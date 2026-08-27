@@ -25,6 +25,7 @@ void main() {
     ).toStableMarkdown();
     expect(md, contains('未内嵌'));
     expect(md, contains('store read'));
+    expect(md, contains('store search'));
   });
 
   test('Group card: no personal cognition URI, no memory write', () {

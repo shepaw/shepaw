@@ -5573,6 +5573,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_spaceArtifacts => 'Artifacts';
 
   @override
+  String get storage_spaceAdvanced => 'Advanced';
+
+  @override
   String storage_browserLastAccessed(String time) {
     return 'Last accessed $time';
   }

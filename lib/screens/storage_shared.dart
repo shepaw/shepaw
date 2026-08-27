@@ -19,7 +19,7 @@ String fmtStorageBytes(int bytes) {
   return '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
 }
 
-/// 储物袋分区显示名（工作/运行时/文件/公开/认知/产物）。
+/// 储物袋分区显示名（文件/工作/公开；高级：运行时/认知/产物）。
 String storageSpaceLabel(AppLocalizations l10n, String space) {
   switch (space) {
     case StoreSpace.workspaces:
@@ -40,7 +40,8 @@ String storageSpaceLabel(AppLocalizations l10n, String space) {
 }
 
 /// 密码输入对话框；返回密码或 null（取消）。
-Future<String?> askStoragePassword(BuildContext context, {String? title}) async {
+Future<String?> askStoragePassword(BuildContext context,
+    {String? title}) async {
   final l10n = AppLocalizations.of(context);
   final controller = TextEditingController();
   final result = await showDialog<String>(

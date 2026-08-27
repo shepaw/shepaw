@@ -9812,6 +9812,12 @@ abstract class AppLocalizations {
   /// **'产物'**
   String get storage_spaceArtifacts;
 
+  /// No description provided for @storage_spaceAdvanced.
+  ///
+  /// In zh, this message translates to:
+  /// **'高级'**
+  String get storage_spaceAdvanced;
+
   /// No description provided for @storage_browserLastAccessed.
   ///
   /// In zh, this message translates to:

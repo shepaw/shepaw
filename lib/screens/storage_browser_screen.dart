@@ -28,10 +28,15 @@ import '../widgets/storage/store_file_list_avatar.dart';
 import 'storage_shared.dart';
 
 class _BrowsedFile {
-  const _BrowsedFile({required this.space, required this.entry});
+  const _BrowsedFile({
+    required this.space,
+    required this.entry,
+    this.snippet,
+  });
 
   final String space;
   final StoreEntry entry;
+  final String? snippet;
 
   String get path => entry.path;
   int get size => entry.size;
@@ -169,11 +174,13 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   /// 「空间」Tab：null = 分区根列表；非 null = 已进入某分区。
   String? _navSpace;
 
+  /// 分区根「高级」折叠（运行时 / 认知 / 产物）。默认分区为空时自动展开。
+  bool _advancedExpanded = false;
+
   /// 当前分区内路径（无首尾 `/`）；空串 = 分区根。
   String _navPath = '';
 
-  bool get _preferLocal =>
-      widget.preferLocalCache || widget.manageLocalMirror;
+  bool get _preferLocal => widget.preferLocalCache || widget.manageLocalMirror;
 
   bool get _isRemote =>
       !_preferLocal &&
@@ -217,6 +224,16 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     return base;
   }
 
+  List<String> get _defaultVisibleSpaces =>
+      StoreSpace.defaultVisibleSpaces(_spaces);
+
+  List<String> get _advancedVisibleSpaces =>
+      StoreSpace.advancedVisibleSpaces(_spaces);
+
+  bool get _advancedSectionExpanded =>
+      _advancedVisibleSpaces.isNotEmpty &&
+      (_defaultVisibleSpaces.isEmpty || _advancedExpanded);
+
   /// 当前已进入的分区；根目录（分区列表）时为 null。
   String? get _effectiveNavSpace => _navSpace;
 
@@ -241,9 +258,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       (widget.initialPath ?? '').replaceAll(RegExp(r'^/+|/+$'), '');
 
   bool get _atNavFloor =>
-      _hasNavFloor &&
-      _navSpace == _navFloorSpace &&
-      _navPath == _navFloorPath;
+      _hasNavFloor && _navSpace == _navFloorSpace && _navPath == _navFloorPath;
 
   bool _isPathAtOrUnderFloor(String path) {
     if (!_hasNavFloor) return true;
@@ -263,7 +278,8 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
 
   String _fileKey(_BrowsedFile file) => '${file.space}:${file.path}';
 
-  bool _isPicked(_BrowsedFile file) => _selectedFiles.containsKey(_fileKey(file));
+  bool _isPicked(_BrowsedFile file) =>
+      _selectedFiles.containsKey(_fileKey(file));
 
   void _togglePick(_BrowsedFile file) {
     final key = _fileKey(file);
@@ -335,8 +351,8 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     final initial = widget.initialSpace;
     if (initial != null && initial.isNotEmpty) {
       _navSpace = initial;
-      final path = (widget.initialPath ?? '')
-          .replaceAll(RegExp(r'^/+|/+$'), '');
+      final path =
+          (widget.initialPath ?? '').replaceAll(RegExp(r'^/+|/+$'), '');
       _navPath = path;
       // 有明确路径时直接落在「空间」Tab。
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -753,8 +769,8 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       _toast(l10n.storage_browserDeleted(relPath));
       await _reload();
     } on StoreException catch (e) {
-      _toast(l10n.storage_browserDeleteFailed(
-          e.message.isEmpty ? e.code : e.message));
+      _toast(l10n
+          .storage_browserDeleteFailed(e.message.isEmpty ? e.code : e.message));
     } catch (e) {
       _toast(l10n.storage_browserDeleteFailed('$e'));
     } finally {
@@ -906,8 +922,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     String? relPath,
   }) async {
     final l10n = AppLocalizations.of(context);
-    final items =
-        deletable ? _folderActionItems(l10n) : _pathActionItems(l10n);
+    final items = deletable ? _folderActionItems(l10n) : _pathActionItems(l10n);
     await showModalBottomSheet<void>(
       context: context,
       builder: (ctx) => SafeArea(
@@ -1130,32 +1145,136 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   }
 
   Future<void> _openSearch() async {
-    // 全平台本地按文件名模糊搜索；不依赖 NAS/master。
     final onSpaceTab = _tabs.index == 1;
     final spaceFilter = onSpaceTab ? _navSpace : null;
-    final pathPrefix =
-        (onSpaceTab && _navSpace != null && _navPath.isNotEmpty)
-            ? '$_navPath/'
-            : '';
-    setState(() => _busy = true);
-    List<_BrowsedFile> corpus = _files;
+    final pathPrefix = (onSpaceTab && _navSpace != null && _navPath.isNotEmpty)
+        ? '$_navPath/'
+        : '';
+    final allowed = _spaces.toSet();
+    await showSearch<void>(
+      context: context,
+      delegate: _StoreSearchDelegate(
+        hint: AppLocalizations.of(context).storage_browserSearchHint,
+        search: (q) => _searchStore(
+          q,
+          space: spaceFilter,
+          pathPrefix: pathPrefix,
+          allowedSpaces: allowed,
+        ),
+        onOpen: _pickMode ? _togglePick : _previewFile,
+      ),
+    );
+  }
+
+  Future<List<_BrowsedFile>> _searchStore(
+    String query, {
+    required String? space,
+    required String pathPrefix,
+    required Set<String> allowedSpaces,
+  }) async {
+    final q = query.trim();
+    if (q.isEmpty) return const [];
+    final limit = pathPrefix.isNotEmpty || space != null ? 200 : 80;
+    try {
+      final hits = await StoreService.instance.searchDevice(
+        q: q,
+        deviceId: _targetId,
+        space: space,
+        limit: limit,
+        preferLocalCache: _preferLocal,
+      );
+      return _hitsToFiles(
+        hits,
+        allowedSpaces: allowedSpaces,
+        pathPrefix: pathPrefix,
+      );
+    } on StoreException catch (e) {
+      if (e.code != StoreError.untrusted &&
+          e.code != StoreError.aclDenied &&
+          e.code != StoreError.masterOffline &&
+          e.code != StoreError.notPaired &&
+          e.code != StoreError.badOp) {
+        rethrow;
+      }
+    }
+    return _fallbackNameSearch(
+      q,
+      space: space,
+      pathPrefix: pathPrefix,
+      allowedSpaces: allowedSpaces,
+    );
+  }
+
+  List<_BrowsedFile> _hitsToFiles(
+    List<Map<String, dynamic>> hits, {
+    required Set<String> allowedSpaces,
+    required String pathPrefix,
+  }) {
+    final out = <_BrowsedFile>[];
+    for (final hit in hits) {
+      final sp = hit['space'] as String? ?? '';
+      final path = hit['path'] as String? ?? '';
+      if (sp.isEmpty || path.isEmpty) continue;
+      if (!allowedSpaces.contains(sp)) continue;
+      if (pathPrefix.isNotEmpty && !path.startsWith(pathPrefix)) continue;
+      if (_isFolderMarkerPath(path)) continue;
+      final snippet = hit['snippet'] as String?;
+      out.add(_BrowsedFile(
+        space: sp,
+        entry: StoreEntry(
+          path: path,
+          size: (hit['size'] as num?)?.toInt() ?? 0,
+          sha256: hit['sha256'] as String? ?? '',
+          mtimeMs: (hit['mtime'] as num?)?.toInt() ??
+              (hit['mtime_ms'] as num?)?.toInt() ??
+              0,
+        ),
+        snippet: (snippet != null && snippet.isNotEmpty && snippet != path)
+            ? snippet
+            : null,
+      ));
+    }
+    return out;
+  }
+
+  Future<List<_BrowsedFile>> _fallbackNameSearch(
+    String query, {
+    required String? space,
+    required String pathPrefix,
+    required Set<String> allowedSpaces,
+  }) async {
+    List<_BrowsedFile> corpus;
     try {
       corpus = await _listAllNames(limit: _isRemote ? 500 : _listLimit);
     } catch (_) {
       corpus = [..._files, ..._dirFiles];
-    } finally {
-      if (mounted) setState(() => _busy = false);
     }
-    if (!mounted) return;
-    await showSearch<void>(
-      context: context,
-      delegate: _LocalFileSearchDelegate(
-        files: corpus,
-        space: spaceFilter,
-        pathPrefix: pathPrefix,
-        onOpen: _pickMode ? _togglePick : _previewFile,
-      ),
-    );
+    final tokens =
+        query.toLowerCase().split(RegExp(r'\s+')).where((t) => t.isNotEmpty);
+    final scored = <(_BrowsedFile, int)>[];
+    for (final f in corpus) {
+      if (space != null && f.space != space) continue;
+      if (!allowedSpaces.contains(f.space)) continue;
+      if (pathPrefix.isNotEmpty && !f.path.startsWith(pathPrefix)) continue;
+      if (_isFolderMarkerPath(f.path)) continue;
+      var score = 0;
+      var ok = true;
+      for (final token in tokens) {
+        final s = _storeSearchPathScore(f.path, token);
+        if (s <= 0) {
+          ok = false;
+          break;
+        }
+        score += s;
+      }
+      if (ok) scored.add((f, score));
+    }
+    scored.sort((a, b) {
+      final byScore = b.$2.compareTo(a.$2);
+      if (byScore != 0) return byScore;
+      return b.$1.mtimeMs.compareTo(a.$1.mtimeMs);
+    });
+    return [for (final e in scored) e.$1];
   }
 
   Future<List<_BrowsedFile>> _listAllNames({int? limit}) async {
@@ -1324,9 +1443,8 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
           ? _uniqueBaseName(l10n.storage_browserNewSpreadsheet, 'csv')
           : _uniqueBaseName(l10n.storage_browserNewDocument, 'md');
       final title = p.basenameWithoutExtension(fileName);
-      final bytes = spreadsheet
-          ? utf8.encode('$title\n')
-          : utf8.encode('# $title\n\n');
+      final bytes =
+          spreadsheet ? utf8.encode('$title\n') : utf8.encode('# $title\n\n');
       await _commitBytes(
         space: _mineSpace,
         path: _destRelPath(fileName),
@@ -1533,8 +1651,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       final space = key.substring(0, i);
       final owner = key.substring(i + 1);
       try {
-        _recentOwnerLabels[key] =
-            await resolveStorageFolderLabel(space, owner);
+        _recentOwnerLabels[key] = await resolveStorageFolderLabel(space, owner);
       } catch (_) {
         _recentOwnerLabels[key] = StorageFolderLabel.unresolved(owner);
       }
@@ -1659,8 +1776,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       actions: [
         if (_pickMode) ..._pickModeActions(l10n),
         // 搜索按钮由 _buildMobileActions 统一提供，这里不再重复添加。
-        if (!_pickMode)
-          ..._buildMobileActions(l10n, includeCreate: _canCreate),
+        if (!_pickMode) ..._buildMobileActions(l10n, includeCreate: _canCreate),
       ],
     );
   }
@@ -1673,7 +1789,9 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       title: _buildTabHeader(l10n),
       actions: [
         if (_pickMode) ..._pickModeActions(l10n),
-        if (!_pickMode) ..._buildMobileActions(l10n, includeCreate: _mobileMineWritable(context)),
+        if (!_pickMode)
+          ..._buildMobileActions(l10n,
+              includeCreate: _mobileMineWritable(context)),
       ],
     );
   }
@@ -1707,12 +1825,11 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
             onSelected: _handleCreateAction,
             itemBuilder: (ctx) => _createMenuItems(l10n),
           ),
-        if (!_pickMode && !_isRemote)
-          IconButton(
-            onPressed: _busy ? null : _openSearch,
-            icon: const Icon(Icons.search),
-            tooltip: l10n.storage_browserSearchTitle,
-          ),
+        IconButton(
+          onPressed: _busy ? null : _openSearch,
+          icon: const Icon(Icons.search),
+          tooltip: l10n.storage_browserSearchTitle,
+        ),
         if (!_pickMode) ...?widget.extraActions,
       ],
     );
@@ -1782,23 +1899,22 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     required bool includeCreate,
   }) {
     return [
-      if (!_isRemote)
-        IconButton(
-          onPressed: _busy ? null : _openSearch,
-          icon: const Icon(Icons.search),
-          tooltip: l10n.storage_browserSearchTitle,
-        ),
+      IconButton(
+        onPressed: _busy ? null : _openSearch,
+        icon: const Icon(Icons.search),
+        tooltip: l10n.storage_browserSearchTitle,
+      ),
       if (includeCreate || widget.extraMenuItems != null)
         PopupMenuButton<dynamic>(
-        icon: const Icon(Icons.add_circle_outline),
-        tooltip: l10n.storage_moreSettings,
-        position: PopupMenuPosition.under,
-        onSelected: _handleMobileMoreSelected,
-        itemBuilder: (ctx) => [
-          if (includeCreate) ..._createMenuItems(l10n),
-          ...?widget.extraMenuItems?.call(ctx),
-        ],
-      ),
+          icon: const Icon(Icons.add_circle_outline),
+          tooltip: l10n.storage_moreSettings,
+          position: PopupMenuPosition.under,
+          onSelected: _handleMobileMoreSelected,
+          itemBuilder: (ctx) => [
+            if (includeCreate) ..._createMenuItems(l10n),
+            ...?widget.extraMenuItems?.call(ctx),
+          ],
+        ),
     ];
   }
 
@@ -1955,9 +2071,8 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
                     Text(
                       modified,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurfaceVariant,
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                     ),
                   ],
@@ -1980,7 +2095,10 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
             Icon(
               Icons.save_outlined,
               size: 72,
-              color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.45),
+              color: Theme.of(context)
+                  .colorScheme
+                  .onSurfaceVariant
+                  .withValues(alpha: 0.45),
             ),
             const SizedBox(height: 16),
             Text(
@@ -2093,8 +2211,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     }
     final visible = _hideInternalFiles
         ? _files
-            .where(
-                (f) => !StoreFileVisual.isInternalStoreFile(f.space, f.path))
+            .where((f) => !StoreFileVisual.isInternalStoreFile(f.space, f.path))
             .toList()
         : _files;
     return Column(
@@ -2109,9 +2226,8 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
                       l10n.storage_recentAllHidden,
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurfaceVariant,
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                     ),
                   ),
@@ -2144,8 +2260,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         child: FilterChip(
           label: Text(l10n.storage_recentHideInternal),
           selected: _hideInternalFiles,
-          onSelected: (v) =>
-              setState(() => _internalHideInternalFiles = v),
+          onSelected: (v) => setState(() => _internalHideInternalFiles = v),
           visualDensity: VisualDensity.compact,
           materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
@@ -2183,8 +2298,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     if (mobile) {
       if (empty) return _buildMobileFolderEmpty(l10n);
       final rows = <Widget>[
-        for (final name in children.folders)
-          _buildMobileFolderRow(name, l10n),
+        for (final name in children.folders) _buildMobileFolderRow(name, l10n),
         for (final f in children.files)
           _buildFileRow(f, l10n, useModified: true),
       ];
@@ -2260,101 +2374,173 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     );
   }
 
-  Widget _buildSpaceRootList(AppLocalizations l10n, {required bool mobile}) {
-    if (mobile) {
-      return ListView.separated(
-        padding: const EdgeInsets.only(top: 4, bottom: 16),
-        itemCount: _spaces.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 2),
-        itemBuilder: (context, i) {
-          final space = _spaces[i];
-          final subtitle = _spaceSubtitle(space);
-          return InkWell(
-            onTap: _busy ? null : () => _enterSpace(space),
-            onLongPress: _busy
-                ? null
-                : () => _showPathActions(
-                      title: storageSpaceLabel(l10n, space),
-                      displayName: space,
-                      uri: _uriForFolderPath(space, ''),
-                    ),
-            child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              child: Row(
+  Widget _buildMobileSpaceRootRow(AppLocalizations l10n, String space) {
+    final subtitle = _spaceSubtitle(space);
+    return InkWell(
+      onTap: _busy ? null : () => _enterSpace(space),
+      onLongPress: _busy
+          ? null
+          : () => _showPathActions(
+                title: storageSpaceLabel(l10n, space),
+                displayName: space,
+                uri: _uriForFolderPath(space, ''),
+              ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(width: 42, child: Center(child: _buildFolderIcon())),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SizedBox(width: 42, child: Center(child: _buildFolderIcon())),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          storageSpaceLabel(l10n, space),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style:
-                              Theme.of(context).textTheme.titleSmall?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                    height: 1.35,
-                                  ),
+                  Text(
+                    storageSpaceLabel(l10n, space),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          height: 1.35,
                         ),
-                        if (subtitle != null) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            subtitle,
-                            style:
-                                Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant,
-                                    ),
-                          ),
-                        ],
-                      ],
-                    ),
                   ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      subtitle,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
                 ],
               ),
             ),
-          );
-        },
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDesktopSpaceRootRow(AppLocalizations l10n, String space) {
+    return ListTile(
+      leading: SizedBox(
+        width: 42,
+        child: Center(child: _buildFolderIcon()),
+      ),
+      title: Text(storageSpaceLabel(l10n, space)),
+      subtitle: _spaceSubtitle(space) == null
+          ? null
+          : Text(
+              _spaceSubtitle(space)!,
+              style: Theme.of(context).textTheme.labelSmall,
+            ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildPathMoreButton(
+            displayName: space,
+            uri: _uriForFolderPath(space, ''),
+          ),
+          const Icon(Icons.chevron_right, size: 20),
+        ],
+      ),
+      onTap: () => _enterSpace(space),
+      onLongPress: () => _showPathActions(
+        title: storageSpaceLabel(l10n, space),
+        displayName: space,
+        uri: _uriForFolderPath(space, ''),
+      ),
+    );
+  }
+
+  Widget _buildMobileAdvancedHeader(AppLocalizations l10n) {
+    return InkWell(
+      onTap: () => setState(() => _advancedExpanded = !_advancedExpanded),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 42,
+              child: Center(
+                child: Icon(
+                  Icons.tune,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                l10n.storage_spaceAdvanced,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      height: 1.35,
+                    ),
+              ),
+            ),
+            Icon(
+              _advancedSectionExpanded ? Icons.expand_less : Icons.expand_more,
+              size: 20,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDesktopAdvancedHeader(AppLocalizations l10n) {
+    return ListTile(
+      leading: SizedBox(
+        width: 42,
+        child: Center(
+          child: Icon(
+            Icons.tune,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+      title: Text(l10n.storage_spaceAdvanced),
+      trailing: Icon(
+        _advancedSectionExpanded ? Icons.expand_less : Icons.expand_more,
+      ),
+      onTap: () => setState(() => _advancedExpanded = !_advancedExpanded),
+    );
+  }
+
+  Widget _buildSpaceRootList(AppLocalizations l10n, {required bool mobile}) {
+    final defaultSpaces = _defaultVisibleSpaces;
+    final advancedSpaces = _advancedVisibleSpaces;
+    final expandAdvanced = _advancedSectionExpanded;
+    if (mobile) {
+      final rows = <Widget>[
+        for (final space in defaultSpaces)
+          _buildMobileSpaceRootRow(l10n, space),
+        if (advancedSpaces.isNotEmpty) _buildMobileAdvancedHeader(l10n),
+        if (expandAdvanced)
+          for (final space in advancedSpaces)
+            _buildMobileSpaceRootRow(l10n, space),
+      ];
+      return ListView.separated(
+        padding: const EdgeInsets.only(top: 4, bottom: 16),
+        itemCount: rows.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 2),
+        itemBuilder: (_, i) => rows[i],
       );
     }
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 8),
       children: [
-        for (final space in _spaces)
-          ListTile(
-            leading: SizedBox(
-              width: 42,
-              child: Center(child: _buildFolderIcon()),
-            ),
-            title: Text(storageSpaceLabel(l10n, space)),
-            subtitle: _spaceSubtitle(space) == null
-                ? null
-                : Text(
-                    _spaceSubtitle(space)!,
-                    style: Theme.of(context).textTheme.labelSmall,
-                  ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildPathMoreButton(
-                  displayName: space,
-                  uri: _uriForFolderPath(space, ''),
-                ),
-                const Icon(Icons.chevron_right, size: 20),
-              ],
-            ),
-            onTap: () => _enterSpace(space),
-            onLongPress: () => _showPathActions(
-              title: storageSpaceLabel(l10n, space),
-              displayName: space,
-              uri: _uriForFolderPath(space, ''),
-            ),
-          ),
+        for (final space in defaultSpaces)
+          _buildDesktopSpaceRootRow(l10n, space),
+        if (advancedSpaces.isNotEmpty) _buildDesktopAdvancedHeader(l10n),
+        if (expandAdvanced)
+          for (final space in advancedSpaces)
+            _buildDesktopSpaceRootRow(l10n, space),
       ],
     );
   }
@@ -2449,14 +2635,12 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
                     for (var i = 0; i < segments.length; i++) ...[
                       if (i > 0)
                         Text(' / ',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant,
-                                )),
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
+                                    )),
                       InkWell(
                         onTap: segments[i].onTap,
                         child: Padding(
@@ -2490,77 +2674,36 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   }
 }
 
-class _LocalFileSearchDelegate extends SearchDelegate<void> {
-  _LocalFileSearchDelegate({
-    required this.files,
-    required this.space,
-    required this.pathPrefix,
+class _StoreSearchDelegate extends SearchDelegate<void> {
+  _StoreSearchDelegate({
+    required this.hint,
+    required this.search,
     required this.onOpen,
   });
 
-  final List<_BrowsedFile> files;
-
-  /// null = 不限分区（「最近」或 store 根）。
-  final String? space;
-  final String pathPrefix;
+  final String hint;
+  final Future<List<_BrowsedFile>> Function(String query) search;
   final void Function(_BrowsedFile file) onOpen;
 
-  /// 子序列模糊：needle 各字符按序出现在 text 中即可。
-  static bool _fuzzySubsequence(String text, String needle) {
-    if (needle.isEmpty) return true;
-    var i = 0;
-    for (final c in text.codeUnits) {
-      if (c == needle.codeUnitAt(i)) {
-        i++;
-        if (i >= needle.length) return true;
-      }
-    }
-    return false;
+  String? _issuedQuery;
+  Future<List<_BrowsedFile>>? _issued;
+
+  @override
+  String get searchFieldLabel => hint;
+
+  Future<List<_BrowsedFile>> _futureFor(String q) {
+    final t = q.trim();
+    if (t == _issuedQuery && _issued != null) return _issued!;
+    _issuedQuery = t;
+    _issued = _run(t);
+    return _issued!;
   }
 
-  /// 越高越靠前；0 = 不匹配。
-  static int _matchScore(String path, String needle) {
-    final name = p.basename(path).toLowerCase();
-    final full = path.toLowerCase();
-    if (name == needle) return 500;
-    if (name.startsWith(needle)) return 400;
-    if (name.contains(needle)) return 300;
-    if (_fuzzySubsequence(name, needle)) return 200;
-    if (full.contains(needle)) return 100;
-    if (_fuzzySubsequence(full, needle)) return 50;
-    return 0;
-  }
-
-  List<_BrowsedFile> _matches(String q) {
-    final needle = q.trim().toLowerCase();
-    if (needle.isEmpty) return const [];
-    final tokens =
-        needle.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
-    final scored = <(_BrowsedFile, int)>[];
-    for (final f in files) {
-      if (space != null && f.space != space) continue;
-      if (pathPrefix.isNotEmpty && !f.path.startsWith(pathPrefix)) continue;
-      if (p.basename(f.path) == _StorageBrowserScreenState._folderMarker) {
-        continue;
-      }
-      var score = 0;
-      var ok = true;
-      for (final token in tokens) {
-        final s = _matchScore(f.path, token);
-        if (s <= 0) {
-          ok = false;
-          break;
-        }
-        score += s;
-      }
-      if (ok) scored.add((f, score));
-    }
-    scored.sort((a, b) {
-      final byScore = b.$2.compareTo(a.$2);
-      if (byScore != 0) return byScore;
-      return b.$1.mtimeMs.compareTo(a.$1.mtimeMs);
-    });
-    return [for (final e in scored) e.$1];
+  Future<List<_BrowsedFile>> _run(String q) async {
+    final captured = q;
+    await Future<void>.delayed(const Duration(milliseconds: 280));
+    if (captured != _issuedQuery) return const [];
+    return search(q);
   }
 
   @override
@@ -2583,44 +2726,90 @@ class _LocalFileSearchDelegate extends SearchDelegate<void> {
   }
 
   @override
-  Widget buildResults(BuildContext context) => _buildList(context);
+  Widget buildResults(BuildContext context) => _buildBody(context);
 
   @override
-  Widget buildSuggestions(BuildContext context) => _buildList(context);
+  Widget buildSuggestions(BuildContext context) => _buildBody(context);
 
-  Widget _buildList(BuildContext context) {
+  Widget _buildBody(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final q = query.trim();
     if (q.isEmpty) {
       return Center(child: Text(l10n.storage_browserSearchHint));
     }
-    final list = _matches(q);
-    if (list.isEmpty) {
-      return Center(child: Text(l10n.storage_browserSearchEmpty));
-    }
-    return ListView.builder(
-      itemCount: list.length,
-      itemBuilder: (_, i) {
-        final f = list[i];
-        final name = p.basename(f.path);
-        return ListTile(
-          title: Text(name, overflow: TextOverflow.ellipsis),
-          subtitle: Text(
-            [
+    return FutureBuilder<List<_BrowsedFile>>(
+      future: _futureFor(q),
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snap.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                l10n.storage_browserSearchFailed('${snap.error}'),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          );
+        }
+        final list = snap.data ?? const <_BrowsedFile>[];
+        if (list.isEmpty) {
+          return Center(child: Text(l10n.storage_browserSearchEmpty));
+        }
+        return ListView.builder(
+          itemCount: list.length,
+          itemBuilder: (_, i) {
+            final f = list[i];
+            final name = p.basename(f.path);
+            final subtitle = [
               _fmtBytes(f.size),
               '${f.space}/${f.path}',
-            ].join(' · '),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-          onTap: () {
-            close(context, null);
-            onOpen(f);
+              if (f.snippet != null && f.snippet!.isNotEmpty) f.snippet!,
+            ].join(' · ');
+            return ListTile(
+              title: Text(name, overflow: TextOverflow.ellipsis),
+              subtitle: Text(
+                subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              onTap: () {
+                close(context, null);
+                onOpen(f);
+              },
+            );
           },
         );
       },
     );
   }
+}
+
+/// 越高越靠前；0 = 不匹配。协议 search 不可用时的文件名回退。
+int _storeSearchPathScore(String path, String needle) {
+  final name = p.basename(path).toLowerCase();
+  final full = path.toLowerCase();
+  if (name == needle) return 500;
+  if (name.startsWith(needle)) return 400;
+  if (name.contains(needle)) return 300;
+  if (_fuzzySubsequence(name, needle)) return 200;
+  if (full.contains(needle)) return 100;
+  if (_fuzzySubsequence(full, needle)) return 50;
+  return 0;
+}
+
+bool _fuzzySubsequence(String text, String needle) {
+  if (needle.isEmpty) return true;
+  var i = 0;
+  for (final c in text.codeUnits) {
+    if (c == needle.codeUnitAt(i)) {
+      i++;
+      if (i >= needle.length) return true;
+    }
+  }
+  return false;
 }
 
 enum _CreateMenuAction {

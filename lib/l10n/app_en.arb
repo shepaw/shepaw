@@ -2691,6 +2691,7 @@
   "storage_spacePublic": "Public",
   "storage_spaceCognition": "Cognition",
   "storage_spaceArtifacts": "Artifacts",
+  "storage_spaceAdvanced": "Advanced",
   "storage_browserLastAccessed": "Last accessed {time}",
   "@storage_browserLastAccessed": {
     "placeholders": {

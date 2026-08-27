@@ -154,7 +154,8 @@ class StoreService {
     final hash = sha256Hex ?? crypto.sha256.convert(content).toString();
     final path = normalizeStorePath(relPath);
 
-    Future<void> putVia(Future<Map<String, dynamic>?> Function(StoreFrame) send) async {
+    Future<void> putVia(
+        Future<Map<String, dynamic>?> Function(StoreFrame) send) async {
       final begin = await send(StoreFrame(
         op: StoreOp.writeBegin,
         payload: <String, dynamic>{
@@ -256,9 +257,11 @@ class StoreService {
     String? prefix,
     int limit = 100,
     int? depth,
+
     /// 为 true 时始终读本机磁盘上的 `<deviceId>/…`（peer 本地缓存 /
     /// local_fallback），不走跨端 store.list。
     bool preferLocalCache = false,
+
     /// 浏览/搜索可关哈希；同步路径保持默认 true。
     bool computeHash = true,
   }) async {
@@ -266,10 +269,7 @@ class StoreService {
     if (deviceId == self || preferLocalCache) {
       final store = await _localStore();
       return store.list(deviceId, space,
-          prefix: prefix,
-          limit: limit,
-          depth: depth,
-          computeHash: computeHash);
+          prefix: prefix, limit: limit, depth: depth, computeHash: computeHash);
     }
     return _listViaServer(
       serverId: await preferredReadServer(deviceId),
@@ -312,8 +312,7 @@ class StoreService {
     final raw = data['entries'] as List? ?? const [];
     return [
       for (final e in raw)
-        if (e is Map)
-          StoreEntry.fromJson(Map<String, dynamic>.from(e)),
+        if (e is Map) StoreEntry.fromJson(Map<String, dynamic>.from(e)),
     ];
   }
 
@@ -361,9 +360,7 @@ class StoreService {
     final self = await DeviceIdentity.deviceId();
     if (await masterDeviceId() == self) {
       return _dispatch(frame,
-          callerDeviceId: self,
-          trustLevel: TrustLevel.owner,
-          loopback: true);
+          callerDeviceId: self, trustLevel: TrustLevel.owner, loopback: true);
     }
     // 远端 master：经配对通道发送（M4 起叠加本地优先队列）
     final masterId = await masterDeviceId();
@@ -384,13 +381,11 @@ class StoreService {
     required String device,
     required String path,
   }) =>
-      call(StoreFrame(
-          op: StoreOp.versionsList,
-          payload: <String, dynamic>{
-            'space': space,
-            'device': device,
-            'path': path,
-          }));
+      call(StoreFrame(op: StoreOp.versionsList, payload: <String, dynamic>{
+        'space': space,
+        'device': device,
+        'path': path,
+      }));
 
   /// 读取指定版本（`ref` = `v<N>` 或 `<sha256[:16+]>`）。
   Future<Map<String, dynamic>?> versionsRead({
@@ -401,16 +396,14 @@ class StoreService {
     int offset = 0,
     int length = LocalStore.maxReadChunk,
   }) =>
-      call(StoreFrame(
-          op: StoreOp.versionsRead,
-          payload: <String, dynamic>{
-            'space': space,
-            'device': device,
-            'path': path,
-            'ref': ref,
-            'offset': offset,
-            'length': length,
-          }));
+      call(StoreFrame(op: StoreOp.versionsRead, payload: <String, dynamic>{
+        'space': space,
+        'device': device,
+        'path': path,
+        'ref': ref,
+        'offset': offset,
+        'length': length,
+      }));
 
   /// 任务血缘 manifest。
   Future<Map<String, dynamic>?> manifest({
@@ -418,18 +411,15 @@ class StoreService {
     required String device,
     required String path,
   }) =>
-      call(StoreFrame(
-          op: StoreOp.manifest,
-          payload: <String, dynamic>{
-            'space': space,
-            'device': device,
-            'path': path,
-          }));
+      call(StoreFrame(op: StoreOp.manifest, payload: <String, dynamic>{
+        'space': space,
+        'device': device,
+        'path': path,
+      }));
 
   /// 产物状态 + 血缘。
-  Future<Map<String, dynamic>?> artifactState(String uri) =>
-      call(StoreFrame(
-          op: StoreOp.artifactState, payload: <String, dynamic>{'uri': uri}));
+  Future<Map<String, dynamic>?> artifactState(String uri) => call(StoreFrame(
+      op: StoreOp.artifactState, payload: <String, dynamic>{'uri': uri}));
 
   /// 交接确认（幂等；agentId 通常为本机 device_id 伪 agent）。
   Future<Map<String, dynamic>?> handoffAck(String uri, String agentId) =>
@@ -446,15 +436,80 @@ class StoreService {
     int limit = 50,
     bool semantic = false,
   }) {
+    return call(StoreFrame(
+        op: StoreOp.search,
+        payload: _searchPayload(
+          q: q,
+          space: space,
+          device: device,
+          state: state,
+          limit: limit,
+          semantic: semantic,
+        )));
+  }
+
+  /// 按目标设备检索：本机/本地缓存直搜磁盘；他端走 [preferredReadServer]。
+  Future<List<Map<String, dynamic>>> searchDevice({
+    required String q,
+    required String deviceId,
+    String? space,
+    int limit = 50,
+    bool preferLocalCache = false,
+  }) async {
+    final self = await DeviceIdentity.deviceId();
+    if (deviceId == self || preferLocalCache) {
+      final store = await _localStore();
+      return store.search(
+        query: q,
+        space: space,
+        device: deviceId,
+        limit: limit,
+      );
+    }
+    return _parseSearchResults(await callPeer(
+      await preferredReadServer(deviceId),
+      StoreFrame(
+        op: StoreOp.search,
+        payload: _searchPayload(
+          q: q,
+          space: space,
+          device: deviceId,
+          limit: limit,
+        ),
+      ),
+    ));
+  }
+
+  static Map<String, dynamic> _searchPayload({
+    required String q,
+    String? space,
+    String? device,
+    String? state,
+    int limit = 50,
+    bool semantic = false,
+  }) {
     final payload = <String, dynamic>{
       'q': q,
       'limit': limit,
       if (semantic) 'semantic': true,
     };
-    if (space != null) payload['space'] = space;
-    if (device != null) payload['device'] = device;
-    if (state != null) payload['state'] = state;
-    return call(StoreFrame(op: StoreOp.search, payload: payload));
+    if (space != null && space.isNotEmpty) payload['space'] = space;
+    if (device != null && device.isNotEmpty) payload['device'] = device;
+    if (state != null && state.isNotEmpty) payload['state'] = state;
+    return payload;
+  }
+
+  static List<Map<String, dynamic>> _parseSearchResults(
+      Map<String, dynamic>? data) {
+    if (data == null || data.containsKey('_error')) {
+      final code = data?['_error'] as String? ?? StoreError.masterOffline;
+      throw StoreException(code, data?['message'] as String? ?? '');
+    }
+    final raw = data['results'] as List? ?? const [];
+    return [
+      for (final e in raw)
+        if (e is Map) Map<String, dynamic>.from(e),
+    ];
   }
 
   /// 事件列表（`seq > since`；可选 `kind` 过滤，如 `handoff.created`）。
@@ -495,9 +550,7 @@ class StoreService {
     final self = await DeviceIdentity.deviceId();
     if (deviceId == self) {
       return _dispatch(frame,
-          callerDeviceId: self,
-          trustLevel: TrustLevel.owner,
-          loopback: true);
+          callerDeviceId: self, trustLevel: TrustLevel.owner, loopback: true);
     }
     final peers = await _peerStorage.loadAllPeers();
     final peer = peers.where((p) => p.fingerprint == deviceId).firstOrNull;
@@ -520,7 +573,8 @@ class StoreService {
         final ok = await _manager.sendControl(peerId, wire.toJson());
         if (!ok) return _errorData(StoreError.masterOffline);
         return await completer.future;
-      }().timeout(timeout, onTimeout: () {
+      }()
+          .timeout(timeout, onTimeout: () {
         return _errorData(
             StoreError.masterOffline, 'timed out after ${timeout.inSeconds}s');
       });
@@ -629,8 +683,7 @@ class StoreService {
       return;
     }
     final configured = await _peerStorage.getSharedStoreAllowlist(peerId);
-    final allowlist =
-        await _peerStorage.effectiveOutboundAllowlist(peerId);
+    final allowlist = await _peerStorage.effectiveOutboundAllowlist(peerId);
     // owner 从未配置出站分享：ACL 用默认；异步落库并 announce。
     if (configured.isEmpty && peer.trustLevel == TrustLevel.owner) {
       unawaited(() async {
@@ -733,8 +786,7 @@ class StoreService {
     Iterable<PeerStoreShareEntry> entries,
   ) async {
     await _peerStorage.replaceStoreShares(peerId, entries);
-    if (_manager.getPeerState(peerId) ==
-        PeerConnectionState.connected) {
+    if (_manager.getPeerState(peerId) == PeerConnectionState.connected) {
       await pushShareAnnounce(peerId);
     }
   }
@@ -743,13 +795,11 @@ class StoreService {
   ///
   /// 路径 B（master 代签）时发送方 fingerprint ≠ `old_device`，必须采信
   /// payload 中的 `old_device`；缺省/非法时才回退 [fromDevice]（路径 A）。
-  Future<void> _receivePushedGrant(
-      String fromDevice, StoreFrame frame) async {
+  Future<void> _receivePushedGrant(String fromDevice, StoreFrame frame) async {
     try {
       final self = await DeviceIdentity.deviceId();
       final payloadOld = frame.payload['old_device'] as String?;
-      final oldDevice =
-          isValidDeviceId(payloadOld) ? payloadOld! : fromDevice;
+      final oldDevice = isValidDeviceId(payloadOld) ? payloadOld! : fromDevice;
       final grant = ImportGrant(
         grantId: frame.payload['grant_id'] as String,
         oldDevice: oldDevice,
@@ -773,8 +823,7 @@ class StoreService {
 
   /// 测试钩子：模拟入站无 req_id 的 `import.grant` 推送。
   @visibleForTesting
-  Future<void> receivePushedGrantForTest(
-          String fromDevice, StoreFrame frame) =>
+  Future<void> receivePushedGrantForTest(String fromDevice, StoreFrame frame) =>
       _receivePushedGrant(fromDevice, frame);
 
   /// 签发后把授权推送给请求方（新设备）。
@@ -812,8 +861,8 @@ class StoreService {
   Future<void> _replyData(
       String peerId, StoreFrame frame, Map<String, dynamic> data) async {
     if (data.containsKey('_error')) {
-      await _reply(peerId, frame, data['_error'] as String,
-          data['message'] as String?);
+      await _reply(
+          peerId, frame, data['_error'] as String, data['message'] as String?);
     } else {
       await _manager.sendControl(
           peerId, storeResult(frame.reqId, data).toJson());
@@ -896,7 +945,8 @@ class StoreService {
               frame.op == StoreOp.read) &&
           frame.device != null &&
           frame.device != callerDeviceId &&
-          !((frame.space != null && store.spaceVisibility(frame.space!) == true) ||
+          !((frame.space != null &&
+                  store.spaceVisibility(frame.space!) == true) ||
               StoreSpace.sharedReadable.contains(frame.space))) {
         final shareHit = shareAllowlist != null &&
             shareAllowlist.allows(
@@ -936,8 +986,8 @@ class StoreService {
               'runtime share denied: ${frame.op} caller=$callerDeviceId '
               '${frame.device}/${frame.path}',
               tag: _auditTag);
-          return _errorData(
-              StoreError.aclDenied, 'runtime share: attachments/artifacts only');
+          return _errorData(StoreError.aclDenied,
+              'runtime share: attachments/artifacts only');
         }
       }
 
@@ -1190,8 +1240,7 @@ class StoreService {
           }
           _lastMigrateAt = now;
           // 对端请求本机升主
-          final result =
-              await MasterMigrationService.instance.promoteSelf();
+          final result = await MasterMigrationService.instance.promoteSelf();
           return <String, dynamic>{
             'master': result.newMasterId,
             'epoch': result.epoch,
@@ -1232,10 +1281,8 @@ class StoreService {
         case StoreOp.importGrant:
           // 仅 loopback（用户在场确认，ACL 已强制）
           final auth = await _importAuthService();
-          final grant = await auth
-              .grant(frame.payload['request_id'] as String);
-          _log.info(
-              'import granted ${grant.grantId} to ${grant.newDevice}',
+          final grant = await auth.grant(frame.payload['request_id'] as String);
+          _log.info('import granted ${grant.grantId} to ${grant.newDevice}',
               tag: _auditTag);
           // 推送授权给请求方（新设备）
           unawaited(_pushGrantToRequester(grant));

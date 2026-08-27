@@ -18,7 +18,7 @@ She 与其他 Agent 通过 `shepaw <namespace> <subcommand> [--flag value ...]` 
                 skills     已加载的 LLM 技能库（list / detail）
                 os         直接操作系统工具（command / file / app / clipboard / process / macos）
                 workflow   工作流编排（create / dispatch / status / complete / fail / cancel）
-                store      储物袋 store:// 读写（write / read / list）
+                store      储物袋 store:// 读写（write / read / list / search / events / spaces）
                 vision     设备端人脸识别（status / recognize / album.* / profile.*）
 ℹ️ META 层       meta       系统信息与时间（datetime；system.info / system.tools-list /
                            system.tools-detail / system.capabilities；cli-tools 外部工具管理）
@@ -36,13 +36,13 @@ She 与其他 Agent 通过 `shepaw <namespace> <subcommand> [--flag value ...]` 
 | `skills` | `list` · `detail --name <skill>`（读技能全文） |
 | `os` | `file.*` · `command.*` · `app.*` · `clipboard.*` · `process.*`（平台相关） |
 | `workflow` | `create` · `dispatch` · `status` · `complete` · `fail` · `cancel`（群 Admin 或 She 1:1 DM） |
-| `store` | `write --filename <name> --content <text> [--task] [--space public/workspaces --group <gid>]` · `read --uri <store://...>` · `list --uri <store://...> --depth 1` |
+| `store` | `write --filename <name> --content <text> [--task] [--space public/workspaces --group <gid>]` · `read --uri <store://...>` · `list --uri <store://...> --depth 1` · `search --query <q> [--space] [--uri]` · `events` · `spaces` |
 | `vision` | `status` · `recognize --image <path>\|--message_id <id>` · `album.enroll/list/remove` · `profile.build/get`（无独立设置页，对话里调用） |
 | `meta` | `datetime` · `system.info` · `system.tools-list` · `system.tools-detail --name <tool>` · `system.capabilities` · `cli-tools.list/install/uninstall/rescan` |
 
 **使用纪律：**
 
-1. 看到 `store://…` 一律用 `shepaw store read/list`，**不要**用 `os.file.read` 去读。
+1. 看到 `store://…` 一律用 `shepaw store read/list/search`，**不要**用 `os.file.read` 去读。
 2. 产物优先 `shepaw store write`（拿到可分享的 URI），不要用 `os.file.write` 写报告/代码/文档。
 3. 群聊执行上下文里 `store write` 默认落到**群工作空间成员目录**（`members/<agentId>/`，跨设备可见），不是本地私有 runtime。
 4. 命令执行有**权限检查**（`CliCommandConfigService`）：UI 操作跳过；Agent 主动调用按配置放行或拒绝。

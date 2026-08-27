@@ -63,7 +63,8 @@ void main() {
       final att = RuntimePaths.attachmentBlob('a1', 'c1', 'a' * 64);
       expect(att, 'a1/c1/attachments/${'a' * 64}');
       expect(RuntimePaths.isRuntimeAttachmentPath(att), isTrue);
-      expect(RuntimePaths.sessionJson('a1', 'c1'), 'a1/c1/sessions/session.json');
+      expect(
+          RuntimePaths.sessionJson('a1', 'c1'), 'a1/c1/sessions/session.json');
       expect(
         RuntimePaths.artifactFile(
           ownerId: 'a1',
@@ -76,8 +77,7 @@ void main() {
     });
 
     test('workflow scoped channel：channel 与 wf/step 分目录', () {
-      const scoped =
-          'psess_group_77899647-8d7e-4eea-8357-37bd10bc5aeb'
+      const scoped = 'psess_group_77899647-8d7e-4eea-8357-37bd10bc5aeb'
           '__wf_af8faa46-bffc-4a3d-82a2-f33427095ae8'
           '__step_79647862-af5b-4871-afa6-6b7353548d90';
       final split = RuntimePaths.splitChannelId(scoped);
@@ -113,24 +113,27 @@ void main() {
         deviceId: '0123456789abcdef',
         relPath: 'a1/soul.md',
       );
-      expect(uri, startsWith('store://${StoreSpace.runtime}/0123456789abcdef/'));
+      expect(
+          uri, startsWith('store://${StoreSpace.runtime}/0123456789abcdef/'));
       expect(uri, contains('a1/soul.md'));
     });
   });
 
   group('StoreSpace profile', () {
     test('内置与 legacy', () {
-      expect(StoreSpace.all, containsAll([
-        StoreSpace.workspaces,
-        StoreSpace.runtime,
-        StoreSpace.files,
-        StoreSpace.public_,
-        StoreSpace.backups,
-        StoreSpace.cognition,
-        StoreSpace.memory,
-        StoreSpace.artifacts,
-        StoreSpace.attachments,
-      ]));
+      expect(
+          StoreSpace.all,
+          containsAll([
+            StoreSpace.workspaces,
+            StoreSpace.runtime,
+            StoreSpace.files,
+            StoreSpace.public_,
+            StoreSpace.backups,
+            StoreSpace.cognition,
+            StoreSpace.memory,
+            StoreSpace.artifacts,
+            StoreSpace.attachments,
+          ]));
       expect(StoreSpace.sharedReadable, isNot(contains(StoreSpace.runtime)));
       expect(StoreSpace.sharedReadable, isNot(contains(StoreSpace.cognition)));
       expect(StoreSpace.sharedReadable, isNot(contains(StoreSpace.memory)));
@@ -140,14 +143,40 @@ void main() {
       expect(StoreSpace.browserSpaces, contains(StoreSpace.public_));
       expect(StoreSpace.browserSpaces, contains(StoreSpace.cognition));
       expect(StoreSpace.browserSpaces, isNot(contains(StoreSpace.memory)));
+      expect(StoreSpace.defaultBrowserSpaces, [
+        StoreSpace.files,
+        StoreSpace.workspaces,
+        StoreSpace.public_,
+      ]);
+      expect(StoreSpace.advancedBrowserSpaces, [
+        StoreSpace.runtime,
+        StoreSpace.cognition,
+        StoreSpace.artifacts,
+      ]);
+      expect(
+        StoreSpace.defaultVisibleSpaces(StoreSpace.browserSpaces),
+        [StoreSpace.files, StoreSpace.workspaces, StoreSpace.public_],
+      );
+      expect(
+        StoreSpace.advancedVisibleSpaces(StoreSpace.browserSpaces),
+        [StoreSpace.runtime, StoreSpace.cognition, StoreSpace.artifacts],
+      );
+      expect(
+        StoreSpace.defaultVisibleSpaces([StoreSpace.files, 'notes']),
+        [StoreSpace.files, 'notes'],
+      );
+      expect(
+        StoreSpace.advancedVisibleSpaces(
+            [StoreSpace.files, StoreSpace.runtime]),
+        [StoreSpace.runtime],
+      );
     });
   });
 
   group('RuntimeSharePolicy', () {
     test('allowsFileRead：仅放行 attachments/artifacts 段下的文件', () {
       expect(
-        RuntimeSharePolicy.allowsFileRead(
-            'agent_1/ch_1/attachments/aaaaaaaa'),
+        RuntimeSharePolicy.allowsFileRead('agent_1/ch_1/attachments/aaaaaaaa'),
         isTrue,
       );
       expect(
@@ -163,8 +192,7 @@ void main() {
       );
       expect(RuntimeSharePolicy.allowsFileRead('agent_1/soul.md'), isFalse);
       expect(
-        RuntimeSharePolicy.allowsFileRead(
-            'agent_1/ch_1/sessions/session.json'),
+        RuntimeSharePolicy.allowsFileRead('agent_1/ch_1/sessions/session.json'),
         isFalse,
       );
       // channel 根下未知文件不放行
@@ -178,7 +206,8 @@ void main() {
     test('isSensitivePath：根镜像/清单与会话段命中', () {
       expect(RuntimeSharePolicy.isSensitivePath('agent_1/soul.md'), isTrue);
       expect(RuntimeSharePolicy.isSensitivePath('agent_1/memory.md'), isTrue);
-      expect(RuntimeSharePolicy.isSensitivePath('agent_1/workspace.md'), isTrue);
+      expect(
+          RuntimeSharePolicy.isSensitivePath('agent_1/workspace.md'), isTrue);
       expect(
         RuntimeSharePolicy.isSensitivePath('agent_1/context.manifest.json'),
         isTrue,
@@ -190,8 +219,7 @@ void main() {
       );
       // 附件/目录非敏感，由服务端 allowsFileRead 严格把关
       expect(
-        RuntimeSharePolicy.isSensitivePath(
-            'agent_1/ch_1/attachments/aaaaaaaa'),
+        RuntimeSharePolicy.isSensitivePath('agent_1/ch_1/attachments/aaaaaaaa'),
         isFalse,
       );
       expect(RuntimeSharePolicy.isSensitivePath('agent_1/ch_1'), isFalse);

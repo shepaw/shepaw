@@ -93,6 +93,7 @@ class StoreSpace {
 
   /// 跨 owner 共享工作区（owner 可跨 device 读写）。
   static const workspaces = 'workspaces';
+
   /// Agent/群运行时镜像与 channel 附件/产物（默认 private）。
   static const runtime = 'runtime';
   static const files = 'files';
@@ -101,6 +102,7 @@ class StoreSpace {
 
   /// Legacy：旧产物区（只读兼容；新写入走 [runtime]）。
   static const artifacts = 'artifacts';
+
   /// Legacy：旧私有附件区（只读兼容）。
   static const attachments = 'attachments';
 
@@ -131,15 +133,52 @@ class StoreSpace {
     attachments,
   ];
 
-  /// Browser chips：用户可见区（不含 backups 密文；legacy artifacts 仍可浏览）。
-  static const browserSpaces = <String>[
-    workspaces,
-    runtime,
+  /// 浏览默认露出：用户文件面（文件 / 工作 / 公开）。「最近」是独立 Tab。
+  static const defaultBrowserSpaces = <String>[
     files,
+    workspaces,
     public_,
+  ];
+
+  /// Agent 内部区：浏览页收到「高级」。
+  static const advancedBrowserSpaces = <String>[
+    runtime,
     cognition,
     artifacts,
   ];
+
+  /// Browser 全量：用户面 + 高级（不含 backups 密文、legacy memory）。
+  static const browserSpaces = <String>[
+    ...defaultBrowserSpaces,
+    ...advancedBrowserSpaces,
+  ];
+
+  /// [allowed] 中的默认浏览分区，保持 [defaultBrowserSpaces] 顺序；
+  /// 未归类的自定义空间跟在后面，避免 `space.declare` 后找不到。
+  static List<String> defaultVisibleSpaces(Iterable<String> allowed) {
+    final set = allowed.toSet();
+    final out = <String>[
+      for (final s in defaultBrowserSpaces)
+        if (set.contains(s)) s,
+    ];
+    for (final s in allowed) {
+      if (!defaultBrowserSpaces.contains(s) &&
+          !advancedBrowserSpaces.contains(s) &&
+          !out.contains(s)) {
+        out.add(s);
+      }
+    }
+    return out;
+  }
+
+  /// [allowed] 中的高级分区，保持 [advancedBrowserSpaces] 顺序。
+  static List<String> advancedVisibleSpaces(Iterable<String> allowed) {
+    final set = allowed.toSet();
+    return [
+      for (final s in advancedBrowserSpaces)
+        if (set.contains(s)) s,
+    ];
+  }
 
   /// Owner 端默认可跨端读的分区（不含 private 的 runtime / cognition）。
   static const sharedReadable = <String>[
@@ -160,8 +199,7 @@ class StoreSpace {
   /// 认知相关 space（权威 + legacy），用于兼容读。
   static const cognitionAliases = <String>[cognition, memory];
 
-  static bool isCognitionSpace(String s) =>
-      s == cognition || s == memory;
+  static bool isCognitionSpace(String s) => s == cognition || s == memory;
 
   static bool isOwnerCrossWritable(String s) => ownerCrossWritable.contains(s);
 
@@ -405,13 +443,13 @@ class StoreUriRef {
 /// [allowEmptyPath] 为 true 时允许分区根 `store://<space>/<device>`（浏览/list）；
 /// 读文件仍应保持默认（必须带 path）。
 ({String space, String device, String path, StoreUriRef ref}) parseStoreUri(
-    String raw, {bool allowEmptyPath = false}) {
+    String raw,
+    {bool allowEmptyPath = false}) {
   final withoutQuery = raw.split('?').first;
   final rest =
       withoutQuery.startsWith('store://') ? withoutQuery.substring(8) : raw;
   final segments = rest.split('/').where((s) => s.isNotEmpty).toList();
-  if (segments.length < 2 ||
-      (!allowEmptyPath && segments.length < 3)) {
+  if (segments.length < 2 || (!allowEmptyPath && segments.length < 3)) {
     throw FormatException(allowEmptyPath
         ? 'bad_uri: missing space/device'
         : 'bad_uri: missing space/device/path');
@@ -426,10 +464,7 @@ class StoreUriRef {
     throw FormatException('bad_uri: invalid device id');
   }
   // Markdown / Uri.tryParse 常把非 ASCII 路径编成 %XX；磁盘上是 UTF-8 文件名。
-  var rel = segments
-      .sublist(2)
-      .map(_decodeStoreUriSegment)
-      .join('/');
+  var rel = segments.sublist(2).map(_decodeStoreUriSegment).join('/');
 
   // 点前缀段保留（.staging/.recycle/.versions/.nexuspouch 系统目录）。
   for (final seg in rel.split('/')) {
@@ -452,12 +487,13 @@ class StoreUriRef {
   }
   if (ref.isLatest) {
     final query = raw.contains('?') ? raw.substring(raw.indexOf('?') + 1) : '';
-    final refParam = query.split('&').firstWhere(
-        (kv) => kv.startsWith('ref='),
-        orElse: () => '');
+    final refParam = query
+        .split('&')
+        .firstWhere((kv) => kv.startsWith('ref='), orElse: () => '');
     if (refParam.isNotEmpty) {
       final v = refParam.substring(4);
-      ref = _parseRefToken(v) ?? (throw FormatException('bad_uri: invalid ref $v'));
+      ref = _parseRefToken(v) ??
+          (throw FormatException('bad_uri: invalid ref $v'));
     }
   }
   return (space: space, device: device, path: rel, ref: ref);

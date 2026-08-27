@@ -11,6 +11,7 @@ import '../../../storage/device_identity.dart';
 import '../../../storage/group_workspace_service.dart';
 import '../../../storage/public_store_service.dart';
 import '../../../storage/runtime_paths.dart';
+import '../../../storage/local_store.dart';
 import '../../../storage/store_protocol.dart';
 import '../../../storage/store_service.dart';
 import '../../../storage/store_uri_reader.dart';
@@ -51,6 +52,9 @@ String? sanitizeMemberRelPath(String raw) {
 /// - `store_read`（`read`）：单参数 URI 读取（`artifacts` / `files` 等），分块/缓存由工具层处理；
 /// - `store_list`（`list`）：默认 `--depth 1` 一层一层列目录（含 `kind:dir`），
 ///   便于跨 agent（`store://runtime/<device>/<agentId>/`）遍历；`--depth 0` 才递归全量文件。
+/// - `store_search`（`search`）：按路径/小文本正文检索，返回 `store://` 命中。
+/// - `store_events`（`events`）：commit/delete 事件；`store_spaces` / `store_declare`
+///   列出或声明分区。
 ///
 /// Agent 只"转述"URI，不构造 URI（URI 从本命令输出或用户/上游输入获得）。
 /// 遇到 `store://...` 一律用本命名空间，不要用 OS `file_read`。
@@ -63,15 +67,19 @@ class StoreNamespace extends CliNamespace {
 
   @override
   String get description =>
-      'Store URIs (store://…): write artifacts, read files, list folders '
-      '(prefer --depth 1 for runtime/workspaces trees) — prefer over OS paths '
-      'whenever you see a store:// link';
+      'Store URIs (store://…): write artifacts, read files, list folders, '
+      'search, events, spaces — prefer over OS paths whenever you see a '
+      'store:// link';
 
   @override
   Map<String, CliCommand> get commands => {
         'write': StoreWriteCommand(),
         'read': StoreReadCommand(),
         'list': StoreListCommand(),
+        'search': StoreSearchCommand(),
+        'events': StoreEventsCommand(),
+        'spaces': StoreSpacesCommand(),
+        'declare': StoreDeclareCommand(),
       };
 }
 
@@ -133,8 +141,7 @@ class StoreWriteCommand extends CliCommand {
       if (group.isEmpty) {
         return {
           'success': false,
-          'error':
-              'missing --group (workspaces write needs the group id)',
+          'error': 'missing --group (workspaces write needs the group id)',
         };
       }
       final executorId =
@@ -146,8 +153,7 @@ class StoreWriteCommand extends CliCommand {
       if (!await GroupWorkspaceService.instance.isMember(group, executorId)) {
         return {
           'success': false,
-          'error':
-              'not a member of this group workspace (group_$group)',
+          'error': 'not a member of this group workspace (group_$group)',
         };
       }
       return _writeGroupWorkspace(
@@ -186,8 +192,8 @@ class StoreWriteCommand extends CliCommand {
 
     final taskId = flags['task'] ?? 'general';
     final desc = flags['desc'];
-    final agentId = (flags['agent_id'] ?? flags['owner'] ?? ChatAgentScope.agentId)
-        .trim();
+    final agentId =
+        (flags['agent_id'] ?? flags['owner'] ?? ChatAgentScope.agentId).trim();
     final channelId =
         (flags['channel_id'] ?? flags['channel'] ?? ChatAgentScope.channelId)
             .trim();
@@ -261,8 +267,7 @@ class StoreWriteCommand extends CliCommand {
         'uri': uri,
         'space': StoreSpace.workspaces,
         'group': group,
-        'note':
-            '已写入群工作空间成员目录 members/$executorId/（跨设备可见，仅群成员可读）。',
+        'note': '已写入群工作空间成员目录 members/$executorId/（跨设备可见，仅群成员可读）。',
       };
     } catch (e) {
       return {'success': false, 'error': '$e'};
@@ -280,9 +285,8 @@ class StoreWriteCommand extends CliCommand {
       }
       return (bytes: await f.readAsBytes(), error: null);
     }
-    final b64 = flags['content_base64'] ??
-        flags['content-base64'] ??
-        flags['base64'];
+    final b64 =
+        flags['content_base64'] ?? flags['content-base64'] ?? flags['base64'];
     if (b64 != null && b64.isNotEmpty) {
       try {
         return (bytes: base64Decode(b64), error: null);
@@ -368,7 +372,10 @@ class StoreReadCommand extends CliCommand {
         'success': true,
         'uri': uri,
         'size': bytes.length,
-        if (text != null) 'content': text else 'content_base64': base64Encode(bytes),
+        if (text != null)
+          'content': text
+        else
+          'content_base64': base64Encode(bytes),
         if (text == null) 'encoding': 'base64',
       };
     } catch (e) {
@@ -444,8 +451,182 @@ class StoreListCommand extends CliCommand {
       : segments.sublist(2).join('/').replaceAll(RegExp(r'/+$'), '');
   for (final seg in path.split('/')) {
     if (seg.isEmpty) continue;
-    if (seg.startsWith('.')) throw const FormatException('bad_path: dot segment');
-    if (seg == '..') throw const FormatException('bad_path: path traversal');
+    if (seg.startsWith('.')) {
+      throw const FormatException('bad_path: dot segment');
+    }
+    if (seg == '..') {
+      throw const FormatException('bad_path: path traversal');
+    }
   }
   return (space: space, device: device, path: path);
+}
+
+int _cliInt(Map<String, String> flags, String key, int fallback) {
+  final raw = flags[key];
+  if (raw == null || raw.isEmpty) return fallback;
+  return int.tryParse(raw) ?? fallback;
+}
+
+Map<String, dynamic> _cliStoreResult(Map<String, dynamic>? data) {
+  if (data == null) return {'success': false, 'error': 'no response'};
+  if (data.containsKey('_error')) {
+    return {
+      'success': false,
+      'error': data['message'] ?? data['_error'],
+      'code': data['_error'],
+    };
+  }
+  return {'success': true, ...data};
+}
+
+/// `shepaw store search --query <q> [--space files] [--device <id>] [--uri store://…]`
+class StoreSearchCommand extends CliCommand {
+  @override
+  String get name => 'search';
+
+  @override
+  String get description =>
+      'Search store:// by path (and small text files by body). Prefer this '
+      'over recursively listing when looking for a filename or keyword.';
+
+  @override
+  String get usage => 'shepaw store search --query report --space files\n'
+      'shepaw store search --query unique-token --uri store://runtime/<device>/<agent-id>/';
+
+  @override
+  Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
+    final q = (flags['query'] ?? flags['q'] ?? '').trim();
+    if (q.isEmpty) {
+      return {'success': false, 'error': 'missing --query'};
+    }
+    String? space = flags['space'];
+    String? device = flags['device'];
+    var pathPrefix = '';
+    final uri = flags['uri'];
+    if (uri != null && uri.isNotEmpty) {
+      final accessErr = await groupWorkspaceAccessError(uri);
+      if (accessErr != null) return {'success': false, 'error': accessErr};
+      try {
+        final parsed = parseStoreUriLoose(uri);
+        space = parsed.space;
+        device = parsed.device;
+        pathPrefix = parsed.path.isEmpty ? '' : '${parsed.path}/';
+      } catch (e) {
+        return {'success': false, 'error': '$e'};
+      }
+    }
+    device ??= await DeviceIdentity.deviceId();
+    try {
+      final hits = await StoreService.instance.searchDevice(
+        q: q,
+        deviceId: device,
+        space: (space == null || space.isEmpty) ? null : space,
+        limit: _cliInt(flags, 'limit', 50),
+      );
+      final filtered = [
+        for (final hit in hits)
+          if (pathPrefix.isEmpty ||
+              '${hit['path'] ?? ''}'.startsWith(pathPrefix))
+            hit,
+      ];
+      return {
+        'success': true,
+        'query': q,
+        'total': filtered.length,
+        'results': filtered,
+      };
+    } on StoreException catch (e) {
+      return {
+        'success': false,
+        'error': e.message.isEmpty ? e.code : e.message,
+        'code': e.code,
+      };
+    } catch (e) {
+      return {'success': false, 'error': '$e'};
+    }
+  }
+}
+
+/// `shepaw store events [--since 0] [--limit 50] [--kind file.committed]`
+class StoreEventsCommand extends CliCommand {
+  @override
+  String get name => 'events';
+
+  @override
+  String get description =>
+      'List store events (commit/delete) since a seq. Empty bus returns '
+      'events=[] and latest_seq=0.';
+
+  @override
+  String get usage => 'shepaw store events --since 0 --limit 50\n'
+      'shepaw store events --kind file.committed';
+
+  @override
+  Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
+    try {
+      return _cliStoreResult(await StoreService.instance.eventsList(
+        since: _cliInt(flags, 'since', 0),
+        limit: _cliInt(flags, 'limit', 50),
+        kind: (flags['kind'] ?? '').trim().isEmpty ? null : flags['kind'],
+      ));
+    } catch (e) {
+      return {'success': false, 'error': '$e'};
+    }
+  }
+}
+
+/// `shepaw store spaces`
+class StoreSpacesCommand extends CliCommand {
+  @override
+  String get name => 'spaces';
+
+  @override
+  String get description =>
+      'List builtin and declared store spaces (name + visibility).';
+
+  @override
+  String get usage => 'shepaw store spaces';
+
+  @override
+  Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
+    try {
+      return _cliStoreResult(await StoreService.instance.spaceList());
+    } catch (e) {
+      return {'success': false, 'error': '$e'};
+    }
+  }
+}
+
+/// `shepaw store declare --name models [--visibility shared]`
+class StoreDeclareCommand extends CliCommand {
+  @override
+  String get name => 'declare';
+
+  @override
+  String get description =>
+      'Declare a custom space on this device (loopback/admin only). '
+      'Name: [a-z][a-z0-9-]{0,31}.';
+
+  @override
+  String get usage => 'shepaw store declare --name models --visibility shared';
+
+  @override
+  Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
+    final name = (flags['name'] ?? '').trim();
+    if (name.isEmpty) {
+      return {'success': false, 'error': 'missing --name'};
+    }
+    try {
+      return _cliStoreResult(await StoreService.instance.spaceDeclare(
+        name: name,
+        visibility: flags['visibility'] ?? 'private',
+        encryption: flags['encryption'] ?? 'none',
+        retention: flags['retention'] ?? 'none',
+        importGrant:
+            flags['import_grant'] ?? flags['import-grant'] ?? 'allowed',
+      ));
+    } catch (e) {
+      return {'success': false, 'error': '$e'};
+    }
+  }
 }

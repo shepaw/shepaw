@@ -3169,6 +3169,7 @@
   "storage_spacePublic": "公开",
   "storage_spaceCognition": "认知",
   "storage_spaceArtifacts": "产物",
+  "storage_spaceAdvanced": "高级",
   "storage_browserLastAccessed": "最近访问于 {time}",
   "@storage_browserLastAccessed": {
     "placeholders": {

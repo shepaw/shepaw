@@ -226,8 +226,9 @@ class ScopeCard {
       ownerId: deviceId,
       ownerKind: 'device',
       deviceId: deviceId,
-      workspaceUris:
-          workspaceUri != null && workspaceUri.isNotEmpty ? [workspaceUri] : const [],
+      workspaceUris: workspaceUri != null && workspaceUri.isNotEmpty
+          ? [workspaceUri]
+          : const [],
       capabilities: const ScopeCardCapabilities(
         writeSoul: false,
         writeMemory: false,
@@ -327,7 +328,8 @@ class ScopeCard {
     if (capabilities.readStore) {
       buf.writeln(
         '- 读: `shepaw store read --uri <uri-as-is>` · '
-        '列: `shepaw store list --uri <uri> --depth 1`',
+        '列: `shepaw store list --uri <uri> --depth 1` · '
+        '搜: `shepaw store search --query <关键词> [--space files]`',
       );
     }
     if (capabilities.writeArtifacts) {
@@ -415,8 +417,7 @@ class ScopeCard {
         'spaces': {
           if (cognitionRootUri != null) 'cognition_root': cognitionRootUri,
           if (soulUri != null) 'soul_uri': soulUri,
-          if (memoryEntriesUri != null)
-            'memory_entries_uri': memoryEntriesUri,
+          if (memoryEntriesUri != null) 'memory_entries_uri': memoryEntriesUri,
           if (runtimeRootUri != null) 'runtime_root': runtimeRootUri,
           if (manifestUri != null) 'manifest_uri': manifestUri,
           if (workspaceUris.isNotEmpty) 'workspace_uris': workspaceUris,

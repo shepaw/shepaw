@@ -12,6 +12,7 @@ import 'package:shepaw/storage/device_identity.dart';
 import 'package:shepaw/storage/import_auth_service.dart';
 import 'package:shepaw/storage/local_store.dart';
 import 'package:shepaw/storage/store_protocol.dart';
+import 'package:shepaw/clis/shepaw/store/store_namespace.dart';
 import 'package:shepaw/storage/store_service.dart';
 
 import 'test_harness.dart';
@@ -29,30 +30,26 @@ void main() {
 
   Future<Map<String, dynamic>?> writeFile(
       String path, Uint8List content) async {
-    final begin = await StoreService.instance.call(StoreFrame(
-        op: StoreOp.writeBegin,
-        payload: {
-          'space': 'files',
-          'path': path,
-          'size': content.length,
-          'sha256': sha(content),
-        }));
+    final begin = await StoreService.instance
+        .call(StoreFrame(op: StoreOp.writeBegin, payload: {
+      'space': 'files',
+      'path': path,
+      'size': content.length,
+      'sha256': sha(content),
+    }));
     final uploadId = begin!['upload_id'] as String;
-    final chunk = await StoreService.instance.call(StoreFrame(
-        op: StoreOp.writeChunk,
-        payload: {
-          'space': 'files',
-          'upload_id': uploadId,
-          'offset': 0,
-          'data': base64Encode(content),
-        }));
+    final chunk = await StoreService.instance
+        .call(StoreFrame(op: StoreOp.writeChunk, payload: {
+      'space': 'files',
+      'upload_id': uploadId,
+      'offset': 0,
+      'data': base64Encode(content),
+    }));
     expect(chunk!['received'], content.length);
-    return StoreService.instance.call(StoreFrame(
-        op: StoreOp.commit,
-        payload: {
-          'space': 'files',
-          'upload_ids': [uploadId],
-        }));
+    return StoreService.instance.call(StoreFrame(op: StoreOp.commit, payload: {
+      'space': 'files',
+      'upload_ids': [uploadId],
+    }));
   }
 
   group('loopback 读写闭环（所有端经 store.* 读写）', () {
@@ -67,23 +64,30 @@ void main() {
 
       final read = await StoreService.instance.call(StoreFrame(
           op: StoreOp.read,
-          payload: {'space': 'files', 'path': 'e2e/a.txt', 'offset': 0, 'length': 1024}));
-      expect(utf8.decode(base64Decode(read!['data'] as String)),
-          'loopback hello');
+          payload: {
+            'space': 'files',
+            'path': 'e2e/a.txt',
+            'offset': 0,
+            'length': 1024
+          }));
+      expect(
+          utf8.decode(base64Decode(read!['data'] as String)), 'loopback hello');
 
       final meta = await StoreService.instance.call(StoreFrame(
           op: StoreOp.meta, payload: {'space': 'files', 'path': 'e2e/a.txt'}));
       expect(meta!['sha256'], sha(content));
 
       final deleted = await StoreService.instance.call(StoreFrame(
-          op: StoreOp.delete, payload: {'space': 'files', 'path': 'e2e/a.txt'}));
+          op: StoreOp.delete,
+          payload: {'space': 'files', 'path': 'e2e/a.txt'}));
       expect(deleted!['recycled'], startsWith('.recycle/'));
     });
 
     test('recycle.empty loopback 放行', () async {
       await writeFile('e2e/trash.txt', bytesOf('x'));
       await StoreService.instance.call(StoreFrame(
-          op: StoreOp.delete, payload: {'space': 'files', 'path': 'e2e/trash.txt'}));
+          op: StoreOp.delete,
+          payload: {'space': 'files', 'path': 'e2e/trash.txt'}));
       final emptied = await StoreService.instance
           .call(StoreFrame(op: StoreOp.recycleEmpty, payload: {}));
       expect(emptied!['purged_bytes'], greaterThan(0));
@@ -93,15 +97,14 @@ void main() {
   group('攻击 fixture（spec §4）', () {
     test('伪造 device_id 写入：拒绝且目标目录无文件', () async {
       final content = bytesOf('forged');
-      final res = await StoreService.instance.call(StoreFrame(
-          op: StoreOp.writeBegin,
-          payload: {
-            'space': 'files',
-            'path': 'victim.txt',
-            'size': content.length,
-            'sha256': sha(content),
-            'device': 'bbbbbbbbbbbbbbbb', // 伪造他端目录
-          }));
+      final res = await StoreService.instance
+          .call(StoreFrame(op: StoreOp.writeBegin, payload: {
+        'space': 'files',
+        'path': 'victim.txt',
+        'size': content.length,
+        'sha256': sha(content),
+        'device': 'bbbbbbbbbbbbbbbb', // 伪造他端目录
+      }));
       expect(res!['_error'], StoreError.aclDenied);
 
       // 他端与本端目录都不该出现该文件
@@ -119,15 +122,14 @@ void main() {
     });
 
     test('读取他人私有目录：拒绝', () async {
-      final res = await StoreService.instance.call(StoreFrame(
-          op: StoreOp.read,
-          payload: {
-            'space': 'backups',
-            'device': 'bbbbbbbbbbbbbbbb',
-            'path': 'snap/db.sqlite.enc',
-            'offset': 0,
-            'length': 1024,
-          }));
+      final res = await StoreService.instance
+          .call(StoreFrame(op: StoreOp.read, payload: {
+        'space': 'backups',
+        'device': 'bbbbbbbbbbbbbbbb',
+        'path': 'snap/db.sqlite.enc',
+        'offset': 0,
+        'length': 1024,
+      }));
       expect(res!['_error'], StoreError.aclDenied);
     });
 
@@ -138,22 +140,20 @@ void main() {
         '..',
         'a/../../b',
       ]) {
-        final res = await StoreService.instance.call(StoreFrame(
-            op: StoreOp.writeBegin,
-            payload: {
-              'space': 'files',
-              'path': path,
-              'size': 1,
-              'sha256': sha(bytesOf('x')),
-            }));
+        final res = await StoreService.instance
+            .call(StoreFrame(op: StoreOp.writeBegin, payload: {
+          'space': 'files',
+          'path': path,
+          'size': 1,
+          'sha256': sha(bytesOf('x')),
+        }));
         expect(res!['_error'], isNotNull, reason: 'path=$path');
       }
     });
 
     test('伪造导入授权 op：bad_op', () async {
       final res = await StoreService.instance.call(StoreFrame(
-          op: 'import.auth',
-          payload: {'grant': 'allow-everything'}));
+          op: 'import.auth', payload: {'grant': 'allow-everything'}));
       expect(res!['_error'], StoreError.badOp);
     });
 
@@ -169,8 +169,7 @@ void main() {
 
       final cross = await StoreService.instance.dispatchForTest(
         StoreFrame(
-            op: StoreOp.list,
-            payload: {'space': 'files', 'device': other}),
+            op: StoreOp.list, payload: {'space': 'files', 'device': other}),
         callerDeviceId: self,
         trustLevel: TrustLevel.friend,
       );
@@ -196,8 +195,7 @@ void main() {
       final payload = utf8.encode('old-backup-bytes');
       await File(p.join(snapDir.path, 'manifest.json'))
           .writeAsString('{"ok":true}');
-      await File(p.join(snapDir.path, 'db.sqlite.enc'))
-          .writeAsBytes(payload);
+      await File(p.join(snapDir.path, 'db.sqlite.enc')).writeAsBytes(payload);
 
       final auth = ImportAuthService(storeRoot: storeRoot);
       final req = await auth.createRequest(oldDevice: oldDev, newDevice: self);
@@ -265,9 +263,10 @@ void main() {
       final self = await DeviceIdentity.deviceId();
       await StoreService.instance.setMasterDeviceId('cccccccccccccccc');
       try {
-        final res = await StoreService.instance.call(StoreFrame(
-            op: StoreOp.stats, payload: {}));
-        expect(res!['_error'], anyOf(StoreError.notPaired, StoreError.masterOffline));
+        final res = await StoreService.instance
+            .call(StoreFrame(op: StoreOp.stats, payload: {}));
+        expect(res!['_error'],
+            anyOf(StoreError.notPaired, StoreError.masterOffline));
       } finally {
         await StoreService.instance.setMasterDeviceId(self);
       }
@@ -518,8 +517,7 @@ void main() {
       expect(deleted['_error'], StoreError.aclDenied);
     });
 
-    test('非 master 仍接受 owner workspaces 跨写；upto_seq / sync.hello 拒绝',
-        () async {
+    test('非 master 仍接受 owner workspaces 跨写；upto_seq / sync.hello 拒绝', () async {
       final self = await DeviceIdentity.deviceId();
       const other = 'bbbbbbbbbbbbbbbb';
       await StoreService.instance.setMasterDeviceId('cccccccccccccccc');
@@ -576,8 +574,7 @@ void main() {
         expect(syncCommit['_error'], StoreError.notMaster);
 
         final hello = await StoreService.instance.dispatchForTest(
-          StoreFrame(
-              op: StoreOp.syncHello, payload: {'device': self}),
+          StoreFrame(op: StoreOp.syncHello, payload: {'device': self}),
           callerDeviceId: self,
           trustLevel: TrustLevel.owner,
         );
@@ -613,11 +610,10 @@ void main() {
       );
       expect(remote['_error'], StoreError.aclDenied);
 
-      final listed = await StoreService.instance.call(
-          StoreFrame(op: StoreOp.spaceList, payload: const {}));
+      final listed = await StoreService.instance
+          .call(StoreFrame(op: StoreOp.spaceList, payload: const {}));
       final names = [
-        for (final s in (listed!['spaces'] as List))
-          (s as Map)['name']
+        for (final s in (listed!['spaces'] as List)) (s as Map)['name']
       ];
       expect(names, contains('models'));
       expect(names, contains('files'));
@@ -654,6 +650,64 @@ void main() {
       expect(paths, contains('p2ops/evented.txt'));
     });
 
+    test('searchDevice 按本机 device 找到文件', () async {
+      final self = await DeviceIdentity.deviceId();
+      await writeFile('p2ops/search-device.md', bytesOf('needle-device-xyz'));
+      final hits = await StoreService.instance.searchDevice(
+        q: 'needle-device-xyz',
+        deviceId: self,
+        space: 'files',
+      );
+      expect(
+        hits.any((h) => h['path'] == 'p2ops/search-device.md'),
+        isTrue,
+        reason: '$hits',
+      );
+    });
+
+    test('CLI search / events / spaces / declare', () async {
+      await writeFile('p2ops/cli-search.md', bytesOf('cli-search-token'));
+      final missing =
+          await StoreNamespace.instance.commands['search']!.execute(const {});
+      expect(missing['success'], isFalse);
+
+      final found = await StoreNamespace.instance.commands['search']!.execute({
+        'query': 'cli-search-token',
+        'space': 'files',
+      });
+      expect(found['success'], isTrue, reason: '$found');
+      final paths = [
+        for (final r in (found['results'] as List)) (r as Map)['path']
+      ];
+      expect(paths, contains('p2ops/cli-search.md'));
+
+      final events = await StoreNamespace.instance.commands['events']!.execute({
+        'kind': 'file.committed',
+      });
+      expect(events['success'], isTrue, reason: '$events');
+      expect((events['latest_seq'] as num).toInt(), greaterThan(0));
+
+      final spaces =
+          await StoreNamespace.instance.commands['spaces']!.execute(const {});
+      expect(spaces['success'], isTrue, reason: '$spaces');
+      final names = [
+        for (final s in (spaces['spaces'] as List)) (s as Map)['name']
+      ];
+      expect(names, contains('files'));
+
+      final unnamed =
+          await StoreNamespace.instance.commands['declare']!.execute(const {});
+      expect(unnamed['success'], isFalse);
+
+      final declared =
+          await StoreNamespace.instance.commands['declare']!.execute({
+        'name': 'clinotes',
+        'visibility': 'private',
+      });
+      expect(declared['success'], isTrue, reason: '$declared');
+      expect((declared['space'] as Map)['name'], 'clinotes');
+    });
+
     test('runtime 写入超配额 → quota_exceeded', () async {
       final store = await StoreService.instance.localStore();
       final prev = store.agentSpaceQuotaBytes;
@@ -661,14 +715,13 @@ void main() {
       store.debugSkipVolumeQuota = true;
       try {
         final content = bytesOf('runtime payload bigger than thirty bytes');
-        final res = await StoreService.instance.call(StoreFrame(
-            op: StoreOp.writeBegin,
-            payload: {
-              'space': StoreSpace.runtime,
-              'path': 'p2ops/too-big.bin',
-              'size': content.length,
-              'sha256': sha(content),
-            }));
+        final res = await StoreService.instance
+            .call(StoreFrame(op: StoreOp.writeBegin, payload: {
+          'space': StoreSpace.runtime,
+          'path': 'p2ops/too-big.bin',
+          'size': content.length,
+          'sha256': sha(content),
+        }));
         expect(res!['_error'], StoreError.quotaExceeded);
       } finally {
         store.agentSpaceQuotaBytes = prev;
