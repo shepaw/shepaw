@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import '../../cli_base.dart';
@@ -49,7 +50,7 @@ String? sanitizeMemberRelPath(String raw) {
 /// - `store_write`（`write`）：产出写入自己设备目录，返回新 URI 即完成共享；
 /// - `store_read`（`read`）：单参数 URI 读取（`artifacts` / `files` 等），分块/缓存由工具层处理；
 /// - `store_list`（`list`）：默认 `--depth 1` 一层一层列目录（含 `kind:dir`），
-///   便于跨 agent（`store://agents/<device>/<uuid>/`）遍历；`--depth 0` 才递归全量文件。
+///   便于跨 agent（`store://runtime/<device>/<agentId>/`）遍历；`--depth 0` 才递归全量文件。
 ///
 /// Agent 只"转述"URI，不构造 URI（URI 从本命令输出或用户/上游输入获得）。
 /// 遇到 `store://...` 一律用本命名空间，不要用 OS `file_read`。
@@ -63,7 +64,7 @@ class StoreNamespace extends CliNamespace {
   @override
   String get description =>
       'Store URIs (store://…): write artifacts, read files, list folders '
-      '(prefer --depth 1 for agents/workspaces trees) — prefer over OS paths '
+      '(prefer --depth 1 for runtime/workspaces trees) — prefer over OS paths '
       'whenever you see a store:// link';
 
   @override
@@ -87,13 +88,15 @@ class StoreWriteCommand extends CliCommand {
   String get description =>
       'Preferred path for produced artifacts: write to store and get a shareable '
       'store:// URI (prefer this over os.file.write for reports/code/docs). '
+      'Text via --content; binary via --file or --content-base64. '
       'Use --space public for the public partition.';
 
   @override
   String get usage =>
       'shepaw store write --filename report.md --content "# Q2 report" '
       '--task task-41 --desc "Q2 销售报告"\n'
-      'shepaw store write --space public --filename note.md --content "hello"';
+      'shepaw store write --space public --filename note.md --content "hello"\n'
+      'shepaw store write --filename shot.png --file /tmp/shot.png';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
@@ -101,16 +104,17 @@ class StoreWriteCommand extends CliCommand {
     if (filename == null || filename.isEmpty) {
       return {'success': false, 'error': 'missing --filename'};
     }
-    final contentText = flags['content'] ?? '';
-    if (contentText.isEmpty) {
-      return {'success': false, 'error': 'missing --content'};
+    final resolved = await _resolveWriteBytes(flags);
+    if (resolved.error != null) {
+      return {'success': false, 'error': resolved.error};
     }
+    final content = resolved.bytes;
     final space = flags['space'] ?? '';
     if (space == StoreSpace.public_) {
       try {
-        final uri = await PublicStoreService.instance.writeText(
+        final uri = await PublicStoreService.instance.writeBytes(
           relPath: filename,
-          content: contentText,
+          content: content,
         );
         return {
           'success': true,
@@ -150,7 +154,7 @@ class StoreWriteCommand extends CliCommand {
         group: group,
         executorId: executorId,
         filename: filename,
-        contentText: contentText,
+        content: content,
       );
     }
     // M9: 群成员默认写共享空间——无 --space 时，群执行上下文（runtimeOwnerId
@@ -169,7 +173,7 @@ class StoreWriteCommand extends CliCommand {
             group: groupOwner,
             executorId: executorId,
             filename: filename,
-            contentText: contentText,
+            content: content,
           );
         }
         LoggerService().info(
@@ -195,7 +199,7 @@ class StoreWriteCommand extends CliCommand {
       final reference = await ArtifactService.instance.writeArtifact(
         taskId: taskId,
         filename: filename,
-        content: Uint8List.fromList(utf8.encode(contentText)),
+        content: content,
         description: desc,
         producer: flags['producer'] ?? agentId,
         runtimeOwnerId: target.ownerId,
@@ -233,7 +237,7 @@ class StoreWriteCommand extends CliCommand {
     required String group,
     required String executorId,
     required String filename,
-    required String contentText,
+    required Uint8List content,
   }) async {
     final ws = GroupWorkspaceService.instance;
     final meta = await ws.loadMeta(group);
@@ -250,7 +254,7 @@ class StoreWriteCommand extends CliCommand {
       final uri = await StoreService.instance.writeWorkspaceFile(
         homeDeviceId: home,
         relPath: rel,
-        content: Uint8List.fromList(utf8.encode(contentText)),
+        content: content,
       );
       return {
         'success': true,
@@ -263,6 +267,37 @@ class StoreWriteCommand extends CliCommand {
     } catch (e) {
       return {'success': false, 'error': '$e'};
     }
+  }
+
+  /// `--file` / `--content-base64` / `--content`（至少一种）。
+  Future<({Uint8List bytes, String? error})> _resolveWriteBytes(
+      Map<String, String> flags) async {
+    final filePath = flags['file'];
+    if (filePath != null && filePath.isNotEmpty) {
+      final f = File(filePath);
+      if (!await f.exists()) {
+        return (bytes: Uint8List(0), error: 'file not found: $filePath');
+      }
+      return (bytes: await f.readAsBytes(), error: null);
+    }
+    final b64 = flags['content_base64'] ??
+        flags['content-base64'] ??
+        flags['base64'];
+    if (b64 != null && b64.isNotEmpty) {
+      try {
+        return (bytes: base64Decode(b64), error: null);
+      } catch (e) {
+        return (bytes: Uint8List(0), error: 'invalid --content-base64: $e');
+      }
+    }
+    final text = flags['content'];
+    if (text != null && text.isNotEmpty) {
+      return (bytes: Uint8List.fromList(utf8.encode(text)), error: null);
+    }
+    return (
+      bytes: Uint8List(0),
+      error: 'missing --content, --file, or --content-base64',
+    );
   }
 
   /// 群聊 / 群绑定成员 DM → 群 runtime；单聊 → 该 Agent 的 runtime。
@@ -353,12 +388,12 @@ class StoreListCommand extends CliCommand {
   String get description =>
       'List a store:// directory. Default --depth 1 for one folder level '
       '(includes dirs); use --depth 0 for full recursive files. Prefer this '
-      'over os.file.list for store://agents/… and store://workspaces/… trees.';
+      'over os.file.list for store://runtime/… and store://workspaces/… trees.';
 
   @override
   String get usage =>
-      'shepaw store list --uri store://agents/0123456789abcdef --depth 1\n'
-      'shepaw store list --uri store://agents/0123456789abcdef/<agent-uuid>/ --depth 1\n'
+      'shepaw store list --uri store://runtime/0123456789abcdef --depth 1\n'
+      'shepaw store list --uri store://runtime/0123456789abcdef/<agent-id>/ --depth 1\n'
       'shepaw store list --uri store://files/0123456789abcdef/docs --depth 0';
 
   @override
@@ -378,6 +413,7 @@ class StoreListCommand extends CliCommand {
         prefix: parsed.path.isEmpty ? null : parsed.path,
         limit: 1000,
         depth: depth,
+        computeHash: false,
       );
       return <String, dynamic>{
         'success': true,

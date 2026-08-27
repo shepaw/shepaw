@@ -5035,7 +5035,8 @@ class AppLocalizationsZh extends AppLocalizations {
   String get peerStoreShare_panelTitle => '储物袋分享';
 
   @override
-  String get peerStoreShare_panelHint => '管理本机储物袋对该设备的可见范围';
+  String get peerStoreShare_panelHint =>
+      '管理本机储物袋对该设备的可见范围（分享仅可读，对方不能删除）';
 
   @override
   String get peerSettings_trustLevel => '信任级别';

@@ -43,6 +43,8 @@ class StoreService {
   static const _auditTag = 'StoreAudit';
   static const _masterKey = 'storage.master_device_id';
   static const _callTimeout = Duration(seconds: 15);
+  static const _heavyCallTimeout = Duration(seconds: 60);
+  static const _listCallTimeout = Duration(seconds: 45);
   static const _migrateThrottle = Duration(seconds: 30);
 
   final _log = LoggerService();
@@ -69,6 +71,8 @@ class StoreService {
       }
     });
     final store = await _localStore();
+    await store.spaceRegistry.load();
+    await store.eventLog.load();
     final removed = await store.gcStaging();
     if (removed > 0) {
       _log.info('gc staging: removed $removed stale sessions', tag: _tag);
@@ -212,27 +216,13 @@ class StoreService {
 
     if (homeDeviceId == self) {
       final store = await _localStore();
-      final (uploadId, _) = await store.writeBegin(
+      await store.putBytes(
         deviceId: self,
         space: StoreSpace.workspaces,
         path: path,
-        size: content.length,
-        sha256: hash,
+        bytes: content,
+        sha256Hex: hash,
       );
-      var offset = 0;
-      while (offset < content.length) {
-        final end = (offset + LocalStore.maxReadChunk) > content.length
-            ? content.length
-            : offset + LocalStore.maxReadChunk;
-        await store.writeChunk(
-            self, StoreSpace.workspaces, uploadId, offset, content.sublist(offset, end));
-        offset = end;
-      }
-      final (ok, failed) =
-          await store.commit(self, StoreSpace.workspaces, [uploadId]);
-      if (failed.isNotEmpty || ok.isEmpty) {
-        throw StateError('workspace commit failed: $failed');
-      }
     } else {
       final server = await preferredWriteServer(homeDeviceId);
       if (server == self) {
@@ -478,6 +468,26 @@ class StoreService {
     return call(StoreFrame(op: StoreOp.eventsList, payload: payload));
   }
 
+  /// 内置 + 已声明自定义空间。
+  Future<Map<String, dynamic>?> spaceList() =>
+      call(StoreFrame(op: StoreOp.spaceList, payload: const {}));
+
+  /// 声明自定义空间（仅 loopback / admin）。
+  Future<Map<String, dynamic>?> spaceDeclare({
+    required String name,
+    String visibility = 'private',
+    String encryption = 'none',
+    String retention = 'none',
+    String importGrant = 'allowed',
+  }) =>
+      call(StoreFrame(op: StoreOp.spaceDeclare, payload: <String, dynamic>{
+        'name': name,
+        'visibility': visibility,
+        'encryption': encryption,
+        'retention': retention,
+        'import_grant': importGrant,
+      }));
+
   /// 向指定设备（device_id）直发请求（换机导入路径 A：旧设备在场，
   /// 由旧设备直接服务，§5.4）。
   Future<Map<String, dynamic>?> callPeer(
@@ -505,12 +515,15 @@ class StoreService {
     try {
       final wire = StoreFrame(
           op: frame.op, reqId: reqId, v: frame.v, payload: frame.payload);
+      final timeout = _timeoutFor(frame);
       return await () async {
         final ok = await _manager.sendControl(peerId, wire.toJson());
         if (!ok) return _errorData(StoreError.masterOffline);
         return await completer.future;
-      }().timeout(_callTimeout,
-          onTimeout: () => _errorData(StoreError.masterOffline));
+      }().timeout(timeout, onTimeout: () {
+        return _errorData(
+            StoreError.masterOffline, 'timed out after ${timeout.inSeconds}s');
+      });
     } finally {
       _pending.remove(reqId);
     }
@@ -521,6 +534,24 @@ class StoreService {
         '_error': code,
         if (message != null) 'message': message,
       };
+
+  /// 浏览/分块读写按体积放大超时；短控制帧仍 15s。
+  static Duration _timeoutFor(StoreFrame frame) {
+    switch (frame.op) {
+      case StoreOp.writeChunk:
+      case StoreOp.commit:
+      case StoreOp.read:
+      case StoreOp.versionsRead:
+        return _heavyCallTimeout;
+      case StoreOp.list:
+      case StoreOp.writeBegin:
+      case StoreOp.search:
+      case StoreOp.eventsList:
+        return _listCallTimeout;
+      default:
+        return _callTimeout;
+    }
+  }
 
   // ────────────────────────────── master 侧帧处理 ──
 
@@ -825,12 +856,15 @@ class StoreService {
     required bool loopback,
     PeerStoreShareAllowlist? shareAllowlist,
   }) async {
+    final store = await _localStore();
+    await store.spaceRegistry.load();
     // ACL（含路径/形态校验的粗筛；细粒度路径错误在执行期抛出）
-    final verdict = checkStoreAcl(
+    final verdict = checkStoreAclWith(
       frame,
       callerDeviceId: callerDeviceId,
       trustLevel: trustLevel,
       loopback: loopback,
+      visibility: store.spaceVisibility,
       shareAllowed: shareAllowlist == null
           ? null
           : (space, path) => shareAllowlist.allows(space, path),
@@ -844,8 +878,8 @@ class StoreService {
       return _errorData(storeAclErrorCode(verdict));
     }
 
-    // B2 fencing：已罢免节点拒绝 sync 写入与 hello（防幽灵 ack）
-    if (_needsMasterFence(frame.op) && !await isMaster()) {
+    // B2 fencing：已罢免节点拒绝镜像写入（带 upto_seq）与 hello（防幽灵 ack）
+    if (_needsMasterFence(frame) && !await isMaster()) {
       final master = await masterDeviceId();
       _log.warning(
           'not_master fence: ${frame.op} caller=$callerDeviceId master=$master',
@@ -853,7 +887,6 @@ class StoreService {
       return _errorData(StoreError.notMaster, 'master=$master');
     }
 
-    final store = await _localStore();
     try {
       // 私有分区跨端读取：显式分享（白名单命中）直接放行（runtime 另有
       // 文件级细粒度策略）；否则校验导入授权实体（spec §5.4）；
@@ -863,7 +896,8 @@ class StoreService {
               frame.op == StoreOp.read) &&
           frame.device != null &&
           frame.device != callerDeviceId &&
-          !StoreSpace.sharedReadable.contains(frame.space)) {
+          !((frame.space != null && store.spaceVisibility(frame.space!) == true) ||
+              StoreSpace.sharedReadable.contains(frame.space))) {
         final shareHit = shareAllowlist != null &&
             shareAllowlist.allows(
               frame.space!,
@@ -920,14 +954,16 @@ class StoreService {
               : rawDepth is num
                   ? rawDepth.toInt()
                   : int.tryParse('$rawDepth');
-          var entries = await store.list(
+          var listed = await store.listPaged(
             device,
             frame.space!,
             prefix: frame.payload['path'] as String?,
             limit: limit,
             depth: depth,
             computeHash: frame.payload['hash'] != false,
+            cursor: frame.payload['cursor'] as String?,
           );
+          var entries = listed.entries;
           // 跨端 list：按出站分享白名单过滤条目（runtime 分享再收窄到
           // 附件/产物文件；目录保持可见以导航）
           if (shareAllowlist != null &&
@@ -944,7 +980,7 @@ class StoreService {
           }
           return <String, dynamic>{
             'entries': [for (final e in entries) e.toJson()],
-            'next_cursor': null,
+            'next_cursor': listed.nextCursor,
           };
 
         case StoreOp.meta:
@@ -1220,6 +1256,75 @@ class StoreService {
             'grants': [for (final g in grants) g.toJson()],
           };
 
+        case StoreOp.spaceList:
+          await store.spaceRegistry.load();
+          return <String, dynamic>{
+            'spaces': [
+              for (final profile in store.spaceRegistry.listAll())
+                profile.toJson()
+            ],
+          };
+
+        case StoreOp.spaceDeclare:
+          final name = frame.payload['name'] as String? ?? '';
+          final profile = await store.spaceRegistry.declare(
+            name: name,
+            visibility: frame.payload['visibility'] as String? ?? 'private',
+            encryption: frame.payload['encryption'] as String? ?? 'none',
+            retention: frame.payload['retention'] as String? ?? 'none',
+            importGrant: frame.payload['import_grant'] as String? ?? 'allowed',
+          );
+          await Directory(p.join(store.root.path, callerDeviceId, profile.name))
+              .create(recursive: true);
+          return <String, dynamic>{'space': profile.toJson()};
+
+        case StoreOp.search:
+          final q = '${frame.payload['q'] ?? ''}'.trim();
+          if (q.isEmpty) {
+            return _errorData(StoreError.badOp, 'empty query');
+          }
+          final rawLimit = frame.payload['limit'];
+          final limit = rawLimit is int
+              ? rawLimit
+              : rawLimit is num
+                  ? rawLimit.toInt()
+                  : int.tryParse('$rawLimit') ?? 50;
+          final results = await store.search(
+            query: q,
+            space: frame.payload['space'] as String?,
+            device: frame.payload['device'] as String?,
+            state: frame.payload['state'] as String?,
+            limit: limit,
+          );
+          return <String, dynamic>{
+            'query': q,
+            'total': results.length,
+            'results': results,
+          };
+
+        case StoreOp.eventsList:
+          final sinceRaw = frame.payload['since'];
+          final since = sinceRaw is int
+              ? sinceRaw
+              : sinceRaw is num
+                  ? sinceRaw.toInt()
+                  : int.tryParse('$sinceRaw') ?? 0;
+          final limitRaw = frame.payload['limit'];
+          final evLimit = limitRaw is int
+              ? limitRaw
+              : limitRaw is num
+                  ? limitRaw.toInt()
+                  : int.tryParse('$limitRaw') ?? 50;
+          final listed = await store.eventLog.list(
+            since: since,
+            limit: evLimit,
+            kind: frame.payload['kind'] as String?,
+          );
+          return <String, dynamic>{
+            'events': listed.events,
+            'latest_seq': listed.latestSeq,
+          };
+
         default:
           return _errorData(StoreError.badOp, 'unsupported op ${frame.op}');
       }
@@ -1248,16 +1353,13 @@ class StoreService {
     }
   }
 
-  static bool _needsMasterFence(String op) {
-    switch (op) {
-      case StoreOp.writeBegin:
-      case StoreOp.writeChunk:
-      case StoreOp.commit:
-      case StoreOp.delete:
-      case StoreOp.syncHello:
-        return true;
-      default:
-        return false;
+  /// 仅挡住 sync 镜像写入（commit/delete 带 `upto_seq`）与 `sync.hello`。
+  /// 属主跨端写 workspaces、本机用户写入不得被升主栅栏误伤。
+  static bool _needsMasterFence(StoreFrame frame) {
+    if (frame.op == StoreOp.syncHello) return true;
+    if (frame.op == StoreOp.commit || frame.op == StoreOp.delete) {
+      return frame.payload['upto_seq'] is num;
     }
+    return false;
   }
 }

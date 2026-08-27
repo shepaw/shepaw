@@ -33,32 +33,13 @@ class AttachmentStoreWriter {
     } on StoreException {
       // not_found → 写入
     }
-    final (uploadId, _) = await local.writeBegin(
+    await local.putBytes(
       deviceId: device,
       space: StoreSpace.runtime,
       path: relPath,
-      size: bytes.length,
-      sha256: hash,
+      bytes: bytes,
+      sha256Hex: hash,
     );
-    var offset = 0;
-    while (offset < bytes.length) {
-      final end = (offset + LocalStore.maxReadChunk) > bytes.length
-          ? bytes.length
-          : offset + LocalStore.maxReadChunk;
-      await local.writeChunk(
-        device,
-        StoreSpace.runtime,
-        uploadId,
-        offset,
-        bytes.sublist(offset, end),
-      );
-      offset = end;
-    }
-    final (committed, failed) =
-        await local.commit(device, StoreSpace.runtime, [uploadId]);
-    if (failed.isNotEmpty || committed.isEmpty) {
-      throw StateError('attachment commit failed: $failed');
-    }
     return storeUriWithRef(StoreSpace.runtime, device, relPath);
   }
 }

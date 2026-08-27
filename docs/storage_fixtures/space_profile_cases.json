@@ -1,5 +1,5 @@
 {
-  "description": "Space profile ACL cases (Step 2). check_acl_with uses declared-space visibility: models=shared, vault=private. Rust (master) first; Dart checkStoreAcl custom-space support is a follow-up.",
+  "description": "Space profile ACL cases (Step 2). check_acl_with uses declared-space visibility: models=shared, vault=private.",
   "caller": "aaaaaaaaaaaaaaaa",
   "other": "bbbbbbbbbbbbbbbb",
   "known": { "models": "shared", "vault": "private" },

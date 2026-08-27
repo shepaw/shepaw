@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -20,7 +21,7 @@ enum StoreUriKind { file, directory }
 /// - `workspaces` / `files` / `public`（及 legacy `artifacts`）：本机直读；他端优先直连属主，属主离线再走 master 镜像；
 /// - 私有分区（`runtime` / `attachments` / `backups` 等）：仅本机自身 device 可读（或显式分享/授权）；
 ///   但 peer 隧道附件在本机留有同 URI 缓存（device=对端），读取/预览前先命中该本地文件，未命中再按 ACL 拒绝。
-/// - 当前仅支持 latest（无 `@ref`）；版本引用后续扩展。
+/// - 支持 latest 与 `@vN` / `@<sha256前缀>` / `?ref=` 版本引用。
 class StoreUriReader {
   StoreUriReader._();
   static final instance = StoreUriReader._();
@@ -28,8 +29,7 @@ class StoreUriReader {
   Future<Uint8List> read(String uriString) async {
     final parsed = parseStoreUri(uriString);
     if (!parsed.ref.isLatest) {
-      throw ArgumentError(
-          'versioned store URI not supported yet: $uriString');
+      return _readVersioned(parsed, uriString);
     }
     final self = await DeviceIdentity.deviceId();
     final space = parsed.space;
@@ -84,8 +84,9 @@ class StoreUriReader {
   Future<StoreUriKind> kindOf(String uriString) async {
     final parsed = parseStoreUri(uriString, allowEmptyPath: true);
     if (!parsed.ref.isLatest) {
-      throw ArgumentError(
-          'versioned store URI not supported yet: $uriString');
+      // 版本引用指向历史文件内容，不是目录。
+      await _assertVersionReadable(parsed, uriString);
+      return StoreUriKind.file;
     }
     if (parsed.path.isEmpty) return StoreUriKind.directory;
 
@@ -175,7 +176,10 @@ class StoreUriReader {
 
   /// 仅查文件大小（本机 `stat` / 远端 meta，不拉内容）。
   Future<int> sizeOf(String uriString) async {
-    final parsed = _parseLatest(uriString);
+    final parsed = parseStoreUri(uriString);
+    if (!parsed.ref.isLatest) {
+      return _sizeVersioned(parsed, uriString);
+    }
     final localHit = await _localCacheHit(
         space: parsed.space, device: parsed.device, path: parsed.path);
     if (localHit != null) return localHit.length();
@@ -211,7 +215,12 @@ class StoreUriReader {
     int? maxBytes,
     void Function(int done, int total)? onProgress,
   }) async {
-    final parsed = _parseLatest(uriString);
+    final parsed = parseStoreUri(uriString);
+    if (!parsed.ref.isLatest) {
+      await _copyVersionedTo(parsed, uriString, dest,
+          maxBytes: maxBytes, onProgress: onProgress);
+      return;
+    }
     final self = await DeviceIdentity.deviceId();
 
     // 本地文件（含 peer 隧道本机缓存）先命中，未命中再走 ACL/远端。
@@ -299,14 +308,149 @@ class StoreUriReader {
     return builder.takeBytes();
   }
 
-  static ({String space, String device, String path, StoreUriRef ref})
-      _parseLatest(String uriString) {
-    final parsed = parseStoreUri(uriString);
-    if (!parsed.ref.isLatest) {
-      throw ArgumentError(
-          'versioned store URI not supported yet: $uriString');
+  static String _refToken(StoreUriRef ref) => switch (ref.kind) {
+        StoreUriRefKind.latest => '',
+        StoreUriRefKind.seq => 'v${ref.value}',
+        StoreUriRefKind.hash => '${ref.value}',
+      };
+
+  Future<void> _assertVersionReadable(
+    ({String space, String device, String path, StoreUriRef ref}) parsed,
+    String uriString,
+  ) async {
+    final self = await DeviceIdentity.deviceId();
+    await _assertReadable(parsed.space, parsed.device, parsed.path, self);
+    // 探活：确认该 ref 存在。
+    await _sizeVersioned(parsed, uriString);
+  }
+
+  Future<int> _sizeVersioned(
+    ({String space, String device, String path, StoreUriRef ref}) parsed,
+    String uriString,
+  ) async {
+    final self = await DeviceIdentity.deviceId();
+    await _assertReadable(parsed.space, parsed.device, parsed.path, self);
+    final token = _refToken(parsed.ref);
+    if (parsed.device == self) {
+      final store = await StoreService.instance.localStore();
+      final (_, size, _) = await store.versionsRead(
+        parsed.device,
+        parsed.space,
+        parsed.path,
+        token,
+        offset: 0,
+        length: 1,
+      );
+      return size;
     }
-    return parsed;
+    final server =
+        await StoreService.instance.preferredReadServer(parsed.device);
+    final res = await StoreService.instance.callPeer(
+      server,
+      StoreFrame(op: StoreOp.versionsRead, payload: {
+        'space': parsed.space,
+        'device': parsed.device,
+        'path': parsed.path,
+        'ref': token,
+        'offset': 0,
+        'length': 1,
+      }),
+    );
+    if (res == null || res.containsKey('_error')) {
+      final code = res?['_error'] as String? ?? StoreError.masterOffline;
+      throw StoreException(code, res?['message'] as String? ?? uriString);
+    }
+    return (res['size'] as num?)?.toInt() ?? 0;
+  }
+
+  Future<Uint8List> _readVersioned(
+    ({String space, String device, String path, StoreUriRef ref}) parsed,
+    String uriString,
+  ) async {
+    final self = await DeviceIdentity.deviceId();
+    await _assertReadable(parsed.space, parsed.device, parsed.path, self);
+    final token = _refToken(parsed.ref);
+    final builder = BytesBuilder(copy: false);
+    var offset = 0;
+    while (true) {
+      final (chunk, _, eof) =
+          await _readVersionedChunk(parsed, token, offset, uriString);
+      if (chunk.isNotEmpty) builder.add(chunk);
+      offset += chunk.length;
+      if (eof || chunk.isEmpty) break;
+    }
+    return builder.takeBytes();
+  }
+
+  Future<(Uint8List, int, bool)> _readVersionedChunk(
+    ({String space, String device, String path, StoreUriRef ref}) parsed,
+    String token,
+    int offset,
+    String uriString,
+  ) async {
+    final self = await DeviceIdentity.deviceId();
+    if (parsed.device == self) {
+      final store = await StoreService.instance.localStore();
+      return store.versionsRead(
+        parsed.device,
+        parsed.space,
+        parsed.path,
+        token,
+        offset: offset,
+        length: LocalStore.maxReadChunk,
+      );
+    }
+    final server =
+        await StoreService.instance.preferredReadServer(parsed.device);
+    final res = await StoreService.instance.callPeer(
+      server,
+      StoreFrame(op: StoreOp.versionsRead, payload: {
+        'space': parsed.space,
+        'device': parsed.device,
+        'path': parsed.path,
+        'ref': token,
+        'offset': offset,
+        'length': LocalStore.maxReadChunk,
+      }),
+    );
+    if (res == null || res.containsKey('_error')) {
+      final code = res?['_error'] as String? ?? StoreError.masterOffline;
+      throw StoreException(code, res?['message'] as String? ?? uriString);
+    }
+    final data = base64Decode(res['data'] as String? ?? '');
+    final size = (res['size'] as num?)?.toInt() ?? data.length;
+    final eof = res['eof'] == true;
+    return (data, size, eof);
+  }
+
+  Future<void> _copyVersionedTo(
+    ({String space, String device, String path, StoreUriRef ref}) parsed,
+    String uriString,
+    File dest, {
+    int? maxBytes,
+    void Function(int done, int total)? onProgress,
+  }) async {
+    final size = await _sizeVersioned(parsed, uriString);
+    if (maxBytes != null && size > maxBytes) {
+      throw StoreException(
+          StoreError.badOp, 'file too large: $size > $maxBytes');
+    }
+    await dest.parent.create(recursive: true);
+    final sink = dest.openWrite();
+    final token = _refToken(parsed.ref);
+    var offset = 0;
+    try {
+      while (true) {
+        final (chunk, _, eof) =
+            await _readVersionedChunk(parsed, token, offset, uriString);
+        if (chunk.isNotEmpty) sink.add(chunk);
+        offset += chunk.length;
+        onProgress?.call(offset, size > 0 ? size : offset);
+        if (eof || chunk.isEmpty) break;
+      }
+    } finally {
+      await sink.close();
+    }
   }
 
   /// 私有分区 + 他端 device 的 URI：本机缓存命中时返回本地 [File]。

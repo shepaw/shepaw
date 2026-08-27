@@ -10,6 +10,9 @@ import 'package:uuid/uuid.dart';
 import 'store_protocol.dart';
 import 'sync_journal.dart';
 import 'commit_retention.dart';
+import 'space_registry.dart';
+import 'store_event_log.dart';
+import 'volume_usage.dart';
 
 /// store 层错误（StoreService 转为 error 帧）。
 class StoreException implements Exception {
@@ -139,6 +142,26 @@ class LocalStore {
   static const _uuid = Uuid();
   static const maxReadChunk = 64 * 1024;
 
+  /// Agent 产物软配额（runtime/artifacts/attachments/cognition 合计，每设备）。
+  static const defaultAgentSpaceQuotaBytes = 2 * 1024 * 1024 * 1024;
+
+  /// 卷剩余不足 [size] + 该余量时拒绝写入。
+  static const volumeHeadroomBytes = 64 * 1024 * 1024;
+
+  /// 检索最多扫描条目；单文件内容嗅探上限。
+  static const searchScanLimit = 5000;
+  static const searchContentMaxBytes = 256 * 1024;
+  static const searchSnippetBytes = 240;
+
+  /// 测试钩子：覆盖 Agent 分区配额；`null` = 默认 2GiB；`≤0` = 关闭。
+  int? agentSpaceQuotaBytes;
+
+  /// 测试钩子：注入卷用量（跳过 `df`）。
+  VolumeUsage? debugVolumeUsage;
+
+  /// 测试钩子：跳过卷配额（单测默认磁盘可能很满）。
+  bool debugSkipVolumeQuota = false;
+
   /// 变更日志挂接点（docs/storage_protocol_spec.md §6.1）。
   /// 由 SyncEngine.start 设置；commit/delete 成功路径内联调用，
   /// 保证"落盘成功即入队"无窗口期。
@@ -161,12 +184,20 @@ class LocalStore {
   Future<void>? _usageRefresh;
   bool _usageDirty = false;
   final StreamController<void> _usageTick = StreamController<void>.broadcast();
+  SpaceRegistry? _spaces;
+  StoreEventLog? _events;
 
   LocalStore({
     required this.root,
     this.versionCoalesceWindow = defaultVersionCoalesceWindow,
   }) : _usageCacheFile =
             File(p.join(root.path, '.system', 'usage_cache.json'));
+
+  SpaceRegistry get spaceRegistry => _spaces ??= SpaceRegistry(root);
+  StoreEventLog get eventLog => _events ??= StoreEventLog(root);
+
+  /// `true`=shared / `false`=private / `null`=未知。
+  bool? spaceVisibility(String space) => spaceRegistry.visibility(space);
 
   /// 后台全量统计完成或增量更新后通知 UI。
   Stream<void> get usageUpdates => _usageTick.stream;
@@ -316,6 +347,45 @@ class LocalStore {
     return entries;
   }
 
+  /// 带 [cursor] 的分页 list（协议 `next_cursor`）。
+  ///
+  /// 浏览路径（[computeHash] = false）会多扫一页再切片；同步路径保持原 [limit]。
+  Future<({List<StoreEntry> entries, String? nextCursor})> listPaged(
+    String deviceId,
+    String space, {
+    String? prefix,
+    int limit = 1000,
+    int? depth,
+    bool computeHash = true,
+    String? cursor,
+  }) async {
+    final pageLimit = limit < 1 ? 1 : limit;
+    final scanLimit = computeHash
+        ? pageLimit
+        : (pageLimit >= 5000 ? pageLimit : 5000);
+    var entries = await list(
+      deviceId,
+      space,
+      prefix: prefix,
+      limit: scanLimit,
+      depth: depth,
+      computeHash: computeHash,
+    );
+    if (cursor != null && cursor.isNotEmpty) {
+      entries = [
+        for (final e in entries)
+          if (e.path.compareTo(cursor) > 0) e
+      ];
+    }
+    if (entries.length > pageLimit) {
+      return (
+        entries: entries.sublist(0, pageLimit),
+        nextCursor: entries[pageLimit - 1].path,
+      );
+    }
+    return (entries: entries, nextCursor: null);
+  }
+
   /// meta：文件 → 单条元数据；目录 → 清单（spec §2.2）。
   Future<Map<String, dynamic>> meta(
       String deviceId, String space, String relPath) async {
@@ -413,6 +483,7 @@ class LocalStore {
     if (size < 0) throw StoreException(StoreError.badOp, 'negative size');
     final normalized = normalizeStorePath(path);
     _resolveInSpace(deviceId, space, normalized); // 仅校验
+    await _enforceWriteQuota(deviceId: deviceId, space: space, size: size);
     final stagingDir = Directory(_stagingDir(deviceId, space));
     await stagingDir.create(recursive: true);
 
@@ -445,6 +516,10 @@ class LocalStore {
         sha256: sha256,
         createdMs: DateTime.now().millisecondsSinceEpoch);
     await metaFile.writeAsString(jsonEncode(meta.toJson()));
+    // 与 Go 对齐：begin 即创建空 part，空文件无需 write.chunk 也能 commit。
+    if (!await partFile.exists()) {
+      await partFile.create();
+    }
     return (id, 0);
   }
 
@@ -467,16 +542,22 @@ class LocalStore {
       throw StoreException(
           StoreError.stagingState, 'offset $offset beyond received $current');
     }
-    // FileMode.append：不存在则创建、不清空、setPosition 随机写。
-    // （FileMode.write 打开即截断，会毁掉断点续传。）
+    if (!await partFile.exists()) {
+      await partFile.create();
+    }
+    // POSIX 上 FileMode.append = O_APPEND，write 会无视 setPosition 变成追加。
+    // 从 checkpoint 重写时先 truncate 到 offset，再追加，避免 part 膨胀、哈希对不上。
     final raf = await partFile.open(mode: FileMode.append);
     try {
+      if (offset < current) {
+        await raf.truncate(offset);
+      }
       await raf.setPosition(offset);
       await raf.writeFrom(data);
     } finally {
       await raf.close();
     }
-    return offset + data.length > current ? offset + data.length : current;
+    return offset + data.length;
   }
 
   /// 原子转正（spec §2.6）：先全量验哈希（任一失败整批不转正），
@@ -510,7 +591,15 @@ class LocalStore {
       final meta = _StagingMeta.fromJson(
           jsonDecode(await metaFile.readAsString()) as Map<String, dynamic>);
       final partFile = File(p.join(stagingDir, '$id.part'));
-      final length = await partFile.exists() ? await partFile.length() : 0;
+      if (!await partFile.exists()) {
+        if (meta.size == 0) {
+          await partFile.create();
+        } else {
+          failed.add('$id: size 0 != declared ${meta.size}');
+          continue;
+        }
+      }
+      final length = await partFile.length();
       if (length != meta.size) {
         failed.add('$id: size $length != declared ${meta.size}');
         continue;
@@ -587,7 +676,131 @@ class LocalStore {
     if (committed.isNotEmpty && manifest != null) {
       await _writeTaskManifest(deviceId, space, committed.first.path, manifest);
     }
+    if (committed.isNotEmpty) {
+      await _appendEventsBestEffort(committed.map((f) => (
+            kind: 'file.committed',
+            device: deviceId,
+            space: space,
+            path: f.path,
+            detail: <String, dynamic>{'size': f.size, 'sha256': f.sha256},
+          )));
+    }
     return (committed, failed);
+  }
+
+  /// 按 64KB 切块写入并 commit。空文件也会落下 0 字节 part。
+  Future<({String path, int size, String sha256})> putBytes({
+    required String deviceId,
+    required String space,
+    required String path,
+    required Uint8List bytes,
+    String? sha256Hex,
+    Map<String, dynamic>? retention,
+    Map<String, dynamic>? manifest,
+    bool publish = false,
+  }) async {
+    final hash = sha256Hex ?? crypto.sha256.convert(bytes).toString();
+    final (uid, _) = await writeBegin(
+      deviceId: deviceId,
+      space: space,
+      path: path,
+      size: bytes.length,
+      sha256: hash,
+    );
+    if (bytes.isEmpty) {
+      await writeChunk(deviceId, space, uid, 0, Uint8List(0));
+    } else {
+      var offset = 0;
+      while (offset < bytes.length) {
+        final end = offset + maxReadChunk > bytes.length
+            ? bytes.length
+            : offset + maxReadChunk;
+        await writeChunk(
+            deviceId, space, uid, offset, bytes.sublist(offset, end));
+        offset = end;
+      }
+    }
+    return _finishPut(
+      deviceId,
+      space,
+      uid,
+      retention: retention,
+      manifest: manifest,
+      publish: publish,
+    );
+  }
+
+  /// 从本机文件流式写入（不把整文件读进内存）。空文件也会落下 0 字节 part。
+  Future<({String path, int size, String sha256})> putFile({
+    required String deviceId,
+    required String space,
+    required String path,
+    required File file,
+    String? sha256Hex,
+    Map<String, dynamic>? retention,
+    Map<String, dynamic>? manifest,
+    bool publish = false,
+  }) async {
+    final size = await file.length();
+    final hash = sha256Hex ??
+        (await crypto.sha256.bind(file.openRead()).first).toString();
+    final (uid, _) = await writeBegin(
+      deviceId: deviceId,
+      space: space,
+      path: path,
+      size: size,
+      sha256: hash,
+    );
+    if (size == 0) {
+      await writeChunk(deviceId, space, uid, 0, Uint8List(0));
+    } else {
+      final raf = await file.open();
+      try {
+        var offset = 0;
+        final buf = Uint8List(maxReadChunk);
+        while (true) {
+          final n = await raf.readInto(buf);
+          if (n <= 0) break;
+          await writeChunk(
+              deviceId, space, uid, offset, buf.sublist(0, n));
+          offset += n;
+        }
+      } finally {
+        await raf.close();
+      }
+    }
+    return _finishPut(
+      deviceId,
+      space,
+      uid,
+      retention: retention,
+      manifest: manifest,
+      publish: publish,
+    );
+  }
+
+  Future<({String path, int size, String sha256})> _finishPut(
+    String deviceId,
+    String space,
+    String uid, {
+    Map<String, dynamic>? retention,
+    Map<String, dynamic>? manifest,
+    bool publish = false,
+  }) async {
+    final (committed, failed) = await commit(
+      deviceId,
+      space,
+      [uid],
+      retention: retention,
+      manifest: manifest,
+      publish: publish,
+    );
+    if (failed.isNotEmpty || committed.isEmpty) {
+      throw StoreException(
+          StoreError.internal, 'commit failed: ${failed.join(', ')}');
+    }
+    final f = committed.first;
+    return (path: f.path, size: f.size, sha256: f.sha256);
   }
 
   // ────────────────────────────── versions / manifest（spec §1.5）──
@@ -951,6 +1164,15 @@ class LocalStore {
       spaceDelta: -bytes,
       recycleDelta: bytes,
     );
+    await _appendEventsBestEffort([
+      (
+        kind: 'file.deleted',
+        device: targetDeviceId,
+        space: space,
+        path: normalized,
+        detail: <String, dynamic>{'recycled': recycled, 'size': bytes},
+      )
+    ]);
     return recycled;
   }
 
@@ -1070,6 +1292,236 @@ class LocalStore {
     await recycleDir.delete(recursive: true);
     await _applyUsageDeltas(recycleDelta: -purged);
     return purged;
+  }
+
+  // ────────────────────────────── search / events / quota ──
+
+  /// 关键词检索（路径优先，小文本文件再嗅探正文；spec §2.11）。
+  Future<List<Map<String, dynamic>>> search({
+    required String query,
+    String? space,
+    String? device,
+    String? state,
+    int limit = 50,
+  }) async {
+    await spaceRegistry.load();
+    if (space != null && space.isNotEmpty && !spaceRegistry.isKnown(space)) {
+      throw StoreException(StoreError.badOp, 'unknown space');
+    }
+    // 磁盘文件均为已 commit；请求其它 state 则无结果。
+    if (state != null &&
+        state.isNotEmpty &&
+        state != 'committed' &&
+        state != 'published') {
+      return const [];
+    }
+    final needle = query.trim().toLowerCase();
+    if (needle.isEmpty) {
+      throw StoreException(StoreError.badOp, 'empty query');
+    }
+    final tokens =
+        needle.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+    final cap = limit < 1 ? 1 : (limit > 200 ? 200 : limit);
+    final devices = device != null && device.isNotEmpty
+        ? [device]
+        : await _listDeviceIds();
+    final spaces = space != null && space.isNotEmpty
+        ? [space]
+        : [
+            for (final profile in spaceRegistry.listAll())
+              if (profile.name != StoreSpace.backups) profile.name
+          ];
+    final scored = <({Map<String, dynamic> hit, int score})>[];
+    var scanned = 0;
+    for (final dev in devices) {
+      for (final sp in spaces) {
+        if (scanned >= searchScanLimit) break;
+        final remain = searchScanLimit - scanned;
+        final entries = await list(
+          dev,
+          sp,
+          limit: remain,
+          computeHash: false,
+        );
+        scanned += entries.length;
+        for (final e in entries) {
+          if (e.isDir) continue;
+          var pathScore = 0;
+          var ok = true;
+          for (final token in tokens) {
+            final s = _searchPathScore(e.path, token);
+            if (s <= 0) {
+              ok = false;
+              break;
+            }
+            pathScore += s;
+          }
+          String snippet = '';
+          var score = pathScore;
+          if (!ok) {
+            final peeked = await _peekTextSnippet(dev, sp, e, tokens);
+            if (peeked == null) continue;
+            snippet = peeked;
+            score = 40;
+          } else {
+            snippet = e.path;
+          }
+          scored.add((
+            hit: <String, dynamic>{
+              'uri': 'store://$sp/$dev/${e.path}',
+              'space': sp,
+              'device': dev,
+              'path': e.path,
+              'sha256': e.sha256,
+              'size': e.size,
+              'state': 'committed',
+              'snippet': snippet,
+              'score': score.toDouble(),
+            },
+            score: score,
+          ));
+        }
+      }
+    }
+    scored.sort((a, b) => b.score.compareTo(a.score));
+    return [for (final s in scored.take(cap)) s.hit];
+  }
+
+  static int _searchPathScore(String path, String needle) {
+    final name = p.basename(path).toLowerCase();
+    final full = path.toLowerCase();
+    if (name == needle) return 500;
+    if (name.startsWith(needle)) return 400;
+    if (name.contains(needle)) return 300;
+    if (full.contains(needle)) return 100;
+    return 0;
+  }
+
+  static const _textExt = {
+    '.md',
+    '.txt',
+    '.json',
+    '.csv',
+    '.yaml',
+    '.yml',
+    '.log',
+    '.arb',
+    '.xml',
+    '.html',
+    '.dart',
+    '.py',
+    '.go',
+    '.js',
+    '.ts',
+  };
+
+  Future<String?> _peekTextSnippet(
+    String deviceId,
+    String space,
+    StoreEntry entry,
+    List<String> tokens,
+  ) async {
+    final ext = p.extension(entry.path).toLowerCase();
+    if (!_textExt.contains(ext)) return null;
+    if (entry.size <= 0 || entry.size > searchContentMaxBytes) return null;
+    try {
+      final abs = _resolveInSpace(deviceId, space, entry.path);
+      final f = File(abs);
+      if (!await f.exists()) return null;
+      const want = searchSnippetBytes + 400;
+      final raf = await f.open();
+      try {
+        final buf = Uint8List(want);
+        final n = await raf.readInto(buf);
+        if (n <= 0) return null;
+        final text = utf8.decode(buf.sublist(0, n), allowMalformed: true).toLowerCase();
+        for (final token in tokens) {
+          if (!text.contains(token)) return null;
+        }
+        final first = tokens.first;
+        final idx = text.indexOf(first);
+        if (idx < 0) {
+          return text.length > searchSnippetBytes
+              ? text.substring(0, searchSnippetBytes)
+              : text;
+        }
+        final start = idx > 40 ? idx - 40 : 0;
+        final end = (start + searchSnippetBytes > text.length)
+            ? text.length
+            : start + searchSnippetBytes;
+        return text.substring(start, end).trim();
+      } finally {
+        await raf.close();
+      }
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<List<String>> _listDeviceIds() async {
+    if (!await root.exists()) return const [];
+    final out = <String>[];
+    await for (final entity in root.list()) {
+      if (entity is! Directory) continue;
+      final id = p.basename(entity.path);
+      if (isValidDeviceId(id)) out.add(id);
+    }
+    return out;
+  }
+
+  Future<void> _enforceWriteQuota({
+    required String deviceId,
+    required String space,
+    required int size,
+  }) async {
+    final vol = debugVolumeUsage ??
+        (debugSkipVolumeQuota ? null : await VolumeUsage.probe(root.path));
+    if (vol != null) {
+      final need = debugVolumeUsage != null
+          ? size + volumeHeadroomBytes
+          : size;
+      if (vol.freeBytes < need) {
+        throw StoreException(StoreError.quotaExceeded, 'volume budget');
+      }
+    }
+    final cap = agentSpaceQuotaBytes ?? defaultAgentSpaceQuotaBytes;
+    if (cap <= 0) return;
+    if (!StoreSpace.agentQuotaSpaces.contains(space)) return;
+    await _loadUsageCache();
+    var used = 0;
+    final per = _deviceSpaceMap(deviceId);
+    for (final s in StoreSpace.agentQuotaSpaces) {
+      used += per[s] ?? 0;
+    }
+    if (used + size > cap) {
+      throw StoreException(StoreError.quotaExceeded, 'agent space quota');
+    }
+  }
+
+  Future<void> _appendEventsBestEffort(
+    Iterable<
+            ({
+              String kind,
+              String device,
+              String space,
+              String path,
+              Map<String, dynamic> detail
+            })>
+        items,
+  ) async {
+    try {
+      for (final item in items) {
+        await eventLog.append(
+          kind: item.kind,
+          device: item.device,
+          space: item.space,
+          path: item.path,
+          detail: item.detail,
+        );
+      }
+    } catch (_) {
+      // 事件总线不得阻断 commit/delete。
+    }
   }
 
   // ────────────────────────────── stats / gc ──

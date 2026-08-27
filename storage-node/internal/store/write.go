@@ -60,6 +60,9 @@ func (l *Local) writeBegin(frame protocol.Frame, caller string) (map[string]any,
 	if sha == "" || !isHexSHA256(sha) {
 		return nil, &OpError{Code: "bad_op", Msg: "invalid sha256"}
 	}
+	if err := l.enforceWriteQuota(caller, space, size); err != nil {
+		return nil, err
+	}
 
 	id, _ := frame.Payload["upload_id"].(string)
 	if id == "" {
@@ -243,6 +246,9 @@ func (l *Local) commit(frame protocol.Frame, caller string) (map[string]any, err
 		committed = append(committed, map[string]any{
 			"upload_id": p.id, "path": p.u.Path, "size": p.size, "sha256": p.sum,
 		})
+		l.appendEvent("file.committed", p.u.Device, p.u.Space, p.u.Path, map[string]any{
+			"size": p.size, "sha256": p.sum,
+		})
 	}
 	if len(committed) > 0 {
 		if device := batch[0].u.Device; device != "" {
@@ -319,6 +325,39 @@ func rejectSymlinkUnder(spaceRoot, path string) error {
 		if fi.Mode()&os.ModeSymlink != 0 {
 			return &OpError{Code: "bad_path", Msg: "symlink not allowed"}
 		}
+	}
+	return nil
+}
+
+const defaultAgentQuota = int64(2 * 1024 * 1024 * 1024)
+const volumeHeadroom = int64(64 * 1024 * 1024)
+
+func (l *Local) enforceWriteQuota(device, space string, size int64) error {
+	if l.VolumeFreeOverride != nil {
+		if *l.VolumeFreeOverride < size+volumeHeadroom {
+			return &OpError{Code: "quota_exceeded", Msg: "volume budget"}
+		}
+	} else if _, free, ok := probeVolume(l.Root); ok {
+		if free < size {
+			return &OpError{Code: "quota_exceeded", Msg: "volume budget"}
+		}
+	}
+	capBytes := l.AgentQuotaBytes
+	if capBytes == 0 {
+		capBytes = defaultAgentQuota
+	}
+	if capBytes < 0 {
+		return nil
+	}
+	if !protocol.AgentQuotaSpace(space) {
+		return nil
+	}
+	var used int64
+	for _, sp := range []string{"runtime", "artifacts", "attachments", "cognition"} {
+		used += dirSize(filepath.Join(l.Root, device, sp), true)
+	}
+	if used+size > capBytes {
+		return &OpError{Code: "quota_exceeded", Msg: "agent space quota"}
 	}
 	return nil
 }

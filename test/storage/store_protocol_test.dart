@@ -183,6 +183,61 @@ void main() {
           StoreAcl.allow);
     });
 
+    test('friend 分享白名单只读，不能 delete 他端', () {
+      bool allowDocs(String space, String? path) {
+        if (space != 'files') return false;
+        final p = path ?? '';
+        return p.isEmpty || p == 'docs' || p.startsWith('docs/');
+      }
+
+      expect(
+          acl(
+              StoreFrame(
+                  op: StoreOp.read,
+                  payload: {
+                    'space': 'files',
+                    'device': other,
+                    'path': 'docs/a.txt',
+                  }),
+              trust: TrustLevel.friend,
+              shareAllowed: allowDocs),
+          StoreAcl.allow);
+      expect(
+          acl(
+              StoreFrame(
+                  op: StoreOp.delete,
+                  payload: {
+                    'space': 'files',
+                    'device': other,
+                    'path': 'docs/a.txt',
+                  }),
+              trust: TrustLevel.friend,
+              shareAllowed: allowDocs),
+          StoreAcl.denyAcl);
+      expect(
+          acl(
+              StoreFrame(
+                  op: StoreOp.delete,
+                  payload: {
+                    'space': 'files',
+                    'device': other,
+                    'path': 'docs/a.txt',
+                  }),
+              shareAllowed: allowDocs),
+          StoreAcl.allow);
+      expect(
+          acl(
+              StoreFrame(
+                  op: StoreOp.delete,
+                  payload: {
+                    'space': 'files',
+                    'device': caller,
+                    'path': 'docs/a.txt',
+                  }),
+              trust: TrustLevel.friend),
+          StoreAcl.allow);
+    });
+
     test('workspaces：owner 可跨 device 写；runtime 不可', () {
       expect(
         acl(StoreFrame(
@@ -308,7 +363,7 @@ void main() {
             StoreAcl.denyAcl,
             reason: 'delete $space of other device');
       }
-      // 删除他端共享分区 → 允许（共享文件手动删除）
+      // 删除他端共享分区 → owner 允许（friend 分享只读，见上一用例）
       expect(
           acl(StoreFrame(
               op: StoreOp.delete,

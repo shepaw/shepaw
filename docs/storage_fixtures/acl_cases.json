@@ -186,6 +186,22 @@
       "loopback": false,
       "payload": { "space": "runtime", "device": "bbbbbbbbbbbbbbbb" },
       "expect": "denyAcl"
+    },
+    {
+      "name": "friend_delete_other_files",
+      "op": "delete",
+      "trust": "friend",
+      "loopback": false,
+      "payload": { "space": "files", "device": "bbbbbbbbbbbbbbbb", "path": "x.txt" },
+      "expect": "denyAcl"
+    },
+    {
+      "name": "owner_delete_other_files",
+      "op": "delete",
+      "trust": "owner",
+      "loopback": false,
+      "payload": { "space": "files", "device": "bbbbbbbbbbbbbbbb", "path": "x.txt" },
+      "expect": "allow"
     }
   ]
 }

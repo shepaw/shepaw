@@ -11,8 +11,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:path/path.dart' as p;
@@ -284,7 +282,6 @@ class FolderBindingService {
           binding.space,
           _destRel(binding, e.rel),
           e.file,
-          e.size,
           e.sha,
         );
         index[e.rel] = <String, dynamic>{
@@ -436,32 +433,14 @@ class FolderBindingService {
     String space,
     String destRel,
     File file,
-    int size,
     String sha,
   ) async {
-    final (uid, _) = await store.writeBegin(
+    await store.putFile(
       deviceId: device,
       space: space,
       path: destRel,
-      size: size,
-      sha256: sha,
+      file: file,
+      sha256Hex: sha,
     );
-    final raf = await file.open();
-    try {
-      var offset = 0;
-      final buf = Uint8List(math.min(LocalStore.maxReadChunk, 64 * 1024));
-      while (true) {
-        final n = await raf.readInto(buf);
-        if (n <= 0) break;
-        await store.writeChunk(device, space, uid, offset, buf.sublist(0, n));
-        offset += n;
-      }
-    } finally {
-      await raf.close();
-    }
-    final (committed, failed) = await store.commit(device, space, <String>[uid]);
-    if (failed.isNotEmpty) {
-      throw StateError('binding commit failed: $failed');
-    }
   }
 }

@@ -30,6 +30,10 @@ type Local struct {
 	peerEnsure PeerEnsure
 	seedAuth   map[string]time.Time // caller → expire (migrate seed window)
 	gcStop     chan struct{}
+	// AgentQuotaBytes overrides the 2GiB default; -1 disables.
+	AgentQuotaBytes int64
+	// VolumeFreeOverride, when set, is used instead of probing the volume.
+	VolumeFreeOverride *int64
 }
 
 // upload tracks an in-flight write; durable state lives in .staging/<id>.{part,json}.
@@ -71,11 +75,11 @@ func Open(root, deviceID string) (*Local, error) {
 }
 
 func (l *Local) Handle(frame protocol.Frame, caller, trust string, loopback bool) (map[string]any, error) {
-	if v := protocol.CheckACL(frame, caller, trust, loopback); v != protocol.Allow {
+	if v := protocol.CheckACLEx(frame, caller, trust, loopback, nil, l.spaceVis); v != protocol.Allow {
 		return nil, &OpError{Code: aclCode(v), Msg: string(v)}
 	}
 	// Fencing: demoted nodes must not accept sync mutations / hello (B2).
-	if needsMasterFence(frame.Op) {
+	if needsMasterFence(frame) {
 		if err := l.requireMaster(); err != nil {
 			return nil, err
 		}
@@ -124,18 +128,28 @@ func (l *Local) Handle(frame protocol.Frame, caller, trust string, loopback bool
 		return l.masterPointerApply(frame)
 	case "master.migrate":
 		return l.masterMigrate(frame)
+	case "space.list":
+		return l.spaceList(frame)
+	case "space.declare":
+		return l.spaceDeclare(frame, caller)
+	case "search":
+		return l.search(frame, caller)
+	case "events.list":
+		return l.eventsList(frame)
 	default:
 		return nil, &OpError{Code: "bad_op", Msg: frame.Op}
 	}
 }
 
-func needsMasterFence(op string) bool {
-	switch op {
-	case "write.begin", "write.chunk", "commit", "delete", "sync.hello":
+func needsMasterFence(frame protocol.Frame) bool {
+	if frame.Op == "sync.hello" {
 		return true
-	default:
-		return false
 	}
+	if frame.Op == "commit" || frame.Op == "delete" {
+		_, ok := payloadInt64(frame.Payload, "upto_seq")
+		return ok
+	}
+	return false
 }
 
 func (l *Local) requireMaster() error {
@@ -337,6 +351,7 @@ func (l *Local) delete(frame protocol.Frame, caller string) (map[string]any, err
 		}
 	} else {
 		out["recycled"] = recycled
+		l.appendEvent("file.deleted", device, frame.Space(), norm, map[string]any{"recycled": recycled})
 	}
 	if upto, ok := payloadInt64(frame.Payload, "upto_seq"); ok {
 		applied, err := l.cursors.advance(caller, upto)

@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:shepaw/storage/local_store.dart';
 import 'package:shepaw/storage/store_protocol.dart';
+import 'package:shepaw/storage/volume_usage.dart';
 
 /// LocalStore 文件系统实现（staging/commit/回收站/stats/gc）。
 /// 临时目录直测，无插件依赖。
@@ -19,6 +20,7 @@ void main() {
   setUp(() async {
     tmp = await Directory.systemTemp.createTemp('local_store_test');
     store = LocalStore(root: tmp);
+    store.debugSkipVolumeQuota = true;
   });
 
   Uint8List bytesOf(String s) => Uint8List.fromList(utf8.encode(s));
@@ -152,6 +154,109 @@ void main() {
         () => store.writeChunk(dev, 'files', uploadId, 0, big),
         throwsA(predicate((e) =>
             e is StoreException && e.code == StoreError.badOp)),
+      );
+    });
+
+    test('空文件不写 chunk 也能 commit（begin 落下 0 字节 part）', () async {
+      final empty = Uint8List(0);
+      final (uploadId, _) = await begin('empty.txt', empty);
+      final (committed, failed) =
+          await store.commit(dev, 'files', [uploadId]);
+      expect(failed, isEmpty);
+      expect(committed.single.path, 'empty.txt');
+      expect(committed.single.size, 0);
+      expect(committed.single.sha256, sha(empty));
+    });
+
+    test('commit 兼容缺失的空 part（旧会话）', () async {
+      final empty = Uint8List(0);
+      final (uploadId, _) = await begin('legacy-empty.txt', empty);
+      final part = File(p.join(tmp.path, dev, 'files', '.staging', '$uploadId.part'));
+      if (await part.exists()) await part.delete();
+      final (committed, failed) =
+          await store.commit(dev, 'files', [uploadId]);
+      expect(failed, isEmpty);
+      expect(committed.single.path, 'legacy-empty.txt');
+    });
+
+    test('putBytes 按 64KB 切块写入超限内容', () async {
+      final big = Uint8List(LocalStore.maxReadChunk + 17);
+      for (var i = 0; i < big.length; i++) {
+        big[i] = i & 0xff;
+      }
+      final put = await store.putBytes(
+        deviceId: dev,
+        space: 'files',
+        path: 'chunked.bin',
+        bytes: big,
+      );
+      expect(put.size, big.length);
+      expect(put.sha256, sha(big));
+      final meta = await store.meta(dev, 'files', 'chunked.bin');
+      expect(meta['size'], big.length);
+    });
+
+    test('putFile 流式写入且不要求整文件进内存', () async {
+      final src = File(p.join(tmp.path, 'src.bin'));
+      final payload = Uint8List.fromList(List<int>.generate(80 * 1024, (i) => i));
+      await src.writeAsBytes(payload);
+      final put = await store.putFile(
+        deviceId: dev,
+        space: 'files',
+        path: 'from-disk.bin',
+        file: src,
+      );
+      expect(put.size, payload.length);
+      expect(put.sha256, sha(payload));
+    });
+
+    test('write.chunk 从 offset 0 重写不会把 part 追加变长', () async {
+      final good = bytesOf('good!!!!');
+      final (uploadId, _) = await begin('rewrite.bin', good);
+      final first = bytesOf('BADBAD!!');
+      expect(first.length, good.length);
+      await store.writeChunk(dev, 'files', uploadId, 0, first);
+      await store.writeChunk(dev, 'files', uploadId, 0, good);
+      final part = File(
+          p.join(tmp.path, dev, 'files', '.staging', '$uploadId.part'));
+      expect(await part.length(), good.length);
+      final (committed, failed) =
+          await store.commit(dev, 'files', [uploadId]);
+      expect(failed, isEmpty);
+      expect(committed.single.sha256, sha(good));
+    });
+
+    test('listPaged 返回 next_cursor 并可翻页', () async {
+      for (final name in ['a.txt', 'b.txt', 'c.txt']) {
+        await store.putBytes(
+          deviceId: dev,
+          space: 'files',
+          path: 'page/$name',
+          bytes: bytesOf(name),
+        );
+      }
+      final first = await store.listPaged(
+        dev,
+        'files',
+        prefix: 'page/',
+        limit: 2,
+        computeHash: false,
+      );
+      expect(first.entries, hasLength(2));
+      expect(first.nextCursor, isNotNull);
+      final second = await store.listPaged(
+        dev,
+        'files',
+        prefix: 'page/',
+        limit: 2,
+        computeHash: false,
+        cursor: first.nextCursor,
+      );
+      expect(second.entries, isNotEmpty);
+      expect(
+        second.entries.map((e) => e.path).toSet().intersection(
+            first.entries.map((e) => e.path).toSet()),
+        isEmpty,
       );
     });
 
@@ -595,6 +700,75 @@ void main() {
       expect(entry.path, 'a/b.txt');
       expect(entry.size, 1024);
       expect(entry.mtimeMs, 1700000000000);
+    });
+  });
+
+  group('search / events / quota', () {
+    test('search 命中路径与正文', () async {
+      await store.putBytes(
+        deviceId: dev,
+        space: 'files',
+        path: 'notes/alpha.txt',
+        bytes: bytesOf('hello unique-token-xyz inside'),
+      );
+      await store.putBytes(
+        deviceId: dev,
+        space: 'files',
+        path: 'notes/other.txt',
+        bytes: bytesOf('nope'),
+      );
+      final byPath = await store.search(query: 'alpha');
+      expect(byPath.single['path'], 'notes/alpha.txt');
+      final byBody = await store.search(query: 'unique-token-xyz');
+      expect(byBody.single['path'], 'notes/alpha.txt');
+      expect(byBody.single['snippet'], contains('unique-token-xyz'));
+    });
+
+    test('commit 写入 events.jsonl', () async {
+      await store.putBytes(
+        deviceId: dev,
+        space: 'files',
+        path: 'ev/a.txt',
+        bytes: bytesOf('e'),
+      );
+      final listed = await store.eventLog.list(since: 0, kind: 'file.committed');
+      expect(listed.latestSeq, greaterThan(0));
+      expect(
+          listed.events.any((e) => e['path'] == 'ev/a.txt'), isTrue);
+    });
+
+    test('agent 分区超配额 → quota_exceeded', () async {
+      store.agentSpaceQuotaBytes = 40;
+      final content = bytesOf('this is more than forty bytes of payload!!');
+      expect(content.length, greaterThan(40));
+      expect(
+        () => store.writeBegin(
+          deviceId: dev,
+          space: StoreSpace.runtime,
+          path: 'agent/out.txt',
+          size: content.length,
+          sha256: sha(content),
+        ),
+        throwsA(isA<StoreException>().having(
+            (e) => e.code, 'code', StoreError.quotaExceeded)),
+      );
+    });
+
+    test('卷剩余不足 → quota_exceeded', () async {
+      store.debugSkipVolumeQuota = false;
+      store.debugVolumeUsage = VolumeUsage(totalBytes: 1000, freeBytes: 10);
+      final content = bytesOf('x');
+      expect(
+        () => store.writeBegin(
+          deviceId: dev,
+          space: 'files',
+          path: 'vol.txt',
+          size: content.length,
+          sha256: sha(content),
+        ),
+        throwsA(isA<StoreException>().having(
+            (e) => e.code, 'code', StoreError.quotaExceeded)),
+      );
     });
   });
 }

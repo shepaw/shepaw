@@ -2562,7 +2562,7 @@
     }
   },
   "peerStoreShare_panelTitle": "Nexus Pouch sharing",
-  "peerStoreShare_panelHint": "Control which local Nexus Pouch spaces this device can read",
+  "peerStoreShare_panelHint": "Control which local Nexus Pouch spaces this device can read. Sharing is read-only; they cannot delete your files.",
   "peerSettings_trustLevel": "Trust level",
   "peerSettings_trustOwnerHint": "Apply default files+artifacts whole-space sharing after switching to Owner?",
   "peerSettings_applyOwnerDefaults": "Apply defaults",

@@ -62,7 +62,7 @@ func IsValidDeviceID(device string) bool {
 // BuiltinSpaces mirrors Dart StoreSpace.all (new + legacy).
 func BuiltinSpaces() []string {
 	return []string{
-		"workspaces", "runtime", "files", "public", "backups", "memory",
+		"workspaces", "runtime", "files", "public", "backups", "cognition", "memory",
 		"artifacts", "attachments",
 	}
 }
@@ -89,6 +89,68 @@ func SharedReadable(s string) bool {
 // OwnerCrossWritable: 仅 workspaces 允许 owner 跨 device 写。
 func OwnerCrossWritable(s string) bool {
 	return s == "workspaces"
+}
+
+func AgentQuotaSpace(s string) bool {
+	switch s {
+	case "runtime", "artifacts", "attachments", "cognition":
+		return true
+	default:
+		return false
+	}
+}
+
+func IsValidSpaceSyntax(s string) bool {
+	if len(s) < 1 || len(s) > 32 {
+		return false
+	}
+	if s[0] < 'a' || s[0] > 'z' {
+		return false
+	}
+	for i := 1; i < len(s); i++ {
+		c := s[i]
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+func IsReservedDeclareName(s string) bool {
+	if IsValidSpace(s) {
+		return true
+	}
+	switch s {
+	case "system", "recycle", "versions", "staging", "nexuspouch", "tools":
+		return true
+	default:
+		return false
+	}
+}
+
+// VisibilityFunc reports shared/known for a space (builtin + declared).
+// known=false → denyBadOp for ops that require a space.
+type VisibilityFunc func(space string) (shared, known bool)
+
+func knownSpace(space string, vis VisibilityFunc) bool {
+	if IsValidSpace(space) {
+		return true
+	}
+	if vis != nil {
+		_, known := vis(space)
+		return known
+	}
+	return false
+}
+
+func sharedSpace(space string, vis VisibilityFunc) bool {
+	if vis != nil {
+		shared, known := vis(space)
+		if known {
+			return shared
+		}
+	}
+	return SharedReadable(space)
 }
 
 // NormalizePath mirrors Dart normalizeStorePath.
@@ -129,7 +191,8 @@ func NormalizePath(raw string) (string, error) {
 	return strings.Join(out, "/"), nil
 }
 
-// ShareAllowedFunc reports whether cross-device access to space/path is allowed.
+// ShareAllowedFunc reports whether cross-device *read* of space/path is allowed.
+// Cross-device delete is owner-only (share allowlist is read-only for friends).
 // path may be empty for list root.
 type ShareAllowedFunc func(space, path string) bool
 
@@ -166,6 +229,11 @@ func CheckACL(frame Frame, callerDeviceID, trustLevel string, loopback bool) Acl
 
 // CheckACLWith adds optional share allowlist for cross-device shared spaces.
 func CheckACLWith(frame Frame, callerDeviceID, trustLevel string, loopback bool, shareAllowed ShareAllowedFunc) AclVerdict {
+	return CheckACLEx(frame, callerDeviceID, trustLevel, loopback, shareAllowed, nil)
+}
+
+// CheckACLEx adds declared-space visibility on top of [CheckACLWith].
+func CheckACLEx(frame Frame, callerDeviceID, trustLevel string, loopback bool, shareAllowed ShareAllowedFunc, vis VisibilityFunc) AclVerdict {
 	isOwner := trustLevel == TrustOwner
 	if !isOwner && friendDeniedOp(frame.Op) {
 		return DenyUntrusted
@@ -176,7 +244,7 @@ func CheckACLWith(frame Frame, callerDeviceID, trustLevel string, loopback bool,
 
 	switch frame.Op {
 	case "write.begin", "write.chunk", "commit", "handoff.create":
-		if space != "" && !IsValidSpace(space) {
+		if space != "" && !knownSpace(space, vis) {
 			return DenyBadOp
 		}
 		if frame.Op == "write.begin" && space == "" {
@@ -192,12 +260,12 @@ func CheckACLWith(frame Frame, callerDeviceID, trustLevel string, loopback bool,
 		return Allow
 
 	case "delete", "handoff.ack":
-		if space == "" || !IsValidSpace(space) {
+		if space == "" || !knownSpace(space, vis) {
 			return DenyBadOp
 		}
 		targetOwn := device == "" || device == callerDeviceID
 		if !targetOwn {
-			if !SharedReadable(space) {
+			if !sharedSpace(space, vis) || !isOwner {
 				return DenyAcl
 			}
 			if v := crossSharedAccess(trustLevel, space, frame.Path(), shareAllowed); v != Allow {
@@ -210,16 +278,16 @@ func CheckACLWith(frame Frame, callerDeviceID, trustLevel string, loopback bool,
 		return Allow
 
 	case "list", "meta", "read", "versions.list", "versions.read", "manifest", "artifact.state":
-		if space == "" || !IsValidSpace(space) {
+		if space == "" || !knownSpace(space, vis) {
 			return DenyBadOp
 		}
 		targetOwn := device == "" || device == callerDeviceID
-		if !targetOwn && SharedReadable(space) {
+		if !targetOwn && sharedSpace(space, vis) {
 			path := frame.Path()
 			if v := crossSharedAccess(trustLevel, space, path, shareAllowed); v != Allow {
 				return v
 			}
-		} else if !targetOwn && !SharedReadable(space) {
+		} else if !targetOwn && !sharedSpace(space, vis) {
 			seed, _ := frame.Payload["seed"].(bool)
 			if seed {
 				if !isOwner {

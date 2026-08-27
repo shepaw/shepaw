@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:crypto/crypto.dart' as crypto;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -505,8 +504,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
             final entries = await StoreService.instance.listDevice(
               deviceId: _targetId,
               space: space,
-              limit: 80,
-              depth: 1,
+              limit: 200,
               computeHash: false,
               preferLocalCache: _preferLocal,
             );
@@ -525,6 +523,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
           }
         }
         all.sort((a, b) => b.mtimeMs.compareTo(a.mtimeMs));
+        if (all.length > 80) all.removeRange(80, all.length);
       } else {
         anyOk = true;
         final journal = await _localJournal();
@@ -1141,11 +1140,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     setState(() => _busy = true);
     List<_BrowsedFile> corpus = _files;
     try {
-      if (!_isRemote) {
-        corpus = await _listAllNames();
-      } else {
-        corpus = [..._files, ..._dirFiles];
-      }
+      corpus = await _listAllNames(limit: _isRemote ? 500 : _listLimit);
     } catch (_) {
       corpus = [..._files, ..._dirFiles];
     } finally {
@@ -1163,14 +1158,14 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     );
   }
 
-  Future<List<_BrowsedFile>> _listAllNames() async {
+  Future<List<_BrowsedFile>> _listAllNames({int? limit}) async {
     final all = <_BrowsedFile>[];
     for (final space in _spaces) {
       try {
         final entries = await StoreService.instance.listDevice(
           deviceId: _targetId,
           space: space,
-          limit: _listLimit,
+          limit: limit ?? _listLimit,
           computeHash: false,
           preferLocalCache: _preferLocal,
         );
@@ -1216,22 +1211,13 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     required String path,
     required Uint8List bytes,
   }) async {
-    final sha = crypto.sha256.convert(bytes).toString();
     final store = await StoreService.instance.localStore();
-    final (uid, _) = await store.writeBegin(
+    await store.putBytes(
       deviceId: _targetId,
       space: space,
       path: path,
-      size: bytes.length,
-      sha256: sha,
+      bytes: bytes,
     );
-    if (bytes.isNotEmpty) {
-      await store.writeChunk(_targetId, space, uid, 0, bytes);
-    }
-    final (_, failed) = await store.commit(_targetId, space, [uid]);
-    if (failed.isNotEmpty) {
-      throw StateError(failed.join(', '));
-    }
   }
 
   Future<void> _promptNewFolder() async {
@@ -1293,9 +1279,14 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         if (localPath == null) continue;
         final file = File(localPath);
         if (!await file.exists()) continue;
-        final bytes = await file.readAsBytes();
         final dest = _destRelPath(p.basename(localPath));
-        await _commitBytes(space: _mineSpace, path: dest, bytes: bytes);
+        final store = await StoreService.instance.localStore();
+        await store.putFile(
+          deviceId: _targetId,
+          space: _mineSpace,
+          path: dest,
+          file: file,
+        );
         if (mounted) {
           _toast(l10n.storage_browserUploadDone(p.basename(localPath)));
         }

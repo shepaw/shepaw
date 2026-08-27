@@ -105,6 +105,7 @@ class _AgentRuntimeContextScreenState extends State<AgentRuntimeContextScreen>
         space: StoreSpace.runtime,
         prefix: '$root/',
         limit: 5000,
+        computeHash: false,
         preferLocalCache: preferLocalCache,
       );
       final arts = <_RuntimeFile>[];

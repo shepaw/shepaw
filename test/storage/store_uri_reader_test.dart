@@ -42,6 +42,30 @@ void main() {
     expect(utf8.decode(back), 'pouch note');
   });
 
+  test('StoreUriReader 可读 @v1 版本引用', () async {
+    final store = await StoreService.instance.localStore();
+    final deviceId = await DeviceIdentity.deviceId();
+    final content = Uint8List.fromList(utf8.encode('versioned note'));
+    const relPath = 'docs/versioned-note.txt';
+    await store.putBytes(
+      deviceId: deviceId,
+      space: StoreSpace.files,
+      path: relPath,
+      bytes: content,
+    );
+    final uri = storeUriWithRef(
+      StoreSpace.files,
+      deviceId,
+      relPath,
+      const StoreUriRef.seq(1),
+    );
+    expect(uri, contains('@v1'));
+    expect(utf8.decode(await StoreUriReader.instance.read(uri)),
+        'versioned note');
+    expect(await StoreUriReader.instance.kindOf(uri), StoreUriKind.file);
+    expect(await StoreUriReader.instance.sizeOf(uri), content.length);
+  });
+
   test('StoreUriReader.kindOf 区分文件与目录', () async {
     final store = await StoreService.instance.localStore();
     final deviceId = await DeviceIdentity.deviceId();

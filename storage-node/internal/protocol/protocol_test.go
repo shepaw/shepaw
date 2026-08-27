@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/shepaw/storage-node/internal/protocol"
@@ -77,6 +78,64 @@ func TestACLFixture(t *testing.T) {
 	}
 	for _, c := range doc.Cases {
 		v := protocol.CheckACL(protocol.Frame{Op: c.Op, Payload: c.Payload}, doc.Caller, c.Trust, c.Loopback)
+		if string(v) != c.Expect {
+			t.Fatalf("%s: got %s want %s", c.Name, v, c.Expect)
+		}
+	}
+}
+
+func TestFriendShareIsReadOnly(t *testing.T) {
+	allowDocs := func(space, path string) bool {
+		if space != "files" {
+			return false
+		}
+		return path == "" || path == "docs" || strings.HasPrefix(path, "docs/")
+	}
+	const caller = "aaaaaaaaaaaaaaaa"
+	const other = "bbbbbbbbbbbbbbbb"
+	read := protocol.CheckACLWith(protocol.Frame{Op: "read", Payload: map[string]any{
+		"space": "files", "device": other, "path": "docs/a.txt",
+	}}, caller, protocol.TrustFriend, false, allowDocs)
+	if read != protocol.Allow {
+		t.Fatalf("read: %s", read)
+	}
+	del := protocol.CheckACLWith(protocol.Frame{Op: "delete", Payload: map[string]any{
+		"space": "files", "device": other, "path": "docs/a.txt",
+	}}, caller, protocol.TrustFriend, false, allowDocs)
+	if del != protocol.DenyAcl {
+		t.Fatalf("delete: %s", del)
+	}
+}
+
+func TestSpaceProfileFixture(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(fixturesDir(t), "space_profile_cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Caller string            `json:"caller"`
+		Known  map[string]string `json:"known"`
+		Cases  []struct {
+			Name     string         `json:"name"`
+			Op       string         `json:"op"`
+			Trust    string         `json:"trust"`
+			Loopback bool           `json:"loopback"`
+			Payload  map[string]any `json:"payload"`
+			Expect   string         `json:"expect"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	vis := func(space string) (bool, bool) {
+		v, ok := doc.Known[space]
+		if !ok {
+			return false, false
+		}
+		return v == "shared", true
+	}
+	for _, c := range doc.Cases {
+		v := protocol.CheckACLEx(protocol.Frame{Op: c.Op, Payload: c.Payload}, doc.Caller, c.Trust, c.Loopback, nil, vis)
 		if string(v) != c.Expect {
 			t.Fatalf("%s: got %s want %s", c.Name, v, c.Expect)
 		}

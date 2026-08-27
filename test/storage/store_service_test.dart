@@ -483,4 +483,197 @@ void main() {
       expect(denied['_error'], StoreError.aclDenied);
     });
   });
+
+  group('friend 分享只读 + 非 master 跨写', () {
+    test('friend 命中白名单可跨端 list，不可 delete', () async {
+      final self = await DeviceIdentity.deviceId();
+      const other = 'bbbbbbbbbbbbbbbb';
+      final allowlist = PeerStoreShareAllowlist.fromEntries(const [
+        PeerStoreShareEntry(space: StoreSpace.files, path: 'docs'),
+      ]);
+
+      final listed = await StoreService.instance.dispatchForTest(
+        StoreFrame(op: StoreOp.list, payload: {
+          'space': StoreSpace.files,
+          'device': other,
+          'path': 'docs',
+          'depth': 1,
+        }),
+        callerDeviceId: self,
+        trustLevel: TrustLevel.friend,
+        shareAllowlist: allowlist,
+      );
+      expect(listed.containsKey('_error'), isFalse);
+
+      final deleted = await StoreService.instance.dispatchForTest(
+        StoreFrame(op: StoreOp.delete, payload: {
+          'space': StoreSpace.files,
+          'device': other,
+          'path': 'docs/a.txt',
+        }),
+        callerDeviceId: self,
+        trustLevel: TrustLevel.friend,
+        shareAllowlist: allowlist,
+      );
+      expect(deleted['_error'], StoreError.aclDenied);
+    });
+
+    test('非 master 仍接受 owner workspaces 跨写；upto_seq / sync.hello 拒绝',
+        () async {
+      final self = await DeviceIdentity.deviceId();
+      const other = 'bbbbbbbbbbbbbbbb';
+      await StoreService.instance.setMasterDeviceId('cccccccccccccccc');
+      try {
+        final content = bytesOf('ws-cross');
+        final begin = await StoreService.instance.dispatchForTest(
+          StoreFrame(op: StoreOp.writeBegin, payload: {
+            'space': StoreSpace.workspaces,
+            'device': self,
+            'path': 'g1/note.txt',
+            'size': content.length,
+            'sha256': sha(content),
+          }),
+          callerDeviceId: other,
+          trustLevel: TrustLevel.owner,
+        );
+        expect(begin.containsKey('_error'), isFalse, reason: '$begin');
+        final uid = begin['upload_id'] as String;
+
+        final chunk = await StoreService.instance.dispatchForTest(
+          StoreFrame(op: StoreOp.writeChunk, payload: {
+            'space': StoreSpace.workspaces,
+            'device': self,
+            'upload_id': uid,
+            'offset': 0,
+            'data': base64Encode(content),
+          }),
+          callerDeviceId: other,
+          trustLevel: TrustLevel.owner,
+        );
+        expect(chunk.containsKey('_error'), isFalse, reason: '$chunk');
+
+        final commit = await StoreService.instance.dispatchForTest(
+          StoreFrame(op: StoreOp.commit, payload: {
+            'space': StoreSpace.workspaces,
+            'device': self,
+            'upload_ids': [uid],
+          }),
+          callerDeviceId: other,
+          trustLevel: TrustLevel.owner,
+        );
+        expect(commit.containsKey('_error'), isFalse, reason: '$commit');
+        expect(commit['committed'], ['g1/note.txt']);
+
+        final syncCommit = await StoreService.instance.dispatchForTest(
+          StoreFrame(op: StoreOp.commit, payload: {
+            'space': StoreSpace.files,
+            'upload_ids': ['u-ghost'],
+            'upto_seq': 9,
+          }),
+          callerDeviceId: other,
+          trustLevel: TrustLevel.owner,
+        );
+        expect(syncCommit['_error'], StoreError.notMaster);
+
+        final hello = await StoreService.instance.dispatchForTest(
+          StoreFrame(
+              op: StoreOp.syncHello, payload: {'device': self}),
+          callerDeviceId: self,
+          trustLevel: TrustLevel.owner,
+        );
+        expect(hello['_error'], StoreError.notMaster);
+      } finally {
+        await StoreService.instance.setMasterDeviceId(self);
+      }
+    });
+  });
+
+  group('space / search / events / quota', () {
+    test('space.declare loopback + space.list；远端拒绝', () async {
+      final self = await DeviceIdentity.deviceId();
+      final declared = await StoreService.instance.dispatchForTest(
+        StoreFrame(op: StoreOp.spaceDeclare, payload: {
+          'name': 'models',
+          'visibility': 'shared',
+        }),
+        callerDeviceId: self,
+        trustLevel: TrustLevel.owner,
+        loopback: true,
+      );
+      expect(declared.containsKey('_error'), isFalse, reason: '$declared');
+      expect(declared['space']['name'], 'models');
+
+      final remote = await StoreService.instance.dispatchForTest(
+        StoreFrame(op: StoreOp.spaceDeclare, payload: {
+          'name': 'vault',
+          'visibility': 'private',
+        }),
+        callerDeviceId: self,
+        trustLevel: TrustLevel.owner,
+      );
+      expect(remote['_error'], StoreError.aclDenied);
+
+      final listed = await StoreService.instance.call(
+          StoreFrame(op: StoreOp.spaceList, payload: const {}));
+      final names = [
+        for (final s in (listed!['spaces'] as List))
+          (s as Map)['name']
+      ];
+      expect(names, contains('models'));
+      expect(names, contains('files'));
+    });
+
+    test('search 找到刚写入的文件；未知 space → bad_op', () async {
+      final content = bytesOf('search-needle-zeta');
+      await writeFile('p2ops/zeta-report.md', content);
+      final found = await StoreService.instance.call(StoreFrame(
+          op: StoreOp.search,
+          payload: {'q': 'zeta-report', 'space': 'files', 'limit': 20}));
+      expect(found!['_error'], isNull, reason: '$found');
+      expect(found['total'], greaterThan(0));
+      final paths = [
+        for (final r in (found['results'] as List)) (r as Map)['path']
+      ];
+      expect(paths, contains('p2ops/zeta-report.md'));
+
+      final bad = await StoreService.instance.call(StoreFrame(
+          op: StoreOp.search, payload: {'q': 'x', 'space': 'mystery'}));
+      expect(bad!['_error'], StoreError.badOp);
+    });
+
+    test('events.list 在 commit 后返回 file.committed', () async {
+      await writeFile('p2ops/evented.txt', bytesOf('evt'));
+      final listed = await StoreService.instance.call(StoreFrame(
+          op: StoreOp.eventsList,
+          payload: {'since': 0, 'kind': 'file.committed', 'limit': 50}));
+      expect(listed!['_error'], isNull, reason: '$listed');
+      expect((listed['latest_seq'] as num).toInt(), greaterThan(0));
+      final paths = [
+        for (final e in (listed['events'] as List)) (e as Map)['path']
+      ];
+      expect(paths, contains('p2ops/evented.txt'));
+    });
+
+    test('runtime 写入超配额 → quota_exceeded', () async {
+      final store = await StoreService.instance.localStore();
+      final prev = store.agentSpaceQuotaBytes;
+      store.agentSpaceQuotaBytes = 30;
+      store.debugSkipVolumeQuota = true;
+      try {
+        final content = bytesOf('runtime payload bigger than thirty bytes');
+        final res = await StoreService.instance.call(StoreFrame(
+            op: StoreOp.writeBegin,
+            payload: {
+              'space': StoreSpace.runtime,
+              'path': 'p2ops/too-big.bin',
+              'size': content.length,
+              'sha256': sha(content),
+            }));
+        expect(res!['_error'], StoreError.quotaExceeded);
+      } finally {
+        store.agentSpaceQuotaBytes = prev;
+        store.debugSkipVolumeQuota = false;
+      }
+    });
+  });
 }

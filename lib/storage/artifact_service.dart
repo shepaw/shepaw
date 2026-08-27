@@ -1,11 +1,9 @@
 import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart' as crypto;
 import 'package:path/path.dart' as p;
 
 import '../services/logger_service.dart';
 import 'device_identity.dart';
-import 'local_store.dart';
 import 'runtime_paths.dart';
 import 'store_protocol.dart';
 import 'store_service.dart';
@@ -173,30 +171,14 @@ class ArtifactService {
       space: StoreSpace.runtime,
     );
     final relPath = uri.storePath;
-    final hash = crypto.sha256.convert(content).toString();
 
     final store = await StoreService.instance.localStore();
-    final (uploadId, _) = await store.writeBegin(
+    await store.putBytes(
       deviceId: deviceId,
       space: StoreSpace.runtime,
       path: relPath,
-      size: content.length,
-      sha256: hash,
+      bytes: content,
     );
-    var offset = 0;
-    while (offset < content.length) {
-      final end = (offset + LocalStore.maxReadChunk) > content.length
-          ? content.length
-          : offset + LocalStore.maxReadChunk;
-      await store.writeChunk(deviceId, StoreSpace.runtime, uploadId, offset,
-          content.sublist(offset, end));
-      offset = end;
-    }
-    final (committed, failed) =
-        await store.commit(deviceId, StoreSpace.runtime, [uploadId]);
-    if (failed.isNotEmpty || committed.isEmpty) {
-      throw StateError('artifact commit failed: $failed');
-    }
     _log.info('artifact written: $uri (${content.length} bytes)', tag: _tag);
 
     return ArtifactReference(

@@ -333,7 +333,7 @@ class ScopeCard {
     if (capabilities.writeArtifacts) {
       buf.writeln(
         '- 写产物: `shepaw store write --filename <名> --content "..."`'
-        '（可选 `--task` / `--desc` / `--space public`）；'
+        ' 或 `--file <path>` / `--content-base64`（可选 `--task` / `--desc` / `--space public`）；'
         '**不要**传 `agent_id` / `owner` / 个人 channel，由系统落到本作用域袋',
       );
     }

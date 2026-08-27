@@ -210,6 +210,39 @@ func TestNotMasterFence(t *testing.T) {
 	if oe, ok := err.(*store.OpError); !ok || oe.Code != "not_master" {
 		t.Fatalf("err=%v", err)
 	}
+
+	// 非 master 仍接受本机写入（不含 upto_seq）
+	body := []byte("local")
+	if _, err = s.Handle(protocol.Frame{
+		Op:      "write.begin",
+		Payload: writeBeginPayload("files", "local.txt", body),
+	}, device, protocol.TrustOwner, true); err != nil {
+		t.Fatalf("local write.begin on non-master: %v", err)
+	}
+
+	_, err = s.Handle(protocol.Frame{
+		Op: "commit",
+		Payload: map[string]any{
+			"space":      "files",
+			"upload_ids": []any{"u-ghost"},
+			"upto_seq":   int64(9),
+		},
+	}, device, protocol.TrustOwner, true)
+	if err == nil {
+		t.Fatal("expected not_master for sync commit")
+	}
+	if oe, ok := err.(*store.OpError); !ok || oe.Code != "not_master" {
+		t.Fatalf("sync commit err=%v", err)
+	}
+
+	if _, err = s.Handle(protocol.Frame{
+		Op: "delete",
+		Payload: map[string]any{
+			"space": "files", "path": "missing-local.txt",
+		},
+	}, device, protocol.TrustOwner, true); err != nil {
+		t.Fatalf("local delete on non-master: %v", err)
+	}
 }
 
 func TestDeleteIdempotent(t *testing.T) {

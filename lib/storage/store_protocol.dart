@@ -170,6 +170,99 @@ class StoreSpace {
       s.length >= 1 &&
       s.length <= 32 &&
       RegExp(r'^[a-z][a-z0-9-]*$').hasMatch(s);
+
+  /// 系统保留名（不可 `space.declare`）：内置分区 + 点目录机制名 + 预留 `tools`。
+  static const reservedDeclareNames = <String>{
+    'system',
+    'recycle',
+    'versions',
+    'staging',
+    'nexuspouch',
+    tools,
+  };
+
+  static bool isReservedDeclareName(String name) =>
+      all.contains(name) || reservedDeclareNames.contains(name);
+
+  /// 内置空间可见性：`true`=shared，`false`=private，`null`=未知。
+  static bool? visibilityOf(String space) => _builtinVisibility(space);
+
+  /// Agent 产物占用计入软配额的分区（runtime 为主，legacy 兼容）。
+  static const agentQuotaSpaces = <String>{
+    runtime,
+    artifacts,
+    attachments,
+    cognition,
+  };
+
+  static List<SpaceProfile> get builtinProfiles => [
+        SpaceProfile.builtin(workspaces, visibility: 'shared'),
+        SpaceProfile.builtin(runtime, visibility: 'private'),
+        SpaceProfile.builtin(files, visibility: 'shared'),
+        SpaceProfile.builtin(public_, visibility: 'shared'),
+        SpaceProfile.builtin(backups,
+            visibility: 'private', encryption: 'client', retention: 'gfs'),
+        SpaceProfile.builtin(cognition, visibility: 'private'),
+        SpaceProfile.builtin(memory, visibility: 'private'),
+        SpaceProfile.builtin(artifacts, visibility: 'shared'),
+        SpaceProfile.builtin(attachments,
+            visibility: 'private', encryption: 'client'),
+      ];
+}
+
+/// 空间属性（spec §0.5；`space.list` / `space.declare`）。
+class SpaceProfile {
+  SpaceProfile({
+    required this.name,
+    required this.visibility,
+    this.encryption = 'none',
+    this.retention = 'none',
+    this.importGrant = 'allowed',
+    this.builtin = false,
+  });
+
+  factory SpaceProfile.builtin(
+    String name, {
+    required String visibility,
+    String encryption = 'none',
+    String retention = 'none',
+    String importGrant = 'allowed',
+  }) =>
+      SpaceProfile(
+        name: name,
+        visibility: visibility,
+        encryption: encryption,
+        retention: retention,
+        importGrant: importGrant,
+        builtin: true,
+      );
+
+  final String name;
+  final String visibility;
+  final String encryption;
+  final String retention;
+  final String importGrant;
+  final bool builtin;
+
+  bool get isShared => visibility == 'shared';
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'name': name,
+        'visibility': visibility,
+        'encryption': encryption,
+        'retention': retention,
+        'import_grant': importGrant,
+        'builtin': builtin,
+      };
+
+  factory SpaceProfile.fromJson(Map<String, dynamic> json) => SpaceProfile(
+        name: json['name'] as String? ?? '',
+        visibility: json['visibility'] as String? ?? 'private',
+        encryption: json['encryption'] as String? ?? 'none',
+        retention: json['retention'] as String? ?? 'none',
+        importGrant: json['import_grant'] as String? ?? 'allowed',
+        builtin: json['builtin'] == true,
+      );
 }
 
 /// 一帧 store.* 消息。
@@ -429,8 +522,9 @@ class TrustLevel {
 /// [callerDeviceId] 调用者设备 id（Noise 对端公钥哈希；loopback 为本机 id）。
 /// [trustLevel] 调用者信任分级。
 /// [loopback] 是否 master 本机用户本地调用（recycle.empty 唯一放行路径）。
-/// [shareAllowed] 跨端读/删 shared 分区时的 path 白名单；`null` 时 owner 保持
+/// [shareAllowed] 跨端读 shared 分区时的 path 白名单；`null` 时 owner 保持
 /// 整区开放（测试/存量兼容），friend 拒绝跨端 shared 访问。
+/// 删除他端文件仅限 owner（分享白名单默认只读）。
 ///
 /// 注意：`seed: true` 在 ACL 层对 owner 粗放行；服务侧须另做短时授权
 /// （见 [SeedAuthorization]，由 `sync.cursors` 开启）。
@@ -492,7 +586,7 @@ bool _friendDeniedOp(String op) => switch (op) {
       _ => false,
     };
 
-/// 跨端访问 shared 分区时是否允许（读/删）。
+/// 跨端访问 shared 分区时是否允许（读；删除见 delete 分支）。
 StoreAcl _crossSharedAccess({
   required String trustLevel,
   required String space,
@@ -553,7 +647,7 @@ StoreAcl checkStoreAclWith(
       }
       return StoreAcl.allow;
 
-    // ── 删除：共享分区可删他端（须白名单）；私有分区仅本端 ──
+    // ── 删除：共享分区仅 owner 可删他端（须白名单）；friend 分享只读 ──
     case StoreOp.delete:
     case StoreOp.handoffAck:
       if (space == null || !known(space)) {
@@ -561,7 +655,7 @@ StoreAcl checkStoreAclWith(
       }
       final targetOwn = device == null || device == callerDeviceId;
       if (!targetOwn) {
-        if (!shared(space)) return StoreAcl.denyAcl;
+        if (!shared(space) || !isOwner) return StoreAcl.denyAcl;
         final cross = _crossSharedAccess(
           trustLevel: trustLevel,
           space: space,

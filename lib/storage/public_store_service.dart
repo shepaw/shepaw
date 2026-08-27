@@ -1,12 +1,10 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart' as crypto;
 import 'package:path/path.dart' as p;
 
 import '../services/logger_service.dart';
 import 'device_identity.dart';
-import 'local_store.dart';
 import 'store_protocol.dart';
 import 'store_service.dart';
 
@@ -34,29 +32,13 @@ class PublicStoreService {
   }) async {
     final deviceId = await DeviceIdentity.deviceId();
     final path = normalizeStorePath(relPath);
-    final hash = crypto.sha256.convert(content).toString();
     final store = await StoreService.instance.localStore();
-    final (uploadId, _) = await store.writeBegin(
+    await store.putBytes(
       deviceId: deviceId,
       space: StoreSpace.public_,
       path: path,
-      size: content.length,
-      sha256: hash,
+      bytes: content,
     );
-    var offset = 0;
-    while (offset < content.length) {
-      final end = (offset + LocalStore.maxReadChunk) > content.length
-          ? content.length
-          : offset + LocalStore.maxReadChunk;
-      await store.writeChunk(
-          deviceId, StoreSpace.public_, uploadId, offset, content.sublist(offset, end));
-      offset = end;
-    }
-    final (ok, failed) =
-        await store.commit(deviceId, StoreSpace.public_, [uploadId]);
-    if (failed.isNotEmpty || ok.isEmpty) {
-      throw StateError('public write failed: $failed');
-    }
     final uri = storeUriWithRef(StoreSpace.public_, deviceId, path);
     _log.info('public written: $uri', tag: _tag);
     return uri;

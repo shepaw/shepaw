@@ -5231,7 +5231,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get peerStoreShare_panelHint =>
-      'Control which local Nexus Pouch spaces this device can read';
+      'Control which local Nexus Pouch spaces this device can read. Sharing is read-only; they cannot delete your files.';
 
   @override
   String get peerSettings_trustLevel => 'Trust level';

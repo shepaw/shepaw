@@ -3040,7 +3040,7 @@
     }
   },
   "peerStoreShare_panelTitle": "储物袋分享",
-  "peerStoreShare_panelHint": "管理本机储物袋对该设备的可见范围",
+  "peerStoreShare_panelHint": "管理本机储物袋对该设备的可见范围（分享仅可读，对方不能删除）",
   "peerSettings_trustLevel": "信任级别",
   "peerSettings_trustOwnerHint": "切换为本人后，是否套用默认的 files+artifacts 整区分享？",
   "peerSettings_applyOwnerDefaults": "套用默认分享",

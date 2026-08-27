@@ -307,7 +307,7 @@ App 经 Noise 配对调用，与 HTTP `/api/v1/search`、`/api/v1/events*` 语�
 | 操作 | space | 自有目录 | 他端目录 |
 |------|-------|---------|----------------|
 | write.\*/commit | 任意 | ✅（device 字段缺省或=调用者；不符即 `acl_denied`+审计） | ❌ 机制上不可能 |
-| delete | artifacts/files | ✅ | ✅ 且须命中出站分享白名单（整区或 path 前缀） |
+| delete | artifacts/files | ✅ | ✅ owner 且须命中出站分享白名单；friend 即使命中白名单也只读（`acl_denied`） |
 | delete | attachments/backups | ✅ | ❌ `acl_denied` |
 | list/read/meta | artifacts/files | ✅ | ✅ 且须命中出站分享白名单；无白名单回调时 owner 兼容整区 |
 | list/read/meta | attachments/backups | ✅ | 仅持有效导入授权（§5） |
@@ -322,7 +322,7 @@ App 经 Noise 配对调用，与 HTTP `/api/v1/search`、`/api/v1/events*` 语�
 **信任与分享白名单：**
 
 - `owner`：配对默认分享 `workspaces`/`files`/`public`/`artifacts` 整区（出示二维码确认方与扫码发起方均写入；旧配对在重连或入站 store 请求时若尚无出站分享行则 ACL 按默认整区放行并回填）；用户可在配对确认/设置中收窄到目录前缀。
-- `friend`：配对默认不分享任何空间；管理/同步类 op（`stats`/`sync.*`/`master.*`/`recycle.*`/`import.*`/`space.*` 等）仍 `untrusted`；跨端读 shared 分区仅当 `peer_store_shares` 命中。
+- `friend`：配对默认不分享任何空间；管理/同步类 op（`stats`/`sync.*`/`master.*`/`recycle.*`/`import.*`/`space.*` 等）仍 `untrusted`；跨端读 shared 分区仅当 `peer_store_shares` 命中。分享白名单默认只读，friend 不可 `delete` 他端文件。
 - 出站分享表 `peer_store_shares(peer_id, space, path, shared)`：`path=""` 表示整区；否则为相对 path 前缀。
 - `share.announce` 将出站分享目录推送给对端缓存（UX）；ACL 权威仍在属主侧。
 

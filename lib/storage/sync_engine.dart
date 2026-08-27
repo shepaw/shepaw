@@ -1,9 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
-
-import 'package:crypto/crypto.dart' as crypto;
 
 import '../peer/services/peer_connection.dart'
     show PeerConnectionEvent, PeerConnectionEventType;
@@ -315,23 +312,25 @@ class SyncEngine {
   /// commit 条目：逐文件 write.begin/chunk 上传，commit 标记最后送达。
   Future<bool> _uploadCommit(SyncQueueEntry entry) async {
     final transport = _transport!;
+    final store = _store!;
+    final deviceId = _deviceId!;
     final uploadIds = <String>[];
     for (final file in entry.files!) {
-      // 读本地正式区当前内容上传。声明哈希必须与实际上传字节一致：
-      // 队列里的 sha256/size 可能已过期（入队后文件被覆盖/GFS/绑定同步等），
-      // 若仍按旧声明上传，master commit 会稳定返回 hash_mismatch 并卡死队列。
-      final local = await _readLocalAll(entry.space, file.path);
-      if (local == null) {
-        // 本地已被清理（如 GFS 剪掉的快照，随后的 delete 条目会覆盖）→ 跳过
+      // 用 meta 取当前 size/hash（流式哈希，不把整文件打进内存），再按块上传。
+      final Map<String, dynamic> meta;
+      try {
+        meta = await store.meta(deviceId, entry.space, file.path);
+      } on StoreException {
         _log.warning('local file gone, skip upload: ${file.path}', tag: _tag);
         continue;
       }
-      final sha = crypto.sha256.convert(local).toString();
-      if (sha != file.sha256 || local.length != file.size) {
+      final size = (meta['size'] as num?)?.toInt() ?? 0;
+      final sha = meta['sha256'] as String? ?? '';
+      if (sha != file.sha256 || size != file.size) {
         _log.warning(
           'stale journal meta for ${file.path}: '
           'queued size=${file.size} sha=${file.sha256} → '
-          'actual size=${local.length} sha=$sha',
+          'actual size=$size sha=$sha',
           tag: _tag,
         );
       }
@@ -340,7 +339,7 @@ class SyncEngine {
           payload: {
             'space': entry.space,
             'path': file.path,
-            'size': local.length,
+            'size': size,
             'sha256': sha,
           }));
       if (begin == null || begin.containsKey('_error')) {
@@ -352,18 +351,17 @@ class SyncEngine {
       }
       final uploadId = begin['upload_id'] as String;
       var offset = _asInt(begin['received']) ?? 0;
-      while (offset < local.length) {
-        final end = (offset + _syncChunk) > local.length
-            ? local.length
-            : offset + _syncChunk;
+      while (offset < size) {
+        final end = (offset + _syncChunk) > size ? size : offset + _syncChunk;
+        final (data, _, _) = await store.read(
+            deviceId, entry.space, file.path, offset, end - offset);
         final chunk = await transport.call(StoreFrame(
             op: StoreOp.writeChunk,
             payload: {
               'space': entry.space,
               'upload_id': uploadId,
               'offset': offset,
-              'data': base64Encode(
-                  Uint8List.fromList(local.sublist(offset, end))),
+              'data': base64Encode(data),
             }));
         if (chunk == null || chunk.containsKey('_error')) {
           _lastError = chunk?['_error'] as String? ?? StoreError.internal;
@@ -455,30 +453,6 @@ class SyncEngine {
           (path: e.path, size: e.size, sha256: e.sha256),
         ]);
       }
-    }
-  }
-
-  /// 读本地正式区当前全文（不依赖队列里可能过期的 size）。
-  Future<Uint8List?> _readLocalAll(String space, String relPath) async {
-    final store = _store!;
-    final deviceId = _deviceId!;
-    try {
-      final builder = BytesBuilder(copy: false);
-      var offset = 0;
-      while (true) {
-        final (chunk, _, eof) = await store.read(
-            deviceId, space, relPath, offset, _syncChunk);
-        if (chunk.isEmpty) {
-          if (offset == 0 && !eof) return null;
-          break;
-        }
-        builder.add(chunk);
-        offset += chunk.length;
-        if (eof) break;
-      }
-      return builder.toBytes();
-    } catch (_) {
-      return null;
     }
   }
 }
