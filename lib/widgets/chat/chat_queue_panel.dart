@@ -71,7 +71,9 @@ class _ChatQueuePanelState extends State<ChatQueuePanel> {
                       _expanded ? Icons.expand_less : Icons.expand_more,
                       size: 18,
                     ),
-                    tooltip: _expanded ? 'Collapse' : 'Expand',
+                    tooltip: _expanded
+                        ? l10n.chat_queueCollapse
+                        : l10n.chat_queueExpand,
                     onPressed: () =>
                         setState(() => _expanded = !_expanded),
                     padding: EdgeInsets.zero,
@@ -232,7 +234,7 @@ class _QueueRow extends StatelessWidget {
         children: [
           IconButton(
             icon: const Icon(Icons.arrow_upward, size: 16),
-            tooltip: 'Up',
+            tooltip: l10n.chat_queueMoveUp,
             onPressed: canMoveUp ? onMoveUp : null,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
@@ -240,7 +242,7 @@ class _QueueRow extends StatelessWidget {
           ),
           IconButton(
             icon: const Icon(Icons.arrow_downward, size: 16),
-            tooltip: 'Down',
+            tooltip: l10n.chat_queueMoveDown,
             onPressed: canMoveDown ? onMoveDown : null,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),

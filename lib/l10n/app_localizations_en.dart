@@ -1942,6 +1942,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_queueEditTitle => 'Edit queued message';
 
   @override
+  String get chat_queueMoveUp => 'Move up';
+
+  @override
+  String get chat_queueMoveDown => 'Move down';
+
+  @override
+  String get chat_queueCollapse => 'Collapse';
+
+  @override
+  String get chat_queueExpand => 'Expand';
+
+  @override
   String get chat_editGroupInfo => 'Edit Group Info';
 
   @override

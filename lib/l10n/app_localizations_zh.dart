@@ -1872,6 +1872,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_queueEditTitle => '编辑待发送消息';
 
   @override
+  String get chat_queueMoveUp => '上移';
+
+  @override
+  String get chat_queueMoveDown => '下移';
+
+  @override
+  String get chat_queueCollapse => '收起';
+
+  @override
+  String get chat_queueExpand => '展开';
+
+  @override
   String get chat_editGroupInfo => '编辑群组信息';
 
   @override

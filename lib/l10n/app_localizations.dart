@@ -3524,6 +3524,30 @@ abstract class AppLocalizations {
   /// **'编辑待发送消息'**
   String get chat_queueEditTitle;
 
+  /// No description provided for @chat_queueMoveUp.
+  ///
+  /// In zh, this message translates to:
+  /// **'上移'**
+  String get chat_queueMoveUp;
+
+  /// No description provided for @chat_queueMoveDown.
+  ///
+  /// In zh, this message translates to:
+  /// **'下移'**
+  String get chat_queueMoveDown;
+
+  /// No description provided for @chat_queueCollapse.
+  ///
+  /// In zh, this message translates to:
+  /// **'收起'**
+  String get chat_queueCollapse;
+
+  /// No description provided for @chat_queueExpand.
+  ///
+  /// In zh, this message translates to:
+  /// **'展开'**
+  String get chat_queueExpand;
+
   /// No description provided for @chat_editGroupInfo.
   ///
   /// In zh, this message translates to:
