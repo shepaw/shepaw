@@ -8,6 +8,7 @@ import '../models/channel.dart';
 import '../models/remote_agent.dart';
 import '../models/acp_protocol.dart';
 import '../models/attachment_data.dart';
+import '../models/queued_message.dart';
 import 'acp_interactive_connection.dart';
 import 'local_database_service.dart';
 import 'tool_result_database_service.dart';
@@ -123,7 +124,7 @@ class ChatService {
   // Pending send queues (keyed by channelId) — survive UI detach/reattach so
   // messages queued behind an in-flight turn are not lost when the user
   // leaves and re-enters the chat.
-  final Map<String, List<String>> _pendingSendQueues = {};
+  final Map<String, List<QueuedMessage>> _pendingSendQueues = {};
 
   /// Sub-service: group session management (create/list/clear sessions)
   late final GroupSessionService _groupSessionService = GroupSessionService(
@@ -793,7 +794,7 @@ class ChatService {
   /// Live pending-send queue for [channelId] (created lazily). Callers may
   /// add / removeAt(0) / clear directly; the list survives ChatController
   /// disposal so re-entering the chat resumes the queue.
-  List<String> pendingSendQueue(String channelId) =>
+  List<QueuedMessage> pendingSendQueue(String channelId) =>
       _pendingSendQueues.putIfAbsent(channelId, () => []);
 
   /// Query whether there is an in-progress task for [channelId].

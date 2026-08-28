@@ -1925,6 +1925,23 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_reEditSub => 'Rollback and edit this message';
 
   @override
+  String chat_sendQueueCount(int count) {
+    return '$count queued';
+  }
+
+  @override
+  String get chat_queueClearAll => 'Clear all';
+
+  @override
+  String get chat_queueDeleteConfirm => 'Delete this queued message?';
+
+  @override
+  String get chat_queueEditHint => 'Message content';
+
+  @override
+  String get chat_queueEditTitle => 'Edit queued message';
+
+  @override
   String get chat_editGroupInfo => 'Edit Group Info';
 
   @override

@@ -3494,6 +3494,36 @@ abstract class AppLocalizations {
   /// **'回滚并编辑此消息'**
   String get chat_reEditSub;
 
+  /// No description provided for @chat_sendQueueCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'待发送 {count} 条'**
+  String chat_sendQueueCount(int count);
+
+  /// No description provided for @chat_queueClearAll.
+  ///
+  /// In zh, this message translates to:
+  /// **'清空队列'**
+  String get chat_queueClearAll;
+
+  /// No description provided for @chat_queueDeleteConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除这条待发送消息？'**
+  String get chat_queueDeleteConfirm;
+
+  /// No description provided for @chat_queueEditHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'消息内容'**
+  String get chat_queueEditHint;
+
+  /// No description provided for @chat_queueEditTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'编辑待发送消息'**
+  String get chat_queueEditTitle;
+
   /// No description provided for @chat_editGroupInfo.
   ///
   /// In zh, this message translates to:

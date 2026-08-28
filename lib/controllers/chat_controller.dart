@@ -2,12 +2,14 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart' show ChangeNotifier;
 import 'package:flutter/widgets.dart';
+import 'package:uuid/uuid.dart';
 import '../models/mention_entry.dart';
 import '../models/message.dart';
 import '../models/channel.dart';
 import '../models/remote_agent.dart';
 import '../models/attachment_data.dart';
 import '../models/pending_attachment.dart';
+import '../models/queued_message.dart';
 import '../services/chat_service.dart';
 import '../services/messaging/agent_messaging_service.dart';
 import '../services/local_database_service.dart';
@@ -52,6 +54,7 @@ import 'group_mention_resolver.dart';
 import 'chat_message_reconciler.dart';
 import 'chat_send_planner.dart';
 import 'dm_send_turn_planner.dart';
+import 'queued_message_ops.dart';
 import 'group_interaction_planner.dart';
 import 'peer_device_label_resolver.dart';
 import 'chat_load_channel_planner.dart';
@@ -157,7 +160,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
 
   /// 待发送队列：按频道存放在 ChatService 侧（跨 Controller 生命周期存活）。
   /// 退出聊天页后队列不随 dispose 丢失，重进时由 loadMessages 重新接管发送。
-  List<String> get messageQueue =>
+  List<QueuedMessage> get messageQueue =>
       chatService.pendingSendQueue(currentChannelId ?? '');
 
   /// 群编排代际守卫：stop 后旧编排的 abort-summarize 会跑完（设计上不带
@@ -912,8 +915,11 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     _notify();
   }
 
-  Future<void> rollbackMessage(Message message, {bool reEdit = false}) async {
-    if (agentId == null || currentChannelId == null) return;
+  /// 回滚 [message] 之后的所有消息。成功返回 `true`；守卫失败或异常返回
+  /// `false`（异常时已发出错误 snackbar）。`reEdit` 供调用方在成功后把原文
+  /// 预填进输入框（预填本身由调用方完成，这里只负责回滚结果）。
+  Future<bool> rollbackMessage(Message message, {bool reEdit = false}) async {
+    if (agentId == null || currentChannelId == null) return false;
 
     try {
       final remoteAgent = await localDatabaseService.getRemoteAgentById(agentId!);
@@ -926,9 +932,42 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       );
 
       await loadMessages();
+      return true;
     } catch (e) {
       _emit(ShowErrorSnackBarEvent('chat_rollbackFailed:$e'));
+      return false;
     }
+  }
+
+  // ---- 待发送队列逐条管理 ----
+
+  /// 编辑队列中 [id] 的消息内容。trim 后为空会被拒绝。返回是否命中。
+  bool editQueuedMessage(String id, String newContent) {
+    final hit = QueuedMessageOps.edit(messageQueue, id, newContent);
+    if (hit) _notify();
+    return hit;
+  }
+
+  /// 删除队列中 [id] 的消息。返回是否命中。
+  bool removeQueuedMessage(String id) {
+    final hit = QueuedMessageOps.remove(messageQueue, id);
+    if (hit) _notify();
+    return hit;
+  }
+
+  /// 将队列中 [id] 的消息移动 [delta] 位（-1 上移 / +1 下移）。
+  /// 越界或 `delta == 0` 时无操作。返回是否命中。
+  bool moveQueuedMessage(String id, int delta) {
+    final hit = QueuedMessageOps.move(messageQueue, id, delta);
+    if (hit) _notify();
+    return hit;
+  }
+
+  /// 清空当前频道的待发送队列。
+  void clearQueuedMessages() {
+    if (messageQueue.isEmpty) return;
+    messageQueue.clear();
+    _notify();
   }
 
   List<String> parseMentionedAgentIds(String content) {

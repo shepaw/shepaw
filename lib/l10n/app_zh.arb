@@ -1051,6 +1051,18 @@
   "chat_rollbackSub": "删除此消息及之后的所有消息",
   "chat_reEdit": "重新编辑",
   "chat_reEditSub": "回滚并编辑此消息",
+  "chat_sendQueueCount": "待发送 {count} 条",
+  "@chat_sendQueueCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_queueClearAll": "清空队列",
+  "chat_queueDeleteConfirm": "删除这条待发送消息？",
+  "chat_queueEditHint": "消息内容",
+  "chat_queueEditTitle": "编辑待发送消息",
   "chat_editGroupInfo": "编辑群组信息",
   "chat_groupName": "群组名称",
   "chat_groupDescription": "描述（可选）",

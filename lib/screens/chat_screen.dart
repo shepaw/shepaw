@@ -31,6 +31,7 @@ import '../widgets/chat/chat_more_drawer.dart';
 import '../widgets/chat/chat_input_area.dart';
 import '../widgets/chat/chat_message_list.dart';
 import '../widgets/chat/chat_reply_preview.dart';
+import '../widgets/chat/chat_queue_panel.dart';
 import '../widgets/chat/session_list_panel.dart';
 import '../widgets/chat/group_session_list_panel.dart';
 import '../widgets/chat/session_list_header_menu.dart';
@@ -2777,8 +2778,19 @@ class _ChatScreenState extends State<ChatScreen>
                                       skippedTaskIds: skippedTaskIds),
                               onReply: (msg) => c.startReply(msg),
                               onRollback: (msg) => c.rollbackMessage(msg),
-                              onRollbackReEdit: (msg, {bool reEdit = false}) =>
-                                  c.rollbackMessage(msg, reEdit: reEdit),
+                              onRollbackReEdit: (msg, {bool reEdit = false}) async {
+                                final ok = await c.rollbackMessage(msg,
+                                    reEdit: reEdit);
+                                // 回滚成功后预填原文并聚焦输入框（重新编辑）。
+                                if (ok && reEdit && mounted) {
+                                  _messageController.value = TextEditingValue(
+                                    text: msg.content,
+                                    selection: TextSelection.collapsed(
+                                        offset: msg.content.length),
+                                  );
+                                  _textFieldFocusNode.requestFocus();
+                                }
+                              },
                               onDelete: (msg) => c.deleteMessage(msg),
                               onAgentAvatarTap: _navigateToAgentDetailById,
                               onScrollToMessage: _scrollToMessage,
@@ -2902,10 +2914,17 @@ class _ChatScreenState extends State<ChatScreen>
                   onCancel: () => c.cancelReply(),
                 ),
   
-              // Queue indicator
+              // Pending-send queue panel (collapsible, per-item edit/delete)
               if (!c.isViewingGroupBoundMemberSession &&
                   !c.isViewingSheBoundSession)
-                _buildQueueIndicator(),
+                ChatQueuePanel(
+                  items: c.messageQueue,
+                  onEdit: (id, newContent) =>
+                      c.editQueuedMessage(id, newContent),
+                  onDelete: (id) => c.removeQueuedMessage(id),
+                  onMove: (id, delta) => c.moveQueuedMessage(id, delta),
+                  onClearAll: () => c.clearQueuedMessages(),
+                ),
   
               // Bound sessions (group member / She relay): input disabled +
               // jump to the linked source conversation.
@@ -3587,63 +3606,4 @@ class _ChatScreenState extends State<ChatScreen>
     );
   }
 
-  Widget _buildQueueIndicator() {
-    if (_controller.messageQueue.isEmpty) return const SizedBox.shrink();
-
-    final count = _controller.messageQueue.length;
-    final preview = _controller.messageQueue.first.length > 40
-        ? '${_controller.messageQueue.first.substring(0, 40)}...'
-        : _controller.messageQueue.first;
-
-    final colorScheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: colorScheme.primaryContainer,
-        border: const Border(
-            top: BorderSide(color: AppColors.primaryLight, width: 1)),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.queue, size: 16, color: AppColors.primary),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  count == 1 ? '1 message queued' : '$count messages queued',
-                  style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      color: colorScheme.onPrimaryContainer),
-                ),
-                Text(preview,
-                    style:
-                        const TextStyle(fontSize: 11, color: AppColors.primary),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
-              ],
-            ),
-          ),
-          GestureDetector(
-            onTap: () {
-              setState(() {
-                _controller.messageQueue.clear();
-              });
-            },
-            child: Padding(
-              padding: const EdgeInsets.only(left: 8),
-              child: Text('Clear',
-                  style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.red[400],
-                      fontWeight: FontWeight.w500)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }

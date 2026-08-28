@@ -290,7 +290,17 @@ mixin _MessagingOps on _ChatControllerBase {
             await sendAttachmentToAgent(msg);
           }
         }
-        messageQueue.add(content);
+        messageQueue.add(
+          QueuedMessage(
+            id: const Uuid().v4(),
+            content: content,
+            replyToId: capturedReplyToId,
+            mentions: mentions,
+            // 群聊附件未随 DM 分支立即发送，必须随队列项携带，出队时透传。
+            attachments:
+                (isGroupMode && hasAttachments) ? attachmentDataList : null,
+          ),
+        );
         _notify();
         return;
       case ChatSendDisposition.sendGroup:
@@ -509,12 +519,23 @@ mixin _MessagingOps on _ChatControllerBase {
     final queue = chatService.pendingSendQueue(channelId);
     if (queue.isEmpty) return;
 
-    final nextContent = queue.removeAt(0);
+    final next = queue.removeAt(0);
     _notify();
     if (isGroupMode) {
-      await processGroupMessage(nextContent);
+      await processGroupMessage(
+        next.content,
+        replyToId: next.replyToId,
+        attachments: next.attachments,
+        mentions: next.mentions,
+      );
     } else {
-      await processMessage(nextContent);
+      await processMessage(
+        next.content,
+        replyToId: next.replyToId,
+        // DM 附件的附件消息在入队前已随 sendAttachmentToAgent 立即发送，
+        // 队列项不携带 attachmentMessages。
+        attachments: next.attachments,
+      );
     }
   }
 
@@ -1186,7 +1207,16 @@ mixin _MessagingOps on _ChatControllerBase {
         'processGroupMessage queued (already processing): ${content.length} chars',
         tag: 'ChatController',
       );
-      messageQueue.add(content);
+      messageQueue.add(
+        QueuedMessage(
+          id: const Uuid().v4(),
+          content: content,
+          replyToId: replyToId,
+          mentions: mentions,
+          attachments: attachments,
+        ),
+      );
+      _notify();
       return;
     }
     LoggerService().debug('processGroupMessage: channelId=$currentChannelId, agents=${groupAgents.map((a) => a.name).toList()}, adminId=$groupAdminAgentId', tag: 'ChatController');

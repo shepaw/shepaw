@@ -748,6 +748,18 @@
   "chat_rollbackSub": "Delete this and all later messages",
   "chat_reEdit": "Re-edit",
   "chat_reEditSub": "Rollback and edit this message",
+  "chat_sendQueueCount": "{count} queued",
+  "@chat_sendQueueCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chat_queueClearAll": "Clear all",
+  "chat_queueDeleteConfirm": "Delete this queued message?",
+  "chat_queueEditHint": "Message content",
+  "chat_queueEditTitle": "Edit queued message",
   "chat_editGroupInfo": "Edit Group Info",
   "chat_groupName": "Group Name",
   "chat_groupDescription": "Description (optional)",

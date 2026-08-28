@@ -1855,6 +1855,23 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_reEditSub => '回滚并编辑此消息';
 
   @override
+  String chat_sendQueueCount(int count) {
+    return '待发送 $count 条';
+  }
+
+  @override
+  String get chat_queueClearAll => '清空队列';
+
+  @override
+  String get chat_queueDeleteConfirm => '删除这条待发送消息？';
+
+  @override
+  String get chat_queueEditHint => '消息内容';
+
+  @override
+  String get chat_queueEditTitle => '编辑待发送消息';
+
+  @override
   String get chat_editGroupInfo => '编辑群组信息';
 
   @override
