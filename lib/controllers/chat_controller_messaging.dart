@@ -464,8 +464,9 @@ mixin _MessagingOps on _ChatControllerBase {
 
     acpCancellationToken?.cancel();
 
-    // Clear queued messages so they won't be sent after stopping
-    messageQueue.clear();
+    // 手动停止：把队列内容倒回输入框，由用户决定是否重发（队列清空）。
+    // 队列为空时 _restoreQueueToComposer 直接返回，不影响输入框。
+    _restoreQueueToComposer();
     isProcessing = false;
     _notify();
   }
@@ -519,7 +520,8 @@ mixin _MessagingOps on _ChatControllerBase {
     // Reset group streaming state
     respondingAgentNames.clear();
     groupStreamingMessageIds.clear();
-    messageQueue.clear();
+    // 手动停止：把队列内容倒回输入框，由用户决定是否重发（队列清空）。
+    _restoreQueueToComposer();
     isProcessing = false;
     _notify();
   }
