@@ -970,6 +970,25 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     _notify();
   }
 
+  /// 发送失败后把当前失败消息 + 待发送队列中的消息合并倒回输入框。
+  ///
+  /// 队列清空（消息不再留在面板），由 [RestoreQueueToComposerEvent] 通知 UI
+  /// 填输入框并聚焦。多条以 `\n\n` 分隔保持发送顺序；带附件的消息只倒回
+  /// 文本（附件随发送失败丢弃）。
+  void _restoreQueueToComposer({String? failedContent}) {
+    final queue = messageQueue;
+    final parts = <String>[
+      if (failedContent != null && failedContent.trim().isNotEmpty)
+        failedContent.trim(),
+      for (final m in queue)
+        if (m.content.trim().isNotEmpty) m.content.trim(),
+    ];
+    if (parts.isEmpty) return;
+    messageQueue.clear();
+    _emit(RestoreQueueToComposerEvent(parts.join('\n\n')));
+    _notify();
+  }
+
   List<String> parseMentionedAgentIds(String content) {
     return GroupMentionResolver.parseFromContent(
       content,

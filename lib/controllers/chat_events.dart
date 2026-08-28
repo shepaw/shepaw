@@ -109,3 +109,10 @@ class AgentInfoUpdatedEvent extends ChatEvent {
   final String? avatar;
   AgentInfoUpdatedEvent(this.name, this.avatar);
 }
+
+/// 发送失败后，把当前失败内容 + 待发送队列中的消息倒回输入框。
+/// [content] 为按发送顺序合并后的文本（多条以换行分隔）。
+class RestoreQueueToComposerEvent extends ChatEvent {
+  final String content;
+  RestoreQueueToComposerEvent(this.content);
+}

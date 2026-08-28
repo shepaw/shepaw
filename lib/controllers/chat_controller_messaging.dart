@@ -273,10 +273,11 @@ mixin _MessagingOps on _ChatControllerBase {
       isProcessing: isProcessing,
     );
 
-    // 发送失败后队列处于暂停态（isProcessing=false 但队列非空）：此时手动
-    // 再发一条不再直接发送，而是排到队尾并恢复排空，保持 FIFO（队首旧消息
-    // 先出，新消息后发）。正常态下队列只在 isProcessing=true 时非空，故该
-    // 分支不会误伤正常发送。
+    // 兜底：失败后队列本应被 _restoreQueueToComposer 倒回清空；若因异常路径
+    // 残留了未处理的队列（isProcessing=false 但队列非空），手动再发一条时
+    // 不直接发送，而是排到队尾并恢复排空，保持 FIFO（队首旧消息先出，新
+    // 消息后发），避免队列永久卡死。正常态下队列只在 isProcessing=true 时
+    // 非空，不会误伤正常发送。
     if (!isProcessing && messageQueue.isNotEmpty) {
       if (disposition == ChatSendDisposition.sendDm ||
           disposition == ChatSendDisposition.sendGroup) {
@@ -313,8 +314,8 @@ mixin _MessagingOps on _ChatControllerBase {
           ),
         );
         _notify();
-        // 失败暂停态恢复：入队后立即排空（正常态 isProcessing=true，由当前
-        // 回合的 finally 负责排空，这里不触发）。
+        // 兜底恢复：残留队列时入队后立即排空（正常态 isProcessing=true，
+        // 由当前回合的 finally 负责排空，这里不触发）。
         if (!isProcessing) {
           unawaited(processNextInQueue());
         }
@@ -765,9 +766,10 @@ mixin _MessagingOps on _ChatControllerBase {
             chatService.getActiveTask(currentChannelId ?? '') != null;
         _emit(ShowSnackBarEvent('chat_peerTurnStillRunning'));
       } else {
-        // 发送失败：保留 backlog（不清队列），暂停自动排空，等待用户手动
-        // 恢复（编辑/删除/重发）。
+        // 发送失败：把当前失败消息 + 队列剩余消息倒回输入框（队列清空），
+        // 供用户重新编辑后手动重发。
         sendFailed = true;
+        _restoreQueueToComposer(failedContent: content);
         if (err.contains('not reachable after')) {
           _emit(ShowErrorSnackBarEvent('chat_reconnectFailed'));
         } else {
@@ -1377,6 +1379,8 @@ mixin _MessagingOps on _ChatControllerBase {
     } catch (e, stackTrace) {
       LoggerService().error('processGroupMessage error: $e', tag: 'ChatController', error: e, stackTrace: stackTrace);
       groupFailed = true;
+      // 失败后把当前群消息 + 队列剩余消息倒回输入框。
+      _restoreQueueToComposer(failedContent: content);
       if (groupTurnGate.isCurrent(epoch)) {
         _emit(ShowErrorSnackBarEvent('chat_groupChatError:$e'));
       }
@@ -1598,6 +1602,8 @@ mixin _MessagingOps on _ChatControllerBase {
       messageIdMap.remove(streamingMessageId);
       _notify();
       fileFailed = true;
+      // 失败后把附件消息文本 + 队列剩余消息倒回输入框。
+      _restoreQueueToComposer(failedContent: attachmentMessage.content);
       _emit(ShowErrorSnackBarEvent('chat_fileMessageFailed:$e'));
     } finally {
       streaming.clear();

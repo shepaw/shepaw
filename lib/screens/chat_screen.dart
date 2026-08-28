@@ -468,6 +468,13 @@ class _ChatScreenState extends State<ChatScreen>
       case AgentInfoUpdatedEvent():
         // Already handled via notifyListeners
         break;
+      case RestoreQueueToComposerEvent(:final content):
+        // 发送失败：队列内容倒回输入框，聚焦让用户重新编辑。
+        _messageController.value = TextEditingValue(
+          text: content,
+          selection: TextSelection.collapsed(offset: content.length),
+        );
+        _textFieldFocusNode.requestFocus();
       case GroupInteractionRequestEvent():
         // User is already in this chat — the approval/interaction card is in
         // the message list. Only scroll into view; do not also toast.
