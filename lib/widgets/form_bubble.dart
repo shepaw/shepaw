@@ -98,9 +98,9 @@ class _FormBubbleState extends State<FormBubble> {
             padding: const EdgeInsets.only(bottom: 4, top: 4),
             child: Text(
               title,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 15,
-                color: Colors.black87,
+                color: Theme.of(context).colorScheme.onSurface,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -110,9 +110,12 @@ class _FormBubbleState extends State<FormBubble> {
             padding: const EdgeInsets.only(bottom: 10),
             child: Text(
               description,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
-                color: Colors.black54,
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.54),
               ),
             ),
           ),
@@ -177,9 +180,9 @@ class _FormBubbleState extends State<FormBubble> {
               children: [
                 Text(
                   label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
-                    color: Colors.black87,
+                    color: Theme.of(context).colorScheme.onSurface,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -309,7 +312,7 @@ class _FormBubbleState extends State<FormBubble> {
                         label.isNotEmpty ? label : id,
                         style: TextStyle(
                           fontSize: 14,
-                          color: Colors.black87,
+                          color: Theme.of(context).colorScheme.onSurface,
                           fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                         ),
                       ),
@@ -320,7 +323,8 @@ class _FormBubbleState extends State<FormBubble> {
                             description,
                             style: TextStyle(
                               fontSize: 12,
-                              color: Colors.grey[600],
+                              color:
+                                  Theme.of(context).colorScheme.onSurfaceVariant,
                             ),
                           ),
                         ),
@@ -386,7 +390,7 @@ class _FormBubbleState extends State<FormBubble> {
                     label,
                     style: TextStyle(
                       fontSize: 14,
-                      color: Colors.black87,
+                      color: Theme.of(context).colorScheme.onSurface,
                       fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                     ),
                   ),
@@ -505,7 +509,7 @@ class _FormBubbleState extends State<FormBubble> {
               label,
               style: TextStyle(
                 fontSize: 12,
-                color: Colors.grey[600],
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
                 fontWeight: FontWeight.w600,
               ),
             ),

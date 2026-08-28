@@ -62,10 +62,11 @@ class _CollapsibleMessageBubbleState extends State<CollapsibleMessageBubble> {
 
   @override
   Widget build(BuildContext context) {
+    final onSurface = Theme.of(context).colorScheme.onSurface;
     final headerColor =
-        widget.isMyMessage ? Colors.white70 : Colors.black54;
+        widget.isMyMessage ? Colors.white70 : onSurface.withValues(alpha: 0.54);
     final chevronColor =
-        widget.isMyMessage ? Colors.white60 : Colors.black45;
+        widget.isMyMessage ? Colors.white60 : onSurface.withValues(alpha: 0.45);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

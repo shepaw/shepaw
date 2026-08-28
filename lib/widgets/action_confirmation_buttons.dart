@@ -44,9 +44,12 @@ class ActionConfirmationButtons extends StatelessWidget {
               child: SingleChildScrollView(
                 child: SelectableText(
                   prompt,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
-                    color: Colors.black54,
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withValues(alpha: 0.54),
                     fontWeight: FontWeight.w500,
                   ),
                 ),

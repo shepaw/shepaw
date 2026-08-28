@@ -44,9 +44,12 @@ class _MultiSelectBubbleState extends State<MultiSelectBubble> {
             padding: const EdgeInsets.only(bottom: 8, top: 4),
             child: Text(
               prompt,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
-                color: Colors.black54,
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.54),
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -132,7 +135,9 @@ class _MultiSelectBubbleState extends State<MultiSelectBubble> {
                 label,
                 style: TextStyle(
                   fontSize: 14,
-                  color: isDisabled ? Colors.grey[400] : Colors.black87,
+                  color: isDisabled
+                      ? Colors.grey[400]
+                      : Theme.of(context).colorScheme.onSurface,
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                 ),
               ),
