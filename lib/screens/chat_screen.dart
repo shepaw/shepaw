@@ -2889,9 +2889,13 @@ class _ChatScreenState extends State<ChatScreen>
                           ),
                     if (_isUserScrolledUp)
                       Positioned(
-                        right: 16,
+                        left: 0,
+                        right: 0,
                         bottom: 12,
-                        child: _buildScrollToBottomButton(),
+                        child: Align(
+                          alignment: Alignment.bottomCenter,
+                          child: _buildScrollToBottomButton(),
+                        ),
                       ),
                     if (_controller.isLoadingOlderMessages)
                       const Positioned(
