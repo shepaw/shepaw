@@ -29,7 +29,8 @@ class ChatMessageList extends StatefulWidget {
 
   final ItemScrollController itemScrollController;
   final ItemPositionsListener itemPositionsListener;
-  final VoidCallback onStopStreaming;
+  /// 停止按钮回调：传入被停止消息的 id（群聊用于定位到单个 agent）。
+  final void Function(String messageId)? onStopStreaming;
   final void Function(Message message, String confirmationId, String actionId, String actionLabel, {String? confirmationContext}) onActionSelected;
   final void Function(Message message, String selectId, String optionId, String optionLabel) onSingleSelectSubmitted;
   final void Function(Message message, String selectId, List<String> optionIds, String summary) onMultiSelectSubmitted;
@@ -317,7 +318,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
                           : null,
                       onStop: (message.id == streamingMessageId ||
                               groupStreamingMessageIds.contains(message.id))
-                          ? widget.onStopStreaming
+                          ? () => widget.onStopStreaming?.call(message.id)
                           : null,
                       onActionSelected:
                           (confirmationId, actionId, actionLabel) {

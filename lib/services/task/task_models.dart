@@ -160,6 +160,12 @@ class GroupActiveTask {
   void Function(String chunk)? onStreamChunk;
   void Function()? onTaskFinished;
 
+  /// Per-agent stop hook: cancels just this agent's in-flight turn without
+  /// touching the shared cancellation token (which would stop every group
+  /// member). May be null while the executor is still wiring the transport or
+  /// after UI detach — callers must tolerate it.
+  void Function()? onCancel;
+
   GroupActiveTask({
     required this.agentId,
     required this.agentName,

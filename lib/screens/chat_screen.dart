@@ -2812,8 +2812,8 @@ class _ChatScreenState extends State<ChatScreen>
                               channelId: c.currentChannelId,
                               itemScrollController: _itemScrollController,
                               itemPositionsListener: _itemPositionsListener,
-                              onStopStreaming: () => c.isGroupMode
-                                  ? c.stopCurrentGroupMessageOnly()
+                              onStopStreaming: (messageId) => c.isGroupMode
+                                  ? c.stopGroupAgentMessage(messageId)
                                   : c.stopCurrentMessageOnly(),
                               onActionSelected: (msg, cid, aid, alabel,
                                   {confirmationContext}) {

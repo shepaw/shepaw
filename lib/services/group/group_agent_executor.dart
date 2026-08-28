@@ -553,6 +553,11 @@ class GroupAgentExecutor {
       final maxToolRounds =
           (agent.metadata['max_tool_rounds'] as num?)?.toInt() ?? 100;
 
+      // Per-agent stop: only this local agent's loop breaks, without touching
+      // the shared token (which would stop every group member).
+      var perAgentCancelled = false;
+      groupTask.onCancel = () => perAgentCancelled = true;
+
       try {
         var allowOneFinalRound = false;
         for (int toolRound = 0;
@@ -600,7 +605,9 @@ class GroupAgentExecutor {
             extraTools: isAdmin ? adminExtraTools : memberExtraTools,
             excludeUIToolNames: GroupOrchestrationTools.excludedUiToolNames,
           )) {
-            if (acpCancellationToken?.isCancelled == true) break;
+            if (acpCancellationToken?.isCancelled == true || perAgentCancelled) {
+              break;
+            }
             switch (event) {
               case LLMTextEvent():
                 streamingStarted = true;
@@ -1011,6 +1018,15 @@ class GroupAgentExecutor {
         return const GroupTurnResult();
       }
 
+      // Per-agent stop: abort only this peer's pending turn (host cancels by
+      // request_id), leaving the shared token and other members untouched.
+      groupTask.onCancel = () {
+        unawaited(
+          PeerAgentClientService.instance
+              .cancelInflightTurnForAgent(channelId, agent.id),
+        );
+      };
+
       final peerMessage = _buildPeerGroupMessage(
         systemPrompt: systemPrompt,
         historyLines: historyLines,
@@ -1324,6 +1340,16 @@ class GroupAgentExecutor {
 
           final effectiveTaskId = taskId;
           final effectiveConnection = connection!;
+
+          // Per-agent stop: cancel exactly this ACP task and locally complete
+          // its completer (mirrors the shared-token callback above, but only
+          // for this connection/task — other group members keep streaming).
+          groupTask.onCancel = () {
+            unawaited(effectiveConnection.cancelTask(effectiveTaskId));
+            if (!taskCompleter.isCompleted) {
+              taskCompleter.complete();
+            }
+          };
 
           // M6：群清空时断线未送达的远端 `/reset` 在此回合任务前补发
           // （best-effort；失败吞掉不阻塞主任务）。

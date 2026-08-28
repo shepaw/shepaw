@@ -924,6 +924,28 @@ class PeerAgentClientService {
     }
   }
 
+  /// Cancel the in-flight turn of a single group agent (identified by its
+  /// [localAgentId] on this device) for [channelId]. The host already aborts
+  /// per `request_id` (see `_handleCancel`), so this is purely a client-side
+  /// filter on top of [_abortPendingTurn] — other agents in the same group
+  /// turn keep streaming.
+  Future<void> cancelInflightTurnForAgent(
+    String channelId,
+    String localAgentId,
+  ) async {
+    if (channelId.isEmpty || localAgentId.isEmpty) return;
+    final requestIds = <String>[
+      for (final entry in _pending.entries)
+        if (!entry.value.completer.isCompleted &&
+            entry.value.channelId == channelId &&
+            entry.value.localAgentId == localAgentId)
+          entry.key,
+    ];
+    for (final requestId in requestIds) {
+      _abortPendingTurn(requestId);
+    }
+  }
+
   /// Abort a pending turn locally and notify the peer: remove it from
   /// [_pending], complete its completer with `[Stopped]`, clear persisted
   /// state, and best-effort send `agent_cancel` so the host interrupts its
@@ -976,6 +998,7 @@ class PeerAgentClientService {
     String remoteAgentId = 'remote-agent',
     String channelId = '',
     String sessionId = '',
+    String localAgentId = '',
     bool suspended = false,
   }) {
     final p = _PendingRequest(
@@ -983,6 +1006,7 @@ class PeerAgentClientService {
       remoteAgentId: remoteAgentId,
       channelId: channelId,
       sessionId: sessionId,
+      localAgentId: localAgentId,
     );
     if (suspended) {
       p.suspendedSince = DateTime.now();

@@ -379,57 +379,67 @@ mixin _MessagingOps on _ChatControllerBase {
     _notify();
   }
 
-  /// Stop all active group streaming messages, but leave the queue intact
-  /// so that the next queued message can be processed.
-  void stopCurrentGroupMessageOnly() {
-    LoggerService().debug('Stopping current group messages only (queue preserved)', tag: 'ChatController');
-    // Supersede the running orchestration turn: its abort-summarize keeps
-    // running to completion by design, but its callbacks and finally-cleanup
-    // must no longer touch the shared state of the next turn.
-    groupTurnGate.invalidate();
+  /// 群聊：只停止 [messageId] 对应单个 agent 的流式回合，其他 agent 继续。
+  /// 队列决策推迟到最后一条在途消息结束：停止的恰是最后一条 → 倒回输入框；
+  /// 否则队列不动，剩余 agent 自然结束后由既有路径排空。
+  void stopGroupAgentMessage(String messageId) {
+    if (!groupStreamingMessageIds.contains(messageId)) return;
 
-    // Mark all active group streaming messages with [Stopped]
-    for (final sid in groupStreamingMessageIds) {
-      final existing = messageIdMap[sid];
-      if (existing != null) {
-        final idx = messages.indexOf(existing);
-        if (idx != -1) {
-          final updated = ChatStreamingText.markMessageStopped(messages[idx]);
-          messages[idx] = updated;
-          messageIdMap[updated.id] = updated;
-        }
+    final existing = messageIdMap[messageId];
+    if (existing == null) return;
+
+    // 工作流流式气泡：停单步 = 终止整个工作流，沿用既有排空语义
+    // （_onWorkflowExecutionFinished 会清空剩余流式状态并排空队列）。
+    if (_workflowStreamingIds.containsValue(messageId)) {
+      final idx = messages.indexOf(existing);
+      if (idx != -1) {
+        final updated = ChatStreamingText.markMessageStopped(messages[idx]);
+        messages[idx] = updated;
+        messageIdMap[updated.id] = updated;
+      }
+      groupStreamingMessageIds.remove(messageId);
+      respondingAgentNames.remove(existing.from.name);
+      unawaited(cancelRunningWorkflow());
+      _notify();
+      return;
+    }
+
+    // —— 普通群 agent 回合：只停这一个 agent ——
+    final agentId = existing.from.id;
+    final idx = messages.indexOf(existing);
+    if (idx != -1) {
+      final updated = ChatStreamingText.markMessageStopped(messages[idx]);
+      messages[idx] = updated;
+      messageIdMap[updated.id] = updated;
+    }
+    groupStreamingMessageIds.remove(messageId);
+    respondingAgentNames.remove(existing.from.name);
+
+    // 完成该 agent 挂起的交互 Completer，避免取消后悬空。
+    for (final key in pendingGroupInteractions.keys.toList()) {
+      final e = pendingGroupInteractions[key]!;
+      if (e.agentId == agentId && !e.result.isCompleted) {
+        e.result.complete(null);
+        pendingGroupInteractions.remove(key);
       }
     }
 
-    // Cancel the cancellation token to stop all active agent tasks
-    acpCancellationToken?.cancel();
-
-    // If a workflow is executing for this channel, cancel its execution loop
-    // too — same contract as stopGroupStreaming.
-    if (activeWorkflowId != null) {
-      unawaited(cancelRunningWorkflow());
+    // 只取消这一个 agent 的底层传输，不碰共享 token（否则会停掉全体）。
+    final channelId = currentChannelId;
+    if (channelId != null) {
+      chatService.cancelGroupAgentTask(channelId, agentId);
     }
 
-    // Force-complete all group tasks in ChatService
-    if (currentChannelId != null) {
-      chatService.cancelActiveGroupTasks(currentChannelId!);
+    // 队列决策：若已无任何在途消息（含尚未 start 流式的任务），说明停掉的
+    // 正是最后一条 → 倒回输入框；否则队列不动，等剩余 agent 自然结束排空。
+    final hasOtherInFlight = channelId != null &&
+        chatService.getActiveGroupTasks(channelId).isNotEmpty;
+    final wasLast = groupStreamingMessageIds.isEmpty && !hasOtherInFlight;
+    if (wasLast) {
+      _restoreQueueToComposer();
+      isProcessing = false;
     }
-
-    // Complete all pending group interaction Completers with null.
-    // Note: plan_approval is no longer tracked in pendingGroupInteractions —
-    // its Completer lives in ChatService._pendingPlanApprovals and survives
-    // channel navigation. So this loop only cancels other interaction types.
-    for (final e in pendingGroupInteractions.values) {
-      if (!e.result.isCompleted) e.result.complete(null);
-    }
-    pendingGroupInteractions.clear();
-
-    // Reset group streaming state but DO NOT clear messageQueue
-    respondingAgentNames.clear();
-    groupStreamingMessageIds.clear();
-    isProcessing = false;
     _notify();
-    processNextInQueue();
   }
 
   void stopStreaming() {

@@ -920,6 +920,24 @@ class ChatService {
     _updateTypingAgentIds();
   }
 
+  /// Cancel only [agentId]'s in-flight group task for [channelId] — the
+  /// per-agent counterpart of [cancelActiveGroupTasks]. Invokes the task's
+  /// [GroupActiveTask.onCancel] hook to abort its underlying transport, then
+  /// marks it complete and removes it from the map so reattach won't revive
+  /// it. Unlike [cancelActiveGroupTasks] it does **not** detach UI callbacks:
+  /// the executor's `_releaseGroupTurn` still needs to fire `onTaskFinished`
+  /// so a reattached turn tracker drains the queue once the last agent ends.
+  void cancelGroupAgentTask(String channelId, String agentId) {
+    final agentMap = _activeGroupTasks[channelId];
+    final task = agentMap?[agentId];
+    if (task == null || task.isComplete) return;
+    task.onCancel?.call();
+    task.isComplete = true;
+    agentMap!.remove(agentId);
+    if (agentMap.isEmpty) _activeGroupTasks.remove(channelId);
+    _updateTypingAgentIds();
+  }
+
   /// Force-stop the in-flight 1:1 DM task for [channelId]: persist
   /// `[Stopped]` and prevent [reattachToActiveTask] from resuming it.
   Future<void> cancelActiveDmTask(

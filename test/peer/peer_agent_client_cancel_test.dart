@@ -99,4 +99,86 @@ void main() {
       expect(svc.hasInflightForChannel('ch-nonexistent'), isFalse);
     });
   });
+
+  group('PeerAgentClientService.cancelInflightTurnForAgent', () {
+    final svc = PeerAgentClientService.instance;
+    final sentFrames = <({String peerId, Map<String, dynamic> json})>[];
+
+    setUp(() {
+      sentFrames.clear();
+      svc.debugSendControlOverride = (peerId, json) async {
+        sentFrames.add((peerId: peerId, json: json));
+        return true;
+      };
+    });
+
+    tearDown(() async {
+      await svc.cancelInflightTurnsForChannel('ch-a');
+      await svc.cancelInflightTurnsForChannel('ch-b');
+      svc.debugSendControlOverride = null;
+    });
+
+    test('只取消匹配 channel+localAgentId 的 turn，同 channel 其他 agent 不受影响', () async {
+      final mine = svc.debugSeedPendingTurn(
+        requestId: 'req-1',
+        peerId: 'peer-1',
+        channelId: 'ch-a',
+        localAgentId: 'agent-1',
+      );
+      final other = svc.debugSeedPendingTurn(
+        requestId: 'req-2',
+        peerId: 'peer-1',
+        channelId: 'ch-a',
+        localAgentId: 'agent-2',
+      );
+
+      await svc.cancelInflightTurnForAgent('ch-a', 'agent-1');
+
+      // 只有 agent-1 的 turn 被 [Stopped] 完成；agent-2 仍在途。
+      expect((await mine).content, '[Stopped]');
+      expect(svc.hasInflightForChannel('ch-a'), isTrue);
+
+      await svc.cancelInflightTurnForAgent('ch-a', 'agent-2');
+      expect((await other).content, '[Stopped]');
+      expect(svc.hasInflightForChannel('ch-a'), isFalse);
+    });
+
+    test('只向对端发送匹配 requestId 的 agent_cancel 控制帧', () async {
+      svc.debugSeedPendingTurn(
+        requestId: 'req-1',
+        peerId: 'peer-1',
+        channelId: 'ch-a',
+        localAgentId: 'agent-1',
+      );
+      svc.debugSeedPendingTurn(
+        requestId: 'req-2',
+        peerId: 'peer-1',
+        channelId: 'ch-a',
+        localAgentId: 'agent-2',
+      );
+
+      await svc.cancelInflightTurnForAgent('ch-a', 'agent-1');
+
+      expect(sentFrames, hasLength(1));
+      expect(sentFrames.single.json['type'], 'agent_cancel');
+      expect(sentFrames.single.json['request_id'], 'req-1');
+    });
+
+    test('空 channel / 空 localAgentId / 无匹配 turn 时为空操作', () async {
+      svc.debugSeedPendingTurn(
+        requestId: 'req-1',
+        peerId: 'peer-1',
+        channelId: 'ch-a',
+        localAgentId: 'agent-1',
+      );
+
+      await svc.cancelInflightTurnForAgent('', 'agent-1');
+      await svc.cancelInflightTurnForAgent('ch-a', '');
+      await svc.cancelInflightTurnForAgent('ch-nonexistent', 'agent-1');
+      await svc.cancelInflightTurnForAgent('ch-a', 'agent-9');
+
+      expect(sentFrames, isEmpty);
+      expect(svc.hasInflightForChannel('ch-a'), isTrue);
+    });
+  });
 }
