@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show SelectedContent;
 import 'package:flutter/services.dart';
 import '../../models/message.dart';
 import '../../services/group/group_task_status.dart';
@@ -20,6 +21,19 @@ class MessageMenuAction {
   });
 }
 
+/// Resolves what the Copy action should write to the clipboard: the user's
+/// current range selection when one exists, otherwise the full message.
+@visibleForTesting
+String resolveMessageCopyText(
+  String fullContent,
+  SelectedContent? selected,
+) {
+  if (selected != null && selected.plainText.isNotEmpty) {
+    return selected.plainText;
+  }
+  return GroupTaskStatusParser.strip(fullContent);
+}
+
 /// Shows a WeChat-style floating context menu anchored to [anchorRect].
 ///
 /// Returns the [OverlayEntry] so the caller can dismiss it.
@@ -35,6 +49,7 @@ OverlayEntry showMessageContextMenu(
   VoidCallback? onViewTrace,
   VoidCallback? onDismiss,
   void Function(Rect panelRect)? onPanelBoundsChanged,
+  SelectedContent? Function()? getSelectedContent,
 }) {
   final menuL10n = AppLocalizations.of(context);
   final userId = LocalUserIdentity.id;
@@ -50,13 +65,21 @@ OverlayEntry showMessageContextMenu(
   }
 
   void copyText() {
-    // Always write to the clipboard explicitly. SelectableRegion.copySelection
-    // no-ops when the selection is empty (common on mobile before Markdown
-    // selectables finish registering / selectAll races), which looked like a
-    // successful Copy with nothing pasted.
-    Clipboard.setData(ClipboardData(
-      text: GroupTaskStatusParser.strip(message.content),
-    ));
+    // Prefer the user's current range selection (e.g. narrowed with the
+    // selection handles) when one exists; otherwise fall back to the whole
+    // message. Writing to the clipboard explicitly avoids the
+    // SelectableRegion.copySelection no-op when the selection is empty
+    // (common on mobile before Markdown selectables finish registering /
+    // selectAll races), which looked like a successful Copy with nothing
+    // pasted.
+    Clipboard.setData(
+      ClipboardData(
+        text: resolveMessageCopyText(
+          message.content,
+          getSelectedContent?.call(),
+        ),
+      ),
+    );
     showTopToast(
       context,
       menuL10n.chat_copiedToClipboard,

@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show SelectedContent;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import '../../models/message.dart';
@@ -16,6 +17,7 @@ class MessageLongPressHandler extends StatefulWidget {
     required bool menuActive,
     required GlobalKey<SelectionAreaState> selectionAreaKey,
     required FocusNode selectionFocusNode,
+    required ValueChanged<SelectedContent?> onSelectionChanged,
   }) builder;
   final VoidCallback onReply;
   final VoidCallback onRollback;
@@ -45,6 +47,7 @@ class _MessageLongPressHandlerState extends State<MessageLongPressHandler> {
   final _anchorKey = GlobalKey();
   final _selectionAreaKey = GlobalKey<SelectionAreaState>();
   final _selectionFocusNode = FocusNode();
+  SelectedContent? _selectedContent;
   late final LongPressGestureRecognizer _longPressRecognizer;
   bool _textSelectionEnabled = false;
   bool _menuActive = false;
@@ -100,6 +103,7 @@ class _MessageLongPressHandlerState extends State<MessageLongPressHandler> {
       _selectionAreaKey.currentState?.selectableRegion.clearSelection();
       _selectionFocusNode.unfocus();
     }
+    _selectedContent = null;
     setState(() {
       _menuActive = false;
       _textSelectionEnabled = false;
@@ -205,6 +209,7 @@ class _MessageLongPressHandlerState extends State<MessageLongPressHandler> {
       onPanelBoundsChanged: (panelRect) {
         _menuPanelRect = panelRect;
       },
+      getSelectedContent: () => _selectedContent,
     );
     _menuShownAt = DateTime.now();
     _installGlobalDismissRoute();
@@ -256,6 +261,7 @@ class _MessageLongPressHandlerState extends State<MessageLongPressHandler> {
             menuActive: _menuActive,
             selectionAreaKey: _selectionAreaKey,
             selectionFocusNode: _selectionFocusNode,
+            onSelectionChanged: (content) => _selectedContent = content,
           ),
           if (_menuActive)
             Positioned.fill(

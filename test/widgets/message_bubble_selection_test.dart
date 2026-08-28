@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show SelectedContent;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/l10n/app_localizations.dart';
 import 'package:shepaw/models/message.dart';
+import 'package:shepaw/widgets/chat/message_context_menu.dart';
 import 'package:shepaw/widgets/chat/message_long_press_handler.dart';
 import 'package:shepaw/widgets/message_bubble.dart';
 
@@ -42,6 +44,7 @@ void main() {
                 required menuActive,
                 required selectionAreaKey,
                 required selectionFocusNode,
+                required onSelectionChanged,
               }) =>
                   MessageBubble(
                 message: message,
@@ -49,6 +52,7 @@ void main() {
                 textSelectionEnabled: textSelectionEnabled,
                 selectionAreaKey: selectionAreaKey,
                 selectionFocusNode: selectionFocusNode,
+                onSelectionChanged: onSelectionChanged,
               ),
             ),
           ),
@@ -84,5 +88,30 @@ void main() {
 
     expect(find.byType(SelectionArea), findsOneWidget,
         reason: '长按选中后应挂载 SelectionArea（选区内拖拽/手柄优先，抽屉让位）');
+  });
+
+  group('resolveMessageCopyText', () {
+    const full = 'hello **world** full message';
+
+    test('uses the current range selection when non-empty', () {
+      expect(
+        resolveMessageCopyText(
+          full,
+          const SelectedContent(plainText: 'selected part'),
+        ),
+        'selected part',
+      );
+    });
+
+    test('falls back to the whole message when selection is empty', () {
+      expect(
+        resolveMessageCopyText(full, null),
+        'hello **world** full message',
+      );
+      expect(
+        resolveMessageCopyText(full, const SelectedContent(plainText: '')),
+        'hello **world** full message',
+      );
+    });
   });
 }

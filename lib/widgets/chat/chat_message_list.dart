@@ -293,6 +293,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
                       required menuActive,
                       required selectionAreaKey,
                       required selectionFocusNode,
+                      required onSelectionChanged,
                     }) =>
                         MessageBubble(
                       message: message,
@@ -302,6 +303,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
                       isContextMenuActive: menuActive,
                       selectionAreaKey: selectionAreaKey,
                       selectionFocusNode: selectionFocusNode,
+                      onSelectionChanged: onSelectionChanged,
                       showSenderName: showSenderName,
                       showAvatar: showAvatar,
                       reserveAvatarSpace: reserveAvatarSpace,

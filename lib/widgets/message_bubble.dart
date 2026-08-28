@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show SelectedContent;
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'package:url_launcher/url_launcher.dart';
@@ -76,6 +77,11 @@ class MessageBubble extends StatelessWidget {
   /// When `true`, the context menu is open on this message.
   final bool isContextMenuActive;
 
+  /// Called with the current [SelectedContent] whenever the text selection
+  /// inside the [SelectionArea] changes (e.g. handles dragged to narrow the
+  /// long-press select-all). Lets the caller copy the user's actual selection.
+  final ValueChanged<SelectedContent?>? onSelectionChanged;
+
   /// Whether to show the sender name above the bubble (group chats only).
   final bool showSenderName;
 
@@ -131,6 +137,7 @@ class MessageBubble extends StatelessWidget {
     this.textSelectionEnabled = false,
     this.selectionAreaKey,
     this.selectionFocusNode,
+    this.onSelectionChanged,
     this.isContextMenuActive = false,
     this.showSenderName = true,
     this.showAvatar = true,
@@ -773,6 +780,7 @@ class MessageBubble extends StatelessWidget {
     return SelectionArea(
       key: useSharedSelectionKey ? selectionAreaKey : null,
       focusNode: useSharedSelectionKey ? selectionFocusNode : null,
+      onSelectionChanged: onSelectionChanged,
       contextMenuBuilder: (context, selectableRegionState) {
         return const SizedBox.shrink();
       },
