@@ -265,13 +265,24 @@ mixin _MessagingOps on _ChatControllerBase {
     final attachmentDataList = persisted.data;
     final hasAttachments = attachmentDataList.isNotEmpty;
 
-    final disposition = ChatSendPlanner.decide(
+    var disposition = ChatSendPlanner.decide(
       content: content,
       hasAttachments: hasAttachments,
       isGroupMode: isGroupMode,
       hasAgent: agentId != null,
       isProcessing: isProcessing,
     );
+
+    // 发送失败后队列处于暂停态（isProcessing=false 但队列非空）：此时手动
+    // 再发一条不再直接发送，而是排到队尾并恢复排空，保持 FIFO（队首旧消息
+    // 先出，新消息后发）。正常态下队列只在 isProcessing=true 时非空，故该
+    // 分支不会误伤正常发送。
+    if (!isProcessing && messageQueue.isNotEmpty) {
+      if (disposition == ChatSendDisposition.sendDm ||
+          disposition == ChatSendDisposition.sendGroup) {
+        disposition = ChatSendDisposition.queueText;
+      }
+    }
 
     switch (disposition) {
       case ChatSendDisposition.empty:
@@ -302,6 +313,11 @@ mixin _MessagingOps on _ChatControllerBase {
           ),
         );
         _notify();
+        // 失败暂停态恢复：入队后立即排空（正常态 isProcessing=true，由当前
+        // 回合的 finally 负责排空，这里不触发）。
+        if (!isProcessing) {
+          unawaited(processNextInQueue());
+        }
         return;
       case ChatSendDisposition.sendGroup:
         LoggerService().debug(
@@ -559,6 +575,9 @@ mixin _MessagingOps on _ChatControllerBase {
     // `streamingMessageId` / `isProcessing` — those belong to the task's
     // onTaskFinished callback, which fires later when task.completed arrives.
     bool awaitingAsyncTask = false;
+    // 发送失败标记：失败时保留 backlog 并暂停自动排空（由用户手动恢复），
+    // 避免一条失败后级联自动发送下一条。PeerTurnInFlight 不视为失败。
+    bool sendFailed = false;
 
     try {
       final remoteAgent = await localDatabaseService.getRemoteAgentById(agentId!);
@@ -736,21 +755,41 @@ mixin _MessagingOps on _ChatControllerBase {
       }
     } catch (e, stackTrace) {
       LoggerService().error('Send message failed', tag: 'ChatController', error: e, stackTrace: stackTrace);
-      messageQueue.clear();
       await loadMessages();
       final err = e.toString();
       if (e is PeerTurnInFlightException) {
+        // 对方回合仍在进行：非失败，交由 reattach / onTaskFinished 的
+        // processNextInQueue 继续排空。
         reattachToActiveTask();
         awaitingAsyncTask =
             chatService.getActiveTask(currentChannelId ?? '') != null;
         _emit(ShowSnackBarEvent('chat_peerTurnStillRunning'));
-      } else if (err.contains('not reachable after')) {
-        _emit(ShowErrorSnackBarEvent('chat_reconnectFailed'));
       } else {
-        _emit(ShowErrorSnackBarEvent('$e'));
+        // 发送失败：保留 backlog（不清队列），暂停自动排空，等待用户手动
+        // 恢复（编辑/删除/重发）。
+        sendFailed = true;
+        if (err.contains('not reachable after')) {
+          _emit(ShowErrorSnackBarEvent('chat_reconnectFailed'));
+        } else {
+          _emit(ShowErrorSnackBarEvent('$e'));
+        }
       }
     } finally {
-      if (awaitingAsyncTask) {
+      if (sendFailed) {
+        if (awaitingAsyncTask) {
+          // 异步确认路径：task 仍在后台跑，流式状态交给 onTaskFinished 清理，
+          // 这里只暂停队列排空（避免级联）。
+          _notify();
+        } else {
+          // 失败路径：清理当前回合状态但不调用 processNextInQueue——
+          // 队列保留且停住，避免级联自动发送。
+          acpCancellationToken = null;
+          streaming.clear();
+          pendingHistoryRequest = null;
+          isProcessing = false;
+          _notify();
+        }
+      } else if (awaitingAsyncTask) {
         // Async path: don't clear streamingMessageId / isProcessing here —
         // the activeTask.onTaskFinished callback owns that cleanup and will
         // fire when the agent's SDK turn actually ends. We still drain the
@@ -1227,6 +1266,8 @@ mixin _MessagingOps on _ChatControllerBase {
     isProcessing = true;
     acpCancellationToken = ACPCancellationToken();
     final epoch = groupTurnGate.beginTurn();
+    // 群回合失败标记：失败时保留 backlog 并暂停自动排空。
+    bool groupFailed = false;
     _notify();
 
     final userMessage = GroupInteractionPlanner.buildOptimisticUserMessage(
@@ -1335,6 +1376,7 @@ mixin _MessagingOps on _ChatControllerBase {
       }
     } catch (e, stackTrace) {
       LoggerService().error('processGroupMessage error: $e', tag: 'ChatController', error: e, stackTrace: stackTrace);
+      groupFailed = true;
       if (groupTurnGate.isCurrent(epoch)) {
         _emit(ShowErrorSnackBarEvent('chat_groupChatError:$e'));
       }
@@ -1351,7 +1393,8 @@ mixin _MessagingOps on _ChatControllerBase {
         respondingAgentNames.clear();
         groupStreamingMessageIds.clear();
         _notify();
-        processNextInQueue();
+        // 失败时保留 backlog 并暂停自动排空，等待用户手动恢复。
+        if (!groupFailed) processNextInQueue();
       }
     }
   }
@@ -1493,6 +1536,9 @@ mixin _MessagingOps on _ChatControllerBase {
 
     acpCancellationToken = ACPCancellationToken();
 
+    // 附件消息发送失败标记：失败时暂停自动排空，保留 backlog。
+    bool fileFailed = false;
+
     try {
       final remoteAgent = await localDatabaseService.getRemoteAgentById(agentId!);
       if (remoteAgent == null) throw Exception('Agent not found');
@@ -1551,12 +1597,14 @@ mixin _MessagingOps on _ChatControllerBase {
       messages.removeWhere((m) => m.id == streamingMessageId);
       messageIdMap.remove(streamingMessageId);
       _notify();
+      fileFailed = true;
       _emit(ShowErrorSnackBarEvent('chat_fileMessageFailed:$e'));
     } finally {
       streaming.clear();
       isProcessing = false;
       _notify();
-      processNextInQueue();
+      // 失败时保留 backlog 并暂停自动排空，等待用户手动恢复。
+      if (!fileFailed) processNextInQueue();
     }
   }
 
