@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../services/location_access_policy.dart';
 import '../services/location_service.dart';
 
 class LocationSettingsScreen extends StatefulWidget {
@@ -14,6 +15,7 @@ class _LocationSettingsScreenState extends State<LocationSettingsScreen>
   Map<String, dynamic>? _status;
   bool _loading = true;
   bool _busy = false;
+  bool _sheAutoApprove = LocationAccessPolicy.defaultSheAutoApprove;
 
   @override
   void initState() {
@@ -37,11 +39,19 @@ class _LocationSettingsScreenState extends State<LocationSettingsScreen>
 
   Future<void> _refresh() async {
     final status = await LocationService.instance.status();
+    final sheAutoApprove = await LocationAccessPolicy.sheAutoApprove();
     if (!mounted) return;
     setState(() {
       _status = status;
+      _sheAutoApprove = sheAutoApprove;
       _loading = false;
     });
+  }
+
+  Future<void> _onSheAutoApproveChanged(bool value) async {
+    await LocationAccessPolicy.setSheAutoApprove(value);
+    if (!mounted) return;
+    setState(() => _sheAutoApprove = value);
   }
 
   bool get _serviceEnabled => _status?['service_enabled'] == true;
@@ -155,6 +165,16 @@ class _LocationSettingsScreenState extends State<LocationSettingsScreen>
             ),
             trailing: const Icon(Icons.chevron_right),
             onTap: _busy ? null : _onPrimaryTap,
+          ),
+          const Divider(height: 1),
+          SwitchListTile(
+            secondary: const Icon(Icons.verified_user_outlined),
+            title: Text(
+              l10n.settings_locationSheAutoApprove(l10n.she_name),
+            ),
+            subtitle: Text(l10n.settings_locationSheAutoApproveSub),
+            value: _sheAutoApprove,
+            onChanged: _onSheAutoApproveChanged,
           ),
         ],
       ),

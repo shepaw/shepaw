@@ -25,6 +25,7 @@ import '../foreground_task_service.dart';
 import '../logger_service.dart';
 import '../peer_key_utils.dart';
 import '../she_service.dart';
+import '../location_access_policy.dart';
 import '../agent_soul_service.dart';
 import '../noise_identity.dart';
 import '../mailbox/mailbox_seal.dart';
@@ -2871,6 +2872,13 @@ class AgentMessagingService {
     final toolName = OsToolRegistry.instance.resolveToolName(cliPath);
     final risk = os_exec.classifyRisk(toolName, flags);
     if (risk == os_exec.RiskLevel.safe) return false;
+
+    if (await LocationAccessPolicy.shouldSkipOsConfirmationFor(
+      agentId: activeTask.agentId,
+      toolName: toolName,
+    )) {
+      return false;
+    }
 
     final confirm = activeTask.onOsToolConfirmation;
     final approved = confirm == null

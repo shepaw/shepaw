@@ -1538,6 +1538,18 @@ abstract class AppLocalizations {
   /// **'无法请求定位权限'**
   String get settings_locationError;
 
+  /// No description provided for @settings_locationSheAutoApprove.
+  ///
+  /// In zh, this message translates to:
+  /// **'{sheName} 读取位置时免确认'**
+  String settings_locationSheAutoApprove(String sheName);
+
+  /// No description provided for @settings_locationSheAutoApproveSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'关闭后每次都会先征求你同意。其他 Agent 始终需要确认。'**
+  String get settings_locationSheAutoApproveSub;
+
   /// No description provided for @settings_exportDataTitle.
   ///
   /// In zh, this message translates to:

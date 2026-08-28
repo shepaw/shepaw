@@ -784,6 +784,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settings_locationError => '无法请求定位权限';
 
   @override
+  String settings_locationSheAutoApprove(String sheName) {
+    return '$sheName 读取位置时免确认';
+  }
+
+  @override
+  String get settings_locationSheAutoApproveSub =>
+      '关闭后每次都会先征求你同意。其他 Agent 始终需要确认。';
+
+  @override
   String get settings_exportDataTitle => '导出数据';
 
   @override

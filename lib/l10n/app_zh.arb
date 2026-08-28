@@ -426,6 +426,15 @@
   "settings_locationOpenSettingsSub": "在系统设置中更改定位权限",
   "settings_locationOpenLocationSettings": "打开定位服务",
   "settings_locationError": "无法请求定位权限",
+  "settings_locationSheAutoApprove": "{sheName} 读取位置时免确认",
+  "@settings_locationSheAutoApprove": {
+    "placeholders": {
+      "sheName": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_locationSheAutoApproveSub": "关闭后每次都会先征求你同意。其他 Agent 始终需要确认。",
   "settings_exportDataTitle": "导出数据",
   "settings_exportDataContent": "将导出所有应用数据（包括 Agent 配置、聊天记录、文件等）为一个备份文件。\n\n导出完成后可以通过系统分享发送到其他位置。",
   "settings_exportingData": "正在导出数据...",

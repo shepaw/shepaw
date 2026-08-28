@@ -377,6 +377,15 @@
   "settings_locationOpenSettingsSub": "Change location permission in the system",
   "settings_locationOpenLocationSettings": "Open location services",
   "settings_locationError": "Could not request location permission",
+  "settings_locationSheAutoApprove": "Let {sheName} read location without asking",
+  "@settings_locationSheAutoApprove": {
+    "placeholders": {
+      "sheName": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_locationSheAutoApproveSub": "Turn this off to review each request. Other agents always need confirmation.",
   "settings_exportDataTitle": "Export Data",
   "settings_exportDataContent": "This will export all app data (including agent configurations, chat history, files, etc.) as a backup file.\n\nOnce exported, you can share it to another location.",
   "settings_exportingData": "Exporting data...",

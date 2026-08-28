@@ -819,6 +819,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settings_locationError => 'Could not request location permission';
 
   @override
+  String settings_locationSheAutoApprove(String sheName) {
+    return 'Let $sheName read location without asking';
+  }
+
+  @override
+  String get settings_locationSheAutoApproveSub =>
+      'Turn this off to review each request. Other agents always need confirmation.';
+
+  @override
   String get settings_exportDataTitle => 'Export Data';
 
   @override
