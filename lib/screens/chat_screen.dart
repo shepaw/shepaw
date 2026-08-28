@@ -10,6 +10,7 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../services/local_user_identity.dart';
 import '../models/channel.dart';
 import '../models/message.dart';
+import '../models/attachment_data.dart';
 import '../models/pending_attachment.dart';
 import '../models/remote_agent.dart';
 import '../models/model_routing_config.dart';
@@ -26,6 +27,7 @@ import '../controllers/chat_attachment_coordinator.dart';
 import '../theme/app_theme.dart';
 import '../widgets/chat/chat_app_bar.dart';
 import '../models/store_attachment_ref.dart';
+import '../storage/store_protocol.dart';
 import '../widgets/chat/storage_file_picker_screen.dart';
 import '../widgets/chat/chat_more_drawer.dart';
 import '../widgets/chat/chat_input_area.dart';
@@ -468,17 +470,72 @@ class _ChatScreenState extends State<ChatScreen>
       case AgentInfoUpdatedEvent():
         // Already handled via notifyListeners
         break;
-      case RestoreQueueToComposerEvent(:final content):
-        // 发送失败：队列内容倒回输入框，聚焦让用户重新编辑。
+      case RestoreQueueToComposerEvent(:final content, :final attachments):
+        // 发送失败：队列内容倒回输入框，聚焦让用户重新编辑；
+        // 附件按 store_uri 引用重建（不复制），无 store_uri 时写临时文件兜底。
         _messageController.value = TextEditingValue(
           text: content,
           selection: TextSelection.collapsed(offset: content.length),
         );
         _textFieldFocusNode.requestFocus();
+        if (attachments.isNotEmpty) {
+          unawaited(_restorePendingAttachments(attachments));
+        }
       case GroupInteractionRequestEvent():
         // User is already in this chat — the approval/interaction card is in
         // the message list. Only scroll into view; do not also toast.
         _scrollToBottom(force: true);
+    }
+  }
+
+  /// 发送失败倒回输入框后，重建待发送附件。
+  ///
+  /// 优先用附件持久化时写入的 `store_uri` 重建 [StoreAttachmentRef] 引用
+  ///（发送时 `saveAttachment` 直接引用储物袋文件，不复制）；无 store_uri
+  ///（异常中间态）时把字节写临时文件兜底。
+  Future<void> _restorePendingAttachments(
+    List<AttachmentData> attachments,
+  ) async {
+    for (var i = 0; i < attachments.length; i++) {
+      if (_pendingQueue.isFull) break;
+      final att = attachments[i];
+      final added = await _tryRestoreStoreRefAttachment(att);
+      if (added) continue;
+      try {
+        final dir = await getTemporaryDirectory();
+        final file = File(
+          '${dir.path}/${AttachmentData.safeFileName(att.fileName)}_$i',
+        );
+        await file.writeAsBytes(att.bytes, flush: true);
+        await _pendingQueue.addFromFile(file, isFromClipboard: true);
+      } catch (e) {
+        LoggerService().error(
+          '_restorePendingAttachments temp file error',
+          tag: 'ChatScreen',
+          error: e,
+        );
+      }
+    }
+    if (mounted) setState(() {});
+  }
+
+  /// 尝试用 [AttachmentData] 的 `store_uri` 引用方式重建附件；失败返回 false。
+  Future<bool> _tryRestoreStoreRefAttachment(AttachmentData att) async {
+    final storeUri = att.extraMetadata?['store_uri'] as String?;
+    if (storeUri == null || storeUri.isEmpty) return false;
+    try {
+      final parsed = parseStoreUri(storeUri);
+      if (!parsed.ref.isLatest) return false;
+      final ref = StoreAttachmentRef(
+        deviceId: parsed.device,
+        space: parsed.space,
+        path: parsed.path,
+        displayName: att.fileName,
+        sizeBytes: att.sizeBytes,
+      );
+      return await _pendingQueue.addFromStoreRef(ref);
+    } catch (_) {
+      return false;
     }
   }
 

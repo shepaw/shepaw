@@ -766,10 +766,13 @@ mixin _MessagingOps on _ChatControllerBase {
             chatService.getActiveTask(currentChannelId ?? '') != null;
         _emit(ShowSnackBarEvent('chat_peerTurnStillRunning'));
       } else {
-        // 发送失败：把当前失败消息 + 队列剩余消息倒回输入框（队列清空），
-        // 供用户重新编辑后手动重发。
+        // 发送失败：把当前失败消息（含附件）+ 队列剩余消息倒回输入框
+        //（队列清空），供用户重新编辑后手动重发。
         sendFailed = true;
-        _restoreQueueToComposer(failedContent: content);
+        _restoreQueueToComposer(
+          failedContent: content,
+          failedAttachments: attachments,
+        );
         if (err.contains('not reachable after')) {
           _emit(ShowErrorSnackBarEvent('chat_reconnectFailed'));
         } else {
@@ -1379,8 +1382,11 @@ mixin _MessagingOps on _ChatControllerBase {
     } catch (e, stackTrace) {
       LoggerService().error('processGroupMessage error: $e', tag: 'ChatController', error: e, stackTrace: stackTrace);
       groupFailed = true;
-      // 失败后把当前群消息 + 队列剩余消息倒回输入框。
-      _restoreQueueToComposer(failedContent: content);
+      // 失败后把当前群消息（含附件）+ 队列剩余消息倒回输入框。
+      _restoreQueueToComposer(
+        failedContent: content,
+        failedAttachments: attachments,
+      );
       if (groupTurnGate.isCurrent(epoch)) {
         _emit(ShowErrorSnackBarEvent('chat_groupChatError:$e'));
       }
@@ -1602,8 +1608,11 @@ mixin _MessagingOps on _ChatControllerBase {
       messageIdMap.remove(streamingMessageId);
       _notify();
       fileFailed = true;
-      // 失败后把附件消息文本 + 队列剩余消息倒回输入框。
-      _restoreQueueToComposer(failedContent: attachmentMessage.content);
+      // 失败后把附件消息文本 + 附件本体 + 队列剩余消息倒回输入框。
+      _restoreQueueToComposer(
+        failedContent: attachmentMessage.content,
+        failedAttachments: [attachmentData],
+      );
       _emit(ShowErrorSnackBarEvent('chat_fileMessageFailed:$e'));
     } finally {
       streaming.clear();
