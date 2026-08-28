@@ -1132,7 +1132,13 @@ mixin _MessagingOps on _ChatControllerBase {
       int? resolvedSize;
       final url = fileData['url'] as String?;
       final rawSize = (fileData['size'] as num?)?.toInt();
-      if (InboundFileMessageParser.needsLocalSizeProbe(url, rawSize) &&
+      if (url != null && url.startsWith('store://') &&
+          (rawSize == null || rawSize == 0)) {
+        // Agent 产物只给 store:// 引用时，向储物袋取真实大小用于展示。
+        try {
+          resolvedSize = await StoreUriReader.instance.sizeOf(url);
+        } catch (_) {}
+      } else if (InboundFileMessageParser.needsLocalSizeProbe(url, rawSize) &&
           url != null) {
         try {
           final f = File(url);

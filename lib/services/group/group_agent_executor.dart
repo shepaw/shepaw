@@ -19,6 +19,7 @@ import '../local_llm_agent_service.dart';
 import '../messaging/local_llm_handler.dart';
 import '../acp_agent_connection.dart';
 import '../file_download_service.dart';
+import '../../storage/store_uri_reader.dart';
 import '../inference_log_service.dart';
 import '../trace_service.dart';
 import '../foreground_task_service.dart';
@@ -181,12 +182,16 @@ class GroupAgentExecutor {
         return;
       }
 
+      // store:// 引用已在本机储物袋中，无需下载；本地路径才需要立即复制。
+      final isStoreUri = url.startsWith('store://');
+
       // If the url is a local file path, try to copy the file immediately so the
       // user doesn't need to manually "download" it (local LLM agents produce files
       // that live on the same device and are accessible directly).
       String? copiedRelativePath;
-      final isLocalPath =
-          !url.startsWith('http://') && !url.startsWith('https://');
+      final isLocalPath = !isStoreUri &&
+          !url.startsWith('http://') &&
+          !url.startsWith('https://');
       if (isLocalPath) {
         try {
           final result = await FileDownloadService().downloadAndSave(
@@ -199,6 +204,15 @@ class GroupAgentExecutor {
         } catch (e) {
           LoggerService().warning('Could not pre-copy local file from $url: $e',
               tag: 'GroupAgentExecutor');
+        }
+      }
+
+      // Agent 产物只给 store:// 引用时，向储物袋取真实大小用于展示。
+      if (isStoreUri && (size == null || size == 0)) {
+        try {
+          size = await StoreUriReader.instance.sizeOf(url);
+        } catch (_) {
+          // 大小拿不到就保持原值，气泡会再尝试懒解析。
         }
       }
 
@@ -227,12 +241,16 @@ class GroupAgentExecutor {
 
       final metadata = <String, dynamic>{
         'source_url': url,
-        'download_status': copiedRelativePath != null ? 'completed' : 'pending',
+        'download_status':
+            copiedRelativePath != null || isStoreUri ? 'completed' : 'pending',
         'name': filename ?? 'file',
         'type': fileMimeType ?? 'application/octet-stream',
         'size': size ?? 0,
       };
 
+      if (isStoreUri) {
+        metadata['store_uri'] = url;
+      }
       if (copiedRelativePath != null) {
         metadata['path'] = copiedRelativePath;
       }

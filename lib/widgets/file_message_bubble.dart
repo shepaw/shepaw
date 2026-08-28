@@ -8,6 +8,7 @@ import '../services/local_database_service.dart';
 import '../services/file_download_service.dart';
 import '../services/attachment_service.dart';
 import '../services/store_open_service.dart';
+import '../storage/store_uri_reader.dart';
 import '../services/ws_file_transfer_service.dart';
 import '../services/acp_agent_connection.dart';
 import '../services/chat_service.dart';
@@ -40,6 +41,8 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
   double _progress = 0.0;
   /// Cached path after download, so we don't rely on widget.message.metadata.
   String? _downloadedPath;
+  /// Real size from the store, resolved lazily when metadata size is 0.
+  int? _resolvedSize;
 
   @override
   void initState() {
@@ -47,12 +50,39 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
     // Default to 'completed' for backward compat with existing messages
     _downloadStatus =
         widget.message.metadata?['download_status'] as String? ?? 'completed';
+    // store:// 引用已在本机储物袋中，无需下载（兼容历史消息 download_status=pending）。
+    if (_storeUri != null && _downloadStatus == 'pending') {
+      _downloadStatus = 'completed';
+    }
+    _resolveStoreSize();
   }
+
+  /// `store://` 引用：显式 `store_uri`，或旧消息 `source_url` 里的 store://。
+  String? get _storeUri => AttachmentService.storeUriOf(widget.message.metadata);
 
   String get _fileName =>
       widget.message.metadata?['name'] as String? ?? 'Unknown file';
 
   int get _fileSize => (widget.message.metadata?['size'] as num?)?.toInt() ?? 0;
+
+  /// 展示用大小：优先 metadata，缺失时用储物袋懒解析结果。
+  int get _displayFileSize {
+    if (_fileSize > 0) return _fileSize;
+    return _resolvedSize ?? 0;
+  }
+
+  Future<void> _resolveStoreSize() async {
+    final uri = _storeUri;
+    if (uri == null || _fileSize > 0) return;
+    try {
+      final size = await StoreUriReader.instance.sizeOf(uri);
+      if (mounted && size > 0) {
+        setState(() => _resolvedSize = size);
+      }
+    } catch (_) {
+      // 大小拿不到就保持原值。
+    }
+  }
 
   String get _fileType => widget.message.metadata?['type'] as String? ?? 'file';
 
@@ -118,7 +148,7 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
 
   Future<void> _openFile() async {
     // 储物袋引用：StoreUriReader → App 预览或 temp + 系统打开（勿直接 OpenFile 私有路径）
-    final storeUri = widget.message.metadata?['store_uri'] as String?;
+    final storeUri = _storeUri;
     if (storeUri != null && storeUri.isNotEmpty) {
       await StoreOpenService.instance.openStoreUri(context, storeUri);
       return;
@@ -166,6 +196,12 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
     final url = widget.message.metadata?['source_url'] as String?;
     final fileId = widget.message.metadata?['file_id'] as String?;
     if ((url == null || url.isEmpty) && (fileId == null || fileId.isEmpty)) return;
+
+    // store:// 引用已在本机储物袋中，无需下载，直接打开/预览。
+    if (_storeUri != null) {
+      await _openFile();
+      return;
+    }
 
     setState(() {
       _downloadStatus = 'downloading';
@@ -424,7 +460,7 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    AttachmentService.formatFileSize(_fileSize),
+                    AttachmentService.formatFileSize(_displayFileSize),
                     style: TextStyle(
                       color: subtitleColor,
                       fontSize: 11,

@@ -27,6 +27,7 @@ import '../peer/services/peer_agent_client_service.dart';
 import '../peer/services/peer_agent_host_service.dart' show isPeerAgentChannel;
 import '../peer/services/peer_storage_service.dart';
 import '../peer/services/peer_connection_manager.dart';
+import '../storage/store_uri_reader.dart';
 import '../peer/services/peer_connection.dart' show PeerConnectionEvent;
 import '../peer/peer_approval_selection.dart';
 import '../peer/peer_approval_payload.dart';

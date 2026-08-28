@@ -39,6 +39,7 @@ import 'group/group_session_service.dart';
 import 'session/session_history_service.dart';
 import '../storage/artifact_service.dart';
 import '../storage/context_bundle.dart';
+import '../storage/store_uri_reader.dart';
 import 'app_lifecycle_service.dart';
 import '../providers/notification_provider.dart';
 import 'foreground_task_service.dart';
@@ -1772,16 +1773,31 @@ $originalQuestion
       final isImage = mimeType != null && mimeType.startsWith('image/');
       final msgType = isImage ? MessageType.image : MessageType.file;
 
+      // store:// 引用已在本机储物袋中，无需下载；http / file_id 才需要 pending。
+      final isStoreUri = url != null && url.startsWith('store://');
       final metadata = <String, dynamic>{
         'name': filename ?? 'file',
         'type': mimeType ?? 'application/octet-stream',
         'size': size ?? 0,
-        'download_status': 'pending',
+        'download_status': isStoreUri ? 'completed' : 'pending',
       };
-      if (url != null && url.isNotEmpty) metadata['source_url'] = url;
+      if (url != null && url.isNotEmpty) {
+        metadata['source_url'] = url;
+        if (isStoreUri) metadata['store_uri'] = url;
+      }
       if (resolvedFileId != null) metadata['file_id'] = resolvedFileId;
       if (thumbnailBase64 != null && thumbnailBase64.isNotEmpty) {
         metadata['thumbnail_base64'] = thumbnailBase64;
+      }
+
+      // Agent 产物只给 store:// 引用时，向储物袋取真实大小用于展示。
+      if (isStoreUri && (size == null || size == 0)) {
+        try {
+          final realSize = await StoreUriReader.instance.sizeOf(url);
+          metadata['size'] = realSize;
+        } catch (_) {
+          // 大小拿不到就保持 0，气泡会再尝试懒解析。
+        }
       }
 
       final channelId = params['channel_id'] as String? ?? '';

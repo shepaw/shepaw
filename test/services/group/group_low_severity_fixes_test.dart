@@ -371,6 +371,7 @@ class _NoopExecutor extends GroupAgentExecutor {
     bool isLoopSummarize = false,
     bool isAbortSummarize = false,
     bool isDispatchNudge = false,
+    bool isPendingStatusNudge = false,
     int? loopRound,
     String mentionMode = 'adminOnly',
     List<String> failedAgentNames = const [],

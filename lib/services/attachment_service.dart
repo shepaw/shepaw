@@ -35,6 +35,19 @@ class AttachmentService {
     return shared.resolveAttachmentFile(metadata);
   }
 
+  /// 从消息 metadata 提取 `store://` 引用。
+  ///
+  /// 优先显式 `store_uri`；兼容旧消息只把 `store://` 放在 `source_url`
+  /// （Agent 产物 `ui.fileMessage` 链路）的情况。非 store 引用返回 null。
+  static String? storeUriOf(Map<String, dynamic>? metadata) {
+    if (metadata == null) return null;
+    final explicit = metadata['store_uri'] as String?;
+    if (explicit != null && explicit.isNotEmpty) return explicit;
+    final url = metadata['source_url'] as String?;
+    if (url != null && url.startsWith('store://')) return url;
+    return null;
+  }
+
   // ────────────────────────────── 附件 store 读写 ──
 
   /// 解析 runtime owner：群聊 → groupFamilyId / channelId；单聊 → agentId。
@@ -134,7 +147,7 @@ class AttachmentService {
 
   /// 解析附件文件（消息气泡展示用）。
   Future<File?> resolveAttachmentFile(Map<String, dynamic> metadata) async {
-    final storeUri = metadata['store_uri'] as String?;
+    final storeUri = storeUriOf(metadata);
     if (storeUri == null || storeUri.isEmpty) return null;
     return StoreAttachmentRef.fileFromStoreUri(storeUri);
   }
