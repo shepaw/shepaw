@@ -1448,6 +1448,96 @@ abstract class AppLocalizations {
   /// **'选择外观'**
   String get settings_appearanceDialogTitle;
 
+  /// No description provided for @settings_location.
+  ///
+  /// In zh, this message translates to:
+  /// **'地理位置'**
+  String get settings_location;
+
+  /// No description provided for @settings_locationSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'Agent 需要时查询当前位置，不后台追踪'**
+  String get settings_locationSub;
+
+  /// No description provided for @settings_locationHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'Agent 仅在你提问「我在哪」或需要本地信息时读取一次位置，不会后台持续追踪。'**
+  String get settings_locationHint;
+
+  /// No description provided for @settings_locationStatus.
+  ///
+  /// In zh, this message translates to:
+  /// **'权限状态'**
+  String get settings_locationStatus;
+
+  /// No description provided for @settings_locationGranted.
+  ///
+  /// In zh, this message translates to:
+  /// **'已允许，Agent 可按需查询当前位置'**
+  String get settings_locationGranted;
+
+  /// No description provided for @settings_locationDenied.
+  ///
+  /// In zh, this message translates to:
+  /// **'未授权，点此申请'**
+  String get settings_locationDenied;
+
+  /// No description provided for @settings_locationDeniedForever.
+  ///
+  /// In zh, this message translates to:
+  /// **'已拒绝，请到系统设置开启'**
+  String get settings_locationDeniedForever;
+
+  /// No description provided for @settings_locationServiceOff.
+  ///
+  /// In zh, this message translates to:
+  /// **'系统定位服务已关闭'**
+  String get settings_locationServiceOff;
+
+  /// No description provided for @settings_locationUnavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法读取定位状态'**
+  String get settings_locationUnavailable;
+
+  /// No description provided for @settings_locationGrant.
+  ///
+  /// In zh, this message translates to:
+  /// **'允许定位'**
+  String get settings_locationGrant;
+
+  /// No description provided for @settings_locationGrantSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'弹出系统定位权限申请'**
+  String get settings_locationGrantSub;
+
+  /// No description provided for @settings_locationOpenSettings.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开应用设置'**
+  String get settings_locationOpenSettings;
+
+  /// No description provided for @settings_locationOpenSettingsSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'在系统设置中更改定位权限'**
+  String get settings_locationOpenSettingsSub;
+
+  /// No description provided for @settings_locationOpenLocationSettings.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开定位服务'**
+  String get settings_locationOpenLocationSettings;
+
+  /// No description provided for @settings_locationError.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法请求定位权限'**
+  String get settings_locationError;
+
   /// No description provided for @settings_exportDataTitle.
   ///
   /// In zh, this message translates to:

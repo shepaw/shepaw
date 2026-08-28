@@ -10,6 +10,8 @@ import 'privacy_policy_screen.dart';
 import 'notification_settings_screen.dart';
 import 'language_settings_screen.dart';
 import 'appearance_settings_screen.dart';
+import 'location_settings_screen.dart';
+import '../services/location_service.dart';
 import 'inference_log_screen.dart';
 import 'log_viewer_screen.dart';
 import 'user_profile_settings_screen.dart';
@@ -42,6 +44,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _biometricSupported = false;
   bool _biometricLoading = true;
   bool _batteryOptIgnored = false;
+  Map<String, dynamic>? _locationStatus;
 
   @override
   void initState() {
@@ -49,6 +52,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     UpdateService().dismissSettingsIconBadge();
     _loadBiometricState();
     _loadBatteryOptimizationState();
+    _loadLocationState();
   }
 
   Future<void> _loadBiometricState() async {
@@ -107,6 +111,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
         setState(() => _batteryOptIgnored = ignored);
       }
     } catch (_) {}
+  }
+
+  Future<void> _loadLocationState() async {
+    try {
+      final status = await LocationService.instance.status();
+      if (mounted) setState(() => _locationStatus = status);
+    } catch (_) {}
+  }
+
+  String _locationSubtitle(AppLocalizations l10n) {
+    final status = _locationStatus;
+    if (status == null || status['success'] != true) {
+      return l10n.settings_locationSub;
+    }
+    if (status['service_enabled'] != true) {
+      return l10n.settings_locationServiceOff;
+    }
+    if (status['available'] == true) {
+      return l10n.settings_locationGranted;
+    }
+    if (status['permission'] == 'deniedForever') {
+      return l10n.settings_locationDeniedForever;
+    }
+    return l10n.settings_locationDenied;
   }
 
   Future<void> _onBatteryOptimizationTap() async {
@@ -284,6 +312,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   builder: (context) => const AppearanceSettingsScreen(),
                 ),
               );
+            },
+          ),
+
+          const Divider(),
+
+          ListTile(
+            leading: const Icon(Icons.location_on_outlined),
+            title: Text(l10n.settings_location),
+            subtitle: Text(_locationSubtitle(l10n)),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              await _openAndRefresh(const LocationSettingsScreen());
+              await _loadLocationState();
             },
           ),
 

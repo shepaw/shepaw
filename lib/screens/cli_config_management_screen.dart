@@ -83,7 +83,7 @@ List<_NsDef> get _topNamespaces => [
       _NsDef(
         key: 'os',
         label: 'OS',
-        description: 'Local OS tools — shell, file, app, clipboard, process',
+        description: 'Local OS tools — shell, file, app, clipboard, location, process',
         icon: Icons.computer_outlined,
         ns: OsCliNamespace.instance,
       ),
@@ -127,6 +127,8 @@ IconData _toolIconFor(String toolName) => switch (toolName) {
       'screenshot' => Icons.screenshot_monitor,
       'clipboard_read' => Icons.content_paste,
       'clipboard_write' => Icons.content_copy,
+      'location_get' => Icons.my_location,
+      'location_status' => Icons.location_searching,
       'process_list' => Icons.list_alt,
       'process_kill' => Icons.cancel_outlined,
       'applescript_exec' => Icons.code,

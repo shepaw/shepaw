@@ -42,6 +42,8 @@ abstract class LocationBackend {
   Future<bool> isServiceEnabled();
   Future<String> checkPermission();
   Future<String> requestPermission();
+  Future<bool> openAppSettings();
+  Future<bool> openLocationSettings();
   Future<LocationFix> getCurrentPosition({
     required String accuracy,
     required Duration timeout,
@@ -79,6 +81,64 @@ class LocationService {
       };
     }
   }
+
+  /// Ask for location permission without reading GPS.
+  ///
+  /// Used by Settings. If the OS location service is off, returns
+  /// `service_disabled` instead of prompting.
+  Future<Map<String, dynamic>> requestAccess() async {
+    try {
+      final serviceEnabled = await _backend.isServiceEnabled();
+      if (!serviceEnabled) {
+        return {
+          'success': false,
+          'service_enabled': false,
+          'permission': await _backend.checkPermission(),
+          'available': false,
+          'code': 'service_disabled',
+          'error': 'Location services are disabled on this device.',
+        };
+      }
+
+      var permission = await _backend.checkPermission();
+      if (permission == 'denied') {
+        permission = await _backend.requestPermission();
+      }
+      final granted = permission == 'whileInUse' || permission == 'always';
+      if (granted) {
+        return {
+          'success': true,
+          'service_enabled': true,
+          'permission': permission,
+          'available': true,
+        };
+      }
+      return {
+        'success': false,
+        'service_enabled': true,
+        'permission': permission,
+        'available': false,
+        'code': permission == 'deniedForever'
+            ? 'permission_denied_forever'
+            : 'permission_denied',
+        'error': permission == 'deniedForever'
+            ? 'Location permission is permanently denied. Enable it in system settings.'
+            : 'Location permission was denied.',
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'error': e.toString(),
+        'code': 'unavailable',
+      };
+    }
+  }
+
+  /// App info page (needed after "Don't ask again" / deniedForever).
+  Future<bool> openAppSettings() => _backend.openAppSettings();
+
+  /// OS location-services page (needed when GPS is switched off).
+  Future<bool> openLocationSettings() => _backend.openLocationSettings();
 
   /// Current coordinates, optionally reverse-geocoded to a place name.
   Future<Map<String, dynamic>> getCurrent({
@@ -173,6 +233,12 @@ class GeolocatorLocationBackend implements LocationBackend {
   @override
   Future<String> requestPermission() async =>
       _permissionName(await Geolocator.requestPermission());
+
+  @override
+  Future<bool> openAppSettings() => Geolocator.openAppSettings();
+
+  @override
+  Future<bool> openLocationSettings() => Geolocator.openLocationSettings();
 
   @override
   Future<LocationFix> getCurrentPosition({

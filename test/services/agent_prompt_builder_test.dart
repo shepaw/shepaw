@@ -92,6 +92,12 @@ void main() {
       expect(block, contains('do **not** guess a name'));
     });
 
+    test('buildMetaCognitionBlock tells She to call location.get for place questions', () {
+      final block = SheService.buildMetaCognitionBlock();
+      expect(block, contains('shepaw os location.get'));
+      expect(block, contains('not background tracking'));
+    });
+
     test('buildMetaCognitionBlock stays compact and defers playbooks to CLI help', () {
       final block = SheService.buildMetaCognitionBlock();
       expect(block.length, lessThan(2800));

@@ -769,6 +769,56 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settings_appearanceDialogTitle => 'Choose appearance';
 
   @override
+  String get settings_location => 'Location';
+
+  @override
+  String get settings_locationSub =>
+      'Agents can query the current place when needed';
+
+  @override
+  String get settings_locationHint =>
+      'Agents read your location only when they need it (for example “where am I” or local weather). Location is not tracked in the background.';
+
+  @override
+  String get settings_locationStatus => 'Permission';
+
+  @override
+  String get settings_locationGranted =>
+      'Allowed. Agents can query the current place';
+
+  @override
+  String get settings_locationDenied => 'Not allowed. Tap to request';
+
+  @override
+  String get settings_locationDeniedForever =>
+      'Denied. Enable it in system settings';
+
+  @override
+  String get settings_locationServiceOff => 'Device location services are off';
+
+  @override
+  String get settings_locationUnavailable => 'Could not read location status';
+
+  @override
+  String get settings_locationGrant => 'Allow location';
+
+  @override
+  String get settings_locationGrantSub => 'Show the system permission prompt';
+
+  @override
+  String get settings_locationOpenSettings => 'Open app settings';
+
+  @override
+  String get settings_locationOpenSettingsSub =>
+      'Change location permission in the system';
+
+  @override
+  String get settings_locationOpenLocationSettings => 'Open location services';
+
+  @override
+  String get settings_locationError => 'Could not request location permission';
+
+  @override
   String get settings_exportDataTitle => 'Export Data';
 
   @override

@@ -36,6 +36,12 @@ class _FakeBackend implements LocationBackend {
   }
 
   @override
+  Future<bool> openAppSettings() async => true;
+
+  @override
+  Future<bool> openLocationSettings() async => true;
+
+  @override
   Future<LocationFix> getCurrentPosition({
     required String accuracy,
     required Duration timeout,
@@ -112,6 +118,28 @@ void main() {
       expect(result['latitude'], 31.2304);
       expect(result['longitude'], 121.4737);
       expect(result['place']['locality'], 'Shanghai');
+    });
+
+    test('requestAccess grants permission without reading GPS', () async {
+      final backend = _FakeBackend(
+        permission: 'denied',
+        requestResult: 'whileInUse',
+        throwOnFix: Exception('should not read GPS'),
+      );
+      LocationService.instance = LocationService(backend: backend);
+      final result = await LocationService.instance.requestAccess();
+      expect(backend.requestCount, 1);
+      expect(result['success'], isTrue);
+      expect(result['available'], isTrue);
+    });
+
+    test('requestAccess fails when services are disabled', () async {
+      LocationService.instance = LocationService(
+        backend: _FakeBackend(serviceEnabled: false),
+      );
+      final result = await LocationService.instance.requestAccess();
+      expect(result['success'], isFalse);
+      expect(result['code'], 'service_disabled');
     });
 
     test('getCurrent skips reverse geocode when disabled', () async {

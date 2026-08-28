@@ -738,6 +738,52 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settings_appearanceDialogTitle => '选择外观';
 
   @override
+  String get settings_location => '地理位置';
+
+  @override
+  String get settings_locationSub => 'Agent 需要时查询当前位置，不后台追踪';
+
+  @override
+  String get settings_locationHint =>
+      'Agent 仅在你提问「我在哪」或需要本地信息时读取一次位置，不会后台持续追踪。';
+
+  @override
+  String get settings_locationStatus => '权限状态';
+
+  @override
+  String get settings_locationGranted => '已允许，Agent 可按需查询当前位置';
+
+  @override
+  String get settings_locationDenied => '未授权，点此申请';
+
+  @override
+  String get settings_locationDeniedForever => '已拒绝，请到系统设置开启';
+
+  @override
+  String get settings_locationServiceOff => '系统定位服务已关闭';
+
+  @override
+  String get settings_locationUnavailable => '无法读取定位状态';
+
+  @override
+  String get settings_locationGrant => '允许定位';
+
+  @override
+  String get settings_locationGrantSub => '弹出系统定位权限申请';
+
+  @override
+  String get settings_locationOpenSettings => '打开应用设置';
+
+  @override
+  String get settings_locationOpenSettingsSub => '在系统设置中更改定位权限';
+
+  @override
+  String get settings_locationOpenLocationSettings => '打开定位服务';
+
+  @override
+  String get settings_locationError => '无法请求定位权限';
+
+  @override
   String get settings_exportDataTitle => '导出数据';
 
   @override

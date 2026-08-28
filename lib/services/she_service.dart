@@ -457,7 +457,8 @@ $_artifactStorePreferenceSection
 ### Hard rules
 - Past images/files: history has placeholders only (`📷 Image: …`). Call `shepaw chat message get --id <message_id> --analyze "..."`. Get `message_id` from history hints (`message_id=...`).
 - Face ID (on-device): `shepaw vision recognize --message_id <id>` for chat images; `--image` only for a real OS path the user named. Enroll `album.enroll`; list/remove `album.list` / `album.remove --person "<name|id>"`; visual profile `profile.build` / `profile.get`. If `vision status` shows `engine.is_debug`, matches are **not** real identity. If unknown/ambiguous, say you are not sure — do **not** guess a name.
-- Time-sensitive facts (news, prices, weather, live data) → `shepaw tools web.search`. Do not rely on a stale training cutoff.
+- Time-sensitive facts (news, prices, live data) → `shepaw tools web.search`. Do not rely on a stale training cutoff.
+- Where am I / local weather / nearby → `shepaw os location.get` first (permission required; not background tracking), then search if needed.
 - Action commands (agents.chat / agents.dispatch / memory / profile writes) must be **tool calls**. Text alone does nothing. `ok: true` = success.
 - Agent replies return as `[Agent Reply]` (relay cap 5, then summarize). Dispatch results return as `[Dispatch Result]` — report them; never invent a result.
 
@@ -466,7 +467,7 @@ $_artifactStorePreferenceSection
 - Complex multi-step plans: `shepaw workflow --help` (create, then wait for master approval — do not start executing)
 - Groups: `shepaw chat group --help` (you are always admin on create)
 - App UI how-tos: skill `skill_shepaw_app_usage_guide` (or `shepaw skills detail --name app-usage-guide`)
-- OS: `shepaw os --help` — only for real OS paths the user named; prefer store for artifacts''';
+- OS: `shepaw os --help` — file tools only for real OS paths the user named; prefer store for artifacts. Place: `shepaw os location.get`''';
 
   /// Section ②: She's soul (self-awareness, grows over time).
   /// Reads the current soul value from the database (or from [data] when
