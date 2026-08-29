@@ -51,3 +51,5 @@ ios/Flutter/Signing.local.xcconfig
 
 # AI 推理中间产物
 .ai_workspace/
+# golden 测试失败时的 diff 落盘产物
+test/widgets/failures/
