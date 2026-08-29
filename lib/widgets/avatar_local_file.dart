@@ -26,6 +26,7 @@ Widget rasterFile(
   required double width,
   required double height,
   required BoxFit fit,
+  int? cacheWidth,
   required Widget fallback,
 }) {
   return Image.file(
@@ -33,6 +34,9 @@ Widget rasterFile(
     width: width,
     height: height,
     fit: fit,
+    // 解码分辨率对齐显示尺寸：头像多为用户上传大图，不限制时按原图
+    // 全尺寸解码进内存。
+    cacheWidth: cacheWidth,
     errorBuilder: (_, __, ___) => fallback,
   );
 }

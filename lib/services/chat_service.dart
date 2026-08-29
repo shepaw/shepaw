@@ -89,6 +89,9 @@ class ChatService {
   // Stream controllers for real-time updates
   final Map<String, StreamController<List<Message>>> _messageControllers = {};
 
+  /// 每频道一条挂起的 notify 去抖 timer（见 _notifyChannelUpdate）。
+  Map<String, Timer>? _channelUpdateDebounceTimers;
+
   // ACP connection pool (keyed by agent ID)
   final Map<String, ACPAgentConnection> _acpConnections = {};
 
@@ -537,13 +540,18 @@ class ChatService {
   }
 
   /// Recompute and notify [typingAgentIds] and [typingChannelIds] based on current active tasks.
+  ///
+  /// ValueNotifier 比较 Set 用恒等；这里手动 setEquals 去噪，内容没变
+  /// 不通知（否则 HomeScreen 会为不变的圆点整页 rebuild）。
   void _updateTypingAgentIds() {
     // typingAgentIds: only 1:1 chat agents (not group tasks)
     final ids = _activeTasks.values
         .where((t) => !t.isComplete)
         .map((t) => t.agentId)
         .toSet();
-    typingAgentIds.value = ids;
+    if (!setEquals(typingAgentIds.value, ids)) {
+      typingAgentIds.value = ids;
+    }
 
     // typingChannelIds: all channels with active typing (1:1 + group)
     final channelIds = _activeTasks.entries
@@ -556,7 +564,9 @@ class ChatService {
         channelIds.add(channelId);
       }
     }
-    typingChannelIds.value = channelIds;
+    if (!setEquals(typingChannelIds.value, channelIds)) {
+      typingChannelIds.value = channelIds;
+    }
   }
 
   /// Release the foreground task lock for [agentName].
@@ -1720,12 +1730,36 @@ $originalQuestion
       _sessionService.generateChannelId(userId, agentId);
 
   /// Notify channel update
+  ///
+  /// 群聊一回合内每个成员消息写库都会调用一次；消费端（reconcile）是
+  /// 全量重拉，没必要每条跑一遍。这里对同一 channel 做 150ms 尾除去抖，
+  /// 爆发写库合并为一次刷新。终态路径（回合完成、审批落库）需要立即刷
+  /// 的用 [notifyChannelUpdateNow]。
   void _notifyChannelUpdate(String channelId) {
+    _channelUpdateDebounceTimers?[channelId]?.cancel();
+    (_channelUpdateDebounceTimers ??= {})[channelId] =
+        Timer(const Duration(milliseconds: 150), () {
+      _channelUpdateDebounceTimers?.remove(channelId);
+      _emitChannelUpdate(channelId);
+    });
+  }
+
+  /// 立即刷新，绕过去抖（清掉该频道挂起的 timer，避免重复发射）。
+  void notifyChannelUpdateNow(String channelId) {
+    _channelUpdateDebounceTimers?[channelId]?.cancel();
+    _channelUpdateDebounceTimers?.remove(channelId);
+    _emitChannelUpdate(channelId);
+  }
+
+  void _emitChannelUpdate(String channelId) {
     if (!_messageControllers.containsKey(channelId)) {
       _messageControllers[channelId] =
           StreamController<List<Message>>.broadcast();
     }
-    _messageControllers[channelId]!.add([]);
+    final controller = _messageControllers[channelId];
+    if (controller != null && !controller.isClosed) {
+      controller.add([]);
+    }
   }
 
   /// Public alias for external callers (e.g. ACPServerService) that need to
@@ -3514,6 +3548,11 @@ $originalQuestion
 
   /// 页面退出时调用，仅关闭 UI 流，ACP 连接保持存活
   void detachUI() {
+    for (final timer in (_channelUpdateDebounceTimers?.values ??
+        const <Timer>[])) {
+      timer.cancel();
+    }
+    _channelUpdateDebounceTimers?.clear();
     for (final controller in _messageControllers.values) {
       controller.close();
     }

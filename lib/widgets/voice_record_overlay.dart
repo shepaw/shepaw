@@ -1,17 +1,47 @@
 import 'package:flutter/material.dart';
 
-/// 录音时显示在输入区域上方的覆盖组件
+import '../services/audio_recording_service.dart';
+
+/// 录音时显示在输入区域上方的覆盖组件。
+///
+/// 振幅/计时的高频更新（~15Hz）由 [AudioRecordingService.stateNotifier]
+/// 驱动，在组件内部局部订阅，避免整页 setState。只有 [isCancelZone]
+/// 这类低频状态仍从外部传入。
 class VoiceRecordOverlay extends StatelessWidget {
-  final Duration elapsed;
-  final double amplitude;
+  final AudioRecordingService audioRecordingService;
   final bool isCancelZone;
 
   const VoiceRecordOverlay({
     Key? key,
+    required this.audioRecordingService,
+    required this.isCancelZone,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<RecordingState>(
+      valueListenable: audioRecordingService.stateNotifier,
+      builder: (context, state, _) {
+        return _RecordingChrome(
+          elapsed: state.elapsed,
+          amplitude: state.amplitude,
+          isCancelZone: isCancelZone,
+        );
+      },
+    );
+  }
+}
+
+class _RecordingChrome extends StatelessWidget {
+  final Duration elapsed;
+  final double amplitude;
+  final bool isCancelZone;
+
+  const _RecordingChrome({
     required this.elapsed,
     required this.amplitude,
     required this.isCancelZone,
-  }) : super(key: key);
+  });
 
   String get _timerText {
     final minutes = elapsed.inMinutes.remainder(60).toString().padLeft(2, '0');

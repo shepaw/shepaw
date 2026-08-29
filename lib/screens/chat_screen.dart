@@ -140,8 +140,6 @@ class _ChatScreenState extends State<ChatScreen>
   StreamSubscription<RecordingState>? _recordingSubscription;
   bool _isRecording = false;
   bool _isCancelZone = false;
-  Duration _recordingElapsed = Duration.zero;
-  double _recordingAmplitude = 0.0;
 
   // Pending attachments (UI-bound)
   List<PendingAttachment> get _pendingAttachments => _pendingQueue.items;
@@ -227,6 +225,13 @@ class _ChatScreenState extends State<ChatScreen>
   final ValueNotifier<int> _pinnedPanelSelectionModeRequest =
       ValueNotifier<int>(0);
 
+  /// 面板真正关心的只有"会话切换 / 消息数变化"这类结构性变化。流式
+  /// chunk 只改消息内容，不计数、不换会话，用这个 tick 把面板与流式
+  /// rebuild 解耦（_onControllerChanged 里按需自增）。
+  final ValueNotifier<int> _pinnedPanelStructTick = ValueNotifier<int>(0);
+  int _pinnedPanelLastMessageCount = -1;
+  String? _pinnedPanelLastChannelId;
+
   /// 清空会话等不可关闭 overlay 是否仍在栈上。Dismiss 必须对上这次 show，
   /// 否则会 pop 掉聊天页或抽屉。
   bool _clearingOverlayOpen = false;
@@ -272,13 +277,13 @@ class _ChatScreenState extends State<ChatScreen>
     _eventSubscription = _controller.events.listen(_handleControllerEvent);
 
     _audioRecordingService = AudioRecordingService();
+    // 振幅/计时的高频采样（~15Hz）由 overlay 内部 ValueListenableBuilder
+    // 消费，这里只跟 isRecording 翻转，避免录音期间整页 rebuild。
+    var wasRecording = false;
     _recordingSubscription = _audioRecordingService.stateStream.listen((state) {
-      if (mounted) {
-        setState(() {
-          _isRecording = state.isRecording;
-          _recordingElapsed = state.elapsed;
-          _recordingAmplitude = state.amplitude;
-        });
+      if (mounted && state.isRecording != wasRecording) {
+        wasRecording = state.isRecording;
+        setState(() => _isRecording = state.isRecording);
       }
     });
 
@@ -360,10 +365,13 @@ class _ChatScreenState extends State<ChatScreen>
     _itemPositionsListener.itemPositions
         .removeListener(_onItemPositionsChanged);
     _programmaticScrollClearTimer?.cancel();
+    // 去抖中的已读标记在离开页面前落库，避免丢已读。
+    _flushPendingMarkRead();
     _audioRecordingService.dispose();
     _messageController.dispose();
     _textFieldFocusNode.dispose();
     _pinnedPanelRefreshTick.dispose();
+    _pinnedPanelStructTick.dispose();
     _pinnedPanelSelectionModeRequest.dispose();
     // 抽屉挂在 root Navigator 上、动画控制器却由本页持有。任何未先
     // await dismissed 的拆页（工作流、通知跳转、CloseScreen）都会把
@@ -395,6 +403,15 @@ class _ChatScreenState extends State<ChatScreen>
     if (messageCount != _trackedMessageCount) {
       _trackedMessageCount = messageCount;
       unawaited(_refreshOtherSessionsUnread());
+    }
+    // 停靠面板只跟随结构性变化：会话切换 / 消息数增减。流式 chunk 只改
+    // 内容，不触发面板 rebuild。
+    final channelId = _controller.currentChannelId;
+    if (messageCount != _pinnedPanelLastMessageCount ||
+        channelId != _pinnedPanelLastChannelId) {
+      _pinnedPanelLastMessageCount = messageCount;
+      _pinnedPanelLastChannelId = channelId;
+      _pinnedPanelStructTick.value++;
     }
     final isStreaming = _controller.streamingMessageId != null ||
         _controller.groupStreamingMessageIds.isNotEmpty;
@@ -784,10 +801,39 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   void _clearScrolledUpState({bool notify = true}) {
+    // 值没变就不 setState：itemPositions 在惯性滚动中每帧触发，空转的
+    // setState 会让整个页面跟着白跑。
+    final unchanged = !_isUserScrolledUp && _unreadMessageCount == 0;
     _isUserScrolledUp = false;
     _unreadMessageCount = 0;
     _controller.isUserScrolledUp = false;
-    if (notify && mounted) setState(() {});
+    if (notify && !unchanged && mounted) setState(() {});
+  }
+
+  /// 已读标记去抖：itemPositions / 滚动结束回调在惯性滚动中高频触发，
+  /// 每次都写库会把滚动路径拖出 IO 抖动。250ms 尾随合并，停止滚动后
+  /// 落一次库；dispose 前 flush 防丢已读。
+  Timer? _markReadDebounceTimer;
+
+  void _scheduleMarkMessagesAsRead() {
+    _markReadDebounceTimer?.cancel();
+    _markReadDebounceTimer = Timer(const Duration(milliseconds: 250), () {
+      _markReadDebounceTimer = null;
+      if (!mounted) return;
+      _controller.markMessagesAsReadIfAtBottom();
+      unawaited(_refreshOtherSessionsUnread());
+    });
+  }
+
+  void _flushPendingMarkRead() {
+    // 只在有挂起的去抖时才落库：dispose 里无条件调用会给每次退页都
+    // 塞一次多余 DB 写。
+    if (_markReadDebounceTimer == null) return;
+    _markReadDebounceTimer?.cancel();
+    _markReadDebounceTimer = null;
+    if (!mounted) return;
+    _controller.markMessagesAsReadIfAtBottom();
+    unawaited(_refreshOtherSessionsUnread());
   }
 
   void _beginProgrammaticScroll() {
@@ -820,8 +866,7 @@ class _ChatScreenState extends State<ChatScreen>
     if (!mounted || _isProgrammaticScrolling) return;
     if (_isUserScrolledUp && _isNewestMessageVisible()) {
       _clearScrolledUpState();
-      _controller.markMessagesAsReadIfAtBottom();
-      unawaited(_refreshOtherSessionsUnread());
+      _scheduleMarkMessagesAsRead();
     }
     unawaited(_maybeLoadOlderMessages());
   }
@@ -907,8 +952,7 @@ class _ChatScreenState extends State<ChatScreen>
     if (metrics.atEdge && metrics.pixels == metrics.minScrollExtent) {
       if (_isUserScrolledUp) {
         _clearScrolledUpState();
-        _controller.markMessagesAsReadIfAtBottom();
-        unawaited(_refreshOtherSessionsUnread());
+        _scheduleMarkMessagesAsRead();
       }
     }
   }
@@ -1625,15 +1669,15 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   /// 停靠面板主体：复用抽屉同一份面板内容，外包 [ChatPanelScope]
-  /// （条目点击保留面板）与 AnimatedBuilder（会话切换 / 消息数变化时
-  /// 刷新高亮与列表）。
+  /// （条目点击保留面板）与 ValueListenableBuilder（只跟随结构 tick，
+  /// 流式 chunk 不再重建面板；会话切换 / 消息数变化时刷新高亮与列表）。
   Widget _buildPinnedPanel(AppLocalizations l10n) {
     return ChatPanelScope(
       popRouteIfAny: () {},
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, _) {
-          // controller 变化后懒重拉：键（切换会话/群）或消息数（新消息
+      child: ValueListenableBuilder<int>(
+        valueListenable: _pinnedPanelStructTick,
+        builder: (context, _, __) {
+          // 结构变化后懒重拉：键（切换会话/群）或消息数（新消息
           // 未读角标）变了才查库，纯 setState（滚动、输入）不触发。
           // deferToNextFrame：重拉内部有 setState，不能在 build 期间同步
           // 调用（否则 "setState() called during build"）。
@@ -3291,8 +3335,7 @@ class _ChatScreenState extends State<ChatScreen>
               // Voice record overlay
               if (_isRecording)
                 VoiceRecordOverlay(
-                  elapsed: _recordingElapsed,
-                  amplitude: _recordingAmplitude,
+                  audioRecordingService: _audioRecordingService,
                   isCancelZone: _isCancelZone,
                 ),
   

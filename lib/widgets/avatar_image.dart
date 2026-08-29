@@ -62,6 +62,14 @@ class AvatarImage extends StatelessWidget {
     return path.startsWith('assets/');
   }
 
+  /// 按显示尺寸 × DPR 计算解码宽度，避免 32px 头像按原图全尺寸解码
+  /// （用户上传的大图会放大内存与解码耗时）。SVG 不走位图解码，无需此值。
+  static int _cacheWidth(double size) {
+    final dpr =
+        WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
+    return (size * dpr).round();
+  }
+
   @override
   Widget build(BuildContext context) {
     final isLocal = isLocalFile(avatar);
@@ -82,6 +90,7 @@ class AvatarImage extends StatelessWidget {
               width: size,
               height: size,
               fit: fit,
+              cacheWidth: _cacheWidth(size),
               errorBuilder: (_, __, ___) => fallback,
             );
       return ClipRRect(
@@ -125,6 +134,7 @@ class AvatarImage extends StatelessWidget {
               width: size,
               height: size,
               fit: fit,
+              cacheWidth: _cacheWidth(size),
               fallback: fallback,
             )
           : Image.network(
@@ -132,6 +142,7 @@ class AvatarImage extends StatelessWidget {
               width: size,
               height: size,
               fit: fit,
+              cacheWidth: _cacheWidth(size),
               errorBuilder: (_, __, ___) => fallback,
             );
     }

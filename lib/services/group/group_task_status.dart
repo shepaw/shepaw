@@ -48,8 +48,23 @@ class GroupTaskStatusParser {
     caseSensitive: false,
   );
 
+  /// One-entry memo for [strip]: bubble builds re-run this on the full
+  /// accumulated text every streaming chunk.
+  static String? _stripMemoInput;
+  static String? _stripMemoOutput;
+
   /// Remove every `[TASK_STATUS]` annotation so bubbles / clipboard stay clean.
   static String strip(String content) {
+    if (identical(_stripMemoInput, content) && _stripMemoOutput != null) {
+      return _stripMemoOutput!;
+    }
+    final out = _stripUnmemoed(content);
+    _stripMemoInput = content;
+    _stripMemoOutput = out;
+    return out;
+  }
+
+  static String _stripUnmemoed(String content) {
     if (content.isEmpty || !_statusTag.hasMatch(content)) return content;
     var out = content.replaceAll(_statusTag, '');
     out = out.replaceAll(RegExp(r'[ \t]+\n'), '\n');

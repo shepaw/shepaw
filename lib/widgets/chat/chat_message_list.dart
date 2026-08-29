@@ -145,18 +145,36 @@ class _ChatMessageListState extends State<ChatMessageList> {
     await _collapsePreference.pruneTo(widget.messages.map((m) => m.id));
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final messages = widget.messages;
-    final isGroupMode = widget.isGroupMode;
-    final messageIdMap = widget.messageIdMap;
-    final streamingMessageId = widget.streamingMessageId;
-    final groupStreamingMessageIds = widget.groupStreamingMessageIds;
-    final agentAvatarMap = widget.agentAvatarMap;
-    final isAgentOffline = widget.isAgentOffline;
-    final highlightedMessageId = widget.highlightedMessageId;
+  // --- 图片分组缓存 -----------------------------------------------------------
+  // 每次 build（流式期间即每帧）都重算两趟 O(n) 的图片索引/分组。结果只
+  // 依赖 messages 的"结构"，流式 chunk 只原地改最后一条的 content，不影
+  // 响分组，因此以 (身份, 长度, 首尾消息签名) 为键缓存，失配才重算。
 
-    // Pre-compute image messages list and index map for gallery support
+  List<Message>? _cachedGroupMessages;
+  List<Message>? _cachedAllImageMessages;
+  Map<String, int>? _cachedImageIndexMap;
+  Map<int, List<Message>>? _cachedImageGroupMap;
+  Set<int>? _cachedMergedIndices;
+
+  String? _messageGroupKey(List<Message> messages) {
+    if (messages.isEmpty) return '';
+    final first = messages.first;
+    final last = messages.last;
+    return '${identityHashCode(messages)}|${messages.length}'
+        '|${first.id}|${first.type.index}'
+        '|${last.id}|${last.type.index}';
+  }
+
+  void _invalidateImageGroupCacheIfNeeded(List<Message> messages) {
+    final key = _messageGroupKey(messages);
+    if (_cachedGroupMessages != null &&
+        _cachedAllImageMessages != null &&
+        _cachedImageIndexMap != null &&
+        _cachedImageGroupMap != null &&
+        _cachedMergedIndices != null &&
+        key == _messageGroupKey(_cachedGroupMessages!)) {
+      return;
+    }
     final allImageMessages = <Message>[];
     final imageIndexMap = <String, int>{};
     for (final msg in messages) {
@@ -193,6 +211,30 @@ class _ChatMessageListState extends State<ChatMessageList> {
         i++;
       }
     }
+
+    _cachedGroupMessages = List.unmodifiable(messages);
+    _cachedAllImageMessages = allImageMessages;
+    _cachedImageIndexMap = imageIndexMap;
+    _cachedImageGroupMap = imageGroupMap;
+    _cachedMergedIndices = mergedIndices;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final messages = widget.messages;
+    final isGroupMode = widget.isGroupMode;
+    final messageIdMap = widget.messageIdMap;
+    final streamingMessageId = widget.streamingMessageId;
+    final groupStreamingMessageIds = widget.groupStreamingMessageIds;
+    final agentAvatarMap = widget.agentAvatarMap;
+    final isAgentOffline = widget.isAgentOffline;
+    final highlightedMessageId = widget.highlightedMessageId;
+
+    _invalidateImageGroupCacheIfNeeded(messages);
+    final allImageMessages = _cachedAllImageMessages!;
+    final imageIndexMap = _cachedImageIndexMap!;
+    final imageGroupMap = _cachedImageGroupMap!;
+    final mergedIndices = _cachedMergedIndices!;
 
     return KeyedSubtree(
       key: _viewportKey,
@@ -308,9 +350,10 @@ class _ChatMessageListState extends State<ChatMessageList> {
                       showAvatar: showAvatar,
                       reserveAvatarSpace: reserveAvatarSpace,
                       stickySenderName: stickySenderName,
-                      stickyScrollListenables: [
-                        widget.itemPositionsListener.itemPositions,
-                      ],
+                      // sticky 偏移信号由组件内部的 ScrollPosition 监听提
+                      // 供（带 0.5px 阈值去重），不再挂全局 itemPositions
+                      // ——之前两份信号叠加，滚动时每个可见气泡每帧
+                      // markNeedsPaint。
                       stickyViewportKey: _viewportKey,
                       bodyCollapsed: isGroupMode &&
                           !isMyMessage &&

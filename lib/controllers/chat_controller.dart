@@ -1101,6 +1101,32 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   /// idempotent and preserves streaming placeholders, so it is safe to run
   /// mid-turn — for DM, [reloadMessagesFromDB] defers while a streaming
   /// session is active and re-runs when it ends.
+
+  /// 群聊 reconcile 单飞守卫：一回合内每个成员消息写库都会触发一次通知，
+  /// 全量 reconcile（300 行 decode）不能并发叠跑。执行中再来通知只置
+  /// queued 标记，当前一轮结束后补跑一轮收敛最终状态。
+  bool _groupReconcileRunning = false;
+  bool _groupReconcileQueued = false;
+
+  void _scheduleGroupReconcile() {
+    if (_groupReconcileRunning) {
+      _groupReconcileQueued = true;
+      return;
+    }
+    _groupReconcileRunning = true;
+    unawaited(() async {
+      try {
+        await reconcileGroupMessages();
+      } finally {
+        _groupReconcileRunning = false;
+        if (_groupReconcileQueued) {
+          _groupReconcileQueued = false;
+          _scheduleGroupReconcile();
+        }
+      }
+    }());
+  }
+
   void _subscribeChannelUpdates() {
     final cid = currentChannelId;
     if (cid == null) return;
@@ -1108,7 +1134,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     _agentTaskCompletionSub?.cancel();
     _channelUpdateSub = chatService.getMessageStream(cid).listen((_) {
       if (isGroupMode) {
-        unawaited(reconcileGroupMessages());
+        _scheduleGroupReconcile();
       } else {
         unawaited(reloadMessagesFromDB());
       }

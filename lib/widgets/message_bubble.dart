@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show SelectedContent;
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -823,9 +825,29 @@ class MessageBubble extends StatelessWidget {
   /// an explicit "(cc)" suffix so readers can tell the target was not
   /// activated. Boundary-aware: "@Tommy" is never treated as a mention of
   /// member "Tom".
+  /// One-entry memo for [_processContentWithMentions]: streaming rebuilds the
+  /// bubble every chunk with the same metadata but a growing content, and the
+  /// regex sweep runs over the full accumulated text each time. Keyed on
+  /// (content, metadata identity) — metadata only changes on structural
+  /// updates, not on streaming chunks.
+  static String? _mentionMemoContent;
+  static Map<String, dynamic>? _mentionMemoMetadata;
+  static String? _mentionMemoResult;
+
   String _processContentWithMentions(String content, Map<String, dynamic>? metadata) {
+    final memoHits = identical(_mentionMemoContent, content) &&
+        identical(_mentionMemoMetadata, metadata) &&
+        _mentionMemoResult != null;
+    if (memoHits) return _mentionMemoResult!;
+    String cacheAndReturn(String result) {
+      _mentionMemoContent = content;
+      _mentionMemoMetadata = metadata;
+      _mentionMemoResult = result;
+      return result;
+    }
+
     final mentionsRaw = metadata?['mentions'] as List<dynamic>? ?? [];
-    if (mentionsRaw.isEmpty) return content;
+    if (mentionsRaw.isEmpty) return cacheAndReturn(content);
 
     final notifyByName = <String, bool>{};
     final names = <String>[];
@@ -836,17 +858,17 @@ class MessageBubble extends StatelessWidget {
       notifyByName[name] = m['notify'] as bool? ?? true;
       if (!names.contains(name)) names.add(name);
     }
-    if (names.isEmpty) return content;
+    if (names.isEmpty) return cacheAndReturn(content);
 
     final pattern = RegExp(
       '@(${names.map(RegExp.escape).join('|')})(?![\\p{L}\\p{N}·-])',
       unicode: true,
     );
-    return content.replaceAllMapped(pattern, (match) {
+    return cacheAndReturn(content.replaceAllMapped(pattern, (match) {
       final name = match.group(1)!;
       final notify = notifyByName[name] ?? true;
       return notify ? '**@$name**' : '**@$name(cc)**';
-    });
+    }));
   }
 
   Widget _buildMessageContent(BuildContext context) {
@@ -888,6 +910,7 @@ class MessageBubble extends StatelessWidget {
         final markdownBody = _StableMarkdownBody(
           data: content,
           styleSheet: styleSheet,
+          isStreaming: isStreaming,
           onTapLink: (text, href, title) async {
             if (href == null) return;
             await _handleTapLink(context, href);
@@ -976,6 +999,7 @@ class MessageBubble extends StatelessWidget {
     final progressBody = _StableMarkdownBody(
       data: progressContent,
       styleSheet: styleSheet,
+      isStreaming: isStreaming && !hasAnswer,
       onTapLink: (text, href, title) async {
         if (href == null) return;
         await _handleTapLink(context, href);
@@ -1274,25 +1298,112 @@ class MessageBubble extends StatelessWidget {
 /// ChatScreen rebuilds the whole list on streaming chunks / status ticks.
 /// flutter_markdown re-parses on every build; skipping that for settled
 /// bubbles keeps scrolling responsive in long sessions.
+///
+/// While streaming, [data] changes every chunk — re-parsing the whole
+/// accumulated text on each chunk makes the turn get slower as it grows.
+/// Updates are therefore throttled: at most one re-parse per
+/// [streamMarkdownParseInterval]; the final content is always flushed
+/// immediately once [isStreaming] turns off.
 class _StableMarkdownBody extends StatefulWidget {
   final String data;
   final MarkdownStyleSheet styleSheet;
   final void Function(String text, String? href, String? title)? onTapLink;
 
+  /// Set to `false` on settled bubbles so their parse is never deferred.
+  final bool isStreaming;
+
   const _StableMarkdownBody({
     required this.data,
     required this.styleSheet,
     this.onTapLink,
+    this.isStreaming = false,
   });
 
   @override
   State<_StableMarkdownBody> createState() => _StableMarkdownBodyState();
 }
 
+/// Pure decision helper for [_StableMarkdownBodyState], unit-testable.
+///
+/// Returns true when a (re)parse should happen right now.
+@visibleForTesting
+bool shouldParseMarkdownNow({
+  required bool isStreaming,
+  required bool dataChanged,
+  required bool pendingData,
+  required bool timerActive,
+}) {
+  if (!dataChanged && !pendingData) return false;
+  if (!isStreaming) return true;
+  // Streaming: parse immediately only while nothing is deferred/scheduled —
+  // i.e. the first chunk, or right after the trailing timer fired.
+  return !timerActive;
+}
+
 class _StableMarkdownBodyState extends State<_StableMarkdownBody> {
+  static const streamMarkdownParseInterval = Duration(milliseconds: 120);
+
   Widget? _cached;
   String? _cachedData;
   MarkdownStyleSheet? _cachedStyle;
+  Timer? _throttleTimer;
+  String? _pendingData;
+
+  @override
+  void initState() {
+    super.initState();
+    // First build parses immediately (either settled or first chunk).
+    _cachedData = null;
+  }
+
+  @override
+  void didUpdateWidget(covariant _StableMarkdownBody oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.data != _cachedData &&
+        widget.isStreaming &&
+        !shouldParseMarkdownNow(
+          isStreaming: true,
+          dataChanged: true,
+          pendingData: _pendingData != null,
+          timerActive: _throttleTimer != null,
+        )) {
+      // Defer the re-parse: remember the newest text, let the trailing timer
+      // flush it. Cheapest possible path for the hot streaming loop.
+      _pendingData = widget.data;
+      _throttleTimer ??= Timer(streamMarkdownParseInterval, _flushPending);
+    } else if (_pendingData != null && widget.data == _pendingData) {
+      // Pending flush already covers this text — nothing to do.
+    }
+    if (!widget.isStreaming) {
+      // Turn finished (or settled bubble): drop any pending work; build()
+      // below renders the latest data synchronously.
+      _cancelThrottle();
+    }
+  }
+
+  void _flushPending() {
+    _throttleTimer = null;
+    if (!mounted || _pendingData == null) return;
+    if (_pendingData != _cachedData) {
+      setState(() {
+        _pendingData = null;
+      });
+    } else {
+      _pendingData = null;
+    }
+  }
+
+  void _cancelThrottle() {
+    _throttleTimer?.cancel();
+    _throttleTimer = null;
+    _pendingData = null;
+  }
+
+  @override
+  void dispose() {
+    _cancelThrottle();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {

@@ -90,7 +90,13 @@ class _StickyInViewHeaderState extends State<StickyInViewHeader> {
 
   void _onScrollSignal() {
     final ro = context.findRenderObject();
-    if (ro is RenderStickyInViewHeader) {
+    if (ro is! RenderStickyInViewHeader) return;
+    // 滚动期间该信号每帧到达（每个可见气泡一份）。只在 sticky 偏移真的
+    // 变了（阈值 0.5px，与 paint 的 stuck 判定一致）才失效重绘，避免整
+    // 个可见列表每帧全部 repaint。未布局完成时跳过。
+    final s = ro.computeStuckOffset();
+    if (s == null) return;
+    if ((s - ro.lastPaintedStuckOffset).abs() > 0.5) {
       ro.markNeedsPaint();
     }
   }
@@ -269,6 +275,18 @@ class RenderStickyInViewHeader extends RenderBox
     return (-itemTop).clamp(0.0, maxOffset);
   }
 
+  /// Current sticky offset without painting, for scroll-signal listeners to
+  /// diff against [lastPaintedStuckOffset]. Returns null before layout.
+  double? computeStuckOffset() {
+    final header = _header;
+    if (header == null || !hasSize || !header.hasSize) return null;
+    return _stuckOffset(header);
+  }
+
+  /// Sticky offset used in the most recent paint. Scroll listeners compare
+  /// against this so unchanged offsets skip invalidation entirely.
+  double lastPaintedStuckOffset = 0;
+
   double? _itemTopInViewport() {
     if (!hasSize) return null;
     final itemGlobal = localToGlobal(Offset.zero);
@@ -297,6 +315,7 @@ class RenderStickyInViewHeader extends RenderBox
     if (body == null || header == null) return;
 
     final stuck = _stuckOffset(header);
+    lastPaintedStuckOffset = stuck;
     final headerH = header.size.height;
     final bodyParentData = body.parentData! as _StickyParentData;
     final bodyLayoutOffset = _showHeaderInFlow

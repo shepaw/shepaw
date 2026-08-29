@@ -17,6 +17,7 @@ Widget rasterFile(
   required double width,
   required double height,
   required BoxFit fit,
+  int? cacheWidth,
   required Widget fallback,
 }) {
   return fallback;

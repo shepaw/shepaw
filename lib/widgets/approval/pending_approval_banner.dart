@@ -22,19 +22,27 @@ class PendingApprovalBanner extends StatefulWidget {
 class _PendingApprovalBannerState extends State<PendingApprovalBanner> {
   StreamSubscription<List<PendingApprovalItem>>? _hubSub;
   StreamSubscription<String?>? _channelSub;
-  List<PendingApprovalItem> _items = const [];
+
+  /// 挂在 ValueNotifier 上驱动局部 rebuild：banner 不在时直接返回
+  /// 同一个 child 实例，Flutter 在该节点短路，app 根部的任何流都
+  /// 不再连带整棵子树重建。
+  final ValueNotifier<List<PendingApprovalItem>> _items =
+      ValueNotifier<List<PendingApprovalItem>>(const []);
+
+  /// activeChannel 变化不改 _items 内容，用独立 tick 通知可见集重算。
+  final ValueNotifier<int> _visibleTick = ValueNotifier<int>(0);
 
   @override
   void initState() {
     super.initState();
-    _items = PendingApprovalHub.instance.all;
+    _items.value = PendingApprovalHub.instance.all;
     _hubSub = PendingApprovalHub.instance.stream.listen((items) {
-      if (!mounted) return;
-      setState(() => _items = items);
+      _items.value = items;
     });
     _channelSub =
         AppLifecycleService().onActiveChannelChanged.listen((_) {
-      if (mounted) setState(() {});
+      // activeChannel 只影响可见集（不改 _items），用独立 tick 通知。
+      _visibleTick.value++;
     });
   }
 
@@ -42,13 +50,15 @@ class _PendingApprovalBannerState extends State<PendingApprovalBanner> {
   void dispose() {
     _hubSub?.cancel();
     _channelSub?.cancel();
+    _items.dispose();
+    _visibleTick.dispose();
     super.dispose();
   }
 
-  List<PendingApprovalItem> get _visible {
+  List<PendingApprovalItem> _visibleOf(List<PendingApprovalItem> items) {
     final active = AppLifecycleService().activeChannelId;
-    if (active == null) return _items;
-    return _items.where((i) => i.channelId != active).toList();
+    if (active == null) return items;
+    return items.where((i) => i.channelId != active).toList();
   }
 
   void _openReview(PendingApprovalItem item) {
@@ -62,9 +72,40 @@ class _PendingApprovalBannerState extends State<PendingApprovalBanner> {
 
   @override
   Widget build(BuildContext context) {
-    final visible = _visible;
-    if (visible.isEmpty) return widget.child;
+    return ValueListenableBuilder<int>(
+      valueListenable: _visibleTick,
+      builder: (context, _, __) {
+        return ValueListenableBuilder<List<PendingApprovalItem>>(
+          valueListenable: _items,
+          child: widget.child,
+          builder: (context, items, child) {
+            final visible = _visibleOf(items);
+            if (visible.isEmpty) return child!;
+            return _BannerBar(
+              visible: visible,
+              onOpenReview: _openReview,
+              child: child!,
+            );
+          },
+        );
+      },
+    );
+  }
+}
 
+class _BannerBar extends StatelessWidget {
+  final List<PendingApprovalItem> visible;
+  final void Function(PendingApprovalItem) onOpenReview;
+  final Widget child;
+
+  const _BannerBar({
+    required this.visible,
+    required this.onOpenReview,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final latest = visible.first;
     final more = visible.length - 1;
@@ -104,7 +145,7 @@ class _PendingApprovalBannerState extends State<PendingApprovalBanner> {
             child: SafeArea(
               bottom: false,
               child: InkWell(
-                onTap: () => _openReview(latest),
+                onTap: () => onOpenReview(latest),
                 child: Padding(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -146,7 +187,7 @@ class _PendingApprovalBannerState extends State<PendingApprovalBanner> {
                         ),
                       ),
                       TextButton(
-                        onPressed: () => _openReview(latest),
+                        onPressed: () => onOpenReview(latest),
                         style: TextButton.styleFrom(
                           visualDensity: VisualDensity.compact,
                           foregroundColor: colorScheme.onPrimaryContainer,
@@ -164,7 +205,7 @@ class _PendingApprovalBannerState extends State<PendingApprovalBanner> {
             ),
           ),
         ),
-        Expanded(child: widget.child),
+        Expanded(child: child),
       ],
     );
   }

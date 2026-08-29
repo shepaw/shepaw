@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:record/record.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
@@ -58,6 +59,11 @@ class AudioRecordingService {
   final _stateController = StreamController<RecordingState>.broadcast();
   Stream<RecordingState> get stateStream => _stateController.stream;
 
+  /// 高频采样（振幅 ~15Hz）走这个 notifier，UI 局部订阅即可（如录音
+  /// overlay 的红点/计时），避免整页 setState。
+  final ValueNotifier<RecordingState> stateNotifier =
+      ValueNotifier<RecordingState>(const RecordingState());
+
   RecordingState _state = const RecordingState();
   RecordingState get currentState => _state;
 
@@ -112,6 +118,7 @@ class AudioRecordingService {
 
       _state = const RecordingState(isRecording: true);
       _stateController.add(_state);
+      stateNotifier.value = _state;
 
       // 采样振幅 ~15Hz
       _amplitudeTimer = Timer.periodic(
@@ -147,6 +154,7 @@ class AudioRecordingService {
 
       _state = const RecordingState();
       _stateController.add(_state);
+      stateNotifier.value = _state;
 
       if (path == null || path.isEmpty) return null;
 
@@ -165,6 +173,7 @@ class AudioRecordingService {
       LoggerService().error('Failed to stop recording', tag: 'AudioRecording', error: e);
       _state = const RecordingState();
       _stateController.add(_state);
+      stateNotifier.value = _state;
       return null;
     }
   }
@@ -181,6 +190,7 @@ class AudioRecordingService {
 
       _state = const RecordingState();
       _stateController.add(_state);
+      stateNotifier.value = _state;
 
       // 删除临时文件
       if (path != null && path.isNotEmpty) {
@@ -193,6 +203,7 @@ class AudioRecordingService {
       LoggerService().error('Failed to cancel recording', tag: 'AudioRecording', error: e);
       _state = const RecordingState();
       _stateController.add(_state);
+      stateNotifier.value = _state;
     }
   }
 
@@ -208,6 +219,7 @@ class AudioRecordingService {
         waveform: List<double>.from(_amplitudes),
       );
       _stateController.add(_state);
+      stateNotifier.value = _state;
     } catch (_) {}
   }
 
@@ -217,6 +229,7 @@ class AudioRecordingService {
     final elapsed = DateTime.now().difference(_startTime!);
     _state = _state.copyWith(elapsed: elapsed);
     _stateController.add(_state);
+    stateNotifier.value = _state;
 
     // 最长录音限制
     if (elapsed >= _maxDuration) {
@@ -228,6 +241,7 @@ class AudioRecordingService {
     _amplitudeTimer?.cancel();
     _elapsedTimer?.cancel();
     _stateController.close();
+    stateNotifier.dispose();
     _recorder.dispose();
   }
 }
