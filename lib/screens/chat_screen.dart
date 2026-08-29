@@ -30,6 +30,7 @@ import '../models/store_attachment_ref.dart';
 import '../storage/store_protocol.dart';
 import '../widgets/chat/storage_file_picker_screen.dart';
 import '../widgets/chat/chat_more_drawer.dart';
+import '../widgets/chat/chat_panel_scope.dart';
 import '../widgets/chat/chat_input_area.dart';
 import '../widgets/chat/chat_message_list.dart';
 import '../widgets/chat/chat_reply_preview.dart';
@@ -191,6 +192,41 @@ class _ChatScreenState extends State<ChatScreen>
   /// `dismissed`，保证切换前一定等抽屉彻底关闭。
   RightDrawerRoute? _drawerRoute;
 
+  // ── 桌面端「固定面板」：会话菜单固定为右侧停靠面板（不再浮动弹出）──
+  // 与抽屉共用同一份面板内容（[ChatMoreDrawer] 及其子面板），但常驻页面
+  // 内（Scaffold 右侧），宽度可拖拽，状态持久化到 SharedPreferences。
+
+  static const String _prefsKeyPanelPinned = 'chat_session_panel_pinned';
+  static const String _prefsKeyPanelWidth = 'chat_session_panel_width';
+
+  /// 会话菜单是否已固定为右侧停靠面板（仅桌面布局生效）。
+  bool _panelPinned = false;
+
+  /// build 时根据布局宽度与 [_panelPinned] 求值：true 表示面板当前正在
+  /// 渲染为停靠形态。抽屉入口（_showSessionList 等）据此放行 —— 窗口
+  /// 缩到非桌面布局时即使固定状态保留，抽屉仍应可打开。
+  bool _showPinnedPanel = false;
+
+  /// 停靠面板宽度（px），拖拽左缘分割线调整，范围与主页左栏一致。
+  double _pinnedPanelWidth = 360;
+  static const double _minPinnedPanelWidth = 240;
+  static const double _maxPinnedPanelWidth = 480;
+
+  /// 停靠面板的会话列表（固定期间由 controller 变化驱动刷新）。
+  List<Channel> _pinnedPanelSessions = const [];
+  bool _pinnedPanelLoading = false;
+
+  /// 上次装载面板列表时的会话键（dm:agentId / group:groupFamilyId）与
+  /// 消息数：任一变化即重拉列表（切换会话、新消息未读角标更新）。
+  String? _pinnedPanelDataKey;
+  int _pinnedPanelDataCount = -1;
+
+  /// 停靠面板常驻，不能像抽屉那样每次打开临时建 notifier（随路由关闭
+  /// dispose 会让面板子树的监听失效），改为页面级持有、随页面销毁。
+  final ValueNotifier<int> _pinnedPanelRefreshTick = ValueNotifier<int>(0);
+  final ValueNotifier<int> _pinnedPanelSelectionModeRequest =
+      ValueNotifier<int>(0);
+
   /// 清空会话等不可关闭 overlay 是否仍在栈上。Dismiss 必须对上这次 show，
   /// 否则会 pop 掉聊天页或抽屉。
   bool _clearingOverlayOpen = false;
@@ -267,6 +303,7 @@ class _ChatScreenState extends State<ChatScreen>
     _checkAgentImageSupport();
     _maybeSyncPeerAgent();
     _ensurePeerSlashCommands();
+    _restorePinnedPanelState();
     // 断连期间被判死的 turn，其结果可能仍留在远端 —— 重连后 service 会发
     // reconcile 通知，这里对当前 agent 做一次增量历史同步把结果补回。
     _reconcileSubscription =
@@ -326,6 +363,8 @@ class _ChatScreenState extends State<ChatScreen>
     _audioRecordingService.dispose();
     _messageController.dispose();
     _textFieldFocusNode.dispose();
+    _pinnedPanelRefreshTick.dispose();
+    _pinnedPanelSelectionModeRequest.dispose();
     // 抽屉挂在 root Navigator 上、动画控制器却由本页持有。任何未先
     // await dismissed 的拆页（工作流、通知跳转、CloseScreen）都会把
     // 退场卡死，遮罩冻在全屏。dispose 时立刻卸路由，不能再播退场。
@@ -1498,6 +1537,149 @@ class _ChatScreenState extends State<ChatScreen>
   // Session list
   // ---------------------------------------------------------------------------
 
+  // ── 桌面端固定面板（pin）：会话菜单固定为右侧停靠面板 ──
+  // 面板内容与抽屉共用（见 _buildSessionPanelContent），状态持久化，
+  // 宽度可拖拽（复刻主页左栏分割线交互，见 _buildPinnedPanelDivider）。
+
+  Future<void> _restorePinnedPanelState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
+      setState(() {
+        _panelPinned = prefs.getBool(_prefsKeyPanelPinned) ?? false;
+        _pinnedPanelWidth = (prefs.getDouble(_prefsKeyPanelWidth) ?? 360)
+            .clamp(_minPinnedPanelWidth, _maxPinnedPanelWidth);
+      });
+      if (_panelPinned) await _refreshPinnedPanelSessions();
+    } catch (_) {
+      // 测试环境无 shared_preferences 插件：保持默认（不固定）即可。
+    }
+  }
+
+  Future<void> _setPanelPinned(bool pinned) async {
+    setState(() => _panelPinned = pinned);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_prefsKeyPanelPinned, pinned);
+  }
+
+  /// 抽屉 header 钉住按钮 → 关抽屉后固定为停靠面板。
+  ///
+  /// 必须先等抽屉彻底销毁再固定：固定会立刻重建页面布局（本页 Scaffold
+  /// 外多出面板子树），而抽屉路由仍持有本页的共享动画控制器，退场未完成
+  /// 就拆页会让路由冻结在屏幕上（见 [_closeDrawerAndWait]）。
+  Future<void> _pinPanelFromDrawer() async {
+    await _closeDrawerAndWait();
+    if (!mounted) return;
+    await _setPanelPinned(true);
+    await _refreshPinnedPanelSessions();
+  }
+
+  Future<void> _unpinPanel() async {
+    await _setPanelPinned(false);
+  }
+
+  /// 当前会话集合的装载键：dm 用 agentId，群聊用 groupFamilyId。
+  String? get _pinnedPanelKey {
+    final c = _controller;
+    return c.isGroupMode
+        ? 'group:${c.groupChannel?.groupFamilyId ?? c.currentChannelId}'
+        : (widget.agentId != null ? 'dm:${widget.agentId}' : null);
+  }
+
+  /// 重新拉取停靠面板的会话列表（键或消息数变化时才拉，避免每帧查库）。
+  Future<void> _refreshPinnedPanelSessions({bool force = false}) async {
+    final key = _pinnedPanelKey;
+    if (key == null) return;
+    final count = _controller.messages.length;
+    final keyChanged = key != _pinnedPanelDataKey;
+    if (!force && !keyChanged && count == _pinnedPanelDataCount) {
+      return;
+    }
+    final countChanged = count != _pinnedPanelDataCount;
+    _pinnedPanelDataKey = key;
+    _pinnedPanelDataCount = count;
+    final c = _controller;
+    final parentGroupId = c.groupChannel?.groupFamilyId;
+    if (c.isGroupMode && parentGroupId == null) return;
+    if (!c.isGroupMode && widget.agentId == null) return;
+    setState(() => _pinnedPanelLoading = true);
+    try {
+      final sessions = c.isGroupMode
+          ? await c.chatService
+              .getGroupSessions(parentGroupId: parentGroupId!)
+          : await c.chatService.getAgentSessions(agentId: widget.agentId!);
+      if (!mounted) return;
+      final sorted = await _sortSessionsByLatestMessage(sessions);
+      if (!mounted) return;
+      setState(() {
+        _pinnedPanelSessions = sorted;
+        _pinnedPanelLoading = false;
+      });
+      // tick = 全量行刷新信号（清预览缓存）：仅消息数变化（新消息 / 未读
+      // 变化）时 bump。纯切换会话不 bump —— 新旧当前行的预览缓存键
+      // （current: 前缀）自然失效重查，其余行保持不闪。
+      if (countChanged || force) _pinnedPanelRefreshTick.value++;
+    } catch (_) {
+      if (mounted) setState(() => _pinnedPanelLoading = false);
+    }
+  }
+
+  /// 停靠面板主体：复用抽屉同一份面板内容，外包 [ChatPanelScope]
+  /// （条目点击保留面板）与 AnimatedBuilder（会话切换 / 消息数变化时
+  /// 刷新高亮与列表）。
+  Widget _buildPinnedPanel(AppLocalizations l10n) {
+    return ChatPanelScope(
+      popRouteIfAny: () {},
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          // controller 变化后懒重拉：键（切换会话/群）或消息数（新消息
+          // 未读角标）变了才查库，纯 setState（滚动、输入）不触发。
+          // deferToNextFrame：重拉内部有 setState，不能在 build 期间同步
+          // 调用（否则 "setState() called during build"）。
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) unawaited(_refreshPinnedPanelSessions());
+          });
+          return _pinnedPanelLoading && _pinnedPanelSessions.isEmpty
+              ? const Center(child: CircularProgressIndicator())
+              : _buildSessionPanelContent(
+                  sessions: _pinnedPanelSessions,
+                  l10n: l10n,
+                  refreshTick: _pinnedPanelRefreshTick,
+                  selectionModeRequest: _pinnedPanelSelectionModeRequest,
+                  pinned: true,
+                  onPinToggle: _unpinPanel,
+                  onClose: _unpinPanel,
+                );
+        },
+      ),
+    );
+  }
+
+  /// 停靠面板左缘的可拖拽分割线：交互与主页左栏分割线一致
+  /// （desktop_home_screen），宽度 clamp 后持久化。
+  Widget _buildPinnedPanelDivider() {
+    return GestureDetector(
+      onHorizontalDragUpdate: (details) {
+        setState(() {
+          _pinnedPanelWidth = (_pinnedPanelWidth - details.delta.dx)
+              .clamp(_minPinnedPanelWidth, _maxPinnedPanelWidth);
+        });
+      },
+      onHorizontalDragEnd: (_) async {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setDouble(_prefsKeyPanelWidth, _pinnedPanelWidth);
+      },
+      child: MouseRegion(
+        cursor: SystemMouseCursors.resizeColumn,
+        child: Container(
+          width: 1,
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        ),
+      ),
+    );
+  }
+
   // ── 抽屉打开手势（触屏左滑，跟手模式）──
   // 打开手势与抽屉内右滑关闭手势共用同一个 RightDrawerHandle：加载会话
   // 期间手指继续移动的位移先累计，push 后直接驱动抽屉进度。
@@ -1578,11 +1760,196 @@ class _ChatScreenState extends State<ChatScreen>
     );
   }
 
+  /// 构造会话菜单面板内容（抽屉与固定面板共用）。
+  ///
+  /// [sessions] 由调用方装载（抽屉每次打开时装载；固定面板由
+  /// [_refreshPinnedPanelSessions] 维护）。[refreshTick] /
+  /// [selectionModeRequest] 在抽屉形态随路由关闭 dispose，固定面板则用
+  /// 页面级 notifier。
+  Widget _buildSessionPanelContent({
+    required List<Channel> sessions,
+    required AppLocalizations l10n,
+    required ValueNotifier<int> refreshTick,
+    required ValueNotifier<int> selectionModeRequest,
+    bool pinned = false,
+    VoidCallback? onPinToggle,
+    VoidCallback? onClose,
+  }) {
+    final c = _controller;
+    return c.isGroupMode
+        ? ChatMoreDrawer(
+            header: _buildGroupDrawerHeader(l10n),
+            headerOnTap: _navigateToGroupDetail,
+            headerTrailingIcon: Icons.group_outlined,
+            headerTrailingTooltip: l10n.chat_groupMembers,
+            onHeaderTrailing: _showGroupMembersPanel,
+            searchHint: l10n.chat_searchSessions,
+            bodyBuilder: (context, query) => _buildGroupPanelBody(
+              context,
+              query,
+              sessions: sessions,
+              l10n: l10n,
+              refreshTick: refreshTick,
+              selectionModeRequest: selectionModeRequest,
+            ),
+            footerActions: [
+              ChatDrawerAction(
+                icon: Icons.inventory_2_outlined,
+                label: l10n.chat_storageSpace,
+                onTap: _navigateToStorageSpace,
+              ),
+              ChatDrawerAction(
+                icon: Icons.account_tree_outlined,
+                label: l10n.chat_workflow,
+                onTap: _showGroupWorkflow,
+              ),
+              ChatDrawerAction(
+                icon: Icons.edit_outlined,
+                label: l10n.chat_editGroupInfo,
+                onTap: _editGroupInfo,
+              ),
+            ],
+            pinned: pinned,
+            onPinToggle: onPinToggle,
+            onClose: onClose,
+          )
+        : ChatMoreDrawer(
+            header: _buildDmDrawerHeader(l10n),
+            headerOnTap: _navigateToAgentDetail,
+            headerTrailingIcon: Icons.edit_outlined,
+            headerTrailingTooltip: l10n.chat_editAgent,
+            onHeaderTrailing: _navigateToAgentDetailForEdit,
+            searchHint: l10n.chat_searchSessions,
+            bodyBuilder: (context, query) => _buildDmPanelBody(
+              context,
+              query,
+              sessions: sessions,
+              l10n: l10n,
+              refreshTick: refreshTick,
+              selectionModeRequest: selectionModeRequest,
+            ),
+            footerActions: [
+              ChatDrawerAction(
+                icon: Icons.inventory_2_outlined,
+                label: l10n.chat_storageSpace,
+                onTap: _navigateToStorageSpace,
+              ),
+              if (c.dmWorkflowEnabled)
+                ChatDrawerAction(
+                  icon: Icons.account_tree_outlined,
+                  label: l10n.chat_workflow,
+                  onTap: _showGroupWorkflow,
+                ),
+            ],
+            pinned: pinned,
+            onPinToggle: onPinToggle,
+            onClose: onClose,
+          );
+  }
+
+  Widget _buildDmPanelBody(
+    BuildContext context,
+    String query, {
+    required List<Channel> sessions,
+    required AppLocalizations l10n,
+    required ValueNotifier<int> refreshTick,
+    required ValueNotifier<int> selectionModeRequest,
+  }) {
+    final c = _controller;
+    if (query.trim().isNotEmpty) {
+      return SessionSearchResults(
+        query: query.trim(),
+        sessions: sessions,
+        searchService: c.searchService,
+        onSwitchSession: _openDrawerSession,
+        onLocateMessage: _locateSearchMessage,
+      );
+    }
+    return SessionListPanel(
+      sessions: sessions,
+      currentChannelId: c.currentChannelId,
+      controller: c,
+      onNewSession: () => c.createNewSession(),
+      onSwitchSession: _openDrawerSession,
+      onBatchDelete: (ids) => c.batchDeleteSessions(ids, isGroup: false),
+      listRefreshTick: refreshTick,
+      selectionModeRequest: selectionModeRequest,
+      onViewTrace: (channelId, channelName) async {
+        await _closeDrawerAndWait();
+        if (!mounted) return;
+        _showSessionTraces(channelId, channelName);
+      },
+      onForkSession: (session) => _forkDrawerSession(session, isGroup: false),
+      onResetSession: () => _resetDrawerSession(isGroup: false),
+      // 「更多」按钮放「新建会话」行右侧，搜索栏只保留输入。
+      moreButton: SessionListHeaderMoreButton(
+        sessions: sessions,
+        databaseService: c.localDatabaseService,
+        refreshTick: refreshTick,
+        onMarkAll: () => _markAllDrawerSessionsRead(sessions, refreshTick),
+        onEnterSelectionMode:
+            sessions.length > 1 ? () => selectionModeRequest.value++ : null,
+      ),
+    );
+  }
+
+  Widget _buildGroupPanelBody(
+    BuildContext context,
+    String query, {
+    required List<Channel> sessions,
+    required AppLocalizations l10n,
+    required ValueNotifier<int> refreshTick,
+    required ValueNotifier<int> selectionModeRequest,
+  }) {
+    final c = _controller;
+    if (query.trim().isNotEmpty) {
+      return SessionSearchResults(
+        query: query.trim(),
+        sessions: sessions,
+        searchService: c.searchService,
+        groupChannel: c.groupChannel,
+        onSwitchSession: _openDrawerSession,
+        onLocateMessage: _locateSearchMessage,
+      );
+    }
+    return GroupSessionListPanel(
+      sessions: sessions,
+      currentChannelId: c.currentChannelId,
+      controller: c,
+      onNewSession: () => c.createNewGroupSession(),
+      onSwitchSession: _openDrawerSession,
+      onBatchDelete: (ids) => c.batchDeleteSessions(ids, isGroup: true),
+      listRefreshTick: refreshTick,
+      selectionModeRequest: selectionModeRequest,
+      onViewTrace: (channelId, channelName) async {
+        await _closeDrawerAndWait();
+        if (!mounted) return;
+        _showSessionTraces(channelId, channelName);
+      },
+      onForkSession: (session) => _forkDrawerSession(session, isGroup: true),
+      onResetSession: () => _resetDrawerSession(isGroup: true),
+      // 「更多」按钮放「新建会话」行右侧，搜索栏只保留输入。
+      moreButton: SessionListHeaderMoreButton(
+        sessions: sessions,
+        databaseService: c.localDatabaseService,
+        refreshTick: refreshTick,
+        onMarkAll: () => _markAllDrawerSessionsRead(sessions, refreshTick),
+        onEnterSelectionMode:
+            sessions.length > 1 ? () => selectionModeRequest.value++ : null,
+      ),
+    );
+  }
+
+  /// 抽屉打开会话菜单（按钮 / 手势两种入口）；固定模式下面板常驻，无需弹出。
   Future<void> _showSessionList({double? gestureDx}) async {
     if (widget.agentId == null) return;
+    // 固定模式下面板常驻，无需弹出（非桌面布局时面板不渲染，抽屉照常）。
+    if (_showPinnedPanel) return;
     final gestureMode = gestureDx != null;
     if (_isChatDrawerOpen) return;
     _isChatDrawerOpen = true;
+    ValueNotifier<int>? refreshTick;
+    ValueNotifier<int>? selectionModeRequest;
     try {
       final sessions = await _sortSessionsByLatestMessage(
         await _controller.chatService
@@ -1591,68 +1958,18 @@ class _ChatScreenState extends State<ChatScreen>
       if (!mounted) return;
 
       final l10n = AppLocalizations.of(context);
-      final c = _controller;
-      final refreshTick = ValueNotifier<int>(0);
-      final selectionModeRequest = ValueNotifier<int>(0);
+      refreshTick = ValueNotifier<int>(0);
+      selectionModeRequest = ValueNotifier<int>(0);
 
-      final drawer = ChatMoreDrawer(
-        header: _buildDmDrawerHeader(l10n),
-        headerOnTap: _navigateToAgentDetail,
-        headerTrailingIcon: Icons.edit_outlined,
-        headerTrailingTooltip: l10n.chat_editAgent,
-        onHeaderTrailing: _navigateToAgentDetailForEdit,
-        searchHint: l10n.chat_searchSessions,
-        bodyBuilder: (context, query) {
-          if (query.trim().isNotEmpty) {
-            return SessionSearchResults(
-              query: query.trim(),
-              sessions: sessions,
-              searchService: c.searchService,
-              onSwitchSession: _openDrawerSession,
-              onLocateMessage: _locateSearchMessage,
-            );
-          }
-          return SessionListPanel(
-            sessions: sessions,
-            currentChannelId: c.currentChannelId,
-            controller: c,
-            onNewSession: () => c.createNewSession(),
-            onSwitchSession: _openDrawerSession,
-            onBatchDelete: (ids) => c.batchDeleteSessions(ids, isGroup: false),
-            listRefreshTick: refreshTick,
-            selectionModeRequest: selectionModeRequest,
-            onViewTrace: (channelId, channelName) async {
-              await _closeDrawerAndWait();
-              if (!mounted) return;
-              _showSessionTraces(channelId, channelName);
-            },
-            onForkSession: (session) =>
-                _forkDrawerSession(session, isGroup: false),
-            onResetSession: () => _resetDrawerSession(isGroup: false),
-            // 「更多」按钮放「新建会话」行右侧，搜索栏只保留输入。
-            moreButton: SessionListHeaderMoreButton(
-              sessions: sessions,
-              databaseService: c.localDatabaseService,
-              refreshTick: refreshTick,
-              onMarkAll: () => _markAllDrawerSessionsRead(sessions, refreshTick),
-              onEnterSelectionMode:
-                  sessions.length > 1 ? () => selectionModeRequest.value++ : null,
-            ),
-          );
-        },
-        footerActions: [
-          ChatDrawerAction(
-            icon: Icons.inventory_2_outlined,
-            label: l10n.chat_storageSpace,
-            onTap: _navigateToStorageSpace,
-          ),
-          if (c.dmWorkflowEnabled)
-            ChatDrawerAction(
-              icon: Icons.account_tree_outlined,
-              label: l10n.chat_workflow,
-              onTap: _showGroupWorkflow,
-            ),
-        ],
+      final drawer = _buildSessionPanelContent(
+        sessions: sessions,
+        l10n: l10n,
+        refreshTick: refreshTick,
+        selectionModeRequest: selectionModeRequest,
+        // 桌面端抽屉 header 提供钉住按钮：转固定停靠面板。
+        onPinToggle: LayoutUtils.isDesktopLayout(context)
+            ? _pinPanelFromDrawer
+            : null,
       );
 
       final width = _chatDrawerWidth(context);
@@ -1695,9 +2012,6 @@ class _ChatScreenState extends State<ChatScreen>
       // "A ValueNotifier<int> was used after being disposed"。
       // 必须等路由彻底销毁再 dispose。
       await route.dismissed;
-
-      refreshTick.dispose();
-      selectionModeRequest.dispose();
     } catch (e) {
       if (mounted) {
         showTopToast(
@@ -1710,14 +2024,74 @@ class _ChatScreenState extends State<ChatScreen>
     } finally {
       _drawerHandle = null;
       _isChatDrawerOpen = false;
+      // 钉住按钮会先关抽屉再固定，此时面板子树可能仍在退场（路由未
+      // 销毁）：notifier 的 dispose 延后到路由彻底销毁（与上面注释同理，
+      // 避免 "used after being disposed"）。
+      final tick = refreshTick;
+      final selection = selectionModeRequest;
+      if (_drawerRoute != null && tick != null && selection != null) {
+        unawaited(_drawerRoute!.dismissed.then((_) {
+          tick.dispose();
+          selection.dispose();
+        }));
+      } else {
+        tick?.dispose();
+        selection?.dispose();
+      }
     }
   }
 
+  /// 群聊抽屉 header：群图标 + 群名 + 成员数。
+  Widget _buildGroupDrawerHeader(AppLocalizations l10n) {
+    final c = _controller;
+    final groupName = c.groupChannel?.name ?? 'Group';
+    return Row(
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: AppColors.primaryContainer,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          alignment: Alignment.center,
+          child: const Icon(Icons.group, size: 22, color: AppColors.primary),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                groupName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                l10n.chat_groupMembersCount(c.groupAgents.length),
+                style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 抽屉打开会话菜单（按钮 / 手势两种入口）；固定模式下面板常驻，无需弹出。
   Future<void> _showGroupSessionList({double? gestureDx}) async {
     if (_controller.groupChannel == null) return;
+    // 固定模式下面板常驻，无需弹出（非桌面布局时面板不渲染，抽屉照常）。
+    if (_showPinnedPanel) return;
     final gestureMode = gestureDx != null;
     if (_isChatDrawerOpen) return;
     _isChatDrawerOpen = true;
+    ValueNotifier<int>? refreshTick;
+    ValueNotifier<int>? selectionModeRequest;
     try {
       final parentGroupId = _controller.groupChannel!.groupFamilyId;
       final sessions = await _sortSessionsByLatestMessage(
@@ -1727,111 +2101,18 @@ class _ChatScreenState extends State<ChatScreen>
       if (!mounted) return;
 
       final l10n = AppLocalizations.of(context);
-      final c = _controller;
-      final groupName = c.groupChannel?.name ?? 'Group';
+      refreshTick = ValueNotifier<int>(0);
+      selectionModeRequest = ValueNotifier<int>(0);
 
-      final header = Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: AppColors.primaryContainer,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            alignment: Alignment.center,
-            child: const Icon(Icons.group, size: 22, color: AppColors.primary),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  groupName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  l10n.chat_groupMembersCount(c.groupAgents.length),
-                  style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-                ),
-              ],
-            ),
-          ),
-        ],
-      );
-
-      final refreshTick = ValueNotifier<int>(0);
-      final selectionModeRequest = ValueNotifier<int>(0);
-
-      final drawer = ChatMoreDrawer(
-        header: header,
-        headerOnTap: _navigateToGroupDetail,
-        headerTrailingIcon: Icons.group_outlined,
-        headerTrailingTooltip: l10n.chat_groupMembers,
-        onHeaderTrailing: _showGroupMembersPanel,
-        searchHint: l10n.chat_searchSessions,
-        bodyBuilder: (context, query) {
-          if (query.trim().isNotEmpty) {
-            return SessionSearchResults(
-              query: query.trim(),
-              sessions: sessions,
-              searchService: c.searchService,
-              groupChannel: c.groupChannel,
-              onSwitchSession: _openDrawerSession,
-              onLocateMessage: _locateSearchMessage,
-            );
-          }
-          return GroupSessionListPanel(
-            sessions: sessions,
-            currentChannelId: c.currentChannelId,
-            controller: c,
-            onNewSession: () => c.createNewGroupSession(),
-            onSwitchSession: _openDrawerSession,
-            onBatchDelete: (ids) => c.batchDeleteSessions(ids, isGroup: true),
-            listRefreshTick: refreshTick,
-            selectionModeRequest: selectionModeRequest,
-            onViewTrace: (channelId, channelName) async {
-              await _closeDrawerAndWait();
-              if (!mounted) return;
-              _showSessionTraces(channelId, channelName);
-            },
-            onForkSession: (session) =>
-                _forkDrawerSession(session, isGroup: true),
-            onResetSession: () => _resetDrawerSession(isGroup: true),
-            // 「更多」按钮放「新建会话」行右侧，搜索栏只保留输入。
-            moreButton: SessionListHeaderMoreButton(
-              sessions: sessions,
-              databaseService: c.localDatabaseService,
-              refreshTick: refreshTick,
-              onMarkAll: () => _markAllDrawerSessionsRead(sessions, refreshTick),
-              onEnterSelectionMode:
-                  sessions.length > 1 ? () => selectionModeRequest.value++ : null,
-            ),
-          );
-        },
-        footerActions: [
-          ChatDrawerAction(
-            icon: Icons.inventory_2_outlined,
-            label: l10n.chat_storageSpace,
-            onTap: _navigateToStorageSpace,
-          ),
-          ChatDrawerAction(
-            icon: Icons.account_tree_outlined,
-            label: l10n.chat_workflow,
-            onTap: _showGroupWorkflow,
-          ),
-          ChatDrawerAction(
-            icon: Icons.edit_outlined,
-            label: l10n.chat_editGroupInfo,
-            onTap: _editGroupInfo,
-          ),
-        ],
+      final drawer = _buildSessionPanelContent(
+        sessions: sessions,
+        l10n: l10n,
+        refreshTick: refreshTick,
+        selectionModeRequest: selectionModeRequest,
+        // 桌面端抽屉 header 提供钉住按钮：转固定停靠面板。
+        onPinToggle: LayoutUtils.isDesktopLayout(context)
+            ? _pinPanelFromDrawer
+            : null,
       );
 
       final width = _chatDrawerWidth(context);
@@ -1874,9 +2155,6 @@ class _ChatScreenState extends State<ChatScreen>
       // "A ValueNotifier<int> was used after being disposed"。
       // 必须等路由彻底销毁再 dispose。
       await route.dismissed;
-
-      refreshTick.dispose();
-      selectionModeRequest.dispose();
     } catch (e) {
       if (mounted) {
         showTopToast(
@@ -1889,6 +2167,20 @@ class _ChatScreenState extends State<ChatScreen>
     } finally {
       _drawerHandle = null;
       _isChatDrawerOpen = false;
+      // 钉住按钮会先关抽屉再固定，此时面板子树可能仍在退场（路由未
+      // 销毁）：notifier 的 dispose 延后到路由彻底销毁（与上面注释同理，
+      // 避免 "used after being disposed"）。
+      final tick = refreshTick;
+      final selection = selectionModeRequest;
+      if (_drawerRoute != null && tick != null && selection != null) {
+        unawaited(_drawerRoute!.dismissed.then((_) {
+          tick.dispose();
+          selection.dispose();
+        }));
+      } else {
+        tick?.dispose();
+        selection?.dispose();
+      }
     }
   }
 
@@ -2688,16 +2980,44 @@ class _ChatScreenState extends State<ChatScreen>
     final l10n = AppLocalizations.of(context);
     final c = _controller;
     final isDesktop = LayoutUtils.isDesktopLayout(context);
-    final hasCustomLeading = widget.showBackButton && widget.onClose != null;
-    final hasLeading = hasCustomLeading ||
-        (!widget.embedded && Navigator.of(context).canPop());
     // 抽屉打开期间整个聊天页随抽屉联动左移（含动画与手指拖动），
     // 形成抽屉与聊天页连为一体的效果。animation 与抽屉路由共享同一控制器
     // （showRightDrawer 传的 sharedController），进度严格同源。
+    // 桌面固定模式：聊天区右侧常驻会话面板（与主页左栏同款的可拖拽
+    // 分割线），面板在 Scaffold 之外全高展示。窗口缩到非桌面布局时
+    // 面板不渲染（固定状态保留），抽屉恢复为唯一形态。
+    _showPinnedPanel = isDesktop && _panelPinned;
     return RightDrawerLinkedPage(
       width: _chatDrawerWidth(context),
       animation: _drawerController,
-      child: Scaffold(
+      child: _showPinnedPanel
+          ? Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(child: _buildChatScaffold(l10n, c, isDesktop)),
+                _buildPinnedPanelDivider(),
+                SizedBox(
+                  width: _pinnedPanelWidth,
+                  child: Material(
+                    color: Theme.of(context).colorScheme.surface,
+                    child: _buildPinnedPanel(l10n),
+                  ),
+                ),
+              ],
+            )
+          : _buildChatScaffold(l10n, c, isDesktop),
+    );
+  }
+
+  Widget _buildChatScaffold(
+    AppLocalizations l10n,
+    ChatController c,
+    bool isDesktop,
+  ) {
+    final hasCustomLeading = widget.showBackButton && widget.onClose != null;
+    final hasLeading = hasCustomLeading ||
+        (!widget.embedded && Navigator.of(context).canPop());
+    return Scaffold(
       appBar: AppBar(
           elevation: 0,
           scrolledUnderElevation: 0.5,
@@ -2741,8 +3061,11 @@ class _ChatScreenState extends State<ChatScreen>
                   ),
           ),
           actionsPadding: const EdgeInsets.only(right: 8),
+          // 固定模式下会话面板常驻右侧，「更多」按钮不再需要
+          // （未读信息在面板列表本身可见）。窗口缩到非桌面布局时面板
+          // 不渲染，按钮要回来，否则没有入口打开抽屉。
           actions: [
-            _buildChatMoreButton(l10n),
+            if (!_showPinnedPanel) _buildChatMoreButton(l10n),
           ],
         ),
       // 触屏设备全区域左滑（向右边缘滑）打开右侧抽屉，跟手模式：识别成功
@@ -3092,7 +3415,6 @@ class _ChatScreenState extends State<ChatScreen>
             ],
           ),
         ),
-      ),
     );
   }
 

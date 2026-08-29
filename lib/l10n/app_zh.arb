@@ -1149,6 +1149,8 @@
   "chat_soulEmptyDesc": "宿主端还没有为该 Agent 写入 Soul（cognition/soul.md）。可在宿主详情页编辑后同步查看。",
   "chat_soulFetchFailed": "无法从配对设备获取 Soul，请确认已连接后重试",
   "chat_moreActions": "更多操作",
+  "chat_pinPanel": "固定面板",
+  "chat_unpinPanel": "取消固定",
   "chat_clearSessionTitle": "清除会话历史",
   "chat_clearSessionContent": "这将删除当前会话的所有消息并重置远端 Agent 连接，此操作不可撤销。",
   "chat_clearSessionGroupContent": "这将删除当前会话的所有消息并重置所有 Agent 连接，此操作不可撤销。",

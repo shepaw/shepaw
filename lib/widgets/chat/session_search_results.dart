@@ -5,14 +5,15 @@ import '../../models/message.dart';
 import '../../services/message_search_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/session_utils.dart';
+import 'chat_panel_scope.dart';
 
 /// 抽屉内搜索的结果视图（查询非空时作为抽屉主体）。
 ///
 /// - 按会话名称命中的会话：点击进入该会话；
 /// - 按消息内容命中的结果：按会话分组展示（关键词高亮），点击定位到消息。
 ///
-/// 所有点击先 pop 抽屉（结果视图位于抽屉 dialog 内）再回调，
-/// 与 [SessionListPanel] 的行为一致。
+/// 所有点击先经 [closePanelRoute] 关闭面板（抽屉 pop 路由；停靠面板
+/// 保留）再回调，与 [SessionListPanel] 的行为一致。
 class SessionSearchResults extends StatelessWidget {
   const SessionSearchResults({
     super.key,
@@ -194,7 +195,7 @@ class SessionSearchResults extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
       ),
       onTap: () {
-        Navigator.of(context).pop();
+        closePanelRoute(context);
         onSwitchSession(session.id);
       },
     );
@@ -247,7 +248,7 @@ class SessionSearchResults extends StatelessWidget {
             ),
           ),
           onTap: () {
-            Navigator.of(context).pop();
+            closePanelRoute(context);
             onLocateMessage(r.message, r.message.channelId);
           },
         ),

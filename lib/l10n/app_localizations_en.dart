@@ -2110,6 +2110,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_moreActions => 'More Actions';
 
   @override
+  String get chat_pinPanel => 'Pin Panel';
+
+  @override
+  String get chat_unpinPanel => 'Unpin Panel';
+
+  @override
   String get chat_clearSessionTitle => 'Clear Session History';
 
   @override

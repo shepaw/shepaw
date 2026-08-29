@@ -818,6 +818,8 @@
   "chat_soulEmptyDesc": "The host has not written a Soul for this agent (cognition/soul.md). Edit it on the host to view it here.",
   "chat_soulFetchFailed": "Could not fetch Soul from the paired device. Check the connection and try again.",
   "chat_moreActions": "More Actions",
+  "chat_pinPanel": "Pin Panel",
+  "chat_unpinPanel": "Unpin Panel",
   "chat_clearSessionTitle": "Clear Session History",
   "chat_clearSessionContent": "This will delete all messages in the current session and reset the remote agent connection. This action cannot be undone.",
   "chat_clearSessionGroupContent": "This will delete all messages in the current session and reset all agent connections. This action cannot be undone.",

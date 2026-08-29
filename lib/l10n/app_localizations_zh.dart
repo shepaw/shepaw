@@ -2036,6 +2036,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_moreActions => '更多操作';
 
   @override
+  String get chat_pinPanel => '固定面板';
+
+  @override
+  String get chat_unpinPanel => '取消固定';
+
+  @override
   String get chat_clearSessionTitle => '清除会话历史';
 
   @override

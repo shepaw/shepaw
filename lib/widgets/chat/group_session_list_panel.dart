@@ -9,6 +9,7 @@ import '../../l10n/app_localizations.dart';
 import 'session_unread_badge.dart';
 import 'session_list_header_menu.dart';
 import 'session_row_menu.dart';
+import 'chat_panel_scope.dart';
 
 /// Session list panel for group chat sessions.
 ///
@@ -135,14 +136,40 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
   Set<String> _selectedIds = {};
   final _databaseService = LocalDatabaseService();
 
+  /// 行级预览缓存（channelId → 最近一次查询结果）。
+  ///
+  /// 渲染永远读缓存（无 FutureBuilder 空态，整列不闪），数据过期时后台
+  /// 重查、完成后原地更新。标记过期的时机：
+  /// - 切换会话（[didUpdateWidget]）——保持旧实现"每次切换全量重查"的
+  ///   新鲜度契约（背景会话的新消息 / 未读在下一次切换时可见）；
+  /// - 外部 tick（全部已读等）。
+  final Map<String, _PreviewEntry> _previews = {};
+
   @override
   void initState() {
     super.initState();
+    widget.listRefreshTick.addListener(_onExternalListRefresh);
     widget.selectionModeRequest.addListener(_onSelectionModeRequested);
   }
 
   @override
+  void didUpdateWidget(_GroupSessionListContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.listRefreshTick != oldWidget.listRefreshTick) {
+      oldWidget.listRefreshTick.removeListener(_onExternalListRefresh);
+      widget.listRefreshTick.addListener(_onExternalListRefresh);
+    }
+    if (widget.currentChannelId != oldWidget.currentChannelId) {
+      _markAllStale();
+    }
+    // 会话被删后缓存条目随手清理
+    _previews
+        .removeWhere((k, _) => !widget.sessions.any((s) => s.id == k));
+  }
+
+  @override
   void dispose() {
+    widget.listRefreshTick.removeListener(_onExternalListRefresh);
     widget.selectionModeRequest.removeListener(_onSelectionModeRequested);
     super.dispose();
   }
@@ -155,6 +182,38 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
     });
   }
 
+  /// 外部全量刷新（全部已读后 tick 自增）：全部行标记过期，重建时后台重查。
+  void _onExternalListRefresh() {
+    if (!mounted) return;
+    _markAllStale();
+    setState(() {});
+  }
+
+  void _markAllStale() {
+    for (final e in _previews.values) {
+      e.stale = true;
+    }
+  }
+
+  /// 取该行的预览条目；无缓存或已过期则发起后台重查（完成后原地更新）。
+  _PreviewEntry _entryFor(String channelId, Channel session) {
+    final entry = _previews.putIfAbsent(channelId, _PreviewEntry.new);
+    if (entry.stale && !entry.refreshing) {
+      entry
+        ..stale = false
+        ..refreshing = true;
+      _querySessionPreview(channelId, session).then((data) {
+        entry
+          ..data = data
+          ..refreshing = false;
+        if (mounted) setState(() {});
+      }).catchError((_) {
+        entry.refreshing = false;
+      });
+    }
+    return entry;
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -162,12 +221,7 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
     return Column(
       children: [
         if (_isSelectionMode) _buildSelectionHeader(l10n),
-        Expanded(
-          child: ValueListenableBuilder<int>(
-            valueListenable: widget.listRefreshTick,
-            builder: (context, tick, _) => _buildList(l10n, tick),
-          ),
-        ),
+        Expanded(child: _buildList(l10n)),
         if (_isSelectionMode) _buildBottomBar(l10n),
       ],
     );
@@ -235,7 +289,7 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
     );
   }
 
-  Widget _buildList(AppLocalizations l10n, int listRefreshTick) {
+  Widget _buildList(AppLocalizations l10n) {
     return ListView.builder(
       itemCount: widget.sessions.length + 1,
       itemBuilder: (context, index) {
@@ -247,39 +301,32 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
         final isCurrent = session.id == widget.currentChannelId;
         final isParent = session.parentGroupId == null;
         final isDisabled = isCurrent || isParent;
-        return FutureBuilder<
-            (Map<String, dynamic>?, Map<String, dynamic>?, int,
-                Map<String, dynamic>?)>(
-          key: ValueKey('${session.id}_$listRefreshTick'),
-          future: _loadSessionPreview(session.id, isCurrent, session),
-          builder: (context, snapshot) {
-            final firstMessage = snapshot.data?.$1;
-            final latestMessage = snapshot.data?.$2;
-            final unreadCount = snapshot.data?.$3 ?? 0;
-            final orchestration = snapshot.data?.$4;
-            final tile = _buildGroupSessionTile(
-              context,
-              session,
-              isCurrent,
-              firstMessage,
-              latestMessage,
-              unreadCount: unreadCount,
-              orchestration: orchestration,
-              selectionMode: _isSelectionMode,
-              selected: _selectedIds.contains(session.id),
-              selectionEnabled: !isDisabled,
-              onSelectionToggle: isDisabled
-                  ? null
-                  : () => setState(() {
-                        if (_selectedIds.contains(session.id)) {
-                          _selectedIds.remove(session.id);
-                        } else {
-                          _selectedIds.add(session.id);
-                        }
-                      }),
-            );
-            return tile;
-          },
+        final preview = _entryFor(session.id, session).data;
+        final firstMessage = preview?.$1;
+        final latestMessage = preview?.$2;
+        // 当前会话渲染时未读归零（缓存存原始未读数）。
+        final unreadCount = isCurrent ? 0 : preview?.$3 ?? 0;
+        final orchestration = preview?.$4;
+        return _buildGroupSessionTile(
+          context,
+          session,
+          isCurrent,
+          firstMessage,
+          latestMessage,
+          unreadCount: unreadCount,
+          orchestration: orchestration,
+          selectionMode: _isSelectionMode,
+          selected: _selectedIds.contains(session.id),
+          selectionEnabled: !isDisabled,
+          onSelectionToggle: isDisabled
+              ? null
+              : () => setState(() {
+                    if (_selectedIds.contains(session.id)) {
+                      _selectedIds.remove(session.id);
+                    } else {
+                      _selectedIds.add(session.id);
+                    }
+                  }),
         );
       },
     );
@@ -312,7 +359,7 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
       // 同属列表一级操作，视觉上成组。
       trailing: widget.moreButton,
       onTap: () {
-        Navigator.pop(context);
+        closePanelRoute(context);
         widget.onNewSession();
       },
     );
@@ -448,14 +495,13 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
 
   Future<(Map<String, dynamic>?, Map<String, dynamic>?, int,
           Map<String, dynamic>?)>
-      _loadSessionPreview(
-          String channelId, bool isCurrent, Channel session) async {
+      _querySessionPreview(String channelId, Channel session) async {
     final firstMessage =
         await _databaseService.getFirstChannelMessage(channelId);
     final latestMessage =
         await _databaseService.getLatestChannelMessage(channelId);
-    var unreadCount = await _databaseService.getUnreadCountByChannel(channelId);
-    if (isCurrent) unreadCount = 0;
+    final unreadCount =
+        await _databaseService.getUnreadCountByChannel(channelId);
     // 任务编排状态（latest.json；不存在 = 从未编排，返回 null）。
     Map<String, dynamic>? orchestration;
     try {
@@ -704,9 +750,9 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
       onTap: selectionMode
           ? (selectionEnabled ? onSelectionToggle : null)
           : isCurrentSession
-              ? () => Navigator.of(context).pop()
+              ? () => closePanelRoute(context)
               : () {
-                  Navigator.of(context).pop();
+                  closePanelRoute(context);
                   widget.onSwitchSession(session.id);
                 },
       onLongPress: selectionMode
@@ -740,7 +786,7 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
             onPressed: _selectedIds.isEmpty
                 ? null
                 : () {
-                    Navigator.pop(context);
+                    closePanelRoute(context);
                     widget.onBatchDelete(_selectedIds.toList());
                   },
           ),
@@ -748,4 +794,17 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
       ),
     );
   }
+}
+
+/// 一行会话的预览缓存条目。
+class _PreviewEntry {
+  /// 最近一次查询结果；null = 尚未查到（渲染回落到会话名占位）。
+  (Map<String, dynamic>?, Map<String, dynamic>?, int, Map<String, dynamic>?)?
+      data;
+
+  /// true = 数据可能过期，待下一次构建时后台重查。
+  bool stale = true;
+
+  /// true = 后台重查进行中（避免重复发起）。
+  bool refreshing = false;
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
+import 'chat_panel_scope.dart';
 
 /// 抽屉底部一个操作条目（储物空间 / 工作流 / 重置会话 等）。
 class ChatDrawerAction {
@@ -23,8 +24,10 @@ class ChatDrawerAction {
 /// 按 query 过滤会话列表并返回面板
 /// （[SessionListPanel] / [GroupSessionListPanel]），搜索不出抽屉。
 ///
-/// 除搜索输入外，所有点击（关闭、header、底部操作）统一先 pop 抽屉再执行
-/// 回调，避免调用方持有 ChatScreen 的 context 误 pop 掉聊天页路由。
+/// 除搜索输入外，所有点击（关闭、header、底部操作）统一先经
+/// [closePanelRoute] 关闭面板再执行回调：抽屉形态 pop 抽屉路由，避免
+/// 调用方持有 ChatScreen 的 context 误 pop 掉聊天页路由；停靠（固定）
+/// 形态由外层 [ChatPanelScope] 接管，面板保留不动。
 class ChatMoreDrawer extends StatefulWidget {
   /// 头像 + 名称行（调用方构造），点击整个区域触发 [headerOnTap]。
   final Widget header;
@@ -47,6 +50,15 @@ class ChatMoreDrawer extends StatefulWidget {
 
   final List<ChatDrawerAction> footerActions;
 
+  /// 是否已固定为停靠面板（钉住图标呈按下态）。
+  final bool pinned;
+
+  /// 钉住按钮回调；为 null 时不显示（移动端抽屉无固定能力）。
+  final VoidCallback? onPinToggle;
+
+  /// 关闭按钮回调；为 null 时退回 pop 当前路由（抽屉形态）。
+  final VoidCallback? onClose;
+
   const ChatMoreDrawer({
     super.key,
     required this.header,
@@ -57,6 +69,9 @@ class ChatMoreDrawer extends StatefulWidget {
     required this.searchHint,
     required this.bodyBuilder,
     this.footerActions = const [],
+    this.pinned = false,
+    this.onPinToggle,
+    this.onClose,
   });
 
   @override
@@ -74,7 +89,7 @@ class _ChatMoreDrawerState extends State<ChatMoreDrawer> {
   }
 
   void _popThen(BuildContext context, VoidCallback? action) {
-    Navigator.of(context).pop();
+    closePanelRoute(context);
     action?.call();
   }
 
@@ -112,6 +127,26 @@ class _ChatMoreDrawerState extends State<ChatMoreDrawer> {
                       ? null
                       : () => _popThen(context, widget.onHeaderTrailing),
                 ),
+              // 钉住：固定为右侧停靠面板（仅桌面）。放在关闭键左侧，
+              // 与 header 尾部小按钮成组。
+              if (widget.onPinToggle != null)
+                IconButton(
+                  icon: Icon(
+                    widget.pinned ? Icons.push_pin : Icons.push_pin_outlined,
+                    size: 20,
+                    color: widget.pinned
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints.tightFor(width: 36, height: 36),
+                  visualDensity: VisualDensity.compact,
+                  tooltip: widget.pinned
+                      ? l10n.chat_unpinPanel
+                      : l10n.chat_pinPanel,
+                  onPressed: widget.onPinToggle,
+                ),
               IconButton(
                 icon: const Icon(Icons.close, size: 20),
                 padding: EdgeInsets.zero,
@@ -119,7 +154,7 @@ class _ChatMoreDrawerState extends State<ChatMoreDrawer> {
                     const BoxConstraints.tightFor(width: 36, height: 36),
                 visualDensity: VisualDensity.compact,
                 tooltip: l10n.common_close,
-                onPressed: () => Navigator.of(context).pop(),
+                onPressed: widget.onClose ?? () => Navigator.of(context).pop(),
               ),
             ],
           ),

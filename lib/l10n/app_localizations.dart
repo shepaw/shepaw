@@ -3830,6 +3830,18 @@ abstract class AppLocalizations {
   /// **'更多操作'**
   String get chat_moreActions;
 
+  /// No description provided for @chat_pinPanel.
+  ///
+  /// In zh, this message translates to:
+  /// **'固定面板'**
+  String get chat_pinPanel;
+
+  /// No description provided for @chat_unpinPanel.
+  ///
+  /// In zh, this message translates to:
+  /// **'取消固定'**
+  String get chat_unpinPanel;
+
   /// No description provided for @chat_clearSessionTitle.
   ///
   /// In zh, this message translates to:
