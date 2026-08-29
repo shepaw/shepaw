@@ -1440,6 +1440,20 @@ class AgentMessagingService {
       });
     };
 
+    // 网关推送 agent.resume.changed：agent 在聊天中改写了储物袋 resume.md
+    // 并被网关采纳。此时应**覆盖**本地简历（与上面仅空时填充不同），She
+    // 的 roster 与详情页下一轮即见新简历。best-effort。
+    connection.onResumeChanged = () {
+      getIt<RemoteAgentService>()
+          .refreshResumeFromCard(agent.id)
+          .catchError((Object e) {
+        LoggerService().debug(
+          'Resume refresh skipped for ${agent.id}: $e',
+          tag: 'AgentMessagingService',
+        );
+      });
+    };
+
     // Build the WebSocket URL
     String wsUrl;
     if (agent.endpoint.startsWith('ws://') || agent.endpoint.startsWith('wss://')) {

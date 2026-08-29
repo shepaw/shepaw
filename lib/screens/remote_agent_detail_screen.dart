@@ -172,6 +172,12 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     _allowPeerMemoryEdit = _agent.peerBoundaryConfig.allowPeerMemoryEdit;
     _initEditingControllers();
     unawaited(_loadSoul());
+    // 打开详情页时读一次储物袋 resume.md 供预览兜底（bio 为空时用 Summary
+    // 填充）。Agent 在聊天中改简历的主要落点在储物袋，这里保证人看到的
+    // 文档与袋内一致。best-effort。
+    if (!_agent.isShe && !_agent.isPeerAgent) {
+      unawaited(_refreshResumePreview());
+    }
 
     // peer agent 的在线状态完全取决于来源配对设备是否在线，订阅连接状态变化
     // 以便设备上/下线时即时刷新页面顶部的状态徽标。
@@ -192,6 +198,29 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         _loadPeerModels();
         _loadPeerModes();
       }
+    }
+  }
+
+  /// 储物袋 resume.md 全文（详情页预览用）。null = 袋内无简历。
+  String? _resumePreviewMd;
+
+  Future<void> _refreshResumePreview() async {
+    try {
+      final md = await getIt<RemoteAgentService>()
+          .refreshResumeFromStore(_agent.id);
+      if (!mounted) return;
+      setState(() => _resumePreviewMd = md);
+      if (md != null) {
+        // bio 若被 Summary 兜底填充，同步回编辑框。
+        final latest = await getIt<RemoteAgentService>().getAgentById(_agent.id);
+        if (!mounted) return;
+        if (latest != null && latest.bio != _agent.bio) {
+          setState(() => _agent = latest);
+          _syncControllersFromAgent();
+        }
+      }
+    } catch (_) {
+      // best-effort：储物袋不可达时静默保留现状。
     }
   }
 
@@ -1290,6 +1319,32 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                   color: Colors.grey[600],
                 ),
             textAlign: TextAlign.center,
+          ),
+        ],
+        if (_resumePreviewMd != null) ...[
+          const SizedBox(height: 12),
+          Theme(
+            data: Theme.of(context).copyWith(
+              dividerColor: Colors.transparent,
+            ),
+            child: ExpansionTile(
+              tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+              childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              title: Text(
+                AppLocalizations.of(context).groupMemberDetail_resume,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              initiallyExpanded: false,
+              children: [
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: SelectableText(
+                    _resumePreviewMd!,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
         const SizedBox(height: 12),

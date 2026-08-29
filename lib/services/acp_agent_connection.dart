@@ -306,6 +306,12 @@ class ACPAgentConnection implements AcpInteractiveConnection {
   /// [AgentMessagingService]）可借此在每次建连时把简历同步到本地 DB。
   void Function(Map<String, dynamic> card)? onAgentCardFetched;
 
+  /// 网关推送 `agent.resume.changed`（agent 在聊天中改写了储物袋 resume.md，
+  /// 网关已采纳）后回调（fire-and-forget）。连接所有者应重新拉取 AgentCard
+  /// 并把最新简历覆盖到本地 DB——这与 [onAgentCardFetched] 不同，此时本地
+  /// 简历需要被**覆盖**而非仅在为空时填充。
+  void Function()? onResumeChanged;
+
   /// Peer static public key learned during the Noise handshake. Null until
   /// [connect] completes successfully. Callers may persist this in their
   /// remote-agent record so the fingerprint can be re-verified on reconnect
@@ -1357,6 +1363,9 @@ class ACPAgentConnection implements AcpInteractiveConnection {
       case ACPMethod.agentCommandsChanged:
         final next = _parseCommandsPayload(params);
         if (next != null) _applySlashCommands(next);
+        break;
+      case ACPMethod.agentResumeChanged:
+        onResumeChanged?.call();
         break;
       default:
         LoggerService().debug('Unknown notification: $method', tag: 'ACP');

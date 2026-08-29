@@ -257,6 +257,10 @@ class ACPMethod {
   /// Agent 可用 slash 指令列表发生变化（文件增删或 SDK 重新加载）
   static const String agentCommandsChanged = 'agent.commands.changed';
 
+  /// Agent 简历发生变化（agent 在聊天中改写储物袋 resume.md，网关已采纳
+  /// 并更新卡片 bio）。App 收到后重新拉取 AgentCard 覆盖本地 bio。
+  static const String agentResumeChanged = 'agent.resume.changed';
+
   // ==================== App -> Agent 通知 (群组事件) ====================
 
   /// 群组成员加入

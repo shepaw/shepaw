@@ -420,18 +420,55 @@ class RemoteAgentService {
   /// 供连接层在每次建连拿到新鲜卡片时调用（见 `ACPAgentConnection
   /// .onAgentCardFetched`）。仅当本地简历为空时写入——用户手动填写的简历
   /// 优先保留；peer agent / 无 description 静默跳过。best-effort。
-  Future<void> syncResumeFromCardData(String agentId, Map card) async {
+  Future<void> syncResumeFromCardData(String agentId, Map card) =>
+      _applyCardResume(agentId, card, overwrite: false);
+
+  /// Agent 简历发生变化（网关 `agent.resume.changed` 通知）时，拉取最新
+  /// AgentCard 并**覆盖**本地 `RemoteAgent.bio`。
+  ///
+  /// 与 [syncResumeFromCardData] 不同：此时变更是 agent 在聊天中主动改写
+  /// 简历的结果，本地旧值（包括用户此前填写的）已被 agent 的新自述取代，
+  /// 应无条件覆盖——否则 She 的 roster 与详情页永远看到旧简历。卡片拉取
+  /// 失败 / 无变化 / peer agent 静默跳过。best-effort。
+  Future<void> refreshResumeFromCard(String agentId) async {
+    try {
+      final connection =
+          ChatService().activeConnectionFor(agentId);
+      if (connection == null) return;
+      final card = await connection
+          .getAgentCard()
+          .timeout(const Duration(seconds: 5));
+      if (!card.isSuccess || card.result is! Map) return;
+      await _applyCardResume(agentId, card.result as Map, overwrite: true);
+    } catch (e) {
+      LoggerService().debug(
+        'Resume refresh from card skipped for $agentId: $e',
+        tag: 'RemoteAgent',
+      );
+    }
+  }
+
+  /// 卡片简历 → 本地 bio 的公共落地。[overwrite] 为 false 时仅填充空值。
+  Future<void> _applyCardResume(
+    String agentId,
+    Map card, {
+    required bool overwrite,
+  }) async {
     try {
       final agent = await getAgentById(agentId);
       if (agent == null || agent.isPeerAgent) return;
-      if (agent.bio?.trim().isNotEmpty == true) return;
+      if (!overwrite && agent.bio?.trim().isNotEmpty == true) return;
       final desc = (card['bio'] as String?) ??
           (card['description'] as String?);
       if (desc == null || desc.trim().isEmpty) return;
+      final newBio = desc.trim();
+      if (newBio == (agent.bio ?? '').trim()) return;
       // 通过 updateAgent 落库并通知，同时把最新简历推送给已共享该 agent 的对端。
-      await updateAgent(agent.copyWith(bio: desc.trim()));
+      await updateAgent(agent.copyWith(bio: newBio));
       LoggerService().info(
-        'Synced resume from agent card for $agentId',
+        overwrite
+            ? 'Overwrote resume from agent card for $agentId'
+            : 'Synced resume from agent card for $agentId',
         tag: 'RemoteAgent',
       );
     } catch (e) {

@@ -95,6 +95,12 @@ class ChatService {
   // ACP connection pool (keyed by agent ID)
   final Map<String, ACPAgentConnection> _acpConnections = {};
 
+  /// Test-only access to the connection pool — lets unit tests inject
+  /// fake connections for [activeConnectionFor] consumers. Never use in
+  /// production code.
+  @visibleForTesting
+  Map<String, ACPAgentConnection> get connectionsForTest => _acpConnections;
+
   // Cached slash-command snapshots, keyed by agent ID. Populated by any
   // connection that sees `agent.commands.changed` (including the one-shot
   // health-check connection that otherwise disposes before the user ever
@@ -3569,6 +3575,15 @@ $originalQuestion
         task.detachUI();
       }
     }
+  }
+
+  /// Get the active ACP connection for [agentId], or null.
+  ///
+  /// 与 [pingAgent] 一样只读现有连接、不建连——供 [RemoteAgentService] 等
+  /// 需要在既有连接上做轻量 RPC（如拉取 AgentCard）的服务使用。
+  ACPAgentConnection? activeConnectionFor(String agentId) {
+    final connection = _acpConnections[agentId];
+    return (connection != null && connection.isConnected) ? connection : null;
   }
 
   /// Check if an existing ACP connection for [agentId] is alive.
