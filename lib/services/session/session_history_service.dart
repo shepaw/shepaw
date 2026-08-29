@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:collection';
 import '../../models/message.dart';
 import '../../models/channel.dart';
 import '../../models/tool_execution_result.dart';
@@ -6,7 +7,44 @@ import '../local_database_service.dart';
 import '../tool_result_database_service.dart';
 import '../inference_log_service.dart';
 import '../logger_service.dart';
+import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
+
+/// metadata jsonDecode 的 LRU 缓存。
+///
+/// 群聊 reconcile 每轮全量拉 300 行并逐行 jsonDecode；一回合内多轮
+/// reconcile（单飞后仍有 2-3 轮）绝大多数行的 metadata 原文不变，命中
+/// 缓存可跳过解析。键 = (messageId, metadata 原文)，解码结果不可变、
+/// 可安全共享。
+class MetadataDecodeCache {
+  static const int _limit = 500;
+  final LinkedHashMap<String, Map<String, dynamic>?> _cache =
+      LinkedHashMap<String, Map<String, dynamic>?>();
+
+  @visibleForTesting
+  int get length => _cache.length;
+
+  Map<String, dynamic>? decode(String? raw, String messageId) {
+    if (raw == null) return null;
+    final key = '$messageId\u0000$raw';
+    if (_cache.containsKey(key)) {
+      // LRU touch：删了重插，移到队尾。
+      final hit = _cache.remove(key);
+      _cache[key] = hit;
+      return hit;
+    }
+    Map<String, dynamic>? decoded;
+    try {
+      decoded = Map<String, dynamic>.from(jsonDecode(raw));
+    } catch (_) {}
+    _cache[key] = decoded;
+    while (_cache.length > _limit) {
+      _cache.remove(_cache.keys.first);
+    }
+    return decoded;
+  }
+}
+
 
 /// Handles session (channel) lifecycle for 1:1 agent conversations.
 class SessionService {
@@ -114,14 +152,15 @@ class HistoryService {
     return loadChannelMessages(channelId, limit: count + paddingAfter);
   }
 
+  /// metadata jsonDecode 结果缓存（见 [MetadataDecodeCache]）。
+  final MetadataDecodeCache _metadataCache = MetadataDecodeCache();
+
+  Map<String, dynamic>? _decodeMetadata(String? raw, String messageId) =>
+      _metadataCache.decode(raw, messageId);
+
   List<Message> _mapsToMessages(List<Map<String, dynamic>> messageMaps, String channelId) {
     return messageMaps.map((map) {
-      Map<String, dynamic>? metadata;
-      if (map['metadata'] != null) {
-        try {
-          metadata = Map<String, dynamic>.from(jsonDecode(map['metadata'] as String));
-        } catch (_) {}
-      }
+      final metadata = _decodeMetadata(map['metadata'] as String?, map['id'] as String);
 
       return Message(
         id: map['id'] as String,

@@ -111,6 +111,13 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   final _eventController = StreamController<ChatEvent>.broadcast();
   Stream<ChatEvent> get events => _eventController.stream;
 
+  /// 流式 chunk 专用的内容通知源。chunk 只改消息内容，外层树（AppBar、
+  /// 输入区、面板）不消费这些变化——它们只需要消息列表子树重建。帧级
+  /// 合批后的 chunk notify 投到这里（见 scheduleStreamingRebuild）；结构
+  /// 性变化（新消息、回合开始/结束、会话切换）仍走 [_notify] 全页通知。
+  /// UI 侧用 AnimatedBuilder(animation: contentListenable) 只包消息列表。
+  final ChangeNotifier contentListenable = ChangeNotifier();
+
   // ---- Core message state ----
   List<Message> messages = [];
   Map<String, Message> messageIdMap = {};
@@ -499,6 +506,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     // 桌面双栏替换中的新页面）正在监听；close 会让存活页面的订阅静默失效，
     // 服务侧写入的消息从此只能等下次全量加载才显示。
     _eventController.close();
+    contentListenable.dispose();
     super.dispose();
   }
 

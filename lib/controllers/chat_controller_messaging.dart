@@ -1641,7 +1641,11 @@ mixin _MessagingOps on _ChatControllerBase {
     _pendingStreamingRebuild = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _pendingStreamingRebuild = false;
-      _notify();
+      // chunk 只改消息内容：通知投给内容专用 listenable，只有消息列表
+      // 子树（AnimatedBuilder 包裹）重建，外层 Scaffold/AppBar/输入区/
+      // 面板不再随每个 chunk 全量 rebuild。结构性变化（回合开始/结束、
+      // 新消息落库）仍走 _notify 全页通知。
+      contentListenable.notifyListeners();
     });
   }
 

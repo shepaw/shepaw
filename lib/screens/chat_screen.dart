@@ -23,6 +23,7 @@ import '../widgets/drawer_swipe_detector.dart';
 import '../widgets/right_drawer_route.dart';
 import '../l10n/app_localizations.dart';
 import '../controllers/chat_controller.dart';
+import 'chat_screen_outer_snapshot.dart';
 import '../controllers/chat_attachment_coordinator.dart';
 import '../theme/app_theme.dart';
 import '../widgets/chat/chat_app_bar.dart';
@@ -232,6 +233,10 @@ class _ChatScreenState extends State<ChatScreen>
   int _pinnedPanelLastMessageCount = -1;
   String? _pinnedPanelLastChannelId;
 
+  /// 外层结构快照门控（见 _onControllerChanged）：快照相等就不整页
+  /// setState。init 后首帧前置为 null，保证首次通知一定触发 rebuild。
+  OuterStructuralSnapshot? _lastOuterSnapshot;
+
   /// 清空会话等不可关闭 overlay 是否仍在栈上。Dismiss 必须对上这次 show，
   /// 否则会 pop 掉聊天页或抽屉。
   bool _clearingOverlayOpen = false;
@@ -423,10 +428,15 @@ class _ChatScreenState extends State<ChatScreen>
     } else if (_isUserScrolledUp && _isNewestMessageVisible()) {
       _clearScrolledUpState(notify: false);
     }
-    // Always rebuild while streaming. Skipping setState when "scrolled up"
-    // used to freeze the bubble for the whole turn (especially with long
-    // lists where jumpTo falsely sticks the flag). Follow-scroll is gated
-    // separately; chunk notifies are already coalesced to one per frame.
+    // 结构快照门控：外层 build 消费的字段都没变就不 setState。流式
+    // chunk 只改消息内容，由 contentListenable 驱动列表子树重建
+    // （AnimatedBuilder 包裹 ChatMessageList），外层 Scaffold/AppBar/
+    // 输入区/面板对 chunk 无动于衷。此前"流式期间无条件整页 rebuild"
+    // 是长会话掉帧的主因。快照字段清单见 OuterStructuralSnapshot 注释，
+    // 外层新增消费字段必须同步进去。
+    final snapshot = OuterStructuralSnapshot.of(_controller);
+    if (snapshot == _lastOuterSnapshot) return;
+    _lastOuterSnapshot = snapshot;
     setState(() {});
   }
 
@@ -3169,7 +3179,9 @@ class _ChatScreenState extends State<ChatScreen>
                               }
                               return false;
                             },
-                            child: ChatMessageList(
+                            child: AnimatedBuilder(
+                            animation: _controller.contentListenable,
+                            builder: (context, _) => ChatMessageList(
                               messages: c.messages,
                               messageIdMap: c.messageIdMap,
                               streamingMessageId: c.streamingMessageId,
@@ -3252,6 +3264,7 @@ class _ChatScreenState extends State<ChatScreen>
                               isAgentOffline: !c.isAgentOnline,
                               defaultWorkspaceUris: c.defaultWorkspaceUris,
                               workspaceUrisByAgentId: c.workspaceUrisByAgentId,
+                            ),
                             ),
                           ),
                     if (_isUserScrolledUp)
