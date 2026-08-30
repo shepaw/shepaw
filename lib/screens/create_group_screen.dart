@@ -8,7 +8,7 @@ import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
 import '../services/group/group_member_session_service.dart';
 import '../services/she_service.dart';
-import '../widgets/avatar_image.dart';
+import '../widgets/agent_list_avatar.dart';
 import 'chat_screen.dart';
 
 class CreateGroupScreen extends StatefulWidget {
@@ -202,16 +202,8 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
     }
   }
 
-  Widget _buildAgentAvatar(Agent agent, {double size = 40, double fontSize = 28}) {
-    return AvatarImage(
-      avatar: agent.avatar,
-      size: size,
-      borderRadius: size / 2,
-      fallback: Text(
-        agent.name.isNotEmpty ? agent.name[0].toUpperCase() : '?',
-        style: TextStyle(fontSize: fontSize * 0.6),
-      ),
-    );
+  Widget _buildAgentAvatar(Agent agent, {double size = 40}) {
+    return AgentListAvatar(avatar: agent.avatar, name: agent.name, size: size);
   }
 
   Widget _buildBottomBar(AppLocalizations l10n, ColorScheme colorScheme) {
@@ -249,7 +241,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
             return Padding(
               padding: const EdgeInsets.only(right: 8),
               child: Chip(
-                avatar: _buildAgentAvatar(agent, size: 24, fontSize: 16),
+                avatar: _buildAgentAvatar(agent, size: 24),
                 label: Text(agent.name),
                 onDeleted: () {
                   setState(() {

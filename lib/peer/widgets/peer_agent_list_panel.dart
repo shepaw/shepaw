@@ -7,7 +7,7 @@ import '../../utils/layout_utils.dart';
 import '../../models/remote_agent.dart';
 import '../../service_locator.dart' show getIt;
 import '../../services/local_database_service.dart';
-import '../../widgets/avatar_image.dart';
+import '../../widgets/agent_list_avatar.dart';
 import '../models/paired_peer.dart';
 import '../services/peer_agent_host_service.dart';
 import '../services/peer_connection_manager.dart';
@@ -315,7 +315,7 @@ class _PeerAgentTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: _AgentAvatar(avatar: agent.avatar),
+      leading: _AgentAvatar(avatar: agent.avatar, name: agent.name),
       title: Text(agent.name),
       subtitle: (agent.bio != null && agent.bio!.isNotEmpty)
           ? Text(agent.bio!, maxLines: 1, overflow: TextOverflow.ellipsis)
@@ -342,7 +342,7 @@ class _MySharedAgentTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: _AgentAvatar(avatar: agent.avatar),
+      leading: _AgentAvatar(avatar: agent.avatar, name: agent.name),
       title: Text(agent.name),
       subtitle: (agent.bio != null && agent.bio!.isNotEmpty)
           ? Text(agent.bio!, maxLines: 1, overflow: TextOverflow.ellipsis)
@@ -364,16 +364,12 @@ class _MySharedAgentTile extends StatelessWidget {
 
 class _AgentAvatar extends StatelessWidget {
   final String avatar;
+  final String name;
 
-  const _AgentAvatar({required this.avatar});
+  const _AgentAvatar({required this.avatar, required this.name});
 
   @override
   Widget build(BuildContext context) {
-    return AvatarImage(
-      avatar: avatar.isNotEmpty ? avatar : '🤖',
-      size: 40,
-      borderRadius: 10,
-      fallback: const Icon(Icons.smart_toy_outlined),
-    );
+    return AgentListAvatar(avatar: avatar, name: name);
   }
 }

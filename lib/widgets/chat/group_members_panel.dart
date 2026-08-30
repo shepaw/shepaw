@@ -6,7 +6,7 @@ import '../../models/remote_agent.dart';
 import '../../peer/widgets/peer_source_badge.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/layout_utils.dart';
-import '../avatar_image.dart';
+import '../agent_list_avatar.dart';
 
 /// Snapshot returned after adding a group member so the panel can refresh.
 class GroupMembersPanelSnapshot {
@@ -338,7 +338,7 @@ class _GroupMembersPanelState extends State<GroupMembersPanel> {
           children: [
             Row(
               children: [
-                _buildAgentAvatar(agent, size: 32, fontSize: 13),
+                _buildAgentAvatar(agent, size: 32),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Row(
@@ -413,29 +413,8 @@ class _GroupMembersPanelState extends State<GroupMembersPanel> {
     );
   }
 
-  Widget _buildAgentAvatar(RemoteAgent agent, {double size = 40, double fontSize = 14}) {
-    return AvatarImage(
-      avatar: agent.avatar.isNotEmpty ? agent.avatar : '🤖',
-      size: size,
-      borderRadius: size <= 32 ? 8 : 10,
-      fallback: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: AppColors.primaryContainer,
-          borderRadius: BorderRadius.circular(size <= 32 ? 8 : 10),
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          agent.name.isNotEmpty ? agent.name[0].toUpperCase() : '?',
-          style: TextStyle(
-            color: AppColors.primaryDark,
-            fontWeight: FontWeight.bold,
-            fontSize: fontSize,
-          ),
-        ),
-      ),
-    );
+  Widget _buildAgentAvatar(RemoteAgent agent, {double size = 40}) {
+    return AgentListAvatar(avatar: agent.avatar, name: agent.name, size: size);
   }
 
   Widget _buildAgentTitle(RemoteAgent agent) {

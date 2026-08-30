@@ -8,7 +8,7 @@ import '../../screens/chat_screen.dart';
 import '../../service_locator.dart' show getIt;
 import '../../services/local_database_service.dart';
 import '../../services/remote_agent_service.dart';
-import '../../widgets/avatar_image.dart';
+import '../../widgets/agent_list_avatar.dart';
 import '../services/peer_agent_client_service.dart';
 import '../services/peer_connection_manager.dart';
 
@@ -239,11 +239,9 @@ class _PeerAgentManagePanelState extends State<PeerAgentManagePanel> {
     }
 
     return ListTile(
-      leading: AvatarImage(
-        avatar: local?.avatar.isNotEmpty == true ? local!.avatar : '🤖',
-        size: 40,
-        borderRadius: 10,
-        fallback: const Icon(Icons.smart_toy_outlined),
+      leading: AgentListAvatar(
+        avatar: local?.avatar ?? '',
+        name: entry.name,
       ),
       title: Text(entry.name),
       subtitle: Text(

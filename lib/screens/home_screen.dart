@@ -16,7 +16,7 @@ import 'contacts_screen.dart';
 import 'storage_space_manage_screen.dart';
 import '../widgets/agent_search_delegate.dart';
 import '../widgets/shepaw_search_page.dart';
-import '../widgets/avatar_image.dart';
+import '../widgets/agent_list_avatar.dart';
 import '../widgets/chat/session_unread_badge.dart';
 import '../services/update_service.dart';
 import '../widgets/update_settings_badge.dart';
@@ -231,24 +231,7 @@ class HomeScreenState extends State<HomeScreen> {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: Colors.grey[200],
-            borderRadius: BorderRadius.circular(10),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: AvatarImage(
-            avatar: agent.avatar,
-            size: 40,
-            borderRadius: 10,
-            fallback: Text(
-              agent.name.isNotEmpty ? agent.name[0] : 'A',
-              style: const TextStyle(fontSize: 20),
-            ),
-          ),
-        ),
+        AgentListAvatar(avatar: agent.avatar, name: agent.name),
         if (unreadCount > 0)
           AvatarUnreadBadgeOverlay(count: unreadCount)
         else if (pendingApproval)
@@ -881,24 +864,7 @@ class HomeScreenState extends State<HomeScreen> {
         : agent.name;
     return ListTile(
       dense: true,
-      leading: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: Colors.grey[200],
-          borderRadius: BorderRadius.circular(10),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: AvatarImage(
-          avatar: agent.avatar,
-          size: 40,
-          borderRadius: 10,
-          fallback: Text(
-            agent.name.isNotEmpty ? agent.name[0] : 'A',
-            style: const TextStyle(fontSize: 20),
-          ),
-        ),
-      ),
+      leading: AgentListAvatar(avatar: agent.avatar, name: agent.name),
       title: Text(displayName, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
         agent.description ?? agent.type ?? 'AI Agent',
