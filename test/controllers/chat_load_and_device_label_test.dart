@@ -8,6 +8,7 @@ Channel _channel({
   required String name,
   required String type,
   List<ChannelMember> members = const [],
+  String? parentGroupId,
 }) {
   return Channel(
     id: id,
@@ -16,6 +17,7 @@ Channel _channel({
     members: members,
     createdBy: 'u',
     createdAt: 1,
+    parentGroupId: parentGroupId,
   );
 }
 
@@ -73,6 +75,48 @@ void main() {
         ['a1', 'a2'],
       );
       expect(ChatLoadChannelPlanner.firstAgentMemberId(channel), 'a1');
+    });
+
+    test('sessionPanelKey groups by family / agent', () {
+      // 群父频道：family = 自身 id。
+      final group = _channel(id: 'g1', name: 'G', type: 'group');
+      expect(ChatLoadChannelPlanner.sessionPanelKey(group), 'group:g1');
+
+      // 群会话的子会话（如分叉出的群会话）：family = parentGroupId，
+      // 与父频道同 key，可原位互切。
+      final childGroup = _channel(
+        id: 'g1_child',
+        name: 'G child',
+        type: 'group',
+        parentGroupId: 'g1',
+      );
+      expect(ChatLoadChannelPlanner.sessionPanelKey(childGroup), 'group:g1');
+      expect(
+        ChatLoadChannelPlanner.sessionPanelKey(group) ==
+            ChatLoadChannelPlanner.sessionPanelKey(childGroup),
+        isTrue,
+      );
+
+      // 普通 DM：取频道里的 agent 成员，无成员行时回退 agentId。
+      final dmWithAgent = _channel(
+        id: 'dm_1',
+        name: 'D',
+        type: 'dm',
+        members: [
+          ChannelMember(id: 'a1', type: 'agent', role: 'member', joinedAt: 1),
+        ],
+      );
+      expect(
+        ChatLoadChannelPlanner.sessionPanelKey(dmWithAgent),
+        'dm:a1',
+      );
+
+      final dmNoMember = _channel(id: 'dm_2', name: 'D2', type: 'dm');
+      expect(
+        ChatLoadChannelPlanner.sessionPanelKey(dmNoMember, agentId: 'a2'),
+        'dm:a2',
+      );
+      expect(ChatLoadChannelPlanner.sessionPanelKey(dmNoMember), isNull);
     });
   });
 

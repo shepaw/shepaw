@@ -248,6 +248,98 @@ mixin _LoadOps on _ChatControllerBase {
     }
   }
 
+  /// 原位切换到 [channelId]（桌面停靠面板点击会话）。保持本 controller 与
+  /// 页面的面板子树存活，只拆 channel 级 UI 挂接与回合状态，然后复用
+  /// [loadMessages] 的完整加载路径（decideChannel 见 currentChannelId
+  /// 非空即 keepCurrent）。草稿由调用方（屏幕层）负责保存/恢复。
+  ///
+  /// 与 dispose() 的语义对齐：
+  /// - 只 detach 任务/工作流 UI，不 cancel——旧频道回合后台继续跑，
+  ///   用户切回时 reattach 接管；
+  /// - 不清 messageQueue（按频道存放在 ChatService 侧，随新频道 getter
+  ///   自动切换，loadMessages 末尾排空）；
+  /// - 不碰 controller 生命周期级资源（_healthCheckTimer、_peerConnSub、
+  ///   _orphanApprovalSub、_eventController、contentListenable）。
+  Future<void> switchChannel(String channelId) async {
+    final oldChannelId = currentChannelId;
+    if (oldChannelId == null || oldChannelId == channelId) return;
+
+    // 1. 先拆旧频道的任务 UI（换 id 之前）：防迟到的 chunk/终态回调把内容
+    //    写进即将被清空的共享 messages 列表。
+    chatService.detachTaskUI(oldChannelId);
+    chatService.detachGroupTaskUI(oldChannelId);
+    final wfId = activeWorkflowId;
+    if (wfId != null) {
+      chatService.detachWorkflowExecutionUI(wfId);
+    }
+
+    // 2. 作废旧编排代际：旧回合的 finally / 流式回调全部变 no-op
+    //    （与 stopStreaming 同款，见 GroupTurnGate 注释）。
+    groupTurnGate.invalidate();
+
+    // 3. 清 DM 流式会话，且不触发 deferred-reload 链：必须先复位标志再
+    //    clear()——clear() 会调 onClear → _onStreamingSessionCleared →
+    //    reloadMessagesFromDB()，否则会在新频道上误跑一次 reconcile。
+    _dmReconcileAfterStreaming = false;
+    _dmReconcileFallbackTimer?.cancel();
+    streaming.clear();
+
+    // 4. 复位群回合状态：不 cancel 共享 token（与 dispose 一致，旧回合
+    //    后台继续），只补完挂起的交互 Completer 防悬空。
+    groupStreamingMessageIds.clear();
+    respondingAgentNames.clear();
+    for (final e in pendingGroupInteractions.values) {
+      if (!e.result.isCompleted) e.result.complete(null);
+    }
+    pendingGroupInteractions.clear();
+    isProcessing = false;
+    acpCancellationToken = null;
+
+    // 5. 工作流本地态：ChatService 侧执行循环继续活着（只 detach 过 UI），
+    //    这里清掉面板挂接，否则旧频道的工作流面板会残留到新频道
+    //    （_restoreWorkflowContext 只设置、不清理）。
+    workflow.clearStreaming();
+    workflow.adoptCancelToken(null);
+    workflow.clearPeerApproval();
+    setActiveWorkflowId(null);
+
+    // 6. 取消 channel 级订阅（loadMessages 内会全部重建，此处只为断开
+    //    旧频道的写入路径）。
+    _channelUpdateSub?.cancel();
+    _channelUpdateSub = null;
+    _agentTaskCompletionSub?.cancel();
+    _agentTaskCompletionSub = null;
+    _clearInboxPush();
+    if (_typingListener != null) {
+      chatService.typingChannelIds.removeListener(_typingListener!);
+      _typingListener = null;
+    }
+
+    // 7. 复位会话级 UI 态：loadMessages 首次 _notify 前不会清这些字段。
+    //    isGroupMode / sourceDeviceLabel 由 loadMessages 按频道元数据重推。
+    replyingToMessage = null;
+    highlightedMessageId = null;
+    hasMoreOlderMessages = false;
+    mentionOnlyMode = false;
+    dmSystemPrompt = null;
+    sourceGroupChannelId = null;
+    sourceGroupName = null;
+    sourceSheChannelId = null;
+    groupChannel = null;
+    groupAgents = [];
+    groupAdminAgentId = null;
+
+    // 8. 换频道并清空消息（messageIdMap 同步清空：DM merge 路径按
+    //    from.id 折叠占位，带着旧列表跑会把旧频道占位并进新频道气泡）。
+    currentChannelId = channelId;
+    messages = [];
+    rebuildMessageIdMap();
+
+    // 9. 正常加载新频道：末尾会 reattach 活跃任务、恢复工作流上下文、
+    //    排空新频道队列并发 RequestScrollToBottomEvent(force: true)。
+    await loadMessages();
+  }
+
   @override
   Future<int> loadOlderMessages() async {
     final channelId = currentChannelId;

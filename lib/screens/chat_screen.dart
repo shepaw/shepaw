@@ -23,6 +23,7 @@ import '../widgets/drawer_swipe_detector.dart';
 import '../widgets/right_drawer_route.dart';
 import '../l10n/app_localizations.dart';
 import '../controllers/chat_controller.dart';
+import '../controllers/chat_load_channel_planner.dart';
 import 'chat_screen_outer_snapshot.dart';
 import '../controllers/chat_attachment_coordinator.dart';
 import '../theme/app_theme.dart';
@@ -255,6 +256,11 @@ class _ChatScreenState extends State<ChatScreen>
 
   /// Last draft key used for migrate-from-agent → channel.
   String? _lastDraftKey;
+
+  /// 原位切换会话（停靠面板）进行中：抑制草稿持久化与迁移，防止旧频道的
+  /// 输入文本被写进新频道的草稿 key（清空输入框、controller 通知都会触发
+  /// 相应回调，见 [_onTextChanged] / [_maybeMigrateComposerDraftKey]）。
+  bool _switchingChannelDraft = false;
 
   @override
   void initState() {
@@ -684,6 +690,8 @@ class _ChatScreenState extends State<ChatScreen>
   // ---------------------------------------------------------------------------
 
   void _onTextChanged() {
+    // 原位切换会话中清空输入框触发：不能把空文本覆写刚保存的旧频道草稿。
+    if (_switchingChannelDraft) return;
     // Mention detection is handled inside ChatInputArea
     _persistComposerDraft();
   }
@@ -757,6 +765,9 @@ class _ChatScreenState extends State<ChatScreen>
 
   /// When channelId resolves after load, migrate drafts and write list aliases.
   void _maybeMigrateComposerDraftKey() {
+    // 原位切换会话中：草稿已按旧 key 保存、新草稿由切换助手恢复，这里的
+    // 迁移/回填逻辑会互相踩踏（详见 _switchPinnedSessionInPlace）。
+    if (_switchingChannelDraft) return;
     final channelId = _controller.currentChannelId;
     if (channelId == null || channelId.isEmpty) return;
 
@@ -2308,8 +2319,9 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   /// [NavigateToSessionEvent] 处理器：先关抽屉并等它彻底销毁，再原地替换
-  /// 聊天页（嵌入模式走 [onSwitchChannel]），避免共享动画控制器被 dispose
-  /// 导致抽屉冻结（见 [_closeDrawerAndWait]）。
+  /// 聊天页（嵌入模式走 [onSwitchChannel]；桌面停靠面板同 family 会话原位
+  /// 换频道），避免共享动画控制器被 dispose 导致抽屉冻结（见
+  /// [_closeDrawerAndWait]）。
   Future<void> _handleNavigateToSession({
     required String channelId,
     String? agentId,
@@ -2323,6 +2335,15 @@ class _ChatScreenState extends State<ChatScreen>
       widget.onSwitchChannel!(channelId);
       return;
     }
+    // 固定面板：新建会话 / 分叉 / 重置等（createNewSession 等发出本事件）
+    // 也原位切换，面板不重建。跨 agent 目标（agentId 非空且不同）页面级
+    // 参数会变，回退整页替换。
+    final crossAgent =
+        agentId != null && widget.agentId != null && agentId != widget.agentId;
+    if (!crossAgent && await _switchPinnedSessionInPlace(channelId)) {
+      return;
+    }
+    if (!mounted) return;
     Navigator.pushReplacement(
       context,
       PageRouteBuilder(
@@ -2353,8 +2374,66 @@ class _ChatScreenState extends State<ChatScreen>
     );
   }
 
+  /// 停靠面板内切换会话：优先原位换频道（面板子树保持挂载，不闪列表），
+  /// 不满足条件时返回 false 由调用方回退整页替换。
+  ///
+  /// 条件：固定面板正在渲染、非嵌入模式、目标会话与当前会话同属一个面板
+  /// family（[ChatLoadChannelPlanner.sessionPanelKey] 相同 —— 面板只列同一
+  /// agent / 同一 group family 的会话，widget.agentId 等页面级参数因此不变）。
+  Future<bool> _switchPinnedSessionInPlace(
+    String channelId, {
+    String? highlightMessageId,
+  }) async {
+    if (!_showPinnedPanel || widget.embedded) return false;
+    if (channelId == _controller.currentChannelId) {
+      if (highlightMessageId != null) await _scrollToMessage(highlightMessageId);
+      return true;
+    }
+    if (!await _canSwitchPinnedInPlace(channelId)) return false;
+
+    // 先用旧 key 保存旧频道草稿（必须在 currentChannelId 变化前）。
+    final oldKey = _composerDraftKey();
+    if (oldKey != null) {
+      getIt<ComposerDraftService>().setDraft(
+        oldKey,
+        _messageController.text,
+        agentId: widget.agentId,
+        groupFamilyId: _composerGroupFamilyId(),
+      );
+    }
+    if (_audioRecordingService.currentState.isRecording) {
+      await _audioRecordingService.cancelRecording();
+    }
+    _switchingChannelDraft = true;
+    _messageController.clear();
+    _pendingHighlightMessageId = highlightMessageId;
+    try {
+      await _controller.switchChannel(channelId);
+    } finally {
+      _switchingChannelDraft = false;
+    }
+    if (!mounted) return true;
+    // 按新 currentChannelId 取回新频道草稿并复位 _lastDraftKey。
+    _restoreComposerDraft();
+    return true;
+  }
+
+  /// 目标会话是否与当前会话同属一个面板 family（原位切换前提）。
+  Future<bool> _canSwitchPinnedInPlace(String channelId) async {
+    final target =
+        await _controller.localDatabaseService.getChannelById(channelId);
+    if (target == null) return false;
+    final currentKey = _pinnedPanelKey;
+    final targetKey = ChatLoadChannelPlanner.sessionPanelKey(
+      target,
+      agentId: widget.agentId,
+    );
+    return currentKey != null && targetKey != null && currentKey == targetKey;
+  }
+
   /// 抽屉内切换会话：touch updated_at（主页恢复最近打开用），随后原地替换
-  /// 聊天页（嵌入模式走 [onSwitchChannel]）。
+  /// 聊天页（嵌入模式走 [onSwitchChannel]；桌面停靠面板同 family 会话
+  /// 原位换频道，面板不重建）。
   ///
   /// 切换前必须等抽屉彻底销毁：嵌入模式切换会重建右栏 Navigator（换 key）、
   /// 非嵌入模式 pushReplacement，两者都会销毁当前 ChatScreen，其持有的
@@ -2376,7 +2455,13 @@ class _ChatScreenState extends State<ChatScreen>
         channelId,
         highlightMessageId: highlightMessageId,
       );
+    } else if (await _switchPinnedSessionInPlace(
+      channelId,
+      highlightMessageId: highlightMessageId,
+    )) {
+      return;
     } else {
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(

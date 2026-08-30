@@ -30,6 +30,18 @@ class ChatLoadChannelPlanner {
     return ChatLoadChannelAction.abort;
   }
 
+  /// 会话面板 family key：群频道用 `group:{groupFamilyId}`，DM 用
+  /// `dm:{agentId}`。[agentId] 是 DM 频道无 agent 成员行时的回退。
+  /// 同一 key 的会话才允许在停靠面板里原位切换（见
+  /// ChatScreen._switchPinnedSessionInPlace）。
+  static String? sessionPanelKey(Channel channel, {String? agentId}) {
+    if (channel.isGroup) {
+      return 'group:${channel.groupFamilyId}';
+    }
+    final memberAgentId = firstAgentMemberId(channel) ?? agentId;
+    return memberAgentId == null ? null : 'dm:$memberAgentId';
+  }
+
   /// Agent member ids in a group channel (excludes the local user).
   static List<String> groupAgentMemberIds(Channel channel, String userId) {
     return channel.memberIds
