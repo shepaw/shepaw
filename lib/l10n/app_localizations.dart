@@ -2702,6 +2702,12 @@ abstract class AppLocalizations {
   /// **'将调用远端 agent 重新扫描工作区并生成简历，然后覆盖本地的描述。继续？'**
   String get agentDetail_regenerateResumeConfirm;
 
+  /// No description provided for @agentDetail_editResume.
+  ///
+  /// In zh, this message translates to:
+  /// **'编辑简历'**
+  String get agentDetail_editResume;
+
   /// No description provided for @agentDetail_regenerateResumeSuccess.
   ///
   /// In zh, this message translates to:
@@ -2719,6 +2725,72 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'更换头像'**
   String get agentDetail_changeAvatar;
+
+  /// No description provided for @resumeEdit_emptyHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'点击编辑简历'**
+  String get resumeEdit_emptyHint;
+
+  /// No description provided for @resumeEdit_unsavedConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'简历有未保存的修改，放弃更改？'**
+  String get resumeEdit_unsavedConfirm;
+
+  /// No description provided for @resumeEdit_promptLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'重新生成提示词'**
+  String get resumeEdit_promptLabel;
+
+  /// No description provided for @resumeEdit_promptHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'描述希望如何改写简历，例如「更突出项目经验」'**
+  String get resumeEdit_promptHint;
+
+  /// No description provided for @resumeEdit_regenerateDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'已生成新简历，请检查后保存'**
+  String get resumeEdit_regenerateDone;
+
+  /// No description provided for @resumeEdit_saved.
+  ///
+  /// In zh, this message translates to:
+  /// **'简历已保存'**
+  String get resumeEdit_saved;
+
+  /// No description provided for @resumeEdit_saveFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'简历保存失败: {error}'**
+  String resumeEdit_saveFailed(String error);
+
+  /// No description provided for @resumeEdit_peerDenied.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对设备未授权修改该 Agent 的简历'**
+  String get resumeEdit_peerDenied;
+
+  /// No description provided for @resumeEdit_peerOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对设备未连接，无法读取简历'**
+  String get resumeEdit_peerOffline;
+
+  /// No description provided for @agent_allowPeerResumeEdit.
+  ///
+  /// In zh, this message translates to:
+  /// **'允许配对设备修改简历'**
+  String get agent_allowPeerResumeEdit;
+
+  /// No description provided for @agent_allowPeerResumeEditDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'开启后，已分享该 agent 的配对设备可远程读取、修改并重新生成其简历'**
+  String get agent_allowPeerResumeEditDesc;
 
   /// No description provided for @agentDetail_selectBuiltinAvatar.
   ///

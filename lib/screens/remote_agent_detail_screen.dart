@@ -36,6 +36,7 @@ import '../storage/runtime_share_service.dart';
 import 'agent_memory_detail_screen.dart';
 import 'agent_runtime_context_screen.dart';
 import 'agent_soul_edit_screen.dart';
+import 'agent_resume_edit_screen.dart';
 import 'storage_directory_opener.dart';
 import '../storage/agent_workspace_uris.dart';
 import '../storage/store_protocol.dart';
@@ -66,9 +67,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   bool _isSaving = false;
   Timer? _autoSaveDebounce;
 
-  /// 正在请求远端网关重新生成简历。
-  bool _regeneratingResume = false;
-
   /// Whether remote-session sync is enabled for this peer agent (default on).
   bool _peerSyncEnabled = true;
 
@@ -83,6 +81,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
   /// Local agent: allow paired devices to edit soul.
   bool _allowPeerSoulEdit = false;
+  bool _allowPeerResumeEdit = false;
   bool _allowPeerMemoryEdit = false;
 
   /// Upstream model list from the paired device's agent (peer agents only).
@@ -169,6 +168,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     _agent = widget.agent;
     _isEditing = widget.initialEditMode;
     _allowPeerSoulEdit = _agent.peerBoundaryConfig.allowPeerSoulEdit;
+    _allowPeerResumeEdit = _agent.peerBoundaryConfig.allowPeerResumeEdit;
     _allowPeerMemoryEdit = _agent.peerBoundaryConfig.allowPeerMemoryEdit;
     _initEditingControllers();
     unawaited(_loadSoul());
@@ -470,6 +470,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     _editingConnectionType = _agent.connectionType;
     _editingAllowExternalAccess = _agent.allowExternalAccess;
     _allowPeerSoulEdit = _agent.peerBoundaryConfig.allowPeerSoulEdit;
+    _allowPeerResumeEdit = _agent.peerBoundaryConfig.allowPeerResumeEdit;
     _allowPeerMemoryEdit = _agent.peerBoundaryConfig.allowPeerMemoryEdit;
 
     // Load skills from metadata
@@ -608,6 +609,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     _editingConnectionType = _agent.connectionType;
     _editingAllowExternalAccess = _agent.allowExternalAccess;
     _allowPeerSoulEdit = _agent.peerBoundaryConfig.allowPeerSoulEdit;
+    _allowPeerResumeEdit = _agent.peerBoundaryConfig.allowPeerResumeEdit;
     _allowPeerMemoryEdit = _agent.peerBoundaryConfig.allowPeerMemoryEdit;
     _enabledSkills = _agent.enabledSkills;
     _enabledCliCommands = _agent.enabledCliCommands;
@@ -728,6 +730,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         metadata['peer_boundary'] = _agent.peerBoundaryConfig
             .copyWith(
               allowPeerSoulEdit: _allowPeerSoulEdit,
+              allowPeerResumeEdit: _allowPeerResumeEdit,
               allowPeerMemoryEdit: _allowPeerMemoryEdit,
             )
             .toJson();
@@ -870,52 +873,28 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     }
   }
 
-  /// 手动请求远端网关重新生成工作区简历，并覆盖本地描述。
-  Future<void> _regenerateResume() async {
-    final l10n = AppLocalizations.of(context);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(l10n.agentDetail_regenerateResume),
-        content: Text(l10n.agentDetail_regenerateResumeConfirm),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: Text(l10n.common_cancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text(l10n.common_confirm),
-          ),
-        ],
+  /// 打开简历编辑页（手动编辑 + 提示词重新生成）。返回已保存的文本时刷新本地。
+  Future<void> _openResumeEditor() async {
+    final result = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AgentResumeEditScreen(
+          agent: _agent,
+          prefetchedResume:
+              _bioController.text.isNotEmpty ? _bioController.text : null,
+          prefetchedEditable: _agent.isPeerAgent
+              ? _agent.metadata['resume_editable'] == true
+              : null,
+        ),
       ),
     );
-    if (confirmed != true || !mounted) return;
-
-    setState(() => _regeneratingResume = true);
-    try {
-      final newBio =
-          await getIt<RemoteAgentService>().regenerateResume(_agent.id);
-      if (!mounted) return;
+    if (!mounted) return;
+    if (result != null) {
       setState(() {
-        _bioController.text = newBio;
-        _agent = _agent.copyWith(bio: newBio);
+        _bioController.text = result;
+        _agent = _agent.copyWith(bio: result);
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.agentDetail_regenerateResumeSuccess)),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l10n.agentDetail_regenerateResumeFailed('$e')),
-          backgroundColor: Colors.red,
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _regeneratingResume = false);
-      }
+      _scheduleAutoSave();
     }
   }
 
@@ -1313,12 +1292,19 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         ),
         if (_agent.bio != null && _agent.bio!.isNotEmpty) ...[
           const SizedBox(height: 8),
-          Text(
-            _agent.bio!,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey[600],
-                ),
-            textAlign: TextAlign.center,
+          InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: _openResumeEditor,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Text(
+                _agent.bio!,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.grey[600],
+                    ),
+                textAlign: TextAlign.center,
+              ),
+            ),
           ),
         ],
         if (_resumePreviewMd != null) ...[
@@ -2632,6 +2618,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     final theme = Theme.of(context);
     final isEnabled = _agent.allowExternalAccess;
     final soulEditEnabled = _agent.peerBoundaryConfig.allowPeerSoulEdit;
+    final resumeEditEnabled = _agent.peerBoundaryConfig.allowPeerResumeEdit;
     final memoryEditEnabled = _agent.peerBoundaryConfig.allowPeerMemoryEdit;
 
     return Card(
@@ -2700,6 +2687,35 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                     soulEditEnabled ? Icons.check_circle : Icons.cancel,
                     size: 16,
                     color: soulEditEnabled
+                        ? Colors.green
+                        : colorScheme.onSurfaceVariant,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(
+                    Icons.description_outlined,
+                    size: 16,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      resumeEditEnabled
+                          ? l10n.agent_allowPeerResumeEdit
+                          : l10n.resumeEdit_peerDenied,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    resumeEditEnabled ? Icons.check_circle : Icons.cancel,
+                    size: 16,
+                    color: resumeEditEnabled
                         ? Colors.green
                         : colorScheme.onSurfaceVariant,
                   ),
@@ -2788,6 +2804,26 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
               value: _allowPeerSoulEdit,
               onChanged: (value) {
                 setState(() => _allowPeerSoulEdit = value);
+                _scheduleAutoSave();
+              },
+            ),
+            const Divider(height: 1),
+            SwitchListTile(
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              secondary:
+                  Icon(Icons.description_outlined, color: colorScheme.primary),
+              title: Text(
+                l10n.agent_allowPeerResumeEdit,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              subtitle: Text(
+                l10n.agent_allowPeerResumeEditDesc,
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+              value: _allowPeerResumeEdit,
+              onChanged: (value) {
+                setState(() => _allowPeerResumeEdit = value);
                 _scheduleAutoSave();
               },
             ),
@@ -3032,42 +3068,29 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
               onChanged: (_) => _scheduleAutoSave(),
             ),
             const SizedBox(height: 12),
-            TextFormField(
-              controller: _bioController,
-              decoration: InputDecoration(
-                labelText: l10n.addAgent_agentBio,
-                hintText: l10n.addAgent_agentBioHint,
-                border: const OutlineInputBorder(),
-                prefixIcon: const Icon(Icons.description),
-                alignLabelWithHint: true,
-              ),
-              maxLines: 3,
-              minLines: 2,
-              onChanged: (_) => _scheduleAutoSave(),
-            ),
-            if (!_agent.isPeerAgent) ...[
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: _regeneratingResume
-                      ? null
-                      : () => _regenerateResume(),
-                  icon: _regeneratingResume
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.refresh, size: 18),
-                  label: Text(
-                    _regeneratingResume
-                        ? l10n.agentDetail_regeneratingResume
-                        : l10n.agentDetail_regenerateResume,
-                  ),
+            // 简历改为入口：点击进入独立编辑页（手动编辑 + 提示词重新生成）。
+            InkWell(
+              borderRadius: BorderRadius.circular(4),
+              onTap: _openResumeEditor,
+              child: InputDecorator(
+                decoration: InputDecoration(
+                  labelText: l10n.addAgent_agentBio,
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.description),
+                  suffixIcon: const Icon(Icons.chevron_right),
+                ),
+                child: Text(
+                  _bioController.text.isEmpty
+                      ? l10n.resumeEdit_emptyHint
+                      : _bioController.text,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: _bioController.text.isEmpty
+                      ? TextStyle(color: Theme.of(context).hintColor)
+                      : null,
                 ),
               ),
-            ],
+            ),
             if (!_agent.isPeerAgent) ...[
               const SizedBox(height: 12),
               TextFormField(

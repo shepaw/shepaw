@@ -1407,6 +1407,9 @@ class AppLocalizationsZh extends AppLocalizations {
       '将调用远端 agent 重新扫描工作区并生成简历，然后覆盖本地的描述。继续？';
 
   @override
+  String get agentDetail_editResume => '编辑简历';
+
+  @override
   String get agentDetail_regenerateResumeSuccess => '简历已更新';
 
   @override
@@ -1416,6 +1419,42 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get agentDetail_changeAvatar => '更换头像';
+
+  @override
+  String get resumeEdit_emptyHint => '点击编辑简历';
+
+  @override
+  String get resumeEdit_unsavedConfirm => '简历有未保存的修改，放弃更改？';
+
+  @override
+  String get resumeEdit_promptLabel => '重新生成提示词';
+
+  @override
+  String get resumeEdit_promptHint => '描述希望如何改写简历，例如「更突出项目经验」';
+
+  @override
+  String get resumeEdit_regenerateDone => '已生成新简历，请检查后保存';
+
+  @override
+  String get resumeEdit_saved => '简历已保存';
+
+  @override
+  String resumeEdit_saveFailed(String error) {
+    return '简历保存失败: $error';
+  }
+
+  @override
+  String get resumeEdit_peerDenied => '配对设备未授权修改该 Agent 的简历';
+
+  @override
+  String get resumeEdit_peerOffline => '配对设备未连接，无法读取简历';
+
+  @override
+  String get agent_allowPeerResumeEdit => '允许配对设备修改简历';
+
+  @override
+  String get agent_allowPeerResumeEditDesc =>
+      '开启后，已分享该 agent 的配对设备可远程读取、修改并重新生成其简历';
 
   @override
   String get agentDetail_selectBuiltinAvatar => '选择内置图标';

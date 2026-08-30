@@ -907,8 +907,20 @@ class ACPAgentConnection implements AcpInteractiveConnection {
   ///
   /// 网关会重新扫描工作区，返回的 AgentCard 中 `bio` / `description`
   /// 即为最新的自述简历。不支持该方法的网关会返回 method-not-found。
-  Future<ACPResponse> resumeRebuild() async {
-    return await sendRequest(ACPMethod.agentResumeRebuild);
+  /// [prompt] 非空时透传给网关作为自定义生成提示词（网关已有支持）。
+  Future<ACPResponse> resumeRebuild({String? prompt}) async {
+    return await sendRequest(
+      ACPMethod.agentResumeRebuild,
+      params: resumeRebuildParams(prompt),
+    );
+  }
+
+  /// `agent.resume.rebuild` 的 params 构造（纯函数，便于单测）。
+  /// 空/空白提示词 → 不带 params（保持旧行为：工作区扫描）。
+  static Map<String, dynamic>? resumeRebuildParams(String? prompt) {
+    final p = prompt?.trim();
+    if (p == null || p.isEmpty) return null;
+    return {'prompt': p};
   }
 
   /// Fetch the agent card after connect and parse its `capabilities` array

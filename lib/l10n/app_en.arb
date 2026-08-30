@@ -592,6 +592,7 @@
   "agentDetail_regenerateResume": "Regenerate resume",
   "agentDetail_regeneratingResume": "Regenerating…",
   "agentDetail_regenerateResumeConfirm": "This will ask the remote agent to re-scan its workspace, regenerate its resume, and overwrite the local description. Continue?",
+  "agentDetail_editResume": "Edit Resume",
   "agentDetail_regenerateResumeSuccess": "Resume updated",
   "agentDetail_regenerateResumeFailed": "Failed to regenerate resume: {error}",
   "@agentDetail_regenerateResumeFailed": {
@@ -602,6 +603,24 @@
     }
   },
   "agentDetail_changeAvatar": "Change Avatar",
+  "resumeEdit_emptyHint": "Tap to edit resume",
+  "resumeEdit_unsavedConfirm": "Resume has unsaved changes. Discard them?",
+  "resumeEdit_promptLabel": "Regeneration prompt",
+  "resumeEdit_promptHint": "Describe how to rewrite the resume, e.g. \"highlight project experience\"",
+  "resumeEdit_regenerateDone": "New resume generated — review and save",
+  "resumeEdit_saved": "Resume saved",
+  "resumeEdit_saveFailed": "Failed to save resume: {error}",
+  "@resumeEdit_saveFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "resumeEdit_peerDenied": "The paired device has not granted resume edit",
+  "resumeEdit_peerOffline": "Paired device not connected, cannot load resume",
+  "agent_allowPeerResumeEdit": "Allow Paired Devices to Edit Resume",
+  "agent_allowPeerResumeEditDesc": "When enabled, paired devices this agent is shared with can read, edit and regenerate its resume remotely",
   "agentDetail_selectBuiltinAvatar": "Select Built-in Icon",
   "agentDetail_selectFromGallery": "Choose from Gallery",
   "agentDetail_takePhoto": "Take Photo",

@@ -35,6 +35,7 @@ import '../../models/store_attachment_ref.dart';
 import '../../services/acp_agent_connection.dart';
 import '../../services/agent_memory_store_service.dart';
 import '../../services/agent_soul_service.dart';
+import '../../services/local_resume_generator.dart';
 import '../../models/agent_memory_entry.dart';
 import '../../services/chat_service.dart';
 import '../../services/local_database_service.dart';
@@ -209,6 +210,15 @@ class PeerAgentHostService {
       case 'agent_soul_set_req':
         unawaited(_handleSoulSet(event.peerId, event.data));
         break;
+      case 'agent_resume_get_req':
+        unawaited(_handleResumeGet(event.peerId, event.data));
+        break;
+      case 'agent_resume_set_req':
+        unawaited(_handleResumeSet(event.peerId, event.data));
+        break;
+      case 'agent_resume_rebuild_req':
+        unawaited(_handleResumeRebuild(event.peerId, event.data));
+        break;
       case 'agent_memory_req':
         unawaited(_handleMemoryReq(event.peerId, event.data));
         break;
@@ -288,6 +298,7 @@ class PeerAgentHostService {
           'avatar': a.avatar,
           'bio': a.bio,
           'capabilities': a.capabilities,
+          'resume_editable': a.peerBoundaryConfig.allowPeerResumeEdit,
           if (engine != null && engine.isNotEmpty) 'engine': engine,
           // Input modalities the peer client should expose (e.g. image picker).
           // Audio is omitted: peer voice input is not supported yet.
@@ -549,6 +560,217 @@ class PeerAgentHostService {
       _log.warning('agent_soul_set_req failed: $e', tag: _tag);
       await PeerConnectionManager.instance.sendControl(peerId, {
         'type': 'agent_soul_set_resp',
+        'agent_id': agentId,
+        'ok': false,
+        'error': e.toString(),
+        if (requestId != null) 'request_id': requestId,
+      });
+    }
+  }
+
+  // ==================== Peer 简历中继：权威在宿主 ====================
+
+  /// 宿主执行本机 LLM 简历重写的上限（含模型往返）；客户端中继超时比它更长。
+  static const _resumeRebuildHostTimeout = Duration(seconds: 90);
+
+  Future<void> _replyResumeGet(
+    String peerId,
+    String agentId, {
+    required bool ok,
+    String resume = '',
+    bool editable = false,
+    String? error,
+    String? requestId,
+  }) async {
+    await PeerConnectionManager.instance.sendControl(peerId, {
+      'type': 'agent_resume_get_resp',
+      'agent_id': agentId,
+      'ok': ok,
+      if (requestId != null && requestId.isNotEmpty) 'request_id': requestId,
+      if (ok) 'resume': resume,
+      if (ok) 'editable': editable,
+      if (!ok && error != null) 'error': error,
+    });
+  }
+
+  Future<void> _handleResumeGet(
+    String peerId,
+    Map<String, dynamic> data,
+  ) async {
+    final agentId = data['agent_id']?.toString();
+    final requestId = data['request_id']?.toString();
+    _log.info(
+      'agent_resume_get_req from=$peerId agent=$agentId req=$requestId',
+      tag: _tag,
+    );
+    if (agentId == null || agentId.isEmpty) {
+      await _replyResumeGet(
+        peerId,
+        '',
+        ok: false,
+        error: 'missing_agent_id',
+        requestId: requestId,
+      );
+      return;
+    }
+    try {
+      final agent = await _resolveSharedAgent(peerId, agentId);
+      if (agent == null) {
+        await _replyResumeGet(
+          peerId,
+          agentId,
+          ok: false,
+          error: 'not_available',
+          requestId: requestId,
+        );
+        return;
+      }
+      await _replyResumeGet(
+        peerId,
+        agentId,
+        ok: true,
+        resume: agent.bio ?? '',
+        editable: agent.peerBoundaryConfig.allowPeerResumeEdit,
+        requestId: requestId,
+      );
+    } catch (e) {
+      _log.warning('agent_resume_get_req failed: $e', tag: _tag);
+      await _replyResumeGet(
+        peerId,
+        agentId,
+        ok: false,
+        error: e.toString(),
+        requestId: requestId,
+      );
+    }
+  }
+
+  Future<void> _handleResumeSet(
+    String peerId,
+    Map<String, dynamic> data,
+  ) async {
+    final agentId = data['agent_id']?.toString();
+    final resume = data['resume'] as String? ?? '';
+    final requestId = data['request_id']?.toString();
+    if (agentId == null || agentId.isEmpty) {
+      await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'agent_resume_set_resp',
+        'agent_id': '',
+        'ok': false,
+        'error': 'missing_agent_id',
+        if (requestId != null) 'request_id': requestId,
+      });
+      return;
+    }
+    try {
+      final agent = await _resolveSharedAgent(peerId, agentId);
+      if (agent == null) {
+        await PeerConnectionManager.instance.sendControl(peerId, {
+          'type': 'agent_resume_set_resp',
+          'agent_id': agentId,
+          'ok': false,
+          'error': 'not_available',
+          if (requestId != null) 'request_id': requestId,
+        });
+        return;
+      }
+      if (!agent.peerBoundaryConfig.allowPeerResumeEdit) {
+        await PeerConnectionManager.instance.sendControl(peerId, {
+          'type': 'agent_resume_set_resp',
+          'agent_id': agentId,
+          'ok': false,
+          'error': 'denied',
+          if (requestId != null) 'request_id': requestId,
+        });
+        return;
+      }
+      // 宿主服务不依赖 RemoteAgentService（它反向 import 本文件），直接落库。
+      await _db.updateRemoteAgent(agent.copyWith(bio: resume.trim()));
+      unawaited(pushAgentListToSharingPeers(agentId));
+      await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'agent_resume_set_resp',
+        'agent_id': agentId,
+        'ok': true,
+        if (requestId != null) 'request_id': requestId,
+      });
+    } catch (e) {
+      _log.warning('agent_resume_set_req failed: $e', tag: _tag);
+      await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'agent_resume_set_resp',
+        'agent_id': agentId,
+        'ok': false,
+        'error': e.toString(),
+        if (requestId != null) 'request_id': requestId,
+      });
+    }
+  }
+
+  Future<void> _handleResumeRebuild(
+    String peerId,
+    Map<String, dynamic> data,
+  ) async {
+    final agentId = data['agent_id']?.toString();
+    final prompt = data['prompt']?.toString() ?? '';
+    final requestId = data['request_id']?.toString();
+    if (agentId == null || agentId.isEmpty) {
+      await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'agent_resume_rebuild_resp',
+        'agent_id': '',
+        'ok': false,
+        'error': 'missing_agent_id',
+        if (requestId != null) 'request_id': requestId,
+      });
+      return;
+    }
+    try {
+      final agent = await _resolveSharedAgent(peerId, agentId);
+      if (agent == null) {
+        await PeerConnectionManager.instance.sendControl(peerId, {
+          'type': 'agent_resume_rebuild_resp',
+          'agent_id': agentId,
+          'ok': false,
+          'error': 'not_available',
+          if (requestId != null) 'request_id': requestId,
+        });
+        return;
+      }
+      if (!agent.peerBoundaryConfig.allowPeerResumeEdit) {
+        await PeerConnectionManager.instance.sendControl(peerId, {
+          'type': 'agent_resume_rebuild_resp',
+          'agent_id': agentId,
+          'ok': false,
+          'error': 'denied',
+          if (requestId != null) 'request_id': requestId,
+        });
+        return;
+      }
+      // 共享给对端的本机 agent 一定是本地 agent，直接走本机 LLM 重写。
+      final newText = await LocalResumeGenerator.regenerate(
+        agent,
+        prompt: prompt,
+      ).timeout(_resumeRebuildHostTimeout);
+      await _db.updateRemoteAgent(agent.copyWith(bio: newText));
+      unawaited(pushAgentListToSharingPeers(agentId));
+      await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'agent_resume_rebuild_resp',
+        'agent_id': agentId,
+        'ok': true,
+        'resume': newText,
+        if (requestId != null) 'request_id': requestId,
+      });
+    } on TimeoutException {
+      _log.warning('agent_resume_rebuild_req timeout agent=$agentId', tag: _tag);
+      await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'agent_resume_rebuild_resp',
+        'agent_id': agentId,
+        'ok': false,
+        'error': 'timeout',
+        if (requestId != null) 'request_id': requestId,
+      });
+    } catch (e) {
+      _log.warning('agent_resume_rebuild_req failed: $e', tag: _tag);
+      await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'agent_resume_rebuild_resp',
         'agent_id': agentId,
         'ok': false,
         'error': e.toString(),

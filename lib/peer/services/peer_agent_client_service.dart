@@ -467,6 +467,38 @@ class PeerSoulInfo {
       PeerSoulInfo(soul: '', editable: false, error: error);
 }
 
+/// Resume (bio) text + edit permission from `agent_resume_get_resp`.
+class PeerResumeInfo {
+  final String resume;
+  final bool editable;
+  /// 非空表示宿主明确拒绝 / 出错（与超时、未发出区分）。
+  final String? error;
+
+  const PeerResumeInfo({
+    required this.resume,
+    required this.editable,
+    this.error,
+  });
+
+  bool get isOk => error == null;
+
+  factory PeerResumeInfo.ok({required String resume, required bool editable}) =>
+      PeerResumeInfo(resume: resume, editable: editable);
+
+  factory PeerResumeInfo.fail(String error) =>
+      PeerResumeInfo(resume: '', editable: false, error: error);
+}
+
+/// Result of `agent_resume_set_resp` / `agent_resume_rebuild_resp`.
+class PeerResumeResult {
+  final bool ok;
+  /// rebuild 成功时宿主返回的新简历文本。
+  final String? resume;
+  final String? error;
+
+  const PeerResumeResult({required this.ok, this.resume, this.error});
+}
+
 /// Structured memory relay result from `agent_memory_resp`.
 class PeerMemoryResult {
   final bool ok;
@@ -742,6 +774,13 @@ class PeerAgentClientService {
   /// Outstanding agent_soul_set_req keyed by request_id.
   final Map<String, Completer<bool>> _pendingSoulSet = {};
 
+  /// Outstanding agent_resume_get_req keyed by request_id.
+  final Map<String, Completer<PeerResumeInfo?>> _pendingResumeGet = {};
+
+  /// Outstanding agent_resume_set_req / agent_resume_rebuild_req keyed by
+  /// request_id.
+  final Map<String, Completer<PeerResumeResult>> _pendingResumeSet = {};
+
   /// Outstanding agent_memory_req keyed by request_id.
   final Map<String, Completer<PeerMemoryResult>> _pendingMemory = {};
 
@@ -987,6 +1026,21 @@ class PeerAgentClientService {
   @visibleForTesting
   Future<bool> Function(String peerId, Map<String, dynamic> json)?
       debugSendControlOverride;
+
+  /// Test seam: deliver a control frame as if it came from the peer
+  /// connection, so unit tests can answer relay requests they captured via
+  /// [debugSendControlOverride] without a live connection.
+  @visibleForTesting
+  void debugInjectControlForTest(
+    String type,
+    Map<String, dynamic> data, {
+    String peerId = 'peer-test',
+  }) {
+    _onControl(PeerControlEvent(
+      peerId: peerId,
+      data: {'type': type, ...data},
+    ));
+  }
 
   /// Test seam: register a synthetic in-flight turn (as [sendChat] would)
   /// and return its completion future, so cancel logic can be exercised
@@ -1553,6 +1607,13 @@ class PeerAgentClientService {
       case 'agent_soul_set_resp':
         _onSoulSetResp(event.data);
         break;
+      case 'agent_resume_get_resp':
+        _onResumeResp(event.data);
+        break;
+      case 'agent_resume_set_resp':
+      case 'agent_resume_rebuild_resp':
+        _onResumeSetResp(event.data);
+        break;
       case 'agent_memory_resp':
         _onMemoryResp(event.data);
         break;
@@ -1963,6 +2024,199 @@ class PeerAgentClientService {
       _completeSoulSet(e.key, ok);
       break;
     }
+  }
+
+  // ==================== Peer 简历中继 ====================
+
+  /// 简历中继超时：宿主 rebuild 要跑一次完整 LLM 生成，远长于 soul 的 12s。
+  static const _resumeRebuildRelayTimeout = Duration(seconds: 120);
+
+  /// 经测试 seam（若有）或连接管理器发出控制帧。
+  Future<bool> _sendResumeControl(
+    String peerId,
+    Map<String, dynamic> json,
+  ) {
+    final sendControl =
+        debugSendControlOverride ?? PeerConnectionManager.instance.sendControl;
+    return sendControl(peerId, json);
+  }
+
+  void _completeResumeGet(String requestId, PeerResumeInfo? info) {
+    final pending = _pendingResumeGet.remove(requestId);
+    if (pending != null && !pending.isCompleted) {
+      pending.complete(info);
+    }
+  }
+
+  void _completeResumeSet(String requestId, PeerResumeResult result) {
+    final pending = _pendingResumeSet.remove(requestId);
+    if (pending != null && !pending.isCompleted) {
+      pending.complete(result);
+    }
+  }
+
+  /// Fetch resume (bio) + edit permission from a shared peer agent
+  /// (`agent_resume_get_req` relay).
+  ///
+  /// 成功：`isOk == true`；宿主拒绝：`error` 有值；超时/未发出：返回 `null`。
+  Future<PeerResumeInfo?> getResumeInfo({
+    required String peerId,
+    required String remoteAgentId,
+  }) async {
+    final requestId = _uuid.v4();
+    final completer = Completer<PeerResumeInfo?>();
+    _pendingResumeGet[requestId] = completer;
+    _log.info(
+      'agent_resume_get_req peer=$peerId agent=$remoteAgentId req=$requestId',
+      tag: _tag,
+    );
+    try {
+      final sent = await _sendResumeControl(peerId, {
+        'type': 'agent_resume_get_req',
+        'agent_id': remoteAgentId,
+        'request_id': requestId,
+      }).timeout(const Duration(seconds: 5));
+      if (!sent) {
+        _completeResumeGet(requestId, null);
+        return null;
+      }
+      return await completer.future.timeout(_soulRelayTimeout);
+    } on TimeoutException {
+      _log.warning(
+        'agent_resume_get_req timeout peer=$peerId agent=$remoteAgentId req=$requestId',
+        tag: _tag,
+      );
+      _completeResumeGet(requestId, null);
+      return null;
+    } catch (e) {
+      _log.warning('agent_resume_get_req failed: $e', tag: _tag);
+      _completeResumeGet(requestId, null);
+      return null;
+    }
+  }
+
+  /// Update resume on a shared peer agent when host allows it.
+  /// 失败（拒绝 / 中继超时 / 未发出）返回 false，与 [setSoul] 一致。
+  Future<bool> setResume({
+    required String peerId,
+    required String remoteAgentId,
+    required String resume,
+  }) async {
+    try {
+      final result = await _sendResumeMutation(
+        type: 'agent_resume_set_req',
+        peerId: peerId,
+        remoteAgentId: remoteAgentId,
+        extra: {'resume': resume},
+        timeout: _soulRelayTimeout,
+      );
+      return result.ok;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Ask the host to regenerate the resume with [prompt] on its own LLM.
+  ///
+  /// 成功返回宿主已落库的新简历文本；失败抛 [StateError]（含宿主错误码），
+  /// 超时抛 [TimeoutException]。
+  Future<String> rebuildResumeViaPeer({
+    required String peerId,
+    required String remoteAgentId,
+    required String prompt,
+  }) async {
+    final result = await _sendResumeMutation(
+      type: 'agent_resume_rebuild_req',
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      extra: {'prompt': prompt},
+      timeout: _resumeRebuildRelayTimeout,
+    );
+    if (!result.ok) {
+      throw StateError(result.error ?? 'resume rebuild failed');
+    }
+    return result.resume ?? '';
+  }
+
+  Future<PeerResumeResult> _sendResumeMutation({
+    required String type,
+    required String peerId,
+    required String remoteAgentId,
+    required Map<String, String> extra,
+    required Duration timeout,
+  }) async {
+    final requestId = _uuid.v4();
+    final completer = Completer<PeerResumeResult>();
+    _pendingResumeSet[requestId] = completer;
+    try {
+      final sent = await _sendResumeControl(peerId, {
+        'type': type,
+        'agent_id': remoteAgentId,
+        ...extra,
+        'request_id': requestId,
+      }).timeout(const Duration(seconds: 5));
+      if (!sent) {
+        return const PeerResumeResult(ok: false, error: 'send_failed');
+      }
+      return await completer.future.timeout(timeout);
+    } on TimeoutException {
+      _completeResumeSet(
+        requestId,
+        const PeerResumeResult(ok: false, error: 'timeout'),
+      );
+      rethrow;
+    } catch (e) {
+      _log.warning('$type failed: $e', tag: _tag);
+      _completeResumeSet(
+        requestId,
+        PeerResumeResult(ok: false, error: e.toString()),
+      );
+      rethrow;
+    }
+  }
+
+  void _onResumeResp(Map<String, dynamic> data) {
+    try {
+      final requestId = data['request_id']?.toString();
+      final PeerResumeInfo info;
+      if (data['ok'] == true) {
+        info = PeerResumeInfo.ok(
+          resume: data['resume'] as String? ?? '',
+          editable: data['editable'] == true,
+        );
+      } else {
+        final err = data['error']?.toString() ?? 'unknown';
+        _log.warning(
+          'agent_resume_get_resp ok=false agent=${data['agent_id']} error=$err',
+          tag: _tag,
+        );
+        info = PeerResumeInfo.fail(err);
+      }
+      if (requestId != null && requestId.isNotEmpty) {
+        _completeResumeGet(requestId, info);
+        return;
+      }
+      final match = _pendingResumeGet.entries.toList();
+      if (match.isNotEmpty) {
+        _completeResumeGet(match.first.key, info);
+      }
+    } catch (e) {
+      _log.warning('agent_resume_get_resp parse failed: $e', tag: _tag);
+    }
+  }
+
+  void _onResumeSetResp(Map<String, dynamic> data) {
+    final requestId = data['request_id']?.toString();
+    if (requestId == null || requestId.isEmpty) return;
+    final ok = data['ok'] == true;
+    _completeResumeSet(
+      requestId,
+      PeerResumeResult(
+        ok: ok,
+        resume: data['resume'] as String?,
+        error: ok ? null : (data['error']?.toString() ?? 'unknown'),
+      ),
+    );
   }
 
   /// Relay structured memory CRUD to the host agent's store directory.
@@ -3385,6 +3639,9 @@ class PeerAgentClientService {
             'source_peer_id': peerId,
             'source_peer_name': peerName,
             'remote_agent_id': remoteId,
+            // 宿主边界开关的最近一次广播，详情页据此默认只读/可编辑；
+            // 打开编辑页时仍会用 agent_resume_get 权威刷新。
+            if (raw['resume_editable'] is bool) 'resume_editable': raw['resume_editable'],
             if (engine != null && engine.isNotEmpty) 'engine': engine,
             if (supportedModalities.isNotEmpty)
               'supported_modalities': supportedModalities,

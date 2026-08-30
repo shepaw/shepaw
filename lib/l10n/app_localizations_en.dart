@@ -1458,6 +1458,9 @@ class AppLocalizationsEn extends AppLocalizations {
       'This will ask the remote agent to re-scan its workspace, regenerate its resume, and overwrite the local description. Continue?';
 
   @override
+  String get agentDetail_editResume => 'Edit Resume';
+
+  @override
   String get agentDetail_regenerateResumeSuccess => 'Resume updated';
 
   @override
@@ -1467,6 +1470,47 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get agentDetail_changeAvatar => 'Change Avatar';
+
+  @override
+  String get resumeEdit_emptyHint => 'Tap to edit resume';
+
+  @override
+  String get resumeEdit_unsavedConfirm =>
+      'Resume has unsaved changes. Discard them?';
+
+  @override
+  String get resumeEdit_promptLabel => 'Regeneration prompt';
+
+  @override
+  String get resumeEdit_promptHint =>
+      'Describe how to rewrite the resume, e.g. \"highlight project experience\"';
+
+  @override
+  String get resumeEdit_regenerateDone =>
+      'New resume generated — review and save';
+
+  @override
+  String get resumeEdit_saved => 'Resume saved';
+
+  @override
+  String resumeEdit_saveFailed(String error) {
+    return 'Failed to save resume: $error';
+  }
+
+  @override
+  String get resumeEdit_peerDenied =>
+      'The paired device has not granted resume edit';
+
+  @override
+  String get resumeEdit_peerOffline =>
+      'Paired device not connected, cannot load resume';
+
+  @override
+  String get agent_allowPeerResumeEdit => 'Allow Paired Devices to Edit Resume';
+
+  @override
+  String get agent_allowPeerResumeEditDesc =>
+      'When enabled, paired devices this agent is shared with can read, edit and regenerate its resume remotely';
 
   @override
   String get agentDetail_selectBuiltinAvatar => 'Select Built-in Icon';

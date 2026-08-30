@@ -25,6 +25,9 @@ class PeerBoundaryConfig {
   /// Allow paired devices to read/write this agent's soul over P2P.
   final bool allowPeerSoulEdit;
 
+  /// Allow paired devices to read/edit/regenerate this agent's resume over P2P.
+  final bool allowPeerResumeEdit;
+
   /// Allow paired devices to read/write this agent's structured memory over P2P.
   final bool allowPeerMemoryEdit;
 
@@ -35,6 +38,7 @@ class PeerBoundaryConfig {
     this.disableMemoryWrites = true,
     this.disableSessionEndWrites = true,
     this.allowPeerSoulEdit = false,
+    this.allowPeerResumeEdit = false,
     this.allowPeerMemoryEdit = false,
   });
 
@@ -49,6 +53,7 @@ class PeerBoundaryConfig {
     disableMemoryWrites: false,
     disableSessionEndWrites: false,
     allowPeerSoulEdit: true,
+    allowPeerResumeEdit: true,
     allowPeerMemoryEdit: true,
   );
 
@@ -66,6 +71,8 @@ class PeerBoundaryConfig {
           flag('disable_session_end_writes', defaults.disableSessionEndWrites),
       allowPeerSoulEdit:
           flag('allow_peer_soul_edit', defaults.allowPeerSoulEdit),
+      allowPeerResumeEdit:
+          flag('allow_peer_resume_edit', defaults.allowPeerResumeEdit),
       allowPeerMemoryEdit:
           flag('allow_peer_memory_edit', defaults.allowPeerMemoryEdit),
     );
@@ -78,6 +85,7 @@ class PeerBoundaryConfig {
         'disable_memory_writes': disableMemoryWrites,
         'disable_session_end_writes': disableSessionEndWrites,
         'allow_peer_soul_edit': allowPeerSoulEdit,
+        'allow_peer_resume_edit': allowPeerResumeEdit,
         'allow_peer_memory_edit': allowPeerMemoryEdit,
       };
 
@@ -88,6 +96,7 @@ class PeerBoundaryConfig {
     bool? disableMemoryWrites,
     bool? disableSessionEndWrites,
     bool? allowPeerSoulEdit,
+    bool? allowPeerResumeEdit,
     bool? allowPeerMemoryEdit,
   }) {
     return PeerBoundaryConfig(
@@ -99,6 +108,7 @@ class PeerBoundaryConfig {
       disableSessionEndWrites:
           disableSessionEndWrites ?? this.disableSessionEndWrites,
       allowPeerSoulEdit: allowPeerSoulEdit ?? this.allowPeerSoulEdit,
+      allowPeerResumeEdit: allowPeerResumeEdit ?? this.allowPeerResumeEdit,
       allowPeerMemoryEdit: allowPeerMemoryEdit ?? this.allowPeerMemoryEdit,
     );
   }

@@ -32,6 +32,7 @@ void main() {
       expect(c.disableOsTools, isTrue);
       expect(c.disableMemoryWrites, isTrue);
       expect(c.allowPeerSoulEdit, isFalse);
+      expect(c.allowPeerResumeEdit, isFalse);
       expect(
         c.blocksCli(namespace: 'os', subcommand: 'command.exec'),
         isTrue,
@@ -62,6 +63,20 @@ void main() {
       );
       expect(
         c.blocksCli(namespace: 'context', subcommand: 'memory.write'),
+        isFalse,
+      );
+      expect(c.allowPeerResumeEdit, isTrue);
+    });
+
+    test('allowPeerResumeEdit json round-trip and copyWith', () {
+      final c = PeerBoundaryConfig.defaults.copyWith(allowPeerResumeEdit: true);
+      expect(c.allowPeerResumeEdit, isTrue);
+      expect(c.allowPeerSoulEdit, isFalse); // untouched
+      final again = PeerBoundaryConfig.fromJson(c.toJson());
+      expect(again.allowPeerResumeEdit, isTrue);
+      // Missing key falls back to defaults (safe read-only for legacy hosts).
+      expect(
+        PeerBoundaryConfig.fromJson({}).allowPeerResumeEdit,
         isFalse,
       );
     });

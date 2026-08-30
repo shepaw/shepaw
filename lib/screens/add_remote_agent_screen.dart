@@ -58,6 +58,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
   bool _isCreating = false;
   bool _allowExternalAccess = false;
   bool _allowPeerSoulEdit = false;
+  bool _allowPeerResumeEdit = false;
   bool _allowPeerMemoryEdit = false;
   String? _localAvatarPath; // 本地图片相对路径
 
@@ -272,6 +273,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
           metadata['peer_boundary'] = PeerBoundaryConfig.defaults
               .copyWith(
                 allowPeerSoulEdit: _allowPeerSoulEdit,
+                allowPeerResumeEdit: _allowPeerResumeEdit,
                 allowPeerMemoryEdit: _allowPeerMemoryEdit,
               )
               .toJson();
@@ -1392,6 +1394,25 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
               value: _allowPeerSoulEdit,
               onChanged: (value) {
                 setState(() => _allowPeerSoulEdit = value);
+              },
+            ),
+            const Divider(height: 1),
+            SwitchListTile(
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              secondary:
+                  Icon(Icons.description_outlined, color: colorScheme.primary),
+              title: Text(
+                l10n.agent_allowPeerResumeEdit,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              subtitle: Text(
+                l10n.agent_allowPeerResumeEditDesc,
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+              value: _allowPeerResumeEdit,
+              onChanged: (value) {
+                setState(() => _allowPeerResumeEdit = value);
               },
             ),
             const Divider(height: 1),

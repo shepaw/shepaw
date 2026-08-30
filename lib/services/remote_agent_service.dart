@@ -486,8 +486,8 @@ class RemoteAgentService {
   /// 均抛出异常，由调用方（详情页按钮）展示错误。
   ///
   /// 仅适用于 ACP WebSocket 接入的远端 agent；peer agent（P2P 隧道）
-  /// 不适用，直接抛错。
-  Future<String> regenerateResume(String agentId) async {
+  /// 不适用，直接抛错。[prompt] 非空时作为自定义生成提示词透传给网关。
+  Future<String> regenerateResume(String agentId, {String? prompt}) async {
     final agent = await getAgentById(agentId);
     if (agent == null) {
       throw StateError('Agent not found: $agentId');
@@ -532,8 +532,8 @@ class RemoteAgentService {
       );
 
       final response = await connection
-          .resumeRebuild()
-          .timeout(const Duration(seconds: 15));
+          .resumeRebuild(prompt: prompt)
+          .timeout(const Duration(seconds: 30));
       if (!response.isSuccess) {
         throw StateError(
           'agent.resume.rebuild 失败: ${response.error?.message}',
