@@ -185,9 +185,14 @@ class _ShepawSearchPageState<T> extends State<ShepawSearchPage<T>> {
         actions: delegate.buildActions(context),
         bottom: delegate.buildBottom(context),
         flexibleSpace: delegate.buildFlexibleSpace(context),
-        systemOverlayStyle: colorScheme.brightness == Brightness.dark
-            ? SystemUiOverlayStyle.light
-            : SystemUiOverlayStyle.dark,
+        // 状态栏与 AppBar 同色（此页 AppBar 用 scaffoldBackgroundColor 而非
+        // 主题 AppBar 的 surface，深色下两者不同），只补图标明暗。
+        systemOverlayStyle: SystemUiOverlayStyle(
+          statusBarColor: theme.scaffoldBackgroundColor,
+          statusBarIconBrightness: colorScheme.brightness == Brightness.dark
+              ? Brightness.light
+              : Brightness.dark,
+        ),
       ),
       body: AnimatedSwitcher(
         duration: const Duration(milliseconds: 300),

@@ -151,8 +151,16 @@ class AppTheme {
         surfaceTintColor: Colors.transparent,
         scrolledUnderElevation: 0,
         elevation: 0,
-        systemOverlayStyle:
-            isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+        // 状态栏/导航栏与 AppBar、页面底色同色，避免系统栏在标题栏上方
+        // 出现一条颜色不同的「贴上去」的横带。
+        systemOverlayStyle: SystemUiOverlayStyle(
+          statusBarColor: scheme.surface,
+          statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+          systemNavigationBarColor: scaffoldBackground,
+          systemNavigationBarIconBrightness:
+              isDark ? Brightness.light : Brightness.dark,
+          systemNavigationBarContrastEnforced: false,
+        ),
       ),
       cardTheme: const CardThemeData(
         surfaceTintColor: Colors.transparent,
