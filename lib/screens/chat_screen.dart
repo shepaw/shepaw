@@ -16,6 +16,7 @@ import '../models/remote_agent.dart';
 import '../models/model_routing_config.dart';
 import '../services/audio_recording_service.dart';
 import '../services/composer_draft_service.dart';
+import '../services/desktop_window_auto_size.dart';
 import '../services/local_database_service.dart';
 import '../services/group/group_member_session_service.dart';
 import '../utils/layout_utils.dart';
@@ -211,6 +212,9 @@ class _ChatScreenState extends State<ChatScreen>
   double _pinnedPanelWidth = 360;
   static const double _minPinnedPanelWidth = 240;
   static const double _maxPinnedPanelWidth = 480;
+
+  /// 面板占用总宽：面板 + 分割线，窗口自适应宽度按这个值增减。
+  double get _pinnedPanelTotalWidth => _pinnedPanelWidth + 1;
 
   /// 停靠面板的会话列表（固定期间由 controller 变化驱动刷新）。
   List<Channel> _pinnedPanelSessions = const [];
@@ -1636,11 +1640,15 @@ class _ChatScreenState extends State<ChatScreen>
     await _closeDrawerAndWait();
     if (!mounted) return;
     await _setPanelPinned(true);
+    // 窗口拉宽以容纳面板，聊天区保持原宽度（非桌面布局 / 插件不可用时
+    // 内部短路，面板照旧内嵌挤压聊天区）。
+    await DesktopWindowAutoSize.growForPanel(_pinnedPanelTotalWidth);
     await _refreshPinnedPanelSessions();
   }
 
   Future<void> _unpinPanel() async {
     await _setPanelPinned(false);
+    await DesktopWindowAutoSize.shrinkForPanel(_pinnedPanelTotalWidth);
   }
 
   /// 当前会话集合的装载键：dm 用 agentId，群聊用 groupFamilyId。
@@ -1727,8 +1735,13 @@ class _ChatScreenState extends State<ChatScreen>
     return GestureDetector(
       onHorizontalDragUpdate: (details) {
         setState(() {
+          final old = _pinnedPanelWidth;
           _pinnedPanelWidth = (_pinnedPanelWidth - details.delta.dx)
               .clamp(_minPinnedPanelWidth, _maxPinnedPanelWidth);
+          if (_pinnedPanelWidth != old) {
+            // 窗口随面板宽度同步增减，聊天区宽度保持不变。
+            unawaited(DesktopWindowAutoSize.adjustWidth(old - _pinnedPanelWidth));
+          }
         });
       },
       onHorizontalDragEnd: (_) async {

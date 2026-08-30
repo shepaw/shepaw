@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'l10n/app_localizations.dart';
+import 'services/desktop_window_auto_size.dart';
 import 'services/password_service.dart';
 import 'services/permission_service.dart';
 import 'services/logger_service.dart';
@@ -63,6 +64,13 @@ Future<void> main(List<String> args) async {
       }
 
       // --- Main window startup ---
+
+      // 初始化窗口管理（窗口随停靠面板开合自适应宽度，见
+      // DesktopWindowAutoSize.growForPanel）。子窗口不初始化——
+      // SubWindowApp 自管尺寸。
+      if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
+        await DesktopWindowAutoSize.ensureInitialized();
+      }
 
       // 初始化服务定位器（注册 navigatorKey 等核心对象）
       setupServiceLocator();
