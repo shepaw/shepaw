@@ -245,6 +245,8 @@ class GroupOrchestrationService {
     ACPCancellationToken? acpCancellationToken,
     void Function(String agentId, String agentName, String chunk)?
         onStreamChunk,
+    void Function(String agentId, String agentName, Map<String, dynamic>)?
+        onMessageMetadata,
     void Function(String agentId, String agentName)? onAgentStart,
     void Function(String agentId, String agentName, bool skipped)? onAgentDone,
     void Function()? onAllDone,
@@ -663,6 +665,7 @@ class GroupOrchestrationService {
               mentionMode: mentionMode,
               acpCancellationToken: acpCancellationToken,
               onStreamChunk: onStreamChunk,
+              onMessageMetadata: onMessageMetadata,
               onAgentDone: onAgentDone,
               onInteractionRequest: onInteractionRequest,
               orchestrationTraceId: orchTraceId,
@@ -723,6 +726,7 @@ class GroupOrchestrationService {
             mentionMode: mentionMode,
             acpCancellationToken: acpCancellationToken,
             onStreamChunk: onStreamChunk,
+            onMessageMetadata: onMessageMetadata,
             onAgentDone: onAgentDone,
             onInteractionRequest: onInteractionRequest,
             orchestrationTraceId: orchTraceId,
@@ -839,6 +843,7 @@ class GroupOrchestrationService {
               acpCancellationToken: acpCancellationToken,
               isFlowMode: isFlowMode,
               onStreamChunk: onStreamChunk,
+              onMessageMetadata: onMessageMetadata,
               onAgentDone: onAgentDone,
               onInteractionRequest: onInteractionRequest,
               orchestrationTraceId: orchTraceId,
@@ -1076,6 +1081,9 @@ class GroupOrchestrationService {
               adminResponseContent += chunk;
               onStreamChunk?.call(agentId, agentName, chunk);
             },
+            onMessageMetadata: (agentId, agentName, metadata) {
+              onMessageMetadata?.call(agentId, agentName, metadata);
+            },
             onAgentDone: onAgentDone,
             onInteractionRequest: onInteractionRequestForAdmin,
             orchestrationTraceId: orchTraceId,
@@ -1246,6 +1254,9 @@ class GroupOrchestrationService {
                     adminResponseContent += chunk;
                     onStreamChunk?.call(agentId, agentName, chunk);
                   },
+                  onMessageMetadata: (agentId, agentName, metadata) {
+                    onMessageMetadata?.call(agentId, agentName, metadata);
+                  },
                   onAgentDone: onAgentDone,
                   onInteractionRequest: onInteractionRequestForAdmin,
                   orchestrationTraceId: orchTraceId,
@@ -1322,6 +1333,9 @@ class GroupOrchestrationService {
                 onStreamChunk: (agentId, agentName, chunk) {
                   adminResponseContent += chunk;
                   onStreamChunk?.call(agentId, agentName, chunk);
+                },
+                onMessageMetadata: (agentId, agentName, metadata) {
+                  onMessageMetadata?.call(agentId, agentName, metadata);
                 },
                 onAgentDone: onAgentDone,
                 onInteractionRequest: onInteractionRequestForAdmin,
@@ -1415,6 +1429,9 @@ class GroupOrchestrationService {
                     adminResponseContent += chunk;
                     onStreamChunk?.call(agentId, agentName, chunk);
                   },
+                  onMessageMetadata: (agentId, agentName, metadata) {
+                    onMessageMetadata?.call(agentId, agentName, metadata);
+                  },
                   onAgentDone: onAgentDone,
                   onInteractionRequest: onInteractionRequestForAdmin,
                   orchestrationTraceId: orchTraceId,
@@ -1503,6 +1520,9 @@ class GroupOrchestrationService {
                     onStreamChunk: (agentId, agentName, chunk) {
                       adminResponseContent += chunk;
                       onStreamChunk?.call(agentId, agentName, chunk);
+                    },
+                    onMessageMetadata: (agentId, agentName, metadata) {
+                      onMessageMetadata?.call(agentId, agentName, metadata);
                     },
                     onAgentDone: onAgentDone,
                     onInteractionRequest: onInteractionRequestForAdmin,
@@ -1650,6 +1670,9 @@ class GroupOrchestrationService {
                       adminResponseContent += chunk;
                       onStreamChunk?.call(agentId, agentName, chunk);
                     },
+                    onMessageMetadata: (agentId, agentName, metadata) {
+                      onMessageMetadata?.call(agentId, agentName, metadata);
+                    },
                     onAgentDone: onAgentDone,
                     onInteractionRequest: onInteractionRequestForAdmin,
                     orchestrationTraceId: orchTraceId,
@@ -1739,6 +1762,9 @@ class GroupOrchestrationService {
                     adminResponseContent += chunk;
                     onStreamChunk?.call(agentId, agentName, chunk);
                   },
+                  onMessageMetadata: (agentId, agentName, metadata) {
+                    onMessageMetadata?.call(agentId, agentName, metadata);
+                  },
                   onAgentDone: onAgentDone,
                   onInteractionRequest: onInteractionRequestForAdmin,
                   orchestrationTraceId: orchTraceId,
@@ -1795,6 +1821,9 @@ class GroupOrchestrationService {
                 onStreamChunk: (agentId, agentName, chunk) {
                   adminResponseContent += chunk;
                   onStreamChunk?.call(agentId, agentName, chunk);
+                },
+                onMessageMetadata: (agentId, agentName, metadata) {
+                  onMessageMetadata?.call(agentId, agentName, metadata);
                 },
                 onAgentDone: onAgentDone,
                 onInteractionRequest: onInteractionRequestForAdmin,
@@ -1915,6 +1944,7 @@ class GroupOrchestrationService {
                     mentionMode: mentionMode,
                     acpCancellationToken: acpCancellationToken,
                     onStreamChunk: onStreamChunk,
+                    onMessageMetadata: onMessageMetadata,
                     onAgentDone: onAgentDone,
                     onInteractionRequest: onInteractionRequest,
                   )
@@ -1979,6 +2009,7 @@ class GroupOrchestrationService {
                   mentionMode: mentionMode,
                   acpCancellationToken: acpCancellationToken,
                   onStreamChunk: onStreamChunk,
+                  onMessageMetadata: onMessageMetadata,
                   onAgentDone: onAgentDone,
                   onInteractionRequest: onInteractionRequest,
                 )
@@ -2100,6 +2131,9 @@ class GroupOrchestrationService {
                   adminResponseContent += chunk;
                   onStreamChunk?.call(agentId, agentName, chunk);
                 },
+                onMessageMetadata: (agentId, agentName, metadata) {
+                  onMessageMetadata?.call(agentId, agentName, metadata);
+                },
                 onAgentDone: onAgentDone,
                 onInteractionRequest: onInteractionRequestForAdmin,
                 orchestrationTraceId: orchTraceId,
@@ -2186,6 +2220,9 @@ class GroupOrchestrationService {
               onStreamChunk: (agentId, agentName, chunk) {
                 adminResponseContent += chunk;
                 onStreamChunk?.call(agentId, agentName, chunk);
+              },
+              onMessageMetadata: (agentId, agentName, metadata) {
+                onMessageMetadata?.call(agentId, agentName, metadata);
               },
               onAgentDone: onAgentDone,
               onInteractionRequest: onInteractionRequestForAdmin,
@@ -2289,6 +2326,7 @@ class GroupOrchestrationService {
             mentionMode: mentionMode,
             acpCancellationToken: acpCancellationToken,
             onStreamChunk: onStreamChunk,
+            onMessageMetadata: onMessageMetadata,
             onAgentDone: onAgentDone,
             onInteractionRequest: onInteractionRequest,
             orchestrationTraceId: orchTraceId,

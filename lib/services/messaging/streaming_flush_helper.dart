@@ -105,15 +105,29 @@ class StreamingFlushHelper {
   }
 
   Future<void> flush({Map<String, dynamic>? extraMetadata}) async {
-    if (!enabled || activeTask.accumulatedContent.isEmpty) return;
+    // 纯 thinking 阶段（answer 为空）也要落库：partial 行只要带上
+    // `status:'streaming'` + `progress_content`，DB 里就有了「本回合回复
+    // 已落库」的标记——活回合的 defer-reload 判定（dbHasTurnReply）靠它
+    // 提前放行，回复不必等 30s 兜底 timer 才渲染。
+    if (!enabled ||
+        (activeTask.accumulatedContent.isEmpty &&
+            activeTask.progressContent.isEmpty)) {
+      return;
+    }
 
     try {
       final metadata = <String, dynamic>{
         'trace_id': traceId,
         'is_partial': true,
-        'flushed_content_length': activeTask.accumulatedContent.length,
+        'flushed_content_length': activeTask.totalContentLength,
         'agent_id': agent.id,
         'agent_name': agent.name,
+        if (activeTask.progressContent.isNotEmpty) ...{
+          'progress_content': activeTask.progressContent,
+          'collapsible': true,
+          'collapsible_title': 'Details',
+          'auto_collapse': true,
+        },
         if (extraMetadata != null) ...extraMetadata,
       };
 
@@ -132,8 +146,9 @@ class StreamingFlushHelper {
       onFlushed?.call(partialMessageId);
 
       LoggerService().debug(
-        'Flushed streaming content: ${activeTask.accumulatedContent.length} '
-        'bytes for task $traceId',
+        'Flushed streaming content: ${activeTask.totalContentLength} '
+        'bytes (answer=${activeTask.accumulatedContent.length}, '
+        'progress=${activeTask.progressContent.length}) for task $traceId',
         tag: 'StreamingFlushHelper',
       );
     } catch (e) {

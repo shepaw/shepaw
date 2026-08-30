@@ -147,6 +147,12 @@ mixin _MessagingOps on _ChatControllerBase {
         scheduleStreamingRebuild();
         scheduleStreamingScrollToBottom();
       },
+      onMessageMetadata: (aid, agentNameVal, metadata) {
+        if (turn.applyMetadata(aid, metadata, messages, messageIdMap) == null) {
+          return;
+        }
+        scheduleStreamingRebuild();
+      },
       onTaskFinished: (aid, agentNameVal) {
         final sid = turn.finish(aid);
         if (sid != null) groupStreamingMessageIds.remove(sid);
@@ -1353,6 +1359,16 @@ mixin _MessagingOps on _ChatControllerBase {
           scheduleStreamingRebuild();
           scheduleStreamingScrollToBottom();
         },
+        onMessageMetadata: (aid, anm, metadata) {
+          if (!groupTurnGate.isCurrent(epoch)) return;
+          // thinking/进度增量：直接合并到该 agent 的群流式气泡 metadata
+          // （与 DM 的 applyMetadataTo 同款），折叠块随 thinking 流式展开。
+          if (turn.applyMetadata(aid, metadata, messages, messageIdMap) ==
+              null) {
+            return;
+          }
+          scheduleStreamingRebuild();
+        },
         onAgentDone: (aid, anm, skipped) {
           if (!groupTurnGate.isCurrent(epoch)) return;
           final sid = turn.idFor(aid);
@@ -1641,6 +1657,10 @@ mixin _MessagingOps on _ChatControllerBase {
     _pendingStreamingRebuild = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _pendingStreamingRebuild = false;
+      // dispose 竞态：controller 已销毁时 contentListenable 不可再通知。
+      // addPostFrameCallback 不会主动请求帧，通知会滞留到下一个自然帧；
+      // 流式气泡里有转圈动画持续产帧，正常流式不受影响。
+      if (_contentListenableDisposed) return;
       // chunk 只改消息内容：通知投给内容专用 listenable，只有消息列表
       // 子树（AnimatedBuilder 包裹）重建，外层 Scaffold/AppBar/输入区/
       // 面板不再随每个 chunk 全量 rebuild。结构性变化（回合开始/结束、

@@ -304,6 +304,10 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   bool _pendingStreamingRebuild = false;
   bool _pendingStreamingScroll = false;
 
+  /// dispose 后置位：已排队的 postFrame 内容通知不能再触碰已 dispose 的
+  /// contentListenable（scheduleStreamingRebuild 在帧回调里检查）。
+  bool _contentListenableDisposed = false;
+
   /// Workflow panel + local execution bookkeeping.
   final ChatWorkflowCoordinator workflow = ChatWorkflowCoordinator();
 
@@ -506,6 +510,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     // 桌面双栏替换中的新页面）正在监听；close 会让存活页面的订阅静默失效，
     // 服务侧写入的消息从此只能等下次全量加载才显示。
     _eventController.close();
+    _contentListenableDisposed = true;
     contentListenable.dispose();
     super.dispose();
   }
@@ -532,6 +537,13 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   void _notify() {
     if (_eventController.isClosed) return;
     notifyListeners();
+    // 0d83ec7 之后消息列表子树只订阅 contentListenable，外层 setState 又被
+    // OuterStructuralSnapshot 门控（29 个结构字段不含消息内容/metadata）。
+    // 任何走 _notify 的内容/metadata 变更（交互卡、reconcile、终态刷新等）
+    // 在结构字段恰好不变时会导致列表不重绘——这里统一兜底投一次内容通知，
+    // 让列表子树同步刷新。真流式 chunk 仍走 scheduleStreamingRebuild 单独
+    // 合批，本调用每回合结构性事件只发生几次，无帧率影响。
+    scheduleStreamingRebuild();
   }
 
   // ---- InteractiveStreamingContext implementation ----
@@ -674,6 +686,9 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
 
   Future<void> reloadMessagesFromDB() async {
     if (currentChannelId == null) return;
+    // 捕获入口频道：本调用可能来自延迟路径（onClear / 兜底 timer / 终态
+    // 事件），原位切换频道后才完成时，旧频道结果不得写入。
+    final channelIdAtStart = currentChannelId;
     _preserveInMemoryPlanApprovalResponses();
     final windowLimit = messages.isEmpty
         ? ChatMessageWindow.initialLimit
@@ -685,6 +700,9 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       currentChannelId!,
       limit: windowLimit,
     );
+    // 频道代际守卫：本调用可能在原位切换频道（switchChannel）后才完成，
+    // 旧频道查回的行不能再覆盖新频道的 messages。
+    if (currentChannelId != channelIdAtStart) return;
     if (isGroupMode) {
       messages.clear();
       messageIdMap.clear();
@@ -1034,6 +1052,9 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
 
   Future<void> reconcileGroupMessages() async {
     if (currentChannelId == null) return;
+    // 捕获入口频道：原位切换频道后才完成的 reconcile 不得写入新频道
+    // （与 reloadMessagesFromDB 的代际守卫同理）。
+    final channelIdAtStart = currentChannelId;
 
     final windowLimit = messages.isEmpty
         ? ChatMessageWindow.initialLimit
@@ -1045,6 +1066,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       currentChannelId!,
       limit: windowLimit,
     );
+    if (currentChannelId != channelIdAtStart) return;
     final result = ChatMessageReconciler.reconcileGroupMessages(
       current: messages,
       dbMessages: dbMessages,

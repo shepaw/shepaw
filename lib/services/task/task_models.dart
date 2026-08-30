@@ -15,6 +15,12 @@ class ActiveTask {
 
   String accumulatedContent = '';
   Map<String, dynamic>? metadata;
+
+  /// thinking/工具进度文本（`progress_content`）。与 answer 分开累计：
+  /// 纯 thinking 阶段 [accumulatedContent] 为空，flush 与「回复已落库」
+  /// 判定都依赖这里非空才能提前生效（否则要等 30s 兜底 timer）。
+  String progressContent = '';
+
   bool isComplete = false;
   String? errorMessage;
 
@@ -94,31 +100,40 @@ class ActiveTask {
     int flushIntervalMs = 2000,
     int contentThreshold = 500,
   }) {
-    if (accumulatedContent.isEmpty) return false;
+    // 纯 thinking 阶段也要落库：让 DB 尽早出现 `status:'streaming'` 行，
+    // 活回合的 defer-reload 判定（dbHasTurnReply）才能命中。
+    if (accumulatedContent.isEmpty && progressContent.isEmpty) return false;
 
     // Never flushed before → use task start time as baseline
     if (lastFlushTimestampMs == null) {
       final timeSinceStart =
           DateTime.now().millisecondsSinceEpoch - startedAtMs;
       return timeSinceStart >= flushIntervalMs ||
-          accumulatedContent.length >= contentThreshold;
+          totalContentLength >= contentThreshold;
     }
 
     // Already flushed → use last flush as baseline
     final timeSinceFlush =
         DateTime.now().millisecondsSinceEpoch - lastFlushTimestampMs!;
-    final contentSinceFlush = accumulatedContent.length - lastFlushedContentLength;
+    final contentSinceFlush =
+        totalContentLength - lastFlushedContentLength;
 
     return timeSinceFlush >= flushIntervalMs ||
         contentSinceFlush >= contentThreshold;
   }
+
+  /// answer + thinking 进度的总长度。shouldFlush / recordFlush 都按它算，
+  /// 纯 thinking 阶段（answer 为空）同样有进度可刷。
+  int get totalContentLength =>
+      accumulatedContent.length + progressContent.length;
 
   /// Record a successful flush to the database.
   /// Should be called after [upsertPartialStreamingMessage] succeeds.
   void recordFlush(String messageId) {
     partialMessageId = messageId;
     lastFlushTimestampMs = DateTime.now().millisecondsSinceEpoch;
-    lastFlushedContentLength = accumulatedContent.length;
+    lastFlushedContentLength =
+        accumulatedContent.length + progressContent.length;
   }
 
   /// Record an interruption event.
@@ -158,6 +173,11 @@ class GroupActiveTask {
 
   // Detachable UI callbacks — set to null when user leaves the screen
   void Function(String chunk)? onStreamChunk;
+
+  /// thinking/工具进度 metadata 增量（`progress_content` 等）。群聊路径此前
+  /// 只把这些攒进终态 metadata，回合结束才可见；挂上该回调后 UI 可实时
+  /// 渲染 thinking 折叠块。
+  void Function(Map<String, dynamic> metadata)? onMessageMetadata;
   void Function()? onTaskFinished;
 
   /// Per-agent stop hook: cancels just this agent's in-flight turn without
@@ -174,6 +194,7 @@ class GroupActiveTask {
 
   void detachUI() {
     onStreamChunk = null;
+    onMessageMetadata = null;
     onTaskFinished = null;
   }
 }

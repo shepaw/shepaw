@@ -75,6 +75,26 @@ class ChatGroupStreamingTracker {
     return applyContent(agentId, messages, messageIdMap);
   }
 
+  /// Merge a metadata [patch] (e.g. thinking `progress_content` deltas) onto
+  /// this agent's streaming bubble. Preserves accumulated content.
+  Message? applyMetadata(
+    String agentId,
+    Map<String, dynamic> patch,
+    List<Message> messages,
+    Map<String, Message> messageIdMap,
+  ) {
+    final sid = streamingIds[agentId];
+    if (sid == null) return null;
+    final existing = messageIdMap[sid];
+    if (existing == null) return null;
+    final idx = messages.indexOf(existing);
+    if (idx == -1) return null;
+    final updated = ChatStreamingText.withMergedMetadata(messages[idx], patch);
+    messages[idx] = updated;
+    messageIdMap[updated.id] = updated;
+    return updated;
+  }
+
   /// Finish an agent turn. Returns the streaming id that was removed (if any).
   String? finish(String agentId) {
     streamingContents.remove(agentId);

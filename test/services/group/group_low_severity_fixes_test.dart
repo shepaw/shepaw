@@ -379,6 +379,8 @@ class _NoopExecutor extends GroupAgentExecutor {
     ACPCancellationToken? acpCancellationToken,
     void Function(String agentId, String agentName, String chunk)?
         onStreamChunk,
+    void Function(String agentId, String agentName, Map<String, dynamic>)?
+        onMessageMetadata,
     void Function(String agentId, String agentName, bool skipped)? onAgentDone,
     Future<Map<String, dynamic>?> Function(
       String agentId,

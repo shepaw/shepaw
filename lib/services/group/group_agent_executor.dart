@@ -316,6 +316,8 @@ class GroupAgentExecutor {
     ACPCancellationToken? acpCancellationToken,
     void Function(String agentId, String agentName, String chunk)?
         onStreamChunk,
+    void Function(String agentId, String agentName, Map<String, dynamic>)?
+        onMessageMetadata,
     void Function(String agentId, String agentName, bool skipped)? onAgentDone,
     Future<Map<String, dynamic>?> Function(
       String agentId,
@@ -1108,6 +1110,9 @@ class GroupAgentExecutor {
                 messageMetadataExtra = Map<String, dynamic>.from(
                   messageMetadataExtra ?? {},
                 )..addAll(progressMeta);
+                // thinking 增量实时推给 UI（此前整段攒到终态才可见）。
+                groupTask.onMessageMetadata?.call(progressMeta);
+                onMessageMetadata?.call(agent.id, agent.name, progressMeta);
               }
               infLogGroup.onTextChunk(groupTraceId, chunk);
             }

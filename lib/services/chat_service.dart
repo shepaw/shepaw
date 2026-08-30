@@ -888,6 +888,8 @@ class ChatService {
     String channelId, {
     void Function(String agentId, String agentName, String chunk)?
         onStreamChunk,
+    void Function(String agentId, String agentName, Map<String, dynamic>)?
+        onMessageMetadata,
     void Function(String agentId, String agentName)? onTaskFinished,
   }) {
     final agentMap = _activeGroupTasks[channelId];
@@ -899,6 +901,9 @@ class ChatService {
       accumulated[entry.key] = task.accumulatedContent;
       task.onStreamChunk = (chunk) {
         onStreamChunk?.call(task.agentId, task.agentName, chunk);
+      };
+      task.onMessageMetadata = (metadata) {
+        onMessageMetadata?.call(task.agentId, task.agentName, metadata);
       };
       task.onTaskFinished = () {
         onTaskFinished?.call(task.agentId, task.agentName);
@@ -2177,6 +2182,8 @@ $originalQuestion
     ACPCancellationToken? acpCancellationToken,
     void Function(String agentId, String agentName, String chunk)?
         onStreamChunk,
+    void Function(String agentId, String agentName, Map<String, dynamic>)?
+        onMessageMetadata,
     void Function(String agentId, String agentName)? onAgentStart,
     void Function(String agentId, String agentName, bool skipped)? onAgentDone,
     void Function()? onAllDone,
@@ -2245,6 +2252,7 @@ $originalQuestion
         attachments: attachments,
         acpCancellationToken: acpCancellationToken,
         onStreamChunk: onStreamChunk,
+        onMessageMetadata: onMessageMetadata,
         onAgentStart: onAgentStart,
         onAgentDone: onAgentDone,
         onAllDone: onAllDone,

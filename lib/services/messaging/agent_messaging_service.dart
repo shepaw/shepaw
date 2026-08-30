@@ -284,7 +284,14 @@ class AgentMessagingService {
             final merged = Map<String, dynamic>.from(activeTask.metadata ?? {});
             merged.addAll(progressMeta);
             activeTask.metadata = merged;
+            final progress = progressMeta['progress_content'];
+            if (progress is String) {
+              // 同步进任务级进度缓冲，纯 thinking 阶段 flush 才能落库。
+              activeTask.progressContent = progress;
+            }
             activeTask.onMessageMetadata?.call(progressMeta);
+            // thinking 帧也要启动 flush（理由同 ACP 路径）。
+            flushHelper.schedule();
           }
         }
       },
@@ -989,6 +996,12 @@ class AgentMessagingService {
       void publishSplitMetadata(Map<String, dynamic> meta) {
         messageMetadataExtra = Map<String, dynamic>.from(messageMetadataExtra ?? {})
           ..addAll(meta);
+        final progress = meta['progress_content'];
+        if (progress is String) {
+          // 同步进任务级进度缓冲：flush 判定与 partial 行都依赖它，
+          // 纯 thinking 阶段 DB 才能尽早出现 status:'streaming' 行。
+          activeTask.progressContent = progress;
+        }
         activeTask.onMessageMetadata?.call(meta);
       }
 
@@ -1198,7 +1211,12 @@ class AgentMessagingService {
             flushHelper?.schedule();
           } else {
             final progressMeta = splitter.progressMetadataDelta();
-            if (progressMeta != null) publishSplitMetadata(progressMeta);
+            if (progressMeta != null) {
+              publishSplitMetadata(progressMeta);
+              // thinking 帧也要启动 flush：否则纯 thinking 阶段 DB 没有
+              // status:'streaming' 行，回复落库后被 defer 到 30s 兜底。
+              flushHelper?.schedule();
+            }
             // Still log full stream for inference debugging.
             infLogAcp.onTextChunk(effectiveTaskId, content);
           }
@@ -1702,6 +1720,11 @@ class AgentMessagingService {
       final merged = Map<String, dynamic>.from(activeTask.metadata ?? {});
       merged.addAll(meta);
       activeTask.metadata = merged;
+      final progress = meta['progress_content'];
+      if (progress is String) {
+        // 同步进任务级进度缓冲，纯 thinking 阶段 flush 才能落库。
+        activeTask.progressContent = progress;
+      }
       activeTask.onMessageMetadata?.call(meta);
     }
 
@@ -1776,7 +1799,11 @@ class AgentMessagingService {
             infLogPeer.onTextChunk(traceId, answerDelta);
           } else {
             final progressMeta = splitter.progressMetadataDelta();
-            if (progressMeta != null) publishMetadata(progressMeta);
+            if (progressMeta != null) {
+              publishMetadata(progressMeta);
+              // thinking 帧也要启动 flush（理由同 ACP 路径）。
+              flushHelper.schedule();
+            }
             infLogPeer.onTextChunk(traceId, chunk);
           }
         },
