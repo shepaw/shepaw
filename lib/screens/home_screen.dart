@@ -14,6 +14,7 @@ import 'chat_screen.dart';
 import 'settings_screen.dart';
 import 'contacts_screen.dart';
 import 'storage_space_manage_screen.dart';
+import 'instruction_set_screen.dart';
 import '../widgets/agent_search_delegate.dart';
 import '../widgets/shepaw_search_page.dart';
 import '../widgets/agent_list_avatar.dart';
@@ -699,6 +700,20 @@ class HomeScreenState extends State<HomeScreen> {
                         context,
                         MaterialPageRoute(
                           builder: (context) => const StorageSpaceManageScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.playlist_add_check_outlined),
+                    title: Text(l10n.instructionSet_title),
+                    subtitle: Text(l10n.instructionSet_subtitle),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const InstructionSetScreen(),
                         ),
                       );
                     },

@@ -3177,6 +3177,53 @@
   "addAgent_pairingCodeHelper": "Agent 主机运行 `<gateway> enroll` 得到类似 XXX-XXX-XXX 的短码，粘贴到这里即可自动授权本设备。不填写则走上方的「复制公钥 → peers add」手动流程。",
   "storage_title": "储物袋",
   "storage_subtitle": "管理本机快照、附件与产物占用",
+  "instructionSet_title": "指令集",
+  "instructionSet_subtitle": "可复用的任务指令，随时一键执行",
+  "instructionSet_empty": "暂无指令。可以让 Agent 帮忙把任务总结保存成指令。",
+  "instructionSet_create": "新建指令",
+  "instructionSet_nameLabel": "指令名称",
+  "instructionSet_descLabel": "指令描述（可选）",
+  "instructionSet_contentLabel": "指令内容",
+  "instructionSet_ownerLabel": "所属 Agent",
+  "instructionSet_updatedLabel": "更新于",
+  "instructionSet_run": "执行",
+  "instructionSet_runHint": "将打开与所属 Agent 的会话，并预填指令内容。",
+  "instructionSet_createHint": "保存后，执行时会自动路由给所属 Agent。",
+  "instructionSet_deleteTitle": "删除指令",
+  "instructionSet_deleteBody": "确定删除「{name}」吗？删除后不可恢复。",
+  "@instructionSet_deleteBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "instructionSet_nameRequired": "请输入指令名称",
+  "instructionSet_contentRequired": "请输入指令内容",
+  "instructionSet_saved": "已保存指令「{name}」",
+  "@instructionSet_saved": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "instructionSet_deleted": "已删除指令「{name}」",
+  "@instructionSet_deleted": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "instructionSet_saveFailed": "保存失败：{error}",
+  "@instructionSet_saveFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "storage_snapshotSection": "本机快照",
   "storage_snapshotDesc": "加密快照（数据库 + 设备身份）。恢复将全量替换当前数据。",
   "storage_snapshotNow": "立即快照",

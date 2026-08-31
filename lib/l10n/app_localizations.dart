@@ -9776,6 +9776,120 @@ abstract class AppLocalizations {
   /// **'管理本机快照、附件与产物占用'**
   String get storage_subtitle;
 
+  /// No description provided for @instructionSet_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'指令集'**
+  String get instructionSet_title;
+
+  /// No description provided for @instructionSet_subtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'可复用的任务指令，随时一键执行'**
+  String get instructionSet_subtitle;
+
+  /// No description provided for @instructionSet_empty.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无指令。可以让 Agent 帮忙把任务总结保存成指令。'**
+  String get instructionSet_empty;
+
+  /// No description provided for @instructionSet_create.
+  ///
+  /// In zh, this message translates to:
+  /// **'新建指令'**
+  String get instructionSet_create;
+
+  /// No description provided for @instructionSet_nameLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'指令名称'**
+  String get instructionSet_nameLabel;
+
+  /// No description provided for @instructionSet_descLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'指令描述（可选）'**
+  String get instructionSet_descLabel;
+
+  /// No description provided for @instructionSet_contentLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'指令内容'**
+  String get instructionSet_contentLabel;
+
+  /// No description provided for @instructionSet_ownerLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'所属 Agent'**
+  String get instructionSet_ownerLabel;
+
+  /// No description provided for @instructionSet_updatedLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'更新于'**
+  String get instructionSet_updatedLabel;
+
+  /// No description provided for @instructionSet_run.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行'**
+  String get instructionSet_run;
+
+  /// No description provided for @instructionSet_runHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'将打开与所属 Agent 的会话，并预填指令内容。'**
+  String get instructionSet_runHint;
+
+  /// No description provided for @instructionSet_createHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存后，执行时会自动路由给所属 Agent。'**
+  String get instructionSet_createHint;
+
+  /// No description provided for @instructionSet_deleteTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除指令'**
+  String get instructionSet_deleteTitle;
+
+  /// No description provided for @instructionSet_deleteBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'确定删除「{name}」吗？删除后不可恢复。'**
+  String instructionSet_deleteBody(String name);
+
+  /// No description provided for @instructionSet_nameRequired.
+  ///
+  /// In zh, this message translates to:
+  /// **'请输入指令名称'**
+  String get instructionSet_nameRequired;
+
+  /// No description provided for @instructionSet_contentRequired.
+  ///
+  /// In zh, this message translates to:
+  /// **'请输入指令内容'**
+  String get instructionSet_contentRequired;
+
+  /// No description provided for @instructionSet_saved.
+  ///
+  /// In zh, this message translates to:
+  /// **'已保存指令「{name}」'**
+  String instructionSet_saved(String name);
+
+  /// No description provided for @instructionSet_deleted.
+  ///
+  /// In zh, this message translates to:
+  /// **'已删除指令「{name}」'**
+  String instructionSet_deleted(String name);
+
+  /// No description provided for @instructionSet_saveFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存失败：{error}'**
+  String instructionSet_saveFailed(String error);
+
   /// No description provided for @storage_snapshotSection.
   ///
   /// In zh, this message translates to:

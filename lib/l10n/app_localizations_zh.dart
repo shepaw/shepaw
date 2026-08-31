@@ -5337,6 +5337,71 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_subtitle => '管理本机快照、附件与产物占用';
 
   @override
+  String get instructionSet_title => '指令集';
+
+  @override
+  String get instructionSet_subtitle => '可复用的任务指令，随时一键执行';
+
+  @override
+  String get instructionSet_empty => '暂无指令。可以让 Agent 帮忙把任务总结保存成指令。';
+
+  @override
+  String get instructionSet_create => '新建指令';
+
+  @override
+  String get instructionSet_nameLabel => '指令名称';
+
+  @override
+  String get instructionSet_descLabel => '指令描述（可选）';
+
+  @override
+  String get instructionSet_contentLabel => '指令内容';
+
+  @override
+  String get instructionSet_ownerLabel => '所属 Agent';
+
+  @override
+  String get instructionSet_updatedLabel => '更新于';
+
+  @override
+  String get instructionSet_run => '执行';
+
+  @override
+  String get instructionSet_runHint => '将打开与所属 Agent 的会话，并预填指令内容。';
+
+  @override
+  String get instructionSet_createHint => '保存后，执行时会自动路由给所属 Agent。';
+
+  @override
+  String get instructionSet_deleteTitle => '删除指令';
+
+  @override
+  String instructionSet_deleteBody(String name) {
+    return '确定删除「$name」吗？删除后不可恢复。';
+  }
+
+  @override
+  String get instructionSet_nameRequired => '请输入指令名称';
+
+  @override
+  String get instructionSet_contentRequired => '请输入指令内容';
+
+  @override
+  String instructionSet_saved(String name) {
+    return '已保存指令「$name」';
+  }
+
+  @override
+  String instructionSet_deleted(String name) {
+    return '已删除指令「$name」';
+  }
+
+  @override
+  String instructionSet_saveFailed(String error) {
+    return '保存失败：$error';
+  }
+
+  @override
   String get storage_snapshotSection => '本机快照';
 
   @override

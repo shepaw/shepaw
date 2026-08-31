@@ -12,6 +12,7 @@ import 'meta/meta_namespace.dart';
 import 'help_namespace.dart';
 import 'external_cli_namespace.dart';
 import 'store/store_namespace.dart';
+import 'instructions/instructions_namespace.dart';
 import 'vision/vision_namespace.dart';
 import '../../services/logger_service.dart';
 import '../../services/cli_command_config_service.dart';
@@ -69,6 +70,8 @@ class ShepawCLI {
     'workflow': WorkflowNamespace.instance,
     // 存储空间产物读写（docs/storage_space_plan.md §6.3）
     'store': StoreNamespace.instance,
+    // 可复用的任务指令集（save/list/get/update/delete/run）
+    'instructions': InstructionsNamespace.instance,
     // 设备端人脸识别（参考相册 + 结构化视觉档案）
     'vision': VisionNamespace.instance,
 
@@ -129,7 +132,11 @@ class ShepawCLI {
       'call namespace=chat subcommand=message.get with flags id=<message_id> analyze=<question>. '
       'Face/person recognition runs on-device: namespace=vision subcommand=album.enroll '
       '(flags person=, image=|message_id=) to register a person, recognize (flags image=|message_id=) '
-      'to identify faces, album.list / profile.build / profile.get to manage profiles.';
+      'to identify faces, album.list / profile.build / profile.get to manage profiles. '
+      'Reusable tasks: when the user asks to save or generate an instruction from a task, '
+      'call namespace=instructions subcommand=save (flags name=, content=, desc=) — it records '
+      'you as the owning agent, and instructions run later auto-routes execution back to you. '
+      'Use instructions list / get / update / delete / run to manage and execute the instruction set.';
 
   /// 动态生成工具描述（包含外部工具信息）
   String _buildToolDescription() {

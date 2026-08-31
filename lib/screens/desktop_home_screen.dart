@@ -22,6 +22,7 @@ import 'remote_agent_detail_screen.dart';
 import 'settings_screen.dart';
 import 'contacts_screen.dart';
 import 'storage_space_manage_screen.dart';
+import 'instruction_set_screen.dart';
 import '../widgets/storage/storage_space_list_panel.dart';
 import '../utils/layout_utils.dart';
 import '../services/native_window_service.dart';
@@ -60,6 +61,7 @@ enum _RightPanelView {
   traces,
   groupWorkflow,
   storageSpaceManage,
+  instructions,
 }
 
 /// Describes one item in the icon sidebar.
@@ -197,6 +199,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   static const double _sidebarWidth = 56;
 
   bool get _isUtilityPanel => _rightPanel == _RightPanelView.settings;
+
+  bool get _isInstructionSetPanel =>
+      _rightPanel == _RightPanelView.instructions;
 
   bool get _isStorageDetailPanel =>
       _rightPanel == _RightPanelView.storageSpaceManage;
@@ -382,6 +387,16 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       // 储物袋点击后直接进入「最近」文件列表。
       _storageSpace = null;
       _rightPanel = _RightPanelView.storageSpaceManage;
+      _navGeneration++;
+    });
+  }
+
+  /// 指令集：与储物袋同级入口，右侧面板打开指令集管理页。
+  void _showInstructions() {
+    setState(() {
+      _selected = null;
+      _clearContactSelectionFields();
+      _rightPanel = _RightPanelView.instructions;
       _navGeneration++;
     });
   }
@@ -678,6 +693,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       case _RightPanelView.storageSpaceManage:
         return StorageSpaceManageScreen(initialSpace: _storageSpace);
 
+      case _RightPanelView.instructions:
+        return const InstructionSetScreen();
+
       case _RightPanelView.empty:
         return _buildEmptyState();
     }
@@ -702,28 +720,40 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         icon: Icons.chat_bubble,
         tooltip: l10n.drawer_myProfile,
         colorBuilder: (_) =>
-            _leftMode == _LeftPanelMode.conversations && !_isUtilityPanel
-                ? activeColor
-                : iconColor,
+            _leftMode == _LeftPanelMode.conversations &&
+                !_isUtilityPanel &&
+                !_isInstructionSetPanel
+            ? activeColor
+            : iconColor,
         onTap: _showConversations,
       ),
       _SidebarItemDef(
         icon: Icons.contacts_outlined,
         tooltip: l10n.drawer_contacts,
         colorBuilder: (_) =>
-            _leftMode == _LeftPanelMode.contacts && !_isUtilityPanel
-                ? activeColor
-                : iconColor,
+            _leftMode == _LeftPanelMode.contacts &&
+                !_isUtilityPanel &&
+                !_isInstructionSetPanel
+            ? activeColor
+            : iconColor,
         onTap: _showContacts,
       ),
       _SidebarItemDef(
         icon: Icons.inventory_2_outlined,
         tooltip: l10n.storage_title,
         colorBuilder: (_) =>
-            _leftMode == _LeftPanelMode.storage && !_isUtilityPanel
-                ? activeColor
-                : iconColor,
+            _leftMode == _LeftPanelMode.storage &&
+                !_isUtilityPanel &&
+                !_isInstructionSetPanel
+            ? activeColor
+            : iconColor,
         onTap: _showStorage,
+      ),
+      _SidebarItemDef(
+        icon: Icons.playlist_add_check_outlined,
+        tooltip: l10n.instructionSet_title,
+        colorBuilder: (_) => _isInstructionSetPanel ? activeColor : iconColor,
+        onTap: _showInstructions,
       ),
     ];
 

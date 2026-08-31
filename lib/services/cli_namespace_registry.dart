@@ -4,6 +4,7 @@ import '../clis/shepaw/tools/tools_namespace.dart';
 import '../clis/shepaw/skills_namespace.dart';
 import '../clis/shepaw/meta/meta_namespace.dart';
 import '../clis/shepaw/help_namespace.dart';
+import '../clis/shepaw/instructions/instructions_namespace.dart';
 import '../clis/shepaw/vision/vision_namespace.dart';
 
 /// 定义 CLI 命名空间的元数据
@@ -105,6 +106,15 @@ class CliNamespaceRegistry {
         commands: _getAllCommandsInNamespace(
           'vision',
           VisionNamespace.instance,
+        ),
+      ),
+      'instructions': CliNamespaceInfo(
+        id: 'instructions',
+        label: 'Instructions',
+        description: 'Reusable task instructions — save/list/get/update/delete/run',
+        commands: _getAllCommandsInNamespace(
+          'instructions',
+          InstructionsNamespace.instance,
         ),
       ),
     };

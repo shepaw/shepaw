@@ -2699,6 +2699,53 @@
   "addAgent_pairingCodeHelper": "Run `<gateway> enroll` on the agent host to get a short code like XXX-XXX-XXX, paste it here to auto-authorize this device. Leave empty to use the \"Copy public key → peers add\" manual flow above.",
   "storage_title": "Nexus Pouch",
   "storage_subtitle": "Manage local snapshots, attachments, and artifact space",
+  "instructionSet_title": "Instruction Set",
+  "instructionSet_subtitle": "Reusable task instructions — run anytime",
+  "instructionSet_empty": "No instructions yet. Ask an agent to summarize a task and save it as an instruction.",
+  "instructionSet_create": "New instruction",
+  "instructionSet_nameLabel": "Name",
+  "instructionSet_descLabel": "Description (optional)",
+  "instructionSet_contentLabel": "Instruction content",
+  "instructionSet_ownerLabel": "Owner agent",
+  "instructionSet_updatedLabel": "Updated",
+  "instructionSet_run": "Run",
+  "instructionSet_runHint": "Opens a chat with the owning agent with the instruction pre-filled.",
+  "instructionSet_createHint": "After saving, running auto-routes to the owning agent.",
+  "instructionSet_deleteTitle": "Delete instruction",
+  "instructionSet_deleteBody": "Delete \"{name}\"? This cannot be undone.",
+  "@instructionSet_deleteBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "instructionSet_nameRequired": "Please enter an instruction name",
+  "instructionSet_contentRequired": "Please enter instruction content",
+  "instructionSet_saved": "Saved instruction \"{name}\"",
+  "@instructionSet_saved": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "instructionSet_deleted": "Deleted instruction \"{name}\"",
+  "@instructionSet_deleted": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "instructionSet_saveFailed": "Save failed: {error}",
+  "@instructionSet_saveFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "storage_snapshotSection": "Local snapshots",
   "storage_snapshotDesc": "Encrypted snapshots of the database and device identity. Restore replaces all current data.",
   "storage_snapshotNow": "Snapshot now",

@@ -5551,6 +5551,76 @@ class AppLocalizationsEn extends AppLocalizations {
       'Manage local snapshots, attachments, and artifact space';
 
   @override
+  String get instructionSet_title => 'Instruction Set';
+
+  @override
+  String get instructionSet_subtitle =>
+      'Reusable task instructions — run anytime';
+
+  @override
+  String get instructionSet_empty =>
+      'No instructions yet. Ask an agent to summarize a task and save it as an instruction.';
+
+  @override
+  String get instructionSet_create => 'New instruction';
+
+  @override
+  String get instructionSet_nameLabel => 'Name';
+
+  @override
+  String get instructionSet_descLabel => 'Description (optional)';
+
+  @override
+  String get instructionSet_contentLabel => 'Instruction content';
+
+  @override
+  String get instructionSet_ownerLabel => 'Owner agent';
+
+  @override
+  String get instructionSet_updatedLabel => 'Updated';
+
+  @override
+  String get instructionSet_run => 'Run';
+
+  @override
+  String get instructionSet_runHint =>
+      'Opens a chat with the owning agent with the instruction pre-filled.';
+
+  @override
+  String get instructionSet_createHint =>
+      'After saving, running auto-routes to the owning agent.';
+
+  @override
+  String get instructionSet_deleteTitle => 'Delete instruction';
+
+  @override
+  String instructionSet_deleteBody(String name) {
+    return 'Delete \"$name\"? This cannot be undone.';
+  }
+
+  @override
+  String get instructionSet_nameRequired => 'Please enter an instruction name';
+
+  @override
+  String get instructionSet_contentRequired =>
+      'Please enter instruction content';
+
+  @override
+  String instructionSet_saved(String name) {
+    return 'Saved instruction \"$name\"';
+  }
+
+  @override
+  String instructionSet_deleted(String name) {
+    return 'Deleted instruction \"$name\"';
+  }
+
+  @override
+  String instructionSet_saveFailed(String error) {
+    return 'Save failed: $error';
+  }
+
+  @override
   String get storage_snapshotSection => 'Local snapshots';
 
   @override
