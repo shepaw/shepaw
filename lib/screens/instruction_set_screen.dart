@@ -331,14 +331,17 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
                               value: SheService.sheId,
                               child: Text(l10n.she_name),
                             ),
+                            // She 自身也存在于 agents 表，需排除避免
+                            // DropdownButton 出现重复 value 断言崩溃。
                             for (final agent in _agents)
-                              DropdownMenuItem(
-                                value: agent.id,
-                                child: Text(
-                                  agent.name,
-                                  overflow: TextOverflow.ellipsis,
+                              if (agent.id != SheService.sheId)
+                                DropdownMenuItem(
+                                  value: agent.id,
+                                  child: Text(
+                                    agent.name,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
-                              ),
                           ],
                           onChanged: (value) {
                             if (value != null) {
