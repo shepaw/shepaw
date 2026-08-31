@@ -102,6 +102,50 @@ void main() {
     expect(service.draftUpdatedAt('ch-1'), first);
   });
 
+  test('instruction marker: set with draft, cleared with draft', () {
+    final service = ComposerDraftService();
+    expect(service.draftInstruction('ch-1'), isNull);
+
+    // 指令集预填：草稿携带指令标题。
+    service.setDraft('ch-1', '执行指令「沉淀指令」：\n内容', instructionName: '沉淀指令');
+    expect(service.draftInstruction('ch-1'), '沉淀指令');
+
+    // 普通键盘保存（instructionName 缺省）不修改已有标记。
+    service.setDraft('ch-1', '执行指令「沉淀指令」：\n内容');
+    expect(service.draftInstruction('ch-1'), '沉淀指令');
+
+    // 新的指令覆盖旧标记。
+    service.setDraft('ch-1', '执行指令「新指令」：\n内容', instructionName: '新指令');
+    expect(service.draftInstruction('ch-1'), '新指令');
+
+    // 清空草稿同时清掉标记。
+    service.setDraft('ch-1', '   ');
+    expect(service.draftInstruction('ch-1'), isNull);
+    expect(service.getDraft('ch-1'), '');
+  });
+
+  test('instruction marker clears via clearDraft', () {
+    final service = ComposerDraftService();
+    service.setDraft('ch-1', 'text', instructionName: '沉淀指令');
+    expect(service.draftInstruction('ch-1'), '沉淀指令');
+    service.clearDraft('ch-1');
+    expect(service.draftInstruction('ch-1'), isNull);
+  });
+
+  test('instruction marker persists across restoreFromDisk', () async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    SharedPreferences.setMockInitialValues({
+      'composer_drafts_v1': '''
+{"drafts":{"agent:a1":"执行指令「沉淀指令」：\\n内容"},"instructions":{"agent:a1":"沉淀指令"},"updatedAt":{"agent:a1":"2026-07-12T12:00:00.000Z"}}
+''',
+    });
+
+    final service = ComposerDraftService();
+    await service.restoreFromDisk();
+    expect(service.getDraft('agent:a1'), '执行指令「沉淀指令」：\n内容');
+    expect(service.draftInstruction('agent:a1'), '沉淀指令');
+  });
+
   test('restoreFromDisk loads persisted drafts', () async {
     TestWidgetsFlutterBinding.ensureInitialized();
     SharedPreferences.setMockInitialValues({

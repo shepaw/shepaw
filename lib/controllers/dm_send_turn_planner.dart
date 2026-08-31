@@ -82,6 +82,8 @@ class DmSendTurnPlanner {
     required String agentId,
     required String agentName,
     String? replyToId,
+    /// 指令集标题：写入乐观消息 metadata，气泡只展示标题（内容隐式投递）。
+    String? instructionName,
     int? nowMs,
   }) {
     final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
@@ -93,6 +95,9 @@ class DmSendTurnPlanner {
       to: MessageFrom(id: agentId, type: 'agent', name: agentName),
       type: MessageType.text,
       replyTo: replyToId,
+      metadata: instructionName != null && instructionName.isNotEmpty
+          ? {'instruction': instructionName}
+          : null,
     );
     final streaming = ChatStreamingText.placeholder(
       id: 'streaming_$now',

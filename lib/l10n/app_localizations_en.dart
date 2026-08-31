@@ -1874,10 +1874,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_camera => 'Camera';
 
   @override
+  String get chat_emoji => 'Emoji';
+
+  @override
   String get chat_file => 'File';
 
   @override
   String get chat_storageBag => 'Nexus Pouch';
+
+  @override
+  String get chat_instruction => 'Instructions';
 
   @override
   String get chat_storageFilePickerTitle => 'Pick from Nexus Pouch';

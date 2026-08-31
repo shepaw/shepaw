@@ -1,3 +1,4 @@
+import '../models/attachment_data.dart';
 import '../models/queued_message.dart';
 
 /// 纯函数助手：待发送队列的逐条编辑/删除/重排。
@@ -38,5 +39,29 @@ class QueuedMessageOps {
     final item = queue.removeAt(idx);
     queue.insert(target, item);
     return true;
+  }
+
+  /// 构建「发送失败倒回输入框」的合并载荷：当前失败消息 + 队列剩余消息。
+  ///
+  /// 纯函数、不修改 [queue]。返回按发送顺序的文本段落（多条以 `\n\n` 拼接）
+  /// 与附件列表（失败消息在前、队列消息在后），均 trim 并过滤空内容。
+  /// 两条列表都为空时表示无可倒回内容，调用方应直接返回、不触发倒回。
+  static ({List<String> parts, List<AttachmentData> attachments})
+      buildRestorePayload({
+    required List<QueuedMessage> queue,
+    String? failedContent,
+    List<AttachmentData>? failedAttachments,
+  }) {
+    final parts = <String>[
+      if (failedContent != null && failedContent.trim().isNotEmpty)
+        failedContent.trim(),
+      for (final m in queue)
+        if (m.content.trim().isNotEmpty) m.content.trim(),
+    ];
+    final attachments = <AttachmentData>[
+      ...?failedAttachments,
+      for (final m in queue) ...?m.attachments,
+    ];
+    return (parts: parts, attachments: attachments);
   }
 }

@@ -899,6 +899,11 @@ class MessageBubble extends StatelessWidget {
           isMyMessage: isMyMessage,
         );
       default:
+        // 指令集消息：气泡只展示指令标题，完整内容作为隐式消息投递给 agent。
+        final instructionTitle = message.metadata?['instruction'] as String?;
+        if (instructionTitle != null && instructionTitle.isNotEmpty) {
+          return _buildInstructionBubble(context, instructionTitle);
+        }
         final displayText = GroupTaskStatusParser.strip(message.content);
         final rawContent = displayText.isEmpty && message.content.isEmpty
             ? '...'
@@ -980,6 +985,37 @@ class MessageBubble extends StatelessWidget {
 
         return markdownWidget;
     }
+  }
+
+  /// 指令集消息气泡：只展示指令标题 + 一个小图标，完整内容隐式投递给 agent。
+  Widget _buildInstructionBubble(BuildContext context, String title) {
+    final textColor = isMyMessage
+        ? Colors.white
+        : Theme.of(context).colorScheme.onSurface;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          Icons.playlist_add_check_outlined,
+          size: 16,
+          color: textColor.withValues(alpha: 0.85),
+        ),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: textColor,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              height: 1.3,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   /// Collapsible progress/thinking block from [metadata.progress_content].

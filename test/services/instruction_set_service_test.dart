@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/services/instruction_set_service.dart';
 import 'package:shepaw/services/local_database_service.dart';
+import 'package:shepaw/services/she_service.dart';
 
 import '../storage/test_harness.dart';
 
@@ -53,8 +54,13 @@ void main() {
         ownerAgentId: 'agent-a',
       );
 
+      // list() 会确保内置系统指令「沉淀指令」存在，故全量为 4。
       final all = await service.list();
-      expect(all.length, 3);
+      expect(all.length, 4);
+      expect(
+        all.any((e) => e.name == InstructionSetService.systemInstructionName),
+        isTrue,
+      );
 
       final ownerA = await service.list(ownerAgentId: 'agent-a');
       expect(ownerA.length, 2);
@@ -124,7 +130,30 @@ void main() {
       );
       await service.delete(created.id);
       expect(await service.getById(created.id), isNull);
-      expect(await service.list(), isEmpty);
+      expect(await service.getByName('待删'), isNull);
+      // 内置系统指令仍会由 list() 保证存在。
+      final rest = await service.list();
+      expect(
+        rest.any((e) => e.name == InstructionSetService.systemInstructionName),
+        isTrue,
+      );
+    });
+
+    test('list seeds built-in system instruction 沉淀指令', () async {
+      final service = InstructionSetService.instance;
+      final all = await service.list();
+      final system = all
+          .where((e) => e.name == InstructionSetService.systemInstructionName)
+          .toList();
+      expect(system, hasLength(1));
+      expect(system.single.content, InstructionSetService.systemInstructionContent);
+      expect(system.single.ownerAgentId, SheService.sheId);
+      // 幂等：重复 list 不会产生重复系统指令。
+      final again = await service.list();
+      expect(
+        again.where((e) => e.name == InstructionSetService.systemInstructionName),
+        hasLength(1),
+      );
     });
   });
 }

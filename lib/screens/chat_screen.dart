@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:pasteboard/pasteboard.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../services/local_user_identity.dart';
 import '../models/channel.dart';
@@ -56,6 +57,7 @@ import '../services/error_handler_service.dart';
 import '../services/she_service.dart';
 import 'channel_trace_screen.dart';
 import 'group_workflow_screen.dart';
+import 'instruction_set_screen.dart';
 import '../widgets/workflow/workflow_progress_panel.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../peer/services/peer_connection_manager.dart';
@@ -150,6 +152,11 @@ class _ChatScreenState extends State<ChatScreen>
 
   // Emoji picker (UI-bound)
   bool _showEmojiPicker = false;
+
+  // WeChat-style attachment panel (mobile "＋" grid: emoji / album / camera /
+  // file / storage bag / instruction). Shares the bottom slot with the emoji
+  // picker — only one can be open at a time.
+  bool _showAttachmentPanel = false;
 
   // Scroll state (UI-bound)
   bool _isUserScrolledUp = false;
@@ -811,9 +818,10 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   void _onFocusChanged() {
-    if (_textFieldFocusNode.hasFocus && _showEmojiPicker) {
+    if (_textFieldFocusNode.hasFocus && (_showEmojiPicker || _showAttachmentPanel)) {
       setState(() {
         _showEmojiPicker = false;
+        _showAttachmentPanel = false;
       });
     }
   }
@@ -1131,6 +1139,25 @@ class _ChatScreenState extends State<ChatScreen>
       _textFieldFocusNode.unfocus();
       setState(() {
         _showEmojiPicker = true;
+        _showAttachmentPanel = false;
+      });
+    }
+  }
+
+  /// WeChat-style "＋" panel toggle (mobile). Opening it closes the emoji
+  /// picker and dismisses the keyboard so the grid has room; closing returns
+  /// focus to the composer.
+  void _toggleAttachmentPanel() {
+    if (_showAttachmentPanel) {
+      setState(() {
+        _showAttachmentPanel = false;
+      });
+      _textFieldFocusNode.requestFocus();
+    } else {
+      _textFieldFocusNode.unfocus();
+      setState(() {
+        _showAttachmentPanel = true;
+        _showEmojiPicker = false;
       });
     }
   }
@@ -1249,54 +1276,189 @@ class _ChatScreenState extends State<ChatScreen>
     });
   }
 
-  void _showAttachmentOptions() {
-    LoggerService().debug(
-        '_showAttachmentOptions called, isDesktop=${LayoutUtils.isDesktopLayout(context)}',
-        tag: 'ChatScreen');
-    // Desktop uses a floating popover anchored to the attachment button
-    // inside ChatInputArea (same interaction as emoji). This path is for
-    // mobile bottom sheet only.
+  /// WeChat-style mobile attachment panel: a grid of icon actions sharing the
+  /// same bottom slot as the emoji picker. Items: 表情 / 相册 / 相机 / 文件 /
+  /// 储物袋 / 指令.
+  Widget _buildAttachmentPanel() {
     final l10n = AppLocalizations.of(context);
-    LayoutUtils.showAdaptivePanel(
-      context: context,
-      builder: (context) => Column(
-        mainAxisSize: MainAxisSize.min,
+    final colorScheme = Theme.of(context).colorScheme;
+    final labelColor = colorScheme.onSurfaceVariant;
+
+    // Close the panel before launching any system picker / navigation.
+    void closePanel() => setState(() => _showAttachmentPanel = false);
+
+    final actions = <Widget>[
+      _buildAttachmentAction(
+        icon: Icons.emoji_emotions_outlined,
+        iconColor: Colors.orange.shade600,
+        label: l10n.chat_emoji,
+        labelColor: labelColor,
+        onTap: () {
+          closePanel();
+          _toggleEmojiPicker();
+        },
+      ),
+      _buildAttachmentAction(
+        icon: Icons.photo_library_outlined,
+        iconColor: Colors.green.shade600,
+        label: l10n.chat_photoLibrary,
+        labelColor: labelColor,
+        onTap: () {
+          closePanel();
+          _pickAndStageImage();
+        },
+      ),
+      _buildAttachmentAction(
+        icon: Icons.photo_camera_outlined,
+        iconColor: Colors.blue.shade600,
+        label: l10n.chat_camera,
+        labelColor: labelColor,
+        onTap: () {
+          closePanel();
+          _pickAndStageCamera();
+        },
+      ),
+      _buildAttachmentAction(
+        icon: Icons.insert_drive_file_outlined,
+        iconColor: Colors.purple.shade400,
+        label: l10n.chat_file,
+        labelColor: labelColor,
+        onTap: () {
+          closePanel();
+          _pickAndStageFile();
+        },
+      ),
+      _buildAttachmentAction(
+        icon: Icons.inventory_2_outlined,
+        iconColor: Colors.teal.shade600,
+        label: l10n.chat_storageBag,
+        labelColor: labelColor,
+        onTap: () {
+          closePanel();
+          _pickFromStorageBag();
+        },
+      ),
+      _buildAttachmentAction(
+        icon: Icons.playlist_add_check_outlined,
+        iconColor: Colors.indigo.shade400,
+        label: l10n.chat_instruction,
+        labelColor: labelColor,
+        onTap: () {
+          closePanel();
+          _openInstructionSet();
+        },
+      ),
+    ];
+
+    return Container(
+      height: 250,
+      color: colorScheme.surfaceContainerLow,
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+      child: GridView.count(
+        key: const Key('chat_attachment_panel'),
+        crossAxisCount: 4,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        physics: const NeverScrollableScrollPhysics(),
+        childAspectRatio: 0.9,
+        children: actions,
+      ),
+    );
+  }
+
+  Widget _buildAttachmentAction({
+    required IconData icon,
+    required Color iconColor,
+    required String label,
+    required Color labelColor,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          ListTile(
-            leading: const Icon(Icons.photo_library),
-            title: Text(l10n.chat_photoLibrary),
-            onTap: () {
-              Navigator.pop(context);
-              _pickAndStageImage();
-            },
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.06),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Icon(icon, size: 28, color: iconColor),
           ),
-          ListTile(
-            leading: const Icon(Icons.camera_alt),
-            title: Text(l10n.chat_camera),
-            onTap: () {
-              Navigator.pop(context);
-              _pickAndStageImage();
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.insert_drive_file),
-            title: Text(l10n.chat_file),
-            onTap: () {
-              Navigator.pop(context);
-              _pickAndStageFile();
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.inventory_2_outlined),
-            title: Text(l10n.chat_storageBag),
-            onTap: () {
-              Navigator.pop(context);
-              _pickFromStorageBag();
-            },
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              color: labelColor,
+              height: 1.1,
+            ),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _pickAndStageCamera() async {
+    if (widget.agentId != null && !_agentSupportsImage) {
+      if (mounted) {
+        showTopToast(
+          context,
+          AppLocalizations.of(context).chat_modalityNotSupported_image,
+          icon: Icons.image_not_supported_outlined,
+          color: Colors.orange,
+        );
+      }
+      return;
+    }
+    try {
+      final image =
+          await _controller.attachmentService.pickImage(source: ImageSource.camera);
+      if (image == null) return;
+      await _addPendingAttachment(image);
+    } catch (e) {
+      if (mounted) {
+        showTopToast(
+          context,
+          AppLocalizations.of(context).chat_sendImageError('$e'),
+          icon: Icons.error_outline,
+          color: Colors.red.shade400,
+        );
+      }
+    }
+  }
+
+  Future<void> _openInstructionSet() async {
+    final c = _controller;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => InstructionSetScreen(
+          // 携带当前聊天上下文：从聊天内执行指令时，预填当前会话并使用
+          // 当前聊天的 agent / 群会话，而不是跳转到指令所属 agent。
+          channelId: c.currentChannelId,
+          agentId: c.isGroupMode ? null : widget.agentId,
+          groupFamilyId: c.isGroupMode
+              ? (c.groupChannel?.groupFamilyId)
+              : null,
+        ),
+      ),
+    );
+    // 指令可能预填到了当前会话的草稿，返回后刷新输入框。
+    if (mounted) {
+      _restoreComposerDraft();
+      setState(() {});
+    }
   }
 
   Future<void> _pickFromStorageBag() async {
@@ -1454,8 +1616,15 @@ class _ChatScreenState extends State<ChatScreen>
   void _sendMessage() {
     final content = _messageController.text.trim();
     final mentions = _chatInputKey.currentState?.currentMentions ?? const [];
+    // 指令集预填：发送前读取草稿的指令标记，写入消息 metadata —— 气泡只
+    // 展示指令标题，完整内容作为隐式消息投递给 agent（草稿在 sendMessage
+    // 内部会被清除，这里必须先取出来）。
+    final draftKey = _composerDraftKey();
+    final instructionName = getIt<ComposerDraftService>()
+        .draftInstruction(draftKey ?? '');
     _controller.sendMessage(
       content: content,
+      instructionName: instructionName,
       pendingAttachments: _pendingAttachments,
       clearMessageController: () {
         _messageController.clear();
@@ -1619,7 +1788,13 @@ class _ChatScreenState extends State<ChatScreen>
         _pinnedPanelWidth = (prefs.getDouble(_prefsKeyPanelWidth) ?? 360)
             .clamp(_minPinnedPanelWidth, _maxPinnedPanelWidth);
       });
-      if (_panelPinned) await _refreshPinnedPanelSessions();
+      if (_panelPinned) {
+        // 启动即固定：窗口保证能容纳「最小聊天区 + 面板」，最小宽度同步
+        // 抬高，避免启动后聊天区被面板挤压（非桌面布局 / 插件不可用时
+        // 内部短路）。
+        await DesktopWindowAutoSize.ensurePanelSpace(_pinnedPanelTotalWidth);
+        await _refreshPinnedPanelSessions();
+      }
     } catch (_) {
       // 测试环境无 shared_preferences 插件：保持默认（不固定）即可。
     }
@@ -1739,8 +1914,10 @@ class _ChatScreenState extends State<ChatScreen>
           _pinnedPanelWidth = (_pinnedPanelWidth - details.delta.dx)
               .clamp(_minPinnedPanelWidth, _maxPinnedPanelWidth);
           if (_pinnedPanelWidth != old) {
-            // 窗口随面板宽度同步增减，聊天区宽度保持不变。
-            unawaited(DesktopWindowAutoSize.adjustWidth(old - _pinnedPanelWidth));
+            // 窗口随面板宽度同步增减（聊天区宽度保持不变），并把最小宽度
+            // 同步为 800 + 面板宽。
+            unawaited(DesktopWindowAutoSize.adjustWidthForPanel(
+                old - _pinnedPanelWidth, _pinnedPanelTotalWidth));
           }
         });
       },
@@ -3226,7 +3403,9 @@ class _ChatScreenState extends State<ChatScreen>
         // 桌面端保留按钮入口，避免鼠标拖选文本误触；emoji 面板打开时禁用，
         // 防止横向滑分类误开抽屉。
         body: DrawerSwipeDetector(
-          enabled: !LayoutUtils.isDesktopLayout(context) && !_showEmojiPicker,
+          enabled: !LayoutUtils.isDesktopLayout(context) &&
+              !_showEmojiPicker &&
+              !_showAttachmentPanel,
           // Android 手势返回 = 右边缘向左滑，与右抽屉打开手势同方向：把
           // 右边缘系统手势区（systemGestureInsets.right，通常 ~34px）让给
           // 系统返回，避免抢事件 —— 用户滑返回时抽屉被误打开。主页左侧
@@ -3490,12 +3669,11 @@ class _ChatScreenState extends State<ChatScreen>
                   isRecording: _isRecording,
                   isCancelZone: _isCancelZone,
                   onSend: _sendMessage,
-                  onToggleEmojiPicker: _toggleEmojiPicker,
-                  onShowAttachmentOptions: _showAttachmentOptions,
+                  onToggleAttachmentPanel: _toggleAttachmentPanel,
+                  showAttachmentPanel: _showAttachmentPanel,
                   onPickFile: _pickAndStageFile,
                   onPickFromStorageBag: _pickFromStorageBag,
                   onSendVoice: _sendVoiceMessage,
-                  showEmojiPicker: _showEmojiPicker,
                   onRemoveAttachment: _removePendingAttachment,
                   onMentionPickerChanged: () {
                     if (mounted) setState(() {});
@@ -3566,6 +3744,14 @@ class _ChatScreenState extends State<ChatScreen>
                     ),
                   ),
                 ),
+
+              // Mobile WeChat-style "＋" attachment panel — same bottom slot
+              // as the emoji picker (only one open at a time).
+              if (_showAttachmentPanel &&
+                  !LayoutUtils.isDesktopLayout(context) &&
+                  !c.isViewingGroupBoundMemberSession &&
+                  !c.isViewingSheBoundSession)
+                _buildAttachmentPanel(),
             ],
           ),
         ),

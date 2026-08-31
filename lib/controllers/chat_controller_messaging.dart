@@ -204,6 +204,9 @@ mixin _MessagingOps on _ChatControllerBase {
     required VoidCallback clearMessageController,
     String? replyToId,
     List<MentionEntry> mentions = const [],
+    /// 指令集预填标记：发送指令时携带指令标题，写入消息 metadata，
+    /// 气泡只展示标题、完整内容作为隐式消息投递给 agent。
+    String? instructionName,
   }) async {
     if (isViewingGroupBoundMemberSession) {
       _emit(ShowSnackBarEvent('chat_groupBoundInputDisabled'));
@@ -314,6 +317,7 @@ mixin _MessagingOps on _ChatControllerBase {
             content: content,
             replyToId: capturedReplyToId,
             mentions: mentions,
+            instructionName: instructionName,
             // 群聊附件未随 DM 分支立即发送，必须随队列项携带，出队时透传。
             attachments:
                 (isGroupMode && hasAttachments) ? attachmentDataList : null,
@@ -337,6 +341,7 @@ mixin _MessagingOps on _ChatControllerBase {
           replyToId: capturedReplyToId,
           attachments: hasAttachments ? attachmentDataList : null,
           mentions: mentions,
+          instructionName: instructionName,
         );
         return;
       case ChatSendDisposition.sendDm:
@@ -345,6 +350,7 @@ mixin _MessagingOps on _ChatControllerBase {
           replyToId: capturedReplyToId,
           attachments: hasAttachments ? attachmentDataList : null,
           attachmentMessages: hasAttachments ? savedAttachmentMessages : null,
+          instructionName: instructionName,
         );
         return;
     }
@@ -562,6 +568,7 @@ mixin _MessagingOps on _ChatControllerBase {
         replyToId: next.replyToId,
         attachments: next.attachments,
         mentions: next.mentions,
+        instructionName: next.instructionName,
       );
     } else {
       await processMessage(
@@ -570,6 +577,7 @@ mixin _MessagingOps on _ChatControllerBase {
         // DM 附件的附件消息在入队前已随 sendAttachmentToAgent 立即发送，
         // 队列项不携带 attachmentMessages。
         attachments: next.attachments,
+        instructionName: next.instructionName,
       );
     }
   }
@@ -579,7 +587,7 @@ mixin _MessagingOps on _ChatControllerBase {
   // ---------------------------------------------------------------------------
 
   @override
-  Future<void> processMessage(String content, {String? replyToId, List<AttachmentData>? attachments, List<Message>? attachmentMessages}) async {
+  Future<void> processMessage(String content, {String? replyToId, List<AttachmentData>? attachments, List<Message>? attachmentMessages, String? instructionName}) async {
     final userId = getUserId();
     final userName = getUserName();
 
@@ -632,6 +640,7 @@ mixin _MessagingOps on _ChatControllerBase {
         agentId: remoteAgent.id,
         agentName: remoteAgent.name,
         replyToId: replyToId,
+        instructionName: instructionName,
       );
       streaming.begin(optimistic.streaming.id, fromId: remoteAgent.id);
       messages.add(optimistic.user);
@@ -662,6 +671,7 @@ mixin _MessagingOps on _ChatControllerBase {
         dmSystemPrompt: dmSystemPrompt,
         acpCancellationToken: acpCancellationToken,
         attachments: attachments,
+        instructionName: instructionName,
         onReconnecting: (attempt, total) {
           if (attempt == 0) {
             _emit(HideReconnectingSnackBarEvent());
@@ -1259,7 +1269,7 @@ mixin _MessagingOps on _ChatControllerBase {
   // ---------------------------------------------------------------------------
 
   @override
-  Future<void> processGroupMessage(String content, {String? replyToId, List<AttachmentData>? attachments, List<MentionEntry> mentions = const []}) async {
+  Future<void> processGroupMessage(String content, {String? replyToId, List<AttachmentData>? attachments, List<MentionEntry> mentions = const [], String? instructionName}) async {
     if (currentChannelId == null || groupAgents.isEmpty) {
       LoggerService().debug('processGroupMessage ABORTED: channelId=$currentChannelId, groupAgents=${groupAgents.length}', tag: 'ChatController');
       return;
@@ -1298,6 +1308,7 @@ mixin _MessagingOps on _ChatControllerBase {
       userId: userId,
       userName: userName,
       replyToId: replyToId,
+      instructionName: instructionName,
     );
     messages.add(userMessage);
     messageIdMap[userMessage.id] = userMessage;
@@ -1316,8 +1327,13 @@ mixin _MessagingOps on _ChatControllerBase {
           for (final a in groupAgents) (id: a.id, name: a.name),
         ],
       );
-      final userMsgMetadata =
+      var userMsgMetadata =
           GroupInteractionPlanner.userMessageMentionsMetadata(mentions);
+      // 指令集消息：合并指令标题到落库 metadata，气泡只展示标题。
+      if (instructionName != null && instructionName.isNotEmpty) {
+        userMsgMetadata ??= <String, dynamic>{};
+        userMsgMetadata['instruction'] = instructionName;
+      }
 
       await chatService.sendMessageToGroup(
         channelId: currentChannelId!,

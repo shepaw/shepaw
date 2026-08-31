@@ -41,6 +41,29 @@ void main() {
       expect(pair.streaming.from.id, 'a');
       expect(pair.streaming.timestampMs, 1001);
     });
+
+    test('instructionName attaches metadata to user bubble', () {
+      final pair = DmSendTurnPlanner.buildOptimisticPair(
+        content: '执行指令「沉淀指令」：\n内容',
+        userId: 'u',
+        userName: 'User',
+        agentId: 'a',
+        agentName: 'Agent',
+        instructionName: '沉淀指令',
+        nowMs: 2000,
+      );
+      expect(pair.user.metadata?['instruction'], '沉淀指令');
+      // 无 instructionName 时不带指令 metadata。
+      final plain = DmSendTurnPlanner.buildOptimisticPair(
+        content: '普通',
+        userId: 'u',
+        userName: 'User',
+        agentId: 'a',
+        agentName: 'Agent',
+        nowMs: 3000,
+      );
+      expect(plain.user.metadata?['instruction'], isNull);
+    });
   });
 
   group('DmSendTurnPlanner.evaluateSupplementRound', () {

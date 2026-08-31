@@ -62,11 +62,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
   }
 
-  testWidgets('full journey: empty → create → detail → delete', (tester) async {
-    // ── 空态 ──
+  testWidgets('full journey: system seeded → create → detail → delete', (tester) async {
+    // ── 初始态：内置系统指令「沉淀指令」始终存在 ──
     await pumpScreen(tester);
     expect(find.text('指令集'), findsOneWidget);
-    expect(find.textContaining('暂无指令'), findsOneWidget);
+    expect(find.text('沉淀指令'), findsOneWidget);
 
     // ── 新建（真实 DB 落库） ──
     await tester.runAsync(() async {
@@ -87,9 +87,12 @@ void main() {
     final items = (await tester.runAsync(
             () => InstructionSetService.instance.list())) ??
         const [];
-    expect(items.length, 1);
-    expect(items.first.name, '周报');
-    expect(items.first.ownerAgentId, SheService.sheId);
+    final mine = items
+        .where((e) => e.name != InstructionSetService.systemInstructionName)
+        .toList();
+    expect(mine.length, 1);
+    expect(mine.first.name, '周报');
+    expect(mine.first.ownerAgentId, SheService.sheId);
 
     // ── 详情面板（执行 / 编辑 / 删除入口） ──
     await tester.tap(find.text('周报').first);
@@ -110,8 +113,12 @@ void main() {
     });
 
     expect(find.text('周报'), findsNothing);
+    final after =
+        await tester.runAsync(() => InstructionSetService.instance.list()) ??
+            const [];
+    // 用户自建指令已删除；内置系统指令仍保留。
     expect(
-      await tester.runAsync(() => InstructionSetService.instance.list()),
+      after.where((e) => e.name != InstructionSetService.systemInstructionName),
       isEmpty,
     );
   });

@@ -18,8 +18,25 @@ import '../services/she_service.dart';
 ///
 /// 桌面端嵌入右侧面板（[DesktopHomeScreen]），移动端作为独立页面打开。
 /// 「执行」会打开与所属 Agent 的会话并预填指令内容，由该 Agent 执行。
+///
+/// 当从某个具体聊天（[channelId] 非空）打开时，执行指令会使用当前聊天的
+/// agent / 群会话：预填当前会话的输入框并返回，而不是跳转到指令所属 agent。
 class InstructionSetScreen extends StatefulWidget {
-  const InstructionSetScreen({super.key});
+  /// 当前聊天上下文。非空表示从具体聊天内打开，执行指令时预填当前会话。
+  final String? channelId;
+
+  /// 当前聊天的 agent（DM 时有效；群聊为 null，走 [groupFamilyId]）。
+  final String? agentId;
+
+  /// 当前群聊的 group family id（群聊时有效）。
+  final String? groupFamilyId;
+
+  const InstructionSetScreen({
+    super.key,
+    this.channelId,
+    this.agentId,
+    this.groupFamilyId,
+  });
 
   @override
   State<InstructionSetScreen> createState() => _InstructionSetScreenState();
@@ -487,9 +504,24 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
   Future<void> _runInstruction(InstructionSet item) async {
     final l10n = _l10n;
     final chatService = getIt<ChatService>();
-    final ownerId = item.ownerAgentId;
     const userId = LocalUserIdentity.id;
 
+    // 从具体聊天内打开：使用当前聊天的 agent / 群会话，不跳转到指令所属 agent。
+    final currentChannelId = widget.channelId;
+    if (currentChannelId != null && currentChannelId.isNotEmpty) {
+      getIt<ComposerDraftService>().setDraft(
+        currentChannelId,
+        '执行指令「${item.name}」：\n${item.content}',
+        agentId: widget.agentId,
+        groupFamilyId: widget.groupFamilyId,
+        // 气泡只展示指令标题，完整内容作为隐式消息投递给 agent。
+        instructionName: item.name,
+      );
+      if (mounted) Navigator.pop(context);
+      return;
+    }
+
+    final ownerId = item.ownerAgentId;
     final channelId =
         await chatService.getLatestActiveChannelId(userId, ownerId) ??
             chatService.generateChannelId(userId, ownerId);
@@ -509,6 +541,8 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
       channelId,
       '执行指令「${item.name}」：\n${item.content}',
       agentId: ownerId,
+      // 气泡只展示指令标题，完整内容作为隐式消息投递给 agent。
+      instructionName: item.name,
     );
 
     if (mounted) {

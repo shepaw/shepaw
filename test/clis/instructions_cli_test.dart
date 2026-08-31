@@ -60,8 +60,11 @@ void main() {
       expect(result['action'], 'updated');
 
       final list = await InstructionSetService.instance.list();
-      expect(list.length, 1);
-      expect(list.first.content, 'v2');
+      final mine = list
+          .where((e) => e.name != InstructionSetService.systemInstructionName)
+          .toList();
+      expect(mine.length, 1);
+      expect(mine.first.content, 'v2');
     });
 
     test('save same name by non-owner is denied', () async {
@@ -151,8 +154,13 @@ void main() {
           .execute({'name': 'y', 'content': 'content-y'}));
       final result = await asAgent('agent-b',
           () => InstructionsNamespace.instance.commands['list']!.execute({}));
-      expect(result['count'], 1);
-      expect((result['instructions'] as List).first['name'], 'y');
+      // 内置系统指令「沉淀指令」始终存在，故 count 为 2。
+      expect(result['count'], 2);
+      final names = (result['instructions'] as List)
+          .map((e) => (e as Map)['name'])
+          .toList();
+      expect(names, contains('y'));
+      expect(names, contains(InstructionSetService.systemInstructionName));
     });
   });
 

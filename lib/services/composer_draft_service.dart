@@ -16,6 +16,7 @@ class ComposerDraftService extends ChangeNotifier {
 
   final Map<String, String> _drafts = {};
   final Map<String, DateTime> _updatedAt = {};
+  final Map<String, String> _draftInstruction = {};
   bool _restoredFromDisk = false;
 
   /// Returns the saved draft for [key], or empty string if none.
@@ -28,6 +29,15 @@ class ComposerDraftService extends ChangeNotifier {
   DateTime? draftUpdatedAt(String key) {
     if (key.isEmpty) return null;
     return _updatedAt[key];
+  }
+
+  /// 指令集预填标记：当前草稿是否来自一条指令，以及该指令的标题。
+  ///
+  /// 发送时由 ChatScreen 读取并写入消息 metadata，使气泡只展示标题、
+  /// 内容作为隐式消息投递给 agent。随草稿一起持久化。
+  String? draftInstruction(String key) {
+    if (key.isEmpty) return null;
+    return _draftInstruction[key];
   }
 
   bool hasDraft(String key) => getDraft(key).isNotEmpty;
@@ -52,6 +62,18 @@ class ComposerDraftService extends ChangeNotifier {
             continue;
           }
           _drafts[key] = text;
+        }
+      }
+
+      final instructionsRaw = decoded['instructions'];
+      if (instructionsRaw is Map) {
+        for (final entry in instructionsRaw.entries) {
+          final key = entry.key?.toString();
+          final title = entry.value?.toString();
+          if (key == null || key.isEmpty || title == null || title.isEmpty) {
+            continue;
+          }
+          _draftInstruction[key] = title;
         }
       }
 
@@ -83,6 +105,9 @@ class ComposerDraftService extends ChangeNotifier {
     String? agentId,
     String? groupFamilyId,
     bool notify = false,
+    /// 指令集预填标记：非空时将该草稿标记为「指令 [instructionName]」。
+    /// 发送时气泡只展示标题、内容隐式投递。传入 null 不修改已有标记。
+    String? instructionName,
   }) {
     final keys = _keysFor(
       key: key,
@@ -106,6 +131,13 @@ class ComposerDraftService extends ChangeNotifier {
       _drafts[k] = text;
       _updatedAt[k] = now;
       changed = true;
+    }
+    if (instructionName != null && instructionName.isNotEmpty) {
+      for (final k in keys) {
+        if (_draftInstruction[k] == instructionName) continue;
+        _draftInstruction[k] = instructionName;
+        changed = true;
+      }
     }
     if (!changed) return;
     if (notify) notifyListeners();
@@ -189,6 +221,7 @@ class ComposerDraftService extends ChangeNotifier {
     for (final k in keys) {
       _drafts.remove(k);
       _updatedAt.remove(k);
+      _draftInstruction.remove(k);
     }
   }
 
@@ -200,6 +233,7 @@ class ComposerDraftService extends ChangeNotifier {
           _storageKey,
           jsonEncode({
             'drafts': _drafts,
+            'instructions': _draftInstruction,
             'updatedAt': {
               for (final e in _updatedAt.entries)
                 e.key: e.value.toIso8601String(),

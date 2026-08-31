@@ -475,6 +475,22 @@ class AgentMessagingService {
     }
   }
 
+  /// Build user-message metadata: implicit-prompt (store://) hints merged
+  /// with the instruction-set title marker (bubble shows only the title).
+  static Map<String, dynamic>? _userMessageMetadata({
+    required String content,
+    List<AttachmentData>? attachments,
+    String? instructionName,
+  }) {
+    Map<String, dynamic>? meta =
+        MessageImplicitPrompt.metadataForTurn(text: content, attachments: attachments);
+    if (instructionName != null && instructionName.isNotEmpty) {
+      meta ??= <String, dynamic>{};
+      meta['instruction'] = instructionName;
+    }
+    return meta;
+  }
+
   Future<Message?> sendMessageToAgent({
     required String content,
     required RemoteAgent agent,
@@ -498,6 +514,8 @@ class AgentMessagingService {
     ACPCancellationToken? acpCancellationToken,
     List<AttachmentData>? attachments,
     Message? existingUserMessage,
+    /// 指令集标题：写入用户消息 metadata，气泡只展示标题、内容隐式投递。
+    String? instructionName,
     /// 主动重连进度回调：`(attempt, total)`。
     /// - `attempt > 0`：正在进行第 `attempt` 次（共 `total` 次）重连尝试。
     /// - `attempt == 0`：重连流程结束（连上或彻底失败），UI 可隐藏进度提示。
@@ -584,9 +602,10 @@ class AgentMessagingService {
           ),
           type: MessageType.text,
           replyTo: replyToId,
-          metadata: MessageImplicitPrompt.metadataForTurn(
-            text: content,
+          metadata: _userMessageMetadata(
+            content: content,
             attachments: attachments,
+            instructionName: instructionName,
           ),
         );
 

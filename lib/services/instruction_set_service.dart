@@ -2,6 +2,7 @@ import 'package:uuid/uuid.dart';
 
 import '../models/instruction_set.dart';
 import 'local_database_service.dart';
+import 'she_service.dart';
 
 /// 指令集业务服务：管理可复用的任务指令。
 ///
@@ -15,12 +16,45 @@ class InstructionSetService {
 
   static const String table = 'instruction_sets';
 
+  /// 内置系统指令：首次访问时自动播种，无需用户手动创建。
+  static const String systemInstructionName = '沉淀指令';
+  static const String systemInstructionContent =
+      '将最近的任务总结为一个指令，方便下次唤醒你完成相同任务时，你能够直接理解';
+
   final LocalDatabaseService _db = LocalDatabaseService();
   static const Uuid _uuid = Uuid();
 
   /// 列出全部指令，可按 owner 过滤（更新时间倒序）。
-  Future<List<InstructionSet>> list({String? ownerAgentId}) =>
-      _db.queryAllInstructionSets(ownerAgentId: ownerAgentId);
+  /// 每次读取都会确保内置系统指令存在（幂等）。
+  Future<List<InstructionSet>> list({String? ownerAgentId}) async {
+    await seedSystemInstructions();
+    return _db.queryAllInstructionSets(ownerAgentId: ownerAgentId);
+  }
+
+  /// 播种内置系统指令（幂等：按名称查询，不存在才创建）。
+  ///
+  /// 系统指令归属 She：从指令集执行时会路由到 She 的会话并预填内容。
+  /// 播种失败（如数据库尚未就绪）不阻塞列表读取。
+  Future<void> seedSystemInstructions() async {
+    try {
+      final existing = await _db.queryInstructionSetByName(systemInstructionName);
+      if (existing != null) return;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await _db.upsertInstructionSet(
+        InstructionSet(
+          id: _uuid.v4(),
+          name: systemInstructionName,
+          content: systemInstructionContent,
+          ownerAgentId: SheService.sheId,
+          ownerAgentName: SheService.sheName,
+          createdAt: now,
+          updatedAt: now,
+        ).toRow(),
+      );
+    } catch (_) {
+      // 播种失败不阻塞指令集列表。
+    }
+  }
 
   /// 按主键查询。
   Future<InstructionSet?> getById(String id) =>

@@ -42,6 +42,8 @@ import '../services/dispatch/she_relay_session_service.dart';
 import '../services/mailbox/channel_mailbox_service.dart';
 import '../services/mailbox/inbox_subscribe_service.dart';
 import '../services/noise_identity.dart';
+import '../services/composer_draft_service.dart';
+import '../service_locator.dart' show getIt;
 import '../utils/session_utils.dart';
 import 'chat_workflow_coordinator.dart';
 import 'chat_attachment_coordinator.dart';
@@ -670,8 +672,8 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   void scheduleStreamingScrollToBottom();
   Future<void> processNextInQueue();
   void _updateStreamingMetadata(Map<String, dynamic> metadata);
-  Future<void> processMessage(String content, {String? replyToId, List<AttachmentData>? attachments, List<Message>? attachmentMessages});
-  Future<void> processGroupMessage(String content, {String? replyToId, List<AttachmentData>? attachments, List<MentionEntry> mentions = const []});
+  Future<void> processMessage(String content, {String? replyToId, List<AttachmentData>? attachments, List<Message>? attachmentMessages, String? instructionName});
+  Future<void> processGroupMessage(String content, {String? replyToId, List<AttachmentData>? attachments, List<MentionEntry> mentions = const [], String? instructionName});
   String? _resolveGroupInteractionMessageId({
     required String agentId,
     required String agentName,
@@ -1001,28 +1003,48 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   /// 队列清空（消息不再留在面板），由 [RestoreQueueToComposerEvent] 通知 UI
   /// 填输入框并聚焦。多条以 `\n\n` 分隔保持发送顺序；附件按同样顺序收集，
   /// UI 侧依据 `store_uri` 重建待发送附件（storeRef 引用，不复制文件）。
+  ///
+  /// 页面已离开（controller 已销毁）时事件流已关闭、事件无法送达，队列却已
+  /// 清空——改为把倒回文本写入频道草稿，重进时由 [ComposerDraftService] /
+  /// 聊天页 `_restoreComposerDraft` 回填输入框，避免消息随超时丢失。
   void _restoreQueueToComposer({
     String? failedContent,
     List<AttachmentData>? failedAttachments,
   }) {
     final queue = messageQueue;
-    final parts = <String>[
-      if (failedContent != null && failedContent.trim().isNotEmpty)
-        failedContent.trim(),
-      for (final m in queue)
-        if (m.content.trim().isNotEmpty) m.content.trim(),
-    ];
-    final attachments = <AttachmentData>[
-      ...?failedAttachments,
-      for (final m in queue) ...?m.attachments,
-    ];
-    if (parts.isEmpty && attachments.isEmpty) return;
-    messageQueue.clear();
+    final payload = QueuedMessageOps.buildRestorePayload(
+      queue: queue,
+      failedContent: failedContent,
+      failedAttachments: failedAttachments,
+    );
+    if (payload.parts.isEmpty && payload.attachments.isEmpty) return;
+    queue.clear();
+    if (!isMounted) {
+      // 注意：草稿只持久化文本；附件（仅群聊队列携带）在离开页面场景无法
+      // 重建，仍会丢失。这是边缘中的边缘，暂不扩 scope。
+      _persistRestoreAsDraft(payload.parts.join('\n\n'));
+      return;
+    }
     _emit(RestoreQueueToComposerEvent(
-      parts.join('\n\n'),
-      attachments: attachments,
+      payload.parts.join('\n\n'),
+      attachments: payload.attachments,
     ));
     _notify();
+  }
+
+  /// 页面已离开时把倒回内容写入该频道草稿，供重进聊天后回填输入框。
+  void _persistRestoreAsDraft(String content) {
+    final key = ComposerDraftService.keyFor(
+      channelId: currentChannelId,
+      agentId: agentId,
+    );
+    if (key == null || key.isEmpty) return;
+    getIt<ComposerDraftService>().setDraft(
+      key,
+      content,
+      agentId: agentId,
+      notify: true,
+    );
   }
 
   List<String> parseMentionedAgentIds(String content) {

@@ -109,6 +109,8 @@ class GroupInteractionPlanner {
     required String userId,
     required String userName,
     String? replyToId,
+    /// 指令集标题：写入乐观消息 metadata，气泡只展示标题（内容隐式投递）。
+    String? instructionName,
     int? nowMs,
   }) {
     final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
@@ -119,6 +121,9 @@ class GroupInteractionPlanner {
       from: MessageFrom(id: userId, type: 'user', name: userName),
       type: MessageType.text,
       replyTo: replyToId,
+      metadata: instructionName != null && instructionName.isNotEmpty
+          ? {'instruction': instructionName}
+          : null,
     );
   }
 

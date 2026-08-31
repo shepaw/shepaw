@@ -21,6 +21,9 @@ class QueuedMessage {
   /// 附件（仅群聊入队路径携带；DM 附件在入队前已立即发送）。
   final List<AttachmentData>? attachments;
 
+  /// 指令集预填标记：出队发送时写入消息 metadata，气泡只展示标题。
+  final String? instructionName;
+
   final DateTime createdAt;
 
   QueuedMessage({
@@ -29,6 +32,7 @@ class QueuedMessage {
     this.replyToId,
     this.mentions = const [],
     this.attachments,
+    this.instructionName,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 }

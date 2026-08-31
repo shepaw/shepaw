@@ -1,9 +1,20 @@
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/controllers/queued_message_ops.dart';
+import 'package:shepaw/models/attachment_data.dart';
 import 'package:shepaw/models/queued_message.dart';
 
 QueuedMessage _msg(String id, String content) =>
     QueuedMessage(id: id, content: content);
+
+AttachmentData _attachment(String name) => AttachmentData(
+      fileName: name,
+      mimeType: 'application/octet-stream',
+      sizeBytes: 1,
+      bytes: Uint8List(1),
+      semanticType: 'file',
+    );
 
 void main() {
   group('QueuedMessageOps.edit', () {
@@ -77,6 +88,53 @@ void main() {
       final q = [_msg('a', '1'), _msg('b', '2')];
       expect(QueuedMessageOps.move(q, 'a', 0), isFalse);
       expect(q.map((m) => m.id), ['a', 'b']);
+    });
+  });
+
+  group('QueuedMessageOps.buildRestorePayload', () {
+    test('failed content first, then queue in send order, trimmed', () {
+      final q = [_msg('a', '  hello '), _msg('b', 'world')];
+      final payload = QueuedMessageOps.buildRestorePayload(
+        queue: q,
+        failedContent: '  failed  ',
+      );
+      expect(payload.parts, ['failed', 'hello', 'world']);
+      expect(payload.attachments, isEmpty);
+    });
+
+    test('filters empty / whitespace-only content', () {
+      final q = [_msg('a', ''), _msg('b', '   '), _msg('c', 'keep')];
+      final payload = QueuedMessageOps.buildRestorePayload(
+        queue: q,
+        failedContent: '   ',
+      );
+      expect(payload.parts, ['keep']);
+    });
+
+    test('collects attachments failed-first then queue in order', () {
+      final failedAtt = _attachment('failed.bin');
+      final queuedAtt = _attachment('queued.bin');
+      final q = [
+        QueuedMessage(id: 'a', content: 'with att', attachments: [queuedAtt]),
+        _msg('b', 'plain'),
+      ];
+      final payload = QueuedMessageOps.buildRestorePayload(
+        queue: q,
+        failedContent: 'x',
+        failedAttachments: [failedAtt],
+      );
+      expect(payload.parts, ['x', 'with att', 'plain']);
+      expect(payload.attachments.map((a) => a.fileName),
+          ['failed.bin', 'queued.bin']);
+    });
+
+    test('both lists empty when nothing to restore', () {
+      final empty = QueuedMessageOps.buildRestorePayload(
+        queue: [],
+        failedContent: null,
+      );
+      expect(empty.parts, isEmpty);
+      expect(empty.attachments, isEmpty);
     });
   });
 }

@@ -35,14 +35,17 @@ class ChatInputArea extends StatefulWidget {
   final bool isRecording;
   final bool isCancelZone;
   final VoidCallback onSend;
-  final VoidCallback onToggleEmojiPicker;
-  final VoidCallback onShowAttachmentOptions;
-  /// Desktop attachment popover actions (mobile still uses
-  /// [onShowAttachmentOptions] bottom sheet).
+  /// Mobile: toggles the WeChat-style attachment panel (grid of emoji /
+  /// album / camera / file / storage-bag / instruction actions).
+  final VoidCallback onToggleAttachmentPanel;
+  /// Whether the mobile attachment panel is currently open. Drives the
+  /// "+" button icon — shown as a keyboard icon while the panel is open.
+  final bool showAttachmentPanel;
+  /// Desktop attachment popover actions (mobile uses the attachment panel
+  /// rendered by the parent screen).
   final VoidCallback onPickFile;
   final VoidCallback onPickFromStorageBag;
   final VoidCallback? onSendVoice;
-  final bool showEmojiPicker;
   final ValueChanged<PendingAttachment> onRemoveAttachment;
   final VoidCallback? onMentionPickerChanged;
   /// Desktop-only: called when user pastes from clipboard and it contains
@@ -82,12 +85,11 @@ class ChatInputArea extends StatefulWidget {
     required this.isRecording,
     required this.isCancelZone,
     required this.onSend,
-    required this.onToggleEmojiPicker,
-    required this.onShowAttachmentOptions,
+    required this.onToggleAttachmentPanel,
+    required this.showAttachmentPanel,
     required this.onPickFile,
     required this.onPickFromStorageBag,
     this.onSendVoice,
-    required this.showEmojiPicker,
     required this.onRemoveAttachment,
     this.onMentionPickerChanged,
     this.onDesktopPaste,
@@ -1163,12 +1165,12 @@ class ChatInputAreaState extends State<ChatInputArea> {
                   ),
                 IconButton(
                   icon: Icon(
-                    widget.showEmojiPicker
-                        ? Icons.keyboard
-                        : Icons.emoji_emotions_outlined,
+                    widget.showAttachmentPanel
+                        ? Icons.keyboard_alt_outlined
+                        : Icons.add_circle_outline,
                   ),
                   color: Colors.grey[600],
-                  onPressed: widget.onToggleEmojiPicker,
+                  onPressed: widget.onToggleAttachmentPanel,
                 ),
                 Expanded(
                   child: _isVoiceMode
@@ -1202,11 +1204,6 @@ class ChatInputAreaState extends State<ChatInputArea> {
                         ),
                 ),
                 const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.add_circle_outline),
-                  color: Colors.grey[600],
-                  onPressed: widget.onShowAttachmentOptions,
-                ),
                 if (!_isVoiceMode)
                   widget.isLoading
                       ? Padding(

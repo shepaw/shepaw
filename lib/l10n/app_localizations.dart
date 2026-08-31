@@ -3410,6 +3410,12 @@ abstract class AppLocalizations {
   /// **'相机'**
   String get chat_camera;
 
+  /// No description provided for @chat_emoji.
+  ///
+  /// In zh, this message translates to:
+  /// **'表情'**
+  String get chat_emoji;
+
   /// No description provided for @chat_file.
   ///
   /// In zh, this message translates to:
@@ -3421,6 +3427,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'储物袋'**
   String get chat_storageBag;
+
+  /// No description provided for @chat_instruction.
+  ///
+  /// In zh, this message translates to:
+  /// **'指令'**
+  String get chat_instruction;
 
   /// No description provided for @chat_storageFilePickerTitle.
   ///

@@ -1802,10 +1802,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_camera => '相机';
 
   @override
+  String get chat_emoji => '表情';
+
+  @override
   String get chat_file => '文件';
 
   @override
   String get chat_storageBag => '储物袋';
+
+  @override
+  String get chat_instruction => '指令';
 
   @override
   String get chat_storageFilePickerTitle => '选择储物袋文件';

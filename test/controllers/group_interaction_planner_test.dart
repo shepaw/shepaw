@@ -148,6 +148,16 @@ void main() {
       expect(user.id, 'temp_user_42');
       expect(user.replyTo, 'r');
 
+      // 指令集消息：乐观消息携带指令标题 metadata。
+      final instr = GroupInteractionPlanner.buildOptimisticUserMessage(
+        content: '执行指令「沉淀指令」：\n内容',
+        userId: 'u',
+        userName: 'U',
+        instructionName: '沉淀指令',
+        nowMs: 43,
+      );
+      expect(instr.metadata?['instruction'], '沉淀指令');
+
       final sid = GroupInteractionPlanner.groupStreamingId('a', nowMs: 7);
       expect(sid, 'group_streaming_a_7');
       final sm = GroupInteractionPlanner.buildAgentStreamingPlaceholder(
