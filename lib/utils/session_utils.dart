@@ -81,4 +81,43 @@ class SessionUtils {
     }
     return '#default';
   }
+
+  /// Claude Code 本地斜杠命令（/model、/clear 等）注入的包装标签，
+  /// 同步远端会话后可能残留在会话标题里，展示层需剔除。
+  static const _kClaudeCommandTagPatterns = [
+    r'<local-command-caveat>.*?</local-command-caveat>',
+    r'<command-name>.*?</command-name>',
+    r'<local-command-stdout>.*?</local-command-stdout>',
+  ];
+
+  /// 判断一段文本是否为 Claude Code 注入的本地命令伪消息
+  /// （caveat / 命令名 / 命令输出）。这类内容不应作为会话标题或预览。
+  static bool isClaudeCommandArtifact(String? text) {
+    if (text == null) return false;
+    final t = text.trim();
+    return t.startsWith('<local-command-caveat>') ||
+        t.startsWith('<command-name>') ||
+        t.startsWith('<local-command-stdout>');
+  }
+
+  /// 剔除会话标题里由本地斜杠命令注入的标签及内容，折叠多余空白。
+  ///
+  /// 清理后为空返回 null，便于调用方回落默认名（如 'Session'）。
+  static String? cleanClaudeSessionTitle(String? title) {
+    if (title == null) return null;
+    var s = title;
+    for (final pattern in _kClaudeCommandTagPatterns) {
+      s = s.replaceAll(RegExp(pattern, dotAll: true), '');
+    }
+    // 标题可能被截断导致标签未闭合，再兜底剔除一次裸标签。
+    s = s.replaceAll(
+      RegExp(
+        r'</?(?:local-command-caveat|command-name|local-command-stdout)\b[^>]*>',
+        dotAll: true,
+      ),
+      '',
+    );
+    s = s.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return s.isEmpty ? null : s;
+  }
 }

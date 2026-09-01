@@ -386,11 +386,20 @@ class _SessionListContentState extends State<_SessionListContent> {
     final isSheBound = session.isSheBoundSession;
     final isBound = isGroupBound || isSheBound;
     // 第一行 = 会话第一条消息的第一句（会话标题就是第一句话，不再用
-    // 各会话雷同的固定名称占位）；没有消息时退回名称。
-    final firstContent = firstMessage?['content'] as String?;
-    final titleText = firstContent != null && firstContent.trim().isNotEmpty
-        ? SessionUtils.splitFirstSentence(firstContent).first
-        : session.name;
+    // 各会话雷同的固定名称占位）；没有消息时退回名称。远端同步的 Claude
+    // 会话首条消息可能是本地命令注入的伪消息，跳过并清洗残留标签。
+    final rawFirst = firstMessage?['content'] as String?;
+    final firstContent = (rawFirst != null &&
+            rawFirst.trim().isNotEmpty &&
+            !SessionUtils.isClaudeCommandArtifact(rawFirst))
+        ? rawFirst
+        : null;
+    final firstTitle = firstContent == null
+        ? null
+        : SessionUtils.splitFirstSentence(firstContent).first;
+    final titleText =
+        SessionUtils.cleanClaudeSessionTitle(firstTitle ?? session.name) ??
+            'Session';
     // 第二行 = 首条消息的剩余部分；首句即整条（无剩余）时回落到最新消息。
     final firstRest = firstContent == null
         ? ''

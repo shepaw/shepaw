@@ -45,11 +45,13 @@ class SessionSearchResults extends StatelessWidget {
   bool get _isGroupMode => groupChannel != null;
 
   String _sessionLabel(Channel session) {
-    if (!_isGroupMode) return session.name;
+    final cleanName =
+        SessionUtils.cleanClaudeSessionTitle(session.name) ?? 'Session';
+    if (!_isGroupMode) return cleanName;
     final isParent = session.parentGroupId == null;
     return isParent
-        ? session.name
-        : '${session.name} (${SessionUtils.shortSessionId(session.id, groupChannel: groupChannel)})';
+        ? cleanName
+        : '$cleanName (${SessionUtils.shortSessionId(session.id, groupChannel: groupChannel)})';
   }
 
   /// 关键词高亮（大小写不敏感）。

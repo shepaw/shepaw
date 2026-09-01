@@ -29,6 +29,7 @@ import '../../services/local_file_storage_service.dart';
 import '../../services/logger_service.dart';
 import '../../service_locator.dart' show getIt;
 import '../../utils/engine_avatars.dart';
+import '../../utils/session_utils.dart';
 import 'peer_connection.dart' show PeerConnectionEvent, PeerConnectionEventType;
 import '../peer_approval_payload.dart';
 import 'peer_agent_ids.dart';
@@ -2582,7 +2583,8 @@ class PeerAgentClientService {
         psessExists: psessExisting != null,
         legacyExists: legacyExisting != null,
       );
-      final name = s.title ?? 'Session';
+      final name =
+          SessionUtils.cleanClaudeSessionTitle(s.title) ?? 'Session';
       final existing = await _db.getChannelById(channelId);
       if (existing == null) {
         final channel = Channel.withMemberIds(
