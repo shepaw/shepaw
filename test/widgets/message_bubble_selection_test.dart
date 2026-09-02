@@ -35,7 +35,7 @@ void main() {
               message: message,
               isGroupMode: false,
               hasSelectableText: true,
-              onReply: () {},
+              onReply: (_) {},
               onRollback: () {},
               onReEdit: () {},
               onDelete: () {},

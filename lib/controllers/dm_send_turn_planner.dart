@@ -82,11 +82,22 @@ class DmSendTurnPlanner {
     required String agentId,
     required String agentName,
     String? replyToId,
+    /// 引用回复时选中的部分文字（可选）；为空表示引用整条消息。
+    String? replyQuoteText,
     /// 指令集标题：写入乐观消息 metadata，气泡只展示标题（内容隐式投递）。
     String? instructionName,
     int? nowMs,
   }) {
     final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
+    Map<String, dynamic>? metadata;
+    if (instructionName != null && instructionName.isNotEmpty) {
+      metadata ??= <String, dynamic>{};
+      metadata['instruction'] = instructionName;
+    }
+    if (replyQuoteText != null && replyQuoteText.isNotEmpty) {
+      metadata ??= <String, dynamic>{};
+      metadata['reply_quote'] = replyQuoteText;
+    }
     final user = Message(
       id: 'temp_user_$now',
       content: content,
@@ -95,9 +106,7 @@ class DmSendTurnPlanner {
       to: MessageFrom(id: agentId, type: 'agent', name: agentName),
       type: MessageType.text,
       replyTo: replyToId,
-      metadata: instructionName != null && instructionName.isNotEmpty
-          ? {'instruction': instructionName}
-          : null,
+      metadata: metadata,
     );
     final streaming = ChatStreamingText.placeholder(
       id: 'streaming_$now',

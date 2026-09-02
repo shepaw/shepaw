@@ -1634,6 +1634,7 @@ class _ChatScreenState extends State<ChatScreen>
         });
       },
       replyToId: _controller.replyingToMessage?.id,
+      replyQuoteText: _controller.replyQuoteText,
       mentions: mentions,
     );
   }
@@ -3496,7 +3497,8 @@ class _ChatScreenState extends State<ChatScreen>
                                   c.handlePlanApprovalResponded(msg, approved,
                                       feedback: feedback,
                                       skippedTaskIds: skippedTaskIds),
-                              onReply: (msg) => c.startReply(msg),
+                              onReply: (msg, selectedText) =>
+                                  c.startReply(msg, selectedText: selectedText),
                               onRollback: (msg) => c.rollbackMessage(msg),
                               onRollbackReEdit: (msg, {bool reEdit = false}) async {
                                 final ok = await c.rollbackMessage(msg,
@@ -3635,6 +3637,7 @@ class _ChatScreenState extends State<ChatScreen>
                   !c.isViewingSheBoundSession)
                 ChatReplyPreview(
                   replyingTo: c.replyingToMessage!,
+                  quoteText: c.replyQuoteText,
                   onCancel: () => c.cancelReply(),
                 ),
   

@@ -211,6 +211,10 @@ class ACPMethod {
   /// 获取 agent 支持的 slash 指令（用于聊天输入框 "/" 弹出列表）
   static const String agentCommandsList = 'agent.commands.list';
 
+  /// 重新挂接一个仍在跑/已结束的任务，补拉 SDK replay buffer 里的增量
+  /// （含终态 status/content/metadata）。停滞看门狗用它解「task.completed 丢失」。
+  static const String agentTaskResume = 'agent.taskResume';
+
   /// 心跳
   static const String ping = 'ping';
 

@@ -89,6 +89,9 @@ class Message {
   bool get isSystemMessage => from.isSystem;
   bool get isSentByMe => false; // 需要根据当前用户判断
 
+  /// 引用回复时选中的部分文字（metadata['reply_quote']）；为空表示引用整条消息。
+  String? get replyQuoteText => metadata?['reply_quote'] as String?;
+
   // For backward compatibility
   String get senderId => from.id;
   String get senderName => from.name;

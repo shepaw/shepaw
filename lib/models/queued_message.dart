@@ -15,6 +15,9 @@ class QueuedMessage {
   /// 引用消息 id（DM / 群聊共用）。
   final String? replyToId;
 
+  /// 引用回复时选中的部分文字（可选）；为空表示引用整条消息。
+  final String? replyQuoteText;
+
   /// 群聊 @ 提及（DM 无此概念，发送时会被忽略）。
   final List<MentionEntry> mentions;
 
@@ -30,6 +33,7 @@ class QueuedMessage {
     required this.id,
     required this.content,
     this.replyToId,
+    this.replyQuoteText,
     this.mentions = const [],
     this.attachments,
     this.instructionName,

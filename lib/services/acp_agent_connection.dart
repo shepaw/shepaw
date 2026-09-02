@@ -104,6 +104,10 @@ class TaskCallbacks {
   final void Function(Map<String, dynamic> data)? onTaskCompleted;
   final void Function(Map<String, dynamic> data)? onTaskError;
 
+  /// 任一该任务的通知帧到达时触发（无参数）。供停滞看门狗刷新活动时间戳，
+  /// 单点覆盖 task.started / ui.* / task.completed / task.error 全部入站活动。
+  final void Function()? onTaskActivity;
+
   const TaskCallbacks({
     this.onTextContent,
     this.onActionConfirmation,
@@ -117,6 +121,7 @@ class TaskCallbacks {
     this.onTaskStarted,
     this.onTaskCompleted,
     this.onTaskError,
+    this.onTaskActivity,
   });
 }
 
@@ -867,6 +872,75 @@ class ACPAgentConnection implements AcpInteractiveConnection {
     );
   }
 
+  /// Re-attach to a task that kept running (or finished) via the SDK's
+  /// replay buffer. The response carries `delta` (text past [knownLength]) plus
+  /// `status: streaming|done|error|lost` and, on done, the original
+  /// `task.completed` params as `metadata`.
+  Future<ACPResponse> resumeTask(String taskId, {int knownLength = 0}) {
+    return sendRequest(
+      ACPMethod.agentTaskResume,
+      params: {
+        'task_id': taskId,
+        'known_length': knownLength,
+      },
+    );
+  }
+
+  /// Pull the SDK replay buffer for a stalled task and dispatch the result
+  /// through the existing per-task callbacks (same accumulate/fold/UI pipeline
+  /// as live frames). Handles:
+  ///   - `delta` non-empty → [TaskCallbacks.onTextContent]
+  ///   - `done`          → [TaskCallbacks.onTaskCompleted] (terminal params)
+  ///   - `error`/`lost`  → [TaskCallbacks.onTaskError]
+  ///   - `streaming`     → nothing (task still running; watchdog clock resets)
+  ///
+  /// Safe to call on a live connection: the SDK rebinds the route to this
+  /// connection and keeps streaming subsequent live frames here.
+  Future<void> resumeTaskAndDispatch(String taskId, int knownLength) async {
+    final cb = _taskCallbacks[taskId];
+    if (cb == null) return;
+
+    final ACPResponse resp;
+    try {
+      resp = await resumeTask(taskId, knownLength: knownLength);
+    } catch (e) {
+      LoggerService().warning(
+        'taskResume failed for task $taskId: $e',
+        tag: 'ACP',
+      );
+      return;
+    }
+    if (!resp.isSuccess) return;
+    final result = resp.result;
+    if (result is! Map) return;
+
+    final delta = result['delta']?.toString() ?? '';
+    if (delta.isNotEmpty) {
+      cb.onTextContent?.call({'content': delta});
+    }
+
+    switch (result['status']?.toString()) {
+      case 'done':
+        final meta = result['metadata'];
+        cb.onTaskCompleted?.call(
+          meta is Map ? Map<String, dynamic>.from(meta) : const {},
+        );
+        break;
+      case 'error':
+        cb.onTaskError?.call({
+          'message': result['message']?.toString() ?? 'agent error',
+        });
+        break;
+      case 'lost':
+        cb.onTaskError?.call({
+          'message': result['message']?.toString() ?? 'task lost (resume failed)',
+        });
+        break;
+      case 'streaming':
+        break; // 任务仍在跑；时钟已由看门狗重置，继续等 live 帧
+    }
+  }
+
   /// Submit an interactive response (action confirmation, select, form, etc.)
   @override
   Future<ACPResponse> submitResponse({
@@ -1317,6 +1391,9 @@ class ACPAgentConnection implements AcpInteractiveConnection {
 
     final taskId = params['task_id'] as String?;
     final cb = (taskId != null) ? _taskCallbacks[taskId] : null;
+
+    // 任何该任务的通知都视为「回合有活动」——停滞看门狗据此刷新时钟。
+    cb?.onTaskActivity?.call();
 
     if (cb == null && taskId != null) {
       LoggerService().debug(

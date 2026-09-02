@@ -19,7 +19,7 @@ class MessageLongPressHandler extends StatefulWidget {
     required FocusNode selectionFocusNode,
     required ValueChanged<SelectedContent?> onSelectionChanged,
   }) builder;
-  final VoidCallback onReply;
+  final void Function(String? selectedText) onReply;
   final VoidCallback onRollback;
   final VoidCallback onReEdit;
   final VoidCallback onDelete;

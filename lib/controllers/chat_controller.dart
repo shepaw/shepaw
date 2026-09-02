@@ -199,6 +199,9 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
 
   // ---- Reply state ----
   Message? replyingToMessage;
+
+  /// 引用回复时选中的部分文字（可选）；为空表示引用整条消息。
+  String? replyQuoteText;
   String? highlightedMessageId;
 
   // ---- Channel / lifecycle ----
@@ -883,13 +886,15 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   // Reply
   // ---------------------------------------------------------------------------
 
-  void startReply(Message message) {
+  void startReply(Message message, {String? selectedText}) {
     replyingToMessage = message;
+    replyQuoteText = selectedText;
     _notify();
   }
 
   void cancelReply() {
     replyingToMessage = null;
+    replyQuoteText = null;
     _notify();
   }
 

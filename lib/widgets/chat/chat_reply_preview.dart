@@ -4,11 +4,15 @@ import '../../models/message.dart';
 /// Preview bar shown when replying to a message.
 class ChatReplyPreview extends StatelessWidget {
   final Message replyingTo;
+
+  /// 引用回复时选中的部分文字（可选）；为空表示引用整条消息。
+  final String? quoteText;
   final VoidCallback onCancel;
 
   const ChatReplyPreview({
     super.key,
     required this.replyingTo,
+    this.quoteText,
     required this.onCancel,
   });
 
@@ -40,7 +44,7 @@ class ChatReplyPreview extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  replyingTo.content,
+                  quoteText ?? replyingTo.content,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(

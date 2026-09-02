@@ -1024,6 +1024,8 @@ class ChatService {
     required String userName,
     String? channelId,
     String? replyToId,
+    /// 引用回复时选中的部分文字（可选）；为空表示引用整条消息。
+    String? replyQuoteText,
     String? dmSystemPrompt,
     void Function(String chunk)? onStreamChunk,
     void Function(Map<String, dynamic> actionData)? onActionConfirmation,
@@ -1063,6 +1065,7 @@ class ChatService {
         userName: userName,
         channelId: channelId,
         replyToId: replyToId,
+        replyQuoteText: replyQuoteText,
         dmSystemPrompt: dmSystemPrompt,
         onStreamChunk: onStreamChunk,
         onActionConfirmation: onActionConfirmation,
@@ -2180,6 +2183,8 @@ $originalQuestion
     bool mentionOnlyMode = false,
     String? adminAgentId,
     String? replyToId,
+    /// 引用回复时选中的部分文字（可选）；为空表示引用整条消息。
+    String? replyQuoteText,
     bool flowMode = false,
     Map<String, dynamic>? userMessageMetadata,
     List<AttachmentData>? attachments,
@@ -2251,6 +2256,7 @@ $originalQuestion
         mentionOnlyMode: mentionOnlyMode,
         adminAgentId: adminAgentId,
         replyToId: replyToId,
+        replyQuoteText: replyQuoteText,
         flowMode: flowMode,
         userMessageMetadata: userMessageMetadata,
         attachments: attachments,

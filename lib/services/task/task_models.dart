@@ -27,6 +27,25 @@ class ActiveTask {
   /// Timestamp when this task was created.
   final int startedAtMs = DateTime.now().millisecondsSinceEpoch;
 
+  /// 最近一次收到该任务入站帧的时间（ms）。停滞看门狗用它判定「连接存活但
+  /// 回合无输出」，超时后调 `agent.taskResume` 补拉。任何带 task_id 的通知
+  /// （task.started / ui.* / task.completed / task.error）都会刷新它。
+  int lastActivityAtMs = DateTime.now().millisecondsSinceEpoch;
+
+  /// 原始收到的 `ui.textContent` 前缀长度（含 thinking/progress，量纲与 SDK
+  /// replay buffer 的 accumulated 一致：UTF-16 code unit）。作为 taskResume 的
+  /// `known_length`，避免 delta 重发已显示的文本。
+  int rawStreamLength = 0;
+
+  /// 停滞判定阈值：距上次活动超过该时长且连接仍存活 → 触发 taskResume。
+  /// 默认 180s，可由 agent metadata `stall_timeout_seconds` 覆盖。
+  Duration stallTimeout = const Duration(seconds: 180);
+
+  /// 刷新 [lastActivityAtMs]（收到任一该任务入站帧时调用）。
+  void markActivity() {
+    lastActivityAtMs = DateTime.now().millisecondsSinceEpoch;
+  }
+
   /// Set to true when the task was interrupted because the app was
   /// backgrounded and the underlying connection died.
   bool wasInterruptedByBackground = false;

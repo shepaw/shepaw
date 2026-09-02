@@ -1133,9 +1133,11 @@ class MessageBubble extends StatelessWidget {
         : Theme.of(context).colorScheme.onSurfaceVariant;
     final bgColor = isMyMessage ? Colors.white.withOpacity(0.15) : Theme.of(context).primaryColor.withOpacity(0.08);
 
-    final previewText = quoted.content.length > 60
-        ? '${quoted.content.substring(0, 60)}...'
-        : quoted.content;
+    // 引用回复优先展示选中的部分文字，未选中时退回整条消息内容。
+    final quoteText = message.replyQuoteText ?? quoted.content;
+    final previewText = quoteText.length > 60
+        ? '${quoteText.substring(0, 60)}...'
+        : quoteText;
 
     return GestureDetector(
       onTap: onQuoteTap,

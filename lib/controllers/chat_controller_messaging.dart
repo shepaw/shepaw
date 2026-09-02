@@ -203,6 +203,8 @@ mixin _MessagingOps on _ChatControllerBase {
     required List<PendingAttachment> pendingAttachments,
     required VoidCallback clearMessageController,
     String? replyToId,
+    /// 引用回复时选中的部分文字（可选）；为空表示引用整条消息。
+    String? replyQuoteText,
     List<MentionEntry> mentions = const [],
     /// 指令集预填标记：发送指令时携带指令标题，写入消息 metadata，
     /// 气泡只展示标题、完整内容作为隐式消息投递给 agent。
@@ -250,6 +252,7 @@ mixin _MessagingOps on _ChatControllerBase {
 
     // Capture reply state
     final capturedReplyToId = replyToId ?? replyingToMessage?.id;
+    final capturedReplyQuoteText = replyQuoteText ?? this.replyQuoteText;
     cancelReply();
 
     // Save all pending attachments and build AttachmentData list
@@ -316,6 +319,7 @@ mixin _MessagingOps on _ChatControllerBase {
             id: const Uuid().v4(),
             content: content,
             replyToId: capturedReplyToId,
+            replyQuoteText: capturedReplyQuoteText,
             mentions: mentions,
             instructionName: instructionName,
             // 群聊附件未随 DM 分支立即发送，必须随队列项携带，出队时透传。
@@ -339,6 +343,7 @@ mixin _MessagingOps on _ChatControllerBase {
         await processGroupMessage(
           content,
           replyToId: capturedReplyToId,
+          replyQuoteText: capturedReplyQuoteText,
           attachments: hasAttachments ? attachmentDataList : null,
           mentions: mentions,
           instructionName: instructionName,
@@ -348,6 +353,7 @@ mixin _MessagingOps on _ChatControllerBase {
         await processMessage(
           content,
           replyToId: capturedReplyToId,
+          replyQuoteText: capturedReplyQuoteText,
           attachments: hasAttachments ? attachmentDataList : null,
           attachmentMessages: hasAttachments ? savedAttachmentMessages : null,
           instructionName: instructionName,
@@ -566,6 +572,7 @@ mixin _MessagingOps on _ChatControllerBase {
       await processGroupMessage(
         next.content,
         replyToId: next.replyToId,
+        replyQuoteText: next.replyQuoteText,
         attachments: next.attachments,
         mentions: next.mentions,
         instructionName: next.instructionName,
@@ -574,6 +581,7 @@ mixin _MessagingOps on _ChatControllerBase {
       await processMessage(
         next.content,
         replyToId: next.replyToId,
+        replyQuoteText: next.replyQuoteText,
         // DM 附件的附件消息在入队前已随 sendAttachmentToAgent 立即发送，
         // 队列项不携带 attachmentMessages。
         attachments: next.attachments,
@@ -587,7 +595,7 @@ mixin _MessagingOps on _ChatControllerBase {
   // ---------------------------------------------------------------------------
 
   @override
-  Future<void> processMessage(String content, {String? replyToId, List<AttachmentData>? attachments, List<Message>? attachmentMessages, String? instructionName}) async {
+  Future<void> processMessage(String content, {String? replyToId, String? replyQuoteText, List<AttachmentData>? attachments, List<Message>? attachmentMessages, String? instructionName}) async {
     final userId = getUserId();
     final userName = getUserName();
 
@@ -640,6 +648,7 @@ mixin _MessagingOps on _ChatControllerBase {
         agentId: remoteAgent.id,
         agentName: remoteAgent.name,
         replyToId: replyToId,
+        replyQuoteText: replyQuoteText,
         instructionName: instructionName,
       );
       streaming.begin(optimistic.streaming.id, fromId: remoteAgent.id);
@@ -668,6 +677,7 @@ mixin _MessagingOps on _ChatControllerBase {
         userName: userName,
         channelId: currentChannelId,
         replyToId: replyToId,
+        replyQuoteText: replyQuoteText,
         dmSystemPrompt: dmSystemPrompt,
         acpCancellationToken: acpCancellationToken,
         attachments: attachments,
@@ -1269,7 +1279,7 @@ mixin _MessagingOps on _ChatControllerBase {
   // ---------------------------------------------------------------------------
 
   @override
-  Future<void> processGroupMessage(String content, {String? replyToId, List<AttachmentData>? attachments, List<MentionEntry> mentions = const [], String? instructionName}) async {
+  Future<void> processGroupMessage(String content, {String? replyToId, String? replyQuoteText, List<AttachmentData>? attachments, List<MentionEntry> mentions = const [], String? instructionName}) async {
     if (currentChannelId == null || groupAgents.isEmpty) {
       LoggerService().debug('processGroupMessage ABORTED: channelId=$currentChannelId, groupAgents=${groupAgents.length}', tag: 'ChatController');
       return;
@@ -1284,6 +1294,7 @@ mixin _MessagingOps on _ChatControllerBase {
           id: const Uuid().v4(),
           content: content,
           replyToId: replyToId,
+          replyQuoteText: replyQuoteText,
           mentions: mentions,
           attachments: attachments,
         ),
@@ -1308,6 +1319,7 @@ mixin _MessagingOps on _ChatControllerBase {
       userId: userId,
       userName: userName,
       replyToId: replyToId,
+      replyQuoteText: replyQuoteText,
       instructionName: instructionName,
     );
     messages.add(userMessage);
@@ -1334,6 +1346,11 @@ mixin _MessagingOps on _ChatControllerBase {
         userMsgMetadata ??= <String, dynamic>{};
         userMsgMetadata['instruction'] = instructionName;
       }
+      // 引用回复：选中部分文字随落库 metadata 持久化，气泡引用块优先展示。
+      if (replyQuoteText != null && replyQuoteText.isNotEmpty) {
+        userMsgMetadata ??= <String, dynamic>{};
+        userMsgMetadata['reply_quote'] = replyQuoteText;
+      }
 
       await chatService.sendMessageToGroup(
         channelId: currentChannelId!,
@@ -1345,6 +1362,7 @@ mixin _MessagingOps on _ChatControllerBase {
         mentionOnlyMode: mentionOnlyMode,
         adminAgentId: groupAdminAgentId,
         replyToId: replyToId,
+        replyQuoteText: replyQuoteText,
         flowMode: groupChannel?.flowMode ?? false,
         acpCancellationToken: acpCancellationToken,
         userMessageMetadata: userMsgMetadata,

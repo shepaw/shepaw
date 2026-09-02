@@ -37,7 +37,7 @@ class ChatMessageList extends StatefulWidget {
   final void Function(Message message, String uploadId, List<Map<String, dynamic>> files, String summary) onFileUploadSubmitted;
   final void Function(Message message, String formId, Map<String, dynamic> values, String summary) onFormSubmitted;
   final void Function(Message message, bool approved, {String? feedback, List<String>? skippedTaskIds})? onPlanApprovalResponded;
-  final void Function(Message message) onReply;
+  final void Function(Message message, String? selectedText) onReply;
   final void Function(Message message) onRollback;
   final void Function(Message message, {bool reEdit}) onRollbackReEdit;
   final void Function(Message message) onDelete;
@@ -321,7 +321,8 @@ class _ChatMessageListState extends State<ChatMessageList> {
                     isGroupMode: isGroupMode,
                     hasSelectableText: message.type == MessageType.text &&
                         !message.isSystemMessage,
-                    onReply: () => widget.onReply(message),
+                    onReply: (selectedText) =>
+                        widget.onReply(message, selectedText),
                     onRollback: () => widget.onRollback(message),
                     onReEdit: () =>
                         widget.onRollbackReEdit(message, reEdit: true),

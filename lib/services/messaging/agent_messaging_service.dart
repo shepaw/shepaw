@@ -140,6 +140,13 @@ class AgentMessagingService {
   /// Guards background send / async-finalize paths against duplicate DB saves.
   final Set<String> _userStoppedChannels = {};
 
+  /// 回合停滞看门狗：周期扫描 [_activeTasks]，发现「连接存活但 N 秒无流帧」
+  /// 的任务就调 `agent.taskResume` 补拉（SDK replay buffer 重放，含丢失的
+  /// `task.completed`）。惰性启动，service 单例生命周期内常驻。
+  /// 不持有 timer 引用：Dart 事件循环会保持活跃 timer 存活。
+  bool _stallWatchdogStarted = false;
+  static const Duration _stallWatchdogTick = Duration(seconds: 20);
+
   // ---------------------------------------------------------------------------
   // Task-completion broadcast
   // ---------------------------------------------------------------------------
@@ -481,12 +488,18 @@ class AgentMessagingService {
     required String content,
     List<AttachmentData>? attachments,
     String? instructionName,
+    String? replyQuoteText,
   }) {
     Map<String, dynamic>? meta =
         MessageImplicitPrompt.metadataForTurn(text: content, attachments: attachments);
     if (instructionName != null && instructionName.isNotEmpty) {
       meta ??= <String, dynamic>{};
       meta['instruction'] = instructionName;
+    }
+    // 引用回复：选中部分文字随落库 metadata 持久化，气泡引用块优先展示。
+    if (replyQuoteText != null && replyQuoteText.isNotEmpty) {
+      meta ??= <String, dynamic>{};
+      meta['reply_quote'] = replyQuoteText;
     }
     return meta;
   }
@@ -498,6 +511,8 @@ class AgentMessagingService {
     required String userName,
     String? channelId,
     String? replyToId,
+    /// 引用回复时选中的部分文字（可选）；为空表示引用整条消息。
+    String? replyQuoteText,
     String? dmSystemPrompt,
     void Function(String chunk)? onStreamChunk,
     void Function(Map<String, dynamic> actionData)? onActionConfirmation,
@@ -606,6 +621,7 @@ class AgentMessagingService {
             content: content,
             attachments: attachments,
             instructionName: instructionName,
+            replyQuoteText: replyQuoteText,
           ),
         );
 
@@ -621,14 +637,17 @@ class AgentMessagingService {
       if (replyToId != null) {
         final quotedMsg = await getMessageById(replyToId);
         if (quotedMsg != null) {
+          // 引用回复：优先用选中的部分文字，未选中时退回整条消息。
+          final quoteText = userMessage.replyQuoteText ?? quotedMsg.content;
           messageToSend = Message(
             id: userMessage.id,
-            content: '[引用 ${quotedMsg.from.name} 的消息: "${quotedMsg.content}"]\n\n${userMessage.content}',
+            content: '[引用 ${quotedMsg.from.name} 的消息: "$quoteText"]\n\n${userMessage.content}',
             timestampMs: userMessage.timestampMs,
             from: userMessage.from,
             to: userMessage.to,
             type: userMessage.type,
             replyTo: userMessage.replyTo,
+            metadata: userMessage.metadata,
           );
         }
       }
@@ -850,6 +869,41 @@ class AgentMessagingService {
     }
   }
 
+  /// 惰性启动停滞看门狗（首次发送时）。`_activeTasks` 为空时扫描是 no-op。
+  void _ensureStallWatchdog() {
+    if (_stallWatchdogStarted) return;
+    _stallWatchdogStarted = true;
+    Timer.periodic(_stallWatchdogTick, (_) {
+      _checkTurnStalls();
+    });
+  }
+
+  /// 扫描进行中的回合：连接存活但距上次活动超过 [ActiveTask.stallTimeout]
+  /// → 调 `agent.taskResume` 补拉。task.completed 被隧道静默丢弃时，resume
+  /// 返回 done 并把终态注入现有完成路径，UI 得以解卡；任务仍在跑则返回
+  /// streaming，时钟重置继续等。
+  void _checkTurnStalls() {
+    if (_activeTasks.isEmpty) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    for (final task in stalledTurns(
+      activeTasks: _activeTasks,
+      connections: _acpConnections,
+      nowMs: now,
+    )) {
+      task.markActivity(); // 重置，防每 tick 重复 resume
+      LoggerService().info(
+        'Turn stalled ${task.stallTimeout.inSeconds}s without frames; '
+        'pulling taskResume for task ${task.taskId}',
+        tag: 'AgentMessagingService',
+      );
+      final conn = _acpConnections[task.agentId];
+      if (conn == null) continue;
+      unawaited(
+        conn.resumeTaskAndDispatch(task.taskId, task.rawStreamLength),
+      );
+    }
+  }
+
   /// Send message via ACP WebSocket protocol
   Future<Message?> _sendViaACPProtocol(Message userMessage, RemoteAgent agent, {
     void Function(String chunk)? onStreamChunk,
@@ -939,6 +993,14 @@ class AgentMessagingService {
         updateTypingAgentIds();
       }
       ForegroundTaskService().acquireTask(agent.name);
+
+      // Per-agent 停滞阈值（agent metadata 可覆盖；默认 180s）
+      final stallSeconds =
+          (agent.metadata['stall_timeout_seconds'] as num?)?.toInt();
+      if (stallSeconds != null && stallSeconds > 0) {
+        activeTask.stallTimeout = Duration(seconds: stallSeconds);
+      }
+      _ensureStallWatchdog();
 
       // Declare effectiveTaskId early so flush functions can reference it
       final effectiveTaskId = taskId;
@@ -1213,8 +1275,12 @@ class AgentMessagingService {
 
       // Set up connection callbacks — accumulate in ActiveTask, then forward to UI
       connection.registerTaskCallbacks(effectiveTaskId, TaskCallbacks(
+        onTaskActivity: () => activeTask.markActivity(),
         onTextContent: (data) {
           final content = data['content'] as String? ?? '';
+          // 记录原始收到前缀长度（含 thinking/progress），作为 taskResume 的
+          // known_length，避免补拉时重发已显示的文本。
+          activeTask.rawStreamLength += content.length;
           if (!foldProgressContent) {
             activeTask.accumulatedContent += content;
             activeTask.onStreamChunk?.call(content);
@@ -3234,4 +3300,24 @@ class AgentMessagingService {
     }
     return null;
   }
+}
+
+/// 停滞看门狗的判定纯函数：返回「连接存活 + 距上次活动超过 stallTimeout」
+/// 的回合。断连（连接不可用）的回合由连接断开路径负责 fail，这里跳过。
+List<ActiveTask> stalledTurns({
+  required Map<String, ActiveTask> activeTasks,
+  required Map<String, ACPAgentConnection> connections,
+  required int nowMs,
+}) {
+  final out = <ActiveTask>[];
+  for (final task in activeTasks.values) {
+    if (task.isComplete) continue;
+    final conn = connections[task.agentId];
+    if (conn == null || !conn.isConnected) continue;
+    if (nowMs - task.lastActivityAtMs < task.stallTimeout.inMilliseconds) {
+      continue;
+    }
+    out.add(task);
+  }
+  return out;
 }

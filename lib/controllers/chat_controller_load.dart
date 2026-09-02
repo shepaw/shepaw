@@ -318,6 +318,7 @@ mixin _LoadOps on _ChatControllerBase {
     // 7. 复位会话级 UI 态：loadMessages 首次 _notify 前不会清这些字段。
     //    isGroupMode / sourceDeviceLabel 由 loadMessages 按频道元数据重推。
     replyingToMessage = null;
+    replyQuoteText = null;
     highlightedMessageId = null;
     hasMoreOlderMessages = false;
     mentionOnlyMode = false;

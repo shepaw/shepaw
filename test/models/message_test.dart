@@ -80,6 +80,41 @@ void main() {
       expect(textMessage.to, isNull);
       expect(textMessage.replyTo, isNull);
       expect(textMessage.metadata, isNull);
+      expect(textMessage.replyQuoteText, isNull);
+    });
+
+    test('replyQuoteText should read metadata reply_quote', () {
+      final withQuote = Message(
+        id: 'msg-q',
+        from: MessageFrom(id: 'u', type: 'user', name: 'U'),
+        type: MessageType.text,
+        content: '',
+        timestampMs: 0,
+        metadata: {'reply_quote': 'selected part'},
+      );
+      expect(withQuote.replyQuoteText, 'selected part');
+
+      // 空串 / 无该键 → null
+      final emptyQuote = Message(
+        id: 'msg-e',
+        from: MessageFrom(id: 'u', type: 'user', name: 'U'),
+        type: MessageType.text,
+        content: '',
+        timestampMs: 0,
+        metadata: {'reply_quote': ''},
+      );
+      expect(emptyQuote.replyQuoteText, '');
+      expect(
+        Message(
+          id: 'msg-n',
+          from: MessageFrom(id: 'u', type: 'user', name: 'U'),
+          type: MessageType.text,
+          content: '',
+          timestampMs: 0,
+          metadata: {'other': 1},
+        ).replyQuoteText,
+        isNull,
+      );
     });
 
     test('backward compatibility: senderId and senderName', () {

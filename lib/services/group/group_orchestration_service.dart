@@ -239,6 +239,8 @@ class GroupOrchestrationService {
     bool mentionOnlyMode = false,
     String? adminAgentId,
     String? replyToId,
+    /// 引用回复时选中的部分文字（可选）；为空表示引用整条消息。
+    String? replyQuoteText,
     bool flowMode = false,
     Map<String, dynamic>? userMessageMetadata,
     List<AttachmentData>? attachments,
@@ -367,8 +369,10 @@ class GroupOrchestrationService {
     if (replyToId != null) {
       final quotedMessage = await getMessageById(replyToId);
       if (quotedMessage != null) {
+        // 引用回复：优先用选中的部分文字，未选中时退回整条消息。
+        final quoteText = replyQuoteText ?? quotedMessage.content;
         effectiveContent =
-            '[引用 ${quotedMessage.from.name} 的消息: "${quotedMessage.content}"]\n\n$content';
+            '[引用 ${quotedMessage.from.name} 的消息: "$quoteText"]\n\n$content';
       }
     }
     // §6.3 + ContextBundle：群编排委派注入产物 URI + runtime 上下文清单

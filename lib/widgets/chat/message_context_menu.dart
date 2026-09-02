@@ -42,7 +42,7 @@ OverlayEntry showMessageContextMenu(
   required Message message,
   required Rect anchorRect,
   required bool isGroupMode,
-  required VoidCallback onReply,
+  required void Function(String? selectedText) onReply,
   required VoidCallback onRollback,
   required VoidCallback onReEdit,
   required VoidCallback onDelete,
@@ -101,7 +101,13 @@ OverlayEntry showMessageContextMenu(
     if (!message.from.isUser || isGroupMode)
       MessageMenuAction(
         label: menuL10n.common_reply,
-        onTap: () => closeMenu(afterClose: onReply),
+        onTap: () => closeMenu(
+          afterClose: () {
+            // 与复制一致：优先携带当前选区文字，未选中时回退整条引用。
+            final selected = getSelectedContent?.call()?.plainText;
+            onReply((selected == null || selected.isEmpty) ? null : selected);
+          },
+        ),
       ),
     if (message.type == MessageType.image || message.type == MessageType.file)
       MessageMenuAction(
