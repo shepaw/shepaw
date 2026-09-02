@@ -1076,6 +1076,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get createGroup_groupRoleHint => '描述该 Agent 在本群中的职责';
 
   @override
+  String get createGroup_fillRoleFromResume => '从简历填充';
+
+  @override
+  String get createGroup_resumeReference => '成员简历';
+
+  @override
   String get createGroup_maxLoopRounds => '最大编排轮次';
 
   @override
@@ -2033,6 +2039,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get chat_editAgent => '编辑 Agent';
+
+  @override
+  String get chat_regenerateResume => '重新生成简历';
 
   @override
   String get chat_viewDetails => '查看详情';

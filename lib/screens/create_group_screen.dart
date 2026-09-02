@@ -8,6 +8,7 @@ import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
 import '../services/group/group_member_session_service.dart';
 import '../services/she_service.dart';
+import '../utils/resume_utils.dart';
 import '../widgets/agent_list_avatar.dart';
 import 'chat_screen.dart';
 
@@ -359,7 +360,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
             ],
           ),
         ),
-        if (isSelected)
+        if (isSelected) ...[
           Padding(
             padding: const EdgeInsets.only(left: 56, right: 16, bottom: 8),
             child: TextField(
@@ -373,6 +374,75 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
               ),
             ),
           ),
+          if (agent.bio?.trim().isNotEmpty == true)
+            Padding(
+              padding: const EdgeInsets.only(left: 56, right: 16, bottom: 8),
+              child: _buildResumeReference(agent, l10n),
+            ),
+        ],
+      ],
+    );
+  }
+
+  /// 成员简历摘要 + 「从简历填充」：She 基于简历起草本群职责。
+  Widget _buildResumeReference(Agent agent, AppLocalizations l10n) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final bio = agent.bio?.trim() ?? '';
+    if (bio.isEmpty) return const SizedBox.shrink();
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  l10n.createGroup_resumeReference,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  bio,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.4,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        TextButton.icon(
+          onPressed: () {
+            final role = ResumeUtils.resumeToOneLine(bio);
+            if (role == null) return;
+            setState(() {
+              _groupBioControllers[agent.id]!.text = role;
+            });
+          },
+          icon: const Icon(Icons.auto_fix_high, size: 16),
+          label: Text(l10n.createGroup_fillRoleFromResume),
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            minimumSize: const Size(0, 36),
+            textStyle: const TextStyle(fontSize: 12),
+          ),
+        ),
       ],
     );
   }

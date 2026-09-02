@@ -2078,6 +2078,18 @@ abstract class AppLocalizations {
   /// **'描述该 Agent 在本群中的职责'**
   String get createGroup_groupRoleHint;
 
+  /// No description provided for @createGroup_fillRoleFromResume.
+  ///
+  /// In zh, this message translates to:
+  /// **'从简历填充'**
+  String get createGroup_fillRoleFromResume;
+
+  /// No description provided for @createGroup_resumeReference.
+  ///
+  /// In zh, this message translates to:
+  /// **'成员简历'**
+  String get createGroup_resumeReference;
+
   /// No description provided for @createGroup_maxLoopRounds.
   ///
   /// In zh, this message translates to:
@@ -3823,6 +3835,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'编辑 Agent'**
   String get chat_editAgent;
+
+  /// No description provided for @chat_regenerateResume.
+  ///
+  /// In zh, this message translates to:
+  /// **'重新生成简历'**
+  String get chat_regenerateResume;
 
   /// No description provided for @chat_viewDetails.
   ///

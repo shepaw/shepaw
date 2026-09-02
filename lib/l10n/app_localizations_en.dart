@@ -1122,6 +1122,12 @@ class AppLocalizationsEn extends AppLocalizations {
       'Describe this agent\'s role in the group';
 
   @override
+  String get createGroup_fillRoleFromResume => 'Fill from resume';
+
+  @override
+  String get createGroup_resumeReference => 'Member resume';
+
+  @override
   String get createGroup_maxLoopRounds => 'Max Orchestration Rounds';
 
   @override
@@ -2110,6 +2116,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get chat_editAgent => 'Edit Agent';
+
+  @override
+  String get chat_regenerateResume => 'Regenerate Resume';
 
   @override
   String get chat_viewDetails => 'View Details';

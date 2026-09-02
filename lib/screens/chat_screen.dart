@@ -48,6 +48,7 @@ import '../widgets/chat/group_members_panel.dart';
 import '../widgets/chat/add_group_member_panel.dart';
 import '../widgets/avatar_image.dart';
 import '../widgets/voice_record_overlay.dart';
+import 'agent_resume_edit_screen.dart';
 import 'remote_agent_detail_screen.dart';
 import 'group_detail_screen.dart';
 import 'group_member_detail_screen.dart';
@@ -1648,6 +1649,28 @@ class _ChatScreenState extends State<ChatScreen>
     await _navigateToAgentDetailById(widget.agentId!);
   }
 
+  /// 从单聊「更多」抽屉直接打开简历编辑页（手动编辑 + 提示词重新生成）。
+  /// 保存后刷新聊天里的 agent 名称/头像。
+  Future<void> _openResumeEditorFromChat() async {
+    if (widget.agentId == null) return;
+    final remoteAgent = await _controller.localDatabaseService
+        .getRemoteAgentById(widget.agentId!);
+    if (remoteAgent == null || !mounted) return;
+    final result = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AgentResumeEditScreen(agent: remoteAgent),
+      ),
+    );
+    if (result != null && mounted) {
+      final updated = await _controller.localDatabaseService
+          .getRemoteAgentById(widget.agentId!);
+      if (updated != null) {
+        _controller.updateAgentInfo(updated.name, updated.avatar);
+      }
+    }
+  }
+
   /// 直接以编辑模式打开 Agent 详情页，无需先进入详情再点击编辑
   Future<void> _navigateToAgentDetailForEdit() async {
     if (widget.agentId == null) return;
@@ -2089,6 +2112,11 @@ class _ChatScreenState extends State<ChatScreen>
                 icon: Icons.inventory_2_outlined,
                 label: l10n.chat_storageSpace,
                 onTap: _navigateToStorageSpace,
+              ),
+              ChatDrawerAction(
+                icon: Icons.badge_outlined,
+                label: l10n.chat_regenerateResume,
+                onTap: _openResumeEditorFromChat,
               ),
               if (c.dmWorkflowEnabled)
                 ChatDrawerAction(
