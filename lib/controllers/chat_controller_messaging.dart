@@ -566,6 +566,19 @@ mixin _MessagingOps on _ChatControllerBase {
     final queue = chatService.pendingSendQueue(channelId);
     if (queue.isEmpty) return;
 
+    // 已有回合在途（isProcessing，或 channel 级 live task / peer inflight
+    // 尚未落进 isProcessing）时不得并发出队：此刻派发下一条只会让多条回合
+    // 同时跑——ACP 异步路径覆盖共享 ActiveTask / 流式状态导致回复错乱，
+    // peer busy 路径则整段 reattach 只吐「上一轮回复仍在继续」不真正发送。
+    // 统一交给当前回合的 onTaskFinished / finally（在 isProcessing=false
+    // 后）逐条排空，保证同一时刻只派发一条。
+    if (isProcessing) return;
+    if (chatService.getActiveTask(channelId) != null) return;
+    if (!isGroupMode &&
+        PeerAgentClientService.instance.hasInflightForChannel(channelId)) {
+      return;
+    }
+
     final next = queue.removeAt(0);
     _notify();
     if (isGroupMode) {
@@ -833,11 +846,12 @@ mixin _MessagingOps on _ChatControllerBase {
           _notify();
         }
       } else if (awaitingAsyncTask) {
-        // Async path: don't clear streamingMessageId / isProcessing here —
-        // the activeTask.onTaskFinished callback owns that cleanup and will
-        // fire when the agent's SDK turn actually ends. We still drain the
-        // send queue so the next queued message can start preparing.
-        processNextInQueue();
+        // 异步确认路径：本轮任务仍在后台跑，isProcessing / 流式状态交给
+        // activeTask.onTaskFinished 清理——回合真正结束时它负责置
+        // isProcessing=false 并调用 processNextInQueue 逐条排空。
+        // 这里绝不能排空队列：此刻回合还活着，出队下一条会并发起新回合
+        // （ACP 覆盖共享 ActiveTask 导致回复错乱），或命中 peer busy 守卫
+        // 重复 reattach（队列整段倒出 + 后续发送卡「上一轮回复仍在继续」）。
       } else {
         acpCancellationToken = null;
         streaming.clear();
