@@ -29,6 +29,7 @@ import '../services/native_window_service.dart';
 import '../services/chat_navigation_service.dart';
 import '../services/chat_service.dart';
 import '../services/local_database_service.dart';
+import '../services/onboarding_service.dart';
 import '../services/she_service.dart';
 import '../services/update_service.dart';
 import '../service_locator.dart' show getIt;
@@ -105,6 +106,25 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _resetIfSelectedPeerRemoved(_selected?.peerId);
       _resetIfContactPeerRemoved();
     });
+
+    // 首次设密登录后：首帧自动打开惜宝聊天页引导配置 AI 模型（一次性标记）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_maybeOpenSheFirstRun());
+    });
+  }
+
+  /// 首次设密后的首登：若 She 尚无 LLM 主模型，自动打开惜宝聊天页展示配置引导。
+  /// 标记无论是否命中都清除（一次性），已配好模型的老用户不弹开，行为不变。
+  Future<void> _maybeOpenSheFirstRun() async {
+    if (!mounted) return;
+    final pending = await OnboardingService().consumeFirstEntryPending();
+    if (!pending || !mounted) return;
+    final db = getIt<LocalDatabaseService>();
+    final agent = await db.getRemoteAgentById(SheService.sheId);
+    if (!mounted) return;
+    // 已配好主模型（非新装/重复触发）→ 落回常规主界面。
+    if (agent != null && agent.isLocal) return;
+    await _openSheChat();
   }
 
   /// 若指定 peerId 正是当前选中的会话且已从存储中删除，则把右面板切回空，

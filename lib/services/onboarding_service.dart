@@ -12,6 +12,7 @@ class OnboardingService {
 
   static const String _keyOnboardingCompleted = 'onboarding_completed';
   static const String _keyFeatureIntroShown = 'feature_intro_shown_';
+  static const String _keyFirstEntryAfterSetup = 'first_entry_after_setup';
 
   /// 检查是否已完成引导
   Future<bool> isOnboardingCompleted() async {
@@ -35,6 +36,27 @@ class OnboardingService {
   Future<void> markFeatureIntroShown(String featureId) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('$_keyFeatureIntroShown$featureId', true);
+  }
+
+  /// 标记「首次设密后的首登」待引导。
+  ///
+  /// 密码设置成功后置位；主界面首帧通过 [consumeFirstEntryPending] 消费，
+  /// 用于在首次进入时自动打开惜宝聊天页引导配置 AI 模型（一次性）。
+  Future<void> markFirstEntryPending() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyFirstEntryAfterSetup, true);
+  }
+
+  /// 读取并清除「首次设密后的首登」标记，返回是否曾置位。
+  ///
+  /// 无论是否命中都清除：标记只触发一次，避免以后每次启动都弹。
+  Future<bool> consumeFirstEntryPending() async {
+    final prefs = await SharedPreferences.getInstance();
+    final pending = prefs.getBool(_keyFirstEntryAfterSetup) ?? false;
+    if (pending) {
+      await prefs.remove(_keyFirstEntryAfterSetup);
+    }
+    return pending;
   }
 
   /// 重置所有引导状态

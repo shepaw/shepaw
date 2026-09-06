@@ -4,6 +4,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../models/agent.dart';
 import '../models/channel.dart';
+import '../models/remote_agent.dart';
 import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
 import '../services/chat_service.dart';
@@ -22,6 +23,7 @@ import '../widgets/chat/session_unread_badge.dart';
 import '../services/update_service.dart';
 import '../widgets/update_settings_badge.dart';
 import '../services/message_search_service.dart';
+import '../services/onboarding_service.dart';
 import '../services/she_service.dart';
 import '../l10n/app_localizations.dart';
 import '../theme/app_theme.dart';
@@ -125,6 +127,56 @@ class HomeScreenState extends State<HomeScreen> {
     _messageSearchService = MessageSearchService(_databaseService);
     _list.refresh();
     _searchController.addListener(_onSearchChanged);
+    // 首次设密登录后：首帧自动打开惜宝聊天页引导配置 AI 模型（一次性标记）。
+    // 桌面嵌入实例（embedded == true）不在此处理，由 DesktopHomeScreen 负责。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_maybeOpenSheFirstRun());
+    });
+  }
+
+  /// 首次设密后的首登：若 She 尚无 LLM 主模型，自动 push 惜宝聊天页。
+  /// 标记无论是否命中都清除（一次性），已配好模型的老用户不弹开，行为不变。
+  Future<void> _maybeOpenSheFirstRun() async {
+    if (widget.embedded) return;
+    final pending = await OnboardingService().consumeFirstEntryPending();
+    if (!pending || !mounted) return;
+
+    final RemoteAgent? agent =
+        await _databaseService.getRemoteAgentById(SheService.sheId);
+    if (!mounted) return;
+    // 已配好主模型（非新装/重复触发）→ 不自动弹开。
+    if (agent != null && agent.isLocal) return;
+
+    final l10n = AppLocalizations.of(context);
+    const userId = 'user';
+    final activeChannelId =
+        await _chatService.getLatestActiveChannelId(userId, SheService.sheId);
+    final channelId = activeChannelId ??
+        _chatService.generateChannelId(userId, SheService.sheId);
+    await _databaseService.touchChannelUpdatedAt(channelId);
+    await _databaseService.markChannelMessagesAsRead(channelId);
+    _list.clearAgentUnread(SheService.sheId);
+    if (!mounted) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatScreen(
+          agentId: SheService.sheId,
+          agentName: agent != null
+              ? SheService.resolveDisplayName(agent.name, l10n.she_name)
+              : l10n.she_name,
+          agentAvatar: agent?.avatar ?? SheService.sheAvatar,
+          channelId: channelId,
+        ),
+      ),
+    ).then((_) {
+      // 从聊天返回后刷新列表，让新建的惜宝会话与未读数落到会话列表。
+      if (!mounted) return;
+      _publishComposerDrafts();
+      _loadAgents(silent: true);
+    });
   }
 
   void _onListChanged() {

@@ -4166,10 +4166,11 @@ class _ChatScreenState extends State<ChatScreen>
     );
   }
 
-  /// Navigate to She's detail screen so the user can pick a model.
+  /// Navigate to She's edit screen (directly in edit mode) so the user can
+  /// pick a model — fewer taps than going through the detail page first.
   Future<void> _openSheConfig() async {
-    await _navigateToAgentDetail();
-    // Re-check after returning from detail screen
+    await _navigateToAgentDetailForEdit();
+    // Re-check after returning from edit screen
     _checkSheNeedsConfig();
     _checkAgentAudioSupport();
     _checkAgentImageSupport();
@@ -4233,9 +4234,30 @@ class _ChatScreenState extends State<ChatScreen>
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Text('🌸',
-                          style: TextStyle(fontSize: 72),
-                          textAlign: TextAlign.center),
+                      Center(
+                        child: Container(
+                          width: 100,
+                          height: 100,
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade100,
+                            borderRadius: BorderRadius.circular(28),
+                          ),
+                          child: AvatarImage(
+                            avatar: (_controller.agentAvatar != null &&
+                                    _controller.agentAvatar!.isNotEmpty)
+                                ? _controller.agentAvatar!
+                                : SheService.sheAvatar,
+                            size: 100,
+                            borderRadius: 28,
+                            fallback: Text(
+                              _controller.agentName?.isNotEmpty == true
+                                  ? _controller.agentName![0]
+                                  : '惜',
+                              style: const TextStyle(fontSize: 56),
+                            ),
+                          ),
+                        ),
+                      ),
                       const SizedBox(height: 16),
                       Text(
                         AppLocalizations.of(context).she_name,

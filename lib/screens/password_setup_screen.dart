@@ -1,6 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../services/onboarding_service.dart';
 import '../services/password_service.dart';
 import '../theme/app_theme.dart';
 import 'privacy_policy_screen.dart';
@@ -98,6 +99,9 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
       final success = await _passwordService.setPassword(password);
 
       if (success) {
+        // 首次设密成功 → 置位首登引导标记，登录进入主界面后由主界面消费，
+        // 自动打开惜宝聊天页引导配置 AI 模型（一次性）。
+        await OnboardingService().markFirstEntryPending();
         if (mounted) {
           // 密码设置成功，跳转到登录页面
           Navigator.of(context).pushReplacementNamed('/login');

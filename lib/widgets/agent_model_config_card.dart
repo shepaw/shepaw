@@ -110,6 +110,13 @@ class _AgentModelConfigCardState extends State<AgentModelConfigCard> {
             if (defs.isEmpty)
               _buildEmptyRegistryState(colorScheme, l10n)
             else ...[
+              // 有可选模型但尚未选择主对话模型 → 在下拉上方给出引导（下拉就在下方）。
+              if (widget.mainModelId == null)
+                _StatusBanner(
+                  icon: Icons.info_outline,
+                  color: colorScheme.error,
+                  text: l10n.addAgent_modelRequired,
+                ),
               _LabeledField(
                 label: l10n.agentModelConfig_mainChat,
                 child: DropdownButtonFormField<String>(
