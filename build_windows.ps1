@@ -180,6 +180,19 @@ if (-not $RunnerDir) {
 
 Write-Ok "Runner: $RunnerDir"
 
+# ── bundle sqlite3.dll ───────────────────────────────────────────────
+# sqflite_common_ffi is built with `sqlite3: source: system`, so the app
+# expects sqlite3.dll next to the executable at runtime. The Flutter build
+# does NOT copy it, so we vendor it and bundle it here. Without it the app
+# crashes on DB init and no window appears.
+$VendoredSqlite = Join-Path $Root 'windows\sqlite3.dll'
+if (Test-Path $VendoredSqlite) {
+  Copy-Item -Path $VendoredSqlite -Destination $RunnerDir -Force
+  Write-Ok "Bundled sqlite3.dll → $RunnerDir"
+} else {
+  Write-Warn "windows\sqlite3.dll not found; build will ship without it and the app will fail to start (missing sqlite3.dll)."
+}
+
 # ── package ─────────────────────────────────────────────────────────
 $ZipName = "$ArtifactPrefix-windows-$Mode.zip"
 $ZipPath = Join-Path $OutDir $ZipName
