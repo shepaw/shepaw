@@ -149,14 +149,53 @@ dynamic _parseParamValue(String raw) {
 bool _isToolNamespace(CliNamespace ns) => ns is ToolsNamespace;
 
 /// 将 icon 字符串解析为 IconData（全局辅助函数）
-/// 支持 Material Icons codePoint（"0xe###" 十六进制 或 纯十进制整数）
+/// 支持 Material 图标名：'icons.folder' 或裸名 'folder'。
+/// 不支持运行期 codePoint——非 const 的 IconData 会被 Android 发布构建的
+/// tree-shake-icons 拦截；Emoji / 未知名称 / null 一律返回 null，
+/// 由调用方回退到默认图标。
 IconData? _parseIconData(String? iconStr) {
   if (iconStr == null) return null;
-  final code = int.tryParse(iconStr) ??
-      int.tryParse(iconStr.replaceFirst('0x', ''), radix: 16);
-  if (code != null) return IconData(code, fontFamily: 'MaterialIcons');
-  return null;
+  final key = iconStr.startsWith('icons.')
+      ? iconStr.substring('icons.'.length)
+      : iconStr;
+  return _kNamedIconData[key];
 }
+
+/// 名称 → 常量 Material 图标的查找表（与页面内已有的回退映射保持一致）。
+const Map<String, IconData> _kNamedIconData = {
+  'folder': Icons.folder,
+  'folder_open': Icons.folder_open,
+  'search': Icons.search,
+  'terminal': Icons.terminal,
+  'settings': Icons.settings_outlined,
+  'info': Icons.info_outline,
+  'description': Icons.description,
+  'edit': Icons.edit_document,
+  'delete': Icons.delete_outline,
+  'move': Icons.drive_file_move_outline,
+  'download': Icons.download,
+  'upload': Icons.upload,
+  'open_in_browser': Icons.open_in_browser,
+  'apps': Icons.apps,
+  'screenshot': Icons.screenshot_monitor,
+  'clipboard_read': Icons.content_paste,
+  'clipboard_write': Icons.content_copy,
+  'location': Icons.my_location,
+  'list': Icons.list_alt,
+  'cancel': Icons.cancel_outlined,
+  'code': Icons.code,
+  'person': Icons.person_outline,
+  'memory': Icons.psychology_outlined,
+  'agents': Icons.smart_toy_outlined,
+  'computer': Icons.computer,
+  'network': Icons.wifi,
+  'chat': Icons.chat_bubble_outline,
+  'help': Icons.help_outline,
+  'build': Icons.build_outlined,
+  'extension': Icons.extension_outlined,
+  'account': Icons.account_circle_outlined,
+  'pin': Icons.push_pin,
+};
 
 // ── 共享帮助对话框 ───────────────────────────────────────────────────────────────
 /// 执行 --help 命令并在底部面板中显示帮助信息
