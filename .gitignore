@@ -53,3 +53,6 @@ ios/Flutter/Signing.local.xcconfig
 .ai_workspace/
 # golden 测试失败时的 diff 落盘产物
 test/widgets/failures/
+
+# 本机 ACP sandbox 配置（不入库）
+.zcode/
