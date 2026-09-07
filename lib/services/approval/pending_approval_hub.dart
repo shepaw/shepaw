@@ -43,6 +43,13 @@ class PendingApprovalHub {
   int countForChannel(String channelId) =>
       _items.values.where((i) => i.channelId == channelId).length;
 
+  /// 是否存在满足 [test] 的待审批项。
+  ///
+  /// 语义同 `all.any(...)` 但不排序：会话列表每行 build 都要判断一次，
+  /// 走 [all] 会为每行复制并排序整个列表。
+  bool any(bool Function(PendingApprovalItem item) test) =>
+      _items.values.any(test);
+
   PendingApprovalItem? get latest => all.isEmpty ? null : all.first;
 
   void upsert(PendingApprovalItem item) {

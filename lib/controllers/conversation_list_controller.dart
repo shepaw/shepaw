@@ -76,6 +76,12 @@ class ConversationListController extends ChangeNotifier {
   bool _healthCheckRunning = false;
   Timer? _healthCheckTimer;
 
+  bool _refreshInFlight = false;
+  Timer? _pendingRefreshTimer;
+
+  /// 后台刷新的合并窗口：peer 断连 / 设备列表变化 / agent 变化常常连发。
+  static const Duration _kSilentRefreshDebounce = Duration(milliseconds: 150);
+
   StreamSubscription? _peerMessageSub;
   StreamSubscription? _peerEventSub;
   StreamSubscription? _peerListChangedSub;
@@ -113,7 +119,7 @@ class ConversationListController extends ChangeNotifier {
   /// Whether [agentId]'s DM has a pending high-priority approval.
   bool agentHasPendingApproval(String agentId) {
     final channelId = _agentChannelIds[agentId];
-    return PendingApprovalHub.instance.all.any(
+    return PendingApprovalHub.instance.any(
       (i) =>
           (i.agentId.isNotEmpty && i.agentId == agentId) ||
           (channelId != null && i.channelId == channelId),
@@ -131,8 +137,7 @@ class ConversationListController extends ChangeNotifier {
       ...?_groupSessionChannelIds[group.id],
       ...?_groupSessionChannelIds[group.groupFamilyId],
     };
-    return PendingApprovalHub.instance.all
-        .any((i) => ids.contains(i.channelId));
+    return PendingApprovalHub.instance.any((i) => ids.contains(i.channelId));
   }
 
   void attach() {
@@ -162,20 +167,20 @@ class ConversationListController extends ChangeNotifier {
     _peerEventSub = PeerConnectionManager.instance.events.listen((event) {
       if (_disposed) return;
       if (event.type == PeerConnectionEventType.disconnected) {
-        refresh(silent: true);
+        _scheduleSilentRefresh();
       }
     });
 
     _peerListChangedSub =
         PeerConnectionManager.instance.peerListChanged.listen((_) {
       if (_disposed) return;
-      refresh(silent: true);
+      _scheduleSilentRefresh();
     });
 
     _agentsChangedSub =
         getIt<RemoteAgentService>().agentsChanged.listen((_) {
       if (_disposed) return;
-      refresh(silent: true);
+      _scheduleSilentRefresh();
     });
 
     _healthCheckTimer = Timer.periodic(const Duration(seconds: 30), (_) {
@@ -211,6 +216,21 @@ class ConversationListController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 合并连发的后台刷新：三个数据源的事件往往同时到达，逐个刷新会把全量
+  /// 加载跑好几遍。已在跑的一轮结束后再补一次，避免并发写同一批缓存。
+  void _scheduleSilentRefresh() {
+    if (_disposed) return;
+    _pendingRefreshTimer?.cancel();
+    _pendingRefreshTimer = Timer(_kSilentRefreshDebounce, () {
+      _pendingRefreshTimer = null;
+      if (_refreshInFlight) {
+        _scheduleSilentRefresh();
+        return;
+      }
+      refresh(silent: true);
+    });
+  }
+
   /// Load agents / groups / peers. [silent] skips full-screen loading.
   Future<void> refresh({bool silent = false}) async {
     final showLoading = !silent &&
@@ -222,6 +242,7 @@ class ConversationListController extends ChangeNotifier {
       notifyListeners();
     }
 
+    _refreshInFlight = true;
     try {
       // 三路数据源互不依赖，并行拉取：串行会把各自的往返时间累加。
       final results = await Future.wait<List<Object>>([
@@ -257,6 +278,8 @@ class ConversationListController extends ChangeNotifier {
       if (_disposed) return;
       _isLoading = false;
       notifyListeners();
+    } finally {
+      _refreshInFlight = false;
     }
   }
 
@@ -643,6 +666,7 @@ class ConversationListController extends ChangeNotifier {
     _chatService.typingAgentIds.removeListener(_onTypingChanged);
     _chatService.typingChannelIds.removeListener(_onTypingChanged);
     _healthCheckTimer?.cancel();
+    _pendingRefreshTimer?.cancel();
     _peerMessageSub?.cancel();
     _peerEventSub?.cancel();
     _peerListChangedSub?.cancel();
