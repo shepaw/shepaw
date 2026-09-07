@@ -150,6 +150,66 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
     super.initState();
     widget.listRefreshTick.addListener(_onExternalListRefresh);
     widget.selectionModeRequest.addListener(_onSelectionModeRequested);
+    _refreshStalePreviews();
+  }
+
+  /// 批量补齐所有过期行的预览：3 次查询 + 并行的编排文件读，替代每会话
+  /// 4 次串行往返（50 个会话原本是 200 次）。
+  Future<void> _refreshStalePreviews() async {
+    final stale = widget.sessions.where((s) {
+      final e = _previews[s.id];
+      return e == null || (e.stale && !e.refreshing);
+    }).toList();
+    if (stale.isEmpty) return;
+
+    // 先标记为刷新中，避免逐行再各发起一次查询。
+    for (final s in stale) {
+      _previews.putIfAbsent(s.id, _PreviewEntry.new)
+        ..stale = false
+        ..refreshing = true;
+    }
+
+    try {
+      final ids = stale.map((s) => s.id).toList();
+      final firsts = await _databaseService.getFirstMessagesByChannels(ids);
+      final latests = await _databaseService.getLatestMessagesByChannels(ids);
+      final unreads = await _databaseService.getUnreadCountsByChannels(ids);
+      // 编排快照是独立文件读，并发跑（sqflite 才需要串行）。
+      final orchestrations =
+          await Future.wait(stale.map(_readOrchestration));
+      if (!mounted) return;
+      for (var i = 0; i < stale.length; i++) {
+        final id = stale[i].id;
+        final e = _previews[id];
+        if (e == null) continue;
+        e.data = (
+          firsts[id],
+          latests[id],
+          unreads[id] ?? 0,
+          orchestrations[i],
+        );
+        e.refreshing = false;
+      }
+      setState(() {});
+    } catch (_) {
+      if (!mounted) return;
+      for (final s in stale) {
+        _previews[s.id]?.refreshing = false;
+      }
+    }
+  }
+
+  /// 单会话的编排快照；读不到（从未编排）返回 null，不影响其它行。
+  static Future<Map<String, dynamic>?> _readOrchestration(
+      Channel session) async {
+    try {
+      return await GroupWorkspaceService.instance.readLatestOrchestration(
+        groupId: session.groupFamilyId,
+        sessionId: session.id,
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   @override
@@ -165,6 +225,8 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
     // 会话被删后缓存条目随手清理
     _previews
         .removeWhere((k, _) => !widget.sessions.any((s) => s.id == k));
+    // 新增/过期的会话用批量查询补齐（无待补项时直接返回）。
+    _refreshStalePreviews();
   }
 
   @override
@@ -187,6 +249,7 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
     if (!mounted) return;
     _markAllStale();
     setState(() {});
+    _refreshStalePreviews();
   }
 
   void _markAllStale() {
