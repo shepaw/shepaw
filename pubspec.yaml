@@ -107,7 +107,7 @@ dependencies:
   # 人脸识别：图片解码（升为直接依赖）
   image: ^4.3.0
   connectivity_plus: ^6.1.0
-  workmanager: ^0.9.0+3
+  workmanager: 0.9.0+3
   wakelock_plus: ^1.3.3
   multicast_dns: ^0.3.3+1
   window_manager: ^0.5.2
@@ -118,6 +118,11 @@ dependency_overrides:
   # on macOS because the framework is not bundled by Flutter's build system.
   # Pin to 2.4.x which uses the older FFI approach without objective_c.dylib.
   path_provider_foundation: '>=2.4.0 <2.5.0'
+  # workmanager 0.9.x 高版本(apple 0.9.6)引入 iOS 26 API，本机 Xcode 16.2
+  # (iOS 18.2 SDK) 无法编译；钉回 iOS-26 之前的自洽版本族。
+  workmanager_apple: 0.9.1+2
+  workmanager_android: 0.9.0+2
+  workmanager_platform_interface: 0.9.1+1
 
 # Prefer OS SQLite on desktop so builds do not download GitHub native assets
 # (often blocked / timed out in restricted networks).
