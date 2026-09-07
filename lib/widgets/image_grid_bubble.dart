@@ -224,6 +224,9 @@ class _ImageGridBubbleState extends State<ImageGridBubble> {
                         Image.memory(
                           thumbBytes,
                           fit: BoxFit.cover,
+                          cacheWidth: (_thumbSize *
+                                  MediaQuery.devicePixelRatioOf(context))
+                              .round(),
                           errorBuilder: (context, error, stackTrace) {
                             return Container(
                               color: Colors.grey[300],

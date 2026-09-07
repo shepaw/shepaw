@@ -1345,6 +1345,9 @@ class ChatInputAreaState extends State<ChatInputArea> {
                   width: 80,
                   height: 80,
                   fit: BoxFit.cover,
+                  // 按 80×80 的显示尺寸解码，避免整份原图进显存。
+                  cacheWidth:
+                      (80 * MediaQuery.devicePixelRatioOf(context)).round(),
                 )
               : Container(
                   width: 80,
@@ -1646,7 +1649,10 @@ class ChatInputAreaState extends State<ChatInputArea> {
     // mounted, the resolver reads directly from the connection on each
     // keystroke, so the palette fires as soon as the agent has pushed or
     // responded with the command list.
-    if (widget.slashCommandsResolver != null) {
+    // 只在当前为空时才向连接实时取一次：resolver 的用途是补「挂载时 stream
+    // 还没建立」的首启竞态，拿到非空列表后由 stream 订阅负责更新。逐字符
+    // 解析会让每次按键都走 getACPConnection → getSlashCommandsSnapshot。
+    if (widget.slashCommandsResolver != null && _slashCommands.isEmpty) {
       _slashCommands = widget.slashCommandsResolver!();
     }
     if (_slashCommands.isEmpty) {

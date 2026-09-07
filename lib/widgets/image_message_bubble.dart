@@ -386,6 +386,7 @@ class _ImageMessageBubbleState extends State<ImageMessageBubble> {
           child: Image.memory(
             _thumbnailBytes!,
             fit: BoxFit.contain,
+            cacheWidth: _cacheWidth,
             errorBuilder: (context, error, stackTrace) {
               return _buildPlaceholder();
             },
