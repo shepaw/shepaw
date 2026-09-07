@@ -122,7 +122,6 @@ class HomeScreenState extends State<HomeScreen> {
       chatService: _chatService,
     );
     _list.setActiveSelection(widget.selectedConversation);
-    _list.addListener(_onListChanged);
     _list.attach();
     _messageSearchService = MessageSearchService(_databaseService);
     _list.refresh();
@@ -179,10 +178,6 @@ class HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  void _onListChanged() {
-    if (mounted) setState(() {});
-  }
-
   @override
   void didUpdateWidget(covariant HomeScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -202,7 +197,6 @@ class HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _searchDebounce?.cancel();
     _searchController.dispose();
-    _list.removeListener(_onListChanged);
     _list.dispose();
     super.dispose();
   }
@@ -532,7 +526,13 @@ class HomeScreenState extends State<HomeScreen> {
         // 左侧抽屉菜单 (hidden in embedded mode)
         drawer: widget.embedded ? null : _buildDrawer(),
         drawerEnableOpenDragGesture: false,
-        body: isSearching ? _buildEmbeddedSearchBody() : _buildBody(),
+        // 列表数据变化只重建 body：typing / 未读 / 草稿这类高频通知不再带动
+        // AppBar 与抽屉一起重建。
+        body: AnimatedBuilder(
+          animation: _list,
+          builder: (context, _) =>
+              isSearching ? _buildEmbeddedSearchBody() : _buildBody(),
+        ),
       ),
     );
   }
