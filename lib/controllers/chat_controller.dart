@@ -1184,6 +1184,32 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     }());
   }
 
+  /// DM 全量重拉单飞守卫（与 [_scheduleGroupReconcile] 同理）：
+  /// 一回合内 flush / 落库会多次通知，每次 reloadMessagesFromDB 都要重拉
+  /// 最多 300 行并逐行 jsonDecode，不能并发叠跑；执行中只置 queued，
+  /// 当前一轮结束后补跑一轮收敛最终状态。
+  bool _dmReloadRunning = false;
+  bool _dmReloadQueued = false;
+
+  void _scheduleDmReload() {
+    if (_dmReloadRunning) {
+      _dmReloadQueued = true;
+      return;
+    }
+    _dmReloadRunning = true;
+    unawaited(() async {
+      try {
+        await reloadMessagesFromDB();
+      } finally {
+        _dmReloadRunning = false;
+        if (_dmReloadQueued) {
+          _dmReloadQueued = false;
+          _scheduleDmReload();
+        }
+      }
+    }());
+  }
+
   void _subscribeChannelUpdates() {
     final cid = currentChannelId;
     if (cid == null) return;
@@ -1193,7 +1219,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       if (isGroupMode) {
         _scheduleGroupReconcile();
       } else {
-        unawaited(reloadMessagesFromDB());
+        _scheduleDmReload();
       }
     });
     _agentTaskCompletionSub =

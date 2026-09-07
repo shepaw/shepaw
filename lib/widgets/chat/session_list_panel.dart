@@ -151,6 +151,46 @@ class _SessionListContentState extends State<_SessionListContent> {
     super.initState();
     widget.listRefreshTick.addListener(_onExternalListRefresh);
     widget.selectionModeRequest.addListener(_onSelectionModeRequested);
+    _refreshStalePreviews();
+  }
+
+  /// 批量补齐所有过期行的预览：3 次查询替代每会话 3 次的 N×3 串行往返
+  /// （50 个会话原本是 150 次 sqflite 往返）。
+  Future<void> _refreshStalePreviews() async {
+    final ids = widget.sessions
+        .map((s) => s.id)
+        .where((id) {
+          final e = _previews[id];
+          return e == null || (e.stale && !e.refreshing);
+        })
+        .toList();
+    if (ids.isEmpty) return;
+
+    // 先标记为刷新中，避免逐行再各发起一次查询。
+    for (final id in ids) {
+      _previews.putIfAbsent(id, _PreviewEntry.new)
+        ..stale = false
+        ..refreshing = true;
+    }
+
+    try {
+      final firsts = await _databaseService.getFirstMessagesByChannels(ids);
+      final latests = await _databaseService.getLatestMessagesByChannels(ids);
+      final unreads = await _databaseService.getUnreadCountsByChannels(ids);
+      if (!mounted) return;
+      for (final id in ids) {
+        final e = _previews[id];
+        if (e == null) continue;
+        e.data = (firsts[id], latests[id], unreads[id] ?? 0);
+        e.refreshing = false;
+      }
+      setState(() {});
+    } catch (_) {
+      if (!mounted) return;
+      for (final id in ids) {
+        _previews[id]?.refreshing = false;
+      }
+    }
   }
 
   @override
@@ -166,6 +206,8 @@ class _SessionListContentState extends State<_SessionListContent> {
     // 会话被删后缓存条目随手清理
     _previews
         .removeWhere((k, _) => !widget.sessions.any((s) => s.id == k));
+    // 新增/过期的会话用批量查询补齐（无待补项时直接返回）。
+    _refreshStalePreviews();
   }
 
   @override
@@ -188,6 +230,7 @@ class _SessionListContentState extends State<_SessionListContent> {
     if (!mounted) return;
     _markAllStale();
     setState(() {});
+    _refreshStalePreviews();
   }
 
   void _markAllStale() {

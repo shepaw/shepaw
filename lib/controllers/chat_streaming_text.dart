@@ -181,9 +181,14 @@ class ChatStreamingSession {
   /// 占位），把锚点改指到同发送者的在途宿主（flush 部分行或残余占位）。
   /// 命中后返回 true。用于应用 chunk 前自愈，以及 reload 后立即恢复
   /// streaming 标记。
-  bool repointAnchor(List<Message> messages) {
+  bool repointAnchor(List<Message> messages,
+      {Map<String, Message>? messageIdMap}) {
     final id = messageId;
     if (id == null) return false;
+    // 快路径：每个 chunk 都会调一次，map 命中即可判定锚点存活，O(1)。
+    // map 未命中时仍退化为列表扫描，保证与原来的判定一致。
+    final map = messageIdMap;
+    if (map != null && map.containsKey(id)) return false;
     if (messages.any((m) => m.id == id)) return false;
     final host = ChatStreamingText.findStreamingHost(messages, fromId: fromId);
     if (host == null) return false;
@@ -202,7 +207,7 @@ class ChatStreamingSession {
   ) {
     final id = messageId;
     if (id == null) return null;
-    repointAnchor(messages);
+    repointAnchor(messages, messageIdMap: messageIdMap);
     final idx = messages.indexWhere((m) => m.id == messageId);
     if (idx == -1) return null;
     final updated = ChatStreamingText.withUpdatedContent(messages[idx], content);
@@ -223,7 +228,7 @@ class ChatStreamingSession {
   ) {
     final id = messageId;
     if (id == null) return null;
-    repointAnchor(messages);
+    repointAnchor(messages, messageIdMap: messageIdMap);
     final idx = messages.indexWhere((m) => m.id == messageId);
     if (idx == -1) return null;
     final updated = ChatStreamingText.withMergedMetadata(messages[idx], patch);

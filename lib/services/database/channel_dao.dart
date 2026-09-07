@@ -469,6 +469,44 @@ extension ChannelDao on LocalDatabaseService {
     return results.isEmpty ? null : results.first;
   }
 
+  /// 批量取多个 channel 的首条非系统消息（单次查询）。
+  ///
+  /// 语义同 [getFirstChannelMessage]：跳过 system / permission_audit。
+  /// 会话列表每行单独查一次就是 N 次串行往返，这里一次拿齐。
+  Future<Map<String, Map<String, dynamic>>> getFirstMessagesByChannels(
+      List<String> channelIds) async {
+    if (channelIds.isEmpty) return const {};
+    const skip = "m2.message_type NOT IN ('system', 'permission_audit')";
+    final db = await database;
+    final rows = await db.rawQuery(
+      'SELECT m.* FROM messages m WHERE m.channel_id IN '
+      '(${List.filled(channelIds.length, '?').join(',')}) '
+      "AND m.message_type NOT IN ('system', 'permission_audit') "
+      'AND m.id = (SELECT m2.id FROM messages m2 '
+      'WHERE m2.channel_id = m.channel_id AND $skip '
+      'ORDER BY m2.created_at ASC LIMIT 1)',
+      channelIds,
+    );
+    return {for (final r in rows) r['channel_id'] as String: r};
+  }
+
+  /// 批量取多个 channel 的最新一条消息（单次查询），语义同
+  /// [getLatestChannelMessage]。
+  Future<Map<String, Map<String, dynamic>>> getLatestMessagesByChannels(
+      List<String> channelIds) async {
+    if (channelIds.isEmpty) return const {};
+    final db = await database;
+    final rows = await db.rawQuery(
+      'SELECT m.* FROM messages m WHERE m.channel_id IN '
+      '(${List.filled(channelIds.length, '?').join(',')}) '
+      'AND m.id = (SELECT m2.id FROM messages m2 '
+      'WHERE m2.channel_id = m.channel_id '
+      'ORDER BY m2.created_at DESC LIMIT 1)',
+      channelIds,
+    );
+    return {for (final r in rows) r['channel_id'] as String: r};
+  }
+
   /// Agent 所有 DM 会话中最新一条消息（跨会话，用于列表排序/预览）。
   Future<Map<String, dynamic>?> getLatestMessageForAgent(String agentId) async {
     final db = await database;
