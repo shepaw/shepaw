@@ -20,6 +20,9 @@ const _kSqlExcludeStreamingUnreadBare = r'''
   )
 ''';
 
+/// `IN (?, ?, ...)` 单批的 id 数量上限，留出余量以避开 SQLite 绑定变量上限。
+const int _kSqlChunkSize = 500;
+
 /// Channel / 成员 / 会话相关的数据访问层。
 extension ChannelDao on LocalDatabaseService {
   /// 创建 Channel
@@ -365,6 +368,21 @@ extension ChannelDao on LocalDatabaseService {
     return channels;
   }
 
+  /// 获取某个群家族下所有会话的 id（含群本身与全部子会话），单次查询。
+  ///
+  /// [getGroupSessions] 会逐条加载成员（1+2N 次往返），但会话列表只用 id 去
+  /// 批量查未读数。这里固定 1 次查询，顺序与 [getGroupSessions] 一致。
+  Future<List<String>> getGroupSessionIds(String parentGroupId) async {
+    final db = await database;
+    final results = await db.rawQuery(
+      'SELECT c.id FROM channels c '
+      "WHERE c.type = 'group' AND (c.id = ? OR c.parent_group_id = ?) "
+      'ORDER BY c.created_at DESC',
+      [parentGroupId, parentGroupId],
+    );
+    return results.map((r) => r['id'] as String).toList();
+  }
+
   /// 获取某个群聊家族中最近活跃的会话（按 updated_at 排序）
   Future<String?> getLatestActiveGroupChannel(String parentGroupId) async {
     final db = await database;
@@ -614,16 +632,24 @@ extension ChannelDao on LocalDatabaseService {
       List<String> channelIds) async {
     if (channelIds.isEmpty) return const {};
     final db = await database;
-    final rows = await db.rawQuery(
-      'SELECT channel_id, COUNT(*) AS count FROM messages '
-      'WHERE channel_id IN (${List.filled(channelIds.length, '?').join(',')}) '
-      'AND is_read = 0 AND sender_type != ?'
-      '$_kSqlExcludeStreamingUnreadBare',
-      [...channelIds, 'user'],
-    );
-    return {
-      for (final r in rows) r['channel_id'] as String: (r['count'] as int?) ?? 0,
-    };
+    final counts = <String, int>{};
+    // 绑定变量数量受 SQLite 上限约束（老设备常见 999），会话数多时分片查询。
+    for (var start = 0; start < channelIds.length; start += _kSqlChunkSize) {
+      var end = start + _kSqlChunkSize;
+      if (end > channelIds.length) end = channelIds.length;
+      final chunk = channelIds.sublist(start, end);
+      final rows = await db.rawQuery(
+        'SELECT channel_id, COUNT(*) AS count FROM messages '
+        'WHERE channel_id IN (${List.filled(chunk.length, '?').join(',')}) '
+        'AND is_read = 0 AND sender_type != ?'
+        '$_kSqlExcludeStreamingUnreadBare',
+        [...chunk, 'user'],
+      );
+      for (final r in rows) {
+        counts[r['channel_id'] as String] = (r['count'] as int?) ?? 0;
+      }
+    }
+    return counts;
   }
 
   /// 标记 channel 所有消息为已读

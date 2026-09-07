@@ -223,23 +223,15 @@ class ConversationListController extends ChangeNotifier {
     }
 
     try {
-      final agents = _visibleOnThisApp(await _apiService.getAgents());
-      await _loadAgentPreviews(agents);
-
-      final allChannels = await _databaseService.getAllChannels();
-      final groups =
-          allChannels.where((c) => c.isGroup && c.parentGroupId == null).toList();
-      await _loadGroupPreviews(groups);
-
-      List<PairedPeer> peers = [];
-      try {
-        peers = await PeerConnectionManager.instance.getAllPeers();
-        final liveIds = peers.map((p) => p.id).toSet();
-        _peerLatestContent.removeWhere((id, _) => !liveIds.contains(id));
-        _peerLatestTime.removeWhere((id, _) => !liveIds.contains(id));
-        _peerUnreadCounts.removeWhere((id, _) => !liveIds.contains(id));
-        await _loadPeerPreviews(peers);
-      } catch (_) {}
+      // 三路数据源互不依赖，并行拉取：串行会把各自的往返时间累加。
+      final results = await Future.wait<List<Object>>([
+        _loadAgents(),
+        _loadGroups(),
+        _loadPeers(),
+      ]);
+      final agents = results[0] as List<Agent>;
+      final groups = results[1] as List<Channel>;
+      final peers = results[2] as List<PairedPeer>;
 
       if (_disposed) return;
       _agents = agents;
@@ -291,99 +283,108 @@ class ConversationListController extends ChangeNotifier {
   }
 
   Future<void> _refreshAgentPreviews(Set<String> agentIds) async {
-    const userId = 'user';
-    for (final agentId in agentIds) {
-      final activeChannelId =
-          await _chatService.getLatestActiveChannelId(userId, agentId);
-      final channelId =
-          activeChannelId ?? _chatService.generateChannelId(userId, agentId);
-      final latestMsg =
-          await _databaseService.getLatestMessageForAgent(agentId);
-      var unreadCount =
-          await _databaseService.getUnreadCountForAgent(agentId);
-      _agentChannelIds[agentId] = channelId;
-      _latestMessages[agentId] = latestMsg;
-      // 用户正在该频道里查看 → 角标按 0 计。
-      if (AppLifecycleService().activeChannelId == channelId) {
-        unreadCount = 0;
-      }
-      _unreadCounts[agentId] = unreadCount;
-    }
+    await Future.wait(agentIds.map(_loadAgentPreview));
     if (_disposed) return;
     _rebuildEntries();
     notifyListeners();
   }
 
   Future<void> _refreshGroupPreviews(Set<String> channelIds) async {
-    for (final group in _groupChannels) {
-      final sessionIds = _groupSessionChannelIds[group.id] ?? {};
-      if (channelIds.intersection(sessionIds).isEmpty) continue;
+    final affected = _groupChannels.where((group) {
+      final sessionIds = _groupSessionChannelIds[group.id] ?? const {};
+      return channelIds.intersection(sessionIds).isNotEmpty;
+    }).toList();
+    if (affected.isEmpty) return;
 
-      final sessions =
-          await _databaseService.getGroupSessions(group.groupFamilyId);
-      int totalUnread = 0;
-      final activeChannelId = await _databaseService
-          .getLatestActiveGroupChannel(group.groupFamilyId);
-
-      for (final session in sessions) {
-        var unread =
-            await _databaseService.getUnreadCountByChannel(session.id);
-        if (session.id == AppLifecycleService().activeChannelId) unread = 0;
-        totalUnread += unread;
-      }
-
-      if (activeChannelId != null) {
-        _groupChannelIds[group.id] = activeChannelId;
-        _groupChannelIds[group.groupFamilyId] = activeChannelId;
-      }
-      _groupLatestMessages[group.id] = await _databaseService
-          .getLatestMessageForGroupFamily(group.groupFamilyId);
-      _groupUnreadCounts[group.id] = totalUnread;
-    }
+    await _loadGroupPreviews(affected);
     if (_disposed) return;
     _rebuildEntries();
     notifyListeners();
   }
 
-  Future<void> _loadAgentPreviews(List<Agent> agents) async {
-    const userId = 'user';
-    for (final agent in agents) {
-      final activeChannelId =
-          await _chatService.getLatestActiveChannelId(userId, agent.id);
-      final channelId =
-          activeChannelId ?? _chatService.generateChannelId(userId, agent.id);
-      final latestMsg =
-          await _databaseService.getLatestMessageForAgent(agent.id);
-      var unreadCount =
-          await _databaseService.getUnreadCountForAgent(agent.id);
-      _agentChannelIds[agent.id] = channelId;
-      _latestMessages[agent.id] = latestMsg;
-      if (AppLifecycleService().activeChannelId == channelId) {
-        unreadCount = 0;
-      }
-      _unreadCounts[agent.id] = unreadCount;
+  Future<List<Agent>> _loadAgents() async {
+    final agents = _visibleOnThisApp(await _apiService.getAgents());
+    await _loadAgentPreviews(agents);
+    return agents;
+  }
+
+  /// 只取顶层群聊：getAllChannels 会为每个会话串行查成员（1+2N 次往返，N 为
+  /// 全部会话数），而会话列表只需要群本身。
+  Future<List<Channel>> _loadGroups() async {
+    final groups = await _databaseService.getTopLevelGroups();
+    await _loadGroupPreviews(groups);
+    return groups;
+  }
+
+  /// 已配对设备；P2P 不可用时静默降级为空列表。
+  Future<List<PairedPeer>> _loadPeers() async {
+    try {
+      final peers = await PeerConnectionManager.instance.getAllPeers();
+      final liveIds = peers.map((p) => p.id).toSet();
+      _peerLatestContent.removeWhere((id, _) => !liveIds.contains(id));
+      _peerLatestTime.removeWhere((id, _) => !liveIds.contains(id));
+      _peerUnreadCounts.removeWhere((id, _) => !liveIds.contains(id));
+      await _loadPeerPreviews(peers);
+      return peers;
+    } catch (_) {
+      return const [];
     }
   }
 
-  Future<void> _loadGroupPreviews(List<Channel> groups) async {
-    for (final group in groups) {
-      final sessions =
-          await _databaseService.getGroupSessions(group.groupFamilyId);
-      int totalUnread = 0;
+  Future<void> _loadAgentPreviews(List<Agent> agents) async {
+    await Future.wait(agents.map((agent) => _loadAgentPreview(agent.id)));
+  }
 
-      _groupSessionChannelIds[group.id] = {
-        group.id,
-        ...sessions.map((s) => s.id),
-      };
+  /// 单个 agent 的 DM 预览：活跃频道 / 最新消息 / 未读数。
+  ///
+  /// 逐 agent 串行是 3N 次 sqflite 往返，并发后整体等待时间接近一次往返。
+  Future<void> _loadAgentPreview(String agentId) async {
+    const userId = 'user';
+    final activeChannelId =
+        await _chatService.getLatestActiveChannelId(userId, agentId);
+    final channelId =
+        activeChannelId ?? _chatService.generateChannelId(userId, agentId);
+    final latestMsg =
+        await _databaseService.getLatestMessageForAgent(agentId);
+    var unreadCount =
+        await _databaseService.getUnreadCountForAgent(agentId);
+    _agentChannelIds[agentId] = channelId;
+    _latestMessages[agentId] = latestMsg;
+    // 用户正在该频道里查看 → 角标按 0 计。
+    if (AppLifecycleService().activeChannelId == channelId) {
+      unreadCount = 0;
+    }
+    _unreadCounts[agentId] = unreadCount;
+  }
+
+  Future<void> _loadGroupPreviews(List<Channel> groups) async {
+    if (groups.isEmpty) return;
+
+    // 会话列表只用到会话 id，成员不参与预览/未读计算，因此走只取 id 的批量
+    // 查询：每个群 1 次，而非 getGroupSessions 的 1+2N 次。
+    final sessionIdsByGroup = <String, List<String>>{};
+    await Future.wait(groups.map((group) async {
+      sessionIdsByGroup[group.id] =
+          await _databaseService.getGroupSessionIds(group.groupFamilyId);
+    }));
+
+    final allSessionIds = <String>[
+      for (final ids in sessionIdsByGroup.values) ...ids,
+    ];
+    final unreadByChannel =
+        await _databaseService.getUnreadCountsByChannels(allSessionIds);
+
+    await Future.wait(groups.map((group) async {
+      final sessionIds = sessionIdsByGroup[group.id] ?? const [];
+      _groupSessionChannelIds[group.id] = {...sessionIds};
 
       final activeChannelId = await _databaseService
           .getLatestActiveGroupChannel(group.groupFamilyId);
 
-      for (final session in sessions) {
-        var unread =
-            await _databaseService.getUnreadCountByChannel(session.id);
-        if (session.id == AppLifecycleService().activeChannelId) unread = 0;
-        totalUnread += unread;
+      var totalUnread = 0;
+      for (final sessionId in sessionIds) {
+        if (sessionId == AppLifecycleService().activeChannelId) continue;
+        totalUnread += unreadByChannel[sessionId] ?? 0;
       }
 
       if (activeChannelId != null) {
@@ -393,26 +394,26 @@ class ConversationListController extends ChangeNotifier {
       _groupLatestMessages[group.id] = await _databaseService
           .getLatestMessageForGroupFamily(group.groupFamilyId);
       _groupUnreadCounts[group.id] = totalUnread;
-    }
+    }));
   }
 
   Future<void> _loadPeerPreviews(List<PairedPeer> peers) async {
     final storage = PeerStorageService();
     final myDeviceId = await PeerPairingService.instance.getDeviceId();
-    for (final peer in peers) {
-      final messages = await storage.getMessages(peer.id, limit: 1);
-      if (messages.isNotEmpty) {
-        _peerLatestContent[peer.id] = messages.first.content;
-        _peerLatestTime[peer.id] = messages.first.timestamp;
-      }
+    // 单次查询同时给出最新预览与未读数：getMessages 按 timestamp DESC 排序，
+    // 首条即最新消息，无需再单独查一次 limit:1。
+    await Future.wait(peers.map((peer) async {
       final recent = await storage.getMessages(peer.id, limit: 100);
-      final unread = recent
+      if (recent.isNotEmpty) {
+        _peerLatestContent[peer.id] = recent.first.content;
+        _peerLatestTime[peer.id] = recent.first.timestamp;
+      }
+      _peerUnreadCounts[peer.id] = recent
           .where((m) =>
               m.senderId != myDeviceId &&
               m.delivery != PeerMessageDelivery.read)
           .length;
-      _peerUnreadCounts[peer.id] = unread;
-    }
+    }));
   }
 
   void _runHealthCheckInBackground() {
