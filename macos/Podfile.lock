@@ -142,7 +142,7 @@ EXTERNAL SOURCES:
 SPEC CHECKSUMS:
   audioplayers_darwin: f15e209a3e856d1a7edcf98dc029f484fead2242
   connectivity_plus: 0a976dfd033b59192912fa3c6c7b54aab5093802
-  desktop_multi_window: 566489c048b501134f9d7fb6a2354c60a9126486
+  desktop_multi_window: d3d11c0c355f438e201de7c57569f95826ff97ba
   emoji_picker_flutter: 533634326b1c5de9a181ba14b9758e6dfe967a20
   file_picker: e716a70a9fe5fd9e09ebc922d7541464289443af
   file_selector_macos: 3e56eaea051180007b900eacb006686fd54da150
