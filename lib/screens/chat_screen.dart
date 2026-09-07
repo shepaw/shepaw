@@ -2479,16 +2479,9 @@ class _ChatScreenState extends State<ChatScreen>
   Future<List<Channel>> _sortSessionsByLatestMessage(
     List<Channel> sessions,
   ) async {
-    final times = <String, DateTime>{};
-    await Future.wait(sessions.map((s) async {
-      final latest =
-          await _controller.localDatabaseService.getLatestChannelMessage(s.id);
-      final created = latest?['created_at'] as String?;
-      if (created != null) {
-        final t = DateTime.tryParse(created);
-        if (t != null) times[s.id] = t;
-      }
-    }));
+    // 单次查询取全部会话的最新消息时间，替代逐条查询的 N 次往返。
+    final times = await _controller.localDatabaseService
+        .getLatestMessageTimesByChannels(sessions.map((s) => s.id).toList());
     final sorted = [...sessions];
     sorted.sort((a, b) {
       final ta =

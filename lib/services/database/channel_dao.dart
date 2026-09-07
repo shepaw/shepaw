@@ -71,6 +71,31 @@ extension ChannelDao on LocalDatabaseService {
     return channels;
   }
 
+  /// 获取顶层群聊（不含群子会话），成员一次性批量加载。
+  ///
+  /// 通讯录只需要 `type = 'group' AND parent_group_id IS NULL` 的会话。走
+  /// [getAllChannels] 会把全部 DM / 群子会话 / She 中转会话一并拉出，并对
+  /// 每个会话串行查成员（1 + 2N 次 sqflite 往返，N 为会话数），是打开通讯录
+  /// 的主要耗时来源。这里固定 2 次查询完成。
+  Future<List<Channel>> getTopLevelGroups() async {
+    final db = await database;
+    final results = await db.query(
+      'channels',
+      where: "type = 'group' AND parent_group_id IS NULL",
+      orderBy: 'created_at DESC',
+    );
+    if (results.isEmpty) return const [];
+
+    final membersByChannel = await _loadMembersByChannel(
+      db,
+      results.map((m) => m['id'] as String).toList(),
+    );
+    return [
+      for (final map in results)
+        _channelFromMap(map, membersByChannel[map['id'] as String] ?? const []),
+    ];
+  }
+
   /// 根据 ID 获取 Channel
   Future<Channel?> getChannelById(String id) async {
     final db = await database;
@@ -364,12 +389,38 @@ extension ChannelDao on LocalDatabaseService {
       ORDER BY c.updated_at DESC
     ''', [agentId]);
 
-    List<Channel> channels = [];
-    for (final map in results) {
-      final members = await getChannelMembers(map['id'] as String);
-      channels.add(_channelFromMap(map, members));
+    // 与 getTopLevelGroups 同源：批量取成员，避免 1+2N 次串行往返。
+    final membersByChannel = await _loadMembersByChannel(
+      db,
+      results.map((m) => m['id'] as String).toList(),
+    );
+    return [
+      for (final map in results)
+        _channelFromMap(map, membersByChannel[map['id'] as String] ?? const []),
+    ];
+  }
+
+  /// 批量取多个 channel 的最新消息时间（单次查询）。
+  ///
+  /// 会话列表排序只需要时间戳，逐条 [getLatestChannelMessage] 的 N 次往返
+  /// 是打开会话列表卡顿的另一半来源。created_at 是 ISO 文本，MAX 即最新。
+  /// 返回的 map 不含没有任何消息的 channel。
+  Future<Map<String, DateTime>> getLatestMessageTimesByChannels(
+      List<String> channelIds) async {
+    if (channelIds.isEmpty) return const {};
+    final db = await database;
+    final rows = await db.rawQuery(
+      'SELECT channel_id, MAX(created_at) AS latest FROM messages '
+      'WHERE channel_id IN (${List.filled(channelIds.length, '?').join(',')}) '
+      'GROUP BY channel_id',
+      channelIds,
+    );
+    final times = <String, DateTime>{};
+    for (final r in rows) {
+      final t = DateTime.tryParse(r['latest'] as String? ?? '');
+      if (t != null) times[r['channel_id'] as String] = t;
     }
-    return channels;
+    return times;
   }
 
   /// 获取 channel 的 updated_at（会话活跃时间：创建/进入/发消息都会刷新）。
@@ -516,6 +567,27 @@ extension ChannelDao on LocalDatabaseService {
     return (result.first['count'] as int?) ?? 0;
   }
 
+  /// 批量统计多个 channel 的未读数（单次查询）。
+  ///
+  /// 替代调用方逐个调用 [getUnreadCountByChannel] 的 N 次串行往返——会话列表
+  /// 「更多」菜单要统计总未读，逐条查会明显卡顿。返回的 map 不含未读为 0
+  /// 的 channel。
+  Future<Map<String, int>> getUnreadCountsByChannels(
+      List<String> channelIds) async {
+    if (channelIds.isEmpty) return const {};
+    final db = await database;
+    final rows = await db.rawQuery(
+      'SELECT channel_id, COUNT(*) AS count FROM messages '
+      'WHERE channel_id IN (${List.filled(channelIds.length, '?').join(',')}) '
+      'AND is_read = 0 AND sender_type != ?'
+      '$_kSqlExcludeStreamingUnreadBare',
+      [...channelIds, 'user'],
+    );
+    return {
+      for (final r in rows) r['channel_id'] as String: (r['count'] as int?) ?? 0,
+    };
+  }
+
   /// 标记 channel 所有消息为已读
   Future<void> markChannelMessagesAsRead(String channelId) async {
     final db = await database;
@@ -526,6 +598,42 @@ extension ChannelDao on LocalDatabaseService {
       whereArgs: [channelId],
     );
   }
+}
+
+/// 批量加载多个 channel 的成员：单次查询覆盖全部，替代逐条 [ChannelDao
+/// .getChannelMembers] 的 1+2N 次串行往返。
+///
+/// `channel_members` 无 type 列，用 EXISTS 判定 agent_id 是否存在于 agents
+/// 表（与 getChannelMembers 一致）；顺序按 rowid，与该方法的返回顺序相同。
+/// 返回的 map 不含无成员的 channel。
+Future<Map<String, List<ChannelMember>>> _loadMembersByChannel(
+    Database db, List<String> channelIds) async {
+  if (channelIds.isEmpty) return const {};
+  final rows = await db.rawQuery(
+    'SELECT cm.channel_id AS channel_id, cm.agent_id AS agent_id, '
+    'cm.role AS role, cm.group_bio AS group_bio, cm.joined_at AS joined_at, '
+    'EXISTS(SELECT 1 FROM agents a WHERE a.id = cm.agent_id) AS is_agent '
+    'FROM channel_members cm '
+    'WHERE cm.channel_id IN (${List.filled(channelIds.length, '?').join(',')}) '
+    'ORDER BY cm.id',
+    channelIds,
+  );
+
+  final byChannel = <String, List<ChannelMember>>{};
+  for (final r in rows) {
+    byChannel.putIfAbsent(r['channel_id'] as String, () => []).add(
+          ChannelMember(
+            id: r['agent_id'] as String,
+            type: (r['is_agent'] as int) == 1 ? 'agent' : 'user',
+            role: r['role'] as String? ?? 'member',
+            groupBio: r['group_bio'] as String?,
+            joinedAt: DateTime.tryParse(r['joined_at'] as String? ?? '')
+                    ?.millisecondsSinceEpoch ??
+                0,
+          ),
+        );
+  }
+  return byChannel;
 }
 
 Channel _channelFromMap(Map<String, dynamic> map, List<ChannelMember> members) {

@@ -35,12 +35,20 @@ class LocalDatabaseService {
   LocalDatabaseService._internal();
 
   Database? _database;
+  Future<Database>? _databaseFuture;
 
   /// 获取数据库实例
+  ///
+  /// 缓存的是 Future 而非实例：并发首次访问（如通讯录并行加载 agents 与群聊）
+  /// 只会触发一次 openDatabase。打开失败时清空缓存，保留原有重试行为。
   Future<Database> get database async {
-    if (_database != null) return _database!;
-    _database = await _initDatabase();
-    return _database!;
+    final opening = _databaseFuture ??= _initDatabase();
+    try {
+      return _database ??= await opening;
+    } catch (_) {
+      _databaseFuture = null;
+      rethrow;
+    }
   }
 
   /// 初始化数据库
@@ -889,9 +897,11 @@ class LocalDatabaseService {
 
   /// 关闭数据库
   Future<void> close() async {
-    if (_database != null) {
-      await _database!.close();
-      _database = null;
+    final db = _database;
+    _database = null;
+    _databaseFuture = null;
+    if (db != null) {
+      await db.close();
     }
   }
 

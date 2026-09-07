@@ -56,6 +56,26 @@ class ContactsScreen extends StatefulWidget {
 
 enum _ContactsSection { groups, local }
 
+/// 一次加载完成后的数据快照。
+class _ContactsSnapshot {
+  final List<Agent> agents;
+  final List<Channel> groups;
+  final List<PairedPeer> peers;
+  final String? masterId;
+
+  const _ContactsSnapshot({
+    required this.agents,
+    required this.groups,
+    required this.peers,
+    required this.masterId,
+  });
+}
+
+/// 进程内缓存：桌面端切走再切回、移动端 push/pop 都会重建 State，缓存让首帧
+/// 直接用上次结果渲染，随后再静默刷新，不必每次打开通讯录都转圈等数据库。
+/// 仅用于首帧快速渲染，不替代刷新——数据仍会在后台重新拉取。
+_ContactsSnapshot? _cachedSnapshot;
+
 class ContactsScreenState extends State<ContactsScreen> {
   /// 折叠箭头列宽 + 间距，使子项头像与父节点头像左对齐。
   static const double _rowPadH = 12;
@@ -86,7 +106,9 @@ class ContactsScreenState extends State<ContactsScreen> {
 
   StreamSubscription<void>? _peerListSub;
 
-  Future<void> reload() => _loadData();
+  /// 外部（桌面端新建助手/群/配对后）触发的刷新：列表已有内容，静默更新即可，
+  /// 不必把整页换成转圈。
+  Future<void> reload() => _loadData(quiet: true);
 
   @override
   void initState() {
@@ -97,7 +119,18 @@ class ContactsScreenState extends State<ContactsScreen> {
         setState(() => _query = next);
       }
     });
-    _loadData();
+    final cached = _cachedSnapshot;
+    if (cached == null) {
+      _loadData();
+    } else {
+      _agents = cached.agents;
+      _groups = cached.groups;
+      _peers = cached.peers;
+      _masterId = cached.masterId;
+      _isLoading = false;
+      // 已有缓存：先渲染，再在后台静默刷新。
+      _loadData(quiet: true);
+    }
     _peerListSub = PeerConnectionManager.instance.peerListChanged.listen((_) {
       _loadData(quiet: true);
     });
@@ -125,26 +158,26 @@ class ContactsScreenState extends State<ContactsScreen> {
   Future<void> _loadData({bool quiet = false}) async {
     if (!quiet && mounted) setState(() => _isLoading = true);
     try {
-      final agents = await _apiService.getAgents();
-      final allChannels = await _databaseService.getAllChannels();
-      final groups = allChannels
-          .where((c) => c.isGroup && c.parentGroupId == null)
-          .toList();
+      // 三路互不依赖，并行等待；任一路失败由下面的 catch 统一处理。
+      final (agents, groups, peerSnapshot) = await (
+        _apiService.getAgents(),
+        _databaseService.getTopLevelGroups(),
+        _loadPeers(),
+      ).wait;
 
-      List<PairedPeer> peers = [];
-      String? masterId;
-      try {
-        await PeerConnectionManager.instance.start();
-        peers = await PeerConnectionManager.instance.getAllPeers();
-        masterId = await StoreService.instance.masterDeviceId();
-      } catch (_) {}
+      _cachedSnapshot = _ContactsSnapshot(
+        agents: agents,
+        groups: groups,
+        peers: peerSnapshot.peers,
+        masterId: peerSnapshot.masterId,
+      );
 
       if (mounted) {
         setState(() {
           _agents = agents;
           _groups = groups;
-          _peers = peers;
-          _masterId = masterId;
+          _peers = peerSnapshot.peers;
+          _masterId = peerSnapshot.masterId;
           _isLoading = false;
         });
       }
@@ -153,6 +186,18 @@ class ContactsScreenState extends State<ContactsScreen> {
       if (mounted) {
         setState(() => _isLoading = false);
       }
+    }
+  }
+
+  /// 已配对设备与主机 ID。Peer 子系统不可用时退化为空，不影响其余部分显示。
+  Future<({List<PairedPeer> peers, String? masterId})> _loadPeers() async {
+    try {
+      await PeerConnectionManager.instance.start();
+      final peers = await PeerConnectionManager.instance.getAllPeers();
+      final masterId = await StoreService.instance.masterDeviceId();
+      return (peers: peers, masterId: masterId);
+    } catch (_) {
+      return (peers: const <PairedPeer>[], masterId: null);
     }
   }
 
