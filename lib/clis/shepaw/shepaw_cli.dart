@@ -14,6 +14,7 @@ import 'external_cli_namespace.dart';
 import 'store/store_namespace.dart';
 import 'instructions/instructions_namespace.dart';
 import 'vision/vision_namespace.dart';
+import 'models/models_namespace.dart';
 import '../../services/logger_service.dart';
 import '../../services/cli_command_config_service.dart';
 import '../../services/cli_tool_registry.dart';
@@ -39,6 +40,8 @@ import '../../services/cli_tool_registry.dart';
 ///             web.config  Web 工具配置管理
 ///   skills    已加载的 LLM 技能库（user-imported skills）
 ///   os        直接操作系统工具（shell/file/app/clipboard/process/macos）
+///   models    AI 模型配置（list / providers / add / update / remove / agent-main）
+///             — 查服务商预设、增删改模型、指派给 Agent 当主模型
 ///
 /// ─── ℹ️ META 层（系统元信息和诊断）─────────────────────────
 ///   meta      系统信息、时间（system.* / datetime）
@@ -74,6 +77,8 @@ class ShepawCLI {
     'instructions': InstructionsNamespace.instance,
     // 设备端人脸识别（参考相册 + 结构化视觉档案）
     'vision': VisionNamespace.instance,
+    // AI 模型定义与配置（provider 预设 / 增删改 / 指派给 Agent 主模型）
+    'models': ModelsNamespace.instance,
 
     // ── ℹ️ META 层 - 系统元信息和诊断 ───────────────────────────────────────────
     'meta': MetaNamespace.instance,
@@ -136,7 +141,14 @@ class ShepawCLI {
       'Reusable tasks: when the user asks to save or generate an instruction from a task, '
       'call namespace=instructions subcommand=save (flags name=, content=, desc=) — it records '
       'you as the owning agent, and instructions run later auto-routes execution back to you. '
-      'Use instructions list / get / update / delete / run to manage and execute the instruction set.';
+      'Use instructions list / get / update / delete / run to manage and execute the instruction set. '
+      'Model configuration: when the user asks to configure AI models — e.g. a provider like '
+      'DeepSeek just released a model and they want it set up, or they want to switch which '
+      'model an agent chats with — call namespace=models (subcommands: list / providers / '
+      'add / update / remove / agent-main; pass flags {"help": ""} for usage). '
+      'Start with "shepaw models list"; verify brand-new model ids from the provider '
+      'docs via web search, then add with namespace=models subcommand=add. Confirm '
+      'changes with the user; never print API keys (outputs expose only has_api_key).';
 
   /// 动态生成工具描述（包含外部工具信息）
   String _buildToolDescription() {
@@ -207,7 +219,8 @@ class ShepawCLI {
     final flags = _parseFlags(args['flags']);
 
     LoggerService().info(
-        'shepaw $namespace ${subcommand.isNotEmpty ? subcommand : ""} $flags [agentId=$agentId]',
+        'shepaw $namespace ${subcommand.isNotEmpty ? subcommand : ""} '
+        '${_redactSensitiveFlags(flags)} [agentId=$agentId]',
         tag: 'Paw');
 
     try {
@@ -296,6 +309,24 @@ class ShepawCLI {
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
+
+  /// 日志脱敏：API Key / token / password 等敏感 flag 值不落日志。
+  ///
+  /// 不做全量 key 名（如 memory `--key soul` 是普通字段）；只处理明确表示
+  /// 凭据的 flag。
+  Map<String, String> _redactSensitiveFlags(Map<String, String> flags) {
+    if (flags.isEmpty) return flags;
+    const sensitiveKeys = {'api_key', 'token', 'password', 'secret'};
+    if (!flags.keys.any(sensitiveKeys.contains)) return flags;
+    final copy = Map<String, String>.from(flags);
+    for (final key in copy.keys.toList()) {
+      final v = copy[key];
+      if (sensitiveKeys.contains(key) && v != null && v.isNotEmpty) {
+        copy[key] = '<redacted>';
+      }
+    }
+    return copy;
+  }
 
   /// 构建命令 ID（用于权限检查）
   /// 格式：namespace.subcommand（如 'context.profile.query'）

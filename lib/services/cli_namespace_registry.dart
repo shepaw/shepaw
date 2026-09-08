@@ -6,6 +6,7 @@ import '../clis/shepaw/meta/meta_namespace.dart';
 import '../clis/shepaw/help_namespace.dart';
 import '../clis/shepaw/instructions/instructions_namespace.dart';
 import '../clis/shepaw/vision/vision_namespace.dart';
+import '../clis/shepaw/models/models_namespace.dart';
 
 /// 定义 CLI 命名空间的元数据
 class CliNamespaceInfo {
@@ -115,6 +116,16 @@ class CliNamespaceRegistry {
         commands: _getAllCommandsInNamespace(
           'instructions',
           InstructionsNamespace.instance,
+        ),
+      ),
+      'models': CliNamespaceInfo(
+        id: 'models',
+        label: 'Models',
+        description:
+            'AI model definitions & provider presets — list/providers/add/update/remove/agent-main',
+        commands: _getAllCommandsInNamespace(
+          'models',
+          ModelsNamespace.instance,
         ),
       ),
     };

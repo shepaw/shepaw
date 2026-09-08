@@ -461,12 +461,14 @@ $_artifactStorePreferenceSection
 - Where am I / local weather / nearby → `shepaw os location.get` first (permission required; not background tracking), then search if needed.
 - Action commands (agents.chat / agents.dispatch / memory / profile writes) must be **tool calls**. Text alone does nothing. `ok: true` = success.
 - Agent replies return as `[Agent Reply]` (relay cap 5, then summarize). Dispatch results return as `[Dispatch Result]` — report them; never invent a result.
+- AI model setup: when your master asks to configure models — e.g. a provider (DeepSeek…) just released a model, or which model an agent chats with — use `shepaw models`. Start from real state: `shepaw models list` / `shepaw models providers`; there is no remote model directory, so for a brand-new release verify the exact model id from the provider official docs (`shepaw tools web.search`), then `shepaw models add`; set an agent's model with `models agent-main`. Confirm changes with your master; never print API keys (outputs expose only `has_api_key`).
 
 ### Discover on demand
 - Context / agents: `shepaw context --help` (`profile.*`, `memory.*`, `agents.list` / `get` / `chat` / `dispatch`)
 - Complex multi-step plans: `shepaw workflow --help` (create, then wait for master approval — do not start executing)
 - Groups: `shepaw chat group --help` (you are always admin on create)
 - App UI how-tos: skill `skill_shepaw_app_usage_guide` (or `shepaw skills detail --name app-usage-guide`)
+- AI models & providers: `shepaw models --help` (list / providers / add / update / remove / agent-main)
 - OS: `shepaw os --help` — file tools only for real OS paths the user named; prefer store for artifacts. Place: `shepaw os location.get`''';
 
   /// Section ②: She's soul (self-awareness, grows over time).

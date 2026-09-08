@@ -2,7 +2,7 @@
 
 ## Overview
 
-ShePaw CLI is a hierarchical, modular command-line interface system built on an abstract base class architecture. It enables She (the AI assistant) to query and modify local data through LLM function calling.
+ShePaw CLI is a hierarchical, modular command-line interface system built on an abstract base class architecture. It enables She (the AI assistant) to query and modify local data through LLM function calling. The `shepaw <namespace> <subcommand>` tool tree includes a `models` namespace so She can also **configure AI models for the user** — inspect provider presets and current definitions, add/update/remove model definitions (with securely stored API keys), and assign a model as an agent's main chat model (e.g. when DeepSeek releases a new model).
 
 ## Directory Structure
 
@@ -33,6 +33,18 @@ lib/clis/
     │   ├── channels_command.dart
     │   ├── messages_command.dart
     │   └── chat_command.dart
+    │
+    ├── models/                # Model configuration namespace (model definitions,
+    │   │                      #  provider presets, per-agent main model)
+    │   ├── models_namespace.dart
+    │   ├── list_command.dart
+    │   ├── show_command.dart
+    │   ├── providers_command.dart
+    │   ├── add_command.dart
+    │   ├── update_command.dart
+    │   ├── remove_command.dart
+    │   ├── agent_main_command.dart
+    │   └── models_cli_helpers.dart
     │
     ├── messages/              # Messages namespace (2 files)
     │   ├── messages_namespace.dart
@@ -386,6 +398,44 @@ class DatetimeNamespace extends CliNamespace {
 4. **Document with examples**: Help text should include realistic command usage
 5. **Keep commands focused**: One command = one atomic operation
 6. **Use lazy initialization**: Create command instances in namespace's `commands` getter, not at class level
+
+## Model Configuration (`shepaw models`)
+
+The `models` namespace lets She help the user configure AI models from chat. It is
+registered as a top-level namespace in `ShepawCLI._namespaces` (and surfaced in
+`CliNamespaceRegistry` for command-permission UIs).
+
+### Commands
+
+| Command | Purpose |
+|---------|---------|
+| `shepaw models list` | List configured model definitions (sanitized — never API keys) + which agents use each one |
+| `shepaw models show --id <id>` | Full detail of one definition (sanitized) |
+| `shepaw models providers` | Built-in LLM provider presets (api base / protocol type / key policy) + configuration facts |
+| `shepaw models add --provider <label> --name <model>` | Create a definition (auto provider presets, auto key reuse by api base, duplicate-guarded) |
+| `shepaw models update --id <id> ...` | Update fields incl. securely-stored API key (`--api_key`, `--clear_api_key`) |
+| `shepaw models remove --id <id> [--yes]` | Delete (refused while agents still reference it, unless `--yes`) |
+| `shepaw models agent-main --agent <id\|name> --model <id\|model>` | Set/switch/unset an agent's main chat model (`metadata['main_model_id']`, same field as the agent editor) |
+
+### What She needs to know (knowledge content)
+
+Runtime guidance lives in `ModelsNamespace.getHelpAsync()` (`what_she_needs_to_know`,
+`rules`, `workflow_deepseek_example`) plus the `shepaw` tool description and She's
+meta-cognition block in `she_service.dart`. Key facts encoded there:
+
+1. **State first**: `models list` / `models providers` before assuming anything; a model only
+   matters once referenced by an agent (`main_model_id` / `scenario_models`).
+2. **Sources of truth for "newest model"**: there is no built-in remote model directory —
+   verify a brand-new release's exact model id against the provider's official docs via
+   `tools web.search`, then `models add` — never guess a model id.
+3. **Secrets**: API keys are stored via `SecureKeyManager` and never echoed; a key cached for the
+   same `api_base` is reused when adding (mirrors the UI key-cache behaviour).
+4. **Activation**: `add` alone does not switch anyone — assign with `agent-main` (takes effect
+   from the agent's next message; explicit scenario models still take priority per modality).
+5. **Safety**: removing an in-use definition is refused without `--yes`; confirm changes with the
+   user before altering/removing what is in use.
+
+See `docs/model_config_cli.md` for the end-to-end scenario walkthrough.
 
 ## Future: Multi-Language Support (i18n)
 
