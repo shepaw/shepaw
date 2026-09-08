@@ -610,6 +610,10 @@ class PeerAgentIncrementalSyncResult {
   });
 }
 
+/// Why a turn resume request is in flight — stall probes must not fail the
+/// turn when the hub is slow to answer.
+enum _ResumePurpose { none, suspend, stallProbe }
+
 class _PendingRequest {
   final String peerId;
   final String remoteAgentId;
@@ -649,6 +653,13 @@ class _PendingRequest {
   DateTime? suspendedSince;
   /// 是否已发出 resume_req 且尚未收到应答（防止重复发送）。
   bool resumeInFlight = false;
+  /// resume_req 的用途：断连续传 vs 停滞探测（后者失败不判死 turn）。
+  _ResumePurpose resumePurpose = _ResumePurpose.none;
+  /// 上次向 Hub 发 stall-probe resume_req 的时刻（节流重复探测）。
+  DateTime? lastStallProbeAt;
+  /// Hub 通知上游 ACP 正在重连 —— idle 计时冻结，避免 P2P 仍连着但
+  /// Hub↔Agent 恢复期间误触 30min 超时。
+  DateTime? upstreamReconnectingSince;
   /// 发出 resume_req 时的 receivedLength 基准，用于 delta 去重（drop-prefix）。
   int? resumeBaseLength;
   _PendingRequest({
@@ -706,6 +717,10 @@ class PeerAgentClientService {
   /// group orchestration forever. Each streaming chunk/metadata resets the
   /// idle clock; approval waits are uncapped — see [_awaitTurnCompletion].
   static const Duration chatTimeout = Duration(minutes: 30);
+
+  /// 连接仍存活但距上次 agent 输出超过该时长 → 向 Hub 发
+  /// `agent_turn_resume_req` 补拉（对齐直连 ACP 的 180s stall watchdog）。
+  static const Duration stallProbeInterval = Duration(seconds: 180);
 
   /// 断连挂起（等待重连续传）的最长时长。挂起期间 idle 计时冻结（对端本来
   /// 就不可能有帧到达），超过该时长说明重连无望，判 turn 失败。
@@ -1482,11 +1497,13 @@ class PeerAgentClientService {
         timer.cancel();
         return;
       }
+      final now = DateTime.now();
       final verdict = evaluateTurnWatchdog(
-        now: DateTime.now(),
+        now: now,
         startedAt: startedAt,
         idleSince: pending.idleSince,
         suspendedSince: pending.suspendedSince,
+        upstreamReconnectingSince: pending.upstreamReconnectingSince,
         openApprovals: pending.openApprovals,
         chatTimeout: chatTimeout,
         suspendWaitHardCap: suspendWaitHardCap,
@@ -1499,6 +1516,19 @@ class PeerAgentClientService {
           duringApproval: pending.openApprovals > 0,
           duringSuspend: verdict == TurnWatchdogVerdict.suspendCap,
         );
+        return;
+      }
+      if (shouldProbeStalledTurn(
+        now: now,
+        idleSince: pending.idleSince,
+        suspendedSince: pending.suspendedSince,
+        upstreamReconnectingSince: pending.upstreamReconnectingSince,
+        openApprovals: pending.openApprovals,
+        resumeInFlight: pending.resumeInFlight,
+        lastStallProbeAt: pending.lastStallProbeAt,
+        stallProbeInterval: stallProbeInterval,
+      )) {
+        unawaited(_probeStalledTurn(requestId, peerId, pending));
       }
     });
     try {
@@ -1590,6 +1620,12 @@ class PeerAgentClientService {
         break;
       case 'agent_turn_resume_resp':
         _onTurnResumeResp(event.data);
+        break;
+      case 'agent_turn_upstream_reconnecting':
+        _onUpstreamReconnecting(event.data);
+        break;
+      case 'agent_turn_upstream_reconnected':
+        _onUpstreamReconnected(event.data);
         break;
       case 'agent_metadata':
         _onMetadata(event.data);
@@ -3305,6 +3341,7 @@ class PeerAgentClientService {
     p.receivedLength += content.length;
     if (content.isNotEmpty) {
       p.idleSince = DateTime.now();
+      p.upstreamReconnectingSince = null;
     }
     p.onChunk?.call(content);
     _schedulePersist(requestId);
@@ -3321,6 +3358,7 @@ class PeerAgentClientService {
     final p = _pending[requestId];
     if (p == null) return;
     p.idleSince = DateTime.now();
+    p.upstreamReconnectingSince = null;
     p.onMetadata?.call(metadata);
   }
 
@@ -3460,6 +3498,7 @@ class PeerAgentClientService {
       }
       if (p.resumeInFlight) continue;
       p.resumeInFlight = true;
+      p.resumePurpose = _ResumePurpose.suspend;
       p.resumeBaseLength = p.receivedLength;
       _log.info(
         'resume turn requestId=$requestId known=${p.receivedLength}',
@@ -3469,11 +3508,43 @@ class PeerAgentClientService {
       if (!sent) {
         // 仍未连通 —— 回滚标志，等下一次 connected 事件重试。
         p.resumeInFlight = false;
+        p.resumePurpose = _ResumePurpose.none;
         p.resumeBaseLength = null;
         continue;
       }
-      _watchResumeResponse(peerId, requestId, resumeRetryCount);
+      _watchResumeResponse(peerId, requestId, resumeRetryCount, failOnExhausted: true);
     }
+  }
+
+  /// 连接仍存活但长时间无输出 —— 向 Hub 拉取 replay buffer 中可能遗漏的
+  /// chunk/done（Hub↔ACP 瞬断、隧道丢帧等）。失败只记日志，下轮看门狗重试。
+  Future<void> _probeStalledTurn(
+    String requestId,
+    String peerId,
+    _PendingRequest p,
+  ) async {
+    if (p.completer.isCompleted || p.resumeInFlight) return;
+    p.lastStallProbeAt = DateTime.now();
+    p.resumeInFlight = true;
+    p.resumePurpose = _ResumePurpose.stallProbe;
+    p.resumeBaseLength = p.receivedLength;
+    _log.info(
+      'stall probe requestId=$requestId known=${p.receivedLength}',
+      tag: 'PeerApproval',
+    );
+    final sent = await _sendResumeReq(peerId, requestId, p);
+    if (!sent) {
+      p.resumeInFlight = false;
+      p.resumePurpose = _ResumePurpose.none;
+      p.resumeBaseLength = null;
+      return;
+    }
+    _watchResumeResponse(
+      peerId,
+      requestId,
+      resumeRetryCount,
+      failOnExhausted: false,
+    );
   }
 
   /// 发一帧 resume_req（断点取 p.receivedLength 当前值）。
@@ -3498,8 +3569,9 @@ class PeerAgentClientService {
   void _watchResumeResponse(
     String peerId,
     String requestId,
-    int retriesLeft,
-  ) {
+    int retriesLeft, {
+    required bool failOnExhausted,
+  }) {
     final p = _pending[requestId];
     if (p == null || p.completer.isCompleted || !p.resumeInFlight) return;
     Timer(_effectiveResumeResponseTimeout, () async {
@@ -3510,7 +3582,7 @@ class PeerAgentClientService {
         _log.warning(
           'resume requestId=$requestId no answer in '
           '${_effectiveResumeResponseTimeout.inSeconds}s — resending '
-          '(retries left: $retriesLeft)',
+          '(retries left: $retriesLeft, purpose=${cur.resumePurpose.name})',
           tag: 'PeerApproval',
         );
         // 刷新 drop-prefix 基准：重连后 live chunk 可能已补到，重发的
@@ -3520,10 +3592,26 @@ class PeerAgentClientService {
         if (!resent) {
           // 连接又不可用 —— 回滚标志，等下一次 connected 事件重新走 resume。
           cur.resumeInFlight = false;
+          cur.resumePurpose = _ResumePurpose.none;
           cur.resumeBaseLength = null;
           return;
         }
-        _watchResumeResponse(peerId, requestId, retriesLeft - 1);
+        _watchResumeResponse(
+          peerId,
+          requestId,
+          retriesLeft - 1,
+          failOnExhausted: failOnExhausted,
+        );
+        return;
+      }
+      if (!failOnExhausted && cur.resumePurpose == _ResumePurpose.stallProbe) {
+        _log.warning(
+          'stall probe requestId=$requestId timed out — will retry on next idle tick',
+          tag: 'PeerApproval',
+        );
+        cur.resumeInFlight = false;
+        cur.resumePurpose = _ResumePurpose.none;
+        cur.resumeBaseLength = null;
         return;
       }
       // 重试耗尽（含旧 hub 完全不响应 resume_req）→ 明确失败。
@@ -3547,6 +3635,33 @@ class PeerAgentClientService {
   Duration get _effectiveResumeResponseTimeout =>
       debugResumeResponseTimeoutOverride ?? resumeResponseTimeout;
 
+  /// Hub 侧 Hub↔ACP 传输断开：P2P 仍连着，冻结 idle 计时并等待恢复。
+  void _onUpstreamReconnecting(Map<String, dynamic> data) {
+    final requestId = data['request_id'] as String?;
+    if (requestId == null) return;
+    final p = _pending[requestId];
+    if (p == null || p.completer.isCompleted) return;
+    p.upstreamReconnectingSince ??= DateTime.now();
+    _log.info(
+      'upstream reconnecting requestId=$requestId — idle clock frozen',
+      tag: 'PeerApproval',
+    );
+  }
+
+  /// Hub 侧 Hub↔ACP 已恢复；若仍无 live 输出，stall probe 会在下一 tick 补拉。
+  void _onUpstreamReconnected(Map<String, dynamic> data) {
+    final requestId = data['request_id'] as String?;
+    if (requestId == null) return;
+    final p = _pending[requestId];
+    if (p == null || p.completer.isCompleted) return;
+    p.upstreamReconnectingSince = null;
+    p.idleSince = DateTime.now();
+    _log.info(
+      'upstream reconnected requestId=$requestId',
+      tag: 'PeerApproval',
+    );
+  }
+
   /// 处理 agent_turn_resume_resp：先经 drop-prefix 去重（重连后 live chunk
   /// 可能先于 resp 到达，与 delta 前缀重叠），再按 status 走既有完成路径。
   void _onTurnResumeResp(Map<String, dynamic> data) {
@@ -3555,6 +3670,7 @@ class PeerAgentClientService {
     final p = _pending[requestId];
     if (p == null) return;
     p.resumeInFlight = false;
+    p.resumePurpose = _ResumePurpose.none;
 
     final rawDelta = data['delta'] as String? ?? '';
     final base = p.resumeBaseLength ?? p.receivedLength;
@@ -3577,6 +3693,7 @@ class PeerAgentClientService {
       p.onChunk?.call(delta);
     }
     p.suspendedSince = null;
+    p.upstreamReconnectingSince = null;
 
     final status = data['status'] as String? ?? 'lost';
     _log.info(

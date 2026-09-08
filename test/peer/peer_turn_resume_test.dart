@@ -58,6 +58,7 @@ void main() {
           startedAt: startedAt,
           idleSince: startedAt,
           suspendedSince: null,
+          upstreamReconnectingSince: null,
           openApprovals: 0,
           chatTimeout: chatTimeout,
           suspendWaitHardCap: suspendCap,
@@ -75,6 +76,7 @@ void main() {
           startedAt: startedAt,
           idleSince: lastOutput,
           suspendedSince: null,
+          upstreamReconnectingSince: null,
           openApprovals: 0,
           chatTimeout: chatTimeout,
           suspendWaitHardCap: suspendCap,
@@ -91,6 +93,7 @@ void main() {
           startedAt: startedAt,
           idleSince: startedAt,
           suspendedSince: null,
+          upstreamReconnectingSince: null,
           openApprovals: 0,
           chatTimeout: chatTimeout,
           suspendWaitHardCap: suspendCap,
@@ -107,6 +110,7 @@ void main() {
           startedAt: startedAt,
           idleSince: startedAt,
           suspendedSince: null,
+          upstreamReconnectingSince: null,
           openApprovals: 1,
           chatTimeout: chatTimeout,
           suspendWaitHardCap: suspendCap,
@@ -124,6 +128,7 @@ void main() {
           startedAt: startedAt,
           idleSince: startedAt,
           suspendedSince: suspendedAt,
+          upstreamReconnectingSince: null,
           openApprovals: 0,
           chatTimeout: chatTimeout,
           suspendWaitHardCap: suspendCap,
@@ -141,6 +146,7 @@ void main() {
           startedAt: startedAt,
           idleSince: startedAt,
           suspendedSince: suspendedAt,
+          upstreamReconnectingSince: null,
           openApprovals: 0,
           chatTimeout: chatTimeout,
           suspendWaitHardCap: suspendCap,
@@ -158,6 +164,7 @@ void main() {
           startedAt: startedAt,
           idleSince: startedAt,
           suspendedSince: null,
+          upstreamReconnectingSince: null,
           openApprovals: 1,
           chatTimeout: chatTimeout,
           suspendWaitHardCap: suspendCap,
@@ -176,6 +183,7 @@ void main() {
           startedAt: startedAt,
           idleSince: lastOutput,
           suspendedSince: null,
+          upstreamReconnectingSince: null,
           openApprovals: 0,
           chatTimeout: chatTimeout,
           suspendWaitHardCap: suspendCap,
@@ -193,6 +201,88 @@ void main() {
           startedAt: startedAt,
           idleSince: startedAt,
           suspendedSince: suspendedAt,
+          upstreamReconnectingSince: null,
+          openApprovals: 0,
+          chatTimeout: chatTimeout,
+          suspendWaitHardCap: suspendCap,
+        ),
+        TurnWatchdogVerdict.none,
+      );
+    });
+  });
+
+  group('shouldProbeStalledTurn', () {
+    final startedAt = DateTime(2026, 7, 20, 12, 0, 0);
+    const stallInterval = Duration(seconds: 180);
+
+    test('空闲超过阈值且无 resume 在途 → true', () {
+      final now = startedAt.add(const Duration(seconds: 200));
+      expect(
+        shouldProbeStalledTurn(
+          now: now,
+          idleSince: startedAt,
+          suspendedSince: null,
+          upstreamReconnectingSince: null,
+          openApprovals: 0,
+          resumeInFlight: false,
+          lastStallProbeAt: null,
+          stallProbeInterval: stallInterval,
+        ),
+        isTrue,
+      );
+    });
+
+    test('上游重连中不探测', () {
+      final now = startedAt.add(const Duration(seconds: 200));
+      expect(
+        shouldProbeStalledTurn(
+          now: now,
+          idleSince: startedAt,
+          suspendedSince: null,
+          upstreamReconnectingSince: startedAt,
+          openApprovals: 0,
+          resumeInFlight: false,
+          lastStallProbeAt: null,
+          stallProbeInterval: stallInterval,
+        ),
+        isFalse,
+      );
+    });
+
+    test('距上次探测不足间隔 → false', () {
+      final lastProbe = startedAt.add(const Duration(seconds: 30));
+      final now = startedAt.add(const Duration(seconds: 200));
+      expect(
+        shouldProbeStalledTurn(
+          now: now,
+          idleSince: startedAt,
+          suspendedSince: null,
+          upstreamReconnectingSince: null,
+          openApprovals: 0,
+          resumeInFlight: false,
+          lastStallProbeAt: lastProbe,
+          stallProbeInterval: stallInterval,
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  group('evaluateTurnWatchdog upstream reconnect', () {
+    final startedAt = DateTime(2026, 7, 20, 12, 0, 0);
+    const chatTimeout = Duration(seconds: 300);
+    const suspendCap = Duration(minutes: 10);
+
+    test('上游重连中冻结 idle 超时', () {
+      final reconnectingAt = startedAt.add(const Duration(seconds: 10));
+      final now = reconnectingAt.add(const Duration(minutes: 6));
+      expect(
+        evaluateTurnWatchdog(
+          now: now,
+          startedAt: startedAt,
+          idleSince: startedAt,
+          suspendedSince: null,
+          upstreamReconnectingSince: reconnectingAt,
           openApprovals: 0,
           chatTimeout: chatTimeout,
           suspendWaitHardCap: suspendCap,

@@ -39,6 +39,8 @@ enum TurnWatchdogVerdict {
 /// 规则（与 _awaitTurnCompletion 的语义一一对应）：
 /// - 挂起中（suspendedSince != null）：idle 计时冻结（断连期间对端本来
 ///   就不会有帧到达），但受 suspendWaitHardCap 约束；
+/// - Hub 上游 ACP 重连中（upstreamReconnectingSince != null）：idle 计时
+///   同样冻结 —— P2P 仍连着但 Hub↔Agent 可能在恢复，不应误判 30min 超时；
 /// - 审批等待中（openApprovals > 0）：idle 计时冻结（用户读卡片的时间
 ///   不计入），且不设超时上限 —— 审批等多久由用户决定；
 /// - 其余情况：距上次 agent 输出（或 turn 开始 / 审批结束）超过 chatTimeout
@@ -48,6 +50,7 @@ TurnWatchdogVerdict evaluateTurnWatchdog({
   required DateTime startedAt,
   required DateTime idleSince,
   required DateTime? suspendedSince,
+  required DateTime? upstreamReconnectingSince,
   required int openApprovals,
   required Duration chatTimeout,
   required Duration suspendWaitHardCap,
@@ -59,8 +62,40 @@ TurnWatchdogVerdict evaluateTurnWatchdog({
     }
     return TurnWatchdogVerdict.none;
   }
+  final upstreamReconnecting = upstreamReconnectingSince;
+  if (upstreamReconnecting != null) {
+    if (now.difference(upstreamReconnecting) > suspendWaitHardCap) {
+      return TurnWatchdogVerdict.suspendCap;
+    }
+    return TurnWatchdogVerdict.none;
+  }
   if (openApprovals == 0 && now.difference(idleSince) > chatTimeout) {
     return TurnWatchdogVerdict.idleTimeout;
   }
   return TurnWatchdogVerdict.none;
+}
+
+/// 是否应向 Hub 发 `agent_turn_resume_req` 探测停滞（连接仍存活、无审批、
+/// 距上次输出超过 [stallProbeInterval]）。与断连后的 suspend-resume 不同：
+/// 探测失败不会判死 turn，下一轮看门狗 tick 会重试。
+bool shouldProbeStalledTurn({
+  required DateTime now,
+  required DateTime idleSince,
+  required DateTime? suspendedSince,
+  required DateTime? upstreamReconnectingSince,
+  required int openApprovals,
+  required bool resumeInFlight,
+  required DateTime? lastStallProbeAt,
+  required Duration stallProbeInterval,
+}) {
+  if (suspendedSince != null) return false;
+  if (upstreamReconnectingSince != null) return false;
+  if (openApprovals > 0) return false;
+  if (resumeInFlight) return false;
+  if (now.difference(idleSince) < stallProbeInterval) return false;
+  if (lastStallProbeAt != null &&
+      now.difference(lastStallProbeAt) < stallProbeInterval) {
+    return false;
+  }
+  return true;
 }
