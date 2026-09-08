@@ -5,6 +5,9 @@
 /// - `agent_list_req`：返回本机所有「本地 agent 且允许外部访问」的列表。
 /// - `agent_chat`：在本机用 [ChatService] 跑对应本地 agent，流式把文本块经
 ///   `agent_chunk` 回传，完成后发 `agent_done`，出错发 `agent_error`。
+/// - `agent_turn_resume_req`：客户端断线重连后按 receivedLength 断点续传 ——
+///   host 为每个在途 agent_chat 保留输出缓冲（跨断连存活），从缓冲切片补发
+///   客户端漏掉的后缀（语义对齐 agent-bridge hub 的 turn registry）。
 /// - `agent_cancel`：取消正在进行的请求。
 /// - `agent_approval_resp`：配对客户端的工具审批回复；Hub 持久化后转发给本地 agent。
 ///
@@ -22,6 +25,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:uuid/uuid.dart';
 
 import '../../models/attachment_data.dart';
@@ -128,6 +132,34 @@ class _PeerChatSession {
   });
 }
 
+/// Host 侧一个 agent_chat turn 的输出缓冲，跨 peer 断连存活。
+///
+/// 对齐 agent-bridge hub 的 peer 级 turn registry：客户端断线后 turn 继续在本机
+/// 跑完并累积输出；客户端重连后发 `agent_turn_resume_req`（断点 = 其已收到的
+/// receivedLength，UTF-16 码元计数），host 从 [accumulated] 切片补发漏掉的后缀。
+///
+/// [accumulated] 与客户端 receivedLength 的计数口径一致：两个端都是 Dart 字符串
+/// 的 UTF-16 码元（live agent_chunk 与 resume delta 逐字一致），无需转码对齐。
+class _HostTurnBuffer {
+  final String peerId;
+  final String agentId;
+  final DateTime createdAt = DateTime.now();
+  /// 已累积的原始流式文本（UTF-16 码元）。
+  String accumulated = '';
+  /// 最近一条 stream metadata（agent_metadata 的 payload），resume 时作为
+  /// stream_metadata 回放，让客户端先恢复 splitter 分流状态再应用 delta。
+  Map<String, dynamic>? lastMetadata;
+  /// streaming | done | error。
+  String status = 'streaming';
+  String? doneContent;
+  Map<String, dynamic>? doneMetadata;
+  String? errorMessage;
+  /// status 离开 streaming 的时刻；null 表示仍在跑。
+  DateTime? terminalAt;
+
+  _HostTurnBuffer({required this.peerId, required this.agentId});
+}
+
 class PeerAgentHostService {
   PeerAgentHostService._();
   static final PeerAgentHostService instance = PeerAgentHostService._();
@@ -144,6 +176,19 @@ class PeerAgentHostService {
 
   /// In-flight peer chat sessions (requestId → context).
   final Map<String, _PeerChatSession> _chatSessions = {};
+
+  /// Turn 输出缓冲（requestId → buffer），跨 peer 断连存活，供断点续传。
+  /// 终态（done/error）条目保留一段时间让迟到的 resume 仍能取回结果；
+  /// 仍在跑（可能停在审批卡上等客户端）的条目只受 [hostTurnLiveTtl] 上限约束。
+  final Map<String, _HostTurnBuffer> _turnBuffers = {};
+  Timer? _turnReapTimer;
+
+  /// 终态 turn 缓冲的保留时长。客户端侧挂起硬顶为 30min（且 App 进程重启后仍会
+  /// 从持久化 inflight 记录继续 resume），30min 足够覆盖「断线后重连」的窗口。
+  static const Duration hostTurnTerminalTtl = Duration(minutes: 30);
+  /// 仍在跑（streaming）的 turn 缓冲上限 —— 审批等待不受 30min 限制，可合法地
+  /// 停很久，但病理级驻留不应无限占内存。
+  static const Duration hostTurnLiveTtl = Duration(hours: 24);
 
   /// In-progress file pushes (fileId → buffer state).
   final Map<String, _IncomingPeerFile> _incomingFiles = {};
@@ -165,11 +210,16 @@ class PeerAgentHostService {
       }
     });
     unawaited(_replayDeferredHubApprovals());
+    _turnReapTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      _reapExpiredTurnBuffers();
+    });
     _log.info('PeerAgentHostService started', tag: _tag);
   }
 
   void stop() {
     _running = false;
+    _turnReapTimer?.cancel();
+    _turnReapTimer = null;
     _sub?.cancel();
     _sub = null;
     _peerConnSub?.cancel();
@@ -179,6 +229,7 @@ class PeerAgentHostService {
     }
     _activeRequests.clear();
     _chatSessions.clear();
+    _turnBuffers.clear();
   }
 
   void _onControl(PeerControlEvent event) {
@@ -188,6 +239,9 @@ class PeerAgentHostService {
         break;
       case 'agent_chat':
         unawaited(_handleChat(event.peerId, event.data));
+        break;
+      case 'agent_turn_resume_req':
+        unawaited(_handleTurnResumeReq(event.peerId, event.data));
         break;
       case 'agent_cancel':
         _handleCancel(event.data);
@@ -1289,6 +1343,21 @@ class PeerAgentHostService {
     final clientSessionId = data['session_id'] as String?;
     if (requestId == null || agentId == null) return;
 
+    // 登记 turn 输出缓冲：客户端断线期间 chunk/metadata 仍继续累积，重连后可
+    // 经 agent_turn_resume_req 断点补发（见 _handleTurnResumeReq）。
+    final buf = _HostTurnBuffer(peerId: peerId, agentId: agentId);
+    _turnBuffers[requestId] = buf;
+
+    /// 出错出口统一走这里：标终态 error（供后续 resume 回放）+ 发 agent_error。
+    Future<void> failTurn(String message) async {
+      if (buf.status == 'streaming') {
+        buf.status = 'error';
+        buf.errorMessage = message;
+        buf.terminalAt = DateTime.now();
+      }
+      await _sendError(peerId, requestId, message);
+    }
+
     final token = ACPCancellationToken();
     _activeRequests[requestId] = token;
 
@@ -1306,12 +1375,12 @@ class PeerAgentHostService {
     try {
       final agent = await _db.getRemoteAgentById(agentId);
       if (agent == null || !agent.isLocal || !agent.allowExternalAccess) {
-        await _sendError(peerId, requestId, 'Agent not available for external access');
+        await failTurn('Agent not available for external access');
         return;
       }
       final sharedIds = await PeerStorageService().getSharedAgentIds(peerId);
       if (!sharedIds.contains(agentId)) {
-        await _sendError(peerId, requestId, 'Agent is not shared with this peer');
+        await failTurn('Agent is not shared with this peer');
         return;
       }
 
@@ -1415,6 +1484,9 @@ class PeerAgentHostService {
         // Relay raw stream; the phone client folds progress once.
         foldProgressContent: false,
         onStreamChunk: (chunk) {
+          // 先累积再发送：发送可能因断连失败，但缓冲必须完整，resume 才能
+          // 按 receivedLength 对齐切片补发。
+          buf.accumulated += chunk;
           unawaited(PeerConnectionManager.instance.sendControl(peerId, {
             'type': 'agent_chunk',
             'request_id': requestId,
@@ -1422,6 +1494,7 @@ class PeerAgentHostService {
           }));
         },
         onMessageMetadata: (data) {
+          buf.lastMetadata = Map<String, dynamic>.from(data);
           unawaited(PeerConnectionManager.instance.sendControl(peerId, {
             'type': 'agent_metadata',
             'request_id': requestId,
@@ -1448,6 +1521,15 @@ class PeerAgentHostService {
         );
       }
 
+      // 终态落缓冲：即使 agent_done 因断连没送到客户端，重连后的 resume 仍能
+      // 从缓冲取回完整结果（与 agent-bridge hub 的终态 registry 语义一致）。
+      if (buf.status == 'streaming') {
+        buf.status = 'done';
+        buf.doneContent = response?.content ?? '';
+        buf.doneMetadata = response?.metadata;
+        buf.terminalAt = DateTime.now();
+      }
+
       await PeerConnectionManager.instance.sendControl(peerId, {
         'type': 'agent_done',
         'request_id': requestId,
@@ -1457,7 +1539,7 @@ class PeerAgentHostService {
       });
     } catch (e) {
       _log.warning('agent_chat failed: $e', tag: _tag);
-      await _sendError(peerId, requestId, e.toString());
+      await failTurn(e.toString());
     } finally {
       _activeRequests.remove(requestId);
       _chatSessions.remove(requestId);
@@ -1823,6 +1905,105 @@ class PeerAgentHostService {
     _activeRequests[requestId]?.cancel();
   }
 
+  /// 客户端重连后请求断点续传：从 [requestId] 的输出缓冲切片补发漏掉的后缀。
+  ///
+  /// 语义与 agent-bridge hub 对齐（应答幂等：known 超界收敛 + 客户端 drop-prefix
+  /// 去重，重发不重复投递）：
+  /// - 在途 streaming → 补后缀 + stream_metadata，任务继续跑，live chunk 照发；
+  /// - 终态 done/error → 补后缀 + 结果/错误信息；
+  /// - host 不认识该 turn（重启或已过期）→ lost，客户端登记历史 reconcile 补回。
+  Future<void> _handleTurnResumeReq(
+    String peerId,
+    Map<String, dynamic> data,
+  ) async {
+    _reapExpiredTurnBuffers();
+    final requestId = data['request_id'] as String?;
+    if (requestId == null) return;
+    final rawKnown = data['known_content_length'];
+    final known = rawKnown is num ? rawKnown.toInt() : 0;
+
+    final buf = _turnBuffers[requestId];
+    if (buf == null || buf.peerId != peerId) {
+      _log.info('turn resume req=$requestId → lost (unknown/expired)', tag: _tag);
+      await _sendPeerControl(peerId, {
+        'type': 'agent_turn_resume_resp',
+        'request_id': requestId,
+        'status': 'lost',
+        'message': '对端任务已结束或丢失（host 重启或已过期）',
+      });
+      return;
+    }
+
+    // 与客户端 receivedLength 同口径：UTF-16 码元。known 超界收敛到缓冲长度。
+    final maxLen = buf.accumulated.length;
+    final base = known < 0 ? 0 : (known > maxLen ? maxLen : known);
+    if (base != known) {
+      _log.warning(
+        'turn resume req=$requestId known=$known out of range — clamped to $base',
+        tag: _tag,
+      );
+    }
+    final delta = buf.accumulated.substring(base);
+
+    final resp = <String, dynamic>{
+      'type': 'agent_turn_resume_resp',
+      'request_id': requestId,
+      'delta': delta,
+    };
+    switch (buf.status) {
+      case 'done':
+        resp['status'] = 'done';
+        resp['content'] = buf.doneContent ?? '';
+        if (buf.doneMetadata != null) resp['metadata'] = buf.doneMetadata;
+        break;
+      case 'error':
+        resp['status'] = 'error';
+        resp['message'] = buf.errorMessage ?? 'agent error';
+        break;
+      case 'streaming':
+      default:
+        resp['status'] = 'streaming';
+        if (buf.lastMetadata != null) {
+          resp['stream_metadata'] = buf.lastMetadata;
+        }
+        break;
+    }
+    _log.info(
+      'turn resume req=$requestId → ${buf.status}, replaying ${delta.length} units',
+      tag: _tag,
+    );
+    await _sendPeerControl(peerId, resp);
+  }
+
+  /// 发一帧控制消息（测试缝：可替换为捕获桩，见 [debugSendControlOverride]）。
+  Future<bool> _sendPeerControl(String peerId, Map<String, dynamic> json) {
+    final sendControl =
+        debugSendControlOverride ?? PeerConnectionManager.instance.sendControl;
+    return sendControl(peerId, json);
+  }
+
+  /// 回收过期 turn 缓冲：终态超 [hostTurnTerminalTtl]、仍在跑超 [hostTurnLiveTtl]。
+  void _reapExpiredTurnBuffers() {
+    if (_turnBuffers.isEmpty) return;
+    final now = DateTime.now();
+    final expired = _turnBuffers.entries
+        .where((e) {
+          final b = e.value;
+          if (b.terminalAt != null) {
+            return now.difference(b.terminalAt!) > hostTurnTerminalTtl;
+          }
+          return now.difference(b.createdAt) > hostTurnLiveTtl;
+        })
+        .map((e) => e.key)
+        .toList();
+    for (final requestId in expired) {
+      _turnBuffers.remove(requestId);
+    }
+    if (expired.isNotEmpty) {
+      _log.info('reaped ${expired.length} expired host turn buffer(s)', tag: _tag);
+    }
+  }
+
   Future<void> _sendError(String peerId, String requestId, String message) async {
     await PeerConnectionManager.instance.sendControl(peerId, {
       'type': 'agent_error',
@@ -1830,6 +2011,48 @@ class PeerAgentHostService {
       'message': message,
     });
   }
+
+  // ── Test seams ─────────────────────────────────────────────────────────
+
+  /// Test seam: when set, [_handleTurnResumeReq] 的应答帧走这里而不是
+  /// [PeerConnectionManager]，便于单测捕获应答内容。
+  @visibleForTesting
+  Future<bool> Function(String peerId, Map<String, dynamic> json)?
+      debugSendControlOverride;
+
+  /// Test seam: 直接执行 resume 应答逻辑（绕过控制事件订阅）。
+  @visibleForTesting
+  Future<void> debugHandleTurnResumeReq(String peerId, Map<String, dynamic> data) =>
+      _handleTurnResumeReq(peerId, data);
+
+  /// Test seam: 直接登记一条 turn 输出缓冲，模拟在途/终态 turn。
+  @visibleForTesting
+  void debugSeedTurnBuffer({
+    required String requestId,
+    required String peerId,
+    String accumulated = '',
+    String status = 'streaming',
+    String? doneContent,
+    Map<String, dynamic>? doneMetadata,
+    String? errorMessage,
+    Map<String, dynamic>? lastMetadata,
+  }) {
+    final buf = _HostTurnBuffer(peerId: peerId, agentId: 'debug-agent');
+    buf.accumulated = accumulated;
+    buf.status = status;
+    buf.doneContent = doneContent;
+    buf.doneMetadata = doneMetadata;
+    buf.errorMessage = errorMessage;
+    buf.lastMetadata = lastMetadata;
+    if (status != 'streaming') {
+      buf.terminalAt = DateTime.now();
+    }
+    _turnBuffers[requestId] = buf;
+  }
+
+  /// Test seam: 清掉全部 turn 缓冲，避免跨用例污染单例状态。
+  @visibleForTesting
+  void debugClearTurnBuffers() => _turnBuffers.clear();
 
   Future<String> _peerDisplayName(String peerId) async {
     try {

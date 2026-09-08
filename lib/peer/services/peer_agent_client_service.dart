@@ -717,6 +717,17 @@ class PeerAgentClientService {
   /// 不会回复），超时按「对端不支持续传」失败，避免无限悬挂。
   static const Duration resumeResponseTimeout = Duration(seconds: 10);
 
+  /// 单帧丢失/握手竞态导致 resume_req 石沉大海时，在判死前重发 resume_req
+  /// 的次数。hub 侧应答是幂等的（drop-prefix 去重 + known 超界收敛），重发
+  /// 只会补回丢失的后缀，不会重复投递。旧 hub（不支持续传）会在重试耗尽后
+  /// 得到与以前一致的明确失败，只是判定延迟从 10s 放宽到 (N+1)×10s —— 远低于
+  /// 30min 挂起硬顶，可接受。
+  ///
+  /// 背景：长任务（Claude Code 回合）跨多次重连时，重连瞬间的噪声/半开竞态会
+  /// 偶发吞掉恰好那一帧 resume_req；hub 端从未收到 → 永不回复 → 原实现 10s 后
+  /// 直接判死整个回合并提示「请重新发送」，即使 hub 与任务都还活着。
+  static const int resumeRetryCount = 2;
+
   final _log = LoggerService();
   final _uuid = const Uuid();
   final _storage = PeerStorageService();
@@ -1027,6 +1038,17 @@ class PeerAgentClientService {
   @visibleForTesting
   Future<bool> Function(String peerId, Map<String, dynamic> json)?
       debugSendControlOverride;
+
+  /// Test seam: shrink the resume-response watchdog so unit tests can observe
+  /// resend/retry behavior without waiting [resumeResponseTimeout] for real.
+  @visibleForTesting
+  Duration? debugResumeResponseTimeoutOverride;
+
+  /// Test seam: run the reconnect-resume sequence for [peerId] directly,
+  /// without a live connection event.
+  @visibleForTesting
+  Future<void> debugResumeSuspendedTurns(String peerId) =>
+      _resumeSuspendedTurns(peerId);
 
   /// Test seam: deliver a control frame as if it came from the peer
   /// connection, so unit tests can answer relay requests they captured via
@@ -3407,7 +3429,8 @@ class PeerAgentClientService {
   /// 重连成功后的恢复序列：
   /// 1. 挂起期间本地取消的 turn → 补发 agent_cancel；
   /// 2. 其余挂起的 turn → 发 agent_turn_resume_req（断点 = receivedLength），
-  ///    并启动应答超时（旧 hub 不支持续传时 10s 后明确失败）。
+  ///    并启动应答看门狗：无应答时重发（重连竞态会偶发吞帧），重试耗尽仍无
+  ///    应答（旧 hub 不支持续传）才明确失败。
   Future<void> _resumeSuspendedTurns(String peerId) async {
     // 1. flush 挂起期间本地取消的 turn
     for (final entry in _cancelledWhileSuspended.entries.toList()) {
@@ -3442,39 +3465,87 @@ class PeerAgentClientService {
         'resume turn requestId=$requestId known=${p.receivedLength}',
         tag: 'PeerApproval',
       );
-      final sent = await PeerConnectionManager.instance.sendControl(peerId, {
-        'type': 'agent_turn_resume_req',
-        'request_id': requestId,
-        'known_content_length': p.receivedLength,
-      });
+      final sent = await _sendResumeReq(peerId, requestId, p);
       if (!sent) {
         // 仍未连通 —— 回滚标志，等下一次 connected 事件重试。
         p.resumeInFlight = false;
         p.resumeBaseLength = null;
         continue;
       }
-      // 应答超时：旧 hub 忽略 resume_req（unknown type 无响应）→ 明确失败。
-      Timer(resumeResponseTimeout, () {
-        final cur = _pending[requestId];
-        if (cur == null || cur.completer.isCompleted) return;
-        if (!cur.resumeInFlight) return;
-        _pending.remove(requestId);
-        _clearPersistedTurn(requestId);
-        for (final e in _approvalToRequest.entries.toList()) {
-          if (e.value == requestId) _approvalToRequest.remove(e.key);
-        }
-        _log.warning(
-          'resume requestId=$requestId timed out — peer hub does not '
-          'support turn resume',
-          tag: 'PeerApproval',
-        );
-        _markReconcileNeeded(requestId);
-        cur.completer.completeError(
-          Exception('对端不支持断点续传或任务已丢失，请重新发送'),
-        );
-      });
+      _watchResumeResponse(peerId, requestId, resumeRetryCount);
     }
   }
+
+  /// 发一帧 resume_req（断点取 p.receivedLength 当前值）。
+  Future<bool> _sendResumeReq(
+    String peerId,
+    String requestId,
+    _PendingRequest p,
+  ) {
+    final sendControl =
+        debugSendControlOverride ?? PeerConnectionManager.instance.sendControl;
+    return sendControl(peerId, {
+      'type': 'agent_turn_resume_req',
+      'request_id': requestId,
+      'known_content_length': p.receivedLength,
+    });
+  }
+
+  /// 单次 resume 应答看门狗。应答到达（[_onTurnResumeResp] 复位
+  /// resumeInFlight）或连接再次断开（[suspend] 复位 resumeInFlight）后自行
+  /// 退役；无应答则重发 resume_req（帧可能被重连竞态吞掉，hub 端幂等），
+  /// 重试耗尽仍无应答才按「对端不支持续传」判失败。
+  void _watchResumeResponse(
+    String peerId,
+    String requestId,
+    int retriesLeft,
+  ) {
+    final p = _pending[requestId];
+    if (p == null || p.completer.isCompleted || !p.resumeInFlight) return;
+    Timer(_effectiveResumeResponseTimeout, () async {
+      final cur = _pending[requestId];
+      if (cur == null || cur.completer.isCompleted) return;
+      if (!cur.resumeInFlight) return;
+      if (retriesLeft > 0) {
+        _log.warning(
+          'resume requestId=$requestId no answer in '
+          '${_effectiveResumeResponseTimeout.inSeconds}s — resending '
+          '(retries left: $retriesLeft)',
+          tag: 'PeerApproval',
+        );
+        // 刷新 drop-prefix 基准：重连后 live chunk 可能已补到，重发的
+        // known_content_length 需反映最新 receivedLength。
+        cur.resumeBaseLength = cur.receivedLength;
+        final resent = await _sendResumeReq(peerId, requestId, cur);
+        if (!resent) {
+          // 连接又不可用 —— 回滚标志，等下一次 connected 事件重新走 resume。
+          cur.resumeInFlight = false;
+          cur.resumeBaseLength = null;
+          return;
+        }
+        _watchResumeResponse(peerId, requestId, retriesLeft - 1);
+        return;
+      }
+      // 重试耗尽（含旧 hub 完全不响应 resume_req）→ 明确失败。
+      _pending.remove(requestId);
+      _clearPersistedTurn(requestId);
+      for (final e in _approvalToRequest.entries.toList()) {
+        if (e.value == requestId) _approvalToRequest.remove(e.key);
+      }
+      _log.warning(
+        'resume requestId=$requestId timed out after $resumeRetryCount '
+        'retries — peer hub does not support turn resume or link lost it',
+        tag: 'PeerApproval',
+      );
+      _markReconcileNeeded(requestId);
+      cur.completer.completeError(
+        Exception('对端不支持断点续传或任务已丢失，请重新发送'),
+      );
+    });
+  }
+
+  Duration get _effectiveResumeResponseTimeout =>
+      debugResumeResponseTimeoutOverride ?? resumeResponseTimeout;
 
   /// 处理 agent_turn_resume_resp：先经 drop-prefix 去重（重连后 live chunk
   /// 可能先于 resp 到达，与 delta 前缀重叠），再按 status 走既有完成路径。
