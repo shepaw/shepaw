@@ -79,8 +79,24 @@ class ConversationListController extends ChangeNotifier {
   bool _refreshInFlight = false;
   Timer? _pendingRefreshTimer;
 
+  /// 上一次 refresh 是否至少有一路数据源失败。UI 据此区分「加载失败」与
+  /// 「确实还没有 agent」，避免首刷失败被误画成「请添加 agent」空状态。
+  bool _loadFailed = false;
+
+  /// 连续失败的次数，成功即清零；达到上限后放弃自动重试。
+  int _consecutiveLoadFailures = 0;
+
+  /// 失败自动重试的定时器（首刷/启动期瞬时失败后短暂等待再试一次）。
+  Timer? _loadRetryTimer;
+
   /// 后台刷新的合并窗口：peer 断连 / 设备列表变化 / agent 变化常常连发。
   static const Duration _kSilentRefreshDebounce = Duration(milliseconds: 150);
+
+  /// 失败自动重试的等待间隔：留出数据库/启动服务的就绪时间。
+  static const Duration _kLoadRetryDelay = Duration(milliseconds: 500);
+
+  /// 失败自动重试的次数上限（不含第一次尝试）。超过后放弃，由 UI 展示错误。
+  static const int _kMaxLoadRetries = 3;
 
   StreamSubscription? _peerMessageSub;
   StreamSubscription? _peerEventSub;
@@ -96,6 +112,10 @@ class ConversationListController extends ChangeNotifier {
   List<PairedPeer> get pairedPeers => _pairedPeers;
   List<ConversationListItem> get entries => _entries;
   bool get isLoading => _isLoading;
+
+  /// 最近一次刷新是否有加载失败（供 UI 显示「加载失败 / 重试」而非空状态）。
+  bool get hasLoadError => _loadFailed;
+
   Set<String> get typingAgentIds => _typingAgentIds;
   Set<String> get typingChannelIds => _typingChannelIds;
 
@@ -177,8 +197,7 @@ class ConversationListController extends ChangeNotifier {
       _scheduleSilentRefresh();
     });
 
-    _agentsChangedSub =
-        getIt<RemoteAgentService>().agentsChanged.listen((_) {
+    _agentsChangedSub = getIt<RemoteAgentService>().agentsChanged.listen((_) {
       if (_disposed) return;
       _scheduleSilentRefresh();
     });
@@ -245,42 +264,117 @@ class ConversationListController extends ChangeNotifier {
     _refreshInFlight = true;
     try {
       // 三路数据源互不依赖，并行拉取：串行会把各自的往返时间累加。
-      final results = await Future.wait<List<Object>>([
-        _loadAgents(),
-        _loadGroups(),
-        _loadPeers(),
+      //
+      // 各路独立成败：成功一路立即生效，失败一路只记日志并降级为空，不再把
+      // 整批结果一起丢弃（否则首刷任一路抛错会把其它两路已成功的结果也清空，
+      // UI 永久停在「空列表 + 请添加 agent」）。
+      List<Agent>? agents;
+      List<Channel>? groups;
+      List<PairedPeer>? peers;
+      var agentsOk = false;
+      var groupsOk = false;
+      var peersOk = false;
+
+      await Future.wait([
+        _loadSource(
+          () async {
+            agents = await _loadAgents();
+            agentsOk = true;
+          },
+          'Failed to load agents',
+        ),
+        _loadSource(
+          () async {
+            groups = await _loadGroups();
+            groupsOk = true;
+          },
+          'Failed to load groups',
+        ),
+        _loadSource(
+          () async {
+            peers = await _loadPeers();
+            peersOk = true;
+          },
+          'Failed to load peers',
+        ),
       ]);
-      final agents = results[0] as List<Agent>;
-      final groups = results[1] as List<Channel>;
-      final peers = results[2] as List<PairedPeer>;
 
       if (_disposed) return;
-      _agents = agents;
-      _filteredAgents = _applySearchFilter(agents);
-      _groupChannels = groups;
-      _pairedPeers = peers;
+
+      if (agentsOk) {
+        _agents = agents!;
+        _filteredAgents = _applySearchFilter(agents!);
+      }
+      if (groupsOk) _groupChannels = groups!;
+      if (peersOk) _pairedPeers = peers!;
       _rebuildEntries();
+
+      final loadFailed = !agentsOk || !groupsOk || !peersOk;
+      if (loadFailed) {
+        _loadFailed = true;
+        _consecutiveLoadFailures++;
+        _handleLoadFailure();
+        return;
+      }
+
+      _loadFailed = false;
+      _consecutiveLoadFailures = 0;
+      _loadRetryTimer?.cancel();
+      _loadRetryTimer = null;
       _isLoading = false;
       notifyListeners();
       if (!silent) {
         LoggerService().debug(
-          'Loaded ${agents.length} agents, ${groups.length} groups',
+          'Loaded ${_agents.length} agents, ${_groupChannels.length} groups',
           tag: 'ConversationList',
         );
       }
       _runHealthCheckInBackground();
-    } catch (e) {
-      LoggerService().error(
-        'Failed to load agents',
-        tag: 'ConversationList',
-        error: e,
-      );
-      if (_disposed) return;
-      _isLoading = false;
-      notifyListeners();
     } finally {
       _refreshInFlight = false;
     }
+  }
+
+  /// 并行数据源的独立 try/catch：单路失败记录日志后降级，不让异常逃逸到
+  /// [refresh] 整体把其它两路已成功的结果一起丢弃。
+  Future<void> _loadSource(
+    Future<void> Function() load,
+    String failureMessage,
+  ) async {
+    try {
+      await load();
+    } catch (e) {
+      LoggerService().error(failureMessage, tag: 'ConversationList', error: e);
+    }
+  }
+
+  /// 某路加载失败后的兜底：连续失败不超过 [_kMaxLoadRetries] 时自动补刷一次
+  /// （启动期瞬时失败可自愈）。首刷转圈期间保持 [_isLoading]（自动重试一轮内
+  /// 不释放，避免错误一闪而过）；放弃后释放 loading，让 UI 依据 [hasLoadError]
+  /// 展示「加载失败 / 重试」。已有内容的后台刷新失败则保持就绪态继续渲染旧内容。
+  void _handleLoadFailure() {
+    if (_disposed) return;
+    if (_consecutiveLoadFailures < _kMaxLoadRetries) {
+      _scheduleLoadRetry();
+      notifyListeners();
+      return;
+    }
+    _isLoading = false;
+    notifyListeners();
+  }
+
+  void _scheduleLoadRetry() {
+    _loadRetryTimer?.cancel();
+    _loadRetryTimer = Timer(_kLoadRetryDelay, () {
+      _loadRetryTimer = null;
+      if (_disposed) return;
+      // 已有另一轮刷新在跑时顺延，避免两轮并发写同一批缓存。
+      if (_refreshInFlight) {
+        _scheduleLoadRetry();
+        return;
+      }
+      refresh(silent: true);
+    });
   }
 
   void _onTypingChanged() {
@@ -361,23 +455,32 @@ class ConversationListController extends ChangeNotifier {
   /// 单个 agent 的 DM 预览：活跃频道 / 最新消息 / 未读数。
   ///
   /// 逐 agent 串行是 3N 次 sqflite 往返，并发后整体等待时间接近一次往返。
+  /// 单个 agent 的任一查询失败只丢弃该行的预览（agent 仍保留、未读按 0），
+  /// 不拖垮整批 —— 否则 1 个坏行会让整轮 Future.wait 抛错、列表被清空。
   Future<void> _loadAgentPreview(String agentId) async {
-    const userId = 'user';
-    final activeChannelId =
-        await _chatService.getLatestActiveChannelId(userId, agentId);
-    final channelId =
-        activeChannelId ?? _chatService.generateChannelId(userId, agentId);
-    final latestMsg =
-        await _databaseService.getLatestMessageForAgent(agentId);
-    var unreadCount =
-        await _databaseService.getUnreadCountForAgent(agentId);
-    _agentChannelIds[agentId] = channelId;
-    _latestMessages[agentId] = latestMsg;
-    // 用户正在该频道里查看 → 角标按 0 计。
-    if (AppLifecycleService().activeChannelId == channelId) {
-      unreadCount = 0;
+    try {
+      const userId = 'user';
+      final activeChannelId =
+          await _chatService.getLatestActiveChannelId(userId, agentId);
+      final channelId =
+          activeChannelId ?? _chatService.generateChannelId(userId, agentId);
+      final latestMsg =
+          await _databaseService.getLatestMessageForAgent(agentId);
+      var unreadCount = await _databaseService.getUnreadCountForAgent(agentId);
+      _agentChannelIds[agentId] = channelId;
+      _latestMessages[agentId] = latestMsg;
+      // 用户正在该频道里查看 → 角标按 0 计。
+      if (AppLifecycleService().activeChannelId == channelId) {
+        unreadCount = 0;
+      }
+      _unreadCounts[agentId] = unreadCount;
+    } catch (e) {
+      LoggerService().error(
+        'Failed to load preview for agent $agentId',
+        tag: 'ConversationList',
+        error: e,
+      );
     }
-    _unreadCounts[agentId] = unreadCount;
   }
 
   Future<void> _loadGroupPreviews(List<Channel> groups) async {
@@ -385,38 +488,66 @@ class ConversationListController extends ChangeNotifier {
 
     // 会话列表只用到会话 id，成员不参与预览/未读计算，因此走只取 id 的批量
     // 查询：每个群 1 次，而非 getGroupSessions 的 1+2N 次。
+    //
+    // 每个群/每个批量查询独立 try/catch：单个群预览失败只丢该行，群列表仍由
+    // refresh() 正常渲染 —— 否则 1 个坏行会让整轮 Future.wait 抛错、列表被清空。
     final sessionIdsByGroup = <String, List<String>>{};
     await Future.wait(groups.map((group) async {
-      sessionIdsByGroup[group.id] =
-          await _databaseService.getGroupSessionIds(group.groupFamilyId);
+      try {
+        sessionIdsByGroup[group.id] =
+            await _databaseService.getGroupSessionIds(group.groupFamilyId);
+      } catch (e) {
+        LoggerService().error(
+          'Failed to load sessions for group ${group.id}',
+          tag: 'ConversationList',
+          error: e,
+        );
+      }
     }));
 
     final allSessionIds = <String>[
       for (final ids in sessionIdsByGroup.values) ...ids,
     ];
-    final unreadByChannel =
-        await _databaseService.getUnreadCountsByChannels(allSessionIds);
+    Map<String, int> unreadByChannel = const {};
+    try {
+      unreadByChannel =
+          await _databaseService.getUnreadCountsByChannels(allSessionIds);
+    } catch (e) {
+      LoggerService().error(
+        'Failed to load group unread counts',
+        tag: 'ConversationList',
+        error: e,
+      );
+    }
 
     await Future.wait(groups.map((group) async {
-      final sessionIds = sessionIdsByGroup[group.id] ?? const [];
-      _groupSessionChannelIds[group.id] = {...sessionIds};
+      try {
+        final sessionIds = sessionIdsByGroup[group.id] ?? const [];
+        _groupSessionChannelIds[group.id] = {...sessionIds};
 
-      final activeChannelId = await _databaseService
-          .getLatestActiveGroupChannel(group.groupFamilyId);
+        final activeChannelId = await _databaseService
+            .getLatestActiveGroupChannel(group.groupFamilyId);
 
-      var totalUnread = 0;
-      for (final sessionId in sessionIds) {
-        if (sessionId == AppLifecycleService().activeChannelId) continue;
-        totalUnread += unreadByChannel[sessionId] ?? 0;
+        var totalUnread = 0;
+        for (final sessionId in sessionIds) {
+          if (sessionId == AppLifecycleService().activeChannelId) continue;
+          totalUnread += unreadByChannel[sessionId] ?? 0;
+        }
+
+        if (activeChannelId != null) {
+          _groupChannelIds[group.id] = activeChannelId;
+          _groupChannelIds[group.groupFamilyId] = activeChannelId;
+        }
+        _groupLatestMessages[group.id] = await _databaseService
+            .getLatestMessageForGroupFamily(group.groupFamilyId);
+        _groupUnreadCounts[group.id] = totalUnread;
+      } catch (e) {
+        LoggerService().error(
+          'Failed to load preview for group ${group.id}',
+          tag: 'ConversationList',
+          error: e,
+        );
       }
-
-      if (activeChannelId != null) {
-        _groupChannelIds[group.id] = activeChannelId;
-        _groupChannelIds[group.groupFamilyId] = activeChannelId;
-      }
-      _groupLatestMessages[group.id] = await _databaseService
-          .getLatestMessageForGroupFamily(group.groupFamilyId);
-      _groupUnreadCounts[group.id] = totalUnread;
     }));
   }
 
@@ -449,8 +580,7 @@ class ConversationListController extends ChangeNotifier {
           timeout: const Duration(seconds: 3),
         );
         if (_disposed) return;
-        final freshAgents =
-            _visibleOnThisApp(await _apiService.getAgents());
+        final freshAgents = _visibleOnThisApp(await _apiService.getAgents());
         if (_disposed) return;
         if (!_agentOnlineStatusChanged(freshAgents, _agents)) return;
 
@@ -588,7 +718,8 @@ class ConversationListController extends ChangeNotifier {
 
     DateTime? agentLastMessageTime(Agent agent) {
       final timeStr = latestMessages[agent.id]?['created_at'] as String?;
-      final msgTime = timeStr != null ? DateTime.tryParse(timeStr)?.toLocal() : null;
+      final msgTime =
+          timeStr != null ? DateTime.tryParse(timeStr)?.toLocal() : null;
       final draftTime = draftUpdatedAtForAgent?.call(agent.id)?.toLocal();
       return latestOf([msgTime, draftTime]);
     }
@@ -630,13 +761,15 @@ class ConversationListController extends ChangeNotifier {
         if (!matchesName && !matchesDesc) continue;
       }
       final timeStr = groupLatestMessages[group.id]?['created_at'] as String?;
-      final msgTime = timeStr != null ? DateTime.tryParse(timeStr)?.toLocal() : null;
+      final msgTime =
+          timeStr != null ? DateTime.tryParse(timeStr)?.toLocal() : null;
       final draftTime = (draftUpdatedAtForGroup?.call(group.groupFamilyId) ??
               draftUpdatedAtForGroup?.call(group.id))
           ?.toLocal();
       final time = latestOf([msgTime, draftTime]);
       blocks.add(
-        ConversationListBlock.standalone(ConversationListItem.group(group, time)),
+        ConversationListBlock.standalone(
+            ConversationListItem.group(group, time)),
       );
     }
 
@@ -667,6 +800,7 @@ class ConversationListController extends ChangeNotifier {
     _chatService.typingChannelIds.removeListener(_onTypingChanged);
     _healthCheckTimer?.cancel();
     _pendingRefreshTimer?.cancel();
+    _loadRetryTimer?.cancel();
     _peerMessageSub?.cancel();
     _peerEventSub?.cancel();
     _peerListChangedSub?.cancel();

@@ -87,6 +87,7 @@ class HomeScreenState extends State<HomeScreen> {
   List<MessageSearchResult> _searchMessageResults = [];
   List<PeerMessageSearchResult> _searchPeerMessageResults = [];
   bool _isEmbeddedSearching = false;
+  bool _isSearchActive = false;
   Timer? _searchDebounce;
 
   // Convenience accessors for tiles (backed by ConversationListController).
@@ -210,10 +211,27 @@ class HomeScreenState extends State<HomeScreen> {
   }
 
   /// 搜索过滤
+  ///
+  /// 嵌入模式下不再逐字符 setState：整棵 Scaffold（含抽屉）与结果列表都会跟着
+  /// 重建，而结果 300ms 后才更新一次。这里只在「空 ↔ 非空」翻转、以及进入
+  /// 待搜状态时各重建一次。
   void _onSearchChanged() {
     if (widget.embedded) {
-      setState(() {});
+      final active = _searchController.text.trim().isNotEmpty;
+      if (active != _isSearchActive) {
+        setState(() => _isSearchActive = active);
+      }
       _searchDebounce?.cancel();
+      if (!active) {
+        _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+          if (mounted) _performEmbeddedSearch('');
+        });
+        return;
+      }
+      // 首字符立刻转圈，避免防抖窗口内闪一下「无结果」。
+      if (!_isEmbeddedSearching) {
+        setState(() => _isEmbeddedSearching = true);
+      }
       _searchDebounce = Timer(const Duration(milliseconds: 300), () {
         if (mounted) _performEmbeddedSearch(_searchController.text.trim());
       });
@@ -235,40 +253,30 @@ class HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    setState(() => _isEmbeddedSearching = true);
     _list.setSearchQuery(query);
 
-    List<Channel> channelResults = [];
-    List<MessageSearchResult> messageResults = [];
-    List<PeerMessageSearchResult> peerMessageResults = [];
-    try {
-      final allChannels = await _databaseService.getAllChannels();
-      final lowerQuery = query.toLowerCase();
-      channelResults = allChannels.where((ch) {
-        return ch.name.toLowerCase().contains(lowerQuery) ||
-            (ch.description?.toLowerCase().contains(lowerQuery) ?? false);
-      }).toList();
-    } catch (_) {}
-    try {
-      messageResults = await _messageSearchService.searchMessages(
-        query: query,
-        limit: 20,
-      );
-    } catch (_) {}
-    try {
-      if (ProductFeatures.deviceChatUiEnabled) {
-        peerMessageResults = await PeerStorageService().searchMessages(
-          query: query,
-          limit: 20,
-        );
-      }
-    } catch (_) {}
+    // 三路数据源互不依赖，串行会把各自的查询时间累加；并行后整体等待时间
+    // 接近最慢的一路。每路各自兜底，单路失败不影响其它两路（同改动前）。
+    final results = await Future.wait<Object>([
+      _databaseService
+          .searchChannels(query)
+          .catchError((Object _) => <Channel>[]),
+      _messageSearchService
+          .searchMessages(query: query, limit: 20)
+          .catchError((Object _) => <MessageSearchResult>[]),
+      ProductFeatures.deviceChatUiEnabled
+          ? PeerStorageService()
+              .searchMessages(query: query, limit: 20)
+              .catchError((Object _) => <PeerMessageSearchResult>[])
+          : Future<List<PeerMessageSearchResult>>.value(
+              const <PeerMessageSearchResult>[]),
+    ]);
 
     if (!mounted || _searchController.text.trim() != query) return;
     setState(() {
-      _searchChannelResults = channelResults;
-      _searchMessageResults = messageResults;
-      _searchPeerMessageResults = peerMessageResults;
+      _searchChannelResults = results[0] as List<Channel>;
+      _searchMessageResults = results[1] as List<MessageSearchResult>;
+      _searchPeerMessageResults = results[2] as List<PeerMessageSearchResult>;
       _isEmbeddedSearching = false;
     });
   }
@@ -490,7 +498,7 @@ class HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final iconColor = IconTheme.of(context).color ?? Theme.of(context).colorScheme.onSurface;
-    final isSearching = widget.embedded && _searchController.text.trim().isNotEmpty;
+    final isSearching = widget.embedded && _isSearchActive;
 
     // Full-area open via DrawerSwipeDetector: clearly rightward swipes open the
     // drawer from the middle; vertical-dominant moves yield to list scrolling.
@@ -575,6 +583,8 @@ class HomeScreenState extends State<HomeScreen> {
                       minWidth: 36,
                       minHeight: 32,
                     ),
+                    // build 只在「空 ↔ 非空」翻转时触发，正是清除按钮需要显隐
+                    // 的时刻，因此无需为它单独监听输入框。
                     suffixIcon: _searchController.text.isNotEmpty
                         ? IconButton(
                             icon: const Icon(Icons.clear, size: 18),
@@ -1192,6 +1202,37 @@ class HomeScreenState extends State<HomeScreen> {
     }
 
     if (_agents.isEmpty && _groupChannels.isEmpty) {
+      // 加载失败要能被看见：显示「加载失败 / 重试」，而不是被误读成
+      // 「用户还没有任何 agent」的空状态。
+      if (_list.hasLoadError) {
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.error_outline,
+                size: 80,
+                color: Colors.grey[400],
+              ),
+              const SizedBox(height: 16),
+              Text(
+                l10n.agentList_loadFailed,
+                style: TextStyle(
+                  fontSize: 18,
+                  color: Colors.grey[600],
+                ),
+              ),
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
+                onPressed: () => _loadAgents(),
+                icon: const Icon(Icons.refresh),
+                label: Text(l10n.widget_retry),
+              ),
+            ],
+          ),
+        );
+      }
+
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,

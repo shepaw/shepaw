@@ -99,6 +99,37 @@ extension ChannelDao on LocalDatabaseService {
     ];
   }
 
+  /// 按名称 / 描述模糊搜索会话，成员批量加载。
+  ///
+  /// 搜索只需要命中的少量会话，走 [getAllChannels] 会把全表拉出来再在内存里
+  /// 过滤，并逐个会话串行查成员（1 + 2N 次往返，N 为全部会话数）。这里固定
+  /// 2 次查询：1 次命中 + 1 次批量取成员。
+  ///
+  /// SQLite 的 LIKE 默认对 ASCII 大小写不敏感，与原先在 Dart 侧
+  /// `toLowerCase().contains()` 的匹配语义一致。
+  Future<List<Channel>> searchChannels(String query, {int limit = 50}) async {
+    final q = query.trim();
+    if (q.isEmpty) return const [];
+    final db = await database;
+    final results = await db.query(
+      'channels',
+      where: 'name LIKE ? OR description LIKE ?',
+      whereArgs: ['%$q%', '%$q%'],
+      orderBy: 'created_at DESC',
+      limit: limit,
+    );
+    if (results.isEmpty) return const [];
+
+    final membersByChannel = await _loadMembersByChannel(
+      db,
+      results.map((m) => m['id'] as String).toList(),
+    );
+    return [
+      for (final map in results)
+        _channelFromMap(map, membersByChannel[map['id'] as String] ?? const []),
+    ];
+  }
+
   /// 根据 ID 获取 Channel
   Future<Channel?> getChannelById(String id) async {
     final db = await database;

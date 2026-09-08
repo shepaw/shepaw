@@ -53,6 +53,26 @@ class AgentSearchDelegate extends SearchDelegate<Agent?> {
           ),
         );
 
+  /// 连续输入时只跑最后一次查询。
+  static const Duration _kDebounce = Duration(milliseconds: 250);
+
+  String? _resultQuery;
+  Future<_GlobalSearchResults>? _resultFuture;
+
+  /// 同一 query 复用同一个 Future。
+  ///
+  /// 搜索页每次 rebuild 都会重建 FutureBuilder，而 future 是在 build 里取的：
+  /// 不缓存的话每敲一个字符（以及每次无关重建）都会把三路查询重跑一遍。
+  Future<_GlobalSearchResults> _searchFor(String searchQuery) {
+    final cached = _resultFuture;
+    if (cached != null && _resultQuery == searchQuery) return cached;
+    _resultQuery = searchQuery;
+    return _resultFuture = Future<_GlobalSearchResults>.delayed(
+      _kDebounce,
+      () => _performSearch(searchQuery),
+    );
+  }
+
   @override
   List<Widget>? buildActions(BuildContext context) => null;
 
@@ -97,16 +117,16 @@ class AgentSearchDelegate extends SearchDelegate<Agent?> {
     }
 
     // Filter agents locally
+    final lowerQuery = query.toLowerCase();
     final agentResults = agents.where((agent) {
-      return agent.name.toLowerCase().contains(query.toLowerCase()) ||
-          (agent.type?.toLowerCase().contains(query.toLowerCase()) ?? false) ||
-          (agent.description?.toLowerCase().contains(query.toLowerCase()) ??
-              false);
+      return agent.name.toLowerCase().contains(lowerQuery) ||
+          (agent.type?.toLowerCase().contains(lowerQuery) ?? false) ||
+          (agent.description?.toLowerCase().contains(lowerQuery) ?? false);
     }).toList();
 
     // Fetch channels and messages asynchronously
     return FutureBuilder<_GlobalSearchResults>(
-      future: _performSearch(query),
+      future: _searchFor(query),
       builder: (context, snapshot) {
         final channelResults = snapshot.data?.channels ?? [];
         final messageResults = snapshot.data?.messages ?? [];
@@ -171,39 +191,30 @@ class AgentSearchDelegate extends SearchDelegate<Agent?> {
   }
 
   Future<_GlobalSearchResults> _performSearch(String searchQuery) async {
-    final channels = await _searchChannels(searchQuery);
-    final messages = await messageSearchService.searchMessages(
-      query: searchQuery,
-      limit: 20,
-    );
-    final peerMessages = ProductFeatures.deviceChatUiEnabled
-        ? await PeerStorageService().searchMessages(
-            query: searchQuery,
-            limit: 20,
-          )
-        : <PeerMessageSearchResult>[];
-    return _GlobalSearchResults(
-      channels: channels,
-      messages: messages,
-      peerMessages: peerMessages,
-    );
-  }
+    // 防抖窗口内又输入了新字符：这一轮的结果没人会看，直接放弃。
+    if (_resultQuery != searchQuery) return _GlobalSearchResults.empty();
 
-  Future<List<Channel>> _searchChannels(String searchQuery) async {
-    try {
-      final allChannels = await databaseService.getAllChannels();
-      return allChannels.where((channel) {
-        return channel.name
-                .toLowerCase()
-                .contains(searchQuery.toLowerCase()) ||
-            (channel.description
-                    ?.toLowerCase()
-                    .contains(searchQuery.toLowerCase()) ??
-                false);
-      }).toList();
-    } catch (_) {
-      return [];
-    }
+    // 三路数据源互不依赖，串行会把各自的查询时间累加；并行后整体等待时间
+    // 接近最慢的一路。每路各自兜底，单路失败不影响其它两路。
+    final results = await Future.wait<Object>([
+      databaseService
+          .searchChannels(searchQuery)
+          .catchError((Object _) => <Channel>[]),
+      messageSearchService
+          .searchMessages(query: searchQuery, limit: 20)
+          .catchError((Object _) => <MessageSearchResult>[]),
+      ProductFeatures.deviceChatUiEnabled
+          ? PeerStorageService()
+              .searchMessages(query: searchQuery, limit: 20)
+              .catchError((Object _) => <PeerMessageSearchResult>[])
+          : Future<List<PeerMessageSearchResult>>.value(
+              const <PeerMessageSearchResult>[]),
+    ]);
+    return _GlobalSearchResults(
+      channels: results[0] as List<Channel>,
+      messages: results[1] as List<MessageSearchResult>,
+      peerMessages: results[2] as List<PeerMessageSearchResult>,
+    );
   }
 
   Widget _buildSectionHeader(BuildContext context, String title, int count) {
@@ -514,9 +525,15 @@ class _GlobalSearchResults {
   final List<MessageSearchResult> messages;
   final List<PeerMessageSearchResult> peerMessages;
 
-  _GlobalSearchResults({
+  const _GlobalSearchResults({
     required this.channels,
     required this.messages,
     required this.peerMessages,
   });
+
+  factory _GlobalSearchResults.empty() => const _GlobalSearchResults(
+        channels: <Channel>[],
+        messages: <MessageSearchResult>[],
+        peerMessages: <PeerMessageSearchResult>[],
+      );
 }

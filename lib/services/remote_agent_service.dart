@@ -93,7 +93,8 @@ class RemoteAgentService {
     if (endpoint.isNotEmpty) {
       // 从 metadata 中提取 target_agent_id
       final targetAgentId = metadata['target_agent_id'] as String?;
-      final existing = await _databaseService.getRemoteAgentByEndpointAndAgentId(
+      final existing =
+          await _databaseService.getRemoteAgentByEndpointAndAgentId(
         endpoint,
         agentId: targetAgentId,
       );
@@ -127,6 +128,8 @@ class RemoteAgentService {
     );
 
     await _databaseService.createRemoteAgent(agent);
+    // 名单变化后通知会话列表等订阅方补刷，否则新 agent 要等一次人为导航才出现。
+    notifyAgentsChanged();
     return agent;
   }
 
@@ -160,7 +163,8 @@ class RemoteAgentService {
     if (endpoint.isNotEmpty) {
       // 从 metadata 中提取 target_agent_id
       final targetAgentId = metadata['target_agent_id'] as String?;
-      final existingByEndpoint = await _databaseService.getRemoteAgentByEndpointAndAgentId(
+      final existingByEndpoint =
+          await _databaseService.getRemoteAgentByEndpointAndAgentId(
         endpoint,
         agentId: targetAgentId,
       );
@@ -193,6 +197,8 @@ class RemoteAgentService {
     );
 
     await _databaseService.createRemoteAgent(agent);
+    // 名单变化后通知会话列表等订阅方补刷，否则新 agent 要等一次人为导航才出现。
+    notifyAgentsChanged();
     return agent;
   }
 
@@ -208,8 +214,7 @@ class RemoteAgentService {
     // 已连接且共享该 agent 的对端，让对端的 peer agent 即时同步。
     // best-effort：无对端 / 推送失败均不影响本次保存。
     try {
-      await PeerAgentHostService.instance
-          .pushAgentListToSharingPeers(agent.id);
+      await PeerAgentHostService.instance.pushAgentListToSharingPeers(agent.id);
     } catch (e) {
       LoggerService().debug(
         'Push agent list to peers skipped after update ${agent.id}: $e',
@@ -235,6 +240,8 @@ class RemoteAgentService {
       await _tryUnregisterFromAgent(agent);
     }
     await _databaseService.deleteRemoteAgent(agentId);
+    // 名单变化后通知会话列表等订阅方补刷，否则已删除的 agent 会残留到下次刷新。
+    notifyAgentsChanged();
   }
 
   /// Open a one-shot Noise session purely to send `peer.unregister`, then
@@ -400,9 +407,8 @@ class RemoteAgentService {
   ) async {
     if (agent.bio?.trim().isNotEmpty == true) return;
     try {
-      final card = await connection
-          .getAgentCard()
-          .timeout(const Duration(seconds: 3));
+      final card =
+          await connection.getAgentCard().timeout(const Duration(seconds: 3));
       if (!card.isSuccess) return;
       final result = card.result;
       if (result is! Map) return;
@@ -432,12 +438,10 @@ class RemoteAgentService {
   /// 失败 / 无变化 / peer agent 静默跳过。best-effort。
   Future<void> refreshResumeFromCard(String agentId) async {
     try {
-      final connection =
-          ChatService().activeConnectionFor(agentId);
+      final connection = ChatService().activeConnectionFor(agentId);
       if (connection == null) return;
-      final card = await connection
-          .getAgentCard()
-          .timeout(const Duration(seconds: 5));
+      final card =
+          await connection.getAgentCard().timeout(const Duration(seconds: 5));
       if (!card.isSuccess || card.result is! Map) return;
       await _applyCardResume(agentId, card.result as Map, overwrite: true);
     } catch (e) {
@@ -458,8 +462,7 @@ class RemoteAgentService {
       final agent = await getAgentById(agentId);
       if (agent == null || agent.isPeerAgent) return;
       if (!overwrite && agent.bio?.trim().isNotEmpty == true) return;
-      final desc = (card['bio'] as String?) ??
-          (card['description'] as String?);
+      final desc = (card['bio'] as String?) ?? (card['description'] as String?);
       if (desc == null || desc.trim().isEmpty) return;
       final newBio = desc.trim();
       if (newBio == (agent.bio ?? '').trim()) return;
@@ -543,8 +546,7 @@ class RemoteAgentService {
       if (card is! Map) {
         throw StateError('返回的 AgentCard 格式异常');
       }
-      final desc = (card['bio'] as String?) ??
-          (card['description'] as String?);
+      final desc = (card['bio'] as String?) ?? (card['description'] as String?);
       if (desc == null || desc.trim().isEmpty) {
         throw StateError('网关未返回简历内容');
       }
@@ -622,7 +624,6 @@ class RemoteAgentService {
     Duration timeout = const Duration(seconds: 5),
     String? enrollmentCode,
   }) async {
-
     final agent = await getAgentById(agentId);
     if (agent == null) {
       LoggerService().warning('Agent($agentId) 不存在', tag: 'RemoteAgent');
@@ -774,8 +775,10 @@ class RemoteAgentService {
       // "temporarily unavailable" and preserve the current status rather than
       // marking the agent offline.
       final msg = e.toString();
-      if (msg.contains('503') || msg.contains('502') ||
-          msg.contains('ServiceUnavailable') || msg.contains('not upgraded')) {
+      if (msg.contains('503') ||
+          msg.contains('502') ||
+          msg.contains('ServiceUnavailable') ||
+          msg.contains('not upgraded')) {
         return agent.isOnline; // keep whatever the last known status was
       }
       await disconnectAgent(agentId);
@@ -864,11 +867,16 @@ class RemoteAgentService {
       'error': errorAgents.length,
       'by_protocol': {
         'acp': allAgents.where((a) => a.protocol == ProtocolType.acp).length,
-        'custom': allAgents.where((a) => a.protocol == ProtocolType.custom).length,
+        'custom':
+            allAgents.where((a) => a.protocol == ProtocolType.custom).length,
       },
       'by_connection_type': {
-        'websocket': allAgents.where((a) => a.connectionType == ConnectionType.websocket).length,
-        'http': allAgents.where((a) => a.connectionType == ConnectionType.http).length,
+        'websocket': allAgents
+            .where((a) => a.connectionType == ConnectionType.websocket)
+            .length,
+        'http': allAgents
+            .where((a) => a.connectionType == ConnectionType.http)
+            .length,
       },
     };
   }
@@ -889,7 +897,8 @@ class RemoteAgentService {
     // 计算最后活跃时间
     int? lastActiveMs;
     if (agent.lastHeartbeat != null) {
-      lastActiveMs = DateTime.now().millisecondsSinceEpoch - agent.lastHeartbeat!;
+      lastActiveMs =
+          DateTime.now().millisecondsSinceEpoch - agent.lastHeartbeat!;
     }
 
     return {
