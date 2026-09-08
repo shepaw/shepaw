@@ -120,12 +120,12 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
                 unawaited(_load());
               },
             ),
+          IconButton(
+            tooltip: l10n.instructionSet_create,
+            icon: const Icon(Icons.add),
+            onPressed: _showCreateDialog,
+          ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showCreateDialog,
-        icon: const Icon(Icons.add),
-        label: Text(l10n.instructionSet_create),
       ),
       body: switch (items) {
         null => const Center(child: CircularProgressIndicator()),
@@ -160,7 +160,7 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
   Widget _buildList(List<InstructionSet> items) {
     final theme = Theme.of(context);
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 88),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
       itemCount: items.length,
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
