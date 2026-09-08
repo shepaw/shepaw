@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/instruction_set.dart';
-import '../models/remote_agent.dart';
 import '../service_locator.dart';
 import '../services/chat_navigation_service.dart';
 import '../services/chat_service.dart';
@@ -13,6 +12,7 @@ import '../services/instruction_set_service.dart';
 import '../services/local_database_service.dart';
 import '../services/local_user_identity.dart';
 import '../services/she_service.dart';
+import 'instruction_set_editor_screen.dart';
 
 /// 指令集管理页：查看 / 新建 / 编辑 / 删除 / 一键执行可复用的任务指令。
 ///
@@ -48,7 +48,6 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
 
   List<InstructionSet>? _items;
   final Map<String, String> _ownerNames = {}; // ownerAgentId -> display name
-  List<RemoteAgent> _agents = const [];
 
   @override
   void initState() {
@@ -76,7 +75,6 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
     if (!mounted) return;
     setState(() {
       _items = items;
-      _agents = agents;
       _ownerNames.addAll(names);
     });
   }
@@ -123,7 +121,7 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
           IconButton(
             tooltip: l10n.instructionSet_create,
             icon: const Icon(Icons.add),
-            onPressed: _showCreateDialog,
+            onPressed: _openEditor,
           ),
         ],
       ),
@@ -149,7 +147,8 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
             child: Text(
               l10n.instructionSet_empty,
               textAlign: TextAlign.center,
-              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+              style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           ),
         ],
@@ -244,7 +243,7 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
       case 'run':
         await _runInstruction(item);
       case 'edit':
-        await _showEditDialog(item);
+        await _openEditor(item: item);
       case 'delete':
         await _confirmDelete(item);
     }
@@ -266,7 +265,7 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
         },
         onEdit: () {
           Navigator.pop(context);
-          unawaited(_showEditDialog(item));
+          unawaited(_openEditor(item: item));
         },
         onDelete: () {
           Navigator.pop(context);
@@ -278,186 +277,22 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
 
   // ── 新建 / 编辑 ──────────────────────────────────────────────────────────────
 
-  Future<void> _showCreateDialog() async {
-    await _showEditorDialog(item: null);
-  }
-
-  Future<void> _showEditDialog(InstructionSet item) async {
-    await _showEditorDialog(item: item);
-  }
-
-  Future<void> _showEditorDialog({InstructionSet? item}) async {
-    final l10n = _l10n;
-    final nameController = TextEditingController(text: item?.name ?? '');
-    final descController =
-        TextEditingController(text: item?.description ?? '');
-    final contentController =
-        TextEditingController(text: item?.content ?? '');
-    var ownerId = item?.ownerAgentId ?? SheService.sheId;
-
-    final saved = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (dialogContext, setDialogState) {
-            return AlertDialog(
-              title: Text(
-                  item == null ? l10n.instructionSet_create : l10n.common_edit),
-              content: SizedBox(
-                width: 420,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextField(
-                        controller: nameController,
-                        decoration: InputDecoration(
-                          labelText: l10n.instructionSet_nameLabel,
-                          isDense: true,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: descController,
-                        decoration: InputDecoration(
-                          labelText: l10n.instructionSet_descLabel,
-                          isDense: true,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: contentController,
-                        maxLines: 6,
-                        minLines: 3,
-                        decoration: InputDecoration(
-                          labelText: l10n.instructionSet_contentLabel,
-                          alignLabelWithHint: true,
-                        ),
-                      ),
-                      if (item == null) ...[
-                        const SizedBox(height: 12),
-                        DropdownButtonFormField<String>(
-                          initialValue: ownerId,
-                          decoration: InputDecoration(
-                            labelText: l10n.instructionSet_ownerLabel,
-                            isDense: true,
-                          ),
-                          items: [
-                            DropdownMenuItem(
-                              value: SheService.sheId,
-                              child: Text(l10n.she_name),
-                            ),
-                            // She 自身也存在于 agents 表，需排除避免
-                            // DropdownButton 出现重复 value 断言崩溃。
-                            for (final agent in _agents)
-                              if (agent.id != SheService.sheId)
-                                DropdownMenuItem(
-                                  value: agent.id,
-                                  child: Text(
-                                    agent.name,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                          ],
-                          onChanged: (value) {
-                            if (value != null) {
-                              ownerId = value;
-                              setDialogState(() {});
-                            }
-                          },
-                        ),
-                        const SizedBox(height: 8),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            l10n.instructionSet_createHint,
-                            style: Theme.of(dialogContext)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(
-                                  color: Theme.of(dialogContext)
-                                      .colorScheme
-                                      .onSurfaceVariant,
-                                ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext, false),
-                  child: Text(l10n.common_cancel),
-                ),
-                FilledButton(
-                  onPressed: () async {
-                    final name = nameController.text.trim();
-                    final content = contentController.text.trim();
-                    if (name.isEmpty) {
-                      ScaffoldMessenger.of(dialogContext).showSnackBar(
-                        SnackBar(content: Text(l10n.instructionSet_nameRequired)),
-                      );
-                      return;
-                    }
-                    if (content.isEmpty) {
-                      ScaffoldMessenger.of(dialogContext).showSnackBar(
-                        SnackBar(
-                            content: Text(l10n.instructionSet_contentRequired)),
-                      );
-                      return;
-                    }
-                    try {
-                      if (item == null) {
-                        await _service.create(
-                          name: name,
-                          description: descController.text,
-                          content: content,
-                          ownerAgentId: ownerId,
-                        );
-                      } else {
-                        await _service.update(
-                          id: item.id,
-                          name: name,
-                          description: descController.text,
-                          content: content,
-                        );
-                      }
-                      if (dialogContext.mounted) {
-                        Navigator.pop(dialogContext, true);
-                      }
-                    } catch (e) {
-                      if (dialogContext.mounted) {
-                        ScaffoldMessenger.of(dialogContext).showSnackBar(
-                          SnackBar(
-                              content: Text(
-                                  l10n.instructionSet_saveFailed('$e'))),
-                        );
-                      }
-                    }
-                  },
-                  child: Text(l10n.common_save),
-                ),
-              ],
-            );
-          },
-        );
-      },
+  /// 打开新建 / 编辑页，保存成功后刷新列表。
+  Future<void> _openEditor({InstructionSet? item}) async {
+    final savedName = await Navigator.push<String>(
+      context,
+      MaterialPageRoute<String>(
+        builder: (_) => InstructionSetEditorScreen(item: item),
+      ),
     );
+    if (savedName == null || !mounted) return;
 
-    if (saved == true && mounted) {
-      setState(() => _items = null);
-      await _load();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content:
-                Text(l10n.instructionSet_saved(nameController.text.trim())),
-          ),
-        );
-      }
+    setState(() => _items = null);
+    await _load();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_l10n.instructionSet_saved(savedName))),
+      );
     }
   }
 
@@ -605,7 +440,8 @@ class _InstructionDetailSheet extends StatelessWidget {
               ),
               IconButton(
                 tooltip: l10n.common_delete,
-                icon: Icon(Icons.delete_outline, color: theme.colorScheme.error),
+                icon:
+                    Icon(Icons.delete_outline, color: theme.colorScheme.error),
                 onPressed: onDelete,
               ),
             ],
