@@ -724,7 +724,10 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       final hasLiveTask = chatService.getActiveTask(currentChannelId!) != null;
       // 回合一开始任务可能尚未登记（登记在发送流程内）——会话「新鲜」
       // 时按活跃处理，不能凭「没有 ActiveTask」把刚开始的回合当僵尸清掉。
-      final turnFresh = streaming.beganWithin(const Duration(seconds: 10));
+      // 新鲜度以最后一次 chunk/进度帧为准：回合还在出字就永远算活跃，
+      // 不会因为「距发送已超过 10s」（长上下文首 token 慢、慢查询拖长
+      // reload）被误判僵尸并清掉流式会话。
+      final turnFresh = streaming.activeWithin(const Duration(seconds: 10));
       final deferReload = ChatStreamingSession.shouldDeferReload(
         streamingActive: streaming.isActive,
         hasLiveTask: hasLiveTask || turnFresh,

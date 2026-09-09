@@ -27,6 +27,7 @@ import '../../services/app_lifecycle_service.dart';
 import '../../services/local_database_service.dart';
 import '../../services/local_file_storage_service.dart';
 import '../../services/logger_service.dart';
+import '../../services/she_agent_impression_service.dart';
 import '../../service_locator.dart' show getIt;
 import '../../utils/engine_avatars.dart';
 import '../../utils/session_utils.dart';
@@ -3780,6 +3781,7 @@ class PeerAgentClientService {
     final list = (data['agents'] as List?) ?? const [];
     final now = DateTime.now().millisecondsSinceEpoch;
     final seenRemoteIds = <String>{};
+    final syncedLocalIds = <String>[];
     final peerName = await _peerDisplayName(peerId);
 
     try {
@@ -3874,10 +3876,16 @@ class PeerAgentClientService {
         } else {
           await _db.updateRemoteAgent(agent);
         }
+        syncedLocalIds.add(localId);
       }
 
       // 对端不再暴露的 agent → 删除。
       await _removeStalePeerAgents(peerId, keep: seenRemoteIds);
+
+      SheAgentImpressionService.instance.scheduleRefreshAll(
+        syncedLocalIds,
+        announce: false,
+      );
 
       _log.debug('Injected ${seenRemoteIds.length} peer agents from $peerId', tag: _tag);
       PeerConnectionManager.instance.notifyPeerListChanged();
@@ -3971,6 +3979,7 @@ class PeerAgentClientService {
           a.sourcePeerId == peerId &&
           !keep.contains(a.remoteAgentId)) {
         await _db.deleteRemoteAgent(a.id);
+        unawaited(SheAgentImpressionService.instance.removeImpression(a.id));
       }
     }
   }
@@ -3996,6 +4005,7 @@ class PeerAgentClientService {
         if (a.protocol == ProtocolType.peer &&
             (a.sourcePeerId == null || !pairedIds.contains(a.sourcePeerId))) {
           await _db.deleteRemoteAgent(a.id);
+          unawaited(SheAgentImpressionService.instance.removeImpression(a.id));
           changed = true;
         }
       }

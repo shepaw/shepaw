@@ -2,6 +2,7 @@ import 'dart:async';
 
 import '../../cli_base.dart';
 import '../../../services/local_database_service.dart';
+import '../../../services/she_agent_impression_service.dart';
 import '../../../peer/services/peer_agent_host_service.dart';
 
 /// 更新 Agent 自己的简历（`RemoteAgent.bio`）。
@@ -68,6 +69,7 @@ class ResumeSetCommand extends CliCommand {
 
     final resume = text.trim().isEmpty ? null : text.trim();
     await _db.updateRemoteAgent(agent.copyWith(bio: resume));
+    SheAgentImpressionService.instance.scheduleRefresh(id);
 
     // Agent 自我更新简历后，把最新列表推送给已连接且共享该 agent 的对端。
     unawaited(

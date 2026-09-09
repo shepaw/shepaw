@@ -187,7 +187,7 @@ class GroupPromptBuilder {
 $memberList
 
 【查阅成员详情】
-花名册只含本群职责，不是完整能力画像。职责足以选人时直接委派；拿不准、任务关键或准备换人时，再调用 `shepaw context agents.get --id <id>`（id 见上表）查看专长、能力与技能。日常派活不必每次都查。
+花名册只含本群职责，不是完整能力画像。职责足以选人时直接委派；拿不准、任务关键或准备换人时，再调用 `shepaw context agents.get --id <id>`（默认摘要）；需要专长/技能/派发经验时再追加 `--sections identity,capabilities,experience`（id 见上表）。日常派活不必每次都查。
 
 【你的身份】你是 ${currentAgent.name}（管理员）。$agentIdentity$customPromptSection
 

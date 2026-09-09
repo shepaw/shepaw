@@ -11,6 +11,7 @@ import '../local_user_identity.dart';
 import '../logger_service.dart';
 import '../messaging/agent_messaging_service.dart';
 import '../she_service.dart';
+import '../she_agent_impression_service.dart';
 import '../trace_service.dart';
 import '../../storage/context_bundle.dart';
 import 'she_relay_session_service.dart';
@@ -495,6 +496,11 @@ class DispatchService {
     }
 
     // 唤起 She 向用户汇报
+    SheAgentImpressionService.instance.scheduleRecordDispatchOutcome(
+      task.targetAgentId,
+      status,
+      errorMessage: errorMessage,
+    );
     await _reportToShe(updated, status,
         result: result, errorMessage: errorMessage);
   }

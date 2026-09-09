@@ -673,7 +673,8 @@ extension ChannelDao on LocalDatabaseService {
         'SELECT channel_id, COUNT(*) AS count FROM messages '
         'WHERE channel_id IN (${List.filled(chunk.length, '?').join(',')}) '
         'AND is_read = 0 AND sender_type != ?'
-        '$_kSqlExcludeStreamingUnreadBare',
+        '$_kSqlExcludeStreamingUnreadBare'
+        ' GROUP BY channel_id',
         [...chunk, 'user'],
       );
       for (final r in rows) {

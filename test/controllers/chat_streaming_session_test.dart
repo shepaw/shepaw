@@ -238,5 +238,30 @@ void main() {
       expect(s.beganAtMs, isNull);
       expect(s.beganWithin(const Duration(seconds: 10)), isFalse);
     });
+
+    test('持续出字的长回合超窗口后 activeWithin 仍为 true', () {
+      final s = ChatStreamingSession()..begin('streaming_1');
+      s.beganAtMs = DateTime.now().millisecondsSinceEpoch - 60000;
+      // 首 token 慢：60s 前发送，但 chunk 一直在到达。
+      s.append('仍在出字');
+      expect(s.beganWithin(const Duration(seconds: 10)), isFalse);
+      expect(s.activeWithin(const Duration(seconds: 10)), isTrue);
+    });
+
+    test('窗口内无任何 chunk/进度帧 → activeWithin 为 false', () {
+      final s = ChatStreamingSession()..begin('streaming_1');
+      s.lastActivityAtMs = DateTime.now().millisecondsSinceEpoch - 60000;
+      expect(s.activeWithin(const Duration(seconds: 10)), isFalse);
+    });
+
+    test('纯思考阶段：进度帧刷新活动时间', () {
+      final s = ChatStreamingSession()..begin('streaming_1', fromId: 'a1');
+      s.beganAtMs = DateTime.now().millisecondsSinceEpoch - 60000;
+      final messages = [_msg('streaming_1')];
+      final map = {for (final m in messages) m.id: m};
+
+      s.applyMetadataTo(messages, map, {'progress_content': 'thinking...'});
+      expect(s.activeWithin(const Duration(seconds: 10)), isTrue);
+    });
   });
 }

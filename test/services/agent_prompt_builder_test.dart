@@ -98,9 +98,31 @@ void main() {
       expect(block, contains('not background tracking'));
     });
 
+    test('profile snapshot caps recent activity in prompt view', () async {
+      final longMem = List.generate(
+        12,
+        (i) => 'Entry $i: ${'detail ' * 40}',
+      ).join('\n');
+      final block = await SheService.instance.buildProfileSnapshotBlock(
+        data: ShePromptData(
+          profile: const {'name': 'Alex'},
+          soul: '',
+          userInfo: '(not yet known)',
+          longTermMemory: longMem,
+          heartbeat: '(no record)',
+        ),
+      );
+      expect(block, contains('[Recent Activity]'));
+      expect(block, contains('[older entries omitted]'));
+      expect(
+        block.length,
+        lessThan(longMem.length),
+      );
+    });
+
     test('buildMetaCognitionBlock stays compact and defers playbooks to CLI help', () {
       final block = SheService.buildMetaCognitionBlock();
-      expect(block.length, lessThan(2800));
+      expect(block.length, lessThan(3100));
       expect(block, isNot(contains('use FIRST')));
       expect(block, contains('shepaw workflow --help'));
       expect(block, contains('shepaw chat group --help'));

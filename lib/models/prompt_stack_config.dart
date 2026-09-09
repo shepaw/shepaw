@@ -310,8 +310,9 @@ class SheStackConfig {
   /// discovers commands via `shepaw workflow --help` / `shepaw chat group --help`.
   final bool includeDmPlaybooks;
 
-  /// Inject a short connected-agents/groups roster (names + online counts).
-  /// Dynamic: online status changes. Default true for She.
+  /// Inject optional dynamic agent/group **counts** only (no names or profiles).
+  /// Discovery instructions live in meta-cognition; profiles via `agents.list` / `agents.get`.
+  /// Default true — ~100 chars; online count helps She know dispatch is possible.
   final bool includeAgentsRoster;
 
   /// Inject distilled memories from paired-owner devices (她的朋友圈).

@@ -115,6 +115,12 @@ class ChatStreamingSession {
   /// 回合的回复行（见 ChatMessageReconciler.dbHasTurnReply）。
   int? beganAtMs;
 
+  /// 最后一次收到 chunk 的时间戳（[begin]/[append] 设置、[clear] 清空）。
+  /// 新鲜度判定（[activeWithin]）以它为准：只要还在出字，回合就不能被
+  /// 当成僵尸清掉——首 token 慢的长回合不应因为「距发送已超过 N 秒」
+  /// 而丢失后续 chunk。
+  int? lastActivityAtMs;
+
   /// 回合（或占位会话）结束时触发一次。控制器用它补做流式期间被推迟的
   /// DB reconcile（见 ChatController._dmReconcileAfterStreaming）。
   void Function()? onClear;
@@ -137,11 +143,14 @@ class ChatStreamingSession {
     messageId = id;
     content = '';
     this.fromId = fromId;
-    beganAtMs = DateTime.now().millisecondsSinceEpoch;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    beganAtMs = now;
+    lastActivityAtMs = now;
   }
 
   void append(String chunk) {
     content += chunk;
+    lastActivityAtMs = DateTime.now().millisecondsSinceEpoch;
   }
 
   void clear() {
@@ -150,6 +159,7 @@ class ChatStreamingSession {
     content = '';
     fromId = null;
     beganAtMs = null;
+    lastActivityAtMs = null;
     if (wasActive) onClear?.call();
   }
 
@@ -158,6 +168,17 @@ class ChatStreamingSession {
     final t = beganAtMs;
     return t != null &&
         DateTime.now().millisecondsSinceEpoch - t <= window.inMilliseconds;
+  }
+
+  /// 会话在 [window] 内是否仍有活动：最后一个 chunk 落在窗口内，或回合
+  /// 才开始（还没有 chunk，此时以 [beganAtMs] 为准）。
+  ///
+  /// 与 [beganWithin] 的区别：回合持续出字时永远新鲜，不会因为「发送后
+  /// 已过 N 秒」被误判为僵尸。
+  bool activeWithin(Duration window) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final last = lastActivityAtMs ?? beganAtMs;
+    return last != null && now - last <= window.inMilliseconds;
   }
 
   /// 会话是否已沦为「僵尸」：锚点气泡已不在 [messages] 中（reload 折叠/
@@ -221,6 +242,9 @@ class ChatStreamingSession {
   }
 
   /// Merge metadata onto the active streaming message.
+  ///
+  /// thinking/进度帧也算活动，同样刷新 [lastActivityAtMs]：纯思考阶段
+  /// 可能长时间没有正文 chunk，不应被新鲜度判定当成僵尸。
   Message? applyMetadataTo(
     List<Message> messages,
     Map<String, Message> messageIdMap,
@@ -228,6 +252,7 @@ class ChatStreamingSession {
   ) {
     final id = messageId;
     if (id == null) return null;
+    lastActivityAtMs = DateTime.now().millisecondsSinceEpoch;
     repointAnchor(messages, messageIdMap: messageIdMap);
     final idx = messages.indexWhere((m) => m.id == messageId);
     if (idx == -1) return null;

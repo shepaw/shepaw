@@ -385,7 +385,7 @@ class _PromptStackConfigScreenState extends State<PromptStackConfigScreen> {
                         ),
                       ),
                       _switch(
-                        title: _tr('Agent 花名册', 'Agents roster'),
+                        title: _tr('Agent 数量提示', 'Agent count hint'),
                         value: _config.she.includeAgentsRoster,
                         onChanged: (v) => setState(
                           () => _config = _config.copyWith(

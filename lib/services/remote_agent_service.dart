@@ -15,6 +15,7 @@ import 'token_service.dart';
 import 'acp_agent_connection.dart';
 import 'chat_service.dart';
 import 'peer_key_utils.dart';
+import 'she_agent_impression_service.dart';
 import 'she_service.dart';
 
 /// Agent 重复异常
@@ -130,6 +131,7 @@ class RemoteAgentService {
     await _databaseService.createRemoteAgent(agent);
     // 名单变化后通知会话列表等订阅方补刷，否则新 agent 要等一次人为导航才出现。
     notifyAgentsChanged();
+    SheAgentImpressionService.instance.scheduleRefresh(agent.id);
     return agent;
   }
 
@@ -199,6 +201,7 @@ class RemoteAgentService {
     await _databaseService.createRemoteAgent(agent);
     // 名单变化后通知会话列表等订阅方补刷，否则新 agent 要等一次人为导航才出现。
     notifyAgentsChanged();
+    SheAgentImpressionService.instance.scheduleRefresh(agent.id);
     return agent;
   }
 
@@ -209,6 +212,7 @@ class RemoteAgentService {
     );
     await _databaseService.updateRemoteAgent(updatedAgent);
     notifyAgentsChanged();
+    SheAgentImpressionService.instance.scheduleRefresh(updatedAgent.id);
 
     // 本地 agent 元数据（名称/头像/简历等）变更后，把最新列表推送给
     // 已连接且共享该 agent 的对端，让对端的 peer agent 即时同步。
@@ -242,6 +246,7 @@ class RemoteAgentService {
     await _databaseService.deleteRemoteAgent(agentId);
     // 名单变化后通知会话列表等订阅方补刷，否则已删除的 agent 会残留到下次刷新。
     notifyAgentsChanged();
+    unawaited(SheAgentImpressionService.instance.removeImpression(agentId));
   }
 
   /// Open a one-shot Noise session purely to send `peer.unregister`, then

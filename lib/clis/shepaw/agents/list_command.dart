@@ -64,8 +64,9 @@ class ListCommand extends CliCommand {
     return {
       'agents': list,
       'count': list.length,
-      'hint': 'Use `shepaw context agents.get --id <id>` for the full '
-          'capability profile before an important dispatch.',
+      'hint': 'Use `shepaw context agents.get --id <id>` for a compact card; '
+          'add `--sections identity,capabilities,...` only when you need more '
+          'before an important dispatch.',
     };
   }
 }

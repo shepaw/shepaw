@@ -288,7 +288,7 @@ class AgentPromptBuilder {
       if (memoriesBlock.isNotEmpty) dynamicParts.add(memoriesBlock);
     }
 
-    // She 1:1 roster + paired-device digests (skip in ephemeral/group).
+    // She 1:1 optional agent/group counts (no impression text; skip in ephemeral/group).
     if (agent.isShe && !hasEphemeral) {
       if (config.she.includeAgentsRoster) {
         final roster = await SheService.instance.buildAgentsOverviewBlock();

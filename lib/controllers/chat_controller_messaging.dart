@@ -1703,11 +1703,13 @@ mixin _MessagingOps on _ChatControllerBase {
   void scheduleStreamingRebuild() {
     if (_pendingStreamingRebuild) return;
     _pendingStreamingRebuild = true;
+    // addPostFrameCallback 不会主动请求帧：没有别的产帧源（转圈动画只在
+    // showAvatar 为真时渲染、用户上滑后连 follow-scroll 也会被跳过）时，
+    // 通知会一直滞留，攒到回合末 _notify() 才一次性刷出。这里显式请求帧。
+    WidgetsBinding.instance.ensureVisualUpdate();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _pendingStreamingRebuild = false;
       // dispose 竞态：controller 已销毁时 contentListenable 不可再通知。
-      // addPostFrameCallback 不会主动请求帧，通知会滞留到下一个自然帧；
-      // 流式气泡里有转圈动画持续产帧，正常流式不受影响。
       if (_contentListenableDisposed) return;
       // chunk 只改消息内容：通知投给内容专用 listenable，只有消息列表
       // 子树（AnimatedBuilder 包裹）重建，外层 Scaffold/AppBar/输入区/

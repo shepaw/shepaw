@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:uuid/uuid.dart';
 import '../models/channel.dart';
 import '../models/cli_command_config.dart';
@@ -8,6 +10,7 @@ import '../peer/services/peer_agent_ids.dart';
 import '../she_network/external_memory_store.dart';
 import 'cli_command_config_service.dart';
 import 'local_database_service.dart';
+import 'she_agent_impression_service.dart';
 import 'she_memory_db_service.dart';
 import 'cognition_service.dart';
 import 'logger_service.dart';
@@ -156,6 +159,7 @@ class SheService {
         );
       }
       await _healSelfCognitionFromMinds();
+      unawaited(SheAgentImpressionService.instance.refreshStaleImpressions());
       return;
     }
 
@@ -177,6 +181,7 @@ class SheService {
     LoggerService().info('She agent created successfully', tag: 'She');
 
     await _healSelfCognitionFromMinds();
+    unawaited(SheAgentImpressionService.instance.refreshStaleImpressions());
   }
 
   /// Rebuild local She after a peer-agent upsert stole [sheId].
@@ -423,6 +428,9 @@ class SheService {
     return '[older entries omitted]\n${text.substring(text.length - maxChars)}';
   }
 
+  /// Prompt-view cap for `[Recent Activity]` inside the profile snapshot block.
+  static const int profileRecentActivityMaxChars = 800;
+
   // ── System Prompt Construction (public building blocks) ──────────────
   //
   // These methods are used by AgentPromptBuilder to assemble the prompt in a
@@ -465,6 +473,7 @@ $_artifactStorePreferenceSection
 
 ### Discover on demand
 - Context / agents: `shepaw context --help` (`profile.*`, `memory.*`, `agents.list` / `get` / `chat` / `dispatch`)
+${buildAgentsDiscoveryGuideBlock()}
 - Complex multi-step plans: `shepaw workflow --help` (create, then wait for master approval — do not start executing)
 - Groups: `shepaw chat group --help` (you are always admin on create)
 - App UI how-tos: skill `skill_shepaw_app_usage_guide` (or `shepaw skills detail --name app-usage-guide`)
@@ -741,90 +750,6 @@ If you learned something new, record it silently:
 
   // ── System Prompt Construction (legacy, kept for backwards compat) ──────
 
-  /// Build the complete system prompt; see file-top comment for stacking order.
-  ///
-  /// [allowSoulSeed] — when false, [userSetPrompt] is treated as ephemeral
-  /// (e.g. group-chat admin instructions) and must not be written into soul.
-  /// [isEphemeralContext] — wraps [userSetPrompt] as a temporary room context
-  /// block instead of "Master's Custom Settings".
-  /// Legacy prompt stack. Prefer [AgentPromptBuilder].
-  @Deprecated('Use AgentPromptBuilder.build() / buildSystemPrompt()')
-  Future<String> buildSystemPromptWithMemory(
-    String userSetPrompt, {
-    bool allowSoulSeed = true,
-    bool isEphemeralContext = false,
-  }) async {
-    final profile = await _cognition.getAllUserProfile();
-    final isInitialized = (profile[_profileInitKey] == 'true');
-    final userInfo = await _sheMemoryDb.getSheMemory('user_info') ?? '(not yet known)';
-    final longTermMemory =
-        await _sheMemoryDb.getSheMemory('long_term_memory') ?? '(no memories yet)';
-    final heartbeat = await _sheMemoryDb.getSheMemory('heartbeat') ?? '(no record)';
-    final soul = await _getSoulForPrompt();
-
-    // Only seed soul from the agent's own system_prompt — never from ephemeral
-    // overrides such as group-admin prompts passed via systemPromptOverride.
-    if (allowSoulSeed && userSetPrompt.trim().isNotEmpty) {
-      await seedSoulFromUserPrompt(userSetPrompt.trim());
-    }
-
-    final parts = <String>[];
-
-    // ① She's core identity (immutable)
-    parts.add(_coreIdentityPrompt());
-
-    // ② She's soul (self-awareness, grows over time)
-    parts.add(_soulPrompt(soul));
-
-    // ③ shepaw CLI tool reference
-    parts.add(_pawCliPrompt());
-
-    // ④ custom / ephemeral context (if any)
-    if (userSetPrompt.trim().isNotEmpty) {
-      parts.add(isEphemeralContext
-          ? _wrapEphemeralContextPrompt(userSetPrompt.trim())
-          : _wrapUserCustomPrompt(userSetPrompt.trim()));
-    }
-
-    // ⑤ strategy for knowing master + missing field hints
-    parts.add(_knowUserStrategyPrompt(profile));
-
-    // ⑥ user profile snapshot (layered injection)
-    parts.add(_buildProfileSnapshot(profile, userInfo, longTermMemory, heartbeat));
-
-    // ⑥.5 digests from paired owner devices（方案 §8.2 互引摘要）
-    final externalBlock = await buildExternalMemoriesBlock();
-    if (externalBlock.isNotEmpty) parts.add(externalBlock);
-
-    // ⑦' (optional) She's self-cognition (self_notes from minds.db)
-    final selfCognition = await buildSheSelfCognitionBlock();
-    if (selfCognition.isNotEmpty) parts.add(selfCognition);
-
-    // ⑦'' (optional) She's user-cognition (impression/notes from minds.db)
-    final userCognition = await buildUserCognitionBlock();
-    if (userCognition.isNotEmpty) parts.add(userCognition);
-
-    // ⑦''' connected-agents roster (1:1 only)
-    if (!isEphemeralContext) {
-      final roster = await buildAgentsOverviewBlock();
-      if (roster.isNotEmpty) parts.add(roster);
-    }
-
-    // ⑦ first meeting instruction (only when profile is empty)
-    if (!isInitialized) {
-      parts.add(_firstMeetingInstruction());
-    }
-
-    // ⑧ session-end write instructions
-    parts.add(isEphemeralContext
-        ? _ephemeralSessionInstructions()
-        : _sessionInstructions(sheId));
-
-    parts.add(_currentTimePrompt());
-
-    return parts.join('\n\n');
-  }
-
   /// Read soul for prompt injection; auto-heal if polluted by ephemeral room context.
   Future<String> _getSoulForPrompt() async {
     final raw =
@@ -877,12 +802,20 @@ You are She — a devoted spirit pet (灵宠) on ShePaw, growing ever closer thr
 
 ## Core Responsibilities
 1. **Devotion** — adapt to their communication style; recall their preferences and important matters
-2. **Agent Management** — help them manage their AI assistants
+2. **Agent Management** — help them manage their AI assistants; query agent profiles via tools when needed (not pre-loaded in your prompt)
 3. **Safety** — proactively alert when risks are detected''';
 
-  /// Compact connected-agents & groups roster for She's 1:1 prompt.
+  /// How She discovers agent profiles on demand (static — safe to cache).
   ///
-  /// Only counts + name lists. Full capability profiles stay behind CLI.
+  /// Agent impressions are **not** injected into the system prompt; She pulls
+  /// them via `agents.list` / `agents.get` when dispatch or routing needs it.
+  static String buildAgentsDiscoveryGuideBlock() => '''
+- **Agents**: profiles not in prompt — query before dispatch when unsure: `agents.list` (roster) → `agents.get --id <id>` (summary card) → `--sections identity|capabilities|experience|...` only as needed''';
+
+  /// Optional dynamic agent/group **counts** for She's 1:1 prompt.
+  ///
+  /// Does **not** include names, roles, or impression text — those stay behind
+  /// `agents.list` / `agents.get`. Opt-in via [SheStackConfig.includeAgentsRoster].
   Future<String> buildAgentsOverviewBlock() async {
     List<RemoteAgent> agents;
     List<Channel> groups;
@@ -904,22 +837,17 @@ You are She — a devoted spirit pet (灵宠) on ShePaw, growing ever closer thr
       buf.writeln('No other agents registered yet — you cannot dispatch '
           'tasks until your master adds one.');
     } else {
-      final online =
-          agents.where((a) => a.isOnline).map((a) => a.name).toList();
-      buf.writeln('${agents.length} agents connected (${online.length} online'
-          '${online.isNotEmpty ? ': ${_joinNames(online)}' : ''}).');
+      final onlineCount = agents.where((a) => a.isOnline).length;
+      buf.writeln('${agents.length} agent(s) registered ($onlineCount online). '
+          'Names and capability profiles are **not** in your prompt — '
+          'call `shepaw context agents.list` or `agents.get --id <id>` when needed.');
     }
     if (groups.isNotEmpty) {
-      buf.writeln('${groups.length} group chats: '
-          '${_joinNames(groups.map((g) => g.name).toList())}.');
+      if (agents.isNotEmpty) buf.writeln();
+      buf.writeln('${groups.length} group chat(s) registered. '
+          'List via `shepaw chat channels --type group`.');
     }
-    buf.write('Details: `shepaw context agents.list` / `agents.get --id`.');
     return buf.toString();
-  }
-
-  static String _joinNames(List<String> names, [int max = 12]) {
-    if (names.length <= max) return names.join(', ');
-    return '${names.take(max).join(', ')} …+${names.length - max}';
   }
 
   /// She's dispatch playbook for 1:1 conversations.
@@ -929,7 +857,17 @@ You are She — a devoted spirit pet (灵宠) on ShePaw, growing ever closer thr
 Delegate work to a connected agent via:
 `shepaw context agents.dispatch --id <agent> --task "<brief>" [--timeout-min N]`
 
-**Choosing who**: run `agents.list` to see who's connected (bio + specialty hint); before an important or unfamiliar dispatch, run `agents.get --id <id>` for the full profile. An agent's 专长/描述 is written by your master — authoritative; its 经验 learnings and 派发战绩 are your own observations — supplementary, never overriding.
+**Choosing who**: agent profiles are **not** in your prompt — query on demand:
+- Roster + specialty snippets → `shepaw context agents.list`
+- Compact card → `agents.get --id <id>` (default summary: role + experience hint)
+- Full specialty/resume → `--sections identity`
+- Tools/skills → `--sections capabilities`
+- Past dispatch learnings → `--sections experience`
+- Everything → `--sections all`
+
+When the fit is obvious from `agents.list`, dispatch directly. When unsure, unfamiliar, or the task is critical, pull the card (and extra sections) first.
+
+Master-authored **specialty** (soul) is authoritative; **bio** is the agent's self-resume; **experience** learnings and dispatch stats are your observations — supplementary, never overriding specialty.
 
 **Act directly when the fit is clear — no need to ask first**:
 - Coding / debugging / repo work → a coding agent
@@ -950,7 +888,7 @@ Delegate work to a connected agent via:
 
 **Learn from results**: when a dispatch teaches you something durable about what an agent is good or bad at, record it silently (do not narrate):
 `shepaw context agents.memory-write --id <agent> --type knowledge --keywords dispatch --content "<one factual line, dated>"`
-e.g. "擅长 Dart 重构；大仓库全量扫描会超时 (2026-07)". It surfaces as 经验 in `agents.get` next time.
+e.g. "擅长 Dart 重构；大仓库全量扫描会超时 (2026-07)". It surfaces in `agents.get --sections experience`.
 
 (In group chats this command is blocked — as that group's admin you orchestrate via the `group_dispatch` / `group_finish` tools instead, never by writing a ```json dispatch block.)''';
 
@@ -1209,13 +1147,17 @@ Build understanding gradually — like friendship, not a questionnaire.
       buf.writeln('\n[Your Impression] $userInfo');
     }
 
-    // Recent activity (last 5 long-term memory entries)
+    // Recent activity (last 5 long-term memory entries, capped for prompt size)
     if (longTermMemory != '(no memories yet)') {
       final lines = longTermMemory.split('\n');
       final recent = lines.length > 5 ? lines.sublist(lines.length - 5) : lines;
-      buf.writeln('\n[Recent Activity]');
-      for (final line in recent) {
-        buf.writeln(line);
+      final activity = truncateTail(
+        recent.join('\n').trim(),
+        profileRecentActivityMaxChars,
+      );
+      if (activity.isNotEmpty) {
+        buf.writeln('\n[Recent Activity]');
+        buf.writeln(activity);
       }
     }
 

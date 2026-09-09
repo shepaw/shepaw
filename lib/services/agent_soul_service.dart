@@ -4,6 +4,7 @@ import '../peer/services/peer_connection_manager.dart';
 import 'cognition_service.dart';
 import 'local_database_service.dart';
 import 'logger_service.dart';
+import 'she_agent_impression_service.dart';
 
 /// Unified read/write for agent Soul (persona / system identity).
 ///
@@ -50,15 +51,20 @@ class AgentSoulService {
       final peerId = agent.sourcePeerId;
       final remoteId = agent.remoteAgentId;
       if (peerId == null || remoteId == null) return false;
-      return PeerAgentClientService.instance.setSoul(
+      final ok = await PeerAgentClientService.instance.setSoul(
         peerId: peerId,
         remoteAgentId: remoteId,
         soul: trimmed,
       );
+      if (ok) {
+        SheAgentImpressionService.instance.scheduleRefresh(agent.id);
+      }
+      return ok;
     }
 
     await CognitionService.instance.updateAgentSoul(agent.id, trimmed);
     await _clearLegacySystemPrompt(agent.id);
+    SheAgentImpressionService.instance.scheduleRefresh(agent.id);
     return true;
   }
 

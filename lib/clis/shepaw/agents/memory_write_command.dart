@@ -1,6 +1,7 @@
 import '../../cli_base.dart';
 import '../../../models/agent_memory_entry.dart';
 import '../../../services/agent_memory_biz_service.dart';
+import '../../../services/she_agent_impression_service.dart';
 
 /// 写入 Agent 记忆
 ///
@@ -84,6 +85,13 @@ class MemoryWriteCommand extends CliCommand {
       keywords: keywords,
       sourceType: 'system',
     );
+
+    if (keywords.any((k) => k.toLowerCase() == 'dispatch')) {
+      await SheAgentImpressionService.instance.appendSheObservation(
+        id,
+        content.trim(),
+      );
+    }
 
     return {
       'ok': true,

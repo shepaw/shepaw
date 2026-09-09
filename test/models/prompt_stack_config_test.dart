@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/prompt_stack_config.dart';
+import 'package:shepaw/services/she_service.dart';
 
 void main() {
   group('PromptStackConfig.forOtherAgent', () {
@@ -40,6 +41,13 @@ void main() {
       expect(PromptStackConfig.forShe.she.includeAgentsRoster, isTrue);
       expect(PromptStackConfig.forShe.she.includeExternalDigests, isTrue);
       expect(PromptStackConfig.forShe.agent.includeUserProfile, isFalse);
+    });
+
+    test('meta cognition includes on-demand agent discovery guide', () {
+      final block = SheService.buildMetaCognitionBlock();
+      expect(block, contains('Agent profiles are not in your prompt'));
+      expect(block, contains('agents.list'));
+      expect(block, contains('agents.get'));
     });
   });
 }

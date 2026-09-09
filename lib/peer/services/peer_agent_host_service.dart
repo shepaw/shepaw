@@ -44,6 +44,7 @@ import '../../models/agent_memory_entry.dart';
 import '../../services/chat_service.dart';
 import '../../services/local_database_service.dart';
 import '../../services/logger_service.dart';
+import '../../services/she_agent_impression_service.dart';
 import '../../services/task/task_models.dart';
 import '../../service_locator.dart' show getIt;
 import '../../storage/attachment_store_writer.dart';
@@ -740,6 +741,7 @@ class PeerAgentHostService {
       }
       // 宿主服务不依赖 RemoteAgentService（它反向 import 本文件），直接落库。
       await _db.updateRemoteAgent(agent.copyWith(bio: resume.trim()));
+      SheAgentImpressionService.instance.scheduleRefresh(agent.id);
       unawaited(pushAgentListToSharingPeers(agentId));
       await PeerConnectionManager.instance.sendControl(peerId, {
         'type': 'agent_resume_set_resp',
@@ -804,6 +806,7 @@ class PeerAgentHostService {
         prompt: prompt,
       ).timeout(_resumeRebuildHostTimeout);
       await _db.updateRemoteAgent(agent.copyWith(bio: newText));
+      SheAgentImpressionService.instance.scheduleRefresh(agent.id);
       unawaited(pushAgentListToSharingPeers(agentId));
       await PeerConnectionManager.instance.sendControl(peerId, {
         'type': 'agent_resume_rebuild_resp',

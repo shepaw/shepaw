@@ -144,4 +144,61 @@ void main() {
       );
     });
   });
+
+  group('getUnreadCountsByChannels', () {
+    late LocalDatabaseService db;
+    var seq = 0;
+
+    setUp(() async {
+      db = LocalDatabaseService();
+      await db.database;
+    });
+
+    Future<String> newDmChannel() async {
+      final suffix = DateTime.now().microsecondsSinceEpoch;
+      final channelId = 'dm_user_agent-batch-$suffix-${seq++}';
+      await db.createChannel(
+        Channel.withMemberIds(
+          id: channelId,
+          name: 'Batch DM',
+          type: 'dm',
+          memberIds: ['user', 'agent-batch-$suffix'],
+          isPrivate: true,
+        ),
+        'user',
+      );
+      return channelId;
+    }
+
+    test('aggregates per channel instead of collapsing to one row', () async {
+      final a = await newDmChannel();
+      final b = await newDmChannel();
+
+      await db.createMessage(
+        id: 'a-1',
+        channelId: a,
+        senderId: 'agent',
+        senderType: 'agent',
+        senderName: 'Agent',
+        content: 'unread in a',
+      );
+      await db.createMessage(
+        id: 'b-1',
+        channelId: b,
+        senderId: 'agent',
+        senderType: 'agent',
+        senderName: 'Agent',
+        content: 'unread in b',
+      );
+
+      expect(await db.getUnreadCountsByChannels([a, b]), {a: 1, b: 1});
+    });
+
+    test('no unread rows returns empty map (no NULL channel_id cast)', () async {
+      final a = await newDmChannel();
+      final b = await newDmChannel();
+
+      expect(await db.getUnreadCountsByChannels([a, b]), isEmpty);
+    });
+  });
 }
