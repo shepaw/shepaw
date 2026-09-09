@@ -24,6 +24,7 @@ import 'planning_helpers.dart';
 import '../../models/mention_entry.dart';
 import '../../storage/context_bundle.dart';
 import '../../storage/group_workspace_service.dart';
+import 'group_member_history.dart';
 import 'group_orchestration_tools.dart';
 
 class GroupOrchestrationService {
@@ -621,6 +622,18 @@ class GroupOrchestrationService {
           }
         }
 
+        // Pin each mentioner's latest reply in the mentioned member's history
+        // so cascade @ activations retain the work product that triggered them.
+        final mentionerIdsByTarget = <String, List<String>>{};
+        for (final entry in turns.entries) {
+          if (!respondedAgentIds.contains(entry.key)) continue;
+          for (final m in entry.value.mentions) {
+            if (!m.notify || !newMentionedIds.contains(m.id)) continue;
+            final list = mentionerIdsByTarget.putIfAbsent(m.id, () => []);
+            if (!list.contains(entry.key)) list.add(entry.key);
+          }
+        }
+
         LoggerService().debug(
           'allMembers cascade round ${cascadeRound + 1}: dispatching ${newMentionedIds.length} newly-mentioned agents',
           tag: 'GroupOrchestrationService',
@@ -673,6 +686,11 @@ class GroupOrchestrationService {
               onAgentDone: onAgentDone,
               onInteractionRequest: onInteractionRequest,
               orchestrationTraceId: orchTraceId,
+              historyPinSenderIds: GroupMemberHistory.buildPinSenderIds(
+                selfAgentId: agent.id,
+                coAgentIds: newMentionedIds,
+                extraPinSenderIds: mentionerIdsByTarget[agent.id] ?? const [],
+              ),
             )
                 .catchError((e) {
               LoggerService().error(
@@ -734,6 +752,11 @@ class GroupOrchestrationService {
             onAgentDone: onAgentDone,
             onInteractionRequest: onInteractionRequest,
             orchestrationTraceId: orchTraceId,
+            historyPinSenderIds: GroupMemberHistory.buildPinSenderIds(
+              selfAgentId: agent.id,
+              coAgentIds: effectiveMentionedAgentIds,
+              extraPinSenderIds: [userId],
+            ),
           )
               .catchError((e) {
             LoggerService().error('Group agent ${agent.name} uncaught error',
@@ -1951,6 +1974,14 @@ class GroupOrchestrationService {
                     onMessageMetadata: onMessageMetadata,
                     onAgentDone: onAgentDone,
                     onInteractionRequest: onInteractionRequest,
+                    historyPinSenderIds: GroupMemberHistory.buildPinSenderIds(
+                      selfAgentId: agent.id,
+                      coAgentIds: stepAgentIds,
+                      extraPinSenderIds: [
+                        userId,
+                        if (adminAgent != null) adminAgent.id,
+                      ],
+                    ),
                   )
                       .catchError((e) {
                     LoggerService().error(
@@ -2016,6 +2047,14 @@ class GroupOrchestrationService {
                   onMessageMetadata: onMessageMetadata,
                   onAgentDone: onAgentDone,
                   onInteractionRequest: onInteractionRequest,
+                  historyPinSenderIds: GroupMemberHistory.buildPinSenderIds(
+                    selfAgentId: agent.id,
+                    coAgentIds: delegatedIds,
+                    extraPinSenderIds: [
+                      userId,
+                      if (adminAgent != null) adminAgent.id,
+                    ],
+                  ),
                 )
                     .catchError((e) {
                   LoggerService().error(
@@ -2334,6 +2373,11 @@ class GroupOrchestrationService {
             onAgentDone: onAgentDone,
             onInteractionRequest: onInteractionRequest,
             orchestrationTraceId: orchTraceId,
+            historyPinSenderIds: GroupMemberHistory.buildPinSenderIds(
+              selfAgentId: agent.id,
+              coAgentIds: agents.map((a) => a.id),
+              extraPinSenderIds: [userId],
+            ),
           )
               .catchError((e) {
             LoggerService().error('Group agent ${agent.name} uncaught error',

@@ -46,6 +46,7 @@ void main() {
       );
 
       expect(ctx['mention_mode'], 'allMembers');
+      expect(ctx['history_policy'], isA<Map<String, dynamic>>());
       expect(ctx['members'], hasLength(2));
       final contract = ctx['member_mention'] as Map<String, dynamic>;
       expect(contract['enabled'], isTrue);

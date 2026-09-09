@@ -62,6 +62,26 @@ class GroupMemberHistory {
   }) =>
       isAdmin || isLoopSummarize || isAbortSummarize || isClosingSummary;
 
+  /// Merge co-dispatch siblings, mentioners, and the user into pin targets.
+  static List<String> buildPinSenderIds({
+    required String selfAgentId,
+    Iterable<String> coAgentIds = const [],
+    Iterable<String> extraPinSenderIds = const [],
+  }) {
+    final out = <String>[];
+    void add(String id) {
+      if (id.isEmpty || id == selfAgentId) return;
+      if (!out.contains(id)) out.add(id);
+    }
+    for (final id in extraPinSenderIds) {
+      add(id);
+    }
+    for (final id in coAgentIds) {
+      add(id);
+    }
+    return out;
+  }
+
   static GroupMemberHistoryPack pack({
     required List<Message> messages,
     required String memberId,
@@ -69,6 +89,9 @@ class GroupMemberHistory {
     int keepRecentCount = memberKeepRecentCount,
     int keepRecentChars = memberKeepRecentChars,
     int keepOwnCount = memberKeepOwnCount,
+    /// Latest reply from each sender (e.g. cascade @ mentioner, or the user
+    /// who @mentioned this member) is pinned even when outside the recent tail.
+    List<String> pinSenderIds = const [],
   }) {
     if (messages.isEmpty) {
       return const GroupMemberHistoryPack(
@@ -111,8 +134,23 @@ class GroupMemberHistory {
       ownKept++;
     }
 
+    for (final senderId in pinSenderIds) {
+      if (senderId.isEmpty) continue;
+      for (var i = messages.length - 1; i >= 0; i--) {
+        final m = messages[i];
+        if (m.from.id != senderId) continue;
+        selected.add(m.id);
+        break;
+      }
+    }
+
     var kept = messages.where((m) => selected.contains(m.id)).toList();
-    kept = _trimToBudget(kept, memberId: memberId, maxChars: maxChars);
+    kept = _trimToBudget(
+      kept,
+      memberId: memberId,
+      maxChars: maxChars,
+      protectedSenderIds: pinSenderIds.toSet(),
+    );
 
     final keptIds = kept.map((m) => m.id).toSet();
     final dropped = messages.where((m) => !keptIds.contains(m.id)).toList();
@@ -129,11 +167,17 @@ class GroupMemberHistory {
     List<Message> kept, {
     required String memberId,
     required int maxChars,
+    Set<String> protectedSenderIds = const {},
   }) {
     final result = List<Message>.from(kept);
     var total = result.fold<int>(0, (s, m) => s + m.content.length);
     while (total > maxChars && result.length > 1) {
-      final dropAt = result.indexWhere((m) => m.from.id != memberId);
+      var dropAt = result.indexWhere(
+        (m) => m.from.id != memberId && !protectedSenderIds.contains(m.from.id),
+      );
+      dropAt = dropAt >= 0
+          ? dropAt
+          : result.indexWhere((m) => m.from.id != memberId);
       final idx = dropAt >= 0 ? dropAt : 0;
       total -= result[idx].content.length;
       result.removeAt(idx);

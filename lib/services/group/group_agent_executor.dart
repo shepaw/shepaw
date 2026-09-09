@@ -334,6 +334,7 @@ class GroupAgentExecutor {
     String? workflowId,
     String? workflowStepId,
     String? orchestrationTraceId,
+    List<String> historyPinSenderIds = const [],
   }) async {
     LoggerService().debug(
       '_processGroupAgent START: ${agent.name} (isAdmin=$isAdmin, isLocal=${agent.isLocal}, isPeer=${agent.isPeerAgent})',
@@ -387,6 +388,8 @@ class GroupAgentExecutor {
       isAbortSummarize: isAbortSummarize,
       isClosingSummary: isClosingSummary,
       acpCancellationToken: acpCancellationToken,
+      historyPinSenderIds: historyPinSenderIds,
+      adminAgent: adminAgent,
     );
     final effectiveHistory = prepared.effectiveHistory;
     final earlierSummary = prepared.earlierSummary;
@@ -2630,6 +2633,8 @@ class GroupAgentExecutor {
     required bool isAbortSummarize,
     required bool isClosingSummary,
     ACPCancellationToken? acpCancellationToken,
+    List<String> historyPinSenderIds = const [],
+    RemoteAgent? adminAgent,
   }) async {
     final useFullHistory = GroupMemberHistory.needsFullHistory(
       isAdmin: isAdmin,
@@ -2642,16 +2647,50 @@ class GroupAgentExecutor {
       final pack = GroupMemberHistory.pack(
         messages: historyMessages,
         memberId: agent.id,
+        pinSenderIds: historyPinSenderIds,
       );
       String? earlierSummary;
+      // P2: all members (including remote ACP/peer) share the channel
+      // compaction cache when admin/local turns have warmed it.
+      final peeked =
+          await HistoryCompactionCacheService.peekSummary(channelId);
+      if (peeked.isNotEmpty) {
+        earlierSummary = peeked;
+      } else if (pack.droppedAny &&
+          adminAgent != null &&
+          adminAgent.isLocal &&
+          acpCancellationToken?.isCancelled != true) {
+        // Cold cache: one-off summarize this member's omitted slice so remote
+        // agents are not left with only rollup text on long threads.
+        final transcript = HistoryCompactor.buildTranscript(pack.dropped);
+        if (transcript.trim().length >=
+            HistoryCompactor.minOlderCharsToSummarize) {
+          try {
+            final cancelKey =
+                'group_member_compact_${agent.id}_${_uuid.v4()}';
+            acpCancellationToken?.addOnCancelled(() {
+              LocalLLMAgentService.instance.abort(cancelKey);
+            });
+            final summary = await _summarizeHistoryForCompaction(
+              agent: adminAgent,
+              transcript: transcript,
+              cancelKey: cancelKey,
+            );
+            if (summary.isNotEmpty) earlierSummary = summary;
+          } catch (e) {
+            LoggerService().warning(
+              'Group member dropped-history summarize failed for ${agent.name}: $e',
+              tag: 'GroupAgentExecutor',
+            );
+          }
+        }
+      }
       if (pack.droppedAny) {
-        final peeked =
-            await HistoryCompactionCacheService.peekSummary(channelId);
-        if (peeked.isNotEmpty) earlierSummary = peeked;
         LoggerService().info(
           'Group member history slimmed for ${agent.name}: '
           'kept ${pack.kept.length}/${historyMessages.length} msgs '
-          '(${pack.kept.fold<int>(0, (s, m) => s + m.content.length)} chars)',
+          '(${pack.kept.fold<int>(0, (s, m) => s + m.content.length)} chars)'
+          '${earlierSummary != null ? '; summary=${earlierSummary.length} chars' : ''}',
           tag: 'GroupAgentExecutor',
         );
       }

@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../../models/acp_protocol.dart';
 import '../../models/channel.dart';
 import '../../models/remote_agent.dart';
+import 'group_member_history.dart';
 import 'group_prompt_builder.dart';
 
 /// Builds the machine-readable `group_context` payload sent to remote / peer
@@ -164,6 +165,7 @@ class GroupContextBuilder {
         channelMembers: channelMembers,
       ),
       'mention_mode': effectiveMode,
+      'history_policy': _historyPolicy(isAdmin: isAdmin),
       if (isFirstMessage != null) 'is_first_message': isFirstMessage,
       if (messageVersion != null) 'message_version': messageVersion,
       if (orchestrationTools != null && orchestrationTools.isNotEmpty)
@@ -179,6 +181,32 @@ class GroupContextBuilder {
     }
 
     return ctx;
+  }
+
+  static Map<String, dynamic> _historyPolicy({required bool isAdmin}) {
+    if (isAdmin) {
+      return {
+        'scope': 'full_transcript',
+        'max_chars': GroupMemberHistory.adminMaxChars,
+        'includes': ['user', 'agent', 'attachment_placeholders'],
+        'excludes': ['system', 'permission_audit'],
+      };
+    }
+    return {
+      'scope': 'member_pack',
+      'max_chars': GroupMemberHistory.memberMaxChars,
+      'includes': [
+        'recent_tail',
+        'self_replies',
+        'pinned_co_dispatch_sibling_replies',
+        'pinned_mentioner_replies',
+        'channel_compaction_summary',
+        'omitted_store_uris',
+      ],
+      'excludes': ['system', 'permission_audit'],
+      'note':
+          'Task brief and @mention reason are injected in the user turn, not history.',
+    };
   }
 
   /// Append machine-readable group context for peer relay (no ACP param).

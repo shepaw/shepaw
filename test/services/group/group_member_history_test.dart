@@ -73,6 +73,19 @@ void main() {
     });
   });
 
+  group('GroupMemberHistory.buildPinSenderIds', () {
+    test('merges user, siblings, and mentioners without self', () {
+      expect(
+        GroupMemberHistory.buildPinSenderIds(
+          selfAgentId: 'coder',
+          coAgentIds: ['coder', 'designer', 'qa'],
+          extraPinSenderIds: ['user1', 'designer'],
+        ),
+        ['user1', 'designer', 'qa'],
+      );
+    });
+  });
+
   group('GroupMemberHistory.pack', () {
     test('keeps a short conversation intact', () {
       final messages = [
@@ -183,6 +196,70 @@ void main() {
         pack.artifactUriNote.contains('store://workspaces/dev/recent.md'),
         isFalse,
       );
+    });
+
+    test('pins co-dispatch sibling latest reply outside the recent tail', () {
+      final messages = [
+        _msg(
+          id: 'sibling-old',
+          content: 'I finished the schema draft',
+          fromId: 'designer',
+          name: 'Designer',
+        ),
+        ...List.generate(
+          10,
+          (i) => _msg(
+            id: 'noise$i',
+            content: 'noise $i',
+            fromId: 'other',
+            name: 'Other',
+          ),
+        ),
+      ];
+      final pack = GroupMemberHistory.pack(
+        messages: messages,
+        memberId: 'coder',
+        maxChars: 4000,
+        keepRecentCount: 3,
+        keepRecentChars: 2000,
+        keepOwnCount: 0,
+        pinSenderIds: GroupMemberHistory.buildPinSenderIds(
+          selfAgentId: 'coder',
+          coAgentIds: ['designer'],
+        ),
+      );
+      expect(pack.kept.map((m) => m.id), contains('sibling-old'));
+    });
+
+    test('pins the latest reply from a mentioner outside the recent tail', () {
+      final messages = [
+        _msg(
+          id: 'mentioner-old',
+          content: 'I need help with the API layer',
+          fromId: 'helper',
+          name: 'Helper',
+        ),
+        ...List.generate(
+          10,
+          (i) => _msg(
+            id: 'noise$i',
+            content: 'noise $i',
+            fromId: 'other',
+            name: 'Other',
+          ),
+        ),
+      ];
+      final pack = GroupMemberHistory.pack(
+        messages: messages,
+        memberId: 'coder',
+        maxChars: 4000,
+        keepRecentCount: 3,
+        keepRecentChars: 2000,
+        keepOwnCount: 0,
+        pinSenderIds: ['helper'],
+      );
+      expect(pack.kept.map((m) => m.id), contains('mentioner-old'));
+      expect(pack.kept.map((m) => m.id), contains('noise9'));
     });
 
     test('prefers dropping others before the member\'s own messages at budget',
