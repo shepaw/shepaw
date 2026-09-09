@@ -35,6 +35,7 @@ import 'workflow/workflow_service.dart';
 import 'workflow/workflow_step_agent_resolver.dart';
 import '../models/workflow_models.dart';
 import 'messaging/agent_messaging_service.dart';
+import 'messaging/chat_history_content.dart';
 import '../peer/services/peer_agent_client_service.dart';
 import 'group/group_session_service.dart';
 import 'session/session_history_service.dart';
@@ -1163,7 +1164,7 @@ class ChatService {
         additionalMessages.where((m) => m.type == MessageType.text).map((m) {
       return {
         'role': m.from.isAgent ? 'assistant' : 'user',
-        'content': m.content,
+        'content': ChatHistoryContent.replayContent(m),
       };
     }).toList();
 

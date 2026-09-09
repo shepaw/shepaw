@@ -1,24 +1,14 @@
 import '../../models/message.dart';
-import '../messaging/local_llm_handler.dart';
+import '../messaging/chat_history_content.dart';
 import '../session/history_compactor.dart';
 
-/// Rules for text replayed into member/admin orchestration history.
-///
-/// Collapsible thinking and tool-progress blocks live in
-/// [Message.metadata] (`progress_content`) for the chat UI only — they are
-/// never merged into LLM history. See [GroupContextBuilder] `history_policy`.
+/// Group orchestration alias for [ChatHistoryContent] (see `history_policy`).
 class GroupHistoryContent {
   GroupHistoryContent._();
 
-  /// Metadata keys holding UI-only progress/thinking — excluded from replay.
-  static const uiOnlyMetadataKeys = ['progress_content'];
+  static const uiOnlyMetadataKeys = ChatHistoryContent.uiOnlyMetadataKeys;
 
-  /// Answer body replayed to group LLM history (member + admin).
-  ///
-  /// Uses [Message.content] only; does not read [Message.metadata].
-  static String replayContent(Message m) {
-    return LocalLLMHelpers.enrichHistoryContent(m, m.content);
-  }
+  static String replayContent(Message m) => ChatHistoryContent.replayContent(m);
 }
 
 /// Packed, member-facing slice of a group transcript.

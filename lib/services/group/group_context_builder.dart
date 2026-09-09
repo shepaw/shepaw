@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../../models/acp_protocol.dart';
 import '../../models/channel.dart';
 import '../../models/remote_agent.dart';
+import '../messaging/chat_history_content.dart';
 import 'group_member_history.dart';
 import 'group_prompt_builder.dart';
 
@@ -191,10 +192,8 @@ class GroupContextBuilder {
     'collapsible_thinking',
   ];
 
-  static const _historyPolicyNote =
-      'Replays message.content (answer text) only. Collapsible thinking and '
-      'tool progress live in metadata.progress_content for the chat UI and are '
-      'not injected into orchestration history. Task brief and @mention reason '
+  static final _historyPolicyNote =
+      '${ChatHistoryContent.replayPolicyNote} Task brief and @mention reason '
       'are injected in the user turn, not history.';
 
   static Map<String, dynamic> _historyPolicy({required bool isAdmin}) {

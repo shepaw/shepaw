@@ -43,6 +43,7 @@ import '../../peer/services/peer_inflight_turn.dart';
 import '../../peer/services/peer_agent_host_service.dart' show isPeerAgentChannel;
 import '../../models/peer_boundary_config.dart';
 import '../../service_locator.dart' show getIt;
+import 'chat_history_content.dart';
 import 'local_llm_handler.dart';
 import 'message_implicit_prompt.dart';
 import 'stream_content_splitter.dart';
@@ -1037,12 +1038,12 @@ class AgentMessagingService {
               .where((m) => m.type != MessageType.system && m.type != MessageType.permissionAudit && m.id != userMessage.id)
               .map((m) {
                 final isAgent = m.from.isAgent;
-                final rawContent = isAgent
-                    ? m.content
-                    : '[${_formatTimestamp(m.timestampMs)}] ${m.content}';
                 final entry = <String, dynamic>{
                   'role': isAgent ? 'assistant' : 'user',
-                  'content': LocalLLMHelpers.enrichHistoryContent(m, rawContent),
+                  'content': ChatHistoryContent.replayContentFormatted(
+                    m,
+                    formatUserTimestamp: _formatTimestamp,
+                  ),
                 };
                 if (m.type != MessageType.text && m.type != MessageType.system) {
                   entry['attachment_info'] = LocalLLMHelpers.buildAttachmentInfo(m);
@@ -1770,7 +1771,7 @@ class AgentMessagingService {
               final isAgent = m.from.isAgent;
               return <String, dynamic>{
                 'role': isAgent ? 'assistant' : 'user',
-                'content': m.content,
+                'content': ChatHistoryContent.replayContent(m),
               };
             })
             .where((e) => (e['content'] as String).trim().isNotEmpty)
@@ -2271,13 +2272,13 @@ class AgentMessagingService {
 
         for (final m in recentMessages) {
           final isAgent = m.from.isAgent;
-          final rawContent = isAgent
-              ? m.content
-              : '[${_formatTimestamp(m.timestampMs)}] ${m.content}';
           final entry = <String, dynamic>{
             'role': isAgent ? 'assistant' : 'user',
             'content': HistoryCompactor.clipContent(
-              LocalLLMHelpers.enrichHistoryContent(m, rawContent),
+              ChatHistoryContent.replayContentFormatted(
+                m,
+                formatUserTimestamp: _formatTimestamp,
+              ),
             ),
           };
           if (m.type != MessageType.text && m.type != MessageType.system) {
@@ -3067,12 +3068,12 @@ class AgentMessagingService {
             m.id != excludeMessageId)
         .map((m) {
       final isAgent = m.from.isAgent;
-      final rawContent = isAgent
-          ? m.content
-          : '[${_formatTimestamp(m.timestampMs)}] ${m.content}';
       return <String, dynamic>{
         'role': isAgent ? 'assistant' : 'user',
-        'content': LocalLLMHelpers.enrichHistoryContent(m, rawContent),
+        'content': ChatHistoryContent.replayContentFormatted(
+          m,
+          formatUserTimestamp: _formatTimestamp,
+        ),
       };
     }).toList();
   }
