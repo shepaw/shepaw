@@ -683,6 +683,30 @@ Send a file or image to the user for download/preview.
 
 #### 7. message_metadata
 Add metadata to the preceding message, e.g. collapsible thinking sections.
+In **group chat** (when `group_context.mention_mode` is `allMembers`), you may
+also attach structured member mentions via the ACP notification
+`ui.messageMetadata` (preferred) or include a `mentions` array in metadata:
+
+```
+<<<directive
+{
+  "type": "message_metadata",
+  "mentions": [
+    {"name": "MemberRegisteredName", "notify": true, "reason": "Need your help with X"}
+  ]
+}
+>>>
+```
+
+- `name`: registered name from `group_context.members[].name`, or `"all"`.
+- `notify`: `true` activates the member; `false` is cc-only (no activation).
+- `reason`: optional; forwarded to the mentioned member.
+- Chat text `@name` is **display-only** — the system only reads structured
+  `mentions` (see `group_context.member_mention` for the full schema).
+- For collapsible thinking, you may combine UI fields with `mentions` in the
+  same metadata payload.
+
+Collapsible-only example:
 
 ```
 <<<directive

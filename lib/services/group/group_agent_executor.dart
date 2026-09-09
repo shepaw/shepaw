@@ -32,6 +32,7 @@ import 'group_mailbox_save_plan.dart';
 import 'group_orchestration_tools.dart';
 import 'group_session_create_service.dart';
 import 'group_session_handoff.dart';
+import 'group_context_builder.dart';
 import 'group_prompt_builder.dart';
 import 'group_turn_result.dart';
 import 'group_turn_outcome.dart';
@@ -1079,10 +1080,24 @@ class GroupAgentExecutor {
         );
       };
 
+      final peerGroupContext = GroupContextBuilder.build(
+        channelId: channelId,
+        groupName: groupName,
+        groupDescription: groupDescription,
+        allAgents: allAgents,
+        channelMembers: channelMembers,
+        mentionMode: mentionMode,
+        isAdmin: isAdmin,
+        isFirstMessage: isFirstMessage,
+        messageVersion: messageVersion,
+        orchestrationTools: isAdmin ? adminExtraTools : null,
+        currentAgent: agent,
+      );
       final peerMessage = _buildPeerGroupMessage(
         systemPrompt: systemPrompt,
         historyLines: historyLines,
         content: content,
+        groupContext: peerGroupContext,
       );
 
       infLogGroup.beginRound(groupTraceId,
@@ -1306,26 +1321,17 @@ class GroupAgentExecutor {
           tag: 'GroupAgentExecutor',
         );
         // Mailbox 兜底也带完整群上下文（离线恢复后群工具/共享空间仍可用）。
-        final mailboxGroupContext = <String, dynamic>{
-          'group_id': channelId,
-          'group_name': groupName,
-          'group_description': groupDescription,
-          'member_count': allAgents.length,
-          'members': allAgents
-              .map((a) => <String, dynamic>{
-                    'id': a.id,
-                    'name': a.name,
-                    'type': 'agent',
-                    'bio': GroupPromptBuilder.oneLineRole(
-                      a,
-                      channelMembers: channelMembers,
-                    ),
-                    'capabilities': a.capabilities,
-                    'status': a.isOnline ? 'online' : 'offline',
-                  })
-              .toList(),
-          if (groupWorkspaceUri != null) 'workspace_uri': groupWorkspaceUri,
-        };
+        final mailboxGroupContext = GroupContextBuilder.build(
+          channelId: channelId,
+          groupName: groupName,
+          groupDescription: groupDescription,
+          allAgents: allAgents,
+          channelMembers: channelMembers,
+          mentionMode: mentionMode,
+          isAdmin: isAdmin,
+          workspaceUri: groupWorkspaceUri,
+          currentAgent: agent,
+        );
         final left = await _collectGroupMailboxReply(
           agent: agent,
           content: content,
@@ -1753,32 +1759,20 @@ class GroupAgentExecutor {
           } catch (_) {}
 
           // Build group_context for remote agents
-          final groupContext = <String, dynamic>{
-            'group_id': channelId,
-            'group_name': groupName,
-            'group_description': groupDescription,
-            'member_count': allAgents.length,
-            'members': allAgents
-                .map((a) => <String, dynamic>{
-                      'id': a.id,
-                      'name': a.name,
-                      'type': 'agent',
-                      'bio': GroupPromptBuilder.oneLineRole(
-                        a,
-                        channelMembers: channelMembers,
-                      ),
-                      'capabilities': a.capabilities,
-                      'status': a.isOnline ? 'online' : 'offline',
-                    })
-                .toList(),
-            'is_first_message': isFirstMessage,
-            if (messageVersion != null) 'message_version': messageVersion,
-            if (isAdmin && adminExtraTools != null)
-              'orchestration_tools': adminExtraTools,
-            // 群工作空间共享面 URI（外接 agent 经 acp-proxy 可见群记忆/
-            // 编排状态/共享产物；读取失败则省略）。
-            if (groupWorkspaceUri != null) 'workspace_uri': groupWorkspaceUri,
-          };
+          final groupContext = GroupContextBuilder.build(
+            channelId: channelId,
+            groupName: groupName,
+            groupDescription: groupDescription,
+            allAgents: allAgents,
+            channelMembers: channelMembers,
+            mentionMode: mentionMode,
+            isAdmin: isAdmin,
+            isFirstMessage: isFirstMessage,
+            messageVersion: messageVersion,
+            orchestrationTools: isAdmin ? adminExtraTools : null,
+            workspaceUri: groupWorkspaceUri,
+            currentAgent: agent,
+          );
 
           final chatResp = await effectiveConnection.sendChatMessage(
             taskId: effectiveTaskId,
@@ -2221,10 +2215,14 @@ class GroupAgentExecutor {
     required String systemPrompt,
     required String historyLines,
     required String content,
+    Map<String, dynamic>? groupContext,
   }) {
     final buf = StringBuffer();
     if (systemPrompt.isNotEmpty) {
       buf.writeln(systemPrompt);
+      if (groupContext != null && groupContext.isNotEmpty) {
+        buf.write(GroupContextBuilder.embedPeerContextBlock(groupContext));
+      }
       buf.writeln();
     }
     if (historyLines.isNotEmpty) {

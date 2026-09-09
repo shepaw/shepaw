@@ -1,5 +1,6 @@
 import '../../models/remote_agent.dart';
 import '../../models/channel.dart';
+import 'group_context_builder.dart';
 import '../../models/message.dart';
 import '../../models/model_routing_config.dart';
 import '../../storage/device_identity.dart';
@@ -275,11 +276,11 @@ $groupScopeSection''';
     final allMembersMentionSection = mentionMode == 'allMembers'
         ? () {
             final example = collaboratorName != null ? collaboratorName : '成员名';
-            final declareHint = currentAgent.isLocal
-                ? '调用 `group_mention` 工具，参数：`{"mentions": [{"name": "成员注册名", "notify": true, "reason": "为什么需要对方"}]}`'
-                : '通过 `ui.messageMetadata` 通知在回复元数据中附带 `mentions` 声明：`{"mentions": [{"name": "成员注册名", "notify": true, "reason": "为什么需要对方"}]}`';
+            final declareHint =
+                GroupContextBuilder.mentionDeclarationHint(currentAgent);
             return '\n\n【协作提及（结构化声明）】\n'
                 '- 需要其他成员协助时，**必须通过结构化声明**；系统只认声明，不解析正文文本\n'
+                '- 完整 machine schema 见请求中的 `group_context.member_mention`（ACP/Peer）或调用 `group_mention` 工具（本地成员）\n'
                 '- $declareHint\n'
                 '- `name` 必须是「群成员列表」中的注册名（如 `$example`），或 `"all"` 表示全体成员\n'
                 '- `notify` 默认 `true`（激活对方）；传 `false` 仅告知（cc），不激活\n'
