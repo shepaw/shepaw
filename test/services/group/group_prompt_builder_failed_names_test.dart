@@ -153,4 +153,18 @@ void main() {
     expect(layered.dynamicSuffix, contains('【成员在线】'));
     expect(layered.full, contains('以下成员执行失败：Coder'));
   });
+
+  test('admin prompt includes session management section', () async {
+    final prompt = await builder.buildGroupSystemPrompt(
+      groupName: '项目群',
+      groupDescription: '',
+      allAgents: [admin, coder],
+      currentAgent: admin,
+      isAdmin: true,
+    );
+
+    expect(prompt, contains('【群 Session 管理 — 必读】'));
+    expect(prompt, contains('group_session_create'));
+    expect(prompt, contains('不强制「一任务一 session」'));
+  });
 }

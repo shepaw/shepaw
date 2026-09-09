@@ -12,6 +12,7 @@ import '../she_service.dart';
 import '../../storage/group_workspace_service.dart';
 import 'group_admin_gate.dart';
 import 'group_member_session_service.dart';
+import 'group_session_create_service.dart';
 import 'she_group_approval_bridge.dart';
 
 /// Result of a group-management CLI / service operation.
@@ -612,6 +613,26 @@ class GroupManagementService {
       'name': trimmed,
       'previous_name': channel.name,
     });
+  }
+
+  /// Create a new group session with a curated handoff package (admin only).
+  Future<GroupSessionCreateResult> createSessionWithHandoff({
+    required String channelId,
+    required String actorId,
+    required String actorName,
+    required Map<String, dynamic> args,
+    String userId = LocalUserIdentity.id,
+  }) {
+    return GroupSessionCreateService(
+      db: _db,
+      chatService: _chat,
+    ).create(
+      channelId: channelId,
+      actorId: actorId,
+      actorName: actorName,
+      args: args,
+      userId: userId,
+    );
   }
 
   /// Send a message into a She-bound group session (external trigger).

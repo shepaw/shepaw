@@ -30,6 +30,8 @@ import '../messaging/connection_retry_policy.dart';
 import 'group_dispatch_parser.dart';
 import 'group_mailbox_save_plan.dart';
 import 'group_orchestration_tools.dart';
+import 'group_session_create_service.dart';
+import 'group_session_handoff.dart';
 import 'group_prompt_builder.dart';
 import 'group_turn_result.dart';
 import 'group_turn_outcome.dart';
@@ -442,6 +444,7 @@ class GroupAgentExecutor {
     Map<String, dynamic>? fileUploadData;
     Map<String, dynamic>? formDataCapture;
     Map<String, dynamic>? messageMetadataExtra;
+    Map<String, dynamic>? sessionActionMeta;
 
     /// Raw `group_mention` tool args (local members), accumulated across tool
     /// rounds; resolved into structured mentions in the unified capture block.
@@ -770,6 +773,53 @@ class GroupAgentExecutor {
                         result: ok,
                       );
                     }
+                    break;
+                  case GroupOrchestrationTools.sessionCreateName:
+                    if (!isAdmin) {
+                      final denied = jsonEncode({
+                        'ok': false,
+                        'error': 'group_session_create is admin-only',
+                      });
+                      pawToolCalls.add(event);
+                      pawToolResults.add({
+                        'tool_call_id': event.id,
+                        'name': event.name,
+                        'result': denied,
+                      });
+                      infLogGroup.onToolResult(
+                        groupTraceId,
+                        toolCallId: event.id,
+                        name: event.name,
+                        result: denied,
+                      );
+                      break;
+                    }
+                    final createResult =
+                        await GroupSessionCreateService().create(
+                      channelId: channelId,
+                      actorId: agent.id,
+                      actorName: agent.name,
+                      args: Map<String, dynamic>.from(event.arguments),
+                      userId: userId,
+                    );
+                    if (createResult.ok &&
+                        createResult.sessionAction != null) {
+                      sessionActionMeta = createResult.sessionAction;
+                    }
+                    final createFeedback =
+                        jsonEncode(createResult.toToolJson());
+                    pawToolCalls.add(event);
+                    pawToolResults.add({
+                      'tool_call_id': event.id,
+                      'name': event.name,
+                      'result': createFeedback,
+                    });
+                    infLogGroup.onToolResult(
+                      groupTraceId,
+                      toolCallId: event.id,
+                      name: event.name,
+                      result: createFeedback,
+                    );
                     break;
                   case 'request_history':
                     // Group turns already inject truncated history; refuse the tool.
@@ -1929,6 +1979,9 @@ class GroupAgentExecutor {
     final meta = <String, dynamic>{};
     meta['trace_id'] = groupTraceId;
     if (messageMetadataExtra != null) meta.addAll(messageMetadataExtra!);
+    if (sessionActionMeta != null) {
+      meta[GroupSessionHandoff.metaActionKey] = sessionActionMeta;
+    }
     if (agentMentions.isNotEmpty) {
       meta['mentions'] = [for (final m in agentMentions) m.toJson()];
     } else {

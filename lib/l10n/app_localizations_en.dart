@@ -5227,6 +5227,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get group_approvalBridgeOpen => 'Open group session';
 
   @override
+  String get group_sessionSwitchTitle => 'New group session ready';
+
+  @override
+  String get group_sessionSwitchBody =>
+      'A new session was created with handoff context. Open it to continue; send a message there to start orchestration.';
+
+  @override
+  String get group_sessionSwitchOpen => 'Open new session';
+
+  @override
+  String group_sessionSwitchReason(String reason) {
+    return 'Reason: $reason';
+  }
+
+  @override
   String get group_approvalKindPlan => 'workflow plan approval';
 
   @override

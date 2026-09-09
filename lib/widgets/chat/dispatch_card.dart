@@ -360,6 +360,119 @@ class GroupApprovalBridgeCard extends StatelessWidget {
   }
 }
 
+/// Inline card on admin messages: open a newly created group session.
+class GroupSessionSwitchCard extends StatelessWidget {
+  final Message message;
+
+  const GroupSessionSwitchCard({super.key, required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
+    final payload =
+        message.metadata?['group_session_action'] as Map<String, dynamic>? ??
+            {};
+    final newSessionId = payload['new_session_id'] as String? ?? '';
+    final handoffUri = payload['handoff_uri'] as String? ?? '';
+    final reason = payload['reason_detail'] as String? ??
+        payload['reason'] as String? ??
+        '';
+    final highlightId = payload['first_message_id'] as String?;
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      constraints: const BoxConstraints(maxWidth: 420),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withOpacity(0.55),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.blue.withOpacity(0.45), width: 1.2),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+            child: Row(
+              children: [
+                Icon(Icons.call_split, size: 16, color: Colors.blue[700]),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    l10n.group_sessionSwitchTitle,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+            child: Text(
+              l10n.group_sessionSwitchBody,
+              style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+            ),
+          ),
+          if (reason.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+              child: Text(
+                l10n.group_sessionSwitchReason(reason),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+              ),
+            ),
+          if (handoffUri.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+              child: Text(
+                handoffUri,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+              ),
+            ),
+          if (newSessionId.isNotEmpty) ...[
+            const Divider(height: 1, indent: 12, endIndent: 12),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => ChatScreen(
+                            channelId: newSessionId,
+                            highlightMessageId: highlightId,
+                            showBackButton: true,
+                          ),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.open_in_new, size: 15),
+                    label: Text(l10n.group_sessionSwitchOpen),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _StatusChip extends StatelessWidget {
   final String label;
   final Color color;

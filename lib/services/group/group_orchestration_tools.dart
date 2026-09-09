@@ -14,6 +14,7 @@ class GroupOrchestrationTools {
 
   static const dispatchName = 'group_dispatch';
   static const finishName = 'group_finish';
+  static const sessionCreateName = 'group_session_create';
 
   /// Member-to-member mention declaration tool. Deliberately NOT in [names]:
   /// [names] tools are encoded as legacy JSON blocks for peer-hosted admins
@@ -54,6 +55,19 @@ class GroupOrchestrationTools {
           'parameters': _finishSchema(),
         },
       },
+      {
+        'type': 'function',
+        'function': {
+          'name': sessionCreateName,
+          'description':
+              'Open a new group session with a curated handoff package when '
+              'staying in the current session would add noise or stale context. '
+              'Do NOT use for simple dev/review rework — keep the current session. '
+              'Requires handoff (user goal + acceptance criteria). Shows the user '
+              'a switch-session card; do not assume they already switched.',
+          'parameters': _sessionCreateSchema(),
+        },
+      },
     ];
   }
 
@@ -77,6 +91,16 @@ class GroupOrchestrationTools {
             'done (user need satisfied), continue (you keep working alone), '
             'or pause (wait for user input).',
         'input_schema': _finishSchema(),
+      },
+      {
+        'name': sessionCreateName,
+        'description':
+            'Open a new group session with a curated handoff package when '
+            'staying in the current session would add noise or stale context. '
+            'Do NOT use for simple dev/review rework — keep the current session. '
+            'Requires handoff (user goal + acceptance criteria). Shows the user '
+            'a switch-session card; do not assume they already switched.',
+        'input_schema': _sessionCreateSchema(),
       },
     ];
   }
@@ -232,6 +256,102 @@ class GroupOrchestrationTools {
           },
         },
         'required': ['action'],
+      };
+
+  static Map<String, dynamic> _sessionCreateSchema() => {
+        'type': 'object',
+        'properties': {
+          'reason': {
+            'type': 'string',
+            'enum': [
+              'topic_shift',
+              'post_delivery',
+              'noise_reduction',
+              'agent_memory_reset',
+              'parallel_track',
+              'user_requested',
+            ],
+            'description': 'Why a new session is recommended',
+          },
+          'reason_detail': {
+            'type': 'string',
+            'description': 'Human-readable explanation for the user',
+          },
+          'handoff': {
+            'type': 'object',
+            'description':
+                'Structured handoff package (preferred). Must include '
+                'task.user_goal, task.acceptance_criteria[], task.status, '
+                'and reason.code unless reason is set at top level.',
+            'properties': {
+              'task': {
+                'type': 'object',
+                'properties': {
+                  'title': {'type': 'string'},
+                  'user_goal': {'type': 'string'},
+                  'acceptance_criteria': {
+                    'type': 'array',
+                    'items': {'type': 'string'},
+                  },
+                  'status': {
+                    'type': 'string',
+                    'enum': [
+                      'not_started',
+                      'in_progress',
+                      'delivered',
+                      'blocked',
+                    ],
+                  },
+                  'status_note': {'type': 'string'},
+                },
+                'required': ['user_goal', 'acceptance_criteria', 'status'],
+              },
+              'reason': {
+                'type': 'object',
+                'properties': {
+                  'code': {'type': 'string'},
+                  'detail': {'type': 'string'},
+                },
+              },
+              'constraints': {
+                'type': 'array',
+                'items': {'type': 'string'},
+              },
+              'artifacts': {
+                'type': 'array',
+                'items': {
+                  'type': 'object',
+                  'properties': {
+                    'uri': {'type': 'string'},
+                    'label': {'type': 'string'},
+                    'required_read': {'type': 'boolean'},
+                  },
+                  'required': ['uri'],
+                },
+              },
+              'open_items': {'type': 'array'},
+              'roles': {'type': 'array'},
+              'first_message_draft': {'type': 'string'},
+            },
+          },
+          'handoff_uri': {
+            'type': 'string',
+            'description':
+                'Existing handoff JSON in store (alternative to inline handoff)',
+          },
+          'post_first_message': {
+            'type': 'boolean',
+            'description':
+                'Write handoff summary as first system message in new session '
+                '(default true)',
+          },
+          'suggest_switch': {
+            'type': 'boolean',
+            'description':
+                'Show user a tappable switch-session card (default true)',
+          },
+        },
+        'required': ['reason'],
       };
 
   /// Parse `group_dispatch` tool arguments into [DispatchStep]s.

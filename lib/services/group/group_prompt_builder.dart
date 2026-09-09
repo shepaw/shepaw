@@ -174,6 +174,7 @@ class GroupPromptBuilder {
           ? _buildWorkflowCliSection(delegateableAgents)
           : '';
       final groupMgmtSection = _buildGroupManagementCliSection();
+      final sessionMgmtSection = _buildSessionManagementSection();
 
       final attachmentSection = _buildAdminAttachmentSection();
 
@@ -246,7 +247,7 @@ $dispatchMemberNameSection
 - **警惕重复失败**：如果同一个任务已经被委派给成员执行了 2 次以上仍未成功，必须停下来重新评估
 - **换思路而非重试**：当某个方案反复失败时，应该考虑：换一个成员来处理、换一种方法或策略、简化任务目标、或者向用户说明困难并请求指导
 - **及时止损**：如果经过多轮尝试后问题仍无法解决，应诚实地向用户汇报当前情况和遇到的困难，而不是继续无意义的循环
-- **关注进展而非次数**：每轮审视结果时，判断是否有实质性进展。如果连续多轮没有任何进展，果断终止并反馈$attachmentSection$planningSection$groupMgmtSection
+- **关注进展而非次数**：每轮审视结果时，判断是否有实质性进展。如果连续多轮没有任何进展，果断终止并反馈$attachmentSection$planningSection$groupMgmtSection$sessionMgmtSection
 
 $groupScopeSection''';
 
@@ -438,8 +439,51 @@ $registeredNames
 - `shepaw chat group rename --name "新群名"` 改群名
 - 从 She 私聊向某群派发需求（须为该群管理员）：`shepaw chat group send --channel <群id> --message "..."`（写入与 She 会话绑定的独立群会话，不干扰群当前聊天）
 - 另建新群（仅 She；创建后你自动成为管理员）：`shepaw chat group create --name "..." [--agents "A,B"]`
-**硬性规则**：add / set-bio / set-description / kick / rename / send **只有本群管理员能成功**；非管理员调用会返回 Permission denied。
+- 新建群会话并交接上下文（须为本群管理员）：调用工具 `group_session_create`，或 CLI `shepaw chat group session create --reason <code> --handoff-json '<json>'`
+**硬性规则**：add / set-bio / set-description / kick / rename / send / session create **只有本群管理员能成功**；非管理员调用会返回 Permission denied。
 先用 `shepaw context agents.list` 确认可添加的 Agent 名称。''';
+  }
+
+  /// Session management rules for admins (handoff + when to fork a new session).
+  String _buildSessionManagementSection() {
+    return '''
+
+【群 Session 管理 — 必读】
+**原则**
+- 不强制「一任务一 session」。同一主题、需要引用最近 dev/review 细节、任务仍在返工时 → **留在当前 session**。
+- 新开 session = 清空主频道历史与成员绑定 DM；群工作空间与 `shared/memory/latest.md` **自动保留**。
+- 禁止把完整聊天历史或【上轮事件】复制到新 session（会污染且绑定旧 orchestrationId）。
+
+**何时建议新开 session**
+- 话题完全无关；或上一任务已 `group_finish(done)` 且是新课题
+- 频道噪音过大（多轮 dev/review），且接近/已完成交付，用户只需看结论与后续
+- 需要重置成员 agent 记忆（反复失败、上下文严重陈旧）
+- 并行两条工作线，避免互相干扰
+- 用户明确要求新会话
+
+**何时不要新开**
+- 仅因审查不通过要返工 → 同 session 继续 `group_dispatch`
+- 任务刚开始、上下文仍少
+- 强依赖最近几轮讨论细节
+
+**新开 session 前必须组装的交接包（最小充分集）**
+1. **用户目标**（必填）— 将作为新 session 首条任务的【全局需求】
+2. **验收标准**（必填）— 每条 dispatch 的 task 须能对照
+3. **关键决策 / 约束**（按需）
+4. **关键产物 URI**（按需）— 只引用 `store://`，禁止贴大段代码
+5. **开放问题 / 待办**（如有）
+6. **来源**（建议）— 旧 session id、上一任务一句话摘要
+
+**执行方式**
+- 优先调用工具 `group_session_create`（`reason` + 结构化 `handoff`，或 `handoff_uri`）
+- 系统会创建 session、写入 `shared/handoffs/<id>.json`、在新 session 写入交接摘要，并向用户展示「打开新会话」卡片
+- **不得**假设用户已自动切换；用户确认切换后再 `group_dispatch`
+- 也可先用 `shepaw store write` 写 handoff，再 `group_session_create` 传 `handoff_uri`
+
+**dev/review 多轮**
+- 返工中：留原 session
+- 已交付且用户要下一版：可新开，handoff 只带最终产物 URI + review 结论摘要，不带每一轮往返
+- 每轮 dispatch 的 task 必须复述验收标准；成员不得修改 handoff 中的用户目标''';
   }
 
   /// Build the workflow CLI usage section for Admin's system prompt.

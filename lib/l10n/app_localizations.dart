@@ -9224,6 +9224,30 @@ abstract class AppLocalizations {
   /// **'打开群会话'**
   String get group_approvalBridgeOpen;
 
+  /// No description provided for @group_sessionSwitchTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'新群会话已就绪'**
+  String get group_sessionSwitchTitle;
+
+  /// No description provided for @group_sessionSwitchBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'已创建带交接上下文的新会话。打开后继续；在新会话发消息即可开始编排。'**
+  String get group_sessionSwitchBody;
+
+  /// No description provided for @group_sessionSwitchOpen.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开新会话'**
+  String get group_sessionSwitchOpen;
+
+  /// No description provided for @group_sessionSwitchReason.
+  ///
+  /// In zh, this message translates to:
+  /// **'原因：{reason}'**
+  String group_sessionSwitchReason(String reason);
+
   /// No description provided for @group_approvalKindPlan.
   ///
   /// In zh, this message translates to:

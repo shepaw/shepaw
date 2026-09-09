@@ -553,6 +553,48 @@ class GroupWorkspaceService {
     }
   }
 
+  /// 写入 session 级交接包（`shared/handoffs/<handoffId>.json` + `.md`）。
+  ///
+  /// 供群管理员 `group_session_create` / CLI 使用；JSON 为机器解析源，
+  /// Markdown 为人类可读伴生文件。返回 JSON 的 store URI。
+  Future<({String jsonUri, String mdUri})?> writeSharedHandoff({
+    required String groupId,
+    required String handoffId,
+    required String jsonContent,
+    required String markdownContent,
+  }) async {
+    final meta = await loadMeta(groupId);
+    if (meta == null) return null;
+    final home = meta.homeDevice;
+    final root = workspaceRoot(groupId);
+    final safeId = RuntimePaths.sanitizeSegment(handoffId);
+    final jsonRel = '$root/shared/handoffs/$safeId.json';
+    final mdRel = '$root/shared/handoffs/$safeId.md';
+    try {
+      await StoreService.instance.writeWorkspaceFile(
+        homeDeviceId: home,
+        relPath: jsonRel,
+        content: Uint8List.fromList(utf8.encode(jsonContent)),
+      );
+      await StoreService.instance.writeWorkspaceFile(
+        homeDeviceId: home,
+        relPath: mdRel,
+        content: Uint8List.fromList(utf8.encode(markdownContent)),
+      );
+      return (
+        jsonUri: 'store://workspaces/$home/$jsonRel',
+        mdUri: 'store://workspaces/$home/$mdRel',
+      );
+    } catch (e) {
+      LoggerService().error(
+        'group workspace handoff write failed: $groupId/$handoffId',
+        tag: 'GroupWorkspaceService',
+        error: e,
+      );
+      return null;
+    }
+  }
+
   /// 写入群记忆蒸馏摘要（任务完成时由编排器调用）。
   ///
   /// 内容 = 编排 finish 轮的 admin 总结（零额外 LLM 调用）；落

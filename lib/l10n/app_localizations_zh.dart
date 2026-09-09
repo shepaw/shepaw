@@ -5028,6 +5028,20 @@ class AppLocalizationsZh extends AppLocalizations {
   String get group_approvalBridgeOpen => '打开群会话';
 
   @override
+  String get group_sessionSwitchTitle => '新群会话已就绪';
+
+  @override
+  String get group_sessionSwitchBody => '已创建带交接上下文的新会话。打开后继续；在新会话发消息即可开始编排。';
+
+  @override
+  String get group_sessionSwitchOpen => '打开新会话';
+
+  @override
+  String group_sessionSwitchReason(String reason) {
+    return '原因：$reason';
+  }
+
+  @override
   String get group_approvalKindPlan => '工作流计划审批';
 
   @override

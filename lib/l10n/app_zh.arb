@@ -2987,6 +2987,17 @@
     }
   },
   "group_approvalBridgeOpen": "打开群会话",
+  "group_sessionSwitchTitle": "新群会话已就绪",
+  "group_sessionSwitchBody": "已创建带交接上下文的新会话。打开后继续；在新会话发消息即可开始编排。",
+  "group_sessionSwitchOpen": "打开新会话",
+  "group_sessionSwitchReason": "原因：{reason}",
+  "@group_sessionSwitchReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
   "group_approvalKindPlan": "工作流计划审批",
   "group_approvalKindAction": "操作确认",
   "group_approvalKindForm": "表单填写",
