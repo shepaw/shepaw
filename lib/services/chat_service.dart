@@ -30,6 +30,8 @@ import 'group/group_event_perception.dart';
 import 'group/group_stage_gate.dart';
 import 'group/group_background_interrupt.dart';
 import 'group/group_channel_busy_exception.dart';
+import 'group/group_task_bootstrap.dart';
+import 'group/group_result_writer.dart';
 import '../storage/group_workspace_service.dart';
 import 'workflow/workflow_service.dart';
 import 'workflow/workflow_step_agent_resolver.dart';
@@ -321,9 +323,12 @@ class ChatService {
     try {
       final channel = await _databaseService.getChannelById(channelId);
       if (channel == null || !channel.isGroup) return;
+      final groupId = channel.groupFamilyId;
+      final orchestrationId = payload['orchestration_id'] as String? ??
+          payload['message_id'] as String?;
       final ws = GroupWorkspaceService.instance;
       await ws.ensureGroupWorkspace(
-        groupId: channel.groupFamilyId,
+        groupId: groupId,
         members: [
           for (final m in channel.members)
             if (m.isAgent) (agentId: m.id, role: m.role),
@@ -331,7 +336,7 @@ class ChatService {
       );
       if (kind == 'dispatch_decision') {
         await ws.writeRoundDispatch(
-          groupId: channel.groupFamilyId,
+          groupId: groupId,
           sessionId: channelId,
           round: round,
           payload: payload,
@@ -339,7 +344,7 @@ class ChatService {
         // 记录消费时间：inbox 读取基准用「最后消费时间」而非本轮开始——
         // 崩溃重启后，重启前未消费的外接 agent 决定仍会被消费。
         await ws.writeRoundState(
-          groupId: channel.groupFamilyId,
+          groupId: groupId,
           sessionId: channelId,
           round: round,
           payload: {
@@ -348,17 +353,44 @@ class ChatService {
             'consumed_at': DateTime.now().toUtc().toIso8601String(),
           },
         );
+        if (orchestrationId != null && orchestrationId.isNotEmpty) {
+          await GroupTaskBootstrap.onDispatchDecision(
+            groupId: groupId,
+            orchestrationId: orchestrationId,
+          );
+        }
         return;
       }
       await ws.writeRoundState(
-        groupId: channel.groupFamilyId,
+        groupId: groupId,
         sessionId: channelId,
         round: round,
         payload: payload,
       );
+      if (orchestrationId != null && orchestrationId.isNotEmpty) {
+        if (kind == 'members_done') {
+          await GroupTaskBootstrap.onSummarizeRound(
+            groupId: groupId,
+            orchestrationId: orchestrationId,
+          );
+          final memberAgents = <RemoteAgent>[];
+          for (final m in channel.members) {
+            if (!m.isAgent) continue;
+            final agent = await _databaseService.getRemoteAgentById(m.id);
+            if (agent != null) memberAgents.add(agent);
+          }
+          await GroupResultWriter.persistFromMembersDonePayload(
+            groupId: groupId,
+            orchestrationId: orchestrationId,
+            payload: payload,
+            agents: memberAgents,
+          );
+        }
+      }
       // 任务完成：把最终 admin 总结蒸馏到群共享记忆（latest.md 覆盖式）。
       if (kind == 'finish') {
         final finalSummary = payload['final_summary'] as String? ?? '';
+        String? memoryUri;
         if (finalSummary.trim().isNotEmpty) {
           // M8: 把跨轮成员产物 URI 追加进群记忆，后续轮次成员可直接引用
           // 历史产物，而不是只看到一段文本摘要。
@@ -374,10 +406,27 @@ class ChatService {
               ..writeln()
               ..write(artifactUris.join('\n'));
           }
-          await ws.writeSharedMemory(
-            groupId: channel.groupFamilyId,
+          memoryUri = await ws.writeSharedMemory(
+            groupId: groupId,
             sessionId: channelId,
             content: memoryContent.toString(),
+          );
+        }
+        if (orchestrationId != null && orchestrationId.isNotEmpty) {
+          final artifactUris = (payload['artifact_uris'] as List?)
+                  ?.whereType<String>()
+                  .where((u) => u.trim().isNotEmpty)
+                  .toList() ??
+              const <String>[];
+          final rounds = (payload['rounds'] as num?)?.toInt();
+          await GroupTaskBootstrap.onFinish(
+            groupId: groupId,
+            orchestrationId: orchestrationId,
+            sessionId: channelId,
+            finalSummary: finalSummary,
+            artifactUris: artifactUris,
+            finalSummaryUri: memoryUri,
+            rounds: rounds,
           );
         }
       }

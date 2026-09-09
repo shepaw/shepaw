@@ -1,6 +1,8 @@
 import '../../models/message.dart';
 import '../messaging/chat_history_content.dart';
 import '../session/history_compactor.dart';
+import 'group_orchestration_features.dart';
+import 'group_orchestration_metadata.dart';
 
 /// Group orchestration alias for [ChatHistoryContent] (see `history_policy`).
 class GroupHistoryContent {
@@ -74,6 +76,65 @@ class GroupMemberHistory {
     required bool isClosingSummary,
   }) =>
       isAdmin || isLoopSummarize || isAbortSummarize || isClosingSummary;
+
+  /// Keeps only messages for [orchestrationId] (metadata tag or legacy tail
+  /// after the triggering user message).
+  static List<Message> filterMessagesForOrchestration({
+    required List<Message> messages,
+    required String orchestrationId,
+    String? excludeMessageId,
+  }) {
+    if (orchestrationId.isEmpty) {
+      if (excludeMessageId == null) return List<Message>.from(messages);
+      return messages.where((m) => m.id != excludeMessageId).toList();
+    }
+
+    final filtered = <Message>[];
+    var pastTrigger = false;
+
+    for (final m in messages) {
+      if (excludeMessageId != null && m.id == excludeMessageId) continue;
+
+      final tagged = GroupOrchestrationMetadata.readOrchestrationId(m.metadata);
+      if (tagged != null) {
+        if (tagged == orchestrationId) {
+          filtered.add(m);
+          pastTrigger = true;
+        }
+        continue;
+      }
+
+      if (m.id == orchestrationId) {
+        filtered.add(m);
+        pastTrigger = true;
+        continue;
+      }
+
+      if (pastTrigger) {
+        filtered.add(m);
+      }
+    }
+
+    return filtered;
+  }
+
+  /// Applies [filterMessagesForOrchestration] when task-scoped admin history
+  /// is enabled; otherwise returns [messages] (minus [excludeMessageId]).
+  static List<Message> loadTaskScopedHistory({
+    required List<Message> messages,
+    required String orchestrationId,
+    String? excludeMessageId,
+  }) {
+    if (!GroupOrchestrationFeatures.useTaskScopedAdminHistory) {
+      if (excludeMessageId == null) return List<Message>.from(messages);
+      return messages.where((m) => m.id != excludeMessageId).toList();
+    }
+    return filterMessagesForOrchestration(
+      messages: messages,
+      orchestrationId: orchestrationId,
+      excludeMessageId: excludeMessageId,
+    );
+  }
 
   /// Merge co-dispatch siblings, mentioners, and the user into pin targets.
   static List<String> buildPinSenderIds({

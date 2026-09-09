@@ -8,6 +8,7 @@ import '../local_user_identity.dart';
 import '../logger_service.dart';
 import 'group_admin_gate.dart';
 import 'group_session_handoff.dart';
+import 'group_task_bootstrap.dart';
 
 /// Creates a new group session with a curated handoff package.
 class GroupSessionCreateService {
@@ -97,6 +98,40 @@ class GroupSessionCreateService {
     }
 
     var handoff = parsed.handoff!;
+    final familyId = channel.groupFamilyId;
+    if ((handoff.orchestrationSummary == null ||
+            handoff.orchestrationSummary!.trim().isEmpty) &&
+        handoff.orchestrationId != null &&
+        handoff.orchestrationId!.trim().isNotEmpty) {
+      final excerpt = await GroupTaskBootstrap.archiveExcerpt(
+        groupId: familyId,
+        orchestrationId: handoff.orchestrationId!.trim(),
+      );
+      if (excerpt != null && excerpt.isNotEmpty) {
+        handoff = GroupSessionHandoff(
+          handoffId: handoff.handoffId,
+          reasonCode: handoff.reasonCode,
+          reasonDetail: handoff.reasonDetail,
+          userGoal: handoff.userGoal,
+          acceptanceCriteria: handoff.acceptanceCriteria,
+          status: handoff.status,
+          title: handoff.title,
+          statusNote: handoff.statusNote,
+          sourceSessionId: handoff.sourceSessionId ?? channelId,
+          sourceSessionLabel: handoff.sourceSessionLabel,
+          orchestrationId: handoff.orchestrationId,
+          orchestrationSummary: excerpt,
+          constraints: handoff.constraints,
+          artifacts: handoff.artifacts,
+          openItems: handoff.openItems,
+          roles: handoff.roles,
+          firstMessageDraft: handoff.firstMessageDraft,
+          createdByAgentId: handoff.createdByAgentId,
+          createdByAgentName: handoff.createdByAgentName,
+          createdAt: handoff.createdAt,
+        );
+      }
+    }
     if (reason.isNotEmpty && GroupSessionHandoff.validReasonCodes.contains(reason)) {
       handoff = GroupSessionHandoff(
         handoffId: handoff.handoffId,
@@ -128,7 +163,6 @@ class GroupSessionCreateService {
       );
     }
 
-    final familyId = channel.groupFamilyId;
     final jsonBody = jsonEncode(handoff.toJson());
     final provisionalMd = handoff.toMarkdown(jsonUri: '(pending)');
     final written = await GroupWorkspaceService.instance.writeSharedHandoff(

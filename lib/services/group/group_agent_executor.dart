@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:sqflite/sqflite.dart' show ConflictAlgorithm;
 import 'package:uuid/uuid.dart';
+import '../../models/group_task.dart';
 import '../../models/message.dart';
 import '../../models/mention_entry.dart';
 import '../../models/remote_agent.dart';
@@ -29,7 +30,11 @@ import '../mailbox/channel_mailbox_service.dart';
 import '../messaging/connection_retry_policy.dart';
 import 'group_dispatch_parser.dart';
 import 'group_mailbox_save_plan.dart';
+import 'group_orchestration_metadata.dart';
 import 'group_orchestration_tools.dart';
+import 'group_orchestration_features.dart';
+import 'group_member_stall.dart';
+import 'group_task_bootstrap.dart';
 import 'group_session_create_service.dart';
 import 'group_session_handoff.dart';
 import 'group_context_builder.dart';
@@ -311,7 +316,10 @@ class GroupAgentExecutor {
     bool isLoopSummarize = false,
     bool isAbortSummarize = false,
     bool isDispatchNudge = false,
+    bool isPlanMissingNudge = false,
     bool isPendingStatusNudge = false,
+    bool isPendingResolution = false,
+    bool isStalledFollowUp = false,
     int? loopRound,
     String mentionMode = 'adminOnly',
     List<String> failedAgentNames = const [],
@@ -334,6 +342,9 @@ class GroupAgentExecutor {
     String? workflowId,
     String? workflowStepId,
     String? orchestrationTraceId,
+    String? orchestrationId,
+    int? orchestrationRound,
+    String? groupFamilyId,
     List<String> historyPinSenderIds = const [],
   }) async {
     LoggerService().debug(
@@ -368,7 +379,10 @@ class GroupAgentExecutor {
       isLoopSummarize: isLoopSummarize,
       isAbortSummarize: isAbortSummarize,
       isDispatchNudge: isDispatchNudge,
+      isPlanMissingNudge: isPlanMissingNudge,
       isPendingStatusNudge: isPendingStatusNudge,
+      isPendingResolution: isPendingResolution,
+      isStalledFollowUp: isStalledFollowUp,
       loopRound: loopRound,
       mentionMode: mentionMode,
       failedAgentNames: failedAgentNames,
@@ -465,6 +479,8 @@ class GroupAgentExecutor {
     var orchWantsContinue = false;
     var orchIsDone = false;
     var orchIsPause = false;
+    var orchPlanPublished = false;
+    String? orchPlanPublishError;
 
     final delegateableNames =
         allAgents.where((a) => a.id != agent.id).map((a) => a.name).toList();
@@ -734,6 +750,75 @@ class GroupAgentExecutor {
                       toolCallId: event.id,
                       name: event.name,
                       result: dispatchResult,
+                    );
+                    break;
+                  case GroupOrchestrationTools.planPublishName:
+                    orchHasSignal = true;
+                    final planParsed = GroupOrchestrationTools.parsePlanPublishArgs(
+                      event.arguments,
+                      allAgents.where((a) => a.id != agent.id).toList(),
+                      orchestrationId: orchestrationId ?? '',
+                    );
+                    String planResult;
+                    if (planParsed.parseError != null ||
+                        planParsed.plan == null) {
+                      orchPlanPublishError = planParsed.parseError ??
+                          'invalid group_plan_publish';
+                      planResult = jsonEncode({
+                        'ok': false,
+                        'error': orchPlanPublishError,
+                        if (planParsed.unresolvedNames.isNotEmpty)
+                          'unresolved_names': planParsed.unresolvedNames,
+                      });
+                    } else if (groupFamilyId == null ||
+                        groupFamilyId!.isEmpty ||
+                        orchestrationId == null ||
+                        orchestrationId!.isEmpty) {
+                      orchPlanPublishError =
+                          'missing group task context for plan publish';
+                      planResult = jsonEncode({
+                        'ok': false,
+                        'error': orchPlanPublishError,
+                      });
+                    } else {
+                      final published = await GroupTaskBootstrap.publishPlan(
+                        groupId: groupFamilyId!,
+                        orchestrationId: orchestrationId!,
+                        sessionId: channelId,
+                        plan: planParsed.plan!,
+                        requirementText: planParsed.requirementText,
+                        requirementNotes: planParsed.requirementNotes,
+                        issuedBy: agent.id,
+                      );
+                      if (published.ok) {
+                        orchPlanPublished = true;
+                        orchPlanPublishError = null;
+                        planResult = jsonEncode({
+                          'ok': true,
+                          'status': GroupTask.statusPlanned,
+                          if (planParsed.unresolvedNames.isNotEmpty)
+                            'unresolved_names': planParsed.unresolvedNames,
+                        });
+                      } else {
+                        orchPlanPublishError =
+                            published.error ?? 'plan publish failed';
+                        planResult = jsonEncode({
+                          'ok': false,
+                          'error': orchPlanPublishError,
+                        });
+                      }
+                    }
+                    pawToolCalls.add(event);
+                    pawToolResults.add({
+                      'tool_call_id': event.id,
+                      'name': event.name,
+                      'result': planResult,
+                    });
+                    infLogGroup.onToolResult(
+                      groupTraceId,
+                      toolCallId: event.id,
+                      name: event.name,
+                      result: planResult,
                     );
                     break;
                   case GroupOrchestrationTools.finishName:
@@ -1810,6 +1895,13 @@ class GroupAgentExecutor {
             await taskCompleter.future.timeout(
               acpTaskTimeout,
               onTimeout: () {
+                if (!isAdmin &&
+                    GroupOrchestrationFeatures.stalledTimeout) {
+                  throw MemberStalledException(
+                    agentName: agent.name,
+                    timeout: acpTaskTimeout,
+                  );
+                }
                 throw TimeoutException(
                     'ACP group task timed out for ${agent.name}');
               },
@@ -1975,6 +2067,14 @@ class GroupAgentExecutor {
     // Build metadata from captured UI tool calls
     final meta = <String, dynamic>{};
     meta['trace_id'] = groupTraceId;
+    final orchId = orchestrationId?.trim();
+    if (orchId != null && orchId.isNotEmpty) {
+      meta.addAll(GroupOrchestrationMetadata.stamp(
+        base: meta,
+        orchestrationId: orchId,
+        orchestrationRound: orchestrationRound,
+      ));
+    }
     if (messageMetadataExtra != null) meta.addAll(messageMetadataExtra!);
     if (sessionActionMeta != null) {
       meta[GroupSessionHandoff.metaActionKey] = sessionActionMeta;
@@ -2185,6 +2285,8 @@ class GroupAgentExecutor {
       unresolvedMentionNames: unresolvedMentionNames,
       hasOrchestrationSignal: orchHasSignal,
       taskStatusInfo: memberStatus,
+      planPublished: orchPlanPublished,
+      planPublishError: orchPlanPublishError,
     );
   }
 

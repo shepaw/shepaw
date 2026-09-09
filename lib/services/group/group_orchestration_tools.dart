@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../../models/group_task.dart';
 import '../../models/mention_entry.dart';
 import '../../models/remote_agent.dart';
 import '../logger_service.dart';
@@ -14,6 +15,7 @@ class GroupOrchestrationTools {
 
   static const dispatchName = 'group_dispatch';
   static const finishName = 'group_finish';
+  static const planPublishName = 'group_plan_publish';
   static const sessionCreateName = 'group_session_create';
 
   /// Member-to-member mention declaration tool. Deliberately NOT in [names]:
@@ -22,7 +24,11 @@ class GroupOrchestrationTools {
   /// agents — they use the reply-metadata convention instead.
   static const mentionName = 'group_mention';
 
-  static const Set<String> names = {dispatchName, finishName};
+  static const Set<String> names = {
+    dispatchName,
+    finishName,
+    planPublishName,
+  };
 
   /// UI tools that must not be offered in group chat (history is already injected).
   static const Set<String> excludedUiToolNames = {'request_history'};
@@ -41,6 +47,18 @@ class GroupOrchestrationTools {
               'assign tasks. Do NOT put dispatch JSON in chat text — use this tool. '
               'Also reply to the user in natural language describing the plan.',
           'parameters': _dispatchSchema(agentNames),
+        },
+      },
+      {
+        'type': 'function',
+        'function': {
+          'name': planPublishName,
+          'description':
+              'Publish the finalized task requirement and formal plan to the '
+              'group workspace (shared/tasks/). Call after user confirms the '
+              'need and before group_dispatch. Members read this plan; do NOT '
+              'dispatch until this succeeds.',
+          'parameters': _planPublishSchema(agentNames),
         },
       },
       {
@@ -83,6 +101,15 @@ class GroupOrchestrationTools {
             'assign tasks. Do NOT put dispatch JSON in chat text — use this tool. '
             'Also reply to the user in natural language describing the plan.',
         'input_schema': _dispatchSchema(agentNames),
+      },
+      {
+        'name': planPublishName,
+        'description':
+            'Publish the finalized task requirement and formal plan to the '
+            'group workspace (shared/tasks/). Call after user confirms the '
+            'need and before group_dispatch. Members read this plan; do NOT '
+            'dispatch until this succeeds.',
+        'input_schema': _planPublishSchema(agentNames),
       },
       {
         'name': finishName,
@@ -241,6 +268,72 @@ class GroupOrchestrationTools {
         },
       },
       'required': ['mode', 'steps'],
+    };
+  }
+
+  static Map<String, dynamic> _planPublishSchema(List<String> agentNames) {
+    final agentItems = <String, dynamic>{
+      'type': 'string',
+      'description': 'Registered group member display name',
+    };
+    if (agentNames.isNotEmpty) {
+      agentItems['enum'] = agentNames;
+    }
+    return {
+      'type': 'object',
+      'properties': {
+        'goal': {
+          'type': 'string',
+          'description': 'Finalized user goal after any clarification',
+        },
+        'requirement_text': {
+          'type': 'string',
+          'description':
+              'Human-readable finalized requirement (Markdown). Becomes '
+              'shared/tasks/.../requirement.md for all members.',
+        },
+        'acceptance_criteria': {
+          'type': 'array',
+          'items': {'type': 'string'},
+          'description': 'How to judge the task complete',
+        },
+        'constraints': {
+          'type': 'array',
+          'items': {'type': 'string'},
+          'description': 'Optional limits or non-goals',
+        },
+        'requirement_notes': {
+          'type': 'string',
+          'description':
+              'Optional summary of clarification Q&A merged into the plan',
+        },
+        'steps_preview': {
+          'type': 'array',
+          'description':
+              'Planned delegation preview (must match upcoming group_dispatch)',
+          'items': {
+            'type': 'object',
+            'properties': {
+              'step': {'type': 'integer'},
+              'agents': {
+                'type': 'array',
+                'items': agentItems,
+                'minItems': 1,
+              },
+              'task': {
+                'type': 'string',
+                'description': 'Member-local brief + acceptance for this step',
+              },
+              'mode': {
+                'type': 'string',
+                'enum': ['concurrent', 'sequential'],
+              },
+            },
+            'required': ['agents', 'task'],
+          },
+        },
+      },
+      'required': ['goal', 'requirement_text', 'steps_preview'],
     };
   }
 
@@ -437,6 +530,150 @@ class GroupOrchestrationTools {
     }
 
     return (steps: steps, unresolvedNames: unresolved, parseError: null);
+  }
+
+  /// Parsed payload for `group_plan_publish`.
+  static ({
+    GroupTaskPlan? plan,
+    String requirementText,
+    String requirementNotes,
+    List<String> unresolvedNames,
+    String? parseError,
+  }) parsePlanPublishArgs(
+    Map<String, dynamic> args,
+    List<RemoteAgent> agents, {
+    required String orchestrationId,
+  }) {
+    final goal = args['goal']?.toString().trim() ?? '';
+    final requirementText = args['requirement_text']?.toString().trim() ?? '';
+    final requirementNotes = args['requirement_notes']?.toString().trim() ?? '';
+    if (goal.isEmpty) {
+      return (
+        plan: null,
+        requirementText: requirementText,
+        requirementNotes: requirementNotes,
+        unresolvedNames: const [],
+        parseError: 'group_plan_publish.goal is required',
+      );
+    }
+    if (requirementText.isEmpty) {
+      return (
+        plan: null,
+        requirementText: requirementText,
+        requirementNotes: requirementNotes,
+        unresolvedNames: const [],
+        parseError: 'group_plan_publish.requirement_text is required',
+      );
+    }
+
+    final criteria = <String>[];
+    final rawCriteria = args['acceptance_criteria'];
+    if (rawCriteria is List) {
+      for (final c in rawCriteria) {
+        if (c is String && c.trim().isNotEmpty) criteria.add(c.trim());
+      }
+    }
+
+    final constraints = <String>[];
+    final rawConstraints = args['constraints'];
+    if (rawConstraints is List) {
+      for (final c in rawConstraints) {
+        if (c is String && c.trim().isNotEmpty) constraints.add(c.trim());
+      }
+    }
+
+    final rawSteps = args['steps_preview'];
+    if (rawSteps is! List || rawSteps.isEmpty) {
+      return (
+        plan: null,
+        requirementText: requirementText,
+        requirementNotes: requirementNotes,
+        unresolvedNames: const [],
+        parseError: 'group_plan_publish.steps_preview must be a non-empty array',
+      );
+    }
+
+    final steps = <GroupTaskPlanStep>[];
+    final unresolved = <String>[];
+    for (final raw in rawSteps) {
+      if (raw is! Map) continue;
+      final map = Map<String, dynamic>.from(raw);
+      final rawAgents = map['agents'];
+      final agentNames = rawAgents is List
+          ? rawAgents.map((e) => '$e').toList()
+          : rawAgents is String
+              ? [rawAgents]
+              : <String>[];
+      if (agentNames.isEmpty) continue;
+
+      final agentIds = <String>[];
+      final resolvedNames = <String>[];
+      for (final name in agentNames) {
+        final agent = GroupDispatchParser.findAgentByDispatchName(agents, name);
+        if (agent == null) {
+          unresolved.add(name);
+          continue;
+        }
+        if (!agentIds.contains(agent.id)) {
+          agentIds.add(agent.id);
+          resolvedNames.add(agent.name);
+        }
+      }
+      if (resolvedNames.isEmpty) continue;
+
+      final rawStep = map['step'];
+      final stepNo = rawStep is num
+          ? rawStep.toInt()
+          : int.tryParse('$rawStep') ?? (steps.length + 1);
+      final modeRaw = map['mode']?.toString().trim();
+      steps.add(GroupTaskPlanStep(
+        step: stepNo,
+        agents: resolvedNames,
+        agentIds: agentIds,
+        task: map['task']?.toString().trim() ?? '',
+        mode: modeRaw == 'sequential' ? 'sequential' : 'concurrent',
+      ));
+    }
+
+    steps.sort((a, b) => a.step.compareTo(b.step));
+    if (steps.isEmpty) {
+      final err = unresolved.isNotEmpty
+          ? 'no group members matched in steps_preview: ${unresolved.join(", ")}'
+          : 'group_plan_publish.steps_preview produced no usable steps';
+      return (
+        plan: null,
+        requirementText: requirementText,
+        requirementNotes: requirementNotes,
+        unresolvedNames: unresolved,
+        parseError: err,
+      );
+    }
+
+    for (final step in steps) {
+      if (step.task.isEmpty) {
+        return (
+          plan: null,
+          requirementText: requirementText,
+          requirementNotes: requirementNotes,
+          unresolvedNames: unresolved,
+          parseError: 'each steps_preview entry needs a non-empty task',
+        );
+      }
+    }
+
+    return (
+      plan: GroupTaskPlan(
+        orchestrationId: orchestrationId,
+        goal: goal,
+        acceptanceCriteria: criteria,
+        constraints: constraints,
+        steps: steps,
+      ),
+      requirementText: requirementText,
+      requirementNotes: requirementNotes,
+      unresolvedNames: unresolved,
+      parseError: null,
+    );
   }
 
   /// Parse `group_finish` action: done | continue | pause.

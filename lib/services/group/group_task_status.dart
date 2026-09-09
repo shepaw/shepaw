@@ -1,4 +1,5 @@
 import '../../models/remote_agent.dart';
+import 'group_member_stall.dart';
 import 'group_turn_result.dart';
 
 /// Parsed `[TASK_STATUS: …]` annotation from a group member reply.
@@ -11,6 +12,19 @@ enum GroupMemberTaskStatus {
 
   /// Real reply with no parseable annotation.
   missing,
+}
+
+/// Member flagged `[NEED_ADMIN]` inside a pending reason — mid-loop admin wake.
+class MemberAdminWakeRequest {
+  final String agentId;
+  final String name;
+  final String? reason;
+
+  const MemberAdminWakeRequest({
+    required this.agentId,
+    required this.name,
+    this.reason,
+  });
 }
 
 /// One member whose reply should block `group_finish(done)`.
@@ -42,6 +56,9 @@ class GroupTaskStatusParser {
 
   static const metadataStatusKey = 'task_status';
   static const metadataReasonKey = 'task_status_reason';
+
+  /// Members put this in pending reason to wake admin before summarize (PR-8).
+  static const needAdminTag = '[NEED_ADMIN]';
 
   static final RegExp _statusTag = RegExp(
     r'\[TASK_STATUS:\s*(done|pending)\s*\](?:\s*(?:原因|reason)\s*[:：]\s*(.*))?',
@@ -157,6 +174,73 @@ class GroupTaskStatusParser {
       ));
     }
     return out;
+  }
+
+  /// Whether [info] requests a mid-loop admin decision (pending + [NEED_ADMIN]).
+  static bool requestsAdminWake(GroupMemberTaskStatusInfo info) {
+    if (!info.applicable || info.status != GroupMemberTaskStatus.pending) {
+      return false;
+    }
+    final reason = info.reason?.trim() ?? '';
+    return reason.contains(needAdminTag);
+  }
+
+  /// Members whose pending reason contains [needAdminTag].
+  static List<MemberAdminWakeRequest> membersNeedingAdminWake({
+    required Map<String, GroupTurnResult> turns,
+    required List<RemoteAgent> agents,
+  }) {
+    final byId = {for (final a in agents) a.id: a};
+    final out = <MemberAdminWakeRequest>[];
+    for (final e in turns.entries) {
+      final info = e.value.taskStatusInfo ?? parse(e.value.content);
+      if (!requestsAdminWake(info)) continue;
+      final agent = byId[e.key];
+      out.add(MemberAdminWakeRequest(
+        agentId: e.key,
+        name: agent?.name ?? e.key,
+        reason: e.value.taskStatusReason ?? info.reason,
+      ));
+    }
+    return out;
+  }
+
+  static String adminStalledFollowUpNote(List<MemberStallRequest> requests) {
+    if (requests.isEmpty) return '';
+    final lines = requests.map((r) {
+      final timeoutLabel = _formatTimeout(r.timeout);
+      return '- ${r.name}：超过 $timeoutLabel 未响应'
+          '${r.stallCount > 1 ? '（第 ${r.stallCount} 次超时）' : ''}';
+    }).join('\n');
+    return '[SYSTEM] 以下成员执行超时（stalled），需要你 **mid-loop** 跟进（不必等到 summarize）：\n'
+        '$lines\n'
+        '请在群内 @ 相关成员询问进度，或 `group_dispatch` 换人/缩小 scope；'
+        '若仍无响应且已多次超时，系统会将该成员标为 failed。';
+  }
+
+  static String _formatTimeout(Duration timeout) {
+    if (timeout.inMinutes >= 1) {
+      return '${timeout.inMinutes} 分钟';
+    }
+    return '${timeout.inSeconds} 秒';
+  }
+
+  static String adminPendingWakeNote(List<MemberAdminWakeRequest> requests) {
+    if (requests.isEmpty) return '';
+    final lines = requests.map((r) {
+      var detail = (r.reason ?? '').trim();
+      if (detail.startsWith(needAdminTag)) {
+        detail = detail.substring(needAdminTag.length).trim();
+      }
+      detail = detail.replaceFirst(RegExp(r'^[：:\s-]+'), '').trim();
+      return detail.isEmpty
+          ? '- ${r.name}：请求管理员决策'
+          : '- ${r.name}：$detail';
+    }).join('\n');
+    return '[SYSTEM] 以下成员在 pending 原因中标记了 $needAdminTag，需要你 **mid-loop** 决策（不必等到 summarize）：\n'
+        '$lines\n'
+        '请结合任务 plan / 成员回复：`group_dispatch` 带决策 re-dispatch；'
+        '能直接答复成员则 dispatch 补充 brief；无法决断则 `group_finish`（pause）或在回复中使用 `[ASK_USER]` 升级用户。';
   }
 
   static String adminNote(List<GroupPendingMember> pending) {

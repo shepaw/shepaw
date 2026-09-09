@@ -7,6 +7,7 @@ import 'package:shepaw/clis/shepaw/store/store_namespace.dart';
 import 'package:shepaw/peer/models/paired_peer.dart';
 import 'package:shepaw/peer/services/peer_storage_service.dart';
 import 'package:shepaw/storage/group_workspace_service.dart';
+import 'package:shepaw/models/group_task.dart';
 import 'package:shepaw/storage/store_protocol.dart';
 import 'package:shepaw/storage/store_service.dart';
 import 'package:shepaw/storage/store_uri_reader.dart';
@@ -559,6 +560,174 @@ void main() {
           .toList();
       expect(paths, isNot(contains('group_group_acl2/members/agent-peer')));
       expect(paths, contains('group_group_acl2/shared')); // shared 保留
+    });
+  });
+
+  group('群任务落盘 (shared/tasks/)', () {
+    test('createTask → requirement/plan/results/archive 读写与索引', () async {
+      await ws.ensureGroupWorkspace(
+        groupId: 'group_task1',
+        members: [(agentId: 'she', role: 'admin')],
+      );
+      const orchId = 'user-msg-orch-001';
+      const sessionId = 'group_session_tasks';
+
+      final created = await ws.createTask(
+        groupId: 'group_task1',
+        orchestrationId: orchId,
+        sessionId: sessionId,
+        userGoal: '编写群聊任务计划功能的设计文档',
+      );
+      expect(created, isNotNull);
+      expect(created!.status, GroupTask.statusClarifying);
+
+      final index1 = await ws.readTaskIndex('group_task1');
+      expect(index1.activeOrchestrationId, orchId);
+      expect(index1.recent.single.orchestrationId, orchId);
+
+      final req = await ws.writeTaskRequirement(
+        groupId: 'group_task1',
+        orchestrationId: orchId,
+        content: '# 定稿需求\n\n用户需要 PR-1 模型与储物袋读写。',
+      );
+      expect(req, isNotNull);
+      expect(req!.uri, contains('shared/tasks/$orchId/requirement.md'));
+      expect(await ws.readTaskRequirement(
+        groupId: 'group_task1',
+        orchestrationId: orchId,
+      ), contains('PR-1'));
+
+      final plan = GroupTaskPlan(
+        orchestrationId: orchId,
+        goal: '实现 GroupTask 储物袋 API',
+        acceptanceCriteria: ['有单元测试'],
+        steps: [
+          GroupTaskPlanStep(
+            step: 1,
+            agents: ['Coder'],
+            task: '实现模型与服务方法',
+          ),
+        ],
+        issuedBy: 'she',
+      );
+      final published = await ws.writeTaskPlan(
+        groupId: 'group_task1',
+        plan: plan,
+        requirementNotes: '用户确认先做 PR-1',
+      );
+      expect(published, isNotNull);
+      expect(published!.task.status, GroupTask.statusPlanned);
+      expect(published.task.hasPublishedPlan, isTrue);
+
+      final planJson = await ws.readTaskPlanJson(
+        groupId: 'group_task1',
+        orchestrationId: orchId,
+      );
+      expect(planJson!.steps.single.agents, ['Coder']);
+
+      final planMd = await ws.readTaskPlanMarkdown(
+        groupId: 'group_task1',
+        orchestrationId: orchId,
+      );
+      expect(planMd, contains('## 分工'));
+      expect(planMd, contains('Coder'));
+
+      await ws.updateTaskStatus(
+        groupId: 'group_task1',
+        orchestrationId: orchId,
+        status: GroupTask.statusExecuting,
+      );
+
+      final memberResult = GroupTaskMemberResult(
+        agentId: 'agent-coder',
+        agentName: 'Coder',
+        round: 1,
+        taskStatus: GroupTaskMemberResult.statusDone,
+        summary: '已实现模型与测试',
+        artifactUris: ['store://workspaces/dev/group_group_task1/members/agent-coder/plan_impl.md'],
+        messageId: 'reply-1',
+      );
+      final results = await ws.upsertTaskMemberResult(
+        groupId: 'group_task1',
+        orchestrationId: orchId,
+        memberResult: memberResult,
+      );
+      expect(results!.members.single.agentName, 'Coder');
+      expect(results.members.single.taskStatus, GroupTaskMemberResult.statusDone);
+
+      final readResults = await ws.readTaskResults(
+        groupId: 'group_task1',
+        orchestrationId: orchId,
+      );
+      expect(readResults!.members.single.summary, contains('已实现'));
+
+      final archive = await ws.writeTaskArchive(
+        groupId: 'group_task1',
+        orchestrationId: orchId,
+        content: '# 任务卷宗\n\nPR-1 已完成。',
+        finalSummaryUri: 'store://workspaces/dev/latest.md',
+      );
+      expect(archive, isNotNull);
+      expect(await ws.readTaskArchive(
+        groupId: 'group_task1',
+        orchestrationId: orchId,
+      ), contains('PR-1 已完成'));
+
+      final done = await ws.updateTaskStatus(
+        groupId: 'group_task1',
+        orchestrationId: orchId,
+        status: GroupTask.statusDone,
+      );
+      expect(done!.finishedAt, isNotNull);
+
+      final indexDone = await ws.readTaskIndex('group_task1');
+      expect(indexDone.activeOrchestrationId, isNull);
+      expect(indexDone.recent.first.status, GroupTask.statusDone);
+
+      expect(
+        ws.taskDir('group_task1', orchId),
+        'group_group_task1/shared/tasks/$orchId',
+      );
+    });
+
+    test('ensureTask 幂等：重复调用不覆盖已有任务', () async {
+      await ws.ensureGroupWorkspace(
+        groupId: 'group_task_ensure',
+        members: [(agentId: 'she', role: 'admin')],
+      );
+      const orchId = 'orch-ensure-1';
+      final first = await ws.ensureTask(
+        groupId: 'group_task_ensure',
+        orchestrationId: orchId,
+        sessionId: 'session-a',
+        userGoal: '第一次',
+      );
+      final second = await ws.ensureTask(
+        groupId: 'group_task_ensure',
+        orchestrationId: orchId,
+        sessionId: 'session-b-should-not-replace',
+        userGoal: '第二次不应写入',
+      );
+      expect(first, isNotNull);
+      expect(second!.sessionId, 'session-a');
+      expect(second.userGoal, '第一次');
+    });
+
+    test('readTask 对不存在任务返回 null', () async {
+      await ws.ensureGroupWorkspace(
+        groupId: 'group_task2',
+        members: [(agentId: 'she', role: 'admin')],
+      );
+      expect(
+        await ws.readTask(
+          groupId: 'group_task2',
+          orchestrationId: 'missing',
+        ),
+        isNull,
+      );
+      final emptyIndex = await ws.readTaskIndex('group_task2');
+      expect(emptyIndex.activeOrchestrationId, isNull);
+      expect(emptyIndex.recent, isEmpty);
     });
   });
 

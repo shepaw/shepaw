@@ -39,7 +39,10 @@ class GroupPromptBuilder {
     bool isLoopSummarize = false,
     bool isAbortSummarize = false,
     bool isDispatchNudge = false,
+    bool isPlanMissingNudge = false,
     bool isPendingStatusNudge = false,
+    bool isPendingResolution = false,
+    bool isStalledFollowUp = false,
     int? loopRound,
     String mentionMode = 'adminOnly',
     List<String> failedAgentNames = const [],
@@ -60,7 +63,10 @@ class GroupPromptBuilder {
       isLoopSummarize: isLoopSummarize,
       isAbortSummarize: isAbortSummarize,
       isDispatchNudge: isDispatchNudge,
+      isPlanMissingNudge: isPlanMissingNudge,
       isPendingStatusNudge: isPendingStatusNudge,
+      isPendingResolution: isPendingResolution,
+      isStalledFollowUp: isStalledFollowUp,
       loopRound: loopRound,
       mentionMode: mentionMode,
       failedAgentNames: failedAgentNames,
@@ -86,7 +92,10 @@ class GroupPromptBuilder {
     bool isLoopSummarize = false,
     bool isAbortSummarize = false,
     bool isDispatchNudge = false,
+    bool isPlanMissingNudge = false,
     bool isPendingStatusNudge = false,
+    bool isPendingResolution = false,
+    bool isStalledFollowUp = false,
     int? loopRound,
     String mentionMode = 'adminOnly',
     List<String> failedAgentNames = const [],
@@ -156,8 +165,21 @@ class GroupPromptBuilder {
             }()
           : isPendingStatusNudge
           ? '\n\n【当前状态】本轮仍有成员任务未完成（pending 或未标注 `[TASK_STATUS]`）。**禁止**调用 `group_finish`（action=`done`）。请立刻 `group_dispatch` 让他们补做，或 `group_finish`（action=`pause`）向用户说明并等待输入。不要调用 request_history，群聊历史已注入。'
+          : isPendingResolution
+          ? '\n\n【当前状态】有成员在执行中 pending 并标记 `[NEED_ADMIN]`，请求你 **mid-loop** 决策（不必等到 summarize）。\n'
+              '- 读成员 pending 原因与任务 plan / requirement\n'
+              '- 你能直接拍板 → `group_dispatch` 带决策 re-dispatch 相关成员\n'
+              '- 需要用户选择 → 自然语言说明选项并 `group_finish`（pause），或回复 `[ASK_USER]` 升级用户\n'
+              '- **禁止**在未处理该请示时 `group_finish`（done）'
+          : isStalledFollowUp
+          ? '\n\n【当前状态】有成员执行 **超时（stalled）**，尚未 hard fail。\n'
+              '- 请在群内 @ 相关成员询问进度，或 `group_dispatch` 换人/缩小 scope\n'
+              '- 连续多次超时后系统会将该成员标为 failed；你在 summarize 中需如实说明\n'
+              '- **禁止**在未跟进 stalled 成员时 `group_finish`（done）'
           : isDispatchNudge
           ? '\n\n【当前状态】上一轮派发未成功（工具参数无效、未调用工具、或旧版文本 JSON 无法解析）。**尚未有任何成员被委派。**请立刻调用 `group_dispatch` 重新派活，或调用 `group_finish`（done/continue/pause）。不要调用 request_history，群聊历史已注入。'
+          : isPlanMissingNudge
+          ? '\n\n【当前状态】你尝试 `group_dispatch`，但本任务尚未发布正式计划。**禁止再次 dispatch。**请先调用 `group_plan_publish`（goal + requirement_text + steps_preview），成功后再 dispatch；若仍需澄清，请 `group_finish`（pause）。'
           : isLoopSummarize
           ? () {
               final failedSection = failedAgentNames.isNotEmpty
@@ -197,22 +219,30 @@ $memberList
 你的首要目标是**尽可能好地完成用户的需求**，你是这个群的项目经理。用户的每条消息都会首先由你处理，你应当：
 1. 认真理解用户的意图和需求
 2. **需求澄清**：如果用户需求不明确、缺少关键信息、或存在多个理解方向，**必须**先调用 `group_finish`（action=`pause`）向用户提出澄清问题，等用户补充/确认后再继续；**不要凭猜测直接派活**
-3. 闲聊、协调性问题、关于本群本身的问题，你可以直接回答；结束后调用 `group_finish`（action=`done`）
-4. 需求已明确时，专业性问题**优先委派给更专业的成员**，即使你自己能答——你的核心价值是拆任务、选对人、盯进度和审结果，而不是替成员干活
+3. **发布正式计划**：需求已明确、准备派活前，**必须**先调用 `group_plan_publish` 写入定稿需求（`requirement_text`）与分工预览（`steps_preview`）；成功后再 `group_dispatch`。成员会从储物袋读取该计划
+4. 闲聊、协调性问题、关于本群本身的问题，你可以直接回答；结束后调用 `group_finish`（action=`done`）
+5. 需求已明确时，专业性问题**优先委派给更专业的成员**，即使你自己能答——你的核心价值是拆任务、选对人、盯进度和审结果，而不是替成员干活
 
 【委派机制（仅在需要时使用）】
 派活与编排控制**必须通过工具调用**，不要在聊天正文里写 ```json 派发块。
 
-1. **`group_dispatch`** — 委派成员
+1. **`group_plan_publish`** — 发布正式任务计划（派活前必做）
+   - `goal`：澄清后的定稿目标
+   - `requirement_text`：定稿需求全文（Markdown，写入 shared/tasks/…/requirement.md）
+   - `acceptance_criteria[]` / `constraints[]`：验收标准与约束（可选）
+   - `steps_preview[]`：分工预览（agents 注册名 + task + mode），应与随后 `group_dispatch` 一致
+   - 发布成功后再调用 `group_dispatch`
+2. **`group_dispatch`** — 委派成员
    - `mode`：`concurrent`（并行）或 `sequential`（按 step 顺序）
    - `steps[]`：每步含 `agents`（成员注册名数组）与 `task`（背景、目标、验收标准）
    - 调用工具的同时，**必须用自然语言向用户简要说明分工安排**
-2. **`group_finish`** — 不派成员时的控制信号
+3. **`group_finish`** — 不派成员时的控制信号
    - `action=done`：需求已满足，结束编排
    - `action=continue`：你自己继续工作，不委派
    - `action=pause`：需要用户输入才能继续（本轮暂停）
 
 **硬性规则：**
+- 决定委派就必须先 `group_plan_publish`，再 `group_dispatch`——未发布计划时 dispatch 会被系统拒绝
 - 决定委派就必须调用 `group_dispatch`——只在自然语言中承诺「我来安排」而不调工具，系统不会派活
 - 系统会拦截：若本轮仍有成员标注 pending 或未标注任务状态，调用 `group_finish`（done）不会结束编排，你会收到纠正提示
 - **禁止**用 `shepaw context agents.chat` 向本群成员派活（那会发到私聊）
@@ -311,7 +341,10 @@ $memberList
 7. 如果你发现自己在重复执行相同的任务且反复失败，应主动换一种方法或策略，而不是用同样的方式继续重试。如果确实无法完成，请如实说明遇到的困难
 8. 如果任务执行过程中需要用户确认信息或做出选择，请用**文字描述**所有选项和所需信息，不要调用 form、action_confirmation、single_select、multi_select 等 UI 工具。管理员会读取你的描述并做出决策。
 9. **产物优先写入 store**：需要持久化/可分享的文件产出时，**必须**调用 `shepaw store write --filename <名> --content "..."`（可选 `--task` / `--desc`），并在回复中**原样**引用返回的 `[filename](store://...)`；禁止编造 URI；**不要**传 agent_id/owner。读法见下方作用域卡片。仅用户明确指定 OS 路径时才用 `os.file.write`
-10. 在每次回复的**最后一行**，必须输出任务状态标注，格式为：\n   - 任务已完成（且已写入 store 并引用 URI，或确实无文件产出）：`[TASK_STATUS: done]`\n   - 任务未完成或需要更多信息：`[TASK_STATUS: pending] 原因：<简要说明>`\n管理员会根据此标注决定下一步安排。$allMembersMentionSection
+10. 在每次回复的**最后一行**，必须输出任务状态标注，格式为：\n   - 任务已完成（且已写入 store 并引用 URI，或确实无文件产出）：`[TASK_STATUS: done]`\n   - 任务未完成或需要更多信息：`[TASK_STATUS: pending] 原因：<简要说明>`\n   - 若需管理员 mid-loop 决策，在 pending 原因**首行**写 `[NEED_ADMIN]` 并描述选项\n管理员会根据此标注决定下一步安排。$allMembersMentionSection
+
+【任务上下文】
+你被委派时会收到【全局需求】（定稿 requirement.md）与【正式任务计划】（plan.md 摘要）；请以它们为准，不要只依赖聊天历史里的原始用户消息。同轮派发时【同轮完成情况】会列出已完成同伴的摘要，避免重复劳动。
 
 【自我简介】
 你可以更新自己在群里的职责描述（只影响本群展示）：`shepaw chat group set-bio --agent ${currentAgent.name} --bio "新的职责"`。**只能修改自己的**；管理员与 She 可修改所有成员。

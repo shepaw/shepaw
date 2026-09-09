@@ -119,13 +119,24 @@ void main() {
   });
 
   group('tool schemas', () {
-    test('openAI tools include enum of agent names', () {
+    test('openAI tools include dispatch, plan_publish, finish, session_create', () {
       final tools = GroupOrchestrationTools.openAITools(
         agentNames: ['Coder', 'Reviewer'],
       );
-      expect(tools.length, 2);
-      final dispatch = tools.first['function'] as Map;
-      expect(dispatch['name'], GroupOrchestrationTools.dispatchName);
+      expect(tools.length, 4);
+      final names = tools
+          .map((t) => (t['function'] as Map)['name'] as String)
+          .toList();
+      expect(names, contains(GroupOrchestrationTools.dispatchName));
+      expect(names, contains(GroupOrchestrationTools.planPublishName));
+      expect(names, contains(GroupOrchestrationTools.finishName));
+      expect(names, contains(GroupOrchestrationTools.sessionCreateName));
+
+      final dispatch = tools.firstWhere(
+        (t) =>
+            (t['function'] as Map)['name'] ==
+            GroupOrchestrationTools.dispatchName,
+      )['function'] as Map;
       final schema = dispatch['parameters'] as Map;
       final agentEnum = (((schema['properties'] as Map)['steps'] as Map)['items']
           as Map)['properties'] as Map;
@@ -205,6 +216,48 @@ void main() {
                   'mentions'] as Map)['items'] as Map)['properties'] as Map;
       final nameSchema = nameEnum['name'] as Map;
       expect(nameSchema['enum'], ['Coder', 'all']);
+    });
+  });
+
+  group('GroupOrchestrationTools.parsePlanPublishArgs', () {
+    test('parses plan with requirement and steps_preview', () {
+      final parsed = GroupOrchestrationTools.parsePlanPublishArgs(
+        {
+          'goal': '交付 API 文档',
+          'requirement_text': '# 定稿\n\n用户需要 OpenAPI 3 文档',
+          'acceptance_criteria': ['含鉴权章节'],
+          'steps_preview': [
+            {
+              'step': 1,
+              'agents': ['Coder'],
+              'task': '起草文档',
+              'mode': 'concurrent',
+            },
+          ],
+        },
+        agents,
+        orchestrationId: 'msg-1',
+      );
+
+      expect(parsed.parseError, isNull);
+      expect(parsed.plan, isNotNull);
+      expect(parsed.plan!.goal, '交付 API 文档');
+      expect(parsed.plan!.steps.single.agents, ['Coder']);
+      expect(parsed.requirementText, contains('OpenAPI'));
+    });
+
+    test('requires non-empty steps_preview', () {
+      final parsed = GroupOrchestrationTools.parsePlanPublishArgs(
+        {
+          'goal': 'g',
+          'requirement_text': 'req',
+          'steps_preview': [],
+        },
+        agents,
+        orchestrationId: 'msg-2',
+      );
+      expect(parsed.plan, isNull);
+      expect(parsed.parseError, isNotNull);
     });
   });
 }

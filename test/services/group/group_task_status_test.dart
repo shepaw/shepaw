@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/remote_agent.dart';
+import 'package:shepaw/services/group/group_member_stall.dart';
 import 'package:shepaw/services/group/group_task_status.dart';
 import 'package:shepaw/services/group/group_turn_result.dart';
 import 'package:shepaw/services/task/task_models.dart';
@@ -199,6 +200,63 @@ void main() {
         },
       );
       expect(info?.status, GroupMemberTaskStatus.missing);
+    });
+  });
+
+  group('GroupTaskStatusParser NEED_ADMIN wake (PR-8)', () {
+    final coder = _agent('coder', 'Coder');
+
+    test('requestsAdminWake when pending reason contains tag', () {
+      final info = GroupTaskStatusParser.parse(
+        '[TASK_STATUS: pending] 原因：[NEED_ADMIN] 选 A 还是 B？',
+      );
+      expect(GroupTaskStatusParser.requestsAdminWake(info), isTrue);
+    });
+
+    test('membersNeedingAdminWake collects tagged pending members', () {
+      final wake = GroupTaskStatusParser.membersNeedingAdminWake(
+        turns: {
+          'coder': GroupTurnResult(
+            content:
+                'blocked\n[TASK_STATUS: pending] 原因：[NEED_ADMIN] 需要选数据库',
+            taskStatusInfo: GroupTaskStatusParser.parse(
+              'blocked\n[TASK_STATUS: pending] 原因：[NEED_ADMIN] 需要选数据库',
+            ),
+          ),
+        },
+        agents: [coder],
+      );
+      expect(wake, hasLength(1));
+      expect(wake.single.name, 'Coder');
+      expect(wake.single.reason, contains('[NEED_ADMIN]'));
+    });
+
+    test('adminPendingWakeNote lists members for mid-loop turn', () {
+      final note = GroupTaskStatusParser.adminPendingWakeNote(const [
+        MemberAdminWakeRequest(
+          agentId: 'coder',
+          name: 'Coder',
+          reason: '[NEED_ADMIN] Redis 还是 Postgres',
+        ),
+      ]);
+      expect(note, contains('[NEED_ADMIN]'));
+      expect(note, contains('Coder'));
+      expect(note, contains('mid-loop'));
+      expect(note, contains('group_dispatch'));
+    });
+
+    test('adminStalledFollowUpNote lists timeout members', () {
+      final note = GroupTaskStatusParser.adminStalledFollowUpNote(const [
+        MemberStallRequest(
+          agentId: 'coder',
+          name: 'Coder',
+          timeout: Duration(minutes: 10),
+          stallCount: 1,
+        ),
+      ]);
+      expect(note, contains('stalled'));
+      expect(note, contains('Coder'));
+      expect(note, contains('10 分钟'));
     });
   });
 

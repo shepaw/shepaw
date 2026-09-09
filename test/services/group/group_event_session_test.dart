@@ -25,6 +25,65 @@ void main() {
       expect(e.orchestrationId, isNull);
     });
 
+    test('memberPending renders compact line and round-trips', () {
+      final e = GroupEvent.memberPending(
+        channelId: 'chan',
+        agentId: 'coder',
+        agentName: 'Coder',
+        reason: '[NEED_ADMIN] 选方案 A 或 B',
+        round: 2,
+        orchestrationId: 'msg-1',
+      );
+      expect(e.type, GroupEventType.memberPending);
+      expect(e.orchestrationId, 'msg-1');
+      expect(renderEventLine(e), contains('Coder'));
+      expect(renderEventLine(e), contains('请示管理员'));
+      expect(renderEventLine(e), contains('选方案'));
+
+      final restored = GroupEvent.fromPersisted({
+        'id': e.id,
+        'type': e.type.name,
+        'channel_id': e.channelId,
+        'round': e.round,
+        'summary': e.summary,
+        'payload': e.payload,
+        'agent_id': e.agentId,
+        'agent': e.agentName,
+        'ts': e.createdAt.toUtc().toIso8601String(),
+      });
+      expect(restored?.type, GroupEventType.memberPending);
+      expect(restored?.orchestrationId, 'msg-1');
+    });
+
+    test('memberStalled renders compact line and round-trips', () {
+      final e = GroupEvent.memberStalled(
+        channelId: 'chan',
+        agentId: 'coder',
+        agentName: 'Coder',
+        timeoutSeconds: 600,
+        stallCount: 1,
+        round: 2,
+        orchestrationId: 'msg-1',
+      );
+      expect(e.type, GroupEventType.memberStalled);
+      expect(renderEventLine(e), contains('stalled'));
+      expect(renderEventLine(e), contains('Coder'));
+
+      final restored = GroupEvent.fromPersisted({
+        'id': e.id,
+        'type': e.type.name,
+        'channel_id': e.channelId,
+        'round': e.round,
+        'summary': e.summary,
+        'payload': e.payload,
+        'agent_id': e.agentId,
+        'agent': e.agentName,
+        'ts': e.createdAt.toUtc().toIso8601String(),
+      }, channelId: 'chan');
+      expect(restored?.type, GroupEventType.memberStalled);
+      expect(restored?.orchestrationId, 'msg-1');
+    });
+
     test('fromPersisted round-trips orchestrationId for crash replay', () {
       final original = loopEvent('msg-task-a', 2, summary: 's');
       final restored = GroupEvent.fromPersisted({

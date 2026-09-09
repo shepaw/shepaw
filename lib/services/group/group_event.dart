@@ -26,6 +26,12 @@ enum GroupEventType {
 
   /// 编排循环一轮结束（loop 模式衔接，预留）。
   loopRoundCompleted,
+
+  /// 成员 pending 且原因含 `[NEED_ADMIN]`，需管理员 mid-loop 决策（PR-8）。
+  memberPending,
+
+  /// 成员执行超时（stalled），需管理员 mid-loop 追问（PR-9）。
+  memberStalled,
 }
 
 /// One structured event in a group chat that agents can perceive.
@@ -170,6 +176,67 @@ class GroupEvent {
     );
   }
 
+  /// 成员在执行中 pending 并请求管理员 mid-loop 决策（`[NEED_ADMIN]`）。
+  factory GroupEvent.memberPending({
+    required String channelId,
+    required String agentId,
+    required String agentName,
+    required String reason,
+    int? round,
+    String? orchestrationId,
+    String? id,
+  }) {
+    final trimmedReason = reason.trim();
+    return GroupEvent(
+      id: id ?? _newId(),
+      type: GroupEventType.memberPending,
+      channelId: channelId,
+      round: round,
+      agentId: agentId,
+      agentName: agentName,
+      summary: trimmedReason.isEmpty
+          ? '成员 $agentName 请求管理员决策'
+          : '成员 $agentName 请求管理员决策：$trimmedReason',
+      payload: {
+        if (round != null) 'round': round,
+        if (trimmedReason.isNotEmpty) 'reason': trimmedReason,
+        if (orchestrationId != null && orchestrationId.isNotEmpty)
+          'orchestration_id': orchestrationId,
+      },
+    );
+  }
+
+  /// 成员执行超时（stalled），需管理员 mid-loop 追问进度或换人。
+  factory GroupEvent.memberStalled({
+    required String channelId,
+    required String agentId,
+    required String agentName,
+    required int timeoutSeconds,
+    int? round,
+    int stallCount = 1,
+    String? orchestrationId,
+    String? id,
+  }) {
+    return GroupEvent(
+      id: id ?? _newId(),
+      type: GroupEventType.memberStalled,
+      channelId: channelId,
+      round: round,
+      agentId: agentId,
+      agentName: agentName,
+      summary: stallCount > 1
+          ? '成员 $agentName 第 $stallCount 次执行超时（${timeoutSeconds}s）'
+          : '成员 $agentName 执行超时（${timeoutSeconds}s）',
+      payload: {
+        'timeout_seconds': timeoutSeconds,
+        'stall_count': stallCount,
+        if (round != null) 'round': round,
+        if (orchestrationId != null && orchestrationId.isNotEmpty)
+          'orchestration_id': orchestrationId,
+      },
+    );
+  }
+
   /// 从工作空间持久化 payload 重建事件（崩溃恢复回放）。字段缺失/类型
   /// 不合法返回 null——回放是 best-effort，单条损坏不应拖垮整批恢复。
   static GroupEvent? fromPersisted(Map<String, dynamic> json, {String? channelId}) {
@@ -241,5 +308,24 @@ String renderEventLine(GroupEvent e) {
         parts.add(e.summary.trim().replaceAll('\n', ' '));
       }
       return parts.join(' · ');
+    case GroupEventType.memberPending:
+      final round = e.round != null ? '第${e.round}轮 · ' : '';
+      final who = e.agentName ?? e.agentId ?? '成员';
+      final reason = (e.payload['reason'] as String?)?.trim();
+      if (reason != null && reason.isNotEmpty) {
+        return '${round}成员 $who · ⏸ 请示管理员 · $reason';
+      }
+      return '${round}成员 $who · ⏸ 请示管理员';
+    case GroupEventType.memberStalled:
+      final round = e.round != null ? '第${e.round}轮 · ' : '';
+      final who = e.agentName ?? e.agentId ?? '成员';
+      final secs = (e.payload['timeout_seconds'] as num?)?.toInt();
+      final stallCount = (e.payload['stall_count'] as num?)?.toInt() ?? 1;
+      final timeoutLabel =
+          secs != null ? '${secs}s' : '超时';
+      if (stallCount > 1) {
+        return '${round}成员 $who · ⏱ stalled（第 $stallCount 次 · $timeoutLabel）';
+      }
+      return '${round}成员 $who · ⏱ stalled（$timeoutLabel）';
   }
 }

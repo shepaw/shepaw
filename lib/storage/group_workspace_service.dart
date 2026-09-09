@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import '../models/group_task.dart';
 import '../peer/models/peer_store_share.dart';
 import '../peer/services/peer_storage_service.dart';
 import '../services/logger_service.dart';
@@ -168,6 +169,14 @@ class OrchestrationInbox {
 /// ├── group-workspace.json         # 成员表（读写权限唯一依据）
 /// ├── members/<agentId>/...        # 成员私有区（store write 落点，只写自己的）
 /// └── shared/
+///     ├── tasks/
+///     │   ├── index.json
+///     │   └── <orchestrationId>/
+///     │       ├── task.json
+///     │       ├── requirement.md
+///     │       ├── plan.md / plan.json
+///     │       ├── results.json
+///     │       └── archive.md
 ///     └── orchestration/<sessionId>/round-N/{state.json, dispatch.json}
 /// ```
 ///
@@ -213,6 +222,45 @@ class GroupWorkspaceService {
   /// `…/orchestration/<sessionId>/inbox`。
   String inboxDir(String groupId, String sessionId) =>
       '${orchestrationRoot(groupId, sessionId)}/inbox';
+
+  /// 群任务根：`group_<gid>/shared/tasks`。
+  String tasksRoot(String groupId) =>
+      '${workspaceRoot(groupId)}/shared/tasks';
+
+  /// 单任务目录：`…/shared/tasks/<orchestrationId>`。
+  String taskDir(String groupId, String orchestrationId) =>
+      '${tasksRoot(groupId)}/${RuntimePaths.sanitizeSegment(orchestrationId)}';
+
+  String taskIndexRelPath(String groupId) =>
+      '${tasksRoot(groupId)}/index.json';
+
+  String taskJsonRelPath(String groupId, String orchestrationId) =>
+      '${taskDir(groupId, orchestrationId)}/task.json';
+
+  String taskRequirementRelPath(String groupId, String orchestrationId) =>
+      '${taskDir(groupId, orchestrationId)}/requirement.md';
+
+  String taskPlanMdRelPath(String groupId, String orchestrationId) =>
+      '${taskDir(groupId, orchestrationId)}/plan.md';
+
+  String taskPlanJsonRelPath(String groupId, String orchestrationId) =>
+      '${taskDir(groupId, orchestrationId)}/plan.json';
+
+  String taskResultsRelPath(String groupId, String orchestrationId) =>
+      '${taskDir(groupId, orchestrationId)}/results.json';
+
+  String taskArchiveRelPath(String groupId, String orchestrationId) =>
+      '${taskDir(groupId, orchestrationId)}/archive.md';
+
+  /// 构建群任务相关文件的 store URI（home device 来自元数据）。
+  Future<String?> taskFileUri({
+    required String groupId,
+    required String relPath,
+  }) async {
+    final meta = await loadMeta(groupId);
+    if (meta == null) return null;
+    return 'store://workspaces/${meta.homeDevice}/$relPath';
+  }
 
   /// 幂等创建群工作空间骨架 + 元数据。已存在时补缺成员，返回空间根。
   ///
@@ -532,6 +580,21 @@ class GroupWorkspaceService {
     );
   }
 
+  /// 最新编排轮次号（来自 `latest.json`）；不存在返回 null。
+  Future<int?> latestOrchestrationRound({
+    required String groupId,
+    required String sessionId,
+  }) async {
+    final latest = await readLatestOrchestration(
+      groupId: groupId,
+      sessionId: sessionId,
+    );
+    final round = latest?['round'];
+    if (round is int) return round;
+    if (round is num) return round.toInt();
+    return null;
+  }
+
   /// 读取最新群记忆（`shared/memory/latest.md`，纯文本）；无内容返回 null。
   Future<String?> readSharedMemoryLatest(String groupId) async {
     final meta = await loadMeta(groupId);
@@ -633,6 +696,364 @@ class GroupWorkspaceService {
       );
       return null;
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 群任务（shared/tasks/<orchestrationId>/）
+  // ---------------------------------------------------------------------------
+
+  /// 读取任务索引；不存在返回空索引。
+  Future<GroupTaskIndex> readTaskIndex(String groupId) async {
+    final meta = await loadMeta(groupId);
+    if (meta == null) return GroupTaskIndex();
+    final json = await _readJson(
+      'store://workspaces/${meta.homeDevice}/${taskIndexRelPath(groupId)}',
+    );
+    if (json == null) return GroupTaskIndex();
+    return GroupTaskIndex.fromJson(json);
+  }
+
+  Future<void> _writeTaskIndex(String groupId, GroupTaskIndex index) async {
+    final meta = await loadMeta(groupId);
+    if (meta == null) return;
+    await _writeJson(
+      groupId: groupId,
+      homeDeviceId: meta.homeDevice,
+      relPath: taskIndexRelPath(groupId),
+      payload: index.toJson(),
+    );
+  }
+
+  /// 创建任务主记录（`task.json`）并更新索引。
+  ///
+  /// [orchestrationId] 通常为触发编排的用户消息 id；[sessionId] 为频道 id。
+  Future<GroupTask?> createTask({
+    required String groupId,
+    required String orchestrationId,
+    required String sessionId,
+    required String userGoal,
+    String status = GroupTask.statusClarifying,
+  }) async {
+    final meta = await loadMeta(groupId);
+    if (meta == null) return null;
+
+    final task = GroupTask(
+      orchestrationId: orchestrationId,
+      sessionId: sessionId,
+      status: status,
+      userGoal: userGoal.trim(),
+    );
+    await _writeJson(
+      groupId: groupId,
+      homeDeviceId: meta.homeDevice,
+      relPath: taskJsonRelPath(groupId, orchestrationId),
+      payload: task.toJson(),
+    );
+    final index = await readTaskIndex(groupId);
+    await _writeTaskIndex(groupId, index.withActiveTask(task));
+    return task;
+  }
+
+  /// 幂等创建：已存在则直接返回，否则 [createTask]。
+  Future<GroupTask?> ensureTask({
+    required String groupId,
+    required String orchestrationId,
+    required String sessionId,
+    required String userGoal,
+    String status = GroupTask.statusClarifying,
+  }) async {
+    final existing = await readTask(
+      groupId: groupId,
+      orchestrationId: orchestrationId,
+    );
+    if (existing != null) return existing;
+    return createTask(
+      groupId: groupId,
+      orchestrationId: orchestrationId,
+      sessionId: sessionId,
+      userGoal: userGoal,
+      status: status,
+    );
+  }
+
+  /// 读取任务主记录；不存在返回 null。
+  Future<GroupTask?> readTask({
+    required String groupId,
+    required String orchestrationId,
+  }) async {
+    final meta = await loadMeta(groupId);
+    if (meta == null) return null;
+    final json = await _readJson(
+      'store://workspaces/${meta.homeDevice}/'
+      '${taskJsonRelPath(groupId, orchestrationId)}',
+    );
+    if (json == null) return null;
+    return GroupTask.fromJson(json);
+  }
+
+  /// 更新任务主记录并同步索引 recent 条目。
+  Future<GroupTask?> writeTask({
+    required String groupId,
+    required GroupTask task,
+  }) async {
+    final meta = await loadMeta(groupId);
+    if (meta == null) return null;
+    final updated = task.copyWith(updatedAt: DateTime.now());
+    await _writeJson(
+      groupId: groupId,
+      homeDeviceId: meta.homeDevice,
+      relPath: taskJsonRelPath(groupId, task.orchestrationId),
+      payload: updated.toJson(),
+    );
+    final index = await readTaskIndex(groupId);
+    await _writeTaskIndex(groupId, index.withActiveTask(updated));
+    return updated;
+  }
+
+  /// 更新任务状态（便捷封装）。
+  Future<GroupTask?> updateTaskStatus({
+    required String groupId,
+    required String orchestrationId,
+    required String status,
+    DateTime? finishedAt,
+  }) async {
+    final existing = await readTask(
+      groupId: groupId,
+      orchestrationId: orchestrationId,
+    );
+    if (existing == null) return null;
+    final terminal = status == GroupTask.statusDone ||
+        status == GroupTask.statusFailed ||
+        status == GroupTask.statusPaused;
+    return writeTask(
+      groupId: groupId,
+      task: existing.copyWith(
+        status: status,
+        finishedAt: terminal ? (finishedAt ?? DateTime.now()) : null,
+        clearFinishedAt: !terminal,
+      ),
+    );
+  }
+
+  /// 写入定稿需求（`requirement.md`）并回写 task.json URI。
+  Future<({GroupTask task, String uri})?> writeTaskRequirement({
+    required String groupId,
+    required String orchestrationId,
+    required String content,
+  }) async {
+    final meta = await loadMeta(groupId);
+    if (meta == null) return null;
+    final existing = await readTask(
+      groupId: groupId,
+      orchestrationId: orchestrationId,
+    );
+    if (existing == null) return null;
+
+    final rel = taskRequirementRelPath(groupId, orchestrationId);
+    await _writeTextFile(
+      homeDeviceId: meta.homeDevice,
+      relPath: rel,
+      content: content,
+    );
+    final uri = 'store://workspaces/${meta.homeDevice}/$rel';
+    final task = await writeTask(
+      groupId: groupId,
+      task: existing.copyWith(requirementUri: uri),
+    );
+    if (task == null) return null;
+    return (task: task, uri: uri);
+  }
+
+  /// 读取定稿需求；不存在返回 null。
+  Future<String?> readTaskRequirement({
+    required String groupId,
+    required String orchestrationId,
+  }) async {
+    final meta = await loadMeta(groupId);
+    if (meta == null) return null;
+    return _readText(
+      'store://workspaces/${meta.homeDevice}/'
+      '${taskRequirementRelPath(groupId, orchestrationId)}',
+    );
+  }
+
+  /// 发布任务计划：写 plan.json + plan.md，更新 task 状态为 planned。
+  Future<({GroupTask task, String planUri, String planJsonUri})?> writeTaskPlan({
+    required String groupId,
+    required GroupTaskPlan plan,
+    String requirementNotes = '',
+  }) async {
+    final meta = await loadMeta(groupId);
+    if (meta == null) return null;
+    final existing = await readTask(
+      groupId: groupId,
+      orchestrationId: plan.orchestrationId,
+    );
+    if (existing == null) return null;
+
+    final mdRel = taskPlanMdRelPath(groupId, plan.orchestrationId);
+    final jsonRel = taskPlanJsonRelPath(groupId, plan.orchestrationId);
+    await _writeTextFile(
+      homeDeviceId: meta.homeDevice,
+      relPath: mdRel,
+      content: plan.toMarkdown(requirementNotes: requirementNotes),
+    );
+    await _writeJson(
+      groupId: groupId,
+      homeDeviceId: meta.homeDevice,
+      relPath: jsonRel,
+      payload: plan.toJson(),
+    );
+
+    final planUri = 'store://workspaces/${meta.homeDevice}/$mdRel';
+    final planJsonUri = 'store://workspaces/${meta.homeDevice}/$jsonRel';
+    final task = await writeTask(
+      groupId: groupId,
+      task: existing.copyWith(
+        status: GroupTask.statusPlanned,
+        planUri: planUri,
+        planJsonUri: planJsonUri,
+      ),
+    );
+    if (task == null) return null;
+    return (task: task, planUri: planUri, planJsonUri: planJsonUri);
+  }
+
+  /// 读取结构化计划；不存在返回 null。
+  Future<GroupTaskPlan?> readTaskPlanJson({
+    required String groupId,
+    required String orchestrationId,
+  }) async {
+    final meta = await loadMeta(groupId);
+    if (meta == null) return null;
+    final json = await _readJson(
+      'store://workspaces/${meta.homeDevice}/'
+      '${taskPlanJsonRelPath(groupId, orchestrationId)}',
+    );
+    if (json == null) return null;
+    return GroupTaskPlan.fromJson(json);
+  }
+
+  /// 读取人类可读计划；不存在返回 null。
+  Future<String?> readTaskPlanMarkdown({
+    required String groupId,
+    required String orchestrationId,
+  }) async {
+    final meta = await loadMeta(groupId);
+    if (meta == null) return null;
+    return _readText(
+      'store://workspaces/${meta.homeDevice}/'
+      '${taskPlanMdRelPath(groupId, orchestrationId)}',
+    );
+  }
+
+  /// 写入/覆盖成员结果汇总（`results.json`）。
+  Future<({GroupTaskResults results, String uri})?> writeTaskResults({
+    required String groupId,
+    required GroupTaskResults results,
+  }) async {
+    final meta = await loadMeta(groupId);
+    if (meta == null) return null;
+    final existing = await readTask(
+      groupId: groupId,
+      orchestrationId: results.orchestrationId,
+    );
+    if (existing == null) return null;
+
+    final rel = taskResultsRelPath(groupId, results.orchestrationId);
+    await _writeJson(
+      groupId: groupId,
+      homeDeviceId: meta.homeDevice,
+      relPath: rel,
+      payload: results.toJson(),
+    );
+    final uri = 'store://workspaces/${meta.homeDevice}/$rel';
+    await writeTask(
+      groupId: groupId,
+      task: existing.copyWith(resultsUri: uri),
+    );
+    return (results: results, uri: uri);
+  }
+
+  /// 追加或更新单个成员结果条目。
+  Future<GroupTaskResults?> upsertTaskMemberResult({
+    required String groupId,
+    required String orchestrationId,
+    required GroupTaskMemberResult memberResult,
+  }) async {
+    final existing = await readTaskResults(
+      groupId: groupId,
+      orchestrationId: orchestrationId,
+    );
+    final merged = (existing ??
+            GroupTaskResults(orchestrationId: orchestrationId))
+        .upsertMember(memberResult);
+    final written = await writeTaskResults(
+      groupId: groupId,
+      results: merged,
+    );
+    return written?.results;
+  }
+
+  /// 读取成员结果汇总；不存在返回 null。
+  Future<GroupTaskResults?> readTaskResults({
+    required String groupId,
+    required String orchestrationId,
+  }) async {
+    final meta = await loadMeta(groupId);
+    if (meta == null) return null;
+    final json = await _readJson(
+      'store://workspaces/${meta.homeDevice}/'
+      '${taskResultsRelPath(groupId, orchestrationId)}',
+    );
+    if (json == null) return null;
+    return GroupTaskResults.fromJson(json);
+  }
+
+  /// 写入任务卷宗（`archive.md`）并回写 task.json URI。
+  Future<({GroupTask task, String uri})?> writeTaskArchive({
+    required String groupId,
+    required String orchestrationId,
+    required String content,
+    String? finalSummaryUri,
+  }) async {
+    final meta = await loadMeta(groupId);
+    if (meta == null) return null;
+    final existing = await readTask(
+      groupId: groupId,
+      orchestrationId: orchestrationId,
+    );
+    if (existing == null) return null;
+
+    final rel = taskArchiveRelPath(groupId, orchestrationId);
+    await _writeTextFile(
+      homeDeviceId: meta.homeDevice,
+      relPath: rel,
+      content: content,
+    );
+    final uri = 'store://workspaces/${meta.homeDevice}/$rel';
+    final task = await writeTask(
+      groupId: groupId,
+      task: existing.copyWith(
+        archiveUri: uri,
+        finalSummaryUri: finalSummaryUri ?? existing.finalSummaryUri,
+      ),
+    );
+    if (task == null) return null;
+    return (task: task, uri: uri);
+  }
+
+  /// 读取任务卷宗；不存在返回 null。
+  Future<String?> readTaskArchive({
+    required String groupId,
+    required String orchestrationId,
+  }) async {
+    final meta = await loadMeta(groupId);
+    if (meta == null) return null;
+    return _readText(
+      'store://workspaces/${meta.homeDevice}/'
+      '${taskArchiveRelPath(groupId, orchestrationId)}',
+    );
   }
 
   /// 校验 agent 是否为群成员（store CLI 路径权限依据）。
@@ -762,5 +1183,31 @@ class GroupWorkspaceService {
       );
     }
     return null;
+  }
+
+  Future<void> _writeTextFile({
+    required String homeDeviceId,
+    required String relPath,
+    required String content,
+  }) async {
+    await StoreService.instance.writeWorkspaceFile(
+      homeDeviceId: homeDeviceId,
+      relPath: relPath,
+      content: Uint8List.fromList(utf8.encode(content)),
+    );
+  }
+
+  Future<String?> _readText(String uri) async {
+    try {
+      final bytes = await StoreUriReader.instance.read(uri);
+      final text = utf8.decode(bytes).trim();
+      return text.isEmpty ? null : text;
+    } catch (e) {
+      LoggerService().debug(
+        'group workspace text read failed: $uri — $e',
+        tag: 'GroupWorkspaceService',
+      );
+      return null;
+    }
   }
 }

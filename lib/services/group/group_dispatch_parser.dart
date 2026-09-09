@@ -1,9 +1,11 @@
 import 'dart:convert';
+import '../../models/group_task.dart';
 import '../../models/mention_entry.dart';
 import '../../models/planning_models.dart';
 import '../../models/remote_agent.dart';
 import '../local_database_service.dart';
 import '../logger_service.dart';
+import 'group_result_writer.dart';
 
 /// A single dispatch step from Admin's structured JSON dispatch block.
 class DispatchStep {
@@ -153,32 +155,76 @@ class GroupDispatchParser {
   }
 
   /// Build the member-facing turn content for a delegated task: a first-class
-  /// 【全局需求】 block (the user's full message) followed by the member's
-  /// 【你的任务】 local brief.
+  /// 【全局需求】 block (定稿 requirement.md) followed by optional
+  /// 【正式任务计划】 and the member's 【你的任务】 local brief.
   ///
   /// When [memberBrief] is empty or equals [globalRequirement] (the step had no
   /// task and fell back to the global message), only the global requirement is
   /// returned — no duplication. [memoryNote] (a short group-history summary) is
   /// always appended. [dispatchPlanNote]（本轮完整派发计划，M3：并发轮内成员
   /// 不再彼此盲）追加为【本轮派发计划】块。[loopEventNote]（上一轮编排事件
-  /// 的被动感知行，M5）追加为【上轮事件】块，非空时拼接。
+  /// 的被动感知行，M5）追加为【上轮事件】块，非空时拼接。[taskPlanNote]
+  /// 为【正式任务计划】块（来自 shared/tasks/…/plan.md，PR-4）。
   static String buildMemberTurnContent({
     required String memberBrief,
     required String globalRequirement,
     required String memoryNote,
+    String taskPlanNote = '',
     String dispatchPlanNote = '',
+    String peerResultsNote = '',
     String loopEventNote = '',
   }) {
     final global = globalRequirement.trim();
     final brief = memberBrief.trim();
+    final formalPlan = taskPlanNote.trim();
     final base = (brief.isEmpty || brief == global)
-        ? '$global$memoryNote'
-        : '【全局需求】\n$global\n\n【你的任务】\n$brief$memoryNote';
+        ? _appendFormalPlanToGlobal(global, formalPlan, memoryNote)
+        : _buildGlobalTaskAndBrief(global, formalPlan, brief, memoryNote);
     final plan = dispatchPlanNote.trim();
     final withPlan = plan.isEmpty ? base : '$base\n\n$plan';
+    final peer = peerResultsNote.trim();
+    final withPeer = peer.isEmpty ? withPlan : '$withPlan\n\n$peer';
     final note = loopEventNote.trim();
-    if (note.isEmpty) return withPlan;
-    return '$withPlan\n\n【上轮事件】\n$note';
+    if (note.isEmpty) return withPeer;
+    return '$withPeer\n\n【上轮事件】\n$note';
+  }
+
+  /// Human-readable 【正式任务计划】 block for member turns.
+  static String buildTaskPlanNote({
+    required String body,
+    String? planUri,
+    int maxChars = 2000,
+  }) {
+    final trimmedBody = body.trim();
+    if (trimmedBody.isEmpty) return '';
+    final clipped = trimmedBody.length <= maxChars
+        ? trimmedBody
+        : '${trimmedBody.substring(0, maxChars)}…';
+    final uriLine = (planUri != null && planUri.trim().isNotEmpty)
+        ? '\n\n（完整计划 store URI：`${planUri.trim()}`）'
+        : '';
+    return '【正式任务计划】\n$clipped$uriLine';
+  }
+
+  static String _appendFormalPlanToGlobal(
+    String global,
+    String formalPlan,
+    String memoryNote,
+  ) {
+    if (formalPlan.isEmpty) return '$global$memoryNote';
+    return '【全局需求】\n$global\n\n$formalPlan$memoryNote';
+  }
+
+  static String _buildGlobalTaskAndBrief(
+    String global,
+    String formalPlan,
+    String brief,
+    String memoryNote,
+  ) {
+    final globalSection = formalPlan.isEmpty
+        ? '【全局需求】\n$global'
+        : '【全局需求】\n$global\n\n$formalPlan';
+    return '$globalSection\n\n【你的任务】\n$brief$memoryNote';
   }
 
   /// 构建【本轮派发计划】块：列出本轮所有被派发成员与各自任务，供同轮成员
@@ -200,6 +246,20 @@ class GroupDispatchParser {
     if (lines.isEmpty) return '';
     return '【本轮派发计划】\n${lines.join('\n')}';
   }
+
+  /// 构建【同轮完成情况】块：列出同轮已回报的成员摘要（PR-7）。
+  static String buildPeerResultsNote({
+    required GroupTaskResults? results,
+    required String selfAgentId,
+    int? round,
+    int maxChars = 1500,
+  }) =>
+      GroupResultWriter.buildPeerResultsNote(
+        results: results,
+        selfAgentId: selfAgentId,
+        round: round,
+        maxChars: maxChars,
+      );
 
   /// 构建【近期事件】块并附加到 [content] 尾部（L1/L2）。
   ///

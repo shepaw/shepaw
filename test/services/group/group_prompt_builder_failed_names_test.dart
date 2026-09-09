@@ -90,6 +90,22 @@ void main() {
     expect(prompt, contains('pause'));
   });
 
+  test('plan missing nudge tells admin to publish plan before dispatch',
+      () async {
+    final prompt = await builder.buildGroupSystemPrompt(
+      groupName: '项目群',
+      groupDescription: '',
+      allAgents: [admin, coder],
+      currentAgent: admin,
+      isAdmin: true,
+      isPlanMissingNudge: true,
+    );
+
+    expect(prompt, contains('group_plan_publish'));
+    expect(prompt, contains('禁止'));
+    expect(prompt, contains('group_dispatch'));
+  });
+
   test('member roster is name + one-line role, not soul specialty', () async {
     final prompt = await builder.buildGroupSystemPrompt(
       groupName: '项目群',

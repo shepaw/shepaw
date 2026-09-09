@@ -32,6 +32,12 @@ class GroupTurnResult {
   /// skipped / empty replies that are not a real status.
   final GroupMemberTaskStatusInfo? taskStatusInfo;
 
+  /// True when the model called `group_plan_publish` successfully this turn.
+  final bool planPublished;
+
+  /// Error from a failed `group_plan_publish` attempt this turn.
+  final String? planPublishError;
+
   const GroupTurnResult({
     this.content = '',
     this.steps = const [],
@@ -44,6 +50,8 @@ class GroupTurnResult {
     this.unresolvedMentionNames = const [],
     this.hasOrchestrationSignal = false,
     this.taskStatusInfo,
+    this.planPublished = false,
+    this.planPublishError,
   });
 
   String? get taskStatusReason => taskStatusInfo?.reason;
