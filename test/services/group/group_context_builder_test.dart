@@ -137,5 +137,36 @@ void main() {
       expect(block, contains('【GROUP_CONTEXT】'));
       expect(block, contains('"mention_mode": "allMembers"'));
     });
+
+    test('history_policy documents thinking exclusion for admin and member', () {
+      final agents = [_agent(id: 'a1', name: 'Alice', local: true)];
+
+      final memberPolicy = GroupContextBuilder.build(
+        channelId: 'ch1',
+        groupName: 'G',
+        groupDescription: '',
+        allAgents: agents,
+        isAdmin: false,
+        currentAgent: agents.first,
+      )['history_policy'] as Map<String, dynamic>;
+
+      final adminPolicy = GroupContextBuilder.build(
+        channelId: 'ch1',
+        groupName: 'G',
+        groupDescription: '',
+        allAgents: agents,
+        isAdmin: true,
+        currentAgent: agents.first,
+      )['history_policy'] as Map<String, dynamic>;
+
+      for (final policy in [memberPolicy, adminPolicy]) {
+        expect(policy['content_source'], 'message.content');
+        expect(
+          policy['excludes'],
+          containsAll(GroupContextBuilder.historyPolicyExcludes),
+        );
+        expect(policy['note'], contains('progress_content'));
+      }
+    });
   });
 }

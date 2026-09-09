@@ -8,6 +8,7 @@ Message _msg({
   required String fromId,
   String name = 'X',
   bool isAgent = true,
+  Map<String, dynamic>? metadata,
 }) {
   return Message(
     id: id,
@@ -19,10 +20,50 @@ Message _msg({
       name: name,
     ),
     type: MessageType.text,
+    metadata: metadata,
   );
 }
 
 void main() {
+  group('GroupHistoryContent.replayContent', () {
+    test('uses message.content only, not metadata.progress_content', () {
+      final m = _msg(
+        id: 'm1',
+        fromId: 'a1',
+        content: 'Final answer.',
+        metadata: {
+          'progress_content': 'Step-by-step internal reasoning…',
+          'collapsible': true,
+        },
+      );
+
+      expect(GroupHistoryContent.replayContent(m), 'Final answer.');
+      expect(
+        GroupHistoryContent.replayContent(m),
+        isNot(contains('internal reasoning')),
+      );
+    });
+
+    test('GroupChatHistory default formatter omits progress_content', () {
+      final selfId = 'a1';
+      final rows = GroupChatHistory.toRoleMessages(
+        messages: [
+          _msg(
+            id: 'm1',
+            fromId: selfId,
+            content: 'Done.',
+            metadata: {'progress_content': 'thinking…'},
+          ),
+        ],
+        selfAgentId: selfId,
+      );
+
+      expect(rows, hasLength(1));
+      expect(rows.first['content'], 'Done.');
+      expect(rows.first['content'], isNot(contains('thinking')));
+    });
+  });
+
   group('GroupMemberHistory.needsFullHistory', () {
     test('only admin and summarize/abort/close turns keep the full window', () {
       expect(

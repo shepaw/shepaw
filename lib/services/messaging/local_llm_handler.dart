@@ -177,6 +177,10 @@ class LocalLLMHelpers {
   /// Store:// refs are folded into the current-turn Scope Card volatile
   /// section ([buildUserMessageContent]); history only keeps a short
   /// `chat message get` hint for non-text attachments.
+  ///
+  /// Group orchestration calls this via [GroupHistoryContent.replayContent]
+  /// with [Message.content] only — `metadata.progress_content` (collapsible
+  /// thinking) is UI-only and is never passed as [baseContent].
   static String enrichHistoryContent(Message m, String baseContent) {
     if (m.type == MessageType.system ||
         m.type == MessageType.permissionAudit) {

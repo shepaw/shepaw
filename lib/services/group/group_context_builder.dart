@@ -183,18 +183,35 @@ class GroupContextBuilder {
     return ctx;
   }
 
+  /// Documented exclusions shared by admin and member history policies.
+  static const historyPolicyExcludes = [
+    'system',
+    'permission_audit',
+    'metadata.progress_content',
+    'collapsible_thinking',
+  ];
+
+  static const _historyPolicyNote =
+      'Replays message.content (answer text) only. Collapsible thinking and '
+      'tool progress live in metadata.progress_content for the chat UI and are '
+      'not injected into orchestration history. Task brief and @mention reason '
+      'are injected in the user turn, not history.';
+
   static Map<String, dynamic> _historyPolicy({required bool isAdmin}) {
     if (isAdmin) {
       return {
         'scope': 'full_transcript',
         'max_chars': GroupMemberHistory.adminMaxChars,
+        'content_source': 'message.content',
         'includes': ['user', 'agent', 'attachment_placeholders'],
-        'excludes': ['system', 'permission_audit'],
+        'excludes': historyPolicyExcludes,
+        'note': _historyPolicyNote,
       };
     }
     return {
       'scope': 'member_pack',
       'max_chars': GroupMemberHistory.memberMaxChars,
+      'content_source': 'message.content',
       'includes': [
         'recent_tail',
         'self_replies',
@@ -203,9 +220,8 @@ class GroupContextBuilder {
         'channel_compaction_summary',
         'omitted_store_uris',
       ],
-      'excludes': ['system', 'permission_audit'],
-      'note':
-          'Task brief and @mention reason are injected in the user turn, not history.',
+      'excludes': historyPolicyExcludes,
+      'note': _historyPolicyNote,
     };
   }
 

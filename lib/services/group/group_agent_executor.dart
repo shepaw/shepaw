@@ -400,7 +400,7 @@ class GroupAgentExecutor {
     // still get a packed transcript (those transports are a single blob).
     String formatLine(Message m) {
       final content = HistoryCompactor.clipContent(
-        LocalLLMHelpers.enrichHistoryContent(m, m.content),
+        GroupHistoryContent.replayContent(m),
       );
       if (m.from.isAgent && m.from.id == agent.id) {
         return '[${m.from.name}(我)]: $content';
@@ -422,7 +422,7 @@ class GroupAgentExecutor {
       truncationNote: truncationNote,
       earlierSummary: earlierSummary,
       formatContent: (m) => HistoryCompactor.clipContent(
-        LocalLLMHelpers.enrichHistoryContent(m, m.content),
+        GroupHistoryContent.replayContent(m),
       ),
     );
 

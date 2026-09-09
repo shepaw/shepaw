@@ -1,5 +1,25 @@
 import '../../models/message.dart';
+import '../messaging/local_llm_handler.dart';
 import '../session/history_compactor.dart';
+
+/// Rules for text replayed into member/admin orchestration history.
+///
+/// Collapsible thinking and tool-progress blocks live in
+/// [Message.metadata] (`progress_content`) for the chat UI only — they are
+/// never merged into LLM history. See [GroupContextBuilder] `history_policy`.
+class GroupHistoryContent {
+  GroupHistoryContent._();
+
+  /// Metadata keys holding UI-only progress/thinking — excluded from replay.
+  static const uiOnlyMetadataKeys = ['progress_content'];
+
+  /// Answer body replayed to group LLM history (member + admin).
+  ///
+  /// Uses [Message.content] only; does not read [Message.metadata].
+  static String replayContent(Message m) {
+    return LocalLLMHelpers.enrichHistoryContent(m, m.content);
+  }
+}
 
 /// Packed, member-facing slice of a group transcript.
 class GroupMemberHistoryPack {
@@ -29,6 +49,9 @@ class GroupMemberHistoryPack {
 
 /// Slims group history for **members**. Admin / summarize / abort turns keep
 /// the [adminMaxChars] window in the executor.
+///
+/// Replay text comes from [GroupHistoryContent.replayContent] (`content`
+/// only — not `metadata.progress_content` / collapsible thinking).
 ///
 /// Members already receive this-round brief, dispatch plan, and event digest
 /// in the user turn. Replaying tens of thousands of chars of the whole group
@@ -258,7 +281,7 @@ class GroupChatHistory {
     }
 
     for (final m in messages) {
-      final raw = formatContent?.call(m) ?? m.content;
+      final raw = formatContent?.call(m) ?? GroupHistoryContent.replayContent(m);
       if (m.from.isAgent && m.from.id == selfAgentId) {
         append('assistant', raw);
       } else {
