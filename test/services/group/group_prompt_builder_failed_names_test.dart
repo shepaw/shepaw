@@ -163,8 +163,9 @@ void main() {
       isAdmin: true,
     );
 
-    expect(prompt, contains('【群 Session 管理 — 必读】'));
+    expect(prompt, contains('【群 Session 管理】'));
     expect(prompt, contains('group_session_create'));
-    expect(prompt, contains('不强制「一任务一 session」'));
+    expect(prompt, contains('不强制一任务一 session'));
+    expect(prompt, isNot(contains('session create **只有本群管理员')));
   });
 }
