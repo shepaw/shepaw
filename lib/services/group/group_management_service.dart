@@ -615,6 +615,124 @@ class GroupManagementService {
     });
   }
 
+  /// Batch-update a group's runtime settings (admin only).
+  ///
+  /// Unlike [Channel.copyWith] (where `null` means keep), the update here is a
+  /// **whole-object rebuild** so empty values can actually clear a column. Field
+  /// semantics:
+  /// - Text (`name`/`description`/`systemPrompt`): `null` keeps the current
+  ///   value; empty (after trim) clears it (`''` → DB `NULL`).
+  /// - `maxLoopRounds`: `null` keeps; `0` (or any `<= 0`) clears it back to the
+  ///   effective default of 50.
+  /// - `mentionMode`: `null` keeps; otherwise only `adminOnly` / `allMembers`.
+  /// - Booleans (`flowMode`/`enableStageGate`): `null` keeps the current value.
+  ///
+  /// Settings take effect from the **next** group message (`sendMessageToGroup`
+  /// re-reads the channel snapshot); already-forked She-bound child sessions
+  /// keep the values copied at fork time and are not back-filled.
+  Future<GroupManagementResult> updateGroupSettings({
+    required String channelId,
+    required String actorId,
+    String? name,
+    String? description,
+    String? systemPrompt,
+    String? mentionMode,
+    int? maxLoopRounds,
+    bool? flowMode,
+    bool? enableStageGate,
+  }) async {
+    final gate = await _requireAdminGroup(channelId, actorId);
+    if (gate.error != null) {
+      return GroupManagementResult.failure(gate.error!);
+    }
+    final channel = gate.channel!;
+
+    String? nextName;
+    if (name != null) {
+      nextName = name.trim();
+      if (nextName.isEmpty) {
+        return GroupManagementResult.failure('Group name cannot be empty.');
+      }
+    }
+    String? nextDescription;
+    if (description != null) {
+      nextDescription = description.trim().isEmpty ? null : description.trim();
+    }
+    String? nextSystemPrompt;
+    if (systemPrompt != null) {
+      nextSystemPrompt =
+          systemPrompt.trim().isEmpty ? null : systemPrompt.trim();
+    }
+    int? nextMaxLoopRounds;
+    if (maxLoopRounds != null) {
+      nextMaxLoopRounds = maxLoopRounds > 0 ? maxLoopRounds : null;
+    }
+    String? nextMentionMode;
+    if (mentionMode != null) {
+      nextMentionMode = mentionMode.trim();
+      if (nextMentionMode != 'adminOnly' &&
+          nextMentionMode != 'allMembers') {
+        return GroupManagementResult.failure(
+          'Invalid mention mode: $nextMentionMode '
+          '(expected adminOnly | allMembers).',
+        );
+      }
+    }
+
+    // 以“是否传入原始参数”区分 keep 与 clear，而非规范化后的值：
+    // `null`（未传）= 保留原值；传入后为空/0 = 真正清空。不能用 `next ?? channel`
+    // 兜底——那样空值规范化为 null 后会静默保留旧值、永远清不掉。
+    final updated = Channel(
+      id: channel.id,
+      name: nextName ?? channel.name,
+      type: channel.type,
+      members: channel.members,
+      createdBy: channel.createdBy,
+      createdAt: channel.createdAt,
+      description: description == null ? channel.description : nextDescription,
+      avatar: channel.avatar,
+      isPrivate: channel.isPrivate,
+      unreadCount: channel.unreadCount,
+      lastMessage: channel.lastMessage,
+      lastMessageTime: channel.lastMessageTime,
+      parentGroupId: channel.parentGroupId,
+      sourceGroupChannelId: channel.sourceGroupChannelId,
+      sourceSheChannelId: channel.sourceSheChannelId,
+      systemPrompt:
+          systemPrompt == null ? channel.systemPrompt : nextSystemPrompt,
+      maxLoopRounds:
+          maxLoopRounds == null ? channel.maxLoopRounds : nextMaxLoopRounds,
+      mentionMode: nextMentionMode ?? channel.mentionMode,
+      flowMode: flowMode ?? channel.flowMode,
+      enableStageGate: enableStageGate ?? channel.enableStageGate,
+    );
+
+    await _db.updateChannel(updated);
+    if (name != null) {
+      await GroupMemberSessionService(_db).syncTitlesForGroupFamily(
+        parentGroupId: updated.groupFamilyId,
+        groupName: nextName!,
+      );
+    }
+    _chat.notifyChannelUpdate(channelId);
+
+    final changed = <String, dynamic>{
+      if (name != null) 'name': nextName,
+      if (description != null) 'description': nextDescription ?? '',
+      if (systemPrompt != null) 'system_prompt': nextSystemPrompt ?? '',
+      if (maxLoopRounds != null) 'max_loop_rounds': nextMaxLoopRounds,
+      if (mentionMode != null) 'mention_mode': nextMentionMode,
+      if (flowMode != null) 'flow_mode': flowMode,
+      if (enableStageGate != null) 'enable_stage_gate': enableStageGate,
+    };
+    return GroupManagementResult.success({
+      'channel_id': channelId,
+      'settings': changed,
+      'note': 'Settings apply from the next group message; already-forked '
+          'She-bound child sessions keep the values copied at fork time.',
+    });
+  }
+
   /// Create a new group session with a curated handoff package (admin only).
   Future<GroupSessionCreateResult> createSessionWithHandoff({
     required String channelId,

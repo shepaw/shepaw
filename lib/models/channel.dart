@@ -269,6 +269,55 @@ class Channel {
     );
   }
 
+  /// 群资料编辑专用重建（配合整行 replace 语义的 `updateChannel`）。
+  ///
+  /// 与 [copyWith] 不同（`null` = 保留），这里专用于“编辑表单保存”：
+  /// 表单总是持有全部可编辑字段，因此必须显式给出每个字段的最终值。
+  /// - `name`：必填最终值。
+  /// - `description` / `systemPrompt` / `maxLoopRounds`：**必填** nullable，
+  ///   传 `null` = 清空该列（对应表单留空输入）。
+  /// - `mentionMode` / `flowMode` / `enableStageGate`：可选，`null` = 保留原值。
+  /// - `avatar`：非 null = 换成新头像（本地绝对路径或 emoji）；
+  ///   `clearAvatar: true` = 移除头像；两者都未给 = 保留原头像。
+  ///
+  /// 绑定列（sourceGroupChannelId / sourceSheChannelId）与 UI 展示态列
+  /// （unreadCount / lastMessage / lastMessageTime / isPrivate / parentGroupId）
+  /// 自动从当前对象原样搬移，避免整行 replace 一次保存就把它们清空。
+  Channel copyWithGroupEdit({
+    required String name,
+    required String? description,
+    required String? systemPrompt,
+    required int? maxLoopRounds,
+    String? mentionMode,
+    bool? flowMode,
+    bool? enableStageGate,
+    String? avatar,
+    bool clearAvatar = false,
+  }) {
+    return Channel(
+      id: id,
+      name: name,
+      type: type,
+      members: members,
+      createdBy: createdBy,
+      createdAt: createdAt,
+      description: description,
+      systemPrompt: systemPrompt,
+      maxLoopRounds: maxLoopRounds,
+      avatar: clearAvatar ? null : (avatar ?? this.avatar),
+      isPrivate: isPrivate,
+      unreadCount: unreadCount,
+      lastMessage: lastMessage,
+      lastMessageTime: lastMessageTime,
+      parentGroupId: parentGroupId,
+      sourceGroupChannelId: sourceGroupChannelId,
+      sourceSheChannelId: sourceSheChannelId,
+      mentionMode: mentionMode ?? this.mentionMode,
+      flowMode: flowMode ?? this.flowMode,
+      enableStageGate: enableStageGate ?? this.enableStageGate,
+    );
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,

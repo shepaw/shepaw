@@ -5516,6 +5516,24 @@ abstract class AppLocalizations {
   /// **'最大编排轮次'**
   String get groupDetail_maxLoopRounds;
 
+  /// No description provided for @groupDetail_avatar.
+  ///
+  /// In zh, this message translates to:
+  /// **'群头像'**
+  String get groupDetail_avatar;
+
+  /// No description provided for @groupDetail_changeAvatar.
+  ///
+  /// In zh, this message translates to:
+  /// **'更换头像'**
+  String get groupDetail_changeAvatar;
+
+  /// No description provided for @groupDetail_removeAvatar.
+  ///
+  /// In zh, this message translates to:
+  /// **'移除头像'**
+  String get groupDetail_removeAvatar;
+
   /// No description provided for @groupDetail_startChat.
   ///
   /// In zh, this message translates to:
@@ -5923,6 +5941,18 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'Admin 生成阶段化 FlowPlan，各阶段串行、阶段内步骤并行执行'**
   String get chat_flowModeDesc;
+
+  /// No description provided for @chat_enableStageGate.
+  ///
+  /// In zh, this message translates to:
+  /// **'阶段门闸'**
+  String get chat_enableStageGate;
+
+  /// No description provided for @chat_enableStageGateDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'每个阶段执行完暂停，等待管理员「继续 / 中止 / 换人」决策后再进入下一阶段'**
+  String get chat_enableStageGateDesc;
 
   /// No description provided for @chat_viewTrace.
   ///

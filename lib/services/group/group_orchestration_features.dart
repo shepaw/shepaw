@@ -42,4 +42,7 @@ class GroupOrchestrationFeatures {
 
   /// Consecutive stall events before marking a member failed.
   static int maxStallsBeforeFail = 2;
+
+  /// Suggest `group_session_create` (noise_reduction) after many done tasks.
+  static bool sessionHandoffHint = true;
 }

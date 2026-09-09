@@ -110,6 +110,13 @@ class _FakeExecutor extends GroupAgentExecutor {
     String? workflowId,
     String? workflowStepId,
     String? orchestrationTraceId,
+    String? orchestrationId,
+    int? orchestrationRound,
+    String? groupFamilyId,
+    List<String> historyPinSenderIds = const [],
+    bool isPlanMissingNudge = false,
+    bool isPendingResolution = false,
+    bool isStalledFollowUp = false,
   }) async {
     calls.add(_TurnCall(
       agentId: agent.id,

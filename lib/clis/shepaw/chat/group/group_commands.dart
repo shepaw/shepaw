@@ -401,6 +401,179 @@ class GroupSetDescriptionCommand extends CliCommand {
   }
 }
 
+/// shepaw chat group set-config — batch-update group runtime settings (admin only).
+///
+/// Writable fields (all optional; pass at least one):
+/// - `--system-prompt ""` — 群系统提示词（留空=清除）
+/// - `--mention-mode adminOnly|allMembers`
+/// - `--max-loop-rounds 30`（0 = 回默认 50）
+/// - `--flow-mode true|false`、`--enable-stage-gate true|false`
+///
+/// Settings take effect from the next group message; already-forked She-bound
+/// child sessions keep the values copied at fork time (no back-fill).
+class GroupSetConfigCommand extends CliCommand {
+  GroupSetConfigCommand({GroupManagementService? service})
+      : _service = service ?? GroupManagementService();
+
+  final GroupManagementService _service;
+
+  @override
+  String get name => 'set-config';
+
+  @override
+  String get description =>
+      'Update this group\'s settings (system-prompt / mention-mode / '
+      'max-loop-rounds / flow-mode / enable-stage-gate) — admin only; '
+      'applies from the next group message';
+
+  @override
+  String get usage =>
+      'shepaw chat group set-config --channel <id> '
+      '[--system-prompt ""|--mention-mode adminOnly|allMembers|'
+      '--max-loop-rounds 30|--flow-mode true|--enable-stage-gate true]';
+
+  @override
+  Map<String, dynamic> getHelp() {
+    final base = super.getHelp();
+    base['flags'] = {
+      'channel': {
+        'description':
+            'Group channel id (or rely on injected channel_id when already in that group)',
+        'required': false,
+        'type': 'string',
+      },
+      'system-prompt': {
+        'description':
+            'New system prompt for group members; pass empty string to clear',
+        'required': false,
+        'type': 'string',
+      },
+      'mention-mode': {
+        'description': "Mention mode: 'adminOnly' or 'allMembers'",
+        'required': false,
+        'type': 'string',
+      },
+      'max-loop-rounds': {
+        'description':
+            'Max orchestration rounds (0 resets to the default 50)',
+        'required': false,
+        'type': 'int',
+      },
+      'flow-mode': {
+        'description': 'Enable/disable Flow mode (true/false/1/0/yes/no)',
+        'required': false,
+        'type': 'boolean',
+      },
+      'enable-stage-gate': {
+        'description':
+            'Enable/disable the stage gate (true/false/1/0/yes/no)',
+        'required': false,
+        'type': 'boolean',
+      },
+    };
+    return base;
+  }
+
+  @override
+  Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
+    final channelId = GroupManagementService.resolveChannelId(flags);
+    if (channelId == null) {
+      return {
+        'error':
+            'Missing --channel. List groups with `shepaw chat channels --type group`.',
+      };
+    }
+
+    // 兼容 `-` / `_` 键写法（与 GroupCreateCommand 读 system-prompt 同款）。
+    final systemPrompt = flags['system-prompt'] ?? flags['system_prompt'];
+    final mentionMode = flags['mention-mode'] ?? flags['mention_mode'];
+    final maxLoopRoundsRaw =
+        flags['max-loop-rounds'] ?? flags['max_loop_rounds'];
+    final flowModeRaw = flags['flow-mode'] ?? flags['flow_mode'];
+    final enableStageGateRaw =
+        flags['enable-stage-gate'] ?? flags['enable_stage_gate'];
+
+    if (systemPrompt == null &&
+        mentionMode == null &&
+        maxLoopRoundsRaw == null &&
+        flowModeRaw == null &&
+        enableStageGateRaw == null) {
+      return {
+        'error': 'At least one setting flag is required: --system-prompt, '
+            '--mention-mode, --max-loop-rounds, --flow-mode, '
+            '--enable-stage-gate',
+      };
+    }
+
+    int? maxLoopRounds;
+    if (maxLoopRoundsRaw != null) {
+      maxLoopRounds = int.tryParse(maxLoopRoundsRaw.trim());
+      if (maxLoopRounds == null || maxLoopRounds < 0) {
+        return {
+          'error': 'Invalid --max-loop-rounds: "$maxLoopRoundsRaw" '
+              '(expected an integer >= 0; 0 resets to the default 50)',
+        };
+      }
+    }
+
+    final bool? flowMode = parseBoolFlag(flowModeRaw);
+    if (flowModeRaw != null && flowMode == null) {
+      return {
+        'error': 'Invalid --flow-mode: "$flowModeRaw" '
+            '(expected true/false/1/0/yes/no)',
+      };
+    }
+    final bool? enableStageGate = parseBoolFlag(enableStageGateRaw);
+    if (enableStageGateRaw != null && enableStageGate == null) {
+      return {
+        'error': 'Invalid --enable-stage-gate: "$enableStageGateRaw" '
+            '(expected true/false/1/0/yes/no)',
+      };
+    }
+
+    if (mentionMode != null &&
+        !const {'adminOnly', 'allMembers'}.contains(mentionMode.trim())) {
+      return {
+        'error': 'Invalid --mention-mode: "$mentionMode" '
+            '(expected adminOnly | allMembers)',
+      };
+    }
+
+    final actorId = ChatAgentScope.agentId.isNotEmpty
+        ? ChatAgentScope.agentId
+        : SheService.sheId;
+    final result = await _service.updateGroupSettings(
+      channelId: channelId,
+      actorId: actorId,
+      systemPrompt: systemPrompt,
+      mentionMode: mentionMode?.trim(),
+      maxLoopRounds: maxLoopRounds,
+      flowMode: flowMode,
+      enableStageGate: enableStageGate,
+    );
+    return result.toJson();
+  }
+
+  /// 布尔 flag 解析：`'' / true / 1 / yes → true`，`false / 0 / no → false`。
+  /// 空串视为 true（CLI 无值布尔 flag），其余非法值返回 null。
+  static bool? parseBoolFlag(String? raw) {
+    if (raw == null) return null;
+    switch (raw.trim().toLowerCase()) {
+      case '':
+      case 'true':
+      case '1':
+      case 'yes':
+        return true;
+      case 'false':
+      case '0':
+      case 'no':
+        return false;
+      default:
+        return null;
+    }
+  }
+}
+
 /// shepaw chat group send — post into a She-bound group session (admin only).
 class GroupSendCommand extends CliCommand {
   GroupSendCommand({GroupManagementService? service})

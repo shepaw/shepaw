@@ -2994,6 +2994,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get groupDetail_maxLoopRounds => '最大编排轮次';
 
   @override
+  String get groupDetail_avatar => '群头像';
+
+  @override
+  String get groupDetail_changeAvatar => '更换头像';
+
+  @override
+  String get groupDetail_removeAvatar => '移除头像';
+
+  @override
   String get groupDetail_startChat => '发起聊天';
 
   @override
@@ -3212,6 +3221,13 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get chat_flowModeDesc => 'Admin 生成阶段化 FlowPlan，各阶段串行、阶段内步骤并行执行';
+
+  @override
+  String get chat_enableStageGate => '阶段门闸';
+
+  @override
+  String get chat_enableStageGateDesc =>
+      '每个阶段执行完暂停，等待管理员「继续 / 中止 / 换人」决策后再进入下一阶段';
 
   @override
   String get chat_viewTrace => '查看 Trace';

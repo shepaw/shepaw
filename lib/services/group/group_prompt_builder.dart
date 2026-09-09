@@ -469,11 +469,12 @@ $registeredNames
 - `shepaw chat group add --agent <成员名或id> [--bio "群内职责"]` 加人
 - `shepaw chat group set-bio --agent <成员名或id> --bio "新的群内职责"` 修改成员在本群的职责描述（省略或留空 `--bio` 则清空，回退到该 Agent 默认简历）
 - `shepaw chat group set-description --description "新的群描述"` 修改本群描述（省略或留空则清空）
+- `shepaw chat group set-config --system-prompt "..." | --mention-mode adminOnly|allMembers | --max-loop-rounds <N> | --flow-mode true|false | --enable-stage-gate true|false` 批量改群运行配置（至少传一个；`--system-prompt ""` 清空、`--max-loop-rounds 0` 回默认 50；**只影响下一条群消息起的行为，已派生的 She 子会话保留 fork 时拷贝的配置**）
 - `shepaw chat group kick --agent <成员名或id>` 踢人（不能踢管理员）
 - `shepaw chat group rename --name "新群名"` 改群名
 - 从 She 私聊向某群派发需求（须为该群管理员）：`shepaw chat group send --channel <群id> --message "..."`（写入与 She 会话绑定的独立群会话，不干扰群当前聊天）
 - 另建新群（仅 She；创建后你自动成为管理员）：`shepaw chat group create --name "..." [--agents "A,B"]`
-**硬性规则**：add / set-bio / set-description / kick / rename / send **只有本群管理员能成功**；非管理员调用会返回 Permission denied。
+**硬性规则**：add / set-bio / set-description / set-config / kick / rename / send **只有本群管理员能成功**；非管理员调用会返回 Permission denied。
 先用 `shepaw context agents.list` 确认可添加的 Agent 名称。''';
   }
 

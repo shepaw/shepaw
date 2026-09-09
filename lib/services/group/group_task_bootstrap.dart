@@ -201,7 +201,10 @@ class GroupTaskBootstrap {
     required String groupId,
     required int channelMessageCount,
   }) async {
-    if (!GroupOrchestrationFeatures.structuredTasks) return null;
+    if (!GroupOrchestrationFeatures.structuredTasks ||
+        !GroupOrchestrationFeatures.sessionHandoffHint) {
+      return null;
+    }
     try {
       final index = await GroupWorkspaceService.instance.readTaskIndex(groupId);
       final doneCount = index.recent
@@ -215,6 +218,19 @@ class GroupTaskBootstrap {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Non-empty suffix for admin summarize / finish turns (includes leading `\n\n`).
+  static Future<String> sessionHandoffSuffix({
+    required String groupId,
+    required int channelMessageCount,
+  }) async {
+    final hint = await sessionHandoffHint(
+      groupId: groupId,
+      channelMessageCount: channelMessageCount,
+    );
+    if (hint == null || hint.isEmpty) return '';
+    return '\n\n$hint';
   }
 
   /// One-line archive excerpt for handoff / cross-task injection.

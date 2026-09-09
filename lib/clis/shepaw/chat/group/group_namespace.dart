@@ -11,6 +11,8 @@ import 'group_session_namespace.dart';
 /// - `rename`  修改群名
 /// - `set-bio` 设置/清空成员的群内职责描述
 /// - `set-description` 设置/清空群描述
+/// - `set-config` 批量改群运行配置（system-prompt / mention-mode / max-loop-rounds /
+///   flow-mode / enable-stage-gate）
 /// - `send`    向绑定群会话发消息（外部触发编排，不影响群当前聊天）
 /// - `session` 新建群会话并交接上下文（admin only）
 class GroupNamespace extends CliNamespace {
@@ -19,11 +21,13 @@ class GroupNamespace extends CliNamespace {
 
   @override
   String get description =>
-      'Create/manage groups (create=She-only; add/kick/rename/set-bio/set-description/send/session=admin only)';
+      'Create/manage groups (create=She-only; add/kick/rename/set-bio/'
+      'set-description/set-config/send/session=admin only)';
 
   @override
   String get usage =>
-      'shepaw chat group <create|add|kick|rename|set-bio|set-description|send|session.create> [flags]';
+      'shepaw chat group <create|add|kick|rename|set-bio|set-description|'
+      'set-config|send|session.create> [flags]';
 
   @override
   Map<String, CliNamespace> get subNamespaces => {
@@ -38,6 +42,7 @@ class GroupNamespace extends CliNamespace {
         'rename': GroupRenameCommand(),
         'set-bio': GroupSetBioCommand(),
         'set-description': GroupSetDescriptionCommand(),
+        'set-config': GroupSetConfigCommand(),
         'send': GroupSendCommand(),
       };
 }

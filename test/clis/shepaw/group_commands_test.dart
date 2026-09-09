@@ -243,6 +243,68 @@ void main() {
       expect(missingChannel['error'], contains('--channel'));
     });
 
+    test('set-config requires --channel', () async {
+      final missingChannel = await GroupSetConfigCommand()
+          .execute({'system-prompt': 'rules'});
+      expect(missingChannel['error'], contains('--channel'));
+    });
+
+    test('set-config requires at least one setting flag', () async {
+      final result =
+          await GroupSetConfigCommand().execute({'channel': 'group_1'});
+      expect(result['error'], contains('At least one setting flag'));
+    });
+
+    test('set-config rejects invalid --max-loop-rounds', () async {
+      final negative = await GroupSetConfigCommand().execute({
+        'channel': 'group_1',
+        'max-loop-rounds': '-3',
+      });
+      expect(negative['error'], contains('--max-loop-rounds'));
+
+      final nonInt = await GroupSetConfigCommand().execute({
+        'channel': 'group_1',
+        'max_loop_rounds': 'abc',
+      });
+      expect(nonInt['error'], contains('--max-loop-rounds'));
+    });
+
+    test('set-config rejects invalid --mention-mode', () async {
+      final result = await GroupSetConfigCommand().execute({
+        'channel': 'group_1',
+        'mention-mode': 'weird',
+      });
+      expect(result['error'], contains('--mention-mode'));
+    });
+
+    test('set-config rejects invalid boolean flags', () async {
+      final flow = await GroupSetConfigCommand().execute({
+        'channel': 'group_1',
+        'flow-mode': 'maybe',
+      });
+      expect(flow['error'], contains('--flow-mode'));
+
+      final gate = await GroupSetConfigCommand().execute({
+        'channel': 'group_1',
+        'enable_stage_gate': 'nah',
+      });
+      expect(gate['error'], contains('--enable-stage-gate'));
+    });
+
+    test('set-config parseBoolFlag maps truthy/falsy/empty and rejects garbage',
+        () {
+      expect(GroupSetConfigCommand.parseBoolFlag(null), isNull);
+      expect(GroupSetConfigCommand.parseBoolFlag(''), isTrue);
+      expect(GroupSetConfigCommand.parseBoolFlag('true'), isTrue);
+      expect(GroupSetConfigCommand.parseBoolFlag('1'), isTrue);
+      expect(GroupSetConfigCommand.parseBoolFlag('yes'), isTrue);
+      expect(GroupSetConfigCommand.parseBoolFlag('TRUE'), isTrue);
+      expect(GroupSetConfigCommand.parseBoolFlag('false'), isFalse);
+      expect(GroupSetConfigCommand.parseBoolFlag('0'), isFalse);
+      expect(GroupSetConfigCommand.parseBoolFlag('no'), isFalse);
+      expect(GroupSetConfigCommand.parseBoolFlag('weird'), isNull);
+    });
+
     test('send requires --channel, --message, and She channel_id', () async {
       final missingChannel = await GroupSendCommand().execute({
         'message': 'do the thing',
@@ -278,6 +340,12 @@ void main() {
       final ns = GroupNamespace();
       expect(ns.commands.keys, contains('send'));
       expect(ns.commands['send'], isA<GroupSendCommand>());
+    });
+
+    test('registers set-config command', () {
+      final ns = GroupNamespace();
+      expect(ns.commands.keys, contains('set-config'));
+      expect(ns.commands['set-config'], isA<GroupSetConfigCommand>());
     });
   });
 }

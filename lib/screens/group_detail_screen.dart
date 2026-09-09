@@ -1,9 +1,14 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+
 import '../l10n/app_localizations.dart';
 import '../models/channel.dart';
 import '../models/agent.dart';
 import '../models/remote_agent.dart';
 import '../peer/widgets/peer_source_badge.dart';
+import '../services/local_file_storage_service.dart';
 import '../theme/app_theme.dart';
 import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
@@ -11,6 +16,7 @@ import '../services/group/group_member_session_service.dart';
 import '../services/logger_service.dart';
 import '../storage/group_workspace_service.dart';
 import '../storage/runtime_share_service.dart';
+import '../utils/layout_utils.dart';
 import '../widgets/form_bottom_bar.dart';
 import '../widgets/avatar_image.dart';
 import 'agent_runtime_context_screen.dart';
@@ -49,6 +55,13 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
   late TextEditingController _systemPromptController;
   late TextEditingController _maxRoundsController;
   late String _selectedMentionMode;
+  late bool _flowMode;
+  late bool _enableStageGate;
+  /// 编辑中选定的群头像（emoji / 本地绝对路径）。`''` = 无头像（保留为空或移除）。
+  late String _pendingAvatar;
+  /// 是否正在编辑头像（打开 picker 前置 true，避免底部 sheet 里再触发重建）。
+  final ImagePicker _imagePicker = ImagePicker();
+  final LocalFileStorageService _fileStorage = LocalFileStorageService();
   bool _isSaving = false;
 
   @override
@@ -70,6 +83,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
       text: _channel.maxLoopRounds?.toString() ?? '',
     );
     _selectedMentionMode = _channel.effectiveMentionMode;
+    _flowMode = _channel.flowMode;
+    _enableStageGate = _channel.enableStageGate;
+    _pendingAvatar = _channel.avatar ?? '';
   }
 
   @override
@@ -112,6 +128,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     _systemPromptController.text = _channel.systemPrompt ?? '';
     _maxRoundsController.text = _channel.maxLoopRounds?.toString() ?? '';
     _selectedMentionMode = _channel.effectiveMentionMode;
+    _flowMode = _channel.flowMode;
+    _enableStageGate = _channel.enableStageGate;
+    _pendingAvatar = _channel.avatar ?? '';
     setState(() => _isEditing = true);
   }
 
@@ -145,20 +164,18 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     try {
       final newSystemPrompt = _systemPromptController.text.trim();
       final newDesc = _descController.text.trim();
-      final updated = Channel(
-        id: _channel.id,
+      // copyWithGroupEdit 会原样搬移 source_* 绑定列、unread/last* 展示列，
+      // 避免整行 replace 一次保存就清空它们；description 空串/留空 = null 清空。
+      final updated = _channel.copyWithGroupEdit(
         name: newName,
-        type: _channel.type,
-        members: _channel.members,
-        createdBy: _channel.createdBy,
-        createdAt: _channel.createdAt,
         description: newDesc.isNotEmpty ? newDesc : null,
         systemPrompt: newSystemPrompt.isNotEmpty ? newSystemPrompt : null,
-        avatar: _channel.avatar,
-        isPrivate: _channel.isPrivate,
         maxLoopRounds: maxLoopRounds,
         mentionMode: _selectedMentionMode,
-        parentGroupId: _channel.parentGroupId,
+        flowMode: _flowMode,
+        enableStageGate: _enableStageGate,
+        avatar: _pendingAvatar.isEmpty ? null : _pendingAvatar,
+        clearAvatar: _pendingAvatar.isEmpty,
       );
       await _databaseService.updateChannel(updated);
       await GroupMemberSessionService(_databaseService).syncTitlesForGroupFamily(
@@ -183,6 +200,228 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to save: $e')),
       );
+    }
+  }
+
+  // ==================== 群头像编辑 ====================
+
+  /// 群头像容器（80px 圆角）；`avatar` 非空用 AvatarImage，否则显示群默认图标。
+  Widget _buildAvatarBox(String? avatar, double size) {
+    final hasAvatar = avatar != null && avatar.isNotEmpty;
+    return Container(
+      width: size,
+      height: size,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: AppColors.primaryContainer,
+        borderRadius: BorderRadius.circular(size * 0.25),
+      ),
+      child: hasAvatar
+          ? AvatarImage(
+              avatar: avatar,
+              size: size,
+              borderRadius: 0,
+              fallback:
+                  const Icon(Icons.group, size: 40, color: AppColors.primary),
+            )
+          : const Icon(Icons.group, size: 40, color: AppColors.primary),
+    );
+  }
+
+  /// 编辑态群头像预览（点按打开 picker）。
+  Widget _buildEditAvatarPreview() {
+    const size = 80.0;
+    return GestureDetector(
+      onTap: _showGroupAvatarPicker,
+      child: Stack(
+        children: [
+          _buildAvatarBox(_pendingAvatar.isEmpty ? null : _pendingAvatar, size),
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.camera_alt,
+                  size: 18, color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showGroupAvatarPicker() {
+    final l10n = AppLocalizations.of(context);
+    LayoutUtils.showAdaptivePanel(
+      context: context,
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.emoji_emotions_outlined),
+            title: Text(l10n.agentDetail_selectBuiltinAvatar),
+            onTap: () {
+              Navigator.pop(ctx);
+              _showBuiltinAvatarPicker();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_library_outlined),
+            title: Text(l10n.agentDetail_selectFromGallery),
+            onTap: () {
+              Navigator.pop(ctx);
+              _pickGroupImageFromGallery();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.camera_alt_outlined),
+            title: Text(l10n.agentDetail_takePhoto),
+            onTap: () {
+              Navigator.pop(ctx);
+              _pickGroupImageFromCamera();
+            },
+          ),
+          if (_pendingAvatar.isNotEmpty ||
+              (_channel.avatar?.isNotEmpty ?? false)) ...[
+            ListTile(
+              leading: Icon(Icons.delete_outline, color: Colors.red[400]),
+              title: Text(l10n.groupDetail_removeAvatar),
+              onTap: () {
+                setState(() => _pendingAvatar = '');
+                Navigator.pop(ctx);
+              },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  void _showBuiltinAvatarPicker() {
+    final l10n = AppLocalizations.of(context);
+    const avatars = [
+      '🤖', '🦾', '🧠', '💡', '🌟', '⚡', '🔮', '🎯',
+      '🚀', '🛸', '🌈', '🔥', '💎', '🎨', '🎭', '🎪',
+      '🐱', '🐶', '🦊', '🐼', '🦉', '🦋', '🐝', '🐙',
+      '👤', '👩‍💻', '🧑‍🔬', '🧑‍🚀', '🧙', '🥷', '🦸', '🤹',
+    ];
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.addAgent_selectAvatar),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: GridView.builder(
+            shrinkWrap: true,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 4,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+            ),
+            itemCount: avatars.length,
+            itemBuilder: (context, index) {
+              final avatar = avatars[index];
+              return GestureDetector(
+                onTap: () {
+                  setState(() => _pendingAvatar = avatar);
+                  Navigator.pop(ctx);
+                },
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: _pendingAvatar == avatar
+                        ? Theme.of(context).colorScheme.primaryContainer
+                        : Theme.of(context).colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Center(
+                    child: Text(avatar,
+                        style: const TextStyle(fontSize: 32)),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(l10n.common_cancel),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickGroupImageFromGallery() async {
+    final l10n = AppLocalizations.of(context);
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 85,
+      );
+      if (image == null) return;
+      await _savePickedGroupImage(File(image.path));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.agentDetail_galleryFailed('$e')),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _pickGroupImageFromCamera() async {
+    final l10n = AppLocalizations.of(context);
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 85,
+      );
+      if (image == null) return;
+      await _savePickedGroupImage(File(image.path));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.agentDetail_cameraFailed('$e')),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _savePickedGroupImage(File imageFile) async {
+    final l10n = AppLocalizations.of(context);
+    try {
+      final relativePath = await _fileStorage.saveImage(
+        imageFile,
+        type: ResourceType.avatars,
+      );
+      final fullPath = await _fileStorage.getFullPath(relativePath);
+      if (!mounted) return;
+      setState(() => _pendingAvatar = fullPath);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.agentDetail_saveImageFailed('$e')),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -336,16 +575,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
           padding: const EdgeInsets.all(24),
           child: Column(
             children: [
-              Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  color: AppColors.primaryContainer,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                alignment: Alignment.center,
-                child: const Icon(Icons.group, size: 40, color: AppColors.primary),
-              ),
+              _buildAvatarBox(_channel.avatar, 80),
               const SizedBox(height: 16),
               Text(
                 _channel.name,
@@ -622,20 +852,17 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
       builder: (context, setEditState) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-            // Group avatar (read-only for now)
+            // Group avatar（点按换头像，或选内置图标 / 相册 / 拍照 / 移除）
+            Center(child: _buildEditAvatarPreview()),
+            const SizedBox(height: 8),
             Center(
-              child: Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  color: AppColors.primaryContainer,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                alignment: Alignment.center,
-                child: const Icon(Icons.group, size: 40, color: AppColors.primary),
+              child: TextButton.icon(
+                onPressed: _showGroupAvatarPicker,
+                icon: const Icon(Icons.edit, size: 16),
+                label: Text(l10n.groupDetail_changeAvatar),
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
 
             // Basic info card
             Card(
@@ -728,6 +955,23 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                         border: const OutlineInputBorder(),
                         prefixIcon: const Icon(Icons.loop),
                       ),
+                    ),
+                    const Divider(height: 24),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(l10n.chat_flowMode),
+                      subtitle: Text(l10n.chat_flowModeDesc),
+                      value: _flowMode,
+                      onChanged: (value) =>
+                          setEditState(() => _flowMode = value),
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(l10n.chat_enableStageGate),
+                      subtitle: Text(l10n.chat_enableStageGateDesc),
+                      value: _enableStageGate,
+                      onChanged: (value) =>
+                          setEditState(() => _enableStageGate = value),
                     ),
                   ],
                 ),

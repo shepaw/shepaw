@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/group_task.dart';
+import 'package:shepaw/services/group/group_orchestration_features.dart';
 import 'package:shepaw/services/group/group_task_archive_builder.dart';
 import 'package:shepaw/services/group/group_task_bootstrap.dart';
 import 'package:shepaw/storage/group_workspace_service.dart';
@@ -169,6 +170,11 @@ void main() {
   });
 
   group('GroupTaskBootstrap.sessionHandoffHint', () {
+    tearDown(() {
+      GroupOrchestrationFeatures.sessionHandoffHint = true;
+      GroupOrchestrationFeatures.structuredTasks = true;
+    });
+
     test('returns hint when enough done tasks and messages', () async {
       final ws = GroupWorkspaceService.instance;
       const groupId = 'group_handoff_hint';
@@ -201,6 +207,80 @@ void main() {
       expect(hint, isNotNull);
       expect(hint!, contains('group_session_create'));
       expect(hint, contains('noise_reduction'));
+    });
+
+    test('sessionHandoffSuffix wraps hint for admin turn injection', () async {
+      final ws = GroupWorkspaceService.instance;
+      const groupId = 'group_handoff_suffix';
+
+      await ws.ensureGroupWorkspace(
+        groupId: groupId,
+        members: [(agentId: 'admin', role: 'admin')],
+      );
+
+      for (var i = 0; i < 5; i++) {
+        final id = 'done-suffix-$i';
+        await ws.ensureTask(
+          groupId: groupId,
+          orchestrationId: id,
+          sessionId: 'sess',
+          userGoal: 'task $i',
+        );
+        await ws.updateTaskStatus(
+          groupId: groupId,
+          orchestrationId: id,
+          status: GroupTask.statusDone,
+        );
+      }
+
+      final suffix = await GroupTaskBootstrap.sessionHandoffSuffix(
+        groupId: groupId,
+        channelMessageCount: 100,
+      );
+
+      expect(suffix, startsWith('\n\n'));
+      expect(suffix, contains('group_session_create'));
+    });
+
+    test('returns null when sessionHandoffHint flag is off', () async {
+      GroupOrchestrationFeatures.sessionHandoffHint = false;
+      final ws = GroupWorkspaceService.instance;
+      const groupId = 'group_handoff_flag_off';
+
+      await ws.ensureGroupWorkspace(
+        groupId: groupId,
+        members: [(agentId: 'admin', role: 'admin')],
+      );
+
+      for (var i = 0; i < 5; i++) {
+        final id = 'done-flag-$i';
+        await ws.ensureTask(
+          groupId: groupId,
+          orchestrationId: id,
+          sessionId: 'sess',
+          userGoal: 'task $i',
+        );
+        await ws.updateTaskStatus(
+          groupId: groupId,
+          orchestrationId: id,
+          status: GroupTask.statusDone,
+        );
+      }
+
+      expect(
+        await GroupTaskBootstrap.sessionHandoffHint(
+          groupId: groupId,
+          channelMessageCount: 100,
+        ),
+        isNull,
+      );
+      expect(
+        await GroupTaskBootstrap.sessionHandoffSuffix(
+          groupId: groupId,
+          channelMessageCount: 100,
+        ),
+        '',
+      );
     });
   });
 }

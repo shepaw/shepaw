@@ -3108,6 +3108,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get groupDetail_maxLoopRounds => 'Max Orchestration Rounds';
 
   @override
+  String get groupDetail_avatar => 'Group Avatar';
+
+  @override
+  String get groupDetail_changeAvatar => 'Change Avatar';
+
+  @override
+  String get groupDetail_removeAvatar => 'Remove Avatar';
+
+  @override
   String get groupDetail_startChat => 'Start Chat';
 
   @override
@@ -3343,6 +3352,13 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get chat_flowModeDesc =>
       'Admin generates a staged FlowPlan; executor drives stages serially, steps in parallel';
+
+  @override
+  String get chat_enableStageGate => 'Stage Gate';
+
+  @override
+  String get chat_enableStageGateDesc =>
+      'Pause at each stage for the admin to approve / redirect before the next stage starts';
 
   @override
   String get chat_viewTrace => 'View Trace';

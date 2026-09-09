@@ -19,6 +19,7 @@ import '../services/audio_recording_service.dart';
 import '../services/composer_draft_service.dart';
 import '../services/desktop_window_auto_size.dart';
 import '../services/local_database_service.dart';
+import '../services/local_file_storage_service.dart';
 import '../services/group/group_member_session_service.dart';
 import '../utils/layout_utils.dart';
 import '../widgets/drawer_swipe_detector.dart';
@@ -2767,6 +2768,150 @@ class _ChatScreenState extends State<ChatScreen>
     }
   }
 
+  // ==================== 群头像选择（桌面抽屉编辑用） ====================
+
+  void _showGroupAvatarSourceSheet(
+    BuildContext ctx, {
+    required String currentAvatar,
+    required ValueChanged<String> onPick,
+    required VoidCallback onRemove,
+  }) {
+    final l10n = AppLocalizations.of(ctx);
+    LayoutUtils.showAdaptivePanel(
+      context: ctx,
+      builder: (sheetCtx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.emoji_emotions_outlined),
+            title: Text(l10n.agentDetail_selectBuiltinAvatar),
+            onTap: () {
+              Navigator.pop(sheetCtx);
+              _showBuiltinGroupAvatarGrid(ctx, onPick);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_library_outlined),
+            title: Text(l10n.agentDetail_selectFromGallery),
+            onTap: () {
+              Navigator.pop(sheetCtx);
+              _pickGroupAvatarImage(ImageSource.gallery, ctx, onPick);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.camera_alt_outlined),
+            title: Text(l10n.agentDetail_takePhoto),
+            onTap: () {
+              Navigator.pop(sheetCtx);
+              _pickGroupAvatarImage(ImageSource.camera, ctx, onPick);
+            },
+          ),
+          if (currentAvatar.isNotEmpty)
+            ListTile(
+              leading: Icon(Icons.delete_outline, color: Colors.red[400]),
+              title: Text(l10n.groupDetail_removeAvatar),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                onRemove();
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _showBuiltinGroupAvatarGrid(
+    BuildContext ctx,
+    ValueChanged<String> onPick,
+  ) {
+    final l10n = AppLocalizations.of(ctx);
+    const avatars = [
+      '🤖', '🦾', '🧠', '💡', '🌟', '⚡', '🔮', '🎯',
+      '🚀', '🛸', '🌈', '🔥', '💎', '🎨', '🎭', '🎪',
+      '🐱', '🐶', '🦊', '🐼', '🦉', '🦋', '🐝', '🐙',
+      '👤', '👩‍💻', '🧑‍🔬', '🧑‍🚀', '🧙', '🥷', '🦸', '🤹',
+    ];
+
+    showDialog<void>(
+      context: ctx,
+      builder: (dialogCtx) => AlertDialog(
+        title: Text(l10n.addAgent_selectAvatar),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: GridView.builder(
+            shrinkWrap: true,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 4,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+            ),
+            itemCount: avatars.length,
+            itemBuilder: (context, index) {
+              final avatar = avatars[index];
+              return GestureDetector(
+                onTap: () {
+                  onPick(avatar);
+                  Navigator.pop(dialogCtx);
+                },
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Center(
+                    child: Text(avatar,
+                        style: const TextStyle(fontSize: 32)),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: Text(l10n.common_cancel),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickGroupAvatarImage(
+    ImageSource source,
+    BuildContext toastContext,
+    ValueChanged<String> onReady,
+  ) async {
+    final l10n = AppLocalizations.of(toastContext);
+    try {
+      final XFile? image = await ImagePicker().pickImage(
+        source: source,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 85,
+      );
+      if (image == null) return;
+      final fileStorage = LocalFileStorageService();
+      final relativePath = await fileStorage.saveImage(
+        File(image.path),
+        type: ResourceType.avatars,
+      );
+      final fullPath = await fileStorage.getFullPath(relativePath);
+      onReady(fullPath);
+    } catch (e) {
+      if (toastContext.mounted) {
+        showTopToast(
+          toastContext,
+          source == ImageSource.camera
+              ? l10n.agentDetail_cameraFailed('$e')
+              : l10n.agentDetail_galleryFailed('$e'),
+          icon: Icons.error,
+          color: Colors.red,
+        );
+      }
+    }
+  }
+
   void _editGroupInfoDesktop() {
     final channel = _controller.groupChannel;
     final nameController = TextEditingController(text: channel?.name ?? '');
@@ -2778,6 +2923,10 @@ class _ChatScreenState extends State<ChatScreen>
       text: channel?.maxLoopRounds?.toString() ?? '',
     );
     String selectedMentionMode = channel?.effectiveMentionMode ?? 'adminOnly';
+    bool flowMode = channel?.flowMode ?? false;
+    bool enableStageGate = channel?.enableStageGate ?? false;
+    // 编辑中群头像（emoji / 本地绝对路径）；'' = 无/移除。
+    String pendingAvatar = channel?.avatar ?? '';
 
     LayoutUtils.showRightDrawer(
       context: context,
@@ -2808,6 +2957,85 @@ class _ChatScreenState extends State<ChatScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      // 群头像：点按或按钮打开 picker（内置图标 / 相册 / 拍照 / 移除）。
+                      Center(
+                        child: GestureDetector(
+                          onTap: () => _showGroupAvatarSourceSheet(
+                            ctx,
+                            currentAvatar: pendingAvatar,
+                            onPick: (value) {
+                              if (ctx.mounted) {
+                                setDrawerState(() => pendingAvatar = value);
+                              }
+                            },
+                            onRemove: () {
+                              if (ctx.mounted) {
+                                setDrawerState(() => pendingAvatar = '');
+                              }
+                            },
+                          ),
+                          child: Stack(
+                            children: [
+                              Container(
+                                width: 80,
+                                height: 80,
+                                clipBehavior: Clip.antiAlias,
+                                decoration: BoxDecoration(
+                                  color: AppColors.primaryContainer,
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: pendingAvatar.isEmpty
+                                    ? const Icon(Icons.group,
+                                        size: 40,
+                                        color: AppColors.primary)
+                                    : AvatarImage(
+                                        avatar: pendingAvatar,
+                                        size: 80,
+                                        borderRadius: 0,
+                                        fallback: const Icon(Icons.group,
+                                            size: 40,
+                                            color: AppColors.primary),
+                                      ),
+                              ),
+                              Positioned(
+                                right: 0,
+                                bottom: 0,
+                                child: Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(ctx).colorScheme.primary,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(Icons.camera_alt,
+                                      size: 18, color: Colors.white),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Center(
+                        child: TextButton.icon(
+                          onPressed: () => _showGroupAvatarSourceSheet(
+                            ctx,
+                            currentAvatar: pendingAvatar,
+                            onPick: (value) {
+                              if (ctx.mounted) {
+                                setDrawerState(() => pendingAvatar = value);
+                              }
+                            },
+                            onRemove: () {
+                              if (ctx.mounted) {
+                                setDrawerState(() => pendingAvatar = '');
+                              }
+                            },
+                          ),
+                          icon: const Icon(Icons.edit, size: 16),
+                          label: Text(panelL10n.groupDetail_changeAvatar),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
                       TextField(
                           controller: nameController,
                           decoration: InputDecoration(
@@ -2877,6 +3105,23 @@ class _ChatScreenState extends State<ChatScreen>
                           prefixIcon: const Icon(Icons.loop),
                         ),
                       ),
+                      const Divider(height: 24),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(panelL10n.chat_flowMode),
+                        subtitle: Text(panelL10n.chat_flowModeDesc),
+                        value: flowMode,
+                        onChanged: (value) =>
+                            setDrawerState(() => flowMode = value),
+                      ),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(panelL10n.chat_enableStageGate),
+                        subtitle: Text(panelL10n.chat_enableStageGateDesc),
+                        value: enableStageGate,
+                        onChanged: (value) =>
+                            setDrawerState(() => enableStageGate = value),
+                      ),
                       const SizedBox(height: 24),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
@@ -2916,13 +3161,11 @@ class _ChatScreenState extends State<ChatScreen>
                               final old = _controller.groupChannel!;
                               final newSystemPrompt =
                                   systemPromptController.text.trim();
-                              final updated = Channel(
-                                id: old.id,
+                              // copyWithGroupEdit 会原样搬移 source_* 绑定列与
+                              // unread/last* 展示列，避免整行 replace 一次保存就清空；
+                              // 同时显式写入 Flow / 阶段门闸开关与编辑中的头像。
+                              final updated = old.copyWithGroupEdit(
                                 name: newName,
-                                type: old.type,
-                                members: old.members,
-                                createdBy: old.createdBy,
-                                createdAt: old.createdAt,
                                 description:
                                     descController.text.trim().isNotEmpty
                                         ? descController.text.trim()
@@ -2930,11 +3173,14 @@ class _ChatScreenState extends State<ChatScreen>
                                 systemPrompt: newSystemPrompt.isNotEmpty
                                     ? newSystemPrompt
                                     : null,
-                                avatar: old.avatar,
-                                isPrivate: old.isPrivate,
                                 maxLoopRounds: maxLoopRounds,
                                 mentionMode: selectedMentionMode,
-                                parentGroupId: old.parentGroupId,
+                                flowMode: flowMode,
+                                enableStageGate: enableStageGate,
+                                avatar: pendingAvatar.isEmpty
+                                    ? null
+                                    : pendingAvatar,
+                                clearAvatar: pendingAvatar.isEmpty,
                               );
                               await _controller.localDatabaseService
                                   .updateChannel(updated);

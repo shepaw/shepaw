@@ -91,6 +91,132 @@ void main() {
     });
   });
 
+  group('P0: UI 群编辑整行 replace 不再清字段', () {
+    test('重建（UI 语义）并 updateChannel 后保留 flow/stage/绑定列', () async {
+      final db = LocalDatabaseService();
+      final suffix = DateTime.now().microsecondsSinceEpoch;
+      final channelId = 'grp_$suffix';
+
+      final group = Channel(
+        id: channelId,
+        name: 'Original',
+        type: 'group',
+        members: [_member('agent_$suffix')],
+        description: 'before',
+        sourceSheChannelId: 'she_$suffix',
+        systemPrompt: 'sys',
+        maxLoopRounds: 3,
+        mentionMode: 'allMembers',
+        flowMode: true,
+        enableStageGate: true,
+      );
+      await db.createChannel(group, 'user');
+
+      // 模拟移动端 _saveEdit / 桌面端保存闭包的重建语义（P0 修复后：显式搬移
+      // source_* / flow / stage 与内存展示字段，而不是 Channel(...) 漏字段）。
+      final updated = _uiEditRebuild(group, newName: 'Renamed');
+      await db.updateChannel(updated);
+
+      final reloaded = await db.getChannelById(channelId);
+      expect(reloaded, isNotNull);
+      expect(reloaded!.name, 'Renamed');
+      expect(reloaded.flowMode, isTrue,
+          reason: '整行 replace 不能把 flow_mode 清回 0');
+      expect(reloaded.enableStageGate, isTrue,
+          reason: '整行 replace 不能把 enable_stage_gate 清回 0');
+      expect(reloaded.sourceSheChannelId, 'she_$suffix',
+          reason: '子会话绑定列不能被 UI 编辑清空');
+      expect(reloaded.mentionMode, 'allMembers');
+      expect(reloaded.systemPrompt, 'sys');
+    });
+  });
+
+  group('P3: copyWithGroupEdit DB 往返（可清空列 / 可关开关 / 可移除头像）', () {
+    test('表单留空并关掉开关 → updateChannel 后列真清空而非保留旧值', () async {
+      final db = LocalDatabaseService();
+      final suffix = DateTime.now().microsecondsSinceEpoch;
+      final channelId = 'grp_$suffix';
+
+      final group = Channel(
+        id: channelId,
+        name: 'Original',
+        type: 'group',
+        members: [_member('agent_$suffix')],
+        description: 'before',
+        avatar: '/tmp/a.png',
+        sourceSheChannelId: 'she_$suffix',
+        systemPrompt: 'sys',
+        maxLoopRounds: 3,
+        mentionMode: 'allMembers',
+        flowMode: true,
+        enableStageGate: true,
+      );
+      await db.createChannel(group, 'user');
+
+      // 移动端/桌面编辑里留空 description/systemPrompt/maxLoopRounds、移除头像、
+      // 关闭 flow/stage 开关——整行 replace 下必须真正清空/关闭，而不是漏字段保留。
+      final updated = group.copyWithGroupEdit(
+        name: 'Renamed',
+        description: null,
+        systemPrompt: null,
+        maxLoopRounds: null,
+        flowMode: false,
+        enableStageGate: false,
+        clearAvatar: true,
+      );
+      await db.updateChannel(updated);
+
+      final reloaded = await db.getChannelById(channelId);
+      expect(reloaded, isNotNull);
+      expect(reloaded!.name, 'Renamed');
+      expect(reloaded.description, isNull, reason: 'description null = 清空');
+      expect(reloaded.systemPrompt, isNull, reason: 'systemPrompt null = 清空');
+      expect(reloaded.maxLoopRounds, isNull, reason: 'maxLoopRounds null = 清空');
+      expect(reloaded.avatar, isNull, reason: 'clearAvatar = 移除头像');
+      expect(reloaded.flowMode, isFalse, reason: '显式关闭 flow');
+      expect(reloaded.enableStageGate, isFalse, reason: '显式关闭 stage gate');
+      expect(reloaded.sourceSheChannelId, 'she_$suffix',
+          reason: '绑定列不能被清空操作波及');
+      expect(reloaded.mentionMode, 'allMembers');
+    });
+
+    test('打开 flow/stage + 换头像 → updateChannel 后写回', () async {
+      final db = LocalDatabaseService();
+      final suffix = DateTime.now().microsecondsSinceEpoch;
+      final channelId = 'grp_$suffix';
+
+      final group = Channel(
+        id: channelId,
+        name: 'Original',
+        type: 'group',
+        members: [_member('agent_$suffix')],
+        sourceSheChannelId: 'she_$suffix',
+      );
+      await db.createChannel(group, 'user');
+
+      final updated = group.copyWithGroupEdit(
+        name: 'New Name',
+        description: null,
+        systemPrompt: 'custom',
+        maxLoopRounds: 12,
+        flowMode: true,
+        enableStageGate: true,
+        avatar: '🤖',
+      );
+      await db.updateChannel(updated);
+
+      final reloaded = await db.getChannelById(channelId);
+      expect(reloaded, isNotNull);
+      expect(reloaded!.name, 'New Name');
+      expect(reloaded.flowMode, isTrue);
+      expect(reloaded.enableStageGate, isTrue);
+      expect(reloaded.systemPrompt, 'custom');
+      expect(reloaded.maxLoopRounds, 12);
+      expect(reloaded.avatar, '🤖');
+      expect(reloaded.sourceSheChannelId, 'she_$suffix');
+    });
+  });
+
   group('L10: ensureMemberSession 并发不再重复引导消息', () {
     test('两次并发 ensure 只产生一条引导系统消息', () async {
       final db = LocalDatabaseService();
@@ -314,6 +440,22 @@ ChannelMember _member(String id, {String type = 'agent', String role = 'member'}
   );
 }
 
+/// 与 UI 群编辑保存相同语义的整对象重建：copyWithGroupEdit 除显式给出的
+/// 可编辑字段外，自动原样搬移 source_* 绑定列与 unread/last* 展示列，
+/// 避免整行 replace 清空它们。
+Channel _uiEditRebuild(Channel source, {required String newName}) {
+  return source.copyWithGroupEdit(
+    name: newName,
+    description: source.description,
+    systemPrompt: source.systemPrompt,
+    maxLoopRounds: source.maxLoopRounds,
+    mentionMode: source.effectiveMentionMode,
+    flowMode: source.flowMode,
+    enableStageGate: source.enableStageGate,
+    avatar: source.avatar,
+  );
+}
+
 RemoteAgent _remoteAgent(String id, String name) {
   return RemoteAgent(
     id: id,
@@ -394,6 +536,13 @@ class _NoopExecutor extends GroupAgentExecutor {
     String? workflowId,
     String? workflowStepId,
     String? orchestrationTraceId,
+    String? orchestrationId,
+    int? orchestrationRound,
+    String? groupFamilyId,
+    List<String> historyPinSenderIds = const [],
+    bool isPlanMissingNudge = false,
+    bool isPendingResolution = false,
+    bool isStalledFollowUp = false,
   }) async {
     throw StateError(
       'L14 test: perception turn should not run within debounce window',

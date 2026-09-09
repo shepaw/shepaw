@@ -279,6 +279,115 @@ void main() {
       });
     });
 
+    group('copyWithGroupEdit', () {
+      Channel boundChannel() {
+        return Channel(
+          id: 'group_edit_1',
+          name: 'Old Name',
+          type: 'group',
+          members: const [],
+          description: 'old desc',
+          avatar: '/tmp/old.png',
+          isPrivate: false,
+          unreadCount: 3,
+          lastMessage: 'hi',
+          lastMessageTime: DateTime.fromMillisecondsSinceEpoch(1),
+          sourceGroupChannelId: 'sg_1',
+          sourceSheChannelId: 'she_1',
+          systemPrompt: 'old sys',
+          maxLoopRounds: 7,
+          mentionMode: 'adminOnly',
+          flowMode: false,
+          enableStageGate: true,
+        );
+      }
+
+      test('updates edited fields and carries binding/display columns', () {
+        final updated = boundChannel().copyWithGroupEdit(
+          name: 'New Name',
+          description: 'new desc',
+          systemPrompt: null, // 清空
+          maxLoopRounds: 0,
+          mentionMode: 'allMembers',
+          flowMode: true,
+          enableStageGate: false,
+          avatar: '/tmp/new.png',
+        );
+
+        expect(updated.name, 'New Name');
+        expect(updated.description, 'new desc');
+        expect(updated.systemPrompt, isNull);
+        expect(updated.maxLoopRounds, 0);
+        expect(updated.mentionMode, 'allMembers');
+        expect(updated.flowMode, isTrue);
+        expect(updated.enableStageGate, isFalse);
+        expect(updated.avatar, '/tmp/new.png');
+        // 未显式给到但不应被整行重建清空的列：
+        expect(updated.id, 'group_edit_1');
+        expect(updated.type, 'group');
+        expect(updated.isPrivate, isFalse);
+        expect(updated.unreadCount, 3);
+        expect(updated.lastMessage, 'hi');
+        expect(updated.lastMessageTime,
+            DateTime.fromMillisecondsSinceEpoch(1));
+        expect(updated.sourceGroupChannelId, 'sg_1');
+        expect(updated.sourceSheChannelId, 'she_1');
+        expect(updated.parentGroupId, isNull);
+      });
+
+      test('null optional booleans/mentionMode keep the original value', () {
+        final updated = boundChannel().copyWithGroupEdit(
+          name: 'Renamed',
+          description: null,
+          systemPrompt: null,
+          maxLoopRounds: null,
+        );
+
+        expect(updated.name, 'Renamed');
+        expect(updated.description, isNull, reason: 'description null = 清空');
+        expect(updated.systemPrompt, isNull);
+        expect(updated.maxLoopRounds, isNull);
+        expect(updated.mentionMode, 'adminOnly', reason: 'null = 保留');
+        expect(updated.flowMode, isFalse, reason: 'null = 保留');
+        expect(updated.enableStageGate, isTrue, reason: 'null = 保留');
+        expect(updated.avatar, '/tmp/old.png', reason: '未动 avatar = 保留');
+      });
+
+      test('clearAvatar removes avatar; avatar param without it sets new one',
+          () {
+        final cleared = boundChannel().copyWithGroupEdit(
+          name: 'N',
+          description: null,
+          systemPrompt: null,
+          maxLoopRounds: null,
+          clearAvatar: true,
+        );
+        expect(cleared.avatar, isNull);
+
+        final unchanged = boundChannel().copyWithGroupEdit(
+          name: 'N',
+          description: null,
+          systemPrompt: null,
+          maxLoopRounds: null,
+        );
+        expect(unchanged.avatar, '/tmp/old.png');
+      });
+
+      test('does not mutate the original channel', () {
+        final source = boundChannel();
+        source.copyWithGroupEdit(
+          name: 'Mutated?',
+          description: 'x',
+          systemPrompt: null,
+          maxLoopRounds: null,
+          flowMode: true,
+        );
+        expect(source.name, 'Old Name');
+        expect(source.description, 'old desc');
+        expect(source.flowMode, isFalse);
+      });
+    });
+
     group('copyWith', () {
       test('should copy with changed fields', () {
         final updated = groupChannel.copyWith(

@@ -238,6 +238,22 @@ class GroupOrchestrationService {
     }
   }
 
+  Future<String> _loadSessionHandoffSuffix({
+    required String groupId,
+    required String channelId,
+  }) async {
+    if (!GroupOrchestrationFeatures.sessionHandoffHint) return '';
+    try {
+      final count = await _db.countChannelMessages(channelId);
+      return GroupTaskBootstrap.sessionHandoffSuffix(
+        groupId: groupId,
+        channelMessageCount: count,
+      );
+    } catch (_) {
+      return '';
+    }
+  }
+
   Future<void> sendMessageToGroup({
     required String channelId,
     required String content,
@@ -2750,6 +2766,10 @@ class GroupOrchestrationService {
             groupId: groupOwnerId,
             orchestrationId: userMessage.id,
           );
+          final sessionHandoffSuffix = await _loadSessionHandoffSuffix(
+            groupId: groupOwnerId,
+            channelId: channelId,
+          );
           try {
             adminTurn = await _executor.processGroupAgent(
               agent: adminAgent,
@@ -2758,7 +2778,8 @@ class GroupOrchestrationService {
                   '${lastDispatchNote != null ? '$effectiveContent\n\n[SYSTEM] 你上一轮的派发记录（该 JSON 已从你的消息中隐藏，仅供核对）：$lastDispatchNote' : effectiveContent}'
                   '${buildMemberArtifactsBlock(memberTurnResults, agents)}'
                   '$structuredResultsBlock'
-                  '${pendingFromLastRound.isNotEmpty ? '\n\n${GroupTaskStatusParser.adminNote(pendingFromLastRound)}' : ''}',
+                  '${pendingFromLastRound.isNotEmpty ? '\n\n${GroupTaskStatusParser.adminNote(pendingFromLastRound)}' : ''}'
+                  '$sessionHandoffSuffix',
               attachments: attachments,
               userId: userId,
               userName: userName,
