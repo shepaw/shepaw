@@ -7,6 +7,8 @@ import '../clis/shepaw/help_namespace.dart';
 import '../clis/shepaw/instructions/instructions_namespace.dart';
 import '../clis/shepaw/vision/vision_namespace.dart';
 import '../clis/shepaw/models/models_namespace.dart';
+import '../clis/shepaw/peer/peer_namespace.dart';
+import '../clis/shepaw/events/events_namespace.dart';
 
 /// 定义 CLI 命名空间的元数据
 class CliNamespaceInfo {
@@ -126,6 +128,26 @@ class CliNamespaceRegistry {
         commands: _getAllCommandsInNamespace(
           'models',
           ModelsNamespace.instance,
+        ),
+      ),
+      'peer': CliNamespaceInfo(
+        id: 'peer',
+        label: 'Peer',
+        description:
+            'Device pairing — pair via shepaw://peer link or list paired devices',
+        commands: _getAllCommandsInNamespace(
+          'peer',
+          PeerNamespace.instance,
+        ),
+      ),
+      'events': CliNamespaceInfo(
+        id: 'events',
+        label: 'Events',
+        description:
+            'Agent event bus — wait, inbox, ack, types (correlation-aware)',
+        commands: _getAllCommandsInNamespace(
+          'events',
+          EventsNamespace.instance,
         ),
       ),
     };

@@ -16,6 +16,7 @@ import 'instructions/instructions_namespace.dart';
 import 'vision/vision_namespace.dart';
 import 'models/models_namespace.dart';
 import 'peer/peer_namespace.dart';
+import 'events/events_namespace.dart';
 import '../../services/logger_service.dart';
 import '../../services/cli_command_config_service.dart';
 import '../../services/cli_tool_registry.dart';
@@ -82,6 +83,8 @@ class ShepawCLI {
     'models': ModelsNamespace.instance,
     // 设备配对（粘贴 shepaw://peer 链接 / 查询已配对设备）
     'peer': PeerNamespace.instance,
+    // Agent 事件总线（wait / inbox / ack / types）
+    'events': EventsNamespace.instance,
 
     // ── ℹ️ META 层 - 系统元信息和诊断 ───────────────────────────────────────────
     'meta': MetaNamespace.instance,
@@ -152,9 +155,12 @@ class ShepawCLI {
       'Start with "shepaw models list"; verify brand-new model ids from the provider '
       'docs via web search, then add with namespace=models subcommand=add. Confirm '
       'changes with the user; never print API keys (outputs expose only has_api_key). '
-      'Device pairing (shepaw://peer): Initiator — peer pair --link <URL from other device>. '
-      'Responder — peer offer (get your link) then peer accept when pending_inbound_request '
-      'appears in peer status (or reject). peer list for paired devices. '
+      'Device pairing (shepaw://peer): Initiator — peer pair --link <URL> (optional '
+      'events wait --correlation <id> --type peer.pairing.completed --timeout 30). '
+      'Responder — peer offer (returns correlation_id + qr_link); She is auto-notified '
+      'via active subscription — then peer accept (do NOT long-block events wait). '
+      'Events: namespace=events — wait/inbox/ack/types/subscribe/list/emit/providers. '
+      'RPC uses --correlation; human-speed flows use active subscription wake. '
       'shepaw://pair?... is agent enrollment — not peer pair.';
 
   /// 动态生成工具描述（包含外部工具信息）

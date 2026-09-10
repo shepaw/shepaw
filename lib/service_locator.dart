@@ -10,6 +10,8 @@ import 'services/remote_agent_service.dart';
 import 'services/message_collapse_preference.dart';
 import 'services/composer_draft_service.dart';
 import 'services/vision/reference_album_service.dart';
+import 'services/event/event_bus.dart';
+import 'services/event/setup_event_bus.dart';
 
 /// 全局服务定位器（依赖注入容器）。
 ///
@@ -54,6 +56,13 @@ void setupServiceLocator() {
   getIt.registerLazySingleton<ReferenceAlbumService>(
     () => ReferenceAlbumService(),
   );
+
+  if (!getIt.isRegistered<EventBus>()) {
+    final bus = EventBus();
+    setupEventBus(bus: bus);
+    EventBus.configure(bus);
+    getIt.registerSingleton<EventBus>(bus);
+  }
 }
 
 /// 在 ACP / 权限服务初始化完成后登记其实例。

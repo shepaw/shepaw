@@ -20,6 +20,8 @@ She 与其他 Agent 通过 `shepaw <namespace> <subcommand> [--flag value ...]` 
                 workflow   工作流编排（create / dispatch / status / complete / fail / cancel）
                 store      储物袋 store:// 读写（write / read / list / search / events / spaces）
                 vision     设备端人脸识别（status / recognize / album.* / profile.*）
+                peer       设备配对（pair / offer / status / accept / reject / list）
+                events     事件总线（wait / inbox / ack / types / subscribe / list / emit / providers）
 ℹ️ META 层       meta       系统信息与时间（datetime；system.info / system.tools-list /
                            system.tools-detail / system.capabilities；cli-tools 外部工具管理）
                 help       顶层帮助
@@ -38,6 +40,8 @@ She 与其他 Agent 通过 `shepaw <namespace> <subcommand> [--flag value ...]` 
 | `workflow` | `create` · `dispatch` · `status` · `complete` · `fail` · `cancel`（群 Admin 或 She 1:1 DM） |
 | `store` | `write --filename <name> --content <text> [--task] [--space public/workspaces --group <gid>]` · `read --uri <store://...>` · `list --uri <store://...> --depth 1` · `search --query <q> [--space] [--uri]` · `events` · `spaces` |
 | `vision` | `status` · `recognize --image <path>\|--message_id <id>` · `album.enroll/list/remove` · `profile.build/get`（无独立设置页，对话里调用） |
+| `peer` | `pair --link "..."`（Initiator）· `offer`（Responder，返回 qr_link + correlation_id）· `status` · `accept` / `reject`（继承 correlation）· `list` |
+| `events` | `wait --correlation <id> --type <type> [--timeout 30]`（机器速度 RPC）· `inbox` / `ack` · `types` · `subscribe` / `list` / `unsubscribe` · `emit` · `providers` |
 | `meta` | `datetime` · `system.info` · `system.tools-list` · `system.tools-detail --name <tool>` · `system.capabilities` · `cli-tools.list/install/uninstall/rescan` |
 
 **使用纪律：**
@@ -48,4 +52,4 @@ She 与其他 Agent 通过 `shepaw <namespace> <subcommand> [--flag value ...]` 
 4. 命令执行有**权限检查**（`CliCommandConfigService`）：UI 操作跳过；Agent 主动调用按配置放行或拒绝。
 5. 读聊天记录里历史图片：`shepaw chat message.get --id <message_id> --analyze "<问题>"`（图片是元数据，不会自动进上下文）。认人用 `shepaw vision recognize --message_id <id>`，不要靠占位文字猜是谁。
 6. `vision status` 里 `engine.is_debug = true` 时，匹配结果不可当作真实身份。
-7. **没有 CLI、只能指路的功能**：定时任务、模型管理/官方目录导入、技能 ZIP 导入、设备配对、备份快照、提示词栈、CLI 权限开关、主密码/生物识别。用户问这些时给第 2 层入口，不要虚构一条 `shepaw` 命令。
+7. **没有 CLI、只能指路的功能**：定时任务、模型管理/官方目录导入、技能 ZIP 导入、备份快照、提示词栈、CLI 权限开关、主密码/生物识别。用户问这些时给第 2 层入口，不要虚构一条 `shepaw` 命令。设备配对用 `peer pair`（`shepaw://peer?...`）；`shepaw://pair?...` 仍是添加远端 Agent，走 UI 扫码。

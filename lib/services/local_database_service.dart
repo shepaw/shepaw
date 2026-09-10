@@ -57,7 +57,7 @@ class LocalDatabaseService {
     final path = join(directory.path, 'shepaw.db');
     return await openDatabase(
       path,
-      version: 33,
+      version: 34,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -436,6 +436,25 @@ class LocalDatabaseService {
     // 指令集（v33）
     await createInstructionSetTable(db);
 
+    // 事件订阅（v34）
+    await _createEventSubscriptionsTable(db);
+
+  }
+
+  Future<void> _createEventSubscriptionsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS event_subscriptions (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL,
+        patterns_json TEXT NOT NULL,
+        delivery TEXT NOT NULL,
+        persistent INTEGER NOT NULL DEFAULT 1,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        created_seq INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    ''');
   }
 
   /// 数据库升级
@@ -873,6 +892,18 @@ class LocalDatabaseService {
       } catch (e) {
         LoggerService().error(
           'Failed to create instruction_sets table (v33)',
+          tag: 'Migration',
+          error: e,
+        );
+      }
+    }
+
+    if (oldVersion < 34) {
+      try {
+        await _createEventSubscriptionsTable(db);
+      } catch (e) {
+        LoggerService().error(
+          'Failed to create event_subscriptions table (v34)',
           tag: 'Migration',
           error: e,
         );

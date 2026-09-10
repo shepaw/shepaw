@@ -48,6 +48,10 @@ import 'app_lifecycle_service.dart';
 import '../providers/notification_provider.dart';
 import 'foreground_task_service.dart';
 import 'logger_service.dart';
+import 'event/event_bus.dart';
+import 'event/event_envelope.dart';
+import 'event/event_perception_service.dart';
+import 'local_user_identity.dart';
 import 'she_service.dart';
 import 'noise_identity.dart';
 import 'mailbox/mailbox_seal.dart';
@@ -589,6 +593,47 @@ class ChatService {
         summary: '步骤被跳过',
       ));
     };
+    EventPerceptionService.instance.runNotifyTurn = _runEventPerceptionTurn;
+  }
+
+  /// Notify-only turn for global EventBus active subscriptions (e.g. peer inbound).
+  Future<void> _runEventPerceptionTurn(
+    String agentId,
+    List<EventEnvelope> events,
+  ) async {
+    if (events.isEmpty) return;
+    final agent = await _databaseService.getRemoteAgentById(agentId);
+    if (agent == null || !agent.isLocal) return;
+
+    final channelId = EventPerceptionService.defaultChannelForAgent(agentId);
+    if (_activeTasks.containsKey(channelId)) {
+      LoggerService().debug(
+        'Event perception deferred: $channelId has active task',
+        tag: 'ChatService',
+      );
+    }
+
+    final lines = events
+        .map((e) {
+          final summary = e.payload['summary'];
+          if (summary is String && summary.isNotEmpty) {
+            return '- $summary (${e.type})';
+          }
+          return '- ${e.type}';
+        })
+        .join('\n');
+
+    await _agentMessagingService.sendMessageToAgent(
+      content: '以下系统事件刚发生：\n$lines',
+      agent: agent,
+      userId: LocalUserIdentity.id,
+      userName: LocalUserIdentity.displayName,
+      channelId: channelId,
+      dmSystemPrompt:
+          '【系统事件通知回合】这不是用户主动发的消息。请用简短中文说明发生了什么，'
+          '并在设备配对场景建议用户确认后调用 peer accept 或 peer reject。'
+          '不要展开无关话题。',
+    );
   }
 
   /// Notification provider, injected from the widget layer.

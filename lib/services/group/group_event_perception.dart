@@ -10,6 +10,9 @@ import 'group_agent_executor.dart';
 import 'group_dispatch_parser.dart';
 import 'group_event.dart';
 import 'group_event_store.dart';
+import '../event/event_bus.dart';
+import '../event/event_bus_flags.dart';
+import '../event/group_event_adapter.dart';
 
 /// Whether an event type triggers an admin perception turn (active-notify) or
 /// is only recorded for passive context injection.
@@ -157,9 +160,32 @@ class GroupEventPerceptionScheduler {
   /// active-notify types additionally enqueue an admin perception turn.
   void schedule(GroupEvent event) {
     _eventStore?.record(event);
+    if (EventBusFeatureFlags.groupProjectionEnabled) {
+      _emitGroupProjection(event);
+    }
     if (_policy.isActiveNotify(event.type)) {
       _pending.putIfAbsent(event.channelId, () => []).add(event);
       _arm(event.channelId);
+    }
+  }
+
+  void _emitGroupProjection(GroupEvent event) {
+    try {
+      final env = GroupEventAdapter.toEnvelope(event);
+      EventBus.instance.emitSystem(
+        systemDomain: 'chat.group',
+        type: env.type,
+        payload: env.payload,
+        scope: env.scope,
+        correlationId: env.correlationId,
+      );
+    } catch (e, st) {
+      LoggerService().error(
+        'GroupEvent EventBus projection failed: $e',
+        tag: 'GroupEventPerception',
+        error: e,
+        stackTrace: st,
+      );
     }
   }
 

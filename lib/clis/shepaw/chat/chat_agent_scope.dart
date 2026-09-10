@@ -16,6 +16,7 @@ class ChatAgentScope {
   static const _agentIdKey = 'chat.agentId';
   static const _channelIdKey = 'chat.channelId';
   static const _runtimeOwnerIdKey = 'chat.runtimeOwnerId';
+  static const _correlationIdKey = 'chat.correlationId';
 
   /// 当前执行命令的 Agent ID；Zone 外默认 She。
   static String get agentId =>
@@ -29,6 +30,10 @@ class ChatAgentScope {
   static String get runtimeOwnerId =>
       Zone.current[_runtimeOwnerIdKey] as String? ?? '';
 
+  /// 当前 CLI 业务链 correlation id（RPC wait 主键）；Zone 外为 null。
+  static String? get correlationId =>
+      Zone.current[_correlationIdKey] as String?;
+
   /// 在隔离 Zone 中执行 [body]，并把当前执行者上下文写入该 Zone。
   ///
   /// 命令的整棵调用树（含异步等待、`store write` 的落盘解析）都继承该
@@ -37,6 +42,7 @@ class ChatAgentScope {
     required String agentId,
     String channelId = '',
     String runtimeOwnerId = '',
+    String? correlationId,
     required Future<R> Function() body,
   }) {
     return runZoned<Future<R>>(
@@ -45,6 +51,7 @@ class ChatAgentScope {
         _agentIdKey: agentId,
         _channelIdKey: channelId,
         _runtimeOwnerIdKey: runtimeOwnerId,
+        if (correlationId != null) _correlationIdKey: correlationId,
       },
     );
   }

@@ -186,4 +186,29 @@ extension ConfigDao on LocalDatabaseService {
       whereArgs: [commandId],
     );
   }
+
+  // ==================== Event 订阅持久化 ====================
+
+  Future<void> upsertEventSubscription(Map<String, dynamic> data) async {
+    final db = await database;
+    await db.insert(
+      'event_subscriptions',
+      data,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> queryAllEventSubscriptions() async {
+    final db = await database;
+    return db.query('event_subscriptions', orderBy: 'created_at ASC');
+  }
+
+  Future<void> deleteEventSubscription(String id) async {
+    final db = await database;
+    await db.delete(
+      'event_subscriptions',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
 }

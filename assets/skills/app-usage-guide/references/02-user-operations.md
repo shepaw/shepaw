@@ -31,7 +31,18 @@
 
 **没有独立设置页、走对话完成的事：** 认人 / 参考相册 / 视觉档案（见 [2.10](#210-认人与参考相册设备端人脸识别)）。
 
-**你（She）不能代劳、只能指路的事**（无对应 `shepaw` 命令）：定时任务、模型管理/官方目录导入、技能 ZIP 导入、设备配对、备份快照的创建/恢复、提示词栈、CLI 权限开关、主密码/生物识别、语言与通知。不要假装已经帮用户设好了。
+**你（She）不能代劳、只能指路的事**（无对应 `shepaw` 命令）：定时任务、模型管理/官方目录导入、技能 ZIP 导入、备份快照的创建/恢复、提示词栈、CLI 权限开关、主密码/生物识别、语言与通知。不要假装已经帮用户设好了。
+
+**设备配对（She 可代劳）**：
+
+| 场景 | 命令 |
+|------|------|
+| 用户给你**对方的**配对链接 | `shepaw peer pair --link "<shepaw://peer?...>"`（可选短 wait：`events wait --correlation <id> --type peer.pairing.completed --timeout 30`） |
+| 用户要**本机等人来连** | `shepaw peer offer` → 把 `qr_link` 给用户；对方连上后 **She 会自动感知**（active 订阅），或 `peer status` 看 `pending_inbound_request`，再 `peer accept`（**不要**长阻塞 `events wait`） |
+| 拒绝可疑入站请求 | `shepaw peer reject` |
+| 查看已配对设备 | `shepaw peer list` |
+
+`shepaw://pair?...` 是添加远端 Agent，走添加 Agent 界面，不是 `peer pair`。
 
 ### 2.1 快速开始与首次配置
 
@@ -130,6 +141,12 @@
 ### 2.6 设备配对与 P2P / She 网络
 
 入口：通讯录 `+` → 配对设备（或主页相应入口）。三个 Tab：**我的二维码** / **扫一扫** / **输入**（无摄像头时粘贴链接）。握手由 **Noise Protocol** 加密（X25519 + ChaCha20-Poly1305）。
+
+**She 代劳配对**：
+
+- 用户给你**对方链接** → `peer pair --link "..."`；提醒对方 `peer offer` 或开着「我的二维码」并 `peer accept`。
+- 用户要**本机二维码/链接** → `peer offer`，把 `qr_link` 发给用户；入站后 She 自动唤醒或 `peer status` → `peer accept`。
+- 事件 CLI：`shepaw events inbox/wait/ack/subscribe/emit`；人类速度链路用 active 唤醒，机器速度用 `--correlation` + 短 wait（≤30s）。
 
 - **Agent-over-Peer**：把本地 Agent 共享给配对设备；对方也能共享回来。
 - **储物袋同步**：P2P 镜像同步（变更游标 + 批量原子上传）。

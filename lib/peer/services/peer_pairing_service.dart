@@ -38,6 +38,8 @@ import 'peer_channel_bridge.dart';
 import 'peer_connection_manager.dart';
 import 'peer_local_server.dart';
 import 'peer_storage_service.dart';
+import '../../services/event/peer_event_provider.dart';
+import '../../services/event/event_bus.dart';
 
 /// 配对会话状态
 enum PairingSessionState {
@@ -67,6 +69,15 @@ class IncomingPairingRequest {
     this.localEndpoint,
     required this.streamId,
   });
+
+  Map<String, dynamic> toJson() => {
+        'device_name': deviceName,
+        'device_id': deviceId,
+        'fingerprint': fingerprint,
+        if (channelEndpoint != null) 'channel_endpoint': channelEndpoint,
+        if (localEndpoint != null) 'local_endpoint': localEndpoint,
+        'stream_id': streamId,
+      };
 }
 
 /// 配对被拒绝时的异常
@@ -101,6 +112,26 @@ class PeerPairingService {
   PairingSessionState _state = PairingSessionState.idle;
   PairingSessionState get state => _state;
 
+  /// Responder 侧当前展示的 QR 深链（`startPairing` 成功后可用）。
+  String? get currentQrContent => _currentQrContent;
+
+  /// 等待用户 / CLI 确认的入站配对请求（`receivedRequest` 状态）。
+  IncomingPairingRequest? get pendingIncomingRequest => _pendingIncomingRequest;
+
+  /// Responder 侧当前会话 correlation（`startPairing` 写入）。
+  String? get responderCorrelationId => _responderCorrelationId;
+
+  /// Initiator 侧当前会话 correlation（`requestPairing` 写入）。
+  String? get initiatorCorrelationId => _initiatorCorrelationId;
+
+  /// 活跃会话 correlation（accept/reject 续链用）。
+  String? get sessionCorrelationId =>
+      _responderCorrelationId ?? _initiatorCorrelationId;
+
+  String? _currentQrContent;
+  IncomingPairingRequest? _pendingIncomingRequest;
+  String? _responderCorrelationId;
+  String? _initiatorCorrelationId;
   String? _currentPairingCode;
   Timer? _timeoutTimer;
   StreamSubscription? _bridgeSub;
@@ -123,10 +154,16 @@ class PeerPairingService {
   ///
   /// 同时启动本地 WS Server 和监听 Channel 隧道入站连接。
   /// 返回 QR 码内容字符串（包含内网地址和/或 Channel 端点）。
-  Future<String> startPairing() async {
+  Future<String> startPairing({String? correlationId}) async {
     if (_state != PairingSessionState.idle) {
       await cancelPairing();
     }
+
+    _responderCorrelationId =
+        correlationId?.trim().isNotEmpty == true
+            ? correlationId!.trim()
+            : generateCorrelationId();
+    _initiatorCorrelationId = null;
 
     await ensureDeviceInfo();
     // 提前启动 ConnectionManager（确保入站连接 listener 就绪）
@@ -192,6 +229,9 @@ class PeerPairingService {
       fingerprint: identity.fingerprintHex,
       publicKey: identity.publicKey,
     );
+
+    _currentQrContent = qrContent;
+    _pendingIncomingRequest = null;
 
     _log.info(
       'Pairing started, code=$_currentPairingCode, local=$localEndpoint, channel=$channelEndpoint',
@@ -287,6 +327,16 @@ class PeerPairingService {
     await StoreService.instance.pushShareAnnounce(peer.id);
 
     _log.info('Pairing confirmed: ${peer.deviceName} (${peer.fingerprint})', tag: _tag);
+    final cid = _responderCorrelationId;
+    if (cid != null) {
+      PeerEventProvider.emitCompleted(
+        correlationId: cid,
+        peerId: peer.id,
+        deviceName: peer.deviceName,
+        role: 'responder',
+        trustLevel: trustLevel,
+      );
+    }
     return peer;
   }
 
@@ -310,6 +360,13 @@ class PeerPairingService {
     } catch (_) {}
 
     _state = PairingSessionState.failed;
+    final cid = _responderCorrelationId;
+    if (cid != null) {
+      PeerEventProvider.emitRejected(
+        correlationId: cid,
+        reason: 'User rejected the pairing request',
+      );
+    }
     _cleanup();
     _log.info('Pairing rejected', tag: _tag);
   }
@@ -335,8 +392,16 @@ class PeerPairingService {
   ///
   /// 优先尝试内网直连，失败后回退到 Channel 穿透。
   /// 成功返回 PairedPeer，失败抛出异常。
-  Future<PairedPeer> requestPairing(PeerPairingInfo info) async {
+  Future<PairedPeer> requestPairing(
+    PeerPairingInfo info, {
+    String? correlationId,
+  }) async {
     _state = PairingSessionState.waitingForConfirm;
+    _initiatorCorrelationId =
+        correlationId?.trim().isNotEmpty == true
+            ? correlationId!.trim()
+            : generateCorrelationId();
+    _responderCorrelationId = null;
 
     await ensureDeviceInfo();
     final identity = await NoiseIdentity.loadOrCreate();
@@ -439,6 +504,13 @@ class PeerPairingService {
         session.close();
         ws.sink.close();
         _state = PairingSessionState.failed;
+        final cid = _initiatorCorrelationId;
+        if (cid != null) {
+          PeerEventProvider.emitRejected(
+            correlationId: cid,
+            reason: response.rejectReason ?? 'User rejected',
+          );
+        }
         throw PairingRejectedException(response.rejectReason);
       }
 
@@ -494,6 +566,15 @@ class PeerPairingService {
       });
 
       _log.info('Pairing successful: ${peer.deviceName} (${peer.fingerprint})', tag: _tag);
+      final cid = _initiatorCorrelationId;
+      if (cid != null) {
+        PeerEventProvider.emitCompleted(
+          correlationId: cid,
+          peerId: peer.id,
+          deviceName: peer.deviceName,
+          role: 'initiator',
+        );
+      }
       return peer;
     } catch (e) {
       ws.sink.close();
@@ -559,21 +640,38 @@ class PeerPairingService {
         final msg2 = await _responderSession!.writeHandshake2(rejectResponse.toBytes());
         final rejectFrame = encodeFrame(Frame(t: FrameType.hs, payload: msg2));
         stream.send(Uint8List.fromList(utf8.encode(rejectFrame)));
+        final cidReject = _responderCorrelationId;
+        if (cidReject != null) {
+          PeerEventProvider.emitRejected(
+            correlationId: cidReject,
+            reason: 'Invalid pairing code',
+          );
+        }
         _state = PairingSessionState.failed;
         _cleanup();
         return;
       }
 
-      // 配对码正确，通知 UI 确认
+      // 配对码正确，通知 UI / CLI 确认
       _state = PairingSessionState.receivedRequest;
-      _incomingRequestController.add(IncomingPairingRequest(
+      final incoming = IncomingPairingRequest(
         deviceName: request.deviceName,
         deviceId: request.deviceId,
         fingerprint: _fingerprintFromKey(_responderPeerPublicKey!),
         channelEndpoint: request.channelEndpoint,
         localEndpoint: request.localEndpoint,
         streamId: stream.streamId,
-      ));
+      );
+      _pendingIncomingRequest = incoming;
+      _incomingRequestController.add(incoming);
+
+      final cid = _responderCorrelationId;
+      if (cid != null) {
+        PeerEventProvider.emitInbound(
+          request: incoming,
+          correlationId: cid,
+        );
+      }
 
     } catch (e) {
       _log.error('Error handling incoming peer stream', tag: _tag, error: e);
@@ -705,6 +803,10 @@ class PeerPairingService {
     _localSub?.cancel();
     _localSub = null;
     _currentPairingCode = null;
+    _currentQrContent = null;
+    _pendingIncomingRequest = null;
+    _responderCorrelationId = null;
+    _initiatorCorrelationId = null;
     _responderSession?.close();
     _responderSession = null;
     _responderStream = null;

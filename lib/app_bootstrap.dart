@@ -46,6 +46,7 @@ import 'she_network/presence_service.dart';
 import 'services/she_service.dart';
 import 'services/dispatch/dispatch_service.dart';
 import 'service_locator.dart';
+import 'services/event/setup_event_bus.dart';
 
 /// ACP Server 端口的 SharedPreferences 键
 const kAcpServerPortKey = 'acp_server_port';
@@ -218,6 +219,8 @@ class AppBootstrap {
       // 初始化示例数据（仅首次启动）
       final api = LocalApiService();
       await api.initializeSampleData();
+
+      await setupEventBusAfterDb();
 
       _log.info('Local storage initialized', tag: 'App');
     } catch (e) {
