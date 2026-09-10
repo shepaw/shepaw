@@ -17,6 +17,9 @@ import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 import 'package:watcher/watcher.dart';
 
+import '../services/event/event_bus.dart';
+import '../services/event/event_scope.dart';
+import '../services/local_user_identity.dart';
 import 'device_identity.dart';
 import 'local_store.dart';
 import 'store_protocol.dart';
@@ -367,7 +370,8 @@ class FolderBindingService {
       if (!await dir.exists()) continue;
       try {
         final w = DirectoryWatcher(b.external);
-        _watchSubs.add(w.events.listen((_) {
+        _watchSubs.add(w.events.listen((event) {
+          _emitFileChanged(b.external, event);
           _debounceByBinding[b.id]?.cancel();
           _debounceByBinding[b.id] = Timer(debounce, () {
             unawaited(syncOne(b));
@@ -376,6 +380,41 @@ class FolderBindingService {
       } catch (_) {
         // Unsupported platform / permission — periodic sync still covers it.
       }
+    }
+  }
+
+  static const _changeVerb = {
+    'created': '创建',
+    'modified': '修改',
+    'deleted': '删除',
+  };
+
+  /// 投射 `store.file.changed`（poll_only）。
+  ///
+  /// 只覆盖**已绑定的外部目录**；store 内部写入与外部未绑定目录不在范围内。
+  /// 事件系统不可用时静默失败——同步对账不依赖事件。
+  void _emitFileChanged(String externalRoot, WatchEvent event) {
+    try {
+      // watcher 的 ChangeType 是常量类而非 enum，不能用 switch 穷尽匹配。
+      final change = event.type == ChangeType.ADD
+          ? 'created'
+          : event.type == ChangeType.REMOVE
+              ? 'deleted'
+              : 'modified';
+      final rel = p.relative(event.path, from: externalRoot);
+      EventBus.instance.emitSystem(
+        systemDomain: 'store',
+        type: 'store.file.changed',
+        payload: {
+          'summary': '$rel 已${_changeVerb[change]}',
+          'uri': 'store://$rel',
+          'change': change,
+          'path': event.path,
+        },
+        scope: EventScope(ownerId: LocalUserIdentity.id),
+      );
+    } catch (_) {
+      // ignore: 事件系统未就绪 / 类型未注册
     }
   }
 

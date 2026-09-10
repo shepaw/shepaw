@@ -2,6 +2,9 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import '../task/services/scheduled_task_service.dart';
 import '../peer/services/peer_connection_manager.dart';
+import 'event/event_bus.dart';
+import 'event/event_scope.dart';
+import 'local_user_identity.dart';
 
 /// Global singleton that observes the app lifecycle and tracks which
 /// chat channel the user is currently viewing.
@@ -59,6 +62,7 @@ class AppLifecycleService with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _emitLifecycleEvent(state);
     isInForeground = state == AppLifecycleState.resumed;
 
     if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
@@ -77,6 +81,26 @@ class AppLifecycleService with WidgetsBindingObserver {
       // 立即恢复 P2P 连接（手机亮屏后不等心跳周期）。
       // 传入后台时长：较久后台后强制刷新可能已半开的陈旧连接。
       PeerConnectionManager.instance.resumeAll(backgroundedFor: duration);
+    }
+  }
+
+  /// 投射 `system.app.lifecycle`（poll_only，无订阅方时只进审计日志）。
+  ///
+  /// 事件系统不可用时静默失败——生命周期处理不能被事件系统拖累。
+  void _emitLifecycleEvent(AppLifecycleState state) {
+    try {
+      final foreground = state == AppLifecycleState.resumed;
+      EventBus.instance.emitSystem(
+        systemDomain: 'system',
+        type: 'system.app.lifecycle',
+        payload: {
+          'summary': foreground ? '应用进入前台' : '应用进入后台',
+          'state': foreground ? 'foreground' : 'background',
+        },
+        scope: EventScope(ownerId: LocalUserIdentity.id),
+      );
+    } catch (_) {
+      // ignore: 事件系统未就绪 / 类型未注册
     }
   }
 

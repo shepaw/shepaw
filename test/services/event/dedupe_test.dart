@@ -2,6 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/services/event/event_bus.dart';
 import 'package:shepaw/services/event/event_namespace_registry.dart';
 import 'package:shepaw/services/event/event_pattern.dart';
+import 'package:shepaw/services/event/event_scope.dart';
+import 'package:shepaw/services/event/workflow_event_types.dart';
 
 void main() {
   late EventBus bus;
@@ -43,6 +45,34 @@ void main() {
 
     final event = await lease.completer.future;
     expect(event.correlationId, cid);
+  });
+
+  test('store.file.changed 同文件同变更在窗口内去重', () {
+    registerStoreEventTypes(bus.registry);
+    bus.addSubscription(
+      agentId: 'agent_store',
+      patterns: [const EventPattern(typeGlob: 'store.file.changed')],
+    );
+
+    Map<String, dynamic> emit(String change) => bus.emitSystem(
+          systemDomain: 'store',
+          type: 'store.file.changed',
+          payload: {
+            'summary': 'notes.md 已修改',
+            'uri': 'store://notes.md',
+            'change': change,
+          },
+          scope: const EventScope(ownerId: 'owner_dedupe'),
+        ).toJson();
+
+    final first = emit('modified');
+    final repeat = emit('modified');
+    final different = emit('deleted');
+
+    expect(first['deduplicated'], isNot(true));
+    expect(repeat['deduplicated'], true);
+    expect(different['deduplicated'], isNot(true));
+    expect(bus.inboxFor('agent_store').length, 2);
   });
 
   test('router dedupe prevents duplicate inbox for subscription', () {

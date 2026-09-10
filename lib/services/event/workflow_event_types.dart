@@ -28,6 +28,10 @@ void registerStoreEventTypes(EventNamespaceRegistry registry) {
       description: 'Storage bag file created/modified/deleted',
       defaultDelivery: EventDelivery.pollOnly,
       requiredScopeKeys: ['ownerId'],
+      // 同一文件同一变更类型 60s 内只记一条：目录监听在批量拷贝/保存时
+      // 会产生大量重复事件。
+      dedupeKeyTemplate:
+          '{type}:{scope.owner_id}:{payload.uri}:{payload.change}',
     ),
     const EventTypeDefinition(
       id: 'store.backup.completed',
