@@ -45,7 +45,25 @@ void main() {
     );
 
     final err = result['error']?.toString() ?? '';
-    expect(err.contains('not allowed during event perception'), isFalse);
+    expect(err.contains('not allowed'), isFalse);
+  });
+
+  test('cliAllowlist namespace entry allows descendant commands', () async {
+    final result = await ChatAgentScope.runScoped<Map<String, dynamic>>(
+      agentId: SheService.sheId,
+      cliAllowlist: const {'peer'},
+      body: () async {
+        final raw = await ShepawCLI.instance.execute({
+          'namespace': 'peer',
+          'subcommand': 'list',
+          'flags': {},
+        });
+        return jsonDecode(raw) as Map<String, dynamic>;
+      },
+    );
+
+    final err = result['error']?.toString() ?? '';
+    expect(err.contains('not allowed'), isFalse);
   });
 
   test('null cliAllowlist does not restrict commands', () async {
@@ -62,6 +80,6 @@ void main() {
     );
 
     final err = result['error']?.toString() ?? '';
-    expect(err.contains('not allowed during event perception'), isFalse);
+    expect(err.contains('not allowed'), isFalse);
   });
 }

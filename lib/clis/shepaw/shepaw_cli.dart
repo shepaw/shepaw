@@ -20,6 +20,7 @@ import 'events/events_namespace.dart';
 import '../../services/logger_service.dart';
 import '../../services/cli_command_config_service.dart';
 import '../../services/cli_tool_registry.dart';
+import '../cli_command_allowlist.dart';
 
 /// ShepawCLI — She 专属的内嵌 CLI，替代 PawToolRegistry。
 ///
@@ -220,12 +221,14 @@ class ShepawCLI {
   /// [isUiOperation] 是否来自 UI 操作（UI 操作跳过权限检查，默认 false）
   /// [channelId] 当前对话频道；flags 未带 channel 时作为 store 落点
   /// [runtimeOwnerId] 群聊时传入群 id，强制产物写入群 runtime
+  /// [cliAllowlist] 非空时覆盖 Zone 内的允许列表（群成员 store/help 等）
   Future<String> execute(
     Map<String, dynamic> args, {
     String agentId = SheService.sheId,
     bool isUiOperation = false,
     String? channelId,
     String? runtimeOwnerId,
+    Set<String>? cliAllowlist,
   }) async {
     final namespace = args['namespace'] as String? ?? 'help';
     final subcommand = args['subcommand'] as String? ?? '';
@@ -270,6 +273,7 @@ class ShepawCLI {
           : (channelId ?? '').trim();
       final scopedOwner = (runtimeOwnerId ?? '').trim();
       final scopedCorrelation = (flags['correlation'] ?? '').trim();
+      final allowlist = cliAllowlist ?? ChatAgentScope.cliAllowlist;
       final result = await ChatAgentScope.runScoped<Map<String, dynamic>>(
         agentId: agentId,
         channelId: scopedChannel,
@@ -277,14 +281,14 @@ class ShepawCLI {
         correlationId: scopedCorrelation.isNotEmpty
             ? scopedCorrelation
             : ChatAgentScope.correlationId,
-        cliAllowlist: ChatAgentScope.cliAllowlist,
+        cliAllowlist: allowlist,
         body: () async {
-          final allowlist = ChatAgentScope.cliAllowlist;
-          if (allowlist != null && !allowlist.contains(commandId)) {
+          final scopedAllowlist = ChatAgentScope.cliAllowlist;
+          if (scopedAllowlist != null &&
+              !cliCommandAllowed(scopedAllowlist, commandId)) {
             return {
-              'error':
-                  'Command not allowed during event perception turn: $commandId',
-              'allowed_commands': allowlist.toList()..sort(),
+              'error': 'Command not allowed: $commandId',
+              'allowed_commands': scopedAllowlist.toList()..sort(),
             };
           }
           if (ns is ContextNamespace) ns.agentId = agentId;

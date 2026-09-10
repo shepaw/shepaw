@@ -13,6 +13,7 @@ import '../../models/llm_stream_event.dart';
 import '../../models/llm_token_usage.dart';
 import '../../models/inference_log_entry.dart';
 import '../../clis/shepaw/shepaw_cli.dart';
+import '../cli_execution_gate.dart';
 import '../../clis/shepaw/workflow/workflow_namespace.dart';
 import '../../clis/shepaw/workflow/workflow_dispatch_command.dart';
 import '../local_database_service.dart';
@@ -2674,26 +2675,14 @@ class GroupAgentExecutor {
     }
   }
 
-  /// Group-local agents: admin gets full shepaw CLI; members may only use
-  /// [store] (write/read artifacts) and [help] (discovery).
+  /// Group agents go through [CliExecutionGate]. Non-admin members are
+  /// limited to the `store` and `help` namespaces.
   Future<String> _executeShepawCliForGroup({
     required Map<String, dynamic> args,
     required RemoteAgent agent,
     required bool isAdmin,
     required String channelId,
   }) async {
-    if (!isAdmin) {
-      final namespace = (args['namespace'] as String?)?.trim() ?? '';
-      if (namespace != 'store' && namespace != 'help') {
-        return jsonEncode({
-          'ok': false,
-          'error': '群成员仅可使用 store 与 help 命名空间。产出请用 shepaw store write，'
-              '读取请用 shepaw store read --uri <store://...>。'
-              '产物写入本群储物袋，不是你个人的 runtime。',
-          'allowed_namespaces': ['store', 'help'],
-        });
-      }
-    }
     String? runtimeOwnerId;
     try {
       final ch = await _db.getChannelById(channelId);
@@ -2707,11 +2696,13 @@ class GroupAgentExecutor {
         ).ownerId;
       }
     } catch (_) {}
-    return ShepawCLI.instance.execute(
-      args,
+    return CliExecutionGate.instance.execute(
+      args: args,
       agentId: agent.id,
       channelId: channelId,
       runtimeOwnerId: runtimeOwnerId,
+      enabledCliCommands: agent.enabledCliCommands,
+      extraAllowlist: isAdmin ? null : kGroupMemberCliAllowlist,
     );
   }
 

@@ -16,7 +16,6 @@ import '../event/event_bus.dart';
 import '../local_llm_agent_service.dart';
 import '../task/task_models.dart';
 import '../../clis/shepaw/os/os_executor.dart' as os_exec;
-import '../../clis/shepaw/os/os_tool_registry.dart';
 import '../skill_registry.dart';
 import '../model_registry.dart';
 import '../ui_component_registry.dart';
@@ -26,7 +25,6 @@ import '../foreground_task_service.dart';
 import '../logger_service.dart';
 import '../peer_key_utils.dart';
 import '../she_service.dart';
-import '../location_access_policy.dart';
 import '../agent_soul_service.dart';
 import '../noise_identity.dart';
 import '../mailbox/mailbox_seal.dart';
@@ -34,6 +32,7 @@ import '../mailbox/channel_mailbox_service.dart';
 import '../mailbox/mailbox_inbox_poller.dart';
 import '../mailbox/mailbox_turn_claims.dart';
 import '../../clis/shepaw/shepaw_cli.dart';
+import '../cli_execution_gate.dart';
 import '../group/group_orchestration_tools.dart';
 import '../session/session_history_service.dart';
 import '../session/history_compactor.dart';
@@ -2617,89 +2616,6 @@ class AgentMessagingService {
 
             // Check if this is a paw tool call (shepaw CLI)
             if (ShepawCLI.instance.isPawTool(tc.name)) {
-              // 检查该 agent 是否有权限执行此 CLI 命令
-              final enabledCliCommands = agent.enabledCliCommands;
-              final namespace = tc.arguments['namespace'] as String? ?? '';
-              final subcommand = tc.arguments['subcommand'] as String? ?? '';
-              final commandId =
-                  subcommand.isNotEmpty ? '$namespace.$subcommand' : namespace;
-
-              if (enabledCliCommands.isNotEmpty) {
-                // Agent 有明确的 CLI 命令限制 → 检查该命令是否被允许
-                if (!enabledCliCommands.contains(commandId)) {
-                  // 命令被禁止 → 返回拒绝错误
-                  final denyResult = {
-                    'error': 'CLI command "$commandId" is not allowed for this agent. Enabled commands: ${enabledCliCommands.join(", ")}',
-                    'command': commandId,
-                  };
-                  toolResults.add({
-                    'tool_call_id': tc.id,
-                    'name': tc.name,
-                    'result': jsonEncode(denyResult),
-                  });
-                  infLog.onToolResult(activeTask.taskId, toolCallId: tc.id, name: tc.name, result: jsonEncode(denyResult));
-                  
-                  // 持久化拒绝结果
-                  await historyService.saveToolExecution(
-                    messageId: agentMessageId,
-                    channelId: effectiveChannelId,
-                    toolCallId: tc.id,
-                    toolName: tc.name,
-                    arguments: tc.arguments,
-                    result: ToolExecutionResult.text(jsonEncode(denyResult)),
-                  );
-                  continue;
-                }
-              }
-
-              // Peer-inbound boundary: deny OS / memory writes by default.
-              if (isPeerInbound &&
-                  peerBoundary.blocksCli(
-                    namespace: namespace,
-                    subcommand: subcommand,
-                  )) {
-                final denyResult = {
-                  'error':
-                      'CLI command "$commandId" is blocked in peer external-serving mode.',
-                  'command': commandId,
-                  'peer_boundary': true,
-                };
-                toolResults.add({
-                  'tool_call_id': tc.id,
-                  'name': tc.name,
-                  'result': jsonEncode(denyResult),
-                });
-                infLog.onToolResult(
-                  activeTask.taskId,
-                  toolCallId: tc.id,
-                  name: tc.name,
-                  result: jsonEncode(denyResult),
-                );
-                await historyService.saveToolExecution(
-                  messageId: agentMessageId,
-                  channelId: effectiveChannelId,
-                  toolCallId: tc.id,
-                  toolName: tc.name,
-                  arguments: tc.arguments,
-                  result: ToolExecutionResult.text(jsonEncode(denyResult)),
-                );
-                continue;
-              }
-
-              // OS 工具风险确认：非 safe 必须经用户批准
-              final osConfirmDenied = await _confirmOsToolIfNeeded(
-                activeTask: activeTask,
-                args: tc.arguments,
-                agentMessageId: agentMessageId,
-                effectiveChannelId: effectiveChannelId,
-                toolCall: tc,
-                toolResults: toolResults,
-                infLog: infLog,
-                historyService: historyService,
-              );
-              if (osConfirmDenied) continue;
-
-              // 命令被允许 → 继续执行。
               // 注入当前频道 id（与群聊执行器一致），agents.dispatch /
               // agents.chat 依赖它定位结果回传的目标频道。
               final cliArgs = Map<String, dynamic>.from(tc.arguments);
@@ -2710,7 +2626,16 @@ class AgentMessagingService {
                 flags['channel_id'] = effectiveChannelId;
                 cliArgs['flags'] = flags;
               }
-              final result = await ShepawCLI.instance.execute(cliArgs, agentId: agent.id);
+              final result = await CliExecutionGate.instance.execute(
+                args: cliArgs,
+                agentId: agent.id,
+                channelId: effectiveChannelId,
+                enabledCliCommands: agent.enabledCliCommands,
+                peerBoundary: isPeerInbound
+                    ? peerBoundary
+                    : PeerBoundaryConfig.open,
+                onOsConfirmation: activeTask.onOsToolConfirmation,
+              );
               toolResults.add({
                 'tool_call_id': tc.id,
                 'name': tc.name,
@@ -2978,76 +2903,6 @@ class AgentMessagingService {
       }
     }
     return buf.toString().trim();
-  }
-
-  /// Returns `true` when the OS tool call was denied (caller should `continue`).
-  Future<bool> _confirmOsToolIfNeeded({
-    required ActiveTask activeTask,
-    required Map<String, dynamic> args,
-    required String agentMessageId,
-    required String effectiveChannelId,
-    required LLMToolCallEvent toolCall,
-    required List<Map<String, dynamic>> toolResults,
-    required InferenceLogService infLog,
-    required HistoryService historyService,
-  }) async {
-    final namespace = args['namespace'] as String? ?? '';
-    if (namespace != 'os') return false;
-
-    final subcommand = args['subcommand'] as String? ?? '';
-    if (subcommand.isEmpty) return false;
-
-    final flagsRaw = args['flags'];
-    final flags = <String, dynamic>{};
-    if (flagsRaw is Map) {
-      flags.addAll(Map<String, dynamic>.from(flagsRaw));
-    }
-
-    final cliPath = 'os.$subcommand';
-    final toolName = OsToolRegistry.instance.resolveToolName(cliPath);
-    final risk = os_exec.classifyRisk(toolName, flags);
-    if (risk == os_exec.RiskLevel.safe) return false;
-
-    if (await LocationAccessPolicy.shouldSkipOsConfirmationFor(
-      agentId: activeTask.agentId,
-      toolName: toolName,
-    )) {
-      return false;
-    }
-
-    final confirm = activeTask.onOsToolConfirmation;
-    final approved = confirm == null
-        ? false // No UI confirmation handler → deny non-safe OS tools
-        : await confirm(toolName, flags, risk);
-
-    if (approved) return false;
-
-    final denyResult = {
-      'error': 'OS tool "$cliPath" was denied by the user (risk: ${risk.name}).',
-      'tool': toolName,
-      'risk': risk.name,
-    };
-    final encoded = jsonEncode(denyResult);
-    toolResults.add({
-      'tool_call_id': toolCall.id,
-      'name': toolCall.name,
-      'result': encoded,
-    });
-    infLog.onToolResult(
-      activeTask.taskId,
-      toolCallId: toolCall.id,
-      name: toolCall.name,
-      result: encoded,
-    );
-    await historyService.saveToolExecution(
-      messageId: agentMessageId,
-      channelId: effectiveChannelId,
-      toolCallId: toolCall.id,
-      toolName: toolCall.name,
-      arguments: args,
-      result: ToolExecutionResult.text(encoded),
-    );
-    return true;
   }
 
   /// Formats a millisecond timestamp as "YYYY-MM-DD HH:MM:SS" (local time).

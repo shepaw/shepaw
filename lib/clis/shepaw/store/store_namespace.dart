@@ -6,6 +6,7 @@ import '../../cli_base.dart';
 import '../chat/chat_agent_scope.dart';
 import '../../../services/local_database_service.dart';
 import '../../../services/logger_service.dart';
+import '../../../services/she_service.dart';
 import '../../../storage/artifact_service.dart';
 import '../../../storage/device_identity.dart';
 import '../../../storage/group_workspace_service.dart';
@@ -31,6 +32,47 @@ Future<String?> groupWorkspaceAccessError(String uri) async {
   final isMember = await GroupWorkspaceService.instance.isMember(gid, agentId);
   if (!isMember) return 'not a member of group workspace (group_$gid)';
   return null;
+}
+
+/// Agent-scoped ACL for private spaces (`runtime` / `cognition`).
+///
+/// She keeps the device-level model (any own-device URI). Non-She may only
+/// touch their own prefix, or the current group runtime owner when scoped.
+/// Shared spaces (`files` / `public` / `workspaces` / `artifacts`) are not
+/// restricted here — group membership is [groupWorkspaceAccessError].
+Future<String?> storeAgentAccessError(String uri) async {
+  final groupErr = await groupWorkspaceAccessError(uri);
+  if (groupErr != null) return groupErr;
+
+  final agentId = ChatAgentScope.agentId.trim();
+  if (agentId.isEmpty) return 'unknown executor agent id';
+  if (agentId == SheService.sheId) return null;
+
+  late final ({String space, String device, String path}) parsed;
+  try {
+    parsed = parseStoreUriLoose(uri);
+  } catch (e) {
+    return '$e';
+  }
+
+  if (parsed.space != StoreSpace.runtime &&
+      !StoreSpace.isCognitionSpace(parsed.space)) {
+    return null;
+  }
+
+  final segs = parsed.path.split('/').where((s) => s.isNotEmpty).toList();
+  if (segs.isEmpty) {
+    return 'acl_denied: ${parsed.space} is scoped to this agent';
+  }
+  final ownerSeg = segs.first;
+  final selfSeg = RuntimePaths.sanitizeSegment(agentId);
+  if (ownerSeg == selfSeg) return null;
+  final groupOwner = ChatAgentScope.runtimeOwnerId.trim();
+  if (groupOwner.isNotEmpty &&
+      ownerSeg == RuntimePaths.sanitizeSegment(groupOwner)) {
+    return null;
+  }
+  return 'acl_denied: cannot access another agent\'s ${parsed.space}';
 }
 
 /// 允许相对子路径，拒绝 `..` 与点段（防路径穿越；群工作空间成员落点）。
@@ -144,9 +186,7 @@ class StoreWriteCommand extends CliCommand {
           'error': 'missing --group (workspaces write needs the group id)',
         };
       }
-      final executorId =
-          (flags['agent_id'] ?? flags['owner'] ?? ChatAgentScope.agentId)
-              .trim();
+      final executorId = ChatAgentScope.agentId.trim();
       if (executorId.isEmpty) {
         return {'success': false, 'error': 'unknown executor agent id'};
       }
@@ -169,9 +209,7 @@ class StoreWriteCommand extends CliCommand {
     if (space.isEmpty) {
       final groupOwner = ChatAgentScope.runtimeOwnerId.trim();
       if (groupOwner.isNotEmpty) {
-        final executorId =
-            (flags['agent_id'] ?? flags['owner'] ?? ChatAgentScope.agentId)
-                .trim();
+        final executorId = ChatAgentScope.agentId.trim();
         final ws = GroupWorkspaceService.instance;
         if (executorId.isNotEmpty &&
             await ws.isMember(groupOwner, executorId)) {
@@ -192,8 +230,7 @@ class StoreWriteCommand extends CliCommand {
 
     final taskId = flags['task'] ?? 'general';
     final desc = flags['desc'];
-    final agentId =
-        (flags['agent_id'] ?? flags['owner'] ?? ChatAgentScope.agentId).trim();
+    final agentId = ChatAgentScope.agentId.trim();
     final channelId =
         (flags['channel_id'] ?? flags['channel'] ?? ChatAgentScope.channelId)
             .trim();
@@ -359,7 +396,7 @@ class StoreReadCommand extends CliCommand {
     if (uri == null || uri.isEmpty) {
       return {'success': false, 'error': 'missing --uri'};
     }
-    final accessErr = await groupWorkspaceAccessError(uri);
+    final accessErr = await storeAgentAccessError(uri);
     if (accessErr != null) return {'success': false, 'error': accessErr};
     try {
       final bytes = await StoreUriReader.instance.read(uri);
@@ -410,7 +447,7 @@ class StoreListCommand extends CliCommand {
       return {'success': false, 'error': 'missing --uri'};
     }
     final depth = int.tryParse(flags['depth'] ?? '1') ?? 1;
-    final accessErr = await groupWorkspaceAccessError(uri);
+    final accessErr = await storeAgentAccessError(uri);
     if (accessErr != null) return {'success': false, 'error': accessErr};
     try {
       final parsed = parseStoreUriLoose(uri);
@@ -504,7 +541,7 @@ class StoreSearchCommand extends CliCommand {
     var pathPrefix = '';
     final uri = flags['uri'];
     if (uri != null && uri.isNotEmpty) {
-      final accessErr = await groupWorkspaceAccessError(uri);
+      final accessErr = await storeAgentAccessError(uri);
       if (accessErr != null) return {'success': false, 'error': accessErr};
       try {
         final parsed = parseStoreUriLoose(uri);
@@ -523,12 +560,20 @@ class StoreSearchCommand extends CliCommand {
         space: (space == null || space.isEmpty) ? null : space,
         limit: _cliInt(flags, 'limit', 50),
       );
-      final filtered = [
+      final prefixFiltered = [
         for (final hit in hits)
           if (pathPrefix.isEmpty ||
               '${hit['path'] ?? ''}'.startsWith(pathPrefix))
             hit,
       ];
+      final filtered = <Map<String, dynamic>>[];
+      for (final hit in prefixFiltered) {
+        final hitUri = hit['uri']?.toString() ?? '';
+        if (hitUri.isEmpty) continue;
+        if (await storeAgentAccessError(hitUri) == null) {
+          filtered.add(hit);
+        }
+      }
       return {
         'success': true,
         'query': q,
