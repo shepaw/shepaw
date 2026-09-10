@@ -2088,8 +2088,9 @@ class PeerAgentClientService {
 
   // ==================== Peer 简历中继 ====================
 
-  /// 简历中继超时：宿主 rebuild 要跑一次完整 LLM 生成，远长于 soul 的 12s。
-  static const _resumeRebuildRelayTimeout = Duration(seconds: 120);
+  /// 简历中继超时：带提示词时会走宿主的一次完整 AI 改写（写 Summary 前先重扫工作区，
+  /// 单次 LLM 回合最长 180s），远长于 soul 的 12s。留出余量给往返。
+  static const _resumeRebuildRelayTimeout = Duration(seconds: 240);
 
   /// 经测试 seam（若有）或连接管理器发出控制帧。
   Future<bool> _sendResumeControl(

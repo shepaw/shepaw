@@ -200,7 +200,9 @@ class _AgentResumeEditScreenState extends State<AgentResumeEditScreen> {
       final newText = await AgentResumeService.instance
           .regenerate(agent, prompt: prompt)
           .timeout(agent.isPeerAgent
-              ? const Duration(seconds: 120)
+              // 带提示词 = 宿主走一次完整 AI 改写（最长 180s），无提示词只是重扫
+              // 工作区（毫秒级）；统一按前者留余量。
+              ? const Duration(seconds: 240)
               : const Duration(seconds: 90));
       if (!mounted) return;
       setState(() {
