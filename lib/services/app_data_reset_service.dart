@@ -1,5 +1,6 @@
 import '../storage/store_wipe_service.dart';
 import 'agent_memory_store_service.dart';
+import 'chat_service.dart';
 import 'event/event_bus.dart';
 import 'event/peer_event_provider.dart';
 import 'cognition_service.dart';
@@ -53,8 +54,11 @@ class AppDataResetService {
     await step('agent_memory', AgentMemoryStoreService.deleteAllAgentMemories);
     // 事件系统：DB 行在 database 步骤已删，这里清内存态并恢复 She 的默认订阅，
     // 否则重置后到下次启动前事件系统处于「零订阅」。
+    // ChatService 侧还有一份排队中的延迟感知回合（持有事件 payload），
+    // 同样属于事件系统内存态，必须一并清掉。
     await step('event_bus', () async {
       EventBus.instance.resetRuntimeState();
+      ChatService().clearDeferredEventPerception();
       PeerEventProvider.seedSheInboundSubscription(EventBus.instance);
     });
     await step('store', () async {

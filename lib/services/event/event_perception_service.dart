@@ -30,9 +30,10 @@ class EventPerceptionService {
   void ensureBound(PerceptionScheduler scheduler) {
     if (_boundScheduler == scheduler && scheduler.onSchedule != null) return;
     _boundScheduler = scheduler;
-    scheduler.onSchedule = (agentId, channelId, events) {
-      unawaited(_onSchedule(agentId, channelId, events));
-    };
+    // 直接绑 _onSchedule（返回 Future）：scheduler 需要 await 它才能把 running
+    // 锁覆盖到回合结束。早期版本用 `unawaited(...)` 包一层，会让锁在回合开始
+    // 的瞬间就释放，导致 notify-only 回合重叠。
+    scheduler.onSchedule = _onSchedule;
   }
 
   Future<void> _onSchedule(

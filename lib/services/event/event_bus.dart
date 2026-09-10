@@ -157,20 +157,26 @@ class EventBus {
     EventScope? scopeFilter,
     Duration timeout = const Duration(seconds: 30),
   }) {
+    // 先清过期 lease：`_pruneLeases` 只在这里被调用，若放在冲突检查之后，
+    // 一次因冲突而抛出的调用就永远不会 prune —— 过期但未被 wait/取消的 lease
+    // 会永久占住该 correlation。
+    _pruneLeases();
+
     if (correlationId != null) {
       // 同一 correlation 全局只允许一个活跃 lease（跨 agent deny）。
+      // `!l.isExpired` 必须显式判断：lease 的过期只在 `waitOnLease` 超时时被
+      // 标记为 cancelled，无人 await 的 lease 过期后 completed/cancelled 仍为 false。
       final conflict = _leases.any(
         (l) =>
             !l.completed &&
             !l.cancelled &&
+            !l.isExpired &&
             l.correlationId == correlationId,
       );
       if (conflict) {
         throw CorrelationAlreadyWaitedException(correlationId);
       }
     }
-
-    _pruneLeases();
 
     final lease = WaitLease(
       leaseId: 'wl_${_uuid.v4()}',

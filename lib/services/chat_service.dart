@@ -662,6 +662,18 @@ class ChatService {
     _scheduleDeferredEventPerceptionRetry(channelId);
   }
 
+  /// 丢弃所有排队的延迟感知回合（取消定时器）。
+  ///
+  /// 「清空数据」必须调用：队列持有 `EventEnvelope`（payload 内含设备名 /
+  /// fingerprint 等），否则 wipe 之后仍可能用已删除的数据触发一次感知回合。
+  /// 内存态，无需等待异步收尾。
+  void clearDeferredEventPerception() {
+    for (final entry in _deferredEventPerception.values) {
+      entry.retryTimer?.cancel();
+    }
+    _deferredEventPerception.clear();
+  }
+
   void _scheduleDeferredEventPerceptionRetry(String channelId) {
     final entry = _deferredEventPerception[channelId];
     if (entry == null) return;

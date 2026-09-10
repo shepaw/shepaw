@@ -79,4 +79,24 @@ void main() {
       throwsA(isA<WaitTimeoutException>()),
     );
   });
+
+  test('expired lease does not block reopening the same correlation', () async {
+    bus.openWaitLease(
+      agentId: 'a1',
+      correlationId: 'cid_stale',
+      typePatterns: ['test.event.ping'],
+      timeout: const Duration(milliseconds: 1),
+    );
+    // 无人 await 该 lease：completed/cancelled 仍为 false，只有 isExpired 为真。
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+
+    expect(
+      () => bus.openWaitLease(
+        agentId: 'a1',
+        correlationId: 'cid_stale',
+        typePatterns: ['test.event.ping'],
+      ),
+      returnsNormally,
+    );
+  });
 }

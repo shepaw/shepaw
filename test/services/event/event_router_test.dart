@@ -46,7 +46,7 @@ void main() {
 
   test('lease early-return suppresses active subscription for correlation', () {
     var scheduleCount = 0;
-    bus.perceptionScheduler.onSchedule = (_, __, ___) => scheduleCount++;
+    bus.perceptionScheduler.onSchedule = (_, __, ___) async => scheduleCount++;
 
     bus.addSubscription(
       agentId: SheService.sheId,
@@ -91,7 +91,7 @@ void main() {
     final woken = <String>[];
     bus.perceptionScheduler
       ..debounce = Duration.zero
-      ..onSchedule = (agentId, _, __) => woken.add(agentId);
+      ..onSchedule = (agentId, _, __) async => woken.add(agentId);
 
     bus.addSubscription(
       agentId: SheService.sheId,

@@ -4,8 +4,13 @@ import 'event_envelope.dart';
 
 /// Notify-only perception turn scheduler with debounce + busy queue (P1+).
 class PerceptionScheduler {
-  void Function(String agentId, String channelId, List<EventEnvelope> events)?
-      onSchedule;
+  /// 感知回合回调。**必须返回可 await 的 Future**：`_drain` 会等它结束才释放
+  /// running 锁，否则锁只覆盖同步调用瞬间，回合会重叠（见 `_drain`）。
+  Future<void> Function(
+    String agentId,
+    String channelId,
+    List<EventEnvelope> events,
+  )? onSchedule;
 
   Duration debounce = const Duration(seconds: 3);
 
@@ -44,11 +49,18 @@ class PerceptionScheduler {
     state.running = true;
     try {
       final parts = key.split('::');
-      onSchedule?.call(
-        parts.first,
-        parts.length > 1 ? parts[1] : '',
-        batch,
-      );
+      // await：running 锁必须覆盖整个感知回合，否则回合重叠（debounce 队列
+      // 也失效）。
+      try {
+        await onSchedule?.call(
+          parts.first,
+          parts.length > 1 ? parts[1] : '',
+          batch,
+        );
+      } catch (_) {
+        // 回调自会兜异常并记日志（见 EventPerceptionService._onSchedule）；
+        // 这里再兜一层，避免回合抛错变成 Timer 中的 unhandled async error。
+      }
     } finally {
       state.running = false;
       if (state.pending.isNotEmpty || state.queued) {
