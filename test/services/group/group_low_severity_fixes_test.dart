@@ -6,6 +6,7 @@ import 'package:shepaw/models/remote_agent.dart';
 import 'package:shepaw/services/acp_agent_connection.dart';
 import 'package:shepaw/services/group/group_agent_executor.dart';
 import 'package:shepaw/services/group/group_dispatch_parser.dart';
+import 'package:shepaw/services/group/group_management_service.dart';
 import 'package:shepaw/services/group/group_event.dart';
 import 'package:shepaw/services/group/group_event_store.dart';
 import 'package:shepaw/services/group/group_interaction_handler.dart';
@@ -16,6 +17,7 @@ import 'package:shepaw/services/group/group_prompt_builder.dart';
 import 'package:shepaw/services/group/group_session_service.dart';
 import 'package:shepaw/services/group/group_turn_result.dart';
 import 'package:shepaw/services/local_database_service.dart';
+import 'package:shepaw/services/she_service.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../storage/test_harness.dart';
@@ -91,8 +93,8 @@ void main() {
     });
   });
 
-  group('P0: UI 群编辑整行 replace 不再清字段', () {
-    test('重建（UI 语义）并 updateChannel 后保留 flow/stage/绑定列', () async {
+  group('P0: 群编辑保存（真实入口）不再清字段', () {
+    test('UI 表单式全量保存后保留 flow/stage/绑定列', () async {
       final db = LocalDatabaseService();
       final suffix = DateTime.now().microsecondsSinceEpoch;
       final channelId = 'grp_$suffix';
@@ -101,7 +103,10 @@ void main() {
         id: channelId,
         name: 'Original',
         type: 'group',
-        members: [_member('agent_$suffix')],
+        members: [
+          _member(SheService.sheId, role: 'admin'),
+          _member('agent_$suffix'),
+        ],
         description: 'before',
         sourceSheChannelId: 'she_$suffix',
         systemPrompt: 'sys',
@@ -112,10 +117,23 @@ void main() {
       );
       await db.createChannel(group, 'user');
 
-      // 模拟移动端 _saveEdit / 桌面端保存闭包的重建语义（P0 修复后：显式搬移
-      // source_* / flow / stage 与内存展示字段，而不是 Channel(...) 漏字段）。
-      final updated = _uiEditRebuild(group, newName: 'Renamed');
-      await db.updateChannel(updated);
+      // 直接走 UI 保存所用的真实入口（GroupManagementService.updateGroup
+      // Settings），不再在测试里复刻一份重建逻辑——真实实现漏搬字段时这里
+      // 必然失败。
+      final result = await GroupManagementService().updateGroupSettings(
+        channelId: channelId,
+        actorId: SheService.sheId,
+        name: 'Renamed',
+        description: 'before',
+        systemPrompt: 'sys',
+        maxLoopRounds: 3,
+        mentionMode: 'allMembers',
+        flowMode: true,
+        enableStageGate: true,
+      );
+      expect(result.ok, isTrue, reason: result.error);
+      // notifyChannelUpdate 有 150ms 去抖 timer，等它结束避免跨用例干扰。
+      await Future<void>.delayed(const Duration(milliseconds: 200));
 
       final reloaded = await db.getChannelById(channelId);
       expect(reloaded, isNotNull);
@@ -437,22 +455,6 @@ ChannelMember _member(String id, {String type = 'agent', String role = 'member'}
     type: type,
     role: role,
     joinedAt: DateTime.now().millisecondsSinceEpoch,
-  );
-}
-
-/// 与 UI 群编辑保存相同语义的整对象重建：copyWithGroupEdit 除显式给出的
-/// 可编辑字段外，自动原样搬移 source_* 绑定列与 unread/last* 展示列，
-/// 避免整行 replace 清空它们。
-Channel _uiEditRebuild(Channel source, {required String newName}) {
-  return source.copyWithGroupEdit(
-    name: newName,
-    description: source.description,
-    systemPrompt: source.systemPrompt,
-    maxLoopRounds: source.maxLoopRounds,
-    mentionMode: source.effectiveMentionMode,
-    flowMode: source.flowMode,
-    enableStageGate: source.enableStageGate,
-    avatar: source.avatar,
   );
 }
 
