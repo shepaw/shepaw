@@ -2648,6 +2648,36 @@ abstract class AppLocalizations {
   /// **'全部可用（默认放行）'**
   String get agentDetail_allCliCommands;
 
+  /// No description provided for @agentDetail_cliCommandsRestricted.
+  ///
+  /// In zh, this message translates to:
+  /// **'已限制为 {count} 条命令'**
+  String agentDetail_cliCommandsRestricted(int count);
+
+  /// No description provided for @agentDetail_cliRequireApproval.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行 CLI 前需要审核'**
+  String get agentDetail_cliRequireApproval;
+
+  /// No description provided for @agentDetail_cliRequireApprovalDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'非 She 默认开启。store 只读与 help 免审；关闭后 os 非 safe 命令仍会确认。'**
+  String get agentDetail_cliRequireApprovalDesc;
+
+  /// No description provided for @agentDetail_cliApprovalOn.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行 CLI 需你确认（store 只读与 help 除外）'**
+  String get agentDetail_cliApprovalOn;
+
+  /// No description provided for @agentDetail_cliApprovalOff.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行 CLI 不再额外确认（os 非 safe 仍会确认）'**
+  String get agentDetail_cliApprovalOff;
+
   /// No description provided for @agentDetail_authToken.
   ///
   /// In zh, this message translates to:

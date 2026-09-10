@@ -2631,6 +2631,7 @@ class AgentMessagingService {
                 agentId: agent.id,
                 channelId: effectiveChannelId,
                 enabledCliCommands: agent.enabledCliCommands,
+                requireApproval: agent.cliRequireApproval,
                 peerBoundary: isPeerInbound
                     ? peerBoundary
                     : PeerBoundaryConfig.open,

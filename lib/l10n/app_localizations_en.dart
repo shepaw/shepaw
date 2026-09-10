@@ -1427,6 +1427,26 @@ class AppLocalizationsEn extends AppLocalizations {
   String get agentDetail_allCliCommands => 'All commands available (default)';
 
   @override
+  String agentDetail_cliCommandsRestricted(int count) =>
+      '$count command(s) selected (restricted)';
+
+  @override
+  String get agentDetail_cliRequireApproval =>
+      'Require approval before CLI runs';
+
+  @override
+  String get agentDetail_cliRequireApprovalDesc =>
+      'Non-She defaults on. Store read / help skip review; OS non-safe tools still confirm even when this is off.';
+
+  @override
+  String get agentDetail_cliApprovalOn =>
+      'CLI runs wait for your approval (store read and help are exempt)';
+
+  @override
+  String get agentDetail_cliApprovalOff =>
+      'CLI runs without extra approval (OS non-safe tools still confirm)';
+
+  @override
   String get agentDetail_authToken => 'Auth Token';
 
   @override

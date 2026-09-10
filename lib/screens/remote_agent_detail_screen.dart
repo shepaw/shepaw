@@ -122,6 +122,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
   // CLI 命令配置
   Set<String> _enabledCliCommands = {};
+  bool _cliRequireApproval = false;
 
   /// Editable prompt-stack flags (persisted in metadata).
   late PromptStackConfig _promptStackConfig;
@@ -485,6 +486,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
     // Load CLI commands from metadata
     _enabledCliCommands = _agent.enabledCliCommands;
+    _cliRequireApproval = _agent.cliRequireApproval;
     _promptStackConfig = _agent.promptStackConfig;
 
 
@@ -613,6 +615,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     _allowPeerMemoryEdit = _agent.peerBoundaryConfig.allowPeerMemoryEdit;
     _enabledSkills = _agent.enabledSkills;
     _enabledCliCommands = _agent.enabledCliCommands;
+    _cliRequireApproval = _agent.cliRequireApproval;
     _promptStackConfig = _agent.promptStackConfig;
     _scenarioModels = AgentScenarioModels.loadForEditing(
       metadata: _agent.metadata,
@@ -734,6 +737,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
               allowPeerMemoryEdit: _allowPeerMemoryEdit,
             )
             .toJson();
+        metadata['cli_require_approval'] = _cliRequireApproval;
       }
 
       // LLM config
@@ -2556,6 +2560,18 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         initiallyExpanded: false,
         children: [
           const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              _agent.cliRequireApproval
+                  ? l10n.agentDetail_cliApprovalOn
+                  : l10n.agentDetail_cliApprovalOff,
+              style: TextStyle(
+                fontSize: 13,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
           if (!isRestricted)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -3245,11 +3261,13 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           const Divider(height: 1, indent: 16, endIndent: 16),
           ListTile(
             leading: Icon(Icons.terminal, color: colorScheme.primary),
-            title: const Text('CLI Commands'),
+            title: Text(l10n.agentDetail_cliCommands),
             subtitle: Text(
               _enabledCliCommands.isEmpty
-                  ? 'All CLI commands available (OS tools still require confirmation)'
-                  : '${_enabledCliCommands.length} command(s) selected (restricted)',
+                  ? l10n.agentDetail_allCliCommands
+                  : l10n.agentDetail_cliCommandsRestricted(
+                      _enabledCliCommands.length,
+                    ),
               style: TextStyle(
                 color: _enabledCliCommands.isEmpty
                     ? colorScheme.primary
@@ -3272,6 +3290,23 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                 });
                 _scheduleAutoSave();
               }
+            },
+          ),
+          const Divider(height: 1, indent: 16, endIndent: 16),
+          SwitchListTile(
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            secondary: Icon(Icons.verified_user_outlined,
+                color: colorScheme.primary),
+            title: Text(l10n.agentDetail_cliRequireApproval),
+            subtitle: Text(
+              l10n.agentDetail_cliRequireApprovalDesc,
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+            value: _cliRequireApproval,
+            onChanged: (value) {
+              setState(() => _cliRequireApproval = value);
+              _scheduleAutoSave();
             },
           ),
           const Divider(height: 1, indent: 16, endIndent: 16),

@@ -310,6 +310,16 @@ class RemoteAgent {
   /// Whether any CLI commands are explicitly enabled.
   bool get hasEnabledCliCommands => enabledCliCommands.isNotEmpty;
 
+  /// Whether CLI execution waits for a user confirmation (same UI as OS).
+  ///
+  /// Absent metadata: She defaults to off; every other agent defaults to on.
+  /// `os.*` non-safe still confirms even when this is false.
+  bool get cliRequireApproval {
+    final raw = metadata['cli_require_approval'];
+    if (raw is bool) return raw;
+    return !isShe;
+  }
+
   /// Multi-modal model routing configuration parsed from metadata.
   /// Legacy inline routing config. Used only when migrating to [scenarioModels].
   @Deprecated('Use scenario_models. Read-only for migration.')

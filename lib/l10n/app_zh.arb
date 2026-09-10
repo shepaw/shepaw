@@ -729,6 +729,18 @@
   "agentDetail_peerTunnel": "P2P 隧道（配对设备）",
   "agentDetail_cliCommands": "CLI 命令",
   "agentDetail_allCliCommands": "全部可用（默认放行）",
+  "agentDetail_cliCommandsRestricted": "已限制为 {count} 条命令",
+  "@agentDetail_cliCommandsRestricted": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "agentDetail_cliRequireApproval": "执行 CLI 前需要审核",
+  "agentDetail_cliRequireApprovalDesc": "非 She 默认开启。store 只读与 help 免审；关闭后 os 非 safe 命令仍会确认。",
+  "agentDetail_cliApprovalOn": "执行 CLI 需你确认（store 只读与 help 除外）",
+  "agentDetail_cliApprovalOff": "执行 CLI 不再额外确认（os 非 safe 仍会确认）",
   "agentDetail_authToken": "认证 Token",
   "agentDetail_copyToken": "复制 Token",
   "agentDetail_tokenCopied": "Token 已复制到剪贴板",

@@ -105,6 +105,58 @@ void main() {
       expect(updated.endpoint, 'https://example.com');
     });
 
+    test('cliRequireApproval defaults She off and others on', () {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final she = RemoteAgent(
+        id: 'she-1',
+        name: 'She',
+        token: 't',
+        endpoint: 'http://local',
+        protocol: ProtocolType.acp,
+        connectionType: ConnectionType.http,
+        createdAt: now,
+        updatedAt: now,
+        metadata: const {'is_she': true},
+      );
+      final other = RemoteAgent(
+        id: 'agent-1',
+        name: 'Other',
+        token: 't',
+        endpoint: 'http://local',
+        protocol: ProtocolType.acp,
+        connectionType: ConnectionType.http,
+        createdAt: now,
+        updatedAt: now,
+      );
+      expect(she.cliRequireApproval, isFalse);
+      expect(other.cliRequireApproval, isTrue);
+
+      final sheOn = RemoteAgent(
+        id: 'she-2',
+        name: 'She',
+        token: 't',
+        endpoint: 'http://local',
+        protocol: ProtocolType.acp,
+        connectionType: ConnectionType.http,
+        createdAt: now,
+        updatedAt: now,
+        metadata: const {'is_she': true, 'cli_require_approval': true},
+      );
+      final otherOff = RemoteAgent(
+        id: 'agent-2',
+        name: 'Other',
+        token: 't',
+        endpoint: 'http://local',
+        protocol: ProtocolType.acp,
+        connectionType: ConnectionType.http,
+        createdAt: now,
+        updatedAt: now,
+        metadata: const {'cli_require_approval': false},
+      );
+      expect(sheOn.cliRequireApproval, isTrue);
+      expect(otherOff.cliRequireApproval, isFalse);
+    });
+
     test('Protocol and ConnectionType enums should work', () {
       expect(ProtocolType.acp.toJson(), 'acp');
       expect(ProtocolType.fromJson('acp'), ProtocolType.acp);

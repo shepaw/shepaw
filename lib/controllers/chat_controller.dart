@@ -24,6 +24,7 @@ import '../services/she_service.dart';
 import '../services/workflow/workflow_service.dart';
 import '../services/approval/pending_approval_hub.dart';
 import '../services/approval/pending_approval_item.dart';
+import '../services/cli_approval_coordinator.dart';
 import '../models/workflow_models.dart';
 import '../peer/services/peer_agent_client_service.dart';
 import '../peer/services/peer_agent_host_service.dart' show isPeerAgentChannel;
@@ -318,6 +319,9 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   /// Workflow panel + local execution bookkeeping.
   final ChatWorkflowCoordinator workflow = ChatWorkflowCoordinator();
 
+  /// Group / headless CLI approvals reuse the same OS confirmation dialog.
+  late final CliApprovalHandler _cliApprovalHandler;
+
   /// The ID of the currently active workflow (set during flow execution).
   String? get activeWorkflowId => workflow.activeWorkflowId;
 
@@ -380,6 +384,12 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     searchService = MessageSearchService(databaseService);
     interactiveResponseHandler = InteractiveResponseHandler(this);
     streaming.onClear = _onStreamingSessionCleared;
+    _cliApprovalHandler = (toolName, flags, risk) async {
+      final event = ShowOsToolConfirmationEvent(toolName, flags, risk);
+      _emit(event);
+      return event.result.future;
+    };
+    CliApprovalCoordinator.instance.register(_cliApprovalHandler);
   }
 
   /// 流式回合结束：若期间有 DB 写入通知被推迟，补一次 reconcile（把
@@ -516,6 +526,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     // 频道共享的 broadcast 流，可能还有其他页面（压栈的同频道 ChatScreen、
     // 桌面双栏替换中的新页面）正在监听；close 会让存活页面的订阅静默失效，
     // 服务侧写入的消息从此只能等下次全量加载才显示。
+    CliApprovalCoordinator.instance.unregister(_cliApprovalHandler);
     _eventController.close();
     _contentListenableDisposed = true;
     contentListenable.dispose();

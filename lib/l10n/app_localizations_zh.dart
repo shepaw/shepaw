@@ -1377,6 +1377,24 @@ class AppLocalizationsZh extends AppLocalizations {
   String get agentDetail_allCliCommands => '全部可用（默认放行）';
 
   @override
+  String agentDetail_cliCommandsRestricted(int count) => '已限制为 $count 条命令';
+
+  @override
+  String get agentDetail_cliRequireApproval => '执行 CLI 前需要审核';
+
+  @override
+  String get agentDetail_cliRequireApprovalDesc =>
+      '非 She 默认开启。store 只读与 help 免审；关闭后 os 非 safe 命令仍会确认。';
+
+  @override
+  String get agentDetail_cliApprovalOn =>
+      '执行 CLI 需你确认（store 只读与 help 除外）';
+
+  @override
+  String get agentDetail_cliApprovalOff =>
+      '执行 CLI 不再额外确认（os 非 safe 仍会确认）';
+
+  @override
   String get agentDetail_authToken => '认证 Token';
 
   @override

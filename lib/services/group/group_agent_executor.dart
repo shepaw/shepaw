@@ -2703,6 +2703,7 @@ class GroupAgentExecutor {
       runtimeOwnerId: runtimeOwnerId,
       enabledCliCommands: agent.enabledCliCommands,
       extraAllowlist: isAdmin ? null : kGroupMemberCliAllowlist,
+      requireApproval: agent.cliRequireApproval,
     );
   }
 

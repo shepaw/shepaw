@@ -19,3 +19,22 @@ bool cliCommandAllowed(Set<String> allowlist, String commandId) {
   }
   return false;
 }
+
+/// Read-only / discovery commands that skip `cliRequireApproval`.
+///
+/// `os.*` non-safe still goes through OS confirmation even when listed here.
+const kCliApprovalExemptCommands = {
+  'help',
+  'store.read',
+  'store.list',
+  'store.search',
+};
+
+/// Whether [commandId] is exempt from the per-agent approval switch.
+bool cliCommandApprovalExempt(String commandId) {
+  if (commandId.isEmpty) return true;
+  if (kCliApprovalExemptCommands.contains(commandId)) return true;
+  final parts = commandId.split('.');
+  if (parts.first == 'help') return true;
+  return false;
+}

@@ -583,6 +583,18 @@
   "agentDetail_peerTunnel": "P2P tunnel (paired device)",
   "agentDetail_cliCommands": "CLI Commands",
   "agentDetail_allCliCommands": "All commands available (default)",
+  "agentDetail_cliCommandsRestricted": "{count} command(s) selected (restricted)",
+  "@agentDetail_cliCommandsRestricted": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "agentDetail_cliRequireApproval": "Require approval before CLI runs",
+  "agentDetail_cliRequireApprovalDesc": "Non-She defaults on. Store read / help skip review; OS non-safe tools still confirm even when this is off.",
+  "agentDetail_cliApprovalOn": "CLI runs wait for your approval (store read and help are exempt)",
+  "agentDetail_cliApprovalOff": "CLI runs without extra approval (OS non-safe tools still confirm)",
   "agentDetail_authToken": "Auth Token",
   "agentDetail_copyToken": "Copy Token",
   "agentDetail_tokenCopied": "Token copied to clipboard",

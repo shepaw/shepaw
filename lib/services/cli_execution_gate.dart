@@ -5,6 +5,7 @@ import '../clis/shepaw/os/os_executor.dart' as os_exec;
 import '../clis/shepaw/os/os_tool_registry.dart';
 import '../clis/shepaw/shepaw_cli.dart';
 import '../models/peer_boundary_config.dart';
+import 'cli_approval_coordinator.dart';
 import 'location_access_policy.dart';
 
 /// Shared pre-execute checks for shepaw CLI.
@@ -34,6 +35,7 @@ class CliExecutionGate {
     bool isUiOperation = false,
     Set<String> enabledCliCommands = const {},
     Set<String>? extraAllowlist,
+    bool requireApproval = false,
     PeerBoundaryConfig peerBoundary = PeerBoundaryConfig.open,
     Future<bool> Function(
       String toolName,
@@ -78,14 +80,16 @@ class CliExecutionGate {
       });
     }
 
-    if (!isUiOperation && namespace == 'os' && subcommand.isNotEmpty) {
-      final osDenied = await _denyOsIfUnconfirmed(
+    if (!isUiOperation) {
+      final denied = await _denyIfUnconfirmed(
         agentId: agentId,
         args: args,
+        namespace: namespace,
         commandId: id,
+        requireApproval: requireApproval,
         onOsConfirmation: onOsConfirmation,
       );
-      if (osDenied != null) return osDenied;
+      if (denied != null) return denied;
     }
 
     return ShepawCLI.instance.execute(
@@ -98,10 +102,12 @@ class CliExecutionGate {
     );
   }
 
-  Future<String?> _denyOsIfUnconfirmed({
+  Future<String?> _denyIfUnconfirmed({
     required String agentId,
     required Map<String, dynamic> args,
+    required String namespace,
     required String commandId,
+    required bool requireApproval,
     Future<bool> Function(
       String toolName,
       Map<String, dynamic> flags,
@@ -114,27 +120,44 @@ class CliExecutionGate {
       flags.addAll(Map<String, dynamic>.from(flagsRaw));
     }
 
-    final toolName = OsToolRegistry.instance.resolveToolName(commandId);
-    final risk = os_exec.classifyRisk(toolName, flags);
-    if (risk == os_exec.RiskLevel.safe) return null;
+    var toolName = commandId;
+    var risk = os_exec.RiskLevel.lowRisk;
+    var osUnsafe = false;
 
-    if (await LocationAccessPolicy.shouldSkipOsConfirmationFor(
-      agentId: agentId,
-      toolName: toolName,
-    )) {
-      return null;
+    if (namespace == 'os' && commandId.contains('.')) {
+      toolName = OsToolRegistry.instance.resolveToolName(commandId);
+      risk = os_exec.classifyRisk(toolName, flags);
+      osUnsafe = risk != os_exec.RiskLevel.safe;
+      if (osUnsafe &&
+          await LocationAccessPolicy.shouldSkipOsConfirmationFor(
+            agentId: agentId,
+            toolName: toolName,
+          )) {
+        osUnsafe = false;
+      }
     }
 
-    final approved = onOsConfirmation == null
-        ? false
-        : await onOsConfirmation(toolName, flags, risk);
+    final policyNeedsConfirm =
+        requireApproval && !cliCommandApprovalExempt(commandId);
+    if (!osUnsafe && !policyNeedsConfirm) return null;
+
+    final approved = onOsConfirmation != null
+        ? await onOsConfirmation(toolName, flags, risk)
+        : await CliApprovalCoordinator.instance.request(toolName, flags, risk);
     if (approved) return null;
 
+    if (osUnsafe) {
+      return jsonEncode({
+        'error':
+            'OS tool "$commandId" was denied by the user (risk: ${risk.name}).',
+        'tool': toolName,
+        'risk': risk.name,
+      });
+    }
     return jsonEncode({
-      'error':
-          'OS tool "$commandId" was denied by the user (risk: ${risk.name}).',
-      'tool': toolName,
-      'risk': risk.name,
+      'error': 'CLI command "$commandId" was denied by the user.',
+      'command': commandId,
+      'approval_denied': true,
     });
   }
 }
