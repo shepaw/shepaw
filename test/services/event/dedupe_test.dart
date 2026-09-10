@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/services/event/event_bus.dart';
+import 'package:shepaw/services/event/event_bus_store.dart';
 import 'package:shepaw/services/event/event_namespace_registry.dart';
 import 'package:shepaw/services/event/event_pattern.dart';
 import 'package:shepaw/services/event/event_scope.dart';
@@ -73,6 +74,48 @@ void main() {
     expect(repeat['deduplicated'], true);
     expect(different['deduplicated'], isNot(true));
     expect(bus.inboxFor('agent_store').length, 2);
+  });
+
+  test('duplicate emit dropped when original evicted from log', () {
+    final smallStore = EventBusStore(maxLogEntries: 2);
+    final smallBus = EventBus(busStore: smallStore);
+    registerP0BuiltinEventTypes(smallBus.registry);
+    smallBus.addSubscription(
+      agentId: 'agent_evict',
+      patterns: [const EventPattern(typeGlob: 'test.event.pong')],
+    );
+
+    const cid = 'cid_evict';
+    final r1 = smallBus.emitSystem(
+      systemDomain: 'test',
+      type: 'test.event.pong',
+      payload: {'summary': 'first', 'fingerprint': 'fp_evict'},
+      correlationId: cid,
+    );
+    smallBus.emitSystem(
+      systemDomain: 'test',
+      type: 'test.event.pong',
+      payload: {'summary': 'second', 'fingerprint': 'fp2'},
+      correlationId: 'cid_other',
+    );
+    smallBus.emitSystem(
+      systemDomain: 'test',
+      type: 'test.event.pong',
+      payload: {'summary': 'third', 'fingerprint': 'fp3'},
+      correlationId: 'cid_third',
+    );
+
+    final rDup = smallBus.emitSystem(
+      systemDomain: 'test',
+      type: 'test.event.pong',
+      payload: {'summary': 'dup', 'fingerprint': 'fp_evict'},
+      correlationId: cid,
+    );
+
+    expect(r1.deduplicated, false);
+    expect(rDup.deduplicated, true);
+    // 重复 emit 被丢弃，inbox 仍只有三次合法投递（不含 dup）。
+    expect(smallBus.inboxFor('agent_evict').length, 3);
   });
 
   test('router dedupe prevents duplicate inbox for subscription', () {

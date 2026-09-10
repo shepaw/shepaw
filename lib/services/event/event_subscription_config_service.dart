@@ -25,21 +25,17 @@ class EventSubscriptionConfigService {
     if (type.startsWith('system.')) {
       return 'Agents cannot emit system events';
     }
-    if (type.startsWith('agent.$agentId.') || type.startsWith('agent.')) {
-      if (!type.startsWith('agent.$agentId.')) {
-        return 'Agents may only emit agent.$agentId.* events';
-      }
+    if (type.startsWith('agent.$agentId.')) {
       final commandId = 'events.emit.$type';
       return CliCommandConfigService.instance.checkPermission(
         commandId,
         agentId: agentId,
       );
     }
-    final commandId = 'events.emit.$type';
-    return CliCommandConfigService.instance.checkPermission(
-      commandId,
-      agentId: agentId,
-    );
+    if (type.startsWith('agent.')) {
+      return 'Agents may only emit agent.$agentId.* events';
+    }
+    return 'Agents may only emit agent.$agentId.* events via CLI';
   }
 
   Future<String?> checkEventsCommandPermission({

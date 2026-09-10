@@ -11,7 +11,24 @@ void main() {
     registerP0BuiltinEventTypes(bus.registry);
   });
 
-  test('second wait on same correlation throws', () {
+  test('second wait on same correlation throws (cross-agent deny)', () {
+    bus.openWaitLease(
+      agentId: 'a1',
+      correlationId: 'cid_cross',
+      typePatterns: ['test.event.ping'],
+    );
+
+    expect(
+      () => bus.openWaitLease(
+        agentId: 'a2',
+        correlationId: 'cid_cross',
+        typePatterns: ['test.event.ping'],
+      ),
+      throwsA(isA<CorrelationAlreadyWaitedException>()),
+    );
+  });
+
+  test('second wait on same correlation throws (same agent)', () {
     bus.openWaitLease(
       agentId: 'a1',
       correlationId: 'cid_dup',

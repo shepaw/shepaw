@@ -5,11 +5,10 @@ import 'package:shepaw/services/event/event_scope.dart';
 import 'package:shepaw/services/event/setup_event_bus.dart';
 import 'package:shepaw/services/she_service.dart';
 
-/// 入站配对全链（不含真实网络）：She seed 订阅 → active 唤醒 → 同 correlation
-/// 的 completed 事件完成 RPC 等待。
+/// Responder 侧事件链（不含真实网络）：She seed 订阅 → active 唤醒；
+/// 若**先**开 wait lease 再 emit completed，RPC 可完成（非 Initiator `pair` 路径）。
 ///
-/// 网络握手由 `peer_pairing_service` 负责，此处用等价的 emit 序列驱动事件系统，
-/// 覆盖的是「事件 → 路由 → 感知 → correlation 连续性」这一段。
+/// Initiator `peer pair` 是同步 RPC，completed 在 return 前已 emit，**不应**再 wait。
 void main() {
   late EventBus bus;
   const cid = 'cid_e2e';

@@ -50,6 +50,8 @@ class EventsWaitCommand extends CliCommand {
       return {'error': e.toString()};
     } on WaitTimeoutException catch (e) {
       return {'error': e.toString(), 'timeout': true};
+    } on WaitCancelledException catch (e) {
+      return {'error': e.toString(), 'cancelled': true};
     }
   }
 

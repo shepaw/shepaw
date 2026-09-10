@@ -38,7 +38,8 @@ class GroupEventAdapter {
       id: event.id,
       type: typeFor(event.type),
       source: 'system:chat.group',
-      correlationId: event.orchestrationId,
+      // poll_only 审计用途；orchestrationId 不是 RPC correlation（见 EVENT_DECISIONS R7）。
+      correlationId: null,
       seq: 0, // assigned by EventBus on emit
       at: event.createdAt,
       payload: {

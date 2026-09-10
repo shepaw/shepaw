@@ -70,8 +70,10 @@ class PeerPairCommand extends CliCommand {
         'message': 'Device paired successfully',
         'peer': peer.toJson(),
         'events_hint':
-            'Initiator may also: shepaw events wait --correlation $correlationId '
-            '--type peer.pairing.completed --timeout 30',
+            'Pairing completed synchronously; result is in peer. '
+            'Do not call events wait for peer.pairing.completed (event already '
+            'occurred). Use shepaw events ack --correlation $correlationId '
+            'to clear inbox if subscribed.',
       }, correlationId);
     } on PairingRejectedException catch (e) {
       return {

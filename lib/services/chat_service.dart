@@ -51,6 +51,7 @@ import 'logger_service.dart';
 import 'event/event_bus.dart';
 import 'event/event_envelope.dart';
 import 'event/event_perception_service.dart';
+import '../clis/shepaw/chat/chat_agent_scope.dart';
 import 'local_user_identity.dart';
 import 'she_service.dart';
 import 'noise_identity.dart';
@@ -117,6 +118,15 @@ class ChatService {
 
   // Active tasks (keyed by channelId) — survives UI detach/reattach
   final Map<String, ActiveTask> _activeTasks = {};
+
+  /// 事件感知 busy 降级：排队重试，超 60s 仍 busy 则 passive（仅 inbox）。
+  final Map<String, _DeferredEventPerception> _deferredEventPerception = {};
+
+  static const _eventPerceptionCliAllowlist = {
+    'peer.accept',
+    'peer.reject',
+    'peer.status',
+  };
 
   // H1: per-channel in-flight guard for group orchestration loops. A channel
   // with an entry is currently running `sendMessageToGroup`; a duplicate send
@@ -619,16 +629,96 @@ class ChatService {
       return;
     }
 
-    // busy 守卫：该频道已有进行中的回合 → 让位（事件已在 inbox，可轮询），
-    // 否则会与用户当前回合并发写同一频道。
     if (_activeTasks.containsKey(targetChannelId)) {
+      _deferEventPerception(
+        channelId: targetChannelId,
+        agentId: agentId,
+        events: events,
+      );
+      return;
+    }
+
+    await _executeEventPerceptionTurn(
+      agent: agent,
+      targetChannelId: targetChannelId,
+      events: events,
+    );
+  }
+
+  void _deferEventPerception({
+    required String channelId,
+    required String agentId,
+    required List<EventEnvelope> events,
+  }) {
+    final existing = _deferredEventPerception[channelId];
+    if (existing != null) {
+      existing.events.addAll(events);
+    } else {
+      _deferredEventPerception[channelId] = _DeferredEventPerception(
+        agentId: agentId,
+        events: List<EventEnvelope>.from(events),
+        firstDeferredAt: DateTime.now(),
+      );
+    }
+    LoggerService().debug(
+      'Event perception deferred: $channelId has active task',
+      tag: 'ChatService',
+    );
+    _scheduleDeferredEventPerceptionRetry(channelId);
+  }
+
+  void _scheduleDeferredEventPerceptionRetry(String channelId) {
+    final entry = _deferredEventPerception[channelId];
+    if (entry == null) return;
+    entry.retryTimer?.cancel();
+    entry.retryTimer = Timer(const Duration(seconds: 3), () {
+      unawaited(_tryDrainDeferredEventPerception(channelId));
+    });
+  }
+
+  Future<void> _tryDrainDeferredEventPerception(String channelId) async {
+    final entry = _deferredEventPerception[channelId];
+    if (entry == null) return;
+
+    final elapsed = DateTime.now().difference(entry.firstDeferredAt);
+    if (elapsed > const Duration(seconds: 60)) {
+      entry.retryTimer?.cancel();
+      _deferredEventPerception.remove(channelId);
       LoggerService().debug(
-        'Event perception deferred: $targetChannelId has active task',
+        'Event perception passive downgrade after 60s: $channelId',
         tag: 'ChatService',
       );
       return;
     }
 
+    if (_activeTasks.containsKey(channelId)) {
+      _scheduleDeferredEventPerceptionRetry(channelId);
+      return;
+    }
+
+    final agent = await _databaseService.getRemoteAgentById(entry.agentId);
+    if (agent == null || !agent.isLocal) {
+      entry.retryTimer?.cancel();
+      _deferredEventPerception.remove(channelId);
+      return;
+    }
+
+    final events = List<EventEnvelope>.from(entry.events);
+    entry.retryTimer?.cancel();
+    _deferredEventPerception.remove(channelId);
+
+    await _executeEventPerceptionTurn(
+      agent: agent,
+      targetChannelId: channelId,
+      events: events,
+    );
+  }
+
+  Future<void> _executeEventPerceptionTurn({
+    required RemoteAgent agent,
+    required String targetChannelId,
+    required List<EventEnvelope> events,
+  }) async {
     final lines = events
         .map((e) {
           final summary = e.payload['summary'];
@@ -639,18 +729,22 @@ class ChatService {
         })
         .join('\n');
 
-    await _agentMessagingService.sendMessageToAgent(
-      content: '以下系统事件刚发生：\n$lines',
-      agent: agent,
-      userId: LocalUserIdentity.id,
-      userName: LocalUserIdentity.displayName,
+    await ChatAgentScope.runScoped(
+      agentId: agent.id,
       channelId: targetChannelId,
-      // 推理日志标记：便于区分「用户回合」与「事件感知回合」。
-      executionMode: 'event_perception',
-      dmSystemPrompt:
-          '【系统事件通知回合】这不是用户主动发的消息。请用简短中文说明发生了什么，'
-          '并在设备配对场景建议用户确认后调用 peer accept 或 peer reject。'
-          '不要展开无关话题。',
+      cliAllowlist: _eventPerceptionCliAllowlist,
+      body: () => _agentMessagingService.sendMessageToAgent(
+        content: '以下系统事件刚发生：\n$lines',
+        agent: agent,
+        userId: LocalUserIdentity.id,
+        userName: LocalUserIdentity.displayName,
+        channelId: targetChannelId,
+        executionMode: 'event_perception',
+        dmSystemPrompt:
+            '【系统事件通知回合】这不是用户主动发的消息。请用简短中文说明发生了什么，'
+            '并在设备配对场景建议用户确认后调用 peer accept 或 peer reject。'
+            '不要展开无关话题。',
+      ),
     );
   }
 
@@ -3936,4 +4030,17 @@ $originalQuestion
       return const [];
     }
   }
+}
+
+class _DeferredEventPerception {
+  _DeferredEventPerception({
+    required this.agentId,
+    required this.events,
+    required this.firstDeferredAt,
+  });
+
+  final String agentId;
+  final List<EventEnvelope> events;
+  final DateTime firstDeferredAt;
+  Timer? retryTimer;
 }

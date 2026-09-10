@@ -16,5 +16,6 @@ void main() {
     expect(env.scope.channelId, 'ch_1');
     expect(env.payload['group_event'], isA<Map>());
     expect(env.payload['summary'], isNotEmpty);
+    expect(env.correlationId, isNull);
   });
 }

@@ -158,11 +158,11 @@ class EventBus {
     Duration timeout = const Duration(seconds: 30),
   }) {
     if (correlationId != null) {
+      // 同一 correlation 全局只允许一个活跃 lease（跨 agent deny）。
       final conflict = _leases.any(
         (l) =>
             !l.completed &&
             !l.cancelled &&
-            l.agentId == agentId &&
             l.correlationId == correlationId,
       );
       if (conflict) {
@@ -299,14 +299,13 @@ class EventBus {
         if (existing != null) {
           envelope = existing;
         } else {
-          envelope = _buildEnvelope(
-            source: source,
-            type: type,
-            payload: payload,
-            scope: scope,
+          // 原事件已被 ring buffer 逐出：视为重复，不再 dispatch。
+          return EmitResult(
+            id: originalId,
+            seq: busStore.currentSeq,
             correlationId: correlationId,
-            causationId: causationId,
-            dedupeKey: dedupeKey,
+            deduplicated: true,
+            originalId: originalId,
           );
         }
       } else {
@@ -381,9 +380,13 @@ class EventBus {
     required EventScope scope,
   }) {
     for (final key in typeDef.requiredEnvelopeKeys) {
-      if (key == 'correlationId' && (correlationId == null || correlationId.isEmpty)) {
-        throw ArgumentError('Missing required envelope key: correlationId');
+      if (key == 'correlationId') {
+        if (correlationId == null || correlationId.isEmpty) {
+          throw ArgumentError('Missing required envelope key: correlationId');
+        }
+        continue;
       }
+      throw UnsupportedError('Unsupported requiredEnvelopeKeys entry: $key');
     }
     for (final key in typeDef.requiredScopeKeys) {
       final value = _scopeValue(scope, key);

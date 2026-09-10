@@ -11,7 +11,12 @@ class EventBusStore {
 
   /// 内存日志上限（P0 无落库）：群每个 step/round 都会投影一条且 payload 内嵌
   /// 整份 GroupEvent JSON，长会话必须裁剪，否则单调增长。
-  static const maxLogEntries = 1000;
+  static const defaultMaxLogEntries = 1000;
+
+  final int maxLogEntries;
+
+  EventBusStore({int? maxLogEntries})
+      : maxLogEntries = maxLogEntries ?? defaultMaxLogEntries;
 
   int get currentSeq => _seq;
 

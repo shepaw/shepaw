@@ -17,6 +17,7 @@ class ChatAgentScope {
   static const _channelIdKey = 'chat.channelId';
   static const _runtimeOwnerIdKey = 'chat.runtimeOwnerId';
   static const _correlationIdKey = 'chat.correlationId';
+  static const _cliAllowlistKey = 'chat.cliAllowlist';
 
   /// 当前执行命令的 Agent ID；Zone 外默认 She。
   static String get agentId =>
@@ -34,6 +35,10 @@ class ChatAgentScope {
   static String? get correlationId =>
       Zone.current[_correlationIdKey] as String?;
 
+  /// 非空时 [ShepawCLI.execute] 仅允许列表内的命令（如事件感知回合白名单）。
+  static Set<String>? get cliAllowlist =>
+      Zone.current[_cliAllowlistKey] as Set<String>?;
+
   /// 在隔离 Zone 中执行 [body]，并把当前执行者上下文写入该 Zone。
   ///
   /// 命令的整棵调用树（含异步等待、`store write` 的落盘解析）都继承该
@@ -43,6 +48,7 @@ class ChatAgentScope {
     String channelId = '',
     String runtimeOwnerId = '',
     String? correlationId,
+    Set<String>? cliAllowlist,
     required Future<R> Function() body,
   }) {
     return runZoned<Future<R>>(
@@ -52,6 +58,7 @@ class ChatAgentScope {
         _channelIdKey: channelId,
         _runtimeOwnerIdKey: runtimeOwnerId,
         if (correlationId != null) _correlationIdKey: correlationId,
+        if (cliAllowlist != null) _cliAllowlistKey: cliAllowlist,
       },
     );
   }

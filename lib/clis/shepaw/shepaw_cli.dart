@@ -251,8 +251,8 @@ class ShepawCLI {
 
       // 权限检查：全局启用 / She 专属
       // UI 操作（用户主动在界面点击执行）跳过权限检查
+      final commandId = _buildCommandId(namespace, subcommand);
       if (!isUiOperation) {
-        final commandId = _buildCommandId(namespace, subcommand);
         final denyReason = await CliCommandConfigService.instance
             .checkPermission(commandId, agentId: agentId);
         if (denyReason != null) {
@@ -269,11 +269,24 @@ class ShepawCLI {
           ? flagChannel
           : (channelId ?? '').trim();
       final scopedOwner = (runtimeOwnerId ?? '').trim();
+      final scopedCorrelation = (flags['correlation'] ?? '').trim();
       final result = await ChatAgentScope.runScoped<Map<String, dynamic>>(
         agentId: agentId,
         channelId: scopedChannel,
         runtimeOwnerId: scopedOwner,
+        correlationId: scopedCorrelation.isNotEmpty
+            ? scopedCorrelation
+            : ChatAgentScope.correlationId,
+        cliAllowlist: ChatAgentScope.cliAllowlist,
         body: () async {
+          final allowlist = ChatAgentScope.cliAllowlist;
+          if (allowlist != null && !allowlist.contains(commandId)) {
+            return {
+              'error':
+                  'Command not allowed during event perception turn: $commandId',
+              'allowed_commands': allowlist.toList()..sort(),
+            };
+          }
           if (ns is ContextNamespace) ns.agentId = agentId;
           if (ns is ChatNamespace) {
             ns.agentId = agentId;
