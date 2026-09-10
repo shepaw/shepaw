@@ -123,6 +123,48 @@ void main() {
       final restored = GroupTaskResults.fromJson(twice.toJson());
       expect(restored!.members.single.summary, '已完成');
     });
+
+    test('upsertMember keeps per-round entries for the same agent', () {
+      final base = GroupTaskResults(orchestrationId: 'msg-1');
+      final round1 = GroupTaskMemberResult(
+        agentId: 'a1',
+        agentName: 'Alice',
+        round: 1,
+        taskStatus: GroupTaskMemberResult.statusDone,
+        summary: '第一轮交付',
+      );
+      final round2 = GroupTaskMemberResult(
+        agentId: 'a1',
+        agentName: 'Alice',
+        round: 2,
+        taskStatus: GroupTaskMemberResult.statusDone,
+        summary: '第二轮交付',
+      );
+
+      final once = base.upsertMember(round1);
+      final twice = once.upsertMember(round2);
+
+      expect(twice.members.length, 2);
+      expect(twice.members.map((m) => m.round), containsAll([1, 2]));
+
+      // 同 (agent, round) 仍是替换而非追加。
+      final round2Again = GroupTaskMemberResult(
+        agentId: 'a1',
+        agentName: 'Alice',
+        round: 2,
+        taskStatus: GroupTaskMemberResult.statusFailed,
+        summary: '第二轮重试失败',
+      );
+      final thrice = twice.upsertMember(round2Again);
+      expect(thrice.members.length, 2);
+      expect(
+        thrice.members.singleWhere((m) => m.round == 2).taskStatus,
+        GroupTaskMemberResult.statusFailed,
+      );
+
+      final restored = GroupTaskResults.fromJson(thrice.toJson());
+      expect(restored!.members.length, 2);
+    });
   });
 
   group('GroupTaskIndex', () {

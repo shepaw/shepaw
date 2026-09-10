@@ -62,10 +62,12 @@ class GroupTask {
           status == statusSummarizing ||
           status == statusDone);
 
-  bool get isTerminal =>
-      status == statusDone ||
-      status == statusFailed ||
-      status == statusPaused;
+  bool get isTerminal => isTerminalStatus(status);
+
+  /// 单一事实：终态集合（done/failed/paused）。供索引条目、存储写回等无
+  /// [GroupTask] 实例的上下文复用，避免多处内联漂移。
+  static bool isTerminalStatus(String status) =>
+      status == statusDone || status == statusFailed || status == statusPaused;
 
   GroupTask copyWith({
     String? sessionId,
@@ -427,9 +429,11 @@ class GroupTaskResults {
   final List<GroupTaskMemberResult> members;
 
   GroupTaskResults upsertMember(GroupTaskMemberResult entry) {
+    // 去重键为 (agentId, round)：同一成员在后续轮被重新委派时应保留每一轮
+    // 的交付记录，而不是被最近一轮覆盖（round 维度此前被压扁丢失）。
     final merged = [
       for (final m in members)
-        if (m.agentId != entry.agentId) m,
+        if (m.agentId != entry.agentId || m.round != entry.round) m,
       entry,
     ];
     return GroupTaskResults(

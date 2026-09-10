@@ -5,6 +5,7 @@ import '../../models/remote_agent.dart';
 import '../../models/channel.dart';
 import '../../models/attachment_data.dart';
 import '../../models/planning_models.dart';
+import '../../models/group_task.dart';
 import '../../models/inference_log_entry.dart';
 import '../../models/model_routing_config.dart';
 import '../local_database_service.dart';
@@ -144,31 +145,12 @@ class GroupOrchestrationService {
     );
   }
 
-  /// Matches `store://<space>/<device>/<path>…` tokens in free text, stopping
-  /// at whitespace / markdown closers / CJK punctuation.
-  static final RegExp _storeUriPattern = RegExp(r'store://[^\s\]\[\)\},，;]+');
-
   /// Extract unique `store://…` artifact URIs referenced in a member reply.
-  static List<String> extractStoreUris(String text) {
-    final uris = <String>[];
-    for (final m in _storeUriPattern.allMatches(text)) {
-      var uri = m.group(0)!.trim();
-      while (uri.isNotEmpty &&
-          (uri.endsWith(')') ||
-              uri.endsWith(']') ||
-              uri.endsWith('}') ||
-              uri.endsWith(',') ||
-              uri.endsWith('，') ||
-              uri.endsWith('。') ||
-              uri.endsWith(';') ||
-              uri.endsWith('.') ||
-              uri.endsWith('：'))) {
-        uri = uri.substring(0, uri.length - 1);
-      }
-      if (uri.isNotEmpty && !uris.contains(uri)) uris.add(uri);
-    }
-    return uris;
-  }
+  ///
+  /// 单一事实源见 [GroupMemberHistory.extractStoreUris]（此前本类与历史层各存
+  /// 一份相同实现，#12 收敛）。
+  static List<String> extractStoreUris(String text) =>
+      GroupMemberHistory.extractStoreUris(text);
 
   /// Build the 【成员产物】 block for the admin's summarize turn: each member's
   /// produced store:// links. Empty when no member referenced an artifact.
@@ -862,13 +844,18 @@ class GroupOrchestrationService {
               orchestrationId: userMessage.id,
             ));
           }
-          final wakeHistory = await loadAndTruncateHistory(
+          // 与 loop 内两处唤醒保持一致：用 task 作用域历史，避免把前序/其它
+          // 任务对话整频道灌给 admin（默认 adminHistoryScope=task 下这是唯一
+          // 不受作用域约束的 admin 回合）。
+          final wakeHistory = await _loadAdminHistory(
             channelId,
+            orchestrationId: userMessage.id,
             excludeMessageId: userMessage.id,
           );
           onAgentStart?.call(adminForWake.id, adminForWake.name);
+          var wakeDecision = const GroupTurnResult();
           try {
-            await _executor.processGroupAgent(
+            wakeDecision = await _executor.processGroupAgent(
               agent: adminForWake,
               channelId: channelId,
               content:
@@ -909,6 +896,16 @@ class GroupOrchestrationService {
             channelId,
             adminForWake.id,
           );
+          // 5a 是一次性 mention 直发路径，没有 round 循环承接 admin 在唤醒
+          // 回合里给出的派发/继续决定；显式记录而非静默丢弃（与 loop 内唤醒
+          // 块的行为漂移，见 #11 同构收敛）。
+          if (wakeDecision.hasDispatch || wakeDecision.hasOrchestrationSignal) {
+            LoggerService().warning(
+              'Admin pending-resolution (mention path) issued a dispatch that '
+              'is not executed in the one-shot mention path',
+              tag: 'GroupOrchestrationService',
+            );
+          }
         }
       }
 
@@ -1349,6 +1346,11 @@ class GroupOrchestrationService {
           ));
         }
 
+        // 本次编排的落盘终态。默认 paused：只有管理员明确完成
+        // （group_finish done / 无派发自然收尾）才算 done，其余
+        // 退出路径（取消/表单交互/预算耗尽/超轮自动停）不污染 done 计数。
+        var finishStatus = GroupTask.statusPaused;
+
         while (true) {
           // 新一轮开始：刷新 inbox 新鲜度基准（只消费本轮内 MCP 写入的决定）。
           roundStartTime = DateTime.now();
@@ -1597,6 +1599,7 @@ class GroupOrchestrationService {
                   channelMembers: channelMembers,
                   customSystemPrompt: customSystemPrompt,
                   mentionMode: mentionMode,
+                  failedAgentNames: List.unmodifiable(failedAgentNames),
                   acpCancellationToken: acpCancellationToken,
                   onStreamChunk: (agentId, agentName, chunk) {
                     adminResponseContent += chunk;
@@ -1618,6 +1621,7 @@ class GroupOrchestrationService {
                     error: e);
                 // M1: 唯一上报方；失败一律 skipped。
                 onAgentDone?.call(adminAgent.id, adminAgent.name, true);
+                finishStatus = GroupTask.statusFailed;
                 break;
               }
               currentRound++;
@@ -1694,6 +1698,7 @@ class GroupOrchestrationService {
                     channelMembers: channelMembers,
                     customSystemPrompt: customSystemPrompt,
                     mentionMode: mentionMode,
+                    failedAgentNames: List.unmodifiable(failedAgentNames),
                     acpCancellationToken: acpCancellationToken,
                     onStreamChunk: (agentId, agentName, chunk) {
                       adminResponseContent += chunk;
@@ -1714,6 +1719,7 @@ class GroupOrchestrationService {
                       tag: 'GroupOrchestrationService',
                       error: e);
                   onAgentDone?.call(adminAgent.id, adminAgent.name, true);
+                  finishStatus = GroupTask.statusFailed;
                   break;
                 }
                 currentRound++;
@@ -1745,7 +1751,12 @@ class GroupOrchestrationService {
           }
 
           // Dispatch gate: local admin must publish formal plan first.
+          // Only meaningful when structured tasks are enabled — publishPlan
+          // itself is gated off by structuredTasks=false, so enforcing the
+          // gate there would deadlock local dispatch (nudge budget exhausted
+          // without ever being able to publish a plan).
           if (delegatedIds.isNotEmpty &&
+              GroupOrchestrationFeatures.structuredTasks &&
               GroupOrchestrationFeatures.requirePublishedPlan &&
               adminAgent.isLocal) {
             final existingTask = await GroupWorkspaceService.instance.readTask(
@@ -1793,6 +1804,9 @@ class GroupOrchestrationService {
                     channelMembers: channelMembers,
                     customSystemPrompt: customSystemPrompt,
                     mentionMode: mentionMode,
+                    // 与 stall/pending 唤醒一致：带上本轮失败名单，否则管理员
+                    // 会在这个 nudge 里把活重新派给刚失败的成员（#11 漂移）。
+                    failedAgentNames: List.unmodifiable(failedAgentNames),
                     acpCancellationToken: acpCancellationToken,
                     onStreamChunk: (agentId, agentName, chunk) {
                       adminResponseContent += chunk;
@@ -1813,6 +1827,7 @@ class GroupOrchestrationService {
                       tag: 'GroupOrchestrationService',
                       error: e);
                   onAgentDone?.call(adminAgent.id, adminAgent.name, true);
+                  finishStatus = GroupTask.statusFailed;
                   break;
                 }
                 currentRound++;
@@ -1822,9 +1837,10 @@ class GroupOrchestrationService {
                   inboxDispatch: planInbox.dispatch,
                   inboxFinish: planInbox.finish,
                 );
+                // planPublished 恒蕴含 hasOrchestrationSignal（group_plan_publish
+                // 工具分支先置 hasSignal），故无需再判 !planPublished（#13）。
                 if (adminResponseContent.trim().isEmpty &&
-                    !adminTurn.hasOrchestrationSignal &&
-                    !adminTurn.planPublished) {
+                    !adminTurn.hasOrchestrationSignal) {
                   LoggerService().warning(
                       'Admin plan-missing nudge produced empty response at round $currentRound, stopping',
                       tag: 'GroupOrchestrationService');
@@ -1951,6 +1967,7 @@ class GroupOrchestrationService {
                     channelMembers: channelMembers,
                     customSystemPrompt: customSystemPrompt,
                     mentionMode: mentionMode,
+                    failedAgentNames: List.unmodifiable(failedAgentNames),
                     acpCancellationToken: acpCancellationToken,
                     onStreamChunk: (agentId, agentName, chunk) {
                       adminResponseContent += chunk;
@@ -1971,6 +1988,7 @@ class GroupOrchestrationService {
                       tag: 'GroupOrchestrationService',
                       error: e);
                   onAgentDone?.call(adminAgent.id, adminAgent.name, true);
+                  finishStatus = GroupTask.statusFailed;
                   break;
                 }
                 final pendingInbox = await _readRoundInbox();
@@ -2006,6 +2024,11 @@ class GroupOrchestrationService {
             await _dispatchParser.stripDispatchJsonFromLastMessage(
                 channelId, adminAgent.id);
             emitRoundEnd(summary: adminResponseContent);
+            // 仅「明确结束而非 pause」才算真正完成；pause（如向用户澄清）
+            // 保持默认 paused，不冒充已完成任务。
+            if (!dispatch.isPause) {
+              finishStatus = GroupTask.statusDone;
+            }
             break;
           }
 
@@ -2134,6 +2157,7 @@ class GroupOrchestrationService {
                   error: e);
               // M1: 唯一上报方；失败一律 skipped。
               onAgentDone?.call(adminAgent.id, adminAgent.name, true);
+              finishStatus = GroupTask.statusFailed;
               break;
             }
             currentRound++;
@@ -2214,6 +2238,12 @@ class GroupOrchestrationService {
               for (final agent in agents) {
                 if (!stepAgentIds.contains(agent.id)) continue;
                 onAgentStart?.call(agent.id, agent.name);
+                // 同轮内后续步骤重新委派该成员：清除此前步骤写入的
+                // failed/stalled 记录，否则其本次成功结果仍会被 fromTurnResult
+                // 判为失败/超时（名单每轮只清空一次，跨步残留）。若再次失败，
+                // handleExecutionError 会重新入名单。
+                failedAgentNames.remove(agent.name);
+                stalledAgentNames.remove(agent.name);
                 final isFirst = !agentIdsWithHistory.contains(agent.id);
                 final memberBrief =
                     step.contentOr(memberTaskContext.globalRequirement);
@@ -2432,6 +2462,50 @@ class GroupOrchestrationService {
             stalledAgentNames: stalledAgentNames,
           );
 
+          // L3: 连续「全未交付」轮提前终止。本轮派发成员全部未交付——超时/
+          // 抛错/空回复计入 failedAgentNames，首次超时记入 stalledAgentNames
+          // 的 stall 同样算作空耗一轮——时，管理员再重派同一批成员只会继续
+          // 空耗；连续 maxConsecutiveAllFailedRounds 轮全未交付即停止。
+          // 必须置于 stall/pending 唤醒之前：唤醒重派走 currentRound++ continue，
+          // 会跳过本轮末尾的旧检查位，若在此处不记账，首超时转 stall 会把
+          // 预算清零，永久不可达成员的终止再被拖一轮。
+          if (delegatedIds.isNotEmpty) {
+            final delegatedNames = delegatedIds.map((id) =>
+                agents.where((a) => a.id == id).firstOrNull?.name ?? id);
+            final allDelegatedFailed = delegatedNames.every(
+              (name) =>
+                  failedAgentNames.contains(name) ||
+                  stalledAgentNames.contains(name),
+            );
+            if (allDelegatedFailed) {
+              consecutiveAllFailedRounds++;
+            } else {
+              consecutiveAllFailedRounds = 0;
+            }
+            if (consecutiveAllFailedRounds >= maxConsecutiveAllFailedRounds) {
+              LoggerService().warning(
+                'Loop orchestration stopped: $consecutiveAllFailedRounds '
+                'consecutive all-failed delegation rounds at round $currentRound',
+                tag: 'GroupOrchestrationService',
+              );
+              await _saveOrchestrationSystemMessage(
+                channelId,
+                '⚠️ 连续 $consecutiveAllFailedRounds 轮所有成员均执行失败，'
+                '流程已自动停止。请检查成员连接与任务配置后重试。',
+              );
+              emitRoundEnd(
+                delegatedAgentNames: delegatedTurnResults.keys
+                    .map((id) =>
+                        agents.where((a) => a.id == id).firstOrNull?.name ?? id)
+                    .toList(),
+                failed: List.unmodifiable(failedAgentNames),
+                summary: '连续 $consecutiveAllFailedRounds 轮成员全部执行失败，自动停止',
+              );
+              finishStatus = GroupTask.statusFailed;
+              break;
+            }
+          }
+
           if (GroupOrchestrationFeatures.stalledTimeout &&
               delegatedIds.isNotEmpty &&
               stalledAgentNames.isNotEmpty) {
@@ -2519,6 +2593,10 @@ class GroupOrchestrationService {
               );
               if (adminTurn.isPause || adminTurn.isDone) {
                 emitRoundEnd(summary: adminResponseContent);
+                // mid-loop 唤醒回合：admin 明确 done 才算完成；pause 保持 paused。
+                if (adminTurn.isDone) {
+                  finishStatus = GroupTask.statusDone;
+                }
                 break;
               }
               if (adminTurn.hasOrchestrationSignal || adminTurn.hasDispatch) {
@@ -2608,48 +2686,16 @@ class GroupOrchestrationService {
               );
               if (adminTurn.isPause || adminTurn.isDone) {
                 emitRoundEnd(summary: adminResponseContent);
+                // mid-loop 唤醒回合：admin 明确 done 才算完成；pause 保持 paused。
+                if (adminTurn.isDone) {
+                  finishStatus = GroupTask.statusDone;
+                }
                 break;
               }
               if (adminTurn.hasOrchestrationSignal || adminTurn.hasDispatch) {
                 currentRound++;
                 continue;
               }
-            }
-          }
-
-          // L3: 连续全失败轮提前终止。本轮派发成员全部失败（超时/抛错/空回复
-          // 均计入 failedAgentNames）时，管理员再重派同一批成员只会继续空耗；
-          // 连续 maxConsecutiveAllFailedRounds 轮全失败即停止并告知用户。
-          if (delegatedIds.isNotEmpty) {
-            final delegatedNames = delegatedIds.map((id) =>
-                agents.where((a) => a.id == id).firstOrNull?.name ?? id);
-            final allDelegatedFailed =
-                delegatedNames.every(failedAgentNames.contains);
-            if (allDelegatedFailed) {
-              consecutiveAllFailedRounds++;
-            } else {
-              consecutiveAllFailedRounds = 0;
-            }
-            if (consecutiveAllFailedRounds >= maxConsecutiveAllFailedRounds) {
-              LoggerService().warning(
-                'Loop orchestration stopped: $consecutiveAllFailedRounds '
-                'consecutive all-failed delegation rounds at round $currentRound',
-                tag: 'GroupOrchestrationService',
-              );
-              await _saveOrchestrationSystemMessage(
-                channelId,
-                '⚠️ 连续 $consecutiveAllFailedRounds 轮所有成员均执行失败，'
-                '流程已自动停止。请检查成员连接与任务配置后重试。',
-              );
-              emitRoundEnd(
-                delegatedAgentNames: delegatedTurnResults.keys
-                    .map((id) =>
-                        agents.where((a) => a.id == id).firstOrNull?.name ?? id)
-                    .toList(),
-                failed: List.unmodifiable(failedAgentNames),
-                summary: '连续 $consecutiveAllFailedRounds 轮成员全部执行失败，自动停止',
-              );
-              break;
             }
           }
 
@@ -2746,9 +2792,17 @@ class GroupOrchestrationService {
                     'artifacts': extractStoreUris(e.value.content),
                     'task_status': e.value.taskStatusInfo?.status.name,
                     'task_status_reason': e.value.taskStatusReason,
+                    // 与 persistFromTurns 共用同一事实源（taskStatusInfo ??
+                    // parse(content)）：显式带出 applicable，避免重放把
+                    // [SKIP]/空回合重建为 pending；taskStatusInfo 为空时
+                    // 重放侧自然退回 parse(content)。
+                    'applicable': e.value.taskStatusInfo?.applicable,
                   },
               },
-              'failed_agents': failedAgentNames,
+              // 快照而非引用：本事件之后 lists 会被下一轮清空，payload 必须
+              // 携带发出时刻的失败/stall 名单，供崩溃/跨端重放复现相同条目。
+              'failed_agents': List<String>.from(failedAgentNames),
+              'stalled_agents': List<String>.from(stalledAgentNames),
             },
           );
 
@@ -2818,6 +2872,7 @@ class GroupOrchestrationService {
                 error: e);
             // M1: 唯一上报方；失败一律 skipped。
             onAgentDone?.call(adminAgent.id, adminAgent.name, true);
+            finishStatus = GroupTask.statusFailed;
             break;
           }
           await _emitOrchestrationRound(
@@ -2867,6 +2922,9 @@ class GroupOrchestrationService {
             'rounds': currentRound,
             'orchestration_id': userMessage.id,
             'cancelled': acpCancellationToken?.isCancelled == true,
+            // 供 onFinish 决定任务终态：done 才写完整归档并计入完成数，
+            // paused/failed 保留执行记录但不冒充已完成。
+            'terminal_status': finishStatus,
             'finished_at': DateTime.now().toIso8601String(),
             // 最后一次 summarize 的 admin 总结 → 群记忆蒸馏素材
             // （shared/memory/，零额外 LLM 调用）。

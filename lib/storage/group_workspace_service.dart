@@ -822,9 +822,7 @@ class GroupWorkspaceService {
       orchestrationId: orchestrationId,
     );
     if (existing == null) return null;
-    final terminal = status == GroupTask.statusDone ||
-        status == GroupTask.statusFailed ||
-        status == GroupTask.statusPaused;
+    final terminal = GroupTask.isTerminalStatus(status);
     return writeTask(
       groupId: groupId,
       task: existing.copyWith(
@@ -980,14 +978,34 @@ class GroupWorkspaceService {
     required String groupId,
     required String orchestrationId,
     required GroupTaskMemberResult memberResult,
+  }) {
+    return upsertTaskMemberResults(
+      groupId: groupId,
+      orchestrationId: orchestrationId,
+      entries: [memberResult],
+    );
+  }
+
+  /// 批量追加/更新多条成员结果（单轮一次读改写）。
+  ///
+  /// [GroupResultWriter.persistFromTurns] 每轮先内存汇总全部成员再调用一次，
+  /// 避免旧 [upsertTaskMemberResult] 每成员一次 read+merge+整写
+  /// results.json/task.json/index.json 的 K 倍放大（每成员约 5 次 loadMeta
+  /// + 3 次整写）。
+  Future<GroupTaskResults?> upsertTaskMemberResults({
+    required String groupId,
+    required String orchestrationId,
+    required List<GroupTaskMemberResult> entries,
   }) async {
+    if (entries.isEmpty) return null;
     final existing = await readTaskResults(
       groupId: groupId,
       orchestrationId: orchestrationId,
     );
-    final merged = (existing ??
-            GroupTaskResults(orchestrationId: orchestrationId))
-        .upsertMember(memberResult);
+    var merged = existing ?? GroupTaskResults(orchestrationId: orchestrationId);
+    for (final entry in entries) {
+      merged = merged.upsertMember(entry);
+    }
     final written = await writeTaskResults(
       groupId: groupId,
       results: merged,

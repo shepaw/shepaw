@@ -89,6 +89,19 @@ class GroupTaskStatusParser {
     return out.trim();
   }
 
+  /// Wire 字符串 → 枚举（`done`/`pending`/`missing`，其余为 null）。
+  ///
+  /// 单一事实源：本类 `displayInfo`（metadata 侧）与 `GroupResultWriter` 的
+  /// members_done 重放共用同一映射，避免两处内联漂移（#12）。
+  static GroupMemberTaskStatus? statusFromWire(String raw) {
+    return switch (raw) {
+      'done' => GroupMemberTaskStatus.done,
+      'pending' => GroupMemberTaskStatus.pending,
+      'missing' => GroupMemberTaskStatus.missing,
+      _ => null,
+    };
+  }
+
   /// Status to render on a member bubble. Prefers persisted metadata; falls
   /// back to a tag still sitting in [content] (streaming / older rows).
   ///
@@ -101,12 +114,7 @@ class GroupTaskStatusParser {
   }) {
     final raw = metadata?[metadataStatusKey];
     if (raw is String) {
-      final status = switch (raw) {
-        'done' => GroupMemberTaskStatus.done,
-        'pending' => GroupMemberTaskStatus.pending,
-        'missing' => GroupMemberTaskStatus.missing,
-        _ => null,
-      };
+      final status = statusFromWire(raw);
       if (status != null) {
         final reason = metadata?[metadataReasonKey] as String?;
         final trimmed = reason?.trim();

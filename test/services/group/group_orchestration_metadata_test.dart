@@ -22,40 +22,5 @@ void main() {
         isNull,
       );
     });
-
-    test('messageBelongsToTask uses metadata or triggering message id', () {
-      expect(
-        GroupOrchestrationMetadata.messageBelongsToTask(
-          messageId: 'msg-1',
-          metadata: {'orchestration_id': 'msg-1'},
-          orchestrationId: 'msg-1',
-        ),
-        isTrue,
-      );
-      expect(
-        GroupOrchestrationMetadata.messageBelongsToTask(
-          messageId: 'msg-1',
-          metadata: null,
-          orchestrationId: 'msg-1',
-        ),
-        isTrue,
-      );
-      expect(
-        GroupOrchestrationMetadata.messageBelongsToTask(
-          messageId: 'reply-9',
-          metadata: {'orchestration_id': 'msg-1'},
-          orchestrationId: 'msg-1',
-        ),
-        isTrue,
-      );
-      expect(
-        GroupOrchestrationMetadata.messageBelongsToTask(
-          messageId: 'reply-9',
-          metadata: {'orchestration_id': 'msg-2'},
-          orchestrationId: 'msg-1',
-        ),
-        isFalse,
-      );
-    });
   });
 }

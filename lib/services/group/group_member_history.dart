@@ -115,6 +115,15 @@ class GroupMemberHistory {
       }
     }
 
+    // 全新编排尚无任何带本 orchestration 标记的消息（trigger 又被排除），
+    // 会得到空历史——首个 admin 回合在跨编排/存量频道里几乎无上下文。
+    // 回退到最近 transcript（与旧版全量行为一致），待后续轮次产生带标记
+    // 消息后再收紧为任务作用域。
+    if (!pastTrigger) {
+      if (excludeMessageId == null) return List<Message>.from(messages);
+      return messages.where((m) => m.id != excludeMessageId).toList();
+    }
+
     return filtered;
   }
 

@@ -145,6 +145,12 @@ class GroupTaskBootstrap {
   }
 
   /// Writes full task archive, marks task done, and updates index.json.
+  ///
+  /// [status] is the orchestration terminal state carried by the `finish`
+  /// event (`done`/`paused`/`failed`). Only `done` counts as a completed
+  /// delivery; cancelled/aborted/maxRounds/budget-exhausted exits land as
+  /// `paused` (or `failed` on exceptions) so they are not mistaken for
+  /// finished work. Legacy payloads without the field fall back to `done`.
   static Future<void> onFinish({
     required String groupId,
     required String orchestrationId,
@@ -153,6 +159,7 @@ class GroupTaskBootstrap {
     List<String> artifactUris = const [],
     String? finalSummaryUri,
     int? rounds,
+    String? status,
   }) async {
     if (!GroupOrchestrationFeatures.structuredTasks) return;
     try {
@@ -184,7 +191,7 @@ class GroupTaskBootstrap {
       await ws.updateTaskStatus(
         groupId: groupId,
         orchestrationId: orchestrationId,
-        status: GroupTask.statusDone,
+        status: _terminalStatus(status),
       );
     } catch (e, st) {
       LoggerService().error(
@@ -193,6 +200,20 @@ class GroupTaskBootstrap {
         error: e,
         stackTrace: st,
       );
+    }
+  }
+
+  /// Maps a `finish` payload `terminal_status` to a stored terminal state.
+  ///
+  /// Unknown/legacy values fall back to [GroupTask.statusDone] to preserve
+  /// pre-fix behaviour for payloads produced before the field existed.
+  static String _terminalStatus(String? status) {
+    switch (status) {
+      case GroupTask.statusFailed:
+      case GroupTask.statusPaused:
+        return status!;
+      default:
+        return GroupTask.statusDone;
     }
   }
 

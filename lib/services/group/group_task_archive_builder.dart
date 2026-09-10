@@ -138,8 +138,8 @@ class GroupTaskArchiveBuilder {
           sessionId: sessionId,
           round: round,
         );
-        if (_matchesOrchestration(state, orchestrationId) &&
-            state?['status'] == 'members_done') {
+        // dispatch 已通过编排过滤，同一轮的 state 同属本任务，无需再次比对。
+        if (state?['status'] == 'members_done') {
           final memberLines = _formatMembersDoneState(state!);
           if (memberLines.isNotEmpty) {
             parts.add('### 第 $round 轮成员回报\n$memberLines');
@@ -168,7 +168,10 @@ class GroupTaskArchiveBuilder {
   ) {
     if (payload == null) return false;
     final id = payload['orchestration_id']?.toString().trim();
-    if (id == null || id.isEmpty) return true;
+    // 无编排标记的 legacy round 无法归属到任何具体任务，一律排除——否则会
+    // 被织入当前任务的 archive.md，污染卷宗（任务级成员结果仍由
+    // results.json 保证，见 _formatResults）。
+    if (id == null || id.isEmpty) return false;
     return id == orchestrationId;
   }
 
@@ -190,10 +193,11 @@ class GroupTaskArchiveBuilder {
   static String _formatResults(GroupTaskResults results) {
     final lines = <String>['### 结构化成员结果（results.json）'];
     for (final member in results.members) {
+      final roundLabel = member.round != null ? '，第 ${member.round} 轮' : '';
       final summary = member.summary.isNotEmpty
           ? member.summary
           : '（无摘要）';
-      lines.add('- ${member.agentName} (${member.taskStatus}): $summary');
+      lines.add('- ${member.agentName} (${member.taskStatus}$roundLabel): $summary');
       if (member.artifactUris.isNotEmpty) {
         lines.add('  产物: ${member.artifactUris.join('、')}');
       }

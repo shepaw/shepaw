@@ -109,6 +109,86 @@ void main() {
       expect(archive, contains('## 产物'));
       expect(archive, contains('store://workspaces/dev/out.md'));
     });
+
+    test('excludes legacy untagged rounds from the task archive', () async {
+      final ws = GroupWorkspaceService.instance;
+      const groupId = 'group_archive_legacy';
+      const sessionId = 'session-legacy';
+      const orchId = 'orch-legacy-target';
+
+      await ws.ensureGroupWorkspace(
+        groupId: groupId,
+        members: [(agentId: 'admin', role: 'admin')],
+      );
+      await ws.ensureTask(
+        groupId: groupId,
+        orchestrationId: orchId,
+        sessionId: sessionId,
+        userGoal: '目标',
+      );
+      await ws.writeTaskRequirement(
+        groupId: groupId,
+        orchestrationId: orchId,
+        content: '需求',
+      );
+
+      // 旧任务轮：无 orchestration_id 标记，不应归属到当前任务。
+      await ws.writeRoundDispatch(
+        groupId: groupId,
+        sessionId: sessionId,
+        round: 1,
+        payload: {
+          'status': 'dispatched',
+          'round': 1,
+          'steps': [
+            {
+              'step': 1,
+              'agents': ['OldCoder'],
+              'task': '旧任务',
+              'mode': 'concurrent',
+            },
+          ],
+        },
+      );
+      // 当前任务轮：带编排标记，应被归档。
+      await ws.writeRoundDispatch(
+        groupId: groupId,
+        sessionId: sessionId,
+        round: 2,
+        payload: {
+          'status': 'dispatched',
+          'round': 2,
+          'orchestration_id': orchId,
+          'steps': [
+            {
+              'step': 1,
+              'agents': ['Coder'],
+              'task': '写 builder',
+              'mode': 'concurrent',
+            },
+          ],
+        },
+      );
+
+      final task = (await ws.readTask(
+        groupId: groupId,
+        orchestrationId: orchId,
+      ))!;
+
+      final archive = await GroupTaskArchiveBuilder.build(
+        ws: ws,
+        groupId: groupId,
+        orchestrationId: orchId,
+        sessionId: sessionId,
+        task: task,
+        finalSummary: 'done',
+        rounds: 2,
+      );
+
+      expect(archive, contains('第 2 轮派发'));
+      expect(archive, isNot(contains('第 1 轮派发')));
+      expect(archive, isNot(contains('旧任务')));
+    });
   });
 
   group('GroupTaskBootstrap.onFinish', () {

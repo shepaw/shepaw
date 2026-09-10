@@ -427,6 +427,9 @@ class ChatService {
             artifactUris: artifactUris,
             finalSummaryUri: memoryUri,
             rounds: rounds,
+            // 编排终态（done/paused/failed）。旧 payload 无此字段时 onFinish
+            // 回退到 done，保持与历史行为一致。
+            status: payload['terminal_status']?.toString(),
           );
         }
       }

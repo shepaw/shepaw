@@ -12,13 +12,6 @@ class GroupOrchestrationMetadata {
     return trimmed.isEmpty ? null : trimmed;
   }
 
-  static int? readOrchestrationRound(Map<String, dynamic>? metadata) {
-    final raw = metadata?[orchestrationRoundKey];
-    if (raw is int) return raw;
-    if (raw is num) return raw.toInt();
-    return null;
-  }
-
   /// Merge orchestration fields into [base] (mutates a copy).
   static Map<String, dynamic> stamp({
     Map<String, dynamic>? base,
@@ -31,17 +24,5 @@ class GroupOrchestrationMetadata {
       out[orchestrationRoundKey] = orchestrationRound;
     }
     return out;
-  }
-
-  /// Whether [messageId] belongs to [orchestrationId] per metadata.
-  static bool messageBelongsToTask({
-    required String messageId,
-    required Map<String, dynamic>? metadata,
-    required String orchestrationId,
-  }) {
-    final tagged = readOrchestrationId(metadata);
-    if (tagged != null) return tagged == orchestrationId;
-    // Untagged messages (legacy) match by id only for the triggering user msg.
-    return messageId == orchestrationId;
   }
 }

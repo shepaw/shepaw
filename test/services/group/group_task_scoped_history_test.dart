@@ -141,6 +141,32 @@ void main() {
 
       expect(scoped.map((m) => m.id), ['admin-reply']);
     });
+
+    test('brand-new orchestration with no matching messages falls back to '
+        'recent transcript', () {
+      const orchId = 'brand-new-task';
+      final messages = [
+        _msg(
+          id: 'legacy-1',
+          content: 'old chat',
+          fromId: 'user',
+          isAgent: false,
+          name: 'U',
+        ),
+        _msg(
+          id: 'legacy-2',
+          content: 'old member reply',
+          fromId: 'coder',
+        ),
+      ];
+
+      final scoped = GroupMemberHistory.filterMessagesForOrchestration(
+        messages: messages,
+        orchestrationId: orchId,
+      );
+
+      expect(scoped.map((m) => m.id), ['legacy-1', 'legacy-2']);
+    });
   });
 
   group('GroupMemberHistory.loadTaskScopedHistory', () {
