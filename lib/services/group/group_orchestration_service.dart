@@ -1351,6 +1351,20 @@ class GroupOrchestrationService {
         // 退出路径（取消/表单交互/预算耗尽/超轮自动停）不污染 done 计数。
         var finishStatus = GroupTask.statusPaused;
 
+        // session handoff 提示：每个编排只计算一次、只注入一次。
+        // - 只算一次：省掉每轮一次的 countChannelMessages + 任务索引读取；
+        // - 只注入一次：提示建议「新建 session」，每轮重复出现会诱导管理员
+        //   在任务执行中途切 session，把当前编排的上下文留在旧会话里。
+        var handoffSuffixPending = true;
+        Future<String> takeSessionHandoffSuffix() async {
+          if (!handoffSuffixPending) return '';
+          handoffSuffixPending = false;
+          return _loadSessionHandoffSuffix(
+            groupId: groupOwnerId,
+            channelId: channelId,
+          );
+        }
+
         while (true) {
           // 新一轮开始：刷新 inbox 新鲜度基准（只消费本轮内 MCP 写入的决定）。
           roundStartTime = DateTime.now();
@@ -2820,10 +2834,7 @@ class GroupOrchestrationService {
             groupId: groupOwnerId,
             orchestrationId: userMessage.id,
           );
-          final sessionHandoffSuffix = await _loadSessionHandoffSuffix(
-            groupId: groupOwnerId,
-            channelId: channelId,
-          );
+          final sessionHandoffSuffix = await takeSessionHandoffSuffix();
           try {
             adminTurn = await _executor.processGroupAgent(
               agent: adminAgent,
