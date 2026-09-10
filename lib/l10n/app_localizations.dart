@@ -7964,6 +7964,36 @@ abstract class AppLocalizations {
   /// **'获取 OpenRouter 模型列表'**
   String get toolModel_fetchOpenRouterList;
 
+  /// No description provided for @toolModel_needProviderBase.
+  ///
+  /// In zh, this message translates to:
+  /// **'请先填写 API Base 地址'**
+  String get toolModel_needProviderBase;
+
+  /// No description provided for @toolModel_needProviderKey.
+  ///
+  /// In zh, this message translates to:
+  /// **'请先填写 {provider} API Key'**
+  String toolModel_needProviderKey(String provider);
+
+  /// No description provided for @toolModel_selectProviderModel.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择 {provider} 模型'**
+  String toolModel_selectProviderModel(String provider);
+
+  /// No description provided for @toolModel_fetchProviderList.
+  ///
+  /// In zh, this message translates to:
+  /// **'获取 {provider} 模型列表'**
+  String toolModel_fetchProviderList(String provider);
+
+  /// No description provided for @toolModel_providerNoModels.
+  ///
+  /// In zh, this message translates to:
+  /// **'{provider} 未返回可用模型'**
+  String toolModel_providerNoModels(String provider);
+
   /// No description provided for @toolModel_catalogAvailable.
   ///
   /// In zh, this message translates to:
@@ -11881,6 +11911,132 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'选择委托 Agent'**
   String get storage_pickDelegateAgent;
+
+  /// No description provided for @localHub_detectedTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'检测到本机 Agent Hub'**
+  String get localHub_detectedTitle;
+
+  /// No description provided for @localHub_detectedBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台电脑已安装 Shepaw Agent Hub。加入后，Hub 上的 Agent 会出现在通讯录里。若仪表盘未运行，将自动启动。'**
+  String get localHub_detectedBody;
+
+  /// No description provided for @localHub_join.
+  ///
+  /// In zh, this message translates to:
+  /// **'加入'**
+  String get localHub_join;
+
+  /// No description provided for @localHub_later.
+  ///
+  /// In zh, this message translates to:
+  /// **'稍后再说'**
+  String get localHub_later;
+
+  /// No description provided for @localHub_missingTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'尚未安装 Agent Hub'**
+  String get localHub_missingTitle;
+
+  /// No description provided for @localHub_missingBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'桌面版通过 Agent Hub 接入本机 Claude Code、Codex 等 Agent。现在自动安装并打开仪表盘，然后在 Hub 里添加 Agent。'**
+  String get localHub_missingBody;
+
+  /// No description provided for @localHub_installAndOpen.
+  ///
+  /// In zh, this message translates to:
+  /// **'安装并打开'**
+  String get localHub_installAndOpen;
+
+  /// No description provided for @localHub_workingTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在准备 Agent Hub'**
+  String get localHub_workingTitle;
+
+  /// No description provided for @localHub_stepCheckingNode.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在检查 Node.js…'**
+  String get localHub_stepCheckingNode;
+
+  /// No description provided for @localHub_stepInstalling.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在安装 shepaw-agent-hub…'**
+  String get localHub_stepInstalling;
+
+  /// No description provided for @localHub_stepStarting.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在启动仪表盘…'**
+  String get localHub_stepStarting;
+
+  /// No description provided for @localHub_stepPairing.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在加入本机 Hub…'**
+  String get localHub_stepPairing;
+
+  /// No description provided for @localHub_joinedTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'已加入 Agent Hub'**
+  String get localHub_joinedTitle;
+
+  /// No description provided for @localHub_joinedBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'本机 Agent Hub 已连接到惜宝。Hub 上的 Agent 会出现在通讯录里。'**
+  String get localHub_joinedBody;
+
+  /// No description provided for @localHub_joinedEmptyBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'接下来请在打开的仪表盘中点击「添加实例」，选择引擎（如 Claude Code、Codex）和工作目录。添加完成后，Agent 会出现在惜宝通讯录。'**
+  String get localHub_joinedEmptyBody;
+
+  /// No description provided for @localHub_openDashboard.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开仪表盘'**
+  String get localHub_openDashboard;
+
+  /// No description provided for @localHub_failedTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法完成'**
+  String get localHub_failedTitle;
+
+  /// No description provided for @localHub_failedBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'{error}'**
+  String localHub_failedBody(String error);
+
+  /// No description provided for @localHub_nodeMissingTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'需要先安装 Node.js'**
+  String get localHub_nodeMissingTitle;
+
+  /// No description provided for @localHub_nodeMissingBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'安装 Agent Hub 需要 Node.js 18.17 或更高版本。安装 Node 后重新打开惜宝，或在终端执行：npm install -g shepaw-agent-hub'**
+  String get localHub_nodeMissingBody;
+
+  /// No description provided for @localHub_installNode.
+  ///
+  /// In zh, this message translates to:
+  /// **'安装 Node.js'**
+  String get localHub_installNode;
 }
 
 class _AppLocalizationsDelegate

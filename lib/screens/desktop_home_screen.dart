@@ -34,6 +34,7 @@ import '../services/she_service.dart';
 import '../services/update_service.dart';
 import '../service_locator.dart' show getIt;
 import '../widgets/update_settings_badge.dart';
+import '../widgets/local_agent_hub_prompt.dart';
 
 /// Desktop split-panel layout similar to WeChat desktop.
 /// Left: icon sidebar + conversation / contacts / storage list.
@@ -108,8 +109,13 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     });
 
     // 首次设密登录后：首帧自动打开惜宝聊天页引导配置 AI 模型（一次性标记）。
+    // 随后检测本机 Agent Hub：已安装则提示加入，未安装则引导安装。
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_maybeOpenSheFirstRun());
+      unawaited(() async {
+        await _maybeOpenSheFirstRun();
+        if (!mounted) return;
+        await maybePromptLocalAgentHub(context);
+      }());
     });
   }
 

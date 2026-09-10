@@ -4472,6 +4472,30 @@ class AppLocalizationsEn extends AppLocalizations {
   String get toolModel_fetchOpenRouterList => 'Fetch OpenRouter model list';
 
   @override
+  String get toolModel_needProviderBase =>
+      'Please enter the API Base URL first';
+
+  @override
+  String toolModel_needProviderKey(String provider) {
+    return 'Please enter the $provider API Key first';
+  }
+
+  @override
+  String toolModel_selectProviderModel(String provider) {
+    return 'Select $provider Model';
+  }
+
+  @override
+  String toolModel_fetchProviderList(String provider) {
+    return 'Fetch $provider model list';
+  }
+
+  @override
+  String toolModel_providerNoModels(String provider) {
+    return '$provider returned no models';
+  }
+
+  @override
   String toolModel_catalogAvailable(int count) {
     return '$count models available';
   }
@@ -6814,4 +6838,74 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get storage_pickDelegateAgent => 'Pick an agent to delegate';
+
+  @override
+  String get localHub_detectedTitle => 'Local Agent Hub found';
+
+  @override
+  String get localHub_detectedBody =>
+      'Shepaw Agent Hub is installed on this computer. Join it so Hub agents appear in Contacts. The dashboard will start automatically if it is not running.';
+
+  @override
+  String get localHub_join => 'Join';
+
+  @override
+  String get localHub_later => 'Later';
+
+  @override
+  String get localHub_missingTitle => 'Agent Hub is not installed';
+
+  @override
+  String get localHub_missingBody =>
+      'The desktop app uses Agent Hub to connect local agents such as Claude Code and Codex. Install it now, open the dashboard, then add agents there.';
+
+  @override
+  String get localHub_installAndOpen => 'Install and open';
+
+  @override
+  String get localHub_workingTitle => 'Setting up Agent Hub';
+
+  @override
+  String get localHub_stepCheckingNode => 'Checking Node.js…';
+
+  @override
+  String get localHub_stepInstalling => 'Installing shepaw-agent-hub…';
+
+  @override
+  String get localHub_stepStarting => 'Starting the dashboard…';
+
+  @override
+  String get localHub_stepPairing => 'Joining the local Hub…';
+
+  @override
+  String get localHub_joinedTitle => 'Joined Agent Hub';
+
+  @override
+  String get localHub_joinedBody =>
+      'This computer\'s Agent Hub is connected. Its agents will show up in Contacts.';
+
+  @override
+  String get localHub_joinedEmptyBody =>
+      'Next, in the dashboard click Add instance, pick an engine (Claude Code, Codex, …) and a working directory. After that, the agent appears in Shepaw Contacts.';
+
+  @override
+  String get localHub_openDashboard => 'Open dashboard';
+
+  @override
+  String get localHub_failedTitle => 'Could not finish';
+
+  @override
+  String localHub_failedBody(String error) {
+    return '$error';
+  }
+
+  @override
+  String get localHub_nodeMissingTitle => 'Node.js is required';
+
+  @override
+  String get localHub_nodeMissingBody =>
+      'Installing Agent Hub needs Node.js 18.17 or newer. Install Node, then reopen Shepaw, or run: npm install -g shepaw-agent-hub';
+
+  @override
+  String get localHub_installNode => 'Install Node.js';
 }

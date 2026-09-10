@@ -13,6 +13,7 @@ import '../services/store_open_service.dart';
 import '../screens/storage_directory_opener.dart';
 import '../storage/workspace_link_resolver.dart';
 import '../theme/app_theme.dart';
+import 'copyable_code_block.dart';
 import 'store_uri_link_syntax.dart';
 import 'voice_message_bubble.dart';
 import 'image_message_bubble.dart';
@@ -1461,6 +1462,10 @@ class _StableMarkdownBodyState extends State<_StableMarkdownBody> {
       selectable: false,
       extensionSet: md.ExtensionSet.gitHubWeb,
       inlineSyntaxes: [StoreUriLinkSyntax()],
+      // builder 与 MarkdownBody 在同一个 cache-miss 分支里一起重建，且只读
+      // styleSheet（_getStyleSheet 按 (isMyMessage, colorScheme) 缓存，identity
+      // 稳定）；缓存命中时整棵树原样复用，不存在 stale builder。
+      builders: {'pre': CopyableCodeBlockBuilder(styleSheet: widget.styleSheet)},
       onTapLink: (text, href, title) =>
           widget.onTapLink?.call(text, href, title),
       styleSheet: widget.styleSheet,

@@ -44,9 +44,9 @@ Shepaw 是一个本地优先的 AI Agent 中枢应用，帮助你与多个 AI �
    - 这样每次打开应用时无需输入密码
 
 3. **配置你的第一个 Agent**
+   - **桌面版**：启动后会自动检测本机是否已安装 Agent Hub（`shepaw-hub`）。已安装会提示加入，加入后 Hub 上的 Agent 出现在通讯录；未安装会协助安装并打开仪表盘，按页面提示添加实例（引擎 + 工作目录）。
    - 侧栏：**通讯录**（Agent / 群 / 已配对设备）、**储物袋**（备份）、**设置**
-   - 主页或通讯录点击 **"添加 Agent"**
-   - 选择 **本地 LLM 代理** 或 **远端 Agent**（见下文）
+   - 也可从主页或通讯录点击 **"添加 Agent"**，选择 **本地 LLM 代理** 或 **远端 Agent**（见下文）
 
 ---
 
@@ -62,8 +62,20 @@ Shepaw 是一个本地优先的 AI Agent 中枢应用，帮助你与多个 AI �
 - **Anthropic Claude** - Claude 3、Claude 2（需要 API 密钥）
 - **Google Gemini** - Gemini Pro、Gemini Vision（需要 API 密钥）
 - **DeepSeek** - DeepSeek API（需要 API 密钥）
+- **腾讯云 TokenHub** - 聚合腾讯混元、DeepSeek、GLM、Kimi、MiniMax、Qwen 等 18+ 模型的统一平台（需要 API 密钥）
 - **Ollama** - 本地部署的模型（无需网络）
 - 其他支持 OpenAI 兼容 API 的提供商
+
+**关于腾讯云 TokenHub 的地域**：TokenHub 不支持跨地域调用，请按你的服务开通地域填写对应的 API Base：
+
+| 地域 | API Base |
+|------|----------|
+| 广州 / 中国大陆 | `https://tokenhub.tencentmaas.com/v1`（备用 `https://tokenhub.tencentmaas.cn/v1`） |
+| 新加坡 | `https://tokenhub-intl.tencentmaas.com/v1` |
+| 硅谷 | `https://tokenhub-us.tencentmaas.com/v1` |
+
+选中 TokenHub 预设后会自动预填广州地域的地址；如果你开通的是新加坡或硅谷，请在 API Base 输入框里改成上表对应地址。<br>
+模型 ID 是跨厂商的（如 `hy3`、`deepseek-v4-pro`、`glm-5.3`、`kimi-k3`、`minimax-m3`、`qwen3.5-flash`，视觉模型 `hy-vision-2.0-instruct`）。填好 Key 后点「获取 TokenHub 模型列表」可直接从平台拉取当前地域可用的模型 ID 并在线挑选。
 
 **配置步骤：**
 1. 点击 **"+ 添加 Agent"** → **"本地 LLM 代理"**

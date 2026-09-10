@@ -89,78 +89,117 @@ class _FormBubbleState extends State<FormBubble> {
 
     if (fields.isEmpty) return const SizedBox.shrink();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Form header
-        if (title != null && title.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 4, top: 4),
-            child: Text(
-              title,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = constraints.hasBoundedWidth
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(context).width;
+        return ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: maxWidth, minWidth: 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Form header
+              if (title != null && title.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4, top: 4),
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 15,
+                      color: Theme.of(context).colorScheme.onSurface,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              if (description != null && description.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Text(
+                    description,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withValues(alpha: 0.54),
+                    ),
+                  ),
+                ),
+
+              // Divider after header
+              if (title != null || description != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Divider(height: 1, color: Colors.grey[300]),
+                ),
+
+              // Form fields
+              ...fields.asMap().entries.map((entry) {
+                final index = entry.key;
+                final field = entry.value as Map<String, dynamic>;
+                return Padding(
+                  padding: EdgeInsets.only(
+                      bottom: index < fields.length - 1 ? 12 : 0),
+                  child: isSubmitted
+                      ? _buildSubmittedField(context, field, submittedValues)
+                      : _buildField(context, field),
+                );
+              }),
+
+              // Submit button
+              if (!isSubmitted) ...[
+                const SizedBox(height: 12),
+                _buildFormSubmitButton(context, formId, fields),
+              ] else ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(Icons.check_circle,
+                        size: 16, color: Theme.of(context).primaryColor),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        AppLocalizations.of(context).widget_formSubmitted,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).primaryColor,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Label + optional required mark that wraps instead of overflowing a Row.
+  Widget _buildFieldLabel(
+    String label, {
+    required bool required,
+    required TextStyle style,
+  }) {
+    return Text.rich(
+      TextSpan(
+        style: style,
+        children: [
+          TextSpan(text: label),
+          if (required)
+            const TextSpan(
+              text: ' *',
               style: TextStyle(
-                fontSize: 15,
-                color: Theme.of(context).colorScheme.onSurface,
+                fontSize: 13,
+                color: Colors.red,
                 fontWeight: FontWeight.w600,
               ),
             ),
-          ),
-        if (description != null && description.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Text(
-              description,
-              style: TextStyle(
-                fontSize: 13,
-                color: Theme.of(context)
-                    .colorScheme
-                    .onSurface
-                    .withValues(alpha: 0.54),
-              ),
-            ),
-          ),
-
-        // Divider after header
-        if (title != null || description != null)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Divider(height: 1, color: Colors.grey[300]),
-          ),
-
-        // Form fields
-        ...fields.asMap().entries.map((entry) {
-          final index = entry.key;
-          final field = entry.value as Map<String, dynamic>;
-          return Padding(
-            padding: EdgeInsets.only(bottom: index < fields.length - 1 ? 12 : 0),
-            child: isSubmitted
-                ? _buildSubmittedField(context, field, submittedValues)
-                : _buildField(context, field),
-          );
-        }),
-
-        // Submit button
-        if (!isSubmitted) ...[
-          const SizedBox(height: 12),
-          _buildFormSubmitButton(context, formId, fields),
-        ] else ...[
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Icon(Icons.check_circle, size: 16, color: Theme.of(context).primaryColor),
-              const SizedBox(width: 6),
-              Text(
-                AppLocalizations.of(context).widget_formSubmitted,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Theme.of(context).primaryColor,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
         ],
-      ],
+      ),
     );
   }
 
@@ -171,27 +210,19 @@ class _FormBubbleState extends State<FormBubble> {
     final required = field['required'] as bool? ?? false;
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (label != null && label.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 6),
-            child: Row(
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Theme.of(context).colorScheme.onSurface,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                if (required)
-                  const Text(
-                    ' *',
-                    style: TextStyle(fontSize: 13, color: Colors.red, fontWeight: FontWeight.w600),
-                  ),
-              ],
+            child: _buildFieldLabel(
+              label,
+              required: required,
+              style: TextStyle(
+                fontSize: 13,
+                color: Theme.of(context).colorScheme.onSurface,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         _buildFieldInput(context, type, field, fieldId),
@@ -500,13 +531,14 @@ class _FormBubbleState extends State<FormBubble> {
     final value = submittedValues[fieldId];
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (label != null && label.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 4),
-            child: Text(
+            child: _buildFieldLabel(
               label,
+              required: false,
               style: TextStyle(
                 fontSize: 12,
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -552,7 +584,12 @@ class _FormBubbleState extends State<FormBubble> {
           children: [
             Icon(Icons.check_circle, size: 16, color: Theme.of(context).primaryColor),
             const SizedBox(width: 6),
-            Text(selectedLabel, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+            Expanded(
+              child: Text(
+                selectedLabel,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+              ),
+            ),
           ],
         );
 
@@ -591,9 +628,13 @@ class _FormBubbleState extends State<FormBubble> {
                 children: [
                   Icon(Icons.attach_file, size: 14, color: Theme.of(context).primaryColor),
                   const SizedBox(width: 4),
-                  Text(
-                    f['name'] as String? ?? 'File',
-                    style: const TextStyle(fontSize: 13),
+                  Expanded(
+                    child: Text(
+                      f['name'] as String? ?? 'File',
+                      style: const TextStyle(fontSize: 13),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ],
               ),

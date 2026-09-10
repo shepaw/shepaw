@@ -22,6 +22,7 @@ import '../widgets/agent_list_avatar.dart';
 import '../widgets/chat/session_unread_badge.dart';
 import '../services/update_service.dart';
 import '../widgets/update_settings_badge.dart';
+import '../widgets/local_agent_hub_prompt.dart';
 import '../services/message_search_service.dart';
 import '../services/onboarding_service.dart';
 import '../services/she_service.dart';
@@ -131,7 +132,11 @@ class HomeScreenState extends State<HomeScreen> {
     // 桌面嵌入实例（embedded == true）不在此处理，由 DesktopHomeScreen 负责。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      unawaited(_maybeOpenSheFirstRun());
+      unawaited(() async {
+        await _maybeOpenSheFirstRun();
+        if (!mounted || widget.embedded) return;
+        await maybePromptLocalAgentHub(context);
+      }());
     });
   }
 

@@ -110,12 +110,37 @@ She 在提示词/工具描述中会被告知下面这些"她需要知道的事"�
   经 `RemoteAgentService.updateAgent` 持久化并推送对端。
 - **去重规则**：`add` 拒绝 `(route.model, api_base)` 已存在；`update --model/--api_base` 改完后同样不产生重复。
 - **服务商预设**：`providers` / `add` 读取 `lib/models/llm_provider_config.dart` 的 `llmProviders`
-  （协议类型、默认 apiBase、是否必填 Key），与"模型管理/编辑页"的服务商选择一致。
+  （协议类型、默认 apiBase、是否必填 Key），与"模型管理/编辑页"的服务商选择一致。目前包含
+  OpenAI、Claude、Gemini、Grok、DeepSeek、Qwen、GLM、Kimi、Hunyuan、Ollama、OpenRouter、
+  腾讯云 TokenHub 共 12 个预设。
 
 ---
 
 ## 6. 后续可选增强（不在本次范围）
 
 - `models test` 连通性探测（发一个极短请求验证 Key/endpoint）。
-- provider 侧 `/models` 实时列表拉取（OpenRouter / Ollama 已在 UI 支持；如需可扩展到 OpenAI 兼容厂商）。
 - 新模型提醒：She 定期核对厂商发布页并主动告知用户（需用户授权自动执行）。
+
+---
+
+## 7. 模型列表在线拉取（UI）
+
+模型编辑页的「获取模型列表」按钮由预设能力位驱动，三条分支：
+
+| 预设 | 分支 | 实现 |
+|------|------|------|
+| OpenRouter | 专用 | `OpenRouterService`（带 modality / pricing 元数据） |
+| Ollama | 专用 | `OllamaService`（本地 `/api/tags`，带 family / parameter_size） |
+| TokenHub 等任意 OpenAI 兼容厂商 | 通用 | `OpenAiCompatibleModelsService`：`GET {apiBase}{modelsPath}` |
+
+**开启方式**：给 `LLMProviderConfig` 的 `modelsPath` 赋值（如 `'/models'`）。预设表里为
+`null` 的厂商不显示该按钮，走手输模型 ID。协议要求 `GET {apiBase}/models` 返回标准
+OpenAI 形态（`{"object":"list","data":[{"id",...}]}`），顶层裸数组亦可。
+
+错误处理：401/403 → `AuthException`（Key 无效或无权限）；404 → `ApiException`
+（该厂商未实现模型列表接口，提示改手输 ID）；其它非 200 → `ApiException`。服务按
+`(apiBase, modelsPath)` 分键做 1 小时缓存，UI 侧一律 `forceRefresh: true`。
+
+> 地域提示：腾讯云 TokenHub 不支持跨地域调用。预设预填的是广州
+> `https://tokenhub.tencentmaas.com/v1`；新加坡为 `https://tokenhub-intl.tencentmaas.com/v1`，
+> 硅谷为 `https://tokenhub-us.tencentmaas.com/v1`，需在 API Base 输入框自行改填。

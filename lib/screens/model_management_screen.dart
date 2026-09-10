@@ -8,6 +8,7 @@ import '../models/model_routing_config.dart';
 import '../models/remote_agent.dart' show repairUtf16Garbled;
 import '../services/model_registry.dart';
 import '../services/ollama_service.dart';
+import '../services/openai_compatible_models_service.dart';
 import '../services/openrouter_service.dart';
 import '../services/logger_service.dart';
 import '../services/secure_key_manager.dart';
@@ -328,6 +329,7 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
   // ── 远程/本地模型列表相关 ──────────────────────────────
   late OpenRouterService _openRouterService;
   late OllamaService _ollamaService;
+  late OpenAiCompatibleModelsService _modelsService;
   bool _loadingModels = false;
   bool _testingOllamaConnection = false;
   String? _modelsError;
@@ -340,6 +342,7 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
     super.initState();
     _openRouterService = OpenRouterService();
     _ollamaService = OllamaService();
+    _modelsService = OpenAiCompatibleModelsService();
 
     final e = widget.existing;
     _displayNameController = TextEditingController(text: e?.displayName ?? '');
@@ -452,15 +455,26 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
     } catch (_) {}
   }
 
-  bool get _isOpenRouterSelected =>
-      _selectedProviderIndex >= 0 &&
-      llmProviders[_selectedProviderIndex].name == 'OpenRouter';
+  /// 当前选中的预设；-1（自定义）或越界时返回 null。
+  LLMProviderConfig? get _selectedPreset {
+    final i = _selectedProviderIndex;
+    return (i < 0 || i >= llmProviders.length) ? null : llmProviders[i];
+  }
 
-  bool get _isOllamaSelected =>
-      _selectedProviderIndex >= 0 &&
-      llmProviders[_selectedProviderIndex].name == 'Ollama';
+  bool get _isOpenRouterSelected => _selectedPreset?.name == 'OpenRouter';
 
-  bool get _supportsModelFetch => _isOpenRouterSelected || _isOllamaSelected;
+  bool get _isOllamaSelected => _selectedPreset?.name == 'Ollama';
+
+  /// 由预设的 modelsPath 驱动的通用 OpenAI 兼容拉取（OpenRouter/Ollama 走各自专用分支）。
+  ///
+  /// 这两个预设的 modelsPath 为 null，因此对它们恒为 false。
+  bool get _isGenericFetchSelected =>
+      !_isOpenRouterSelected &&
+      !_isOllamaSelected &&
+      (_selectedPreset?.modelsPath ?? '').isNotEmpty;
+
+  bool get _supportsModelFetch =>
+      _isOpenRouterSelected || _isOllamaSelected || _isGenericFetchSelected;
 
   /// 获取 OpenRouter 模型列表
   Future<void> _fetchOpenRouterModels() async {
@@ -567,6 +581,74 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
     }
   }
 
+  /// 通用 OpenAI 兼容模型列表拉取（预设的 modelsPath 非空时可用，如 TokenHub）。
+  Future<void> _fetchGenericModels() async {
+    final l10n = AppLocalizations.of(context);
+    final preset = _selectedPreset;
+    final providerName = preset?.name ?? '';
+    final modelsPath = preset?.modelsPath ?? '';
+    final apiBase = _apiBaseController.text.trim();
+
+    if (apiBase.isEmpty) {
+      setState(() => _modelsError = l10n.toolModel_needProviderBase);
+      return;
+    }
+    if ((preset?.requiresApiKey ?? false) &&
+        _apiKeyController.text.trim().isEmpty) {
+      setState(() {
+        _modelsError = l10n.toolModel_needProviderKey(providerName);
+      });
+      return;
+    }
+
+    setState(() {
+      _loadingModels = true;
+      _modelsError = null;
+    });
+
+    try {
+      final models = await _modelsService.getModels(
+        apiBase: apiBase,
+        modelsPath: modelsPath,
+        apiKey: _apiKeyController.text.trim(),
+        providerLabel: providerName,
+        forceRefresh: true,
+      );
+      if (!mounted) return;
+
+      setState(() => _loadingModels = false);
+
+      if (models.isEmpty) {
+        setState(() {
+          _modelsError = l10n.toolModel_providerNoModels(providerName);
+        });
+        return;
+      }
+
+      _showModelSelectionDialog(
+        title: l10n.toolModel_selectProviderModel(providerName),
+        models: models
+            .map(
+              (m) => _PickableModel(
+                // chat/completions 需要的是精确 id（而非展示名）。
+                id: m.id,
+                name: m.name ?? m.id,
+                subtitle: m.status == null ? m.id : '${m.id} · ${m.status}',
+              ),
+            )
+            .toList(),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _modelsError = _formatModelFetchError(e, AppLocalizations.of(context));
+        _loadingModels = false;
+      });
+      LoggerService().error('获取 $providerName 模型列表失败',
+          tag: 'ModelEdit', error: e);
+    }
+  }
+
   Future<void> _testOllamaConnection() async {
     final l10n = AppLocalizations.of(context);
     final apiBase = _apiBaseController.text.trim();
@@ -647,6 +729,7 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
     _responseBodyPathController.dispose();
     _openRouterService.close();
     _ollamaService.close();
+    _modelsService.close();
     super.dispose();
   }
 
@@ -702,6 +785,21 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
     final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
     final isEditing = widget.existing != null;
+
+    // 拉取按钮的动作/文案/图标：Ollama、OpenRouter 走各自专用分支，
+    // 其余由预设的 modelsPath 驱动的通用 OpenAI 兼容分支。
+    final fetchModelsAction = _isOllamaSelected
+        ? _fetchOllamaModels
+        : (_isOpenRouterSelected
+            ? _fetchOpenRouterModels
+            : _fetchGenericModels);
+    final fetchModelsLabel = _isOllamaSelected
+        ? l10n.toolModel_fetchOllamaList
+        : (_isOpenRouterSelected
+            ? l10n.toolModel_fetchOpenRouterList
+            : l10n.toolModel_fetchProviderList(_selectedPreset?.name ?? ''));
+    final fetchModelsIcon =
+        _isOllamaSelected ? Icons.storage : Icons.cloud_download;
 
     return Scaffold(
       appBar: AppBar(
@@ -895,11 +993,8 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed: _loadingModels
-                            ? null
-                            : (_isOllamaSelected
-                                ? _fetchOllamaModels
-                                : _fetchOpenRouterModels),
+                        onPressed:
+                            _loadingModels ? null : fetchModelsAction,
                         icon: _loadingModels
                             ? SizedBox(
                                 width: 16,
@@ -910,15 +1005,11 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
                                       AlwaysStoppedAnimation(colorScheme.primary),
                                 ),
                               )
-                            : Icon(_isOllamaSelected
-                                ? Icons.storage
-                                : Icons.cloud_download),
+                            : Icon(fetchModelsIcon),
                         label: Text(
                           _loadingModels
                               ? l10n.common_fetching
-                              : (_isOllamaSelected
-                                  ? l10n.toolModel_fetchOllamaList
-                                  : l10n.toolModel_fetchOpenRouterList),
+                              : fetchModelsLabel,
                         ),
                       ),
                     ),

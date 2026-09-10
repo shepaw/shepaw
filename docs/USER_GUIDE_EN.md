@@ -44,8 +44,9 @@ Shepaw is a local-first AI Agent Hub that helps you collaborate with multiple AI
    - This lets you unlock the app without typing your password each time
 
 3. **Add Your First Agent**
+   - **Desktop:** the app detects whether Agent Hub (`shepaw-hub`) is already on this computer. If it is, you are prompted to join so Hub agents appear in Contacts. If it is not, the app can install Agent Hub and open the dashboard so you can add instances (engine + working directory).
    - Sidebar: **Contacts** (agents / groups / paired devices), **Store** (backups), **Settings**
-   - From home or Contacts, tap **"Add Agent"**
+   - You can also tap **"Add Agent"** from home or Contacts
    - Choose a **Local LLM Agent** or a **Remote Agent** (see below)
 
 ---
@@ -62,8 +63,20 @@ A local agent runs AI models directly on your device without requiring a network
 - **Anthropic Claude** — Claude 3, Claude 2 (API key required)
 - **Google Gemini** — Gemini Pro, Gemini Vision (API key required)
 - **DeepSeek** — DeepSeek API (API key required)
+- **Tencent Cloud TokenHub** — one platform aggregating 18+ models including Tencent Hunyuan, DeepSeek, GLM, Kimi, MiniMax and Qwen (API key required)
 - **Ollama** — Locally deployed models (no network required)
 - Any other provider with an OpenAI-compatible API
+
+**About TokenHub regions:** TokenHub does not support cross-region calls. Set the API Base that matches the region your service is provisioned in:
+
+| Region | API Base |
+|--------|----------|
+| Guangzhou / Chinese mainland | `https://tokenhub.tencentmaas.com/v1` (fallback `https://tokenhub.tencentmaas.cn/v1`) |
+| Singapore | `https://tokenhub-intl.tencentmaas.com/v1` |
+| Silicon Valley | `https://tokenhub-us.tencentmaas.com/v1` |
+
+Selecting the TokenHub preset pre-fills the Guangzhou address; if you are provisioned in Singapore or Silicon Valley, edit the API Base field to the matching URL above.<br>
+Model IDs are cross-vendor (e.g. `hy3`, `deepseek-v4-pro`, `glm-5.3`, `kimi-k3`, `minimax-m3`, `qwen3.5-flash`; vision model `hy-vision-2.0-instruct`). After entering your key, tap "Fetch TokenHub model list" to pull the model IDs available in your region and pick one.
 
 **Setup Steps:**
 1. Tap **"+ Add Agent"** → **"Local LLM Agent"**

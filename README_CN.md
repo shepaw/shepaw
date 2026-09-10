@@ -29,7 +29,7 @@ Shepaw是一个跨平台的 AI助理们交互协作的平台，但"她"可以帮
 ### Agent 管理与通信
 - **She —— 内置守护 Agent（灵宠）** —— 一个随你相处而成长的"她"：灵魂、简历（bio）、长期记忆、认知与用户画像，会主动了解你
 - **ACP 协议**（Agent Communication Protocol）— 基于 JSON-RPC 2.0 的 WebSocket 双向实时通信
-- **本地 LLM Agent** — 直接集成 11 家主流 LLM 服务：OpenAI、Claude、Gemini、Grok、DeepSeek、Qwen、GLM、Kimi、Hunyuan、OpenRouter、Ollama，以及任意兼容 OpenAI API 的服务
+- **本地 LLM Agent** — 直接集成 12 家主流 LLM 服务：OpenAI、Claude、Gemini、Grok、DeepSeek、Qwen、GLM、Kimi、Hunyuan、TokenHub、OpenRouter、Ollama，以及任意兼容 OpenAI API 的服务
 - **Remote / Peer Agent** — 其他设备上的 ACP Agent，以及配对设备共享出来的 Agent（agent-over-Peer）
 - **ShePaw CLI（Agent 命令树）** — 内置 `shepaw <namespace> <command>` 工具树（context / chat / tools / skills / os / workflow / store / meta …），让 She 与其他 Agent 通过函数调用读写本地数据
 - 双向通信：用户主动对话 & Agent 主动发起对话（需授权）
@@ -134,7 +134,7 @@ Windows 构建请使用专用脚本（详见 [BUILD_GUIDE.md](BUILD_GUIDE.md)）
 
 | 类型 | 提供商 |
 |------|--------|
-| 云端 | OpenAI (GPT-4 / GPT-4o)、Anthropic Claude、Google Gemini、Grok、DeepSeek、Qwen（通义千问）、GLM（智谱）、Kimi（月之暗面）、Hunyuan（腾讯混元）、OpenRouter |
+| 云端 | OpenAI (GPT-4 / GPT-4o)、Anthropic Claude、Google Gemini、Grok、DeepSeek、Qwen（通义千问）、GLM（智谱）、Kimi（月之暗面）、Hunyuan（腾讯混元）、TokenHub（腾讯云）、OpenRouter |
 | 本地 | Ollama（llama3、llava 等任意本地模型） |
 | 自定义 | 任何兼容 OpenAI API 的服务 |
 

@@ -69,6 +69,18 @@ void main() {
       expect(deepseek['requires_api_key'], true);
       expect(result['facts'], isA<List<dynamic>>());
     });
+
+    test('exposes the TokenHub preset', () async {
+      final result = await ModelsNamespace.instance.execute('providers', {});
+      final providers = result['providers'] as List<dynamic>;
+      final tokenhub = providers
+          .whereType<Map<String, dynamic>>()
+          .firstWhere((p) => p['name'] == 'TokenHub');
+      expect(tokenhub['provider_type'], 'openai');
+      expect(tokenhub['default_api_base'], 'https://tokenhub.tencentmaas.com/v1');
+      expect(tokenhub['default_model'], 'hy3');
+      expect(tokenhub['requires_api_key'], true);
+    });
   });
 
   group('models list', () {
@@ -98,6 +110,22 @@ void main() {
 
       final list = await ModelsListCommand().execute({});
       expect((list['models'] as List).length, 1);
+    });
+
+    test('adds a TokenHub model, api base filled from the preset', () async {
+      // 不传 --api_base：必须落到 TokenHub 预设的 base（而非第一个 openai 预设）。
+      final result = await ModelsAddCommand().execute({
+        'provider': 'TokenHub',
+        'name': 'hy3',
+        'types': 'text',
+      });
+      expect(result['ok'], true);
+      expect(result['error'], isNull);
+      final model = result['model'] as Map<String, dynamic>;
+      expect(model['provider'], 'openai');
+      expect(model['model'], 'hy3');
+      expect(model['api_base'], 'https://tokenhub.tencentmaas.com/v1');
+      expect(result['requires_api_key'], true);
     });
 
     test('rejects duplicate (same model + api base)', () async {

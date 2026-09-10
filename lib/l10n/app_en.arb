@@ -1947,6 +1947,39 @@
   "toolModel_fetchOllamaFailed": "Failed to fetch Ollama models",
   "toolModel_fetchOllamaList": "Fetch Ollama local model list",
   "toolModel_fetchOpenRouterList": "Fetch OpenRouter model list",
+  "toolModel_needProviderBase": "Please enter the API Base URL first",
+  "toolModel_needProviderKey": "Please enter the {provider} API Key first",
+  "@toolModel_needProviderKey": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
+  "toolModel_selectProviderModel": "Select {provider} Model",
+  "@toolModel_selectProviderModel": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
+  "toolModel_fetchProviderList": "Fetch {provider} model list",
+  "@toolModel_fetchProviderList": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
+  "toolModel_providerNoModels": "{provider} returned no models",
+  "@toolModel_providerNoModels": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
   "toolModel_catalogAvailable": "{count} models available",
   "@toolModel_catalogAvailable": {
     "placeholders": {
@@ -3608,5 +3641,33 @@
       }
     }
   },
-  "storage_pickDelegateAgent": "Pick an agent to delegate"
+  "storage_pickDelegateAgent": "Pick an agent to delegate",
+  "localHub_detectedTitle": "Local Agent Hub found",
+  "localHub_detectedBody": "Shepaw Agent Hub is installed on this computer. Join it so Hub agents appear in Contacts. The dashboard will start automatically if it is not running.",
+  "localHub_join": "Join",
+  "localHub_later": "Later",
+  "localHub_missingTitle": "Agent Hub is not installed",
+  "localHub_missingBody": "The desktop app uses Agent Hub to connect local agents such as Claude Code and Codex. Install it now, open the dashboard, then add agents there.",
+  "localHub_installAndOpen": "Install and open",
+  "localHub_workingTitle": "Setting up Agent Hub",
+  "localHub_stepCheckingNode": "Checking Node.js…",
+  "localHub_stepInstalling": "Installing shepaw-agent-hub…",
+  "localHub_stepStarting": "Starting the dashboard…",
+  "localHub_stepPairing": "Joining the local Hub…",
+  "localHub_joinedTitle": "Joined Agent Hub",
+  "localHub_joinedBody": "This computer's Agent Hub is connected. Its agents will show up in Contacts.",
+  "localHub_joinedEmptyBody": "Next, in the dashboard click Add instance, pick an engine (Claude Code, Codex, …) and a working directory. After that, the agent appears in Shepaw Contacts.",
+  "localHub_openDashboard": "Open dashboard",
+  "localHub_failedTitle": "Could not finish",
+  "localHub_failedBody": "{error}",
+  "@localHub_failedBody": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "localHub_nodeMissingTitle": "Node.js is required",
+  "localHub_nodeMissingBody": "Installing Agent Hub needs Node.js 18.17 or newer. Install Node, then reopen Shepaw, or run: npm install -g shepaw-agent-hub",
+  "localHub_installNode": "Install Node.js"
 }

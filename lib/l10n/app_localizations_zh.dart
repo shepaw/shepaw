@@ -4300,6 +4300,29 @@ class AppLocalizationsZh extends AppLocalizations {
   String get toolModel_fetchOpenRouterList => '获取 OpenRouter 模型列表';
 
   @override
+  String get toolModel_needProviderBase => '请先填写 API Base 地址';
+
+  @override
+  String toolModel_needProviderKey(String provider) {
+    return '请先填写 $provider API Key';
+  }
+
+  @override
+  String toolModel_selectProviderModel(String provider) {
+    return '选择 $provider 模型';
+  }
+
+  @override
+  String toolModel_fetchProviderList(String provider) {
+    return '获取 $provider 模型列表';
+  }
+
+  @override
+  String toolModel_providerNoModels(String provider) {
+    return '$provider 未返回可用模型';
+  }
+
+  @override
   String toolModel_catalogAvailable(int count) {
     return '发现 $count 个可用模型';
   }
@@ -6553,4 +6576,74 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get storage_pickDelegateAgent => '选择委托 Agent';
+
+  @override
+  String get localHub_detectedTitle => '检测到本机 Agent Hub';
+
+  @override
+  String get localHub_detectedBody =>
+      '这台电脑已安装 Shepaw Agent Hub。加入后，Hub 上的 Agent 会出现在通讯录里。若仪表盘未运行，将自动启动。';
+
+  @override
+  String get localHub_join => '加入';
+
+  @override
+  String get localHub_later => '稍后再说';
+
+  @override
+  String get localHub_missingTitle => '尚未安装 Agent Hub';
+
+  @override
+  String get localHub_missingBody =>
+      '桌面版通过 Agent Hub 接入本机 Claude Code、Codex 等 Agent。现在自动安装并打开仪表盘，然后在 Hub 里添加 Agent。';
+
+  @override
+  String get localHub_installAndOpen => '安装并打开';
+
+  @override
+  String get localHub_workingTitle => '正在准备 Agent Hub';
+
+  @override
+  String get localHub_stepCheckingNode => '正在检查 Node.js…';
+
+  @override
+  String get localHub_stepInstalling => '正在安装 shepaw-agent-hub…';
+
+  @override
+  String get localHub_stepStarting => '正在启动仪表盘…';
+
+  @override
+  String get localHub_stepPairing => '正在加入本机 Hub…';
+
+  @override
+  String get localHub_joinedTitle => '已加入 Agent Hub';
+
+  @override
+  String get localHub_joinedBody =>
+      '本机 Agent Hub 已连接到惜宝。Hub 上的 Agent 会出现在通讯录里。';
+
+  @override
+  String get localHub_joinedEmptyBody =>
+      '接下来请在打开的仪表盘中点击「添加实例」，选择引擎（如 Claude Code、Codex）和工作目录。添加完成后，Agent 会出现在惜宝通讯录。';
+
+  @override
+  String get localHub_openDashboard => '打开仪表盘';
+
+  @override
+  String get localHub_failedTitle => '无法完成';
+
+  @override
+  String localHub_failedBody(String error) {
+    return '$error';
+  }
+
+  @override
+  String get localHub_nodeMissingTitle => '需要先安装 Node.js';
+
+  @override
+  String get localHub_nodeMissingBody =>
+      '安装 Agent Hub 需要 Node.js 18.17 或更高版本。安装 Node 后重新打开惜宝，或在终端执行：npm install -g shepaw-agent-hub';
+
+  @override
+  String get localHub_installNode => '安装 Node.js';
 }

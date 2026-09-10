@@ -31,7 +31,7 @@ Designed with a local-first philosophy: all your data stays on your device. SheP
 ### Agent Management & Communication
 - **She — the built-in guardian agent (spirit pet)** — a persona that lives and grows with you: soul, resume (bio), long-term memory, cognition, and a user profile it actively learns
 - **ACP Protocol** (Agent Communication Protocol) — Real-time bidirectional WebSocket communication based on JSON-RPC 2.0
-- **Local LLM Agents** — direct integration with 11 major LLM services: OpenAI, Claude, Gemini, Grok, DeepSeek, Qwen, GLM, Kimi, Hunyuan, OpenRouter, Ollama, plus any OpenAI-compatible API
+- **Local LLM Agents** — direct integration with 12 major LLM services: OpenAI, Claude, Gemini, Grok, DeepSeek, Qwen, GLM, Kimi, Hunyuan, TokenHub, OpenRouter, Ollama, plus any OpenAI-compatible API
 - **Remote / Peer Agents** — ACP agents on other devices, plus agents exposed from paired devices (agent-over-Peer)
 - **ShePaw CLI for agents** — a built-in `shepaw <namespace> <command>` tool tree (context / chat / tools / skills / os / workflow / store / meta …) that lets She and other agents read and modify local data through LLM function calling
 - Bidirectional communication: user-initiated chat & agent-initiated messages (with authorization)
@@ -136,7 +136,7 @@ For detailed build instructions, see [BUILD_GUIDE.md](BUILD_GUIDE.md).
 
 | Type | Providers |
 |------|-----------|
-| Cloud | OpenAI (GPT-4 / GPT-4o), Anthropic Claude, Google Gemini, Grok, DeepSeek, Qwen (Alibaba), GLM (Zhipu), Kimi (Moonshot), Hunyuan (Tencent), OpenRouter |
+| Cloud | OpenAI (GPT-4 / GPT-4o), Anthropic Claude, Google Gemini, Grok, DeepSeek, Qwen (Alibaba), GLM (Zhipu), Kimi (Moonshot), Hunyuan (Tencent), TokenHub (Tencent), OpenRouter |
 | Local | Ollama (llama3, llava, and any locally deployed model) |
 | Custom | Any service with an OpenAI-compatible API |
 

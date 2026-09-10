@@ -48,14 +48,16 @@
 
 1. **设置主密码**：首次启动必设，保护 API Key、聊天记录等敏感数据。建议 8+ 字符、含大小写和数字。
 2. **启用生物识别（可选）**：Face ID / Touch ID / 指纹，之后开 App 免输密码。
-3. **添加第一个 Agent**：主页 →「添加 Agent」→ 选「本地 LLM 代理」或「远端 Agent」。
+3. **添加第一个 Agent**：
+   - **桌面版**会自动检测本机 Agent Hub（`shepaw-hub`）。已安装则提示加入（Hub 上的 Agent 进入通讯录）；未安装则协助安装并打开仪表盘，在「添加实例」里选引擎和工作目录。
+   - 也可：主页 →「添加 Agent」→ 选「本地 LLM 代理」或「远端 Agent」。
 4. 备份与恢复入口在 **储物袋 → 备份与恢复**（加密快照），不在系统设置里。
 
 ### 2.2 添加和管理 Agent
 
 **本地 LLM 代理**（模型跑在本机或直连云服务）：
 
-- 支持提供商：OpenAI、Anthropic Claude、Google Gemini、Grok、DeepSeek、Qwen（通义千问）、GLM（智谱）、Kimi（月之暗面）、Hunyuan（腾讯混元）、OpenRouter、Ollama（本地模型，无需网络）、任意 OpenAI 兼容 API。
+- 支持提供商：OpenAI、Anthropic Claude、Google Gemini、Grok、DeepSeek、Qwen（通义千问）、GLM（智谱）、Kimi（月之暗面）、Hunyuan（腾讯混元）、TokenHub（腾讯云聚合平台：混元/DeepSeek/GLM/Kimi/MiniMax/Qwen 等 18+ 模型，一套 Key + OpenAI 兼容协议）、OpenRouter、Ollama（本地模型，无需网络）、任意 OpenAI 兼容 API。
 - 配置步骤：`+ 添加 Agent` →「本地 LLM 代理」→ 填名称 → 选提供商 → 填 API Key（或 Ollama 服务器地址，如 `http://localhost:11434`）→ 选模型/参数 → 保存。
 
 **远端 Agent（ACP 协议）**（运行在别处的 Agent 服务，v2.1 **没有共享 Token**）：
@@ -84,7 +86,7 @@
 
 **从官方目录一键导入**：进入模型管理页会自动拉取**官方模型目录**（channel 服务 `GET /api/v1/models`，1 小时缓存）。顶部横幅或空态按钮 →「从官方目录导入」→ 选模型 → 一键写入全局定义，API Key 留空待补填；需要 Key 的模型导入后提示「请填入你的 API Key」。
 
-**编辑器里拉取模型列表**：选 OpenRouter 预设时可填 Key 后拉取在线模型列表；选 Ollama 时可拉取本地模型列表、测试连接（如 `http://localhost:11434`）。
+**编辑器里拉取模型列表**：选 OpenRouter 预设时可填 Key 后拉取在线模型列表；选 Ollama 时可拉取本地模型列表、测试连接（如 `http://localhost:11434`）；选 TokenHub 预设填 Key 后可拉取该地域的模型列表（TokenHub 不支持跨地域调用，默认广州 `https://tokenhub.tencentmaas.com/v1`，新加坡 / 硅谷需手改 API Base）。
 
 **与多模态路由的关系**：在 Agent 上按模态从这些全局定义里分配模型（见 [2.8](#28-系统工具技能包多模态路由定时任务web-工具)）。
 

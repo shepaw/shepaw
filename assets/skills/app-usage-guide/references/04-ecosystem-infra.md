@@ -54,4 +54,6 @@ Shepaw app → Shepaw ACP v2.1 → AcpProxyAgent → @agentclientprotocol/sdk �
 
 **Agent Hub（多项目宿主）**：一个 CLI + Web 仪表盘（默认 `:4000`），按项目各起一个网关进程，每项目独立身份/会话存储/授权对等列表。常用：`shepaw-hub quickstart`（交互式）、`init`、`instance add --engine … --cwd …`、`start <id>`、`status`、`pair`、`doctor`、`version`。
 
+**桌面版 App**：启动后会自动检测本机是否已安装 / 正在运行 Agent Hub。已安装则提示加入（`shepaw://peer` 配对，Hub 上的 Agent 进入通讯录）；未安装则协助 `npm install -g shepaw-agent-hub` 并打开仪表盘，引导在「添加实例」里选引擎和工作目录。详见 [2.1](02-user-operations.md#21-快速开始与首次配置)。
+
 **Channel 隧道路由（外网访问）**：Agent Hub 在 Channel 已配置时自动启动隧道路由器，让外网 App 也能连到局域网内的 Agent。

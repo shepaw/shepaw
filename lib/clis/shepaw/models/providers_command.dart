@@ -41,7 +41,7 @@ class ModelsProvidersCommand extends CliCommand {
             'model id from its official docs (shepaw tools web.search), then run '
             'shepaw models add --provider <provider label> --name <model id>.',
         'provider_type "openai" means OpenAI-compatible chat/completions '
-            '(OpenAI, DeepSeek, Qwen, Kimi, Hunyuan, Ollama, OpenRouter, Gemini-compatible).',
+            '(OpenAI, DeepSeek, Qwen, Kimi, Hunyuan, TokenHub, Ollama, OpenRouter, Gemini-compatible).',
         'API keys are stored securely and never printed: outputs expose only has_api_key. '
             'When adding a model under an api_base that already has a key, the key is '
             'reused automatically.',

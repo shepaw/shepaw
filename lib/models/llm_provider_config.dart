@@ -7,6 +7,9 @@ class LLMProviderConfig {
   /// Default vision-capable model suggestion when creating a new model entry.
   /// Not used at runtime — configure per-agent scenario models instead.
   final String? defaultVisionModel;
+  /// 相对 [defaultApiBase] 的模型列表路径（OpenAI 兼容 `GET {apiBase}{modelsPath}`）。
+  /// null 表示不提供在线模型列表拉取。
+  final String? modelsPath;
   final List<String> models;
   final bool requiresApiKey;
   final String icon;
@@ -17,6 +20,7 @@ class LLMProviderConfig {
     required this.defaultApiBase,
     required this.defaultModel,
     this.defaultVisionModel,
+    this.modelsPath,
     required this.models,
     required this.requiresApiKey,
     required this.icon,
@@ -132,5 +136,18 @@ const List<LLMProviderConfig> llmProviders = [
     models: [],
     requiresApiKey: true,
     icon: '🔄',
+  ),
+  // 追加在末尾：多处按 providerType 取「第一个命中」的预设（UI 预选第二轮、
+  // CLI resolveProvider），追加可保证 index 0 仍是 OpenAI，存量行为不变。
+  LLMProviderConfig(
+    name: 'TokenHub',
+    providerType: 'openai',
+    defaultApiBase: 'https://tokenhub.tencentmaas.com/v1',
+    defaultModel: 'hy3',
+    defaultVisionModel: 'hy-vision-2.0-instruct',
+    models: [],
+    modelsPath: '/models',
+    requiresApiKey: true,
+    icon: '☁️',
   ),
 ];

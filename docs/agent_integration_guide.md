@@ -311,7 +311,7 @@ The `ctx` object passed to `on_chat` provides these methods:
 
 | Class | Backend | Notes |
 |-------|---------|-------|
-| `OpenAIProvider` | OpenAI, DeepSeek, Qwen, Ollama, vLLM, LM Studio | Any OpenAI-compatible API |
+| `OpenAIProvider` | OpenAI, DeepSeek, Qwen, Ollama, vLLM, LM Studio, Tencent Cloud TokenHub | Any OpenAI-compatible API |
 | `ClaudeProvider` | Anthropic Claude | Claude 3.5/4 series |
 | `GLMProvider` | ZhipuAI GLM | GLM-4, GLM-4.7 with JWT auth |
 
