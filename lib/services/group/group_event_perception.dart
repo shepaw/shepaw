@@ -11,7 +11,6 @@ import 'group_dispatch_parser.dart';
 import 'group_event.dart';
 import 'group_event_store.dart';
 import '../event/event_bus.dart';
-import '../event/event_bus_flags.dart';
 import '../event/group_event_adapter.dart';
 
 /// Whether an event type triggers an admin perception turn (active-notify) or
@@ -160,9 +159,9 @@ class GroupEventPerceptionScheduler {
   /// active-notify types additionally enqueue an admin perception turn.
   void schedule(GroupEvent event) {
     _eventStore?.record(event);
-    if (EventBusFeatureFlags.groupProjectionEnabled) {
-      _emitGroupProjection(event);
-    }
+    // chat.group.* 投影（单发射点）：EventBus 只做扇出 / 订阅 / 审计，
+    // 群编排感知仍走本 scheduler。投影失败不能影响群事件记录（见 try/catch）。
+    _emitGroupProjection(event);
     if (_policy.isActiveNotify(event.type)) {
       _pending.putIfAbsent(event.channelId, () => []).add(event);
       _arm(event.channelId);
