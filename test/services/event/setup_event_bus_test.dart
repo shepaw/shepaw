@@ -14,6 +14,15 @@ void main() {
     expect(bus.perceptionScheduler.onSchedule, isNotNull);
   });
 
+  test('chat.message.mention 默认 poll_only（避免群聊双唤醒）', () {
+    final bus = EventBus();
+    setupEventBus(bus: bus);
+
+    final def = bus.registry.get('chat.message.mention');
+    expect(def, isNotNull);
+    expect(def!.defaultDelivery, EventDelivery.pollOnly);
+  });
+
   test('resetRuntimeState clears state but keeps perception binding', () {
     final bus = EventBus();
     setupEventBus(bus: bus);

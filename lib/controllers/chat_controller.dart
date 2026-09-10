@@ -66,6 +66,8 @@ import 'peer_approval_completer_resolver.dart';
 import 'chat_events.dart';
 import 'chat_message_window.dart';
 import '../storage/agent_workspace_uris.dart';
+import '../services/event/event_bus.dart';
+import '../services/event/event_scope.dart';
 
 // ChatEvent 及其全部子类已拆分到 chat_events.dart，这里重新导出，
 // 使现有 `import '../controllers/chat_controller.dart'` 的调用方无需改动。

@@ -52,7 +52,9 @@ void registerChatEventTypes(EventNamespaceRegistry registry) {
   registry.register(const EventTypeDefinition(
     id: 'chat.message.mention',
     description: 'Agent was @mentioned in a channel',
-    defaultDelivery: EventDelivery.active,
+    // poll_only：群聊里 @ 已由编排 / 提及处理直接消费，若默认 active 会与既有
+    // 路径形成双唤醒（重复回复）。需要主动感知的 agent 可显式订阅 active。
+    defaultDelivery: EventDelivery.pollOnly,
     requiredScopeKeys: ['channelId', 'agentId'],
   ));
   registry.register(const EventTypeDefinition(

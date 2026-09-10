@@ -1366,6 +1366,33 @@ mixin _MessagingOps on _ChatControllerBase {
         userMsgMetadata['reply_quote'] = replyQuoteText;
       }
 
+      // 投射 chat.message.mention（poll_only，仅记录 + 供显式订阅）。
+      // 群聊里 @ 已由编排 / 提及处理直接消费，这里不做 active 唤醒，避免重复回复。
+      if (mentionedAgentIds.isNotEmpty) {
+        try {
+          final snippet =
+              content.length > 80 ? content.substring(0, 80) : content;
+          for (final mentionedId in mentionedAgentIds) {
+            EventBus.instance.emitSystem(
+              systemDomain: 'chat',
+              type: 'chat.message.mention',
+              payload: {
+                'summary': '用户在群中 @了你',
+                'message_id': userMessage.id,
+                'channel_id': currentChannelId,
+                'snippet': snippet,
+              },
+              scope: EventScope(
+                channelId: currentChannelId,
+                agentId: mentionedId,
+              ),
+            );
+          }
+        } catch (_) {
+          // 事件系统不可用时不影响发消息
+        }
+      }
+
       await chatService.sendMessageToGroup(
         channelId: currentChannelId!,
         content: content,
