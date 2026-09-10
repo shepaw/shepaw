@@ -20,7 +20,7 @@ import '../services/composer_draft_service.dart';
 import '../services/desktop_window_auto_size.dart';
 import '../services/local_database_service.dart';
 import '../services/local_file_storage_service.dart';
-import '../services/group/group_member_session_service.dart';
+import '../services/group/group_management_service.dart';
 import '../utils/layout_utils.dart';
 import '../widgets/drawer_swipe_detector.dart';
 import '../widgets/right_drawer_route.dart';
@@ -3159,38 +3159,40 @@ class _ChatScreenState extends State<ChatScreen>
                                 }
                               }
                               final old = _controller.groupChannel!;
-                              final newSystemPrompt =
-                                  systemPromptController.text.trim();
-                              // copyWithGroupEdit 会原样搬移 source_* 绑定列与
-                              // unread/last* 展示列，避免整行 replace 一次保存就清空；
-                              // 同时显式写入 Flow / 阶段门闸开关与编辑中的头像。
-                              final updated = old.copyWithGroupEdit(
+                              // 群配置只走 GroupManagementService 这一个入口
+                              // （DB 写回 + 家族标题同步 + 变更通知 + 整行重建
+                              // 保留未改列）。留空文本传 ''、轮次留空传 0 ——
+                              // 这里是「清空」而不是服务层的「保留原值」。
+                              final result = await GroupManagementService()
+                                  .updateGroupSettings(
+                                channelId: old.id,
+                                actorId: SheService.sheId,
                                 name: newName,
-                                description:
-                                    descController.text.trim().isNotEmpty
-                                        ? descController.text.trim()
-                                        : null,
-                                systemPrompt: newSystemPrompt.isNotEmpty
-                                    ? newSystemPrompt
-                                    : null,
-                                maxLoopRounds: maxLoopRounds,
+                                description: descController.text.trim(),
+                                systemPrompt: systemPromptController.text.trim(),
+                                maxLoopRounds: maxLoopRounds ?? 0,
                                 mentionMode: selectedMentionMode,
                                 flowMode: flowMode,
                                 enableStageGate: enableStageGate,
-                                avatar: pendingAvatar.isEmpty
-                                    ? null
-                                    : pendingAvatar,
+                                avatar:
+                                    pendingAvatar.isEmpty ? null : pendingAvatar,
                                 clearAvatar: pendingAvatar.isEmpty,
                               );
-                              await _controller.localDatabaseService
-                                  .updateChannel(updated);
-                              await GroupMemberSessionService(
-                                      _controller.localDatabaseService)
-                                  .syncTitlesForGroupFamily(
-                                parentGroupId: updated.groupFamilyId,
-                                groupName: newName,
-                              );
-                              if (mounted) {
+                              if (!result.ok) {
+                                if (ctx.mounted) {
+                                  showTopToast(
+                                    ctx,
+                                    result.error ?? '',
+                                    icon: Icons.error_outline,
+                                    color: Colors.red,
+                                  );
+                                }
+                                return;
+                              }
+                              final updated = await _controller
+                                  .localDatabaseService
+                                  .getChannelById(old.id);
+                              if (updated != null && mounted) {
                                 _controller.updateGroupChannelInfo(updated);
                               }
                               if (ctx.mounted) Navigator.pop(ctx);

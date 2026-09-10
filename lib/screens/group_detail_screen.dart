@@ -12,8 +12,10 @@ import '../services/local_file_storage_service.dart';
 import '../theme/app_theme.dart';
 import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
+import '../services/group/group_management_service.dart';
 import '../services/group/group_member_session_service.dart';
 import '../services/logger_service.dart';
+import '../services/she_service.dart';
 import '../storage/group_workspace_service.dart';
 import '../storage/runtime_share_service.dart';
 import '../utils/layout_utils.dart';
@@ -162,27 +164,35 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
 
     setState(() => _isSaving = true);
     try {
-      final newSystemPrompt = _systemPromptController.text.trim();
-      final newDesc = _descController.text.trim();
-      // copyWithGroupEdit 会原样搬移 source_* 绑定列、unread/last* 展示列，
-      // 避免整行 replace 一次保存就清空它们；description 空串/留空 = null 清空。
-      final updated = _channel.copyWithGroupEdit(
+      // 群配置只走 GroupManagementService 这一个入口（DB 写回 + 家族标题
+      // 同步 + 变更通知 + 整行重建保留未改列）。留空文本传 ''、轮次留空传
+      // 0 —— 这里是「清空」而不是服务层的「保留原值」。
+      final result = await GroupManagementService().updateGroupSettings(
+        channelId: _channel.id,
+        actorId: SheService.sheId,
         name: newName,
-        description: newDesc.isNotEmpty ? newDesc : null,
-        systemPrompt: newSystemPrompt.isNotEmpty ? newSystemPrompt : null,
-        maxLoopRounds: maxLoopRounds,
+        description: _descController.text.trim(),
+        systemPrompt: _systemPromptController.text.trim(),
+        maxLoopRounds: maxLoopRounds ?? 0,
         mentionMode: _selectedMentionMode,
         flowMode: _flowMode,
         enableStageGate: _enableStageGate,
         avatar: _pendingAvatar.isEmpty ? null : _pendingAvatar,
         clearAvatar: _pendingAvatar.isEmpty,
       );
-      await _databaseService.updateChannel(updated);
-      await GroupMemberSessionService(_databaseService).syncTitlesForGroupFamily(
-        parentGroupId: updated.groupFamilyId,
-        groupName: newName,
-      );
       if (!mounted) return;
+      if (!result.ok) {
+        setState(() => _isSaving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result.error ?? '')),
+        );
+        return;
+      }
+      final updated = await _databaseService.getChannelById(_channel.id);
+      if (updated == null) {
+        setState(() => _isSaving = false);
+        return;
+      }
       if (widget.startInEditMode) {
         // Opened directly in edit mode (e.g. from chat screen), pop with result
         Navigator.pop(context, updated);

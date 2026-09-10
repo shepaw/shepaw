@@ -626,6 +626,12 @@ class GroupManagementService {
   ///   effective default of 50.
   /// - `mentionMode`: `null` keeps; otherwise only `adminOnly` / `allMembers`.
   /// - Booleans (`flowMode`/`enableStageGate`): `null` keeps the current value.
+  /// - `avatar`: non-null = 换成新头像（emoji 或本地绝对路径）；
+  ///   `clearAvatar: true` = 移除头像；两者都未给 = 保留原头像。
+  ///
+  /// 这是群配置的**唯一写入入口**（UI 编辑保存与 CLI set-config 共用），
+  /// 内部复用 [Channel.copyWithGroupEdit] 重建整行并统一负责标题同步与
+  /// 变更通知，避免两条写入路径各自的校验/通知/清空语义分叉。
   ///
   /// Settings take effect from the **next** group message (`sendMessageToGroup`
   /// re-reads the channel snapshot); already-forked She-bound child sessions
@@ -640,6 +646,8 @@ class GroupManagementService {
     int? maxLoopRounds,
     bool? flowMode,
     bool? enableStageGate,
+    String? avatar,
+    bool clearAvatar = false,
   }) async {
     final gate = await _requireAdminGroup(channelId, actorId);
     if (gate.error != null) {
@@ -695,6 +703,8 @@ class GroupManagementService {
       mentionMode: nextMentionMode,
       flowMode: flowMode,
       enableStageGate: enableStageGate,
+      avatar: avatar,
+      clearAvatar: clearAvatar,
     );
 
     await _db.updateChannel(updated);
@@ -714,6 +724,8 @@ class GroupManagementService {
       if (mentionMode != null) 'mention_mode': nextMentionMode,
       if (flowMode != null) 'flow_mode': flowMode,
       if (enableStageGate != null) 'enable_stage_gate': enableStageGate,
+      if (avatar != null) 'avatar': avatar,
+      if (clearAvatar) 'avatar': '',
     };
     return GroupManagementResult.success({
       'channel_id': channelId,

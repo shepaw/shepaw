@@ -159,6 +159,45 @@ void main() {
       expect(reloaded.isAdmin(SheService.sheId), isTrue);
     });
 
+    test('头像：avatar 换图与 clearAvatar 移除', () async {
+      final db = LocalDatabaseService();
+      final suffix = DateTime.now().microsecondsSinceEpoch;
+      final channelId = 'grp_$suffix';
+      await db.createChannel(
+        Channel(
+          id: channelId,
+          name: 'Team $suffix',
+          type: 'group',
+          members: [
+            _member(SheService.sheId, role: 'admin'),
+            _member('agent_$suffix'),
+          ],
+          avatar: '🤖',
+        ),
+        'user',
+      );
+
+      final service = GroupManagementService();
+      final setResult = await service.updateGroupSettings(
+        channelId: channelId,
+        actorId: SheService.sheId,
+        avatar: '🎯',
+      );
+      expect(setResult.ok, isTrue, reason: setResult.error);
+      await settleNotify();
+      expect((await db.getChannelById(channelId))!.avatar, '🎯');
+
+      final clearResult = await service.updateGroupSettings(
+        channelId: channelId,
+        actorId: SheService.sheId,
+        clearAvatar: true,
+      );
+      expect(clearResult.ok, isTrue, reason: clearResult.error);
+      await settleNotify();
+      expect((await db.getChannelById(channelId))!.avatar, isNull,
+          reason: 'UI 的「移除头像」依赖这条路径');
+    });
+
     test('name 与 description 也支持清空语义', () async {
       final db = LocalDatabaseService();
       final suffix = DateTime.now().microsecondsSinceEpoch;
