@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/clis/shepaw/events/ack_command.dart';
+import 'package:shepaw/clis/shepaw/events/emit_command.dart';
 import 'package:shepaw/clis/shepaw/events/events_namespace.dart';
 import 'package:shepaw/clis/shepaw/events/inbox_command.dart';
 import 'package:shepaw/clis/shepaw/events/types_command.dart';
@@ -39,7 +40,6 @@ void main() {
         'unsubscribe',
         'list',
         'emit',
-        'providers',
       ]) {
         expect(commands.containsKey(name), true, reason: 'missing $name');
       }
@@ -134,6 +134,34 @@ void main() {
             'correlation': 'cid_ack_all',
           });
           expect(ack['acked_count'], 1);
+        },
+      );
+    });
+  });
+
+  group('events emit（agent / 外部包发布通道）', () {
+    test('agent.<id>.* 可发布并被订阅者收到；其它前缀被拒', () async {
+      await ChatAgentScope.runScoped(
+        agentId: SheService.sheId,
+        body: () async {
+          EventBus.instance.addSubscription(
+            agentId: 'agent_listener',
+            patterns: [const EventPattern(typeGlob: 'agent.*')],
+          );
+
+          final ok = await EventsEmitCommand().execute({
+            'type': 'agent.${SheService.sheId}.tool.done',
+            'payload': '{"task":"daily-report"}',
+          });
+          expect(ok['success'], true);
+          expect(EventBus.instance.inboxFor('agent_listener').length, 1);
+
+          // 外部包 / agent 不能冒用系统域
+          final denied = await EventsEmitCommand().execute({
+            'type': 'peer.pairing.inbound',
+            'payload': '{}',
+          });
+          expect(denied['error'], isNotNull);
         },
       );
     });

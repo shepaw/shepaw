@@ -3,7 +3,6 @@ import 'ack_command.dart';
 import 'emit_command.dart';
 import 'inbox_command.dart';
 import 'list_subscriptions_command.dart';
-import 'providers_command.dart';
 import 'subscribe_command.dart';
 import 'types_command.dart';
 import 'unsubscribe_command.dart';
@@ -34,7 +33,6 @@ class EventsNamespace extends CliNamespace {
         'unsubscribe': EventsUnsubscribeCommand(),
         'list': EventsListSubscriptionsCommand(),
         'emit': EventsEmitCommand(),
-        'providers': EventsProvidersCommand(),
       };
 
   @override
