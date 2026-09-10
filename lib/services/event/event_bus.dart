@@ -482,6 +482,18 @@ class EventBus {
     );
   }
 
+  /// busy 超时 passive 降级：将 active 投递的 inbox 条目改为 passive。
+  void downgradeActiveInboxToPassive(
+    String agentId,
+    Iterable<String> eventIds,
+  ) {
+    inboxStore.reclassifyDelivery(
+      agentId,
+      eventIds,
+      EventDelivery.passive.wireValue,
+    );
+  }
+
   void _ensureAgentEventTypeRegistered(String type) {
     if (registry.get(type) != null) return;
     registry.register(EventTypeDefinition(

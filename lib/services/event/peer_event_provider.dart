@@ -21,6 +21,13 @@ class PeerEventProvider {
         requiredEnvelopeKeys: ['correlationId'],
         requiredScopeKeys: ['ownerId'],
         dedupeKeyTemplate: '{type}:{correlation_id}:{payload.fingerprint}',
+        perceptionCliAllowlist: {
+          'peer.accept',
+          'peer.reject',
+          'peer.status',
+          'events.ack',
+          'events.inbox',
+        },
       ),
       const EventTypeDefinition(
         id: 'peer.pairing.completed',

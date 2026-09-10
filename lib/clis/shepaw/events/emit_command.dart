@@ -40,7 +40,10 @@ class EventsEmitCommand extends CliCommand {
       payload['summary'] = type;
     }
 
-    final correlation = flags['correlation']?.trim();
+    final fromFlag = flags['correlation']?.trim();
+    final correlation = (fromFlag != null && fromFlag.isNotEmpty)
+        ? fromFlag
+        : ChatAgentScope.correlationId;
     final scope = EventScope(
       channelId: flags['channel_id'] ?? flags['channel'],
       agentId: agentId,

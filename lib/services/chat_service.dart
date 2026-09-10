@@ -51,6 +51,7 @@ import 'logger_service.dart';
 import 'event/event_bus.dart';
 import 'event/event_envelope.dart';
 import 'event/event_perception_service.dart';
+import 'event/event_type_definition.dart';
 import '../clis/shepaw/chat/chat_agent_scope.dart';
 import 'local_user_identity.dart';
 import 'she_service.dart';
@@ -121,12 +122,6 @@ class ChatService {
 
   /// 事件感知 busy 降级：排队重试，超 60s 仍 busy 则 passive（仅 inbox）。
   final Map<String, _DeferredEventPerception> _deferredEventPerception = {};
-
-  static const _eventPerceptionCliAllowlist = {
-    'peer.accept',
-    'peer.reject',
-    'peer.status',
-  };
 
   // H1: per-channel in-flight guard for group orchestration loops. A channel
   // with an entry is currently running `sendMessageToGroup`; a duplicate send
@@ -683,6 +678,10 @@ class ChatService {
     final elapsed = DateTime.now().difference(entry.firstDeferredAt);
     if (elapsed > const Duration(seconds: 60)) {
       entry.retryTimer?.cancel();
+      EventBus.instance.downgradeActiveInboxToPassive(
+        entry.agentId,
+        entry.events.map((e) => e.id),
+      );
       _deferredEventPerception.remove(channelId);
       LoggerService().debug(
         'Event perception passive downgrade after 60s: $channelId',
@@ -729,10 +728,15 @@ class ChatService {
         })
         .join('\n');
 
+    final cliAllowlist = perceptionCliAllowlistForEvents(
+      events,
+      EventBus.instance.registry,
+    );
+
     await ChatAgentScope.runScoped(
       agentId: agent.id,
       channelId: targetChannelId,
-      cliAllowlist: _eventPerceptionCliAllowlist,
+      cliAllowlist: cliAllowlist,
       body: () => _agentMessagingService.sendMessageToAgent(
         content: '以下系统事件刚发生：\n$lines',
         agent: agent,

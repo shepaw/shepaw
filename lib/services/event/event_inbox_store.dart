@@ -21,6 +21,22 @@ class EventInboxStore {
     list.sort((a, b) => a.event.seq.compareTo(b.event.seq));
   }
 
+  /// 将指定事件的 inbox 档位改为 [newDelivery]（如 active → passive 降级）。
+  void reclassifyDelivery(
+    String agentId,
+    Iterable<String> eventIds,
+    String newDelivery,
+  ) {
+    final ids = eventIds.toSet();
+    final list = _inboxes[agentId];
+    if (list == null) return;
+    for (final entry in list) {
+      if (ids.contains(entry.event.id)) {
+        entry.delivery = newDelivery;
+      }
+    }
+  }
+
   /// 未 ack 的 [delivery] 档位事件（passive 上下文注入用），按 seq 升序。
   List<InboxEntry> unreadByDelivery(
     String agentId,
@@ -89,8 +105,8 @@ class InboxEntry {
   final DateTime deliveredAt;
   final String deliveredVia;
 
-  /// 投递档位（`EventDelivery.wireValue`）；wait 路径为 null。
-  final String? delivery;
+  /// 投递档位（`EventDelivery.wireValue`）；wait 路径为 null；可降级改写。
+  String? delivery;
   DateTime? ackedAt;
 
   InboxEntry({

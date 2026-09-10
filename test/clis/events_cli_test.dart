@@ -140,6 +140,21 @@ void main() {
   });
 
   group('events emit（agent / 外部包发布通道）', () {
+    test('emit inherits correlation from ChatAgentScope zone', () async {
+      await ChatAgentScope.runScoped(
+        agentId: SheService.sheId,
+        correlationId: 'cid_zone_emit',
+        body: () async {
+          final ok = await EventsEmitCommand().execute({
+            'type': 'agent.${SheService.sheId}.tool.zone',
+            'payload': '{"summary":"zone cid"}',
+          });
+          expect(ok['success'], true);
+          expect(ok['correlation_id'], 'cid_zone_emit');
+        },
+      );
+    });
+
     test('agent.<id>.* 可发布并被订阅者收到；其它前缀被拒', () async {
       await ChatAgentScope.runScoped(
         agentId: SheService.sheId,
