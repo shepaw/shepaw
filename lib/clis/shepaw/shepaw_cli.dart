@@ -15,6 +15,7 @@ import 'store/store_namespace.dart';
 import 'instructions/instructions_namespace.dart';
 import 'vision/vision_namespace.dart';
 import 'models/models_namespace.dart';
+import 'peer/peer_namespace.dart';
 import '../../services/logger_service.dart';
 import '../../services/cli_command_config_service.dart';
 import '../../services/cli_tool_registry.dart';
@@ -79,6 +80,8 @@ class ShepawCLI {
     'vision': VisionNamespace.instance,
     // AI 模型定义与配置（provider 预设 / 增删改 / 指派给 Agent 主模型）
     'models': ModelsNamespace.instance,
+    // 设备配对（粘贴 shepaw://peer 链接 / 查询已配对设备）
+    'peer': PeerNamespace.instance,
 
     // ── ℹ️ META 层 - 系统元信息和诊断 ───────────────────────────────────────────
     'meta': MetaNamespace.instance,
@@ -148,7 +151,11 @@ class ShepawCLI {
       'add / update / remove / agent-main; pass flags {"help": ""} for usage). '
       'Start with "shepaw models list"; verify brand-new model ids from the provider '
       'docs via web search, then add with namespace=models subcommand=add. Confirm '
-      'changes with the user; never print API keys (outputs expose only has_api_key).';
+      'changes with the user; never print API keys (outputs expose only has_api_key). '
+      'Device pairing (shepaw://peer): Initiator — peer pair --link <URL from other device>. '
+      'Responder — peer offer (get your link) then peer accept when pending_inbound_request '
+      'appears in peer status (or reject). peer list for paired devices. '
+      'shepaw://pair?... is agent enrollment — not peer pair.';
 
   /// 动态生成工具描述（包含外部工具信息）
   String _buildToolDescription() {
@@ -360,6 +367,21 @@ class ShepawCLI {
   ///   "--query 你好 --limit 5"   → {'query': '你好', 'limit': '5'}
   ///   "--url https://x.com"     → {'url': 'https://x.com'}
   ///   "--flag"                   → {'flag': ''}
+  ///   `--key "a b"` / `--key ""` → 引号被剥掉（空串仍是空串，可用来清列）
+  /// 剥掉值两侧的成对引号。
+  ///
+  /// flags 以字符串形态传入时（小模型常见）无法做 shell 分词：`--system-prompt ""`
+  /// 会被切成 `--system-prompt` + `""`，引号本身变成值的一部分写进提示词。
+  /// 只剥首尾成对且长度 ≥2 的引号，值内部的引号原样保留。
+  static String _stripQuotes(String value) {
+    if (value.length < 2) return value;
+    final first = value[0];
+    if ((first == '"' || first == "'") && value.endsWith(first)) {
+      return value.substring(1, value.length - 1);
+    }
+    return value;
+  }
+
   Map<String, String> _parseFlagsFromString(String raw) {
     final result = <String, String>{};
     if (raw.trim().isEmpty) return result;
@@ -396,7 +418,7 @@ class ShepawCLI {
             valueParts.add(tokens[j]);
             j++;
           }
-          result[key] = valueParts.join(' ');
+          result[key] = _stripQuotes(valueParts.join(' '));
           i = j;
           continue;
         }

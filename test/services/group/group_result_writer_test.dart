@@ -176,7 +176,8 @@ void main() {
         round: 2,
       );
 
-      expect(note, contains('【同轮完成情况】'));
+      expect(note, contains('【上一轮完成情况（第 1 轮，本轮尚未回报）】'),
+          reason: '回退到上一轮时必须说清是上一轮，不能冒充同轮');
       expect(note, contains('Coder'));
       expect(note, contains('R1 交付'));
       expect(note, isNot(contains('QA')));
@@ -436,6 +437,62 @@ void main() {
         orchestrationId: orchId,
       );
       expect(results!.members.single.summary, 'LIVE 已落盘');
+    });
+
+    test('本轮只写了一部分成员时，重放补齐缺失成员', () async {
+      const groupId = 'group_result_writer_replay';
+      const orchId = 'orch-replay-partial';
+      await ensureTask(groupId, orchId);
+      final ws = GroupWorkspaceService.instance;
+
+      // live 侧只落盘了 coder（例如另一个成员的写入被中断）。
+      await ws.upsertTaskMemberResult(
+        groupId: groupId,
+        orchestrationId: orchId,
+        memberResult: GroupTaskMemberResult(
+          agentId: 'coder',
+          agentName: 'Coder',
+          round: 1,
+          taskStatus: GroupTaskMemberResult.statusDone,
+          summary: 'LIVE 已落盘',
+        ),
+      );
+
+      await GroupResultWriter.persistFromMembersDonePayload(
+        groupId: groupId,
+        orchestrationId: orchId,
+        agents: [_agent('coder', 'Coder'), _agent('doc', 'Doc')],
+        payload: {
+          'status': 'members_done',
+          'round': 1,
+          'orchestration_id': orchId,
+          'member_results': {
+            'coder': {
+              'content': 'REPLAY coder\n[TASK_STATUS: done]',
+              'task_status': 'done',
+              'applicable': true,
+            },
+            'doc': {
+              'content': 'REPLAY doc 文档已写\n[TASK_STATUS: done]',
+              'task_status': 'done',
+              'applicable': true,
+            },
+          },
+          'failed_agents': <String>[],
+          'stalled_agents': <String>[],
+        },
+      );
+
+      final results = await ws.readTaskResults(
+        groupId: groupId,
+        orchestrationId: orchId,
+      );
+      final doc = results!.members
+          .where((m) => m.agentId == 'doc')
+          .firstOrNull;
+      expect(doc, isNotNull,
+          reason: '整轮判定会把缺失成员永久挡在重放之外，必须按成员判断');
+      expect(doc!.summary, contains('REPLAY doc'));
     });
   });
 

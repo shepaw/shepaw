@@ -150,20 +150,6 @@ class GroupResultWriter {
     GroupTaskResults? merged;
     try {
       final ws = GroupWorkspaceService.instance;
-      // 崩溃恢复路径：live 设备在发 members_done 之前已由 persistFromTurns
-      // 落盘本轮结果。若 results.json 已含本轮条目，说明重放冗余，跳过整写
-      // （省一次 results/task/index 三文件写）。results.json 缺失或该轮未写
-      // 成功时仍走重建。
-      if (round > 0) {
-        final existing = await ws.readTaskResults(
-          groupId: groupId,
-          orchestrationId: orchestrationId,
-        );
-        if (existing != null && existing.members.any((m) => m.round == round)) {
-          return existing;
-        }
-      }
-
       final entries = <GroupTaskMemberResult>[];
       for (final entry in raw.entries) {
         final agentId = entry.key.toString();
@@ -203,6 +189,24 @@ class GroupResultWriter {
           messageId: member.messageId,
           completedAt: member.completedAt,
         ));
+      }
+
+      // 崩溃恢复路径：live 设备在发 members_done 之前已由 persistFromTurns
+      // 落盘本轮结果。若本次要写的条目都已存在，重放是冗余的，跳过整写
+      // （省一次 results/task/index 三文件写）。
+      // 按**成员**而非「整轮」判断：只要缺一个成员就补写，否则本轮只写了一
+      // 部分时，整轮判定会把剩下成员永久挡在重放之外。
+      if (entries.isNotEmpty) {
+        final existing = await ws.readTaskResults(
+          groupId: groupId,
+          orchestrationId: orchestrationId,
+        );
+        if (existing != null &&
+            entries.every((e) => existing.members.any(
+                  (m) => m.agentId == e.agentId && m.round == e.round,
+                ))) {
+          return existing;
+        }
       }
       merged = await ws.upsertTaskMemberResults(
         groupId: groupId,
@@ -313,7 +317,11 @@ class GroupResultWriter {
     if (body.length > maxChars) {
       body = '${body.substring(0, maxChars)}…';
     }
-    return '【同轮完成情况】\n$body';
+    // 回退到上一轮时标题必须说清轮次——否则成员会把它当成「本轮已完成」。
+    final heading = (targetRound != null && targetRound != round)
+        ? '【上一轮完成情况（第 $targetRound 轮，本轮尚未回报）】'
+        : '【同轮完成情况】';
+    return '$heading\n$body';
   }
 
   static Future<String> loadAdminResultsBlock({
