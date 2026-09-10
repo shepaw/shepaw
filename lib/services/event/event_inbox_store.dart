@@ -1,4 +1,5 @@
 import 'event_envelope.dart';
+import 'event_type_matching.dart';
 
 /// Per-agent inbox with ack tracking (P0 in-memory).
 class EventInboxStore {
@@ -67,14 +68,11 @@ class EventInboxStore {
       filtered = filtered.where((e) => e.event.correlationId == correlationId);
     }
     if (typePattern != null && typePattern.isNotEmpty) {
-      filtered = filtered.where((e) {
-        // Simple prefix/glob handled by caller if needed; here exact or prefix.*
-        if (typePattern.endsWith('.*')) {
-          final prefix = typePattern.substring(0, typePattern.length - 2);
-          return e.event.type == prefix || e.event.type.startsWith('$prefix.');
-        }
-        return e.event.type == typePattern;
-      });
+      // 复用订阅/wait 的同一套匹配（支持 `prefix.*` 与同深度 `*`），
+      // 避免同一个 pattern 在 `events inbox --pattern` 与 `subscribe` 下语义不同。
+      filtered = filtered.where(
+        (e) => typeMatchesPattern(typePattern, e.event.type),
+      );
     }
     return filtered.take(limit).toList();
   }

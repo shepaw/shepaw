@@ -43,14 +43,15 @@ class EventRouter {
     // 1. WaitLease priority
     // RPC 命中即视为该 agent 已消费：其订阅不再二次投递（含 active 唤醒），
     // 但 **不** 影响其他 agent 的订阅。
+    //
+    // 不带 correlation 的裸 wait（RFC §8.1 允许 `wait` 省略 --correlation）
+    // 同样算已消费：否则同一事件会既完成 wait、又触发 active 感知回合。
     final waitedAgents = <String>{};
     for (final lease in activeLeases) {
       if (!lease.matches(event)) continue;
       lease.complete(event);
       inboxStore.write(lease.agentId, event, via: 'wait');
-      if (lease.correlationId != null) {
-        waitedAgents.add(lease.agentId);
-      }
+      waitedAgents.add(lease.agentId);
       break; // only first matching lease
     }
     if (waitedAgents.isNotEmpty) consumed = true;

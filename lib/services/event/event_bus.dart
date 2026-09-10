@@ -101,6 +101,8 @@ class EventBus {
 
   final List<WaitLease> _leases = [];
   final List<EventSubscription> _subscriptions = [];
+  /// 由 [emitAgent] 自动注册的 `agent.<id>.*` 类型 id，供 reset 回收。
+  final Set<String> _autoRegisteredTypes = {};
   final _uuid = const Uuid();
 
   int get currentSeq => busStore.currentSeq;
@@ -507,6 +509,9 @@ class EventBus {
       description: 'Agent custom event',
       defaultDelivery: EventDelivery.pollOnly,
     ));
+    // 记下来以便 resetRuntimeState 回收：自动注册的类型会永久写入 registry
+    // （全局单例），长跑进程里若 agent 动态生成 type 会单调增长。
+    _autoRegisteredTypes.add(type);
   }
 
   /// 清空运行时状态（「清空数据」时调用）。
@@ -524,6 +529,12 @@ class EventBus {
     }
     _leases.clear();
     _subscriptions.clear();
+    // 回收自动注册的 agent 自定义类型；内置类型（setupEventBus 注册）保留，
+    // 否则重置后到下次启动前 `emitSystem` 会因类型不存在而抛错。
+    for (final type in _autoRegisteredTypes) {
+      registry.unregister(type);
+    }
+    _autoRegisteredTypes.clear();
   }
 }
 

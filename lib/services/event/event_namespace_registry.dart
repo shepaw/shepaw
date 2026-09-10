@@ -3,13 +3,22 @@ import 'event_type_definition.dart';
 
 /// Registry of built-in and plugin event types (mirrors [CliNamespaceRegistry]).
 class EventNamespaceRegistry {
-  EventNamespaceRegistry._();
-  static final EventNamespaceRegistry instance = EventNamespaceRegistry._();
+  /// 公共构造：`EventBus(registry: ...)` 才有意义（否则只能注入全局单例，
+  /// 测试与多实例场景无法隔离类型表）。
+  EventNamespaceRegistry();
+
+  static final EventNamespaceRegistry instance = EventNamespaceRegistry();
 
   final Map<String, EventTypeDefinition> _types = {};
 
   void register(EventTypeDefinition type) {
     _types[type.id] = type;
+  }
+
+  /// 移除类型（用于 `EventBus.resetRuntimeState` 回收自动注册的
+  /// `agent.<id>.*` 类型，避免长跑进程里类型表单调增长）。
+  void unregister(String id) {
+    _types.remove(id);
   }
 
   void registerAll(Iterable<EventTypeDefinition> types) {

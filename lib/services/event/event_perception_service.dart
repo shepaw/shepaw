@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../../models/channel.dart';
 import '../local_database_service.dart';
 import '../local_user_identity.dart';
 import '../logger_service.dart';
@@ -65,17 +66,28 @@ class EventPerceptionService {
   /// 解析 owner ↔ agent 的 1:1 频道；找不到返回 null（调用方降级为仅入 inbox）。
   ///
   /// DM 频道 id 是 uuid（`LocalApiService.createDM`），**不等于** agentId，
-  /// 因此必须查库：取成员恰好为 {owner, agent} 的 dm 频道（最近更新的优先）。
+  /// 因此必须查库：取成员恰好为 {owner, agent} 的 dm 频道。
+  ///
+  /// 优先级：普通 DM > 群绑定会话 / She 绑定会话。
+  /// 绑定会话（`agents.chat`、群派发为成员自动创建）成员也可能恰好是
+  /// {owner, agent}，若直接取首个匹配，感知回合会被写进 agent↔agent 的
+  /// 会话频道而非用户与 agent 的单聊。筛选口径与
+  /// `ChatService.drainAllMailboxReplies` 一致。
   static Future<String?> resolveDirectChannelId(String agentId) async {
     try {
       final channels = await LocalDatabaseService().getChannelsForAgent(agentId);
       final ownerId = LocalUserIdentity.id;
+      Channel? fallback;
       for (final channel in channels) {
         final memberIds = channel.members.map((m) => m.id).toSet();
         if (memberIds.length != 2 || !memberIds.contains(agentId)) continue;
         if (ownerId.isNotEmpty && !memberIds.contains(ownerId)) continue;
-        return channel.id;
+        if (!channel.isGroupBoundMemberSession && !channel.isSheBoundSession) {
+          return channel.id;
+        }
+        fallback ??= channel;
       }
+      return fallback?.id;
     } catch (e) {
       LoggerService().warning(
         'Failed to resolve DM channel for $agentId',
