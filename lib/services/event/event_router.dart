@@ -90,8 +90,16 @@ class EventRouter {
       }
 
       deliveredAgents.add(target.agentId);
-      inboxStore.write(target.agentId, event, via: target.mode);
+      inboxStore.write(
+        target.agentId,
+        event,
+        via: target.mode,
+        delivery: target.delivery.wireValue,
+      );
 
+      // active：debounce 后唤醒 notify-only 回合。
+      // passive：仅入 inbox，由 [EventBus.buildPassiveContext] 并入该 agent
+      // 的下一回合 context。
       if (target.delivery == EventDelivery.active) {
         perceptionScheduler.schedule(
           agentId: target.agentId,
@@ -99,7 +107,6 @@ class EventRouter {
           events: [event],
         );
       }
-      // passive: inbox only for P0; context injection deferred to P1+
     }
 
     return consumed;

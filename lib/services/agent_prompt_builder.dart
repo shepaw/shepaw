@@ -70,12 +70,19 @@ class AgentPromptBuilder {
   /// Optional prompt-stack override (e.g. peer-inbound stripped config).
   final PromptStackConfig? configOverride;
 
+  /// 事件系统 passive 递送的未读摘要（见 `EventBus.buildPassiveContext`）。
+  ///
+  /// 独立于 [ephemeralContext]：后者非空会跳过 Scope Card / DM playbooks，
+  /// 而 passive 事件只是附加信息，不应改变这些分段行为。
+  final String? eventContext;
+
   AgentPromptBuilder({
     required this.agent,
     this.dmSystemPromptOverride,
     this.ephemeralContext,
     this.ephemeralDynamicSuffix,
     this.configOverride,
+    this.eventContext,
   });
 
   /// Split a group/room prompt so She's stacked persona can cache.
@@ -220,6 +227,13 @@ class AgentPromptBuilder {
     }
 
     // ── Dynamic suffix (profile / roster / time) ─────────────────────────
+
+    // ⑤'' 事件系统 passive 未读事件 — 每回合都可能变化，放 dynamic 后缀；
+    //     为空时不注入，避免无谓地撑大提示词。
+    final eventBlock = eventContext?.trim() ?? '';
+    if (eventBlock.isNotEmpty) {
+      dynamicParts.add(eventBlock);
+    }
 
     // ⑤' Room/group per-turn state — before profile so time can stay last.
     if (ephemeralDynamic.isNotEmpty) {

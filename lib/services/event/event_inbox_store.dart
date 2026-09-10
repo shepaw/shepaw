@@ -4,15 +4,34 @@ import 'event_envelope.dart';
 class EventInboxStore {
   final Map<String, List<InboxEntry>> _inboxes = {};
 
-  void write(String agentId, EventEnvelope event, {String via = 'subscription'}) {
+  void write(
+    String agentId,
+    EventEnvelope event, {
+    String via = 'subscription',
+    String? delivery,
+  }) {
     final list = _inboxes.putIfAbsent(agentId, () => []);
     if (list.any((e) => e.event.id == event.id)) return;
     list.add(InboxEntry(
       event: event,
       deliveredAt: DateTime.now(),
       deliveredVia: via,
+      delivery: delivery,
     ));
     list.sort((a, b) => a.event.seq.compareTo(b.event.seq));
+  }
+
+  /// 未 ack 的 [delivery] 档位事件（passive 上下文注入用），按 seq 升序。
+  List<InboxEntry> unreadByDelivery(
+    String agentId,
+    String delivery, {
+    int limit = 5,
+  }) {
+    final list = _inboxes[agentId] ?? const [];
+    return list
+        .where((e) => e.ackedAt == null && e.delivery == delivery)
+        .take(limit)
+        .toList();
   }
 
   List<InboxEntry> inboxFor(
@@ -69,18 +88,23 @@ class InboxEntry {
   final EventEnvelope event;
   final DateTime deliveredAt;
   final String deliveredVia;
+
+  /// 投递档位（`EventDelivery.wireValue`）；wait 路径为 null。
+  final String? delivery;
   DateTime? ackedAt;
 
   InboxEntry({
     required this.event,
     required this.deliveredAt,
     required this.deliveredVia,
+    this.delivery,
   });
 
   Map<String, dynamic> toJson() => {
         'event': event.toJson(),
         'delivered_at': deliveredAt.toIso8601String(),
         'delivered_via': deliveredVia,
+        if (delivery != null) 'delivery': delivery,
         'acked': ackedAt != null,
         if (event.correlationId != null)
           'correlation_id': event.correlationId,

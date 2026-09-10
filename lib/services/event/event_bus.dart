@@ -435,6 +435,38 @@ class EventBus {
     );
   }
 
+  /// passive 事件的「下一回合上下文」文本块；无未读内容返回 null。
+  ///
+  /// 只取 delivery=passive 且未 ack 的条目（active 已单独唤醒、poll_only 需
+  /// 显式轮询），最多 [maxEvents] 条，按 seq 升序。注入方见
+  /// `AgentPromptBuilder.eventContext`。
+  String? buildPassiveContext(String agentId, {int maxEvents = 5}) {
+    final entries = inboxStore.unreadByDelivery(
+      agentId,
+      EventDelivery.passive.wireValue,
+      limit: maxEvents,
+    );
+    if (entries.isEmpty) return null;
+
+    final buffer = StringBuffer()
+      ..writeln('【系统事件 · 近期未读】')
+      ..writeln(
+          '以下事件已投递到你的事件收件箱，尚未确认；可用 `shepaw events ack` 确认：');
+    for (final entry in entries) {
+      final summary = entry.event.payload['summary'];
+      final text = summary is String && summary.isNotEmpty
+          ? summary
+          : entry.event.type;
+      final correlation = entry.event.correlationId;
+      buffer.write('- $text（${entry.event.type}');
+      if (correlation != null && correlation.isNotEmpty) {
+        buffer.write('，correlation=$correlation');
+      }
+      buffer.writeln('）');
+    }
+    return buffer.toString();
+  }
+
   int ackInbox(
     String agentId, {
     String? eventId,

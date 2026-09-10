@@ -12,6 +12,7 @@ import '../local_database_service.dart';
 import '../tool_result_database_service.dart';
 import '../acp_agent_connection.dart';
 import '../agent_prompt_builder.dart';
+import '../event/event_bus.dart';
 import '../local_llm_agent_service.dart';
 import '../task/task_models.dart';
 import '../../clis/shepaw/os/os_executor.dart' as os_exec;
@@ -2185,6 +2186,8 @@ class AgentMessagingService {
         dmSystemPromptOverride: dmSystemPrompt,
         ephemeralContext: peerPreamble,
         configOverride: isPeerInbound ? promptConfig : null,
+        // passive 递送的未读事件并入本回合 context（无订阅/无未读时为 null）。
+        eventContext: EventBus.instance.buildPassiveContext(agent.id),
       ).build();
       final systemPrompt = builtPrompt.full;
 
