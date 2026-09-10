@@ -516,6 +516,9 @@ class AgentMessagingService {
     /// 引用回复时选中的部分文字（可选）；为空表示引用整条消息。
     String? replyQuoteText,
     String? dmSystemPrompt,
+    /// 推理日志的 `executionMode` 标记（如事件感知回合 `event_perception`）；
+    /// 为空时维持默认的 `local_multi_round`。
+    String? executionMode,
     void Function(String chunk)? onStreamChunk,
     void Function(Map<String, dynamic> actionData)? onActionConfirmation,
     void Function(Map<String, dynamic> selectData)? onSingleSelect,
@@ -559,6 +562,7 @@ class AgentMessagingService {
           channelId: channelId,
           replyToId: replyToId,
           dmSystemPrompt: dmSystemPrompt,
+          executionMode: executionMode,
           onStreamChunk: onStreamChunk,
           onActionConfirmation: onActionConfirmation,
           onSingleSelect: onSingleSelect,
@@ -2046,6 +2050,7 @@ class AgentMessagingService {
     String? channelId,
     String? replyToId,
     String? dmSystemPrompt,
+    String? executionMode,
     void Function(String chunk)? onStreamChunk,
     void Function(Map<String, dynamic>)? onActionConfirmation,
     void Function(Map<String, dynamic>)? onSingleSelect,
@@ -2321,7 +2326,7 @@ class AgentMessagingService {
         channelId: channelId ?? effectiveChannelId,
         provider: agent.metadata['llm_provider'] as String?,
         model: agent.metadata['llm_model'] as String?,
-        executionMode: 'local_multi_round',
+        executionMode: executionMode ?? 'local_multi_round',
         userMessage: effectiveContent,
         systemPrompt: systemPrompt,
       );

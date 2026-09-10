@@ -488,10 +488,19 @@ class EventBus {
     ));
   }
 
-  void clearState() {
+  /// 清空运行时状态（「清空数据」时调用）。
+  ///
+  /// 只清内存态；持久化的 `event_subscriptions` 由
+  /// `LocalDatabaseService.clearAllData()` 负责。感知回调绑定保留
+  /// （`PerceptionScheduler.cancelPending`），调用方如需恢复默认订阅请重新
+  /// seed（如 `PeerEventProvider.seedSheInboundSubscription`）。
+  void resetRuntimeState() {
     busStore.reset();
     inboxStore.reset();
-    perceptionScheduler.reset();
+    perceptionScheduler.cancelPending();
+    for (final lease in _leases) {
+      lease.cancel();
+    }
     _leases.clear();
     _subscriptions.clear();
   }

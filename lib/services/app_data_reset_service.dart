@@ -1,5 +1,7 @@
 import '../storage/store_wipe_service.dart';
 import 'agent_memory_store_service.dart';
+import 'event/event_bus.dart';
+import 'event/peer_event_provider.dart';
 import 'cognition_service.dart';
 import 'inference_log_service.dart';
 import 'local_database_service.dart';
@@ -49,6 +51,12 @@ class AppDataResetService {
     });
     await step('legacy_files', () => _files.clearAllResources());
     await step('agent_memory', AgentMemoryStoreService.deleteAllAgentMemories);
+    // 事件系统：DB 行在 database 步骤已删，这里清内存态并恢复 She 的默认订阅，
+    // 否则重置后到下次启动前事件系统处于「零订阅」。
+    await step('event_bus', () async {
+      EventBus.instance.resetRuntimeState();
+      PeerEventProvider.seedSheInboundSubscription(EventBus.instance);
+    });
     await step('store', () async {
       await _storeWipe.wipeSelfTree();
     });

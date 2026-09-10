@@ -61,11 +61,17 @@ class PerceptionScheduler {
     }
   }
 
-  void reset() {
+  /// 取消所有待触发的批次（保留 [onSchedule] 绑定）。
+  void cancelPending() {
     for (final s in _channels.values) {
       s.debounceTimer?.cancel();
     }
     _channels.clear();
+  }
+
+  /// 完全重置（含解绑 [onSchedule]；重绑需再调 `ensureBound`）。
+  void reset() {
+    cancelPending();
     onSchedule = null;
   }
 }

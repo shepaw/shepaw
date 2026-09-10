@@ -645,6 +645,8 @@ class ChatService {
       userId: LocalUserIdentity.id,
       userName: LocalUserIdentity.displayName,
       channelId: targetChannelId,
+      // 推理日志标记：便于区分「用户回合」与「事件感知回合」。
+      executionMode: 'event_perception',
       dmSystemPrompt:
           '【系统事件通知回合】这不是用户主动发的消息。请用简短中文说明发生了什么，'
           '并在设备配对场景建议用户确认后调用 peer accept 或 peer reject。'

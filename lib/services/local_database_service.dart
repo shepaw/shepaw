@@ -924,6 +924,7 @@ class LocalDatabaseService {
     await db.delete('messages');
     await db.delete('conversation_requests');
     await db.delete('resources');
+    await db.delete('event_subscriptions');
   }
 
   /// 关闭数据库
