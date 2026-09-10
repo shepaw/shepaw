@@ -679,32 +679,22 @@ class GroupManagementService {
       }
     }
 
+    // 与 UI 编辑保存共用同一重建实现（[Channel.copyWithGroupEdit]）：绑定列、
+    // 展示态列以及将来新增的列由它统一搬移，避免这里再手工罗列一遍字段——
+    // 漏列就会在整行 replace 时被静默清空。
     // 以“是否传入原始参数”区分 keep 与 clear，而非规范化后的值：
     // `null`（未传）= 保留原值；传入后为空/0 = 真正清空。不能用 `next ?? channel`
     // 兜底——那样空值规范化为 null 后会静默保留旧值、永远清不掉。
-    final updated = Channel(
-      id: channel.id,
+    final updated = channel.copyWithGroupEdit(
       name: nextName ?? channel.name,
-      type: channel.type,
-      members: channel.members,
-      createdBy: channel.createdBy,
-      createdAt: channel.createdAt,
       description: description == null ? channel.description : nextDescription,
-      avatar: channel.avatar,
-      isPrivate: channel.isPrivate,
-      unreadCount: channel.unreadCount,
-      lastMessage: channel.lastMessage,
-      lastMessageTime: channel.lastMessageTime,
-      parentGroupId: channel.parentGroupId,
-      sourceGroupChannelId: channel.sourceGroupChannelId,
-      sourceSheChannelId: channel.sourceSheChannelId,
       systemPrompt:
           systemPrompt == null ? channel.systemPrompt : nextSystemPrompt,
       maxLoopRounds:
           maxLoopRounds == null ? channel.maxLoopRounds : nextMaxLoopRounds,
-      mentionMode: nextMentionMode ?? channel.mentionMode,
-      flowMode: flowMode ?? channel.flowMode,
-      enableStageGate: enableStageGate ?? channel.enableStageGate,
+      mentionMode: nextMentionMode,
+      flowMode: flowMode,
+      enableStageGate: enableStageGate,
     );
 
     await _db.updateChannel(updated);

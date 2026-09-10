@@ -122,6 +122,43 @@ void main() {
       expect(reloaded.mentionMode, 'adminOnly');
     });
 
+    test('不在参数里的列（parentGroupId/createdBy）也原样保留', () async {
+      final db = LocalDatabaseService();
+      final suffix = DateTime.now().microsecondsSinceEpoch;
+      final channelId = 'grp_$suffix';
+      await db.createChannel(
+        Channel(
+          id: channelId,
+          name: 'Keep Name',
+          type: 'group',
+          members: [
+            _member(SheService.sheId, role: 'admin'),
+            _member('agent_$suffix'),
+          ],
+          unreadCount: 3,
+          parentGroupId: 'grp_parent_$suffix',
+        ),
+        'user',
+      );
+
+      final service = GroupManagementService();
+      final result = await service.updateGroupSettings(
+        channelId: channelId,
+        actorId: SheService.sheId,
+        enableStageGate: true,
+      );
+      expect(result.ok, isTrue, reason: result.error);
+      await settleNotify();
+
+      final reloaded = await db.getChannelById(channelId);
+      expect(reloaded!.enableStageGate, isTrue);
+      expect(reloaded.parentGroupId, 'grp_parent_$suffix',
+          reason: 'updateGroupSettings 没有该参数，重建时必须搬移而不是丢弃');
+      expect(reloaded.members.map((m) => m.id),
+          containsAll([SheService.sheId, 'agent_$suffix']));
+      expect(reloaded.isAdmin(SheService.sheId), isTrue);
+    });
+
     test('name 与 description 也支持清空语义', () async {
       final db = LocalDatabaseService();
       final suffix = DateTime.now().microsecondsSinceEpoch;
