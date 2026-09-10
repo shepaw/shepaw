@@ -34,13 +34,16 @@ Future<void> loadPersistedEventSubscriptions({EventBus? bus}) async {
     final delivery = EventDelivery.fromWire(row['delivery'] as String?) ??
         EventDelivery.pollOnly;
 
+    // seq 是 **进程内** 单调计数（重启归零）。若沿用上一次运行落库的
+    // `created_seq`，新事件 seq 必然小于它，`eventSeq < createdSeq` 会让该订阅
+    // 永久不匹配。这里统一用当前 seq（启动期即 0）：重启后本来也无历史可回放。
     target.addSubscription(
       subscriptionId: id,
       agentId: agentId,
       patterns: patterns,
       delivery: delivery,
       persistent: (row['persistent'] as int? ?? 1) == 1,
-      createdSeq: row['created_seq'] as int?,
+      createdSeq: target.currentSeq,
     );
   }
 }

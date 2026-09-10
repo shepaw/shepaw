@@ -1,10 +1,19 @@
 import 'dart:async';
 
+import '../local_database_service.dart';
+import '../local_user_identity.dart';
 import '../logger_service.dart';
-import '../she_service.dart';
-import 'event_envelope.dart';
 import 'event_bus.dart';
 import 'perception_scheduler.dart';
+
+/// Notify-only 回合执行器：`(agentId, channelId, events)`。
+///
+/// [channelId] 为空字符串时由执行方自行解析 DM 频道（如 peer 入站事件不带频道）。
+typedef EventNotifyTurnHandler = Future<void> Function(
+  String agentId,
+  String channelId,
+  List<EventEnvelope> events,
+);
 
 /// Wires [PerceptionScheduler] to agent notify-only turns (P1+).
 class EventPerceptionService {
@@ -14,19 +23,23 @@ class EventPerceptionService {
   static const _tag = 'EventPerception';
 
   /// Set by [ChatService] after messaging stack is ready.
-  Future<void> Function(String agentId, List<EventEnvelope> events)? runNotifyTurn;
+  EventNotifyTurnHandler? runNotifyTurn;
 
-  bool _bound = false;
+  PerceptionScheduler? _boundScheduler;
 
   void ensureBound(PerceptionScheduler scheduler) {
-    if (_bound) return;
-    _bound = true;
-    scheduler.onSchedule = (agentId, events) {
-      unawaited(_onSchedule(agentId, events));
+    if (_boundScheduler == scheduler && scheduler.onSchedule != null) return;
+    _boundScheduler = scheduler;
+    scheduler.onSchedule = (agentId, channelId, events) {
+      unawaited(_onSchedule(agentId, channelId, events));
     };
   }
 
-  Future<void> _onSchedule(String agentId, List<EventEnvelope> events) async {
+  Future<void> _onSchedule(
+    String agentId,
+    String channelId,
+    List<EventEnvelope> events,
+  ) async {
     if (events.isEmpty) return;
     final run = runNotifyTurn;
     if (run == null) {
@@ -37,7 +50,7 @@ class EventPerceptionService {
       return;
     }
     try {
-      await run(agentId, events);
+      await run(agentId, channelId, events);
     } catch (e, st) {
       LoggerService().error(
         'Event perception turn failed: $e',
@@ -48,15 +61,33 @@ class EventPerceptionService {
     }
   }
 
-  /// Default She DM channel id (1:1).
-  static String defaultChannelForAgent(String agentId) {
-    if (agentId == SheService.sheId) return SheService.sheId;
-    return agentId;
+  /// 解析 owner ↔ agent 的 1:1 频道；找不到返回 null（调用方降级为仅入 inbox）。
+  ///
+  /// DM 频道 id 是 uuid（`LocalApiService.createDM`），**不等于** agentId，
+  /// 因此必须查库：取成员恰好为 {owner, agent} 的 dm 频道（最近更新的优先）。
+  static Future<String?> resolveDirectChannelId(String agentId) async {
+    try {
+      final channels = await LocalDatabaseService().getChannelsForAgent(agentId);
+      final ownerId = LocalUserIdentity.id;
+      for (final channel in channels) {
+        final memberIds = channel.members.map((m) => m.id).toSet();
+        if (memberIds.length != 2 || !memberIds.contains(agentId)) continue;
+        if (ownerId.isNotEmpty && !memberIds.contains(ownerId)) continue;
+        return channel.id;
+      }
+    } catch (e) {
+      LoggerService().warning(
+        'Failed to resolve DM channel for $agentId',
+        tag: _tag,
+        error: e,
+      );
+    }
+    return null;
   }
 }
 
-/// Call once after [EventBus] is registered.
-void wireEventPerception() {
+/// Bind the given [bus]'s scheduler (defaults to the global one).
+void wireEventPerception([EventBus? bus]) {
   EventPerceptionService.instance
-      .ensureBound(EventBus.instance.perceptionScheduler);
+      .ensureBound((bus ?? EventBus.instance).perceptionScheduler);
 }

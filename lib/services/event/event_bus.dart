@@ -105,11 +105,6 @@ class EventBus {
 
   int get currentSeq => busStore.currentSeq;
 
-  /// Register P0 test types; call from bootstrap / tests.
-  void registerP0Types() {
-    registerP0BuiltinEventTypes(registry);
-  }
-
   EventSubscription addSubscription({
     String? subscriptionId,
     required String agentId,
@@ -223,6 +218,13 @@ class EventBus {
     String? correlationId,
     String? causationId,
   }) {
+    // 域白名单：`system:<domain>` 只能发自己域下的 type，避免任意调用方
+    // 冒用 `system:peer` 等受信任来源（emit 的 source 由调用方法推导，不可传入）。
+    if (!type.startsWith('$systemDomain.')) {
+      throw ArgumentError(
+        'System domain "$systemDomain" may not emit $type',
+      );
+    }
     return _emit(
       source: 'system:$systemDomain',
       type: type,

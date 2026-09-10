@@ -599,18 +599,34 @@ class ChatService {
   /// Notify-only turn for global EventBus active subscriptions (e.g. peer inbound).
   Future<void> _runEventPerceptionTurn(
     String agentId,
+    String channelId,
     List<EventEnvelope> events,
   ) async {
     if (events.isEmpty) return;
     final agent = await _databaseService.getRemoteAgentById(agentId);
     if (agent == null || !agent.isLocal) return;
 
-    final channelId = EventPerceptionService.defaultChannelForAgent(agentId);
-    if (_activeTasks.containsKey(channelId)) {
+    // 事件未带频道（如 peer 入站）→ 解析 owner↔agent 的 1:1 频道；
+    // 解析不到就只留 inbox，不伪造频道写消息。
+    final targetChannelId = channelId.isNotEmpty
+        ? channelId
+        : await EventPerceptionService.resolveDirectChannelId(agentId);
+    if (targetChannelId == null || targetChannelId.isEmpty) {
       LoggerService().debug(
-        'Event perception deferred: $channelId has active task',
+        'Event perception inbox-only: no DM channel for $agentId',
         tag: 'ChatService',
       );
+      return;
+    }
+
+    // busy 守卫：该频道已有进行中的回合 → 让位（事件已在 inbox，可轮询），
+    // 否则会与用户当前回合并发写同一频道。
+    if (_activeTasks.containsKey(targetChannelId)) {
+      LoggerService().debug(
+        'Event perception deferred: $targetChannelId has active task',
+        tag: 'ChatService',
+      );
+      return;
     }
 
     final lines = events
@@ -628,7 +644,7 @@ class ChatService {
       agent: agent,
       userId: LocalUserIdentity.id,
       userName: LocalUserIdentity.displayName,
-      channelId: channelId,
+      channelId: targetChannelId,
       dmSystemPrompt:
           '【系统事件通知回合】这不是用户主动发的消息。请用简短中文说明发生了什么，'
           '并在设备配对场景建议用户确认后调用 peer accept 或 peer reject。'

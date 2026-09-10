@@ -9,12 +9,19 @@ class EventBusStore {
   final Map<String, _DedupeEntry> _dedupeWindow = {};
   static const dedupeWindowMs = 60000;
 
+  /// 内存日志上限（P0 无落库）：群每个 step/round 都会投影一条且 payload 内嵌
+  /// 整份 GroupEvent JSON，长会话必须裁剪，否则单调增长。
+  static const maxLogEntries = 1000;
+
   int get currentSeq => _seq;
 
   int nextSeq() => ++_seq;
 
   void append(EventEnvelope envelope) {
     _log.add(envelope);
+    if (_log.length > maxLogEntries) {
+      _log.removeRange(0, _log.length - maxLogEntries);
+    }
   }
 
   List<EventEnvelope> get log => List.unmodifiable(_log);

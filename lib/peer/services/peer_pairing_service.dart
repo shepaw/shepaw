@@ -315,6 +315,9 @@ class PeerPairingService {
             : <PeerStoreShareEntry>[]);
     await PeerStorageService().replaceStoreShares(peer.id, shares);
 
+    // 先取 correlation：`_cleanup()` 会清空 `_responderCorrelationId`，
+    // 之后读取恒为 null，completed 事件就永远发不出去。
+    final cid = _responderCorrelationId;
     _state = PairingSessionState.completed;
     _cleanup();
 
@@ -327,7 +330,6 @@ class PeerPairingService {
     await StoreService.instance.pushShareAnnounce(peer.id);
 
     _log.info('Pairing confirmed: ${peer.deviceName} (${peer.fingerprint})', tag: _tag);
-    final cid = _responderCorrelationId;
     if (cid != null) {
       PeerEventProvider.emitCompleted(
         correlationId: cid,

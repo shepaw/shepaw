@@ -17,7 +17,9 @@ class EventsSubscribeCommand extends CliCommand {
 
   @override
   String get usage =>
-      'shepaw events subscribe --pattern "peer.pairing.*" [--delivery poll_only|passive|active] [--persist]';
+      'shepaw events subscribe --pattern "peer.pairing.*" '
+      '[--delivery poll_only|passive|active] [--persist] '
+      '[--channel_id id] [--owner_id id] [--peer_id id] [--device_id id] [--agent_id id]';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
@@ -35,9 +37,11 @@ class EventsSubscribeCommand extends CliCommand {
         EventDelivery.pollOnly;
     final persist = flags.containsKey('persist');
 
+    final scope = _scopeFromFlags(flags);
+
     final sub = EventBus.instance.addSubscription(
       agentId: agentId,
-      patterns: [EventPattern(typeGlob: pattern)],
+      patterns: [EventPattern(typeGlob: pattern, scope: scope)],
       delivery: delivery,
       persistent: persist,
     );
@@ -47,7 +51,7 @@ class EventsSubscribeCommand extends CliCommand {
         'id': sub.id,
         'agent_id': agentId,
         'patterns_json': jsonEncode([
-          {'type_glob': pattern, 'scope': {}},
+          {'type_glob': pattern, 'scope': scope},
         ]),
         'delivery': delivery.wireValue,
         'persistent': 1,
@@ -62,8 +66,27 @@ class EventsSubscribeCommand extends CliCommand {
       'success': true,
       'subscription_id': sub.id,
       'pattern': pattern,
+      if (scope.isNotEmpty) 'scope': scope,
       'delivery': delivery.wireValue,
       'persistent': persist,
     };
+  }
+
+  /// scope 过滤（缺省即通配）：--channel_id / --owner_id / --peer_id /
+  /// --device_id / --agent_id。
+  Map<String, String> _scopeFromFlags(Map<String, String> flags) {
+    final scope = <String, String>{};
+    void take(String key, String flag) {
+      final raw = flags[flag]?.trim();
+      if (raw != null && raw.isNotEmpty) scope[key] = raw;
+    }
+
+    take('channel_id', 'channel_id');
+    if (!scope.containsKey('channel_id')) take('channel_id', 'channel');
+    take('owner_id', 'owner_id');
+    take('peer_id', 'peer_id');
+    take('device_id', 'device_id');
+    take('agent_id', 'agent_id');
+    return scope;
   }
 }

@@ -3,7 +3,6 @@ import 'package:shepaw/services/event/event_bus.dart';
 import 'package:shepaw/services/event/event_delivery.dart';
 import 'package:shepaw/services/event/event_namespace_registry.dart';
 import 'package:shepaw/services/event/event_pattern.dart';
-import 'package:shepaw/services/event/event_scope.dart';
 import 'package:shepaw/services/she_service.dart';
 
 void main() {
@@ -47,7 +46,7 @@ void main() {
 
   test('lease early-return suppresses active subscription for correlation', () {
     var scheduleCount = 0;
-    bus.perceptionScheduler.onSchedule = (_, __) => scheduleCount++;
+    bus.perceptionScheduler.onSchedule = (_, __, ___) => scheduleCount++;
 
     bus.addSubscription(
       agentId: SheService.sheId,
@@ -85,6 +84,56 @@ void main() {
     );
 
     expect(bus.inboxFor('agent_a'), isEmpty);
+  });
+
+  test('correlation wait suppresses only the waiting agent subscription',
+      () async {
+    final woken = <String>[];
+    bus.perceptionScheduler
+      ..debounce = Duration.zero
+      ..onSchedule = (agentId, _, __) => woken.add(agentId);
+
+    bus.addSubscription(
+      agentId: SheService.sheId,
+      patterns: [const EventPattern(typeGlob: 'test.event.pong')],
+      delivery: EventDelivery.active,
+    );
+    bus.addSubscription(
+      agentId: 'agent_other',
+      patterns: [const EventPattern(typeGlob: 'test.event.pong')],
+      delivery: EventDelivery.active,
+    );
+
+    bus.openWaitLease(
+      agentId: SheService.sheId,
+      correlationId: 'cid_x',
+      typePatterns: ['test.event.pong'],
+    );
+
+    bus.emitSystem(
+      systemDomain: 'test',
+      type: 'test.event.pong',
+      payload: {'summary': 'hit'},
+      correlationId: 'cid_x',
+    );
+
+    // debounce 为 0 → 等一个事件循环让 scheduler drain。
+    await Future<void>.delayed(Duration.zero);
+
+    // She 已由 wait 消费 → 不再 active 唤醒；其他 agent 的订阅不受影响。
+    expect(woken, ['agent_other']);
+    expect(bus.inboxFor('agent_other').length, 1);
+  });
+
+  test('emitSystem rejects types outside the declared system domain', () {
+    expect(
+      () => bus.emitSystem(
+        systemDomain: 'peer',
+        type: 'test.event.pong',
+        payload: const {},
+      ),
+      throwsArgumentError,
+    );
   });
 
   test('historical events filtered by createdSeq', () {

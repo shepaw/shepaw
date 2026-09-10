@@ -38,20 +38,27 @@ class EventRouter {
     required Iterable<WaitLease> activeLeases,
     required Iterable<EventSubscription> subscriptions,
   }) {
+    var consumed = false;
+
     // 1. WaitLease priority
+    // RPC 命中即视为该 agent 已消费：其订阅不再二次投递（含 active 唤醒），
+    // 但 **不** 影响其他 agent 的订阅。
+    final waitedAgents = <String>{};
     for (final lease in activeLeases) {
       if (!lease.matches(event)) continue;
       lease.complete(event);
       inboxStore.write(lease.agentId, event, via: 'wait');
       if (lease.correlationId != null) {
-        return true; // suppress subscription active wake for this correlation
+        waitedAgents.add(lease.agentId);
       }
       break; // only first matching lease
     }
+    if (waitedAgents.isNotEmpty) consumed = true;
 
     // 2. Subscriptions
     final targets = <DispatchTarget>[];
     for (final sub in subscriptions) {
+      if (waitedAgents.contains(sub.agentId)) continue;
       if (!sub.matches(
         type: event.type,
         eventScope: event.scope,
@@ -95,6 +102,6 @@ class EventRouter {
       // passive: inbox only for P0; context injection deferred to P1+
     }
 
-    return false;
+    return consumed;
   }
 }

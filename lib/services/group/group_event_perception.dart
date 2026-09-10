@@ -178,6 +178,9 @@ class GroupEventPerceptionScheduler {
         payload: env.payload,
         scope: env.scope,
         correlationId: env.correlationId,
+        // 保留 GroupEvent.id 作为上游事件 id：投影 envelope 会重新分配
+        // `evt_*` id 与 `at`，没有它就无法从 event_log 回溯到群事件。
+        causationId: env.id,
       );
     } catch (e, st) {
       LoggerService().error(

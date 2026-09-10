@@ -4,10 +4,10 @@ import 'event_envelope.dart';
 
 /// Notify-only perception turn scheduler with debounce + busy queue (P1+).
 class PerceptionScheduler {
-  void Function(String agentId, List<EventEnvelope> events)? onSchedule;
+  void Function(String agentId, String channelId, List<EventEnvelope> events)?
+      onSchedule;
 
   Duration debounce = const Duration(seconds: 3);
-  Duration busyDefer = const Duration(seconds: 60);
 
   final Map<String, _ChannelState> _channels = {};
 
@@ -15,14 +15,12 @@ class PerceptionScheduler {
     required String agentId,
     required String channelId,
     required List<EventEnvelope> events,
-    Set<String>? allowedTools,
   }) {
     if (events.isEmpty) return;
     final key = '$agentId::$channelId';
     final state = _channels.putIfAbsent(key, _ChannelState.new);
 
     state.pending.addAll(events);
-    state.lastEventAt = DateTime.now();
 
     if (state.running) {
       state.queued = true;
@@ -46,7 +44,11 @@ class PerceptionScheduler {
     state.running = true;
     try {
       final parts = key.split('::');
-      onSchedule?.call(parts.first, batch);
+      onSchedule?.call(
+        parts.first,
+        parts.length > 1 ? parts[1] : '',
+        batch,
+      );
     } finally {
       state.running = false;
       if (state.pending.isNotEmpty || state.queued) {
@@ -73,5 +75,4 @@ class _ChannelState {
   Timer? debounceTimer;
   bool running = false;
   bool queued = false;
-  DateTime lastEventAt = DateTime.now();
 }
