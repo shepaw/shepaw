@@ -1,15 +1,12 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/channel.dart';
 import '../models/agent.dart';
 import '../models/remote_agent.dart';
 import '../peer/widgets/peer_source_badge.dart';
-import '../services/local_file_storage_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/group_avatar_picker.dart';
 import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
 import '../services/group/group_management_service.dart';
@@ -18,7 +15,6 @@ import '../services/logger_service.dart';
 import '../services/she_service.dart';
 import '../storage/group_workspace_service.dart';
 import '../storage/runtime_share_service.dart';
-import '../utils/layout_utils.dart';
 import '../widgets/form_bottom_bar.dart';
 import '../widgets/avatar_image.dart';
 import 'agent_runtime_context_screen.dart';
@@ -61,9 +57,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
   late bool _enableStageGate;
   /// 编辑中选定的群头像（emoji / 本地绝对路径）。`''` = 无头像（保留为空或移除）。
   late String _pendingAvatar;
-  /// 是否正在编辑头像（打开 picker 前置 true，避免底部 sheet 里再触发重建）。
-  final ImagePicker _imagePicker = ImagePicker();
-  final LocalFileStorageService _fileStorage = LocalFileStorageService();
   bool _isSaving = false;
 
   @override
@@ -264,175 +257,16 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     );
   }
 
+  /// 群头像来源面板（内置 emoji / 相册 / 拍照 / 移除）。
+  ///
+  /// 与聊天页桌面抽屉编辑共用 [GroupAvatarPicker]，避免两处各维护一份。
   void _showGroupAvatarPicker() {
-    final l10n = AppLocalizations.of(context);
-    LayoutUtils.showAdaptivePanel(
-      context: context,
-      builder: (ctx) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            leading: const Icon(Icons.emoji_emotions_outlined),
-            title: Text(l10n.agentDetail_selectBuiltinAvatar),
-            onTap: () {
-              Navigator.pop(ctx);
-              _showBuiltinAvatarPicker();
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.photo_library_outlined),
-            title: Text(l10n.agentDetail_selectFromGallery),
-            onTap: () {
-              Navigator.pop(ctx);
-              _pickGroupImageFromGallery();
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.camera_alt_outlined),
-            title: Text(l10n.agentDetail_takePhoto),
-            onTap: () {
-              Navigator.pop(ctx);
-              _pickGroupImageFromCamera();
-            },
-          ),
-          if (_pendingAvatar.isNotEmpty ||
-              (_channel.avatar?.isNotEmpty ?? false)) ...[
-            ListTile(
-              leading: Icon(Icons.delete_outline, color: Colors.red[400]),
-              title: Text(l10n.groupDetail_removeAvatar),
-              onTap: () {
-                setState(() => _pendingAvatar = '');
-                Navigator.pop(ctx);
-              },
-            ),
-          ],
-        ],
-      ),
+    GroupAvatarPicker.showSourceSheet(
+      context,
+      currentAvatar: _pendingAvatar,
+      onPick: (value) => setState(() => _pendingAvatar = value),
+      onRemove: () => setState(() => _pendingAvatar = ''),
     );
-  }
-
-  void _showBuiltinAvatarPicker() {
-    final l10n = AppLocalizations.of(context);
-    const avatars = [
-      '🤖', '🦾', '🧠', '💡', '🌟', '⚡', '🔮', '🎯',
-      '🚀', '🛸', '🌈', '🔥', '💎', '🎨', '🎭', '🎪',
-      '🐱', '🐶', '🦊', '🐼', '🦉', '🦋', '🐝', '🐙',
-      '👤', '👩‍💻', '🧑‍🔬', '🧑‍🚀', '🧙', '🥷', '🦸', '🤹',
-    ];
-
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(l10n.addAgent_selectAvatar),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: GridView.builder(
-            shrinkWrap: true,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 4,
-              mainAxisSpacing: 8,
-              crossAxisSpacing: 8,
-            ),
-            itemCount: avatars.length,
-            itemBuilder: (context, index) {
-              final avatar = avatars[index];
-              return GestureDetector(
-                onTap: () {
-                  setState(() => _pendingAvatar = avatar);
-                  Navigator.pop(ctx);
-                },
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: _pendingAvatar == avatar
-                        ? Theme.of(context).colorScheme.primaryContainer
-                        : Theme.of(context).colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Center(
-                    child: Text(avatar,
-                        style: const TextStyle(fontSize: 32)),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(l10n.common_cancel),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _pickGroupImageFromGallery() async {
-    final l10n = AppLocalizations.of(context);
-    try {
-      final XFile? image = await _imagePicker.pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 512,
-        maxHeight: 512,
-        imageQuality: 85,
-      );
-      if (image == null) return;
-      await _savePickedGroupImage(File(image.path));
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(l10n.agentDetail_galleryFailed('$e')),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _pickGroupImageFromCamera() async {
-    final l10n = AppLocalizations.of(context);
-    try {
-      final XFile? image = await _imagePicker.pickImage(
-        source: ImageSource.camera,
-        maxWidth: 512,
-        maxHeight: 512,
-        imageQuality: 85,
-      );
-      if (image == null) return;
-      await _savePickedGroupImage(File(image.path));
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(l10n.agentDetail_cameraFailed('$e')),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _savePickedGroupImage(File imageFile) async {
-    final l10n = AppLocalizations.of(context);
-    try {
-      final relativePath = await _fileStorage.saveImage(
-        imageFile,
-        type: ResourceType.avatars,
-      );
-      final fullPath = await _fileStorage.getFullPath(relativePath);
-      if (!mounted) return;
-      setState(() => _pendingAvatar = fullPath);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(l10n.agentDetail_saveImageFailed('$e')),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
   }
 
   /// 群工作空间详情：初始化状态、home device、成员表（角色）、共享面 URI。

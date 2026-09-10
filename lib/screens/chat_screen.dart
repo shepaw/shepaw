@@ -19,7 +19,7 @@ import '../services/audio_recording_service.dart';
 import '../services/composer_draft_service.dart';
 import '../services/desktop_window_auto_size.dart';
 import '../services/local_database_service.dart';
-import '../services/local_file_storage_service.dart';
+
 import '../services/group/group_management_service.dart';
 import '../utils/layout_utils.dart';
 import '../widgets/drawer_swipe_detector.dart';
@@ -48,6 +48,7 @@ import '../widgets/chat/session_unread_badge.dart';
 import '../widgets/chat/group_members_panel.dart';
 import '../widgets/chat/add_group_member_panel.dart';
 import '../widgets/avatar_image.dart';
+import '../widgets/group_avatar_picker.dart';
 import '../widgets/voice_record_overlay.dart';
 import 'agent_resume_edit_screen.dart';
 import 'remote_agent_detail_screen.dart';
@@ -2768,150 +2769,6 @@ class _ChatScreenState extends State<ChatScreen>
     }
   }
 
-  // ==================== 群头像选择（桌面抽屉编辑用） ====================
-
-  void _showGroupAvatarSourceSheet(
-    BuildContext ctx, {
-    required String currentAvatar,
-    required ValueChanged<String> onPick,
-    required VoidCallback onRemove,
-  }) {
-    final l10n = AppLocalizations.of(ctx);
-    LayoutUtils.showAdaptivePanel(
-      context: ctx,
-      builder: (sheetCtx) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            leading: const Icon(Icons.emoji_emotions_outlined),
-            title: Text(l10n.agentDetail_selectBuiltinAvatar),
-            onTap: () {
-              Navigator.pop(sheetCtx);
-              _showBuiltinGroupAvatarGrid(ctx, onPick);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.photo_library_outlined),
-            title: Text(l10n.agentDetail_selectFromGallery),
-            onTap: () {
-              Navigator.pop(sheetCtx);
-              _pickGroupAvatarImage(ImageSource.gallery, ctx, onPick);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.camera_alt_outlined),
-            title: Text(l10n.agentDetail_takePhoto),
-            onTap: () {
-              Navigator.pop(sheetCtx);
-              _pickGroupAvatarImage(ImageSource.camera, ctx, onPick);
-            },
-          ),
-          if (currentAvatar.isNotEmpty)
-            ListTile(
-              leading: Icon(Icons.delete_outline, color: Colors.red[400]),
-              title: Text(l10n.groupDetail_removeAvatar),
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                onRemove();
-              },
-            ),
-        ],
-      ),
-    );
-  }
-
-  void _showBuiltinGroupAvatarGrid(
-    BuildContext ctx,
-    ValueChanged<String> onPick,
-  ) {
-    final l10n = AppLocalizations.of(ctx);
-    const avatars = [
-      '🤖', '🦾', '🧠', '💡', '🌟', '⚡', '🔮', '🎯',
-      '🚀', '🛸', '🌈', '🔥', '💎', '🎨', '🎭', '🎪',
-      '🐱', '🐶', '🦊', '🐼', '🦉', '🦋', '🐝', '🐙',
-      '👤', '👩‍💻', '🧑‍🔬', '🧑‍🚀', '🧙', '🥷', '🦸', '🤹',
-    ];
-
-    showDialog<void>(
-      context: ctx,
-      builder: (dialogCtx) => AlertDialog(
-        title: Text(l10n.addAgent_selectAvatar),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: GridView.builder(
-            shrinkWrap: true,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 4,
-              mainAxisSpacing: 8,
-              crossAxisSpacing: 8,
-            ),
-            itemCount: avatars.length,
-            itemBuilder: (context, index) {
-              final avatar = avatars[index];
-              return GestureDetector(
-                onTap: () {
-                  onPick(avatar);
-                  Navigator.pop(dialogCtx);
-                },
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Center(
-                    child: Text(avatar,
-                        style: const TextStyle(fontSize: 32)),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx),
-            child: Text(l10n.common_cancel),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _pickGroupAvatarImage(
-    ImageSource source,
-    BuildContext toastContext,
-    ValueChanged<String> onReady,
-  ) async {
-    final l10n = AppLocalizations.of(toastContext);
-    try {
-      final XFile? image = await ImagePicker().pickImage(
-        source: source,
-        maxWidth: 512,
-        maxHeight: 512,
-        imageQuality: 85,
-      );
-      if (image == null) return;
-      final fileStorage = LocalFileStorageService();
-      final relativePath = await fileStorage.saveImage(
-        File(image.path),
-        type: ResourceType.avatars,
-      );
-      final fullPath = await fileStorage.getFullPath(relativePath);
-      onReady(fullPath);
-    } catch (e) {
-      if (toastContext.mounted) {
-        showTopToast(
-          toastContext,
-          source == ImageSource.camera
-              ? l10n.agentDetail_cameraFailed('$e')
-              : l10n.agentDetail_galleryFailed('$e'),
-          icon: Icons.error,
-          color: Colors.red,
-        );
-      }
-    }
-  }
-
   void _editGroupInfoDesktop() {
     final channel = _controller.groupChannel;
     final nameController = TextEditingController(text: channel?.name ?? '');
@@ -2960,7 +2817,7 @@ class _ChatScreenState extends State<ChatScreen>
                       // 群头像：点按或按钮打开 picker（内置图标 / 相册 / 拍照 / 移除）。
                       Center(
                         child: GestureDetector(
-                          onTap: () => _showGroupAvatarSourceSheet(
+                          onTap: () => GroupAvatarPicker.showSourceSheet(
                             ctx,
                             currentAvatar: pendingAvatar,
                             onPick: (value) {
@@ -3017,7 +2874,7 @@ class _ChatScreenState extends State<ChatScreen>
                       const SizedBox(height: 8),
                       Center(
                         child: TextButton.icon(
-                          onPressed: () => _showGroupAvatarSourceSheet(
+                          onPressed: () => GroupAvatarPicker.showSourceSheet(
                             ctx,
                             currentAvatar: pendingAvatar,
                             onPick: (value) {
