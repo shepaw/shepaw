@@ -1651,6 +1651,9 @@ class GroupOrchestrationService {
                     'Admin nudge produced empty response at round $currentRound, stopping',
                     tag: 'GroupOrchestrationService');
                 emitRoundEnd(summary: '管理员多次未产出有效派发，流程停止');
+                // 异常停止（不是向用户澄清的 pause）：落 failed，避免与
+                // 「主动暂停等用户」混为一谈。
+                finishStatus = GroupTask.statusFailed;
                 break;
               }
               continue;
@@ -1663,6 +1666,7 @@ class GroupOrchestrationService {
               '⚠️ 管理员的派发指令多次无法解析（${dispatch.parseError}），流程已停止，请重新描述需求再试。',
             );
             emitRoundEnd(summary: '管理员派发指令多次无法解析（${dispatch.parseError}），流程停止');
+            finishStatus = GroupTask.statusFailed;
             break;
           }
 
@@ -1753,6 +1757,7 @@ class GroupOrchestrationService {
                     GroupVerbalDispatchDetector.exhaustedWarning(promised),
                   );
                   emitRoundEnd(summary: '管理员口头派活后未产出有效编排信号，流程停止');
+                  finishStatus = GroupTask.statusFailed;
                   break;
                 }
                 continue;
@@ -1863,6 +1868,7 @@ class GroupOrchestrationService {
                     GroupPlanPublishGate.exhaustedWarning(),
                   );
                   emitRoundEnd(summary: '管理员未发布任务计划即尝试派活，流程停止');
+                  finishStatus = GroupTask.statusFailed;
                   break;
                 }
                 continue;
@@ -1872,6 +1878,7 @@ class GroupOrchestrationService {
                 GroupPlanPublishGate.exhaustedWarning(),
               );
               emitRoundEnd(summary: '管理员未发布任务计划即尝试派活，流程停止');
+              finishStatus = GroupTask.statusFailed;
               break;
             }
           }
@@ -2188,6 +2195,7 @@ class GroupOrchestrationService {
               LoggerService().warning(
                   'Admin continue produced empty response at round $currentRound, stopping',
                   tag: 'GroupOrchestrationService');
+              finishStatus = GroupTask.statusFailed;
               break;
             }
             continue;

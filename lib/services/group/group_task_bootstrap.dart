@@ -150,7 +150,8 @@ class GroupTaskBootstrap {
   /// event (`done`/`paused`/`failed`). Only `done` counts as a completed
   /// delivery; cancelled/aborted/maxRounds/budget-exhausted exits land as
   /// `paused` (or `failed` on exceptions) so they are not mistaken for
-  /// finished work. Legacy payloads without the field fall back to `done`.
+  /// finished work. Legacy payloads without the field fall back to `done`;
+  /// unknown values fall back to `paused`.
   static Future<void> onFinish({
     required String groupId,
     required String orchestrationId,
@@ -205,15 +206,19 @@ class GroupTaskBootstrap {
 
   /// Maps a `finish` payload `terminal_status` to a stored terminal state.
   ///
-  /// Unknown/legacy values fall back to [GroupTask.statusDone] to preserve
-  /// pre-fix behaviour for payloads produced before the field existed.
+  /// `null`（旧 payload 根本没这个字段）回退 [GroupTask.statusDone] 以兼容
+  /// 修复前的行为；**未知值回退 paused 而不是 done** —— 宁可按未完成处理，
+  /// 也不把来源不明的终态算作已交付（否则等于把「不冒充 done」的修复又开
+  /// 了个后门）。
   static String _terminalStatus(String? status) {
+    if (status == null) return GroupTask.statusDone;
     switch (status) {
+      case GroupTask.statusDone:
       case GroupTask.statusFailed:
       case GroupTask.statusPaused:
-        return status!;
+        return status;
       default:
-        return GroupTask.statusDone;
+        return GroupTask.statusPaused;
     }
   }
 

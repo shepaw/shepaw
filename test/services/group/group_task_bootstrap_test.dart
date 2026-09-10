@@ -152,7 +152,8 @@ void main() {
       );
 
       final unknown = await readBack(groupId2, orchId2);
-      expect(unknown!.status, GroupTask.statusDone);
+      expect(unknown!.status, GroupTask.statusPaused,
+          reason: '未知终态不得冒充 done');
     });
   });
 }
