@@ -1,3 +1,9 @@
+// 构建 She 提示词会读 MindsDatabaseService（profile / cognition），底层走
+// path_provider 平台通道。与 storage / dispatch 等套件一致：默认 CI 排除，
+// 需插件环境时单独跑（见 ci.yml --exclude-tags=needs-plugins）。
+@Tags(['needs-plugins'])
+library;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/remote_agent.dart';
 import 'package:shepaw/models/prompt_stack_config.dart';

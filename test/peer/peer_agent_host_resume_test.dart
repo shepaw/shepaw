@@ -96,7 +96,9 @@ void main() {
 
       final resp = lastResumeResp();
       expect(resp!['status'], 'error');
-      expect(resp['delta'], 'text');
+      // 'partial text' 的前 7 个码元是 'partial'（下标 0-6），下标 7 是空格，
+      // 因此补发后缀为 ' text'（含分隔符，与客户端 receivedLength 同口径）。
+      expect(resp['delta'], ' text');
       expect(resp['message'], 'boom');
     });
 
