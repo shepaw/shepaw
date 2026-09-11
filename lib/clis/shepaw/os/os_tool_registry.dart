@@ -513,31 +513,8 @@ class OsToolRegistry {
   }
 
   // ---------------------------------------------------------------------------
-  // LLM tool formats
+  // System prompt
   // ---------------------------------------------------------------------------
-
-  List<Map<String, dynamic>> openAITools({Set<String>? enabledTools}) {
-    return _filteredTools(enabledTools)
-        .map((t) => <String, dynamic>{
-              'type': 'function',
-              'function': {
-                'name': t.cliPath,
-                'description': t.description,
-                'parameters': t.parameterSchema,
-              },
-            })
-        .toList();
-  }
-
-  List<Map<String, dynamic>> claudeTools({Set<String>? enabledTools}) {
-    return _filteredTools(enabledTools)
-        .map((t) => <String, dynamic>{
-              'name': t.cliPath,
-              'description': t.description,
-              'input_schema': t.parameterSchema,
-            })
-        .toList();
-  }
 
   String systemPromptSuffix(Set<String> enabledTools) =>
       systemPromptSuffixLayered(enabledTools, 'summary');
@@ -578,14 +555,21 @@ IMPORTANT: These tools execute real actions on the user's device. Always confirm
 For file/command operations, prefer using these tools over describing steps in text.''';
   }
 
+  /// Compact OS capability note for agents that already carry the `shepaw`
+  /// CLI reference.
+  ///
+  /// There is no per-OS-tool function surface any more — every entry in
+  /// [tools] is reachable as the CLI command `shepaw os <category>.<action>`
+  /// (e.g. `shepaw os command.exec --command "ls -la"`), so the note points at
+  /// that surface instead of claiming standalone tools that do not exist.
   String systemPromptCliReference(Set<String> enabledTools) {
     final filtered = _filteredTools(enabledTools);
     if (filtered.isEmpty) return '';
     final count = filtered.length;
     return '''
 
-You have access to $count OS-level tools that let you operate the local machine (files, terminal, screenshots, clipboard, etc.).
-IMPORTANT: These tools execute real actions on the user's device. Always confirm destructive operations.''';
+You have access to $count OS capabilities on the local machine (files, terminal, screenshots, clipboard, etc.), exposed as the `shepaw` CLI namespace `os` — run them as `shepaw os <category>.<action> [--flag value]` (e.g. `shepaw os command.exec --command "ls -la"`, `shepaw os file.read --path /tmp/a.txt`). Call `shepaw os` to list the available commands.
+IMPORTANT: These commands execute real actions on the user's device. Always confirm destructive operations.''';
   }
 
   // ---------------------------------------------------------------------------

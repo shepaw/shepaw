@@ -5,19 +5,13 @@ import 'package:flutter/services.dart';
 
 import '../clis/cli_base.dart';
 import '../clis/shepaw/shepaw_cli.dart' show ShepawCLI;
-import '../clis/shepaw/context/context_namespace.dart';
-import '../clis/shepaw/chat/chat_namespace.dart';
 import '../clis/shepaw/tools/tools_namespace.dart';
-import '../clis/shepaw/skills_namespace.dart';
-import '../clis/shepaw/meta/meta_namespace.dart';
-import '../clis/shepaw/help_namespace.dart';
-import '../clis/shepaw/os/os_cli_namespace.dart';
-import '../clis/shepaw/context/context_namespace.dart' show ContextNamespace;
 import '../models/cli_command_config.dart';
 import '../models/cli_config_field.dart';
 import '../models/command_config_schema.dart';
 import '../models/tool_config.dart';
 import '../services/cli_command_config_service.dart';
+import '../services/cli_namespace_registry.dart';
 import '../clis/shepaw/os/os_tool_registry.dart';
 import '../services/tool_config_service.dart';
 
@@ -58,56 +52,42 @@ class _NsDef {
   });
 }
 
+/// 命名空间图标。缺省回退到 [Icons.terminal]，新增命名空间自动可见。
+const Map<String, IconData> _namespaceIcons = {
+  'context': Icons.account_circle_outlined,
+  'chat': Icons.chat_bubble_outline,
+  'tools': Icons.build_outlined,
+  'os': Icons.computer_outlined,
+  'skills': Icons.extension_outlined,
+  'store': Icons.inventory_2_outlined,
+  'workflow': Icons.account_tree_outlined,
+  'instructions': Icons.rule_outlined,
+  'vision': Icons.visibility_outlined,
+  'models': Icons.memory_outlined,
+  'peer': Icons.devices_outlined,
+  'events': Icons.notifications_outlined,
+  'meta': Icons.info_outlined,
+  'help': Icons.help_outline,
+};
+
+/// 顶层命名空间展示名。仅覆盖首字母大写规则不合适的项。
+const Map<String, String> _namespaceLabels = {'os': 'OS'};
+
+/// 顶层命名空间列表 —— 直接从 [ShepawCLI.instance.namespaces] 派生。
+///
+/// 此前是 7 项硬编码副本，缺 `store` / `workflow` / `instructions` /
+/// `vision` / `models` / `peer` / `events`，导致这些命名空间在这个管理页里
+/// 完全不可见、无法配置。
 List<_NsDef> get _topNamespaces => [
-      _NsDef(
-        key: 'context',
-        label: 'Context',
-        description: "She's internal state — profile, memory, agents",
-        icon: Icons.account_circle_outlined,
-        ns: ContextNamespace.instance,
-      ),
-      _NsDef(
-        key: 'chat',
-        label: 'Chat',
-        description: 'Channels and message history',
-        icon: Icons.chat_bubble_outline,
-        ns: ChatNamespace.instance,
-      ),
-      _NsDef(
-        key: 'tools',
-        label: 'Tools',
-        description: 'Network and web tools',
-        icon: Icons.build_outlined,
-        ns: ToolsNamespace.instance,
-      ),
-      _NsDef(
-        key: 'os',
-        label: 'OS',
-        description: 'Local OS tools — shell, file, app, clipboard, location, process',
-        icon: Icons.computer_outlined,
-        ns: OsCliNamespace.instance,
-      ),
-      _NsDef(
-        key: 'skills',
-        label: 'Skills',
-        description: 'Loaded LLM skill library',
-        icon: Icons.extension_outlined,
-        ns: SkillsNamespace.instance,
-      ),
-      _NsDef(
-        key: 'meta',
-        label: 'Meta',
-        description: 'System info and datetime utilities',
-        icon: Icons.info_outlined,
-        ns: MetaNamespace.instance,
-      ),
-      _NsDef(
-        key: 'help',
-        label: 'Help',
-        description: 'Full CLI reference and examples',
-        icon: Icons.help_outline,
-        ns: HelpNamespace.instance,
-      ),
+      for (final entry in ShepawCLI.instance.namespaces.entries)
+        _NsDef(
+          key: entry.key,
+          label: _namespaceLabels[entry.key] ??
+              CliNamespaceRegistry.labelFor(entry.key),
+          description: entry.value.description,
+          icon: _namespaceIcons[entry.key] ?? Icons.terminal,
+          ns: entry.value,
+        ),
     ];
 
 // ─── 共享辅助 ──────────────────────────────────────────────────────────────────

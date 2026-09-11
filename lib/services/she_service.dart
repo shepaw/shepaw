@@ -1011,7 +1011,8 @@ Soul is global across all conversations — only update it with identity/self-aw
     if (hasMessages) {
       actionWarnings.add('- When you learn something important about an agent → call `shepaw context agents.memory-write --id <id>`');
     }
-    actionWarnings.add('- Only a tool call returning `ok: true` means the operation succeeded');
+    actionWarnings.add(
+        '- Read the tool result, not one magic field: a local `shepaw` CLI result failed when it carries an `error` field and succeeded otherwise; an ACP `hub.cli.execute` result failed when it carries `error` or `ok: false`. `ok` only exists on the ACP wrapper — its absence from a local result is normal and never means failure');
     final warnings = actionWarnings.join('\n');
 
     // Summary mode (shepawCliSummaryMode): drop the "When to use" prose.

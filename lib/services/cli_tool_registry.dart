@@ -19,6 +19,7 @@ import 'package:dio/dio.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../clis/shepaw/shepaw_cli.dart';
 import '../models/cli_tool_definition.dart';
 import 'logger_service.dart';
 
@@ -48,16 +49,12 @@ class CliToolRegistry {
   List<CliToolDefinition> _tools = [];
 
   /// Built-in namespace names that external tools must not shadow.
-  static const _reservedNamespaces = {
-    'context',
-    'chat',
-    'tools',
-    'skills',
-    'web',
-    'os',
-    'meta',
-    'help',
-  };
+  ///
+  /// Derived from [ShepawCLI.builtinNamespaceNames] rather than a local copy:
+  /// the hand-maintained list had drifted (`store` / `workflow` missing, plus a
+  /// stale `web` entry that is no longer a top-level namespace).
+  static Set<String> get _reservedNamespaces =>
+      ShepawCLI.instance.builtinNamespaceNames;
 
   /// Absolute path to the cli-tools directory.
   String get directoryPath => _directoryPath;

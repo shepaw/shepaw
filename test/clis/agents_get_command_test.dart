@@ -45,8 +45,8 @@ void main() {
       expect(commands.containsKey('get'), isTrue);
 
       expect(
-        CliNamespaceRegistry.instance.isValidCommandId('context.agents.get'),
-        isTrue,
+        CliNamespaceRegistry.instance.allCommandIds,
+        contains('context.agents.get'),
       );
     });
 

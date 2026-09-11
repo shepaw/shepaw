@@ -92,6 +92,22 @@ class ShepawCLI {
     'help': HelpNamespace.instance,
   };
 
+  /// 当前已注册的顶层命名空间（内置 + 外部工具）。
+  ///
+  /// 单一事实来源：`CliNamespaceRegistry` / `CliToolRegistry` 的保留名集合
+  /// 都从这里派生，避免各自维护副本后漂移。
+  /// [reloadExternalTools] 会改动底层 map，因此调用方每次都应重新读取。
+  Map<String, CliNamespace> get namespaces => _namespaces;
+
+  /// 内置顶层命名空间名（不含 [ExternalCliNamespace]）。
+  ///
+  /// 外部工具不得遮蔽这些名字。必须排除外部命名空间自身：它们在重扫描期间
+  /// 仍留在 [namespaces] 里，若算作保留名会让所有已安装工具被判为冲突。
+  Set<String> get builtinNamespaceNames => {
+        for (final entry in _namespaces.entries)
+          if (entry.value is! ExternalCliNamespace) entry.key,
+      };
+
   /// 从 [CliToolRegistry] 重新加载外部 CLI 工具到命名空间注册表。
   ///
   /// 在以下时机调用：
