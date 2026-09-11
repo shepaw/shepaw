@@ -7020,6 +7020,44 @@ class AppLocalizationsEn extends AppLocalizations {
       'Shepaw Agent Hub is installed on this computer. Join it so Hub agents appear in Contacts. The dashboard will start automatically if it is not running.';
 
   @override
+  String get localHub_nudgeJoinTitle => 'Local Agent Hub';
+
+  @override
+  String get localHub_nudgeJoinBody =>
+      'It\'s installed. Join so Hub agents appear in Contacts. Dismiss to stop reminders, or join later from Settings.';
+
+  @override
+  String get localHub_nudgeInstallBody =>
+      'Use it to connect local agents such as Claude Code and Codex. Dismiss to stop reminders, or install later from Settings.';
+
+  @override
+  String get localHub_dontAskAgain => 'Don\'t ask again';
+
+  @override
+  String get localHub_connectedSnack => 'Connected to the local Agent Hub';
+
+  @override
+  String get localHub_emptyGuideSnack =>
+      'Add an instance in the dashboard so the agent appears in Contacts';
+
+  @override
+  String get settings_localHub => 'Local Agent Hub';
+
+  @override
+  String get settings_localHubSub =>
+      'Connect local agents such as Claude Code and Codex';
+
+  @override
+  String get settings_localHubConnected =>
+      'Connected. Hub agents are in Contacts';
+
+  @override
+  String get settings_localHubInstalled => 'Installed. Tap to join';
+
+  @override
+  String get settings_localHubMissing => 'Not installed. Tap to install';
+
+  @override
   String get localHub_join => 'Join';
 
   @override

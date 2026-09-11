@@ -205,6 +205,7 @@ class HomeScreenState extends State<HomeScreen> {
     _searchDebounce?.cancel();
     _searchController.dispose();
     _list.dispose();
+    if (!widget.embedded) removeLocalAgentHubNudge();
     super.dispose();
   }
 

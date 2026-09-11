@@ -167,6 +167,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     ChatNavigationService.instance.setDesktopHandler(null);
     _peerEventSub?.cancel();
     _peerListChangedSub?.cancel();
+    removeLocalAgentHubNudge();
     FloatingPanelManager.instance.closeAll();
     NativeWindowService.instance.closeAll();
     super.dispose();

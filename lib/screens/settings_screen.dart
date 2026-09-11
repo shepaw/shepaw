@@ -24,6 +24,7 @@ import '../services/biometric_service.dart';
 import '../widgets/update_dialog.dart';
 import '../services/update_service.dart';
 import '../widgets/model_icon.dart';
+import '../widgets/local_agent_hub_prompt.dart';
 import '../services/model_registry.dart';
 import '../services/skill_registry.dart';
 import 'dart:io' show Platform;
@@ -400,9 +401,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const Divider(),
 
-          // 定时任务配置不适合移动端操作，入口仅在桌面端提供；
-          // 已创建的任务不受入口隐藏影响，调度器照常运行。
-          if (!(Platform.isAndroid || Platform.isIOS))
+          // 定时任务、本机 Agent Hub：桌面端入口。
+          if (!(Platform.isAndroid || Platform.isIOS)) ...[
             ListTile(
               leading: const Icon(Icons.schedule),
               title: Text(l10n.scheduledTasks_title),
@@ -412,6 +412,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const ScheduledTasksManagementScreen(),
               ),
             ),
+            const Divider(),
+            const LocalAgentHubSettingsTile(),
+          ],
 
           const Divider(height: 32),
 

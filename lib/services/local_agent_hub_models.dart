@@ -11,8 +11,57 @@ const kLocalAgentHubDashboardUrl = 'http://127.0.0.1:4000';
 /// npm package that provides the `shepaw-hub` binary.
 const kLocalAgentHubNpmPackage = 'shepaw-agent-hub';
 
-/// How long to hide the desktop prompt after the user taps “later”.
+/// How long an older “later” tap still suppresses the desktop nudge.
 const kLocalAgentHubSnooze = Duration(days: 3);
+
+/// What the desktop app should do after detecting a local Agent Hub.
+enum LocalHubNudgeKind {
+  /// Already handled, dismissed, or nothing to offer.
+  none,
+
+  /// Hub is on this machine; show a non-blocking join card.
+  join,
+
+  /// Hub is missing; show a non-blocking install card.
+  install,
+
+  /// Already paired, dashboard running, no instances yet — once-only hint.
+  emptyGuide,
+}
+
+/// Startup offer for the local Agent Hub. Pure function, no I/O.
+class LocalHubNudgeDecision {
+  const LocalHubNudgeDecision(this.kind);
+  final LocalHubNudgeKind kind;
+
+  bool get shouldShowCard =>
+      kind == LocalHubNudgeKind.join || kind == LocalHubNudgeKind.install;
+}
+
+/// Decide whether to nudge, and how. [suppressed] means the user dismissed
+/// this Hub (or still has an unexpired “later” snooze).
+LocalHubNudgeDecision resolveLocalHubNudge({
+  required LocalHubDetection detection,
+  required bool suppressed,
+  required bool guideShown,
+}) {
+  if (detection.alreadyPaired) {
+    final empty = detection.instanceCount == 0;
+    if (empty &&
+        detection.presence == LocalHubPresence.running &&
+        !guideShown) {
+      return const LocalHubNudgeDecision(LocalHubNudgeKind.emptyGuide);
+    }
+    return const LocalHubNudgeDecision(LocalHubNudgeKind.none);
+  }
+  if (suppressed) {
+    return const LocalHubNudgeDecision(LocalHubNudgeKind.none);
+  }
+  if (detection.isPresent) {
+    return const LocalHubNudgeDecision(LocalHubNudgeKind.join);
+  }
+  return const LocalHubNudgeDecision(LocalHubNudgeKind.install);
+}
 
 enum LocalHubPresence {
   /// No CLI, no config dir, dashboard not responding.

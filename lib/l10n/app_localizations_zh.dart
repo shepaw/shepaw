@@ -6742,6 +6742,41 @@ class AppLocalizationsZh extends AppLocalizations {
       '这台电脑已安装 Shepaw Agent Hub。加入后，Hub 上的 Agent 会出现在通讯录里。若仪表盘未运行，将自动启动。';
 
   @override
+  String get localHub_nudgeJoinTitle => '本机 Agent Hub';
+
+  @override
+  String get localHub_nudgeJoinBody =>
+      '已安装。加入后，Hub 上的 Agent 会出现在通讯录。关闭后不再提醒，也可在设置里加入。';
+
+  @override
+  String get localHub_nudgeInstallBody =>
+      '用来接入本机 Claude Code、Codex 等。关闭后不再提醒，也可在设置里安装。';
+
+  @override
+  String get localHub_dontAskAgain => '不再提示';
+
+  @override
+  String get localHub_connectedSnack => '已连接到本机 Agent Hub';
+
+  @override
+  String get localHub_emptyGuideSnack => '在仪表盘添加实例后，Agent 会出现在通讯录';
+
+  @override
+  String get settings_localHub => '本机 Agent Hub';
+
+  @override
+  String get settings_localHubSub => '接入本机 Claude Code、Codex 等 Agent';
+
+  @override
+  String get settings_localHubConnected => '已连接，Hub 上的 Agent 在通讯录中';
+
+  @override
+  String get settings_localHubInstalled => '已安装，点这里加入';
+
+  @override
+  String get settings_localHubMissing => '未安装，点这里安装';
+
+  @override
   String get localHub_join => '加入';
 
   @override

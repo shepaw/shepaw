@@ -12200,6 +12200,72 @@ abstract class AppLocalizations {
   /// **'这台电脑已安装 Shepaw Agent Hub。加入后，Hub 上的 Agent 会出现在通讯录里。若仪表盘未运行，将自动启动。'**
   String get localHub_detectedBody;
 
+  /// No description provided for @localHub_nudgeJoinTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'本机 Agent Hub'**
+  String get localHub_nudgeJoinTitle;
+
+  /// No description provided for @localHub_nudgeJoinBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'已安装。加入后，Hub 上的 Agent 会出现在通讯录。关闭后不再提醒，也可在设置里加入。'**
+  String get localHub_nudgeJoinBody;
+
+  /// No description provided for @localHub_nudgeInstallBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'用来接入本机 Claude Code、Codex 等。关闭后不再提醒，也可在设置里安装。'**
+  String get localHub_nudgeInstallBody;
+
+  /// No description provided for @localHub_dontAskAgain.
+  ///
+  /// In zh, this message translates to:
+  /// **'不再提示'**
+  String get localHub_dontAskAgain;
+
+  /// No description provided for @localHub_connectedSnack.
+  ///
+  /// In zh, this message translates to:
+  /// **'已连接到本机 Agent Hub'**
+  String get localHub_connectedSnack;
+
+  /// No description provided for @localHub_emptyGuideSnack.
+  ///
+  /// In zh, this message translates to:
+  /// **'在仪表盘添加实例后，Agent 会出现在通讯录'**
+  String get localHub_emptyGuideSnack;
+
+  /// No description provided for @settings_localHub.
+  ///
+  /// In zh, this message translates to:
+  /// **'本机 Agent Hub'**
+  String get settings_localHub;
+
+  /// No description provided for @settings_localHubSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'接入本机 Claude Code、Codex 等 Agent'**
+  String get settings_localHubSub;
+
+  /// No description provided for @settings_localHubConnected.
+  ///
+  /// In zh, this message translates to:
+  /// **'已连接，Hub 上的 Agent 在通讯录中'**
+  String get settings_localHubConnected;
+
+  /// No description provided for @settings_localHubInstalled.
+  ///
+  /// In zh, this message translates to:
+  /// **'已安装，点这里加入'**
+  String get settings_localHubInstalled;
+
+  /// No description provided for @settings_localHubMissing.
+  ///
+  /// In zh, this message translates to:
+  /// **'未安装，点这里安装'**
+  String get settings_localHubMissing;
+
   /// No description provided for @localHub_join.
   ///
   /// In zh, this message translates to:

@@ -42,6 +42,10 @@ class LocalAgentHubService {
 
   static const _prefSnoozeUntil = 'local_hub.snooze_until';
   static const _prefGuideShown = 'local_hub.add_agent_guide_shown';
+  static const _prefDismissed = 'local_hub.prompt_dismissed';
+  static const _prefDismissedFp = 'local_hub.prompt_dismissed_fp';
+  static const _prefJoinedFp = 'local_hub.joined_fingerprint';
+  static const _joinedUnknownSentinel = '*';
 
   final LocalAgentHubHost _host;
   final http.Client _http;
@@ -101,6 +105,49 @@ class LocalAgentHubService {
     );
   }
 
+  /// Close the startup nudge for this Hub identity. A later Hub with a
+  /// different fingerprint can offer again.
+  Future<void> dismissPrompt({String? fingerprint}) async {
+    final prefs = await _prefsFactory();
+    await prefs.setBool(_prefDismissed, true);
+    if (fingerprint != null && fingerprint.isNotEmpty) {
+      await prefs.setString(_prefDismissedFp, fingerprint);
+    } else {
+      await prefs.remove(_prefDismissedFp);
+    }
+  }
+
+  /// Remember a successful join so the next launch does not nag even if the
+  /// Hub identity file is unreadable from the GUI app.
+  Future<void> markJoined({String? fingerprint}) async {
+    final prefs = await _prefsFactory();
+    await prefs.setString(
+      _prefJoinedFp,
+      (fingerprint != null && fingerprint.isNotEmpty)
+          ? fingerprint
+          : _joinedUnknownSentinel,
+    );
+  }
+
+  /// User closed the nudge, or an older “later” snooze is still in effect.
+  Future<bool> isPromptSuppressed(LocalHubDetection detection) async {
+    if (await isSnoozed()) return true;
+    final prefs = await _prefsFactory();
+    final dismissed = prefs.getBool(_prefDismissed) ?? false;
+    if (!dismissed) return false;
+    final dismissedFp = prefs.getString(_prefDismissedFp);
+    final currentFp = detection.hubFingerprint;
+    if (currentFp != null && currentFp != dismissedFp) return false;
+    return true;
+  }
+
+  Future<bool> _rememberedJoin(String? fingerprint) async {
+    final prefs = await _prefsFactory();
+    final joinedFp = prefs.getString(_prefJoinedFp);
+    if (joinedFp == null || joinedFp.isEmpty) return false;
+    return fingerprint == null || fingerprint == joinedFp;
+  }
+
   Future<bool> addAgentGuideShown() async {
     final prefs = await _prefsFactory();
     return prefs.getBool(_prefGuideShown) ?? false;
@@ -113,8 +160,9 @@ class LocalAgentHubService {
 
   Future<LocalHubDetection> detect() async {
     final fingerprint = _readHubFingerprint();
-    final alreadyPaired =
+    final peerPaired =
         fingerprint != null ? await _isPaired(fingerprint) : false;
+    final alreadyPaired = peerPaired || await _rememberedJoin(fingerprint);
     final hubBinary = await _resolveBinary('shepaw-hub');
     final node = await _resolveBinary('node');
     var nodeAvailable = false;
@@ -174,7 +222,9 @@ class LocalAgentHubService {
     await ensureDashboardRunning();
     onProgress?.call(LocalHubProgressStep.pairing);
     await pairWithRunningHub();
-    return detect();
+    final result = await detect();
+    await markJoined(fingerprint: result.hubFingerprint);
+    return result;
   }
 
   /// `npm install -g shepaw-agent-hub`, start the dashboard, then pair.
@@ -230,7 +280,9 @@ class LocalAgentHubService {
     await ensureDashboardRunning();
     onProgress?.call(LocalHubProgressStep.pairing);
     await pairWithRunningHub();
-    return detect();
+    final result = await detect();
+    await markJoined(fingerprint: result.hubFingerprint);
+    return result;
   }
 
   Future<void> ensureDashboardRunning({

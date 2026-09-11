@@ -360,6 +360,128 @@ void main() {
       expect(await svc.isSnoozed(), isTrue);
     });
   });
+
+  group('prompt dismiss and remembered join', () {
+    test('dismissPrompt suppresses the same Hub fingerprint', () async {
+      SharedPreferences.setMockInitialValues({});
+      final svc = _service(
+        files: {},
+        extraDirs: const [],
+        binaries: const {},
+        run: (exe, args) =>
+            const HostCommandResult(exitCode: 1, stdout: '', stderr: ''),
+        http: MockClient((_) async => throw Exception('down')),
+      );
+      const detection = LocalHubDetection(
+        presence: LocalHubPresence.installed,
+        hubFingerprint: 'abcd1234abcd1234',
+      );
+      expect(await svc.isPromptSuppressed(detection), isFalse);
+      await svc.dismissPrompt(fingerprint: detection.hubFingerprint);
+      expect(await svc.isPromptSuppressed(detection), isTrue);
+      expect(
+        await svc.isPromptSuppressed(
+          const LocalHubDetection(
+            presence: LocalHubPresence.installed,
+            hubFingerprint: 'ffff0000ffff0000',
+          ),
+        ),
+        isFalse,
+      );
+    });
+
+    test('markJoined makes detect() report alreadyPaired', () async {
+      SharedPreferences.setMockInitialValues({});
+      final pub = Uint8List.fromList(List<int>.generate(32, (i) => i + 2));
+      final fp = fingerprintFromPublicKey(pub);
+      final identity = jsonEncode({
+        'version': 1,
+        'agentId': 'acp_agent_x',
+        'staticPublicKey': toBase64Url(pub),
+        'staticPrivateKey': toBase64Url(pub),
+        'createdAt': '2026-01-01T00:00:00.000Z',
+      });
+      final svc = _service(
+        files: {
+          '/home/.config/shepaw-hub/peer-identity.json': identity,
+          '/home/.config/shepaw-hub/hub.json': '{}',
+        },
+        extraDirs: const [],
+        binaries: const {},
+        run: (exe, args) =>
+            const HostCommandResult(exitCode: 1, stdout: '', stderr: ''),
+        http: MockClient((_) async => throw Exception('down')),
+      );
+      expect((await svc.detect()).alreadyPaired, isFalse);
+      await svc.markJoined(fingerprint: fp);
+      expect((await svc.detect()).alreadyPaired, isTrue);
+    });
+  });
+
+  group('resolveLocalHubNudge', () {
+    const installed = LocalHubDetection(
+      presence: LocalHubPresence.installed,
+      hubFingerprint: 'abcd',
+    );
+    const runningEmpty = LocalHubDetection(
+      presence: LocalHubPresence.running,
+      alreadyPaired: true,
+      instanceCount: 0,
+    );
+    const missing = LocalHubDetection(presence: LocalHubPresence.missing);
+
+    test('join when Hub is present and not dismissed', () {
+      expect(
+        resolveLocalHubNudge(
+          detection: installed,
+          suppressed: false,
+          guideShown: false,
+        ).kind,
+        LocalHubNudgeKind.join,
+      );
+    });
+
+    test('none when the user dismissed the nudge', () {
+      expect(
+        resolveLocalHubNudge(
+          detection: installed,
+          suppressed: true,
+          guideShown: false,
+        ).kind,
+        LocalHubNudgeKind.none,
+      );
+    });
+
+    test('install when Hub is missing', () {
+      expect(
+        resolveLocalHubNudge(
+          detection: missing,
+          suppressed: false,
+          guideShown: false,
+        ).kind,
+        LocalHubNudgeKind.install,
+      );
+    });
+
+    test('emptyGuide only once after pairing', () {
+      expect(
+        resolveLocalHubNudge(
+          detection: runningEmpty,
+          suppressed: false,
+          guideShown: false,
+        ).kind,
+        LocalHubNudgeKind.emptyGuide,
+      );
+      expect(
+        resolveLocalHubNudge(
+          detection: runningEmpty,
+          suppressed: false,
+          guideShown: true,
+        ).kind,
+        LocalHubNudgeKind.none,
+      );
+    });
+  });
 }
 
 LocalAgentHubService _service({
