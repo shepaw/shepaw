@@ -8,22 +8,24 @@ RemoteAgent _agent({
   required String name,
   bool local = false,
   bool peer = false,
+  bool hubPeer = false,
 }) {
   return RemoteAgent(
     id: id,
     name: name,
     token: '',
-    endpoint: peer ? '' : 'http://example.com',
-    protocol: peer ? ProtocolType.peer : ProtocolType.acp,
+    endpoint: peer || hubPeer ? '' : 'http://example.com',
+    protocol: (peer || hubPeer) ? ProtocolType.peer : ProtocolType.acp,
     connectionType: ConnectionType.http,
     createdAt: 0,
     updatedAt: 0,
     metadata: {
       if (local) 'llm_provider': 'openai',
-      if (peer) ...{
+      if (peer || hubPeer) ...{
         'source_peer_id': 'peer1',
         'remote_agent_id': 'remote1',
       },
+      if (hubPeer) 'manageable': true,
     },
   );
 }
@@ -93,6 +95,23 @@ void main() {
       expect(cli['method'], ACPMethod.hubExecuteCli);
       expect(cli['params'], containsPair('session_id', '<agent.chat session_id>'));
       expect(cli['note'], contains('no shepaw function tool'));
+    });
+
+    test('Hub peer engine gets shepaw store cli hint, not hub.cli.execute', () {
+      final hub = _agent(id: 'h1', name: 'Cursor', hubPeer: true);
+      final ctx = GroupContextBuilder.build(
+        channelId: 'ch1',
+        groupName: 'G',
+        groupDescription: '',
+        allAgents: [hub],
+        mentionMode: 'adminOnly',
+        isAdmin: false,
+        currentAgent: hub,
+      );
+      final cli = ctx['cli'] as Map<String, dynamic>;
+      expect(cli['method'], 'shepaw store');
+      expect(cli['note'], contains('Hub'));
+      expect(cli['note'], contains('Do not use hub.cli.execute'));
     });
 
     test('local group member does not get hub.cli.execute hint', () {

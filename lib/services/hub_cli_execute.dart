@@ -14,6 +14,11 @@ class HubCliExecute {
 
   final LocalDatabaseService _db;
 
+  /// In-flight group / DM session for an agent (group channel preferred).
+  /// [ChatService] registers this so a omitted `session_id` still lands
+  /// group writes in the group bag instead of personal runtime.
+  static String? Function(String agentId)? activeSessionLookup;
+
   static const ignoredIdentityFlags = {
     'agent_id',
     'owner',
@@ -43,6 +48,20 @@ class HubCliExecute {
     return s;
   }
 
+  /// Prefer the caller-supplied `session_id`; if omitted, use the in-flight
+  /// turn (group channel or DM) so store writes do not fall into personal
+  /// runtime during a group turn.
+  static String? resolveSessionId(
+    Map<String, dynamic>? params, {
+    String? activeFallback,
+  }) {
+    final requested = boundSessionId(params);
+    if (requested != null) return requested;
+    final fallback = activeFallback?.trim();
+    if (fallback == null || fallback.isEmpty) return null;
+    return fallback;
+  }
+
   static bool isMember(Channel channel, String agentId) =>
       channel.memberIds.contains(agentId);
 
@@ -70,10 +89,12 @@ class HubCliExecute {
   static Map<String, dynamic> groupContextHint() => {
         'method': 'hub.cli.execute',
         'note':
-            'Run shepaw CLI on the user device. Identity is the authenticated '
-            'ACP session — do not send agent_id, owner, or channel_id. '
-            'Pass session_id from agent.chat. Prefer shepaw store read/write '
-            'over any Hub store_read / store_write aliases.',
+            'You have no shepaw function tool. Run shepaw CLI on the user '
+            'device via hub.cli.execute. Identity is the authenticated ACP '
+            'session — do not send agent_id, owner, or channel_id. Pass '
+            'session_id from agent.chat (App fills the in-flight group/DM '
+            'turn if omitted). This is ACP only; Agent Hub engines use '
+            'local shepaw store, not this method.',
         'params': {
           'namespace': 'store',
           'subcommand': 'write',
@@ -125,7 +146,10 @@ class HubCliExecute {
 
     String? channelId;
     String? runtimeOwnerId;
-    final sessionId = boundSessionId(params);
+    final sessionId = resolveSessionId(
+      params,
+      activeFallback: activeSessionLookup?.call(agentId),
+    );
     if (sessionId != null) {
       final channel = await _db.getChannelById(sessionId);
       if (channel == null || !isMember(channel, agentId)) {

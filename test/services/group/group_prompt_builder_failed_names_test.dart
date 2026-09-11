@@ -8,6 +8,7 @@ RemoteAgent _agent(
   String? bio,
   List<String> capabilities = const [],
   bool local = false,
+  bool hubPeer = false,
 }) =>
     RemoteAgent(
       id: id,
@@ -16,13 +17,21 @@ RemoteAgent _agent(
       bio: bio,
       token: '',
       endpoint: '',
-      protocol: ProtocolType.acp,
+      protocol: hubPeer ? ProtocolType.peer : ProtocolType.acp,
       connectionType: ConnectionType.http,
       createdAt: 0,
       updatedAt: 0,
       capabilities: capabilities,
       metadata: {
         if (local) 'llm_provider': 'openai',
+        if (hubPeer) ...{
+          'source_peer_id': 'peer1',
+          'remote_agent_id': 'inst-1',
+          'manageable': true,
+          'engine': 'cursor',
+          'workspace_uri':
+              'store://workspaces/0123456789abcdef/Users/me/proj/',
+        },
       },
     );
 
@@ -233,5 +242,25 @@ void main() {
     expect(prompt, contains('hub.cli.execute'));
     expect(prompt, contains('namespace=store'));
     expect(prompt, isNot(contains('shepaw store write')));
+  });
+
+  test('Hub peer engine prompt teaches shepaw store, not hub.cli.execute',
+      () async {
+    final hub = _agent('cursor-1', 'Cursor', hubPeer: true);
+    final prompt = await builder.buildGroupSystemPrompt(
+      groupName: '项目群',
+      groupDescription: '',
+      allAgents: [hub, coder],
+      currentAgent: hub,
+      isAdmin: true,
+    );
+
+    expect(prompt, contains('shepaw store write'));
+    expect(prompt, contains('本宿主（Agent Hub）只有 `shepaw store`'));
+    expect(prompt, contains('不要 `hub.cli.execute`'));
+    expect(prompt, isNot(contains('你没有 shepaw function tool')));
+    expect(prompt, isNot(contains('你有 shepaw CLI 工具')));
+    expect(prompt, isNot(contains('【群管理 CLI】')));
+    expect(prompt, contains('0123456789abcdef'));
   });
 }

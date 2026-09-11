@@ -1399,9 +1399,13 @@ Your Agent can proactively start a new conversation with the user (requires App 
 
 ### 11.8 Run shepaw CLI on the user device
 
-Remote agents must **not** implement `store_read` / `store_write` in their own process. Reading the user's store (and any other shepaw command) goes through `hub.cli.execute` so App [CliExecutionGate] applies the same allowlist, approval, and store ACL as local agents.
+**Remote ACP agents** have no shepaw function tool. Reading the user's store (and any other shepaw command) goes through `hub.cli.execute` so App [CliExecutionGate] applies the same allowlist, approval, and store ACL as local agents.
 
-Identity is the **authenticated ACP session**. Do not send `agent_id` / `owner` / `channel_id` (they are stripped from `flags`). The only channel binding is `session_id` from `agent.chat`; a group-bound member session writes into that group's bag, not personal runtime.
+Identity is the **authenticated ACP session**. Do not send `agent_id` / `owner` / `channel_id` (they are stripped from `flags`). Prefer `session_id` from `agent.chat`; if omitted, the App fills the agent's **in-flight group or DM turn** so group artifacts do not land in personal runtime. A group-bound member session writes into that group's bag.
+
+**Agent Hub engines (Cursor, Claude Code, …) are not this path.** Hub is a paired store client: writes land on the Hub `<device_id>/`, reads follow the store protocol (local / master / owner). Engines should only see `shepaw store` (read / write / list / meta) — not `os`, `chat`, or `hub.cli.execute`. Legacy MCP `store_read` / `store_write` should map to that local store client, not forward `hub.cli.execute`.
+
+Peer inbound (a paired device talking to a local agent) is **not** this allowlist — it stays on `PeerBoundaryConfig` (deny `os.*` / host memory writes).
 
 ```json
 {
@@ -1433,9 +1437,9 @@ Write example:
 }
 ```
 
-On success `result.ok == true` plus the CLI JSON. Gate denials (command not allowed, user tapped deny) are still JSON-RPC success with `result.ok == false` and `error`. Hub MCP `store_read` / `store_write` aliases are deprecated — map them to `store read` / `store write` as above.
+On success `result.ok == true` plus the CLI JSON. Gate denials (command not allowed, user tapped deny) are still JSON-RPC success with `result.ok == false` and `error`. ACP remotes map old `store_read` / `store_write` to `store read` / `store write` above. Agent Hub engines use local `shepaw store`, not `hub.cli.execute`.
 
-Local LLM agents get a shepaw function tool whose `namespace` enum is trimmed to that agent's `enabled_cli_commands` (and the group-member store/help role list). Remote agents should trim their own tool list the same way, or only expose `hub.cli.execute` and rely on the gate.
+Local LLM agents get a shepaw function tool whose `namespace` enum is trimmed to that agent's `enabled_cli_commands` (and the group-member store/help role list). Specific ids such as `store.write` also trim the `subcommand` enum. Remote agents should trim their own tool list the same way, or only expose `hub.cli.execute` and rely on the gate.
 
 ---
 

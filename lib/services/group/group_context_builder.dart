@@ -174,7 +174,19 @@ class GroupContextBuilder {
       if (workspaceUri != null) 'workspace_uri': workspaceUri,
     };
 
-    if (currentAgent != null &&
+    if (currentAgent != null && currentAgent.usesHubStoreCli) {
+      ctx['cli'] = {
+        'method': 'shepaw store',
+        'note':
+            'Agent Hub store client on this host. Use shepaw store '
+            'read/write/list. Writes land on the Hub device_id. Do not use '
+            'hub.cli.execute or os.*. Pass store:// URIs verbatim.',
+        'params': {
+          'namespace': 'store',
+          'subcommand': 'write',
+        },
+      };
+    } else if (currentAgent != null &&
         !currentAgent.isLocal &&
         !currentAgent.isPeerAgent) {
       ctx['cli'] = {
@@ -183,8 +195,8 @@ class GroupContextBuilder {
             'You have no shepaw function tool. Run shepaw CLI on the user '
             'device via this ACP request. Identity is the authenticated '
             'session — do not send agent_id, owner, or channel_id. Pass '
-            'session_id from agent.chat. Hub store_read / store_write '
-            'aliases are deprecated.',
+            'session_id from agent.chat. This is ACP only; Agent Hub engines '
+            'use local shepaw store instead.',
         'params': {
           'namespace': 'store',
           'subcommand': 'write',

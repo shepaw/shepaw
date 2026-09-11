@@ -197,7 +197,9 @@ class GroupPromptBuilder {
       final planningSection = isFlowMode
           ? _buildWorkflowCliSection(delegateableAgents)
           : '';
-      final groupMgmtSection = _buildGroupManagementCliSection();
+      final groupMgmtSection = currentAgent.usesHubStoreCli
+          ? ''
+          : _buildGroupManagementCliSection();
       final sessionMgmtSection = _buildSessionManagementSection();
 
       final attachmentSection = _buildAdminAttachmentSection(currentAgent);
@@ -419,26 +421,43 @@ $groupScopeSection''';
     final cliSurface = ScopeCard.surfaceFor(
       isLocal: currentAgent.isLocal,
       isPeerAgent: currentAgent.isPeerAgent,
+      isHubPeerEngine: currentAgent.usesHubStoreCli,
     );
+    final workspaceUri = currentAgent.workspaceUri;
     try {
-      final deviceId = await DeviceIdentity.deviceId();
+      var deviceId = await DeviceIdentity.deviceId();
+      if (currentAgent.usesHubStoreCli) {
+        final hubDevice = ScopeCard.deviceIdFromStoreUri(workspaceUri);
+        if (hubDevice != null) deviceId = hubDevice;
+      }
       return ScopeCard.forGroup(
         groupId: groupId,
         deviceId: deviceId,
         channelId: channelId,
+        workspaceUris: [
+          if (workspaceUri != null && workspaceUri.isNotEmpty) workspaceUri,
+        ],
         cliSurface: cliSurface,
       ).toStableMarkdown();
     } catch (_) {
       return ScopeCard.forGroup(
         groupId: groupId,
-        deviceId: 'unknown',
+        deviceId: ScopeCard.deviceIdFromStoreUri(workspaceUri) ?? 'unknown',
         channelId: channelId,
+        workspaceUris: [
+          if (workspaceUri != null && workspaceUri.isNotEmpty) workspaceUri,
+        ],
         cliSurface: cliSurface,
       ).toStableMarkdown();
     }
   }
 
   static String _cliTransportPreamble(RemoteAgent agent) {
+    if (agent.usesHubStoreCli) {
+      return '''
+【CLI 调用方式】本宿主（Agent Hub）只有 `shepaw store`（read / write / list / meta）。写落 Hub 自己的 device 目录，返回的 `store://` 原样引用。读任意 `store://` 用 `shepaw store read`（本机 / master / 属主）。不要 `hub.cli.execute`，不要 `os` / `chat` / `context`。
+''';
+    }
     if (!agent.usesHubCliExecute) return '';
     return '''
 【CLI 调用方式】你没有 shepaw function tool。下文出现的 `shepaw <namespace> <subcommand> --flag` 一律通过 ACP 请求 `hub.cli.execute` 在用户设备上执行。
@@ -453,12 +472,20 @@ params：`namespace`、`subcommand`、`flags`（对象，对应去掉 `--` 的�
           ? '9. **产物优先写入 store**：需要持久化/可分享的文件产出时，**必须**调用 ACP `hub.cli.execute`，namespace=store subcommand=write，flags.filename / flags.content（可选 flags.task / flags.desc），session_id=本轮 agent.chat 的 session_id，并在回复中**原样**引用返回的 `[filename](store://...)`；禁止编造 URI；**不要**传 agent_id/owner。读法见下方作用域卡片。仅用户明确指定 OS 路径时才用 hub.cli.execute 调 os.file.write'
           : '- **产物优先写入 store**：需要持久化/可分享的文件产出时，优先用 ACP `hub.cli.execute` store write，在回复中原样引用返回的 `store://` URI；不要默认写 `/tmp`；**不要**传 agent_id/owner。读法见作用域卡片，勿用 `os.file.read`';
     }
+    if (agent.usesHubStoreCli) {
+      return memberMust
+          ? '9. **产物优先写入 store**：需要持久化/可分享的文件产出时，**必须**调用 `shepaw store write --filename <名> --content "..."`（可选 `--task` / `--desc`），并在回复中**原样**引用返回的 `[filename](store://...)`；禁止编造 URI；写落 Hub 本机 device。不要 `hub.cli.execute` / `os.file.write`'
+          : '- **产物优先写入 store**：需要持久化/可分享的文件产出时，优先用 `shepaw store write`，在回复中原样引用返回的 `store://` URI；写落 Hub 本机 device；不要默认写 `/tmp`；不要 `hub.cli.execute` / `os.file.read`';
+    }
     return memberMust
         ? '9. **产物优先写入 store**：需要持久化/可分享的文件产出时，**必须**调用 `shepaw store write --filename <名> --content "..."`（可选 `--task` / `--desc`），并在回复中**原样**引用返回的 `[filename](store://...)`；禁止编造 URI；**不要**传 agent_id/owner。读法见下方作用域卡片。仅用户明确指定 OS 路径时才用 `os.file.write`'
         : '- **产物优先写入 store**：需要持久化/可分享的文件产出时，优先用 `shepaw store write`，在回复中原样引用返回的 `store://` URI；不要默认写 `/tmp`；**不要**传 agent_id/owner。读法见作用域卡片，勿用 `os.file.read`';
   }
 
   static String _setBioCommand(RemoteAgent agent) {
+    if (agent.usesHubStoreCli) {
+      return '本宿主无 `chat group.set-bio`；在回复里说明新职责即可，或请用户在 App 里改';
+    }
     if (agent.usesHubCliExecute) {
       return 'ACP `hub.cli.execute` namespace=chat subcommand=group.set-bio，flags.agent=${agent.name} flags.bio="新的职责"，session_id=本轮 agent.chat 的 session_id';
     }
@@ -467,6 +494,17 @@ params：`namespace`、`subcommand`、`flags`（对象，对应去掉 `--` 的�
 
   /// Shepaw CLI guidance for group admin — historical attachments are metadata only.
   String _buildAdminAttachmentSection(RemoteAgent agent) {
+    if (agent.usesHubStoreCli) {
+      return '''
+
+【历史附件与图片 — 必读】
+群聊历史中，图片/文件/语音消息**只保留文字占位符**（如 "📷 Image: xxx.jpg"），不含实际像素或文件内容。
+当用户追问历史图片/附件「说了什么」「内容是什么」「这张图什么意思」时：
+1. **禁止**凭占位符文字猜测或编造
+2. 有 `store://` 时用 `shepaw store read --uri` 原样读取
+3. 本宿主没有 `shepaw chat message.get` / `hub.cli.execute`；否则说明看不到附件内容，请用户重发或改走本机 Agent
+''';
+    }
     if (agent.usesHubCliExecute) {
       return '''
 

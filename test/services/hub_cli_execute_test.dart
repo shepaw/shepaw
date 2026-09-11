@@ -41,6 +41,26 @@ void main() {
     });
   });
 
+  group('HubCliExecute.resolveSessionId', () {
+    test('prefers explicit session_id over the in-flight fallback', () {
+      expect(
+        HubCliExecute.resolveSessionId(
+          {'session_id': 'from-agent'},
+          activeFallback: 'group-9',
+        ),
+        'from-agent',
+      );
+    });
+
+    test('omitted session_id uses the in-flight group/DM turn', () {
+      expect(
+        HubCliExecute.resolveSessionId({}, activeFallback: 'group-9'),
+        'group-9',
+      );
+      expect(HubCliExecute.resolveSessionId({}), isNull);
+    });
+  });
+
   group('HubCliExecute.scopeOf', () {
     test('group-bound member session maps to the group bag', () {
       final ch = Channel.withMemberIds(

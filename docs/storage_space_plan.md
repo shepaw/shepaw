@@ -177,14 +177,14 @@
   理由：LLM 原生擅长 Markdown 链接；URI 是唯一机器 token，正则可解析；聊天 UI 直接渲染为可点击附件。
 - **Agent 侧纪律**（由编排层注入）：
   - 引用：原样引用 URI，不改写、不拼接路径——Agent 只"转述"URI，从不"构造"URI；
-  - 读取：`store_read(uri)` 单参数；分块、缓存、大文件落盘由工具层处理；
-  - 写入：`store_write(filename, content)` 返回新 URI，返回即完成共享（本地优先，后台同步）。
+  - 读取：本机 `shepaw store read --uri <uri>`；远端 ACP `hub.cli.execute` `{namespace:"store",subcommand:"read",flags:{uri}}`；Agent Hub 引擎本机 `shepaw store read`（store 协议，写落 Hub `device_id`）。分块、缓存、大文件落盘由工具层处理。
+  - 写入：本机 `shepaw store write --filename … --content …`；远端 ACP 走 `hub.cli.execute` store write；Agent Hub 同样 `shepaw store write`，返回新 URI 即完成共享（本地优先，后台同步）。旧 MCP `store_read` / `store_write` 映射到本机 store 客户端，不要转发 `hub.cli.execute`。
 - **工作流注入**：群组编排跨端派活时，编排层在任务上下文注入标准片段（改造点在 `lib/services/group/`）：
 
   ```
   ## 可用产物
   - [report.md](store://artifacts/pc-b/task-41/report.md) — Q2 销售报告，markdown，12KB（上游 codebot 产出）
-  读取：store_read 原样传入括号内 URI；产出：store_write 返回新 URI 即完成共享。
+  读取：shepaw store read / hub.cli.execute store read / Hub 本机 shepaw store read，原样传入括号内 URI；产出：store write 返回新 URI 即完成共享。
   ```
 
 - **统一写入路径**：任何端的 Agent（含 master 本机的 Agent）产出都经 `artifact_service` → `store.*` 写入自己设备目录，无特权路径。

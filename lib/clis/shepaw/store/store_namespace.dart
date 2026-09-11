@@ -89,14 +89,15 @@ String? sanitizeMemberRelPath(String raw) {
 
 /// [TOOLING 层] store 命名空间 - 存储空间产物/文件读写
 ///
-/// 对应 docs/storage_space_plan.md §6.3 的 Agent 侧纪律：
-/// - `store_write`（`write`）：产出写入自己设备目录，返回新 URI 即完成共享；
-/// - `store_read`（`read`）：单参数 URI 读取（`artifacts` / `files` 等），分块/缓存由工具层处理；
-/// - `store_list`（`list`）：默认 `--depth 1` 一层一层列目录（含 `kind:dir`），
+/// 对应 docs/storage_space_plan.md §6.3 的 Agent 侧纪律
+///（本机 `shepaw store …` / 远端 ACP `hub.cli.execute` / Agent Hub 本机
+/// `shepaw store` 走 store 协议；不要把 Hub MCP 转成 `hub.cli.execute`）：
+/// - `write`：产出写入自己设备目录，返回新 URI 即完成共享；
+/// - `read`：单参数 URI 读取（`artifacts` / `files` 等），分块/缓存由工具层处理；
+/// - `list`：默认 `--depth 1` 一层一层列目录（含 `kind:dir`），
 ///   便于跨 agent（`store://runtime/<device>/<agentId>/`）遍历；`--depth 0` 才递归全量文件。
-/// - `store_search`（`search`）：按路径/小文本正文检索，返回 `store://` 命中。
-/// - `store_events`（`events`）：commit/delete 事件；`store_spaces` / `store_declare`
-///   列出或声明分区。
+/// - `search`：按路径/小文本正文检索，返回 `store://` 命中。
+/// - `events`：commit/delete 事件；`spaces` / `declare` 列出或声明分区。
 ///
 /// Agent 只"转述"URI，不构造 URI（URI 从本命令输出或用户/上游输入获得）。
 /// 遇到 `store://...` 一律用本命名空间，不要用 OS `file_read`。

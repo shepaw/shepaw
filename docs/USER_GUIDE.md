@@ -221,7 +221,8 @@ Shepaw 对所有敏感操作进行权限控制。
 - Agent 主动调用工具时，授权记录会出现在**会话里**（没有「设置 → 权限与审计」页）
 - 全局 CLI / OS 工具： **设置** → **CLI 管理**
 - 单个 Agent：详情页 → **CLI 命令**（可限制可用命令，并打开「执行前审核」）
-- 限制命令后，模型看到的 shepaw 工具 `namespace` 枚举会按允许列表裁剪；闸门仍会再拦一次。`store read` / `list` / `search` 与 `help` 默认免审，`os` 非 safe 始终确认。远端 Agent 走 `hub.cli.execute`，同一套规则。
+- 限制命令后，模型看到的 shepaw 工具 `namespace` 枚举会按允许列表裁剪；若只开了 `store.write` 这类具体命令，`subcommand` 枚举也会裁到这些命令。闸门仍会再拦一次。`store read` / `list` / `search` 与 `help` 默认免审，`os` 非 safe 始终确认。远端 ACP Agent 走 `hub.cli.execute`，同一套规则。Agent Hub 上的引擎只接本机 `shepaw store`，不走 `hub.cli.execute`。
+- **配对入站（Peer inbound）例外**：对端设备找本机 Agent 说话时，另走 `PeerBoundaryConfig`（默认禁 `os.*`、禁写本机记忆），**不**并进「CLI 命令」允许列表。空允许列表不会放开配对入站的 os / 写记忆。
 
 #### 3.3 推理日志
 1. 进入 **设置** → **推理日志**

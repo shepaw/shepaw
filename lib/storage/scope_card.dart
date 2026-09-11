@@ -7,6 +7,7 @@ library;
 
 import 'memory_paths.dart';
 import 'runtime_paths.dart';
+import 'store_protocol.dart';
 
 /// Scope Card 场景。
 enum ScopeCardMode {
@@ -17,10 +18,12 @@ enum ScopeCardMode {
   acp,
 }
 
-/// CLI 调用面：本机 / Peer 走 shepaw function tool；远端 ACP 走 `hub.cli.execute`。
+/// CLI 调用面：本机 / 对端 App 本地 Agent 走 shepaw function tool；
+/// 远端 ACP 走 `hub.cli.execute`；Agent Hub 引擎走本机 `shepaw store`。
 enum ScopeCardCliSurface {
   shepawTool,
   hubExecuteCli,
+  hubStoreCli,
 }
 
 /// 本轮注入状态（易变；默认只影响 volatile 文案）。
@@ -109,14 +112,27 @@ class ScopeCard {
   final List<String> extraUris;
   final ScopeCardCliSurface cliSurface;
 
-  /// 远端 ACP（非本机、非 Peer）走 `hub.cli.execute`；其余走 shepaw 工具。
+  /// 远端 ACP 走 `hub.cli.execute`；Hub 引擎走本机 `shepaw store`；
+  /// 其余（本机 / 对端 App 本地 Agent）走 shepaw 工具。
   static ScopeCardCliSurface surfaceFor({
     required bool isLocal,
     required bool isPeerAgent,
-  }) =>
-      (!isLocal && !isPeerAgent)
-          ? ScopeCardCliSurface.hubExecuteCli
-          : ScopeCardCliSurface.shepawTool;
+    bool isHubPeerEngine = false,
+  }) {
+    if (!isLocal && !isPeerAgent) return ScopeCardCliSurface.hubExecuteCli;
+    if (isHubPeerEngine) return ScopeCardCliSurface.hubStoreCli;
+    return ScopeCardCliSurface.shepawTool;
+  }
+
+  /// Pull `device_id` out of a `store://<space>/<device>/…` URI.
+  static String? deviceIdFromStoreUri(String? uri) {
+    if (uri == null || !uri.startsWith('store://')) return null;
+    try {
+      return parseStoreUri(uri, allowEmptyPath: true).device;
+    } catch (_) {
+      return null;
+    }
+  }
 
   // ── Factories ──────────────────────────────────────────────────────────
 
@@ -214,6 +230,7 @@ class ScopeCard {
     required String deviceId,
     String? channelId,
     List<String> extraUris = const [],
+    List<String> workspaceUris = const [],
     ScopeCardCliSurface cliSurface = ScopeCardCliSurface.shepawTool,
   }) {
     return ScopeCard(
@@ -233,6 +250,7 @@ class ScopeCard {
       injected: const ScopeCardInjected(),
       capabilities: ScopeCardCapabilities.groupMember,
       extraUris: extraUris,
+      workspaceUris: workspaceUris,
       cliSurface: cliSurface,
     );
   }
@@ -297,6 +315,8 @@ class ScopeCard {
 
   bool get _hubCli => cliSurface == ScopeCardCliSurface.hubExecuteCli;
 
+  bool get _hubStore => cliSurface == ScopeCardCliSurface.hubStoreCli;
+
   static const _hubSessionId =
       'session_id=本轮 agent.chat 的 session_id';
 
@@ -318,9 +338,13 @@ class ScopeCard {
           'flags:{filename:"<名>",content:"..."},$_hubSessionId}`'
           '（可选 flags.task / flags.desc / flags.space=public）；'
           '**不要**传 `agent_id` / `owner` / `channel_id`，由系统落到本作用域袋'
-      : '- 写产物: `shepaw store write --filename <名> --content "..."`'
-          ' 或 `--file <path>` / `--content-base64`（可选 `--task` / `--desc` / `--space public`）；'
-          '**不要**传 `agent_id` / `owner` / 个人 channel，由系统落到本作用域袋';
+      : _hubStore
+          ? '- 写产物: `shepaw store write --filename <名> --content "..."`'
+              '（可选 `--task` / `--desc` / `--space public`）；'
+              '写落 **本机 device** 目录，返回的 `store://` 原样引用；**不要**传 `agent_id` / `owner`'
+          : '- 写产物: `shepaw store write --filename <名> --content "..."`'
+              ' 或 `--file <path>` / `--content-base64`（可选 `--task` / `--desc` / `--space public`）；'
+              '**不要**传 `agent_id` / `owner` / 个人 channel，由系统落到本作用域袋';
 
   String get _memoryWriteLine => _hubCli
       ? '- 写记忆: ACP `hub.cli.execute` `{namespace:"context",'
@@ -357,9 +381,6 @@ class ScopeCard {
         '- 分区：`files` 沉淀 · `public` 公开引用 · `runtime` 会话产物 · '
         '`cognition` Soul/结构化记忆权威 · `workspaces` 工作区 · `backups` 本端灾备',
       );
-      if (workspaceUris.isNotEmpty) {
-        buf.writeln('- 工作区已挂载：`${workspaceUris.first}`');
-      }
     } else {
       if (cognitionRootUri != null) {
         buf.writeln('- 认知权威: `$cognitionRootUri`');
@@ -382,6 +403,10 @@ class ScopeCard {
       }
     }
 
+    if (workspaceUris.isNotEmpty) {
+      buf.writeln('- 工作区已挂载：`${workspaceUris.first}`');
+    }
+
     if (runtimeRootUri != null) {
       buf.writeln('- 产物/runtime: `$runtimeRootUri`');
     }
@@ -395,12 +420,18 @@ class ScopeCard {
     if (capabilities.writeArtifacts) {
       buf.writeln(_storeWriteLine);
     }
+    if (_hubStore) {
+      buf.writeln(
+        '- 本宿主 shepaw 仅 `store`（read / write / list / meta）；'
+        '不要调 `os` / `chat` / `context` / `hub.cli.execute`',
+      );
+    }
     if (capabilities.writeMemory) {
       buf.writeln(_memoryWriteLine);
     } else if (mode == ScopeCardMode.peer) {
       buf.writeln('- 写记忆: **禁止**（本 peer 回合不使用 memory-write）');
     }
-    if (capabilities.writeSoul && mode != ScopeCardMode.group) {
+    if (capabilities.writeSoul && mode != ScopeCardMode.group && !_hubStore) {
       buf.writeln('- 写 Soul: 经既有 cognition/soul CLI（勿写 runtime 镜像）');
     }
 

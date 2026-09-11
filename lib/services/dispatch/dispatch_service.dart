@@ -213,6 +213,7 @@ class DispatchService {
       cliSurface: ScopeCard.surfaceFor(
         isLocal: targetAgent.isLocal,
         isPeerAgent: targetAgent.isPeerAgent,
+        isHubPeerEngine: targetAgent.usesHubStoreCli,
       ),
     );
     final userMsg = Message(

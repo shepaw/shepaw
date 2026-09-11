@@ -230,7 +230,8 @@ Shepaw applies permission controls to all sensitive operations.
 - When an agent calls a tool, the approval record appears **in the chat** (there is no Settings → Permissions & Audit page)
 - Global CLI / OS tools: **Settings** → **CLI Management**
 - Per agent: Details → **CLI Commands** (restrict the command set and/or require approval before each run)
-- A restricted allowlist also trims the shepaw tool `namespace` enum the model sees; the execution gate still enforces it. `store read` / `list` / `search` and `help` skip approval; non-safe `os` tools always confirm. Remote agents use `hub.cli.execute` under the same rules.
+- A restricted allowlist also trims the shepaw tool `namespace` enum; if only specific commands such as `store.write` are enabled, the `subcommand` enum is trimmed too. The execution gate still enforces it. `store read` / `list` / `search` and `help` skip approval; non-safe `os` tools always confirm. Remote ACP agents use `hub.cli.execute` under the same rules. Agent Hub engines use local `shepaw store` only — not `hub.cli.execute`.
+- **Peer inbound is separate**: when a paired device talks to a local agent, `PeerBoundaryConfig` still denies `os.*` and host memory writes. That deny-list is not merged into the per-agent CLI allowlist — an empty allowlist does not lift the inbound peer boundary.
 
 #### 3.3 Inference Logs
 1. Go to **Settings** → **Inference Log**

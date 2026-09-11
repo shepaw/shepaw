@@ -44,6 +44,7 @@ import 'session/session_history_service.dart';
 import '../storage/artifact_service.dart';
 import '../storage/context_bundle.dart';
 import '../storage/scope_card.dart';
+import 'hub_cli_execute.dart';
 import '../storage/store_uri_reader.dart';
 import 'app_lifecycle_service.dart';
 import '../providers/notification_provider.dart';
@@ -586,6 +587,7 @@ class ChatService {
     // commands seen during short-lived health-check connections, even
     // though those connections are disposed before the chat screen opens.
     ACPAgentConnection.slashCommandsSnapshotHook = cacheSlashCommandsSnapshot;
+    HubCliExecute.activeSessionLookup = findActiveSessionId;
     // 步骤被显式跳过 → 发射 stepSkipped 事件（被动，不唤醒管理员）。
     // 闭包内才访问 _groupEventPerceptionScheduler，避免在构造期提前初始化。
     WorkflowService.instance.onStepSkipped = (step, channelId) {
@@ -1093,6 +1095,19 @@ class ChatService {
   /// Detach UI callbacks from the task on [channelId] without cancelling it.
   void detachTaskUI(String channelId) {
     _activeTasks[channelId]?.detachUI();
+  }
+
+  /// In-flight session for [agentId]: group channel first, then DM.
+  /// Used by [HubCliExecute] when the remote omits `session_id`.
+  String? findActiveSessionId(String agentId) {
+    for (final agents in _activeGroupTasks.values) {
+      final task = agents[agentId];
+      if (task != null && !task.isComplete) return task.channelId;
+    }
+    for (final task in _activeTasks.values) {
+      if (task.agentId == agentId && !task.isComplete) return task.channelId;
+    }
+    return null;
   }
 
   /// Get all active (non-complete) group tasks for a channel.
@@ -3198,6 +3213,7 @@ $originalQuestion
               cliSurface: ScopeCard.surfaceFor(
                 isLocal: agent.isLocal,
                 isPeerAgent: agent.isPeerAgent,
+                isHubPeerEngine: agent.usesHubStoreCli,
               ),
             );
             await _groupAgentExecutor.processGroupAgent(
@@ -3373,6 +3389,7 @@ $originalQuestion
               cliSurface: ScopeCard.surfaceFor(
                 isLocal: agent.isLocal,
                 isPeerAgent: agent.isPeerAgent,
+                isHubPeerEngine: agent.usesHubStoreCli,
               ),
             );
             final response = await _agentMessagingService.sendMessageToAgent(

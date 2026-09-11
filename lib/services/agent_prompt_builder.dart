@@ -371,6 +371,7 @@ class AgentPromptBuilder {
         cliSurface: ScopeCard.surfaceFor(
           isLocal: agent.isLocal,
           isPeerAgent: agent.isPeerAgent,
+          isHubPeerEngine: agent.usesHubStoreCli,
         ),
       ).toStableMarkdown();
     } catch (e) {

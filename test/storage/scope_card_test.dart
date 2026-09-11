@@ -116,7 +116,8 @@ void main() {
     expect(md, isNot(contains('shepaw store read')));
   });
 
-  test('surfaceFor: remote ACP uses hub, local and peer use shepaw', () {
+  test('surfaceFor: remote ACP uses hub, local and peer use shepaw, Hub engine uses store',
+      () {
     expect(
       ScopeCard.surfaceFor(isLocal: false, isPeerAgent: false),
       ScopeCardCliSurface.hubExecuteCli,
@@ -129,6 +130,41 @@ void main() {
       ScopeCard.surfaceFor(isLocal: true, isPeerAgent: true),
       ScopeCardCliSurface.shepawTool,
     );
+    expect(
+      ScopeCard.surfaceFor(
+        isLocal: false,
+        isPeerAgent: true,
+        isHubPeerEngine: true,
+      ),
+      ScopeCardCliSurface.hubStoreCli,
+    );
+  });
+
+  test('hub store surface teaches shepaw store, not hub.cli.execute or os', () {
+    final md = ScopeCard.forGroup(
+      groupId: 'g1',
+      deviceId: 'dddddddddddddddd',
+      cliSurface: ScopeCardCliSurface.hubStoreCli,
+      workspaceUris: const [
+        'store://workspaces/dddddddddddddddd/Users/me/proj/',
+      ],
+    ).toStableMarkdown();
+    expect(md, contains('shepaw store write'));
+    expect(md, contains('本宿主 shepaw 仅 `store`'));
+    expect(md, contains('不要调 `os`'));
+    expect(md, contains('工作区已挂载'));
+    expect(md, contains('不要调 `os` / `chat` / `context` / `hub.cli.execute`'));
+    expect(md, isNot(contains('agents.memory-write')));
+  });
+
+  test('deviceIdFromStoreUri reads the device segment', () {
+    expect(
+      ScopeCard.deviceIdFromStoreUri(
+        'store://workspaces/0123456789abcdef/Users/me/proj/',
+      ),
+      '0123456789abcdef',
+    );
+    expect(ScopeCard.deviceIdFromStoreUri('not-a-uri'), isNull);
   });
 
   test('volatileUrisMarkdown lists folded URIs once', () {

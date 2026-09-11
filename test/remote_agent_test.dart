@@ -145,6 +145,46 @@ void main() {
       expect(remote.usesHubCliExecute, isTrue);
       expect(local.usesHubCliExecute, isFalse);
       expect(peer.usesHubCliExecute, isFalse);
+      expect(peer.usesHubStoreCli, isFalse);
+    });
+
+    test('usesHubStoreCli is true only for Hub-managed peer engines', () {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final hub = RemoteAgent(
+        id: 'h1',
+        name: 'Cursor',
+        token: 't',
+        endpoint: '',
+        protocol: ProtocolType.peer,
+        connectionType: ConnectionType.http,
+        createdAt: now,
+        updatedAt: now,
+        metadata: const {
+          'source_peer_id': 'peer1',
+          'remote_agent_id': 'inst-1',
+          'manageable': true,
+          'engine': 'cursor',
+        },
+      );
+      final phonePeer = RemoteAgent(
+        id: 'p1',
+        name: 'Coder',
+        token: 't',
+        endpoint: '',
+        protocol: ProtocolType.peer,
+        connectionType: ConnectionType.http,
+        createdAt: now,
+        updatedAt: now,
+        metadata: const {
+          'llm_provider': 'openai',
+          'source_peer_id': 'peer1',
+          'remote_agent_id': 'a1',
+        },
+      );
+      expect(hub.usesHubStoreCli, isTrue);
+      expect(hub.usesHubCliExecute, isFalse);
+      expect(phonePeer.usesHubStoreCli, isFalse);
+      expect(phonePeer.usesHubCliExecute, isFalse);
     });
 
     test('cliRequireApproval defaults She off and others on', () {

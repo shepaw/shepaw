@@ -1422,9 +1422,13 @@ Agent 可以主动向用户发起新会话（需要 App 用户授权）：
 
 ### 11.8 在用户设备上执行 shepaw CLI
 
-远端 Agent **不要**在自己进程里实现 `store_read` / `store_write`。读写用户储物袋、以及其它 shepaw 命令，一律通过 `hub.cli.execute` 交给 App 的 [CliExecutionGate]：命令权限、执行审核、store ACL 与本地 Agent 同一套。
+**远端 ACP Agent** 没有 shepaw function tool。读写用户储物袋、以及其它 shepaw 命令，一律通过 `hub.cli.execute` 交给 App 的 [CliExecutionGate]：命令权限、执行审核、store ACL 与本地 Agent 同一套。
 
-身份以 **ACP 认证会话** 为准。不要传 `agent_id` / `owner` / `channel_id`（即使放在 `flags` 里也会被丢掉）。频道绑定只认 `agent.chat` 下发的 `session_id`；群绑定成员会话会落到该群的储物袋，而不是个人 runtime。
+身份以 **ACP 认证会话** 为准。不要传 `agent_id` / `owner` / `channel_id`（即使放在 `flags` 里也会被丢掉）。频道绑定优先认 `agent.chat` 下发的 `session_id`；漏传时 App 会回填该 Agent **正在进行的群/单聊回合**，避免群产物落到个人 runtime。群绑定成员会话会落到该群的储物袋。
+
+**Agent Hub 上的引擎（Cursor / Claude Code 等）不是这条路。** Hub 是配对存储客户端：写落 Hub 自己的 `<device_id>/`，读走 store 协议（本机 / master / 属主）。引擎只应看见 `shepaw store`（read / write / list / meta），不要 `os` / `chat` / `hub.cli.execute`。旧 MCP `store_read` / `store_write` 应映射到同一套本机 store 客户端，而不是转发 `hub.cli.execute`。
+
+配对入站（Peer inbound，对端设备找本机 Agent）**不**走这套 allowlist，仍由 `PeerBoundaryConfig` 单独禁 `os.*` / 写本机记忆。
 
 ```json
 {
@@ -1456,9 +1460,9 @@ Agent 可以主动向用户发起新会话（需要 App 用户授权）：
 }
 ```
 
-App 成功时 `result.ok == true`，并带上 CLI JSON；闸门拒绝（未授权命令、用户点了拒绝）时仍是 JSON-RPC success，`result.ok == false` 且带 `error`。`store_read` / `store_write` 这类 Hub MCP 别名视为过时，请映射到上面的 `store read` / `store write`。
+App 成功时 `result.ok == true`，并带上 CLI JSON；闸门拒绝（未授权命令、用户点了拒绝）时仍是 JSON-RPC success，`result.ok == false` 且带 `error`。ACP 远端把旧 `store_read` / `store_write` 映射到上面的 `store read` / `store write`。Agent Hub 引擎走本机 `shepaw store`，不要映射成 `hub.cli.execute`。
 
-本机 LLM Agent 的 `shepaw` function tool 会按该 Agent 的 `enabled_cli_commands`（以及群成员的 store/help 角色表）裁剪 `namespace` 枚举，避免模型点到未授权命令。远端请在自己的 tool 列表里做同样的裁剪，或只暴露 `hub.cli.execute` 并依赖闸门拒绝。
+本机 LLM Agent 的 `shepaw` function tool 会按该 Agent 的 `enabled_cli_commands`（以及群成员的 store/help 角色表）裁剪 `namespace` 枚举；若允许列表是 `store.write` 这类具体命令，`subcommand` 枚举也会裁到这些命令。远端请在自己的 tool 列表里做同样的裁剪，或只暴露 `hub.cli.execute` 并依赖闸门拒绝。
 
 ---
 
