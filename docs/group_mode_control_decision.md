@@ -1,9 +1,12 @@
 # 对话模式控制权归属：决策记录（群聊 + 单聊）
 
-> 状态：§5.1 已拍板（Plan Mode 保留并扩展到单聊），其余待确认
+> 状态：§5.1 已重新拍板（规划模式 = 只读开关，映射到 agent 原生 plan mode），其余待确认
 > 日期：2026-09-11
-> 更新 1：2026-09-11 补入单聊计划模式调研结论（§2.5、§5.1）
-> 更新 2：2026-09-11 文档债已清（§2.4、§5.1.3）
+> 更新 1：补入单聊 workflow 引擎调研（§2.5）
+> 更新 2：文档债已清（§2.4、§5.1.4）
+> 更新 3：**§5.1 定位修正** —— 初版把「计划模式」理解成 App 侧审批闸门，理解错了。
+> 用户要的规划模式是「一个开关让 agent 别动手改代码，先写计划」，见 §5.1.1。
+> 原决策 #1 / #2（§7）作废。
 
 ## 1. 问题
 
@@ -82,6 +85,27 @@
 结论：**门控不是按 `channel.type`，而是按「成员里有没有 She」**。把计划模式扩展到单聊，
 实质上是把这条判据换成一个用户开关，而不是新建一套机制。
 
+> ⚠️ 这套引擎是**审批闸门**（App 拿结构化计划驱动执行），**不是**用户要的规划模式。
+> 见 §5.1.1 的修正。这里保留是因为它是现状事实，但不要再把它当作规划模式的落地路径。
+
+### 2.6 第三方 agent 的原生 plan mode
+
+Shepaw 接入的远端 agent（Claude Code、Codex、Cursor 等）自带 plan mode。
+调研结论：
+
+- **项目里已经有映射表**：`lib/peer/engine_session_modes.dart:38-74` 硬编了各引擎的原生 mode，
+  其中 `claude-code/plan`、`cursor/plan`、`opencode/plan` 的描述统一是「只规划，不改代码」；
+  `codex` 是审批档位（`on-request` / `on-failure` / `never`）。
+- **但只对 Peer（Hub 引擎）开放**：`remote_agent_detail_screen.dart:357`
+  `if (!_agent.isPeerAgent) return;` —— ACP 远端 agent 用不上。
+- **ACP 侧没有能力协商**：`acp_protocol.dart:187-336` 全部 method 里没有 `plan` /
+  `session_mode` / `permission`；capability 只解析一个 bit ——
+  `acp_agent_connection.dart:2014` `_supportsAsyncConfirmation = capsSet.contains('async_confirmation')`。
+- **因此会双计划并存**：`group_prompt_builder.dart:1201` 无条件教 ACP 管理员
+  「调用 `shepaw workflow create` 创建工作流」，而对端自己的 plan mode 同时也在跑，
+  两条路产出的东西互不可见。
+- **本地裸模型没有原生 plan mode**：本地 LLM 代理就是 OpenAI 兼容接口，只有 prompt 可约束。
+
 ## 3. 决策原则
 
 **判据：用户能在「按下发送之前」回答这个问题吗？**
@@ -104,49 +128,71 @@
 | `maxLoopRounds` | **保留开关** | 成本上限，纯用户侧约束（烧多少 token）。 |
 | `flowMode` | **保留开关，但挪位置** | 见 §5.2：它是每次任务的属性，不是群的属性。 |
 | `enableStageGate` | **保留，语义摆正** | 见 §5.3：从"模式"改称"干预强度"，三档。 |
-| 计划模式 | **保留，并扩展到单聊** | 见 §5.1：它不是第三种编排模式，而是正交于编排模式的审批闸门。 |
+| 规划模式（新） | **新增开关** | 见 §5.1：一个「别动手改代码，先写计划」的只读开关，映射到 agent 原生 plan mode。 |
+| 老的 Planning Mode | **删** | 见 §5.1.2：代码里已无剩余物，文档债已清。 |
+| 审批闸门（workflow） | **维持现状，不扩展** | 见 §5.1.1：那是另一件事，原「扩展到单聊」的计划已搁置。 |
 | 8 个 feature flag | **不进 UI，收敛删除** | 见 §5.4。 |
 | 新增编排策略 | **默认归 admin** | 除非能通过 §3 判据，否则不许加 UI 开关。 |
 
 ## 5. 落地步骤（按顺序）
 
-### 5.1 计划模式：保留，正交化，并扩展到单聊（已拍板）
+### 5.1 规划模式：一个「只读规划」开关（2026-09-11 重新拍板）
 
-#### 5.1.1 重新定位：它是「审批闸门」，不是第三种编排模式
+#### 5.1.1 修正：上一版定位错了
 
-原文档把「标准 / Planning / Flow」并列成三种模式，这是个分类错误。
-「先出计划给你看，你点头再执行」与「怎么编排多个 agent」是两个正交的维度：
+上一版把「计划模式」理解成 App 侧的**审批闸门**（先出计划 → 用户确认 → App 驱动执行）。
+这不是用户要的。用户要的规划模式很单纯：
 
-|  | 不卡审批（直接跑） | 卡审批（计划模式） |
+> 一个开关，让 agent 不要动手改代码，先写计划。
+
+两者是根本不同的东西：
+
+|  | 审批闸门（上一版的理解） | 规划模式（用户要的） |
 |---|---|---|
-| **标准编排**（轮流对话） | 现状默认 | 群聊：admin 先给讨论提纲，确认后再开始 |
-| **Flow 编排**（阶段化执行） | 现状 `flowMode` | FlowPlan 生成后先给用户过一遍 |
+| 重点 | 「我来批准」 | 「你不许动手」 |
+| 机制 | App 拿结构化计划渲染卡片，用户点头后 App 驱动执行 | agent 处于只读状态，只输出计划 |
+| 强制力 | App 侧编排 | **agent 侧工具权限，硬拦** |
+| 产物 | `workflow_executions` 里的结构化步骤 | 一段计划文本 |
+| 承载 | workflow 引擎（§2.5） | **agent 原生 plan mode**（§2.6） |
 
-所以计划模式应当是一个**独立的 bool 开关**，而不是 `Channel` 上的三态枚举。
-这也让单聊支持它变得自然——单聊没有多 agent 编排，但仍然可以"先出计划 → 你确认 → 执行"。
+所以规划模式**不是** workflow 引擎的事，而是**把 agent 原生的「只读规划」能力暴露成一个开关**。
+原 §5.1.2「扩展到单聊」那套改造（换 `dmWorkflowEnabled` 判据）属于审批闸门路线，
+**已搁置**，不再是规划模式的落地路径。
 
-统一后的命名建议：内部沿用 `planApproval`（与 `metadata['plan_approval']` 一致），
-UI 文案用「计划确认」。原 `chat_planningMode` arb key 无人引用，已删除（见 §5.1.3）。
+#### 5.1.2 老的 Planning Mode：删（代码里已无剩余物）
 
-#### 5.1.2 扩展到单聊：换掉判据，不是新建机制
+文档债已清（§5.1.4）。代码侧复查一遍，确认没有可删的剩余物：
 
-现状门控在 `chat_controller_load.dart:90-92`：只有成员含 She 的 DM 才有工作流。
-改造点：
+- `planning_mode` 列：已 deprecated，仅为迁移兼容保留（`channel_dao.dart:48`、`:753`）。
+  **保持不动**——删列要写迁移，收益为零。
+- `planning_models.dart`：**不是**老 Planning Mode 的残留，而是 Flow / Workflow 共用的
+  计划数据结构，被 `workflow_service.dart`、`plan_approval_card.dart`、
+  `workflow_create_command.dart` 使用，**不能删**。
+  只是文件名带 `planning_` 容易误导，可考虑改名，纯重命名，优先级低。
 
-1. **判据换掉**：`dmWorkflowEnabled` 从「`channel.agentIds.contains(SheService.sheId)`」
-   改为「用户开了计划模式开关 **且** 该 agent 支持 shepaw CLI」。
-   开关落到 `Channel`（参照 `enableStageGate` 的持久化路径：`copyWithGroupEdit` / `toJson`）。
-2. **复用现有三件套**：`WorkflowService.createWorkflowExecution` +
-   `PlanApprovalCard` + `WorkflowProgressPanel`，都已经 type-agnostic。
-   UI 门控点 `chat_screen.dart:3699,3730` 的 `c.isGroupMode || c.dmWorkflowEnabled`
-   保持结构不变，只是 `dmWorkflowEnabled` 的含义变了。
-3. **补两个单聊缺口**：
-   - `chat_controller_load.dart:231-234`：DM 缺 `_reattachPendingPlanApproval`
-     （DM 靠 metadata 持久化，没有 Completer），重载会话时待审批计划可能丢。
-   - `WorkfowStep.agent` 在单聊无意义（`chat_controller_workflow.dart:327-333` 已处理
-     DM 回合竞态），需补执行人缺失时的降级——单 agent 串行执行。
+结论：老的 Planning Mode 在代码里早就死透了，「删」这件事实际只落在文档上，已完成。
 
-#### 5.1.3 同步清文档债 ✅ 已完成（2026-09-11）
+#### 5.1.3 新的规划模式：映射到 agent 原生 plan mode
+
+§2.6 已确认：**项目里已经有第三方原生 plan mode 的映射表**，正是这个语义。
+
+- `lib/peer/engine_session_modes.dart:38-74`：`claude-code/plan`、`cursor/plan`、
+  `opencode/plan`，描述统一为「只规划，不改代码」。
+- 关键优势：**原生 plan mode 是硬拦**。Claude Code 的 plan mode 真的把写工具禁掉，
+  agent 想违规也做不到。这比 Shepaw 用 prompt 说「请先写计划」可靠得多——
+  后者是软约束，模型不守规矩就绕过。
+- 现状只对 Peer（Hub 引擎）开放：`remote_agent_detail_screen.dart:357`
+  `if (!_agent.isPeerAgent) return;`
+
+落地步骤：
+
+1. 把 mode 选择器从 Peer-only 放开到 ACP 远端 agent（去掉上面那道门）。
+   前提：要能拿到 engineId，ACP 侧目前拿不到，需要先补。
+2. 开关语义统一叫「规划模式」，不管背后映射的是原生 plan mode 还是别的。
+3. 中期：ACP 握手加 native plan capability 协商位（`acp_protocol.dart:187-336` 目前没有），
+   有原生能力就映射过去；没有再决定降级策略。
+
+#### 5.1.4 清文档债 ✅ 已完成（2026-09-11）
 
 全部改为「两种编排模式（标准 / Flow）」，计划审批不再作为独立模式出现，
 而是 Flow 里的「计划卡片 → 你确认 → 执行」。改动文件：
@@ -157,8 +203,7 @@ UI 文案用「计划确认」。原 `chat_planningMode` arb key 无人引用，
 - `docs/gorup_chat_flow.md`（`planningMode` 开关 → `flowMode`）
 - `lib/l10n/app_zh.arb` / `app_en.arb` + 重新 `flutter gen-l10n`
 
-注：用户文档只写**现状**。计划模式作为「正交维度」的写法只出现在本决策文档（§5.1.1），
-等 §5.1.2 落地后再同步到用户文档。
+注：用户文档只写**现状**。规划模式是新能力，等 §5.1.3 落地后再同步到用户文档。
 
 ### 5.2 `flowMode` 从「群属性」下沉到「本次任务属性」
 
@@ -193,17 +238,27 @@ UI 文案用「计划确认」。原 `chat_planningMode` arb key 无人引用，
 
 ## 6. 待定
 
-1. 单聊计划模式的开关放在哪一层：跟 `flowMode` 一样做成 `Channel` 属性（群/单聊各自一份），
-   还是像 §5.2 说的做成「每次发送时的意图」？**倾向后者**，但要先看 §5.2 是否落地。
-2. 单聊计划模式是否对**所有** agent 开放，还是只给开了 `includeShepawCli` 的？
-   纯聊天型 agent（没开 CLI）调不了 `shepaw workflow create`，开了开关也没用——
-   UI 上要不要拦（开关置灰 + 说明）？
-3. `flowMode` 下沉到每次发送，是否值得做（§5.2 第 2 步改造量不小）。
-4. 干预强度三档里 `askUser` 这档是否真有需求——如果没人用，两档就够。
+1. **本地裸模型（没有原生 plan mode）怎么办？** 三条路：
+   - 只靠 prompt 软约束（「先给计划，等我确认再动手」）—— 不保证，模型可能照改不误；
+   - 开关置灰，只对有原生 plan mode 的 agent 开放 —— 诚实，但本地 agent 用户用不上；
+   - 置灰 + 说明「该 agent 不支持，只能靠提示词约束」。
+   **倾向第三条**，但要确认本地 LLM 代理是不是重要场景。
+2. 规划模式的开关放在哪一层：做成 `Channel` 属性（跟 `flowMode` 一样），
+   还是做成「每次发送时的意图」（§5.2 的路子）？规划模式更像**会话级状态**
+   （一次规划可能跨好几轮），**倾向 `Channel` 属性**。
+3. ACP 远端 agent 的 engineId 从哪来？`engineSessionModeCatalog(engineId)` 需要它，
+   目前只有 Peer 路径有。这是 §5.1.3 第 1 步的前置。
+4. 群聊里规划模式作用于谁？只约束 admin、还是所有成员？群聊语义下「别动手」
+   应该约束的是**成员**（干活的），admin 本来就在协调。
+5. `flowMode` 下沉到每次发送，是否值得做（§5.2 第 2 步改造量不小）。
+6. 干预强度三档里 `askUser` 这档是否真有需求——如果没人用，两档就够。
 
 ## 7. 已拍板
 
 | # | 决策 | 日期 |
 |---|---|---|
-| 1 | 计划模式保留，不删除；且不止群聊，单聊也要支持 | 2026-09-11 |
-| 2 | 计划模式重新定位为「审批闸门」，与编排模式正交，不当作第三种模式 | 2026-09-11 |
+| 1 | ~~计划模式保留，不删除；且不止群聊，单聊也要支持~~ **作废**（定位错了） | 2026-09-11 |
+| 2 | ~~计划模式重新定位为「审批闸门」，与编排模式正交~~ **作废**（同上） | 2026-09-11 |
+| 3 | 老的 Planning Mode 删除；代码侧无剩余物，只清文档 | 2026-09-11 |
+| 4 | 规划模式 = 一个「别动手改代码，先写计划」的只读开关，映射到 agent 原生 plan mode | 2026-09-11 |
+| 5 | 审批闸门（workflow 引擎）与规划模式是两件事；前者维持现状，不再扩展到单聊 | 2026-09-11 |
