@@ -3805,6 +3805,10 @@ class _ChatScreenState extends State<ChatScreen>
                   },
                   onDesktopPaste: _handleDesktopPaste,
                   hasAudioModel: _agentSupportsAudio,
+                  // 会话模式（Peer agent 原生 mode / 规划模式）入口：会话级，
+                  // 换会话时输入框自行重拉（见 chat_input_area）。
+                  agentId: c.agentId,
+                  channelId: c.currentChannelId,
                   slashCommands: c.agentId == null
                       ? const []
                       : (c.chatService

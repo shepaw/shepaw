@@ -8,7 +8,12 @@ import '../../models/acp_protocol.dart';
 import '../../models/mention_entry.dart';
 import '../../models/pending_attachment.dart';
 import '../../models/remote_agent.dart';
+import '../../peer/engine_session_modes.dart';
+import '../../peer/services/peer_agent_client_service.dart';
+import '../../peer/services/peer_connection_manager.dart';
 import '../../services/audio_recording_service.dart';
+import '../../services/local_database_service.dart';
+import '../../service_locator.dart' show getIt;
 import '../../utils/layout_utils.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/error_handler_service.dart';
@@ -73,6 +78,14 @@ class ChatInputArea extends StatefulWidget {
   /// rebuild when it becomes available.
   final List<SlashCommandInfo> Function()? slashCommandsResolver;
 
+  /// 当前会话所属 agent（单聊）。用于按会话读取 / 切换上游会话模式
+  /// （Peer agent 的原生 mode，如 Claude Code 的 plan）——真值在上游引擎，
+  /// 本地不落库（见 docs/group_mode_control_decision.md §5.1.3b）。
+  final String? agentId;
+
+  /// 当前会话 id：切模式时按会话下发（sessionId = psess_ 解码值 ?? 本身）。
+  final String? channelId;
+
   const ChatInputArea({
     super.key,
     required this.messageController,
@@ -97,6 +110,8 @@ class ChatInputArea extends StatefulWidget {
     this.slashCommands = const [],
     this.slashCommandsStream,
     this.slashCommandsResolver,
+    this.agentId,
+    this.channelId,
   });
 
   @override
@@ -148,6 +163,27 @@ class ChatInputAreaState extends State<ChatInputArea> {
   OverlayEntry? _attachmentOverlay;
   bool _desktopAttachmentOpen = false;
 
+  // ── 会话模式（Peer agent 的原生 mode）──
+  // 只有 Peer 接入的 agent 有上游 mode 可切，本地 agent / 群聊整个入口不
+  // 出现。列表与当前值都来自上游（离线时退回引擎目录），切换走
+  // setMode(sessionId:) —— 会话级，不落本地库。
+  final GlobalKey _modeChipKey = GlobalKey();
+  List<PeerAgentMode> _sessionModes = const [];
+  String? _currentSessionMode;
+  String? _modePeerId;
+  String? _modeRemoteAgentId;
+  /// 进入规划模式前的档位，Shift+Tab 再按一次时用它切回。
+  String? _modeBeforePlan;
+  bool _sessionModeSetting = false;
+  /// 会话切换时作废在途的拉取（fetchModes 最长 15s），避免旧会话的结果
+  /// 覆盖新会话的 chip。
+  int _sessionModesToken = 0;
+
+  bool get _sessionModeAvailable => _sessionModes.isNotEmpty;
+
+  bool get _planModeActive =>
+      (_currentSessionMode ?? '').toLowerCase() == 'plan';
+
   @override
   void initState() {
     super.initState();
@@ -169,6 +205,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
         _detectSlashTrigger();
       }
     });
+    unawaited(_loadSessionModes());
   }
 
   @override
@@ -209,6 +246,16 @@ class ChatInputAreaState extends State<ChatInputArea> {
         }
       });
     }
+    if (oldWidget.agentId != widget.agentId ||
+        oldWidget.channelId != widget.channelId) {
+      // 会话级状态：换会话（或换 agent）后旧档位不再适用，清空后重拉。
+      _sessionModes = const [];
+      _currentSessionMode = null;
+      _modeBeforePlan = null;
+      _modePeerId = null;
+      _modeRemoteAgentId = null;
+      unawaited(_loadSessionModes());
+    }
   }
 
   void _onTextChanged() {
@@ -238,6 +285,240 @@ class ChatInputAreaState extends State<ChatInputArea> {
   }
 
   bool get _canSend => _hasText || widget.pendingAttachments.isNotEmpty;
+
+  // ---------------------------------------------------------------------------
+  // Session mode（Peer agent 的原生 mode / 规划模式）
+  // ---------------------------------------------------------------------------
+
+  /// 本会话对应的上游 sessionId：已同步的远端会话用 `psess_` 前缀解码，
+  /// 其余会话直接把 channelId 当 sessionId —— 与发送时的取法一致
+  /// （agent_messaging_service）。
+  String? get _sessionIdForMode {
+    final cid = widget.channelId;
+    if (cid == null || cid.isEmpty) return null;
+    return remoteSessionIdFromChannelId(cid) ?? cid;
+  }
+
+  /// 拉取当前会话可用的模式。只有 Peer agent 有上游 mode：本地 agent 与
+  /// 群聊（作用于谁未定，§6 #4）都不显示入口。
+  Future<void> _loadSessionModes() async {
+    final agentId = widget.agentId;
+    if (widget.isGroupMode || agentId == null || agentId.isEmpty) return;
+    if (!getIt.isRegistered<LocalDatabaseService>()) return;
+    final token = ++_sessionModesToken;
+    RemoteAgent? agent;
+    try {
+      agent = await getIt<LocalDatabaseService>().getRemoteAgentById(agentId);
+    } catch (_) {
+      return;
+    }
+    if (!mounted || token != _sessionModesToken) return;
+    if (agent == null || !agent.isPeerAgent) return;
+    final peerId = agent.sourcePeerId;
+    final remoteAgentId = agent.remoteAgentId;
+    if (peerId == null || remoteAgentId == null) return;
+
+    final catalog = catalogModesList(agent.metadata['engine'] as String?);
+    _modePeerId = peerId;
+    _modeRemoteAgentId = remoteAgentId;
+    if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
+      // 离线：退回引擎目录（已知引擎的原生档位），至少不让入口消失。
+      setState(() {
+        _sessionModes = catalog.modes;
+        _currentSessionMode = catalog.current;
+      });
+      return;
+    }
+    // 注：fetchModes 内部按 remoteAgentId 去重（不含 sessionId），同一
+    // agent 的并发请求会复用同一个 future。列表是 agent 级的、本来一致，
+    // 只有 current 可能取到另一会话的值 —— 会话间来回切时以 chip 上显示
+    // 的为准，必要时再点开菜单重选。
+    final list = await PeerAgentClientService.instance.fetchModes(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      sessionId: _sessionIdForMode,
+    );
+    if (!mounted || token != _sessionModesToken) return;
+    final live = list.modes.isNotEmpty ? list : catalog;
+    setState(() {
+      _sessionModes = live.modes;
+      _currentSessionMode = live.current ?? catalog.current;
+    });
+  }
+
+  Future<void> _setSessionMode(String mode) async {
+    final peerId = _modePeerId;
+    final remoteAgentId = _modeRemoteAgentId;
+    if (peerId == null || remoteAgentId == null) return;
+    if (_sessionModeSetting || mode == _currentSessionMode) return;
+    final previous = _currentSessionMode;
+    setState(() {
+      _sessionModeSetting = true;
+      _currentSessionMode = mode;
+    });
+    final ok = await PeerAgentClientService.instance.setMode(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      mode: mode,
+      sessionId: _sessionIdForMode,
+    );
+    if (!mounted) return;
+    setState(() => _sessionModeSetting = false);
+    if (ok) return;
+    // 上游拒绝：回退本地显示，不要停留在一个实际没生效的档位上。
+    setState(() => _currentSessionMode = previous);
+    showTopToast(
+      context,
+      AppLocalizations.of(context).chat_sessionModeSwitchFailed,
+      icon: Icons.error_outline,
+      color: Colors.red.shade400,
+    );
+  }
+
+  PeerAgentMode? _findMode(String value) {
+    final target = value.toLowerCase();
+    for (final m in _sessionModes) {
+      if (m.value.toLowerCase() == target) return m;
+    }
+    return null;
+  }
+
+  /// Shift+Tab 的快捷切换：切到 plan 档，再切一次回原档位。
+  Future<void> _togglePlanMode() async {
+    if (!_sessionModeAvailable) return;
+    final plan = _findMode('plan');
+    if (plan == null) {
+      // 引擎没有原生 plan 档（codex 只有审批档位）：说清楚而不是静默。
+      showTopToast(
+        context,
+        AppLocalizations.of(context).chat_planModeUnsupported,
+        icon: Icons.info_outline,
+        color: Colors.blueGrey,
+      );
+      return;
+    }
+    if (_planModeActive) {
+      final fallback = _sessionModes.firstWhere(
+        (m) => m.value.toLowerCase() != 'plan',
+        orElse: () => plan,
+      );
+      await _setSessionMode(_modeBeforePlan ?? fallback.value);
+      return;
+    }
+    _modeBeforePlan = _currentSessionMode;
+    await _setSessionMode(plan.value);
+  }
+
+  /// 常驻 chip：桌面在底部工具条，移动端在输入框上方一条。
+  /// 规划档高亮为「规划中」——必须一眼可见，否则用户会以为 agent 卡住
+  /// 不动（§5.1.5）。
+  Widget _buildSessionModeChip() {
+    if (!_sessionModeAvailable) return const SizedBox.shrink();
+    final l10n = AppLocalizations.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
+    final planning = _planModeActive;
+    final current = _findMode(_currentSessionMode ?? '');
+    final label = planning
+        ? l10n.chat_planModeOn
+        : (current?.displayName ?? l10n.chat_sessionMode);
+    final fg = planning ? colorScheme.primary : colorScheme.onSurfaceVariant;
+    return InkWell(
+      key: _modeChipKey,
+      onTap: _sessionModeSetting ? null : _showSessionModeMenu,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: planning
+              ? colorScheme.primaryContainer.withValues(alpha: 0.6)
+              : colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: planning ? colorScheme.primary : colorScheme.outline,
+            width: planning ? 1 : 0.5,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              planning ? Icons.assignment_outlined : Icons.tune_outlined,
+              size: 14,
+              color: fg,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: fg,
+              ),
+            ),
+            const SizedBox(width: 2),
+            Icon(Icons.arrow_drop_down, size: 16, color: fg),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 全部档位菜单（带描述），当前档位打勾；plan 档另有 Shift+Tab 快捷入口。
+  Future<void> _showSessionModeMenu() async {
+    final modes = _sessionModes;
+    if (modes.isEmpty) return;
+    final overlayBox =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (overlayBox == null) return;
+    final chipBox =
+        _modeChipKey.currentContext?.findRenderObject() as RenderBox?;
+    final rect = chipBox != null
+        ? overlayBox.globalToLocal(chipBox.localToGlobal(Offset.zero)) &
+            chipBox.size
+        : Rect.fromLTWH(24, overlayBox.size.height - 240, 200, 0);
+    final colorScheme = Theme.of(context).colorScheme;
+    final picked = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromSize(rect, overlayBox.size),
+      items: [
+        for (final m in modes)
+          PopupMenuItem<String>(
+            value: m.value,
+            child: Row(
+              children: [
+                Icon(
+                  Icons.check,
+                  size: 16,
+                  color: m.value == _currentSessionMode
+                      ? colorScheme.primary
+                      : Colors.transparent,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(m.displayName, style: const TextStyle(fontSize: 14)),
+                      if (m.description.isNotEmpty)
+                        Text(
+                          m.description,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+    if (!mounted || picked == null) return;
+    await _setSessionMode(picked);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -607,7 +888,22 @@ class ChatInputAreaState extends State<ChatInputArea> {
               // Multi-line text area
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-                child: Actions(
+                // 容器常驻、只换装饰：条件包裹会让 TextField 换父节点，
+                // 切换规划模式时会掉焦点。
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: _planModeActive
+                        ? colorScheme.primaryContainer.withValues(alpha: 0.25)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color:
+                          _planModeActive ? colorScheme.primary : Colors.transparent,
+                      width: 1,
+                    ),
+                  ),
+                  child: Actions(
                   actions: widget.onDesktopPaste != null
                       ? {
                           PasteTextIntent: CallbackAction<PasteTextIntent>(
@@ -658,7 +954,9 @@ class ChatInputAreaState extends State<ChatInputArea> {
                           color: Theme.of(context).colorScheme.onSurface,
                         ),
                         decoration: InputDecoration(
-                          hintText: l10n.chat_messageHint,
+                          hintText: _planModeActive
+                              ? l10n.chat_planModeHint
+                              : l10n.chat_messageHint,
                           hintStyle: TextStyle(
                             fontSize: 14,
                             color: Colors.grey[400],
@@ -674,6 +972,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
                       ),
                     ),
                   ),
+                ),
                 ),
               ),
               // Bottom toolbar: icons left, Send right
@@ -695,6 +994,10 @@ class ChatInputAreaState extends State<ChatInputArea> {
                       tooltip: 'Attachment',
                       onPressed: _toggleDesktopAttachmentPopover,
                     ),
+                    if (_sessionModeAvailable) ...[
+                      const SizedBox(width: 4),
+                      _buildSessionModeChip(),
+                    ],
                     const Spacer(),
                     if (widget.isLoading)
                       SizedBox(
@@ -1128,6 +1431,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
 
   Widget _buildMobileInputArea() {
     final hasPendingAttachments = widget.pendingAttachments.isNotEmpty;
+    final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.all(8),
@@ -1146,6 +1450,15 @@ class ChatInputAreaState extends State<ChatInputArea> {
           mainAxisSize: MainAxisSize.min,
           children: [
             _buildPendingAttachmentsPreview(),
+            // 输入框上方一条：那一行已塞了 语音 / + / 输入框 / 发送，再塞
+            // 图标会挤（§5.1.5），模式 chip 单独占一条。
+            if (_sessionModeAvailable)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
+                child: Row(
+                  children: [_buildSessionModeChip()],
+                ),
+              ),
             Row(
               children: [
                 if (widget.hasAudioModel)
@@ -1177,8 +1490,17 @@ class ChatInputAreaState extends State<ChatInputArea> {
                       ? _buildHoldToTalkButton()
                       : Container(
                           decoration: BoxDecoration(
-                            color: colorScheme.surfaceContainerHighest,
+                            color: _planModeActive
+                                ? colorScheme.primaryContainer
+                                    .withValues(alpha: 0.3)
+                                : colorScheme.surfaceContainerHighest,
                             borderRadius: BorderRadius.circular(24),
+                            border: Border.all(
+                              color: _planModeActive
+                                  ? colorScheme.primary
+                                  : Colors.transparent,
+                              width: 1,
+                            ),
                           ),
                           child: Focus(
                             onKeyEvent: _handleInputKeyEvent,
@@ -1188,7 +1510,9 @@ class ChatInputAreaState extends State<ChatInputArea> {
                                 controller: widget.messageController,
                                 focusNode: widget.textFieldFocusNode,
                                 decoration: InputDecoration(
-                                  hintText: AppLocalizations.of(context).chat_messageHint,
+                                  hintText: _planModeActive
+                                      ? l10n.chat_planModeHint
+                                      : l10n.chat_messageHint,
                                   border: InputBorder.none,
                                   contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 16,
@@ -1441,6 +1765,15 @@ class ChatInputAreaState extends State<ChatInputArea> {
 
   KeyEventResult _handleInputKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
+
+    // Shift+Tab：切换规划模式（与 Claude Code 一致，肌肉记忆可迁移）。
+    // 必须排在 slash 面板之前——面板里 Tab 是「补全命令」。
+    if (event.logicalKey == LogicalKeyboardKey.tab &&
+        HardwareKeyboard.instance.isShiftPressed &&
+        _sessionModeAvailable) {
+      unawaited(_togglePlanMode());
+      return KeyEventResult.handled;
+    }
 
     // Slash palette takes precedence over mention picker when active: if
     // the user just typed "/", they want slash-command completion, not
