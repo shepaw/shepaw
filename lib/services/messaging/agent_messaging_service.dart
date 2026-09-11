@@ -391,6 +391,20 @@ class AgentMessagingService {
     }
   }
 
+  /// 登记在途 DM 回合。
+  ///
+  /// 新回合天然属于新的一代：登记时顺手丢掉该频道可能残留的「用户停止」标记
+  /// （[_userStoppedChannels]）。上一回合被停止后若以异常收尾（例如
+  /// cursor-agent 被取消后回 `task.error`），它走不到 [sendMessageToAgent]
+  /// 里的消费点，标记就会残留；若不清理，下一回合会把新回复误判成「已被
+  /// 停止」而丢弃——表现为「停止 → 重新编辑 → 重发」后回复不出来。
+  void _registerActiveTask(String channelId, ActiveTask task) {
+    if (channelId.isEmpty) return;
+    _userStoppedChannels.remove(channelId);
+    _activeTasks[channelId] = task;
+    updateTypingAgentIds();
+  }
+
   /// Force-stop the in-flight 1:1 task for [channelId]: mark complete
   /// synchronously (prevents reattach), persist `[Stopped]` to DB, and
   /// release foreground/typing state.
@@ -771,6 +785,12 @@ class AgentMessagingService {
     } catch (e, stackTrace) {
       LoggerService().error('Failed to send message', tag: 'AgentMessagingService', error: e, stackTrace: stackTrace);
 
+      // 本回合以失败收尾，走不到上面的「用户停止」消费点，必须自己把标记带走；
+      // 否则它会残留到该频道下一回合，新回复被误判成「已被停止」而丢弃。
+      if (channelId != null) {
+        _userStoppedChannels.remove(channelId);
+      }
+
       // Create error message
       final errorMessage = Message(
         id: _uuid.v4(),
@@ -993,10 +1013,7 @@ class AgentMessagingService {
       activeTask.onRequestHistory = onRequestHistory;
 
       // Register active task
-      if (effectiveChannelId.isNotEmpty) {
-        _activeTasks[effectiveChannelId] = activeTask;
-        updateTypingAgentIds();
-      }
+      _registerActiveTask(effectiveChannelId, activeTask);
       ForegroundTaskService().acquireTask(agent.name);
 
       // Per-agent 停滞阈值（agent metadata 可覆盖；默认 180s）
@@ -1728,10 +1745,7 @@ class AgentMessagingService {
     // Surface tool-call approvals (agent_approval_req relayed by the hub) to
     // the chat UI via the same card mechanism as the direct ACP flow.
     activeTask.onActionConfirmation = onActionConfirmation;
-    if (effectiveChannelId.isNotEmpty) {
-      _activeTasks[effectiveChannelId] = activeTask;
-      updateTypingAgentIds();
-    }
+    _registerActiveTask(effectiveChannelId, activeTask);
     ForegroundTaskService().acquireTask(agent.name);
 
     // Declared before the flush helper so its onFlushed closure can bridge the
@@ -2115,10 +2129,7 @@ class AgentMessagingService {
     activeTask.onRequestHistory = onRequestHistory;
     activeTask.onOsToolConfirmation = onOsToolConfirmation;
 
-    if (effectiveChannelId.isNotEmpty) {
-      _activeTasks[effectiveChannelId] = activeTask;
-      updateTypingAgentIds();
-    }
+    _registerActiveTask(effectiveChannelId, activeTask);
     ForegroundTaskService().acquireTask(agent.name);
 
     final flushHelper = StreamingFlushHelper.fromAgent(
