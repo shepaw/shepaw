@@ -36,11 +36,12 @@ enum GroupEventType {
 
 /// One structured event in a group chat that agents can perceive.
 ///
-/// - Passive events (step completions …) are recorded into the
-///   [GroupEventStore] and injected into the next relevant member's context
-///   bundle — zero extra LLM turns.
-/// - Active-notify events (step failures, membership changes …) additionally
-///   schedule a debounced admin perception turn.
+/// - Passive events (step completions, membership join/leave …) are recorded
+///   into the [GroupEventStore] and injected into the next relevant member's
+///   context bundle — zero extra LLM turns.
+/// - Active-notify events (step failures, and member-left only when the
+///   departing agent still has in-flight work) additionally schedule a
+///   debounced admin perception turn.
 class GroupEvent {
   final String id;
   final GroupEventType type;
@@ -82,6 +83,9 @@ class GroupEvent {
     required String memberName,
     required bool isJoin,
     String? id,
+    /// Leave-only: departing member still has an in-flight group turn.
+    /// Promotes [GroupEventType.memberLeft] to active-notify.
+    bool hasInFlightWork = false,
   }) {
     return GroupEvent(
       id: id ?? _newId(),
@@ -90,7 +94,10 @@ class GroupEvent {
       agentId: memberId,
       agentName: memberName,
       summary: isJoin ? '成员 $memberName 加入群聊' : '成员 $memberName 离开群聊',
-      payload: {'isJoin': isJoin},
+      payload: {
+        'isJoin': isJoin,
+        if (hasInFlightWork) 'has_in_flight_work': true,
+      },
     );
   }
 

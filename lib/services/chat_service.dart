@@ -286,7 +286,8 @@ class ChatService {
     },
   );
 
-  /// Sub-service: coalesced admin perception turn after member enter/leave.
+  /// Sub-service: membership join/leave event log + optional admin perception
+  /// when a departing member still has in-flight work.
   late final GroupMembershipPerceptionScheduler
       _groupMembershipPerceptionScheduler = GroupMembershipPerceptionScheduler(
     db: _databaseService,
@@ -300,6 +301,11 @@ class ChatService {
     // M2: 编排 loop 进行中，感知回合让位（drop）。
     isChannelOrchestrating: (channelId) =>
         _groupOrchestratingChannels.contains(channelId),
+    // 成员离开且仍有进行中群回合时才叫醒管理员；加人/空闲踢人只记事件。
+    hasInFlightWork: (channelId, memberId) {
+      final task = _activeGroupTasks[channelId]?[memberId];
+      return task != null && !task.isComplete;
+    },
   );
 
   /// Sub-service: group event log (passive awareness + workspace persistence).
@@ -2383,10 +2389,10 @@ $originalQuestion
   /// push notification to every connected remote agent still in the group.
   /// Returns the system [Message] so the caller can insert it into the UI.
   ///
-  /// After the notification is persisted, a fire-and-forget admin perception
-  /// turn is scheduled so the group admin (She) becomes aware of the roster
-  /// change and can adjust task allocation. This never blocks or breaks the
-  /// membership operation itself.
+  /// After the notification is persisted, the membership change is recorded
+  /// for passive context. An admin perception turn is scheduled only when a
+  /// departing member still has in-flight work. This never blocks or breaks
+  /// the membership operation itself.
   Future<Message> notifyGroupMembershipChange(
     String channelId,
     String memberId,

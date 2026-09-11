@@ -20,17 +20,24 @@ class EventPerceptionPolicy {
 
   const EventPerceptionPolicy({required this.activeNotifyTypes});
 
-  /// Default: membership changes and step failures activate the admin. Step
-  /// successes are passive — the admin is not woken up per node.
+  /// Default: step failures activate the admin. Membership join/leave is
+  /// passive (next real turn injects roster + event log). A leave is promoted
+  /// to active-notify only when the departing member still has in-flight work
+  /// (`payload['has_in_flight_work'] == true`) so the admin can reallocate.
+  /// Step successes stay passive — the admin is not woken up per node.
   factory EventPerceptionPolicy.defaultPolicy() => const EventPerceptionPolicy(
         activeNotifyTypes: {
-          GroupEventType.memberJoined,
-          GroupEventType.memberLeft,
           GroupEventType.stepFailed,
         },
       );
 
-  bool isActiveNotify(GroupEventType type) => activeNotifyTypes.contains(type);
+  bool isActiveNotify(GroupEvent event) {
+    if (event.type == GroupEventType.memberJoined) return false;
+    if (event.type == GroupEventType.memberLeft) {
+      return event.payload['has_in_flight_work'] == true;
+    }
+    return activeNotifyTypes.contains(event.type);
+  }
 }
 
 /// Builds the turn content for an admin perception turn.
@@ -162,7 +169,7 @@ class GroupEventPerceptionScheduler {
     // chat.group.* 投影（单发射点）：EventBus 只做扇出 / 订阅 / 审计，
     // 群编排感知仍走本 scheduler。投影失败不能影响群事件记录（见 try/catch）。
     _emitGroupProjection(event);
-    if (_policy.isActiveNotify(event.type)) {
+    if (_policy.isActiveNotify(event)) {
       _pending.putIfAbsent(event.channelId, () => []).add(event);
       _arm(event.channelId);
     }

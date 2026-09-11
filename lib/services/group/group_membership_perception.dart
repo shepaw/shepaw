@@ -22,16 +22,17 @@ class MembershipChangeEvent {
   });
 }
 
-/// Fires a single "admin perception turn" after group membership changes.
+/// Records membership join/leave and, only when a departing member still has
+/// in-flight work, fires a coalesced admin perception turn.
 ///
 /// The group admin (She) never sees `MessageType.system` join/leave messages
 /// — `GroupOrchestrationService.sendMessageToGroup` filters them out of agent
-/// history — so the admin cannot react to roster changes on its own. This
-/// scheduler coalesces rapid changes (e.g. a CLI `addMember` loop) per channel
-/// and triggers one admin turn via [GroupAgentExecutor.processGroupAgent] so
-/// the admin acknowledges the change and can note task reallocation.
+/// history — so roster changes are written to the shared event log for the
+/// next real turn. Waking the admin on every add/kick is noise (and the
+/// perception turn cannot dispatch). A leave is promoted to active-notify
+/// only when [hasInFlightWork] is true for that member.
 ///
-/// This class is now a thin facade over [GroupEventPerceptionScheduler] with a
+/// This class is a thin facade over [GroupEventPerceptionScheduler] with a
 /// membership-specific prompt builder; all debounce/guard/merge mechanics live
 /// in the generic engine. All scheduling is fire-and-forget: [schedule] never
 /// throws and never blocks the membership operation itself.
@@ -53,7 +54,12 @@ class GroupMembershipPerceptionScheduler {
 
     /// 该频道是否正在运行编排 loop（M2）——透传给底层 scheduler。
     bool Function(String channelId)? isChannelOrchestrating,
-  }) : _inner = GroupEventPerceptionScheduler(
+
+    /// Leave-only: departing [memberId] still has an in-flight group turn
+    /// on [channelId]. When true, the leave is active-notify.
+    bool Function(String channelId, String memberId)? hasInFlightWork,
+  })  : _hasInFlightWork = hasInFlightWork,
+        _inner = GroupEventPerceptionScheduler(
           db: db,
           executor: executor,
           acpConnections: acpConnections,
@@ -66,6 +72,8 @@ class GroupMembershipPerceptionScheduler {
           isChannelOrchestrating: isChannelOrchestrating,
         );
 
+  final bool Function(String channelId, String memberId)? _hasInFlightWork;
+
   /// Record a membership change. Synchronous and non-blocking.
   void schedule({
     required String channelId,
@@ -73,11 +81,14 @@ class GroupMembershipPerceptionScheduler {
     required String memberName,
     required bool isJoin,
   }) {
+    final inFlight = !isJoin &&
+        (_hasInFlightWork?.call(channelId, memberId) ?? false);
     _inner.schedule(GroupEvent.memberChange(
       channelId: channelId,
       memberId: memberId,
       memberName: memberName,
       isJoin: isJoin,
+      hasInFlightWork: inFlight,
     ));
   }
 
