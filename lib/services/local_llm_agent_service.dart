@@ -147,8 +147,9 @@ class LocalLLMAgentService {
     List<Map<String, dynamic>>? extraTools,
     /// UI tool names to omit (e.g. request_history in group chat).
     Set<String> excludeUIToolNames = const {},
-    /// Per-agent CLI allowlist (empty = unrestricted). Trims shepaw tool schema.
-    Set<String> enabledCliCommands = const {},
+    /// Per-agent CLI allowlist. `null` = unrestricted, `{}` = block every
+    /// command. Trims the shepaw tool schema.
+    Set<String>? enabledCliCommands,
     /// Extra role allowlist (e.g. group members: store/help).
     Set<String>? extraCliAllowlist,
   }) async* {
@@ -258,7 +259,7 @@ class LocalLLMAgentService {
     required bool includeShepawCli,
     List<Map<String, dynamic>>? extraTools,
     Set<String> excludeUIToolNames = const {},
-    Set<String> enabledCliCommands = const {},
+    Set<String>? enabledCliCommands,
     Set<String>? extraCliAllowlist,
   }) {
     final tools = <Map<String, dynamic>>[];
@@ -846,7 +847,7 @@ class LocalLLMAgentService {
     List<AttachmentData>? attachments,
     List<Map<String, dynamic>>? extraTools,
     Set<String> excludeUIToolNames = const {},
-    Set<String> enabledCliCommands = const {},
+    Set<String>? enabledCliCommands,
     Set<String>? extraCliAllowlist,
   }) async* {
     final effectiveSystemPrompt = systemPrompt;
@@ -959,7 +960,7 @@ class LocalLLMAgentService {
     List<AttachmentData>? attachments,
     List<Map<String, dynamic>>? extraTools,
     Set<String> excludeUIToolNames = const {},
-    Set<String> enabledCliCommands = const {},
+    Set<String>? enabledCliCommands,
     Set<String>? extraCliAllowlist,
   }) async* {
     final messages = <Map<String, dynamic>>[];

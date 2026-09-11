@@ -1,17 +1,34 @@
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../clis/cli_command_allowlist.dart';
 import '../services/cli_namespace_registry.dart';
 import '../widgets/cli_command_config_card.dart';
 import '../widgets/form_bottom_bar.dart';
 
+/// Result of [CliCommandSelectScreen].
+///
+/// The screen can express three distinct outcomes, but `Navigator.push` already
+/// spends `null` on "the user went back without saving". If "unrestricted"
+/// also popped `null`, cancelling the picker would silently widen a restricted
+/// agent to unrestricted — so the saved outcome is always wrapped.
+class CliCommandSelection {
+  /// `null` = unrestricted (drop the metadata key);
+  /// `{}` = block every CLI command;
+  /// non-empty = explicit allowlist.
+  final Set<String>? commands;
+
+  const CliCommandSelection(this.commands);
+}
+
 /// Full-page screen for configuring CLI commands for an agent.
 ///
-/// Receives the current set of enabled commands and returns the updated set
-/// via [Navigator.pop].
+/// Receives the current allowlist and returns the updated one via
+/// [Navigator.pop] as a [CliCommandSelection].
 ///
 /// This is parallel to [OsToolSelectScreen] but for CLI commands.
 class CliCommandSelectScreen extends StatefulWidget {
-  final Set<String> enabledCommands;
+  /// Current per-agent allowlist: `null` = unrestricted, `{}` = block all.
+  final Set<String>? enabledCommands;
 
   const CliCommandSelectScreen({
     super.key,
@@ -28,23 +45,20 @@ class _CliCommandSelectScreenState extends State<CliCommandSelectScreen> {
   @override
   void initState() {
     super.initState();
-    // When enabledCommands is empty, it means "all allowed" in storage.
-    // Pre-populate with all commands so the UI shows all switches ON.
-    if (widget.enabledCommands.isEmpty) {
-      _enabledCommands = Set<String>.from(
-        CliNamespaceRegistry.instance.allCommandIds,
-      );
-    } else {
-      _enabledCommands = Set<String>.from(widget.enabledCommands);
-    }
+    // Unrestricted (`null`) shows every switch ON: that is what "the agent may
+    // run anything" looks like. Block-all (`{}`) is the opposite and must stay
+    // visually distinct, otherwise the user cannot tell the two states apart.
+    _enabledCommands = widget.enabledCommands == null
+        ? Set<String>.from(CliNamespaceRegistry.instance.allCommandIds)
+        : Set<String>.from(widget.enabledCommands!);
   }
 
   void _save() {
-    final allIds = CliNamespaceRegistry.instance.allCommandIds;
-    final result = _enabledCommands.length >= allIds.length
-        ? <String>{}
-        : _enabledCommands;
-    Navigator.pop(context, result);
+    final result = cliSelectionToAllowlist(
+      selected: _enabledCommands,
+      allCommandIds: CliNamespaceRegistry.instance.allCommandIds.toSet(),
+    );
+    Navigator.pop(context, CliCommandSelection(result));
   }
 
   @override

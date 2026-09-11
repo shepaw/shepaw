@@ -583,6 +583,7 @@
   "agentDetail_peerTunnel": "P2P tunnel (paired device)",
   "agentDetail_cliCommands": "CLI Commands",
   "agentDetail_allCliCommands": "All commands available (default)",
+  "agentDetail_cliCommandsBlocked": "All commands blocked",
   "agentDetail_cliCommandsRestricted": "{count} command(s) selected (restricted)",
   "@agentDetail_cliCommandsRestricted": {
     "placeholders": {

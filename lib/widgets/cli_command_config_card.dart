@@ -18,6 +18,34 @@ class CliCommandConfigCard extends StatelessWidget {
     required this.onChanged,
   });
 
+  /// Confirms "Deselect All", which now means **block every command** rather
+  /// than "allow everything" (the old, inverted behaviour).
+  Future<void> _confirmDeselectAll(BuildContext context) async {
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Block all CLI commands?'),
+        content: const Text(
+          'This agent will not be able to run any shepaw command. '
+          'Pick "Select All" (or re-enable individual commands) to lift the '
+          'restriction again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(l10n.common_cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Block all'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) onChanged({});
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -60,7 +88,9 @@ class CliCommandConfigCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Select CLI commands this agent can execute. Unselected commands will be blocked. All selected = unrestricted.',
+              'Select CLI commands this agent can execute. Unselected commands '
+              'will be blocked. Saving with everything selected means '
+              'unrestricted; deselecting every command blocks them all.',
               style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
             ),
             const SizedBox(height: 8),
@@ -83,9 +113,9 @@ class CliCommandConfigCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 TextButton.icon(
-                  onPressed: () {
-                    onChanged({});
-                  },
+                  // 二次确认：`{}` 的语义是「禁止一切」，方向与直觉相反，
+                  // 误点的代价是让该 agent 完全不能调用 CLI。
+                  onPressed: () => _confirmDeselectAll(context),
                   icon: const Icon(Icons.deselect, size: 16),
                   label: const Text('Deselect All'),
                   style: TextButton.styleFrom(

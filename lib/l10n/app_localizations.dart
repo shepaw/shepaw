@@ -2648,6 +2648,12 @@ abstract class AppLocalizations {
   /// **'全部可用（默认放行）'**
   String get agentDetail_allCliCommands;
 
+  /// No description provided for @agentDetail_cliCommandsBlocked.
+  ///
+  /// In zh, this message translates to:
+  /// **'全部命令已禁止'**
+  String get agentDetail_cliCommandsBlocked;
+
   /// No description provided for @agentDetail_cliCommandsRestricted.
   ///
   /// In zh, this message translates to:

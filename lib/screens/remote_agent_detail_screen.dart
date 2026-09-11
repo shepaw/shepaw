@@ -120,8 +120,8 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   // 场景模型
   AgentScenarioModels _scenarioModels = const AgentScenarioModels();
 
-  // CLI 命令配置
-  Set<String> _enabledCliCommands = {};
+  // CLI 命令配置：null = 不受限（未配置），{} = 全禁，非空 = 显式白名单
+  Set<String>? _enabledCliCommands;
   bool _cliRequireApproval = false;
 
   /// Editable prompt-stack flags (persisted in metadata).
@@ -776,11 +776,13 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         }
         metadata.remove('tool_model_scenarios');
 
-        // Save CLI commands
-        if (_enabledCliCommands.isNotEmpty) {
-          metadata['enabled_cli_commands'] = _enabledCliCommands.toList();
-        } else {
+        // Save CLI commands. Three-state: absent key = unrestricted,
+        // `[]` = block every command, non-empty = explicit allowlist.
+        final cliCommands = _enabledCliCommands;
+        if (cliCommands == null) {
           metadata.remove('enabled_cli_commands');
+        } else {
+          metadata['enabled_cli_commands'] = cliCommands.toList();
         }
 
         _applyScenarioModelsMetadata(metadata);
@@ -2512,20 +2514,24 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
   /// CLI 命令卡（详情模式，仅本地 agent）。
   ///
-  /// 与编辑页的 [CliCommandSelectScreen] 对应：`enabledCliCommands` 为空表示
-  /// 全部放行（默认），非空表示仅放行选中的命令。按命名空间分组展示。
+  /// 与编辑页的 [CliCommandSelectScreen] 对应，三态语义：
+  /// `null` = 未配置 / 全部放行（默认），`{}` = 全部禁止，非空 = 仅放行选中的
+  /// 命令。按命名空间分组展示。
   Widget _buildCliCommandsCard() {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final registry = CliNamespaceRegistry.instance;
     final enabledCommands = _agent.enabledCliCommands;
-    final isRestricted = enabledCommands.isNotEmpty;
+    final allowed = enabledCommands ?? const <String>{};
+    // `null` = 不受限 → 徽标显示全部命令数（旧行为）；`{}` 显示 0。
+    final badgeCount =
+        enabledCommands == null ? registry.allCommandIds.length : allowed.length;
 
     // 按顶层命名空间分组已放行的命令，便于浏览
     final grouped = registry.namespaces.values
-        .map((ns) => MapEntry(
-            ns, ns.commands.where(enabledCommands.contains).toList()))
+        .map((ns) =>
+            MapEntry(ns, ns.commands.where(allowed.contains).toList()))
         .where((entry) => entry.value.isNotEmpty)
         .toList();
 
@@ -2548,11 +2554,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
               ),
             ),
             const Spacer(),
-            _buildCountBadge(
-              '${isRestricted ? enabledCommands.length : registry.allCommandIds.length}',
-              true,
-              colorScheme,
-            ),
+            _buildCountBadge('$badgeCount', true, colorScheme),
           ],
         ),
         tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -2572,7 +2574,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
               ),
             ),
           ),
-          if (!isRestricted)
+          if (enabledCommands == null)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(
@@ -2580,6 +2582,20 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                 style: TextStyle(
                   fontSize: 13,
                   color: colorScheme.onSurfaceVariant,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            )
+          else if (grouped.isEmpty)
+            // `{}`（全禁）：没有任何分组可列，必须显式说明，否则卡片看起来像
+            // 加载失败。
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                l10n.agentDetail_cliCommandsBlocked,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: colorScheme.error,
                   fontStyle: FontStyle.italic,
                 ),
               ),
@@ -3263,20 +3279,25 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
             leading: Icon(Icons.terminal, color: colorScheme.primary),
             title: Text(l10n.agentDetail_cliCommands),
             subtitle: Text(
-              _enabledCliCommands.isEmpty
-                  ? l10n.agentDetail_allCliCommands
-                  : l10n.agentDetail_cliCommandsRestricted(
-                      _enabledCliCommands.length,
-                    ),
+              switch (_enabledCliCommands) {
+                null => l10n.agentDetail_allCliCommands,
+                final commands when commands.isEmpty =>
+                  l10n.agentDetail_cliCommandsBlocked,
+                final commands => l10n.agentDetail_cliCommandsRestricted(
+                    commands.length,
+                  ),
+              },
               style: TextStyle(
-                color: _enabledCliCommands.isEmpty
-                    ? colorScheme.primary
-                    : colorScheme.onSurfaceVariant,
+                color: switch (_enabledCliCommands) {
+                  null => colorScheme.primary,
+                  final commands when commands.isEmpty => colorScheme.error,
+                  _ => colorScheme.onSurfaceVariant,
+                },
               ),
             ),
             trailing: const Icon(Icons.chevron_right),
             onTap: () async {
-              final result = await Navigator.push<Set<String>>(
+              final result = await Navigator.push<CliCommandSelection>(
                 context,
                 MaterialPageRoute(
                   builder: (_) => CliCommandSelectScreen(
@@ -3284,12 +3305,12 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                   ),
                 ),
               );
-              if (result != null) {
-                setState(() {
-                  _enabledCliCommands = result;
-                });
-                _scheduleAutoSave();
-              }
+              // null = 用户未保存直接返回，保持原配置不动。
+              if (result == null) return;
+              setState(() {
+                _enabledCliCommands = result.commands;
+              });
+              _scheduleAutoSave();
             },
           ),
           const Divider(height: 1, indent: 16, endIndent: 16),

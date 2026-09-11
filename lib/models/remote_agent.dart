@@ -297,18 +297,23 @@ class RemoteAgent {
   /// Whether any tool models are enabled.
   bool get hasToolModels => enabledToolModels.isNotEmpty;
 
-  /// Enabled CLI commands (from metadata).
-  /// 
-  /// Empty set means all CLI commands are available (default permissive).
-  /// Non-empty set means only these commands are available (restrictive).
-  Set<String> get enabledCliCommands {
+  /// Enabled CLI commands (from metadata). Three distinct states:
+  ///
+  /// - `null` — key absent: **unrestricted** (the default, and what every
+  ///   pre-existing agent has).
+  /// - `{}` — key present but empty (`[]`): **every** CLI command is blocked.
+  /// - non-empty — only these commands (namespace entries allow descendants).
+  ///
+  /// `null` vs `{}` used to collapse into the same value, which forced the
+  /// picker to guess and made "Deselect All" mean "allow everything".
+  Set<String>? get enabledCliCommands {
     final cmds = metadata['enabled_cli_commands'];
     if (cmds is List) return Set<String>.from(cmds.cast<String>());
-    return {};
+    return null;
   }
 
-  /// Whether any CLI commands are explicitly enabled.
-  bool get hasEnabledCliCommands => enabledCliCommands.isNotEmpty;
+  /// Whether CLI commands are restricted to an explicit, non-empty allowlist.
+  bool get hasEnabledCliCommands => (enabledCliCommands ?? const {}).isNotEmpty;
 
   /// Whether CLI execution waits for a user confirmation (same UI as OS).
   ///

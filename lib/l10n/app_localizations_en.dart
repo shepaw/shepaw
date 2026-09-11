@@ -1427,6 +1427,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get agentDetail_allCliCommands => 'All commands available (default)';
 
   @override
+  String get agentDetail_cliCommandsBlocked => 'All commands blocked';
+
+  @override
   String agentDetail_cliCommandsRestricted(int count) {
     return '$count command(s) selected (restricted)';
   }

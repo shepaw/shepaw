@@ -136,7 +136,7 @@ class ShepawCLI {
   bool isPawTool(String name) => name == toolName;
 
   Map<String, dynamic> openAITool({
-    Set<String> enabledCliCommands = const {},
+    Set<String>? enabledCliCommands,
     Set<String>? extraAllowlist,
   }) =>
       {
@@ -155,7 +155,7 @@ class ShepawCLI {
       };
 
   Map<String, dynamic> claudeTool({
-    Set<String> enabledCliCommands = const {},
+    Set<String>? enabledCliCommands,
     Set<String>? extraAllowlist,
   }) =>
       {
@@ -202,7 +202,7 @@ class ShepawCLI {
 
   /// 动态生成工具描述（包含外部工具信息）
   String _buildToolDescription({
-    Set<String> enabledCliCommands = const {},
+    Set<String>? enabledCliCommands,
     Set<String>? extraAllowlist,
   }) {
     final suffix = CliToolRegistry.instance.toolDescriptionSuffix();
@@ -219,7 +219,7 @@ class ShepawCLI {
   }
 
   Map<String, dynamic> _parameterSchema({
-    Set<String> enabledCliCommands = const {},
+    Set<String>? enabledCliCommands,
     Set<String>? extraAllowlist,
   }) {
     // 动态构建 subcommand 描述（包含外部工具）

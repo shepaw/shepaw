@@ -72,26 +72,30 @@ bool cliCommandApprovalExempt(String commandId) {
 }
 
 /// Whether [allowlist] grants [namespace] or any descendant command.
+///
+/// An **empty** [allowlist] grants nothing. "Unrestricted" is expressed by not
+/// calling this at all (a null allowlist on the caller's side), never by an
+/// empty set — otherwise `{}` means both "no restriction" and "nothing
+/// allowed" depending on which primitive reads it.
 bool cliNamespaceVisible(Set<String> allowlist, String namespace) {
-  if (allowlist.isEmpty) return true;
   if (allowlist.contains(namespace)) return true;
   final prefix = '$namespace.';
   return allowlist.any((e) => e.startsWith(prefix));
 }
 
-/// Namespaces the LLM schema may advertise after intersecting per-agent
-/// [enabledCliCommands] with an optional extra allowlist (group members).
+/// Namespaces the LLM schema may advertise after intersecting the per-agent
+/// allowlist with an optional extra allowlist (group members).
 ///
-/// Empty [enabledCliCommands] means no per-agent restriction. A non-null
-/// [extraAllowlist] always restricts. Empty intersection falls back to
-/// `help` so the model still has a callable namespace.
+/// `null` [enabledCliCommands] means no per-agent restriction; `{}` means every
+/// command is blocked. Same for [extraAllowlist]. Empty intersection falls back
+/// to `help` so the model still has a callable namespace.
 List<String> cliFilterNamespaces(
   Iterable<String> all, {
-  Set<String> enabledCliCommands = const {},
+  Set<String>? enabledCliCommands,
   Set<String>? extraAllowlist,
 }) {
   final filtered = all.where((ns) {
-    if (enabledCliCommands.isNotEmpty &&
+    if (enabledCliCommands != null &&
         !cliNamespaceVisible(enabledCliCommands, ns)) {
       return false;
     }
@@ -107,13 +111,13 @@ List<String> cliFilterNamespaces(
 
 /// Restriction line for the shepaw tool description, or null if unrestricted.
 String? cliSchemaRestrictionNote({
-  Set<String> enabledCliCommands = const {},
+  Set<String>? enabledCliCommands,
   Set<String>? extraAllowlist,
 }) {
   final parts = <String>[];
-  if (enabledCliCommands.isNotEmpty) {
+  if (enabledCliCommands != null) {
     final sorted = enabledCliCommands.toList()..sort();
-    parts.add('per-agent: ${sorted.join(', ')}');
+    parts.add('per-agent: ${sorted.isEmpty ? '(none)' : sorted.join(', ')}');
   }
   if (extraAllowlist != null) {
     final sorted = extraAllowlist.toList()..sort();
@@ -136,7 +140,7 @@ const kCliBareNamespaces = {'help'};
 /// `store.read` / `store.list` just because `store` is in the namespace list.
 List<String>? cliFilterSubcommands({
   required Iterable<String> namespaces,
-  Set<String> enabledCliCommands = const {},
+  Set<String>? enabledCliCommands,
   Set<String>? extraAllowlist,
 }) {
   final visible = namespaces.toSet();
@@ -144,7 +148,7 @@ List<String>? cliFilterSubcommands({
 
   bool fullyGranted(String ns) {
     final byEnabled =
-        enabledCliCommands.isEmpty || enabledCliCommands.contains(ns);
+        enabledCliCommands == null || enabledCliCommands.contains(ns);
     final byExtra = extraAllowlist == null || extraAllowlist.contains(ns);
     return byEnabled && byExtra;
   }
@@ -167,8 +171,26 @@ List<String>? cliFilterSubcommands({
     }
   }
 
-  if (enabledCliCommands.isNotEmpty) collect(enabledCliCommands);
+  if (enabledCliCommands != null) collect(enabledCliCommands);
   if (extraAllowlist != null) collect(extraAllowlist);
   if (subs.isEmpty) return null;
   return subs.toList()..sort();
+}
+
+/// Map a command picker's [selected] set to the persisted three-state value.
+///
+/// The persisted metadata key has three meanings and they must stay distinct:
+/// key absent (`null`, unrestricted), `[]` (block everything), non-empty
+/// (explicit allowlist). "Everything selected" therefore maps back to `null`
+/// so the picker round-trips an unrestricted agent without pinning it to
+/// today's command list.
+Set<String>? cliSelectionToAllowlist({
+  required Set<String> selected,
+  required Set<String> allCommandIds,
+}) {
+  if (selected.isEmpty) return const <String>{};
+  if (allCommandIds.isNotEmpty && selected.length >= allCommandIds.length) {
+    return null;
+  }
+  return selected;
 }

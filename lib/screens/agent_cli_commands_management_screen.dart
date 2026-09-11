@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter/material.dart';
 import '../models/remote_agent.dart';
 import '../services/remote_agent_service.dart';
@@ -132,22 +133,25 @@ class _AgentCliCommandsTileState extends State<_AgentCliCommandsTile> {
     final registry = CliNamespaceRegistry.instance;
 
     String getStatusText() {
-      if (enabledCommands.isEmpty) {
+      if (enabledCommands == null) {
         return 'All CLI commands available. Store read / help skip review; '
             'OS non-safe tools always confirm. Per-agent “require approval” '
             'is on the agent detail page.';
-      } else {
-        final count = enabledCommands.length;
-        return '$count command(s) allowed';
       }
+      if (enabledCommands.isEmpty) {
+        return 'All CLI commands blocked — this agent cannot call shepaw.';
+      }
+      return '${enabledCommands.length} command(s) allowed';
     }
 
     Color getStatusColor() {
-      if (enabledCommands.isEmpty) {
+      if (enabledCommands == null) {
         return colorScheme.primary;
-      } else {
-        return colorScheme.tertiary;
       }
+      if (enabledCommands.isEmpty) {
+        return colorScheme.error;
+      }
+      return colorScheme.tertiary;
     }
 
     return ListTile(
@@ -185,7 +189,7 @@ class _AgentCliCommandsTileState extends State<_AgentCliCommandsTile> {
               fontWeight: FontWeight.w500,
             ),
           ),
-          if (enabledCommands.isNotEmpty) ...[
+          if (enabledCommands != null && enabledCommands.isNotEmpty) ...[
             const SizedBox(height: 4),
             Text(
               'Namespaces: ${registry.groupCommandsByNamespace(enabledCommands).keys.join(", ")}',
@@ -199,7 +203,7 @@ class _AgentCliCommandsTileState extends State<_AgentCliCommandsTile> {
       ),
       trailing: const Icon(Icons.chevron_right),
       onTap: () async {
-        final result = await Navigator.push<Set<String>>(
+        final result = await Navigator.push<CliCommandSelection>(
           context,
           MaterialPageRoute(
             builder: (_) => CliCommandSelectScreen(
@@ -208,38 +212,41 @@ class _AgentCliCommandsTileState extends State<_AgentCliCommandsTile> {
           ),
         );
 
-        if (result != null && result != enabledCommands) {
-          // Update agent with new CLI commands
-          final updated = widget.agent.copyWith(
-            metadata: {
-              ...widget.agent.metadata,
-              if (result.isNotEmpty)
-                'enabled_cli_commands': result.toList()
-              else
-                'enabled_cli_commands': <String>[], // Keep empty list to maintain "all allowed" state
-            },
-          );
+        // null = the user went back without saving; leave the agent alone.
+        if (result == null || setEquals(result.commands, enabledCommands)) {
+          return;
+        }
 
-          try {
-            await _agentService.updateAgent(updated);
-            widget.onRefresh();
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('CLI commands updated'),
-                  duration: Duration(seconds: 2),
-                ),
-              );
-            }
-          } catch (e) {
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Error: $e'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-            }
+        // Three-state persistence: absent key = unrestricted, `[]` = block all,
+        // non-empty list = explicit allowlist. The old code wrote `[]` for
+        // "empty", which the model layer read back as "unrestricted".
+        final metadata = {...widget.agent.metadata};
+        if (result.commands == null) {
+          metadata.remove('enabled_cli_commands');
+        } else {
+          metadata['enabled_cli_commands'] = result.commands!.toList();
+        }
+        final updated = widget.agent.copyWith(metadata: metadata);
+
+        try {
+          await _agentService.updateAgent(updated);
+          widget.onRefresh();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('CLI commands updated'),
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Error: $e'),
+                backgroundColor: Colors.red,
+              ),
+            );
           }
         }
       },

@@ -36,7 +36,7 @@ class CliExecutionGate {
     String? channelId,
     String? runtimeOwnerId,
     bool isUiOperation = false,
-    Set<String> enabledCliCommands = const {},
+    Set<String>? enabledCliCommands,
     Set<String>? extraAllowlist,
     bool requireApproval = false,
     PeerBoundaryConfig peerBoundary = PeerBoundaryConfig.open,
@@ -50,12 +50,16 @@ class CliExecutionGate {
     final subcommand = (args['subcommand'] as String?)?.trim() ?? '';
     final id = commandId(namespace, subcommand);
 
+    // Both checks below are "non-null means constrained": `null` = the axis
+    // imposes no restriction, `{}` = it allows nothing. Keeping them identical
+    // is what makes the three-state storage unambiguous end to end.
     if (!isUiOperation &&
-        enabledCliCommands.isNotEmpty &&
+        enabledCliCommands != null &&
         !isCommandAllowed(enabledCliCommands, id)) {
+      final allowed = (enabledCliCommands.toList()..sort()).join(', ');
       return jsonEncode({
-        'error':
-            'CLI command "$id" is not allowed for this agent. Enabled commands: ${enabledCliCommands.join(", ")}',
+        'error': 'CLI command "$id" is not allowed for this agent. '
+            'Enabled commands: ${allowed.isEmpty ? '(none)' : allowed}',
         'command': id,
       });
     }

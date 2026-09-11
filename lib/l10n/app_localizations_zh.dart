@@ -1377,6 +1377,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get agentDetail_allCliCommands => '全部可用（默认放行）';
 
   @override
+  String get agentDetail_cliCommandsBlocked => '全部命令已禁止';
+
+  @override
   String agentDetail_cliCommandsRestricted(int count) {
     return '已限制为 $count 条命令';
   }

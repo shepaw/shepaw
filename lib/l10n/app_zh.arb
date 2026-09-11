@@ -729,6 +729,7 @@
   "agentDetail_peerTunnel": "P2P 隧道（配对设备）",
   "agentDetail_cliCommands": "CLI 命令",
   "agentDetail_allCliCommands": "全部可用（默认放行）",
+  "agentDetail_cliCommandsBlocked": "全部命令已禁止",
   "agentDetail_cliCommandsRestricted": "已限制为 {count} 条命令",
   "@agentDetail_cliCommandsRestricted": {
     "placeholders": {
