@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../l10n/app_localizations.dart';
 import '../peer/models/paired_peer.dart';
 import '../peer/screens/peer_pairing_screen.dart';
+import '../peer/screens/peer_scan_screen.dart';
 import '../peer/screens/peer_settings_screen.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_storage_service.dart';
@@ -164,8 +165,7 @@ class _StorageNexuspouchScreenState extends State<StorageNexuspouchScreen> {
           ),
         );
         if (goPair == true && mounted) {
-          final result = await PeerPairingScreen.show(context,
-              initialTabIndex: PeerPairingScreen.scanTabIndex);
+          final result = await PeerScanScreen.show(context);
           if (result != null) await _loadPairedState();
         }
         return;

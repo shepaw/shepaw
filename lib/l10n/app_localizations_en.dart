@@ -1427,8 +1427,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get agentDetail_allCliCommands => 'All commands available (default)';
 
   @override
-  String agentDetail_cliCommandsRestricted(int count) =>
-      '$count command(s) selected (restricted)';
+  String agentDetail_cliCommandsRestricted(int count) {
+    return '$count command(s) selected (restricted)';
+  }
 
   @override
   String get agentDetail_cliRequireApproval =>
@@ -4134,19 +4135,47 @@ class AppLocalizationsEn extends AppLocalizations {
   String get peerPairing_title => 'Pair Device';
 
   @override
-  String get peerPairing_tabMyQr => 'My QR Code';
+  String get peerPairing_tabConnect => 'Connect out';
 
   @override
-  String get peerPairing_tabScan => 'Scan';
-
-  @override
-  String get peerPairing_tabManual => 'Enter';
+  String get peerPairing_tabBeConnected => 'Connect in';
 
   @override
   String get peerPairing_copyLink => 'Copy pairing link';
 
   @override
   String get peerPairing_linkCopied => 'Pairing link copied';
+
+  @override
+  String get peerConnect_scanTitle => 'Scan to connect';
+
+  @override
+  String get peerConnect_scanSubtitle =>
+      'Scan the pairing QR code on the other device';
+
+  @override
+  String get peerConnect_scanDesktopHint =>
+      'Desktop has no camera. Scan with a phone, or use one of the options below';
+
+  @override
+  String get peerConnect_hubTitle => 'Enter the other device\'s Hub address';
+
+  @override
+  String get peerConnect_hubSubtitle =>
+      'Use this when the other computer runs Shepaw Agent Hub';
+
+  @override
+  String get peerConnect_pasteTitle => 'Paste a pairing link';
+
+  @override
+  String get peerConnect_pasteSubtitle =>
+      'Copy a shepaw://peer link from the other device (when there\'s no camera, or across the internet)';
+
+  @override
+  String get peerConnect_guideTitle => 'No Agent Hub on the other device yet?';
+
+  @override
+  String get peerConnect_guideAction => 'See how to install it';
 
   @override
   String get peerManual_title => 'Manual pairing';
@@ -4193,6 +4222,44 @@ class AppLocalizationsEn extends AppLocalizations {
   String peerManual_failed(String error) {
     return 'Pairing failed: $error';
   }
+
+  @override
+  String get peerManual_confirmTitle =>
+      'Confirm the device you are pairing with';
+
+  @override
+  String peerManual_targetName(String name) {
+    return 'Device name: $name';
+  }
+
+  @override
+  String get peerManual_targetNameUnknown =>
+      'This device did not provide a name';
+
+  @override
+  String get peerManual_targetNameUnverified =>
+      'The name is self-declared and unverified — trust the fingerprint instead';
+
+  @override
+  String peerManual_fingerprint(String fingerprint) {
+    return 'Fingerprint: $fingerprint';
+  }
+
+  @override
+  String peerManual_viaLocal(String endpoint) {
+    return 'Direct over LAN: $endpoint';
+  }
+
+  @override
+  String peerManual_viaChannel(String endpoint) {
+    return 'Relayed over the internet: $endpoint';
+  }
+
+  @override
+  String get peerManual_confirmConnect => 'Confirm and pair';
+
+  @override
+  String get peerManual_cancel => 'Cancel';
 
   @override
   String get peerRole_initiatorShort => 'Initiated by me';
@@ -5515,16 +5582,106 @@ class AppLocalizationsEn extends AppLocalizations {
   String get peerScan_frameHint => 'Place the peer QR code inside the frame';
 
   @override
-  String peerScan_cameraError(String error) {
-    return 'Camera error: $error';
+  String get peerScan_notPairingQr => 'That isn\'t a pairing QR code';
+
+  @override
+  String get peerHub_title => 'Enter the other device\'s Hub address';
+
+  @override
+  String get peerHub_desc =>
+      'Enter the dashboard address of Shepaw Agent Hub on the other computer. The app will ask it for a pairing code.';
+
+  @override
+  String get peerHub_addrLabel => 'Hub address';
+
+  @override
+  String get peerHub_addrHint => '192.168.1.5:4000';
+
+  @override
+  String get peerHub_addrHelp =>
+      'IP, hostname, or a full http(s) URL. Port defaults to 4000.';
+
+  @override
+  String get peerHub_tokenLabel => 'Access token';
+
+  @override
+  String get peerHub_tokenHint => 'SHEPAW_HUB_TOKEN';
+
+  @override
+  String get peerHub_tokenHelp =>
+      'Only needed if the other Hub was started with SHEPAW_HUB_TOKEN. The token is used for this request only and is never stored.';
+
+  @override
+  String get peerHub_submit => 'Get pairing code';
+
+  @override
+  String get peerHub_probing => 'Asking the Hub for a pairing code…';
+
+  @override
+  String get peerHub_emptyError => 'Enter the other Hub\'s address';
+
+  @override
+  String get peerHub_invalidError =>
+      'That address doesn\'t look right. Example: 192.168.1.5:4000';
+
+  @override
+  String get peerHub_pairLinkError =>
+      'That\'s a pairing link — use \"Paste a pairing link\" instead';
+
+  @override
+  String get peerHub_unreachableError =>
+      'Couldn\'t reach that address. Check that the other Hub is running and that both devices can see each other.';
+
+  @override
+  String get peerHub_notHubError =>
+      'Something answered at that address, but it isn\'t a Shepaw Agent Hub dashboard.';
+
+  @override
+  String get peerHub_tokenRequired =>
+      'That Hub requires an access token. Enter one and try again.';
+
+  @override
+  String get peerHub_tokenInvalid => 'The access token is incorrect.';
+
+  @override
+  String peerHub_startFailed(String error) {
+    return 'The other Hub couldn\'t start its peer service: $error';
   }
 
   @override
-  String get peerList_add => 'Add pairing';
+  String peerHub_ticketFailed(String error) {
+    return 'The other Hub\'s response was incomplete: $error';
+  }
 
   @override
-  String get peerList_emptyHint =>
-      'Scan their QR code or let them scan yours to establish an encrypted connection';
+  String get peerHub_ticketMismatch =>
+      'Pairing code check failed (the response doesn\'t match the QR code). Aborted.';
+
+  @override
+  String peerHub_confirmHub(String url) {
+    return 'Hub address: $url';
+  }
+
+  @override
+  String get peerHub_confirmWarning =>
+      'The other Hub will accept any device holding this pairing code without asking again. Check the Hub address and fingerprint first.';
+
+  @override
+  String get peerHub_insecureWarning =>
+      'This is a public address over plain http — the access token will be sent in the clear.';
+
+  @override
+  String get peerHub_guideTitle => 'No Agent Hub on the other device yet?';
+
+  @override
+  String get peerHub_guideBody =>
+      '# Run this on the other computer (needs Node.js >= 18.17)\nnpm install -g shepaw-agent-hub\nshepaw-hub init\n\n# Set the token BEFORE binding a non-loopback address --\n# the Hub refuses to start if you do it the other way around\nexport SHEPAW_HUB_TOKEN=<a long random string>\nshepaw-hub web --host 0.0.0.0';
+
+  @override
+  String get peerHub_guideCopy => 'Copy commands';
+
+  @override
+  String get peerHub_guideCopied => 'Commands copied';
 
   @override
   String peerList_pairedSuccess(String name) {

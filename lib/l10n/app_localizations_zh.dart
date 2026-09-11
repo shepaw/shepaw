@@ -1377,7 +1377,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get agentDetail_allCliCommands => '全部可用（默认放行）';
 
   @override
-  String agentDetail_cliCommandsRestricted(int count) => '已限制为 $count 条命令';
+  String agentDetail_cliCommandsRestricted(int count) {
+    return '已限制为 $count 条命令';
+  }
 
   @override
   String get agentDetail_cliRequireApproval => '执行 CLI 前需要审核';
@@ -1387,12 +1389,10 @@ class AppLocalizationsZh extends AppLocalizations {
       '非 She 默认开启。store 只读与 help 免审；关闭后 os 非 safe 命令仍会确认。';
 
   @override
-  String get agentDetail_cliApprovalOn =>
-      '执行 CLI 需你确认（store 只读与 help 除外）';
+  String get agentDetail_cliApprovalOn => '执行 CLI 需你确认（store 只读与 help 除外）';
 
   @override
-  String get agentDetail_cliApprovalOff =>
-      '执行 CLI 不再额外确认（os 非 safe 仍会确认）';
+  String get agentDetail_cliApprovalOff => '执行 CLI 不再额外确认（os 非 safe 仍会确认）';
 
   @override
   String get agentDetail_authToken => '认证 Token';
@@ -3974,19 +3974,44 @@ class AppLocalizationsZh extends AppLocalizations {
   String get peerPairing_title => '配对设备';
 
   @override
-  String get peerPairing_tabMyQr => '我的二维码';
+  String get peerPairing_tabConnect => '我连它';
 
   @override
-  String get peerPairing_tabScan => '扫一扫';
-
-  @override
-  String get peerPairing_tabManual => '输入';
+  String get peerPairing_tabBeConnected => '它连我';
 
   @override
   String get peerPairing_copyLink => '复制配对链接';
 
   @override
   String get peerPairing_linkCopied => '配对链接已复制';
+
+  @override
+  String get peerConnect_scanTitle => '扫码连接';
+
+  @override
+  String get peerConnect_scanSubtitle => '扫描对方设备上的配对二维码';
+
+  @override
+  String get peerConnect_scanDesktopHint => '桌面端没有摄像头，请用手机扫码，或改用下面的方式';
+
+  @override
+  String get peerConnect_hubTitle => '输入对方 Hub 地址';
+
+  @override
+  String get peerConnect_hubSubtitle => '对方电脑上装了 Shepaw Agent Hub 时使用';
+
+  @override
+  String get peerConnect_pasteTitle => '粘贴配对链接';
+
+  @override
+  String get peerConnect_pasteSubtitle =>
+      '从对方设备复制 shepaw://peer 链接（摄像头不可用或跨公网时用）';
+
+  @override
+  String get peerConnect_guideTitle => '对方还没有 Agent Hub？';
+
+  @override
+  String get peerConnect_guideAction => '查看安装方法';
 
   @override
   String get peerManual_title => '手动输入配对';
@@ -4029,6 +4054,41 @@ class AppLocalizationsZh extends AppLocalizations {
   String peerManual_failed(String error) {
     return '配对失败: $error';
   }
+
+  @override
+  String get peerManual_confirmTitle => '确认配对对象';
+
+  @override
+  String peerManual_targetName(String name) {
+    return '设备名称：$name';
+  }
+
+  @override
+  String get peerManual_targetNameUnknown => '对方未提供名称';
+
+  @override
+  String get peerManual_targetNameUnverified => '名称由对方自填，未经校验；请以指纹为准';
+
+  @override
+  String peerManual_fingerprint(String fingerprint) {
+    return '指纹：$fingerprint';
+  }
+
+  @override
+  String peerManual_viaLocal(String endpoint) {
+    return '内网直连：$endpoint';
+  }
+
+  @override
+  String peerManual_viaChannel(String endpoint) {
+    return '外网中继：$endpoint';
+  }
+
+  @override
+  String get peerManual_confirmConnect => '确认并配对';
+
+  @override
+  String get peerManual_cancel => '取消';
 
   @override
   String get peerRole_initiatorShort => '我发起';
@@ -5302,15 +5362,97 @@ class AppLocalizationsZh extends AppLocalizations {
   String get peerScan_frameHint => '将对方的二维码放入框内';
 
   @override
-  String peerScan_cameraError(String error) {
-    return '摄像头错误: $error';
+  String get peerScan_notPairingQr => '这不是配对二维码';
+
+  @override
+  String get peerHub_title => '输入对方 Hub 地址';
+
+  @override
+  String get peerHub_desc => '填对方电脑上 Shepaw Agent Hub 的仪表盘地址，App 会向它要一个配对码。';
+
+  @override
+  String get peerHub_addrLabel => 'Hub 地址';
+
+  @override
+  String get peerHub_addrHint => '192.168.1.5:4000';
+
+  @override
+  String get peerHub_addrHelp => '支持 IP、主机名或完整 http(s) 地址；没写端口按 4000 处理';
+
+  @override
+  String get peerHub_tokenLabel => '访问令牌';
+
+  @override
+  String get peerHub_tokenHint => 'SHEPAW_HUB_TOKEN';
+
+  @override
+  String get peerHub_tokenHelp =>
+      '对方 Hub 设了 SHEPAW_HUB_TOKEN 时才需要填。令牌只用于本次请求，不会被保存。';
+
+  @override
+  String get peerHub_submit => '获取配对码';
+
+  @override
+  String get peerHub_probing => '正在向 Hub 请求配对码…';
+
+  @override
+  String get peerHub_emptyError => '请填写对方 Hub 的地址';
+
+  @override
+  String get peerHub_invalidError => '地址格式不对，示例：192.168.1.5:4000';
+
+  @override
+  String get peerHub_pairLinkError => '这是一条配对链接，请改用「粘贴配对链接」';
+
+  @override
+  String get peerHub_unreachableError => '连不上这个地址。请确认对方 Hub 正在运行，且两台设备网络互通。';
+
+  @override
+  String get peerHub_notHubError => '这个地址有响应，但不是 Shepaw Agent Hub 仪表盘。';
+
+  @override
+  String get peerHub_tokenRequired => '对方 Hub 要求访问令牌，请填写后重试。';
+
+  @override
+  String get peerHub_tokenInvalid => '访问令牌不正确。';
+
+  @override
+  String peerHub_startFailed(String error) {
+    return '对方 Hub 起不来 peer 服务：$error';
   }
 
   @override
-  String get peerList_add => '添加配对';
+  String peerHub_ticketFailed(String error) {
+    return '对方 Hub 的响应不完整：$error';
+  }
 
   @override
-  String get peerList_emptyHint => '扫描对方的二维码或让对方扫描你的二维码来建立加密连接';
+  String get peerHub_ticketMismatch => '配对码校验失败（响应与二维码对不上），已中止。';
+
+  @override
+  String peerHub_confirmHub(String url) {
+    return 'Hub 地址：$url';
+  }
+
+  @override
+  String get peerHub_confirmWarning =>
+      '对方 Hub 会自动接受持有此配对码的设备，不会二次确认。请先核对 Hub 地址与指纹。';
+
+  @override
+  String get peerHub_insecureWarning => '这是公网地址且走明文 http，访问令牌会以明文发送。';
+
+  @override
+  String get peerHub_guideTitle => '对方还没有 Agent Hub？';
+
+  @override
+  String get peerHub_guideBody =>
+      '# 在对方电脑上执行（需要 Node.js ≥ 18.17）\nnpm install -g shepaw-agent-hub\nshepaw-hub init\n\n# 先设令牌，再绑定非回环地址 ——\n# 顺序反了 Hub 会拒绝启动\nexport SHEPAW_HUB_TOKEN=换成一个足够长的随机串\nshepaw-hub web --host 0.0.0.0';
+
+  @override
+  String get peerHub_guideCopy => '复制命令';
+
+  @override
+  String get peerHub_guideCopied => '命令已复制';
 
   @override
   String peerList_pairedSuccess(String name) {

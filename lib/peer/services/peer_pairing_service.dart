@@ -95,6 +95,15 @@ class PairingTimeoutException implements Exception {
 }
 
 /// P2P 配对服务（单例）
+///
+/// ⚠️ **同一台机器上 Initiator 与 Responder 并发使用不受支持。**
+/// `_state` / `_responderCorrelationId` / `_localSub` 都是单一实例字段：
+/// `requestPairing`（Initiator）会把 `_responderCorrelationId` 覆盖成 null，
+/// 于是 `startPairing`（Responder）建立的会话就失去了 correlation，谁也认领不回；
+/// 反过来 `cancelPairing()` 会取消 `_localSub`，直接掐掉 Responder 会话。
+///
+/// 所以 UI 侧一律「先退出当前配对页，再进另一个」：
+/// `PeerScanScreen` / `PeerQrDisplayScreen` 的拥有者负责在 dispose 时收口。
 class PeerPairingService {
   PeerPairingService._();
   static final PeerPairingService instance = PeerPairingService._();
@@ -228,6 +237,9 @@ class PeerPairingService {
       code: _currentPairingCode!,
       fingerprint: identity.fingerprintHex,
       publicKey: identity.publicKey,
+      // 用私有同步的 _getDeviceName()：它正是喂给 PairingRequest.deviceName 的那个
+      // 取值口，同一个来源才能保证「QR 里的名字 == 握手后到达的名字」。
+      name: _getDeviceName(),
     );
 
     _currentQrContent = qrContent;

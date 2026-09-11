@@ -5,15 +5,31 @@ import '../../l10n/app_localizations.dart';
 import '../models/paired_peer.dart';
 import '../models/pairing_payload.dart';
 import '../services/peer_pairing_service.dart';
+import '../widgets/peer_pairing_confirm_card.dart';
 
 /// P2P 手动输入配对页面（Initiator 侧）
 ///
 /// 适用于桌面端等无法使用摄像头扫码的场景：
 /// 用户粘贴对方二维码对应的配对深链（shepaw://peer?...）发起配对。
+///
+/// 拆成两步：先解析并展示「确认卡片」，用户核对无误后再连接。
+/// 目的是让用户在**连接之前**知道对方是谁 —— 多人共用一个内网时，
+/// 粘贴的人需要一个判断「我贴的是不是那个人的链接」的机会。
+///
+/// 卡片里的设备名是对方**自述**的、未经认证的标签；真正的凭据是指纹。
 class PeerManualInputScreen extends StatefulWidget {
   final void Function(PairedPeer peer)? onPaired;
 
   const PeerManualInputScreen({super.key, this.onPaired});
+
+  static Future<PairedPeer?> show(BuildContext context) {
+    return Navigator.of(context).push<PairedPeer?>(
+      MaterialPageRoute<PairedPeer?>(
+        builder: (_) => const PeerManualInputScreen(),
+        fullscreenDialog: true,
+      ),
+    );
+  }
 
   @override
   State<PeerManualInputScreen> createState() => _PeerManualInputScreenState();
@@ -24,6 +40,9 @@ class _PeerManualInputScreenState extends State<PeerManualInputScreen> {
   bool _processing = false;
   String? _error;
   String? _statusMessage;
+
+  /// 已解析、等待用户确认的配对信息。非空时页面渲染确认卡片。
+  PeerPairingInfo? _pendingInfo;
 
   @override
   void dispose() {
@@ -42,7 +61,8 @@ class _PeerManualInputScreenState extends State<PeerManualInputScreen> {
     }
   }
 
-  Future<void> _submit() async {
+  /// 第一步：只解析，不连接。成功则进入确认卡片。
+  void _submit() {
     final l10n = AppLocalizations.of(context);
     final raw = _controller.text.trim();
     if (raw.isEmpty) {
@@ -56,6 +76,15 @@ class _PeerManualInputScreenState extends State<PeerManualInputScreen> {
       return;
     }
 
+    setState(() {
+      _error = null;
+      _pendingInfo = info;
+    });
+  }
+
+  /// 第二步：用户在卡片上确认后才真正发起连接。
+  Future<void> _connect(PeerPairingInfo info) async {
+    final l10n = AppLocalizations.of(context);
     setState(() {
       _processing = true;
       _error = null;
@@ -73,7 +102,15 @@ class _PeerManualInputScreenState extends State<PeerManualInputScreen> {
       if (mounted) {
         setState(() => _statusMessage = l10n.peerManual_success);
         await Future.delayed(const Duration(milliseconds: 500));
-        widget.onPaired?.call(peer);
+        if (!mounted) return;
+        // 统一出口：内嵌（有 onPaired）交给调用方，独立路由 pop 回 PairedPeer。
+        // 三个「我连它」入口都走这一条，谁也不自己判断内嵌与否。
+        final onPaired = widget.onPaired;
+        if (onPaired != null) {
+          onPaired(peer);
+        } else {
+          Navigator.of(context).pop(peer);
+        }
       }
     } on PairingRejectedException {
       _showError(l10n.peerManual_rejected);
@@ -84,12 +121,20 @@ class _PeerManualInputScreenState extends State<PeerManualInputScreen> {
     }
   }
 
+  /// 失败时**保留** `_pendingInfo`：错误渲染在确认卡片内，重试只需再点一次确认。
   void _showError(String message) {
     if (!mounted) return;
     setState(() {
       _error = message;
       _processing = false;
       _statusMessage = null;
+    });
+  }
+
+  void _cancelPending() {
+    setState(() {
+      _pendingInfo = null;
+      _error = null;
     });
   }
 
@@ -113,6 +158,23 @@ class _PeerManualInputScreenState extends State<PeerManualInputScreen> {
       );
     }
 
+    final pending = _pendingInfo;
+    if (pending != null) {
+      return PeerPairingConfirmCard(
+        info: pending,
+        error: _error,
+        onConfirm: () => _connect(pending),
+        onCancel: _cancelPending,
+      );
+    }
+    return _buildInputForm(context, l10n, colorScheme);
+  }
+
+  Widget _buildInputForm(
+    BuildContext context,
+    AppLocalizations l10n,
+    ColorScheme colorScheme,
+  ) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(

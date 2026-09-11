@@ -38,6 +38,7 @@ import '../peer/models/paired_peer.dart';
 import '../peer/screens/peer_chat_screen.dart';
 import '../peer/widgets/peer_device_icon.dart';
 import '../peer/screens/peer_pairing_screen.dart';
+import '../peer/screens/peer_scan_screen.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_storage_service.dart';
 import '../widgets/drawer_swipe_detector.dart';
@@ -1398,10 +1399,7 @@ class HomeScreenState extends State<HomeScreen> {
           if (mounted) _loadAgents(silent: true);
         }
       case 'scan':
-        await PeerPairingScreen.show(
-          context,
-          initialTabIndex: PeerPairingScreen.scanTabIndex,
-        );
+        await PeerScanScreen.show(context);
         if (mounted) _loadAgents(silent: true);
     }
   }

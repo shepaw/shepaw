@@ -7364,23 +7364,17 @@ abstract class AppLocalizations {
   /// **'配对设备'**
   String get peerPairing_title;
 
-  /// No description provided for @peerPairing_tabMyQr.
+  /// No description provided for @peerPairing_tabConnect.
   ///
   /// In zh, this message translates to:
-  /// **'我的二维码'**
-  String get peerPairing_tabMyQr;
+  /// **'我连它'**
+  String get peerPairing_tabConnect;
 
-  /// No description provided for @peerPairing_tabScan.
+  /// No description provided for @peerPairing_tabBeConnected.
   ///
   /// In zh, this message translates to:
-  /// **'扫一扫'**
-  String get peerPairing_tabScan;
-
-  /// No description provided for @peerPairing_tabManual.
-  ///
-  /// In zh, this message translates to:
-  /// **'输入'**
-  String get peerPairing_tabManual;
+  /// **'它连我'**
+  String get peerPairing_tabBeConnected;
 
   /// No description provided for @peerPairing_copyLink.
   ///
@@ -7393,6 +7387,60 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'配对链接已复制'**
   String get peerPairing_linkCopied;
+
+  /// No description provided for @peerConnect_scanTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫码连接'**
+  String get peerConnect_scanTitle;
+
+  /// No description provided for @peerConnect_scanSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫描对方设备上的配对二维码'**
+  String get peerConnect_scanSubtitle;
+
+  /// No description provided for @peerConnect_scanDesktopHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'桌面端没有摄像头，请用手机扫码，或改用下面的方式'**
+  String get peerConnect_scanDesktopHint;
+
+  /// No description provided for @peerConnect_hubTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入对方 Hub 地址'**
+  String get peerConnect_hubTitle;
+
+  /// No description provided for @peerConnect_hubSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'对方电脑上装了 Shepaw Agent Hub 时使用'**
+  String get peerConnect_hubSubtitle;
+
+  /// No description provided for @peerConnect_pasteTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'粘贴配对链接'**
+  String get peerConnect_pasteTitle;
+
+  /// No description provided for @peerConnect_pasteSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'从对方设备复制 shepaw://peer 链接（摄像头不可用或跨公网时用）'**
+  String get peerConnect_pasteSubtitle;
+
+  /// No description provided for @peerConnect_guideTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'对方还没有 Agent Hub？'**
+  String get peerConnect_guideTitle;
+
+  /// No description provided for @peerConnect_guideAction.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看安装方法'**
+  String get peerConnect_guideAction;
 
   /// No description provided for @peerManual_title.
   ///
@@ -7471,6 +7519,60 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'配对失败: {error}'**
   String peerManual_failed(String error);
+
+  /// No description provided for @peerManual_confirmTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'确认配对对象'**
+  String get peerManual_confirmTitle;
+
+  /// No description provided for @peerManual_targetName.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备名称：{name}'**
+  String peerManual_targetName(String name);
+
+  /// No description provided for @peerManual_targetNameUnknown.
+  ///
+  /// In zh, this message translates to:
+  /// **'对方未提供名称'**
+  String get peerManual_targetNameUnknown;
+
+  /// No description provided for @peerManual_targetNameUnverified.
+  ///
+  /// In zh, this message translates to:
+  /// **'名称由对方自填，未经校验；请以指纹为准'**
+  String get peerManual_targetNameUnverified;
+
+  /// No description provided for @peerManual_fingerprint.
+  ///
+  /// In zh, this message translates to:
+  /// **'指纹：{fingerprint}'**
+  String peerManual_fingerprint(String fingerprint);
+
+  /// No description provided for @peerManual_viaLocal.
+  ///
+  /// In zh, this message translates to:
+  /// **'内网直连：{endpoint}'**
+  String peerManual_viaLocal(String endpoint);
+
+  /// No description provided for @peerManual_viaChannel.
+  ///
+  /// In zh, this message translates to:
+  /// **'外网中继：{endpoint}'**
+  String peerManual_viaChannel(String endpoint);
+
+  /// No description provided for @peerManual_confirmConnect.
+  ///
+  /// In zh, this message translates to:
+  /// **'确认并配对'**
+  String get peerManual_confirmConnect;
+
+  /// No description provided for @peerManual_cancel.
+  ///
+  /// In zh, this message translates to:
+  /// **'取消'**
+  String get peerManual_cancel;
 
   /// No description provided for @peerRole_initiatorShort.
   ///
@@ -9692,23 +9794,173 @@ abstract class AppLocalizations {
   /// **'将对方的二维码放入框内'**
   String get peerScan_frameHint;
 
-  /// No description provided for @peerScan_cameraError.
+  /// No description provided for @peerScan_notPairingQr.
   ///
   /// In zh, this message translates to:
-  /// **'摄像头错误: {error}'**
-  String peerScan_cameraError(String error);
+  /// **'这不是配对二维码'**
+  String get peerScan_notPairingQr;
 
-  /// No description provided for @peerList_add.
+  /// No description provided for @peerHub_title.
   ///
   /// In zh, this message translates to:
-  /// **'添加配对'**
-  String get peerList_add;
+  /// **'输入对方 Hub 地址'**
+  String get peerHub_title;
 
-  /// No description provided for @peerList_emptyHint.
+  /// No description provided for @peerHub_desc.
   ///
   /// In zh, this message translates to:
-  /// **'扫描对方的二维码或让对方扫描你的二维码来建立加密连接'**
-  String get peerList_emptyHint;
+  /// **'填对方电脑上 Shepaw Agent Hub 的仪表盘地址，App 会向它要一个配对码。'**
+  String get peerHub_desc;
+
+  /// No description provided for @peerHub_addrLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'Hub 地址'**
+  String get peerHub_addrLabel;
+
+  /// No description provided for @peerHub_addrHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'192.168.1.5:4000'**
+  String get peerHub_addrHint;
+
+  /// No description provided for @peerHub_addrHelp.
+  ///
+  /// In zh, this message translates to:
+  /// **'支持 IP、主机名或完整 http(s) 地址；没写端口按 4000 处理'**
+  String get peerHub_addrHelp;
+
+  /// No description provided for @peerHub_tokenLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'访问令牌'**
+  String get peerHub_tokenLabel;
+
+  /// No description provided for @peerHub_tokenHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'SHEPAW_HUB_TOKEN'**
+  String get peerHub_tokenHint;
+
+  /// No description provided for @peerHub_tokenHelp.
+  ///
+  /// In zh, this message translates to:
+  /// **'对方 Hub 设了 SHEPAW_HUB_TOKEN 时才需要填。令牌只用于本次请求，不会被保存。'**
+  String get peerHub_tokenHelp;
+
+  /// No description provided for @peerHub_submit.
+  ///
+  /// In zh, this message translates to:
+  /// **'获取配对码'**
+  String get peerHub_submit;
+
+  /// No description provided for @peerHub_probing.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在向 Hub 请求配对码…'**
+  String get peerHub_probing;
+
+  /// No description provided for @peerHub_emptyError.
+  ///
+  /// In zh, this message translates to:
+  /// **'请填写对方 Hub 的地址'**
+  String get peerHub_emptyError;
+
+  /// No description provided for @peerHub_invalidError.
+  ///
+  /// In zh, this message translates to:
+  /// **'地址格式不对，示例：192.168.1.5:4000'**
+  String get peerHub_invalidError;
+
+  /// No description provided for @peerHub_pairLinkError.
+  ///
+  /// In zh, this message translates to:
+  /// **'这是一条配对链接，请改用「粘贴配对链接」'**
+  String get peerHub_pairLinkError;
+
+  /// No description provided for @peerHub_unreachableError.
+  ///
+  /// In zh, this message translates to:
+  /// **'连不上这个地址。请确认对方 Hub 正在运行，且两台设备网络互通。'**
+  String get peerHub_unreachableError;
+
+  /// No description provided for @peerHub_notHubError.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个地址有响应，但不是 Shepaw Agent Hub 仪表盘。'**
+  String get peerHub_notHubError;
+
+  /// No description provided for @peerHub_tokenRequired.
+  ///
+  /// In zh, this message translates to:
+  /// **'对方 Hub 要求访问令牌，请填写后重试。'**
+  String get peerHub_tokenRequired;
+
+  /// No description provided for @peerHub_tokenInvalid.
+  ///
+  /// In zh, this message translates to:
+  /// **'访问令牌不正确。'**
+  String get peerHub_tokenInvalid;
+
+  /// No description provided for @peerHub_startFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'对方 Hub 起不来 peer 服务：{error}'**
+  String peerHub_startFailed(String error);
+
+  /// No description provided for @peerHub_ticketFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'对方 Hub 的响应不完整：{error}'**
+  String peerHub_ticketFailed(String error);
+
+  /// No description provided for @peerHub_ticketMismatch.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对码校验失败（响应与二维码对不上），已中止。'**
+  String get peerHub_ticketMismatch;
+
+  /// No description provided for @peerHub_confirmHub.
+  ///
+  /// In zh, this message translates to:
+  /// **'Hub 地址：{url}'**
+  String peerHub_confirmHub(String url);
+
+  /// No description provided for @peerHub_confirmWarning.
+  ///
+  /// In zh, this message translates to:
+  /// **'对方 Hub 会自动接受持有此配对码的设备，不会二次确认。请先核对 Hub 地址与指纹。'**
+  String get peerHub_confirmWarning;
+
+  /// No description provided for @peerHub_insecureWarning.
+  ///
+  /// In zh, this message translates to:
+  /// **'这是公网地址且走明文 http，访问令牌会以明文发送。'**
+  String get peerHub_insecureWarning;
+
+  /// No description provided for @peerHub_guideTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'对方还没有 Agent Hub？'**
+  String get peerHub_guideTitle;
+
+  /// No description provided for @peerHub_guideBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'# 在对方电脑上执行（需要 Node.js ≥ 18.17）\nnpm install -g shepaw-agent-hub\nshepaw-hub init\n\n# 先设令牌，再绑定非回环地址 ——\n# 顺序反了 Hub 会拒绝启动\nexport SHEPAW_HUB_TOKEN=换成一个足够长的随机串\nshepaw-hub web --host 0.0.0.0'**
+  String get peerHub_guideBody;
+
+  /// No description provided for @peerHub_guideCopy.
+  ///
+  /// In zh, this message translates to:
+  /// **'复制命令'**
+  String get peerHub_guideCopy;
+
+  /// No description provided for @peerHub_guideCopied.
+  ///
+  /// In zh, this message translates to:
+  /// **'命令已复制'**
+  String get peerHub_guideCopied;
 
   /// No description provided for @peerList_pairedSuccess.
   ///

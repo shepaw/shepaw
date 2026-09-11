@@ -1767,11 +1767,19 @@
   "scheduledTasks_form_agentConversationHint": "Select a conversation for this agent (defaults to the active session)",
   "scheduledTasks_form_agentNoConversation": "No conversations found for this agent",
   "peerPairing_title": "Pair Device",
-  "peerPairing_tabMyQr": "My QR Code",
-  "peerPairing_tabScan": "Scan",
-  "peerPairing_tabManual": "Enter",
+  "peerPairing_tabConnect": "Connect out",
+  "peerPairing_tabBeConnected": "Connect in",
   "peerPairing_copyLink": "Copy pairing link",
   "peerPairing_linkCopied": "Pairing link copied",
+  "peerConnect_scanTitle": "Scan to connect",
+  "peerConnect_scanSubtitle": "Scan the pairing QR code on the other device",
+  "peerConnect_scanDesktopHint": "Desktop has no camera. Scan with a phone, or use one of the options below",
+  "peerConnect_hubTitle": "Enter the other device's Hub address",
+  "peerConnect_hubSubtitle": "Use this when the other computer runs Shepaw Agent Hub",
+  "peerConnect_pasteTitle": "Paste a pairing link",
+  "peerConnect_pasteSubtitle": "Copy a shepaw://peer link from the other device (when there's no camera, or across the internet)",
+  "peerConnect_guideTitle": "No Agent Hub on the other device yet?",
+  "peerConnect_guideAction": "See how to install it",
   "peerManual_title": "Manual pairing",
   "peerManual_desc": "Copy the pairing link from the other device's \"My QR Code\" page and paste it below to start pairing.",
   "peerManual_inputHint": "shepaw://peer?local=...&code=...#fp=...&pk=...",
@@ -1792,6 +1800,43 @@
       }
     }
   },
+  "peerManual_confirmTitle": "Confirm the device you are pairing with",
+  "peerManual_targetName": "Device name: {name}",
+  "@peerManual_targetName": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "peerManual_targetNameUnknown": "This device did not provide a name",
+  "peerManual_targetNameUnverified": "The name is self-declared and unverified — trust the fingerprint instead",
+  "peerManual_fingerprint": "Fingerprint: {fingerprint}",
+  "@peerManual_fingerprint": {
+    "placeholders": {
+      "fingerprint": {
+        "type": "String"
+      }
+    }
+  },
+  "peerManual_viaLocal": "Direct over LAN: {endpoint}",
+  "@peerManual_viaLocal": {
+    "placeholders": {
+      "endpoint": {
+        "type": "String"
+      }
+    }
+  },
+  "peerManual_viaChannel": "Relayed over the internet: {endpoint}",
+  "@peerManual_viaChannel": {
+    "placeholders": {
+      "endpoint": {
+        "type": "String"
+      }
+    }
+  },
+  "peerManual_confirmConnect": "Confirm and pair",
+  "peerManual_cancel": "Cancel",
   "peerRole_initiatorShort": "Initiated by me",
   "peerRole_responderShort": "Initiated by peer",
   "peerRole_initiatorDesc": "Paired by scanning on this device",
@@ -2706,16 +2751,55 @@
   "peerScan_desktopUnsupported": "Camera scanning is not supported on desktop",
   "peerScan_useMobile": "Please use scanning on a mobile device",
   "peerScan_frameHint": "Place the peer QR code inside the frame",
-  "peerScan_cameraError": "Camera error: {error}",
-  "@peerScan_cameraError": {
+  "peerScan_notPairingQr": "That isn't a pairing QR code",
+  "peerHub_title": "Enter the other device's Hub address",
+  "peerHub_desc": "Enter the dashboard address of Shepaw Agent Hub on the other computer. The app will ask it for a pairing code.",
+  "peerHub_addrLabel": "Hub address",
+  "peerHub_addrHint": "192.168.1.5:4000",
+  "peerHub_addrHelp": "IP, hostname, or a full http(s) URL. Port defaults to 4000.",
+  "peerHub_tokenLabel": "Access token",
+  "peerHub_tokenHint": "SHEPAW_HUB_TOKEN",
+  "peerHub_tokenHelp": "Only needed if the other Hub was started with SHEPAW_HUB_TOKEN. The token is used for this request only and is never stored.",
+  "peerHub_submit": "Get pairing code",
+  "peerHub_probing": "Asking the Hub for a pairing code…",
+  "peerHub_emptyError": "Enter the other Hub's address",
+  "peerHub_invalidError": "That address doesn't look right. Example: 192.168.1.5:4000",
+  "peerHub_pairLinkError": "That's a pairing link — use \"Paste a pairing link\" instead",
+  "peerHub_unreachableError": "Couldn't reach that address. Check that the other Hub is running and that both devices can see each other.",
+  "peerHub_notHubError": "Something answered at that address, but it isn't a Shepaw Agent Hub dashboard.",
+  "peerHub_tokenRequired": "That Hub requires an access token. Enter one and try again.",
+  "peerHub_tokenInvalid": "The access token is incorrect.",
+  "peerHub_startFailed": "The other Hub couldn't start its peer service: {error}",
+  "@peerHub_startFailed": {
     "placeholders": {
       "error": {
         "type": "String"
       }
     }
   },
-  "peerList_add": "Add pairing",
-  "peerList_emptyHint": "Scan their QR code or let them scan yours to establish an encrypted connection",
+  "peerHub_ticketFailed": "The other Hub's response was incomplete: {error}",
+  "@peerHub_ticketFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "peerHub_ticketMismatch": "Pairing code check failed (the response doesn't match the QR code). Aborted.",
+  "peerHub_confirmHub": "Hub address: {url}",
+  "@peerHub_confirmHub": {
+    "placeholders": {
+      "url": {
+        "type": "String"
+      }
+    }
+  },
+  "peerHub_confirmWarning": "The other Hub will accept any device holding this pairing code without asking again. Check the Hub address and fingerprint first.",
+  "peerHub_insecureWarning": "This is a public address over plain http — the access token will be sent in the clear.",
+  "peerHub_guideTitle": "No Agent Hub on the other device yet?",
+  "peerHub_guideBody": "# Run this on the other computer (needs Node.js >= 18.17)\nnpm install -g shepaw-agent-hub\nshepaw-hub init\n\n# Set the token BEFORE binding a non-loopback address --\n# the Hub refuses to start if you do it the other way around\nexport SHEPAW_HUB_TOKEN=<a long random string>\nshepaw-hub web --host 0.0.0.0",
+  "peerHub_guideCopy": "Copy commands",
+  "peerHub_guideCopied": "Commands copied",
   "peerList_pairedSuccess": "Successfully paired with {name}",
   "@peerList_pairedSuccess": {
     "placeholders": {

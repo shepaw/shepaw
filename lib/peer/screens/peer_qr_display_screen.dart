@@ -9,6 +9,37 @@ import '../models/paired_peer.dart';
 import '../services/peer_pairing_service.dart';
 import 'peer_pairing_confirm_screen.dart';
 
+/// 超过这个长度就认为 payload 里带了设备名（或别的长字段），二维码需要放大。
+///
+/// 实测（`QrErrorCorrectLevel.M`）：不带名字 143 字节 → 49×49 模块；
+/// 带 32 runes 的 CJK 名 437 字节 → 81×81。160 字节的普通名字仍是 53×53，
+/// 与 240px 下的基线密度接近，不需要放大。
+const int _longQrPayloadBytes = 200;
+
+/// QR 的基准边长，也是短 payload 的固定边长（改动前就是这个值）。
+const double _qrBaseSide = 240.0;
+
+/// 长 payload 时允许放到的最大边长。
+///
+/// 取 400 是为了让最坏情况（32 runes 名字 → 最长 89×89 模块）的模块尺寸回到
+/// 不带名字时的基线（240/49 ≈ 4.9 px）。320 只能恢复到 ~3.6 px，仍明显更密。
+/// 窄屏上会被可用宽度压回去 —— 那是屏幕宽度的硬限，放大解决不了。
+const double _qrMaxSide = 400.0;
+
+/// Container 的左右内边距之和 —— 可用宽度要扣掉它才是 QR 能占的宽度。
+const double _qrContainerPadding = 32.0;
+
+/// 按 payload 字节数与可用宽度算出二维码边长。
+///
+/// 抽成纯函数是为了能单测：`PeerQrDisplayScreen` 的 initState 会直接调用真实
+/// 单例服务，不适合在 widget test 里渲染。
+double qrSideFor({required int payloadBytes, required double availableWidth}) {
+  if (payloadBytes <= _longQrPayloadBytes) return _qrBaseSide;
+  final available = availableWidth - _qrContainerPadding;
+  if (available < _qrBaseSide) return _qrBaseSide; // 窄屏保持旧行为
+  return available < _qrMaxSide ? available : _qrMaxSide;
+}
+
 /// 展示自己的配对 QR 码（Responder 侧）
 class PeerQrDisplayScreen extends StatefulWidget {
   final void Function(PairedPeer peer)? onPaired;
@@ -276,12 +307,22 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
                 ),
               ],
             ),
-            child: QrImageView(
-              data: _qrData!,
-              version: QrVersions.auto,
-              size: 240,
-              backgroundColor: Colors.white,
-              errorCorrectionLevel: QrErrorCorrectLevel.M,
+            // 带设备名的 payload 会明显变长：CJK 在 query 里每个字占 9 个 ASCII
+            // 字节，32 runes 的中文名把总长从 ~143 推到 ~437，ECC M 下二维码从
+            // 49×49 涨到 81×81 模块。固定 240 时模块只有 ~2.96 px（emoji 名 2.70），
+            // 明显比不带名字时的 4.90 难扫，所以长 payload 时按可用宽度放大。
+            // 短 payload 保持 240，渲染结果与改动前逐像素一致。
+            child: LayoutBuilder(
+              builder: (context, constraints) => QrImageView(
+                data: _qrData!,
+                version: QrVersions.auto,
+                size: qrSideFor(
+                  payloadBytes: _qrData!.length,
+                  availableWidth: constraints.maxWidth,
+                ),
+                backgroundColor: Colors.white,
+                errorCorrectionLevel: QrErrorCorrectLevel.M,
+              ),
             ),
           ),
 
@@ -324,7 +365,8 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
 
           const SizedBox(height: 12),
 
-          // 复制配对链接（供对方在「输入」Tab 手动粘贴，桌面端等无摄像头场景）
+          // 复制配对链接（供对方在「我连它 → 粘贴配对链接」里手动粘贴，
+          // 摄像头不可用或跨公网时用）
           TextButton.icon(
             onPressed: () {
               final l10n = AppLocalizations.of(context);
