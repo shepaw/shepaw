@@ -40,6 +40,8 @@ class LocalLLMHelpers {
     bool includeShepawCli = true,
     // 是否在工具列表里注入 get_tool_result（有历史工具调用时应传 true）
     bool includeGetToolResult = false,
+    Set<String> enabledCliCommands = const {},
+    Set<String>? extraCliAllowlist,
   }) {
     final skillRegistry = SkillRegistry.instance;
     final toolModelRegistry = ModelRegistry.instance;
@@ -53,7 +55,11 @@ class LocalLLMHelpers {
           enabledToolModels: enabledToolModels.toSet(),
           scenarioOverrides: Map<String, String>.from(toolModelScenarios),
         ),
-        if (includeShepawCli) pawRegistry.claudeTool(),
+        if (includeShepawCli)
+          pawRegistry.claudeTool(
+            enabledCliCommands: enabledCliCommands,
+            extraAllowlist: extraCliAllowlist,
+          ),
         if (includeGetToolResult) getToolResultClaude(),
       ];
     } else {
@@ -64,7 +70,11 @@ class LocalLLMHelpers {
           enabledToolModels: enabledToolModels.toSet(),
           scenarioOverrides: Map<String, String>.from(toolModelScenarios),
         ),
-        if (includeShepawCli) pawRegistry.openAITool(),
+        if (includeShepawCli)
+          pawRegistry.openAITool(
+            enabledCliCommands: enabledCliCommands,
+            extraAllowlist: extraCliAllowlist,
+          ),
         if (includeGetToolResult) getToolResultOpenAI(),
       ];
     }

@@ -622,7 +622,10 @@ class GroupAgentExecutor {
             // flow (their prompt forbids form/action_confirmation etc. — P1-2);
             // only the admin gets the full UI surface.
             enableUITools: isAdmin,
-            includeShepawCli: agent.isLocal,
+            // Remote ACP agents use hub.cli.execute; this path is local LLM.
+            includeShepawCli: agent.promptStackConfig.tools.includeShepawCli,
+            enabledCliCommands: agent.enabledCliCommands,
+            extraCliAllowlist: isAdmin ? null : kGroupMemberCliAllowlist,
             systemPromptOverride: systemPrompt,
             // She also gets the split: AgentPromptBuilder stacks persona as
             // the cache-stable prefix and keeps online/loop in the suffix.

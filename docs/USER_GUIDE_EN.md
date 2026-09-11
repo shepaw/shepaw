@@ -229,7 +229,8 @@ Shepaw applies permission controls to all sensitive operations.
 #### 3.2 Permissions & CLI Toggles
 - When an agent calls a tool, the approval record appears **in the chat** (there is no Settings → Permissions & Audit page)
 - Global CLI / OS tools: **Settings** → **CLI Management**
-- Per agent: Details → **CLI Commands**
+- Per agent: Details → **CLI Commands** (restrict the command set and/or require approval before each run)
+- A restricted allowlist also trims the shepaw tool `namespace` enum the model sees; the execution gate still enforces it. `store read` / `list` / `search` and `help` skip approval; non-safe `os` tools always confirm. Remote agents use `hub.cli.execute` under the same rules.
 
 #### 3.3 Inference Logs
 1. Go to **Settings** → **Inference Log**

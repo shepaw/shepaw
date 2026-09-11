@@ -147,6 +147,10 @@ class LocalLLMAgentService {
     List<Map<String, dynamic>>? extraTools,
     /// UI tool names to omit (e.g. request_history in group chat).
     Set<String> excludeUIToolNames = const {},
+    /// Per-agent CLI allowlist (empty = unrestricted). Trims shepaw tool schema.
+    Set<String> enabledCliCommands = const {},
+    /// Extra role allowlist (e.g. group members: store/help).
+    Set<String>? extraCliAllowlist,
   }) async* {
     final resolved = _resolveModelConfig(agent, attachments);
     final effectiveIncludeShepawCli =
@@ -220,6 +224,8 @@ class LocalLLMAgentService {
           attachments: attachments,
           extraTools: extraTools,
           excludeUIToolNames: excludeUIToolNames,
+          enabledCliCommands: enabledCliCommands,
+          extraCliAllowlist: extraCliAllowlist,
         );
         break;
       case 'glm':
@@ -238,6 +244,8 @@ class LocalLLMAgentService {
           attachments: attachments,
           extraTools: extraTools,
           excludeUIToolNames: excludeUIToolNames,
+          enabledCliCommands: enabledCliCommands,
+          extraCliAllowlist: extraCliAllowlist,
         );
         break;
     }
@@ -250,6 +258,8 @@ class LocalLLMAgentService {
     required bool includeShepawCli,
     List<Map<String, dynamic>>? extraTools,
     Set<String> excludeUIToolNames = const {},
+    Set<String> enabledCliCommands = const {},
+    Set<String>? extraCliAllowlist,
   }) {
     final tools = <Map<String, dynamic>>[];
     if (enableUITools) {
@@ -268,8 +278,14 @@ class LocalLLMAgentService {
     if (includeShepawCli) {
       tools.add(
         isClaude
-            ? ShepawCLI.instance.claudeTool()
-            : ShepawCLI.instance.openAITool(),
+            ? ShepawCLI.instance.claudeTool(
+                enabledCliCommands: enabledCliCommands,
+                extraAllowlist: extraCliAllowlist,
+              )
+            : ShepawCLI.instance.openAITool(
+                enabledCliCommands: enabledCliCommands,
+                extraAllowlist: extraCliAllowlist,
+              ),
       );
     }
     return tools;
@@ -830,6 +846,8 @@ class LocalLLMAgentService {
     List<AttachmentData>? attachments,
     List<Map<String, dynamic>>? extraTools,
     Set<String> excludeUIToolNames = const {},
+    Set<String> enabledCliCommands = const {},
+    Set<String>? extraCliAllowlist,
   }) async* {
     final effectiveSystemPrompt = systemPrompt;
 
@@ -903,6 +921,8 @@ class LocalLLMAgentService {
       includeShepawCli: includeShepawCli,
       extraTools: extraTools,
       excludeUIToolNames: excludeUIToolNames,
+      enabledCliCommands: enabledCliCommands,
+      extraCliAllowlist: extraCliAllowlist,
     );
     if (tools.isNotEmpty) {
       requestBody['tools'] = tools;
@@ -939,6 +959,8 @@ class LocalLLMAgentService {
     List<AttachmentData>? attachments,
     List<Map<String, dynamic>>? extraTools,
     Set<String> excludeUIToolNames = const {},
+    Set<String> enabledCliCommands = const {},
+    Set<String>? extraCliAllowlist,
   }) async* {
     final messages = <Map<String, dynamic>>[];
     if (history != null) {
@@ -974,6 +996,8 @@ class LocalLLMAgentService {
       includeShepawCli: includeShepawCli,
       extraTools: extraTools,
       excludeUIToolNames: excludeUIToolNames,
+      enabledCliCommands: enabledCliCommands,
+      extraCliAllowlist: extraCliAllowlist,
     );
     if (tools.isNotEmpty) {
       requestBody['tools'] = PromptCache.markLastTool(tools);

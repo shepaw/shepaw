@@ -1458,6 +1458,8 @@ Agent 可以主动向用户发起新会话（需要 App 用户授权）：
 
 App 成功时 `result.ok == true`，并带上 CLI JSON；闸门拒绝（未授权命令、用户点了拒绝）时仍是 JSON-RPC success，`result.ok == false` 且带 `error`。`store_read` / `store_write` 这类 Hub MCP 别名视为过时，请映射到上面的 `store read` / `store write`。
 
+本机 LLM Agent 的 `shepaw` function tool 会按该 Agent 的 `enabled_cli_commands`（以及群成员的 store/help 角色表）裁剪 `namespace` 枚举，避免模型点到未授权命令。远端请在自己的 tool 列表里做同样的裁剪，或只暴露 `hub.cli.execute` 并依赖闸门拒绝。
+
 ---
 
 ## 12. 群组聊天支持

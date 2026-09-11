@@ -1435,6 +1435,8 @@ Write example:
 
 On success `result.ok == true` plus the CLI JSON. Gate denials (command not allowed, user tapped deny) are still JSON-RPC success with `result.ok == false` and `error`. Hub MCP `store_read` / `store_write` aliases are deprecated — map them to `store read` / `store write` as above.
 
+Local LLM agents get a shepaw function tool whose `namespace` enum is trimmed to that agent's `enabled_cli_commands` (and the group-member store/help role list). Remote agents should trim their own tool list the same way, or only expose `hub.cli.execute` and rely on the gate.
+
 ---
 
 ## 12. Group Chat Support

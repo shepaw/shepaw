@@ -119,19 +119,39 @@ class ShepawCLI {
 
   bool isPawTool(String name) => name == toolName;
 
-  Map<String, dynamic> openAITool() => {
+  Map<String, dynamic> openAITool({
+    Set<String> enabledCliCommands = const {},
+    Set<String>? extraAllowlist,
+  }) =>
+      {
         'type': 'function',
         'function': {
           'name': toolName,
-          'description': _buildToolDescription(),
-          'parameters': _parameterSchema(),
+          'description': _buildToolDescription(
+            enabledCliCommands: enabledCliCommands,
+            extraAllowlist: extraAllowlist,
+          ),
+          'parameters': _parameterSchema(
+            enabledCliCommands: enabledCliCommands,
+            extraAllowlist: extraAllowlist,
+          ),
         },
       };
 
-  Map<String, dynamic> claudeTool() => {
+  Map<String, dynamic> claudeTool({
+    Set<String> enabledCliCommands = const {},
+    Set<String>? extraAllowlist,
+  }) =>
+      {
         'name': toolName,
-        'description': _buildToolDescription(),
-        'input_schema': _parameterSchema(),
+        'description': _buildToolDescription(
+          enabledCliCommands: enabledCliCommands,
+          extraAllowlist: extraAllowlist,
+        ),
+        'input_schema': _parameterSchema(
+          enabledCliCommands: enabledCliCommands,
+          extraAllowlist: extraAllowlist,
+        ),
       };
 
   /// 内置 CLI 的基础描述
@@ -165,13 +185,27 @@ class ShepawCLI {
       'shepaw://pair?... is agent enrollment — not peer pair.';
 
   /// 动态生成工具描述（包含外部工具信息）
-  String _buildToolDescription() {
+  String _buildToolDescription({
+    Set<String> enabledCliCommands = const {},
+    Set<String>? extraAllowlist,
+  }) {
     final suffix = CliToolRegistry.instance.toolDescriptionSuffix();
-    if (suffix.isEmpty) return _builtinToolDescription;
-    return '$_builtinToolDescription$suffix';
+    final restriction = cliSchemaRestrictionNote(
+      enabledCliCommands: enabledCliCommands,
+      extraAllowlist: extraAllowlist,
+    );
+    final buf = StringBuffer(_builtinToolDescription);
+    if (suffix.isNotEmpty) buf.write(suffix);
+    if (restriction != null) {
+      buf.write(' $restriction');
+    }
+    return buf.toString();
   }
 
-  Map<String, dynamic> _parameterSchema() {
+  Map<String, dynamic> _parameterSchema({
+    Set<String> enabledCliCommands = const {},
+    Set<String>? extraAllowlist,
+  }) {
     // 动态构建 subcommand 描述（包含外部工具）
     final extSubcmdDesc = CliToolRegistry.instance.externalSubcommandDescription();
     final subcommandDesc = StringBuffer(
@@ -188,7 +222,11 @@ class ShepawCLI {
       'properties': {
         'namespace': {
           'type': 'string',
-          'enum': _namespaces.keys.toList(),
+          'enum': cliFilterNamespaces(
+            _namespaces.keys,
+            enabledCliCommands: enabledCliCommands,
+            extraAllowlist: extraAllowlist,
+          ),
           'description': 'Command namespace',
         },
         'subcommand': {
