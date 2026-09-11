@@ -7,6 +7,8 @@
 > 更新 3：**§5.1 定位修正** —— 初版把「计划模式」理解成 App 侧审批闸门，理解错了。
 > 用户要的规划模式是「一个开关让 agent 别动手改代码，先写计划」，见 §5.1.1。
 > 原决策 #1 / #2（§7）作废。
+> 更新 4：**会话模式入口已落地**（2026-09-12）。§5.1.5 的位置与 §5.1.6 的
+> 「会话模式」一行已实现（输入框 chip + Shift+Tab），模型入口仍未做（§6 #8）。
 
 ## 1. 问题
 
@@ -206,7 +208,7 @@ ACP 协议没有 mode 方法、`metadata['engine']` 也拿不到，去掉 UI 门
 
 **阶段一：App 侧闭环（不依赖外部仓库，可立即做）**
 
-1. 规划模式开关 UI + 会话状态，按 §5.1.5 落地。
+1. 规划模式开关 UI + 会话状态，按 §5.1.5 落地。✅ **已完成**（2026-09-12）
 2. 生效路径按能力分级：
    - **Peer agent** → 已有 `setMode` transport，直接映射原生 plan mode。✅ 硬拦
    - **ACP 远端 agent** → 无 transport，降级为 prompt 注入（软约束），UI 明示「该 agent
@@ -223,8 +225,8 @@ ACP 协议没有 mode 方法、`metadata['engine']` 也拿不到，去掉 UI 门
 **会话级是对的，transport 本来就支持。** 初版曾据函数签名推断 `setMode` 是 agent 级，
 这是错的——漏看了可选参数：
 
-- `fetchModes({peerId, remoteAgentId, sessionId})`（`peer_agent_client_service.dart:3713`）
-  和 `setMode({peerId, remoteAgentId, mode, sessionId})`（`:3759`）**都接受 `sessionId`**，
+- `fetchModes({peerId, remoteAgentId, sessionId})`（`peer_agent_client_service.dart:1863`）
+  和 `setMode({peerId, remoteAgentId, mode, sessionId})`（`:1909`）**都接受 `sessionId`**，
   传了就写进 `payload['session_id']`。文档注释也写明「[sessionId] scopes to a synced session」。
 - 类型与命名本身就是会话语义：`PeerAgentMode` 的注释是「One upstream **session-mode**
   option」，relay 的目标方法叫 `agent.modes.list` / `agent.modes.setCurrent`。
@@ -238,7 +240,7 @@ ACP 协议没有 mode 方法、`metadata['engine']` 也拿不到，去掉 UI 门
 结论：规划模式的开关做成**会话级**（§5.1.5）与 transport 一致，
 切换时把本会话对应的远端 sessionId 传下去即可，不需要额外记录每个会话的 mode。
 
-#### 5.1.5 开关放哪：输入框工具条，不放设置页（2026-09-11 定）
+#### 5.1.5 开关放哪：输入框工具条，不放设置页（2026-09-11 定）✅ 已落地（2026-09-12）
 
 **结论：输入框上的常驻切换 + 状态挂在会话（Channel）上。**
 
@@ -273,6 +275,15 @@ ACP 协议没有 mode 方法、`metadata['engine']` 也拿不到，去掉 UI 门
 - 只靠 slash 命令——依赖 agent 自己暴露 `/plan`，不是统一入口；可以作为**补充**（现有 slash
   机制见 `SlashCommandPicker`），但不能当主入口
 
+**落地结果**（2026-09-12，`lib/widgets/chat/chat_input_area.dart`）：做成了**会话模式 chip**
+而不是独立的 bool 开关——plan 只是上游众多档位之一（claude-code 有六档），单开一个 bool 会
+变成第二个真相源（见 §5.1.3b 与 `5ccea29` 的 revert）。因此：
+
+- chip 常驻显示当前档位，`plan` 档高亮为「规划中」；点开菜单可切到任意档位；
+- Shift+Tab 专用于 plan 档切换，再按一次回原档位；
+- 状态不进本地库：`fetchModes` / `setMode` 均带 `sessionId`，按会话生效；换会话清空重拉；
+- 群聊暂不显示入口（§6 #4 未定），本地 agent 无上游 mode 也不显示（§5.1.6）。
+
 #### 5.1.4 清文档债 ✅ 已完成（2026-09-11）
 
 全部改为「两种编排模式（标准 / Flow）」，计划审批不再作为独立模式出现，
@@ -293,8 +304,12 @@ ACP 协议没有 mode 方法、`metadata['engine']` 也拿不到，去掉 UI 门
 
 | 入口 | Peer agent | 本地 agent |
 |---|---|---|
-| 会话模式 | `fetchModes` / `setMode`（`peer_agent_client_service.dart:3713` / `:3759`） | **隐藏** |
-| 模型 | `fetchModels` / `setModel`（`:1774` / `:1819`） | `AgentScenarioModels.modelIds`（`agent_scenario_models.dart:10`） |
+| 会话模式 | `fetchModes` / `setMode`（`peer_agent_client_service.dart:1863` / `:1909`） | **隐藏** |
+| 模型 | `fetchModels` / `setModel`（`:1778` / `:1823`） | `AgentScenarioModels.modelIds`（`agent_scenario_models.dart:10`） |
+
+**会话模式一行已落地**（2026-09-12）：输入框 chip 走 `fetchModes` / `setMode` 且都传
+`sessionId`；本地 agent 判定为「非 Peer」→ 整个入口不渲染。
+**模型一行仍未做**，等 §6 #8 的主模型下拉落地。
 
 **模型列表走的也是 Peer relay，不是 ACP。** `acp_protocol.dart` 里 `grep model`
 零命中；`fetchModels` 是 `agent.models.list` relay，与 `fetchModes` 同构，
