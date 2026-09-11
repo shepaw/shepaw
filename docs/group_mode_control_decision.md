@@ -311,10 +311,11 @@ ACP 协议没有 mode 方法、`metadata['engine']` 也拿不到，去掉 UI 门
 
 - **会话模式**：走 `fetchModes` / `setMode` 且都传 `sessionId`；本地 agent 判定为
   「非 Peer」→ 整个入口不渲染。
-- **模型**：按 §6 #8 取 `metadata['main_model_id']`，候选来自 `ModelRegistry`，
-  菜单带「添加模型」直达模型管理页。**只对本地 agent 显示** —— Peer agent 的引擎
-  模型由对端自管，给它看本地定义会变成「选了没反应」（§5.1.3a 的同一条理由）。
-  因此 Peer 那半行（先 `fetchModels` 拉上游列表）仍未做。
+- **模型**：同一个 chip 按 agent 类型取不同数据源 ——
+  - 本地 agent → `metadata['main_model_id']` + `ModelRegistry`，菜单带「添加模型」
+    直达模型管理页（§6 #8）；
+  - Peer agent → 上游 `fetchModels` / `setModel`，按会话下发；没有「添加模型」
+    入口（对端自管），离线时整个入口不显示（模型没有引擎目录可兜底）。
 
 **模型列表走的也是 Peer relay，不是 ACP。** `acp_protocol.dart` 里 `grep model`
 零命中；`fetchModels` 是 `agent.models.list` relay，与 `fetchModes` 同构，
@@ -375,8 +376,8 @@ ACP 协议没有 mode 方法、`metadata['engine']` 也拿不到，去掉 UI 门
 7. ~~ACP 远端 agent 的模型/会话模式入口怎么办~~ **关闭**：ACP 已废弃，App 入口已隐藏，
    只剩 Peer agent 与本地 agent 两类（§5.1.6）。
 8. ~~输入框的「模型」切哪个模态~~ **已定**：**复用 Agent 设置页「主模型」的那套下拉**，
-   并且要能顺手添加模型。不是按 `ModalityType` 逐个切。**已落地**（2026-09-12），
-   但只对本地 agent 显示。
+   并且要能顺手添加模型。不是按 `ModalityType` 逐个切。**已落地**（2026-09-12）。
+   Peer agent 走同一 chip 的上游分支（`fetchModels`），共用 UI、分数据源。
 
    主模型的落点与取值：
    - 存 `RemoteAgent.metadata['main_model_id']`（`remote_agent.dart:397`）
