@@ -7,6 +7,7 @@ import 'services/acp_server_service.dart';
 import 'services/permission_service.dart';
 import 'services/token_service.dart';
 import 'services/remote_agent_service.dart';
+import 'services/remote_hub_pairing_service.dart';
 import 'services/message_collapse_preference.dart';
 import 'services/composer_draft_service.dart';
 import 'services/vision/reference_album_service.dart';
@@ -55,6 +56,11 @@ void setupServiceLocator() {
   // 人脸参考相册：CLI / UI 共用同一实例（embedding 向量库懒加载）。
   getIt.registerLazySingleton<ReferenceAlbumService>(
     () => ReferenceAlbumService(),
+  );
+
+  // 远端 Agent Hub 取码（无状态，仅持有 http.Client）。
+  getIt.registerLazySingleton<RemoteHubPairingService>(
+    () => RemoteHubPairingService(),
   );
 
   if (!getIt.isRegistered<EventBus>()) {
