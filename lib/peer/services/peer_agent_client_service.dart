@@ -286,11 +286,16 @@ class PeerHistoryMessage {
 /// 3. Anchor to session-level [sessionUpdatedAt] from `sessions.list`
 /// 4. Preserve existing local time when no session anchor is available
 /// 5. [fallbackEnd]-anchored synthetic times for brand-new rows
+///
+/// [latestLocalAt] 是本地已有消息的最新时间：整批同步时间不得早于它。会话级
+/// 锚（[sessionUpdatedAt]）可能落后数分钟，原样落库会把刚同步回来的回复排到
+/// 列表最上方，看起来就像「回复跑到了被引用的消息上面」。
 List<DateTime> assignPeerHistoryTimestamps(
   List<PeerHistoryMessage> history, {
   Map<String, DateTime> existingById = const {},
   DateTime? sessionUpdatedAt,
   DateTime? fallbackEnd,
+  DateTime? latestLocalAt,
   String Function(PeerHistoryMessage message, int index)? idFor,
 }) {
   if (history.isEmpty) return const [];
@@ -320,6 +325,14 @@ List<DateTime> assignPeerHistoryTimestamps(
   for (var i = 1; i < out.length; i++) {
     if (out[i].isBefore(out[i - 1])) {
       out[i] = out[i - 1].add(const Duration(seconds: 1));
+    }
+  }
+  // 整批不早于本地已有消息：整体平移以保持批内相对间隔。
+  final floor = latestLocalAt;
+  if (floor != null && out.last.isBefore(floor)) {
+    final shift = floor.difference(out.last) + const Duration(seconds: 1);
+    for (var i = 0; i < out.length; i++) {
+      out[i] = out[i].add(shift);
     }
   }
   return out;
@@ -2897,10 +2910,17 @@ class PeerAgentClientService {
       if (at != null) existingById[id] = at;
     }
 
+    DateTime? latestLocalAt;
+    for (final at in existingById.values) {
+      if (latestLocalAt == null || at.isAfter(latestLocalAt)) {
+        latestLocalAt = at;
+      }
+    }
     final createdAts = assignPeerHistoryTimestamps(
       history,
       existingById: existingById,
       sessionUpdatedAt: sessionUpdatedAt,
+      latestLocalAt: latestLocalAt,
       idFor: (m, i) => peerHistoryMessageId(m, channelId, i),
     );
 

@@ -33,10 +33,22 @@ mixin _MessagingOps on _ChatControllerBase {
     streaming.begin(hostId, fromId: activeTask.agentId);
     streaming.content = activeTask.accumulatedContent;
 
+    // 复用的占位可能带着上一回合的旧时间戳（flush 行可能几分钟前就落库），
+    // 沿用它会让「正在回复」的气泡被排序顶到列表上方——抬到当前最新消息之后。
+    int? seedTs;
+    if (reusable != null) {
+      var maxOther = 0;
+      for (final m in messages) {
+        if (m.id == reusable.id) continue;
+        if (m.timestampMs > maxOther) maxOther = m.timestampMs;
+      }
+      if (reusable.timestampMs <= maxOther) seedTs = maxOther + 1;
+    }
     var seeded = reusable != null
         ? ChatStreamingText.withUpdatedContent(
             reusable,
             streaming.content,
+            timestampMs: seedTs,
           )
         : ChatStreamingText.withUpdatedContent(
             ChatStreamingText.placeholder(

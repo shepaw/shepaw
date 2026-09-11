@@ -331,5 +331,39 @@ void main() {
       expect(times[0], later);
       expect(times[1], later.add(const Duration(seconds: 1)));
     });
+
+    test('整批不早于本地已有消息（会话锚过期时整体前移）', () {
+      final remoteEnd = DateTime.utc(2026, 7, 12, 11, 55);
+      final localLatest = DateTime.utc(2026, 7, 12, 12, 0);
+      final history = [
+        PeerHistoryMessage(role: 'user', content: 'a'),
+        PeerHistoryMessage(role: 'agent', content: 'b'),
+      ];
+      final times = assignPeerHistoryTimestamps(
+        history,
+        sessionUpdatedAt: remoteEnd,
+        latestLocalAt: localLatest,
+      );
+      // 批内间隔保持 1 分钟，末条落在本地最新消息之后。
+      expect(times.last, localLatest.add(const Duration(seconds: 1)));
+      expect(
+        times.last.difference(times.first),
+        const Duration(minutes: 1),
+      );
+    });
+
+    test('本地不比整批新时不平移（幂等）', () {
+      final remoteEnd = DateTime.utc(2026, 7, 12, 12, 0);
+      final history = [
+        PeerHistoryMessage(role: 'user', content: 'a'),
+        PeerHistoryMessage(role: 'agent', content: 'b'),
+      ];
+      final times = assignPeerHistoryTimestamps(
+        history,
+        sessionUpdatedAt: remoteEnd,
+        latestLocalAt: remoteEnd.subtract(const Duration(minutes: 5)),
+      );
+      expect(times.last, remoteEnd);
+    });
   });
 }

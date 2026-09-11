@@ -13,11 +13,18 @@ class ChatStreamingText {
   }
 
   /// Copy [message] with a new content string (preserves routing fields).
-  static Message withUpdatedContent(Message message, String content) {
+  ///
+  /// [timestampMs] 显式覆盖原时间戳——复用上一回合的流式占位时需要把气泡
+  /// 抬到当前最新消息之后，否则排序会把它顶到列表上方。
+  static Message withUpdatedContent(
+    Message message,
+    String content, {
+    int? timestampMs,
+  }) {
     return Message(
       id: message.id,
       content: content,
-      timestampMs: message.timestampMs,
+      timestampMs: timestampMs ?? message.timestampMs,
       from: message.from,
       to: message.to,
       channelId: message.channelId,
