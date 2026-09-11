@@ -93,6 +93,82 @@ class MessageUtils {
     return true;
   }
 
+  /// 列表展示顺序：修正时间戳异常造成的错序。
+  ///
+  /// 时间戳并不总是可靠的排序依据——重连续传会复用上一回合的流式占位
+  /// （沿用旧 `created_at`）、peer 历史同步回灌的行可能锚在过期的
+  /// `sessionUpdatedAt` 上。结果就是「正在回复」的气泡被排到被回复消息
+  /// 之前，甚至整列最上方。
+  ///
+  /// 两条规则（仅影响展示顺序，不改动 [messages] 本身）：
+  /// 1. 回复消息（[Message.replyTo]）绝不排在被回复的消息之前；
+  /// 2. 在途流式气泡（[streamingIds]）天然是最新的一条，排在最末。
+  ///
+  /// 顺序本就正确时直接返回同一个 [messages] 实例，便于调用方复用缓存。
+  static List<Message> orderForDisplay(
+    List<Message> messages, {
+    Set<String> streamingIds = const {},
+  }) {
+    if (messages.length < 2) return messages;
+
+    final byId = <String, Message>{};
+    for (final m in messages) {
+      byId.putIfAbsent(m.id, () => m);
+    }
+
+    final effective = <String, int>{};
+    final visiting = <String>{};
+    int resolve(Message m) {
+      final cached = effective[m.id];
+      if (cached != null) return cached;
+      var ts = m.timestampMs;
+      final parentId = m.replyTo;
+      // visiting 同时充当环守卫：replyTo 成环时直接用自己的时间戳。
+      if (parentId != null && visiting.add(m.id)) {
+        final parent = byId[parentId];
+        if (parent != null) {
+          final parentTs = resolve(parent);
+          if (ts <= parentTs) ts = parentTs + 1;
+        }
+        visiting.remove(m.id);
+      }
+      effective[m.id] = ts;
+      return ts;
+    }
+
+    final values = <int>[for (final m in messages) resolve(m)];
+
+    if (streamingIds.isNotEmpty) {
+      var maxOther = -1;
+      for (var i = 0; i < messages.length; i++) {
+        if (streamingIds.contains(messages[i].id)) continue;
+        if (values[i] > maxOther) maxOther = values[i];
+      }
+      if (maxOther >= 0) {
+        for (var i = 0; i < messages.length; i++) {
+          if (!streamingIds.contains(messages[i].id)) continue;
+          if (values[i] < maxOther) values[i] = maxOther + 1;
+        }
+      }
+    }
+
+    var changed = false;
+    for (var i = 0; i < messages.length; i++) {
+      if (values[i] != messages[i].timestampMs) {
+        changed = true;
+        break;
+      }
+    }
+    if (!changed) return messages;
+
+    final order = List<int>.generate(messages.length, (i) => i);
+    order.sort((a, b) {
+      final cmp = values[a].compareTo(values[b]);
+      return cmp != 0 ? cmp : a.compareTo(b);
+    });
+    return [for (final i in order) messages[i]];
+  }
+
   /// 群聊中是否折叠头像/作者名。
   ///
   /// 已禁用连续同作者折叠：每条群消息独立展示头像与作者栏。

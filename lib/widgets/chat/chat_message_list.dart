@@ -221,11 +221,19 @@ class _ChatMessageListState extends State<ChatMessageList> {
 
   @override
   Widget build(BuildContext context) {
-    final messages = widget.messages;
-    final isGroupMode = widget.isGroupMode;
-    final messageIdMap = widget.messageIdMap;
     final streamingMessageId = widget.streamingMessageId;
     final groupStreamingMessageIds = widget.groupStreamingMessageIds;
+    // 时间戳异常（重连续传占位、peer 历史回灌）会把「正在回复」的气泡排到
+    // 被回复消息之前甚至整列最上方——展示前先按因果关系修正顺序。
+    final messages = MessageUtils.orderForDisplay(
+      widget.messages,
+      streamingIds: <String>{
+        if (streamingMessageId != null) streamingMessageId,
+        ...groupStreamingMessageIds,
+      },
+    );
+    final isGroupMode = widget.isGroupMode;
+    final messageIdMap = widget.messageIdMap;
     final agentAvatarMap = widget.agentAvatarMap;
     final isAgentOffline = widget.isAgentOffline;
     final highlightedMessageId = widget.highlightedMessageId;
