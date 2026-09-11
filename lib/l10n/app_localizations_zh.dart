@@ -5170,10 +5170,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get group_approvalBridgeOpen => '打开群会话';
 
   @override
-  String get group_sessionSwitchTitle => '新群会话已就绪';
+  String get group_sessionSwitchTitle => '新会话已就绪';
 
   @override
-  String get group_sessionSwitchBody => '已创建带交接上下文的新会话。打开后继续；在新会话发消息即可开始编排。';
+  String get group_sessionSwitchBody => '已用交接摘要创建新会话。打开后继续；在新会话发消息即可接着聊。';
 
   @override
   String get group_sessionSwitchOpen => '打开新会话';
@@ -6866,4 +6866,19 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get localHub_installNode => '安装 Node.js';
+
+  @override
+  String get chat_sessionMode => '会话模式';
+
+  @override
+  String get chat_planModeOn => '规划中';
+
+  @override
+  String get chat_planModeHint => '描述你想做什么，Agent 会先给计划';
+
+  @override
+  String get chat_planModeUnsupported => '该 Agent 没有原生规划模式';
+
+  @override
+  String get chat_sessionModeSwitchFailed => '切换会话模式失败';
 }

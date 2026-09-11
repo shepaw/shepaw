@@ -1057,7 +1057,8 @@ class MessageBubble extends StatelessWidget {
 
   /// Interactive cards/buttons appended below message text (approval, forms, etc.).
   Widget? _buildInteractiveFooter(BuildContext context) {
-    if (message.metadata?['group_session_action'] != null) {
+    if (message.metadata?['group_session_action'] != null ||
+        message.metadata?['session_action'] != null) {
       return GroupSessionSwitchCard(message: message);
     }
 

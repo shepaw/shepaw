@@ -9461,13 +9461,13 @@ abstract class AppLocalizations {
   /// No description provided for @group_sessionSwitchTitle.
   ///
   /// In zh, this message translates to:
-  /// **'新群会话已就绪'**
+  /// **'新会话已就绪'**
   String get group_sessionSwitchTitle;
 
   /// No description provided for @group_sessionSwitchBody.
   ///
   /// In zh, this message translates to:
-  /// **'已创建带交接上下文的新会话。打开后继续；在新会话发消息即可开始编排。'**
+  /// **'已用交接摘要创建新会话。打开后继续；在新会话发消息即可接着聊。'**
   String get group_sessionSwitchBody;
 
   /// No description provided for @group_sessionSwitchOpen.
@@ -12427,6 +12427,36 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'安装 Node.js'**
   String get localHub_installNode;
+
+  /// No description provided for @chat_sessionMode.
+  ///
+  /// In zh, this message translates to:
+  /// **'会话模式'**
+  String get chat_sessionMode;
+
+  /// No description provided for @chat_planModeOn.
+  ///
+  /// In zh, this message translates to:
+  /// **'规划中'**
+  String get chat_planModeOn;
+
+  /// No description provided for @chat_planModeHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'描述你想做什么，Agent 会先给计划'**
+  String get chat_planModeHint;
+
+  /// No description provided for @chat_planModeUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'该 Agent 没有原生规划模式'**
+  String get chat_planModeUnsupported;
+
+  /// No description provided for @chat_sessionModeSwitchFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'切换会话模式失败'**
+  String get chat_sessionModeSwitchFailed;
 }
 
 class _AppLocalizationsDelegate

@@ -4,6 +4,7 @@ import 'channels_command.dart';
 import 'group/group_namespace.dart';
 import 'message_namespace.dart';
 import 'messages_command.dart';
+import 'session/session_namespace.dart';
 
 /// [COMMUNICATION 层] chat 命名空间 - 对话频道和消息管理
 ///
@@ -15,6 +16,7 @@ import 'messages_command.dart';
 /// - `messages`  查询频道消息（--channel <id> 或 --agent <agent_id>）
 /// - `message.get` 按 message_id 获取完整消息 / 附件 / 图片分析
 /// - `group.*`   创建 / 加人 / 踢人 / 改群名 / 向绑定群会话发消息（变更需管理员）
+/// - `session.create`  一对一新开会话并交接摘要（不自动切换）
 class ChatNamespace extends CliNamespace {
   static final instance = ChatNamespace._();
   ChatNamespace._();
@@ -33,6 +35,7 @@ class ChatNamespace extends CliNamespace {
   Map<String, CliNamespace> get subNamespaces => {
         'message': MessageNamespace(),
         'group': GroupNamespace(),
+        'session': ChatSessionNamespace(),
       };
 
   @override

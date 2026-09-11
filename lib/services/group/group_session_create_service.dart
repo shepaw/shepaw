@@ -335,6 +335,7 @@ class GroupSessionCreateResult {
           'handoff_id': handoffId,
           'handoff_uri': handoffUri,
           'handoff_json_uri': handoffJsonUri,
+          'session_action': sessionAction,
         }
       : {
           'error': error,

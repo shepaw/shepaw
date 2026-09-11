@@ -1,56 +1,61 @@
 import 'dart:convert';
 
 import '../../../../services/group/group_management_service.dart';
+import '../../../../services/session/dm_session_create_service.dart';
 import '../../../cli_base.dart';
+import '../chat_agent_scope.dart';
 
-/// shepaw chat group session create — open a new session with handoff (admin only).
-class GroupSessionCreateCommand extends CliCommand {
-  GroupSessionCreateCommand({GroupManagementService? service})
-      : _service = service ?? GroupManagementService();
+/// shepaw chat session create — open a new 1:1 session with a handoff summary.
+class ChatSessionCreateCommand extends CliCommand {
+  ChatSessionCreateCommand({DmSessionCreateService? service})
+      : _service = service ?? DmSessionCreateService();
 
-  final GroupManagementService _service;
+  final DmSessionCreateService _service;
 
   @override
   String get name => 'create';
 
   @override
   String get description =>
-      'Create a new group session with a curated handoff package (admin only)';
+      'Create a new 1:1 session with a handoff summary (does not auto-switch)';
 
   @override
   String get usage =>
-      'shepaw chat group session create --reason topic_shift '
-      '--handoff-json \'{"task":{"user_goal":"...","acceptance_criteria":["..."],"status":"in_progress"}}\' '
-      '[--reason-detail "..."] [--handoff-uri store://...] [--no-first-message]';
+      'shepaw chat session create --reason context_too_long '
+      '--summary "key points to keep" '
+      '[--reason-detail "..."] [--handoff-json \'{...}\']';
 
   @override
   Map<String, dynamic> getHelp() {
     final base = super.getHelp();
     base['flags'] = {
       'channel': {
-        'description': 'Group channel id (defaults to injected channel_id)',
+        'description': 'DM channel id (defaults to injected channel_id)',
         'required': false,
         'type': 'string',
       },
       'reason': {
         'description':
-            'topic_shift | post_delivery | noise_reduction | context_too_long | agent_memory_reset | parallel_track | user_requested',
+            'topic_shift | post_delivery | noise_reduction | context_too_long | '
+            'agent_memory_reset | parallel_track | user_requested',
         'required': true,
         'type': 'string',
       },
       'reason-detail': {
-        'description': 'Human-readable reason for the user',
+        'description': 'Human-readable explanation for the user',
         'required': false,
+        'type': 'string',
+      },
+      'summary': {
+        'description':
+            'Key points for the new session (required unless handoff-json '
+            'includes task.user_goal)',
+        'required': true,
         'type': 'string',
       },
       'handoff-json': {
         'description':
-            'Inline handoff JSON (task.user_goal, acceptance_criteria, status)',
-        'required': false,
-        'type': 'string',
-      },
-      'handoff-uri': {
-        'description': 'Existing handoff JSON store URI (alternative to handoff-json)',
+            'Optional structured handoff JSON (task.user_goal used as summary)',
         'required': false,
         'type': 'string',
       },
@@ -70,10 +75,12 @@ class GroupSessionCreateCommand extends CliCommand {
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
-    final channelId = GroupManagementService.resolveChannelId(flags);
-    if (channelId == null || channelId.isEmpty) {
+    final channelId = GroupManagementService.resolveChannelId(flags) ??
+        ChatAgentScope.channelId.trim();
+    if (channelId.isEmpty) {
       return {
-        'error': 'Missing --channel or channel_id (must run inside a group)',
+        'error':
+            'Missing --channel or channel_id (must run inside a 1:1 session)',
       };
     }
 
@@ -82,15 +89,8 @@ class GroupSessionCreateCommand extends CliCommand {
       return {'error': 'Missing required flag: --reason'};
     }
 
+    final summary = flags['summary']?.trim() ?? '';
     final handoffJson = flags['handoff-json'] ?? flags['handoff_json'];
-    final handoffUri = flags['handoff-uri'] ?? flags['handoff_uri'];
-    if ((handoffJson == null || handoffJson.trim().isEmpty) &&
-        (handoffUri == null || handoffUri.trim().isEmpty)) {
-      return {
-        'error': 'Provide --handoff-json or --handoff-uri',
-      };
-    }
-
     Map<String, dynamic>? inlineHandoff;
     if (handoffJson != null && handoffJson.trim().isNotEmpty) {
       try {
@@ -103,25 +103,31 @@ class GroupSessionCreateCommand extends CliCommand {
         return {'error': 'Invalid --handoff-json: $e'};
       }
     }
+    if (summary.isEmpty && inlineHandoff == null) {
+      return {'error': 'Provide --summary or --handoff-json'};
+    }
 
-    final actorId = flags['agent_id']?.trim() ?? flags['owner']?.trim() ?? '';
+    final actorId = (flags['agent_id']?.trim().isNotEmpty == true)
+        ? flags['agent_id']!.trim()
+        : ChatAgentScope.agentId.trim();
     if (actorId.isEmpty) {
       return {'error': 'Missing executor agent id'};
     }
-    final actorName = flags['agent_name']?.trim() ?? actorId;
+    final actorName = flags['agent_name']?.trim().isNotEmpty == true
+        ? flags['agent_name']!.trim()
+        : actorId;
 
     final args = <String, dynamic>{
       'reason': reason,
       if (flags['reason-detail']?.trim().isNotEmpty == true)
         'reason_detail': flags['reason-detail']!.trim(),
+      if (summary.isNotEmpty) 'summary': summary,
       if (inlineHandoff != null) 'handoff': inlineHandoff,
-      if (handoffUri != null && handoffUri.trim().isNotEmpty)
-        'handoff_uri': handoffUri.trim(),
       'post_first_message': flags['no-first-message'] != 'true',
       'suggest_switch': flags['no-switch-card'] != 'true',
     };
 
-    final result = await _service.createSessionWithHandoff(
+    final result = await _service.create(
       channelId: channelId,
       actorId: actorId,
       actorName: actorName,

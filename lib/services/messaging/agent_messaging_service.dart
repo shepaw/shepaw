@@ -2359,6 +2359,7 @@ class AgentMessagingService {
       Map<String, dynamic>? formDataCapture;
       Map<String, dynamic>? messageMetadataExtra;
       Map<String, dynamic>? planApprovalData;
+      Map<String, dynamic>? sessionActionMeta;
       Map<String, dynamic>? historyRequestData;
       bool fileMessageHandled = false;
 
@@ -2641,6 +2642,8 @@ class AgentMessagingService {
                     ? Map<String, dynamic>.from(cliArgs['flags'] as Map)
                     : <String, dynamic>{};
                 flags['channel_id'] = effectiveChannelId;
+                flags.putIfAbsent('agent_id', () => agent.id);
+                flags.putIfAbsent('agent_name', () => agent.name);
                 cliArgs['flags'] = flags;
               }
               final result = await CliExecutionGate.instance.execute(
@@ -2678,7 +2681,12 @@ class AgentMessagingService {
                     };
                     planApprovalData = planData;
                     onWorkflowPlanCreated?.call(workflowId, planData);
-                  }                }
+                  }
+                }
+                final switchAction = cliJson?['session_action'];
+                if (switchAction is Map) {
+                  sessionActionMeta = Map<String, dynamic>.from(switchAction);
+                }
               } catch (e) {
                 LoggerService().warning('Workflow approval flow error: $e', tag: 'AgentMessagingService');
               }
@@ -2764,6 +2772,9 @@ class AgentMessagingService {
       if (fileUploadData != null) meta['file_upload'] = fileUploadData;
       if (formDataCapture != null) meta['form'] = formDataCapture;
       if (planApprovalData != null) meta['plan_approval'] = planApprovalData;
+      if (sessionActionMeta != null) {
+        meta['session_action'] = sessionActionMeta;
+      }
       final messageMetadata = meta;
       activeTask.metadata = messageMetadata;
 

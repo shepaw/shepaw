@@ -5378,11 +5378,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get group_approvalBridgeOpen => 'Open group session';
 
   @override
-  String get group_sessionSwitchTitle => 'New group session ready';
+  String get group_sessionSwitchTitle => 'New session ready';
 
   @override
   String get group_sessionSwitchBody =>
-      'A new session was created with handoff context. Open it to continue; send a message there to start orchestration.';
+      'A new session was created with a handoff summary. Open it to continue; send a message there to pick up.';
 
   @override
   String get group_sessionSwitchOpen => 'Open new session';
@@ -7147,4 +7147,20 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get localHub_installNode => 'Install Node.js';
+
+  @override
+  String get chat_sessionMode => 'Session mode';
+
+  @override
+  String get chat_planModeOn => 'Planning';
+
+  @override
+  String get chat_planModeHint =>
+      'Describe what you want — the agent will plan first';
+
+  @override
+  String get chat_planModeUnsupported => 'This agent has no native plan mode';
+
+  @override
+  String get chat_sessionModeSwitchFailed => 'Failed to switch session mode';
 }

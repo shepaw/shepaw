@@ -4,6 +4,7 @@ import '../../models/dispatch_task.dart';
 import '../../models/message.dart';
 import '../../screens/chat_screen.dart';
 import '../../services/dispatch/dispatch_service.dart';
+import '../../services/session/dm_session_create_service.dart';
 
 /// She 任务派发状态卡（在 She↔用户 频道中渲染）。
 ///
@@ -370,9 +371,7 @@ class GroupSessionSwitchCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
-    final payload =
-        message.metadata?['group_session_action'] as Map<String, dynamic>? ??
-            {};
+    final payload = sessionSwitchActionOf(message.metadata) ?? {};
     final newSessionId = payload['new_session_id'] as String? ?? '';
     final handoffUri = payload['handoff_uri'] as String? ?? '';
     final reason = payload['reason_detail'] as String? ??

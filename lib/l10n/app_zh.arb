@@ -3106,8 +3106,8 @@
     }
   },
   "group_approvalBridgeOpen": "打开群会话",
-  "group_sessionSwitchTitle": "新群会话已就绪",
-  "group_sessionSwitchBody": "已创建带交接上下文的新会话。打开后继续；在新会话发消息即可开始编排。",
+  "group_sessionSwitchTitle": "新会话已就绪",
+  "group_sessionSwitchBody": "已用交接摘要创建新会话。打开后继续；在新会话发消息即可接着聊。",
   "group_sessionSwitchOpen": "打开新会话",
   "group_sessionSwitchReason": "原因：{reason}",
   "@group_sessionSwitchReason": {
@@ -4278,5 +4278,10 @@
   },
   "localHub_nodeMissingTitle": "需要先安装 Node.js",
   "localHub_nodeMissingBody": "安装 Agent Hub 需要 Node.js 18.17 或更高版本。安装 Node 后重新打开惜宝，或在终端执行：npm install -g shepaw-agent-hub",
-  "localHub_installNode": "安装 Node.js"
+  "localHub_installNode": "安装 Node.js",
+  "chat_sessionMode": "会话模式",
+  "chat_planModeOn": "规划中",
+  "chat_planModeHint": "描述你想做什么，Agent 会先给计划",
+  "chat_planModeUnsupported": "该 Agent 没有原生规划模式",
+  "chat_sessionModeSwitchFailed": "切换会话模式失败"
 }

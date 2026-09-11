@@ -2628,8 +2628,8 @@
     }
   },
   "group_approvalBridgeOpen": "Open group session",
-  "group_sessionSwitchTitle": "New group session ready",
-  "group_sessionSwitchBody": "A new session was created with handoff context. Open it to continue; send a message there to start orchestration.",
+  "group_sessionSwitchTitle": "New session ready",
+  "group_sessionSwitchBody": "A new session was created with a handoff summary. Open it to continue; send a message there to pick up.",
   "group_sessionSwitchOpen": "Open new session",
   "group_sessionSwitchReason": "Reason: {reason}",
   "@group_sessionSwitchReason": {
@@ -3800,5 +3800,10 @@
   },
   "localHub_nodeMissingTitle": "Node.js is required",
   "localHub_nodeMissingBody": "Installing Agent Hub needs Node.js 18.17 or newer. Install Node, then reopen Shepaw, or run: npm install -g shepaw-agent-hub",
-  "localHub_installNode": "Install Node.js"
+  "localHub_installNode": "Install Node.js",
+  "chat_sessionMode": "Session mode",
+  "chat_planModeOn": "Planning",
+  "chat_planModeHint": "Describe what you want — the agent will plan first",
+  "chat_planModeUnsupported": "This agent has no native plan mode",
+  "chat_sessionModeSwitchFailed": "Failed to switch session mode"
 }

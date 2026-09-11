@@ -37,6 +37,7 @@ class GroupSessionHandoff {
     'topic_shift',
     'post_delivery',
     'noise_reduction',
+    'context_too_long',
     'agent_memory_reset',
     'parallel_track',
     'user_requested',
