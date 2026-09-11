@@ -354,9 +354,19 @@ ACP 协议没有 mode 方法、`metadata['engine']` 也拿不到，去掉 UI 门
 6. `flowMode` 下沉到每次发送，是否值得做（§5.2 第 2 步改造量不小）。
 7. ~~ACP 远端 agent 的模型/会话模式入口怎么办~~ **关闭**：ACP 已废弃，App 入口已隐藏，
    只剩 Peer agent 与本地 agent 两类（§5.1.6）。
-8. **输入框里的「模型」切的是哪个模态？** 本地 agent 的模型是按
-   `ModalityType` 配置的（文本 / 图片 / 音频…各一个），一个图标点开要么只切
-   文本模型、要么是个分组列表。**倾向只切文本模型**，其余模态仍在 Agent 详情页配。
+8. ~~输入框的「模型」切哪个模态~~ **已定**：**复用 Agent 设置页「主模型」的那套下拉**，
+   并且要能顺手添加模型。不是按 `ModalityType` 逐个切。
+
+   主模型的落点与取值：
+   - 存 `RemoteAgent.metadata['main_model_id']`（`remote_agent.dart:397`）
+   - 经 `ModelRegistry.instance.getById(...)` 解析（`:408`）
+   - 下拉在 `AgentModelConfigCard`（`agent_model_config_card.dart:158-160`，
+     `initialValue: widget.mainModelId`），列表来自 `ModelRegistry` 的全局模型定义
+   - 输入框入口点开即同一个 picker + 一个「添加模型」入口（复用
+     `ModelSelectScreen` / 模型管理页的添加流程）
+
+   所以本地 agent 与 Peer agent 的模型入口**都**走这套：Peer 额外可先用
+   `fetchModels` 拉上游列表，本地直接用 `ModelRegistry` 的已配置定义。
 6. 干预强度三档里 `askUser` 这档是否真有需求——如果没人用，两档就够。
 
 ## 7. 已拍板
