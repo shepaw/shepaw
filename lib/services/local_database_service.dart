@@ -57,7 +57,7 @@ class LocalDatabaseService {
     final path = join(directory.path, 'shepaw.db');
     return await openDatabase(
       path,
-      version: 34,
+      version: 35,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -149,6 +149,7 @@ class LocalDatabaseService {
         planning_mode INTEGER DEFAULT 0,
         flow_mode INTEGER DEFAULT 0,
         enable_stage_gate INTEGER DEFAULT 0,
+        plan_mode INTEGER DEFAULT 0,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         created_by TEXT NOT NULL
@@ -904,6 +905,24 @@ class LocalDatabaseService {
       } catch (e) {
         LoggerService().error(
           'Failed to create event_subscriptions table (v34)',
+          tag: 'Migration',
+          error: e,
+        );
+      }
+    }
+
+    if (oldVersion < 35) {
+      // 版本 34 -> 35: channels 表增加 plan_mode（规划模式，默认关）
+      //
+      // 与 flow_mode / enable_stage_gate 同为会话级开关，但语义不同：
+      // 规划模式要求 Agent 先给计划、不动手改东西，对支持原生 plan mode 的
+      // Agent 会映射到该能力。见 docs/group_mode_control_decision.md §5.1。
+      try {
+        await db.execute(
+          'ALTER TABLE channels ADD COLUMN plan_mode INTEGER DEFAULT 0');
+      } catch (e) {
+        LoggerService().error(
+          'Failed to add plan_mode (v35)',
           tag: 'Migration',
           error: e,
         );

@@ -71,6 +71,13 @@ class Channel {
   final bool flowMode;
   /// 阶段门闸：工作流每个阶段结束后阻塞，管理员决策「继续/中止/换人」后才进下一阶段
   final bool enableStageGate;
+  /// 规划模式：要求 Agent 先给计划、不动手改东西。会话级状态。
+  ///
+  /// 与编排模式（标准 / Flow）正交：它不是第三种编排模式，而是「只读规划」的
+  /// 一道约束。支持原生 plan mode 的 Agent（如 Claude Code）会映射到该能力
+  /// （工具层硬拦）；不支持的只能靠提示词软约束。见
+  /// `docs/group_mode_control_decision.md` §5.1。
+  final bool planMode;
 
   /// 获取有效的最大循环轮次，默认 50
   int get effectiveMaxLoopRounds => maxLoopRounds ?? 50;
@@ -102,6 +109,7 @@ class Channel {
     this.mentionMode,
     this.flowMode = false,
     this.enableStageGate = false,
+    this.planMode = false,
   });
 
   /// Returns the ID that links all sessions of the same group together.
@@ -140,6 +148,7 @@ class Channel {
     String? mentionMode,
     bool flowMode = false,
     bool enableStageGate = false,
+    bool planMode = false,
   }) {
     return Channel(
       id: id,
@@ -167,6 +176,7 @@ class Channel {
       mentionMode: mentionMode,
       flowMode: flowMode,
       enableStageGate: enableStageGate,
+      planMode: planMode,
     );
   }
 
@@ -220,6 +230,7 @@ class Channel {
       mentionMode: json['metadata']?['mention_mode'],
       flowMode: json['flow_mode'] as bool? ?? false,
       enableStageGate: json['enable_stage_gate'] as bool? ?? false,
+      planMode: json['plan_mode'] as bool? ?? false,
     );
   }
 
@@ -244,6 +255,7 @@ class Channel {
     String? mentionMode,
     bool? flowMode,
     bool? enableStageGate,
+    bool? planMode,
   }) {
     return Channel(
       id: id ?? this.id,
@@ -266,6 +278,7 @@ class Channel {
       mentionMode: mentionMode ?? this.mentionMode,
       flowMode: flowMode ?? this.flowMode,
       enableStageGate: enableStageGate ?? this.enableStageGate,
+      planMode: planMode ?? this.planMode,
     );
   }
 
@@ -336,6 +349,7 @@ class Channel {
       'is_private': isPrivate,
       if (flowMode) 'flow_mode': true,
       if (enableStageGate) 'enable_stage_gate': true,
+      if (planMode) 'plan_mode': true,
       if (unreadCount != null) 'unread_count': unreadCount,
       if (parentGroupId != null) 'parent_group_id': parentGroupId,
       if (sourceGroupChannelId != null)
