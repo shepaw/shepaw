@@ -199,6 +199,7 @@ void main() {
         code: code,
         fingerprint: fp,
         publicKey: pub,
+        name: 'Hub Alpha',
       );
 
       final posts = <String>[];
@@ -250,6 +251,9 @@ void main() {
       expect(seen, isNotNull);
       expect(seen!.localEndpoint, 'ws://127.0.0.1:18793/peer/ws');
       expect(seen!.code, code);
+      // 上面那条断言证明「改写成 loopback」的分支确实执行了；这条证明改写没有
+      // 连带丢掉其它字段。两者必须同时成立 —— 逐字段重建的写法只满足前者。
+      expect(seen!.name, 'Hub Alpha');
     });
   });
 

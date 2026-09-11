@@ -133,7 +133,9 @@ class _AgentCliCommandsTileState extends State<_AgentCliCommandsTile> {
 
     String getStatusText() {
       if (enabledCommands.isEmpty) {
-        return 'All CLI commands available (OS tools still require confirmation)';
+        return 'All CLI commands available. Store read / help skip review; '
+            'OS non-safe tools always confirm. Per-agent “require approval” '
+            'is on the agent detail page.';
       } else {
         final count = enabledCommands.length;
         return '$count command(s) allowed';

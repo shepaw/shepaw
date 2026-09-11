@@ -217,20 +217,27 @@ class ShepawCLI {
       subcommandDesc.write('; $extSubcmdDesc');
     }
 
+    final namespaces = cliFilterNamespaces(
+      _namespaces.keys,
+      enabledCliCommands: enabledCliCommands,
+      extraAllowlist: extraAllowlist,
+    );
+    final subcommands = cliFilterSubcommands(
+      namespaces: namespaces,
+      enabledCliCommands: enabledCliCommands,
+      extraAllowlist: extraAllowlist,
+    );
     return {
       'type': 'object',
       'properties': {
         'namespace': {
           'type': 'string',
-          'enum': cliFilterNamespaces(
-            _namespaces.keys,
-            enabledCliCommands: enabledCliCommands,
-            extraAllowlist: extraAllowlist,
-          ),
+          'enum': namespaces,
           'description': 'Command namespace',
         },
         'subcommand': {
           'type': 'string',
+          if (subcommands != null) 'enum': subcommands,
           'description': subcommandDesc.toString(),
         },
         'flags': {

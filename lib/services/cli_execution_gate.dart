@@ -13,6 +13,9 @@ import 'location_access_policy.dart';
 /// Local LLM tool calls, group turns, and ACP `hub.cli.execute`
 /// all go through here. Identity is She vs non-She + per-agent allowlist;
 /// deployment (local/remote) is not a permission axis.
+///
+/// Peer-inbound turns additionally pass [PeerBoundaryConfig] (deny `os.*` /
+/// host memory writes). That policy stays separate from the allowlist.
 class CliExecutionGate {
   CliExecutionGate._();
   static final instance = CliExecutionGate._();

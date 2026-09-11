@@ -2,6 +2,11 @@
 ///
 /// Persisted as `RemoteAgent.metadata['peer_boundary']`. Missing metadata
 /// uses [defaults] — privacy-first for external users.
+///
+/// This is **not** the per-agent `enabled_cli_commands` allowlist.
+/// Peer inbound keeps a separate deny-list (no `os.*`, no host memory
+/// writes) so pairing a device cannot be widened by an empty CLI
+/// allowlist. Do not merge the two.
 library;
 
 /// Controls prompt stripping and CLI denials for peer-inbound sessions.

@@ -10,6 +10,15 @@ List<String> _namespaceEnum(Map<String, dynamic> tool) {
   return List<String>.from(ns['enum'] as List);
 }
 
+List<String>? _subcommandEnum(Map<String, dynamic> tool) {
+  final fn = tool['function'] as Map<String, dynamic>?;
+  final params = (fn?['parameters'] ?? tool['input_schema']) as Map;
+  final sub = (params['properties'] as Map)['subcommand'] as Map;
+  final raw = sub['enum'];
+  if (raw is! List) return null;
+  return List<String>.from(raw);
+}
+
 String _description(Map<String, dynamic> tool) {
   final fn = tool['function'] as Map<String, dynamic>?;
   return (fn?['description'] ?? tool['description']) as String;
@@ -60,6 +69,42 @@ void main() {
     });
   });
 
+  group('cliFilterSubcommands', () {
+    test('unrestricted or whole-namespace allowlist leaves subcommand open', () {
+      expect(
+        cliFilterSubcommands(namespaces: const ['store', 'help']),
+        isNull,
+      );
+      expect(
+        cliFilterSubcommands(
+          namespaces: const ['store'],
+          enabledCliCommands: const {'store'},
+        ),
+        isNull,
+      );
+    });
+
+    test('specific command ids become a subcommand enum', () {
+      expect(
+        cliFilterSubcommands(
+          namespaces: const ['store', 'help'],
+          enabledCliCommands: const {'store.write', 'help'},
+        ),
+        ['write'],
+      );
+    });
+
+    test('group-member store/help role does not trim store subcommands', () {
+      expect(
+        cliFilterSubcommands(
+          namespaces: const ['store', 'help'],
+          extraAllowlist: kGroupMemberCliAllowlist,
+        ),
+        isNull,
+      );
+    });
+  });
+
   group('ShepawCLI tool schema', () {
     test('openAITool enum is unfiltered by default', () {
       final ns = _namespaceEnum(ShepawCLI.instance.openAITool());
@@ -71,7 +116,9 @@ void main() {
         enabledCliCommands: const {'store.write', 'help'},
       );
       expect(_namespaceEnum(tool), ['store', 'help']);
+      expect(_subcommandEnum(tool), ['write']);
       expect(_description(tool), contains('per-agent: help, store.write'));
+      expect(_description(tool), contains('subcommands'));
     });
 
     test('claudeTool extraAllowlist trims to store and help', () {

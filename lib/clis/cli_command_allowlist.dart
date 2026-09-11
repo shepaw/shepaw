@@ -88,5 +88,55 @@ String? cliSchemaRestrictionNote({
     parts.add('role: ${sorted.join(', ')}');
   }
   if (parts.isEmpty) return null;
-  return 'Restricted CLI surface (${parts.join('; ')}). Do not call other namespaces.';
+  return 'Restricted CLI surface (${parts.join('; ')}). '
+      'Do not call other namespaces or subcommands.';
+}
+
+/// Namespaces commonly invoked with no subcommand (schema may still enum
+/// sibling command ids like `store.write`).
+const kCliBareNamespaces = {'help'};
+
+/// Allowed `subcommand` strings for the shepaw tool schema.
+///
+/// Returns null when unrestricted, or when a visible namespace is granted
+/// wholesale (e.g. allowlist entry `store`) so every descendant stays valid.
+/// Specific ids (`store.write`) become an enum so the model cannot see
+/// `store.read` / `store.list` just because `store` is in the namespace list.
+List<String>? cliFilterSubcommands({
+  required Iterable<String> namespaces,
+  Set<String> enabledCliCommands = const {},
+  Set<String>? extraAllowlist,
+}) {
+  final visible = namespaces.toSet();
+  if (visible.isEmpty) return null;
+
+  bool fullyGranted(String ns) {
+    final byEnabled =
+        enabledCliCommands.isEmpty || enabledCliCommands.contains(ns);
+    final byExtra = extraAllowlist == null || extraAllowlist.contains(ns);
+    return byEnabled && byExtra;
+  }
+
+  for (final ns in visible) {
+    if (fullyGranted(ns) && !kCliBareNamespaces.contains(ns)) {
+      return null;
+    }
+  }
+
+  final subs = <String>{};
+  void collect(Set<String> allow) {
+    for (final e in allow) {
+      final dot = e.indexOf('.');
+      if (dot <= 0) continue;
+      final ns = e.substring(0, dot);
+      if (visible.contains(ns)) {
+        subs.add(e.substring(dot + 1));
+      }
+    }
+  }
+
+  if (enabledCliCommands.isNotEmpty) collect(enabledCliCommands);
+  if (extraAllowlist != null) collect(extraAllowlist);
+  if (subs.isEmpty) return null;
+  return subs.toList()..sort();
 }
