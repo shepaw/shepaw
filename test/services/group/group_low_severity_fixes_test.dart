@@ -517,6 +517,7 @@ class _NoopExecutor extends GroupAgentExecutor {
     bool isDispatchNudge = false,
     bool isPendingStatusNudge = false,
     int? loopRound,
+    bool membersConsultedThisOrchestration = true,
     String mentionMode = 'adminOnly',
     List<String> failedAgentNames = const [],
     List<AttachmentData>? attachments,

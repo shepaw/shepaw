@@ -89,6 +89,7 @@ class _FakeExecutor extends GroupAgentExecutor {
     bool isDispatchNudge = false,
     bool isPendingStatusNudge = false,
     int? loopRound,
+    bool membersConsultedThisOrchestration = true,
     String mentionMode = 'adminOnly',
     List<String> failedAgentNames = const [],
     List<AttachmentData>? attachments,
@@ -553,7 +554,112 @@ void main() {
     });
   });
 
+  group('EventPerceptionPolicy', () {
+    final policy = EventPerceptionPolicy.defaultPolicy();
+
+    test('join is never active-notify', () {
+      expect(
+        policy.isActiveNotify(GroupEvent.memberChange(
+          channelId: 'g',
+          memberId: 'm',
+          memberName: '甲',
+          isJoin: true,
+        )),
+        isFalse,
+      );
+    });
+
+    test('idle leave is passive; leave with in-flight work is active', () {
+      expect(
+        policy.isActiveNotify(GroupEvent.memberChange(
+          channelId: 'g',
+          memberId: 'm',
+          memberName: '甲',
+          isJoin: false,
+        )),
+        isFalse,
+      );
+      expect(
+        policy.isActiveNotify(GroupEvent.memberChange(
+          channelId: 'g',
+          memberId: 'm',
+          memberName: '甲',
+          isJoin: false,
+          hasInFlightWork: true,
+        )),
+        isTrue,
+      );
+    });
+
+    test('stepFailed is active; stepCompleted is not', () {
+      expect(
+        policy.isActiveNotify(GroupEvent.stepFailed(
+          channelId: 'g',
+          stageIndex: 0,
+          stepIndex: 0,
+        )),
+        isTrue,
+      );
+      expect(
+        policy.isActiveNotify(GroupEvent.stepCompleted(
+          channelId: 'g',
+          stageIndex: 0,
+          stepIndex: 0,
+        )),
+        isFalse,
+      );
+    });
+  });
+
   group('scheduler', () {
+    test('memberJoined never triggers a turn', () async {
+      final seed = await _seedLocalAdminGroup();
+      final scheduler = _scheduler(executor: seed.executor);
+
+      scheduler.schedule(GroupEvent.memberChange(
+        channelId: seed.channel.id,
+        memberId: seed.memberId,
+        memberName: 'Agent B',
+        isJoin: true,
+      ));
+
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(seed.executor.calls, isEmpty);
+    });
+
+    test('memberLeft without in-flight work never triggers a turn', () async {
+      final seed = await _seedLocalAdminGroup();
+      final scheduler = _scheduler(executor: seed.executor);
+
+      scheduler.schedule(GroupEvent.memberChange(
+        channelId: seed.channel.id,
+        memberId: seed.memberId,
+        memberName: 'Agent B',
+        isJoin: false,
+      ));
+
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(seed.executor.calls, isEmpty);
+    });
+
+    test('memberLeft with in-flight work triggers one admin turn', () async {
+      final seed = await _seedLocalAdminGroup();
+      final scheduler = _scheduler(executor: seed.executor);
+
+      scheduler.schedule(GroupEvent.memberChange(
+        channelId: seed.channel.id,
+        memberId: seed.memberId,
+        memberName: 'Agent B',
+        isJoin: false,
+        hasInFlightWork: true,
+      ));
+
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(seed.executor.calls, hasLength(1));
+      expect(seed.executor.calls.single.agentId, seed.adminId);
+      expect(seed.executor.calls.single.content, contains('成员离开：Agent B'));
+    });
+
     test('passive stepCompleted alone never triggers a turn', () async {
       final seed = await _seedLocalAdminGroup();
       final scheduler = _scheduler(executor: seed.executor);

@@ -87,6 +87,7 @@ class _FakeExecutor extends GroupAgentExecutor {
     bool isDispatchNudge = false,
     bool isPendingStatusNudge = false,
     int? loopRound,
+    bool membersConsultedThisOrchestration = true,
     String mentionMode = 'adminOnly',
     List<String> failedAgentNames = const [],
     List<AttachmentData>? attachments,
@@ -235,6 +236,7 @@ GroupMembershipPerceptionScheduler _scheduler({
   required _FakeExecutor executor,
   Map<String, ACPAgentConnection> acpConnections = const {},
   Duration debounce = const Duration(milliseconds: 10),
+  bool Function(String channelId, String memberId)? hasInFlightWork,
 }) {
   return GroupMembershipPerceptionScheduler(
     db: LocalDatabaseService(),
@@ -243,6 +245,7 @@ GroupMembershipPerceptionScheduler _scheduler({
     loadChannelMessages: (channelId, {int limit = 100}) async =>
         const <Message>[],
     debounce: debounce,
+    hasInFlightWork: hasInFlightWork,
   );
 }
 
@@ -368,7 +371,7 @@ void main() {
   });
 
   group('scheduler', () {
-    test('coalesces rapid changes into one admin turn', () async {
+    test('join and idle leave stay passive — no admin turn', () async {
       final seed = await _seedLocalAdminGroup();
       final scheduler = _scheduler(executor: seed.executor);
 
@@ -382,6 +385,25 @@ void main() {
         channelId: seed.channel.id,
         memberId: 'm2',
         memberName: '乙',
+        isJoin: false,
+      );
+
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(seed.executor.calls, isEmpty);
+    });
+
+    test('leave with in-flight work triggers one admin turn; joins do not',
+        () async {
+      final seed = await _seedLocalAdminGroup();
+      final scheduler = _scheduler(
+        executor: seed.executor,
+        hasInFlightWork: (channelId, memberId) => memberId == 'm3',
+      );
+
+      scheduler.schedule(
+        channelId: seed.channel.id,
+        memberId: 'm1',
+        memberName: '甲',
         isJoin: true,
       );
       scheduler.schedule(
@@ -402,29 +424,56 @@ void main() {
         call.customSystemPrompt,
         GroupMembershipPerceptionScheduler.perceptionSystemPrompt,
       );
-      expect(call.content, contains('加入：甲、乙'));
       expect(call.content, contains('离开：丙'));
+      expect(call.content, isNot(contains('加入：')));
+    });
 
-      // A later change triggers a second, distinct turn.
+    test('coalesces rapid in-flight leaves into one admin turn', () async {
+      final seed = await _seedLocalAdminGroup();
+      final scheduler = _scheduler(
+        executor: seed.executor,
+        hasInFlightWork: (_, __) => true,
+      );
+
+      scheduler.schedule(
+        channelId: seed.channel.id,
+        memberId: 'm3',
+        memberName: '丙',
+        isJoin: false,
+      );
       scheduler.schedule(
         channelId: seed.channel.id,
         memberId: 'm4',
         memberName: '丁',
-        isJoin: true,
+        isJoin: false,
+      );
+
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(seed.executor.calls, hasLength(1));
+      expect(seed.executor.calls.single.content, contains('离开：丙、丁'));
+
+      scheduler.schedule(
+        channelId: seed.channel.id,
+        memberId: 'm5',
+        memberName: '戊',
+        isJoin: false,
       );
       await Future<void>.delayed(const Duration(milliseconds: 100));
       expect(seed.executor.calls, hasLength(2));
     });
 
-    test('drops the admin\'s own membership change', () async {
+    test('drops the admin\'s own in-flight leave', () async {
       final seed = await _seedLocalAdminGroup();
-      final scheduler = _scheduler(executor: seed.executor);
+      final scheduler = _scheduler(
+        executor: seed.executor,
+        hasInFlightWork: (_, __) => true,
+      );
 
       scheduler.schedule(
         channelId: seed.channel.id,
         memberId: seed.adminId,
         memberName: 'She',
-        isJoin: true,
+        isJoin: false,
       );
 
       await Future<void>.delayed(const Duration(milliseconds: 100));
@@ -433,13 +482,16 @@ void main() {
 
     test('null channel is a silent no-op', () async {
       final executor = _FakeExecutor(db: LocalDatabaseService());
-      final scheduler = _scheduler(executor: executor);
+      final scheduler = _scheduler(
+        executor: executor,
+        hasInFlightWork: (_, __) => true,
+      );
 
       scheduler.schedule(
         channelId: 'does_not_exist',
         memberId: 'm1',
         memberName: '甲',
-        isJoin: true,
+        isJoin: false,
       );
 
       await Future<void>.delayed(const Duration(milliseconds: 100));
@@ -460,13 +512,16 @@ void main() {
       await db.createChannel(channel, 'user');
 
       final executor = _FakeExecutor(db: db);
-      final scheduler = _scheduler(executor: executor);
+      final scheduler = _scheduler(
+        executor: executor,
+        hasInFlightWork: (_, __) => true,
+      );
 
       scheduler.schedule(
         channelId: channel.id,
         memberId: memberId,
         memberName: 'Agent B',
-        isJoin: true,
+        isJoin: false,
       );
 
       await Future<void>.delayed(const Duration(milliseconds: 100));
@@ -487,13 +542,16 @@ void main() {
       await db.createChannel(channel, 'user');
 
       final executor = _FakeExecutor(db: db);
-      final scheduler = _scheduler(executor: executor);
+      final scheduler = _scheduler(
+        executor: executor,
+        hasInFlightWork: (_, __) => true,
+      );
 
       scheduler.schedule(
         channelId: channel.id,
         memberId: 'some_member',
         memberName: 'Member',
-        isJoin: true,
+        isJoin: false,
       );
 
       await Future<void>.delayed(const Duration(milliseconds: 100));
@@ -503,13 +561,16 @@ void main() {
     test('strips a leaked dispatch JSON block after the turn', () async {
       final seed = await _seedLocalAdminGroup();
       seed.executor.replyToPersist = '好的，我已知悉。\n```json\n{"steps":[]}\n```';
-      final scheduler = _scheduler(executor: seed.executor);
+      final scheduler = _scheduler(
+        executor: seed.executor,
+        hasInFlightWork: (_, __) => true,
+      );
 
       scheduler.schedule(
         channelId: seed.channel.id,
         memberId: 'm1',
         memberName: '甲',
-        isJoin: true,
+        isJoin: false,
       );
 
       await Future<void>.delayed(const Duration(milliseconds: 150));
