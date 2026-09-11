@@ -10,7 +10,7 @@ import 'location_access_policy.dart';
 
 /// Shared pre-execute checks for shepaw CLI.
 ///
-/// Local LLM tool calls, group turns, and (later) ACP `hub.cli.execute`
+/// Local LLM tool calls, group turns, and ACP `hub.cli.execute`
 /// all go through here. Identity is She vs non-She + per-agent allowlist;
 /// deployment (local/remote) is not a permission axis.
 class CliExecutionGate {

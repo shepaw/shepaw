@@ -39,6 +39,9 @@ enum ACPRequestType {
   /// 获取 UI 组件模板
   getUIComponentTemplates,
 
+  /// 在用户设备上执行 shepaw CLI
+  executeCli,
+
   /// 未知类型
   unknown,
 }
@@ -121,6 +124,8 @@ class ACPServerRequest {
         return ACPRequestType.getSessionMessages;
       case ACPMethod.hubGetUIComponentTemplates:
         return ACPRequestType.getUIComponentTemplates;
+      case ACPMethod.hubExecuteCli:
+        return ACPRequestType.executeCli;
       default:
         return ACPRequestType.unknown;
     }

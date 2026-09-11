@@ -18,6 +18,7 @@ import 'local_database_service.dart';
 import 'local_file_storage_service.dart';
 import 'ui_component_registry.dart';
 import 'logger_service.dart';
+import 'hub_cli_execute.dart';
 import 'package:uuid/uuid.dart';
 
 /// Handles hub.* JSON-RPC requests from Agents.
@@ -77,6 +78,8 @@ class ACPHubHandlers {
           return await _handleGetAttachmentContent(id, params, agentId, agentName);
         case ACPMethod.hubGetUIComponentTemplates:
           return _handleGetUIComponentTemplates(id);
+        case ACPMethod.hubExecuteCli:
+          return await _handleExecuteCli(id, params, agentId);
         case ACPMethod.ping:
           return ACPResponse.success(id: id, result: {'pong': true});
         default:
@@ -216,6 +219,7 @@ class ACPHubHandlers {
         'agent_count': agents.length,
         'channel_count': 0,
         'online_user_count': 0,
+        'cli': HubCliExecute.groupContextHint(),
       },
     );
   }
@@ -588,6 +592,43 @@ class ACPHubHandlers {
         message: 'Failed to read attachment file: $e',
       );
     }
+  }
+
+  Future<ACPResponse> _handleExecuteCli(
+    dynamic id,
+    Map<String, dynamic>? params,
+    String? agentId,
+  ) async {
+    if (agentId == null || agentId.isEmpty) {
+      return ACPResponse.error(
+        id: id,
+        code: ACPErrorCode.unauthorized,
+        message: 'Agent not authenticated',
+      );
+    }
+
+    final result = await HubCliExecute(database: _databaseService).run(
+      agentId: agentId,
+      params: params,
+    );
+    final message = result['error']?.toString() ?? '';
+    if (result['ok'] != true &&
+        (message == 'missing namespace' ||
+            message == 'unknown agent' ||
+            message.contains('session_id'))) {
+      final code = message == 'missing namespace'
+          ? ACPErrorCode.invalidParams
+          : message == 'unknown agent'
+              ? ACPErrorCode.unauthorized
+              : ACPErrorCode.permissionDenied;
+      return ACPResponse.error(
+        id: id,
+        code: code,
+        message: message,
+        data: result,
+      );
+    }
+    return ACPResponse.success(id: id, result: result);
   }
 
   /// Handle hub.getUIComponentTemplates — returns the centralized UI component

@@ -89,6 +89,23 @@ void main() {
       final contract = ctx['member_mention'] as Map<String, dynamic>;
       expect(contract['transport'], 'acp_notification');
       expect(contract['acp_method'], ACPMethod.uiMessageMetadata);
+      final cli = ctx['cli'] as Map<String, dynamic>;
+      expect(cli['method'], ACPMethod.hubExecuteCli);
+      expect(cli['params'], containsPair('session_id', '<agent.chat session_id>'));
+    });
+
+    test('local group member does not get hub.cli.execute hint', () {
+      final local = _agent(id: 'l1', name: 'Local', local: true);
+      final ctx = GroupContextBuilder.build(
+        channelId: 'ch1',
+        groupName: 'G',
+        groupDescription: '',
+        allAgents: [local],
+        mentionMode: 'adminOnly',
+        isAdmin: false,
+        currentAgent: local,
+      );
+      expect(ctx.containsKey('cli'), isFalse);
     });
 
     test('peer member gets reply_metadata contract', () {

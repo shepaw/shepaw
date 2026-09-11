@@ -69,7 +69,7 @@ Shepaw uses the **ACP (Agent Communication Protocol)** to communicate with Remot
 | App → Agent | Request | `auth.authenticate`, `agent.chat`, `agent.cancelTask`, `agent.submitResponse`, `agent.rollback`, `agent.getCard`, `ping` |
 | Agent → App | Notification | `ui.textContent`, `ui.actionConfirmation`, `ui.singleSelect`, `ui.multiSelect`, `ui.fileUpload`, `ui.form`, `ui.fileMessage`, `ui.messageMetadata`, `ui.requestHistory` |
 | Agent → App | Task events | `task.started`, `task.completed`, `task.error` |
-| Agent → App | Request | `hub.getUIComponentTemplates`, `hub.getSessions`, `hub.getSessionMessages`, `hub.getAgentList`, `hub.getHubInfo`, `hub.getAttachmentContent`, `hub.initiateChat` |
+| Agent → App | Request | `hub.getUIComponentTemplates`, `hub.getSessions`, `hub.getSessionMessages`, `hub.getAgentList`, `hub.getHubInfo`, `hub.getAttachmentContent`, `hub.initiateChat`, `hub.cli.execute` |
 | Bidirectional | Heartbeat | `ping` / `pong` |
 
 ---
@@ -1397,6 +1397,44 @@ Your Agent can proactively start a new conversation with the user (requires App 
 }
 ```
 
+### 11.8 Run shepaw CLI on the user device
+
+Remote agents must **not** implement `store_read` / `store_write` in their own process. Reading the user's store (and any other shepaw command) goes through `hub.cli.execute` so App [CliExecutionGate] applies the same allowlist, approval, and store ACL as local agents.
+
+Identity is the **authenticated ACP session**. Do not send `agent_id` / `owner` / `channel_id` (they are stripped from `flags`). The only channel binding is `session_id` from `agent.chat`; a group-bound member session writes into that group's bag, not personal runtime.
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "hub.cli.execute",
+  "id": "req_007",
+  "params": {
+    "namespace": "store",
+    "subcommand": "read",
+    "flags": { "uri": "store://runtime/<device>/<agent>/notes.md" },
+    "session_id": "<session_id from agent.chat>"
+  }
+}
+```
+
+Write example:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "hub.cli.execute",
+  "id": "req_008",
+  "params": {
+    "namespace": "store",
+    "subcommand": "write",
+    "flags": { "filename": "notes.md", "content": "hello" },
+    "session_id": "<session_id from agent.chat>"
+  }
+}
+```
+
+On success `result.ok == true` plus the CLI JSON. Gate denials (command not allowed, user tapped deny) are still JSON-RPC success with `result.ok == false` and `error`. Hub MCP `store_read` / `store_write` aliases are deprecated — map them to `store read` / `store write` as above.
+
 ---
 
 ## 12. Group Chat Support
@@ -1958,3 +1996,4 @@ It marks the version of the App's UI component registry. If it changes between r
 | `hub.getHubInfo` | Get Hub metadata |
 | `hub.getAttachmentContent` | Get full attachment content |
 | `hub.initiateChat` | Proactively start a new chat |
+| `hub.cli.execute` | Run shepaw CLI on the user device (store, etc.) |

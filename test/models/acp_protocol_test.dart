@@ -332,6 +332,7 @@ void main() {
       expect(ACPMethod.hubGetHubInfo, 'hub.getHubInfo');
       expect(ACPMethod.hubSendFile, 'hub.sendFile');
       expect(ACPMethod.hubInitiateChat, 'hub.initiateChat');
+      expect(ACPMethod.hubExecuteCli, 'hub.cli.execute');
     });
   });
 

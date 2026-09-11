@@ -308,6 +308,9 @@ class ACPMethod {
   /// 获取附件内容
   static const String hubGetAttachmentContent = 'hub.getAttachmentContent';
 
+  /// 在用户设备上执行 shepaw CLI（走 [CliExecutionGate]）
+  static const String hubExecuteCli = 'hub.cli.execute';
+
   // ==================== File Transfer ====================
 
   /// Request file data via WebSocket binary transfer

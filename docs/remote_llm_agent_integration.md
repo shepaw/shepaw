@@ -69,7 +69,7 @@ Shepaw 使用 **ACP（Agent Communication Protocol）** 协议与 Remote Agent �
 | App → Agent | 请求 | `auth.authenticate`, `agent.chat`, `agent.cancelTask`, `agent.submitResponse`, `agent.rollback`, `agent.getCard`, `ping` |
 | Agent → App | 通知 | `ui.textContent`, `ui.actionConfirmation`, `ui.singleSelect`, `ui.multiSelect`, `ui.fileUpload`, `ui.form`, `ui.fileMessage`, `ui.messageMetadata`, `ui.requestHistory` |
 | Agent → App | 任务事件 | `task.started`, `task.completed`, `task.error` |
-| Agent → App | 请求 | `hub.getUIComponentTemplates`, `hub.getSessions`, `hub.getSessionMessages`, `hub.getAgentList`, `hub.getHubInfo`, `hub.getAttachmentContent`, `hub.initiateChat` |
+| Agent → App | 请求 | `hub.getUIComponentTemplates`, `hub.getSessions`, `hub.getSessionMessages`, `hub.getAgentList`, `hub.getHubInfo`, `hub.getAttachmentContent`, `hub.initiateChat`, `hub.cli.execute` |
 | Bidirectional | 心跳 | `ping` / `pong` |
 
 ---
@@ -1420,6 +1420,44 @@ Agent 可以主动向用户发起新会话（需要 App 用户授权）：
 }
 ```
 
+### 11.8 在用户设备上执行 shepaw CLI
+
+远端 Agent **不要**在自己进程里实现 `store_read` / `store_write`。读写用户储物袋、以及其它 shepaw 命令，一律通过 `hub.cli.execute` 交给 App 的 [CliExecutionGate]：命令权限、执行审核、store ACL 与本地 Agent 同一套。
+
+身份以 **ACP 认证会话** 为准。不要传 `agent_id` / `owner` / `channel_id`（即使放在 `flags` 里也会被丢掉）。频道绑定只认 `agent.chat` 下发的 `session_id`；群绑定成员会话会落到该群的储物袋，而不是个人 runtime。
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "hub.cli.execute",
+  "id": "req_007",
+  "params": {
+    "namespace": "store",
+    "subcommand": "read",
+    "flags": { "uri": "store://runtime/<device>/<agent>/notes.md" },
+    "session_id": "<agent.chat 的 session_id>"
+  }
+}
+```
+
+写入示例：
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "hub.cli.execute",
+  "id": "req_008",
+  "params": {
+    "namespace": "store",
+    "subcommand": "write",
+    "flags": { "filename": "notes.md", "content": "hello" },
+    "session_id": "<agent.chat 的 session_id>"
+  }
+}
+```
+
+App 成功时 `result.ok == true`，并带上 CLI JSON；闸门拒绝（未授权命令、用户点了拒绝）时仍是 JSON-RPC success，`result.ok == false` 且带 `error`。`store_read` / `store_write` 这类 Hub MCP 别名视为过时，请映射到上面的 `store read` / `store write`。
+
 ---
 
 ## 12. 群组聊天支持
@@ -2040,3 +2078,4 @@ wscat -c ws://localhost:8080/acp/ws
 | `hub.getHubInfo` | 获取 Hub 基本信息 |
 | `hub.getAttachmentContent` | 获取附件完整内容 |
 | `hub.initiateChat` | 主动发起新会话 |
+| `hub.cli.execute` | 在用户设备上执行 shepaw CLI（储物袋等） |

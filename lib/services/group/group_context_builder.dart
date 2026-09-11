@@ -174,6 +174,26 @@ class GroupContextBuilder {
       if (workspaceUri != null) 'workspace_uri': workspaceUri,
     };
 
+    if (currentAgent != null &&
+        !currentAgent.isLocal &&
+        !currentAgent.isPeerAgent) {
+      ctx['cli'] = {
+        'method': ACPMethod.hubExecuteCli,
+        'note':
+            'Run shepaw CLI on the user device via this ACP request. '
+            'Identity is the authenticated session — do not send agent_id, '
+            'owner, or channel_id. Pass session_id from agent.chat. '
+            'Prefer shepaw store read/write; Hub store_read / store_write '
+            'aliases are deprecated.',
+        'params': {
+          'namespace': 'store',
+          'subcommand': 'write',
+          'flags': <String, dynamic>{},
+          'session_id': '<agent.chat session_id>',
+        },
+      };
+    }
+
     if (effectiveMode == 'allMembers' && !isAdmin && currentAgent != null) {
       ctx['member_mention'] = memberMentionContract(
         agent: currentAgent,
