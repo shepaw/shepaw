@@ -47,10 +47,9 @@ Designed with a local-first philosophy: all your data stays on your device. SheP
 
 ### Collaboration & Automation
 - **Direct Message / Group Channel** — multiple agents working together
-- **Three group orchestration modes:**
+- **Two group orchestration modes:**
   - **Standard** — Admin coordinates agents in round-robin discussion (up to 50 rounds)
-  - **Planning Mode** — Agent generates a JSON execution plan; you review and approve each task before it runs
-  - **Flow Mode** — Agent produces a multi-stage workflow; the system drives execution automatically with pause / resume / skip / abort controls
+  - **Flow Mode** — Admin produces a multi-stage workflow; the plan surfaces in the chat for you to review / edit / skip, then the system drives execution automatically with pause / resume / skip / abort controls
 - **Dispatch** — admin clarifies your requirements first, then dispatches tasks to capable members via `@` mentions; structured `json` dispatch blocks are also supported
 - **Group memory & workspace** — shared memory distillation, member artifacts persisted to the group workspace, group context injected into every member turn
 - **Group permission model** — the admin (or She) holds full group-management permissions; regular members can self-edit their own bio / role only

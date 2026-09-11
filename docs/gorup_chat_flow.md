@@ -7,7 +7,7 @@
   - ExecutionPlan / PlanTask 带依赖关系 (dependencies 字段)
   - Admin 角色 + @mention 路由机制
   - TaskStatus 状态机 (pending → inProgress → done/failed/skipped)
-  - planningMode 开关和 maxLoopRounds 控制
+  - flowMode 开关和 maxLoopRounds 控制
 
   缺口：缺少将计划与消息路由强绑定的"流程执行引擎"。
 

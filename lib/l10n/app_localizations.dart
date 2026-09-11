@@ -5948,18 +5948,6 @@ abstract class AppLocalizations {
   /// **'提及模式'**
   String get createGroup_mentionMode;
 
-  /// No description provided for @chat_planningMode.
-  ///
-  /// In zh, this message translates to:
-  /// **'计划模式'**
-  String get chat_planningMode;
-
-  /// No description provided for @chat_planningModeDesc.
-  ///
-  /// In zh, this message translates to:
-  /// **'启用后 Admin 会先生成任务计划，用户确认后再执行'**
-  String get chat_planningModeDesc;
-
   /// No description provided for @chat_flowMode.
   ///
   /// In zh, this message translates to:

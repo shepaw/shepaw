@@ -2,7 +2,8 @@
 
 > 状态：§5.1 已拍板（Plan Mode 保留并扩展到单聊），其余待确认
 > 日期：2026-09-11
-> 更新：2026-09-11 补入单聊计划模式调研结论（§2.5、§5.1）
+> 更新 1：2026-09-11 补入单聊计划模式调研结论（§2.5、§5.1）
+> 更新 2：2026-09-11 文档债已清（§2.4、§5.1.3）
 
 ## 1. 问题
 
@@ -41,17 +42,21 @@
 `pendingAdminWake`、`stalledTimeout`、`sessionHandoffHint`。
 注释自称 "Defaults favor the new structured-task path" —— 是灰度残留，不是配置项。
 
-### 2.4 文档与代码不一致
+### 2.4 文档与代码不一致（已于 2026-09-11 清理）
 
-`docs/USER_GUIDE.md:408` 承诺「三种群组编排模式」，但：
+曾存在的问题：`docs/USER_GUIDE.md` 承诺「三种群组编排模式」，但：
 - 代码中只有 `bool flowMode`，没有三态枚举；
 - Planning Mode 的 `planning_mode` 列已废弃（`channel_dao.dart:48`、`753` 注释 deprecated）；
-- 只剩 i18n 文案（`app_zh.arb:1897`）无任何 UI 引用；
+- 只剩 i18n 文案 `chat_planningMode`，无任何 UI 引用；
 - 计划数据结构本身仍被 Flow Mode 复用（`planning_models.dart`、`message_bubble.dart` 里的 `PlanApprovalCard`）。
 
-同一错误还存在于：`README.md:50`、`README_CN.md:50`、
-`assets/skills/app-usage-guide/references/02-user-operations.md:111,123`、`USER_GUIDE_EN.md:156,326`。
-注意技能包文档会被 agent 直接读到，等于在教 agent 一个不存在的开关——这条优先级最高。
+同一错误还散落在 `README.md`、`README_CN.md`、`README_EN.md`、`USER_GUIDE_EN.md`、
+以及 `assets/skills/app-usage-guide/references/02-user-operations.md`。最后一份会被 agent
+直接读到，等于在教 agent 一个不存在的开关——优先级最高。
+
+**已清理**：全部改为「两种编排模式（标准 / Flow）」，计划审批作为 Flow 内的计划卡片描述；
+两个无引用的 arb key（`chat_planningMode`、`chat_planningModeDesc`）已从 `app_zh.arb` /
+`app_en.arb` 移除并重新 `flutter gen-l10n`。
 
 ### 2.5 计划模式其实已经存在，且群聊单聊共用一套引擎
 
@@ -121,7 +126,7 @@
 这也让单聊支持它变得自然——单聊没有多 agent 编排，但仍然可以"先出计划 → 你确认 → 执行"。
 
 统一后的命名建议：内部沿用 `planApproval`（与 `metadata['plan_approval']` 一致），
-UI 文案用「计划确认」，`chat_planningMode` 这个 arb key 顺手换掉（它现在无人引用）。
+UI 文案用「计划确认」。原 `chat_planningMode` arb key 无人引用，已删除（见 §5.1.3）。
 
 #### 5.1.2 扩展到单聊：换掉判据，不是新建机制
 
@@ -141,12 +146,19 @@ UI 文案用「计划确认」，`chat_planningMode` 这个 arb key 顺手换掉
    - `WorkfowStep.agent` 在单聊无意义（`chat_controller_workflow.dart:327-333` 已处理
      DM 回合竞态），需补执行人缺失时的降级——单 agent 串行执行。
 
-#### 5.1.3 同步清文档债
+#### 5.1.3 同步清文档债 ✅ 已完成（2026-09-11）
 
-文档里的「三种模式」表述要改成「编排模式 × 审批闸门」两个维度。
-要改的位置：`USER_GUIDE.md:151,312,408`、`USER_GUIDE_EN.md:156,326`、
-`README.md:50`、`README_CN.md:50`、`02-user-operations.md:111,123`。
-其中技能包文档会被 agent 读到，优先改。
+全部改为「两种编排模式（标准 / Flow）」，计划审批不再作为独立模式出现，
+而是 Flow 里的「计划卡片 → 你确认 → 执行」。改动文件：
+
+- `assets/skills/app-usage-guide/references/02-user-operations.md`（优先，会被 agent 读到）
+- `docs/USER_GUIDE.md` / `docs/USER_GUIDE_EN.md`
+- `README.md` / `README_CN.md` / `README_EN.md`
+- `docs/gorup_chat_flow.md`（`planningMode` 开关 → `flowMode`）
+- `lib/l10n/app_zh.arb` / `app_en.arb` + 重新 `flutter gen-l10n`
+
+注：用户文档只写**现状**。计划模式作为「正交维度」的写法只出现在本决策文档（§5.1.1），
+等 §5.1.2 落地后再同步到用户文档。
 
 ### 5.2 `flowMode` 从「群属性」下沉到「本次任务属性」
 

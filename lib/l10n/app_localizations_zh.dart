@@ -3229,12 +3229,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get createGroup_mentionMode => '提及模式';
 
   @override
-  String get chat_planningMode => '计划模式';
-
-  @override
-  String get chat_planningModeDesc => '启用后 Admin 会先生成任务计划，用户确认后再执行';
-
-  @override
   String get chat_flowMode => 'Flow 模式';
 
   @override

@@ -1894,8 +1894,6 @@
   "chat_mentionModeAdminOnlyDesc": "仅管理员可以 @提及并激活其他成员",
   "chat_mentionModeAllMembersDesc": "任何成员都可以 @提及并激活其他成员",
   "createGroup_mentionMode": "提及模式",
-  "chat_planningMode": "计划模式",
-  "chat_planningModeDesc": "启用后 Admin 会先生成任务计划，用户确认后再执行",
   "chat_flowMode": "Flow 模式",
   "chat_flowModeDesc": "Admin 生成阶段化 FlowPlan，各阶段串行、阶段内步骤并行执行",
   "chat_enableStageGate": "阶段门闸",

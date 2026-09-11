@@ -3361,13 +3361,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get createGroup_mentionMode => 'Mention Mode';
 
   @override
-  String get chat_planningMode => 'Planning Mode';
-
-  @override
-  String get chat_planningModeDesc =>
-      'Admin generates a plan first, execution begins after user approval';
-
-  @override
   String get chat_flowMode => 'Flow Mode';
 
   @override

@@ -1416,8 +1416,6 @@
   "chat_mentionModeAdminOnlyDesc": "Only admin can @mention and activate other members",
   "chat_mentionModeAllMembersDesc": "Any member can @mention and activate other members",
   "createGroup_mentionMode": "Mention Mode",
-  "chat_planningMode": "Planning Mode",
-  "chat_planningModeDesc": "Admin generates a plan first, execution begins after user approval",
   "chat_flowMode": "Flow Mode",
   "chat_flowModeDesc": "Admin generates a staged FlowPlan; executor drives stages serially, steps in parallel",
   "chat_enableStageGate": "Stage Gate",
