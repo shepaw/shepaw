@@ -183,8 +183,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
   final GlobalKey _modeChipKey = GlobalKey();
   List<PeerAgentMode> _sessionModes = const [];
   String? _currentSessionMode;
-  String? _modePeerId;
-  String? _modeRemoteAgentId;
+  String? _peerId;
+  String? _remoteAgentId;
   /// 进入规划模式前的档位，Shift+Tab 再按一次时用它切回。
   String? _modeBeforePlan;
   bool _sessionModeSetting = false;
@@ -197,17 +197,24 @@ class ChatInputAreaState extends State<ChatInputArea> {
   bool get _planModeActive =>
       (_currentSessionMode ?? '').toLowerCase() == 'plan';
 
-  // ── 主模型（§5.1.6 / §6 #8）──
-  // 只对本地 agent 有意义：Peer agent 的模型由对端引擎自管（CLI 的
-  // models agent-main 同样拒绝非本地 agent）。未设置主模型时也显示，
-  // 让用户能就地补上。
+  // ── 模型（§5.1.6 / §6 #8）──
+  // 两类 agent 的数据来源不同：
+  // - 本地 agent → `metadata['main_model_id']` + ModelRegistry（可「添加模型」）
+  // - Peer agent → 上游 `fetchModels` / `setModel`，按会话生效
   final GlobalKey _mainModelChipKey = GlobalKey();
   ModelDefinition? _mainModelDef;
   /// 存了 id 但定义已被删除：显示原始 id 而不是假装没选过。
   String? _mainModelDanglingId;
   bool _mainModelAvailable = false;
+  List<PeerAgentModel> _peerModels = const [];
+  String? _currentPeerModel;
+  bool _modelSetting = false;
 
-  /// 主模型菜单里的「添加模型」哨兵值。
+  /// 本地 agent 未配置模型、或 Peer agent 上游没给列表 → 入口都不出现。
+  bool get _modelEntryAvailable =>
+      _mainModelAvailable || _peerModels.isNotEmpty;
+
+  /// 主模型菜单里的「添加模型」哨兵值（仅本地 agent 的菜单有）。
   static const _addModelSentinel = '__add_model__';
 
   @override
@@ -278,11 +285,13 @@ class ChatInputAreaState extends State<ChatInputArea> {
       _sessionModes = const [];
       _currentSessionMode = null;
       _modeBeforePlan = null;
-      _modePeerId = null;
-      _modeRemoteAgentId = null;
+      _peerId = null;
+      _remoteAgentId = null;
       _mainModelDef = null;
       _mainModelDanglingId = null;
       _mainModelAvailable = false;
+      _peerModels = const [];
+      _currentPeerModel = null;
       unawaited(_loadAgentControls());
     }
   }
@@ -344,10 +353,34 @@ class ChatInputAreaState extends State<ChatInputArea> {
     if (!mounted || token != _controlsToken || agent == null) return;
     if (agent.isPeerAgent) {
       await _loadSessionModes(agent, token);
+      await _loadPeerModels(agent, token);
     }
     if (agent.isLocal) {
       _readMainModel(agent);
     }
+  }
+
+  /// Peer agent 的上游模型列表。与会话模式不同，模型没有本地目录可兜底，
+  /// 所以离线时直接不显示入口，而不是给一份对端未必认的候选。
+  Future<void> _loadPeerModels(RemoteAgent agent, int token) async {
+    final peerId = agent.sourcePeerId;
+    final remoteAgentId = agent.remoteAgentId;
+    if (peerId == null || remoteAgentId == null) return;
+    if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
+      return;
+    }
+    // 与 fetchModes 同款：按 remoteAgentId 去重（不含 sessionId），会话间
+    // 并发拉取时 current 可能取到另一会话的值。
+    final list = await PeerAgentClientService.instance.fetchModels(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      sessionId: _sessionIdForMode,
+    );
+    if (!mounted || token != _controlsToken) return;
+    setState(() {
+      _peerModels = list.models;
+      _currentPeerModel = list.current;
+    });
   }
 
   /// 拉取当前会话可用的模式（Peer agent 的原生 mode）。
@@ -357,8 +390,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
     if (peerId == null || remoteAgentId == null) return;
 
     final catalog = catalogModesList(agent.metadata['engine'] as String?);
-    _modePeerId = peerId;
-    _modeRemoteAgentId = remoteAgentId;
+    _peerId = peerId;
+    _remoteAgentId = remoteAgentId;
     if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
       // 离线：退回引擎目录（已知引擎的原生档位），至少不让入口消失。
       setState(() {
@@ -385,8 +418,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
   }
 
   Future<void> _setSessionMode(String mode) async {
-    final peerId = _modePeerId;
-    final remoteAgentId = _modeRemoteAgentId;
+    final peerId = _peerId;
+    final remoteAgentId = _remoteAgentId;
     if (peerId == null || remoteAgentId == null) return;
     if (_sessionModeSetting || mode == _currentSessionMode) return;
     final previous = _currentSessionMode;
@@ -475,11 +508,13 @@ class ChatInputAreaState extends State<ChatInputArea> {
   }
 
   Widget _buildMainModelChip() {
-    if (!_mainModelAvailable) return const SizedBox.shrink();
+    if (!_modelEntryAvailable) return const SizedBox.shrink();
     final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
     final def = _mainModelDef;
-    final unset = def == null;
+    final unset = _peerModels.isNotEmpty
+        ? (_currentPeerModel ?? '').isEmpty
+        : def == null && _mainModelDanglingId == null;
     final fg = unset ? colorScheme.error : colorScheme.onSurfaceVariant;
     return InkWell(
       key: _mainModelChipKey,
@@ -499,9 +534,12 @@ class ChatInputAreaState extends State<ChatInputArea> {
             const SizedBox(width: 4),
             Flexible(
               child: Text(
-                def?.displayName ??
-                    _mainModelDanglingId ??
-                    l10n.chat_mainModelUnset,
+                _peerModels.isNotEmpty
+                    ? (_findPeerModel(_currentPeerModel ?? '')?.displayName ??
+                        l10n.chat_mainModelUnset)
+                    : (def?.displayName ??
+                        _mainModelDanglingId ??
+                        l10n.chat_mainModelUnset),
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 12,
@@ -518,10 +556,53 @@ class ChatInputAreaState extends State<ChatInputArea> {
     );
   }
 
-  /// 与 Agent 设置页同一套候选（`ModelRegistry` 的全局定义），末尾带
-  /// 「添加模型」直达模型管理页（§6 #8 要求能顺手添加）。
+  PeerAgentModel? _findPeerModel(String value) {
+    for (final m in _peerModels) {
+      if (m.value == value) return m;
+    }
+    return null;
+  }
+
+  /// 切上游模型：与会话模式一样按会话下发（sessionId），失败回退显示。
+  Future<void> _setPeerModel(String value) async {
+    final peerId = _peerId;
+    final remoteAgentId = _remoteAgentId;
+    if (peerId == null || remoteAgentId == null) return;
+    if (_modelSetting || value == _currentPeerModel) return;
+    final previous = _currentPeerModel;
+    setState(() {
+      _modelSetting = true;
+      _currentPeerModel = value;
+    });
+    final ok = await PeerAgentClientService.instance.setModel(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      model: value,
+      sessionId: _sessionIdForMode,
+    );
+    if (!mounted) return;
+    setState(() => _modelSetting = false);
+    if (ok) return;
+    setState(() => _currentPeerModel = previous);
+    showTopToast(
+      context,
+      AppLocalizations.of(context).chat_mainModelSwitchFailed,
+      icon: Icons.error_outline,
+      color: Colors.red.shade400,
+    );
+  }
+
+  /// Peer agent → 上游模型列表；本地 agent → 与 Agent 设置页同一套候选
+  ///（`ModelRegistry` 的全局定义），末尾带「添加模型」直达模型管理页
+  ///（§6 #8 要求能顺手添加）。
   Future<void> _showMainModelMenu() async {
+    final peerModels = _peerModels;
     final defs = ModelRegistry.instance.definitions;
+    if (peerModels.isEmpty && defs.isEmpty) {
+      // 本地 agent 一个定义都没有：菜单里只有「添加模型」，直接跳过去。
+      await _openModelManagement();
+      return;
+    }
     final overlayBox =
         Overlay.of(context).context.findRenderObject() as RenderBox?;
     if (overlayBox == null) return;
@@ -537,60 +618,52 @@ class ChatInputAreaState extends State<ChatInputArea> {
       context: context,
       position: RelativeRect.fromSize(rect, overlayBox.size),
       items: [
-        for (final def in defs)
+        if (peerModels.isNotEmpty)
+          for (final m in peerModels)
+            PopupMenuItem<String>(
+              value: m.value,
+              child: _ModelMenuItem(
+                title: m.displayName,
+                subtitle: m.description,
+                selected: m.value == _currentPeerModel,
+                colorScheme: colorScheme,
+              ),
+            )
+        else ...[
+          for (final def in defs)
+            PopupMenuItem<String>(
+              value: def.id,
+              child: _ModelMenuItem(
+                title: def.displayName,
+                subtitle: def.route.model,
+                selected: def.id == _mainModelDef?.id,
+                colorScheme: colorScheme,
+              ),
+            ),
           PopupMenuItem<String>(
-            value: def.id,
+            value: _addModelSentinel,
             child: Row(
               children: [
-                Icon(
-                  Icons.check,
-                  size: 16,
-                  color: def.id == _mainModelDef?.id
-                      ? colorScheme.primary
-                      : Colors.transparent,
-                ),
+                Icon(Icons.add, size: 18, color: colorScheme.primary),
                 const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(def.displayName,
-                          style: const TextStyle(fontSize: 14)),
-                      if (def.route.model != null &&
-                          def.route.model!.isNotEmpty)
-                        Text(
-                          def.route.model!,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                    ],
+                Text(
+                  l10n.toolModel_addTitle,
+                  style: TextStyle(
+                    color: colorScheme.primary,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
             ),
           ),
-        PopupMenuItem<String>(
-          value: _addModelSentinel,
-          child: Row(
-            children: [
-              Icon(Icons.add, size: 18, color: colorScheme.primary),
-              const SizedBox(width: 8),
-              Text(
-                l10n.toolModel_addTitle,
-                style: TextStyle(
-                  color: colorScheme.primary,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        ),
+        ],
       ],
     );
     if (!mounted || picked == null) return;
+    if (peerModels.isNotEmpty) {
+      await _setPeerModel(picked);
+      return;
+    }
     if (picked == _addModelSentinel) {
       await _openModelManagement();
       return;
@@ -1221,7 +1294,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
                       const SizedBox(width: 4),
                       _buildSessionModeChip(),
                     ],
-                    if (_mainModelAvailable) ...[
+                    if (_modelEntryAvailable) ...[
                       const SizedBox(width: 4),
                       Flexible(child: _buildMainModelChip()),
                     ],
@@ -1679,15 +1752,15 @@ class ChatInputAreaState extends State<ChatInputArea> {
             _buildPendingAttachmentsPreview(),
             // 输入框上方一条：那一行已塞了 语音 / + / 输入框 / 发送，再塞
             // 图标会挤（§5.1.5），两个 chip 单独占一条。
-            if (_sessionModeAvailable || _mainModelAvailable)
+            if (_sessionModeAvailable || _modelEntryAvailable)
               Padding(
                 padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
                 child: Row(
                   children: [
                     if (_sessionModeAvailable) _buildSessionModeChip(),
-                    if (_sessionModeAvailable && _mainModelAvailable)
+                    if (_sessionModeAvailable && _modelEntryAvailable)
                       const SizedBox(width: 6),
-                    if (_mainModelAvailable)
+                    if (_modelEntryAvailable)
                       Flexible(child: _buildMainModelChip()),
                   ],
                 ),
@@ -2490,4 +2563,50 @@ class _PopoverCaretPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _PopoverCaretPainter oldDelegate) =>
       oldDelegate.color != color;
+}
+
+/// 模型菜单的一行：选中打勾 + 名称 + 副标题（上游描述 / 路由模型名）。
+class _ModelMenuItem extends StatelessWidget {
+  const _ModelMenuItem({
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.colorScheme,
+  });
+
+  final String title;
+  final String? subtitle;
+  final bool selected;
+  final ColorScheme colorScheme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(
+          Icons.check,
+          size: 16,
+          color: selected ? colorScheme.primary : Colors.transparent,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(title, style: const TextStyle(fontSize: 14)),
+              if (subtitle != null && subtitle!.isNotEmpty)
+                Text(
+                  subtitle!,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 }
