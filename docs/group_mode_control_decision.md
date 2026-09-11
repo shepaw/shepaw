@@ -106,6 +106,19 @@ Shepaw 接入的远端 agent（Claude Code、Codex、Cursor 等）自带 plan mo
   两条路产出的东西互不可见。
 - **本地裸模型没有原生 plan mode**：本地 LLM 代理就是 OpenAI 兼容接口，只有 prompt 可约束。
 
+**⚠️ 关键阻塞：mode 的传输通道只存在于 Peer 协议，ACP 没有。**
+
+- `metadata['engine']` 只有 peer 路径会写：`peer_agent_client_service.dart:3858`（从配对设备拉取
+  agent 列表时）、`peer_agent_host_service.dart:357`（本机 agent 分享给 peer 时）。
+  **ACP 远端 agent 的 `metadata['engine']` 永远是 null** → 查不到 catalog。
+- `lib/models/acp_protocol.dart` 里 `grep modes` **零命中**——ACP 协议没有任何 mode 相关方法。
+  mode 的读写只有 peer 那套：`agent.modes.list` / `agent.modes.setCurrent`
+  （`peer_agent_client_service.dart:1859` / `:1905`）。
+- `shepaw-acp-proxy` **不在这个仓库**（另一个二进制/仓库），要加协议方法得跨仓库协同。
+
+结论：单纯去掉 `remote_agent_detail_screen.dart:357` 那道 `if (!_agent.isPeerAgent) return;`
+只会得到一个「选了没反应」的下拉框。缺的不是 UI 门，是传输通道。
+
 ## 3. 决策原则
 
 **判据：用户能在「按下发送之前」回答这个问题吗？**
@@ -184,13 +197,32 @@ Shepaw 接入的远端 agent（Claude Code、Codex、Cursor 等）自带 plan mo
 - 现状只对 Peer（Hub 引擎）开放：`remote_agent_detail_screen.dart:357`
   `if (!_agent.isPeerAgent) return;`
 
-落地步骤：
+#### 5.1.3a 原落地步骤第 1 步作废（2026-09-11 查证）
 
-1. 把 mode 选择器从 Peer-only 放开到 ACP 远端 agent（去掉上面那道门）。
-   前提：要能拿到 engineId，ACP 侧目前拿不到，需要先补。
-2. 开关语义统一叫「规划模式」，不管背后映射的是原生 plan mode 还是别的。
-3. 中期：ACP 握手加 native plan capability 协商位（`acp_protocol.dart:187-336` 目前没有），
-   有原生能力就映射过去；没有再决定降级策略。
+原计划「把 mode 选择器从 Peer-only 放开到 ACP 远端 agent」**不可行**，见 §2.6 末尾：
+ACP 协议没有 mode 方法、`metadata['engine']` 也拿不到，去掉 UI 门只会得到无反应的下拉框。
+
+#### 5.1.3b 修订后的落地顺序
+
+**阶段一：App 侧闭环（不依赖外部仓库，可立即做）**
+
+1. 规划模式开关 UI + 会话状态，按 §5.1.5 落地。
+2. 生效路径按能力分级：
+   - **Peer agent** → 已有 `setMode` transport，直接映射原生 plan mode。✅ 硬拦
+   - **ACP 远端 agent** → 无 transport，降级为 prompt 注入（软约束），UI 明示「该 agent
+     不支持原生规划模式，仅靠提示词约束」
+   - **本地裸模型** → 同上，待 §6 #1 定夺
+3. 能力判定：新增一个 `supportsNativePlanMode` 判定，Peer + `metadata['engine']` 命中
+   catalog 且含 `plan` 档 → true；否则 false。
+
+**阶段二：ACP 协议扩展（跨仓库，独立提案）**
+
+4. `acp_protocol.dart` 加 mode 相关方法 + 握手 capability 位，需要 `shepaw-acp-proxy`
+   同步实现。做完后阶段一的降级路径自动升级为硬拦。
+
+注意一个语义差异待确认（见 §6 #7）：Peer 的 `setMode` 是 **agent 级**
+（`setMode(peerId, remoteAgentId, mode)`），而 §5.1.5 定的开关是**会话级**。
+两者不一致——在一个会话里开规划模式，会不会影响该 agent 的其它会话？
 
 #### 5.1.5 开关放哪：输入框工具条，不放设置页（2026-09-11 定）
 
@@ -284,7 +316,11 @@ Shepaw 接入的远端 agent（Claude Code、Codex、Cursor 等）自带 plan mo
    目前只有 Peer 路径有。这是 §5.1.3 第 1 步的前置。
 4. 群聊里规划模式作用于谁？只约束 admin、还是所有成员？群聊语义下「别动手」
    应该约束的是**成员**（干活的），admin 本来就在协调。
-5. `flowMode` 下沉到每次发送，是否值得做（§5.2 第 2 步改造量不小）。
+5. **Peer 的 `setMode` 是 agent 级，开关定的是会话级**（§5.1.3b 末尾）。二选一：
+   - 开关也做成 agent 级（跟 transport 一致，但切换会影响该 agent 的所有会话）
+   - 保持会话级，切换时只对本会话生效（需要额外记录每个会话的 mode，transport 仍是 agent 级 → 会互相打架）
+   **倾向**：先按 agent 级做，跟 transport 对齐，避免两套真相。
+6. `flowMode` 下沉到每次发送，是否值得做（§5.2 第 2 步改造量不小）。
 6. 干预强度三档里 `askUser` 这档是否真有需求——如果没人用，两档就够。
 
 ## 7. 已拍板
