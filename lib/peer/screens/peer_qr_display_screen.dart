@@ -84,8 +84,14 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
     _serverUrlController.dispose();
     _channelIdController.dispose();
     _secretController.dispose();
-    // 注意：不在这里 cancelPairing()，因为 TabView 切换时会触发 dispose
-    // 配对生命周期由父页面 PeerPairingScreen 管理
+    // 离开「它连我」就作废这个配对码。
+    //
+    // 代价：TabView 切走会触发 dispose，切回来 `initState` 重新 `_startPairing()`
+    // —— 也就是「切走再切回 = 换一个新码」。原本就是 5 分钟 TTL，这个代价可以接受；
+    // 换来的是不再把 Responder 会话留在后台：`PeerPairingService` 是单会话的，
+    // 残存的 Responder 会被随后在「我连它」发起的 `requestPairing` 直接冲掉，
+    // 留着一个已经不响应的码比换一个码更糟。
+    PeerPairingService.instance.cancelPairing();
     super.dispose();
   }
 
