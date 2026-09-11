@@ -214,4 +214,106 @@ void main() {
       expect(result['approval_denied'], isNot(isTrue));
     });
   });
+
+  /// `help` 不受 allowlist 限制，但它回答的是「你能看见哪些命名空间」。
+  ///
+  /// 这两件事必须同时成立才安全：只豁免不转发，受限 agent 会从 help 里读到
+  /// 自己无权使用的全部命名空间；只转发不豁免，`cliFilterNamespaces` 在交集
+  /// 为空时回退的 `['help']` 就成了永远调不通的假承诺。
+  group('help 豁免与 allowlist 转发', () {
+    /// 从 help 结果里取出模型能看到的命名空间名。
+    Future<Set<String>> helpNamespaces({
+      Set<String>? enabledCliCommands,
+      Set<String>? extraAllowlist,
+      bool isUiOperation = false,
+      bool expectError = false,
+    }) async {
+      final raw = await CliExecutionGate.instance.execute(
+        args: {'namespace': 'help', 'subcommand': '', 'flags': {}},
+        agentId: 'agent-other',
+        isUiOperation: isUiOperation,
+        enabledCliCommands: enabledCliCommands,
+        extraAllowlist: extraAllowlist,
+      );
+      final result = jsonDecode(raw) as Map<String, dynamic>;
+      expect(result['error'], expectError ? isNotNull : isNull);
+      return ((result['namespaces'] as Map?) ?? const {}).keys
+          .cast<String>()
+          .toSet();
+    }
+
+    test('per-agent 白名单：help 可调，但只列出被放行的命名空间', () async {
+      // 旧行为下这就漏了：Gate 只转发 extraAllowlist，help 拿到的 allowlist
+      // 是 null → 13 个命名空间全吐。
+      final visible = await helpNamespaces(
+        enabledCliCommands: const {'store.read'},
+      );
+      expect(visible, {'store'});
+      for (final leaked in ['os', 'workflow', 'peer', 'vision', 'models']) {
+        expect(visible, isNot(contains(leaked)), reason: '$leaked 泄漏了');
+      }
+    });
+
+    test('per-agent 白名单：具体命令收敛到它所在的命名空间', () async {
+      expect(
+        await helpNamespaces(enabledCliCommands: const {'os.command.exec'}),
+        {'os'},
+      );
+      expect(
+        await helpNamespaces(
+          enabledCliCommands: const {'context.profile.query'},
+        ),
+        {'context'},
+      );
+    });
+
+    test('全禁（{}）：help 仍可调，但一个命名空间都不列', () async {
+      // cliFilterNamespaces 的空交集回退成 ['help'] —— 到这里才真正自洽：
+      // 模型有个能调用的命令，而这个命令什么也不告诉它。
+      expect(await helpNamespaces(enabledCliCommands: const {}), isEmpty);
+    });
+
+    test('群成员轴：两张白名单取交集', () async {
+      // extraAllowlist 之前就在转发，这里钉死它和新加的 per-agent 轴是取交
+      // 而不是互相覆盖。
+      expect(
+        await helpNamespaces(
+          enabledCliCommands: const {'store.read', 'os.command.exec'},
+          extraAllowlist: kGroupMemberCliAllowlist,
+        ),
+        {'store'},
+      );
+      expect(
+        await helpNamespaces(extraAllowlist: kGroupMemberCliAllowlist),
+        {'store'},
+      );
+    });
+
+    test('不带任何白名单：help 列出全部（默认不受限）', () async {
+      final visible = await helpNamespaces();
+      expect(visible, containsAll(['os', 'store', 'workflow']));
+    });
+
+    test('UI 操作不受 per-agent 白名单约束', () async {
+      // isUiOperation 的语义是「用户自己在界面上点的」，不能被 agent 配置
+      // 反向锁住。
+      expect(
+        await helpNamespaces(
+          enabledCliCommands: const {'store.read'},
+          isUiOperation: true,
+        ),
+        containsAll(['os', 'store', 'workflow']),
+      );
+    });
+
+    test('豁免只覆盖 help 本身，别的命令照旧被拒', () async {
+      final raw = await CliExecutionGate.instance.execute(
+        args: {'namespace': 'os', 'subcommand': 'command.exec', 'flags': {}},
+        agentId: 'agent-other',
+        enabledCliCommands: const {'store.read'},
+      );
+      final result = jsonDecode(raw) as Map<String, dynamic>;
+      expect(result['error'], contains('not allowed for this agent'));
+    });
+  });
 }

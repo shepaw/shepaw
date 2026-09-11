@@ -50,10 +50,21 @@ class CliExecutionGate {
     final subcommand = (args['subcommand'] as String?)?.trim() ?? '';
     final id = commandId(namespace, subcommand);
 
+    // `help` is callable regardless of the allowlist — the same decision
+    // [ShepawCLI.execute] makes when it short-circuits on `namespace == 'help'`
+    // — and [cliCommandApprovalExempt] already treats it as approval-exempt.
+    //
+    // This is only safe together with the allowlist forwarded below: `help`
+    // answers with the namespaces it can see, so an exempt `help` that never
+    // received the allowlist would hand every restricted agent the full
+    // namespace list. The two changes are one unit.
+    final helpExempt = namespace == 'help';
+
     // Both checks below are "non-null means constrained": `null` = the axis
     // imposes no restriction, `{}` = it allows nothing. Keeping them identical
     // is what makes the three-state storage unambiguous end to end.
     if (!isUiOperation &&
+        !helpExempt &&
         enabledCliCommands != null &&
         !isCommandAllowed(enabledCliCommands, id)) {
       final allowed = (enabledCliCommands.toList()..sort()).join(', ');
@@ -65,6 +76,7 @@ class CliExecutionGate {
     }
 
     if (!isUiOperation &&
+        !helpExempt &&
         extraAllowlist != null &&
         !isCommandAllowed(extraAllowlist, id)) {
       return jsonEncode({
@@ -99,13 +111,24 @@ class CliExecutionGate {
       if (denied != null) return denied;
     }
 
+    // Hand both allowlist axes to the CLI. Without this the per-agent allowlist
+    // is enforced *only* by the two checks above: `help` would be filtered by
+    // the group axis alone, and the subcommand surface advertised in the tool
+    // schema ([cliFilterSubcommands]) would have no runtime counterpart.
+    //
+    // Intersection, not `??`: each axis can only narrow. `isUiOperation` keeps
+    // its existing meaning — a UI-triggered run is not constrained by the
+    // agent's own allowlist.
     return ShepawCLI.instance.execute(
       args,
       agentId: agentId,
       isUiOperation: isUiOperation,
       channelId: channelId,
       runtimeOwnerId: runtimeOwnerId,
-      cliAllowlist: extraAllowlist,
+      cliAllowlist: cliIntersectAllowlists(
+        isUiOperation ? null : enabledCliCommands,
+        extraAllowlist,
+      ),
     );
   }
 
