@@ -20,6 +20,13 @@ class GroupOrchestrationFeatures {
   /// Require `group_plan_publish` before `group_dispatch` (local admin only).
   static bool requirePublishedPlan = true;
 
+  /// Bounce a user-facing clarification card (form/select) once when the admin
+  /// has not consulted any member yet in this orchestration.
+  static bool reconFirstBounce = true;
+
+  /// Per-orchestration bounce budget for [reconFirstBounce].
+  static int maxReconFirstBounces = 1;
+
   /// Admin LLM history: `task` excludes prior-task agent chatter (PR-5).
   static GroupAdminHistoryScope adminHistoryScope =
       GroupAdminHistoryScope.task;

@@ -1198,6 +1198,10 @@ class GroupOrchestrationService {
           );
         }
 
+        // 本编排内是否已咨询过成员，驱动 GroupReconFirstGate 的卡片弹回：
+        // 管理员还没向任何成员了解过情况时，面向用户的澄清卡片会被弹回一次。
+        var membersConsulted = false;
+
         // 1. First admin call
         onAgentStart?.call(adminAgent.id, adminAgent.name);
         final isFirstMessage = !agentIdsWithHistory.contains(adminAgent.id);
@@ -1207,10 +1211,13 @@ class GroupOrchestrationService {
             agent: adminAgent,
             channelId: channelId,
             content: '$effectiveContent\n\n'
-                '[SYSTEM] 需求澄清：若用户需求不明确或信息不足，请先调用 '
-                '`group_finish`（action=`pause`）向用户澄清，确认后再 '
-                '`group_plan_publish` 发布正式计划，然后 `group_dispatch`；'
-                '不要凭猜测派活。',
+                '[SYSTEM] 先摸底，再澄清：信息不足时，先分清缺的是哪一类——'
+                '**团队内可查证的事实**（现状、清单、已有实现、产物里怎么写的）'
+                '必须先用 `group_dispatch`（`intent=recon`）向负责的成员了解，'
+                '**严禁**拿来问用户；只有**用户才能决定的意图**（优先级、取舍、'
+                '验收口径）才用澄清卡片或 `group_finish`（action=`pause`）一次问清。'
+                '需求明确后再 `group_plan_publish` 发布正式计划，然后 '
+                '`group_dispatch`（`intent=work`）。不要凭猜测派活。',
             attachments: attachments,
             userId: userId,
             userName: userName,
@@ -1221,6 +1228,7 @@ class GroupOrchestrationService {
             mentionedAgentIds: const [],
             isFirstMessage: isFirstMessage,
             isAdmin: true,
+            membersConsultedThisOrchestration: membersConsulted,
             messageVersion: messageVersion,
             channelMembers: channelMembers,
             customSystemPrompt: customSystemPrompt,
@@ -1774,7 +1782,12 @@ class GroupOrchestrationService {
           // itself is gated off by structuredTasks=false, so enforcing the
           // gate there would deadlock local dispatch (nudge budget exhausted
           // without ever being able to publish a plan).
+          // 摸底派发（intent=recon）豁免计划门槛：需求尚未定稿，本就无正式计划
+          // 可发；若照旧拦截，等于逼管理员把没定稿的需求谎称定稿才敢问成员。
+          final isReconDispatch = dispatch.steps.isNotEmpty &&
+              dispatch.steps.every((s) => s.isRecon);
           if (delegatedIds.isNotEmpty &&
+              !isReconDispatch &&
               GroupOrchestrationFeatures.structuredTasks &&
               GroupOrchestrationFeatures.requirePublishedPlan &&
               adminAgent.isLocal) {
@@ -2241,6 +2254,10 @@ class GroupOrchestrationService {
           // Execute delegated agents based on dispatch mode. Turn results are
           // captured per agent so the allMembers cascade below can activate
           // members mentioned in their replies without re-reading the DB.
+          //
+          // 走到这里成员一定会被调用（正式派发或 intent=recon 摸底），此后
+          // 管理员的澄清卡片不再受 GroupReconFirstGate 限制。
+          if (delegatedIds.isNotEmpty) membersConsulted = true;
           final delegatedTurnResults = <String, GroupTurnResult>{};
           final isSequential = dispatch.steps.isNotEmpty &&
               dispatch.steps.first.mode == 'sequential';

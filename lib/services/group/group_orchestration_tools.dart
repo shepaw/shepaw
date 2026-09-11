@@ -33,6 +33,15 @@ class GroupOrchestrationTools {
   /// UI tools that must not be offered in group chat (history is already injected).
   static const Set<String> excludedUiToolNames = {'request_history'};
 
+  /// `group_dispatch.intent` values.
+  ///
+  /// [dispatchIntentRecon] is a fact-finding turn: the admin asks members what
+  /// the current state is before the requirement is finalized. It exempts the
+  /// dispatch from the `group_plan_publish` gate (there is no settled
+  /// requirement to publish yet) and does not flip the task to `executing`.
+  static const String dispatchIntentWork = 'work';
+  static const String dispatchIntentRecon = 'recon';
+
   /// OpenAI function-calling tool definitions with [agentNames] as enum.
   static List<Map<String, dynamic>> openAITools({
     required List<String> agentNames,
@@ -43,9 +52,12 @@ class GroupOrchestrationTools {
         'function': {
           'name': dispatchName,
           'description':
-              'Delegate work to group members. Call this whenever you decide to '
-              'assign tasks. Do NOT put dispatch JSON in chat text — use this tool. '
-              'Also reply to the user in natural language describing the plan.',
+              'Delegate work to group members, or run a recon turn to find out '
+              'facts only they can verify (intent=recon, needs no published '
+              'plan). Call this whenever you assign tasks or need to consult '
+              'members. Do NOT put dispatch JSON in chat text — use this tool. '
+              'For intent=work also reply to the user in natural language '
+              'describing the plan.',
           'parameters': _dispatchSchema(agentNames),
         },
       },
@@ -233,6 +245,18 @@ class GroupOrchestrationTools {
     return {
       'type': 'object',
       'properties': {
+        'intent': {
+          'type': 'string',
+          'enum': [dispatchIntentWork, dispatchIntentRecon],
+          'description':
+              'work (default) = assign real deliverables, requires a published '
+              'plan first. recon = fact-finding: ask members what the current '
+              'state actually is (which items exist, what is already '
+              'implemented) before the requirement is finalized. recon needs no '
+              'published plan and expects answers, not deliverables. Use recon '
+              'whenever the missing detail is something a member can look up — '
+              'never ask the user for a fact your team can verify.',
+        },
         'mode': {
           'type': 'string',
           'enum': ['concurrent', 'sequential'],
@@ -467,6 +491,18 @@ class GroupOrchestrationTools {
     }
     final mode =
         (rawMode is String && validModes.contains(rawMode)) ? rawMode : 'concurrent';
+    // 非法 intent 回落 work（保守：宁可要求先发计划，也不要误判成摸底而跳过门禁）。
+    final rawIntent = args['intent'];
+    if (rawIntent is String &&
+        rawIntent.isNotEmpty &&
+        rawIntent != dispatchIntentWork &&
+        rawIntent != dispatchIntentRecon) {
+      LoggerService().warning(
+        'group_dispatch intent "$rawIntent" is not supported; falling back to $dispatchIntentWork',
+        tag: 'GroupOrchestrationTools',
+      );
+    }
+    final isRecon = rawIntent == dispatchIntentRecon;
     final rawSteps = args['steps'];
     if (rawSteps is! List || rawSteps.isEmpty) {
       return (
@@ -515,6 +551,7 @@ class GroupOrchestrationTools {
         agentIds: agentIds,
         task: map['task']?.toString() ?? '',
         mode: mode,
+        isRecon: isRecon,
       ));
     }
 

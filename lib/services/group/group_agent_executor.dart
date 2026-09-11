@@ -34,6 +34,7 @@ import 'group_mailbox_save_plan.dart';
 import 'group_orchestration_metadata.dart';
 import 'group_orchestration_tools.dart';
 import 'group_orchestration_features.dart';
+import 'group_recon_first_gate.dart';
 import 'group_member_stall.dart';
 import 'group_task_bootstrap.dart';
 import 'group_session_create_service.dart';
@@ -322,6 +323,12 @@ class GroupAgentExecutor {
     bool isPendingResolution = false,
     bool isStalledFollowUp = false,
     int? loopRound,
+    /// Whether this orchestration has already consulted a member (any member
+    /// turn has run). Drives [GroupReconFirstGate]: while false, the admin's
+    /// user-facing clarification cards are bounced once so it does fact-finding
+    /// first. Defaults to true — callers that never dispatch members (member
+    /// turns, workflow steps) must not be gated.
+    bool membersConsultedThisOrchestration = true,
     String mentionMode = 'adminOnly',
     List<String> failedAgentNames = const [],
     List<AttachmentData>? attachments,
@@ -464,6 +471,10 @@ class GroupAgentExecutor {
     Map<String, dynamic>? formDataCapture;
     Map<String, dynamic>? messageMetadataExtra;
     Map<String, dynamic>? sessionActionMeta;
+
+    /// User-facing clarification cards bounced this turn by
+    /// [GroupReconFirstGate] (admin has not consulted any member yet).
+    var reconFirstBounceCount = 0;
 
     /// Raw `group_mention` tool args (local members), accumulated across tool
     /// rounds; resolved into structured mentions in the unified capture block.
@@ -610,6 +621,42 @@ class GroupAgentExecutor {
           final pawToolResults = <Map<String, dynamic>>[];
           LLMDoneEvent? doneEvent;
 
+          // 摸底兜底（见 GroupReconFirstGate）：管理员本轮编排里还没问过任何
+          // 成员时，第一张面向用户的澄清卡片直接弹回。**不捕获、不落库、不
+          // emit**，用户看不到；退回理由作为 tool result 回给模型，它在同一次
+          // 多轮工具循环里即可改走 group_dispatch(intent=recon)。
+          bool bounceCardIfNeeded(LLMToolCallEvent event, String interactionType) {
+            if (!GroupReconFirstGate.shouldBounce(
+              isAdmin: isAdmin,
+              interactionType: interactionType,
+              hasDelegateableMembers: delegateableNames.isNotEmpty,
+              membersConsulted: membersConsultedThisOrchestration,
+              bounceCount: reconFirstBounceCount,
+            )) {
+              return false;
+            }
+            reconFirstBounceCount++;
+            LoggerService().warning(
+              'Clarification card "$interactionType" bounced (round ${loopRound ?? 0}): '
+              'no member consulted yet in this orchestration '
+              '($reconFirstBounceCount/${GroupOrchestrationFeatures.maxReconFirstBounces})',
+              tag: 'GroupAgentExecutor',
+            );
+            final feedback = jsonEncode({
+              'ok': false,
+              'error': GroupReconFirstGate.toolFeedback(),
+            });
+            pawToolCalls.add(event);
+            pawToolResults.add({
+              'tool_call_id': event.id,
+              'name': event.name,
+              'result': feedback,
+            });
+            infLogGroup.onToolResult(groupTraceId,
+                toolCallId: event.id, name: event.name, result: feedback);
+            return true;
+          }
+
           await for (final event in LocalLLMAgentService.instance.chat(
             agent: agent,
             message: toolRound == 0
@@ -665,10 +712,12 @@ class GroupAgentExecutor {
                         Map<String, dynamic>.from(event.arguments);
                     break;
                   case 'single_select':
+                    if (bounceCardIfNeeded(event, 'single_select')) break;
                     singleSelectData =
                         Map<String, dynamic>.from(event.arguments);
                     break;
                   case 'multi_select':
+                    if (bounceCardIfNeeded(event, 'multi_select')) break;
                     multiSelectData =
                         Map<String, dynamic>.from(event.arguments);
                     break;
@@ -676,6 +725,7 @@ class GroupAgentExecutor {
                     fileUploadData = Map<String, dynamic>.from(event.arguments);
                     break;
                   case 'form':
+                    if (bounceCardIfNeeded(event, 'form')) break;
                     formDataCapture =
                         Map<String, dynamic>.from(event.arguments);
                     break;

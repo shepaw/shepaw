@@ -14,11 +14,17 @@ class DispatchStep {
   final String task;
   final String mode; // "concurrent" | "sequential"
 
+  /// `intent=recon`: fact-finding turn. Members answer questions about the
+  /// current state; no deliverable is expected and the formal plan gate does
+  /// not apply. See [GroupOrchestrationTools.dispatchIntentRecon].
+  final bool isRecon;
+
   const DispatchStep({
     required this.step,
     required this.agentIds,
     required this.task,
     required this.mode,
+    this.isRecon = false,
   });
 
   /// Member-facing brief for this step; empty task falls back to [fallback].
