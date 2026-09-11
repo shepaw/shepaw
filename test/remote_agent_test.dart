@@ -105,6 +105,48 @@ void main() {
       expect(updated.endpoint, 'https://example.com');
     });
 
+    test('usesHubCliExecute is true only for remote ACP', () {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final remote = RemoteAgent(
+        id: 'r1',
+        name: 'Remote',
+        token: 't',
+        endpoint: 'http://example.com',
+        protocol: ProtocolType.acp,
+        connectionType: ConnectionType.http,
+        createdAt: now,
+        updatedAt: now,
+      );
+      final local = RemoteAgent(
+        id: 'l1',
+        name: 'Local',
+        token: 't',
+        endpoint: 'http://local',
+        protocol: ProtocolType.acp,
+        connectionType: ConnectionType.http,
+        createdAt: now,
+        updatedAt: now,
+        metadata: const {'llm_provider': 'openai'},
+      );
+      final peer = RemoteAgent(
+        id: 'p1',
+        name: 'Peer',
+        token: 't',
+        endpoint: '',
+        protocol: ProtocolType.peer,
+        connectionType: ConnectionType.http,
+        createdAt: now,
+        updatedAt: now,
+        metadata: const {
+          'llm_provider': 'openai',
+          'source_peer_id': 'peer1',
+        },
+      );
+      expect(remote.usesHubCliExecute, isTrue);
+      expect(local.usesHubCliExecute, isFalse);
+      expect(peer.usesHubCliExecute, isFalse);
+    });
+
     test('cliRequireApproval defaults She off and others on', () {
       final now = DateTime.now().millisecondsSinceEpoch;
       final she = RemoteAgent(

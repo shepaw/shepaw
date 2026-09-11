@@ -346,6 +346,10 @@ class RemoteAgent {
   /// `metadata.containsKey('llm_provider')` 之类的隐式判断。
   bool get isLocal => metadata['llm_provider'] != null;
 
+  /// 远端 ACP：没有 shepaw function tool，CLI 一律走 `hub.cli.execute`。
+  /// 本机 LLM 与 Peer（对端本机有 shepaw 工具）仍走 `shepaw …`。
+  bool get usesHubCliExecute => !isLocal && !isPeerAgent;
+
   /// Whether this agent can handle content of the given [modality].
   ///
   /// - Text is always supported.

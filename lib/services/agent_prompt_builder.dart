@@ -368,6 +368,10 @@ class AgentPromptBuilder {
         deviceId: deviceId,
         injected: injected,
         writeMemory: !agent.isPeerAgent,
+        cliSurface: ScopeCard.surfaceFor(
+          isLocal: agent.isLocal,
+          isPeerAgent: agent.isPeerAgent,
+        ),
       ).toStableMarkdown();
     } catch (e) {
       LoggerService().warning(

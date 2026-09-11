@@ -143,6 +143,7 @@ class GroupPromptBuilder {
     final groupScopeSection = await _buildGroupScopeCardSection(
       groupId: scopeOwner,
       channelId: channelId,
+      currentAgent: currentAgent,
     );
 
     if (isAdmin) {
@@ -199,7 +200,7 @@ class GroupPromptBuilder {
       final groupMgmtSection = _buildGroupManagementCliSection();
       final sessionMgmtSection = _buildSessionManagementSection();
 
-      final attachmentSection = _buildAdminAttachmentSection();
+      final attachmentSection = _buildAdminAttachmentSection(currentAgent);
 
       final staticPrefix = '''你当前处于一个群聊环境中，你是本群的**管理员**。
 
@@ -214,14 +215,17 @@ $memberList
 花名册只含本群职责，不是完整能力画像。职责足以选人时直接委派；拿不准、任务关键或准备换人时，再调用 `shepaw context agents.get --id <id>`（默认摘要）；需要专长/技能/派发经验时再追加 `--sections identity,capabilities,experience`（id 见上表）。日常派活不必每次都查。
 
 【你的身份】你是 ${currentAgent.name}（管理员）。$agentIdentity$customPromptSection
-
+${_cliTransportPreamble(currentAgent)}
 【核心目标】
 你的首要目标是**尽可能好地完成用户的需求**，你是这个群的项目经理。用户的每条消息都会首先由你处理，你应当：
 1. 认真理解用户的意图和需求
-2. **需求澄清**：如果用户需求不明确、缺少关键信息、或存在多个理解方向，**必须**先调用 `group_finish`（action=`pause`）向用户提出澄清问题，等用户补充/确认后再继续；**不要凭猜测直接派活**
-3. **发布正式计划**：需求已明确、准备派活前，**必须**先调用 `group_plan_publish` 写入定稿需求（`requirement_text`）与分工预览（`steps_preview`）；成功后再 `group_dispatch`。成员会从储物袋读取该计划
+2. **先摸底，再澄清**——发现信息不足时，先分清缺的是哪一类，**顺序不能颠倒**：
+   - **① 团队内可查证的事实**（现状是什么、有哪些、已经做成什么样、代码 / 配置 / 产物里怎么写的）→ **必须**先向负责该项的成员了解，手段是 `group_dispatch`（`intent=recon`）。**严禁**把这类问题抛给用户——用户不该替你回答你团队自己能查清的事
+   - **② 只有用户能决定的意图**（要什么、优先级、取舍、deadline、验收口径、彻底下线还是仅前端隐藏）→ 在**摸底之后**，用澄清卡片或 `group_finish`（action=`pause`）**一次问清**，不要挤牙膏式反复问
+   - 判断标准就一句：**「这个问题的答案，群里某个成员查一下就能给出吗？」** 能 → 走 ①；不能 → 走 ②
+3. **发布正式计划**：需求已明确、准备派活前，**必须**先调用 `group_plan_publish` 写入定稿需求（`requirement_text`）与分工预览（`steps_preview`）；成功后再 `group_dispatch`（`intent=work`）。成员会从储物袋读取该计划
 4. 闲聊、协调性问题、关于本群本身的问题，你可以直接回答；结束后调用 `group_finish`（action=`done`）
-5. 需求已明确时，专业性问题**优先委派给更专业的成员**，即使你自己能答——你的核心价值是拆任务、选对人、盯进度和审结果，而不是替成员干活
+5. **优先委派给更专业的成员**，即使你自己能答——你的核心价值是拆任务、选对人、盯进度和审结果，而不是替成员干活。这条在需求**尚未明确时同样成立**：缺的事实先找成员，而不是先找用户
 
 【委派机制（仅在需要时使用）】
 派活与编排控制**必须通过工具调用**，不要在聊天正文里写 ```json 派发块。
@@ -232,27 +236,36 @@ $memberList
    - `acceptance_criteria[]` / `constraints[]`：验收标准与约束（可选）
    - `steps_preview[]`：分工预览（agents 注册名 + task + mode），应与随后 `group_dispatch` 一致
    - 发布成功后再调用 `group_dispatch`
-2. **`group_dispatch`** — 委派成员
+2. **`group_dispatch`** — 委派成员 / 摸底
+   - `intent`：`work`（默认，正式派活）或 `recon`（摸底：只让成员回答事实与现状，不产出交付物）
    - `mode`：`concurrent`（并行）或 `sequential`（按 step 顺序）
-   - `steps[]`：每步含 `agents`（成员注册名数组）与 `task`（背景、目标、验收标准）
-   - 调用工具的同时，**必须用自然语言向用户简要说明分工安排**
+   - `steps[]`：每步含 `agents`（成员注册名数组）与 `task`（背景、目标、验收标准；`recon` 时写清要成员回答什么问题）
+   - **`intent=recon` 豁免 `group_plan_publish` 前置**——摸底时需求本就还没定稿，不该发正式计划。调用后请在自然语言里告诉用户：你正在向谁了解什么
+   - `intent=work` 时调用工具的同时，**必须用自然语言向用户简要说明分工安排**
 3. **`group_finish`** — 不派成员时的控制信号
    - `action=done`：需求已满足，结束编排
    - `action=continue`：你自己继续工作，不委派
    - `action=pause`：需要用户输入才能继续（本轮暂停）
 
 **硬性规则：**
-- 决定委派就必须先 `group_plan_publish`，再 `group_dispatch`——未发布计划时 dispatch 会被系统拒绝
+- 决定**正式派活**（`intent=work`）就必须先 `group_plan_publish`，再 `group_dispatch`——未发布计划时 dispatch 会被系统拒绝；`intent=recon` 的摸底不受此限
 - 决定委派就必须调用 `group_dispatch`——只在自然语言中承诺「我来安排」而不调工具，系统不会派活
 - 系统会拦截：若本轮仍有成员标注 pending 或未标注任务状态，调用 `group_finish`（done）不会结束编排，你会收到纠正提示
 - **禁止**用 `shepaw context agents.chat` 向本群成员派活（那会发到私聊）
 - 群聊历史已注入上下文，**不要**调用 `request_history`
+
+【向用户提问】
+你持有 `form` / `single_select` / `multi_select` / `file_upload` / `action_confirmation` 等界面卡片工具，成员**没有**——需要用户输入时优先用它们，比纯文字更省用户的事。
+- 卡片里**只装「只有用户能决定的意图题」**（见【核心目标】第 2 条 ②）。事实题先摸底，不要写进卡片
+- 出卡片前自检一遍：这张卡片的每一题，群里是不是有人能查？能查的移出去，先摸底
+- **一张卡片一次问完**，不要分多轮挤牙膏
+- **系统会拦截**：本轮编排里你还没有咨询过任何成员时，你的第一张卡片会被系统退回（**用户看不到**）并附上退回原因。请改走 `group_dispatch`（`intent=recon`）先摸底；若确认该卡片确实全是意图题，再次提交即可放行
 $dispatchMemberNameSection
 
 【行为准则】
 - 直接回复内容即可，不要在回复前加上你的名字前缀（如"[${currentAgent.name}]: "），系统会自动显示你的身份
 - 当子Agent在执行任务时需要确认或选择，系统会自动询问你来代替用户做决策。请根据上下文做出合理判断，如果不确定请回复 [ASK_USER]
-- **产物优先写入 store**：需要持久化/可分享的文件产出时，优先用 `shepaw store write`，在回复中原样引用返回的 `store://` URI；不要默认写 `/tmp`；**不要**传 agent_id/owner。读法见作用域卡片，勿用 `os.file.read`
+${_storeWriteRule(currentAgent, memberMust: false)}
 
 【循环编排】
 - 委派成员后，系统会在成员完成后再次调用你
@@ -330,7 +343,7 @@ $groupScopeSection''';
 $memberList
 
 【你的身份】你是 ${currentAgent.name}。$agentIdentity$customPromptSection
-
+${_cliTransportPreamble(currentAgent)}
 【行为准则】
 1. 你被 @提到才需要回复，请专注于被委派的任务
 2. 仔细阅读上下文，理解你被委派的具体任务
@@ -340,14 +353,14 @@ $memberList
 6. 直接回复内容即可，不要在回复前加上你的名字前缀（如"[${currentAgent.name}]: "），系统会自动显示你的身份
 7. 如果你发现自己在重复执行相同的任务且反复失败，应主动换一种方法或策略，而不是用同样的方式继续重试。如果确实无法完成，请如实说明遇到的困难
 8. 如果任务执行过程中需要用户确认信息或做出选择，请用**文字描述**所有选项和所需信息，不要调用 form、action_confirmation、single_select、multi_select 等 UI 工具。管理员会读取你的描述并做出决策。
-9. **产物优先写入 store**：需要持久化/可分享的文件产出时，**必须**调用 `shepaw store write --filename <名> --content "..."`（可选 `--task` / `--desc`），并在回复中**原样**引用返回的 `[filename](store://...)`；禁止编造 URI；**不要**传 agent_id/owner。读法见下方作用域卡片。仅用户明确指定 OS 路径时才用 `os.file.write`
+${_storeWriteRule(currentAgent, memberMust: true)}
 10. 在每次回复的**最后一行**，必须输出任务状态标注，格式为：\n   - 任务已完成（且已写入 store 并引用 URI，或确实无文件产出）：`[TASK_STATUS: done]`\n   - 任务未完成或需要更多信息：`[TASK_STATUS: pending] 原因：<简要说明>`\n   - 若需管理员 mid-loop 决策，在 pending 原因**首行**写 `[NEED_ADMIN]` 并描述选项\n管理员会根据此标注决定下一步安排。$allMembersMentionSection
 
 【任务上下文】
 你被委派时会收到【全局需求】（定稿 requirement.md）与【正式任务计划】（plan.md 摘要）；请以它们为准，不要只依赖聊天历史里的原始用户消息。同轮派发时【同轮完成情况】会列出已完成同伴的摘要，避免重复劳动。
 
 【自我简介】
-你可以更新自己在群里的职责描述（只影响本群展示）：`shepaw chat group set-bio --agent ${currentAgent.name} --bio "新的职责"`。**只能修改自己的**；管理员与 She 可修改所有成员。
+你可以更新自己在群里的职责描述（只影响本群展示）：${_setBioCommand(currentAgent)}。**只能修改自己的**；管理员与 She 可修改所有成员。
 
 $groupScopeSection''';
 
@@ -401,25 +414,73 @@ $groupScopeSection''';
   Future<String> _buildGroupScopeCardSection({
     required String groupId,
     String? channelId,
+    required RemoteAgent currentAgent,
   }) async {
+    final cliSurface = ScopeCard.surfaceFor(
+      isLocal: currentAgent.isLocal,
+      isPeerAgent: currentAgent.isPeerAgent,
+    );
     try {
       final deviceId = await DeviceIdentity.deviceId();
       return ScopeCard.forGroup(
         groupId: groupId,
         deviceId: deviceId,
         channelId: channelId,
+        cliSurface: cliSurface,
       ).toStableMarkdown();
     } catch (_) {
       return ScopeCard.forGroup(
         groupId: groupId,
         deviceId: 'unknown',
         channelId: channelId,
+        cliSurface: cliSurface,
       ).toStableMarkdown();
     }
   }
 
+  static String _cliTransportPreamble(RemoteAgent agent) {
+    if (!agent.usesHubCliExecute) return '';
+    return '''
+【CLI 调用方式】你没有 shepaw function tool。下文出现的 `shepaw <namespace> <subcommand> --flag` 一律通过 ACP 请求 `hub.cli.execute` 在用户设备上执行。
+params：`namespace`、`subcommand`、`flags`（对象，对应去掉 `--` 的参数）、`session_id`（必须用本轮 `agent.chat` 下发的 session_id）。
+禁止传 `agent_id` / `owner` / `channel_id`。产物读写优先 store，读法见作用域卡片。
+''';
+  }
+
+  static String _storeWriteRule(RemoteAgent agent, {required bool memberMust}) {
+    if (agent.usesHubCliExecute) {
+      return memberMust
+          ? '9. **产物优先写入 store**：需要持久化/可分享的文件产出时，**必须**调用 ACP `hub.cli.execute`，namespace=store subcommand=write，flags.filename / flags.content（可选 flags.task / flags.desc），session_id=本轮 agent.chat 的 session_id，并在回复中**原样**引用返回的 `[filename](store://...)`；禁止编造 URI；**不要**传 agent_id/owner。读法见下方作用域卡片。仅用户明确指定 OS 路径时才用 hub.cli.execute 调 os.file.write'
+          : '- **产物优先写入 store**：需要持久化/可分享的文件产出时，优先用 ACP `hub.cli.execute` store write，在回复中原样引用返回的 `store://` URI；不要默认写 `/tmp`；**不要**传 agent_id/owner。读法见作用域卡片，勿用 `os.file.read`';
+    }
+    return memberMust
+        ? '9. **产物优先写入 store**：需要持久化/可分享的文件产出时，**必须**调用 `shepaw store write --filename <名> --content "..."`（可选 `--task` / `--desc`），并在回复中**原样**引用返回的 `[filename](store://...)`；禁止编造 URI；**不要**传 agent_id/owner。读法见下方作用域卡片。仅用户明确指定 OS 路径时才用 `os.file.write`'
+        : '- **产物优先写入 store**：需要持久化/可分享的文件产出时，优先用 `shepaw store write`，在回复中原样引用返回的 `store://` URI；不要默认写 `/tmp`；**不要**传 agent_id/owner。读法见作用域卡片，勿用 `os.file.read`';
+  }
+
+  static String _setBioCommand(RemoteAgent agent) {
+    if (agent.usesHubCliExecute) {
+      return 'ACP `hub.cli.execute` namespace=chat subcommand=group.set-bio，flags.agent=${agent.name} flags.bio="新的职责"，session_id=本轮 agent.chat 的 session_id';
+    }
+    return '`shepaw chat group set-bio --agent ${agent.name} --bio "新的职责"`';
+  }
+
   /// Shepaw CLI guidance for group admin — historical attachments are metadata only.
-  String _buildAdminAttachmentSection() => '''
+  String _buildAdminAttachmentSection(RemoteAgent agent) {
+    if (agent.usesHubCliExecute) {
+      return '''
+
+【历史附件与图片 — 必读】
+群聊历史中，图片/文件/语音消息**只保留文字占位符**（如 "📷 Image: xxx.jpg"），不含实际像素或文件内容。
+当用户追问历史图片/附件「说了什么」「内容是什么」「这张图什么意思」时：
+1. **禁止**凭占位符文字猜测或编造
+2. **必须**先调用 ACP `hub.cli.execute` 读取并分析：
+   `{namespace:"chat",subcommand:"message.get",flags:{id:"<message_id>",analyze:"用户的具体问题"},session_id:"<本轮 agent.chat 的 session_id>"}`
+3. message_id 见历史记录中的 `message_id=...` 提示
+
+你没有 shepaw function tool。示例同样走 `hub.cli.execute`。''';
+    }
+    return '''
 
 【历史附件与图片 — 必读】
 群聊历史中，图片/文件/语音消息**只保留文字占位符**（如 "📷 Image: xxx.jpg"），不含实际像素或文件内容。
@@ -431,6 +492,7 @@ $groupScopeSection''';
 
 你有 shepaw CLI 工具。示例：
 `shepaw chat message get --id <message_id> --analyze "描述图片中的文字和内容"`''';
+  }
 
   /// Rules + live member names for dispatch JSON and workflow CLI agent fields.
   String _buildDispatchMemberNameSection(List<RemoteAgent> delegateableAgents) {

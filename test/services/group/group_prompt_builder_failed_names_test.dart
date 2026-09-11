@@ -7,6 +7,7 @@ RemoteAgent _agent(
   String name, {
   String? bio,
   List<String> capabilities = const [],
+  bool local = false,
 }) =>
     RemoteAgent(
       id: id,
@@ -20,6 +21,9 @@ RemoteAgent _agent(
       createdAt: 0,
       updatedAt: 0,
       capabilities: capabilities,
+      metadata: {
+        if (local) 'llm_provider': 'openai',
+      },
     );
 
 void main() {
@@ -58,7 +62,7 @@ void main() {
     expect(prompt, isNot(contains('以下成员执行失败')));
   });
 
-  test('initial admin prompt instructs requirement clarification', () async {
+  test('initial admin prompt instructs recon before clarification', () async {
     final prompt = await builder.buildGroupSystemPrompt(
       groupName: '项目群',
       groupDescription: '',
@@ -67,10 +71,10 @@ void main() {
       isAdmin: true,
     );
 
-    expect(prompt, contains('需求澄清'));
+    expect(prompt, contains('先摸底，再澄清'));
+    expect(prompt, contains('intent=recon'));
     expect(prompt, contains('group_finish'));
     expect(prompt, contains('pause'));
-    expect(prompt, contains('凭猜测直接派活'));
     expect(prompt, contains('系统会拦截'));
   });
 
@@ -183,5 +187,51 @@ void main() {
     expect(prompt, contains('group_session_create'));
     expect(prompt, contains('不强制一任务一 session'));
     expect(prompt, isNot(contains('session create **只有本群管理员')));
+  });
+
+  test('remote ACP admin prompt teaches hub.cli.execute, not shepaw store',
+      () async {
+    final prompt = await builder.buildGroupSystemPrompt(
+      groupName: '项目群',
+      groupDescription: '',
+      allAgents: [admin, coder],
+      currentAgent: admin,
+      isAdmin: true,
+    );
+
+    expect(prompt, contains('hub.cli.execute'));
+    expect(prompt, contains('你没有 shepaw function tool'));
+    expect(prompt, contains('session_id'));
+    expect(prompt, isNot(contains('shepaw store write')));
+    expect(prompt, isNot(contains('你有 shepaw CLI 工具')));
+  });
+
+  test('local LLM admin prompt still teaches shepaw store write', () async {
+    final localAdmin = _agent('admin-local', 'LocalPM', local: true);
+    final prompt = await builder.buildGroupSystemPrompt(
+      groupName: '项目群',
+      groupDescription: '',
+      allAgents: [localAdmin, coder],
+      currentAgent: localAdmin,
+      isAdmin: true,
+    );
+
+    expect(prompt, contains('shepaw store write'));
+    expect(prompt, isNot(contains('你没有 shepaw function tool')));
+    expect(prompt, isNot(contains('hub.cli.execute')));
+  });
+
+  test('remote ACP member prompt uses hub store write', () async {
+    final prompt = await builder.buildGroupSystemPrompt(
+      groupName: '项目群',
+      groupDescription: '',
+      allAgents: [admin, coder],
+      currentAgent: coder,
+      isAdmin: false,
+    );
+
+    expect(prompt, contains('hub.cli.execute'));
+    expect(prompt, contains('namespace=store'));
+    expect(prompt, isNot(contains('shepaw store write')));
   });
 }

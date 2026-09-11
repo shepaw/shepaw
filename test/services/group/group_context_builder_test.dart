@@ -92,6 +92,7 @@ void main() {
       final cli = ctx['cli'] as Map<String, dynamic>;
       expect(cli['method'], ACPMethod.hubExecuteCli);
       expect(cli['params'], containsPair('session_id', '<agent.chat session_id>'));
+      expect(cli['note'], contains('no shepaw function tool'));
     });
 
     test('local group member does not get hub.cli.execute hint', () {

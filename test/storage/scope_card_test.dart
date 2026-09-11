@@ -92,6 +92,45 @@ void main() {
     );
   });
 
+  test('hub CLI surface teaches hub.cli.execute instead of shepaw tool', () {
+    final md = ScopeCard.forAgentDm(
+      agentId: 'agent_hub',
+      deviceId: 'aaaaaaaaaaaaaaaa',
+      cliSurface: ScopeCardCliSurface.hubExecuteCli,
+    ).toStableMarkdown();
+    expect(md, contains('hub.cli.execute'));
+    expect(md, contains('session_id'));
+    expect(md, contains('store'));
+    expect(md, isNot(contains('shepaw store read')));
+    expect(md, isNot(contains('shepaw store write')));
+    expect(md, contains('不要'));
+    expect(md, contains('agent_id'));
+  });
+
+  test('volatileUrisMarkdown hub surface uses hub.cli.execute', () {
+    final md = ScopeCard.volatileUrisMarkdown(
+      ['store://files/0123456789abcdef/a.txt'],
+      cliSurface: ScopeCardCliSurface.hubExecuteCli,
+    );
+    expect(md, contains('hub.cli.execute'));
+    expect(md, isNot(contains('shepaw store read')));
+  });
+
+  test('surfaceFor: remote ACP uses hub, local and peer use shepaw', () {
+    expect(
+      ScopeCard.surfaceFor(isLocal: false, isPeerAgent: false),
+      ScopeCardCliSurface.hubExecuteCli,
+    );
+    expect(
+      ScopeCard.surfaceFor(isLocal: true, isPeerAgent: false),
+      ScopeCardCliSurface.shepawTool,
+    );
+    expect(
+      ScopeCard.surfaceFor(isLocal: true, isPeerAgent: true),
+      ScopeCardCliSurface.shepawTool,
+    );
+  });
+
   test('volatileUrisMarkdown lists folded URIs once', () {
     final md = ScopeCard.volatileUrisMarkdown([
       'store://files/0123456789abcdef/a.txt',

@@ -180,10 +180,10 @@ class GroupContextBuilder {
       ctx['cli'] = {
         'method': ACPMethod.hubExecuteCli,
         'note':
-            'Run shepaw CLI on the user device via this ACP request. '
-            'Identity is the authenticated session — do not send agent_id, '
-            'owner, or channel_id. Pass session_id from agent.chat. '
-            'Prefer shepaw store read/write; Hub store_read / store_write '
+            'You have no shepaw function tool. Run shepaw CLI on the user '
+            'device via this ACP request. Identity is the authenticated '
+            'session — do not send agent_id, owner, or channel_id. Pass '
+            'session_id from agent.chat. Hub store_read / store_write '
             'aliases are deprecated.',
         'params': {
           'namespace': 'store',

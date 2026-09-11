@@ -43,6 +43,7 @@ import 'group/group_session_service.dart';
 import 'session/session_history_service.dart';
 import '../storage/artifact_service.dart';
 import '../storage/context_bundle.dart';
+import '../storage/scope_card.dart';
 import '../storage/store_uri_reader.dart';
 import 'app_lifecycle_service.dart';
 import '../providers/notification_provider.dart';
@@ -3194,6 +3195,10 @@ $originalQuestion
               channelId: channelId,
               extraRefTexts: workflowArtifactExtras(),
               isGroup: true,
+              cliSurface: ScopeCard.surfaceFor(
+                isLocal: agent.isLocal,
+                isPeerAgent: agent.isPeerAgent,
+              ),
             );
             await _groupAgentExecutor.processGroupAgent(
               agent: agent,
@@ -3365,6 +3370,10 @@ $originalQuestion
               ownerId: agent.id,
               channelId: execChannelId,
               extraRefTexts: workflowArtifactExtras(),
+              cliSurface: ScopeCard.surfaceFor(
+                isLocal: agent.isLocal,
+                isPeerAgent: agent.isPeerAgent,
+              ),
             );
             final response = await _agentMessagingService.sendMessageToAgent(
               content:

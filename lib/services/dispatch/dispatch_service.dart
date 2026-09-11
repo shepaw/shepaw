@@ -14,6 +14,7 @@ import '../she_service.dart';
 import '../she_agent_impression_service.dart';
 import '../trace_service.dart';
 import '../../storage/context_bundle.dart';
+import '../../storage/scope_card.dart';
 import 'she_relay_session_service.dart';
 
 /// She 单聊任务派发服务：登记 → 跟踪 → 回传闭环。
@@ -209,6 +210,10 @@ class DispatchService {
       prompt,
       ownerId: targetAgent.id,
       channelId: targetChannelId,
+      cliSurface: ScopeCard.surfaceFor(
+        isLocal: targetAgent.isLocal,
+        isPeerAgent: targetAgent.isPeerAgent,
+      ),
     );
     final userMsg = Message(
       id: _uuid.v4(),

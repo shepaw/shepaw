@@ -141,6 +141,7 @@ class ContextBundleService {
     String? channelId,
     bool expandUris = false,
     bool isGroup = false,
+    ScopeCardCliSurface cliSurface = ScopeCardCliSurface.shepawTool,
   }) async {
     final deviceId = await DeviceIdentity.deviceId();
     final extras = <String>[];
@@ -165,12 +166,14 @@ class ContextBundleService {
         deviceId: deviceId,
         channelId: channelId,
         extraUris: ScopeCard.dedupeUris(extras),
+        cliSurface: cliSurface,
       );
     }
     return ScopeCard.forAgentDm(
       agentId: ownerId,
       deviceId: deviceId,
       channelId: channelId,
+      cliSurface: cliSurface,
     ).copyWith(extraUris: ScopeCard.dedupeUris(extras));
   }
 
@@ -181,12 +184,14 @@ class ContextBundleService {
     bool expandUris = false,
     bool isGroup = false,
     bool includeStable = false,
+    ScopeCardCliSurface cliSurface = ScopeCardCliSurface.shepawTool,
   }) async {
     final card = await buildLocalScopeCard(
       ownerId: ownerId,
       channelId: channelId,
       expandUris: expandUris,
       isGroup: isGroup,
+      cliSurface: cliSurface,
     );
     if (includeStable) return card.toMarkdown();
     final vol = card.toVolatileMarkdown();
@@ -207,6 +212,7 @@ class ContextBundleService {
     List<String> extraUris = const [],
     bool expandUris = false,
     bool isGroup = false,
+    ScopeCardCliSurface cliSurface = ScopeCardCliSurface.shepawTool,
   }) async {
     final withArts = ArtifactService.instance
         .wrapWithArtifactSection(text, extraRefTexts: extraRefTexts);
@@ -216,6 +222,7 @@ class ContextBundleService {
         channelId: channelId,
         expandUris: expandUris,
         isGroup: isGroup,
+        cliSurface: cliSurface,
       );
       final merged = card.copyWith(
         extraUris: ScopeCard.dedupeUris([...card.extraUris, ...extraUris]),
