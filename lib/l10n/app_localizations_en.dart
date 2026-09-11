@@ -3306,6 +3306,19 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get toolModel_deleteReferencedTitle => 'Model Still In Use';
+
+  @override
+  String toolModel_deleteReferencedContent(String name, String agents) {
+    return 'Model \"$name\" is still referenced by these agents:\n$agents\n\nAfter deletion those agents must pick another model (the rest of their config is kept), and will show a warning until they do. Delete anyway?';
+  }
+
+  @override
+  String agentModelConfig_danglingModel(String name) {
+    return 'The previous main model ($name) no longer exists. Please pick another.';
+  }
+
+  @override
   String toolModel_deleted(String name) {
     return 'Model \"$name\" deleted';
   }
@@ -3382,6 +3395,21 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get chat_viewSession => 'View Session';
+
+  @override
+  String get chat_copySessionTitleAndId => 'Copy session title and ID';
+
+  @override
+  String get chat_copyChannelId => 'Copy Channel ID';
+
+  @override
+  String get chat_listeningEventsTitle => 'Listening events';
+
+  @override
+  String get chat_eventListenKindSubscribe => 'Subscribe';
+
+  @override
+  String get chat_eventListenKindWait => 'Wait';
 
   @override
   String get chat_forkSession => 'Fork';

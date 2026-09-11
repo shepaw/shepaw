@@ -1,12 +1,12 @@
 import '../../../models/llm_provider_config.dart';
 import '../../../models/model_definition.dart';
-import '../../../models/remote_agent.dart';
-import '../../../services/local_database_service.dart';
 import '../../../services/model_registry.dart';
 import '../../../services/secure_key_manager.dart';
 
 /// `models` 命名空间的共享工具：provider 预设解析、能力类型解析、
-/// ModelDefinition 查找/汇总、agent 引用扫描、API Key 缓存复用。
+/// ModelDefinition 查找/汇总、API Key 缓存复用。
+///
+/// agent 引用统计在 `ModelUsageService`（UI 也要用，故独立成 service）。
 ///
 /// 安全约定：任何命令输出都不得包含 API Key 明文，只暴露 `has_api_key`
 /// 之类的布尔状态。密钥只写入 [SecureKeyManager] / [ModelRegistry] 持久化。
@@ -136,68 +136,6 @@ Map<String, dynamic> modelSummary(ModelDefinition def) {
 bool hasApiKey(ModelDefinition def) {
   final key = def.route.apiKey;
   return key != null && key.isNotEmpty;
-}
-
-/// 读取全量 agents（失败返回空列表，不阻塞命令）。
-Future<List<RemoteAgent>> allAgents() async {
-  try {
-    return await LocalDatabaseService().getAllRemoteAgents();
-  } catch (_) {
-    return const [];
-  }
-}
-
-/// 统计每个模型定义被哪些 agent 引用（主模型 / 各场景模型）。
-///
-/// 返回 `defId -> {'main': [...], 'scenario': {modality: [...]}}`，
-/// 列表项为 `{'id': agentId, 'name': agentName}`。
-Future<Map<String, Map<String, dynamic>>> usageByModelId() async {
-  final agents = await allAgents();
-  final usage = <String, Map<String, dynamic>>{};
-
-  void addMain(String defId, RemoteAgent a) {
-    final main = usage.putIfAbsent(
-        defId,
-        () => {
-              'main': <Map<String, String>>[],
-              'scenario': <String, List<Map<String, String>>>{},
-            })['main'] as List<Map<String, String>>;
-    main.add({'id': a.id, 'name': a.name});
-  }
-
-  void addScenario(String defId, String modality, RemoteAgent a) {
-    final scenarios = usage.putIfAbsent(
-        defId,
-        () => {
-              'main': <Map<String, String>>[],
-              'scenario': <String, List<Map<String, String>>>{},
-            })['scenario'] as Map<String, List<Map<String, String>>>;
-    scenarios.putIfAbsent(modality, () => []).add({'id': a.id, 'name': a.name});
-  }
-
-  for (final agent in agents) {
-    final metadata = agent.metadata;
-    final mainModelId = metadata['main_model_id'] as String?;
-    if (mainModelId != null && mainModelId.isNotEmpty) {
-      addMain(mainModelId, agent);
-    }
-    for (final modality in kConfigurableScenarioModalities) {
-      final scenarioId = agent.scenarioModels.modelIdFor(modality);
-      if (scenarioId != null && scenarioId.isNotEmpty) {
-        addScenario(scenarioId, modality.name, agent);
-      }
-    }
-    // 生成类场景模型也可能以 enabled_tool_models 形式启用（旧数据迁移前）。
-    final enabled = metadata['enabled_tool_models'];
-    if (enabled is List) {
-      for (final toolName in enabled.cast<String>()) {
-        final def = ModelRegistry.instance.getDefinition(toolName);
-        if (def == null || !def.isDelegatable) continue;
-        addScenario(def.id, 'tool_model', agent);
-      }
-    }
-  }
-  return usage;
 }
 
 /// 按 id 或 route.model（可选 apiBase 消歧）解析 ModelDefinition。

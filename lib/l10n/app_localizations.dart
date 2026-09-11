@@ -5858,6 +5858,24 @@ abstract class AppLocalizations {
   /// **'确定要删除模型 {name} 吗？'**
   String toolModel_deleteContent(String name);
 
+  /// No description provided for @toolModel_deleteReferencedTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'模型仍在使用'**
+  String get toolModel_deleteReferencedTitle;
+
+  /// No description provided for @toolModel_deleteReferencedContent.
+  ///
+  /// In zh, this message translates to:
+  /// **'模型 {name} 仍被以下 Agent 引用：\n{agents}\n\n删除后这些 Agent 需要重新选择模型（其余配置不会丢失），期间会提示主模型已失效。确定继续删除吗？'**
+  String toolModel_deleteReferencedContent(String name, String agents);
+
+  /// No description provided for @agentModelConfig_danglingModel.
+  ///
+  /// In zh, this message translates to:
+  /// **'原主模型（{name}）已不存在，请重新选择'**
+  String agentModelConfig_danglingModel(String name);
+
   /// No description provided for @toolModel_deleted.
   ///
   /// In zh, this message translates to:
@@ -5989,6 +6007,36 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'查看会话'**
   String get chat_viewSession;
+
+  /// No description provided for @chat_copySessionTitleAndId.
+  ///
+  /// In zh, this message translates to:
+  /// **'复制会话标题和 ID'**
+  String get chat_copySessionTitleAndId;
+
+  /// No description provided for @chat_copyChannelId.
+  ///
+  /// In zh, this message translates to:
+  /// **'复制 Channel ID'**
+  String get chat_copyChannelId;
+
+  /// No description provided for @chat_listeningEventsTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在监听的事件'**
+  String get chat_listeningEventsTitle;
+
+  /// No description provided for @chat_eventListenKindSubscribe.
+  ///
+  /// In zh, this message translates to:
+  /// **'订阅'**
+  String get chat_eventListenKindSubscribe;
+
+  /// No description provided for @chat_eventListenKindWait.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待'**
+  String get chat_eventListenKindWait;
 
   /// No description provided for @chat_forkSession.
   ///

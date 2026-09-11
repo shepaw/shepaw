@@ -14,7 +14,19 @@ class AgentModelConfigCard extends StatefulWidget {
   final AgentScenarioModels scenarioModels;
   final ValueChanged<AgentScenarioModels> onScenarioModelsChanged;
   final bool showRequiredBadge;
+
+  /// 仅在**包在 `Form` 里**的调用方有意义（新建 agent 页有 `_formKey` 并在
+  /// 提交前 `validate()`）。自动保存的详情页没有 Form，传了也永远不会执行
+  /// —— 那里改用 [danglingModelName] 做显式提示。
   final FormFieldValidator<String>? mainModelValidator;
+
+  /// 非空表示 agent 存储的主模型定义已被删除（悬空）。传入原始 id 用于提示
+  /// 文案 —— registry 里已经查不到定义名了。
+  final String? danglingModelName;
+
+  /// 从本卡片进入模型管理、返回后触发。调用方应借此重新解析当前主模型：
+  /// 用户可能刚把正在使用的定义删掉了，此时下拉的旧值已不在候选中。
+  final VoidCallback? onRegistryChanged;
 
   const AgentModelConfigCard({
     super.key,
@@ -24,6 +36,8 @@ class AgentModelConfigCard extends StatefulWidget {
     required this.onScenarioModelsChanged,
     this.showRequiredBadge = false,
     this.mainModelValidator,
+    this.danglingModelName,
+    this.onRegistryChanged,
   });
 
   @override
@@ -59,7 +73,9 @@ class _AgentModelConfigCardState extends State<AgentModelConfigCard> {
         builder: (_) => const ModelManagementScreen(),
       ),
     );
-    if (mounted) setState(() => _modelPickerEpoch++);
+    if (!mounted) return;
+    setState(() => _modelPickerEpoch++);
+    widget.onRegistryChanged?.call();
   }
 
   @override
@@ -107,11 +123,29 @@ class _AgentModelConfigCardState extends State<AgentModelConfigCard> {
               style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
             ),
             const SizedBox(height: 12),
+            // 悬空的主模型：单独提示「是哪一个消失了」，与下面的空态（从未
+            // 选过）区分开，并给出直达模型管理的入口。
+            if (widget.danglingModelName != null)
+              _StatusBanner(
+                icon: Icons.warning_amber_outlined,
+                color: colorScheme.error,
+                text: l10n.agentModelConfig_danglingModel(
+                  widget.danglingModelName!,
+                ),
+                actionLabel: l10n.toolModel_goToManagement,
+                onAction: _openModelManagement,
+              ),
             if (defs.isEmpty)
-              _buildEmptyRegistryState(colorScheme, l10n)
+              // 悬空横幅已经带了自己的入口，这里不再重复一个按钮。
+              _buildEmptyRegistryState(
+                colorScheme,
+                l10n,
+                showAction: widget.danglingModelName == null,
+              )
             else ...[
               // 有可选模型但尚未选择主对话模型 → 在下拉上方给出引导（下拉就在下方）。
-              if (widget.mainModelId == null)
+              // 悬空时不重复弹「请选择模型」：上面那条已经把原因说清楚了。
+              if (widget.mainModelId == null && widget.danglingModelName == null)
                 _StatusBanner(
                   icon: Icons.info_outline,
                   color: colorScheme.error,
@@ -236,7 +270,11 @@ class _AgentModelConfigCardState extends State<AgentModelConfigCard> {
     );
   }
 
-  Widget _buildEmptyRegistryState(ColorScheme colorScheme, AppLocalizations l10n) {
+  Widget _buildEmptyRegistryState(
+    ColorScheme colorScheme,
+    AppLocalizations l10n, {
+    bool showAction = true,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -259,21 +297,23 @@ class _AgentModelConfigCardState extends State<AgentModelConfigCard> {
             ],
           ),
         ),
-        const SizedBox(height: 8),
-        Align(
-          alignment: Alignment.centerRight,
-          child: TextButton.icon(
-            onPressed: _openModelManagement,
-            icon: const Icon(Icons.settings_outlined, size: 16),
-            label: Text(l10n.toolModel_goToManagement),
-            style: TextButton.styleFrom(
-              textStyle: const TextStyle(fontSize: 13),
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        if (showAction) ...[
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: _openModelManagement,
+              icon: const Icon(Icons.settings_outlined, size: 16),
+              label: Text(l10n.toolModel_goToManagement),
+              style: TextButton.styleFrom(
+                textStyle: const TextStyle(fontSize: 13),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
             ),
           ),
-        ),
+        ],
       ],
     );
   }
@@ -544,14 +584,21 @@ class _StatusBanner extends StatelessWidget {
   final Color color;
   final String text;
 
+  /// 可选的行内操作（如「前往模型管理」）。
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
   const _StatusBanner({
     required this.icon,
     required this.color,
     required this.text,
+    this.actionLabel,
+    this.onAction,
   });
 
   @override
   Widget build(BuildContext context) {
+    final showAction = actionLabel != null && onAction != null;
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 8),
@@ -561,14 +608,35 @@ class _StatusBanner extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: color.withValues(alpha: 0.25)),
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 16, color: color),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(text, style: TextStyle(fontSize: 12, color: color)),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(text, style: TextStyle(fontSize: 12, color: color)),
+              ),
+            ],
           ),
+          if (showAction)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: onAction,
+                icon: const Icon(Icons.settings_outlined, size: 16),
+                label: Text(actionLabel!),
+                style: TextButton.styleFrom(
+                  foregroundColor: color,
+                  textStyle: const TextStyle(fontSize: 13),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ),
         ],
       ),
     );

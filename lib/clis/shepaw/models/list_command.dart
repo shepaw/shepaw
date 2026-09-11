@@ -1,5 +1,6 @@
 import '../../cli_base.dart';
 import '../../../services/model_registry.dart';
+import '../../../services/model_usage_service.dart';
 import 'models_cli_helpers.dart';
 
 /// 列出所有已配置的模型定义。
@@ -32,7 +33,7 @@ class ModelsListCommand extends CliCommand {
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
     final limit = int.tryParse(flags['limit'] ?? '') ?? 50;
-    final usage = await usageByModelId();
+    final usage = await ModelUsageService.usageByModelId();
     final defs = ModelRegistry.instance.definitions;
 
     final list = defs.take(limit).map((def) {

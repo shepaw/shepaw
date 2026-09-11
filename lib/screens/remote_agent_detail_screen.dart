@@ -17,6 +17,7 @@ import '../peer/models/paired_peer.dart' show PeerConnectionState;
 import '../services/remote_agent_service.dart';
 import '../services/she_service.dart';
 import '../services/agent_soul_service.dart';
+import '../services/agent_metadata_builder.dart';
 import '../services/local_file_storage_service.dart';
 import '../services/model_registry.dart';
 import '../models/agent_scenario_models.dart';
@@ -110,6 +111,13 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
   // 主模型选择（从 ModelRegistry 中选择）
   String? _selectedMainModelId;
+
+  /// agent 存储的 `main_model_id` 指向一个已被删除的模型定义时，记录该 id。
+  /// 非空即「悬空」：UI 需要提示用户重新选择，保存时也必须保留
+  /// `llm_provider` / `main_model_id`（见 `buildLlmMetadata`）。
+  String? _danglingMainModelId;
+
+  bool get _mainModelDangling => _danglingMainModelId != null;
 
   ProtocolType _editingProtocol = ProtocolType.acp;
   ConnectionType _editingConnectionType = ConnectionType.websocket;
@@ -490,33 +498,56 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     _promptStackConfig = _agent.promptStackConfig;
 
 
-    // Match main model — prefer stored main_model_id, then fall back to
-    // matching by llm_model + llm_api_base for legacy agents.
-    _selectedMainModelId = null;
-    final storedId = _agent.metadata['main_model_id'] as String?;
-    if (storedId != null && ModelRegistry.instance.getById(storedId) != null) {
-      _selectedMainModelId = storedId;
-    } else {
-      final savedModel = _agent.metadata['llm_model'] as String?;
-      final savedBase = _agent.metadata['llm_api_base'] as String?;
-      if (savedModel != null) {
-        for (final def in ModelRegistry.instance.definitions) {
-          if (def.route.model == savedModel && def.route.apiBase == savedBase) {
-            _selectedMainModelId = def.id;
-            break;
-          }
+    final selection = _resolveMainModelSelection();
+    _selectedMainModelId = selection.id;
+    _danglingMainModelId = selection.danglingId;
+  }
+
+  /// 模型管理页返回后重新解析主模型：用户可能刚删掉了正在使用的定义，
+  /// 此时旧的下拉值已不在候选中（会触发 Dropdown 断言），必须刷新。
+  void _refreshMainModelSelection() {
+    if (!mounted) return;
+    final selection = _resolveMainModelSelection();
+    setState(() {
+      _selectedMainModelId = selection.id;
+      _danglingMainModelId = selection.danglingId;
+    });
+  }
+
+  /// 从 agent metadata 解析主模型选择结果。
+  ///
+  /// 优先用存储的 `main_model_id`；查不到定义时再按 legacy 的
+  /// `llm_model`（+ `llm_api_base` 消歧）兜底。两者都落空时区分「本来就没
+  /// 主模型」与「主模型被删了」—— 后者要额外保住 `llm_provider`。
+  ({String? id, String? danglingId}) _resolveMainModelSelection() {
+    final metadata = _agent.metadata;
+    final storedId = metadata['main_model_id'] as String?;
+    if (storedId != null && storedId.isNotEmpty) {
+      return ModelRegistry.instance.getById(storedId) != null
+          ? (id: storedId, danglingId: null)
+          : (id: null, danglingId: storedId);
+    }
+
+    final savedModel = metadata['llm_model'] as String?;
+    final savedBase = metadata['llm_api_base'] as String?;
+    if (savedModel != null) {
+      for (final def in ModelRegistry.instance.definitions) {
+        if (def.route.model == savedModel && def.route.apiBase == savedBase) {
+          return (id: def.id, danglingId: null);
         }
-        if (_selectedMainModelId == null) {
-          for (final def in ModelRegistry.instance.definitions) {
-            if (def.route.model == savedModel) {
-              _selectedMainModelId = def.id;
-              break;
-            }
-          }
+      }
+      for (final def in ModelRegistry.instance.definitions) {
+        if (def.route.model == savedModel) {
+          return (id: def.id, danglingId: null);
         }
       }
     }
-
+    // legacy 字段也匹配不到。只有当前确实是本地 agent（有 llm_provider）时
+    // 才算「主模型失效」；否则就是「本来没配过」，不提示。
+    return (
+      id: null,
+      danglingId: metadata['llm_provider'] != null ? savedModel : null,
+    );
   }
 
   @override
@@ -623,30 +654,9 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       modelRouting: _agent.modelRouting,
       definitions: ModelRegistry.instance.definitions,
     );
-    _selectedMainModelId = null;
-    final storedId = _agent.metadata['main_model_id'] as String?;
-    if (storedId != null && ModelRegistry.instance.getById(storedId) != null) {
-      _selectedMainModelId = storedId;
-    } else {
-      final savedModel = _agent.metadata['llm_model'] as String?;
-      final savedBase = _agent.metadata['llm_api_base'] as String?;
-      if (savedModel != null) {
-        for (final def in ModelRegistry.instance.definitions) {
-          if (def.route.model == savedModel && def.route.apiBase == savedBase) {
-            _selectedMainModelId = def.id;
-            break;
-          }
-        }
-        if (_selectedMainModelId == null) {
-          for (final def in ModelRegistry.instance.definitions) {
-            if (def.route.model == savedModel) {
-              _selectedMainModelId = def.id;
-              break;
-            }
-          }
-        }
-      }
-    }
+    final selection = _resolveMainModelSelection();
+    _selectedMainModelId = selection.id;
+    _danglingMainModelId = selection.danglingId;
   }
 
   void _applyScenarioModelsMetadata(Map<String, dynamic> metadata) {
@@ -740,60 +750,45 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         metadata['cli_require_approval'] = _cliRequireApproval;
       }
 
-      // LLM config
-      if (_selectedMainModelId != null) {
-        final mainModel = ModelRegistry.instance.getById(_selectedMainModelId!);
-        if (mainModel != null) {
-          final route = mainModel.route;
-          // Only store the model definition ID — full config is looked up at
-          // call time via ModelRegistry. llm_provider is kept solely as the
-          // sentinel for isLocalAgent().
-          metadata['main_model_id'] = _selectedMainModelId!;
-          metadata['llm_provider'] = (route.provider != null && route.provider!.isNotEmpty)
-              ? route.provider!
-              : 'openai';
-          // Remove any previously-stored redundant fields so they can't
-          // interfere with the ModelRegistry lookup.
-          metadata.remove('llm_model');
-          metadata.remove('llm_api_base');
-          metadata.remove('llm_api_key');
-        }
+      // LLM config（只动主模型相关键）。主模型悬空时这里会保住
+      // main_model_id / llm_provider，避免把本地 agent 改写成远端 ACP。
+      final llm = buildLlmMetadata(
+        metadata,
+        selectedMainModelId: _selectedMainModelId,
+      );
+      // 直接赋值（不 setState）：紧随其后的 `_agent` 更新已经会触发重建，
+      // 而 deactivate() 里的保存发生在 Overlay 拆栈期间，此时调度重建不安全。
+      _danglingMainModelId = llm.danglingRef;
 
-        // Save skills
-        if (_enabledSkills.isNotEmpty) {
-          metadata['enabled_skills'] = _enabledSkills.toList();
-        } else {
-          metadata.remove('enabled_skills');
-        }
-
-        // Save tool models derived from generation scenario config
-        final enabledTools =
-            _scenarioModels.enabledGenerationToolModels(ModelRegistry.instance);
-        if (enabledTools.isNotEmpty) {
-          metadata['enabled_tool_models'] = enabledTools.toList();
-        } else {
-          metadata.remove('enabled_tool_models');
-        }
-        metadata.remove('tool_model_scenarios');
-
-        // Save CLI commands. Three-state: absent key = unrestricted,
-        // `[]` = block every command, non-empty = explicit allowlist.
-        final cliCommands = _enabledCliCommands;
-        if (cliCommands == null) {
-          metadata.remove('enabled_cli_commands');
-        } else {
-          metadata['enabled_cli_commands'] = cliCommands.toList();
-        }
-
-        _applyScenarioModelsMetadata(metadata);
+      // 以下配置与主模型选择无关，独立于主模型分支保存 —— 之前它们被
+      // 嵌在 `_selectedMainModelId != null` 里，导致「没选主模型」时整块
+      // 配置既写不进去也清不掉。
+      if (_enabledSkills.isNotEmpty) {
+        metadata['enabled_skills'] = _enabledSkills.toList();
       } else {
-        // No model selected — clear LLM config
-        metadata.remove('llm_provider');
-        metadata.remove('main_model_id');
-        metadata.remove('llm_model');
-        metadata.remove('llm_api_base');
-        metadata.remove('llm_api_key');
+        metadata.remove('enabled_skills');
       }
+
+      // Save tool models derived from generation scenario config
+      final enabledTools =
+          _scenarioModels.enabledGenerationToolModels(ModelRegistry.instance);
+      if (enabledTools.isNotEmpty) {
+        metadata['enabled_tool_models'] = enabledTools.toList();
+      } else {
+        metadata.remove('enabled_tool_models');
+      }
+      metadata.remove('tool_model_scenarios');
+
+      // Save CLI commands. Three-state: absent key = unrestricted,
+      // `[]` = block every command, non-empty = explicit allowlist.
+      final cliCommands = _enabledCliCommands;
+      if (cliCommands == null) {
+        metadata.remove('enabled_cli_commands');
+      } else {
+        metadata['enabled_cli_commands'] = cliCommands.toList();
+      }
+
+      _applyScenarioModelsMetadata(metadata);
 
       // Prompt stack applies to local / She agents regardless of model selection.
       if (_isLocalMode || _selectedMainModelId != null) {
@@ -2375,6 +2370,19 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                 ),
               ),
             ],
+            // 主模型悬空：llm_provider 仍在（我们刻意保住它），所以上面走的是
+            // 「有 provider」分支，这里单独把「模型没了」说清楚。
+            if (_isLocalMode && _mainModelDangling) ...[
+              const SizedBox(height: 8),
+              Text(
+                l10n.agentModelConfig_danglingModel(_danglingMainModelId!),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.orange.shade700,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
             if (_agent.lastHeartbeat != null) ...[
               const SizedBox(height: 8),
               _buildInfoRow(l10n.agentDetail_lastActive, _formatTimestamp(_agent.lastHeartbeat!)),
@@ -3003,7 +3011,11 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           AgentModelConfigCard(
             mainModelId: _selectedMainModelId,
             onMainModelChanged: (id) {
-              setState(() => _selectedMainModelId = id);
+              setState(() {
+                _selectedMainModelId = id;
+                // 重新选择即解决了悬空。
+                _danglingMainModelId = null;
+              });
               _scheduleAutoSave();
             },
             scenarioModels: _scenarioModels,
@@ -3012,12 +3024,8 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
               _scheduleAutoSave();
             },
             showRequiredBadge: true,
-            mainModelValidator: (val) {
-              if (val == null || val.isEmpty) {
-                return AppLocalizations.of(context).addAgent_modelRequired;
-              }
-              return null;
-            },
+            danglingModelName: _danglingMainModelId,
+            onRegistryChanged: _refreshMainModelSelection,
           ),
         ],
 

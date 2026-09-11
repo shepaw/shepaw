@@ -7,6 +7,7 @@ import '../models/agent_scenario_models.dart';
 import '../models/peer_boundary_config.dart';
 import '../models/remote_agent.dart';
 import '../services/model_registry.dart';
+import '../services/agent_metadata_builder.dart';
 import '../services/agent_soul_service.dart';
 import '../services/remote_agent_service.dart';
 import '../services/local_file_storage_service.dart';
@@ -236,50 +237,44 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
     });
 
     try {
-      // 构建 metadata（包含 LLM 配置）
+      // 构建 metadata（包含 LLM 配置）。主模型键与详情页共用同一实现，
+      // 避免两边对「什么时候删 llm_provider」的判断分叉。
       final Map<String, dynamic> metadata = {};
       AgentStatus? initialStatus;
-      if (_selectedMainModelId != null) {
-        final mainModel = ModelRegistry.instance.getById(_selectedMainModelId!);
-        if (mainModel != null) {
-          final route = mainModel.route;
-          // Only store the model definition ID — full config is looked up at
-          // call time via ModelRegistry. llm_provider is kept solely as the
-          // sentinel for isLocalAgent().
-          metadata['main_model_id'] = _selectedMainModelId!;
-          metadata['llm_provider'] = (route.provider != null && route.provider!.isNotEmpty)
-              ? route.provider!
-              : 'openai';
-          // Local LLM agents are always available
-          initialStatus = AgentStatus.online;
+      final llm = buildLlmMetadata(
+        metadata,
+        selectedMainModelId: _selectedMainModelId,
+      );
+      if (llm.state == MainModelState.resolved) {
+        // Local LLM agents are always available
+        initialStatus = AgentStatus.online;
 
-          // Save enabled skills
-          if (_enabledSkills.isNotEmpty) {
-            metadata['enabled_skills'] = _enabledSkills.toList();
-          }
-
-          // Save enabled tool models derived from generation scenario config
-          final enabledTools =
-              _scenarioModels.enabledGenerationToolModels(ModelRegistry.instance);
-          if (enabledTools.isNotEmpty) {
-            metadata['enabled_tool_models'] = enabledTools.toList();
-          } else {
-            metadata.remove('enabled_tool_models');
-          }
-          metadata.remove('tool_model_scenarios');
-
-          // Save allow_external_access
-          metadata['allow_external_access'] = _allowExternalAccess;
-          metadata['peer_boundary'] = PeerBoundaryConfig.defaults
-              .copyWith(
-                allowPeerSoulEdit: _allowPeerSoulEdit,
-                allowPeerResumeEdit: _allowPeerResumeEdit,
-                allowPeerMemoryEdit: _allowPeerMemoryEdit,
-              )
-              .toJson();
-
-          _applyScenarioModelsMetadata(metadata);
+        // Save enabled skills
+        if (_enabledSkills.isNotEmpty) {
+          metadata['enabled_skills'] = _enabledSkills.toList();
         }
+
+        // Save enabled tool models derived from generation scenario config
+        final enabledTools =
+            _scenarioModels.enabledGenerationToolModels(ModelRegistry.instance);
+        if (enabledTools.isNotEmpty) {
+          metadata['enabled_tool_models'] = enabledTools.toList();
+        } else {
+          metadata.remove('enabled_tool_models');
+        }
+        metadata.remove('tool_model_scenarios');
+
+        // Save allow_external_access
+        metadata['allow_external_access'] = _allowExternalAccess;
+        metadata['peer_boundary'] = PeerBoundaryConfig.defaults
+            .copyWith(
+              allowPeerSoulEdit: _allowPeerSoulEdit,
+              allowPeerResumeEdit: _allowPeerResumeEdit,
+              allowPeerMemoryEdit: _allowPeerMemoryEdit,
+            )
+            .toJson();
+
+        _applyScenarioModelsMetadata(metadata);
       }
       // Soul: 一律写入储物袋 cognition/<agent>/soul.md，不进 metadata。
       final soulText = _systemPromptController.text.trim();

@@ -6,6 +6,8 @@ import 'package:shepaw/clis/shepaw/models/list_command.dart';
 import 'package:shepaw/clis/shepaw/models/remove_command.dart';
 import 'package:shepaw/clis/shepaw/models/show_command.dart';
 import 'package:shepaw/clis/shepaw/models/update_command.dart';
+import 'package:shepaw/models/remote_agent.dart';
+import 'package:shepaw/services/local_database_service.dart';
 import 'package:shepaw/services/model_registry.dart';
 import 'package:shepaw/services/secure_key_manager.dart';
 
@@ -249,6 +251,82 @@ void main() {
           .execute({'id': 'no-such-id', 'display_name': 'x'});
       expect(result['ok'], isNot(true));
       expect(result['error'], contains('not found'));
+    });
+  });
+
+  // 引用保护：usageByModelId 上移到 ModelUsageService 后，CLI 侧行为必须
+  // 逐字不变（list 的 used_by 结构、remove 的拒绝与 --yes 放行）。
+  group('models usage guard', () {
+    late String id;
+
+    setUp(() async {
+      final result = await ModelsAddCommand().execute({
+        'provider': 'DeepSeek',
+        'name': 'deepseek-chat',
+        'display_name': 'DeepSeek Chat',
+      });
+      id = result['id'] as String;
+    });
+
+    tearDown(() async {
+      // 用例间清掉 agent 行，避免互相干扰（agents 表不在 registry 清理范围内）。
+      for (final agent in await LocalDatabaseService().getAllRemoteAgents()) {
+        await LocalDatabaseService().deleteRemoteAgent(agent.id);
+      }
+    });
+
+    Future<void> createReferencingAgent(String name) async {
+      await LocalDatabaseService().createRemoteAgent(
+        RemoteAgent(
+          id: 'agent-$name',
+          name: name,
+          token: '',
+          endpoint: '',
+          protocol: ProtocolType.acp,
+          connectionType: ConnectionType.http,
+          createdAt: 0,
+          updatedAt: 0,
+          metadata: {'main_model_id': id, 'llm_provider': 'openai'},
+        ),
+      );
+    }
+
+    test('list marks the definition as used_by the referencing agent', () async {
+      await createReferencingAgent('Alice');
+
+      final list = await ModelsListCommand().execute({});
+      final entry = (list['models'] as List)
+          .cast<Map<String, dynamic>>()
+          .firstWhere((m) => m['id'] == id);
+      expect(entry['used_by']['main'], [
+        {'id': 'agent-Alice', 'name': 'Alice'},
+      ]);
+      expect(entry['used_by']['scenario'], isEmpty);
+    });
+
+    test('remove refuses while referenced, listing the agents', () async {
+      await createReferencingAgent('Alice');
+
+      final refused = await ModelsRemoveCommand().execute({'id': id});
+      expect(refused['error'], contains('still referenced'));
+      expect(refused['used_by']['main'], [
+        {'id': 'agent-Alice', 'name': 'Alice'},
+      ]);
+      // 拒绝时定义必须还在。
+      expect(ModelRegistry.instance.getById(id), isNotNull);
+    });
+
+    test('remove with --yes deletes anyway and echoes used_by', () async {
+      await createReferencingAgent('Alice');
+
+      final forced =
+          await ModelsRemoveCommand().execute({'id': id, 'yes': 'true'});
+      expect(forced['ok'], true);
+      expect(forced['action'], 'removed');
+      expect(forced['used_by']['main'], [
+        {'id': 'agent-Alice', 'name': 'Alice'},
+      ]);
+      expect(ModelRegistry.instance.getById(id), isNull);
     });
   });
 }

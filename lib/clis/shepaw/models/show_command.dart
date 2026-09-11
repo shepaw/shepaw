@@ -1,4 +1,5 @@
 import '../../cli_base.dart';
+import '../../../services/model_usage_service.dart';
 import 'models_cli_helpers.dart';
 
 /// 查看单个模型定义的完整配置（脱敏）。
@@ -50,7 +51,7 @@ class ModelsShowCommand extends CliCommand {
     final def = resolved.def!;
 
     final detail = modelSummary(def);
-    final usageByDef = await usageByModelId();
+    final usageByDef = await ModelUsageService.usageByModelId();
     detail['used_by'] =
         usageByDef[def.id] ?? {'main': <dynamic>[], 'scenario': <dynamic>{}};
 

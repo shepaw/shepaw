@@ -1387,6 +1387,26 @@
       }
     }
   },
+  "toolModel_deleteReferencedTitle": "Model Still In Use",
+  "toolModel_deleteReferencedContent": "Model \"{name}\" is still referenced by these agents:\n{agents}\n\nAfter deletion those agents must pick another model (the rest of their config is kept), and will show a warning until they do. Delete anyway?",
+  "@toolModel_deleteReferencedContent": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "agents": {
+        "type": "String"
+      }
+    }
+  },
+  "agentModelConfig_danglingModel": "The previous main model ({name}) no longer exists. Please pick another.",
+  "@agentModelConfig_danglingModel": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "toolModel_deleted": "Model \"{name}\" deleted",
   "@toolModel_deleted": {
     "placeholders": {
@@ -1423,6 +1443,11 @@
   "chat_enableStageGateDesc": "Pause at each stage for the admin to approve / redirect before the next stage starts",
   "chat_viewTrace": "View Trace",
   "chat_viewSession": "View Session",
+  "chat_copySessionTitleAndId": "Copy session title and ID",
+  "chat_copyChannelId": "Copy Channel ID",
+  "chat_listeningEventsTitle": "Listening events",
+  "chat_eventListenKindSubscribe": "Subscribe",
+  "chat_eventListenKindWait": "Wait",
   "chat_forkSession": "Fork",
   "chat_forkingSession": "Forking session…",
   "chat_forkSessionFailed": "Fork session failed: {error}",

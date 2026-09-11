@@ -1,6 +1,7 @@
 import '../../cli_base.dart';
 import 'models_cli_helpers.dart';
 import '../../../services/model_registry.dart';
+import '../../../services/model_usage_service.dart';
 
 /// 删除模型定义（脱敏）。若仍被 Agent 引用则默认拒绝，需 --yes 确认。
 class ModelsRemoveCommand extends CliCommand {
@@ -48,7 +49,7 @@ class ModelsRemoveCommand extends CliCommand {
     }
     final def = resolved.def!;
 
-    final usageByDef = await usageByModelId();
+    final usageByDef = await ModelUsageService.usageByModelId();
     final usedBy = usageByDef[def.id];
     final referenced = usedBy != null &&
         ((usedBy['main'] as List).isNotEmpty ||

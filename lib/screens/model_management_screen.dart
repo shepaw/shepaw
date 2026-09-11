@@ -7,6 +7,7 @@ import '../models/model_definition.dart';
 import '../models/model_routing_config.dart';
 import '../models/remote_agent.dart' show repairUtf16Garbled;
 import '../services/model_registry.dart';
+import '../services/model_usage_service.dart';
 import '../services/ollama_service.dart';
 import '../services/openai_compatible_models_service.dart';
 import '../services/openrouter_service.dart';
@@ -58,11 +59,31 @@ class _ModelManagementScreenState
 
   Future<void> _delete(ModelDefinition def) async {
     final l10n = AppLocalizations.of(context);
+
+    // 引用检查：删掉一个仍被 agent 用作主模型 / 场景模型的定义会留下悬空
+    // 引用，必须让用户看见是哪些 agent 受影响（对齐 CLI `remove` 的
+    // 引用保护，只是这里用显式二次确认代替 `--yes`）。
+    final usage = (await ModelUsageService.usageByModelId())[def.id];
+    if (!mounted) return;
+    final referencingAgents =
+        usage == null ? const <String>[] : ModelUsageService.referencedAgentNames(usage);
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(l10n.toolModel_deleteTitle),
-        content: Text(l10n.toolModel_deleteContent(def.displayName)),
+        title: Text(
+          referencingAgents.isEmpty
+              ? l10n.toolModel_deleteTitle
+              : l10n.toolModel_deleteReferencedTitle,
+        ),
+        content: Text(
+          referencingAgents.isEmpty
+              ? l10n.toolModel_deleteContent(def.displayName)
+              : l10n.toolModel_deleteReferencedContent(
+                  def.displayName,
+                  referencingAgents.join(l10n.common_listSeparator),
+                ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),

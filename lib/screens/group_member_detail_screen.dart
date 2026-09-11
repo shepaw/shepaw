@@ -10,6 +10,7 @@ import '../peer/widgets/peer_source_badge.dart';
 import '../services/agent_soul_service.dart';
 import '../services/local_database_service.dart';
 import '../services/logger_service.dart';
+import '../services/model_registry.dart';
 import '../widgets/avatar_image.dart';
 import 'agent_soul_edit_screen.dart';
 
@@ -568,7 +569,14 @@ class _GroupMemberDetailScreenState extends State<GroupMemberDetailScreen> {
   String? _modelName(RemoteAgent agent) {
     final metadata = agent.metadata;
     final mainId = metadata['main_model_id'] as String?;
-    if (mainId != null && mainId.isNotEmpty) return mainId;
+    if (mainId != null && mainId.isNotEmpty) {
+      // metadata 里存的是定义 id，界面上要显示定义名。定义已被删除时退回
+      // 原始 id —— 悬空也总好过整行空白。
+      final displayName = ModelRegistry.instance.getById(mainId)?.displayName;
+      return (displayName != null && displayName.isNotEmpty)
+          ? displayName
+          : mainId;
+    }
     final model = metadata['llm_model'] as String?;
     if (model != null && model.isNotEmpty) return model;
     return null;

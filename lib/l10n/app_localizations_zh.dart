@@ -3179,6 +3179,19 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get toolModel_deleteReferencedTitle => '模型仍在使用';
+
+  @override
+  String toolModel_deleteReferencedContent(String name, String agents) {
+    return '模型 $name 仍被以下 Agent 引用：\n$agents\n\n删除后这些 Agent 需要重新选择模型（其余配置不会丢失），期间会提示主模型已失效。确定继续删除吗？';
+  }
+
+  @override
+  String agentModelConfig_danglingModel(String name) {
+    return '原主模型（$name）已不存在，请重新选择';
+  }
+
+  @override
   String toolModel_deleted(String name) {
     return '模型 $name 已删除';
   }
@@ -3249,6 +3262,21 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get chat_viewSession => '查看会话';
+
+  @override
+  String get chat_copySessionTitleAndId => '复制会话标题和 ID';
+
+  @override
+  String get chat_copyChannelId => '复制 Channel ID';
+
+  @override
+  String get chat_listeningEventsTitle => '正在监听的事件';
+
+  @override
+  String get chat_eventListenKindSubscribe => '订阅';
+
+  @override
+  String get chat_eventListenKindWait => '等待';
 
   @override
   String get chat_forkSession => '分叉';
