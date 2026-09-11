@@ -3275,7 +3275,7 @@
   "peerHub_confirmWarning": "对方 Hub 会自动接受持有此配对码的设备，不会二次确认。请先核对 Hub 地址与指纹。",
   "peerHub_insecureWarning": "这是公网地址且走明文 http，访问令牌会以明文发送。",
   "peerHub_guideTitle": "对方还没有 Agent Hub？",
-  "peerHub_guideBody": "# 在对方电脑上执行（需要 Node.js ≥ 18.17）\nnpm install -g shepaw-agent-hub\nshepaw-hub init\n\n# 先设令牌，再绑定非回环地址 ——\n# 顺序反了 Hub 会拒绝启动\nexport SHEPAW_HUB_TOKEN=换成一个足够长的随机串\nshepaw-hub web --host 0.0.0.0",
+  "peerHub_guideBody": "# 在对方电脑上执行（需要 Node.js ≥ 18.20）\nnpm install -g shepaw-agent-hub\nshepaw-hub init\n\n# 先设令牌，再绑定非回环地址 ——\n# 顺序反了 Hub 会拒绝启动\nexport SHEPAW_HUB_TOKEN=换成一个足够长的随机串\nshepaw-hub web --host 0.0.0.0",
   "peerHub_guideCopy": "复制命令",
   "peerHub_guideCopied": "命令已复制",
   "peerList_pairedSuccess": "已与 {name} 配对成功",

@@ -5446,7 +5446,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get peerHub_guideBody =>
-      '# 在对方电脑上执行（需要 Node.js ≥ 18.17）\nnpm install -g shepaw-agent-hub\nshepaw-hub init\n\n# 先设令牌，再绑定非回环地址 ——\n# 顺序反了 Hub 会拒绝启动\nexport SHEPAW_HUB_TOKEN=换成一个足够长的随机串\nshepaw-hub web --host 0.0.0.0';
+      '# 在对方电脑上执行（需要 Node.js ≥ 18.20）\nnpm install -g shepaw-agent-hub\nshepaw-hub init\n\n# 先设令牌，再绑定非回环地址 ——\n# 顺序反了 Hub 会拒绝启动\nexport SHEPAW_HUB_TOKEN=换成一个足够长的随机串\nshepaw-hub web --host 0.0.0.0';
 
   @override
   String get peerHub_guideCopy => '复制命令';

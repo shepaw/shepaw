@@ -5675,7 +5675,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get peerHub_guideBody =>
-      '# Run this on the other computer (needs Node.js >= 18.17)\nnpm install -g shepaw-agent-hub\nshepaw-hub init\n\n# Set the token BEFORE binding a non-loopback address --\n# the Hub refuses to start if you do it the other way around\nexport SHEPAW_HUB_TOKEN=<a long random string>\nshepaw-hub web --host 0.0.0.0';
+      '# Run this on the other computer (needs Node.js >= 18.20)\nnpm install -g shepaw-agent-hub\nshepaw-hub init\n\n# Set the token BEFORE binding a non-loopback address --\n# the Hub refuses to start if you do it the other way around\nexport SHEPAW_HUB_TOKEN=<a long random string>\nshepaw-hub web --host 0.0.0.0';
 
   @override
   String get peerHub_guideCopy => 'Copy commands';
