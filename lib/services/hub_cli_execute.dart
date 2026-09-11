@@ -65,6 +65,23 @@ class HubCliExecute {
   static bool isMember(Channel channel, String agentId) =>
       channel.memberIds.contains(agentId);
 
+  /// Extra allowlist for an authenticated session, or null when unrestricted.
+  ///
+  /// Remote ACP group members must be narrowed to the same surface as local
+  /// ones ([kGroupMemberCliAllowlist]). Without this, the same non-admin
+  /// member got `{store, help}` when running locally but every command its own
+  /// `enabled_cli_commands` allowed when running remotely — and that allowlist
+  /// is unrestricted by default, so `os.command.exec` went through.
+  ///
+  /// Same rule the group executor uses to build the schema
+  /// (`group_agent_executor.dart`: `isAdmin ? null : kGroupMemberCliAllowlist`),
+  /// so "the model was told it may call it" and "execution allows it" agree.
+  static Set<String>? extraAllowlistFor(Channel? channel, String agentId) {
+    if (channel == null || !channel.isGroup) return null;
+    if (channel.isAdmin(agentId)) return null;
+    return kGroupMemberCliAllowlist;
+  }
+
   /// Map a member-verified channel to Gate `channelId` / `runtimeOwnerId`.
   /// Group-bound member DMs write into the group bag, not personal runtime.
   static ({String channelId, String runtimeOwnerId}) scopeOf(
@@ -109,6 +126,7 @@ class HubCliExecute {
     required Map<String, dynamic> args,
     String? channelId,
     String? runtimeOwnerId,
+    Set<String>? extraAllowlist,
   }) {
     return CliExecutionGate.instance.execute(
       args: args,
@@ -116,6 +134,7 @@ class HubCliExecute {
       channelId: channelId,
       runtimeOwnerId: runtimeOwnerId,
       enabledCliCommands: agent.enabledCliCommands,
+      extraAllowlist: extraAllowlist,
       requireApproval: agent.cliRequireApproval,
     );
   }
@@ -146,6 +165,8 @@ class HubCliExecute {
 
     String? channelId;
     String? runtimeOwnerId;
+    // No bound session = not a group context → keep it unrestricted.
+    Set<String>? extraAllowlist;
     final sessionId = resolveSessionId(
       params,
       activeFallback: activeSessionLookup?.call(agentId),
@@ -158,6 +179,7 @@ class HubCliExecute {
           'error': 'session_id is not a bound session for this agent',
         };
       }
+      extraAllowlist = extraAllowlistFor(channel, agentId);
       final scope = scopeOf(channel, agentId);
       channelId = scope.channelId;
       runtimeOwnerId = scope.runtimeOwnerId;
@@ -173,6 +195,7 @@ class HubCliExecute {
       },
       channelId: channelId,
       runtimeOwnerId: runtimeOwnerId,
+      extraAllowlist: extraAllowlist,
     );
 
     try {

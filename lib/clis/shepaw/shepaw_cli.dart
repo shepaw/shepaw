@@ -282,7 +282,8 @@ class ShepawCLI {
   /// [isUiOperation] 是否来自 UI 操作（UI 操作跳过权限检查，默认 false）
   /// [channelId] 当前对话频道；flags 未带 channel 时作为 store 落点
   /// [runtimeOwnerId] 群聊时传入群 id，强制产物写入群 runtime
-  /// [cliAllowlist] 非空时覆盖 Zone 内的允许列表（群成员 store/help 等）
+  /// [cliAllowlist] 显式允许列表（群成员 store/help 等）；与环境 Zone 白名单
+  /// 取**交集**，任一侧为 null 表示该轴不施加限制。
   Future<String> execute(
     Map<String, dynamic> args, {
     String agentId = SheService.sheId,
@@ -302,16 +303,6 @@ class ShepawCLI {
 
     try {
       final ns = _namespaces[namespace];
-      if (ns == null) {
-        return jsonEncode({
-          'error': 'Unknown namespace: $namespace',
-          'available': _namespaces.keys.toList(),
-        });
-      }
-
-      if (namespace == 'help') {
-        return jsonEncode(_buildHelpResult());
-      }
 
       // 权限检查：全局启用 / She 专属
       // UI 操作（用户主动在界面点击执行）跳过权限检查
@@ -324,6 +315,28 @@ class ShepawCLI {
         }
       }
 
+      // 有效 allowlist = 显式传入 ∩ 环境 Zone。
+      // 任一侧为 null 表示该轴不施加限制。用交集而非 `??` 覆盖：两条链路
+      // （群成员 extraAllowlist / 事件感知 Zone 白名单）一旦叠加，覆盖语义会
+      // 静默放宽权限。
+      final allowlist =
+          cliIntersectAllowlists(cliAllowlist, ChatAgentScope.cliAllowlist);
+
+      if (ns == null) {
+        return jsonEncode({
+          'error': 'Unknown namespace: $namespace',
+          'available': _visibleNamespaceNames(allowlist),
+        });
+      }
+
+      // `help` 恒可调用（不受 allowlist 限制），但内容按有效 allowlist 过滤：
+      // 它此前在权限检查之前短路，会把全部命名空间及其描述回吐给任何调用者，
+      // 而 cliFilterNamespaces 在交集为空时又故意回退到 `help`——即"被限到
+      // 什么都没有"的 agent 恰好拿到唯一会泄露全量列表的命名空间。
+      if (namespace == 'help') {
+        return jsonEncode(_buildHelpResult(allowlist: allowlist));
+      }
+
       // 透传当前执行者的 agentId / channelId / 群 runtime owner（store write 等
       // 依赖）。并发成员工具调用必须在各自 Zone 内执行：读取点优先取 Zone 值，
       // 避免原先静态全局被并发覆盖的串号竞态。
@@ -334,7 +347,6 @@ class ShepawCLI {
           : (channelId ?? '').trim();
       final scopedOwner = (runtimeOwnerId ?? '').trim();
       final scopedCorrelation = (flags['correlation'] ?? '').trim();
-      final allowlist = cliAllowlist ?? ChatAgentScope.cliAllowlist;
       final result = await ChatAgentScope.runScoped<Map<String, dynamic>>(
         agentId: agentId,
         channelId: scopedChannel,
@@ -373,21 +385,35 @@ class ShepawCLI {
 
   // ── Help ─────────────────────────────────────────────────────────────────────
 
-  Map<String, dynamic> _buildHelpResult() {
+  /// 顶层命名空间名中，[allowlist] 允许模型看见的那些。
+  ///
+  /// `allowlist == null` = 不受限 → 全部可见。
+  List<String> _visibleNamespaceNames(Set<String>? allowlist) => allowlist == null
+      ? _namespaces.keys.toList()
+      : _namespaces.keys
+          .where((ns) => cliNamespaceVisible(allowlist, ns))
+          .toList();
+
+  /// 顶层 help。**内容按 [allowlist] 过滤**，避免受限 agent 从 help 里
+  /// 读到它无权使用的命名空间（`allowlist == null` 表示不过滤）。
+  Map<String, dynamic> _buildHelpResult({Set<String>? allowlist}) {
+    bool visible(String ns) =>
+        allowlist == null || cliNamespaceVisible(allowlist, ns);
+
     final result = <String, dynamic>{
       'cli': 'shepaw <namespace> [subcommand] [--flag value ...]',
       'hint': 'Call "shepaw <namespace>" to see available sub-commands. '
               'Add flags={"help":""} to any command for detailed usage.',
       'namespaces': {
         for (final entry in _namespaces.entries)
-          if (entry.value is! HelpNamespace)
+          if (entry.value is! HelpNamespace && visible(entry.key))
             entry.key: entry.value.description,
       },
     };
 
     // 添加外部工具信息
     final externalNs = _namespaces.entries
-        .where((e) => e.value is ExternalCliNamespace)
+        .where((e) => e.value is ExternalCliNamespace && visible(e.key))
         .toList();
     if (externalNs.isNotEmpty) {
       result['external_tools'] = {

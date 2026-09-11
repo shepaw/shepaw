@@ -20,6 +20,38 @@ bool cliCommandAllowed(Set<String> allowlist, String commandId) {
   return false;
 }
 
+/// Prefix-aware intersection of two allowlists.
+///
+/// Plain set intersection is wrong here: entries allow a *subtree*, so
+/// `{'store'} ∩ {'store.read'}` must be `{'store.read'}`, not `{}`.
+///
+/// For `a ∈ A`, `b ∈ B`: if one is a dot-boundary prefix of the other (or they
+/// are equal), the longer one is the tighter grant and is contributed;
+/// incomparable pairs contribute nothing. This is exact — an entry `x` allows
+/// `c` iff `x` is a dot-boundary prefix of `c`, so when `a` and `b` are both
+/// prefixes of `c` they are comparable and their longer form allows exactly
+/// the same `c`s the pair did together.
+///
+/// `null` on either side means "that axis imposes no restriction", so the other
+/// side passes through unchanged. An empty result means "nothing is allowed".
+Set<String>? cliIntersectAllowlists(Set<String>? a, Set<String>? b) {
+  if (a == null) return b;
+  if (b == null) return a;
+  final result = <String>{};
+  for (final x in a) {
+    for (final y in b) {
+      if (x == y) {
+        result.add(x);
+      } else if (y.startsWith('$x.')) {
+        result.add(y);
+      } else if (x.startsWith('$y.')) {
+        result.add(x);
+      }
+    }
+  }
+  return result;
+}
+
 /// Read-only / discovery commands that skip `cliRequireApproval`.
 ///
 /// `os.*` non-safe still goes through OS confirmation even when listed here.
