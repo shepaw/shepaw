@@ -12457,6 +12457,18 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'切换会话模式失败'**
   String get chat_sessionModeSwitchFailed;
+
+  /// No description provided for @chat_mainModelUnset.
+  ///
+  /// In zh, this message translates to:
+  /// **'未设置模型'**
+  String get chat_mainModelUnset;
+
+  /// No description provided for @chat_mainModelSwitchFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'切换主模型失败'**
+  String get chat_mainModelSwitchFailed;
 }
 
 class _AppLocalizationsDelegate

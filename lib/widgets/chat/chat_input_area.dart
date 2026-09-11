@@ -6,18 +6,25 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../models/acp_protocol.dart';
 import '../../models/mention_entry.dart';
+import '../../models/model_definition.dart';
 import '../../models/pending_attachment.dart';
 import '../../models/remote_agent.dart';
 import '../../peer/engine_session_modes.dart';
 import '../../peer/services/peer_agent_client_service.dart';
 import '../../peer/services/peer_connection_manager.dart';
+import '../../screens/model_management_screen.dart';
+import '../../services/agent_metadata_builder.dart';
 import '../../services/audio_recording_service.dart';
 import '../../services/local_database_service.dart';
+import '../../services/model_registry.dart';
+import '../../services/remote_agent_service.dart';
+import '../../services/session/session_slash_commands.dart';
 import '../../service_locator.dart' show getIt;
 import '../../utils/layout_utils.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/error_handler_service.dart';
 import '../../theme/app_theme.dart';
+import '../model_icon.dart';
 import 'slash_command_picker.dart';
 
 /// The chat input area widget (supports both desktop and mobile layouts).
@@ -149,6 +156,12 @@ class ChatInputAreaState extends State<ChatInputArea> {
   late List<SlashCommandInfo> _slashCommands;
   StreamSubscription<List<SlashCommandInfo>>? _slashCommandsSub;
 
+  List<SlashCommandInfo> get _effectiveSlashCommands =>
+      ShepawSessionSlashCommands.merge(
+        _slashCommands,
+        isGroup: widget.isGroupMode,
+      );
+
   // Desktop WeChat-style floating emoji / attachment popovers.
   // Anchored via the toolbar button's global rect on the root Overlay so the
   // panel isn't clipped / buried by the desktop conversation list (the chat
@@ -177,12 +190,25 @@ class ChatInputAreaState extends State<ChatInputArea> {
   bool _sessionModeSetting = false;
   /// 会话切换时作废在途的拉取（fetchModes 最长 15s），避免旧会话的结果
   /// 覆盖新会话的 chip。
-  int _sessionModesToken = 0;
+  int _controlsToken = 0;
 
   bool get _sessionModeAvailable => _sessionModes.isNotEmpty;
 
   bool get _planModeActive =>
       (_currentSessionMode ?? '').toLowerCase() == 'plan';
+
+  // ── 主模型（§5.1.6 / §6 #8）──
+  // 只对本地 agent 有意义：Peer agent 的模型由对端引擎自管（CLI 的
+  // models agent-main 同样拒绝非本地 agent）。未设置主模型时也显示，
+  // 让用户能就地补上。
+  final GlobalKey _mainModelChipKey = GlobalKey();
+  ModelDefinition? _mainModelDef;
+  /// 存了 id 但定义已被删除：显示原始 id 而不是假装没选过。
+  String? _mainModelDanglingId;
+  bool _mainModelAvailable = false;
+
+  /// 主模型菜单里的「添加模型」哨兵值。
+  static const _addModelSentinel = '__add_model__';
 
   @override
   void initState() {
@@ -205,7 +231,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
         _detectSlashTrigger();
       }
     });
-    unawaited(_loadSessionModes());
+    unawaited(_loadAgentControls());
   }
 
   @override
@@ -254,7 +280,10 @@ class ChatInputAreaState extends State<ChatInputArea> {
       _modeBeforePlan = null;
       _modePeerId = null;
       _modeRemoteAgentId = null;
-      unawaited(_loadSessionModes());
+      _mainModelDef = null;
+      _mainModelDanglingId = null;
+      _mainModelAvailable = false;
+      unawaited(_loadAgentControls());
     }
   }
 
@@ -299,21 +328,30 @@ class ChatInputAreaState extends State<ChatInputArea> {
     return remoteSessionIdFromChannelId(cid) ?? cid;
   }
 
-  /// 拉取当前会话可用的模式。只有 Peer agent 有上游 mode：本地 agent 与
-  /// 群聊（作用于谁未定，§6 #4）都不显示入口。
-  Future<void> _loadSessionModes() async {
+  /// 拉取输入框两个入口的数据：Peer agent → 会话模式；本地 agent → 主模型
+  /// （§5.1.6）。群聊两个入口都不显示（作用于谁未定，§6 #4）。
+  Future<void> _loadAgentControls() async {
     final agentId = widget.agentId;
     if (widget.isGroupMode || agentId == null || agentId.isEmpty) return;
     if (!getIt.isRegistered<LocalDatabaseService>()) return;
-    final token = ++_sessionModesToken;
+    final token = ++_controlsToken;
     RemoteAgent? agent;
     try {
       agent = await getIt<LocalDatabaseService>().getRemoteAgentById(agentId);
     } catch (_) {
       return;
     }
-    if (!mounted || token != _sessionModesToken) return;
-    if (agent == null || !agent.isPeerAgent) return;
+    if (!mounted || token != _controlsToken || agent == null) return;
+    if (agent.isPeerAgent) {
+      await _loadSessionModes(agent, token);
+    }
+    if (agent.isLocal) {
+      _readMainModel(agent);
+    }
+  }
+
+  /// 拉取当前会话可用的模式（Peer agent 的原生 mode）。
+  Future<void> _loadSessionModes(RemoteAgent agent, int token) async {
     final peerId = agent.sourcePeerId;
     final remoteAgentId = agent.remoteAgentId;
     if (peerId == null || remoteAgentId == null) return;
@@ -338,7 +376,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
       remoteAgentId: remoteAgentId,
       sessionId: _sessionIdForMode,
     );
-    if (!mounted || token != _sessionModesToken) return;
+    if (!mounted || token != _controlsToken) return;
     final live = list.modes.isNotEmpty ? list : catalog;
     setState(() {
       _sessionModes = live.modes;
@@ -373,6 +411,191 @@ class ChatInputAreaState extends State<ChatInputArea> {
       icon: Icons.error_outline,
       color: Colors.red.shade400,
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Main model（§5.1.6 / §6 #8）
+  // ---------------------------------------------------------------------------
+
+  void _readMainModel(RemoteAgent agent) {
+    final id = agent.metadata['main_model_id'] as String?;
+    final def = id == null ? null : ModelRegistry.instance.getById(id);
+    setState(() {
+      _mainModelAvailable = true;
+      _mainModelDef = def;
+      _mainModelDanglingId = (def == null && id != null) ? id : null;
+    });
+  }
+
+  /// 写 `metadata['main_model_id']` —— 与 Agent 设置页 / `shepaw models
+  /// agent-main` 同一个字段，经 `buildLlmMetadata` 保证悬空时不剥掉配置。
+  Future<void> _setMainModel(String id) async {
+    final agentId = widget.agentId;
+    if (agentId == null || !getIt.isRegistered<LocalDatabaseService>()) return;
+    final db = getIt<LocalDatabaseService>();
+    RemoteAgent? agent;
+    try {
+      agent = await db.getRemoteAgentById(agentId);
+    } catch (_) {
+      return;
+    }
+    if (!mounted || agent == null || !agent.isLocal) return;
+    final metadata = Map<String, dynamic>.from(agent.metadata);
+    final result = buildLlmMetadata(metadata, selectedMainModelId: id);
+    if (result.state != MainModelState.resolved) {
+      showTopToast(
+        context,
+        AppLocalizations.of(context).chat_mainModelSwitchFailed,
+        icon: Icons.error_outline,
+        color: Colors.red.shade400,
+      );
+      return;
+    }
+    await getIt<RemoteAgentService>().updateAgent(
+      agent.copyWith(
+        metadata: metadata,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+    if (!mounted) return;
+    setState(() {
+      _mainModelDef = ModelRegistry.instance.getById(id);
+      _mainModelDanglingId = null;
+    });
+  }
+
+  Future<void> _openModelManagement() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ModelManagementScreen()),
+    );
+    if (!mounted) return;
+    // 定义可能被改名 / 删除，回来后按 registry 重新解析 chip。
+    unawaited(_loadAgentControls());
+  }
+
+  Widget _buildMainModelChip() {
+    if (!_mainModelAvailable) return const SizedBox.shrink();
+    final l10n = AppLocalizations.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
+    final def = _mainModelDef;
+    final unset = def == null;
+    final fg = unset ? colorScheme.error : colorScheme.onSurfaceVariant;
+    return InkWell(
+      key: _mainModelChipKey,
+      onTap: _showMainModelMenu,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: colorScheme.outline, width: 0.5),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ModelIcon(size: 14, color: fg),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                def?.displayName ??
+                    _mainModelDanglingId ??
+                    l10n.chat_mainModelUnset,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: fg,
+                ),
+              ),
+            ),
+            const SizedBox(width: 2),
+            Icon(Icons.arrow_drop_down, size: 16, color: fg),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 与 Agent 设置页同一套候选（`ModelRegistry` 的全局定义），末尾带
+  /// 「添加模型」直达模型管理页（§6 #8 要求能顺手添加）。
+  Future<void> _showMainModelMenu() async {
+    final defs = ModelRegistry.instance.definitions;
+    final overlayBox =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (overlayBox == null) return;
+    final chipBox =
+        _mainModelChipKey.currentContext?.findRenderObject() as RenderBox?;
+    final rect = chipBox != null
+        ? overlayBox.globalToLocal(chipBox.localToGlobal(Offset.zero)) &
+            chipBox.size
+        : Rect.fromLTWH(24, overlayBox.size.height - 240, 200, 0);
+    final l10n = AppLocalizations.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
+    final picked = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromSize(rect, overlayBox.size),
+      items: [
+        for (final def in defs)
+          PopupMenuItem<String>(
+            value: def.id,
+            child: Row(
+              children: [
+                Icon(
+                  Icons.check,
+                  size: 16,
+                  color: def.id == _mainModelDef?.id
+                      ? colorScheme.primary
+                      : Colors.transparent,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(def.displayName,
+                          style: const TextStyle(fontSize: 14)),
+                      if (def.route.model != null &&
+                          def.route.model!.isNotEmpty)
+                        Text(
+                          def.route.model!,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        PopupMenuItem<String>(
+          value: _addModelSentinel,
+          child: Row(
+            children: [
+              Icon(Icons.add, size: 18, color: colorScheme.primary),
+              const SizedBox(width: 8),
+              Text(
+                l10n.toolModel_addTitle,
+                style: TextStyle(
+                  color: colorScheme.primary,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+    if (!mounted || picked == null) return;
+    if (picked == _addModelSentinel) {
+      await _openModelManagement();
+      return;
+    }
+    await _setMainModel(picked);
   }
 
   PeerAgentMode? _findMode(String value) {
@@ -541,7 +764,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
 
   Widget _buildSlashPickerWidget() {
     return SlashCommandPicker(
-      commands: _slashCommands,
+      commands: _effectiveSlashCommands,
       query: _slashQuery,
       selectedIndex: _slashSelectedIndex,
       scrollController: _slashScrollController,
@@ -998,6 +1221,10 @@ class ChatInputAreaState extends State<ChatInputArea> {
                       const SizedBox(width: 4),
                       _buildSessionModeChip(),
                     ],
+                    if (_mainModelAvailable) ...[
+                      const SizedBox(width: 4),
+                      Flexible(child: _buildMainModelChip()),
+                    ],
                     const Spacer(),
                     if (widget.isLoading)
                       SizedBox(
@@ -1451,12 +1678,18 @@ class ChatInputAreaState extends State<ChatInputArea> {
           children: [
             _buildPendingAttachmentsPreview(),
             // 输入框上方一条：那一行已塞了 语音 / + / 输入框 / 发送，再塞
-            // 图标会挤（§5.1.5），模式 chip 单独占一条。
-            if (_sessionModeAvailable)
+            // 图标会挤（§5.1.5），两个 chip 单独占一条。
+            if (_sessionModeAvailable || _mainModelAvailable)
               Padding(
                 padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
                 child: Row(
-                  children: [_buildSessionModeChip()],
+                  children: [
+                    if (_sessionModeAvailable) _buildSessionModeChip(),
+                    if (_sessionModeAvailable && _mainModelAvailable)
+                      const SizedBox(width: 6),
+                    if (_mainModelAvailable)
+                      Flexible(child: _buildMainModelChip()),
+                  ],
                 ),
               ),
             Row(
@@ -1780,7 +2013,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
     // message send or @mention submenus.
     if (_showSlashPicker) {
       final filtered =
-          SlashCommandPicker.filter(_slashCommands, _slashQuery);
+          SlashCommandPicker.filter(_effectiveSlashCommands, _slashQuery);
       if (filtered.isNotEmpty) {
         if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
           setState(() {
@@ -1988,7 +2221,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
     if (widget.slashCommandsResolver != null && _slashCommands.isEmpty) {
       _slashCommands = widget.slashCommandsResolver!();
     }
-    if (_slashCommands.isEmpty) {
+    if (_effectiveSlashCommands.isEmpty) {
       if (_showSlashPicker) {
         setState(() {
           _showSlashPicker = false;
@@ -2030,7 +2263,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
 
     if (slashPos >= 0) {
       final query = text.substring(slashPos + 1, cursorPos);
-      final filtered = SlashCommandPicker.filter(_slashCommands, query);
+      final filtered = SlashCommandPicker.filter(_effectiveSlashCommands, query);
       if (filtered.isNotEmpty) {
         final queryChanged = query != _slashQuery;
         setState(() {

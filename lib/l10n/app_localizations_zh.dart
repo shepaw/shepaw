@@ -6881,4 +6881,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get chat_sessionModeSwitchFailed => '切换会话模式失败';
+
+  @override
+  String get chat_mainModelUnset => '未设置模型';
+
+  @override
+  String get chat_mainModelSwitchFailed => '切换主模型失败';
 }

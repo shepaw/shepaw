@@ -4283,5 +4283,7 @@
   "chat_planModeOn": "规划中",
   "chat_planModeHint": "描述你想做什么，Agent 会先给计划",
   "chat_planModeUnsupported": "该 Agent 没有原生规划模式",
-  "chat_sessionModeSwitchFailed": "切换会话模式失败"
+  "chat_sessionModeSwitchFailed": "切换会话模式失败",
+  "chat_mainModelUnset": "未设置模型",
+  "chat_mainModelSwitchFailed": "切换主模型失败"
 }

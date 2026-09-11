@@ -3805,5 +3805,7 @@
   "chat_planModeOn": "Planning",
   "chat_planModeHint": "Describe what you want — the agent will plan first",
   "chat_planModeUnsupported": "This agent has no native plan mode",
-  "chat_sessionModeSwitchFailed": "Failed to switch session mode"
+  "chat_sessionModeSwitchFailed": "Failed to switch session mode",
+  "chat_mainModelUnset": "No model set",
+  "chat_mainModelSwitchFailed": "Failed to switch main model"
 }

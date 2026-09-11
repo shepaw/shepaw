@@ -7163,4 +7163,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get chat_sessionModeSwitchFailed => 'Failed to switch session mode';
+
+  @override
+  String get chat_mainModelUnset => 'No model set';
+
+  @override
+  String get chat_mainModelSwitchFailed => 'Failed to switch main model';
 }
