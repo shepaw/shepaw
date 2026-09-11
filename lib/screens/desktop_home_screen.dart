@@ -666,6 +666,10 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
       case _RightPanelView.pairDevice:
         return PeerPairingScreen(
+          // 桌面端没有摄像头，`mobile_scanner` 也没有桌面实现 —— 「我连它」的第一项
+          // 在这块屏幕上必然是个死入口。所以桌面面板仍旧落在「它连我」：把二维码
+          // 摆出来让手机扫，本来就是桌面配对的常态流程。
+          initialTab: PeerPairingTab.beConnected,
           onPaired: (peer) {
             _reloadAgents();
             _reloadContacts();
