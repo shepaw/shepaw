@@ -286,6 +286,24 @@ ACP 协议没有 mode 方法、`metadata['engine']` 也拿不到，去掉 UI 门
 
 注：用户文档只写**现状**。规划模式是新能力，等 §5.1.3 落地后再同步到用户文档。
 
+#### 5.1.6 输入框两个入口的数据来源（2026-09-11 定）
+
+**前提：Agent 只有两类。** ACP 远端 agent 已废弃（App 入口已隐藏），只剩
+**Peer 接入的 agent**（Hub 引擎）与**本地 agent**（本地 LLM 代理）。
+
+| 入口 | Peer agent | 本地 agent |
+|---|---|---|
+| 会话模式 | `fetchModes` / `setMode`（`peer_agent_client_service.dart:3713` / `:3759`） | **隐藏** |
+| 模型 | `fetchModels` / `setModel`（`:1774` / `:1819`） | `AgentScenarioModels.modelIds`（`agent_scenario_models.dart:10`） |
+
+**模型列表走的也是 Peer relay，不是 ACP。** `acp_protocol.dart` 里 `grep model`
+零命中；`fetchModels` 是 `agent.models.list` relay，与 `fetchModes` 同构，
+同样接受可选 `sessionId`（注释：「scoping to a synced session」）。
+
+本地 agent 没有「模型列表」，只有按模态配置的 modelId 映射
+（`Map<ModalityType, String>`），picker 需列出其 values。
+待定：输入框里的「模型」切的是哪个模态（见 §6 #8）。
+
 ### 5.2 `flowMode` 从「群属性」下沉到「本次任务属性」
 
 现状：改一次要开抽屉 → 编辑群信息 → 翻开关 → 保存。链路太长，实际没人来回切，
@@ -334,6 +352,11 @@ ACP 协议没有 mode 方法、`metadata['engine']` 也拿不到，去掉 UI 门
    `fetchModes` / `setMode` 都接受 `sessionId`，transport 本来就支持；
    看着像 agent 级只是因为 Agent 详情页调 `fetchModes` 时没传 sessionId。
 6. `flowMode` 下沉到每次发送，是否值得做（§5.2 第 2 步改造量不小）。
+7. ~~ACP 远端 agent 的模型/会话模式入口怎么办~~ **关闭**：ACP 已废弃，App 入口已隐藏，
+   只剩 Peer agent 与本地 agent 两类（§5.1.6）。
+8. **输入框里的「模型」切的是哪个模态？** 本地 agent 的模型是按
+   `ModalityType` 配置的（文本 / 图片 / 音频…各一个），一个图标点开要么只切
+   文本模型、要么是个分组列表。**倾向只切文本模型**，其余模态仍在 Agent 详情页配。
 6. 干预强度三档里 `askUser` 这档是否真有需求——如果没人用，两档就够。
 
 ## 7. 已拍板
