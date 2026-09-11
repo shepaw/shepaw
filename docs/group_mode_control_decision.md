@@ -220,9 +220,23 @@ ACP 协议没有 mode 方法、`metadata['engine']` 也拿不到，去掉 UI 门
 4. `acp_protocol.dart` 加 mode 相关方法 + 握手 capability 位，需要 `shepaw-acp-proxy`
    同步实现。做完后阶段一的降级路径自动升级为硬拦。
 
-注意一个语义差异待确认（见 §6 #7）：Peer 的 `setMode` 是 **agent 级**
-（`setMode(peerId, remoteAgentId, mode)`），而 §5.1.5 定的开关是**会话级**。
-两者不一致——在一个会话里开规划模式，会不会影响该 agent 的其它会话？
+**会话级是对的，transport 本来就支持。** 初版曾据函数签名推断 `setMode` 是 agent 级，
+这是错的——漏看了可选参数：
+
+- `fetchModes({peerId, remoteAgentId, sessionId})`（`peer_agent_client_service.dart:3713`）
+  和 `setMode({peerId, remoteAgentId, mode, sessionId})`（`:3759`）**都接受 `sessionId`**，
+  传了就写进 `payload['session_id']`。文档注释也写明「[sessionId] scopes to a synced session」。
+- 类型与命名本身就是会话语义：`PeerAgentMode` 的注释是「One upstream **session-mode**
+  option」，relay 的目标方法叫 `agent.modes.list` / `agent.modes.setCurrent`。
+- 第三方 agent 的 plan mode 本来就是 per-session（Claude Code / Cursor 都能多会话并行，
+  一个在规划、另一个在执行）。做成 agent 级反而不能并行开发。
+
+**当前之所以表现得像 agent 级，是调用方的问题**：Agent 详情页的
+`_loadPeerModes()`（`remote_agent_detail_screen.dart:387`）调 `fetchModes` 时**没传 sessionId**。
+是那个页面的用法是 agent 级的，不是能力是 agent 级的。
+
+结论：规划模式的开关做成**会话级**（§5.1.5）与 transport 一致，
+切换时把本会话对应的远端 sessionId 传下去即可，不需要额外记录每个会话的 mode。
 
 #### 5.1.5 开关放哪：输入框工具条，不放设置页（2026-09-11 定）
 
@@ -316,10 +330,9 @@ ACP 协议没有 mode 方法、`metadata['engine']` 也拿不到，去掉 UI 门
    目前只有 Peer 路径有。这是 §5.1.3 第 1 步的前置。
 4. 群聊里规划模式作用于谁？只约束 admin、还是所有成员？群聊语义下「别动手」
    应该约束的是**成员**（干活的），admin 本来就在协调。
-5. **Peer 的 `setMode` 是 agent 级，开关定的是会话级**（§5.1.3b 末尾）。二选一：
-   - 开关也做成 agent 级（跟 transport 一致，但切换会影响该 agent 的所有会话）
-   - 保持会话级，切换时只对本会话生效（需要额外记录每个会话的 mode，transport 仍是 agent 级 → 会互相打架）
-   **倾向**：先按 agent 级做，跟 transport 对齐，避免两套真相。
+5. ~~`setMode` 是 agent 级还是会话级~~ **已定（§5.1.3b）**：**会话级**。
+   `fetchModes` / `setMode` 都接受 `sessionId`，transport 本来就支持；
+   看着像 agent 级只是因为 Agent 详情页调 `fetchModes` 时没传 sessionId。
 6. `flowMode` 下沉到每次发送，是否值得做（§5.2 第 2 步改造量不小）。
 6. 干预强度三档里 `askUser` 这档是否真有需求——如果没人用，两档就够。
 
