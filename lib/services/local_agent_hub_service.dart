@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../peer/models/pairing_payload.dart';
 import '../peer/services/peer_pairing_service.dart';
 import '../peer/services/peer_storage_service.dart';
+import 'hub_api_client.dart';
 import 'local_agent_hub_host.dart';
 import 'local_agent_hub_models.dart';
 
@@ -62,6 +63,16 @@ class LocalAgentHubService {
   }
 
   Uri get _dashboardUri => Uri.parse(dashboardUrl);
+
+  /// 仪表盘 HTTP 收口到 [HubApiClient]，本机与远端走同一套请求 / 鉴权 / 超时。
+  ///
+  /// 超时刻意显式传 2s（客户端默认 3s）：本机是回环，`ensureDashboardRunning`
+  /// 每 500ms 轮询一次，2s 的失败判定比跨网段的 3s 更合适。
+  late final HubApiClient _client = HubApiClient(
+    dashboardUri: _dashboardUri,
+    httpClient: _http,
+    healthTimeout: const Duration(seconds: 2),
+  );
 
   String get hubRoot {
     final explicit = _host.env['SHEPAW_HUB_HOME'];
@@ -286,14 +297,12 @@ class LocalAgentHubService {
       );
     }
     final locals = await _host.localIpv4s();
+    // copyWith（而不是逐字段重建）：否则每加一个字段都会在这条路径上被静默丢掉，
+    // 桌面接入本机 hub 时二维码里的设备名就是这么丢的。
     final rewritten = info.localEndpoint == null
         ? info
-        : PeerPairingInfo(
+        : info.copyWith(
             localEndpoint: preferLoopbackIfLocal(info.localEndpoint!, locals),
-            channelEndpoint: info.channelEndpoint,
-            code: info.code,
-            fingerprint: info.fingerprint,
-            publicKey: info.publicKey,
           );
     await _pairFn(rewritten);
   }
@@ -337,16 +346,10 @@ class LocalAgentHubService {
   }
 
   Future<_Health?> _getHealth() async {
-    try {
-      final resp = await _http
-          .get(_dashboardUri.replace(path: '/api/health'))
-          .timeout(const Duration(seconds: 2));
-      if (resp.statusCode != 200) return null;
-      if (!parseDashboardHealthOk(resp.body)) return null;
-      return _Health(authRequired: parseDashboardAuthRequired(resp.body));
-    } catch (_) {
-      return null;
-    }
+    // 「连不上」与「有响应但不是 Hub」对本机场景是同一个结论：没跑起来。
+    final probe = await _client.health();
+    if (!probe.isOk) return null;
+    return _Health(authRequired: probe.authRequired);
   }
 
   Future<int?> _fetchInstanceCount() async {
@@ -362,27 +365,22 @@ class LocalAgentHubService {
   }
 
   Future<Object> _postJson(String path) async {
-    final resp = await _http
-        .post(
-          _dashboardUri.replace(path: path),
-          headers: const {'content-type': 'application/json'},
-          body: '{}',
-        )
-        .timeout(const Duration(seconds: 15));
-    if (resp.statusCode == 401) {
+    try {
+      return await _client.postJson(path);
+    } on HubApiException catch (e) {
+      // 401 单独归一成 auth-required（与远端路径同一语义），其余带上 path
+      // 与状态码，方便对着 `shepaw-hub web` 的日志排查。
+      if (e.statusCode == 401) {
+        throw LocalHubException(
+          'Dashboard requires SHEPAW_HUB_TOKEN',
+          code: 'auth-required',
+        );
+      }
       throw LocalHubException(
-        'Dashboard requires SHEPAW_HUB_TOKEN',
-        code: 'auth-required',
+        'Hub $path failed HTTP ${e.statusCode}: ${e.body}',
+        code: 'http-${e.statusCode}',
       );
     }
-    if (resp.statusCode < 200 || resp.statusCode >= 300) {
-      throw LocalHubException(
-        'Hub $path failed HTTP ${resp.statusCode}: ${resp.body}',
-        code: 'http-${resp.statusCode}',
-      );
-    }
-    if (resp.body.isEmpty) return const <String, dynamic>{};
-    return jsonDecode(resp.body);
   }
 }
 
