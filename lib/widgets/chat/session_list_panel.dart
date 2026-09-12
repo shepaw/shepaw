@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../controllers/chat_controller.dart';
 import '../../models/channel.dart';
 import '../../services/local_database_service.dart';
+import '../../utils/layout_utils.dart';
 import '../../utils/session_utils.dart';
 import '../../l10n/app_localizations.dart';
 import 'session_unread_badge.dart';
@@ -549,8 +550,12 @@ class _SessionListContentState extends State<_SessionListContent> {
         ? null
         : () => widget.onCopyToAgent!(session);
     final resetSession = isCurrentSession ? widget.onResetSession : null;
+    final isDesktop = LayoutUtils.isDesktopLayout(context);
 
-    return ListTile(
+    return SessionRowHoverHost(
+      enabled: isDesktop && !selectionMode,
+      builder: (context, hover) {
+        return ListTile(
       tileColor: isCurrentSession ? Colors.orange.withOpacity(0.08) : null,
       contentPadding: selectionMode
           ? const EdgeInsets.fromLTRB(8, 0, 16, 0)
@@ -650,15 +655,27 @@ class _SessionListContentState extends State<_SessionListContent> {
           );
         },
       ),
-      trailing: timeText.isNotEmpty
-          ? Text(
-              timeText,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[500],
-              ),
-            )
-          : null,
+      trailing: sessionRowTrailing(
+        context: context,
+        showMore: hover.showMore,
+        timeText: timeText,
+        onMorePressed: hover.showMore
+            ? (buttonContext) => hover.holdWhileOpen(
+                  () => showSessionRowPopupMenu(
+                    context,
+                    buttonContext: buttonContext,
+                    session: session,
+                    sessionTitle: titleText,
+                    isCurrentSession: isCurrentSession,
+                    onViewSession: viewSession,
+                    onViewTrace: viewTrace,
+                    onForkSession: forkSession,
+                    onCopyToAgent: copyToAgent,
+                    onResetSession: resetSession,
+                  ),
+                )
+            : null,
+      ),
       onTap: selectionMode
           ? (selectionEnabled ? onSelectionToggle : null)
           : isCurrentSession
@@ -667,7 +684,7 @@ class _SessionListContentState extends State<_SessionListContent> {
                   closePanelRoute(context);
                   widget.onSwitchSession(session.id);
                 },
-      onLongPress: selectionMode
+      onLongPress: selectionMode || isDesktop
           ? null
           : () => showSessionRowMenu(
                 context,
@@ -680,6 +697,8 @@ class _SessionListContentState extends State<_SessionListContent> {
                 onCopyToAgent: copyToAgent,
                 onResetSession: resetSession,
               ),
+        );
+      },
     );
   }
 

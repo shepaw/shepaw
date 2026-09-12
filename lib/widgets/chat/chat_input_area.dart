@@ -1200,11 +1200,11 @@ class ChatInputAreaState extends State<ChatInputArea> {
               _buildPendingAttachmentsPreview(),
               // Multi-line text area
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
                 // 容器常驻、只换装饰：条件包裹会让 TextField 换父节点，
                 // 切换规划模式时会掉焦点。
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
                   decoration: BoxDecoration(
                     color: _planModeActive
                         ? colorScheme.primaryContainer.withValues(alpha: 0.25)
@@ -1290,7 +1290,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
               ),
               // Bottom toolbar: icons left, Send right
               Padding(
-                padding: const EdgeInsets.fromLTRB(8, 4, 16, 10),
+                padding: const EdgeInsets.fromLTRB(4, 2, 8, 6),
                 child: Row(
                   children: [
                     _buildDesktopToolbarIcon(

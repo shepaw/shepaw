@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -117,6 +118,71 @@ void main() {
       '标题：阶段讨论\n'
       '会话 ID：group_child-session\n'
       'channel ID：group_family-root',
+    );
+    await flushToastTimers(tester);
+  });
+
+  testWidgets('桌面 hover 把日期换成更多图标，点击出下拉而不是底部菜单', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('zh'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: SessionRowHoverHost(
+            enabled: true,
+            builder: (context, hover) {
+              return ListTile(
+                title: const Text('Session row'),
+                trailing: sessionRowTrailing(
+                  context: context,
+                  showMore: hover.showMore,
+                  timeText: '9/12',
+                  onMorePressed: hover.showMore
+                      ? (buttonContext) => hover.holdWhileOpen(
+                            () => showSessionRowPopupMenu(
+                              context,
+                              buttonContext: buttonContext,
+                              session: session(),
+                              sessionTitle: 'First sentence title',
+                              isCurrentSession: true,
+                            ),
+                          )
+                      : null,
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('9/12'), findsOneWidget);
+    expect(find.byKey(const Key('session_row_more')), findsNothing);
+
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await gesture.addPointer(location: Offset.zero);
+    addTearDown(gesture.removePointer);
+    await tester.pump();
+    await gesture.moveTo(tester.getCenter(find.text('Session row')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('9/12'), findsNothing);
+    expect(find.byKey(const Key('session_row_more')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('session_row_more')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.text('复制会话信息'), findsOneWidget);
+
+    await tester.tap(find.text('复制会话信息'));
+    await tester.pumpAndSettle();
+    expect(
+      copiedText(),
+      '标题：First sentence title\n'
+      '会话 ID：dm_user1_agent1_1700000000000\n'
+      'channel ID：dm_user1_agent1_1700000000000',
     );
     await flushToastTimers(tester);
   });

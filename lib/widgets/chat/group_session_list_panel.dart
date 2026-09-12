@@ -4,6 +4,7 @@ import '../../controllers/chat_controller.dart';
 import '../../models/channel.dart';
 import '../../services/local_database_service.dart';
 import '../../storage/group_workspace_service.dart';
+import '../../utils/layout_utils.dart';
 import '../../utils/session_utils.dart';
 import '../../l10n/app_localizations.dart';
 import 'session_unread_badge.dart';
@@ -623,7 +624,7 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
     final orchestrationRound = orchestration?['round'] as int? ?? 0;
 
     // 第一行 = 会话第一条消息的第一句（会话标题就是第一句话），没有消息时
-    // 退回群名。会话 id 不在标题中展示，可从长按菜单复制。
+    // 退回群名。会话 id 不在标题中展示，可从更多菜单复制。
     final firstContent = firstMessage?['content'] as String?;
     final titleText = firstContent != null && firstContent.trim().isNotEmpty
         ? SessionUtils.splitFirstSentence(firstContent).first
@@ -690,8 +691,49 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
         ? null
         : () => widget.onForkSession!(session);
     final resetSession = isCurrentSession ? widget.onResetSession : null;
+    final isDesktop = LayoutUtils.isDesktopLayout(context);
+    final orchestrationChip = isOrchestrating
+        ? InkWell(
+            onTap: orchestration == null
+                ? null
+                : () => _showOrchestrationSheet(
+                      context,
+                      session,
+                      orchestration,
+                    ),
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(
+                    width: 9,
+                    height: 9,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.6,
+                      color: Colors.orange,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '第$orchestrationRound轮',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.orange[800],
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          )
+        : null;
 
-    return ListTile(
+    return SessionRowHoverHost(
+      enabled: isDesktop && !selectionMode,
+      builder: (context, hover) {
+        return ListTile(
       tileColor: isCurrentSession ? Colors.orange.withOpacity(0.08) : null,
       contentPadding: selectionMode
           ? const EdgeInsets.fromLTRB(8, 0, 16, 0)
@@ -751,59 +793,27 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
           );
         },
       ),
-      trailing: (timeText.isNotEmpty || isOrchestrating)
-          ? Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                if (isOrchestrating)
-                  InkWell(
-                    onTap: orchestration == null
-                        ? null
-                        : () => _showOrchestrationSheet(
-                              context,
-                              session,
-                              orchestration,
-                            ),
-                    borderRadius: BorderRadius.circular(8),
-                    child: Padding(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const SizedBox(
-                            width: 9,
-                            height: 9,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 1.6,
-                              color: Colors.orange,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '第$orchestrationRound轮',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.orange[800],
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+      trailing: sessionRowTrailing(
+        context: context,
+        showMore: hover.showMore,
+        timeText: timeText,
+        above: orchestrationChip,
+        onMorePressed: hover.showMore
+            ? (buttonContext) => hover.holdWhileOpen(
+                  () => showSessionRowPopupMenu(
+                    context,
+                    buttonContext: buttonContext,
+                    session: session,
+                    sessionTitle: titleText,
+                    isCurrentSession: isCurrentSession,
+                    onViewSession: viewSession,
+                    onViewTrace: viewTrace,
+                    onForkSession: forkSession,
+                    onResetSession: resetSession,
                   ),
-                if (timeText.isNotEmpty)
-                  Text(
-                    timeText,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[500],
-                    ),
-                  ),
-              ],
-            )
-          : null,
+                )
+            : null,
+      ),
       onTap: selectionMode
           ? (selectionEnabled ? onSelectionToggle : null)
           : isCurrentSession
@@ -812,7 +822,7 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
                   closePanelRoute(context);
                   widget.onSwitchSession(session.id);
                 },
-      onLongPress: selectionMode
+      onLongPress: selectionMode || isDesktop
           ? null
           : () => showSessionRowMenu(
                 context,
@@ -824,6 +834,8 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
                 onForkSession: forkSession,
                 onResetSession: resetSession,
               ),
+        );
+      },
     );
   }
 
