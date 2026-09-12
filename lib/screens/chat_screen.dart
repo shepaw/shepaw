@@ -187,12 +187,16 @@ class _ChatScreenState extends State<ChatScreen>
   /// 防止会话抽屉重复打开（会话加载是异步的，连点会叠出两个抽屉）。
   bool _isChatDrawerOpen = false;
 
-  /// 抽屉打开手势（触屏左滑）的实时位移（px，左滑为正），会话加载完成前
-  /// 手指继续移动时累计，push 时换算为初始进度。
+  /// 抽屉打开手势（触屏左滑）的实时位移（px，左滑为正），手势被接受的那
+  /// 一帧换算为抽屉初始进度（见 [_openSessionDrawer]）。
   double _drawerGestureOpenDx = 0;
 
-  /// 打开手势在会话加载完成前已抬手时记录的速度（px/s）；null 表示手势未结束。
-  double? _drawerGestureEndVelocity;
+  /// 上一次抽屉装载到的会话列表（按会话键缓存，见 [_openSessionDrawer]）。
+  ///
+  /// 抽屉「先弹后填」后首帧先用它渲染：同一会话里再划开时列表即时可见，
+  /// 查询结果回来再原地替换。
+  String? _drawerSessionsCacheKey;
+  List<Channel> _drawerSessionsCache = const [];
 
   /// 跟手模式下打开的抽屉句柄；null 表示当前抽屉为按钮打开或未打开。
   RightDrawerHandle? _drawerHandle;
@@ -1964,17 +1968,21 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   // ── 抽屉打开手势（触屏左滑，跟手模式）──
-  // 打开手势与抽屉内右滑关闭手势共用同一个 RightDrawerHandle：加载会话
-  // 期间手指继续移动的位移先累计，push 后直接驱动抽屉进度。
+  // 打开手势与抽屉内右滑关闭手势共用同一个 RightDrawerHandle：手势被识别
+  // 接受的那一帧就建好 handle 并推路由（见 [_openSessionDrawer]），中途没有
+  // 「等会话数据」的空窗。
+  //
+  // 但 push 会立刻取消在途指针（`NavigatorState._cancelActivePointers`），
+  // 所以 start 之后通常直接收到 end（velocity=0、位移=接受帧），中间的
+  // update 只在「识别器已接受但 push 尚未发生」的极窄窗口里可能到达。
 
   void _onOpenGestureStart(double openDx) {
+    // 唯一读取点：_openSessionDrawer 用它在 push 前算初始进度。
     _drawerGestureOpenDx = openDx;
-    _drawerGestureEndVelocity = null;
     _startOpenDrawer(gestureDx: openDx);
   }
 
   void _onOpenGestureUpdate(double openDx) {
-    _drawerGestureOpenDx = openDx;
     final handle = _drawerHandle;
     if (handle != null) {
       handle.setProgress(openDx / handle.width);
@@ -1982,15 +1990,10 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   void _onOpenGestureEnd(double velocityDx, double openDx) {
-    _drawerGestureOpenDx = openDx;
-    final handle = _drawerHandle;
-    if (handle != null) {
-      handle.settle(velocityDx: velocityDx, openDx: openDx);
-    } else {
-      // 会话还在加载中：记下速度，push 后由加载流程补一次 settle
-      // （openDx 已累计在 _drawerGestureOpenDx）。
-      _drawerGestureEndVelocity = velocityDx;
-    }
+    // handle 在手势被接受那一帧就已建好并随路由 attach（见
+    // [_openSessionDrawer]）：抬手（含 push 触发的 PointerCancel）必定落在
+    // 其之后，直接收尾即可。
+    _drawerHandle?.settle(velocityDx: velocityDx, openDx: openDx);
   }
 
   Future<void> _startOpenDrawer({required double gestureDx}) async {
@@ -2045,10 +2048,10 @@ class _ChatScreenState extends State<ChatScreen>
 
   /// 构造会话菜单面板内容（抽屉与固定面板共用）。
   ///
-  /// [sessions] 由调用方装载（抽屉每次打开时装载；固定面板由
-  /// [_refreshPinnedPanelSessions] 维护）。[refreshTick] /
-  /// [selectionModeRequest] 在抽屉形态随路由关闭 dispose，固定面板则用
-  /// 页面级 notifier。
+  /// [sessions] 由调用方装载（抽屉先给缓存、再由 [_openSessionDrawer] 拉到的
+  /// 结果原地替换；固定面板由 [_refreshPinnedPanelSessions] 维护）。
+  /// [refreshTick] / [selectionModeRequest] 在抽屉形态随路由关闭 dispose，
+  /// 固定面板则用页面级 notifier。
   Widget _buildSessionPanelContent({
     required List<Channel> sessions,
     required AppLocalizations l10n,
@@ -2228,38 +2231,45 @@ class _ChatScreenState extends State<ChatScreen>
     );
   }
 
-  /// 抽屉打开会话菜单（按钮 / 手势两种入口）；固定模式下面板常驻，无需弹出。
-  Future<void> _showSessionList({double? gestureDx}) async {
-    if (widget.agentId == null) return;
+  /// 打开会话抽屉（DM / 群聊共用）。
+  ///
+  /// **先弹后填**：手势被接受的那一帧同步建 handle、推路由，抽屉立刻带
+  /// 初始进度出现；面板内容先用上次的缓存（[_drawerSessionsCache]，同一会话
+  /// 里再划开时列表即时可见）渲染，[loadSessions] 的结果回来后再原地替换。
+  ///
+  /// 旧实现是「先 await 会话查询、再推路由」：查询期间 [_drawerHandle] 还是
+  /// null，[_onOpenGestureUpdate] 上报的位移无处可去（手指在动、屏幕不动），
+  /// 数据到了才在那一帧整棵建完面板并一次性弹出，紧接着 push 又触发
+  /// `Navigator._cancelActivePointers` 补一段自滑动画 ——「空转 → 猛弹 →
+  /// 自滑」这个接缝就是首滑的顿挫感，先弹后填把它抹掉了。
+  ///
+  /// 注意 push 与指针互斥：`NavigatorState.push` 结尾的 `_cancelActivePointers`
+  /// 会取消在途手指，识别器随即以 `velocity = 0`、`openDx = 接受帧位移`
+  /// 上报 [_onOpenGestureEnd]（见 drawer_swipe_detector.dart），抽屉不真正
+  /// 跟手 —— 它从接受帧的进度滑到全开。要跟手得让抽屉不走路由。
+  ///
+  /// [loadFailedMessage] 只在装载失败时调用：抽屉照常可用，用户可以关掉重试。
+  Future<void> _openSessionDrawer({
+    required String? cacheKey,
+    required Future<List<Channel>> Function() loadSessions,
+    required String Function(Object error) loadFailedMessage,
+    double? gestureDx,
+  }) async {
     // 固定模式下面板常驻，无需弹出（非桌面布局时面板不渲染，抽屉照常）。
     if (_showPinnedPanel) return;
     final gestureMode = gestureDx != null;
     if (_isChatDrawerOpen) return;
     _isChatDrawerOpen = true;
-    ValueNotifier<int>? refreshTick;
-    ValueNotifier<int>? selectionModeRequest;
+
+    final l10n = AppLocalizations.of(context);
+    final refreshTick = ValueNotifier<int>(0);
+    final selectionModeRequest = ValueNotifier<int>(0);
+    final sessions = ValueNotifier<List<Channel>>(
+      cacheKey != null && cacheKey == _drawerSessionsCacheKey
+          ? _drawerSessionsCache
+          : const <Channel>[],
+    );
     try {
-      final sessions = await _sortSessionsByLatestMessage(
-        await _controller.chatService
-            .getAgentSessions(agentId: widget.agentId!),
-      );
-      if (!mounted) return;
-
-      final l10n = AppLocalizations.of(context);
-      refreshTick = ValueNotifier<int>(0);
-      selectionModeRequest = ValueNotifier<int>(0);
-
-      final drawer = _buildSessionPanelContent(
-        sessions: sessions,
-        l10n: l10n,
-        refreshTick: refreshTick,
-        selectionModeRequest: selectionModeRequest,
-        // 桌面端抽屉 header 提供钉住按钮：转固定停靠面板。
-        onPinToggle: LayoutUtils.isDesktopLayout(context)
-            ? _pinPanelFromDrawer
-            : null,
-      );
-
       final width = _chatDrawerWidth(context);
       final handle = gestureMode
           ? RightDrawerHandle(
@@ -2268,7 +2278,19 @@ class _ChatScreenState extends State<ChatScreen>
       _drawerHandle = handle;
       final route = LayoutUtils.showRightDrawer(
         context: context,
-        builder: (_) => drawer,
+        builder: (_) => ValueListenableBuilder<List<Channel>>(
+          valueListenable: sessions,
+          builder: (context, list, _) => _buildSessionPanelContent(
+            sessions: list,
+            l10n: l10n,
+            refreshTick: refreshTick,
+            selectionModeRequest: selectionModeRequest,
+            // 桌面端抽屉 header 提供钉住按钮：转固定停靠面板。
+            onPinToggle: LayoutUtils.isDesktopLayout(context)
+                ? _pinPanelFromDrawer
+                : null,
+          ),
+        ),
         width: width,
         handle: handle,
         initialProgress: gestureMode
@@ -2282,51 +2304,75 @@ class _ChatScreenState extends State<ChatScreen>
       unawaited(route.dismissed.then((_) {
         if (_drawerRoute == route) _drawerRoute = null;
       }));
-      // 打开手势可能在会话加载完成前已抬手：push 后立即按抬手瞬间的速度
-      // 与位移收尾（openDx 已在 _drawerGestureOpenDx 累计）。
-      final endVelocity = _drawerGestureEndVelocity;
-      if (gestureMode && endVelocity != null && handle != null) {
-        handle.settle(
-          velocityDx: endVelocity,
-          openDx: _drawerGestureOpenDx,
-        );
+
+      // 会话查询排在 push 之后：抽屉此刻已经跟手，这里只负责把内容填进去。
+      try {
+        final loaded = await loadSessions();
+        if (mounted) {
+          sessions.value = loaded;
+          if (cacheKey != null) {
+            _drawerSessionsCacheKey = cacheKey;
+            _drawerSessionsCache = loaded;
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          showTopToast(
+            context,
+            loadFailedMessage(e),
+            icon: Icons.error_outline,
+            color: Colors.red.shade400,
+          );
+        }
       }
+
       await route.popped;
 
       // 抽屉子树在退场动画期间仍存活（overlay 条目要等路由销毁才移除）：
       // 若在 popped（pop 瞬间）就 dispose，退场期间新挂载的子组件会对已
-      // 销毁的 notifier addListener —— 移动端短滑跟手关闭时（抬手早于会话
-      // 加载完成，handle.settle 在 push 后同步 pop）面板首帧才挂载，必现
+      // 销毁的 notifier addListener —— 移动端短滑跟手关闭时（抬手早于内容
+      // 装载完成，handle.settle 在 push 后同步 pop）面板首帧才挂载，必现
       // "A ValueNotifier<int> was used after being disposed"。
       // 必须等路由彻底销毁再 dispose。
       await route.dismissed;
-    } catch (e) {
-      if (mounted) {
-        showTopToast(
-          context,
-          AppLocalizations.of(context).chat_loadSessionsFailed('$e'),
-          icon: Icons.error_outline,
-          color: Colors.red.shade400,
-        );
-      }
     } finally {
       _drawerHandle = null;
       _isChatDrawerOpen = false;
       // 钉住按钮会先关抽屉再固定，此时面板子树可能仍在退场（路由未
       // 销毁）：notifier 的 dispose 延后到路由彻底销毁（与上面注释同理，
       // 避免 "used after being disposed"）。
-      final tick = refreshTick;
-      final selection = selectionModeRequest;
-      if (_drawerRoute != null && tick != null && selection != null) {
-        unawaited(_drawerRoute!.dismissed.then((_) {
-          tick.dispose();
-          selection.dispose();
+      final list = sessions;
+      final drawerRoute = _drawerRoute;
+      if (drawerRoute != null) {
+        unawaited(drawerRoute.dismissed.then((_) {
+          refreshTick.dispose();
+          selectionModeRequest.dispose();
+          list.dispose();
         }));
       } else {
-        tick?.dispose();
-        selection?.dispose();
+        refreshTick.dispose();
+        selectionModeRequest.dispose();
+        list.dispose();
       }
     }
+  }
+
+  /// 抽屉打开会话菜单（按钮 / 手势两种入口）。
+  ///
+  /// 会话键与停靠面板共用（[_pinnedPanelKey]：dm:agentId / group:groupFamilyId）,
+  /// 抽屉的会话缓存据此复用。
+  Future<void> _showSessionList({double? gestureDx}) async {
+    final agentId = widget.agentId;
+    if (agentId == null) return;
+    final l10n = AppLocalizations.of(context);
+    await _openSessionDrawer(
+      cacheKey: _pinnedPanelKey,
+      loadSessions: () async => _sortSessionsByLatestMessage(
+        await _controller.chatService.getAgentSessions(agentId: agentId),
+      ),
+      loadFailedMessage: (e) => l10n.chat_loadSessionsFailed('$e'),
+      gestureDx: gestureDx,
+    );
   }
 
   /// 群聊抽屉 header：群图标 + 群名 + 成员数。
@@ -2370,106 +2416,21 @@ class _ChatScreenState extends State<ChatScreen>
     );
   }
 
-  /// 抽屉打开会话菜单（按钮 / 手势两种入口）；固定模式下面板常驻，无需弹出。
+  /// 抽屉打开会话菜单（群聊；按钮 / 手势两种入口）。见 [_openSessionDrawer]。
   Future<void> _showGroupSessionList({double? gestureDx}) async {
-    if (_controller.groupChannel == null) return;
-    // 固定模式下面板常驻，无需弹出（非桌面布局时面板不渲染，抽屉照常）。
-    if (_showPinnedPanel) return;
-    final gestureMode = gestureDx != null;
-    if (_isChatDrawerOpen) return;
-    _isChatDrawerOpen = true;
-    ValueNotifier<int>? refreshTick;
-    ValueNotifier<int>? selectionModeRequest;
-    try {
-      final parentGroupId = _controller.groupChannel!.groupFamilyId;
-      final sessions = await _sortSessionsByLatestMessage(
+    final groupChannel = _controller.groupChannel;
+    if (groupChannel == null) return;
+    final parentGroupId = groupChannel.groupFamilyId;
+    final l10n = AppLocalizations.of(context);
+    await _openSessionDrawer(
+      cacheKey: _pinnedPanelKey,
+      loadSessions: () async => _sortSessionsByLatestMessage(
         await _controller.chatService
             .getGroupSessions(parentGroupId: parentGroupId),
-      );
-      if (!mounted) return;
-
-      final l10n = AppLocalizations.of(context);
-      refreshTick = ValueNotifier<int>(0);
-      selectionModeRequest = ValueNotifier<int>(0);
-
-      final drawer = _buildSessionPanelContent(
-        sessions: sessions,
-        l10n: l10n,
-        refreshTick: refreshTick,
-        selectionModeRequest: selectionModeRequest,
-        // 桌面端抽屉 header 提供钉住按钮：转固定停靠面板。
-        onPinToggle: LayoutUtils.isDesktopLayout(context)
-            ? _pinPanelFromDrawer
-            : null,
-      );
-
-      final width = _chatDrawerWidth(context);
-      final handle = gestureMode
-          ? RightDrawerHandle(
-              width: width, openThreshold: _chatDrawerOpenSwipeThreshold)
-          : null;
-      _drawerHandle = handle;
-      final route = LayoutUtils.showRightDrawer(
-        context: context,
-        builder: (_) => drawer,
-        width: width,
-        handle: handle,
-        initialProgress: gestureMode
-            ? (_drawerGestureOpenDx / width).clamp(0.0, 1.0)
-            : 0,
-        sharedController: _drawerController,
-      );
-      // 路由销毁（退场动画结束）后再清引用：pop 只完成 popped future，
-      // 退场期间 _openDrawerSession 仍要拿 dismissed（见该处注释）。
-      _drawerRoute = route;
-      unawaited(route.dismissed.then((_) {
-        if (_drawerRoute == route) _drawerRoute = null;
-      }));
-      // 打开手势可能在会话加载完成前已抬手：push 后立即按抬手瞬间的速度
-      // 与位移收尾（openDx 已在 _drawerGestureOpenDx 累计）。
-      final endVelocity = _drawerGestureEndVelocity;
-      if (gestureMode && endVelocity != null && handle != null) {
-        handle.settle(
-          velocityDx: endVelocity,
-          openDx: _drawerGestureOpenDx,
-        );
-      }
-      await route.popped;
-
-      // 抽屉子树在退场动画期间仍存活（overlay 条目要等路由销毁才移除）：
-      // 若在 popped（pop 瞬间）就 dispose，退场期间新挂载的子组件会对已
-      // 销毁的 notifier addListener —— 移动端短滑跟手关闭时（抬手早于会话
-      // 加载完成，handle.settle 在 push 后同步 pop）面板首帧才挂载，必现
-      // "A ValueNotifier<int> was used after being disposed"。
-      // 必须等路由彻底销毁再 dispose。
-      await route.dismissed;
-    } catch (e) {
-      if (mounted) {
-        showTopToast(
-          context,
-          AppLocalizations.of(context).chat_loadGroupSessionsFailed('$e'),
-          icon: Icons.error_outline,
-          color: Colors.red.shade400,
-        );
-      }
-    } finally {
-      _drawerHandle = null;
-      _isChatDrawerOpen = false;
-      // 钉住按钮会先关抽屉再固定，此时面板子树可能仍在退场（路由未
-      // 销毁）：notifier 的 dispose 延后到路由彻底销毁（与上面注释同理，
-      // 避免 "used after being disposed"）。
-      final tick = refreshTick;
-      final selection = selectionModeRequest;
-      if (_drawerRoute != null && tick != null && selection != null) {
-        unawaited(_drawerRoute!.dismissed.then((_) {
-          tick.dispose();
-          selection.dispose();
-        }));
-      } else {
-        tick?.dispose();
-        selection?.dispose();
-      }
-    }
+      ),
+      loadFailedMessage: (e) => l10n.chat_loadGroupSessionsFailed('$e'),
+      gestureDx: gestureDx,
+    );
   }
 
   // ---------------------------------------------------------------------------
