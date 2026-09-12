@@ -1458,6 +1458,17 @@
       }
     }
   },
+  "chat_copySessionTo": "Copy to",
+  "chat_copySessionToTitle": "Copy to Agent",
+  "chat_copyingSession": "Copying session…",
+  "chat_copySessionFailed": "Copy session failed: {error}",
+  "@chat_copySessionFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "modelType_sectionLabel": "Model Types",
   "modelType_sectionHint": "Select the capability types this model supports (multi-select)",
   "modelType_text": "Text",

@@ -1936,6 +1936,17 @@
       }
     }
   },
+  "chat_copySessionTo": "复制到",
+  "chat_copySessionToTitle": "复制到 Agent",
+  "chat_copyingSession": "正在复制会话…",
+  "chat_copySessionFailed": "复制会话失败：{error}",
+  "@chat_copySessionFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "modelType_sectionLabel": "模型类型",
   "modelType_sectionHint": "选择此模型支持的能力类型（可多选）",
   "modelType_text": "文本",

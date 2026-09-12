@@ -3423,6 +3423,20 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get chat_copySessionTo => 'Copy to';
+
+  @override
+  String get chat_copySessionToTitle => 'Copy to Agent';
+
+  @override
+  String get chat_copyingSession => 'Copying session…';
+
+  @override
+  String chat_copySessionFailed(String error) {
+    return 'Copy session failed: $error';
+  }
+
+  @override
   String get modelType_sectionLabel => 'Model Types';
 
   @override

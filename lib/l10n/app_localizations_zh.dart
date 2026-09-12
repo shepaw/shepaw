@@ -3290,6 +3290,20 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get chat_copySessionTo => '复制到';
+
+  @override
+  String get chat_copySessionToTitle => '复制到 Agent';
+
+  @override
+  String get chat_copyingSession => '正在复制会话…';
+
+  @override
+  String chat_copySessionFailed(String error) {
+    return '复制会话失败：$error';
+  }
+
+  @override
   String get modelType_sectionLabel => '模型类型';
 
   @override

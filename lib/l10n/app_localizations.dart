@@ -6056,6 +6056,30 @@ abstract class AppLocalizations {
   /// **'分叉会话失败：{error}'**
   String chat_forkSessionFailed(String error);
 
+  /// No description provided for @chat_copySessionTo.
+  ///
+  /// In zh, this message translates to:
+  /// **'复制到'**
+  String get chat_copySessionTo;
+
+  /// No description provided for @chat_copySessionToTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'复制到 Agent'**
+  String get chat_copySessionToTitle;
+
+  /// No description provided for @chat_copyingSession.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在复制会话…'**
+  String get chat_copyingSession;
+
+  /// No description provided for @chat_copySessionFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'复制会话失败：{error}'**
+  String chat_copySessionFailed(String error);
+
   /// No description provided for @modelType_sectionLabel.
   ///
   /// In zh, this message translates to:
