@@ -23,6 +23,7 @@ import 'services/cli_tool_registry.dart';
 import 'clis/shepaw/shepaw_cli.dart';
 import 'services/model_registry.dart';
 import 'services/logger_service.dart';
+import 'services/frame_timing_monitor.dart';
 import 'services/foreground_task_service.dart';
 import 'task/services/scheduled_task_service.dart';
 import 'services/trace_service.dart';
@@ -88,6 +89,9 @@ class AppBootstrap {
     required GlobalKey<NavigatorState> navigatorKey,
   }) async {
     _initDatabaseFactory();
+
+    // 慢帧埋点：只写超预算的帧，日志页可导出（真机性能问题只能靠现场数据）
+    FrameTimingMonitor().start();
 
     // 初始化本地数据库与示例数据
     await _initializeLocalStorage();
