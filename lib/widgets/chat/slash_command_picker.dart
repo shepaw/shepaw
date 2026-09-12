@@ -192,45 +192,57 @@ class _SlashCommandPickerState extends State<SlashCommandPicker> {
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12,
-                      vertical: 8,
+                      vertical: 6,
                     ),
                     child: Row(
                       children: [
-                        Text(
-                          '/${cmd.name}',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: Theme.of(context).primaryColor,
-                            fontFamily: 'monospace',
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text.rich(
+                                TextSpan(
+                                  children: [
+                                    TextSpan(
+                                      text: '/${cmd.name}',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        color: Theme.of(context).primaryColor,
+                                        fontFamily: 'monospace',
+                                      ),
+                                    ),
+                                    if (cmd.argumentHint != null)
+                                      TextSpan(
+                                        text: '  ${cmd.argumentHint}',
+                                        style: TextStyle(
+                                          color: Colors.grey[500],
+                                          fontSize: 12,
+                                          fontFamily: 'monospace',
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              if (cmd.description != null)
+                                Text(
+                                  cmd.description!,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: Colors.grey[700],
+                                    fontSize: 12,
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
-                        if (cmd.argumentHint != null) ...[
-                          const SizedBox(width: 6),
-                          Text(
-                            cmd.argumentHint!,
-                            style: TextStyle(
-                              color: Colors.grey[500],
-                              fontSize: 12,
-                              fontFamily: 'monospace',
-                            ),
-                          ),
+                        if (cmd.scope != null) ...[
+                          const SizedBox(width: 8),
+                          _ScopeBadge(scope: cmd.scope!),
                         ],
-                        const SizedBox(width: 10),
-                        if (cmd.description != null)
-                          Expanded(
-                            child: Text(
-                              cmd.description!,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: Colors.grey[700],
-                                fontSize: 13,
-                              ),
-                            ),
-                          )
-                        else
-                          const Spacer(),
-                        if (cmd.scope != null) _ScopeBadge(scope: cmd.scope!),
                       ],
                     ),
                   ),

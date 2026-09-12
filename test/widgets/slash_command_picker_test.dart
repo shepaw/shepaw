@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/acp_protocol.dart';
 import 'package:shepaw/widgets/chat/slash_command_picker.dart';
@@ -45,5 +46,37 @@ void main() {
       final out = SlashCommandPicker.filter(many, '');
       expect(out.length, 20);
     });
+  });
+
+  testWidgets('long argument hints ellipsize instead of overflowing',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 280,
+            child: SlashCommandPicker(
+              commands: const [
+                SlashCommandInfo(
+                  name: 'session-new',
+                  description:
+                      'Ask the agent to compress this chat and open a new session',
+                  argumentHint:
+                      '--reason context_too_long --summary "key points"',
+                  scope: CommandScope.builtin,
+                ),
+              ],
+              query: '',
+              selectedIndex: 0,
+              onSelect: (_) {},
+              onHover: (_) {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.textContaining('/session-new'), findsOneWidget);
   });
 }
