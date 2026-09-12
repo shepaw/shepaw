@@ -5,6 +5,7 @@ import 'package:shepaw/l10n/app_localizations.dart';
 import 'package:shepaw/services/event/event_bus.dart';
 import 'package:shepaw/services/event/event_delivery.dart';
 import 'package:shepaw/services/event/event_pattern.dart';
+import 'package:shepaw/widgets/chat/chat_app_bar.dart';
 import 'package:shepaw/widgets/chat/chat_event_listen_badge.dart';
 
 void main() {
@@ -54,6 +55,11 @@ void main() {
     expect(find.textContaining('正在监听的事件'), findsOneWidget);
     expect(find.text('peer.pairing.inbound'), findsOneWidget);
     expect(find.textContaining('订阅'), findsOneWidget);
+
+    final panel = tester.getSize(find.byKey(const Key('chat_event_listen_panel')));
+    expect(panel.width, lessThanOrEqualTo(220));
+    expect(panel.height, lessThan(200));
+    expect(panel.height, greaterThan(40));
   });
 
   testWidgets('鼠标悬停徽标时展开面板', (tester) async {
@@ -74,5 +80,42 @@ void main() {
 
     expect(find.byType(BottomSheet), findsNothing);
     expect(find.text('peer.pairing.inbound'), findsOneWidget);
+  });
+
+  testWidgets('事件数标记在标题状态栏，与在线状态同行', (tester) async {
+    EventBus.instance.addSubscription(
+      agentId: 'agent-1',
+      patterns: const [EventPattern(typeGlob: 'peer.pairing.inbound')],
+      delivery: EventDelivery.active,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('zh'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          appBar: AppBar(
+            title: const ChatDMAppBarTitle(
+              agentName: 'Shee',
+              isProcessing: false,
+              isCheckingHealth: false,
+              isAgentOnline: true,
+              agentId: 'agent-1',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byIcon(Icons.sensors), findsOneWidget);
+    expect(find.text('在线'), findsOneWidget);
+
+    final nameY = tester.getCenter(find.text('Shee')).dy;
+    final onlineY = tester.getCenter(find.text('在线')).dy;
+    final badgeY = tester.getCenter(find.byIcon(Icons.sensors)).dy;
+    expect(badgeY, greaterThan(nameY + 4));
+    expect((badgeY - onlineY).abs(), lessThan(6));
   });
 }

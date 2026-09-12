@@ -6,12 +6,12 @@ import '../../l10n/app_localizations.dart';
 import '../../services/event/event_bus.dart';
 import '../../theme/app_theme.dart';
 
-const _kPanelWidth = 300.0;
-const _kPanelMaxHeight = 280.0;
+const _kPanelWidth = 220.0;
+const _kPanelMaxHeight = 196.0;
 const Object _kTapGroup = 'chat_event_listen_panel';
 
-/// AppBar 标题旁的「正在监听事件」徽标：有订阅或 wait 时显示图标和数量，
-/// 悬停（桌面）或点击后在徽标下方展开监听列表。
+/// AppBar 状态栏的「正在监听事件」徽标：有订阅或 wait 时显示图标和数量，
+/// 悬停（桌面）或点击后在徽标下方展开紧凑列表（尺寸对齐桌面附件弹层）。
 class ChatEventListenBadge extends StatefulWidget {
   final List<String> agentIds;
   final Map<String, String> agentNames;
@@ -102,7 +102,7 @@ class _ChatEventListenBadgeState extends State<ChatEventListenBadge> {
           child: CompositedTransformTarget(
             link: _link,
             child: Padding(
-              padding: const EdgeInsets.only(left: 6),
+              padding: const EdgeInsets.only(left: 4),
               child: TapRegion(
                 groupId: _kTapGroup,
                 child: MouseRegion(
@@ -121,7 +121,7 @@ class _ChatEventListenBadgeState extends State<ChatEventListenBadge> {
                       borderRadius: BorderRadius.circular(4),
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
+                            horizontal: 5, vertical: 1),
                         decoration: BoxDecoration(
                           color: color.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(4),
@@ -129,12 +129,12 @@ class _ChatEventListenBadgeState extends State<ChatEventListenBadge> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.sensors, size: 13, color: color),
-                            const SizedBox(width: 3),
+                            Icon(Icons.sensors, size: 12, color: color),
+                            const SizedBox(width: 2),
                             Text(
                               '${entries.length}',
                               style: TextStyle(
-                                fontSize: 11,
+                                fontSize: 10,
                                 height: 1.2,
                                 color: color,
                                 fontWeight: FontWeight.w600,
@@ -161,6 +161,9 @@ class _ChatEventListenBadgeState extends State<ChatEventListenBadge> {
   }) {
     final showAgent = _ids.length > 1;
     final alignEnd = _shouldAlignEnd();
+    final screenWidth = MediaQuery.sizeOf(overlayContext).width;
+    final panelWidth = _kPanelWidth.clamp(0.0, screenWidth - 16);
+    final colorScheme = Theme.of(overlayContext).colorScheme;
     return CompositedTransformFollower(
       link: _link,
       showWhenUnlinked: false,
@@ -181,100 +184,104 @@ class _ChatEventListenBadgeState extends State<ChatEventListenBadge> {
           },
           child: Material(
             color: Colors.transparent,
-            child: SizedBox(
-              width: _kPanelWidth,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Theme.of(overlayContext).colorScheme.surface,
-                  borderRadius: BorderRadius.circular(8),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.14),
-                      blurRadius: 16,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-                        child: Text(
-                          '${l10n.chat_listeningEventsTitle} · ${entries.length}',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(
-                          maxHeight: _kPanelMaxHeight - 40,
-                        ),
-                        child: ListView.builder(
-                          shrinkWrap: true,
-                          padding: const EdgeInsets.only(bottom: 8),
-                          itemCount: entries.length,
-                          itemBuilder: (context, index) {
-                            final entry = entries[index];
-                            return Padding(
-                              padding:
-                                  const EdgeInsets.fromLTRB(12, 4, 12, 6),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Icon(
-                                    entry.isWait
-                                        ? Icons.hourglass_empty
-                                        : Icons.sensors,
-                                    size: 16,
-                                    color: AppColors.primary,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          entry.pattern,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontSize: 13,
-                                            fontFamily: 'monospace',
-                                            height: 1.25,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          _subtitle(
-                                            l10n,
-                                            entry,
-                                            showAgent: showAgent,
-                                          ),
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            height: 1.25,
-                                            color: Colors.grey[600],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
+            child: UnconstrainedBox(
+              alignment: alignEnd ? Alignment.topRight : Alignment.topLeft,
+              child: SizedBox(
+                key: const Key('chat_event_listen_panel'),
+                width: panelWidth,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: colorScheme.surface,
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.12),
+                        blurRadius: 16,
+                        offset: const Offset(0, 4),
                       ),
                     ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                          child: Text(
+                            '${l10n.chat_listeningEventsTitle} · ${entries.length}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(
+                            maxHeight: _kPanelMaxHeight - 36,
+                          ),
+                          child: ListView.builder(
+                            shrinkWrap: true,
+                            padding: const EdgeInsets.only(bottom: 6),
+                            itemCount: entries.length,
+                            itemBuilder: (context, index) {
+                              final entry = entries[index];
+                              return Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(12, 3, 12, 5),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Icon(
+                                      entry.isWait
+                                          ? Icons.hourglass_empty
+                                          : Icons.sensors,
+                                      size: 15,
+                                      color: AppColors.primary,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            entry.pattern,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              fontFamily: 'monospace',
+                                              height: 1.25,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 1),
+                                          Text(
+                                            _subtitle(
+                                              l10n,
+                                              entry,
+                                              showAgent: showAgent,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              height: 1.25,
+                                              color: Colors.grey[600],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),

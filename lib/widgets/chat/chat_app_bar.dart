@@ -88,11 +88,6 @@ class ChatDMAppBarTitle extends StatelessWidget {
             children: [
               _ChatAppBarNameRow(
                 name: displayName ?? 'AI Agent',
-                afterName: ChatEventListenBadge(
-                  agentIds: [
-                    if (agentId != null && agentId!.isNotEmpty) agentId!,
-                  ],
-                ),
                 badge:
                     sourceDeviceLabel != null && sourceDeviceLabel!.isNotEmpty
                         ? _SourceDeviceBadge(label: sourceDeviceLabel!)
@@ -105,6 +100,11 @@ class ChatDMAppBarTitle extends StatelessWidget {
                 trailing: isProcessing && onStopGenerating != null
                     ? _StopGeneratingButton(onTap: onStopGenerating!)
                     : null,
+                afterStatus: ChatEventListenBadge(
+                  agentIds: [
+                    if (agentId != null && agentId!.isNotEmpty) agentId!,
+                  ],
+                ),
                 children: [
                   if (isProcessing)
                     _TypingMeta(
@@ -192,14 +192,6 @@ class ChatGroupAppBarTitle extends StatelessWidget {
             children: [
               _ChatAppBarNameRow(
                 name: groupName,
-                afterName: ChatEventListenBadge(
-                  agentIds: [
-                    for (final agent in groupAgents) agent.id,
-                  ],
-                  agentNames: {
-                    for (final agent in groupAgents) agent.id: agent.name,
-                  },
-                ),
                 badgeMaxWidth: metrics.badgeMaxWidth,
                 style: metrics.nameStyle,
               ),
@@ -208,6 +200,14 @@ class ChatGroupAppBarTitle extends StatelessWidget {
                 trailing: isProcessing && onStopGenerating != null
                     ? _StopGeneratingButton(onTap: onStopGenerating!)
                     : null,
+                afterStatus: ChatEventListenBadge(
+                  agentIds: [
+                    for (final agent in groupAgents) agent.id,
+                  ],
+                  agentNames: {
+                    for (final agent in groupAgents) agent.id: agent.name,
+                  },
+                ),
                 children: [
                   if (isProcessing)
                     _TypingMeta(
@@ -353,7 +353,6 @@ class _ChatAppBarAvatar extends StatelessWidget {
 
 class _ChatAppBarNameRow extends StatelessWidget {
   final String name;
-  final Widget? afterName;
   final Widget? badge;
   final double badgeMaxWidth;
   final TextStyle style;
@@ -362,7 +361,6 @@ class _ChatAppBarNameRow extends StatelessWidget {
     required this.name,
     required this.style,
     required this.badgeMaxWidth,
-    this.afterName,
     this.badge,
   });
 
@@ -378,7 +376,6 @@ class _ChatAppBarNameRow extends StatelessWidget {
             style: style,
           ),
         ),
-        if (afterName != null) afterName!,
         if (badge != null) ...[
           const SizedBox(width: 6),
           ConstrainedBox(
@@ -393,10 +390,12 @@ class _ChatAppBarNameRow extends StatelessWidget {
 
 class _ChatAppBarMetaRow extends StatelessWidget {
   final List<Widget> children;
+  final Widget? afterStatus;
   final Widget? trailing;
 
   const _ChatAppBarMetaRow({
     required this.children,
+    this.afterStatus,
     this.trailing,
   });
 
@@ -415,6 +414,7 @@ class _ChatAppBarMetaRow extends StatelessWidget {
             child: children[i],
           ),
         ],
+        if (afterStatus != null) afterStatus!,
         if (trailing != null) ...[
           const SizedBox(width: 6),
           trailing!,
