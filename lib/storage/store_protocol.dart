@@ -10,6 +10,23 @@ const int kStoreProtocolVersion = 4;
 /// peer 层控制帧路由 type / 协议命名空间。
 const String kStoreControlType = 'store';
 
+/// 远端读传输参数（spec §2.3：`encoding=bin` 可选，旧对端回退 JSON/base64）。
+class StoreTransfer {
+  StoreTransfer._();
+
+  /// `read` / `versions.read` 请求字段：正文走 Noise 明文二进制帧，不经 JSON base64。
+  static const encodingBin = 'bin';
+
+  /// JSON/base64 兼容块（旧对端 / 未声明 encoding）。
+  static const jsonChunk = 64 * 1024;
+
+  /// 二进制读块。外层 envelope 上限 4MiB，256KiB 留足 Noise/JSON 封装余量。
+  static const binaryChunk = 256 * 1024;
+
+  /// 滑动窗口：同时在飞的 `read` 数（req_id 多路复用）。
+  static const pipelineWindow = 8;
+}
+
 /// store.* 操作（spec §2）。
 class StoreOp {
   StoreOp._();

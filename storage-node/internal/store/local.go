@@ -17,7 +17,8 @@ import (
 	"github.com/shepaw/storage-node/internal/protocol"
 )
 
-const maxChunk = 65536
+const maxChunk = protocol.StoreBinJSONChunk
+const maxBinaryChunk = protocol.StoreBinBinaryChunk
 
 type Local struct {
 	Root       string
@@ -308,23 +309,48 @@ func (l *Local) read(frame protocol.Frame, caller string) (map[string]any, error
 		return nil, &OpError{Code: "not_found", Msg: err.Error()}
 	}
 	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return nil, &OpError{Code: "not_found", Msg: err.Error()}
+	}
+	fileSize := st.Size()
 	offset := int64(num(frame.Payload["offset"]))
 	length := int64(num(frame.Payload["length"]))
-	if length <= 0 || length > maxChunk {
-		length = maxChunk
+	max := int64(maxChunk)
+	if protocol.WantsBinaryRead(frame.Op, frame.Payload) {
+		max = int64(maxBinaryChunk)
+	}
+	if length <= 0 || length > max {
+		length = max
+	}
+	if offset < 0 || offset >= fileSize {
+		if protocol.WantsBinaryRead(frame.Op, frame.Payload) {
+			return map[string]any{"_bin": []byte{}, "size": fileSize, "eof": true}, nil
+		}
+		return map[string]any{"data": "", "size": fileSize, "eof": true}, nil
 	}
 	if _, err := f.Seek(offset, io.SeekStart); err != nil {
-		return map[string]any{"data": "", "size": 0, "eof": true}, nil
+		if protocol.WantsBinaryRead(frame.Op, frame.Payload) {
+			return map[string]any{"_bin": []byte{}, "size": fileSize, "eof": true}, nil
+		}
+		return map[string]any{"data": "", "size": fileSize, "eof": true}, nil
 	}
 	buf := make([]byte, length)
 	n, err := io.ReadFull(f, buf)
 	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
 		n = 0
 	}
-	eof := n < int(length)
+	eof := offset+int64(n) >= fileSize
+	if protocol.WantsBinaryRead(frame.Op, frame.Payload) {
+		return map[string]any{
+			"_bin": buf[:n],
+			"size": fileSize,
+			"eof":  eof,
+		}, nil
+	}
 	return map[string]any{
 		"data": base64.StdEncoding.EncodeToString(buf[:n]),
-		"size": n,
+		"size": fileSize,
 		"eof":  eof,
 	}, nil
 }

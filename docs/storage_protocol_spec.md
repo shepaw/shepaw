@@ -165,7 +165,15 @@ store://<space>/<device>/<relpath>[@<ref>]
 → {"op": "result", "data": {"data": "<base64>", "size": 4096, "eof": true}}
 ```
 
-- `length` ≤ 65536（64KB）；`offset` 越界返回空 data + `eof: true`。
+- 默认 `length` ≤ 65536（64KB），正文为 JSON base64；`offset` 越界返回空 data + `eof: true`。
+- **可选 `encoding: "bin"`**（v4.2 扩展，不升 `v`）：`length` 可达 262144（256KB）。成功时对端不回 JSON `result`，而在同一 Noise 会话上发一帧明文：
+
+  ```
+  magic "SPB1" | kind=1 | req_id | offset u64be | file_size u64be | flags(bit0=eof) | data
+  ```
+
+  `req_id` 与请求相同。旧对端忽略未知字段，若 `length>64KB` 则 `bad_op`（或悄悄截成 64KB 并仍回 JSON）；客户端回退 JSON 路径。
+- 客户端可对多个 `read`（不同 `req_id` / `offset`）做滑动窗口并发；服务端按请求独立回复。
 
 ### 2.4 write.begin — 开始写入（断点续传）
 

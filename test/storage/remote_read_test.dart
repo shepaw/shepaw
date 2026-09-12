@@ -75,7 +75,15 @@ void main() {
           path: path,
           size: content.length,
           sha256: sha(content));
-      await serverStore.writeChunk(device, 'files', uid, 0, content);
+      var off = 0;
+      while (off < content.length) {
+        final end = (off + LocalStore.maxReadChunk < content.length)
+            ? off + LocalStore.maxReadChunk
+            : content.length;
+        await serverStore.writeChunk(
+            device, 'files', uid, off, content.sublist(off, end));
+        off = end;
+      }
       await serverStore.commit(device, 'files', [uid]);
     }
 
@@ -104,6 +112,13 @@ void main() {
                 frame.payload['path'] as String,
                 frame.payload['offset'] as int,
                 frame.payload['length'] as int);
+            if (frame.payload['encoding'] == StoreTransfer.encodingBin) {
+              return {
+                '_bin': data,
+                'size': size,
+                'eof': eof,
+              };
+            }
             return {
               'data': base64Encode(data),
               'size': size,
@@ -278,6 +293,32 @@ void main() {
       expect(r.bytes, content);
       expect(r.fromOwnerFallback, isTrue);
       expect(targets.contains(device), isTrue);
+    });
+
+    test('大文件按 256KB 分块，而不是 64KB 停等', () async {
+      final content = Uint8List.fromList(
+          List<int>.generate(StoreTransfer.binaryChunk + 40, (i) => i % 251));
+      await serverWrite('doc/big.bin', content);
+      final lengths = <int>[];
+      final encodings = <String?>[];
+      final realCaller = RemoteReadService.instance.serverCaller!;
+      RemoteReadService.instance.serverCaller =
+          (serverDeviceId, frame) async {
+        if (frame.op == StoreOp.read) {
+          lengths.add(frame.payload['length'] as int);
+          encodings.add(frame.payload['encoding'] as String?);
+        }
+        return realCaller(serverDeviceId, frame);
+      };
+
+      final r = await RemoteReadService.instance.readVerified(
+          serverDeviceId: server,
+          deviceId: device,
+          space: 'files',
+          path: 'doc/big.bin');
+      expect(r.bytes, content);
+      expect(lengths, [StoreTransfer.binaryChunk, 40]);
+      expect(encodings, everyElement(StoreTransfer.encodingBin));
     });
 
     test('master 离线无缓存时回退源设备直读', () async {

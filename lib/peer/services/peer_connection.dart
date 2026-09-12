@@ -16,6 +16,7 @@ import '../../services/noise_identity.dart';
 import '../../services/noise/noise_session.dart';
 import '../../services/noise/noise_envelope.dart';
 import '../../services/logger_service.dart';
+import '../../storage/store_binary_frame.dart';
 import '../models/paired_peer.dart';
 import '../models/peer_message.dart';
 import 'peer_advertise.dart';
@@ -86,6 +87,10 @@ class PeerConnection {
   /// 发出的是解密后的原始 JSON（含 `type` 字段）。
   final _controlController = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get control => _controlController.stream;
+
+  /// Noise 明文二进制（store 读块 `SPB1`），不经 JSON。
+  final _binaryController = StreamController<Uint8List>.broadcast();
+  Stream<Uint8List> get binary => _binaryController.stream;
 
   /// agent-over-peer 控制消息的 type 前缀。这些帧不走聊天持久化，
   /// 而是通过 [control] 流交给上层服务处理。
@@ -289,6 +294,12 @@ class PeerConnection {
     _lastActivity = DateTime.now();
   }
 
+  /// 发送已加密会话上的 Noise 明文（store 二进制读块等）。
+  Future<void> sendPlain(Uint8List plaintext) async {
+    await _serializedSend(plaintext);
+    _lastActivity = DateTime.now();
+  }
+
   /// 发送心跳
   Future<void> _sendHeartbeat() async {
     await _serializedSend(Uint8List.fromList(utf8.encode(jsonEncode({
@@ -346,6 +357,7 @@ class PeerConnection {
     _messageController.close();
     _ackController.close();
     _controlController.close();
+    _binaryController.close();
     _stateController.close();
   }
 
@@ -469,6 +481,14 @@ class PeerConnection {
 
       if (_noiseSession == null || !_noiseSession!.ready) return;
       final plaintext = await _noiseSession!.decrypt(frame.payload);
+      if (StoreBinaryChunk.looksLike(plaintext)) {
+        if (!_binaryController.isClosed) {
+          _binaryController.add(plaintext);
+        }
+        _lastActivity = DateTime.now();
+        _lastReceivedAt = _lastActivity;
+        return;
+      }
       final json = jsonDecode(utf8.decode(plaintext)) as Map<String, dynamic>;
 
       _lastActivity = DateTime.now();

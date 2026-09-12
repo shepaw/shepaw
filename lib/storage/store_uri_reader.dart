@@ -11,6 +11,7 @@ import 'local_store.dart';
 import 'remote_read_service.dart';
 import 'runtime_paths.dart';
 import 'store_protocol.dart';
+import 'store_remote_fetcher.dart';
 import 'store_service.dart';
 
 /// `store://` 指向的是文件还是目录。
@@ -370,15 +371,37 @@ class StoreUriReader {
     final self = await DeviceIdentity.deviceId();
     await _assertReadable(parsed.space, parsed.device, parsed.path, self);
     final token = _refToken(parsed.ref);
-    final builder = BytesBuilder(copy: false);
-    var offset = 0;
-    while (true) {
-      final (chunk, _, eof) =
-          await _readVersionedChunk(parsed, token, offset, uriString);
-      if (chunk.isNotEmpty) builder.add(chunk);
-      offset += chunk.length;
-      if (eof || chunk.isEmpty) break;
+    if (parsed.device == self) {
+      final builder = BytesBuilder(copy: false);
+      var offset = 0;
+      while (true) {
+        final (chunk, _, eof) =
+            await _readVersionedChunk(parsed, token, offset, uriString);
+        if (chunk.isNotEmpty) builder.add(chunk);
+        offset += chunk.length;
+        if (eof || chunk.isEmpty) break;
+      }
+      return builder.takeBytes();
     }
+    final size = await _sizeVersioned(parsed, uriString);
+    final server =
+        await StoreService.instance.preferredReadServer(parsed.device);
+    final builder = BytesBuilder(copy: false);
+    await StoreRemoteFetcher.pump(
+      fileSize: size,
+      fetch: ({required offset, required length, required binary}) =>
+          StoreService.instance.readRemoteChunk(
+        serverDeviceId: server,
+        deviceId: parsed.device,
+        space: parsed.space,
+        path: parsed.path,
+        offset: offset,
+        length: length,
+        binary: binary,
+        versionRef: token,
+      ),
+      onChunk: builder.add,
+    );
     return builder.takeBytes();
   }
 
@@ -438,15 +461,39 @@ class StoreUriReader {
     await dest.parent.create(recursive: true);
     final sink = dest.openWrite();
     final token = _refToken(parsed.ref);
-    var offset = 0;
+    final self = await DeviceIdentity.deviceId();
     try {
-      while (true) {
-        final (chunk, _, eof) =
-            await _readVersionedChunk(parsed, token, offset, uriString);
-        if (chunk.isNotEmpty) sink.add(chunk);
-        offset += chunk.length;
-        onProgress?.call(offset, size > 0 ? size : offset);
-        if (eof || chunk.isEmpty) break;
+      if (parsed.device == self) {
+        var offset = 0;
+        while (true) {
+          final (chunk, _, eof) =
+              await _readVersionedChunk(parsed, token, offset, uriString);
+          if (chunk.isNotEmpty) sink.add(chunk);
+          offset += chunk.length;
+          onProgress?.call(offset, size > 0 ? size : offset);
+          if (eof || chunk.isEmpty) break;
+        }
+      } else {
+        final server =
+            await StoreService.instance.preferredReadServer(parsed.device);
+        await StoreRemoteFetcher.pump(
+          fileSize: size,
+          fetch: ({required offset, required length, required binary}) =>
+              StoreService.instance.readRemoteChunk(
+            serverDeviceId: server,
+            deviceId: parsed.device,
+            space: parsed.space,
+            path: parsed.path,
+            offset: offset,
+            length: length,
+            binary: binary,
+            versionRef: token,
+          ),
+          onChunk: (chunk) {
+            if (chunk.isNotEmpty) sink.add(chunk);
+          },
+          onProgress: onProgress,
+        );
       }
     } finally {
       await sink.close();

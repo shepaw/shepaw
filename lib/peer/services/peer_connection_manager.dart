@@ -101,6 +101,10 @@ class PeerConnectionManager {
   final _controlController = StreamController<PeerControlEvent>.broadcast();
   Stream<PeerControlEvent> get controlEvents => _controlController.stream;
 
+  /// store 二进制读块（Noise 明文 `SPB1`）。
+  final _binaryController = StreamController<PeerBinaryEvent>.broadcast();
+  Stream<PeerBinaryEvent> get binaryEvents => _binaryController.stream;
+
   /// 连接状态变化事件
   final _eventController = StreamController<PeerConnectionEvent>.broadcast();
   Stream<PeerConnectionEvent> get events => _eventController.stream;
@@ -406,6 +410,21 @@ class PeerConnectionManager {
         return true;
       } catch (e) {
         _log.warning('sendControl failed: $e', tag: _tag);
+        return false;
+      }
+    }
+    return false;
+  }
+
+  /// 发送 Noise 明文二进制（store 读块）。未连接时返回 false。
+  Future<bool> sendPlain(String peerId, Uint8List plaintext) async {
+    final conn = _connections[peerId];
+    if (conn != null && conn.state == PeerConnectionState.connected) {
+      try {
+        await conn.sendPlain(plaintext);
+        return true;
+      } catch (e) {
+        _log.warning('sendPlain failed: $e', tag: _tag);
         return false;
       }
     }
@@ -774,6 +793,12 @@ class PeerConnectionManager {
       conn.control.listen((json) {
         if (!_controlController.isClosed) {
           _controlController.add(PeerControlEvent(peerId: peer.id, data: json));
+        }
+      }),
+      conn.binary.listen((bytes) {
+        if (!_binaryController.isClosed) {
+          _binaryController.add(
+              PeerBinaryEvent(peerId: peer.id, plaintext: bytes));
         }
       }),
       conn.stateChanges.listen((state) {
@@ -1204,9 +1229,17 @@ class PeerConnectionManager {
     _messageController.close();
     _ackController.close();
     _controlController.close();
+    _binaryController.close();
     _eventController.close();
     _peerListChangedController.close();
   }
+}
+
+/// store 二进制读块事件（带来源 peerId）。
+class PeerBinaryEvent {
+  final String peerId;
+  final Uint8List plaintext;
+  PeerBinaryEvent({required this.peerId, required this.plaintext});
 }
 
 /// agent-over-peer 控制消息事件（带来源 peerId）。

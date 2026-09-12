@@ -22,6 +22,8 @@ import 'device_identity.dart';
 import 'import_auth_service.dart';
 import 'local_store.dart';
 import 'master_migration_service.dart';
+import 'store_binary_frame.dart';
+import 'store_remote_fetcher.dart';
 import 'mirror_hash_gate.dart';
 import 'runtime_paths.dart';
 import 'seed_authorization.dart';
@@ -58,6 +60,7 @@ class StoreService {
   ImportAuthService? _importAuth;
   DeviceCursorStore? _cursorStore;
   StreamSubscription<PeerControlEvent>? _controlSub;
+  StreamSubscription<PeerBinaryEvent>? _binarySub;
   StreamSubscription<PeerConnectionEvent>? _connSub;
   final _pending = <String, Completer<Map<String, dynamic>?>>{};
 
@@ -65,6 +68,7 @@ class StoreService {
 
   Future<void> start() async {
     _controlSub ??= _manager.controlEvents.listen(_onControl);
+    _binarySub ??= _manager.binaryEvents.listen(_onBinary);
     _connSub ??= _manager.events.listen((e) {
       if (e.type == PeerConnectionEventType.connected) {
         unawaited(_onPeerConnected(e.peerId));
@@ -86,6 +90,8 @@ class StoreService {
   Future<void> stop() async {
     await _controlSub?.cancel();
     _controlSub = null;
+    await _binarySub?.cancel();
+    _binarySub = null;
     await _connSub?.cancel();
     _connSub = null;
   }
@@ -560,6 +566,43 @@ class StoreService {
     return _callPeerId(peer.id, frame);
   }
 
+  /// 远端读一块：`encoding=bin` 时对端用 `SPB1` 回正文，旧对端仍回 JSON base64。
+  Future<StoreReadChunk> readRemoteChunk({
+    required String serverDeviceId,
+    required String deviceId,
+    required String space,
+    required String path,
+    required int offset,
+    required int length,
+    required bool binary,
+    String? grantId,
+    String? versionRef,
+  }) async {
+    final res = await callPeer(
+      serverDeviceId,
+      StoreFrame(
+        op: versionRef != null ? StoreOp.versionsRead : StoreOp.read,
+        payload: <String, dynamic>{
+          'space': space,
+          'device': deviceId,
+          'path': path,
+          'offset': offset,
+          'length': length,
+          if (binary) 'encoding': StoreTransfer.encodingBin,
+          if (grantId != null) 'grant': grantId,
+          if (versionRef != null) 'ref': versionRef,
+        },
+      ),
+    );
+    if (res == null || res.containsKey('_error')) {
+      throw StoreException(
+        res?['_error'] as String? ?? StoreError.masterOffline,
+        res?['message'] as String? ?? '',
+      );
+    }
+    return StoreReadChunk.fromResult(res);
+  }
+
   Future<Map<String, dynamic>?> _callPeerId(
       String peerId, StoreFrame frame) async {
     final reqId = frame.reqId ?? 'r-${_uuid.v4()}';
@@ -608,6 +651,18 @@ class StoreService {
   }
 
   // ────────────────────────────── master 侧帧处理 ──
+
+  void _onBinary(PeerBinaryEvent event) {
+    final chunk = StoreBinaryChunk.tryDecode(event.plaintext);
+    if (chunk == null) return;
+    final completer = _pending.remove(chunk.reqId);
+    completer?.complete(<String, dynamic>{
+      'data': chunk.bytes,
+      'size': chunk.fileSize,
+      'eof': chunk.eof,
+      '_encoding': StoreTransfer.encodingBin,
+    });
+  }
 
   void _onControl(PeerControlEvent event) {
     Map<String, dynamic>? decoded;
@@ -863,10 +918,68 @@ class StoreService {
     if (data.containsKey('_error')) {
       await _reply(
           peerId, frame, data['_error'] as String, data['message'] as String?);
-    } else {
-      await _manager.sendControl(
-          peerId, storeResult(frame.reqId, data).toJson());
+      return;
     }
+    final bin = data['_bin'];
+    if (bin is Uint8List &&
+        frame.reqId != null &&
+        _wantsBinary(frame)) {
+      final ok = await _manager.sendPlain(
+        peerId,
+        StoreBinaryChunk(
+          reqId: frame.reqId!,
+          offset: frame.payload['offset'] as int? ?? 0,
+          fileSize: (data['size'] as num?)?.toInt() ?? bin.length,
+          eof: data['eof'] == true,
+          bytes: bin,
+        ).encode(),
+      );
+      if (!ok) {
+        await _reply(peerId, frame, StoreError.masterOffline);
+      }
+      return;
+    }
+    await _manager.sendControl(
+        peerId, storeResult(frame.reqId, data).toJson());
+  }
+
+  static bool _wantsBinary(StoreFrame frame) =>
+      frame.payload['encoding'] == StoreTransfer.encodingBin &&
+      (frame.op == StoreOp.read || frame.op == StoreOp.versionsRead);
+
+  static int _readLength(StoreFrame frame) {
+    final raw = frame.payload['length'];
+    final max = _wantsBinary(frame)
+        ? LocalStore.maxBinaryReadChunk
+        : LocalStore.maxReadChunk;
+    final requested = raw is int
+        ? raw
+        : raw is num
+            ? raw.toInt()
+            : max;
+    if (requested < 1 || requested > max) {
+      throw StoreException(StoreError.badOp, 'length must be 1..$max');
+    }
+    return requested;
+  }
+
+  static Map<String, dynamic> _readPayload(
+    (Uint8List, int, bool) result, {
+    required bool binary,
+  }) {
+    final (data, size, eof) = result;
+    if (binary) {
+      return <String, dynamic>{
+        '_bin': data,
+        'size': size,
+        'eof': eof,
+      };
+    }
+    return <String, dynamic>{
+      'data': base64Encode(data),
+      'size': size,
+      'eof': eof,
+    };
   }
 
   // ────────────────────────────── 统一执行器（loopback 与远端共用）──
@@ -1048,17 +1161,16 @@ class StoreService {
           return meta;
 
         case StoreOp.read:
-          final (data, size, eof) = await store.read(
+          return _readPayload(
+            await store.read(
               frame.device ?? callerDeviceId,
               frame.space!,
               frame.path!,
               frame.payload['offset'] as int? ?? 0,
-              frame.payload['length'] as int? ?? LocalStore.maxReadChunk);
-          return <String, dynamic>{
-            'data': base64Encode(data),
-            'size': size,
-            'eof': eof,
-          };
+              _readLength(frame),
+            ),
+            binary: _wantsBinary(frame),
+          );
 
         case StoreOp.writeBegin:
           final writeDevice = _writeDeviceId(frame, callerDeviceId);
@@ -1168,19 +1280,17 @@ class StoreService {
           );
 
         case StoreOp.versionsRead:
-          final (data, size, eof) = await store.versionsRead(
-            frame.device ?? callerDeviceId,
-            frame.space!,
-            frame.path!,
-            frame.payload['ref'] as String? ?? '',
-            offset: frame.payload['offset'] as int? ?? 0,
-            length: frame.payload['length'] as int? ?? LocalStore.maxReadChunk,
+          return _readPayload(
+            await store.versionsRead(
+              frame.device ?? callerDeviceId,
+              frame.space!,
+              frame.path!,
+              frame.payload['ref'] as String? ?? '',
+              offset: frame.payload['offset'] as int? ?? 0,
+              length: _readLength(frame),
+            ),
+            binary: _wantsBinary(frame),
           );
-          return <String, dynamic>{
-            'data': base64Encode(data),
-            'size': size,
-            'eof': eof,
-          };
 
         case StoreOp.manifest:
           return await store.readManifest(

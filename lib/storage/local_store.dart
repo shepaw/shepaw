@@ -140,7 +140,10 @@ class LocalStore {
   static const Duration defaultVersionCoalesceWindow = Duration(seconds: 30);
 
   static const _uuid = Uuid();
-  static const maxReadChunk = 64 * 1024;
+  static const maxReadChunk = StoreTransfer.jsonChunk;
+
+  /// `encoding=bin` 读块上限（JSON/base64 路径仍为 [maxReadChunk]）。
+  static const maxBinaryReadChunk = StoreTransfer.binaryChunk;
 
   /// Agent 产物软配额（runtime/artifacts/attachments/cognition 合计，每设备）。
   static const defaultAgentSpaceQuotaBytes = 2 * 1024 * 1024 * 1024;
@@ -445,12 +448,12 @@ class LocalStore {
     return type == FileSystemEntityType.file ? 'file' : 'dir';
   }
 
-  /// 读文件块（≤64KB，spec §2.3）。
+  /// 读文件块（JSON 路径 ≤64KB；`encoding=bin` 可达 [maxBinaryReadChunk]）。
   Future<(Uint8List, int, bool)> read(String deviceId, String space,
       String relPath, int offset, int length) async {
-    if (length <= 0 || length > maxReadChunk) {
+    if (length <= 0 || length > maxBinaryReadChunk) {
       throw StoreException(
-          StoreError.badOp, 'length must be 1..$maxReadChunk');
+          StoreError.badOp, 'length must be 1..$maxBinaryReadChunk');
     }
     if (offset < 0) throw StoreException(StoreError.badOp, 'negative offset');
     final abs = _resolveInSpace(deviceId, space, relPath);
@@ -976,9 +979,9 @@ class LocalStore {
     int offset = 0,
     int length = maxReadChunk,
   }) async {
-    if (length < 1 || length > maxReadChunk) {
+    if (length < 1 || length > maxBinaryReadChunk) {
       throw StoreException(
-          StoreError.badOp, 'length must be 1..$maxReadChunk');
+          StoreError.badOp, 'length must be 1..$maxBinaryReadChunk');
     }
     if (offset < 0) throw StoreException(StoreError.badOp, 'negative offset');
 

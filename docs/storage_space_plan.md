@@ -155,7 +155,7 @@
 ```
 
 - `space` ∈ `artifacts | files | attachments | backups`，必填单值；**写操作永远落在调用者自己的 `<device_id>/` 下**（跨目录写在机制上不可能）；`device` 参数仅用于读取/列举其他端目录，缺省为调用者。
-- 分块 64KB、SHA-256 校验、offset 幂等断点续传（内容经 base64 封装在控制帧内；大文件成本已知，后续可换二进制帧）。
+- 分块默认 64KB（JSON/base64）；`encoding=bin` 时 256KB 二进制帧 + 滑动窗口（见 spec §2.3）。SHA-256 校验、offset 幂等断点续传。
 - **`commit` 原子转正**：一次逻辑写入先落 `<device_id>/<space>/.staging/<upload_id>/`，对 `list`/恢复不可见；`commit` 后整批原子转正；超过 24h 未 commit 的暂存自动清理（决策 4）。
 - `meta`：只返回元数据（sha256、size、mtime），不传输内容，用于缓存校验；path 为目录时返回清单及各文件 hash（一次往返完成批量校验）。
 - **远端读缓存**（非本地写路径）：按内容 hash 键入 `LocalCas`（默认 LRU **500MB**——决策 6）；仅服务于他端共享区读取。本机正式区是真实文件树，不经 CAS 写入。

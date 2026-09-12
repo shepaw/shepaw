@@ -245,6 +245,21 @@ func (s *Server) serveTransport(conn *websocket.Conn, sess *noise.Session, fp st
 			log.Printf("decrypt: %v", err)
 			return
 		}
+		if protocol.LooksLikeStoreBin(plain) {
+			chunk, decErr := protocol.DecodeStoreBin(plain)
+			if decErr == nil && s.Sessions != nil {
+				s.Sessions.DeliverReply(fp, chunk.ReqID, map[string]any{
+					"op":     "result",
+					"req_id": chunk.ReqID,
+					"data": map[string]any{
+						"data": chunk.Data,
+						"size": chunk.FileSize,
+						"eof":  chunk.EOF,
+					},
+				})
+			}
+			continue
+		}
 		var raw map[string]any
 		if err := json.Unmarshal(plain, &raw); err != nil {
 			continue
@@ -313,6 +328,30 @@ func (s *Server) handleStoreRequest(
 	if err == nil && op == "master.migrate" {
 		s.overlayMigrateBroadcast(data)
 	}
+	if err == nil && protocol.WantsBinaryRead(op, payload) {
+		if raw, ok := data["_bin"].([]byte); ok {
+			eof, _ := data["eof"].(bool)
+			plain, encErr := protocol.EncodeStoreBin(protocol.StoreBinChunk{
+				ReqID:    reqID,
+				Offset:   anyToUint64(payload["offset"]),
+				FileSize: anyToUint64(data["size"]),
+				EOF:      eof,
+				Data:     raw,
+			})
+			if encErr == nil && reqID != "" {
+				writeMu.Lock()
+				ct, encErr := sess.Encrypt(plain)
+				if encErr == nil {
+					enc, frameErr := noise.EncodeFrame(noise.Frame{Type: noise.FrameData, Payload: ct})
+					if frameErr == nil {
+						_ = conn.WriteMessage(websocket.TextMessage, []byte(enc))
+					}
+				}
+				writeMu.Unlock()
+				return
+			}
+		}
+	}
 	var reply map[string]any
 	if err != nil {
 		code := "internal"
@@ -377,6 +416,30 @@ func asInt64(v any) int64 {
 	case json.Number:
 		i, _ := x.Int64()
 		return i
+	default:
+		return 0
+	}
+}
+
+func anyToUint64(v any) uint64 {
+	switch n := v.(type) {
+	case int:
+		return uint64(n)
+	case int64:
+		return uint64(n)
+	case uint64:
+		return n
+	case float64:
+		if n < 0 {
+			return 0
+		}
+		return uint64(n)
+	case json.Number:
+		i, err := n.Int64()
+		if err != nil || i < 0 {
+			return 0
+		}
+		return uint64(i)
 	default:
 		return 0
 	}

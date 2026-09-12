@@ -11,6 +11,7 @@ import 'device_identity.dart';
 import 'local_cas.dart';
 import 'local_store.dart';
 import 'store_protocol.dart';
+import 'store_remote_fetcher.dart';
 import 'store_service.dart';
 
 /// 缓存校验读取的结果。
@@ -264,26 +265,25 @@ class RemoteReadService {
     final sink = tmp.openWrite();
     var offset = 0;
     try {
-      while (true) {
-        final res = await _callServer(
-            serverDeviceId,
-            StoreFrame(op: StoreOp.read, payload: {
-              'space': space,
-              'device': deviceId,
-              'path': path,
-              'offset': offset,
-              'length': LocalStore.maxReadChunk,
-              if (grantId != null) 'grant': grantId,
-            }));
-        if (res == null || res.containsKey('_error')) {
-          throw StateError('read failed: ${res?['_error']}');
-        }
-        final chunk = base64Decode(res['data'] as String);
-        if (chunk.isNotEmpty) sink.add(chunk);
-        offset += chunk.length;
-        onProgress?.call(offset, remoteSize);
-        if (res['eof'] == true || chunk.isEmpty) break;
-      }
+      await StoreRemoteFetcher.pump(
+        fileSize: remoteSize,
+        fetch: ({required offset, required length, required binary}) =>
+            _fetchChunk(
+          serverDeviceId: serverDeviceId,
+          deviceId: deviceId,
+          space: space,
+          path: path,
+          offset: offset,
+          length: length,
+          binary: binary,
+          grantId: grantId,
+        ),
+        onChunk: (chunk) {
+          if (chunk.isNotEmpty) sink.add(chunk);
+          offset += chunk.length;
+        },
+        onProgress: onProgress,
+      );
     } catch (e) {
       await sink.close();
       if (await tmp.exists()) await tmp.delete();
@@ -530,30 +530,75 @@ class RemoteReadService {
   Future<Uint8List> _readAll(String serverDeviceId, String deviceId,
       String space, String path, int size, String? grantId) async {
     final builder = BytesBuilder(copy: false);
-    var offset = 0;
-    while (true) {
-      final res = await _callServer(
-          serverDeviceId,
-          StoreFrame(op: StoreOp.read, payload: {
-            'space': space,
-            'device': deviceId,
-            'path': path,
-            'offset': offset,
-            'length': LocalStore.maxReadChunk,
-            if (grantId != null) 'grant': grantId,
-          }));
-      if (res == null || res.containsKey('_error')) {
-        throw StateError('read failed: ${res?['_error']}');
-      }
-      final chunk = base64Decode(res['data'] as String);
-      builder.add(chunk);
-      offset += chunk.length;
-      if (res['eof'] == true || chunk.isEmpty) break;
-    }
+    await StoreRemoteFetcher.pump(
+      fileSize: size,
+      fetch: ({required offset, required length, required binary}) =>
+          _fetchChunk(
+        serverDeviceId: serverDeviceId,
+        deviceId: deviceId,
+        space: space,
+        path: path,
+        offset: offset,
+        length: length,
+        binary: binary,
+        grantId: grantId,
+      ),
+      onChunk: builder.add,
+    );
     final bytes = builder.toBytes();
     if (bytes.length != size) {
       throw StateError('size mismatch: ${bytes.length} != $size');
     }
     return bytes;
+  }
+
+  Future<StoreReadChunk> _fetchChunk({
+    required String serverDeviceId,
+    required String deviceId,
+    required String space,
+    required String path,
+    required int offset,
+    required int length,
+    required bool binary,
+    String? grantId,
+    String? versionRef,
+  }) async {
+    final injected = serverCaller;
+    if (injected != null) {
+      final res = await injected(
+        serverDeviceId,
+        StoreFrame(
+          op: versionRef != null ? StoreOp.versionsRead : StoreOp.read,
+          payload: <String, dynamic>{
+            'space': space,
+            'device': deviceId,
+            'path': path,
+            'offset': offset,
+            'length': length,
+            if (binary) 'encoding': StoreTransfer.encodingBin,
+            if (grantId != null) 'grant': grantId,
+            if (versionRef != null) 'ref': versionRef,
+          },
+        ),
+      );
+      if (res == null || res.containsKey('_error')) {
+        throw StoreException(
+          res?['_error'] as String? ?? StoreError.masterOffline,
+          res?['message'] as String? ?? 'read failed',
+        );
+      }
+      return StoreReadChunk.fromResult(res);
+    }
+    return StoreService.instance.readRemoteChunk(
+      serverDeviceId: serverDeviceId,
+      deviceId: deviceId,
+      space: space,
+      path: path,
+      offset: offset,
+      length: length,
+      binary: binary,
+      grantId: grantId,
+      versionRef: versionRef,
+    );
   }
 }

@@ -325,6 +325,11 @@ void main() {
       expect(eof4, isTrue);
 
       expect(Uint8List.fromList([...c1, ...c2, ...c3, ...c4]), content);
+
+      final (wide, _, wideEof) = await store.read(
+          dev, 'files', 'big.bin', 0, LocalStore.maxBinaryReadChunk);
+      expect(wide.length, content.length);
+      expect(wideEof, isTrue);
     });
 
     test('meta：文件与目录清单', () async {

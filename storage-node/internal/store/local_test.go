@@ -2,8 +2,8 @@ package store_test
 
 import (
 	"encoding/base64"
-	"fmt"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -71,6 +71,27 @@ func TestWriteCommitRead(t *testing.T) {
 	raw, _ := base64.StdEncoding.DecodeString(res["data"].(string))
 	if string(raw) != string(payload) {
 		t.Fatalf("got %q", raw)
+	}
+
+	bin, err := s.Handle(protocol.Frame{
+		Op: "read",
+		Payload: map[string]any{
+			"space":    "artifacts",
+			"path":     "task-1/hello.txt",
+			"offset":   0,
+			"length":   protocol.StoreBinBinaryChunk,
+			"encoding": "bin",
+		},
+	}, device, protocol.TrustOwner, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := bin["_bin"].([]byte)
+	if !ok || string(got) != string(payload) {
+		t.Fatalf("bin got %v", bin["_bin"])
+	}
+	if bin["eof"] != true {
+		t.Fatal("expected eof")
 	}
 }
 
@@ -149,7 +170,7 @@ func TestDeleteRestoreRecycleEmpty(t *testing.T) {
 	}
 
 	_, err = s.Handle(protocol.Frame{
-		Op: "recycle.restore",
+		Op:      "recycle.restore",
 		Payload: map[string]any{"recycle_path": recycled},
 	}, device, protocol.TrustOwner, true)
 	if err != nil {
@@ -165,7 +186,7 @@ func TestDeleteRestoreRecycleEmpty(t *testing.T) {
 
 	writeFile("task-1/hello.txt", "v2")
 	_, _ = s.Handle(protocol.Frame{
-		Op: "delete",
+		Op:      "delete",
 		Payload: map[string]any{"space": "artifacts", "path": "task-1/hello.txt"},
 	}, device, protocol.TrustOwner, true)
 	empty, err := s.Handle(protocol.Frame{
