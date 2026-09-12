@@ -743,12 +743,16 @@ class ChatInputAreaState extends State<ChatInputArea> {
               color: fg,
             ),
             const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: fg,
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: fg,
+                ),
               ),
             ),
             const SizedBox(width: 2),
@@ -1292,11 +1296,17 @@ class ChatInputAreaState extends State<ChatInputArea> {
                     ),
                     if (_sessionModeAvailable) ...[
                       const SizedBox(width: 4),
-                      _buildSessionModeChip(),
+                      Flexible(
+                        fit: FlexFit.loose,
+                        child: _buildSessionModeChip(),
+                      ),
                     ],
                     if (_modelEntryAvailable) ...[
                       const SizedBox(width: 4),
-                      Flexible(child: _buildMainModelChip()),
+                      Flexible(
+                        fit: FlexFit.loose,
+                        child: _buildMainModelChip(),
+                      ),
                     ],
                     const Spacer(),
                     if (widget.isLoading)
@@ -1757,11 +1767,18 @@ class ChatInputAreaState extends State<ChatInputArea> {
                 padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
                 child: Row(
                   children: [
-                    if (_sessionModeAvailable) _buildSessionModeChip(),
+                    if (_sessionModeAvailable)
+                      Flexible(
+                        fit: FlexFit.loose,
+                        child: _buildSessionModeChip(),
+                      ),
                     if (_sessionModeAvailable && _modelEntryAvailable)
                       const SizedBox(width: 6),
                     if (_modelEntryAvailable)
-                      Flexible(child: _buildMainModelChip()),
+                      Flexible(
+                        fit: FlexFit.loose,
+                        child: _buildMainModelChip(),
+                      ),
                   ],
                 ),
               ),
