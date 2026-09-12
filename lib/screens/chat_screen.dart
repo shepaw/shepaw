@@ -43,6 +43,7 @@ import '../widgets/chat/chat_queue_panel.dart';
 import '../widgets/chat/session_list_panel.dart';
 import '../widgets/chat/group_session_list_panel.dart';
 import '../widgets/chat/session_list_header_menu.dart';
+import '../widgets/chat/session_preview_entry.dart';
 import '../widgets/chat/session_search_results.dart';
 import '../widgets/chat/session_unread_badge.dart';
 import '../widgets/chat/group_members_panel.dart';
@@ -198,6 +199,16 @@ class _ChatScreenState extends State<ChatScreen>
   /// 查询结果回来再原地替换。
   String? _drawerSessionsCacheKey;
   List<Channel> _drawerSessionsCache = const [];
+
+  /// 行预览（标题 / 最新消息 / 未读）跨抽屉路由存活。
+  ///
+  /// 列表面板的 State 随抽屉路由 dispose，这份 map 留在页面上：再划开时
+  /// 首帧就能画出旧预览，后台标过期重查，避免每次都从会话名占位闪过去。
+  final Map<String, SessionPreviewEntry> _drawerPreviewCache = {};
+
+  /// 抽屉列表的滚动位置（[PageStorageKey] 写进这个 bucket）。
+  /// 路由自带的 bucket 随抽屉销毁，必须提到页面级才能记住滑到哪。
+  PageStorageBucket _drawerPageStorage = PageStorageBucket();
 
   /// 跟手模式下打开的抽屉句柄；null 表示当前抽屉为按钮打开或未打开。
   RightDrawerHandle? _drawerHandle;
@@ -2163,6 +2174,7 @@ class _ChatScreenState extends State<ChatScreen>
       sessions: sessions,
       currentChannelId: c.currentChannelId,
       controller: c,
+      previewCache: _drawerPreviewCache,
       onNewSession: () => c.createNewSession(),
       onSwitchSession: _openDrawerSession,
       onBatchDelete: (ids) => c.batchDeleteSessions(ids, isGroup: false),
@@ -2211,6 +2223,7 @@ class _ChatScreenState extends State<ChatScreen>
       sessions: sessions,
       currentChannelId: c.currentChannelId,
       controller: c,
+      previewCache: _drawerPreviewCache,
       onNewSession: () => c.createNewGroupSession(),
       onSwitchSession: _openDrawerSession,
       onBatchDelete: (ids) => c.batchDeleteSessions(ids, isGroup: true),
@@ -2268,10 +2281,14 @@ class _ChatScreenState extends State<ChatScreen>
     final l10n = AppLocalizations.of(context);
     final refreshTick = ValueNotifier<int>(0);
     final selectionModeRequest = ValueNotifier<int>(0);
+    final cacheHit = cacheKey != null && cacheKey == _drawerSessionsCacheKey;
+    // 换了 agent / 群：旧预览和滚动位置都属于上一份列表，立刻丢掉。
+    if (!cacheHit) {
+      _drawerPreviewCache.clear();
+      _drawerPageStorage = PageStorageBucket();
+    }
     final sessions = ValueNotifier<List<Channel>>(
-      cacheKey != null && cacheKey == _drawerSessionsCacheKey
-          ? _drawerSessionsCache
-          : const <Channel>[],
+      cacheHit ? _drawerSessionsCache : const <Channel>[],
     );
     try {
       final width = _chatDrawerWidth(context);
@@ -2282,17 +2299,20 @@ class _ChatScreenState extends State<ChatScreen>
       _drawerHandle = handle;
       final route = LayoutUtils.showRightDrawer(
         context: context,
-        builder: (_) => ValueListenableBuilder<List<Channel>>(
-          valueListenable: sessions,
-          builder: (context, list, _) => _buildSessionPanelContent(
-            sessions: list,
-            l10n: l10n,
-            refreshTick: refreshTick,
-            selectionModeRequest: selectionModeRequest,
-            // 桌面端抽屉 header 提供钉住按钮：转固定停靠面板。
-            onPinToggle: LayoutUtils.isDesktopLayout(context)
-                ? _pinPanelFromDrawer
-                : null,
+        builder: (_) => PageStorage(
+          bucket: _drawerPageStorage,
+          child: ValueListenableBuilder<List<Channel>>(
+            valueListenable: sessions,
+            builder: (context, list, _) => _buildSessionPanelContent(
+              sessions: list,
+              l10n: l10n,
+              refreshTick: refreshTick,
+              selectionModeRequest: selectionModeRequest,
+              // 桌面端抽屉 header 提供钉住按钮：转固定停靠面板。
+              onPinToggle: LayoutUtils.isDesktopLayout(context)
+                  ? _pinPanelFromDrawer
+                  : null,
+            ),
           ),
         ),
         width: width,
@@ -2313,7 +2333,12 @@ class _ChatScreenState extends State<ChatScreen>
       try {
         final loaded = await loadSessions();
         if (mounted) {
-          sessions.value = loaded;
+          // 同一份 id/顺序再赋新 List 会让 ValueListenableBuilder 整棵重
+          // 建 ChatMoreDrawer（搜索框焦点、列表 element 都重建）。缓存命
+          // 中时列表已经在画，结构没变就只更新缓存引用。
+          if (!_sameSessionIds(sessions.value, loaded)) {
+            sessions.value = loaded;
+          }
           if (cacheKey != null) {
             _drawerSessionsCacheKey = cacheKey;
             _drawerSessionsCache = loaded;
@@ -2460,6 +2485,16 @@ class _ChatScreenState extends State<ChatScreen>
       return tb.compareTo(ta);
     });
     return sorted;
+  }
+
+  /// 会话列表结构是否相同（id + 顺序）。用于避免抽屉二次装载整棵重建。
+  static bool _sameSessionIds(List<Channel> a, List<Channel> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].id != b[i].id) return false;
+    }
+    return true;
   }
 
   /// 关闭右侧抽屉并等待其彻底销毁（退场动画结束、路由 dispose）。

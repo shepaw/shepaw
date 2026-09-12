@@ -7,6 +7,7 @@ import '../../utils/session_utils.dart';
 import '../../l10n/app_localizations.dart';
 import 'session_unread_badge.dart';
 import 'session_list_header_menu.dart';
+import 'session_preview_entry.dart';
 import 'session_row_menu.dart';
 import 'chat_panel_scope.dart';
 
@@ -53,6 +54,9 @@ class SessionListPanel extends StatelessWidget {
   /// 每会话底部菜单「重置会话」回调（仅当前会话行显示）。
   final VoidCallback? onResetSession;
 
+  /// 跨抽屉开关存活的行预览缓存。由 [ChatScreen] 持有；为空则组件自建。
+  final Map<String, SessionPreviewEntry>? previewCache;
+
   const SessionListPanel({
     super.key,
     required this.sessions,
@@ -71,6 +75,7 @@ class SessionListPanel extends StatelessWidget {
     this.onForkSession,
     this.onCopyToAgent,
     this.onResetSession,
+    this.previewCache,
   });
 
   @override
@@ -89,6 +94,7 @@ class SessionListPanel extends StatelessWidget {
       onForkSession: onForkSession,
       onCopyToAgent: onCopyToAgent,
       onResetSession: onResetSession,
+      previewCache: previewCache,
     );
   }
 }
@@ -121,6 +127,9 @@ class _SessionListContent extends StatefulWidget {
   /// 每会话底部菜单「重置会话」回调（仅当前会话行显示）。
   final VoidCallback? onResetSession;
 
+  /// 跨抽屉开关存活的行预览缓存；为空则 [State] 自建一份。
+  final Map<String, SessionPreviewEntry>? previewCache;
+
   const _SessionListContent({
     required this.sessions,
     this.currentChannelId,
@@ -135,6 +144,7 @@ class _SessionListContent extends StatefulWidget {
     this.onForkSession,
     this.onCopyToAgent,
     this.onResetSession,
+    this.previewCache,
   });
 
   @override
@@ -146,20 +156,25 @@ class _SessionListContentState extends State<_SessionListContent> {
   Set<String> _selectedIds = {};
   final _databaseService = LocalDatabaseService();
 
+  /// 组件自建的回退缓存（未传入 [previewCache] 时使用，例如测试）。
+  final Map<String, SessionPreviewEntry> _localPreviews = {};
+
   /// 行级预览缓存（channelId → 最近一次查询结果）。
   ///
-  /// 渲染永远读缓存（无 FutureBuilder 空态，整列不闪），数据过期时后台
-  /// 重查、完成后原地更新。标记过期的时机：
-  /// - 切换会话（[didUpdateWidget]）——保持旧实现"每次切换全量重查"的
-  ///   新鲜度契约（背景会话的新消息 / 未读在下一次切换时可见）；
-  /// - 外部 tick（全部已读等）。
-  final Map<String, _PreviewEntry> _previews = {};
+  /// 优先用调用方传入的 [previewCache]（跨抽屉路由存活）；否则用本地 map。
+  /// 渲染永远读缓存（无 FutureBuilder 空态），数据过期时后台重查。
+  Map<String, SessionPreviewEntry> get _previews =>
+      widget.previewCache ?? _localPreviews;
 
   @override
   void initState() {
     super.initState();
     widget.listRefreshTick.addListener(_onExternalListRefresh);
     widget.selectionModeRequest.addListener(_onSelectionModeRequested);
+    // 复用跨路由缓存时先标过期：首帧仍画旧标题/预览，后台补新鲜度。
+    if (widget.previewCache != null) {
+      _markAllStale();
+    }
     _refreshStalePreviews();
   }
 
@@ -177,7 +192,7 @@ class _SessionListContentState extends State<_SessionListContent> {
 
     // 先标记为刷新中，避免逐行再各发起一次查询。
     for (final id in ids) {
-      _previews.putIfAbsent(id, _PreviewEntry.new)
+      _previews.putIfAbsent(id, SessionPreviewEntry.new)
         ..stale = false
         ..refreshing = true;
     }
@@ -190,7 +205,7 @@ class _SessionListContentState extends State<_SessionListContent> {
       for (final id in ids) {
         final e = _previews[id];
         if (e == null) continue;
-        e.data = (firsts[id], latests[id], unreads[id] ?? 0);
+        e.data = (firsts[id], latests[id], unreads[id] ?? 0, null);
         e.refreshing = false;
       }
       setState(() {});
@@ -249,15 +264,15 @@ class _SessionListContentState extends State<_SessionListContent> {
   }
 
   /// 取该行的预览条目；无缓存或已过期则发起后台重查（完成后原地更新）。
-  _PreviewEntry _entryFor(String channelId) {
-    final entry = _previews.putIfAbsent(channelId, _PreviewEntry.new);
+  SessionPreviewEntry _entryFor(String channelId) {
+    final entry = _previews.putIfAbsent(channelId, SessionPreviewEntry.new);
     if (entry.stale && !entry.refreshing) {
       entry
         ..stale = false
         ..refreshing = true;
       _querySessionPreview(channelId).then((data) {
         entry
-          ..data = data
+          ..data = (data.$1, data.$2, data.$3, null)
           ..refreshing = false;
         if (mounted) setState(() {});
       }).catchError((_) {
@@ -341,6 +356,7 @@ class _SessionListContentState extends State<_SessionListContent> {
 
   Widget _buildList(AppLocalizations l10n) {
     return ListView.builder(
+      key: const PageStorageKey<String>('dm-session-list'),
       itemCount: widget.sessions.length + 1,
       itemBuilder: (context, index) {
         if (index == 0) {
@@ -694,14 +710,3 @@ class _SessionListContentState extends State<_SessionListContent> {
   }
 }
 
-/// 一行会话的预览缓存条目。
-class _PreviewEntry {
-  /// 最近一次查询结果；null = 尚未查到（渲染回落到会话名占位）。
-  (Map<String, dynamic>?, Map<String, dynamic>?, int)? data;
-
-  /// true = 数据可能过期，待下一次构建时后台重查。
-  bool stale = true;
-
-  /// true = 后台重查进行中（避免重复发起）。
-  bool refreshing = false;
-}
