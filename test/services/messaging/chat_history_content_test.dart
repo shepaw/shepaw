@@ -61,6 +61,38 @@ void main() {
       );
     });
 
+    test('shouldReplay skips switch-card-only and history_exclude rows', () {
+      final card = _msg(
+        id: 'card',
+        fromId: 'a1',
+        content: 'New session ready. Open it to continue.',
+        metadata: {
+          'session_action': {'new_session_id': 'dm_new'},
+        },
+      );
+      final excluded = _msg(
+        id: 'ex',
+        fromId: 'a1',
+        content: 'visible but excluded',
+        metadata: {ChatHistoryContent.historyExcludeMetaKey: true},
+      );
+      final withReply = _msg(
+        id: 'ok',
+        fromId: 'a1',
+        content: 'Created a new session.',
+        metadata: {
+          'session_action': {'new_session_id': 'dm_new'},
+        },
+      );
+
+      expect(ChatHistoryContent.shouldReplay(card), isFalse);
+      expect(ChatHistoryContent.replayContent(card), isEmpty);
+      expect(ChatHistoryContent.shouldReplay(excluded), isFalse);
+      expect(ChatHistoryContent.replayContent(excluded), isEmpty);
+      expect(ChatHistoryContent.shouldReplay(withReply), isTrue);
+      expect(ChatHistoryContent.replayContent(withReply), 'Created a new session.');
+    });
+
     test('GroupHistoryContent delegates to ChatHistoryContent', () {
       final m = _msg(
         id: 'm1',

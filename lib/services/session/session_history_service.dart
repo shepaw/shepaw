@@ -7,6 +7,7 @@ import '../local_database_service.dart';
 import '../tool_result_database_service.dart';
 import '../inference_log_service.dart';
 import '../logger_service.dart';
+import '../messaging/chat_history_content.dart';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
@@ -241,7 +242,7 @@ class HistoryService {
   }) async {
     final allMessages = await loadChannelMessages(channelId, limit: limit);
     var history = allMessages
-        .where((m) => m.type != MessageType.system && m.type != MessageType.permissionAudit)
+        .where(ChatHistoryContent.shouldReplay)
         .toList();
     if (excludeMessageId != null) {
       history.removeWhere((m) => m.id == excludeMessageId);

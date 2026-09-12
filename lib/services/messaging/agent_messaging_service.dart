@@ -35,6 +35,7 @@ import '../../clis/shepaw/shepaw_cli.dart';
 import '../cli_execution_gate.dart';
 import '../group/group_orchestration_tools.dart';
 import '../session/session_history_service.dart';
+import '../session/session_slash_commands.dart';
 import '../session/history_compactor.dart';
 import '../session/history_compaction_cache_service.dart';
 import '../remote_agent_service.dart';
@@ -1056,7 +1057,8 @@ class AgentMessagingService {
         final messages = await loadChannelMessages(sessionId, limit: 40);
         if (messages.isNotEmpty) {
           chatHistory = messages
-              .where((m) => m.type != MessageType.system && m.type != MessageType.permissionAudit && m.id != userMessage.id)
+              .where((m) =>
+                  ChatHistoryContent.shouldReplay(m) && m.id != userMessage.id)
               .map((m) {
                 final isAgent = m.from.isAgent;
                 final entry = <String, dynamic>{
@@ -1415,7 +1417,7 @@ class AgentMessagingService {
       final chatResp = await connection.sendChatMessage(
         taskId: effectiveTaskId,
         sessionId: sessionId ?? '',
-        message: userMessage.content,
+        message: ShepawSessionSlashCommands.expandForModel(userMessage.content),
         userId: userMessage.from.id,
         messageId: userMessage.id,
         history: chatHistory,
@@ -1782,9 +1784,7 @@ class AgentMessagingService {
       if (messages.isNotEmpty) {
         chatHistory = messages
             .where((m) =>
-                m.type != MessageType.system &&
-                m.type != MessageType.permissionAudit &&
-                m.id != userMessage.id)
+                ChatHistoryContent.shouldReplay(m) && m.id != userMessage.id)
             .map((m) {
               final isAgent = m.from.isAgent;
               return <String, dynamic>{
@@ -1849,10 +1849,12 @@ class AgentMessagingService {
         remoteAgentId: remoteAgentId,
         // Wire-only enrichment: local DB/bubble keeps userMessage.content;
         // prefer persisted metadata.implicit_prompt when present.
-        message: MessageImplicitPrompt.forPeerWireMessage(
-          message: userMessage.content,
-          attachments: attachments,
-          messageMetadata: userMessage.metadata,
+        message: ShepawSessionSlashCommands.expandForModel(
+          MessageImplicitPrompt.forPeerWireMessage(
+            message: userMessage.content,
+            attachments: attachments,
+            messageMetadata: userMessage.metadata,
+          ),
         ),
         sessionId: peerSessionId,
         history: chatHistory,
@@ -2233,9 +2235,7 @@ class AgentMessagingService {
         );
         final candidates = loaded
             .where((m) =>
-                m.type != MessageType.system &&
-                m.type != MessageType.permissionAudit &&
-                m.id != userMessage.id)
+                ChatHistoryContent.shouldReplay(m) && m.id != userMessage.id)
             .toList();
 
         final plan = HistoryCompactor.plan(
@@ -2319,7 +2319,8 @@ class AgentMessagingService {
       }
       roundMessages.addAll(chatHistory);
       // Resolve quoted message content for trace
-      String effectiveContent = content;
+      String effectiveContent =
+          ShepawSessionSlashCommands.expandForModel(content);
       if (replyToId != null) {
         final quotedMsg = await getMessageById(replyToId);
         if (quotedMsg != null) {
@@ -2955,9 +2956,7 @@ class AgentMessagingService {
     if (messages.isEmpty) return null;
     return messages
         .where((m) =>
-            m.type != MessageType.system &&
-            m.type != MessageType.permissionAudit &&
-            m.id != excludeMessageId)
+            ChatHistoryContent.shouldReplay(m) && m.id != excludeMessageId)
         .map((m) {
       final isAgent = m.from.isAgent;
       return <String, dynamic>{

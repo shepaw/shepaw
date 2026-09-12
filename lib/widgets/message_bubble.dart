@@ -261,6 +261,13 @@ class MessageBubble extends StatelessWidget {
       if (dispatchMeta?['relay_approval'] != null) {
         return RelayApprovalCard(message: message);
       }
+      if (dispatchMeta?['group_session_action'] != null ||
+          dispatchMeta?['session_action'] != null) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Center(child: GroupSessionSwitchCard(message: message)),
+        );
+      }
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Center(

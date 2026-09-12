@@ -11,6 +11,7 @@ import 'group_dispatch_parser.dart';
 import 'group_event.dart';
 import 'group_event_store.dart';
 import '../event/event_bus.dart';
+import '../messaging/chat_history_content.dart';
 import '../event/group_event_adapter.dart';
 
 /// Whether an event type triggers an admin perception turn (active-notify) or
@@ -327,11 +328,7 @@ class GroupEventPerceptionScheduler {
       // Snapshot history, mirroring orchestration's non-system filter. The
       // event details come from the content prompt below.
       final raw = await _loadChannelMessages(channelId, limit: 50);
-      final history = raw
-          .where((m) =>
-              m.type != MessageType.system &&
-              m.type != MessageType.permissionAudit)
-          .toList();
+      final history = raw.where(ChatHistoryContent.shouldReplay).toList();
 
       final content = _promptBuilder(
         groupName: channel.name,

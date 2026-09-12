@@ -3147,9 +3147,7 @@ $originalQuestion
       // 「X 加入了群聊」等系统消息错标为 [System(User)]。
       var historyMessages =
           (await loadChannelMessages(channelId, limit: 50))
-              .where((m) =>
-                  m.type != MessageType.system &&
-                  m.type != MessageType.permissionAudit)
+              .where(ChatHistoryContent.shouldReplay)
               .toList();
 
       // §6.3：工作流跨步骤累积 store:// 引用，注入后续步骤 instruction。
@@ -3547,9 +3545,7 @@ $originalQuestion
         // L6：同样过滤 system/permissionAudit（与上方初始加载一致）。
         historyMessages =
             (await loadChannelMessages(channelId, limit: 50))
-                .where((m) =>
-                    m.type != MessageType.system &&
-                    m.type != MessageType.permissionAudit)
+                .where(ChatHistoryContent.shouldReplay)
                 .toList();
 
         // 被动事件：成员感知「工作流进入新阶段」（不唤醒管理员，仅注入上下文）。

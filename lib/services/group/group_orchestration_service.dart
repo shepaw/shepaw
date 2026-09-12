@@ -35,6 +35,7 @@ import 'group_task_bootstrap.dart';
 import 'group_admin_task_context.dart';
 import 'group_result_writer.dart';
 import 'group_member_stall.dart';
+import '../messaging/chat_history_content.dart';
 
 class GroupOrchestrationService {
   final LocalDatabaseService _db;
@@ -347,9 +348,7 @@ class GroupOrchestrationService {
     // Include all non-system messages (text + attachment summaries) so agents
     // have context about shared files/images without loading raw content.
     final eligibleMessages = allMessages
-        .where((m) =>
-            m.type != MessageType.system &&
-            m.type != MessageType.permissionAudit)
+        .where(ChatHistoryContent.shouldReplay)
         .toList();
 
     // Determine which agents have prior messages in the channel

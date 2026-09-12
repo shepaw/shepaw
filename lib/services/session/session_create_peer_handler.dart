@@ -1,6 +1,7 @@
 import '../../services/group/group_management_service.dart';
 import '../../services/local_database_service.dart';
 import '../../services/logger_service.dart';
+import '../../services/messaging/chat_history_content.dart';
 import '../../services/session/dm_session_create_service.dart';
 import '../chat_service.dart';
 
@@ -77,8 +78,6 @@ class SessionCreatePeerHandler {
     if (action is Map && json['error'] == null) {
       await _attachSwitchCard(
         channelId: channelId,
-        actorId: actorId,
-        actorName: actorName,
         sessionAction: Map<String, dynamic>.from(action),
       );
     }
@@ -123,8 +122,6 @@ class SessionCreatePeerHandler {
 
   Future<void> _attachSwitchCard({
     required String channelId,
-    required String actorId,
-    required String actorName,
     required Map<String, dynamic> sessionAction,
   }) async {
     final published = _publishMetadata?.call(channelId, {
@@ -139,13 +136,14 @@ class SessionCreatePeerHandler {
       await _db.createMessage(
         id: id,
         channelId: channelId,
-        senderId: actorId,
-        senderType: 'agent',
-        senderName: actorName,
-        content: 'New session ready. Open it to continue.',
-        messageType: 'text',
+        senderId: 'system',
+        senderType: 'system',
+        senderName: 'system',
+        content: '',
+        messageType: 'system',
         metadata: {
           DmSessionCreateService.metaActionKey: sessionAction,
+          ChatHistoryContent.historyExcludeMetaKey: true,
         },
       );
       await _db.markMessageAsRead(id);

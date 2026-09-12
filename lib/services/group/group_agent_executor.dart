@@ -19,6 +19,7 @@ import '../../clis/shepaw/workflow/workflow_dispatch_command.dart';
 import '../local_database_service.dart';
 import '../local_llm_agent_service.dart';
 import '../messaging/local_llm_handler.dart';
+import '../messaging/chat_history_content.dart';
 import '../acp_agent_connection.dart';
 import '../file_download_service.dart';
 import '../../storage/store_uri_reader.dart';
@@ -55,6 +56,7 @@ import 'group_member_session_service.dart';
 import 'group_member_history.dart';
 import '../session/history_compactor.dart';
 import '../session/history_compaction_cache_service.dart';
+import '../session/session_slash_commands.dart';
 import '../../storage/group_workspace_service.dart';
 import '../../storage/runtime_paths.dart';
 
@@ -400,6 +402,7 @@ class GroupAgentExecutor {
       channelId: channelId,
     );
     final systemPrompt = layeredSystemPrompt.full;
+    final modelContent = ShepawSessionSlashCommands.expandForModel(content);
 
     final prepared = await _prepareGroupHistory(
       agent: agent,
@@ -582,7 +585,7 @@ class GroupAgentExecutor {
       final roundMessages = <Map<String, dynamic>>[
         ...chatHistory,
         LocalLLMHelpers.buildUserMessageContent(
-          content,
+          modelContent,
           attachments,
           isClaude,
         ),
@@ -660,7 +663,7 @@ class GroupAgentExecutor {
           await for (final event in LocalLLMAgentService.instance.chat(
             agent: agent,
             message: toolRound == 0
-                ? content
+                ? modelContent
                 : '', // Only first round has original message
             history: toolRound == 0
                 ? (chatHistory.isNotEmpty ? chatHistory : null)
@@ -1238,7 +1241,7 @@ class GroupAgentExecutor {
       final peerMessage = _buildPeerGroupMessage(
         systemPrompt: systemPrompt,
         historyLines: historyLines,
-        content: content,
+        content: modelContent,
         groupContext: peerGroupContext,
       );
 
@@ -1476,7 +1479,7 @@ class GroupAgentExecutor {
         );
         final left = await _collectGroupMailboxReply(
           agent: agent,
-          content: content,
+          content: modelContent,
           userId: userId,
           userName: userName,
           sessionId: memberSessionId,
@@ -1919,7 +1922,7 @@ class GroupAgentExecutor {
           final chatResp = await effectiveConnection.sendChatMessage(
             taskId: effectiveTaskId,
             sessionId: memberSessionId,
-            message: content,
+            message: modelContent,
             userId: userId,
             messageId: _uuid.v4(),
             history: acpHistoryEntries.isNotEmpty ? acpHistoryEntries : null,
@@ -2783,6 +2786,8 @@ class GroupAgentExecutor {
     List<String> historyPinSenderIds = const [],
     RemoteAgent? adminAgent,
   }) async {
+    historyMessages =
+        historyMessages.where(ChatHistoryContent.shouldReplay).toList();
     final useFullHistory = GroupMemberHistory.needsFullHistory(
       isAdmin: isAdmin,
       isLoopSummarize: isLoopSummarize,
