@@ -455,6 +455,7 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
       builder: (sheetContext) {
         return FutureBuilder<Map<String, dynamic>?>(
           future: GroupWorkspaceService.instance.readRoundSummary(
@@ -491,13 +492,16 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
       _ => '🔄 编排进行中',
     };
 
+    final maxHeight = MediaQuery.sizeOf(context).height * 0.75;
     return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
             Text('任务编排状态 · 第 $round 轮',
                 style: const TextStyle(
                     fontSize: 16, fontWeight: FontWeight.bold)),
@@ -515,11 +519,13 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
               const SizedBox(height: 4),
               for (final s in steps.cast<Map<String, dynamic>>())
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 3),
+                  padding: const EdgeInsets.only(bottom: 8),
                   child: Text(
                     '步骤${s['step']} → ${(s['agents'] as List).join('、')}'
                     '${(s['task'] as String? ?? '').isNotEmpty ? '：${s['task']}' : ''}',
                     style: const TextStyle(fontSize: 13),
+                    maxLines: 6,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
             ],
@@ -563,7 +569,8 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
                 child: Text('暂无该轮编排快照',
                     style: TextStyle(fontSize: 13, color: Colors.grey[500])),
               ),
-          ],
+            ],
+          ),
         ),
       ),
     );
