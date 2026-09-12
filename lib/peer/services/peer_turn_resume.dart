@@ -75,6 +75,12 @@ TurnWatchdogVerdict evaluateTurnWatchdog({
   return TurnWatchdogVerdict.none;
 }
 
+/// 已有助手正文且流静止后，视为回复结束（成功收口，不是超时失败）。
+///
+/// `agent_done` 只是便利信号，不是定义。工作流不应等成员/对端再吐一个
+/// done；有正文、无在途审批、持续静默即结束。
+const Duration kReplySettleIdle = Duration(seconds: 180);
+
 /// 审批闸门卡住后，允许 stall probe 的最短等待。
 ///
 /// 用户正在读卡片时不探测；但 `openApprovals` 因漏计 / 提交挂起而
@@ -116,6 +122,25 @@ bool shouldProbeStalledTurn({
     return false;
   }
   return true;
+}
+
+/// 系统观察到回复已经结束：有助手正文、没有未决审批、流已静止。
+///
+/// 断连 / 上游重连期间不算结束（对端本来就不会再吐帧）。
+bool shouldCompleteSettledReply({
+  required DateTime now,
+  required DateTime idleSince,
+  required DateTime? suspendedSince,
+  required DateTime? upstreamReconnectingSince,
+  required int openApprovals,
+  required bool hasAssistantContent,
+  Duration settleIdle = kReplySettleIdle,
+}) {
+  if (!hasAssistantContent) return false;
+  if (openApprovals > 0) return false;
+  if (suspendedSince != null) return false;
+  if (upstreamReconnectingSince != null) return false;
+  return now.difference(idleSince) >= settleIdle;
 }
 
 /// One role/content line from a remote peer transcript.

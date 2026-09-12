@@ -1268,6 +1268,7 @@ class GroupAgentExecutor {
         }
 
         final splitter = StreamContentSplitter();
+        String? peerTurnRequestId;
         final result = await PeerAgentClientService.instance.sendChat(
           peerId: peerId,
           remoteAgentId: remoteAgentId,
@@ -1280,6 +1281,7 @@ class GroupAgentExecutor {
           channelId: channelId,
           agentName: agent.name,
           onRequestStarted: (requestId) {
+            peerTurnRequestId = requestId;
             final spanId = TraceService.instance.addSpan(
               traceId: groupTraceId,
               spanType: 'peer_request',
@@ -1314,6 +1316,13 @@ class GroupAgentExecutor {
               groupTask.onStreamChunk?.call(answerDelta);
               onStreamChunk?.call(agent.id, agent.name, answerDelta);
               infLogGroup.onTextChunk(groupTraceId, answerDelta);
+              final rid = peerTurnRequestId;
+              if (rid != null) {
+                PeerAgentClientService.instance.noteInflightAnswer(
+                  rid,
+                  splitter.answerContent,
+                );
+              }
             } else {
               final progressMeta = splitter.progressMetadataDelta();
               if (progressMeta != null) {

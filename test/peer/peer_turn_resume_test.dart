@@ -306,6 +306,75 @@ void main() {
     });
   });
 
+  group('shouldCompleteSettledReply', () {
+    final startedAt = DateTime(2026, 7, 20, 12, 0, 0);
+    const settle = Duration(seconds: 180);
+
+    test('有正文且静默超过阈值 → true', () {
+      final now = startedAt.add(const Duration(seconds: 180));
+      expect(
+        shouldCompleteSettledReply(
+          now: now,
+          idleSince: startedAt,
+          suspendedSince: null,
+          upstreamReconnectingSince: null,
+          openApprovals: 0,
+          hasAssistantContent: true,
+          settleIdle: settle,
+        ),
+        isTrue,
+      );
+    });
+
+    test('还没有助手正文 → false（不能把空回合当结束）', () {
+      final now = startedAt.add(const Duration(minutes: 10));
+      expect(
+        shouldCompleteSettledReply(
+          now: now,
+          idleSince: startedAt,
+          suspendedSince: null,
+          upstreamReconnectingSince: null,
+          openApprovals: 0,
+          hasAssistantContent: false,
+          settleIdle: settle,
+        ),
+        isFalse,
+      );
+    });
+
+    test('有未决审批 → false', () {
+      final now = startedAt.add(const Duration(seconds: 180));
+      expect(
+        shouldCompleteSettledReply(
+          now: now,
+          idleSince: startedAt,
+          suspendedSince: null,
+          upstreamReconnectingSince: null,
+          openApprovals: 1,
+          hasAssistantContent: true,
+          settleIdle: settle,
+        ),
+        isFalse,
+      );
+    });
+
+    test('静默不足 → false', () {
+      final now = startedAt.add(const Duration(seconds: 179));
+      expect(
+        shouldCompleteSettledReply(
+          now: now,
+          idleSince: startedAt,
+          suspendedSince: null,
+          upstreamReconnectingSince: null,
+          openApprovals: 0,
+          hasAssistantContent: true,
+          settleIdle: settle,
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('remoteTranscriptUnblocksInflight', () {
     test('session 对上且已有助手回复 → true', () {
       expect(

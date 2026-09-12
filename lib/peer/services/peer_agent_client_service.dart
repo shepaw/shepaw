@@ -1536,6 +1536,23 @@ class PeerAgentClientService {
         );
         return;
       }
+      if (shouldCompleteSettledReply(
+        now: now,
+        idleSince: pending.idleSince,
+        suspendedSince: pending.suspendedSince,
+        upstreamReconnectingSince: pending.upstreamReconnectingSince,
+        openApprovals: pending.openApprovals,
+        hasAssistantContent: pending.answerContent.trim().isNotEmpty,
+      )) {
+        timer.cancel();
+        _log.info(
+          'reply settled requestId=$requestId '
+          '(${pending.answerContent.length} chars, no agent_done needed)',
+          tag: _tag,
+        );
+        _finishPending(requestId, {'content': pending.answerContent});
+        return;
+      }
       if (shouldProbeStalledTurn(
         now: now,
         idleSince: pending.idleSince,
@@ -3663,6 +3680,7 @@ class PeerAgentClientService {
       p.resumeInFlight = false;
       p.resumePurpose = _ResumePurpose.none;
       p.resumeBaseLength = null;
+      unawaited(_reconcileInflightFromRemoteHistory(p, requestId));
       return;
     }
     _watchResumeResponse(
@@ -3671,6 +3689,33 @@ class PeerAgentClientService {
       resumeRetryCount,
       failOnExhausted: false,
     );
+    // 不依赖 resume 带回 done：远端 transcript 有助手回复即收口。
+    unawaited(_reconcileInflightFromRemoteHistory(p, requestId));
+  }
+
+  Future<void> _reconcileInflightFromRemoteHistory(
+    _PendingRequest p,
+    String requestId,
+  ) async {
+    if (p.completer.isCompleted || p.sessionId.isEmpty) return;
+    try {
+      final history = await fetchHistory(
+        peerId: p.peerId,
+        remoteAgentId: p.remoteAgentId,
+        sessionId: p.sessionId,
+      );
+      if (p.completer.isCompleted || history.isEmpty) return;
+      _completeInflightTurnsFromRemoteHistory(
+        remoteSessionId: p.sessionId,
+        history: history,
+      );
+    } catch (e) {
+      _log.warning(
+        'stall-probe history reconcile failed requestId=$requestId: $e',
+        tag: _tag,
+        error: e,
+      );
+    }
   }
 
   /// 发一帧 resume_req（断点取 p.receivedLength 当前值）。
