@@ -40,6 +40,8 @@ import 'messaging/agent_messaging_service.dart';
 import 'messaging/chat_history_content.dart';
 import '../peer/services/peer_agent_client_service.dart';
 import 'group/group_session_service.dart';
+import 'group/group_member_session_service.dart';
+import 'group/peer_approval_policy.dart';
 import 'session/session_history_service.dart';
 import '../storage/artifact_service.dart';
 import '../storage/context_bundle.dart';
@@ -3088,15 +3090,25 @@ $originalQuestion
       var effectiveWorkflow = workflow;
       if (orphanedRunning.isNotEmpty) {
         for (final step in orphanedRunning) {
+          final recovered = await _recoverWorkflowStepOutput(
+            groupChannelId: channelId,
+            workflowId: workflowId,
+            step: step,
+            agents: agents,
+          );
           LoggerService().info(
             'executeWorkflowSteps: healing orphaned running step ${step.id} '
-            '(${step.agentName}) on workflow $workflowId',
+            '(${step.agentName}) on workflow $workflowId'
+            '${recovered != null ? ' (recovered ${recovered.length} chars)' : ''}',
             tag: 'ChatService',
           );
           await _workflowService.completeStep(
             step.id,
-            outputSummary:
-                step.outputSummary ?? 'Recovered after interrupted execution',
+            outputSummary: ArtifactService.instance.truncateStepSummary(
+              recovered ??
+                  step.outputSummary ??
+                  'Recovered after interrupted execution',
+            ),
           );
         }
         final refreshed =
@@ -3106,20 +3118,11 @@ $originalQuestion
           return;
         }
         effectiveWorkflow = refreshed;
-        if (effectiveWorkflow.allStepsSucceeded) {
-          await _workflowService.completeWorkflow(
-            workflowId,
-            summary: '所有阶段执行完毕',
-          );
-          _emitWorkflowMacroEvent(
-            channelId: channelId,
-            type: GroupEventType.workflowCompleted,
-            summary: '工作流所有阶段执行完毕',
-          );
-          reachedTerminalState = true;
-          return;
-        }
-        if (effectiveWorkflow.allStepsTerminal) {
+        // allStepsSucceeded：不要在这里 complete + return，留给后面的
+        // 收尾总结（否则 website 已答完、只是本地 turn 挂死时，重启治愈后
+        // 管理员不会再汇报）。
+        if (!effectiveWorkflow.allStepsSucceeded &&
+            effectiveWorkflow.allStepsTerminal) {
           await _workflowService.failWorkflow(
             workflowId,
             'Workflow has failed steps and no remaining work',
@@ -3800,6 +3803,46 @@ $originalQuestion
       final finished = _activeWorkflowExecutions.remove(workflowId);
       finished?.onExecutionFinished?.call();
     }
+  }
+
+  /// Pull the last assistant reply from the member/workflow private session
+  /// so an interrupted Flow step can heal with real output instead of a stub.
+  Future<String?> _recoverWorkflowStepOutput({
+    required String groupChannelId,
+    required String workflowId,
+    required WorkflowStepExecution step,
+    required List<RemoteAgent> agents,
+  }) async {
+    final agent = agents.cast<RemoteAgent?>().firstWhere(
+          (a) => a!.name == step.agentName,
+          orElse: () => null,
+        );
+    if (agent == null) return null;
+    final memberSession = GroupMemberSessionService.memberSessionId(
+      groupChannelId,
+      agent.id,
+    );
+    final scoped = PeerApprovalPolicy.workflowSessionId(
+      channelId: memberSession,
+      workflowId: workflowId,
+      workflowStepId: step.id,
+    );
+    final candidates = <String>[
+      if (scoped != null) ...[
+        syncedPeerChannelId(scoped),
+        scoped,
+      ],
+      memberSession,
+    ];
+    for (final cid in candidates) {
+      final msgs = await loadChannelMessages(cid, limit: 20);
+      for (final m in msgs) {
+        if (m.from.isAgent && m.content.trim().isNotEmpty) {
+          return m.content;
+        }
+      }
+    }
+    return null;
   }
 
   /// Cancel a running workflow execution.

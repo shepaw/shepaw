@@ -673,6 +673,8 @@ class _PendingRequest {
   _ResumePurpose resumePurpose = _ResumePurpose.none;
   /// 上次向 Hub 发 stall-probe resume_req 的时刻（节流重复探测）。
   DateTime? lastStallProbeAt;
+  /// 最近一张审批卡到达的时刻。闸门过期后允许 stall probe。
+  DateTime? lastApprovalOpenedAt;
   /// Hub 通知上游 ACP 正在重连 —— idle 计时冻结，避免 P2P 仍连着但
   /// Hub↔Agent 恢复期间误触 30min 超时。
   DateTime? upstreamReconnectingSince;
@@ -1543,6 +1545,7 @@ class PeerAgentClientService {
         resumeInFlight: pending.resumeInFlight,
         lastStallProbeAt: pending.lastStallProbeAt,
         stallProbeInterval: stallProbeInterval,
+        lastApprovalOpenedAt: pending.lastApprovalOpenedAt,
       )) {
         unawaited(_probeStalledTurn(requestId, peerId, pending));
       }
@@ -2905,6 +2908,14 @@ class PeerAgentClientService {
     );
     if (history.isEmpty) return 0;
 
+    // Group/workflow turns stream on the group channel but persist on this
+    // session. If the remote already wrote the assistant reply, finish the
+    // local wait — a missed agent_done must not block the whole stage.
+    _completeInflightTurnsFromRemoteHistory(
+      remoteSessionId: remoteSessionId,
+      history: history,
+    );
+
     final existing = await _db.getChannelMessages(channelId, limit: 2000);
     final existingAsc = existing.reversed.toList();
     final existingById = <String, DateTime>{};
@@ -3038,6 +3049,34 @@ class PeerAgentClientService {
       tag: _tag,
     );
     return history.length;
+  }
+
+  void _completeInflightTurnsFromRemoteHistory({
+    required String remoteSessionId,
+    required List<PeerHistoryMessage> history,
+  }) {
+    final last = lastAssistantContentFromHistory([
+      for (final m in history)
+        RemoteHistoryLine(role: m.role, content: m.content),
+    ]);
+    for (final entry in _pending.entries.toList()) {
+      final requestId = entry.key;
+      final p = entry.value;
+      if (p.completer.isCompleted) continue;
+      if (!remoteTranscriptUnblocksInflight(
+        inflightSessionId: p.sessionId,
+        syncedRemoteSessionId: remoteSessionId,
+        lastAssistantContent: last,
+      )) {
+        continue;
+      }
+      _log.info(
+        'completing inflight turn $requestId from remote transcript '
+        'session=$remoteSessionId (${last!.length} chars)',
+        tag: _tag,
+      );
+      _finishPending(requestId, {'content': last});
+    }
   }
 
   /// Cached slash commands for an agent (by local agent id). Empty until the
@@ -3217,6 +3256,7 @@ class PeerAgentClientService {
         return;
       }
       pending.openApprovals++;
+      pending.lastApprovalOpenedAt = DateTime.now();
       _approvalToRequest[approvalId] = requestId;
       if (!hasCallback) {
         _log.warning(
@@ -3314,7 +3354,9 @@ class PeerAgentClientService {
     Object? lastErr;
     for (var attempt = 0; attempt < 3; attempt++) {
       try {
-        sent = await PeerConnectionManager.instance.sendControl(peerId, payload);
+        sent = await PeerConnectionManager.instance
+            .sendControl(peerId, payload)
+            .timeout(const Duration(seconds: 8), onTimeout: () => false);
         if (sent) break;
         lastErr = 'peer not connected';
       } catch (e) {
@@ -3791,8 +3833,10 @@ class PeerAgentClientService {
         p.idleSince = DateTime.now();
         break;
       case 'done':
-        _onDone({
-          'request_id': requestId,
+        // Remote turn is finished. Bypass the openApprovals gate — a stale
+        // count (hung submit / missed decrement) must not deadlock group
+        // workflow on a member that already answered.
+        _finishPending(requestId, {
           'content': data['content'] as String? ?? '',
           if (data['metadata'] != null) 'metadata': data['metadata'],
         });

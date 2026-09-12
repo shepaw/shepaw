@@ -75,9 +75,19 @@ TurnWatchdogVerdict evaluateTurnWatchdog({
   return TurnWatchdogVerdict.none;
 }
 
-/// 是否应向 Hub 发 `agent_turn_resume_req` 探测停滞（连接仍存活、无审批、
+/// 审批闸门卡住后，允许 stall probe 的最短等待。
+///
+/// 用户正在读卡片时不探测；但 `openApprovals` 因漏计 / 提交挂起而
+/// 降不下来时，若一直跳过探测，群聊 Flow 会永远等这个成员。
+const Duration kStaleApprovalProbeAfter = Duration(minutes: 10);
+
+/// 是否应向 Hub 发 `agent_turn_resume_req` 探测停滞（连接仍存活、
 /// 距上次输出超过 [stallProbeInterval]）。与断连后的 suspend-resume 不同：
 /// 探测失败不会判死 turn，下一轮看门狗 tick 会重试。
+///
+/// 新鲜审批卡（[openApprovals] > 0 且距 [lastApprovalOpenedAt] 不足
+/// [kStaleApprovalProbeAfter]）仍不探测，避免打断用户读卡。闸门过期后
+/// 恢复探测，以便发现远端其实已经 `done`。
 bool shouldProbeStalledTurn({
   required DateTime now,
   required DateTime idleSince,
@@ -87,10 +97,18 @@ bool shouldProbeStalledTurn({
   required bool resumeInFlight,
   required DateTime? lastStallProbeAt,
   required Duration stallProbeInterval,
+  DateTime? lastApprovalOpenedAt,
+  Duration staleApprovalProbeAfter = kStaleApprovalProbeAfter,
 }) {
   if (suspendedSince != null) return false;
   if (upstreamReconnectingSince != null) return false;
-  if (openApprovals > 0) return false;
+  if (openApprovals > 0) {
+    final opened = lastApprovalOpenedAt;
+    if (opened == null ||
+        now.difference(opened) < staleApprovalProbeAfter) {
+      return false;
+    }
+  }
   if (resumeInFlight) return false;
   if (now.difference(idleSince) < stallProbeInterval) return false;
   if (lastStallProbeAt != null &&
@@ -98,4 +116,42 @@ bool shouldProbeStalledTurn({
     return false;
   }
   return true;
+}
+
+/// One role/content line from a remote peer transcript.
+class RemoteHistoryLine {
+  const RemoteHistoryLine({required this.role, required this.content});
+
+  final String role;
+  final String content;
+}
+
+/// Last non-empty assistant (non-user) line, or null.
+String? lastAssistantContentFromHistory(
+  Iterable<RemoteHistoryLine> history,
+) {
+  for (final m in history.toList().reversed) {
+    if (m.role != 'user' && m.content.trim().isNotEmpty) {
+      return m.content;
+    }
+  }
+  return null;
+}
+
+/// Group/workflow peer turns stream on the group [channelId] but persist
+/// history on the member/workflow [sessionId]. If that session's remote
+/// transcript already has a final assistant reply, a missed `agent_done`
+/// must not keep the whole stage blocked.
+bool remoteTranscriptUnblocksInflight({
+  required String inflightSessionId,
+  required String syncedRemoteSessionId,
+  required String? lastAssistantContent,
+}) {
+  if (inflightSessionId.isEmpty || syncedRemoteSessionId.isEmpty) {
+    return false;
+  }
+  if (lastAssistantContent == null || lastAssistantContent.trim().isEmpty) {
+    return false;
+  }
+  return inflightSessionId == syncedRemoteSessionId;
 }

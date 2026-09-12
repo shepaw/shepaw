@@ -1374,8 +1374,28 @@ class GroupAgentExecutor {
           },
         );
 
-        if (peerApprovalInFlight != null) {
-          await peerApprovalInFlight;
+        final approvalChain = peerApprovalInFlight;
+        if (approvalChain != null) {
+          // sendChat may already be done (remote finished / history reconcile)
+          // while the last approval submit is still hung. Waiting unbounded
+          // here re-deadlocks the group Flow stage.
+          try {
+            await approvalChain.timeout(
+              const Duration(seconds: 20),
+              onTimeout: () {
+                LoggerService().warning(
+                  'Peer approval chain still in flight after turn completed '
+                  'for ${agent.name}; continuing so the stage can finish',
+                  tag: 'GroupAgentExecutor',
+                );
+              },
+            );
+          } catch (e) {
+            LoggerService().warning(
+              'Peer approval chain error for ${agent.name} after turn: $e',
+              tag: 'GroupAgentExecutor',
+            );
+          }
           peerApprovalInFlight = null;
         }
 

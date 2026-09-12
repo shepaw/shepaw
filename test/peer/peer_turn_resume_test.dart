@@ -249,6 +249,44 @@ void main() {
       );
     });
 
+    test('新鲜审批卡不探测', () {
+      final opened = startedAt.add(const Duration(minutes: 1));
+      final now = opened.add(const Duration(minutes: 2));
+      expect(
+        shouldProbeStalledTurn(
+          now: now,
+          idleSince: startedAt,
+          suspendedSince: null,
+          upstreamReconnectingSince: null,
+          openApprovals: 1,
+          resumeInFlight: false,
+          lastStallProbeAt: null,
+          stallProbeInterval: stallInterval,
+          lastApprovalOpenedAt: opened,
+        ),
+        isFalse,
+      );
+    });
+
+    test('审批闸门过期后恢复探测', () {
+      final opened = startedAt;
+      final now = opened.add(const Duration(minutes: 11));
+      expect(
+        shouldProbeStalledTurn(
+          now: now,
+          idleSince: startedAt,
+          suspendedSince: null,
+          upstreamReconnectingSince: null,
+          openApprovals: 1,
+          resumeInFlight: false,
+          lastStallProbeAt: null,
+          stallProbeInterval: stallInterval,
+          lastApprovalOpenedAt: opened,
+        ),
+        isTrue,
+      );
+    });
+
     test('距上次探测不足间隔 → false', () {
       final lastProbe = startedAt.add(const Duration(seconds: 30));
       final now = startedAt.add(const Duration(seconds: 200));
@@ -264,6 +302,52 @@ void main() {
           stallProbeInterval: stallInterval,
         ),
         isFalse,
+      );
+    });
+  });
+
+  group('remoteTranscriptUnblocksInflight', () {
+    test('session 对上且已有助手回复 → true', () {
+      expect(
+        remoteTranscriptUnblocksInflight(
+          inflightSessionId: 'gmd_g1__a1__wf_w__step_s',
+          syncedRemoteSessionId: 'gmd_g1__a1__wf_w__step_s',
+          lastAssistantContent: '## 官网引擎清单现状',
+        ),
+        isTrue,
+      );
+    });
+
+    test('session 不一致 → false', () {
+      expect(
+        remoteTranscriptUnblocksInflight(
+          inflightSessionId: 'gmd_g1__a1',
+          syncedRemoteSessionId: 'gmd_g1__a2',
+          lastAssistantContent: 'done',
+        ),
+        isFalse,
+      );
+    });
+
+    test('无助手回复 → false', () {
+      expect(
+        remoteTranscriptUnblocksInflight(
+          inflightSessionId: 's1',
+          syncedRemoteSessionId: 's1',
+          lastAssistantContent: '   ',
+        ),
+        isFalse,
+      );
+    });
+
+    test('lastAssistantContentFromHistory 取最后一条非 user', () {
+      expect(
+        lastAssistantContentFromHistory(const [
+          RemoteHistoryLine(role: 'user', content: 'q'),
+          RemoteHistoryLine(role: 'agent', content: 'first'),
+          RemoteHistoryLine(role: 'agent', content: 'final answer'),
+        ]),
+        'final answer',
       );
     });
   });
