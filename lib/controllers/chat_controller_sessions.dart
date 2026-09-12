@@ -158,6 +158,34 @@ mixin _SessionOps on _ChatControllerBase {
     }
   }
 
+  /// 复制会话到另一个 agent：在 [target] 下生成一份副本（消息 + 工具执行
+  /// 历史），并跳转过去。源会话保持不变。
+  Future<void> copySessionToAgent(Channel session, RemoteAgent target) async {
+    _emit(ShowLoadingOverlayEvent('chat_copyingSession'));
+    try {
+      final newChannelId = await chatService.copySessionToAgent(
+        sourceChannelId: session.id,
+        userId: getUserId(),
+        targetAgentId: target.id,
+      );
+
+      await localDatabaseService.touchChannelUpdatedAt(newChannelId);
+      await pruneEmptySessionBeforeSwitch(nextChannelId: newChannelId);
+
+      _emit(DismissOverlayEvent());
+      _emit(NavigateToSessionEvent(
+        channelId: newChannelId,
+        agentId: target.id,
+        agentName: target.name,
+        agentAvatar: target.avatar,
+        embedded: embedded,
+      ));
+    } catch (e) {
+      _emit(DismissOverlayEvent());
+      _emit(ShowErrorSnackBarEvent('chat_copySessionFailed:$e'));
+    }
+  }
+
   Future<void> clearCurrentSessionHistory() async {
     if (agentId == null) return;
 
