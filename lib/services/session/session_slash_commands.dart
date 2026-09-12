@@ -82,29 +82,59 @@ class ShepawSessionSlashCommands {
     return null;
   }
 
+  /// Flags typed after `/session-new` / `/group-session-new`, or empty.
+  static String invokedFlags(String raw) {
+    final trimmed = raw.trimLeft();
+    final space = trimmed.indexOf(RegExp(r'\s'));
+    if (space == -1) return '';
+    return trimmed.substring(space + 1).trim();
+  }
+
   /// Expand a user-visible `/session-new` into the model-facing instruction.
   ///
   /// The chat bubble stays as the raw slash line; only the LLM / engine
-  /// prompt should use this.
+  /// prompt should use this. The result must not start with `/` — Claude
+  /// Code (and similar engines) treat a leading slash as their own command
+  /// and reply `Unknown command: /session-new`.
   static String expandForModel(String raw) {
-    if (isExpanded(raw)) return raw;
+    if (isExpanded(raw)) return _withoutLeadingSlash(raw);
     final name = parseInvokedName(raw);
     if (name == null) return raw;
     final isGroup = name == groupSessionNew.name;
-    return '$raw\n\n$expandOpen\n${_modelInstruction(isGroup: isGroup)}\n$expandClose';
+    final flags = invokedFlags(raw);
+    return '$expandOpen\n${_modelInstruction(isGroup: isGroup, flags: flags)}\n$expandClose';
   }
 
-  static String _modelInstruction({required bool isGroup}) {
+  /// Drop a leftover `/session-new …` first line from an older expand.
+  static String _withoutLeadingSlash(String text) {
+    final trimmed = text.trimLeft();
+    if (!trimmed.startsWith('/')) return text;
+    final nl = trimmed.indexOf('\n');
+    if (nl == -1) return text;
+    return trimmed.substring(nl + 1).replaceFirst(RegExp(r'^\n+'), '');
+  }
+
+  static String _modelInstruction({
+    required bool isGroup,
+    String flags = '',
+  }) {
+    final flagsLine = flags.isEmpty ? '' : '\nUser-supplied flags: $flags\n';
     if (isGroup) {
-      return '''The user invoked /group-session-new. Understand the current conversation intent, compress durable context into a handoff, then run:
+      return '''The user invoked /group-session-new.$flagsLine
+Understand the current conversation intent, compress durable context into a handoff, then run:
 
 shepaw chat group session create --reason <topic_shift|post_delivery|noise_reduction|context_too_long|agent_memory_reset|parallel_track|user_requested> --handoff-json '{"task":{"user_goal":"...","acceptance_criteria":["..."],"status":"in_progress"}}'
 
+`shepaw` is injected on PATH by this host (Hub shim, not Homebrew/npm). Do not search /opt/homebrew or /usr/local or assume it is missing. If the shell says command not found, run "\$SHEPAW_BIN" the same way.
+
 Honor any flags the user already typed after the command. After the command succeeds, a switch card appears for the user to confirm. Do not assume they switched; continue here until they open the new session.''';
     }
-    return '''The user invoked /session-new. Understand the current conversation intent, compress durable context into a handoff summary, then run:
+    return '''The user invoked /session-new.$flagsLine
+Understand the current conversation intent, compress durable context into a handoff summary, then run:
 
 shepaw chat session create --reason <topic_shift|post_delivery|noise_reduction|context_too_long|agent_memory_reset|parallel_track|user_requested> --summary "<compressed key points>"
+
+`shepaw` is injected on PATH by this host (Hub shim, not Homebrew/npm). Do not search /opt/homebrew or /usr/local or assume it is missing. If the shell says command not found, run "\$SHEPAW_BIN" the same way.
 
 Honor any flags the user already typed after the command. After the command succeeds, a switch card appears for the user to confirm. Do not assume they switched; continue here until they open the new session.''';
   }

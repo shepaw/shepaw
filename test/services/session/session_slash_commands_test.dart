@@ -35,14 +35,17 @@ void main() {
     );
   });
 
-  test('expandForModel teaches CLI after /session-new', () {
+  test('expandForModel teaches CLI and does not start with a slash', () {
     final expanded = ShepawSessionSlashCommands.expandForModel(
       '/session-new --reason user_requested',
     );
-    expect(expanded, startsWith('/session-new --reason user_requested'));
-    expect(expanded, contains(ShepawSessionSlashCommands.expandOpen));
+    expect(expanded.startsWith('/'), isFalse);
+    expect(expanded, startsWith(ShepawSessionSlashCommands.expandOpen));
     expect(expanded, contains('shepaw chat session create'));
+    expect(expanded, contains('User-supplied flags: --reason user_requested'));
     expect(expanded, contains('Do not assume they switched'));
+    expect(expanded, contains('SHEPAW_BIN'));
+    expect(expanded, contains('Hub shim'));
   });
 
   test('expandForModel teaches group CLI after /group-session-new', () {
@@ -58,5 +61,13 @@ void main() {
     expect(ShepawSessionSlashCommands.expandForModel('/compact'), '/compact');
     final once = ShepawSessionSlashCommands.expandForModel('/session-new');
     expect(ShepawSessionSlashCommands.expandForModel(once), once);
+  });
+
+  test('expandForModel strips a leftover leading slash from older expands', () {
+    final leftover =
+        '/session-new\n\n${ShepawSessionSlashCommands.expandOpen}\nrun cli\n${ShepawSessionSlashCommands.expandClose}';
+    final out = ShepawSessionSlashCommands.expandForModel(leftover);
+    expect(out.startsWith('/'), isFalse);
+    expect(out, contains(ShepawSessionSlashCommands.expandOpen));
   });
 }
