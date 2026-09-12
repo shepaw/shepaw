@@ -47,6 +47,9 @@ class SessionListPanel extends StatelessWidget {
   /// 每会话底部菜单「分叉」回调。
   final void Function(Channel session)? onForkSession;
 
+  /// 每会话底部菜单「复制到」回调（复制到另一个 agent 的新会话）。
+  final void Function(Channel session)? onCopyToAgent;
+
   /// 每会话底部菜单「重置会话」回调（仅当前会话行显示）。
   final VoidCallback? onResetSession;
 
@@ -66,6 +69,7 @@ class SessionListPanel extends StatelessWidget {
     this.moreButton,
     this.onViewTrace,
     this.onForkSession,
+    this.onCopyToAgent,
     this.onResetSession,
   });
 
@@ -83,6 +87,7 @@ class SessionListPanel extends StatelessWidget {
       moreButton: moreButton,
       onViewTrace: onViewTrace,
       onForkSession: onForkSession,
+      onCopyToAgent: onCopyToAgent,
       onResetSession: onResetSession,
     );
   }
@@ -110,6 +115,9 @@ class _SessionListContent extends StatefulWidget {
   /// 每会话底部菜单「分叉」回调。
   final void Function(Channel session)? onForkSession;
 
+  /// 每会话底部菜单「复制到」回调（复制到另一个 agent 的新会话）。
+  final void Function(Channel session)? onCopyToAgent;
+
   /// 每会话底部菜单「重置会话」回调（仅当前会话行显示）。
   final VoidCallback? onResetSession;
 
@@ -125,6 +133,7 @@ class _SessionListContent extends StatefulWidget {
     this.moreButton,
     this.onViewTrace,
     this.onForkSession,
+    this.onCopyToAgent,
     this.onResetSession,
   });
 
@@ -520,6 +529,9 @@ class _SessionListContentState extends State<_SessionListContent> {
     final forkSession = widget.onForkSession == null
         ? null
         : () => widget.onForkSession!(session);
+    final copyToAgent = widget.onCopyToAgent == null
+        ? null
+        : () => widget.onCopyToAgent!(session);
     final resetSession = isCurrentSession ? widget.onResetSession : null;
 
     return ListTile(
@@ -649,6 +661,7 @@ class _SessionListContentState extends State<_SessionListContent> {
                 onViewSession: viewSession,
                 onViewTrace: viewTrace,
                 onForkSession: forkSession,
+                onCopyToAgent: copyToAgent,
                 onResetSession: resetSession,
               ),
     );

@@ -10,6 +10,7 @@ import '../../services/error_handler_service.dart';
 /// - 查看会话（仅非当前会话）
 /// - 查看 Trace
 /// - 分叉（复制当前会话到新会话）
+/// - 复制到（复制当前会话到另一个 agent 的新会话）
 /// - 重置会话（仅当前会话且回调非空）
 /// - 复制会话标题和 ID
 /// - 复制 Channel ID
@@ -24,6 +25,7 @@ Future<void> showSessionRowMenu(
   VoidCallback? onViewSession,
   VoidCallback? onViewTrace,
   VoidCallback? onForkSession,
+  VoidCallback? onCopyToAgent,
   VoidCallback? onResetSession,
 }) async {
   final l10n = AppLocalizations.of(context);
@@ -68,6 +70,12 @@ Future<void> showSessionRowMenu(
                 label: l10n.chat_forkSession,
                 value: 'fork',
               ),
+            if (onCopyToAgent != null)
+              item(
+                icon: Icons.drive_file_move_outline,
+                label: l10n.chat_copySessionTo,
+                value: 'copyToAgent',
+              ),
             if (isCurrentSession && onResetSession != null)
               item(
                 icon: Icons.refresh,
@@ -98,6 +106,8 @@ Future<void> showSessionRowMenu(
       onViewTrace?.call();
     case 'fork':
       onForkSession?.call();
+    case 'copyToAgent':
+      onCopyToAgent?.call();
     case 'reset':
       onResetSession?.call();
     case 'copyTitleAndId':

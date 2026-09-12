@@ -47,6 +47,7 @@ import '../widgets/chat/session_search_results.dart';
 import '../widgets/chat/session_unread_badge.dart';
 import '../widgets/chat/group_members_panel.dart';
 import '../widgets/chat/add_group_member_panel.dart';
+import '../widgets/chat/copy_to_agent_picker.dart';
 import '../widgets/avatar_image.dart';
 import '../widgets/os_tool_confirmation_dialog.dart';
 import '../clis/shepaw/os/os_executor.dart' as os_exec;
@@ -671,6 +672,8 @@ class _ChatScreenState extends State<ChatScreen>
         return l10n.chat_batchDeleteSuccess(int.tryParse(param) ?? 0);
       case 'chat_clearSessionFailed':
         return l10n.chat_clearSessionFailed(param);
+      case 'chat_copySessionFailed':
+        return l10n.chat_copySessionFailed(param);
       case 'chat_loadFailed':
         return l10n.chat_loadFailed(param);
       case 'chat_searchError':
@@ -2171,6 +2174,7 @@ class _ChatScreenState extends State<ChatScreen>
         _showSessionTraces(channelId, channelName);
       },
       onForkSession: (session) => _forkDrawerSession(session, isGroup: false),
+      onCopyToAgent: (session) => _copySessionToAgent(context, session),
       onResetSession: () => _resetDrawerSession(isGroup: false),
       // 「更多」按钮放「新建会话」行右侧，搜索栏只保留输入。
       moreButton: SessionListHeaderMoreButton(
@@ -2670,7 +2674,60 @@ class _ChatScreenState extends State<ChatScreen>
     unawaited(_controller.forkSession(session, isGroup: isGroup));
   }
 
+  /// 抽屉内「复制到」：先在抽屉内选目标 agent，等抽屉彻底销毁后再复制
+  /// 会话并跳转（与分叉同理，避免共享动画控制器随本页 dispose 冻结抽屉）。
+  Future<void> _copySessionToAgent(
+    BuildContext panelContext,
+    Channel session,
+  ) async {
+    final l10n = AppLocalizations.of(context);
+    final allAgents =
+        await _controller.localDatabaseService.getAllRemoteAgents();
+    // 复制到同一 agent 等于分叉，这里只列出其他 agent。
+    final available =
+        allAgents.where((a) => a.id != _controller.agentId).toList();
+    if (!mounted) return;
+    if (available.isEmpty) {
+      showTopToast(
+        context,
+        l10n.chat_noMoreAgents,
+        icon: Icons.group_off,
+        color: Colors.blueGrey,
+      );
+      return;
+    }
+
+    final target = await _showCopyToAgentPicker(available, panelContext);
+    if (target == null || !mounted) return;
+    await _closeDrawerAndWait();
+    if (!mounted) return;
+    unawaited(_controller.copySessionToAgent(session, target));
+  }
+
+  Future<RemoteAgent?> _showCopyToAgentPicker(
+    List<RemoteAgent> available,
+    BuildContext navigationContext,
+  ) async {
+    if (LayoutUtils.isDesktopLayout(navigationContext)) {
+      return LayoutUtils.showRightDrawer<RemoteAgent>(
+        context: navigationContext,
+        builder: (_) => CopyToAgentPicker(availableAgents: available),
+      ).popped;
+    }
+
+    return Navigator.push<RemoteAgent>(
+      navigationContext,
+      MaterialPageRoute(
+        builder: (context) => CopyToAgentPicker(
+          availableAgents: available,
+          wrappedInScaffold: true,
+        ),
+      ),
+    );
+  }
+
   /// 抽屉内「重置会话」：等抽屉销毁后对当前会话执行重置。
+
   Future<void> _resetDrawerSession({required bool isGroup}) async {
     await _closeDrawerAndWait();
     if (!mounted) return;
