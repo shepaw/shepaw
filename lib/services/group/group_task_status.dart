@@ -277,6 +277,42 @@ class GroupTaskStatusParser {
     final names = pending.map((p) => p.display).join('、');
     return '⚠️ 以下成员任务仍未完成：$names。可再次 @ 他们补做，或让管理员跟进。';
   }
+
+  /// Sequential later steps depend on earlier ones. Halt when this step did
+  /// not finish (pending / unmarked) or the channel is blocked (approval
+  /// denied / NEED_ADMIN). Avoids kicking the reviewer while the writer
+  /// still cannot land files.
+  static bool shouldHaltRemainingSequentialSteps({
+    required Map<String, GroupTurnResult> stepTurns,
+    required List<RemoteAgent> agents,
+  }) {
+    if (stepTurns.isEmpty) return true;
+    if (blockingMembers(turns: stepTurns, agents: agents).isNotEmpty) {
+      return true;
+    }
+    for (final turn in stepTurns.values) {
+      if (looksChannelBlocked(turn)) return true;
+    }
+    return false;
+  }
+
+  /// Member text or pending reason says the store / approval channel is down.
+  static bool looksChannelBlocked(GroupTurnResult turn) {
+    final blob = '${turn.content}\n${turn.taskStatusReason ?? ''}';
+    if (blob.contains(needAdminTag)) return true;
+    if (blob.contains('approval_denied')) return true;
+    return false;
+  }
+
+  static String sequentialHaltNote(List<GroupPendingMember> pending) {
+    if (pending.isEmpty) {
+      return '⚠️ 上一顺序步骤未完成（通道/审批受阻或无有效产出），已跳过后续成员，避免空跑。'
+          '请先解决阻塞后再继续。';
+    }
+    final names = pending.map((p) => p.display).join('、');
+    return '⚠️ 顺序步骤中 $names 尚未完成，已跳过后续成员，避免空跑。'
+        '请先处理该阻塞后再继续。';
+  }
 }
 
 class GroupMemberTaskStatusInfo {

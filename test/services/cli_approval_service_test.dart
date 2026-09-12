@@ -89,6 +89,18 @@ void main() {
     expect(await b, isTrue);
   });
 
+  test('awaitApproval times out as denied', () async {
+    final future = CliApprovalService.instance.awaitApproval(
+      confirmationId: 'cli_timeout',
+      toolName: 'store.write',
+      channelId: 'ch',
+      timeout: const Duration(milliseconds: 30),
+    );
+    expect(CliApprovalService.instance.hasLive('cli_timeout'), isTrue);
+    expect(await future, isFalse);
+    expect(CliApprovalService.instance.hasLive('cli_timeout'), isFalse);
+  });
+
   test('expireStaleCards skips live completers and already-answered cards', () {
     CliApprovalService.instance.awaitApproval(
       confirmationId: 'live',

@@ -81,6 +81,7 @@ void main() {
     );
 
     expect(prompt, contains('先摸底，再澄清'));
+    expect(prompt, contains('用户已经给出明确交付物'));
     expect(prompt, contains('intent=recon'));
     expect(prompt, contains('也不会创建工作流或弹审批卡'));
     expect(prompt, contains('全部成员完成'));

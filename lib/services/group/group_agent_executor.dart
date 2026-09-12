@@ -666,6 +666,7 @@ class GroupAgentExecutor {
               hasDelegateableMembers: delegateableNames.isNotEmpty,
               membersConsulted: membersConsultedThisOrchestration,
               bounceCount: reconFirstBounceCount,
+              userContent: content,
             )) {
               return false;
             }

@@ -40,6 +40,7 @@ void main() {
       expect(cliCommandApprovalExempt('store.list'), isTrue);
       expect(cliCommandApprovalExempt('store.search'), isTrue);
       expect(cliCommandApprovalExempt('store.write'), isTrue);
+      expect(cliCommandApprovalExempt('store'), isTrue);
       expect(cliCommandApprovalExempt('store.events'), isTrue);
       expect(cliCommandApprovalExempt('store.spaces'), isTrue);
       expect(cliCommandApprovalExempt('store.declare'), isFalse);

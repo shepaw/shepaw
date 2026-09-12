@@ -316,4 +316,53 @@ void main() {
       expect(ids, isEmpty);
     });
   });
+
+  group('GroupTaskStatusParser.shouldHaltRemainingSequentialSteps', () {
+    final coder = _agent('coder', 'Coder');
+
+    test('halts when the step is pending / NEED_ADMIN', () {
+      final turn = GroupTurnResult(
+        content: 'store.write approval_denied\n'
+            '[TASK_STATUS: pending] 原因：[NEED_ADMIN] 通道被拒',
+        taskStatusInfo: GroupTaskStatusParser.parse(
+          'store.write approval_denied\n'
+          '[TASK_STATUS: pending] 原因：[NEED_ADMIN] 通道被拒',
+        ),
+      );
+      expect(
+        GroupTaskStatusParser.shouldHaltRemainingSequentialSteps(
+          stepTurns: {'coder': turn},
+          agents: [coder],
+        ),
+        isTrue,
+      );
+      expect(GroupTaskStatusParser.looksChannelBlocked(turn), isTrue);
+    });
+
+    test('does not halt a completed step', () {
+      final turn = GroupTurnResult(
+        content: '四份文件已落盘\n[TASK_STATUS: done]',
+        taskStatusInfo: GroupTaskStatusParser.parse(
+          '四份文件已落盘\n[TASK_STATUS: done]',
+        ),
+      );
+      expect(
+        GroupTaskStatusParser.shouldHaltRemainingSequentialSteps(
+          stepTurns: {'coder': turn},
+          agents: [coder],
+        ),
+        isFalse,
+      );
+    });
+
+    test('halts an empty step so later reviewers are not launched', () {
+      expect(
+        GroupTaskStatusParser.shouldHaltRemainingSequentialSteps(
+          stepTurns: const {},
+          agents: [coder],
+        ),
+        isTrue,
+      );
+    });
+  });
 }

@@ -9,6 +9,7 @@ class CliApprovalHandle {
   final String toolName;
   final String? channelId;
   final Completer<bool> completer;
+  Timer? timeoutTimer;
 
   CliApprovalHandle({
     required this.confirmationId,
@@ -29,11 +30,19 @@ class CliApprovalService {
 
   final Map<String, CliApprovalHandle> _pending = {};
 
+  /// Unanswered cards deny themselves so a backgrounded app cannot freeze
+  /// a group turn for tens of minutes (snake session, 2026-09-12).
+  static const defaultTimeout = Duration(minutes: 2);
+
   /// Register (or reuse) a pending approval and wait for [complete] / [cancel].
+  ///
+  /// [timeout] defaults to [defaultTimeout]. `Duration.zero` waits forever
+  /// (tests / explicit no-timeout callers).
   Future<bool> awaitApproval({
     required String confirmationId,
     required String toolName,
     String? channelId,
+    Duration? timeout,
   }) {
     final existing = _pending[confirmationId];
     if (existing != null && !existing.completer.isCompleted) {
@@ -46,6 +55,14 @@ class CliApprovalService {
       completer: Completer<bool>(),
     );
     _pending[confirmationId] = handle;
+    final limit = timeout ?? defaultTimeout;
+    if (limit > Duration.zero) {
+      handle.timeoutTimer = Timer(limit, () {
+        if (!handle.completer.isCompleted) {
+          complete(confirmationId, approved: false);
+        }
+      });
+    }
     return handle.completer.future;
   }
 
@@ -67,6 +84,7 @@ class CliApprovalService {
     String? toolName,
   }) {
     final handle = _pending.remove(confirmationId);
+    handle?.timeoutTimer?.cancel();
     final name = (toolName ?? handle?.toolName ?? '').trim();
     if (approved && rememberSession && name.isNotEmpty) {
       CliApprovalCoordinator.instance.grantForSession(name);
@@ -103,5 +121,10 @@ class CliApprovalService {
     return expired;
   }
 
-  void resetForTest() => _pending.clear();
+  void resetForTest() {
+    for (final handle in _pending.values) {
+      handle.timeoutTimer?.cancel();
+    }
+    _pending.clear();
+  }
 }

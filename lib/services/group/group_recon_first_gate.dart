@@ -43,6 +43,7 @@ class GroupReconFirstGate {
     required bool hasDelegateableMembers,
     required bool membersConsulted,
     required int bounceCount,
+    String? userContent,
   }) {
     if (!GroupOrchestrationFeatures.reconFirstBounce) return false;
     if (!isAdmin) return false;
@@ -50,8 +51,63 @@ class GroupReconFirstGate {
     // Nothing to consult — a single-member group must still be able to ask.
     if (!hasDelegateableMembers) return false;
     if (membersConsulted) return false;
+    // User already named a concrete deliverable — an intent-only card
+    // (format / destination / acceptance) should not force a recon round.
+    if (requirementLooksSettled(userContent ?? '')) return false;
     return bounceCount < GroupOrchestrationFeatures.maxReconFirstBounces;
   }
+
+  /// First-turn admin hint. Clear deliverables skip the "must recon" lecture.
+  static String adminFirstTurnSystemNote(String userContent) {
+    if (requirementLooksSettled(userContent)) {
+      return '[SYSTEM] 用户已给出明确交付物。只缺意图取舍（形态、落点、验收）时，'
+          '直接出澄清卡片或 `group_plan_publish`，不要为「袋子空不空」先派 '
+          '`group_dispatch`（`intent=recon`）。只有团队内事实不清时才摸底。'
+          '需求明确后再 `group_plan_publish`，然后 `group_dispatch`（`intent=work`）。';
+    }
+    return '[SYSTEM] 先摸底，再澄清：信息不足时，先分清缺的是哪一类——'
+        '**团队内可查证的事实**（现状、清单、已有实现、产物里怎么写的）'
+        '必须先用 `group_dispatch`（`intent=recon`）向负责的成员了解，'
+        '**严禁**拿来问用户；只有**用户才能决定的意图**（优先级、取舍、'
+        '验收口径）才用澄清卡片或 `group_finish`（action=`pause`）一次问清。'
+        '需求明确后再 `group_plan_publish` 发布正式计划，然后 '
+        '`group_dispatch`（`intent=work`）。不要凭猜测派活。';
+  }
+
+  /// True when the user already asked for a concrete deliverable.
+  ///
+  /// Strips a trailing `[SYSTEM] …` injection so callers can pass the raw
+  /// admin-turn content.
+  static bool requirementLooksSettled(String content) {
+    final user = _userFacingText(content).trim();
+    if (user.length < 4) return false;
+    if (_formSubmit.hasMatch(user)) return true;
+    if (_factQuestion.hasMatch(user) && !_settledDeliverable.hasMatch(user)) {
+      return false;
+    }
+    return _settledDeliverable.hasMatch(user);
+  }
+
+  static String _userFacingText(String content) {
+    final i = content.indexOf('\n\n[SYSTEM]');
+    return i >= 0 ? content.substring(0, i) : content;
+  }
+
+  static final _formSubmit = RegExp(
+    r'(Form submitted:|表单已提交)',
+    caseSensitive: false,
+  );
+
+  static final _settledDeliverable = RegExp(
+    r'(帮我|请|麻烦)?(实现|开发|做一个|做一[个只]|写一个|写一[个只]|创建一[个只]|搭建)|'
+    r'\b(implement|build|create|write)\s+\w+',
+    caseSensitive: false,
+  );
+
+  static final _factQuestion = RegExp(
+    r'(有没有|是什么|看看|查一下|现在.{0,8}(怎样|如何|什么)|what\s+(is|are)\b|is there\b)',
+    caseSensitive: false,
+  );
 
   /// Tool-result body handed back to the admin for the bounced call.
   static String toolFeedback() => '[系统拦截] 这张卡片已退回，**用户看不到它**。'
@@ -62,5 +118,6 @@ class GroupReconFirstGate {
       '拿到答案后再决定要问用户什么；\n'
       '2. **确认无误**：若卡片里每一题都**只有用户能决定**（意图、取舍、优先级、'
       'deadline、验收口径），原样重新提交即可放行。\n'
-      '自检标准：「这个问题的答案，群里某个成员查一下就能给出吗？」能 → 走 1。';
+      '自检标准：「这个问题的答案，群里某个成员查一下就能给出吗？」能 → 走 1。'
+      '用户已经说清要交付什么时，不要为「袋子空不空」走 1。';
 }

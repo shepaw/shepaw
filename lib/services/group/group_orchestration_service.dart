@@ -20,6 +20,7 @@ import 'group_prompt_builder.dart';
 import 'group_member_session_service.dart';
 import 'group_turn_result.dart';
 import 'group_task_status.dart';
+import 'group_recon_first_gate.dart';
 import 'group_verbal_dispatch.dart';
 import 'planning_helpers.dart';
 import '../../models/mention_entry.dart';
@@ -1210,13 +1211,7 @@ class GroupOrchestrationService {
             agent: adminAgent,
             channelId: channelId,
             content: '$effectiveContent\n\n'
-                '[SYSTEM] 先摸底，再澄清：信息不足时，先分清缺的是哪一类——'
-                '**团队内可查证的事实**（现状、清单、已有实现、产物里怎么写的）'
-                '必须先用 `group_dispatch`（`intent=recon`）向负责的成员了解，'
-                '**严禁**拿来问用户；只有**用户才能决定的意图**（优先级、取舍、'
-                '验收口径）才用澄清卡片或 `group_finish`（action=`pause`）一次问清。'
-                '需求明确后再 `group_plan_publish` 发布正式计划，然后 '
-                '`group_dispatch`（`intent=work`）。不要凭猜测派活。',
+                '${GroupReconFirstGate.adminFirstTurnSystemNote(effectiveContent)}',
             attachments: attachments,
             userId: userId,
             userName: userName,
@@ -2329,6 +2324,26 @@ class GroupOrchestrationService {
                 failedAgentNames: failedAgentNames,
                 stalledAgentNames: stalledAgentNames,
               );
+              if (GroupTaskStatusParser.shouldHaltRemainingSequentialSteps(
+                stepTurns: stepTurns,
+                agents: agents,
+              )) {
+                final pending = GroupTaskStatusParser.blockingMembers(
+                  turns: stepTurns,
+                  agents: agents,
+                );
+                LoggerService().warning(
+                  'Sequential dispatch halted after a blocked step '
+                  '(${pending.map((p) => p.name).join(', ')}); '
+                  'skipping remaining steps',
+                  tag: 'GroupOrchestrationService',
+                );
+                await _saveOrchestrationSystemMessage(
+                  channelId,
+                  GroupTaskStatusParser.sequentialHaltNote(pending),
+                );
+                break;
+              }
             }
           } else {
             // Concurrent execution (default)
