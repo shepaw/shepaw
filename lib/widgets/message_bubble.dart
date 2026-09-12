@@ -916,21 +916,26 @@ class MessageBubble extends StatelessWidget {
         final rawContent = displayText.isEmpty && message.content.isEmpty
             ? '...'
             : displayText;
-        final content =
-            _processContentWithMentions(rawContent, message.metadata);
+        final hasAnswer = displayText.trim().isNotEmpty;
         final styleSheet =
             _getStyleSheet(isMyMessage, Theme.of(context).colorScheme);
-        final markdownBody = _StableMarkdownBody(
-          data: content,
-          styleSheet: styleSheet,
-          isStreaming: isStreaming,
-          onTapLink: (text, href, title) async {
-            if (href == null) return;
-            await _handleTapLink(context, href);
-          },
-        );
-        final markdownWidget = _wrapWithTextSelection(markdownBody);
-        final hasAnswer = displayText.trim().isNotEmpty;
+        // 用户发出的原文按纯文本展示，不做 Markdown 预览。
+        final bodyWidget = isMyMessage
+            ? _wrapWithTextSelection(_plainOutgoingText(rawContent))
+            : _wrapWithTextSelection(
+                _StableMarkdownBody(
+                  data: _processContentWithMentions(
+                    rawContent,
+                    message.metadata,
+                  ),
+                  styleSheet: styleSheet,
+                  isStreaming: isStreaming,
+                  onTapLink: (text, href, title) async {
+                    if (href == null) return;
+                    await _handleTapLink(context, href);
+                  },
+                ),
+              );
 
         final progressSection = _buildProgressCollapsibleSection(
           context,
@@ -945,10 +950,10 @@ class MessageBubble extends StatelessWidget {
             children.add(progressSection);
             if (hasAnswer) {
               children.add(const SizedBox(height: 8));
-              children.add(markdownWidget);
+              children.add(bodyWidget);
             }
           } else if (hasAnswer) {
-            children.add(markdownWidget);
+            children.add(bodyWidget);
           }
           if (interactiveFooter != null) {
             if (children.isNotEmpty) {
@@ -974,7 +979,7 @@ class MessageBubble extends StatelessWidget {
             autoCollapseOnComplete: autoCollapse,
             isStreaming: isStreaming,
             isMyMessage: isMyMessage,
-            child: markdownWidget,
+            child: bodyWidget,
           );
         }
 
@@ -987,12 +992,24 @@ class MessageBubble extends StatelessWidget {
             autoCollapseOnComplete: false,
             isStreaming: false,
             isMyMessage: isMyMessage,
-            child: markdownWidget,
+            child: bodyWidget,
           );
         }
 
-        return markdownWidget;
+        return bodyWidget;
     }
+  }
+
+  /// 用户发出的原文：按原始字符串展示，不走 Markdown 预览。
+  Widget _plainOutgoingText(String text) {
+    return Text(
+      text,
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 15,
+        height: 1.5,
+      ),
+    );
   }
 
   /// 指令集消息气泡：只展示指令标题 + 一个小图标，完整内容隐式投递给 agent。

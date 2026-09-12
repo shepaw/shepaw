@@ -227,14 +227,33 @@ void main() {
       expect(button.left, greaterThan(0.0));
     });
 
-    testWidgets('按钮颜色跟随代码字形（深色气泡用白色）', (tester) async {
-      await pumpBubble(tester, '```\nfoo();\n```\n', isMyMessage: true);
+    testWidgets('按钮颜色跟随代码字形（深色代码块用白色）', (tester) async {
+      // 用户发出的气泡已改为纯文本，不再走 Markdown 代码块；
+      // 这里直接测 CopyableCodeBlock 按 textStyle.color 上色。
+      await tester.pumpWidget(
+        const MaterialApp(
+          locale: Locale('zh'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Scaffold(
+            body: CopyableCodeBlock(
+              code: 'foo();',
+              textStyle: TextStyle(
+                color: Colors.white,
+                fontFamily: 'monospace',
+              ),
+              padding: EdgeInsets.all(10),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
 
       final icon = tester.widget<Icon>(find.byIcon(Icons.copy_rounded));
       expect(
         icon.color,
         Colors.white,
-        reason: '必须取 styleSheet.code.color（styles["pre"] 是段落样式，不是 monospace）',
+        reason: '必须取 textStyle.color（styles["pre"] 是段落样式，不是 monospace）',
       );
     });
 
