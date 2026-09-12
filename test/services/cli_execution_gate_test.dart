@@ -33,13 +33,23 @@ void main() {
   });
 
   group('cliCommandApprovalExempt', () {
-    test('help and store reads skip approval', () {
+    test('help and everyday store I/O skip approval', () {
       expect(cliCommandApprovalExempt('help'), isTrue);
       expect(cliCommandApprovalExempt('help.foo'), isTrue);
       expect(cliCommandApprovalExempt('store.read'), isTrue);
       expect(cliCommandApprovalExempt('store.list'), isTrue);
       expect(cliCommandApprovalExempt('store.search'), isTrue);
-      expect(cliCommandApprovalExempt('store.write'), isFalse);
+      expect(cliCommandApprovalExempt('store.write'), isTrue);
+      expect(cliCommandApprovalExempt('store.events'), isTrue);
+      expect(cliCommandApprovalExempt('store.spaces'), isTrue);
+      expect(cliCommandApprovalExempt('store.declare'), isFalse);
+      expect(
+        cliCommandApprovalExempt(
+          'store.write',
+          flags: const {'file': '/tmp/shot.png'},
+        ),
+        isFalse,
+      );
       expect(cliCommandApprovalExempt('peer.list'), isFalse);
     });
   });
@@ -151,12 +161,12 @@ void main() {
       expect(result['command'], 'peer.list');
     });
 
-    test('requireApproval skips store.read', () async {
+    test('requireApproval skips store.write without --file', () async {
       var asked = false;
       final raw = await CliExecutionGate.instance.execute(
         args: {
           'namespace': 'store',
-          'subcommand': 'read',
+          'subcommand': 'write',
           'flags': {},
         },
         agentId: 'agent-other',
@@ -169,7 +179,48 @@ void main() {
       final result = jsonDecode(raw) as Map<String, dynamic>;
       expect(asked, isFalse);
       expect(result['approval_denied'], isNot(isTrue));
-      expect(result['error'], contains('missing --uri'));
+      expect(result['error'], contains('missing --filename'));
+    });
+
+    test('requireApproval still asks store.write --file', () async {
+      var asked = false;
+      final raw = await CliExecutionGate.instance.execute(
+        args: {
+          'namespace': 'store',
+          'subcommand': 'write',
+          'flags': {'file': '/tmp/shot.png', 'filename': 'shot.png'},
+        },
+        agentId: 'agent-other',
+        requireApproval: true,
+        onOsConfirmation: (tool, flags, risk) async {
+          asked = true;
+          return false;
+        },
+      );
+      final result = jsonDecode(raw) as Map<String, dynamic>;
+      expect(asked, isTrue);
+      expect(result['approval_denied'], isTrue);
+    });
+
+    test('session grant skips a later confirmation', () async {
+      var asked = 0;
+      CliApprovalCoordinator.instance.grantForSession('peer.list');
+      final raw = await CliExecutionGate.instance.execute(
+        args: {
+          'namespace': 'peer',
+          'subcommand': 'list',
+          'flags': {},
+        },
+        agentId: 'agent-other',
+        requireApproval: true,
+        onOsConfirmation: (tool, flags, risk) async {
+          asked += 1;
+          return true;
+        },
+      );
+      final result = jsonDecode(raw) as Map<String, dynamic>;
+      expect(asked, 0);
+      expect(result['approval_denied'], isNot(isTrue));
     });
 
     test('requireApproval proceeds when confirmation returns true', () async {

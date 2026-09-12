@@ -1440,11 +1440,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get agentDetail_cliRequireApprovalDesc =>
-      'Non-She defaults on. Store read / help skip review; OS non-safe tools still confirm even when this is off.';
+      'Non-She defaults on. Everyday store I/O and help skip review; you can allow a command for this session. OS non-safe tools still confirm even when this is off.';
 
   @override
   String get agentDetail_cliApprovalOn =>
-      'CLI runs wait for your approval (store read and help are exempt)';
+      'CLI runs wait for your approval (everyday store I/O and help are exempt)';
 
   @override
   String get agentDetail_cliApprovalOff =>
@@ -2563,6 +2563,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get osTool_deny => 'Deny';
+
+  @override
+  String get osTool_rememberSession => 'Allow this command for this session';
 
   @override
   String get skill_configTitle => 'Skills';

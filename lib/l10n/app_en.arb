@@ -593,8 +593,8 @@
     }
   },
   "agentDetail_cliRequireApproval": "Require approval before CLI runs",
-  "agentDetail_cliRequireApprovalDesc": "Non-She defaults on. Store read / help skip review; OS non-safe tools still confirm even when this is off.",
-  "agentDetail_cliApprovalOn": "CLI runs wait for your approval (store read and help are exempt)",
+  "agentDetail_cliRequireApprovalDesc": "Non-She defaults on. Everyday store I/O and help skip review; you can allow a command for this session. OS non-safe tools still confirm even when this is off.",
+  "agentDetail_cliApprovalOn": "CLI runs wait for your approval (everyday store I/O and help are exempt)",
   "agentDetail_cliApprovalOff": "CLI runs without extra approval (OS non-safe tools still confirm)",
   "agentDetail_authToken": "Auth Token",
   "agentDetail_copyToken": "Copy Token",
@@ -982,6 +982,7 @@
   "osTool_tool": "Tool",
   "osTool_approve": "Approve",
   "osTool_deny": "Deny",
+  "osTool_rememberSession": "Allow this command for this session",
   "skill_configTitle": "Skills",
   "skill_configHint": "Enable markdown-based skills to guide the agent through complex multi-step tasks.",
   "skill_selectAll": "Select All",

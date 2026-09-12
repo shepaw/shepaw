@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import '../clis/shepaw/os/os_executor.dart';
 import '../l10n/app_localizations.dart';
+import '../services/cli_approval_coordinator.dart';
 
-/// Dialog for confirming high-risk OS tool operations.
-class OsToolConfirmationDialog extends StatelessWidget {
+/// Dialog for confirming CLI / OS tool operations.
+class OsToolConfirmationDialog extends StatefulWidget {
   final String toolName;
   final Map<String, dynamic> args;
   final RiskLevel risk;
@@ -14,6 +15,20 @@ class OsToolConfirmationDialog extends StatelessWidget {
     required this.args,
     required this.risk,
   });
+
+  @override
+  State<OsToolConfirmationDialog> createState() =>
+      _OsToolConfirmationDialogState();
+}
+
+class _OsToolConfirmationDialogState extends State<OsToolConfirmationDialog> {
+  bool _rememberSession = false;
+
+  String get toolName => widget.toolName;
+  Map<String, dynamic> get args => widget.args;
+  RiskLevel get risk => widget.risk;
+
+  bool get _canRememberSession => risk != RiskLevel.highRisk;
 
   @override
   Widget build(BuildContext context) {
@@ -94,6 +109,22 @@ class OsToolConfirmationDialog extends StatelessWidget {
               color: colorScheme.onSurfaceVariant,
             ),
           ),
+          if (_canRememberSession) ...[
+            const SizedBox(height: 8),
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              value: _rememberSession,
+              onChanged: (value) {
+                setState(() => _rememberSession = value ?? false);
+              },
+              controlAffinity: ListTileControlAffinity.leading,
+              title: Text(
+                l10n.osTool_rememberSession,
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+          ],
         ],
       ),
       actions: [
@@ -102,7 +133,12 @@ class OsToolConfirmationDialog extends StatelessWidget {
           child: Text(l10n.osTool_deny),
         ),
         FilledButton(
-          onPressed: () => Navigator.of(context).pop(true),
+          onPressed: () {
+            if (_rememberSession && _canRememberSession) {
+              CliApprovalCoordinator.instance.grantForSession(toolName);
+            }
+            Navigator.of(context).pop(true);
+          },
           style: risk == RiskLevel.highRisk
               ? FilledButton.styleFrom(
                   backgroundColor: colorScheme.error,

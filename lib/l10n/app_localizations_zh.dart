@@ -1389,10 +1389,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get agentDetail_cliRequireApprovalDesc =>
-      '非 She 默认开启。store 只读与 help 免审；关闭后 os 非 safe 命令仍会确认。';
+      '非 She 默认开启。储物袋日常读写与 help 免审；确认时可勾选本次会话允许。关闭后 os 非 safe 命令仍会确认。';
 
   @override
-  String get agentDetail_cliApprovalOn => '执行 CLI 需你确认（store 只读与 help 除外）';
+  String get agentDetail_cliApprovalOn => '执行 CLI 需你确认（储物袋日常读写与 help 除外）';
 
   @override
   String get agentDetail_cliApprovalOff => '执行 CLI 不再额外确认（os 非 safe 仍会确认）';
@@ -2469,6 +2469,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get osTool_deny => '拒绝';
+
+  @override
+  String get osTool_rememberSession => '本次会话允许此命令';
 
   @override
   String get skill_configTitle => '技能';

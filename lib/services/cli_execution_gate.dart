@@ -52,7 +52,8 @@ class CliExecutionGate {
 
     // `help` is callable regardless of the allowlist — the same decision
     // [ShepawCLI.execute] makes when it short-circuits on `namespace == 'help'`
-    // — and [cliCommandApprovalExempt] already treats it as approval-exempt.
+    // — and [cliCommandApprovalExempt] already treats help / everyday store as
+    // approval-exempt.
     //
     // This is only safe together with the allowlist forwarded below: `help`
     // answers with the namespaces it can see, so an exempt `help` that never
@@ -167,9 +168,12 @@ class CliExecutionGate {
       }
     }
 
-    final policyNeedsConfirm =
-        requireApproval && !cliCommandApprovalExempt(commandId);
+    final policyNeedsConfirm = requireApproval &&
+        !cliCommandApprovalExempt(commandId, flags: flags);
     if (!osUnsafe && !policyNeedsConfirm) return null;
+    if (CliApprovalCoordinator.instance.isGrantedForSession(toolName)) {
+      return null;
+    }
 
     final approved = onOsConfirmation != null
         ? await onOsConfirmation(toolName, flags, risk)

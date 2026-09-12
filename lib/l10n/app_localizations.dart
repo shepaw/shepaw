@@ -2669,13 +2669,13 @@ abstract class AppLocalizations {
   /// No description provided for @agentDetail_cliRequireApprovalDesc.
   ///
   /// In zh, this message translates to:
-  /// **'非 She 默认开启。store 只读与 help 免审；关闭后 os 非 safe 命令仍会确认。'**
+  /// **'非 She 默认开启。储物袋日常读写与 help 免审；确认时可勾选本次会话允许。关闭后 os 非 safe 命令仍会确认。'**
   String get agentDetail_cliRequireApprovalDesc;
 
   /// No description provided for @agentDetail_cliApprovalOn.
   ///
   /// In zh, this message translates to:
-  /// **'执行 CLI 需你确认（store 只读与 help 除外）'**
+  /// **'执行 CLI 需你确认（储物袋日常读写与 help 除外）'**
   String get agentDetail_cliApprovalOn;
 
   /// No description provided for @agentDetail_cliApprovalOff.
@@ -4603,6 +4603,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'拒绝'**
   String get osTool_deny;
+
+  /// No description provided for @osTool_rememberSession.
+  ///
+  /// In zh, this message translates to:
+  /// **'本次会话允许此命令'**
+  String get osTool_rememberSession;
 
   /// No description provided for @skill_configTitle.
   ///

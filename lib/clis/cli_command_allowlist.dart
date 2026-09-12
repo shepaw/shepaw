@@ -52,23 +52,43 @@ Set<String>? cliIntersectAllowlists(Set<String>? a, Set<String>? b) {
   return result;
 }
 
-/// Read-only / discovery commands that skip `cliRequireApproval`.
+/// Namespaces that skip `cliRequireApproval` (except
+/// [kCliApprovalRequiredCommands]).
 ///
-/// `os.*` non-safe still goes through OS confirmation even when listed here.
-const kCliApprovalExemptCommands = {
+/// `store` is a sandboxed bag with its own ACL, so everyday read/write should
+/// not stop for a tap. `os.*` non-safe still goes through OS confirmation
+/// even when a command is listed here.
+const kCliApprovalExemptNamespaces = {
   'help',
-  'store.read',
-  'store.list',
-  'store.search',
+  'store',
+};
+
+/// Commands that still need a tap even when their namespace is exempt.
+///
+/// `store.declare` creates a new space. `store.write --file` copies a host
+/// path into the bag — that is closer to `os.file.read` than an in-bag write.
+const kCliApprovalRequiredCommands = {
+  'store.declare',
 };
 
 /// Whether [commandId] is exempt from the per-agent approval switch.
-bool cliCommandApprovalExempt(String commandId) {
+bool cliCommandApprovalExempt(
+  String commandId, {
+  Map<String, dynamic>? flags,
+}) {
   if (commandId.isEmpty) return true;
-  if (kCliApprovalExemptCommands.contains(commandId)) return true;
-  final parts = commandId.split('.');
-  if (parts.first == 'help') return true;
-  return false;
+  if (kCliApprovalRequiredCommands.contains(commandId)) return false;
+  final ns = commandId.split('.').first;
+  if (!kCliApprovalExemptNamespaces.contains(ns)) return false;
+  if (commandId == 'store.write' && _hasNonEmptyFlag(flags, 'file')) {
+    return false;
+  }
+  return true;
+}
+
+bool _hasNonEmptyFlag(Map<String, dynamic>? flags, String key) {
+  final raw = flags?[key];
+  return raw is String && raw.trim().isNotEmpty;
 }
 
 /// Whether [allowlist] grants [namespace] or any descendant command.
