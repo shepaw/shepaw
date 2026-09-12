@@ -27,6 +27,13 @@ import '../../theme/app_theme.dart';
 import '../model_icon.dart';
 import 'slash_command_picker.dart';
 
+/// 模型 / 会话模式弹出列表的尺寸：保留 Material 默认宽度，限制高度以便长列表滚动。
+const _kComposerChoiceMenuConstraints = BoxConstraints(
+  minWidth: 2.0 * 56.0,
+  maxWidth: 5.0 * 56.0,
+  maxHeight: 280,
+);
+
 /// The chat input area widget (supports both desktop and mobile layouts).
 ///
 /// Handles:
@@ -617,6 +624,10 @@ class ChatInputAreaState extends State<ChatInputArea> {
     final picked = await showMenu<String>(
       context: context,
       position: RelativeRect.fromSize(rect, overlayBox.size),
+      constraints: _kComposerChoiceMenuConstraints,
+      initialValue: peerModels.isNotEmpty
+          ? _currentPeerModel
+          : _mainModelDef?.id,
       items: [
         if (peerModels.isNotEmpty)
           for (final m in peerModels)
@@ -780,6 +791,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
     final picked = await showMenu<String>(
       context: context,
       position: RelativeRect.fromSize(rect, overlayBox.size),
+      constraints: _kComposerChoiceMenuConstraints,
+      initialValue: _currentSessionMode,
       items: [
         for (final m in modes)
           PopupMenuItem<String>(
