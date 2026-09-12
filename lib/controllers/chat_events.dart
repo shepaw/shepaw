@@ -75,14 +75,6 @@ class ShowHistoryRequestDialogEvent extends ChatEvent {
   ShowHistoryRequestDialogEvent(this.reason) : result = Completer<bool>();
 }
 
-class ShowOsToolConfirmationEvent extends ChatEvent {
-  final String toolName;
-  final Map<String, dynamic> args;
-  final dynamic risk;
-  final Completer<bool> result;
-  ShowOsToolConfirmationEvent(this.toolName, this.args, this.risk) : result = Completer<bool>();
-}
-
 class GroupInteractionRequestEvent extends ChatEvent
     implements PendingInteractionLike {
   @override

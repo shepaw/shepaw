@@ -739,7 +739,7 @@
     }
   },
   "agentDetail_cliRequireApproval": "执行 CLI 前需要审核",
-  "agentDetail_cliRequireApprovalDesc": "非 She 默认开启。储物袋日常读写与 help 免审；确认时可勾选本次会话允许。关闭后 os 非 safe 命令仍会确认。",
+  "agentDetail_cliRequireApprovalDesc": "非 She 默认开启。储物袋日常读写与 help 免审；其余确认出现在消息气泡里，可稍后点，也可勾选本次会话允许。关闭后 os 非 safe 命令仍会确认。",
   "agentDetail_cliApprovalOn": "执行 CLI 需你确认（储物袋日常读写与 help 除外）",
   "agentDetail_cliApprovalOff": "执行 CLI 不再额外确认（os 非 safe 仍会确认）",
   "agentDetail_authToken": "认证 Token",
@@ -1419,6 +1419,7 @@
   "osTool_approve": "批准",
   "osTool_deny": "拒绝",
   "osTool_rememberSession": "本次会话允许此命令",
+  "osTool_expired": "已过期",
   "skill_configTitle": "技能",
   "skill_configHint": "启用基于 Markdown 的技能，引导 Agent 完成复杂的多步骤任务。",
   "skill_selectAll": "全选",

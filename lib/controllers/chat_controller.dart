@@ -25,6 +25,8 @@ import '../services/workflow/workflow_service.dart';
 import '../services/approval/pending_approval_hub.dart';
 import '../services/approval/pending_approval_item.dart';
 import '../services/cli_approval_coordinator.dart';
+import '../services/cli_approval_service.dart';
+import '../clis/shepaw/os/os_executor.dart' as os_exec;
 import '../models/workflow_models.dart';
 import '../peer/services/peer_agent_client_service.dart';
 import '../peer/services/peer_agent_host_service.dart' show isPeerAgentChannel;
@@ -319,7 +321,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   /// Workflow panel + local execution bookkeeping.
   final ChatWorkflowCoordinator workflow = ChatWorkflowCoordinator();
 
-  /// Group / headless CLI approvals reuse the same OS confirmation dialog.
+  /// Group / headless CLI approvals reuse the last-active chat's card handler.
   late final CliApprovalHandler _cliApprovalHandler;
 
   /// The ID of the currently active workflow (set during flow execution).
@@ -384,11 +386,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     searchService = MessageSearchService(databaseService);
     interactiveResponseHandler = InteractiveResponseHandler(this);
     streaming.onClear = _onStreamingSessionCleared;
-    _cliApprovalHandler = (toolName, flags, risk) async {
-      final event = ShowOsToolConfirmationEvent(toolName, flags, risk);
-      _emit(event);
-      return event.result.future;
-    };
+    _cliApprovalHandler = requestCliApproval;
     CliApprovalCoordinator.instance.register(_cliApprovalHandler);
   }
 
@@ -538,6 +536,17 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       _eventController.add(event);
     }
   }
+
+  /// Insert a CLI approval card and wait until the user taps it.
+  Future<bool> requestCliApproval(
+    String toolName,
+    Map<String, dynamic> flags,
+    os_exec.RiskLevel risk,
+  );
+
+  void _cancelCliApprovalsForCurrentChannel();
+
+  void _expireStaleCliApprovalCards();
 
   /// Implemented by [_MessagingOps]: attach/replace an action-confirmation
   /// card on a host bubble. Called from the base's orphan-approval listener.

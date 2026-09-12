@@ -27,6 +27,7 @@ import 'form_bubble.dart';
 import 'collapsible_message_bubble.dart';
 import 'permission_audit_bubble.dart';
 import 'chat/plan_approval_card.dart';
+import 'chat/cli_approval_card.dart';
 import 'chat/dispatch_card.dart';
 import 'chat/relay_approval_card.dart';
 import 'avatar_image.dart';
@@ -1108,6 +1109,12 @@ class MessageBubble extends StatelessWidget {
           actionConfirmation['selected_action_id'] == null;
       if (isWorkflowPeerApproval) {
         return _workflowPeerApprovalHint(context);
+      }
+      if (actionConfirmation['confirmation_context'] == 'cli') {
+        return CliApprovalCard(
+          actionData: actionConfirmation,
+          onActionSelected: onActionSelected,
+        );
       }
       return ActionConfirmationButtons(
         actionData: actionConfirmation,

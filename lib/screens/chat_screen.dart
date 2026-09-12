@@ -50,8 +50,6 @@ import '../widgets/chat/group_members_panel.dart';
 import '../widgets/chat/add_group_member_panel.dart';
 import '../widgets/chat/copy_to_agent_picker.dart';
 import '../widgets/avatar_image.dart';
-import '../widgets/os_tool_confirmation_dialog.dart';
-import '../clis/shepaw/os/os_executor.dart' as os_exec;
 import '../widgets/group_avatar_picker.dart';
 import '../widgets/voice_record_overlay.dart';
 import 'agent_resume_edit_screen.dart';
@@ -558,15 +556,6 @@ class _ChatScreenState extends State<ChatScreen>
         }
       case ShowHistoryRequestDialogEvent(:final reason, :final result):
         _showHistoryRequestDialog(reason).then((approved) {
-          if (!result.isCompleted) result.complete(approved);
-        });
-      case ShowOsToolConfirmationEvent(
-          :final toolName,
-          :final args,
-          :final risk,
-          :final result
-        ):
-        _showOsToolConfirmation(toolName, args, risk).then((approved) {
           if (!result.isCompleted) result.complete(approved);
         });
       case CloseScreenEvent():
@@ -3320,20 +3309,6 @@ class _ChatScreenState extends State<ChatScreen>
               onPressed: () => Navigator.of(ctx).pop(true),
               child: Text(l10n.chat_historyApprove)),
         ],
-      ),
-    );
-    return result ?? false;
-  }
-
-  Future<bool> _showOsToolConfirmation(
-      String toolName, Map<String, dynamic> args, dynamic risk) async {
-    final level = risk is os_exec.RiskLevel ? risk : os_exec.RiskLevel.lowRisk;
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => OsToolConfirmationDialog(
-        toolName: toolName,
-        args: args,
-        risk: level,
       ),
     );
     return result ?? false;

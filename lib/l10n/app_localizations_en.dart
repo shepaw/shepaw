@@ -1440,7 +1440,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get agentDetail_cliRequireApprovalDesc =>
-      'Non-She defaults on. Everyday store I/O and help skip review; you can allow a command for this session. OS non-safe tools still confirm even when this is off.';
+      'Non-She defaults on. Everyday store I/O and help skip review; other confirmations appear as a chat card you can tap later, or allow for this session. OS non-safe tools still confirm even when this is off.';
 
   @override
   String get agentDetail_cliApprovalOn =>
@@ -2566,6 +2566,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get osTool_rememberSession => 'Allow this command for this session';
+
+  @override
+  String get osTool_expired => 'Expired';
 
   @override
   String get skill_configTitle => 'Skills';

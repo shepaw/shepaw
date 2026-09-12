@@ -524,6 +524,7 @@ mixin _MessagingOps on _ChatControllerBase {
     }
 
     acpCancellationToken?.cancel();
+    _cancelCliApprovalsForCurrentChannel();
 
     // 手动停止：把队列内容倒回输入框，由用户决定是否重发（队列清空）。
     // 队列为空时 _restoreQueueToComposer 直接返回，不影响输入框。
@@ -569,6 +570,7 @@ mixin _MessagingOps on _ChatControllerBase {
     if (currentChannelId != null) {
       chatService.cancelPlanApproval(currentChannelId!);
     }
+    _cancelCliApprovalsForCurrentChannel();
 
     // Complete all pending group interaction Completers with null.
     // Note: plan_approval is no longer tracked here — its Completer is in
@@ -735,11 +737,7 @@ mixin _MessagingOps on _ChatControllerBase {
             _emit(ShowReconnectingSnackBarEvent(attempt, total));
           }
         },
-        onOsToolConfirmation: (toolName, args, risk) async {
-          final event = ShowOsToolConfirmationEvent(toolName, args, risk);
-          _emit(event);
-          return await event.result.future;
-        },
+        onOsToolConfirmation: requestCliApproval,
         onStreamChunk: (chunk) {
           streaming.append(chunk);
           streaming.applyContentTo(messages, messageIdMap);

@@ -357,11 +357,7 @@ mixin _WorkflowOps on _ChatControllerBase {
       userId: userId,
       userName: userName,
       cancelToken: cancelToken,
-      onOsToolConfirmation: (toolName, args, risk) async {
-        final event = ShowOsToolConfirmationEvent(toolName, args, risk);
-        _emit(event);
-        return await event.result.future;
-      },
+      onOsToolConfirmation: requestCliApproval,
       onAgentStart: (aid, anm) {
         _onWorkflowAgentStart(aid, anm, userId: userId, userName: userName);
       },

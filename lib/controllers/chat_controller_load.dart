@@ -195,6 +195,7 @@ mixin _LoadOps on _ChatControllerBase {
       }
       await _refreshHasMoreOlderMessages();
       _reapplyStashedPlanApprovalResponses();
+      _expireStaleCliApprovalCards();
       await PendingApprovalHub.instance.reconcileForChannel(
         currentChannelId!,
         messages,

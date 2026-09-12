@@ -8,7 +8,7 @@ typedef CliApprovalHandler = Future<bool> Function(
 );
 
 /// Last-active chat registers a handler so group / headless turns can reuse
-/// the same confirmation UI as DM OS tools.
+/// the same in-chat CLI approval card as DM tools.
 ///
 /// [grantForSession] remembers a command until process exit (or
 /// [resetForTest]) so frequent low-risk CLIs are not re-prompted every call.

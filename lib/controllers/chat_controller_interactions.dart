@@ -9,6 +9,166 @@ part of 'chat_controller.dart';
 // ---------------------------------------------------------------------------
 
 mixin _InteractionOps on _ChatControllerBase {
+  static const _cliExpiredActionId = 'expired';
+
+  @override
+  Future<bool> requestCliApproval(
+    String toolName,
+    Map<String, dynamic> flags,
+    os_exec.RiskLevel risk,
+  ) async {
+    if (CliApprovalCoordinator.instance.isGrantedForSession(toolName)) {
+      return true;
+    }
+    final confirmationId =
+        'cli_${DateTime.now().millisecondsSinceEpoch}_$toolName';
+    final actionData = <String, dynamic>{
+      'confirmation_id': confirmationId,
+      'confirmation_context': 'cli',
+      'prompt': os_exec.getRiskDescription(risk, toolName, flags),
+      'tool_name': toolName,
+      'flags': Map<String, dynamic>.from(flags),
+      'risk': risk.name,
+      'actions': [
+        {'id': 'deny', 'label': 'Deny', 'style': 'secondary'},
+        {'id': 'allow', 'label': 'Allow', 'style': 'primary'},
+      ],
+    };
+    _insertCliApprovalCard(actionData);
+    return CliApprovalService.instance.awaitApproval(
+      confirmationId: confirmationId,
+      toolName: toolName,
+      channelId: currentChannelId,
+    );
+  }
+
+  void _insertCliApprovalCard(Map<String, dynamic> actionData) {
+    final hostId = StreamingActionConfirmation.resolveHostMessageId(
+      preferredId: streamingMessageId,
+      messageIdMap: messageIdMap,
+      messages: messages,
+    );
+    final host = hostId == null ? null : messageIdMap[hostId];
+    final existing = host?.metadata?['action_confirmation'];
+    final hostBusy = existing is Map && existing['selected_action_id'] == null;
+    if (host != null && !hostBusy) {
+      _handleStreamingActionConfirmation(actionData);
+    } else {
+      _insertCliApprovalFallback(actionData);
+    }
+    final attachedId = StreamingActionConfirmation.resolveHostMessageId(
+      preferredId: streamingMessageId,
+      messageIdMap: messageIdMap,
+      messages: messages,
+    );
+    if (currentChannelId == null) return;
+    final hubItem = PendingApprovalItem.fromInteraction(
+      channelId: currentChannelId!,
+      agentId: _cliApprovalAgentId,
+      agentName: agentName ?? 'Agent',
+      interactionType: 'action_confirmation',
+      data: actionData,
+      messageId: attachedId,
+    );
+    if (hubItem != null) {
+      PendingApprovalHub.instance.upsert(hubItem);
+    }
+    _emit(RequestScrollToBottomEvent(force: true));
+  }
+
+  String get _cliApprovalAgentId {
+    final id = agentId;
+    if (id != null && id.isNotEmpty) return id;
+    for (final sid in groupStreamingMessageIds.toList().reversed) {
+      final m = messageIdMap[sid];
+      if (m != null && m.from.isAgent) return m.from.id;
+    }
+    for (final m in messages.reversed) {
+      if (m.from.isAgent) return m.from.id;
+    }
+    return 'shepaw-cli';
+  }
+
+  void _insertCliApprovalFallback(Map<String, dynamic> actionData) {
+    final aid = _cliApprovalAgentId;
+    final displayName = agentName ?? 'Agent';
+    final userId = getUserId();
+    final userName = getUserName();
+    final sid = isGroupMode
+        ? StreamingActionConfirmation.groupFallbackId(aid)
+        : StreamingActionConfirmation.dmFallbackId(aid);
+    final sm = StreamingActionConfirmation.buildFallbackBubble(
+      id: sid,
+      agentId: aid,
+      agentName: displayName,
+      userId: userId,
+      userName: userName,
+      actionData: actionData,
+    );
+    messages.add(sm);
+    messageIdMap[sid] = sm;
+    if (isGroupMode) {
+      groupStreamingMessageIds.add(sid);
+    } else if (streamingMessageId == null) {
+      streamingMessageId = sid;
+      streamingContent = sm.content;
+    }
+    _notify();
+    if (currentChannelId == null) return;
+    localDatabaseService
+        .createMessage(
+          id: sid,
+          channelId: currentChannelId!,
+          senderId: aid,
+          senderType: 'agent',
+          senderName: displayName,
+          content: sm.content,
+          messageType: 'text',
+          metadata: sm.metadata,
+        )
+        .ignore();
+  }
+
+  @override
+  void _cancelCliApprovalsForCurrentChannel() {
+    final cid = currentChannelId;
+    if (cid == null) return;
+    for (final msg in List<Message>.from(messages)) {
+      final ac = msg.metadata?['action_confirmation'];
+      if (ac is! Map) continue;
+      if (ac['confirmation_context'] != 'cli') continue;
+      if (ac['selected_action_id'] != null) continue;
+      _markActionConfirmationSelected(
+        msg.id,
+        actionId: _cliExpiredActionId,
+        actionLabel: _cliExpiredActionId,
+      );
+      final confirmationId = ac['confirmation_id'] as String? ?? '';
+      if (confirmationId.isNotEmpty) {
+        PendingApprovalHub.instance.resolveByConfirmationId(confirmationId);
+      }
+    }
+    CliApprovalService.instance.cancelForChannel(cid);
+  }
+
+  @override
+  void _expireStaleCliApprovalCards() {
+    final stale = CliApprovalService.instance.expireStaleCards(messages);
+    for (final messageId in stale) {
+      final ac = messageIdMap[messageId]?.metadata?['action_confirmation'];
+      final confirmationId =
+          ac is Map ? (ac['confirmation_id'] as String? ?? '') : '';
+      _markActionConfirmationSelected(
+        messageId,
+        actionId: _cliExpiredActionId,
+        actionLabel: _cliExpiredActionId,
+      );
+      if (confirmationId.isNotEmpty) {
+        PendingApprovalHub.instance.resolveByConfirmationId(confirmationId);
+      }
+    }
+  }
+
   /// Helper: for group chat with local LLM agents that have already finished,
   /// just persist the user's interactive response to the message metadata in
   /// DB.  Returns true if handled (caller should return early).
@@ -346,6 +506,24 @@ mixin _InteractionOps on _ChatControllerBase {
     );
 
     PendingApprovalHub.instance.resolveByConfirmationId(confirmationId);
+
+    if (confirmationContext == 'cli') {
+      final approved = actionId == 'allow' || actionId == 'allow_session';
+      final rememberSession = actionId == 'allow_session';
+      _markActionConfirmationSelected(
+        originalMessage.id,
+        actionId: approved ? 'allow' : actionId,
+        actionLabel: actionLabel,
+      );
+      if (CliApprovalService.instance.hasLive(confirmationId)) {
+        CliApprovalService.instance.complete(
+          confirmationId,
+          approved: approved,
+          rememberSession: rememberSession,
+        );
+      }
+      return;
+    }
 
     // Peer in-band approvals in group chat: the original P2P sendChat turn is
     // still live on GroupAgentExecutor. Submit via submitApproval instead of
