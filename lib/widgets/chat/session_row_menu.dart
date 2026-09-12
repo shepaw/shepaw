@@ -318,7 +318,7 @@ Widget? sessionRowTrailing({
             return IconButton(
               key: const Key('session_row_more'),
               tooltip: AppLocalizations.of(context).chat_moreActions,
-              icon: const Icon(Icons.more_horiz, size: 20),
+              icon: const Icon(Icons.more_vert, size: 20),
               visualDensity: VisualDensity.compact,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
