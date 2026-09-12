@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/channel.dart';
 import '../../services/error_handler_service.dart';
+import '../../utils/session_utils.dart';
 
 /// 长按会话行弹出的底部菜单。
 ///
@@ -12,8 +13,7 @@ import '../../services/error_handler_service.dart';
 /// - 分叉（复制当前会话到新会话）
 /// - 复制到（复制当前会话到另一个 agent 的新会话）
 /// - 重置会话（仅当前会话且回调非空）
-/// - 复制会话标题和 ID
-/// - 复制 Channel ID
+/// - 复制会话信息（标题、会话 ID、channel ID）
 ///
 /// 会等到 bottom sheet 完全关闭后再执行对应回调，因此调用方在回调里再
 /// 关抽屉/导航不会与 sheet 的退场动画打架。
@@ -84,13 +84,8 @@ Future<void> showSessionRowMenu(
               ),
             item(
               icon: Icons.copy_all,
-              label: l10n.chat_copySessionTitleAndId,
-              value: 'copyTitleAndId',
-            ),
-            item(
-              icon: Icons.tag,
-              label: l10n.chat_copyChannelId,
-              value: 'copyChannelId',
+              label: l10n.chat_copySessionInfo,
+              value: 'copyInfo',
             ),
           ],
         ),
@@ -110,13 +105,15 @@ Future<void> showSessionRowMenu(
       onCopyToAgent?.call();
     case 'reset':
       onResetSession?.call();
-    case 'copyTitleAndId':
+    case 'copyInfo':
       await _copyText(
         context,
-        '$displayTitle\n${session.id}',
+        l10n.chat_copySessionInfoPayload(
+          displayTitle,
+          session.id,
+          SessionUtils.familyChannelId(session),
+        ),
       );
-    case 'copyChannelId':
-      await _copyText(context, session.id);
   }
 }
 

@@ -6008,17 +6008,18 @@ abstract class AppLocalizations {
   /// **'查看会话'**
   String get chat_viewSession;
 
-  /// No description provided for @chat_copySessionTitleAndId.
+  /// No description provided for @chat_copySessionInfo.
   ///
   /// In zh, this message translates to:
-  /// **'复制会话标题和 ID'**
-  String get chat_copySessionTitleAndId;
+  /// **'复制会话信息'**
+  String get chat_copySessionInfo;
 
-  /// No description provided for @chat_copyChannelId.
+  /// No description provided for @chat_copySessionInfoPayload.
   ///
   /// In zh, this message translates to:
-  /// **'复制 Channel ID'**
-  String get chat_copyChannelId;
+  /// **'标题：{title}\n会话 ID：{sessionId}\nchannel ID：{channelId}'**
+  String chat_copySessionInfoPayload(
+      String title, String sessionId, String channelId);
 
   /// No description provided for @chat_listeningEventsTitle.
   ///

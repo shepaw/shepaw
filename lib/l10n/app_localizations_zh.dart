@@ -3264,10 +3264,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_viewSession => '查看会话';
 
   @override
-  String get chat_copySessionTitleAndId => '复制会话标题和 ID';
+  String get chat_copySessionInfo => '复制会话信息';
 
   @override
-  String get chat_copyChannelId => '复制 Channel ID';
+  String chat_copySessionInfoPayload(
+      String title, String sessionId, String channelId) {
+    return '标题：$title\n会话 ID：$sessionId\nchannel ID：$channelId';
+  }
 
   @override
   String get chat_listeningEventsTitle => '正在监听的事件';

@@ -3397,10 +3397,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_viewSession => 'View Session';
 
   @override
-  String get chat_copySessionTitleAndId => 'Copy session title and ID';
+  String get chat_copySessionInfo => 'Copy session info';
 
   @override
-  String get chat_copyChannelId => 'Copy Channel ID';
+  String chat_copySessionInfoPayload(
+      String title, String sessionId, String channelId) {
+    return 'Title: $title\nSession ID: $sessionId\nchannel ID: $channelId';
+  }
 
   @override
   String get chat_listeningEventsTitle => 'Listening events';

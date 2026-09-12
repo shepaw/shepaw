@@ -97,6 +97,69 @@ void main() {
       });
     });
 
+    group('familyChannelId', () {
+      test('group child session uses parentGroupId', () {
+        final session = Channel(
+          id: 'group_child-session',
+          name: 'Child',
+          type: 'group',
+          members: const [],
+          parentGroupId: 'group_family-root',
+        );
+        expect(SessionUtils.familyChannelId(session), 'group_family-root');
+      });
+
+      test('parent group session uses its own id', () {
+        final session = Channel(
+          id: 'group_family-root',
+          name: 'Group',
+          type: 'group',
+          members: const [],
+        );
+        expect(SessionUtils.familyChannelId(session), 'group_family-root');
+      });
+
+      test('group-bound member DM uses sourceGroupChannelId', () {
+        final session = Channel(
+          id: 'gmd_group_x__agent1',
+          name: 'Member DM',
+          type: 'dm',
+          members: const [],
+          sourceGroupChannelId: 'group_family-root',
+        );
+        expect(SessionUtils.familyChannelId(session), 'group_family-root');
+      });
+
+      test('plain DM falls back to session id', () {
+        final session = Channel(
+          id: 'dm_user1_agent1_1700000000000',
+          name: 'DM',
+          type: 'dm',
+          members: const [],
+        );
+        expect(
+          SessionUtils.familyChannelId(session),
+          'dm_user1_agent1_1700000000000',
+        );
+      });
+    });
+
+    group('sessionIdFromChannelId', () {
+      test('strips psess_ prefix for synced peer sessions', () {
+        expect(
+          SessionUtils.sessionIdFromChannelId('psess_remote-session-42'),
+          'remote-session-42',
+        );
+      });
+
+      test('returns local channel id unchanged', () {
+        expect(
+          SessionUtils.sessionIdFromChannelId('dm_user1_agent1_1700000000000'),
+          'dm_user1_agent1_1700000000000',
+        );
+      });
+    });
+
     group('shouldPruneEmptySessionOnSwitch', () {
       test('switching to the same session never prunes', () {
         expect(

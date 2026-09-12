@@ -1921,8 +1921,15 @@
   "chat_enableStageGateDesc": "每个阶段执行完暂停，等待管理员「继续 / 中止 / 换人」决策后再进入下一阶段",
   "chat_viewTrace": "查看 Trace",
   "chat_viewSession": "查看会话",
-  "chat_copySessionTitleAndId": "复制会话标题和 ID",
-  "chat_copyChannelId": "复制 Channel ID",
+  "chat_copySessionInfo": "复制会话信息",
+  "chat_copySessionInfoPayload": "标题：{title}\n会话 ID：{sessionId}\nchannel ID：{channelId}",
+  "@chat_copySessionInfoPayload": {
+    "placeholders": {
+      "title": { "type": "String" },
+      "sessionId": { "type": "String" },
+      "channelId": { "type": "String" }
+    }
+  },
   "chat_listeningEventsTitle": "正在监听的事件",
   "chat_eventListenKindSubscribe": "订阅",
   "chat_eventListenKindWait": "等待",

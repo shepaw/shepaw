@@ -63,7 +63,7 @@ class SessionUtils {
     // kSyncedPeerSessionPrefix). Show the tail of the bound remote session id.
     const peerPrefix = 'psess_';
     if (channelId.startsWith(peerPrefix)) {
-      final sid = channelId.substring(peerPrefix.length);
+      final sid = sessionIdFromChannelId(channelId);
       final tail = sid.length > 6 ? sid.substring(sid.length - 6) : sid;
       return '#$tail';
     }
@@ -80,6 +80,24 @@ class SessionUtils {
       return '#${uuid.substring(uuid.length > 6 ? uuid.length - 6 : 0)}';
     }
     return '#default';
+  }
+
+  /// 上游 / 引擎侧 session id：已同步远端会话去掉 `psess_`，其余即 channel id。
+  static String sessionIdFromChannelId(String channelId) {
+    const peerPrefix = 'psess_';
+    if (channelId.startsWith(peerPrefix)) {
+      return channelId.substring(peerPrefix.length);
+    }
+    return channelId;
+  }
+
+  /// 复制/展示用的 channel id：群会话取家族根（群 id），群成员绑定 DM 取
+  /// 来源群，普通单聊没有群，退回会话自身 id。
+  static String familyChannelId(Channel session) {
+    if (session.isGroup) return session.groupFamilyId;
+    final bound = session.sourceGroupChannelId;
+    if (bound != null && bound.isNotEmpty) return bound;
+    return session.id;
   }
 
   /// Claude Code 本地斜杠命令（/model、/clear 等）注入的包装标签，
