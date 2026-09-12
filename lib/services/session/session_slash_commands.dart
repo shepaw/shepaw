@@ -35,22 +35,28 @@ class ShepawSessionSlashCommands {
   static List<SlashCommandInfo> forConversation({required bool isGroup}) =>
       isGroup ? const [groupSessionNew] : const [sessionNew];
 
-  /// Append Shepaw session commands that the agent list does not already have.
+  /// Keep the command that matches this conversation; drop the other.
   static List<SlashCommandInfo> merge(
     List<SlashCommandInfo> existing, {
     required bool isGroup,
   }) {
     final extras = forConversation(isGroup: isGroup);
-    if (extras.isEmpty) return existing;
+    final otherNames = <String>{
+      for (final c in forConversation(isGroup: !isGroup)) _bareName(c.name),
+    };
+    final kept = [
+      for (final c in existing)
+        if (!otherNames.contains(_bareName(c.name))) c,
+    ];
     final names = <String>{
-      for (final c in existing) _bareName(c.name),
+      for (final c in kept) _bareName(c.name),
     };
     final missing = [
       for (final c in extras)
         if (!names.contains(_bareName(c.name))) c,
     ];
-    if (missing.isEmpty) return existing;
-    return [...existing, ...missing];
+    if (missing.isEmpty && kept.length == existing.length) return existing;
+    return [...kept, ...missing];
   }
 
   static String _bareName(String name) =>

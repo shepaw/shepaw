@@ -1,0 +1,37 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shepaw/models/acp_protocol.dart';
+import 'package:shepaw/services/session/session_slash_commands.dart';
+
+void main() {
+  test('DM merge adds session-new and drops group-session-new', () {
+    final merged = ShepawSessionSlashCommands.merge(
+      const [
+        SlashCommandInfo(name: 'compact'),
+        SlashCommandInfo(name: 'group-session-new', description: 'stale'),
+      ],
+      isGroup: false,
+    );
+    expect(merged.map((c) => c.name), ['compact', 'session-new']);
+  });
+
+  test('group merge adds group-session-new and drops session-new', () {
+    final merged = ShepawSessionSlashCommands.merge(
+      const [
+        SlashCommandInfo(name: 'session-new', description: 'stale'),
+      ],
+      isGroup: true,
+    );
+    expect(merged.map((c) => c.name), ['group-session-new']);
+  });
+
+  test('descriptions teach the shepaw CLI, not a function tool', () {
+    expect(
+      ShepawSessionSlashCommands.sessionNew.description,
+      contains('shepaw chat session create'),
+    );
+    expect(
+      ShepawSessionSlashCommands.groupSessionNew.description,
+      contains('shepaw chat group session create'),
+    );
+  });
+}

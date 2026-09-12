@@ -155,6 +155,8 @@ void main() {
     expect(md, contains('工作区已挂载'));
     expect(md, contains('不要 `hub.cli.execute`'));
     expect(md, isNot(contains('agents.memory-write')));
+    expect(md, isNot(contains('session-new')));
+    expect(md, isNot(contains('session create')));
   });
 
   test('deviceIdFromStoreUri reads the device segment', () {

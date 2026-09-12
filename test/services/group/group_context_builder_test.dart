@@ -113,6 +113,8 @@ void main() {
       expect(cli['note'], contains('Hub'));
       expect(cli['note'], contains('forwarded to the paired App'));
       expect(cli['note'], contains('Do not use hub.cli.execute'));
+      expect(cli['note'], isNot(contains('New sessions')));
+      expect(cli['note'], isNot(contains('session create')));
     });
 
     test('local group member does not get hub.cli.execute hint', () {

@@ -585,7 +585,7 @@ $registeredNames
 - 可新开：话题无关、上任务已交付且新课题、频道噪音大且接近交付、需重置 agent 记忆、并行支线、用户要求。
 - 勿新开：仅审查返工、任务刚开始、强依赖最近几轮讨论。
 - 新开清空聊天与成员 DM；store 产物与 shared/memory 自动保留；禁止复制 chat 历史或【上轮事件】。
-- 用 `group_session_create`（`reason` + `handoff`：用户目标、验收标准必填；或 `handoff_uri`），或 CLI `shepaw chat group session create`；用户点切换卡片后再 dispatch，勿假定已切换。
+- 新开用指令 `/group-session-new`，或编排工具 `group_session_create`；用户点切换卡片后再 dispatch，勿假定已切换。
 - dev/review 返工留原 session；已交付后续可新开，handoff 只带最终产物 URI + review 摘要。''';
   }
 

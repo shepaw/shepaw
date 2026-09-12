@@ -182,8 +182,7 @@ class GroupContextBuilder {
             'Hub) uses shepaw store read/write/list. Foreign store:// and '
             'other namespaces (os/chat/context/events, except she-only) are '
             'forwarded to the paired App gate. Do not use hub.cli.execute. '
-            'New sessions: shepaw chat session create (or group session '
-            'create). Pass store:// URIs verbatim.',
+            'Pass store:// URIs verbatim.',
         'params': {
           'namespace': 'store',
           'subcommand': 'write',

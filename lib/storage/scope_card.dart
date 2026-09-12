@@ -424,9 +424,7 @@ class ScopeCard {
       buf.writeln(
         '- 本宿主 `shepaw store` 只直接碰 **本机 device**；其他设备的 '
         '`store://` 以及 `os` / `chat` / `context` / `events` 由 shim 转到'
-        '配对 App（闸门 + She 专属）。新开会话用 `/session-new` 或 '
-        '`shepaw chat session create`（群用 `/group-session-new`）。'
-        '不要 `hub.cli.execute`',
+        '配对 App（闸门 + She 专属）。不要 `hub.cli.execute`',
       );
     }
     if (capabilities.writeMemory) {
