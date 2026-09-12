@@ -283,8 +283,8 @@ ACP 协议没有 mode 方法、`metadata['engine']` 也拿不到，去掉 UI 门
 - Shift+Tab 专用于 plan 档切换，再按一次回原档位；
 - 状态不进本地库：`fetchModes` / `setMode` 均带 `sessionId`，按会话生效；换会话清空重拉；
 - 本地 agent 无上游 mode → 入口不显示（§5.1.6）；
-- 群聊**只作用于 admin**（§6 #4 已定）：sessionId 用 admin 在群里的绑定成员会话
-  （`gmd_<群id>__<adminId>`），成员不受影响。
+- **群聊不显示入口**（§6 #4）：单聊里 chip 就是「这个 agent 的档位」，群里会变成
+  「admin 的档位」，而干活的却是成员 —— 用户会以为所有人都不动手。
 
 #### 5.1.4 清文档债 ✅ 已完成（2026-09-11）
 
@@ -369,24 +369,20 @@ ACP 协议没有 mode 方法、`metadata['engine']` 也拿不到，去掉 UI 门
    状态挂 `Channel`（会话级）。
 3. ACP 远端 agent 的 engineId 从哪来？`engineSessionModeCatalog(engineId)` 需要它，
    目前只有 Peer 路径有。这是 §5.1.3 第 1 步的前置。
-4. ~~群聊里规划模式作用于谁~~ **已定（2026-09-12）：只约束 admin**，成员各自的
-   mode 不动。三条理由：
+4. ~~群聊里规划模式作用于谁~~ **关闭（2026-09-12）：群聊不做这个入口。**
 
-   - **「别动手」在群里的落点是协调者。** 群的执行链是 admin 派活 → 成员执行，
-     admin 只读就等于整群先出计划再动手；反过来把成员切成只读，群会直接跑不动
-     （成员没有别的产出方式）。
-   - **transport 是会话级，切一次只能切一个会话。** 每个成员（含 admin）在群里
-     都有独立绑定会话（`gmd_<群id>__<agentId>`，
-     `group_member_session_service.dart:35`），要约束成员就得逐个下发 N 次，
-     且部分引擎根本没有 plan 档（codex 只有审批档位）。
-   - **可回退。** 日后若确实要约束成员，走的是同一条 transport，只是 UI 从单档
-     选择变成多选；现在不做，不留坑。
+   中间过程：先定「只约束 admin」（理由是群里 admin 派活、成员执行，admin 只读
+   等于整群先出计划），且实现要点已查清——sessionId 要传 admin 的群成员会话
+   `gmd_<群id>__<adminId>`（`group_member_session_service.dart:35`），**不是群
+   channel id**；admin 由 `Channel.adminAgentId`（`channel.dart:298`）推导。
 
-   实现要点：群聊下发给 admin 时 sessionId 必须传
-   `GroupMemberSessionService.memberSessionId(groupChannelId, adminAgentId)`，
-   **不能传群 channel id** —— 那不是 admin 的会话。admin 由
-   `Channel.adminAgentId`（`channel.dart:298`）推导，即 `members` 里
-   `role == 'admin'` 的那个。
+   **随即撤回**：动手后判断歧义太大，不值得。同一个 chip 在单聊里是「这个
+   agent 的当前档位」，在群里就变成「admin 的档位」——但群里干活的明明是成员，
+   用户看到「规划中」会以为**所有人**都不动手，实际成员照改不误。要消除歧义就
+   得把 chip 写成「管理员：规划中」并在菜单里解释谁受影响，成本远超收益。
+
+   结论：**群聊不显示这两个入口**（`widget.isGroupMode` 直接返回）。真要做，
+   先决条件不是实现，而是想清楚「群只读」的产品语义，再单独提案。
 5. ~~`setMode` 是 agent 级还是会话级~~ **已定（§5.1.3b）**：**会话级**。
    `fetchModes` / `setMode` 都接受 `sessionId`，transport 本来就支持；
    看着像 agent 级只是因为 Agent 详情页调 `fetchModes` 时没传 sessionId。
@@ -419,4 +415,4 @@ ACP 协议没有 mode 方法、`metadata['engine']` 也拿不到，去掉 UI 门
 | 4 | 规划模式 = 一个「别动手改代码，先写计划」的只读开关，映射到 agent 原生 plan mode | 2026-09-11 |
 | 5 | 审批闸门（workflow 引擎）与规划模式是两件事；前者维持现状，不再扩展到单聊 | 2026-09-11 |
 | 6 | 规划模式开关放输入框工具条（桌面）/ 输入框上方状态条（移动），状态挂会话；快捷键 Shift+Tab | 2026-09-11 |
-| 7 | 群聊里规划模式只约束 admin，成员 mode 不动；sessionId 用 admin 的群成员会话 `gmd_<群id>__<adminId>` | 2026-09-12 |
+| 7 | ~~群聊里规划模式只约束 admin~~ **作废**：同一天撤回，群聊不显示这两个入口——歧义太大（见 §6 #4） | 2026-09-12 |
