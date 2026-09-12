@@ -2248,6 +2248,54 @@ $originalQuestion
     return newChannelId;
   }
 
+  /// 复制会话到另一个 agent：在 [targetAgentId] 下新建一条 DM 会话，把源会话
+  /// 的消息与工具执行历史搬过去，返回新会话 channelId。源会话保持不变。
+  ///
+  /// 与 [forkSession] 唯一的区别是归属 agent：分叉留在同一 agent 下，复制到
+  /// 则换 agent（新会话成员 = 用户 + 目标 agent）。同样不带 group/She 绑定
+  /// 标记，副本不继承「群绑定 / She 中转」的只读语义。
+  Future<String> copySessionToAgent({
+    required String sourceChannelId,
+    required String userId,
+    required String targetAgentId,
+  }) async {
+    final source = await _databaseService.getChannelById(sourceChannelId);
+    if (source == null) throw Exception('Channel not found: $sourceChannelId');
+
+    final ids = [userId, targetAgentId]..sort();
+    final newChannelId =
+        'dm_${ids.join('_')}_${DateTime.now().millisecondsSinceEpoch}';
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    final channel = Channel(
+      id: newChannelId,
+      name: source.name,
+      type: 'dm',
+      members: [
+        ChannelMember(
+          id: userId,
+          type: 'user',
+          role: 'member',
+          joinedAt: now,
+        ),
+        ChannelMember(
+          id: targetAgentId,
+          type: 'agent',
+          role: 'member',
+          joinedAt: now,
+        ),
+      ],
+      isPrivate: true,
+    );
+    await _databaseService.createChannel(channel, userId);
+
+    await _copyChannelData(
+      sourceChannelId: sourceChannelId,
+      newChannelId: newChannelId,
+    );
+    return newChannelId;
+  }
+
   /// DM 分叉：按 createNewSession 的时间戳 id 规则生成新 channel。
   Future<String> _forkDmChannel(
     Channel source,
