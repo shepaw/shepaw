@@ -1,0 +1,11 @@
+{
+  "version": "1.0.23",
+  "buildNumber": "1",
+  "description": "修复若干问题。macOS 请下载后解压，将 ShePaw.app 拖到「应用程序」。",
+  "isMandatory": false,
+  "releaseDate": "2026-09-12T16:00:00Z",
+  "downloadUrl": "https://release.shepaw.com/download/shepaw-1.0.23-macos-release.tar.gz",
+  "fileSize": 123456789,
+  "checksum": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "minMacOSVersion": "11.0"
+}

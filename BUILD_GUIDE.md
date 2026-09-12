@@ -61,6 +61,8 @@ Flutter **不支持**从 macOS / Linux 交叉编译 Windows 桌面包。请在 *
 
 版本号从 `pubspec.yaml` 的 `version:` 自动读取。
 
+打好 macOS / Android 旁加载包之后，用静态 JSON 发布更新清单，见 [`docs/UPDATE_RELEASE.md`](docs/UPDATE_RELEASE.md)。
+
 ## 常用选项
 
 | 选项 | 含义 |

@@ -10,7 +10,8 @@ import 'logger_service.dart';
 
 /// 自动更新服务
 ///
-/// 负责从 release.shepaw.com 检查并管理应用更新。
+/// 从更新服务器拉取**按平台拆分的静态 JSON**，再决定是否提示下载安装包。
+/// 不需要动态后端：把 `latest-{platform}.json` 放到任意 HTTPS 静态托管即可。
 ///
 /// ## 请求频率控制
 ///
@@ -18,13 +19,13 @@ import 'logger_service.dart';
 /// - 网络失败/服务不可用：1 小时冷却（[_errorRetryInterval]），避免服务持续不可用时每次启动都尝试
 /// - [force] = true：绕过冷却，用于用户手动触发
 ///
-/// API 约定（后端待实现）：
-/// GET https://release.shepaw.com/api/v1/check-update
+/// 默认检查地址：
+/// GET https://release.shepaw.com/api/v1/latest-{platform}.json
 ///
-/// Query Parameters:
-///   - platform: "ios" | "android" | "macos" | "windows" | "linux"
-///   - currentVersion: 当前版本号，格式 "1.2.3"
-///   - buildNumber: 当前构建号，格式 "4"
+/// `{platform}` 替换为 `ios` / `android` / `macos` / `windows` / `linux`。
+/// 仍会附带 query（`platform` / `currentVersion` / `buildNumber`），静态托管会忽略。
+/// 若要用旧的单一动态接口，编译时设置
+/// `--dart-define=UPDATE_CHECK_ENDPOINT=/api/v1/check-update`。
 ///
 /// Response (200 OK):
 /// ```json
@@ -44,7 +45,7 @@ import 'logger_service.dart';
 /// }
 /// ```
 ///
-/// Response (204 No Content): 没有可用更新
+/// Response (204 / 404): 没有可用更新
 ///
 class UpdateService extends ChangeNotifier {
   static final UpdateService _instance = UpdateService._internal();
@@ -57,7 +58,7 @@ class UpdateService extends ChangeNotifier {
   );
   static const String _checkEndpoint = String.fromEnvironment(
     'UPDATE_CHECK_ENDPOINT',
-    defaultValue: '/api/v1/check-update',
+    defaultValue: '/api/v1/latest-{platform}.json',
   );
 
   static const String _prefLastCheckTimeKey = 'update_last_check_time';
@@ -74,11 +75,37 @@ class UpdateService extends ChangeNotifier {
   /// 默认更新服务器地址（可被用户自定义域名覆盖）
   static String get defaultBaseUrl => _baseUrl;
 
-  /// 固定的更新检查路径
+  /// 固定的更新检查路径（可含 `{platform}` 占位符）
   static String get checkEndpoint => _checkEndpoint;
 
-  /// 默认完整更新检查地址
+  /// 默认完整更新检查地址（未替换平台占位符）
   static String get defaultCheckUpdateUrl => '$defaultBaseUrl$_checkEndpoint';
+
+  /// 把 [baseUrl] + [endpoint] 解析成实际检查 URL。
+  ///
+  /// [endpoint] 中的 `{platform}` 会被替换。query 始终带上当前版本，
+  /// 方便以后换成动态接口；静态文件托管会忽略这些参数。
+  static Uri resolveCheckUri({
+    required String baseUrl,
+    required String endpoint,
+    required String platform,
+    required String currentVersion,
+    required String buildNumber,
+  }) {
+    final resolvedEndpoint = endpoint.replaceAll('{platform}', platform);
+    final joined = baseUrl.endsWith('/') && resolvedEndpoint.startsWith('/')
+        ? '$baseUrl${resolvedEndpoint.substring(1)}'
+        : '$baseUrl$resolvedEndpoint';
+    final base = Uri.parse(joined);
+    return base.replace(
+      queryParameters: {
+        ...base.queryParameters,
+        'platform': platform,
+        'currentVersion': currentVersion,
+        'buildNumber': buildNumber,
+      },
+    );
+  }
 
   /// 正常冷却间隔：成功或无更新后 6 小时内不重复请求
   static const Duration _minCheckInterval = Duration(hours: 6);
@@ -149,10 +176,11 @@ class UpdateService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 当前生效的更新检查 URL（不含 query 参数）
+  /// 当前生效的更新检查 URL（不含 query，已替换当前平台）
   Future<String> getCheckUpdateUrl() async {
     final baseUrl = await getCheckUpdateBaseUrl();
-    return '$baseUrl$_checkEndpoint';
+    final platform = _getPlatformString() ?? 'unknown';
+    return '$baseUrl${_checkEndpoint.replaceAll('{platform}', platform)}';
   }
 
   /// 当前生效的更新服务器地址（仅域名/origin，不含路径）
@@ -259,15 +287,13 @@ class UpdateService extends ChangeNotifier {
         return UpdateCheckResult(hasUpdate: false, timestamp: now);
       }
 
-      final checkUrl = await getCheckUpdateUrl();
-      final baseUri = Uri.parse(checkUrl);
-      final uri = baseUri.replace(
-        queryParameters: {
-          ...baseUri.queryParameters,
-          'platform': platform,
-          'currentVersion': currentVersion.versionString,
-          'buildNumber': currentVersion.buildNumber.toString(),
-        },
+      final checkBaseUrl = await getCheckUpdateBaseUrl();
+      final uri = resolveCheckUri(
+        baseUrl: checkBaseUrl,
+        endpoint: _checkEndpoint,
+        platform: platform,
+        currentVersion: currentVersion.versionString,
+        buildNumber: currentVersion.buildNumber.toString(),
       );
 
       _logger.info('Checking for updates: $uri', tag: 'UpdateService');
@@ -277,8 +303,8 @@ class UpdateService extends ChangeNotifier {
       // 请求成功（无论有无更新），记录检查时间（使用正常冷却）
       await _saveLastCheckTime(now);
 
-      if (response.statusCode == 204) {
-        // 无可用更新
+      if (response.statusCode == 204 || response.statusCode == 404) {
+        // 无可用更新（静态托管未上传该平台清单时也视为无更新）
         await _clearCachedUpdateInfo();
         await _setAvailableUpdate(null);
         _logger.info('No update available', tag: 'UpdateService');

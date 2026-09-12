@@ -12,6 +12,7 @@ import '../l10n/app_localizations.dart';
 import '../models/update_model.dart';
 import 'logger_service.dart';
 import 'notification_service.dart';
+import 'update_checksum.dart';
 import 'update_service.dart';
 
 /// 负责更新通知流程的完整编排：
@@ -183,6 +184,13 @@ class UpdateNotificationService {
           // 可在此更新进度通知（可选，暂不实现以保持简洁）
         },
       );
+
+      if (!await UpdateChecksum.matchesFile(File(filePath), info.checksum)) {
+        try {
+          await File(filePath).delete();
+        } catch (_) {}
+        throw Exception('checksum mismatch');
+      }
 
       // 写入 pending
       await _savePending(filePath, info.version);

@@ -377,6 +377,16 @@ The Admin Agent is responsible for:
 3. Tap **"Test Connection"** to diagnose the issue
 4. Check **Settings → System Log / Inference Log**
 
+### Q11: How do I update the app?
+**A:**
+1. Open **Settings → Check for Updates** (the app also checks in the background on launch)
+2. Download when a newer version is offered
+3. **macOS**: open the archive and move `ShePaw.app` into Applications
+4. **Android (sideloaded APK)**: allow installing unknown apps, then update in place; the same signing key keeps chat data
+5. **iOS**: follow the TestFlight or App Store link — the app cannot replace its own IPA
+
+The default update host is `release.shepaw.com`. You can change the domain on the check-for-updates row.
+
 ---
 
 ## Quick Reference

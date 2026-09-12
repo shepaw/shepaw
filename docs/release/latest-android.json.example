@@ -1,0 +1,11 @@
+{
+  "version": "1.0.23",
+  "buildNumber": "1",
+  "description": "修复若干问题。请允许「安装未知应用」后覆盖安装，聊天数据会保留。",
+  "isMandatory": false,
+  "releaseDate": "2026-09-12T16:00:00Z",
+  "downloadUrl": "https://release.shepaw.com/download/shepaw-1.0.23-android-release.apk",
+  "fileSize": 87654321,
+  "checksum": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "minAndroidSdk": 21
+}
