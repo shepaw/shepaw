@@ -39,19 +39,13 @@ class SessionSearchResults extends StatelessWidget {
   /// 点击内容命中的消息 → 定位（同会话滚动，跨会话切换后高亮）。
   final void Function(Message message, String? channelId) onLocateMessage;
 
-  /// 群聊模式传入，用于显示 `名称 (#shortId)` 标签。
+  /// 群聊模式传入，用于区分会话搜索结果的图标样式。
   final Channel? groupChannel;
 
   bool get _isGroupMode => groupChannel != null;
 
   String _sessionLabel(Channel session) {
-    final cleanName =
-        SessionUtils.cleanClaudeSessionTitle(session.name) ?? 'Session';
-    if (!_isGroupMode) return cleanName;
-    final isParent = session.parentGroupId == null;
-    return isParent
-        ? cleanName
-        : '$cleanName (${SessionUtils.shortSessionId(session.id, groupChannel: groupChannel)})';
+    return SessionUtils.cleanClaudeSessionTitle(session.name) ?? 'Session';
   }
 
   /// 关键词高亮（大小写不敏感）。

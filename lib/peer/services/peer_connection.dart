@@ -137,6 +137,10 @@ class PeerConnection {
     'agent_file_end',
     'agent_file_ack',
     'agent_file_error',
+    'session_create_req',
+    'session_create_resp',
+    'cli_execute_req',
+    'cli_execute_resp',
     // 存储空间协议帧（docs/storage_protocol_spec.md v1，载荷内含 ns/op 子路由）。
     'store',
     // 多 she 网络（docs/storage_space_plan.md §8，M8）。

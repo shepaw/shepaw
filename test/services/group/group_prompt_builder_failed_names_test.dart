@@ -244,7 +244,7 @@ void main() {
     expect(prompt, isNot(contains('shepaw store write')));
   });
 
-  test('Hub peer engine prompt teaches shepaw store, not hub.cli.execute',
+  test('Hub peer engine prompt teaches shepaw plus App-forwarded CLI',
       () async {
     final hub = _agent('cursor-1', 'Cursor', hubPeer: true);
     final prompt = await builder.buildGroupSystemPrompt(
@@ -256,11 +256,11 @@ void main() {
     );
 
     expect(prompt, contains('shepaw store write'));
-    expect(prompt, contains('本宿主（Agent Hub）只有 `shepaw store`'));
+    expect(prompt, contains('转到配对 App'));
     expect(prompt, contains('不要 `hub.cli.execute`'));
     expect(prompt, isNot(contains('你没有 shepaw function tool')));
     expect(prompt, isNot(contains('你有 shepaw CLI 工具')));
-    expect(prompt, isNot(contains('【群管理 CLI】')));
+    expect(prompt, contains('【群管理 CLI】'));
     expect(prompt, contains('0123456789abcdef'));
   });
 }

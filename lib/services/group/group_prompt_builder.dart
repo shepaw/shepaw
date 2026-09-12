@@ -197,9 +197,7 @@ class GroupPromptBuilder {
       final planningSection = isFlowMode
           ? _buildWorkflowCliSection(delegateableAgents)
           : '';
-      final groupMgmtSection = currentAgent.usesHubStoreCli
-          ? ''
-          : _buildGroupManagementCliSection();
+      final groupMgmtSection = _buildGroupManagementCliSection();
       final sessionMgmtSection = _buildSessionManagementSection();
 
       final attachmentSection = _buildAdminAttachmentSection(currentAgent);
@@ -455,7 +453,7 @@ $groupScopeSection''';
   static String _cliTransportPreamble(RemoteAgent agent) {
     if (agent.usesHubStoreCli) {
       return '''
-【CLI 调用方式】本宿主（Agent Hub）只有 `shepaw store`（read / write / list / meta）。写落 Hub 自己的 device 目录，返回的 `store://` 原样引用。读任意 `store://` 用 `shepaw store read`（本机 / master / 属主）。不要 `hub.cli.execute`，不要 `os` / `chat` / `context`。
+【CLI 调用方式】本宿主（Agent Hub）用 PATH 上的 `shepaw`。本机袋（`store://` 的 device 是 Hub）直接 `shepaw store`；读其他设备的袋、以及 store 以外的命令（`os` / `chat` / `context` / `events` …）由 shim 转到配对 App，闸门与 She 专属限制在手机上裁决。不要 `hub.cli.execute`。She 专属命令会被拒绝。
 ''';
     }
     if (!agent.usesHubCliExecute) return '';
@@ -474,8 +472,8 @@ params：`namespace`、`subcommand`、`flags`（对象，对应去掉 `--` 的�
     }
     if (agent.usesHubStoreCli) {
       return memberMust
-          ? '9. **产物优先写入 store**：需要持久化/可分享的文件产出时，**必须**调用 `shepaw store write --filename <名> --content "..."`（可选 `--task` / `--desc`），并在回复中**原样**引用返回的 `[filename](store://...)`；禁止编造 URI；写落 Hub 本机 device。不要 `hub.cli.execute` / `os.file.write`'
-          : '- **产物优先写入 store**：需要持久化/可分享的文件产出时，优先用 `shepaw store write`，在回复中原样引用返回的 `store://` URI；写落 Hub 本机 device；不要默认写 `/tmp`；不要 `hub.cli.execute` / `os.file.read`';
+          ? '9. **产物优先写入 store**：需要持久化/可分享的文件产出时，**必须**调用 `shepaw store write --filename <名> --content "..."`（可选 `--task` / `--desc`），并在回复中**原样**引用返回的 `[filename](store://...)`；禁止编造 URI；写落 Hub 本机 device。不要 `hub.cli.execute`'
+          : '- **产物优先写入 store**：需要持久化/可分享的文件产出时，优先用 `shepaw store write`，在回复中原样引用返回的 `store://` URI；写落 Hub 本机 device；不要默认写 `/tmp`；不要 `hub.cli.execute`';
     }
     return memberMust
         ? '9. **产物优先写入 store**：需要持久化/可分享的文件产出时，**必须**调用 `shepaw store write --filename <名> --content "..."`（可选 `--task` / `--desc`），并在回复中**原样**引用返回的 `[filename](store://...)`；禁止编造 URI；**不要**传 agent_id/owner。读法见下方作用域卡片。仅用户明确指定 OS 路径时才用 `os.file.write`'
@@ -484,7 +482,7 @@ params：`namespace`、`subcommand`、`flags`（对象，对应去掉 `--` 的�
 
   static String _setBioCommand(RemoteAgent agent) {
     if (agent.usesHubStoreCli) {
-      return '本宿主无 `chat group.set-bio`；在回复里说明新职责即可，或请用户在 App 里改';
+      return '`shepaw chat group set-bio --agent ${agent.name} --bio "新的职责"`（经 App 闸门）';
     }
     if (agent.usesHubCliExecute) {
       return 'ACP `hub.cli.execute` namespace=chat subcommand=group.set-bio，flags.agent=${agent.name} flags.bio="新的职责"，session_id=本轮 agent.chat 的 session_id';
@@ -502,7 +500,7 @@ params：`namespace`、`subcommand`、`flags`（对象，对应去掉 `--` 的�
 当用户追问历史图片/附件「说了什么」「内容是什么」「这张图什么意思」时：
 1. **禁止**凭占位符文字猜测或编造
 2. 有 `store://` 时用 `shepaw store read --uri` 原样读取
-3. 本宿主没有 `shepaw chat message.get` / `hub.cli.execute`；否则说明看不到附件内容，请用户重发或改走本机 Agent
+3. 否则 `shepaw chat message get --id <message_id> --analyze "用户的具体问题"`（经 App 闸门）
 ''';
     }
     if (agent.usesHubCliExecute) {

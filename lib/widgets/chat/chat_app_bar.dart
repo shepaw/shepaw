@@ -3,10 +3,10 @@ import '../../models/channel.dart';
 import '../../models/remote_agent.dart';
 import '../../services/she_service.dart';
 import '../../utils/layout_utils.dart';
-import '../../utils/session_utils.dart';
 import '../avatar_image.dart';
 import '../../l10n/app_localizations.dart';
 import '../../theme/app_theme.dart';
+import 'chat_event_listen_badge.dart';
 
 /// AppBar title widget for DM (1-on-1) chat mode.
 class ChatDMAppBarTitle extends StatelessWidget {
@@ -15,7 +15,6 @@ class ChatDMAppBarTitle extends StatelessWidget {
   final bool isProcessing;
   final bool isCheckingHealth;
   final bool isAgentOnline;
-  final String? currentChannelId;
   final VoidCallback? onAvatarTap;
   final VoidCallback? onStopGenerating;
 
@@ -23,7 +22,10 @@ class ChatDMAppBarTitle extends StatelessWidget {
   /// 一个「来自 设备名」徽标，方便多设备场景下区分。
   final String? sourceDeviceLabel;
 
-  /// 正在从远端拉取该会话的聊天记录。为 true 时在 session id 旁显示「同步远端…」。
+  /// 当前单聊 Agent，用于标题旁展示事件监听徽标。
+  final String? agentId;
+
+  /// 正在从远端拉取该会话的聊天记录。为 true 时在状态旁显示「同步远端…」。
   final bool syncingRemote;
 
   const ChatDMAppBarTitle({
@@ -33,10 +35,10 @@ class ChatDMAppBarTitle extends StatelessWidget {
     required this.isProcessing,
     required this.isCheckingHealth,
     required this.isAgentOnline,
-    this.currentChannelId,
     this.onAvatarTap,
     this.onStopGenerating,
     this.sourceDeviceLabel,
+    this.agentId,
     this.syncingRemote = false,
   });
 
@@ -86,6 +88,11 @@ class ChatDMAppBarTitle extends StatelessWidget {
             children: [
               _ChatAppBarNameRow(
                 name: displayName ?? 'AI Agent',
+                afterName: ChatEventListenBadge(
+                  agentIds: [
+                    if (agentId != null && agentId!.isNotEmpty) agentId!,
+                  ],
+                ),
                 badge:
                     sourceDeviceLabel != null && sourceDeviceLabel!.isNotEmpty
                         ? _SourceDeviceBadge(label: sourceDeviceLabel!)
@@ -116,12 +123,6 @@ class ChatDMAppBarTitle extends StatelessWidget {
                       color:
                           isAgentOnline ? const Color(0xFF34C759) : Colors.grey,
                     ),
-                  if (currentChannelId != null)
-                    _MetaText(
-                      SessionUtils.shortSessionId(currentChannelId!),
-                      color: Colors.grey[500],
-                      monospace: true,
-                    ),
                   if (syncingRemote)
                     _SyncingMeta(label: l10n.chat_syncingRemote),
                 ],
@@ -141,7 +142,6 @@ class ChatGroupAppBarTitle extends StatelessWidget {
   final bool isProcessing;
   final Set<String> respondingAgentNames;
   final bool mentionOnlyMode;
-  final String? currentChannelId;
   final VoidCallback? onAvatarTap;
   final VoidCallback? onStopGenerating;
 
@@ -152,7 +152,6 @@ class ChatGroupAppBarTitle extends StatelessWidget {
     required this.isProcessing,
     required this.respondingAgentNames,
     required this.mentionOnlyMode,
-    this.currentChannelId,
     this.onAvatarTap,
     this.onStopGenerating,
   });
@@ -193,6 +192,14 @@ class ChatGroupAppBarTitle extends StatelessWidget {
             children: [
               _ChatAppBarNameRow(
                 name: groupName,
+                afterName: ChatEventListenBadge(
+                  agentIds: [
+                    for (final agent in groupAgents) agent.id,
+                  ],
+                  agentNames: {
+                    for (final agent in groupAgents) agent.id: agent.name,
+                  },
+                ),
                 badgeMaxWidth: metrics.badgeMaxWidth,
                 style: metrics.nameStyle,
               ),
@@ -211,16 +218,6 @@ class ChatGroupAppBarTitle extends StatelessWidget {
                     )
                   else
                     _MetaText(membersLabel, color: Colors.grey[500]),
-                  if (currentChannelId != null &&
-                      groupChannel?.parentGroupId != null)
-                    _MetaText(
-                      SessionUtils.shortSessionId(
-                        currentChannelId!,
-                        groupChannel: groupChannel,
-                      ),
-                      color: Colors.grey[500],
-                      monospace: true,
-                    ),
                 ],
               ),
             ],
@@ -356,6 +353,7 @@ class _ChatAppBarAvatar extends StatelessWidget {
 
 class _ChatAppBarNameRow extends StatelessWidget {
   final String name;
+  final Widget? afterName;
   final Widget? badge;
   final double badgeMaxWidth;
   final TextStyle style;
@@ -364,6 +362,7 @@ class _ChatAppBarNameRow extends StatelessWidget {
     required this.name,
     required this.style,
     required this.badgeMaxWidth,
+    this.afterName,
     this.badge,
   });
 
@@ -379,6 +378,7 @@ class _ChatAppBarNameRow extends StatelessWidget {
             style: style,
           ),
         ),
+        if (afterName != null) afterName!,
         if (badge != null) ...[
           const SizedBox(width: 6),
           ConstrainedBox(
@@ -428,13 +428,11 @@ class _MetaText extends StatelessWidget {
   final String text;
   final Color? color;
   final bool italic;
-  final bool monospace;
 
   const _MetaText(
     this.text, {
     this.color,
     this.italic = false,
-    this.monospace = false,
   });
 
   @override
@@ -444,11 +442,10 @@ class _MetaText extends StatelessWidget {
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: TextStyle(
-        fontSize: monospace ? 11 : 12,
+        fontSize: 12,
         height: 1.2,
         color: color,
         fontStyle: italic ? FontStyle.italic : FontStyle.normal,
-        fontFamily: monospace ? 'monospace' : null,
       ),
     );
   }

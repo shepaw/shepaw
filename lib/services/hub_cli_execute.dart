@@ -111,7 +111,8 @@ class HubCliExecute {
             'session — do not send agent_id, owner, or channel_id. Pass '
             'session_id from agent.chat (App fills the in-flight group/DM '
             'turn if omitted). This is ACP only; Agent Hub engines use '
-            'local shepaw store, not this method.',
+            'the PATH shepaw shim (local store / App-forwarded CLI), '
+            'not this method.',
         'params': {
           'namespace': 'store',
           'subcommand': 'write',

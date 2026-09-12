@@ -592,12 +592,6 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
     bool selectionEnabled = true,
     VoidCallback? onSelectionToggle,
   }) {
-    final isParent = session.parentGroupId == null;
-    final label = isParent
-        ? '#default'
-        : SessionUtils.shortSessionId(session.id,
-            groupChannel: widget.groupChannel);
-
     // 任务编排状态角标：latest.json 非终态（running/dispatched/members_done/
     // round_complete）显示「第 N 轮 🔄」；finished 安静（消息日志即结论）。
     final orchestrationStatus = orchestration?['status'] as String? ?? '';
@@ -606,11 +600,11 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
     final orchestrationRound = orchestration?['round'] as int? ?? 0;
 
     // 第一行 = 会话第一条消息的第一句（会话标题就是第一句话），没有消息时
-    // 退回「群名 (#id)」；会话编号 #label 仍以小徽标跟在后面。
+    // 退回群名。会话 id 不在标题中展示，可从长按菜单复制。
     final firstContent = firstMessage?['content'] as String?;
     final titleText = firstContent != null && firstContent.trim().isNotEmpty
         ? SessionUtils.splitFirstSentence(firstContent).first
-        : '${session.name} ($label)';
+        : session.name;
     // 第二行 = 首条消息的剩余部分；首句即整条（无剩余）时回落到最新消息。
     final firstRest = firstContent == null
         ? ''
@@ -697,35 +691,12 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
               ],
             )
           : avatar,
-      title: Row(
-        children: [
-          Expanded(
-            child: Text(
-              titleText,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              // 标题就是会话的第一句话，与第二行同字号，不再按「标题」加重。
-              style: const TextStyle(fontSize: 14),
-            ),
-          ),
-          // 会话编号徽标（#abc123），仍跟在首句标题后。
-          Container(
-            margin: const EdgeInsets.only(left: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.grey.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 10,
-                color: Colors.grey[700],
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
+      title: Text(
+        titleText,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        // 标题就是会话的第一句话，与第二行同字号，不再按「标题」加重。
+        style: const TextStyle(fontSize: 14),
       ),
       // 活跃会话（群内 agent 正在该会话处理任务）显示「输入中」，样式与
       // 主页对话列表一致；监听 typingChannelIds 实时更新。
@@ -823,6 +794,7 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
           : () => showSessionRowMenu(
                 context,
                 session: session,
+                sessionTitle: titleText,
                 isCurrentSession: isCurrentSession,
                 onViewSession: viewSession,
                 onViewTrace: viewTrace,

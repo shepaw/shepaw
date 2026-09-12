@@ -140,7 +140,7 @@ void main() {
     );
   });
 
-  test('hub store surface teaches shepaw store, not hub.cli.execute or os', () {
+  test('hub store surface teaches local store plus App-forwarded CLI', () {
     final md = ScopeCard.forGroup(
       groupId: 'g1',
       deviceId: 'dddddddddddddddd',
@@ -150,10 +150,10 @@ void main() {
       ],
     ).toStableMarkdown();
     expect(md, contains('shepaw store write'));
-    expect(md, contains('本宿主 shepaw 仅 `store`'));
-    expect(md, contains('不要调 `os`'));
+    expect(md, contains('本机 device'));
+    expect(md, contains('转到配对 App'));
     expect(md, contains('工作区已挂载'));
-    expect(md, contains('不要调 `os` / `chat` / `context` / `hub.cli.execute`'));
+    expect(md, contains('不要 `hub.cli.execute`'));
     expect(md, isNot(contains('agents.memory-write')));
   });
 

@@ -1437,7 +1437,7 @@ Write example:
 }
 ```
 
-On success `result.ok == true` plus the CLI JSON. Gate denials (command not allowed, user tapped deny) are still JSON-RPC success with `result.ok == false` and `error`. ACP remotes map old `store_read` / `store_write` to `store read` / `store write` above. Agent Hub engines use local `shepaw store`, not `hub.cli.execute`.
+On success `result.ok == true` plus the CLI JSON. Gate denials (command not allowed, user tapped deny) are still JSON-RPC success with `result.ok == false` and `error`. ACP remotes map old `store_read` / `store_write` to `store read` / `store write` above. Agent Hub engines use the local `shepaw` shim (Hub pouch locally; other commands forwarded to the App gate), not `hub.cli.execute`.
 
 Local LLM agents get a shepaw function tool whose `namespace` enum is trimmed to that agent's `enabled_cli_commands` (and the group-member store/help role list). Specific ids such as `store.write` also trim the `subcommand` enum. Remote agents should trim their own tool list the same way, or only expose `hub.cli.execute` and rely on the gate.
 

@@ -19,7 +19,7 @@ enum ScopeCardMode {
 }
 
 /// CLI 调用面：本机 / 对端 App 本地 Agent 走 shepaw function tool；
-/// 远端 ACP 走 `hub.cli.execute`；Agent Hub 引擎走本机 `shepaw store`。
+/// 远端 ACP 走 `hub.cli.execute`；Agent Hub 引擎走本机 `shepaw`（本机袋本地，其余转 App）。
 enum ScopeCardCliSurface {
   shepawTool,
   hubExecuteCli,
@@ -112,7 +112,7 @@ class ScopeCard {
   final List<String> extraUris;
   final ScopeCardCliSurface cliSurface;
 
-  /// 远端 ACP 走 `hub.cli.execute`；Hub 引擎走本机 `shepaw store`；
+  /// 远端 ACP 走 `hub.cli.execute`；Hub 引擎走本机 `shepaw`；
   /// 其余（本机 / 对端 App 本地 Agent）走 shepaw 工具。
   static ScopeCardCliSurface surfaceFor({
     required bool isLocal,
@@ -422,8 +422,11 @@ class ScopeCard {
     }
     if (_hubStore) {
       buf.writeln(
-        '- 本宿主 shepaw 仅 `store`（read / write / list / meta）；'
-        '不要调 `os` / `chat` / `context` / `hub.cli.execute`',
+        '- 本宿主 `shepaw store` 只直接碰 **本机 device**；其他设备的 '
+        '`store://` 以及 `os` / `chat` / `context` / `events` 由 shim 转到'
+        '配对 App（闸门 + She 专属）。新开会话用 `/session-new` 或 '
+        '`shepaw chat session create`（群用 `/group-session-new`）。'
+        '不要 `hub.cli.execute`',
       );
     }
     if (capabilities.writeMemory) {

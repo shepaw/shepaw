@@ -644,6 +644,7 @@ class _SessionListContentState extends State<_SessionListContent> {
           : () => showSessionRowMenu(
                 context,
                 session: session,
+                sessionTitle: titleText,
                 isCurrentSession: isCurrentSession,
                 onViewSession: viewSession,
                 onViewTrace: viewTrace,

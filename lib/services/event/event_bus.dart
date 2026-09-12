@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
+import 'agent_event_listen.dart';
 import 'event_bus_store.dart';
 import 'event_delivery.dart';
 import 'event_envelope.dart';
@@ -13,6 +15,7 @@ import 'event_type_definition.dart';
 import 'perception_scheduler.dart';
 import 'wait_lease.dart';
 
+export 'agent_event_listen.dart';
 export 'event_envelope.dart';
 export 'event_scope.dart';
 export 'event_delivery.dart';
@@ -101,6 +104,14 @@ class EventBus {
 
   final List<WaitLease> _leases = [];
   final List<EventSubscription> _subscriptions = [];
+
+  /// Bumped when subscriptions or wait leases change so the chat title
+  /// can refresh the listening-event badge.
+  final ValueNotifier<int> listenListenable = ValueNotifier(0);
+
+  void _notifyListenChanged() {
+    listenListenable.value++;
+  }
   /// 由 [emitAgent] 自动注册的 `agent.<id>.*` 类型 id，供 reset 回收。
   final Set<String> _autoRegisteredTypes = {};
   final _uuid = const Uuid();
@@ -130,6 +141,7 @@ class EventBus {
       createdSeq: createdSeq ?? busStore.currentSeq,
     );
     _subscriptions.add(sub);
+    _notifyListenChanged();
     return sub;
   }
 
@@ -142,7 +154,44 @@ class EventBus {
   bool removeSubscription(String subscriptionId) {
     final before = _subscriptions.length;
     _subscriptions.removeWhere((s) => s.id == subscriptionId);
-    return _subscriptions.length < before;
+    final removed = _subscriptions.length < before;
+    if (removed) _notifyListenChanged();
+    return removed;
+  }
+
+  /// Active subscriptions and wait leases for [agentIds], one entry per
+  /// pattern. Empty / expired / disabled items are omitted.
+  List<AgentEventListenEntry> listenEntriesFor(Iterable<String> agentIds) {
+    final ids = agentIds.where((id) => id.isNotEmpty).toSet();
+    if (ids.isEmpty) return const [];
+
+    final entries = <AgentEventListenEntry>[];
+    for (final sub in _subscriptions) {
+      if (!ids.contains(sub.agentId) || !sub.enabled || sub.isExpired) {
+        continue;
+      }
+      for (final pattern in sub.patterns) {
+        entries.add(AgentEventListenEntry(
+          agentId: sub.agentId,
+          kind: AgentEventListenKind.subscription,
+          pattern: pattern.typeGlob,
+          delivery: sub.delivery.wireValue,
+        ));
+      }
+    }
+    for (final lease in _activeLeases()) {
+      if (!ids.contains(lease.agentId)) continue;
+      for (final pattern in lease.typePatterns) {
+        entries.add(AgentEventListenEntry(
+          agentId: lease.agentId,
+          kind: AgentEventListenKind.wait,
+          pattern: pattern,
+          correlationId: lease.correlationId,
+          expiresAt: lease.expiresAt,
+        ));
+      }
+    }
+    return entries;
   }
 
   EventSubscription? findSubscription(String subscriptionId) {
@@ -162,7 +211,7 @@ class EventBus {
     // 先清过期 lease：`_pruneLeases` 只在这里被调用，若放在冲突检查之后，
     // 一次因冲突而抛出的调用就永远不会 prune —— 过期但未被 wait/取消的 lease
     // 会永久占住该 correlation。
-    _pruneLeases();
+    final pruned = _pruneLeases();
 
     if (correlationId != null) {
       // 同一 correlation 全局只允许一个活跃 lease（跨 agent deny）。
@@ -176,6 +225,7 @@ class EventBus {
             l.correlationId == correlationId,
       );
       if (conflict) {
+        if (pruned) _notifyListenChanged();
         throw CorrelationAlreadyWaitedException(correlationId);
       }
     }
@@ -190,6 +240,7 @@ class EventBus {
       expiresAt: DateTime.now().add(timeout),
     );
     _leases.add(lease);
+    _notifyListenChanged();
     return lease;
   }
 
@@ -204,6 +255,7 @@ class EventBus {
       );
     } finally {
       _leases.remove(lease);
+      _notifyListenChanged();
     }
   }
 
@@ -212,6 +264,7 @@ class EventBus {
       if (lease.leaseId == leaseId) {
         lease.cancel();
         _leases.remove(lease);
+        _notifyListenChanged();
         return;
       }
     }
@@ -424,8 +477,10 @@ class EventBus {
   Iterable<WaitLease> _activeLeases() =>
       _leases.where((l) => !l.completed && !l.cancelled && !l.isExpired);
 
-  void _pruneLeases() {
+  bool _pruneLeases() {
+    final before = _leases.length;
     _leases.removeWhere((l) => l.completed || l.cancelled || l.isExpired);
+    return _leases.length < before;
   }
 
   List<InboxEntry> inboxFor(
@@ -535,6 +590,7 @@ class EventBus {
       registry.unregister(type);
     }
     _autoRegisteredTypes.clear();
+    _notifyListenChanged();
   }
 }
 

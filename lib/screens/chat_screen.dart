@@ -3454,7 +3454,6 @@ class _ChatScreenState extends State<ChatScreen>
                     isProcessing: c.isProcessing,
                     respondingAgentNames: c.respondingAgentNames,
                     mentionOnlyMode: c.mentionOnlyMode,
-                    currentChannelId: c.currentChannelId,
                     onAvatarTap: _navigateToGroupDetail,
                     onStopGenerating:
                         c.isProcessing ? () => c.stopGroupStreaming() : null,
@@ -3465,7 +3464,7 @@ class _ChatScreenState extends State<ChatScreen>
                     isProcessing: c.isProcessing,
                     isCheckingHealth: c.isCheckingHealth,
                     isAgentOnline: c.isAgentOnline,
-                    currentChannelId: c.currentChannelId,
+                    agentId: c.agentId,
                     sourceDeviceLabel: c.sourceDeviceLabel,
                     syncingRemote: _syncingPeerHistory,
                     onAvatarTap: _navigateToAgentDetail,

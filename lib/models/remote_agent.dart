@@ -353,11 +353,11 @@ class RemoteAgent {
 
   /// 远端 ACP：没有 shepaw function tool，CLI 一律走 `hub.cli.execute`。
   /// 本机 LLM 与普通 Peer（对端 App 上的本地 Agent）仍走 `shepaw …`。
-  /// Agent Hub 上的引擎（[usesHubStoreCli]）走 Hub 本机 `shepaw store`，
-  /// 不是这条 ACP 方法。
+  /// Agent Hub 上的引擎（[usesHubStoreCli]）打 PATH 上的 `shepaw`：
+  /// 本机袋留在 Hub，其余经 peer 转到 App 闸门，不是这条 ACP 方法。
   bool get usesHubCliExecute => !isLocal && !isPeerAgent;
 
-  /// Hub 上报的可管理实例：储物袋客户端在 Hub 本机，只暴露 `store`。
+  /// Hub 上报的可管理实例：本机 `shepaw store` + 其余命令转 App。
   bool get usesHubStoreCli => isPeerAgent && peerAgentManageable;
 
   /// Whether this agent can handle content of the given [modality].

@@ -27,6 +27,8 @@ import '../../services/app_lifecycle_service.dart';
 import '../../services/local_database_service.dart';
 import '../../services/local_file_storage_service.dart';
 import '../../services/logger_service.dart';
+import '../../services/session/cli_execute_peer_handler.dart';
+import '../../services/session/session_create_peer_handler.dart';
 import '../../services/she_agent_impression_service.dart';
 import '../../service_locator.dart' show getIt;
 import '../../utils/engine_avatars.dart';
@@ -1652,6 +1654,12 @@ class PeerAgentClientService {
         break;
       case 'agent_approval_req':
         _onApprovalReq(event.peerId, event.data);
+        break;
+      case 'session_create_req':
+        unawaited(_onSessionCreateReq(event.peerId, event.data));
+        break;
+      case 'cli_execute_req':
+        unawaited(_onCliExecuteReq(event.peerId, event.data));
         break;
       case 'agent_commands_resp':
         _onCommandsResp(event.peerId, event.data);
@@ -3382,6 +3390,60 @@ class PeerAgentClientService {
     p.idleSince = DateTime.now();
     p.upstreamReconnectingSince = null;
     p.onMetadata?.call(metadata);
+  }
+
+  /// Push metadata onto the in-flight turn for [channelId], if any.
+  bool publishMetadataToChannel(
+    String channelId,
+    Map<String, dynamic> metadata,
+  ) {
+    if (channelId.isEmpty || metadata.isEmpty) return false;
+    for (final p in _pending.values) {
+      if (p.completer.isCompleted || p.channelId != channelId) continue;
+      p.idleSince = DateTime.now();
+      p.upstreamReconnectingSince = null;
+      p.onMetadata?.call(metadata);
+      return true;
+    }
+    return false;
+  }
+
+  Future<void> _onCliExecuteReq(
+    String peerId,
+    Map<String, dynamic> data,
+  ) async {
+    Map<String, dynamic> result;
+    try {
+      result = await PeerCliExecuteHandler().handle(data);
+    } catch (e) {
+      result = {'ok': false, 'error': e.toString()};
+    }
+    final reqId = data['req_id'];
+    await PeerConnectionManager.instance.sendControl(peerId, {
+      'type': PeerCliExecuteHandler.respType,
+      if (reqId != null) 'req_id': reqId,
+      ...result,
+    });
+  }
+
+  Future<void> _onSessionCreateReq(
+    String peerId,
+    Map<String, dynamic> data,
+  ) async {
+    Map<String, dynamic> result;
+    try {
+      result = await SessionCreatePeerHandler(
+        publishMetadata: publishMetadataToChannel,
+      ).handle(data);
+    } catch (e) {
+      result = {'error': e.toString()};
+    }
+    final reqId = data['req_id'];
+    await PeerConnectionManager.instance.sendControl(peerId, {
+      'type': SessionCreatePeerHandler.respType,
+      if (reqId != null) 'req_id': reqId,
+      ...result,
+    });
   }
 
   void _finishPending(String requestId, Map<String, dynamic> data) {

@@ -111,6 +111,7 @@ void main() {
       final cli = ctx['cli'] as Map<String, dynamic>;
       expect(cli['method'], 'shepaw store');
       expect(cli['note'], contains('Hub'));
+      expect(cli['note'], contains('forwarded to the paired App'));
       expect(cli['note'], contains('Do not use hub.cli.execute'));
     });
 
