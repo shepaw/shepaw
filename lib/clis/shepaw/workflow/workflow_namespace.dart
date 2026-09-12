@@ -11,7 +11,7 @@ import 'workflow_cancel_command.dart';
 /// 仅供群内 Admin Agent 调用，用于创建、分发、管理工作流。
 ///
 /// Subcommands:
-/// - `create`    创建工作流（阶段化计划），提交用户审批
+/// - `create`    创建工作流（阶段化计划；`--require-approval` 决定是否请用户审批）
 /// - `dispatch`  将指定阶段的步骤委派给成员 Agent 执行
 /// - `status`    查看当前工作流执行状态
 /// - `complete`  标记工作流成功完成

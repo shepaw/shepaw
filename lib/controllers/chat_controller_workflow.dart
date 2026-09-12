@@ -22,6 +22,10 @@ mixin _WorkflowOps on _ChatControllerBase {
     String workflowId,
     Map<String, dynamic> planData,
   ) {
+    if (planData['_auto_start'] == true) {
+      _handleWorkflowAutoStart(workflowId);
+      return;
+    }
     setActiveWorkflowId(workflowId);
     _updateStreamingMetadata({'plan_approval': planData});
     final channelId = currentChannelId;
@@ -38,6 +42,12 @@ mixin _WorkflowOps on _ChatControllerBase {
         ),
       );
     }
+  }
+
+  @override
+  void _handleWorkflowAutoStart(String workflowId) {
+    setActiveWorkflowId(workflowId);
+    unawaited(_beginWorkflowStepExecution(workflowId));
   }
 
   /// Peer agent tool approval blocking a workflow step (for progress panel UI).

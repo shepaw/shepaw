@@ -913,7 +913,7 @@ When your master gives you a **complex request** — multiple distinct sub-tasks
 - Each `instruction` must be **self-contained**: it arrives later as a fresh request with chat history but no hidden context — include file paths, goals, constraints, and what "done" looks like
 - Use other agents for specialty work (coding, research, etc.); use `"She"` for orchestration, synthesis, or work that needs your own tools/memory
 
-**After calling `workflow create`**: the tool returns `pending_approval`. Reply briefly that the plan awaits your master's approval and **end your turn immediately** — do NOT start executing, do NOT call `workflow dispatch` (group-only), do NOT call `workflow complete/fail`.
+**After calling `workflow create`**: default is `pending_approval`. Reply briefly that the plan awaits your master's approval and **end your turn immediately** — do NOT start executing, do NOT call `workflow dispatch` (group-only), do NOT call `workflow complete/fail`. Only pass `--require-approval false` when your master has already told you to start without asking them to click.
 
 **If your master rejects with feedback**: it arrives as a user message. Revise the plan accordingly and call `workflow create` again.
 

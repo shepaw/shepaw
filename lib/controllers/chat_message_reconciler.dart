@@ -216,14 +216,35 @@ class ChatMessageReconciler {
     return messages;
   }
 
+  /// Whether [dbMsg] can fold a live temp from the same sender.
+  ///
+  /// Must not adopt an older historical bubble — that would erase the
+  /// in-flight `group_streaming_*` host and drop subsequent chunks until
+  /// the member's final persist. Only a flushed partial or a row created
+  /// at/after the temp (same turn) is a valid fold target.
+  static bool canAdoptTempOntoDb({
+    required Message temp,
+    required Message dbMsg,
+  }) {
+    if (isFlushedStreamingPartial(dbMsg)) return true;
+    // Placeholder is created at onAgentStart; this turn's persist is later.
+    return dbMsg.timestampMs >= temp.timestampMs;
+  }
+
   /// Reconcile in-memory group temps with [dbMessages].
   ///
-  /// Pass 1 matches exact content; pass 2 matches unique sender. Unmatched
-  /// streaming temps with content are kept when no DB row exists for that
-  /// sender (DB save may have failed).
+  /// Pass 1 matches exact content; pass 2 matches unique sender only when
+  /// the DB row is this turn's persist (flush or newer timestamp).
+  ///
+  /// [liveStreamingIds] is the in-flight `group_streaming_*` / `wf_streaming_*`
+  /// set. Empty live temps in that set are kept — a mid-turn DB write
+  /// (admin persist, first member done) must not drop a member who has not
+  /// produced the first token yet. When null, every current streaming temp
+  /// is treated as live.
   static GroupReconcileResult reconcileGroupMessages({
     required List<Message> current,
     required List<Message> dbMessages,
+    Set<String>? liveStreamingIds,
   }) {
     final tempMessages = <String, int>{};
     for (int i = 0; i < current.length; i++) {
@@ -277,14 +298,27 @@ class ChatMessageReconciler {
               messages[e.value].from.id == dbMsg.from.id)
           .toList();
       if (candidates.length == 1) {
-        adopt(candidates.first.key, dbMsg);
+        final tempMsg = messages[candidates.first.value];
+        if (canAdoptTempOntoDb(temp: tempMsg, dbMsg: dbMsg)) {
+          adopt(candidates.first.key, dbMsg);
+        }
       }
     }
 
     final dbSenderIds = dbMessages.map((m) => m.from.id).toSet();
+    final liveIds = liveStreamingIds ??
+        messages
+            .where((m) =>
+                m.id.startsWith('group_streaming_') ||
+                m.id.startsWith('wf_streaming_'))
+            .map((m) => m.id)
+            .toSet();
     messages.removeWhere((m) {
       if (!isGroupTempId(m.id)) return false;
       if (usedTempIds.contains(m.id)) return false;
+      if (m.id.startsWith('group_streaming_') && liveIds.contains(m.id)) {
+        return false;
+      }
       if (m.id.startsWith('group_streaming_') &&
           m.content.trim().isNotEmpty &&
           !dbSenderIds.contains(m.from.id)) {
@@ -293,6 +327,9 @@ class ChatMessageReconciler {
       if ((m.id.startsWith('wf_streaming_') ||
               m.id.startsWith('group_peer_approval_')) &&
           !dbSenderIds.contains(m.from.id)) {
+        return false;
+      }
+      if (m.id.startsWith('wf_streaming_') && liveIds.contains(m.id)) {
         return false;
       }
       // Orphan peer approvals that raced past agent_done land on a dedicated

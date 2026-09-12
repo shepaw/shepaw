@@ -1089,18 +1089,17 @@ class GroupAgentExecutor {
                         'result': cliResult,
                       });
 
-                      // Handle workflow create approval flow
+                      // Handle workflow create: optional plan card, or auto-start.
                       try {
                         final cliJson =
                             json.decode(cliResult) as Map<String, dynamic>?;
-                        if (cliJson != null &&
-                            cliJson['status'] == 'pending_approval') {
+                        if (cliJson != null && onInteractionRequest != null) {
                           final workflowId = cliJson['workflow_id'] as String?;
                           final planDataRaw =
                               cliJson['_plan_data'] as Map<String, dynamic>?;
                           if (workflowId != null &&
-                              planDataRaw != null &&
-                              onInteractionRequest != null) {
+                              cliJson['status'] == 'pending_approval' &&
+                              planDataRaw != null) {
                             await onInteractionRequest.call(
                               agent.id,
                               agent.name,
@@ -1109,6 +1108,17 @@ class GroupAgentExecutor {
                                 ...planDataRaw,
                                 '_workflowId': workflowId,
                                 '_non_blocking': true
+                              },
+                            );
+                          } else if (workflowId != null &&
+                              cliJson['_auto_start'] == true) {
+                            await onInteractionRequest.call(
+                              agent.id,
+                              agent.name,
+                              'workflow_auto_start',
+                              {
+                                '_workflowId': workflowId,
+                                '_non_blocking': true,
                               },
                             );
                           }
@@ -2234,23 +2244,33 @@ class GroupAgentExecutor {
         type: MessageType.text,
         metadata: messageMetadata,
       );
-      savedMessageId = agentResponse.id;
-
-      await _db.createMessage(
-        id: agentResponse.id,
-        channelId: channelId,
-        senderId: agent.id,
-        senderType: 'agent',
-        senderName: agent.name,
-        content: persistedContent,
-        messageType: 'text',
-        metadata: messageMetadata,
-        // 信箱回复的确定性 id 可能与推送拉取路径已插入的行冲突——ignore
-        // 保留先到者（内容相同），且不能中断后续的已读标记/通知/镜像。
-        conflictAlgorithm: ConflictAlgorithm.ignore,
-      );
+      savedMessageId = groupTask.partialMessageId ?? agentResponse.id;
+      if (savedMessageId != agentResponse.id) {
+        messageMetadata.remove('status');
+        messageMetadata.remove('is_partial');
+        messageMetadata.remove('is_recoverable');
+        await _db.updateMessage(
+          messageId: savedMessageId!,
+          content: persistedContent,
+          metadata: messageMetadata,
+        );
+      } else {
+        await _db.createMessage(
+          id: agentResponse.id,
+          channelId: channelId,
+          senderId: agent.id,
+          senderType: 'agent',
+          senderName: agent.name,
+          content: persistedContent,
+          messageType: 'text',
+          metadata: messageMetadata,
+          // 信箱回复的确定性 id 可能与推送拉取路径已插入的行冲突——ignore
+          // 保留先到者（内容相同），且不能中断后续的已读标记/通知/镜像。
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+      }
       // Mark as read immediately — the user is actively viewing this chat
-      await _db.markMessageAsRead(agentResponse.id);
+      await _db.markMessageAsRead(savedMessageId!);
       notifyChannelUpdate(channelId);
 
       // Mirror request + reply into the bound member session so local history
@@ -2265,7 +2285,7 @@ class GroupAgentExecutor {
         agentName: agent.name,
         replyContent: persistedContent,
         replyMetadata: messageMetadata,
-        sourceMessageId: agentResponse.id,
+        sourceMessageId: savedMessageId,
       );
     } catch (e) {
       LoggerService().error('Group agent ${agent.name} DB save error',

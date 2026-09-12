@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 
 import '../../controllers/group_interaction_planner.dart';
 import '../../models/message.dart';
 import '../chat_service.dart';
 import '../local_database_service.dart';
+import '../local_user_identity.dart';
 import '../logger_service.dart';
 import '../she_service.dart';
 import '../task/plan_approval_service.dart';
@@ -49,6 +51,27 @@ class SheGroupApprovalBridge {
     required String interactionType,
     required Map<String, dynamic> data,
   }) async {
+    if (interactionType == 'workflow_auto_start') {
+      final workflowId = data['_workflowId'] as String?;
+      if (workflowId != null && workflowId.isNotEmpty) {
+        unawaited(_chat.executeWorkflowSteps(
+          workflowId: workflowId,
+          channelId: groupChannelId,
+          userId: LocalUserIdentity.id,
+          userName: LocalUserIdentity.displayName,
+          onInteractionRequest: (aid, anm, type, stepData) =>
+              persistHeadlessInteraction(
+            groupChannelId: groupChannelId,
+            agentId: aid,
+            agentName: anm,
+            interactionType: type,
+            data: stepData,
+          ),
+        ));
+      }
+      return GroupInteractionPlanner.nonBlockingResult();
+    }
+
     final payload = Map<String, dynamic>.from(data);
     final explicitSavedId = GroupInteractionPlanner.takeSavedMessageId(payload);
     final isPeerAction = interactionType == 'action_confirmation' &&
@@ -124,6 +147,9 @@ class SheGroupApprovalBridge {
       interactionType: interactionType,
       data: data,
     );
+    if (interactionType == 'workflow_auto_start') {
+      return result;
+    }
     await injectBridgeNotice(
       sheChannelId: sheChannelId,
       groupChannelId: groupChannelId,

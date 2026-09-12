@@ -239,7 +239,7 @@ void main() {
       expect(result.messages.any((m) => m.id == 'temp_user_1'), isFalse);
     });
 
-    test('drops empty unmatched temps', () {
+    test('drops empty unmatched temps when not live', () {
       final temp = _agent(
         'group_streaming_a_1',
         agentId: 'a',
@@ -249,8 +249,45 @@ void main() {
       final result = ChatMessageReconciler.reconcileGroupMessages(
         current: [temp],
         dbMessages: [_user('u_db', ts: 10)],
+        liveStreamingIds: const {},
       );
       expect(result.messages.any((m) => m.id.startsWith('group_streaming_')), isFalse);
+    });
+
+    test('keeps empty live group_streaming even when sender has history', () {
+      final temp = _agent(
+        'group_streaming_a_1',
+        agentId: 'a',
+        content: '',
+        ts: 100,
+      );
+      final historical = _agent('db_old', agentId: 'a', content: '旧回复', ts: 10);
+      final result = ChatMessageReconciler.reconcileGroupMessages(
+        current: [temp],
+        dbMessages: [historical, _user('u_db', ts: 5)],
+        liveStreamingIds: {'group_streaming_a_1'},
+      );
+      expect(result.pendingKeyMigrations, isEmpty);
+      expect(result.messages.any((m) => m.id == 'group_streaming_a_1'), isTrue);
+      expect(result.messages.any((m) => m.id == 'db_old'), isTrue);
+    });
+
+    test('pass2 does not fold a live temp onto an older historical bubble', () {
+      final temp = _agent(
+        'group_streaming_a_1',
+        agentId: 'a',
+        content: '正在摸底…',
+        ts: 100,
+      );
+      final historical = _agent('db_old', agentId: 'a', content: '旧回复', ts: 10);
+      final result = ChatMessageReconciler.reconcileGroupMessages(
+        current: [temp],
+        dbMessages: [historical],
+        liveStreamingIds: {'group_streaming_a_1'},
+      );
+      expect(result.pendingKeyMigrations, isEmpty);
+      expect(result.messages.any((m) => m.id == 'group_streaming_a_1'), isTrue);
+      expect(result.messages.any((m) => m.id == 'db_old'), isTrue);
     });
 
     test('appends unmatched db rows', () {

@@ -44,6 +44,42 @@ void main() {
       expect(result['error'] as String, contains('at least one stage'));
     });
 
+    test('require-approval defaults to true and rejects invalid values', () {
+      expect(
+        WorkflowCreateCommand.parseRequireApprovalFlag({}),
+        (value: true, error: null),
+      );
+      expect(
+        WorkflowCreateCommand.parseRequireApprovalFlag(
+          {'require-approval': 'false'},
+        ),
+        (value: false, error: null),
+      );
+      expect(
+        WorkflowCreateCommand.parseRequireApprovalFlag(
+          {'require_approval': 'true'},
+        ),
+        (value: true, error: null),
+      );
+      expect(
+        WorkflowCreateCommand.parseRequireApprovalFlag(
+          {'require-approval': 'maybe'},
+        ).error,
+        contains('--require-approval'),
+      );
+    });
+
+    test('invalid --require-approval returns structured error', () async {
+      final result = await WorkflowCreateCommand().execute({
+        'title': 't',
+        'channel_id': 'ch-1',
+        'stages': '[{"label":"s","steps":[{"agent":"She","instruction":"do"}]}]',
+        'require-approval': 'maybe',
+      });
+      expect(result['error'], isNotNull);
+      expect(result['error'] as String, contains('--require-approval'));
+    });
+
     test('missing channel context errors without mentioning group chat', () async {
       // DM 工作流：channel_id 由 paw CLI 执行点自动注入；缺失时报错文案
       // 不应再把命令限制成群聊专属。

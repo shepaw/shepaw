@@ -253,9 +253,11 @@ class GroupOrchestrationTools {
               'plan first. recon = fact-finding: ask members what the current '
               'state actually is (which items exist, what is already '
               'implemented) before the requirement is finalized. recon needs no '
-              'published plan and expects answers, not deliverables. Use recon '
-              'whenever the missing detail is something a member can look up — '
-              'never ask the user for a fact your team can verify.',
+              'published plan, does not create a workflow or plan-approval card, '
+              'and expects answers, not deliverables. Use recon whenever the '
+              'missing detail is something a member can look up — never ask the '
+              'user for a fact your team can verify. Do not call workflow create '
+              'just to talk with members.',
         },
         'mode': {
           'type': 'string',

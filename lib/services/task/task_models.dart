@@ -190,6 +190,9 @@ class GroupActiveTask {
   String accumulatedContent = '';
   bool isComplete = false;
 
+  /// Partial `status: streaming` row flushed for switch-away / app kill.
+  String? partialMessageId;
+
   // Detachable UI callbacks — set to null when user leaves the screen
   void Function(String chunk)? onStreamChunk;
 

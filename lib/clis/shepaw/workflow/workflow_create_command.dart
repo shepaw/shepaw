@@ -2,11 +2,13 @@ import 'dart:convert';
 import '../../cli_base.dart';
 import '../../../models/planning_models.dart';
 import '../../../services/workflow/workflow_service.dart';
+import '../models/models_cli_helpers.dart';
 
 /// 创建工作流计划。
 ///
 /// 用法：
 ///   shepaw workflow create --title "标题" --summary "摘要" --stages '[...]'
+///       [--require-approval true|false]
 ///
 /// stages JSON 格式：
 /// ```json
@@ -20,9 +22,9 @@ import '../../../services/workflow/workflow_service.dart';
 /// ]
 /// ```
 ///
-/// 创建后系统会向用户展示审批卡片。
-/// 命令立即返回 workflow_id 和 pending_approval 状态。
-/// 群聊 Flow Mode 与 She 的 1:1 私聊一致：审批通过后由系统自动执行
+/// 默认请求用户审批（`pending_approval`）。管理员可传
+/// `--require-approval false` 跳过审批并立即执行。
+/// 群聊 Flow Mode 与 She 的 1:1 私聊一致：进入 running 后由系统自动执行
 /// 全部阶段（ChatService.executeWorkflowSteps），无需再调 dispatch；
 /// `workflow dispatch` 仅用于手动重试某一阶段。
 class WorkflowCreateCommand extends CliCommand {
@@ -30,11 +32,23 @@ class WorkflowCreateCommand extends CliCommand {
   String get name => 'create';
 
   @override
-  String get description => 'Create a workflow plan (pending user approval)';
+  String get description =>
+      'Create a workflow plan (optional user approval)';
 
   @override
   String get usage =>
-      'shepaw workflow create --title "Refactor auth" --summary "..." --stages \'[{"label":"Phase 1","steps":[{"agent":"CodeBot","instruction":"Analyze code"}]}]\'';
+      'shepaw workflow create --title "Refactor auth" --summary "..." --stages \'[{"label":"Phase 1","steps":[{"agent":"CodeBot","instruction":"Analyze code"}]}]\' [--require-approval true|false]';
+
+  /// Default `true` when the flag is omitted or present with an empty value.
+  static ({bool? value, String? error}) parseRequireApprovalFlag(
+    Map<String, String> flags,
+  ) {
+    final raw = flags['require-approval'] ?? flags['require_approval'];
+    if (raw == null || raw.trim().isEmpty) {
+      return (value: true, error: null);
+    }
+    return parseBoolFlag(raw, '--require-approval');
+  }
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
@@ -42,6 +56,11 @@ class WorkflowCreateCommand extends CliCommand {
     final summary = flags['summary'] ?? '';
     final stagesJson = flags['stages'];
     final channelId = flags['channel_id'];
+    final approval = parseRequireApprovalFlag(flags);
+    if (approval.error != null) {
+      return {'error': approval.error};
+    }
+    final requireApproval = approval.value ?? true;
 
     if (title == null || title.isEmpty) {
       return {'error': 'Missing required flag: --title'};
@@ -102,26 +121,38 @@ class WorkflowCreateCommand extends CliCommand {
       stages: stages,
     );
 
-    // Create workflow execution record
     final workflowService = WorkflowService.instance;
     final execution = await workflowService.createWorkflowExecution(
       channelId: channelId,
       title: title,
       flowPlan: flowPlan,
       triggerMessage: flags['trigger_message'],
+      requireApproval: requireApproval,
     );
 
-    // Return immediately with pending_approval status.
-    // The GroupAgentExecutor will handle showing the approval UI
-    // and the user approval flow externally.
+    if (requireApproval) {
+      return {
+        'workflow_id': execution.id,
+        'status': 'pending_approval',
+        'require_approval': true,
+        'title': title,
+        'total_stages': stages.length,
+        'total_steps': stages.fold<int>(0, (sum, s) => sum + s.steps.length),
+        'message': '工作流已创建，等待用户审批。审批通过后系统会自动开始执行。',
+        '_plan_data': flowPlan.toExecutionPlan().toJson(),
+      };
+    }
+
     return {
       'workflow_id': execution.id,
-      'status': 'pending_approval',
+      'status': 'running',
+      'require_approval': false,
       'title': title,
       'total_stages': stages.length,
       'total_steps': stages.fold<int>(0, (sum, s) => sum + s.steps.length),
-      'message': '工作流已创建，等待用户审批。审批通过后系统会自动开始执行。',
+      'message': '工作流已创建并立即开始执行（未请求用户审批）。',
       '_plan_data': flowPlan.toExecutionPlan().toJson(),
+      '_auto_start': true,
     };
   }
 }

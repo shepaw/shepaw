@@ -597,6 +597,11 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   // ---------------------------------------------------------------------------
 
   void onAppLifecycleChanged(bool resumed) {
+    if (!resumed) {
+      lifecycle.onLifecycleChanged(false);
+      unawaited(chatService.flushInFlightGroupPartials());
+      return;
+    }
     final shouldHandleResume = lifecycle.onLifecycleChanged(resumed);
     if (!shouldHandleResume) return;
 
@@ -701,6 +706,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
 
   // ---- Workflow hooks (implemented by [_WorkflowOps]) ----
   void _handleDmWorkflowPlanCreated(String workflowId, Map<String, dynamic> planData);
+  void _handleWorkflowAutoStart(String workflowId);
 
   Future<void> reloadMessagesFromDB() async {
     if (currentChannelId == null) return;
@@ -1113,6 +1119,10 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     final result = ChatMessageReconciler.reconcileGroupMessages(
       current: messages,
       dbMessages: dbMessages,
+      liveStreamingIds: {
+        ...groupStreamingMessageIds,
+        ..._workflowStreamingIds.values,
+      },
     );
 
     LoggerService().debug(

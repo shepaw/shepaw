@@ -82,6 +82,40 @@ void main() {
     expect(dispatch.steps.first.agentIds, ['a1']);
   });
 
+  test('isReconOnly is true only when every step is recon', () {
+    expect(DispatchStep.isReconOnly(const []), isFalse);
+    expect(
+      DispatchStep.isReconOnly(const [
+        DispatchStep(
+          step: 1,
+          agentIds: ['a1'],
+          task: '现状是什么',
+          mode: 'concurrent',
+          isRecon: true,
+        ),
+      ]),
+      isTrue,
+    );
+    expect(
+      DispatchStep.isReconOnly(const [
+        DispatchStep(
+          step: 1,
+          agentIds: ['a1'],
+          task: '现状是什么',
+          mode: 'concurrent',
+          isRecon: true,
+        ),
+        DispatchStep(
+          step: 2,
+          agentIds: ['a2'],
+          task: '实现功能',
+          mode: 'concurrent',
+        ),
+      ]),
+      isFalse,
+    );
+  });
+
   test('buildFlowPlanFromDispatch splits sequential steps into stages', () {
     final dispatch = parser.parseStructuredDispatch(
       '''```json

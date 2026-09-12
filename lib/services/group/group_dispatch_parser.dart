@@ -27,6 +27,19 @@ class DispatchStep {
     this.isRecon = false,
   });
 
+  /// True when this dispatch is discussion / fact-finding only.
+  ///
+  /// Recon must not be wrapped as a workflow or blocked on plan approval —
+  /// members should be invoked immediately. An empty list is not recon.
+  static bool isReconOnly(Iterable<DispatchStep> steps) {
+    var any = false;
+    for (final step in steps) {
+      any = true;
+      if (!step.isRecon) return false;
+    }
+    return any;
+  }
+
   /// Member-facing brief for this step; empty task falls back to [fallback].
   String contentOr(String fallback) {
     final trimmed = task.trim();

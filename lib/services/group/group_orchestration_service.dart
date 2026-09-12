@@ -1283,30 +1283,9 @@ class GroupOrchestrationService {
           }
         }
 
-        final firstDispatch = adminTurn;
-        if (firstDispatch.steps.isNotEmpty) {
-          await _dispatchParser.stripDispatchJsonFromLastMessage(
-              channelId, adminAgent.id);
-          final dispatchPlan = _dispatchParser.buildFlowPlanFromDispatch(
-            steps: firstDispatch.steps,
-            mode: firstDispatch.steps.first.mode,
-            agents: agents,
-            summary: effectiveContent,
-            title: groupName,
-          );
-          if (await _offerWorkflowFromPlan(
-            channelId: channelId,
-            adminAgent: adminAgent,
-            flowPlan: dispatchPlan,
-            triggerMessageId: userMessage.id,
-            onActiveWorkflowChanged: onActiveWorkflowChanged,
-            onInteractionRequest: onInteractionRequestForAdmin,
-          )) {
-            await endOrchTrace(InferenceStatus.completed);
-            onAllDone?.call();
-            return;
-          }
-        }
+        // group_dispatch（含并行摸底）走下方循环：等全部成员完成后再由管理员
+        // 综合分析。不要把派发自动收成工作流——审批由 admin 在
+        // `shepaw workflow create --require-approval` 上自己决定。
 
         // 2. Loop: parse dispatch JSON → delegate → admin summarize → repeat
         final failedAgentNames = <String>[];
@@ -1783,8 +1762,7 @@ class GroupOrchestrationService {
           // without ever being able to publish a plan).
           // 摸底派发（intent=recon）豁免计划门槛：需求尚未定稿，本就无正式计划
           // 可发；若照旧拦截，等于逼管理员把没定稿的需求谎称定稿才敢问成员。
-          final isReconDispatch = dispatch.steps.isNotEmpty &&
-              dispatch.steps.every((s) => s.isRecon);
+          final isReconDispatch = DispatchStep.isReconOnly(dispatch.steps);
           if (delegatedIds.isNotEmpty &&
               !isReconDispatch &&
               GroupOrchestrationFeatures.structuredTasks &&
@@ -2217,28 +2195,8 @@ class GroupOrchestrationService {
           await _dispatchParser.stripDispatchJsonFromLastMessage(
               channelId, adminAgent.id);
 
-          // Structured task dispatch → create workflow + approval card instead of
-          // running inline delegation (execution starts after user approval).
-          if (dispatch.steps.isNotEmpty) {
-            final flowPlanFromDispatch =
-                _dispatchParser.buildFlowPlanFromDispatch(
-              steps: dispatch.steps,
-              mode: dispatch.steps.first.mode,
-              agents: agents,
-              summary: effectiveContent,
-              title: groupName,
-            );
-            if (await _offerWorkflowFromPlan(
-              channelId: channelId,
-              adminAgent: adminAgent,
-              flowPlan: flowPlanFromDispatch,
-              triggerMessageId: userMessage.id,
-              onActiveWorkflowChanged: onActiveWorkflowChanged,
-              onInteractionRequest: onInteractionRequestForAdmin,
-            )) {
-              break;
-            }
-          }
+          // group_dispatch 一律 inline：并发成员 Future.wait 齐了再进入
+          // 管理员综合分析。工作流只由 admin 显式 `workflow create` 创建。
 
           // Reset failed-agent tracking for this delegation round
           failedAgentNames.clear();

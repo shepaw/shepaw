@@ -264,8 +264,8 @@ mixin _LoadOps on _ChatControllerBase {
     final oldChannelId = currentChannelId;
     if (oldChannelId == null || oldChannelId == channelId) return;
 
-    // 1. 先拆旧频道的任务 UI（换 id 之前）：防迟到的 chunk/终态回调把内容
-    //    写进即将被清空的共享 messages 列表。
+    // 1. 先把旧群在途成员正文落库，再拆 UI：切走 / 杀进程后仍能看到气泡。
+    await chatService.flushInFlightGroupPartials(channelId: oldChannelId);
     chatService.detachTaskUI(oldChannelId);
     chatService.detachGroupTaskUI(oldChannelId);
     final wfId = activeWorkflowId;

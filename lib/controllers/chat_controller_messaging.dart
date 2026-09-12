@@ -128,8 +128,33 @@ mixin _MessagingOps on _ChatControllerBase {
     for (final entry in activeTasks.entries) {
       final aid = entry.key;
       final task = entry.value;
-      final sid = 'group_streaming_${aid}_${DateTime.now().millisecondsSinceEpoch}';
+      final host = ChatStreamingText.findStreamingHost(
+        messages,
+        fromId: aid,
+        group: true,
+      );
+      final sid = host?.id ??
+          (task.partialMessageId != null &&
+                  messageIdMap.containsKey(task.partialMessageId)
+              ? task.partialMessageId!
+              : GroupInteractionPlanner.groupStreamingId(aid));
       turn.begin(aid, sid, initialContent: task.accumulatedContent);
+
+      isProcessing = true;
+      respondingAgentNames.add(task.agentName);
+      groupStreamingMessageIds.add(sid);
+
+      if (host != null || messageIdMap.containsKey(sid)) {
+        ChatGroupStreamingTracker.applyContentById(
+          sid,
+          task.accumulatedContent.isNotEmpty
+              ? task.accumulatedContent
+              : (messageIdMap[sid]?.content ?? ''),
+          messages,
+          messageIdMap,
+        );
+        continue;
+      }
 
       final streamingMessage = ChatStreamingText.withUpdatedContent(
         ChatStreamingText.placeholder(
@@ -139,10 +164,6 @@ mixin _MessagingOps on _ChatControllerBase {
         ),
         task.accumulatedContent,
       );
-
-      isProcessing = true;
-      respondingAgentNames.add(task.agentName);
-      groupStreamingMessageIds.add(sid);
       messages.add(streamingMessage);
       messageIdMap[streamingMessage.id] = streamingMessage;
     }
@@ -1537,6 +1558,10 @@ mixin _MessagingOps on _ChatControllerBase {
       interactionType,
       data,
     );
+    if (interactionType == 'workflow_auto_start') {
+      if (workflowId != null) _handleWorkflowAutoStart(workflowId);
+      return GroupInteractionPlanner.nonBlockingResult();
+    }
     if (workflowId != null) setActiveWorkflowId(workflowId);
 
     var sid = turn.idFor(agentId);

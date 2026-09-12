@@ -82,9 +82,28 @@ void main() {
 
     expect(prompt, contains('先摸底，再澄清'));
     expect(prompt, contains('intent=recon'));
+    expect(prompt, contains('也不会创建工作流或弹审批卡'));
+    expect(prompt, contains('全部成员完成'));
     expect(prompt, contains('group_finish'));
     expect(prompt, contains('pause'));
     expect(prompt, contains('系统会拦截'));
+  });
+
+  test('flow-mode prompt forbids workflow create for recon discussion', () async {
+    final prompt = await builder.buildGroupSystemPrompt(
+      groupName: '项目群',
+      groupDescription: '',
+      allAgents: [admin, coder],
+      currentAgent: admin,
+      isAdmin: true,
+      isFlowMode: true,
+    );
+
+    expect(prompt, contains('摸底 / 和成员讨论需求不要建工作流'));
+    expect(prompt, contains('禁止**为此调用 `shepaw workflow create`'));
+    expect(prompt, contains('--require-approval'));
+    expect(prompt, contains('全部成员完成'));
+    expect(prompt, contains('shepaw workflow create'));
   });
 
   test('pending-status nudge prompt forbids group_finish done', () async {

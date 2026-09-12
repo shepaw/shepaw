@@ -2683,6 +2683,14 @@ class AgentMessagingService {
                     planApprovalData = planData;
                     onWorkflowPlanCreated?.call(workflowId, planData);
                   }
+                } else if (cliJson != null && cliJson['_auto_start'] == true) {
+                  final workflowId = cliJson['workflow_id'] as String?;
+                  if (workflowId != null) {
+                    onWorkflowPlanCreated?.call(workflowId, {
+                      '_workflowId': workflowId,
+                      '_auto_start': true,
+                    });
+                  }
                 }
                 final switchAction = cliJson?['session_action'];
                 if (switchAction is Map) {

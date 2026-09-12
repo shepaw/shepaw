@@ -14,12 +14,19 @@ void main() {
       );
     });
 
-    test('workflowIdFromPlanApproval only for plan_approval', () {
+    test('workflowIdFromPlanApproval only for plan_approval and auto-start', () {
       expect(
         GroupInteractionPlanner.workflowIdFromPlanApproval('plan_approval', {
           '_workflowId': 'wf1',
         }),
         'wf1',
+      );
+      expect(
+        GroupInteractionPlanner.workflowIdFromPlanApproval(
+          'workflow_auto_start',
+          {'_workflowId': 'wf2'},
+        ),
+        'wf2',
       );
       expect(
         GroupInteractionPlanner.workflowIdFromPlanApproval(

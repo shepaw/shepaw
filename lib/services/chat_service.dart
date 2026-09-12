@@ -1162,6 +1162,50 @@ class ChatService {
     return accumulated;
   }
 
+  /// Persist in-flight group member text so switch-away / app kill can
+  /// recover bubbles (`status: streaming`). Reuses [GroupActiveTask.partialMessageId]
+  /// so the final save can fold onto the same row.
+  Future<void> flushInFlightGroupPartials({String? channelId}) async {
+    final maps = channelId == null
+        ? _activeGroupTasks.entries.toList()
+        : [
+            if (_activeGroupTasks[channelId] != null)
+              MapEntry(channelId, _activeGroupTasks[channelId]!),
+          ];
+    for (final channelEntry in maps) {
+      var flushed = false;
+      for (final task in channelEntry.value.values) {
+        if (task.isComplete) continue;
+        if (task.accumulatedContent.trim().isEmpty) continue;
+        try {
+          final id = await _databaseService.upsertPartialStreamingMessage(
+            existingMessageId: task.partialMessageId,
+            channelId: channelEntry.key,
+            senderId: task.agentId,
+            senderName: task.agentName,
+            content: task.accumulatedContent,
+            replyToId: null,
+            metadata: {
+              'agent_id': task.agentId,
+              'agent_name': task.agentName,
+              'is_partial': true,
+            },
+          );
+          task.partialMessageId = id;
+          flushed = true;
+        } catch (e) {
+          LoggerService().warning(
+            'Failed to flush group partial for ${task.agentName}: $e',
+            tag: 'ChatService',
+          );
+        }
+      }
+      if (flushed) {
+        _notifyChannelUpdate(channelEntry.key);
+      }
+    }
+  }
+
   /// Detach UI callbacks from all group tasks for [channelId].
   void detachGroupTaskUI(String channelId) {
     final agentMap = _activeGroupTasks[channelId];

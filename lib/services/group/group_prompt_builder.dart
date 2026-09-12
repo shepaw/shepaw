@@ -240,7 +240,7 @@ ${_cliTransportPreamble(currentAgent)}
    - `intent`：`work`（默认，正式派活）或 `recon`（摸底：只让成员回答事实与现状，不产出交付物）
    - `mode`：`concurrent`（并行）或 `sequential`（按 step 顺序）
    - `steps[]`：每步含 `agents`（成员注册名数组）与 `task`（背景、目标、验收标准；`recon` 时写清要成员回答什么问题）
-   - **`intent=recon` 豁免 `group_plan_publish` 前置**——摸底时需求本就还没定稿，不该发正式计划。调用后请在自然语言里告诉用户：你正在向谁了解什么
+   - **`intent=recon` 豁免 `group_plan_publish`，也不会创建工作流或弹审批卡**——摸底/讨论需求时直接调成员。并行派多人时系统会等**全部成员完成**后再唤起你综合分析。调用后请在自然语言里告诉用户：你正在向谁了解什么
    - `intent=work` 时调用工具的同时，**必须用自然语言向用户简要说明分工安排**
 3. **`group_finish`** — 不派成员时的控制信号
    - `action=done`：需求已满足，结束编排
@@ -603,18 +603,23 @@ $registeredNames
     return '''
 
 【工作流模式】
-当前群组已开启工作流模式。请通过 CLI 工具来规划和执行复杂任务：
+当前群组已开启工作流模式。**正式的多阶段交付**才走工作流；**摸底 / 和成员讨论需求不要建工作流**。
 
-**流程：**
-1. 分析用户需求，设计阶段化执行计划
-2. 调用 `shepaw workflow create` 创建工作流（用户会看到审批卡片）
-3. **立即结束本轮回复，等待用户审批**——审批通过前不要调用 `workflow dispatch` / `complete` / `fail`，也不要自行开始执行
-4. 审批通过后，**系统会自动按阶段执行**所有步骤（阶段内并行、阶段间串行），无需你手动 dispatch；全部执行完后你会再次被唤起做最终总结
+**摸底 / 讨论（不审批、不建工作流）：**
+- 用 `group_dispatch`（`intent=recon`）直接调成员问事实、对需求
+- **禁止**为此调用 `shepaw workflow create`——系统不会弹审批卡，成员马上开始答
+- 在自然语言里告诉用户你正在向谁了解什么即可
+
+**正式交付（工作流，审批由你决定）：**
+1. 需求已明确后，设计阶段化执行计划
+2. 调用 `shepaw workflow create`。默认 `--require-approval true`（用户会看到审批卡片）；若你判断不必让用户点审，传 `--require-approval false`，系统会立刻按阶段执行
+3. **需要审批时**：立即结束本轮回复，等待用户审批——通过前不要调用 `workflow dispatch` / `complete` / `fail`
+4. **跳过审批或审批通过后**：系统自动按阶段执行（阶段内并行、阶段间串行），无需你手动 dispatch；全部执行完后你会再次被唤起做最终总结
 5. 若用户拒绝并给出修改意见，你会收到反馈——据此修改计划后再次调用 `workflow create`
 
 **可用命令：**
-- `shepaw workflow create --title "标题" --stages '[{"label":"阶段名","steps":[{"agent":"成员注册名","instruction":"指令"}]}]'`
-  创建工作流并提交审批。`agent` 必须是下列注册名之一：$agentNamesHint
+- `shepaw workflow create --title "标题" --stages '[...]' [--require-approval true|false]`
+  创建工作流。默认请求用户审批；`--require-approval false` 则跳过审批并立即执行。`agent` 必须是下列注册名之一：$agentNamesHint
 - `shepaw workflow status --workflow_id <id>`
   查看工作流当前状态。
 - `shepaw workflow dispatch --workflow_id <id> --stage_index <n>`
@@ -627,7 +632,7 @@ $registeredNames
   取消工作流。
 
 **注意：**
-- 只有在任务需要多步骤协调时才使用工作流，简单任务直接委派即可
+- 只有需求已明确、需要多阶段交付时才使用工作流；摸底、对需求、简单问答一律 `group_dispatch`（`intent=recon`）
 - 每个阶段内的步骤会并行执行，不同阶段串行推进
 - 步骤执行期间（消息带 `[Workflow ...]` 前缀）**禁止**调用 `workflow create/complete/fail/cancel`
 - 取消工作流是用户在 UI 上的操作，不是你''';

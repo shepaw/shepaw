@@ -57,6 +57,7 @@ class WorkflowService {
     required String title,
     required FlowPlan flowPlan,
     String? triggerMessage,
+    bool requireApproval = true,
   }) async {
     final now = DateTime.now();
     final workflowId = _uuid.v4();
@@ -66,8 +67,11 @@ class WorkflowService {
       channelId: channelId,
       title: title.isNotEmpty ? title : (flowPlan.title.isNotEmpty ? flowPlan.title : '工作流'),
       flowPlanJson: _encodePlan(flowPlan),
-      status: WorkflowStatus.pendingApproval,
+      status: requireApproval
+          ? WorkflowStatus.pendingApproval
+          : WorkflowStatus.running,
       createdAt: now,
+      startedAt: requireApproval ? null : now,
       triggerMessage: triggerMessage,
     );
 
@@ -105,19 +109,22 @@ class WorkflowService {
     _workflowChannelCache[workflowId] = channelId;
     _notify(workflowId);
     LoggerService().info(
-      'WorkflowService: created workflow $workflowId with ${steps.length} steps',
+      'WorkflowService: created workflow $workflowId with ${steps.length} steps'
+      '${requireApproval ? '' : ' (auto-start, no plan approval)'}',
       tag: 'WorkflowService',
     );
-    PendingApprovalHub.instance.upsert(
-      PendingApprovalItem(
-        id: PendingApprovalItem.planId(workflowId),
-        channelId: channelId,
-        agentId: '',
-        agentName: execution.title.isNotEmpty ? execution.title : 'Workflow',
-        kind: PendingApprovalKind.plan,
-        createdAt: execution.createdAt.millisecondsSinceEpoch,
-      ),
-    );
+    if (requireApproval) {
+      PendingApprovalHub.instance.upsert(
+        PendingApprovalItem(
+          id: PendingApprovalItem.planId(workflowId),
+          channelId: channelId,
+          agentId: '',
+          agentName: execution.title.isNotEmpty ? execution.title : 'Workflow',
+          kind: PendingApprovalKind.plan,
+          createdAt: execution.createdAt.millisecondsSinceEpoch,
+        ),
+      );
+    }
     return execution;
   }
 

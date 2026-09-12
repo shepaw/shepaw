@@ -23,12 +23,15 @@ class GroupInteractionPlanner {
   static Map<String, dynamic> nonBlockingResult() =>
       const {'_non_blocking': true};
 
-  /// Workflow id embedded in a plan_approval payload, if any.
+  /// Workflow id embedded in a plan_approval / auto-start payload, if any.
   static String? workflowIdFromPlanApproval(
     String interactionType,
     Map<String, dynamic> data,
   ) {
-    if (interactionType != 'plan_approval') return null;
+    if (interactionType != 'plan_approval' &&
+        interactionType != 'workflow_auto_start') {
+      return null;
+    }
     return data['_workflowId'] as String?;
   }
 
