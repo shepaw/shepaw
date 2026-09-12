@@ -624,6 +624,37 @@ class GroupAgentExecutor {
           final pawToolResults = <Map<String, dynamic>>[];
           LLMDoneEvent? doneEvent;
 
+          // Every tool_call in the assistant message must have a following
+          // tool result, including fire-and-forget UI tools. Otherwise the
+          // next round is a 400 (insufficient tool messages).
+          // [continueLoop] false = do not start another LLM round for this
+          // tool alone (form / select cards wait for the user). Mixed rounds
+          // still continue when an executable tool is also in [pawToolCalls].
+          void ackTool(
+            LLMToolCallEvent event, [
+            String? result,
+            bool continueLoop = true,
+          ]) {
+            final payload = result ??
+                jsonEncode({
+                  'ok': true,
+                  'status': 'accepted',
+                  'tool': event.name,
+                });
+            if (continueLoop) pawToolCalls.add(event);
+            pawToolResults.add({
+              'tool_call_id': event.id,
+              'name': event.name,
+              'result': payload,
+            });
+            infLogGroup.onToolResult(
+              groupTraceId,
+              toolCallId: event.id,
+              name: event.name,
+              result: payload,
+            );
+          }
+
           // 摸底兜底（见 GroupReconFirstGate）：管理员本轮编排里还没问过任何
           // 成员时，第一张面向用户的澄清卡片直接弹回。**不捕获、不落库、不
           // emit**，用户看不到；退回理由作为 tool result 回给模型，它在同一次
@@ -649,14 +680,7 @@ class GroupAgentExecutor {
               'ok': false,
               'error': GroupReconFirstGate.toolFeedback(),
             });
-            pawToolCalls.add(event);
-            pawToolResults.add({
-              'tool_call_id': event.id,
-              'name': event.name,
-              'result': feedback,
-            });
-            infLogGroup.onToolResult(groupTraceId,
-                toolCallId: event.id, name: event.name, result: feedback);
+            ackTool(event, feedback);
             return true;
           }
 
@@ -709,32 +733,39 @@ class GroupAgentExecutor {
                       userId: userId,
                       userName: userName,
                     );
+                    ackTool(event, null, false);
                     break;
                   case 'action_confirmation':
                     actionConfirmationData =
                         Map<String, dynamic>.from(event.arguments);
+                    ackTool(event, null, false);
                     break;
                   case 'single_select':
                     if (bounceCardIfNeeded(event, 'single_select')) break;
                     singleSelectData =
                         Map<String, dynamic>.from(event.arguments);
+                    ackTool(event, null, false);
                     break;
                   case 'multi_select':
                     if (bounceCardIfNeeded(event, 'multi_select')) break;
                     multiSelectData =
                         Map<String, dynamic>.from(event.arguments);
+                    ackTool(event, null, false);
                     break;
                   case 'file_upload':
                     fileUploadData = Map<String, dynamic>.from(event.arguments);
+                    ackTool(event, null, false);
                     break;
                   case 'form':
                     if (bounceCardIfNeeded(event, 'form')) break;
                     formDataCapture =
                         Map<String, dynamic>.from(event.arguments);
+                    ackTool(event, null, false);
                     break;
                   case 'message_metadata':
                     messageMetadataExtra =
                         Map<String, dynamic>.from(event.arguments);
+                    ackTool(event, null, false);
                     break;
                   case GroupOrchestrationTools.mentionName:
                     mentionToolDeclarations = [
@@ -1128,6 +1159,14 @@ class GroupAgentExecutor {
                             'Workflow approval flow error: $e',
                             tag: 'GroupAgentExecutor');
                       }
+                    } else {
+                      ackTool(
+                        event,
+                        jsonEncode({
+                          'ok': false,
+                          'error': 'Unknown tool: ${event.name}',
+                        }),
+                      );
                     }
                     break;
                 }
@@ -1157,16 +1196,25 @@ class GroupAgentExecutor {
               'Multi-turn: ${pawToolCalls.length} tool calls in round ${toolRound + 1}, continuing...',
               tag: 'GroupAgentExecutor',
             );
+            var rawAssistant = LocalLLMHelpers.sanitizeAssistantToolCalls(
+              doneEvent!.rawAssistantMessage!,
+              isClaude: isClaude,
+            );
+            LocalLLMHelpers.ensureToolResultsForAssistant(
+              rawAssistant: rawAssistant,
+              toolResults: pawToolResults,
+              isClaude: isClaude,
+            );
             if (isClaude) {
               LocalLLMHelpers.appendToolRoundClaude(
                   roundMessages,
-                  doneEvent!.rawAssistantMessage!,
+                  rawAssistant,
                   pawToolCalls,
                   pawToolResults);
             } else {
               LocalLLMHelpers.appendToolRoundOpenAI(
                   roundMessages,
-                  doneEvent!.rawAssistantMessage!,
+                  rawAssistant,
                   pawToolCalls,
                   pawToolResults);
             }

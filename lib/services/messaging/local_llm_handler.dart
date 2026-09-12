@@ -311,6 +311,101 @@ class LocalLLMHelpers {
     return {'role': 'user', 'content': contentParts};
   }
 
+  /// Placeholder result for a tool_call that was captured (UI card, metadata)
+  /// or not executed. Providers reject the next request if any tool_call_id
+  /// in the assistant message lacks a following tool / tool_result message.
+  static const missingToolResultStub =
+      '{"ok":true,"status":"accepted","note":"UI or unhandled tool; no further output."}';
+
+  /// Tool calls the assistant actually emitted (skips empty ids).
+  static List<({String id, String name})> assistantToolCalls(
+    Map<String, dynamic> rawAssistant, {
+    required bool isClaude,
+  }) {
+    if (isClaude) {
+      final content = rawAssistant['content'];
+      if (content is! List) return const [];
+      final out = <({String id, String name})>[];
+      for (final part in content) {
+        if (part is! Map) continue;
+        if (part['type'] != 'tool_use') continue;
+        final id = part['id'] as String? ?? '';
+        if (id.isEmpty) continue;
+        out.add((id: id, name: part['name'] as String? ?? ''));
+      }
+      return out;
+    }
+    final calls = rawAssistant['tool_calls'];
+    if (calls is! List) return const [];
+    final out = <({String id, String name})>[];
+    for (final tc in calls) {
+      if (tc is! Map) continue;
+      final id = tc['id'] as String? ?? '';
+      if (id.isEmpty) continue;
+      final fn = tc['function'];
+      final name = fn is Map ? (fn['name'] as String? ?? '') : '';
+      out.add((id: id, name: name));
+    }
+    return out;
+  }
+
+  /// Drop phantom tool_calls / tool_use blocks that have no id (some
+  /// OpenAI-compatible streams emit an empty extra index).
+  static Map<String, dynamic> sanitizeAssistantToolCalls(
+    Map<String, dynamic> rawAssistant, {
+    required bool isClaude,
+  }) {
+    if (isClaude) {
+      final content = rawAssistant['content'];
+      if (content is! List) return rawAssistant;
+      final kept = content.where((part) {
+        if (part is! Map) return true;
+        if (part['type'] != 'tool_use') return true;
+        return (part['id'] as String? ?? '').isNotEmpty;
+      }).toList();
+      if (kept.length == content.length) return rawAssistant;
+      return {...rawAssistant, 'content': kept};
+    }
+    final calls = rawAssistant['tool_calls'];
+    if (calls is! List) return rawAssistant;
+    final kept = calls.where((tc) {
+      if (tc is! Map) return false;
+      return (tc['id'] as String? ?? '').isNotEmpty;
+    }).toList();
+    if (kept.length == calls.length) return rawAssistant;
+    final copy = Map<String, dynamic>.from(rawAssistant);
+    if (kept.isEmpty) {
+      copy.remove('tool_calls');
+    } else {
+      copy['tool_calls'] = kept;
+    }
+    return copy;
+  }
+
+  /// Add a stub result for every assistant tool_call_id not already in
+  /// [toolResults]. Required before the next LLM round.
+  static void ensureToolResultsForAssistant({
+    required Map<String, dynamic> rawAssistant,
+    required List<Map<String, dynamic>> toolResults,
+    required bool isClaude,
+    String stubResult = missingToolResultStub,
+  }) {
+    final have = <String>{};
+    for (final r in toolResults) {
+      final id = r['tool_call_id'];
+      if (id is String && id.isNotEmpty) have.add(id);
+    }
+    for (final call in assistantToolCalls(rawAssistant, isClaude: isClaude)) {
+      if (have.contains(call.id)) continue;
+      toolResults.add({
+        'tool_call_id': call.id,
+        'name': call.name,
+        'result': stubResult,
+      });
+      have.add(call.id);
+    }
+  }
+
   /// Append a tool round to the message history for OpenAI-compatible APIs.
   static void appendToolRoundOpenAI(
     List<Map<String, dynamic>> messages,
