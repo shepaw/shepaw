@@ -64,6 +64,63 @@ void main() {
   });
 
   testWidgets(
+      'sticky header stays pinned across consecutive in-view scroll frames',
+      (tester) async {
+    final controller = ScrollController();
+    final viewportKey = GlobalKey();
+    const headerText = 'Author';
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: KeyedSubtree(
+            key: viewportKey,
+            child: ListView(
+              controller: controller,
+              children: [
+                const SizedBox(height: 400),
+                StickyInViewHeader(
+                  viewportKey: viewportKey,
+                  header: const Padding(
+                    padding: EdgeInsets.only(bottom: 4),
+                    child: Row(
+                      children: [
+                        Icon(Icons.person, size: 24),
+                        SizedBox(width: 8),
+                        Text(headerText),
+                      ],
+                    ),
+                  ),
+                  child: Container(
+                    height: 800,
+                    color: Colors.grey.shade200,
+                    alignment: Alignment.topLeft,
+                    child: const Text('BODY'),
+                  ),
+                ),
+                const SizedBox(height: 800),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Walk through the long item in small steps — the header must stay locked
+    // to the viewport top on every frame, not chase the scroll by one frame.
+    for (var offset = 420.0; offset <= 900.0; offset += 24) {
+      controller.jumpTo(offset);
+      await tester.pump();
+      final headerDy = tester.getTopLeft(find.text(headerText)).dy;
+      expect(headerDy, greaterThanOrEqualTo(-1),
+          reason: 'header drifted above viewport at scroll $offset');
+      expect(headerDy, lessThan(40),
+          reason: 'header lagged below viewport at scroll $offset');
+    }
+  });
+
+  testWidgets(
       'overlay mode shows avatar+name when tall reverse item is clipped',
       (tester) async {
     final positions = ItemPositionsListener.create();

@@ -6,8 +6,10 @@ import 'package:flutter/rendering.dart';
 
 /// Pins [header] to the top of this widget's visible area while scrolling.
 ///
-/// Sticky offset is applied during **paint** (not a lagged setState chase), so
-/// the author chrome locks firmly once it reaches the viewport top.
+/// Sticky offset is applied during **paint** after the scroll layout, so the
+/// author chrome stays locked to the viewport top in the same frame. Header
+/// and body live on their own layers so scrolling only moves compositor
+/// offsets — it does not re-rasterize the title or the long bubble body.
 ///
 /// While stuck, [child] is clipped below the header with [bubbleTopRadius] so
 /// the visible content keeps a rounded top — it reads as bubble content
@@ -90,15 +92,13 @@ class _StickyInViewHeaderState extends State<StickyInViewHeader> {
 
   void _onScrollSignal() {
     final ro = context.findRenderObject();
-    if (ro is! RenderStickyInViewHeader) return;
-    // 滚动期间该信号每帧到达（每个可见气泡一份）。只在 sticky 偏移真的
-    // 变了（阈值 0.5px，与 paint 的 stuck 判定一致）才失效重绘，避免整
-    // 个可见列表每帧全部 repaint。未布局完成时跳过。
-    final s = ro.computeStuckOffset();
-    if (s == null) return;
-    if ((s - ro.lastPaintedStuckOffset).abs() > 0.5) {
-      ro.markNeedsPaint();
-    }
+    if (ro is! RenderStickyInViewHeader || !ro.hasSize) return;
+    // ScrollPosition 在 setPixels 时通知，此时 localToGlobal 仍是上一帧
+    // 的位置。这里不能拿旧坐标做阈值比较，否则会跳过本帧 markNeedsPaint，
+    // 标题跟着列表滑走一帧再弹回，看起来像模糊闪动。
+    // 只标记 paint；真正偏移在 layout 之后的 paint() 里算。header/body
+    // 各有独立图层，不会把长消息正文重新栅格化。
+    ro.markNeedsPaint();
   }
 
   @override
@@ -125,6 +125,7 @@ class _StickyInViewHeaderState extends State<StickyInViewHeader> {
       stuckBackground: stuckBg,
       bubbleTopRadius: widget.bubbleTopRadius,
       viewportKey: widget.viewportKey,
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
       header: widget.header,
       body: widget.child,
     );
@@ -136,15 +137,21 @@ class _StickyInViewHeaderRender extends MultiChildRenderObjectWidget {
   final Color stuckBackground;
   final double bubbleTopRadius;
   final GlobalKey? viewportKey;
+  final double devicePixelRatio;
 
   _StickyInViewHeaderRender({
     required this.showHeaderInFlow,
     required this.stuckBackground,
     required this.bubbleTopRadius,
     required this.viewportKey,
+    required this.devicePixelRatio,
     required Widget header,
     required Widget body,
-  }) : super(children: [body, header]);
+  }) : super(children: [
+          // 独立图层：滚动时只改 clip / offset，不重绘长正文和标题文字。
+          RepaintBoundary(child: body),
+          RepaintBoundary(child: header),
+        ]);
 
   @override
   RenderStickyInViewHeader createRenderObject(BuildContext context) {
@@ -153,6 +160,7 @@ class _StickyInViewHeaderRender extends MultiChildRenderObjectWidget {
       stuckBackground: stuckBackground,
       bubbleTopRadius: bubbleTopRadius,
       viewportKey: viewportKey,
+      devicePixelRatio: devicePixelRatio,
     );
   }
 
@@ -165,7 +173,8 @@ class _StickyInViewHeaderRender extends MultiChildRenderObjectWidget {
       ..showHeaderInFlow = showHeaderInFlow
       ..stuckBackground = stuckBackground
       ..bubbleTopRadius = bubbleTopRadius
-      ..viewportKey = viewportKey;
+      ..viewportKey = viewportKey
+      ..devicePixelRatio = devicePixelRatio;
   }
 }
 
@@ -180,15 +189,18 @@ class RenderStickyInViewHeader extends RenderBox
     required Color stuckBackground,
     required double bubbleTopRadius,
     required GlobalKey? viewportKey,
+    required double devicePixelRatio,
   })  : _showHeaderInFlow = showHeaderInFlow,
         _stuckBackground = stuckBackground,
         _bubbleTopRadius = bubbleTopRadius,
-        _viewportKey = viewportKey;
+        _viewportKey = viewportKey,
+        _devicePixelRatio = devicePixelRatio;
 
   bool _showHeaderInFlow;
   Color _stuckBackground;
   double _bubbleTopRadius;
   GlobalKey? _viewportKey;
+  double _devicePixelRatio;
 
   set showHeaderInFlow(bool value) {
     if (_showHeaderInFlow == value) return;
@@ -211,6 +223,12 @@ class RenderStickyInViewHeader extends RenderBox
   set viewportKey(GlobalKey? value) {
     if (_viewportKey == value) return;
     _viewportKey = value;
+    markNeedsPaint();
+  }
+
+  set devicePixelRatio(double value) {
+    if (_devicePixelRatio == value) return;
+    _devicePixelRatio = value;
     markNeedsPaint();
   }
 
@@ -266,41 +284,38 @@ class RenderStickyInViewHeader extends RenderBox
     headerParentData.offset = Offset.zero;
   }
 
+  double _snapToPhysicalPixel(double logical) {
+    final dpr = _devicePixelRatio;
+    if (dpr <= 0) return logical.roundToDouble();
+    return (logical * dpr).round() / dpr;
+  }
+
   double _stuckOffset(RenderBox header) {
-    final itemTop = _itemTopInViewport();
-    if (itemTop == null || itemTop >= 0) return 0;
+    final viewportTop = _viewportTopGlobal();
+    if (viewportTop == null || !hasSize) return 0;
+
+    final itemTop = localToGlobal(Offset.zero).dy - viewportTop;
+    if (itemTop >= 0) return 0;
 
     final headerH = header.size.height;
     final maxOffset = math.max(0.0, size.height - headerH);
-    return (-itemTop).clamp(0.0, maxOffset);
+    final raw = (-itemTop).clamp(0.0, maxOffset);
+    // 按屏幕坐标对齐物理像素，避免标题每帧在亚像素位置重绘发糊。
+    final snappedGlobal = _snapToPhysicalPixel(viewportTop + itemTop + raw);
+    return (snappedGlobal - viewportTop - itemTop).clamp(0.0, maxOffset);
   }
 
-  /// Current sticky offset without painting, for scroll-signal listeners to
-  /// diff against [lastPaintedStuckOffset]. Returns null before layout.
-  double? computeStuckOffset() {
-    final header = _header;
-    if (header == null || !hasSize || !header.hasSize) return null;
-    return _stuckOffset(header);
-  }
-
-  /// Sticky offset used in the most recent paint. Scroll listeners compare
-  /// against this so unchanged offsets skip invalidation entirely.
-  double lastPaintedStuckOffset = 0;
-
-  double? _itemTopInViewport() {
-    if (!hasSize) return null;
-    final itemGlobal = localToGlobal(Offset.zero);
-
+  double? _viewportTopGlobal() {
     final viewportKeyBox =
         _viewportKey?.currentContext?.findRenderObject() as RenderBox?;
     if (viewportKeyBox != null && viewportKeyBox.hasSize) {
-      return itemGlobal.dy - viewportKeyBox.localToGlobal(Offset.zero).dy;
+      return viewportKeyBox.localToGlobal(Offset.zero).dy;
     }
 
     final viewport = RenderAbstractViewport.maybeOf(this);
-    final viewportBox = viewport is RenderBox ? (viewport as RenderBox) : null;
+    final viewportBox = viewport is RenderBox ? viewport as RenderBox : null;
     if (viewportBox != null && viewportBox.hasSize) {
-      return itemGlobal.dy - viewportBox.localToGlobal(Offset.zero).dy;
+      return viewportBox.localToGlobal(Offset.zero).dy;
     }
     return null;
   }
@@ -309,13 +324,15 @@ class RenderStickyInViewHeader extends RenderBox
   bool get isRepaintBoundary => true;
 
   @override
+  bool get alwaysNeedsCompositing => true;
+
+  @override
   void paint(PaintingContext context, Offset offset) {
     final body = _body;
     final header = _header;
     if (body == null || header == null) return;
 
     final stuck = _stuckOffset(header);
-    lastPaintedStuckOffset = stuck;
     final headerH = header.size.height;
     final bodyParentData = body.parentData! as _StickyParentData;
     final bodyLayoutOffset = _showHeaderInFlow

@@ -359,10 +359,8 @@ class _ChatMessageListState extends State<ChatMessageList> {
                       showAvatar: showAvatar,
                       reserveAvatarSpace: reserveAvatarSpace,
                       stickySenderName: stickySenderName,
-                      // sticky 偏移信号由组件内部的 ScrollPosition 监听提
-                      // 供（带 0.5px 阈值去重），不再挂全局 itemPositions
-                      // ——之前两份信号叠加，滚动时每个可见气泡每帧
-                      // markNeedsPaint。
+                      // sticky 偏移由组件内部的 ScrollPosition 在同帧 paint
+                      // 中计算；不要再挂全局 itemPositions，避免双信号。
                       stickyViewportKey: _viewportKey,
                       bodyCollapsed: isGroupMode &&
                           !isMyMessage &&
