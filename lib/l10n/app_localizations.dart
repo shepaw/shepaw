@@ -3806,6 +3806,12 @@ abstract class AppLocalizations {
   /// **'工作流'**
   String get chat_workflow;
 
+  /// No description provided for @chat_tasks.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务'**
+  String get chat_tasks;
+
   /// No description provided for @chat_newSession.
   ///
   /// In zh, this message translates to:
@@ -8648,6 +8654,126 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'工作流计划获批并执行后，记录会显示在此处'**
   String get workflow_emptyHint;
+
+  /// No description provided for @group_task_listTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'{name} - 任务'**
+  String group_task_listTitle(String name);
+
+  /// No description provided for @group_task_empty.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没有任务'**
+  String get group_task_empty;
+
+  /// No description provided for @group_task_emptyHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'在群里提出一个目标后，任务会显示在这里'**
+  String get group_task_emptyHint;
+
+  /// No description provided for @group_task_detailTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务详情'**
+  String get group_task_detailTitle;
+
+  /// No description provided for @group_task_notFound.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务不存在'**
+  String get group_task_notFound;
+
+  /// No description provided for @group_task_requirement.
+  ///
+  /// In zh, this message translates to:
+  /// **'需求'**
+  String get group_task_requirement;
+
+  /// No description provided for @group_task_plan.
+  ///
+  /// In zh, this message translates to:
+  /// **'计划'**
+  String get group_task_plan;
+
+  /// No description provided for @group_task_results.
+  ///
+  /// In zh, this message translates to:
+  /// **'成员结果'**
+  String get group_task_results;
+
+  /// No description provided for @group_task_archive.
+  ///
+  /// In zh, this message translates to:
+  /// **'卷宗'**
+  String get group_task_archive;
+
+  /// No description provided for @group_task_workflows.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作流'**
+  String get group_task_workflows;
+
+  /// No description provided for @group_task_noWorkflows.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个任务还没有走工作流'**
+  String get group_task_noWorkflows;
+
+  /// No description provided for @group_task_orphanWorkflows.
+  ///
+  /// In zh, this message translates to:
+  /// **'未归入任务的工作流'**
+  String get group_task_orphanWorkflows;
+
+  /// No description provided for @group_task_workflowCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 个工作流'**
+  String group_task_workflowCount(int count);
+
+  /// No description provided for @group_taskStateClarifying.
+  ///
+  /// In zh, this message translates to:
+  /// **'澄清中'**
+  String get group_taskStateClarifying;
+
+  /// No description provided for @group_taskStatePlanned.
+  ///
+  /// In zh, this message translates to:
+  /// **'已规划'**
+  String get group_taskStatePlanned;
+
+  /// No description provided for @group_taskStateExecuting.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行中'**
+  String get group_taskStateExecuting;
+
+  /// No description provided for @group_taskStateSummarizing.
+  ///
+  /// In zh, this message translates to:
+  /// **'汇总中'**
+  String get group_taskStateSummarizing;
+
+  /// No description provided for @group_taskStateDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'已完成'**
+  String get group_taskStateDone;
+
+  /// No description provided for @group_taskStatePaused.
+  ///
+  /// In zh, this message translates to:
+  /// **'已暂停'**
+  String get group_taskStatePaused;
+
+  /// No description provided for @group_taskStateFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'失败'**
+  String get group_taskStateFailed;
 
   /// No description provided for @workflow_statusPendingApproval.
   ///

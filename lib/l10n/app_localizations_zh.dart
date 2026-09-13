@@ -2029,6 +2029,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_workflow => '工作流';
 
   @override
+  String get chat_tasks => '任务';
+
+  @override
   String get chat_newSession => '新建会话';
 
   @override
@@ -4715,6 +4718,70 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get workflow_emptyHint => '工作流计划获批并执行后，记录会显示在此处';
+
+  @override
+  String group_task_listTitle(String name) {
+    return '$name - 任务';
+  }
+
+  @override
+  String get group_task_empty => '还没有任务';
+
+  @override
+  String get group_task_emptyHint => '在群里提出一个目标后，任务会显示在这里';
+
+  @override
+  String get group_task_detailTitle => '任务详情';
+
+  @override
+  String get group_task_notFound => '任务不存在';
+
+  @override
+  String get group_task_requirement => '需求';
+
+  @override
+  String get group_task_plan => '计划';
+
+  @override
+  String get group_task_results => '成员结果';
+
+  @override
+  String get group_task_archive => '卷宗';
+
+  @override
+  String get group_task_workflows => '工作流';
+
+  @override
+  String get group_task_noWorkflows => '这个任务还没有走工作流';
+
+  @override
+  String get group_task_orphanWorkflows => '未归入任务的工作流';
+
+  @override
+  String group_task_workflowCount(int count) {
+    return '$count 个工作流';
+  }
+
+  @override
+  String get group_taskStateClarifying => '澄清中';
+
+  @override
+  String get group_taskStatePlanned => '已规划';
+
+  @override
+  String get group_taskStateExecuting => '执行中';
+
+  @override
+  String get group_taskStateSummarizing => '汇总中';
+
+  @override
+  String get group_taskStateDone => '已完成';
+
+  @override
+  String get group_taskStatePaused => '已暂停';
+
+  @override
+  String get group_taskStateFailed => '失败';
 
   @override
   String get workflow_statusPendingApproval => '待审批';

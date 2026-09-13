@@ -2107,6 +2107,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_workflow => 'Workflow';
 
   @override
+  String get chat_tasks => 'Tasks';
+
+  @override
   String get chat_newSession => 'New Session';
 
   @override
@@ -4901,6 +4904,71 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get workflow_emptyHint =>
       'Approved and executed workflows will appear here';
+
+  @override
+  String group_task_listTitle(String name) {
+    return '$name - Tasks';
+  }
+
+  @override
+  String get group_task_empty => 'No tasks yet';
+
+  @override
+  String get group_task_emptyHint =>
+      'Tasks appear here after you set a goal in the group';
+
+  @override
+  String get group_task_detailTitle => 'Task details';
+
+  @override
+  String get group_task_notFound => 'Task not found';
+
+  @override
+  String get group_task_requirement => 'Requirement';
+
+  @override
+  String get group_task_plan => 'Plan';
+
+  @override
+  String get group_task_results => 'Member results';
+
+  @override
+  String get group_task_archive => 'Archive';
+
+  @override
+  String get group_task_workflows => 'Workflows';
+
+  @override
+  String get group_task_noWorkflows => 'This task has not used a workflow';
+
+  @override
+  String get group_task_orphanWorkflows => 'Workflows not linked to a task';
+
+  @override
+  String group_task_workflowCount(int count) {
+    return '$count workflows';
+  }
+
+  @override
+  String get group_taskStateClarifying => 'Clarifying';
+
+  @override
+  String get group_taskStatePlanned => 'Planned';
+
+  @override
+  String get group_taskStateExecuting => 'Executing';
+
+  @override
+  String get group_taskStateSummarizing => 'Summarizing';
+
+  @override
+  String get group_taskStateDone => 'Done';
+
+  @override
+  String get group_taskStatePaused => 'Paused';
+
+  @override
+  String get group_taskStateFailed => 'Failed';
 
   @override
   String get workflow_statusPendingApproval => 'Pending approval';

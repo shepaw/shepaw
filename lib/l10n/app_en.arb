@@ -828,6 +828,7 @@
     }
   },
   "chat_workflow": "Workflow",
+  "chat_tasks": "Tasks",
   "chat_newSession": "New Session",
   "chat_sessionList": "Session List",
   "chat_sessionHistory": "Session History",
@@ -2337,6 +2338,40 @@
   },
   "workflow_empty": "No workflow records",
   "workflow_emptyHint": "Approved and executed workflows will appear here",
+  "group_task_listTitle": "{name} - Tasks",
+  "@group_task_listTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "group_task_empty": "No tasks yet",
+  "group_task_emptyHint": "Tasks appear here after you set a goal in the group",
+  "group_task_detailTitle": "Task details",
+  "group_task_notFound": "Task not found",
+  "group_task_requirement": "Requirement",
+  "group_task_plan": "Plan",
+  "group_task_results": "Member results",
+  "group_task_archive": "Archive",
+  "group_task_workflows": "Workflows",
+  "group_task_noWorkflows": "This task has not used a workflow",
+  "group_task_orphanWorkflows": "Workflows not linked to a task",
+  "group_task_workflowCount": "{count} workflows",
+  "@group_task_workflowCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "group_taskStateClarifying": "Clarifying",
+  "group_taskStatePlanned": "Planned",
+  "group_taskStateExecuting": "Executing",
+  "group_taskStateSummarizing": "Summarizing",
+  "group_taskStateDone": "Done",
+  "group_taskStatePaused": "Paused",
+  "group_taskStateFailed": "Failed",
   "workflow_statusPendingApproval": "Pending approval",
   "workflow_statusRunning": "Running",
   "workflow_statusCompleted": "Completed",

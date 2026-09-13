@@ -61,6 +61,7 @@ import '../services/logger_service.dart';
 import '../services/error_handler_service.dart';
 import '../services/she_service.dart';
 import 'channel_trace_screen.dart';
+import 'group_task_list_screen.dart';
 import 'group_workflow_screen.dart';
 import 'instruction_set_screen.dart';
 import '../widgets/workflow/workflow_progress_panel.dart';
@@ -93,8 +94,8 @@ class ChatScreen extends StatefulWidget {
   final void Function(String channelId, {String? highlightMessageId})?
       onSwitchChannel;
   final ValueChanged<String?>? onShowTraces;
-  final void Function(String channelId, String channelName)?
-      onShowGroupWorkflow;
+  final void Function(String channelId, String channelName, String groupId)?
+      onShowGroupTasks;
 
   /// When set, scroll to and highlight this message after loading.
   final String? highlightMessageId;
@@ -112,7 +113,7 @@ class ChatScreen extends StatefulWidget {
     this.onClose,
     this.onSwitchChannel,
     this.onShowTraces,
-    this.onShowGroupWorkflow,
+    this.onShowGroupTasks,
     this.highlightMessageId,
     this.showBackButton = false,
   }) : super(key: key);
@@ -2026,6 +2027,33 @@ class _ChatScreenState extends State<ChatScreen>
     );
   }
 
+  Future<void> _showGroupTasks() async {
+    await _closeDrawerAndWait();
+    if (!mounted) return;
+    final channelId = _controller.currentChannelId;
+    if (channelId == null) return;
+    final l10n = AppLocalizations.of(context);
+    final c = _controller;
+    final channelName = c.groupChannel?.name ??
+        (SheService.isSheIdentity(c.agentId)
+            ? SheService.resolveDisplayName(c.agentName, l10n.she_name)
+            : (c.agentName ?? ''));
+    final groupId = c.groupChannel?.groupFamilyId ?? channelId;
+    if (widget.onShowGroupTasks != null) {
+      widget.onShowGroupTasks!(channelId, channelName, groupId);
+      return;
+    }
+    Navigator.of(context, rootNavigator: widget.embedded).push(
+      MaterialPageRoute(
+        builder: (_) => GroupTaskListScreen(
+          groupId: groupId,
+          channelId: channelId,
+          channelName: channelName,
+        ),
+      ),
+    );
+  }
+
   Future<void> _showGroupWorkflow() async {
     await _closeDrawerAndWait();
     if (!mounted) return;
@@ -2037,10 +2065,6 @@ class _ChatScreenState extends State<ChatScreen>
         (SheService.isSheIdentity(c.agentId)
             ? SheService.resolveDisplayName(c.agentName, l10n.she_name)
             : (c.agentName ?? ''));
-    if (widget.onShowGroupWorkflow != null) {
-      widget.onShowGroupWorkflow!(channelId, channelName);
-      return;
-    }
     Navigator.of(context, rootNavigator: widget.embedded).push(
       MaterialPageRoute(
         builder: (_) => GroupWorkflowScreen(
@@ -2090,9 +2114,9 @@ class _ChatScreenState extends State<ChatScreen>
                 onTap: _navigateToStorageSpace,
               ),
               ChatDrawerAction(
-                icon: Icons.account_tree_outlined,
-                label: l10n.chat_workflow,
-                onTap: _showGroupWorkflow,
+                icon: Icons.assignment_outlined,
+                label: l10n.chat_tasks,
+                onTap: _showGroupTasks,
               ),
               ChatDrawerAction(
                 icon: Icons.edit_outlined,

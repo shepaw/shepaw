@@ -14,7 +14,7 @@ import '../peer/services/peer_connection_manager.dart';
 import 'home_screen.dart';
 import 'chat_screen.dart';
 import 'channel_trace_screen.dart';
-import 'group_workflow_screen.dart';
+import 'group_task_list_screen.dart';
 import 'add_remote_agent_screen.dart';
 import 'create_group_screen.dart';
 import 'group_detail_screen.dart';
@@ -61,7 +61,7 @@ enum _RightPanelView {
   contactGroup,
   contactPeer,
   traces,
-  groupWorkflow,
+  groupTasks,
   storageSpaceManage,
   instructions,
 }
@@ -207,9 +207,10 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   /// a channel after the initial ConversationSelection was recorded.
   String? _tracesChannelId;
 
-  /// Channel info for the group workflow view.
-  String? _workflowChannelId;
-  String? _workflowChannelName;
+  /// Channel info for the group task list view.
+  String? _taskChannelId;
+  String? _taskChannelName;
+  String? _taskGroupId;
 
   /// Tracks the panel that was showing before switching to chat,
   /// so the close/back button can return to it (e.g. search → chat → search).
@@ -284,22 +285,28 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     });
   }
 
-  void _onShowGroupWorkflow(String channelId, String channelName) {
+  void _onShowGroupTasks(
+    String channelId,
+    String channelName,
+    String groupId,
+  ) {
     setState(() {
       _previousPanel = _RightPanelView.chat;
-      _workflowChannelId = channelId;
-      _workflowChannelName = channelName;
-      _rightPanel = _RightPanelView.groupWorkflow;
+      _taskChannelId = channelId;
+      _taskChannelName = channelName;
+      _taskGroupId = groupId;
+      _rightPanel = _RightPanelView.groupTasks;
       _navGeneration++;
     });
   }
 
-  void _onGroupWorkflowBack() {
+  void _onGroupTasksBack() {
     setState(() {
       _rightPanel = _RightPanelView.chat;
       _previousPanel = null;
-      _workflowChannelId = null;
-      _workflowChannelName = null;
+      _taskChannelId = null;
+      _taskChannelName = null;
+      _taskGroupId = null;
       _navGeneration++;
     });
   }
@@ -631,7 +638,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             onClose: _onChatClose,
             onSwitchChannel: _onSwitchChannel,
             onShowTraces: _onShowTraces,
-            onShowGroupWorkflow: _onShowGroupWorkflow,
+            onShowGroupTasks: _onShowGroupTasks,
           );
         }
         return _buildEmptyState();
@@ -714,11 +721,12 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           onBack: _onTracesBack,
         );
 
-      case _RightPanelView.groupWorkflow:
-        return GroupWorkflowScreen(
-          channelId: _workflowChannelId ?? '',
-          channelName: _workflowChannelName ?? '',
-          onBack: _onGroupWorkflowBack,
+      case _RightPanelView.groupTasks:
+        return GroupTaskListScreen(
+          groupId: _taskGroupId ?? _taskChannelId ?? '',
+          channelId: _taskChannelId ?? '',
+          channelName: _taskChannelName ?? '',
+          onBack: _onGroupTasksBack,
         );
 
       case _RightPanelView.storageSpaceManage:
