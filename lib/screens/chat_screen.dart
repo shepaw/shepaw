@@ -690,6 +690,8 @@ class _ChatScreenState extends State<ChatScreen>
         return l10n.chat_responseError(param);
       case 'chat_peerTurnStillRunning':
         return l10n.chat_peerTurnStillRunning;
+      case 'osTool_approvalExpired':
+        return l10n.osTool_approvalExpired;
       case 'chat_historyLoadFailed':
         return l10n.chat_historyLoadFailed(param);
       case 'chat_modalityNotSupported':

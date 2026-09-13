@@ -89,6 +89,22 @@ void main() {
     expect(await b, isTrue);
   });
 
+  test('default timeout is zero so OS cards wait for the user', () {
+    expect(CliApprovalService.defaultTimeout, Duration.zero);
+  });
+
+  test('awaitApproval without timeout stays live', () async {
+    final future = CliApprovalService.instance.awaitApproval(
+      confirmationId: 'cli_no_timeout',
+      toolName: 'os.command',
+      channelId: 'ch',
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(CliApprovalService.instance.hasLive('cli_no_timeout'), isTrue);
+    CliApprovalService.instance.complete('cli_no_timeout', approved: true);
+    expect(await future, isTrue);
+  });
+
   test('awaitApproval times out as denied', () async {
     final future = CliApprovalService.instance.awaitApproval(
       confirmationId: 'cli_timeout',

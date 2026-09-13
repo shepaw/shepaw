@@ -2571,6 +2571,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get osTool_expired => 'Expired';
 
   @override
+  String get osTool_approvalExpired =>
+      'This approval expired; the command was not executed';
+
+  @override
   String get skill_configTitle => 'Skills';
 
   @override

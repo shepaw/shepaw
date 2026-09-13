@@ -35,11 +35,40 @@ mixin _InteractionOps on _ChatControllerBase {
       ],
     };
     _insertCliApprovalCard(actionData);
-    return CliApprovalService.instance.awaitApproval(
+    final approved = await CliApprovalService.instance.awaitApproval(
       confirmationId: confirmationId,
       toolName: toolName,
       channelId: currentChannelId,
     );
+    // Timeout / channel cancel complete the waiter as denied without a tap.
+    // Expire the card immediately so Allow/Deny cannot look still live.
+    if (!approved) {
+      _expireCliCardByConfirmationId(confirmationId);
+    }
+    return approved;
+  }
+
+  String? _messageIdForCliConfirmation(String confirmationId) {
+    if (confirmationId.isEmpty) return null;
+    for (final msg in messages) {
+      final ac = msg.metadata?['action_confirmation'];
+      if (ac is! Map) continue;
+      if (ac['confirmation_id'] == confirmationId) return msg.id;
+    }
+    return null;
+  }
+
+  void _expireCliCardByConfirmationId(String confirmationId) {
+    final messageId = _messageIdForCliConfirmation(confirmationId);
+    if (messageId == null) return;
+    final ac = messageIdMap[messageId]?.metadata?['action_confirmation'];
+    if (ac is Map && ac['selected_action_id'] != null) return;
+    _markActionConfirmationSelected(
+      messageId,
+      actionId: _cliExpiredActionId,
+      actionLabel: _cliExpiredActionId,
+    );
+    PendingApprovalHub.instance.resolveByConfirmationId(confirmationId);
   }
 
   void _insertCliApprovalCard(Map<String, dynamic> actionData) {
@@ -508,6 +537,15 @@ mixin _InteractionOps on _ChatControllerBase {
     PendingApprovalHub.instance.resolveByConfirmationId(confirmationId);
 
     if (confirmationContext == 'cli') {
+      if (!CliApprovalService.instance.hasLive(confirmationId)) {
+        LoggerService().info(
+          'CLI approval tap after waiter gone: confirmationId=$confirmationId',
+          tag: 'ChatController',
+        );
+        _expireCliCardByConfirmationId(confirmationId);
+        _emit(ShowSnackBarEvent('osTool_approvalExpired'));
+        return;
+      }
       final approved = actionId == 'allow' || actionId == 'allow_session';
       final rememberSession = actionId == 'allow_session';
       _markActionConfirmationSelected(
@@ -515,13 +553,11 @@ mixin _InteractionOps on _ChatControllerBase {
         actionId: approved ? 'allow' : actionId,
         actionLabel: actionLabel,
       );
-      if (CliApprovalService.instance.hasLive(confirmationId)) {
-        CliApprovalService.instance.complete(
-          confirmationId,
-          approved: approved,
-          rememberSession: rememberSession,
-        );
-      }
+      CliApprovalService.instance.complete(
+        confirmationId,
+        approved: approved,
+        rememberSession: rememberSession,
+      );
       return;
     }
 

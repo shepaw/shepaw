@@ -2477,6 +2477,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get osTool_expired => '已过期';
 
   @override
+  String get osTool_approvalExpired => '该审核已过期，命令未执行';
+
+  @override
   String get skill_configTitle => '技能';
 
   @override

@@ -1420,6 +1420,7 @@
   "osTool_deny": "拒绝",
   "osTool_rememberSession": "本次会话允许此命令",
   "osTool_expired": "已过期",
+  "osTool_approvalExpired": "该审核已过期，命令未执行",
   "skill_configTitle": "技能",
   "skill_configHint": "启用基于 Markdown 的技能，引导 Agent 完成复杂的多步骤任务。",
   "skill_selectAll": "全选",

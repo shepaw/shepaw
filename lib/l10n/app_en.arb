@@ -984,6 +984,7 @@
   "osTool_deny": "Deny",
   "osTool_rememberSession": "Allow this command for this session",
   "osTool_expired": "Expired",
+  "osTool_approvalExpired": "This approval expired; the command was not executed",
   "skill_configTitle": "Skills",
   "skill_configHint": "Enable markdown-based skills to guide the agent through complex multi-step tasks.",
   "skill_selectAll": "Select All",

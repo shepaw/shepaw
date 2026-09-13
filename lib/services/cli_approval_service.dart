@@ -30,14 +30,18 @@ class CliApprovalService {
 
   final Map<String, CliApprovalHandle> _pending = {};
 
-  /// Unanswered cards deny themselves so a backgrounded app cannot freeze
-  /// a group turn for tens of minutes (snake session, 2026-09-12).
-  static const defaultTimeout = Duration(minutes: 2);
+  /// Default is no auto-deny. OS / high-risk cards need time to read; a short
+  /// timeout makes a later "Approve" tap a no-op while the agent already
+  /// continued as denied (sudoku session, 2026-09-13).
+  ///
+  /// Pass an explicit [timeout] only for callers that must not wait forever.
+  /// Process death / channel reload still expire leftover cards via
+  /// [expireStaleCards].
+  static const defaultTimeout = Duration.zero;
 
   /// Register (or reuse) a pending approval and wait for [complete] / [cancel].
   ///
-  /// [timeout] defaults to [defaultTimeout]. `Duration.zero` waits forever
-  /// (tests / explicit no-timeout callers).
+  /// [timeout] defaults to [defaultTimeout] (`Duration.zero` = wait forever).
   Future<bool> awaitApproval({
     required String confirmationId,
     required String toolName,

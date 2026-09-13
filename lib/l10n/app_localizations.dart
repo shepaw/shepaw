@@ -4616,6 +4616,12 @@ abstract class AppLocalizations {
   /// **'已过期'**
   String get osTool_expired;
 
+  /// No description provided for @osTool_approvalExpired.
+  ///
+  /// In zh, this message translates to:
+  /// **'该审核已过期，命令未执行'**
+  String get osTool_approvalExpired;
+
   /// No description provided for @skill_configTitle.
   ///
   /// In zh, this message translates to:
