@@ -900,6 +900,56 @@ class PeerConnectionManager {
   /// 内网端点建连超时 — 不可达时快速失败以便回退到 Channel
   static const _localConnectTimeout = Duration(seconds: 2);
 
+  /// 尝试一条内网 WS。占用口但公钥不对（桌面 App / 残留 daemon）也会在
+  /// [_localConnectTimeout] 内失败，不会每个口卡 15s。
+  Future<bool> _tryLocalWs(
+    PeerConnection conn,
+    PairedPeer peer, {
+    required String url,
+    required String transport,
+    bool persistOnSuccess = false,
+  }) async {
+    if (conn.isClosed) return false;
+    if (_isOwnLocalEndpoint(url)) {
+      _log.debug(
+        'Skip $transport for ${peer.deviceName}: own PeerLocalServer',
+        tag: _tag,
+      );
+      return false;
+    }
+    try {
+      await conn.connectViaWebSocket(
+        url,
+        timeout: _localConnectTimeout,
+        handshakeTimeout: _localConnectTimeout,
+      );
+      if (persistOnSuccess && url != peer.localEndpoint) {
+        await _storage.updateLocalEndpoint(peer.id, url);
+      }
+      PeerDeliveryTraceService.instance.recordTransportAttempt(
+        peerId: peer.id,
+        transport: transport,
+        success: true,
+        endpoint: url,
+      );
+      _log.debug(
+        'Connected to ${peer.deviceName} via local network ($transport)',
+        tag: _tag,
+      );
+      return true;
+    } catch (e) {
+      PeerDeliveryTraceService.instance.recordTransportAttempt(
+        peerId: peer.id,
+        transport: transport,
+        success: false,
+        endpoint: url,
+        error: e.toString(),
+      );
+      _log.debug('$transport connection failed: $e', tag: _tag);
+      return false;
+    }
+  }
+
   /// Tie-break responder 兜底发起延迟（可达性判断已处理主路径，这里只作安全网）
   static const _fallbackDelay = Duration(seconds: 6);
 
@@ -1009,86 +1059,66 @@ class PeerConnectionManager {
       // 优先内网直连，失败回退 Channel。
       // 跳过本机 PeerLocalServer 监听端点，避免同机自连触发 NoiseAeadFailure；
       // 同 IP、不同端口（本机 Nexuspouch）仍可走 stored/mDNS endpoint。
+      // Hub 默认 18793，被占后迁到 18794…；18792 常是桌面 App，TCP 通但 Noise
+      // 对不上。扫一小段口才能在 Channel 挂掉时找到新端口。
       bool connected = false;
       final storedLocal = peer.localEndpoint;
       final lanAddr = _extractLanAddress(storedLocal);
       String? fixedUrl;
       if (lanAddr != null) {
-        fixedUrl = 'ws://$lanAddr:${PeerLocalServer.defaultPort}/peer/ws';
+        fixedUrl =
+            'ws://${formatLanWsHost(lanAddr)}:${PeerLocalServer.defaultPort}/peer/ws';
       }
 
-      if (fixedUrl != null && !_isOwnLocalEndpoint(fixedUrl)) {
-        try {
-          await conn.connectViaWebSocket(fixedUrl, timeout: _localConnectTimeout);
-          connected = true;
-          connectedTransport = 'local_fixed';
-          PeerDeliveryTraceService.instance.recordTransportAttempt(
-            peerId: peer.id,
+      if (fixedUrl != null &&
+          await _tryLocalWs(
+            conn,
+            peer,
+            url: fixedUrl,
             transport: 'local_fixed',
-            success: true,
-            endpoint: fixedUrl,
-          );
-          _log.debug(
-            'Connected to ${peer.deviceName} via local network (fixed port)',
-            tag: _tag,
-          );
-        } catch (e) {
-          PeerDeliveryTraceService.instance.recordTransportAttempt(
-            peerId: peer.id,
-            transport: 'local_fixed',
-            success: false,
-            endpoint: fixedUrl,
-            error: e.toString(),
-          );
-          _log.debug('Fixed port connection failed: $e', tag: _tag);
-        }
-      } else if (fixedUrl != null) {
-        _log.debug(
-          'Skip fixed port for ${peer.deviceName}: would hit own PeerLocalServer',
-          tag: _tag,
-        );
+          )) {
+        connected = true;
+        connectedTransport = 'local_fixed';
       }
 
-      // 存储/mDNS 端点（含非默认端口、localhost → Nexuspouch）
       if (!connected &&
-          !conn.isClosed &&
           storedLocal != null &&
           storedLocal != fixedUrl &&
-          !_isOwnLocalEndpoint(storedLocal)) {
-        try {
-          await conn.connectViaWebSocket(
-            storedLocal,
-            timeout: _localConnectTimeout,
-          );
-          connected = true;
-          connectedTransport = 'local_stored';
-          PeerDeliveryTraceService.instance.recordTransportAttempt(
-            peerId: peer.id,
+          await _tryLocalWs(
+            conn,
+            peer,
+            url: storedLocal,
             transport: 'local_stored',
-            success: true,
-            endpoint: storedLocal,
-          );
-          _log.debug(
-            'Connected to ${peer.deviceName} via local network (stored port)',
-            tag: _tag,
-          );
-        } catch (e2) {
-          PeerDeliveryTraceService.instance.recordTransportAttempt(
-            peerId: peer.id,
-            transport: 'local_stored',
-            success: false,
-            endpoint: storedLocal,
-            error: e2.toString(),
-          );
-          _log.debug('Stored port connection also failed: $e2', tag: _tag);
+          )) {
+        connected = true;
+        connectedTransport = 'local_stored';
+      }
+
+      if (!connected && lanAddr != null) {
+        final skip = <int>{
+          PeerLocalServer.defaultPort,
+          if (peerEndpointPort(storedLocal) case final storedPort?) storedPort,
+          if (PeerLocalServer.instance.port case final ownPort?) ownPort,
+        };
+        for (final url in lanPeerScanEndpoints(
+          lanHost: lanAddr,
+          skipPorts: skip,
+        )) {
+          if (await _tryLocalWs(
+            conn,
+            peer,
+            url: url,
+            transport: 'local_scan',
+            persistOnSuccess: true,
+          )) {
+            connected = true;
+            connectedTransport = 'local_scan';
+            if (url != peer.localEndpoint) {
+              peer = peer.copyWith(localEndpoint: url);
+            }
+            break;
+          }
         }
-      } else if (!connected &&
-          storedLocal != null &&
-          _isOwnLocalEndpoint(storedLocal)) {
-        _log.debug(
-          'Skip stored local endpoint for ${peer.deviceName}: own PeerLocalServer',
-          tag: _tag,
-        );
       }
 
       if (!connected && !conn.isClosed && peer.channelEndpoint != null) {

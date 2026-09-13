@@ -193,15 +193,18 @@ class PeerConnection {
   ///
   /// [timeout] 控制底层 TCP/WS 建连超时。内网端点不可达时应使用较短超时
   /// （如 2s）以便快速回退到 Channel，避免长时间阻塞。
+  /// [handshakeTimeout] 控制 Noise msg2 等待；扫端口时应对占用口（桌面
+  /// ShePaw / 残留 daemon）尽快放弃，避免每个口卡 15s。
   Future<void> connectViaWebSocket(
     String endpoint, {
     Duration timeout = const Duration(seconds: 10),
+    Duration handshakeTimeout = const Duration(seconds: 15),
   }) async {
     if (_closed) return;
     _setState(PeerConnectionState.connecting);
 
     // 清理上一次尝试遗留的订阅 / socket / 会话。connectViaWebSocket 会在同一个
-    // PeerConnection 上按「固定端口 → 存储端口 → channel」顺序重试；若不清理，
+    // PeerConnection 上按「固定端口 → 存储端口 → 端口扫描 → channel」顺序重试；若不清理，
     // 上一次尝试的 socket 监听器仍然活跃，而 _handleIncomingFrame 用的是实例当前
     // 的 _noiseSession（本次新建的会话）。旧 socket 上迟到的帧会被用新会话解密 →
     // NoiseTransportError: decrypt failed，并造成 socket / 订阅泄漏。
@@ -256,7 +259,10 @@ class PeerConnection {
       );
 
       // Noise IK 握手（使用 completer 等待 msg2）
-      await _performInitiatorHandshake(handshakeCompleter);
+      await _performInitiatorHandshake(
+        handshakeCompleter,
+        handshakeTimeout: handshakeTimeout,
+      );
 
       _setState(PeerConnectionState.connected);
       _startHeartbeat();
@@ -363,7 +369,10 @@ class PeerConnection {
 
   // ── 内部方法 ────────────────────────────────────────────────────────────
 
-  Future<void> _performInitiatorHandshake(Completer<String> msg2Completer) async {
+  Future<void> _performInitiatorHandshake(
+    Completer<String> msg2Completer, {
+    Duration handshakeTimeout = const Duration(seconds: 15),
+  }) async {
     final identity = await NoiseIdentity.loadOrCreate();
     _noiseSession = await NoiseSession.initiator(
       staticPublicKey: identity.publicKey,
@@ -390,7 +399,7 @@ class PeerConnection {
     _send(frame1);
 
     // 等待 msg2（通过 Completer，复用同一个 subscription）
-    final msg2Raw = await msg2Completer.future.timeout(const Duration(seconds: 15));
+    final msg2Raw = await msg2Completer.future.timeout(handshakeTimeout);
     final msg2Frame = decodeFrame(msg2Raw);
     if (msg2Frame.t != FrameType.hs) {
       throw StateError('Expected handshake frame, got ${msg2Frame.t}');

@@ -115,4 +115,61 @@ void main() {
       );
     });
   });
+
+  group('peerEndpointPort', () {
+    test('reads explicit port', () {
+      expect(peerEndpointPort('ws://192.168.31.21:18794/peer/ws'), 18794);
+    });
+
+    test('defaults ws without port to 80', () {
+      expect(peerEndpointPort('ws://192.168.31.21/peer/ws'), 80);
+    });
+
+    test('returns null for empty', () {
+      expect(peerEndpointPort(null), isNull);
+      expect(peerEndpointPort(''), isNull);
+    });
+  });
+
+  group('lanPeerScanEndpoints', () {
+    test('scans Hub default range and skips already-tried ports', () {
+      expect(
+        lanPeerScanEndpoints(
+          lanHost: '192.168.31.21',
+          skipPorts: {kAppPeerDefaultPort, 18794},
+        ),
+        [
+          'ws://192.168.31.21:18793/peer/ws',
+          'ws://192.168.31.21:18795/peer/ws',
+          'ws://192.168.31.21:18796/peer/ws',
+          'ws://192.168.31.21:18797/peer/ws',
+          'ws://192.168.31.21:18798/peer/ws',
+          'ws://192.168.31.21:18799/peer/ws',
+        ],
+      );
+    });
+
+    test('brackets IPv6 hosts', () {
+      expect(
+        lanPeerScanEndpoints(
+          lanHost: 'fe80::1',
+          startPort: 18793,
+          endPort: 18793,
+        ),
+        ['ws://[fe80::1]:18793/peer/ws'],
+      );
+    });
+
+    test('returns empty when host missing or range inverted', () {
+      expect(lanPeerScanEndpoints(lanHost: ''), isEmpty);
+      expect(
+        lanPeerScanEndpoints(
+          lanHost: '192.168.31.21',
+          startPort: 18799,
+          endPort: 18793,
+        ),
+        isEmpty,
+      );
+    });
+  });
 }

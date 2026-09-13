@@ -4,6 +4,56 @@
 /// 防自连必须按「本机监听的 host:port」判断，不能 ban 整个本机 IP。
 library;
 
+/// 桌面 App 自己的 Peer 口。Hub 避开它，默认用 [kHubPeerDefaultPort]。
+const int kAppPeerDefaultPort = 18792;
+
+/// Hub 默认 Peer 端口（与 agent-hub `DEFAULT_PEER_PORT` 对齐）。
+const int kHubPeerDefaultPort = 18793;
+
+/// Hub 默认口被占后顺延的扫描上限（含）。再往后几乎只是异常堆积。
+const int kHubPeerScanPortEnd = 18799;
+
+/// 把局域网 host 写成 `ws://` 可用的形式（IPv6 加方括号）。
+String formatLanWsHost(String host) {
+  if (host.contains(':') && !host.startsWith('[')) return '[$host]';
+  return host;
+}
+
+/// 从 `ws://host:port/path` 取出端口；解析失败返回 null。
+int? peerEndpointPort(String? endpoint) {
+  if (endpoint == null || endpoint.isEmpty) return null;
+  try {
+    final uri = Uri.parse(endpoint);
+    if (uri.hasPort) return uri.port;
+    if (uri.scheme == 'wss' || uri.scheme == 'https') return 443;
+    if (uri.scheme == 'ws' || uri.scheme == 'http') return 80;
+    return null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// 同一局域网 IP 上 Hub 可能迁到的 Peer URL（已试端口跳过）。
+///
+/// Hub 默认 18793，被占后 18794…。18792 由 App 先单独试，不放进这里。
+List<String> lanPeerScanEndpoints({
+  required String lanHost,
+  Set<int> skipPorts = const {},
+  int startPort = kHubPeerDefaultPort,
+  int endPort = kHubPeerScanPortEnd,
+  String path = '/peer/ws',
+}) {
+  if (lanHost.isEmpty || endPort < startPort) return const [];
+  final host = formatLanWsHost(lanHost);
+  final normalizedPath = path.startsWith('/') ? path : '/$path';
+  final urls = <String>[];
+  for (var port = startPort; port <= endPort; port++) {
+    if (skipPorts.contains(port)) continue;
+    urls.add('ws://$host:$port$normalizedPath');
+  }
+  return urls;
+}
+
 /// 判断 [endpoint] 是否指向本机当前 PeerLocalServer 监听地址。
 ///
 /// [ownHost]/[ownPort] 为 `PeerLocalServer.address` / `.port`。
