@@ -95,18 +95,24 @@ class PeerLocalServer {
 
   /// 获取本机局域网 IP 地址
   static Future<String> getLocalIp() async {
+    final ips = await listLocalIpv4s();
+    return ips.isEmpty ? '127.0.0.1' : ips.first;
+  }
+
+  /// 本机非回环 IPv4（用于判断是否与对端在同一 /24）。
+  static Future<Set<String>> listLocalIpv4s() async {
+    final out = <String>{};
     try {
       for (final interface in await NetworkInterface.list(
+        includeLinkLocal: false,
         type: InternetAddressType.IPv4,
       )) {
         for (final addr in interface.addresses) {
-          if (!addr.isLoopback && !addr.isLinkLocal) {
-            return addr.address;
-          }
+          if (!addr.isLoopback) out.add(addr.address);
         }
       }
     } catch (_) {}
-    return '127.0.0.1';
+    return out;
   }
 
   // ── 内部方法 ────────────────────────────────────────────────────────────

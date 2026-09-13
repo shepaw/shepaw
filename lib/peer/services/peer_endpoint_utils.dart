@@ -54,6 +54,45 @@ List<String> lanPeerScanEndpoints({
   return urls;
 }
 
+/// 两个 IPv4 是否同属一个 /24（家用 Wi-Fi 的默认网段）。
+bool isSameIpv4Slash24(String a, String b) {
+  final pa = parseIpv4Octets(a);
+  final pb = parseIpv4Octets(b);
+  if (pa == null || pb == null) return false;
+  return pa[0] == pb[0] && pa[1] == pb[1] && pa[2] == pb[2];
+}
+
+/// 解析点分 IPv4；IPv6 / 主机名返回 null。
+List<int>? parseIpv4Octets(String host) {
+  final parts = host.split('.');
+  if (parts.length != 4) return null;
+  final out = <int>[];
+  for (final part in parts) {
+    final n = int.tryParse(part, radix: 10);
+    if (n == null || n < 0 || n > 255) return null;
+    if (part.length > 1 && part.startsWith('0')) return null;
+    out.add(n);
+  }
+  return out;
+}
+
+/// 本机是否像在对端局域网里：任一本地 IPv4 与对端同 /24（或就是同一地址）。
+///
+/// 蜂窝 / 其它 Wi-Fi 上本地是 10.x、100.64.x 或另一段 192.168.x，
+/// 对端仍是家里的 192.168.31.x → 返回 false，应跳过 LAN 直连去走 Channel。
+bool canReachLanPeer({
+  required String? peerLanHost,
+  required Iterable<String> localIpv4s,
+}) {
+  if (peerLanHost == null || peerLanHost.isEmpty) return false;
+  for (final local in localIpv4s) {
+    if (local == peerLanHost || isSameIpv4Slash24(local, peerLanHost)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /// 判断 [endpoint] 是否指向本机当前 PeerLocalServer 监听地址。
 ///
 /// [ownHost]/[ownPort] 为 `PeerLocalServer.address` / `.port`。

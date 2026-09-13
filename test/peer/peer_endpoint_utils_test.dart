@@ -172,4 +172,61 @@ void main() {
       );
     });
   });
+
+  group('canReachLanPeer', () {
+    test('same /24 is reachable', () {
+      expect(
+        canReachLanPeer(
+          peerLanHost: '192.168.31.21',
+          localIpv4s: {'192.168.31.50'},
+        ),
+        isTrue,
+      );
+    });
+
+    test('exact same address is reachable', () {
+      expect(
+        canReachLanPeer(
+          peerLanHost: '192.168.31.21',
+          localIpv4s: {'192.168.31.21'},
+        ),
+        isTrue,
+      );
+    });
+
+    test('cellular or other Wi-Fi is not on home LAN', () {
+      expect(
+        canReachLanPeer(
+          peerLanHost: '192.168.31.21',
+          localIpv4s: {'10.12.34.56', '100.64.1.8'},
+        ),
+        isFalse,
+      );
+      expect(
+        canReachLanPeer(
+          peerLanHost: '192.168.31.21',
+          localIpv4s: {'192.168.1.8'},
+        ),
+        isFalse,
+      );
+    });
+
+    test('missing peer or no local IPv4 is not reachable', () {
+      expect(
+        canReachLanPeer(peerLanHost: null, localIpv4s: {'192.168.31.50'}),
+        isFalse,
+      );
+      expect(
+        canReachLanPeer(peerLanHost: '192.168.31.21', localIpv4s: const {}),
+        isFalse,
+      );
+      expect(
+        canReachLanPeer(
+          peerLanHost: 'hub.local',
+          localIpv4s: {'192.168.31.50'},
+        ),
+        isFalse,
+      );
+    });
+  });
 }

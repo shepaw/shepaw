@@ -1061,13 +1061,23 @@ class PeerConnectionManager {
       // 同 IP、不同端口（本机 Nexuspouch）仍可走 stored/mDNS endpoint。
       // Hub 默认 18793，被占后迁到 18794…；18792 常是桌面 App，TCP 通但 Noise
       // 对不上。扫一小段口才能在 Channel 挂掉时找到新端口。
+      // 外网（本机不在对端 /24）跳过 LAN，避免每个私网地址空等 2s 再走 Channel。
       bool connected = false;
       final storedLocal = peer.localEndpoint;
       final lanAddr = _extractLanAddress(storedLocal);
+      final onPeerLan = canReachLanPeer(
+        peerLanHost: lanAddr,
+        localIpv4s: await PeerLocalServer.listLocalIpv4s(),
+      );
       String? fixedUrl;
-      if (lanAddr != null) {
+      if (onPeerLan && lanAddr != null) {
         fixedUrl =
             'ws://${formatLanWsHost(lanAddr)}:${PeerLocalServer.defaultPort}/peer/ws';
+      } else if (lanAddr != null) {
+        _log.debug(
+          'Skip LAN for ${peer.deviceName}: not on same subnet as $lanAddr',
+          tag: _tag,
+        );
       }
 
       if (fixedUrl != null &&
@@ -1082,6 +1092,7 @@ class PeerConnectionManager {
       }
 
       if (!connected &&
+          onPeerLan &&
           storedLocal != null &&
           storedLocal != fixedUrl &&
           await _tryLocalWs(
@@ -1094,7 +1105,7 @@ class PeerConnectionManager {
         connectedTransport = 'local_stored';
       }
 
-      if (!connected && lanAddr != null) {
+      if (!connected && onPeerLan && lanAddr != null) {
         final skip = <int>{
           PeerLocalServer.defaultPort,
           if (peerEndpointPort(storedLocal) case final storedPort?) storedPort,
