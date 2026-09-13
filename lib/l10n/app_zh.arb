@@ -2843,6 +2843,30 @@
       }
     }
   },
+  "group_task_artifacts": "产物",
+  "group_task_acceptance": "验收标准",
+  "group_task_constraints": "约束",
+  "group_task_archiveHint": "卷宗是执行结束后的派生快照，不是任务的主数据",
+  "group_task_planStep": "步骤 {step}",
+  "@group_task_planStep": {
+    "placeholders": {
+      "step": {
+        "type": "int"
+      }
+    }
+  },
+  "group_task_memberRound": "第 {round} 轮",
+  "@group_task_memberRound": {
+    "placeholders": {
+      "round": {
+        "type": "int"
+      }
+    }
+  },
+  "group_task_planConcurrent": "并行",
+  "group_task_planSequential": "串行",
+  "group_task_memberFailed": "失败",
+  "group_task_memberStalled": "停滞",
   "group_taskStateClarifying": "澄清中",
   "group_taskStatePlanned": "已规划",
   "group_taskStateExecuting": "执行中",

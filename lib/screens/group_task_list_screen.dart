@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../models/group_task.dart';
 import '../models/workflow_models.dart';
+import '../services/group/group_task_display.dart';
 import '../services/group/group_task_labels.dart';
 import '../services/group/group_task_workflow_matcher.dart';
 import '../services/local_database_service.dart';
@@ -233,9 +234,10 @@ class _TaskTile extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      task.userGoal.trim().isEmpty
-                          ? task.orchestrationId
-                          : task.userGoal.trim(),
+                      GroupTaskDisplay.title(
+                        task.userGoal,
+                        fallback: task.orchestrationId,
+                      ),
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,

@@ -8733,6 +8733,66 @@ abstract class AppLocalizations {
   /// **'{count} 个工作流'**
   String group_task_workflowCount(int count);
 
+  /// No description provided for @group_task_artifacts.
+  ///
+  /// In zh, this message translates to:
+  /// **'产物'**
+  String get group_task_artifacts;
+
+  /// No description provided for @group_task_acceptance.
+  ///
+  /// In zh, this message translates to:
+  /// **'验收标准'**
+  String get group_task_acceptance;
+
+  /// No description provided for @group_task_constraints.
+  ///
+  /// In zh, this message translates to:
+  /// **'约束'**
+  String get group_task_constraints;
+
+  /// No description provided for @group_task_archiveHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'卷宗是执行结束后的派生快照，不是任务的主数据'**
+  String get group_task_archiveHint;
+
+  /// No description provided for @group_task_planStep.
+  ///
+  /// In zh, this message translates to:
+  /// **'步骤 {step}'**
+  String group_task_planStep(int step);
+
+  /// No description provided for @group_task_memberRound.
+  ///
+  /// In zh, this message translates to:
+  /// **'第 {round} 轮'**
+  String group_task_memberRound(int round);
+
+  /// No description provided for @group_task_planConcurrent.
+  ///
+  /// In zh, this message translates to:
+  /// **'并行'**
+  String get group_task_planConcurrent;
+
+  /// No description provided for @group_task_planSequential.
+  ///
+  /// In zh, this message translates to:
+  /// **'串行'**
+  String get group_task_planSequential;
+
+  /// No description provided for @group_task_memberFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'失败'**
+  String get group_task_memberFailed;
+
+  /// No description provided for @group_task_memberStalled.
+  ///
+  /// In zh, this message translates to:
+  /// **'停滞'**
+  String get group_task_memberStalled;
+
   /// No description provided for @group_taskStateClarifying.
   ///
   /// In zh, this message translates to:

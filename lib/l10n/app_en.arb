@@ -2365,6 +2365,30 @@
       }
     }
   },
+  "group_task_artifacts": "Artifacts",
+  "group_task_acceptance": "Acceptance criteria",
+  "group_task_constraints": "Constraints",
+  "group_task_archiveHint": "The archive is a derived snapshot after finish, not the task source of truth",
+  "group_task_planStep": "Step {step}",
+  "@group_task_planStep": {
+    "placeholders": {
+      "step": {
+        "type": "int"
+      }
+    }
+  },
+  "group_task_memberRound": "Round {round}",
+  "@group_task_memberRound": {
+    "placeholders": {
+      "round": {
+        "type": "int"
+      }
+    }
+  },
+  "group_task_planConcurrent": "Concurrent",
+  "group_task_planSequential": "Sequential",
+  "group_task_memberFailed": "Failed",
+  "group_task_memberStalled": "Stalled",
   "group_taskStateClarifying": "Clarifying",
   "group_taskStatePlanned": "Planned",
   "group_taskStateExecuting": "Executing",

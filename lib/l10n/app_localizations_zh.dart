@@ -4763,6 +4763,40 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get group_task_artifacts => '产物';
+
+  @override
+  String get group_task_acceptance => '验收标准';
+
+  @override
+  String get group_task_constraints => '约束';
+
+  @override
+  String get group_task_archiveHint => '卷宗是执行结束后的派生快照，不是任务的主数据';
+
+  @override
+  String group_task_planStep(int step) {
+    return '步骤 $step';
+  }
+
+  @override
+  String group_task_memberRound(int round) {
+    return '第 $round 轮';
+  }
+
+  @override
+  String get group_task_planConcurrent => '并行';
+
+  @override
+  String get group_task_planSequential => '串行';
+
+  @override
+  String get group_task_memberFailed => '失败';
+
+  @override
+  String get group_task_memberStalled => '停滞';
+
+  @override
   String get group_taskStateClarifying => '澄清中';
 
   @override

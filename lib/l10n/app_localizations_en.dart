@@ -4950,6 +4950,41 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get group_task_artifacts => 'Artifacts';
+
+  @override
+  String get group_task_acceptance => 'Acceptance criteria';
+
+  @override
+  String get group_task_constraints => 'Constraints';
+
+  @override
+  String get group_task_archiveHint =>
+      'The archive is a derived snapshot after finish, not the task source of truth';
+
+  @override
+  String group_task_planStep(int step) {
+    return 'Step $step';
+  }
+
+  @override
+  String group_task_memberRound(int round) {
+    return 'Round $round';
+  }
+
+  @override
+  String get group_task_planConcurrent => 'Concurrent';
+
+  @override
+  String get group_task_planSequential => 'Sequential';
+
+  @override
+  String get group_task_memberFailed => 'Failed';
+
+  @override
+  String get group_task_memberStalled => 'Stalled';
+
+  @override
   String get group_taskStateClarifying => 'Clarifying';
 
   @override

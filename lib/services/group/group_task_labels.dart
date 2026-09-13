@@ -1,6 +1,21 @@
 import '../../l10n/app_localizations.dart';
 import '../../models/group_task.dart';
 
+String groupTaskMemberStatusLabel(AppLocalizations l10n, String status) {
+  switch (status) {
+    case GroupTaskMemberResult.statusDone:
+      return l10n.group_taskStatusDone;
+    case GroupTaskMemberResult.statusPending:
+      return l10n.group_taskStatusPending;
+    case GroupTaskMemberResult.statusFailed:
+      return l10n.group_task_memberFailed;
+    case GroupTaskMemberResult.statusStalled:
+      return l10n.group_task_memberStalled;
+    default:
+      return status;
+  }
+}
+
 String groupTaskStateLabel(AppLocalizations l10n, String status) {
   switch (status) {
     case GroupTask.statusClarifying:
