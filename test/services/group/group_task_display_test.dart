@@ -11,12 +11,19 @@ void main() {
       );
     });
 
-    test('strips leading mentions and takes the first sentence', () {
+    test('keeps the original message including mentions', () {
       expect(
         GroupTaskDisplay.title(
           '@She @Claude 帮我写一个简版的数独小游戏。要求能在终端里玩，还要有提示。',
         ),
-        '帮我写一个简版的数独小游戏。',
+        '@She @Claude 帮我写一个简版的数独小游戏。要求能在终端里玩，还要有提示。',
+      );
+    });
+
+    test('collapses newlines but does not drop later sentences', () {
+      expect(
+        GroupTaskDisplay.title('写一个贪吃蛇\n要能计分'),
+        '写一个贪吃蛇 要能计分',
       );
     });
 

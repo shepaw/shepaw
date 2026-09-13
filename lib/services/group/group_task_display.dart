@@ -9,21 +9,19 @@ import 'group_member_history.dart';
 class GroupTaskDisplay {
   GroupTaskDisplay._();
 
-  static const listTitleMaxChars = 36;
-  static const detailTitleMaxChars = 72;
+  static const listTitleMaxChars = 80;
+  static const detailTitleMaxChars = 80;
 
   static final _whitespace = RegExp(r'\s+');
-  static final _leadingMentions = RegExp(
-    r'^(?:@[\w\u00c0-\u024f\u4e00-\u9fff.\-]+\s+)+',
-    unicode: true,
-  );
-  static final _sentenceEnd = RegExp(r'[。！？!?]');
   static final _taskRecordFile = RegExp(
     r'/shared/tasks/[^/]+/'
     r'(task\.json|requirement\.md|plan\.md|plan\.json|results\.json|archive\.md)$',
   );
 
-  /// Short label for lists / app bars. Never invents a new stored title.
+  /// List / app-bar label from the user's original message.
+  ///
+  /// Keeps mentions and later sentences. Only collapses whitespace so a
+  /// multi-line chat message fits one title, then truncates if still long.
   static String title(
     String userGoal, {
     String fallback = '',
@@ -32,14 +30,7 @@ class GroupTaskDisplay {
     var text = userGoal.trim();
     if (text.isEmpty) return fallback;
     text = text.replaceAll(_whitespace, ' ').trim();
-    text = text.replaceFirst(_leadingMentions, '').trim();
     if (text.isEmpty) return fallback;
-
-    final end = _sentenceEnd.firstMatch(text);
-    if (end != null && end.start >= 4) {
-      text = text.substring(0, end.end).trim();
-    }
-
     if (text.length <= maxChars) return text;
     return '${text.substring(0, maxChars).trimRight()}…';
   }
