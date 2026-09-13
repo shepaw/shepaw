@@ -164,28 +164,32 @@ class _ChatEventListenBadgeState extends State<ChatEventListenBadge> {
     final screenWidth = MediaQuery.sizeOf(overlayContext).width;
     final panelWidth = _kPanelWidth.clamp(0.0, screenWidth - 16);
     final colorScheme = Theme.of(overlayContext).colorScheme;
+    // OverlayPortal 给 overlay 子树的是整屏紧约束。UnconstrainedBox 会
+    // `constrain` 成全屏，若 TapRegion / MouseRegion 包在它外面，命中盒
+    // 会铺满窗口：点空白不算 outside，onExit 也要到离开窗口才触发。
+    // 两者必须放在 UnconstrainedBox 里面，只包住面板本身。
     return CompositedTransformFollower(
       link: _link,
       showWhenUnlinked: false,
       targetAnchor: alignEnd ? Alignment.bottomRight : Alignment.bottomLeft,
       followerAnchor: alignEnd ? Alignment.topRight : Alignment.topLeft,
       offset: const Offset(0, 6),
-      child: TapRegion(
-        groupId: _kTapGroup,
-        onTapOutside: (_) => _hidePanel(),
-        child: MouseRegion(
-          onEnter: (_) {
-            _overPanel = true;
-            _hideTimer?.cancel();
-          },
-          onExit: (_) {
-            _overPanel = false;
-            _scheduleHide();
-          },
-          child: Material(
-            color: Colors.transparent,
-            child: UnconstrainedBox(
-              alignment: alignEnd ? Alignment.topRight : Alignment.topLeft,
+      child: UnconstrainedBox(
+        alignment: alignEnd ? Alignment.topRight : Alignment.topLeft,
+        child: TapRegion(
+          groupId: _kTapGroup,
+          onTapOutside: (_) => _hidePanel(),
+          child: MouseRegion(
+            onEnter: (_) {
+              _overPanel = true;
+              _hideTimer?.cancel();
+            },
+            onExit: (_) {
+              _overPanel = false;
+              _scheduleHide();
+            },
+            child: Material(
+              color: Colors.transparent,
               child: SizedBox(
                 key: const Key('chat_event_listen_panel'),
                 width: panelWidth,

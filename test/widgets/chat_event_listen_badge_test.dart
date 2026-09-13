@@ -82,6 +82,46 @@ void main() {
     expect(find.text('peer.pairing.inbound'), findsOneWidget);
   });
 
+  testWidgets('鼠标离开徽标后面板自动关闭', (tester) async {
+    EventBus.instance.addSubscription(
+      agentId: 'agent-1',
+      patterns: const [EventPattern(typeGlob: 'peer.pairing.inbound')],
+      delivery: EventDelivery.active,
+    );
+
+    await pumpBadge(tester);
+
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await gesture.addPointer(location: Offset.zero);
+    addTearDown(gesture.removePointer);
+    await tester.pump();
+    await gesture.moveTo(tester.getCenter(find.byIcon(Icons.sensors)));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('chat_event_listen_panel')), findsOneWidget);
+
+    await gesture.moveTo(const Offset(10, 500));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.byKey(const Key('chat_event_listen_panel')), findsNothing);
+  });
+
+  testWidgets('点击空白处关闭面板', (tester) async {
+    EventBus.instance.addSubscription(
+      agentId: 'agent-1',
+      patterns: const [EventPattern(typeGlob: 'peer.pairing.inbound')],
+      delivery: EventDelivery.active,
+    );
+
+    await pumpBadge(tester);
+    await tester.tap(find.byIcon(Icons.sensors));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('chat_event_listen_panel')), findsOneWidget);
+
+    await tester.tapAt(const Offset(20, 500));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('chat_event_listen_panel')), findsNothing);
+  });
+
   testWidgets('事件数标记在标题状态栏，与在线状态同行', (tester) async {
     EventBus.instance.addSubscription(
       agentId: 'agent-1',
