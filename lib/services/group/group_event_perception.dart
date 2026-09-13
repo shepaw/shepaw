@@ -376,7 +376,6 @@ class GroupEventPerceptionScheduler {
           customSystemPrompt: _customSystemPrompt,
           channelMembers: channel.members,
           adminAgent: adminAgent,
-          isFlowMode: false,
           messageVersion: null,
           acpCancellationToken: token,
         );

@@ -407,7 +407,9 @@ class GroupSetDescriptionCommand extends CliCommand {
 /// - `--system-prompt ""` — 群系统提示词（留空=清除）
 /// - `--mention-mode adminOnly|allMembers`
 /// - `--max-loop-rounds 30`（0 = 回默认 50）
-/// - `--flow-mode true|false`、`--enable-stage-gate true|false`
+///
+/// Flow / stage-gate are no longer user settings: the admin agent picks the
+/// orchestration path per task.
 ///
 /// Settings take effect from the next group message; already-forked She-bound
 /// child sessions keep the values copied at fork time (no back-fill).
@@ -423,14 +425,13 @@ class GroupSetConfigCommand extends CliCommand {
   @override
   String get description =>
       'Update this group\'s settings (system-prompt / mention-mode / '
-      'max-loop-rounds / flow-mode / enable-stage-gate) — admin only; '
-      'applies from the next group message';
+      'max-loop-rounds) — admin only; applies from the next group message';
 
   @override
   String get usage =>
       'shepaw chat group set-config --channel <id> '
       '[--system-prompt ""|--mention-mode adminOnly|allMembers|'
-      '--max-loop-rounds 30|--flow-mode true|--enable-stage-gate true]';
+      '--max-loop-rounds 30]';
 
   @override
   Map<String, dynamic> getHelp() {
@@ -459,17 +460,6 @@ class GroupSetConfigCommand extends CliCommand {
         'required': false,
         'type': 'int',
       },
-      'flow-mode': {
-        'description': 'Enable/disable Flow mode (true/false/1/0/yes/no)',
-        'required': false,
-        'type': 'boolean',
-      },
-      'enable-stage-gate': {
-        'description':
-            'Enable/disable the stage gate (true/false/1/0/yes/no)',
-        'required': false,
-        'type': 'boolean',
-      },
     };
     return base;
   }
@@ -489,19 +479,13 @@ class GroupSetConfigCommand extends CliCommand {
     final mentionMode = flags['mention-mode'] ?? flags['mention_mode'];
     final maxLoopRoundsRaw =
         flags['max-loop-rounds'] ?? flags['max_loop_rounds'];
-    final flowModeRaw = flags['flow-mode'] ?? flags['flow_mode'];
-    final enableStageGateRaw =
-        flags['enable-stage-gate'] ?? flags['enable_stage_gate'];
 
     if (systemPrompt == null &&
         mentionMode == null &&
-        maxLoopRoundsRaw == null &&
-        flowModeRaw == null &&
-        enableStageGateRaw == null) {
+        maxLoopRoundsRaw == null) {
       return {
         'error': 'At least one setting flag is required: --system-prompt, '
-            '--mention-mode, --max-loop-rounds, --flow-mode, '
-            '--enable-stage-gate',
+            '--mention-mode, --max-loop-rounds',
       };
     }
 
@@ -514,21 +498,6 @@ class GroupSetConfigCommand extends CliCommand {
               '(expected an integer >= 0; 0 resets to the default 50)',
         };
       }
-    }
-
-    final bool? flowMode = parseBoolFlag(flowModeRaw);
-    if (flowModeRaw != null && flowMode == null) {
-      return {
-        'error': 'Invalid --flow-mode: "$flowModeRaw" '
-            '(expected true/false/1/0/yes/no)',
-      };
-    }
-    final bool? enableStageGate = parseBoolFlag(enableStageGateRaw);
-    if (enableStageGateRaw != null && enableStageGate == null) {
-      return {
-        'error': 'Invalid --enable-stage-gate: "$enableStageGateRaw" '
-            '(expected true/false/1/0/yes/no)',
-      };
     }
 
     if (mentionMode != null &&
@@ -548,29 +517,8 @@ class GroupSetConfigCommand extends CliCommand {
       systemPrompt: systemPrompt,
       mentionMode: mentionMode?.trim(),
       maxLoopRounds: maxLoopRounds,
-      flowMode: flowMode,
-      enableStageGate: enableStageGate,
     );
     return result.toJson();
-  }
-
-  /// 布尔 flag 解析：`'' / true / 1 / yes → true`，`false / 0 / no → false`。
-  /// 空串视为 true（CLI 无值布尔 flag），其余非法值返回 null。
-  static bool? parseBoolFlag(String? raw) {
-    if (raw == null) return null;
-    switch (raw.trim().toLowerCase()) {
-      case '':
-      case 'true':
-      case '1':
-      case 'yes':
-        return true;
-      case 'false':
-      case '0':
-      case 'no':
-        return false;
-      default:
-        return null;
-    }
   }
 }
 

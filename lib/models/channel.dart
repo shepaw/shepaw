@@ -67,9 +67,10 @@ class Channel {
   final int? maxLoopRounds;
   /// 群聊 @提及模式: 'adminOnly' (默认) 或 'allMembers'
   final String? mentionMode;
-  /// Flow 模式：Admin 生成阶段化 FlowPlan，由 FlowExecutor 主动驱动执行
+  /// 历史字段：编排策略改由管理员按任务自主选择，运行时不再读取此开关。
+  /// 仍持久化，避免旧行 / 家族拷贝丢列。
   final bool flowMode;
-  /// 阶段门闸：工作流每个阶段结束后阻塞，管理员决策「继续/中止/换人」后才进下一阶段
+  /// 历史字段：群聊工作流阶段门闸始终交给管理员，运行时不再读取此开关。
   final bool enableStageGate;
 
   /// 获取有效的最大循环轮次，默认 50

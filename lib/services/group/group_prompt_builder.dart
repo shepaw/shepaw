@@ -46,7 +46,6 @@ class GroupPromptBuilder {
     int? loopRound,
     String mentionMode = 'adminOnly',
     List<String> failedAgentNames = const [],
-    bool isFlowMode = false,
     bool isClosingSummary = false,
     String? groupId,
     String? channelId,
@@ -70,7 +69,6 @@ class GroupPromptBuilder {
       loopRound: loopRound,
       mentionMode: mentionMode,
       failedAgentNames: failedAgentNames,
-      isFlowMode: isFlowMode,
       isClosingSummary: isClosingSummary,
       groupId: groupId,
       channelId: channelId,
@@ -99,7 +97,6 @@ class GroupPromptBuilder {
     int? loopRound,
     String mentionMode = 'adminOnly',
     List<String> failedAgentNames = const [],
-    bool isFlowMode = false,
     bool isClosingSummary = false,
     String? groupId,
     String? channelId,
@@ -194,9 +191,7 @@ class GroupPromptBuilder {
           allAgents.where((a) => a.id != currentAgent.id).toList();
       final dispatchMemberNameSection =
           _buildDispatchMemberNameSection(delegateableAgents);
-      final planningSection = isFlowMode
-          ? _buildWorkflowCliSection(delegateableAgents)
-          : '';
+      final planningSection = _buildWorkflowCliSection(delegateableAgents);
       final groupMgmtSection = _buildGroupManagementCliSection();
       final sessionMgmtSection = _buildSessionManagementSection();
 
@@ -224,7 +219,9 @@ ${_cliTransportPreamble(currentAgent)}
    - **② 只有用户能决定的意图**（要什么、优先级、取舍、deadline、验收口径、彻底下线还是仅前端隐藏）→ 在**摸底之后**，用澄清卡片或 `group_finish`（action=`pause`）**一次问清**，不要挤牙膏式反复问
    - **③ 例外：用户已经给出明确交付物**（如「实现一个贪吃蛇」「写一个登录页」）时，**不要**为「袋子里有没有现成代码」先派一轮摸底——空袋子是新任务的常态。直接问意图题或 `group_plan_publish`
    - 判断标准就一句：**「这个问题的答案，群里某个成员查一下就能给出吗？」** 能 → 走 ①；不能 → 走 ②。用户已经说清要做什么 → 走 ③
-3. **发布正式计划**：需求已明确、准备派活前，**必须**先调用 `group_plan_publish` 写入定稿需求（`requirement_text`）与分工预览（`steps_preview`）；成功后再 `group_dispatch`（`intent=work`）。成员会从储物袋读取该计划
+3. **正式交付由你选编排**（不要问用户开哪种模式，群上也没有需要先打开的开关）：
+   - **协调编排**（更常见）：需求还在收敛、要边做边看 → 先 `group_plan_publish` 写入定稿需求与分工预览，再 `group_dispatch`（`intent=work`）。成员会从储物袋读取该计划
+   - **工作流**：需求已明确、能一次拆成多个可自动推进的阶段 → `shepaw workflow create`，系统按阶段执行；每个非最后阶段结束你会收到门闸回合，自主决定继续 / 中止 / 换人
 4. 闲聊、协调性问题、关于本群本身的问题，你可以直接回答；结束后调用 `group_finish`（action=`done`）
 5. **优先委派给更专业的成员**，即使你自己能答——你的核心价值是拆任务、选对人、盯进度和审结果，而不是替成员干活。这条在需求**尚未明确时同样成立**：缺的事实先找成员，而不是先找用户
 
@@ -249,7 +246,7 @@ ${_cliTransportPreamble(currentAgent)}
    - `action=pause`：需要用户输入才能继续（本轮暂停）
 
 **硬性规则：**
-- 决定**正式派活**（`intent=work`）就必须先 `group_plan_publish`，再 `group_dispatch`——未发布计划时 dispatch 会被系统拒绝；`intent=recon` 的摸底不受此限
+- 决定**协调编排正式派活**（`intent=work`）就必须先 `group_plan_publish`，再 `group_dispatch`——未发布计划时 dispatch 会被系统拒绝；`intent=recon` 的摸底不受此限。多阶段自动推进则走 `shepaw workflow create`，不要和 `intent=work` 混用同一轮
 - 决定委派就必须调用 `group_dispatch`——只在自然语言中承诺「我来安排」而不调工具，系统不会派活
 - 系统会拦截：若本轮仍有成员标注 pending 或未标注任务状态，调用 `group_finish`（done）不会结束编排，你会收到纠正提示
 - **禁止**用 `shepaw context agents.chat` 向本群成员派活（那会发到私聊）
@@ -568,7 +565,7 @@ $registeredNames
 - `shepaw chat group add --agent <成员名或id> [--bio "群内职责"]` 加人
 - `shepaw chat group set-bio --agent <成员名或id> --bio "新的群内职责"` 修改成员在本群的职责描述（省略或留空 `--bio` 则清空，回退到该 Agent 默认简历）
 - `shepaw chat group set-description --description "新的群描述"` 修改本群描述（省略或留空则清空）
-- `shepaw chat group set-config --system-prompt "..." | --mention-mode adminOnly|allMembers | --max-loop-rounds <N> | --flow-mode true|false | --enable-stage-gate true|false` 批量改群运行配置（至少传一个；`--system-prompt ""` 清空、`--max-loop-rounds 0` 回默认 50；**只影响下一条群消息起的行为，已派生的 She 子会话保留 fork 时拷贝的配置**）
+- `shepaw chat group set-config --system-prompt "..." | --mention-mode adminOnly|allMembers | --max-loop-rounds <N>` 批量改群运行配置（至少传一个；`--system-prompt ""` 清空、`--max-loop-rounds 0` 回默认 50；**只影响下一条群消息起的行为，已派生的 She 子会话保留 fork 时拷贝的配置**）
 - `shepaw chat group kick --agent <成员名或id>` 踢人（不能踢管理员）
 - `shepaw chat group rename --name "新群名"` 改群名
 - 从 She 私聊向某群派发需求（须为该群管理员）：`shepaw chat group send --channel <群id> --message "..."`（写入与 She 会话绑定的独立群会话，不干扰群当前聊天）
@@ -590,12 +587,11 @@ $registeredNames
 - dev/review 返工留原 session；已交付后续可新开，handoff 只带最终产物 URI + review 摘要。''';
   }
 
-  /// Build the workflow CLI usage section for Admin's system prompt.
+  /// Workflow CLI + how to choose it versus round-by-round dispatch.
   ///
-  /// Mirrors She's DM playbook (SheService.buildDmWorkflowPlaybookBlock):
-  /// `workflow create` ends the turn pending approval; approval triggers
-  /// automatic execution of all stages by the system (ChatService
-  /// executeWorkflowSteps), so per-stage manual dispatch is NOT the normal path.
+  /// Always injected: the admin picks the path per task. `workflow create`
+  /// ends the turn pending approval (unless skipped); approval triggers
+  /// automatic stage execution (ChatService.executeWorkflowSteps).
   String _buildWorkflowCliSection(List<RemoteAgent> delegateableAgents) {
     final agentNamesHint = delegateableAgents.isEmpty
         ? '（当前无可委派成员）'
@@ -603,22 +599,27 @@ $registeredNames
 
     return '''
 
-【工作流模式】
-当前群组已开启工作流模式。**正式的多阶段交付**才走工作流；**摸底 / 和成员讨论需求不要建工作流**。
+【编排策略 — 由你自主选择】
+正式交付有两条路，按**这次任务**选。不要问用户开哪种模式。
+
+**A. 协调编排（更常见）** — 你每轮派活、复盘、再决定下一步
+- 走 `group_plan_publish` → `group_dispatch`（`intent=work`）
+- 适合：需求还在收敛、结果不确定、需要反复对产出、一两轮就能做完
+
+**B. 工作流（多阶段自动推进）** — 你一次拆阶段，系统按阶段执行
+- 适合：需求已明确，能拆成 2 个以上可串行阶段（如 调研→实现→验收）
+- 调用 `shepaw workflow create`。默认 `--require-approval true`（用户看审批卡）；你判断不必点审则 `--require-approval false`
+- 需要审批时：立即结束本轮，通过前不要调用 `workflow dispatch` / `complete` / `fail`
+- 跳过审批或审批通过后：系统自动按阶段执行（阶段内并行、阶段间串行），无需你手动 dispatch
+- **每个非最后阶段结束，你会收到阶段门闸回合**：根据本阶段对错，输出 `[GATE_DECISION: continue]`、`[GATE_DECISION: abort]` 或 `[GATE_DECISION: reassign:成员名]`。这是你的把关
+- 用户拒绝并给出修改意见时，按反馈改计划后再 `workflow create`
 
 **摸底 / 讨论（不审批、不建工作流）：**
 - 用 `group_dispatch`（`intent=recon`）直接调成员问事实、对需求
 - **禁止**为此调用 `shepaw workflow create`——系统不会弹审批卡，成员马上开始答
 - 在自然语言里告诉用户你正在向谁了解什么即可
 
-**正式交付（工作流，审批由你决定）：**
-1. 需求已明确后，设计阶段化执行计划
-2. 调用 `shepaw workflow create`。默认 `--require-approval true`（用户会看到审批卡片）；若你判断不必让用户点审，传 `--require-approval false`，系统会立刻按阶段执行
-3. **需要审批时**：立即结束本轮回复，等待用户审批——通过前不要调用 `workflow dispatch` / `complete` / `fail`
-4. **跳过审批或审批通过后**：系统自动按阶段执行（阶段内并行、阶段间串行），无需你手动 dispatch；全部执行完后你会再次被唤起做最终总结
-5. 若用户拒绝并给出修改意见，你会收到反馈——据此修改计划后再次调用 `workflow create`
-
-**可用命令：**
+**工作流命令：**
 - `shepaw workflow create --title "标题" --stages '[...]' [--require-approval true|false]`
   创建工作流。默认请求用户审批；`--require-approval false` 则跳过审批并立即执行。`agent` 必须是下列注册名之一：$agentNamesHint
 - `shepaw workflow status --workflow_id <id>`

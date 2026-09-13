@@ -3640,15 +3640,13 @@ $originalQuestion
         final stageSteps =
             updatedWorkflow?.steps.where((s) => s.stageIndex == stageIdx) ?? [];
         final isLastStage = stageIdx == stageIndices.last;
-        // 阶段门闸：仅群聊工作流、频道开启、还有后续阶段、且存在可解析的管理员
-        // 时启用。开启后阶段失败不再立刻终止工作流——交给管理员把关（继续/中止/
-        // 换人）。M1：频道未配置管理员（adminAgentId 缺失或已不在成员列表）时
-        // 门闸无法把关，视为关闭——本阶段失败走下方 failWorkflow，全成功则直接
+        // 阶段门闸：群聊工作流在非最后阶段结束时，一律交给管理员把关（继续/
+        // 中止/换人）。不再看频道开关——编排策略由管理员按任务自主选择。
+        // M1：频道未配置管理员（adminAgentId 缺失或已不在成员列表）时门闸
+        // 无法把关，视为关闭——本阶段失败走下方 failWorkflow，全成功则直接
         // 进入下一阶段，杜绝「无人把关却静默放行」。
-        final gateEnabled = !isDmWorkflow &&
-            channel.enableStageGate &&
-            !isLastStage &&
-            workflowAdminAgent != null;
+        final gateEnabled =
+            !isDmWorkflow && !isLastStage && workflowAdminAgent != null;
 
         if (stageSteps.any((s) => s.status == StepExecutionStatus.failed) &&
             !gateEnabled) {

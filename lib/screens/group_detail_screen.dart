@@ -53,8 +53,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
   late TextEditingController _systemPromptController;
   late TextEditingController _maxRoundsController;
   late String _selectedMentionMode;
-  late bool _flowMode;
-  late bool _enableStageGate;
   /// 编辑中选定的群头像（emoji / 本地绝对路径）。`''` = 无头像（保留为空或移除）。
   late String _pendingAvatar;
   bool _isSaving = false;
@@ -78,8 +76,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
       text: _channel.maxLoopRounds?.toString() ?? '',
     );
     _selectedMentionMode = _channel.effectiveMentionMode;
-    _flowMode = _channel.flowMode;
-    _enableStageGate = _channel.enableStageGate;
     _pendingAvatar = _channel.avatar ?? '';
   }
 
@@ -123,8 +119,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     _systemPromptController.text = _channel.systemPrompt ?? '';
     _maxRoundsController.text = _channel.maxLoopRounds?.toString() ?? '';
     _selectedMentionMode = _channel.effectiveMentionMode;
-    _flowMode = _channel.flowMode;
-    _enableStageGate = _channel.enableStageGate;
     _pendingAvatar = _channel.avatar ?? '';
     setState(() => _isEditing = true);
   }
@@ -168,8 +162,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
         systemPrompt: _systemPromptController.text.trim(),
         maxLoopRounds: maxLoopRounds ?? 0,
         mentionMode: _selectedMentionMode,
-        flowMode: _flowMode,
-        enableStageGate: _enableStageGate,
         avatar: _pendingAvatar.isEmpty ? null : _pendingAvatar,
         clearAvatar: _pendingAvatar.isEmpty,
       );
@@ -793,23 +785,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                         border: const OutlineInputBorder(),
                         prefixIcon: const Icon(Icons.loop),
                       ),
-                    ),
-                    const Divider(height: 24),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(l10n.chat_flowMode),
-                      subtitle: Text(l10n.chat_flowModeDesc),
-                      value: _flowMode,
-                      onChanged: (value) =>
-                          setEditState(() => _flowMode = value),
-                    ),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(l10n.chat_enableStageGate),
-                      subtitle: Text(l10n.chat_enableStageGateDesc),
-                      value: _enableStageGate,
-                      onChanged: (value) =>
-                          setEditState(() => _enableStageGate = value),
                     ),
                   ],
                 ),

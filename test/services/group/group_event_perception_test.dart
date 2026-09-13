@@ -105,7 +105,6 @@ class _FakeExecutor extends GroupAgentExecutor {
       String interactionType,
       Map<String, dynamic> data,
     )? onInteractionRequest,
-    bool isFlowMode = false,
     bool isClosingSummary = false,
     bool isWorkflowStep = false,
     String? workflowId,

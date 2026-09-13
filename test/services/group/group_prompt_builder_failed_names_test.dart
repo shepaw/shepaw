@@ -90,17 +90,19 @@ void main() {
     expect(prompt, contains('系统会拦截'));
   });
 
-  test('flow-mode prompt forbids workflow create for recon discussion', () async {
+  test('admin prompt always offers workflow path and forbids it for recon',
+      () async {
     final prompt = await builder.buildGroupSystemPrompt(
       groupName: '项目群',
       groupDescription: '',
       allAgents: [admin, coder],
       currentAgent: admin,
       isAdmin: true,
-      isFlowMode: true,
     );
 
-    expect(prompt, contains('摸底 / 和成员讨论需求不要建工作流'));
+    expect(prompt, contains('编排策略 — 由你自主选择'));
+    expect(prompt, contains('不要问用户开哪种模式'));
+    expect(prompt, contains('GATE_DECISION'));
     expect(prompt, contains('禁止**为此调用 `shepaw workflow create`'));
     expect(prompt, contains('--require-approval'));
     expect(prompt, contains('全部成员完成'));

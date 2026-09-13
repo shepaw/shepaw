@@ -962,7 +962,6 @@ class GroupOrchestrationService {
           bool isAbortSummarize = false,
           int? loopRound,
           List<String> failedAgentNames = const [],
-          bool isFlowMode = false,
         }) =>
             _executor.processGroupAgent(
               agent: agent,
@@ -988,7 +987,6 @@ class GroupOrchestrationService {
               mentionMode: mentionMode,
               failedAgentNames: failedAgentNames,
               acpCancellationToken: acpCancellationToken,
-              isFlowMode: isFlowMode,
               onStreamChunk: onStreamChunk,
               onMessageMetadata: onMessageMetadata,
               onAgentDone: onAgentDone,
@@ -1227,7 +1225,6 @@ class GroupOrchestrationService {
             channelMembers: channelMembers,
             customSystemPrompt: customSystemPrompt,
             mentionMode: mentionMode,
-            isFlowMode: flowMode,
             acpCancellationToken: acpCancellationToken,
             onStreamChunk: (agentId, agentName, chunk) {
               adminResponseContent += chunk;

@@ -277,34 +277,6 @@ void main() {
       expect(result['error'], contains('--mention-mode'));
     });
 
-    test('set-config rejects invalid boolean flags', () async {
-      final flow = await GroupSetConfigCommand().execute({
-        'channel': 'group_1',
-        'flow-mode': 'maybe',
-      });
-      expect(flow['error'], contains('--flow-mode'));
-
-      final gate = await GroupSetConfigCommand().execute({
-        'channel': 'group_1',
-        'enable_stage_gate': 'nah',
-      });
-      expect(gate['error'], contains('--enable-stage-gate'));
-    });
-
-    test('set-config parseBoolFlag maps truthy/falsy/empty and rejects garbage',
-        () {
-      expect(GroupSetConfigCommand.parseBoolFlag(null), isNull);
-      expect(GroupSetConfigCommand.parseBoolFlag(''), isTrue);
-      expect(GroupSetConfigCommand.parseBoolFlag('true'), isTrue);
-      expect(GroupSetConfigCommand.parseBoolFlag('1'), isTrue);
-      expect(GroupSetConfigCommand.parseBoolFlag('yes'), isTrue);
-      expect(GroupSetConfigCommand.parseBoolFlag('TRUE'), isTrue);
-      expect(GroupSetConfigCommand.parseBoolFlag('false'), isFalse);
-      expect(GroupSetConfigCommand.parseBoolFlag('0'), isFalse);
-      expect(GroupSetConfigCommand.parseBoolFlag('no'), isFalse);
-      expect(GroupSetConfigCommand.parseBoolFlag('weird'), isNull);
-    });
-
     test('send requires --channel, --message, and She channel_id', () async {
       final missingChannel = await GroupSendCommand().execute({
         'message': 'do the thing',

@@ -2845,8 +2845,6 @@ class _ChatScreenState extends State<ChatScreen>
       text: channel?.maxLoopRounds?.toString() ?? '',
     );
     String selectedMentionMode = channel?.effectiveMentionMode ?? 'adminOnly';
-    bool flowMode = channel?.flowMode ?? false;
-    bool enableStageGate = channel?.enableStageGate ?? false;
     // 编辑中群头像（emoji / 本地绝对路径）；'' = 无/移除。
     String pendingAvatar = channel?.avatar ?? '';
 
@@ -3027,23 +3025,6 @@ class _ChatScreenState extends State<ChatScreen>
                           prefixIcon: const Icon(Icons.loop),
                         ),
                       ),
-                      const Divider(height: 24),
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(panelL10n.chat_flowMode),
-                        subtitle: Text(panelL10n.chat_flowModeDesc),
-                        value: flowMode,
-                        onChanged: (value) =>
-                            setDrawerState(() => flowMode = value),
-                      ),
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(panelL10n.chat_enableStageGate),
-                        subtitle: Text(panelL10n.chat_enableStageGateDesc),
-                        value: enableStageGate,
-                        onChanged: (value) =>
-                            setDrawerState(() => enableStageGate = value),
-                      ),
                       const SizedBox(height: 24),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
@@ -3094,8 +3075,6 @@ class _ChatScreenState extends State<ChatScreen>
                                 systemPrompt: systemPromptController.text.trim(),
                                 maxLoopRounds: maxLoopRounds ?? 0,
                                 mentionMode: selectedMentionMode,
-                                flowMode: flowMode,
-                                enableStageGate: enableStageGate,
                                 avatar:
                                     pendingAvatar.isEmpty ? null : pendingAvatar,
                                 clearAvatar: pendingAvatar.isEmpty,
