@@ -57,6 +57,46 @@ void main() {
           isTrue);
     });
 
+    test('群任务 JSON 记账识别为内部文件，卷宗正文不藏', () {
+      expect(
+          StoreFileVisual.isInternalStoreFile(
+              StoreSpace.workspaces, 'group_g1/shared/tasks/index.json'),
+          isTrue);
+      expect(
+          StoreFileVisual.isInternalStoreFile(StoreSpace.workspaces,
+              'group_g1/shared/tasks/orch-1/task.json'),
+          isTrue);
+      expect(
+          StoreFileVisual.isInternalStoreFile(StoreSpace.workspaces,
+              'group_g1/shared/tasks/orch-1/plan.json'),
+          isTrue);
+      expect(
+          StoreFileVisual.isInternalStoreFile(StoreSpace.workspaces,
+              'group_g1/shared/tasks/orch-1/results.json'),
+          isTrue);
+      expect(
+          StoreFileVisual.isInternalStoreFile(StoreSpace.workspaces,
+              'group_g1/shared/tasks/orch-1/requirement.md'),
+          isFalse);
+      expect(
+          StoreFileVisual.isInternalStoreFile(StoreSpace.workspaces,
+              'group_g1/shared/tasks/orch-1/plan.md'),
+          isFalse);
+      expect(
+          StoreFileVisual.isInternalStoreFile(StoreSpace.workspaces,
+              'group_g1/shared/tasks/orch-1/archive.md'),
+          isFalse);
+      // 成员自己写的同名文件不是群任务记账。
+      expect(
+          StoreFileVisual.isInternalStoreFile(StoreSpace.workspaces,
+              'group_g1/members/agent_2/task.json'),
+          isFalse);
+      expect(
+          StoreFileVisual.isInternalStoreFile(
+              StoreSpace.files, 'docs/shared/tasks/task.json'),
+          isFalse);
+    });
+
     test('认知记忆记账 meta.json 识别为内部文件', () {
       // 用户报告路径：cognition/<device>/<agentId>/meta.json
       expect(StoreFileVisual.isInternalStoreFile(

@@ -289,12 +289,25 @@ class StoreFileVisual {
     );
   }
 
+  /// 群任务机器记账文件名（`shared/tasks/` 下）。
+  ///
+  /// 不含 `requirement.md` / `plan.md` / `archive.md`：那些是给人看的卷宗，
+  /// 任务详情页也会打开；「隐藏内部文件」只藏 JSON 状态，不整树抹掉任务目录。
+  static const _groupTaskMetadataLeaves = {
+    'index.json',
+    'task.json',
+    'plan.json',
+    'results.json',
+  };
+
   /// 是否为「内部记账/镜像」文件：默认在「最近」隐藏。
   ///
   /// 用户可见文件（聊天附件、产物、工作区实际文件、普通文件）返回 false。
   /// 覆盖：owner 根镜像（soul/memory/workspace/context.manifest）、`sessions/*`、
-  /// 群工作区元数据、群编排 `orchestration/*`、`.keep` 占位、
-  /// 认知记忆记账 `meta.json`（`cognition/<agentId>/meta.json` 及 peer 子树）。
+  /// 群工作区元数据、群编排 `orchestration/*`、群任务 JSON 记账
+  /// （`shared/tasks/` 下的 `index.json` / `task.json` / `plan.json` /
+  /// `results.json`）、`.keep` 占位、认知记忆记账 `meta.json`
+  /// （`cognition/<agentId>/meta.json` 及 peer 子树）。
   ///
   /// `workspaces/.../members/<agentId>/` 是群成员储物袋（store write 落点），
   /// 不是内部记账，不能藏掉——否则从产物「在储物袋中显示」会进空白页。
@@ -307,6 +320,19 @@ class StoreFileVisual {
     if (parts.contains('orchestration')) return true;
     // 认知记忆库记账文件（next_id 计数 / 迁移标记），非用户内容。
     if (leaf == 'meta.json' && StoreSpace.isCognitionSpace(space)) return true;
+    if (space == StoreSpace.workspaces &&
+        _groupTaskMetadataLeaves.contains(leaf) &&
+        _isGroupTaskRecordPath(parts)) {
+      return true;
+    }
+    return false;
+  }
+
+  /// `…/shared/tasks[/…]`（群工作区任务卷宗），不误伤成员自建的 `tasks/`。
+  static bool _isGroupTaskRecordPath(List<String> parts) {
+    for (var i = 0; i < parts.length - 1; i++) {
+      if (parts[i] == 'shared' && parts[i + 1] == 'tasks') return true;
+    }
     return false;
   }
 
