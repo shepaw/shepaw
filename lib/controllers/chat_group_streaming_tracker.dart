@@ -95,6 +95,16 @@ class ChatGroupStreamingTracker {
     return updated;
   }
 
+  /// After reconcile folds a temp host onto a DB row, keep applying chunks.
+  void repointId(String fromId, String toId) {
+    if (fromId.isEmpty || toId.isEmpty || fromId == toId) return;
+    for (final entry in streamingIds.entries.toList()) {
+      if (entry.value == fromId) {
+        streamingIds[entry.key] = toId;
+      }
+    }
+  }
+
   /// Finish an agent turn. Returns the streaming id that was removed (if any).
   String? finish(String agentId) {
     streamingContents.remove(agentId);

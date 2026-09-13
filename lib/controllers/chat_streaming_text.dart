@@ -100,7 +100,9 @@ class ChatStreamingText {
       if (m.metadata?['status'] == 'streaming') return m;
       final id = m.id;
       final matches = group
-          ? (id.startsWith('group_streaming_') || id.startsWith('wf_streaming_'))
+          ? (id.startsWith('group_streaming_') ||
+              id.startsWith('wf_streaming_') ||
+              id.startsWith('group_peer_approval_'))
           : id.startsWith('streaming_');
       if (matches) return m;
     }

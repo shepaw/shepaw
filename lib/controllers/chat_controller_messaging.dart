@@ -123,7 +123,8 @@ mixin _MessagingOps on _ChatControllerBase {
     final activeTasks = chatService.getActiveGroupTasks(currentChannelId!);
     if (activeTasks.isEmpty) return;
 
-    final turn = ChatGroupStreamingTracker();
+    groupTurn.clear();
+    final turn = groupTurn;
 
     for (final entry in activeTasks.entries) {
       final aid = entry.key;
@@ -194,6 +195,12 @@ mixin _MessagingOps on _ChatControllerBase {
 
         if (turn.isEmpty) {
           reconcileGroupMessages().then((_) {
+            final cid = currentChannelId;
+            if (cid != null && chatService.isGroupChannelOrchestrating(cid)) {
+              // This member finished; the group loop is still dispatching.
+              _syncGroupStreamingHostsFromActiveTasks();
+              return;
+            }
             isProcessing = false;
             respondingAgentNames.clear();
             groupStreamingMessageIds.clear();
@@ -203,6 +210,63 @@ mixin _MessagingOps on _ChatControllerBase {
         }
       },
     );
+  }
+
+  /// After mid-turn reconcile (or CLI approval), create hosts for group
+  /// members that started while the UI was parked on the previous bubble.
+  @override
+  void _syncGroupStreamingHostsFromActiveTasks() {
+    if (!isGroupMode || currentChannelId == null) return;
+    final activeTasks = chatService.getActiveGroupTasks(currentChannelId!);
+    if (activeTasks.isEmpty) return;
+
+    var added = false;
+    for (final entry in activeTasks.entries) {
+      final aid = entry.key;
+      final task = entry.value;
+      final existingSid = groupTurn.idFor(aid);
+      if (existingSid != null && messageIdMap.containsKey(existingSid)) {
+        continue;
+      }
+      final host = ChatStreamingText.findStreamingHost(
+        messages,
+        fromId: aid,
+        group: true,
+      );
+      final sid = host?.id ??
+          (task.partialMessageId != null &&
+                  messageIdMap.containsKey(task.partialMessageId)
+              ? task.partialMessageId!
+              : GroupInteractionPlanner.groupStreamingId(aid));
+      groupTurn.begin(aid, sid, initialContent: task.accumulatedContent);
+      groupStreamingMessageIds.add(sid);
+      respondingAgentNames.add(task.agentName);
+      if (host == null && !messageIdMap.containsKey(sid)) {
+        final streamingMessage = ChatStreamingText.withUpdatedContent(
+          ChatStreamingText.placeholder(
+            id: sid,
+            from: MessageFrom(id: aid, type: 'agent', name: task.agentName),
+            timestampMs: DateTime.now().millisecondsSinceEpoch + 1,
+          ),
+          task.accumulatedContent,
+        );
+        messages.add(streamingMessage);
+        messageIdMap[streamingMessage.id] = streamingMessage;
+        added = true;
+      }
+    }
+
+    // Original send callbacks are gone (isProcessing already false) but
+    // ChatService is still orchestrating — bind live chunk hooks.
+    if (!isProcessing) {
+      isProcessing = true;
+      reattachToGroupActiveTasks();
+      return;
+    }
+    if (added) {
+      _notify();
+      _emit(RequestScrollToBottomEvent(force: true));
+    }
   }
 
   /// Re-emit a GroupInteractionRequestEvent for any pending plan_approval
@@ -583,6 +647,7 @@ mixin _MessagingOps on _ChatControllerBase {
     // Reset group streaming state
     respondingAgentNames.clear();
     groupStreamingMessageIds.clear();
+    groupTurn.clear();
     // 手动停止：把队列内容倒回输入框，由用户决定是否重发（队列清空）。
     _restoreQueueToComposer();
     isProcessing = false;
@@ -1373,7 +1438,8 @@ mixin _MessagingOps on _ChatControllerBase {
     _notify();
     _emit(RequestScrollToBottomEvent(force: true));
 
-    final turn = ChatGroupStreamingTracker();
+    groupTurn.clear();
+    final turn = groupTurn;
 
     try {
       final agentIds = groupAgents.map((a) => a.id).toList();

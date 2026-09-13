@@ -67,6 +67,37 @@ void main() {
       expect(tracker.idFor('a1'), 'db1'); // sid 已改指
     });
 
+    test('repointId 改指后后续 chunk 落到新宿主', () {
+      final tracker = ChatGroupStreamingTracker()
+        ..begin('a1', 'group_streaming_1', initialContent: 'Hi');
+      tracker.repointId('group_streaming_1', 'db1');
+      expect(tracker.idFor('a1'), 'db1');
+
+      final messages = [_msg('db1', content: 'Hi')];
+      final map = {for (final m in messages) m.id: m};
+      tracker.appendAndApply('a1', '!', messages, map);
+      expect(messages.first.content, 'Hi!');
+    });
+
+    test('applyContent 自愈：可改指到同发送者的审核回退气泡', () {
+      final tracker = ChatGroupStreamingTracker()
+        ..begin('a1', 'group_streaming_1');
+      tracker.append('a1', 'cmd');
+      final messages = [
+        _msg(
+          'group_peer_approval_a1_1',
+          content: 'confirm',
+          metadata: {
+            'action_confirmation': {'confirmation_id': 'cli_1'},
+          },
+        ),
+      ];
+      final map = {for (final m in messages) m.id: m};
+      expect(tracker.applyContent('a1', messages, map), isNotNull);
+      expect(tracker.idFor('a1'), 'group_peer_approval_a1_1');
+      expect(messages.first.content, 'cmd');
+    });
+
     test('applyContent 无宿主存活时不改指、返回 null', () {
       final tracker = ChatGroupStreamingTracker()..begin('a1', 'group_streaming_1');
       tracker.append('a1', 'x');

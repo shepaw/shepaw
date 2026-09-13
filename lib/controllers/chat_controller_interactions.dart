@@ -73,7 +73,9 @@ mixin _InteractionOps on _ChatControllerBase {
 
   void _insertCliApprovalCard(Map<String, dynamic> actionData) {
     final hostId = StreamingActionConfirmation.resolveHostMessageId(
-      preferredId: streamingMessageId,
+      preferredId: isGroupMode
+          ? _groupStreamingHostIdFor(_cliApprovalAgentId)
+          : streamingMessageId,
       messageIdMap: messageIdMap,
       messages: messages,
     );
@@ -86,7 +88,9 @@ mixin _InteractionOps on _ChatControllerBase {
       _insertCliApprovalFallback(actionData);
     }
     final attachedId = StreamingActionConfirmation.resolveHostMessageId(
-      preferredId: streamingMessageId,
+      preferredId: isGroupMode
+          ? _groupStreamingHostIdFor(_cliApprovalAgentId)
+          : streamingMessageId,
       messageIdMap: messageIdMap,
       messages: messages,
     );
@@ -101,6 +105,27 @@ mixin _InteractionOps on _ChatControllerBase {
     );
     if (hubItem != null) {
       PendingApprovalHub.instance.upsert(hubItem);
+    }
+    _emit(RequestScrollToBottomEvent(force: true));
+  }
+
+  String? _groupStreamingHostIdFor(String agentId) {
+    final tracked = groupTurn.idFor(agentId);
+    if (tracked != null && messageIdMap.containsKey(tracked)) return tracked;
+    return ChatStreamingText.findStreamingHost(
+      messages,
+      fromId: agentId,
+      group: true,
+    )?.id;
+  }
+
+  void _catchUpGroupUiAfterCliApproval(String messageId) {
+    groupStreamingMessageIds.remove(messageId);
+    if (!isGroupMode || currentChannelId == null) return;
+    _scheduleGroupReconcile();
+    if (chatService.isGroupChannelOrchestrating(currentChannelId!) &&
+        !isProcessing) {
+      reattachToGroupActiveTasks();
     }
     _emit(RequestScrollToBottomEvent(force: true));
   }
@@ -544,6 +569,7 @@ mixin _InteractionOps on _ChatControllerBase {
         );
         _expireCliCardByConfirmationId(confirmationId);
         _emit(ShowSnackBarEvent('osTool_approvalExpired'));
+        _catchUpGroupUiAfterCliApproval(originalMessage.id);
         return;
       }
       final approved = actionId == 'allow' || actionId == 'allow_session';
@@ -558,6 +584,7 @@ mixin _InteractionOps on _ChatControllerBase {
         approved: approved,
         rememberSession: rememberSession,
       );
+      _catchUpGroupUiAfterCliApproval(originalMessage.id);
       return;
     }
 

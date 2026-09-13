@@ -289,6 +289,7 @@ mixin _LoadOps on _ChatControllerBase {
     // 4. 复位群回合状态：不 cancel 共享 token（与 dispose 一致，旧回合
     //    后台继续），只补完挂起的交互 Completer 防悬空。
     groupStreamingMessageIds.clear();
+    groupTurn.clear();
     respondingAgentNames.clear();
     for (final e in pendingGroupInteractions.values) {
       if (!e.result.isCompleted) e.result.complete(null);

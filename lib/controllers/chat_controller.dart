@@ -282,6 +282,9 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   bool mentionOnlyMode = false;
   String? groupAdminAgentId;
   Set<String> groupStreamingMessageIds = {};
+  /// Shared across send / reattach / reconcile so mid-turn DB folds keep
+  /// applying chunks (and CLI approval can find the live host).
+  final groupTurn = ChatGroupStreamingTracker();
   Map<String, GroupInteractionRequestEvent> pendingGroupInteractions = {};
 
   /// When viewing a DM that was auto-created for a group member, these point
@@ -697,6 +700,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   // ---- Messaging hooks (implemented by [_MessagingOps]) ----
   void reattachToActiveTask();
   void reattachToGroupActiveTasks();
+  void _syncGroupStreamingHostsFromActiveTasks();
   void _reattachPendingPlanApproval();
   void scheduleStreamingRebuild();
   void scheduleStreamingScrollToBottom();
@@ -1152,6 +1156,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         groupStreamingMessageIds.remove(entry.key);
         groupStreamingMessageIds.add(entry.value);
       }
+      groupTurn.repointId(entry.key, entry.value);
       for (final e in _workflowStreamingIds.entries) {
         if (e.value == entry.key) {
           _workflowStreamingIds[e.key] = entry.value;
@@ -1176,6 +1181,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
 
     messages = result.messages;
     rebuildMessageIdMap();
+    _syncGroupStreamingHostsFromActiveTasks();
     unawaited(_refreshHasMoreOlderMessages());
     LoggerService().debug(
       'reconcileGroupMessages done: ${messages.length} messages',
