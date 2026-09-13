@@ -38,13 +38,13 @@ void main() {
           isTrue);
     });
 
-    test('群工作区元数据 / members / orchestration 识别为内部文件', () {
+    test('群工作区元数据 / orchestration 识别为内部文件', () {
       expect(StoreFileVisual.isInternalStoreFile(StoreSpace.workspaces,
               'group_g1/group-workspace.json'),
           isTrue);
       expect(StoreFileVisual.isInternalStoreFile(
               StoreSpace.workspaces, 'group_g1/members/agent_2/notes.md'),
-          isTrue);
+          isFalse);
       expect(
           StoreFileVisual.isInternalStoreFile(
               StoreSpace.workspaces,
@@ -92,6 +92,10 @@ void main() {
           isFalse);
       expect(StoreFileVisual.isInternalStoreFile(
               StoreSpace.workspaces, 'agent_1/notes.md'),
+          isFalse);
+      expect(
+          StoreFileVisual.isInternalStoreFile(
+              StoreSpace.workspaces, 'group_g1/members/agent_2/game.py'),
           isFalse);
       expect(StoreFileVisual.isInternalStoreFile(
               StoreSpace.files, 'docs/plan.md'),

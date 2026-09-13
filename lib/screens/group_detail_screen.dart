@@ -17,7 +17,7 @@ import '../storage/group_workspace_service.dart';
 import '../storage/runtime_share_service.dart';
 import '../widgets/form_bottom_bar.dart';
 import '../widgets/avatar_image.dart';
-import 'agent_runtime_context_screen.dart';
+import 'storage_directory_opener.dart';
 import 'workspace_binding_screen.dart';
 import 'chat_screen.dart';
 import 'group_member_detail_screen.dart';
@@ -585,27 +585,21 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
           leading: Icon(Icons.inventory_2_outlined, color: colorScheme.primary),
           title: Text(
             Localizations.localeOf(context).languageCode.startsWith('zh')
-                ? '产物 · 附件'
-                : 'Artifacts · Attachments',
+                ? '群储物袋'
+                : 'Group storage bag',
           ),
           subtitle: Text(
             Localizations.localeOf(context).languageCode.startsWith('zh')
-                ? '查看该群的产物与附件（群没有 Soul）'
-                : 'Browse this group\'s artifacts and attachments (no Soul)',
+                ? '成员产物在 members/ 下，任务卷宗在 shared/'
+                : 'Member artifacts under members/, task records under shared/',
             style: TextStyle(color: colorScheme.onSurfaceVariant),
           ),
           trailing: const Icon(Icons.chevron_right),
           onTap: () {
-            final ownerId = _channel.parentGroupId?.isNotEmpty == true
-                ? _channel.parentGroupId!
-                : _channel.id;
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => AgentRuntimeContextScreen(
-                  ownerId: ownerId,
-                  displayName: _channel.name,
-                ),
-              ),
+            openGroupWorkspaceBag(
+              context,
+              groupId: _channel.groupFamilyId,
+              title: _channel.name,
             );
           },
         ),

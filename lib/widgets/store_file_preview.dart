@@ -175,18 +175,23 @@ class StoreFilePreviewPage extends StatelessWidget {
   }
 
   /// 跳到储物袋中该文件所在的目录。
+  ///
+  /// 用 URI 里的 `/` 父路径，不再 `resolvePrefix`：runtime 下产物目录常常
+  /// 没有独立 dir 节点，往上裁会落到 agent 私有袋根，群成员文件就看不见。
   Future<void> _revealInStorageBag(BuildContext context) async {
     final uri = storeUri;
     if (uri == null || uri.isEmpty) return;
     try {
       final parsed = parseStoreUri(uri);
       registerStorageDirectoryOpener();
-      final parent = p.dirname(parsed.path);
+      final slash = parsed.path.lastIndexOf('/');
+      final parent = slash < 0 ? '' : parsed.path.substring(0, slash);
       await StoreOpenService.instance.openDirectoryInBrowser(
         context,
         space: parsed.space,
         deviceId: parsed.device,
-        path: parent == '.' ? '' : parent,
+        path: parent,
+        resolvePrefix: false,
       );
     } catch (_) {
       if (!context.mounted) return;

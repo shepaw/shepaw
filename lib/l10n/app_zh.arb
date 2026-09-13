@@ -3583,6 +3583,15 @@
   "storage_browserPathCopied": "路径已复制",
   "storage_browserLinkCopied": "分享链接已复制",
   "storage_browserReveal": "在储物袋中显示",
+  "storage_browserMembersFolder": "成员储物袋",
+  "storage_browserGroupMemberBag": "{name} 的群储物袋",
+  "@storage_browserGroupMemberBag": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "storage_browserExport": "导出到…",
   "storage_browserExportDone": "已导出到 {path}",
   "@storage_browserExportDone": {

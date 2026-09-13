@@ -38,6 +38,14 @@ void main() {
       expect(ws.workspaceRoot('group_test1'), 'group_group_test1');
       expect(ws.metaRelPath('group_test1'),
           'group_group_test1/group-workspace.json');
+      expect(
+        ws.membersDir(
+          'group_13df0417-800c-4af5-b9d6-83eb202709b3',
+          '9c899927-c661-4e10-9e5a-57536a621d69',
+        ),
+        'group_group_13df0417-800c-4af5-b9d6-83eb202709b3/'
+        'members/9c899927-c661-4e10-9e5a-57536a621d69',
+      );
 
       final meta = await ws.loadMeta('group_test1');
       expect(meta, isNotNull);

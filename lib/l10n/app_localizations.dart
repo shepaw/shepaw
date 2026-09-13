@@ -11019,6 +11019,18 @@ abstract class AppLocalizations {
   /// **'在储物袋中显示'**
   String get storage_browserReveal;
 
+  /// No description provided for @storage_browserMembersFolder.
+  ///
+  /// In zh, this message translates to:
+  /// **'成员储物袋'**
+  String get storage_browserMembersFolder;
+
+  /// No description provided for @storage_browserGroupMemberBag.
+  ///
+  /// In zh, this message translates to:
+  /// **'{name} 的群储物袋'**
+  String storage_browserGroupMemberBag(String name);
+
   /// No description provided for @storage_browserExport.
   ///
   /// In zh, this message translates to:

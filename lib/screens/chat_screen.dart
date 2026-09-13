@@ -57,6 +57,7 @@ import 'remote_agent_detail_screen.dart';
 import 'group_detail_screen.dart';
 import 'group_member_detail_screen.dart';
 import 'agent_runtime_context_screen.dart';
+import 'storage_directory_opener.dart';
 import '../services/logger_service.dart';
 import '../services/error_handler_service.dart';
 import '../services/she_service.dart';
@@ -1778,17 +1779,11 @@ class _ChatScreenState extends State<ChatScreen>
     if (c.isGroupMode) {
       final channel = c.groupChannel;
       if (channel == null) return;
-      final ownerId = channel.parentGroupId?.isNotEmpty == true
-          ? channel.parentGroupId!
-          : channel.id;
       if (!mounted) return;
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => AgentRuntimeContextScreen(
-            ownerId: ownerId,
-            displayName: channel.name,
-          ),
-        ),
+      await openGroupWorkspaceBag(
+        context,
+        groupId: channel.groupFamilyId,
+        title: channel.name,
       );
       return;
     }

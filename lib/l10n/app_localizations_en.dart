@@ -6291,6 +6291,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_browserReveal => 'Show in storage bag';
 
   @override
+  String get storage_browserMembersFolder => 'Member bags';
+
+  @override
+  String storage_browserGroupMemberBag(String name) {
+    return '$name\'s group bag';
+  }
+
+  @override
   String get storage_browserExport => 'Export to…';
 
   @override

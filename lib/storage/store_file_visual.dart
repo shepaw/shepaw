@@ -293,15 +293,17 @@ class StoreFileVisual {
   ///
   /// 用户可见文件（聊天附件、产物、工作区实际文件、普通文件）返回 false。
   /// 覆盖：owner 根镜像（soul/memory/workspace/context.manifest）、`sessions/*`、
-  /// 群工作区元数据与 `members/*`、群编排 `orchestration/*`、`.keep` 占位、
+  /// 群工作区元数据、群编排 `orchestration/*`、`.keep` 占位、
   /// 认知记忆记账 `meta.json`（`cognition/<agentId>/meta.json` 及 peer 子树）。
+  ///
+  /// `workspaces/.../members/<agentId>/` 是群成员储物袋（store write 落点），
+  /// 不是内部记账，不能藏掉——否则从产物「在储物袋中显示」会进空白页。
   static bool isInternalStoreFile(String space, String path) {
     final leaf = p.basename(path);
     if (leaf == '.keep') return true;
     if (RuntimeSharePolicy.isSensitivePath(path)) return true;
     if (leaf == 'group-workspace.json') return true;
     final parts = path.split('/');
-    if (parts.contains('members') && space == StoreSpace.workspaces) return true;
     if (parts.contains('orchestration')) return true;
     // 认知记忆库记账文件（next_id 计数 / 迁移标记），非用户内容。
     if (leaf == 'meta.json' && StoreSpace.isCognitionSpace(space)) return true;

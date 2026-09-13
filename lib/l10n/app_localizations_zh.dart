@@ -6044,6 +6044,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_browserReveal => '在储物袋中显示';
 
   @override
+  String get storage_browserMembersFolder => '成员储物袋';
+
+  @override
+  String storage_browserGroupMemberBag(String name) {
+    return '$name 的群储物袋';
+  }
+
+  @override
   String get storage_browserExport => '导出到…';
 
   @override

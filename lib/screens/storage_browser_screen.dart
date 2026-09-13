@@ -1601,6 +1601,14 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
 
   StorageFolderLabel _folderLabelFor(String space, String name) {
     if (name.isEmpty) return StorageFolderLabel.unresolved(name);
+    if (space == StoreSpace.workspaces && name == 'members') {
+      return StorageFolderLabel(
+        label: AppLocalizations.of(context).storage_browserMembersFolder,
+        avatar: '',
+        isGroup: true,
+        resolved: true,
+      );
+    }
     return _folderLabelCache['$space:$name'] ??
         StorageFolderLabel.unresolved(name);
   }
@@ -1719,6 +1727,13 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       final parts = _navPath.split('/');
       final last = parts.isNotEmpty ? parts.last : _navPath;
       final space = _navSpace;
+      if (space == StoreSpace.workspaces &&
+          parts.length >= 3 &&
+          parts[parts.length - 2] == 'members') {
+        final agent = _folderLabelFor(space!, last);
+        return AppLocalizations.of(context)
+            .storage_browserGroupMemberBag(agent.label);
+      }
       if (space != null) {
         final label = _folderLabelFor(space, last);
         if (label.resolved) return label.label;

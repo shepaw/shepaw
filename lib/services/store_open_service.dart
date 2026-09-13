@@ -193,6 +193,7 @@ class StoreOpenService {
     required String space,
     required String deviceId,
     required String path,
+    bool resolvePrefix = true,
   }) async {
     await _openDirectoryOrThrow(
       context,
@@ -200,7 +201,7 @@ class StoreOpenService {
       space: space,
       deviceId: deviceId,
       path: path,
-      resolvePrefix: true,
+      resolvePrefix: resolvePrefix,
     );
   }
 

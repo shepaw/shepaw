@@ -3105,6 +3105,15 @@
   "storage_browserPathCopied": "Path copied",
   "storage_browserLinkCopied": "Share link copied",
   "storage_browserReveal": "Show in storage bag",
+  "storage_browserMembersFolder": "Member bags",
+  "storage_browserGroupMemberBag": "{name}'s group bag",
+  "@storage_browserGroupMemberBag": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "storage_browserExport": "Export to…",
   "storage_browserExportDone": "Exported to {path}",
   "@storage_browserExportDone": {
