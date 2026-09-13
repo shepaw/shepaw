@@ -2705,6 +2705,14 @@ $originalQuestion
     }
   }
 
+  /// Whether [channelId] still has a live `sendMessageToGroup` loop.
+  ///
+  /// ChatService outlives ChatController: switching groups disposes the
+  /// screen but does not cancel this loop. UI reattaches via
+  /// `reattachToGroupActiveTasks`.
+  bool isGroupChannelOrchestrating(String channelId) =>
+      _groupOrchestratingChannels.contains(channelId);
+
   /// 检查群会话的编排恢复状态（`latest.json` 非终态 → 提示中断）。
   ///
   /// 进程被杀重启后，内存编排循环已消亡，但 `shared/orchestration/
@@ -2712,8 +2720,11 @@ $originalQuestion
   /// 「发消息即可从当前进度继续」——编排上下文都在消息日志里，新一轮
   /// sendMessageToGroup 天然从断点延续。幂等：同一轮次只提示一次
   /// （metadata `orchestration_interrupt` 标记）。
+  ///
+  /// 切到别的群再回来时循环仍在 [_groupOrchestratingChannels] 里，不算中断。
   Future<bool> maybeNotifyInterruptedOrchestration(String channelId) async {
     try {
+      if (isGroupChannelOrchestrating(channelId)) return false;
       final channel = await _databaseService.getChannelById(channelId);
       if (channel == null || !channel.isGroup) return false;
       final ws = GroupWorkspaceService.instance;
@@ -2723,7 +2734,12 @@ $originalQuestion
       );
       if (latest == null) return false;
       final status = latest['status'] as String? ?? '';
-      if (status == 'finished') return false;
+      if (!GroupBackgroundInterrupt.shouldNotifyCrashedOrchestration(
+        latestStatus: status,
+        liveInMemory: false,
+      )) {
+        return false;
+      }
       final round = latest['round'] as int? ?? 0;
 
       // 幂等：最近消息已有同轮次提示则跳过（重启重进不重复打扰）。

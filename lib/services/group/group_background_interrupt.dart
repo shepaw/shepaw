@@ -26,4 +26,16 @@ class GroupBackgroundInterrupt {
     }
     return out;
   }
+
+  /// Crash-recovery notice is only for a non-terminal `latest.json` when the
+  /// in-process loop is gone. Switching chats leaves the loop alive — do not
+  /// treat that as 「应用退出」.
+  static bool shouldNotifyCrashedOrchestration({
+    required String? latestStatus,
+    required bool liveInMemory,
+  }) {
+    if (liveInMemory) return false;
+    if (latestStatus == null || latestStatus.isEmpty) return false;
+    return latestStatus != 'finished';
+  }
 }

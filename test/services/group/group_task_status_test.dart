@@ -298,6 +298,50 @@ void main() {
       expect(ids, ['g1']);
     });
 
+    test('live in-memory loop is not a crash', () {
+      expect(
+        GroupBackgroundInterrupt.shouldNotifyCrashedOrchestration(
+          latestStatus: 'running',
+          liveInMemory: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('non-terminal latest after process death is a crash', () {
+      expect(
+        GroupBackgroundInterrupt.shouldNotifyCrashedOrchestration(
+          latestStatus: 'running',
+          liveInMemory: false,
+        ),
+        isTrue,
+      );
+      expect(
+        GroupBackgroundInterrupt.shouldNotifyCrashedOrchestration(
+          latestStatus: 'dispatched',
+          liveInMemory: false,
+        ),
+        isTrue,
+      );
+    });
+
+    test('finished or missing latest is not a crash', () {
+      expect(
+        GroupBackgroundInterrupt.shouldNotifyCrashedOrchestration(
+          latestStatus: 'finished',
+          liveInMemory: false,
+        ),
+        isFalse,
+      );
+      expect(
+        GroupBackgroundInterrupt.shouldNotifyCrashedOrchestration(
+          latestStatus: null,
+          liveInMemory: false,
+        ),
+        isFalse,
+      );
+    });
+
     test('local-only in-flight channels are left running', () {
       final tasks = <String, Map<String, GroupActiveTask>>{
         'g-local': {

@@ -217,6 +217,7 @@ mixin _LoadOps on _ChatControllerBase {
         await _restoreWorkflowContext();
         // 进程被杀后内存编排循环消亡：检查群工作空间最新编排状态，
         // 非终态时提示用户「发消息即可从断点继续」（幂等，同一轮次只提示一次）。
+        // 切群再回来时循环仍在 ChatService 里，这里会直接跳过。
         await chatService.maybeNotifyInterruptedOrchestration(currentChannelId!);
         final interruptedInfo =
             chatService.getInterruptedTaskInfo(currentChannelId!);
