@@ -6063,6 +6063,684 @@ abstract class AppLocalizations {
   /// **'等待'**
   String get chat_eventListenKindWait;
 
+  /// No description provided for @event_family_peer.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备配对'**
+  String get event_family_peer;
+
+  /// No description provided for @event_family_chatGroup.
+  ///
+  /// In zh, this message translates to:
+  /// **'群聊编排'**
+  String get event_family_chatGroup;
+
+  /// No description provided for @event_family_chatMessage.
+  ///
+  /// In zh, this message translates to:
+  /// **'聊天消息'**
+  String get event_family_chatMessage;
+
+  /// No description provided for @event_family_workflow.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作流'**
+  String get event_family_workflow;
+
+  /// No description provided for @event_family_store.
+  ///
+  /// In zh, this message translates to:
+  /// **'存储'**
+  String get event_family_store;
+
+  /// No description provided for @event_family_system.
+  ///
+  /// In zh, this message translates to:
+  /// **'系统'**
+  String get event_family_system;
+
+  /// No description provided for @event_family_test.
+  ///
+  /// In zh, this message translates to:
+  /// **'测试'**
+  String get event_family_test;
+
+  /// No description provided for @event_family_agent.
+  ///
+  /// In zh, this message translates to:
+  /// **'Agent 自定义'**
+  String get event_family_agent;
+
+  /// No description provided for @event_deliveryPollOnly.
+  ///
+  /// In zh, this message translates to:
+  /// **'轮询'**
+  String get event_deliveryPollOnly;
+
+  /// No description provided for @event_deliveryPassive.
+  ///
+  /// In zh, this message translates to:
+  /// **'被动'**
+  String get event_deliveryPassive;
+
+  /// No description provided for @event_deliveryActive.
+  ///
+  /// In zh, this message translates to:
+  /// **'主动'**
+  String get event_deliveryActive;
+
+  /// No description provided for @event_type_peerPairingInbound.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备配对请求'**
+  String get event_type_peerPairingInbound;
+
+  /// No description provided for @event_type_peerPairingCompleted.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对成功'**
+  String get event_type_peerPairingCompleted;
+
+  /// No description provided for @event_type_peerPairingRejected.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对被拒绝'**
+  String get event_type_peerPairingRejected;
+
+  /// No description provided for @event_type_peerConnectionChanged.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备连接变化'**
+  String get event_type_peerConnectionChanged;
+
+  /// No description provided for @event_type_chatGroupMemberJoined.
+  ///
+  /// In zh, this message translates to:
+  /// **'成员加入群聊'**
+  String get event_type_chatGroupMemberJoined;
+
+  /// No description provided for @event_type_chatGroupMemberLeft.
+  ///
+  /// In zh, this message translates to:
+  /// **'成员退出群聊'**
+  String get event_type_chatGroupMemberLeft;
+
+  /// No description provided for @event_type_chatGroupStageStarted.
+  ///
+  /// In zh, this message translates to:
+  /// **'编排阶段开始'**
+  String get event_type_chatGroupStageStarted;
+
+  /// No description provided for @event_type_chatGroupStepCompleted.
+  ///
+  /// In zh, this message translates to:
+  /// **'编排步骤完成'**
+  String get event_type_chatGroupStepCompleted;
+
+  /// No description provided for @event_type_chatGroupStepFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'编排步骤失败'**
+  String get event_type_chatGroupStepFailed;
+
+  /// No description provided for @event_type_chatGroupStepSkipped.
+  ///
+  /// In zh, this message translates to:
+  /// **'编排步骤跳过'**
+  String get event_type_chatGroupStepSkipped;
+
+  /// No description provided for @event_type_chatGroupWorkflowCompleted.
+  ///
+  /// In zh, this message translates to:
+  /// **'编排完成'**
+  String get event_type_chatGroupWorkflowCompleted;
+
+  /// No description provided for @event_type_chatGroupWorkflowFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'编排失败'**
+  String get event_type_chatGroupWorkflowFailed;
+
+  /// No description provided for @event_type_chatGroupLoopRoundCompleted.
+  ///
+  /// In zh, this message translates to:
+  /// **'循环轮次完成'**
+  String get event_type_chatGroupLoopRoundCompleted;
+
+  /// No description provided for @event_type_chatGroupMemberPending.
+  ///
+  /// In zh, this message translates to:
+  /// **'成员等待中'**
+  String get event_type_chatGroupMemberPending;
+
+  /// No description provided for @event_type_chatGroupMemberStalled.
+  ///
+  /// In zh, this message translates to:
+  /// **'成员停滞'**
+  String get event_type_chatGroupMemberStalled;
+
+  /// No description provided for @event_type_chatMessageMention.
+  ///
+  /// In zh, this message translates to:
+  /// **'被提及'**
+  String get event_type_chatMessageMention;
+
+  /// No description provided for @event_type_workflowApprovalPending.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作流待审批'**
+  String get event_type_workflowApprovalPending;
+
+  /// No description provided for @event_type_workflowApprovalResolved.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作流审批已决'**
+  String get event_type_workflowApprovalResolved;
+
+  /// No description provided for @event_type_storeFileChanged.
+  ///
+  /// In zh, this message translates to:
+  /// **'存储文件变更'**
+  String get event_type_storeFileChanged;
+
+  /// No description provided for @event_type_storeBackupCompleted.
+  ///
+  /// In zh, this message translates to:
+  /// **'备份完成'**
+  String get event_type_storeBackupCompleted;
+
+  /// No description provided for @event_type_storeBackupFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'备份失败'**
+  String get event_type_storeBackupFailed;
+
+  /// No description provided for @event_type_systemAppLifecycle.
+  ///
+  /// In zh, this message translates to:
+  /// **'应用前后台切换'**
+  String get event_type_systemAppLifecycle;
+
+  /// No description provided for @event_type_testEventPing.
+  ///
+  /// In zh, this message translates to:
+  /// **'测试事件 Ping'**
+  String get event_type_testEventPing;
+
+  /// No description provided for @event_type_testEventPong.
+  ///
+  /// In zh, this message translates to:
+  /// **'测试事件 Pong'**
+  String get event_type_testEventPong;
+
+  /// No description provided for @eventMgmt_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'事件管理'**
+  String get eventMgmt_title;
+
+  /// No description provided for @eventMgmt_subtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'收件箱、订阅、类型与实时事件流'**
+  String get eventMgmt_subtitle;
+
+  /// No description provided for @eventMgmt_tabInbox.
+  ///
+  /// In zh, this message translates to:
+  /// **'收件箱'**
+  String get eventMgmt_tabInbox;
+
+  /// No description provided for @eventMgmt_tabListen.
+  ///
+  /// In zh, this message translates to:
+  /// **'监听'**
+  String get eventMgmt_tabListen;
+
+  /// No description provided for @eventMgmt_tabTypes.
+  ///
+  /// In zh, this message translates to:
+  /// **'类型'**
+  String get eventMgmt_tabTypes;
+
+  /// No description provided for @eventMgmt_tabEmit.
+  ///
+  /// In zh, this message translates to:
+  /// **'发送'**
+  String get eventMgmt_tabEmit;
+
+  /// No description provided for @eventMgmt_tabRecent.
+  ///
+  /// In zh, this message translates to:
+  /// **'最近事件'**
+  String get eventMgmt_tabRecent;
+
+  /// No description provided for @eventMgmt_agentLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'Agent'**
+  String get eventMgmt_agentLabel;
+
+  /// No description provided for @eventMgmt_agentPick.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择 Agent'**
+  String get eventMgmt_agentPick;
+
+  /// No description provided for @eventMgmt_unknownAgent.
+  ///
+  /// In zh, this message translates to:
+  /// **'未知 Agent'**
+  String get eventMgmt_unknownAgent;
+
+  /// No description provided for @eventMgmt_memoryOnly.
+  ///
+  /// In zh, this message translates to:
+  /// **'事件仅存在内存中，重启后清空'**
+  String get eventMgmt_memoryOnly;
+
+  /// No description provided for @eventMgmt_error.
+  ///
+  /// In zh, this message translates to:
+  /// **'出错了：{error}'**
+  String eventMgmt_error(String error);
+
+  /// No description provided for @eventMgmt_copied.
+  ///
+  /// In zh, this message translates to:
+  /// **'已复制到剪贴板'**
+  String get eventMgmt_copied;
+
+  /// No description provided for @eventMgmt_inboxUnreadOnly.
+  ///
+  /// In zh, this message translates to:
+  /// **'仅未读'**
+  String get eventMgmt_inboxUnreadOnly;
+
+  /// No description provided for @eventMgmt_inboxEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'收件箱为空'**
+  String get eventMgmt_inboxEmpty;
+
+  /// No description provided for @eventMgmt_inboxNoUnread.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有未确认的事件'**
+  String get eventMgmt_inboxNoUnread;
+
+  /// No description provided for @eventMgmt_inboxAck.
+  ///
+  /// In zh, this message translates to:
+  /// **'确认收到'**
+  String get eventMgmt_inboxAck;
+
+  /// No description provided for @eventMgmt_inboxAcked.
+  ///
+  /// In zh, this message translates to:
+  /// **'已确认'**
+  String get eventMgmt_inboxAcked;
+
+  /// No description provided for @eventMgmt_inboxLoadMore.
+  ///
+  /// In zh, this message translates to:
+  /// **'加载更多'**
+  String get eventMgmt_inboxLoadMore;
+
+  /// No description provided for @eventMgmt_inboxNoMore.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有更多了'**
+  String get eventMgmt_inboxNoMore;
+
+  /// No description provided for @eventMgmt_inboxAckedCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'已确认 {count} 条'**
+  String eventMgmt_inboxAckedCount(int count);
+
+  /// No description provided for @eventMgmt_inboxCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 条'**
+  String eventMgmt_inboxCount(int count);
+
+  /// No description provided for @eventMgmt_inboxAckFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'确认失败：{error}'**
+  String eventMgmt_inboxAckFailed(String error);
+
+  /// No description provided for @eventMgmt_listenSubscriptions.
+  ///
+  /// In zh, this message translates to:
+  /// **'订阅'**
+  String get eventMgmt_listenSubscriptions;
+
+  /// No description provided for @eventMgmt_listenLeases.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待租约'**
+  String get eventMgmt_listenLeases;
+
+  /// No description provided for @eventMgmt_listenNoSubscriptions.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无订阅'**
+  String get eventMgmt_listenNoSubscriptions;
+
+  /// No description provided for @eventMgmt_listenNoLeases.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无等待租约'**
+  String get eventMgmt_listenNoLeases;
+
+  /// No description provided for @eventMgmt_listenCreate.
+  ///
+  /// In zh, this message translates to:
+  /// **'新建订阅'**
+  String get eventMgmt_listenCreate;
+
+  /// No description provided for @eventMgmt_listenUnsubscribe.
+  ///
+  /// In zh, this message translates to:
+  /// **'取消订阅'**
+  String get eventMgmt_listenUnsubscribe;
+
+  /// No description provided for @eventMgmt_listenUnsubscribeConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'取消这条订阅？'**
+  String get eventMgmt_listenUnsubscribeConfirm;
+
+  /// No description provided for @eventMgmt_listenCancelLease.
+  ///
+  /// In zh, this message translates to:
+  /// **'取消等待'**
+  String get eventMgmt_listenCancelLease;
+
+  /// No description provided for @eventMgmt_listenCancelLeaseConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'取消这条等待租约？正在等待的一方会收到取消异常。'**
+  String get eventMgmt_listenCancelLeaseConfirm;
+
+  /// No description provided for @eventMgmt_listenLeaseCancelled.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待租约已取消'**
+  String get eventMgmt_listenLeaseCancelled;
+
+  /// No description provided for @eventMgmt_listenExpiresAt.
+  ///
+  /// In zh, this message translates to:
+  /// **'{time} 到期'**
+  String eventMgmt_listenExpiresAt(String time);
+
+  /// No description provided for @eventMgmt_listenPersistent.
+  ///
+  /// In zh, this message translates to:
+  /// **'持久化'**
+  String get eventMgmt_listenPersistent;
+
+  /// No description provided for @eventMgmt_listenUntilRestart.
+  ///
+  /// In zh, this message translates to:
+  /// **'仅本次运行'**
+  String get eventMgmt_listenUntilRestart;
+
+  /// No description provided for @eventMgmt_pattern.
+  ///
+  /// In zh, this message translates to:
+  /// **'事件模式'**
+  String get eventMgmt_pattern;
+
+  /// No description provided for @eventMgmt_patternHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'chat.group.* 或 peer.pairing.inbound'**
+  String get eventMgmt_patternHint;
+
+  /// No description provided for @eventMgmt_patternRequired.
+  ///
+  /// In zh, this message translates to:
+  /// **'请填写事件模式'**
+  String get eventMgmt_patternRequired;
+
+  /// No description provided for @eventMgmt_deliveryLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'投递档位'**
+  String get eventMgmt_deliveryLabel;
+
+  /// No description provided for @eventMgmt_deliveryPollOnlyHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'仅写入收件箱，需要 Agent 主动轮询'**
+  String get eventMgmt_deliveryPollOnlyHint;
+
+  /// No description provided for @eventMgmt_deliveryPassiveHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'写入收件箱，并注入下一回合上下文'**
+  String get eventMgmt_deliveryPassiveHint;
+
+  /// No description provided for @eventMgmt_deliveryActiveHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'写入收件箱，并主动唤醒一次感知回合'**
+  String get eventMgmt_deliveryActiveHint;
+
+  /// No description provided for @eventMgmt_persist.
+  ///
+  /// In zh, this message translates to:
+  /// **'持久化订阅'**
+  String get eventMgmt_persist;
+
+  /// No description provided for @eventMgmt_persistHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'重启后自动恢复'**
+  String get eventMgmt_persistHint;
+
+  /// No description provided for @eventMgmt_scopeOptional.
+  ///
+  /// In zh, this message translates to:
+  /// **'作用域过滤（可选）'**
+  String get eventMgmt_scopeOptional;
+
+  /// No description provided for @eventMgmt_scopeChannel.
+  ///
+  /// In zh, this message translates to:
+  /// **'频道 ID'**
+  String get eventMgmt_scopeChannel;
+
+  /// No description provided for @eventMgmt_scopeOwner.
+  ///
+  /// In zh, this message translates to:
+  /// **'属主 ID'**
+  String get eventMgmt_scopeOwner;
+
+  /// No description provided for @eventMgmt_scopePeer.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备 ID'**
+  String get eventMgmt_scopePeer;
+
+  /// No description provided for @eventMgmt_subscribeFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'订阅失败：{error}'**
+  String eventMgmt_subscribeFailed(String error);
+
+  /// No description provided for @eventMgmt_unsubscribeFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'取消订阅失败：{error}'**
+  String eventMgmt_unsubscribeFailed(String error);
+
+  /// No description provided for @eventMgmt_subscribeCreated.
+  ///
+  /// In zh, this message translates to:
+  /// **'订阅已创建'**
+  String get eventMgmt_subscribeCreated;
+
+  /// No description provided for @eventMgmt_typesSearch.
+  ///
+  /// In zh, this message translates to:
+  /// **'搜索事件类型'**
+  String get eventMgmt_typesSearch;
+
+  /// No description provided for @eventMgmt_typesEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有匹配的事件类型'**
+  String get eventMgmt_typesEmpty;
+
+  /// No description provided for @eventMgmt_typesCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'共 {count} 个类型'**
+  String eventMgmt_typesCount(int count);
+
+  /// No description provided for @eventMgmt_typesDefaultDelivery.
+  ///
+  /// In zh, this message translates to:
+  /// **'默认档位'**
+  String get eventMgmt_typesDefaultDelivery;
+
+  /// No description provided for @eventMgmt_typesScopeKeys.
+  ///
+  /// In zh, this message translates to:
+  /// **'必需作用域'**
+  String get eventMgmt_typesScopeKeys;
+
+  /// No description provided for @eventMgmt_typesEnvelopeKeys.
+  ///
+  /// In zh, this message translates to:
+  /// **'必需信封字段'**
+  String get eventMgmt_typesEnvelopeKeys;
+
+  /// No description provided for @eventMgmt_typesRequiredNone.
+  ///
+  /// In zh, this message translates to:
+  /// **'无'**
+  String get eventMgmt_typesRequiredNone;
+
+  /// No description provided for @eventMgmt_emitType.
+  ///
+  /// In zh, this message translates to:
+  /// **'事件类型'**
+  String get eventMgmt_emitType;
+
+  /// No description provided for @eventMgmt_emitTypeHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'agent.<agentId>.custom.<name>'**
+  String get eventMgmt_emitTypeHint;
+
+  /// No description provided for @eventMgmt_emitTypeRequired.
+  ///
+  /// In zh, this message translates to:
+  /// **'请填写事件类型'**
+  String get eventMgmt_emitTypeRequired;
+
+  /// No description provided for @eventMgmt_emitRegistered.
+  ///
+  /// In zh, this message translates to:
+  /// **'已注册类型'**
+  String get eventMgmt_emitRegistered;
+
+  /// No description provided for @eventMgmt_emitPayload.
+  ///
+  /// In zh, this message translates to:
+  /// **'载荷 JSON'**
+  String get eventMgmt_emitPayload;
+
+  /// No description provided for @eventMgmt_emitPayloadMustBeObject.
+  ///
+  /// In zh, this message translates to:
+  /// **'顶层必须是 JSON 对象'**
+  String get eventMgmt_emitPayloadMustBeObject;
+
+  /// No description provided for @eventMgmt_emitCorrelation.
+  ///
+  /// In zh, this message translates to:
+  /// **'关联 ID（可选）'**
+  String get eventMgmt_emitCorrelation;
+
+  /// No description provided for @eventMgmt_emitChannel.
+  ///
+  /// In zh, this message translates to:
+  /// **'频道 ID（可选）'**
+  String get eventMgmt_emitChannel;
+
+  /// No description provided for @eventMgmt_emitSend.
+  ///
+  /// In zh, this message translates to:
+  /// **'发送事件'**
+  String get eventMgmt_emitSend;
+
+  /// No description provided for @eventMgmt_emitSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'已发送 · seq {seq}'**
+  String eventMgmt_emitSuccess(int seq);
+
+  /// No description provided for @eventMgmt_emitDeduplicated.
+  ///
+  /// In zh, this message translates to:
+  /// **'已去重，复用事件 {id}'**
+  String eventMgmt_emitDeduplicated(String id);
+
+  /// No description provided for @eventMgmt_emitFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'发送失败：{error}'**
+  String eventMgmt_emitFailed(String error);
+
+  /// No description provided for @eventMgmt_emitInvalidJson.
+  ///
+  /// In zh, this message translates to:
+  /// **'载荷不是合法 JSON 对象：{error}'**
+  String eventMgmt_emitInvalidJson(String error);
+
+  /// No description provided for @eventMgmt_emitTypePrefix.
+  ///
+  /// In zh, this message translates to:
+  /// **'类型必须以 agent.{agentId}. 开头'**
+  String eventMgmt_emitTypePrefix(String agentId);
+
+  /// No description provided for @eventMgmt_recentEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'本次运行还没有事件'**
+  String get eventMgmt_recentEmpty;
+
+  /// No description provided for @eventMgmt_recentCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'最近 {count} 条'**
+  String eventMgmt_recentCount(int count);
+
+  /// No description provided for @eventMgmt_recentSource.
+  ///
+  /// In zh, this message translates to:
+  /// **'来源'**
+  String get eventMgmt_recentSource;
+
+  /// No description provided for @eventMgmt_payloadExpand.
+  ///
+  /// In zh, this message translates to:
+  /// **'展开'**
+  String get eventMgmt_payloadExpand;
+
+  /// No description provided for @eventMgmt_payloadCollapse.
+  ///
+  /// In zh, this message translates to:
+  /// **'收起'**
+  String get eventMgmt_payloadCollapse;
+
   /// No description provided for @chat_forkSession.
   ///
   /// In zh, this message translates to:

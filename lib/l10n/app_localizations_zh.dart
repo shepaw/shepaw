@@ -3294,6 +3294,373 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_eventListenKindWait => '等待';
 
   @override
+  String get event_family_peer => '设备配对';
+
+  @override
+  String get event_family_chatGroup => '群聊编排';
+
+  @override
+  String get event_family_chatMessage => '聊天消息';
+
+  @override
+  String get event_family_workflow => '工作流';
+
+  @override
+  String get event_family_store => '存储';
+
+  @override
+  String get event_family_system => '系统';
+
+  @override
+  String get event_family_test => '测试';
+
+  @override
+  String get event_family_agent => 'Agent 自定义';
+
+  @override
+  String get event_deliveryPollOnly => '轮询';
+
+  @override
+  String get event_deliveryPassive => '被动';
+
+  @override
+  String get event_deliveryActive => '主动';
+
+  @override
+  String get event_type_peerPairingInbound => '设备配对请求';
+
+  @override
+  String get event_type_peerPairingCompleted => '配对成功';
+
+  @override
+  String get event_type_peerPairingRejected => '配对被拒绝';
+
+  @override
+  String get event_type_peerConnectionChanged => '设备连接变化';
+
+  @override
+  String get event_type_chatGroupMemberJoined => '成员加入群聊';
+
+  @override
+  String get event_type_chatGroupMemberLeft => '成员退出群聊';
+
+  @override
+  String get event_type_chatGroupStageStarted => '编排阶段开始';
+
+  @override
+  String get event_type_chatGroupStepCompleted => '编排步骤完成';
+
+  @override
+  String get event_type_chatGroupStepFailed => '编排步骤失败';
+
+  @override
+  String get event_type_chatGroupStepSkipped => '编排步骤跳过';
+
+  @override
+  String get event_type_chatGroupWorkflowCompleted => '编排完成';
+
+  @override
+  String get event_type_chatGroupWorkflowFailed => '编排失败';
+
+  @override
+  String get event_type_chatGroupLoopRoundCompleted => '循环轮次完成';
+
+  @override
+  String get event_type_chatGroupMemberPending => '成员等待中';
+
+  @override
+  String get event_type_chatGroupMemberStalled => '成员停滞';
+
+  @override
+  String get event_type_chatMessageMention => '被提及';
+
+  @override
+  String get event_type_workflowApprovalPending => '工作流待审批';
+
+  @override
+  String get event_type_workflowApprovalResolved => '工作流审批已决';
+
+  @override
+  String get event_type_storeFileChanged => '存储文件变更';
+
+  @override
+  String get event_type_storeBackupCompleted => '备份完成';
+
+  @override
+  String get event_type_storeBackupFailed => '备份失败';
+
+  @override
+  String get event_type_systemAppLifecycle => '应用前后台切换';
+
+  @override
+  String get event_type_testEventPing => '测试事件 Ping';
+
+  @override
+  String get event_type_testEventPong => '测试事件 Pong';
+
+  @override
+  String get eventMgmt_title => '事件管理';
+
+  @override
+  String get eventMgmt_subtitle => '收件箱、订阅、类型与实时事件流';
+
+  @override
+  String get eventMgmt_tabInbox => '收件箱';
+
+  @override
+  String get eventMgmt_tabListen => '监听';
+
+  @override
+  String get eventMgmt_tabTypes => '类型';
+
+  @override
+  String get eventMgmt_tabEmit => '发送';
+
+  @override
+  String get eventMgmt_tabRecent => '最近事件';
+
+  @override
+  String get eventMgmt_agentLabel => 'Agent';
+
+  @override
+  String get eventMgmt_agentPick => '选择 Agent';
+
+  @override
+  String get eventMgmt_unknownAgent => '未知 Agent';
+
+  @override
+  String get eventMgmt_memoryOnly => '事件仅存在内存中，重启后清空';
+
+  @override
+  String eventMgmt_error(String error) {
+    return '出错了：$error';
+  }
+
+  @override
+  String get eventMgmt_copied => '已复制到剪贴板';
+
+  @override
+  String get eventMgmt_inboxUnreadOnly => '仅未读';
+
+  @override
+  String get eventMgmt_inboxEmpty => '收件箱为空';
+
+  @override
+  String get eventMgmt_inboxNoUnread => '没有未确认的事件';
+
+  @override
+  String get eventMgmt_inboxAck => '确认收到';
+
+  @override
+  String get eventMgmt_inboxAcked => '已确认';
+
+  @override
+  String get eventMgmt_inboxLoadMore => '加载更多';
+
+  @override
+  String get eventMgmt_inboxNoMore => '没有更多了';
+
+  @override
+  String eventMgmt_inboxAckedCount(int count) {
+    return '已确认 $count 条';
+  }
+
+  @override
+  String eventMgmt_inboxCount(int count) {
+    return '$count 条';
+  }
+
+  @override
+  String eventMgmt_inboxAckFailed(String error) {
+    return '确认失败：$error';
+  }
+
+  @override
+  String get eventMgmt_listenSubscriptions => '订阅';
+
+  @override
+  String get eventMgmt_listenLeases => '等待租约';
+
+  @override
+  String get eventMgmt_listenNoSubscriptions => '暂无订阅';
+
+  @override
+  String get eventMgmt_listenNoLeases => '暂无等待租约';
+
+  @override
+  String get eventMgmt_listenCreate => '新建订阅';
+
+  @override
+  String get eventMgmt_listenUnsubscribe => '取消订阅';
+
+  @override
+  String get eventMgmt_listenUnsubscribeConfirm => '取消这条订阅？';
+
+  @override
+  String get eventMgmt_listenCancelLease => '取消等待';
+
+  @override
+  String get eventMgmt_listenCancelLeaseConfirm => '取消这条等待租约？正在等待的一方会收到取消异常。';
+
+  @override
+  String get eventMgmt_listenLeaseCancelled => '等待租约已取消';
+
+  @override
+  String eventMgmt_listenExpiresAt(String time) {
+    return '$time 到期';
+  }
+
+  @override
+  String get eventMgmt_listenPersistent => '持久化';
+
+  @override
+  String get eventMgmt_listenUntilRestart => '仅本次运行';
+
+  @override
+  String get eventMgmt_pattern => '事件模式';
+
+  @override
+  String get eventMgmt_patternHint => 'chat.group.* 或 peer.pairing.inbound';
+
+  @override
+  String get eventMgmt_patternRequired => '请填写事件模式';
+
+  @override
+  String get eventMgmt_deliveryLabel => '投递档位';
+
+  @override
+  String get eventMgmt_deliveryPollOnlyHint => '仅写入收件箱，需要 Agent 主动轮询';
+
+  @override
+  String get eventMgmt_deliveryPassiveHint => '写入收件箱，并注入下一回合上下文';
+
+  @override
+  String get eventMgmt_deliveryActiveHint => '写入收件箱，并主动唤醒一次感知回合';
+
+  @override
+  String get eventMgmt_persist => '持久化订阅';
+
+  @override
+  String get eventMgmt_persistHint => '重启后自动恢复';
+
+  @override
+  String get eventMgmt_scopeOptional => '作用域过滤（可选）';
+
+  @override
+  String get eventMgmt_scopeChannel => '频道 ID';
+
+  @override
+  String get eventMgmt_scopeOwner => '属主 ID';
+
+  @override
+  String get eventMgmt_scopePeer => '设备 ID';
+
+  @override
+  String eventMgmt_subscribeFailed(String error) {
+    return '订阅失败：$error';
+  }
+
+  @override
+  String eventMgmt_unsubscribeFailed(String error) {
+    return '取消订阅失败：$error';
+  }
+
+  @override
+  String get eventMgmt_subscribeCreated => '订阅已创建';
+
+  @override
+  String get eventMgmt_typesSearch => '搜索事件类型';
+
+  @override
+  String get eventMgmt_typesEmpty => '没有匹配的事件类型';
+
+  @override
+  String eventMgmt_typesCount(int count) {
+    return '共 $count 个类型';
+  }
+
+  @override
+  String get eventMgmt_typesDefaultDelivery => '默认档位';
+
+  @override
+  String get eventMgmt_typesScopeKeys => '必需作用域';
+
+  @override
+  String get eventMgmt_typesEnvelopeKeys => '必需信封字段';
+
+  @override
+  String get eventMgmt_typesRequiredNone => '无';
+
+  @override
+  String get eventMgmt_emitType => '事件类型';
+
+  @override
+  String get eventMgmt_emitTypeHint => 'agent.<agentId>.custom.<name>';
+
+  @override
+  String get eventMgmt_emitTypeRequired => '请填写事件类型';
+
+  @override
+  String get eventMgmt_emitRegistered => '已注册类型';
+
+  @override
+  String get eventMgmt_emitPayload => '载荷 JSON';
+
+  @override
+  String get eventMgmt_emitPayloadMustBeObject => '顶层必须是 JSON 对象';
+
+  @override
+  String get eventMgmt_emitCorrelation => '关联 ID（可选）';
+
+  @override
+  String get eventMgmt_emitChannel => '频道 ID（可选）';
+
+  @override
+  String get eventMgmt_emitSend => '发送事件';
+
+  @override
+  String eventMgmt_emitSuccess(int seq) {
+    return '已发送 · seq $seq';
+  }
+
+  @override
+  String eventMgmt_emitDeduplicated(String id) {
+    return '已去重，复用事件 $id';
+  }
+
+  @override
+  String eventMgmt_emitFailed(String error) {
+    return '发送失败：$error';
+  }
+
+  @override
+  String eventMgmt_emitInvalidJson(String error) {
+    return '载荷不是合法 JSON 对象：$error';
+  }
+
+  @override
+  String eventMgmt_emitTypePrefix(String agentId) {
+    return '类型必须以 agent.$agentId. 开头';
+  }
+
+  @override
+  String get eventMgmt_recentEmpty => '本次运行还没有事件';
+
+  @override
+  String eventMgmt_recentCount(int count) {
+    return '最近 $count 条';
+  }
+
+  @override
+  String get eventMgmt_recentSource => '来源';
+
+  @override
+  String get eventMgmt_payloadExpand => '展开';
+
+  @override
+  String get eventMgmt_payloadCollapse => '收起';
+
+  @override
   String get chat_forkSession => '分叉';
 
   @override

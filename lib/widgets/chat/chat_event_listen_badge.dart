@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../l10n/l10n_helpers.dart';
 import '../../services/event/event_bus.dart';
 import '../../theme/app_theme.dart';
 
@@ -231,54 +232,63 @@ class _ChatEventListenBadgeState extends State<ChatEventListenBadge> {
                             itemCount: entries.length,
                             itemBuilder: (context, index) {
                               final entry = entries[index];
-                              return Padding(
-                                padding:
-                                    const EdgeInsets.fromLTRB(12, 3, 12, 5),
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Icon(
-                                      entry.isWait
-                                          ? Icons.hourglass_empty
-                                          : Icons.sensors,
-                                      size: 15,
-                                      color: AppColors.primary,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            entry.pattern,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              fontSize: 12,
-                                              fontFamily: 'monospace',
-                                              height: 1.25,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 1),
-                                          Text(
-                                            _subtitle(
-                                              l10n,
-                                              entry,
-                                              showAgent: showAgent,
-                                            ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              height: 1.25,
-                                              color: Colors.grey[600],
-                                            ),
-                                          ),
-                                        ],
+                              // 原始标识（glob / 线上档位值）在 tooltip 里保留：
+                              // 名称化后 `chat.group.*` 与 `chat.group.step.*`
+                              // 都显示为家族名，信息量不能丢。
+                              return Tooltip(
+                                message: entry.pattern,
+                                child: Padding(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(12, 3, 12, 5),
+                                  child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Icon(
+                                        entry.isWait
+                                            ? Icons.hourglass_empty
+                                            : Icons.sensors,
+                                        size: 15,
+                                        color: AppColors.primary,
                                       ),
-                                    ),
-                                  ],
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              localizeEventTypeLabel(
+                                                l10n,
+                                                entry.pattern,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                                height: 1.25,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 1),
+                                            Text(
+                                              _subtitle(
+                                                l10n,
+                                                entry,
+                                                showAgent: showAgent,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                height: 1.25,
+                                                color: Colors.grey[600],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               );
                             },
@@ -322,8 +332,8 @@ class _ChatEventListenBadgeState extends State<ChatEventListenBadge> {
       }
     } else {
       parts.add(l10n.chat_eventListenKindSubscribe);
-      final delivery = entry.delivery;
-      if (delivery != null && delivery.isNotEmpty) {
+      final delivery = localizeEventDelivery(l10n, entry.delivery);
+      if (delivery != null) {
         parts.add(delivery);
       }
     }

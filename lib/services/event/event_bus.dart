@@ -109,6 +109,12 @@ class EventBus {
   /// can refresh the listening-event badge.
   final ValueNotifier<int> listenListenable = ValueNotifier(0);
 
+  /// 有新事件投递时递增（事件管理页的收件箱 / 最近事件用）。
+  ///
+  /// 与 [listenListenable] 分开：事件投递本身不改订阅关系，若共用同一个
+  /// notifier，聊天标题的监听徽标会被高频事件拖着反复重建。
+  final ValueNotifier<int> emitListenable = ValueNotifier(0);
+
   void _notifyListenChanged() {
     listenListenable.value++;
   }
@@ -193,6 +199,14 @@ class EventBus {
     }
     return entries;
   }
+
+  /// 当前活跃 wait lease（已滤掉 completed / cancelled / expired）。
+  ///
+  /// 必须走 [_activeLeases] 而不是裸 `_leases`：[`_pruneLeases`] 只在
+  /// [openWaitLease] 里被调用，无人 await 的 lease 过期后不会被回收，
+  /// 裸列表会长期残留过期项。
+  List<WaitLease> get activeWaitLeases =>
+      List.unmodifiable(_activeLeases());
 
   EventSubscription? findSubscription(String subscriptionId) {
     for (final s in _subscriptions) {
@@ -402,6 +416,10 @@ class EventBus {
       activeLeases: _activeLeases(),
       subscriptions: _subscriptions,
     );
+
+    // 去重命中也会走到这里（envelope 复用原事件）：管理页的收件箱/实时流
+    // 需要跟着刷新，否则新写入的 inbox 条目要等下一次操作才可见。
+    emitListenable.value++;
 
     return EmitResult(
       id: envelope.id,

@@ -1937,6 +1937,177 @@
   "chat_listeningEventsTitle": "正在监听的事件",
   "chat_eventListenKindSubscribe": "订阅",
   "chat_eventListenKindWait": "等待",
+
+  "event_family_peer": "设备配对",
+  "event_family_chatGroup": "群聊编排",
+  "event_family_chatMessage": "聊天消息",
+  "event_family_workflow": "工作流",
+  "event_family_store": "存储",
+  "event_family_system": "系统",
+  "event_family_test": "测试",
+  "event_family_agent": "Agent 自定义",
+
+  "event_deliveryPollOnly": "轮询",
+  "event_deliveryPassive": "被动",
+  "event_deliveryActive": "主动",
+
+  "event_type_peerPairingInbound": "设备配对请求",
+  "event_type_peerPairingCompleted": "配对成功",
+  "event_type_peerPairingRejected": "配对被拒绝",
+  "event_type_peerConnectionChanged": "设备连接变化",
+
+  "event_type_chatGroupMemberJoined": "成员加入群聊",
+  "event_type_chatGroupMemberLeft": "成员退出群聊",
+  "event_type_chatGroupStageStarted": "编排阶段开始",
+  "event_type_chatGroupStepCompleted": "编排步骤完成",
+  "event_type_chatGroupStepFailed": "编排步骤失败",
+  "event_type_chatGroupStepSkipped": "编排步骤跳过",
+  "event_type_chatGroupWorkflowCompleted": "编排完成",
+  "event_type_chatGroupWorkflowFailed": "编排失败",
+  "event_type_chatGroupLoopRoundCompleted": "循环轮次完成",
+  "event_type_chatGroupMemberPending": "成员等待中",
+  "event_type_chatGroupMemberStalled": "成员停滞",
+
+  "event_type_chatMessageMention": "被提及",
+
+  "event_type_workflowApprovalPending": "工作流待审批",
+  "event_type_workflowApprovalResolved": "工作流审批已决",
+
+  "event_type_storeFileChanged": "存储文件变更",
+  "event_type_storeBackupCompleted": "备份完成",
+  "event_type_storeBackupFailed": "备份失败",
+
+  "event_type_systemAppLifecycle": "应用前后台切换",
+
+  "event_type_testEventPing": "测试事件 Ping",
+  "event_type_testEventPong": "测试事件 Pong",
+
+  "eventMgmt_title": "事件管理",
+  "eventMgmt_subtitle": "收件箱、订阅、类型与实时事件流",
+  "eventMgmt_tabInbox": "收件箱",
+  "eventMgmt_tabListen": "监听",
+  "eventMgmt_tabTypes": "类型",
+  "eventMgmt_tabEmit": "发送",
+  "eventMgmt_tabRecent": "最近事件",
+  "eventMgmt_agentLabel": "Agent",
+  "eventMgmt_agentPick": "选择 Agent",
+  "eventMgmt_unknownAgent": "未知 Agent",
+  "eventMgmt_memoryOnly": "事件仅存在内存中，重启后清空",
+  "eventMgmt_error": "出错了：{error}",
+  "@eventMgmt_error": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "eventMgmt_copied": "已复制到剪贴板",
+
+  "eventMgmt_inboxUnreadOnly": "仅未读",
+  "eventMgmt_inboxEmpty": "收件箱为空",
+  "eventMgmt_inboxNoUnread": "没有未确认的事件",
+  "eventMgmt_inboxAck": "确认收到",
+  "eventMgmt_inboxAcked": "已确认",
+  "eventMgmt_inboxLoadMore": "加载更多",
+  "eventMgmt_inboxNoMore": "没有更多了",
+  "eventMgmt_inboxAckedCount": "已确认 {count} 条",
+  "@eventMgmt_inboxAckedCount": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "eventMgmt_inboxCount": "{count} 条",
+  "@eventMgmt_inboxCount": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "eventMgmt_inboxAckFailed": "确认失败：{error}",
+  "@eventMgmt_inboxAckFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+
+  "eventMgmt_listenSubscriptions": "订阅",
+  "eventMgmt_listenLeases": "等待租约",
+  "eventMgmt_listenNoSubscriptions": "暂无订阅",
+  "eventMgmt_listenNoLeases": "暂无等待租约",
+  "eventMgmt_listenCreate": "新建订阅",
+  "eventMgmt_listenUnsubscribe": "取消订阅",
+  "eventMgmt_listenUnsubscribeConfirm": "取消这条订阅？",
+  "eventMgmt_listenCancelLease": "取消等待",
+  "eventMgmt_listenCancelLeaseConfirm": "取消这条等待租约？正在等待的一方会收到取消异常。",
+  "eventMgmt_listenLeaseCancelled": "等待租约已取消",
+  "eventMgmt_listenExpiresAt": "{time} 到期",
+  "@eventMgmt_listenExpiresAt": {
+    "placeholders": { "time": { "type": "String" } }
+  },
+  "eventMgmt_listenPersistent": "持久化",
+  "eventMgmt_listenUntilRestart": "仅本次运行",
+
+  "eventMgmt_pattern": "事件模式",
+  "eventMgmt_patternHint": "chat.group.* 或 peer.pairing.inbound",
+  "eventMgmt_patternRequired": "请填写事件模式",
+  "eventMgmt_deliveryLabel": "投递档位",
+  "eventMgmt_deliveryPollOnlyHint": "仅写入收件箱，需要 Agent 主动轮询",
+  "eventMgmt_deliveryPassiveHint": "写入收件箱，并注入下一回合上下文",
+  "eventMgmt_deliveryActiveHint": "写入收件箱，并主动唤醒一次感知回合",
+  "eventMgmt_persist": "持久化订阅",
+  "eventMgmt_persistHint": "重启后自动恢复",
+  "eventMgmt_scopeOptional": "作用域过滤（可选）",
+  "eventMgmt_scopeChannel": "频道 ID",
+  "eventMgmt_scopeOwner": "属主 ID",
+  "eventMgmt_scopePeer": "设备 ID",
+  "eventMgmt_subscribeFailed": "订阅失败：{error}",
+  "@eventMgmt_subscribeFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "eventMgmt_unsubscribeFailed": "取消订阅失败：{error}",
+  "@eventMgmt_unsubscribeFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "eventMgmt_subscribeCreated": "订阅已创建",
+
+  "eventMgmt_typesSearch": "搜索事件类型",
+  "eventMgmt_typesEmpty": "没有匹配的事件类型",
+  "eventMgmt_typesCount": "共 {count} 个类型",
+  "@eventMgmt_typesCount": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "eventMgmt_typesDefaultDelivery": "默认档位",
+  "eventMgmt_typesScopeKeys": "必需作用域",
+  "eventMgmt_typesEnvelopeKeys": "必需信封字段",
+  "eventMgmt_typesRequiredNone": "无",
+
+  "eventMgmt_emitType": "事件类型",
+  "eventMgmt_emitTypeHint": "agent.<agentId>.custom.<name>",
+  "eventMgmt_emitTypeRequired": "请填写事件类型",
+  "eventMgmt_emitRegistered": "已注册类型",
+  "eventMgmt_emitPayload": "载荷 JSON",
+  "eventMgmt_emitPayloadMustBeObject": "顶层必须是 JSON 对象",
+  "eventMgmt_emitCorrelation": "关联 ID（可选）",
+  "eventMgmt_emitChannel": "频道 ID（可选）",
+  "eventMgmt_emitSend": "发送事件",
+  "eventMgmt_emitSuccess": "已发送 · seq {seq}",
+  "@eventMgmt_emitSuccess": {
+    "placeholders": { "seq": { "type": "int" } }
+  },
+  "eventMgmt_emitDeduplicated": "已去重，复用事件 {id}",
+  "@eventMgmt_emitDeduplicated": {
+    "placeholders": { "id": { "type": "String" } }
+  },
+  "eventMgmt_emitFailed": "发送失败：{error}",
+  "@eventMgmt_emitFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "eventMgmt_emitInvalidJson": "载荷不是合法 JSON 对象：{error}",
+  "@eventMgmt_emitInvalidJson": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "eventMgmt_emitTypePrefix": "类型必须以 agent.{agentId}. 开头",
+  "@eventMgmt_emitTypePrefix": {
+    "placeholders": { "agentId": { "type": "String" } }
+  },
+
+  "eventMgmt_recentEmpty": "本次运行还没有事件",
+  "eventMgmt_recentCount": "最近 {count} 条",
+  "@eventMgmt_recentCount": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "eventMgmt_recentSource": "来源",
+  "eventMgmt_payloadExpand": "展开",
+  "eventMgmt_payloadCollapse": "收起",
   "chat_forkSession": "分叉",
   "chat_forkingSession": "正在分叉会话…",
   "chat_forkSessionFailed": "分叉会话失败：{error}",

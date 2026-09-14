@@ -53,8 +53,10 @@ void main() {
 
     expect(find.byType(BottomSheet), findsNothing);
     expect(find.textContaining('正在监听的事件'), findsOneWidget);
-    expect(find.text('peer.pairing.inbound'), findsOneWidget);
+    // 面板主行渲染本地化类型名，原始 glob 退到 tooltip。
+    expect(find.text('设备配对请求'), findsOneWidget);
     expect(find.textContaining('订阅'), findsOneWidget);
+    expect(find.textContaining('主动'), findsOneWidget);
 
     final panel = tester.getSize(find.byKey(const Key('chat_event_listen_panel')));
     expect(panel.width, lessThanOrEqualTo(220));
@@ -79,7 +81,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(BottomSheet), findsNothing);
-    expect(find.text('peer.pairing.inbound'), findsOneWidget);
+    expect(find.text('设备配对请求'), findsOneWidget);
   });
 
   testWidgets('鼠标离开徽标后面板自动关闭', (tester) async {

@@ -18,6 +18,7 @@ import 'user_profile_settings_screen.dart';
 import 'model_management_screen.dart';
 import 'skill_management_screen.dart';
 import 'cli_config_management_screen.dart';
+import 'event_management/event_management_screen.dart';
 import '../task/screens/scheduled_tasks_management_screen.dart';
 import '../utils/layout_utils.dart';
 import '../services/biometric_service.dart';
@@ -396,6 +397,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _openAndRefresh(
               const CliConfigManagementScreen(),
+            ),
+          ),
+
+          const Divider(),
+
+          ListTile(
+            leading: const Icon(Icons.sensors),
+            title: Text(l10n.eventMgmt_title),
+            subtitle: Text(l10n.eventMgmt_subtitle),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _openAndRefresh(
+              const EventManagementScreen(),
             ),
           ),
 

@@ -3428,6 +3428,382 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_eventListenKindWait => 'Wait';
 
   @override
+  String get event_family_peer => 'Device pairing';
+
+  @override
+  String get event_family_chatGroup => 'Group orchestration';
+
+  @override
+  String get event_family_chatMessage => 'Chat messages';
+
+  @override
+  String get event_family_workflow => 'Workflow';
+
+  @override
+  String get event_family_store => 'Storage';
+
+  @override
+  String get event_family_system => 'System';
+
+  @override
+  String get event_family_test => 'Test';
+
+  @override
+  String get event_family_agent => 'Agent custom';
+
+  @override
+  String get event_deliveryPollOnly => 'Poll only';
+
+  @override
+  String get event_deliveryPassive => 'Passive';
+
+  @override
+  String get event_deliveryActive => 'Active';
+
+  @override
+  String get event_type_peerPairingInbound => 'Device pairing request';
+
+  @override
+  String get event_type_peerPairingCompleted => 'Pairing completed';
+
+  @override
+  String get event_type_peerPairingRejected => 'Pairing rejected';
+
+  @override
+  String get event_type_peerConnectionChanged => 'Device connection changed';
+
+  @override
+  String get event_type_chatGroupMemberJoined => 'Member joined group';
+
+  @override
+  String get event_type_chatGroupMemberLeft => 'Member left group';
+
+  @override
+  String get event_type_chatGroupStageStarted => 'Orchestration stage started';
+
+  @override
+  String get event_type_chatGroupStepCompleted =>
+      'Orchestration step completed';
+
+  @override
+  String get event_type_chatGroupStepFailed => 'Orchestration step failed';
+
+  @override
+  String get event_type_chatGroupStepSkipped => 'Orchestration step skipped';
+
+  @override
+  String get event_type_chatGroupWorkflowCompleted => 'Orchestration completed';
+
+  @override
+  String get event_type_chatGroupWorkflowFailed => 'Orchestration failed';
+
+  @override
+  String get event_type_chatGroupLoopRoundCompleted => 'Loop round completed';
+
+  @override
+  String get event_type_chatGroupMemberPending => 'Member pending';
+
+  @override
+  String get event_type_chatGroupMemberStalled => 'Member stalled';
+
+  @override
+  String get event_type_chatMessageMention => 'Mentioned in chat';
+
+  @override
+  String get event_type_workflowApprovalPending => 'Workflow awaiting approval';
+
+  @override
+  String get event_type_workflowApprovalResolved =>
+      'Workflow approval resolved';
+
+  @override
+  String get event_type_storeFileChanged => 'Stored file changed';
+
+  @override
+  String get event_type_storeBackupCompleted => 'Backup completed';
+
+  @override
+  String get event_type_storeBackupFailed => 'Backup failed';
+
+  @override
+  String get event_type_systemAppLifecycle => 'App lifecycle changed';
+
+  @override
+  String get event_type_testEventPing => 'Test event ping';
+
+  @override
+  String get event_type_testEventPong => 'Test event pong';
+
+  @override
+  String get eventMgmt_title => 'Event management';
+
+  @override
+  String get eventMgmt_subtitle =>
+      'Inbox, subscriptions, types and live event stream';
+
+  @override
+  String get eventMgmt_tabInbox => 'Inbox';
+
+  @override
+  String get eventMgmt_tabListen => 'Listen';
+
+  @override
+  String get eventMgmt_tabTypes => 'Types';
+
+  @override
+  String get eventMgmt_tabEmit => 'Emit';
+
+  @override
+  String get eventMgmt_tabRecent => 'Recent';
+
+  @override
+  String get eventMgmt_agentLabel => 'Agent';
+
+  @override
+  String get eventMgmt_agentPick => 'Select agent';
+
+  @override
+  String get eventMgmt_unknownAgent => 'Unknown agent';
+
+  @override
+  String get eventMgmt_memoryOnly =>
+      'Events live in memory only and are cleared on restart';
+
+  @override
+  String eventMgmt_error(String error) {
+    return 'Error: $error';
+  }
+
+  @override
+  String get eventMgmt_copied => 'Copied to clipboard';
+
+  @override
+  String get eventMgmt_inboxUnreadOnly => 'Unread only';
+
+  @override
+  String get eventMgmt_inboxEmpty => 'Inbox is empty';
+
+  @override
+  String get eventMgmt_inboxNoUnread => 'No unacknowledged events';
+
+  @override
+  String get eventMgmt_inboxAck => 'Ack';
+
+  @override
+  String get eventMgmt_inboxAcked => 'Acked';
+
+  @override
+  String get eventMgmt_inboxLoadMore => 'Load more';
+
+  @override
+  String get eventMgmt_inboxNoMore => 'No more events';
+
+  @override
+  String eventMgmt_inboxAckedCount(int count) {
+    return 'Acked $count event(s)';
+  }
+
+  @override
+  String eventMgmt_inboxCount(int count) {
+    return '$count event(s)';
+  }
+
+  @override
+  String eventMgmt_inboxAckFailed(String error) {
+    return 'Ack failed: $error';
+  }
+
+  @override
+  String get eventMgmt_listenSubscriptions => 'Subscriptions';
+
+  @override
+  String get eventMgmt_listenLeases => 'Wait leases';
+
+  @override
+  String get eventMgmt_listenNoSubscriptions => 'No subscriptions';
+
+  @override
+  String get eventMgmt_listenNoLeases => 'No wait leases';
+
+  @override
+  String get eventMgmt_listenCreate => 'New subscription';
+
+  @override
+  String get eventMgmt_listenUnsubscribe => 'Unsubscribe';
+
+  @override
+  String get eventMgmt_listenUnsubscribeConfirm => 'Remove this subscription?';
+
+  @override
+  String get eventMgmt_listenCancelLease => 'Cancel wait';
+
+  @override
+  String get eventMgmt_listenCancelLeaseConfirm =>
+      'Cancel this wait lease? The waiting party will receive a cancellation error.';
+
+  @override
+  String get eventMgmt_listenLeaseCancelled => 'Wait lease cancelled';
+
+  @override
+  String eventMgmt_listenExpiresAt(String time) {
+    return 'expires $time';
+  }
+
+  @override
+  String get eventMgmt_listenPersistent => 'Persistent';
+
+  @override
+  String get eventMgmt_listenUntilRestart => 'This run only';
+
+  @override
+  String get eventMgmt_pattern => 'Event pattern';
+
+  @override
+  String get eventMgmt_patternHint => 'chat.group.* or peer.pairing.inbound';
+
+  @override
+  String get eventMgmt_patternRequired => 'Event pattern is required';
+
+  @override
+  String get eventMgmt_deliveryLabel => 'Delivery';
+
+  @override
+  String get eventMgmt_deliveryPollOnlyHint =>
+      'Inbox only; the agent polls explicitly';
+
+  @override
+  String get eventMgmt_deliveryPassiveHint =>
+      'Written to the inbox and merged into the next turn context';
+
+  @override
+  String get eventMgmt_deliveryActiveHint =>
+      'Written to the inbox and wakes one perception turn';
+
+  @override
+  String get eventMgmt_persist => 'Persistent subscription';
+
+  @override
+  String get eventMgmt_persistHint => 'Restored automatically after restart';
+
+  @override
+  String get eventMgmt_scopeOptional => 'Scope filter (optional)';
+
+  @override
+  String get eventMgmt_scopeChannel => 'Channel ID';
+
+  @override
+  String get eventMgmt_scopeOwner => 'Owner ID';
+
+  @override
+  String get eventMgmt_scopePeer => 'Peer ID';
+
+  @override
+  String eventMgmt_subscribeFailed(String error) {
+    return 'Subscribe failed: $error';
+  }
+
+  @override
+  String eventMgmt_unsubscribeFailed(String error) {
+    return 'Unsubscribe failed: $error';
+  }
+
+  @override
+  String get eventMgmt_subscribeCreated => 'Subscription created';
+
+  @override
+  String get eventMgmt_typesSearch => 'Search event types';
+
+  @override
+  String get eventMgmt_typesEmpty => 'No matching event types';
+
+  @override
+  String eventMgmt_typesCount(int count) {
+    return '$count type(s)';
+  }
+
+  @override
+  String get eventMgmt_typesDefaultDelivery => 'Default delivery';
+
+  @override
+  String get eventMgmt_typesScopeKeys => 'Required scope keys';
+
+  @override
+  String get eventMgmt_typesEnvelopeKeys => 'Required envelope keys';
+
+  @override
+  String get eventMgmt_typesRequiredNone => 'none';
+
+  @override
+  String get eventMgmt_emitType => 'Event type';
+
+  @override
+  String get eventMgmt_emitTypeHint => 'agent.<agentId>.custom.<name>';
+
+  @override
+  String get eventMgmt_emitTypeRequired => 'Event type is required';
+
+  @override
+  String get eventMgmt_emitRegistered => 'Registered types';
+
+  @override
+  String get eventMgmt_emitPayload => 'Payload JSON';
+
+  @override
+  String get eventMgmt_emitPayloadMustBeObject =>
+      'the top level must be a JSON object';
+
+  @override
+  String get eventMgmt_emitCorrelation => 'Correlation ID (optional)';
+
+  @override
+  String get eventMgmt_emitChannel => 'Channel ID (optional)';
+
+  @override
+  String get eventMgmt_emitSend => 'Emit event';
+
+  @override
+  String eventMgmt_emitSuccess(int seq) {
+    return 'Emitted · seq $seq';
+  }
+
+  @override
+  String eventMgmt_emitDeduplicated(String id) {
+    return 'Deduplicated; reused event $id';
+  }
+
+  @override
+  String eventMgmt_emitFailed(String error) {
+    return 'Emit failed: $error';
+  }
+
+  @override
+  String eventMgmt_emitInvalidJson(String error) {
+    return 'Payload is not a valid JSON object: $error';
+  }
+
+  @override
+  String eventMgmt_emitTypePrefix(String agentId) {
+    return 'Type must start with agent.$agentId.';
+  }
+
+  @override
+  String get eventMgmt_recentEmpty => 'No events yet this run';
+
+  @override
+  String eventMgmt_recentCount(int count) {
+    return 'Latest $count';
+  }
+
+  @override
+  String get eventMgmt_recentSource => 'Source';
+
+  @override
+  String get eventMgmt_payloadExpand => 'Expand';
+
+  @override
+  String get eventMgmt_payloadCollapse => 'Collapse';
+
+  @override
   String get chat_forkSession => 'Fork';
 
   @override

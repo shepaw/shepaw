@@ -1459,6 +1459,180 @@
   "chat_listeningEventsTitle": "Listening events",
   "chat_eventListenKindSubscribe": "Subscribe",
   "chat_eventListenKindWait": "Wait",
+
+  "event_family_peer": "Device pairing",
+  "event_family_chatGroup": "Group orchestration",
+  "event_family_chatMessage": "Chat messages",
+  "event_family_workflow": "Workflow",
+  "event_family_store": "Storage",
+  "event_family_system": "System",
+  "event_family_test": "Test",
+  "event_family_agent": "Agent custom",
+
+  "event_deliveryPollOnly": "Poll only",
+  "event_deliveryPassive": "Passive",
+  "event_deliveryActive": "Active",
+
+  "event_type_peerPairingInbound": "Device pairing request",
+  "event_type_peerPairingCompleted": "Pairing completed",
+  "event_type_peerPairingRejected": "Pairing rejected",
+  "event_type_peerConnectionChanged": "Device connection changed",
+
+  "event_type_chatGroupMemberJoined": "Member joined group",
+  "event_type_chatGroupMemberLeft": "Member left group",
+  "event_type_chatGroupStageStarted": "Orchestration stage started",
+  "event_type_chatGroupStepCompleted": "Orchestration step completed",
+  "event_type_chatGroupStepFailed": "Orchestration step failed",
+  "event_type_chatGroupStepSkipped": "Orchestration step skipped",
+  "event_type_chatGroupWorkflowCompleted": "Orchestration completed",
+  "event_type_chatGroupWorkflowFailed": "Orchestration failed",
+  "event_type_chatGroupLoopRoundCompleted": "Loop round completed",
+  "event_type_chatGroupMemberPending": "Member pending",
+  "event_type_chatGroupMemberStalled": "Member stalled",
+
+  "event_type_chatMessageMention": "Mentioned in chat",
+
+  "event_type_workflowApprovalPending": "Workflow awaiting approval",
+  "event_type_workflowApprovalResolved": "Workflow approval resolved",
+
+  "event_type_storeFileChanged": "Stored file changed",
+  "event_type_storeBackupCompleted": "Backup completed",
+  "event_type_storeBackupFailed": "Backup failed",
+
+  "event_type_systemAppLifecycle": "App lifecycle changed",
+
+  "event_type_testEventPing": "Test event ping",
+  "event_type_testEventPong": "Test event pong",
+
+  "eventMgmt_title": "Event management",
+  "eventMgmt_subtitle": "Inbox, subscriptions, types and live event stream",
+  "eventMgmt_tabInbox": "Inbox",
+  "eventMgmt_tabListen": "Listen",
+  "eventMgmt_tabTypes": "Types",
+  "eventMgmt_tabEmit": "Emit",
+  "eventMgmt_tabRecent": "Recent",
+  "eventMgmt_agentLabel": "Agent",
+  "eventMgmt_agentPick": "Select agent",
+  "eventMgmt_unknownAgent": "Unknown agent",
+  "eventMgmt_memoryOnly": "Events live in memory only and are cleared on restart",
+  "eventMgmt_error": "Error: {error}",
+  "@eventMgmt_error": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "eventMgmt_copied": "Copied to clipboard",
+
+  "eventMgmt_inboxUnreadOnly": "Unread only",
+  "eventMgmt_inboxEmpty": "Inbox is empty",
+  "eventMgmt_inboxNoUnread": "No unacknowledged events",
+  "eventMgmt_inboxAck": "Ack",
+  "eventMgmt_inboxAcked": "Acked",
+  "eventMgmt_inboxLoadMore": "Load more",
+  "eventMgmt_inboxNoMore": "No more events",
+  "eventMgmt_inboxAckedCount": "Acked {count} event(s)",
+  "@eventMgmt_inboxAckedCount": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "eventMgmt_inboxCount": "{count} event(s)",
+  "@eventMgmt_inboxCount": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "eventMgmt_inboxAckFailed": "Ack failed: {error}",
+  "@eventMgmt_inboxAckFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+
+  "eventMgmt_listenSubscriptions": "Subscriptions",
+  "eventMgmt_listenLeases": "Wait leases",
+  "eventMgmt_listenNoSubscriptions": "No subscriptions",
+  "eventMgmt_listenNoLeases": "No wait leases",
+  "eventMgmt_listenCreate": "New subscription",
+  "eventMgmt_listenUnsubscribe": "Unsubscribe",
+  "eventMgmt_listenUnsubscribeConfirm": "Remove this subscription?",
+  "eventMgmt_listenCancelLease": "Cancel wait",
+  "eventMgmt_listenCancelLeaseConfirm":
+      "Cancel this wait lease? The waiting party will receive a cancellation error.",
+  "eventMgmt_listenLeaseCancelled": "Wait lease cancelled",
+  "eventMgmt_listenExpiresAt": "expires {time}",
+  "@eventMgmt_listenExpiresAt": {
+    "placeholders": { "time": { "type": "String" } }
+  },
+  "eventMgmt_listenPersistent": "Persistent",
+  "eventMgmt_listenUntilRestart": "This run only",
+
+  "eventMgmt_pattern": "Event pattern",
+  "eventMgmt_patternHint": "chat.group.* or peer.pairing.inbound",
+  "eventMgmt_patternRequired": "Event pattern is required",
+  "eventMgmt_deliveryLabel": "Delivery",
+  "eventMgmt_deliveryPollOnlyHint": "Inbox only; the agent polls explicitly",
+  "eventMgmt_deliveryPassiveHint":
+      "Written to the inbox and merged into the next turn context",
+  "eventMgmt_deliveryActiveHint":
+      "Written to the inbox and wakes one perception turn",
+  "eventMgmt_persist": "Persistent subscription",
+  "eventMgmt_persistHint": "Restored automatically after restart",
+  "eventMgmt_scopeOptional": "Scope filter (optional)",
+  "eventMgmt_scopeChannel": "Channel ID",
+  "eventMgmt_scopeOwner": "Owner ID",
+  "eventMgmt_scopePeer": "Peer ID",
+  "eventMgmt_subscribeFailed": "Subscribe failed: {error}",
+  "@eventMgmt_subscribeFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "eventMgmt_unsubscribeFailed": "Unsubscribe failed: {error}",
+  "@eventMgmt_unsubscribeFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "eventMgmt_subscribeCreated": "Subscription created",
+
+  "eventMgmt_typesSearch": "Search event types",
+  "eventMgmt_typesEmpty": "No matching event types",
+  "eventMgmt_typesCount": "{count} type(s)",
+  "@eventMgmt_typesCount": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "eventMgmt_typesDefaultDelivery": "Default delivery",
+  "eventMgmt_typesScopeKeys": "Required scope keys",
+  "eventMgmt_typesEnvelopeKeys": "Required envelope keys",
+  "eventMgmt_typesRequiredNone": "none",
+
+  "eventMgmt_emitType": "Event type",
+  "eventMgmt_emitTypeHint": "agent.<agentId>.custom.<name>",
+  "eventMgmt_emitTypeRequired": "Event type is required",
+  "eventMgmt_emitRegistered": "Registered types",
+  "eventMgmt_emitPayload": "Payload JSON",
+  "eventMgmt_emitPayloadMustBeObject": "the top level must be a JSON object",
+  "eventMgmt_emitCorrelation": "Correlation ID (optional)",
+  "eventMgmt_emitChannel": "Channel ID (optional)",
+  "eventMgmt_emitSend": "Emit event",
+  "eventMgmt_emitSuccess": "Emitted · seq {seq}",
+  "@eventMgmt_emitSuccess": {
+    "placeholders": { "seq": { "type": "int" } }
+  },
+  "eventMgmt_emitDeduplicated": "Deduplicated; reused event {id}",
+  "@eventMgmt_emitDeduplicated": {
+    "placeholders": { "id": { "type": "String" } }
+  },
+  "eventMgmt_emitFailed": "Emit failed: {error}",
+  "@eventMgmt_emitFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "eventMgmt_emitInvalidJson": "Payload is not a valid JSON object: {error}",
+  "@eventMgmt_emitInvalidJson": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "eventMgmt_emitTypePrefix": "Type must start with agent.{agentId}.",
+  "@eventMgmt_emitTypePrefix": {
+    "placeholders": { "agentId": { "type": "String" } }
+  },
+
+  "eventMgmt_recentEmpty": "No events yet this run",
+  "eventMgmt_recentCount": "Latest {count}",
+  "@eventMgmt_recentCount": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "eventMgmt_recentSource": "Source",
+  "eventMgmt_payloadExpand": "Expand",
+  "eventMgmt_payloadCollapse": "Collapse",
   "chat_forkSession": "Fork",
   "chat_forkingSession": "Forking session…",
   "chat_forkSessionFailed": "Fork session failed: {error}",
