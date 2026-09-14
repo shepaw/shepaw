@@ -35,9 +35,15 @@ Future<void> maybePromptLocalAgentHub(BuildContext context) async {
   if (!context.mounted) return;
   _localHubPromptAttempted = true;
 
+  LoggerService().info('maybePromptLocalAgentHub start', tag: 'LocalAgentHub');
   final svc = LocalAgentHubService.instance;
   try {
     final detection = await svc.detect();
+    LoggerService().info(
+      'Local Agent Hub detect: present=${detection.isPresent}, '
+      'presence=${detection.presence}, paired=${detection.alreadyPaired}',
+      tag: 'LocalAgentHub',
+    );
     if (!context.mounted) return;
     final suppressed = await svc.isPromptSuppressed(detection);
     final guideShown = await svc.addAgentGuideShown();

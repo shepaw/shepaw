@@ -298,10 +298,20 @@ class UpdateService extends ChangeNotifier {
 
       _logger.info('Checking for updates: $uri', tag: 'UpdateService');
 
+      final httpStarted = DateTime.now();
+      _logger.info('HTTP GET starting', tag: 'UpdateService');
       final response = await http.get(uri).timeout(_requestTimeout);
+      final httpElapsed = DateTime.now().difference(httpStarted).inMilliseconds;
+      _logger.info(
+        'HTTP GET done: status=${response.statusCode}, '
+        'bytes=${response.body.length}, elapsed=${httpElapsed}ms',
+        tag: 'UpdateService',
+      );
 
       // 请求成功（无论有无更新），记录检查时间（使用正常冷却）
+      _logger.info('Saving last check time', tag: 'UpdateService');
       await _saveLastCheckTime(now);
+      _logger.info('Last check time saved', tag: 'UpdateService');
 
       if (response.statusCode == 204 || response.statusCode == 404) {
         // 无可用更新（静态托管未上传该平台清单时也视为无更新）
@@ -312,6 +322,7 @@ class UpdateService extends ChangeNotifier {
       }
 
       if (response.statusCode == 200) {
+        _logger.info('Parsing update JSON response', tag: 'UpdateService');
         final json = jsonDecode(response.body) as Map<String, dynamic>;
         _logger.info(
           'appcheck raw response keys: ${json.keys.toList()}, '
@@ -320,9 +331,15 @@ class UpdateService extends ChangeNotifier {
           'fullBody=${response.body.length > 500 ? response.body.substring(0, 500) : response.body}',
           tag: 'UpdateService',
         );
+        _logger.info('Building UpdateInfo from JSON', tag: 'UpdateService');
         final updateInfo = UpdateInfo.fromJson(json);
         final latestVersion = VersionInfo.parse(
           '${updateInfo.version}+${json['buildNumber'] ?? 0}',
+        );
+        _logger.info(
+          'Version compare: current=${currentVersion.versionString}, '
+          'latest=${latestVersion.versionString}',
+          tag: 'UpdateService',
         );
 
         if (currentVersion.isLowerThan(latestVersion)) {

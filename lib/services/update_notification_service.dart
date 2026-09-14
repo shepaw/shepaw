@@ -69,6 +69,10 @@ class UpdateNotificationService {
     UpdateInfo info,
     BuildContext context,
   ) async {
+    _logger.info(
+      'notifyUpdateAvailable start: version=${info.version}',
+      tag: 'UpdateNotification',
+    );
     // l10n 必须在第一个 await 前提取，避免跨 async 使用 BuildContext
     final title = AppLocalizations.of(context)
         .update_notification_availableTitle(info.version);
@@ -103,9 +107,13 @@ class UpdateNotificationService {
   /// 启动时检查是否有待安装的更新包。
   /// 若有，弹出对话框让用户选择立即安装或稍后。
   Future<void> checkAndInstallPending(BuildContext context) async {
+    _logger.info('checkAndInstallPending start', tag: 'UpdateNotification');
     final path = await _getPendingPath();
     final version = await _getPendingVersion();
-    if (path == null || version == null) return;
+    if (path == null || version == null) {
+      _logger.info('No pending install package', tag: 'UpdateNotification');
+      return;
+    }
 
     // 确认文件仍然存在
     if (!File(path).existsSync()) {

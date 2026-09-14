@@ -25,6 +25,7 @@ import 'storage_space_manage_screen.dart';
 import 'instruction_set_screen.dart';
 import '../widgets/storage/storage_space_list_panel.dart';
 import '../utils/layout_utils.dart';
+import '../services/logger_service.dart';
 import '../services/native_window_service.dart';
 import '../services/chat_navigation_service.dart';
 import '../services/chat_service.dart';
@@ -112,9 +113,21 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     // 随后检测本机 Agent Hub：已安装则提示加入，未安装则引导安装。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(() async {
-        await _maybeOpenSheFirstRun();
-        if (!mounted) return;
-        await maybePromptLocalAgentHub(context);
+        LoggerService().info('DesktopHome postFrame start', tag: 'HomeBoot');
+        try {
+          await _maybeOpenSheFirstRun();
+          LoggerService().info('_maybeOpenSheFirstRun done', tag: 'HomeBoot');
+          if (!mounted) return;
+          await maybePromptLocalAgentHub(context);
+          LoggerService().info('maybePromptLocalAgentHub done', tag: 'HomeBoot');
+        } catch (e, stack) {
+          LoggerService().error(
+            'DesktopHome postFrame failed',
+            tag: 'HomeBoot',
+            error: e,
+            stackTrace: stack,
+          );
+        }
       }());
     });
   }
