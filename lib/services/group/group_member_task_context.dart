@@ -2,6 +2,7 @@ import '../../models/group_task.dart';
 import '../../storage/group_workspace_service.dart';
 import '../logger_service.dart';
 import 'group_dispatch_parser.dart';
+import 'group_artifact_registry.dart';
 import 'group_orchestration_features.dart';
 
 /// Member-facing task slices loaded from `shared/tasks/<orchestrationId>/`.
@@ -62,9 +63,18 @@ class GroupMemberTaskContextLoader {
         );
       }
 
+      final artifactPlanNote = await GroupArtifactRegistry.loadMemberArtifactPlanNote(
+        groupId: groupId,
+        orchestrationId: orchestrationId,
+      );
+      final combinedPlanNote = [
+        if (taskPlanNote.isNotEmpty) taskPlanNote,
+        if (artifactPlanNote.isNotEmpty) artifactPlanNote,
+      ].join();
+
       return GroupMemberTaskContext(
         globalRequirement: requirement,
-        taskPlanNote: taskPlanNote,
+        taskPlanNote: combinedPlanNote,
         requirementUri: task?.requirementUri,
         planUri: task?.planUri,
       );

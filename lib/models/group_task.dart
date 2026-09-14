@@ -14,6 +14,8 @@ class GroupTask {
     this.resultsUri,
     this.archiveUri,
     this.finalSummaryUri,
+    this.artifactPlanUri,
+    this.artifactsUri,
     DateTime? createdAt,
     DateTime? updatedAt,
     this.finishedAt,
@@ -50,6 +52,8 @@ class GroupTask {
   final String? resultsUri;
   final String? archiveUri;
   final String? finalSummaryUri;
+  final String? artifactPlanUri;
+  final String? artifactsUri;
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? finishedAt;
@@ -79,6 +83,8 @@ class GroupTask {
     String? resultsUri,
     String? archiveUri,
     String? finalSummaryUri,
+    String? artifactPlanUri,
+    String? artifactsUri,
     DateTime? updatedAt,
     DateTime? finishedAt,
     bool clearFinishedAt = false,
@@ -94,6 +100,8 @@ class GroupTask {
       resultsUri: resultsUri ?? this.resultsUri,
       archiveUri: archiveUri ?? this.archiveUri,
       finalSummaryUri: finalSummaryUri ?? this.finalSummaryUri,
+      artifactPlanUri: artifactPlanUri ?? this.artifactPlanUri,
+      artifactsUri: artifactsUri ?? this.artifactsUri,
       createdAt: createdAt,
       updatedAt: updatedAt ?? DateTime.now(),
       finishedAt: clearFinishedAt ? null : (finishedAt ?? this.finishedAt),
@@ -112,6 +120,8 @@ class GroupTask {
         if (resultsUri != null) 'results_uri': resultsUri,
         if (archiveUri != null) 'archive_uri': archiveUri,
         if (finalSummaryUri != null) 'final_summary_uri': finalSummaryUri,
+        if (artifactPlanUri != null) 'artifact_plan_uri': artifactPlanUri,
+        if (artifactsUri != null) 'artifacts_uri': artifactsUri,
         'created_at': createdAt.toIso8601String(),
         'updated_at': updatedAt.toIso8601String(),
         if (finishedAt != null) 'finished_at': finishedAt!.toIso8601String(),
@@ -152,6 +162,8 @@ class GroupTask {
       resultsUri: json['results_uri'] as String?,
       archiveUri: json['archive_uri'] as String?,
       finalSummaryUri: json['final_summary_uri'] as String?,
+      artifactPlanUri: json['artifact_plan_uri'] as String?,
+      artifactsUri: json['artifacts_uri'] as String?,
       createdAt: createdAt,
       updatedAt: updatedAt,
       finishedAt: parseTime(json['finished_at'] as String?),

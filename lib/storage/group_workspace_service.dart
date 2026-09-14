@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import '../models/group_task.dart';
+import '../models/group_task_artifact.dart';
 import '../peer/models/peer_store_share.dart';
 import '../peer/services/peer_storage_service.dart';
 import '../services/logger_service.dart';
@@ -251,6 +252,12 @@ class GroupWorkspaceService {
 
   String taskArchiveRelPath(String groupId, String orchestrationId) =>
       '${taskDir(groupId, orchestrationId)}/archive.md';
+
+  String taskArtifactPlanRelPath(String groupId, String orchestrationId) =>
+      '${taskDir(groupId, orchestrationId)}/artifact_plan.json';
+
+  String taskArtifactsRelPath(String groupId, String orchestrationId) =>
+      '${taskDir(groupId, orchestrationId)}/artifacts.json';
 
   /// 构建群任务相关文件的 store URI（home device 来自元数据）。
   Future<String?> taskFileUri({
@@ -1072,6 +1079,102 @@ class GroupWorkspaceService {
       'store://workspaces/${meta.homeDevice}/'
       '${taskArchiveRelPath(groupId, orchestrationId)}',
     );
+  }
+
+  /// 写入/覆盖产物落点规划（`artifact_plan.json`）。
+  Future<GroupTaskArtifactPlan?> writeTaskArtifactPlan({
+    required String groupId,
+    required GroupTaskArtifactPlan plan,
+  }) async {
+    final meta = await loadMeta(groupId);
+    if (meta == null) return null;
+    final existing = await readTask(
+      groupId: groupId,
+      orchestrationId: plan.orchestrationId,
+    );
+    if (existing == null) return null;
+
+    final rel = taskArtifactPlanRelPath(groupId, plan.orchestrationId);
+    await _writeJson(
+      groupId: groupId,
+      homeDeviceId: meta.homeDevice,
+      relPath: rel,
+      payload: plan.toJson(),
+    );
+    final uri = 'store://workspaces/${meta.homeDevice}/$rel';
+    await writeTask(
+      groupId: groupId,
+      task: existing.copyWith(artifactPlanUri: uri),
+    );
+    return plan;
+  }
+
+  /// 读取产物落点规划；不存在返回 null。
+  Future<GroupTaskArtifactPlan?> readTaskArtifactPlan({
+    required String groupId,
+    required String orchestrationId,
+  }) async {
+    final meta = await loadMeta(groupId);
+    if (meta == null) return null;
+    final json = await _readJson(
+      'store://workspaces/${meta.homeDevice}/'
+      '${taskArtifactPlanRelPath(groupId, orchestrationId)}',
+    );
+    if (json == null) return null;
+    return GroupTaskArtifactPlan.fromJson(json);
+  }
+
+  /// 登记产物条目（合并写入 `artifacts.json`）。
+  Future<GroupTaskArtifactManifest?> registerTaskArtifacts({
+    required String groupId,
+    required String orchestrationId,
+    required List<GroupTaskArtifactEntry> entries,
+  }) async {
+    if (entries.isEmpty) return null;
+    final meta = await loadMeta(groupId);
+    if (meta == null) return null;
+    final existing = await readTask(
+      groupId: groupId,
+      orchestrationId: orchestrationId,
+    );
+    if (existing == null) return null;
+
+    final current = await readTaskArtifactManifest(
+      groupId: groupId,
+      orchestrationId: orchestrationId,
+    );
+    final merged = (current ??
+            GroupTaskArtifactManifest(orchestrationId: orchestrationId))
+        .registerAll(entries);
+
+    final rel = taskArtifactsRelPath(groupId, orchestrationId);
+    await _writeJson(
+      groupId: groupId,
+      homeDeviceId: meta.homeDevice,
+      relPath: rel,
+      payload: merged.toJson(),
+    );
+    final uri = 'store://workspaces/${meta.homeDevice}/$rel';
+    await writeTask(
+      groupId: groupId,
+      task: existing.copyWith(artifactsUri: uri),
+    );
+    return merged;
+  }
+
+  /// 读取产物聚合清单；不存在返回 null。
+  Future<GroupTaskArtifactManifest?> readTaskArtifactManifest({
+    required String groupId,
+    required String orchestrationId,
+  }) async {
+    final meta = await loadMeta(groupId);
+    if (meta == null) return null;
+    final json = await _readJson(
+      'store://workspaces/${meta.homeDevice}/'
+      '${taskArtifactsRelPath(groupId, orchestrationId)}',
+    );
+    if (json == null) return null;
+    return GroupTaskArtifactManifest.fromJson(json);
   }
 
   /// 校验 agent 是否为群成员（store CLI 路径权限依据）。

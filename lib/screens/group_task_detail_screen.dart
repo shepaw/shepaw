@@ -81,6 +81,10 @@ class _GroupTaskDetailScreenState extends State<GroupTaskDetailScreen> {
       groupId: widget.groupId,
       orchestrationId: widget.orchestrationId,
     );
+    final manifest = await ws.readTaskArtifactManifest(
+      groupId: widget.groupId,
+      orchestrationId: widget.orchestrationId,
+    );
     final channelWorkflows =
         await widget.workflowService.getWorkflowExecutions(task.sessionId);
     final assignment = GroupTaskWorkflowMatcher.assign(
@@ -98,6 +102,7 @@ class _GroupTaskDetailScreenState extends State<GroupTaskDetailScreen> {
       _artifacts = GroupTaskDisplay.artifactUris(
         results: results,
         archive: archive,
+        manifest: manifest,
       );
       _workflows = assignment.forTask(task.orchestrationId);
       _loading = false;

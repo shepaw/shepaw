@@ -276,7 +276,15 @@ mixin _InteractionOps on _ChatControllerBase {
     // admin's subsequent @mentions of member agents will still be honoured.
     if (responseText != null && originalMessage.from.isAgent) {
       final agentName = originalMessage.from.name;
-      Future.microtask(() => processGroupMessage('@$agentName $responseText'));
+      final groupId = groupChannel?.groupFamilyId ?? currentChannelId ?? '';
+      Future.microtask(() async {
+        final continued = await GroupOrchestrationContinuation
+            .resolveForInteractionResponse(groupId: groupId);
+        await processGroupMessage(
+          '@$agentName $responseText',
+          continueOrchestrationId: continued,
+        );
+      });
     }
 
     return true;

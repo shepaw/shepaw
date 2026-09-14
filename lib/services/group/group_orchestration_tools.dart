@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../../models/group_task.dart';
+import '../../models/group_task_artifact.dart';
 import '../../models/mention_entry.dart';
 import '../../models/remote_agent.dart';
 import '../logger_service.dart';
@@ -17,6 +18,8 @@ class GroupOrchestrationTools {
   static const finishName = 'group_finish';
   static const planPublishName = 'group_plan_publish';
   static const sessionCreateName = 'group_session_create';
+  static const artifactPlanName = 'group_artifact_plan';
+  static const artifactRegisterName = 'group_artifact_register';
 
   /// Member-to-member mention declaration tool. Deliberately NOT in [names]:
   /// [names] tools are encoded as legacy JSON blocks for peer-hosted admins
@@ -88,6 +91,30 @@ class GroupOrchestrationTools {
       {
         'type': 'function',
         'function': {
+          'name': artifactPlanName,
+          'description':
+              'Plan where task deliverables should be stored before dispatch. '
+              'Sets the unified store write --task id and expected artifact '
+              'slots so members write under one directory. Call after '
+              'requirement is clear and before or with group_plan_publish.',
+          'parameters': _artifactPlanSchema(agentNames),
+        },
+      },
+      {
+        'type': 'function',
+        'function': {
+          'name': artifactRegisterName,
+          'description':
+              'Register one or more store:// artifact URIs under the current '
+              'task manifest (artifacts.json). Use to consolidate scattered '
+              'deliverables, attach recon findings, or record URIs members '
+              'forgot to link.',
+          'parameters': _artifactRegisterSchema(),
+        },
+      },
+      {
+        'type': 'function',
+        'function': {
           'name': sessionCreateName,
           'description':
               'Open a new group session with a curated handoff package when '
@@ -130,6 +157,21 @@ class GroupOrchestrationTools {
             'done (user need satisfied), continue (you keep working alone), '
             'or pause (wait for user input).',
         'input_schema': _finishSchema(),
+      },
+      {
+        'name': artifactPlanName,
+        'description':
+            'Plan where task deliverables should be stored before dispatch. '
+            'Sets the unified store write --task id and expected artifact '
+            'slots so members write under one directory.',
+        'input_schema': _artifactPlanSchema(agentNames),
+      },
+      {
+        'name': artifactRegisterName,
+        'description':
+            'Register store:// artifact URIs under the current task manifest '
+            '(artifacts.json) to consolidate scattered deliverables.',
+        'input_schema': _artifactRegisterSchema(),
       },
       {
         'name': sessionCreateName,
@@ -362,6 +404,75 @@ class GroupOrchestrationTools {
       'required': ['goal', 'requirement_text', 'steps_preview'],
     };
   }
+
+  static Map<String, dynamic> _artifactPlanSchema(List<String> agentNames) {
+    final agentItems = <String, dynamic>{
+      'type': 'string',
+      'description': 'Registered group member display name',
+    };
+    if (agentNames.isNotEmpty) {
+      agentItems['enum'] = agentNames;
+    }
+    return {
+      'type': 'object',
+      'properties': {
+        'store_task_id': {
+          'type': 'string',
+          'description':
+              'Unified shepaw store write --task id for ALL deliverables of '
+              'this task. Prefer the current orchestration id (sanitized).',
+        },
+        'notes': {
+          'type': 'string',
+          'description': 'Optional layout notes for members/admin',
+        },
+        'slots': {
+          'type': 'array',
+          'description': 'Expected artifact files and owners',
+          'items': {
+            'type': 'object',
+            'properties': {
+              'filename': {'type': 'string'},
+              'description': {'type': 'string'},
+              'assigned_agent': agentItems,
+            },
+            'required': ['filename', 'description'],
+          },
+        },
+      },
+      'required': ['store_task_id'],
+    };
+  }
+
+  static Map<String, dynamic> _artifactRegisterSchema() => {
+        'type': 'object',
+        'properties': {
+          'artifacts': {
+            'type': 'array',
+            'description': 'Artifacts to register under this task',
+            'items': {
+              'type': 'object',
+              'properties': {
+                'uri': {
+                  'type': 'string',
+                  'description': 'store:// URI of the artifact',
+                },
+                'label': {
+                  'type': 'string',
+                  'description': 'Human-readable name',
+                },
+                'category': {'type': 'string'},
+                'produced_by': {
+                  'type': 'string',
+                  'description': 'Member name or "admin"',
+                },
+              },
+              'required': ['uri'],
+            },
+          },
+        },
+        'required': ['artifacts'],
+      };
 
   static Map<String, dynamic> _finishSchema() => {
         'type': 'object',
@@ -714,6 +825,80 @@ class GroupOrchestrationTools {
       unresolvedNames: unresolved,
       parseError: null,
     );
+  }
+
+  /// Parsed payload for `group_artifact_plan`.
+  static ({
+    String storeTaskId,
+    List<GroupTaskArtifactPlanSlot> slots,
+    String notes,
+    String? parseError,
+  }) parseArtifactPlanArgs(
+    Map<String, dynamic> args, {
+    required String orchestrationId,
+  }) {
+    final storeTaskId = args['store_task_id']?.toString().trim() ?? '';
+    if (storeTaskId.isEmpty) {
+      return (
+        storeTaskId: '',
+        slots: const [],
+        notes: '',
+        parseError: 'group_artifact_plan.store_task_id is required',
+      );
+    }
+    final notes = args['notes']?.toString().trim() ?? '';
+    final slots = <GroupTaskArtifactPlanSlot>[];
+    final rawSlots = args['slots'];
+    if (rawSlots is List) {
+      for (final raw in rawSlots) {
+        if (raw is! Map) continue;
+        final slot = GroupTaskArtifactPlanSlot.fromJson(
+          Map<String, dynamic>.from(raw),
+        );
+        if (slot != null) slots.add(slot);
+      }
+    }
+    return (
+      storeTaskId: storeTaskId,
+      slots: slots,
+      notes: notes,
+      parseError: null,
+    );
+  }
+
+  /// Parsed payload for `group_artifact_register`.
+  static ({
+    List<GroupTaskArtifactEntry> entries,
+    String? parseError,
+  }) parseArtifactRegisterArgs(Map<String, dynamic> args) {
+    final raw = args['artifacts'];
+    if (raw is! List || raw.isEmpty) {
+      return (
+        entries: const [],
+        parseError: 'group_artifact_register.artifacts must be a non-empty array',
+      );
+    }
+    final entries = <GroupTaskArtifactEntry>[];
+    for (final item in raw) {
+      if (item is! Map) continue;
+      final map = Map<String, dynamic>.from(item);
+      final uri = map['uri']?.toString().trim() ?? '';
+      if (uri.isEmpty || !uri.startsWith('store://')) continue;
+      entries.add(GroupTaskArtifactEntry(
+        uri: uri,
+        label: map['label']?.toString().trim() ?? '',
+        category: map['category']?.toString().trim() ?? '',
+        producedBy: map['produced_by']?.toString().trim() ?? '',
+        source: GroupTaskArtifactEntry.sourceAdmin,
+      ));
+    }
+    if (entries.isEmpty) {
+      return (
+        entries: const [],
+        parseError: 'group_artifact_register produced no valid store:// URIs',
+      );
+    }
+    return (entries: entries, parseError: null);
   }
 
   /// Parse `group_finish` action: done | continue | pause.

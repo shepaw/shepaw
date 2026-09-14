@@ -1389,7 +1389,7 @@ mixin _MessagingOps on _ChatControllerBase {
   // ---------------------------------------------------------------------------
 
   @override
-  Future<void> processGroupMessage(String content, {String? replyToId, String? replyQuoteText, List<AttachmentData>? attachments, List<MentionEntry> mentions = const [], String? instructionName}) async {
+  Future<void> processGroupMessage(String content, {String? replyToId, String? replyQuoteText, List<AttachmentData>? attachments, List<MentionEntry> mentions = const [], String? instructionName, String? continueOrchestrationId}) async {
     if (currentChannelId == null || groupAgents.isEmpty) {
       LoggerService().debug('processGroupMessage ABORTED: channelId=$currentChannelId, groupAgents=${groupAgents.length}', tag: 'ChatController');
       return;
@@ -1504,6 +1504,7 @@ mixin _MessagingOps on _ChatControllerBase {
         flowMode: groupChannel?.flowMode ?? false,
         acpCancellationToken: acpCancellationToken,
         userMessageMetadata: userMsgMetadata,
+        continueOrchestrationId: continueOrchestrationId,
         attachments: attachments,
         onAgentStart: (aid, anm) {
           if (!groupTurnGate.isCurrent(epoch)) return;

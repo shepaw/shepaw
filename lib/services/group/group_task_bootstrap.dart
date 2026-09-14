@@ -1,6 +1,7 @@
 import '../../models/group_task.dart';
 import '../../storage/group_workspace_service.dart';
 import '../logger_service.dart';
+import 'group_artifact_registry.dart';
 import 'group_orchestration_features.dart';
 import 'group_task_archive_builder.dart';
 
@@ -171,6 +172,20 @@ class GroupTaskBootstrap {
       );
       if (existing == null) return;
 
+      await GroupArtifactRegistry.syncFromTaskOutcomes(
+        groupId: groupId,
+        orchestrationId: orchestrationId,
+        extraUris: artifactUris,
+      );
+      final manifest = await ws.readTaskArtifactManifest(
+        groupId: groupId,
+        orchestrationId: orchestrationId,
+      );
+      final mergedArtifactUris = <String>{
+        ...artifactUris,
+        if (manifest != null) ...manifest.uris,
+      }.toList();
+
       final archiveContent = await GroupTaskArchiveBuilder.build(
         ws: ws,
         groupId: groupId,
@@ -178,7 +193,7 @@ class GroupTaskBootstrap {
         sessionId: sessionId,
         task: existing,
         finalSummary: finalSummary,
-        artifactUris: artifactUris,
+        artifactUris: mergedArtifactUris,
         rounds: rounds,
       );
 

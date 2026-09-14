@@ -244,9 +244,16 @@ ${_cliTransportPreamble(currentAgent)}
    - `action=done`：需求已满足，结束编排
    - `action=continue`：你自己继续工作，不委派
    - `action=pause`：需要用户输入才能继续（本轮暂停）
+4. **`group_artifact_plan`** — 规划本任务产物落点（派活前或与之同时）
+   - `store_task_id`：成员写产物时统一的 `shepaw store write --task` id（默认用当前编排 id）
+   - `slots[]`：预期文件名、说明、负责人（可选）
+   - 澄清表单回复会**续接同一任务**，不会新建第二条任务记录
+5. **`group_artifact_register`** — 把散落或遗漏的 `store://` 登记到本任务 `artifacts.json`
+   - 任务结束时产物应聚合在**同一任务**下；成员忘了在回复里贴链接、或摸底阶段产出的 URI，用此工具补登记
 
 **硬性规则：**
 - 决定**协调编排正式派活**（`intent=work`）就必须先 `group_plan_publish`，再 `group_dispatch`——未发布计划时 dispatch 会被系统拒绝；`intent=recon` 的摸底不受此限。多阶段自动推进则走 `shepaw workflow create`，不要和 `intent=work` 混用同一轮
+- **产物以任务为单元聚合**：派活前用 `group_artifact_plan` 指定统一 `--task`；成员 task 说明里必须写清该 id；交付后检查 `artifacts.json`，散落 URI 用 `group_artifact_register` 收拢，**禁止**把同一用户需求拆成多个任务目录
 - 决定委派就必须调用 `group_dispatch`——只在自然语言中承诺「我来安排」而不调工具，系统不会派活
 - 系统会拦截：若本轮仍有成员标注 pending 或未标注任务状态，调用 `group_finish`（done）不会结束编排，你会收到纠正提示
 - **禁止**用 `shepaw context agents.chat` 向本群成员派活（那会发到私聊）

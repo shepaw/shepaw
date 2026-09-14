@@ -1,4 +1,5 @@
 import '../../models/group_task.dart';
+import '../../models/group_task_artifact.dart';
 import '../../storage/artifact_service.dart';
 import 'group_member_history.dart';
 
@@ -15,7 +16,8 @@ class GroupTaskDisplay {
   static final _whitespace = RegExp(r'\s+');
   static final _taskRecordFile = RegExp(
     r'/shared/tasks/[^/]+/'
-    r'(task\.json|requirement\.md|plan\.md|plan\.json|results\.json|archive\.md)$',
+    r'(task\.json|requirement\.md|plan\.md|plan\.json|results\.json|'
+    r'archive\.md|artifact_plan\.json|artifacts\.json)$',
   );
 
   /// List / app-bar label from the user's original message.
@@ -39,6 +41,7 @@ class GroupTaskDisplay {
   static List<String> artifactUris({
     GroupTaskResults? results,
     String? archive,
+    GroupTaskArtifactManifest? manifest,
   }) {
     final seen = <String>{};
     final out = <String>[];
@@ -49,6 +52,11 @@ class GroupTaskDisplay {
       if (seen.add(uri)) out.add(uri);
     }
 
+    if (manifest != null) {
+      for (final entry in manifest.entries) {
+        add(entry.uri);
+      }
+    }
     if (results != null) {
       for (final member in results.members) {
         for (final uri in member.artifactUris) {

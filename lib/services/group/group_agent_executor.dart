@@ -37,6 +37,7 @@ import 'group_orchestration_tools.dart';
 import 'group_orchestration_features.dart';
 import 'group_recon_first_gate.dart';
 import 'group_member_stall.dart';
+import 'group_artifact_registry.dart';
 import 'group_task_bootstrap.dart';
 import 'group_session_create_service.dart';
 import 'group_session_handoff.dart';
@@ -906,6 +907,110 @@ class GroupAgentExecutor {
                       toolCallId: event.id,
                       name: event.name,
                       result: planResult,
+                    );
+                    break;
+                  case GroupOrchestrationTools.artifactPlanName:
+                    orchHasSignal = true;
+                    final planArgs = GroupOrchestrationTools.parseArtifactPlanArgs(
+                      event.arguments,
+                      orchestrationId: orchestrationId ?? '',
+                    );
+                    String artifactPlanResult;
+                    if (planArgs.parseError != null) {
+                      artifactPlanResult = jsonEncode({
+                        'ok': false,
+                        'error': planArgs.parseError,
+                      });
+                    } else if (groupFamilyId == null ||
+                        groupFamilyId!.isEmpty ||
+                        orchestrationId == null ||
+                        orchestrationId!.isEmpty) {
+                      artifactPlanResult = jsonEncode({
+                        'ok': false,
+                        'error': 'missing group task context for artifact plan',
+                      });
+                    } else {
+                      final published = await GroupArtifactRegistry.publishPlan(
+                        groupId: groupFamilyId!,
+                        orchestrationId: orchestrationId!,
+                        storeTaskId: planArgs.storeTaskId,
+                        slots: planArgs.slots,
+                        notes: planArgs.notes,
+                      );
+                      artifactPlanResult = published != null
+                          ? jsonEncode({
+                              'ok': true,
+                              'store_task_id': published.storeTaskId,
+                              'slot_count': published.slots.length,
+                            })
+                          : jsonEncode({
+                              'ok': false,
+                              'error': 'artifact plan write failed',
+                            });
+                    }
+                    pawToolCalls.add(event);
+                    pawToolResults.add({
+                      'tool_call_id': event.id,
+                      'name': event.name,
+                      'result': artifactPlanResult,
+                    });
+                    infLogGroup.onToolResult(
+                      groupTraceId,
+                      toolCallId: event.id,
+                      name: event.name,
+                      result: artifactPlanResult,
+                    );
+                    break;
+                  case GroupOrchestrationTools.artifactRegisterName:
+                    orchHasSignal = true;
+                    final registerParsed =
+                        GroupOrchestrationTools.parseArtifactRegisterArgs(
+                      event.arguments,
+                    );
+                    String registerResult;
+                    if (registerParsed.parseError != null) {
+                      registerResult = jsonEncode({
+                        'ok': false,
+                        'error': registerParsed.parseError,
+                      });
+                    } else if (groupFamilyId == null ||
+                        groupFamilyId!.isEmpty ||
+                        orchestrationId == null ||
+                        orchestrationId!.isEmpty) {
+                      registerResult = jsonEncode({
+                        'ok': false,
+                        'error':
+                            'missing group task context for artifact register',
+                      });
+                    } else {
+                      final manifest =
+                          await GroupArtifactRegistry.registerEntries(
+                        groupId: groupFamilyId!,
+                        orchestrationId: orchestrationId!,
+                        entries: registerParsed.entries,
+                      );
+                      registerResult = manifest != null
+                          ? jsonEncode({
+                              'ok': true,
+                              'registered_count': registerParsed.entries.length,
+                              'total_count': manifest.entries.length,
+                            })
+                          : jsonEncode({
+                              'ok': false,
+                              'error': 'artifact register failed',
+                            });
+                    }
+                    pawToolCalls.add(event);
+                    pawToolResults.add({
+                      'tool_call_id': event.id,
+                      'name': event.name,
+                      'result': registerResult,
+                    });
+                    infLogGroup.onToolResult(
+                      groupTraceId,
+                      toolCallId: event.id,
+                      name: event.name,
+                      result: registerResult,
                     );
                     break;
                   case GroupOrchestrationTools.finishName:

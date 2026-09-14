@@ -34,6 +34,7 @@ import 'group_orchestration_features.dart';
 import 'group_plan_publish_gate.dart';
 import 'group_task_bootstrap.dart';
 import 'group_admin_task_context.dart';
+import 'group_artifact_registry.dart';
 import 'group_result_writer.dart';
 import 'group_member_stall.dart';
 import '../messaging/chat_history_content.dart';
@@ -252,6 +253,9 @@ class GroupOrchestrationService {
     String? replyQuoteText,
     bool flowMode = false,
     Map<String, dynamic>? userMessageMetadata,
+    /// 续接已有编排任务时使用；与 [userMessageMetadata] 中的 orchestration_id
+    /// 一致时不会新建 shared/tasks 条目（澄清表单回复等同一条用户消息）。
+    String? continueOrchestrationId,
     List<AttachmentData>? attachments,
     ACPCancellationToken? acpCancellationToken,
     void Function(String agentId, String agentName, String chunk)?
@@ -275,9 +279,13 @@ class GroupOrchestrationService {
 
     // 1. Save user message to the group channel
     final userMessageId = _uuid.v4();
+    final continuedId = continueOrchestrationId?.trim();
+    final orchestrationId = (continuedId != null && continuedId.isNotEmpty)
+        ? continuedId
+        : userMessageId;
     final userMetadata = GroupOrchestrationMetadata.stamp(
       base: userMessageMetadata,
-      orchestrationId: userMessageId,
+      orchestrationId: orchestrationId,
     );
     final userMessage = Message(
       id: userMessageId,
@@ -320,12 +328,14 @@ class GroupOrchestrationService {
         groupChannel: channel,
         userId: userId,
       );
-      await GroupTaskBootstrap.ensureTaskForUserMessage(
-        groupId: channel.groupFamilyId,
-        orchestrationId: userMessage.id,
-        sessionId: channelId,
-        userGoal: content,
-      );
+      if (continuedId == null || continuedId.isEmpty) {
+        await GroupTaskBootstrap.ensureTaskForUserMessage(
+          groupId: channel.groupFamilyId,
+          orchestrationId: orchestrationId,
+          sessionId: channelId,
+          userGoal: content,
+        );
+      }
     }
 
     // 3. Load all agent RemoteAgent objects
@@ -373,7 +383,7 @@ class GroupOrchestrationService {
 
     final adminHistoryMessages = GroupMemberHistory.loadTaskScopedHistory(
       messages: historyMessages,
-      orchestrationId: userMessage.id,
+      orchestrationId: orchestrationId,
     );
 
     // Per-agent context budget is applied in GroupAgentExecutor:
@@ -503,10 +513,17 @@ class GroupOrchestrationService {
     }
     final crossTaskNotes = await GroupAdminTaskContextLoader.buildCrossTaskNotes(
       groupId: groupOwnerId,
-      orchestrationId: userMessage.id,
+      orchestrationId: orchestrationId,
     );
     if (crossTaskNotes.isNotEmpty) {
       effectiveContent = '$effectiveContent\n\n$crossTaskNotes';
+    }
+    final artifactNotes = await GroupArtifactRegistry.loadAdminArtifactBlock(
+      groupId: groupOwnerId,
+      orchestrationId: orchestrationId,
+    );
+    if (artifactNotes.isNotEmpty) {
+      effectiveContent = '$effectiveContent$artifactNotes';
     }
     // 被派发的成员也带截断版群历史总结（全文只在 admin 上下文；成员
     // 只需要要点，避免每个成员每轮膨胀 token）。
@@ -717,7 +734,7 @@ class GroupOrchestrationService {
               onMessageMetadata: onMessageMetadata,
               onAgentDone: onAgentDone,
               onInteractionRequest: onInteractionRequest,
-              orchestrationId: userMessage.id,
+              orchestrationId: orchestrationId,
               groupFamilyId: groupOwnerId,
               orchestrationTraceId: orchTraceId,
               historyPinSenderIds: GroupMemberHistory.buildPinSenderIds(
@@ -787,7 +804,7 @@ class GroupOrchestrationService {
             onMessageMetadata: onMessageMetadata,
             onAgentDone: onAgentDone,
             onInteractionRequest: onInteractionRequest,
-            orchestrationId: userMessage.id,
+            orchestrationId: orchestrationId,
             groupFamilyId: groupOwnerId,
             orchestrationTraceId: orchTraceId,
             historyPinSenderIds: GroupMemberHistory.buildPinSenderIds(
@@ -841,7 +858,7 @@ class GroupOrchestrationService {
               agentId: req.agentId,
               agentName: req.name,
               reason: req.reason ?? '',
-              orchestrationId: userMessage.id,
+              orchestrationId: orchestrationId,
             ));
           }
           // 与 loop 内两处唤醒保持一致：用 task 作用域历史，避免把前序/其它
@@ -849,7 +866,7 @@ class GroupOrchestrationService {
           // 不受作用域约束的 admin 回合）。
           final wakeHistory = await _loadAdminHistory(
             channelId,
-            orchestrationId: userMessage.id,
+            orchestrationId: orchestrationId,
             excludeMessageId: userMessage.id,
           );
           onAgentStart?.call(adminForWake.id, adminForWake.name);
@@ -880,7 +897,7 @@ class GroupOrchestrationService {
               onMessageMetadata: onMessageMetadata,
               onAgentDone: onAgentDone,
               onInteractionRequest: onInteractionRequest,
-              orchestrationId: userMessage.id,
+              orchestrationId: orchestrationId,
               groupFamilyId: groupOwnerId,
               orchestrationTraceId: orchTraceId,
             );
@@ -991,7 +1008,7 @@ class GroupOrchestrationService {
               onMessageMetadata: onMessageMetadata,
               onAgentDone: onAgentDone,
               onInteractionRequest: onInteractionRequest,
-              orchestrationId: userMessage.id,
+              orchestrationId: orchestrationId,
               groupFamilyId: groupOwnerId,
               orchestrationTraceId: orchTraceId,
             );
@@ -1235,7 +1252,7 @@ class GroupOrchestrationService {
             },
             onAgentDone: onAgentDone,
             onInteractionRequest: onInteractionRequestForAdmin,
-            orchestrationId: userMessage.id,
+            orchestrationId: orchestrationId,
             groupFamilyId: groupOwnerId,
             orchestrationTraceId: orchTraceId,
           );
@@ -1320,7 +1337,7 @@ class GroupOrchestrationService {
             summary: summary,
             // M4：绑定本次编排会话（触发用户消息 id），下一轮成员只感知本
             // 任务的事件，避免连续两次任务时注入上一任务的轮次结论。
-            orchestrationId: userMessage.id,
+            orchestrationId: orchestrationId,
           ));
         }
 
@@ -1366,7 +1383,7 @@ class GroupOrchestrationService {
               'status': 'running',
               'channel_id': channelId,
               'message_id': userMessage.id,
-              'orchestration_id': userMessage.id,
+              'orchestration_id': orchestrationId,
               'started_at': roundStartTime.toIso8601String(),
             },
           );
@@ -1379,7 +1396,7 @@ class GroupOrchestrationService {
             if (adminResponseContent.trim().isNotEmpty) {
               final abortHistory = await _loadAdminHistory(
                 channelId,
-                orchestrationId: userMessage.id,
+                orchestrationId: orchestrationId,
                 excludeMessageId: userMessage.id,
               );
               adminResponseContent = '';
@@ -1416,7 +1433,7 @@ class GroupOrchestrationService {
                   },
                   onAgentDone: onAgentDone,
                   onInteractionRequest: onInteractionRequestForAdmin,
-                  orchestrationId: userMessage.id,
+                  orchestrationId: orchestrationId,
               groupFamilyId: groupOwnerId,
               orchestrationTraceId: orchTraceId,
                 );
@@ -1464,7 +1481,7 @@ class GroupOrchestrationService {
             // Run abort-summarize so Admin can wrap up what was accomplished
             final maxRoundsHistory = await _loadAdminHistory(
               channelId,
-              orchestrationId: userMessage.id,
+              orchestrationId: orchestrationId,
               excludeMessageId: userMessage.id,
             );
             adminResponseContent = '';
@@ -1501,7 +1518,7 @@ class GroupOrchestrationService {
                 },
                 onAgentDone: onAgentDone,
                 onInteractionRequest: onInteractionRequestForAdmin,
-                orchestrationId: userMessage.id,
+                orchestrationId: orchestrationId,
               groupFamilyId: groupOwnerId,
               orchestrationTraceId: orchTraceId,
               );
@@ -1564,7 +1581,7 @@ class GroupOrchestrationService {
                   channelId, adminAgent.id);
               final nudgeHistory = await _loadAdminHistory(
                 channelId,
-                orchestrationId: userMessage.id,
+                orchestrationId: orchestrationId,
                 excludeMessageId: userMessage.id,
               );
               adminResponseContent = '';
@@ -1602,7 +1619,7 @@ class GroupOrchestrationService {
                   },
                   onAgentDone: onAgentDone,
                   onInteractionRequest: onInteractionRequestForAdmin,
-                  orchestrationId: userMessage.id,
+                  orchestrationId: orchestrationId,
               groupFamilyId: groupOwnerId,
               orchestrationTraceId: orchTraceId,
                 );
@@ -1667,7 +1684,7 @@ class GroupOrchestrationService {
                     channelId, adminAgent.id);
                 final nudgeHistory = await _loadAdminHistory(
                   channelId,
-                  orchestrationId: userMessage.id,
+                  orchestrationId: orchestrationId,
                   excludeMessageId: userMessage.id,
                 );
                 adminResponseContent = '';
@@ -1705,7 +1722,7 @@ class GroupOrchestrationService {
                     },
                     onAgentDone: onAgentDone,
                     onInteractionRequest: onInteractionRequestForAdmin,
-                    orchestrationId: userMessage.id,
+                    orchestrationId: orchestrationId,
               groupFamilyId: groupOwnerId,
               orchestrationTraceId: orchTraceId,
                   );
@@ -1762,7 +1779,7 @@ class GroupOrchestrationService {
               adminAgent.isLocal) {
             final existingTask = await GroupWorkspaceService.instance.readTask(
               groupId: groupOwnerId,
-              orchestrationId: userMessage.id,
+              orchestrationId: orchestrationId,
             );
             final hasPlan =
                 adminTurn.planPublished || (existingTask?.hasPublishedPlan ?? false);
@@ -1778,7 +1795,7 @@ class GroupOrchestrationService {
                     channelId, adminAgent.id);
                 final nudgeHistory = await _loadAdminHistory(
                   channelId,
-                  orchestrationId: userMessage.id,
+                  orchestrationId: orchestrationId,
                   excludeMessageId: userMessage.id,
                 );
                 adminResponseContent = '';
@@ -1818,7 +1835,7 @@ class GroupOrchestrationService {
                     },
                     onAgentDone: onAgentDone,
                     onInteractionRequest: onInteractionRequestForAdmin,
-                    orchestrationId: userMessage.id,
+                    orchestrationId: orchestrationId,
                     groupFamilyId: groupOwnerId,
                     orchestrationTraceId: orchTraceId,
                   );
@@ -1911,7 +1928,7 @@ class GroupOrchestrationService {
             payload: {
               'status': 'dispatched',
               'round': currentRound,
-              'orchestration_id': userMessage.id,
+              'orchestration_id': orchestrationId,
               'steps': dispatch.steps
                   .map((s) => {
                         'step': s.step,
@@ -1943,7 +1960,7 @@ class GroupOrchestrationService {
                     channelId, adminAgent.id);
                 final nudgeHistory = await _loadAdminHistory(
                   channelId,
-                  orchestrationId: userMessage.id,
+                  orchestrationId: orchestrationId,
                   excludeMessageId: userMessage.id,
                 );
                 adminResponseContent = '';
@@ -1981,7 +1998,7 @@ class GroupOrchestrationService {
                     },
                     onAgentDone: onAgentDone,
                     onInteractionRequest: onInteractionRequestForAdmin,
-                    orchestrationId: userMessage.id,
+                    orchestrationId: orchestrationId,
               groupFamilyId: groupOwnerId,
               orchestrationTraceId: orchTraceId,
                   );
@@ -2047,7 +2064,7 @@ class GroupOrchestrationService {
                   channelId, adminAgent.id);
               final abortHistory = await _loadAdminHistory(
                 channelId,
-                orchestrationId: userMessage.id,
+                orchestrationId: orchestrationId,
                 excludeMessageId: userMessage.id,
               );
               adminResponseContent = '';
@@ -2084,7 +2101,7 @@ class GroupOrchestrationService {
                   },
                   onAgentDone: onAgentDone,
                   onInteractionRequest: onInteractionRequestForAdmin,
-                  orchestrationId: userMessage.id,
+                  orchestrationId: orchestrationId,
               groupFamilyId: groupOwnerId,
               orchestrationTraceId: orchTraceId,
                 );
@@ -2108,7 +2125,7 @@ class GroupOrchestrationService {
 
             final continueHistory = await _loadAdminHistory(
               channelId,
-              orchestrationId: userMessage.id,
+              orchestrationId: orchestrationId,
               excludeMessageId: userMessage.id,
             );
             adminResponseContent = '';
@@ -2149,7 +2166,7 @@ class GroupOrchestrationService {
                 },
                 onAgentDone: onAgentDone,
                 onInteractionRequest: onInteractionRequestForAdmin,
-                orchestrationId: userMessage.id,
+                orchestrationId: orchestrationId,
               groupFamilyId: groupOwnerId,
               orchestrationTraceId: orchTraceId,
               );
@@ -2196,7 +2213,7 @@ class GroupOrchestrationService {
 
           final memberTaskContext = await GroupMemberTaskContextLoader.load(
             groupId: groupOwnerId,
-            orchestrationId: userMessage.id,
+            orchestrationId: orchestrationId,
             userMessageFallback: effectiveContent,
           );
 
@@ -2238,7 +2255,7 @@ class GroupOrchestrationService {
                 final peerResultsNote =
                     await GroupResultWriter.loadPeerResultsNote(
                   groupId: groupOwnerId,
-                  orchestrationId: userMessage.id,
+                  orchestrationId: orchestrationId,
                   selfAgentId: agent.id,
                   round: currentRound,
                 );
@@ -2259,7 +2276,7 @@ class GroupOrchestrationService {
                         agents: agents,
                       ),
                       peerResultsNote: peerResultsNote,
-                      loopEventNote: _buildLoopEventNote(channelId, orchestrationId: userMessage.id),
+                      loopEventNote: _buildLoopEventNote(channelId, orchestrationId: orchestrationId),
                     ),
                     attachments: attachments,
                     userId: userId,
@@ -2280,7 +2297,7 @@ class GroupOrchestrationService {
                     onMessageMetadata: onMessageMetadata,
                     onAgentDone: onAgentDone,
                     onInteractionRequest: onInteractionRequest,
-                    orchestrationId: userMessage.id,
+                    orchestrationId: orchestrationId,
                     orchestrationRound: currentRound,
                     groupFamilyId: groupOwnerId,
                     historyPinSenderIds: GroupMemberHistory.buildPinSenderIds(
@@ -2314,7 +2331,7 @@ class GroupOrchestrationService {
               };
               await GroupResultWriter.persistFromTurns(
                 groupId: groupOwnerId,
-                orchestrationId: userMessage.id,
+                orchestrationId: orchestrationId,
                 turns: stepTurns,
                 agents: agents,
                 round: currentRound,
@@ -2356,7 +2373,7 @@ class GroupOrchestrationService {
                 final peerResultsNote =
                     await GroupResultWriter.loadPeerResultsNote(
                   groupId: groupOwnerId,
-                  orchestrationId: userMessage.id,
+                  orchestrationId: orchestrationId,
                   selfAgentId: agent.id,
                   round: currentRound,
                 );
@@ -2380,7 +2397,7 @@ class GroupOrchestrationService {
                       agents: agents,
                     ),
                     peerResultsNote: peerResultsNote,
-                    loopEventNote: _buildLoopEventNote(channelId, orchestrationId: userMessage.id),
+                    loopEventNote: _buildLoopEventNote(channelId, orchestrationId: orchestrationId),
                   ),
                   attachments: attachments,
                   userId: userId,
@@ -2401,7 +2418,7 @@ class GroupOrchestrationService {
                   onMessageMetadata: onMessageMetadata,
                   onAgentDone: onAgentDone,
                   onInteractionRequest: onInteractionRequest,
-                  orchestrationId: userMessage.id,
+                  orchestrationId: orchestrationId,
                   orchestrationRound: currentRound,
                   groupFamilyId: groupOwnerId,
                   historyPinSenderIds: GroupMemberHistory.buildPinSenderIds(
@@ -2462,7 +2479,7 @@ class GroupOrchestrationService {
 
           await GroupResultWriter.persistFromTurns(
             groupId: groupOwnerId,
-            orchestrationId: userMessage.id,
+            orchestrationId: orchestrationId,
             turns: memberTurnResults,
             agents: agents,
             round: currentRound,
@@ -2536,12 +2553,12 @@ class GroupOrchestrationService {
                   timeoutSeconds: req.timeout.inSeconds,
                   stallCount: req.stallCount,
                   round: currentRound,
-                  orchestrationId: userMessage.id,
+                  orchestrationId: orchestrationId,
                 ));
               }
               final stallHistory = await _loadAdminHistory(
                 channelId,
-                orchestrationId: userMessage.id,
+                orchestrationId: orchestrationId,
                 excludeMessageId: userMessage.id,
               );
               adminResponseContent = '';
@@ -2577,7 +2594,7 @@ class GroupOrchestrationService {
                   onMessageMetadata: onMessageMetadata,
                   onAgentDone: onAgentDone,
                   onInteractionRequest: onInteractionRequestForAdmin,
-                  orchestrationId: userMessage.id,
+                  orchestrationId: orchestrationId,
                   groupFamilyId: groupOwnerId,
                   orchestrationTraceId: orchTraceId,
                 );
@@ -2629,12 +2646,12 @@ class GroupOrchestrationService {
                   agentName: req.name,
                   reason: req.reason ?? '',
                   round: currentRound,
-                  orchestrationId: userMessage.id,
+                  orchestrationId: orchestrationId,
                 ));
               }
               final wakeHistory = await _loadAdminHistory(
                 channelId,
-                orchestrationId: userMessage.id,
+                orchestrationId: orchestrationId,
                 excludeMessageId: userMessage.id,
               );
               adminResponseContent = '';
@@ -2670,7 +2687,7 @@ class GroupOrchestrationService {
                   onMessageMetadata: onMessageMetadata,
                   onAgentDone: onAgentDone,
                   onInteractionRequest: onInteractionRequestForAdmin,
-                  orchestrationId: userMessage.id,
+                  orchestrationId: orchestrationId,
                   groupFamilyId: groupOwnerId,
                   orchestrationTraceId: orchTraceId,
                 );
@@ -2716,7 +2733,7 @@ class GroupOrchestrationService {
                 tag: 'GroupOrchestrationService');
             final abortHistory = await _loadAdminHistory(
               channelId,
-              orchestrationId: userMessage.id,
+              orchestrationId: orchestrationId,
               excludeMessageId: userMessage.id,
             );
             adminResponseContent = '';
@@ -2754,7 +2771,7 @@ class GroupOrchestrationService {
                 },
                 onAgentDone: onAgentDone,
                 onInteractionRequest: onInteractionRequestForAdmin,
-                orchestrationId: userMessage.id,
+                orchestrationId: orchestrationId,
               groupFamilyId: groupOwnerId,
               orchestrationTraceId: orchTraceId,
               );
@@ -2787,7 +2804,7 @@ class GroupOrchestrationService {
             payload: {
               'status': 'members_done',
               'round': currentRound,
-              'orchestration_id': userMessage.id,
+              'orchestration_id': orchestrationId,
               'member_results': {
                 for (final e in memberTurnResults.entries)
                   e.key: {
@@ -2817,7 +2834,7 @@ class GroupOrchestrationService {
           // Reload history (now includes member replies) and call admin again to summarize
           final loopHistory = await _loadAdminHistory(
             channelId,
-            orchestrationId: userMessage.id,
+            orchestrationId: orchestrationId,
             excludeMessageId: userMessage.id,
           );
 
@@ -2826,7 +2843,12 @@ class GroupOrchestrationService {
           final structuredResultsBlock =
               await GroupResultWriter.loadAdminResultsBlock(
             groupId: groupOwnerId,
-            orchestrationId: userMessage.id,
+            orchestrationId: orchestrationId,
+          );
+          final summarizeArtifactNotes =
+              await GroupArtifactRegistry.loadAdminArtifactBlock(
+            groupId: groupOwnerId,
+            orchestrationId: orchestrationId,
           );
           final sessionHandoffSuffix = await takeSessionHandoffSuffix();
           try {
@@ -2837,6 +2859,7 @@ class GroupOrchestrationService {
                   '${lastDispatchNote != null ? '$effectiveContent\n\n[SYSTEM] 你上一轮的派发记录（该 JSON 已从你的消息中隐藏，仅供核对）：$lastDispatchNote' : effectiveContent}'
                   '${buildMemberArtifactsBlock(memberTurnResults, agents)}'
                   '$structuredResultsBlock'
+                  '$summarizeArtifactNotes'
                   '${pendingFromLastRound.isNotEmpty ? '\n\n${GroupTaskStatusParser.adminNote(pendingFromLastRound)}' : ''}'
                   '$sessionHandoffSuffix',
               attachments: attachments,
@@ -2866,7 +2889,7 @@ class GroupOrchestrationService {
               },
               onAgentDone: onAgentDone,
               onInteractionRequest: onInteractionRequestForAdmin,
-              orchestrationId: userMessage.id,
+              orchestrationId: orchestrationId,
               groupFamilyId: groupOwnerId,
               orchestrationTraceId: orchTraceId,
             );
@@ -2906,7 +2929,7 @@ class GroupOrchestrationService {
             failedAgentNames: List.unmodifiable(failedAgentNames),
             summary: adminResponseContent,
             // M4：绑定本次编排会话（触发用户消息 id）。
-            orchestrationId: userMessage.id,
+            orchestrationId: orchestrationId,
           ));
 
           currentRound++;
@@ -2925,7 +2948,7 @@ class GroupOrchestrationService {
           payload: {
             'status': 'finished',
             'rounds': currentRound,
-            'orchestration_id': userMessage.id,
+            'orchestration_id': orchestrationId,
             'cancelled': acpCancellationToken?.isCancelled == true,
             // 供 onFinish 决定任务终态：done 才写完整归档并计入完成数，
             // paused/failed 保留执行记录但不冒充已完成。
@@ -2976,7 +2999,7 @@ class GroupOrchestrationService {
             onMessageMetadata: onMessageMetadata,
             onAgentDone: onAgentDone,
             onInteractionRequest: onInteractionRequest,
-            orchestrationId: userMessage.id,
+            orchestrationId: orchestrationId,
             groupFamilyId: groupOwnerId,
             orchestrationTraceId: orchTraceId,
             historyPinSenderIds: GroupMemberHistory.buildPinSenderIds(

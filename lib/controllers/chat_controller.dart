@@ -41,6 +41,7 @@ import '../services/workflow/workflow_restore_planner.dart';
 import '../services/workflow/workflow_pending_approval_picker.dart';
 import '../services/workflow/workflow_plan_approval_sync.dart';
 import '../services/group/group_member_session_service.dart';
+import '../services/group/group_orchestration_continuation.dart';
 import '../services/dispatch/she_relay_session_service.dart';
 import '../services/mailbox/channel_mailbox_service.dart';
 import '../services/mailbox/inbox_subscribe_service.dart';
@@ -707,7 +708,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   Future<void> processNextInQueue();
   void _updateStreamingMetadata(Map<String, dynamic> metadata);
   Future<void> processMessage(String content, {String? replyToId, List<AttachmentData>? attachments, List<Message>? attachmentMessages, String? instructionName});
-  Future<void> processGroupMessage(String content, {String? replyToId, List<AttachmentData>? attachments, List<MentionEntry> mentions = const [], String? instructionName});
+  Future<void> processGroupMessage(String content, {String? replyToId, String? replyQuoteText, List<AttachmentData>? attachments, List<MentionEntry> mentions = const [], String? instructionName, String? continueOrchestrationId});
   String? _resolveGroupInteractionMessageId({
     required String agentId,
     required String agentName,

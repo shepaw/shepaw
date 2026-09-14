@@ -2529,6 +2529,7 @@ $originalQuestion
     String? replyQuoteText,
     bool flowMode = false,
     Map<String, dynamic>? userMessageMetadata,
+    String? continueOrchestrationId,
     List<AttachmentData>? attachments,
     ACPCancellationToken? acpCancellationToken,
     void Function(String agentId, String agentName, String chunk)?
@@ -2601,6 +2602,7 @@ $originalQuestion
         replyQuoteText: replyQuoteText,
         flowMode: flowMode,
         userMessageMetadata: userMessageMetadata,
+        continueOrchestrationId: continueOrchestrationId,
         attachments: attachments,
         acpCancellationToken: acpCancellationToken,
         onStreamChunk: onStreamChunk,

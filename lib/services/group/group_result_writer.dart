@@ -4,6 +4,7 @@ import '../../storage/group_workspace_service.dart';
 import '../acp_agent_connection.dart';
 import '../logger_service.dart';
 import 'group_member_history.dart';
+import 'group_artifact_registry.dart';
 import 'group_orchestration_features.dart';
 import 'group_task_status.dart';
 import 'group_turn_result.dart';
@@ -107,6 +108,13 @@ class GroupResultWriter {
         orchestrationId: orchestrationId,
         entries: entries,
       );
+      if (merged != null) {
+        await GroupArtifactRegistry.syncFromTaskOutcomes(
+          groupId: groupId,
+          orchestrationId: orchestrationId,
+          results: merged,
+        );
+      }
     } catch (e) {
       LoggerService().debug(
         'persist task results failed: $groupId/$orchestrationId — $e',

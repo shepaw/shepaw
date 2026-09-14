@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/group_task.dart';
+import 'package:shepaw/models/group_task_artifact.dart';
 import 'package:shepaw/services/group/group_task_display.dart';
 
 void main() {
@@ -72,6 +73,22 @@ void main() {
           'store://runtime/0123456789abcdef/owner/ch/artifacts/t/readme.md',
         ],
       );
+    });
+
+    test('prefers manifest entries first', () {
+      final manifest = GroupTaskArtifactManifest(
+        orchestrationId: 'orch-1',
+        entries: [
+          GroupTaskArtifactEntry(
+            uri: 'store://runtime/dev/gr/ch/artifacts/t/manifest.md',
+            label: 'from manifest',
+          ),
+        ],
+      );
+      final uris = GroupTaskDisplay.artifactUris(manifest: manifest);
+      expect(uris, [
+        'store://runtime/dev/gr/ch/artifacts/t/manifest.md',
+      ]);
     });
 
     test('dedupes the same uri from results and archive', () {
