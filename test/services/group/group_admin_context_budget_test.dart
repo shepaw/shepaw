@@ -21,8 +21,10 @@ void main() {
         summarizeArtifactCompactNotes: '',
         pendingNote: '',
         sessionHandoffSuffix: '',
+        artifactPrefillBlock: '\n\n【成员产物摘录】\n  body',
       );
       expect(content, contains('你上一轮的派发记录'));
+      expect(content, contains('【成员产物摘录】'));
       expect(content, contains('step1→A'));
       expect(content, isNot(contains('摘要模式')));
     });

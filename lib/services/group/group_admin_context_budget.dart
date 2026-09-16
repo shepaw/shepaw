@@ -24,6 +24,7 @@ class GroupAdminContextBudget {
     required String pendingNote,
     required String sessionHandoffSuffix,
     String? resultsUri,
+    String artifactPrefillBlock = '',
   }) {
     if (budgetChars <= 0) {
       return _full(
@@ -34,6 +35,7 @@ class GroupAdminContextBudget {
         summarizeArtifactNotes: summarizeArtifactNotes,
         pendingNote: pendingNote,
         sessionHandoffSuffix: sessionHandoffSuffix,
+        artifactPrefillBlock: artifactPrefillBlock,
       );
     }
 
@@ -45,9 +47,11 @@ class GroupAdminContextBudget {
       summarizeArtifactNotes: summarizeArtifactNotes,
       pendingNote: pendingNote,
       sessionHandoffSuffix: sessionHandoffSuffix,
+      artifactPrefillBlock: artifactPrefillBlock,
     );
     if (full.length <= budgetChars) return full;
 
+    // Compact mode drops artifact prefill to save tokens (URIs remain in results).
     final compact = _compact(
       adminSummarizeBase: adminSummarizeBase,
       dispatchUri: dispatchUri,
@@ -90,6 +94,7 @@ class GroupAdminContextBudget {
     required String summarizeArtifactNotes,
     required String pendingNote,
     required String sessionHandoffSuffix,
+    String artifactPrefillBlock = '',
   }) {
     final dispatchPrefix = lastDispatchNote != null
         ? '$adminSummarizeBase\n\n'
@@ -98,6 +103,7 @@ class GroupAdminContextBudget {
     return '$dispatchPrefix'
         '$memberArtifactsBlock'
         '$structuredResultsBlock'
+        '$artifactPrefillBlock'
         '$summarizeArtifactNotes'
         '$pendingNote'
         '$sessionHandoffSuffix';

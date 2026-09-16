@@ -40,6 +40,7 @@ import 'group_member_stall.dart';
 import 'group_member_delivery.dart';
 import 'group_member_capability_probe.dart';
 import 'group_admin_context_budget.dart';
+import 'group_admin_artifact_prefill.dart';
 import '../messaging/chat_history_content.dart';
 
 class GroupOrchestrationService {
@@ -2938,6 +2939,12 @@ class GroupOrchestrationService {
           final pendingNote = pendingFromLastRound.isNotEmpty
               ? '\n\n${GroupTaskStatusParser.adminNote(pendingFromLastRound)}'
               : '';
+          final artifactPrefillBlock =
+              await GroupAdminArtifactPrefill.loadPrefillBlock(
+            groupId: groupOwnerId,
+            orchestrationId: orchestrationId,
+            round: currentRound,
+          );
           final summarizeContent = GroupAdminContextBudget.assembleLoopSummarizeContent(
             adminSummarizeBase: adminSummarizeBase,
             lastDispatchNote: lastDispatchNote,
@@ -2951,6 +2958,7 @@ class GroupOrchestrationService {
             pendingNote: pendingNote,
             sessionHandoffSuffix: sessionHandoffSuffix,
             resultsUri: resultsUri,
+            artifactPrefillBlock: artifactPrefillBlock,
           );
           try {
             adminTurn = await _executor.processGroupAgent(

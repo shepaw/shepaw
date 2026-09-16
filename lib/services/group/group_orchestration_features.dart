@@ -65,4 +65,7 @@ class GroupOrchestrationFeatures {
   /// Admin loop-summarize prompt char budget; over budget → compact URI mode.
   /// Set to 0 to disable budgeting.
   static int adminContextBudgetChars = 12000;
+
+  /// Auto `store read` member artifact URIs into admin summarize (Phase 0 D).
+  static bool adminArtifactPrefill = true;
 }
