@@ -46,18 +46,20 @@ class GroupAdminTaskContextLoader {
         }
       }
 
-      final requirement = await ws.readTaskRequirement(
-        groupId: groupId,
-        orchestrationId: orchestrationId,
-      );
-      if (requirement != null && requirement.trim().isNotEmpty) {
-        final req = requirement.trim();
-        final user = userMessageFallback?.trim() ?? '';
-        if (user.isEmpty || !_requirementRedundantWithUser(req, user)) {
-          parts.add(
-            '[当前任务定稿需求（requirement.md）]\n'
-            '${_truncate(req, maxRequirementChars)}',
-          );
+      if (!GroupOrchestrationFeatures.requirementUriOnlyPrompts) {
+        final requirement = await ws.readTaskRequirement(
+          groupId: groupId,
+          orchestrationId: orchestrationId,
+        );
+        if (requirement != null && requirement.trim().isNotEmpty) {
+          final req = requirement.trim();
+          final user = userMessageFallback?.trim() ?? '';
+          if (user.isEmpty || !_requirementRedundantWithUser(req, user)) {
+            parts.add(
+              '[当前任务定稿需求（requirement.md）]\n'
+              '${_truncate(req, maxRequirementChars)}',
+            );
+          }
         }
       }
     } catch (e) {

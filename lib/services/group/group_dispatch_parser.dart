@@ -5,6 +5,7 @@ import '../../models/planning_models.dart';
 import '../../models/remote_agent.dart';
 import '../local_database_service.dart';
 import '../logger_service.dart';
+import 'group_orchestration_features.dart';
 import 'group_result_writer.dart';
 
 /// A single dispatch step from Admin's structured JSON dispatch block.
@@ -248,8 +249,11 @@ class GroupDispatchParser {
     // requirement URI exists or the local brief differs from global text.
     final hasRequirementRef =
         requirementUri != null && requirementUri.trim().isNotEmpty;
-    if (isFollowUpRound &&
-        brief.isNotEmpty &&
+    final uriOnlyFirstRound =
+        GroupOrchestrationFeatures.requirementUriOnlyPrompts &&
+            hasRequirementRef;
+    if (brief.isNotEmpty &&
+        (isFollowUpRound || uriOnlyFirstRound) &&
         (hasRequirementRef || brief != global)) {
       final ref = hasRequirementRef
           ? '（定稿需求见 `$requirementUri`，此处不重复全文）'

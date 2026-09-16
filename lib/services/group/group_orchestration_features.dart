@@ -68,4 +68,7 @@ class GroupOrchestrationFeatures {
 
   /// Auto `store read` member artifact URIs into admin summarize (Phase 0 D).
   static bool adminArtifactPrefill = true;
+
+  /// User goal only in `requirement.md`; admin/member prompts use URI refs (Phase J).
+  static bool requirementUriOnlyPrompts = true;
 }

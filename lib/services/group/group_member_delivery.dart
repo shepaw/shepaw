@@ -6,6 +6,7 @@ import 'group_dispatch_parser.dart';
 import 'group_member_capability_probe.dart';
 import 'group_member_stall.dart';
 import 'group_member_task_context.dart';
+import 'group_orchestration_features.dart';
 
 /// Per-member delivery constraints and failure classification for group dispatch.
 class GroupMemberDelivery {
@@ -166,6 +167,12 @@ class GroupMemberDelivery {
     final ref = (requirementUri != null && requirementUri.trim().isNotEmpty)
         ? '定稿需求 `$requirementUri`'
         : '用户原始需求见 shared/tasks/…/requirement.md';
+    if (GroupOrchestrationFeatures.requirementUriOnlyPrompts &&
+        requirementUri != null &&
+        requirementUri.trim().isNotEmpty) {
+      return '【本轮续编 · 第 $round 轮】$ref。\n'
+          '请根据下方成员回报与结构化结果综合回复；完整历史已在对话上下文中。';
+    }
     return '【本轮续编 · 第 $round 轮】$ref。\n'
         '用户目标摘要：${userGoal.trim().length > 200 ? '${userGoal.trim().substring(0, 200)}…' : userGoal.trim()}\n'
         '请根据下方成员回报与结构化结果综合回复；完整历史已在对话上下文中。';

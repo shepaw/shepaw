@@ -22,11 +22,30 @@ class GroupTaskBootstrap {
   }) async {
     if (!GroupOrchestrationFeatures.structuredTasks) return null;
     try {
-      return await GroupWorkspaceService.instance.ensureTask(
+      final ws = GroupWorkspaceService.instance;
+      final task = await ws.ensureTask(
         groupId: groupId,
         orchestrationId: orchestrationId,
         sessionId: sessionId,
         userGoal: userGoal,
+      );
+      if (task == null) return null;
+      if (GroupOrchestrationFeatures.requirementUriOnlyPrompts) {
+        final existing = await ws.readTaskRequirement(
+          groupId: groupId,
+          orchestrationId: orchestrationId,
+        );
+        if (existing == null || existing.trim().isEmpty) {
+          await ws.writeTaskRequirement(
+            groupId: groupId,
+            orchestrationId: orchestrationId,
+            content: userGoal.trim(),
+          );
+        }
+      }
+      return ws.readTask(
+        groupId: groupId,
+        orchestrationId: orchestrationId,
       );
     } catch (e, st) {
       LoggerService().error(

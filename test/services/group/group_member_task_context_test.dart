@@ -52,7 +52,8 @@ void main() {
       userMessageFallback: '原始用户消息 with bundle noise',
     );
 
-    expect(ctx.globalRequirement, contains('OpenAPI 文档需求'));
+    expect(ctx.globalRequirement, contains('requirement.md'));
+    expect(ctx.globalRequirement, isNot(contains('OpenAPI 文档需求')));
     expect(ctx.globalRequirement, isNot(contains('bundle noise')));
     expect(ctx.taskPlanNote, contains('【正式任务计划】'));
     expect(ctx.taskPlanNote, contains('定稿目标'));

@@ -18,6 +18,7 @@ void main() {
       GroupOrchestrationFeatures.adminHistoryScope =
           GroupAdminHistoryScope.task;
       GroupOrchestrationFeatures.structuredTasks = true;
+      GroupOrchestrationFeatures.requirementUriOnlyPrompts = true;
     });
 
     test('buildCrossTaskNotes is empty when task scope disabled', () async {
@@ -78,6 +79,35 @@ void main() {
 
       expect(notes, contains('[上一任务摘要]'));
       expect(notes, contains('Shipped OAuth login'));
+      expect(notes, isNot(contains('Integrate Stripe checkout')));
+    });
+
+    test('includes inline requirement when uri-only prompts disabled', () async {
+      GroupOrchestrationFeatures.requirementUriOnlyPrompts = false;
+      const groupId = 'group_admin_ctx_inline';
+      const currentId = 'current-inline';
+
+      await GroupWorkspaceService.instance.ensureGroupWorkspace(
+        groupId: groupId,
+        members: [(agentId: 'admin', role: 'admin')],
+      );
+      await GroupWorkspaceService.instance.ensureTask(
+        groupId: groupId,
+        orchestrationId: currentId,
+        sessionId: 'sess',
+        userGoal: 'Add billing',
+      );
+      await GroupWorkspaceService.instance.writeTaskRequirement(
+        groupId: groupId,
+        orchestrationId: currentId,
+        content: 'Integrate Stripe checkout.',
+      );
+
+      final notes = await GroupAdminTaskContextLoader.buildCrossTaskNotes(
+        groupId: groupId,
+        orchestrationId: currentId,
+      );
+
       expect(notes, contains('[当前任务定稿需求（requirement.md）]'));
       expect(notes, contains('Integrate Stripe checkout'));
     });

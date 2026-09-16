@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/group_task.dart';
+import 'package:shepaw/services/group/group_orchestration_features.dart';
 import 'package:shepaw/services/group/group_task_bootstrap.dart';
 import 'package:shepaw/storage/group_workspace_service.dart';
 import 'package:shepaw/storage/store_service.dart';
@@ -10,6 +11,32 @@ void main() {
   setUpAll(() async {
     await StorageTestHarness.init();
     await StoreService.instance.start();
+  });
+
+  test('ensureTaskForUserMessage seeds requirement.md from user goal', () async {
+    GroupOrchestrationFeatures.requirementUriOnlyPrompts = true;
+    const groupId = 'group_req_seed';
+    const orchId = 'orch-seed';
+
+    await GroupWorkspaceService.instance.ensureGroupWorkspace(
+      groupId: groupId,
+      members: [(agentId: 'admin', role: 'admin')],
+    );
+
+    final task = await GroupTaskBootstrap.ensureTaskForUserMessage(
+      groupId: groupId,
+      orchestrationId: orchId,
+      sessionId: 'sess-seed',
+      userGoal: '排查外接 agent 链路',
+    );
+
+    expect(task, isNotNull);
+    expect(task!.requirementUri, isNotNull);
+    final req = await GroupWorkspaceService.instance.readTaskRequirement(
+      groupId: groupId,
+      orchestrationId: orchId,
+    );
+    expect(req, '排查外接 agent 链路');
   });
 
   test('publishPlan writes requirement and plan, task becomes planned', () async {

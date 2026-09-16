@@ -4,6 +4,7 @@ import '../logger_service.dart';
 import 'group_dispatch_parser.dart';
 import 'group_artifact_registry.dart';
 import 'group_orchestration_features.dart';
+import 'group_requirement_ref.dart';
 
 /// Member-facing task slices loaded from `shared/tasks/<orchestrationId>/`.
 class GroupMemberTaskContext {
@@ -49,7 +50,17 @@ class GroupMemberTaskContextLoader {
         orchestrationId: orchestrationId,
       );
       if (reqText != null && reqText.trim().isNotEmpty) {
-        requirement = _truncate(reqText.trim(), GroupMemberTaskContext.maxRequirementChars);
+        final uri = task?.requirementUri?.trim();
+        if (GroupOrchestrationFeatures.requirementUriOnlyPrompts &&
+            uri != null &&
+            uri.isNotEmpty) {
+          requirement = GroupRequirementRef.memberGlobalPlaceholder(uri);
+        } else {
+          requirement = _truncate(
+            reqText.trim(),
+            GroupMemberTaskContext.maxRequirementChars,
+          );
+        }
       }
 
       var taskPlanNote = '';

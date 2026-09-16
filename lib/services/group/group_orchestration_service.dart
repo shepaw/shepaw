@@ -41,6 +41,7 @@ import 'group_member_delivery.dart';
 import 'group_member_capability_probe.dart';
 import 'group_admin_context_budget.dart';
 import 'group_admin_artifact_prefill.dart';
+import 'group_requirement_ref.dart';
 import '../messaging/chat_history_content.dart';
 
 class GroupOrchestrationService {
@@ -501,9 +502,24 @@ class GroupOrchestrationService {
       }
     }
 
+    final ws = GroupWorkspaceService.instance;
+    final taskMeta = GroupOrchestrationFeatures.structuredTasks
+        ? await ws.readTask(
+            groupId: groupOwnerId,
+            orchestrationId: orchestrationId,
+          )
+        : null;
+    var promptCore = effectiveContent;
+    final requirementUri = taskMeta?.requirementUri?.trim();
+    if (GroupOrchestrationFeatures.requirementUriOnlyPrompts &&
+        requirementUri != null &&
+        requirementUri.isNotEmpty) {
+      promptCore = GroupRequirementRef.adminUserGoalBlock(requirementUri);
+    }
+
     final bundledContent =
         await ContextBundleService.instance.wrapWithContextBundle(
-      effectiveContent,
+      promptCore,
       ownerId: groupOwnerId,
       channelId: channelId,
       isGroup: true,
@@ -511,7 +527,6 @@ class GroupOrchestrationService {
 
     // 群记忆主动注入：任务开始时把最新群记忆（shared/memory/latest.md，
     // 上一个任务的蒸馏总结）带进 admin 上下文，跨任务共享结论。
-    final ws = GroupWorkspaceService.instance;
     final groupMemory = await ws.readSharedMemoryLatest(groupOwnerId);
     final groupMemoryBlock = groupMemory != null
         ? '[群历史任务总结（shared/memory/latest.md）]\n$groupMemory'
@@ -534,10 +549,6 @@ class GroupOrchestrationService {
       groupId: groupOwnerId,
       orchestrationId: orchestrationId,
       compact: true,
-    );
-    final taskMeta = await ws.readTask(
-      groupId: groupOwnerId,
-      orchestrationId: orchestrationId,
     );
     effectiveContent = GroupAdminContextBudget.assembleFirstAdminTurnContent(
       bundledContent: bundledContent,

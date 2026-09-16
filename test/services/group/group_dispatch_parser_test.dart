@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/services/group/group_dispatch_parser.dart';
+import 'package:shepaw/services/group/group_orchestration_features.dart';
 
 void main() {
   group('GroupDispatchParser buildMemberTurnContent / buildTaskPlanNote', () {
@@ -36,6 +37,21 @@ void main() {
       expect(content, contains('【同轮完成情况】'));
       expect(content, contains('Coder (done)'));
       expect(content, contains('【你的任务】'));
+    });
+
+    test('first round omits global body when uri-only prompts enabled', () {
+      GroupOrchestrationFeatures.requirementUriOnlyPrompts = true;
+      final content = GroupDispatchParser.buildMemberTurnContent(
+        memberBrief: '做 recon 探测',
+        globalRequirement: '（定稿需求见 `store://workspaces/dev/tasks/o1/requirement.md`，请 store read 后执行）',
+        memoryNote: '',
+        requirementUri: 'store://workspaces/dev/tasks/o1/requirement.md',
+        isFollowUpRound: false,
+      );
+      expect(content, contains('【你的任务】'));
+      expect(content, contains('做 recon 探测'));
+      expect(content, contains('requirement.md'));
+      expect(content, isNot(contains('【全局需求】')));
     });
 
     test('follow-up round omits repeated global requirement', () {
