@@ -52,6 +52,18 @@ void main() {
       );
     });
 
+    test('deliveryContextFor encodes peer delivery mode', () {
+      final agent = _agent(
+        id: 'peer1',
+        name: 'peer-cursor',
+        protocol: ProtocolType.peer,
+        metadata: {'manageable': true},
+      );
+      final ctx = GroupMemberDelivery.deliveryContextFor(agent);
+      expect(ctx['mode'], 'hub_peer');
+      expect(ctx['prefer_workspace_mount'], isTrue);
+    });
+
     test('buildMemberDispatchContent adds recon footer for recon steps', () {
       final agent = _agent(
         id: 'local',

@@ -10,6 +10,29 @@ import 'group_member_task_context.dart';
 class GroupMemberDelivery {
   GroupMemberDelivery._();
 
+  /// Machine-readable delivery hints for `group_context` (ACP / peer metadata).
+  static Map<String, dynamic> deliveryContextFor(RemoteAgent agent) {
+    final mode = agent.isPeerAgent
+        ? 'hub_peer'
+        : agent.isLocal
+            ? 'app_local'
+            : agent.usesHubCliExecute
+                ? 'acp_shim'
+                : 'acp';
+    return {
+      'mode': mode,
+      'store_cli': agent.usesHubStoreCli
+          ? 'shepaw_path'
+          : agent.usesHubCliExecute
+              ? 'hub_cli_execute'
+              : agent.isLocal
+                  ? 'shepaw_tool'
+                  : 'unknown',
+      'prefer_workspace_mount': agent.isPeerAgent || agent.usesHubCliExecute,
+      'chat_only_accepted': true,
+    };
+  }
+
   /// Human-readable block injected into member turn content before 【你的任务】.
   static String buildDeliveryNote(RemoteAgent agent) {
     final lines = <String>['【宿主约束 · 交付方式】'];

@@ -2108,6 +2108,7 @@ class GroupAgentExecutor {
             orchestrationTools: isAdmin ? adminExtraTools : null,
             workspaceUri: groupWorkspaceUri,
             currentAgent: agent,
+            memberSessionId: memberSessionId,
           );
 
           final chatResp = await effectiveConnection.sendChatMessage(

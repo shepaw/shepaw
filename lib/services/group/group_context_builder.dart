@@ -4,6 +4,7 @@ import '../../models/acp_protocol.dart';
 import '../../models/channel.dart';
 import '../../models/remote_agent.dart';
 import '../messaging/chat_history_content.dart';
+import 'group_member_delivery.dart';
 import 'group_member_history.dart';
 import 'group_prompt_builder.dart';
 
@@ -148,6 +149,7 @@ class GroupContextBuilder {
     List<Map<String, dynamic>>? orchestrationTools,
     String? workspaceUri,
     RemoteAgent? currentAgent,
+    String? memberSessionId,
   }) {
     final effectiveMode = mentionMode.isNotEmpty ? mentionMode : 'adminOnly';
     final collaboratorName = allAgents
@@ -172,7 +174,13 @@ class GroupContextBuilder {
       if (orchestrationTools != null && orchestrationTools.isNotEmpty)
         'orchestration_tools': orchestrationTools,
       if (workspaceUri != null) 'workspace_uri': workspaceUri,
+      if (memberSessionId != null && memberSessionId.isNotEmpty)
+        'member_session_id': memberSessionId,
     };
+
+    if (currentAgent != null && !isAdmin) {
+      ctx['delivery'] = GroupMemberDelivery.deliveryContextFor(currentAgent);
+    }
 
     if (currentAgent != null && currentAgent.usesHubStoreCli) {
       ctx['cli'] = {
