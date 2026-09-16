@@ -206,6 +206,17 @@ class _PeerHubInputScreenState extends State<PeerHubInputScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    return Scaffold(
+      appBar: AppBar(title: Text(l10n.peerHub_title)),
+      // 本页是独立全屏路由，没有 AppBar 兜底时内容会从 y=0 起排，
+      // 顶部图标直接被状态栏切掉一半。
+      body: SafeArea(
+        child: _buildBody(context, l10n),
+      ),
+    );
+  }
+
+  Widget _buildBody(BuildContext context, AppLocalizations l10n) {
     final colorScheme = Theme.of(context).colorScheme;
 
     if (_connecting) {
@@ -239,12 +250,6 @@ class _PeerHubInputScreenState extends State<PeerHubInputScreen> {
       children: [
         Icon(Icons.dns_outlined, size: 48, color: colorScheme.primary),
         const SizedBox(height: 16),
-        Text(
-          l10n.peerHub_title,
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        const SizedBox(height: 8),
         Text(
           l10n.peerHub_desc,
           textAlign: TextAlign.center,

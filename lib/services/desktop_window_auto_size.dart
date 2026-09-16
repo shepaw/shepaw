@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
+import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 
 /// 桌面主窗口「随停靠面板开合自适应宽度」：固定会话面板时窗口拉宽以
@@ -31,9 +32,18 @@ class DesktopWindowAutoSize {
     _initialized = true;
     try {
       await windowManager.ensureInitialized();
+      await windowManager.setPreventClose(true);
     } catch (_) {
       // 平台实现不可用（如测试环境）时保持静默，后续调用全部短路。
     }
+  }
+
+  /// 把主窗口拉回前台。走 shepaw/window，避免 window_manager.show 改窗口生命周期。
+  static Future<void> bringToFront() async {
+    if (!_enabled) return;
+    try {
+      await const MethodChannel('shepaw/window').invokeMethod<void>('focus');
+    } catch (_) {}
   }
 
   /// 面板即将展开：窗口加宽 [panelWidth] 让聊天区保持原宽度，并把最小

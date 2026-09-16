@@ -183,12 +183,6 @@ class _PeerManualInputScreenState extends State<PeerManualInputScreen> {
           Icon(Icons.keyboard_alt_outlined, size: 48, color: colorScheme.primary),
           const SizedBox(height: 16),
           Text(
-            l10n.peerManual_title,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          Text(
             l10n.peerManual_desc,
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(

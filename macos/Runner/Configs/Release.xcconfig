@@ -1,2 +1,6 @@
 #include "../../Flutter/Flutter-Release.xcconfig"
 #include "Warnings.xcconfig"
+
+// adhoc Release 时 Xcode 会自动塞 get-task-allow，沙盒 App 在 Sequoia
+// 上用完 Touch ID 后会被 AMFI 直接杀掉（无 crash report，看起来像闪退）。
+CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO

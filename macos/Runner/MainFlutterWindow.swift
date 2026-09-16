@@ -9,6 +9,7 @@ class MainFlutterWindow: NSWindow {
     self.contentViewController = flutterViewController
     self.setFrame(windowFrame, display: true)
     self.minSize = NSSize(width: 800, height: 400)
+    isReleasedWhenClosed = false
 
     RegisterGeneratedPlugins(registry: flutterViewController)
 
@@ -29,6 +30,14 @@ class MainFlutterWindow: NSWindow {
         }
         DispatchQueue.main.async {
           self?.title = title
+        }
+        result(nil)
+      case "focus":
+        DispatchQueue.main.async {
+          guard let window = self else { return }
+          window.setIsVisible(true)
+          window.makeKeyAndOrderFront(nil)
+          NSApp.activate(ignoringOtherApps: true)
         }
         result(nil)
       default:

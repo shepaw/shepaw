@@ -3,6 +3,7 @@ import '../l10n/app_localizations.dart';
 import '../services/logger_service.dart';
 import '../services/password_service.dart';
 import '../services/biometric_service.dart';
+import '../services/desktop_window_auto_size.dart';
 import '../theme/app_theme.dart';
 
 /// 登录页面
@@ -61,7 +62,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
     if (success && mounted) {
       LoggerService().info('Biometric login OK, navigating to /home', tag: 'Login');
-      Navigator.of(context).pushReplacementNamed('/home');
+      await _goHome();
     }
   }
 
@@ -69,6 +70,14 @@ class _LoginScreenState extends State<LoginScreen> {
   void dispose() {
     _passwordController.dispose();
     super.dispose();
+  }
+
+  /// 系统认证面板关掉后再进主页，避免 macOS 把主窗口当成已关闭而退出。
+  Future<void> _goHome() async {
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    await DesktopWindowAutoSize.bringToFront();
+    if (!mounted) return;
+    Navigator.of(context).pushReplacementNamed('/home');
   }
 
   /// 提交登录
@@ -98,7 +107,7 @@ class _LoginScreenState extends State<LoginScreen> {
         // 登录成功，跳转到主页
         if (mounted) {
           LoggerService().info('Password verified, navigating to /home', tag: 'Login');
-          Navigator.of(context).pushReplacementNamed('/home');
+          await _goHome();
         }
       } else {
         setState(() {
