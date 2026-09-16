@@ -109,6 +109,24 @@ class GroupAdminContextBudget {
         '$sessionHandoffSuffix';
   }
 
+  /// Admin nudge / stall / wake turns: short task prefix + system note only.
+  static String buildNudgeContent({
+    required String adminSummarizeBase,
+    required String systemNote,
+  }) {
+    final note = systemNote.trim();
+    if (note.isEmpty) return adminSummarizeBase;
+    var content = '$adminSummarizeBase\n\n$note';
+    if (budgetChars <= 0 || content.length <= budgetChars) return content;
+    final overhead = note.length + 2;
+    final maxBase = (budgetChars - overhead).clamp(200, budgetChars);
+    if (adminSummarizeBase.length > maxBase) {
+      content =
+          '${adminSummarizeBase.substring(0, maxBase)}…\n\n$note';
+    }
+    return content;
+  }
+
   static String _compact({
     required String adminSummarizeBase,
     String? dispatchUri,

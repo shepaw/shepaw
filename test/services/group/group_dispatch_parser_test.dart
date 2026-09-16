@@ -53,6 +53,22 @@ void main() {
       expect(content, isNot(contains('用户完整需求原文很长很长')));
     });
 
+    test('follow-up round skips global even when brief equals global text', () {
+      const global = '用户完整需求原文很长很长';
+      final content = GroupDispatchParser.buildMemberTurnContent(
+        memberBrief: global,
+        globalRequirement: global,
+        memoryNote: '',
+        requirementUri: 'store://workspaces/dev/shared/tasks/o1/requirement.md',
+        isFollowUpRound: true,
+      );
+      expect(content, contains('【你的任务】'));
+      expect(content, contains('requirement.md'));
+      expect(content, isNot(contains('【全局需求】')));
+      // Brief may repeat goal text; full global block must not appear twice.
+      expect(content.indexOf('【全局需求】'), -1);
+    });
+
     test('truncates long plan bodies', () {
       final note = GroupDispatchParser.buildTaskPlanNote(
         body: 'x' * 50,

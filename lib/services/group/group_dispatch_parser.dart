@@ -244,10 +244,14 @@ class GroupDispatchParser {
     String? requirementUri,
     bool isFollowUpRound = false,
   }) {
-    // Follow-up rounds: skip repeating the full global requirement when there
-    // is a distinct local brief — reference requirement.md instead.
-    if (isFollowUpRound && brief.isNotEmpty && brief != global) {
-      final ref = (requirementUri != null && requirementUri.trim().isNotEmpty)
+    // Follow-up rounds: skip repeating the full global requirement when a
+    // requirement URI exists or the local brief differs from global text.
+    final hasRequirementRef =
+        requirementUri != null && requirementUri.trim().isNotEmpty;
+    if (isFollowUpRound &&
+        brief.isNotEmpty &&
+        (hasRequirementRef || brief != global)) {
+      final ref = hasRequirementRef
           ? '（定稿需求见 `$requirementUri`，此处不重复全文）'
           : '（全局需求见本轮任务 store / 群历史，此处不重复全文）';
       final taskSection = formalPlan.isEmpty

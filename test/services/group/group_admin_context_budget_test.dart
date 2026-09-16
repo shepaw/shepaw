@@ -29,6 +29,17 @@ void main() {
       expect(content, isNot(contains('摘要模式')));
     });
 
+    test('buildNudgeContent uses short prefix not full effectiveContent stack', () {
+      GroupOrchestrationFeatures.adminContextBudgetChars = 10000;
+      final nudge = GroupAdminContextBudget.buildNudgeContent(
+        adminSummarizeBase: '【本轮续编 · 第 2 轮】定稿需求 `store://req`。',
+        systemNote: '[SYSTEM] 请重新 group_dispatch',
+      );
+      expect(nudge, contains('【本轮续编'));
+      expect(nudge, contains('[SYSTEM]'));
+      expect(nudge, isNot(contains('当前储物袋作用域')));
+    });
+
     test('switches to compact mode when over budget', () {
       GroupOrchestrationFeatures.adminContextBudgetChars = 200;
       final longDispatch = 'x' * 500;

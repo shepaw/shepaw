@@ -696,8 +696,11 @@ class GroupOrchestrationService {
           tag: 'GroupOrchestrationService',
         );
 
-        final cascadeHistory = await loadAndTruncateHistory(channelId,
-            excludeMessageId: userMessage.id);
+        final cascadeHistory = await _loadMemberHistory(
+          channelId,
+          orchestrationId: orchestrationId,
+          excludeMessageId: userMessage.id,
+        );
         final cascadeFutures =
             <({String agentId, Future<GroupTurnResult> future})>[];
         for (final agent in agents) {
@@ -1599,8 +1602,14 @@ class GroupOrchestrationService {
                 adminTurn = await _executor.processGroupAgent(
                   agent: adminAgent,
                   channelId: channelId,
-                  content:
-                      '$effectiveContent\n\n[SYSTEM] 你上一条回复中的派发指令无法执行：${dispatch.parseError}。请调用 `group_dispatch` 重新派活（agents 必须用注册名），或调用 `group_finish`（done/continue/pause）；若无需派发请直接给出最终答复并 finish。',
+                  content: await _buildAdminLoopNudgeContent(
+                    groupOwnerId: groupOwnerId,
+                    orchestrationId: orchestrationId,
+                    userGoal: userMessage.content,
+                    round: currentRound,
+                    systemNote:
+                        '[SYSTEM] 你上一条回复中的派发指令无法执行：${dispatch.parseError}。请调用 `group_dispatch` 重新派活（agents 必须用注册名），或调用 `group_finish`（done/continue/pause）；若无需派发请直接给出最终答复并 finish。',
+                  ),
                   attachments: attachments,
                   userId: userId,
                   userName: userName,
@@ -1702,8 +1711,15 @@ class GroupOrchestrationService {
                   adminTurn = await _executor.processGroupAgent(
                     agent: adminAgent,
                     channelId: channelId,
-                    content:
-                        '$effectiveContent\n\n${GroupVerbalDispatchDetector.nudgeSystemContent(promised)}',
+                    content: await _buildAdminLoopNudgeContent(
+                      groupOwnerId: groupOwnerId,
+                      orchestrationId: orchestrationId,
+                      userGoal: userMessage.content,
+                      round: currentRound,
+                      systemNote: GroupVerbalDispatchDetector.nudgeSystemContent(
+                        promised,
+                      ),
+                    ),
                     attachments: attachments,
                     userId: userId,
                     userName: userName,
@@ -1813,8 +1829,13 @@ class GroupOrchestrationService {
                   adminTurn = await _executor.processGroupAgent(
                     agent: adminAgent,
                     channelId: channelId,
-                    content:
-                        '$effectiveContent\n\n${GroupPlanPublishGate.nudgeSystemContent()}',
+                    content: await _buildAdminLoopNudgeContent(
+                      groupOwnerId: groupOwnerId,
+                      orchestrationId: orchestrationId,
+                      userGoal: userMessage.content,
+                      round: currentRound,
+                      systemNote: GroupPlanPublishGate.nudgeSystemContent(),
+                    ),
                     attachments: attachments,
                     userId: userId,
                     userName: userName,
@@ -1978,8 +1999,15 @@ class GroupOrchestrationService {
                   adminTurn = await _executor.processGroupAgent(
                     agent: adminAgent,
                     channelId: channelId,
-                    content:
-                        '$effectiveContent\n\n${GroupTaskStatusParser.nudgeSystemContent(pendingFromLastRound)}',
+                    content: await _buildAdminLoopNudgeContent(
+                      groupOwnerId: groupOwnerId,
+                      orchestrationId: orchestrationId,
+                      userGoal: userMessage.content,
+                      round: currentRound,
+                      systemNote: GroupTaskStatusParser.nudgeSystemContent(
+                        pendingFromLastRound,
+                      ),
+                    ),
                     attachments: attachments,
                     userId: userId,
                     userName: userName,
@@ -2273,8 +2301,11 @@ class GroupOrchestrationService {
               final stepAgentIds = step.agentIds;
 
               // Reload history before each step so agents see previous steps' output
-              final stepHistory = await loadAndTruncateHistory(channelId,
-                  excludeMessageId: userMessage.id);
+              final stepHistory = await _loadMemberHistory(
+                channelId,
+                orchestrationId: orchestrationId,
+                excludeMessageId: userMessage.id,
+              );
 
               // Launch all agents within this step concurrently
               final stepFutures = <Future<void>>[];
@@ -2408,8 +2439,11 @@ class GroupOrchestrationService {
               if (!delegatedIds.contains(agent.id)) return;
               onAgentStart?.call(agent.id, agent.name);
               final isFirst = !agentIdsWithHistory.contains(agent.id);
-              final history = await loadAndTruncateHistory(channelId,
-                  excludeMessageId: userMessage.id);
+              final history = await _loadMemberHistory(
+                channelId,
+                orchestrationId: orchestrationId,
+                excludeMessageId: userMessage.id,
+              );
               final peerResultsNote =
                   await GroupResultWriter.loadPeerResultsNote(
                 groupId: groupOwnerId,
@@ -2620,8 +2654,15 @@ class GroupOrchestrationService {
                 adminTurn = await _executor.processGroupAgent(
                   agent: adminAgent,
                   channelId: channelId,
-                  content:
-                      '$effectiveContent\n\n${GroupTaskStatusParser.adminStalledFollowUpNote(stallFollowUpRequests)}',
+                  content: await _buildAdminLoopNudgeContent(
+                    groupOwnerId: groupOwnerId,
+                    orchestrationId: orchestrationId,
+                    userGoal: userMessage.content,
+                    round: currentRound,
+                    systemNote: GroupTaskStatusParser.adminStalledFollowUpNote(
+                      stallFollowUpRequests,
+                    ),
+                  ),
                   attachments: attachments,
                   userId: userId,
                   userName: userName,
@@ -2713,8 +2754,15 @@ class GroupOrchestrationService {
                 adminTurn = await _executor.processGroupAgent(
                   agent: adminAgent,
                   channelId: channelId,
-                  content:
-                      '$effectiveContent\n\n${GroupTaskStatusParser.adminPendingWakeNote(adminWakeRequests)}',
+                  content: await _buildAdminLoopNudgeContent(
+                    groupOwnerId: groupOwnerId,
+                    orchestrationId: orchestrationId,
+                    userGoal: userMessage.content,
+                    round: currentRound,
+                    systemNote: GroupTaskStatusParser.adminPendingWakeNote(
+                      adminWakeRequests,
+                    ),
+                  ),
                   attachments: attachments,
                   userId: userId,
                   userName: userName,
@@ -2929,13 +2977,12 @@ class GroupOrchestrationService {
             relPath: ws.taskResultsRelPath(groupOwnerId, orchestrationId),
           );
           final sessionHandoffSuffix = await takeSessionHandoffSuffix();
-          final adminSummarizeBase = currentRound > 1
-              ? GroupMemberDelivery.buildAdminLoopSummarizePrefix(
-                  userGoal: userMessage.content,
-                  requirementUri: memberTaskContext.requirementUri,
-                  round: currentRound,
-                )
-              : effectiveContent;
+          final adminSummarizeBase =
+              GroupMemberDelivery.buildAdminLoopSummarizePrefix(
+            userGoal: userMessage.content,
+            requirementUri: memberTaskContext.requirementUri,
+            round: currentRound,
+          );
           final pendingNote = pendingFromLastRound.isNotEmpty
               ? '\n\n${GroupTaskStatusParser.adminNote(pendingFromLastRound)}'
               : '';
@@ -3226,6 +3273,46 @@ class GroupOrchestrationService {
       messages: raw,
       orchestrationId: orchestrationId,
       excludeMessageId: excludeMessageId,
+    );
+  }
+
+  /// Task-scoped transcript for member dispatch / cascade turns.
+  Future<List<Message>> _loadMemberHistory(
+    String channelId, {
+    required String orchestrationId,
+    String? excludeMessageId,
+  }) async {
+    final raw = await loadAndTruncateHistory(
+      channelId,
+      excludeMessageId: excludeMessageId,
+    );
+    return GroupMemberHistory.loadTaskScopedHistory(
+      messages: raw,
+      orchestrationId: orchestrationId,
+      excludeMessageId: excludeMessageId,
+    );
+  }
+
+  /// Short admin prefix + system nudge (no Scope Card / 群记忆 stack).
+  Future<String> _buildAdminLoopNudgeContent({
+    required String groupOwnerId,
+    required String orchestrationId,
+    required String userGoal,
+    required int round,
+    required String systemNote,
+  }) async {
+    final ctx = await GroupMemberTaskContextLoader.load(
+      groupId: groupOwnerId,
+      orchestrationId: orchestrationId,
+      userMessageFallback: userGoal,
+    );
+    return GroupAdminContextBudget.buildNudgeContent(
+      adminSummarizeBase: GroupMemberDelivery.buildAdminLoopSummarizePrefix(
+        userGoal: userGoal,
+        requirementUri: ctx.requirementUri,
+        round: round,
+      ),
+      systemNote: systemNote,
     );
   }
 
