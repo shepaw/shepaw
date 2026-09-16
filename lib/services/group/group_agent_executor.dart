@@ -36,6 +36,7 @@ import 'group_orchestration_metadata.dart';
 import 'group_orchestration_tools.dart';
 import 'group_orchestration_features.dart';
 import 'group_recon_first_gate.dart';
+import 'group_member_capability_probe.dart';
 import 'group_member_stall.dart';
 import 'group_artifact_registry.dart';
 import 'group_task_bootstrap.dart';
@@ -356,6 +357,8 @@ class GroupAgentExecutor {
     int? orchestrationRound,
     String? groupFamilyId,
     List<String> historyPinSenderIds = const [],
+    MemberCapabilitySnapshot? memberProbe,
+    Duration? taskTimeout,
   }) async {
     LoggerService().debug(
       '_processGroupAgent START: ${agent.name} (isAdmin=$isAdmin, isLocal=${agent.isLocal}, isPeer=${agent.isPeerAgent})',
@@ -2109,8 +2112,10 @@ class GroupAgentExecutor {
             workspaceUri: groupWorkspaceUri,
             currentAgent: agent,
             memberSessionId: memberSessionId,
+            memberProbe: memberProbe,
           );
 
+          final effectiveTaskTimeout = taskTimeout ?? acpTaskTimeout;
           final chatResp = await effectiveConnection.sendChatMessage(
             taskId: effectiveTaskId,
             sessionId: memberSessionId,
@@ -2142,13 +2147,13 @@ class GroupAgentExecutor {
             }
           } else {
             await taskCompleter.future.timeout(
-              acpTaskTimeout,
+              effectiveTaskTimeout,
               onTimeout: () {
                 if (!isAdmin &&
                     GroupOrchestrationFeatures.stalledTimeout) {
                   throw MemberStalledException(
                     agentName: agent.name,
-                    timeout: acpTaskTimeout,
+                    timeout: effectiveTaskTimeout,
                   );
                 }
                 throw TimeoutException(

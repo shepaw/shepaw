@@ -38,6 +38,7 @@ import 'group_artifact_registry.dart';
 import 'group_result_writer.dart';
 import 'group_member_stall.dart';
 import 'group_member_delivery.dart';
+import 'group_member_capability_probe.dart';
 import '../messaging/chat_history_content.dart';
 
 class GroupOrchestrationService {
@@ -85,6 +86,9 @@ class GroupOrchestrationService {
   /// 时不注入。以 channelId 为参数以便按频道读取事件日志。
   final List<String> Function(String channelId)? eventDigestLines;
 
+  /// Optional live probe before [group_dispatch] (connectivity + store CLI).
+  final GroupMemberCapabilityProbe? memberCapabilityProbe;
+
   GroupOrchestrationService({
     required LocalDatabaseService db,
     required Uuid uuid,
@@ -101,6 +105,7 @@ class GroupOrchestrationService {
     this.onGroupEvent,
     this.loopEventLines,
     this.eventDigestLines,
+    this.memberCapabilityProbe,
   })  : _db = db,
         _uuid = uuid,
         _executor = executor,
@@ -2230,6 +2235,34 @@ class GroupOrchestrationService {
           final delegatedTurnResults = <String, GroupTurnResult>{};
           final isSequential = dispatch.steps.isNotEmpty &&
               dispatch.steps.first.mode == 'sequential';
+          final isReconOnly = DispatchStep.isReconOnly(dispatch.steps);
+          final useSerialRecon = !isSequential &&
+              isReconOnly &&
+              currentRound <= 1 &&
+              delegatedIds.length > 1 &&
+              GroupOrchestrationFeatures.reconSerialFirstRound;
+
+          final memberProbes = <String, MemberCapabilitySnapshot>{};
+          if (GroupOrchestrationFeatures.preflightMemberProbe &&
+              memberCapabilityProbe != null) {
+            final targets =
+                agents.where((a) => delegatedIds.contains(a.id)).toList();
+            memberProbes.addAll(await memberCapabilityProbe!.probeAll(targets));
+          }
+
+          Duration? taskTimeoutFor(RemoteAgent agent) {
+            if (!isReconOnly ||
+                currentRound > 1 ||
+                !agent.isPeerAgent ||
+                GroupOrchestrationFeatures.peerReconFirstRoundTimeoutMinutes <=
+                    0) {
+              return null;
+            }
+            return Duration(
+              minutes:
+                  GroupOrchestrationFeatures.peerReconFirstRoundTimeoutMinutes,
+            );
+          }
 
           if (isSequential) {
             // Sequential workflow: execute steps in order
@@ -2280,7 +2313,10 @@ class GroupOrchestrationService {
                           channelId, orchestrationId: orchestrationId),
                       currentRound: currentRound,
                       stepIsRecon: step.isRecon,
+                      probe: memberProbes[agent.id],
                     ),
+                    memberProbe: memberProbes[agent.id],
+                    taskTimeout: taskTimeoutFor(agent),
                     attachments: attachments,
                     userId: userId,
                     userName: userName,
@@ -2365,92 +2401,100 @@ class GroupOrchestrationService {
               }
             }
           } else {
-            // Concurrent execution (default)
-            final updatedHistory = await loadAndTruncateHistory(channelId,
-                excludeMessageId: userMessage.id);
-
-            final delegatedFutures = <Future<void>>[];
-            for (final agent in agents) {
-              if (!delegatedIds.contains(agent.id)) continue;
+            // Concurrent execution (default); first-round recon may run serially.
+            Future<void> runDelegatedAgent(RemoteAgent agent) async {
+              if (!delegatedIds.contains(agent.id)) return;
               onAgentStart?.call(agent.id, agent.name);
               final isFirst = !agentIdsWithHistory.contains(agent.id);
-              delegatedFutures.add(() async {
-                final peerResultsNote =
-                    await GroupResultWriter.loadPeerResultsNote(
-                  groupId: groupOwnerId,
-                  orchestrationId: orchestrationId,
-                  selfAgentId: agent.id,
-                  round: currentRound,
-                );
-                // 成员先看【全局需求】（用户完整消息），再看【你的任务】（局部 brief）。
-                final memberBrief = GroupDispatchParser.taskContentForAgent(
-                  agentId: agent.id,
-                  steps: dispatch.steps,
-                  fallback: memberTaskContext.globalRequirement,
-                );
-                final result = await _executor
-                    .processGroupAgent(
+              final history = await loadAndTruncateHistory(channelId,
+                  excludeMessageId: userMessage.id);
+              final peerResultsNote =
+                  await GroupResultWriter.loadPeerResultsNote(
+                groupId: groupOwnerId,
+                orchestrationId: orchestrationId,
+                selfAgentId: agent.id,
+                round: currentRound,
+              );
+              final memberBrief = GroupDispatchParser.taskContentForAgent(
+                agentId: agent.id,
+                steps: dispatch.steps,
+                fallback: memberTaskContext.globalRequirement,
+              );
+              final result = await _executor
+                  .processGroupAgent(
+                agent: agent,
+                channelId: channelId,
+                content: GroupMemberDelivery.buildMemberDispatchContent(
                   agent: agent,
-                  channelId: channelId,
-                  content: GroupMemberDelivery.buildMemberDispatchContent(
-                    agent: agent,
-                    memberBrief: memberBrief,
-                    taskContext: memberTaskContext,
-                    memoryNote: memberMemoryNote,
-                    steps: dispatch.steps,
-                    agents: agents,
-                    peerResultsNote: peerResultsNote,
-                    loopEventNote: _buildLoopEventNote(
-                        channelId, orchestrationId: orchestrationId),
-                    currentRound: currentRound,
-                  ),
-                  attachments: attachments,
-                  userId: userId,
-                  userName: userName,
-                  groupName: groupName,
-                  groupDescription: groupDescription,
-                  allAgents: agents,
-                  historyMessages: updatedHistory,
-                  mentionedAgentIds: delegatedIds,
-                  isFirstMessage: isFirst,
-                  messageVersion: messageVersion,
-                  channelMembers: channelMembers,
-                  adminAgent: adminAgent,
-                  customSystemPrompt: customSystemPrompt,
-                  mentionMode: mentionMode,
-                  acpCancellationToken: acpCancellationToken,
-                  onStreamChunk: onStreamChunk,
-                  onMessageMetadata: onMessageMetadata,
+                  memberBrief: memberBrief,
+                  taskContext: memberTaskContext,
+                  memoryNote: memberMemoryNote,
+                  steps: dispatch.steps,
+                  agents: agents,
+                  peerResultsNote: peerResultsNote,
+                  loopEventNote: _buildLoopEventNote(
+                      channelId, orchestrationId: orchestrationId),
+                  currentRound: currentRound,
+                  probe: memberProbes[agent.id],
+                ),
+                attachments: attachments,
+                userId: userId,
+                userName: userName,
+                groupName: groupName,
+                groupDescription: groupDescription,
+                allAgents: agents,
+                historyMessages: history,
+                mentionedAgentIds: delegatedIds,
+                isFirstMessage: isFirst,
+                messageVersion: messageVersion,
+                channelMembers: channelMembers,
+                adminAgent: adminAgent,
+                customSystemPrompt: customSystemPrompt,
+                mentionMode: mentionMode,
+                acpCancellationToken: acpCancellationToken,
+                onStreamChunk: onStreamChunk,
+                onMessageMetadata: onMessageMetadata,
+                onAgentDone: onAgentDone,
+                onInteractionRequest: onInteractionRequest,
+                orchestrationId: orchestrationId,
+                orchestrationRound: currentRound,
+                groupFamilyId: groupOwnerId,
+                memberProbe: memberProbes[agent.id],
+                taskTimeout: taskTimeoutFor(agent),
+                historyPinSenderIds: GroupMemberHistory.buildPinSenderIds(
+                  selfAgentId: agent.id,
+                  coAgentIds: delegatedIds,
+                  extraPinSenderIds: [
+                    userId,
+                    if (adminAgent != null) adminAgent.id,
+                  ],
+                ),
+              )
+                  .catchError((e) {
+                return GroupMemberStallHandler.handleExecutionError(
+                  error: e,
+                  agent: agent,
+                  tracker: stallTracker,
+                  failedAgentNames: failedAgentNames,
+                  stalledAgentNames: stalledAgentNames,
+                  failedAgentReasons: failedAgentReasons,
                   onAgentDone: onAgentDone,
-                  onInteractionRequest: onInteractionRequest,
-                  orchestrationId: orchestrationId,
-                  orchestrationRound: currentRound,
-                  groupFamilyId: groupOwnerId,
-                  historyPinSenderIds: GroupMemberHistory.buildPinSenderIds(
-                    selfAgentId: agent.id,
-                    coAgentIds: delegatedIds,
-                    extraPinSenderIds: [
-                      userId,
-                      if (adminAgent != null) adminAgent.id,
-                    ],
-                  ),
-                )
-                    .catchError((e) {
-                  return GroupMemberStallHandler.handleExecutionError(
-                    error: e,
-                    agent: agent,
-                    tracker: stallTracker,
-                    failedAgentNames: failedAgentNames,
-                    stalledAgentNames: stalledAgentNames,
-                    failedAgentReasons: failedAgentReasons,
-                    onAgentDone: onAgentDone,
-                    logLabel: 'delegated agent',
-                  );
-                });
-                delegatedTurnResults[agent.id] = result;
-              }());
+                  logLabel: 'delegated agent',
+                );
+              });
+              delegatedTurnResults[agent.id] = result;
             }
-            await Future.wait(delegatedFutures);
+
+            if (useSerialRecon) {
+              for (final agent in agents) {
+                if (acpCancellationToken?.isCancelled == true) break;
+                await runDelegatedAgent(agent);
+              }
+            } else {
+              await Future.wait(
+                agents.map(runDelegatedAgent),
+              );
+            }
           }
 
           // M7: 汇总用回合集合 = 本轮派发成员 + cascade 级联激活的成员，

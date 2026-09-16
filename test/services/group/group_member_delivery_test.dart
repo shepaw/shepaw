@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/remote_agent.dart';
 import 'package:shepaw/services/group/group_dispatch_parser.dart';
+import 'package:shepaw/services/group/group_member_capability_probe.dart';
 import 'package:shepaw/services/group/group_member_delivery.dart';
 import 'package:shepaw/services/group/group_member_stall.dart';
 import 'package:shepaw/services/group/group_member_task_context.dart';
@@ -52,6 +53,21 @@ void main() {
       );
     });
 
+    test('buildDeliveryNote reflects failed store CLI probe', () {
+      final agent = _agent(
+        id: 'acp1',
+        name: 'cursor',
+      );
+      const probe = MemberCapabilitySnapshot(
+        reachable: true,
+        storeCliAvailable: false,
+        notes: ['hub.cli.execute 探测失败'],
+      );
+      final note = GroupMemberDelivery.buildDeliveryNote(agent, probe: probe);
+      expect(note, contains('禁止'));
+      expect(note, contains('workspace'));
+    });
+
     test('deliveryContextFor encodes peer delivery mode', () {
       final agent = _agent(
         id: 'peer1',
@@ -62,6 +78,17 @@ void main() {
       final ctx = GroupMemberDelivery.deliveryContextFor(agent);
       expect(ctx['mode'], 'hub_peer');
       expect(ctx['prefer_workspace_mount'], isTrue);
+    });
+
+    test('deliveryContextFor marks unavailable store when probe fails', () {
+      final agent = _agent(id: 'acp1', name: 'cursor');
+      const probe = MemberCapabilitySnapshot(
+        reachable: true,
+        storeCliAvailable: false,
+      );
+      final ctx = GroupMemberDelivery.deliveryContextFor(agent, probe: probe);
+      expect(ctx['store_cli'], 'unavailable');
+      expect(ctx['store_cli_live'], isFalse);
     });
 
     test('buildMemberDispatchContent adds recon footer for recon steps', () {

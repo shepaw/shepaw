@@ -23,6 +23,9 @@ import 'group/group_interaction_handler.dart';
 import 'group/planning_helpers.dart';
 import 'group/group_agent_executor.dart';
 import 'group/group_orchestration_service.dart';
+import 'group/group_member_capability_probe.dart';
+import '../service_locator.dart';
+import 'remote_agent_service.dart';
 import 'group/group_membership_perception.dart';
 import 'group/group_event.dart';
 import 'group/group_event_store.dart';
@@ -286,6 +289,11 @@ class ChatService {
           events.length <= 5 ? events : events.sublist(events.length - 5);
       return tail.map(renderEventLine).toList();
     },
+    memberCapabilityProbe: GroupMemberCapabilityProbe(
+      checkHealth: (id, {timeout = const Duration(seconds: 3)}) =>
+          getIt<RemoteAgentService>().checkAgentHealth(id, timeout: timeout),
+      connectionLookup: (id) => _acpConnections[id],
+    ),
   );
 
   /// Sub-service: membership join/leave event log + optional admin perception

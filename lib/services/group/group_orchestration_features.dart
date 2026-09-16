@@ -52,4 +52,13 @@ class GroupOrchestrationFeatures {
 
   /// Suggest `group_session_create` (noise_reduction) after many done tasks.
   static bool sessionHandoffHint = true;
+
+  /// Live probe members before [group_dispatch] (connectivity + store CLI).
+  static bool preflightMemberProbe = true;
+
+  /// First-round recon with multiple members runs serially (not concurrent).
+  static bool reconSerialFirstRound = true;
+
+  /// Shorter ACP timeout for peer members on first-round recon (minutes).
+  static int peerReconFirstRoundTimeoutMinutes = 3;
 }

@@ -3,6 +3,7 @@ import 'dart:async';
 import '../../models/remote_agent.dart';
 import '../acp_agent_connection.dart';
 import 'group_dispatch_parser.dart';
+import 'group_member_capability_probe.dart';
 import 'group_member_stall.dart';
 import 'group_member_task_context.dart';
 
@@ -11,7 +12,10 @@ class GroupMemberDelivery {
   GroupMemberDelivery._();
 
   /// Machine-readable delivery hints for `group_context` (ACP / peer metadata).
-  static Map<String, dynamic> deliveryContextFor(RemoteAgent agent) {
+  static Map<String, dynamic> deliveryContextFor(
+    RemoteAgent agent, {
+    MemberCapabilitySnapshot? probe,
+  }) {
     final mode = agent.isPeerAgent
         ? 'hub_peer'
         : agent.isLocal
@@ -19,23 +23,41 @@ class GroupMemberDelivery {
             : agent.usesHubCliExecute
                 ? 'acp_shim'
                 : 'acp';
+    var storeCli = agent.usesHubStoreCli
+        ? 'shepaw_path'
+        : agent.usesHubCliExecute
+            ? 'hub_cli_execute'
+            : agent.isLocal
+                ? 'shepaw_tool'
+                : 'unknown';
+    var preferWorkspaceMount =
+        agent.isPeerAgent || agent.usesHubCliExecute;
+    if (probe != null) {
+      if (probe.storeCliAvailable == false) {
+        storeCli = 'unavailable';
+        preferWorkspaceMount = true;
+      } else if (probe.storeCliAvailable == true && agent.usesHubCliExecute) {
+        storeCli = 'hub_cli_execute_live';
+      }
+    }
     return {
       'mode': mode,
-      'store_cli': agent.usesHubStoreCli
-          ? 'shepaw_path'
-          : agent.usesHubCliExecute
-              ? 'hub_cli_execute'
-              : agent.isLocal
-                  ? 'shepaw_tool'
-                  : 'unknown',
-      'prefer_workspace_mount': agent.isPeerAgent || agent.usesHubCliExecute,
+      'store_cli': storeCli,
+      'prefer_workspace_mount': preferWorkspaceMount,
       'chat_only_accepted': true,
+      if (probe != null) ...probe.toDeliveryExtras(),
     };
   }
 
   /// Human-readable block injected into member turn content before 【你的任务】.
-  static String buildDeliveryNote(RemoteAgent agent) {
+  static String buildDeliveryNote(
+    RemoteAgent agent, {
+    MemberCapabilitySnapshot? probe,
+  }) {
     final lines = <String>['【宿主约束 · 交付方式】'];
+    if (probe != null && !probe.reachable) {
+      lines.add('- ⚠️ 派发前探测：当前不可达；若仍收到任务，请聊天条目化交付或说明阻塞原因');
+    }
     if (agent.isPeerAgent) {
       lines.add('- 宿主：Agent Hub 对端引擎（peer）；`store://runtime/…` 跨设备只读受限');
       lines.add('- 产物：优先写 **workspace 挂载目录** 或群 `shared/`（管理员可读）；');
@@ -44,13 +66,24 @@ class GroupMemberDelivery {
     } else if (agent.usesHubStoreCli) {
       lines.add('- 宿主：Agent Hub 本机引擎；`shepaw store` 写 Hub device');
       lines.add('- 跨设备共享：另写一份到群 workspace `shared/` 或挂载路径');
+      if (probe?.storeCliAvailable == false) {
+        lines.add('- ⚠️ Hub 实例未运行：禁止依赖 CLI，改 workspace/shared 或聊天交付');
+      }
     } else if (agent.usesHubCliExecute) {
       lines.add('- 宿主：外接 ACP（经 App shim）；store 经 `hub.cli.execute`');
-      lines.add('- shim 缺失时：直写 workspace 挂载路径，勿反复重试 CLI');
+      if (probe?.storeCliAvailable == false) {
+        lines.add('- ⚠️ CLI 探测不可用：**禁止** `shepaw store write`；直写 workspace 挂载路径');
+      } else {
+        lines.add('- shim 缺失时：直写 workspace 挂载路径，勿反复重试 CLI');
+      }
     } else if (agent.isLocal) {
       lines.add('- 宿主：App 本地 LLM；`shepaw store write` 可用');
     } else {
       lines.add('- 宿主：外接 ACP；产物见作用域卡片');
+    }
+    for (final note in probe?.notes ?? const <String>[]) {
+      if (note.trim().isEmpty) continue;
+      lines.add('- 探测：$note');
     }
     return '${lines.join('\n')}\n';
   }
@@ -100,6 +133,7 @@ class GroupMemberDelivery {
     required String loopEventNote,
     required int currentRound,
     bool stepIsRecon = false,
+    MemberCapabilitySnapshot? probe,
   }) {
     var brief = memberBrief.trim();
     if (stepIsRecon || DispatchStep.isReconOnly(steps)) {
@@ -116,7 +150,7 @@ class GroupMemberDelivery {
       ),
       peerResultsNote: peerResultsNote,
       loopEventNote: loopEventNote,
-      deliveryNote: buildDeliveryNote(agent),
+      deliveryNote: buildDeliveryNote(agent, probe: probe),
       requirementUri: taskContext.requirementUri,
       isFollowUpRound: currentRound > 1,
     );

@@ -4,6 +4,7 @@ import '../../models/acp_protocol.dart';
 import '../../models/channel.dart';
 import '../../models/remote_agent.dart';
 import '../messaging/chat_history_content.dart';
+import 'group_member_capability_probe.dart';
 import 'group_member_delivery.dart';
 import 'group_member_history.dart';
 import 'group_prompt_builder.dart';
@@ -150,6 +151,7 @@ class GroupContextBuilder {
     String? workspaceUri,
     RemoteAgent? currentAgent,
     String? memberSessionId,
+    MemberCapabilitySnapshot? memberProbe,
   }) {
     final effectiveMode = mentionMode.isNotEmpty ? mentionMode : 'adminOnly';
     final collaboratorName = allAgents
@@ -179,7 +181,10 @@ class GroupContextBuilder {
     };
 
     if (currentAgent != null && !isAdmin) {
-      ctx['delivery'] = GroupMemberDelivery.deliveryContextFor(currentAgent);
+      ctx['delivery'] = GroupMemberDelivery.deliveryContextFor(
+        currentAgent,
+        probe: memberProbe,
+      );
     }
 
     if (currentAgent != null && currentAgent.usesHubStoreCli) {
