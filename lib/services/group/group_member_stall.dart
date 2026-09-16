@@ -1,6 +1,7 @@
 import '../acp_agent_connection.dart';
 import '../logger_service.dart';
 import '../../models/remote_agent.dart';
+import 'group_member_delivery.dart';
 import 'group_orchestration_features.dart';
 import 'group_turn_result.dart';
 
@@ -90,6 +91,7 @@ class GroupMemberStallHandler {
     GroupMemberStallTracker? tracker,
     List<String>? failedAgentNames,
     List<String>? stalledAgentNames,
+    Map<String, String>? failedAgentReasons,
     void Function(String agentId, String agentName, bool skipped)? onAgentDone,
     String logLabel = 'agent',
   }) {
@@ -103,6 +105,10 @@ class GroupMemberStallHandler {
         failedAgentNames: failedAgentNames,
         stalledAgentNames: stalledAgentNames,
       );
+      if (escalated) {
+        failedAgentReasons?[agent.name] =
+            GroupMemberDelivery.classifyFailure(error);
+      }
       LoggerService().warning(
         escalated
             ? 'Member ${agent.name} escalated to failed after repeated stalls'
@@ -119,6 +125,8 @@ class GroupMemberStallHandler {
       error: error,
     );
     failedAgentNames?.add(agent.name);
+    failedAgentReasons?[agent.name] =
+        GroupMemberDelivery.classifyFailure(error);
     onAgentDone?.call(agent.id, agent.name, true);
     return const GroupTurnResult();
   }

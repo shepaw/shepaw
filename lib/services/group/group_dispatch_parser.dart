@@ -192,13 +192,24 @@ class GroupDispatchParser {
     String dispatchPlanNote = '',
     String peerResultsNote = '',
     String loopEventNote = '',
+    String deliveryNote = '',
+    String? requirementUri,
+    bool isFollowUpRound = false,
   }) {
     final global = globalRequirement.trim();
     final brief = memberBrief.trim();
     final formalPlan = taskPlanNote.trim();
-    final base = (brief.isEmpty || brief == global)
-        ? _appendFormalPlanToGlobal(global, formalPlan, memoryNote)
-        : _buildGlobalTaskAndBrief(global, formalPlan, brief, memoryNote);
+    final delivery = deliveryNote.trim();
+    final briefWithDelivery =
+        delivery.isEmpty ? brief : '$delivery\n$brief';
+    final base = _buildMemberBase(
+      global: global,
+      brief: briefWithDelivery,
+      formalPlan: formalPlan,
+      memoryNote: memoryNote,
+      requirementUri: requirementUri,
+      isFollowUpRound: isFollowUpRound,
+    );
     final plan = dispatchPlanNote.trim();
     final withPlan = plan.isEmpty ? base : '$base\n\n$plan';
     final peer = peerResultsNote.trim();
@@ -223,6 +234,31 @@ class GroupDispatchParser {
         ? '\n\n（完整计划 store URI：`${planUri.trim()}`）'
         : '';
     return '【正式任务计划】\n$clipped$uriLine';
+  }
+
+  static String _buildMemberBase({
+    required String global,
+    required String brief,
+    required String formalPlan,
+    required String memoryNote,
+    String? requirementUri,
+    bool isFollowUpRound = false,
+  }) {
+    // Follow-up rounds: skip repeating the full global requirement when there
+    // is a distinct local brief — reference requirement.md instead.
+    if (isFollowUpRound && brief.isNotEmpty && brief != global) {
+      final ref = (requirementUri != null && requirementUri.trim().isNotEmpty)
+          ? '（定稿需求见 `$requirementUri`，此处不重复全文）'
+          : '（全局需求见本轮任务 store / 群历史，此处不重复全文）';
+      final taskSection = formalPlan.isEmpty
+          ? '【你的任务】\n$brief$ref$memoryNote'
+          : '【你的任务】\n$brief$ref\n\n$formalPlan$memoryNote';
+      return taskSection;
+    }
+    if (brief.isEmpty || brief == global) {
+      return _appendFormalPlanToGlobal(global, formalPlan, memoryNote);
+    }
+    return _buildGlobalTaskAndBrief(global, formalPlan, brief, memoryNote);
   }
 
   static String _appendFormalPlanToGlobal(

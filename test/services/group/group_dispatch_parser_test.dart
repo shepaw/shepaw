@@ -38,6 +38,21 @@ void main() {
       expect(content, contains('【你的任务】'));
     });
 
+    test('follow-up round omits repeated global requirement', () {
+      final content = GroupDispatchParser.buildMemberTurnContent(
+        memberBrief: '补交 app-recon 摘要',
+        globalRequirement: '用户完整需求原文很长很长',
+        memoryNote: '',
+        requirementUri: 'store://workspaces/dev/shared/tasks/o1/requirement.md',
+        isFollowUpRound: true,
+      );
+      expect(content, contains('【你的任务】'));
+      expect(content, contains('补交 app-recon 摘要'));
+      expect(content, contains('requirement.md'));
+      expect(content, isNot(contains('【全局需求】')));
+      expect(content, isNot(contains('用户完整需求原文很长很长')));
+    });
+
     test('truncates long plan bodies', () {
       final note = GroupDispatchParser.buildTaskPlanNote(
         body: 'x' * 50,

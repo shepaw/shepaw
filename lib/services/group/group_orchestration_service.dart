@@ -37,6 +37,7 @@ import 'group_admin_task_context.dart';
 import 'group_artifact_registry.dart';
 import 'group_result_writer.dart';
 import 'group_member_stall.dart';
+import 'group_member_delivery.dart';
 import '../messaging/chat_history_content.dart';
 
 class GroupOrchestrationService {
@@ -1298,6 +1299,7 @@ class GroupOrchestrationService {
 
         // 2. Loop: parse dispatch JSON → delegate → admin summarize → repeat
         final failedAgentNames = <String>[];
+        final failedAgentReasons = <String, String>{};
         final stalledAgentNames = <String>[];
         final stallTracker = GroupMemberStallTracker();
         var dispatchNudgeCount = 0;
@@ -2209,6 +2211,7 @@ class GroupOrchestrationService {
 
           // Reset failed-agent tracking for this delegation round
           failedAgentNames.clear();
+          failedAgentReasons.clear();
           stalledAgentNames.clear();
 
           final memberTaskContext = await GroupMemberTaskContextLoader.load(
@@ -2265,18 +2268,18 @@ class GroupOrchestrationService {
                     agent: agent,
                     channelId: channelId,
                     // 成员先看【全局需求】（定稿 requirement.md），再看【正式任务计划】与【你的任务】。
-                    content: GroupDispatchParser.buildMemberTurnContent(
+                    content: GroupMemberDelivery.buildMemberDispatchContent(
+                      agent: agent,
                       memberBrief: memberBrief,
-                      globalRequirement: memberTaskContext.globalRequirement,
+                      taskContext: memberTaskContext,
                       memoryNote: memberMemoryNote,
-                      taskPlanNote: memberTaskContext.taskPlanNote,
-                      dispatchPlanNote:
-                          GroupDispatchParser.buildDispatchPlanNote(
-                        steps: dispatch.steps,
-                        agents: agents,
-                      ),
+                      steps: dispatch.steps,
+                      agents: agents,
                       peerResultsNote: peerResultsNote,
-                      loopEventNote: _buildLoopEventNote(channelId, orchestrationId: orchestrationId),
+                      loopEventNote: _buildLoopEventNote(
+                          channelId, orchestrationId: orchestrationId),
+                      currentRound: currentRound,
+                      stepIsRecon: step.isRecon,
                     ),
                     attachments: attachments,
                     userId: userId,
@@ -2316,6 +2319,7 @@ class GroupOrchestrationService {
                       tracker: stallTracker,
                       failedAgentNames: failedAgentNames,
                       stalledAgentNames: stalledAgentNames,
+                      failedAgentReasons: failedAgentReasons,
                       onAgentDone: onAgentDone,
                       logLabel: 'step agent',
                     );
@@ -2337,6 +2341,7 @@ class GroupOrchestrationService {
                 round: currentRound,
                 failedAgentNames: failedAgentNames,
                 stalledAgentNames: stalledAgentNames,
+                failedAgentReasons: failedAgentReasons,
               );
               if (GroupTaskStatusParser.shouldHaltRemainingSequentialSteps(
                 stepTurns: stepTurns,
@@ -2387,17 +2392,17 @@ class GroupOrchestrationService {
                     .processGroupAgent(
                   agent: agent,
                   channelId: channelId,
-                  content: GroupDispatchParser.buildMemberTurnContent(
+                  content: GroupMemberDelivery.buildMemberDispatchContent(
+                    agent: agent,
                     memberBrief: memberBrief,
-                    globalRequirement: memberTaskContext.globalRequirement,
+                    taskContext: memberTaskContext,
                     memoryNote: memberMemoryNote,
-                    taskPlanNote: memberTaskContext.taskPlanNote,
-                    dispatchPlanNote: GroupDispatchParser.buildDispatchPlanNote(
-                      steps: dispatch.steps,
-                      agents: agents,
-                    ),
+                    steps: dispatch.steps,
+                    agents: agents,
                     peerResultsNote: peerResultsNote,
-                    loopEventNote: _buildLoopEventNote(channelId, orchestrationId: orchestrationId),
+                    loopEventNote: _buildLoopEventNote(
+                        channelId, orchestrationId: orchestrationId),
+                    currentRound: currentRound,
                   ),
                   attachments: attachments,
                   userId: userId,
@@ -2437,6 +2442,7 @@ class GroupOrchestrationService {
                     tracker: stallTracker,
                     failedAgentNames: failedAgentNames,
                     stalledAgentNames: stalledAgentNames,
+                    failedAgentReasons: failedAgentReasons,
                     onAgentDone: onAgentDone,
                     logLabel: 'delegated agent',
                   );
@@ -2485,6 +2491,7 @@ class GroupOrchestrationService {
             round: currentRound,
             failedAgentNames: failedAgentNames,
             stalledAgentNames: stalledAgentNames,
+            failedAgentReasons: failedAgentReasons,
           );
 
           // L3: 连续「全未交付」轮提前终止。本轮派发成员全部未交付——超时/
@@ -2844,6 +2851,7 @@ class GroupOrchestrationService {
               await GroupResultWriter.loadAdminResultsBlock(
             groupId: groupOwnerId,
             orchestrationId: orchestrationId,
+            round: currentRound,
           );
           final summarizeArtifactNotes =
               await GroupArtifactRegistry.loadAdminArtifactBlock(
@@ -2851,12 +2859,19 @@ class GroupOrchestrationService {
             orchestrationId: orchestrationId,
           );
           final sessionHandoffSuffix = await takeSessionHandoffSuffix();
+          final adminSummarizeBase = currentRound > 1
+              ? GroupMemberDelivery.buildAdminLoopSummarizePrefix(
+                  userGoal: userMessage.content,
+                  requirementUri: memberTaskContext.requirementUri,
+                  round: currentRound,
+                )
+              : effectiveContent;
           try {
             adminTurn = await _executor.processGroupAgent(
               agent: adminAgent,
               channelId: channelId,
               content:
-                  '${lastDispatchNote != null ? '$effectiveContent\n\n[SYSTEM] 你上一轮的派发记录（该 JSON 已从你的消息中隐藏，仅供核对）：$lastDispatchNote' : effectiveContent}'
+                  '${lastDispatchNote != null ? '$adminSummarizeBase\n\n[SYSTEM] 你上一轮的派发记录（该 JSON 已从你的消息中隐藏，仅供核对）：$lastDispatchNote' : adminSummarizeBase}'
                   '${buildMemberArtifactsBlock(memberTurnResults, agents)}'
                   '$structuredResultsBlock'
                   '$summarizeArtifactNotes'

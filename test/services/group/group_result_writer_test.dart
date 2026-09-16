@@ -518,5 +518,57 @@ void main() {
       expect(block, contains('Coder (done'));
       expect(block, contains('store://workspaces/dev/api.md'));
     });
+
+    test('filters to current and prior round only', () {
+      final block = GroupResultWriter.buildAdminResultsBlock(
+        GroupTaskResults(
+          orchestrationId: 'o1',
+          members: [
+            GroupTaskMemberResult(
+              agentId: 'a',
+              agentName: 'A',
+              round: 1,
+              taskStatus: GroupTaskMemberResult.statusFailed,
+              summary: 'round1 fail',
+            ),
+            GroupTaskMemberResult(
+              agentId: 'a',
+              agentName: 'A',
+              round: 2,
+              taskStatus: GroupTaskMemberResult.statusDone,
+              summary: 'round2 ok',
+            ),
+            GroupTaskMemberResult(
+              agentId: 'b',
+              agentName: 'B',
+              round: 3,
+              taskStatus: GroupTaskMemberResult.statusDone,
+              summary: 'round3 only b',
+            ),
+          ],
+        ),
+        round: 2,
+      );
+
+      expect(block, contains('第 2 轮与上轮'));
+      expect(block, contains('round2 ok'));
+      // 同一成员只保留允许轮次内最新一条（round2 覆盖 round1）
+      expect(block, isNot(contains('round1 fail')));
+      expect(block, isNot(contains('round3 only b')));
+    });
+  });
+
+  group('GroupResultWriter.fromTurnResult failure reasons', () {
+    test('uses classified failure reason when provided', () {
+      final member = GroupResultWriter.fromTurnResult(
+        agentId: 'x',
+        agentName: 'X',
+        turn: const GroupTurnResult(),
+        round: 1,
+        failedAgentNames: ['X'],
+        failedAgentReasons: {'X': '连接中断（上游 ACP/WS 关闭）'},
+      );
+      expect(member?.summary, '连接中断（上游 ACP/WS 关闭）');
+    });
   });
 }

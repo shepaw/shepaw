@@ -24,14 +24,18 @@ class GroupResultWriter {
     required int round,
     List<String> failedAgentNames = const [],
     List<String> stalledAgentNames = const [],
+    Map<String, String> failedAgentReasons = const {},
   }) {
     if (failedAgentNames.contains(agentName)) {
+      final reason = failedAgentReasons[agentName]?.trim();
       return GroupTaskMemberResult(
         agentId: agentId,
         agentName: agentName,
         round: round,
         taskStatus: GroupTaskMemberResult.statusFailed,
-        summary: '执行失败或超时',
+        summary: (reason != null && reason.isNotEmpty)
+            ? reason
+            : '执行失败或超时',
       );
     }
 
@@ -59,6 +63,8 @@ class GroupResultWriter {
     if (summary.isEmpty && info.reason != null && info.reason!.isNotEmpty) {
       summary = info.reason!.trim();
     }
+    final artifactUris = GroupMemberHistory.extractStoreUris(turn.content);
+    summary = _appendArtifactHint(summary, artifactUris);
 
     return GroupTaskMemberResult(
       agentId: agentId,
@@ -66,8 +72,16 @@ class GroupResultWriter {
       round: round,
       taskStatus: taskStatus,
       summary: summary,
-      artifactUris: GroupMemberHistory.extractStoreUris(turn.content),
+      artifactUris: artifactUris,
     );
+  }
+
+  /// When summary is clipped, point admin at the first artifact URI.
+  static String _appendArtifactHint(String summary, List<String> artifactUris) {
+    if (artifactUris.isEmpty) return summary;
+    final uri = artifactUris.first;
+    if (summary.contains(uri)) return summary;
+    return summary.isEmpty ? '见 $uri' : '$summary（全文见 $uri）';
   }
 
   /// Upsert all member turns into `results.json`.
@@ -79,6 +93,7 @@ class GroupResultWriter {
     required int round,
     List<String> failedAgentNames = const [],
     List<String> stalledAgentNames = const [],
+    Map<String, String> failedAgentReasons = const {},
   }) async {
     if (!GroupOrchestrationFeatures.structuredTasks ||
         !GroupOrchestrationFeatures.structuredResults) {
@@ -99,6 +114,7 @@ class GroupResultWriter {
           round: round,
           failedAgentNames: failedAgentNames,
           stalledAgentNames: stalledAgentNames,
+          failedAgentReasons: failedAgentReasons,
         );
         if (member == null) continue;
         entries.add(member);
@@ -335,6 +351,8 @@ class GroupResultWriter {
   static Future<String> loadAdminResultsBlock({
     required String groupId,
     required String orchestrationId,
+    int? round,
+    bool includePriorRound = true,
   }) async {
     if (!GroupOrchestrationFeatures.structuredTasks ||
         !GroupOrchestrationFeatures.structuredResults) {
@@ -345,16 +363,38 @@ class GroupResultWriter {
         groupId: groupId,
         orchestrationId: orchestrationId,
       );
-      return buildAdminResultsBlock(results);
+      return buildAdminResultsBlock(
+        results,
+        round: round,
+        includePriorRound: includePriorRound,
+      );
     } catch (_) {
       return '';
     }
   }
 
-  static String buildAdminResultsBlock(GroupTaskResults? results) {
+  /// Admin summarize block. When [round] is set, only injects that round (and
+  /// optionally the immediately prior round for delta context) — not the full
+  /// multi-round history that previously bloated every admin turn.
+  static String buildAdminResultsBlock(
+    GroupTaskResults? results, {
+    int? round,
+    bool includePriorRound = true,
+  }) {
     if (results == null || results.members.isEmpty) return '';
-    final lines = <String>['【结构化成员结果（results.json）】'];
-    for (final member in results.members) {
+
+    final filtered = _filterMembersForAdminView(
+      results.members,
+      round: round,
+      includePriorRound: includePriorRound,
+    );
+    if (filtered.isEmpty) return '';
+
+    final heading = round != null
+        ? '【结构化成员结果（第 $round 轮${includePriorRound && round > 1 ? '与上轮' : ''}）】'
+        : '【结构化成员结果（results.json）】';
+    final lines = <String>[heading];
+    for (final member in filtered) {
       final roundLabel =
           member.round != null ? '，第 ${member.round} 轮' : '';
       final summary =
@@ -367,6 +407,36 @@ class GroupResultWriter {
       }
     }
     return '\n\n${lines.join('\n')}';
+  }
+
+  /// Latest entry per agent, optionally scoped to [round] ± prior round.
+  static List<GroupTaskMemberResult> _filterMembersForAdminView(
+    List<GroupTaskMemberResult> members, {
+    int? round,
+    bool includePriorRound = true,
+  }) {
+    if (round == null) return members;
+
+    final allowedRounds = <int>{round};
+    if (includePriorRound && round > 1) allowedRounds.add(round - 1);
+
+    final byAgent = <String, GroupTaskMemberResult>{};
+    for (final member in members) {
+      final r = member.round;
+      if (r == null || !allowedRounds.contains(r)) continue;
+      final prev = byAgent[member.agentId];
+      if (prev == null || (prev.round ?? 0) <= (r)) {
+        byAgent[member.agentId] = member;
+      }
+    }
+    final out = byAgent.values.toList()
+      ..sort((a, b) {
+        final ar = a.round ?? 0;
+        final br = b.round ?? 0;
+        if (ar != br) return ar.compareTo(br);
+        return a.agentName.compareTo(b.agentName);
+      });
+    return out;
   }
 
   static String _firstLineSummary(String text, int maxChars) {

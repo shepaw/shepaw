@@ -477,12 +477,15 @@ params：`namespace`、`subcommand`、`flags`（对象，对应去掉 `--` 的�
     }
     if (agent.usesHubStoreCli) {
       return memberMust
-          ? '9. **产物优先写入 store**：需要持久化/可分享的文件产出时，**必须**调用 `shepaw store write --filename <名> --content "..."`（可选 `--task` / `--desc`），并在回复中**原样**引用返回的 `[filename](store://...)`；禁止编造 URI；写落 Hub 本机 device。不要 `hub.cli.execute`'
-          : '- **产物优先写入 store**：需要持久化/可分享的文件产出时，优先用 `shepaw store write`，在回复中原样引用返回的 `store://` URI；写落 Hub 本机 device；不要默认写 `/tmp`；不要 `hub.cli.execute`';
+          ? '9. **产物优先写入 store**：需要持久化/可分享的文件产出时，**必须**调用 `shepaw store write --filename <名> --content "..."`（可选 `--task` / `--desc`），并在回复中**原样**引用返回的 `[filename](store://...)`；禁止编造 URI；写落 Hub 本机 device。跨设备共享时另写 workspace 挂载路径或群 `shared/`。不要 `hub.cli.execute`'
+          : '- **产物优先写入 store**：需要持久化/可分享的文件产出时，优先用 `shepaw store write`，在回复中原样引用返回的 `store://` URI；写落 Hub 本机 device；跨设备共享另写 workspace/shared；不要默认写 `/tmp`；不要 `hub.cli.execute`';
     }
+    final crossDevice = memberMust
+        ? '跨设备共享时**必须**另写一份到群 workspace `shared/` 或 repo 挂载路径（`store://runtime/…` 对其他设备常不可读）。'
+        : '跨设备共享产物优先写群 workspace `shared/` 或挂载路径。';
     return memberMust
-        ? '9. **产物优先写入 store**：需要持久化/可分享的文件产出时，**必须**调用 `shepaw store write --filename <名> --content "..."`（可选 `--task` / `--desc`），并在回复中**原样**引用返回的 `[filename](store://...)`；禁止编造 URI；**不要**传 agent_id/owner。读法见下方作用域卡片。仅用户明确指定 OS 路径时才用 `os.file.write`'
-        : '- **产物优先写入 store**：需要持久化/可分享的文件产出时，优先用 `shepaw store write`，在回复中原样引用返回的 `store://` URI；不要默认写 `/tmp`；**不要**传 agent_id/owner。读法见作用域卡片，勿用 `os.file.read`';
+        ? '9. **产物优先写入 store**：需要持久化/可分享的文件产出时，**必须**调用 `shepaw store write --filename <名> --content "..."`（可选 `--task` / `--desc`），并在回复中**原样**引用返回的 `[filename](store://...)`；禁止编造 URI；**不要**传 agent_id/owner。$crossDevice CLI 不可用时直写 workspace 挂载路径并给出绝对路径。读法见下方作用域卡片。仅用户明确指定 OS 路径时才用 `os.file.write`'
+        : '- **产物优先写入 store**：需要持久化/可分享的文件产出时，优先用 `shepaw store write`，在回复中原样引用返回的 `store://` URI；$crossDevice 不要默认写 `/tmp`；**不要**传 agent_id/owner。读法见作用域卡片，勿用 `os.file.read`';
   }
 
   static String _setBioCommand(RemoteAgent agent) {
