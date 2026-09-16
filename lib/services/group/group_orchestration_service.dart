@@ -501,7 +501,7 @@ class GroupOrchestrationService {
       }
     }
 
-    effectiveContent =
+    final bundledContent =
         await ContextBundleService.instance.wrapWithContextBundle(
       effectiveContent,
       ownerId: groupOwnerId,
@@ -511,29 +511,44 @@ class GroupOrchestrationService {
 
     // 群记忆主动注入：任务开始时把最新群记忆（shared/memory/latest.md，
     // 上一个任务的蒸馏总结）带进 admin 上下文，跨任务共享结论。
-    final groupMemory =
-        await GroupWorkspaceService.instance.readSharedMemoryLatest(
-      groupOwnerId,
+    final ws = GroupWorkspaceService.instance;
+    final groupMemory = await ws.readSharedMemoryLatest(groupOwnerId);
+    final groupMemoryBlock = groupMemory != null
+        ? '[群历史任务总结（shared/memory/latest.md）]\n$groupMemory'
+        : '';
+    final groupMemoryUri = await ws.taskFileUri(
+      groupId: groupOwnerId,
+      relPath: '${ws.workspaceRoot(groupOwnerId)}/shared/memory/latest.md',
     );
-    if (groupMemory != null) {
-      effectiveContent = '$effectiveContent\n\n'
-          '[群历史任务总结（shared/memory/latest.md）]\n$groupMemory';
-    }
     final crossTaskNotes = await GroupAdminTaskContextLoader.buildCrossTaskNotes(
       groupId: groupOwnerId,
       orchestrationId: orchestrationId,
       userMessageFallback: content,
     );
-    if (crossTaskNotes.isNotEmpty) {
-      effectiveContent = '$effectiveContent\n\n$crossTaskNotes';
-    }
     final artifactNotes = await GroupArtifactRegistry.loadAdminArtifactBlock(
       groupId: groupOwnerId,
       orchestrationId: orchestrationId,
     );
-    if (artifactNotes.isNotEmpty) {
-      effectiveContent = '$effectiveContent$artifactNotes';
-    }
+    final artifactCompactNotes =
+        await GroupArtifactRegistry.loadAdminArtifactBlock(
+      groupId: groupOwnerId,
+      orchestrationId: orchestrationId,
+      compact: true,
+    );
+    final taskMeta = await ws.readTask(
+      groupId: groupOwnerId,
+      orchestrationId: orchestrationId,
+    );
+    effectiveContent = GroupAdminContextBudget.assembleFirstAdminTurnContent(
+      bundledContent: bundledContent,
+      groupMemoryBlock: groupMemoryBlock,
+      groupMemoryUri: groupMemoryUri,
+      crossTaskNotes: crossTaskNotes,
+      artifactNotes: artifactNotes,
+      artifactCompactNotes: artifactCompactNotes,
+      requirementUri: taskMeta?.requirementUri,
+      userGoal: content,
+    );
     // 被派发的成员也带截断版群历史总结（全文只在 admin 上下文；成员
     // 只需要要点，避免每个成员每轮膨胀 token）。
     final memberPreviousTaskNote =
@@ -1244,8 +1259,12 @@ class GroupOrchestrationService {
           adminTurn = await _executor.processGroupAgent(
             agent: adminAgent,
             channelId: channelId,
-            content: '$effectiveContent\n\n'
-                '${GroupReconFirstGate.adminFirstTurnSystemNote(effectiveContent)}',
+            content: GroupAdminContextBudget.buildFirstTurnWithGateNote(
+              effectiveContent: effectiveContent,
+              gateNote: GroupReconFirstGate.adminFirstTurnSystemNote(
+                effectiveContent,
+              ),
+            ),
             attachments: attachments,
             userId: userId,
             userName: userName,
@@ -2268,7 +2287,7 @@ class GroupOrchestrationService {
           final memberTaskContext = await GroupMemberTaskContextLoader.load(
             groupId: groupOwnerId,
             orchestrationId: orchestrationId,
-            userMessageFallback: effectiveContent,
+            userMessageFallback: content,
           );
 
           // Execute delegated agents based on dispatch mode. Turn results are
