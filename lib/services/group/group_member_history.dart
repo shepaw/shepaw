@@ -69,13 +69,20 @@ class GroupMemberHistory {
 
   /// Admin, loop-close, abort, and closing-summary turns still need the
   /// full group transcript. Member task turns do not.
+  ///
+  /// Admin loop summarize is an exception: member results + artifact prefill
+  /// already sit in the user turn, so replaying the full transcript duplicates
+  /// long member replies.
   static bool needsFullHistory({
     required bool isAdmin,
     required bool isLoopSummarize,
     required bool isAbortSummarize,
     required bool isClosingSummary,
-  }) =>
-      isAdmin || isLoopSummarize || isAbortSummarize || isClosingSummary;
+  }) {
+    if (isAbortSummarize || isClosingSummary) return true;
+    if (isAdmin && isLoopSummarize) return false;
+    return isAdmin || isLoopSummarize;
+  }
 
   /// Keeps only messages for [orchestrationId] (metadata tag or legacy tail
   /// after the triggering user message).

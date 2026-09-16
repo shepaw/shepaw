@@ -11,10 +11,12 @@ class GroupAdminTaskContextLoader {
 
   static const maxRequirementChars = 4000;
   static const maxArchiveLineChars = 240;
+  static const maxMemberPreviousTaskChars = 400;
 
   static Future<String> buildCrossTaskNotes({
     required String groupId,
     required String orchestrationId,
+    String? userMessageFallback,
   }) async {
     if (!GroupOrchestrationFeatures.useTaskScopedAdminHistory) return '';
     if (groupId.isEmpty || orchestrationId.isEmpty) return '';
@@ -49,10 +51,14 @@ class GroupAdminTaskContextLoader {
         orchestrationId: orchestrationId,
       );
       if (requirement != null && requirement.trim().isNotEmpty) {
-        parts.add(
-          '[当前任务定稿需求（requirement.md）]\n'
-          '${_truncate(requirement.trim(), maxRequirementChars)}',
-        );
+        final req = requirement.trim();
+        final user = userMessageFallback?.trim() ?? '';
+        if (user.isEmpty || !_requirementRedundantWithUser(req, user)) {
+          parts.add(
+            '[当前任务定稿需求（requirement.md）]\n'
+            '${_truncate(req, maxRequirementChars)}',
+          );
+        }
       }
     } catch (e) {
       LoggerService().debug(
@@ -79,6 +85,43 @@ class GroupAdminTaskContextLoader {
       return _truncate(entry.title, maxArchiveLineChars);
     }
     return entry.orchestrationId;
+  }
+
+  /// Short cross-task note for member dispatch (previous task only).
+  static Future<String> buildMemberCrossTaskNote({
+    required String groupId,
+    required String orchestrationId,
+  }) async {
+    if (!GroupOrchestrationFeatures.useTaskScopedAdminHistory) return '';
+    if (groupId.isEmpty || orchestrationId.isEmpty) return '';
+    try {
+      final index =
+          await GroupWorkspaceService.instance.readTaskIndex(groupId);
+      for (final entry in index.recent) {
+        if (entry.orchestrationId == orchestrationId) continue;
+        if (!GroupTask.isTerminalStatus(entry.status)) continue;
+        final line = await _previousTaskLine(
+          groupId: groupId,
+          entry: entry,
+        );
+        if (line.isEmpty) return '';
+        return '\n\n[上一任务摘要（截断）]\n'
+            '${_truncate(line, maxMemberPreviousTaskChars)}';
+      }
+    } catch (e) {
+      LoggerService().debug(
+        'load member cross-task note failed: $groupId/$orchestrationId — $e',
+        tag: 'GroupAdminTaskContextLoader',
+      );
+    }
+    return '';
+  }
+
+  static bool _requirementRedundantWithUser(String requirement, String user) {
+    if (requirement == user) return true;
+    if (user.length >= 80 && requirement.startsWith(user)) return true;
+    if (requirement.length >= 80 && user.startsWith(requirement)) return true;
+    return false;
   }
 
   static String _truncate(String text, int maxChars) {

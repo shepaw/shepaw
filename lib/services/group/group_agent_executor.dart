@@ -418,9 +418,18 @@ class GroupAgentExecutor {
       historyPinSenderIds: historyPinSenderIds,
       adminAgent: adminAgent,
     );
-    final effectiveHistory = prepared.effectiveHistory;
-    final earlierSummary = prepared.earlierSummary;
-    final truncationNote = prepared.truncationNote;
+    // Follow-up member turns: upstream ACP/peer session already holds prior
+    // turns — skip re-injecting a history blob (avoids double context).
+    final skipMemberHistoryReplay = !isAdmin &&
+        orchestrationRound != null &&
+        orchestrationRound > 1;
+    var effectiveHistory = skipMemberHistoryReplay
+        ? const <Message>[]
+        : prepared.effectiveHistory;
+    var earlierSummary =
+        skipMemberHistoryReplay ? null : prepared.earlierSummary;
+    var truncationNote =
+        skipMemberHistoryReplay ? null : prepared.truncationNote;
 
     // Local LLM: role-attributed history so this agent's own turns stay
     // `assistant` and later rounds can reuse the prefix cache. Peer / ACP

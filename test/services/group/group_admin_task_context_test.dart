@@ -81,5 +81,79 @@ void main() {
       expect(notes, contains('[当前任务定稿需求（requirement.md）]'));
       expect(notes, contains('Integrate Stripe checkout'));
     });
+
+    test('skips redundant requirement when it mirrors user message', () async {
+      GroupOrchestrationFeatures.adminHistoryScope =
+          GroupAdminHistoryScope.task;
+      const groupId = 'group_admin_ctx_dedup';
+      const currentId = 'current-dedup';
+
+      await GroupWorkspaceService.instance.ensureGroupWorkspace(
+        groupId: groupId,
+        members: [(agentId: 'admin', role: 'admin')],
+      );
+      await GroupWorkspaceService.instance.ensureTask(
+        groupId: groupId,
+        orchestrationId: currentId,
+        sessionId: 'sess',
+        userGoal: '排查外接 agent 链路',
+      );
+      await GroupWorkspaceService.instance.writeTaskRequirement(
+        groupId: groupId,
+        orchestrationId: currentId,
+        content: '排查外接 agent 链路',
+      );
+
+      final notes = await GroupAdminTaskContextLoader.buildCrossTaskNotes(
+        groupId: groupId,
+        orchestrationId: currentId,
+        userMessageFallback: '排查外接 agent 链路',
+      );
+
+      expect(notes, isNot(contains('[当前任务定稿需求（requirement.md）]')));
+    });
+
+    test('buildMemberCrossTaskNote includes previous terminal task', () async {
+      GroupOrchestrationFeatures.adminHistoryScope =
+          GroupAdminHistoryScope.task;
+      const groupId = 'group_member_ctx';
+      const prevId = 'prev-m';
+      const currentId = 'current-m';
+
+      await GroupWorkspaceService.instance.ensureGroupWorkspace(
+        groupId: groupId,
+        members: [(agentId: 'admin', role: 'admin')],
+      );
+      await GroupWorkspaceService.instance.ensureTask(
+        groupId: groupId,
+        orchestrationId: prevId,
+        sessionId: 'sess',
+        userGoal: 'Task A',
+      );
+      await GroupWorkspaceService.instance.updateTaskStatus(
+        groupId: groupId,
+        orchestrationId: prevId,
+        status: GroupTask.statusDone,
+      );
+      await GroupWorkspaceService.instance.writeTaskArchive(
+        groupId: groupId,
+        orchestrationId: prevId,
+        content: '# 卷宗\n\n## 最终结论\nDone task A summary.',
+      );
+      await GroupWorkspaceService.instance.ensureTask(
+        groupId: groupId,
+        orchestrationId: currentId,
+        sessionId: 'sess',
+        userGoal: 'Task B',
+      );
+
+      final note = await GroupAdminTaskContextLoader.buildMemberCrossTaskNote(
+        groupId: groupId,
+        orchestrationId: currentId,
+      );
+
+      expect(note, contains('[上一任务摘要（截断）]'));
+      expect(note, contains('Done task A'));
+    });
   });
 }

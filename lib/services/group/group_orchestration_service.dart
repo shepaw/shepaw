@@ -522,6 +522,7 @@ class GroupOrchestrationService {
     final crossTaskNotes = await GroupAdminTaskContextLoader.buildCrossTaskNotes(
       groupId: groupOwnerId,
       orchestrationId: orchestrationId,
+      userMessageFallback: content,
     );
     if (crossTaskNotes.isNotEmpty) {
       effectiveContent = '$effectiveContent\n\n$crossTaskNotes';
@@ -535,10 +536,17 @@ class GroupOrchestrationService {
     }
     // 被派发的成员也带截断版群历史总结（全文只在 admin 上下文；成员
     // 只需要要点，避免每个成员每轮膨胀 token）。
-    final memberMemoryNote = groupMemory != null
-        ? '\n\n[群历史任务总结（截断）]\n'
-            '${groupMemory.length <= 600 ? groupMemory : '${groupMemory.substring(0, 600)}…'}'
-        : '';
+    final memberPreviousTaskNote =
+        await GroupAdminTaskContextLoader.buildMemberCrossTaskNote(
+      groupId: groupOwnerId,
+      orchestrationId: orchestrationId,
+    );
+    final memberMemoryNote = [
+      if (groupMemory != null)
+        '\n\n[群历史任务总结（截断）]\n'
+        '${groupMemory.length <= 600 ? groupMemory : '${groupMemory.substring(0, 600)}…'}',
+      memberPreviousTaskNote,
+    ].join();
 
     // 5. Route to the appropriate flow based on admin setting and @mentions
     LoggerService().debug(
@@ -2170,12 +2178,20 @@ class GroupOrchestrationService {
             try {
               final pendingNote = pendingFromLastRound.isEmpty
                   ? ''
-                  : '\n\n${GroupTaskStatusParser.adminNote(pendingFromLastRound)}';
+                  : GroupTaskStatusParser.adminNote(pendingFromLastRound);
               adminTurn = await _executor.processGroupAgent(
                 agent: adminAgent,
                 channelId: channelId,
                 content: _withEventDigest(
-                    '$effectiveContent$pendingNote', channelId),
+                  await _buildAdminLoopNudgeContent(
+                    groupOwnerId: groupOwnerId,
+                    orchestrationId: orchestrationId,
+                    userGoal: userMessage.content,
+                    round: currentRound,
+                    systemNote: pendingNote,
+                  ),
+                  channelId,
+                ),
                 attachments: attachments,
                 userId: userId,
                 userName: userName,

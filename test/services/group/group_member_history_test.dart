@@ -111,6 +111,24 @@ void main() {
         ),
         isFalse,
       );
+      expect(
+        GroupMemberHistory.needsFullHistory(
+          isAdmin: true,
+          isLoopSummarize: true,
+          isAbortSummarize: false,
+          isClosingSummary: false,
+        ),
+        isFalse,
+      );
+      expect(
+        GroupMemberHistory.needsFullHistory(
+          isAdmin: true,
+          isLoopSummarize: true,
+          isAbortSummarize: true,
+          isClosingSummary: false,
+        ),
+        isTrue,
+      );
     });
   });
 
