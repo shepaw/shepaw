@@ -1,5 +1,6 @@
 import '../../models/acp_protocol.dart';
 import '../../models/remote_agent.dart';
+import '../../peer/services/peer_agent_client_service.dart';
 import '../acp_agent_connection.dart';
 import '../logger_service.dart';
 
@@ -37,21 +38,32 @@ typedef MemberHealthCheck = Future<bool> Function(
   Duration timeout,
 });
 
+/// Live Hub roster + `/api/v1/health` via peer `agent_manage list`.
+typedef PeerHubManageLister = Future<PeerAgentManageResult> Function(
+  String peerId,
+);
+
 class GroupMemberCapabilityProbe {
   GroupMemberCapabilityProbe({
     required MemberHealthCheck checkHealth,
     ACPAgentConnection? Function(String agentId)? connectionLookup,
+    PeerHubManageLister? peerHubLister,
     Duration healthTimeout = const Duration(seconds: 3),
     Duration storeCliTimeout = const Duration(seconds: 3),
+    Duration peerHubTimeout = const Duration(seconds: 4),
   })  : _checkHealth = checkHealth,
         _connectionLookup = connectionLookup,
+        _peerHubLister = peerHubLister,
         _healthTimeout = healthTimeout,
-        _storeCliTimeout = storeCliTimeout;
+        _storeCliTimeout = storeCliTimeout,
+        _peerHubTimeout = peerHubTimeout;
 
   final MemberHealthCheck _checkHealth;
   final ACPAgentConnection? Function(String agentId)? _connectionLookup;
+  final PeerHubManageLister? _peerHubLister;
   final Duration _healthTimeout;
   final Duration _storeCliTimeout;
+  final Duration _peerHubTimeout;
 
   static const _tag = 'GroupMemberProbe';
 
@@ -94,15 +106,7 @@ class GroupMemberCapabilityProbe {
     }
 
     if (agent.isPeerAgent) {
-      final running = agent.peerAgentRunning;
-      if (!running) {
-        notes.add('Hub 实例未运行（metadata.running=false）');
-      }
-      return MemberCapabilitySnapshot(
-        reachable: true,
-        storeCliAvailable: running ? null : false,
-        notes: notes,
-      );
+      return _probePeerHub(agent, notes);
     }
 
     if (agent.usesHubCliExecute) {
@@ -120,6 +124,58 @@ class GroupMemberCapabilityProbe {
     }
 
     return MemberCapabilitySnapshot(reachable: true, notes: notes);
+  }
+
+  Future<MemberCapabilitySnapshot> _probePeerHub(
+    RemoteAgent agent,
+    List<String> notes,
+  ) async {
+    var running = agent.peerAgentRunning;
+    bool? storeCliAvailable;
+    final lister = _peerHubLister;
+    final peerId = agent.sourcePeerId;
+    if (lister != null && peerId != null && peerId.isNotEmpty) {
+      try {
+        final manage = await lister(peerId).timeout(_peerHubTimeout);
+        if (!manage.ok) {
+          notes.add('Hub agent_manage 探测失败：${manage.error ?? 'unknown'}');
+        } else {
+          final remoteId = agent.remoteAgentId;
+          if (remoteId != null && remoteId.isNotEmpty) {
+            for (final entry in manage.agents) {
+              if (entry.id == remoteId) {
+                running = entry.running;
+                break;
+              }
+            }
+          }
+          if (manage.hubStoreOk == true) {
+            notes.add('Hub store /api/v1/health 可达');
+            storeCliAvailable = running ? true : false;
+          } else if (manage.hubStoreOk == false) {
+            notes.add('Hub /api/v1/health 不可用（shepaw store shim 可能失效）');
+            storeCliAvailable = false;
+          }
+        }
+      } catch (e) {
+        LoggerService().debug(
+          'Peer hub probe failed for ${agent.name}: $e',
+          tag: _tag,
+        );
+        notes.add('Hub live 探测超时或失败');
+      }
+    }
+    if (!running) {
+      notes.add('Hub 实例未运行');
+      storeCliAvailable = false;
+    } else if (storeCliAvailable == null) {
+      storeCliAvailable = agent.usesHubStoreCli ? true : null;
+    }
+    return MemberCapabilitySnapshot(
+      reachable: true,
+      storeCliAvailable: storeCliAvailable,
+      notes: notes,
+    );
   }
 
   Future<bool?> _probeStoreCli(RemoteAgent agent) async {

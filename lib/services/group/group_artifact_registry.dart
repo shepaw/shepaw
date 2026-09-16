@@ -123,18 +123,21 @@ class GroupArtifactRegistry {
   static Future<String> loadAdminArtifactBlock({
     required String groupId,
     required String orchestrationId,
+    bool compact = false,
   }) async {
     if (!GroupOrchestrationFeatures.structuredTasks) return '';
     try {
       final ws = GroupWorkspaceService.instance;
       final parts = <String>[];
 
-      final plan = await ws.readTaskArtifactPlan(
-        groupId: groupId,
-        orchestrationId: orchestrationId,
-      );
-      if (plan != null) {
-        parts.add(plan.toAdminBlock());
+      if (!compact) {
+        final plan = await ws.readTaskArtifactPlan(
+          groupId: groupId,
+          orchestrationId: orchestrationId,
+        );
+        if (plan != null) {
+          parts.add(plan.toAdminBlock());
+        }
       }
 
       final manifest = await ws.readTaskArtifactManifest(
@@ -142,11 +145,19 @@ class GroupArtifactRegistry {
         orchestrationId: orchestrationId,
       );
       if (manifest != null && manifest.entries.isNotEmpty) {
-        final lines = <String>['【已登记产物（artifacts.json）】'];
+        final heading = compact
+            ? '【产物链接（摘要模式）】'
+            : '【已登记产物（artifacts.json）】';
+        final lines = <String>[heading];
         for (final entry in manifest.entries) {
-          final label = entry.label.isNotEmpty ? entry.label : entry.uri;
-          final by = entry.producedBy.isNotEmpty ? ' (${entry.producedBy})' : '';
-          lines.add('- $label$by: ${entry.uri}');
+          if (compact) {
+            lines.add('- ${entry.uri}');
+          } else {
+            final label = entry.label.isNotEmpty ? entry.label : entry.uri;
+            final by =
+                entry.producedBy.isNotEmpty ? ' (${entry.producedBy})' : '';
+            lines.add('- $label$by: ${entry.uri}');
+          }
         }
         parts.add(lines.join('\n'));
       }

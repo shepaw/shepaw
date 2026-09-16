@@ -39,6 +39,7 @@ import 'group_result_writer.dart';
 import 'group_member_stall.dart';
 import 'group_member_delivery.dart';
 import 'group_member_capability_probe.dart';
+import 'group_admin_context_budget.dart';
 import '../messaging/chat_history_content.dart';
 
 class GroupOrchestrationService {
@@ -2897,10 +2898,34 @@ class GroupOrchestrationService {
             orchestrationId: orchestrationId,
             round: currentRound,
           );
+          final structuredResultsCompactBlock =
+              await GroupResultWriter.loadAdminResultsBlock(
+            groupId: groupOwnerId,
+            orchestrationId: orchestrationId,
+            round: currentRound,
+            includePriorRound: false,
+            compact: true,
+          );
           final summarizeArtifactNotes =
               await GroupArtifactRegistry.loadAdminArtifactBlock(
             groupId: groupOwnerId,
             orchestrationId: orchestrationId,
+          );
+          final summarizeArtifactCompactNotes =
+              await GroupArtifactRegistry.loadAdminArtifactBlock(
+            groupId: groupOwnerId,
+            orchestrationId: orchestrationId,
+            compact: true,
+          );
+          final ws = GroupWorkspaceService.instance;
+          final dispatchUri = await ws.taskFileUri(
+            groupId: groupOwnerId,
+            relPath:
+                '${ws.roundDir(groupOwnerId, channelId, currentRound)}/dispatch.json',
+          );
+          final resultsUri = await ws.taskFileUri(
+            groupId: groupOwnerId,
+            relPath: ws.taskResultsRelPath(groupOwnerId, orchestrationId),
           );
           final sessionHandoffSuffix = await takeSessionHandoffSuffix();
           final adminSummarizeBase = currentRound > 1
@@ -2910,17 +2935,28 @@ class GroupOrchestrationService {
                   round: currentRound,
                 )
               : effectiveContent;
+          final pendingNote = pendingFromLastRound.isNotEmpty
+              ? '\n\n${GroupTaskStatusParser.adminNote(pendingFromLastRound)}'
+              : '';
+          final summarizeContent = GroupAdminContextBudget.assembleLoopSummarizeContent(
+            adminSummarizeBase: adminSummarizeBase,
+            lastDispatchNote: lastDispatchNote,
+            dispatchUri: dispatchUri,
+            memberArtifactsBlock:
+                buildMemberArtifactsBlock(memberTurnResults, agents),
+            structuredResultsBlock: structuredResultsBlock,
+            structuredResultsCompactBlock: structuredResultsCompactBlock,
+            summarizeArtifactNotes: summarizeArtifactNotes,
+            summarizeArtifactCompactNotes: summarizeArtifactCompactNotes,
+            pendingNote: pendingNote,
+            sessionHandoffSuffix: sessionHandoffSuffix,
+            resultsUri: resultsUri,
+          );
           try {
             adminTurn = await _executor.processGroupAgent(
               agent: adminAgent,
               channelId: channelId,
-              content:
-                  '${lastDispatchNote != null ? '$adminSummarizeBase\n\n[SYSTEM] 你上一轮的派发记录（该 JSON 已从你的消息中隐藏，仅供核对）：$lastDispatchNote' : adminSummarizeBase}'
-                  '${buildMemberArtifactsBlock(memberTurnResults, agents)}'
-                  '$structuredResultsBlock'
-                  '$summarizeArtifactNotes'
-                  '${pendingFromLastRound.isNotEmpty ? '\n\n${GroupTaskStatusParser.adminNote(pendingFromLastRound)}' : ''}'
-                  '$sessionHandoffSuffix',
+              content: summarizeContent,
               attachments: attachments,
               userId: userId,
               userName: userName,

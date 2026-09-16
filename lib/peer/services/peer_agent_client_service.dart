@@ -569,11 +569,19 @@ class PeerAgentManageResult {
   final List<PeerAgentManageEntry> agents;
   final bool unsupported;
 
+  /// Live probe of hub-local `GET /api/v1/health` (agent_manage list).
+  final bool? hubStoreOk;
+
+  /// Device id from hub store health when [hubStoreOk] is true.
+  final String? hubStoreDevice;
+
   const PeerAgentManageResult({
     required this.ok,
     this.error,
     this.agents = const [],
     this.unsupported = false,
+    this.hubStoreOk,
+    this.hubStoreDevice,
   });
 }
 
@@ -2538,11 +2546,23 @@ class PeerAgentClientService {
       agents.add(PeerAgentManageEntry.fromJson(Map<String, dynamic>.from(item)));
     }
     final error = data['error'] as String?;
+    bool? hubStoreOk;
+    String? hubStoreDevice;
+    final hubStore = data['hub_store'];
+    if (hubStore is Map) {
+      hubStoreOk = hubStore['ok'] == true;
+      final device = hubStore['device'];
+      if (device is String && device.trim().isNotEmpty) {
+        hubStoreDevice = device.trim();
+      }
+    }
     completer.complete(PeerAgentManageResult(
       ok: data['ok'] == true,
       error: error,
       agents: agents,
       unsupported: error == 'unsupported',
+      hubStoreOk: hubStoreOk,
+      hubStoreDevice: hubStoreDevice,
     ));
   }
 

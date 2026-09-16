@@ -353,6 +353,7 @@ class GroupResultWriter {
     required String orchestrationId,
     int? round,
     bool includePriorRound = true,
+    bool compact = false,
   }) async {
     if (!GroupOrchestrationFeatures.structuredTasks ||
         !GroupOrchestrationFeatures.structuredResults) {
@@ -367,6 +368,7 @@ class GroupResultWriter {
         results,
         round: round,
         includePriorRound: includePriorRound,
+        compact: compact,
       );
     } catch (_) {
       return '';
@@ -376,32 +378,46 @@ class GroupResultWriter {
   /// Admin summarize block. When [round] is set, only injects that round (and
   /// optionally the immediately prior round for delta context) — not the full
   /// multi-round history that previously bloated every admin turn.
+  static const int compactAdminSummaryChars = 80;
+
   static String buildAdminResultsBlock(
     GroupTaskResults? results, {
     int? round,
     bool includePriorRound = true,
+    bool compact = false,
   }) {
     if (results == null || results.members.isEmpty) return '';
 
     final filtered = _filterMembersForAdminView(
       results.members,
       round: round,
-      includePriorRound: includePriorRound,
+      includePriorRound: compact ? false : includePriorRound,
     );
     if (filtered.isEmpty) return '';
 
-    final heading = round != null
-        ? '【结构化成员结果（第 $round 轮${includePriorRound && round > 1 ? '与上轮' : ''}）】'
-        : '【结构化成员结果（results.json）】';
+    final heading = compact
+        ? (round != null
+            ? '【成员结果摘要 · 第 $round 轮】'
+            : '【成员结果摘要】')
+        : (round != null
+            ? '【结构化成员结果（第 $round 轮${includePriorRound && round > 1 ? '与上轮' : ''}）】'
+            : '【结构化成员结果（results.json）】');
     final lines = <String>[heading];
     for (final member in filtered) {
       final roundLabel =
           member.round != null ? '，第 ${member.round} 轮' : '';
-      final summary =
-          member.summary.isNotEmpty ? member.summary : '（无文字摘要）';
-      lines.add(
-        '- ${member.agentName} (${member.taskStatus}$roundLabel): $summary',
-      );
+      if (compact) {
+        final summary = member.summary.isNotEmpty
+            ? _firstLineSummary(member.summary, compactAdminSummaryChars)
+            : member.taskStatus;
+        lines.add('- ${member.agentName} (${member.taskStatus}$roundLabel): $summary');
+      } else {
+        final summary =
+            member.summary.isNotEmpty ? member.summary : '（无文字摘要）';
+        lines.add(
+          '- ${member.agentName} (${member.taskStatus}$roundLabel): $summary',
+        );
+      }
       if (member.artifactUris.isNotEmpty) {
         lines.add('  ${member.artifactUris.join(' ')}');
       }

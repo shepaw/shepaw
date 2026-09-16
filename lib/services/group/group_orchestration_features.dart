@@ -61,4 +61,8 @@ class GroupOrchestrationFeatures {
 
   /// Shorter ACP timeout for peer members on first-round recon (minutes).
   static int peerReconFirstRoundTimeoutMinutes = 3;
+
+  /// Admin loop-summarize prompt char budget; over budget → compact URI mode.
+  /// Set to 0 to disable budgeting.
+  static int adminContextBudgetChars = 12000;
 }

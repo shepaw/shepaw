@@ -293,6 +293,10 @@ class ChatService {
       checkHealth: (id, {timeout = const Duration(seconds: 3)}) =>
           getIt<RemoteAgentService>().checkAgentHealth(id, timeout: timeout),
       connectionLookup: (id) => _acpConnections[id],
+      peerHubLister: (peerId) => PeerAgentClientService.instance.manageAgents(
+            peerId: peerId,
+            op: 'list',
+          ),
     ),
   );
 
