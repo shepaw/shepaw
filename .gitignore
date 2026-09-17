@@ -45,9 +45,11 @@ data/**
 !data/build_windows.ps1
 !data/key.properties.example
 !data/apple.properties.example
+!data/setup_notarytool.sh
 
 # Flutter / Xcode local signing inject (written by build script when team is set)
 ios/Flutter/Signing.local.xcconfig
+macos/Flutter/Signing.local.xcconfig
 
 # AI 推理中间产物
 .ai_workspace/

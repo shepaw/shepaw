@@ -4,6 +4,7 @@ import '../../models/message.dart';
 import '../../widgets/message_bubble.dart';
 import '../../utils/message_utils.dart';
 import '../../services/she_service.dart';
+import '../../services/messaging/chat_history_content.dart';
 import '../../services/message_collapse_preference.dart';
 import '../../service_locator.dart';
 import 'message_long_press_handler.dart';
@@ -257,6 +258,9 @@ class _ChatMessageListState extends State<ChatMessageList> {
           // Map back to the chronological index.
           final originalIndex = messages.length - 1 - index;
           final message = messages[originalIndex];
+          if (!ChatHistoryContent.shouldDisplayInChat(message)) {
+            return const SizedBox.shrink();
+          }
           // She 以 userId 身份发送的消息，sender_type 虽为 'user' 但不应视为"我的消息"
           final isMyMessage = message.from.type == 'user'
               && message.from.id != SheService.sheId;

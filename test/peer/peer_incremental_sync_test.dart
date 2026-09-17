@@ -165,6 +165,48 @@ void main() {
     });
   });
 
+  group('peerHistoryDisplayFields', () {
+    test('marks pure Scope Card as ui_hidden', () {
+      final m = PeerHistoryMessage(
+        role: 'user',
+        content: '## 当前储物袋作用域\n- schema: v1 · mode: `acp`',
+      );
+      final out = peerHistoryDisplayFields(m);
+      expect(out.metadata?['ui_hidden'], isTrue);
+      expect(out.metadata?['history_exclude'], isTrue);
+    });
+
+    test('strips Scope Card prefix for bundled user text', () {
+      final m = PeerHistoryMessage(
+        role: 'user',
+        content: '## 当前储物袋作用域\n- device: `x`\n\n排查 bug',
+      );
+      final out = peerHistoryDisplayFields(m);
+      expect(out.content, '排查 bug');
+      expect(out.metadata?['wire_content'], m.content);
+      expect(out.metadata?['ui_hidden'], isNull);
+    });
+
+    test('honors Hub protocol metadata without content heuristics', () {
+      final m = PeerHistoryMessage.fromJson({
+        'role': 'user',
+        'content': 'plain user text',
+        'metadata': {
+          'ui_hidden': true,
+          'history_exclude': true,
+          'kind': 'scope_card_stable',
+        },
+      })!;
+      final out = peerHistoryDisplayFields(
+        m,
+        baseMetadata: peerHistoryMessageMetadata(m),
+      );
+      expect(out.metadata?['ui_hidden'], isTrue);
+      expect(out.metadata?['history_exclude'], isTrue);
+      expect(out.metadata?['kind'], 'scope_card_stable');
+    });
+  });
+
   group('PeerHistoryMessage.fromJson progress fields', () {
     test('parses the reconstructed progress section', () {
       final m = PeerHistoryMessage.fromJson({

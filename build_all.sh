@@ -223,6 +223,51 @@ find_macos_app() {
   echo "$app"
 }
 
+read_apple_prop() {
+  local key="$1" def="${2:-}"
+  local file="$ROOT_DIR/data/apple.properties"
+  [[ -f "$file" ]] || { echo "$def"; return 0; }
+  local val
+  val="$(grep -E "^${key}=" "$file" | head -1 | cut -d= -f2- | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+  echo "${val:-$def}"
+}
+
+# Developer ID + notarytool. No-ops when the keychain profile is missing.
+notarize_macos_app() {
+  local app="$1"
+  [[ "$BUILD_MODE" == "release" ]] || return 0
+  [[ -d "$app" ]] || die "Cannot notarize missing app: $app"
+
+  local profile
+  profile="$(read_apple_prop NOTARY_PROFILE shepaw)"
+  profile="${NOTARY_PROFILE:-$profile}"
+
+  local hist
+  if ! hist="$(xcrun notarytool history --keychain-profile "$profile" 2>&1)"; then
+    if echo "$hist" | grep -q "No Keychain password item"; then
+      warn "Skip notarization: no notarytool profile '$profile'."
+      warn "Create an App Store Connect API key, then run: ./data/setup_notarytool.sh"
+      return 0
+    fi
+    die "notarytool history failed: $hist"
+  fi
+
+  local zip="${app%.app}.notarize.zip"
+  rm -f "$zip"
+  info "Zipping $app for notarization..."
+  ditto -c -k --keepParent "$app" "$zip"
+  info "Submitting to Apple notary service (profile=$profile)..."
+  xcrun notarytool submit "$zip" --keychain-profile "$profile" --wait
+  info "Stapling ticket..."
+  xcrun stapler staple "$app"
+  rm -f "$zip"
+  if spctl --assess --type execute --verbose "$app" 2>&1; then
+    success "Notarized and stapled: $app"
+  else
+    warn "stapler succeeded but spctl still rejected $app (Gatekeeper cache?)"
+  fi
+}
+
 # ── prepare ─────────────────────────────────────────────────────────
 prepare() {
   require_cmd flutter
@@ -375,7 +420,18 @@ build_macos() {
   team="${DEVELOPMENT_TEAM:-$team}"
 
   if [[ -n "$team" ]]; then
+    info "Building macOS with DEVELOPMENT_TEAM=$team (Developer ID)..."
+    cat > macos/Flutter/Signing.local.xcconfig <<EOF
+DEVELOPMENT_TEAM = $team
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY = Developer ID Application
+ENABLE_HARDENED_RUNTIME = YES
+OTHER_CODE_SIGN_FLAGS = --timestamp
+EOF
     export DEVELOPMENT_TEAM="$team"
+  else
+    rm -f macos/Flutter/Signing.local.xcconfig
+    info "Building macOS unsigned / ad-hoc (no DEVELOPMENT_TEAM). Set data/apple.properties for Developer ID."
   fi
 
   flutter build macos "--${BUILD_MODE}"
@@ -386,6 +442,9 @@ build_macos() {
   fi
   local app_name
   app_name="$(basename "$app")"
+  if [[ -n "$team" ]]; then
+    notarize_macos_app "$app"
+  fi
   archive_dir "$app" "${ARTIFACT_PREFIX}-macos-${BUILD_MODE}.tar.gz" "$app_name"
   copy_artifact "$app" "$app_name"
 }

@@ -431,6 +431,16 @@ class _ChatScreenState extends State<ChatScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _controller.onAppLifecycleChanged(state == AppLifecycleState.resumed);
 
+    if (state == AppLifecycleState.resumed) {
+      // 息屏期间被判死的 peer turn，结果可能只留在远端 transcript。P2P 重连
+      // 是异步的（resumeAll），稍等一下再补拉当前会话，重连完成才有效果。
+      unawaited(Future<void>.delayed(const Duration(seconds: 2), () {
+        if (mounted) {
+          unawaited(_recoverStrandedPeerTurn());
+        }
+      }));
+    }
+
     // If the app loses focus while recording (e.g. Samsung edge panel, app
     // switch, incoming call), stop the recording so it doesn't run forever.
     if (state != AppLifecycleState.resumed &&
@@ -4109,8 +4119,9 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   /// 断连期间被判死的 turn 可能已在远端跑完 —— service 重连后发来的
-  /// reconcile 通知（'peerId::remoteAgentId'）。匹配当前 agent 时做一次
-  /// 增量历史同步把结果补回对话；用户未表态过同步偏好时不弹窗打扰。
+  /// reconcile 通知（'peerId::remoteAgentId'）。匹配当前 agent 时把结果补回
+  /// 对话：已开启同步走完整增量同步；未表态 / 已关闭则只补当前会话
+  /// （见 [_recoverStrandedPeerTurn]），不能整段跳过。
   Future<void> _onPeerReconcileRequest(String key) async {
     final agentId = widget.agentId;
     if (agentId == null) return;
@@ -4125,7 +4136,63 @@ class _ChatScreenState extends State<ChatScreen>
       return;
     }
     if (!mounted) return;
-    await _maybeSyncPeerAgent(promptIfUndecided: false);
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('peer_sync_disabled_$agentId') == false) {
+      await _maybeSyncPeerAgent(promptIfUndecided: false);
+      return;
+    }
+    // 未表态 / 已关闭同步：不能整段跳过 —— 结果会永远留在远端 transcript，
+    // 页面卡在「回复中」，只有退出重进才恢复。改走只补当前会话的窄路径
+    // （不链接远端 session、不弹窗、不新建会话）。
+    await _recoverStrandedPeerTurn();
+  }
+
+  /// 息屏 / 断连期间被判死的 peer turn，结果可能只留在远端 transcript：
+  /// 把当前会话的远端 transcript 拉回本地并刷新列表。
+  ///
+  /// `syncHistory` 内部会用远端 transcript 收尾仍在挂起的本地 turn
+  /// （`_completeInflightTurnsFromRemoteHistory`），因此「本地 turn 仍在途、
+  /// 只是 agent_done 丢了」也能自愈。
+  Future<void> _recoverStrandedPeerTurn() async {
+    final agentId = widget.agentId;
+    final channelId = _controller.currentChannelId ?? widget.channelId;
+    if (agentId == null || channelId == null || channelId.isEmpty) return;
+
+    // 只救「页面还在转圈但已经不出字」的回合；仍在正常出字 / 思考的回合
+    // 由 resume / 续传自己收尾，不能被这里的 transcript 覆盖抢跑。
+    final busy = _controller.streaming.isActive || _controller.isProcessing;
+    if (!busy) return;
+    if (_controller.streaming.isActive &&
+        _controller.streaming.activeWithin(const Duration(seconds: 20))) {
+      return;
+    }
+
+    final agent =
+        await _controller.localDatabaseService.getRemoteAgentById(agentId);
+    if (!mounted || agent == null || !agent.isPeerAgent) return;
+    final peerId = agent.sourcePeerId;
+    final remoteAgentId = agent.remoteAgentId;
+    if (peerId == null || remoteAgentId == null) return;
+    if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
+      return;
+    }
+
+    try {
+      await PeerAgentClientService.instance.syncHistory(
+        peerId: peerId,
+        remoteAgentId: remoteAgentId,
+        localAgentId: agent.id,
+        agentName: _controller.agentName ?? agent.name,
+        channelId: channelId,
+        userId: _controller.getUserId(),
+        userName: _controller.getUserName(),
+      );
+    } catch (e) {
+      LoggerService().warning('peer turn recovery failed: $e', tag: 'ChatScreen');
+      return;
+    }
+    if (!mounted) return;
+    await _controller.reloadMessagesFromDB();
   }
 
   /// On entry to a peer agent chat, incrementally sync remote sessions + dirty

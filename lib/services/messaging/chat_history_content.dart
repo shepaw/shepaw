@@ -1,4 +1,5 @@
 import '../../models/message.dart';
+import '../../utils/session_utils.dart';
 import '../session/dm_session_create_service.dart';
 import 'local_llm_handler.dart';
 
@@ -17,6 +18,9 @@ class ChatHistoryContent {
   /// Mark a persisted row as UI-only (switch card fallback).
   static const historyExcludeMetaKey = 'history_exclude';
 
+  /// Hub 同步 transcript 中的 Scope Card / 内部说明书：聊天 UI 与标题隐藏。
+  static const uiHiddenMetaKey = 'ui_hidden';
+
   static const _switchCardPlaceholder =
       'New session ready. Open it to continue.';
 
@@ -33,8 +37,28 @@ class ChatHistoryContent {
       return false;
     }
     if (m.metadata?[historyExcludeMetaKey] == true) return false;
+    if (m.metadata?[uiHiddenMetaKey] == true) return false;
     if (_isSwitchCardOnly(m)) return false;
+    if (SessionUtils.isHubInternalPromptArtifact(m.content)) return false;
     return true;
+  }
+
+  /// False for Hub 内部说明书等不应出现在气泡里的行。
+  static bool shouldDisplayInChat(Message m) {
+    if (m.metadata?[uiHiddenMetaKey] == true) return false;
+    if (m.type == MessageType.system ||
+        m.type == MessageType.permissionAudit) {
+      return true;
+    }
+    if (SessionUtils.isHubInternalPromptArtifact(m.content)) return false;
+    return true;
+  }
+
+  /// 展示用正文：去掉 Scope Card 前缀，保留用户真实输入。
+  static String displayContent(Message m) {
+    if (m.metadata?[uiHiddenMetaKey] == true) return '';
+    return SessionUtils.stripHubInternalPromptForDisplay(m.content) ??
+        m.content;
   }
 
   static bool _isSwitchCardOnly(Message m) {

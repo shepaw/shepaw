@@ -46,6 +46,19 @@ cp data/apple.properties.example data/apple.properties
 # DEVELOPMENT_TEAM=XXXXXXXXXX
 ```
 
+macOS Release 会用钥匙串里的 `Developer ID Application`（需本机已导入对应证书和私钥）。
+
+公证（notarytool）用 App Store Connect API 密钥，配一次即可：
+
+```bash
+# 1. https://appstoreconnect.apple.com/access/integrations/api
+#    生成 API Key，下载 AuthKey_*.p8 到 data/apple/，Issuer ID 写入 apple.properties
+# 2. 入库到钥匙串
+./data/setup_notarytool.sh
+```
+
+之后 `./build_all.sh macos` 会在 Developer ID 签名后自动 submit + stapler。
+
 Windows 桌面请在 Windows 上运行：`.\data\build_windows.ps1`
 
 ## Git 忽略规则

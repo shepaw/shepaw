@@ -94,6 +94,32 @@ void main() {
       expect(first!['id'], 'real-1');
     });
 
+    test('Hub Scope Card 首条被跳过，标题用真实用户消息', () async {
+      await db.createMessage(
+        id: 'scope-only',
+        channelId: channelId,
+        senderId: 'user',
+        senderType: 'user',
+        senderName: 'User',
+        content: '## 当前储物袋作用域\n- schema: v1 · mode: `acp`',
+        createdAt: DateTime(2026, 8, 21, 10, 0, 0),
+      );
+      await db.createMessage(
+        id: 'real-first',
+        channelId: channelId,
+        senderId: 'user',
+        senderType: 'user',
+        senderName: 'User',
+        content: '帮我写单元测试',
+        createdAt: DateTime(2026, 8, 21, 10, 0, 1),
+      );
+
+      final first = await db.getFirstChannelMessage(channelId);
+      expect(first, isNotNull);
+      expect(first!['id'], 'real-first');
+      expect(first['content'], '帮我写单元测试');
+    });
+
     test('普通会话保持字面第一条消息', () async {
       await db.createMessage(
         id: 'plain-first',

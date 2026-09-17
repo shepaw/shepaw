@@ -366,5 +366,38 @@ void main() {
         expect(SessionUtils.cleanClaudeSessionTitle(null), isNull);
       });
     });
+
+    group('Hub Scope Card / internal prompt', () {
+      const scopeCard = '## 当前储物袋作用域\n'
+          '- schema: v1 · mode: `acp` · owner: device\n'
+          '- device: `abc`\n'
+          '- 读: `shepaw store read`';
+
+      test('isHubInternalPromptArtifact 识别纯 Scope Card', () {
+        expect(SessionUtils.isHubInternalPromptArtifact(scopeCard), isTrue);
+      });
+
+      test('stripHubInternalPromptForDisplay 保留 Scope Card 后的用户正文', () {
+        const bundled = '$scopeCard\n\n帮我排查登录 bug';
+        expect(
+          SessionUtils.stripHubInternalPromptForDisplay(bundled),
+          '帮我排查登录 bug',
+        );
+        expect(SessionUtils.isHubInternalPromptArtifact(bundled), isFalse);
+      });
+
+      test('sessionTitleFromMessageContent 跳过 Scope Card', () {
+        expect(
+          SessionUtils.sessionTitleFromMessageContent(scopeCard),
+          isNull,
+        );
+        expect(
+          SessionUtils.sessionTitleFromMessageContent(
+            '$scopeCard\n\n修复会话标题',
+          ),
+          '修复会话标题',
+        );
+      });
+    });
   });
 }

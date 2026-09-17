@@ -61,6 +61,34 @@ void main() {
       );
     });
 
+    test('shouldDisplayInChat hides Hub Scope Card and ui_hidden rows', () {
+      const scope = '## 当前储物袋作用域\n- device: `x`';
+      final hidden = _msg(
+        id: 'h1',
+        fromId: 'u1',
+        isAgent: false,
+        content: scope,
+        metadata: {ChatHistoryContent.uiHiddenMetaKey: true},
+      );
+      final scopeOnly = _msg(
+        id: 's1',
+        fromId: 'u1',
+        isAgent: false,
+        content: scope,
+      );
+      final user = _msg(
+        id: 'u2',
+        fromId: 'u1',
+        isAgent: false,
+        content: '真实用户消息',
+      );
+
+      expect(ChatHistoryContent.shouldDisplayInChat(hidden), isFalse);
+      expect(ChatHistoryContent.shouldDisplayInChat(scopeOnly), isFalse);
+      expect(ChatHistoryContent.shouldDisplayInChat(user), isTrue);
+      expect(ChatHistoryContent.shouldReplay(scopeOnly), isFalse);
+    });
+
     test('shouldReplay skips switch-card-only and history_exclude rows', () {
       final card = _msg(
         id: 'card',

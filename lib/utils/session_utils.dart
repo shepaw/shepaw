@@ -118,6 +118,63 @@ class SessionUtils {
         t.startsWith('<local-command-stdout>');
   }
 
+  /// Hub / Agent Hub 同步 transcript 时，首条 user 消息可能是 Scope Card
+  /// 或整段 system 说明书（`## 当前储物袋作用域`），不应作为会话标题或气泡展示。
+  static const _scopeCardHeader = '## 当前储物袋作用域';
+
+  /// 整段仅为内部提示（Scope Card / Claude 命令伪消息等），无用户可见正文。
+  static bool isHubInternalPromptArtifact(String? text) {
+    if (text == null) return false;
+    final t = text.trim();
+    if (t.isEmpty) return false;
+    if (isClaudeCommandArtifact(t)) return true;
+    if (!t.contains(_scopeCardHeader)) return false;
+    final visible = stripHubInternalPromptForDisplay(t);
+    return visible == null || visible.isEmpty;
+  }
+
+  /// 去掉 Scope Card 等 Hub 注入段，返回用户可见正文；无则 null。
+  static String? stripHubInternalPromptForDisplay(String? text) {
+    if (text == null) return null;
+    var s = text.trim();
+    if (s.isEmpty) return null;
+
+    // 按行剥离 Scope Card（stable / volatile 可出现多次）。
+    final lines = s.split('\n');
+    final kept = <String>[];
+    var skippingScope = false;
+    for (final line in lines) {
+      if (line.startsWith(_scopeCardHeader)) {
+        skippingScope = true;
+        continue;
+      }
+      if (skippingScope) {
+        if (line.startsWith('## ')) {
+          skippingScope = false;
+          kept.add(line);
+        } else if (line.trim().isEmpty) {
+          skippingScope = false;
+        }
+        continue;
+      }
+      kept.add(line);
+    }
+    s = kept.join('\n').trim();
+
+    s = (cleanClaudeSessionTitle(s) ?? '').trim();
+    return s.isEmpty ? null : s;
+  }
+
+  /// 从消息正文提取会话列表标题候选；不可展示时返回 null。
+  static String? sessionTitleFromMessageContent(String? content) {
+    if (content == null) return null;
+    if (isClaudeCommandArtifact(content)) return null;
+    if (isHubInternalPromptArtifact(content)) return null;
+    final visible = stripHubInternalPromptForDisplay(content) ?? content.trim();
+    if (visible.isEmpty) return null;
+    return cleanClaudeSessionTitle(visible);
+  }
+
   /// 剔除会话标题里由本地斜杠命令注入的标签及内容，折叠多余空白。
   ///
   /// 清理后为空返回 null，便于调用方回落默认名（如 'Session'）。

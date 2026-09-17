@@ -33,6 +33,7 @@ import '../../services/she_agent_impression_service.dart';
 import '../../service_locator.dart' show getIt;
 import '../../utils/engine_avatars.dart';
 import '../../utils/session_utils.dart';
+import '../../services/messaging/chat_history_content.dart';
 import 'peer_connection.dart' show PeerConnectionEvent, PeerConnectionEventType;
 import '../peer_approval_payload.dart';
 import 'peer_agent_ids.dart';
@@ -246,6 +247,9 @@ class PeerHistoryMessage {
   final String? progressTitle;
   final bool? progressAutoCollapse;
 
+  /// Hub history protocol annotations (`ui_hidden`, `history_exclude`, `kind`).
+  final Map<String, dynamic>? metadata;
+
   PeerHistoryMessage({
     required this.role,
     required this.content,
@@ -254,6 +258,7 @@ class PeerHistoryMessage {
     this.progressContent,
     this.progressTitle,
     this.progressAutoCollapse,
+    this.metadata,
   });
 
   static PeerHistoryMessage? fromJson(Map<String, dynamic> json) {
@@ -266,6 +271,11 @@ class PeerHistoryMessage {
       createdAt = DateTime.tryParse(rawCreated);
     }
     final rawProgress = json['progress_content'] as String?;
+    Map<String, dynamic>? metadata;
+    final rawMeta = json['metadata'];
+    if (rawMeta is Map) {
+      metadata = Map<String, dynamic>.from(rawMeta);
+    }
     return PeerHistoryMessage(
       role: role,
       content: content,
@@ -275,6 +285,7 @@ class PeerHistoryMessage {
           (rawProgress?.isNotEmpty ?? false) ? rawProgress : null,
       progressTitle: json['progress_title'] as String?,
       progressAutoCollapse: json['progress_auto_collapse'] as bool?,
+      metadata: metadata,
     );
   }
 }
@@ -367,14 +378,53 @@ String _rowProgressContent(Map<String, dynamic> row) {
 /// produces, so the bubble renders the identical collapsible block.
 /// Returns null when the message carries no progress.
 Map<String, dynamic>? peerHistoryMessageMetadata(PeerHistoryMessage m) {
+  final meta = <String, dynamic>{};
+  final protocol = m.metadata;
+  if (protocol != null) {
+    if (protocol['ui_hidden'] == true) {
+      meta[ChatHistoryContent.uiHiddenMetaKey] = true;
+    }
+    if (protocol['history_exclude'] == true) {
+      meta[ChatHistoryContent.historyExcludeMetaKey] = true;
+    }
+    final kind = protocol['kind'];
+    if (kind is String && kind.isNotEmpty) {
+      meta['kind'] = kind;
+    }
+  }
   final progress = m.progressContent;
-  if (progress == null || progress.isEmpty) return null;
-  return {
-    'progress_content': progress,
-    'collapsible': true,
-    'collapsible_title': m.progressTitle ?? 'Details',
-    'auto_collapse': m.progressAutoCollapse ?? true,
-  };
+  if (progress != null && progress.isNotEmpty) {
+    meta['progress_content'] = progress;
+    meta['collapsible'] = true;
+    meta['collapsible_title'] = m.progressTitle ?? 'Details';
+    meta['auto_collapse'] = m.progressAutoCollapse ?? true;
+  }
+  return meta.isEmpty ? null : meta;
+}
+
+/// Hub transcript 落库：隐藏纯 Scope Card 行；可剥离前缀时写入展示正文。
+({String content, Map<String, dynamic>? metadata}) peerHistoryDisplayFields(
+  PeerHistoryMessage m, {
+  Map<String, dynamic>? baseMetadata,
+}) {
+  final meta = baseMetadata != null
+      ? Map<String, dynamic>.from(baseMetadata)
+      : <String, dynamic>{};
+  final wire = m.content;
+  if (meta[ChatHistoryContent.uiHiddenMetaKey] == true) {
+    return (content: wire, metadata: meta);
+  }
+  if (SessionUtils.isHubInternalPromptArtifact(wire)) {
+    meta[ChatHistoryContent.uiHiddenMetaKey] = true;
+    meta[ChatHistoryContent.historyExcludeMetaKey] = true;
+    return (content: wire, metadata: meta);
+  }
+  final stripped = SessionUtils.stripHubInternalPromptForDisplay(wire);
+  if (stripped != null && stripped != wire) {
+    meta['wire_content'] = wire;
+    return (content: stripped, metadata: meta.isEmpty ? null : meta);
+  }
+  return (content: wire, metadata: meta.isEmpty ? null : meta);
 }
 
 /// When re-upserting a synced history row, keep the prior read bit if the
@@ -1596,6 +1646,13 @@ class PeerAgentClientService {
       'marked history reconcile for $key (turn $requestId failed remotely-recoverable)',
       tag: _tag,
     );
+    // 提示原本只在下一个 connected 事件投递；但判死恰恰常发生在连接已恢复
+    // 之后（resumeAll 对在途 turn 保留连接不重建 → 之后可能再无 connected
+    // 事件；或 resume 应答 lost 时连接早已在位），提示会一直压在队列里，
+    // 结果永久留在远端 transcript。连接已在位就立刻补发一次。
+    if (PeerConnectionManager.instance.connectedPeerIds.contains(owner.peerId)) {
+      scheduleMicrotask(() => _flushReconcileHints(owner.peerId));
+    }
   }
 
   /// 重连成功后把该 peer 的 reconcile 提示发出去（聊天页据此触发增量同步）。
@@ -3020,7 +3077,10 @@ class PeerAgentClientService {
       // Fold the reconstructed progress section (thinking/tools/plan) into the
       // same metadata shape the live stream produces — the bubble renders it
       // as one collapsible block above the answer.
-      final metadata = peerHistoryMessageMetadata(m);
+      final display = peerHistoryDisplayFields(
+        m,
+        baseMetadata: peerHistoryMessageMetadata(m),
+      );
       final isRead = preservedReadStateForHistorySync(
         remote: m,
         existingRow: existingRowsById[msgId],
@@ -3031,8 +3091,8 @@ class PeerAgentClientService {
         senderId: isUser ? userId : localAgentId,
         senderType: isUser ? 'user' : 'agent',
         senderName: isUser ? userName : agentName,
-        content: m.content,
-        metadata: metadata,
+        content: display.content,
+        metadata: display.metadata,
         createdAt: createdAts[i],
         isRead: isRead,
         conflictAlgorithm: ConflictAlgorithm.replace,

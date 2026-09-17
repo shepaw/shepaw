@@ -623,10 +623,10 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
         orchestrationStatus.isNotEmpty && orchestrationStatus != 'finished';
     final orchestrationRound = orchestration?['round'] as int? ?? 0;
 
-    // 第一行 = 会话第一条消息的第一句（会话标题就是第一句话），没有消息时
-    // 退回群名。会话 id 不在标题中展示，可从更多菜单复制。
-    final firstContent = firstMessage?['content'] as String?;
-    final titleText = firstContent != null && firstContent.trim().isNotEmpty
+    // 第一行 = 首条可展示消息的第一句；Hub 同步的 Scope Card 不参与标题。
+    final rawFirst = firstMessage?['content'] as String?;
+    final firstContent = SessionUtils.sessionTitleFromMessageContent(rawFirst);
+    final titleText = firstContent != null
         ? SessionUtils.splitFirstSentence(firstContent).first
         : session.name;
     // 第二行 = 首条消息的剩余部分；首句即整条（无剩余）时回落到最新消息。

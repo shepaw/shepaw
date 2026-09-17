@@ -5,3 +5,12 @@
 # Without this file, iOS is built unsigned (xcodebuild CODE_SIGNING_ALLOWED=NO)
 # and can be signed later in Xcode; macOS builds use ad-hoc / local signing.
 DEVELOPMENT_TEAM=
+
+# notarytool keychain profile name (default: shepaw)
+NOTARY_PROFILE=shepaw
+
+# App Store Connect API key — create at
+# https://appstoreconnect.apple.com/access/integrations/api
+# then run: ./data/setup_notarytool.sh
+# NOTARY_ISSUER=
+# NOTARY_KEY_ID=

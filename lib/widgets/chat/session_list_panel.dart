@@ -454,15 +454,9 @@ class _SessionListContentState extends State<_SessionListContent> {
     final isGroupBound = session.isGroupBoundMemberSession;
     final isSheBound = session.isSheBoundSession;
     final isBound = isGroupBound || isSheBound;
-    // 第一行 = 会话第一条消息的第一句（会话标题就是第一句话，不再用
-    // 各会话雷同的固定名称占位）；没有消息时退回名称。远端同步的 Claude
-    // 会话首条消息可能是本地命令注入的伪消息，跳过并清洗残留标签。
+    // 第一行 = 首条可展示消息的第一句；跳过 Claude 命令伪消息与 Hub Scope Card。
     final rawFirst = firstMessage?['content'] as String?;
-    final firstContent = (rawFirst != null &&
-            rawFirst.trim().isNotEmpty &&
-            !SessionUtils.isClaudeCommandArtifact(rawFirst))
-        ? rawFirst
-        : null;
+    final firstContent = SessionUtils.sessionTitleFromMessageContent(rawFirst);
     final firstTitle = firstContent == null
         ? null
         : SessionUtils.splitFirstSentence(firstContent).first;

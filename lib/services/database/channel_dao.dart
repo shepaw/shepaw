@@ -1,6 +1,10 @@
+import 'dart:convert';
+
 import 'package:sqflite/sqflite.dart';
 import '../../models/channel.dart';
+import '../../utils/session_utils.dart';
 import '../local_database_service.dart';
+import '../messaging/chat_history_content.dart';
 
 /// In-flight streaming/partial flushes are not complete replies yet — exclude
 /// them from unread tallies until the turn finalizes into a normal message row.
@@ -500,12 +504,10 @@ extension ChannelDao on LocalDatabaseService {
     return results.isEmpty ? null : results.first;
   }
 
-  /// 获取 channel 第一条**非系统**消息（会话列表用首句作标题）。
+  /// 获取 channel 第一条**可展示**的非系统消息（会话列表用首句作标题）。
   ///
-  /// 跳过 system / permission_audit 等辅助消息——群聊绑定成员会话（gmd_）
-  /// 创建时写入的说明系统消息会占据「第一条」，直接取会令列表标题显示
-  /// 系统文案而非真实内容。全部为系统消息时返回 null，由调用方回退到
-  /// 会话名/描述。
+  /// 跳过 system / permission_audit；跳过 Hub 同步的 Scope Card 等内部说明书
+  /// （`metadata.ui_hidden` 或正文匹配 [SessionUtils.isHubInternalPromptArtifact]）。
   Future<Map<String, dynamic>?> getFirstChannelMessage(String channelId) async {
     final db = await database;
     final results = await db.query(
@@ -513,30 +515,53 @@ extension ChannelDao on LocalDatabaseService {
       where: 'channel_id = ? AND message_type NOT IN (?, ?)',
       whereArgs: [channelId, 'system', 'permission_audit'],
       orderBy: 'created_at ASC',
-      limit: 1,
+      limit: 20,
     );
-    return results.isEmpty ? null : results.first;
+    for (final row in results) {
+      if (_isDisplayableSessionTitleRow(row)) return row;
+    }
+    return null;
   }
 
-  /// 批量取多个 channel 的首条非系统消息（单次查询）。
+  bool _isDisplayableSessionTitleRow(Map<String, dynamic> row) {
+    final metaRaw = row['metadata'] as String?;
+    if (metaRaw != null && metaRaw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(metaRaw);
+        if (decoded is Map &&
+            decoded[ChatHistoryContent.uiHiddenMetaKey] == true) {
+          return false;
+        }
+      } catch (_) {}
+    }
+    final content = row['content'] as String? ?? '';
+    return SessionUtils.sessionTitleFromMessageContent(content) != null;
+  }
+
+  /// 批量取多个 channel 的首条可展示非系统消息（单次查询 + Dart 过滤）。
   ///
-  /// 语义同 [getFirstChannelMessage]：跳过 system / permission_audit。
-  /// 会话列表每行单独查一次就是 N 次串行往返，这里一次拿齐。
+  /// 语义同 [getFirstChannelMessage]。
   Future<Map<String, Map<String, dynamic>>> getFirstMessagesByChannels(
       List<String> channelIds) async {
     if (channelIds.isEmpty) return const {};
-    const skip = "m2.message_type NOT IN ('system', 'permission_audit')";
     final db = await database;
     final rows = await db.rawQuery(
       'SELECT m.* FROM messages m WHERE m.channel_id IN '
       '(${List.filled(channelIds.length, '?').join(',')}) '
       "AND m.message_type NOT IN ('system', 'permission_audit') "
-      'AND m.id = (SELECT m2.id FROM messages m2 '
-      'WHERE m2.channel_id = m.channel_id AND $skip '
-      'ORDER BY m2.created_at ASC LIMIT 1)',
+      'ORDER BY m.channel_id ASC, m.created_at ASC',
       channelIds,
     );
-    return {for (final r in rows) r['channel_id'] as String: r};
+    final out = <String, Map<String, dynamic>>{};
+    final scanned = <String, int>{};
+    for (final r in rows) {
+      final cid = r['channel_id'] as String;
+      final n = (scanned[cid] ?? 0) + 1;
+      scanned[cid] = n;
+      if (n > 20 || out.containsKey(cid)) continue;
+      if (_isDisplayableSessionTitleRow(r)) out[cid] = r;
+    }
+    return out;
   }
 
   /// 批量取多个 channel 的最新一条消息（单次查询），语义同
