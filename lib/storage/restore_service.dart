@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import '../services/app_paths.dart';
 
 import '../services/agent_memory_db_service.dart';
 import '../services/agent_memory_store_service.dart';
@@ -90,7 +90,7 @@ class RestoreService {
     await _closeAllDatabases();
 
     // 3. 全量替换主库（保留 .pre-restore 兜底）
-    final docs = await getApplicationDocumentsDirectory();
+    final docs = await AppPaths.documents();
     final dbFile = File(p.join(docs.path, 'shepaw.db'));
     final backup = File(p.join(docs.path, 'shepaw.db.pre-restore'));
     if (await backup.exists()) await backup.delete();
@@ -118,7 +118,7 @@ class RestoreService {
 
   /// 恢复后清理：删除 .pre-restore 兜底文件（用户确认恢复成功后）。
   Future<void> discardPreRestoreBackup() async {
-    final docs = await getApplicationDocumentsDirectory();
+    final docs = await AppPaths.documents();
     final backup = File(p.join(docs.path, 'shepaw.db.pre-restore'));
     if (await backup.exists()) await backup.delete();
   }

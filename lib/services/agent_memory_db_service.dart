@@ -1,7 +1,7 @@
 import 'dart:io' show File;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
-import 'package:path_provider/path_provider.dart';
+import 'app_paths.dart';
 import '../models/agent_memory_entry.dart';
 import 'logger_service.dart';
 import '../storage/runtime_mirror_service.dart';
@@ -40,7 +40,7 @@ class AgentMemoryDbService {
   static Future<void> deleteAllDatabases() async {
     await closeAll();
     try {
-      final directory = await getApplicationDocumentsDirectory();
+      final directory = await AppPaths.documents();
       await for (final entity in directory.list()) {
         if (entity is File && entity.path.contains('agent_memory_') && entity.path.endsWith('.db')) {
           await entity.delete();
@@ -92,7 +92,7 @@ class AgentMemoryDbService {
   }
 
   Future<Database> _initDatabase() async {
-    final directory = await getApplicationDocumentsDirectory();
+    final directory = await AppPaths.documents();
     final path = join(directory.path, _dbFileName);
 
     return await openDatabase(
@@ -454,7 +454,7 @@ class AgentMemoryDbService {
   Future<void> deleteDatabase() async {
     await close();
     try {
-      final directory = await getApplicationDocumentsDirectory();
+      final directory = await AppPaths.documents();
       final path = join(directory.path, _dbFileName);
       await databaseFactory.deleteDatabase(path);
       LoggerService().info(

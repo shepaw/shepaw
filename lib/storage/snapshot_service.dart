@@ -7,7 +7,7 @@ import 'package:crypto/crypto.dart' as crypto;
 import 'package:cryptography/cryptography.dart' show SecretKey;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import '../services/app_paths.dart';
 
 import '../services/local_database_service.dart';
 import '../services/logger_service.dart';
@@ -172,7 +172,7 @@ class SnapshotService {
 
   /// 本机存储空间根目录（设备目录模型 §2）。
   Future<Directory> deviceStoreRoot() async {
-    final docs = await getApplicationDocumentsDirectory();
+    final docs = await AppPaths.documents();
     final deviceId = await DeviceIdentity.deviceId();
     final dir = Directory(p.join(docs.path, 'shepaw', 'store', deviceId));
     await dir.create(recursive: true);
@@ -302,7 +302,7 @@ class SnapshotService {
 
   /// 与 [StoreService] 同根的 LocalStore（本机 loopback 写路径）。
   Future<LocalStore> _openLocalStore() async {
-    final docs = await getApplicationDocumentsDirectory();
+    final docs = await AppPaths.documents();
     final root = Directory(p.join(docs.path, 'shepaw', 'store'));
     await root.create(recursive: true);
     return LocalStore(root: root);

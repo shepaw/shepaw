@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:path_provider/path_provider.dart';
+import 'app_paths.dart';
 import 'package:path/path.dart' as path;
 import 'package:uuid/uuid.dart';
 import 'dart:typed_data';
@@ -15,7 +15,7 @@ class LocalFileStorageService {
 
   /// 获取应用数据目录
   Future<Directory> get _appDataDir async {
-    final directory = await getApplicationDocumentsDirectory();
+    final directory = await AppPaths.documents();
     final appDir = Directory(path.join(directory.path, 'shepaw'));
     if (!await appDir.exists()) {
       await appDir.create(recursive: true);

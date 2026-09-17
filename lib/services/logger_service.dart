@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
+import 'app_paths.dart';
 import 'package:intl/intl.dart';
 import 'log_file_parser.dart';
 
@@ -61,7 +62,7 @@ class LoggerService extends ChangeNotifier {
     if (_initialized) return;
 
     try {
-      final dir = await getApplicationDocumentsDirectory();
+      final dir = await AppPaths.documents();
       final logDir = Directory('${dir.path}/logs');
       if (!await logDir.exists()) {
         await logDir.create(recursive: true);
@@ -245,7 +246,7 @@ class LoggerService extends ChangeNotifier {
   Future<Directory?> _resolveLogDir() async {
     if (_logFile != null) return _logFile!.parent;
     try {
-      final dir = await getApplicationDocumentsDirectory();
+      final dir = await AppPaths.documents();
       return Directory('${dir.path}/logs');
     } catch (_) {
       return null;

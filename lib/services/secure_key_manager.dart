@@ -4,7 +4,7 @@ import 'dart:math';
 import 'dart:typed_data';
 import 'package:encrypt/encrypt.dart' as encrypt;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:path_provider/path_provider.dart';
+import 'app_paths.dart';
 
 /// 安全密钥管理服务
 ///
@@ -28,7 +28,7 @@ class SecureKeyManager {
   // ── 内部路径辅助 ──────────────────────────────────────────────────────────
 
   static Future<Directory> _dir() async {
-    final base = await getApplicationSupportDirectory();
+    final base = await AppPaths.support();
     final dir = Directory('${base.path}/$_secureDir');
     if (!dir.existsSync()) await dir.create(recursive: true);
     return dir;

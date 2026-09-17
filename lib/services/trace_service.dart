@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
-import 'package:path_provider/path_provider.dart';
+import 'app_paths.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 import '../models/inference_log_entry.dart';
@@ -573,7 +573,7 @@ class TraceService extends ChangeNotifier {
   /// Get the size of the trace database file in bytes, or null if unavailable.
   Future<int?> getDatabaseSizeBytes() async {
     try {
-      final directory = await getApplicationDocumentsDirectory();
+      final directory = await AppPaths.documents();
       final path = join(directory.path, 'agent_traces.db');
       final file = File(path);
       if (await file.exists()) return await file.length();

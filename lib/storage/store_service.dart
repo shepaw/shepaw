@@ -6,7 +6,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import '../services/app_paths.dart';
 import 'package:uuid/uuid.dart';
 
 import '../peer/models/paired_peer.dart' show PeerConnectionState;
@@ -99,7 +99,7 @@ class StoreService {
   Future<LocalStore> _localStore() async {
     final existing = _store;
     if (existing != null) return existing;
-    final docs = await getApplicationDocumentsDirectory();
+    final docs = await AppPaths.documents();
     final root = Directory(p.join(docs.path, 'shepaw', 'store'));
     await root.create(recursive: true);
     return _store = LocalStore(root: root);

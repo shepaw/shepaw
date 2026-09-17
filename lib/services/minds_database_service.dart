@@ -1,6 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
-import 'package:path_provider/path_provider.dart';
+import 'app_paths.dart';
 import '../models/cognition.dart';
 
 /// 认知数据库服务
@@ -42,7 +42,7 @@ class MindsDatabaseService {
   }
 
   Future<Database> _initDatabase() async {
-    final directory = await getApplicationDocumentsDirectory();
+    final directory = await AppPaths.documents();
     final path = join(directory.path, _dbName);
 
     return await openDatabase(
@@ -301,7 +301,7 @@ class MindsDatabaseService {
   /// 删除整个数据库文件
   Future<void> deleteDatabase() async {
     await close();
-    final directory = await getApplicationDocumentsDirectory();
+    final directory = await AppPaths.documents();
     final path = join(directory.path, _dbName);
     try {
       await databaseFactory.deleteDatabase(path);

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'l10n/app_localizations.dart';
+import 'services/app_paths.dart';
 import 'services/desktop_window_auto_size.dart';
 import 'services/password_service.dart';
 import 'services/permission_service.dart';
@@ -48,6 +49,10 @@ Future<void> main(List<String> args) async {
     () async {
       WidgetsFlutterBinding.ensureInitialized();
 
+      // 解析数据根目录（macOS 首次运行会把旧沙盒容器搬过来）。
+      // 必须早于 LoggerService / 任何数据库，否则会在错误的位置建空库。
+      await AppPaths.initialize();
+
       // Detect if this is a sub-window by checking the current engine's arguments.
       if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
         try {
@@ -77,6 +82,11 @@ Future<void> main(List<String> args) async {
 
       // 初始化日志服务（最先初始化，确保后续日志可写入文件）
       await LoggerService().initialize();
+
+      final migrationNote = AppPaths.migrationNote;
+      if (migrationNote != null) {
+        LoggerService().info(migrationNote, tag: 'AppPaths');
+      }
 
       // 执行完整启动编排（数据库、ACP、P2P、通知、注册表等）
       final boot = await AppBootstrap.initialize(navigatorKey: navigatorKey);

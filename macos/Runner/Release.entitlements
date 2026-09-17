@@ -2,25 +2,20 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>com.apple.security.app-sandbox</key>
-	<true/>
-	<key>com.apple.security.network.server</key>
-	<true/>
-	<key>com.apple.security.network.client</key>
-	<true/>
-	<key>com.apple.security.temporary-exception.apple-events</key>
-	<true/>
-	<key>com.apple.security.files.user-selected.read-write</key>
-	<true/>
-	<key>com.apple.security.files.downloads.read-write</key>
-	<true/>
-	<key>com.apple.security.device.camera</key>
+	<!-- 刻意不开 com.apple.security.app-sandbox：ShePaw 要拉起 node / npm /
+	     各家 CLI Agent，而 App Sandbox 会拒绝 exec 任何非 Apple 二进制
+	     （deny process-exec*）。Developer ID + 公证分发不要求沙盒，只有
+	     Mac App Store 才强制。改回沙盒前请先想清楚本地 CLI 怎么办。
+	     以下权限由 Hardened Runtime 解释，不依赖沙盒。 -->
+	<key>com.apple.security.automation.apple-events</key>
 	<true/>
 	<key>com.apple.security.device.audio-input</key>
 	<true/>
-	<key>com.apple.security.assets.pictures.read-only</key>
+	<key>com.apple.security.device.camera</key>
 	<true/>
 	<key>com.apple.security.personal-information.location</key>
+	<true/>
+	<key>com.apple.security.personal-information.photos-library</key>
 	<true/>
 </dict>
 </plist>

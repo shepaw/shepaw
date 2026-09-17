@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:convert';
 import 'package:path_provider/path_provider.dart';
+import 'app_paths.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:archive/archive_io.dart';
 import 'package:sqflite/sqflite.dart';
@@ -293,7 +294,7 @@ class DataExportImportService {
         _logger.warning('store memory export partial fail: $e');
       }
 
-      final docsDir = await getApplicationDocumentsDirectory();
+      final docsDir = await AppPaths.documents();
       await for (final entity in docsDir.list()) {
         final name = entity.path.split('/').last;
         if (entity is! File ||

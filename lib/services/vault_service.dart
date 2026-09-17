@@ -7,7 +7,7 @@ import 'package:archive/archive_io.dart';
 import 'package:crypto/crypto.dart';
 import 'package:encrypt/encrypt.dart' as enc;
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import 'app_paths.dart';
 
 import 'logger_service.dart';
 
@@ -350,13 +350,13 @@ class VaultService {
 
   /// 获取 DB 目录路径（与各 DB Service 保持一致）
   Future<String> _getDbDirectory() async {
-    final dir = await getApplicationDocumentsDirectory();
+    final dir = await AppPaths.documents();
     return dir.path;
   }
 
   /// 获取 vaults 存储目录（自动创建）
   Future<String> _getVaultsDirectory() async {
-    final appDir = await getApplicationDocumentsDirectory();
+    final appDir = await AppPaths.documents();
     final vaultsDir = Directory(p.join(appDir.path, _vaultsDirName));
     if (!await vaultsDir.exists()) {
       await vaultsDir.create(recursive: true);

@@ -17,7 +17,7 @@ import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:dio/dio.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import 'app_paths.dart';
 
 import '../clis/shepaw/shepaw_cli.dart';
 import '../models/cli_tool_definition.dart';
@@ -85,7 +85,7 @@ class CliToolRegistry {
   /// Resolves the default cli-tools directory under the app's documents path
   /// and performs the initial scan. Call once at app startup.
   Future<void> initialize() async {
-    final docsDir = await getApplicationDocumentsDirectory();
+    final docsDir = await AppPaths.documents();
     final toolsDir = Directory(p.join(docsDir.path, 'shepaw', 'cli-tools'));
     if (!await toolsDir.exists()) {
       await toolsDir.create(recursive: true);

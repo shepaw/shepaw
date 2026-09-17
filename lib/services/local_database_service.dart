@@ -1,7 +1,7 @@
 import 'dart:io' show File, Directory;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
-import 'package:path_provider/path_provider.dart';
+import 'app_paths.dart';
 import 'she_profile_database_service.dart';
 import 'she_memory_db_service.dart';
 import 'minds_database_service.dart';
@@ -53,7 +53,7 @@ class LocalDatabaseService {
 
   /// 初始化数据库
   Future<Database> _initDatabase() async {
-    final directory = await getApplicationDocumentsDirectory();
+    final directory = await AppPaths.documents();
     final path = join(directory.path, 'shepaw.db');
     return await openDatabase(
       path,
@@ -946,7 +946,7 @@ class LocalDatabaseService {
   ///
   /// 注意：调用前应已通过 [VaultService.createVault] 完成数据备份。
   static Future<void> clearAllDatabases() async {
-    final dbDir = (await getApplicationDocumentsDirectory()).path;
+    final dbDir = (await AppPaths.documents()).path;
 
     // 1. 关闭所有数据库连接（将各 DB 服务的 _database 置 null）
     await LocalDatabaseService().close();

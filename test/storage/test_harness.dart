@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shepaw/services/app_paths.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 /// 存储层测试 harness：method channel 全 mock（path_provider → 临时目录、
@@ -29,6 +30,12 @@ class StorageTestHarness {
         if (!dir.existsSync()) dir.createSync(recursive: true);
         return dir.path;
       },
+    );
+
+    // 生产代码一律走 AppPaths；钉到 mock 的文档目录，测试里直接
+    // getApplicationDocumentsDirectory() 取到的仍是同一个位置。
+    AppPaths.setRootForTesting(
+      Directory('${tmp.path}/getApplicationDocumentsDirectory'),
     );
 
     messenger.setMockMethodCallHandler(

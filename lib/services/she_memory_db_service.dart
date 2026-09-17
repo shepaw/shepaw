@@ -1,6 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
-import 'package:path_provider/path_provider.dart';
+import 'app_paths.dart';
 
 /// She 专用记忆数据库服务
 ///
@@ -46,7 +46,7 @@ class SheMemoryDbService {
   }
 
   Future<Database> _initDatabase() async {
-    final directory = await getApplicationDocumentsDirectory();
+    final directory = await AppPaths.documents();
     final path = join(directory.path, _dbName);
 
     return await openDatabase(
@@ -137,7 +137,7 @@ class SheMemoryDbService {
   /// 删除整个数据库文件
   Future<void> deleteDatabase() async {
     await close();
-    final directory = await getApplicationDocumentsDirectory();
+    final directory = await AppPaths.documents();
     final path = join(directory.path, _dbName);
     try {
       await databaseFactory.deleteDatabase(path);

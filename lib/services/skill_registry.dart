@@ -21,7 +21,7 @@ import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:dio/dio.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import 'app_paths.dart';
 import 'logger_service.dart';
 
 /// Thrown when importing a skill whose name conflicts with an existing skill.
@@ -106,7 +106,7 @@ class SkillRegistry {
   /// Resolves the default skills directory under the app's documents path
   /// and performs the initial scan. Call once at app startup.
   Future<void> initialize() async {
-    final docsDir = await getApplicationDocumentsDirectory();
+    final docsDir = await AppPaths.documents();
     final skillsDir = Directory(p.join(docsDir.path, 'shepaw', 'skills'));
     if (!await skillsDir.exists()) {
       await skillsDir.create(recursive: true);
