@@ -165,4 +165,36 @@ void main() {
       expect(isInsecureDashboard(Uri.parse('https://hub.example.com')), isFalse);
     });
   });
+
+  group('looksLikeHubDashboardInput', () {
+    test('accepts IPs, host:port, domains and explicit URLs', () {
+      for (final raw in const [
+        '192.168.1.5',
+        '192.168.1.5:4000',
+        'http://192.168.1.5:4000/',
+        'https://hub.example.com/',
+        'hub.local',
+        'hub.local:4000',
+        'localhost',
+        'localhost:4000',
+        'raspberrypi:4000',
+        '[fe80::1]:4000',
+      ]) {
+        expect(looksLikeHubDashboardInput(raw), isTrue, reason: raw);
+      }
+    });
+
+    test('rejects pairing links and bare words that are not addresses', () {
+      for (final raw in const [
+        '',
+        '   ',
+        'not-a-pairing-link',
+        'raspberrypi',
+        'shepaw://peer?local=ws://x&code=ABC',
+        'ftp://h',
+      ]) {
+        expect(looksLikeHubDashboardInput(raw), isFalse, reason: raw);
+      }
+    });
+  });
 }

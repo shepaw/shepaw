@@ -371,8 +371,7 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
 
           const SizedBox(height: 12),
 
-          // 复制配对链接（供对方在「我连它 → 粘贴配对链接」里手动粘贴，
-          // 摄像头不可用或跨公网时用）
+          // 复制配对链接（供对方在「我连它 → 粘贴链接或 Hub 地址」里手动粘贴）
           TextButton.icon(
             onPressed: () {
               final l10n = AppLocalizations.of(context);

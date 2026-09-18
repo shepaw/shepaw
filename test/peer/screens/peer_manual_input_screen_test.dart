@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/l10n/app_localizations.dart';
 import 'package:shepaw/peer/models/pairing_payload.dart';
 import 'package:shepaw/peer/screens/peer_manual_input_screen.dart';
+import 'package:shepaw/services/remote_hub_pairing_service.dart';
 
 /// `sha256(<32 个 0 字节>)[:8]` —— 与 `zeroKey()` 自洽。
 const _fp = '66687aadf862bd77';
@@ -22,20 +23,42 @@ String qrWith({String? name}) => PeerPairingInfo.encode(
       name: name,
     );
 
-Future<void> pumpScreen(WidgetTester tester) async {
+class _FakeHubPairing extends Fake implements RemoteHubPairingService {
+  int calls = 0;
+  RemoteHubException? error;
+
+  @override
+  Future<RemoteHubTicket> mintTicket(
+    Uri dashboardUri, {
+    String? token,
+  }) async {
+    calls++;
+    if (error != null) throw error!;
+    return RemoteHubTicket(
+      info: PeerPairingInfo.tryParse(qrWith(name: '客厅 Hub'))!,
+      fingerprint: _fp,
+      dashboardUri: dashboardUri,
+    );
+  }
+}
+
+Future<void> pumpScreen(
+  WidgetTester tester, {
+  RemoteHubPairingService? hub,
+}) async {
   await tester.pumpWidget(
-    const MaterialApp(
-      locale: Locale('zh'),
+    MaterialApp(
+      locale: const Locale('zh'),
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
-      home: Scaffold(body: PeerManualInputScreen()),
+      home: PeerManualInputScreen(hubPairingService: hub),
     ),
   );
 }
 
-/// 输入链接并点「发起配对」——只解析，不应发起任何连接。
+/// 输入内容并点「发起配对」——链接路径只解析，Hub 路径只取票，都不该真连接。
 Future<void> submit(WidgetTester tester, String raw) async {
-  await tester.enterText(find.byType(TextField), raw);
+  await tester.enterText(find.byType(TextField).first, raw);
   await tester.tap(find.text('发起配对'));
   await tester.pumpAndSettle();
 }
@@ -91,7 +114,7 @@ void main() {
 
     expect(find.text('确认配对对象'), findsNothing);
     expect(find.byType(TextField), findsOneWidget);
-    expect(find.textContaining('无效的配对内容'), findsOneWidget);
+    expect(find.textContaining('无法识别'), findsOneWidget);
   });
 
   testWidgets('指纹被篡改的链接 → 拒绝解析，不出卡片', (tester) async {
@@ -100,6 +123,33 @@ void main() {
     await submit(tester, qrWith(name: '客厅 Hub').replaceFirst('pk=A', 'pk=B'));
 
     expect(find.text('确认配对对象'), findsNothing);
-    expect(find.textContaining('无效的配对内容'), findsOneWidget);
+    expect(find.textContaining('无法识别'), findsOneWidget);
+  });
+
+  testWidgets('Hub 地址 → 向 Hub 取票后出确认卡片，并声明不会二次确认', (tester) async {
+    final hub = _FakeHubPairing();
+    await pumpScreen(tester, hub: hub);
+    await submit(tester, '192.168.1.5:4000');
+
+    expect(hub.calls, 1);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.text('确认配对对象'), findsOneWidget);
+    expect(find.text('设备名称：客厅 Hub'), findsOneWidget);
+    expect(
+      find.textContaining('Hub 地址：http://192.168.1.5:4000'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('不会二次确认'), findsOneWidget);
+    expect(find.byType(TextField), findsNothing);
+  });
+
+  testWidgets('乱贴的词不会被当成 Hub 主机名去探测', (tester) async {
+    final hub = _FakeHubPairing();
+    await pumpScreen(tester, hub: hub);
+    await submit(tester, 'not-a-pairing-link');
+
+    expect(hub.calls, 0);
+    expect(find.text('确认配对对象'), findsNothing);
+    expect(find.textContaining('无法识别'), findsOneWidget);
   });
 }

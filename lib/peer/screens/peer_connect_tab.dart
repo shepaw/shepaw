@@ -3,15 +3,15 @@ import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 import '../../utils/platform_utils.dart';
 import '../models/paired_peer.dart';
-import 'peer_hub_input_screen.dart';
 import 'peer_manual_input_screen.dart';
 import 'peer_scan_screen.dart';
 
 /// 「设备配对 → 我连它」的入口列表。
 ///
-/// 这一页回答的是**方式**：同样是主动去连对方，可以扫码、可以填对方 Hub 地址、
-/// 也可以粘贴对方给的链接。三种方式跑的是同一套配对握手，成功出口也都收口到
-/// [onPaired]，所以这里不自己判断「是不是内嵌在桌面右栏」，交给父页面分派。
+/// 这一页回答的是**方式**：同样是主动去连对方，可以扫码，也可以把对方给的
+/// 配对链接或 Hub 地址贴进同一个输入框。两种手动输入跑的是同一套配对握手，
+/// 成功出口也都收口到 [onPaired]，所以这里不自己判断「是不是内嵌在桌面右栏」，
+/// 交给父页面分派。
 class PeerConnectTab extends StatelessWidget {
   const PeerConnectTab({super.key, required this.onPaired});
 
@@ -28,11 +28,6 @@ class PeerConnectTab extends StatelessWidget {
       return;
     }
     final peer = await PeerScanScreen.show(context);
-    if (peer != null) onPaired(peer);
-  }
-
-  Future<void> _hub(BuildContext context) async {
-    final peer = await PeerHubInputScreen.show(context);
     if (peer != null) onPaired(peer);
   }
 
@@ -55,13 +50,6 @@ class PeerConnectTab extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         _ConnectTile(
-          icon: Icons.dns_outlined,
-          title: l10n.peerConnect_hubTitle,
-          subtitle: l10n.peerConnect_hubSubtitle,
-          onTap: () => _hub(context),
-        ),
-        const SizedBox(height: 8),
-        _ConnectTile(
           icon: Icons.link,
           title: l10n.peerConnect_pasteTitle,
           subtitle: l10n.peerConnect_pasteSubtitle,
@@ -75,7 +63,7 @@ class PeerConnectTab extends StatelessWidget {
 
   /// 指向 Agent Hub 的安装指引卡片。
   ///
-  /// 只做指路，不复制一份命令 —— 指引正文只有 [PeerHubInputScreen] 一份，
+  /// 只做指路，不复制一份命令 —— 指引正文只有 [PeerManualInputScreen] 一份，
   /// 「先设 token，再说 --host 0.0.0.0」的顺序才不会在两个地方各错一次。
   Widget _buildGuideCard(BuildContext context, AppLocalizations l10n) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -100,7 +88,7 @@ class PeerConnectTab extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 TextButton(
-                  onPressed: () => PeerHubInputScreen.show(
+                  onPressed: () => PeerManualInputScreen.show(
                     context,
                     showGuide: true,
                   ),
@@ -141,7 +129,7 @@ class _ConnectTile extends StatelessWidget {
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
+        onTap: () => onTap(),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(

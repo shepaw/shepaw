@@ -4588,18 +4588,11 @@ class AppLocalizationsEn extends AppLocalizations {
       'Desktop has no camera. Scan with a phone, or use one of the options below';
 
   @override
-  String get peerConnect_hubTitle => 'Enter the other device\'s Hub address';
-
-  @override
-  String get peerConnect_hubSubtitle =>
-      'Use this when the other computer runs Shepaw Agent Hub';
-
-  @override
-  String get peerConnect_pasteTitle => 'Paste a pairing link';
+  String get peerConnect_pasteTitle => 'Paste a link or Hub address';
 
   @override
   String get peerConnect_pasteSubtitle =>
-      'Copy a shepaw://peer link from the other device (when there\'s no camera, or across the internet)';
+      'A shepaw:// pairing link from the other app, or the Agent Hub address on the other computer';
 
   @override
   String get peerConnect_guideTitle => 'No Agent Hub on the other device yet?';
@@ -4608,15 +4601,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get peerConnect_guideAction => 'See how to install it';
 
   @override
-  String get peerManual_title => 'Manual pairing';
+  String get peerManual_title => 'Enter pairing details';
 
   @override
   String get peerManual_desc =>
-      'Copy the pairing link from the other device\'s \"My QR Code\" page and paste it below to start pairing.';
+      'Paste the pairing link from the other device\'s \"My QR Code\" page, or enter the Agent Hub dashboard address (for example 192.168.1.5:4000).';
 
   @override
-  String get peerManual_inputHint =>
-      'shepaw://peer?local=...&code=...#fp=...&pk=...';
+  String get peerManual_inputHint => 'shepaw://peer?... or 192.168.1.5:4000';
 
   @override
   String get peerManual_paste => 'Paste';
@@ -4626,11 +4618,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get peerManual_emptyError =>
-      'Please paste the other device\'s pairing content';
+      'Paste a pairing link or enter a Hub address';
 
   @override
   String get peerManual_invalidError =>
-      'Invalid content. Please paste the full pairing link (shepaw://peer?...)';
+      'Couldn\'t recognize that. Paste a full pairing link (shepaw://peer?...) or a Hub address (for example 192.168.1.5:4000)';
 
   @override
   String get peerManual_connecting => 'Connecting...';
@@ -6115,23 +6107,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get peerScan_notPairingQr => 'That isn\'t a pairing QR code';
 
   @override
-  String get peerHub_title => 'Enter the other device\'s Hub address';
-
-  @override
-  String get peerHub_desc =>
-      'Enter the dashboard address of Shepaw Agent Hub on the other computer. The app will ask it for a pairing code.';
-
-  @override
-  String get peerHub_addrLabel => 'Hub address';
-
-  @override
-  String get peerHub_addrHint => '192.168.1.5:4000';
-
-  @override
-  String get peerHub_addrHelp =>
-      'IP, hostname, or a full http(s) URL. Port defaults to 4000.';
-
-  @override
   String get peerHub_tokenLabel => 'Access token';
 
   @override
@@ -6142,21 +6117,11 @@ class AppLocalizationsEn extends AppLocalizations {
       'Only needed if the other Hub was started with SHEPAW_HUB_TOKEN. The token is used for this request only and is never stored.';
 
   @override
-  String get peerHub_submit => 'Get pairing code';
-
-  @override
   String get peerHub_probing => 'Asking the Hub for a pairing code…';
-
-  @override
-  String get peerHub_emptyError => 'Enter the other Hub\'s address';
 
   @override
   String get peerHub_invalidError =>
       'That address doesn\'t look right. Example: 192.168.1.5:4000';
-
-  @override
-  String get peerHub_pairLinkError =>
-      'That\'s a pairing link — use \"Paste a pairing link\" instead';
 
   @override
   String get peerHub_unreachableError =>

@@ -4416,17 +4416,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get peerConnect_scanDesktopHint => '桌面端没有摄像头，请用手机扫码，或改用下面的方式';
 
   @override
-  String get peerConnect_hubTitle => '输入对方 Hub 地址';
+  String get peerConnect_pasteTitle => '粘贴链接或 Hub 地址';
 
   @override
-  String get peerConnect_hubSubtitle => '对方电脑上装了 Shepaw Agent Hub 时使用';
-
-  @override
-  String get peerConnect_pasteTitle => '粘贴配对链接';
-
-  @override
-  String get peerConnect_pasteSubtitle =>
-      '从对方设备复制 shepaw://peer 链接（摄像头不可用或跨公网时用）';
+  String get peerConnect_pasteSubtitle => '对方 App 的配对链接，或对方电脑上 Agent Hub 的地址';
 
   @override
   String get peerConnect_guideTitle => '对方还没有 Agent Hub？';
@@ -4435,14 +4428,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get peerConnect_guideAction => '查看安装方法';
 
   @override
-  String get peerManual_title => '手动输入配对';
+  String get peerManual_title => '输入配对信息';
 
   @override
-  String get peerManual_desc => '在对方设备的「我的二维码」页面复制配对链接，粘贴到下方发起配对。';
+  String get peerManual_desc =>
+      '粘贴对方「我的二维码」里的配对链接，或填入对方 Agent Hub 的仪表盘地址（如 192.168.1.5:4000）。';
 
   @override
-  String get peerManual_inputHint =>
-      'shepaw://peer?local=...&code=...#fp=...&pk=...';
+  String get peerManual_inputHint => 'shepaw://peer?... 或 192.168.1.5:4000';
 
   @override
   String get peerManual_paste => '粘贴';
@@ -4451,10 +4444,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get peerManual_submit => '发起配对';
 
   @override
-  String get peerManual_emptyError => '请粘贴对方的配对内容';
+  String get peerManual_emptyError => '请粘贴配对链接或填写 Hub 地址';
 
   @override
-  String get peerManual_invalidError => '无效的配对内容，请粘贴完整的配对链接（shepaw://peer?...）';
+  String get peerManual_invalidError =>
+      '无法识别。请粘贴完整配对链接（shepaw://peer?...），或填写 Hub 地址（如 192.168.1.5:4000）';
 
   @override
   String get peerManual_connecting => '正在连接...';
@@ -5884,21 +5878,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get peerScan_notPairingQr => '这不是配对二维码';
 
   @override
-  String get peerHub_title => '输入对方 Hub 地址';
-
-  @override
-  String get peerHub_desc => '填对方电脑上 Shepaw Agent Hub 的仪表盘地址，App 会向它要一个配对码。';
-
-  @override
-  String get peerHub_addrLabel => 'Hub 地址';
-
-  @override
-  String get peerHub_addrHint => '192.168.1.5:4000';
-
-  @override
-  String get peerHub_addrHelp => '支持 IP、主机名或完整 http(s) 地址；没写端口按 4000 处理';
-
-  @override
   String get peerHub_tokenLabel => '访问令牌';
 
   @override
@@ -5909,19 +5888,10 @@ class AppLocalizationsZh extends AppLocalizations {
       '对方 Hub 设了 SHEPAW_HUB_TOKEN 时才需要填。令牌只用于本次请求，不会被保存。';
 
   @override
-  String get peerHub_submit => '获取配对码';
-
-  @override
   String get peerHub_probing => '正在向 Hub 请求配对码…';
 
   @override
-  String get peerHub_emptyError => '请填写对方 Hub 的地址';
-
-  @override
   String get peerHub_invalidError => '地址格式不对，示例：192.168.1.5:4000';
-
-  @override
-  String get peerHub_pairLinkError => '这是一条配对链接，请改用「粘贴配对链接」';
 
   @override
   String get peerHub_unreachableError => '连不上这个地址。请确认对方 Hub 正在运行，且两台设备网络互通。';

@@ -8175,28 +8175,16 @@ abstract class AppLocalizations {
   /// **'桌面端没有摄像头，请用手机扫码，或改用下面的方式'**
   String get peerConnect_scanDesktopHint;
 
-  /// No description provided for @peerConnect_hubTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'输入对方 Hub 地址'**
-  String get peerConnect_hubTitle;
-
-  /// No description provided for @peerConnect_hubSubtitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'对方电脑上装了 Shepaw Agent Hub 时使用'**
-  String get peerConnect_hubSubtitle;
-
   /// No description provided for @peerConnect_pasteTitle.
   ///
   /// In zh, this message translates to:
-  /// **'粘贴配对链接'**
+  /// **'粘贴链接或 Hub 地址'**
   String get peerConnect_pasteTitle;
 
   /// No description provided for @peerConnect_pasteSubtitle.
   ///
   /// In zh, this message translates to:
-  /// **'从对方设备复制 shepaw://peer 链接（摄像头不可用或跨公网时用）'**
+  /// **'对方 App 的配对链接，或对方电脑上 Agent Hub 的地址'**
   String get peerConnect_pasteSubtitle;
 
   /// No description provided for @peerConnect_guideTitle.
@@ -8214,19 +8202,19 @@ abstract class AppLocalizations {
   /// No description provided for @peerManual_title.
   ///
   /// In zh, this message translates to:
-  /// **'手动输入配对'**
+  /// **'输入配对信息'**
   String get peerManual_title;
 
   /// No description provided for @peerManual_desc.
   ///
   /// In zh, this message translates to:
-  /// **'在对方设备的「我的二维码」页面复制配对链接，粘贴到下方发起配对。'**
+  /// **'粘贴对方「我的二维码」里的配对链接，或填入对方 Agent Hub 的仪表盘地址（如 192.168.1.5:4000）。'**
   String get peerManual_desc;
 
   /// No description provided for @peerManual_inputHint.
   ///
   /// In zh, this message translates to:
-  /// **'shepaw://peer?local=...&code=...#fp=...&pk=...'**
+  /// **'shepaw://peer?... 或 192.168.1.5:4000'**
   String get peerManual_inputHint;
 
   /// No description provided for @peerManual_paste.
@@ -8244,13 +8232,13 @@ abstract class AppLocalizations {
   /// No description provided for @peerManual_emptyError.
   ///
   /// In zh, this message translates to:
-  /// **'请粘贴对方的配对内容'**
+  /// **'请粘贴配对链接或填写 Hub 地址'**
   String get peerManual_emptyError;
 
   /// No description provided for @peerManual_invalidError.
   ///
   /// In zh, this message translates to:
-  /// **'无效的配对内容，请粘贴完整的配对链接（shepaw://peer?...）'**
+  /// **'无法识别。请粘贴完整配对链接（shepaw://peer?...），或填写 Hub 地址（如 192.168.1.5:4000）'**
   String get peerManual_invalidError;
 
   /// No description provided for @peerManual_connecting.
@@ -10749,36 +10737,6 @@ abstract class AppLocalizations {
   /// **'这不是配对二维码'**
   String get peerScan_notPairingQr;
 
-  /// No description provided for @peerHub_title.
-  ///
-  /// In zh, this message translates to:
-  /// **'输入对方 Hub 地址'**
-  String get peerHub_title;
-
-  /// No description provided for @peerHub_desc.
-  ///
-  /// In zh, this message translates to:
-  /// **'填对方电脑上 Shepaw Agent Hub 的仪表盘地址，App 会向它要一个配对码。'**
-  String get peerHub_desc;
-
-  /// No description provided for @peerHub_addrLabel.
-  ///
-  /// In zh, this message translates to:
-  /// **'Hub 地址'**
-  String get peerHub_addrLabel;
-
-  /// No description provided for @peerHub_addrHint.
-  ///
-  /// In zh, this message translates to:
-  /// **'192.168.1.5:4000'**
-  String get peerHub_addrHint;
-
-  /// No description provided for @peerHub_addrHelp.
-  ///
-  /// In zh, this message translates to:
-  /// **'支持 IP、主机名或完整 http(s) 地址；没写端口按 4000 处理'**
-  String get peerHub_addrHelp;
-
   /// No description provided for @peerHub_tokenLabel.
   ///
   /// In zh, this message translates to:
@@ -10797,35 +10755,17 @@ abstract class AppLocalizations {
   /// **'对方 Hub 设了 SHEPAW_HUB_TOKEN 时才需要填。令牌只用于本次请求，不会被保存。'**
   String get peerHub_tokenHelp;
 
-  /// No description provided for @peerHub_submit.
-  ///
-  /// In zh, this message translates to:
-  /// **'获取配对码'**
-  String get peerHub_submit;
-
   /// No description provided for @peerHub_probing.
   ///
   /// In zh, this message translates to:
   /// **'正在向 Hub 请求配对码…'**
   String get peerHub_probing;
 
-  /// No description provided for @peerHub_emptyError.
-  ///
-  /// In zh, this message translates to:
-  /// **'请填写对方 Hub 的地址'**
-  String get peerHub_emptyError;
-
   /// No description provided for @peerHub_invalidError.
   ///
   /// In zh, this message translates to:
   /// **'地址格式不对，示例：192.168.1.5:4000'**
   String get peerHub_invalidError;
-
-  /// No description provided for @peerHub_pairLinkError.
-  ///
-  /// In zh, this message translates to:
-  /// **'这是一条配对链接，请改用「粘贴配对链接」'**
-  String get peerHub_pairLinkError;
 
   /// No description provided for @peerHub_unreachableError.
   ///

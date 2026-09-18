@@ -60,6 +60,30 @@ Uri? normalizeHubDashboardUrl(
   return Uri(scheme: scheme, host: parsed.host, port: defaultPort);
 }
 
+/// 用户输入是否**看起来像** Hub 仪表盘地址，而不是一段随手乱贴的文字。
+///
+/// 配对入口把「粘贴 shepaw:// 链接」和「填 Hub 地址」收成同一个框之后，
+/// 不能再把 `not-a-pairing-link` 这种词当成主机名去探测 —— 那会先空等几秒
+/// 超时，再报「连不上」，把「链接贴错了」掩盖掉。
+///
+/// 认作 Hub 地址的（在 [normalizeHubDashboardUrl] 能解析的前提下）：
+/// - 显式 `http(s)://…`
+/// - 带端口（`host:4000`、`[v6]:4000`）
+/// - 内网 / 回环 IP、`localhost`
+/// - 带点的主机名（`hub.local`、`example.com`）
+///
+/// 单节主机名（`raspberrypi`）请写成 `raspberrypi:4000`。
+bool looksLikeHubDashboardInput(String raw) {
+  final uri = normalizeHubDashboardUrl(raw);
+  if (uri == null) return false;
+  final trimmed = raw.trim();
+  if (trimmed.contains('://')) return true;
+  if (trimmed.contains(':')) return true;
+  if (isPrivateOrLoopback(uri.host)) return true;
+  if (uri.host.contains('.')) return true;
+  return false;
+}
+
 /// 该 host 是否属于内网 / 回环（含 IPv4 私有段、link-local 与 IPv6 回环 / ULA）。
 ///
 /// 用于决定要不要提示「token 会以明文发送」。域名一律判为**公网** ——
