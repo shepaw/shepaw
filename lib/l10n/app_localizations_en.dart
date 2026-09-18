@@ -3082,7 +3082,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get contacts_title => 'Contacts';
 
   @override
-  String get contacts_agents => 'This Device';
+  String get contacts_agents => 'Built-in';
 
   @override
   String get contacts_groups => 'Group Chats';

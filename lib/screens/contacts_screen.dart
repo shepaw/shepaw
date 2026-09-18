@@ -24,7 +24,7 @@ import 'add_remote_agent_screen.dart';
 import 'create_group_screen.dart';
 
 /// WeChat-style contacts screen with collapsible sections.
-/// Order: each paired device (foldable, with peer agents) → Group Chats → Local.
+/// Order: each paired device (foldable, with peer agents) → Group Chats → Built-in.
 ///
 /// When [embedded] is true (desktop middle column), selection callbacks open
 /// details in the parent right panel instead of pushing a new route.
@@ -218,7 +218,7 @@ class ContactsScreenState extends State<ContactsScreen> {
     final paired = _pairedPeerIds;
     final list = _agents.where((a) {
       if (a.hiddenOnThisApp) return false;
-      // 本机：非 peer agent；若 peer 已解配则暂挂在本机以免丢失入口。
+      // App 内置：非 peer agent；若 peer 已解配则暂挂在这里以免丢失入口。
       if (!a.isPeerAgent) return true;
       final src = a.sourcePeerId;
       return src == null || !paired.contains(src);
@@ -408,12 +408,12 @@ class ContactsScreenState extends State<ContactsScreen> {
       if (_expanded.contains(_ContactsSection.groups))
         ..._buildGroupChildren(groups, l10n),
 
-      // Local agents (本机)
+      // App 内置（非 peer；用来和本机 Agent Hub 那台配对设备区分）
       _buildSectionHeader(
         section: _ContactsSection.local,
         title: l10n.contacts_agents,
         count: localAgents.length,
-        icon: Icons.smartphone_outlined,
+        icon: Icons.apps_outlined,
         iconColor: AppColors.primary,
       ),
       if (_expanded.contains(_ContactsSection.local))
