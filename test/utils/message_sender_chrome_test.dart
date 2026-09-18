@@ -7,12 +7,14 @@ Message _msg({
   required String senderId,
   required DateTime timestamp,
   String name = 'Alice',
+  String senderType = 'agent',
 }) {
   return Message.simple(
     id: id,
     channelId: 'ch',
     senderId: senderId,
     senderName: name,
+    senderType: senderType,
     content: 'hi',
     timestamp: timestamp,
     type: MessageType.text,
@@ -113,6 +115,59 @@ void main() {
           collapseSenderChrome: false,
         ),
         isFalse,
+      );
+    });
+  });
+
+  group('defaultExpandedGroupMessageId', () {
+    test('returns last non-my collapsible message', () {
+      final messages = [
+        _msg(id: '1', senderId: 'agent-a', timestamp: t0, name: 'A'),
+        _msg(
+          id: '2',
+          senderId: 'local-user',
+          senderType: 'user',
+          timestamp: t1,
+          name: 'Me',
+        ),
+        _msg(id: '3', senderId: 'agent-b', timestamp: t1, name: 'B'),
+      ];
+      expect(
+        MessageUtils.defaultExpandedGroupMessageId(messages),
+        '3',
+      );
+    });
+
+    test('returns null when latest message is from me', () {
+      final messages = [
+        _msg(id: '1', senderId: 'agent-a', timestamp: t0, name: 'A'),
+        _msg(
+          id: '2',
+          senderId: 'local-user',
+          senderType: 'user',
+          timestamp: t1,
+          name: 'Me',
+        ),
+      ];
+      expect(MessageUtils.defaultExpandedGroupMessageId(messages), isNull);
+    });
+
+    test('skips system messages at the tail', () {
+      final messages = [
+        _msg(id: '1', senderId: 'agent-a', timestamp: t0, name: 'A'),
+        Message.simple(
+          id: 'sys',
+          channelId: 'ch',
+          senderId: 'system',
+          senderName: 'System',
+          content: 'joined',
+          timestamp: t1,
+          type: MessageType.system,
+        ),
+      ];
+      expect(
+        MessageUtils.defaultExpandedGroupMessageId(messages),
+        '1',
       );
     });
   });

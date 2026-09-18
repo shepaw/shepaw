@@ -1,51 +1,90 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Persists which group-chat message bodies the user has collapsed.
+/// Persists user overrides for group-chat message body collapse.
 ///
-/// Keys are scoped by [channelId] so each conversation keeps its own set.
+/// Default (no override): every message is collapsed except
+/// [defaultExpandedMessageId]. Keys are scoped by [channelId].
 class MessageCollapsePreference extends ChangeNotifier {
-  static const _keyPrefix = 'chat_collapsed_msg_ids_';
+  static const _collapsedKeyPrefix = 'chat_collapsed_msg_ids_';
+  static const _expandedKeyPrefix = 'chat_expanded_msg_ids_';
 
   String? _channelId;
-  Set<String> _collapsedIds = {};
+  /// User explicitly collapsed (overrides default expanded latest).
+  Set<String> _userCollapsedIds = {};
+  /// User explicitly expanded (overrides default collapsed history).
+  Set<String> _userExpandedIds = {};
   bool _loaded = false;
 
   String? get channelId => _channelId;
-  Set<String> get collapsedIds => _collapsedIds;
+  Set<String> get collapsedIds => _userCollapsedIds;
+  Set<String> get expandedIds => _userExpandedIds;
   bool get isLoaded => _loaded;
 
-  bool isCollapsed(String messageId) => _collapsedIds.contains(messageId);
+  /// Whether [messageId] should render in collapsed list-tile mode.
+  ///
+  /// [defaultExpandedMessageId] is the chronologically last collapsible
+  /// message in the channel (see [MessageUtils.defaultExpandedGroupMessageId]).
+  bool isCollapsed(
+    String messageId, {
+    String? defaultExpandedMessageId,
+  }) {
+    if (_userExpandedIds.contains(messageId)) return false;
+    if (_userCollapsedIds.contains(messageId)) return true;
+    if (defaultExpandedMessageId == null) return true;
+    return messageId != defaultExpandedMessageId;
+  }
 
-  /// Load (or switch to) collapsed ids for [channelId].
+  /// Load (or switch to) override sets for [channelId].
   Future<void> loadForChannel(String channelId) async {
     if (_channelId == channelId && _loaded) return;
     _channelId = channelId;
     _loaded = false;
     final prefs = await SharedPreferences.getInstance();
-    final ids = prefs.getStringList('$_keyPrefix$channelId') ?? const [];
-    _collapsedIds = ids.toSet();
+    final collapsed =
+        prefs.getStringList('$_collapsedKeyPrefix$channelId') ?? const [];
+    final expanded =
+        prefs.getStringList('$_expandedKeyPrefix$channelId') ?? const [];
+    _userCollapsedIds = collapsed.toSet();
+    _userExpandedIds = expanded.toSet();
     _loaded = true;
     notifyListeners();
   }
 
-  Future<void> toggle(String messageId) async {
-    if (_collapsedIds.contains(messageId)) {
-      _collapsedIds.remove(messageId);
+  Future<void> toggle(
+    String messageId, {
+    String? defaultExpandedMessageId,
+  }) async {
+    final collapsed = isCollapsed(
+      messageId,
+      defaultExpandedMessageId: defaultExpandedMessageId,
+    );
+    if (collapsed) {
+      _userCollapsedIds.remove(messageId);
+      _userExpandedIds.add(messageId);
     } else {
-      _collapsedIds.add(messageId);
+      _userExpandedIds.remove(messageId);
+      _userCollapsedIds.add(messageId);
     }
     notifyListeners();
     await _persist();
   }
 
   Future<void> setCollapsed(String messageId, bool collapsed) async {
-    final currently = _collapsedIds.contains(messageId);
-    if (currently == collapsed) return;
     if (collapsed) {
-      _collapsedIds.add(messageId);
+      if (_userCollapsedIds.contains(messageId) &&
+          !_userExpandedIds.contains(messageId)) {
+        return;
+      }
+      _userExpandedIds.remove(messageId);
+      _userCollapsedIds.add(messageId);
     } else {
-      _collapsedIds.remove(messageId);
+      if (_userExpandedIds.contains(messageId) &&
+          !_userCollapsedIds.contains(messageId)) {
+        return;
+      }
+      _userCollapsedIds.remove(messageId);
+      _userExpandedIds.add(messageId);
     }
     notifyListeners();
     await _persist();
@@ -56,9 +95,14 @@ class MessageCollapsePreference extends ChangeNotifier {
     final existing = existingIds is Set<String>
         ? existingIds
         : existingIds.toSet();
-    final before = _collapsedIds.length;
-    _collapsedIds.removeWhere((id) => !existing.contains(id));
-    if (_collapsedIds.length == before) return;
+    final beforeCollapsed = _userCollapsedIds.length;
+    final beforeExpanded = _userExpandedIds.length;
+    _userCollapsedIds.removeWhere((id) => !existing.contains(id));
+    _userExpandedIds.removeWhere((id) => !existing.contains(id));
+    if (_userCollapsedIds.length == beforeCollapsed &&
+        _userExpandedIds.length == beforeExpanded) {
+      return;
+    }
     notifyListeners();
     await _persist();
   }
@@ -68,8 +112,12 @@ class MessageCollapsePreference extends ChangeNotifier {
     if (channelId == null) return;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(
-      '$_keyPrefix$channelId',
-      _collapsedIds.toList(growable: false),
+      '$_collapsedKeyPrefix$channelId',
+      _userCollapsedIds.toList(growable: false),
+    );
+    await prefs.setStringList(
+      '$_expandedKeyPrefix$channelId',
+      _userExpandedIds.toList(growable: false),
     );
   }
 }

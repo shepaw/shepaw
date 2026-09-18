@@ -10,36 +10,77 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  test('toggle and persist collapsed ids per channel', () async {
+  test('defaults collapse history and expand latest only', () async {
     final store = MessageCollapsePreference();
     await store.loadForChannel('ch-1');
-    expect(store.isCollapsed('m1'), isFalse);
 
-    await store.toggle('m1');
-    expect(store.isCollapsed('m1'), isTrue);
+    expect(
+      store.isCollapsed('old', defaultExpandedMessageId: 'latest'),
+      isTrue,
+    );
+    expect(
+      store.isCollapsed('latest', defaultExpandedMessageId: 'latest'),
+      isFalse,
+    );
+    expect(
+      store.isCollapsed('old', defaultExpandedMessageId: null),
+      isTrue,
+    );
+  });
 
-    await store.toggle('m1');
-    expect(store.isCollapsed('m1'), isFalse);
+  test('toggle and persist user overrides per channel', () async {
+    final store = MessageCollapsePreference();
+    await store.loadForChannel('ch-1');
 
-    await store.setCollapsed('m2', true);
-    await store.setCollapsed('m3', true);
+    await store.toggle('old', defaultExpandedMessageId: 'latest');
+    expect(store.isCollapsed('old', defaultExpandedMessageId: 'latest'),
+        isFalse);
+
+    await store.toggle('old', defaultExpandedMessageId: 'latest');
+    expect(
+        store.isCollapsed('old', defaultExpandedMessageId: 'latest'), isTrue);
+
+    await store.toggle('latest', defaultExpandedMessageId: 'latest');
+    expect(
+      store.isCollapsed('latest', defaultExpandedMessageId: 'latest'),
+      isTrue,
+    );
 
     final reloaded = MessageCollapsePreference();
     await reloaded.loadForChannel('ch-1');
-    expect(reloaded.isCollapsed('m2'), isTrue);
-    expect(reloaded.isCollapsed('m3'), isTrue);
+    expect(reloaded.expandedIds, isEmpty);
+    expect(reloaded.collapsedIds, containsAll(['old', 'latest']));
 
     await reloaded.loadForChannel('ch-2');
-    expect(reloaded.isCollapsed('m2'), isFalse);
+    expect(
+      reloaded.isCollapsed('old', defaultExpandedMessageId: 'latest'),
+      isTrue,
+    );
   });
 
-  test('pruneTo drops missing message ids', () async {
+  test('setCollapsed records explicit expand/collapse overrides', () async {
+    final store = MessageCollapsePreference();
+    await store.loadForChannel('ch-1');
+
+    await store.setCollapsed('m1', true);
+    expect(store.isCollapsed('m1', defaultExpandedMessageId: 'm2'), isTrue);
+
+    await store.setCollapsed('m1', false);
+    expect(store.isCollapsed('m1', defaultExpandedMessageId: 'm2'), isFalse);
+  });
+
+  test('pruneTo drops missing message ids from both override sets', () async {
     final store = MessageCollapsePreference();
     await store.loadForChannel('ch-1');
     await store.setCollapsed('keep', true);
     await store.setCollapsed('gone', true);
-    await store.pruneTo({'keep'});
-    expect(store.isCollapsed('keep'), isTrue);
-    expect(store.isCollapsed('gone'), isFalse);
+    await store.setCollapsed('expanded', false);
+    await store.pruneTo({'keep', 'expanded'});
+    expect(store.isCollapsed('keep', defaultExpandedMessageId: null), isTrue);
+    expect(store.isCollapsed('gone', defaultExpandedMessageId: null), isTrue);
+    expect(
+      store.isCollapsed('expanded', defaultExpandedMessageId: null),
+      isFalse,
+    );
   });
 }

@@ -1,5 +1,7 @@
 import 'package:intl/intl.dart';
 import '../models/message.dart';
+import '../services/messaging/chat_history_content.dart';
+import '../services/she_service.dart';
 
 /// 消息工具类
 class MessageUtils {
@@ -207,6 +209,24 @@ class MessageUtils {
     required bool collapseSenderChrome,
   }) {
     return isGroupMode && collapseSenderChrome;
+  }
+
+  /// 群聊默认展开的消息：列表中最后一条可展示、非系统消息。
+  ///
+  /// 若最后一条是己方消息，或没有符合条件的消息，返回 null（全部默认收起）。
+  static String? defaultExpandedGroupMessageId(List<Message> messages) {
+    for (var i = messages.length - 1; i >= 0; i--) {
+      final message = messages[i];
+      if (!ChatHistoryContent.shouldDisplayInChat(message)) continue;
+      if (message.isSystemMessage ||
+          message.type == MessageType.permissionAudit) {
+        continue;
+      }
+      final isMyMessage = message.from.type == 'user' &&
+          message.from.id != SheService.sheId;
+      return isMyMessage ? null : message.id;
+    }
+    return null;
   }
 
   /// 编辑消息

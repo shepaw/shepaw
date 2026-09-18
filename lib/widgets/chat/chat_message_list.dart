@@ -244,6 +244,9 @@ class _ChatMessageListState extends State<ChatMessageList> {
     final imageIndexMap = _cachedImageIndexMap!;
     final imageGroupMap = _cachedImageGroupMap!;
     final mergedIndices = _cachedMergedIndices!;
+    final defaultExpandedMessageId = isGroupMode
+        ? MessageUtils.defaultExpandedGroupMessageId(messages)
+        : null;
 
     return KeyedSubtree(
       key: _viewportKey,
@@ -368,9 +371,17 @@ class _ChatMessageListState extends State<ChatMessageList> {
                       stickyViewportKey: _viewportKey,
                       bodyCollapsed: isGroupMode &&
                           !isMyMessage &&
-                          _collapsePreference.isCollapsed(message.id),
+                          _collapsePreference.isCollapsed(
+                            message.id,
+                            defaultExpandedMessageId:
+                                defaultExpandedMessageId,
+                          ),
                       onToggleBodyCollapse: isGroupMode && !isMyMessage
-                          ? () => _collapsePreference.toggle(message.id)
+                          ? () => _collapsePreference.toggle(
+                                message.id,
+                                defaultExpandedMessageId:
+                                    defaultExpandedMessageId,
+                              )
                           : null,
                       onStop: (message.id == streamingMessageId ||
                               groupStreamingMessageIds.contains(message.id))
