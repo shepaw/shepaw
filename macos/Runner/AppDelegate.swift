@@ -42,9 +42,8 @@ class AppDelegate: FlutterAppDelegate {
 
   override func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
     if !flag {
-      for window in sender.windows where window is MainFlutterWindow {
-        window.setIsVisible(true)
-        window.makeKeyAndOrderFront(self)
+      for case let window as MainFlutterWindow in sender.windows {
+        window.revealToUser()
       }
     }
     return true
@@ -52,9 +51,12 @@ class AppDelegate: FlutterAppDelegate {
 
   /// 不要调 super：FlutterAppDelegate 没有实现这个 selector，
   /// Touch ID 关掉后 AppKit 一回调就会 unrecognized selector 崩掉。
+  ///
+  /// 用户自己关掉的窗口不要拉回来，否则「关窗 → 切别的 App → 切回来」
+  /// 窗口会莫名重现；那种情况只由点 Dock 图标恢复。
   override func applicationDidBecomeActive(_ notification: Notification) {
-    for window in NSApp.windows where window is MainFlutterWindow {
-      if !window.isVisible {
+    for case let window as MainFlutterWindow in NSApp.windows {
+      if !window.isVisible && !window.closedByUser {
         window.setIsVisible(true)
         window.makeKeyAndOrderFront(nil)
       }

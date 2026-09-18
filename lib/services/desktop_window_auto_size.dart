@@ -27,12 +27,15 @@ class DesktopWindowAutoSize {
   static bool _initialized = false;
 
   /// 初始化 window_manager 插件。重复调用安全。
+  ///
+  /// 不要在这里调 `setPreventClose(true)`：它让插件的 windowShouldClose 一律
+  /// 返回 false，关闭按钮会彻底失效（没有 WindowListener 接管时窗口不会消失）。
+  /// macOS「关窗不退进程」由 MainFlutterWindow.performClose 在原生层隐藏窗口实现。
   static Future<void> ensureInitialized() async {
     if (_initialized) return;
     _initialized = true;
     try {
       await windowManager.ensureInitialized();
-      await windowManager.setPreventClose(true);
     } catch (_) {
       // 平台实现不可用（如测试环境）时保持静默，后续调用全部短路。
     }

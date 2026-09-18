@@ -3,6 +3,11 @@ import FlutterMacOS
 import desktop_multi_window
 
 class MainFlutterWindow: NSWindow {
+  /// 用户点过关闭按钮（Cmd+W 同理）后置位，由 AppDelegate 读取：
+  /// applicationDidBecomeActive 的 Touch ID 兜底不能再把窗口拉回来，
+  /// 否则关掉的窗口会在切回 App 时自己冒出来。点 Dock 图标时清零。
+  private(set) var closedByUser = false
+
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
     let windowFrame = self.frame
@@ -35,8 +40,7 @@ class MainFlutterWindow: NSWindow {
       case "focus":
         DispatchQueue.main.async {
           guard let window = self else { return }
-          window.setIsVisible(true)
-          window.makeKeyAndOrderFront(nil)
+          window.revealToUser()
           NSApp.activate(ignoringOtherApps: true)
         }
         result(nil)
@@ -50,5 +54,19 @@ class MainFlutterWindow: NSWindow {
     }
 
     super.awakeFromNib()
+  }
+
+  /// 关闭按钮只隐藏窗口，不真的 close：Flutter 引擎与后台的 Peer / ACP 连接
+  /// 必须活着，而窗口一旦 close，local_auth 的 Touch ID 面板收起时 AppKit 会
+  /// 顺手杀掉进程。重新打开走 Dock 图标（applicationShouldHandleReopen）。
+  override func performClose(_ sender: Any?) {
+    closedByUser = true
+    orderOut(nil)
+  }
+
+  func revealToUser() {
+    closedByUser = false
+    setIsVisible(true)
+    makeKeyAndOrderFront(nil)
   }
 }
