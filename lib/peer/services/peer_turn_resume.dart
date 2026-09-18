@@ -151,32 +151,48 @@ class RemoteHistoryLine {
   final String content;
 }
 
-/// Last non-empty assistant (non-user) line, or null.
-String? lastAssistantContentFromHistory(
-  Iterable<RemoteHistoryLine> history,
-) {
-  for (final m in history.toList().reversed) {
-    if (m.role != 'user' && m.content.trim().isNotEmpty) {
-      return m.content;
-    }
-  }
-  return null;
-}
-
-/// Group/workflow peer turns stream on the group [channelId] but persist
-/// history on the member/workflow [sessionId]. If that session's remote
-/// transcript already has a final assistant reply, a missed `agent_done`
-/// must not keep the whole stage blocked.
-bool remoteTranscriptUnblocksInflight({
+/// 用远端 transcript 收尾在途回合时应采用的回复，无法收尾时返回 null。
+///
+/// Group/workflow peer turns stream on the group channel but persist history on
+/// the member/workflow session. If that session's remote transcript already has
+/// the final assistant reply, a missed `agent_done` must not keep the whole
+/// stage blocked.
+///
+/// 不能简单地「从后往前取最后一条 assistant 行」：那样会跨过尾部的 user 行，
+/// 于是 `[Q1, A1, Q2]`（提问已提交、agent 还在跑）会交出 A1，把上一回合的
+/// 回复当成 Q2 的答案落库。判据：
+/// - transcript 属于该在途会话；
+/// - 最新一条非空行必须是 assistant 行（尾部是 user 行说明还没答）；
+/// - 本回合已经流出过文本时，远端回复必须以同样的开头起始，否则这条
+///   assistant 属于别的回合。
+String? settlingReplyFromRemoteTranscript({
   required String inflightSessionId,
   required String syncedRemoteSessionId,
-  required String? lastAssistantContent,
+  required Iterable<RemoteHistoryLine> history,
+  String receivedContent = '',
 }) {
-  if (inflightSessionId.isEmpty || syncedRemoteSessionId.isEmpty) {
-    return false;
+  if (inflightSessionId.isEmpty || syncedRemoteSessionId.isEmpty) return null;
+  if (inflightSessionId != syncedRemoteSessionId) return null;
+
+  RemoteHistoryLine? newest;
+  final lines = history.toList();
+  for (var i = lines.length - 1; i >= 0; i--) {
+    if (lines[i].content.trim().isEmpty) continue;
+    newest = lines[i];
+    break;
   }
-  if (lastAssistantContent == null || lastAssistantContent.trim().isEmpty) {
-    return false;
+  if (newest == null || newest.role == 'user') return null;
+
+  // 只比对开头一小段：续传重叠可能让累积内容的尾部有瑕疵，而开头已足够区分
+  // 「同一条回复的前半」与「上一回合的另一条回复」。
+  final received = receivedContent.trim();
+  if (received.isNotEmpty) {
+    final head = received.length <= _kSettleProbeChars
+        ? received
+        : received.substring(0, _kSettleProbeChars);
+    if (!newest.content.trim().startsWith(head)) return null;
   }
-  return inflightSessionId == syncedRemoteSessionId;
+  return newest.content;
 }
+
+const int _kSettleProbeChars = 64;

@@ -375,48 +375,104 @@ void main() {
     });
   });
 
-  group('remoteTranscriptUnblocksInflight', () {
-    test('session 对上且已有助手回复 → true', () {
+  group('settlingReplyFromRemoteTranscript', () {
+    String? settle(
+      List<RemoteHistoryLine> history, {
+      String sessionId = 's1',
+      String syncedSessionId = 's1',
+      String receivedContent = '',
+    }) {
+      return settlingReplyFromRemoteTranscript(
+        inflightSessionId: sessionId,
+        syncedRemoteSessionId: syncedSessionId,
+        history: history,
+        receivedContent: receivedContent,
+      );
+    }
+
+    test('session 对上且回合已答完 → 交出末条回复', () {
       expect(
-        remoteTranscriptUnblocksInflight(
-          inflightSessionId: 'gmd_g1__a1__wf_w__step_s',
-          syncedRemoteSessionId: 'gmd_g1__a1__wf_w__step_s',
-          lastAssistantContent: '## 官网引擎清单现状',
+        settle(
+          const [
+            RemoteHistoryLine(role: 'user', content: 'q'),
+            RemoteHistoryLine(role: 'agent', content: '## 官网引擎清单现状'),
+          ],
+          sessionId: 'gmd_g1__a1__wf_w__step_s',
+          syncedSessionId: 'gmd_g1__a1__wf_w__step_s',
         ),
-        isTrue,
+        '## 官网引擎清单现状',
       );
     });
 
-    test('session 不一致 → false', () {
+    test('session 不一致 → null', () {
       expect(
-        remoteTranscriptUnblocksInflight(
-          inflightSessionId: 'gmd_g1__a1',
-          syncedRemoteSessionId: 'gmd_g1__a2',
-          lastAssistantContent: 'done',
+        settle(
+          const [RemoteHistoryLine(role: 'agent', content: 'done')],
+          sessionId: 'gmd_g1__a1',
+          syncedSessionId: 'gmd_g1__a2',
         ),
-        isFalse,
+        isNull,
       );
     });
 
-    test('无助手回复 → false', () {
+    test('无助手回复 → null', () {
       expect(
-        remoteTranscriptUnblocksInflight(
-          inflightSessionId: 's1',
-          syncedRemoteSessionId: 's1',
-          lastAssistantContent: '   ',
-        ),
-        isFalse,
-      );
-    });
-
-    test('lastAssistantContentFromHistory 取最后一条非 user', () {
-      expect(
-        lastAssistantContentFromHistory(const [
+        settle(const [
           RemoteHistoryLine(role: 'user', content: 'q'),
-          RemoteHistoryLine(role: 'agent', content: 'first'),
-          RemoteHistoryLine(role: 'agent', content: 'final answer'),
+          RemoteHistoryLine(role: 'agent', content: '   '),
         ]),
-        'final answer',
+        isNull,
+      );
+    });
+
+    // 回归：提问已提交但 agent 还没答，尾部是 user 行。旧实现会跨过它取到 A1，
+    // 把上一回合的回复存成新提问的答案。
+    test('提问已在 transcript 但尚未作答 → null', () {
+      expect(
+        settle(const [
+          RemoteHistoryLine(role: 'user', content: 'Q1'),
+          RemoteHistoryLine(role: 'agent', content: 'A1 回答的是 Q1'),
+          RemoteHistoryLine(role: 'user', content: 'Q2'),
+        ]),
+        isNull,
+      );
+    });
+
+    test('答完后同一 transcript 交出新回复', () {
+      expect(
+        settle(const [
+          RemoteHistoryLine(role: 'user', content: 'Q1'),
+          RemoteHistoryLine(role: 'agent', content: 'A1 回答的是 Q1'),
+          RemoteHistoryLine(role: 'user', content: 'Q2'),
+          RemoteHistoryLine(role: 'agent', content: 'A2 回答的是 Q2'),
+        ]),
+        'A2 回答的是 Q2',
+      );
+    });
+
+    test('已流出的开头对得上 → 交出完整回复', () {
+      expect(
+        settle(
+          const [
+            RemoteHistoryLine(role: 'user', content: 'Q'),
+            RemoteHistoryLine(role: 'agent', content: 'Hello world, 详细展开…'),
+          ],
+          receivedContent: 'Hello wo',
+        ),
+        'Hello world, 详细展开…',
+      );
+    });
+
+    test('已流出的开头对不上（末条属于别的回合）→ null', () {
+      expect(
+        settle(
+          const [
+            RemoteHistoryLine(role: 'user', content: 'Q'),
+            RemoteHistoryLine(role: 'agent', content: '完全不同的另一条回复'),
+          ],
+          receivedContent: 'Hello wo',
+        ),
+        isNull,
       );
     });
   });

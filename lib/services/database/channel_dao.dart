@@ -514,7 +514,7 @@ extension ChannelDao on LocalDatabaseService {
       'messages',
       where: 'channel_id = ? AND message_type NOT IN (?, ?)',
       whereArgs: [channelId, 'system', 'permission_audit'],
-      orderBy: 'created_at ASC',
+      orderBy: 'created_at ASC, rowid ASC',
       limit: 20,
     );
     for (final row in results) {

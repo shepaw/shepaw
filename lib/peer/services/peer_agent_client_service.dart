@@ -294,21 +294,26 @@ class PeerHistoryMessage {
 ///
 /// Preference order per message:
 /// 1. Protocol [PeerHistoryMessage.createdAt] (filled by agent-bridge)
-/// 2. Existing local `created_at` for the same stable id (when any remote stamp
-///    exists — preserves prior good times for unstamped gaps)
-/// 3. Anchor to session-level [sessionUpdatedAt] from `sessions.list`
-/// 4. Preserve existing local time when no session anchor is available
-/// 5. [fallbackEnd]-anchored synthetic times for brand-new rows
+/// 2. Existing local `created_at` for the same stable id — a resynced row keeps
+///    the time it already has, so repeated syncs are idempotent
+/// 3. [sessionUpdatedAt] / [fallbackEnd]-anchored synthetic times, one minute
+///    apart, for rows the channel does not have yet
 ///
-/// [latestLocalAt] 是本地已有消息的最新时间：整批同步时间不得早于它。会话级
-/// 锚（[sessionUpdatedAt]）可能落后数分钟，原样落库会把刚同步回来的回复排到
-/// 列表最上方，看起来就像「回复跑到了被引用的消息上面」。
+/// [latestMirroredLocalAt] is a lower bound for the batch, applied only when no
+/// message carries a remote stamp: the session-level anchor
+/// ([sessionUpdatedAt]) can lag by minutes, and storing it verbatim would sort
+/// the whole synthesized batch above messages the channel already shows.
+///
+/// It must only account for local rows the remote transcript actually contains.
+/// Counting a just-sent message that the remote has not committed yet would
+/// shift the batch past it, pushing the previous turn's reply *below* the new
+/// question — the reply then reads as an answer to it.
 List<DateTime> assignPeerHistoryTimestamps(
   List<PeerHistoryMessage> history, {
   Map<String, DateTime> existingById = const {},
   DateTime? sessionUpdatedAt,
   DateTime? fallbackEnd,
-  DateTime? latestLocalAt,
+  DateTime? latestMirroredLocalAt,
   String Function(PeerHistoryMessage message, int index)? idFor,
 }) {
   if (history.isEmpty) return const [];
@@ -321,11 +326,6 @@ List<DateTime> assignPeerHistoryTimestamps(
     final existing = id != null ? existingById[id] : null;
     if (m.createdAt != null) {
       out.add(m.createdAt!);
-    } else if (anyRemote && existing != null) {
-      out.add(existing);
-    } else if (sessionUpdatedAt != null) {
-      final offsetFromEnd = history.length - 1 - i;
-      out.add(sessionUpdatedAt.subtract(Duration(minutes: offsetFromEnd)));
     } else if (existing != null) {
       out.add(existing);
     } else {
@@ -340,9 +340,11 @@ List<DateTime> assignPeerHistoryTimestamps(
       out[i] = out[i - 1].add(const Duration(seconds: 1));
     }
   }
-  // 整批不早于本地已有消息：整体平移以保持批内相对间隔。
-  final floor = latestLocalAt;
-  if (floor != null && out.last.isBefore(floor)) {
+  // Only synthesized batches get floored. Remote stamps are authoritative and
+  // must land verbatim, otherwise every sync pushes the transcript later than
+  // the last one and it drifts past newer local messages.
+  final floor = latestMirroredLocalAt;
+  if (!anyRemote && floor != null && out.last.isBefore(floor)) {
     final shift = floor.difference(out.last) + const Duration(seconds: 1);
     for (var i = 0; i < out.length; i++) {
       out[i] = out[i].add(shift);
@@ -3023,17 +3025,26 @@ class PeerAgentClientService {
       if (at != null) existingById[id] = at;
     }
 
-    DateTime? latestLocalAt;
-    for (final at in existingById.values) {
-      if (latestLocalAt == null || at.isAfter(latestLocalAt)) {
-        latestLocalAt = at;
+    final remoteIds = <String>{
+      for (var i = 0; i < history.length; i++)
+        peerHistoryMessageId(history[i], channelId, i),
+    };
+    // Lower bound for a synthesized batch, restricted to rows this transcript
+    // owns. A live local row the remote does not have yet is genuinely newer
+    // than the batch and must stay below it.
+    DateTime? latestMirroredLocalAt;
+    for (final entry in existingById.entries) {
+      if (!remoteIds.contains(entry.key)) continue;
+      final at = entry.value;
+      if (latestMirroredLocalAt == null || at.isAfter(latestMirroredLocalAt)) {
+        latestMirroredLocalAt = at;
       }
     }
     final createdAts = assignPeerHistoryTimestamps(
       history,
       existingById: existingById,
       sessionUpdatedAt: sessionUpdatedAt,
-      latestLocalAt: latestLocalAt,
+      latestMirroredLocalAt: latestMirroredLocalAt,
       idFor: (m, i) => peerHistoryMessageId(m, channelId, i),
     );
 
@@ -3064,16 +3075,45 @@ class PeerAgentClientService {
       if (identical) return 0;
     }
 
-    final remoteIds = <String>{};
+    // Live rows of a turn still in flight (the user's prompt, the streaming
+    // partial). They stay put below, so the remote copy of the same text must
+    // not be written as a second row.
+    final preserveIds = <String>{};
+    for (final rec in snapshotInflightTurns()) {
+      if (rec.channelId != channelId) continue;
+      if (rec.userMessageId.isNotEmpty) preserveIds.add(rec.userMessageId);
+      if (rec.partialMessageId != null && rec.partialMessageId!.isNotEmpty) {
+        preserveIds.add(rec.partialMessageId!);
+      }
+    }
+    final preservedRoleContentKeys = <String>{};
+    for (final id in preserveIds) {
+      final row = existingRowsById[id];
+      if (row == null) continue;
+      final role = (row['sender_type'] as String?) == 'user' ? 'user' : 'agent';
+      preservedRoleContentKeys.add(
+        peerHistoryRoleContentKey(role, row['content'] as String? ?? ''),
+      );
+    }
+
     final remoteRoleContentKeys = <String>{};
     final remoteAgentContents = <String>[];
     for (var i = 0; i < history.length; i++) {
       final m = history[i];
       final isUser = m.role == 'user';
       final msgId = peerHistoryMessageId(m, channelId, i);
-      remoteIds.add(msgId);
       remoteRoleContentKeys.add(peerHistoryRoleContentKey(m.role, m.content));
       if (!isUser) remoteAgentContents.add(m.content);
+      // An in-flight local row already shows this text, and the UI is still
+      // writing to it. Adding the `peerhist_*` twin now would double the bubble
+      // and orphan the partial's reply link. The next sync — after the turn
+      // settles and the row loses its reprieve — mirrors it and drops the local
+      // copy, so the channel still converges on the remote transcript.
+      if (!existingRowsById.containsKey(msgId) &&
+          preservedRoleContentKeys
+              .contains(peerHistoryRoleContentKey(m.role, m.content))) {
+        continue;
+      }
       // Fold the reconstructed progress section (thinking/tools/plan) into the
       // same metadata shape the live stream produces — the bubble renders it
       // as one collapsible block above the answer.
@@ -3081,9 +3121,10 @@ class PeerAgentClientService {
         m,
         baseMetadata: peerHistoryMessageMetadata(m),
       );
+      final existingRow = existingRowsById[msgId];
       final isRead = preservedReadStateForHistorySync(
         remote: m,
-        existingRow: existingRowsById[msgId],
+        existingRow: existingRow,
       );
       await _db.createMessage(
         id: msgId,
@@ -3093,24 +3134,19 @@ class PeerAgentClientService {
         senderName: isUser ? userName : agentName,
         content: display.content,
         metadata: display.metadata,
+        // ConflictAlgorithm.replace rewrites the whole row, so the reply link
+        // has to be carried over explicitly — it is the only causal edge
+        // MessageUtils.orderForDisplay can fall back on when stamps are coarse.
+        replyToId: existingRow?['reply_to_id'] as String?,
         createdAt: createdAts[i],
         isRead: isRead,
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
     }
 
-    // Drop stale remote-mirrored rows, but keep live local messages that the
-    // remote transcript does not yet contain (in-flight user send, streaming
-    // partials). Otherwise a sync mid-turn deletes the new uuid bubble and
-    // the previous assistant reply looks like the answer to the new message.
-    final preserveIds = <String>{};
-    for (final rec in snapshotInflightTurns()) {
-      if (rec.channelId != channelId) continue;
-      if (rec.userMessageId.isNotEmpty) preserveIds.add(rec.userMessageId);
-      if (rec.partialMessageId != null && rec.partialMessageId!.isNotEmpty) {
-        preserveIds.add(rec.partialMessageId!);
-      }
-    }
+    // Drop stale remote-mirrored rows, but keep the live rows collected above:
+    // deleting a mid-turn bubble would make the previous assistant reply look
+    // like the answer to the new message.
     final localRows = existingAsc.map((row) {
       return PeerHistorySyncLocalRow(
         id: row['id'] as String? ?? '',
@@ -3152,27 +3188,27 @@ class PeerAgentClientService {
     required String remoteSessionId,
     required List<PeerHistoryMessage> history,
   }) {
-    final last = lastAssistantContentFromHistory([
+    final lines = [
       for (final m in history)
         RemoteHistoryLine(role: m.role, content: m.content),
-    ]);
+    ];
     for (final entry in _pending.entries.toList()) {
       final requestId = entry.key;
       final p = entry.value;
       if (p.completer.isCompleted) continue;
-      if (!remoteTranscriptUnblocksInflight(
+      final reply = settlingReplyFromRemoteTranscript(
         inflightSessionId: p.sessionId,
         syncedRemoteSessionId: remoteSessionId,
-        lastAssistantContent: last,
-      )) {
-        continue;
-      }
+        history: lines,
+        receivedContent: p.answerContent,
+      );
+      if (reply == null) continue;
       _log.info(
         'completing inflight turn $requestId from remote transcript '
-        'session=$remoteSessionId (${last!.length} chars)',
+        'session=$remoteSessionId (${reply.length} chars)',
         tag: _tag,
       );
-      _finishPending(requestId, {'content': last});
+      _finishPending(requestId, {'content': reply});
     }
   }
 

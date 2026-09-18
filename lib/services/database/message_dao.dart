@@ -45,13 +45,18 @@ extension MessageDao on LocalDatabaseService {
   }
 
   /// 获取 Channel 的消息
+  ///
+  /// `rowid` 是排序的次级键：`created_at` 并不保证唯一——peer 历史同步回灌的
+  /// 时间戳来自引擎 transcript，精度可能只到分钟，同一分钟的两个回合会拿到
+  /// 相同的戳。只按 created_at 排序时它们的先后是任意的，回复会被排到别的
+  /// 提问下面。插入顺序即到达顺序，可以稳定地打破这种平局。
   Future<List<Map<String, dynamic>>> getChannelMessages(String channelId, {int limit = 100, int offset = 0}) async {
     final db = await database;
     return await db.query(
       'messages',
       where: 'channel_id = ?',
       whereArgs: [channelId],
-      orderBy: 'created_at DESC',
+      orderBy: 'created_at DESC, rowid DESC',
       limit: limit,
       offset: offset,
     );
@@ -68,7 +73,7 @@ extension MessageDao on LocalDatabaseService {
       'messages',
       where: 'channel_id = ? AND created_at < ?',
       whereArgs: [channelId, beforeCreatedAt],
-      orderBy: 'created_at DESC',
+      orderBy: 'created_at DESC, rowid DESC',
       limit: limit,
     );
   }
@@ -321,7 +326,7 @@ extension MessageDao on LocalDatabaseService {
           '(metadata LIKE \'%"status":"streaming"%\' OR '
           'metadata LIKE \'%"status": "streaming"%\')',
       whereArgs: [channelId, senderId],
-      orderBy: 'created_at DESC',
+      orderBy: 'created_at DESC, rowid DESC',
       limit: 1,
     );
     if (rows.isEmpty) return null;
@@ -468,7 +473,7 @@ extension MessageDao on LocalDatabaseService {
         'messages',
         where: 'channel_id = ? AND ($jsonQuery = "streaming" OR $jsonQuery = "partial")',
         whereArgs: [channelId],
-        orderBy: 'created_at DESC',
+        orderBy: 'created_at DESC, rowid DESC',
         limit: 50, // Reasonable limit for recovery
       );
 

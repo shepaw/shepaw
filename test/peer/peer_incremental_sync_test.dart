@@ -362,6 +362,23 @@ void main() {
       expect(times[1], local);
     });
 
+    test('reuses existing local time over the session anchor (idempotent resync)', () {
+      final local0 = DateTime.utc(2026, 7, 1, 10);
+      final local1 = DateTime.utc(2026, 7, 1, 10, 0, 30);
+      final history = [
+        PeerHistoryMessage(role: 'user', content: 'a'),
+        PeerHistoryMessage(role: 'agent', content: 'b'),
+      ];
+      final times = assignPeerHistoryTimestamps(
+        history,
+        existingById: {'peerhist_0': local0, 'peerhist_1': local1},
+        sessionUpdatedAt: end,
+        latestMirroredLocalAt: local1,
+        idFor: (m, i) => 'peerhist_$i',
+      );
+      expect(times, [local0, local1]);
+    });
+
     test('enforces non-decreasing order', () {
       final earlier = DateTime.utc(2026, 7, 1, 10);
       final later = DateTime.utc(2026, 7, 1, 11);
@@ -374,9 +391,9 @@ void main() {
       expect(times[1], later.add(const Duration(seconds: 1)));
     });
 
-    test('整批不早于本地已有消息（会话锚过期时整体前移）', () {
+    test('合成批不早于已镜像的本地消息（会话锚过期时整体前移）', () {
       final remoteEnd = DateTime.utc(2026, 7, 12, 11, 55);
-      final localLatest = DateTime.utc(2026, 7, 12, 12, 0);
+      final mirroredLatest = DateTime.utc(2026, 7, 12, 12, 0);
       final history = [
         PeerHistoryMessage(role: 'user', content: 'a'),
         PeerHistoryMessage(role: 'agent', content: 'b'),
@@ -384,10 +401,10 @@ void main() {
       final times = assignPeerHistoryTimestamps(
         history,
         sessionUpdatedAt: remoteEnd,
-        latestLocalAt: localLatest,
+        latestMirroredLocalAt: mirroredLatest,
       );
       // 批内间隔保持 1 分钟，末条落在本地最新消息之后。
-      expect(times.last, localLatest.add(const Duration(seconds: 1)));
+      expect(times.last, mirroredLatest.add(const Duration(seconds: 1)));
       expect(
         times.last.difference(times.first),
         const Duration(minutes: 1),
@@ -403,9 +420,51 @@ void main() {
       final times = assignPeerHistoryTimestamps(
         history,
         sessionUpdatedAt: remoteEnd,
-        latestLocalAt: remoteEnd.subtract(const Duration(minutes: 5)),
+        latestMirroredLocalAt: remoteEnd.subtract(const Duration(minutes: 5)),
       );
       expect(times.last, remoteEnd);
+    });
+
+    test('权威远端时间不因本地下界而平移（回复不会被顶到新消息之后）', () {
+      // 上一回合已镜像；用户又发了一条，远端 transcript 还没有它。
+      final q1 = DateTime.utc(2026, 7, 12, 11, 50);
+      final a1 = DateTime.utc(2026, 7, 12, 11, 50, 1);
+      final justSentLocally = DateTime.utc(2026, 7, 12, 12, 0);
+      final history = [
+        PeerHistoryMessage(role: 'user', content: 'Q1', createdAt: q1),
+        PeerHistoryMessage(role: 'agent', content: 'A1', createdAt: a1),
+      ];
+      final times = assignPeerHistoryTimestamps(
+        history,
+        existingById: {'peerhist_0': q1, 'peerhist_1': a1},
+        latestMirroredLocalAt: a1,
+        idFor: (m, i) => 'peerhist_$i',
+      );
+      expect(times, [q1, a1]);
+      expect(times.last.isBefore(justSentLocally), isTrue);
+    });
+
+    test('重复同步不会把整段 transcript 往后推（幂等）', () {
+      final q1 = DateTime.utc(2026, 7, 12, 11, 50);
+      final a1 = DateTime.utc(2026, 7, 12, 11, 50, 1);
+      final history = [
+        PeerHistoryMessage(role: 'user', content: 'Q1', createdAt: q1),
+        PeerHistoryMessage(role: 'agent', content: 'A1', createdAt: a1),
+      ];
+      var existing = {'peerhist_0': q1, 'peerhist_1': a1};
+      // 本地存在一条更新的实时行（远端尚未收录）。
+      var mirroredLatest = a1;
+      for (var round = 0; round < 4; round++) {
+        final times = assignPeerHistoryTimestamps(
+          history,
+          existingById: existing,
+          latestMirroredLocalAt: mirroredLatest,
+          idFor: (m, i) => 'peerhist_$i',
+        );
+        expect(times, [q1, a1], reason: 'round $round drifted');
+        existing = {'peerhist_0': times[0], 'peerhist_1': times[1]};
+        mirroredLatest = times.last;
+      }
     });
   });
 }
