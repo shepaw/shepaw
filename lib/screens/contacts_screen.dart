@@ -8,9 +8,11 @@ import '../theme/app_theme.dart';
 import '../peer/models/paired_peer.dart';
 import '../peer/screens/peer_settings_screen.dart';
 import '../peer/widgets/peer_device_icon.dart';
+import '../peer/screens/peer_manual_input_screen.dart';
 import '../peer/screens/peer_pairing_screen.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_storage_service.dart';
+import '../utils/platform_utils.dart';
 import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
 import '../services/she_service.dart';
@@ -292,11 +294,7 @@ class ContactsScreenState extends State<ContactsScreen> {
             onSelected: (value) {
               switch (value) {
                 case 'device':
-                  if (widget.onPairDevice != null) {
-                    widget.onPairDevice!();
-                  } else {
-                    _startPeerPairing();
-                  }
+                  _startPeerPairing();
                 case 'group':
                   if (widget.onCreateGroup != null) {
                     widget.onCreateGroup!();
@@ -985,7 +983,13 @@ class ContactsScreenState extends State<ContactsScreen> {
       widget.onPairDevice!();
       return;
     }
-    final peer = await PeerPairingScreen.show(context);
+    // 通讯录「添加配对设备」：移动端进「它连我」等人扫；桌面直接进输入配对信息。
+    final peer = isDesktopPlatform
+        ? await PeerManualInputScreen.show(context)
+        : await PeerPairingScreen.show(
+            context,
+            initialTab: PeerPairingTab.beConnected,
+          );
     if (peer != null && mounted) {
       final l10n = AppLocalizations.of(context);
       ScaffoldMessenger.of(context).showSnackBar(

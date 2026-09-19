@@ -7,6 +7,7 @@ import '../l10n/app_localizations.dart';
 import '../config/product_features.dart';
 import '../peer/models/paired_peer.dart';
 import '../peer/screens/peer_chat_screen.dart';
+import '../peer/screens/peer_manual_input_screen.dart';
 import '../peer/screens/peer_pairing_screen.dart';
 import '../peer/screens/peer_settings_screen.dart';
 import '../peer/services/peer_connection.dart';
@@ -58,6 +59,7 @@ enum _RightPanelView {
   addAgent,
   createGroup,
   pairDevice,
+  pairDeviceInput,
   contactAgent,
   contactGroup,
   contactPeer,
@@ -515,6 +517,17 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     });
   }
 
+  void _onDevicePaired(PairedPeer peer) {
+    _reloadAgents();
+    _reloadContacts();
+    if (_leftMode == _LeftPanelMode.contacts ||
+        !ProductFeatures.deviceChatUiEnabled) {
+      _onContactPeerSelected(peer);
+      return;
+    }
+    _onConversationSelected(ConversationSelection(peerId: peer.id));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -545,7 +558,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                   onPeerSelected: _onContactPeerSelected,
                   onAddAgent: () => _showPanel(_RightPanelView.addAgent),
                   onCreateGroup: () => _showPanel(_RightPanelView.createGroup),
-                  onPairDevice: () => _showPanel(_RightPanelView.pairDevice),
+                  onPairDevice: () =>
+                      _showPanel(_RightPanelView.pairDeviceInput),
                 ),
               _LeftPanelMode.storage => StorageSpaceListPanel(
                   key: _storageKey,
@@ -691,17 +705,12 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           // 在这块屏幕上必然是个死入口。所以桌面面板仍旧落在「它连我」：把二维码
           // 摆出来让手机扫，本来就是桌面配对的常态流程。
           initialTab: PeerPairingTab.beConnected,
-          onPaired: (peer) {
-            _reloadAgents();
-            _reloadContacts();
-            if (_leftMode == _LeftPanelMode.contacts ||
-                !ProductFeatures.deviceChatUiEnabled) {
-              _onContactPeerSelected(peer);
-              return;
-            }
-            _onConversationSelected(ConversationSelection(peerId: peer.id));
-          },
+          onPaired: _onDevicePaired,
         );
+
+      case _RightPanelView.pairDeviceInput:
+        // 通讯录「添加配对设备」在桌面直接进「输入配对信息」，不再绕 tab。
+        return PeerManualInputScreen(onPaired: _onDevicePaired);
 
       case _RightPanelView.contactAgent:
         final agent = _contactAgent;
