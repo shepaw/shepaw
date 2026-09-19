@@ -4444,6 +4444,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get peerManual_submit => '发起配对';
 
   @override
+  String get peerManual_guideHint => '在对方电脑上执行这些命令，装好后把仪表盘地址贴回来。';
+
+  @override
+  String get peerManual_recognizedLink => '配对链接';
+
+  @override
+  String get peerManual_recognizedHub => 'Hub 地址';
+
+  @override
   String get peerManual_emptyError => '请粘贴配对链接或填写 Hub 地址';
 
   @override

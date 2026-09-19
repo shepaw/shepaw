@@ -8229,6 +8229,24 @@ abstract class AppLocalizations {
   /// **'发起配对'**
   String get peerManual_submit;
 
+  /// No description provided for @peerManual_guideHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'在对方电脑上执行这些命令，装好后把仪表盘地址贴回来。'**
+  String get peerManual_guideHint;
+
+  /// No description provided for @peerManual_recognizedLink.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对链接'**
+  String get peerManual_recognizedLink;
+
+  /// No description provided for @peerManual_recognizedHub.
+  ///
+  /// In zh, this message translates to:
+  /// **'Hub 地址'**
+  String get peerManual_recognizedHub;
+
   /// No description provided for @peerManual_emptyError.
   ///
   /// In zh, this message translates to:

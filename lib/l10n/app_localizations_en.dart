@@ -4617,6 +4617,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get peerManual_submit => 'Start pairing';
 
   @override
+  String get peerManual_guideHint =>
+      'Run these commands on the other computer, then paste the dashboard address back here.';
+
+  @override
+  String get peerManual_recognizedLink => 'Pairing link';
+
+  @override
+  String get peerManual_recognizedHub => 'Hub address';
+
+  @override
   String get peerManual_emptyError =>
       'Paste a pairing link or enter a Hub address';
 

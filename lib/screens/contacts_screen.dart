@@ -291,6 +291,7 @@ class ContactsScreenState extends State<ContactsScreen> {
         actions: [
           PopupMenuButton<String>(
             icon: const Icon(Icons.add),
+            position: PopupMenuPosition.under,
             onSelected: (value) {
               switch (value) {
                 case 'device':
