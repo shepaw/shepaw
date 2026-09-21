@@ -752,7 +752,11 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         );
 
       case _RightPanelView.storageSpaceManage:
-        return StorageSpaceManageScreen(initialSpace: _storageSpace);
+        // 左侧面板已列出「最近 / 我的 / 智能体」入口，右侧不再重复放 Tab。
+        return StorageSpaceManageScreen(
+          initialSpace: _storageSpace,
+          showTabHeader: false,
+        );
 
       case _RightPanelView.instructions:
         return const InstructionSetScreen();

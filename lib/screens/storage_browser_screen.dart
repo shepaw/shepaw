@@ -64,6 +64,7 @@ class StorageBrowserScreen extends StatefulWidget {
     this.extraActions,
     this.extraMenuItems,
     this.onExtraMenuSelected,
+    this.showTabHeader = true,
     this.usedBytes,
     this.hideInternalFiles,
     this.onHideInternalFilesChanged,
@@ -111,6 +112,12 @@ class StorageBrowserScreen extends StatefulWidget {
 
   /// [extraMenuItems] 选中回调。
   final void Function(dynamic value)? onExtraMenuSelected;
+
+  /// 是否在 AppBar 展示「最近 / 空间」Tab 头（默认 true）。
+  ///
+  /// 桌面左右分栏（左侧已有「最近 / 分区」列表）传 false：标题改为回显
+  /// 当前位置，不再重复放切换入口。Tab 状态本身仍由父级驱动。
+  final bool showTabHeader;
 
   /// 非 null 时在 AppBar 展示「已使用 xxx」轻量 badge。
   final int? usedBytes;
@@ -1810,7 +1817,14 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       elevation: 0,
       scrolledUnderElevation: 0,
       centerTitle: true,
-      title: _buildTabHeader(l10n),
+      title: widget.showTabHeader
+          ? _buildTabHeader(l10n)
+          : Text(
+              _locationTitle(l10n),
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
       actions: [
         if (used != null)
           Padding(
@@ -1841,6 +1855,16 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         if (!_pickMode) ...?widget.extraActions,
       ],
     );
+  }
+
+  /// 不展示 Tab 头时的标题：回显「最近」或当前分区 / 文件夹位置。
+  ///
+  /// 分区根列表（点了面包屑「首页」）与「最近」同为 `_navSpace == null`，
+  /// 故用 Tab 下标区分。
+  String _locationTitle(AppLocalizations l10n) {
+    if (_navSpace == null && _tabs.index == 0) return l10n.storage_spaceRecent;
+    final folder = _currentFolderTitle();
+    return folder.isEmpty ? l10n.storage_browserHome : folder;
   }
 
   Widget _buildTabHeader(AppLocalizations l10n) {
