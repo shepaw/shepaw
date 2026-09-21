@@ -379,6 +379,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get drawer_settings => 'Settings';
 
   @override
+  String get nav_chats => 'Chats';
+
+  @override
+  String get nav_agents => 'Agents';
+
+  @override
+  String get nav_storage => 'Pouch';
+
+  @override
+  String get nav_settings => 'Settings';
+
+  @override
   String get drawer_logout => 'Logout';
 
   @override

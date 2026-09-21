@@ -364,6 +364,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get drawer_settings => '设置';
 
   @override
+  String get nav_chats => '对话';
+
+  @override
+  String get nav_agents => '智能体';
+
+  @override
+  String get nav_storage => '储物袋';
+
+  @override
+  String get nav_settings => '设置';
+
+  @override
   String get drawer_logout => '退出登录';
 
   @override

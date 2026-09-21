@@ -776,6 +776,30 @@ abstract class AppLocalizations {
   /// **'设置'**
   String get drawer_settings;
 
+  /// No description provided for @nav_chats.
+  ///
+  /// In zh, this message translates to:
+  /// **'对话'**
+  String get nav_chats;
+
+  /// No description provided for @nav_agents.
+  ///
+  /// In zh, this message translates to:
+  /// **'智能体'**
+  String get nav_agents;
+
+  /// No description provided for @nav_storage.
+  ///
+  /// In zh, this message translates to:
+  /// **'储物袋'**
+  String get nav_storage;
+
+  /// No description provided for @nav_settings.
+  ///
+  /// In zh, this message translates to:
+  /// **'设置'**
+  String get nav_settings;
+
   /// No description provided for @drawer_logout.
   ///
   /// In zh, this message translates to:

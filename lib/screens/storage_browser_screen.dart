@@ -24,6 +24,7 @@ import '../storage/sync_engine.dart';
 import '../storage/sync_journal.dart';
 import '../utils/layout_utils.dart';
 import '../widgets/avatar_image.dart';
+import '../widgets/mobile_shell_scope.dart';
 import '../widgets/storage/store_file_list_avatar.dart';
 import 'storage_shared.dart';
 import 'jade_slip_screen.dart';
@@ -1810,6 +1811,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       elevation: 0,
       scrolledUnderElevation: 0,
       centerTitle: true,
+      automaticallyImplyLeading: !MobileShellScope.isActive(context),
       title: _buildTabHeader(l10n),
       actions: [
         if (_pickMode) ..._pickModeActions(l10n),

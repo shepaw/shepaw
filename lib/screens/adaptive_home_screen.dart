@@ -4,11 +4,11 @@ import '../services/logger_service.dart';
 import '../services/update_notification_service.dart';
 import '../services/update_service.dart';
 import 'desktop_home_screen.dart';
-import 'home_screen.dart';
+import 'mobile_home_shell.dart';
 
-/// Routes to either [DesktopHomeScreen] (split-panel) or [HomeScreen] (mobile)
-/// based on platform and window width. Rebuilds automatically on window resize
-/// via [MediaQuery].
+/// Routes to either [DesktopHomeScreen] (split-panel) or [MobileHomeShell]
+/// (bottom-bar tabs) based on platform and window width. Rebuilds automatically
+/// on window resize via [MediaQuery].
 ///
 /// Also performs a background update check on first load.
 class AdaptiveHomeScreen extends StatefulWidget {
@@ -77,6 +77,6 @@ class _AdaptiveHomeScreenState extends State<AdaptiveHomeScreen> {
   Widget build(BuildContext context) {
     final desktop = LayoutUtils.isDesktopLayout(context);
     _logger.info('AdaptiveHomeScreen build: desktop=$desktop', tag: 'HomeBoot');
-    return desktop ? const DesktopHomeScreen() : const HomeScreen();
+    return desktop ? const DesktopHomeScreen() : const MobileHomeShell();
   }
 }

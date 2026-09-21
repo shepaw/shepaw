@@ -26,6 +26,7 @@ import '../widgets/update_dialog.dart';
 import '../services/update_service.dart';
 import '../widgets/model_icon.dart';
 import '../widgets/local_agent_hub_prompt.dart';
+import '../widgets/mobile_shell_scope.dart';
 import '../services/model_registry.dart';
 import '../services/skill_registry.dart';
 import 'dart:io' show Platform;
@@ -51,7 +52,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    UpdateService().dismissSettingsIconBadge();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // 底部栏「设置」tab 会常驻挂载，角标改由切到该 tab 时清除。
+      if (!MobileShellScope.isActive(context)) {
+        UpdateService().dismissSettingsIconBadge();
+      }
+    });
     _loadBiometricState();
     _loadBatteryOptimizationState();
     _loadLocationState();
@@ -180,7 +187,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        automaticallyImplyLeading: Navigator.canPop(context),
+        automaticallyImplyLeading:
+            !MobileShellScope.isActive(context) && Navigator.canPop(context),
         title: Text(l10n.settings_title),
         centerTitle: true,
       ),

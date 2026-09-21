@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import '../models/agent.dart';
 import '../models/channel.dart';
 import '../models/remote_agent.dart';
@@ -12,16 +11,10 @@ import '../services/composer_draft_service.dart';
 import 'add_remote_agent_screen.dart';
 import 'create_group_screen.dart';
 import 'chat_screen.dart';
-import 'settings_screen.dart';
-import 'contacts_screen.dart';
-import 'storage_space_manage_screen.dart';
-import 'instruction_set_screen.dart';
 import '../widgets/agent_search_delegate.dart';
 import '../widgets/shepaw_search_page.dart';
 import '../widgets/agent_list_avatar.dart';
 import '../widgets/chat/session_unread_badge.dart';
-import '../services/update_service.dart';
-import '../widgets/update_settings_badge.dart';
 import '../widgets/local_agent_hub_prompt.dart';
 import '../services/message_search_service.dart';
 import '../services/onboarding_service.dart';
@@ -41,7 +34,6 @@ import '../peer/screens/peer_pairing_screen.dart';
 import '../peer/screens/peer_scan_screen.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_storage_service.dart';
-import '../widgets/drawer_swipe_detector.dart';
 import 'package:provider/provider.dart';
 
 /// 应用主页 - Telegram风格设计
@@ -83,7 +75,6 @@ class HomeScreenState extends State<HomeScreen> {
   late final ConversationListController _list;
   final TextEditingController _searchController = TextEditingController();
   final GlobalKey _addButtonKey = GlobalKey();
-  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   late final MessageSearchService _messageSearchService;
   List<Channel> _searchChannelResults = [];
   List<MessageSearchResult> _searchMessageResults = [];
@@ -507,47 +498,29 @@ class HomeScreenState extends State<HomeScreen> {
     final iconColor = IconTheme.of(context).color ?? Theme.of(context).colorScheme.onSurface;
     final isSearching = widget.embedded && _isSearchActive;
 
-    // Full-area open via DrawerSwipeDetector: clearly rightward swipes open the
-    // drawer from the middle; vertical-dominant moves yield to list scrolling.
-    // Scaffold's built-in edge drag stays off so it cannot steal diagonal scrolls.
-    return DrawerSwipeDetector(
-      enabled: !widget.embedded,
-      onOpenDrawer: widget.embedded
-          ? null
-          : () => _scaffoldKey.currentState?.openDrawer(),
-      verticalScrollSlop: 18,
-      blockLeadingEdgeDrawerGesture: !widget.embedded,
-      child: Scaffold(
-        key: _scaffoldKey,
-        appBar: widget.embedded
-            ? _buildEmbeddedAppBar(iconColor)
-            : AppBar(
-                title: Text(
-                  _homeAppBarTitle(context),
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600,
-                  ),
+    return Scaffold(
+      appBar: widget.embedded
+          ? _buildEmbeddedAppBar(iconColor)
+          : AppBar(
+              title: Text(
+                _homeAppBarTitle(context),
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
                 ),
-                centerTitle: true,
-                elevation: 0,
-                scrolledUnderElevation: 0.5,
-                leading: IconButton(
-                  icon: const Icon(Icons.menu),
-                  onPressed: () => _scaffoldKey.currentState?.openDrawer(),
-                ),
-                actions: [_buildAppBarTrailingActions(iconColor)],
               ),
-        // 左侧抽屉菜单 (hidden in embedded mode)
-        drawer: widget.embedded ? null : _buildDrawer(),
-        drawerEnableOpenDragGesture: false,
-        // 列表数据变化只重建 body：typing / 未读 / 草稿这类高频通知不再带动
-        // AppBar 与抽屉一起重建。
-        body: AnimatedBuilder(
-          animation: _list,
-          builder: (context, _) =>
-              isSearching ? _buildEmbeddedSearchBody() : _buildBody(),
-        ),
+              centerTitle: true,
+              elevation: 0,
+              scrolledUnderElevation: 0.5,
+              automaticallyImplyLeading: false,
+              actions: [_buildAppBarTrailingActions(iconColor)],
+            ),
+      // 列表数据变化只重建 body：typing / 未读 / 草稿这类高频通知不再带动
+      // AppBar 一起重建。
+      body: AnimatedBuilder(
+        animation: _list,
+        builder: (context, _) =>
+            isSearching ? _buildEmbeddedSearchBody() : _buildBody(),
       ),
     );
   }
@@ -704,133 +677,6 @@ class HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
-  /// 构建左侧抽屉菜单
-  Widget _buildDrawer() {
-    final l10n = AppLocalizations.of(context);
-    return Drawer(
-      child: SafeArea(
-        child: Column(
-          children: [
-            // App 品牌头部
-            Container(
-              width: double.infinity,
-              color: Theme.of(context).primaryColor,
-              padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: Image.asset(
-                      'assets/images/shepaw_icon.png',
-                      width: 64,
-                      height: 64,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'ShePaw',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            
-            // 菜单列表
-            Expanded(
-              child: ListView(
-                padding: EdgeInsets.zero,
-                children: [
-                  ListTile(
-                    leading: const Icon(Icons.contacts_outlined),
-                    title: Text(l10n.drawer_contacts),
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const ContactsScreen(),
-                        ),
-                      ).then((_) => _loadAgents(silent: true));
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.inventory_2_outlined),
-                    title: Text(l10n.storage_title),
-                    subtitle: Text(l10n.storage_subtitle),
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const StorageSpaceManageScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.playlist_add_check_outlined),
-                    title: Text(l10n.instructionSet_title),
-                    subtitle: Text(l10n.instructionSet_subtitle),
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const InstructionSetScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  const Divider(),
-                  ListTile(
-                    leading: SettingsUpdateBadge(
-                      child: const Icon(Icons.settings_outlined),
-                    ),
-                    title: Text(l10n.drawer_settings),
-                    onTap: () {
-                      UpdateService().dismissSettingsIconBadge();
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const SettingsScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
-            
-            // 版本信息
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: FutureBuilder<PackageInfo>(
-                future: PackageInfo.fromPlatform(),
-                builder: (context, snapshot) {
-                  final version = snapshot.data?.version ?? '';
-                  return Text(
-                    'ShePaw v$version',
-                    style: TextStyle(
-                      color: Colors.grey[500],
-                      fontSize: 12,
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
 
   /// 桌面版：在会话列表区域展示搜索结果。
   Widget _buildEmbeddedSearchBody() {

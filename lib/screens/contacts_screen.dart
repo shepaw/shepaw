@@ -19,6 +19,7 @@ import '../services/she_service.dart';
 import '../services/logger_service.dart';
 import '../storage/store_service.dart';
 import '../widgets/avatar_image.dart';
+import '../widgets/mobile_shell_scope.dart';
 import '../models/remote_agent.dart';
 import 'remote_agent_detail_screen.dart';
 import 'group_detail_screen.dart';
@@ -288,6 +289,7 @@ class ContactsScreenState extends State<ContactsScreen> {
       appBar: AppBar(
         title: Text(l10n.contacts_title),
         elevation: 0,
+        automaticallyImplyLeading: !MobileShellScope.isActive(context),
         actions: [
           PopupMenuButton<String>(
             icon: const Icon(Icons.add),
