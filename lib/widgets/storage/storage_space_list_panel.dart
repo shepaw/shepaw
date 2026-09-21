@@ -98,6 +98,8 @@ class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
         return Icons.bolt_outlined;
       case StoreSpace.files:
         return Icons.folder_outlined;
+      case StoreSpace.notes:
+        return Icons.auto_stories_outlined;
       case StoreSpace.public_:
         return Icons.public;
       case StoreSpace.cognition:
@@ -203,6 +205,16 @@ class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
     );
   }
 
+  Widget _buildNotesRow(AppLocalizations l10n) {
+    return _hubRow(
+      leading: _leadingIconBox(Icons.auto_stories_outlined),
+      title: l10n.jadeSlip_title,
+      subtitle: l10n.jadeSlip_entryHint,
+      selected: widget.selectedSpace == StoreSpace.notes,
+      onTap: () => widget.onSpaceSelected?.call(StoreSpace.notes),
+    );
+  }
+
   Widget _buildSpaceRow(AppLocalizations l10n, String space) {
     final bytes = _spaceBytes[space];
     return _hubRow(
@@ -230,9 +242,10 @@ class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
           _buildRecentRow(l10n),
+          const Divider(height: 16, indent: 64),
+          _buildSectionHeader(l10n, l10n.storage_categoryMine),
+          _buildNotesRow(l10n),
           if (userSpaces.isNotEmpty) ...[
-            const Divider(height: 16, indent: 64),
-            _buildSectionHeader(l10n, l10n.storage_categoryMine),
             for (final space in userSpaces) _buildSpaceRow(l10n, space),
           ],
           if (agentSpaces.isNotEmpty) ...[

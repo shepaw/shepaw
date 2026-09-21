@@ -127,6 +127,7 @@ void main() {
             StoreSpace.workspaces,
             StoreSpace.runtime,
             StoreSpace.files,
+            StoreSpace.notes,
             StoreSpace.public_,
             StoreSpace.backups,
             StoreSpace.cognition,
@@ -134,6 +135,7 @@ void main() {
             StoreSpace.artifacts,
             StoreSpace.attachments,
           ]));
+      expect(StoreSpace.sharedReadable, contains(StoreSpace.notes));
       expect(StoreSpace.sharedReadable, isNot(contains(StoreSpace.runtime)));
       expect(StoreSpace.sharedReadable, isNot(contains(StoreSpace.cognition)));
       expect(StoreSpace.sharedReadable, isNot(contains(StoreSpace.memory)));

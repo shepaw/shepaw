@@ -24,7 +24,9 @@ import 'settings_screen.dart';
 import 'contacts_screen.dart';
 import 'storage_space_manage_screen.dart';
 import 'instruction_set_screen.dart';
+import 'jade_slip_screen.dart';
 import '../widgets/storage/storage_space_list_panel.dart';
+import '../storage/store_protocol.dart';
 import '../utils/layout_utils.dart';
 import '../services/logger_service.dart';
 import '../services/native_window_service.dart';
@@ -66,6 +68,7 @@ enum _RightPanelView {
   traces,
   groupTasks,
   storageSpaceManage,
+  jadeSlips,
   instructions,
 }
 
@@ -247,7 +250,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _rightPanel == _RightPanelView.instructions;
 
   bool get _isStorageDetailPanel =>
-      _rightPanel == _RightPanelView.storageSpaceManage;
+      _rightPanel == _RightPanelView.storageSpaceManage ||
+      _rightPanel == _RightPanelView.jadeSlips;
 
   bool get _storageRecentSelected =>
       _leftMode == _LeftPanelMode.storage &&
@@ -479,7 +483,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _storageSpace = space;
       _selected = null;
       _clearContactSelectionFields();
-      _rightPanel = _RightPanelView.storageSpaceManage;
+      _rightPanel = space == StoreSpace.notes
+          ? _RightPanelView.jadeSlips
+          : _RightPanelView.storageSpaceManage;
       _navGeneration++;
     });
   }
@@ -757,6 +763,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           initialSpace: _storageSpace,
           showTabHeader: false,
         );
+
+      case _RightPanelView.jadeSlips:
+        return const JadeSlipScreen(embedded: true);
 
       case _RightPanelView.instructions:
         return const InstructionSetScreen();

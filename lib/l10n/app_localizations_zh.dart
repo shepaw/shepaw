@@ -6128,6 +6128,102 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get jadeSlip_title => '玉简';
+
+  @override
+  String get jadeSlip_entryHint => '记下待办，交给 Agent 去办';
+
+  @override
+  String get jadeSlip_empty => '玉简还是空的。写下想做的事，随时点播放交给 Agent 执行。';
+
+  @override
+  String get jadeSlip_create => '新玉简';
+
+  @override
+  String get jadeSlip_untitled => '未题玉简';
+
+  @override
+  String get jadeSlip_captureHint => '记下一条待办…';
+
+  @override
+  String get jadeSlip_pickHint => '从左侧选一条玉简，或点 + 新建';
+
+  @override
+  String get jadeSlip_filterOpen => '待办';
+
+  @override
+  String get jadeSlip_filterDoing => '进行中';
+
+  @override
+  String get jadeSlip_filterDone => '已完成';
+
+  @override
+  String get jadeSlip_filterAll => '全部';
+
+  @override
+  String jadeSlip_progress(int done, int total) {
+    return '$done/$total 已完成';
+  }
+
+  @override
+  String get jadeSlip_run => '交给 Agent';
+
+  @override
+  String get jadeSlip_runHint => '将打开会话并预填玉简内容，发送后 Agent 会按清单执行。';
+
+  @override
+  String get jadeSlip_pickAgent => '选择执行的 Agent';
+
+  @override
+  String get jadeSlip_titleHint => '标题';
+
+  @override
+  String get jadeSlip_titleRequired => '请填写玉简标题';
+
+  @override
+  String get jadeSlip_checklist => '清单';
+
+  @override
+  String get jadeSlip_itemHint => '添加一项…';
+
+  @override
+  String get jadeSlip_notes => '备注';
+
+  @override
+  String get jadeSlip_notesHint => '补充说明、链接、验收标准…';
+
+  @override
+  String get jadeSlip_dueNone => '截止日期';
+
+  @override
+  String get jadeSlip_assigneeNone => '指定 Agent';
+
+  @override
+  String get jadeSlip_priorityNone => '无优先级';
+
+  @override
+  String get jadeSlip_priorityLow => '低';
+
+  @override
+  String get jadeSlip_priorityMedium => '中';
+
+  @override
+  String get jadeSlip_priorityHigh => '高';
+
+  @override
+  String get jadeSlip_deleteTitle => '删除玉简';
+
+  @override
+  String jadeSlip_deleteBody(String name) {
+    return '确定删除「$name」吗？删除后可从储物袋回收站找回。';
+  }
+
+  @override
+  String jadeSlip_saveFailed(String error) {
+    return '保存失败：$error';
+  }
+
+  @override
   String get storage_snapshotSection => '本机快照';
 
   @override

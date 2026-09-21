@@ -126,6 +126,10 @@ class StoreSpace {
   /// Legacy chat uploads under `files/chat/<sha256>`（旧 URI 兼容）。
   static const chatAttachmentPrefix = 'chat';
 
+  /// 玉简：用户待办/笔记（专属 UI，不进「文件」浏览）。
+  /// 落盘：`notes/<device>/slips/<id>.json`，跨设备随储物袋镜像。
+  static const notes = 'notes';
+
   /// Agent 认知权威空间（soul + 结构化记忆）：
   /// `cognition/<agentId>/soul.md`、`…/entries/*.json`、`…/peers/<peerId>/…`。
   static const cognition = 'cognition';
@@ -142,6 +146,7 @@ class StoreSpace {
     workspaces,
     runtime,
     files,
+    notes,
     public_,
     backups,
     cognition,
@@ -215,6 +220,7 @@ class StoreSpace {
   static const sharedReadable = <String>[
     workspaces,
     files,
+    notes,
     public_,
     artifacts,
   ];
@@ -268,6 +274,7 @@ class StoreSpace {
         SpaceProfile.builtin(workspaces, visibility: 'shared'),
         SpaceProfile.builtin(runtime, visibility: 'private'),
         SpaceProfile.builtin(files, visibility: 'shared'),
+        SpaceProfile.builtin(notes, visibility: 'shared'),
         SpaceProfile.builtin(public_, visibility: 'shared'),
         SpaceProfile.builtin(backups,
             visibility: 'private', encryption: 'client', retention: 'gfs'),
@@ -615,6 +622,7 @@ StoreAcl checkStoreAcl(
 bool? _builtinVisibility(String space) => switch (space) {
       StoreSpace.workspaces ||
       StoreSpace.files ||
+      StoreSpace.notes ||
       StoreSpace.public_ ||
       StoreSpace.artifacts =>
         true,

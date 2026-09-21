@@ -11193,6 +11193,186 @@ abstract class AppLocalizations {
   /// **'保存失败：{error}'**
   String instructionSet_saveFailed(String error);
 
+  /// No description provided for @jadeSlip_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'玉简'**
+  String get jadeSlip_title;
+
+  /// No description provided for @jadeSlip_entryHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'记下待办，交给 Agent 去办'**
+  String get jadeSlip_entryHint;
+
+  /// No description provided for @jadeSlip_empty.
+  ///
+  /// In zh, this message translates to:
+  /// **'玉简还是空的。写下想做的事，随时点播放交给 Agent 执行。'**
+  String get jadeSlip_empty;
+
+  /// No description provided for @jadeSlip_create.
+  ///
+  /// In zh, this message translates to:
+  /// **'新玉简'**
+  String get jadeSlip_create;
+
+  /// No description provided for @jadeSlip_untitled.
+  ///
+  /// In zh, this message translates to:
+  /// **'未题玉简'**
+  String get jadeSlip_untitled;
+
+  /// No description provided for @jadeSlip_captureHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'记下一条待办…'**
+  String get jadeSlip_captureHint;
+
+  /// No description provided for @jadeSlip_pickHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'从左侧选一条玉简，或点 + 新建'**
+  String get jadeSlip_pickHint;
+
+  /// No description provided for @jadeSlip_filterOpen.
+  ///
+  /// In zh, this message translates to:
+  /// **'待办'**
+  String get jadeSlip_filterOpen;
+
+  /// No description provided for @jadeSlip_filterDoing.
+  ///
+  /// In zh, this message translates to:
+  /// **'进行中'**
+  String get jadeSlip_filterDoing;
+
+  /// No description provided for @jadeSlip_filterDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'已完成'**
+  String get jadeSlip_filterDone;
+
+  /// No description provided for @jadeSlip_filterAll.
+  ///
+  /// In zh, this message translates to:
+  /// **'全部'**
+  String get jadeSlip_filterAll;
+
+  /// No description provided for @jadeSlip_progress.
+  ///
+  /// In zh, this message translates to:
+  /// **'{done}/{total} 已完成'**
+  String jadeSlip_progress(int done, int total);
+
+  /// No description provided for @jadeSlip_run.
+  ///
+  /// In zh, this message translates to:
+  /// **'交给 Agent'**
+  String get jadeSlip_run;
+
+  /// No description provided for @jadeSlip_runHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'将打开会话并预填玉简内容，发送后 Agent 会按清单执行。'**
+  String get jadeSlip_runHint;
+
+  /// No description provided for @jadeSlip_pickAgent.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择执行的 Agent'**
+  String get jadeSlip_pickAgent;
+
+  /// No description provided for @jadeSlip_titleHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'标题'**
+  String get jadeSlip_titleHint;
+
+  /// No description provided for @jadeSlip_titleRequired.
+  ///
+  /// In zh, this message translates to:
+  /// **'请填写玉简标题'**
+  String get jadeSlip_titleRequired;
+
+  /// No description provided for @jadeSlip_checklist.
+  ///
+  /// In zh, this message translates to:
+  /// **'清单'**
+  String get jadeSlip_checklist;
+
+  /// No description provided for @jadeSlip_itemHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加一项…'**
+  String get jadeSlip_itemHint;
+
+  /// No description provided for @jadeSlip_notes.
+  ///
+  /// In zh, this message translates to:
+  /// **'备注'**
+  String get jadeSlip_notes;
+
+  /// No description provided for @jadeSlip_notesHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'补充说明、链接、验收标准…'**
+  String get jadeSlip_notesHint;
+
+  /// No description provided for @jadeSlip_dueNone.
+  ///
+  /// In zh, this message translates to:
+  /// **'截止日期'**
+  String get jadeSlip_dueNone;
+
+  /// No description provided for @jadeSlip_assigneeNone.
+  ///
+  /// In zh, this message translates to:
+  /// **'指定 Agent'**
+  String get jadeSlip_assigneeNone;
+
+  /// No description provided for @jadeSlip_priorityNone.
+  ///
+  /// In zh, this message translates to:
+  /// **'无优先级'**
+  String get jadeSlip_priorityNone;
+
+  /// No description provided for @jadeSlip_priorityLow.
+  ///
+  /// In zh, this message translates to:
+  /// **'低'**
+  String get jadeSlip_priorityLow;
+
+  /// No description provided for @jadeSlip_priorityMedium.
+  ///
+  /// In zh, this message translates to:
+  /// **'中'**
+  String get jadeSlip_priorityMedium;
+
+  /// No description provided for @jadeSlip_priorityHigh.
+  ///
+  /// In zh, this message translates to:
+  /// **'高'**
+  String get jadeSlip_priorityHigh;
+
+  /// No description provided for @jadeSlip_deleteTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除玉简'**
+  String get jadeSlip_deleteTitle;
+
+  /// No description provided for @jadeSlip_deleteBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'确定删除「{name}」吗？删除后可从储物袋回收站找回。'**
+  String jadeSlip_deleteBody(String name);
+
+  /// No description provided for @jadeSlip_saveFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存失败：{error}'**
+  String jadeSlip_saveFailed(String error);
+
   /// No description provided for @storage_snapshotSection.
   ///
   /// In zh, this message translates to:

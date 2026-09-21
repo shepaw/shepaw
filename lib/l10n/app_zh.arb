@@ -3642,6 +3642,52 @@
       }
     }
   },
+  "jadeSlip_title": "玉简",
+  "jadeSlip_entryHint": "记下待办，交给 Agent 去办",
+  "jadeSlip_empty": "玉简还是空的。写下想做的事，随时点播放交给 Agent 执行。",
+  "jadeSlip_create": "新玉简",
+  "jadeSlip_untitled": "未题玉简",
+  "jadeSlip_captureHint": "记下一条待办…",
+  "jadeSlip_pickHint": "从左侧选一条玉简，或点 + 新建",
+  "jadeSlip_filterOpen": "待办",
+  "jadeSlip_filterDoing": "进行中",
+  "jadeSlip_filterDone": "已完成",
+  "jadeSlip_filterAll": "全部",
+  "jadeSlip_progress": "{done}/{total} 已完成",
+  "@jadeSlip_progress": {
+    "placeholders": {
+      "done": {"type": "int"},
+      "total": {"type": "int"}
+    }
+  },
+  "jadeSlip_run": "交给 Agent",
+  "jadeSlip_runHint": "将打开会话并预填玉简内容，发送后 Agent 会按清单执行。",
+  "jadeSlip_pickAgent": "选择执行的 Agent",
+  "jadeSlip_titleHint": "标题",
+  "jadeSlip_titleRequired": "请填写玉简标题",
+  "jadeSlip_checklist": "清单",
+  "jadeSlip_itemHint": "添加一项…",
+  "jadeSlip_notes": "备注",
+  "jadeSlip_notesHint": "补充说明、链接、验收标准…",
+  "jadeSlip_dueNone": "截止日期",
+  "jadeSlip_assigneeNone": "指定 Agent",
+  "jadeSlip_priorityNone": "无优先级",
+  "jadeSlip_priorityLow": "低",
+  "jadeSlip_priorityMedium": "中",
+  "jadeSlip_priorityHigh": "高",
+  "jadeSlip_deleteTitle": "删除玉简",
+  "jadeSlip_deleteBody": "确定删除「{name}」吗？删除后可从储物袋回收站找回。",
+  "@jadeSlip_deleteBody": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
+  "jadeSlip_saveFailed": "保存失败：{error}",
+  "@jadeSlip_saveFailed": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
   "storage_snapshotSection": "本机快照",
   "storage_snapshotDesc": "加密快照（数据库 + 设备身份）。恢复将全量替换当前数据。",
   "storage_snapshotNow": "立即快照",

@@ -23,6 +23,7 @@ func builtinSpaceProfiles() []spaceProfile {
 		{Name: "workspaces", Visibility: "shared", Encryption: "none", Retention: "none", ImportGrant: "allowed", Builtin: true},
 		{Name: "runtime", Visibility: "private", Encryption: "none", Retention: "none", ImportGrant: "allowed", Builtin: true},
 		{Name: "files", Visibility: "shared", Encryption: "none", Retention: "none", ImportGrant: "allowed", Builtin: true},
+		{Name: "notes", Visibility: "shared", Encryption: "none", Retention: "none", ImportGrant: "allowed", Builtin: true},
 		{Name: "public", Visibility: "shared", Encryption: "none", Retention: "none", ImportGrant: "allowed", Builtin: true},
 		{Name: "backups", Visibility: "private", Encryption: "client", Retention: "gfs", ImportGrant: "allowed", Builtin: true},
 		{Name: "cognition", Visibility: "private", Encryption: "none", Retention: "none", ImportGrant: "allowed", Builtin: true},

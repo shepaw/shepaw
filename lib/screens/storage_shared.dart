@@ -28,6 +28,8 @@ String storageSpaceLabel(AppLocalizations l10n, String space) {
       return l10n.storage_spaceRuntime;
     case StoreSpace.files:
       return l10n.storage_spaceFiles;
+    case StoreSpace.notes:
+      return l10n.jadeSlip_title;
     case StoreSpace.public_:
       return l10n.storage_spacePublic;
     case StoreSpace.cognition:

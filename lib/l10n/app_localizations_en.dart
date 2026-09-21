@@ -6373,6 +6373,105 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get jadeSlip_title => 'Jade Slips';
+
+  @override
+  String get jadeSlip_entryHint => 'Capture to-dos and hand them to an agent';
+
+  @override
+  String get jadeSlip_empty =>
+      'No jade slips yet. Write what you need done, then tap play to send it to an agent.';
+
+  @override
+  String get jadeSlip_create => 'New slip';
+
+  @override
+  String get jadeSlip_untitled => 'Untitled slip';
+
+  @override
+  String get jadeSlip_captureHint => 'Capture a to-do…';
+
+  @override
+  String get jadeSlip_pickHint =>
+      'Pick a slip on the left, or tap + to create one';
+
+  @override
+  String get jadeSlip_filterOpen => 'Open';
+
+  @override
+  String get jadeSlip_filterDoing => 'In progress';
+
+  @override
+  String get jadeSlip_filterDone => 'Done';
+
+  @override
+  String get jadeSlip_filterAll => 'All';
+
+  @override
+  String jadeSlip_progress(int done, int total) {
+    return '$done/$total done';
+  }
+
+  @override
+  String get jadeSlip_run => 'Hand to agent';
+
+  @override
+  String get jadeSlip_runHint =>
+      'Opens a chat with the jade slip pre-filled. Send it and the agent will work the checklist.';
+
+  @override
+  String get jadeSlip_pickAgent => 'Choose an agent';
+
+  @override
+  String get jadeSlip_titleHint => 'Title';
+
+  @override
+  String get jadeSlip_titleRequired => 'Please enter a title';
+
+  @override
+  String get jadeSlip_checklist => 'Checklist';
+
+  @override
+  String get jadeSlip_itemHint => 'Add an item…';
+
+  @override
+  String get jadeSlip_notes => 'Notes';
+
+  @override
+  String get jadeSlip_notesHint => 'Details, links, acceptance criteria…';
+
+  @override
+  String get jadeSlip_dueNone => 'Due date';
+
+  @override
+  String get jadeSlip_assigneeNone => 'Assign agent';
+
+  @override
+  String get jadeSlip_priorityNone => 'No priority';
+
+  @override
+  String get jadeSlip_priorityLow => 'Low';
+
+  @override
+  String get jadeSlip_priorityMedium => 'Medium';
+
+  @override
+  String get jadeSlip_priorityHigh => 'High';
+
+  @override
+  String get jadeSlip_deleteTitle => 'Delete jade slip';
+
+  @override
+  String jadeSlip_deleteBody(String name) {
+    return 'Delete \"$name\"? You can restore it from the pouch recycle bin.';
+  }
+
+  @override
+  String jadeSlip_saveFailed(String error) {
+    return 'Save failed: $error';
+  }
+
+  @override
   String get storage_snapshotSection => 'Local snapshots';
 
   @override

@@ -3167,6 +3167,52 @@
       }
     }
   },
+  "jadeSlip_title": "Jade Slips",
+  "jadeSlip_entryHint": "Capture to-dos and hand them to an agent",
+  "jadeSlip_empty": "No jade slips yet. Write what you need done, then tap play to send it to an agent.",
+  "jadeSlip_create": "New slip",
+  "jadeSlip_untitled": "Untitled slip",
+  "jadeSlip_captureHint": "Capture a to-do…",
+  "jadeSlip_pickHint": "Pick a slip on the left, or tap + to create one",
+  "jadeSlip_filterOpen": "Open",
+  "jadeSlip_filterDoing": "In progress",
+  "jadeSlip_filterDone": "Done",
+  "jadeSlip_filterAll": "All",
+  "jadeSlip_progress": "{done}/{total} done",
+  "@jadeSlip_progress": {
+    "placeholders": {
+      "done": {"type": "int"},
+      "total": {"type": "int"}
+    }
+  },
+  "jadeSlip_run": "Hand to agent",
+  "jadeSlip_runHint": "Opens a chat with the jade slip pre-filled. Send it and the agent will work the checklist.",
+  "jadeSlip_pickAgent": "Choose an agent",
+  "jadeSlip_titleHint": "Title",
+  "jadeSlip_titleRequired": "Please enter a title",
+  "jadeSlip_checklist": "Checklist",
+  "jadeSlip_itemHint": "Add an item…",
+  "jadeSlip_notes": "Notes",
+  "jadeSlip_notesHint": "Details, links, acceptance criteria…",
+  "jadeSlip_dueNone": "Due date",
+  "jadeSlip_assigneeNone": "Assign agent",
+  "jadeSlip_priorityNone": "No priority",
+  "jadeSlip_priorityLow": "Low",
+  "jadeSlip_priorityMedium": "Medium",
+  "jadeSlip_priorityHigh": "High",
+  "jadeSlip_deleteTitle": "Delete jade slip",
+  "jadeSlip_deleteBody": "Delete \"{name}\"? You can restore it from the pouch recycle bin.",
+  "@jadeSlip_deleteBody": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
+  "jadeSlip_saveFailed": "Save failed: {error}",
+  "@jadeSlip_saveFailed": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
   "storage_snapshotSection": "Local snapshots",
   "storage_snapshotDesc": "Encrypted snapshots of the database and device identity. Restore replaces all current data.",
   "storage_snapshotNow": "Snapshot now",

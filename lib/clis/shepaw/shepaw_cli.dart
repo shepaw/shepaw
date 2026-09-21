@@ -13,6 +13,7 @@ import 'help_namespace.dart';
 import 'external_cli_namespace.dart';
 import 'store/store_namespace.dart';
 import 'instructions/instructions_namespace.dart';
+import 'notes/notes_namespace.dart';
 import 'vision/vision_namespace.dart';
 import 'models/models_namespace.dart';
 import 'peer/peer_namespace.dart';
@@ -79,6 +80,8 @@ class ShepawCLI {
     'store': StoreNamespace.instance,
     // 可复用的任务指令集（save/list/get/update/delete/run）
     'instructions': InstructionsNamespace.instance,
+    // 储物袋玉简：用户待办，Agent 勾选执行
+    'notes': NotesNamespace.instance,
     // 设备端人脸识别（参考相册 + 结构化视觉档案）
     'vision': VisionNamespace.instance,
     // AI 模型定义与配置（provider 预设 / 增删改 / 指派给 Agent 主模型）
@@ -186,6 +189,12 @@ class ShepawCLI {
       'call namespace=instructions subcommand=save (flags name=, content=, desc=) — it records '
       'you as the owning agent, and instructions run later auto-routes execution back to you. '
       'Use instructions list / get / update / delete / run to manage and execute the instruction set. '
+      'Jade slips (玉简, user to-dos in Nexus Pouch): when the user asks you to do, list, or '
+      'check off their to-dos, call namespace=notes. Start with notes list (optional flags '
+      'status=open|in_progress|done, query=). Get the checklist with notes get --id. As soon as '
+      'you finish a step, call notes item --id --item <itemId> --done true. Mark the whole slip '
+      'done with notes complete --id. Add a slip with notes add --title --items "a;b". '
+      'Do the work — do not only acknowledge. '
       'Model configuration: when the user asks to configure AI models — e.g. a provider like '
       'DeepSeek just released a model and they want it set up, or they want to switch which '
       'model an agent chats with — call namespace=models (subcommands: list / providers / '

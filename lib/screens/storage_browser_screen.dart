@@ -26,6 +26,7 @@ import '../utils/layout_utils.dart';
 import '../widgets/avatar_image.dart';
 import '../widgets/storage/store_file_list_avatar.dart';
 import 'storage_shared.dart';
+import 'jade_slip_screen.dart';
 
 class _BrowsedFile {
   const _BrowsedFile({
@@ -1510,6 +1511,14 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   }
 
   void _enterSpace(String space) {
+    if (space == StoreSpace.notes) {
+      unawaited(Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => const JadeSlipScreen(),
+        ),
+      ));
+      return;
+    }
     setState(() {
       _navSpace = space;
       _navPath = '';
@@ -2406,6 +2415,53 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     );
   }
 
+  Widget _buildMobileNotesRow(AppLocalizations l10n) {
+    return InkWell(
+      onTap: _busy ? null : () => _enterSpace(StoreSpace.notes),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 42,
+              child: Center(
+                child: Icon(
+                  Icons.auto_stories_outlined,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    l10n.jadeSlip_title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          height: 1.35,
+                        ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    l10n.jadeSlip_entryHint,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildMobileSpaceRootRow(AppLocalizations l10n, String space) {
     final subtitle = _spaceSubtitle(space);
     return InkWell(
@@ -2508,6 +2564,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       final rows = <Widget>[
         if (userSpaces.isNotEmpty) ...[
           _buildSpaceCategoryHeader(l10n, l10n.storage_categoryMine),
+          _buildMobileNotesRow(l10n),
           for (final space in userSpaces)
             _buildMobileSpaceRootRow(l10n, space),
         ],
@@ -2529,6 +2586,13 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       children: [
         if (userSpaces.isNotEmpty) ...[
           _buildSpaceCategoryHeader(l10n, l10n.storage_categoryMine),
+          ListTile(
+            leading: Icon(Icons.auto_stories_outlined,
+                color: Theme.of(context).colorScheme.primary),
+            title: Text(l10n.jadeSlip_title),
+            subtitle: Text(l10n.jadeSlip_entryHint),
+            onTap: () => _enterSpace(StoreSpace.notes),
+          ),
           for (final space in userSpaces)
             _buildDesktopSpaceRootRow(l10n, space),
         ],

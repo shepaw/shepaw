@@ -43,6 +43,10 @@ void main() {
       expect(cliCommandApprovalExempt('store'), isTrue);
       expect(cliCommandApprovalExempt('store.events'), isTrue);
       expect(cliCommandApprovalExempt('store.spaces'), isTrue);
+      expect(cliCommandApprovalExempt('notes.list'), isTrue);
+      expect(cliCommandApprovalExempt('notes.item'), isTrue);
+      expect(cliCommandApprovalExempt('notes.complete'), isTrue);
+      expect(cliCommandApprovalExempt('notes.delete'), isFalse);
       expect(cliCommandApprovalExempt('store.declare'), isFalse);
       expect(
         cliCommandApprovalExempt(

@@ -1,0 +1,680 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+
+import '../l10n/app_localizations.dart';
+import '../models/jade_slip.dart';
+import '../models/remote_agent.dart';
+import '../services/jade_slip_service.dart';
+import '../services/local_database_service.dart';
+import '../services/she_service.dart';
+import '../theme/app_theme.dart';
+import '../widgets/form_bottom_bar.dart';
+import 'jade_slip_dispatch.dart';
+
+/// 玉简编辑：标题、清单勾选、备注、负责人、截止日期。
+class JadeSlipEditorScreen extends StatefulWidget {
+  final String slipId;
+  final bool embedded;
+  final VoidCallback? onChanged;
+
+  const JadeSlipEditorScreen({
+    super.key,
+    required this.slipId,
+    this.embedded = false,
+    this.onChanged,
+  });
+
+  @override
+  State<JadeSlipEditorScreen> createState() => _JadeSlipEditorScreenState();
+}
+
+class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
+  final _service = JadeSlipService.instance;
+  final _title = TextEditingController();
+  final _body = TextEditingController();
+  final _item = TextEditingController();
+
+  JadeSlip? _slip;
+  List<RemoteAgent> _agents = const [];
+  bool _saving = false;
+  bool _dirty = false;
+  StreamSubscription<void>? _sub;
+
+  static const _btnRadius = BorderRadius.all(Radius.circular(10));
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+    unawaited(_loadAgents());
+    _sub = _service.changes.listen((_) {
+      if (!_dirty) unawaited(_reloadSilent());
+    });
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    _title.dispose();
+    _body.dispose();
+    _item.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadAgents() async {
+    final agents = await LocalDatabaseService().getAllRemoteAgents();
+    if (mounted) setState(() => _agents = agents);
+  }
+
+  Future<void> _load() async {
+    final slip = await _service.getById(widget.slipId);
+    if (!mounted) return;
+    if (slip == null) {
+      if (!widget.embedded) Navigator.pop(context);
+      return;
+    }
+    _title.text = slip.title;
+    _body.text = slip.body;
+    setState(() {
+      _slip = slip;
+      _dirty = false;
+    });
+  }
+
+  Future<void> _reloadSilent() async {
+    final slip = await _service.getById(widget.slipId);
+    if (!mounted || slip == null || _dirty) return;
+    _title.text = slip.title;
+    _body.text = slip.body;
+    setState(() => _slip = slip);
+  }
+
+  Future<void> _persist(JadeSlip next) async {
+    setState(() => _saving = true);
+    try {
+      final saved = await _service.update(next);
+      if (!mounted) return;
+      setState(() {
+        _slip = saved;
+        _dirty = false;
+        _saving = false;
+      });
+      widget.onChanged?.call();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content:
+                Text(AppLocalizations.of(context).jadeSlip_saveFailed('$e'))),
+      );
+    }
+  }
+
+  Future<bool> _flush() async {
+    final slip = _slip;
+    if (slip == null) return true;
+    final title = _title.text.trim();
+    if (title.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content:
+                Text(AppLocalizations.of(context).jadeSlip_titleRequired)),
+      );
+      return false;
+    }
+    if (!_dirty && title == slip.title && _body.text == slip.body) return true;
+    await _persist(slip.copyWith(title: title, body: _body.text));
+    return true;
+  }
+
+  Future<void> _addItem() async {
+    final text = _item.text.trim();
+    if (text.isEmpty || _slip == null) return;
+    _item.clear();
+    await _flush();
+    await _service.addItem(id: widget.slipId, text: text);
+    widget.onChanged?.call();
+    await _load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final slip = _slip;
+    if (slip == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    final body = Column(
+      children: [
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _title,
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        height: 1.25,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: l10n.jadeSlip_titleHint,
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                      onChanged: (_) => setState(() => _dirty = true),
+                    ),
+                  ),
+                  if (widget.embedded)
+                    IconButton(
+                      tooltip: l10n.common_delete,
+                      icon: Icon(Icons.delete_outline,
+                          color: scheme.onSurfaceVariant),
+                      onPressed: () => unawaited(_confirmDelete(slip)),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _PriorityPill(
+                    value: slip.priority,
+                    label: _priorityLabel(l10n, slip.priority),
+                    onChanged: (v) =>
+                        unawaited(_persist(slip.copyWith(priority: v))),
+                    labelOf: (p) => _priorityLabel(l10n, p),
+                  ),
+                  _MetaPill(
+                    icon: Icons.event_outlined,
+                    label: slip.dueAtMs == null
+                        ? l10n.jadeSlip_dueNone
+                        : _fmtDay(slip.dueAtMs!),
+                    active: slip.dueAtMs != null,
+                    onTap: () => unawaited(_pickDue(slip)),
+                    onClear: slip.dueAtMs == null
+                        ? null
+                        : () => unawaited(_persist(slip.copyWith(clearDue: true))),
+                  ),
+                  _MetaPill(
+                    icon: Icons.smart_toy_outlined,
+                    label: slip.assigneeAgentName.isEmpty
+                        ? l10n.jadeSlip_assigneeNone
+                        : slip.assigneeAgentName,
+                    active: slip.assigneeAgentName.isNotEmpty,
+                    onTap: () => unawaited(_pickAssignee(slip)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 28),
+              _SectionLabel(
+                label: l10n.jadeSlip_checklist,
+                trailing: slip.itemCount == 0
+                    ? null
+                    : l10n.jadeSlip_progress(slip.doneCount, slip.itemCount),
+              ),
+              const SizedBox(height: 6),
+              for (final item in slip.items)
+                _ChecklistRow(
+                  item: item,
+                  onChanged: (v) => unawaited(_service.setItemDone(
+                    id: slip.id,
+                    itemId: item.id,
+                    done: v,
+                  )),
+                ),
+              _AddItemRow(
+                controller: _item,
+                hint: l10n.jadeSlip_itemHint,
+                onSubmit: () => unawaited(_addItem()),
+              ),
+              const SizedBox(height: 28),
+              _SectionLabel(label: l10n.jadeSlip_notes),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _body,
+                minLines: 5,
+                maxLines: 14,
+                style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
+                decoration: InputDecoration(
+                  hintText: l10n.jadeSlip_notesHint,
+                  filled: true,
+                  fillColor: scheme.surfaceContainerHighest,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                        color: scheme.primary.withValues(alpha: 0.4)),
+                  ),
+                  contentPadding: const EdgeInsets.all(14),
+                ),
+                onChanged: (_) => setState(() => _dirty = true),
+              ),
+            ],
+          ),
+        ),
+        FormBottomBar(
+          child: Row(
+            children: [
+              TextButton(
+                onPressed: _saving
+                    ? null
+                    : () async {
+                        if (!await _flush()) return;
+                        if (!mounted || widget.embedded) return;
+                        Navigator.pop(context);
+                      },
+                child: _saving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(l10n.common_save),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: _saving
+                      ? null
+                      : () async {
+                          if (!await _flush()) return;
+                          final latest = await _service.getById(widget.slipId);
+                          if (latest == null || !context.mounted) return;
+                          await dispatchJadeSlip(context, latest);
+                        },
+                  icon: const Icon(Icons.play_arrow_rounded, size: 20),
+                  label: Text(l10n.jadeSlip_run),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: const RoundedRectangleBorder(borderRadius: _btnRadius),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    if (widget.embedded) return body;
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (!await _flush() || !mounted) return;
+        Navigator.pop(context);
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(l10n.jadeSlip_title),
+          actions: [
+            IconButton(
+              tooltip: l10n.common_delete,
+              icon: const Icon(Icons.delete_outline),
+              onPressed: () => unawaited(_confirmDelete(slip)),
+            ),
+          ],
+        ),
+        body: body,
+      ),
+    );
+  }
+
+  Future<void> _confirmDelete(JadeSlip slip) async {
+    final l10n = AppLocalizations.of(context);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.jadeSlip_deleteTitle),
+        content: Text(l10n.jadeSlip_deleteBody(slip.title)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.common_cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.common_delete),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await _service.delete(slip.id);
+    widget.onChanged?.call();
+    if (mounted && !widget.embedded) Navigator.pop(context);
+  }
+
+  Future<void> _pickDue(JadeSlip slip) async {
+    final initial = slip.dueAtMs == null
+        ? DateTime.now()
+        : DateTime.fromMillisecondsSinceEpoch(slip.dueAtMs!);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+    if (picked == null) return;
+    await _persist(slip.copyWith(
+      dueAtMs: DateTime(picked.year, picked.month, picked.day, 18)
+          .millisecondsSinceEpoch,
+    ));
+  }
+
+  Future<void> _pickAssignee(JadeSlip slip) async {
+    final l10n = AppLocalizations.of(context);
+    final picked = await showModalBottomSheet<(String, String)>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => ListView(
+        children: [
+          ListTile(
+            leading: const Icon(Icons.person_off_outlined),
+            title: Text(l10n.jadeSlip_assigneeNone),
+            onTap: () => Navigator.pop(ctx, const ('', '')),
+          ),
+          ListTile(
+            leading: const Icon(Icons.favorite_outline),
+            title: Text(l10n.she_name),
+            onTap: () => Navigator.pop(ctx, (SheService.sheId, l10n.she_name)),
+          ),
+          for (final a in _agents)
+            ListTile(
+              leading: const Icon(Icons.smart_toy_outlined),
+              title: Text(a.name),
+              onTap: () => Navigator.pop(ctx, (a.id, a.name)),
+            ),
+        ],
+      ),
+    );
+    if (picked == null) return;
+    await _persist(slip.copyWith(
+      assigneeAgentId: picked.$1,
+      assigneeAgentName: picked.$2,
+    ));
+  }
+
+  String _priorityLabel(AppLocalizations l10n, JadeSlipPriority p) =>
+      switch (p) {
+        JadeSlipPriority.none => l10n.jadeSlip_priorityNone,
+        JadeSlipPriority.low => l10n.jadeSlip_priorityLow,
+        JadeSlipPriority.medium => l10n.jadeSlip_priorityMedium,
+        JadeSlipPriority.high => l10n.jadeSlip_priorityHigh,
+      };
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel({required this.label, this.trailing});
+
+  final String label;
+  final String? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Row(
+      children: [
+        Text(
+          label,
+          style: theme.textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: scheme.onSurfaceVariant,
+            letterSpacing: 0.2,
+          ),
+        ),
+        if (trailing != null) ...[
+          const Spacer(),
+          Text(
+            trailing!,
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _MetaPill extends StatelessWidget {
+  const _MetaPill({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.active = false,
+    this.onClear,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool active;
+  final VoidCallback? onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final fg = active ? scheme.onSurface : scheme.onSurfaceVariant;
+    return Material(
+      color: active
+          ? AppColors.primary.withValues(alpha: 0.08)
+          : scheme.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 7, 6, 7),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: active ? AppColors.primary : fg),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: fg,
+                  fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                ),
+              ),
+              if (onClear != null)
+                InkWell(
+                  onTap: onClear,
+                  customBorder: const CircleBorder(),
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 4),
+                    child: Icon(Icons.close, size: 14, color: scheme.onSurfaceVariant),
+                  ),
+                )
+              else
+                Padding(
+                  padding: const EdgeInsets.only(left: 2),
+                  child: Icon(Icons.expand_more, size: 16, color: scheme.onSurfaceVariant),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PriorityPill extends StatelessWidget {
+  const _PriorityPill({
+    required this.value,
+    required this.label,
+    required this.onChanged,
+    required this.labelOf,
+  });
+
+  final JadeSlipPriority value;
+  final String label;
+  final ValueChanged<JadeSlipPriority> onChanged;
+  final String Function(JadeSlipPriority) labelOf;
+
+  Color _color() => switch (value) {
+        JadeSlipPriority.high => const Color(0xFFE24C4C),
+        JadeSlipPriority.medium => AppColors.primary,
+        JadeSlipPriority.low => const Color(0xFF5B8DEF),
+        JadeSlipPriority.none => AppColors.textSecondary,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final color = _color();
+    final active = value != JadeSlipPriority.none;
+    return PopupMenuButton<JadeSlipPriority>(
+      tooltip: label,
+      onSelected: onChanged,
+      itemBuilder: (ctx) => [
+        for (final p in JadeSlipPriority.values)
+          PopupMenuItem(
+            value: p,
+            child: Text(labelOf(p)),
+          ),
+      ],
+      child: Material(
+        color: active
+            ? color.withValues(alpha: 0.12)
+            : scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 7, 6, 7),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.flag_outlined, size: 16, color: color),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: active ? color : scheme.onSurfaceVariant,
+                  fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                ),
+              ),
+              Icon(Icons.expand_more, size: 16, color: scheme.onSurfaceVariant),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ChecklistRow extends StatelessWidget {
+  const _ChecklistRow({required this.item, required this.onChanged});
+
+  final JadeSlipItem item;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return InkWell(
+      onTap: () => onChanged(!item.done),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: Checkbox(
+                value: item.done,
+                onChanged: (v) => onChanged(v ?? false),
+                visualDensity: VisualDensity.compact,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                side: BorderSide(color: scheme.outline, width: 1.4),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                item.text,
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  decoration: item.done ? TextDecoration.lineThrough : null,
+                  color: item.done ? scheme.onSurfaceVariant : scheme.onSurface,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AddItemRow extends StatelessWidget {
+  const _AddItemRow({
+    required this.controller,
+    required this.hint,
+    required this.onSubmit,
+  });
+
+  final TextEditingController controller;
+  final String hint;
+  final VoidCallback onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(
+        children: [
+          Icon(Icons.add, size: 20, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 10),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              textInputAction: TextInputAction.done,
+              style: theme.textTheme.bodyLarge,
+              decoration: InputDecoration(
+                hintText: hint,
+                hintStyle: TextStyle(color: scheme.onSurfaceVariant),
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 8),
+              ),
+              onSubmitted: (_) => onSubmit(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _fmtDay(int ms) {
+  final d = DateTime.fromMillisecondsSinceEpoch(ms).toLocal();
+  return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+}
