@@ -6289,7 +6289,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_spaceRecent => '最近';
 
   @override
-  String get storage_spaceWorkspaces => '工作';
+  String get storage_spaceWorkspaces => '工作区';
+
+  @override
+  String get storage_categoryMine => '我的';
+
+  @override
+  String get storage_categoryAgents => '智能体';
 
   @override
   String get storage_spaceRuntime => '运行时';

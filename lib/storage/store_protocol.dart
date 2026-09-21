@@ -150,37 +150,43 @@ class StoreSpace {
     attachments,
   ];
 
-  /// 浏览默认露出：用户文件面（文件 / 工作 / 公开）。「最近」是独立 Tab。
-  static const defaultBrowserSpaces = <String>[
+  /// 浏览「我的」：用户文件面（文件 / 公开）。「最近」是独立 Tab。
+  static const userBrowserSpaces = <String>[
     files,
-    workspaces,
     public_,
   ];
 
-  /// Agent 内部区：浏览页收到「高级」。
-  static const advancedBrowserSpaces = <String>[
+  /// 浏览「智能体」：工作区 / 运行时 / 认知 / 产物。
+  static const agentBrowserSpaces = <String>[
+    workspaces,
     runtime,
     cognition,
     artifacts,
   ];
 
-  /// Browser 全量：用户面 + 高级（不含 backups 密文、legacy memory）。
+  /// 兼容别名：等同 [userBrowserSpaces]。
+  static const defaultBrowserSpaces = userBrowserSpaces;
+
+  /// 兼容别名：等同 [agentBrowserSpaces]。
+  static const advancedBrowserSpaces = agentBrowserSpaces;
+
+  /// Browser 全量：我的 + 智能体（不含 backups 密文、legacy memory）。
   static const browserSpaces = <String>[
-    ...defaultBrowserSpaces,
-    ...advancedBrowserSpaces,
+    ...userBrowserSpaces,
+    ...agentBrowserSpaces,
   ];
 
-  /// [allowed] 中的默认浏览分区，保持 [defaultBrowserSpaces] 顺序；
+  /// [allowed] 中「我的」分区，保持 [userBrowserSpaces] 顺序；
   /// 未归类的自定义空间跟在后面，避免 `space.declare` 后找不到。
-  static List<String> defaultVisibleSpaces(Iterable<String> allowed) {
+  static List<String> userVisibleSpaces(Iterable<String> allowed) {
     final set = allowed.toSet();
     final out = <String>[
-      for (final s in defaultBrowserSpaces)
+      for (final s in userBrowserSpaces)
         if (set.contains(s)) s,
     ];
     for (final s in allowed) {
-      if (!defaultBrowserSpaces.contains(s) &&
-          !advancedBrowserSpaces.contains(s) &&
+      if (!userBrowserSpaces.contains(s) &&
+          !agentBrowserSpaces.contains(s) &&
           !out.contains(s)) {
         out.add(s);
       }
@@ -188,14 +194,22 @@ class StoreSpace {
     return out;
   }
 
-  /// [allowed] 中的高级分区，保持 [advancedBrowserSpaces] 顺序。
-  static List<String> advancedVisibleSpaces(Iterable<String> allowed) {
+  /// [allowed] 中「智能体」分区，保持 [agentBrowserSpaces] 顺序。
+  static List<String> agentVisibleSpaces(Iterable<String> allowed) {
     final set = allowed.toSet();
     return [
-      for (final s in advancedBrowserSpaces)
+      for (final s in agentBrowserSpaces)
         if (set.contains(s)) s,
     ];
   }
+
+  /// 兼容别名：等同 [userVisibleSpaces]。
+  static List<String> defaultVisibleSpaces(Iterable<String> allowed) =>
+      userVisibleSpaces(allowed);
+
+  /// 兼容别名：等同 [agentVisibleSpaces]。
+  static List<String> advancedVisibleSpaces(Iterable<String> allowed) =>
+      agentVisibleSpaces(allowed);
 
   /// Owner 端默认可跨端读的分区（不含 private 的 runtime / cognition）。
   static const sharedReadable = <String>[

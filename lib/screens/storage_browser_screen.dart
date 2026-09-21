@@ -174,9 +174,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   /// 「空间」Tab：null = 分区根列表；非 null = 已进入某分区。
   String? _navSpace;
 
-  /// 分区根「高级」折叠（运行时 / 认知 / 产物）。默认分区为空时自动展开。
-  bool _advancedExpanded = false;
-
   /// 当前分区内路径（无首尾 `/`）；空串 = 分区根。
   String _navPath = '';
 
@@ -224,15 +221,11 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     return base;
   }
 
-  List<String> get _defaultVisibleSpaces =>
-      StoreSpace.defaultVisibleSpaces(_spaces);
+  List<String> get _userVisibleSpaces =>
+      StoreSpace.userVisibleSpaces(_spaces);
 
-  List<String> get _advancedVisibleSpaces =>
-      StoreSpace.advancedVisibleSpaces(_spaces);
-
-  bool get _advancedSectionExpanded =>
-      _advancedVisibleSpaces.isNotEmpty &&
-      (_defaultVisibleSpaces.isEmpty || _advancedExpanded);
+  List<String> get _agentVisibleSpaces =>
+      StoreSpace.agentVisibleSpaces(_spaces);
 
   /// 当前已进入的分区；根目录（分区列表）时为 null。
   String? get _effectiveNavSpace => _navSpace;
@@ -2471,74 +2464,34 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     );
   }
 
-  Widget _buildMobileAdvancedHeader(AppLocalizations l10n) {
-    return InkWell(
-      onTap: () => setState(() => _advancedExpanded = !_advancedExpanded),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 42,
-              child: Center(
-                child: Icon(
-                  Icons.tune,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Text(
-                l10n.storage_spaceAdvanced,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      height: 1.35,
-                    ),
-              ),
-            ),
-            Icon(
-              _advancedSectionExpanded ? Icons.expand_less : Icons.expand_more,
-              size: 20,
+  Widget _buildSpaceCategoryHeader(AppLocalizations l10n, String title) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+      child: Text(
+        title,
+        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w600,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
-          ],
-        ),
       ),
-    );
-  }
-
-  Widget _buildDesktopAdvancedHeader(AppLocalizations l10n) {
-    return ListTile(
-      leading: SizedBox(
-        width: 42,
-        child: Center(
-          child: Icon(
-            Icons.tune,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-        ),
-      ),
-      title: Text(l10n.storage_spaceAdvanced),
-      trailing: Icon(
-        _advancedSectionExpanded ? Icons.expand_less : Icons.expand_more,
-      ),
-      onTap: () => setState(() => _advancedExpanded = !_advancedExpanded),
     );
   }
 
   Widget _buildSpaceRootList(AppLocalizations l10n, {required bool mobile}) {
-    final defaultSpaces = _defaultVisibleSpaces;
-    final advancedSpaces = _advancedVisibleSpaces;
-    final expandAdvanced = _advancedSectionExpanded;
+    final userSpaces = _userVisibleSpaces;
+    final agentSpaces = _agentVisibleSpaces;
     if (mobile) {
       final rows = <Widget>[
-        for (final space in defaultSpaces)
-          _buildMobileSpaceRootRow(l10n, space),
-        if (advancedSpaces.isNotEmpty) _buildMobileAdvancedHeader(l10n),
-        if (expandAdvanced)
-          for (final space in advancedSpaces)
+        if (userSpaces.isNotEmpty) ...[
+          _buildSpaceCategoryHeader(l10n, l10n.storage_categoryMine),
+          for (final space in userSpaces)
             _buildMobileSpaceRootRow(l10n, space),
+        ],
+        if (agentSpaces.isNotEmpty) ...[
+          _buildSpaceCategoryHeader(l10n, l10n.storage_categoryAgents),
+          for (final space in agentSpaces)
+            _buildMobileSpaceRootRow(l10n, space),
+        ],
       ];
       return ListView.separated(
         padding: const EdgeInsets.only(top: 4, bottom: 16),
@@ -2550,12 +2503,16 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 8),
       children: [
-        for (final space in defaultSpaces)
-          _buildDesktopSpaceRootRow(l10n, space),
-        if (advancedSpaces.isNotEmpty) _buildDesktopAdvancedHeader(l10n),
-        if (expandAdvanced)
-          for (final space in advancedSpaces)
+        if (userSpaces.isNotEmpty) ...[
+          _buildSpaceCategoryHeader(l10n, l10n.storage_categoryMine),
+          for (final space in userSpaces)
             _buildDesktopSpaceRootRow(l10n, space),
+        ],
+        if (agentSpaces.isNotEmpty) ...[
+          _buildSpaceCategoryHeader(l10n, l10n.storage_categoryAgents),
+          for (final space in agentSpaces)
+            _buildDesktopSpaceRootRow(l10n, space),
+        ],
       ],
     );
   }

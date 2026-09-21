@@ -143,30 +143,35 @@ void main() {
       expect(StoreSpace.browserSpaces, contains(StoreSpace.public_));
       expect(StoreSpace.browserSpaces, contains(StoreSpace.cognition));
       expect(StoreSpace.browserSpaces, isNot(contains(StoreSpace.memory)));
-      expect(StoreSpace.defaultBrowserSpaces, [
+      expect(StoreSpace.userBrowserSpaces, [
         StoreSpace.files,
-        StoreSpace.workspaces,
         StoreSpace.public_,
       ]);
-      expect(StoreSpace.advancedBrowserSpaces, [
+      expect(StoreSpace.agentBrowserSpaces, [
+        StoreSpace.workspaces,
         StoreSpace.runtime,
         StoreSpace.cognition,
         StoreSpace.artifacts,
       ]);
       expect(
-        StoreSpace.defaultVisibleSpaces(StoreSpace.browserSpaces),
-        [StoreSpace.files, StoreSpace.workspaces, StoreSpace.public_],
+        StoreSpace.userVisibleSpaces(StoreSpace.browserSpaces),
+        [StoreSpace.files, StoreSpace.public_],
       );
       expect(
-        StoreSpace.advancedVisibleSpaces(StoreSpace.browserSpaces),
-        [StoreSpace.runtime, StoreSpace.cognition, StoreSpace.artifacts],
+        StoreSpace.agentVisibleSpaces(StoreSpace.browserSpaces),
+        [
+          StoreSpace.workspaces,
+          StoreSpace.runtime,
+          StoreSpace.cognition,
+          StoreSpace.artifacts,
+        ],
       );
       expect(
-        StoreSpace.defaultVisibleSpaces([StoreSpace.files, 'notes']),
+        StoreSpace.userVisibleSpaces([StoreSpace.files, 'notes']),
         [StoreSpace.files, 'notes'],
       );
       expect(
-        StoreSpace.advancedVisibleSpaces(
+        StoreSpace.agentVisibleSpaces(
             [StoreSpace.files, StoreSpace.runtime]),
         [StoreSpace.runtime],
       );

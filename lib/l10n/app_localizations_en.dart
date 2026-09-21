@@ -6541,7 +6541,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_spaceRecent => 'Recent';
 
   @override
-  String get storage_spaceWorkspaces => 'Workspaces';
+  String get storage_spaceWorkspaces => 'Workspace';
+
+  @override
+  String get storage_categoryMine => 'Mine';
+
+  @override
+  String get storage_categoryAgents => 'Agents';
 
   @override
   String get storage_spaceRuntime => 'Runtime';

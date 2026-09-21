@@ -9,7 +9,7 @@ import '../../storage/store_protocol.dart';
 import '../../storage/store_service.dart';
 import '../../theme/app_theme.dart';
 
-/// 桌面储物袋左侧面板：最近 + 文件/工作/公开；运行时/认知/产物收入「高级」。
+/// 桌面储物袋左侧面板：最近 + 「我的」/「智能体」分区列表。
 ///
 /// 选中回调由父级在右侧 master-detail 展示对应内容：
 /// 「最近」→ 最近文件列表；分区 → 该分区文件浏览。
@@ -44,7 +44,6 @@ class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
 
   String _selfId = '';
   bool _loading = true;
-  bool _advancedExpanded = false;
   Map<String, int> _spaceBytes = const {};
   StreamSubscription<void>? _usageSub;
 
@@ -180,6 +179,21 @@ class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
     );
   }
 
+  Widget _buildSectionHeader(AppLocalizations l10n, String title) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: Colors.grey[600],
+          letterSpacing: 0.2,
+        ),
+      ),
+    );
+  }
+
   Widget _buildRecentRow(AppLocalizations l10n) {
     return _hubRow(
       leading: _leadingIconBox(Icons.history),
@@ -200,32 +214,15 @@ class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
     );
   }
 
-  Widget _buildAdvancedHeader(AppLocalizations l10n, {required bool expanded}) {
-    return _hubRow(
-      leading: _leadingIconBox(Icons.tune),
-      title: l10n.storage_spaceAdvanced,
-      selected: !expanded &&
-          widget.selectedSpace != null &&
-          StoreSpace.advancedBrowserSpaces.contains(widget.selectedSpace),
-      trailing: Icon(
-        expanded ? Icons.expand_less : Icons.expand_more,
-        size: 20,
-      ),
-      onTap: () => setState(() => _advancedExpanded = !_advancedExpanded),
-    );
-  }
-
   Widget _buildBody(AppLocalizations l10n) {
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    final defaultSpaces =
-        StoreSpace.defaultVisibleSpaces(StoreSpace.browserSpaces);
-    final advancedSpaces =
-        StoreSpace.advancedVisibleSpaces(StoreSpace.browserSpaces);
-    final expandAdvanced = advancedSpaces.isNotEmpty &&
-        (defaultSpaces.isEmpty || _advancedExpanded);
+    final userSpaces =
+        StoreSpace.userVisibleSpaces(StoreSpace.browserSpaces);
+    final agentSpaces =
+        StoreSpace.agentVisibleSpaces(StoreSpace.browserSpaces);
 
     return RefreshIndicator(
       onRefresh: reload,
@@ -233,12 +230,16 @@ class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
           _buildRecentRow(l10n),
-          const Divider(height: 16, indent: 64),
-          for (final space in defaultSpaces) _buildSpaceRow(l10n, space),
-          if (advancedSpaces.isNotEmpty)
-            _buildAdvancedHeader(l10n, expanded: expandAdvanced),
-          if (expandAdvanced)
-            for (final space in advancedSpaces) _buildSpaceRow(l10n, space),
+          if (userSpaces.isNotEmpty) ...[
+            const Divider(height: 16, indent: 64),
+            _buildSectionHeader(l10n, l10n.storage_categoryMine),
+            for (final space in userSpaces) _buildSpaceRow(l10n, space),
+          ],
+          if (agentSpaces.isNotEmpty) ...[
+            const Divider(height: 16, indent: 64),
+            _buildSectionHeader(l10n, l10n.storage_categoryAgents),
+            for (final space in agentSpaces) _buildSpaceRow(l10n, space),
+          ],
           ...widget.footer,
           const SizedBox(height: 24),
         ],

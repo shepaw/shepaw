@@ -11484,8 +11484,20 @@ abstract class AppLocalizations {
   /// No description provided for @storage_spaceWorkspaces.
   ///
   /// In zh, this message translates to:
-  /// **'工作'**
+  /// **'工作区'**
   String get storage_spaceWorkspaces;
+
+  /// No description provided for @storage_categoryMine.
+  ///
+  /// In zh, this message translates to:
+  /// **'我的'**
+  String get storage_categoryMine;
+
+  /// No description provided for @storage_categoryAgents.
+  ///
+  /// In zh, this message translates to:
+  /// **'智能体'**
+  String get storage_categoryAgents;
 
   /// No description provided for @storage_spaceRuntime.
   ///
