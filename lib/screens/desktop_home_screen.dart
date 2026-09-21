@@ -246,12 +246,10 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
   bool get _isUtilityPanel => _rightPanel == _RightPanelView.settings;
 
-  bool get _isInstructionSetPanel =>
-      _rightPanel == _RightPanelView.instructions;
-
   bool get _isStorageDetailPanel =>
       _rightPanel == _RightPanelView.storageSpaceManage ||
-      _rightPanel == _RightPanelView.jadeSlips;
+      _rightPanel == _RightPanelView.jadeSlips ||
+      _rightPanel == _RightPanelView.instructions;
 
   bool get _storageRecentSelected =>
       _leftMode == _LeftPanelMode.storage &&
@@ -444,16 +442,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     });
   }
 
-  /// 指令集：与储物袋同级入口，右侧面板打开指令集管理页。
-  void _showInstructions() {
-    setState(() {
-      _selected = null;
-      _clearContactSelectionFields();
-      _rightPanel = _RightPanelView.instructions;
-      _navGeneration++;
-    });
-  }
-
   void _showPanel(_RightPanelView panel) {
     if (_rightPanel == panel) return; // already showing this panel
     setState(() {
@@ -483,9 +471,11 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _storageSpace = space;
       _selected = null;
       _clearContactSelectionFields();
-      _rightPanel = space == StoreSpace.notes
-          ? _RightPanelView.jadeSlips
-          : _RightPanelView.storageSpaceManage;
+      _rightPanel = switch (space) {
+        StoreSpace.notes => _RightPanelView.jadeSlips,
+        StoreSpace.instructions => _RightPanelView.instructions,
+        _ => _RightPanelView.storageSpaceManage,
+      };
       _navGeneration++;
     });
   }
@@ -795,8 +785,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         tooltip: l10n.drawer_myProfile,
         colorBuilder: (_) =>
             _leftMode == _LeftPanelMode.conversations &&
-                !_isUtilityPanel &&
-                !_isInstructionSetPanel
+                !_isUtilityPanel
             ? activeColor
             : iconColor,
         onTap: _showConversations,
@@ -806,8 +795,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         tooltip: l10n.drawer_contacts,
         colorBuilder: (_) =>
             _leftMode == _LeftPanelMode.contacts &&
-                !_isUtilityPanel &&
-                !_isInstructionSetPanel
+                !_isUtilityPanel
             ? activeColor
             : iconColor,
         onTap: _showContacts,
@@ -817,17 +805,10 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         tooltip: l10n.storage_title,
         colorBuilder: (_) =>
             _leftMode == _LeftPanelMode.storage &&
-                !_isUtilityPanel &&
-                !_isInstructionSetPanel
+                !_isUtilityPanel
             ? activeColor
             : iconColor,
         onTap: _showStorage,
-      ),
-      _SidebarItemDef(
-        icon: Icons.playlist_add_check_outlined,
-        tooltip: l10n.instructionSet_title,
-        colorBuilder: (_) => _isInstructionSetPanel ? activeColor : iconColor,
-        onTap: _showInstructions,
       ),
     ];
 

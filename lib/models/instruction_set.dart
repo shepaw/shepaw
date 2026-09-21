@@ -25,6 +25,22 @@ class InstructionSet {
   final int createdAt;
   final int updatedAt;
 
+  /// 储物袋约定路径（近期列表用；权威仍在 SQLite，尚未整区落盘）。
+  String get relPath => 'sets/$id.json';
+
+  static bool isRecordPath(String path) {
+    final parts = path.split('/');
+    return parts.length == 2 &&
+        parts.first == 'sets' &&
+        parts.last.endsWith('.json');
+  }
+
+  static String? idFromRecordPath(String path) {
+    if (!isRecordPath(path)) return null;
+    final leaf = path.substring(path.lastIndexOf('/') + 1);
+    return leaf.substring(0, leaf.length - '.json'.length);
+  }
+
   factory InstructionSet.fromRow(Map<String, dynamic> row) => InstructionSet(
         id: row['id'] as String,
         name: row['name'] as String,

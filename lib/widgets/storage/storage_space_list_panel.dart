@@ -100,6 +100,8 @@ class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
         return Icons.folder_outlined;
       case StoreSpace.notes:
         return Icons.auto_stories_outlined;
+      case StoreSpace.instructions:
+        return Icons.playlist_add_check_outlined;
       case StoreSpace.public_:
         return Icons.public;
       case StoreSpace.cognition:
@@ -215,6 +217,16 @@ class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
     );
   }
 
+  Widget _buildInstructionsRow(AppLocalizations l10n) {
+    return _hubRow(
+      leading: _leadingIconBox(Icons.playlist_add_check_outlined),
+      title: l10n.instructionSet_title,
+      subtitle: l10n.instructionSet_subtitle,
+      selected: widget.selectedSpace == StoreSpace.instructions,
+      onTap: () => widget.onSpaceSelected?.call(StoreSpace.instructions),
+    );
+  }
+
   Widget _buildSpaceRow(AppLocalizations l10n, String space) {
     final bytes = _spaceBytes[space];
     return _hubRow(
@@ -245,6 +257,7 @@ class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
           const Divider(height: 16, indent: 64),
           _buildSectionHeader(l10n, l10n.storage_categoryMine),
           _buildNotesRow(l10n),
+          _buildInstructionsRow(l10n),
           if (userSpaces.isNotEmpty) ...[
             for (final space in userSpaces) _buildSpaceRow(l10n, space),
           ],

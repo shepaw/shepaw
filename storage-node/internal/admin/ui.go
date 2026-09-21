@@ -75,6 +75,7 @@ td, th { text-align: left; padding: .35rem .25rem; border-bottom: 1px solid
         <option value="memory">memory</option>
         <option value="files">files</option>
         <option value="notes">notes</option>
+        <option value="instructions">instructions</option>
         <option value="public">public</option>
         <option value="artifacts">artifacts</option>
         <option value="attachments">attachments</option>

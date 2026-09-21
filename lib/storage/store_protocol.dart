@@ -130,6 +130,9 @@ class StoreSpace {
   /// 落盘：`notes/<device>/slips/<id>.json`，跨设备随储物袋镜像。
   static const notes = 'notes';
 
+  /// 指令集：可复用任务指令（专属 UI，不进「文件」浏览）。
+  static const instructions = 'instructions';
+
   /// Agent 认知权威空间（soul + 结构化记忆）：
   /// `cognition/<agentId>/soul.md`、`…/entries/*.json`、`…/peers/<peerId>/…`。
   static const cognition = 'cognition';
@@ -147,6 +150,7 @@ class StoreSpace {
     runtime,
     files,
     notes,
+    instructions,
     public_,
     backups,
     cognition,
@@ -155,11 +159,23 @@ class StoreSpace {
     attachments,
   ];
 
-  /// 浏览「我的」：用户文件面（文件 / 公开）。「最近」是独立 Tab。
+  /// 浏览「我的」：用户文件面。玉简 / 指令集走专属入口，不进普通文件夹列表。
+  /// `public` 与 `files` 对 owner 同权，已无独立「公开这个文件夹」产品入口，
+  /// 故不再展示；协议 / CLI / 「最近」仍识别该分区。
   static const userBrowserSpaces = <String>[
     files,
-    public_,
   ];
+
+  /// 专属 UI 分区：有独立列表页，不能再当普通文件夹出现在「我的」。
+  static const dedicatedUserSpaces = <String>{
+    notes,
+    instructions,
+  };
+
+  /// 协议保留、用户分区列表隐藏。
+  static const hiddenUserBrowserSpaces = <String>{
+    public_,
+  };
 
   /// 浏览「智能体」：工作区 / 运行时 / 认知 / 产物。
   static const agentBrowserSpaces = <String>[
@@ -167,6 +183,15 @@ class StoreSpace {
     runtime,
     cognition,
     artifacts,
+  ];
+
+  /// 「最近」收录的分区：浏览面 + 玉简/指令集 + 仍可能有存量的 public。
+  static const recentSpaces = <String>[
+    files,
+    notes,
+    instructions,
+    public_,
+    ...agentBrowserSpaces,
   ];
 
   /// 兼容别名：等同 [userBrowserSpaces]。
@@ -190,6 +215,10 @@ class StoreSpace {
         if (set.contains(s)) s,
     ];
     for (final s in allowed) {
+      if (dedicatedUserSpaces.contains(s) ||
+          hiddenUserBrowserSpaces.contains(s)) {
+        continue;
+      }
       if (!userBrowserSpaces.contains(s) &&
           !agentBrowserSpaces.contains(s) &&
           !out.contains(s)) {
@@ -221,6 +250,7 @@ class StoreSpace {
     workspaces,
     files,
     notes,
+    instructions,
     public_,
     artifacts,
   ];
@@ -275,6 +305,7 @@ class StoreSpace {
         SpaceProfile.builtin(runtime, visibility: 'private'),
         SpaceProfile.builtin(files, visibility: 'shared'),
         SpaceProfile.builtin(notes, visibility: 'shared'),
+        SpaceProfile.builtin(instructions, visibility: 'shared'),
         SpaceProfile.builtin(public_, visibility: 'shared'),
         SpaceProfile.builtin(backups,
             visibility: 'private', encryption: 'client', retention: 'gfs'),
@@ -623,6 +654,7 @@ bool? _builtinVisibility(String space) => switch (space) {
       StoreSpace.workspaces ||
       StoreSpace.files ||
       StoreSpace.notes ||
+      StoreSpace.instructions ||
       StoreSpace.public_ ||
       StoreSpace.artifacts =>
         true,

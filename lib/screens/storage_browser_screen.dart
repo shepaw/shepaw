@@ -9,9 +9,13 @@ import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 
 import '../l10n/app_localizations.dart';
+import '../models/instruction_set.dart';
+import '../models/jade_slip.dart';
 import '../models/store_attachment_ref.dart';
 import '../peer/models/peer_store_share.dart';
 import '../peer/services/peer_storage_service.dart';
+import '../services/instruction_set_service.dart';
+import '../services/jade_slip_service.dart';
 import '../services/store_open_service.dart';
 import '../storage/device_identity.dart';
 import '../storage/local_store.dart';
@@ -27,22 +31,37 @@ import '../widgets/avatar_image.dart';
 import '../widgets/mobile_shell_scope.dart';
 import '../widgets/storage/store_file_list_avatar.dart';
 import 'storage_shared.dart';
+import 'jade_slip_editor_screen.dart';
 import 'jade_slip_screen.dart';
+import 'instruction_set_editor_screen.dart';
+import 'instruction_set_screen.dart';
 
 class _BrowsedFile {
   const _BrowsedFile({
     required this.space,
     required this.entry,
     this.snippet,
+    this.displayTitle,
+    this.virtual = false,
   });
 
   final String space;
   final StoreEntry entry;
   final String? snippet;
+  final String? displayTitle;
+
+  /// SQLite 指令集等尚未落盘的条目：不能走 store 预览/导出。
+  final bool virtual;
 
   String get path => entry.path;
   int get size => entry.size;
   int get mtimeMs => entry.mtimeMs;
+
+  bool get isJadeSlipRecord =>
+      space == StoreSpace.notes && JadeSlip.isRecordPath(path);
+
+  bool get isInstructionRecord =>
+      space == StoreSpace.instructions && InstructionSet.isRecordPath(path);
 }
 
 /// 浏览 App store 正式文件。
@@ -166,6 +185,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   final Map<String, _BrowsedFile> _selectedFiles = {};
   int _dirLoadGen = 0;
   StreamSubscription<void>? _usageSub;
+  StreamSubscription<void>? _jadeSub;
 
   /// 目录名 → 可读标签缓存，key 为 `'$space:$name'`；同一 (space, name) 只解析一次。
   final Map<String, StorageFolderLabel> _folderLabelCache = {};
@@ -349,6 +369,9 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     _tabs.addListener(() {
       if (_tabs.indexIsChanging) return;
       if (mounted) setState(() {});
+      if (_tabs.index == 0 && !_isRemote) {
+        unawaited(_loadRecent());
+      }
     });
     final initial = widget.initialSpace;
     if (initial != null && initial.isNotEmpty) {
@@ -367,6 +390,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   @override
   void dispose() {
     _usageSub?.cancel();
+    _jadeSub?.cancel();
     _tabs.dispose();
     super.dispose();
   }
@@ -430,6 +454,10 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     await _reload();
     if (!_isRemote) {
       unawaited(_subscribeUsage());
+      _jadeSub?.cancel();
+      _jadeSub = JadeSlipService.instance.changes.listen((_) {
+        if (mounted) unawaited(_loadRecent());
+      });
     }
   }
 
@@ -438,7 +466,10 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       final store = await StoreService.instance.localStore();
       _usageSub?.cancel();
       _usageSub = store.usageUpdates.listen((_) {
-        if (mounted) unawaited(_loadSpaceBytes());
+        if (mounted) {
+          unawaited(_loadSpaceBytes());
+          unawaited(_loadRecent());
+        }
       });
     } catch (_) {}
   }
@@ -529,6 +560,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
             anyOk = true;
             for (final e in entries) {
               if (e.isDir || _isFolderMarkerPath(e.path)) continue;
+              if (_pickMode && _isDedicatedRecord(space, e.path)) continue;
               all.add(_BrowsedFile(space: space, entry: e));
             }
           } on StoreException catch (e) {
@@ -545,10 +577,11 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       } else {
         anyOk = true;
         final journal = await _localJournal();
-        final allowed = _spaces.toSet();
+        final allowed = StoreSpace.recentSpaces.toSet();
         for (final item in await journal.recent()) {
           if (!allowed.contains(item.space)) continue;
           if (_isFolderMarkerPath(item.path)) continue;
+          if (_pickMode && _isDedicatedRecord(item.space, item.path)) continue;
           all.add(_BrowsedFile(
             space: item.space,
             entry: StoreEntry(
@@ -559,6 +592,14 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
             ),
           ));
         }
+        if (!_pickMode) {
+          await _overlayInstructionSets(all);
+        }
+        all.sort((a, b) => b.mtimeMs.compareTo(a.mtimeMs));
+        if (all.length > SyncJournal.recentLimit) {
+          all.removeRange(SyncJournal.recentLimit, all.length);
+        }
+        await _applyJadeSlipTitles(all);
       }
       await _refreshRecentOwnerLabels(all);
       if (!mounted) return;
@@ -577,6 +618,60 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         _loading = false;
       });
     }
+  }
+
+  bool _isDedicatedRecord(String space, String path) =>
+      (space == StoreSpace.notes && JadeSlip.isRecordPath(path)) ||
+      (space == StoreSpace.instructions && InstructionSet.isRecordPath(path));
+
+  Future<void> _overlayInstructionSets(List<_BrowsedFile> all) async {
+    try {
+      final items = await InstructionSetService.instance.list();
+      final existing = {
+        for (final f in all)
+          if (f.space == StoreSpace.instructions) f.path,
+      };
+      for (final item in items) {
+        if (item.name == InstructionSetService.systemInstructionName) continue;
+        if (existing.contains(item.relPath)) continue;
+        all.add(_BrowsedFile(
+          space: StoreSpace.instructions,
+          displayTitle: item.name,
+          virtual: true,
+          entry: StoreEntry(
+            path: item.relPath,
+            size: item.content.length,
+            sha256: '',
+            mtimeMs: item.updatedAt,
+          ),
+        ));
+      }
+    } catch (_) {
+      // 指令集未就绪时「最近」仍展示 store 文件。
+    }
+  }
+
+  Future<void> _applyJadeSlipTitles(List<_BrowsedFile> files) async {
+    final need = files.any((f) => f.isJadeSlipRecord && f.displayTitle == null);
+    if (!need) return;
+    try {
+      final slips =
+          await JadeSlipService.instance.list(includeArchived: true);
+      final byPath = {for (final s in slips) s.relPath: s.title};
+      for (var i = 0; i < files.length; i++) {
+        final f = files[i];
+        if (!f.isJadeSlipRecord || f.displayTitle != null) continue;
+        final title = byPath[f.path];
+        if (title == null || title.isEmpty) continue;
+        files[i] = _BrowsedFile(
+          space: f.space,
+          entry: f.entry,
+          snippet: f.snippet,
+          displayTitle: title,
+          virtual: f.virtual,
+        );
+      }
+    } catch (_) {}
   }
 
   Future<SyncJournal> _localJournal() async {
@@ -672,6 +767,35 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   }
 
   Future<void> _previewFile(_BrowsedFile file) async {
+    if (file.isJadeSlipRecord) {
+      final id = JadeSlip.idFromRecordPath(file.path);
+      if (id == null || id.isEmpty) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => JadeSlipEditorScreen(slipId: id),
+        ),
+      );
+      if (mounted) unawaited(_loadRecent());
+      return;
+    }
+    if (file.isInstructionRecord) {
+      final id = InstructionSet.idFromRecordPath(file.path);
+      if (id == null || id.isEmpty) return;
+      final item = await InstructionSetService.instance.getById(id);
+      if (!mounted) return;
+      if (item == null) {
+        _toast(AppLocalizations.of(context).storage_browserEmpty);
+        return;
+      }
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => InstructionSetEditorScreen(item: item),
+        ),
+      );
+      if (mounted) unawaited(_loadRecent());
+      return;
+    }
+    if (file.virtual) return;
     if (_targetId.isEmpty) return;
     await StoreOpenService.instance.openStoreUri(context, _uriFor(file));
   }
@@ -766,8 +890,21 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     if (confirmed != true) return;
     setState(() => _busy = true);
     try {
-      final store = await StoreService.instance.localStore();
-      await store.delete(_targetId, space, relPath);
+      if (space == StoreSpace.notes && JadeSlip.isRecordPath(relPath)) {
+        final id = JadeSlip.idFromRecordPath(relPath);
+        if (id != null && id.isNotEmpty) {
+          await JadeSlipService.instance.delete(id);
+        }
+      } else if (space == StoreSpace.instructions &&
+          InstructionSet.isRecordPath(relPath)) {
+        final id = InstructionSet.idFromRecordPath(relPath);
+        if (id != null && id.isNotEmpty) {
+          await InstructionSetService.instance.delete(id);
+        }
+      } else {
+        final store = await StoreService.instance.localStore();
+        await store.delete(_targetId, space, relPath);
+      }
       _toast(l10n.storage_browserDeleted(relPath));
       await _reload();
     } on StoreException catch (e) {
@@ -788,7 +925,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         _copyPathText(_uriFor(file));
       case _EntryAction.shareLink:
         _shareMarkdownLink(
-          displayName: p.basename(file.path),
+          displayName: file.displayTitle ?? p.basename(file.path),
           uri: _uriFor(file),
         );
       case _EntryAction.export:
@@ -804,33 +941,42 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     }
   }
 
-  List<PopupMenuEntry<Object>> _entryActionItems(AppLocalizations l10n) {
+  List<PopupMenuEntry<Object>> _entryActionItems(
+    AppLocalizations l10n, {
+    _BrowsedFile? file,
+  }) {
     final errorColor = Theme.of(context).colorScheme.error;
+    final virtual = file?.virtual == true;
     return [
       PopupMenuItem(
         value: _EntryAction.preview,
         child: Text(l10n.storage_browserPreview),
       ),
-      PopupMenuItem(
-        value: _EntryAction.copyPath,
-        child: Text(l10n.storage_browserCopyPath),
-      ),
-      PopupMenuItem(
-        value: _EntryAction.shareLink,
-        child: Text(l10n.storage_browserShareLink),
-      ),
-      PopupMenuItem(
-        value: _EntryAction.export,
-        child: Text(l10n.storage_browserExport),
-      ),
-      PopupMenuItem(
-        value: _EntryAction.versions,
-        child: Text(l10n.storage_browserVersions),
-      ),
-      PopupMenuItem(
-        value: _EntryAction.manifest,
-        child: Text(l10n.storage_browserManifest),
-      ),
+      if (!virtual)
+        PopupMenuItem(
+          value: _EntryAction.copyPath,
+          child: Text(l10n.storage_browserCopyPath),
+        ),
+      if (!virtual)
+        PopupMenuItem(
+          value: _EntryAction.shareLink,
+          child: Text(l10n.storage_browserShareLink),
+        ),
+      if (!virtual)
+        PopupMenuItem(
+          value: _EntryAction.export,
+          child: Text(l10n.storage_browserExport),
+        ),
+      if (!virtual)
+        PopupMenuItem(
+          value: _EntryAction.versions,
+          child: Text(l10n.storage_browserVersions),
+        ),
+      if (!virtual)
+        PopupMenuItem(
+          value: _EntryAction.manifest,
+          child: Text(l10n.storage_browserManifest),
+        ),
       if (_canDelete)
         PopupMenuItem(
           value: _EntryAction.delete,
@@ -1516,6 +1662,14 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       unawaited(Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => const JadeSlipScreen(),
+        ),
+      ));
+      return;
+    }
+    if (space == StoreSpace.instructions) {
+      unawaited(Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => const InstructionSetScreen(),
         ),
       ));
       return;
@@ -2418,8 +2572,31 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   }
 
   Widget _buildMobileNotesRow(AppLocalizations l10n) {
-    return InkWell(
+    return _buildMobileSpecialSpaceRow(
+      icon: Icons.auto_stories_outlined,
+      title: l10n.jadeSlip_title,
+      subtitle: l10n.jadeSlip_entryHint,
       onTap: _busy ? null : () => _enterSpace(StoreSpace.notes),
+    );
+  }
+
+  Widget _buildMobileInstructionsRow(AppLocalizations l10n) {
+    return _buildMobileSpecialSpaceRow(
+      icon: Icons.playlist_add_check_outlined,
+      title: l10n.instructionSet_title,
+      subtitle: l10n.instructionSet_subtitle,
+      onTap: _busy ? null : () => _enterSpace(StoreSpace.instructions),
+    );
+  }
+
+  Widget _buildMobileSpecialSpaceRow({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback? onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
@@ -2429,7 +2606,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
               width: 42,
               child: Center(
                 child: Icon(
-                  Icons.auto_stories_outlined,
+                  icon,
                   color: Theme.of(context).colorScheme.primary,
                 ),
               ),
@@ -2440,7 +2617,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    l10n.jadeSlip_title,
+                    title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -2450,7 +2627,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    l10n.jadeSlip_entryHint,
+                    subtitle,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
@@ -2567,6 +2744,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         if (userSpaces.isNotEmpty) ...[
           _buildSpaceCategoryHeader(l10n, l10n.storage_categoryMine),
           _buildMobileNotesRow(l10n),
+          _buildMobileInstructionsRow(l10n),
           for (final space in userSpaces)
             _buildMobileSpaceRootRow(l10n, space),
         ],
@@ -2594,6 +2772,13 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
             title: Text(l10n.jadeSlip_title),
             subtitle: Text(l10n.jadeSlip_entryHint),
             onTap: () => _enterSpace(StoreSpace.notes),
+          ),
+          ListTile(
+            leading: Icon(Icons.playlist_add_check_outlined,
+                color: Theme.of(context).colorScheme.primary),
+            title: Text(l10n.instructionSet_title),
+            subtitle: Text(l10n.instructionSet_subtitle),
+            onTap: () => _enterSpace(StoreSpace.instructions),
           ),
           for (final space in userSpaces)
             _buildDesktopSpaceRootRow(l10n, space),
