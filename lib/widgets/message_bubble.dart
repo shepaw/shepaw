@@ -924,7 +924,7 @@ class MessageBubble extends StatelessWidget {
         final bodyWidget = isMyMessage
             ? _wrapWithTextSelection(_plainOutgoingText(rawContent))
             : _wrapWithTextSelection(
-                _StableMarkdownBody(
+                StableMarkdownBody(
                   data: _processContentWithMentions(
                     rawContent,
                     message.metadata,
@@ -1058,7 +1058,7 @@ class MessageBubble extends StatelessWidget {
 
     final progressTitle = message.metadata?['collapsible_title'] as String?;
     final autoCollapse = message.metadata?['auto_collapse'] != false;
-    final progressBody = _StableMarkdownBody(
+    final progressBody = StableMarkdownBody(
       data: progressContent,
       styleSheet: styleSheet,
       isStreaming: isStreaming && !hasAnswer,
@@ -1379,7 +1379,11 @@ class MessageBubble extends StatelessWidget {
 /// Updates are therefore throttled: at most one re-parse per
 /// [streamMarkdownParseInterval]; the final content is always flushed
 /// immediately once [isStreaming] turns off.
-class _StableMarkdownBody extends StatefulWidget {
+///
+/// Public only so the throttle state machine can be driven by a widget test
+/// (`message_bubble_markdown_throttle_test.dart`); it is internal to the
+/// bubbles in this file.
+class StableMarkdownBody extends StatefulWidget {
   final String data;
   final MarkdownStyleSheet styleSheet;
   final void Function(String text, String? href, String? title)? onTapLink;
@@ -1387,7 +1391,8 @@ class _StableMarkdownBody extends StatefulWidget {
   /// Set to `false` on settled bubbles so their parse is never deferred.
   final bool isStreaming;
 
-  const _StableMarkdownBody({
+  const StableMarkdownBody({
+    super.key,
     required this.data,
     required this.styleSheet,
     this.onTapLink,
@@ -1395,10 +1400,10 @@ class _StableMarkdownBody extends StatefulWidget {
   });
 
   @override
-  State<_StableMarkdownBody> createState() => _StableMarkdownBodyState();
+  State<StableMarkdownBody> createState() => StableMarkdownBodyState();
 }
 
-/// Pure decision helper for [_StableMarkdownBodyState], unit-testable.
+/// Pure decision helper for [StableMarkdownBodyState], unit-testable.
 ///
 /// Returns true when a (re)parse should happen right now.
 @visibleForTesting
@@ -1410,12 +1415,12 @@ bool shouldParseMarkdownNow({
 }) {
   if (!dataChanged && !pendingData) return false;
   if (!isStreaming) return true;
-  // Streaming: parse immediately only while nothing is deferred/scheduled —
-  // i.e. the first chunk, or right after the trailing timer fired.
+  // Streaming: parse immediately only while no throttle window is open —
+  // i.e. the first chunk, or the first chunk after an idle gap closed one.
   return !timerActive;
 }
 
-class _StableMarkdownBodyState extends State<_StableMarkdownBody> {
+class StableMarkdownBodyState extends State<StableMarkdownBody> {
   static const streamMarkdownParseInterval = Duration(milliseconds: 120);
 
   Widget? _cached;
@@ -1432,40 +1437,56 @@ class _StableMarkdownBodyState extends State<_StableMarkdownBody> {
   }
 
   @override
-  void didUpdateWidget(covariant _StableMarkdownBody oldWidget) {
+  void didUpdateWidget(covariant StableMarkdownBody oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.data != _cachedData &&
-        widget.isStreaming &&
-        !shouldParseMarkdownNow(
-          isStreaming: true,
-          dataChanged: true,
-          pendingData: _pendingData != null,
-          timerActive: _throttleTimer != null,
-        )) {
-      // Defer the re-parse: remember the newest text, let the trailing timer
-      // flush it. Cheapest possible path for the hot streaming loop.
-      _pendingData = widget.data;
-      _throttleTimer ??= Timer(streamMarkdownParseInterval, _flushPending);
-    } else if (_pendingData != null && widget.data == _pendingData) {
-      // Pending flush already covers this text — nothing to do.
-    }
     if (!widget.isStreaming) {
       // Turn finished (or settled bubble): drop any pending work; build()
       // below renders the latest data synchronously.
       _cancelThrottle();
+      return;
     }
+    if (widget.data == _cachedData && _pendingData == null) return;
+
+    if (shouldParseMarkdownNow(
+      isStreaming: true,
+      dataChanged: widget.data != _cachedData,
+      pendingData: _pendingData != null,
+      timerActive: _throttleTimer != null,
+    )) {
+      // Parse now — build() below does it — and hold the window shut so the
+      // chunks that follow defer instead of each re-parsing the whole text.
+      // (Not opening the window here is what let the throttle never engage:
+      // timerActive stayed false forever, so every chunk re-parsed.)
+      _openThrottleWindow();
+    } else {
+      // Defer the re-parse: remember the newest text, let the trailing timer
+      // flush it. Cheapest possible path for the hot streaming loop.
+      _pendingData = widget.data;
+      // No-op when the window is already open (the only reachable state here);
+      // kept so deferred text can never be left without a timer to render it.
+      _openThrottleWindow();
+    }
+  }
+
+  /// Starts the throttle window if one is not already open.
+  void _openThrottleWindow() {
+    _throttleTimer ??= Timer(streamMarkdownParseInterval, _flushPending);
   }
 
   void _flushPending() {
     _throttleTimer = null;
-    if (!mounted || _pendingData == null) return;
-    if (_pendingData != _cachedData) {
-      setState(() {
-        _pendingData = null;
-      });
-    } else {
-      _pendingData = null;
+    if (!mounted) return;
+    final next = _pendingData;
+    _pendingData = null;
+    if (next == null) return;
+    if (next != _cachedData) {
+      // build() re-parses the newest text. Deferred updates always carry the
+      // latest `widget.data`, so this renders everything received so far.
+      setState(() {});
     }
+    // Hold the window shut for one more interval: chunks arriving right after
+    // a flush belong to the next batch, not to a fresh leading edge.
+    if (widget.isStreaming) _openThrottleWindow();
   }
 
   void _cancelThrottle() {
@@ -1482,8 +1503,13 @@ class _StableMarkdownBodyState extends State<_StableMarkdownBody> {
 
   @override
   Widget build(BuildContext context) {
+    // Text deferred by the throttle window must not be parsed here either:
+    // `didUpdateWidget` only schedules the flush, so rendering the PREVIOUS
+    // parse until it fires is what makes the throttle actually throttle.
+    // Without this, every chunk re-parsed the whole accumulated reply.
+    final deferred = _pendingData != null && _pendingData != _cachedData;
     if (_cached != null &&
-        _cachedData == widget.data &&
+        (_cachedData == widget.data || deferred) &&
         identical(_cachedStyle, widget.styleSheet)) {
       return _cached!;
     }
