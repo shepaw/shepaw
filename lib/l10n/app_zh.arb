@@ -18,6 +18,7 @@
   "common_copy": "复制",
   "common_reply": "回复",
   "common_search": "搜索",
+  "common_savedStatus": "已保存",
   "common_refresh": "刷新",
   "common_clear": "清除",
   "common_optional": "可选",
@@ -3638,6 +3639,17 @@
       }
     }
   },
+  "instructionSet_pickHint": "选择一条指令，或新建",
+  "instructionSet_noMatch": "没有匹配的指令",
+  "instructionSet_fillCurrent": "填入当前对话",
+  "instructionSet_fillCurrentHint": "这条指令属于 {owner}。在此对话中使用时，会发给当前会话。",
+  "@instructionSet_fillCurrentHint": {
+    "placeholders": {
+      "owner": {
+        "type": "String"
+      }
+    }
+  },
   "instructionSet_saveFailed": "保存失败：{error}",
   "@instructionSet_saveFailed": {
     "placeholders": {
@@ -3648,12 +3660,12 @@
   },
   "jadeSlip_title": "玉简",
   "jadeSlip_entryHint": "记下待办，交给 Agent 去办",
-  "jadeSlip_empty": "玉简还是空的。写下想做的事，随时点播放交给 Agent 执行。",
+  "jadeSlip_empty": "玉简还是空的。写下想做的事，打开后可以交给 Agent 执行。",
   "jadeSlip_create": "新玉简",
   "jadeSlip_untitled": "未题玉简",
   "jadeSlip_captureHint": "记下一条待办…",
   "jadeSlip_pickHint": "从左侧选一条玉简，或点 + 新建",
-  "jadeSlip_filterOpen": "待办",
+  "jadeSlip_filterOpen": "未完成",
   "jadeSlip_filterDoing": "进行中",
   "jadeSlip_filterDone": "已完成",
   "jadeSlip_filterAll": "全部",

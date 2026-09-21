@@ -65,6 +65,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get common_search => 'Search';
 
   @override
+  String get common_savedStatus => 'Saved';
+
+  @override
   String get common_refresh => 'Refresh';
 
   @override
@@ -6380,6 +6383,20 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get instructionSet_pickHint => 'Select an instruction, or create one';
+
+  @override
+  String get instructionSet_noMatch => 'No matching instructions';
+
+  @override
+  String get instructionSet_fillCurrent => 'Insert into this chat';
+
+  @override
+  String instructionSet_fillCurrentHint(String owner) {
+    return 'This instruction belongs to $owner. Using it here sends it to the current chat.';
+  }
+
+  @override
   String instructionSet_saveFailed(String error) {
     return 'Save failed: $error';
   }
@@ -6392,7 +6409,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get jadeSlip_empty =>
-      'No jade slips yet. Write what you need done, then tap play to send it to an agent.';
+      'No jade slips yet. Write what you need done, then open it and hand it to an agent.';
 
   @override
   String get jadeSlip_create => 'New slip';
@@ -6408,7 +6425,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Pick a slip on the left, or tap + to create one';
 
   @override
-  String get jadeSlip_filterOpen => 'Open';
+  String get jadeSlip_filterOpen => 'Not started';
 
   @override
   String get jadeSlip_filterDoing => 'In progress';

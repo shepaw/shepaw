@@ -15,7 +15,6 @@ import '../services/she_service.dart';
 import '../services/store_open_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/chat/storage_file_picker_screen.dart';
-import '../widgets/form_bottom_bar.dart';
 import 'jade_slip_dispatch.dart';
 import 'storage_shared.dart';
 
@@ -23,12 +22,14 @@ import 'storage_shared.dart';
 class JadeSlipEditorScreen extends StatefulWidget {
   final String slipId;
   final bool embedded;
+  final bool focusChecklist;
   final VoidCallback? onChanged;
 
   const JadeSlipEditorScreen({
     super.key,
     required this.slipId,
     this.embedded = false,
+    this.focusChecklist = false,
     this.onChanged,
   });
 
@@ -41,11 +42,16 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   final _title = TextEditingController();
   final _body = TextEditingController();
   final _item = TextEditingController();
+  final _itemFocus = FocusNode();
+  final _runKey = GlobalKey();
 
   JadeSlip? _slip;
   List<RemoteAgent> _agents = const [];
   bool _saving = false;
   bool _dirty = false;
+  bool _closed = false;
+  bool _didFocusChecklist = false;
+  Timer? _textDebounce;
   StreamSubscription<void>? _sub;
 
   static const _btnRadius = BorderRadius.all(Radius.circular(10));
@@ -62,10 +68,19 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
 
   @override
   void dispose() {
+    _textDebounce?.cancel();
+    final slip = _slip;
+    if (!_closed && _dirty && slip != null) {
+      final title = _title.text.trim();
+      if (title.isNotEmpty) {
+        unawaited(_service.update(slip.copyWith(title: title, body: _body.text)));
+      }
+    }
     _sub?.cancel();
     _title.dispose();
     _body.dispose();
     _item.dispose();
+    _itemFocus.dispose();
     super.dispose();
   }
 
@@ -87,13 +102,30 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
       _slip = slip;
       _dirty = false;
     });
+    _maybeFocusChecklist();
+  }
+
+  void _maybeFocusChecklist() {
+    if (_didFocusChecklist || !widget.focusChecklist) return;
+    _didFocusChecklist = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _itemFocus.requestFocus();
+    });
+  }
+
+  void _onTextChanged() {
+    setState(() => _dirty = true);
+    _textDebounce?.cancel();
+    _textDebounce = Timer(const Duration(milliseconds: 500), () {
+      unawaited(_flush(notifyIfEmpty: false));
+    });
   }
 
   Future<void> _reloadSilent() async {
     final slip = await _service.getById(widget.slipId);
     if (!mounted || slip == null || _dirty) return;
-    _title.text = slip.title;
-    _body.text = slip.body;
+    if (_title.text != slip.title) _title.text = slip.title;
+    if (_body.text != slip.body) _body.text = slip.body;
     setState(() => _slip = slip);
   }
 
@@ -119,16 +151,19 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     }
   }
 
-  Future<bool> _flush() async {
+  Future<bool> _flush({bool notifyIfEmpty = true}) async {
+    _textDebounce?.cancel();
     final slip = _slip;
     if (slip == null) return true;
     final title = _title.text.trim();
     if (title.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content:
-                Text(AppLocalizations.of(context).jadeSlip_titleRequired)),
-      );
+      if (notifyIfEmpty && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content:
+                  Text(AppLocalizations.of(context).jadeSlip_titleRequired)),
+        );
+      }
       return false;
     }
     if (!_dirty && title == slip.title && _body.text == slip.body) return true;
@@ -262,32 +297,55 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
             children: [
               Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _title,
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        height: 1.25,
+                  if (_saving)
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else if (!_dirty)
+                    Text(
+                      l10n.common_savedStatus,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
                       ),
-                      decoration: InputDecoration(
-                        hintText: l10n.jadeSlip_titleHint,
-                        border: InputBorder.none,
-                        isDense: true,
-                        contentPadding: EdgeInsets.zero,
+                    ),
+                  const Spacer(),
+                  FilledButton.icon(
+                    key: _runKey,
+                    onPressed: _saving ? null : () => unawaited(_handOff(slip)),
+                    icon: const Icon(Icons.play_arrow_rounded, size: 20),
+                    label: Text(l10n.jadeSlip_run),
+                    style: FilledButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      shape: const RoundedRectangleBorder(
+                        borderRadius: _btnRadius,
                       ),
-                      onChanged: (_) => setState(() => _dirty = true),
                     ),
                   ),
-                  if (widget.embedded)
-                    IconButton(
-                      tooltip: l10n.common_delete,
-                      icon: Icon(Icons.delete_outline,
-                          color: scheme.onSurfaceVariant),
-                      onPressed: () => unawaited(_confirmDelete(slip)),
-                    ),
+                  IconButton(
+                    tooltip: l10n.common_delete,
+                    icon: Icon(Icons.delete_outline,
+                        color: scheme.onSurfaceVariant),
+                    onPressed: () => unawaited(_confirmDelete(slip)),
+                  ),
                 ],
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _title,
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  height: 1.25,
+                ),
+                decoration: InputDecoration(
+                  hintText: l10n.jadeSlip_titleHint,
+                  border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                onChanged: (_) => _onTextChanged(),
               ),
               const SizedBox(height: 12),
               Wrap(
@@ -312,13 +370,18 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                         ? null
                         : () => unawaited(_persist(slip.copyWith(clearDue: true))),
                   ),
-                  _MetaPill(
-                    icon: Icons.smart_toy_outlined,
+                  _AssigneePill(
                     label: slip.assigneeAgentName.isEmpty
                         ? l10n.jadeSlip_assigneeNone
                         : slip.assigneeAgentName,
                     active: slip.assigneeAgentName.isNotEmpty,
-                    onTap: () => unawaited(_pickAssignee(slip)),
+                    noneLabel: l10n.jadeSlip_assigneeNone,
+                    sheLabel: l10n.she_name,
+                    agents: _agents,
+                    onSelected: (id, name) => unawaited(_persist(slip.copyWith(
+                      assigneeAgentId: id,
+                      assigneeAgentName: name,
+                    ))),
                   ),
                 ],
               ),
@@ -342,6 +405,7 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                 ),
               _AddItemRow(
                 controller: _item,
+                focusNode: _itemFocus,
                 hint: l10n.jadeSlip_itemHint,
                 onSubmit: () => unawaited(_addItem()),
               ),
@@ -399,48 +463,7 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                   ),
                   contentPadding: const EdgeInsets.all(14),
                 ),
-                onChanged: (_) => setState(() => _dirty = true),
-              ),
-            ],
-          ),
-        ),
-        FormBottomBar(
-          child: Row(
-            children: [
-              TextButton(
-                onPressed: _saving
-                    ? null
-                    : () async {
-                        if (!await _flush()) return;
-                        if (!mounted || widget.embedded) return;
-                        Navigator.pop(context);
-                      },
-                child: _saving
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Text(l10n.common_save),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: _saving
-                      ? null
-                      : () async {
-                          if (!await _flush()) return;
-                          final latest = await _service.getById(widget.slipId);
-                          if (latest == null || !context.mounted) return;
-                          await dispatchJadeSlip(context, latest);
-                        },
-                  icon: const Icon(Icons.play_arrow_rounded, size: 20),
-                  label: Text(l10n.jadeSlip_run),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: const RoundedRectangleBorder(borderRadius: _btnRadius),
-                  ),
-                ),
+                onChanged: (_) => _onTextChanged(),
               ),
             ],
           ),
@@ -454,19 +477,13 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
+        final navigator = Navigator.of(context);
         if (!await _flush() || !mounted) return;
-        Navigator.pop(context);
+        navigator.pop();
       },
       child: Scaffold(
         appBar: AppBar(
           title: Text(l10n.jadeSlip_title),
-          actions: [
-            IconButton(
-              tooltip: l10n.common_delete,
-              icon: const Icon(Icons.delete_outline),
-              onPressed: () => unawaited(_confirmDelete(slip)),
-            ),
-          ],
         ),
         body: body,
       ),
@@ -493,9 +510,46 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
       ),
     );
     if (ok != true) return;
+    _textDebounce?.cancel();
+    _closed = true;
+    _dirty = false;
     await _service.delete(slip.id);
     widget.onChanged?.call();
     if (mounted && !widget.embedded) Navigator.pop(context);
+  }
+
+  Future<void> _handOff(JadeSlip slip) async {
+    if (!await _flush()) return;
+    final latest = await _service.getById(widget.slipId);
+    if (latest == null || !mounted) return;
+    if (latest.assigneeAgentId.trim().isEmpty) {
+      final agentId = await _pickRunAgent();
+      if (agentId == null || !mounted) return;
+      await dispatchJadeSlip(context, latest, preferredAgentId: agentId);
+      return;
+    }
+    await dispatchJadeSlip(context, latest);
+  }
+
+  Future<String?> _pickRunAgent() async {
+    final l10n = AppLocalizations.of(context);
+    final box = _runKey.currentContext?.findRenderObject() as RenderBox?;
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (box == null || overlay == null || !box.hasSize) return null;
+    final rect = Rect.fromPoints(
+      box.localToGlobal(Offset.zero, ancestor: overlay),
+      box.localToGlobal(box.size.bottomRight(Offset.zero), ancestor: overlay),
+    );
+    return showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(rect, Offset.zero & overlay.size),
+      items: [
+        PopupMenuItem(value: SheService.sheId, child: Text(l10n.she_name)),
+        for (final agent in _agents)
+          if (agent.id != SheService.sheId)
+            PopupMenuItem(value: agent.id, child: Text(agent.name)),
+      ],
+    );
   }
 
   Future<void> _pickDue(JadeSlip slip) async {
@@ -512,39 +566,6 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     await _persist(slip.copyWith(
       dueAtMs: DateTime(picked.year, picked.month, picked.day, 18)
           .millisecondsSinceEpoch,
-    ));
-  }
-
-  Future<void> _pickAssignee(JadeSlip slip) async {
-    final l10n = AppLocalizations.of(context);
-    final picked = await showModalBottomSheet<(String, String)>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => ListView(
-        children: [
-          ListTile(
-            leading: const Icon(Icons.person_off_outlined),
-            title: Text(l10n.jadeSlip_assigneeNone),
-            onTap: () => Navigator.pop(ctx, const ('', '')),
-          ),
-          ListTile(
-            leading: const Icon(Icons.favorite_outline),
-            title: Text(l10n.she_name),
-            onTap: () => Navigator.pop(ctx, (SheService.sheId, l10n.she_name)),
-          ),
-          for (final a in _agents)
-            ListTile(
-              leading: const Icon(Icons.smart_toy_outlined),
-              title: Text(a.name),
-              onTap: () => Navigator.pop(ctx, (a.id, a.name)),
-            ),
-        ],
-      ),
-    );
-    if (picked == null) return;
-    await _persist(slip.copyWith(
-      assigneeAgentId: picked.$1,
-      assigneeAgentName: picked.$2,
     ));
   }
 
@@ -647,6 +668,76 @@ class _MetaPill extends StatelessWidget {
                   padding: const EdgeInsets.only(left: 2),
                   child: Icon(Icons.expand_more, size: 16, color: scheme.onSurfaceVariant),
                 ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AssigneePill extends StatelessWidget {
+  const _AssigneePill({
+    required this.label,
+    required this.active,
+    required this.noneLabel,
+    required this.sheLabel,
+    required this.agents,
+    required this.onSelected,
+  });
+
+  final String label;
+  final bool active;
+  final String noneLabel;
+  final String sheLabel;
+  final List<RemoteAgent> agents;
+  final void Function(String id, String name) onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final fg = active ? scheme.onSurface : scheme.onSurfaceVariant;
+    return PopupMenuButton<(String, String)>(
+      tooltip: label,
+      onSelected: (picked) => onSelected(picked.$1, picked.$2),
+      itemBuilder: (ctx) => [
+        PopupMenuItem(value: ('', ''), child: Text(noneLabel)),
+        PopupMenuItem(
+          value: (SheService.sheId, sheLabel),
+          child: Text(sheLabel),
+        ),
+        for (final agent in agents)
+          if (agent.id != SheService.sheId)
+            PopupMenuItem(
+              value: (agent.id, agent.name),
+              child: Text(agent.name),
+            ),
+      ],
+      child: Material(
+        color: active
+            ? AppColors.primary.withValues(alpha: 0.08)
+            : scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 7, 6, 7),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.smart_toy_outlined,
+                size: 16,
+                color: active ? AppColors.primary : fg,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: fg,
+                  fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                ),
+              ),
+              Icon(Icons.expand_more, size: 16, color: scheme.onSurfaceVariant),
             ],
           ),
         ),
@@ -801,11 +892,13 @@ class _ChecklistRow extends StatelessWidget {
 class _AddItemRow extends StatelessWidget {
   const _AddItemRow({
     required this.controller,
+    required this.focusNode,
     required this.hint,
     required this.onSubmit,
   });
 
   final TextEditingController controller;
+  final FocusNode focusNode;
   final String hint;
   final VoidCallback onSubmit;
 
@@ -822,6 +915,7 @@ class _AddItemRow extends StatelessWidget {
           Expanded(
             child: TextField(
               controller: controller,
+              focusNode: focusNode,
               textInputAction: TextInputAction.done,
               style: theme.textTheme.bodyLarge,
               decoration: InputDecoration(

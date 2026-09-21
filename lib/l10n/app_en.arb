@@ -18,6 +18,7 @@
   "common_copy": "Copy",
   "common_reply": "Reply",
   "common_search": "Search",
+  "common_savedStatus": "Saved",
   "common_refresh": "Refresh",
   "common_clear": "Clear",
   "common_optional": "Optional",
@@ -3163,6 +3164,17 @@
       }
     }
   },
+  "instructionSet_pickHint": "Select an instruction, or create one",
+  "instructionSet_noMatch": "No matching instructions",
+  "instructionSet_fillCurrent": "Insert into this chat",
+  "instructionSet_fillCurrentHint": "This instruction belongs to {owner}. Using it here sends it to the current chat.",
+  "@instructionSet_fillCurrentHint": {
+    "placeholders": {
+      "owner": {
+        "type": "String"
+      }
+    }
+  },
   "instructionSet_saveFailed": "Save failed: {error}",
   "@instructionSet_saveFailed": {
     "placeholders": {
@@ -3173,12 +3185,12 @@
   },
   "jadeSlip_title": "Jade Slips",
   "jadeSlip_entryHint": "Capture to-dos and hand them to an agent",
-  "jadeSlip_empty": "No jade slips yet. Write what you need done, then tap play to send it to an agent.",
+  "jadeSlip_empty": "No jade slips yet. Write what you need done, then open it and hand it to an agent.",
   "jadeSlip_create": "New slip",
   "jadeSlip_untitled": "Untitled slip",
   "jadeSlip_captureHint": "Capture a to-do…",
   "jadeSlip_pickHint": "Pick a slip on the left, or tap + to create one",
-  "jadeSlip_filterOpen": "Open",
+  "jadeSlip_filterOpen": "Not started",
   "jadeSlip_filterDoing": "In progress",
   "jadeSlip_filterDone": "Done",
   "jadeSlip_filterAll": "All",

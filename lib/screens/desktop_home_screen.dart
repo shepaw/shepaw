@@ -758,7 +758,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         return const JadeSlipScreen(embedded: true);
 
       case _RightPanelView.instructions:
-        return const InstructionSetScreen();
+        return const InstructionSetScreen(embedded: true);
 
       case _RightPanelView.empty:
         return _buildEmptyState();

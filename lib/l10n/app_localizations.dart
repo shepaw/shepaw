@@ -206,6 +206,12 @@ abstract class AppLocalizations {
   /// **'搜索'**
   String get common_search;
 
+  /// No description provided for @common_savedStatus.
+  ///
+  /// In zh, this message translates to:
+  /// **'已保存'**
+  String get common_savedStatus;
+
   /// No description provided for @common_refresh.
   ///
   /// In zh, this message translates to:
@@ -11211,6 +11217,30 @@ abstract class AppLocalizations {
   /// **'已删除指令「{name}」'**
   String instructionSet_deleted(String name);
 
+  /// No description provided for @instructionSet_pickHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择一条指令，或新建'**
+  String get instructionSet_pickHint;
+
+  /// No description provided for @instructionSet_noMatch.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有匹配的指令'**
+  String get instructionSet_noMatch;
+
+  /// No description provided for @instructionSet_fillCurrent.
+  ///
+  /// In zh, this message translates to:
+  /// **'填入当前对话'**
+  String get instructionSet_fillCurrent;
+
+  /// No description provided for @instructionSet_fillCurrentHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'这条指令属于 {owner}。在此对话中使用时，会发给当前会话。'**
+  String instructionSet_fillCurrentHint(String owner);
+
   /// No description provided for @instructionSet_saveFailed.
   ///
   /// In zh, this message translates to:
@@ -11232,7 +11262,7 @@ abstract class AppLocalizations {
   /// No description provided for @jadeSlip_empty.
   ///
   /// In zh, this message translates to:
-  /// **'玉简还是空的。写下想做的事，随时点播放交给 Agent 执行。'**
+  /// **'玉简还是空的。写下想做的事，打开后可以交给 Agent 执行。'**
   String get jadeSlip_empty;
 
   /// No description provided for @jadeSlip_create.
@@ -11262,7 +11292,7 @@ abstract class AppLocalizations {
   /// No description provided for @jadeSlip_filterOpen.
   ///
   /// In zh, this message translates to:
-  /// **'待办'**
+  /// **'未完成'**
   String get jadeSlip_filterOpen;
 
   /// No description provided for @jadeSlip_filterDoing.

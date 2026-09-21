@@ -12,15 +12,14 @@ import '../services/instruction_set_service.dart';
 import '../services/local_database_service.dart';
 import '../services/local_user_identity.dart';
 import '../services/she_service.dart';
+import '../utils/layout_utils.dart';
 import 'instruction_set_editor_screen.dart';
 
-/// 指令集管理页：查看 / 新建 / 编辑 / 删除 / 一键执行可复用的任务指令。
+/// 指令集：查看 / 新建 / 编辑 / 删除 / 一键执行可复用的任务指令。
 ///
-/// 桌面端嵌入右侧面板（[DesktopHomeScreen]），移动端作为独立页面打开。
-/// 「执行」会打开与所属 Agent 的会话并预填指令内容，由该 Agent 执行。
-///
-/// 当从某个具体聊天（[channelId] 非空）打开时，执行指令会使用当前聊天的
-/// agent / 群会话：预填当前会话的输入框并返回，而不是跳转到指令所属 agent。
+/// 桌面宽面板是左侧列表 + 右侧就地编辑。窄面板和手机点一条后在本页打开
+/// 同一张编辑面。从聊天打开时主按钮把指令填入当前会话；从储物袋打开时
+/// 执行会打开所属 Agent 的会话并预填正文。
 class InstructionSetScreen extends StatefulWidget {
   /// 当前聊天上下文。非空表示从具体聊天内打开，执行指令时预填当前会话。
   final String? channelId;
@@ -31,11 +30,15 @@ class InstructionSetScreen extends StatefulWidget {
   /// 当前群聊的 group family id（群聊时有效）。
   final String? groupFamilyId;
 
+  /// 嵌在桌面右栏时不显示外层返回。
+  final bool embedded;
+
   const InstructionSetScreen({
     super.key,
     this.channelId,
     this.agentId,
     this.groupFamilyId,
+    this.embedded = false,
   });
 
   @override
@@ -45,14 +48,30 @@ class InstructionSetScreen extends StatefulWidget {
 class _InstructionSetScreenState extends State<InstructionSetScreen> {
   final _service = InstructionSetService.instance;
   final _db = LocalDatabaseService();
+  final _search = TextEditingController();
 
   List<InstructionSet>? _items;
-  final Map<String, String> _ownerNames = {}; // ownerAgentId -> display name
+  final Map<String, String> _ownerNames = {};
+  String? _selectedId;
+  bool _creating = false;
+  String? _hoveredId;
+  InstructionSetEditorScreenState? _editor;
+
+  bool get _fillCurrent {
+    final id = widget.channelId;
+    return id != null && id.isNotEmpty;
+  }
 
   @override
   void initState() {
     super.initState();
     unawaited(_load());
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -63,7 +82,6 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
     for (final agent in agents) {
       names[agent.id] = agent.name;
     }
-    // 数据库里的 owner_agent_name 快照优先，其次按 agent 表解析。
     for (final item in items) {
       if (item.ownerAgentName.isNotEmpty) {
         names[item.ownerAgentId] = item.ownerAgentName;
@@ -76,6 +94,11 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
     setState(() {
       _items = items;
       _ownerNames.addAll(names);
+      if (!_creating &&
+          _selectedId != null &&
+          items.every((s) => s.id != _selectedId)) {
+        _selectedId = null;
+      }
     });
   }
 
@@ -86,18 +109,74 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
     return _ownerNames[ownerId] ?? ownerId;
   }
 
-  String _formatTime(int millis) {
-    final dt = DateTime.fromMillisecondsSinceEpoch(millis);
-    final now = DateTime.now();
-    final local = dt.toLocal();
-    if (local.year == now.year &&
-        local.month == now.month &&
-        local.day == now.day) {
-      return '${local.hour.toString().padLeft(2, '0')}:'
-          '${local.minute.toString().padLeft(2, '0')}';
+  bool _wideFor(BoxConstraints constraints) =>
+      LayoutUtils.isDesktopLayout(context) && constraints.maxWidth >= 720;
+
+  bool _matches(InstructionSet item) {
+    final q = _search.text.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    return item.name.toLowerCase().contains(q) ||
+        (item.description ?? '').toLowerCase().contains(q) ||
+        item.content.toLowerCase().contains(q);
+  }
+
+  void _startCreate() {
+    unawaited(_editor?.flush());
+    setState(() {
+      _creating = true;
+      _selectedId = null;
+    });
+  }
+
+  void _select(InstructionSet item) {
+    if (!_creating && item.id == _selectedId) return;
+    unawaited(_editor?.flush());
+    setState(() {
+      _creating = false;
+      _selectedId = item.id;
+    });
+  }
+
+  void _closeDetail() {
+    unawaited(_editor?.flush());
+    setState(() {
+      _creating = false;
+      _selectedId = null;
+    });
+  }
+
+  void _setEditor(InstructionSetEditorScreenState state, {required bool active}) {
+    if (active) {
+      _editor = state;
+    } else if (identical(_editor, state)) {
+      _editor = null;
     }
-    return '${local.year}-${local.month.toString().padLeft(2, '0')}-'
-        '${local.day.toString().padLeft(2, '0')}';
+  }
+
+  void _onPersisted(InstructionSet saved, {required bool created}) {
+    setState(() {
+      final rest = _items?.where((e) => e.id != saved.id).toList() ?? [];
+      _items = [saved, ...rest];
+      if (saved.ownerAgentName.isNotEmpty) {
+        _ownerNames[saved.ownerAgentId] = saved.ownerAgentName;
+      }
+      if (created) {
+        _creating = false;
+        _selectedId = saved.id;
+      }
+    });
+  }
+
+  Future<void> _onDeleted(InstructionSet item) async {
+    setState(() {
+      _items = _items?.where((e) => e.id != item.id).toList();
+      if (_selectedId == item.id) _selectedId = null;
+      _creating = false;
+    });
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(_l10n.instructionSet_deleted(item.name))),
+    );
   }
 
   @override
@@ -105,243 +184,267 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
     final l10n = _l10n;
     final items = _items;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(l10n.instructionSet_title),
-        actions: [
-          if (items != null && items.isNotEmpty)
-            IconButton(
-              tooltip: l10n.common_refresh,
-              icon: const Icon(Icons.refresh),
-              onPressed: () {
-                setState(() => _items = null);
-                unawaited(_load());
-              },
-            ),
-          IconButton(
-            tooltip: l10n.instructionSet_create,
-            icon: const Icon(Icons.add),
-            onPressed: _openEditor,
-          ),
-        ],
-      ),
-      body: switch (items) {
-        null => const Center(child: CircularProgressIndicator()),
-        [] => _buildEmpty(),
-        _ => _buildList(items),
-      },
-    );
-  }
-
-  Widget _buildEmpty() {
-    final l10n = _l10n;
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.playlist_add_check_outlined,
-              size: 64, color: Theme.of(context).colorScheme.outlineVariant),
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
-            child: Text(
-              l10n.instructionSet_empty,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildList(List<InstructionSet> items) {
-    final theme = Theme.of(context);
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
-      itemCount: items.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
-      itemBuilder: (context, index) {
-        final item = items[index];
-        return Card(
-          margin: EdgeInsets.zero,
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: theme.colorScheme.secondaryContainer,
-              child: Icon(Icons.playlist_add_check_outlined,
-                  size: 20, color: theme.colorScheme.onSecondaryContainer),
-            ),
-            title: Text(
-              item.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (item.description != null && item.description!.isNotEmpty)
-                  Text(
-                    item.description!,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                const SizedBox(height: 2),
-                Text(
-                  '${_l10n.instructionSet_ownerLabel} ${_ownerLabel(item.ownerAgentId)}'
-                  ' · ${_l10n.instructionSet_updatedLabel} ${_formatTime(item.updatedAt)}',
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = _wideFor(constraints);
+        final selected = _selectedItem(items);
+        final showingNarrowDetail =
+            !wide && (_creating || selected != null);
+        final hideOuterAppBar = widget.embedded && wide;
+        return Scaffold(
+          appBar: hideOuterAppBar
+              ? null
+              : AppBar(
+                  title: Text(showingNarrowDetail
+                      ? (_creating
+                          ? l10n.instructionSet_create
+                          : (selected?.name ?? l10n.instructionSet_title))
+                      : l10n.instructionSet_title),
+                  elevation: widget.embedded ? 0 : null,
+                  automaticallyImplyLeading:
+                      !widget.embedded && !showingNarrowDetail,
+                  leading: showingNarrowDetail
+                      ? BackButton(onPressed: _closeDetail)
+                      : null,
+                  actions: [
+                    if (!showingNarrowDetail)
+                      IconButton(
+                        tooltip: l10n.instructionSet_create,
+                        icon: const Icon(Icons.add),
+                        onPressed: _startCreate,
+                      ),
+                  ],
                 ),
-              ],
-            ),
-            trailing: PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert),
-              tooltip: item.name,
-              onSelected: (action) => _onAction(item, action),
-              itemBuilder: (_) => [
-                PopupMenuItem(
-                  value: 'run',
-                  child: ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.play_arrow),
-                    title: Text(_l10n.instructionSet_run),
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'edit',
-                  child: ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.edit_outlined),
-                    title: Text(_l10n.common_edit),
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'delete',
-                  child: ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(Icons.delete_outline,
-                        color: theme.colorScheme.error),
-                    title: Text(
-                      _l10n.common_delete,
-                      style: TextStyle(color: theme.colorScheme.error),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            onTap: () => _showDetail(item),
-          ),
+          body: items == null
+              ? const Center(child: CircularProgressIndicator())
+              : wide
+                  ? Row(
+                      children: [
+                        SizedBox(
+                          width: 300,
+                          child: _buildListPane(
+                            l10n,
+                            items,
+                            wide: true,
+                            showHeader: hideOuterAppBar,
+                          ),
+                        ),
+                        VerticalDivider(
+                          width: 1,
+                          color: Theme.of(context).colorScheme.outlineVariant,
+                        ),
+                        Expanded(child: _buildDetail(l10n, selected)),
+                      ],
+                    )
+                  : showingNarrowDetail
+                      ? _buildDetail(l10n, selected)
+                      : _buildListPane(l10n, items, wide: false, showHeader: false),
         );
       },
     );
   }
 
-  Future<void> _onAction(InstructionSet item, String action) async {
-    switch (action) {
-      case 'run':
-        await _runInstruction(item);
-      case 'edit':
-        await _openEditor(item: item);
-      case 'delete':
-        await _confirmDelete(item);
+  InstructionSet? _selectedItem(List<InstructionSet>? items) {
+    if (items == null || _selectedId == null) return null;
+    for (final item in items) {
+      if (item.id == _selectedId) return item;
     }
+    return null;
   }
 
-  void _showDetail(InstructionSet item) {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (_) => _InstructionDetailSheet(
-        item: item,
-        ownerLabel: _ownerLabel(item.ownerAgentId),
-        l10n: _l10n,
-        onRun: () {
-          Navigator.pop(context);
-          unawaited(_runInstruction(item));
-        },
-        onEdit: () {
-          Navigator.pop(context);
-          unawaited(_openEditor(item: item));
-        },
-        onDelete: () {
-          Navigator.pop(context);
-          unawaited(_confirmDelete(item));
-        },
-      ),
-    );
-  }
-
-  // ── 新建 / 编辑 ──────────────────────────────────────────────────────────────
-
-  /// 打开新建 / 编辑页，保存成功后刷新列表。
-  Future<void> _openEditor({InstructionSet? item}) async {
-    final savedName = await Navigator.push<String>(
-      context,
-      MaterialPageRoute<String>(
-        builder: (_) => InstructionSetEditorScreen(item: item),
-      ),
-    );
-    if (savedName == null || !mounted) return;
-
-    setState(() => _items = null);
-    await _load();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_l10n.instructionSet_saved(savedName))),
-      );
-    }
-  }
-
-  // ── 删除 ─────────────────────────────────────────────────────────────────────
-
-  Future<void> _confirmDelete(InstructionSet item) async {
-    final l10n = _l10n;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(l10n.instructionSet_deleteTitle),
-        content: Text(l10n.instructionSet_deleteBody(item.name)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: Text(l10n.common_cancel),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(dialogContext).colorScheme.error,
+  Widget _buildDetail(AppLocalizations l10n, InstructionSet? selected) {
+    if (!_creating && selected == null) {
+      final scheme = Theme.of(context).colorScheme;
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.playlist_add_check_outlined,
+                size: 40, color: scheme.outline),
+            const SizedBox(height: 12),
+            Text(
+              l10n.instructionSet_pickHint,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
             ),
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text(l10n.common_delete),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    await _service.delete(item.id);
-    setState(() => _items = null);
-    await _load();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l10n.instructionSet_deleted(item.name)),
+          ],
         ),
       );
     }
+    return InstructionSetEditorScreen(
+      key: ValueKey(_creating ? 'creating' : selected!.id),
+      item: _creating ? null : selected,
+      embedded: true,
+      fillCurrentChat: _fillCurrent,
+      onEditorReady: _setEditor,
+      onPersisted: _onPersisted,
+      onRun: _runInstruction,
+      onDeleted: (item) => unawaited(_onDeleted(item)),
+    );
   }
 
-  // ── 执行：打开与所属 Agent 的会话并预填指令内容 ────────────────────────────
+  Widget _buildListPane(
+    AppLocalizations l10n,
+    List<InstructionSet> items, {
+    required bool wide,
+    required bool showHeader,
+  }) {
+    final theme = Theme.of(context);
+    final visible = items.where(_matches).toList();
+    final groups = <String, List<InstructionSet>>{};
+    final owners = <String>[];
+    for (final item in visible) {
+      groups.putIfAbsent(item.ownerAgentId, () {
+        owners.add(item.ownerAgentId);
+        return [];
+      }).add(item);
+    }
+    final showHeaders = owners.length > 1;
+    final entries = <(String?, InstructionSet?)>[
+      for (final owner in owners) ...[
+        if (showHeaders) (owner, null),
+        for (final item in groups[owner]!) (null, item),
+      ],
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (showHeader)
+          SizedBox(
+            height: kToolbarHeight,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                children: [
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      l10n.instructionSet_title,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: l10n.instructionSet_create,
+                    icon: const Icon(Icons.add),
+                    onPressed: _startCreate,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          child: TextField(
+            controller: _search,
+            decoration: InputDecoration(
+              hintText: l10n.common_search,
+              isDense: true,
+              prefixIcon: const Icon(Icons.search, size: 18),
+              filled: true,
+              fillColor: theme.colorScheme.surfaceContainerHighest,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide.none,
+              ),
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+        ),
+        Expanded(
+          child: visible.isEmpty
+              ? _buildEmpty(l10n, searching: _search.text.trim().isNotEmpty)
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(8, 4, 8, 16),
+                  itemCount: entries.length,
+                  itemBuilder: (context, index) {
+                    final header = entries[index].$1;
+                    if (header != null) {
+                      return Padding(
+                        padding: const EdgeInsets.fromLTRB(8, 12, 8, 4),
+                        child: Text(
+                          _ownerLabel(header),
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      );
+                    }
+                    final item = entries[index].$2!;
+                    return _InstructionRow(
+                      item: item,
+                      subtitle: item.description?.trim().isNotEmpty == true
+                          ? item.description!.trim()
+                          : null,
+                      selected: item.id == _selectedId && !_creating,
+                      showRun: wide &&
+                          (_hoveredId == item.id || item.id == _selectedId),
+                      runLabel: _fillCurrent
+                          ? l10n.instructionSet_fillCurrent
+                          : l10n.instructionSet_run,
+                      onHover: (hover) => setState(() {
+                        _hoveredId = hover ? item.id : null;
+                      }),
+                      onTap: () => _select(item),
+                      onRun: () => unawaited(_runFromRow(item)),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmpty(AppLocalizations l10n, {required bool searching}) {
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              searching
+                  ? Icons.search_off
+                  : Icons.playlist_add_check_outlined,
+              size: 48,
+              color: scheme.outline,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              searching ? l10n.instructionSet_noMatch : l10n.instructionSet_empty,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: scheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _runFromRow(InstructionSet item) async {
+    if (item.id == _selectedId && _editor != null) {
+      final latest = await _editor!.flush(notify: true);
+      if (latest == null) return;
+      await _runInstruction(latest);
+      return;
+    }
+    await _runInstruction(item);
+  }
 
   Future<void> _runInstruction(InstructionSet item) async {
     final l10n = _l10n;
     final chatService = getIt<ChatService>();
     const userId = LocalUserIdentity.id;
 
-    // 从具体聊天内打开：使用当前聊天的 agent / 群会话，不跳转到指令所属 agent。
     final currentChannelId = widget.channelId;
     if (currentChannelId != null && currentChannelId.isNotEmpty) {
       getIt<ComposerDraftService>().setDraft(
@@ -349,7 +452,6 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
         '执行指令「${item.name}」：\n${item.content}',
         agentId: widget.agentId,
         groupFamilyId: widget.groupFamilyId,
-        // 气泡只展示指令标题，完整内容作为隐式消息投递给 agent。
         instructionName: item.name,
       );
       if (mounted) Navigator.pop(context);
@@ -376,17 +478,9 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
       channelId,
       '执行指令「${item.name}」：\n${item.content}',
       agentId: ownerId,
-      // 气泡只展示指令标题，完整内容作为隐式消息投递给 agent。
       instructionName: item.name,
     );
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.instructionSet_runHint)),
-      );
-    }
-    // 桌面端：右侧面板原地切换到所属 Agent 会话；移动端：在指令集页之上
-    // 打开所属 Agent 会话（返回键回到指令集页）。
     await ChatNavigationService.instance.openChannel(
       channelId: channelId,
       agentId: ownerId,
@@ -396,96 +490,100 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
   }
 }
 
-/// 指令详情底部面板。
-class _InstructionDetailSheet extends StatelessWidget {
-  const _InstructionDetailSheet({
+class _InstructionRow extends StatelessWidget {
+  const _InstructionRow({
     required this.item,
-    required this.ownerLabel,
-    required this.l10n,
+    required this.subtitle,
+    required this.selected,
+    required this.showRun,
+    required this.runLabel,
+    required this.onHover,
+    required this.onTap,
     required this.onRun,
-    required this.onEdit,
-    required this.onDelete,
   });
 
   final InstructionSet item;
-  final String ownerLabel;
-  final AppLocalizations l10n;
+  final String? subtitle;
+  final bool selected;
+  final bool showRun;
+  final String runLabel;
+  final ValueChanged<bool> onHover;
+  final VoidCallback onTap;
   final VoidCallback onRun;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final muted = theme.colorScheme.onSurfaceVariant;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  item.name,
-                  style: theme.textTheme.titleLarge
-                      ?.copyWith(fontWeight: FontWeight.bold),
+    final scheme = theme.colorScheme;
+    return MouseRegion(
+      onEnter: (_) => onHover(true),
+      onExit: (_) => onHover(false),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Material(
+          color: selected
+              ? scheme.primary.withValues(alpha: 0.08)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(10),
+            child: Row(
+              children: [
+                Container(
+                  width: 3,
+                  height: 36,
+                  margin: const EdgeInsets.only(left: 4),
+                  decoration: BoxDecoration(
+                    color: selected ? scheme.primary : Colors.transparent,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
-              ),
-              IconButton(
-                tooltip: l10n.common_edit,
-                icon: const Icon(Icons.edit_outlined),
-                onPressed: onEdit,
-              ),
-              IconButton(
-                tooltip: l10n.common_delete,
-                icon:
-                    Icon(Icons.delete_outline, color: theme.colorScheme.error),
-                onPressed: onDelete,
-              ),
-            ],
-          ),
-          if (item.description != null && item.description!.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(item.description!, style: TextStyle(color: muted)),
-          ],
-          const SizedBox(height: 4),
-          Text(
-            '${l10n.instructionSet_ownerLabel} $ownerLabel',
-            style: theme.textTheme.bodySmall?.copyWith(color: muted),
-          ),
-          const SizedBox(height: 16),
-          Container(
-            width: double.infinity,
-            constraints: const BoxConstraints(maxHeight: 320),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: SingleChildScrollView(
-              child: SelectableText(
-                item.content,
-                style: theme.textTheme.bodyMedium,
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: onRun,
-              icon: const Icon(Icons.play_arrow),
-              label: Text(l10n.instructionSet_run),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (subtitle != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            subtitle!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                if (showRun)
+                  IconButton(
+                    tooltip: runLabel,
+                    visualDensity: VisualDensity.compact,
+                    icon: Icon(
+                      Icons.play_arrow_rounded,
+                      color: selected ? scheme.primary : scheme.outline,
+                    ),
+                    onPressed: onRun,
+                  )
+                else
+                  const SizedBox(width: 8),
+              ],
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            l10n.instructionSet_runHint,
-            style: theme.textTheme.bodySmall?.copyWith(color: muted),
-          ),
-        ],
+        ),
       ),
     );
   }

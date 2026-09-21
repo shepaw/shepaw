@@ -64,6 +64,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get common_search => '搜索';
 
   @override
+  String get common_savedStatus => '已保存';
+
+  @override
   String get common_refresh => '刷新';
 
   @override
@@ -6135,6 +6138,20 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get instructionSet_pickHint => '选择一条指令，或新建';
+
+  @override
+  String get instructionSet_noMatch => '没有匹配的指令';
+
+  @override
+  String get instructionSet_fillCurrent => '填入当前对话';
+
+  @override
+  String instructionSet_fillCurrentHint(String owner) {
+    return '这条指令属于 $owner。在此对话中使用时，会发给当前会话。';
+  }
+
+  @override
   String instructionSet_saveFailed(String error) {
     return '保存失败：$error';
   }
@@ -6146,7 +6163,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get jadeSlip_entryHint => '记下待办，交给 Agent 去办';
 
   @override
-  String get jadeSlip_empty => '玉简还是空的。写下想做的事，随时点播放交给 Agent 执行。';
+  String get jadeSlip_empty => '玉简还是空的。写下想做的事，打开后可以交给 Agent 执行。';
 
   @override
   String get jadeSlip_create => '新玉简';
@@ -6161,7 +6178,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get jadeSlip_pickHint => '从左侧选一条玉简，或点 + 新建';
 
   @override
-  String get jadeSlip_filterOpen => '待办';
+  String get jadeSlip_filterOpen => '未完成';
 
   @override
   String get jadeSlip_filterDoing => '进行中';
