@@ -67,6 +67,14 @@ Buy tickets
       status: JadeSlipStatus.inProgress,
       priority: JadeSlipPriority.high,
       items: const [JadeSlipItem(id: 'i1', text: 'x', done: true)],
+      attachments: const [
+        JadeSlipAttachment(
+          id: 'att1',
+          name: 'shot.png',
+          path: 'slips/id1/files/att1-shot.png',
+          sizeBytes: 12,
+        ),
+      ],
       assigneeAgentId: 'she-builtin-agent-001',
       dueAtMs: 100,
       tags: const ['travel'],
@@ -79,6 +87,7 @@ Buy tickets
     expect(copy.status, JadeSlipStatus.inProgress);
     expect(copy.priority, JadeSlipPriority.high);
     expect(copy.items.single.done, isTrue);
+    expect(copy.attachments.single.name, 'shot.png');
     expect(copy.dueAtMs, 100);
     expect(copy.relPath, 'slips/id1.json');
   });

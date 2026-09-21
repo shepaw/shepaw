@@ -6205,6 +6205,28 @@ class AppLocalizationsZh extends AppLocalizations {
   String get jadeSlip_notesHint => '补充说明、链接、验收标准…';
 
   @override
+  String get jadeSlip_attachments => '附件';
+
+  @override
+  String get jadeSlip_addAttachment => '添加附件…';
+
+  @override
+  String get jadeSlip_attachLocal => '本地文件';
+
+  @override
+  String get jadeSlip_attachStore => '储物袋文件';
+
+  @override
+  String jadeSlip_attachmentCount(int count) {
+    return '$count 个附件';
+  }
+
+  @override
+  String jadeSlip_attachmentFailed(String error) {
+    return '添加附件失败：$error';
+  }
+
+  @override
   String get jadeSlip_dueNone => '截止日期';
 
   @override

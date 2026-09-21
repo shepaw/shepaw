@@ -49,6 +49,14 @@ void main() {
     expect(mid!.status, JadeSlipStatus.inProgress);
     expect(mid.doneCount, 1);
 
+    await JadeSlipService.instance.removeItem(
+      id: created.id,
+      itemId: 'a2',
+    );
+    final trimmed = await JadeSlipService.instance.getById(created.id);
+    expect(trimmed!.items.map((e) => e.id).toList(), ['a1']);
+    expect(trimmed.status, JadeSlipStatus.done);
+
     await JadeSlipService.instance.complete(created.id);
     final done = await JadeSlipService.instance.getById(created.id);
     expect(done!.status, JadeSlipStatus.done);
@@ -64,6 +72,8 @@ void main() {
       'add',
       'update',
       'item',
+      'attach',
+      'detach',
       'complete',
       'delete',
     ]) {
@@ -91,6 +101,32 @@ void main() {
       'done': 'true',
     });
     expect(checked['success'], isTrue);
+
+    final removed = await NotesItemCommand().execute({
+      'id': slip,
+      'item': firstId,
+      'delete': 'true',
+    });
+    expect(removed['success'], isTrue);
+    expect(removed['action'], 'removed');
+    expect(((removed['slip'] as Map)['items'] as List).length, 1);
+
+    final tmpFile = File('${tmp.path}/note.txt');
+    await tmpFile.writeAsString('hello');
+    final attached = await NotesAttachCommand().execute({
+      'id': slip,
+      'file': tmpFile.path,
+    });
+    expect(attached['success'], isTrue);
+    final atts = ((attached['slip'] as Map)['attachments'] as List).cast<Map>();
+    expect(atts.length, 1);
+    expect(atts.first['name'], 'note.txt');
+    final detached = await NotesDetachCommand().execute({
+      'id': slip,
+      'attachment': atts.first['id'] as String,
+    });
+    expect(detached['success'], isTrue);
+    expect((detached['slip'] as Map)['attachments'], isNull);
 
     final completed = await NotesCompleteCommand().execute({'id': slip});
     expect(completed['success'], isTrue);

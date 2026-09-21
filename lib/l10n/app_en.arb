@@ -3198,6 +3198,22 @@
   "jadeSlip_itemHint": "Add an item…",
   "jadeSlip_notes": "Notes",
   "jadeSlip_notesHint": "Details, links, acceptance criteria…",
+  "jadeSlip_attachments": "Attachments",
+  "jadeSlip_addAttachment": "Add attachment…",
+  "jadeSlip_attachLocal": "From this device",
+  "jadeSlip_attachStore": "From Nexus Pouch",
+  "jadeSlip_attachmentCount": "{count} attachments",
+  "@jadeSlip_attachmentCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "jadeSlip_attachmentFailed": "Couldn’t add attachment: {error}",
+  "@jadeSlip_attachmentFailed": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
   "jadeSlip_dueNone": "Due date",
   "jadeSlip_assigneeNone": "Assign agent",
   "jadeSlip_priorityNone": "No priority",

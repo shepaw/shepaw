@@ -1,16 +1,23 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 
 import '../l10n/app_localizations.dart';
 import '../models/jade_slip.dart';
 import '../models/remote_agent.dart';
+import '../models/store_attachment_ref.dart';
 import '../services/jade_slip_service.dart';
 import '../services/local_database_service.dart';
 import '../services/she_service.dart';
+import '../services/store_open_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/chat/storage_file_picker_screen.dart';
 import '../widgets/form_bottom_bar.dart';
 import 'jade_slip_dispatch.dart';
+import 'storage_shared.dart';
 
 /// 玉简编辑：标题、清单勾选、备注、负责人、截止日期。
 class JadeSlipEditorScreen extends StatefulWidget {
@@ -139,6 +146,105 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     await _load();
   }
 
+  Future<void> _removeItem(String itemId) async {
+    final slip = _slip;
+    if (slip == null) return;
+    await _flush();
+    setState(() {
+      _slip = slip.copyWith(
+        items: [for (final item in slip.items) if (item.id != itemId) item],
+      );
+    });
+    await _service.removeItem(id: widget.slipId, itemId: itemId);
+    widget.onChanged?.call();
+    await _load();
+  }
+
+  Future<void> _removeAttachment(String attachmentId) async {
+    final slip = _slip;
+    if (slip == null) return;
+    await _flush();
+    setState(() {
+      _slip = slip.copyWith(
+        attachments: [
+          for (final a in slip.attachments)
+            if (a.id != attachmentId) a,
+        ],
+      );
+    });
+    await _service.removeAttachment(id: widget.slipId, attachmentId: attachmentId);
+    widget.onChanged?.call();
+    await _load();
+  }
+
+  Future<void> _addLocalAttachments() async {
+    final picked = await FilePicker.platform.pickFiles(allowMultiple: true);
+    if (picked == null || picked.files.isEmpty || !mounted) return;
+    await _flush();
+    setState(() => _saving = true);
+    try {
+      for (final item in picked.files) {
+        final localPath = item.path;
+        if (localPath == null) continue;
+        final file = File(localPath);
+        if (!await file.exists()) continue;
+        await _service.addAttachment(
+          id: widget.slipId,
+          file: file,
+          displayName: p.basename(localPath),
+        );
+      }
+      widget.onChanged?.call();
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            AppLocalizations.of(context).jadeSlip_attachmentFailed('$e'),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _addStoreAttachments() async {
+    final refs = await Navigator.of(context).push<List<StoreAttachmentRef>>(
+      MaterialPageRoute(
+        builder: (_) => const StorageFilePickerScreen(maxSelection: 20),
+      ),
+    );
+    if (refs == null || refs.isEmpty || !mounted) return;
+    await _flush();
+    setState(() => _saving = true);
+    try {
+      for (final ref in refs) {
+        final file = await ref.resolveLocalFile();
+        if (file == null) continue;
+        await _service.addAttachment(
+          id: widget.slipId,
+          file: file,
+          displayName: ref.displayName,
+        );
+      }
+      widget.onChanged?.call();
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            AppLocalizations.of(context).jadeSlip_attachmentFailed('$e'),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -232,11 +338,39 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                     itemId: item.id,
                     done: v,
                   )),
+                  onDelete: () => unawaited(_removeItem(item.id)),
                 ),
               _AddItemRow(
                 controller: _item,
                 hint: l10n.jadeSlip_itemHint,
                 onSubmit: () => unawaited(_addItem()),
+              ),
+              const SizedBox(height: 28),
+              _SectionLabel(
+                label: l10n.jadeSlip_attachments,
+                trailing: slip.attachments.isEmpty
+                    ? null
+                    : l10n.jadeSlip_attachmentCount(slip.attachments.length),
+              ),
+              const SizedBox(height: 6),
+              for (final att in slip.attachments)
+                _AttachmentRow(
+                  attachment: att,
+                  onOpen: () => unawaited(
+                    StoreOpenService.instance.openStoreUri(
+                      context,
+                      att.uriFor(slip.deviceId),
+                    ),
+                  ),
+                  onDelete: () => unawaited(_removeAttachment(att.id)),
+                ),
+              _AddAttachmentRow(
+                hint: l10n.jadeSlip_addAttachment,
+                localLabel: l10n.jadeSlip_attachLocal,
+                storeLabel: l10n.jadeSlip_attachStore,
+                enabled: !_saving,
+                onLocal: () => unawaited(_addLocalAttachments()),
+                onStore: () => unawaited(_addStoreAttachments()),
               ),
               const SizedBox(height: 28),
               _SectionLabel(label: l10n.jadeSlip_notes),
@@ -586,46 +720,78 @@ class _PriorityPill extends StatelessWidget {
 }
 
 class _ChecklistRow extends StatelessWidget {
-  const _ChecklistRow({required this.item, required this.onChanged});
+  const _ChecklistRow({
+    required this.item,
+    required this.onChanged,
+    required this.onDelete,
+  });
 
   final JadeSlipItem item;
   final ValueChanged<bool> onChanged;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    return InkWell(
-      onTap: () => onChanged(!item.done),
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 24,
-              height: 24,
-              child: Checkbox(
-                value: item.done,
-                onChanged: (v) => onChanged(v ?? false),
+    final l10n = AppLocalizations.of(context);
+    return Dismissible(
+      key: ValueKey(item.id),
+      direction: DismissDirection.endToStart,
+      onDismissed: (_) => onDelete(),
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 16),
+        decoration: BoxDecoration(
+          color: scheme.errorContainer,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(Icons.delete_outline, color: scheme.onErrorContainer),
+      ),
+      child: InkWell(
+        onTap: () => onChanged(!item.done),
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 24,
+                height: 24,
+                child: Checkbox(
+                  value: item.done,
+                  onChanged: (v) => onChanged(v ?? false),
+                  visualDensity: VisualDensity.compact,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  side: BorderSide(color: scheme.outline, width: 1.4),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  item.text,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    decoration: item.done ? TextDecoration.lineThrough : null,
+                    color: item.done
+                        ? scheme.onSurfaceVariant
+                        : scheme.onSurface,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: l10n.common_delete,
                 visualDensity: VisualDensity.compact,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                side: BorderSide(color: scheme.outline, width: 1.4),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                item.text,
-                style: theme.textTheme.bodyLarge?.copyWith(
-                  decoration: item.done ? TextDecoration.lineThrough : null,
-                  color: item.done ? scheme.onSurfaceVariant : scheme.onSurface,
+                iconSize: 18,
+                onPressed: onDelete,
+                icon: Icon(
+                  Icons.close,
+                  color: scheme.onSurfaceVariant,
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -669,6 +835,135 @@ class _AddItemRow extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _AttachmentRow extends StatelessWidget {
+  const _AttachmentRow({
+    required this.attachment,
+    required this.onOpen,
+    required this.onDelete,
+  });
+
+  final JadeSlipAttachment attachment;
+  final VoidCallback onOpen;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final l10n = AppLocalizations.of(context);
+    final size = attachment.sizeBytes > 0
+        ? fmtStorageBytes(attachment.sizeBytes)
+        : null;
+    return Dismissible(
+      key: ValueKey('att-${attachment.id}'),
+      direction: DismissDirection.endToStart,
+      onDismissed: (_) => onDelete(),
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 16),
+        decoration: BoxDecoration(
+          color: scheme.errorContainer,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(Icons.delete_outline, color: scheme.onErrorContainer),
+      ),
+      child: InkWell(
+        onTap: onOpen,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            children: [
+              Icon(Icons.attach_file, size: 20, color: scheme.onSurfaceVariant),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      attachment.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyLarge,
+                    ),
+                    if (size != null)
+                      Text(
+                        size,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: l10n.common_delete,
+                visualDensity: VisualDensity.compact,
+                iconSize: 18,
+                onPressed: onDelete,
+                icon: Icon(Icons.close, color: scheme.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AddAttachmentRow extends StatelessWidget {
+  const _AddAttachmentRow({
+    required this.hint,
+    required this.localLabel,
+    required this.storeLabel,
+    required this.enabled,
+    required this.onLocal,
+    required this.onStore,
+  });
+
+  final String hint;
+  final String localLabel;
+  final String storeLabel;
+  final bool enabled;
+  final VoidCallback onLocal;
+  final VoidCallback onStore;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return PopupMenuButton<String>(
+      enabled: enabled,
+      tooltip: hint,
+      onSelected: (v) {
+        if (v == 'local') onLocal();
+        if (v == 'store') onStore();
+      },
+      itemBuilder: (ctx) => [
+        PopupMenuItem(value: 'local', child: Text(localLabel)),
+        PopupMenuItem(value: 'store', child: Text(storeLabel)),
+      ],
+      child: Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Row(
+          children: [
+            Icon(Icons.add, size: 20, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                hint,
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

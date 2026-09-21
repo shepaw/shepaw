@@ -476,6 +476,9 @@ class _SlipRow extends StatelessWidget {
     if (slip.itemCount > 0) {
       meta.add(l10n.jadeSlip_progress(slip.doneCount, slip.itemCount));
     }
+    if (slip.attachments.isNotEmpty) {
+      meta.add(l10n.jadeSlip_attachmentCount(slip.attachments.length));
+    }
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),

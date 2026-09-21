@@ -142,6 +142,8 @@ class JadeSlipService {
       );
       for (final entry in entries) {
         if (entry.isDir || !entry.path.endsWith('.json')) continue;
+        final parts = entry.path.split('/');
+        if (parts.length != 2 || parts.first != 'slips') continue;
         final slip = await _readSlip(store, deviceId, entry.path);
         if (slip == null) continue;
         final existing = byId[slip.id];
@@ -287,6 +289,82 @@ class JadeSlipService {
     return update(slip.copyWith(items: [...slip.items, item]));
   }
 
+  Future<JadeSlip> removeItem({
+    required String id,
+    required String itemId,
+  }) async {
+    final slip = await getById(id);
+    if (slip == null) {
+      throw StateError('jade slip not found: $id');
+    }
+    final items = [for (final item in slip.items) if (item.id != itemId) item];
+    if (items.length == slip.items.length) {
+      throw StateError('jade slip item not found: $itemId');
+    }
+    return update(slip.copyWith(items: items));
+  }
+
+  Future<JadeSlip> addAttachment({
+    required String id,
+    required File file,
+    String? displayName,
+  }) async {
+    final slip = await getById(id);
+    if (slip == null) {
+      throw StateError('jade slip not found: $id');
+    }
+    if (!await file.exists()) {
+      throw ArgumentError('attachment file not found: ${file.path}');
+    }
+    final attId = JadeSlipAttachment.newId();
+    final name = (displayName ?? p.basename(file.path)).trim();
+    final safe = _safeFileName(name.isEmpty ? attId : name);
+    final rel = 'slips/${slip.id}/files/$attId-$safe';
+    final store = await _store();
+    final put = await store.putFile(
+      deviceId: slip.deviceId,
+      space: StoreSpace.notes,
+      path: rel,
+      file: file,
+    );
+    final att = JadeSlipAttachment(
+      id: attId,
+      name: name.isEmpty ? safe : name,
+      path: rel,
+      sizeBytes: put.size,
+    );
+    return update(slip.copyWith(attachments: [...slip.attachments, att]));
+  }
+
+  Future<JadeSlip> removeAttachment({
+    required String id,
+    required String attachmentId,
+  }) async {
+    final slip = await getById(id);
+    if (slip == null) {
+      throw StateError('jade slip not found: $id');
+    }
+    JadeSlipAttachment? found;
+    final remaining = <JadeSlipAttachment>[];
+    for (final att in slip.attachments) {
+      if (att.id == attachmentId) {
+        found = att;
+      } else {
+        remaining.add(att);
+      }
+    }
+    if (found == null) {
+      throw StateError('jade slip attachment not found: $attachmentId');
+    }
+    final store = await _store();
+    try {
+      await store.delete(slip.deviceId, StoreSpace.notes, found.path);
+    } on StoreException catch (e) {
+      if (e.code != StoreError.notFound) rethrow;
+    }
+    return update(slip.copyWith(attachments: remaining));
+  }
+
   Future<JadeSlip> complete(String id) async {
     final slip = await getById(id);
     if (slip == null) {
@@ -303,6 +381,13 @@ class JadeSlipService {
     final slip = await getById(id);
     if (slip == null) return;
     final store = await _store();
+    for (final att in slip.attachments) {
+      try {
+        await store.delete(slip.deviceId, StoreSpace.notes, att.path);
+      } on StoreException catch (e) {
+        if (e.code != StoreError.notFound) rethrow;
+      }
+    }
     try {
       await store.delete(slip.deviceId, StoreSpace.notes, slip.relPath);
     } on StoreException catch (e) {
@@ -315,4 +400,11 @@ class JadeSlipService {
   Future<String> uriOf(JadeSlip slip) async {
     return storeUriWithRef(StoreSpace.notes, slip.deviceId, slip.relPath);
   }
+}
+
+String _safeFileName(String name) {
+  final base = p.basename(name).trim();
+  final cleaned = base.replaceAll(RegExp(r'[\\/:\0]+'), '_');
+  if (cleaned.isEmpty || cleaned == '.' || cleaned == '..') return 'file';
+  return cleaned;
 }

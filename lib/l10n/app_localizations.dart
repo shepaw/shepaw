@@ -11343,6 +11343,42 @@ abstract class AppLocalizations {
   /// **'补充说明、链接、验收标准…'**
   String get jadeSlip_notesHint;
 
+  /// No description provided for @jadeSlip_attachments.
+  ///
+  /// In zh, this message translates to:
+  /// **'附件'**
+  String get jadeSlip_attachments;
+
+  /// No description provided for @jadeSlip_addAttachment.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加附件…'**
+  String get jadeSlip_addAttachment;
+
+  /// No description provided for @jadeSlip_attachLocal.
+  ///
+  /// In zh, this message translates to:
+  /// **'本地文件'**
+  String get jadeSlip_attachLocal;
+
+  /// No description provided for @jadeSlip_attachStore.
+  ///
+  /// In zh, this message translates to:
+  /// **'储物袋文件'**
+  String get jadeSlip_attachStore;
+
+  /// No description provided for @jadeSlip_attachmentCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 个附件'**
+  String jadeSlip_attachmentCount(int count);
+
+  /// No description provided for @jadeSlip_attachmentFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加附件失败：{error}'**
+  String jadeSlip_attachmentFailed(String error);
+
   /// No description provided for @jadeSlip_dueNone.
   ///
   /// In zh, this message translates to:

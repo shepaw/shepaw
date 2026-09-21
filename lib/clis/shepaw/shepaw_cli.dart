@@ -194,6 +194,8 @@ class ShepawCLI {
       'status=open|in_progress|done, query=). Get the checklist with notes get --id. As soon as '
       'you finish a step, call notes item --id --item <itemId> --done true. Mark the whole slip '
       'done with notes complete --id. Add a slip with notes add --title --items "a;b". '
+      'Attachments: notes attach --id --file <path> (or --uri store://…); '
+      'notes detach --id --attachment <id>. Read files with store read --uri. '
       'Do the work — do not only acknowledge. '
       'Model configuration: when the user asks to configure AI models — e.g. a provider like '
       'DeepSeek just released a model and they want it set up, or they want to switch which '

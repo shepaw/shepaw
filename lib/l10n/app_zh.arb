@@ -3673,6 +3673,22 @@
   "jadeSlip_itemHint": "添加一项…",
   "jadeSlip_notes": "备注",
   "jadeSlip_notesHint": "补充说明、链接、验收标准…",
+  "jadeSlip_attachments": "附件",
+  "jadeSlip_addAttachment": "添加附件…",
+  "jadeSlip_attachLocal": "本地文件",
+  "jadeSlip_attachStore": "储物袋文件",
+  "jadeSlip_attachmentCount": "{count} 个附件",
+  "@jadeSlip_attachmentCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "jadeSlip_attachmentFailed": "添加附件失败：{error}",
+  "@jadeSlip_attachmentFailed": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
   "jadeSlip_dueNone": "截止日期",
   "jadeSlip_assigneeNone": "指定 Agent",
   "jadeSlip_priorityNone": "无优先级",

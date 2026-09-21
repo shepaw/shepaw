@@ -6453,6 +6453,28 @@ class AppLocalizationsEn extends AppLocalizations {
   String get jadeSlip_notesHint => 'Details, links, acceptance criteria…';
 
   @override
+  String get jadeSlip_attachments => 'Attachments';
+
+  @override
+  String get jadeSlip_addAttachment => 'Add attachment…';
+
+  @override
+  String get jadeSlip_attachLocal => 'From this device';
+
+  @override
+  String get jadeSlip_attachStore => 'From Nexus Pouch';
+
+  @override
+  String jadeSlip_attachmentCount(int count) {
+    return '$count attachments';
+  }
+
+  @override
+  String jadeSlip_attachmentFailed(String error) {
+    return 'Couldn’t add attachment: $error';
+  }
+
+  @override
   String get jadeSlip_dueNone => 'Due date';
 
   @override

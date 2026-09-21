@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import '../../cli_base.dart';
 import '../../../models/jade_slip.dart';
+import '../../../models/store_attachment_ref.dart';
 import '../../../services/jade_slip_service.dart';
 import '../../../services/local_user_identity.dart';
 import '../../../services/she_service.dart';
@@ -12,7 +15,9 @@ import '../chat/chat_agent_scope.dart';
 /// - `get`      读取一条完整玉简（含清单 item id）
 /// - `add`      新建玉简（用户口述时也可代记）
 /// - `update`   改标题/正文/状态/优先级/负责人
-/// - `item`     勾选/反勾/追加清单项
+/// - `item`     勾选/反勾/追加/删除清单项
+/// - `attach`   添加附件（`--file` 本地路径或 `--uri` store://）
+/// - `detach`   删除附件
 /// - `complete` 整条完成
 /// - `delete`   删除（仅用户 / She）
 class NotesNamespace extends CliNamespace {
@@ -39,6 +44,8 @@ class NotesNamespace extends CliNamespace {
         'add': NotesAddCommand(),
         'update': NotesUpdateCommand(),
         'item': NotesItemCommand(),
+        'attach': NotesAttachCommand(),
+        'detach': NotesDetachCommand(),
         'complete': NotesCompleteCommand(),
         'delete': NotesDeleteCommand(),
       };
@@ -63,6 +70,16 @@ Map<String, dynamic> _slipJson(JadeSlip slip, {bool full = false}) {
         for (final item in slip.items)
           {'id': item.id, 'text': item.text, 'done': item.done},
       ],
+      if (slip.attachments.isNotEmpty)
+        'attachments': [
+          for (final a in slip.attachments)
+            {
+              'id': a.id,
+              'name': a.name,
+              'uri': a.uriFor(slip.deviceId),
+              'size': a.sizeBytes,
+            },
+        ],
       'device_id': slip.deviceId,
       'created_at': slip.createdAt,
     } else if (slip.items.isNotEmpty)
@@ -240,13 +257,15 @@ class NotesItemCommand extends CliCommand {
 
   @override
   String get description =>
-      'Check off (--item + --done true), uncheck, or append (--text) a '
-      'checklist row. Call this as soon as you finish a step.';
+      'Check off (--item + --done true), uncheck, append (--text), or '
+      'remove (--item + --delete) a checklist row. Call this as soon as '
+      'you finish a step.';
 
   @override
   String get usage =>
       'shepaw notes item --id <slipId> --item <itemId> --done true\n'
-      'shepaw notes item --id <slipId> --text "new checklist row"';
+      'shepaw notes item --id <slipId> --text "new checklist row"\n'
+      'shepaw notes item --id <slipId> --item <itemId> --delete';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
@@ -254,6 +273,11 @@ class NotesItemCommand extends CliCommand {
     if (id.isEmpty) return {'error': 'Missing --id. Usage: $usage'};
     final text = flags['text']?.trim() ?? '';
     final itemId = flags['item']?.trim() ?? '';
+    final deleteRaw = (flags['delete'] ?? '').trim().toLowerCase();
+    final delete = deleteRaw == 'true' ||
+        deleteRaw == '1' ||
+        deleteRaw == 'yes' ||
+        flags.containsKey('delete') && deleteRaw.isEmpty;
     try {
       if (text.isNotEmpty) {
         final slip = await JadeSlipService.instance.addItem(id: id, text: text);
@@ -261,6 +285,17 @@ class NotesItemCommand extends CliCommand {
       }
       if (itemId.isEmpty) {
         return {'error': 'Missing --item or --text. Usage: $usage'};
+      }
+      if (delete) {
+        final slip = await JadeSlipService.instance.removeItem(
+          id: id,
+          itemId: itemId,
+        );
+        return {
+          'success': true,
+          'action': 'removed',
+          'slip': _slipJson(slip, full: true),
+        };
       }
       final doneRaw = (flags['done'] ?? 'true').trim().toLowerCase();
       final done = doneRaw != 'false' && doneRaw != '0';
@@ -272,6 +307,95 @@ class NotesItemCommand extends CliCommand {
       return {
         'success': true,
         'action': done ? 'checked' : 'unchecked',
+        'slip': _slipJson(slip, full: true),
+      };
+    } catch (e) {
+      return {'error': '$e'};
+    }
+  }
+}
+
+class NotesAttachCommand extends CliCommand {
+  @override
+  String get name => 'attach';
+
+  @override
+  String get description =>
+      'Attach a local file (--file) or an existing pouch file (--uri store://)';
+
+  @override
+  String get usage =>
+      'shepaw notes attach --id <slipId> --file /path/to/file\n'
+      'shepaw notes attach --id <slipId> --uri store://files/<device>/...';
+
+  @override
+  Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
+    final id = flags['id']?.trim() ?? '';
+    if (id.isEmpty) return {'error': 'Missing --id. Usage: $usage'};
+    final local = (flags['file'] ?? flags['path'] ?? '').trim();
+    final uri = (flags['uri'] ?? '').trim();
+    try {
+      File? file;
+      String? name;
+      if (local.isNotEmpty) {
+        file = File(local);
+        name = file.uri.pathSegments.isNotEmpty
+            ? file.uri.pathSegments.last
+            : file.path;
+      } else if (uri.isNotEmpty) {
+        file = await StoreAttachmentRef.fileFromStoreUri(uri);
+        name = uri.split('/').last;
+      } else {
+        return {'error': 'Missing --file or --uri. Usage: $usage'};
+      }
+      if (file == null || !await file.exists()) {
+        return {'error': 'Attachment file not found'};
+      }
+      final slip = await JadeSlipService.instance.addAttachment(
+        id: id,
+        file: file,
+        displayName: name,
+      );
+      return {
+        'success': true,
+        'action': 'attached',
+        'slip': _slipJson(slip, full: true),
+      };
+    } catch (e) {
+      return {'error': '$e'};
+    }
+  }
+}
+
+class NotesDetachCommand extends CliCommand {
+  @override
+  String get name => 'detach';
+
+  @override
+  String get description =>
+      'Remove an attachment from a jade slip (--attachment <id>)';
+
+  @override
+  String get usage =>
+      'shepaw notes detach --id <slipId> --attachment <attachmentId>';
+
+  @override
+  Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
+    final id = flags['id']?.trim() ?? '';
+    if (id.isEmpty) return {'error': 'Missing --id. Usage: $usage'};
+    final attId =
+        (flags['attachment'] ?? flags['att'] ?? flags['item'] ?? '').trim();
+    if (attId.isEmpty) {
+      return {'error': 'Missing --attachment. Usage: $usage'};
+    }
+    try {
+      final slip = await JadeSlipService.instance.removeAttachment(
+        id: id,
+        attachmentId: attId,
+      );
+      return {
+        'success': true,
+        'action': 'detached',
         'slip': _slipJson(slip, full: true),
       };
     } catch (e) {

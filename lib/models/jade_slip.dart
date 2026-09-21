@@ -1,8 +1,11 @@
 import 'package:uuid/uuid.dart';
 
+import '../storage/store_protocol.dart';
+
 /// 玉简条目：储物袋里的待办/笔记，供用户记录、Agent 勾选执行。
 ///
 /// 落盘为 `store://notes/<device>/slips/<id>.json`，跨设备随储物袋镜像。
+/// 附件落在同分区 `slips/<id>/files/`。
 class JadeSlip {
   const JadeSlip({
     required this.id,
@@ -11,6 +14,7 @@ class JadeSlip {
     this.status = JadeSlipStatus.open,
     this.priority = JadeSlipPriority.none,
     this.items = const [],
+    this.attachments = const [],
     this.assigneeAgentId = '',
     this.assigneeAgentName = '',
     this.dueAtMs,
@@ -26,6 +30,7 @@ class JadeSlip {
   final JadeSlipStatus status;
   final JadeSlipPriority priority;
   final List<JadeSlipItem> items;
+  final List<JadeSlipAttachment> attachments;
   final String assigneeAgentId;
   final String assigneeAgentName;
   final int? dueAtMs;
@@ -49,12 +54,27 @@ class JadeSlip {
 
   String get relPath => 'slips/$id.json';
 
+  /// 玉简正文记录：`slips/<id>.json`（不含附件 `slips/<id>/files/…`）。
+  static bool isRecordPath(String path) {
+    final parts = path.split('/');
+    return parts.length == 2 &&
+        parts.first == 'slips' &&
+        parts.last.endsWith('.json');
+  }
+
+  static String? idFromRecordPath(String path) {
+    if (!isRecordPath(path)) return null;
+    final leaf = path.substring(path.lastIndexOf('/') + 1);
+    return leaf.substring(0, leaf.length - '.json'.length);
+  }
+
   JadeSlip copyWith({
     String? title,
     String? body,
     JadeSlipStatus? status,
     JadeSlipPriority? priority,
     List<JadeSlipItem>? items,
+    List<JadeSlipAttachment>? attachments,
     String? assigneeAgentId,
     String? assigneeAgentName,
     int? dueAtMs,
@@ -70,6 +90,7 @@ class JadeSlip {
       status: status ?? this.status,
       priority: priority ?? this.priority,
       items: items ?? this.items,
+      attachments: attachments ?? this.attachments,
       assigneeAgentId: assigneeAgentId ?? this.assigneeAgentId,
       assigneeAgentName: assigneeAgentName ?? this.assigneeAgentName,
       dueAtMs: clearDue ? null : (dueAtMs ?? this.dueAtMs),
@@ -99,6 +120,8 @@ class JadeSlip {
         'status': status.wire,
         'priority': priority.wire,
         'items': [for (final item in items) item.toJson()],
+        if (attachments.isNotEmpty)
+          'attachments': [for (final a in attachments) a.toJson()],
         if (assigneeAgentId.isNotEmpty) 'assignee_agent_id': assigneeAgentId,
         if (assigneeAgentName.isNotEmpty)
           'assignee_agent_name': assigneeAgentName,
@@ -127,6 +150,17 @@ class JadeSlip {
         if (s.isNotEmpty) tags.add(s);
       }
     }
+    final rawAtt = json['attachments'];
+    final attachments = <JadeSlipAttachment>[];
+    if (rawAtt is List) {
+      for (final item in rawAtt) {
+        if (item is Map) {
+          attachments.add(
+            JadeSlipAttachment.fromJson(item.cast<String, dynamic>()),
+          );
+        }
+      }
+    }
     return JadeSlip(
       id: (json['id'] as String? ?? '').trim(),
       title: (json['title'] as String? ?? '').trim(),
@@ -134,6 +168,7 @@ class JadeSlip {
       status: JadeSlipStatus.parse(json['status'] as String?),
       priority: JadeSlipPriority.parse(json['priority'] as String?),
       items: items,
+      attachments: attachments,
       assigneeAgentId: json['assignee_agent_id'] as String? ?? '',
       assigneeAgentName: json['assignee_agent_name'] as String? ?? '',
       dueAtMs: (json['due_at'] as num?)?.toInt(),
@@ -180,6 +215,12 @@ class JadeSlip {
         buf.writeln('- [${item.done ? 'x' : ' '}] ${item.text} (item=${item.id})');
       }
     }
+    if (attachments.isNotEmpty) {
+      buf.writeln('attachments:');
+      for (final a in attachments) {
+        buf.writeln('- ${a.name} (attachment=${a.id} uri=${a.uriFor(deviceId)})');
+      }
+    }
     final notes = body.trim();
     if (notes.isNotEmpty) {
       buf
@@ -194,6 +235,9 @@ class JadeSlip {
       ..writeln(
           '- shepaw notes item --id $id --item <itemId> --done true')
       ..writeln('- shepaw notes complete --id $id');
+    if (attachments.isNotEmpty) {
+      buf.writeln('- shepaw store read --uri <attachment uri>');
+    }
     return buf.toString();
   }
 }
@@ -229,6 +273,42 @@ class JadeSlipItem {
 
   /// 短 id，方便 Agent 在对话里抄写。
   static String newId() => const Uuid().v4().replaceAll('-', '').substring(0, 8);
+}
+
+class JadeSlipAttachment {
+  const JadeSlipAttachment({
+    required this.id,
+    required this.name,
+    required this.path,
+    this.sizeBytes = 0,
+  });
+
+  final String id;
+  final String name;
+
+  /// `notes` 分区内相对路径，如 `slips/<id>/files/<attId>-name.pdf`。
+  final String path;
+  final int sizeBytes;
+
+  String uriFor(String deviceId) =>
+      storeUriWithRef(StoreSpace.notes, deviceId, path);
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'path': path,
+        if (sizeBytes > 0) 'size': sizeBytes,
+      };
+
+  factory JadeSlipAttachment.fromJson(Map<String, dynamic> json) =>
+      JadeSlipAttachment(
+        id: (json['id'] as String? ?? '').trim(),
+        name: (json['name'] as String? ?? '').trim(),
+        path: (json['path'] as String? ?? '').trim(),
+        sizeBytes: (json['size'] as num?)?.toInt() ?? 0,
+      );
+
+  static String newId() => JadeSlipItem.newId();
 }
 
 enum JadeSlipStatus {
