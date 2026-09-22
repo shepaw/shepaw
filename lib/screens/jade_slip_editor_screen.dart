@@ -531,6 +531,11 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                   )),
                   onDelete: () => unawaited(_removeItem(item.id)),
                   onRename: (text) => unawaited(_renameItem(item.id, text)),
+                  onEditComplete: () {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) _itemFocus.requestFocus();
+                    });
+                  },
                 ),
               _AddItemRow(
                 controller: _item,
@@ -988,12 +993,16 @@ class _ChecklistRow extends StatefulWidget {
     required this.onChanged,
     required this.onDelete,
     required this.onRename,
+    this.onEditComplete,
   });
 
   final JadeSlipItem item;
   final ValueChanged<bool> onChanged;
   final VoidCallback onDelete;
   final ValueChanged<String> onRename;
+
+  /// 回车保存后回调（用于把焦点移到「添加一项」）。
+  final VoidCallback? onEditComplete;
 
   @override
   State<_ChecklistRow> createState() => _ChecklistRowState();
@@ -1003,28 +1012,51 @@ class _ChecklistRowState extends State<_ChecklistRow> {
   final _controller = TextEditingController();
   final _focus = FocusNode();
   bool _editing = false;
+  bool _submitting = false;
+  bool _pendingFocusAdd = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(_onFocusChange);
+  }
 
   @override
   void dispose() {
+    _focus.removeListener(_onFocusChange);
     _controller.dispose();
     _focus.dispose();
     super.dispose();
   }
 
+  void _onFocusChange() {
+    if (!_focus.hasFocus && _editing) {
+      _submit();
+    }
+  }
+
   void _beginEdit() {
     _controller.text = widget.item.text;
+    _pendingFocusAdd = false;
     setState(() => _editing = true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _focus.requestFocus();
     });
   }
 
-  void _submit() {
+  void _submit({bool fromEnter = false}) {
+    if (!_editing || _submitting) return;
+    _submitting = true;
+    if (fromEnter) _pendingFocusAdd = true;
+    final focusAdd = _pendingFocusAdd;
+    _pendingFocusAdd = false;
     final text = _controller.text.trim();
     if (text.isNotEmpty && text != widget.item.text) {
       widget.onRename(text);
     }
     if (mounted) setState(() => _editing = false);
+    _submitting = false;
+    if (focusAdd) widget.onEditComplete?.call();
   }
 
   @override
@@ -1075,13 +1107,14 @@ class _ChecklistRowState extends State<_ChecklistRow> {
                   ? TextField(
                       controller: _controller,
                       focusNode: _focus,
+                      textInputAction: TextInputAction.done,
                       style: theme.textTheme.bodyLarge,
                       decoration: const InputDecoration(
                         border: InputBorder.none,
                         isDense: true,
                         contentPadding: EdgeInsets.symmetric(vertical: 8),
                       ),
-                      onSubmitted: (_) => _submit(),
+                      onEditingComplete: () => _submit(fromEnter: true),
                     )
                   : GestureDetector(
                       behavior: HitTestBehavior.opaque,
@@ -1106,7 +1139,7 @@ class _ChecklistRowState extends State<_ChecklistRow> {
                 tooltip: l10n.common_save,
                 visualDensity: VisualDensity.compact,
                 iconSize: 18,
-                onPressed: _submit,
+                onPressed: () => _submit(),
                 icon: Icon(Icons.check, color: scheme.primary),
               )
             else
