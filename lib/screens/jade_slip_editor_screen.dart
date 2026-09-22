@@ -12,10 +12,10 @@ import '../models/store_attachment_ref.dart';
 import '../services/jade_slip_service.dart';
 import '../services/local_database_service.dart';
 import '../services/local_user_identity.dart';
-import '../services/she_service.dart';
 import '../services/store_open_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/chat/storage_file_picker_screen.dart';
+import 'jade_slip_agent_picker.dart';
 import 'jade_slip_dispatch.dart';
 import 'storage_shared.dart';
 
@@ -427,9 +427,8 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                         ? l10n.jadeSlip_assigneeNone
                         : slip.assigneeAgentName,
                     active: slip.assigneeAgentName.isNotEmpty,
-                    noneLabel: l10n.jadeSlip_assigneeNone,
-                    sheLabel: l10n.she_name,
                     agents: _agents,
+                    currentAgentId: slip.assigneeAgentId,
                     onSelected: (id, name) => unawaited(_persist(slip.copyWith(
                       assigneeAgentId: id,
                       assigneeAgentName: name,
@@ -618,24 +617,12 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   }
 
   Future<String?> _pickRunAgent() async {
-    final l10n = AppLocalizations.of(context);
-    final box = _runKey.currentContext?.findRenderObject() as RenderBox?;
-    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox?;
-    if (box == null || overlay == null || !box.hasSize) return null;
-    final rect = Rect.fromPoints(
-      box.localToGlobal(Offset.zero, ancestor: overlay),
-      box.localToGlobal(box.size.bottomRight(Offset.zero), ancestor: overlay),
+    final picked = await showJadeSlipAgentPicker(
+      context,
+      agents: _agents,
+      currentAgentId: _slip?.assigneeAgentId,
     );
-    return showMenu<String>(
-      context: context,
-      position: RelativeRect.fromRect(rect, Offset.zero & overlay.size),
-      items: [
-        PopupMenuItem(value: SheService.sheId, child: Text(l10n.she_name)),
-        for (final agent in _agents)
-          if (agent.id != SheService.sheId)
-            PopupMenuItem(value: agent.id, child: Text(agent.name)),
-      ],
-    );
+    return picked?.id;
   }
 
   Future<void> _pickDue(JadeSlip slip) async {
@@ -766,17 +753,15 @@ class _AssigneePill extends StatelessWidget {
   const _AssigneePill({
     required this.label,
     required this.active,
-    required this.noneLabel,
-    required this.sheLabel,
     required this.agents,
     required this.onSelected,
+    this.currentAgentId,
   });
 
   final String label;
   final bool active;
-  final String noneLabel;
-  final String sheLabel;
   final List<RemoteAgent> agents;
+  final String? currentAgentId;
   final void Function(String id, String name) onSelected;
 
   @override
@@ -784,27 +769,23 @@ class _AssigneePill extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final fg = active ? scheme.onSurface : scheme.onSurfaceVariant;
-    return PopupMenuButton<(String, String)>(
-      tooltip: label,
-      onSelected: (picked) => onSelected(picked.$1, picked.$2),
-      itemBuilder: (ctx) => [
-        PopupMenuItem(value: ('', ''), child: Text(noneLabel)),
-        PopupMenuItem(
-          value: (SheService.sheId, sheLabel),
-          child: Text(sheLabel),
-        ),
-        for (final agent in agents)
-          if (agent.id != SheService.sheId)
-            PopupMenuItem(
-              value: (agent.id, agent.name),
-              child: Text(agent.name),
-            ),
-      ],
-      child: Material(
-        color: active
-            ? AppColors.primary.withValues(alpha: 0.08)
-            : scheme.surfaceContainerHighest,
+    return Material(
+      color: active
+          ? AppColors.primary.withValues(alpha: 0.08)
+          : scheme.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
         borderRadius: BorderRadius.circular(8),
+        onTap: () async {
+          final picked = await showJadeSlipAgentPicker(
+            context,
+            agents: agents,
+            currentAgentId: currentAgentId,
+            allowNone: true,
+          );
+          if (picked == null) return;
+          onSelected(picked.id, picked.id.isEmpty ? '' : picked.name);
+        },
         child: Padding(
           padding: const EdgeInsets.fromLTRB(10, 7, 6, 7),
           child: Row(

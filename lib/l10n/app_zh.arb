@@ -3680,6 +3680,7 @@
   "jadeSlip_runHint": "将打开会话并预填玉简内容，发送后 Agent 会按清单执行。",
   "jadeSlip_pickAgent": "选择执行的 Agent",
   "jadeSlip_searchAgent": "搜索 Agent",
+  "jadeSlip_deviceLocal": "本机",
   "jadeSlip_noAgentMatch": "没有匹配「{query}」的 Agent",
   "@jadeSlip_noAgentMatch": {
     "placeholders": {

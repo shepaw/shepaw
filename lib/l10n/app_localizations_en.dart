@@ -6455,6 +6455,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get jadeSlip_searchAgent => 'Search agents';
 
   @override
+  String get jadeSlip_deviceLocal => 'This device';
+
+  @override
   String jadeSlip_noAgentMatch(String query) {
     return 'No agent matches \"$query\"';
   }

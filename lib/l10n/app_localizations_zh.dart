@@ -6207,6 +6207,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get jadeSlip_searchAgent => '搜索 Agent';
 
   @override
+  String get jadeSlip_deviceLocal => '本机';
+
+  @override
   String jadeSlip_noAgentMatch(String query) {
     return '没有匹配「$query」的 Agent';
   }

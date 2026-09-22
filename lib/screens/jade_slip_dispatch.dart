@@ -10,6 +10,7 @@ import '../services/jade_slip_service.dart';
 import '../services/local_database_service.dart';
 import '../services/local_user_identity.dart';
 import '../services/she_service.dart';
+import 'jade_slip_agent_picker.dart';
 
 /// 打开与 Agent 的会话并预填玉简任务。返回是否已派发。
 Future<bool> dispatchJadeSlip(
@@ -26,33 +27,14 @@ Future<bool> dispatchJadeSlip(
   if (agentId.isEmpty) {
     final agents = await db.getAllRemoteAgents();
     if (!context.mounted) return false;
-    final picked = await showDialog<(String, String, String?)>(
-      context: context,
-      builder: (ctx) {
-        return SimpleDialog(
-          title: Text(l10n.jadeSlip_pickAgent),
-          children: [
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(ctx, (
-                SheService.sheId,
-                l10n.she_name,
-                SheService.sheAvatar,
-              )),
-              child: Text(l10n.she_name),
-            ),
-            for (final a in agents)
-              SimpleDialogOption(
-                onPressed: () => Navigator.pop(ctx, (a.id, a.name, a.avatar)),
-                child: Text(a.name),
-              ),
-          ],
-        );
-      },
+    final picked = await showJadeSlipAgentPicker(
+      context,
+      agents: agents,
     );
-    if (picked == null) return false;
-    agentId = picked.$1;
-    agentName = picked.$2;
-    avatar = picked.$3;
+    if (picked == null || picked.id.isEmpty) return false;
+    agentId = picked.id;
+    agentName = picked.name;
+    avatar = picked.avatar;
   } else if (agentId == SheService.sheId) {
     agentName = l10n.she_name;
     avatar = SheService.sheAvatar;

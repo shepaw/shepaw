@@ -11343,6 +11343,12 @@ abstract class AppLocalizations {
   /// **'搜索 Agent'**
   String get jadeSlip_searchAgent;
 
+  /// No description provided for @jadeSlip_deviceLocal.
+  ///
+  /// In zh, this message translates to:
+  /// **'本机'**
+  String get jadeSlip_deviceLocal;
+
   /// No description provided for @jadeSlip_noAgentMatch.
   ///
   /// In zh, this message translates to:

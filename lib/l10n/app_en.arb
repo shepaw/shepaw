@@ -3205,6 +3205,7 @@
   "jadeSlip_runHint": "Opens a chat with the jade slip pre-filled. Send it and the agent will work the checklist.",
   "jadeSlip_pickAgent": "Choose an agent",
   "jadeSlip_searchAgent": "Search agents",
+  "jadeSlip_deviceLocal": "This device",
   "jadeSlip_noAgentMatch": "No agent matches \"{query}\"",
   "@jadeSlip_noAgentMatch": {
     "placeholders": {
