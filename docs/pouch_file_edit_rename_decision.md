@@ -25,6 +25,10 @@ preview / copyPath / shareLink / export / versions / manifest / delete，
 
 编辑页独立成 `StoreTextEditorScreen`：读 → 编辑 → 保存。
 
+补充（同日）：新建文档/表格后**直接进编辑器**。理由——待办的原话是「新建文件后，可以…」，
+建完立刻能打字才叫「可以」；靠用户再去找菜单里的「编辑内容」等于没接上。
+上传的本地文件不自动进编辑器（可能是二进制）。
+
 ### 2.2 保存：覆盖写，不新增版本 API
 
 直接 `LocalStore.putBytes` 写回**同路径**。旧内容由 `_archiveToVersions`
