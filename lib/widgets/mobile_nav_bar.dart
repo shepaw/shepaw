@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../theme/app_theme.dart';
 import 'update_settings_badge.dart';
@@ -15,11 +16,40 @@ class MobileNavBar extends StatelessWidget {
     required this.onSelect,
   });
 
-  /// Tab content height above the system safe area.
+  /// Tab content height above the home-indicator clearance.
   static const double height = 48;
 
-  /// Space to keep above the home indicator so content is not covered.
-  static const double reserveAboveSafeArea = height;
+  /// iOS home indicator is a thin mark near the edge. Padding the full
+  /// safe-area inset (~34) leaves a tall empty band under the labels.
+  static const double iosHomeIndicatorClearance = 12;
+
+  /// Bottom padding under the icons.
+  ///
+  /// iOS and Android gesture navigation only need to clear a thin
+  /// indicator. Android 3-button navigation keeps the full inset so the
+  /// icons stay above the system buttons.
+  static double contentBottomInset(BuildContext context) {
+    final safe = MediaQuery.paddingOf(context).bottom;
+    if (safe <= 0) return 0;
+    final platform = Theme.of(context).platform;
+    if (platform == TargetPlatform.iOS) {
+      return safe > iosHomeIndicatorClearance
+          ? iosHomeIndicatorClearance
+          : safe;
+    }
+    if (platform == TargetPlatform.android) {
+      final gesture = MediaQuery.systemGestureInsetsOf(context).bottom;
+      final threeButton = safe >= 40 && gesture < 8;
+      if (!threeButton && safe > iosHomeIndicatorClearance) {
+        return iosHomeIndicatorClearance;
+      }
+    }
+    return safe;
+  }
+
+  /// Total height occupied by the bar, including the bottom clearance.
+  static double occupiedHeight(BuildContext context) =>
+      height + contentBottomInset(context);
 
   final int index;
   final List<MobileNavItem> items;
@@ -30,39 +60,49 @@ class MobileNavBar extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
-    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    final bottomInset = contentBottomInset(context);
 
     final barColor = scheme.surface;
-    final selectedFg = AppColors.primary;
+    const selectedFg = AppColors.primary;
     final unselectedFg = scheme.onSurfaceVariant;
-    final dividerColor = isDark
-        ? scheme.outline.withValues(alpha: 0.7)
-        : scheme.outline;
+    final dividerColor =
+        isDark ? scheme.outline.withValues(alpha: 0.7) : scheme.outline;
 
-    return Material(
-      color: barColor,
-      child: Ink(
-        decoration: BoxDecoration(
-          border: Border(top: BorderSide(color: dividerColor, width: 0.5)),
-        ),
-        child: Padding(
-          padding: EdgeInsets.only(bottom: bottomInset),
-          child: SizedBox(
-            height: height,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (var i = 0; i < items.length; i++)
-                  Expanded(
-                    child: _NavDestination(
-                      item: items[i],
-                      selected: i == index,
-                      selectedFg: selectedFg,
-                      unselectedFg: unselectedFg,
-                      onTap: () => onSelect(i),
+    // Sampled at the system navigation bar so Android paints that strip
+    // the same color as this bar instead of the page background.
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle(
+        systemNavigationBarColor: barColor,
+        systemNavigationBarDividerColor: barColor,
+        systemNavigationBarIconBrightness:
+            isDark ? Brightness.light : Brightness.dark,
+        systemNavigationBarContrastEnforced: false,
+      ),
+      child: Material(
+        color: barColor,
+        child: Ink(
+          decoration: BoxDecoration(
+            border: Border(top: BorderSide(color: dividerColor, width: 0.5)),
+          ),
+          child: Padding(
+            padding: EdgeInsets.only(bottom: bottomInset),
+            child: SizedBox(
+              height: height,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var i = 0; i < items.length; i++)
+                    Expanded(
+                      child: _NavDestination(
+                        item: items[i],
+                        selected: i == index,
+                        selectedFg: selectedFg,
+                        unselectedFg: unselectedFg,
+                        onTap: () => onSelect(i),
+                      ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

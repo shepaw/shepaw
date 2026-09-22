@@ -93,15 +93,20 @@ Future<void> openStorageMoreAction(
 
 /// 储物袋：点击后直接进入本机文件浏览（其他设备空间不在此进入）。
 /// 传入 [initialSpace] 时直接落在「空间」Tab 的该分区根目录。
+/// [openOnSpaceTab] 为 true 时默认停在「空间」，而不是「最近」。
 class StorageSpaceManageScreen extends StatefulWidget {
   const StorageSpaceManageScreen({
     super.key,
     this.initialSpace,
     this.showTabHeader = true,
+    this.openOnSpaceTab = false,
   });
 
-  /// 初始分区（null = 默认「最近」文件列表）。
+  /// 初始分区（null = 默认「最近」文件列表，除非 [openOnSpaceTab]）。
   final String? initialSpace;
+
+  /// 打开时直接选中「空间」Tab。移动端底栏入口使用。
+  final bool openOnSpaceTab;
 
   /// 是否在 AppBar 展示「最近 / 空间」Tab 头；桌面左右分栏时传 false，
   /// 由左侧面板提供分区入口。
@@ -162,10 +167,10 @@ class _StorageSpaceManageScreenState extends State<StorageSpaceManageScreen> {
     return StorageBrowserScreen(
       usedBytes: _usedBytes,
       initialSpace: widget.initialSpace,
+      openOnSpaceTab: widget.openOnSpaceTab,
       showTabHeader: widget.showTabHeader,
       hideInternalFiles: _hideInternalFiles,
-      onHideInternalFilesChanged: (v) =>
-          setState(() => _hideInternalFiles = v),
+      onHideInternalFilesChanged: (v) => setState(() => _hideInternalFiles = v),
       extraActions: [
         PopupMenuButton<StorageMoreAction>(
           tooltip: l10n.storage_moreSettings,

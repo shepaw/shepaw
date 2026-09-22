@@ -81,6 +81,7 @@ class StorageBrowserScreen extends StatefulWidget {
     this.manageLocalMirror = false,
     this.initialSpace,
     this.initialPath,
+    this.openOnSpaceTab = false,
     this.lockToInitialEntry = false,
     this.title,
     this.extraActions,
@@ -117,6 +118,9 @@ class StorageBrowserScreen extends StatefulWidget {
 
   /// 「空间」Tab 内初始相对路径（无首尾 `/`）；需配合 [initialSpace]。
   final String? initialPath;
+
+  /// 打开时直接选中「空间」Tab（分区根列表）。默认仍是「最近」。
+  final bool openOnSpaceTab;
 
   /// 从外部深链进入（如 Agent 工作区）时：返回键在入口路径即 pop，
   /// 不会退到储物袋分区根 / 空间列表。
@@ -251,8 +255,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     return base;
   }
 
-  List<String> get _userVisibleSpaces =>
-      StoreSpace.userVisibleSpaces(_spaces);
+  List<String> get _userVisibleSpaces => StoreSpace.userVisibleSpaces(_spaces);
 
   List<String> get _agentVisibleSpaces =>
       StoreSpace.agentVisibleSpaces(_spaces);
@@ -366,7 +369,14 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 2, vsync: this);
+    final initial = widget.initialSpace;
+    final openOnSpace =
+        widget.openOnSpaceTab || (initial != null && initial.isNotEmpty);
+    _tabs = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: openOnSpace ? 1 : 0,
+    );
     _tabs.addListener(() {
       if (_tabs.indexIsChanging) return;
       if (mounted) setState(() {});
@@ -374,16 +384,11 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         unawaited(_loadRecent());
       }
     });
-    final initial = widget.initialSpace;
     if (initial != null && initial.isNotEmpty) {
       _navSpace = initial;
       final path =
           (widget.initialPath ?? '').replaceAll(RegExp(r'^/+|/+$'), '');
       _navPath = path;
-      // 有明确路径时直接落在「空间」Tab。
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _tabs.index != 1) _tabs.index = 1;
-      });
     }
     _bootstrap();
   }
@@ -656,8 +661,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     final need = files.any((f) => f.isJadeSlipRecord && f.displayTitle == null);
     if (!need) return;
     try {
-      final slips =
-          await JadeSlipService.instance.list(includeArchived: true);
+      final slips = await JadeSlipService.instance.list(includeArchived: true);
       final byPath = {for (final s in slips) s.relPath: s.title};
       for (var i = 0; i < files.length; i++) {
         final f = files[i];
@@ -970,10 +974,10 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       return;
     }
     final l10n = AppLocalizations.of(context);
-    final permanent = (space == StoreSpace.notes &&
-            JadeSlip.isRecordPath(relPath)) ||
-        (space == StoreSpace.instructions &&
-            InstructionSet.isRecordPath(relPath));
+    final permanent =
+        (space == StoreSpace.notes && JadeSlip.isRecordPath(relPath)) ||
+            (space == StoreSpace.instructions &&
+                InstructionSet.isRecordPath(relPath));
     final title = permanent
         ? l10n.storage_browserDeletePermanentTitle
         : isFolder
@@ -1435,9 +1439,8 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     final pathPrefix = (onSpaceTab && _navSpace != null && _navPath.isNotEmpty)
         ? '$_navPath/'
         : '';
-    final allowed = _isRemote
-        ? _spaces.toSet()
-        : StoreSpace.recentSpaces.toSet();
+    final allowed =
+        _isRemote ? _spaces.toSet() : StoreSpace.recentSpaces.toSet();
     await showSearch<void>(
       context: context,
       delegate: _StoreSearchDelegate(
@@ -2140,7 +2143,9 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       elevation: 0,
       scrolledUnderElevation: 0,
       centerTitle: true,
-      automaticallyImplyLeading: !MobileShellScope.isActive(context),
+      // 底栏根页不显示返回；从储物袋再推进来的浏览页仍要能返回。
+      automaticallyImplyLeading:
+          !MobileShellScope.isActive(context) || Navigator.canPop(context),
       title: _buildTabHeader(l10n),
       actions: [
         if (_pickMode) ..._pickModeActions(l10n),
@@ -2920,8 +2925,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
           _buildSpaceCategoryHeader(l10n, l10n.storage_categoryMine),
           _buildMobileNotesRow(l10n),
           _buildMobileInstructionsRow(l10n),
-          for (final space in userSpaces)
-            _buildMobileSpaceRootRow(l10n, space),
+          for (final space in userSpaces) _buildMobileSpaceRootRow(l10n, space),
         ],
         if (agentSpaces.isNotEmpty) ...[
           _buildSpaceCategoryHeader(l10n, l10n.storage_categoryAgents),

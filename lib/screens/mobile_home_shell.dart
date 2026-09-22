@@ -12,8 +12,9 @@ import 'storage_space_manage_screen.dart';
 /// Mobile root: four bottom-bar tabs. Inactive tabs stay mounted after first
 /// open so list scroll position is kept.
 ///
-/// Chat / detail pages still push on the root navigator, which covers this
-/// shell so the bar hides while in a conversation.
+/// Chat pages still push on the root navigator, which covers this shell so
+/// the bar hides while in a conversation. The storage tab has its own
+/// navigator: pages opened from the pouch stay above the bar.
 class MobileHomeShell extends StatefulWidget {
   const MobileHomeShell({super.key});
 
@@ -24,6 +25,7 @@ class MobileHomeShell extends StatefulWidget {
 class _MobileHomeShellState extends State<MobileHomeShell> {
   int _index = 0;
   final Set<int> _opened = {0};
+  final GlobalKey<NavigatorState> _storageNavKey = GlobalKey<NavigatorState>();
 
   void _select(int index) {
     if (index == 3) {
@@ -49,11 +51,31 @@ class _MobileHomeShellState extends State<MobileHomeShell> {
     );
   }
 
+  /// Pushes stay inside the pouch so the bottom bar remains tappable.
+  Widget _storageTab() {
+    return NavigatorPopHandler<void>(
+      enabled: _index == 2,
+      onPopWithResult: (_) {
+        _storageNavKey.currentState?.maybePop();
+      },
+      child: Navigator(
+        key: _storageNavKey,
+        onGenerateRoute: (settings) {
+          return MaterialPageRoute<void>(
+            settings: settings,
+            builder: (_) => const StorageSpaceManageScreen(
+              openOnSpaceTab: true,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final bottomInset = MediaQuery.paddingOf(context).bottom;
-    final reserve = MobileNavBar.reserveAboveSafeArea + bottomInset;
+    final reserve = MobileNavBar.occupiedHeight(context);
 
     return MobileShellScope(
       index: _index,
@@ -65,13 +87,24 @@ class _MobileHomeShellState extends State<MobileHomeShell> {
             Positioned.fill(
               child: Padding(
                 padding: EdgeInsets.only(bottom: reserve),
-                child: Stack(
-                  children: [
-                    _tab(0, const HomeScreen()),
-                    _tab(1, const ContactsScreen()),
-                    _tab(2, const StorageSpaceManageScreen()),
-                    _tab(3, const SettingsScreen()),
-                  ],
+                // The bar already covers the home indicator. Drop the bottom
+                // inset so tab pages don't add a second empty band above it.
+                child: MediaQuery.removePadding(
+                  context: context,
+                  removeBottom: true,
+                  child: Stack(
+                    children: [
+                      _tab(0, const HomeScreen()),
+                      _tab(1, const ContactsScreen()),
+                      _tab(
+                        2,
+                        _opened.contains(2)
+                            ? _storageTab()
+                            : const SizedBox.shrink(),
+                      ),
+                      _tab(3, const SettingsScreen()),
+                    ],
+                  ),
                 ),
               ),
             ),
