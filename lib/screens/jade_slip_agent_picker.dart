@@ -27,14 +27,12 @@ Future<JadeSlipAgentPick?> showJadeSlipAgentPicker(
   BuildContext context, {
   required List<RemoteAgent> agents,
   String? currentAgentId,
-  bool allowNone = false,
 }) {
   return showDialog<JadeSlipAgentPick>(
     context: context,
     builder: (ctx) => _JadeSlipAgentPickerDialog(
       agents: agents,
       currentAgentId: currentAgentId,
-      allowNone: allowNone,
     ),
   );
 }
@@ -43,12 +41,10 @@ class _JadeSlipAgentPickerDialog extends StatefulWidget {
   const _JadeSlipAgentPickerDialog({
     required this.agents,
     this.currentAgentId,
-    required this.allowNone,
   });
 
   final List<RemoteAgent> agents;
   final String? currentAgentId;
-  final bool allowNone;
 
   @override
   State<_JadeSlipAgentPickerDialog> createState() =>
@@ -105,21 +101,6 @@ class _JadeSlipAgentPickerDialogState
                   ? Center(child: Text(l10n.jadeSlip_noAgentMatch(_query.text)))
                   : ListView(
                       children: [
-                        if (widget.allowNone)
-                          _AgentOptionRow(
-                            avatar: '',
-                            name: l10n.jadeSlip_assigneeNone,
-                            selected: widget.currentAgentId == null ||
-                                widget.currentAgentId!.isEmpty,
-                            onTap: () => Navigator.pop(
-                              context,
-                              JadeSlipAgentPick(
-                                id: '',
-                                name: l10n.jadeSlip_assigneeNone,
-                                avatar: '',
-                              ),
-                            ),
-                          ),
                         if (sheMatches)
                           _AgentOptionRow(
                             avatar: SheService.sheAvatar,

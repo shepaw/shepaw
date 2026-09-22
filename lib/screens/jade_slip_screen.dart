@@ -9,6 +9,34 @@ import '../theme/app_theme.dart';
 import '../utils/layout_utils.dart';
 import 'jade_slip_editor_screen.dart';
 
+/// 搜索词是否命中玉简标题、正文或清单。与 [JadeSlipService.list] 的过滤一致。
+bool jadeSlipMatchesQuery(JadeSlip slip, String query) {
+  final q = query.trim().toLowerCase();
+  if (q.isEmpty) return true;
+  if (slip.title.toLowerCase().contains(q)) return true;
+  if (slip.body.toLowerCase().contains(q)) return true;
+  return slip.items.any((item) => item.text.toLowerCase().contains(q));
+}
+
+/// 当前打开的玉简已不符合筛选时，仍插回列表原位置。
+///
+/// 勾选清单会推导状态（已完成 ↔ 进行中）。立刻按筛选丢掉它，桌面分栏右侧
+/// 正在编辑的页面会一起消失。留到用户主动切换筛选再严格过滤。
+List<JadeSlip> insertRetainedJadeSlip({
+  required List<JadeSlip> items,
+  required JadeSlip retained,
+  required int anchorIndex,
+}) {
+  if (retained.status == JadeSlipStatus.archived) return items;
+  if (items.any((slip) => slip.id == retained.id)) return items;
+  final next = List<JadeSlip>.of(items);
+  var index = anchorIndex;
+  if (index < 0) index = 0;
+  if (index > next.length) index = next.length;
+  next.insert(index, retained);
+  return next;
+}
+
 /// 储物袋「玉简」：待办笔记本。桌面嵌在右侧面板，移动端独立页。
 class JadeSlipScreen extends StatefulWidget {
   final bool embedded;
@@ -35,6 +63,15 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
   bool _searchOpen = false;
   bool _lastWide = false;
   StreamSubscription<void>? _sub;
+  int _loadSerial = 0;
+
+  /// 打开中的玉简在当前筛选列表里的位置，状态变了也留在原处。
+  int _anchorIndex = 0;
+  double _listPaneWidth = 280;
+
+  static const double _minListPaneWidth = 220;
+  static const double _maxListPaneWidth = 480;
+  static const double _minDetailPaneWidth = 360;
 
   @override
   void initState() {
@@ -55,7 +92,8 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
     super.dispose();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool strict = false}) async {
+    final serial = ++_loadSerial;
     final includeArchived = _filter == _JadeSlipFilter.all;
     JadeSlipStatus? status;
     switch (_filter) {
@@ -68,17 +106,39 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
       case _JadeSlipFilter.all:
         status = null;
     }
+    final selectedId = _selectedId;
     var items = await _service.list(
       status: status,
       query: _search.text,
       includeArchived: includeArchived,
     );
-    if (!mounted) return;
+    if (!mounted || serial != _loadSerial) return;
+    var nextSelected = selectedId;
+    if (selectedId != null && items.every((s) => s.id != selectedId)) {
+      JadeSlip? kept;
+      if (!strict) {
+        kept = await _service.getById(selectedId);
+        if (!mounted || serial != _loadSerial) return;
+      }
+      if (kept != null &&
+          kept.status != JadeSlipStatus.archived &&
+          jadeSlipMatchesQuery(kept, _search.text)) {
+        items = insertRetainedJadeSlip(
+          items: items,
+          retained: kept,
+          anchorIndex: _anchorIndex,
+        );
+      } else {
+        nextSelected = null;
+      }
+    }
+    if (nextSelected != null) {
+      final index = items.indexWhere((s) => s.id == nextSelected);
+      if (index >= 0) _anchorIndex = index;
+    }
     setState(() {
       _items = items;
-      if (_selectedId != null && items.every((s) => s.id != _selectedId)) {
-        _selectedId = items.isEmpty ? null : items.first.id;
-      }
+      _selectedId = nextSelected;
     });
   }
 
@@ -111,6 +171,11 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
   }
 
   Future<void> _openEditor(JadeSlip slip) async {
+    final items = _items;
+    if (items != null) {
+      final index = items.indexWhere((s) => s.id == slip.id);
+      if (index >= 0) _anchorIndex = index;
+    }
     setState(() {
       _selectedId = slip.id;
       if (_focusChecklistId != slip.id) _focusChecklistId = null;
@@ -171,17 +236,14 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
                   ? Row(
                       children: [
                         SizedBox(
-                          width: 280,
+                          width: _listPaneWidth,
                           child: _buildListPane(
                             l10n,
                             items,
                             showHeader: hideOuterAppBar,
                           ),
                         ),
-                        VerticalDivider(
-                          width: 1,
-                          color: Theme.of(context).colorScheme.outline,
-                        ),
+                        _buildPaneSplitter(constraints.maxWidth),
                         Expanded(
                           child: selected == null
                               ? _buildEmptyEditorHint(l10n)
@@ -198,6 +260,37 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
                   : _buildListPane(l10n, items, showHeader: false),
         );
       },
+    );
+  }
+
+  void _resizeListPane(double delta, double maxWidth) {
+    final room = maxWidth - _minDetailPaneWidth;
+    final maxList = room < _minListPaneWidth
+        ? _minListPaneWidth
+        : (room > _maxListPaneWidth ? _maxListPaneWidth : room);
+    final next = _listPaneWidth + delta;
+    setState(() {
+      _listPaneWidth = next < _minListPaneWidth
+          ? _minListPaneWidth
+          : (next > maxList ? maxList : next);
+    });
+  }
+
+  Widget _buildPaneSplitter(double maxWidth) {
+    final line = Theme.of(context).colorScheme.outline;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onHorizontalDragUpdate: (details) =>
+          _resizeListPane(details.delta.dx, maxWidth),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.resizeColumn,
+        child: SizedBox(
+          width: 12,
+          child: Center(
+            child: Container(width: 1, color: line),
+          ),
+        ),
+      ),
     );
   }
 
@@ -320,7 +413,7 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
                   labelOf: (f) => _filterLabel(l10n, f),
                   onChanged: (f) {
                     setState(() => _filter = f);
-                    unawaited(_load());
+                    unawaited(_load(strict: true));
                   },
                 ),
               ),
@@ -357,7 +450,7 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
                 ),
                 onSelected: (f) {
                   setState(() => _filter = f);
-                  unawaited(_load());
+                  unawaited(_load(strict: true));
                 },
                 itemBuilder: (_) => [
                   CheckedPopupMenuItem(

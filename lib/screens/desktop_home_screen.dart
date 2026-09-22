@@ -71,6 +71,85 @@ enum _RightPanelView {
   instructions,
 }
 
+/// 某个主菜单（消息 / 通讯录 / 储物袋）自己的右栏状态。
+///
+/// 三个菜单各留一份，切走时不拆掉对应 Navigator，再回来还是上次的页面。
+class _DeskSlot {
+  _DeskSlot({
+    required this.mode,
+    required this.rightPanel,
+  }) {
+    routeArgs = _RouteArgs.fromSlot(this);
+  }
+
+  final _LeftPanelMode mode;
+  _RightPanelView rightPanel;
+  ConversationSelection? selected;
+  ConversationSelection? lastConversation;
+  RemoteAgent? contactAgent;
+  Channel? contactGroup;
+  PairedPeer? contactPeer;
+  String? storageSpace;
+  String? tracesChannelId;
+  String? taskChannelId;
+  String? taskChannelName;
+  String? taskGroupId;
+  _RightPanelView? previousPanel;
+  int navGeneration = 0;
+  late _RouteArgs routeArgs;
+
+  bool get storageRecentSelected =>
+      rightPanel == _RightPanelView.storageSpaceManage && storageSpace == null;
+}
+
+/// 右栏 Navigator 初次生成路由时用的快照。之后不再跟着别的菜单变。
+class _RouteArgs {
+  _RouteArgs({
+    required this.mode,
+    required this.panel,
+    this.selected,
+    this.contactAgent,
+    this.contactGroup,
+    this.contactPeer,
+    this.storageSpace,
+    this.tracesChannelId,
+    this.taskChannelId,
+    this.taskChannelName,
+    this.taskGroupId,
+    this.showChatBack = false,
+  });
+
+  factory _RouteArgs.fromSlot(_DeskSlot slot) {
+    return _RouteArgs(
+      mode: slot.mode,
+      panel: slot.rightPanel,
+      selected: slot.selected,
+      contactAgent: slot.contactAgent,
+      contactGroup: slot.contactGroup,
+      contactPeer: slot.contactPeer,
+      storageSpace: slot.storageSpace,
+      tracesChannelId: slot.tracesChannelId,
+      taskChannelId: slot.taskChannelId,
+      taskChannelName: slot.taskChannelName,
+      taskGroupId: slot.taskGroupId,
+      showChatBack: slot.previousPanel != null,
+    );
+  }
+
+  final _LeftPanelMode mode;
+  final _RightPanelView panel;
+  final ConversationSelection? selected;
+  final RemoteAgent? contactAgent;
+  final Channel? contactGroup;
+  final PairedPeer? contactPeer;
+  final String? storageSpace;
+  final String? tracesChannelId;
+  final String? taskChannelId;
+  final String? taskChannelName;
+  final String? taskGroupId;
+  final bool showChatBack;
+}
+
 /// Describes one item in the icon sidebar.
 class _SidebarItemDef {
   final IconData icon;
@@ -91,17 +170,21 @@ class _SidebarItemDef {
 class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   StreamSubscription? _peerEventSub;
   StreamSubscription? _peerListChangedSub;
-  late final _RightPanelNavigatorObserver _navObserver;
+  late final Map<_LeftPanelMode, _RightPanelNavigatorObserver> _navObservers;
 
   @override
   void initState() {
     super.initState();
-    _navObserver = _RightPanelNavigatorObserver(_onRightPanelRootPopped);
+    _navObservers = {
+      for (final mode in _LeftPanelMode.values)
+        mode: _RightPanelNavigatorObserver(() => _onRightPanelRootPopped(mode)),
+    };
     ChatNavigationService.instance.setDesktopHandler(_onConversationSelected);
     // 监听 peer 事件，删除 peer 后右面板切回空
     _peerEventSub = PeerConnectionManager.instance.events.listen((event) {
+      final selected = _slots[_LeftPanelMode.conversations]!.selected;
       if (event.type == PeerConnectionEventType.disconnected &&
-          _selected?.peerId == event.peerId) {
+          selected?.peerId == event.peerId) {
         _resetIfSelectedPeerRemoved(event.peerId);
       }
     });
@@ -109,7 +192,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     // 监听设备列表变化（删除配对后），若当前选中的 peer 已不存在则清空右面板
     _peerListChangedSub =
         PeerConnectionManager.instance.peerListChanged.listen((_) {
-      _resetIfSelectedPeerRemoved(_selected?.peerId);
+      _resetIfSelectedPeerRemoved(
+        _slots[_LeftPanelMode.conversations]!.selected?.peerId,
+      );
       _resetIfContactPeerRemoved();
     });
 
@@ -153,27 +238,33 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   /// 若指定 peerId 正是当前选中的会话且已从存储中删除，则把右面板切回空，
   /// 避免 FutureBuilder 因找不到 peer 而一直转圈。
   void _resetIfSelectedPeerRemoved(String? peerId) {
-    if (peerId == null || _selected?.peerId != peerId) return;
+    final slot = _slots[_LeftPanelMode.conversations]!;
+    if (peerId == null || slot.selected?.peerId != peerId) return;
     PeerConnectionManager.instance.getAllPeers().then((peers) {
       if (mounted &&
-          _selected?.peerId == peerId &&
+          slot.selected?.peerId == peerId &&
           !peers.any((p) => p.id == peerId)) {
         setState(() {
-          _selected = null;
-          if (_lastConversation?.peerId == peerId) _lastConversation = null;
-          _rightPanel = _RightPanelView.empty;
-          _navGeneration++;
+          slot.selected = null;
+          if (slot.lastConversation?.peerId == peerId) {
+            slot.lastConversation = null;
+          }
+          slot.rightPanel = _RightPanelView.empty;
+          _publishRoute(slot);
         });
       }
     });
   }
 
   void _resetIfContactPeerRemoved() {
-    final peerId = _contactPeer?.id;
-    if (peerId == null || _rightPanel != _RightPanelView.contactPeer) return;
+    final slot = _slots[_LeftPanelMode.contacts]!;
+    final peerId = slot.contactPeer?.id;
+    if (peerId == null || slot.rightPanel != _RightPanelView.contactPeer) {
+      return;
+    }
     PeerConnectionManager.instance.getAllPeers().then((peers) {
       if (mounted &&
-          _contactPeer?.id == peerId &&
+          slot.contactPeer?.id == peerId &&
           !peers.any((p) => p.id == peerId)) {
         _clearContactDetail(reloadList: true);
       }
@@ -191,11 +282,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     super.dispose();
   }
 
-  ConversationSelection? _selected;
-
-  /// Chat that was open when the sidebar left conversations, so switching
-  /// back restores it instead of clearing the right panel.
-  ConversationSelection? _lastConversation;
   double _leftPanelWidth = 320;
   final GlobalKey<HomeScreenState> _homeKey = GlobalKey<HomeScreenState>();
   final GlobalKey<ContactsScreenState> _contactsKey =
@@ -204,107 +290,115 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       GlobalKey<StorageSpaceListPanelState>();
 
   _LeftPanelMode _leftMode = _LeftPanelMode.conversations;
-  _RightPanelView _rightPanel = _RightPanelView.empty;
+  bool _settingsOpen = false;
 
-  RemoteAgent? _contactAgent;
-  Channel? _contactGroup;
-  PairedPeer? _contactPeer;
-  String? _storageSpace;
-
-  String? get _selectedContactId {
-    switch (_rightPanel) {
-      case _RightPanelView.contactAgent:
-        return _contactAgent?.id;
-      case _RightPanelView.contactGroup:
-        return _contactGroup?.id;
-      case _RightPanelView.contactPeer:
-        return _contactPeer?.id;
-      default:
-        return null;
-    }
-  }
-
-  /// The actual channelId of the chat that triggered the traces view.
-  /// May differ from _selected?.channelId when the controller created/loaded
-  /// a channel after the initial ConversationSelection was recorded.
-  String? _tracesChannelId;
-
-  /// Channel info for the group task list view.
-  String? _taskChannelId;
-  String? _taskChannelName;
-  String? _taskGroupId;
-
-  /// Tracks the panel that was showing before switching to chat,
-  /// so the close/back button can return to it (e.g. search → chat → search).
-  _RightPanelView? _previousPanel;
-
-  /// Monotonic counter appended to the Navigator's ValueKey so that
-  /// each conversation switch creates a fresh Navigator (and therefore a
-  /// fresh initial route).  This avoids the problem where
-  /// `onGenerateRoute` only fires once for a given Navigator instance.
-  int _navGeneration = 0;
+  /// 每个主菜单一份右栏。切菜单只改 [_leftMode]，不重建另外两个 Navigator。
+  final Map<_LeftPanelMode, _DeskSlot> _slots = {
+    _LeftPanelMode.conversations: _DeskSlot(
+      mode: _LeftPanelMode.conversations,
+      rightPanel: _RightPanelView.empty,
+    ),
+    _LeftPanelMode.contacts: _DeskSlot(
+      mode: _LeftPanelMode.contacts,
+      rightPanel: _RightPanelView.empty,
+    ),
+    _LeftPanelMode.storage: _DeskSlot(
+      mode: _LeftPanelMode.storage,
+      rightPanel: _RightPanelView.storageSpaceManage,
+    ),
+  };
 
   static const double _minLeftPanelWidth = 240;
   static const double _maxLeftPanelWidth = 480;
   static const double _sidebarWidth = 56;
 
-  bool get _isUtilityPanel => _rightPanel == _RightPanelView.settings;
+  _DeskSlot get _active => _slots[_leftMode]!;
 
-  bool get _isStorageDetailPanel =>
-      _rightPanel == _RightPanelView.storageSpaceManage ||
-      _rightPanel == _RightPanelView.jadeSlips ||
-      _rightPanel == _RightPanelView.instructions;
+  String? _contactIdOf(_DeskSlot slot) {
+    switch (slot.rightPanel) {
+      case _RightPanelView.contactAgent:
+        return slot.contactAgent?.id;
+      case _RightPanelView.contactGroup:
+        return slot.contactGroup?.id;
+      case _RightPanelView.contactPeer:
+        return slot.contactPeer?.id;
+      default:
+        return null;
+    }
+  }
 
-  bool get _storageRecentSelected =>
-      _leftMode == _LeftPanelMode.storage &&
-      _rightPanel == _RightPanelView.storageSpaceManage &&
-      _storageSpace == null;
+  bool _isStorageDetail(_DeskSlot slot) =>
+      slot.rightPanel == _RightPanelView.storageSpaceManage ||
+      slot.rightPanel == _RightPanelView.jadeSlips ||
+      slot.rightPanel == _RightPanelView.instructions;
 
-  bool get _isContactDetailPanel =>
-      _rightPanel == _RightPanelView.contactAgent ||
-      _rightPanel == _RightPanelView.contactGroup ||
-      _rightPanel == _RightPanelView.contactPeer;
+  bool _isContactDetail(_DeskSlot slot) =>
+      slot.rightPanel == _RightPanelView.contactAgent ||
+      slot.rightPanel == _RightPanelView.contactGroup ||
+      slot.rightPanel == _RightPanelView.contactPeer;
+
+  /// 同一菜单里换页面时换掉 Navigator。`onGenerateRoute` 只在新建时走一次。
+  void _publishRoute(_DeskSlot slot) {
+    slot.navGeneration++;
+    slot.routeArgs = _RouteArgs.fromSlot(slot);
+  }
+
+  void _showMode(_LeftPanelMode mode) {
+    if (_leftMode == mode && !_settingsOpen) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() {
+      _settingsOpen = false;
+      _leftMode = mode;
+    });
+  }
 
   void _onConversationSelected(ConversationSelection selection) {
+    if (_leftMode != _LeftPanelMode.conversations || _settingsOpen) {
+      FocusManager.instance.primaryFocus?.unfocus();
+    }
     setState(() {
+      _settingsOpen = false;
       _leftMode = _LeftPanelMode.conversations;
-      _previousPanel = null;
-      _selected = selection;
-      _lastConversation = selection;
-      _clearContactSelectionFields();
-      _rightPanel = _RightPanelView.chat;
-      _navGeneration++;
+      final slot = _slots[_LeftPanelMode.conversations]!;
+      slot.previousPanel = null;
+      slot.selected = selection;
+      slot.lastConversation = selection;
+      slot.rightPanel = _RightPanelView.chat;
+      _publishRoute(slot);
     });
   }
 
   void _onChatClose() {
     setState(() {
-      _selected = null;
-      _lastConversation = null;
+      final slot = _slots[_LeftPanelMode.conversations]!;
+      slot.selected = null;
+      slot.lastConversation = null;
       // Return to the previous panel (e.g. search) if there was one,
       // otherwise go to empty.
-      _rightPanel = _previousPanel ?? _RightPanelView.empty;
-      _previousPanel = null;
-      _navGeneration++;
+      slot.rightPanel = slot.previousPanel ?? _RightPanelView.empty;
+      slot.previousPanel = null;
+      _publishRoute(slot);
     });
     _reloadAgents();
   }
 
   void _onShowTraces(String? channelId) {
     setState(() {
-      _previousPanel = _RightPanelView.chat;
-      _tracesChannelId = channelId;
-      _rightPanel = _RightPanelView.traces;
-      _navGeneration++;
+      final slot = _slots[_LeftPanelMode.conversations]!;
+      slot.previousPanel = _RightPanelView.chat;
+      slot.tracesChannelId = channelId;
+      slot.rightPanel = _RightPanelView.traces;
+      _publishRoute(slot);
     });
   }
 
   void _onTracesBack() {
     setState(() {
-      _rightPanel = _RightPanelView.chat;
-      _previousPanel = null;
-      _tracesChannelId = null;
-      _navGeneration++;
+      final slot = _slots[_LeftPanelMode.conversations]!;
+      slot.rightPanel = _RightPanelView.chat;
+      slot.previousPanel = null;
+      slot.tracesChannelId = null;
+      _publishRoute(slot);
     });
   }
 
@@ -314,30 +408,34 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     String groupId,
   ) {
     setState(() {
-      _previousPanel = _RightPanelView.chat;
-      _taskChannelId = channelId;
-      _taskChannelName = channelName;
-      _taskGroupId = groupId;
-      _rightPanel = _RightPanelView.groupTasks;
-      _navGeneration++;
+      final slot = _slots[_LeftPanelMode.conversations]!;
+      slot.previousPanel = _RightPanelView.chat;
+      slot.taskChannelId = channelId;
+      slot.taskChannelName = channelName;
+      slot.taskGroupId = groupId;
+      slot.rightPanel = _RightPanelView.groupTasks;
+      _publishRoute(slot);
     });
   }
 
   void _onGroupTasksBack() {
     setState(() {
-      _rightPanel = _RightPanelView.chat;
-      _previousPanel = null;
-      _taskChannelId = null;
-      _taskChannelName = null;
-      _taskGroupId = null;
-      _navGeneration++;
+      final slot = _slots[_LeftPanelMode.conversations]!;
+      slot.rightPanel = _RightPanelView.chat;
+      slot.previousPanel = null;
+      slot.taskChannelId = null;
+      slot.taskChannelName = null;
+      slot.taskGroupId = null;
+      _publishRoute(slot);
     });
   }
 
   void _onSwitchChannel(String channelId, {String? highlightMessageId}) {
-    if (_selected == null) return;
-    final agentId = _selected!.agentId;
-    final groupFamilyId = _selected!.groupFamilyId;
+    final slot = _slots[_LeftPanelMode.conversations]!;
+    final selected = slot.selected;
+    if (selected == null) return;
+    final agentId = selected.agentId;
+    final groupFamilyId = selected.groupFamilyId;
     if (agentId != null) {
       _homeKey.currentState?.rememberAgentChannel(agentId, channelId);
     }
@@ -345,15 +443,16 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _homeKey.currentState?.rememberGroupChannel(groupFamilyId, channelId);
     }
     setState(() {
-      _selected = ConversationSelection(
-        agentId: _selected!.agentId,
-        agentName: _selected!.agentName,
-        agentAvatar: _selected!.agentAvatar,
+      slot.selected = ConversationSelection(
+        agentId: selected.agentId,
+        agentName: selected.agentName,
+        agentAvatar: selected.agentAvatar,
         channelId: channelId,
-        groupFamilyId: _selected!.groupFamilyId,
+        groupFamilyId: selected.groupFamilyId,
         highlightMessageId: highlightMessageId,
       );
-      _navGeneration++;
+      slot.lastConversation = slot.selected;
+      _publishRoute(slot);
     });
   }
 
@@ -369,57 +468,35 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     _storageKey.currentState?.reload();
   }
 
-  void _clearContactSelectionFields() {
-    _contactAgent = null;
-    _contactGroup = null;
-    _contactPeer = null;
-  }
-
   void _clearContactDetail({bool reloadList = false}) {
     setState(() {
-      _clearContactSelectionFields();
-      _rightPanel = _RightPanelView.empty;
-      _navGeneration++;
+      final slot = _slots[_LeftPanelMode.contacts]!;
+      slot.contactAgent = null;
+      slot.contactGroup = null;
+      slot.contactPeer = null;
+      slot.rightPanel = _RightPanelView.empty;
+      _publishRoute(slot);
     });
     if (reloadList) _reloadContacts();
   }
 
-  void _onRightPanelRootPopped() {
+  void _onRightPanelRootPopped(_LeftPanelMode mode) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (_isContactDetailPanel) {
+      if (!mounted || _leftMode != mode || _settingsOpen) return;
+      final slot = _slots[mode]!;
+      if (_isContactDetail(slot)) {
         _clearContactDetail(reloadList: true);
         return;
       }
-      if (_isStorageDetailPanel && _leftMode == _LeftPanelMode.storage) {
-        _showStorage();
+      if (_isStorageDetail(slot)) {
+        // 根路由被关掉时，按当前分区重新铺一页，不要退回「最近」。
+        setState(() => _publishRoute(slot));
         _reloadStorage();
       }
     });
   }
 
-  void _rememberOpenChat() {
-    if (_rightPanel == _RightPanelView.chat && _selected != null) {
-      _lastConversation = _selected;
-    }
-  }
-
-  void _showConversations() {
-    if (_leftMode == _LeftPanelMode.conversations && !_isUtilityPanel) return;
-    setState(() {
-      _leftMode = _LeftPanelMode.conversations;
-      _clearContactSelectionFields();
-      final restore = _lastConversation;
-      if (restore != null) {
-        _selected = restore;
-        _rightPanel = _RightPanelView.chat;
-      } else {
-        _selected = null;
-        _rightPanel = _RightPanelView.empty;
-      }
-      _navGeneration++;
-    });
-  }
+  void _showConversations() => _showMode(_LeftPanelMode.conversations);
 
   /// 侧栏打开惜宝。频道和已读交给聊天页加载，这里不等数据库。
   void _openSheChat() {
@@ -447,98 +524,91 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     ));
   }
 
-  void _showContacts() {
-    setState(() {
-      _rememberOpenChat();
-      _leftMode = _LeftPanelMode.contacts;
-      _selected = null;
-      _clearContactSelectionFields();
-      _rightPanel = _RightPanelView.empty;
-      _navGeneration++;
-    });
-  }
+  void _showContacts() => _showMode(_LeftPanelMode.contacts);
 
-  void _showStorage() {
-    setState(() {
-      _rememberOpenChat();
-      _leftMode = _LeftPanelMode.storage;
-      _selected = null;
-      _clearContactSelectionFields();
-      // 储物袋点击后直接进入「最近」文件列表。
-      _storageSpace = null;
-      _rightPanel = _RightPanelView.storageSpaceManage;
-      _navGeneration++;
-    });
-  }
+  void _showStorage() => _showMode(_LeftPanelMode.storage);
 
   void _showPanel(_RightPanelView panel) {
-    if (_rightPanel == panel) return; // already showing this panel
+    if (panel == _RightPanelView.settings) {
+      if (_settingsOpen) return;
+      FocusManager.instance.primaryFocus?.unfocus();
+      setState(() => _settingsOpen = true);
+      return;
+    }
+    final slot = _active;
+    if (!_settingsOpen && slot.rightPanel == panel) return;
     setState(() {
-      _rightPanel = panel;
+      _settingsOpen = false;
+      slot.rightPanel = panel;
       if (panel != _RightPanelView.chat) {
-        _selected = null;
+        slot.selected = null;
       }
-      if (!_isContactDetailPanel) {
-        _clearContactSelectionFields();
+      if (!_isContactDetail(slot)) {
+        slot.contactAgent = null;
+        slot.contactGroup = null;
+        slot.contactPeer = null;
       }
-      _navGeneration++;
+      _publishRoute(slot);
     });
   }
 
   void _onStorageRecentSelected() {
     setState(() {
-      _storageSpace = null;
-      _selected = null;
-      _clearContactSelectionFields();
-      _rightPanel = _RightPanelView.storageSpaceManage;
-      _navGeneration++;
+      final slot = _slots[_LeftPanelMode.storage]!;
+      slot.storageSpace = null;
+      slot.selected = null;
+      slot.rightPanel = _RightPanelView.storageSpaceManage;
+      _publishRoute(slot);
     });
   }
 
   void _onStorageSpaceSelected(String space) {
     setState(() {
-      _storageSpace = space;
-      _selected = null;
-      _clearContactSelectionFields();
-      _rightPanel = switch (space) {
+      final slot = _slots[_LeftPanelMode.storage]!;
+      slot.storageSpace = space;
+      slot.selected = null;
+      slot.rightPanel = switch (space) {
         StoreSpace.notes => _RightPanelView.jadeSlips,
         StoreSpace.instructions => _RightPanelView.instructions,
         _ => _RightPanelView.storageSpaceManage,
       };
-      _navGeneration++;
+      _publishRoute(slot);
     });
   }
 
   void _onContactAgentSelected(RemoteAgent agent) {
     setState(() {
-      _contactAgent = agent;
-      _contactGroup = null;
-      _contactPeer = null;
-      _selected = null;
-      _rightPanel = _RightPanelView.contactAgent;
-      _navGeneration++;
+      final slot = _slots[_LeftPanelMode.contacts]!;
+      slot.contactAgent = agent;
+      slot.contactGroup = null;
+      slot.contactPeer = null;
+      slot.selected = null;
+      slot.rightPanel = _RightPanelView.contactAgent;
+      _publishRoute(slot);
     });
   }
 
   void _onContactGroupSelected(Channel group) {
     setState(() {
-      _contactGroup = group;
-      _contactAgent = null;
-      _contactPeer = null;
-      _selected = null;
-      _rightPanel = _RightPanelView.contactGroup;
-      _navGeneration++;
+      final slot = _slots[_LeftPanelMode.contacts]!;
+      slot.contactGroup = group;
+      slot.contactAgent = null;
+      slot.contactPeer = null;
+      slot.selected = null;
+      slot.rightPanel = _RightPanelView.contactGroup;
+      _publishRoute(slot);
     });
   }
 
   void _onContactPeerSelected(PairedPeer peer) {
     setState(() {
-      _contactPeer = peer;
-      _contactAgent = null;
-      _contactGroup = null;
-      _selected = null;
-      _rightPanel = _RightPanelView.contactPeer;
-      _navGeneration++;
+      final slot = _slots[_LeftPanelMode.contacts]!;
+      slot.contactPeer = peer;
+      slot.contactAgent = null;
+      slot.contactGroup = null;
+      slot.selected = null;
+      slot.rightPanel = _RightPanelView.contactPeer;
+      _publishRoute(slot);
     });
   }
 
@@ -561,23 +631,28 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           // WeChat-style icon sidebar
           _buildSidebar(),
 
-          // Conversation / contacts / storage list panel
+          // 三个主菜单都留在树上，切走再回来不用重头渲染。
           SizedBox(
             width: _leftPanelWidth,
-            child: switch (_leftMode) {
-              _LeftPanelMode.conversations => HomeScreen(
+            child: IndexedStack(
+              index: _leftMode.index,
+              sizing: StackFit.expand,
+              children: [
+                HomeScreen(
                   key: _homeKey,
                   embedded: true,
-                  selectedConversation: _selected,
+                  selectedConversation:
+                      _slots[_LeftPanelMode.conversations]!.selected,
                   onConversationSelected: _onConversationSelected,
                   onAddAgent: () => _showPanel(_RightPanelView.addAgent),
                   onCreateGroup: () => _showPanel(_RightPanelView.createGroup),
                   onPairDevice: () => _showPanel(_RightPanelView.pairDevice),
                 ),
-              _LeftPanelMode.contacts => ContactsScreen(
+                ContactsScreen(
                   key: _contactsKey,
                   embedded: true,
-                  selectedContactId: _selectedContactId,
+                  selectedContactId:
+                      _contactIdOf(_slots[_LeftPanelMode.contacts]!),
                   onAgentSelected: _onContactAgentSelected,
                   onGroupSelected: _onContactGroupSelected,
                   onPeerSelected: _onContactPeerSelected,
@@ -586,14 +661,16 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                   onPairDevice: () =>
                       _showPanel(_RightPanelView.pairDeviceInput),
                 ),
-              _LeftPanelMode.storage => StorageSpaceListPanel(
+                StorageSpaceListPanel(
                   key: _storageKey,
-                  recentSelected: _storageRecentSelected,
-                  selectedSpace: _storageSpace,
+                  recentSelected:
+                      _slots[_LeftPanelMode.storage]!.storageRecentSelected,
+                  selectedSpace: _slots[_LeftPanelMode.storage]!.storageSpace,
                   onRecentSelected: _onStorageRecentSelected,
                   onSpaceSelected: _onStorageSpaceSelected,
                 ),
-            },
+              ],
+            ),
           ),
 
           // Resizable divider
@@ -620,21 +697,29 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             ),
           ),
 
-          // Right panel — uses a nested Navigator so that pages pushed
-          // inside it (e.g. Settings sub-pages) stay within this panel.
-          // The ValueKey includes _navGeneration so that switching
-          // conversations creates a fresh Navigator with a new initial
-          // route, rather than trying to mutate the old one.
+          // 每个主菜单一个 Navigator。菜单内换页才换 key；切到别的主菜单再回来，
+          // 已打开的页面（含 push 上去的子页）还在。
           Expanded(
             child: ClipRect(
-              child: Navigator(
-                key: ValueKey('nav_$_navGeneration'),
-                observers: [_navObserver],
-                onGenerateRoute: (_) {
-                  return MaterialPageRoute(
-                    builder: (_) => _buildRightPanelRoot(),
-                  );
-                },
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  IndexedStack(
+                    index: _leftMode.index,
+                    sizing: StackFit.expand,
+                    children: [
+                      for (final mode in _LeftPanelMode.values)
+                        _modeNavigator(mode),
+                    ],
+                  ),
+                  if (_settingsOpen)
+                    Navigator(
+                      key: const ValueKey('desktop_settings'),
+                      onGenerateRoute: (_) => MaterialPageRoute<void>(
+                        builder: (_) => const SettingsScreen(),
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
@@ -643,20 +728,35 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     );
   }
 
-  /// The root widget of the right-panel navigator.
-  Widget _buildRightPanelRoot() {
-    switch (_rightPanel) {
+  Widget _modeNavigator(_LeftPanelMode mode) {
+    final slot = _slots[mode]!;
+    final args = slot.routeArgs;
+    return Navigator(
+      key: ValueKey('desk_nav_${mode.name}_${slot.navGeneration}'),
+      observers: [_navObservers[mode]!],
+      onGenerateRoute: (_) {
+        return MaterialPageRoute<void>(
+          builder: (_) => _buildRightPanel(args),
+        );
+      },
+    );
+  }
+
+  /// The root widget of one main-menu navigator.
+  Widget _buildRightPanel(_RouteArgs args) {
+    switch (args.panel) {
       case _RightPanelView.chat:
-        if (_selected != null) {
+        final selected = args.selected;
+        if (selected != null) {
           // P2P 设备聊天
-          if (_selected!.peerId != null) {
+          if (selected.peerId != null) {
             if (!ProductFeatures.deviceChatUiEnabled) {
-              return _buildEmptyState();
+              return _buildEmptyState(args.mode);
             }
             return FutureBuilder<PairedPeer?>(
-              key: ValueKey('peer_${_selected!.peerId}'),
+              key: ValueKey('peer_${selected.peerId}'),
               future: PeerConnectionManager.instance.getAllPeers().then(
-                (peers) => peers.where((p) => p.id == _selected!.peerId).firstOrNull,
+                (peers) => peers.where((p) => p.id == selected.peerId).firstOrNull,
               ),
               builder: (context, snapshot) {
                 // 仅在加载中显示转圈
@@ -666,13 +766,13 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                 // 加载完成但 peer 不存在（已被删除）→ 回到空状态，避免一直白屏转圈
                 final peer = snapshot.data;
                 if (peer == null) {
-                  return _buildEmptyState();
+                  return _buildEmptyState(args.mode);
                 }
                 return PeerChatScreen(
-                  key: ValueKey(_selected!.key),
+                  key: ValueKey(selected.key),
                   peer: peer,
                   embedded: true,
-                  highlightMessageId: _selected!.highlightMessageId,
+                  highlightMessageId: selected.highlightMessageId,
                   onAgentSelected: (agent) {
                     _onConversationSelected(ConversationSelection(
                       agentId: agent.id,
@@ -686,21 +786,21 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           }
           // 普通 Agent/Group 聊天
           return ChatScreen(
-            key: ValueKey(_selected!.key),
-            agentId: _selected!.agentId,
-            agentName: _selected!.agentName,
-            agentAvatar: _selected!.agentAvatar,
-            channelId: _selected!.channelId,
-            highlightMessageId: _selected!.highlightMessageId,
+            key: ValueKey(selected.key),
+            agentId: selected.agentId,
+            agentName: selected.agentName,
+            agentAvatar: selected.agentAvatar,
+            channelId: selected.channelId,
+            highlightMessageId: selected.highlightMessageId,
             embedded: true,
-            showBackButton: _previousPanel != null,
+            showBackButton: args.showChatBack,
             onClose: _onChatClose,
             onSwitchChannel: _onSwitchChannel,
             onShowTraces: _onShowTraces,
             onShowGroupTasks: _onShowGroupTasks,
           );
         }
-        return _buildEmptyState();
+        return _buildEmptyState(args.mode);
 
       case _RightPanelView.settings:
         return const SettingsScreen();
@@ -745,24 +845,24 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         return PeerManualInputScreen(onPaired: _onDevicePaired);
 
       case _RightPanelView.contactAgent:
-        final agent = _contactAgent;
-        if (agent == null) return _buildEmptyState();
+        final agent = args.contactAgent;
+        if (agent == null) return _buildEmptyState(args.mode);
         return RemoteAgentDetailScreen(
           key: ValueKey('contact_agent_${agent.id}'),
           agent: agent,
         );
 
       case _RightPanelView.contactGroup:
-        final group = _contactGroup;
-        if (group == null) return _buildEmptyState();
+        final group = args.contactGroup;
+        if (group == null) return _buildEmptyState(args.mode);
         return GroupDetailScreen(
           key: ValueKey('contact_group_${group.id}'),
           channel: group,
         );
 
       case _RightPanelView.contactPeer:
-        final peer = _contactPeer;
-        if (peer == null) return _buildEmptyState();
+        final peer = args.contactPeer;
+        if (peer == null) return _buildEmptyState(args.mode);
         return PeerSettingsScreen(
           key: ValueKey('contact_peer_${peer.id}'),
           peer: peer,
@@ -770,23 +870,23 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
       case _RightPanelView.traces:
         return ChannelTraceScreen(
-          channelId: _tracesChannelId,
-          channelName: _selected?.agentName,
+          channelId: args.tracesChannelId,
+          channelName: args.selected?.agentName,
           onBack: _onTracesBack,
         );
 
       case _RightPanelView.groupTasks:
         return GroupTaskListScreen(
-          groupId: _taskGroupId ?? _taskChannelId ?? '',
-          channelId: _taskChannelId ?? '',
-          channelName: _taskChannelName ?? '',
+          groupId: args.taskGroupId ?? args.taskChannelId ?? '',
+          channelId: args.taskChannelId ?? '',
+          channelName: args.taskChannelName ?? '',
           onBack: _onGroupTasksBack,
         );
 
       case _RightPanelView.storageSpaceManage:
         // 左侧面板已列出「最近 / 我的 / 智能体」入口，右侧不再重复放 Tab。
         return StorageSpaceManageScreen(
-          initialSpace: _storageSpace,
+          initialSpace: args.storageSpace,
           showTabHeader: false,
         );
 
@@ -797,7 +897,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         return const InstructionSetScreen(embedded: true);
 
       case _RightPanelView.empty:
-        return _buildEmptyState();
+        return _buildEmptyState(args.mode);
     }
   }
 
@@ -820,8 +920,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         icon: Icons.chat_bubble,
         tooltip: l10n.drawer_myProfile,
         colorBuilder: (_) =>
-            _leftMode == _LeftPanelMode.conversations &&
-                !_isUtilityPanel
+            _leftMode == _LeftPanelMode.conversations && !_settingsOpen
             ? activeColor
             : iconColor,
         onTap: _showConversations,
@@ -830,8 +929,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         icon: Icons.contacts_outlined,
         tooltip: l10n.drawer_contacts,
         colorBuilder: (_) =>
-            _leftMode == _LeftPanelMode.contacts &&
-                !_isUtilityPanel
+            _leftMode == _LeftPanelMode.contacts && !_settingsOpen
             ? activeColor
             : iconColor,
         onTap: _showContacts,
@@ -840,8 +938,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         icon: Icons.inventory_2_outlined,
         tooltip: l10n.storage_title,
         colorBuilder: (_) =>
-            _leftMode == _LeftPanelMode.storage &&
-                !_isUtilityPanel
+            _leftMode == _LeftPanelMode.storage && !_settingsOpen
             ? activeColor
             : iconColor,
         onTap: _showStorage,
@@ -860,7 +957,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         icon: Icons.settings_outlined,
         tooltip: l10n.drawer_settings,
         colorBuilder: (_) =>
-            _rightPanel == _RightPanelView.settings ? activeColor : iconColor,
+            _settingsOpen ? activeColor : iconColor,
         onTap: () {
           UpdateService().dismissSettingsIconBadge();
           _showPanel(_RightPanelView.settings);
@@ -942,11 +1039,11 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     );
   }
 
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState(_LeftPanelMode mode) {
     final l10n = AppLocalizations.of(context);
     final IconData icon;
     final String label;
-    switch (_leftMode) {
+    switch (mode) {
       case _LeftPanelMode.contacts:
         icon = Icons.contacts_outlined;
         label = l10n.contacts_title;

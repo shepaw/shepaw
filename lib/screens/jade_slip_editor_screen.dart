@@ -46,7 +46,6 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   final _item = TextEditingController();
   final _itemFocus = FocusNode();
   final _comment = TextEditingController();
-  final _runKey = GlobalKey();
 
   JadeSlip? _slip;
   List<RemoteAgent> _agents = const [];
@@ -57,8 +56,6 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   bool _didFocusChecklist = false;
   Timer? _textDebounce;
   StreamSubscription<void>? _sub;
-
-  static const _btnRadius = BorderRadius.all(Radius.circular(10));
 
   @override
   void initState() {
@@ -374,18 +371,11 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                       ),
                     ),
                   const Spacer(),
-                  FilledButton.icon(
-                    key: _runKey,
-                    // 保存状态只由左侧提示表达，按钮不随保存禁用，避免闪一下。
+                  IconButton(
+                    tooltip: l10n.jadeSlip_run,
                     onPressed: () => unawaited(_handOff(slip)),
-                    icon: const Icon(Icons.play_arrow_rounded, size: 20),
-                    label: Text(l10n.jadeSlip_run),
-                    style: FilledButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      shape: const RoundedRectangleBorder(
-                        borderRadius: _btnRadius,
-                      ),
-                    ),
+                    icon: Icon(Icons.play_arrow_rounded,
+                        color: scheme.onSurfaceVariant),
                   ),
                   IconButton(
                     tooltip: l10n.common_delete,
@@ -805,10 +795,9 @@ class _AssigneePill extends StatelessWidget {
             context,
             agents: agents,
             currentAgentId: currentAgentId,
-            allowNone: true,
           );
-          if (picked == null) return;
-          onSelected(picked.id, picked.id.isEmpty ? '' : picked.name);
+          if (picked == null || picked.id.isEmpty) return;
+          onSelected(picked.id, picked.name);
         },
         child: Padding(
           padding: const EdgeInsets.fromLTRB(10, 7, 6, 7),
