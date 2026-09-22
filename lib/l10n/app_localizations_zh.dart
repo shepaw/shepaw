@@ -6192,6 +6192,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get jadeSlip_filterAll => '全部';
 
   @override
+  String get jadeSlip_filter => '筛选';
+
+  @override
   String jadeSlip_progress(int done, int total) {
     return '$done/$total 已完成';
   }

@@ -6438,6 +6438,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get jadeSlip_filterAll => 'All';
 
   @override
+  String get jadeSlip_filter => 'Filter';
+
+  @override
   String jadeSlip_progress(int done, int total) {
     return '$done/$total done';
   }

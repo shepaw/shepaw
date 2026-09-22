@@ -51,16 +51,17 @@ enum _JadeSlipFilter { open, doing, done, all }
 
 class _JadeSlipScreenState extends State<JadeSlipScreen> {
   final _service = JadeSlipService.instance;
-  final _capture = TextEditingController();
   final _search = TextEditingController();
-  final _captureFocus = FocusNode();
   final _searchFocus = FocusNode();
 
   List<JadeSlip>? _items;
-  _JadeSlipFilter _filter = _JadeSlipFilter.open;
+  _JadeSlipFilter _filter = _JadeSlipFilter.all;
   String? _selectedId;
   String? _focusChecklistId;
+  String? _focusTitleId;
   bool _searchOpen = false;
+  bool _filterOpen = true;
+  bool _creating = false;
   bool _lastWide = false;
   StreamSubscription<void>? _sub;
   int _loadSerial = 0;
@@ -85,9 +86,7 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
   @override
   void dispose() {
     _sub?.cancel();
-    _capture.dispose();
     _search.dispose();
-    _captureFocus.dispose();
     _searchFocus.dispose();
     super.dispose();
   }
@@ -147,29 +146,6 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
   bool _wideFor(BoxConstraints constraints) =>
       LayoutUtils.isDesktopLayout(context) && constraints.maxWidth >= 720;
 
-  Future<void> _quickAdd() async {
-    final title = _capture.text.trim();
-    if (title.isEmpty) return;
-    _capture.clear();
-    final slip = await _service.create(title: title);
-    if (!mounted) return;
-    setState(() {
-      _selectedId = slip.id;
-      _focusChecklistId = slip.id;
-    });
-    await _load();
-    if (!mounted || _lastWide) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => JadeSlipEditorScreen(
-          slipId: slip.id,
-          focusChecklist: true,
-        ),
-      ),
-    );
-    if (mounted) unawaited(_load());
-  }
-
   Future<void> _openEditor(JadeSlip slip) async {
     final items = _items;
     if (items != null) {
@@ -179,6 +155,7 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
     setState(() {
       _selectedId = slip.id;
       if (_focusChecklistId != slip.id) _focusChecklistId = null;
+      if (_focusTitleId != slip.id) _focusTitleId = null;
     });
     if (_lastWide) return;
     await Navigator.of(context).push(
@@ -189,11 +166,88 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
     if (mounted) unawaited(_load());
   }
 
-  Future<void> _newSlip() async {
-    final slip = await _service.create(title: _l10n.jadeSlip_untitled);
-    if (!mounted) return;
-    await _openEditor(slip);
-    if (mounted) unawaited(_load());
+  void _toggleSearch() {
+    setState(() {
+      _searchOpen = !_searchOpen;
+      if (!_searchOpen) _search.clear();
+    });
+    if (_searchOpen) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _searchOpen) _searchFocus.requestFocus();
+      });
+    } else {
+      unawaited(_load());
+    }
+  }
+
+  /// 新建：桌面在右侧打开并改标题，手机直接进入编辑页。
+  Future<void> _onCreatePressed() async {
+    if (_creating) return;
+    _creating = true;
+    try {
+      final slip = await _service.create(title: _l10n.jadeSlip_untitled);
+      if (!mounted) return;
+      final query = _search.text.trim();
+      final wide = _lastWide;
+      setState(() {
+        _selectedId = slip.id;
+        _focusTitleId = slip.id;
+        _focusChecklistId = null;
+        if (query.isNotEmpty && !jadeSlipMatchesQuery(slip, query)) {
+          _search.clear();
+          _searchOpen = false;
+        }
+      });
+      await _load();
+      if (!mounted || wide) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => JadeSlipEditorScreen(
+            slipId: slip.id,
+            focusTitle: true,
+          ),
+        ),
+      );
+      if (!mounted) return;
+      setState(() {
+        if (_focusTitleId == slip.id) _focusTitleId = null;
+      });
+      unawaited(_load());
+    } finally {
+      _creating = false;
+    }
+  }
+
+  List<Widget> _titleActions(AppLocalizations l10n) {
+    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
+    Color tint(bool on) => on ? AppColors.primary : muted;
+    final filterOn = _filterOpen || _filter != _JadeSlipFilter.all;
+    return [
+      IconButton(
+        tooltip: l10n.common_search,
+        visualDensity: VisualDensity.compact,
+        icon: Icon(
+          Icons.search,
+          color: tint(_searchOpen || _search.text.isNotEmpty),
+        ),
+        onPressed: _toggleSearch,
+      ),
+      IconButton(
+        tooltip: l10n.jadeSlip_filter,
+        visualDensity: VisualDensity.compact,
+        icon: Icon(Icons.filter_list, color: tint(filterOn)),
+        onPressed: () => setState(() => _filterOpen = !_filterOpen),
+      ),
+      IconButton(
+        tooltip: l10n.jadeSlip_create,
+        visualDensity: VisualDensity.compact,
+        icon: Icon(
+          Icons.add,
+          color: tint(_focusTitleId != null),
+        ),
+        onPressed: () => unawaited(_onCreatePressed()),
+      ),
+    ];
   }
 
   @override
@@ -222,13 +276,7 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
                   title: Text(l10n.jadeSlip_title),
                   elevation: widget.embedded ? 0 : null,
                   automaticallyImplyLeading: !widget.embedded,
-                  actions: [
-                    IconButton(
-                      tooltip: l10n.jadeSlip_create,
-                      icon: const Icon(Icons.add),
-                      onPressed: _newSlip,
-                    ),
-                  ],
+                  actions: _titleActions(l10n),
                 ),
           body: items == null
               ? const Center(child: CircularProgressIndicator())
@@ -251,7 +299,9 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
                                   key: ValueKey(selected.id),
                                   slipId: selected.id,
                                   embedded: true,
-                                  focusChecklist: selected.id == _focusChecklistId,
+                                  focusChecklist:
+                                      selected.id == _focusChecklistId,
+                                  focusTitle: selected.id == _focusTitleId,
                                   onChanged: () => unawaited(_load()),
                                 ),
                         ),
@@ -339,47 +389,11 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
                       ),
                     ),
                   ),
-                  IconButton(
-                    tooltip: l10n.jadeSlip_create,
-                    icon: const Icon(Icons.add),
-                    onPressed: _newSlip,
-                  ),
+                  ..._titleActions(l10n),
                 ],
               ),
             ),
           ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-          child: TextField(
-            controller: _capture,
-            focusNode: _captureFocus,
-            textInputAction: TextInputAction.done,
-            decoration: _quietField(
-              context,
-              hint: l10n.jadeSlip_captureHint,
-              prefix: Icon(
-                Icons.edit_note_outlined,
-                size: 20,
-                color: scheme.onSurfaceVariant,
-              ),
-              suffix: IconButton(
-                tooltip: l10n.jadeSlip_create,
-                onPressed: _quickAdd,
-                icon: Container(
-                  width: 28,
-                  height: 28,
-                  decoration: const BoxDecoration(
-                    color: AppColors.primary,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.arrow_upward,
-                      size: 16, color: Colors.white),
-                ),
-              ),
-            ),
-            onSubmitted: (_) => unawaited(_quickAdd()),
-          ),
-        ),
         if (_searchOpen)
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
@@ -398,71 +412,25 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
               onChanged: (_) => unawaited(_load()),
             ),
           ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8, 8, 4, 4),
-          child: Row(
-            children: [
-              Expanded(
-                child: _FilterBar(
-                  filters: const [
-                    _JadeSlipFilter.open,
-                    _JadeSlipFilter.doing,
-                    _JadeSlipFilter.done,
-                  ],
-                  selected: _filter,
-                  labelOf: (f) => _filterLabel(l10n, f),
-                  onChanged: (f) {
-                    setState(() => _filter = f);
-                    unawaited(_load(strict: true));
-                  },
-                ),
-              ),
-              IconButton(
-                tooltip: l10n.common_search,
-                visualDensity: VisualDensity.compact,
-                icon: Icon(
-                  Icons.search,
-                  color: _searchOpen || _search.text.isNotEmpty
-                      ? AppColors.primary
-                      : scheme.onSurfaceVariant,
-                ),
-                onPressed: () {
-                  setState(() {
-                    _searchOpen = !_searchOpen;
-                    if (!_searchOpen) _search.clear();
-                  });
-                  if (_searchOpen) {
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (mounted && _searchOpen) _searchFocus.requestFocus();
-                    });
-                  } else {
-                    unawaited(_load());
-                  }
-                },
-              ),
-              PopupMenuButton<_JadeSlipFilter>(
-                tooltip: l10n.jadeSlip_filterAll,
-                icon: Icon(
-                  Icons.more_horiz,
-                  color: _filter == _JadeSlipFilter.all
-                      ? AppColors.primary
-                      : scheme.onSurfaceVariant,
-                ),
-                onSelected: (f) {
-                  setState(() => _filter = f);
-                  unawaited(_load(strict: true));
-                },
-                itemBuilder: (_) => [
-                  CheckedPopupMenuItem(
-                    value: _JadeSlipFilter.all,
-                    checked: _filter == _JadeSlipFilter.all,
-                    child: Text(l10n.jadeSlip_filterAll),
+        if (_filterOpen)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final f in _JadeSlipFilter.values)
+                  _FilterTag(
+                    label: _filterLabel(l10n, f),
+                    selected: _filter == f,
+                    onTap: () {
+                      setState(() => _filter = f);
+                      unawaited(_load(strict: true));
+                    },
                   ),
-                ],
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
         Expanded(
           child: items.isEmpty
               ? _buildEmpty(l10n)
@@ -528,7 +496,8 @@ InputDecoration _quietField(
     fillColor: scheme.surfaceContainerHighest,
     hintStyle: TextStyle(color: scheme.onSurfaceVariant, fontSize: 14),
     contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-    border: OutlineInputBorder(borderRadius: radius, borderSide: BorderSide.none),
+    border:
+        OutlineInputBorder(borderRadius: radius, borderSide: BorderSide.none),
     enabledBorder:
         OutlineInputBorder(borderRadius: radius, borderSide: BorderSide.none),
     focusedBorder: OutlineInputBorder(
@@ -538,46 +507,8 @@ InputDecoration _quietField(
   );
 }
 
-class _FilterBar extends StatelessWidget {
-  const _FilterBar({
-    required this.filters,
-    required this.selected,
-    required this.labelOf,
-    required this.onChanged,
-  });
-
-  final List<_JadeSlipFilter> filters;
-  final _JadeSlipFilter selected;
-  final String Function(_JadeSlipFilter) labelOf;
-  final ValueChanged<_JadeSlipFilter> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        children: [
-          for (final f in filters)
-            Expanded(
-              child: _FilterSeg(
-                label: labelOf(f),
-                selected: selected == f,
-                onTap: () => onChanged(f),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FilterSeg extends StatelessWidget {
-  const _FilterSeg({
+class _FilterTag extends StatelessWidget {
+  const _FilterTag({
     required this.label,
     required this.selected,
     required this.onTap,
@@ -592,27 +523,23 @@ class _FilterSeg extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     return Material(
-      color: selected ? scheme.surface : Colors.transparent,
-      borderRadius: BorderRadius.circular(8),
-      elevation: selected ? 0.5 : 0,
-      shadowColor: Colors.black26,
+      color: selected
+          ? AppColors.primary.withValues(alpha: 0.14)
+          : scheme.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(999),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                label,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.labelMedium?.copyWith(
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                  color: selected ? scheme.onSurface : scheme.onSurfaceVariant,
-                ),
-              ),
+        borderRadius: BorderRadius.circular(999),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          child: Text(
+            label,
+            style: theme.textTheme.labelMedium?.copyWith(
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              color: selected ? AppColors.primary : scheme.onSurfaceVariant,
             ),
           ),
+        ),
       ),
     );
   }

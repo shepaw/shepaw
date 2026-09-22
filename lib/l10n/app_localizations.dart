@@ -11313,6 +11313,12 @@ abstract class AppLocalizations {
   /// **'全部'**
   String get jadeSlip_filterAll;
 
+  /// No description provided for @jadeSlip_filter.
+  ///
+  /// In zh, this message translates to:
+  /// **'筛选'**
+  String get jadeSlip_filter;
+
   /// No description provided for @jadeSlip_progress.
   ///
   /// In zh, this message translates to:

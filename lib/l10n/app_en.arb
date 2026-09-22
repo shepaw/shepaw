@@ -3201,6 +3201,7 @@
   "jadeSlip_filterDoing": "In progress",
   "jadeSlip_filterDone": "Done",
   "jadeSlip_filterAll": "All",
+  "jadeSlip_filter": "Filter",
   "jadeSlip_progress": "{done}/{total} done",
   "@jadeSlip_progress": {
     "placeholders": {

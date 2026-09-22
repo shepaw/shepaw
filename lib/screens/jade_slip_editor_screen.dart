@@ -25,6 +25,7 @@ class JadeSlipEditorScreen extends StatefulWidget {
   final String slipId;
   final bool embedded;
   final bool focusChecklist;
+  final bool focusTitle;
   final VoidCallback? onChanged;
 
   const JadeSlipEditorScreen({
@@ -32,6 +33,7 @@ class JadeSlipEditorScreen extends StatefulWidget {
     required this.slipId,
     this.embedded = false,
     this.focusChecklist = false,
+    this.focusTitle = false,
     this.onChanged,
   });
 
@@ -42,6 +44,7 @@ class JadeSlipEditorScreen extends StatefulWidget {
 class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   final _service = JadeSlipService.instance;
   final _title = TextEditingController();
+  final _titleFocus = FocusNode();
   final _body = TextEditingController();
   final _item = TextEditingController();
   final _itemFocus = FocusNode();
@@ -54,6 +57,7 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   bool _closed = false;
   bool _allowPop = false;
   bool _didFocusChecklist = false;
+  bool _didFocusTitle = false;
   Timer? _textDebounce;
   StreamSubscription<void>? _sub;
 
@@ -80,6 +84,7 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     }
     _sub?.cancel();
     _title.dispose();
+    _titleFocus.dispose();
     _body.dispose();
     _item.dispose();
     _itemFocus.dispose();
@@ -105,7 +110,38 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
       _slip = slip;
       _dirty = false;
     });
+    _maybeFocusTitle();
     _maybeFocusChecklist();
+  }
+
+  @override
+  void didUpdateWidget(JadeSlipEditorScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.focusTitle && !oldWidget.focusTitle) {
+      _didFocusTitle = false;
+    }
+    if (widget.focusChecklist && !oldWidget.focusChecklist) {
+      _didFocusChecklist = false;
+    }
+    _maybeFocusTitle();
+    _maybeFocusChecklist();
+  }
+
+  void _maybeFocusTitle() {
+    if (_didFocusTitle || !widget.focusTitle || _slip == null) return;
+    _didFocusTitle = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _titleFocus.requestFocus();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_titleFocus.hasFocus) return;
+        final text = _title.text;
+        _title.selection = TextSelection(
+          baseOffset: 0,
+          extentOffset: text.length,
+        );
+      });
+    });
   }
 
   void _maybeFocusChecklist() {
@@ -371,12 +407,17 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                       ),
                     ),
                   const Spacer(),
-                  IconButton(
-                    tooltip: l10n.jadeSlip_run,
+                  FilledButton.icon(
                     onPressed: () => unawaited(_handOff(slip)),
-                    icon: Icon(Icons.play_arrow_rounded,
-                        color: scheme.onSurfaceVariant),
+                    style: FilledButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                    ),
+                    icon: const Icon(Icons.play_arrow_rounded, size: 20),
+                    label: Text(l10n.jadeSlip_run),
                   ),
+                  const SizedBox(width: 4),
                   IconButton(
                     tooltip: l10n.common_delete,
                     icon: Icon(Icons.delete_outline,
@@ -388,6 +429,7 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
               const SizedBox(height: 8),
               TextField(
                 controller: _title,
+                focusNode: _titleFocus,
                 maxLines: null,
                 keyboardType: TextInputType.multiline,
                 style: theme.textTheme.headlineSmall?.copyWith(

@@ -3676,6 +3676,7 @@
   "jadeSlip_filterDoing": "进行中",
   "jadeSlip_filterDone": "已完成",
   "jadeSlip_filterAll": "全部",
+  "jadeSlip_filter": "筛选",
   "jadeSlip_progress": "{done}/{total} 已完成",
   "@jadeSlip_progress": {
     "placeholders": {
