@@ -249,6 +249,11 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     await _service.addItem(id: widget.slipId, text: text);
     widget.onChanged?.call();
     await _load();
+    if (!mounted) return;
+    // 连续添加：回车后保持焦点在「添加一项」。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _itemFocus.requestFocus();
+    });
   }
 
   Future<void> _addComment() async {
@@ -541,6 +546,7 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                 controller: _item,
                 focusNode: _itemFocus,
                 hint: l10n.jadeSlip_itemHint,
+                keepFocusOnSubmit: true,
                 onSubmit: () => unawaited(_addItem()),
               ),
               const SizedBox(height: 28),
@@ -1176,12 +1182,16 @@ class _AddItemRow extends StatelessWidget {
     required this.hint,
     required this.onSubmit,
     this.focusNode,
+    this.keepFocusOnSubmit = false,
   });
 
   final TextEditingController controller;
   final FocusNode? focusNode;
   final String hint;
   final VoidCallback onSubmit;
+
+  /// 为 true 时回车不触发默认失焦，便于连续添加清单项。
+  final bool keepFocusOnSubmit;
 
   @override
   Widget build(BuildContext context) {
@@ -1206,7 +1216,9 @@ class _AddItemRow extends StatelessWidget {
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(vertical: 8),
               ),
-              onSubmitted: (_) => onSubmit(),
+              // 覆盖默认 onEditingComplete（会 unfocus），才能连续输入。
+              onEditingComplete: keepFocusOnSubmit ? onSubmit : null,
+              onSubmitted: keepFocusOnSubmit ? null : (_) => onSubmit(),
             ),
           ),
         ],
