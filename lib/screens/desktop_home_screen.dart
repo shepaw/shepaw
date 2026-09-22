@@ -31,7 +31,6 @@ import '../utils/layout_utils.dart';
 import '../services/logger_service.dart';
 import '../services/native_window_service.dart';
 import '../services/chat_navigation_service.dart';
-import '../services/chat_service.dart';
 import '../services/local_database_service.dart';
 import '../services/onboarding_service.dart';
 import '../services/she_service.dart';
@@ -148,7 +147,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     if (!mounted) return;
     // 已配好主模型（非新装/重复触发）→ 落回常规主界面。
     if (agent != null && agent.isLocal) return;
-    await _openSheChat();
+    _openSheChat();
   }
 
   /// 若指定 peerId 正是当前选中的会话且已从存储中删除，则把右面板切回空，
@@ -337,6 +336,14 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
   void _onSwitchChannel(String channelId, {String? highlightMessageId}) {
     if (_selected == null) return;
+    final agentId = _selected!.agentId;
+    final groupFamilyId = _selected!.groupFamilyId;
+    if (agentId != null) {
+      _homeKey.currentState?.rememberAgentChannel(agentId, channelId);
+    }
+    if (groupFamilyId != null) {
+      _homeKey.currentState?.rememberGroupChannel(groupFamilyId, channelId);
+    }
     setState(() {
       _selected = ConversationSelection(
         agentId: _selected!.agentId,
@@ -414,29 +421,29 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     });
   }
 
-  /// Open the built-in She (惜宝) DM from the sidebar brand icon.
-  Future<void> _openSheChat() async {
+  /// 侧栏打开惜宝。频道和已读交给聊天页加载，这里不等数据库。
+  void _openSheChat() {
     final l10n = AppLocalizations.of(context);
-    final db = getIt<LocalDatabaseService>();
-    final chatService = getIt<ChatService>();
-    final agent = await db.getRemoteAgentById(SheService.sheId);
-    if (!mounted) return;
-
-    const userId = 'user';
-    final activeChannelId =
-        await chatService.getLatestActiveChannelId(userId, SheService.sheId);
-    final channelId = activeChannelId ??
-        chatService.generateChannelId(userId, SheService.sheId);
-    await db.touchChannelUpdatedAt(channelId);
-    if (!mounted) return;
-
+    final home = _homeKey.currentState;
+    String? name;
+    String? avatar;
+    final agents = home?.agents;
+    if (agents != null) {
+      for (final agent in agents) {
+        if (agent.id == SheService.sheId) {
+          name = agent.name;
+          avatar = agent.avatar;
+          break;
+        }
+      }
+    }
     _onConversationSelected(ConversationSelection(
       agentId: SheService.sheId,
-      agentName: agent != null
-          ? SheService.resolveDisplayName(agent.name, l10n.she_name)
+      agentName: name != null
+          ? SheService.resolveDisplayName(name, l10n.she_name)
           : l10n.she_name,
-      agentAvatar: agent?.avatar ?? SheService.sheAvatar,
-      channelId: channelId,
+      agentAvatar: avatar ?? SheService.sheAvatar,
+      channelId: home?.cachedAgentChannelId(SheService.sheId),
     ));
   }
 

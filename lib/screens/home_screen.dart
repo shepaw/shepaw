@@ -107,6 +107,17 @@ class HomeScreenState extends State<HomeScreen> {
   /// Public accessor for the current agents list (used by desktop sidebar search).
   List<Agent> get agents => _list.agents;
 
+  /// 列表预览已经解析过的 DM 频道；没有则返回 null，交给聊天页自己查。
+  String? cachedAgentChannelId(String agentId) => _list.agentChannelId(agentId);
+
+  void rememberAgentChannel(String agentId, String channelId) {
+    _list.rememberAgentChannel(agentId, channelId);
+  }
+
+  void rememberGroupChannel(String groupFamilyId, String channelId) {
+    _list.rememberGroupChannel(groupFamilyId, channelId);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -146,13 +157,7 @@ class HomeScreenState extends State<HomeScreen> {
     if (agent != null && agent.isLocal) return;
 
     final l10n = AppLocalizations.of(context);
-    const userId = 'user';
-    final activeChannelId =
-        await _chatService.getLatestActiveChannelId(userId, SheService.sheId);
-    final channelId = activeChannelId ??
-        _chatService.generateChannelId(userId, SheService.sheId);
-    await _databaseService.touchChannelUpdatedAt(channelId);
-    await _databaseService.markChannelMessagesAsRead(channelId);
+    final channelId = _list.agentChannelId(SheService.sheId);
     _list.clearAgentUnread(SheService.sheId);
     if (!mounted) return;
 
@@ -172,7 +177,7 @@ class HomeScreenState extends State<HomeScreen> {
       // 从聊天返回后刷新列表，让新建的惜宝会话与未读数落到会话列表。
       if (!mounted) return;
       _publishComposerDrafts();
-      _loadAgents(silent: true);
+      unawaited(_markLatestAgentReadThenReload(SheService.sheId));
     });
   }
 
@@ -201,6 +206,118 @@ class HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadAgents({bool silent = false}) => _list.refresh(silent: silent);
+
+  /// 点开 Agent：用列表缓存的频道立刻进入。updated_at 和已读由聊天页加载时写入。
+  void _openAgentChat(Agent agent) {
+    final channelId = _list.agentChannelId(agent.id);
+    _list.clearAgentUnread(agent.id);
+    if (widget.embedded && widget.onConversationSelected != null) {
+      widget.onConversationSelected!(ConversationSelection(
+        agentId: agent.id,
+        agentName: agent.name,
+        agentAvatar: agent.avatar,
+        channelId: channelId,
+      ));
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatScreen(
+          agentId: agent.id,
+          agentName: agent.name,
+          agentAvatar: agent.avatar,
+          channelId: channelId,
+        ),
+      ),
+    ).then((_) {
+      if (!mounted) return;
+      _publishComposerDrafts();
+      unawaited(_markLatestAgentReadThenReload(agent.id));
+    });
+  }
+
+  Future<void> _markLatestAgentReadThenReload(String agentId) async {
+    const userId = 'user';
+    try {
+      final channelId =
+          await _chatService.getLatestActiveChannelId(userId, agentId) ??
+              _chatService.generateChannelId(userId, agentId);
+      await _databaseService.markChannelMessagesAsRead(channelId);
+    } catch (_) {}
+    if (!mounted) return;
+    await _loadAgents(silent: true);
+  }
+
+  /// 点开群：缓存里已有最近会话就立刻进入；没有才查一次库。
+  Future<void> _openGroupChat({
+    required String unreadKey,
+    required String groupFamilyId,
+    required String fallbackChannelId,
+  }) async {
+    var resolvedChannelId = _list.groupChannelId(groupFamilyId) ??
+        _list.groupChannelId(fallbackChannelId);
+    if (resolvedChannelId == null) {
+      resolvedChannelId = await _databaseService
+              .getLatestActiveGroupChannel(groupFamilyId) ??
+          fallbackChannelId;
+      if (!mounted) return;
+    }
+    final targetChannelId = resolvedChannelId;
+    _list.clearGroupUnread(unreadKey);
+    if (widget.embedded && widget.onConversationSelected != null) {
+      widget.onConversationSelected!(ConversationSelection(
+        channelId: targetChannelId,
+        groupFamilyId: groupFamilyId,
+      ));
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatScreen(channelId: targetChannelId),
+      ),
+    ).then((_) {
+      if (!mounted) return;
+      _publishComposerDrafts();
+      unawaited(_markChannelReadThenReload(targetChannelId));
+    });
+  }
+
+  Future<void> _markChannelReadThenReload(String channelId) async {
+    try {
+      await _databaseService.markChannelMessagesAsRead(channelId);
+    } catch (_) {}
+    if (!mounted) return;
+    await _loadAgents(silent: true);
+  }
+
+  void _openChannelChat(
+    String channelId, {
+    String? highlightMessageId,
+    String? groupFamilyId,
+  }) {
+    if (widget.embedded && widget.onConversationSelected != null) {
+      widget.onConversationSelected!(ConversationSelection(
+        channelId: channelId,
+        groupFamilyId: groupFamilyId,
+        highlightMessageId: highlightMessageId,
+      ));
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatScreen(
+          channelId: channelId,
+          highlightMessageId: highlightMessageId,
+        ),
+      ),
+    ).then((_) {
+      if (!mounted) return;
+      unawaited(_markChannelReadThenReload(channelId));
+    });
+  }
 
   /// After leaving a chat, force the draft listener to re-sort (WeChat-style bump).
   void _publishComposerDrafts() {
@@ -1301,38 +1418,12 @@ class HomeScreenState extends State<HomeScreen> {
         : (lastTime != null ? _formatTime(lastTime) : '');
 
     return InkWell(
-      onTap: () async {
-        if (widget.embedded && widget.onConversationSelected != null) {
-          // Embedded mode: find active session and fire callback
-          final latestChannelId = await _databaseService.getLatestActiveGroupChannel(group.groupFamilyId);
-          final targetChannelId = latestChannelId ?? group.id;
-          _list.clearGroupUnread(group.id);
-          widget.onConversationSelected!(ConversationSelection(
-            channelId: targetChannelId,
-            groupFamilyId: group.groupFamilyId,
-          ));
-          return;
-        }
-
-        // Find the most recently active session for this group family
-        final latestChannelId = await _databaseService.getLatestActiveGroupChannel(group.groupFamilyId);
-        final targetChannelId = latestChannelId ?? group.id;
-
-        await _databaseService.touchChannelUpdatedAt(targetChannelId);
-        await _databaseService.markChannelMessagesAsRead(targetChannelId);
-        _list.clearGroupUnread(group.id);
-
-        if (!mounted) return;
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ChatScreen(channelId: targetChannelId),
-          ),
-        ).then((_) async {
-          // Reload full list in case the group was deleted or modified
-          _publishComposerDrafts();
-          await _loadAgents(silent: true);
-        });
+      onTap: () {
+        unawaited(_openGroupChat(
+          unreadKey: group.id,
+          groupFamilyId: group.groupFamilyId,
+          fallbackChannelId: group.id,
+        ));
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -1438,120 +1529,33 @@ class HomeScreenState extends State<HomeScreen> {
 
   /// Handle a selection from the global search delegate using the same
   /// navigation flow as tapping items in the conversation list.
-  Future<void> _handleSearchSelection(SearchSelection selection) async {
+  void _handleSearchSelection(SearchSelection selection) {
     if (selection.agent != null) {
-      // Agent result — reuse the same logic as _buildAgentTile onTap
-      final agent = selection.agent!;
-
-      if (widget.embedded && widget.onConversationSelected != null) {
-        const userId = 'user';
-        final activeChannelId =
-            await _chatService.getLatestActiveChannelId(userId, agent.id);
-        final channelId =
-            activeChannelId ?? _chatService.generateChannelId(userId, agent.id);
-        await _databaseService.touchChannelUpdatedAt(channelId);
-        _list.clearAgentUnread(agent.id);
-        widget.onConversationSelected!(ConversationSelection(
-          agentId: agent.id,
-          agentName: agent.name,
-          agentAvatar: agent.avatar,
-          channelId: channelId,
-        ));
-        return;
-      }
-
-      const userId = 'user';
-      final activeChannelId =
-          await _chatService.getLatestActiveChannelId(userId, agent.id);
-      final channelId =
-          activeChannelId ?? _chatService.generateChannelId(userId, agent.id);
-      await _databaseService.touchChannelUpdatedAt(channelId);
-      await _databaseService.markChannelMessagesAsRead(channelId);
-      _list.clearAgentUnread(agent.id);
-
-      if (!mounted) return;
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ChatScreen(
-            agentId: agent.id,
-            agentName: agent.name,
-            agentAvatar: agent.avatar,
-            channelId: channelId,
-          ),
-        ),
-      ).then((_) async {
-        const userId = 'user';
-        final activeChannelId =
-            await _chatService.getLatestActiveChannelId(userId, agent.id);
-        final channelId =
-            activeChannelId ?? _chatService.generateChannelId(userId, agent.id);
-        await _databaseService.markChannelMessagesAsRead(channelId);
-        _publishComposerDrafts();
-        _loadAgents(silent: true);
-      });
+      _openAgentChat(selection.agent!);
     } else if (selection.channel != null) {
-      // Channel/group result — reuse the same logic as _buildGroupTile onTap
       final channel = selection.channel!;
-
       if (widget.embedded && widget.onConversationSelected != null) {
-        setState(() {
-          _groupUnreadCounts[channel.id] = 0;
-        });
+        if (channel.isGroup) _list.clearGroupUnread(channel.id);
         widget.onConversationSelected!(ConversationSelection(
           channelId: channel.id,
           groupFamilyId: channel.isGroup ? channel.groupFamilyId : null,
         ));
         return;
       }
-
-      final latestChannelId = channel.isGroup
-          ? await _databaseService
-              .getLatestActiveGroupChannel(channel.groupFamilyId)
-          : null;
-      final targetChannelId = latestChannelId ?? channel.id;
-
-      await _databaseService.touchChannelUpdatedAt(targetChannelId);
-      await _databaseService.markChannelMessagesAsRead(targetChannelId);
-      setState(() {
-        _groupUnreadCounts[channel.id] = 0;
-      });
-
-      if (!mounted) return;
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ChatScreen(channelId: targetChannelId),
-        ),
-      ).then((_) async {
-        await _loadAgents(silent: true);
-      });
-    } else if (selection.messageChannelId != null) {
-      // Message result — navigate to the channel with highlight
-      final channelId = selection.messageChannelId!;
-
-      if (widget.embedded && widget.onConversationSelected != null) {
-        widget.onConversationSelected!(ConversationSelection(
-          channelId: channelId,
-          highlightMessageId: selection.highlightMessageId,
+      if (channel.isGroup) {
+        unawaited(_openGroupChat(
+          unreadKey: channel.id,
+          groupFamilyId: channel.groupFamilyId,
+          fallbackChannelId: channel.id,
         ));
         return;
       }
-
-      await _databaseService.markChannelMessagesAsRead(channelId);
-
-      if (!mounted) return;
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ChatScreen(
-            channelId: channelId,
-            highlightMessageId: selection.highlightMessageId,
-          ),
-        ),
-      ).then((_) async {
-        await _loadAgents(silent: true);
-      });
+      _openChannelChat(channel.id);
+    } else if (selection.messageChannelId != null) {
+      _openChannelChat(
+        selection.messageChannelId!,
+        highlightMessageId: selection.highlightMessageId,
+      );
     } else if (selection.peerId != null &&
         ProductFeatures.deviceChatUiEnabled) {
       final peerId = selection.peerId!;
@@ -1607,55 +1611,7 @@ class HomeScreenState extends State<HomeScreen> {
         : (lastTime != null ? _formatTime(lastTime) : '');
 
     return InkWell(
-      onTap: () async {
-        if (widget.embedded && widget.onConversationSelected != null) {
-          const userId = 'user';
-          final activeChannelId =
-              await _chatService.getLatestActiveChannelId(userId, agent.id);
-          final channelId =
-              activeChannelId ?? _chatService.generateChannelId(userId, agent.id);
-          await _databaseService.touchChannelUpdatedAt(channelId);
-          _list.clearAgentUnread(agent.id);
-          widget.onConversationSelected!(ConversationSelection(
-            agentId: agent.id,
-            agentName: agent.name,
-            agentAvatar: agent.avatar,
-            channelId: channelId,
-          ));
-          return;
-        }
-
-        // 进入聊天前标记该 channel 所有消息为已读
-        const userId = 'user';
-        final activeChannelId = await _chatService.getLatestActiveChannelId(userId, agent.id);
-        final channelId = activeChannelId ?? _chatService.generateChannelId(userId, agent.id);
-        await _databaseService.touchChannelUpdatedAt(channelId);
-        await _databaseService.markChannelMessagesAsRead(channelId);
-        // 立即清除本地未读缓存
-        _list.clearAgentUnread(agent.id);
-
-        if (!mounted) return;
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ChatScreen(
-              agentId: agent.id,
-              agentName: agent.name,
-              agentAvatar: agent.avatar,
-              channelId: channelId,
-            ),
-          ),
-        ).then((_) async {
-          // 从聊天返回后先标记已读，再刷新最新消息和未读数
-          const userId = 'user';
-          final activeChannelId = await _chatService.getLatestActiveChannelId(userId, agent.id);
-          final channelId = activeChannelId ?? _chatService.generateChannelId(userId, agent.id);
-          await _databaseService.markChannelMessagesAsRead(channelId);
-          // Reload agents to pick up avatar/name changes made in detail screen
-          _publishComposerDrafts();
-          _loadAgents(silent: true);
-        });
-      },
+      onTap: () => _openAgentChat(agent),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         color: isSelected ? AppColors.primary.withValues(alpha: 0.08) : null,

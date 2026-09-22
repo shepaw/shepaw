@@ -136,6 +136,16 @@ class ConversationListController extends ChangeNotifier {
   /// Active session channel for [groupId], if known from the last preview load.
   String? groupChannelId(String groupId) => _groupChannelIds[groupId];
 
+  /// 聊天页切到新会话后回写，避免列表缓存还指着上一个频道。
+  void rememberAgentChannel(String agentId, String channelId) {
+    _agentChannelIds[agentId] = channelId;
+  }
+
+  /// 群会话切换后回写 family → 当前频道。
+  void rememberGroupChannel(String groupFamilyId, String channelId) {
+    _groupChannelIds[groupFamilyId] = channelId;
+  }
+
   /// Whether [agentId]'s DM has a pending high-priority approval.
   bool agentHasPendingApproval(String agentId) {
     final channelId = _agentChannelIds[agentId];
