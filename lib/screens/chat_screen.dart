@@ -94,8 +94,11 @@ class ChatScreen extends StatefulWidget {
   final String? channelId;
   final bool embedded;
   final VoidCallback? onClose;
-  final void Function(String channelId, {String? highlightMessageId})?
-      onSwitchChannel;
+  final void Function(
+    String channelId, {
+    String? highlightMessageId,
+    bool inPlace,
+  })? onSwitchChannel;
   final ValueChanged<String?>? onShowTraces;
   final void Function(String channelId, String channelName, String groupId)?
       onShowGroupTasks;
@@ -250,10 +253,12 @@ class _ChatScreenState extends State<ChatScreen>
   List<Channel> _pinnedPanelSessions = const [];
   bool _pinnedPanelLoading = false;
 
-  /// 上次装载面板列表时的会话键（dm:agentId / group:groupFamilyId）与
-  /// 消息数：任一变化即重拉列表（切换会话、新消息未读角标更新）。
+  /// 上次装载面板列表时的会话键（dm:agentId / group:groupFamilyId）、
+  /// 消息数和当前频道。键或同频道消息数变化才重拉列表；纯切换频道
+  /// 只核对成员是否被删，不把每一行预览标过期。
   String? _pinnedPanelDataKey;
   int _pinnedPanelDataCount = -1;
+  String? _pinnedPanelSeenChannelId;
 
   /// 停靠面板常驻，不能像抽屉那样每次打开临时建 notifier（随路由关闭
   /// dispose 会让面板子树的监听失效），改为页面级持有、随页面销毁。
@@ -1944,23 +1949,32 @@ class _ChatScreenState extends State<ChatScreen>
         : (widget.agentId != null ? 'dm:${widget.agentId}' : null);
   }
 
-  /// 重新拉取停靠面板的会话列表（键或消息数变化时才拉，避免每帧查库）。
+  /// 重新拉取停靠面板的会话列表（键或同频道消息数变化时才整表重查）。
   Future<void> _refreshPinnedPanelSessions({bool force = false}) async {
     final key = _pinnedPanelKey;
     if (key == null) return;
     final count = _controller.messages.length;
+    final channelId = _controller.currentChannelId;
     final keyChanged = key != _pinnedPanelDataKey;
-    if (!force && !keyChanged && count == _pinnedPanelDataCount) {
+    final countChanged = count != _pinnedPanelDataCount;
+    final channelChanged = channelId != _pinnedPanelSeenChannelId;
+    if (!force && !keyChanged && !countChanged && !channelChanged) {
       return;
     }
-    final countChanged = count != _pinnedPanelDataCount;
+    // 同一面板里换频道：成员列表通常不变（空会话被删时才会少一行）。
+    // 不先把面板打成加载态，也不 bump 全量预览 tick。
+    final switchOnly = !force && !keyChanged && channelChanged;
     _pinnedPanelDataKey = key;
     _pinnedPanelDataCount = count;
+    _pinnedPanelSeenChannelId = channelId;
     final c = _controller;
     final parentGroupId = c.groupChannel?.groupFamilyId;
     if (c.isGroupMode && parentGroupId == null) return;
     if (!c.isGroupMode && widget.agentId == null) return;
-    setState(() => _pinnedPanelLoading = true);
+    // 已有列表时不先切到加载态，避免换频道或新消息时整表闪一下。
+    if (!switchOnly && _pinnedPanelSessions.isEmpty) {
+      setState(() => _pinnedPanelLoading = true);
+    }
     try {
       final sessions = c.isGroupMode
           ? await c.chatService
@@ -1969,14 +1983,22 @@ class _ChatScreenState extends State<ChatScreen>
       if (!mounted) return;
       final sorted = await _sortSessionsByLatestMessage(sessions);
       if (!mounted) return;
-      setState(() {
-        _pinnedPanelSessions = sorted;
-        _pinnedPanelLoading = false;
-      });
-      // tick = 全量行刷新信号（清预览缓存）：仅消息数变化（新消息 / 未读
-      // 变化）时 bump。纯切换会话不 bump —— 新旧当前行的预览缓存键
-      // （current: 前缀）自然失效重查，其余行保持不闪。
-      if (countChanged || force) _pinnedPanelRefreshTick.value++;
+      final sameIds = _sameSessionIds(_pinnedPanelSessions, sorted);
+      // 同频道新消息只让当前行预览过期。换频道时离开/进入的两行由列表
+      // didUpdateWidget 处理，这里不再整表 bump。
+      final currentPreviewDirty = countChanged && !channelChanged;
+      if (currentPreviewDirty && channelId != null) {
+        _drawerPreviewCache[channelId]?.stale = true;
+      }
+      if (!sameIds || _pinnedPanelLoading || currentPreviewDirty) {
+        setState(() {
+          _pinnedPanelSessions = sorted;
+          _pinnedPanelLoading = false;
+        });
+      }
+      if (force || keyChanged) {
+        _pinnedPanelRefreshTick.value++;
+      }
     } catch (_) {
       if (mounted) setState(() => _pinnedPanelLoading = false);
     }
@@ -2636,9 +2658,9 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   /// [NavigateToSessionEvent] 处理器：先关抽屉并等它彻底销毁，再原地替换
-  /// 聊天页（嵌入模式走 [onSwitchChannel]；桌面停靠面板同 family 会话原位
-  /// 换频道），避免共享动画控制器被 dispose 导致抽屉冻结（见
-  /// [_closeDrawerAndWait]）。
+  /// 聊天页。停靠面板且同 family 时原位换频道（含桌面嵌入）；否则嵌入模式
+  /// 走 [onSwitchChannel] 重建右栏。避免共享动画控制器被 dispose 导致抽屉
+  /// 冻结（见 [_closeDrawerAndWait]）。
   Future<void> _handleNavigateToSession({
     required String channelId,
     String? agentId,
@@ -2648,16 +2670,18 @@ class _ChatScreenState extends State<ChatScreen>
   }) async {
     await _closeDrawerAndWait();
     if (!mounted) return;
-    if (embedded && widget.onSwitchChannel != null) {
-      widget.onSwitchChannel!(channelId);
-      return;
-    }
     // 固定面板：新建会话 / 分叉 / 重置等（createNewSession 等发出本事件）
     // 也原位切换，面板不重建。跨 agent 目标（agentId 非空且不同）页面级
-    // 参数会变，回退整页替换。
+    // 参数会变，回退整页替换。嵌入模式同样先试原位，避免右栏 Navigator
+    // 换 key 把会话列表拆掉。
     final crossAgent =
         agentId != null && widget.agentId != null && agentId != widget.agentId;
     if (!crossAgent && await _switchPinnedSessionInPlace(channelId)) {
+      return;
+    }
+    if (!mounted) return;
+    if ((embedded || widget.embedded) && widget.onSwitchChannel != null) {
+      widget.onSwitchChannel!(channelId);
       return;
     }
     if (!mounted) return;
@@ -2694,16 +2718,21 @@ class _ChatScreenState extends State<ChatScreen>
   /// 停靠面板内切换会话：优先原位换频道（面板子树保持挂载，不闪列表），
   /// 不满足条件时返回 false 由调用方回退整页替换。
   ///
-  /// 条件：固定面板正在渲染、非嵌入模式、目标会话与当前会话同属一个面板
-  /// family（[ChatLoadChannelPlanner.sessionPanelKey] 相同 —— 面板只列同一
+  /// 条件：固定面板正在渲染，且目标会话与当前会话同属一个面板 family
+  /// （[ChatLoadChannelPlanner.sessionPanelKey] 相同 —— 面板只列同一
   /// agent / 同一 group family 的会话，widget.agentId 等页面级参数因此不变）。
+  /// 桌面嵌入同样走这里：成功后用 [onSwitchChannel] 的 `inPlace` 只同步
+  /// 外层当前频道，不重建右栏 Navigator。
   Future<bool> _switchPinnedSessionInPlace(
     String channelId, {
     String? highlightMessageId,
   }) async {
-    if (!_showPinnedPanel || widget.embedded) return false;
+    if (!_showPinnedPanel) return false;
     if (channelId == _controller.currentChannelId) {
-      if (highlightMessageId != null) await _scrollToMessage(highlightMessageId);
+      if (highlightMessageId != null) {
+        await _scrollToMessage(highlightMessageId);
+      }
+      _rememberEmbeddedChannel(channelId, highlightMessageId: highlightMessageId);
       return true;
     }
     if (!await _canSwitchPinnedInPlace(channelId)) return false;
@@ -2732,7 +2761,21 @@ class _ChatScreenState extends State<ChatScreen>
     if (!mounted) return true;
     // 按新 currentChannelId 取回新频道草稿并复位 _lastDraftKey。
     _restoreComposerDraft();
+    _rememberEmbeddedChannel(channelId, highlightMessageId: highlightMessageId);
     return true;
+  }
+
+  /// 嵌入模式原位换频道后，让桌面外层记下当前频道，但不换导航。
+  void _rememberEmbeddedChannel(
+    String channelId, {
+    String? highlightMessageId,
+  }) {
+    if (!widget.embedded) return;
+    widget.onSwitchChannel?.call(
+      channelId,
+      highlightMessageId: highlightMessageId,
+      inPlace: true,
+    );
   }
 
   /// 目标会话是否与当前会话同属一个面板 family（原位切换前提）。
@@ -2748,12 +2791,11 @@ class _ChatScreenState extends State<ChatScreen>
     return currentKey != null && targetKey != null && currentKey == targetKey;
   }
 
-  /// 抽屉内切换会话：touch updated_at（主页恢复最近打开用），随后原地替换
-  /// 聊天页（嵌入模式走 [onSwitchChannel]；桌面停靠面板同 family 会话
-  /// 原位换频道，面板不重建）。
+  /// 抽屉或停靠面板内切换会话：touch updated_at（主页恢复最近打开用）。
+  /// 停靠面板且同 family 时原位换频道（面板不重建）；否则嵌入模式走
+  /// [onSwitchChannel] 重建右栏，非嵌入模式 pushReplacement。
   ///
-  /// 切换前必须等抽屉彻底销毁：嵌入模式切换会重建右栏 Navigator（换 key）、
-  /// 非嵌入模式 pushReplacement，两者都会销毁当前 ChatScreen，其持有的
+  /// 整页替换前必须等抽屉彻底销毁：替换会销毁当前 ChatScreen，其持有的
   /// 抽屉共享动画控制器随之 dispose。若抽屉还在退场动画中就切换，退场
   /// 永远无法完成，抽屉路由永不销毁 —— 冻结在屏幕上并挡住一切点击。
   Future<void> _openDrawerSession(
@@ -2767,16 +2809,17 @@ class _ChatScreenState extends State<ChatScreen>
     if (!mounted) return;
     await _closeDrawerAndWait();
     if (!mounted) return;
+    if (await _switchPinnedSessionInPlace(
+      channelId,
+      highlightMessageId: highlightMessageId,
+    )) {
+      return;
+    }
     if (widget.embedded) {
       widget.onSwitchChannel?.call(
         channelId,
         highlightMessageId: highlightMessageId,
       );
-    } else if (await _switchPinnedSessionInPlace(
-      channelId,
-      highlightMessageId: highlightMessageId,
-    )) {
-      return;
     } else {
       if (!mounted) return;
       Navigator.pushReplacement(

@@ -275,7 +275,11 @@ class _SessionListContentState extends State<_SessionListContent> {
       widget.listRefreshTick.addListener(_onExternalListRefresh);
     }
     if (widget.currentChannelId != oldWidget.currentChannelId) {
-      _markAllStale();
+      markSwitchedSessionPreviewsStale(
+        _previews,
+        fromChannelId: oldWidget.currentChannelId,
+        toChannelId: widget.currentChannelId,
+      );
     }
     // 会话被删后缓存条目随手清理
     _previews

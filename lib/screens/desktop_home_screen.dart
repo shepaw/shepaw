@@ -430,7 +430,11 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     });
   }
 
-  void _onSwitchChannel(String channelId, {String? highlightMessageId}) {
+  void _onSwitchChannel(
+    String channelId, {
+    String? highlightMessageId,
+    bool inPlace = false,
+  }) {
     final slot = _slots[_LeftPanelMode.conversations]!;
     final selected = slot.selected;
     if (selected == null) return;
@@ -442,16 +446,25 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     if (groupFamilyId != null) {
       _homeKey.currentState?.rememberGroupChannel(groupFamilyId, channelId);
     }
+    final next = ConversationSelection(
+      agentId: selected.agentId,
+      agentName: selected.agentName,
+      agentAvatar: selected.agentAvatar,
+      channelId: channelId,
+      groupFamilyId: selected.groupFamilyId,
+      highlightMessageId: highlightMessageId,
+    );
+    // 停靠面板已在当前聊天页里换好频道。只记下频道，不换导航 key，
+    // 否则整页重建会把会话列表和预览缓存一起丢掉。
+    if (inPlace) {
+      slot.selected = next;
+      slot.lastConversation = next;
+      slot.routeArgs = _RouteArgs.fromSlot(slot);
+      return;
+    }
     setState(() {
-      slot.selected = ConversationSelection(
-        agentId: selected.agentId,
-        agentName: selected.agentName,
-        agentAvatar: selected.agentAvatar,
-        channelId: channelId,
-        groupFamilyId: selected.groupFamilyId,
-        highlightMessageId: highlightMessageId,
-      );
-      slot.lastConversation = slot.selected;
+      slot.selected = next;
+      slot.lastConversation = next;
       _publishRoute(slot);
     });
   }

@@ -104,7 +104,11 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   final String? initialChannelId;
   final bool embedded;
   final VoidCallback? onClose;
-  final void Function(String channelId, {String? highlightMessageId})? onSwitchChannel;
+  final void Function(
+    String channelId, {
+    String? highlightMessageId,
+    bool inPlace,
+  })? onSwitchChannel;
   final String Function() getUserId;
   final String Function() getUserName;
 

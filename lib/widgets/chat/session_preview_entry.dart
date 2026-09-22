@@ -13,3 +13,16 @@ class SessionPreviewEntry {
   /// true = 后台重查进行中（避免重复发起）。
   bool refreshing = false;
 }
+
+/// 切换当前会话时，只把离开和进入的两行标过期。
+///
+/// 其余行的预览（标题、最新消息、未读）没有变，不必整表重查。
+void markSwitchedSessionPreviewsStale(
+  Map<String, SessionPreviewEntry> previews, {
+  required String? fromChannelId,
+  required String? toChannelId,
+}) {
+  if (fromChannelId == toChannelId) return;
+  if (fromChannelId != null) previews[fromChannelId]?.stale = true;
+  if (toChannelId != null) previews[toChannelId]?.stale = true;
+}
