@@ -7990,4 +7990,51 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get contacts_noSearchResults => 'No matches';
+
+  @override
+  String get chat_attachImageFailed => 'Couldn\'t send the image. Try again.';
+
+  @override
+  String get chat_attachFileFailed => 'Couldn\'t send the file. Try again.';
+
+  @override
+  String get chat_sessionsLoadFailed => 'Couldn\'t load sessions. Try again.';
+
+  @override
+  String get chat_groupSessionsLoadFailed =>
+      'Couldn\'t load group sessions. Try again.';
+
+  @override
+  String get chat_downloadFailed => 'Download failed. Try again.';
+
+  @override
+  String get chat_openFileFailed => 'Couldn\'t open this file';
+
+  @override
+  String get chat_fileNotFound => 'File not found';
+
+  @override
+  String get chat_fileTooLargeToOpen => 'This file is too large to open here';
+
+  @override
+  String get chat_storeFileMissing => 'Couldn\'t find this file in the pouch';
+
+  @override
+  String get chat_storeLocationFailed =>
+      'Couldn\'t locate this file in the pouch';
+
+  @override
+  String get peer_pairingFailedRetry => 'Pairing failed. Try again.';
+
+  @override
+  String get peerSettings_trustUpdateFailed =>
+      'Couldn\'t change the trust level. Try again.';
+
+  @override
+  String get groupMemberDetail_adminFailed =>
+      'Couldn\'t change the admin. Try again.';
+
+  @override
+  String get scheduledTasks_actionFailed =>
+      'Couldn\'t complete that. Try again.';
 }

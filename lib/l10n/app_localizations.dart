@@ -13928,6 +13928,90 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'没有匹配的结果'**
   String get contacts_noSearchResults;
+
+  /// No description provided for @chat_attachImageFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'发送图片失败，请重试'**
+  String get chat_attachImageFailed;
+
+  /// No description provided for @chat_attachFileFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'发送文件失败，请重试'**
+  String get chat_attachFileFailed;
+
+  /// No description provided for @chat_sessionsLoadFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'加载会话失败，请重试'**
+  String get chat_sessionsLoadFailed;
+
+  /// No description provided for @chat_groupSessionsLoadFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'加载群组会话失败，请重试'**
+  String get chat_groupSessionsLoadFailed;
+
+  /// No description provided for @chat_downloadFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'下载失败，请重试'**
+  String get chat_downloadFailed;
+
+  /// No description provided for @chat_openFileFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法打开这个文件'**
+  String get chat_openFileFailed;
+
+  /// No description provided for @chat_fileNotFound.
+  ///
+  /// In zh, this message translates to:
+  /// **'找不到这个文件'**
+  String get chat_fileNotFound;
+
+  /// No description provided for @chat_fileTooLargeToOpen.
+  ///
+  /// In zh, this message translates to:
+  /// **'文件太大，无法在这里打开'**
+  String get chat_fileTooLargeToOpen;
+
+  /// No description provided for @chat_storeFileMissing.
+  ///
+  /// In zh, this message translates to:
+  /// **'找不到储物袋里的这个文件'**
+  String get chat_storeFileMissing;
+
+  /// No description provided for @chat_storeLocationFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法在储物袋中定位这个文件'**
+  String get chat_storeLocationFailed;
+
+  /// No description provided for @peer_pairingFailedRetry.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对失败，请重试'**
+  String get peer_pairingFailedRetry;
+
+  /// No description provided for @peerSettings_trustUpdateFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'修改信任级别失败，请重试'**
+  String get peerSettings_trustUpdateFailed;
+
+  /// No description provided for @groupMemberDetail_adminFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'修改管理员失败，请重试'**
+  String get groupMemberDetail_adminFailed;
+
+  /// No description provided for @scheduledTasks_actionFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'操作失败，请重试'**
+  String get scheduledTasks_actionFailed;
 }
 
 class _AppLocalizationsDelegate

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../service_locator.dart';
+import '../../services/logger_service.dart';
 import '../../services/hub_address.dart';
 import '../../services/remote_hub_pairing_service.dart';
 import '../models/paired_peer.dart';
@@ -250,7 +251,8 @@ class _PeerManualInputScreenState extends State<PeerManualInputScreen> {
     } on PairingTimeoutException {
       _showError(l10n.peerManual_timeout);
     } catch (e) {
-      _showError(l10n.peerManual_failed('$e'));
+      LoggerService().error('manual pairing failed', tag: 'PeerManual', error: e);
+      _showError(l10n.peer_pairingFailedRetry);
     }
   }
 

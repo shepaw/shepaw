@@ -4256,5 +4256,19 @@
     }
   },
   "contacts_loadFailed": "Couldn't load contacts",
-  "contacts_noSearchResults": "No matches"
+  "contacts_noSearchResults": "No matches",
+  "chat_attachImageFailed": "Couldn't send the image. Try again.",
+  "chat_attachFileFailed": "Couldn't send the file. Try again.",
+  "chat_sessionsLoadFailed": "Couldn't load sessions. Try again.",
+  "chat_groupSessionsLoadFailed": "Couldn't load group sessions. Try again.",
+  "chat_downloadFailed": "Download failed. Try again.",
+  "chat_openFileFailed": "Couldn't open this file",
+  "chat_fileNotFound": "File not found",
+  "chat_fileTooLargeToOpen": "This file is too large to open here",
+  "chat_storeFileMissing": "Couldn't find this file in the pouch",
+  "chat_storeLocationFailed": "Couldn't locate this file in the pouch",
+  "peer_pairingFailedRetry": "Pairing failed. Try again.",
+  "peerSettings_trustUpdateFailed": "Couldn't change the trust level. Try again.",
+  "groupMemberDetail_adminFailed": "Couldn't change the admin. Try again.",
+  "scheduledTasks_actionFailed": "Couldn't complete that. Try again."
 }

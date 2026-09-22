@@ -4731,5 +4731,19 @@
     }
   },
   "contacts_loadFailed": "通讯录加载失败",
-  "contacts_noSearchResults": "没有匹配的结果"
+  "contacts_noSearchResults": "没有匹配的结果",
+  "chat_attachImageFailed": "发送图片失败，请重试",
+  "chat_attachFileFailed": "发送文件失败，请重试",
+  "chat_sessionsLoadFailed": "加载会话失败，请重试",
+  "chat_groupSessionsLoadFailed": "加载群组会话失败，请重试",
+  "chat_downloadFailed": "下载失败，请重试",
+  "chat_openFileFailed": "无法打开这个文件",
+  "chat_fileNotFound": "找不到这个文件",
+  "chat_fileTooLargeToOpen": "文件太大，无法在这里打开",
+  "chat_storeFileMissing": "找不到储物袋里的这个文件",
+  "chat_storeLocationFailed": "无法在储物袋中定位这个文件",
+  "peer_pairingFailedRetry": "配对失败，请重试",
+  "peerSettings_trustUpdateFailed": "修改信任级别失败，请重试",
+  "groupMemberDetail_adminFailed": "修改管理员失败，请重试",
+  "scheduledTasks_actionFailed": "操作失败，请重试"
 }

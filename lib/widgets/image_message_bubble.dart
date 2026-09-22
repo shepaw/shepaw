@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../models/message.dart';
 import '../models/remote_agent.dart';
 import '../services/logger_service.dart';
@@ -203,13 +204,14 @@ class _ImageMessageBubbleState extends State<ImageMessageBubble> {
         });
       }
     } catch (e) {
+      LoggerService().error('image download failed', tag: 'ImageBubble', error: e);
       if (mounted) {
         setState(() {
           _downloadStatus = 'pending';
           _progress = 0.0;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Download failed: $e')),
+          SnackBar(content: Text(AppLocalizations.of(context).chat_downloadFailed)),
         );
       }
     }

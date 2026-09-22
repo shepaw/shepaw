@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../services/logger_service.dart';
 import '../../widgets/qr_scanner_view.dart';
 import '../models/paired_peer.dart';
 import '../models/pairing_payload.dart';
@@ -97,7 +98,8 @@ class _PeerScanScreenState extends State<PeerScanScreen> {
       _showError(l10n.peerManual_timeout);
       return QrScannerOutcome.retry;
     } catch (e) {
-      _showError(l10n.peerPairing_failed('$e'));
+      LoggerService().error('scan pairing failed', tag: 'PeerScan', error: e);
+      _showError(l10n.peer_pairingFailedRetry);
       return QrScannerOutcome.retry;
     }
   }

@@ -8,6 +8,7 @@ import '../services/peer_storage_service.dart';
 import '../widgets/peer_agent_share_dialog.dart';
 import '../widgets/peer_store_share_selector.dart';
 import '../../service_locator.dart' show getIt;
+import '../../services/logger_service.dart';
 import '../../services/local_database_service.dart';
 import '../../storage/store_protocol.dart' show TrustLevel;
 
@@ -149,8 +150,9 @@ class _PeerPairingConfirmScreenState extends State<PeerPairingConfirmScreen> {
       if (mounted) {
         setState(() => _processing = false);
         final l10n = AppLocalizations.of(context);
+        LoggerService().error('confirm pairing failed', tag: 'PeerPairing', error: e);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.peerPairing_failed('$e'))),
+          SnackBar(content: Text(l10n.peer_pairingFailedRetry)),
         );
       }
     }

@@ -1471,10 +1471,11 @@ class _ChatScreenState extends State<ChatScreen>
       if (image == null) return;
       await _addPendingAttachment(image);
     } catch (e) {
+      LoggerService().error('_pickAndStageCamera error', tag: 'ChatScreen', error: e);
       if (mounted) {
         showTopToast(
           context,
-          AppLocalizations.of(context).chat_sendImageError('$e'),
+          AppLocalizations.of(context).chat_attachImageFailed,
           icon: Icons.error_outline,
           color: Colors.red.shade400,
         );
@@ -1540,7 +1541,7 @@ class _ChatScreenState extends State<ChatScreen>
       if (mounted) {
         showTopToast(
           context,
-          AppLocalizations.of(context).chat_sendFileError('$e'),
+          AppLocalizations.of(context).chat_attachFileFailed,
           icon: Icons.error_outline,
           color: Colors.red.shade400,
         );
@@ -1561,7 +1562,7 @@ class _ChatScreenState extends State<ChatScreen>
       if (mounted) {
         showTopToast(
           context,
-          AppLocalizations.of(context).chat_sendFileError('$e'),
+          AppLocalizations.of(context).chat_attachFileFailed,
           icon: Icons.error_outline,
           color: Colors.red.shade400,
         );
@@ -1586,10 +1587,11 @@ class _ChatScreenState extends State<ChatScreen>
       if (image == null) return;
       await _addPendingAttachment(image);
     } catch (e) {
+      LoggerService().error('_pickAndStageImage error', tag: 'ChatScreen', error: e);
       if (mounted) {
         showTopToast(
           context,
-          AppLocalizations.of(context).chat_sendImageError('$e'),
+          AppLocalizations.of(context).chat_attachImageFailed,
           icon: Icons.error_outline,
           color: Colors.red.shade400,
         );
@@ -2437,7 +2439,14 @@ class _ChatScreenState extends State<ChatScreen>
       loadSessions: () async => _sortSessionsByLatestMessage(
         await _controller.chatService.getAgentSessions(agentId: agentId),
       ),
-      loadFailedMessage: (e) => l10n.chat_loadSessionsFailed('$e'),
+      loadFailedMessage: (e) {
+        LoggerService().error(
+          'load sessions failed',
+          tag: 'ChatScreen',
+          error: e,
+        );
+        return l10n.chat_sessionsLoadFailed;
+      },
       gestureDx: gestureDx,
     );
   }
@@ -2495,7 +2504,14 @@ class _ChatScreenState extends State<ChatScreen>
         await _controller.chatService
             .getGroupSessions(parentGroupId: parentGroupId),
       ),
-      loadFailedMessage: (e) => l10n.chat_loadGroupSessionsFailed('$e'),
+      loadFailedMessage: (e) {
+        LoggerService().error(
+          'load group sessions failed',
+          tag: 'ChatScreen',
+          error: e,
+        );
+        return l10n.chat_groupSessionsLoadFailed;
+      },
       gestureDx: gestureDx,
     );
   }

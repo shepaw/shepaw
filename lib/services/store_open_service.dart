@@ -96,15 +96,15 @@ class StoreOpenService {
       _log.warning('openStoreUri failed: $e', tag: _tag, error: e);
       if (context.mounted) {
         final msg = e.code == StoreError.badOp && e.message.contains('too large')
-            ? 'File too large to open here'
-            : 'Cannot open: $uriString';
+            ? AppLocalizations.of(context).chat_fileTooLargeToOpen
+            : AppLocalizations.of(context).chat_openFileFailed;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
       }
     } catch (e) {
       _log.warning('openStoreUri failed: $e', tag: _tag, error: e);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Cannot open: $uriString')),
+          SnackBar(content: Text(AppLocalizations.of(context).chat_openFileFailed)),
         );
       }
     }
@@ -179,10 +179,9 @@ class StoreOpenService {
       await openStoreUri(context, storeUri);
       return;
     }
-    final name = metadata?['name'] as String? ?? 'file';
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No store:// URI for $name')),
+        SnackBar(content: Text(AppLocalizations.of(context).chat_storeFileMissing)),
       );
     }
   }

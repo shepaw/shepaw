@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../config/product_features.dart';
 import '../../l10n/app_localizations.dart';
+import '../../services/logger_service.dart';
 import '../../screens/storage_browser_screen.dart';
 import '../../storage/store_protocol.dart' show TrustLevel;
 import '../../storage/store_service.dart';
@@ -159,44 +160,56 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
     );
     if (selected == null || selected == _trustLevel || !mounted) return;
 
-    if (selected == TrustLevel.owner && _trustLevel == TrustLevel.friend) {
-      final apply = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text(l10n.peerSettings_trustLevel),
-          content: Text(l10n.peerSettings_trustOwnerHint),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text(l10n.peerSettings_keepShares),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(l10n.peerSettings_applyOwnerDefaults),
-            ),
-          ],
-        ),
-      );
-      await PeerStorageService().setTrustLevel(widget.peer.id, selected);
-      if (apply == true) {
-        await StoreService.instance.setOutboundStoreShares(
-          widget.peer.id,
-          PeerStorageService.ownerDefaultStoreShares(),
+    try {
+      if (selected == TrustLevel.owner && _trustLevel == TrustLevel.friend) {
+        final apply = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text(l10n.peerSettings_trustLevel),
+            content: Text(l10n.peerSettings_trustOwnerHint),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(l10n.peerSettings_keepShares),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text(l10n.peerSettings_applyOwnerDefaults),
+              ),
+            ],
+          ),
         );
+        await PeerStorageService().setTrustLevel(widget.peer.id, selected);
+        if (apply == true) {
+          await StoreService.instance.setOutboundStoreShares(
+            widget.peer.id,
+            PeerStorageService.ownerDefaultStoreShares(),
+          );
+        }
+      } else if (selected == TrustLevel.friend) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(l10n.peerSettings_trustFriendHint)),
+          );
+        }
+        await PeerStorageService().setTrustLevel(widget.peer.id, selected);
+      } else {
+        await PeerStorageService().setTrustLevel(widget.peer.id, selected);
       }
-    } else if (selected == TrustLevel.friend) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.peerSettings_trustFriendHint)),
-        );
-      }
-      await PeerStorageService().setTrustLevel(widget.peer.id, selected);
-    } else {
-      await PeerStorageService().setTrustLevel(widget.peer.id, selected);
-    }
 
-    if (mounted) setState(() => _trustLevel = selected);
-    PeerConnectionManager.instance.notifyPeerListChanged();
+      if (mounted) setState(() => _trustLevel = selected);
+      PeerConnectionManager.instance.notifyPeerListChanged();
+    } catch (e) {
+      LoggerService().error(
+        'change trust level failed',
+        tag: 'PeerSettings',
+        error: e,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.peerSettings_trustUpdateFailed)),
+      );
+    }
   }
 
   void _openStoreSharePanel() {

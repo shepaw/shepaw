@@ -196,7 +196,9 @@ class StoreFilePreviewPage extends StatelessWidget {
     } catch (_) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('无法定位: $uri')),
+        SnackBar(
+          content: Text(AppLocalizations.of(context).chat_storeLocationFailed),
+        ),
       );
     }
   }

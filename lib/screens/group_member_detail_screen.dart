@@ -147,7 +147,7 @@ class _GroupMemberDetailScreenState extends State<GroupMemberDetailScreen> {
       setState(() => _savingBio = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to save: $e'),
+          content: Text(l10n.groupDetail_saveFailed),
           backgroundColor: Colors.red,
         ),
       );
@@ -198,7 +198,7 @@ class _GroupMemberDetailScreenState extends State<GroupMemberDetailScreen> {
       setState(() => _changingAdmin = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to change admin: $e'),
+          content: Text(l10n.groupMemberDetail_adminFailed),
           backgroundColor: Colors.red,
         ),
       );

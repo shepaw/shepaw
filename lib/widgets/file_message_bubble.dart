@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:open_file/open_file.dart';
+import '../l10n/app_localizations.dart';
 import '../models/message.dart';
 import '../models/remote_agent.dart';
 import '../services/logger_service.dart';
@@ -163,9 +164,10 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
         await OpenFile.open(fullPath);
         return;
       } catch (e) {
+        LoggerService().error('open downloaded file failed', tag: 'FileBubble', error: e);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Cannot open file: $e')),
+            SnackBar(content: Text(AppLocalizations.of(context).chat_openFileFailed)),
           );
         }
         return;
@@ -176,7 +178,7 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
     if (file == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('File not found')),
+          SnackBar(content: Text(AppLocalizations.of(context).chat_fileNotFound)),
         );
       }
       return;
@@ -184,9 +186,10 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
     try {
       await OpenFile.open(file.path);
     } catch (e) {
+      LoggerService().error('open file failed', tag: 'FileBubble', error: e);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Cannot open file: $e')),
+          SnackBar(content: Text(AppLocalizations.of(context).chat_openFileFailed)),
         );
       }
     }
@@ -266,13 +269,14 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
         });
       }
     } catch (e) {
+      LoggerService().error('file download failed', tag: 'FileBubble', error: e);
       if (mounted) {
         setState(() {
           _downloadStatus = 'pending';
           _progress = 0.0;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Download failed: $e')),
+          SnackBar(content: Text(AppLocalizations.of(context).chat_downloadFailed)),
         );
       }
     }

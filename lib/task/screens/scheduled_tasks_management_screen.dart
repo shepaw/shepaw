@@ -349,9 +349,12 @@ class _ScheduledTasksManagementScreenState
       }
       _refresh();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-      }
+      LoggerService().error('toggle scheduled task failed', tag: 'ScheduledTasks', error: e);
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.scheduledTasks_actionFailed)),
+      );
     }
   }
 
@@ -395,9 +398,11 @@ class _ScheduledTasksManagementScreenState
           _refresh();
         }
       } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-        }
+        LoggerService().error('delete scheduled task failed', tag: 'ScheduledTasks', error: e);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.scheduledTasks_actionFailed)),
+        );
       }
     }
   }

@@ -7689,4 +7689,46 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get contacts_noSearchResults => '没有匹配的结果';
+
+  @override
+  String get chat_attachImageFailed => '发送图片失败，请重试';
+
+  @override
+  String get chat_attachFileFailed => '发送文件失败，请重试';
+
+  @override
+  String get chat_sessionsLoadFailed => '加载会话失败，请重试';
+
+  @override
+  String get chat_groupSessionsLoadFailed => '加载群组会话失败，请重试';
+
+  @override
+  String get chat_downloadFailed => '下载失败，请重试';
+
+  @override
+  String get chat_openFileFailed => '无法打开这个文件';
+
+  @override
+  String get chat_fileNotFound => '找不到这个文件';
+
+  @override
+  String get chat_fileTooLargeToOpen => '文件太大，无法在这里打开';
+
+  @override
+  String get chat_storeFileMissing => '找不到储物袋里的这个文件';
+
+  @override
+  String get chat_storeLocationFailed => '无法在储物袋中定位这个文件';
+
+  @override
+  String get peer_pairingFailedRetry => '配对失败，请重试';
+
+  @override
+  String get peerSettings_trustUpdateFailed => '修改信任级别失败，请重试';
+
+  @override
+  String get groupMemberDetail_adminFailed => '修改管理员失败，请重试';
+
+  @override
+  String get scheduledTasks_actionFailed => '操作失败，请重试';
 }
