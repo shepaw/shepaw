@@ -72,6 +72,7 @@ void main() {
       'add',
       'update',
       'item',
+      'comment',
       'attach',
       'detach',
       'complete',
@@ -127,6 +128,42 @@ void main() {
     });
     expect(detached['success'], isTrue);
     expect((detached['slip'] as Map)['attachments'], isNull);
+
+    final renamed = await NotesItemCommand().execute({
+      'id': slip,
+      'item': ((removed['slip'] as Map)['items'] as List).cast<Map>().first['id']
+          as String,
+      'text': 'charger + cable',
+    });
+    expect(renamed['success'], isTrue);
+    expect(renamed['action'], 'renamed');
+    expect(
+      ((renamed['slip'] as Map)['items'] as List).cast<Map>().first['text'],
+      'charger + cable',
+    );
+
+    final posted = await asAgent(
+      SheService.sheId,
+      () => NotesCommentCommand().execute({
+        'id': slip,
+        'text': '已改完第一步',
+      }),
+    );
+    expect(posted['success'], isTrue);
+    final comments = ((posted['slip'] as Map)['comments'] as List).cast<Map>();
+    expect(comments.single['author'], 'She');
+    expect(comments.single['text'], '已改完第一步');
+
+    final listedComments = await NotesCommentCommand().execute({'id': slip});
+    expect(listedComments['count'], 1);
+
+    final removedComment = await NotesCommentCommand().execute({
+      'id': slip,
+      'comment': comments.single['id'] as String,
+      'delete': 'true',
+    });
+    expect(removedComment['success'], isTrue);
+    expect((removedComment['slip'] as Map)['comments'], isNull);
 
     final completed = await NotesCompleteCommand().execute({'id': slip});
     expect(completed['success'], isTrue);
