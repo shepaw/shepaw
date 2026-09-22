@@ -6551,6 +6551,42 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_browserPreview => '预览';
 
   @override
+  String get storage_browserEdit => '编辑内容';
+
+  @override
+  String get storage_browserSaved => '已保存';
+
+  @override
+  String storage_browserSaveFailed(String error) {
+    return '保存失败：$error';
+  }
+
+  @override
+  String get storage_browserNotText => '这个文件不是可编辑的文本文件';
+
+  @override
+  String get storage_browserTooLarge => '文件超过 1 MB，暂不支持在线编辑';
+
+  @override
+  String get storage_browserRename => '重命名';
+
+  @override
+  String get storage_browserRenameTitle => '重命名文件';
+
+  @override
+  String get storage_browserFileNameHint => '文件名';
+
+  @override
+  String storage_browserRenamed(String name) {
+    return '已重命名为 $name';
+  }
+
+  @override
+  String storage_browserRenameFailed(String error) {
+    return '重命名失败：$error';
+  }
+
+  @override
   String get storage_browserCopyPath => '复制路径';
 
   @override

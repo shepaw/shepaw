@@ -3836,6 +3836,37 @@
   "storage_browserLoadMore": "加载更多",
   "storage_browserRefresh": "刷新",
   "storage_browserPreview": "预览",
+  "storage_browserEdit": "编辑内容",
+  "storage_browserSaved": "已保存",
+  "storage_browserSaveFailed": "保存失败：{error}",
+  "@storage_browserSaveFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "storage_browserNotText": "这个文件不是可编辑的文本文件",
+  "storage_browserTooLarge": "文件超过 1 MB，暂不支持在线编辑",
+  "storage_browserRename": "重命名",
+  "storage_browserRenameTitle": "重命名文件",
+  "storage_browserFileNameHint": "文件名",
+  "storage_browserRenamed": "已重命名为 {name}",
+  "@storage_browserRenamed": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "storage_browserRenameFailed": "重命名失败：{error}",
+  "@storage_browserRenameFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "storage_browserCopyPath": "复制路径",
   "storage_browserShareLink": "分享链接",
   "storage_browserPathCopied": "路径已复制",

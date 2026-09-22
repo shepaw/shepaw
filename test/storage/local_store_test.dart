@@ -529,6 +529,54 @@ void main() {
     });
   });
 
+  group('rename', () {
+    test('改名搬走文件，旧路径不可读、新路径内容不变', () async {
+      final c = bytesOf('rename me');
+      final (u, _) = await begin('old.txt', c);
+      await store.writeChunk(dev, 'files', u, 0, c);
+      await store.commit(dev, 'files', [u]);
+
+      await store.rename(dev, 'files', 'old.txt', 'new.txt',
+          sha256: sha(c), size: c.length);
+
+      final listed = await store.list(dev, 'files');
+      expect(listed.single.path, 'new.txt');
+      expect(listed.single.sha256, sha(c));
+      final (data, _, __) = await store.read(dev, 'files', 'new.txt', 0, 64);
+      expect(utf8.decode(data), 'rename me');
+      expect(() => store.meta(dev, 'files', 'old.txt'),
+          throwsA(isA<StoreException>()));
+    });
+
+    test('改名只动正式区，回收站不进文件', () async {
+      final c = bytesOf('keep');
+      final (u, _) = await begin('k.txt', c);
+      await store.writeChunk(dev, 'files', u, 0, c);
+      await store.commit(dev, 'files', [u]);
+
+      await store.rename(dev, 'files', 'k.txt', 'k2.txt',
+          sha256: sha(c), size: c.length);
+
+      expect(await store.recycleList(), isEmpty);
+    });
+
+    test('同名已存在时报错，不覆盖', () async {
+      final a = bytesOf('aaa');
+      final (u1, _) = await begin('a.txt', a);
+      await store.writeChunk(dev, 'files', u1, 0, a);
+      final b = bytesOf('bbb');
+      final (u2, _) = await begin('b.txt', b);
+      await store.writeChunk(dev, 'files', u2, 0, b);
+      await store.commit(dev, 'files', [u1, u2]);
+
+      expect(
+        () => store.rename(dev, 'files', 'a.txt', 'b.txt',
+            sha256: sha(a), size: a.length),
+        throwsA(isA<StoreException>()),
+      );
+    });
+  });
+
   group('stats/gc/安全', () {
     test('stats 按设备与分区统计', () async {
       final c = bytesOf('stat');

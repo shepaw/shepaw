@@ -31,6 +31,7 @@ import '../widgets/avatar_image.dart';
 import '../widgets/mobile_shell_scope.dart';
 import '../widgets/storage/store_file_list_avatar.dart';
 import 'storage_shared.dart';
+import 'store_text_editor_screen.dart';
 import 'jade_slip_editor_screen.dart';
 import 'jade_slip_screen.dart';
 import 'instruction_set_editor_screen.dart';
@@ -599,8 +600,8 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         if (all.length > SyncJournal.recentLimit) {
           all.removeRange(SyncJournal.recentLimit, all.length);
         }
-        await _applyJadeSlipTitles(all);
       }
+      await _applyJadeSlipTitles(all);
       await _refreshRecentOwnerLabels(all);
       if (!mounted) return;
       setState(() {
@@ -859,6 +860,103 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   Future<void> _deleteFile(_BrowsedFile file) =>
       _deletePath(space: file.space, relPath: file.path);
 
+  bool _isTextEditable(_BrowsedFile file) {
+    if (file.virtual || file.isJadeSlipRecord || file.isInstructionRecord) {
+      return false;
+    }
+    final ext = p.extension(file.path).replaceFirst('.', '').toLowerCase();
+    return _textEditableExts.contains(ext) && file.size <= _maxEditableBytes;
+  }
+
+  Future<void> _editFile(_BrowsedFile file) async {
+    final l10n = AppLocalizations.of(context);
+    if (file.virtual || file.isJadeSlipRecord || file.isInstructionRecord) {
+      return;
+    }
+    if (file.size > _maxEditableBytes) {
+      _toast(l10n.storage_browserTooLarge);
+      return;
+    }
+    final ext = p.extension(file.path).replaceFirst('.', '').toLowerCase();
+    if (!_textEditableExts.contains(ext)) {
+      _toast(l10n.storage_browserNotText);
+      return;
+    }
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => StoreTextEditorScreen(
+          space: file.space,
+          deviceId: _targetId,
+          relPath: file.path,
+        ),
+      ),
+    );
+    if (saved == true && mounted) await _reload();
+  }
+
+  Future<void> _renameFile(_BrowsedFile file) async {
+    if (!_canWrite) {
+      _toast(AppLocalizations.of(context).storage_browserDeleteDenied);
+      return;
+    }
+    final l10n = AppLocalizations.of(context);
+    final controller = TextEditingController(text: p.basename(file.path));
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.storage_browserRenameTitle),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration:
+              InputDecoration(hintText: l10n.storage_browserFileNameHint),
+          onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(l10n.common_cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: Text(l10n.common_confirm),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (name == null || name.isEmpty || _busy) return;
+    if (name.contains('/') || name.contains('\\')) {
+      _toast(l10n.storage_browserRenameFailed('invalid name'));
+      return;
+    }
+    final dir = p.dirname(file.path);
+    final toRel = dir == '.' ? name : '$dir/$name';
+    if (toRel == file.path) return;
+    setState(() => _busy = true);
+    try {
+      final store = await StoreService.instance.localStore();
+      final meta = await store.meta(_targetId, file.space, file.path);
+      await store.rename(
+        _targetId,
+        file.space,
+        file.path,
+        toRel,
+        sha256: meta['sha256'] as String? ?? '',
+        size: (meta['size'] as num?)?.toInt() ?? file.size,
+      );
+      _toast(l10n.storage_browserRenamed(name));
+      await _reload();
+    } on StoreException catch (e) {
+      _toast(l10n
+          .storage_browserRenameFailed(e.message.isEmpty ? e.code : e.message));
+    } catch (e) {
+      _toast(l10n.storage_browserRenameFailed('$e'));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _deletePath({
     required String space,
     required String relPath,
@@ -921,6 +1019,10 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     switch (action) {
       case _EntryAction.preview:
         _previewFile(file);
+      case _EntryAction.edit:
+        unawaited(_editFile(file));
+      case _EntryAction.rename:
+        unawaited(_renameFile(file));
       case _EntryAction.copyPath:
         _copyPathText(_uriFor(file));
       case _EntryAction.shareLink:
@@ -929,11 +1031,11 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
           uri: _uriFor(file),
         );
       case _EntryAction.export:
-        _exportFile(file);
+        if (!file.virtual) _exportFile(file);
       case _EntryAction.versions:
-        _showVersions(file);
+        if (!file.virtual) _showVersions(file);
       case _EntryAction.manifest:
-        _showManifest(file);
+        if (!file.virtual) _showManifest(file);
       case _EntryAction.delete:
         _deleteFile(file);
       default:
@@ -952,6 +1054,16 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         value: _EntryAction.preview,
         child: Text(l10n.storage_browserPreview),
       ),
+      if (!virtual && _canWrite && file != null && _isTextEditable(file))
+        PopupMenuItem(
+          value: _EntryAction.edit,
+          child: Text(l10n.storage_browserEdit),
+        ),
+      if (!virtual && _canWrite)
+        PopupMenuItem(
+          value: _EntryAction.rename,
+          child: Text(l10n.storage_browserRename),
+        ),
       if (!virtual)
         PopupMenuItem(
           value: _EntryAction.copyPath,
@@ -1110,7 +1222,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       enabled: !_busy,
       position: PopupMenuPosition.under,
       onSelected: (action) => _handleEntryAction(file, action),
-      itemBuilder: (_) => _entryActionItems(l10n),
+      itemBuilder: (_) => _entryActionItems(l10n, file: file),
     );
   }
 
@@ -1124,12 +1236,15 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              title: Text('${file.space}/${file.path}',
-                  maxLines: 2, overflow: TextOverflow.ellipsis),
+              title: Text(
+                _displayFileName(l10n, file),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
               subtitle: Text(_fmtBytes(file.size)),
             ),
             const Divider(height: 1),
-            for (final item in _entryActionItems(l10n))
+            for (final item in _entryActionItems(l10n, file: file))
               if (item is PopupMenuItem<Object>)
                 ListTile(
                   title: item.child,
@@ -1298,7 +1413,9 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     final pathPrefix = (onSpaceTab && _navSpace != null && _navPath.isNotEmpty)
         ? '$_navPath/'
         : '';
-    final allowed = _spaces.toSet();
+    final allowed = _isRemote
+        ? _spaces.toSet()
+        : StoreSpace.recentSpaces.toSet();
     await showSearch<void>(
       context: context,
       delegate: _StoreSearchDelegate(
@@ -1427,7 +1544,8 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
 
   Future<List<_BrowsedFile>> _listAllNames({int? limit}) async {
     final all = <_BrowsedFile>[];
-    for (final space in _spaces) {
+    final spaces = _isRemote ? _spaces : StoreSpace.recentSpaces;
+    for (final space in spaces) {
       try {
         final entries = await StoreService.instance.listDevice(
           deviceId: _targetId,
@@ -1645,10 +1763,30 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   }
 
   String _displayFileName(AppLocalizations l10n, _BrowsedFile file) {
+    final title = file.displayTitle?.trim();
+    if (title != null && title.isNotEmpty) return title;
+    if (file.isJadeSlipRecord) return l10n.jadeSlip_title;
+    if (file.isInstructionRecord) return l10n.instructionSet_title;
     return StoreFileVisual.displayFriendlyName(l10n, file.space, file.path);
   }
 
   Widget _buildFileAvatar(_BrowsedFile file) {
+    if (file.isJadeSlipRecord || file.isInstructionRecord) {
+      final scheme = Theme.of(context).colorScheme;
+      final icon = file.isJadeSlipRecord
+          ? Icons.auto_stories_outlined
+          : Icons.playlist_add_check_outlined;
+      return Container(
+        width: StoreFileVisual.avatarWidth,
+        height: StoreFileVisual.avatarHeight,
+        decoration: BoxDecoration(
+          color: scheme.primary.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        alignment: Alignment.center,
+        child: Icon(icon, size: 24, color: scheme.primary),
+      );
+    }
     return StoreFileListAvatar(
       deviceId: _targetId,
       space: file.space,
@@ -3068,6 +3206,8 @@ enum _CreateMenuAction {
 
 enum _EntryAction {
   preview,
+  edit,
+  rename,
   copyPath,
   shareLink,
   export,
@@ -3075,6 +3215,32 @@ enum _EntryAction {
   manifest,
   delete,
 }
+
+/// 可在内置编辑器里改内容的文本文件后缀。
+const _textEditableExts = <String>{
+  'md',
+  'markdown',
+  'txt',
+  'csv',
+  'json',
+  'yaml',
+  'yml',
+  'xml',
+  'html',
+  'htm',
+  'log',
+  'ini',
+  'toml',
+  'cfg',
+  'conf',
+  'sh',
+  'py',
+  'js',
+  'ts',
+};
+
+/// 在线编辑的体积上限：整文件读进内存再整体回写。
+const _maxEditableBytes = 1024 * 1024;
 
 /// 文件大小格式化（本文件列表行 / 搜索 / 长按菜单共用）。
 String _fmtBytes(int n) {

@@ -3361,6 +3361,37 @@
   "storage_browserLoadMore": "Load more",
   "storage_browserRefresh": "Refresh",
   "storage_browserPreview": "Preview",
+  "storage_browserEdit": "Edit content",
+  "storage_browserSaved": "Saved",
+  "storage_browserSaveFailed": "Save failed: {error}",
+  "@storage_browserSaveFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "storage_browserNotText": "This file is not an editable text file",
+  "storage_browserTooLarge": "Files over 1 MB cannot be edited here yet",
+  "storage_browserRename": "Rename",
+  "storage_browserRenameTitle": "Rename file",
+  "storage_browserFileNameHint": "File name",
+  "storage_browserRenamed": "Renamed to {name}",
+  "@storage_browserRenamed": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "storage_browserRenameFailed": "Rename failed: {error}",
+  "@storage_browserRenameFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "storage_browserCopyPath": "Copy path",
   "storage_browserShareLink": "Share link",
   "storage_browserPathCopied": "Path copied",

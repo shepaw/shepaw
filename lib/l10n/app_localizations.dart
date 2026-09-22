@@ -11949,6 +11949,66 @@ abstract class AppLocalizations {
   /// **'预览'**
   String get storage_browserPreview;
 
+  /// No description provided for @storage_browserEdit.
+  ///
+  /// In zh, this message translates to:
+  /// **'编辑内容'**
+  String get storage_browserEdit;
+
+  /// No description provided for @storage_browserSaved.
+  ///
+  /// In zh, this message translates to:
+  /// **'已保存'**
+  String get storage_browserSaved;
+
+  /// No description provided for @storage_browserSaveFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存失败：{error}'**
+  String storage_browserSaveFailed(String error);
+
+  /// No description provided for @storage_browserNotText.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个文件不是可编辑的文本文件'**
+  String get storage_browserNotText;
+
+  /// No description provided for @storage_browserTooLarge.
+  ///
+  /// In zh, this message translates to:
+  /// **'文件超过 1 MB，暂不支持在线编辑'**
+  String get storage_browserTooLarge;
+
+  /// No description provided for @storage_browserRename.
+  ///
+  /// In zh, this message translates to:
+  /// **'重命名'**
+  String get storage_browserRename;
+
+  /// No description provided for @storage_browserRenameTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'重命名文件'**
+  String get storage_browserRenameTitle;
+
+  /// No description provided for @storage_browserFileNameHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'文件名'**
+  String get storage_browserFileNameHint;
+
+  /// No description provided for @storage_browserRenamed.
+  ///
+  /// In zh, this message translates to:
+  /// **'已重命名为 {name}'**
+  String storage_browserRenamed(String name);
+
+  /// No description provided for @storage_browserRenameFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'重命名失败：{error}'**
+  String storage_browserRenameFailed(String error);
+
   /// No description provided for @storage_browserCopyPath.
   ///
   /// In zh, this message translates to:

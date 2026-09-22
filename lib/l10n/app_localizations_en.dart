@@ -6806,6 +6806,43 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_browserPreview => 'Preview';
 
   @override
+  String get storage_browserEdit => 'Edit content';
+
+  @override
+  String get storage_browserSaved => 'Saved';
+
+  @override
+  String storage_browserSaveFailed(String error) {
+    return 'Save failed: $error';
+  }
+
+  @override
+  String get storage_browserNotText => 'This file is not an editable text file';
+
+  @override
+  String get storage_browserTooLarge =>
+      'Files over 1 MB cannot be edited here yet';
+
+  @override
+  String get storage_browserRename => 'Rename';
+
+  @override
+  String get storage_browserRenameTitle => 'Rename file';
+
+  @override
+  String get storage_browserFileNameHint => 'File name';
+
+  @override
+  String storage_browserRenamed(String name) {
+    return 'Renamed to $name';
+  }
+
+  @override
+  String storage_browserRenameFailed(String error) {
+    return 'Rename failed: $error';
+  }
+
+  @override
   String get storage_browserCopyPath => 'Copy path';
 
   @override
