@@ -12813,6 +12813,12 @@ abstract class AppLocalizations {
   /// **'连接并设为 master'**
   String get storage_nasConnect;
 
+  /// No description provided for @storage_nasConnectConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接 {name}，并把它设为备份目标？本机会开始向它镜像同步。'**
+  String storage_nasConnectConfirm(String name);
+
   /// No description provided for @storage_nasConnected.
   ///
   /// In zh, this message translates to:

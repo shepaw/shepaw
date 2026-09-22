@@ -3824,6 +3824,14 @@
   "storage_nasScanning": "Scanning LAN…",
   "storage_nasEmpty": "No Nexus Pouch nodes found. You can still pair phones/PCs to browse shared Nexus Pouches.",
   "storage_nasConnect": "Connect & set master",
+  "storage_nasConnectConfirm": "Connect to {name} and set it as the backup target? This device will start mirroring to it.",
+  "@storage_nasConnectConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "storage_nasConnected": "Connected to {name} and set as master",
   "@storage_nasConnected": {
     "placeholders": {

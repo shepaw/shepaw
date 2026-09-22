@@ -4299,6 +4299,14 @@
   "storage_nasScanning": "正在扫描局域网…",
   "storage_nasEmpty": "未发现 Nexus Pouch 节点。也可直接配对手机/电脑互相浏览储物袋。",
   "storage_nasConnect": "连接并设为 master",
+  "storage_nasConnectConfirm": "连接 {name}，并把它设为备份目标？本机会开始向它镜像同步。",
+  "@storage_nasConnectConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "storage_nasConnected": "已连接 {name} 并设为 master",
   "@storage_nasConnected": {
     "placeholders": {

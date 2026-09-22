@@ -169,35 +169,66 @@ class _StorageNexuspouchScreenState extends State<StorageNexuspouchScreen> {
       storageToast(context, l10n.storage_nasMissingFingerprint);
       return;
     }
+    if (_busyFp != null) return;
+
+    final PairedPeer? peer;
+    try {
+      peer = await _storage.getPeerByFingerprint(node.fingerprint);
+    } catch (e) {
+      LoggerService().error('nas connect failed', tag: 'Nexuspouch', error: e);
+      if (mounted) {
+        storageToast(context, l10n.storage_nasConnectFailedRetry);
+      }
+      return;
+    }
+    if (!mounted) return;
+    if (peer == null) {
+      final goPair = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(l10n.storage_nasNotPairedTitle),
+          content: Text(l10n.storage_nasNotPairedBody(node.name)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l10n.common_cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(l10n.storage_nasOpenPairing),
+            ),
+          ],
+        ),
+      );
+      if (goPair == true && mounted) {
+        final result = await PeerScanScreen.show(context);
+        if (result != null) await _loadPairedState();
+      }
+      return;
+    }
+
+    final label = node.name.isEmpty ? node.fingerprint : node.name;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.storage_nasConnect),
+        content: Text(l10n.storage_nasConnectConfirm(label)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.common_cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.common_confirm),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted || _busyFp != null) return;
+
     setState(() => _busyFp = node.fingerprint);
     try {
-      final peer = await _storage.getPeerByFingerprint(node.fingerprint);
-      if (peer == null) {
-        if (!mounted) return;
-        final goPair = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: Text(l10n.storage_nasNotPairedTitle),
-            content: Text(l10n.storage_nasNotPairedBody(node.name)),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: Text(l10n.common_cancel),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: Text(l10n.storage_nasOpenPairing),
-              ),
-            ],
-          ),
-        );
-        if (goPair == true && mounted) {
-          final result = await PeerScanScreen.show(context);
-          if (result != null) await _loadPairedState();
-        }
-        return;
-      }
-
       await _storage.updateLocalEndpoint(peer.id, node.endpoint);
       await PeerConnectionManager.instance.connectToPeer(peer);
       await StoreService.instance.setMasterDeviceId(node.fingerprint);

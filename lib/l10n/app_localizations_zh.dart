@@ -7062,6 +7062,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_nasConnect => '连接并设为 master';
 
   @override
+  String storage_nasConnectConfirm(String name) {
+    return '连接 $name，并把它设为备份目标？本机会开始向它镜像同步。';
+  }
+
+  @override
   String storage_nasConnected(String name) {
     return '已连接 $name 并设为 master';
   }

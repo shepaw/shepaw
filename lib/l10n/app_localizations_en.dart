@@ -7331,6 +7331,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_nasConnect => 'Connect & set master';
 
   @override
+  String storage_nasConnectConfirm(String name) {
+    return 'Connect to $name and set it as the backup target? This device will start mirroring to it.';
+  }
+
+  @override
   String storage_nasConnected(String name) {
     return 'Connected to $name and set as master';
   }
