@@ -58,6 +58,7 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   bool _allowPop = false;
   bool _didFocusChecklist = false;
   bool _didFocusTitle = false;
+  String _untitledLabel = '';
   Timer? _textDebounce;
   StreamSubscription<void>? _sub;
 
@@ -72,14 +73,43 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _untitledLabel = AppLocalizations.of(context).jadeSlip_untitled;
+  }
+
+  /// 磁盘上仍是空白草稿，且输入框也没填：离开时删除，等同后悔新建。
+  bool _shouldDiscardBlankDraft(JadeSlip slip) {
+    if (_untitledLabel.isEmpty) return false;
+    if (!slip.isBlankDraft(untitledTitle: _untitledLabel)) return false;
+    final title = _title.text.trim();
+    if (title.isNotEmpty && title != _untitledLabel.trim()) return false;
+    if (_body.text.trim().isNotEmpty) return false;
+    return true;
+  }
+
+  Future<void> _discardBlankDraft(JadeSlip slip) async {
+    _closed = true;
+    _dirty = false;
+    await _service.delete(slip.id);
+    widget.onChanged?.call();
+  }
+
+  @override
   void dispose() {
     _textDebounce?.cancel();
     final slip = _slip;
-    if (!_closed && _dirty && slip != null) {
-      final title = _title.text.trim();
-      if (title.isNotEmpty) {
-        unawaited(
-            _service.update(slip.copyWith(title: title, body: _body.text)));
+    if (!_closed && slip != null) {
+      if (_shouldDiscardBlankDraft(slip)) {
+        unawaited(_service.delete(slip.id).then((_) {
+          widget.onChanged?.call();
+        }));
+      } else if (_dirty) {
+        final title = _title.text.trim();
+        if (title.isNotEmpty) {
+          unawaited(
+              _service.update(slip.copyWith(title: title, body: _body.text)));
+        }
       }
     }
     _sub?.cancel();
@@ -509,6 +539,43 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                 onSubmit: () => unawaited(_addItem()),
               ),
               const SizedBox(height: 28),
+              _SectionLabel(label: l10n.jadeSlip_notes),
+              const SizedBox(height: 8),
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: 120,
+                  maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+                ),
+                child: TextField(
+                  controller: _body,
+                  minLines: 3,
+                  maxLines: null,
+                  keyboardType: TextInputType.multiline,
+                  textAlignVertical: TextAlignVertical.top,
+                  style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
+                  decoration: InputDecoration(
+                    hintText: l10n.jadeSlip_notesHint,
+                    filled: true,
+                    fillColor: scheme.surfaceContainerHighest,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                          color: scheme.primary.withValues(alpha: 0.4)),
+                    ),
+                    contentPadding: const EdgeInsets.all(14),
+                  ),
+                  onChanged: (_) => _onTextChanged(),
+                ),
+              ),
+              const SizedBox(height: 28),
               _SectionLabel(
                 label: l10n.jadeSlip_attachments,
                 trailing: slip.attachments.isEmpty
@@ -534,35 +601,6 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                 enabled: !_saving,
                 onLocal: () => unawaited(_addLocalAttachments()),
                 onStore: () => unawaited(_addStoreAttachments()),
-              ),
-              const SizedBox(height: 28),
-              _SectionLabel(label: l10n.jadeSlip_notes),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _body,
-                minLines: 5,
-                maxLines: 14,
-                style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
-                decoration: InputDecoration(
-                  hintText: l10n.jadeSlip_notesHint,
-                  filled: true,
-                  fillColor: scheme.surfaceContainerHighest,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(
-                        color: scheme.primary.withValues(alpha: 0.4)),
-                  ),
-                  contentPadding: const EdgeInsets.all(14),
-                ),
-                onChanged: (_) => _onTextChanged(),
               ),
               const SizedBox(height: 28),
               _SectionLabel(
@@ -607,6 +645,16 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
       canPop: _allowPop,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
+        final slip = _slip;
+        if (slip != null && _shouldDiscardBlankDraft(slip)) {
+          await _discardBlankDraft(slip);
+          if (!context.mounted) return;
+          setState(() => _allowPop = true);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (context.mounted) Navigator.of(context).pop();
+          });
+          return;
+        }
         final saved = await _flush(notifyIfEmpty: false);
         if (!context.mounted) return;
         if (!saved) {

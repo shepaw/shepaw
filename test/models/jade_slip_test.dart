@@ -17,6 +17,32 @@ Buy tickets
     expect(items[0].done, isFalse);
   });
 
+  test('blank draft matches untitled placeholder with no content', () {
+    final blank = JadeSlip(
+      id: 'a',
+      title: '未题玉简',
+      deviceId: 'dev',
+      createdAt: 1,
+      updatedAt: 1,
+    );
+    expect(blank.isBlankDraft(untitledTitle: '未题玉简'), isTrue);
+    expect(blank.isBlankDraft(untitledTitle: 'Untitled slip'), isFalse);
+    expect(
+      blank.copyWith(title: '买菜').isBlankDraft(untitledTitle: '未题玉简'),
+      isFalse,
+    );
+    expect(
+      blank.copyWith(body: '备注').isBlankDraft(untitledTitle: '未题玉简'),
+      isFalse,
+    );
+    expect(
+      blank
+          .copyWith(items: const [JadeSlipItem(id: '1', text: 'x')])
+          .isBlankDraft(untitledTitle: '未题玉简'),
+      isFalse,
+    );
+  });
+
   test('withDerivedStatus follows checklist', () {
     final now = 1;
     final base = JadeSlip(

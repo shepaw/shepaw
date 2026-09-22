@@ -57,6 +57,25 @@ class JadeSlip {
   bool get isOpen =>
       status == JadeSlipStatus.open || status == JadeSlipStatus.inProgress;
 
+  /// 新建后未填写任何内容的草稿：离开编辑时等同「后悔新建」，应撤销删除。
+  ///
+  /// [untitledTitle] 为创建时的占位标题（如「未题玉简」）。
+  bool isBlankDraft({required String untitledTitle}) {
+    final t = title.trim();
+    final placeholder = untitledTitle.trim();
+    if (t.isNotEmpty && t != placeholder) return false;
+    if (body.trim().isNotEmpty) return false;
+    if (items.isNotEmpty) return false;
+    if (comments.isNotEmpty) return false;
+    if (attachments.isNotEmpty) return false;
+    if (assigneeAgentId.trim().isNotEmpty) return false;
+    if (dueAtMs != null) return false;
+    if (tags.isNotEmpty) return false;
+    if (priority != JadeSlipPriority.none) return false;
+    if (status != JadeSlipStatus.open) return false;
+    return true;
+  }
+
   String get relPath => 'slips/$id.json';
 
   /// 玉简正文记录：`slips/<id>.json`（不含附件 `slips/<id>/files/…`）。
