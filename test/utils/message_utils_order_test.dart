@@ -75,6 +75,17 @@ void main() {
       expect(identical(again.last, replacement), isTrue);
     });
 
+    test('往时间轴头部插入更早消息不改变已有消息的反向展示下标', () {
+      final current = [_msg('a', 100), _msg('b', 200), _msg('c', 300)];
+      expect(MessageUtils.messageIdAtDisplayIndex(current, 0), 'c');
+      expect(MessageUtils.messageIdAtDisplayIndex(current, 2), 'a');
+
+      final withOlder = [_msg('o1', 10), _msg('o2', 20), ...current];
+      expect(MessageUtils.displayIndexOf(withOlder, 'a'), 2);
+      expect(MessageUtils.displayIndexOf(withOlder, 'c'), 0);
+      expect(MessageUtils.displayIndexOf(withOlder, 'missing'), -1);
+    });
+
     test('在途流式气泡排到最末', () {
       final messages = [
         _msg('streaming', 100),

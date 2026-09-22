@@ -173,6 +173,32 @@ class MessageUtils {
     return [for (final i in order) messages[i]];
   }
 
+  /// 反向列表中 [displayIndex] 对应的消息 id。0 是最新一条。
+  static String? messageIdAtDisplayIndex(
+    List<Message> messages,
+    int displayIndex, {
+    Set<String> streamingIds = const {},
+  }) {
+    if (displayIndex < 0) return null;
+    final ordered = orderForDisplay(messages, streamingIds: streamingIds);
+    final chrono = ordered.length - 1 - displayIndex;
+    if (chrono < 0 || chrono >= ordered.length) return null;
+    return ordered[chrono].id;
+  }
+
+  /// 反向列表中 [id] 的展示下标。找不到返回 -1。
+  static int displayIndexOf(
+    List<Message> messages,
+    String id, {
+    Set<String> streamingIds = const {},
+  }) {
+    final ordered = orderForDisplay(messages, streamingIds: streamingIds);
+    for (var i = 0; i < ordered.length; i++) {
+      if (ordered[i].id == id) return ordered.length - 1 - i;
+    }
+    return -1;
+  }
+
   /// 当前窗口与刚从数据库读出的窗口是否是同一批展示内容。
   ///
   /// 用于跳过「同步写完库再整表替换」：内容、顺序、时间戳和 metadata

@@ -142,6 +142,9 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   /// True while [loadOlderMessages] is in flight.
   bool isLoadingOlderMessages = false;
 
+  /// 只驱动顶部加载圈。翻页开始时不要走 [_notify]，否则整列会在数据到达前重建一次。
+  final ValueNotifier<bool> olderMessagesLoading = ValueNotifier(false);
+
   // ---- Streaming state ----
   final ChatStreamingSession streaming = ChatStreamingSession();
 
@@ -538,6 +541,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     _contentListenableDisposed = true;
     contentListenable.dispose();
     streamingListenable.dispose();
+    olderMessagesLoading.dispose();
     super.dispose();
   }
 
@@ -575,7 +579,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     if (_eventController.isClosed) return;
     notifyListeners();
     // 0d83ec7 之后消息列表子树只订阅 contentListenable，外层 setState 又被
-    // OuterStructuralSnapshot 门控（29 个结构字段不含消息内容/metadata）。
+    // OuterStructuralSnapshot 门控（结构字段不含消息内容/metadata）。
     // 任何走 _notify 的内容/metadata 变更（交互卡、reconcile、终态刷新等）
     // 在结构字段恰好不变时会导致列表不重绘——这里统一兜底投一次内容通知，
     // 让列表子树同步刷新。真流式 chunk 仍走 scheduleStreamingRebuild 单独

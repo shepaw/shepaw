@@ -352,7 +352,8 @@ mixin _LoadOps on _ChatControllerBase {
     if (messages.isEmpty) return 0;
 
     isLoadingOlderMessages = true;
-    _notify();
+    olderMessagesLoading.value = true;
+    var added = 0;
 
     try {
       // Prefer the persisted created_at cursor so local/UTC formatting matches
@@ -380,10 +381,11 @@ mixin _LoadOps on _ChatControllerBase {
           messageIdMap[m.id] = m;
         }
       }
+      added = fresh.length;
 
       // Exhausted when the DB page was short, or everything was already present.
       hasMoreOlderMessages = older.length >= ChatMessageWindow.pageSize;
-      return fresh.length;
+      return added;
     } catch (e) {
       LoggerService().warning(
         'loadOlderMessages failed: $e',
@@ -393,7 +395,8 @@ mixin _LoadOps on _ChatControllerBase {
       return 0;
     } finally {
       isLoadingOlderMessages = false;
-      _notify();
+      olderMessagesLoading.value = false;
+      if (added > 0) _notify();
     }
   }
 

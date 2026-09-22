@@ -22,6 +22,7 @@ import '../services/local_database_service.dart';
 
 import '../services/group/group_management_service.dart';
 import '../utils/layout_utils.dart';
+import '../utils/message_utils.dart';
 import '../widgets/discard_changes_scope.dart';
 import '../widgets/drawer_swipe_detector.dart';
 import '../widgets/right_drawer_route.dart';
@@ -979,15 +980,28 @@ class _ChatScreenState extends State<ChatScreen>
 
     final anchorIndex = topMost.index;
     final anchorAlignment = topMost.itemLeadingEdge;
+    // 反向列表把 index 0 钉在最新一条。更早的消息插在时间轴开头后，
+    // 已有消息的展示下标不变；按 added 去 jumpTo 会把视口整页掀走。
+    final anchorId = MessageUtils.messageIdAtDisplayIndex(
+      c.messages,
+      anchorIndex,
+      streamingIds: _streamingIdsOf(c),
+    );
 
     final added = await c.loadOlderMessages();
-    if (!mounted || added <= 0) return;
+    if (!mounted || added <= 0 || anchorId == null) return;
     if (!_itemScrollController.isAttached) return;
+
+    final newIndex = MessageUtils.displayIndexOf(
+      _controller.messages,
+      anchorId,
+      streamingIds: _streamingIdsOf(_controller),
+    );
+    if (newIndex < 0 || newIndex == anchorIndex) return;
 
     _beginProgrammaticScroll();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_itemScrollController.isAttached) return;
-      final newIndex = anchorIndex + added;
       if (newIndex < 0 || newIndex >= _controller.messages.length) return;
       _itemScrollController.jumpTo(
         index: newIndex,
@@ -995,6 +1009,11 @@ class _ChatScreenState extends State<ChatScreen>
       );
     });
   }
+
+  Set<String> _streamingIdsOf(ChatController controller) => {
+        if (controller.streamingMessageId != null) controller.streamingMessageId!,
+        ...controller.groupStreamingMessageIds,
+      };
 
   void _onUserScroll(ScrollDirection direction) {
     // Ignore idle and programmatic jumpTo/scrollTo — those can report
@@ -3825,8 +3844,11 @@ class _ChatScreenState extends State<ChatScreen>
                           child: _buildScrollToBottomButton(),
                         ),
                       ),
-                    if (_controller.isLoadingOlderMessages)
-                      const Positioned(
+                    ValueListenableBuilder<bool>(
+                      valueListenable: _controller.olderMessagesLoading,
+                      builder: (context, loading, child) =>
+                          loading ? child! : const SizedBox.shrink(),
+                      child: const Positioned(
                         top: 8,
                         left: 0,
                         right: 0,
@@ -3838,6 +3860,7 @@ class _ChatScreenState extends State<ChatScreen>
                           ),
                         ),
                       ),
+                    ),
                   ],
                 ),
               ),
