@@ -96,14 +96,18 @@ class _TopToastWidgetState extends State<_TopToastWidget>
                     },
                     child: Container(
                       margin: const EdgeInsets.only(left: 8),
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.25),
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
                         widget.actionLabel!,
-                        style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600),
                       ),
                     ),
                   ),
@@ -145,7 +149,10 @@ class _TopToastManager {
     _dismissNow();
 
     final overlay = Overlay.of(context);
-    final topPadding = MediaQuery.of(context).padding.top;
+    // 调用方多半在 Scaffold body 里，那里的 padding.top 已被 AppBar 吃掉，
+    // 用它会把 toast 定在屏幕最上沿，状态栏挡住上半截。这里取视图真实顶距。
+    final view = View.of(context);
+    final topPadding = view.viewPadding.top / view.devicePixelRatio;
 
     // Fresh key every time — guarantees uniqueness in the tree.
     final key = GlobalKey<_TopToastWidgetState>();

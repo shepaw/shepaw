@@ -77,7 +77,8 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     if (!_closed && _dirty && slip != null) {
       final title = _title.text.trim();
       if (title.isNotEmpty) {
-        unawaited(_service.update(slip.copyWith(title: title, body: _body.text)));
+        unawaited(
+            _service.update(slip.copyWith(title: title, body: _body.text)));
       }
     }
     _sub?.cancel();
@@ -209,7 +210,10 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     await _flush();
     setState(() {
       _slip = slip.copyWith(
-        comments: [for (final c in slip.comments) if (c.id != commentId) c],
+        comments: [
+          for (final c in slip.comments)
+            if (c.id != commentId) c
+        ],
       );
     });
     await _service.removeComment(id: widget.slipId, commentId: commentId);
@@ -229,7 +233,8 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
         ],
       );
     });
-    await _service.updateItemText(id: widget.slipId, itemId: itemId, text: text);
+    await _service.updateItemText(
+        id: widget.slipId, itemId: itemId, text: text);
     widget.onChanged?.call();
     await _load();
   }
@@ -240,7 +245,10 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     await _flush();
     setState(() {
       _slip = slip.copyWith(
-        items: [for (final item in slip.items) if (item.id != itemId) item],
+        items: [
+          for (final item in slip.items)
+            if (item.id != itemId) item
+        ],
       );
     });
     await _service.removeItem(id: widget.slipId, itemId: itemId);
@@ -260,7 +268,8 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
         ],
       );
     });
-    await _service.removeAttachment(id: widget.slipId, attachmentId: attachmentId);
+    await _service.removeAttachment(
+        id: widget.slipId, attachmentId: attachmentId);
     widget.onChanged?.call();
     await _load();
   }
@@ -367,7 +376,8 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                   const Spacer(),
                   FilledButton.icon(
                     key: _runKey,
-                    onPressed: _saving ? null : () => unawaited(_handOff(slip)),
+                    // 保存状态只由左侧提示表达，按钮不随保存禁用，避免闪一下。
+                    onPressed: () => unawaited(_handOff(slip)),
                     icon: const Icon(Icons.play_arrow_rounded, size: 20),
                     label: Text(l10n.jadeSlip_run),
                     style: FilledButton.styleFrom(
@@ -423,7 +433,8 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                     onTap: () => unawaited(_pickDue(slip)),
                     onClear: slip.dueAtMs == null
                         ? null
-                        : () => unawaited(_persist(slip.copyWith(clearDue: true))),
+                        : () =>
+                            unawaited(_persist(slip.copyWith(clearDue: true))),
                   ),
                   _AssigneePill(
                     label: slip.assigneeAgentName.isEmpty
@@ -524,9 +535,8 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
               const SizedBox(height: 28),
               _SectionLabel(
                 label: l10n.jadeSlip_comments,
-                trailing: slip.comments.isEmpty
-                    ? null
-                    : '${slip.comments.length}',
+                trailing:
+                    slip.comments.isEmpty ? null : '${slip.comments.length}',
               ),
               const SizedBox(height: 6),
               if (slip.comments.isEmpty)
@@ -745,13 +755,15 @@ class _MetaPill extends StatelessWidget {
                   customBorder: const CircleBorder(),
                   child: Padding(
                     padding: const EdgeInsets.only(left: 4),
-                    child: Icon(Icons.close, size: 14, color: scheme.onSurfaceVariant),
+                    child: Icon(Icons.close,
+                        size: 14, color: scheme.onSurfaceVariant),
                   ),
                 )
               else
                 Padding(
                   padding: const EdgeInsets.only(left: 2),
-                  child: Icon(Icons.expand_more, size: 16, color: scheme.onSurfaceVariant),
+                  child: Icon(Icons.expand_more,
+                      size: 16, color: scheme.onSurfaceVariant),
                 ),
             ],
           ),
@@ -961,82 +973,85 @@ class _ChecklistRowState extends State<_ChecklistRow> {
         ),
         child: Icon(Icons.delete_outline, color: scheme.onErrorContainer),
       ),
-      child: InkWell(
-        onTap: _editing ? null : () => widget.onChanged(!item.done),
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 2),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 24,
-                height: 24,
-                child: Checkbox(
-                  value: item.done,
-                  onChanged: (v) => widget.onChanged(v ?? false),
-                  visualDensity: VisualDensity.compact,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  side: BorderSide(color: scheme.outline, width: 1.4),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: Checkbox(
+                value: item.done,
+                onChanged: (v) => widget.onChanged(v ?? false),
+                visualDensity: VisualDensity.compact,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
                 ),
+                side: BorderSide(color: scheme.outline, width: 1.4),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _editing
-                    ? TextField(
-                        controller: _controller,
-                        focusNode: _focus,
-                        style: theme.textTheme.bodyLarge,
-                        decoration: const InputDecoration(
-                          border: InputBorder.none,
-                          isDense: true,
-                          contentPadding: EdgeInsets.symmetric(vertical: 8),
-                        ),
-                        onSubmitted: (_) => _submit(),
-                      )
-                    : Text(
-                        item.text,
-                        style: theme.textTheme.bodyLarge?.copyWith(
-                          decoration:
-                              item.done ? TextDecoration.lineThrough : null,
-                          color: item.done
-                              ? scheme.onSurfaceVariant
-                              : scheme.onSurface,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _editing
+                  ? TextField(
+                      controller: _controller,
+                      focusNode: _focus,
+                      style: theme.textTheme.bodyLarge,
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding: EdgeInsets.symmetric(vertical: 8),
+                      ),
+                      onSubmitted: (_) => _submit(),
+                    )
+                  : GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _beginEdit,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Text(
+                          item.text,
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            decoration:
+                                item.done ? TextDecoration.lineThrough : null,
+                            color: item.done
+                                ? scheme.onSurfaceVariant
+                                : scheme.onSurface,
+                          ),
                         ),
                       ),
+                    ),
+            ),
+            if (_editing)
+              IconButton(
+                tooltip: l10n.common_save,
+                visualDensity: VisualDensity.compact,
+                iconSize: 18,
+                onPressed: _submit,
+                icon: Icon(Icons.check, color: scheme.primary),
+              )
+            else
+              PopupMenuButton<String>(
+                tooltip: l10n.common_more,
+                padding: EdgeInsets.zero,
+                iconSize: 18,
+                icon: Icon(Icons.more_vert, color: scheme.onSurfaceVariant),
+                onSelected: (v) {
+                  if (v == 'edit') _beginEdit();
+                  if (v == 'delete') widget.onDelete();
+                },
+                itemBuilder: (_) => [
+                  PopupMenuItem(
+                    value: 'edit',
+                    child: Text(l10n.common_edit),
+                  ),
+                  PopupMenuItem(
+                    value: 'delete',
+                    child: Text(l10n.common_delete),
+                  ),
+                ],
               ),
-              if (_editing)
-                IconButton(
-                  tooltip: l10n.common_save,
-                  visualDensity: VisualDensity.compact,
-                  iconSize: 18,
-                  onPressed: _submit,
-                  icon: Icon(Icons.check, color: scheme.primary),
-                )
-              else
-                PopupMenuButton<String>(
-                  tooltip: l10n.common_more,
-                  padding: EdgeInsets.zero,
-                  iconSize: 18,
-                  icon: Icon(Icons.more_vert, color: scheme.onSurfaceVariant),
-                  onSelected: (v) {
-                    if (v == 'edit') _beginEdit();
-                    if (v == 'delete') widget.onDelete();
-                  },
-                  itemBuilder: (_) => [
-                    PopupMenuItem(
-                      value: 'edit',
-                      child: Text(l10n.common_edit),
-                    ),
-                    PopupMenuItem(
-                      value: 'delete',
-                      child: Text(l10n.common_delete),
-                    ),
-                  ],
-                ),
-            ],
-          ),
+          ],
         ),
       ),
     );
@@ -1106,7 +1121,8 @@ class _CommentRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.comment_outlined, size: 18, color: scheme.onSurfaceVariant),
+          Icon(Icons.comment_outlined,
+              size: 18, color: scheme.onSurfaceVariant),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -1173,9 +1189,8 @@ class _AttachmentRow extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final l10n = AppLocalizations.of(context);
-    final size = attachment.sizeBytes > 0
-        ? fmtStorageBytes(attachment.sizeBytes)
-        : null;
+    final size =
+        attachment.sizeBytes > 0 ? fmtStorageBytes(attachment.sizeBytes) : null;
     return Dismissible(
       key: ValueKey('att-${attachment.id}'),
       direction: DismissDirection.endToStart,

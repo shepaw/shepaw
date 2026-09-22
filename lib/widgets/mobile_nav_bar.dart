@@ -21,7 +21,7 @@ class MobileNavBar extends StatelessWidget {
 
   /// iOS home indicator is a thin mark near the edge. Padding the full
   /// safe-area inset (~34) leaves a tall empty band under the labels.
-  static const double iosHomeIndicatorClearance = 12;
+  static const double iosHomeIndicatorClearance = 15;
 
   /// Bottom padding under the icons.
   ///
