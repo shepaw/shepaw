@@ -120,12 +120,14 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   final _eventController = StreamController<ChatEvent>.broadcast();
   Stream<ChatEvent> get events => _eventController.stream;
 
-  /// 流式 chunk 专用的内容通知源。chunk 只改消息内容，外层树（AppBar、
-  /// 输入区、面板）不消费这些变化——它们只需要消息列表子树重建。帧级
-  /// 合批后的 chunk notify 投到这里（见 scheduleStreamingRebuild）；结构
-  /// 性变化（新消息、回合开始/结束、会话切换）仍走 [_notify] 全页通知。
-  /// UI 侧用 AnimatedBuilder(animation: contentListenable) 只包消息列表。
+  /// 非逐字的内容通知：交互卡、reconcile、终态刷新。结构快照没变时，
+  /// 外层不会 setState，列表靠这个补一次重建。
+  ///
+  /// 逐字 chunk 不走这里，走 [streamingListenable]，只刷新正在输出的气泡。
   final ChangeNotifier contentListenable = ChangeNotifier();
+
+  /// 流式 chunk / 进度帧。只让正在输出的气泡重建。
+  final ChangeNotifier streamingListenable = ChangeNotifier();
 
   // ---- Core message state ----
   List<Message> messages = [];
@@ -317,6 +319,9 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
 
   // ---- Frame coalescing ----
   bool _pendingStreamingRebuild = false;
+
+  /// 同一帧里如果既有 chunk 又有 [_notify]，列表也要重建一次。
+  bool _pendingListRefresh = false;
 
   /// dispose 后置位：已排队的 postFrame 内容通知不能再触碰已 dispose 的
   /// contentListenable（scheduleStreamingRebuild 在帧回调里检查）。
@@ -532,6 +537,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     _eventController.close();
     _contentListenableDisposed = true;
     contentListenable.dispose();
+    streamingListenable.dispose();
     super.dispose();
   }
 
@@ -573,8 +579,8 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     // 任何走 _notify 的内容/metadata 变更（交互卡、reconcile、终态刷新等）
     // 在结构字段恰好不变时会导致列表不重绘——这里统一兜底投一次内容通知，
     // 让列表子树同步刷新。真流式 chunk 仍走 scheduleStreamingRebuild 单独
-    // 合批，本调用每回合结构性事件只发生几次，无帧率影响。
-    scheduleStreamingRebuild();
+    // 合批，且不带 refreshList，只更新正在输出的气泡。
+    scheduleStreamingRebuild(refreshList: true);
   }
 
   // ---- InteractiveStreamingContext implementation ----
@@ -703,7 +709,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   void reattachToGroupActiveTasks();
   void _syncGroupStreamingHostsFromActiveTasks();
   void _reattachPendingPlanApproval();
-  void scheduleStreamingRebuild();
+  void scheduleStreamingRebuild({bool refreshList = false});
   Future<void> processNextInQueue();
   void _updateStreamingMetadata(Map<String, dynamic> metadata);
   Future<void> processMessage(String content, {String? replyToId, List<AttachmentData>? attachments, List<Message>? attachmentMessages, String? instructionName});

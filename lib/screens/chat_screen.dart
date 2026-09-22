@@ -485,8 +485,8 @@ class _ChatScreenState extends State<ChatScreen>
       _clearScrolledUpState(notify: false);
     }
     // 结构快照门控：外层 build 消费的字段都没变就不 setState。流式
-    // chunk 只改消息内容，由 contentListenable 驱动列表子树重建
-    // （AnimatedBuilder 包裹 ChatMessageList），外层 Scaffold/AppBar/
+    // chunk 只改正在输出的气泡（streamingListenable）。交互卡等非逐字
+    // 内容变化才由 contentListenable 重建整列。外层 Scaffold/AppBar/
     // 输入区/面板对 chunk 无动于衷。此前"流式期间无条件整页 rebuild"
     // 是长会话掉帧的主因。快照字段清单见 OuterStructuralSnapshot 注释，
     // 外层新增消费字段必须同步进去。
@@ -3810,6 +3810,7 @@ class _ChatScreenState extends State<ChatScreen>
                               isAgentOffline: !c.isAgentOnline,
                               defaultWorkspaceUris: c.defaultWorkspaceUris,
                               workspaceUrisByAgentId: c.workspaceUrisByAgentId,
+                              streamingListenable: c.streamingListenable,
                             ),
                             ),
                             ),

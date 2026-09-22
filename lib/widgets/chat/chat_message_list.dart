@@ -63,6 +63,9 @@ class ChatMessageList extends StatefulWidget {
   /// Per-sender workspace roots so group replies open the right cwd.
   final Map<String, List<String>> workspaceUrisByAgentId;
 
+  /// 流式 chunk 只通知正在输出的气泡，不重建整列。
+  final Listenable streamingListenable;
+
   const ChatMessageList({
     super.key,
     required this.messages,
@@ -92,6 +95,7 @@ class ChatMessageList extends StatefulWidget {
     this.isAgentOffline = false,
     this.defaultWorkspaceUris = const [],
     this.workspaceUrisByAgentId = const {},
+    required this.streamingListenable,
   });
 
   @override
@@ -326,8 +330,8 @@ class _ChatMessageListState extends State<ChatMessageList> {
               ? (widget.workspaceUrisByAgentId[message.from.id] ??
                   widget.defaultWorkspaceUris)
               : widget.defaultWorkspaceUris;
-          // 流式期间整表会重建，但已结束的气泡消息对象不变。戳相同就复用
-          // 上次建好的子树，避免每条都重走 Markdown。
+          // 已结束的气泡在整列重建时复用子树。流式 chunk 不重建整列，
+          // 正在输出的那条另走 [_LiveMessageTile]。
           final stamp = (
             message,
             isStreaming,
@@ -346,14 +350,13 @@ class _ChatMessageListState extends State<ChatMessageList> {
             imageIndexMap,
             workspaceUris,
           );
-          final tile = _StableMessageTile(
-            stamp: stamp,
-            builder: (context) => RepaintBoundary(
+          Widget buildTile(BuildContext context, Message live) {
+            return RepaintBoundary(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (showDateSeparator)
-                  _buildDateSeparator(context, message.dateTime),
+                  _buildDateSeparator(context, live.dateTime),
                 DecoratedBox(
                   decoration: BoxDecoration(
                     color: isHighlighted
@@ -362,19 +365,19 @@ class _ChatMessageListState extends State<ChatMessageList> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: MessageLongPressHandler(
-                    message: message,
+                    message: live,
                     isGroupMode: isGroupMode,
-                    hasSelectableText: message.type == MessageType.text &&
-                        !message.isSystemMessage,
+                    hasSelectableText: live.type == MessageType.text &&
+                        !live.isSystemMessage,
                     onReply: (selectedText) =>
-                        widget.onReply(message, selectedText),
-                    onRollback: () => widget.onRollback(message),
+                        widget.onReply(live, selectedText),
+                    onRollback: () => widget.onRollback(live),
                     onReEdit: () =>
-                        widget.onRollbackReEdit(message, reEdit: true),
-                    onDelete: () => widget.onDelete(message),
-                    onViewTrace: (message.from.isAgent &&
-                            message.metadata?['trace_id'] != null)
-                        ? () => widget.onViewTrace?.call(message)
+                        widget.onRollbackReEdit(live, reEdit: true),
+                    onDelete: () => widget.onDelete(live),
+                    onViewTrace: (live.from.isAgent &&
+                            live.metadata?['trace_id'] != null)
+                        ? () => widget.onViewTrace?.call(live)
                         : null,
                     builder: ({
                       required textSelectionEnabled,
@@ -384,7 +387,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
                       required onSelectionChanged,
                     }) =>
                         MessageBubble(
-                      message: message,
+                      message: live,
                       isMyMessage: isMyMessage,
                       isStreaming: isStreaming,
                       textSelectionEnabled: textSelectionEnabled,
@@ -402,61 +405,61 @@ class _ChatMessageListState extends State<ChatMessageList> {
                       bodyCollapsed: bodyCollapsed,
                       onToggleBodyCollapse: isGroupMode && !isMyMessage
                           ? () => _collapsePreference.toggle(
-                                message.id,
+                                live.id,
                                 defaultExpandedMessageId:
                                     defaultExpandedMessageId,
                               )
                           : null,
-                      onStop: (message.id == streamingMessageId ||
-                              groupStreamingMessageIds.contains(message.id))
-                          ? () => widget.onStopStreaming?.call(message.id)
+                      onStop: (live.id == streamingMessageId ||
+                              groupStreamingMessageIds.contains(live.id))
+                          ? () => widget.onStopStreaming?.call(live.id)
                           : null,
                       onActionSelected:
                           (confirmationId, actionId, actionLabel) {
-                        final confirmationContext = (message.metadata?[
+                        final confirmationContext = (live.metadata?[
                                     'action_confirmation']
                                 as Map<String, dynamic>?)?[
                             'confirmation_context'] as String?;
                         widget.onActionSelected(
-                            message, confirmationId, actionId, actionLabel,
+                            live, confirmationId, actionId, actionLabel,
                             confirmationContext: confirmationContext);
                       },
                       onSingleSelectSubmitted:
                           (selectId, optionId, optionLabel) {
                         widget.onSingleSelectSubmitted(
-                            message, selectId, optionId, optionLabel);
+                            live, selectId, optionId, optionLabel);
                       },
                       onMultiSelectSubmitted: (selectId, optionIds, summary) {
                         widget.onMultiSelectSubmitted(
-                            message, selectId, optionIds, summary);
+                            live, selectId, optionIds, summary);
                       },
                       onFileUploadSubmitted: (uploadId, files, summary) {
                         widget.onFileUploadSubmitted(
-                            message, uploadId, files, summary);
+                            live, uploadId, files, summary);
                       },
                       onFormSubmitted: (formId, values, summary) {
                         widget.onFormSubmitted(
-                            message, formId, values, summary);
+                            live, formId, values, summary);
                       },
                       onPlanApprovalResponded:
                           widget.onPlanApprovalResponded != null
                               ? (approved, {feedback, skippedTaskIds}) =>
                                   widget.onPlanApprovalResponded!(
-                                      message, approved,
+                                      live, approved,
                                       feedback: feedback,
                                       skippedTaskIds: skippedTaskIds)
                               : null,
                       quotedMessage: quotedMessage,
                       showQuote: !isReplyToPrevious,
-                      onQuoteTap: message.replyTo != null
-                          ? () => widget.onScrollToMessage(message.replyTo!)
+                      onQuoteTap: live.replyTo != null
+                          ? () => widget.onScrollToMessage(live.replyTo!)
                           : null,
                       allImageMessages: allImageMessages,
-                      imageIndex: imageIndexMap[message.id] ?? 0,
+                      imageIndex: imageIndexMap[live.id] ?? 0,
                       imageIndexMap: imageIndexMap,
                       groupedImageMessages: groupedImages,
-                      onAvatarTap: message.from.isAgent
-                          ? () => widget.onAgentAvatarTap(message.from.id)
+                      onAvatarTap: live.from.isAgent
+                          ? () => widget.onAgentAvatarTap(live.from.id)
                           : null,
                       senderAvatar: senderAvatar,
                       isAgentOffline: isAgentOffline,
@@ -466,8 +469,21 @@ class _ChatMessageListState extends State<ChatMessageList> {
                 ),
               ],
             ),
-          ),
           );
+          }
+
+          final tile = isStreaming
+              ? _LiveMessageTile(
+                  listenable: widget.streamingListenable,
+                  messagesById: widget.messageIdMap,
+                  messageId: message.id,
+                  fallback: message,
+                  builder: buildTile,
+                )
+              : _StableMessageTile(
+                  stamp: stamp,
+                  builder: (context) => buildTile(context, message),
+                );
           if (!isStreaming) {
             return KeyedSubtree(key: ValueKey(message.id), child: tile);
           }
@@ -501,6 +517,85 @@ class _ChatMessageListState extends State<ChatMessageList> {
         ),
       ),
     );
+  }
+}
+
+/// 流式 chunk 期间只重建这一条。消息对象在 [messagesById] 里被替换，
+/// 整列不重建。
+class _LiveMessageTile extends StatefulWidget {
+  final Listenable listenable;
+  final Map<String, Message> messagesById;
+  final String messageId;
+  final Message fallback;
+  final Widget Function(BuildContext context, Message message) builder;
+
+  const _LiveMessageTile({
+    required this.listenable,
+    required this.messagesById,
+    required this.messageId,
+    required this.fallback,
+    required this.builder,
+  });
+
+  @override
+  State<_LiveMessageTile> createState() => _LiveMessageTileState();
+}
+
+class _LiveMessageTileState extends State<_LiveMessageTile> {
+  Message? _shown;
+  Widget? _child;
+  ThemeData? _theme;
+  TextScaler? _scaler;
+  Locale? _locale;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.listenable.addListener(_onStream);
+  }
+
+  @override
+  void didUpdateWidget(covariant _LiveMessageTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 整列重建时高亮、折叠等闭包输入可能变了，丢掉缓存。
+    // chunk 只走 listener 的 setState，不会进这里。
+    _child = null;
+    if (oldWidget.listenable != widget.listenable) {
+      oldWidget.listenable.removeListener(_onStream);
+      widget.listenable.addListener(_onStream);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.listenable.removeListener(_onStream);
+    super.dispose();
+  }
+
+  void _onStream() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final message =
+        widget.messagesById[widget.messageId] ?? widget.fallback;
+    final theme = Theme.of(context);
+    final scaler = MediaQuery.textScalerOf(context);
+    final locale = Localizations.localeOf(context);
+    // 群聊里多条同时在输出时，一次通知会打到每一条。对象没换就复用子树。
+    if (_child != null &&
+        identical(_shown, message) &&
+        theme == _theme &&
+        scaler == _scaler &&
+        locale == _locale) {
+      return _child!;
+    }
+    _shown = message;
+    _theme = theme;
+    _scaler = scaler;
+    _locale = locale;
+    return _child = widget.builder(context, message);
   }
 }
 

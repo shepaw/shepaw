@@ -3,9 +3,9 @@ import '../controllers/chat_controller.dart';
 /// 外层 ChatScreen build 真正消费的 controller 字段快照。
 ///
 /// `_onControllerChanged` 用它做门控：快照相等就不 `setState`。流式
-/// chunk 只改消息内容（气泡内容由 contentListenable 驱动列表子树重
-/// 建），外层 Scaffold/AppBar/输入区/面板不消费这些变化，无需整页
-/// rebuild。
+/// chunk 只改正在输出的气泡（streamingListenable）。其余内容变化由
+/// contentListenable 驱动列表子树重建。外层 Scaffold/AppBar/输入区/面板
+/// 不消费这些变化，无需整页 rebuild。
 ///
 /// ⚠️ 维护约定：`build` / `_buildChatScaffold` / 外层各 `_build*` 若新增
 /// 读取 controller 的字段，必须同步加到这里（并参与 == 比较），否则该
