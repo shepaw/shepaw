@@ -109,17 +109,6 @@ OverlayEntry showMessageContextMenu(
           },
         ),
       ),
-    if (message.type == MessageType.image || message.type == MessageType.file)
-      MessageMenuAction(
-        label: menuL10n.chat_download,
-        onTap: () => closeMenu(
-          afterClose: () => showTopToast(
-            context,
-            menuL10n.common_featureComingSoon,
-            icon: Icons.info_outline,
-          ),
-        ),
-      ),
     if (message.from.isUser) ...[
       MessageMenuAction(
         label: menuL10n.chat_rollback,
@@ -200,6 +189,7 @@ class _MessageFloatingMenuOverlayState
   static const _arrowSize = 8.0;
   static const _gap = 10.0;
   static const _menuBarHeight = 42.0;
+  static const _verticalItemHeight = 44.0;
 
   @override
   Widget build(BuildContext context) {
@@ -207,9 +197,15 @@ class _MessageFloatingMenuOverlayState
     final padding = MediaQuery.paddingOf(context);
     const horizontalMargin = 12.0;
     final maxMenuWidth = screenSize.width - horizontalMargin * 2;
-    final estimatedWidth = _estimateMenuWidth(context, widget.actions);
-    final menuWidth = estimatedWidth.clamp(0.0, maxMenuWidth);
-    final needsScroll = estimatedWidth > maxMenuWidth;
+    // TextPainter 比实际排版略窄，留一点余量，避免横条差几个像素就溢出。
+    final horizontalWidth = _estimateMenuWidth(context, widget.actions) + 8;
+    final vertical = horizontalWidth > maxMenuWidth;
+    final menuWidth = vertical
+        ? (_longestLabelWidth(context, widget.actions) + 32)
+            .clamp(140.0, maxMenuWidth)
+        : horizontalWidth;
+    final barHeight =
+        vertical ? widget.actions.length * _verticalItemHeight : _menuBarHeight;
 
     final anchorCenterX = widget.anchorRect.center.dx;
     var left = anchorCenterX - menuWidth / 2;
@@ -221,7 +217,7 @@ class _MessageFloatingMenuOverlayState
     final showAbove = widget.anchorRect.center.dy > screenSize.height * 0.4;
     final arrowLeft =
         (anchorCenterX - left - _arrowSize).clamp(8.0, menuWidth - 20.0);
-    final panelHeight = _menuBarHeight + _arrowSize;
+    final panelHeight = barHeight + _arrowSize;
 
     var top = showAbove
         ? widget.anchorRect.top - _gap - panelHeight
@@ -233,29 +229,16 @@ class _MessageFloatingMenuOverlayState
 
     final menuWidget = SizedBox(
       width: menuWidth,
-      height: _menuBarHeight,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: _menuBg,
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x40000000),
-              blurRadius: 8,
-              offset: Offset(0, 2),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            physics: needsScroll
-                ? const BouncingScrollPhysics()
-                : const NeverScrollableScrollPhysics(),
-            child: _buildMenuContent(context, widget.actions),
-          ),
-        ),
+      height: barHeight,
+      child: Material(
+        color: _menuBg,
+        elevation: 6,
+        shadowColor: const Color(0x40000000),
+        borderRadius: BorderRadius.circular(8),
+        clipBehavior: Clip.antiAlias,
+        child: vertical
+            ? _buildVerticalMenu(widget.actions)
+            : _buildMenuContent(widget.actions),
       ),
     );
 
@@ -273,9 +256,8 @@ class _MessageFloatingMenuOverlayState
     final column = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: showAbove
-          ? [menuWidget, arrowWidget]
-          : [arrowWidget, menuWidget],
+      children:
+          showAbove ? [menuWidget, arrowWidget] : [arrowWidget, menuWidget],
     );
 
     return Positioned(
@@ -295,67 +277,106 @@ double _estimateMenuWidth(
   BuildContext context,
   List<MessageMenuAction> actions,
 ) {
-    const style = TextStyle(color: Colors.white, fontSize: 14);
-    const buttonHPadding = 12.0;
-    const dividerWidth = 0.5;
-    var width = 0.0;
-    for (var i = 0; i < actions.length; i++) {
-      final painter = TextPainter(
-        text: TextSpan(text: actions[i].label, style: style),
-        textDirection: Directionality.of(context),
-        maxLines: 1,
-      )..layout();
-      width += painter.width + buttonHPadding * 2;
-      if (i < actions.length - 1) width += dividerWidth;
-    }
+  const style = TextStyle(color: Colors.white, fontSize: 14);
+  const buttonHPadding = 12.0;
+  const dividerWidth = 0.5;
+  var width = 0.0;
+  for (var i = 0; i < actions.length; i++) {
+    final painter = TextPainter(
+      text: TextSpan(text: actions[i].label, style: style),
+      textDirection: Directionality.of(context),
+      maxLines: 1,
+    )..layout();
+    width += painter.width + buttonHPadding * 2;
+    if (i < actions.length - 1) width += dividerWidth;
+  }
   return width;
 }
 
-Widget _buildMenuContent(
+Widget _buildMenuContent(List<MessageMenuAction> actions) {
+  return IntrinsicHeight(
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < actions.length; i++) ...[
+          if (i > 0)
+            Container(
+              width: 0.5,
+              margin: const EdgeInsets.symmetric(vertical: 10),
+              color: Colors.white24,
+            ),
+          _MenuActionButton(action: actions[i]),
+        ],
+      ],
+    ),
+  );
+}
+
+Widget _buildVerticalMenu(List<MessageMenuAction> actions) {
+  return Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      for (final action in actions)
+        _MenuActionButton(action: action, expanded: true),
+    ],
+  );
+}
+
+double _longestLabelWidth(
   BuildContext context,
   List<MessageMenuAction> actions,
 ) {
-    return IntrinsicHeight(
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (var i = 0; i < actions.length; i++) ...[
-            if (i > 0)
-              Container(
-                width: 0.5,
-                margin: const EdgeInsets.symmetric(vertical: 10),
-                color: Colors.white24,
-              ),
-            _MenuActionButton(action: actions[i]),
-          ],
-        ],
-      ),
-    );
+  const style = TextStyle(color: Colors.white, fontSize: 14);
+  var width = 0.0;
+  for (final action in actions) {
+    final painter = TextPainter(
+      text: TextSpan(text: action.label, style: style),
+      textDirection: Directionality.of(context),
+      maxLines: 1,
+    )..layout();
+    if (painter.width > width) width = painter.width;
+  }
+  return width;
 }
 
 class _MenuActionButton extends StatelessWidget {
   final MessageMenuAction action;
+  final bool expanded;
 
-  const _MenuActionButton({required this.action});
+  const _MenuActionButton({
+    required this.action,
+    this.expanded = false,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: action.onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-        child: Text(
-          action.label,
-          style: TextStyle(
-            color: action.color ?? Colors.white,
-            fontSize: 14,
-            fontWeight: FontWeight.w400,
-          ),
-          maxLines: 1,
-          softWrap: false,
-        ),
+    final label = Text(
+      action.label,
+      style: TextStyle(
+        color: action.color ?? Colors.white,
+        fontSize: 14,
+        fontWeight: FontWeight.w400,
       ),
+      maxLines: 1,
+      softWrap: false,
+    );
+    return InkWell(
+      onTap: action.onTap,
+      splashColor: Colors.white24,
+      highlightColor: Colors.white10,
+      child: expanded
+          ? SizedBox(
+              height: _MessageFloatingMenuOverlayState._verticalItemHeight,
+              width: double.infinity,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Align(alignment: Alignment.centerLeft, child: label),
+              ),
+            )
+          : Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+              child: label,
+            ),
     );
   }
 }

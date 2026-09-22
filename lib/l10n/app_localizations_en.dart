@@ -7388,6 +7388,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_sharedSetMaster => 'Set as master (backup target)';
 
   @override
+  String storage_sharedSetMasterConfirm(String name) {
+    return 'Set $name as the backup target? This device will start mirroring to it.';
+  }
+
+  @override
+  String get storage_sharedSetMasterFailed =>
+      'Couldn\'t set the backup target. Try again.';
+
+  @override
+  String get storage_nasConnectFailedRetry => 'Couldn\'t connect. Try again.';
+
+  @override
   String get storage_setMasterExplainBody =>
       'When a device is set as the master storage node, changes to this device\'s files/artifacts in the Nexus Pouch are mirrored to it on a schedule. When a device is offline, reads may fall back to the master mirror.';
 

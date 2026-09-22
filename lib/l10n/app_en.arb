@@ -3861,6 +3861,16 @@
   "storage_sharedBrowse": "Browse Nexus Pouch",
   "storage_sharedBrowseHint": "Read-only shared spaces (files / artifacts). Prefer live owner; fall back to master mirror when offline.",
   "storage_sharedSetMaster": "Set as master (backup target)",
+  "storage_sharedSetMasterConfirm": "Set {name} as the backup target? This device will start mirroring to it.",
+  "@storage_sharedSetMasterConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "storage_sharedSetMasterFailed": "Couldn't set the backup target. Try again.",
+  "storage_nasConnectFailedRetry": "Couldn't connect. Try again.",
   "storage_setMasterExplainBody": "When a device is set as the master storage node, changes to this device's files/artifacts in the Nexus Pouch are mirrored to it on a schedule. When a device is offline, reads may fall back to the master mirror.",
   "storage_browseLocalSpace": "Browse local Nexus Pouch",
   "storage_peerSpaceEntry": "Device Nexus Pouch",

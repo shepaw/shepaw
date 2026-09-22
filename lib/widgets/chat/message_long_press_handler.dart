@@ -120,8 +120,7 @@ class _MessageLongPressHandlerState extends State<MessageLongPressHandler> {
   void _installGlobalDismissRoute() {
     _removeGlobalDismissRoute();
     _globalDismissRoute = _handleGlobalPointer;
-    WidgetsBinding.instance.pointerRouter
-        .addGlobalRoute(_globalDismissRoute!);
+    WidgetsBinding.instance.pointerRouter.addGlobalRoute(_globalDismissRoute!);
   }
 
   void _removeGlobalDismissRoute() {
@@ -243,38 +242,47 @@ class _MessageLongPressHandlerState extends State<MessageLongPressHandler> {
           alpha: 0.14,
         );
 
-    return RawGestureDetector(
+    return Listener(
       key: _anchorKey,
       behavior: HitTestBehavior.deferToChild,
-      gestures: <Type, GestureRecognizerFactory>{
-        LongPressGestureRecognizer:
-            GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
-          () => _longPressRecognizer,
-          (_) {},
-        ),
+      onPointerDown: (event) {
+        if (event.kind == PointerDeviceKind.mouse &&
+            (event.buttons & kSecondaryMouseButton) != 0) {
+          _onLongPress();
+        }
       },
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          widget.builder(
-            textSelectionEnabled: _textSelectionEnabled,
-            menuActive: _menuActive,
-            selectionAreaKey: _selectionAreaKey,
-            selectionFocusNode: _selectionFocusNode,
-            onSelectionChanged: (content) => _selectedContent = content,
+      child: RawGestureDetector(
+        behavior: HitTestBehavior.deferToChild,
+        gestures: <Type, GestureRecognizerFactory>{
+          LongPressGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
+            () => _longPressRecognizer,
+            (_) {},
           ),
-          if (_menuActive)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: selectedTint,
-                    borderRadius: BorderRadius.circular(8),
+        },
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            widget.builder(
+              textSelectionEnabled: _textSelectionEnabled,
+              menuActive: _menuActive,
+              selectionAreaKey: _selectionAreaKey,
+              selectionFocusNode: _selectionFocusNode,
+              onSelectionChanged: (content) => _selectedContent = content,
+            ),
+            if (_menuActive)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: selectedTint,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }

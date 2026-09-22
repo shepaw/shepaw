@@ -10,6 +10,7 @@ import '../peer/screens/peer_scan_screen.dart';
 import '../peer/screens/peer_settings_screen.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_storage_service.dart';
+import '../services/logger_service.dart';
 import '../storage/device_identity.dart';
 import '../storage/nexuspouch_discovery_service.dart';
 import '../storage/store_service.dart';
@@ -115,7 +116,28 @@ class _StorageNexuspouchScreenState extends State<StorageNexuspouchScreen> {
           PeerConnectionState.connected;
 
   Future<void> _setMaster(String deviceId, {String? name}) async {
+    if (_busyFp != null) return;
     final l10n = AppLocalizations.of(context);
+    final label = (name == null || name.isEmpty) ? deviceId : name;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.storage_sharedSetMaster),
+        content: Text(l10n.storage_sharedSetMasterConfirm(label)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.common_cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.common_confirm),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
     setState(() => _busyFp = deviceId);
     try {
       await StoreService.instance.setMasterDeviceId(deviceId);
@@ -124,12 +146,17 @@ class _StorageNexuspouchScreenState extends State<StorageNexuspouchScreen> {
       if (mounted) {
         storageToast(
           context,
-          l10n.storage_sharedMasterSet(name ?? deviceId),
+          l10n.storage_sharedMasterSet(label),
         );
       }
     } catch (e) {
+      LoggerService().error(
+        'set master failed',
+        tag: 'Nexuspouch',
+        error: e,
+      );
       if (mounted) {
-        storageToast(context, l10n.storage_nasConnectFailed('$e'));
+        storageToast(context, l10n.storage_sharedSetMasterFailed);
       }
     } finally {
       if (mounted) setState(() => _busyFp = null);
@@ -180,8 +207,9 @@ class _StorageNexuspouchScreenState extends State<StorageNexuspouchScreen> {
         storageToast(context, l10n.storage_nasConnected(node.name));
       }
     } catch (e) {
+      LoggerService().error('nas connect failed', tag: 'Nexuspouch', error: e);
       if (mounted) {
-        storageToast(context, l10n.storage_nasConnectFailed('$e'));
+        storageToast(context, l10n.storage_nasConnectFailedRetry);
       }
     } finally {
       if (mounted) setState(() => _busyFp = null);
@@ -208,6 +236,48 @@ class _StorageNexuspouchScreenState extends State<StorageNexuspouchScreen> {
           readOnly: readOnly,
         ),
       ),
+    );
+  }
+
+  Widget _selfTrailing(AppLocalizations l10n, bool selfIsMaster) {
+    if (_busyFp == _selfId) {
+      return const SizedBox(
+        width: 24,
+        height: 24,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      );
+    }
+    if (_selfId.isEmpty) {
+      return const Icon(Icons.folder_open_outlined);
+    }
+    return PopupMenuButton<String>(
+      tooltip: l10n.common_more,
+      onSelected: (v) async {
+        switch (v) {
+          case 'browse':
+            _browseDevice(
+              deviceId: _selfId,
+              name: l10n.storage_sharedThisDevice,
+              readOnly: false,
+            );
+          case 'master':
+            await _setMaster(
+              _selfId,
+              name: l10n.storage_sharedThisDevice,
+            );
+        }
+      },
+      itemBuilder: (ctx) => [
+        PopupMenuItem(
+          value: 'browse',
+          child: Text(l10n.storage_sharedBrowse),
+        ),
+        if (!selfIsMaster)
+          PopupMenuItem(
+            value: 'master',
+            child: Text(l10n.storage_sharedSetMaster),
+          ),
+      ],
     );
   }
 
@@ -330,23 +400,15 @@ class _StorageNexuspouchScreenState extends State<StorageNexuspouchScreen> {
                 ],
               ),
               subtitle: Text(
-                _selfId.length > 8
-                    ? '${_selfId.substring(0, 8)}…'
-                    : _selfId,
+                _selfId.length > 8 ? '${_selfId.substring(0, 8)}…' : _selfId,
               ),
-              trailing: const Icon(Icons.folder_open_outlined),
+              trailing: _selfTrailing(l10n, selfIsMaster),
               onTap: _selfId.isEmpty
                   ? null
                   : () => _browseDevice(
                         deviceId: _selfId,
                         name: l10n.storage_sharedThisDevice,
                         readOnly: false,
-                      ),
-              onLongPress: selfIsMaster
-                  ? null
-                  : () => _setMaster(
-                        _selfId,
-                        name: l10n.storage_sharedThisDevice,
                       ),
             ),
           ),
@@ -457,9 +519,7 @@ class _StorageNexuspouchScreenState extends State<StorageNexuspouchScreen> {
               padding: const EdgeInsets.symmetric(vertical: 24),
               child: Center(
                 child: Text(
-                  _scanning
-                      ? l10n.storage_nasScanning
-                      : l10n.storage_nasEmpty,
+                  _scanning ? l10n.storage_nasScanning : l10n.storage_nasEmpty,
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),

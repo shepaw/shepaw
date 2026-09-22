@@ -12909,6 +12909,24 @@ abstract class AppLocalizations {
   /// **'设为 master（备份目标）'**
   String get storage_sharedSetMaster;
 
+  /// No description provided for @storage_sharedSetMasterConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'确定把 {name} 设为备份目标？本机会开始向它镜像同步。'**
+  String storage_sharedSetMasterConfirm(String name);
+
+  /// No description provided for @storage_sharedSetMasterFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'没能设为备份目标，请重试'**
+  String get storage_sharedSetMasterFailed;
+
+  /// No description provided for @storage_nasConnectFailedRetry.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接失败，请重试'**
+  String get storage_nasConnectFailedRetry;
+
   /// No description provided for @storage_setMasterExplainBody.
   ///
   /// In zh, this message translates to:

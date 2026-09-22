@@ -7117,6 +7117,17 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_sharedSetMaster => '设为 master（备份目标）';
 
   @override
+  String storage_sharedSetMasterConfirm(String name) {
+    return '确定把 $name 设为备份目标？本机会开始向它镜像同步。';
+  }
+
+  @override
+  String get storage_sharedSetMasterFailed => '没能设为备份目标，请重试';
+
+  @override
+  String get storage_nasConnectFailedRetry => '连接失败，请重试';
+
+  @override
   String get storage_setMasterExplainBody =>
       '将某台设备设为主存储节点（master）后，本机储物袋的 files/artifacts 变更会定期镜像备份到该端。设备离线时，可尝试从 master 读取镜像副本。';
 

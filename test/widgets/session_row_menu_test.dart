@@ -1,4 +1,3 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -122,7 +121,7 @@ void main() {
     await flushToastTimers(tester);
   });
 
-  testWidgets('桌面 hover 把日期换成更多图标，点击出下拉而不是底部菜单', (tester) async {
+  testWidgets('桌面会话行同时显示时间和更多，点击出下拉而不是底部菜单', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         locale: const Locale('zh'),
@@ -158,16 +157,6 @@ void main() {
     );
 
     expect(find.text('9/12'), findsOneWidget);
-    expect(find.byKey(const Key('session_row_more')), findsNothing);
-
-    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    await gesture.addPointer(location: Offset.zero);
-    addTearDown(gesture.removePointer);
-    await tester.pump();
-    await gesture.moveTo(tester.getCenter(find.text('Session row')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('9/12'), findsNothing);
     expect(find.byKey(const Key('session_row_more')), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('session_row_more')));

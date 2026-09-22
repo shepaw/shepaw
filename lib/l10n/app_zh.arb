@@ -4336,6 +4336,16 @@
   "storage_sharedBrowse": "浏览储物袋",
   "storage_sharedBrowseHint": "只读浏览该设备共享分区（files / artifacts）。属主在线直读；离线时尝试 master 镜像。",
   "storage_sharedSetMaster": "设为 master（备份目标）",
+  "storage_sharedSetMasterConfirm": "确定把 {name} 设为备份目标？本机会开始向它镜像同步。",
+  "@storage_sharedSetMasterConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "storage_sharedSetMasterFailed": "没能设为备份目标，请重试",
+  "storage_nasConnectFailedRetry": "连接失败，请重试",
   "storage_setMasterExplainBody": "将某台设备设为主存储节点（master）后，本机储物袋的 files/artifacts 变更会定期镜像备份到该端。设备离线时，可尝试从 master 读取镜像副本。",
   "storage_browseLocalSpace": "浏览本机储物袋",
   "storage_peerSpaceEntry": "设备储物袋",

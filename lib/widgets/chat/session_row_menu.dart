@@ -248,7 +248,7 @@ Future<void> _copyText(BuildContext context, String text) async {
   );
 }
 
-/// 桌面端会话行 hover：把右侧日期换成「更多」，菜单打开期间保持图标。
+/// 桌面端会话行：时间和「更多」一起显示，不必悬停才找得到。
 class SessionRowHoverHost extends StatefulWidget {
   final bool enabled;
   final Widget Function(BuildContext context, SessionRowHoverState hover)
@@ -275,35 +275,23 @@ class SessionRowHoverState {
 }
 
 class _SessionRowHoverHostState extends State<SessionRowHoverHost> {
-  bool _hovered = false;
-  bool _menuOpen = false;
-
   Future<void> _holdWhileOpen(Future<void> Function() action) async {
-    setState(() => _menuOpen = true);
-    try {
-      await action();
-    } finally {
-      if (mounted) setState(() => _menuOpen = false);
-    }
+    await action();
   }
 
   @override
   Widget build(BuildContext context) {
-    final hover = SessionRowHoverState(
-      showMore: widget.enabled && (_hovered || _menuOpen),
-      holdWhileOpen: _holdWhileOpen,
-    );
-    final child = widget.builder(context, hover);
-    if (!widget.enabled) return child;
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: child,
+    return widget.builder(
+      context,
+      SessionRowHoverState(
+        showMore: widget.enabled,
+        holdWhileOpen: _holdWhileOpen,
+      ),
     );
   }
 }
 
-/// 会话行右侧：默认日期；桌面 hover 后换成更多按钮。
+/// 会话行右侧：手机只显示时间；桌面同时显示时间和「更多」。
 Widget? sessionRowTrailing({
   required BuildContext context,
   required bool showMore,
@@ -332,7 +320,17 @@ Widget? sessionRowTrailing({
           timeText,
           style: TextStyle(fontSize: 12, color: Colors.grey[500]),
         );
-  final end = showMore ? more : time;
+  final Widget? end;
+  if (showMore && more != null && time != null) {
+    end = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [time, more],
+    );
+  } else if (showMore && more != null) {
+    end = more;
+  } else {
+    end = time;
+  }
   if (above == null && end == null) return null;
   if (above == null) return end;
   return Column(

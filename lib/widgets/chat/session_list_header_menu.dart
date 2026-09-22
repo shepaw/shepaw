@@ -103,9 +103,9 @@ class _SessionListHeaderMoreButtonState
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.edit_outlined, size: 20),
+              const Icon(Icons.checklist_outlined, size: 20),
               const SizedBox(width: 12),
-              Text(l10n.common_edit),
+              Text(l10n.chat_selectSessions),
             ],
           ),
         ),
@@ -174,8 +174,7 @@ class _SessionListHeaderMoreButtonState
             return IconButton(
               icon: const Icon(Icons.more_vert, size: 20),
               padding: EdgeInsets.zero,
-              constraints:
-                  const BoxConstraints.tightFor(width: 36, height: 36),
+              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
               visualDensity: VisualDensity.compact,
               tooltip: l10n.common_more,
               onPressed: () => _showMenu(buttonContext, totalUnread),
