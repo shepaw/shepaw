@@ -4188,5 +4188,42 @@
   "chat_planModeUnsupported": "This agent has no native plan mode",
   "chat_sessionModeSwitchFailed": "Failed to switch session mode",
   "chat_mainModelUnset": "No model set",
-  "chat_mainModelSwitchFailed": "Failed to switch main model"
+  "chat_mainModelSwitchFailed": "Failed to switch main model",
+  "common_discardUnsaved": "You have unsaved changes. Discard them?",
+  "chat_deleteMessageTitle": "Delete message",
+  "chat_deleteMessageContent": "Delete this message? This cannot be undone.",
+  "chat_resetDmConfirm": "This sends a reset command and clears the remote context.",
+  "chat_resetGroupConfirm": "This deletes every message in the current group session. This cannot be undone.",
+  "chat_currentSessionCannotDelete": "Open now, can't delete",
+  "chat_queueClearConfirm": "Clear every message waiting to be sent?",
+  "chat_voiceSwipeToCancel": "Swipe up to cancel",
+  "chat_voiceReleaseToCancel": "Release to cancel",
+  "chat_voiceHoldToTalk": "Hold to talk",
+  "jadeSlip_deleteItemTitle": "Delete item",
+  "jadeSlip_deleteItemBody": "Delete this checklist item?",
+  "jadeSlip_deleteAttachmentTitle": "Delete attachment",
+  "jadeSlip_deleteAttachmentBody": "Delete this attachment? The file will be removed from the pouch.",
+  "storage_browserDeleteFolderTitle": "Delete folder",
+  "storage_browserDeleteFolderConfirm": "Delete folder {path} and its contents, and move them to the recycle bin?",
+  "@storage_browserDeleteFolderConfirm": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "storage_browserDeletePermanentTitle": "Delete permanently",
+  "storage_browserDeletePermanentConfirm": "Permanently delete {path}? It will not go to the recycle bin.",
+  "@storage_browserDeletePermanentConfirm": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "createGroup_invalidMaxRounds": "Enter a positive whole number for max rounds",
+  "createGroup_failed": "Couldn't create the group. Try again.",
+  "agentDetail_autosaveFailed": "Couldn't save. Your edits are still here — try again.",
+  "groupDetail_saveFailed": "Couldn't save. Try again.",
+  "scheduledTasks_saveFailed": "Couldn't save. Try again."
 }

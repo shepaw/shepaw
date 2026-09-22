@@ -4663,5 +4663,42 @@
   "chat_planModeUnsupported": "该 Agent 没有原生规划模式",
   "chat_sessionModeSwitchFailed": "切换会话模式失败",
   "chat_mainModelUnset": "未设置模型",
-  "chat_mainModelSwitchFailed": "切换主模型失败"
+  "chat_mainModelSwitchFailed": "切换主模型失败",
+  "common_discardUnsaved": "有未保存的修改，放弃更改？",
+  "chat_deleteMessageTitle": "删除消息",
+  "chat_deleteMessageContent": "确定删除这条消息？此操作不可撤销。",
+  "chat_resetDmConfirm": "将向当前会话发送重置指令，清空远端上下文。",
+  "chat_resetGroupConfirm": "这将删除当前群会话的所有消息，此操作不可撤销。",
+  "chat_currentSessionCannotDelete": "正在查看，无法删除",
+  "chat_queueClearConfirm": "确定清空队列中的全部待发送消息？",
+  "chat_voiceSwipeToCancel": "上滑取消",
+  "chat_voiceReleaseToCancel": "松手取消",
+  "chat_voiceHoldToTalk": "按住说话",
+  "jadeSlip_deleteItemTitle": "删除待办",
+  "jadeSlip_deleteItemBody": "确定删除这条待办？",
+  "jadeSlip_deleteAttachmentTitle": "删除附件",
+  "jadeSlip_deleteAttachmentBody": "确定删除这个附件？文件会从储物袋中删除。",
+  "storage_browserDeleteFolderTitle": "删除文件夹",
+  "storage_browserDeleteFolderConfirm": "将删除文件夹 {path} 及其内容，并移入回收站。确认？",
+  "@storage_browserDeleteFolderConfirm": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "storage_browserDeletePermanentTitle": "永久删除",
+  "storage_browserDeletePermanentConfirm": "将永久删除 {path}，不会进入回收站。确认？",
+  "@storage_browserDeletePermanentConfirm": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "createGroup_invalidMaxRounds": "最大轮次请输入正整数",
+  "createGroup_failed": "创建群聊失败，请重试",
+  "agentDetail_autosaveFailed": "保存失败，修改还在，请稍后重试",
+  "groupDetail_saveFailed": "保存失败，请重试",
+  "scheduledTasks_saveFailed": "保存失败，请重试"
 }

@@ -10,6 +10,7 @@ import '../services/group/group_member_session_service.dart';
 import '../services/she_service.dart';
 import '../utils/resume_utils.dart';
 import '../widgets/agent_list_avatar.dart';
+import '../widgets/discard_changes_scope.dart';
 import 'chat_screen.dart';
 
 class CreateGroupScreen extends StatefulWidget {
@@ -37,17 +38,54 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
   final LocalDatabaseService _databaseService = LocalDatabaseService();
   List<Agent> _agents = [];
   bool _isLoading = true;
+  bool _creating = false;
+  final _discardKey = GlobalKey<DiscardChangesScopeState>();
+  Set<String> _baselineAgentIds = {};
+  String? _baselineAdminId;
 
   @override
   void initState() {
     super.initState();
     _filterController.addListener(_onFilterChanged);
+    for (final controller in [
+      _nameController,
+      _purposeController,
+      _systemPromptController,
+      _maxRoundsController,
+    ]) {
+      controller.addListener(_onDraftChanged);
+    }
     _loadAgents();
+  }
+
+  void _onDraftChanged() {
+    if (mounted) setState(() {});
+  }
+
+  bool get _formDirty {
+    if (_nameController.text.trim().isNotEmpty) return true;
+    if (_purposeController.text.trim().isNotEmpty) return true;
+    if (_systemPromptController.text.trim().isNotEmpty) return true;
+    if (_maxRoundsController.text.trim() != '50') return true;
+    if (_mentionMode != 'adminOnly') return true;
+    if (_selectedAgentIds.length != _baselineAgentIds.length ||
+        !_selectedAgentIds.containsAll(_baselineAgentIds)) {
+      return true;
+    }
+    return _adminAgentId != _baselineAdminId;
   }
 
   @override
   void dispose() {
     _filterController.removeListener(_onFilterChanged);
+    for (final controller in [
+      _nameController,
+      _purposeController,
+      _systemPromptController,
+      _maxRoundsController,
+    ]) {
+      controller.removeListener(_onDraftChanged);
+    }
     _filterController.dispose();
     _nameController.dispose();
     _purposeController.dispose();
@@ -111,9 +149,12 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
     _selectedAgentIds.add(she.id);
     _groupBioControllers.putIfAbsent(she.id, TextEditingController.new);
     _adminAgentId = she.id;
+    _baselineAgentIds = Set<String>.from(_selectedAgentIds);
+    _baselineAdminId = _adminAgentId;
   }
 
   Future<void> _createGroup() async {
+    if (_creating) return;
     final l10n = AppLocalizations.of(context);
     final name = _nameController.text.trim();
     final purpose = _purposeController.text.trim();
@@ -147,6 +188,16 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
       return;
     }
 
+    if (maxRoundsText.isNotEmpty &&
+        (maxLoopRounds == null || maxLoopRounds < 1)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.createGroup_invalidMaxRounds)),
+      );
+      return;
+    }
+
+    setState(() => _creating = true);
+    try {
     // Generate a UUID channel ID for the group
     final channelId = 'group_${const Uuid().v4()}';
     const userId = 'user';
@@ -187,19 +238,29 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
       userId: userId,
     );
 
-    if (mounted) {
-      if (widget.onGroupCreated != null) {
-        widget.onGroupCreated!(channelId);
-      } else {
-        // Replace CreateGroupScreen with ChatScreen.
-        // HomeScreen's .then((_) => _loadAgents()) fires on replacement,
-        // refreshing the group list while user is in the chat.
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (_) => ChatScreen(channelId: channelId),
-          ),
+    if (!mounted) return;
+    await _discardKey.currentState?.allowPop();
+    if (!mounted) return;
+    if (widget.onGroupCreated != null) {
+      widget.onGroupCreated!(channelId);
+    } else {
+      // Replace CreateGroupScreen with ChatScreen.
+      // HomeScreen's .then((_) => _loadAgents()) fires on replacement,
+      // refreshing the group list while user is in the chat.
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => ChatScreen(channelId: channelId),
+        ),
+      );
+    }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.createGroup_failed)),
         );
       }
+    } finally {
+      if (mounted) setState(() => _creating = false);
     }
   }
 
@@ -219,7 +280,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
       child: SizedBox(
         width: double.infinity,
         child: ElevatedButton.icon(
-          onPressed: _selectedAgentIds.isEmpty ? null : _createGroup,
+          onPressed: _creating || _selectedAgentIds.isEmpty ? null : _createGroup,
           icon: const Icon(Icons.check),
           label: Text(l10n.createGroup_button),
           style: ElevatedButton.styleFrom(
@@ -668,7 +729,10 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
-    return Scaffold(
+    return DiscardChangesScope(
+      key: _discardKey,
+      dirty: _formDirty,
+      child: Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: Navigator.canPop(context),
         title: Text(l10n.createGroup_title),
@@ -681,6 +745,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                 _buildBottomBar(l10n, colorScheme),
               ],
             ),
+      ),
     );
   }
 }

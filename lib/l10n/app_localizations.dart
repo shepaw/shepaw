@@ -13730,6 +13730,144 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'切换主模型失败'**
   String get chat_mainModelSwitchFailed;
+
+  /// No description provided for @common_discardUnsaved.
+  ///
+  /// In zh, this message translates to:
+  /// **'有未保存的修改，放弃更改？'**
+  String get common_discardUnsaved;
+
+  /// No description provided for @chat_deleteMessageTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除消息'**
+  String get chat_deleteMessageTitle;
+
+  /// No description provided for @chat_deleteMessageContent.
+  ///
+  /// In zh, this message translates to:
+  /// **'确定删除这条消息？此操作不可撤销。'**
+  String get chat_deleteMessageContent;
+
+  /// No description provided for @chat_resetDmConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'将向当前会话发送重置指令，清空远端上下文。'**
+  String get chat_resetDmConfirm;
+
+  /// No description provided for @chat_resetGroupConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'这将删除当前群会话的所有消息，此操作不可撤销。'**
+  String get chat_resetGroupConfirm;
+
+  /// No description provided for @chat_currentSessionCannotDelete.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在查看，无法删除'**
+  String get chat_currentSessionCannotDelete;
+
+  /// No description provided for @chat_queueClearConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'确定清空队列中的全部待发送消息？'**
+  String get chat_queueClearConfirm;
+
+  /// No description provided for @chat_voiceSwipeToCancel.
+  ///
+  /// In zh, this message translates to:
+  /// **'上滑取消'**
+  String get chat_voiceSwipeToCancel;
+
+  /// No description provided for @chat_voiceReleaseToCancel.
+  ///
+  /// In zh, this message translates to:
+  /// **'松手取消'**
+  String get chat_voiceReleaseToCancel;
+
+  /// No description provided for @chat_voiceHoldToTalk.
+  ///
+  /// In zh, this message translates to:
+  /// **'按住说话'**
+  String get chat_voiceHoldToTalk;
+
+  /// No description provided for @jadeSlip_deleteItemTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除待办'**
+  String get jadeSlip_deleteItemTitle;
+
+  /// No description provided for @jadeSlip_deleteItemBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'确定删除这条待办？'**
+  String get jadeSlip_deleteItemBody;
+
+  /// No description provided for @jadeSlip_deleteAttachmentTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除附件'**
+  String get jadeSlip_deleteAttachmentTitle;
+
+  /// No description provided for @jadeSlip_deleteAttachmentBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'确定删除这个附件？文件会从储物袋中删除。'**
+  String get jadeSlip_deleteAttachmentBody;
+
+  /// No description provided for @storage_browserDeleteFolderTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除文件夹'**
+  String get storage_browserDeleteFolderTitle;
+
+  /// No description provided for @storage_browserDeleteFolderConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'将删除文件夹 {path} 及其内容，并移入回收站。确认？'**
+  String storage_browserDeleteFolderConfirm(String path);
+
+  /// No description provided for @storage_browserDeletePermanentTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'永久删除'**
+  String get storage_browserDeletePermanentTitle;
+
+  /// No description provided for @storage_browserDeletePermanentConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'将永久删除 {path}，不会进入回收站。确认？'**
+  String storage_browserDeletePermanentConfirm(String path);
+
+  /// No description provided for @createGroup_invalidMaxRounds.
+  ///
+  /// In zh, this message translates to:
+  /// **'最大轮次请输入正整数'**
+  String get createGroup_invalidMaxRounds;
+
+  /// No description provided for @createGroup_failed.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建群聊失败，请重试'**
+  String get createGroup_failed;
+
+  /// No description provided for @agentDetail_autosaveFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存失败，修改还在，请稍后重试'**
+  String get agentDetail_autosaveFailed;
+
+  /// No description provided for @groupDetail_saveFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存失败，请重试'**
+  String get groupDetail_saveFailed;
+
+  /// No description provided for @scheduledTasks_saveFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存失败，请重试'**
+  String get scheduledTasks_saveFailed;
 }
 
 class _AppLocalizationsDelegate

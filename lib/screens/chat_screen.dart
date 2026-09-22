@@ -22,6 +22,7 @@ import '../services/local_database_service.dart';
 
 import '../services/group/group_management_service.dart';
 import '../utils/layout_utils.dart';
+import '../widgets/discard_changes_scope.dart';
 import '../widgets/drawer_swipe_detector.dart';
 import '../widgets/right_drawer_route.dart';
 import '../l10n/app_localizations.dart';
@@ -326,7 +327,10 @@ class _ChatScreenState extends State<ChatScreen>
     _recordingSubscription = _audioRecordingService.stateStream.listen((state) {
       if (mounted && state.isRecording != wasRecording) {
         wasRecording = state.isRecording;
-        setState(() => _isRecording = state.isRecording);
+        setState(() {
+          _isRecording = state.isRecording;
+          if (!state.isRecording) _isCancelZone = false;
+        });
       }
     });
 
@@ -544,7 +548,9 @@ class _ChatScreenState extends State<ChatScreen>
           embedded: embedded,
         ));
       case ShowLoadingOverlayEvent(:final message):
-        _showClearingOverlay(message);
+        _showClearingOverlay(
+          _resolveSnackBarMessage(AppLocalizations.of(context), message),
+        );
       case DismissOverlayEvent():
         _dismissClearingOverlay();
       case RequestScrollToBottomEvent(:final force):
@@ -682,6 +688,18 @@ class _ChatScreenState extends State<ChatScreen>
         return l10n.chat_groupBoundInputDisabled;
       case 'chat_batchDeleteSuccess':
         return l10n.chat_batchDeleteSuccess(int.tryParse(param) ?? 0);
+      case 'chat_clearingSession':
+        return l10n.chat_clearingSession;
+      case 'chat_clearingAllSessions':
+        return l10n.chat_clearingAllSessions;
+      case 'chat_clearingGroupSession':
+        return l10n.chat_clearingGroupSession;
+      case 'chat_clearingAllGroupSessions':
+        return l10n.chat_clearingAllGroupSessions;
+      case 'chat_forkingSession':
+        return l10n.chat_forkingSession;
+      case 'chat_copyingSession':
+        return l10n.chat_copyingSession;
       case 'chat_clearSessionFailed':
         return l10n.chat_clearSessionFailed(param);
       case 'chat_copySessionFailed':
@@ -2784,6 +2802,13 @@ class _ChatScreenState extends State<ChatScreen>
   /// 抽屉内「重置会话」：等抽屉销毁后对当前会话执行重置。
 
   Future<void> _resetDrawerSession({required bool isGroup}) async {
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await showConfirmDialog(
+      context,
+      title: l10n.chat_resetSession,
+      message: isGroup ? l10n.chat_resetGroupConfirm : l10n.chat_resetDmConfirm,
+    );
+    if (!confirmed || !mounted) return;
     await _closeDrawerAndWait();
     if (!mounted) return;
     if (isGroup) {
@@ -3658,8 +3683,30 @@ class _ChatScreenState extends State<ChatScreen>
                                       skippedTaskIds: skippedTaskIds),
                               onReply: (msg, selectedText) =>
                                   c.startReply(msg, selectedText: selectedText),
-                              onRollback: (msg) => c.rollbackMessage(msg),
+                              onRollback: (msg) async {
+                                final l10n = AppLocalizations.of(context);
+                                if (!await showConfirmDialog(
+                                  context,
+                                  title: l10n.chat_rollbackTitle,
+                                  message: l10n.chat_rollbackContent,
+                                )) {
+                                  return;
+                                }
+                                if (!mounted) return;
+                                await c.rollbackMessage(msg);
+                              },
                               onRollbackReEdit: (msg, {bool reEdit = false}) async {
+                                final l10n = AppLocalizations.of(context);
+                                if (!await showConfirmDialog(
+                                  context,
+                                  title: reEdit
+                                      ? l10n.chat_reEditTitle
+                                      : l10n.chat_rollbackTitle,
+                                  message: l10n.chat_rollbackContent,
+                                )) {
+                                  return;
+                                }
+                                if (!mounted) return;
                                 final ok = await c.rollbackMessage(msg,
                                     reEdit: reEdit);
                                 // 回滚成功后预填原文并聚焦输入框（重新编辑）。
@@ -3672,7 +3719,19 @@ class _ChatScreenState extends State<ChatScreen>
                                   _textFieldFocusNode.requestFocus();
                                 }
                               },
-                              onDelete: (msg) => c.deleteMessage(msg),
+                              onDelete: (msg) async {
+                                final l10n = AppLocalizations.of(context);
+                                if (!await showConfirmDialog(
+                                  context,
+                                  title: l10n.chat_deleteMessageTitle,
+                                  message: l10n.chat_deleteMessageContent,
+                                  confirmLabel: l10n.common_delete,
+                                )) {
+                                  return;
+                                }
+                                if (!mounted) return;
+                                await c.deleteMessage(msg);
+                              },
                               onAgentAvatarTap: _navigateToAgentDetailById,
                               onScrollToMessage: _scrollToMessage,
                               highlightedMessageId: c.highlightedMessageId,
@@ -3830,6 +3889,10 @@ class _ChatScreenState extends State<ChatScreen>
                   audioRecordingService: _audioRecordingService,
                   isRecording: _isRecording,
                   isCancelZone: _isCancelZone,
+                  onCancelZoneChanged: (cancel) {
+                    if (!mounted || _isCancelZone == cancel) return;
+                    setState(() => _isCancelZone = cancel);
+                  },
                   onSend: _sendMessage,
                   onToggleAttachmentPanel: _toggleAttachmentPanel,
                   showAttachmentPanel: _showAttachmentPanel,

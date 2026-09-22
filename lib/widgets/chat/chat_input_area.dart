@@ -53,6 +53,8 @@ class ChatInputArea extends StatefulWidget {
   final AudioRecordingService audioRecordingService;
   final bool isRecording;
   final bool isCancelZone;
+  /// Finger moved far enough up during hold-to-talk to cancel on release.
+  final ValueChanged<bool>? onCancelZoneChanged;
   final VoidCallback onSend;
   /// Mobile: toggles the WeChat-style attachment panel (grid of emoji /
   /// album / camera / file / storage-bag / instruction actions).
@@ -111,6 +113,7 @@ class ChatInputArea extends StatefulWidget {
     required this.audioRecordingService,
     required this.isRecording,
     required this.isCancelZone,
+    this.onCancelZoneChanged,
     required this.onSend,
     required this.onToggleAttachmentPanel,
     required this.showAttachmentPanel,
@@ -1307,6 +1310,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
                       tooltip: 'Attachment',
                       onPressed: _toggleDesktopAttachmentPopover,
                     ),
+                    if (widget.hasAudioModel && widget.onSendVoice != null)
+                      _buildDesktopHoldToTalk(iconColor, l10n),
                     if (_sessionModeAvailable) ...[
                       const SizedBox(width: 4),
                       Flexible(
@@ -1896,38 +1901,77 @@ class ChatInputAreaState extends State<ChatInputArea> {
   // Hold to talk button
   // ---------------------------------------------------------------------------
 
+  static const double _voiceCancelDistance = 48;
+
+  void _startVoiceHold() {
+    widget.audioRecordingService.startRecording().then((success) {
+      if (!success && mounted) {
+        showTopToast(
+          context,
+          AppLocalizations.of(context).chat_micNotAvailable,
+          icon: Icons.mic_off,
+          color: Colors.orange,
+        );
+      }
+    });
+  }
+
+  void _updateVoiceCancelZone(LongPressMoveUpdateDetails details) {
+    final cancel = details.offsetFromOrigin.dy < -_voiceCancelDistance;
+    if (cancel != widget.isCancelZone) {
+      widget.onCancelZoneChanged?.call(cancel);
+    }
+  }
+
+  Future<void> _endVoiceHold() async {
+    final cancel = widget.isCancelZone;
+    widget.onCancelZoneChanged?.call(false);
+    if (cancel) {
+      await widget.audioRecordingService.cancelRecording();
+    } else {
+      widget.onSendVoice?.call();
+    }
+  }
+
+  Future<void> _cancelVoiceHold() async {
+    widget.onCancelZoneChanged?.call(false);
+    // On Samsung devices, edge panel gestures can steal focus and cancel
+    // the long press without triggering onLongPressEnd. Stop/cancel the
+    // recording so it doesn't keep running in the background.
+    if (widget.audioRecordingService.currentState.isRecording) {
+      await widget.audioRecordingService.cancelRecording();
+    }
+  }
+
+  Widget _buildDesktopHoldToTalk(Color iconColor, AppLocalizations l10n) {
+    final recording = widget.isRecording;
+    return GestureDetector(
+      onLongPressStart: (_) => _startVoiceHold(),
+      onLongPressMoveUpdate: _updateVoiceCancelZone,
+      onLongPressEnd: (_) => _endVoiceHold(),
+      onLongPressCancel: _cancelVoiceHold,
+      child: Tooltip(
+        message: l10n.chat_voiceHoldToTalk,
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Icon(
+            recording ? Icons.mic : Icons.mic_none,
+            size: 22,
+            color: recording
+                ? Theme.of(context).colorScheme.error
+                : iconColor,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildHoldToTalkButton() {
     return GestureDetector(
-      onLongPressStart: (_) {
-        widget.audioRecordingService.startRecording().then((success) {
-          if (!success && mounted) {
-            showTopToast(
-              context,
-              AppLocalizations.of(context).chat_micNotAvailable,
-              icon: Icons.mic_off,
-              color: Colors.orange,
-            );
-          }
-        });
-      },
-      onLongPressMoveUpdate: (details) {
-        // Cancel zone is handled by parent widget
-      },
-      onLongPressEnd: (_) async {
-        if (widget.isCancelZone) {
-          await widget.audioRecordingService.cancelRecording();
-        } else {
-          widget.onSendVoice?.call();
-        }
-      },
-      onLongPressCancel: () async {
-        // On Samsung devices, edge panel gestures can steal focus and cancel
-        // the long press without triggering onLongPressEnd. Stop/cancel the
-        // recording so it doesn't keep running in the background.
-        if (widget.audioRecordingService.currentState.isRecording) {
-          await widget.audioRecordingService.cancelRecording();
-        }
-      },
+      onLongPressStart: (_) => _startVoiceHold(),
+      onLongPressMoveUpdate: _updateVoiceCancelZone,
+      onLongPressEnd: (_) => _endVoiceHold(),
+      onLongPressCancel: _cancelVoiceHold,
       child: Container(
         height: 48,
         decoration: BoxDecoration(

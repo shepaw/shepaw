@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../services/audio_recording_service.dart';
 
 /// 录音时显示在输入区域上方的覆盖组件。
@@ -51,8 +52,10 @@ class _RecordingChrome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bgColor = isCancelZone ? Colors.red[50] : Colors.grey[100];
-    final accentColor = isCancelZone ? Colors.red : Theme.of(context).primaryColor;
+    final scheme = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context);
+    final bgColor = isCancelZone ? scheme.errorContainer : scheme.surfaceContainerHigh;
+    final accentColor = isCancelZone ? scheme.error : scheme.primary;
 
     // 脉动红点大小随振幅变化
     final dotSize = 12.0 + amplitude * 8.0;
@@ -94,10 +97,12 @@ class _RecordingChrome extends StatelessWidget {
 
           // 提示文字
           Text(
-            isCancelZone ? 'Release to cancel' : 'Swipe up to cancel',
+            isCancelZone
+                ? l10n.chat_voiceReleaseToCancel
+                : l10n.chat_voiceSwipeToCancel,
             style: TextStyle(
               fontSize: 14,
-              color: isCancelZone ? Colors.red : Colors.grey[600],
+              color: isCancelZone ? scheme.error : scheme.onSurfaceVariant,
             ),
           ),
         ],

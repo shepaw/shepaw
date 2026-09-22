@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/discard_changes_scope.dart';
 import '../models/agent_scenario_models.dart';
 import '../models/peer_boundary_config.dart';
 import '../models/remote_agent.dart';
@@ -97,8 +98,32 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
   AgentScenarioModels _scenarioModels = const AgentScenarioModels();
 
   late RemoteAgentService _agentService;
+  final _discardKey = GlobalKey<DiscardChangesScopeState>();
 
-  void _finish() {
+  bool get _hasDraft =>
+      _nameController.text.trim().isNotEmpty ||
+      _bioController.text.trim().isNotEmpty ||
+      _endpointController.text.trim().isNotEmpty ||
+      _tokenController.text.trim().isNotEmpty ||
+      _systemPromptController.text.trim().isNotEmpty ||
+      _remoteAgentIdController.text.trim().isNotEmpty ||
+      _enrollmentCodeController.text.trim().isNotEmpty ||
+      _selectedAvatar != '🤖' ||
+      _localAvatarPath != null ||
+      _enabledSkills.isNotEmpty ||
+      _selectedMainModelId != null ||
+      _allowExternalAccess ||
+      _allowPeerSoulEdit ||
+      _allowPeerResumeEdit ||
+      _allowPeerMemoryEdit;
+
+  void _onDraftChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _finish() async {
+    await _discardKey.currentState?.allowPop();
+    if (!mounted) return;
     if (widget.onDone != null) {
       widget.onDone!();
     } else {
@@ -112,6 +137,17 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
     _agentService = getIt<RemoteAgentService>();
     // Auto-parse token + agentId from a full URL pasted into the endpoint field
     _endpointController.addListener(_onEndpointChanged);
+    for (final controller in [
+      _nameController,
+      _bioController,
+      _endpointController,
+      _tokenController,
+      _systemPromptController,
+      _remoteAgentIdController,
+      _enrollmentCodeController,
+    ]) {
+      controller.addListener(_onDraftChanged);
+    }
 
     // v2.1: fetch (or generate on first ever launch) this device's long-term
     // Noise static keypair so the pairing screen can display the public key
@@ -201,6 +237,17 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
 
   @override
   void dispose() {
+    for (final controller in [
+      _nameController,
+      _bioController,
+      _endpointController,
+      _tokenController,
+      _systemPromptController,
+      _remoteAgentIdController,
+      _enrollmentCodeController,
+    ]) {
+      controller.removeListener(_onDraftChanged);
+    }
     _nameController.dispose();
     _bioController.dispose();
     _endpointController.removeListener(_onEndpointChanged);
@@ -583,7 +630,10 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final l10n = AppLocalizations.of(context);
-    return Scaffold(
+    return DiscardChangesScope(
+      key: _discardKey,
+      dirty: _hasDraft,
+      child: Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: Navigator.canPop(context),
         title: Text(_mode == AgentCreationMode.connect ? l10n.addAgent_connectTitle : l10n.addAgent_createTitle),
@@ -659,6 +709,7 @@ class _AddRemoteAgentScreenState extends State<AddRemoteAgentScreen> {
           ),
           _buildBottomBar(colorScheme),
         ],
+      ),
       ),
     );
   }

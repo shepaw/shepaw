@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -23,7 +24,6 @@ import '../services/model_registry.dart';
 import '../models/agent_scenario_models.dart';
 import '../models/llm_provider_config.dart';
 import '../services/skill_registry.dart';
-import '../services/cli_namespace_registry.dart';
 import '../service_locator.dart' show getIt;
 import 'skill_select_screen.dart';
 import 'cli_command_select_screen.dart';
@@ -66,6 +66,12 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   bool _isDeleting = false;
   bool _isEditing = false;
   bool _isSaving = false;
+  bool _allowPop = false;
+  Future<bool>? _persistTail;
+  String? _nameError;
+  String? _maxToolRoundsError;
+  String? _taskTimeoutError;
+  String? _autosaveError;
   Timer? _autoSaveDebounce;
 
   /// Whether remote-session sync is enabled for this peer agent (default on).
@@ -622,6 +628,54 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     );
   }
 
+  /// 打开 CLI 命令配置页。查看模式也可直接改，保存后立刻落库。
+  Future<void> _openCliCommandsEditor() async {
+    final current = _agent.enabledCliCommands;
+    final result = await Navigator.push<CliCommandSelection>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CliCommandSelectScreen(enabledCommands: current),
+      ),
+    );
+    if (result == null || !mounted) return;
+    if (_cliCommandsEqual(result.commands, current)) return;
+
+    final metadata = Map<String, dynamic>.from(_agent.metadata);
+    if (result.commands == null) {
+      metadata.remove('enabled_cli_commands');
+    } else {
+      metadata['enabled_cli_commands'] = result.commands!.toList();
+    }
+    final updated = _agent.copyWith(
+      metadata: metadata,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+    );
+
+    final l10n = AppLocalizations.of(context);
+    try {
+      await getIt<RemoteAgentService>().updateAgent(updated);
+      if (!mounted) return;
+      setState(() {
+        _agent = updated;
+        _enabledCliCommands = result.commands;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.agentDetail_saveFailed('$e')),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  static bool _cliCommandsEqual(Set<String>? a, Set<String>? b) {
+    if (identical(a, b)) return true;
+    if (a == null || b == null) return false;
+    return setEquals(a, b);
+  }
+
   void _syncControllersFromAgent() {
     final l10n = AppLocalizations.of(context);
     _nameController.text = _agent.isShe
@@ -683,23 +737,62 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     fn();
   }
 
-  Future<void> _persistChanges({bool showFeedback = false}) async {
+  Future<bool> _persistChanges({bool showFeedback = false}) {
+    final running = _persistTail;
+    if (running != null) {
+      return running.then((_) {
+        if (!mounted || !_isEditing) return false;
+        return _persistChanges(showFeedback: showFeedback);
+      });
+    }
+    final run = _persistChangesNow(showFeedback: showFeedback);
+    _persistTail = run;
+    return run.whenComplete(() {
+      if (identical(_persistTail, run)) _persistTail = null;
+    });
+  }
+
+  String? _toolRoundsError(String text, AppLocalizations l10n) {
+    if (_agent.isPeerAgent || text.isEmpty) return null;
+    final n = int.tryParse(text);
+    if (n == null || n < 1 || n > 500) {
+      return l10n.agentDetail_maxToolRoundsInvalid;
+    }
+    return null;
+  }
+
+  String? _taskTimeoutErrorOf(String text, AppLocalizations l10n) {
+    if (text.isEmpty) return null;
+    final n = int.tryParse(text);
+    if (n == null || n < 60 || n > 10800) {
+      return l10n.agentDetail_taskTimeoutInvalid;
+    }
+    return null;
+  }
+
+  Future<bool> _persistChangesNow({bool showFeedback = false}) async {
     final l10n = AppLocalizations.of(context);
-    if (!_isEditing) return;
+    if (!_isEditing) return true;
     var name = _nameController.text.trim();
     if (name.isEmpty) {
-      return;
+      _safeSetState(() => _nameError = l10n.agentDetail_nameRequired);
+      return false;
     }
     if (_agent.isShe) {
       name = SheService.normalizeStoredName(name, l10n.she_name);
     }
 
-    if (_isSaving) {
-      _autoSaveDebounce?.cancel();
-      _autoSaveDebounce = Timer(const Duration(milliseconds: 400), () {
-        unawaited(_persistChanges(showFeedback: showFeedback));
+    final maxToolRoundsText = _maxToolRoundsController.text.trim();
+    final taskTimeoutText = _taskTimeoutController.text.trim();
+    final roundsError = _toolRoundsError(maxToolRoundsText, l10n);
+    final timeoutError = _taskTimeoutErrorOf(taskTimeoutText, l10n);
+    if (roundsError != null || timeoutError != null) {
+      _safeSetState(() {
+        _nameError = null;
+        _maxToolRoundsError = roundsError;
+        _taskTimeoutError = timeoutError;
       });
-      return;
+      return false;
     }
 
     // Snapshot controller values before any await — deactivate/dispose may
@@ -709,8 +802,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     final bioText = _bioController.text.trim();
     final endpoint = _endpointController.text.trim();
     final remoteAgentId = _remoteAgentIdController.text.trim();
-    final maxToolRoundsText = _maxToolRoundsController.text.trim();
-    final taskTimeoutText = _taskTimeoutController.text.trim();
 
     // v2.1: token is no longer required — authentication is handled via Noise
     // public-key pinning. Keep reading the field so users who still have an
@@ -812,19 +903,12 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
       // Save tool call limits (local / self-managed remote agents only)
       if (!_agent.isPeerAgent) {
-        final maxToolRounds = int.tryParse(maxToolRoundsText);
-        if (maxToolRounds != null && maxToolRounds >= 1 && maxToolRounds <= 500) {
-          metadata['max_tool_rounds'] = maxToolRounds;
-        } else {
-          metadata['max_tool_rounds'] = 100;
-        }
+        metadata['max_tool_rounds'] = maxToolRoundsText.isEmpty
+            ? 100
+            : int.parse(maxToolRoundsText);
       }
-      final taskTimeout = int.tryParse(taskTimeoutText);
-      if (taskTimeout != null && taskTimeout >= 60 && taskTimeout <= 10800) {
-        metadata['task_timeout_seconds'] = taskTimeout;
-      } else {
-        metadata['task_timeout_seconds'] = 10800;
-      }
+      metadata['task_timeout_seconds'] =
+          taskTimeoutText.isEmpty ? 10800 : int.parse(taskTimeoutText);
 
       final updatedAgent = _agent.copyWith(
         name: name,
@@ -843,6 +927,10 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       _safeSetState(() {
         _agent = updatedAgent;
         _isSaving = false;
+        _nameError = null;
+        _maxToolRoundsError = null;
+        _taskTimeoutError = null;
+        _autosaveError = null;
       });
 
       if (mounted && showFeedback) {
@@ -850,16 +938,13 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           SnackBar(content: Text(l10n.agentDetail_saveSuccess)),
         );
       }
+      return true;
     } catch (e) {
-      _safeSetState(() => _isSaving = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(l10n.agentDetail_saveFailed('$e')),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      _safeSetState(() {
+        _isSaving = false;
+        _autosaveError = l10n.agentDetail_autosaveFailed;
+      });
+      return false;
     }
   }
 
@@ -1144,13 +1229,22 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return PopScope(
-      canPop: widget.initialEditMode || !_isEditing,
+      canPop: _allowPop || !_isEditing,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
         _autoSaveDebounce?.cancel();
-        unawaited(_persistChanges().then((_) {
-          if (mounted) setState(() => _isEditing = false);
-        }));
+        unawaited(() async {
+          final ok = await _persistChanges();
+          if (!mounted || !ok) return;
+          if (widget.initialEditMode) {
+            setState(() => _allowPop = true);
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) Navigator.of(context).pop();
+            });
+          } else {
+            setState(() => _isEditing = false);
+          }
+        }());
       },
       child: Scaffold(
       appBar: AppBar(
@@ -2520,132 +2614,49 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     );
   }
 
-  /// CLI 命令卡（详情模式，仅本地 agent）。
+  /// CLI 命令入口（详情模式，仅本地 agent）。
   ///
-  /// 与编辑页的 [CliCommandSelectScreen] 对应，三态语义：
-  /// `null` = 未配置 / 全部放行（默认），`{}` = 全部禁止，非空 = 仅放行选中的
-  /// 命令。按命名空间分组展示。
+  /// 与 Soul / 记忆一样走 ListTile 进独立配置页，不再用 ExpansionTile：
+  /// 默认「全部放行」时折叠面板展开是空的，交互本身也像坏了。
+  ///
+  /// 三态写在副标题上：`null` = 全部放行，`{}` = 全部禁止，非空 = 白名单。
   Widget _buildCliCommandsCard() {
     final l10n = AppLocalizations.of(context);
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final registry = CliNamespaceRegistry.instance;
+    final colorScheme = Theme.of(context).colorScheme;
     final enabledCommands = _agent.enabledCliCommands;
-    final allowed = enabledCommands ?? const <String>{};
-    // `null` = 不受限 → 徽标显示全部命令数（旧行为）；`{}` 显示 0。
-    final badgeCount =
-        enabledCommands == null ? registry.allCommandIds.length : allowed.length;
-
-    // 按顶层命名空间分组已放行的命令，便于浏览
-    final grouped = registry.namespaces.values
-        .map((ns) =>
-            MapEntry(ns, ns.commands.where(allowed.contains).toList()))
-        .where((entry) => entry.value.isNotEmpty)
-        .toList();
+    final statusText = switch (enabledCommands) {
+      null => l10n.agentDetail_allCliCommands,
+      final commands when commands.isEmpty =>
+        l10n.agentDetail_cliCommandsBlocked,
+      final commands => l10n.agentDetail_cliCommandsRestricted(commands.length),
+    };
+    final approvalText = _agent.cliRequireApproval
+        ? l10n.agentDetail_cliApprovalOn
+        : l10n.agentDetail_cliApprovalOff;
+    final statusColor = switch (enabledCommands) {
+      null => colorScheme.primary,
+      final commands when commands.isEmpty => colorScheme.error,
+      _ => colorScheme.onSurfaceVariant,
+    };
 
     return Card(
       elevation: 0,
-      clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: colorScheme.outlineVariant),
       ),
-      child: ExpansionTile(
-        leading: Icon(Icons.terminal, size: 18, color: colorScheme.primary),
-        title: Row(
-          children: [
-            Text(
-              l10n.agentDetail_cliCommands,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: colorScheme.primary,
-              ),
-            ),
-            const Spacer(),
-            _buildCountBadge('$badgeCount', true, colorScheme),
-          ],
+      child: ListTile(
+        leading: Icon(Icons.terminal, color: colorScheme.primary),
+        title: Text(l10n.agentDetail_cliCommands),
+        subtitle: Text(
+          '$statusText\n$approvalText',
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: statusColor),
         ),
-        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        initiallyExpanded: false,
-        children: [
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              _agent.cliRequireApproval
-                  ? l10n.agentDetail_cliApprovalOn
-                  : l10n.agentDetail_cliApprovalOff,
-              style: TextStyle(
-                fontSize: 13,
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-          if (enabledCommands == null)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                l10n.agentDetail_allCliCommands,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: colorScheme.onSurfaceVariant,
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-            )
-          else if (grouped.isEmpty)
-            // `{}`（全禁）：没有任何分组可列，必须显式说明，否则卡片看起来像
-            // 加载失败。
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                l10n.agentDetail_cliCommandsBlocked,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: colorScheme.error,
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-            )
-          else
-            ...grouped.map((entry) {
-              final ns = entry.key;
-              final commands = entry.value;
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      Icons.chevron_right,
-                      size: 16,
-                      color: colorScheme.onSurface,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '${ns.label} (${commands.length})',
-                            style: const TextStyle(
-                                fontSize: 13, fontWeight: FontWeight.w500),
-                          ),
-                          Text(
-                            commands.join(', '),
-                            style: TextStyle(
-                                fontSize: 11,
-                                color: colorScheme.onSurfaceVariant),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }),
-        ],
+        isThreeLine: true,
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => unawaited(_openCliCommandsEditor()),
       ),
     );
   }
@@ -2936,6 +2947,13 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (_autosaveError != null) ...[
+          Text(
+            _autosaveError!,
+            style: TextStyle(color: colorScheme.error),
+          ),
+          const SizedBox(height: 12),
+        ],
         // 头像编辑
         Center(
           child: GestureDetector(
@@ -3104,8 +3122,14 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                 hintText: l10n.addAgent_agentNameHint,
                 border: const OutlineInputBorder(),
                 prefixIcon: const Icon(Icons.badge),
+                errorText: _nameError,
               ),
-              onChanged: (_) => _scheduleAutoSave(),
+              onChanged: (_) {
+                if (_nameError != null) {
+                  setState(() => _nameError = null);
+                }
+                _scheduleAutoSave();
+              },
             ),
             const SizedBox(height: 12),
             // 简历改为入口：点击进入独立编辑页（手动编辑 + 提示词重新生成）。
@@ -3141,9 +3165,15 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.repeat),
                   helperText: l10n.agentDetail_maxToolRoundsHelper,
+                  errorText: _maxToolRoundsError,
                 ),
                 keyboardType: TextInputType.number,
-                onChanged: (_) => _scheduleAutoSave(),
+                onChanged: (_) {
+                  if (_maxToolRoundsError != null) {
+                    setState(() => _maxToolRoundsError = null);
+                  }
+                  _scheduleAutoSave();
+                },
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) return null;
                   final n = int.tryParse(value.trim());
@@ -3161,9 +3191,15 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.timer),
                 helperText: l10n.agentDetail_taskTimeoutHelper,
+                errorText: _taskTimeoutError,
               ),
               keyboardType: TextInputType.number,
-              onChanged: (_) => _scheduleAutoSave(),
+              onChanged: (_) {
+                if (_taskTimeoutError != null) {
+                  setState(() => _taskTimeoutError = null);
+                }
+                _scheduleAutoSave();
+              },
               validator: (value) {
                 if (value == null || value.trim().isEmpty) return null;
                 final n = int.tryParse(value.trim());

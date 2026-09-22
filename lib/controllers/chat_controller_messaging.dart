@@ -9,6 +9,10 @@ part of 'chat_controller.dart';
 // ---------------------------------------------------------------------------
 
 mixin _MessagingOps on _ChatControllerBase {
+  /// Held from the start of [sendMessage] until the composer is cleared, so a
+  /// second tap during the attachment lookup cannot send the same text twice.
+  bool _composerSendLocked = false;
+
   // ---------------------------------------------------------------------------
   // Reattach to background tasks
   // ---------------------------------------------------------------------------
@@ -328,24 +332,30 @@ mixin _MessagingOps on _ChatControllerBase {
       return;
     }
 
-    if (!isGroupMode && agentId != null && hasPendingAttachments) {
-      final agent = await localDatabaseService.getRemoteAgentById(agentId!);
-      if (agent != null) {
-        final validation = ChatAttachmentValidator.validatePendingForAgent(
-          agent,
-          pendingAttachments,
-        );
-        if (!validation.ok) {
-          _emit(ShowSnackBarEvent(validation.errorKey!));
-          return;
+    if (_composerSendLocked) return;
+    _composerSendLocked = true;
+    late final List<PendingAttachment> attachmentsToSend;
+    try {
+      if (!isGroupMode && agentId != null && hasPendingAttachments) {
+        final agent = await localDatabaseService.getRemoteAgentById(agentId!);
+        if (agent != null) {
+          final validation = ChatAttachmentValidator.validatePendingForAgent(
+            agent,
+            pendingAttachments,
+          );
+          if (!validation.ok) {
+            _emit(ShowSnackBarEvent(validation.errorKey!));
+            return;
+          }
         }
       }
+
+      attachmentsToSend = List<PendingAttachment>.from(pendingAttachments);
+      pendingAttachments.clear();
+      clearMessageController();
+    } finally {
+      _composerSendLocked = false;
     }
-
-    final attachmentsToSend = List<PendingAttachment>.from(pendingAttachments);
-    pendingAttachments.clear();
-
-    clearMessageController();
 
     // Capture reply state
     final capturedReplyToId = replyToId ?? replyingToMessage?.id;

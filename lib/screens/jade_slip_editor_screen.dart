@@ -15,6 +15,7 @@ import '../services/local_user_identity.dart';
 import '../services/store_open_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/chat/storage_file_picker_screen.dart';
+import '../widgets/discard_changes_scope.dart';
 import 'jade_slip_agent_picker.dart';
 import 'jade_slip_dispatch.dart';
 import 'storage_shared.dart';
@@ -52,6 +53,7 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   bool _saving = false;
   bool _dirty = false;
   bool _closed = false;
+  bool _allowPop = false;
   bool _didFocusChecklist = false;
   Timer? _textDebounce;
   StreamSubscription<void>? _sub;
@@ -132,25 +134,27 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     setState(() => _slip = slip);
   }
 
-  Future<void> _persist(JadeSlip next) async {
+  Future<bool> _persist(JadeSlip next) async {
     setState(() => _saving = true);
     try {
       final saved = await _service.update(next);
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() {
         _slip = saved;
         _dirty = false;
         _saving = false;
       });
       widget.onChanged?.call();
+      return true;
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() => _saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
             content:
                 Text(AppLocalizations.of(context).jadeSlip_saveFailed('$e'))),
       );
+      return false;
     }
   }
 
@@ -170,8 +174,7 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
       return false;
     }
     if (!_dirty && title == slip.title && _body.text == slip.body) return true;
-    await _persist(slip.copyWith(title: title, body: _body.text));
-    return true;
+    return _persist(slip.copyWith(title: title, body: _body.text));
   }
 
   Future<void> _addItem() async {
@@ -559,12 +562,21 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     if (widget.embedded) return body;
 
     return PopScope(
-      canPop: false,
+      canPop: _allowPop,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
-        final navigator = Navigator.of(context);
-        if (!await _flush() || !mounted) return;
-        navigator.pop();
+        final saved = await _flush(notifyIfEmpty: false);
+        if (!context.mounted) return;
+        if (!saved) {
+          final discard = await confirmDiscardChanges(context);
+          if (!discard || !context.mounted) return;
+          _closed = true;
+          _dirty = false;
+        }
+        setState(() => _allowPop = true);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (context.mounted) Navigator.of(context).pop();
+        });
       },
       child: Scaffold(
         appBar: AppBar(
@@ -933,6 +945,12 @@ class _ChecklistRowState extends State<_ChecklistRow> {
     return Dismissible(
       key: ValueKey('item-${item.id}'),
       direction: DismissDirection.endToStart,
+      confirmDismiss: (_) => showConfirmDialog(
+        context,
+        title: l10n.jadeSlip_deleteItemTitle,
+        message: l10n.jadeSlip_deleteItemBody,
+        confirmLabel: l10n.common_delete,
+      ),
       onDismissed: (_) => widget.onDelete(),
       background: Container(
         alignment: Alignment.centerRight,
@@ -1161,6 +1179,12 @@ class _AttachmentRow extends StatelessWidget {
     return Dismissible(
       key: ValueKey('att-${attachment.id}'),
       direction: DismissDirection.endToStart,
+      confirmDismiss: (_) => showConfirmDialog(
+        context,
+        title: l10n.jadeSlip_deleteAttachmentTitle,
+        message: l10n.jadeSlip_deleteAttachmentBody,
+        confirmLabel: l10n.common_delete,
+      ),
       onDismissed: (_) => onDelete(),
       background: Container(
         alignment: Alignment.centerRight,

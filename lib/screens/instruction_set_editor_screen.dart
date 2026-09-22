@@ -8,6 +8,7 @@ import '../models/remote_agent.dart';
 import '../services/instruction_set_service.dart';
 import '../services/local_database_service.dart';
 import '../services/she_service.dart';
+import '../widgets/discard_changes_scope.dart';
 import '../widgets/form_bottom_bar.dart';
 
 /// 指令集新建 / 编辑。
@@ -69,6 +70,21 @@ class InstructionSetEditorScreenState extends State<InstructionSetEditorScreen> 
   static const _autosaveDelay = Duration(milliseconds: 500);
 
   bool get _isEditing => _current != null;
+  final _discardKey = GlobalKey<DiscardChangesScopeState>();
+
+  bool get _pageDirty {
+    final item = widget.item;
+    if (item == null) {
+      return _nameController.text.trim().isNotEmpty ||
+          _descController.text.trim().isNotEmpty ||
+          _contentController.text.trim().isNotEmpty ||
+          _ownerId != SheService.sheId;
+    }
+    return _nameController.text != item.name ||
+        _descController.text != (item.description ?? '') ||
+        _contentController.text != item.content ||
+        _ownerId != item.ownerAgentId;
+  }
 
   @override
   void initState() {
@@ -221,6 +237,8 @@ class InstructionSetEditorScreenState extends State<InstructionSetEditorScreen> 
       content: _contentController.text.trim(),
     );
     if (saved != null && mounted && !widget.embedded) {
+      await _discardKey.currentState?.allowPop();
+      if (!mounted) return;
       Navigator.pop(context, saved.name);
     }
   }
@@ -260,7 +278,11 @@ class InstructionSetEditorScreenState extends State<InstructionSetEditorScreen> 
     await _service.delete(current.id);
     if (!mounted) return;
     widget.onDeleted?.call(current);
-    if (!widget.embedded) Navigator.pop(context);
+    if (!widget.embedded) {
+      await _discardKey.currentState?.allowPop();
+      if (!mounted) return;
+      Navigator.pop(context);
+    }
   }
 
   @override
@@ -273,7 +295,10 @@ class InstructionSetEditorScreenState extends State<InstructionSetEditorScreen> 
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
 
-    return Scaffold(
+    return DiscardChangesScope(
+      key: _discardKey,
+      dirty: _pageDirty,
+      child: Scaffold(
       appBar: AppBar(
         title: Text(_isEditing ? l10n.common_edit : l10n.instructionSet_create),
       ),
@@ -317,6 +342,7 @@ class InstructionSetEditorScreenState extends State<InstructionSetEditorScreen> 
             ),
           ),
         ],
+      ),
       ),
     );
   }
@@ -417,7 +443,7 @@ class InstructionSetEditorScreenState extends State<InstructionSetEditorScreen> 
               ? l10n.instructionSet_nameRequired
               : null
           : null,
-      onChanged: widget.embedded ? (_) => _onEdited() : null,
+      onChanged: (_) => _onEdited(),
     );
   }
 
@@ -432,7 +458,7 @@ class InstructionSetEditorScreenState extends State<InstructionSetEditorScreen> 
       ),
       maxLines: 3,
       minLines: 2,
-      onChanged: widget.embedded ? (_) => _onEdited() : null,
+      onChanged: (_) => _onEdited(),
     );
   }
 
@@ -452,7 +478,7 @@ class InstructionSetEditorScreenState extends State<InstructionSetEditorScreen> 
               ? l10n.instructionSet_contentRequired
               : null
           : null,
-      onChanged: widget.embedded ? (_) => _onEdited() : null,
+      onChanged: (_) => _onEdited(),
     );
   }
 

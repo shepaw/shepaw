@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
@@ -15,6 +17,7 @@ import '../services/logger_service.dart';
 import '../services/she_service.dart';
 import '../storage/group_workspace_service.dart';
 import '../storage/runtime_share_service.dart';
+import '../widgets/discard_changes_scope.dart';
 import '../widgets/form_bottom_bar.dart';
 import '../widgets/avatar_image.dart';
 import 'storage_directory_opener.dart';
@@ -48,6 +51,38 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
 
   // Edit mode state
   bool _isEditing = false;
+  bool _popEditRoute = false;
+
+  bool _editDirty() {
+    if (!_isEditing) return false;
+    if (_nameController.text != _channel.name) return true;
+    if (_descController.text != (_channel.description ?? '')) return true;
+    if (_systemPromptController.text != (_channel.systemPrompt ?? '')) {
+      return true;
+    }
+    if (_maxRoundsController.text !=
+        (_channel.maxLoopRounds?.toString() ?? '')) {
+      return true;
+    }
+    if (_selectedMentionMode != _channel.effectiveMentionMode) return true;
+    return _pendingAvatar != (_channel.avatar ?? '');
+  }
+
+  Future<void> _leaveEdit() async {
+    if (_editDirty()) {
+      final discard = await confirmDiscardChanges(context);
+      if (!discard || !mounted) return;
+    }
+    if (!mounted) return;
+    if (widget.startInEditMode) {
+      setState(() => _popEditRoute = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) Navigator.of(context).pop();
+      });
+    } else {
+      _cancelEdit();
+    }
+  }
   late TextEditingController _nameController;
   late TextEditingController _descController;
   late TextEditingController _systemPromptController;
@@ -169,7 +204,13 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
       if (!result.ok) {
         setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result.error ?? '')),
+          SnackBar(
+            content: Text(
+              (result.error == null || result.error!.isEmpty)
+                  ? l10n.groupDetail_saveFailed
+                  : result.error!,
+            ),
+          ),
         );
         return;
       }
@@ -180,7 +221,10 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
       }
       if (widget.startInEditMode) {
         // Opened directly in edit mode (e.g. from chat screen), pop with result
-        Navigator.pop(context, updated);
+        setState(() => _popEditRoute = true);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) Navigator.pop(context, updated);
+        });
       } else {
         setState(() {
           _channel = updated;
@@ -193,7 +237,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
       if (!mounted) return;
       setState(() => _isSaving = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to save: $e')),
+        SnackBar(content: Text(l10n.groupDetail_saveFailed)),
       );
     }
   }
@@ -347,7 +391,13 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
 
-    return Scaffold(
+    return PopScope(
+      canPop: _popEditRoute || !_isEditing,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        unawaited(_leaveEdit());
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: Text(_isEditing ? l10n.groupDetail_editTitle : l10n.groupDetail_title),
         elevation: 1,
@@ -391,6 +441,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                 ),
               ],
             ),
+      ),
     );
   }
 

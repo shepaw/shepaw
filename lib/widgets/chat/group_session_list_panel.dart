@@ -11,7 +11,27 @@ import 'session_unread_badge.dart';
 import 'session_list_header_menu.dart';
 import 'session_preview_entry.dart';
 import 'session_row_menu.dart';
+import '../discard_changes_scope.dart';
 import 'chat_panel_scope.dart';
+
+Widget _selectionCheckbox(
+  BuildContext context, {
+  required bool selected,
+  required bool enabled,
+  required VoidCallback? onToggle,
+}) {
+  final box = Checkbox(
+    value: selected,
+    onChanged: enabled ? (_) => onToggle?.call() : null,
+    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    visualDensity: VisualDensity.compact,
+  );
+  if (enabled) return box;
+  return Tooltip(
+    message: AppLocalizations.of(context).chat_currentSessionCannotDelete,
+    child: box,
+  );
+}
 
 /// Session list panel for group chat sessions.
 ///
@@ -162,9 +182,44 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
     super.initState();
     widget.listRefreshTick.addListener(_onExternalListRefresh);
     widget.selectionModeRequest.addListener(_onSelectionModeRequested);
-    // 复用跨路由缓存时先标过期：首帧仍画旧标题/预览，后台补新鲜度。
-    if (widget.previewCache != null) {
-      _markAllStale();
+    // 复用跨路由缓存时只把「最新消息时间已变 / 编排仍在进行」的行标过期
+    // （见 [_markChangedStale]）：原先无条件全量标过期，等于每次左滑都把
+    // 所有会话的首条/最新/未读/编排重查一遍，耗时随聊天内容增长。首帧不闪
+    // 占位由缓存本身保证，不需要靠全量重查换取新鲜度。
+    if (widget.previewCache != null && _previews.isNotEmpty) {
+      _markChangedStale();
+    }
+    _refreshStalePreviews();
+  }
+
+  /// 逐个比对「最新消息时间」，只把实际变过的行标过期。
+  ///
+  /// 一次 `MAX(created_at) GROUP BY channel_id`（每会话回传两列）替代对
+  /// 所有行重跑四个查询；内容未变的会话直接沿用缓存。编排快照是文件读、
+  /// 不进消息表，因此仍在编排中（状态非 finished）的行一并标过期，避免
+  /// 「第 N 轮 🔄」角标停在旧轮次。
+  Future<void> _markChangedStale() async {
+    final ids = widget.sessions.map((s) => s.id).toList();
+    if (ids.isEmpty) return;
+    final times = await _databaseService.getLatestMessageTimesByChannels(ids);
+    if (!mounted) return;
+    for (final id in ids) {
+      final entry = _previews[id];
+      if (entry == null) continue;
+      final cachedAt = entry.data?.$2?['created_at'] as String?;
+      // 尚无缓存数据的行保持初始 stale，由 _refreshStalePreviews 补齐。
+      if (cachedAt == null) continue;
+      final cached = DateTime.tryParse(cachedAt);
+      final live = times[id];
+      final orchestrationStatus =
+          entry.data?.$4?['status'] as String? ?? '';
+      if (cached == null ||
+          live == null ||
+          !live.isAtSameMomentAs(cached) ||
+          (orchestrationStatus.isNotEmpty &&
+              orchestrationStatus != 'finished')) {
+        entry.stale = true;
+      }
     }
     _refreshStalePreviews();
   }
@@ -743,13 +798,11 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
           ? Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Checkbox(
-                  value: selected,
-                  onChanged: selectionEnabled
-                      ? (_) => onSelectionToggle?.call()
-                      : null,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
+                _selectionCheckbox(
+                  context,
+                  selected: selected,
+                  enabled: selectionEnabled,
+                  onToggle: onSelectionToggle,
                 ),
                 const SizedBox(width: 4),
                 avatar,
@@ -765,7 +818,14 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
       ),
       // 活跃会话（群内 agent 正在该会话处理任务）显示「输入中」，样式与
       // 主页对话列表一致；监听 typingChannelIds 实时更新。
-      subtitle: ValueListenableBuilder<Set<String>>(
+      subtitle: selectionMode && !selectionEnabled
+          ? Text(
+              AppLocalizations.of(context).chat_currentSessionCannotDelete,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+            )
+          : ValueListenableBuilder<Set<String>>(
         valueListenable: widget.controller.chatService.typingChannelIds,
         builder: (context, typingChannelIds, _) {
           final isTyping = typingChannelIds.contains(session.id);
@@ -855,9 +915,18 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
             ),
             onPressed: _selectedIds.isEmpty
                 ? null
-                : () {
+                : () async {
+                    final count = _selectedIds.length;
+                    final confirmed = await showConfirmDialog(
+                      context,
+                      title: l10n.chat_deleteSession,
+                      message: l10n.chat_batchDeleteContent(count),
+                      confirmLabel: l10n.common_delete,
+                    );
+                    if (!confirmed || !mounted) return;
+                    final ids = _selectedIds.toList();
                     closePanelRoute(context);
-                    widget.onBatchDelete(_selectedIds.toList());
+                    widget.onBatchDelete(ids);
                   },
           ),
         ),

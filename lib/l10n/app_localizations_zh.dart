@@ -7580,4 +7580,77 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get chat_mainModelSwitchFailed => '切换主模型失败';
+
+  @override
+  String get common_discardUnsaved => '有未保存的修改，放弃更改？';
+
+  @override
+  String get chat_deleteMessageTitle => '删除消息';
+
+  @override
+  String get chat_deleteMessageContent => '确定删除这条消息？此操作不可撤销。';
+
+  @override
+  String get chat_resetDmConfirm => '将向当前会话发送重置指令，清空远端上下文。';
+
+  @override
+  String get chat_resetGroupConfirm => '这将删除当前群会话的所有消息，此操作不可撤销。';
+
+  @override
+  String get chat_currentSessionCannotDelete => '正在查看，无法删除';
+
+  @override
+  String get chat_queueClearConfirm => '确定清空队列中的全部待发送消息？';
+
+  @override
+  String get chat_voiceSwipeToCancel => '上滑取消';
+
+  @override
+  String get chat_voiceReleaseToCancel => '松手取消';
+
+  @override
+  String get chat_voiceHoldToTalk => '按住说话';
+
+  @override
+  String get jadeSlip_deleteItemTitle => '删除待办';
+
+  @override
+  String get jadeSlip_deleteItemBody => '确定删除这条待办？';
+
+  @override
+  String get jadeSlip_deleteAttachmentTitle => '删除附件';
+
+  @override
+  String get jadeSlip_deleteAttachmentBody => '确定删除这个附件？文件会从储物袋中删除。';
+
+  @override
+  String get storage_browserDeleteFolderTitle => '删除文件夹';
+
+  @override
+  String storage_browserDeleteFolderConfirm(String path) {
+    return '将删除文件夹 $path 及其内容，并移入回收站。确认？';
+  }
+
+  @override
+  String get storage_browserDeletePermanentTitle => '永久删除';
+
+  @override
+  String storage_browserDeletePermanentConfirm(String path) {
+    return '将永久删除 $path，不会进入回收站。确认？';
+  }
+
+  @override
+  String get createGroup_invalidMaxRounds => '最大轮次请输入正整数';
+
+  @override
+  String get createGroup_failed => '创建群聊失败，请重试';
+
+  @override
+  String get agentDetail_autosaveFailed => '保存失败，修改还在，请稍后重试';
+
+  @override
+  String get groupDetail_saveFailed => '保存失败，请重试';
+
+  @override
+  String get scheduledTasks_saveFailed => '保存失败，请重试';
 }

@@ -857,8 +857,11 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     }
   }
 
-  Future<void> _deleteFile(_BrowsedFile file) =>
-      _deletePath(space: file.space, relPath: file.path);
+  Future<void> _deleteFile(_BrowsedFile file) => _deletePath(
+        space: file.space,
+        relPath: file.path,
+        isFolder: file.entry.isDir,
+      );
 
   bool _isTextEditable(_BrowsedFile file) {
     if (file.virtual || file.isJadeSlipRecord || file.isInstructionRecord) {
@@ -960,17 +963,32 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   Future<void> _deletePath({
     required String space,
     required String relPath,
+    bool isFolder = false,
   }) async {
     if (!_canDelete) {
       _toast(AppLocalizations.of(context).storage_browserDeleteDenied);
       return;
     }
     final l10n = AppLocalizations.of(context);
+    final permanent = (space == StoreSpace.notes &&
+            JadeSlip.isRecordPath(relPath)) ||
+        (space == StoreSpace.instructions &&
+            InstructionSet.isRecordPath(relPath));
+    final title = permanent
+        ? l10n.storage_browserDeletePermanentTitle
+        : isFolder
+            ? l10n.storage_browserDeleteFolderTitle
+            : l10n.storage_browserDeleteTitle;
+    final message = permanent
+        ? l10n.storage_browserDeletePermanentConfirm(relPath)
+        : isFolder
+            ? l10n.storage_browserDeleteFolderConfirm(relPath)
+            : l10n.storage_browserDeleteConfirm(relPath);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(l10n.storage_browserDeleteTitle),
-        content: Text(l10n.storage_browserDeleteConfirm(relPath)),
+        title: Text(title),
+        content: Text(message),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -1142,7 +1160,11 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         _shareMarkdownLink(displayName: displayName, uri: uri);
       case _EntryAction.delete:
         if (space != null && relPath != null) {
-          unawaited(_deletePath(space: space, relPath: relPath));
+          unawaited(_deletePath(
+            space: space,
+            relPath: relPath,
+            isFolder: true,
+          ));
         }
       default:
         break;
@@ -2082,7 +2104,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         body: TabBarView(
           controller: _tabs,
           children: [
-            _buildFlatTab(l10n, mobile: mobile),
+            _buildFlatTab(l10n),
             _buildSpaceTab(l10n, mobile: mobile),
           ],
         ),
@@ -2535,7 +2557,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     );
   }
 
-  Widget _buildFlatTab(AppLocalizations l10n, {required bool mobile}) {
+  Widget _buildFlatTab(AppLocalizations l10n) {
     if (_error != null) {
       return Center(
         child: Padding(
@@ -2589,7 +2611,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
                   itemBuilder: (context, i) => _buildFileRow(
                     visible[i],
                     l10n,
-                    showMoreButton: !mobile && !_pickMode,
+                    showMoreButton: !_pickMode,
                     contextSubtitle: _recentFileContext(l10n, visible[i]),
                   ),
                 ),

@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../helpers/cron_parser.dart';
 import '../../l10n/app_localizations.dart';
+import '../../widgets/discard_changes_scope.dart';
 import '../models/scheduled_task.dart';
 import '../../models/remote_agent.dart';
 import '../../models/channel.dart';
@@ -80,6 +81,41 @@ class _ScheduledTaskFormScreenState extends State<ScheduledTaskFormScreen> {
   bool _loadingChannels = false;
   List<RemoteAgent> _agents = [];
   bool _loadingAgents = false;
+  final _discardKey = GlobalKey<DiscardChangesScopeState>();
+  String _formBaseline = '';
+
+  String _formSignature() => [
+        _descriptionController.text,
+        _instructionController.text,
+        _executionTarget,
+        _selectedAgentId ?? '',
+        _selectedChannelId ?? '',
+        _selectedAgentIds.join(','),
+        _selectedMentionedAgentIds.join(','),
+        _scheduleMode.name,
+        _intervalValueController.text,
+        _intervalUnit,
+        _cronFrequency.name,
+        '$_cronHour',
+        '$_cronMinute',
+        (_cronWeekdays.toList()..sort()).join(','),
+        (_cronMonthdays.toList()..sort()).join(','),
+        _cronCustomController.text,
+        _onceDateTime?.millisecondsSinceEpoch.toString() ?? '',
+      ].join('|');
+
+  bool get _formDirty => _formSignature() != _formBaseline;
+
+  void _onDraftChanged() {
+    if (mounted) setState(() {});
+  }
+
+  List<TextEditingController> get _draftControllers => [
+        _descriptionController,
+        _instructionController,
+        _intervalValueController,
+        _cronCustomController,
+      ];
 
   // ─────────────────────────────────────────────────────────────────────────
   // Lifecycle
@@ -123,6 +159,10 @@ class _ScheduledTaskFormScreenState extends State<ScheduledTaskFormScreen> {
     _agents = List.from(widget.agents);
     if (_agents.isEmpty) {
       _loadAgents();
+    }
+    _formBaseline = _formSignature();
+    for (final controller in _draftControllers) {
+      controller.addListener(_onDraftChanged);
     }
   }
 
@@ -234,6 +274,9 @@ class _ScheduledTaskFormScreenState extends State<ScheduledTaskFormScreen> {
 
   @override
   void dispose() {
+    for (final controller in _draftControllers) {
+      controller.removeListener(_onDraftChanged);
+    }
     _descriptionController.dispose();
     _instructionController.dispose();
     _intervalValueController.dispose();
@@ -403,6 +446,8 @@ class _ScheduledTaskFormScreenState extends State<ScheduledTaskFormScreen> {
         });
         if (mounted) {
           _showSnack(l10n.scheduledTasks_createSuccess);
+          await _discardKey.currentState?.allowPop();
+          if (!mounted) return;
           widget.onDone();
         }
       } else {
@@ -428,11 +473,13 @@ class _ScheduledTaskFormScreenState extends State<ScheduledTaskFormScreen> {
         await taskService.updateScheduledTask(updated);
         if (mounted) {
           _showSnack(l10n.scheduledTasks_updateSuccess);
+          await _discardKey.currentState?.allowPop();
+          if (!mounted) return;
           widget.onDone();
         }
       }
     } catch (e) {
-      if (mounted) _showSnack('Error: $e');
+      if (mounted) _showSnack(l10n.scheduledTasks_saveFailed);
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -455,11 +502,14 @@ class _ScheduledTaskFormScreenState extends State<ScheduledTaskFormScreen> {
     final colorScheme = theme.colorScheme;
     final isCreating = widget.task == null;
 
-    return Scaffold(
+    return DiscardChangesScope(
+      key: _discardKey,
+      dirty: _formDirty,
+      child: Scaffold(
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: widget.onDone,
+          onPressed: () => Navigator.maybePop(context),
         ),
         title: Text(isCreating
             ? l10n.scheduledTasks_createTask
@@ -504,6 +554,7 @@ class _ScheduledTaskFormScreenState extends State<ScheduledTaskFormScreen> {
           ),
           _buildBottomBar(l10n, colorScheme),
         ],
+      ),
       ),
     );
   }

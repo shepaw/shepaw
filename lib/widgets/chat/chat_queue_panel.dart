@@ -183,7 +183,7 @@ class _ChatQueuePanelState extends State<ChatQueuePanel> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(l10n.chat_queueClearAll),
-        content: Text(l10n.chat_queueDeleteConfirm),
+        content: Text(l10n.chat_queueClearConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),

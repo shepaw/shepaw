@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/cognition_service.dart';
 import '../services/logger_service.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/discard_changes_scope.dart';
 import '../widgets/form_bottom_bar.dart';
 
 /// 用户档案设置页面
@@ -58,12 +59,43 @@ class _UserProfileSettingsScreenState extends State<UserProfileSettingsScreen> {
 
   bool _isLoading = true;
   bool _isSaving = false;
+  final _discardKey = GlobalKey<DiscardChangesScopeState>();
+  Map<String, String> _presetBaseline = {};
+  String _customBaseline = '';
+
+  bool get _profileDirty {
+    for (final entry in _controllers.entries) {
+      if (entry.value.text != (_presetBaseline[entry.key] ?? '')) return true;
+    }
+    return _customSignature() != _customBaseline;
+  }
+
+  String _customSignature() => _customAttrs
+      .map((attr) => '${attr.key}\u0000${attr.valueController.text}')
+      .join('\u0001');
+
+  void _captureBaseline() {
+    _presetBaseline = {
+      for (final entry in _controllers.entries) entry.key: entry.value.text,
+    };
+    _customBaseline = _customSignature();
+  }
+
+  void _onDraftChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _watch(TextEditingController controller) {
+    controller.addListener(_onDraftChanged);
+  }
 
   @override
   void initState() {
     super.initState();
     for (final key in [..._coreFieldKeys, ..._extendedFieldKeys]) {
-      _controllers[key] = TextEditingController();
+      final controller = TextEditingController();
+      _watch(controller);
+      _controllers[key] = controller;
     }
     _loadProfile();
   }
@@ -71,7 +103,11 @@ class _UserProfileSettingsScreenState extends State<UserProfileSettingsScreen> {
   @override
   void dispose() {
     for (final c in _controllers.values) {
+      c.removeListener(_onDraftChanged);
       c.dispose();
+    }
+    for (final attr in _customAttrs) {
+      attr.valueController.removeListener(_onDraftChanged);
     }
     super.dispose();
   }
@@ -168,10 +204,12 @@ class _UserProfileSettingsScreenState extends State<UserProfileSettingsScreen> {
           _controllers[entry.key]?.text = entry.value;
         } else {
           // 非预设字段 → 自定义属性
+          final valueController = TextEditingController(text: entry.value);
+          _watch(valueController);
           customAttrs.add(
             _CustomAttr(
               key: entry.key,
-              valueController: TextEditingController(text: entry.value),
+              valueController: valueController,
             ),
           );
         }
@@ -183,6 +221,7 @@ class _UserProfileSettingsScreenState extends State<UserProfileSettingsScreen> {
             ..clear()
             ..addAll(customAttrs);
           _isLoading = false;
+          _captureBaseline();
         });
       }
     } catch (e) {
@@ -234,7 +273,10 @@ class _UserProfileSettingsScreenState extends State<UserProfileSettingsScreen> {
         await _cognition.updateUserProfileField(entry.key, entry.value);
       }
 
-      if (mounted) _showSnack(l10n.profile_saved);
+      if (mounted) {
+        _captureBaseline();
+        _showSnack(l10n.profile_saved);
+      }
       LoggerService().info('User profile saved', tag: 'UserProfileSettings');
     } catch (e) {
       LoggerService().error(
@@ -265,9 +307,13 @@ class _UserProfileSettingsScreenState extends State<UserProfileSettingsScreen> {
         c.text = '';
       }
       for (final attr in _customAttrs) {
+        attr.valueController.removeListener(_onDraftChanged);
         attr.valueController.dispose();
       }
-      setState(() => _customAttrs.clear());
+      setState(() {
+        _customAttrs.clear();
+        _captureBaseline();
+      });
       if (mounted) _showSnack(l10n.profile_resetSuccess);
     } catch (e) {
       if (mounted) _showSnack(l10n.profile_resetFailed);
@@ -343,11 +389,13 @@ class _UserProfileSettingsScreenState extends State<UserProfileSettingsScreen> {
       final key = keyController.text.trim();
       final value = valueController.text.trim();
       if (key.isNotEmpty) {
+        final controller = TextEditingController(text: value);
+        _watch(controller);
         setState(() {
           _customAttrs.add(
             _CustomAttr(
               key: key,
-              valueController: TextEditingController(text: value),
+              valueController: controller,
             ),
           );
         });
@@ -368,6 +416,7 @@ class _UserProfileSettingsScreenState extends State<UserProfileSettingsScreen> {
     );
     if (confirmed != true) return;
 
+    attr.valueController.removeListener(_onDraftChanged);
     attr.valueController.dispose();
     setState(() => _customAttrs.removeAt(index));
   }
@@ -441,7 +490,10 @@ class _UserProfileSettingsScreenState extends State<UserProfileSettingsScreen> {
     final coreFields = _buildCoreFields(l10n);
     final extendedFields = _buildExtendedFields(l10n);
 
-    return Scaffold(
+    return DiscardChangesScope(
+      key: _discardKey,
+      dirty: _profileDirty,
+      child: Scaffold(
       appBar: AppBar(
         title: Text(l10n.profile_personalTitle),
         centerTitle: true,
@@ -518,6 +570,7 @@ class _UserProfileSettingsScreenState extends State<UserProfileSettingsScreen> {
             ),
           ),
         ],
+      ),
       ),
     );
   }

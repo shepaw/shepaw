@@ -7874,4 +7874,84 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get chat_mainModelSwitchFailed => 'Failed to switch main model';
+
+  @override
+  String get common_discardUnsaved => 'You have unsaved changes. Discard them?';
+
+  @override
+  String get chat_deleteMessageTitle => 'Delete message';
+
+  @override
+  String get chat_deleteMessageContent =>
+      'Delete this message? This cannot be undone.';
+
+  @override
+  String get chat_resetDmConfirm =>
+      'This sends a reset command and clears the remote context.';
+
+  @override
+  String get chat_resetGroupConfirm =>
+      'This deletes every message in the current group session. This cannot be undone.';
+
+  @override
+  String get chat_currentSessionCannotDelete => 'Open now, can\'t delete';
+
+  @override
+  String get chat_queueClearConfirm =>
+      'Clear every message waiting to be sent?';
+
+  @override
+  String get chat_voiceSwipeToCancel => 'Swipe up to cancel';
+
+  @override
+  String get chat_voiceReleaseToCancel => 'Release to cancel';
+
+  @override
+  String get chat_voiceHoldToTalk => 'Hold to talk';
+
+  @override
+  String get jadeSlip_deleteItemTitle => 'Delete item';
+
+  @override
+  String get jadeSlip_deleteItemBody => 'Delete this checklist item?';
+
+  @override
+  String get jadeSlip_deleteAttachmentTitle => 'Delete attachment';
+
+  @override
+  String get jadeSlip_deleteAttachmentBody =>
+      'Delete this attachment? The file will be removed from the pouch.';
+
+  @override
+  String get storage_browserDeleteFolderTitle => 'Delete folder';
+
+  @override
+  String storage_browserDeleteFolderConfirm(String path) {
+    return 'Delete folder $path and its contents, and move them to the recycle bin?';
+  }
+
+  @override
+  String get storage_browserDeletePermanentTitle => 'Delete permanently';
+
+  @override
+  String storage_browserDeletePermanentConfirm(String path) {
+    return 'Permanently delete $path? It will not go to the recycle bin.';
+  }
+
+  @override
+  String get createGroup_invalidMaxRounds =>
+      'Enter a positive whole number for max rounds';
+
+  @override
+  String get createGroup_failed => 'Couldn\'t create the group. Try again.';
+
+  @override
+  String get agentDetail_autosaveFailed =>
+      'Couldn\'t save. Your edits are still here — try again.';
+
+  @override
+  String get groupDetail_saveFailed => 'Couldn\'t save. Try again.';
+
+  @override
+  String get scheduledTasks_saveFailed => 'Couldn\'t save. Try again.';
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/discard_changes_scope.dart';
 import '../widgets/model_icon.dart';
 import '../models/llm_provider_config.dart';
 import '../models/model_definition.dart';
@@ -354,6 +355,32 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
   bool _loadingModels = false;
   bool _testingOllamaConnection = false;
   String? _modelsError;
+  final _discardKey = GlobalKey<DiscardChangesScopeState>();
+  String _baseline = '';
+
+  List<TextEditingController> get _draftControllers => [
+        _displayNameController,
+        _descriptionController,
+        _providerController,
+        _modelController,
+        _apiBaseController,
+        _apiKeyController,
+        _requestBodyTemplateController,
+        _responseBodyPathController,
+      ];
+
+  String _formSignature() => [
+        ..._draftControllers.map((controller) => controller.text),
+        '$_streamEnabled',
+        _selectedModelTypes.map((type) => type.name).join(','),
+        '$_selectedProviderIndex',
+      ].join('\u0001');
+
+  bool get _modelDirty => _formSignature() != _baseline;
+
+  void _onDraftChanged() {
+    if (mounted) setState(() {});
+  }
 
   // ── Provider API Key 缓存 ─────────────────────────────
   /// Secure storage key 前缀由 [SecureKeyManager.providerApiKeyStorageKey] 管理
@@ -408,6 +435,10 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
           }
         }
       }
+    }
+    _baseline = _formSignature();
+    for (final controller in _draftControllers) {
+      controller.addListener(_onDraftChanged);
     }
   }
 
@@ -740,6 +771,9 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
   @override
   void dispose() {
     _apiKeyController.removeListener(_repairApiKeyIfGarbled);
+    for (final controller in _draftControllers) {
+      controller.removeListener(_onDraftChanged);
+    }
     _displayNameController.dispose();
     _descriptionController.dispose();
     _providerController.dispose();
@@ -754,7 +788,7 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
     super.dispose();
   }
 
-  void _save() {
+  Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
 
     final apiBase = _apiBaseController.text.trim();
@@ -798,6 +832,8 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
       modelTypes: _selectedModelTypes,
     );
 
+    await _discardKey.currentState?.allowPop();
+    if (!mounted) return;
     Navigator.pop(context, result);
   }
 
@@ -822,7 +858,10 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
     final fetchModelsIcon =
         _isOllamaSelected ? Icons.storage : Icons.cloud_download;
 
-    return Scaffold(
+    return DiscardChangesScope(
+      key: _discardKey,
+      dirty: _modelDirty,
+      child: Scaffold(
       appBar: AppBar(
         title: Text(isEditing
             ? l10n.toolModel_editTitle
@@ -1161,6 +1200,7 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
             ),
           ),
         ],
+      ),
       ),
     );
   }
