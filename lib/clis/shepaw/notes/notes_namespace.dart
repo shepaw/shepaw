@@ -257,14 +257,15 @@ class NotesItemCommand extends CliCommand {
 
   @override
   String get description =>
-      'Check off (--item + --done true), uncheck, append (--text), or '
-      'remove (--item + --delete) a checklist row. Call this as soon as '
-      'you finish a step.';
+      'Check off (--item + --done true), uncheck, append (--text), '
+      'retitle (--item + --text), or remove (--item + --delete) a '
+      'checklist row. Call this as soon as you finish a step.';
 
   @override
   String get usage =>
       'shepaw notes item --id <slipId> --item <itemId> --done true\n'
       'shepaw notes item --id <slipId> --text "new checklist row"\n'
+      'shepaw notes item --id <slipId> --item <itemId> --text "new text"\n'
       'shepaw notes item --id <slipId> --item <itemId> --delete';
 
   @override
@@ -279,6 +280,18 @@ class NotesItemCommand extends CliCommand {
         deleteRaw == 'yes' ||
         flags.containsKey('delete') && deleteRaw.isEmpty;
     try {
+      if (itemId.isNotEmpty && text.isNotEmpty) {
+        final slip = await JadeSlipService.instance.updateItemText(
+          id: id,
+          itemId: itemId,
+          text: text,
+        );
+        return {
+          'success': true,
+          'action': 'renamed',
+          'slip': _slipJson(slip, full: true),
+        };
+      }
       if (text.isNotEmpty) {
         final slip = await JadeSlipService.instance.addItem(id: id, text: text);
         return {'success': true, 'action': 'added', 'slip': _slipJson(slip, full: true)};

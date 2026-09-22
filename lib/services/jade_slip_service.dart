@@ -289,6 +289,29 @@ class JadeSlipService {
     return update(slip.copyWith(items: [...slip.items, item]));
   }
 
+  Future<JadeSlip> updateItemText({
+    required String id,
+    required String itemId,
+    required String text,
+  }) async {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) {
+      throw ArgumentError('item text cannot be empty');
+    }
+    final slip = await getById(id);
+    if (slip == null) {
+      throw StateError('jade slip not found: $id');
+    }
+    final items = [
+      for (final item in slip.items)
+        if (item.id == itemId) item.copyWith(text: trimmed) else item,
+    ];
+    if (items.every((e) => e.id != itemId)) {
+      throw StateError('jade slip item not found: $itemId');
+    }
+    return update(slip.copyWith(items: items));
+  }
+
   Future<JadeSlip> removeItem({
     required String id,
     required String itemId,

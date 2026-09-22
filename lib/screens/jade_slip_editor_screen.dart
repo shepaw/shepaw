@@ -181,6 +181,23 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     await _load();
   }
 
+  Future<void> _renameItem(String itemId, String text) async {
+    final slip = _slip;
+    if (slip == null) return;
+    await _flush();
+    setState(() {
+      _slip = slip.copyWith(
+        items: [
+          for (final item in slip.items)
+            if (item.id == itemId) item.copyWith(text: text) else item,
+        ],
+      );
+    });
+    await _service.updateItemText(id: widget.slipId, itemId: itemId, text: text);
+    widget.onChanged?.call();
+    await _load();
+  }
+
   Future<void> _removeItem(String itemId) async {
     final slip = _slip;
     if (slip == null) return;
@@ -397,6 +414,7 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
               const SizedBox(height: 6),
               for (final item in slip.items)
                 _ChecklistRow(
+                  key: ValueKey(item.id),
                   item: item,
                   onChanged: (v) => unawaited(_service.setItemDone(
                     id: slip.id,
@@ -404,6 +422,7 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                     done: v,
                   )),
                   onDelete: () => unawaited(_removeItem(item.id)),
+                  onRename: (text) => unawaited(_renameItem(item.id, text)),
                 ),
               _AddItemRow(
                 controller: _item,
@@ -812,26 +831,63 @@ class _PriorityPill extends StatelessWidget {
   }
 }
 
-class _ChecklistRow extends StatelessWidget {
+/// 清单项：勾选、行内改字、更多操作（编辑 / 删除）。
+class _ChecklistRow extends StatefulWidget {
   const _ChecklistRow({
+    super.key,
     required this.item,
     required this.onChanged,
     required this.onDelete,
+    required this.onRename,
   });
 
   final JadeSlipItem item;
   final ValueChanged<bool> onChanged;
   final VoidCallback onDelete;
+  final ValueChanged<String> onRename;
+
+  @override
+  State<_ChecklistRow> createState() => _ChecklistRowState();
+}
+
+class _ChecklistRowState extends State<_ChecklistRow> {
+  final _controller = TextEditingController();
+  final _focus = FocusNode();
+  bool _editing = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _beginEdit() {
+    _controller.text = widget.item.text;
+    setState(() => _editing = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focus.requestFocus();
+    });
+  }
+
+  void _submit() {
+    final text = _controller.text.trim();
+    if (text.isNotEmpty && text != widget.item.text) {
+      widget.onRename(text);
+    }
+    if (mounted) setState(() => _editing = false);
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final l10n = AppLocalizations.of(context);
+    final item = widget.item;
     return Dismissible(
-      key: ValueKey(item.id),
+      key: ValueKey('item-${item.id}'),
       direction: DismissDirection.endToStart,
-      onDismissed: (_) => onDelete(),
+      onDismissed: (_) => widget.onDelete(),
       background: Container(
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 16),
@@ -842,7 +898,7 @@ class _ChecklistRow extends StatelessWidget {
         child: Icon(Icons.delete_outline, color: scheme.onErrorContainer),
       ),
       child: InkWell(
-        onTap: () => onChanged(!item.done),
+        onTap: _editing ? null : () => widget.onChanged(!item.done),
         borderRadius: BorderRadius.circular(8),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 2),
@@ -853,7 +909,7 @@ class _ChecklistRow extends StatelessWidget {
                 height: 24,
                 child: Checkbox(
                   value: item.done,
-                  onChanged: (v) => onChanged(v ?? false),
+                  onChanged: (v) => widget.onChanged(v ?? false),
                   visualDensity: VisualDensity.compact,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(4),
@@ -863,26 +919,58 @@ class _ChecklistRow extends StatelessWidget {
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: Text(
-                  item.text,
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    decoration: item.done ? TextDecoration.lineThrough : null,
-                    color: item.done
-                        ? scheme.onSurfaceVariant
-                        : scheme.onSurface,
-                  ),
-                ),
+                child: _editing
+                    ? TextField(
+                        controller: _controller,
+                        focusNode: _focus,
+                        style: theme.textTheme.bodyLarge,
+                        decoration: const InputDecoration(
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(vertical: 8),
+                        ),
+                        onSubmitted: (_) => _submit(),
+                      )
+                    : Text(
+                        item.text,
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          decoration:
+                              item.done ? TextDecoration.lineThrough : null,
+                          color: item.done
+                              ? scheme.onSurfaceVariant
+                              : scheme.onSurface,
+                        ),
+                      ),
               ),
-              IconButton(
-                tooltip: l10n.common_delete,
-                visualDensity: VisualDensity.compact,
-                iconSize: 18,
-                onPressed: onDelete,
-                icon: Icon(
-                  Icons.close,
-                  color: scheme.onSurfaceVariant,
+              if (_editing)
+                IconButton(
+                  tooltip: l10n.common_save,
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 18,
+                  onPressed: _submit,
+                  icon: Icon(Icons.check, color: scheme.primary),
+                )
+              else
+                PopupMenuButton<String>(
+                  tooltip: l10n.common_more,
+                  padding: EdgeInsets.zero,
+                  iconSize: 18,
+                  icon: Icon(Icons.more_vert, color: scheme.onSurfaceVariant),
+                  onSelected: (v) {
+                    if (v == 'edit') _beginEdit();
+                    if (v == 'delete') widget.onDelete();
+                  },
+                  itemBuilder: (_) => [
+                    PopupMenuItem(
+                      value: 'edit',
+                      child: Text(l10n.common_edit),
+                    ),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Text(l10n.common_delete),
+                    ),
+                  ],
                 ),
-              ),
             ],
           ),
         ),
