@@ -538,47 +538,73 @@ extension ChannelDao on LocalDatabaseService {
     return SessionUtils.sessionTitleFromMessageContent(content) != null;
   }
 
-  /// 批量取多个 channel 的首条可展示非系统消息（单次查询 + Dart 过滤）。
+  /// 每个会话最多扫描前多少条消息去找可展示的标题行（与单条
+  /// [getFirstChannelMessage] 的 limit 一致）。
+  static const int _kSessionTitleScanLimit = 20;
+
+  /// 批量取多个 channel 的首条可展示非系统消息。
   ///
   /// 语义同 [getFirstChannelMessage]。
+  ///
+  /// **按会话分片、每片有界**：旧实现是一条 `WHERE channel_id IN (...)` 的
+  /// `SELECT m.*`（无 LIMIT），把涉及会话的**全部**消息行（含完整
+  /// content / metadata）搬过 platform channel 后才在 Dart 侧丢弃多余的
+  /// —— 搬运量随聊天内容线性增长，是「聊天久了左滑开抽屉变卡」的主因。
+  /// 这里改为每会话一条 `LIMIT [_kSessionTitleScanLimit]` 的有界查询，由
+  /// [Batch] 合成**一次** platform channel 往返：既限制了数据量，也保留
+  /// 了原先「避免 N×3 次串行往返」的初衷。
   Future<Map<String, Map<String, dynamic>>> getFirstMessagesByChannels(
       List<String> channelIds) async {
     if (channelIds.isEmpty) return const {};
     final db = await database;
-    final rows = await db.rawQuery(
-      'SELECT m.* FROM messages m WHERE m.channel_id IN '
-      '(${List.filled(channelIds.length, '?').join(',')}) '
-      "AND m.message_type NOT IN ('system', 'permission_audit') "
-      'ORDER BY m.channel_id ASC, m.created_at ASC',
-      channelIds,
-    );
+    final batch = db.batch();
+    for (final id in channelIds) {
+      batch.rawQuery(
+        'SELECT * FROM messages '
+        "WHERE channel_id = ? AND message_type NOT IN ('system', 'permission_audit') "
+        'ORDER BY created_at ASC, rowid ASC LIMIT ?',
+        [id, _kSessionTitleScanLimit],
+      );
+    }
     final out = <String, Map<String, dynamic>>{};
-    final scanned = <String, int>{};
-    for (final r in rows) {
-      final cid = r['channel_id'] as String;
-      final n = (scanned[cid] ?? 0) + 1;
-      scanned[cid] = n;
-      if (n > 20 || out.containsKey(cid)) continue;
-      if (_isDisplayableSessionTitleRow(r)) out[cid] = r;
+    for (final result in await batch.commit()) {
+      if (result is! List) continue;
+      for (final row in result) {
+        if (row is! Map<String, dynamic>) continue;
+        final cid = row['channel_id'] as String?;
+        if (cid == null || out.containsKey(cid)) continue;
+        if (_isDisplayableSessionTitleRow(row)) out[cid] = row;
+      }
     }
     return out;
   }
 
-  /// 批量取多个 channel 的最新一条消息（单次查询），语义同
-  /// [getLatestChannelMessage]。
+  /// 批量取多个 channel 的最新一条消息，语义同 [getLatestChannelMessage]。
+  ///
+  /// 同样按会话有界查询 + [Batch] 合并往返：旧实现的相关子查询
+  /// `m.id = (SELECT ... LIMIT 1)` 要对每个会话的每一行做一次判定并回表
+  /// 读整行，SQL 侧依旧扫过全部消息。
   Future<Map<String, Map<String, dynamic>>> getLatestMessagesByChannels(
       List<String> channelIds) async {
     if (channelIds.isEmpty) return const {};
     final db = await database;
-    final rows = await db.rawQuery(
-      'SELECT m.* FROM messages m WHERE m.channel_id IN '
-      '(${List.filled(channelIds.length, '?').join(',')}) '
-      'AND m.id = (SELECT m2.id FROM messages m2 '
-      'WHERE m2.channel_id = m.channel_id '
-      'ORDER BY m2.created_at DESC LIMIT 1)',
-      channelIds,
-    );
-    return {for (final r in rows) r['channel_id'] as String: r};
+    final batch = db.batch();
+    for (final id in channelIds) {
+      batch.rawQuery(
+        'SELECT * FROM messages WHERE channel_id = ? '
+        'ORDER BY created_at DESC LIMIT 1',
+        [id],
+      );
+    }
+    final out = <String, Map<String, dynamic>>{};
+    for (final result in await batch.commit()) {
+      if (result is! List || result.isEmpty) continue;
+      final row = result.first;
+      if (row is! Map<String, dynamic>) continue;
+      final cid = row['channel_id'] as String?;
+      if (cid != null) out[cid] = row;
+    }
+    return out;
   }
 
   /// Agent 所有 DM 会话中最新一条消息（跨会话，用于列表排序/预览）。
