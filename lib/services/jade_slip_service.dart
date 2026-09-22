@@ -327,6 +327,49 @@ class JadeSlipService {
     return update(slip.copyWith(items: items));
   }
 
+  /// 追加一条留言。作者由调用方给定（App 内是本机用户，CLI 是执行中的 Agent）。
+  Future<JadeSlip> addComment({
+    required String id,
+    required String text,
+    required String authorId,
+    String authorName = '',
+  }) async {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) {
+      throw ArgumentError('comment text cannot be empty');
+    }
+    final slip = await getById(id);
+    if (slip == null) {
+      throw StateError('jade slip not found: $id');
+    }
+    final comment = JadeSlipComment(
+      id: JadeSlipComment.newId(),
+      authorId: authorId,
+      authorName: authorName.trim(),
+      text: trimmed,
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+    );
+    return update(slip.copyWith(comments: [...slip.comments, comment]));
+  }
+
+  Future<JadeSlip> removeComment({
+    required String id,
+    required String commentId,
+  }) async {
+    final slip = await getById(id);
+    if (slip == null) {
+      throw StateError('jade slip not found: $id');
+    }
+    final remaining = [
+      for (final c in slip.comments)
+        if (c.id != commentId) c,
+    ];
+    if (remaining.length == slip.comments.length) {
+      throw StateError('jade slip comment not found: $commentId');
+    }
+    return update(slip.copyWith(comments: remaining));
+  }
+
   Future<JadeSlip> addAttachment({
     required String id,
     required File file,

@@ -6452,6 +6452,26 @@ class AppLocalizationsEn extends AppLocalizations {
   String get jadeSlip_pickAgent => 'Choose an agent';
 
   @override
+  String get jadeSlip_searchAgent => 'Search agents';
+
+  @override
+  String jadeSlip_noAgentMatch(String query) {
+    return 'No agent matches \"$query\"';
+  }
+
+  @override
+  String get jadeSlip_comments => 'Comments';
+
+  @override
+  String get jadeSlip_commentHint => 'Write a comment…';
+
+  @override
+  String get jadeSlip_commentEmpty => 'No comments yet';
+
+  @override
+  String get jadeSlip_commentMine => 'Me';
+
+  @override
   String get jadeSlip_titleHint => 'Title';
 
   @override

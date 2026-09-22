@@ -14,6 +14,7 @@ class JadeSlip {
     this.status = JadeSlipStatus.open,
     this.priority = JadeSlipPriority.none,
     this.items = const [],
+    this.comments = const [],
     this.attachments = const [],
     this.assigneeAgentId = '',
     this.assigneeAgentName = '',
@@ -30,6 +31,10 @@ class JadeSlip {
   final JadeSlipStatus status;
   final JadeSlipPriority priority;
   final List<JadeSlipItem> items;
+
+  /// 过程留言：用户在 App 里写、Agent 用 `shepaw notes comment` 追加。
+  final List<JadeSlipComment> comments;
+
   final List<JadeSlipAttachment> attachments;
   final String assigneeAgentId;
   final String assigneeAgentName;
@@ -74,6 +79,7 @@ class JadeSlip {
     JadeSlipStatus? status,
     JadeSlipPriority? priority,
     List<JadeSlipItem>? items,
+    List<JadeSlipComment>? comments,
     List<JadeSlipAttachment>? attachments,
     String? assigneeAgentId,
     String? assigneeAgentName,
@@ -90,6 +96,7 @@ class JadeSlip {
       status: status ?? this.status,
       priority: priority ?? this.priority,
       items: items ?? this.items,
+      comments: comments ?? this.comments,
       attachments: attachments ?? this.attachments,
       assigneeAgentId: assigneeAgentId ?? this.assigneeAgentId,
       assigneeAgentName: assigneeAgentName ?? this.assigneeAgentName,
@@ -120,6 +127,8 @@ class JadeSlip {
         'status': status.wire,
         'priority': priority.wire,
         'items': [for (final item in items) item.toJson()],
+        if (comments.isNotEmpty)
+          'comments': [for (final c in comments) c.toJson()],
         if (attachments.isNotEmpty)
           'attachments': [for (final a in attachments) a.toJson()],
         if (assigneeAgentId.isNotEmpty) 'assignee_agent_id': assigneeAgentId,
@@ -150,6 +159,15 @@ class JadeSlip {
         if (s.isNotEmpty) tags.add(s);
       }
     }
+    final rawComments = json['comments'];
+    final comments = <JadeSlipComment>[];
+    if (rawComments is List) {
+      for (final item in rawComments) {
+        if (item is Map) {
+          comments.add(JadeSlipComment.fromJson(item.cast<String, dynamic>()));
+        }
+      }
+    }
     final rawAtt = json['attachments'];
     final attachments = <JadeSlipAttachment>[];
     if (rawAtt is List) {
@@ -168,6 +186,7 @@ class JadeSlip {
       status: JadeSlipStatus.parse(json['status'] as String?),
       priority: JadeSlipPriority.parse(json['priority'] as String?),
       items: items,
+      comments: comments,
       attachments: attachments,
       assigneeAgentId: json['assignee_agent_id'] as String? ?? '',
       assigneeAgentName: json['assignee_agent_name'] as String? ?? '',
@@ -228,13 +247,22 @@ class JadeSlip {
         ..writeln('notes:')
         ..writeln(notes);
     }
+    if (comments.isNotEmpty) {
+      buf
+        ..writeln()
+        ..writeln('comments:');
+      for (final c in comments) {
+        buf.writeln('- ${c.displayName}: ${c.text} (comment=${c.id})');
+      }
+    }
     buf
       ..writeln()
       ..writeln('请用 shepaw notes 读写进度，完成一项就勾一项，不要只口头答应：')
       ..writeln('- shepaw notes get --id $id')
       ..writeln(
           '- shepaw notes item --id $id --item <itemId> --done true')
-      ..writeln('- shepaw notes complete --id $id');
+      ..writeln('- shepaw notes complete --id $id')
+      ..writeln('- shepaw notes comment --id $id --text "进度说明"');
     if (attachments.isNotEmpty) {
       buf.writeln('- shepaw store read --uri <attachment uri>');
     }
@@ -273,6 +301,52 @@ class JadeSlipItem {
 
   /// 短 id，方便 Agent 在对话里抄写。
   static String newId() => const Uuid().v4().replaceAll('-', '').substring(0, 8);
+}
+
+/// 玉简上的一条留言（用户或 Agent 写的过程记录）。
+class JadeSlipComment {
+  const JadeSlipComment({
+    required this.id,
+    required this.authorId,
+    this.authorName = '',
+    required this.text,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String authorId;
+  final String authorName;
+  final String text;
+  final int createdAt;
+
+  String get displayName => authorName.isEmpty ? authorId : authorName;
+
+  JadeSlipComment copyWith({String? text}) => JadeSlipComment(
+        id: id,
+        authorId: authorId,
+        authorName: authorName,
+        text: text ?? this.text,
+        createdAt: createdAt,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'author_id': authorId,
+        'author_name': authorName,
+        'text': text,
+        'created_at': createdAt,
+      };
+
+  factory JadeSlipComment.fromJson(Map<String, dynamic> json) =>
+      JadeSlipComment(
+        id: (json['id'] as String? ?? '').trim(),
+        authorId: (json['author_id'] as String? ?? '').trim(),
+        authorName: (json['author_name'] as String? ?? '').trim(),
+        text: json['text'] as String? ?? '',
+        createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+      );
+
+  static String newId() => JadeSlipItem.newId();
 }
 
 class JadeSlipAttachment {

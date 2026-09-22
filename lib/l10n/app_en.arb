@@ -3204,6 +3204,19 @@
   "jadeSlip_run": "Hand to agent",
   "jadeSlip_runHint": "Opens a chat with the jade slip pre-filled. Send it and the agent will work the checklist.",
   "jadeSlip_pickAgent": "Choose an agent",
+  "jadeSlip_searchAgent": "Search agents",
+  "jadeSlip_noAgentMatch": "No agent matches \"{query}\"",
+  "@jadeSlip_noAgentMatch": {
+    "placeholders": {
+      "query": {
+        "type": "String"
+      }
+    }
+  },
+  "jadeSlip_comments": "Comments",
+  "jadeSlip_commentHint": "Write a comment…",
+  "jadeSlip_commentEmpty": "No comments yet",
+  "jadeSlip_commentMine": "Me",
   "jadeSlip_titleHint": "Title",
   "jadeSlip_titleRequired": "Please enter a title",
   "jadeSlip_checklist": "Checklist",

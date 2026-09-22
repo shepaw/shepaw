@@ -3679,6 +3679,19 @@
   "jadeSlip_run": "交给 Agent",
   "jadeSlip_runHint": "将打开会话并预填玉简内容，发送后 Agent 会按清单执行。",
   "jadeSlip_pickAgent": "选择执行的 Agent",
+  "jadeSlip_searchAgent": "搜索 Agent",
+  "jadeSlip_noAgentMatch": "没有匹配「{query}」的 Agent",
+  "@jadeSlip_noAgentMatch": {
+    "placeholders": {
+      "query": {
+        "type": "String"
+      }
+    }
+  },
+  "jadeSlip_comments": "评论",
+  "jadeSlip_commentHint": "写条评论…",
+  "jadeSlip_commentEmpty": "还没有评论",
+  "jadeSlip_commentMine": "我",
   "jadeSlip_titleHint": "标题",
   "jadeSlip_titleRequired": "请填写玉简标题",
   "jadeSlip_checklist": "清单",

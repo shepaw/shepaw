@@ -11337,6 +11337,42 @@ abstract class AppLocalizations {
   /// **'选择执行的 Agent'**
   String get jadeSlip_pickAgent;
 
+  /// No description provided for @jadeSlip_searchAgent.
+  ///
+  /// In zh, this message translates to:
+  /// **'搜索 Agent'**
+  String get jadeSlip_searchAgent;
+
+  /// No description provided for @jadeSlip_noAgentMatch.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有匹配「{query}」的 Agent'**
+  String jadeSlip_noAgentMatch(String query);
+
+  /// No description provided for @jadeSlip_comments.
+  ///
+  /// In zh, this message translates to:
+  /// **'评论'**
+  String get jadeSlip_comments;
+
+  /// No description provided for @jadeSlip_commentHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'写条评论…'**
+  String get jadeSlip_commentHint;
+
+  /// No description provided for @jadeSlip_commentEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没有评论'**
+  String get jadeSlip_commentEmpty;
+
+  /// No description provided for @jadeSlip_commentMine.
+  ///
+  /// In zh, this message translates to:
+  /// **'我'**
+  String get jadeSlip_commentMine;
+
   /// No description provided for @jadeSlip_titleHint.
   ///
   /// In zh, this message translates to:

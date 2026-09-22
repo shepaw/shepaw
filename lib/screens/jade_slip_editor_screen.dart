@@ -11,6 +11,7 @@ import '../models/remote_agent.dart';
 import '../models/store_attachment_ref.dart';
 import '../services/jade_slip_service.dart';
 import '../services/local_database_service.dart';
+import '../services/local_user_identity.dart';
 import '../services/she_service.dart';
 import '../services/store_open_service.dart';
 import '../theme/app_theme.dart';
@@ -43,6 +44,7 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   final _body = TextEditingController();
   final _item = TextEditingController();
   final _itemFocus = FocusNode();
+  final _comment = TextEditingController();
   final _runKey = GlobalKey();
 
   JadeSlip? _slip;
@@ -81,6 +83,7 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     _body.dispose();
     _item.dispose();
     _itemFocus.dispose();
+    _comment.dispose();
     super.dispose();
   }
 
@@ -177,6 +180,36 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     _item.clear();
     await _flush();
     await _service.addItem(id: widget.slipId, text: text);
+    widget.onChanged?.call();
+    await _load();
+  }
+
+  Future<void> _addComment() async {
+    final text = _comment.text.trim();
+    if (text.isEmpty || _slip == null) return;
+    final l10n = AppLocalizations.of(context);
+    _comment.clear();
+    await _flush();
+    await _service.addComment(
+      id: widget.slipId,
+      text: text,
+      authorId: LocalUserIdentity.id,
+      authorName: l10n.jadeSlip_commentMine,
+    );
+    widget.onChanged?.call();
+    await _load();
+  }
+
+  Future<void> _removeComment(String commentId) async {
+    final slip = _slip;
+    if (slip == null) return;
+    await _flush();
+    setState(() {
+      _slip = slip.copyWith(
+        comments: [for (final c in slip.comments) if (c.id != commentId) c],
+      );
+    });
+    await _service.removeComment(id: widget.slipId, commentId: commentId);
     widget.onChanged?.call();
     await _load();
   }
@@ -485,6 +518,38 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                   contentPadding: const EdgeInsets.all(14),
                 ),
                 onChanged: (_) => _onTextChanged(),
+              ),
+              const SizedBox(height: 28),
+              _SectionLabel(
+                label: l10n.jadeSlip_comments,
+                trailing: slip.comments.isEmpty
+                    ? null
+                    : '${slip.comments.length}',
+              ),
+              const SizedBox(height: 6),
+              if (slip.comments.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Text(
+                    l10n.jadeSlip_commentEmpty,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                )
+              else
+                for (final comment in slip.comments)
+                  _CommentRow(
+                    comment: comment,
+                    onDelete: comment.authorId == LocalUserIdentity.id
+                        ? () => unawaited(_removeComment(comment.id))
+                        : null,
+                  ),
+              _AddItemRow(
+                controller: _comment,
+                focusNode: null,
+                hint: l10n.jadeSlip_commentHint,
+                onSubmit: () => unawaited(_addComment()),
               ),
             ],
           ),
@@ -982,13 +1047,13 @@ class _ChecklistRowState extends State<_ChecklistRow> {
 class _AddItemRow extends StatelessWidget {
   const _AddItemRow({
     required this.controller,
-    required this.focusNode,
     required this.hint,
     required this.onSubmit,
+    this.focusNode,
   });
 
   final TextEditingController controller;
-  final FocusNode focusNode;
+  final FocusNode? focusNode;
   final String hint;
   final VoidCallback onSubmit;
 
@@ -1018,6 +1083,75 @@ class _AddItemRow extends StatelessWidget {
               onSubmitted: (_) => onSubmit(),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CommentRow extends StatelessWidget {
+  const _CommentRow({required this.comment, this.onDelete});
+
+  final JadeSlipComment comment;
+
+  /// 只允许删自己写的评论，避免误删 Agent 的过程记录。
+  final VoidCallback? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final l10n = AppLocalizations.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.comment_outlined, size: 18, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        comment.displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    if (comment.createdAt > 0) ...[
+                      const SizedBox(width: 6),
+                      Text(
+                        _fmtStamp(comment.createdAt),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  comment.text,
+                  style: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
+                ),
+              ],
+            ),
+          ),
+          if (onDelete != null)
+            IconButton(
+              tooltip: l10n.common_delete,
+              visualDensity: VisualDensity.compact,
+              iconSize: 18,
+              onPressed: onDelete,
+              icon: Icon(Icons.close, color: scheme.onSurfaceVariant),
+            ),
         ],
       ),
     );
@@ -1156,4 +1290,11 @@ class _AddAttachmentRow extends StatelessWidget {
 String _fmtDay(int ms) {
   final d = DateTime.fromMillisecondsSinceEpoch(ms).toLocal();
   return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+}
+
+String _fmtStamp(int ms) {
+  final d = DateTime.fromMillisecondsSinceEpoch(ms).toLocal();
+  final hh = d.hour.toString().padLeft(2, '0');
+  final mm = d.minute.toString().padLeft(2, '0');
+  return '${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')} $hh:$mm';
 }

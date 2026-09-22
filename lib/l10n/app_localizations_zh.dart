@@ -6204,6 +6204,26 @@ class AppLocalizationsZh extends AppLocalizations {
   String get jadeSlip_pickAgent => '选择执行的 Agent';
 
   @override
+  String get jadeSlip_searchAgent => '搜索 Agent';
+
+  @override
+  String jadeSlip_noAgentMatch(String query) {
+    return '没有匹配「$query」的 Agent';
+  }
+
+  @override
+  String get jadeSlip_comments => '评论';
+
+  @override
+  String get jadeSlip_commentHint => '写条评论…';
+
+  @override
+  String get jadeSlip_commentEmpty => '还没有评论';
+
+  @override
+  String get jadeSlip_commentMine => '我';
+
+  @override
   String get jadeSlip_titleHint => '标题';
 
   @override

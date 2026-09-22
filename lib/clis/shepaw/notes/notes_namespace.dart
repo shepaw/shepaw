@@ -4,6 +4,7 @@ import '../../cli_base.dart';
 import '../../../models/jade_slip.dart';
 import '../../../models/store_attachment_ref.dart';
 import '../../../services/jade_slip_service.dart';
+import '../../../services/local_database_service.dart';
 import '../../../services/local_user_identity.dart';
 import '../../../services/she_service.dart';
 import '../chat/chat_agent_scope.dart';
@@ -44,6 +45,7 @@ class NotesNamespace extends CliNamespace {
         'add': NotesAddCommand(),
         'update': NotesUpdateCommand(),
         'item': NotesItemCommand(),
+        'comment': NotesCommentCommand(),
         'attach': NotesAttachCommand(),
         'detach': NotesDetachCommand(),
         'complete': NotesCompleteCommand(),
@@ -70,6 +72,17 @@ Map<String, dynamic> _slipJson(JadeSlip slip, {bool full = false}) {
         for (final item in slip.items)
           {'id': item.id, 'text': item.text, 'done': item.done},
       ],
+      if (slip.comments.isNotEmpty)
+        'comments': [
+          for (final c in slip.comments)
+            {
+              'id': c.id,
+              'author_id': c.authorId,
+              'author': c.displayName,
+              'text': c.text,
+              'created_at': c.createdAt,
+            },
+        ],
       if (slip.attachments.isNotEmpty)
         'attachments': [
           for (final a in slip.attachments)
@@ -321,6 +334,90 @@ class NotesItemCommand extends CliCommand {
         'success': true,
         'action': done ? 'checked' : 'unchecked',
         'slip': _slipJson(slip, full: true),
+      };
+    } catch (e) {
+      return {'error': '$e'};
+    }
+  }
+}
+
+/// 玉简留言：Agent 把处理过程记回玉简，用户在 App 里能直接看到。
+class NotesCommentCommand extends CliCommand {
+  @override
+  String get name => 'comment';
+
+  @override
+  String get description =>
+      'Add a comment (--text) to a jade slip, list them (no --text), '
+      'or remove one (--comment <id> --delete). The author is the running '
+      'agent, so the user can follow your progress on the slip itself.';
+
+  @override
+  String get usage =>
+      'shepaw notes comment --id <slipId> --text "已改完，待验证"\n'
+      'shepaw notes comment --id <slipId>\n'
+      'shepaw notes comment --id <slipId> --comment <commentId> --delete';
+
+  @override
+  Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
+    final id = flags['id']?.trim() ?? '';
+    if (id.isEmpty) return {'error': 'Missing --id. Usage: $usage'};
+    final slip = await JadeSlipService.instance.getById(id);
+    if (slip == null) return {'error': 'Jade slip not found: $id'};
+
+    final commentId = (flags['comment'] ?? '').trim();
+    final deleteRaw = (flags['delete'] ?? '').trim().toLowerCase();
+    final delete = deleteRaw == 'true' ||
+        deleteRaw == '1' ||
+        deleteRaw == 'yes' ||
+        flags.containsKey('delete') && deleteRaw.isEmpty;
+    try {
+      if (commentId.isNotEmpty && delete) {
+        final next = await JadeSlipService.instance.removeComment(
+          id: id,
+          commentId: commentId,
+        );
+        return {
+          'success': true,
+          'action': 'removed',
+          'slip': _slipJson(next, full: true),
+        };
+      }
+      final text = flags['text']?.trim() ?? '';
+      if (text.isEmpty) {
+        return {
+          'success': true,
+          'count': slip.comments.length,
+          'comments': [
+            for (final c in slip.comments)
+              {
+                'id': c.id,
+                'author_id': c.authorId,
+                'author': c.displayName,
+                'text': c.text,
+                'created_at': c.createdAt,
+              },
+          ],
+        };
+      }
+      final actor = ChatAgentScope.agentId.trim();
+      var authorName = '';
+      if (actor == SheService.sheId) {
+        authorName = SheService.sheName;
+      } else if (actor.isNotEmpty) {
+        final agent = await LocalDatabaseService().getRemoteAgentById(actor);
+        authorName = agent?.name ?? '';
+      }
+      final next = await JadeSlipService.instance.addComment(
+        id: id,
+        text: text,
+        authorId: actor,
+        authorName: authorName,
+      );
+      return {
+        'success': true,
+        'action': 'added',
+        'slip': _slipJson(next, full: true),
       };
     } catch (e) {
       return {'error': '$e'};
