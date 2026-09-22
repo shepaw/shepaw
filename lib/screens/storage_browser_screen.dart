@@ -1711,12 +1711,27 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       final title = p.basenameWithoutExtension(fileName);
       final bytes =
           spreadsheet ? utf8.encode('$title\n') : utf8.encode('# $title\n\n');
+      final space = _mineSpace;
+      final targetId = _targetId;
+      final relPath = _destRelPath(fileName);
       await _commitBytes(
-        space: _mineSpace,
-        path: _destRelPath(fileName),
+        space: space,
+        path: relPath,
         bytes: Uint8List.fromList(bytes),
       );
       await _reload();
+      if (!mounted) return;
+      // 建完直接进编辑器：新建的文档/表格就是要马上写内容。
+      await Navigator.of(context).push<bool>(
+        MaterialPageRoute<bool>(
+          builder: (_) => StoreTextEditorScreen(
+            space: space,
+            deviceId: targetId,
+            relPath: relPath,
+          ),
+        ),
+      );
+      if (mounted) await _reload();
     } catch (e) {
       _toast(l10n.storage_browserNewFileFailed('$e'));
     } finally {
