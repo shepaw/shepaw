@@ -91,4 +91,12 @@ Buy tickets
     expect(copy.dueAtMs, 100);
     expect(copy.relPath, 'slips/id1.json');
   });
+
+  test('isRecordPath only matches slips/<id>.json', () {
+    expect(JadeSlip.isRecordPath('slips/id1.json'), isTrue);
+    expect(JadeSlip.idFromRecordPath('slips/id1.json'), 'id1');
+    expect(JadeSlip.isRecordPath('slips/id1/files/a.png'), isFalse);
+    expect(JadeSlip.isRecordPath('other/id1.json'), isFalse);
+    expect(JadeSlip.idFromRecordPath('slips/id1/files/a.png'), isNull);
+  });
 }

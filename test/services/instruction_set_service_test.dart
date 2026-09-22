@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shepaw/models/instruction_set.dart';
 import 'package:shepaw/services/instruction_set_service.dart';
 import 'package:shepaw/services/local_database_service.dart';
 import 'package:shepaw/services/she_service.dart';
@@ -137,6 +138,21 @@ void main() {
         rest.any((e) => e.name == InstructionSetService.systemInstructionName),
         isTrue,
       );
+    });
+
+    test('store record path helpers', () {
+      const item = InstructionSet(
+        id: 'abc',
+        name: 'n',
+        content: 'c',
+        ownerAgentId: 'a',
+        createdAt: 1,
+        updatedAt: 2,
+      );
+      expect(item.relPath, 'sets/abc.json');
+      expect(InstructionSet.isRecordPath('sets/abc.json'), isTrue);
+      expect(InstructionSet.idFromRecordPath('sets/abc.json'), 'abc');
+      expect(InstructionSet.isRecordPath('sets/abc/extra.json'), isFalse);
     });
 
     test('list seeds built-in system instruction 沉淀指令', () async {

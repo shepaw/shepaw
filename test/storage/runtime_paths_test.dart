@@ -144,13 +144,13 @@ void main() {
       expect(StoreSpace.isOwnerCrossWritable(StoreSpace.workspaces), isTrue);
       expect(StoreSpace.isOwnerCrossWritable(StoreSpace.runtime), isFalse);
       expect(StoreSpace.browserSpaces, contains(StoreSpace.workspaces));
-      expect(StoreSpace.browserSpaces, contains(StoreSpace.public_));
+      expect(StoreSpace.browserSpaces, isNot(contains(StoreSpace.public_)));
       expect(StoreSpace.browserSpaces, contains(StoreSpace.cognition));
       expect(StoreSpace.browserSpaces, isNot(contains(StoreSpace.memory)));
-      expect(StoreSpace.userBrowserSpaces, [
-        StoreSpace.files,
-        StoreSpace.public_,
-      ]);
+      expect(StoreSpace.userBrowserSpaces, [StoreSpace.files]);
+      expect(StoreSpace.recentSpaces, contains(StoreSpace.notes));
+      expect(StoreSpace.recentSpaces, contains(StoreSpace.instructions));
+      expect(StoreSpace.recentSpaces, contains(StoreSpace.public_));
       expect(StoreSpace.agentBrowserSpaces, [
         StoreSpace.workspaces,
         StoreSpace.runtime,
@@ -159,7 +159,11 @@ void main() {
       ]);
       expect(
         StoreSpace.userVisibleSpaces(StoreSpace.browserSpaces),
-        [StoreSpace.files, StoreSpace.public_],
+        [StoreSpace.files],
+      );
+      expect(
+        StoreSpace.userVisibleSpaces(StoreSpace.sharedReadable),
+        [StoreSpace.files],
       );
       expect(
         StoreSpace.agentVisibleSpaces(StoreSpace.browserSpaces),
@@ -171,8 +175,13 @@ void main() {
         ],
       );
       expect(
-        StoreSpace.userVisibleSpaces([StoreSpace.files, 'notes']),
-        [StoreSpace.files, 'notes'],
+        StoreSpace.userVisibleSpaces([StoreSpace.files, 'vault']),
+        [StoreSpace.files, 'vault'],
+      );
+      expect(
+        StoreSpace.userVisibleSpaces(
+            [StoreSpace.files, StoreSpace.notes, StoreSpace.public_]),
+        [StoreSpace.files],
       );
       expect(
         StoreSpace.agentVisibleSpaces(
