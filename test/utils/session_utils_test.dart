@@ -386,6 +386,21 @@ void main() {
         expect(SessionUtils.isHubInternalPromptArtifact(bundled), isFalse);
       });
 
+      test('stripHubInternalPromptForDisplay 保留正文换行', () {
+        const body = '上一行\n\n## 标题\n\n正文';
+        expect(SessionUtils.stripHubInternalPromptForDisplay(body), body);
+      });
+
+      test('visibleMessageContent 用 wire_content 还原被折掉的换行', () {
+        expect(
+          SessionUtils.visibleMessageContent(
+            '上一行 ## 标题 正文',
+            {'wire_content': '上一行\n\n## 标题\n\n正文'},
+          ),
+          '上一行\n\n## 标题\n\n正文',
+        );
+      });
+
       test('sessionTitleFromMessageContent 跳过 Scope Card', () {
         expect(
           SessionUtils.sessionTitleFromMessageContent(scopeCard),

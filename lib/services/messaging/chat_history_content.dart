@@ -57,8 +57,9 @@ class ChatHistoryContent {
   /// 展示用正文：去掉 Scope Card 前缀，保留用户真实输入。
   static String displayContent(Message m) {
     if (m.metadata?[uiHiddenMetaKey] == true) return '';
-    return SessionUtils.stripHubInternalPromptForDisplay(m.content) ??
-        m.content;
+    final restored = SessionUtils.visibleMessageContent(m.content, m.metadata);
+    if (restored != m.content) return restored;
+    return SessionUtils.stripHubInternalPromptForDisplay(m.content) ?? m.content;
   }
 
   static bool _isSwitchCardOnly(Message m) {

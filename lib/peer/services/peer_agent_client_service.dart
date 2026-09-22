@@ -440,8 +440,27 @@ int preservedReadStateForHistorySync({
   final prevRole =
       (existingRow['sender_type'] as String?) == 'user' ? 'user' : 'agent';
   if (prevRole != remote.role) return 0;
-  if ((existingRow['content'] as String? ?? '') != remote.content) return 0;
+  final stored = existingRow['content'] as String? ?? '';
+  if (stored != remote.content && _rowWireContent(existingRow) != remote.content) {
+    return 0;
+  }
   return existingRow['is_read'] as int? ?? 0;
+}
+
+/// `wire_content` kept beside a synced row, or null when absent.
+String? _rowWireContent(Map<String, dynamic> row) {
+  final raw = row['metadata'];
+  Map<String, dynamic>? meta;
+  if (raw is Map) {
+    meta = Map<String, dynamic>.from(raw);
+  } else if (raw is String && raw.isNotEmpty) {
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) meta = Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+  }
+  final wire = meta?['wire_content'];
+  return wire is String && wire.isNotEmpty ? wire : null;
 }
 
 /// One upstream model option from `agent_models_resp`.

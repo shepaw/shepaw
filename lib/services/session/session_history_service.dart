@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:collection';
 import '../../models/message.dart';
+import '../../utils/session_utils.dart';
 import '../../models/channel.dart';
 import '../../models/tool_execution_result.dart';
 import '../local_database_service.dart';
@@ -162,6 +164,13 @@ class HistoryService {
   List<Message> _mapsToMessages(List<Map<String, dynamic>> messageMaps, String channelId) {
     return messageMaps.map((map) {
       final metadata = _decodeMetadata(map['metadata'] as String?, map['id'] as String);
+      final stored = map['content'] as String;
+      final visible = SessionUtils.visibleMessageContent(stored, metadata);
+      if (visible != stored) {
+        unawaited(
+          _db.updateMessage(messageId: map['id'] as String, content: visible),
+        );
+      }
 
       return Message(
         id: map['id'] as String,
@@ -172,7 +181,7 @@ class HistoryService {
         ),
         channelId: channelId,
         type: _parseMessageType(map['message_type'] as String),
-        content: map['content'] as String,
+        content: visible,
         timestampMs: DateTime.parse(map['created_at'] as String).millisecondsSinceEpoch,
         replyTo: map['reply_to_id'] as String?,
         metadata: metadata,
@@ -193,6 +202,12 @@ class HistoryService {
       } catch (_) {}
     }
 
+    final stored = map['content'] as String;
+    final visible = SessionUtils.visibleMessageContent(stored, metadata);
+    if (visible != stored) {
+      unawaited(_db.updateMessage(messageId: map['id'] as String, content: visible));
+    }
+
     return Message(
       id: map['id'] as String,
       from: MessageFrom(
@@ -202,7 +217,7 @@ class HistoryService {
       ),
       channelId: map['channel_id'] as String?,
       type: _parseMessageType(map['message_type'] as String),
-      content: map['content'] as String,
+      content: visible,
       timestampMs: DateTime.parse(map['created_at'] as String).millisecondsSinceEpoch,
       replyTo: map['reply_to_id'] as String?,
       metadata: metadata,

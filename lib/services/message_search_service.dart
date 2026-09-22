@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'logger_service.dart';
 import '../models/message.dart';
+import '../utils/session_utils.dart';
 import 'local_database_service.dart';
 
 /// 消息搜索服务 - 支持跨会话搜索
@@ -81,6 +83,17 @@ class MessageSearchService {
           timestampMs = DateTime.now().millisecondsSinceEpoch;
         }
 
+        final stored = map['content'] as String? ?? '';
+        final visible = SessionUtils.visibleMessageContent(stored, metadata);
+        if (visible != stored && map['id'] != null) {
+          unawaited(
+            _database.updateMessage(
+              messageId: map['id'] as String,
+              content: visible,
+            ),
+          );
+        }
+
         final message = Message(
           id: map['id'] as String,
           from: MessageFrom(
@@ -90,7 +103,7 @@ class MessageSearchService {
           ),
           channelId: map['channel_id'] as String?,
           type: _parseMessageType(map['message_type'] as String? ?? 'text'),
-          content: map['content'] as String? ?? '',
+          content: visible,
           timestampMs: timestampMs,
           replyTo: replyTo,
           metadata: metadata,
@@ -163,6 +176,17 @@ class MessageSearchService {
           timestampMs = DateTime.now().millisecondsSinceEpoch;
         }
 
+        final stored = map['content'] as String? ?? '';
+        final visible = SessionUtils.visibleMessageContent(stored, metadata);
+        if (visible != stored && map['id'] != null) {
+          unawaited(
+            _database.updateMessage(
+              messageId: map['id'] as String,
+              content: visible,
+            ),
+          );
+        }
+
         final message = Message(
           id: map['id'] as String,
           from: MessageFrom(
@@ -172,7 +196,7 @@ class MessageSearchService {
           ),
           channelId: map['channel_id'] as String?,
           type: _parseMessageType(map['message_type'] as String? ?? 'text'),
-          content: map['content'] as String? ?? '',
+          content: visible,
           timestampMs: timestampMs,
           metadata: metadata,
         );

@@ -160,9 +160,34 @@ class SessionUtils {
       kept.add(line);
     }
     s = kept.join('\n').trim();
-
-    s = (cleanClaudeSessionTitle(s) ?? '').trim();
+    s = _stripClaudeCommandTags(s).trim();
     return s.isEmpty ? null : s;
+  }
+
+  /// 聊天正文。同步曾把原文折进 `metadata.wire_content`、气泡里只留折叠后的
+  /// 一行；有原文时用它还原换行，Scope Card 仍按行剥掉。
+  static String visibleMessageContent(
+    String content,
+    Map<String, dynamic>? metadata,
+  ) {
+    final wire = metadata?['wire_content'];
+    if (wire is! String || wire.isEmpty) return content;
+    final restored = stripHubInternalPromptForDisplay(wire);
+    if (restored == null || restored.isEmpty) return content;
+    return restored;
+  }
+
+  static String _stripClaudeCommandTags(String s) {
+    for (final pattern in _kClaudeCommandTagPatterns) {
+      s = s.replaceAll(RegExp(pattern, dotAll: true), '');
+    }
+    return s.replaceAll(
+      RegExp(
+        r'</?(?:local-command-caveat|command-name|local-command-stdout)\b[^>]*>',
+        dotAll: true,
+      ),
+      '',
+    );
   }
 
   /// 从消息正文提取会话列表标题候选；不可展示时返回 null。
@@ -180,19 +205,8 @@ class SessionUtils {
   /// 清理后为空返回 null，便于调用方回落默认名（如 'Session'）。
   static String? cleanClaudeSessionTitle(String? title) {
     if (title == null) return null;
-    var s = title;
-    for (final pattern in _kClaudeCommandTagPatterns) {
-      s = s.replaceAll(RegExp(pattern, dotAll: true), '');
-    }
     // 标题可能被截断导致标签未闭合，再兜底剔除一次裸标签。
-    s = s.replaceAll(
-      RegExp(
-        r'</?(?:local-command-caveat|command-name|local-command-stdout)\b[^>]*>',
-        dotAll: true,
-      ),
-      '',
-    );
-    s = s.replaceAll(RegExp(r'\s+'), ' ').trim();
+    final s = _stripClaudeCommandTags(title).replaceAll(RegExp(r'\s+'), ' ').trim();
     return s.isEmpty ? null : s;
   }
 }

@@ -187,6 +187,16 @@ void main() {
       expect(out.metadata?['ui_hidden'], isNull);
     });
 
+    test('keeps markdown newlines in the synced answer', () {
+      final m = PeerHistoryMessage(
+        role: 'agent',
+        content: '上一行\n\n## 标题\n\n正文',
+      );
+      final out = peerHistoryDisplayFields(m);
+      expect(out.content, '上一行\n\n## 标题\n\n正文');
+      expect(out.metadata?['wire_content'], isNull);
+    });
+
     test('honors Hub protocol metadata without content heuristics', () {
       final m = PeerHistoryMessage.fromJson({
         'role': 'user',
@@ -257,6 +267,24 @@ void main() {
             'sender_type': 'agent',
             'content': 'hi',
             'is_read': 1,
+          },
+        ),
+        1,
+      );
+    });
+
+    test('keeps read bit when stored text was only whitespace-collapsed', () {
+      expect(
+        preservedReadStateForHistorySync(
+          remote: PeerHistoryMessage(
+            role: 'agent',
+            content: '上一行\n\n## 标题',
+          ),
+          existingRow: {
+            'sender_type': 'agent',
+            'content': '上一行 ## 标题',
+            'is_read': 1,
+            'metadata': '{"wire_content":"上一行\\n\\n## 标题"}',
           },
         ),
         1,
