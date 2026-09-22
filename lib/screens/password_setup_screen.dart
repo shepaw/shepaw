@@ -126,7 +126,6 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return Scaffold(
-      backgroundColor: Colors.white,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
@@ -158,7 +157,7 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
               Text(
                 l10n.passwordSetup_subtitle,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey[600],
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
                 textAlign: TextAlign.center,
               ),

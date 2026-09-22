@@ -266,7 +266,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get home_noAgents => '暂无 Agent';
 
   @override
-  String get home_noAgentsHint => '点击菜单添加 Agent';
+  String get home_noAgentsHint => '添加一个智能体后即可开始对话';
 
   @override
   String get home_noMessages => '暂无消息';
@@ -4172,7 +4172,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get scheduledTasks_confirmDelete => '删除任务？';
 
   @override
-  String get scheduledTasks_confirmDeleteMsg => '确定要删除这个定时任务吗？此操作无法撤销。';
+  String scheduledTasks_confirmDeleteMsg(String name) {
+    return '确定要删除「$name」吗？此操作无法撤销。';
+  }
 
   @override
   String get scheduledTasks_confirmPause => '暂停任务？';
@@ -7653,4 +7655,38 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get scheduledTasks_saveFailed => '保存失败，请重试';
+
+  @override
+  String get scheduledTasks_executeFailed => '执行失败，请重试';
+
+  @override
+  String get chat_emptyStart => '发一条消息开始聊天';
+
+  @override
+  String get chat_emptyTitle => '还没有消息';
+
+  @override
+  String get chat_emptyGroupTitle => '开始群聊';
+
+  @override
+  String chat_emptyWithAgent(String name) {
+    return '给 $name 发一条消息开始聊天';
+  }
+
+  @override
+  String get chat_agentFallbackName => '智能体';
+
+  @override
+  String get chat_groupBoundSession => '群绑定会话';
+
+  @override
+  String login_retryIn(int seconds) {
+    return '$seconds 秒后可再试';
+  }
+
+  @override
+  String get contacts_loadFailed => '通讯录加载失败';
+
+  @override
+  String get contacts_noSearchResults => '没有匹配的结果';
 }

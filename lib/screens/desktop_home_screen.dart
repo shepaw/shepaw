@@ -161,6 +161,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           !peers.any((p) => p.id == peerId)) {
         setState(() {
           _selected = null;
+          if (_lastConversation?.peerId == peerId) _lastConversation = null;
           _rightPanel = _RightPanelView.empty;
           _navGeneration++;
         });
@@ -192,6 +193,10 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   }
 
   ConversationSelection? _selected;
+
+  /// Chat that was open when the sidebar left conversations, so switching
+  /// back restores it instead of clearing the right panel.
+  ConversationSelection? _lastConversation;
   double _leftPanelWidth = 320;
   final GlobalKey<HomeScreenState> _homeKey = GlobalKey<HomeScreenState>();
   final GlobalKey<ContactsScreenState> _contactsKey =
@@ -266,6 +271,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _leftMode = _LeftPanelMode.conversations;
       _previousPanel = null;
       _selected = selection;
+      _lastConversation = selection;
       _clearContactSelectionFields();
       _rightPanel = _RightPanelView.chat;
       _navGeneration++;
@@ -275,6 +281,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   void _onChatClose() {
     setState(() {
       _selected = null;
+      _lastConversation = null;
       // Return to the previous panel (e.g. search) if there was one,
       // otherwise go to empty.
       _rightPanel = _previousPanel ?? _RightPanelView.empty;
@@ -384,12 +391,25 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     });
   }
 
+  void _rememberOpenChat() {
+    if (_rightPanel == _RightPanelView.chat && _selected != null) {
+      _lastConversation = _selected;
+    }
+  }
+
   void _showConversations() {
+    if (_leftMode == _LeftPanelMode.conversations && !_isUtilityPanel) return;
     setState(() {
       _leftMode = _LeftPanelMode.conversations;
       _clearContactSelectionFields();
-      _selected = null;
-      _rightPanel = _RightPanelView.empty;
+      final restore = _lastConversation;
+      if (restore != null) {
+        _selected = restore;
+        _rightPanel = _RightPanelView.chat;
+      } else {
+        _selected = null;
+        _rightPanel = _RightPanelView.empty;
+      }
       _navGeneration++;
     });
   }
@@ -422,6 +442,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
   void _showContacts() {
     setState(() {
+      _rememberOpenChat();
       _leftMode = _LeftPanelMode.contacts;
       _selected = null;
       _clearContactSelectionFields();
@@ -432,6 +453,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
   void _showStorage() {
     setState(() {
+      _rememberOpenChat();
       _leftMode = _LeftPanelMode.storage;
       _selected = null;
       _clearContactSelectionFields();
@@ -569,6 +591,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
           // Resizable divider
           GestureDetector(
+            behavior: HitTestBehavior.opaque,
             onHorizontalDragUpdate: (details) {
               setState(() {
                 _leftPanelWidth = (_leftPanelWidth + details.delta.dx)
@@ -577,9 +600,15 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             },
             child: MouseRegion(
               cursor: SystemMouseCursors.resizeColumn,
-              child: Container(
-                width: 1,
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              child: SizedBox(
+                width: 12,
+                child: Center(
+                  child: Container(
+                    width: 1,
+                    color:
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
+                  ),
+                ),
               ),
             ),
           ),

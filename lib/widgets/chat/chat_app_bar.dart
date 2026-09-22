@@ -87,7 +87,7 @@ class ChatDMAppBarTitle extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _ChatAppBarNameRow(
-                name: displayName ?? 'AI Agent',
+                name: displayName ?? l10n.chat_agentFallbackName,
                 badge:
                     sourceDeviceLabel != null && sourceDeviceLabel!.isNotEmpty
                         ? _SourceDeviceBadge(label: sourceDeviceLabel!)

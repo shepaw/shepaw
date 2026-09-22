@@ -280,7 +280,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get home_noAgents => 'No Agents';
 
   @override
-  String get home_noAgentsHint => 'Tap the menu to add agents';
+  String get home_noAgentsHint => 'Add an agent to start chatting';
 
   @override
   String get home_noMessages => 'No messages';
@@ -4329,8 +4329,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get scheduledTasks_confirmDelete => 'Delete Task?';
 
   @override
-  String get scheduledTasks_confirmDeleteMsg =>
-      'Are you sure you want to delete this scheduled task? This action cannot be undone.';
+  String scheduledTasks_confirmDeleteMsg(String name) {
+    return 'Delete \"$name\"? This cannot be undone.';
+  }
 
   @override
   String get scheduledTasks_confirmPause => 'Pause Task?';
@@ -7954,4 +7955,39 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get scheduledTasks_saveFailed => 'Couldn\'t save. Try again.';
+
+  @override
+  String get scheduledTasks_executeFailed =>
+      'Couldn\'t run the task. Try again.';
+
+  @override
+  String get chat_emptyStart => 'Send a message to start chatting';
+
+  @override
+  String get chat_emptyTitle => 'No messages yet';
+
+  @override
+  String get chat_emptyGroupTitle => 'Start a group conversation';
+
+  @override
+  String chat_emptyWithAgent(String name) {
+    return 'Send a message to start chatting with $name';
+  }
+
+  @override
+  String get chat_agentFallbackName => 'Agent';
+
+  @override
+  String get chat_groupBoundSession => 'Group-bound session';
+
+  @override
+  String login_retryIn(int seconds) {
+    return 'Try again in ${seconds}s';
+  }
+
+  @override
+  String get contacts_loadFailed => 'Couldn\'t load contacts';
+
+  @override
+  String get contacts_noSearchResults => 'No matches';
 }

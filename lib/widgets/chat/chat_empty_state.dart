@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/app_localizations.dart';
+
 /// Empty state widget shown when there are no messages yet.
 class ChatEmptyState extends StatelessWidget {
   final String? agentName;
@@ -13,6 +15,8 @@ class ChatEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final scheme = Theme.of(context).colorScheme;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -20,25 +24,23 @@ class ChatEmptyState extends StatelessWidget {
           Icon(
             isGroupMode ? Icons.group : Icons.chat_bubble_outline,
             size: 64,
-            color: Colors.grey[300],
+            color: scheme.outline,
           ),
           const SizedBox(height: 16),
           Text(
-            isGroupMode
-                ? 'Start a group conversation'
-                : 'No messages yet',
+            isGroupMode ? l10n.chat_emptyGroupTitle : l10n.chat_emptyTitle,
             style: TextStyle(
               fontSize: 16,
-              color: Colors.grey[500],
+              color: scheme.onSurfaceVariant,
             ),
           ),
           if (agentName != null && !isGroupMode) ...[
             const SizedBox(height: 8),
             Text(
-              'Send a message to start chatting with $agentName',
+              l10n.chat_emptyWithAgent(agentName!),
               style: TextStyle(
                 fontSize: 14,
-                color: Colors.grey[400],
+                color: scheme.onSurfaceVariant,
               ),
             ),
           ],

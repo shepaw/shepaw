@@ -587,7 +587,7 @@ abstract class AppLocalizations {
   /// No description provided for @home_noAgentsHint.
   ///
   /// In zh, this message translates to:
-  /// **'点击菜单添加 Agent'**
+  /// **'添加一个智能体后即可开始对话'**
   String get home_noAgentsHint;
 
   /// No description provided for @home_noMessages.
@@ -7710,8 +7710,8 @@ abstract class AppLocalizations {
   /// No description provided for @scheduledTasks_confirmDeleteMsg.
   ///
   /// In zh, this message translates to:
-  /// **'确定要删除这个定时任务吗？此操作无法撤销。'**
-  String get scheduledTasks_confirmDeleteMsg;
+  /// **'确定要删除「{name}」吗？此操作无法撤销。'**
+  String scheduledTasks_confirmDeleteMsg(String name);
 
   /// No description provided for @scheduledTasks_confirmPause.
   ///
@@ -13868,6 +13868,66 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'保存失败，请重试'**
   String get scheduledTasks_saveFailed;
+
+  /// No description provided for @scheduledTasks_executeFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行失败，请重试'**
+  String get scheduledTasks_executeFailed;
+
+  /// No description provided for @chat_emptyStart.
+  ///
+  /// In zh, this message translates to:
+  /// **'发一条消息开始聊天'**
+  String get chat_emptyStart;
+
+  /// No description provided for @chat_emptyTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没有消息'**
+  String get chat_emptyTitle;
+
+  /// No description provided for @chat_emptyGroupTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'开始群聊'**
+  String get chat_emptyGroupTitle;
+
+  /// No description provided for @chat_emptyWithAgent.
+  ///
+  /// In zh, this message translates to:
+  /// **'给 {name} 发一条消息开始聊天'**
+  String chat_emptyWithAgent(String name);
+
+  /// No description provided for @chat_agentFallbackName.
+  ///
+  /// In zh, this message translates to:
+  /// **'智能体'**
+  String get chat_agentFallbackName;
+
+  /// No description provided for @chat_groupBoundSession.
+  ///
+  /// In zh, this message translates to:
+  /// **'群绑定会话'**
+  String get chat_groupBoundSession;
+
+  /// No description provided for @login_retryIn.
+  ///
+  /// In zh, this message translates to:
+  /// **'{seconds} 秒后可再试'**
+  String login_retryIn(int seconds);
+
+  /// No description provided for @contacts_loadFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'通讯录加载失败'**
+  String get contacts_loadFailed;
+
+  /// No description provided for @contacts_noSearchResults.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有匹配的结果'**
+  String get contacts_noSearchResults;
 }
 
 class _AppLocalizationsDelegate

@@ -76,9 +76,9 @@ class _MobileHomeShellState extends State<MobileHomeShell> {
               ),
             ),
             Positioned(
-              left: MobileNavBar.horizontalMargin,
-              right: MobileNavBar.horizontalMargin,
-              bottom: bottomInset + MobileNavBar.bottomGap,
+              left: 0,
+              right: 0,
+              bottom: 0,
               child: MobileNavBar(
                 index: _index,
                 onSelect: _select,
@@ -89,9 +89,9 @@ class _MobileHomeShellState extends State<MobileHomeShell> {
                     label: l10n.nav_chats,
                   ),
                   MobileNavItem(
-                    icon: Icons.smart_toy_outlined,
-                    selectedIcon: Icons.smart_toy,
-                    label: l10n.nav_agents,
+                    icon: Icons.people_outline,
+                    selectedIcon: Icons.people,
+                    label: l10n.contacts_title,
                   ),
                   MobileNavItem(
                     icon: Icons.inventory_2_outlined,

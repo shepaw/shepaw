@@ -97,6 +97,7 @@ class ContactsScreenState extends State<ContactsScreen> {
   List<PairedPeer> _peers = [];
   String? _masterId;
   bool _isLoading = true;
+  bool _loadFailed = false;
   String _query = '';
 
   final Set<_ContactsSection> _expanded = {
@@ -182,12 +183,16 @@ class ContactsScreenState extends State<ContactsScreen> {
           _peers = peerSnapshot.peers;
           _masterId = peerSnapshot.masterId;
           _isLoading = false;
+          _loadFailed = false;
         });
       }
     } catch (e) {
       LoggerService().error('Failed to load contacts data', tag: 'Contacts', error: e);
       if (mounted) {
-        setState(() => _isLoading = false);
+        setState(() {
+          _isLoading = false;
+          _loadFailed = true;
+        });
       }
     }
   }
@@ -377,10 +382,53 @@ class ContactsScreenState extends State<ContactsScreen> {
     final peers = _filteredPeers;
     final groups = _filteredGroups;
     final localAgents = _localAgents;
+    final nothingLoaded =
+        _agents.isEmpty && _groups.isEmpty && _peers.isEmpty;
+
+    if (_loadFailed && nothingLoaded && _query.isEmpty) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          const SizedBox(height: 72),
+          Icon(Icons.cloud_off_outlined, size: 48, color: Colors.grey[400]),
+          const SizedBox(height: 12),
+          Text(
+            l10n.contacts_loadFailed,
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+          ),
+          const SizedBox(height: 16),
+          Center(
+            child: OutlinedButton.icon(
+              onPressed: () => _loadData(),
+              icon: const Icon(Icons.refresh),
+              label: Text(l10n.widget_retry),
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (_query.isNotEmpty &&
+        peers.isEmpty &&
+        groups.isEmpty &&
+        localAgents.isEmpty) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          const SizedBox(height: 72),
+          Text(
+            l10n.contacts_noSearchResults,
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+          ),
+        ],
+      );
+    }
 
     final children = <Widget>[
       // Each paired device is its own foldable row (with nested peer agents).
-      if (peers.isEmpty)
+      if (peers.isEmpty && _query.isEmpty)
         _buildEmptyHint(
           icon: Icons.devices_other,
           message: l10n.contacts_noPeers,
@@ -630,6 +678,7 @@ class ContactsScreenState extends State<ContactsScreen> {
 
   List<Widget> _buildGroupChildren(List<Channel> groups, AppLocalizations l10n) {
     if (groups.isEmpty) {
+      if (_query.isNotEmpty) return const [];
       return [
         _buildEmptyHint(
           icon: Icons.group_outlined,
@@ -647,6 +696,7 @@ class ContactsScreenState extends State<ContactsScreen> {
     AppLocalizations l10n,
   ) {
     if (agents.isEmpty) {
+      if (_query.isNotEmpty) return const [];
       return [
         _buildEmptyHint(
           icon: Icons.smart_toy_outlined,

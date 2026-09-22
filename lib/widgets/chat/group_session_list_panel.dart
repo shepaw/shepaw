@@ -842,7 +842,9 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
             );
           }
           return Text(
-            preview.isNotEmpty ? preview : 'No messages',
+            preview.isNotEmpty
+                ? preview
+                : AppLocalizations.of(context).home_noMessages,
             // 两行同尺寸：第二行给到两行高度，多显示一些内容。
             maxLines: 2,
             overflow: TextOverflow.ellipsis,

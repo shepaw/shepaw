@@ -123,7 +123,7 @@
     }
   },
   "home_noAgents": "暂无 Agent",
-  "home_noAgentsHint": "点击菜单添加 Agent",
+  "home_noAgentsHint": "添加一个智能体后即可开始对话",
   "home_noMessages": "暂无消息",
   "home_draftPrefix": "[草稿]",
   "home_typing": "对方正在输入...",
@@ -2353,7 +2353,14 @@
     }
   },
   "scheduledTasks_confirmDelete": "删除任务？",
-  "scheduledTasks_confirmDeleteMsg": "确定要删除这个定时任务吗？此操作无法撤销。",
+  "scheduledTasks_confirmDeleteMsg": "确定要删除「{name}」吗？此操作无法撤销。",
+  "@scheduledTasks_confirmDeleteMsg": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "scheduledTasks_confirmPause": "暂停任务？",
   "scheduledTasks_confirmPauseMsg": "任务将停止执行。您可以稍后恢复。",
   "scheduledTasks_invalidSchedule": "无效的时间安排",
@@ -4700,5 +4707,29 @@
   "createGroup_failed": "创建群聊失败，请重试",
   "agentDetail_autosaveFailed": "保存失败，修改还在，请稍后重试",
   "groupDetail_saveFailed": "保存失败，请重试",
-  "scheduledTasks_saveFailed": "保存失败，请重试"
+  "scheduledTasks_saveFailed": "保存失败，请重试",
+  "scheduledTasks_executeFailed": "执行失败，请重试",
+  "chat_emptyStart": "发一条消息开始聊天",
+  "chat_emptyTitle": "还没有消息",
+  "chat_emptyGroupTitle": "开始群聊",
+  "chat_emptyWithAgent": "给 {name} 发一条消息开始聊天",
+  "@chat_emptyWithAgent": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "chat_agentFallbackName": "智能体",
+  "chat_groupBoundSession": "群绑定会话",
+  "login_retryIn": "{seconds} 秒后可再试",
+  "@login_retryIn": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "contacts_loadFailed": "通讯录加载失败",
+  "contacts_noSearchResults": "没有匹配的结果"
 }

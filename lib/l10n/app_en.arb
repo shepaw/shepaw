@@ -81,7 +81,7 @@
   "changePassword_wrongCurrent": "Incorrect current password. Please try again",
   "changePassword_failed": "Failed to change password: {error}",
   "home_noAgents": "No Agents",
-  "home_noAgentsHint": "Tap the menu to add agents",
+  "home_noAgentsHint": "Add an agent to start chatting",
   "home_noMessages": "No messages",
   "home_draftPrefix": "[Draft]",
   "home_typing": "Typing...",
@@ -1878,7 +1878,14 @@
     }
   },
   "scheduledTasks_confirmDelete": "Delete Task?",
-  "scheduledTasks_confirmDeleteMsg": "Are you sure you want to delete this scheduled task? This action cannot be undone.",
+  "scheduledTasks_confirmDeleteMsg": "Delete \"{name}\"? This cannot be undone.",
+  "@scheduledTasks_confirmDeleteMsg": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "scheduledTasks_confirmPause": "Pause Task?",
   "scheduledTasks_confirmPauseMsg": "The task will stop executing. You can resume it later.",
   "scheduledTasks_invalidSchedule": "Invalid schedule pattern",
@@ -4225,5 +4232,29 @@
   "createGroup_failed": "Couldn't create the group. Try again.",
   "agentDetail_autosaveFailed": "Couldn't save. Your edits are still here — try again.",
   "groupDetail_saveFailed": "Couldn't save. Try again.",
-  "scheduledTasks_saveFailed": "Couldn't save. Try again."
+  "scheduledTasks_saveFailed": "Couldn't save. Try again.",
+  "scheduledTasks_executeFailed": "Couldn't run the task. Try again.",
+  "chat_emptyStart": "Send a message to start chatting",
+  "chat_emptyTitle": "No messages yet",
+  "chat_emptyGroupTitle": "Start a group conversation",
+  "chat_emptyWithAgent": "Send a message to start chatting with {name}",
+  "@chat_emptyWithAgent": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "chat_agentFallbackName": "Agent",
+  "chat_groupBoundSession": "Group-bound session",
+  "login_retryIn": "Try again in {seconds}s",
+  "@login_retryIn": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "contacts_loadFailed": "Couldn't load contacts",
+  "contacts_noSearchResults": "No matches"
 }

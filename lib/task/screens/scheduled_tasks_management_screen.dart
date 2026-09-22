@@ -34,6 +34,7 @@ class _ScheduledTasksManagementScreenState
   late Future<List<ScheduledTask>> _tasksFuture;
   late Future<List<RemoteAgent>> _agentsFuture;
   String? _selectedAgentFilter;
+  String? _executingTaskId;
 
   @override
   void initState() {
@@ -306,7 +307,9 @@ class _ScheduledTasksManagementScreenState
                 ),
                 const SizedBox(width: 8),
                 TextButton(
-                  onPressed: () => _executeTaskNow(context, task, l10n),
+                  onPressed: _executingTaskId == task.id
+                      ? null
+                      : () => _executeTaskNow(task, l10n),
                   child: Text(l10n.scheduledTasks_executeNow),
                 ),
                 const SizedBox(width: 8),
@@ -352,15 +355,22 @@ class _ScheduledTasksManagementScreenState
     }
   }
 
-  Future<void> _executeTaskNow(BuildContext context, ScheduledTask task, AppLocalizations l10n) async {
-    // Fire-and-forget: don't await the full agent execution, only the dispatch.
-    _taskService.executeTaskNow(task.id).catchError((e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-      }
-    });
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.scheduledTasks_executeNowSuccess)));
+  Future<void> _executeTaskNow(ScheduledTask task, AppLocalizations l10n) async {
+    if (_executingTaskId != null) return;
+    setState(() => _executingTaskId = task.id);
+    try {
+      await _taskService.executeTaskNow(task.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.scheduledTasks_executeNowSuccess)),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.scheduledTasks_executeFailed)),
+      );
+    } finally {
+      if (mounted) setState(() => _executingTaskId = null);
     }
   }
 
@@ -369,7 +379,7 @@ class _ScheduledTasksManagementScreenState
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(l10n.scheduledTasks_confirmDelete),
-        content: Text(l10n.scheduledTasks_confirmDeleteMsg),
+        content: Text(l10n.scheduledTasks_confirmDeleteMsg(task.description)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l10n.common_cancel)),
           TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text(l10n.scheduledTasks_deleteTask, style: const TextStyle(color: Colors.red))),

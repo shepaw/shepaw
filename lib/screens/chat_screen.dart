@@ -3437,7 +3437,7 @@ class _ChatScreenState extends State<ChatScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                displayName ?? 'AI Agent',
+                displayName ?? AppLocalizations.of(context).chat_agentFallbackName,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style:
@@ -4590,12 +4590,18 @@ class _ChatScreenState extends State<ChatScreen>
                   ),
           ),
           const SizedBox(height: 16),
-          Text(_controller.agentName ?? 'AI Agent',
-              style:
-                  const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          Text(
+            _controller.agentName ??
+                AppLocalizations.of(context).chat_agentFallbackName,
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
           const SizedBox(height: 8),
-          Text('Send a message to start chatting',
-              style: TextStyle(color: Colors.grey[600])),
+          Text(
+            AppLocalizations.of(context).chat_emptyStart,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
         ],
       ),
     );

@@ -576,6 +576,7 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
 
   Widget _buildInputArea(AppLocalizations l10n) {
     final isConnected = _connectionState == PeerConnectionState.connected;
+    final scheme = Theme.of(context).colorScheme;
 
     return Container(
       padding: EdgeInsets.only(
@@ -587,7 +588,7 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
       decoration: BoxDecoration(
         color: Theme.of(context).scaffoldBackgroundColor,
         border: Border(
-          top: BorderSide(color: Colors.grey[300]!, width: 0.5),
+          top: BorderSide(color: scheme.outline, width: 0.5),
         ),
       ),
       child: Row(
@@ -600,13 +601,13 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
                 hintText: isConnected
                     ? l10n.peerChat_hintOnline
                     : l10n.peerChat_hintOffline,
-                hintStyle: TextStyle(color: Colors.grey[400]),
+                hintStyle: TextStyle(color: scheme.onSurfaceVariant),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(24),
                   borderSide: BorderSide.none,
                 ),
                 filled: true,
-                fillColor: Colors.grey[100],
+                fillColor: scheme.surfaceContainerHighest,
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 16,
                   vertical: 10,

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../services/logger_service.dart';
@@ -19,11 +21,17 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordService = PasswordService();
   final _biometricService = BiometricService();
 
+  static const int _lockoutSeconds = 30;
+
   bool _isPasswordVisible = false;
   bool _isLoading = false;
   String _errorMessage = '';
   int _failedAttempts = 0;
+  int _lockSecondsLeft = 0;
+  Timer? _lockTimer;
   bool _biometricAvailable = false;
+
+  bool get _isLocked => _lockSecondsLeft > 0;
 
   @override
   void initState() {
@@ -56,6 +64,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _authenticateWithBiometric() async {
+    if (_isLocked) return;
     final l10n = AppLocalizations.of(context);
     final success = await _biometricService.authenticate(
       reason: l10n.login_biometricPrompt,
@@ -68,8 +77,33 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
+    _lockTimer?.cancel();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  void _beginLockout() {
+    _lockSecondsLeft = _lockoutSeconds;
+    _errorMessage = AppLocalizations.of(context).login_retryIn(_lockSecondsLeft);
+    _lockTimer?.cancel();
+    _lockTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        _lockSecondsLeft -= 1;
+        if (_lockSecondsLeft <= 0) {
+          timer.cancel();
+          _lockTimer = null;
+          _failedAttempts = 0;
+          _errorMessage = '';
+        } else {
+          _errorMessage =
+              AppLocalizations.of(context).login_retryIn(_lockSecondsLeft);
+        }
+      });
+    });
   }
 
   /// 系统认证面板关掉后再进主页，避免 macOS 把主窗口当成已关闭而退出。
@@ -82,6 +116,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   /// 提交登录
   Future<void> _submitLogin() async {
+    if (_isLocked || _isLoading) return;
     final l10n = AppLocalizations.of(context);
     setState(() {
       _errorMessage = '';
@@ -113,7 +148,7 @@ class _LoginScreenState extends State<LoginScreen> {
         setState(() {
           _failedAttempts++;
           if (_failedAttempts >= 3) {
-            _errorMessage = l10n.login_tooManyAttempts;
+            _beginLockout();
           } else {
             _errorMessage = l10n.login_wrongPassword(_failedAttempts);
           }
@@ -136,8 +171,8 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: Colors.white,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
@@ -169,7 +204,7 @@ class _LoginScreenState extends State<LoginScreen> {
               Text(
                 l10n.login_subtitle,
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: Colors.grey[600],
+                  color: scheme.onSurfaceVariant,
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -209,17 +244,17 @@ class _LoginScreenState extends State<LoginScreen> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.red[50],
+                    color: scheme.errorContainer,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.error_outline, color: Colors.red[700]),
+                      Icon(Icons.error_outline, color: scheme.onErrorContainer),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           _errorMessage,
-                          style: TextStyle(color: Colors.red[700]),
+                          style: TextStyle(color: scheme.onErrorContainer),
                         ),
                       ),
                     ],
@@ -231,7 +266,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
               // 登录按钮
               ElevatedButton(
-                onPressed: (_isLoading || _failedAttempts >= 3)
+                onPressed: (_isLoading || _isLocked)
                   ? null
                   : _submitLogin,
                 style: ElevatedButton.styleFrom(
@@ -265,7 +300,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       icon: const Icon(Icons.fingerprint),
                       color: Theme.of(context).primaryColor,
                       tooltip: l10n.login_useBiometric,
-                      onPressed: _authenticateWithBiometric,
+                      onPressed: _isLocked ? null : _authenticateWithBiometric,
                     ),
                     const SizedBox(height: 4),
                     Text(

@@ -527,9 +527,10 @@ class _SessionListContentState extends State<_SessionListContent> {
         : (firstMessage == null || isSameMessage ? '' : latestContent);
     // 无消息时的兜底：绑定会话优先显示描述，其余显示占位文案（与旧行为一致）。
     final boundDesc = isBound ? (session.description ?? '').trim() : '';
+    final l10n = AppLocalizations.of(context);
     final fallbackPreview = boundDesc.isNotEmpty
         ? boundDesc
-        : (isGroupBound ? 'Group-bound session' : 'No messages');
+        : (isGroupBound ? l10n.chat_groupBoundSession : l10n.home_noMessages);
     final createdAtStr = latestMessage?['created_at'] as String?;
     String timeText = '';
     if (createdAtStr != null) {

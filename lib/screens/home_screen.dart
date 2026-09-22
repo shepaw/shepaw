@@ -647,17 +647,16 @@ class HomeScreenState extends State<HomeScreen> {
     required String tooltip,
     required VoidCallback onPressed,
   }) {
-    // 布局宽度贴合 24px 图标，避免 IconButton 默认最小宽度把两图标间距撑大。
+    // 点击区域至少 48px，避免标题栏图标只有图标像素可点。
     return IconButton(
       key: key,
       icon: icon,
       tooltip: tooltip,
       onPressed: onPressed,
       padding: EdgeInsets.zero,
-      constraints: const BoxConstraints.tightFor(width: 24, height: 40),
+      constraints: const BoxConstraints.tightFor(width: 48, height: 48),
       style: IconButton.styleFrom(
-        minimumSize: Size.zero,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        tapTargetSize: MaterialTapTargetSize.padded,
       ),
     );
   }
@@ -797,7 +796,7 @@ class HomeScreenState extends State<HomeScreen> {
       leading: AgentListAvatar(avatar: agent.avatar, name: agent.name),
       title: Text(displayName, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
-        agent.description ?? agent.type ?? 'AI Agent',
+        agent.description ?? agent.type ?? l10n.chat_agentFallbackName,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
@@ -1110,6 +1109,12 @@ class HomeScreenState extends State<HomeScreen> {
                 fontSize: 14,
                 color: Colors.grey[500],
               ),
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _showAddMenu,
+              icon: const Icon(Icons.add),
+              label: Text(l10n.home_addAgent),
             ),
           ],
         ),

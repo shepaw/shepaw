@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../config/product_features.dart';
 import '../models/agent.dart';
 import '../models/channel.dart';
+import '../l10n/app_localizations.dart';
 import '../peer/services/peer_storage_service.dart';
 import '../services/local_database_service.dart';
 import '../services/message_search_service.dart';
@@ -253,6 +254,7 @@ class AgentSearchDelegate extends SearchDelegate<Agent?> {
   }
 
   Widget _buildAgentTile(BuildContext context, Agent agent) {
+    final l10n = AppLocalizations.of(context);
     return ListTile(
       leading: Container(
         width: 40,
@@ -273,7 +275,7 @@ class AgentSearchDelegate extends SearchDelegate<Agent?> {
         ),
       ),
       title: Text(agent.name),
-      subtitle: Text(agent.description ?? agent.type ?? 'AI Agent'),
+      subtitle: Text(agent.description ?? agent.type ?? l10n.chat_agentFallbackName),
       onTap: () {
         popShepawSearch(context, agent);
         onResultSelected?.call(SearchSelection(agent: agent));

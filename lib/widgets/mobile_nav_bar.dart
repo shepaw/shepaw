@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_theme.dart';
 import 'update_settings_badge.dart';
 
-/// Floating capsule bottom bar, matching the phone-app screenshot:
-/// selected tab is a filled pill; unselected tabs stay muted.
+/// WeChat-style bottom tab bar: full width, flush with the screen edge.
+/// The selected tab's icon and label use the brand orange; unselected
+/// tabs stay muted. The bar background extends through the home-indicator
+/// inset.
 class MobileNavBar extends StatelessWidget {
   const MobileNavBar({
     super.key,
@@ -12,12 +15,11 @@ class MobileNavBar extends StatelessWidget {
     required this.onSelect,
   });
 
-  static const double height = 64;
-  static const double horizontalMargin = 16;
-  static const double bottomGap = 8;
+  /// Tab content height above the system safe area.
+  static const double height = 48;
 
   /// Space to keep above the home indicator so content is not covered.
-  static const double reserveAboveSafeArea = height + bottomGap;
+  static const double reserveAboveSafeArea = height;
 
   final int index;
   final List<MobileNavItem> items;
@@ -28,47 +30,41 @@ class MobileNavBar extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
 
-    final barColor = isDark
-        ? const Color(0xFF2A2C32)
-        : scheme.surface;
-    final selectedBg = isDark ? Colors.white : scheme.onSurface;
-    final selectedFg = isDark ? const Color(0xFF1A1C20) : scheme.surface;
+    final barColor = scheme.surface;
+    final selectedFg = AppColors.primary;
     final unselectedFg = scheme.onSurfaceVariant;
+    final dividerColor = isDark
+        ? scheme.outline.withValues(alpha: 0.7)
+        : scheme.outline;
 
     return Material(
-      color: Colors.transparent,
-      child: Container(
-        height: height,
+      color: barColor,
+      child: Ink(
         decoration: BoxDecoration(
-          color: barColor,
-          borderRadius: BorderRadius.circular(28),
-          border: isDark
-              ? null
-              : Border.all(color: scheme.outline.withValues(alpha: 0.5)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.12),
-              blurRadius: 18,
-              offset: const Offset(0, 6),
-            ),
-          ],
+          border: Border(top: BorderSide(color: dividerColor, width: 0.5)),
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 6),
-        child: Row(
-          children: [
-            for (var i = 0; i < items.length; i++)
-              Expanded(
-                child: _NavDestination(
-                  item: items[i],
-                  selected: i == index,
-                  selectedBg: selectedBg,
-                  selectedFg: selectedFg,
-                  unselectedFg: unselectedFg,
-                  onTap: () => onSelect(i),
-                ),
-              ),
-          ],
+        child: Padding(
+          padding: EdgeInsets.only(bottom: bottomInset),
+          child: SizedBox(
+            height: height,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < items.length; i++)
+                  Expanded(
+                    child: _NavDestination(
+                      item: items[i],
+                      selected: i == index,
+                      selectedFg: selectedFg,
+                      unselectedFg: unselectedFg,
+                      onTap: () => onSelect(i),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -93,7 +89,6 @@ class _NavDestination extends StatelessWidget {
   const _NavDestination({
     required this.item,
     required this.selected,
-    required this.selectedBg,
     required this.selectedFg,
     required this.unselectedFg,
     required this.onTap,
@@ -101,7 +96,6 @@ class _NavDestination extends StatelessWidget {
 
   final MobileNavItem item;
   final bool selected;
-  final Color selectedBg;
   final Color selectedFg;
   final Color unselectedFg;
   final VoidCallback onTap;
@@ -113,35 +107,25 @@ class _NavDestination extends StatelessWidget {
       button: true,
       selected: selected,
       label: item.label,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
+      child: InkWell(
         onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOut,
-          margin: const EdgeInsets.symmetric(horizontal: 3, vertical: 7),
-          decoration: BoxDecoration(
-            color: selected ? selectedBg : Colors.transparent,
-            borderRadius: BorderRadius.circular(22),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _icon(fg),
-              const SizedBox(height: 2),
-              Text(
-                item.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 11,
-                  height: 1.1,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                  color: fg,
-                ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _icon(fg),
+            const SizedBox(height: 2),
+            Text(
+              item.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                height: 1.1,
+                fontWeight: FontWeight.w400,
+                color: fg,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
