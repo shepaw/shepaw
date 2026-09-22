@@ -5,6 +5,37 @@ import '../local_database_service.dart';
 import '../logger_service.dart';
 import '../../storage/runtime_mirror_service.dart';
 
+/// 一次 [MessageDao.createMessages] 要写入的行。
+class StoredMessageInsert {
+  final String id;
+  final String channelId;
+  final String senderId;
+  final String senderType;
+  final String senderName;
+  final String content;
+  final String messageType;
+  final Map<String, dynamic>? metadata;
+  final String? replyToId;
+  final DateTime createdAt;
+  final int isRead;
+  final ConflictAlgorithm conflictAlgorithm;
+
+  const StoredMessageInsert({
+    required this.id,
+    required this.channelId,
+    required this.senderId,
+    required this.senderType,
+    required this.senderName,
+    required this.content,
+    this.messageType = 'text',
+    this.metadata,
+    this.replyToId,
+    required this.createdAt,
+    this.isRead = 0,
+    this.conflictAlgorithm = ConflictAlgorithm.abort,
+  });
+}
+
 /// 消息（含流式/部分消息）相关的数据访问层。
 extension MessageDao on LocalDatabaseService {
   /// 创建消息
@@ -42,6 +73,55 @@ extension MessageDao on LocalDatabaseService {
     );
     // SQLite 权威；runtime session.json 单向镜像（fail-open）
     RuntimeMirrorService.instance.onMessageCreated(channelId);
+  }
+
+  /// 批量写入。历史同步用它替代逐条 [createMessage]，避免几百次往返。
+  /// 每个频道只触发一次 runtime 镜像。
+  Future<void> createMessages(List<StoredMessageInsert> rows) async {
+    if (rows.isEmpty) return;
+    final db = await database;
+    final batch = db.batch();
+    for (final row in rows) {
+      batch.insert(
+        'messages',
+        {
+          'id': row.id,
+          'channel_id': row.channelId,
+          'sender_id': row.senderId,
+          'sender_type': row.senderType,
+          'sender_name': row.senderName,
+          'content': row.content,
+          'message_type': row.messageType,
+          'metadata': row.metadata != null ? jsonEncode(row.metadata) : null,
+          'reply_to_id': row.replyToId,
+          'created_at': row.createdAt.toIso8601String(),
+          'is_read': row.isRead,
+        },
+        conflictAlgorithm: row.conflictAlgorithm,
+      );
+    }
+    await batch.commit(noResult: true);
+    final channels = <String>{for (final row in rows) row.channelId};
+    for (final channelId in channels) {
+      RuntimeMirrorService.instance.onMessageCreated(channelId);
+    }
+  }
+
+  /// 按 id 批量删除。SQLite 变量数有上限，所以分块。
+  Future<void> deleteMessagesByIds(List<String> ids) async {
+    if (ids.isEmpty) return;
+    final db = await database;
+    const chunkSize = 400;
+    for (var i = 0; i < ids.length; i += chunkSize) {
+      final end = i + chunkSize < ids.length ? i + chunkSize : ids.length;
+      final chunk = ids.sublist(i, end);
+      final placeholders = List.filled(chunk.length, '?').join(',');
+      await db.delete(
+        'messages',
+        where: 'id IN ($placeholders)',
+        whereArgs: chunk,
+      );
+    }
   }
 
   /// 获取 Channel 的消息

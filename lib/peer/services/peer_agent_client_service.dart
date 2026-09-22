@@ -3098,6 +3098,7 @@ class PeerAgentClientService {
 
     final remoteRoleContentKeys = <String>{};
     final remoteAgentContents = <String>[];
+    final inserts = <StoredMessageInsert>[];
     for (var i = 0; i < history.length; i++) {
       final m = history[i];
       final isUser = m.role == 'user';
@@ -3126,23 +3127,26 @@ class PeerAgentClientService {
         remote: m,
         existingRow: existingRow,
       );
-      await _db.createMessage(
-        id: msgId,
-        channelId: channelId,
-        senderId: isUser ? userId : localAgentId,
-        senderType: isUser ? 'user' : 'agent',
-        senderName: isUser ? userName : agentName,
-        content: display.content,
-        metadata: display.metadata,
-        // ConflictAlgorithm.replace rewrites the whole row, so the reply link
-        // has to be carried over explicitly — it is the only causal edge
-        // MessageUtils.orderForDisplay can fall back on when stamps are coarse.
-        replyToId: existingRow?['reply_to_id'] as String?,
-        createdAt: createdAts[i],
-        isRead: isRead,
-        conflictAlgorithm: ConflictAlgorithm.replace,
+      inserts.add(
+        StoredMessageInsert(
+          id: msgId,
+          channelId: channelId,
+          senderId: isUser ? userId : localAgentId,
+          senderType: isUser ? 'user' : 'agent',
+          senderName: isUser ? userName : agentName,
+          content: display.content,
+          metadata: display.metadata,
+          // ConflictAlgorithm.replace rewrites the whole row, so the reply link
+          // has to be carried over explicitly — it is the only causal edge
+          // MessageUtils.orderForDisplay can fall back on when stamps are coarse.
+          replyToId: existingRow?['reply_to_id'] as String?,
+          createdAt: createdAts[i],
+          isRead: isRead,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        ),
       );
     }
+    await _db.createMessages(inserts);
 
     // Drop stale remote-mirrored rows, but keep the live rows collected above:
     // deleting a mid-turn bubble would make the previous assistant reply look
@@ -3167,9 +3171,7 @@ class PeerAgentClientService {
           PeerHistoryRemoteEntry(role: m.role, content: m.content),
       ],
     );
-    for (final id in toDelete) {
-      await _db.deleteMessage(id);
-    }
+    await _db.deleteMessagesByIds(toDelete.toList());
 
     // User is actively viewing this channel — synced rows must not resurrect
     // unread (covers the loadMessages ↔ syncHistory race on chat entry).

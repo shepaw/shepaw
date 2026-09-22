@@ -399,6 +399,7 @@ class _ChatScreenState extends State<ChatScreen>
         groupFamilyId: groupFamilyId,
       );
     }
+    unawaited(getIt<ComposerDraftService>().flush());
     final draftService = getIt<ComposerDraftService>();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       draftService.publish();
@@ -447,6 +448,9 @@ class _ChatScreenState extends State<ChatScreen>
 
     // If the app loses focus while recording (e.g. Samsung edge panel, app
     // switch, incoming call), stop the recording so it doesn't run forever.
+    if (state != AppLifecycleState.resumed) {
+      unawaited(getIt<ComposerDraftService>().flush());
+    }
     if (state != AppLifecycleState.resumed &&
         _audioRecordingService.currentState.isRecording) {
       _audioRecordingService.cancelRecording();
@@ -1032,6 +1036,30 @@ class _ChatScreenState extends State<ChatScreen>
         _scheduleMarkMessagesAsRead();
       }
     }
+  }
+
+  bool _streamingFollowQueued = false;
+
+  /// 流式气泡长高之后再贴底。每个 chunk 都 jumpTo 会在长会话里连续掉帧；
+  /// 高度没变时视口不需要动。
+  void _scheduleStreamingFollow() {
+    if (_streamingFollowQueued) return;
+    final streaming = _controller.streamingMessageId != null ||
+        _controller.groupStreamingMessageIds.isNotEmpty;
+    if (!streaming) return;
+    if (_isUserScrolledUp && !_liveFollowStreaming) return;
+    _streamingFollowQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _streamingFollowQueued = false;
+      if (!mounted || _controller.messages.isEmpty) return;
+      if (!_itemScrollController.isAttached) return;
+      if (_isUserScrolledUp && !_liveFollowStreaming) return;
+      final stillStreaming = _controller.streamingMessageId != null ||
+          _controller.groupStreamingMessageIds.isNotEmpty;
+      if (!stillStreaming) return;
+      _beginProgrammaticScroll();
+      _itemScrollController.jumpTo(index: 0, alignment: 0.0);
+    });
   }
 
   void _scrollToBottom({bool force = false, bool isNewMessage = false}) {
@@ -3657,6 +3685,11 @@ class _ChatScreenState extends State<ChatScreen>
                               }
                               return false;
                             },
+                            child: NotificationListener<SizeChangedLayoutNotification>(
+                            onNotification: (_) {
+                              _scheduleStreamingFollow();
+                              return false;
+                            },
                             child: AnimatedBuilder(
                             animation: _controller.contentListenable,
                             builder: (context, _) => ChatMessageList(
@@ -3777,6 +3810,7 @@ class _ChatScreenState extends State<ChatScreen>
                               isAgentOffline: !c.isAgentOnline,
                               defaultWorkspaceUris: c.defaultWorkspaceUris,
                               workspaceUrisByAgentId: c.workspaceUrisByAgentId,
+                            ),
                             ),
                             ),
                           ),

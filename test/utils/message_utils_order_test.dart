@@ -37,6 +37,44 @@ void main() {
       ]);
     });
 
+    test('窗口内容一致时 sameDisplayWindow 为真', () {
+      final current = [_msg('a', 100), _msg('b', 200)];
+      final incoming = [_msg('a', 100), _msg('b', 200)];
+      expect(MessageUtils.sameDisplayWindow(current, incoming), isTrue);
+      incoming[1] = _msg('b', 201);
+      expect(MessageUtils.sameDisplayWindow(current, incoming), isFalse);
+    });
+
+    test('展示顺序缓存复用原列表，并看到被替换的流式对象', () {
+      final memo = DisplayOrderMemo();
+      final messages = [_msg('a', 100), _msg('b', 200)];
+      expect(
+        identical(memo.apply(messages, streamingIds: {'b'}), messages),
+        isTrue,
+      );
+
+      final replacement = _msg('b', 200);
+      messages[1] = replacement;
+      final again = memo.apply(messages, streamingIds: {'b'});
+      expect(identical(again, messages), isTrue);
+      expect(identical(again.last, replacement), isTrue);
+    });
+
+    test('展示顺序缓存在结构不变时仍按上次的排列取当前对象', () {
+      final memo = DisplayOrderMemo();
+      final messages = [
+        _msg('reply', 100, replyTo: 'ask'),
+        _msg('ask', 200),
+      ];
+      expect(_ids(memo.apply(messages)), ['ask', 'reply']);
+
+      final replacement = _msg('reply', 100, replyTo: 'ask');
+      messages[0] = replacement;
+      final again = memo.apply(messages);
+      expect(_ids(again), ['ask', 'reply']);
+      expect(identical(again.last, replacement), isTrue);
+    });
+
     test('在途流式气泡排到最末', () {
       final messages = [
         _msg('streaming', 100),

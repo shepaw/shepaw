@@ -94,6 +94,20 @@ void main() {
     expect(count, 3);
   });
 
+  test('setDraft keeps text in memory and flush writes it', () async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    SharedPreferences.setMockInitialValues({});
+    final service = ComposerDraftService();
+    service.setDraft('ch-1', 'hello');
+    expect(service.getDraft('ch-1'), 'hello');
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('composer_drafts_v1'), isNull);
+
+    await service.flush();
+    expect(prefs.getString('composer_drafts_v1'), contains('hello'));
+  });
+
   test('setDraft does not bump updatedAt when text is unchanged', () {
     final service = ComposerDraftService();
     service.setDraft('ch-1', 'hello');

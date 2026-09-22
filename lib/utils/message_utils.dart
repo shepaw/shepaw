@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:intl/intl.dart';
 import '../models/message.dart';
 import '../services/messaging/chat_history_content.dart';
@@ -169,6 +171,37 @@ class MessageUtils {
       return cmp != 0 ? cmp : a.compareTo(b);
     });
     return [for (final i in order) messages[i]];
+  }
+
+  /// 当前窗口与刚从数据库读出的窗口是否是同一批展示内容。
+  ///
+  /// 用于跳过「同步写完库再整表替换」：内容、顺序、时间戳和 metadata
+  /// 都没变时，替换只会让每条气泡丢掉已解析的 Markdown。
+  static bool sameDisplayWindow(List<Message> current, List<Message> incoming) {
+    if (identical(current, incoming)) return true;
+    if (current.length != incoming.length) return false;
+    for (var i = 0; i < current.length; i++) {
+      final a = current[i];
+      final b = incoming[i];
+      if (a.id != b.id ||
+          a.content != b.content ||
+          a.timestampMs != b.timestampMs ||
+          a.replyTo != b.replyTo ||
+          a.type != b.type) {
+        return false;
+      }
+      if (_metadataJson(a.metadata) != _metadataJson(b.metadata)) return false;
+    }
+    return true;
+  }
+
+  static String _metadataJson(Map<String, dynamic>? metadata) {
+    if (metadata == null || metadata.isEmpty) return '';
+    try {
+      return jsonEncode(metadata);
+    } catch (_) {
+      return '';
+    }
   }
 
   /// 群聊中是否折叠头像/作者名。
@@ -368,5 +401,81 @@ class MessageUtils {
   static bool containsKeyword(Message message, String keyword) {
     if (keyword.isEmpty) return true;
     return message.content.toLowerCase().contains(keyword.toLowerCase());
+  }
+}
+
+/// 记住 [MessageUtils.orderForDisplay] 的结果。
+///
+/// 流式输出只替换消息对象，id / 时间戳 / replyTo 不变。顺序没变时直接返回
+/// 原列表；曾经排过序时按保存的下标重取，保证气泡拿到的是替换后的对象。
+class DisplayOrderMemo {
+  String? _key;
+  List<Message>? _source;
+  List<int>? _perm;
+
+  /// 最近一次参与比较的结构键（id、时间戳、回复关系、类型、在途流式 id）。
+  String? get structuralKey => _key;
+
+  List<Message> apply(
+    List<Message> messages, {
+    Set<String> streamingIds = const {},
+  }) {
+    final key = _structuralKey(messages, streamingIds);
+    if (key == _key && identical(_source, messages)) {
+      final perm = _perm;
+      if (perm != null && perm.length == messages.length) {
+        return [for (final i in perm) messages[i]];
+      }
+      if (perm == null) return messages;
+    }
+    final ordered = MessageUtils.orderForDisplay(
+      messages,
+      streamingIds: streamingIds,
+    );
+    _key = key;
+    _source = messages;
+    if (identical(ordered, messages)) {
+      _perm = null;
+      return messages;
+    }
+    final indexOf = <String, int>{
+      for (var i = 0; i < messages.length; i++) messages[i].id: i,
+    };
+    final perm = <int>[];
+    for (final message in ordered) {
+      final index = indexOf[message.id];
+      if (index == null) {
+        _perm = null;
+        return ordered;
+      }
+      perm.add(index);
+    }
+    _perm = perm;
+    return ordered;
+  }
+
+  static String _structuralKey(
+    List<Message> messages,
+    Set<String> streamingIds,
+  ) {
+    final buffer = StringBuffer()..write(messages.length);
+    for (final message in messages) {
+      buffer
+        ..write('\n')
+        ..write(message.id)
+        ..write('\t')
+        ..write(message.timestampMs)
+        ..write('\t')
+        ..write(message.replyTo ?? '')
+        ..write('\t')
+        ..write(message.type.index);
+    }
+    if (streamingIds.isNotEmpty) {
+      final ids = streamingIds.toList()..sort();
+      buffer
+        ..write('\n#')
+        ..writeAll(ids, ',');
+    }
+    return buffer.toString();
   }
 }

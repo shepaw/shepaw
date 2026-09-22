@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:uuid/uuid.dart';
 import '../models/mention_entry.dart';
 import '../models/message.dart';
+import '../utils/message_utils.dart';
 import '../models/channel.dart';
 import '../models/remote_agent.dart';
 import '../models/attachment_data.dart';
@@ -316,7 +317,6 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
 
   // ---- Frame coalescing ----
   bool _pendingStreamingRebuild = false;
-  bool _pendingStreamingScroll = false;
 
   /// dispose 后置位：已排队的 postFrame 内容通知不能再触碰已 dispose 的
   /// contentListenable（scheduleStreamingRebuild 在帧回调里检查）。
@@ -704,7 +704,6 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   void _syncGroupStreamingHostsFromActiveTasks();
   void _reattachPendingPlanApproval();
   void scheduleStreamingRebuild();
-  void scheduleStreamingScrollToBottom();
   Future<void> processNextInQueue();
   void _updateStreamingMetadata(Map<String, dynamic> metadata);
   Future<void> processMessage(String content, {String? replyToId, List<AttachmentData>? attachments, List<Message>? attachmentMessages, String? instructionName});
@@ -742,6 +741,10 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     // 旧频道查回的行不能再覆盖新频道的 messages。
     if (currentChannelId != channelIdAtStart) return;
     if (isGroupMode) {
+      if (MessageUtils.sameDisplayWindow(messages, dbMessages)) {
+        unawaited(_refreshHasMoreOlderMessages());
+        return;
+      }
       messages.clear();
       messageIdMap.clear();
       for (final m in dbMessages) {
@@ -761,6 +764,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       // 不会因为「距发送已超过 10s」（长上下文首 token 慢、慢查询拖长
       // reload）被误判僵尸并清掉流式会话。
       final turnFresh = streaming.activeWithin(const Duration(seconds: 10));
+      final wasStreaming = streaming.isActive;
       final deferReload = ChatStreamingSession.shouldDeferReload(
         streamingActive: streaming.isActive,
         hasLiveTask: hasLiveTask || turnFresh,
@@ -784,6 +788,11 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
           // 僵尸会话：无任务、占位已无宿主，直接清掉。
           streaming.clear();
         }
+      }
+      if (!wasStreaming &&
+          MessageUtils.sameDisplayWindow(messages, dbMessages)) {
+        unawaited(_refreshHasMoreOlderMessages());
+        return;
       }
       _mergeDmStreamingPlaceholders(dbMessages);
       rebuildMessageIdMap();

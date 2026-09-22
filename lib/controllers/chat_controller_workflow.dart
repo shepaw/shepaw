@@ -406,7 +406,6 @@ mixin _WorkflowOps on _ChatControllerBase {
       messageIdMap,
     );
     scheduleStreamingRebuild();
-    scheduleStreamingScrollToBottom();
   }
 
   void _onWorkflowAgentDone(String aid, String anm, bool skipped) {

@@ -101,7 +101,6 @@ mixin _MessagingOps on _ChatControllerBase {
         streaming.append(chunk);
         streaming.applyContentTo(messages, messageIdMap);
         scheduleStreamingRebuild();
-        scheduleStreamingScrollToBottom();
       },
       onActionConfirmation: _handleStreamingActionConfirmation,
       onMessageMetadata: (metadata) {
@@ -183,7 +182,6 @@ mixin _MessagingOps on _ChatControllerBase {
           return;
         }
         scheduleStreamingRebuild();
-        scheduleStreamingScrollToBottom();
       },
       onMessageMetadata: (aid, agentNameVal, metadata) {
         if (turn.applyMetadata(aid, metadata, messages, messageIdMap) == null) {
@@ -817,7 +815,6 @@ mixin _MessagingOps on _ChatControllerBase {
           streaming.append(chunk);
           streaming.applyContentTo(messages, messageIdMap);
           scheduleStreamingRebuild();
-          scheduleStreamingScrollToBottom();
         },
         onActionConfirmation: _handleStreamingActionConfirmation,
         onSingleSelect: (selectData) {
@@ -1031,7 +1028,6 @@ mixin _MessagingOps on _ChatControllerBase {
             streaming.append(chunk);
             streaming.applyContentTo(messages, messageIdMap);
             scheduleStreamingRebuild();
-            scheduleStreamingScrollToBottom();
           },
           acpCancellationToken: acpCancellationToken,
         );
@@ -1540,7 +1536,6 @@ mixin _MessagingOps on _ChatControllerBase {
             return;
           }
           scheduleStreamingRebuild();
-          scheduleStreamingScrollToBottom();
         },
         onMessageMetadata: (aid, anm, metadata) {
           if (!groupTurnGate.isCurrent(epoch)) return;
@@ -1801,7 +1796,6 @@ mixin _MessagingOps on _ChatControllerBase {
           streaming.append(chunk);
           streaming.applyContentTo(messages, messageIdMap);
           scheduleStreamingRebuild();
-          scheduleStreamingScrollToBottom();
         },
       );
 
@@ -1855,21 +1849,6 @@ mixin _MessagingOps on _ChatControllerBase {
       // 面板不再随每个 chunk 全量 rebuild。结构性变化（回合开始/结束、
       // 新消息落库）仍走 _notify 全页通知。
       contentListenable.notifyListeners();
-    });
-  }
-
-  @override
-  void scheduleStreamingScrollToBottom() {
-    // Do not gate on isUserScrolledUp at schedule time — a sticky false
-    // positive (common with long lists after jumpTo) would drop every chunk's
-    // follow-scroll for the rest of the turn. Check at emit time instead;
-    // ChatScreen also resumes live-follow after force sends.
-    if (_pendingStreamingScroll) return;
-    _pendingStreamingScroll = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _pendingStreamingScroll = false;
-      if (isUserScrolledUp) return;
-      _emit(RequestScrollToBottomEvent());
     });
   }
 

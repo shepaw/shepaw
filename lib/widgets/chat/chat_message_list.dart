@@ -147,33 +147,25 @@ class _ChatMessageListState extends State<ChatMessageList> {
   }
 
   // --- 图片分组缓存 -----------------------------------------------------------
-  // 每次 build（流式期间即每帧）都重算两趟 O(n) 的图片索引/分组。结果只
-  // 依赖 messages 的"结构"，流式 chunk 只原地改最后一条的 content，不影
-  // 响分组，因此以 (身份, 长度, 首尾消息签名) 为键缓存，失配才重算。
+  // 流式期间列表每帧重建，但分组只依赖消息结构。结构键与展示顺序缓存
+  // 相同：内容增长不改 id / 类型，失配才重算。
 
-  List<Message>? _cachedGroupMessages;
+  final DisplayOrderMemo _displayOrder = DisplayOrderMemo();
+  String? _imageGroupKey;
   List<Message>? _cachedAllImageMessages;
   Map<String, int>? _cachedImageIndexMap;
   Map<int, List<Message>>? _cachedImageGroupMap;
   Set<int>? _cachedMergedIndices;
 
-  String? _messageGroupKey(List<Message> messages) {
-    if (messages.isEmpty) return '';
-    final first = messages.first;
-    final last = messages.last;
-    return '${identityHashCode(messages)}|${messages.length}'
-        '|${first.id}|${first.type.index}'
-        '|${last.id}|${last.type.index}';
-  }
-
-  void _invalidateImageGroupCacheIfNeeded(List<Message> messages) {
-    final key = _messageGroupKey(messages);
-    if (_cachedGroupMessages != null &&
+  void _invalidateImageGroupCacheIfNeeded(
+    List<Message> messages,
+    String structuralKey,
+  ) {
+    if (_imageGroupKey == structuralKey &&
         _cachedAllImageMessages != null &&
         _cachedImageIndexMap != null &&
         _cachedImageGroupMap != null &&
-        _cachedMergedIndices != null &&
-        key == _messageGroupKey(_cachedGroupMessages!)) {
+        _cachedMergedIndices != null) {
       return;
     }
     final allImageMessages = <Message>[];
@@ -213,7 +205,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
       }
     }
 
-    _cachedGroupMessages = List.unmodifiable(messages);
+    _imageGroupKey = structuralKey;
     _cachedAllImageMessages = allImageMessages;
     _cachedImageIndexMap = imageIndexMap;
     _cachedImageGroupMap = imageGroupMap;
@@ -226,7 +218,8 @@ class _ChatMessageListState extends State<ChatMessageList> {
     final groupStreamingMessageIds = widget.groupStreamingMessageIds;
     // 时间戳异常（重连续传占位、peer 历史回灌）会把「正在回复」的气泡排到
     // 被回复消息之前甚至整列最上方——展示前先按因果关系修正顺序。
-    final messages = MessageUtils.orderForDisplay(
+    // 流式 chunk 不改结构，命中缓存时不再重走回复链。
+    final messages = _displayOrder.apply(
       widget.messages,
       streamingIds: <String>{
         if (streamingMessageId != null) streamingMessageId,
@@ -239,7 +232,10 @@ class _ChatMessageListState extends State<ChatMessageList> {
     final isAgentOffline = widget.isAgentOffline;
     final highlightedMessageId = widget.highlightedMessageId;
 
-    _invalidateImageGroupCacheIfNeeded(messages);
+    _invalidateImageGroupCacheIfNeeded(
+      messages,
+      _displayOrder.structuralKey ?? '',
+    );
     final allImageMessages = _cachedAllImageMessages!;
     final imageIndexMap = _cachedImageIndexMap!;
     final imageGroupMap = _cachedImageGroupMap!;
@@ -255,6 +251,8 @@ class _ChatMessageListState extends State<ChatMessageList> {
         itemScrollController: widget.itemScrollController,
         itemPositionsListener: widget.itemPositionsListener,
         padding: const EdgeInsets.all(16),
+        // 大约一屏。滑出视口的气泡保留已解析的 Markdown，翻历史时不用重解析。
+        minCacheExtent: MediaQuery.sizeOf(context).height,
         itemCount: messages.length,
         itemBuilder: (context, index) {
           // In reverse mode, index 0 is the newest (last) message.
@@ -316,9 +314,41 @@ class _ChatMessageListState extends State<ChatMessageList> {
           // Sticky for every non-my group message (each message shows its own
           // author chrome — consecutive same-author collapse is disabled).
           final stickySenderName = isGroupMode && !isMyMessage;
-
-          return RepaintBoundary(
-            key: ValueKey(message.id),
+          final bodyCollapsed = isGroupMode &&
+              !isMyMessage &&
+              _collapsePreference.isCollapsed(
+                message.id,
+                defaultExpandedMessageId: defaultExpandedMessageId,
+              );
+          final groupedImages = imageGroupMap[originalIndex];
+          final senderAvatar = agentAvatarMap[message.from.id];
+          final workspaceUris = message.from.isAgent
+              ? (widget.workspaceUrisByAgentId[message.from.id] ??
+                  widget.defaultWorkspaceUris)
+              : widget.defaultWorkspaceUris;
+          // 流式期间整表会重建，但已结束的气泡消息对象不变。戳相同就复用
+          // 上次建好的子树，避免每条都重走 Markdown。
+          final stamp = (
+            message,
+            isStreaming,
+            isHighlighted,
+            bodyCollapsed,
+            showDateSeparator,
+            isAgentOffline,
+            quotedMessage,
+            showSenderName,
+            showAvatar,
+            reserveAvatarSpace,
+            stickySenderName,
+            senderAvatar,
+            allImageMessages,
+            groupedImages,
+            imageIndexMap,
+            workspaceUris,
+          );
+          final tile = _StableMessageTile(
+            stamp: stamp,
+            builder: (context) => RepaintBoundary(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -369,13 +399,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
                       // sticky 偏移由组件内部的 ScrollPosition 在同帧 paint
                       // 中计算；不要再挂全局 itemPositions，避免双信号。
                       stickyViewportKey: _viewportKey,
-                      bodyCollapsed: isGroupMode &&
-                          !isMyMessage &&
-                          _collapsePreference.isCollapsed(
-                            message.id,
-                            defaultExpandedMessageId:
-                                defaultExpandedMessageId,
-                          ),
+                      bodyCollapsed: bodyCollapsed,
                       onToggleBodyCollapse: isGroupMode && !isMyMessage
                           ? () => _collapsePreference.toggle(
                                 message.id,
@@ -430,21 +454,28 @@ class _ChatMessageListState extends State<ChatMessageList> {
                       allImageMessages: allImageMessages,
                       imageIndex: imageIndexMap[message.id] ?? 0,
                       imageIndexMap: imageIndexMap,
-                      groupedImageMessages: imageGroupMap[originalIndex],
+                      groupedImageMessages: groupedImages,
                       onAvatarTap: message.from.isAgent
                           ? () => widget.onAgentAvatarTap(message.from.id)
                           : null,
-                      senderAvatar: agentAvatarMap[message.from.id],
+                      senderAvatar: senderAvatar,
                       isAgentOffline: isAgentOffline,
-                      workspaceUris: message.from.isAgent
-                          ? (widget.workspaceUrisByAgentId[message.from.id] ??
-                              widget.defaultWorkspaceUris)
-                          : widget.defaultWorkspaceUris,
+                      workspaceUris: workspaceUris,
                     ),
                   ),
                 ),
               ],
             ),
+          ),
+          );
+          if (!isStreaming) {
+            return KeyedSubtree(key: ValueKey(message.id), child: tile);
+          }
+          // 只在正在输出的气泡外包一层：高度变化才通知外层贴底，
+          // 不再每个 chunk 都 jumpTo。
+          return SizeChangedLayoutNotifier(
+            key: ValueKey(message.id),
+            child: tile,
           );
         },
       ),
@@ -470,5 +501,56 @@ class _ChatMessageListState extends State<ChatMessageList> {
         ),
       ),
     );
+  }
+}
+
+/// 展示输入没变时复用已建好的气泡子树。
+///
+/// 列表在流式 chunk 上整表重建，但 [builder] 只在 [stamp] 变化时重跑。
+/// 返回同一个 widget 实例时，子 Element 不会 update，Markdown 不会重解析。
+class _StableMessageTile extends StatefulWidget {
+  final Object stamp;
+  final WidgetBuilder builder;
+
+  const _StableMessageTile({
+    required this.stamp,
+    required this.builder,
+  });
+
+  @override
+  State<_StableMessageTile> createState() => _StableMessageTileState();
+}
+
+class _StableMessageTileState extends State<_StableMessageTile> {
+  Widget? _child;
+  ThemeData? _theme;
+  TextScaler? _scaler;
+  Locale? _locale;
+
+  @override
+  void didUpdateWidget(covariant _StableMessageTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.stamp != widget.stamp) {
+      _child = null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 主题、字号、语言变了也要重做气泡。这些依赖在 build 里读取，
+    // 流式期间值不变，子树继续复用。
+    final theme = Theme.of(context);
+    final scaler = MediaQuery.textScalerOf(context);
+    final locale = Localizations.localeOf(context);
+    if (_child == null ||
+        theme != _theme ||
+        scaler != _scaler ||
+        locale != _locale) {
+      _theme = theme;
+      _scaler = scaler;
+      _locale = locale;
+      _child = widget.builder(context);
+    }
+    return _child!;
   }
 }

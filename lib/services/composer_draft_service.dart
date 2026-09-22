@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -18,6 +19,11 @@ class ComposerDraftService extends ChangeNotifier {
   final Map<String, DateTime> _updatedAt = {};
   final Map<String, String> _draftInstruction = {};
   bool _restoredFromDisk = false;
+
+  /// 按键落盘去抖。内存立即可见；磁盘在停手后再写，离开会话时 [flush]。
+  static const _persistDelay = Duration(milliseconds: 400);
+  Timer? _persistTimer;
+  bool _persistPending = false;
 
   /// Returns the saved draft for [key], or empty string if none.
   String getDraft(String key) {
@@ -120,7 +126,7 @@ class ComposerDraftService extends ChangeNotifier {
     if (trimmed.isEmpty) {
       _removeKeys(keys);
       if (notify) notifyListeners();
-      _persistToDisk();
+      _persistNow();
       return;
     }
 
@@ -141,7 +147,7 @@ class ComposerDraftService extends ChangeNotifier {
     }
     if (!changed) return;
     if (notify) notifyListeners();
-    _persistToDisk();
+    _schedulePersist();
   }
 
   /// Removes drafts for [key] and optional list aliases.
@@ -159,7 +165,7 @@ class ComposerDraftService extends ChangeNotifier {
     if (keys.isEmpty) return;
     _removeKeys(keys);
     if (notify) notifyListeners();
-    _persistToDisk();
+    _persistNow();
   }
 
   /// Copies a draft from [fromKey] to [toKey] when the conversation identity
@@ -184,7 +190,7 @@ class ComposerDraftService extends ChangeNotifier {
       _drafts.remove(fromKey);
       _updatedAt.remove(fromKey);
     }
-    _persistToDisk();
+    _persistNow();
   }
 
   /// Notifies listeners (conversation list) that drafts changed.
@@ -225,24 +231,47 @@ class ComposerDraftService extends ChangeNotifier {
     }
   }
 
-  void _persistToDisk() {
-    () async {
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(
-          _storageKey,
-          jsonEncode({
-            'drafts': _drafts,
-            'instructions': _draftInstruction,
-            'updatedAt': {
-              for (final e in _updatedAt.entries)
-                e.key: e.value.toIso8601String(),
-            },
-          }),
-        );
-      } catch (_) {
-        // Best-effort — in-memory draft still works for this session.
-      }
-    }();
+  /// 把尚未落盘的草稿立刻写入。离开会话或退到后台时调用。
+  Future<void> flush() {
+    _persistTimer?.cancel();
+    _persistTimer = null;
+    if (!_persistPending) return Future<void>.value();
+    _persistPending = false;
+    return _writeDrafts();
+  }
+
+  void _schedulePersist() {
+    _persistPending = true;
+    _persistTimer?.cancel();
+    _persistTimer = Timer(_persistDelay, () {
+      _persistTimer = null;
+      if (!_persistPending) return;
+      _persistPending = false;
+      unawaited(_writeDrafts());
+    });
+  }
+
+  void _persistNow() {
+    _persistPending = true;
+    unawaited(flush());
+  }
+
+  Future<void> _writeDrafts() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _storageKey,
+        jsonEncode({
+          'drafts': _drafts,
+          'instructions': _draftInstruction,
+          'updatedAt': {
+            for (final e in _updatedAt.entries)
+              e.key: e.value.toIso8601String(),
+          },
+        }),
+      );
+    } catch (_) {
+      // Best-effort — in-memory draft still works for this session.
+    }
   }
 }
