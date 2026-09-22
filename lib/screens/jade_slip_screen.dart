@@ -590,7 +590,7 @@ class _SlipRow extends StatelessWidget {
                     children: [
                       Text(
                         slip.title,
-                        maxLines: 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodyLarge?.copyWith(
                           fontWeight: FontWeight.w600,

@@ -335,6 +335,8 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
               const SizedBox(height: 8),
               TextField(
                 controller: _title,
+                maxLines: null,
+                keyboardType: TextInputType.multiline,
                 style: theme.textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.w700,
                   height: 1.25,
