@@ -359,6 +359,9 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
     return Column(
       children: [
         if (_isSelectionMode) _buildSelectionHeader(l10n),
+        // 「新建会话」行不参与滚动：它比会话行矮（无副标题），留在
+        // [ListView.builder] 里会破坏等高前提（见 [_buildList]）。
+        if (!_isSelectionMode) _buildNewSessionItem(context, l10n),
         Expanded(child: _buildList(l10n)),
         if (_isSelectionMode) _buildBottomBar(l10n),
       ],
@@ -430,13 +433,15 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
   Widget _buildList(AppLocalizations l10n) {
     return ListView.builder(
       key: const PageStorageKey<String>('group-session-list'),
-      itemCount: widget.sessions.length + 1,
+      // 固定行高：抽屉收起即销毁整棵路由，重开时新的 viewport 要从上次的
+      // 滚动偏移恢复。变高列表只能从 index 0 逐行「建 + 排版」到该偏移
+      // （sliver_list.dart 的 `while (endScrollOffset < scrollOffset)`），
+      // 滑得越深首帧越重，正好砸在 250ms 划入动画上。给了等高原型后
+      // Sliver 能由偏移 O(1) 算出首个可见行，只建可视行。
+      prototypeItem: const _GroupSessionTilePrototype(),
+      itemCount: widget.sessions.length,
       itemBuilder: (context, index) {
-        if (index == 0) {
-          if (_isSelectionMode) return const SizedBox.shrink();
-          return _buildNewSessionItem(context, l10n);
-        }
-        final session = widget.sessions[index - 1];
+        final session = widget.sessions[index];
         final isCurrent = session.id == widget.currentChannelId;
         final isParent = session.parentGroupId == null;
         final isDisabled = isCurrent || isParent;
@@ -446,26 +451,29 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
         // 当前会话渲染时未读归零（缓存存原始未读数）。
         final unreadCount = isCurrent ? 0 : preview?.$3 ?? 0;
         final orchestration = preview?.$4;
-        return _buildGroupSessionTile(
-          context,
-          session,
-          isCurrent,
-          firstMessage,
-          latestMessage,
-          unreadCount: unreadCount,
-          orchestration: orchestration,
-          selectionMode: _isSelectionMode,
-          selected: _selectedIds.contains(session.id),
-          selectionEnabled: !isDisabled,
-          onSelectionToggle: isDisabled
-              ? null
-              : () => setState(() {
-                    if (_selectedIds.contains(session.id)) {
-                      _selectedIds.remove(session.id);
-                    } else {
-                      _selectedIds.add(session.id);
-                    }
-                  }),
+        // 行级 repaint 隔离：某会话「输入中」翻转时只重画该行。
+        return RepaintBoundary(
+          child: _buildGroupSessionTile(
+            context,
+            session,
+            isCurrent,
+            firstMessage,
+            latestMessage,
+            unreadCount: unreadCount,
+            orchestration: orchestration,
+            selectionMode: _isSelectionMode,
+            selected: _selectedIds.contains(session.id),
+            selectionEnabled: !isDisabled,
+            onSelectionToggle: isDisabled
+                ? null
+                : () => setState(() {
+                      if (_selectedIds.contains(session.id)) {
+                        _selectedIds.remove(session.id);
+                      } else {
+                        _selectedIds.add(session.id);
+                      }
+                    }),
+          ),
         );
       },
     );
@@ -831,9 +839,22 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
             )
           : ValueListenableBuilder<Set<String>>(
         valueListenable: widget.controller.chatService.typingChannelIds,
-        builder: (context, typingChannelIds, _) {
-          final isTyping = typingChannelIds.contains(session.id);
-          if (isTyping) {
+        // 常态（非「输入中」）副标题提到 child：监听翻转时复用同一个 Text
+        // 实例，不必重建带两行省略号排版的段落。
+        child: Text(
+          preview.isNotEmpty
+              ? preview
+              : AppLocalizations.of(context).home_noMessages,
+          // 两行同尺寸：第二行给到两行高度，多显示一些内容。
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 14,
+            color: Colors.grey[600],
+          ),
+        ),
+        builder: (context, typingChannelIds, child) {
+          if (typingChannelIds.contains(session.id)) {
             return Text(
               AppLocalizations.of(context).home_typing,
               maxLines: 1,
@@ -845,18 +866,7 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
               ),
             );
           }
-          return Text(
-            preview.isNotEmpty
-                ? preview
-                : AppLocalizations.of(context).home_noMessages,
-            // 两行同尺寸：第二行给到两行高度，多显示一些内容。
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[600],
-            ),
-          );
+          return child!;
         },
       ),
       trailing: sessionRowTrailing(
@@ -937,6 +947,27 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 群会话行的行高原型，只给 [ListView.builder] 的 `prototypeItem` 量高度用
+/// （等价于 Offstage：不绘制、不参与命中测试）。
+///
+/// 结构与 [_GroupSessionListContentState._buildGroupSessionTile] 保持一致
+/// （40×40 leading + 单行标题 + 最多两行副标题），高度随字号/主题走。
+class _GroupSessionTilePrototype extends StatelessWidget {
+  const _GroupSessionTilePrototype();
+
+  @override
+  Widget build(BuildContext context) {
+    return const ListTile(
+      contentPadding: EdgeInsets.symmetric(horizontal: 16),
+      horizontalTitleGap: 16,
+      leading: SizedBox(width: 40, height: 40),
+      title: Text(' ', maxLines: 1, style: TextStyle(fontSize: 14)),
+      // 两个换行 = 两行副标题的高度（会话行副标题 maxLines: 2）。
+      subtitle: Text('\n', maxLines: 2, style: TextStyle(fontSize: 14)),
     );
   }
 }
