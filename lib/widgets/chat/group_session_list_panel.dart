@@ -362,7 +362,7 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
         // 「新建会话」行不参与滚动：它比会话行矮（无副标题），留在
         // [ListView.builder] 里会破坏等高前提（见 [_buildList]）。
         if (!_isSelectionMode) _buildNewSessionItem(context, l10n),
-        Expanded(child: _buildList(l10n)),
+        Expanded(child: _buildList()),
         if (_isSelectionMode) _buildBottomBar(l10n),
       ],
     );
@@ -430,7 +430,7 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
     );
   }
 
-  Widget _buildList(AppLocalizations l10n) {
+  Widget _buildList() {
     return ListView.builder(
       key: const PageStorageKey<String>('group-session-list'),
       // 固定行高：抽屉收起即销毁整棵路由，重开时新的 viewport 要从上次的
