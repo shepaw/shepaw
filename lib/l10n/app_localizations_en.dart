@@ -6567,6 +6567,75 @@ class AppLocalizationsEn extends AppLocalizations {
   String get jadeSlip_notes => 'Notes';
 
   @override
+  String get jadeSlip_contract => 'Note for the agent';
+
+  @override
+  String get jadeSlip_contractHint =>
+      'Optional. Open this to add a goal, constraints, or done-when';
+
+  @override
+  String get jadeSlip_goal => 'Goal';
+
+  @override
+  String get jadeSlip_goalHint => 'What the agent should achieve';
+
+  @override
+  String get jadeSlip_constraints => 'Constraints';
+
+  @override
+  String get jadeSlip_constraintsHint =>
+      'What must not be done, and what must be kept';
+
+  @override
+  String get jadeSlip_doneWhen => 'Done when';
+
+  @override
+  String get jadeSlip_doneWhenHint => 'How you will know it is finished';
+
+  @override
+  String get jadeSlip_acceptItem => 'Accept';
+
+  @override
+  String get jadeSlip_returnItem => 'Send back';
+
+  @override
+  String get jadeSlip_blockItem => 'Mark blocked';
+
+  @override
+  String get jadeSlip_itemSubmitted => 'Waiting for acceptance';
+
+  @override
+  String get jadeSlip_itemSession => 'Open the working session';
+
+  @override
+  String jadeSlip_itemBlocked(String reason) {
+    return 'Blocked: $reason';
+  }
+
+  @override
+  String get jadeSlip_parent => 'Parent slip';
+
+  @override
+  String get jadeSlip_child => 'Child slip';
+
+  @override
+  String get jadeSlip_assignItem => 'Assign to another agent';
+
+  @override
+  String get jadeSlip_splitItem => 'Split into a child slip';
+
+  @override
+  String get jadeSlip_openChild => 'Open child slip';
+
+  @override
+  String get jadeSlip_unassignItem => 'Clear this assignment';
+
+  @override
+  String jadeSlip_itemAssignee(String name) {
+    return 'With: $name';
+  }
+
+  @override
   String get jadeSlip_notesHint => 'Details, links, acceptance criteria…';
 
   @override

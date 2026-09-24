@@ -147,8 +147,10 @@ class JadeSlipService {
         final slip = await _readSlip(store, deviceId, entry.path);
         if (slip == null) continue;
         final existing = byId[slip.id];
-        if (existing == null || slip.updatedAt >= existing.updatedAt) {
+        if (existing == null) {
           byId[slip.id] = slip;
+        } else {
+          byId[slip.id] = JadeSlip.mergeCopies(existing, slip);
         }
       }
     }
@@ -186,14 +188,58 @@ class JadeSlipService {
     return null;
   }
 
+  Future<List<JadeSlip>> childrenOf(String id) async {
+    final trimmed = id.trim();
+    if (trimmed.isEmpty) return const [];
+    final all = await list(includeArchived: true);
+    return all.where((s) => s.parentId == trimmed).toList();
+  }
+
+  /// 把父简上的一项拆成一条子简。子简记住父简和来源事项。
+  Future<JadeSlip> splitItem({
+    required String id,
+    required String itemId,
+  }) async {
+    final parent = await getById(id);
+    if (parent == null) throw StateError('jade slip not found: $id');
+    JadeSlipItem? item;
+    for (final candidate in parent.items) {
+      if (candidate.id == itemId) item = candidate;
+    }
+    if (item == null) throw StateError('jade slip item not found: $itemId');
+    if (item.childSlipId.isNotEmpty) {
+      final existing = await getById(item.childSlipId);
+      if (existing != null) return existing;
+    }
+    final child = await create(
+      title: item.text,
+      parentId: parent.id,
+      sourceItemId: item.id,
+      assigneeAgentId: item.assigneeAgentId,
+      assigneeAgentName: item.assigneeAgentName,
+    );
+    await _mapItem(
+      parent.id,
+      item.id,
+      (current) => current.copyWith(childSlipId: child.id),
+    );
+    return child;
+  }
+
   Future<JadeSlip> create({
     required String title,
     String body = '',
+    String goal = '',
+    String constraints = '',
+    String doneWhen = '',
     List<JadeSlipItem>? items,
     JadeSlipPriority priority = JadeSlipPriority.none,
     String assigneeAgentId = '',
     String assigneeAgentName = '',
     int? dueAtMs,
+    String sourceInstructionId = '',
+    String parentId = '',
+    String sourceItemId = '',
     List<String> tags = const [],
   }) async {
     final trimmedTitle = title.trim();
@@ -212,12 +258,18 @@ class JadeSlipService {
       id: _uuid.v4(),
       title: trimmedTitle,
       body: body.trim(),
+      goal: goal.trim(),
+      constraints: constraints.trim(),
+      doneWhen: doneWhen.trim(),
       items: merged,
       priority: priority,
       assigneeAgentId: assigneeAgentId.trim(),
       assigneeAgentName: assigneeAgentName.trim(),
       dueAtMs: dueAtMs,
       tags: tags,
+      sourceInstructionId: sourceInstructionId.trim(),
+      parentId: parentId.trim(),
+      sourceItemId: sourceItemId.trim(),
       deviceId: await _selfId(),
       createdAt: now,
       updatedAt: now,
@@ -258,19 +310,242 @@ class JadeSlipService {
     required String id,
     required String itemId,
     required bool done,
+    String actorId = '',
+    String actorName = '',
+    String sessionId = '',
   }) async {
     final slip = await getById(id);
     if (slip == null) {
       throw StateError('jade slip not found: $id');
     }
+    final now = DateTime.now().millisecondsSinceEpoch;
     final items = [
       for (final item in slip.items)
-        if (item.id == itemId) item.copyWith(done: done) else item,
+        if (item.id == itemId)
+          item.copyWith(
+            state: done ? JadeSlipItemState.submitted : JadeSlipItemState.open,
+            blockedReason: '',
+            actorId: actorId.isEmpty ? null : actorId,
+            actorName: actorName.isEmpty ? null : actorName,
+            sessionId: sessionId.isEmpty ? null : sessionId,
+            updatedAt: now,
+          )
+        else
+          item,
     ];
     if (items.every((e) => e.id != itemId)) {
       throw StateError('jade slip item not found: $itemId');
     }
     return update(slip.copyWith(items: items));
+  }
+
+  Future<JadeSlip> _mapItem(
+    String id,
+    String itemId,
+    JadeSlipItem Function(JadeSlipItem item) change,
+  ) async {
+    final slip = await getById(id);
+    if (slip == null) throw StateError('jade slip not found: $id');
+    var found = false;
+    final items = <JadeSlipItem>[];
+    for (final item in slip.items) {
+      if (item.id == itemId) {
+        found = true;
+        items.add(change(item));
+      } else {
+        items.add(item);
+      }
+    }
+    if (!found) throw StateError('jade slip item not found: $itemId');
+    return update(slip.copyWith(items: items));
+  }
+
+  /// 人验收某一项。Agent 的勾选只表示已提交。
+  Future<JadeSlip> acceptItem({
+    required String id,
+    required String itemId,
+    String actorId = '',
+    String actorName = '',
+  }) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final slip = await _mapItem(
+      id,
+      itemId,
+      (item) => item.copyWith(
+        state: JadeSlipItemState.accepted,
+        actorId: actorId,
+        actorName: actorName,
+        blockedReason: '',
+        updatedAt: now,
+      ),
+    );
+    await _rollupAcceptedChild(slip);
+    return (await getById(id)) ?? slip;
+  }
+
+  /// 没有清单的子简整条验收。有清单时仍逐项验收。
+  Future<JadeSlip> acceptWhole({
+    required String id,
+    String actorId = '',
+    String actorName = '',
+  }) async {
+    final slip = await getById(id);
+    if (slip == null) throw StateError('jade slip not found: $id');
+    if (slip.items.isEmpty) {
+      final done = await update(slip.copyWith(status: JadeSlipStatus.done));
+      await _rollupAcceptedChild(done);
+      return (await getById(id)) ?? done;
+    }
+    var current = slip;
+    for (final item in slip.items) {
+      if (item.state == JadeSlipItemState.submitted) {
+        current = await acceptItem(
+          id: id,
+          itemId: item.id,
+          actorId: actorId,
+          actorName: actorName,
+        );
+      }
+    }
+    return current;
+  }
+
+  /// 子简验收通过后，父简上对应事项变为已提交，等人在父简上验收。
+  Future<void> _rollupAcceptedChild(JadeSlip slip) async {
+    if (slip.parentId.isEmpty || slip.sourceItemId.isEmpty) return;
+    if (slip.status != JadeSlipStatus.done && !slip.allItemsDone) return;
+    final parent = await getById(slip.parentId);
+    if (parent == null) return;
+    JadeSlipItem? item;
+    for (final candidate in parent.items) {
+      if (candidate.id == slip.sourceItemId) item = candidate;
+    }
+    if (item == null || item.state == JadeSlipItemState.accepted) return;
+    if (item.state == JadeSlipItemState.submitted) return;
+    await setItemDone(
+      id: parent.id,
+      itemId: item.id,
+      done: true,
+    );
+  }
+
+  /// 退回已提交的项，留下原因，状态回到 open。
+  Future<JadeSlip> returnItem({
+    required String id,
+    required String itemId,
+    required String reason,
+    String actorId = '',
+    String actorName = '',
+  }) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final slip = await _mapItem(
+      id,
+      itemId,
+      (item) => item.copyWith(
+        state: JadeSlipItemState.open,
+        actorId: actorId,
+        actorName: actorName,
+        blockedReason: reason.trim(),
+        updatedAt: now,
+      ),
+    );
+    if (reason.trim().isEmpty) return slip;
+    return addComment(
+      id: id,
+      text: reason.trim(),
+      authorId: actorId,
+      authorName: actorName,
+      itemId: itemId,
+    );
+  }
+
+  Future<JadeSlip> blockItem({
+    required String id,
+    required String itemId,
+    required String reason,
+    String actorId = '',
+    String actorName = '',
+  }) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return _mapItem(
+      id,
+      itemId,
+      (item) => item.copyWith(
+        state: JadeSlipItemState.blocked,
+        actorId: actorId,
+        actorName: actorName,
+        blockedReason: reason.trim(),
+        updatedAt: now,
+      ),
+    );
+  }
+
+  Future<JadeSlip> addEvidence({
+    required String id,
+    required String itemId,
+    required String uri,
+  }) {
+    final ref = uri.trim();
+    if (ref.isEmpty) throw ArgumentError('evidence uri cannot be empty');
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return _mapItem(
+      id,
+      itemId,
+      (item) => item.copyWith(
+        evidence: [...item.evidence, ref],
+        updatedAt: now,
+      ),
+    );
+  }
+
+  /// 把清单中的一项交给另一个 Agent。空 id 表示取消这项的协作指派。
+  Future<JadeSlip> assignItem({
+    required String id,
+    required String itemId,
+    required String assigneeAgentId,
+    String assigneeAgentName = '',
+  }) async {
+    final slip = await getById(id);
+    if (slip == null) {
+      throw StateError('jade slip not found: $id');
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final agentId = assigneeAgentId.trim();
+    final agentName = assigneeAgentName.trim();
+    JadeSlipItem? previous;
+    for (final item in slip.items) {
+      if (item.id == itemId) previous = item;
+    }
+    final items = [
+      for (final item in slip.items)
+        if (item.id == itemId)
+          item.copyWith(
+            assigneeAgentId: agentId,
+            assigneeAgentName: agentName,
+            clearAssignee: agentId.isEmpty,
+            updatedAt: now,
+          )
+        else
+          item,
+    ];
+    if (previous == null) {
+      throw StateError('jade slip item not found: $itemId');
+    }
+    await update(slip.copyWith(items: items));
+    final from = previous.assigneeAgentName.isEmpty
+        ? previous.assigneeAgentId
+        : previous.assigneeAgentName;
+    final to = agentName.isEmpty ? agentId : agentName;
+    final note = agentId.isEmpty
+        ? '取消「${previous.text}」的协作指派'
+        : '「${previous.text}」交给 $to${from.isEmpty ? '' : '（原 $from）'}';
+    return addComment(
+      id: id,
+      text: note,
+      authorId: agentId.isEmpty ? 'user' : agentId,
+      authorName: to,
+      itemId: itemId,
+    );
   }
 
   Future<JadeSlip> addItem({
@@ -324,7 +599,10 @@ class JadeSlipService {
     if (items.length == slip.items.length) {
       throw StateError('jade slip item not found: $itemId');
     }
-    return update(slip.copyWith(items: items));
+    return update(slip.copyWith(
+      items: items,
+      removedItemIds: [...slip.removedItemIds, itemId],
+    ));
   }
 
   /// 追加一条留言。作者由调用方给定（App 内是本机用户，CLI 是执行中的 Agent）。
@@ -333,6 +611,7 @@ class JadeSlipService {
     required String text,
     required String authorId,
     String authorName = '',
+    String itemId = '',
   }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) {
@@ -346,6 +625,7 @@ class JadeSlipService {
       id: JadeSlipComment.newId(),
       authorId: authorId,
       authorName: authorName.trim(),
+      itemId: itemId.trim(),
       text: trimmed,
       createdAt: DateTime.now().millisecondsSinceEpoch,
     );
@@ -436,11 +716,19 @@ class JadeSlipService {
     if (slip == null) {
       throw StateError('jade slip not found: $id');
     }
-    final items = [for (final item in slip.items) item.copyWith(done: true)];
-    return update(slip.copyWith(
-      items: items,
-      status: JadeSlipStatus.done,
-    ));
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final items = [
+      for (final item in slip.items)
+        if (item.state == JadeSlipItemState.accepted)
+          item
+        else
+          item.copyWith(
+            state: JadeSlipItemState.submitted,
+            blockedReason: '',
+            updatedAt: now,
+          ),
+    ];
+    return update(slip.copyWith(items: items));
   }
 
   Future<void> delete(String id) async {

@@ -352,9 +352,11 @@ class ScopeCard {
   String get _notesLine => _hubCli
       ? '- 玉简待办: ACP `hub.cli.execute` `{namespace:"notes",'
           'subcommand:"list"},$_hubSessionId}` · 读: subcommand=get flags.id · '
-          '勾选: subcommand=item flags.id+flags.item+flags.done=true'
+          '勾选: subcommand=item flags.id+flags.item+flags.done=true · '
+          '交给另一个 Agent: flags.item+flags.assignee'
       : '- 玉简待办: `shepaw notes list` / `notes get --id <id>` / '
-          '`notes item --id <id> --item <itemId> --done true`';
+          '`notes item --id <id> --item <itemId> --done true` / '
+          '`notes item --id <id> --item <itemId> --assignee <agent_id>`';
 
   String get _memoryWriteLine => _hubCli
       ? '- 写记忆: ACP `hub.cli.execute` `{namespace:"context",'

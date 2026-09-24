@@ -3268,6 +3268,37 @@
   "jadeSlip_sessionNoMessage": "Empty",
   "jadeSlip_sessionCurrentTag": "current",
   "jadeSlip_notes": "Notes",
+  "jadeSlip_contract": "Note for the agent",
+  "jadeSlip_contractHint": "Optional. Open this to add a goal, constraints, or done-when",
+  "jadeSlip_goal": "Goal",
+  "jadeSlip_goalHint": "What the agent should achieve",
+  "jadeSlip_constraints": "Constraints",
+  "jadeSlip_constraintsHint": "What must not be done, and what must be kept",
+  "jadeSlip_doneWhen": "Done when",
+  "jadeSlip_doneWhenHint": "How you will know it is finished",
+  "jadeSlip_acceptItem": "Accept",
+  "jadeSlip_returnItem": "Send back",
+  "jadeSlip_blockItem": "Mark blocked",
+  "jadeSlip_itemSubmitted": "Waiting for acceptance",
+  "jadeSlip_itemSession": "Open the working session",
+  "jadeSlip_itemBlocked": "Blocked: {reason}",
+  "@jadeSlip_itemBlocked": {
+    "placeholders": {
+      "reason": {"type": "String"}
+    }
+  },
+  "jadeSlip_parent": "Parent slip",
+  "jadeSlip_child": "Child slip",
+  "jadeSlip_assignItem": "Assign to another agent",
+  "jadeSlip_splitItem": "Split into a child slip",
+  "jadeSlip_openChild": "Open child slip",
+  "jadeSlip_unassignItem": "Clear this assignment",
+  "jadeSlip_itemAssignee": "With: {name}",
+  "@jadeSlip_itemAssignee": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
   "jadeSlip_notesHint": "Details, links, acceptance criteria…",
   "jadeSlip_attachments": "Attachments",
   "jadeSlip_addAttachment": "Add attachment…",

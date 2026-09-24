@@ -11541,6 +11541,132 @@ abstract class AppLocalizations {
   /// **'备注'**
   String get jadeSlip_notes;
 
+  /// No description provided for @jadeSlip_contract.
+  ///
+  /// In zh, this message translates to:
+  /// **'给 Agent 的说明'**
+  String get jadeSlip_contract;
+
+  /// No description provided for @jadeSlip_contractHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'不写也可以。要交代目标、约束或完成标准时再展开'**
+  String get jadeSlip_contractHint;
+
+  /// No description provided for @jadeSlip_goal.
+  ///
+  /// In zh, this message translates to:
+  /// **'目标'**
+  String get jadeSlip_goal;
+
+  /// No description provided for @jadeSlip_goalHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'要 Agent 达成的结果'**
+  String get jadeSlip_goalHint;
+
+  /// No description provided for @jadeSlip_constraints.
+  ///
+  /// In zh, this message translates to:
+  /// **'约束'**
+  String get jadeSlip_constraints;
+
+  /// No description provided for @jadeSlip_constraintsHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'不能做什么、必须遵守什么'**
+  String get jadeSlip_constraintsHint;
+
+  /// No description provided for @jadeSlip_doneWhen.
+  ///
+  /// In zh, this message translates to:
+  /// **'完成标准'**
+  String get jadeSlip_doneWhen;
+
+  /// No description provided for @jadeSlip_doneWhenHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'怎样算做完'**
+  String get jadeSlip_doneWhenHint;
+
+  /// No description provided for @jadeSlip_acceptItem.
+  ///
+  /// In zh, this message translates to:
+  /// **'验收'**
+  String get jadeSlip_acceptItem;
+
+  /// No description provided for @jadeSlip_returnItem.
+  ///
+  /// In zh, this message translates to:
+  /// **'退回'**
+  String get jadeSlip_returnItem;
+
+  /// No description provided for @jadeSlip_blockItem.
+  ///
+  /// In zh, this message translates to:
+  /// **'标记阻塞'**
+  String get jadeSlip_blockItem;
+
+  /// No description provided for @jadeSlip_itemSubmitted.
+  ///
+  /// In zh, this message translates to:
+  /// **'待验收'**
+  String get jadeSlip_itemSubmitted;
+
+  /// No description provided for @jadeSlip_itemSession.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看干活会话'**
+  String get jadeSlip_itemSession;
+
+  /// No description provided for @jadeSlip_itemBlocked.
+  ///
+  /// In zh, this message translates to:
+  /// **'阻塞：{reason}'**
+  String jadeSlip_itemBlocked(String reason);
+
+  /// No description provided for @jadeSlip_parent.
+  ///
+  /// In zh, this message translates to:
+  /// **'父简'**
+  String get jadeSlip_parent;
+
+  /// No description provided for @jadeSlip_child.
+  ///
+  /// In zh, this message translates to:
+  /// **'子简'**
+  String get jadeSlip_child;
+
+  /// No description provided for @jadeSlip_assignItem.
+  ///
+  /// In zh, this message translates to:
+  /// **'指派给其他 Agent'**
+  String get jadeSlip_assignItem;
+
+  /// No description provided for @jadeSlip_splitItem.
+  ///
+  /// In zh, this message translates to:
+  /// **'拆成子简'**
+  String get jadeSlip_splitItem;
+
+  /// No description provided for @jadeSlip_openChild.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开子简'**
+  String get jadeSlip_openChild;
+
+  /// No description provided for @jadeSlip_unassignItem.
+  ///
+  /// In zh, this message translates to:
+  /// **'取消这项指派'**
+  String get jadeSlip_unassignItem;
+
+  /// No description provided for @jadeSlip_itemAssignee.
+  ///
+  /// In zh, this message translates to:
+  /// **'协作：{name}'**
+  String jadeSlip_itemAssignee(String name);
+
   /// No description provided for @jadeSlip_notesHint.
   ///
   /// In zh, this message translates to:

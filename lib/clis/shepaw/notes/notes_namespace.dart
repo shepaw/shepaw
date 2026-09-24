@@ -4,23 +4,14 @@ import '../../cli_base.dart';
 import '../../../models/jade_slip.dart';
 import '../../../models/store_attachment_ref.dart';
 import '../../../services/jade_slip_service.dart';
+import '../../../services/jade_slip_wake.dart';
 import '../../../services/local_database_service.dart';
 import '../../../services/local_user_identity.dart';
 import '../../../services/she_service.dart';
 import '../chat/chat_agent_scope.dart';
 
-/// [TOOLING 层] notes 命名空间 — 储物袋「玉简」待办。
-///
-/// 用户把待办写在玉简里，Agent 用本命名空间领取、勾选、完成：
-/// - `list`     列出待办（`--status open|in_progress|done`）
-/// - `get`      读取一条完整玉简（含清单 item id）
-/// - `add`      新建玉简（用户口述时也可代记）
-/// - `update`   改标题/正文/状态/优先级/负责人
-/// - `item`     勾选/反勾/追加/删除清单项
-/// - `attach`   添加附件（`--file` 本地路径或 `--uri` store://）
-/// - `detach`   删除附件
-/// - `complete` 整条完成
-/// - `delete`   删除（仅用户 / She）
+/// 玉简：人把目标交给 Agent，Agent 再把清单项交给其他 Agent。
+/// 进度写回同一条简，不散落在各会话里。
 class NotesNamespace extends CliNamespace {
   static final instance = NotesNamespace._();
   NotesNamespace._();
@@ -30,10 +21,10 @@ class NotesNamespace extends CliNamespace {
 
   @override
   String get description =>
-      'Jade slips (玉简): the user\'s to-do notebook in Nexus Pouch. '
-      'List/get open tasks, check items off as you finish them, and mark '
-      'the slip complete. Prefer this over ad-hoc chat when the user asks '
-      'you to work through their to-dos.';
+      'Jade slips (玉简): the shared contract between a person and agents. '
+      'The human writes the goal; agents check items off and hand an item '
+      'to another agent with notes item --assignee. Prefer this over ad-hoc '
+      'chat when work must stay visible after the session ends.';
 
   @override
   String get icon => '📜';
@@ -45,6 +36,8 @@ class NotesNamespace extends CliNamespace {
         'add': NotesAddCommand(),
         'update': NotesUpdateCommand(),
         'item': NotesItemCommand(),
+        'split': NotesSplitCommand(),
+        'accept': NotesAcceptCommand(),
         'comment': NotesCommentCommand(),
         'attach': NotesAttachCommand(),
         'detach': NotesDetachCommand(),
@@ -60,6 +53,9 @@ Map<String, dynamic> _slipJson(JadeSlip slip, {bool full = false}) {
     'status': slip.status.wire,
     'priority': slip.priority.wire,
     'done': '${slip.doneCount}/${slip.itemCount}',
+    if (slip.goal.isNotEmpty) 'goal': slip.goal,
+    if (full && slip.constraints.isNotEmpty) 'constraints': slip.constraints,
+    if (full && slip.doneWhen.isNotEmpty) 'done_when': slip.doneWhen,
     if (slip.assigneeAgentId.isNotEmpty)
       'assignee_agent_id': slip.assigneeAgentId,
     if (slip.assigneeAgentName.isNotEmpty)
@@ -70,7 +66,7 @@ Map<String, dynamic> _slipJson(JadeSlip slip, {bool full = false}) {
       'body': slip.body,
       'items': [
         for (final item in slip.items)
-          {'id': item.id, 'text': item.text, 'done': item.done},
+          {'id': item.id, 'text': item.text, 'state': item.state.wire, 'done': item.done, ..._itemAssignee(item), if (item.blockedReason.isNotEmpty) 'blocked_reason': item.blockedReason, if (item.evidence.isNotEmpty) 'evidence': item.evidence, if (item.sessionId.isNotEmpty) 'session_id': item.sessionId},
       ],
       if (slip.comments.isNotEmpty)
         'comments': [
@@ -98,10 +94,17 @@ Map<String, dynamic> _slipJson(JadeSlip slip, {bool full = false}) {
     } else if (slip.items.isNotEmpty)
       'open_items': [
         for (final item in slip.items)
-          if (!item.done) {'id': item.id, 'text': item.text},
+          if (!item.done) {'id': item.id, 'text': item.text, ..._itemAssignee(item)},
       ],
   };
 }
+
+Map<String, dynamic> _itemAssignee(JadeSlipItem item) => {
+      if (item.assigneeAgentId.isNotEmpty)
+        'assignee_agent_id': item.assigneeAgentId,
+      if (item.assigneeAgentName.isNotEmpty)
+        'assignee_agent_name': item.assigneeAgentName,
+    };
 
 class NotesListCommand extends CliCommand {
   @override
@@ -161,7 +164,17 @@ class NotesGetCommand extends CliCommand {
     if (id.isEmpty) return {'error': 'Missing --id. Usage: $usage'};
     final slip = await JadeSlipService.instance.getById(id);
     if (slip == null) return {'error': 'Jade slip not found: $id'};
-    return {'success': true, 'slip': _slipJson(slip, full: true)};
+    final json = _slipJson(slip, full: true);
+    if (slip.parentId.isNotEmpty) json['parent_id'] = slip.parentId;
+    if (slip.sourceItemId.isNotEmpty) {
+      json['source_item_id'] = slip.sourceItemId;
+    }
+    final children = await JadeSlipService.instance.childrenOf(slip.id);
+    json['children'] = [
+      for (final child in children)
+        {'id': child.id, 'title': child.title, 'status': child.status.wire},
+    ];
+    return {'success': true, 'slip': json};
   }
 }
 
@@ -172,11 +185,14 @@ class NotesAddCommand extends CliCommand {
   @override
   String get description =>
       'Create a jade slip. --items is semicolon-separated checklist text. '
-      'Markdown "- [ ] item" in --body is also parsed into checklist items.';
+      'Markdown "- [ ] item" in --body is also parsed into checklist items. '
+      '--goal is what the human wants done; --constraints and --done-when '
+      'travel with the slip when another agent picks up an item.';
 
   @override
   String get usage =>
       'shepaw notes add --title "Book flights" '
+      '[--goal "..."] [--constraints "..."] [--done-when "..."] '
       '[--body "..."] [--items "compare prices;buy tickets"] '
       '[--priority low|medium|high]';
 
@@ -200,6 +216,9 @@ class NotesAddCommand extends CliCommand {
         items: items,
         priority: JadeSlipPriority.parse(flags['priority']),
         dueAtMs: _parseDue(flags['due']),
+        goal: flags['goal'] ?? '',
+        constraints: flags['constraints'] ?? '',
+        doneWhen: _flag(flags, 'done-when', 'done_when') ?? '',
       );
       return {
         'success': true,
@@ -218,11 +237,12 @@ class NotesUpdateCommand extends CliCommand {
 
   @override
   String get description =>
-      'Update title/body/status/priority/assignee/due of a jade slip';
+      'Update title/body/goal/constraints/done-when/status/priority/assignee/due';
 
   @override
   String get usage =>
       'shepaw notes update --id <id> [--title t] [--body b] '
+      '[--goal g] [--constraints c] [--done-when d] '
       '[--status open|in_progress|done|archived] [--priority high] '
       '[--assignee <agent_id>] [--due <iso-or-ms>]';
 
@@ -240,6 +260,16 @@ class NotesUpdateCommand extends CliCommand {
     if (flags.containsKey('body')) {
       next = next.copyWith(body: flags['body'] ?? '');
     }
+    if (flags.containsKey('goal')) {
+      next = next.copyWith(goal: flags['goal'] ?? '');
+    }
+    if (flags.containsKey('constraints')) {
+      next = next.copyWith(constraints: flags['constraints'] ?? '');
+    }
+    final doneWhen = _flag(flags, 'done-when', 'done_when');
+    if (doneWhen != null) {
+      next = next.copyWith(doneWhen: doneWhen);
+    }
     if (flags.containsKey('status')) {
       next = next.copyWith(status: JadeSlipStatus.parse(flags['status']));
     }
@@ -255,9 +285,56 @@ class NotesUpdateCommand extends CliCommand {
           ? next.copyWith(clearDue: true)
           : next.copyWith(dueAtMs: _parseDue(due));
     }
+    if (flags.containsKey('parent')) {
+      next = next.copyWith(parentId: flags['parent']!.trim());
+    }
+    if (flags.containsKey('blocked-by') || flags.containsKey('blocked_by')) {
+      next = next.copyWith(
+        blockedBySlipId: (flags['blocked-by'] ?? flags['blocked_by'] ?? '').trim(),
+      );
+    }
     try {
       final slip = await JadeSlipService.instance.update(next);
       return {'success': true, 'slip': _slipJson(slip, full: true)};
+    } catch (e) {
+      return {'error': '$e'};
+    }
+  }
+}
+
+class NotesSplitCommand extends CliCommand {
+  @override
+  String get name => 'split';
+
+  @override
+  String get description =>
+      'Turn one checklist item into a child jade slip. The child remembers '
+      'the parent slip and the source item. Accepting the child submits '
+      'that item on the parent.';
+
+  @override
+  String get usage => 'shepaw notes split --id <slipId> --item <itemId>';
+
+  @override
+  Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
+    final id = flags['id']?.trim() ?? '';
+    final itemId = flags['item']?.trim() ?? '';
+    if (id.isEmpty || itemId.isEmpty) {
+      return {'error': 'Missing --id or --item. Usage: $usage'};
+    }
+    try {
+      final child = await JadeSlipService.instance.splitItem(
+        id: id,
+        itemId: itemId,
+      );
+      return {
+        'success': true,
+        'action': 'split',
+        'child_id': child.id,
+        'parent_id': child.parentId,
+        'source_item_id': child.sourceItemId,
+        'slip': _slipJson(child, full: true),
+      };
     } catch (e) {
       return {'error': '$e'};
     }
@@ -270,16 +347,16 @@ class NotesItemCommand extends CliCommand {
 
   @override
   String get description =>
-      'Check off (--item + --done true), uncheck, append (--text), '
-      'retitle (--item + --text), or remove (--item + --delete) a '
-      'checklist row. Call this as soon as you finish a step.';
+      'Check off submits an item (--done true) for the human to accept. '
+      'Also: uncheck, append, retitle, --assignee, --block --reason, '
+      '--evidence <uri>, or --delete.';
 
   @override
   String get usage =>
       'shepaw notes item --id <slipId> --item <itemId> --done true\n'
-      'shepaw notes item --id <slipId> --text "new checklist row"\n'
-      'shepaw notes item --id <slipId> --item <itemId> --text "new text"\n'
-      'shepaw notes item --id <slipId> --item <itemId> --delete';
+      'shepaw notes item --id <slipId> --item <itemId> --block --reason "..."\n'
+      'shepaw notes item --id <slipId> --item <itemId> --evidence <uri>\n'
+      'shepaw notes item --id <slipId> --item <itemId> --assignee <agent_id>';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
@@ -293,6 +370,44 @@ class NotesItemCommand extends CliCommand {
         deleteRaw == 'yes' ||
         flags.containsKey('delete') && deleteRaw.isEmpty;
     try {
+      if (flags.containsKey('assignee')) {
+        if (itemId.isEmpty) {
+          return {'error': 'Missing --item. Usage: $usage'};
+        }
+        final agentId = flags['assignee']!.trim();
+        final slip = await JadeSlipService.instance.assignItem(
+          id: id,
+          itemId: itemId,
+          assigneeAgentId: agentId,
+          assigneeAgentName: await _agentName(agentId, flags),
+        );
+        if (agentId.isNotEmpty) {
+          await JadeSlipWake.notify(slip, '有一项改派给 $agentId');
+        }
+        return {
+          'success': true,
+          'action': agentId.isEmpty ? 'unassigned' : 'assigned',
+          'slip': _slipJson(slip, full: true),
+        };
+      }
+      if (flags.containsKey('evidence')) {
+        if (itemId.isEmpty) return {'error': 'Missing --item. Usage: $usage'};
+        final slip = await JadeSlipService.instance.addEvidence(
+          id: id,
+          itemId: itemId,
+          uri: flags['evidence'] ?? '',
+        );
+        return {'success': true, 'action': 'evidence', 'slip': _slipJson(slip, full: true)};
+      }
+      if (flags.containsKey('block')) {
+        if (itemId.isEmpty) return {'error': 'Missing --item. Usage: $usage'};
+        final slip = await JadeSlipService.instance.blockItem(
+          id: id,
+          itemId: itemId,
+          reason: flags['reason'] ?? '',
+        );
+        return {'success': true, 'action': 'blocked', 'slip': _slipJson(slip, full: true)};
+      }
       if (itemId.isNotEmpty && text.isNotEmpty) {
         final slip = await JadeSlipService.instance.updateItemText(
           id: id,
@@ -325,14 +440,76 @@ class NotesItemCommand extends CliCommand {
       }
       final doneRaw = (flags['done'] ?? 'true').trim().toLowerCase();
       final done = doneRaw != 'false' && doneRaw != '0';
+      final actor = ChatAgentScope.agentId.trim();
+      var actorName = '';
+      if (done && actor.isNotEmpty && actor != SheService.sheId) {
+        final agent = await LocalDatabaseService().getRemoteAgentById(actor);
+        actorName = agent?.name ?? '';
+      } else if (done && actor == SheService.sheId) {
+        actorName = SheService.sheName;
+      }
       final slip = await JadeSlipService.instance.setItemDone(
         id: id,
         itemId: itemId,
         done: done,
+        actorId: done ? actor : '',
+        actorName: actorName,
+        sessionId: done ? ChatAgentScope.channelId.trim() : '',
       );
       return {
         'success': true,
         'action': done ? 'checked' : 'unchecked',
+        'slip': _slipJson(slip, full: true),
+      };
+    } catch (e) {
+      return {'error': '$e'};
+    }
+  }
+}
+
+/// 人验收已提交的项。Agent 不能把自己的提交标成完成。
+class NotesAcceptCommand extends CliCommand {
+  @override
+  String get name => 'accept';
+
+  @override
+  String get description =>
+      'Accept a submitted item (--item) or every submitted item on the slip. '
+      'Only the user or She.';
+
+  @override
+  String get usage =>
+      'shepaw notes accept --id <slipId> [--item <itemId>]';
+
+  @override
+  Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
+    final denied = _denyUnlessUserOrShe();
+    if (denied != null) return denied;
+    final id = flags['id']?.trim() ?? '';
+    if (id.isEmpty) return {'error': 'Missing --id. Usage: $usage'};
+    final itemId = (flags['item'] ?? '').trim();
+    try {
+      if (itemId.isEmpty) {
+        final slip = await JadeSlipService.instance.acceptWhole(
+          id: id,
+          actorId: LocalUserIdentity.id,
+          actorName: LocalUserIdentity.displayName,
+        );
+        return {
+          'success': true,
+          'action': 'accepted',
+          'slip': _slipJson(slip, full: true),
+        };
+      }
+      final slip = await JadeSlipService.instance.acceptItem(
+        id: id,
+        itemId: itemId,
+        actorId: LocalUserIdentity.id,
+        actorName: LocalUserIdentity.displayName,
+      );
+      return {
+        'success': true,
+        'action': 'accepted',
         'slip': _slipJson(slip, full: true),
       };
     } catch (e) {
@@ -413,6 +590,7 @@ class NotesCommentCommand extends CliCommand {
         text: text,
         authorId: actor,
         authorName: authorName,
+        itemId: (flags['item'] ?? '').trim(),
       );
       return {
         'success': true,
@@ -569,10 +747,36 @@ class NotesDeleteCommand extends CliCommand {
   }
 }
 
+Map<String, dynamic>? _denyUnlessUserOrShe() {
+  final actor = ChatAgentScope.agentId.trim();
+  if (actor.isNotEmpty &&
+      actor != SheService.sheId &&
+      actor != LocalUserIdentity.id) {
+    return {
+      'error': 'Permission denied: only the user or She can accept jade slip items.',
+    };
+  }
+  return null;
+}
+
 int? _parseDue(String? raw) {
   final s = raw?.trim() ?? '';
   if (s.isEmpty) return null;
   final asInt = int.tryParse(s);
   if (asInt != null) return asInt < 100000000000 ? asInt * 1000 : asInt;
   return DateTime.tryParse(s)?.millisecondsSinceEpoch;
+}
+
+String? _flag(Map<String, String> flags, String a, String b) {
+  if (flags.containsKey(a)) return flags[a] ?? '';
+  if (flags.containsKey(b)) return flags[b] ?? '';
+  return null;
+}
+
+Future<String> _agentName(String agentId, Map<String, String> flags) async {
+  final given = (flags['assignee-name'] ?? flags['assignee_name'] ?? '').trim();
+  if (given.isNotEmpty || agentId.isEmpty) return given;
+  if (agentId == SheService.sheId) return SheService.sheName;
+  final agent = await LocalDatabaseService().getRemoteAgentById(agentId);
+  return agent?.name ?? '';
 }

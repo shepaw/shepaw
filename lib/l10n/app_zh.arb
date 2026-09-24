@@ -3743,6 +3743,37 @@
   "jadeSlip_sessionNoMessage": "空会话",
   "jadeSlip_sessionCurrentTag": "当前",
   "jadeSlip_notes": "备注",
+  "jadeSlip_contract": "给 Agent 的说明",
+  "jadeSlip_contractHint": "不写也可以。要交代目标、约束或完成标准时再展开",
+  "jadeSlip_goal": "目标",
+  "jadeSlip_goalHint": "要 Agent 达成的结果",
+  "jadeSlip_constraints": "约束",
+  "jadeSlip_constraintsHint": "不能做什么、必须遵守什么",
+  "jadeSlip_doneWhen": "完成标准",
+  "jadeSlip_doneWhenHint": "怎样算做完",
+  "jadeSlip_acceptItem": "验收",
+  "jadeSlip_returnItem": "退回",
+  "jadeSlip_blockItem": "标记阻塞",
+  "jadeSlip_itemSubmitted": "待验收",
+  "jadeSlip_itemSession": "查看干活会话",
+  "jadeSlip_itemBlocked": "阻塞：{reason}",
+  "@jadeSlip_itemBlocked": {
+    "placeholders": {
+      "reason": {"type": "String"}
+    }
+  },
+  "jadeSlip_parent": "父简",
+  "jadeSlip_child": "子简",
+  "jadeSlip_assignItem": "指派给其他 Agent",
+  "jadeSlip_splitItem": "拆成子简",
+  "jadeSlip_openChild": "打开子简",
+  "jadeSlip_unassignItem": "取消这项指派",
+  "jadeSlip_itemAssignee": "协作：{name}",
+  "@jadeSlip_itemAssignee": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
   "jadeSlip_notesHint": "补充说明、链接、验收标准…",
   "jadeSlip_attachments": "附件",
   "jadeSlip_addAttachment": "添加附件…",

@@ -6316,6 +6316,73 @@ class AppLocalizationsZh extends AppLocalizations {
   String get jadeSlip_notes => '备注';
 
   @override
+  String get jadeSlip_contract => '给 Agent 的说明';
+
+  @override
+  String get jadeSlip_contractHint => '不写也可以。要交代目标、约束或完成标准时再展开';
+
+  @override
+  String get jadeSlip_goal => '目标';
+
+  @override
+  String get jadeSlip_goalHint => '要 Agent 达成的结果';
+
+  @override
+  String get jadeSlip_constraints => '约束';
+
+  @override
+  String get jadeSlip_constraintsHint => '不能做什么、必须遵守什么';
+
+  @override
+  String get jadeSlip_doneWhen => '完成标准';
+
+  @override
+  String get jadeSlip_doneWhenHint => '怎样算做完';
+
+  @override
+  String get jadeSlip_acceptItem => '验收';
+
+  @override
+  String get jadeSlip_returnItem => '退回';
+
+  @override
+  String get jadeSlip_blockItem => '标记阻塞';
+
+  @override
+  String get jadeSlip_itemSubmitted => '待验收';
+
+  @override
+  String get jadeSlip_itemSession => '查看干活会话';
+
+  @override
+  String jadeSlip_itemBlocked(String reason) {
+    return '阻塞：$reason';
+  }
+
+  @override
+  String get jadeSlip_parent => '父简';
+
+  @override
+  String get jadeSlip_child => '子简';
+
+  @override
+  String get jadeSlip_assignItem => '指派给其他 Agent';
+
+  @override
+  String get jadeSlip_splitItem => '拆成子简';
+
+  @override
+  String get jadeSlip_openChild => '打开子简';
+
+  @override
+  String get jadeSlip_unassignItem => '取消这项指派';
+
+  @override
+  String jadeSlip_itemAssignee(String name) {
+    return '协作：$name';
+  }
+
+  @override
   String get jadeSlip_notesHint => '补充说明、链接、验收标准…';
 
   @override

@@ -9,6 +9,7 @@ import '../services/chat_navigation_service.dart';
 import '../services/chat_service.dart';
 import '../services/composer_draft_service.dart';
 import '../services/instruction_set_service.dart';
+import '../services/jade_slip_service.dart';
 import '../services/local_database_service.dart';
 import '../services/local_user_identity.dart';
 import '../services/she_service.dart';
@@ -444,12 +445,21 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
     final l10n = _l10n;
     final chatService = getIt<ChatService>();
     const userId = LocalUserIdentity.id;
+    final ownerId = item.ownerAgentId;
+    final slip = await JadeSlipService.instance.create(
+      title: item.name,
+      goal: item.content,
+      assigneeAgentId: ownerId,
+      assigneeAgentName: item.ownerAgentName,
+      sourceInstructionId: item.id,
+    );
+    final tracked = '这次执行记在玉简「${slip.title}」（id=${slip.id}）。\n${item.content}';
 
     final currentChannelId = widget.channelId;
     if (currentChannelId != null && currentChannelId.isNotEmpty) {
       getIt<ComposerDraftService>().setDraft(
         currentChannelId,
-        '执行指令「${item.name}」：\n${item.content}',
+        tracked,
         agentId: widget.agentId,
         groupFamilyId: widget.groupFamilyId,
         instructionName: item.name,
@@ -458,7 +468,6 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
       return;
     }
 
-    final ownerId = item.ownerAgentId;
     final channelId =
         await chatService.getLatestActiveChannelId(userId, ownerId) ??
             chatService.generateChannelId(userId, ownerId);
@@ -476,7 +485,7 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
 
     getIt<ComposerDraftService>().setDraft(
       channelId,
-      '执行指令「${item.name}」：\n${item.content}',
+      tracked,
       agentId: ownerId,
       instructionName: item.name,
     );

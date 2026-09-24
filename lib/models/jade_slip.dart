@@ -11,6 +11,9 @@ class JadeSlip {
     required this.id,
     required this.title,
     this.body = '',
+    this.goal = '',
+    this.constraints = '',
+    this.doneWhen = '',
     this.status = JadeSlipStatus.open,
     this.priority = JadeSlipPriority.none,
     this.items = const [],
@@ -20,6 +23,11 @@ class JadeSlip {
     this.assigneeAgentName = '',
     this.dueAtMs,
     this.tags = const [],
+    this.parentId = '',
+    this.sourceItemId = '',
+    this.blockedBySlipId = '',
+    this.sourceInstructionId = '',
+    this.removedItemIds = const [],
     required this.deviceId,
     required this.createdAt,
     required this.updatedAt,
@@ -28,6 +36,16 @@ class JadeSlip {
   final String id;
   final String title;
   final String body;
+
+  /// 人交给 Agent 的目标：这一次要达成什么。
+  final String goal;
+
+  /// 约束：不能做什么、必须遵守什么。Agent 拆给其他 Agent 时一并带上。
+  final String constraints;
+
+  /// 怎样算完成。人和 Agent 用同一句话验收。
+  final String doneWhen;
+
   final JadeSlipStatus status;
   final JadeSlipPriority priority;
   final List<JadeSlipItem> items;
@@ -41,25 +59,52 @@ class JadeSlip {
   final int? dueAtMs;
   final List<String> tags;
 
+  /// 父简。大事拆开后，子简指回这一条。
+  final String parentId;
+
+  /// 父简上被拆出来的那一项。
+  final String sourceItemId;
+
+  /// 被哪一条玉简堵住。空表示没有依赖。
+  final String blockedBySlipId;
+
+  /// 这条简来自哪条指令集。空表示人手建的。
+  final String sourceInstructionId;
+
+  /// 已删除的清单项 id。合并时用来避免把另一端已删的项加回来。
+  final List<String> removedItemIds;
+
   /// 权威副本所在设备（写入该 device 目录，便于镜像回源）。
   final String deviceId;
   final int createdAt;
   final int updatedAt;
 
-  int get doneCount => items.where((e) => e.done).length;
+  int get doneCount =>
+      items.where((e) => e.state == JadeSlipItemState.accepted).length;
+
+  int get submittedCount =>
+      items.where((e) => e.state == JadeSlipItemState.submitted).length;
 
   int get itemCount => items.length;
 
-  /// 待办项（未勾选）。派发时只把待办交给 Agent，已完成的留在玉简里。
-  List<JadeSlipItem> get openItems =>
-      items.where((e) => !e.done).toList(growable: false);
+  /// 还要 Agent 动手的项：未提交，或被堵住。已提交的等验收，不再派出去。
+  List<JadeSlipItem> get openItems => items
+      .where((e) =>
+          e.state == JadeSlipItemState.open ||
+          e.state == JadeSlipItemState.blocked)
+      .toList(growable: false);
 
-  bool get hasOpenItems => items.any((e) => !e.done);
+  bool get hasOpenItems => openItems.isNotEmpty;
 
-  bool get allItemsDone => items.isNotEmpty && items.every((e) => e.done);
+  bool get allItemsDone =>
+      items.isNotEmpty &&
+      items.every((e) => e.state == JadeSlipItemState.accepted);
 
   bool get isOpen =>
-      status == JadeSlipStatus.open || status == JadeSlipStatus.inProgress;
+      status == JadeSlipStatus.open ||
+      status == JadeSlipStatus.inProgress ||
+      status == JadeSlipStatus.needsReview ||
+      status == JadeSlipStatus.blocked;
 
   /// 新建后未填写任何内容的草稿：离开编辑时等同「后悔新建」，应撤销删除。
   ///
@@ -69,12 +114,19 @@ class JadeSlip {
     final placeholder = untitledTitle.trim();
     if (t.isNotEmpty && t != placeholder) return false;
     if (body.trim().isNotEmpty) return false;
+    if (goal.trim().isNotEmpty) return false;
+    if (constraints.trim().isNotEmpty) return false;
+    if (doneWhen.trim().isNotEmpty) return false;
     if (items.isNotEmpty) return false;
     if (comments.isNotEmpty) return false;
     if (attachments.isNotEmpty) return false;
     if (assigneeAgentId.trim().isNotEmpty) return false;
     if (dueAtMs != null) return false;
     if (tags.isNotEmpty) return false;
+    if (parentId.trim().isNotEmpty) return false;
+    if (sourceItemId.trim().isNotEmpty) return false;
+    if (blockedBySlipId.trim().isNotEmpty) return false;
+    if (sourceInstructionId.trim().isNotEmpty) return false;
     if (priority != JadeSlipPriority.none) return false;
     if (status != JadeSlipStatus.open) return false;
     return true;
@@ -99,6 +151,9 @@ class JadeSlip {
   JadeSlip copyWith({
     String? title,
     String? body,
+    String? goal,
+    String? constraints,
+    String? doneWhen,
     JadeSlipStatus? status,
     JadeSlipPriority? priority,
     List<JadeSlipItem>? items,
@@ -109,6 +164,11 @@ class JadeSlip {
     int? dueAtMs,
     bool clearDue = false,
     List<String>? tags,
+    String? parentId,
+    String? sourceItemId,
+    String? blockedBySlipId,
+    String? sourceInstructionId,
+    List<String>? removedItemIds,
     String? deviceId,
     int? updatedAt,
   }) {
@@ -116,6 +176,9 @@ class JadeSlip {
       id: id,
       title: title ?? this.title,
       body: body ?? this.body,
+      goal: goal ?? this.goal,
+      constraints: constraints ?? this.constraints,
+      doneWhen: doneWhen ?? this.doneWhen,
       status: status ?? this.status,
       priority: priority ?? this.priority,
       items: items ?? this.items,
@@ -125,28 +188,84 @@ class JadeSlip {
       assigneeAgentName: assigneeAgentName ?? this.assigneeAgentName,
       dueAtMs: clearDue ? null : (dueAtMs ?? this.dueAtMs),
       tags: tags ?? this.tags,
+      parentId: parentId ?? this.parentId,
+      sourceItemId: sourceItemId ?? this.sourceItemId,
+      blockedBySlipId: blockedBySlipId ?? this.blockedBySlipId,
+      sourceInstructionId: sourceInstructionId ?? this.sourceInstructionId,
+      removedItemIds: removedItemIds ?? this.removedItemIds,
       deviceId: deviceId ?? this.deviceId,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 
-  /// 根据清单进度推导状态：全完成 → done；有勾选 → in_progress；否则 open。
-  /// 已归档、或没有清单项时不自动改。
+  /// 清单推导整简状态。已归档、或没有清单项时不自动改。
+  ///
+  /// 全部验收通过才是 done。还有人要做的是 open / in_progress。
+  /// 都交上来了是 needs_review。只剩被堵住的是 blocked。
   JadeSlip withDerivedStatus({int? updatedAt}) {
     if (status == JadeSlipStatus.archived || items.isEmpty) {
       return updatedAt == null ? this : copyWith(updatedAt: updatedAt);
     }
-    final next = allItemsDone
-        ? JadeSlipStatus.done
-        : (doneCount > 0 ? JadeSlipStatus.inProgress : JadeSlipStatus.open);
+    final JadeSlipStatus next;
+    if (allItemsDone) {
+      next = JadeSlipStatus.done;
+    } else if (items.any((e) => e.state == JadeSlipItemState.open)) {
+      next = items.any((e) => e.state != JadeSlipItemState.open)
+          ? JadeSlipStatus.inProgress
+          : JadeSlipStatus.open;
+    } else if (items.any((e) => e.state == JadeSlipItemState.submitted)) {
+      next = JadeSlipStatus.needsReview;
+    } else if (items.any((e) => e.state == JadeSlipItemState.blocked)) {
+      next = JadeSlipStatus.blocked;
+    } else {
+      next = JadeSlipStatus.open;
+    }
     return copyWith(status: next, updatedAt: updatedAt);
+  }
+
+  /// 两台设备各写了一部分时按字段并，不拿整份 JSON 互相覆盖。
+  static JadeSlip mergeCopies(JadeSlip a, JadeSlip b) {
+    final newer = a.updatedAt >= b.updatedAt ? a : b;
+    final older = identical(newer, a) ? b : a;
+    final removed = <String>{
+      ...newer.removedItemIds,
+      ...older.removedItemIds,
+    };
+    final items = <String, JadeSlipItem>{};
+    for (final item in [...older.items, ...newer.items]) {
+      if (removed.contains(item.id)) continue;
+      final prev = items[item.id];
+      if (prev == null || item.updatedAt >= prev.updatedAt) {
+        items[item.id] = item;
+      }
+    }
+    final comments = <String, JadeSlipComment>{};
+    for (final comment in [...older.comments, ...newer.comments]) {
+      comments.putIfAbsent(comment.id, () => comment);
+    }
+    final attachments = <String, JadeSlipAttachment>{};
+    for (final att in [...older.attachments, ...newer.attachments]) {
+      attachments.putIfAbsent(att.id, () => att);
+    }
+    return newer
+        .copyWith(
+          items: items.values.toList(),
+          comments: comments.values.toList(),
+          attachments: attachments.values.toList(),
+          removedItemIds: removed.toList(),
+          updatedAt: newer.updatedAt,
+        )
+        .withDerivedStatus(updatedAt: newer.updatedAt);
   }
 
   Map<String, dynamic> toJson() => {
         'id': id,
         'title': title,
         'body': body,
+        if (goal.isNotEmpty) 'goal': goal,
+        if (constraints.isNotEmpty) 'constraints': constraints,
+        if (doneWhen.isNotEmpty) 'done_when': doneWhen,
         'status': status.wire,
         'priority': priority.wire,
         'items': [for (final item in items) item.toJson()],
@@ -159,6 +278,12 @@ class JadeSlip {
           'assignee_agent_name': assigneeAgentName,
         if (dueAtMs != null) 'due_at': dueAtMs,
         if (tags.isNotEmpty) 'tags': tags,
+        if (parentId.isNotEmpty) 'parent_id': parentId,
+        if (sourceItemId.isNotEmpty) 'source_item_id': sourceItemId,
+        if (blockedBySlipId.isNotEmpty) 'blocked_by': blockedBySlipId,
+        if (sourceInstructionId.isNotEmpty)
+          'source_instruction_id': sourceInstructionId,
+        if (removedItemIds.isNotEmpty) 'removed_items': removedItemIds,
         'device_id': deviceId,
         'created_at': createdAt,
         'updated_at': updatedAt,
@@ -206,6 +331,9 @@ class JadeSlip {
       id: (json['id'] as String? ?? '').trim(),
       title: (json['title'] as String? ?? '').trim(),
       body: json['body'] as String? ?? '',
+      goal: json['goal'] as String? ?? '',
+      constraints: json['constraints'] as String? ?? '',
+      doneWhen: json['done_when'] as String? ?? '',
       status: JadeSlipStatus.parse(json['status'] as String?),
       priority: JadeSlipPriority.parse(json['priority'] as String?),
       items: items,
@@ -215,6 +343,15 @@ class JadeSlip {
       assigneeAgentName: json['assignee_agent_name'] as String? ?? '',
       dueAtMs: (json['due_at'] as num?)?.toInt(),
       tags: tags,
+      parentId: (json['parent_id'] as String? ?? '').trim(),
+      sourceItemId: (json['source_item_id'] as String? ?? '').trim(),
+      blockedBySlipId: (json['blocked_by'] as String? ?? '').trim(),
+      sourceInstructionId:
+          (json['source_instruction_id'] as String? ?? '').trim(),
+      removedItemIds: [
+        for (final id in (json['removed_items'] as List? ?? const []))
+          id.toString().trim(),
+      ].where((id) => id.isNotEmpty).toList(),
       deviceId: (json['device_id'] as String?)?.trim().isNotEmpty == true
           ? (json['device_id'] as String).trim()
           : (deviceId ?? ''),
@@ -234,7 +371,9 @@ class JadeSlip {
       out.add(JadeSlipItem(
         id: JadeSlipItem.newId(),
         text: text,
-        done: done,
+        state: done
+            ? JadeSlipItemState.accepted
+            : JadeSlipItemState.open,
       ));
     }
     return out;
@@ -252,9 +391,8 @@ class JadeSlip {
             ? openItems
             : items;
     final buf = StringBuffer(
-      focusItem != null
-          ? '请执行玉简待办「$title」（id=$id）中的这一项：'
-          : '请执行玉简待办「$title」（id=$id）。',
+      '玉简「$title」（id=$id），待办 ${openItems.length}/$itemCount 项。'
+      '请 shepaw notes get --id $id 现读，不要依赖对话里的旧副本。',
     )
       ..writeln()
       ..writeln('status: ${status.wire}')
@@ -263,13 +401,35 @@ class JadeSlip {
       buf.writeln(
           'due: ${DateTime.fromMillisecondsSinceEpoch(dueAtMs!).toIso8601String()}');
     }
+    final goalText = goal.trim();
+    if (goalText.isNotEmpty) {
+      buf
+        ..writeln()
+        ..writeln('goal（人交给 Agent 的目标）:')
+        ..writeln(goalText);
+    }
+    final constraintText = constraints.trim();
+    if (constraintText.isNotEmpty) {
+      buf
+        ..writeln()
+        ..writeln('constraints（必须遵守）:')
+        ..writeln(constraintText);
+    }
+    final doneText = doneWhen.trim();
+    if (doneText.isNotEmpty) {
+      buf
+        ..writeln()
+        ..writeln('done when（怎样算完成）:')
+        ..writeln(doneText);
+    }
     if (scoped.isNotEmpty) {
       buf.writeln(scoped.length != items.length
           ? 'checklist（待办 ${scoped.length}/$itemCount 项，'
               '已完成 $doneCount 项）:'
           : 'checklist:');
       for (final item in scoped) {
-        buf.writeln('- [${item.done ? 'x' : ' '}] ${item.text} (item=${item.id})');
+        buf.writeln(
+            '- [${item.state.mark}] ${item.text} (item=${item.id}${item.assigneeSuffix})');
       }
     } else if (items.isNotEmpty) {
       // 只交待办而待办为空：说清状态，别让 Agent 以为这条玉简没有清单。
@@ -289,27 +449,22 @@ class JadeSlip {
         ..writeln(notes);
     }
     if (comments.isNotEmpty) {
-      buf
-        ..writeln()
-        ..writeln('comments:');
-      for (final c in comments) {
-        buf.writeln('- ${c.displayName}: ${c.text} (comment=${c.id})');
-      }
+      buf.writeln('comments: ${comments.length} 条，用 notes get 查看，不在这里展开');
     }
     buf
       ..writeln()
-      ..writeln('请用 shepaw notes 读写进度，完成一项就勾一项，不要只口头答应：')
+      ..writeln('人和 Agent、Agent 与 Agent 写回同一条玉简：')
       ..writeln('- shepaw notes get --id $id')
       ..writeln(
-          '- shepaw notes item --id $id --item <itemId> --done true');
-    // 只派发单项时不能建议 complete —— 那会把整条玉简标记为完成。
-    if (focusItem == null) {
-      buf.writeln('- shepaw notes complete --id $id');
-    }
-    buf.writeln('- shepaw notes comment --id $id --text "进度说明"');
-    if (attachments.isNotEmpty) {
-      buf.writeln('- shepaw store read --uri <attachment uri>');
-    }
+          '- shepaw notes item --id $id --item <itemId> --done true  （提交，等验收）')
+      ..writeln(
+          '- shepaw notes item --id $id --item <itemId> --assignee <agent_id>')
+      ..writeln(
+          '- shepaw notes item --id $id --item <itemId> --block --reason "..."')
+      ..writeln(
+          '- shepaw notes item --id $id --item <itemId> --evidence <store-uri>')
+      ..writeln('- shepaw notes accept --id $id --item <itemId>  （人验收）')
+      ..writeln('- shepaw notes comment --id $id --item <itemId> --text "进度"');
     return buf.toString();
   }
 }
@@ -318,33 +473,158 @@ class JadeSlipItem {
   const JadeSlipItem({
     required this.id,
     required this.text,
-    this.done = false,
+    this.state = JadeSlipItemState.open,
+    this.assigneeAgentId = '',
+    this.assigneeAgentName = '',
+    this.actorId = '',
+    this.actorName = '',
+    this.sessionId = '',
+    this.childSlipId = '',
+    this.blockedReason = '',
+    this.evidence = const [],
+    this.updatedAt = 0,
   });
 
   final String id;
   final String text;
-  final bool done;
+  final JadeSlipItemState state;
 
-  JadeSlipItem copyWith({String? text, bool? done}) => JadeSlipItem(
+  /// 已验收。旧数据里的 `done: true` 读成 accepted。
+  bool get done => state == JadeSlipItemState.accepted;
+
+  final String assigneeAgentId;
+  final String assigneeAgentName;
+  final String actorId;
+  final String actorName;
+
+  /// Agent 提交这项时正在干活的会话。人可以从事项打开它。
+  final String sessionId;
+
+  /// 这项被拆成的子简。空表示还没有。
+  final String childSlipId;
+  final String blockedReason;
+  final List<String> evidence;
+  final int updatedAt;
+
+  String get assigneeSuffix {
+    if (assigneeAgentId.isEmpty && assigneeAgentName.isEmpty) return '';
+    final who = assigneeAgentName.isEmpty ? assigneeAgentId : assigneeAgentName;
+    return ' assignee=$who';
+  }
+
+  JadeSlipItem copyWith({
+    String? text,
+    JadeSlipItemState? state,
+    String? assigneeAgentId,
+    String? assigneeAgentName,
+    bool clearAssignee = false,
+    String? actorId,
+    String? actorName,
+    String? sessionId,
+    String? childSlipId,
+    String? blockedReason,
+    List<String>? evidence,
+    int? updatedAt,
+  }) =>
+      JadeSlipItem(
         id: id,
         text: text ?? this.text,
-        done: done ?? this.done,
+        state: state ?? this.state,
+        assigneeAgentId:
+            clearAssignee ? '' : (assigneeAgentId ?? this.assigneeAgentId),
+        assigneeAgentName:
+            clearAssignee ? '' : (assigneeAgentName ?? this.assigneeAgentName),
+        actorId: actorId ?? this.actorId,
+        actorName: actorName ?? this.actorName,
+        sessionId: sessionId ?? this.sessionId,
+        childSlipId: childSlipId ?? this.childSlipId,
+        blockedReason: blockedReason ?? this.blockedReason,
+        evidence: evidence ?? this.evidence,
+        updatedAt: updatedAt ?? this.updatedAt,
       );
 
   Map<String, dynamic> toJson() => {
         'id': id,
         'text': text,
+        'state': state.wire,
         'done': done,
+        if (assigneeAgentId.isNotEmpty) 'assignee_agent_id': assigneeAgentId,
+        if (assigneeAgentName.isNotEmpty)
+          'assignee_agent_name': assigneeAgentName,
+        if (actorId.isNotEmpty) 'actor_id': actorId,
+        if (actorName.isNotEmpty) 'actor_name': actorName,
+        if (sessionId.isNotEmpty) 'session_id': sessionId,
+        if (childSlipId.isNotEmpty) 'child_slip_id': childSlipId,
+        if (blockedReason.isNotEmpty) 'blocked_reason': blockedReason,
+        if (evidence.isNotEmpty) 'evidence': evidence,
+        if (updatedAt > 0) 'updated_at': updatedAt,
       };
 
-  factory JadeSlipItem.fromJson(Map<String, dynamic> json) => JadeSlipItem(
-        id: (json['id'] as String? ?? '').trim(),
-        text: (json['text'] as String? ?? '').trim(),
-        done: json['done'] == true,
-      );
+  factory JadeSlipItem.fromJson(Map<String, dynamic> json) {
+    final rawEvidence = json['evidence'];
+    final evidence = <String>[];
+    if (rawEvidence is List) {
+      for (final e in rawEvidence) {
+        final s = e.toString().trim();
+        if (s.isNotEmpty) evidence.add(s);
+      }
+    } else if (rawEvidence is String && rawEvidence.trim().isNotEmpty) {
+      evidence.add(rawEvidence.trim());
+    }
+    final rawState = json['state'] as String?;
+    final state = rawState != null && rawState.trim().isNotEmpty
+        ? JadeSlipItemState.parse(rawState)
+        : (json['done'] == true
+            ? JadeSlipItemState.accepted
+            : JadeSlipItemState.open);
+    return JadeSlipItem(
+      id: (json['id'] as String? ?? '').trim(),
+      text: (json['text'] as String? ?? '').trim(),
+      state: state,
+      assigneeAgentId: json['assignee_agent_id'] as String? ?? '',
+      assigneeAgentName: json['assignee_agent_name'] as String? ?? '',
+      actorId: json['actor_id'] as String? ?? '',
+      actorName: json['actor_name'] as String? ?? '',
+      sessionId: (json['session_id'] as String? ?? '').trim(),
+      childSlipId: (json['child_slip_id'] as String? ?? '').trim(),
+      blockedReason: json['blocked_reason'] as String? ?? '',
+      evidence: evidence,
+      updatedAt: (json['updated_at'] as num?)?.toInt() ?? 0,
+    );
+  }
 
-  /// 短 id，方便 Agent 在对话里抄写。
   static String newId() => const Uuid().v4().replaceAll('-', '').substring(0, 8);
+}
+
+enum JadeSlipItemState {
+  open,
+  submitted,
+  accepted,
+  blocked;
+
+  String get wire => name;
+
+  String get mark => switch (this) {
+        open => ' ',
+        submitted => '~',
+        accepted => 'x',
+        blocked => '!',
+      };
+
+  static JadeSlipItemState parse(String? raw) {
+    switch ((raw ?? '').trim()) {
+      case 'submitted':
+      case 'review':
+        return submitted;
+      case 'accepted':
+      case 'done':
+        return accepted;
+      case 'blocked':
+        return blocked;
+      default:
+        return open;
+    }
+  }
 }
 
 /// 玉简上的一条留言（用户或 Agent 写的过程记录）。
@@ -353,6 +633,7 @@ class JadeSlipComment {
     required this.id,
     required this.authorId,
     this.authorName = '',
+    this.itemId = '',
     required this.text,
     required this.createdAt,
   });
@@ -360,6 +641,9 @@ class JadeSlipComment {
   final String id;
   final String authorId;
   final String authorName;
+
+  /// 挂在某一项上。空表示整简留言。
+  final String itemId;
   final String text;
   final int createdAt;
 
@@ -369,6 +653,7 @@ class JadeSlipComment {
         id: id,
         authorId: authorId,
         authorName: authorName,
+        itemId: itemId,
         text: text ?? this.text,
         createdAt: createdAt,
       );
@@ -377,6 +662,7 @@ class JadeSlipComment {
         'id': id,
         'author_id': authorId,
         'author_name': authorName,
+        if (itemId.isNotEmpty) 'item_id': itemId,
         'text': text,
         'created_at': createdAt,
       };
@@ -386,6 +672,7 @@ class JadeSlipComment {
         id: (json['id'] as String? ?? '').trim(),
         authorId: (json['author_id'] as String? ?? '').trim(),
         authorName: (json['author_name'] as String? ?? '').trim(),
+        itemId: (json['item_id'] as String? ?? '').trim(),
         text: json['text'] as String? ?? '',
         createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
       );
@@ -432,12 +719,16 @@ class JadeSlipAttachment {
 enum JadeSlipStatus {
   open,
   inProgress,
+  needsReview,
+  blocked,
   done,
   archived;
 
   String get wire => switch (this) {
         open => 'open',
         inProgress => 'in_progress',
+        needsReview => 'needs_review',
+        blocked => 'blocked',
         done => 'done',
         archived => 'archived',
       };
@@ -447,6 +738,11 @@ enum JadeSlipStatus {
       case 'in_progress':
       case 'doing':
         return inProgress;
+      case 'needs_review':
+      case 'review':
+        return needsReview;
+      case 'blocked':
+        return blocked;
       case 'done':
       case 'completed':
         return done;

@@ -10,7 +10,9 @@ import '../l10n/app_localizations.dart';
 import '../models/jade_slip.dart';
 import '../models/remote_agent.dart';
 import '../models/store_attachment_ref.dart';
+import '../services/chat_navigation_service.dart';
 import '../services/jade_slip_service.dart';
+import '../services/jade_slip_wake.dart';
 import '../services/local_database_service.dart';
 import '../services/local_user_identity.dart';
 import '../services/store_open_service.dart';
@@ -29,6 +31,7 @@ class JadeSlipEditorScreen extends StatefulWidget {
   final bool focusChecklist;
   final bool focusTitle;
   final VoidCallback? onChanged;
+  final ValueChanged<String>? onOpenSlip;
 
   const JadeSlipEditorScreen({
     super.key,
@@ -37,6 +40,7 @@ class JadeSlipEditorScreen extends StatefulWidget {
     this.focusChecklist = false,
     this.focusTitle = false,
     this.onChanged,
+    this.onOpenSlip,
   });
 
   @override
@@ -47,12 +51,17 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   final _service = JadeSlipService.instance;
   final _title = TextEditingController();
   final _titleFocus = FocusNode();
+  final _goal = TextEditingController();
+  final _constraints = TextEditingController();
+  final _doneWhen = TextEditingController();
   final _body = TextEditingController();
   final _item = TextEditingController();
   final _itemFocus = FocusNode();
   final _comment = TextEditingController();
 
   JadeSlip? _slip;
+  JadeSlip? _parent;
+  List<JadeSlip> _children = const [];
   List<RemoteAgent> _agents = const [];
   bool _saving = false;
   bool _dirty = false;
@@ -60,6 +69,7 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   bool _allowPop = false;
   bool _didFocusChecklist = false;
   bool _didFocusTitle = false;
+  bool _contractOpen = false;
   String _untitledLabel = '';
   Timer? _textDebounce;
   StreamSubscription<void>? _sub;
@@ -86,6 +96,9 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     if (!slip.isBlankDraft(untitledTitle: _untitledLabel)) return false;
     final title = _title.text.trim();
     if (title.isNotEmpty && title != _untitledLabel.trim()) return false;
+    if (_goal.text.trim().isNotEmpty) return false;
+    if (_constraints.text.trim().isNotEmpty) return false;
+    if (_doneWhen.text.trim().isNotEmpty) return false;
     if (_body.text.trim().isNotEmpty) return false;
     return true;
   }
@@ -109,14 +122,22 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
       } else if (_dirty) {
         final title = _title.text.trim();
         if (title.isNotEmpty) {
-          unawaited(
-              _service.update(slip.copyWith(title: title, body: _body.text)));
+          unawaited(_service.update(slip.copyWith(
+            title: title,
+            goal: _goal.text,
+            constraints: _constraints.text,
+            doneWhen: _doneWhen.text,
+            body: _body.text,
+          )));
         }
       }
     }
     _sub?.cancel();
     _title.dispose();
     _titleFocus.dispose();
+    _goal.dispose();
+    _constraints.dispose();
+    _doneWhen.dispose();
     _body.dispose();
     _item.dispose();
     _itemFocus.dispose();
@@ -137,10 +158,23 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
       return;
     }
     _title.text = slip.title;
+    _goal.text = slip.goal;
+    _constraints.text = slip.constraints;
+    _doneWhen.text = slip.doneWhen;
     _body.text = slip.body;
+    final parent = slip.parentId.isEmpty
+        ? null
+        : await _service.getById(slip.parentId);
+    final children = await _service.childrenOf(slip.id);
+    if (!mounted) return;
     setState(() {
       _slip = slip;
+      _parent = parent;
+      _children = children;
       _dirty = false;
+      _contractOpen = slip.goal.trim().isNotEmpty ||
+          slip.constraints.trim().isNotEmpty ||
+          slip.doneWhen.trim().isNotEmpty;
     });
     _maybeFocusTitle();
     _maybeFocusChecklist();
@@ -196,6 +230,11 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     final slip = await _service.getById(widget.slipId);
     if (!mounted || slip == null || _dirty) return;
     if (_title.text != slip.title) _title.text = slip.title;
+    if (_goal.text != slip.goal) _goal.text = slip.goal;
+    if (_constraints.text != slip.constraints) {
+      _constraints.text = slip.constraints;
+    }
+    if (_doneWhen.text != slip.doneWhen) _doneWhen.text = slip.doneWhen;
     if (_body.text != slip.body) _body.text = slip.body;
     setState(() => _slip = slip);
   }
@@ -239,8 +278,21 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
       }
       return false;
     }
-    if (!_dirty && title == slip.title && _body.text == slip.body) return true;
-    return _persist(slip.copyWith(title: title, body: _body.text));
+    if (!_dirty &&
+        title == slip.title &&
+        _goal.text == slip.goal &&
+        _constraints.text == slip.constraints &&
+        _doneWhen.text == slip.doneWhen &&
+        _body.text == slip.body) {
+      return true;
+    }
+    return _persist(slip.copyWith(
+      title: title,
+      goal: _goal.text,
+      constraints: _constraints.text,
+      doneWhen: _doneWhen.text,
+      body: _body.text,
+    ));
   }
 
   Future<void> _addItem() async {
@@ -550,6 +602,22 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                   onDelete: () => unawaited(_removeItem(item.id)),
                   onRename: (text) => unawaited(_renameItem(item.id, text)),
                   onHandOff: () => unawaited(_handOffItem(slip, item)),
+                  onAssign: () => unawaited(_assignItem(item)),
+                  onUnassign: item.assigneeAgentId.isEmpty
+                      ? null
+                      : () => unawaited(_assignItem(item, clear: true)),
+                  onAccept: item.state == JadeSlipItemState.submitted
+                      ? () => unawaited(_service.acceptItem(
+                            id: slip.id,
+                            itemId: item.id,
+                            actorId: LocalUserIdentity.id,
+                            actorName: LocalUserIdentity.displayName,
+                          ))
+                      : null,
+                  onReturn: item.state == JadeSlipItemState.submitted
+                      ? () => unawaited(_returnItem(item))
+                      : null,
+                  onSplit: () => unawaited(_splitItem(item)),
                   onEditComplete: () {
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       if (mounted) _itemFocus.requestFocus();
@@ -564,6 +632,65 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                 hint: l10n.jadeSlip_itemHint,
                 onSubmit: () => unawaited(_addItem()),
               ),
+              if (_parent != null || _children.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                if (_parent != null)
+                  _FamilyLink(
+                    label: l10n.jadeSlip_parent,
+                    title: _parent!.title,
+                    onTap: () => _openSlip(_parent!.id),
+                  ),
+                for (final child in _children)
+                  _FamilyLink(
+                    label: l10n.jadeSlip_child,
+                    title: child.title,
+                    onTap: () => _openSlip(child.id),
+                  ),
+              ],
+              const SizedBox(height: 20),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Tooltip(
+                  message: l10n.jadeSlip_contractHint,
+                  child: TextButton.icon(
+                  onPressed: () =>
+                      setState(() => _contractOpen = !_contractOpen),
+                  icon: Icon(
+                    _contractOpen ? Icons.expand_less : Icons.expand_more,
+                    size: 18,
+                  ),
+                  label: Text(l10n.jadeSlip_contract),
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    foregroundColor: scheme.onSurfaceVariant,
+                    padding: EdgeInsets.zero,
+                  ),
+                  ),
+                ),
+              ),
+              if (_contractOpen) ...[
+                const SizedBox(height: 8),
+                _ContractField(
+                  controller: _goal,
+                  hint: l10n.jadeSlip_goalHint,
+                  label: l10n.jadeSlip_goal,
+                  onChanged: _onTextChanged,
+                ),
+                const SizedBox(height: 12),
+                _ContractField(
+                  controller: _constraints,
+                  hint: l10n.jadeSlip_constraintsHint,
+                  label: l10n.jadeSlip_constraints,
+                  onChanged: _onTextChanged,
+                ),
+                const SizedBox(height: 12),
+                _ContractField(
+                  controller: _doneWhen,
+                  hint: l10n.jadeSlip_doneWhenHint,
+                  label: l10n.jadeSlip_doneWhen,
+                  onChanged: _onTextChanged,
+                ),
+              ],
               const SizedBox(height: 28),
               _SectionLabel(label: l10n.jadeSlip_notes),
               const SizedBox(height: 8),
@@ -751,6 +878,95 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   Future<void> _handOffItem(JadeSlip slip, JadeSlipItem item) =>
       _dispatch(slip, focusItem: item);
 
+  /// 把这一项记到另一个 Agent 名下，不另开一轮对话。对方下次读玉简就能领走。
+  Future<void> _assignItem(JadeSlipItem item, {bool clear = false}) async {
+    if (clear) {
+      await _service.assignItem(
+        id: widget.slipId,
+        itemId: item.id,
+        assigneeAgentId: '',
+      );
+      widget.onChanged?.call();
+      return;
+    }
+    if (!mounted) return;
+    final picked = await showJadeSlipAgentPicker(
+      context,
+      agents: _agents,
+      currentAgentId: item.assigneeAgentId,
+    );
+    if (picked == null || picked.id.isEmpty) return;
+    final updated = await _service.assignItem(
+      id: widget.slipId,
+      itemId: item.id,
+      assigneeAgentId: picked.id,
+      assigneeAgentName: picked.name,
+    );
+    widget.onChanged?.call();
+    await JadeSlipWake.notify(updated, '已把一项交给 ${picked.name}');
+  }
+
+  Future<void> _returnItem(JadeSlipItem item) async {
+    final l10n = AppLocalizations.of(context);
+    final reason = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.jadeSlip_returnItem),
+        content: TextField(
+          controller: reason,
+          autofocus: true,
+          decoration: InputDecoration(hintText: l10n.jadeSlip_returnItem),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.common_cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.common_save),
+          ),
+        ],
+      ),
+    );
+    final text = reason.text.trim();
+    reason.dispose();
+    if (ok != true || text.isEmpty) return;
+    final updated = await _service.returnItem(
+      id: widget.slipId,
+      itemId: item.id,
+      reason: text,
+      actorId: LocalUserIdentity.id,
+      actorName: LocalUserIdentity.displayName,
+    );
+    widget.onChanged?.call();
+    await JadeSlipWake.notify(updated, '有一项被退回');
+  }
+
+  Future<void> _splitItem(JadeSlipItem item) async {
+    if (item.childSlipId.isNotEmpty) {
+      _openSlip(item.childSlipId);
+      return;
+    }
+    final child = await _service.splitItem(id: widget.slipId, itemId: item.id);
+    widget.onChanged?.call();
+    _openSlip(child.id);
+  }
+
+  void _openSlip(String slipId) {
+    final open = widget.onOpenSlip;
+    if (open != null) {
+      open(slipId);
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => JadeSlipEditorScreen(slipId: slipId),
+      ),
+    );
+  }
+
   Future<void> _dispatch(JadeSlip slip, {JadeSlipItem? focusItem}) async {
     if (!await _flush()) return;
     final latest = await _service.getById(widget.slipId);
@@ -825,6 +1041,85 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
         JadeSlipPriority.medium => l10n.jadeSlip_priorityMedium,
         JadeSlipPriority.high => l10n.jadeSlip_priorityHigh,
       };
+}
+
+class _FamilyLink extends StatelessWidget {
+  const _FamilyLink({
+    required this.label,
+    required this.title,
+    required this.onTap,
+  });
+
+  final String label;
+  final String title;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton(
+        onPressed: onTap,
+        style: TextButton.styleFrom(
+          visualDensity: VisualDensity.compact,
+          padding: EdgeInsets.zero,
+        ),
+        child: Text(
+          '$label · $title',
+          style: theme.textTheme.bodyMedium?.copyWith(color: scheme.primary),
+        ),
+      ),
+    );
+  }
+}
+
+class _ContractField extends StatelessWidget {
+  const _ContractField({
+    required this.controller,
+    required this.hint,
+    required this.onChanged,
+    this.label,
+  });
+
+  final TextEditingController controller;
+  final String hint;
+  final String? label;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return TextField(
+      controller: controller,
+      minLines: 1,
+      maxLines: 4,
+      keyboardType: TextInputType.multiline,
+      style: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        filled: true,
+        fillColor: scheme.surfaceContainerHighest,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: scheme.primary.withValues(alpha: 0.4)),
+        ),
+        contentPadding: const EdgeInsets.all(14),
+      ),
+      onChanged: (_) => onChanged(),
+    );
+  }
 }
 
 class _SectionLabel extends StatelessWidget {
@@ -1063,6 +1358,11 @@ class _ChecklistRow extends StatefulWidget {
     required this.onDelete,
     required this.onRename,
     required this.onHandOff,
+    this.onAssign,
+    this.onUnassign,
+    this.onAccept,
+    this.onReturn,
+    this.onSplit,
     this.onEditComplete,
   });
 
@@ -1073,6 +1373,13 @@ class _ChecklistRow extends StatefulWidget {
 
   /// 只把这一项交给 Agent 执行。
   final VoidCallback onHandOff;
+
+  /// 把这一项记到另一个 Agent 名下，不发送对话。
+  final VoidCallback? onAssign;
+  final VoidCallback? onUnassign;
+  final VoidCallback? onAccept;
+  final VoidCallback? onReturn;
+  final VoidCallback? onSplit;
 
   /// 回车保存后回调（用于把焦点移到「添加一项」）。
   final VoidCallback? onEditComplete;
@@ -1165,7 +1472,8 @@ class _ChecklistRowState extends State<_ChecklistRow> {
               width: 24,
               height: 24,
               child: Checkbox(
-                value: item.done,
+                value: item.state == JadeSlipItemState.accepted ||
+                    item.state == JadeSlipItemState.submitted,
                 onChanged: (v) => widget.onChanged(v ?? false),
                 visualDensity: VisualDensity.compact,
                 shape: RoundedRectangleBorder(
@@ -1199,15 +1507,62 @@ class _ChecklistRowState extends State<_ChecklistRow> {
                       onTap: _beginEdit,
                       child: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Text(
-                          item.text,
-                          style: theme.textTheme.bodyLarge?.copyWith(
-                            decoration:
-                                item.done ? TextDecoration.lineThrough : null,
-                            color: item.done
-                                ? scheme.onSurfaceVariant
-                                : scheme.onSurface,
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.text,
+                              style: theme.textTheme.bodyLarge?.copyWith(
+                                decoration: item.done
+                                    ? TextDecoration.lineThrough
+                                    : null,
+                                color: item.done
+                                    ? scheme.onSurfaceVariant
+                                    : scheme.onSurface,
+                              ),
+                            ),
+                            if (item.assigneeAgentName.isNotEmpty)
+                              Text(
+                                l10n.jadeSlip_itemAssignee(
+                                    item.assigneeAgentName),
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: scheme.primary,
+                                ),
+                              ),
+                            if (item.sessionId.isNotEmpty)
+                              GestureDetector(
+                                onTap: () => ChatNavigationService.instance
+                                    .openChannel(
+                                  channelId: item.sessionId,
+                                  agentId: item.actorId.isNotEmpty
+                                      ? item.actorId
+                                      : item.assigneeAgentId,
+                                  agentName: item.actorName.isNotEmpty
+                                      ? item.actorName
+                                      : item.assigneeAgentName,
+                                ),
+                                child: Text(
+                                  l10n.jadeSlip_itemSession,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: scheme.primary,
+                                  ),
+                                ),
+                              ),
+                            if (item.state == JadeSlipItemState.submitted)
+                              Text(
+                                l10n.jadeSlip_itemSubmitted,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: scheme.primary,
+                                ),
+                              ),
+                            if (item.blockedReason.isNotEmpty)
+                              Text(
+                                l10n.jadeSlip_itemBlocked(item.blockedReason),
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: scheme.error,
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                     ),
@@ -1228,6 +1583,11 @@ class _ChecklistRowState extends State<_ChecklistRow> {
                 icon: Icon(Icons.more_vert, color: scheme.onSurfaceVariant),
                 onSelected: (v) {
                   if (v == 'agent') widget.onHandOff();
+                  if (v == 'assign') widget.onAssign?.call();
+                  if (v == 'unassign') widget.onUnassign?.call();
+                  if (v == 'accept') widget.onAccept?.call();
+                  if (v == 'return') widget.onReturn?.call();
+                  if (v == 'split') widget.onSplit?.call();
                   if (v == 'edit') _beginEdit();
                   if (v == 'delete') widget.onDelete();
                 },
@@ -1236,6 +1596,33 @@ class _ChecklistRowState extends State<_ChecklistRow> {
                     value: 'agent',
                     child: Text(l10n.jadeSlip_run),
                   ),
+                  if (item.state == JadeSlipItemState.submitted)
+                    PopupMenuItem(
+                      value: 'accept',
+                      child: Text(l10n.jadeSlip_acceptItem),
+                    ),
+                  if (item.state == JadeSlipItemState.submitted)
+                    PopupMenuItem(
+                      value: 'return',
+                      child: Text(l10n.jadeSlip_returnItem),
+                    ),
+                  PopupMenuItem(
+                    value: 'split',
+                    child: Text(
+                      item.childSlipId.isEmpty
+                          ? l10n.jadeSlip_splitItem
+                          : l10n.jadeSlip_openChild,
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'assign',
+                    child: Text(l10n.jadeSlip_assignItem),
+                  ),
+                  if (widget.onUnassign != null)
+                    PopupMenuItem(
+                      value: 'unassign',
+                      child: Text(l10n.jadeSlip_unassignItem),
+                    ),
                   PopupMenuItem(
                     value: 'edit',
                     child: Text(l10n.common_edit),

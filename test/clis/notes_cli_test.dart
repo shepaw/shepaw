@@ -47,7 +47,7 @@ void main() {
     );
     final mid = await JadeSlipService.instance.getById(created.id);
     expect(mid!.status, JadeSlipStatus.inProgress);
-    expect(mid.doneCount, 1);
+    expect(mid.submittedCount, 1);
 
     await JadeSlipService.instance.removeItem(
       id: created.id,
@@ -55,9 +55,9 @@ void main() {
     );
     final trimmed = await JadeSlipService.instance.getById(created.id);
     expect(trimmed!.items.map((e) => e.id).toList(), ['a1']);
-    expect(trimmed.status, JadeSlipStatus.done);
+    expect(trimmed.status, JadeSlipStatus.needsReview);
 
-    await JadeSlipService.instance.complete(created.id);
+    await JadeSlipService.instance.acceptItem(id: created.id, itemId: 'a1');
     final done = await JadeSlipService.instance.getById(created.id);
     expect(done!.status, JadeSlipStatus.done);
     expect(done.allItemsDone, isTrue);
@@ -167,7 +167,7 @@ void main() {
 
     final completed = await NotesCompleteCommand().execute({'id': slip});
     expect(completed['success'], isTrue);
-    expect((completed['slip'] as Map)['status'], 'done');
+    expect((completed['slip'] as Map)['status'], 'needs_review');
 
     final denied = await asAgent(
       'agent-other',
@@ -181,5 +181,75 @@ void main() {
     );
     expect(deleted['success'], isTrue);
     expect(await JadeSlipService.instance.list(includeArchived: true), isEmpty);
+  });
+
+  test('notes CLI writes the goal and assigns an item to another agent', () async {
+    final tasked = await NotesAddCommand().execute({
+      'title': 'Plan trip',
+      'goal': '订好下周行程',
+      'constraints': '预算 3000',
+      'done-when': '日程写进备注',
+      'items': '查机票',
+    });
+    expect(tasked['success'], isTrue);
+    final taskedId = (tasked['slip'] as Map)['id'] as String;
+    expect((tasked['slip'] as Map)['goal'], '订好下周行程');
+    expect((tasked['slip'] as Map)['done_when'], '日程写进备注');
+
+    final itemId =
+        ((tasked['slip'] as Map)['items'] as List).cast<Map>().first['id']
+            as String;
+    final assigned = await NotesItemCommand().execute({
+      'id': taskedId,
+      'item': itemId,
+      'assignee': 'agent-b',
+      'assignee-name': 'Beta',
+    });
+    expect(assigned['action'], 'assigned');
+    final assignedItem =
+        ((assigned['slip'] as Map)['items'] as List).cast<Map>().first;
+    expect(assignedItem['assignee_agent_name'], 'Beta');
+
+    final cleared = await NotesItemCommand().execute({
+      'id': taskedId,
+      'item': itemId,
+      'assignee': '',
+    });
+    expect(cleared['action'], 'unassigned');
+    expect(
+      ((cleared['slip'] as Map)['items'] as List)
+          .cast<Map>()
+          .first['assignee_agent_id'],
+      isNull,
+    );
+  });
+
+  test('split a item into a child slip and accepting the child submits the parent item', () async {
+    final parent = await JadeSlipService.instance.create(
+      title: '出行',
+      items: [JadeSlipItem(id: 'flight', text: '订机票')],
+    );
+    final split = await NotesSplitCommand().execute({
+      'id': parent.id,
+      'item': 'flight',
+    });
+    expect(split['success'], isTrue);
+    final childId = split['child_id'] as String;
+
+    final got = await NotesGetCommand().execute({'id': parent.id});
+    final children = (got['slip'] as Map)['children'] as List;
+    expect(children.single['id'], childId);
+
+    final childGot = await NotesGetCommand().execute({'id': childId});
+    expect((childGot['slip'] as Map)['parent_id'], parent.id);
+    expect((childGot['slip'] as Map)['source_item_id'], 'flight');
+
+    final accepted = await NotesAcceptCommand().execute({'id': childId});
+    expect(accepted['success'], isTrue);
+    expect((accepted['slip'] as Map)['status'], 'done');
+
+    final parentAfter = await JadeSlipService.instance.getById(parent.id);
+    expect(parentAfter!.items.single.state, JadeSlipItemState.submitted);
+    expect(parentAfter.status, JadeSlipStatus.needsReview);
   });
 }

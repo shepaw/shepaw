@@ -160,10 +160,32 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
     if (_lastWide) return;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => JadeSlipEditorScreen(slipId: slip.id),
+        builder: (_) => JadeSlipEditorScreen(
+          slipId: slip.id,
+          onOpenSlip: _openRelated,
+        ),
       ),
     );
     if (mounted) unawaited(_load());
+  }
+
+  void _openRelated(String slipId) {
+    final items = _items;
+    JadeSlip? slip;
+    if (items != null) {
+      for (final item in items) {
+        if (item.id == slipId) slip = item;
+      }
+    }
+    if (slip != null) {
+      unawaited(_openEditor(slip));
+      return;
+    }
+    unawaited(() async {
+      final loaded = await _service.getById(slipId);
+      if (!mounted || loaded == null) return;
+      await _openEditor(loaded);
+    }());
   }
 
   void _toggleSearch() {
@@ -303,6 +325,7 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
                                       selected.id == _focusChecklistId,
                                   focusTitle: selected.id == _focusTitleId,
                                   onChanged: () => unawaited(_load()),
+                                  onOpenSlip: _openRelated,
                                 ),
                         ),
                       ],
@@ -624,6 +647,16 @@ class _SlipRow extends StatelessWidget {
                         const SizedBox(height: 3),
                         Text(
                           meta.join(' · '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ] else if (slip.goal.trim().isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          slip.goal.trim(),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodySmall?.copyWith(

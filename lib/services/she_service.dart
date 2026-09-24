@@ -678,7 +678,10 @@ ${parts.join('\n')}''';
 
     if (allowed('notes')) {
       parts.add('''### Jade Slips (玉简)
-- The master's to-do slips → `shepaw notes list` (`--status open|in_progress|done`), `shepaw notes get --id <id>`
+- Shared contract between the person and agents. Goal, constraints, and done-when live on the slip; checklist items can be handed to another agent.
+- Read → `shepaw notes list` / `shepaw notes get --id <id>`
+- Write the goal → `shepaw notes update --id <id> --goal "..." --constraints "..." --done-when "..."`
+- Hand one item to another agent → `shepaw notes item --id <id> --item <itemId> --assignee <agent_id>`
 - Finished a step → `shepaw notes item --id <id> --item <itemId> --done true`; whole slip → `shepaw notes complete --id <id>`''');
     }
 
