@@ -197,4 +197,7 @@ class CliExecutionGate {
 }
 
 /// Default extra allowlist for non-admin group members (namespace-level).
-const kGroupMemberCliAllowlist = {'store', 'help'};
+///
+/// `notes`（玉简）是协作动作——勾选清单不是写个人认知袋，所以成员也有。
+/// `notes.delete` 已由 `kCliApprovalRequiredCommands` 单独拦，不必再收窄。
+const kGroupMemberCliAllowlist = {'store', 'help', 'notes'};

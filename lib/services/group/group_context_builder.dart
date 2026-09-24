@@ -193,9 +193,12 @@ class GroupContextBuilder {
         'note':
             'Agent Hub shepaw CLI on this host. Local pouch (URI device = '
             'Hub) uses shepaw store read/write/list. Foreign store:// and '
-            'other namespaces (os/chat/context/events, except she-only) are '
-            'forwarded to the paired App gate. Do not use hub.cli.execute. '
-            'Pass store:// URIs verbatim.',
+            'other namespaces (os/chat/context/events/notes, except she-only) '
+            'are forwarded to the paired App gate. Do not use hub.cli.execute. '
+            'Pass store:// URIs verbatim. '
+            'Jade slips (玉简, the user\'s to-do slips) are namespace "notes": '
+            'shepaw notes list / notes get --id <id> / notes item --id <id> '
+            '--item <itemId> --done true / notes complete --id <id>.',
         'params': {
           'namespace': 'store',
           'subcommand': 'write',
@@ -211,7 +214,10 @@ class GroupContextBuilder {
             'device via this ACP request. Identity is the authenticated '
             'session — do not send agent_id, owner, or channel_id. Pass '
             'session_id from agent.chat. This is ACP only; Agent Hub engines '
-            'use the PATH shepaw shim instead.',
+            'use the PATH shepaw shim instead. '
+            'Jade slips (玉简, the user\'s to-do slips) are namespace "notes": '
+            'list / get (flags.id) / item (flags.id + flags.item + '
+            'flags.done=true) / complete (flags.id).',
         'params': {
           'namespace': 'store',
           'subcommand': 'write',

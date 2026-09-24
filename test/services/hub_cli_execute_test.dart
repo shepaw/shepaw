@@ -106,11 +106,11 @@ void main() {
 
   /// P0-3 回归：远端 ACP 群成员此前没有角色收敛。
   ///
-  /// 同一个群、同一个非管理员角色，本地 agent 被限到 `{store, help}`，远端
+  /// 同一个群、同一个非管理员角色，本地 agent 被限到 `kGroupMemberCliAllowlist`，远端
   /// agent 却拿到 `enabledCliCommands` 允许的全部命令——而它默认是「不受限」，
   /// 所以默认配置下远端成员能在群里跑 `os.command.exec`。
   group('HubCliExecute.extraAllowlistFor', () {
-    test('群里的非管理员成员被收窄到 store/help', () {
+    test('群里的非管理员成员被收窄到 kGroupMemberCliAllowlist', () {
       expect(
         HubCliExecute.extraAllowlistFor(_groupChannel(), 'member-1'),
         kGroupMemberCliAllowlist,

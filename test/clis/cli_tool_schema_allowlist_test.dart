@@ -121,12 +121,14 @@ void main() {
       expect(_description(tool), contains('subcommands'));
     });
 
-    test('claudeTool extraAllowlist trims to store and help', () {
+    test('claudeTool extraAllowlist trims to store/notes and help', () {
       final tool = ShepawCLI.instance.claudeTool(
         extraAllowlist: kGroupMemberCliAllowlist,
       );
-      expect(_namespaceEnum(tool), ['store', 'help']);
-      expect(_description(tool), contains('role: help, store'));
+      // schema 枚举跟命名空间注册顺序（store → notes → … → help）。
+      expect(_namespaceEnum(tool), ['store', 'notes', 'help']);
+      // 描述里的 role 是字典序，跟上面的 schema 顺序不是一回事。
+      expect(_description(tool), contains('role: help, notes, store'));
     });
   });
 }

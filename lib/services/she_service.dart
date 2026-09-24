@@ -476,6 +476,7 @@ $_artifactStorePreferenceSection
 ${buildAgentsDiscoveryGuideBlock()}
 - Complex multi-step plans: `shepaw workflow --help` (create, then wait for master approval — do not start executing)
 - Groups: `shepaw chat group --help` (you are always admin on create)
+- Jade slips (玉简, the master's to-dos): `shepaw notes --help` (list / get / item --done true / complete)
 - App UI how-tos: skill `skill_shepaw_app_usage_guide` (or `shepaw skills detail --name app-usage-guide`)
 - AI models & providers: `shepaw models --help` (list / providers / add / update / remove / agent-main)
 - OS: `shepaw os --help` — file tools only for real OS paths the user named; prefer store for artifacts. Place: `shepaw os location.get`''';
@@ -673,6 +674,12 @@ ${parts.join('\n')}''';
 
     if (allowed('store')) {
       parts.add(_artifactStorePreferenceSection);
+    }
+
+    if (allowed('notes')) {
+      parts.add('''### Jade Slips (玉简)
+- The master's to-do slips → `shepaw notes list` (`--status open|in_progress|done`), `shepaw notes get --id <id>`
+- Finished a step → `shepaw notes item --id <id> --item <itemId> --done true`; whole slip → `shepaw notes complete --id <id>`''');
     }
 
     if (allowed('vision')) {

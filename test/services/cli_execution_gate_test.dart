@@ -337,11 +337,12 @@ void main() {
           enabledCliCommands: const {'store.read', 'os.command.exec'},
           extraAllowlist: kGroupMemberCliAllowlist,
         ),
+        // notes 在成员轴里、但不在这个 agent 的 per-agent 轴里 —— 交集把它去掉。
         {'store'},
       );
       expect(
         await helpNamespaces(extraAllowlist: kGroupMemberCliAllowlist),
-        {'store'},
+        {'store', 'notes'},
       );
     });
 
