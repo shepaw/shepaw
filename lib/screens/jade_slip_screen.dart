@@ -47,7 +47,26 @@ class JadeSlipScreen extends StatefulWidget {
   State<JadeSlipScreen> createState() => _JadeSlipScreenState();
 }
 
-enum _JadeSlipFilter { open, doing, done, all }
+enum JadeSlipListFilter { open, doing, done, all }
+
+/// 列表筛选。未完成是还没验收通过的；进行中是已经动过、还没验收的。
+bool jadeSlipMatchesListFilter(JadeSlipStatus status, JadeSlipListFilter filter) {
+  switch (filter) {
+    case JadeSlipListFilter.open:
+      return status == JadeSlipStatus.open ||
+          status == JadeSlipStatus.inProgress ||
+          status == JadeSlipStatus.needsReview ||
+          status == JadeSlipStatus.blocked;
+    case JadeSlipListFilter.doing:
+      return status == JadeSlipStatus.inProgress ||
+          status == JadeSlipStatus.needsReview ||
+          status == JadeSlipStatus.blocked;
+    case JadeSlipListFilter.done:
+      return status == JadeSlipStatus.done;
+    case JadeSlipListFilter.all:
+      return true;
+  }
+}
 
 class _JadeSlipScreenState extends State<JadeSlipScreen> {
   final _service = JadeSlipService.instance;
@@ -55,7 +74,7 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
   final _searchFocus = FocusNode();
 
   List<JadeSlip>? _items;
-  _JadeSlipFilter _filter = _JadeSlipFilter.all;
+  JadeSlipListFilter _filter = JadeSlipListFilter.all;
   String? _selectedId;
   String? _focusChecklistId;
   String? _focusTitleId;
@@ -93,24 +112,18 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
 
   Future<void> _load({bool strict = false}) async {
     final serial = ++_loadSerial;
-    final includeArchived = _filter == _JadeSlipFilter.all;
-    JadeSlipStatus? status;
-    switch (_filter) {
-      case _JadeSlipFilter.open:
-        status = JadeSlipStatus.open;
-      case _JadeSlipFilter.doing:
-        status = JadeSlipStatus.inProgress;
-      case _JadeSlipFilter.done:
-        status = JadeSlipStatus.done;
-      case _JadeSlipFilter.all:
-        status = null;
-    }
+    final includeArchived = _filter == JadeSlipListFilter.all;
     final selectedId = _selectedId;
     var items = await _service.list(
-      status: status,
       query: _search.text,
       includeArchived: includeArchived,
     );
+    if (_filter != JadeSlipListFilter.all) {
+      items = [
+        for (final slip in items)
+          if (jadeSlipMatchesListFilter(slip.status, _filter)) slip,
+      ];
+    }
     if (!mounted || serial != _loadSerial) return;
     var nextSelected = selectedId;
     if (selectedId != null && items.every((s) => s.id != selectedId)) {
@@ -243,7 +256,7 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
   List<Widget> _titleActions(AppLocalizations l10n) {
     final muted = Theme.of(context).colorScheme.onSurfaceVariant;
     Color tint(bool on) => on ? AppColors.primary : muted;
-    final filterOn = _filterOpen || _filter != _JadeSlipFilter.all;
+    final filterOn = _filterOpen || _filter != JadeSlipListFilter.all;
     return [
       IconButton(
         tooltip: l10n.common_search,
@@ -442,7 +455,7 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                for (final f in _JadeSlipFilter.values)
+                for (final f in JadeSlipListFilter.values)
                   _FilterTag(
                     label: _filterLabel(l10n, f),
                     selected: _filter == f,
@@ -471,11 +484,11 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
     );
   }
 
-  String _filterLabel(AppLocalizations l10n, _JadeSlipFilter f) => switch (f) {
-        _JadeSlipFilter.open => l10n.jadeSlip_filterOpen,
-        _JadeSlipFilter.doing => l10n.jadeSlip_filterDoing,
-        _JadeSlipFilter.done => l10n.jadeSlip_filterDone,
-        _JadeSlipFilter.all => l10n.jadeSlip_filterAll,
+  String _filterLabel(AppLocalizations l10n, JadeSlipListFilter f) => switch (f) {
+        JadeSlipListFilter.open => l10n.jadeSlip_filterOpen,
+        JadeSlipListFilter.doing => l10n.jadeSlip_filterDoing,
+        JadeSlipListFilter.done => l10n.jadeSlip_filterDone,
+        JadeSlipListFilter.all => l10n.jadeSlip_filterAll,
       };
 
   Widget _buildEmpty(AppLocalizations l10n) {

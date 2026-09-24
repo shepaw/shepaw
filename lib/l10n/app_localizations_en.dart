@@ -6429,7 +6429,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Pick a slip on the left, or tap + to create one';
 
   @override
-  String get jadeSlip_filterOpen => 'Not started';
+  String get jadeSlip_filterOpen => 'Not done';
 
   @override
   String get jadeSlip_filterDoing => 'In progress';

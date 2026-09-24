@@ -44,6 +44,41 @@ void main() {
     expect(next.map((s) => s.id), ['a']);
   });
 
+  test('待验收出现在未完成和进行中，不出现在已完成', () {
+    expect(
+      jadeSlipMatchesListFilter(
+        JadeSlipStatus.needsReview,
+        JadeSlipListFilter.open,
+      ),
+      isTrue,
+    );
+    expect(
+      jadeSlipMatchesListFilter(
+        JadeSlipStatus.needsReview,
+        JadeSlipListFilter.doing,
+      ),
+      isTrue,
+    );
+    expect(
+      jadeSlipMatchesListFilter(
+        JadeSlipStatus.needsReview,
+        JadeSlipListFilter.done,
+      ),
+      isFalse,
+    );
+    expect(
+      jadeSlipMatchesListFilter(
+        JadeSlipStatus.blocked,
+        JadeSlipListFilter.doing,
+      ),
+      isTrue,
+    );
+    expect(
+      jadeSlipMatchesListFilter(JadeSlipStatus.done, JadeSlipListFilter.open),
+      isFalse,
+    );
+  });
+
   test('query matches title, body, and checklist text', () {
     final slip = const JadeSlip(
       id: 'a',

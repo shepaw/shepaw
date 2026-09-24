@@ -3198,7 +3198,7 @@
   "jadeSlip_untitled": "Untitled slip",
   "jadeSlip_captureHint": "Capture a to-do…",
   "jadeSlip_pickHint": "Pick a slip on the left, or tap + to create one",
-  "jadeSlip_filterOpen": "Not started",
+  "jadeSlip_filterOpen": "Not done",
   "jadeSlip_filterDoing": "In progress",
   "jadeSlip_filterDone": "Done",
   "jadeSlip_filterAll": "All",
