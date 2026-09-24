@@ -346,17 +346,17 @@ class ScopeCard {
               ' 或 `--file <path>` / `--content-base64`（可选 `--task` / `--desc` / `--space public`）；'
               '**不要**传 `agent_id` / `owner` / 个人 channel，由系统落到本作用域袋';
 
-  /// 玉简（notes 命名空间）：用户的待办本，Agent 领取 / 勾选 / 完成。
+  /// 玉简（slip 命名空间）：用户的待办本，Agent 领取 / 勾选 / 完成。
   ///
   /// 与 `_storeReadLine` 同款两态——`hubStoreCli` 也走 shim，落在同一支。
   String get _notesLine => _hubCli
-      ? '- 玉简待办: ACP `hub.cli.execute` `{namespace:"notes",'
+      ? '- 玉简: ACP `hub.cli.execute` `{namespace:"slip",'
           'subcommand:"list"},$_hubSessionId}` · 读: subcommand=get flags.id · '
           '勾选: subcommand=item flags.id+flags.item+flags.done=true · '
           '交给另一个 Agent: flags.item+flags.assignee'
-      : '- 玉简待办: `shepaw notes list` / `notes get --id <id>` / '
-          '`notes item --id <id> --item <itemId> --done true` / '
-          '`notes item --id <id> --item <itemId> --assignee <agent_id>`';
+      : '- 玉简: `shepaw slip list` / `slip get --id <id>` / '
+          '`slip item --id <id> --item <itemId> --done true` / '
+          '`slip item --id <id> --item <itemId> --assignee <agent_id>`';
 
   String get _memoryWriteLine => _hubCli
       ? '- 写记忆: ACP `hub.cli.execute` `{namespace:"context",'

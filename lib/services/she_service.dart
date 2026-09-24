@@ -476,7 +476,7 @@ $_artifactStorePreferenceSection
 ${buildAgentsDiscoveryGuideBlock()}
 - Complex multi-step plans: `shepaw workflow --help` (create, then wait for master approval — do not start executing)
 - Groups: `shepaw chat group --help` (you are always admin on create)
-- Jade slips (玉简, the master's to-dos): `shepaw notes --help` (list / get / item --done true / complete)
+- Jade slips (玉简, the master's to-dos): `shepaw slip --help` (list / get / item --done true / complete)
 - App UI how-tos: skill `skill_shepaw_app_usage_guide` (or `shepaw skills detail --name app-usage-guide`)
 - AI models & providers: `shepaw models --help` (list / providers / add / update / remove / agent-main)
 - OS: `shepaw os --help` — file tools only for real OS paths the user named; prefer store for artifacts. Place: `shepaw os location.get`''';
@@ -676,13 +676,13 @@ ${parts.join('\n')}''';
       parts.add(_artifactStorePreferenceSection);
     }
 
-    if (allowed('notes')) {
+    if (allowed('slip')) {
       parts.add('''### Jade Slips (玉简)
 - Shared contract between the person and agents. Goal, constraints, and done-when live on the slip; checklist items can be handed to another agent.
-- Read → `shepaw notes list` / `shepaw notes get --id <id>`
-- Write the goal → `shepaw notes update --id <id> --goal "..." --constraints "..." --done-when "..."`
-- Hand one item to another agent → `shepaw notes item --id <id> --item <itemId> --assignee <agent_id>`
-- Finished a step → `shepaw notes item --id <id> --item <itemId> --done true`; whole slip → `shepaw notes complete --id <id>`''');
+- Read → `shepaw slip list` / `shepaw slip get --id <id>`
+- Write the goal → `shepaw slip update --id <id> --goal "..." --constraints "..." --done-when "..."`
+- Hand one item to another agent → `shepaw slip item --id <id> --item <itemId> --assignee <agent_id>`
+- Finished a step → `shepaw slip item --id <id> --item <itemId> --done true`; whole slip → `shepaw slip complete --id <id>`''');
     }
 
     if (allowed('vision')) {

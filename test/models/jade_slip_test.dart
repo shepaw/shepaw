@@ -86,8 +86,8 @@ Buy tickets
     final prompt = slip.toAgentPrompt();
     expect(prompt, contains('id=slip-1'));
     expect(prompt, contains('item=ab12cd34'));
-    expect(prompt, contains('shepaw notes item'));
-    expect(prompt, contains('shepaw notes accept'));
+    expect(prompt, contains('shepaw slip item'));
+    expect(prompt, contains('shepaw slip accept'));
     expect(prompt, contains('--assignee'));
   });
 
@@ -160,7 +160,7 @@ Buy tickets
     expect(prompt, contains('待办 2/3 项'));
     expect(prompt, contains('item=open1'));
     expect(prompt, isNot(contains('item=done1')));
-    expect(prompt, contains('shepaw notes accept'));
+    expect(prompt, contains('shepaw slip accept'));
   });
 
   /// 单项派发（清单项菜单）：只给这一项，且不能建议 complete——
@@ -184,8 +184,8 @@ Buy tickets
     );
     expect(prompt, contains('item=itemB'));
     expect(prompt, isNot(contains('item=itemA')));
-    expect(prompt, contains('shepaw notes item'));
-    expect(prompt, contains('shepaw notes comment'));
+    expect(prompt, contains('shepaw slip item'));
+    expect(prompt, contains('shepaw slip comment'));
   });
 
   /// 待办为空但清单非空：如实说明，别让 Agent 以为没有清单。

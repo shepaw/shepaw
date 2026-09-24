@@ -61,7 +61,7 @@ Set<String>? cliIntersectAllowlists(Set<String>? a, Set<String>? b) {
 const kCliApprovalExemptNamespaces = {
   'help',
   'store',
-  'notes',
+  'slip',
 };
 
 /// Commands that still need a tap even when their namespace is exempt.
@@ -70,7 +70,7 @@ const kCliApprovalExemptNamespaces = {
 /// path into the bag — that is closer to `os.file.read` than an in-bag write.
 const kCliApprovalRequiredCommands = {
   'store.declare',
-  'notes.delete',
+  'slip.delete',
 };
 
 /// Whether [commandId] is exempt from the per-agent approval switch.

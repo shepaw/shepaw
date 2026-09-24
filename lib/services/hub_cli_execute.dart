@@ -113,8 +113,8 @@ class HubCliExecute {
             'turn if omitted). This is ACP only; Agent Hub engines use '
             'the PATH shepaw shim (local store / App-forwarded CLI), '
             'not this method. '
-            'Jade slips (玉简, the user\'s to-do slips in Nexus Pouch) live '
-            'under the same method: namespace="notes" — list / get '
+            'Jade slips (玉简) live '
+            'under the same method: namespace="slip" — list / get '
             '(flags.id) / item (flags.id + flags.item + flags.done=true) / '
             'complete (flags.id). Prefer it over ad-hoc chat when asked to '
             'do or tick off the user\'s to-dos.',

@@ -50,7 +50,7 @@ class JadeSlip {
   final JadeSlipPriority priority;
   final List<JadeSlipItem> items;
 
-  /// 过程留言：用户在 App 里写、Agent 用 `shepaw notes comment` 追加。
+  /// 过程留言：用户在 App 里写、Agent 用 `shepaw slip comment` 追加。
   final List<JadeSlipComment> comments;
 
   final List<JadeSlipAttachment> attachments;
@@ -392,7 +392,7 @@ class JadeSlip {
             : items;
     final buf = StringBuffer(
       '玉简「$title」（id=$id），待办 ${openItems.length}/$itemCount 项。'
-      '请 shepaw notes get --id $id 现读，不要依赖对话里的旧副本。',
+      '请 shepaw slip get --id $id 现读，不要依赖对话里的旧副本。',
     )
       ..writeln()
       ..writeln('status: ${status.wire}')
@@ -449,22 +449,22 @@ class JadeSlip {
         ..writeln(notes);
     }
     if (comments.isNotEmpty) {
-      buf.writeln('comments: ${comments.length} 条，用 notes get 查看，不在这里展开');
+      buf.writeln('comments: ${comments.length} 条，用 slip get 查看，不在这里展开');
     }
     buf
       ..writeln()
       ..writeln('人和 Agent、Agent 与 Agent 写回同一条玉简：')
-      ..writeln('- shepaw notes get --id $id')
+      ..writeln('- shepaw slip get --id $id')
       ..writeln(
-          '- shepaw notes item --id $id --item <itemId> --done true  （提交，等验收）')
+          '- shepaw slip item --id $id --item <itemId> --done true  （提交，等验收）')
       ..writeln(
-          '- shepaw notes item --id $id --item <itemId> --assignee <agent_id>')
+          '- shepaw slip item --id $id --item <itemId> --assignee <agent_id>')
       ..writeln(
-          '- shepaw notes item --id $id --item <itemId> --block --reason "..."')
+          '- shepaw slip item --id $id --item <itemId> --block --reason "..."')
       ..writeln(
-          '- shepaw notes item --id $id --item <itemId> --evidence <store-uri>')
-      ..writeln('- shepaw notes accept --id $id --item <itemId>  （人验收）')
-      ..writeln('- shepaw notes comment --id $id --item <itemId> --text "进度"');
+          '- shepaw slip item --id $id --item <itemId> --evidence <store-uri>')
+      ..writeln('- shepaw slip accept --id $id --item <itemId>  （人验收）')
+      ..writeln('- shepaw slip comment --id $id --item <itemId> --text "进度"');
     return buf.toString();
   }
 }

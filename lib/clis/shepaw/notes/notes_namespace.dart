@@ -17,13 +17,13 @@ class NotesNamespace extends CliNamespace {
   NotesNamespace._();
 
   @override
-  String get namespace => 'notes';
+  String get namespace => 'slip';
 
   @override
   String get description =>
       'Jade slips (玉简): the shared contract between a person and agents. '
       'The human writes the goal; agents check items off and hand an item '
-      'to another agent with notes item --assignee. Prefer this over ad-hoc '
+      'to another agent with slip item --assignee. Prefer this over ad-hoc '
       'chat when work must stay visible after the session ends.';
 
   @override
@@ -117,7 +117,7 @@ class NotesListCommand extends CliCommand {
 
   @override
   String get usage =>
-      'shepaw notes list [--status open|in_progress|done|all] [--query <text>]';
+      'shepaw slip list [--status open|in_progress|done|all] [--query <text>]';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
@@ -142,7 +142,7 @@ class NotesListCommand extends CliCommand {
       'slips': [for (final s in shown) _slipJson(s)],
       'hint': shown.isEmpty
           ? 'No matching jade slips.'
-          : 'Use shepaw notes get --id <id> then notes item / notes complete.',
+          : 'Use shepaw slip get --id <id> then slip item / slip complete.',
     };
   }
 }
@@ -153,10 +153,10 @@ class NotesGetCommand extends CliCommand {
 
   @override
   String get description =>
-      'Get one jade slip including checklist item ids for notes item';
+      'Get one jade slip including checklist item ids for slip item';
 
   @override
-  String get usage => 'shepaw notes get --id <id>';
+  String get usage => 'shepaw slip get --id <id>';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
@@ -191,7 +191,7 @@ class NotesAddCommand extends CliCommand {
 
   @override
   String get usage =>
-      'shepaw notes add --title "Book flights" '
+      'shepaw slip add --title "Book flights" '
       '[--goal "..."] [--constraints "..."] [--done-when "..."] '
       '[--body "..."] [--items "compare prices;buy tickets"] '
       '[--priority low|medium|high]';
@@ -241,7 +241,7 @@ class NotesUpdateCommand extends CliCommand {
 
   @override
   String get usage =>
-      'shepaw notes update --id <id> [--title t] [--body b] '
+      'shepaw slip update --id <id> [--title t] [--body b] '
       '[--goal g] [--constraints c] [--done-when d] '
       '[--status open|in_progress|done|archived] [--priority high] '
       '[--assignee <agent_id>] [--due <iso-or-ms>]';
@@ -313,7 +313,7 @@ class NotesSplitCommand extends CliCommand {
       'that item on the parent.';
 
   @override
-  String get usage => 'shepaw notes split --id <slipId> --item <itemId>';
+  String get usage => 'shepaw slip split --id <slipId> --item <itemId>';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
@@ -353,10 +353,10 @@ class NotesItemCommand extends CliCommand {
 
   @override
   String get usage =>
-      'shepaw notes item --id <slipId> --item <itemId> --done true\n'
-      'shepaw notes item --id <slipId> --item <itemId> --block --reason "..."\n'
-      'shepaw notes item --id <slipId> --item <itemId> --evidence <uri>\n'
-      'shepaw notes item --id <slipId> --item <itemId> --assignee <agent_id>';
+      'shepaw slip item --id <slipId> --item <itemId> --done true\n'
+      'shepaw slip item --id <slipId> --item <itemId> --block --reason "..."\n'
+      'shepaw slip item --id <slipId> --item <itemId> --evidence <uri>\n'
+      'shepaw slip item --id <slipId> --item <itemId> --assignee <agent_id>';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
@@ -479,7 +479,7 @@ class NotesAcceptCommand extends CliCommand {
 
   @override
   String get usage =>
-      'shepaw notes accept --id <slipId> [--item <itemId>]';
+      'shepaw slip accept --id <slipId> [--item <itemId>]';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
@@ -531,9 +531,9 @@ class NotesCommentCommand extends CliCommand {
 
   @override
   String get usage =>
-      'shepaw notes comment --id <slipId> --text "已改完，待验证"\n'
-      'shepaw notes comment --id <slipId>\n'
-      'shepaw notes comment --id <slipId> --comment <commentId> --delete';
+      'shepaw slip comment --id <slipId> --text "已改完，待验证"\n'
+      'shepaw slip comment --id <slipId>\n'
+      'shepaw slip comment --id <slipId> --comment <commentId> --delete';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
@@ -613,8 +613,8 @@ class NotesAttachCommand extends CliCommand {
 
   @override
   String get usage =>
-      'shepaw notes attach --id <slipId> --file /path/to/file\n'
-      'shepaw notes attach --id <slipId> --uri store://files/<device>/...';
+      'shepaw slip attach --id <slipId> --file /path/to/file\n'
+      'shepaw slip attach --id <slipId> --uri store://files/<device>/...';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
@@ -665,7 +665,7 @@ class NotesDetachCommand extends CliCommand {
 
   @override
   String get usage =>
-      'shepaw notes detach --id <slipId> --attachment <attachmentId>';
+      'shepaw slip detach --id <slipId> --attachment <attachmentId>';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
@@ -701,7 +701,7 @@ class NotesCompleteCommand extends CliCommand {
       'Mark the whole jade slip done (all checklist items checked)';
 
   @override
-  String get usage => 'shepaw notes complete --id <id>';
+  String get usage => 'shepaw slip complete --id <id>';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
@@ -725,7 +725,7 @@ class NotesDeleteCommand extends CliCommand {
       'Delete a jade slip (only the user or She)';
 
   @override
-  String get usage => 'shepaw notes delete --id <id>';
+  String get usage => 'shepaw slip delete --id <id>';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
@@ -737,7 +737,7 @@ class NotesDeleteCommand extends CliCommand {
         actor != LocalUserIdentity.id) {
       return {
         'error': 'Permission denied: only the user or She can delete jade slips. '
-            'Mark it done with notes complete instead.',
+            'Mark it done with slip complete instead.',
       };
     }
     final existing = await JadeSlipService.instance.getById(id);

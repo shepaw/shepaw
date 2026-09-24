@@ -43,10 +43,10 @@ void main() {
       expect(cliCommandApprovalExempt('store'), isTrue);
       expect(cliCommandApprovalExempt('store.events'), isTrue);
       expect(cliCommandApprovalExempt('store.spaces'), isTrue);
-      expect(cliCommandApprovalExempt('notes.list'), isTrue);
-      expect(cliCommandApprovalExempt('notes.item'), isTrue);
-      expect(cliCommandApprovalExempt('notes.complete'), isTrue);
-      expect(cliCommandApprovalExempt('notes.delete'), isFalse);
+      expect(cliCommandApprovalExempt('slip.list'), isTrue);
+      expect(cliCommandApprovalExempt('slip.item'), isTrue);
+      expect(cliCommandApprovalExempt('slip.complete'), isTrue);
+      expect(cliCommandApprovalExempt('slip.delete'), isFalse);
       expect(cliCommandApprovalExempt('store.declare'), isFalse);
       expect(
         cliCommandApprovalExempt(
@@ -342,7 +342,7 @@ void main() {
       );
       expect(
         await helpNamespaces(extraAllowlist: kGroupMemberCliAllowlist),
-        {'store', 'notes'},
+        {'store', 'slip'},
       );
     });
 

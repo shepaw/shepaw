@@ -22,7 +22,7 @@ class JadeSlipWake {
     final agents = getIt<RemoteAgentService>();
     final text =
         '玉简「${slip.title}」（id=${slip.id}）$reason。待办 ${slip.openItems.length} 项。'
-        '请 shepaw notes get --id ${slip.id}';
+        '请 shepaw slip get --id ${slip.id}';
     for (final id in ids) {
       try {
         final agent = await agents.getAgentById(id);

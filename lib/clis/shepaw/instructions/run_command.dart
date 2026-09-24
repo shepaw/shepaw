@@ -52,7 +52,7 @@ class RunInstructionCommand extends CliCommand {
       sourceInstructionId: item.id,
     );
     final tracked = '这次执行记在玉简「${slip.title}」（id=${slip.id}）。'
-        '进度用 shepaw notes 写回，不要只留在对话里。\n${item.content}';
+        '进度用 shepaw slip 写回，不要只留在对话里。\n${item.content}';
 
     // 所属 agent 是当前执行者或 She → 就地执行。
     if (ownerId == currentAgent || ownerId == SheService.sheId) {
