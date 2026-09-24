@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../theme/app_theme.dart';
 import 'avatar_local_file.dart'
     if (dart.library.html) 'avatar_local_file_web.dart' as local_file;
 
@@ -15,6 +16,10 @@ import 'avatar_local_file.dart'
 ///   fallback: Text('A', style: TextStyle(fontSize: 20)),
 /// )
 /// ```
+///
+/// 默认会铺一层中性浅色底板（[AppColors.avatarPlate]）：引擎 logo 多为
+/// 「透明底 + 近黑描边」，深色模式下贴在深色页面上会完全看不见。外层若已有
+/// 自己的底色（例如群头像的橘色容器），传 `showPlate: false` 让位。
 class AvatarImage extends StatelessWidget {
   /// 头像路径：本地文件路径、网络 URL 或 null。
   final String avatar;
@@ -31,6 +36,12 @@ class AvatarImage extends StatelessWidget {
   /// 图片填充方式，默认 BoxFit.cover。
   final BoxFit fit;
 
+  /// 是否铺头像底板，默认 true。外层容器自带底色时传 false。
+  final bool showPlate;
+
+  /// 底板颜色，缺省按主题取 [AppColors.avatarPlateFor]。
+  final Color? plateColor;
+
   const AvatarImage({
     super.key,
     required this.avatar,
@@ -38,6 +49,8 @@ class AvatarImage extends StatelessWidget {
     required this.borderRadius,
     required this.fallback,
     this.fit = BoxFit.cover,
+    this.showPlate = true,
+    this.plateColor,
   });
 
   /// 判断路径是否为 SVG 格式（兼容带 query string 的 URL）。
@@ -93,20 +106,11 @@ class AvatarImage extends StatelessWidget {
               cacheWidth: _cacheWidth(size),
               errorBuilder: (_, __, ___) => fallback,
             );
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(borderRadius),
-        child: SizedBox(width: size, height: size, child: assetWidget),
-      );
+      return _shell(context, assetWidget);
     }
 
     if (!isLocal && !isNetwork) {
-      // Emoji / 短文本默认头像：铺满区域，避免四周大片空隙。
-      return _EmojiAvatar(
-        avatar: avatar,
-        size: size,
-        borderRadius: borderRadius,
-        fallback: fallback,
-      );
+      return _shell(context, _emojiContent());
     }
 
     final Widget imageWidget;
@@ -147,35 +151,25 @@ class AvatarImage extends StatelessWidget {
             );
     }
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(borderRadius),
-      child: SizedBox(width: size, height: size, child: imageWidget),
-    );
+    return _shell(context, imageWidget);
   }
-}
 
-/// 将 emoji 默认头像放大到接近 [size]，减少灰底空隙。
-class _EmojiAvatar extends StatelessWidget {
-  final String avatar;
-  final double size;
-  final double borderRadius;
-  final Widget fallback;
+  /// 统一裁剪 + 铺底板；底板存在时同时给兜底文字/图标一个可读的前景色，
+  /// 否则深色模式下「浅色底板 + 浅色首字母」会再次看不清。
+  Widget _shell(BuildContext context, Widget child) {
+    final plate = showPlate
+        ? (plateColor ??
+            AppColors.avatarPlateFor(Theme.of(context).brightness))
+        : null;
 
-  const _EmojiAvatar({
-    required this.avatar,
-    required this.size,
-    required this.borderRadius,
-    required this.fallback,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final glyph = avatar.trim();
-    if (glyph.isEmpty) {
-      return SizedBox(
-        width: size,
-        height: size,
-        child: Center(child: fallback),
+    Widget content = child;
+    if (plate != null) {
+      content = DefaultTextStyle.merge(
+        style: const TextStyle(color: AppColors.onAvatarPlate),
+        child: IconTheme.merge(
+          data: const IconThemeData(color: AppColors.onAvatarPlate),
+          child: child,
+        ),
       );
     }
 
@@ -184,16 +178,28 @@ class _EmojiAvatar extends StatelessWidget {
       child: SizedBox(
         width: size,
         height: size,
-        child: Center(
-          // height: 1 去掉 emoji 字体多余行高；字号接近容器边长以铺满。
-          child: Text(
-            glyph,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: size * 0.86,
-              height: 1.0,
-            ),
-          ),
+        child: ColoredBox(
+          color: plate ?? Colors.transparent,
+          child: content,
+        ),
+      ),
+    );
+  }
+
+  /// emoji / 短文本默认头像内容：铺满区域，避免四周大片空隙。
+  Widget _emojiContent() {
+    final glyph = avatar.trim();
+    if (glyph.isEmpty) {
+      return Center(child: fallback);
+    }
+    return Center(
+      // height: 1 去掉 emoji 字体多余行高；字号接近容器边长以铺满。
+      child: Text(
+        glyph,
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          fontSize: size * 0.86,
+          height: 1.0,
         ),
       ),
     );

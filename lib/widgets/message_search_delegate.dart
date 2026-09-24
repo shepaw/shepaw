@@ -150,7 +150,7 @@ class MessageSearchDelegate extends SearchDelegate<String> {
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: Colors.grey[700],
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -226,7 +226,7 @@ class MessageSearchDelegate extends SearchDelegate<String> {
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 13,
-                    color: isMyMessage ? Theme.of(context).primaryColor : Colors.grey[800],
+                    color: isMyMessage ? Theme.of(context).primaryColor : Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -249,7 +249,10 @@ class MessageSearchDelegate extends SearchDelegate<String> {
 
   /// Build content with search keyword highlighted
   Widget _buildHighlightedContent(BuildContext context, String content) {
-    final baseStyle = TextStyle(color: Colors.grey[800], fontSize: 13);
+    final baseStyle = TextStyle(
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+        fontSize: 13,
+      );
     if (query.isEmpty) {
       return Text(content,
           maxLines: 3, overflow: TextOverflow.ellipsis, style: baseStyle);

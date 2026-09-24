@@ -199,7 +199,7 @@ class DispatchConfirmCard extends StatelessWidget {
                 task,
                 maxLines: 4,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
             ),
             if (pending) ...[
@@ -305,7 +305,7 @@ class GroupApprovalBridgeCard extends StatelessWidget {
                 ),
                 maxLines: 3,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
             ),
             if (groupChannelId.isNotEmpty) ...[
@@ -413,7 +413,7 @@ class GroupSessionSwitchCard extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
             child: Text(
               l10n.group_sessionSwitchBody,
-              style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           ),
           if (reason.isNotEmpty)

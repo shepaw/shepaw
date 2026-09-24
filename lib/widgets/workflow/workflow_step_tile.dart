@@ -49,7 +49,7 @@ class WorkflowStepTile extends StatelessWidget {
                       step.instruction,
                       style: TextStyle(
                         fontSize: 13,
-                        color: _textColor,
+                        color: _textColor(context),
                         fontWeight: step.status == StepExecutionStatus.running
                             ? FontWeight.w600
                             : FontWeight.normal,
@@ -104,7 +104,9 @@ class WorkflowStepTile extends StatelessWidget {
                             step.durationLabel,
                             style: TextStyle(
                               fontSize: 11,
-                              color: Colors.grey.shade600,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
                             ),
                           ),
                         ],
@@ -163,14 +165,14 @@ class WorkflowStepTile extends StatelessWidget {
     }
   }
 
-  Color get _textColor {
+  Color _textColor(BuildContext context) {
     switch (step.status) {
       case StepExecutionStatus.skipped:
-        return Colors.grey;
+        return Theme.of(context).colorScheme.onSurfaceVariant;
       case StepExecutionStatus.failed:
         return Colors.red.shade700;
       default:
-        return Colors.black87;
+        return Theme.of(context).colorScheme.onSurface;
     }
   }
 

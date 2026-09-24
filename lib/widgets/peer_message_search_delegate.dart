@@ -147,7 +147,10 @@ class PeerMessageSearchDelegate extends SearchDelegate<String> {
   }
 
   Widget _buildHighlightedContent(BuildContext context, String content) {
-    final baseStyle = TextStyle(color: Colors.grey[800], fontSize: 13);
+    final baseStyle = TextStyle(
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+        fontSize: 13,
+      );
     if (query.isEmpty) {
       return Text(
         content,

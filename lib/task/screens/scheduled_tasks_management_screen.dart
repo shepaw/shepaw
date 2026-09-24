@@ -277,7 +277,7 @@ class _ScheduledTasksManagementScreenState
             const SizedBox(height: 8),
             Text(
               _getScheduleDescription(task.schedulePattern, l10n),
-              style: TextStyle(color: Colors.grey[700], fontSize: 13),
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
             ),
             const SizedBox(height: 8),
             Text(

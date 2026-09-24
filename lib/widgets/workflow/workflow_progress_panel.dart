@@ -221,7 +221,7 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
                           ? Colors.green.shade700
                           : failed
                               ? Colors.red.shade700
-                              : Colors.black87,
+                              : Theme.of(context).colorScheme.onSurface,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -481,7 +481,7 @@ class _WorkflowProgressPanelState extends State<WorkflowProgressPanel>
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
-                            color: Colors.grey.shade800,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ),

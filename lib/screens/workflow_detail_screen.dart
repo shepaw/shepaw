@@ -408,7 +408,7 @@ class _WorkflowDetailScreenState extends State<WorkflowDetailScreen> {
             summary,
             style: TextStyle(
               fontSize: 13,
-              color: Colors.grey.shade800,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               height: 1.4,
             ),
           ),
@@ -630,7 +630,7 @@ class _WorkflowDetailScreenState extends State<WorkflowDetailScreen> {
             content,
             style: TextStyle(
               fontSize: 13,
-              color: Colors.grey.shade800,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               height: 1.4,
             ),
             maxLines: 5,

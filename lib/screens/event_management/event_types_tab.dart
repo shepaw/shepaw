@@ -200,7 +200,7 @@ class _TypeTile extends StatelessWidget {
           if (definition.description.isNotEmpty)
             Text(
               definition.description,
-              style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+              style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           Text(
             '${l10n.eventMgmt_typesScopeKeys}: '

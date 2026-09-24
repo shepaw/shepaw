@@ -792,7 +792,7 @@ class ContactsScreenState extends State<ContactsScreen> {
             width: _avatarSize,
             height: _avatarSize,
             decoration: BoxDecoration(
-              color: Colors.grey[200],
+              color: AppColors.avatarPlateFor(Theme.of(context).brightness),
               borderRadius: BorderRadius.circular(8),
             ),
             clipBehavior: Clip.antiAlias,

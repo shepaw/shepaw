@@ -2373,7 +2373,8 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
             borderRadius: 8,
             fallback: Text(
               label.label.isNotEmpty ? label.label[0] : '?',
-              style: TextStyle(fontSize: 16, color: scheme.onSurfaceVariant),
+              // 颜色交给 AvatarImage 的底板前景色，保证深色模式下可读。
+              style: const TextStyle(fontSize: 16),
             ),
           ),
         ),

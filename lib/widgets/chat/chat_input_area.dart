@@ -1073,7 +1073,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
                             : FontWeight.normal,
                         color: notifySelected
                             ? Theme.of(context).primaryColor
-                            : Colors.grey[700],
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
                   ],
@@ -1113,7 +1113,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
                             ccSelected ? FontWeight.w600 : FontWeight.normal,
                         color: ccSelected
                             ? Colors.orange[700]
-                            : Colors.grey[700],
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
                   ],

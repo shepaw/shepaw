@@ -239,7 +239,7 @@ class SessionSearchResults extends StatelessWidget {
                 context,
                 r.message.content,
                 query.trim(),
-                TextStyle(fontSize: 13.5, color: Colors.grey[800]),
+                TextStyle(fontSize: 13.5, color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
             ),
           ),

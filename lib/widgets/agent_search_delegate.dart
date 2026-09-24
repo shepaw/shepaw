@@ -229,7 +229,7 @@ class AgentSearchDelegate extends SearchDelegate<Agent?> {
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: Colors.grey[700],
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(width: 8),
@@ -260,7 +260,6 @@ class AgentSearchDelegate extends SearchDelegate<Agent?> {
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: Colors.grey[200],
           borderRadius: BorderRadius.circular(10),
         ),
         clipBehavior: Clip.antiAlias,
@@ -381,7 +380,7 @@ class AgentSearchDelegate extends SearchDelegate<Agent?> {
                     fontSize: 12,
                     color: isMyMessage
                         ? Theme.of(context).primaryColor
-                        : Colors.grey[800],
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
                 const Spacer(),
@@ -457,7 +456,10 @@ class AgentSearchDelegate extends SearchDelegate<Agent?> {
   }
 
   Widget _buildHighlightedContent(BuildContext context, String content) {
-    final baseStyle = TextStyle(color: Colors.grey[800], fontSize: 13);
+    final baseStyle = TextStyle(
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+        fontSize: 13,
+      );
     if (query.isEmpty) {
       return Text(content,
           maxLines: 2, overflow: TextOverflow.ellipsis, style: baseStyle);

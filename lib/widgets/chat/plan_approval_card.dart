@@ -142,7 +142,7 @@ class _PlanApprovalCardState extends State<PlanApprovalCard> {
                 _plan.summary,
                 style: TextStyle(
                   fontSize: 13,
-                  color: Colors.grey[700],
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
             ),

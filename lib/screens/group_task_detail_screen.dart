@@ -169,7 +169,7 @@ class _GroupTaskDetailScreenState extends State<GroupTaskDetailScreen> {
             child: SelectableText(
               raw,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.grey.shade700,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
             ),
           ),
@@ -335,7 +335,7 @@ class _GroupTaskDetailScreenState extends State<GroupTaskDetailScreen> {
                           ].join(' · '),
                           style: TextStyle(
                             fontSize: 12,
-                            color: Colors.grey.shade700,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ],
@@ -417,7 +417,7 @@ class _GroupTaskDetailScreenState extends State<GroupTaskDetailScreen> {
             child: SelectableText(
               text,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.grey.shade700,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
             ),
           ),

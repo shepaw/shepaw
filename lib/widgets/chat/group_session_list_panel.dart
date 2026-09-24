@@ -583,7 +583,7 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
                   style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: Colors.grey[700])),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant)),
               const SizedBox(height: 4),
               for (final s in steps.cast<Map<String, dynamic>>())
                 Padding(
@@ -603,7 +603,7 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
                   style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: Colors.grey[700])),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant)),
               const SizedBox(height: 4),
               for (final e in memberResults.entries)
                 Padding(
@@ -622,7 +622,7 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
                   style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: Colors.grey[700])),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant)),
               const SizedBox(height: 4),
               Text(adminSummary,
                   style: const TextStyle(fontSize: 13),

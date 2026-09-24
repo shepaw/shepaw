@@ -41,7 +41,8 @@ class PermissionAuditBubble extends StatelessWidget {
           constraints: const BoxConstraints(maxWidth: 400),
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.white,
+              // 深色模式下白卡片会突兀地亮在深色页面上，跟随主题表面色。
+              color: Theme.of(context).colorScheme.surface,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: borderColor, width: 1.5),
               boxShadow: [
@@ -69,7 +70,6 @@ class PermissionAuditBubble extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
-                            color: Colors.black87,
                           ),
                         ),
                       ),
@@ -94,23 +94,26 @@ class PermissionAuditBubble extends StatelessWidget {
                 ),
 
                 // Divider
-                Divider(height: 1, color: Colors.grey[200]),
+                Divider(
+                  height: 1,
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
 
                 // Details
                 Padding(
                   padding: const EdgeInsets.all(14),
                   child: Column(
                     children: [
-                      _buildDetailRow('Requester', agentName),
+                      _buildDetailRow(context, 'Requester', agentName),
                       const SizedBox(height: 6),
-                      _buildDetailRow('Action', action),
+                      _buildDetailRow(context, 'Action', action),
                       if (sessionId != null) ...[
                         const SizedBox(height: 6),
-                        _buildDetailRow('Session', sessionId),
+                        _buildDetailRow(context, 'Session', sessionId),
                       ],
                       if (timeDisplay.isNotEmpty) ...[
                         const SizedBox(height: 6),
-                        _buildDetailRow('Time', timeDisplay),
+                        _buildDetailRow(context, 'Time', timeDisplay),
                       ],
                     ],
                   ),
@@ -123,7 +126,7 @@ class PermissionAuditBubble extends StatelessWidget {
     );
   }
 
-  Widget _buildDetailRow(String label, String value) {
+  Widget _buildDetailRow(BuildContext context, String label, String value) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -133,7 +136,7 @@ class PermissionAuditBubble extends StatelessWidget {
             label,
             style: TextStyle(
               fontSize: 12,
-              color: Colors.grey[600],
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -141,9 +144,9 @@ class PermissionAuditBubble extends StatelessWidget {
         Expanded(
           child: Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
-              color: Colors.black87,
+              color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
         ),

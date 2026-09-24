@@ -238,7 +238,7 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
                     child: RichText(
                       text: TextSpan(
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.grey[700],
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                         children: [
                           TextSpan(text: '${l10n.passwordSetup_agreePrefix} '),

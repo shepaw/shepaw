@@ -3053,6 +3053,8 @@ class _ChatScreenState extends State<ChatScreen>
                                         avatar: pendingAvatar,
                                         size: 80,
                                         borderRadius: 0,
+                                        // 群头像容器自带橘色底，别再铺一层中性底板。
+                                        showPlate: false,
                                         fallback: const Icon(Icons.group,
                                             size: 40,
                                             color: AppColors.primary),
@@ -3514,13 +3516,19 @@ class _ChatScreenState extends State<ChatScreen>
             borderRadius: 10,
             fallback: Text(
               displayName?.isNotEmpty == true ? displayName![0] : 'A',
-              style: const TextStyle(fontSize: 18),
+              style: const TextStyle(
+                fontSize: 18,
+                color: AppColors.onAvatarPlate,
+              ),
             ),
           )
         : Text(
             c.agentAvatar ??
                 (displayName?.isNotEmpty == true ? displayName![0] : 'A'),
-            style: const TextStyle(fontSize: 18),
+            style: const TextStyle(
+              fontSize: 18,
+              color: AppColors.onAvatarPlate,
+            ),
           );
 
     return Row(
@@ -3529,7 +3537,7 @@ class _ChatScreenState extends State<ChatScreen>
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-            color: Colors.grey[200],
+            color: AppColors.avatarPlateFor(Theme.of(context).brightness),
             borderRadius: BorderRadius.circular(10),
           ),
           alignment: Alignment.center,
@@ -4621,6 +4629,8 @@ class _ChatScreenState extends State<ChatScreen>
                                 : SheService.sheAvatar,
                             size: 100,
                             borderRadius: 28,
+                            // 外层橘色容器即底板。
+                            showPlate: false,
                             fallback: Text(
                               _controller.agentName?.isNotEmpty == true
                                   ? _controller.agentName![0]
@@ -4681,7 +4691,7 @@ class _ChatScreenState extends State<ChatScreen>
             width: 80,
             height: 80,
             decoration: BoxDecoration(
-              color: Colors.grey[200],
+              color: AppColors.avatarPlateFor(Theme.of(context).brightness),
               borderRadius: BorderRadius.circular(20),
             ),
             alignment: Alignment.center,

@@ -164,7 +164,7 @@ class RelayApprovalCard extends StatelessWidget {
                   prompt,
                   maxLines: 4,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
               ),
             if (state == _CardState.resolved && selectedLabel.isNotEmpty)

@@ -61,7 +61,8 @@ class ChatDMAppBarTitle extends StatelessWidget {
           size: metrics.avatarSize,
           borderRadius: metrics.avatarRadius,
           onTap: onAvatarTap,
-          backgroundColor: Colors.grey[200],
+          backgroundColor:
+              AppColors.avatarPlateFor(Theme.of(context).brightness),
           statusColor: isAgentOnline ? const Color(0xFF34C759) : Colors.grey,
           child: agentAvatar != null && agentAvatar!.length > 2
               ? AvatarImage(
@@ -70,13 +71,19 @@ class ChatDMAppBarTitle extends StatelessWidget {
                   borderRadius: metrics.avatarRadius,
                   fallback: Text(
                     displayName?.isNotEmpty == true ? displayName![0] : 'A',
-                    style: TextStyle(fontSize: metrics.avatarFallbackSize),
+                    style: TextStyle(
+                      fontSize: metrics.avatarFallbackSize,
+                      color: AppColors.onAvatarPlate,
+                    ),
                   ),
                 )
               : Text(
                   agentAvatar ??
                       (displayName?.isNotEmpty == true ? displayName![0] : 'A'),
-                  style: TextStyle(fontSize: metrics.avatarFallbackSize),
+                  style: TextStyle(
+                    fontSize: metrics.avatarFallbackSize,
+                    color: AppColors.onAvatarPlate,
+                  ),
                 ),
         ),
         SizedBox(width: metrics.gap),

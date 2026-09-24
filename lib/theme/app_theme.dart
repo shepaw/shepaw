@@ -72,6 +72,23 @@ class AppColors {
 
   /// 深色模式：次要文字。
   static const Color darkTextSecondary = Color(0xFF9AA0A6);
+
+  /// 头像底板（浅色模式）。
+  ///
+  /// 引擎 logo 多为「透明底 + 近黑描边」（codex / cursor / kimi /
+  /// deepseek-harness 等），深色模式下直接贴在深色页面上会完全看不见，
+  /// 因此头像一律铺一层中性浅色底板，与字体/图标无关。
+  static const Color avatarPlate = Color(0xFFF2F3F5);
+
+  /// 头像底板（深色模式）：比浅色模式略压暗，避免大面积高亮。
+  static const Color darkAvatarPlate = Color(0xFFD5D8DD);
+
+  /// 头像底板上的前景色：首字母兜底文字、无显式颜色的兜底图标。
+  static const Color onAvatarPlate = Color(0xFF1F2329);
+
+  /// 按当前亮度取头像底板色（深色模式同样用浅色底板，保证黑 logo 可见）。
+  static Color avatarPlateFor(Brightness brightness) =>
+      brightness == Brightness.dark ? darkAvatarPlate : avatarPlate;
 }
 
 /// 应用主题。统一从 [AppColors] 派生，保证全局风格一致。
