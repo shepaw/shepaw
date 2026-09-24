@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
@@ -9,6 +11,8 @@ import '../services/composer_draft_service.dart';
 import '../services/jade_slip_service.dart';
 import '../services/local_database_service.dart';
 import '../services/local_user_identity.dart';
+import '../services/logger_service.dart';
+import '../services/remote_agent_service.dart';
 import '../services/she_service.dart';
 import 'jade_slip_agent_picker.dart';
 
@@ -24,7 +28,10 @@ enum JadeSlipSessionTarget {
   specific,
 }
 
-/// 打开与 Agent 的会话并预填玉简任务。返回是否已派发。
+/// 打开与 Agent 的会话并把玉简任务发出去。返回是否已派发。
+///
+/// 任务直接发送，不是预填草稿——用户已经在确认弹层点过一次了。只有连
+/// Agent 行都取不到时才退回预填，见下面的 `target == null` 分支。
 ///
 /// [focusItem] / [onlyOpenItems] 收窄交给 Agent 的清单范围，语义见
 /// [JadeSlip.toAgentPrompt]；[sessionTarget] 决定落在哪条会话。
@@ -91,17 +98,50 @@ Future<bool> dispatchJadeSlip(
               chatService.generateChannelId(userId, agentId);
   }
 
-  getIt<ComposerDraftService>().setDraft(
-    targetChannelId,
-    slip.toAgentPrompt(focusItem: focusItem, onlyOpenItems: onlyOpenItems),
-    agentId: agentId,
-  );
+  final prompt =
+      slip.toAgentPrompt(focusItem: focusItem, onlyOpenItems: onlyOpenItems);
+  final target = await getIt<RemoteAgentService>().getAgentById(agentId);
 
-  if (context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(l10n.jadeSlip_runHint)),
+  if (target == null) {
+    // 没有 Agent 行就发不出去（Agent 被删掉了？）。退回预填 + 跳转，
+    // 至少别把用户已经确认的任务丢掉。
+    getIt<ComposerDraftService>()
+        .setDraft(targetChannelId, prompt, agentId: agentId);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.jadeSlip_sendFailed)),
+      );
+    }
+  } else {
+    // 确认即发送。sendMessageToAgent 要等 Agent 整个回合跑完才返回（可能
+    // 几分钟），所以 fire-and-forget —— 与 dispatch_service 同一套写法。
+    // 用户消息在任何协议发送之前就已落库，因此连不上 Agent 也不会丢任务。
+    unawaited(
+      chatService
+          .sendMessageToAgent(
+            content: prompt,
+            agent: target,
+            userId: userId,
+            userName: LocalUserIdentity.displayName,
+            channelId: targetChannelId,
+          )
+          .catchError((Object e, StackTrace st) {
+        LoggerService().error(
+          'jade slip dispatch send failed: ${target.name}',
+          tag: 'JadeSlip',
+          error: e,
+          stackTrace: st,
+        );
+        return null;
+      }),
     );
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.jadeSlip_runHint)),
+      );
+    }
   }
+
   await ChatNavigationService.instance.openChannel(
     channelId: targetChannelId,
     agentId: agentId,

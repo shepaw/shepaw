@@ -6453,7 +6453,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get jadeSlip_runHint =>
-      'Opens a chat with the jade slip pre-filled. Send it and the agent will work the checklist.';
+      'Sent to the agent — it is working the checklist in the chat.';
+
+  @override
+  String get jadeSlip_sendFailed =>
+      'That agent could not be found. The content is pre-filled in the composer so you can send it manually.';
 
   @override
   String get jadeSlip_pickAgent => 'Choose an agent';

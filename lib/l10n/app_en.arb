@@ -3211,7 +3211,8 @@
     }
   },
   "jadeSlip_run": "Hand to agent",
-  "jadeSlip_runHint": "Opens a chat with the jade slip pre-filled. Send it and the agent will work the checklist.",
+  "jadeSlip_runHint": "Sent to the agent — it is working the checklist in the chat.",
+  "jadeSlip_sendFailed": "That agent could not be found. The content is pre-filled in the composer so you can send it manually.",
   "jadeSlip_pickAgent": "Choose an agent",
   "jadeSlip_searchAgent": "Search agents",
   "jadeSlip_deviceLocal": "This device",

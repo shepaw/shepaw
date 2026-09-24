@@ -3686,7 +3686,8 @@
     }
   },
   "jadeSlip_run": "交给 Agent",
-  "jadeSlip_runHint": "将打开会话并预填玉简内容，发送后 Agent 会按清单执行。",
+  "jadeSlip_runHint": "已交给 Agent，正在会话中按清单执行。",
+  "jadeSlip_sendFailed": "找不到该 Agent，内容已预填到输入框，可手动发送。",
   "jadeSlip_pickAgent": "选择执行的 Agent",
   "jadeSlip_searchAgent": "搜索 Agent",
   "jadeSlip_deviceLocal": "本机",

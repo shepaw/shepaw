@@ -6206,7 +6206,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get jadeSlip_run => '交给 Agent';
 
   @override
-  String get jadeSlip_runHint => '将打开会话并预填玉简内容，发送后 Agent 会按清单执行。';
+  String get jadeSlip_runHint => '已交给 Agent，正在会话中按清单执行。';
+
+  @override
+  String get jadeSlip_sendFailed => '找不到该 Agent，内容已预填到输入框，可手动发送。';
 
   @override
   String get jadeSlip_pickAgent => '选择执行的 Agent';

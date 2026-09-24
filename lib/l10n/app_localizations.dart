@@ -11340,8 +11340,14 @@ abstract class AppLocalizations {
   /// No description provided for @jadeSlip_runHint.
   ///
   /// In zh, this message translates to:
-  /// **'将打开会话并预填玉简内容，发送后 Agent 会按清单执行。'**
+  /// **'已交给 Agent，正在会话中按清单执行。'**
   String get jadeSlip_runHint;
+
+  /// No description provided for @jadeSlip_sendFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'找不到该 Agent，内容已预填到输入框，可手动发送。'**
+  String get jadeSlip_sendFailed;
 
   /// No description provided for @jadeSlip_pickAgent.
   ///
