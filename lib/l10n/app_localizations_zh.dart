@@ -6244,6 +6244,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get jadeSlip_itemHint => '添加一项…';
 
   @override
+  String get jadeSlip_itemAdd => '添加清单项';
+
+  @override
   String get jadeSlip_notes => '备注';
 
   @override

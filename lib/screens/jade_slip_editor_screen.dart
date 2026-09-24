@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
 import '../l10n/app_localizations.dart';
@@ -545,8 +546,8 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
               _AddItemRow(
                 controller: _item,
                 focusNode: _itemFocus,
+                fieldKey: jadeSlipAddItemFieldKey,
                 hint: l10n.jadeSlip_itemHint,
-                keepFocusOnSubmit: true,
                 onSubmit: () => unawaited(_addItem()),
               ),
               const SizedBox(height: 28),
@@ -681,7 +682,20 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: Text(l10n.jadeSlip_title),
+          // 标题栏跟随玉简标题实时变化。用 ValueListenableBuilder 只重建
+          // title 一个节点，不整页 setState——页面里有 ListView 和多个
+          // Dismissible，整页重建代价明显。
+          title: ValueListenableBuilder<TextEditingValue>(
+            valueListenable: _title,
+            builder: (context, value, _) {
+              final title = value.text.trim();
+              return Text(
+                title.isEmpty ? l10n.jadeSlip_untitled : title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              );
+            },
+          ),
         ),
         body: body,
       ),
@@ -1110,17 +1124,22 @@ class _ChecklistRowState extends State<_ChecklistRow> {
             const SizedBox(width: 10),
             Expanded(
               child: _editing
-                  ? TextField(
-                      controller: _controller,
-                      focusNode: _focus,
-                      textInputAction: TextInputAction.done,
-                      style: theme.textTheme.bodyLarge,
-                      decoration: const InputDecoration(
-                        border: InputBorder.none,
-                        isDense: true,
-                        contentPadding: EdgeInsets.symmetric(vertical: 8),
+                  ? _SubmitOnEnter(
+                      onSubmit: () => _submit(fromEnter: true),
+                      child: TextField(
+                        controller: _controller,
+                        focusNode: _focus,
+                        minLines: 1,
+                        maxLines: 6,
+                        keyboardType: TextInputType.multiline,
+                        textInputAction: TextInputAction.newline,
+                        style: theme.textTheme.bodyLarge,
+                        decoration: const InputDecoration(
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(vertical: 8),
+                        ),
                       ),
-                      onEditingComplete: () => _submit(fromEnter: true),
                     )
                   : GestureDetector(
                       behavior: HitTestBehavior.opaque,
@@ -1176,13 +1195,55 @@ class _ChecklistRowState extends State<_ChecklistRow> {
   }
 }
 
+/// 「添加清单项」输入框的稳定 key（同一页还有评论输入框，测试靠它区分）。
+const jadeSlipAddItemFieldKey = ValueKey('jade-slip-add-item');
+
+/// 无修饰键回车 = 提交，Shift+Enter = 换行。
+///
+/// key 事件先走 focus 链、再走 `Shortcuts`，父节点返回 handled 就能抢在
+/// `EditableText` 的 newline action 之前，回车不会被插入成换行。
+class _SubmitOnEnter extends StatelessWidget {
+  const _SubmitOnEnter({required this.onSubmit, required this.child});
+
+  final VoidCallback onSubmit;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      // 自身不参与焦点与遍历，只当 key 事件冒泡链上的一环。
+      canRequestFocus: false,
+      skipTraversal: true,
+      onKeyEvent: (node, event) {
+        if (event.logicalKey != LogicalKeyboardKey.enter &&
+            event.logicalKey != LogicalKeyboardKey.numpadEnter) {
+          return KeyEventResult.ignored;
+        }
+        if (event is KeyDownEvent) {
+          // Shift+Enter 换行，交给 EditableText 处理。
+          if (HardwareKeyboard.instance.isShiftPressed) {
+            return KeyEventResult.ignored;
+          }
+          onSubmit();
+          return KeyEventResult.handled;
+        }
+        // 长按回车的重复事件吞掉，避免连续提交或塞进换行。
+        return event is KeyRepeatEvent
+            ? KeyEventResult.handled
+            : KeyEventResult.ignored;
+      },
+      child: child,
+    );
+  }
+}
+
 class _AddItemRow extends StatelessWidget {
   const _AddItemRow({
     required this.controller,
     required this.hint,
     required this.onSubmit,
     this.focusNode,
-    this.keepFocusOnSubmit = false,
+    this.fieldKey,
   });
 
   final TextEditingController controller;
@@ -1190,36 +1251,54 @@ class _AddItemRow extends StatelessWidget {
   final String hint;
   final VoidCallback onSubmit;
 
-  /// 为 true 时回车不触发默认失焦，便于连续添加清单项。
-  final bool keepFocusOnSubmit;
+  /// 供测试稳定定位输入框（同一页面里还有一个评论输入框）。
+  final Key? fieldKey;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final l10n = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.only(top: 4),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          Icon(Icons.add, size: 20, color: scheme.onSurfaceVariant),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Icon(Icons.add, size: 20, color: scheme.onSurfaceVariant),
+          ),
           const SizedBox(width: 10),
           Expanded(
-            child: TextField(
-              controller: controller,
-              focusNode: focusNode,
-              textInputAction: TextInputAction.done,
-              style: theme.textTheme.bodyLarge,
-              decoration: InputDecoration(
-                hintText: hint,
-                hintStyle: TextStyle(color: scheme.onSurfaceVariant),
-                border: InputBorder.none,
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(vertical: 8),
+            child: _SubmitOnEnter(
+              onSubmit: onSubmit,
+              child: TextField(
+                key: fieldKey,
+                controller: controller,
+                focusNode: focusNode,
+                minLines: 1,
+                // 6 行封顶后内部滚动，避免长文本把页面顶穿。
+                maxLines: 6,
+                keyboardType: TextInputType.multiline,
+                textInputAction: TextInputAction.newline,
+                style: theme.textTheme.bodyLarge,
+                decoration: InputDecoration(
+                  hintText: hint,
+                  hintStyle: TextStyle(color: scheme.onSurfaceVariant),
+                  border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                ),
               ),
-              // 覆盖默认 onEditingComplete（会 unfocus），才能连续输入。
-              onEditingComplete: keepFocusOnSubmit ? onSubmit : null,
-              onSubmitted: keepFocusOnSubmit ? null : (_) => onSubmit(),
             ),
+          ),
+          // 移动端软键盘没有 Shift+Enter，提交必须有非键盘入口。
+          IconButton(
+            tooltip: l10n.jadeSlip_itemAdd,
+            visualDensity: VisualDensity.compact,
+            iconSize: 20,
+            onPressed: onSubmit,
+            icon: Icon(Icons.add_circle_outline, color: scheme.primary),
           ),
         ],
       ),

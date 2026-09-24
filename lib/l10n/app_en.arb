@@ -3230,6 +3230,7 @@
   "jadeSlip_titleRequired": "Please enter a title",
   "jadeSlip_checklist": "Checklist",
   "jadeSlip_itemHint": "Add an item…",
+  "jadeSlip_itemAdd": "Add checklist item",
   "jadeSlip_notes": "Notes",
   "jadeSlip_notesHint": "Details, links, acceptance criteria…",
   "jadeSlip_attachments": "Attachments",

@@ -6491,6 +6491,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get jadeSlip_itemHint => 'Add an item…';
 
   @override
+  String get jadeSlip_itemAdd => 'Add checklist item';
+
+  @override
   String get jadeSlip_notes => 'Notes';
 
   @override

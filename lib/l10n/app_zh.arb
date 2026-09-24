@@ -3705,6 +3705,7 @@
   "jadeSlip_titleRequired": "请填写玉简标题",
   "jadeSlip_checklist": "清单",
   "jadeSlip_itemHint": "添加一项…",
+  "jadeSlip_itemAdd": "添加清单项",
   "jadeSlip_notes": "备注",
   "jadeSlip_notesHint": "补充说明、链接、验收标准…",
   "jadeSlip_attachments": "附件",

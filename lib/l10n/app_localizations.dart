@@ -11409,6 +11409,12 @@ abstract class AppLocalizations {
   /// **'添加一项…'**
   String get jadeSlip_itemHint;
 
+  /// No description provided for @jadeSlip_itemAdd.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加清单项'**
+  String get jadeSlip_itemAdd;
+
   /// No description provided for @jadeSlip_notes.
   ///
   /// In zh, this message translates to:
