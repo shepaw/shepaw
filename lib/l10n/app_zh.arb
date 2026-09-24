@@ -11,6 +11,7 @@
   "common_save": "保存",
   "common_delete": "删除",
   "common_edit": "编辑",
+  "common_modify": "修改",
   "common_close": "关闭",
   "common_loading": "正在加载...",
   "common_retry": "重试",
@@ -3706,6 +3707,40 @@
   "jadeSlip_checklist": "清单",
   "jadeSlip_itemHint": "添加一项…",
   "jadeSlip_itemAdd": "添加清单项",
+  "jadeSlip_noOpenItems": "清单已全部完成，没有待办项可以交给 Agent",
+  "jadeSlip_handOffTitle": "交给 Agent",
+  "jadeSlip_handOffAgent": "执行 Agent",
+  "jadeSlip_handOffScope": "交给它的内容",
+  "jadeSlip_handOffScopeItem": "清单项「{text}」",
+  "@jadeSlip_handOffScopeItem": {
+    "placeholders": {
+      "text": {"type": "String"}
+    }
+  },
+  "jadeSlip_handOffScopeNoItems": "全部内容（无清单）",
+  "jadeSlip_handOffScopeAll": "全部 {total} 项",
+  "@jadeSlip_handOffScopeAll": {
+    "placeholders": {
+      "total": {"type": "int"}
+    }
+  },
+  "jadeSlip_handOffScopeOpen": "待办 {open} 项（共 {total} 项）",
+  "@jadeSlip_handOffScopeOpen": {
+    "placeholders": {
+      "open": {"type": "int"},
+      "total": {"type": "int"}
+    }
+  },
+  "jadeSlip_handOffSession": "目标会话",
+  "jadeSlip_sessionCurrent": "当前会话",
+  "jadeSlip_sessionCurrentHint": "该 Agent 最近活跃的会话",
+  "jadeSlip_sessionFresh": "新开会话",
+  "jadeSlip_sessionFreshHint": "新开一条空白会话",
+  "jadeSlip_sessionPick": "指定会话",
+  "jadeSlip_sessionPickHint": "从该 Agent 的历史会话中选择",
+  "jadeSlip_sessionEmpty": "该 Agent 还没有历史会话",
+  "jadeSlip_sessionNoMessage": "空会话",
+  "jadeSlip_sessionCurrentTag": "当前",
   "jadeSlip_notes": "备注",
   "jadeSlip_notesHint": "补充说明、链接、验收标准…",
   "jadeSlip_attachments": "附件",

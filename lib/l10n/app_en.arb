@@ -11,6 +11,7 @@
   "common_save": "Save",
   "common_delete": "Delete",
   "common_edit": "Edit",
+  "common_modify": "Modify",
   "common_close": "Close",
   "common_loading": "Loading...",
   "common_retry": "Retry",
@@ -3231,6 +3232,40 @@
   "jadeSlip_checklist": "Checklist",
   "jadeSlip_itemHint": "Add an item…",
   "jadeSlip_itemAdd": "Add checklist item",
+  "jadeSlip_noOpenItems": "Everything is done — nothing pending to hand off",
+  "jadeSlip_handOffTitle": "Hand to agent",
+  "jadeSlip_handOffAgent": "Agent",
+  "jadeSlip_handOffScope": "What it gets",
+  "jadeSlip_handOffScopeItem": "Checklist item \"{text}\"",
+  "@jadeSlip_handOffScopeItem": {
+    "placeholders": {
+      "text": {"type": "String"}
+    }
+  },
+  "jadeSlip_handOffScopeNoItems": "The whole slip (no checklist)",
+  "jadeSlip_handOffScopeAll": "All {total} items",
+  "@jadeSlip_handOffScopeAll": {
+    "placeholders": {
+      "total": {"type": "int"}
+    }
+  },
+  "jadeSlip_handOffScopeOpen": "{open} pending of {total}",
+  "@jadeSlip_handOffScopeOpen": {
+    "placeholders": {
+      "open": {"type": "int"},
+      "total": {"type": "int"}
+    }
+  },
+  "jadeSlip_handOffSession": "Session",
+  "jadeSlip_sessionCurrent": "Current session",
+  "jadeSlip_sessionCurrentHint": "The agent's most recently active session",
+  "jadeSlip_sessionFresh": "New session",
+  "jadeSlip_sessionFreshHint": "Start with an empty session",
+  "jadeSlip_sessionPick": "Pick a session",
+  "jadeSlip_sessionPickHint": "Choose from this agent's past sessions",
+  "jadeSlip_sessionEmpty": "This agent has no past sessions yet",
+  "jadeSlip_sessionNoMessage": "Empty",
+  "jadeSlip_sessionCurrentTag": "current",
   "jadeSlip_notes": "Notes",
   "jadeSlip_notesHint": "Details, links, acceptance criteria…",
   "jadeSlip_attachments": "Attachments",

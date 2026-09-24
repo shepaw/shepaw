@@ -50,6 +50,10 @@ class JadeSlip {
 
   int get itemCount => items.length;
 
+  /// 待办项（未勾选）。派发时只把待办交给 Agent，已完成的留在玉简里。
+  List<JadeSlipItem> get openItems =>
+      items.where((e) => !e.done).toList(growable: false);
+
   bool get hasOpenItems => items.any((e) => !e.done);
 
   bool get allItemsDone => items.isNotEmpty && items.every((e) => e.done);
@@ -237,9 +241,21 @@ class JadeSlip {
   }
 
   /// Agent 执行时的任务说明：结构化清单 + CLI 用法。
-  String toAgentPrompt() {
-    final buf = StringBuffer()
-      ..writeln('请执行玉简待办「$title」（id=$id）。')
+  ///
+  /// 两种收窄方式都会保留「待办 N/M 项」的进度摘要，Agent 仍看得到整体上下文：
+  /// - [focusItem] 非空：只派发这一项（清单项右侧菜单的「交给 Agent」）。
+  /// - [onlyOpenItems] 为 true：清单只列未完成项（顶栏「交给 Agent」只交待办）。
+  String toAgentPrompt({JadeSlipItem? focusItem, bool onlyOpenItems = false}) {
+    final scoped = focusItem != null
+        ? <JadeSlipItem>[focusItem]
+        : onlyOpenItems
+            ? openItems
+            : items;
+    final buf = StringBuffer(
+      focusItem != null
+          ? '请执行玉简待办「$title」（id=$id）中的这一项：'
+          : '请执行玉简待办「$title」（id=$id）。',
+    )
       ..writeln()
       ..writeln('status: ${status.wire}')
       ..writeln('priority: ${priority.wire}');
@@ -247,11 +263,17 @@ class JadeSlip {
       buf.writeln(
           'due: ${DateTime.fromMillisecondsSinceEpoch(dueAtMs!).toIso8601String()}');
     }
-    if (items.isNotEmpty) {
-      buf.writeln('checklist:');
-      for (final item in items) {
+    if (scoped.isNotEmpty) {
+      buf.writeln(scoped.length != items.length
+          ? 'checklist（待办 ${scoped.length}/$itemCount 项，'
+              '已完成 $doneCount 项）:'
+          : 'checklist:');
+      for (final item in scoped) {
         buf.writeln('- [${item.done ? 'x' : ' '}] ${item.text} (item=${item.id})');
       }
+    } else if (items.isNotEmpty) {
+      // 只交待办而待办为空：说清状态，别让 Agent 以为这条玉简没有清单。
+      buf.writeln('checklist（$itemCount 项全部已完成，无待办）:');
     }
     if (attachments.isNotEmpty) {
       buf.writeln('attachments:');
@@ -279,9 +301,12 @@ class JadeSlip {
       ..writeln('请用 shepaw notes 读写进度，完成一项就勾一项，不要只口头答应：')
       ..writeln('- shepaw notes get --id $id')
       ..writeln(
-          '- shepaw notes item --id $id --item <itemId> --done true')
-      ..writeln('- shepaw notes complete --id $id')
-      ..writeln('- shepaw notes comment --id $id --text "进度说明"');
+          '- shepaw notes item --id $id --item <itemId> --done true');
+    // 只派发单项时不能建议 complete —— 那会把整条玉简标记为完成。
+    if (focusItem == null) {
+      buf.writeln('- shepaw notes complete --id $id');
+    }
+    buf.writeln('- shepaw notes comment --id $id --text "进度说明"');
     if (attachments.isNotEmpty) {
       buf.writeln('- shepaw store read --uri <attachment uri>');
     }

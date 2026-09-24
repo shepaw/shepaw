@@ -44,6 +44,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get common_edit => 'Edit';
 
   @override
+  String get common_modify => 'Modify';
+
+  @override
   String get common_close => 'Close';
 
   @override
@@ -6492,6 +6495,69 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get jadeSlip_itemAdd => 'Add checklist item';
+
+  @override
+  String get jadeSlip_noOpenItems =>
+      'Everything is done — nothing pending to hand off';
+
+  @override
+  String get jadeSlip_handOffTitle => 'Hand to agent';
+
+  @override
+  String get jadeSlip_handOffAgent => 'Agent';
+
+  @override
+  String get jadeSlip_handOffScope => 'What it gets';
+
+  @override
+  String jadeSlip_handOffScopeItem(String text) {
+    return 'Checklist item \"$text\"';
+  }
+
+  @override
+  String get jadeSlip_handOffScopeNoItems => 'The whole slip (no checklist)';
+
+  @override
+  String jadeSlip_handOffScopeAll(int total) {
+    return 'All $total items';
+  }
+
+  @override
+  String jadeSlip_handOffScopeOpen(int open, int total) {
+    return '$open pending of $total';
+  }
+
+  @override
+  String get jadeSlip_handOffSession => 'Session';
+
+  @override
+  String get jadeSlip_sessionCurrent => 'Current session';
+
+  @override
+  String get jadeSlip_sessionCurrentHint =>
+      'The agent\'s most recently active session';
+
+  @override
+  String get jadeSlip_sessionFresh => 'New session';
+
+  @override
+  String get jadeSlip_sessionFreshHint => 'Start with an empty session';
+
+  @override
+  String get jadeSlip_sessionPick => 'Pick a session';
+
+  @override
+  String get jadeSlip_sessionPickHint =>
+      'Choose from this agent\'s past sessions';
+
+  @override
+  String get jadeSlip_sessionEmpty => 'This agent has no past sessions yet';
+
+  @override
+  String get jadeSlip_sessionNoMessage => 'Empty';
+
+  @override
+  String get jadeSlip_sessionCurrentTag => 'current';
 
   @override
   String get jadeSlip_notes => 'Notes';

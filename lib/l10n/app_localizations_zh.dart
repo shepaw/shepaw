@@ -43,6 +43,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get common_edit => '编辑';
 
   @override
+  String get common_modify => '修改';
+
+  @override
   String get common_close => '关闭';
 
   @override
@@ -6245,6 +6248,66 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get jadeSlip_itemAdd => '添加清单项';
+
+  @override
+  String get jadeSlip_noOpenItems => '清单已全部完成，没有待办项可以交给 Agent';
+
+  @override
+  String get jadeSlip_handOffTitle => '交给 Agent';
+
+  @override
+  String get jadeSlip_handOffAgent => '执行 Agent';
+
+  @override
+  String get jadeSlip_handOffScope => '交给它的内容';
+
+  @override
+  String jadeSlip_handOffScopeItem(String text) {
+    return '清单项「$text」';
+  }
+
+  @override
+  String get jadeSlip_handOffScopeNoItems => '全部内容（无清单）';
+
+  @override
+  String jadeSlip_handOffScopeAll(int total) {
+    return '全部 $total 项';
+  }
+
+  @override
+  String jadeSlip_handOffScopeOpen(int open, int total) {
+    return '待办 $open 项（共 $total 项）';
+  }
+
+  @override
+  String get jadeSlip_handOffSession => '目标会话';
+
+  @override
+  String get jadeSlip_sessionCurrent => '当前会话';
+
+  @override
+  String get jadeSlip_sessionCurrentHint => '该 Agent 最近活跃的会话';
+
+  @override
+  String get jadeSlip_sessionFresh => '新开会话';
+
+  @override
+  String get jadeSlip_sessionFreshHint => '新开一条空白会话';
+
+  @override
+  String get jadeSlip_sessionPick => '指定会话';
+
+  @override
+  String get jadeSlip_sessionPickHint => '从该 Agent 的历史会话中选择';
+
+  @override
+  String get jadeSlip_sessionEmpty => '该 Agent 还没有历史会话';
+
+  @override
+  String get jadeSlip_sessionNoMessage => '空会话';
+
+  @override
+  String get jadeSlip_sessionCurrentTag => '当前';
 
   @override
   String get jadeSlip_notes => '备注';

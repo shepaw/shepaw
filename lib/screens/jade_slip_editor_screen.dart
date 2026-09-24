@@ -19,6 +19,7 @@ import '../widgets/chat/storage_file_picker_screen.dart';
 import '../widgets/discard_changes_scope.dart';
 import 'jade_slip_agent_picker.dart';
 import 'jade_slip_dispatch.dart';
+import 'jade_slip_dispatch_dialog.dart';
 import 'storage_shared.dart';
 
 /// 玉简编辑：标题、清单勾选、备注、负责人、截止日期。
@@ -537,6 +538,7 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                   )),
                   onDelete: () => unawaited(_removeItem(item.id)),
                   onRename: (text) => unawaited(_renameItem(item.id, text)),
+                  onHandOff: () => unawaited(_handOffItem(slip, item)),
                   onEditComplete: () {
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       if (mounted) _itemFocus.requestFocus();
@@ -730,26 +732,61 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     if (mounted && !widget.embedded) Navigator.pop(context);
   }
 
-  Future<void> _handOff(JadeSlip slip) async {
+  /// 顶栏「交给 Agent」：只把**待办项**交给 Agent，先确认目标与会话。
+  Future<void> _handOff(JadeSlip slip) => _dispatch(slip);
+
+  /// 清单项右侧菜单「交给 Agent」：只派发这一项。
+  Future<void> _handOffItem(JadeSlip slip, JadeSlipItem item) =>
+      _dispatch(slip, focusItem: item);
+
+  Future<void> _dispatch(JadeSlip slip, {JadeSlipItem? focusItem}) async {
     if (!await _flush()) return;
     final latest = await _service.getById(widget.slipId);
     if (latest == null || !mounted) return;
-    if (latest.assigneeAgentId.trim().isEmpty) {
-      final agentId = await _pickRunAgent();
-      if (agentId == null || !mounted) return;
-      await dispatchJadeSlip(context, latest, preferredAgentId: agentId);
-      return;
-    }
-    await dispatchJadeSlip(context, latest);
-  }
 
-  Future<String?> _pickRunAgent() async {
-    final picked = await showJadeSlipAgentPicker(
+    final JadeSlipItem? target;
+    if (focusItem == null) {
+      target = null;
+      // 顶栏入口只交待办。待办为空就没有可交给 Agent 的活——清单为空
+      // 是另一回事，那条玉简只有备注，仍然可以派发。
+      if (latest.items.isNotEmpty && latest.openItems.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context).jadeSlip_noOpenItems),
+          ),
+        );
+        return;
+      }
+    } else {
+      // 单项派发时该项可能已被删掉，重新按 id 取一次。
+      JadeSlipItem? found;
+      for (final item in latest.items) {
+        if (item.id == focusItem.id) {
+          found = item;
+          break;
+        }
+      }
+      if (found == null) return;
+      target = found;
+    }
+
+    final choice = await showJadeSlipDispatchDialog(
       context,
+      slip: latest,
       agents: _agents,
-      currentAgentId: _slip?.assigneeAgentId,
+      focusItem: target,
     );
-    return picked?.id;
+    if (choice == null || !mounted) return;
+    await dispatchJadeSlip(
+      context,
+      latest,
+      preferredAgentId: choice.agentId,
+      focusItem: target,
+      // 单项入口由 focusItem 收窄；顶栏入口只交待办。
+      onlyOpenItems: target == null,
+      sessionTarget: choice.sessionTarget,
+      channelId: choice.channelId,
+    );
   }
 
   Future<void> _pickDue(JadeSlip slip) async {
@@ -1005,7 +1042,7 @@ class _PriorityPill extends StatelessWidget {
   }
 }
 
-/// 清单项：勾选、行内改字、更多操作（编辑 / 删除）。
+/// 清单项：勾选、行内改字、更多操作（交给 Agent / 编辑 / 删除）。
 class _ChecklistRow extends StatefulWidget {
   const _ChecklistRow({
     super.key,
@@ -1013,6 +1050,7 @@ class _ChecklistRow extends StatefulWidget {
     required this.onChanged,
     required this.onDelete,
     required this.onRename,
+    required this.onHandOff,
     this.onEditComplete,
   });
 
@@ -1020,6 +1058,9 @@ class _ChecklistRow extends StatefulWidget {
   final ValueChanged<bool> onChanged;
   final VoidCallback onDelete;
   final ValueChanged<String> onRename;
+
+  /// 只把这一项交给 Agent 执行。
+  final VoidCallback onHandOff;
 
   /// 回车保存后回调（用于把焦点移到「添加一项」）。
   final VoidCallback? onEditComplete;
@@ -1174,10 +1215,15 @@ class _ChecklistRowState extends State<_ChecklistRow> {
                 iconSize: 18,
                 icon: Icon(Icons.more_vert, color: scheme.onSurfaceVariant),
                 onSelected: (v) {
+                  if (v == 'agent') widget.onHandOff();
                   if (v == 'edit') _beginEdit();
                   if (v == 'delete') widget.onDelete();
                 },
                 itemBuilder: (_) => [
+                  PopupMenuItem(
+                    value: 'agent',
+                    child: Text(l10n.jadeSlip_run),
+                  ),
                   PopupMenuItem(
                     value: 'edit',
                     child: Text(l10n.common_edit),

@@ -85,6 +85,76 @@ Buy tickets
     expect(prompt, contains('shepaw notes complete'));
   });
 
+  /// 顶栏「交给 Agent」只交待办项：已完成的留在玉简里，但进度摘要仍给到
+  /// Agent，免得它以为这条玉简只有一件事。
+  test('onlyOpenItems 只列未完成项，并保留进度摘要', () {
+    final slip = JadeSlip(
+      id: 'slip-1',
+      title: 'Book flights',
+      items: const [
+        JadeSlipItem(id: 'done1', text: '已完成的事', done: true),
+        JadeSlipItem(id: 'open1', text: '待办的事'),
+        JadeSlipItem(id: 'open2', text: '另一件待办'),
+      ],
+      deviceId: 'aaaaaaaaaaaaaaaa',
+      createdAt: 0,
+      updatedAt: 0,
+    );
+
+    final prompt = slip.toAgentPrompt(onlyOpenItems: true);
+    expect(prompt, contains('待办 2/3 项'));
+    expect(prompt, contains('已完成 1 项'));
+    expect(prompt, contains('item=open1'));
+    expect(prompt, contains('item=open2'));
+    expect(prompt, isNot(contains('item=done1')));
+    // 全部完成才建议 complete；这条还有待办，仍然可以建议。
+    expect(prompt, contains('shepaw notes complete'));
+  });
+
+  /// 单项派发（清单项菜单）：只给这一项，且不能建议 complete——
+  /// 那会把整条玉简标记为完成。
+  test('focusItem 只派发一项，且不建议 complete', () {
+    final slip = JadeSlip(
+      id: 'slip-1',
+      title: 'Book flights',
+      items: const [
+        JadeSlipItem(id: 'itemA', text: '甲'),
+        JadeSlipItem(id: 'itemB', text: '乙'),
+      ],
+      deviceId: 'aaaaaaaaaaaaaaaa',
+      createdAt: 0,
+      updatedAt: 0,
+    );
+
+    final prompt = slip.toAgentPrompt(
+      focusItem: slip.items[1],
+      onlyOpenItems: true,
+    );
+    expect(prompt, contains('中的这一项'));
+    expect(prompt, contains('item=itemB'));
+    expect(prompt, isNot(contains('item=itemA')));
+    expect(prompt, isNot(contains('shepaw notes complete')));
+    // 勾一项、留言仍然要教。
+    expect(prompt, contains('shepaw notes item'));
+    expect(prompt, contains('shepaw notes comment'));
+  });
+
+  /// 待办为空但清单非空：如实说明，别让 Agent 以为没有清单。
+  test('onlyOpenItems 且全部完成时说明无待办', () {
+    final slip = JadeSlip(
+      id: 'slip-1',
+      title: 'Book flights',
+      items: const [JadeSlipItem(id: 'done1', text: '做完了', done: true)],
+      deviceId: 'aaaaaaaaaaaaaaaa',
+      createdAt: 0,
+      updatedAt: 0,
+    );
+
+    final prompt = slip.toAgentPrompt(onlyOpenItems: true);
+    expect(prompt, contains('全部已完成，无待办'));
+    expect(prompt, isNot(contains('- [x] 做完了')));
+  });
+
   test('json roundtrip', () {
     final slip = JadeSlip(
       id: 'id1',

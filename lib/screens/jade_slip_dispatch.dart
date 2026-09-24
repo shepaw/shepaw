@@ -12,11 +12,30 @@ import '../services/local_user_identity.dart';
 import '../services/she_service.dart';
 import 'jade_slip_agent_picker.dart';
 
+/// 派发到哪条会话。
+enum JadeSlipSessionTarget {
+  /// 该 Agent 最近活跃的会话；没有就落到默认会话。
+  current,
+
+  /// 新开一条会话。
+  fresh,
+
+  /// 用户指定的会话（[dispatchJadeSlip] 的 `channelId`）。
+  specific,
+}
+
 /// 打开与 Agent 的会话并预填玉简任务。返回是否已派发。
+///
+/// [focusItem] / [onlyOpenItems] 收窄交给 Agent 的清单范围，语义见
+/// [JadeSlip.toAgentPrompt]；[sessionTarget] 决定落在哪条会话。
 Future<bool> dispatchJadeSlip(
   BuildContext context,
   JadeSlip slip, {
   String? preferredAgentId,
+  JadeSlipItem? focusItem,
+  bool onlyOpenItems = false,
+  JadeSlipSessionTarget sessionTarget = JadeSlipSessionTarget.current,
+  String? channelId,
 }) async {
   final l10n = AppLocalizations.of(context);
   final db = LocalDatabaseService();
@@ -53,13 +72,28 @@ Future<bool> dispatchJadeSlip(
 
   final chatService = getIt<ChatService>();
   const userId = LocalUserIdentity.id;
-  final channelId =
-      await chatService.getLatestActiveChannelId(userId, agentId) ??
+  final String targetChannelId;
+  switch (sessionTarget) {
+    case JadeSlipSessionTarget.fresh:
+      targetChannelId = await chatService.createNewSession(
+        userId: userId,
+        userName: LocalUserIdentity.displayName,
+        agentId: agentId,
+        agentName: agentName,
+      );
+    case JadeSlipSessionTarget.specific:
+      targetChannelId = channelId ??
+          await chatService.getLatestActiveChannelId(userId, agentId) ??
           chatService.generateChannelId(userId, agentId);
+    case JadeSlipSessionTarget.current:
+      targetChannelId =
+          await chatService.getLatestActiveChannelId(userId, agentId) ??
+              chatService.generateChannelId(userId, agentId);
+  }
 
   getIt<ComposerDraftService>().setDraft(
-    channelId,
-    slip.toAgentPrompt(),
+    targetChannelId,
+    slip.toAgentPrompt(focusItem: focusItem, onlyOpenItems: onlyOpenItems),
     agentId: agentId,
   );
 
@@ -69,7 +103,7 @@ Future<bool> dispatchJadeSlip(
     );
   }
   await ChatNavigationService.instance.openChannel(
-    channelId: channelId,
+    channelId: targetChannelId,
     agentId: agentId,
     agentName: agentName,
     agentAvatar: avatar,

@@ -164,6 +164,12 @@ abstract class AppLocalizations {
   /// **'编辑'**
   String get common_edit;
 
+  /// No description provided for @common_modify.
+  ///
+  /// In zh, this message translates to:
+  /// **'修改'**
+  String get common_modify;
+
   /// No description provided for @common_close.
   ///
   /// In zh, this message translates to:
@@ -11414,6 +11420,114 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'添加清单项'**
   String get jadeSlip_itemAdd;
+
+  /// No description provided for @jadeSlip_noOpenItems.
+  ///
+  /// In zh, this message translates to:
+  /// **'清单已全部完成，没有待办项可以交给 Agent'**
+  String get jadeSlip_noOpenItems;
+
+  /// No description provided for @jadeSlip_handOffTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'交给 Agent'**
+  String get jadeSlip_handOffTitle;
+
+  /// No description provided for @jadeSlip_handOffAgent.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行 Agent'**
+  String get jadeSlip_handOffAgent;
+
+  /// No description provided for @jadeSlip_handOffScope.
+  ///
+  /// In zh, this message translates to:
+  /// **'交给它的内容'**
+  String get jadeSlip_handOffScope;
+
+  /// No description provided for @jadeSlip_handOffScopeItem.
+  ///
+  /// In zh, this message translates to:
+  /// **'清单项「{text}」'**
+  String jadeSlip_handOffScopeItem(String text);
+
+  /// No description provided for @jadeSlip_handOffScopeNoItems.
+  ///
+  /// In zh, this message translates to:
+  /// **'全部内容（无清单）'**
+  String get jadeSlip_handOffScopeNoItems;
+
+  /// No description provided for @jadeSlip_handOffScopeAll.
+  ///
+  /// In zh, this message translates to:
+  /// **'全部 {total} 项'**
+  String jadeSlip_handOffScopeAll(int total);
+
+  /// No description provided for @jadeSlip_handOffScopeOpen.
+  ///
+  /// In zh, this message translates to:
+  /// **'待办 {open} 项（共 {total} 项）'**
+  String jadeSlip_handOffScopeOpen(int open, int total);
+
+  /// No description provided for @jadeSlip_handOffSession.
+  ///
+  /// In zh, this message translates to:
+  /// **'目标会话'**
+  String get jadeSlip_handOffSession;
+
+  /// No description provided for @jadeSlip_sessionCurrent.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前会话'**
+  String get jadeSlip_sessionCurrent;
+
+  /// No description provided for @jadeSlip_sessionCurrentHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'该 Agent 最近活跃的会话'**
+  String get jadeSlip_sessionCurrentHint;
+
+  /// No description provided for @jadeSlip_sessionFresh.
+  ///
+  /// In zh, this message translates to:
+  /// **'新开会话'**
+  String get jadeSlip_sessionFresh;
+
+  /// No description provided for @jadeSlip_sessionFreshHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'新开一条空白会话'**
+  String get jadeSlip_sessionFreshHint;
+
+  /// No description provided for @jadeSlip_sessionPick.
+  ///
+  /// In zh, this message translates to:
+  /// **'指定会话'**
+  String get jadeSlip_sessionPick;
+
+  /// No description provided for @jadeSlip_sessionPickHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'从该 Agent 的历史会话中选择'**
+  String get jadeSlip_sessionPickHint;
+
+  /// No description provided for @jadeSlip_sessionEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'该 Agent 还没有历史会话'**
+  String get jadeSlip_sessionEmpty;
+
+  /// No description provided for @jadeSlip_sessionNoMessage.
+  ///
+  /// In zh, this message translates to:
+  /// **'空会话'**
+  String get jadeSlip_sessionNoMessage;
+
+  /// No description provided for @jadeSlip_sessionCurrentTag.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前'**
+  String get jadeSlip_sessionCurrentTag;
 
   /// No description provided for @jadeSlip_notes.
   ///
