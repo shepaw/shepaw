@@ -119,18 +119,27 @@ void main() {
   });
 
   group('tool schemas', () {
-    test('openAI tools include dispatch, plan_publish, finish, session_create', () {
+    test('openAI tools include dispatch, plan_publish, finish, artifacts, '
+        'session_create', () {
       final tools = GroupOrchestrationTools.openAITools(
         agentNames: ['Coder', 'Reviewer'],
       );
-      expect(tools.length, 4);
       final names = tools
           .map((t) => (t['function'] as Map)['name'] as String)
           .toList();
-      expect(names, contains(GroupOrchestrationTools.dispatchName));
-      expect(names, contains(GroupOrchestrationTools.planPublishName));
-      expect(names, contains(GroupOrchestrationTools.finishName));
-      expect(names, contains(GroupOrchestrationTools.sessionCreateName));
+      // 只锁「管理员该拿到的工具都在」；工具集会随编排能力增长
+      // （artifact_plan / artifact_register 就是后加的），不锁总数。
+      expect(
+        names,
+        containsAll(<String>[
+          GroupOrchestrationTools.dispatchName,
+          GroupOrchestrationTools.planPublishName,
+          GroupOrchestrationTools.finishName,
+          GroupOrchestrationTools.artifactPlanName,
+          GroupOrchestrationTools.artifactRegisterName,
+          GroupOrchestrationTools.sessionCreateName,
+        ]),
+      );
 
       final dispatch = tools.firstWhere(
         (t) =>

@@ -235,7 +235,11 @@ void main() {
     expect(prompt, contains('hub.cli.execute'));
     expect(prompt, contains('你没有 shepaw function tool'));
     expect(prompt, contains('session_id'));
-    expect(prompt, isNot(contains('shepaw store write')));
+    // 产物写入口必须是本宿主的 ACP 通道。正文里的 `shepaw <ns> <sub>` 只是
+    // **写法**（委派/工作流/群管理等段落都用这套记法）：【CLI 调用方式】前言
+    // 已声明「下文出现的 shepaw … 一律通过 hub.cli.execute 执行」，所以这里
+    // 断言通道本身，而不是禁用字符串。
+    expect(prompt, contains('ACP `hub.cli.execute` store write'));
     expect(prompt, isNot(contains('你有 shepaw CLI 工具')));
   });
 

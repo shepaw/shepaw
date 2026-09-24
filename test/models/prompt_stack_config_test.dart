@@ -45,7 +45,9 @@ void main() {
 
     test('meta cognition includes on-demand agent discovery guide', () {
       final block = SheService.buildMetaCognitionBlock();
-      expect(block, contains('Agent profiles are not in your prompt'));
+      // 指引只承诺「画像不在提示词里、要按需查」——具体措辞见
+      // [SheService.buildAgentsDiscoveryGuideBlock]。
+      expect(block, contains('profiles not in prompt'));
       expect(block, contains('agents.list'));
       expect(block, contains('agents.get'));
     });
