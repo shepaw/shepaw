@@ -6,6 +6,7 @@ import 'package:shepaw/models/remote_agent.dart';
 import 'package:shepaw/services/acp_agent_connection.dart';
 import 'package:shepaw/services/group/group_agent_executor.dart';
 import 'package:shepaw/services/group/group_interaction_handler.dart';
+import 'package:shepaw/services/group/group_member_capability_probe.dart';
 import 'package:shepaw/services/group/group_membership_perception.dart';
 import 'package:shepaw/services/group/group_prompt_builder.dart';
 import 'package:shepaw/services/group/group_turn_result.dart';
@@ -112,6 +113,8 @@ class _FakeExecutor extends GroupAgentExecutor {
     int? orchestrationRound,
     String? groupFamilyId,
     List<String> historyPinSenderIds = const [],
+    MemberCapabilitySnapshot? memberProbe,
+    Duration? taskTimeout,
     bool isPlanMissingNudge = false,
     bool isPendingResolution = false,
     bool isStalledFollowUp = false,

@@ -10,6 +10,7 @@ import 'package:shepaw/services/group/group_management_service.dart';
 import 'package:shepaw/services/group/group_event.dart';
 import 'package:shepaw/services/group/group_event_store.dart';
 import 'package:shepaw/services/group/group_interaction_handler.dart';
+import 'package:shepaw/services/group/group_member_capability_probe.dart';
 import 'package:shepaw/services/group/group_member_session_service.dart';
 import 'package:shepaw/services/group/group_membership_perception.dart';
 import 'package:shepaw/services/group/group_orchestration_tools.dart';
@@ -542,6 +543,8 @@ class _NoopExecutor extends GroupAgentExecutor {
     int? orchestrationRound,
     String? groupFamilyId,
     List<String> historyPinSenderIds = const [],
+    MemberCapabilitySnapshot? memberProbe,
+    Duration? taskTimeout,
     bool isPlanMissingNudge = false,
     bool isPendingResolution = false,
     bool isStalledFollowUp = false,
