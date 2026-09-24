@@ -88,10 +88,10 @@ Buy tickets
   /// 顶栏「交给 Agent」只交待办项：已完成的留在玉简里，但进度摘要仍给到
   /// Agent，免得它以为这条玉简只有一件事。
   test('onlyOpenItems 只列未完成项，并保留进度摘要', () {
-    final slip = JadeSlip(
+    const slip = JadeSlip(
       id: 'slip-1',
       title: 'Book flights',
-      items: const [
+      items: [
         JadeSlipItem(id: 'done1', text: '已完成的事', done: true),
         JadeSlipItem(id: 'open1', text: '待办的事'),
         JadeSlipItem(id: 'open2', text: '另一件待办'),
@@ -114,10 +114,10 @@ Buy tickets
   /// 单项派发（清单项菜单）：只给这一项，且不能建议 complete——
   /// 那会把整条玉简标记为完成。
   test('focusItem 只派发一项，且不建议 complete', () {
-    final slip = JadeSlip(
+    const slip = JadeSlip(
       id: 'slip-1',
       title: 'Book flights',
-      items: const [
+      items: [
         JadeSlipItem(id: 'itemA', text: '甲'),
         JadeSlipItem(id: 'itemB', text: '乙'),
       ],
@@ -141,10 +141,10 @@ Buy tickets
 
   /// 待办为空但清单非空：如实说明，别让 Agent 以为没有清单。
   test('onlyOpenItems 且全部完成时说明无待办', () {
-    final slip = JadeSlip(
+    const slip = JadeSlip(
       id: 'slip-1',
       title: 'Book flights',
-      items: const [JadeSlipItem(id: 'done1', text: '做完了', done: true)],
+      items: [JadeSlipItem(id: 'done1', text: '做完了', done: true)],
       deviceId: 'aaaaaaaaaaaaaaaa',
       createdAt: 0,
       updatedAt: 0,
