@@ -252,10 +252,21 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     widget.onChanged?.call();
     await _load();
     if (!mounted) return;
-    // 连续添加：回车后保持焦点在「添加一项」。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _itemFocus.requestFocus();
-    });
+    // 列表插入新行、父页面随后刷新都会重建子树。拉住焦点，才能连续添加。
+    _holdAddItemFocus();
+  }
+
+  void _holdAddItemFocus() {
+    final until = DateTime.now().add(const Duration(milliseconds: 600));
+    void pump() {
+      if (!mounted || DateTime.now().isAfter(until)) return;
+      if (_itemFocus.canRequestFocus && !_itemFocus.hasFocus) {
+        _itemFocus.requestFocus();
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) => pump());
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => pump());
   }
 
   Future<void> _addComment() async {
@@ -546,6 +557,7 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                   },
                 ),
               _AddItemRow(
+                key: const ValueKey('jade-slip-add-item-row'),
                 controller: _item,
                 focusNode: _itemFocus,
                 fieldKey: jadeSlipAddItemFieldKey,
@@ -1285,6 +1297,7 @@ class _SubmitOnEnter extends StatelessWidget {
 
 class _AddItemRow extends StatelessWidget {
   const _AddItemRow({
+    super.key,
     required this.controller,
     required this.hint,
     required this.onSubmit,
