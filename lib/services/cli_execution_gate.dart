@@ -199,5 +199,8 @@ class CliExecutionGate {
 /// Default extra allowlist for non-admin group members (namespace-level).
 ///
 /// `notes`（玉简）是协作动作——勾选清单不是写个人认知袋，所以成员也有。
-/// `notes.delete` 已由 `kCliApprovalRequiredCommands` 单独拦，不必再收窄。
+///
+/// 放开整个命名空间是安全的：`notes.delete` 在命令内部就有 ACL（非 She、
+/// 非本机用户直接拒），不依赖审批开关——审批只在 agent 自己开了
+/// `cliRequireApproval` 时才问，单靠它不算拦。
 const kGroupMemberCliAllowlist = {'store', 'help', 'notes'};
