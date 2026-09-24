@@ -1,6 +1,7 @@
 # 玉简交互优化（第二轮三项）：决策记录
 
-> 日期：2026-09-23
+> 日期：2026-09-23（行号：文中 `file:line` 是动手前那一版的行号；本轮 commit
+> 落地后行号已漂移，读的时候按符号名找，别按数字跳）
 > 来源：玉简待办「玉简交互优化」（3 项清单，指派给 shepaw 执行）
 
 ## 1. 背景
@@ -25,16 +26,17 @@
 - `shepaw help` → 命名空间清单里**有** `notes`，描述完整；
   `shepaw notes` → 10 个子命令全列出来。**执行面没问题。**
 - 但没有任何一处**主动告诉** agent「有玉简这回事」：
-  - `ScopeCard.toStableMarkdown()`（`lib/storage/scope_card.dart:701`）是每轮唯一
-    说明书，外接 ACP / Hub 引擎都会收到，里面只有 store / memory / soul，**没有
-    notes**。
-  - `HubCliExecute.groupContextHint()`（`hub_cli_execute.dart:106`）与
-    `group_context_builder.dart:204` 的 `ctx['cli']` 只给 `namespace: 'store'`
+  - `ScopeCard.toStableMarkdown()`（`lib/storage/scope_card.dart`，找
+    `_storeReadLine`）是每轮唯一说明书，外接 ACP / Hub 引擎都会收到，里面只有
+    store / memory / soul，**没有 notes**。
+  - `HubCliExecute.groupContextHint()`（`hub_cli_execute.dart`）与
+    `GroupContextBuilder.build()` 里 `ctx['cli']` 那一支
+    （`group_context_builder.dart`）只给 `namespace: 'store'`
     一个例子，没说「还有别的命名空间，跑 `shepaw help` 看」。
-  - `SheService._nonSheMetaCliBlock()`（`she_service.dart:1616`）逐项列 Web /
-    Store / Vision / OS / Meta，**没有玉简**。
+  - `SheService._nonSheMetaCliBlock()`（`she_service.dart`，搜
+    `_nonSheMetaCliBlock`）逐项列 Web / Store / Vision / OS / Meta，**没有玉简**。
   - 群成员被 `kGroupMemberCliAllowlist = {'store', 'help'}`
-    （`cli_execution_gate.dart:200`）收窄，即使知道了也执行不了。
+    （`cli_execution_gate.dart`）收窄，即使知道了也执行不了。
 - 唯一让外接 agent 明白的通路是用户点玉简「交给 Agent」→
   `JadeSlip.toAgentPrompt()` 预填的草稿。用户随口说「记到玉简」时它不会想到。
 
