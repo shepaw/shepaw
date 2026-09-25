@@ -741,7 +741,8 @@ class HomeScreenState extends State<HomeScreen> {
             tooltip: l10n.common_search,
             onPressed: _openSearch,
           ),
-          const SizedBox(width: _appBarActionEdgeGap),
+          // 两个按钮各自 48px 点击区、图标居中，本身已留出 12px 视觉间隙；
+          // 再插间距会让图标间距大于最右侧按钮到屏幕边缘的距离，故紧贴排列。
           _buildCompactAppBarIconButton(
             key: _addButtonKey,
             icon: SvgPicture.asset(
