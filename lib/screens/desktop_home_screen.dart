@@ -581,7 +581,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       slot.storageSpace = space;
       slot.selected = null;
       slot.rightPanel = switch (space) {
-        StoreSpace.notes => _RightPanelView.jadeSlips,
+        StoreSpace.slips => _RightPanelView.jadeSlips,
         StoreSpace.instructions => _RightPanelView.instructions,
         _ => _RightPanelView.storageSpaceManage,
       };

@@ -98,7 +98,7 @@ class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
         return Icons.bolt_outlined;
       case StoreSpace.files:
         return Icons.folder_outlined;
-      case StoreSpace.notes:
+      case StoreSpace.slips:
         return Icons.auto_stories_outlined;
       case StoreSpace.instructions:
         return Icons.playlist_add_check_outlined;
@@ -212,8 +212,8 @@ class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
       leading: _leadingIconBox(Icons.auto_stories_outlined),
       title: l10n.jadeSlip_title,
       subtitle: l10n.jadeSlip_entryHint,
-      selected: widget.selectedSpace == StoreSpace.notes,
-      onTap: () => widget.onSpaceSelected?.call(StoreSpace.notes),
+      selected: widget.selectedSpace == StoreSpace.slips,
+      onTap: () => widget.onSpaceSelected?.call(StoreSpace.slips),
     );
   }
 

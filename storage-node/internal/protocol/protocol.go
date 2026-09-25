@@ -62,7 +62,7 @@ func IsValidDeviceID(device string) bool {
 // BuiltinSpaces mirrors Dart StoreSpace.all (new + legacy).
 func BuiltinSpaces() []string {
 	return []string{
-		"workspaces", "runtime", "files", "notes", "instructions", "public", "backups", "cognition", "memory",
+		"workspaces", "runtime", "files", "slips", "instructions", "public", "backups", "cognition", "memory",
 		"artifacts", "attachments", "tools",
 	}
 }
@@ -79,7 +79,7 @@ func IsValidSpace(s string) bool {
 // SharedReadable: owner 默认可跨端读（不含 private runtime）。
 func SharedReadable(s string) bool {
 	switch s {
-	case "workspaces", "files", "notes", "instructions", "public", "artifacts", "tools":
+	case "workspaces", "files", "slips", "instructions", "public", "artifacts", "tools":
 		return true
 	default:
 		return false

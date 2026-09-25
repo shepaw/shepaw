@@ -4,8 +4,8 @@ import '../storage/store_protocol.dart';
 
 /// 玉简条目：储物袋里的待办/笔记，供用户记录、Agent 勾选执行。
 ///
-/// 落盘为 `store://notes/<device>/slips/<id>.json`，跨设备随储物袋镜像。
-/// 附件落在同分区 `slips/<id>/files/`。
+/// 落盘为 `store://slips/<device>/<id>.json`，跨设备随储物袋镜像。
+/// 附件落在同分区 `<id>/files/`。
 class JadeSlip {
   const JadeSlip({
     required this.id,
@@ -142,14 +142,13 @@ class JadeSlip {
     return true;
   }
 
-  String get relPath => 'slips/$id.json';
+  String get relPath => '$id.json';
 
-  /// 玉简正文记录：`slips/<id>.json`（不含附件 `slips/<id>/files/…`）。
+  /// 玉简正文记录：`<id>.json`（不含附件 `<id>/files/…`）。
   static bool isRecordPath(String path) {
-    final parts = path.split('/');
-    return parts.length == 2 &&
-        parts.first == 'slips' &&
-        parts.last.endsWith('.json');
+    return !path.contains('/') &&
+        path.endsWith('.json') &&
+        path.length > '.json'.length;
   }
 
   static String? idFromRecordPath(String path) {
@@ -281,6 +280,7 @@ class JadeSlip {
   }
 
   Map<String, dynamic> toJson() => {
+        'kind': 'jade_slip',
         'id': id,
         'title': title,
         'body': body,
@@ -768,12 +768,12 @@ class JadeSlipAttachment {
   final String id;
   final String name;
 
-  /// `notes` 分区内相对路径，如 `slips/<id>/files/<attId>-name.pdf`。
+  /// `slips` 分区内相对路径，如 `<id>/files/<attId>-name.pdf`。
   final String path;
   final int sizeBytes;
 
   String uriFor(String deviceId) =>
-      storeUriWithRef(StoreSpace.notes, deviceId, path);
+      storeUriWithRef(StoreSpace.slips, deviceId, path);
 
   Map<String, dynamic> toJson() => {
         'id': id,

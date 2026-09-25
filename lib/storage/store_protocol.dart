@@ -126,9 +126,9 @@ class StoreSpace {
   /// Legacy chat uploads under `files/chat/<sha256>`（旧 URI 兼容）。
   static const chatAttachmentPrefix = 'chat';
 
-  /// 玉简：用户待办/笔记（专属 UI，不进「文件」浏览）。
-  /// 落盘：`notes/<device>/slips/<id>.json`，跨设备随储物袋镜像。
-  static const notes = 'notes';
+  /// 玉简：用户待办（专属 UI，不进「文件」浏览）。
+  /// 落盘：`slips/<device>/<id>.json`，跨设备随储物袋镜像。
+  static const slips = 'slips';
 
   /// 指令集：可复用任务指令（专属 UI，不进「文件」浏览）。
   static const instructions = 'instructions';
@@ -152,7 +152,7 @@ class StoreSpace {
     workspaces,
     runtime,
     files,
-    notes,
+    slips,
     instructions,
     public_,
     backups,
@@ -172,7 +172,7 @@ class StoreSpace {
 
   /// 专属 UI 分区：有独立列表页，不能再当普通文件夹出现在「我的」。
   static const dedicatedUserSpaces = <String>{
-    notes,
+    slips,
     instructions,
   };
 
@@ -193,7 +193,7 @@ class StoreSpace {
   /// 「最近」收录的分区：浏览面 + 玉简/指令集 + 仍可能有存量的 public。
   static const recentSpaces = <String>[
     files,
-    notes,
+    slips,
     instructions,
     public_,
     ...agentBrowserSpaces,
@@ -254,7 +254,7 @@ class StoreSpace {
   static const sharedReadable = <String>[
     workspaces,
     files,
-    notes,
+    slips,
     instructions,
     public_,
     artifacts,
@@ -310,7 +310,7 @@ class StoreSpace {
         SpaceProfile.builtin(workspaces, visibility: 'shared'),
         SpaceProfile.builtin(runtime, visibility: 'private'),
         SpaceProfile.builtin(files, visibility: 'shared'),
-        SpaceProfile.builtin(notes, visibility: 'shared'),
+        SpaceProfile.builtin(slips, visibility: 'shared'),
         SpaceProfile.builtin(instructions, visibility: 'shared'),
         SpaceProfile.builtin(public_, visibility: 'shared'),
         SpaceProfile.builtin(backups,
@@ -660,7 +660,7 @@ StoreAcl checkStoreAcl(
 bool? _builtinVisibility(String space) => switch (space) {
       StoreSpace.workspaces ||
       StoreSpace.files ||
-      StoreSpace.notes ||
+      StoreSpace.slips ||
       StoreSpace.instructions ||
       StoreSpace.public_ ||
       StoreSpace.artifacts ||

@@ -5,7 +5,7 @@
 
 ## 1. 背景与约束
 
-玉简是储物袋 `notes` 分区的待办（`store://notes/<device>/slips/<id>.json`），
+玉简是储物袋 `slips` 分区的待办（`store://slips/<device>/<id>.json`），
 用户写、Agent 用 `shepaw notes …` 执行。四条清单项都是同一个页面的改动，
 但涉及三种不同性质的变更：
 

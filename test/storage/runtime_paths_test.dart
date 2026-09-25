@@ -127,7 +127,7 @@ void main() {
             StoreSpace.workspaces,
             StoreSpace.runtime,
             StoreSpace.files,
-            StoreSpace.notes,
+            StoreSpace.slips,
             StoreSpace.instructions,
             StoreSpace.public_,
             StoreSpace.backups,
@@ -136,7 +136,7 @@ void main() {
             StoreSpace.artifacts,
             StoreSpace.attachments,
           ]));
-      expect(StoreSpace.sharedReadable, contains(StoreSpace.notes));
+      expect(StoreSpace.sharedReadable, contains(StoreSpace.slips));
       expect(StoreSpace.sharedReadable, contains(StoreSpace.instructions));
       expect(StoreSpace.sharedReadable, isNot(contains(StoreSpace.runtime)));
       expect(StoreSpace.sharedReadable, isNot(contains(StoreSpace.cognition)));
@@ -150,7 +150,7 @@ void main() {
       expect(StoreSpace.browserSpaces, contains(StoreSpace.cognition));
       expect(StoreSpace.browserSpaces, isNot(contains(StoreSpace.memory)));
       expect(StoreSpace.userBrowserSpaces, [StoreSpace.files]);
-      expect(StoreSpace.recentSpaces, contains(StoreSpace.notes));
+      expect(StoreSpace.recentSpaces, contains(StoreSpace.slips));
       expect(StoreSpace.recentSpaces, contains(StoreSpace.instructions));
       expect(StoreSpace.recentSpaces, contains(StoreSpace.public_));
       expect(StoreSpace.agentBrowserSpaces, [
@@ -182,7 +182,7 @@ void main() {
       );
       expect(
         StoreSpace.userVisibleSpaces(
-            [StoreSpace.files, StoreSpace.notes, StoreSpace.public_]),
+            [StoreSpace.files, StoreSpace.slips, StoreSpace.public_]),
         [StoreSpace.files],
       );
       expect(

@@ -28,5 +28,7 @@ Hub 引擎打本机 PATH 上的 `shepaw`。本机 device 的储物袋留在 Hub�
 - 做完的产物用 `slip item --evidence` 挂回对应项。
 - 一项可以交给另一个 Agent。
 - 子命令以 `shepaw slip` 为准。
+- 储物袋里的玉简是 `store://slips/<device>/<id>.json`，文件里 `kind` 为 `jade_slip`。读到它就是一条玉简。
+- 进度、验收、证据用 `shepaw slip` 写回。不要用 `store write` 覆盖这份 JSON。
 
 用户要你做待办、勾进度、或说「记到玉简」时，用 `slip`，不要只在对话里答应。

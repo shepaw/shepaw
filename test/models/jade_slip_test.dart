@@ -218,7 +218,7 @@ Buy tickets
         JadeSlipAttachment(
           id: 'att1',
           name: 'shot.png',
-          path: 'slips/id1/files/att1-shot.png',
+          path: 'id1/files/att1-shot.png',
           sizeBytes: 12,
         ),
       ],
@@ -236,14 +236,15 @@ Buy tickets
     expect(copy.items.single.done, isTrue);
     expect(copy.attachments.single.name, 'shot.png');
     expect(copy.dueAtMs, 100);
-    expect(copy.relPath, 'slips/id1.json');
+    expect(copy.relPath, 'id1.json');
+    expect(copy.toJson()['kind'], 'jade_slip');
   });
 
-  test('isRecordPath only matches slips/<id>.json', () {
-    expect(JadeSlip.isRecordPath('slips/id1.json'), isTrue);
-    expect(JadeSlip.idFromRecordPath('slips/id1.json'), 'id1');
-    expect(JadeSlip.isRecordPath('slips/id1/files/a.png'), isFalse);
-    expect(JadeSlip.isRecordPath('other/id1.json'), isFalse);
-    expect(JadeSlip.idFromRecordPath('slips/id1/files/a.png'), isNull);
+  test('isRecordPath only matches <id>.json', () {
+    expect(JadeSlip.isRecordPath('id1.json'), isTrue);
+    expect(JadeSlip.idFromRecordPath('id1.json'), 'id1');
+    expect(JadeSlip.isRecordPath('id1/files/a.png'), isFalse);
+    expect(JadeSlip.isRecordPath('slips/id1.json'), isFalse);
+    expect(JadeSlip.idFromRecordPath('id1/files/a.png'), isNull);
   });
 }

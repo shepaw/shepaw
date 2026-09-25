@@ -75,7 +75,7 @@ class JadeSlipService {
     while (true) {
       final (data, _, eof) = await store.read(
         deviceId,
-        StoreSpace.notes,
+        StoreSpace.slips,
         path,
         offset,
         chunk,
@@ -119,7 +119,7 @@ class JadeSlipService {
     );
     await store.putBytes(
       deviceId: slip.deviceId,
-      space: StoreSpace.notes,
+      space: StoreSpace.slips,
       path: slip.relPath,
       bytes: bytes,
     );
@@ -136,14 +136,11 @@ class JadeSlipService {
     for (final deviceId in await _deviceIds(store)) {
       final entries = await store.list(
         deviceId,
-        StoreSpace.notes,
-        prefix: 'slips/',
+        StoreSpace.slips,
         computeHash: false,
       );
       for (final entry in entries) {
-        if (entry.isDir || !entry.path.endsWith('.json')) continue;
-        final parts = entry.path.split('/');
-        if (parts.length != 2 || parts.first != 'slips') continue;
+        if (entry.isDir || !JadeSlip.isRecordPath(entry.path)) continue;
         final slip = await _readSlip(store, deviceId, entry.path);
         if (slip == null) continue;
         final existing = byId[slip.id];
@@ -290,7 +287,7 @@ class JadeSlipService {
     final store = await _store();
     final originExists = existing != null &&
         await Directory(
-          p.join(store.root.path, existing.deviceId, StoreSpace.notes),
+          p.join(store.root.path, existing.deviceId, StoreSpace.slips),
         ).exists();
     if (!originExists) deviceId = self;
 
@@ -713,11 +710,11 @@ class JadeSlipService {
     final attId = JadeSlipAttachment.newId();
     final name = (displayName ?? p.basename(file.path)).trim();
     final safe = _safeFileName(name.isEmpty ? attId : name);
-    final rel = 'slips/${slip.id}/files/$attId-$safe';
+    final rel = '${slip.id}/files/$attId-$safe';
     final store = await _store();
     final put = await store.putFile(
       deviceId: slip.deviceId,
-      space: StoreSpace.notes,
+      space: StoreSpace.slips,
       path: rel,
       file: file,
     );
@@ -752,7 +749,7 @@ class JadeSlipService {
     }
     final store = await _store();
     try {
-      await store.delete(slip.deviceId, StoreSpace.notes, found.path);
+      await store.delete(slip.deviceId, StoreSpace.slips, found.path);
     } on StoreException catch (e) {
       if (e.code != StoreError.notFound) rethrow;
     }
@@ -785,13 +782,13 @@ class JadeSlipService {
     final store = await _store();
     for (final att in slip.attachments) {
       try {
-        await store.delete(slip.deviceId, StoreSpace.notes, att.path);
+        await store.delete(slip.deviceId, StoreSpace.slips, att.path);
       } on StoreException catch (e) {
         if (e.code != StoreError.notFound) rethrow;
       }
     }
     try {
-      await store.delete(slip.deviceId, StoreSpace.notes, slip.relPath);
+      await store.delete(slip.deviceId, StoreSpace.slips, slip.relPath);
     } on StoreException catch (e) {
       if (e.code != StoreError.notFound) rethrow;
     }
@@ -818,7 +815,7 @@ class JadeSlipService {
 
   /// 本机 store:// URI，Agent 也可用 `shepaw store read`。
   Future<String> uriOf(JadeSlip slip) async {
-    return storeUriWithRef(StoreSpace.notes, slip.deviceId, slip.relPath);
+    return storeUriWithRef(StoreSpace.slips, slip.deviceId, slip.relPath);
   }
 }
 

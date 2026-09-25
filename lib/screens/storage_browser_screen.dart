@@ -59,7 +59,7 @@ class _BrowsedFile {
   int get mtimeMs => entry.mtimeMs;
 
   bool get isJadeSlipRecord =>
-      space == StoreSpace.notes && JadeSlip.isRecordPath(path);
+      space == StoreSpace.slips && JadeSlip.isRecordPath(path);
 
   bool get isInstructionRecord =>
       space == StoreSpace.instructions && InstructionSet.isRecordPath(path);
@@ -627,7 +627,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   }
 
   bool _isDedicatedRecord(String space, String path) =>
-      (space == StoreSpace.notes && JadeSlip.isRecordPath(path)) ||
+      (space == StoreSpace.slips && JadeSlip.isRecordPath(path)) ||
       (space == StoreSpace.instructions && InstructionSet.isRecordPath(path));
 
   Future<void> _overlayInstructionSets(List<_BrowsedFile> all) async {
@@ -975,7 +975,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     }
     final l10n = AppLocalizations.of(context);
     final permanent =
-        (space == StoreSpace.notes && JadeSlip.isRecordPath(relPath)) ||
+        (space == StoreSpace.slips && JadeSlip.isRecordPath(relPath)) ||
             (space == StoreSpace.instructions &&
                 InstructionSet.isRecordPath(relPath));
     final title = permanent
@@ -1010,7 +1010,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     if (confirmed != true) return;
     setState(() => _busy = true);
     try {
-      if (space == StoreSpace.notes && JadeSlip.isRecordPath(relPath)) {
+      if (space == StoreSpace.slips && JadeSlip.isRecordPath(relPath)) {
         final id = JadeSlip.idFromRecordPath(relPath);
         if (id != null && id.isNotEmpty) {
           await JadeSlipService.instance.delete(id);
@@ -1836,7 +1836,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   }
 
   void _enterSpace(String space) {
-    if (space == StoreSpace.notes) {
+    if (space == StoreSpace.slips) {
       unawaited(Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => const JadeSlipScreen(),
@@ -2757,7 +2757,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       icon: Icons.auto_stories_outlined,
       title: l10n.jadeSlip_title,
       subtitle: l10n.jadeSlip_entryHint,
-      onTap: _busy ? null : () => _enterSpace(StoreSpace.notes),
+      onTap: _busy ? null : () => _enterSpace(StoreSpace.slips),
     );
   }
 
@@ -2951,7 +2951,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
                 color: Theme.of(context).colorScheme.primary),
             title: Text(l10n.jadeSlip_title),
             subtitle: Text(l10n.jadeSlip_entryHint),
-            onTap: () => _enterSpace(StoreSpace.notes),
+            onTap: () => _enterSpace(StoreSpace.slips),
           ),
           ListTile(
             leading: Icon(Icons.playlist_add_check_outlined,
