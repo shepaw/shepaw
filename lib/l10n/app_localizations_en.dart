@@ -6596,6 +6596,23 @@ class AppLocalizationsEn extends AppLocalizations {
   String get jadeSlip_acceptItem => 'Accept';
 
   @override
+  String get jadeSlip_addEvidence => 'Add evidence';
+
+  @override
+  String get jadeSlip_evidenceHint => 'store:// or a result address';
+
+  @override
+  String get jadeSlip_activity => 'Activity';
+
+  @override
+  String get jadeSlip_sourceSession => 'Open the source session';
+
+  @override
+  String jadeSlip_sourceInstruction(String id) {
+    return 'From instruction $id';
+  }
+
+  @override
   String get jadeSlip_returnItem => 'Send back';
 
   @override

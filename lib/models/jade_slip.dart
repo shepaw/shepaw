@@ -27,6 +27,8 @@ class JadeSlip {
     this.sourceItemId = '',
     this.blockedBySlipId = '',
     this.sourceInstructionId = '',
+    this.sourceChannelId = '',
+    this.events = const [],
     this.removedItemIds = const [],
     required this.deviceId,
     required this.createdAt,
@@ -70,6 +72,12 @@ class JadeSlip {
 
   /// 这条简来自哪条指令集。空表示人手建的。
   final String sourceInstructionId;
+
+  /// 第一次派发所在的会话。之后改派不覆盖。
+  final String sourceChannelId;
+
+  /// 指派、提交、退回、验收、证据。评论仍是自由过程记录。
+  final List<JadeSlipEvent> events;
 
   /// 已删除的清单项 id。合并时用来避免把另一端已删的项加回来。
   final List<String> removedItemIds;
@@ -127,6 +135,8 @@ class JadeSlip {
     if (sourceItemId.trim().isNotEmpty) return false;
     if (blockedBySlipId.trim().isNotEmpty) return false;
     if (sourceInstructionId.trim().isNotEmpty) return false;
+    if (sourceChannelId.trim().isNotEmpty) return false;
+    if (events.isNotEmpty) return false;
     if (priority != JadeSlipPriority.none) return false;
     if (status != JadeSlipStatus.open) return false;
     return true;
@@ -168,6 +178,8 @@ class JadeSlip {
     String? sourceItemId,
     String? blockedBySlipId,
     String? sourceInstructionId,
+    String? sourceChannelId,
+    List<JadeSlipEvent>? events,
     List<String>? removedItemIds,
     String? deviceId,
     int? updatedAt,
@@ -192,6 +204,8 @@ class JadeSlip {
       sourceItemId: sourceItemId ?? this.sourceItemId,
       blockedBySlipId: blockedBySlipId ?? this.blockedBySlipId,
       sourceInstructionId: sourceInstructionId ?? this.sourceInstructionId,
+      sourceChannelId: sourceChannelId ?? this.sourceChannelId,
+      events: events ?? this.events,
       removedItemIds: removedItemIds ?? this.removedItemIds,
       deviceId: deviceId ?? this.deviceId,
       createdAt: createdAt,
@@ -248,11 +262,18 @@ class JadeSlip {
     for (final att in [...older.attachments, ...newer.attachments]) {
       attachments.putIfAbsent(att.id, () => att);
     }
+    final events = <String, JadeSlipEvent>{};
+    for (final event in [...older.events, ...newer.events]) {
+      events.putIfAbsent(event.id, () => event);
+    }
+    final eventList = events.values.toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
     return newer
         .copyWith(
           items: items.values.toList(),
           comments: comments.values.toList(),
           attachments: attachments.values.toList(),
+          events: eventList,
           removedItemIds: removed.toList(),
           updatedAt: newer.updatedAt,
         )
@@ -283,6 +304,9 @@ class JadeSlip {
         if (blockedBySlipId.isNotEmpty) 'blocked_by': blockedBySlipId,
         if (sourceInstructionId.isNotEmpty)
           'source_instruction_id': sourceInstructionId,
+        if (sourceChannelId.isNotEmpty) 'source_channel_id': sourceChannelId,
+        if (events.isNotEmpty)
+          'events': [for (final e in events) e.toJson()],
         if (removedItemIds.isNotEmpty) 'removed_items': removedItemIds,
         'device_id': deviceId,
         'created_at': createdAt,
@@ -348,6 +372,12 @@ class JadeSlip {
       blockedBySlipId: (json['blocked_by'] as String? ?? '').trim(),
       sourceInstructionId:
           (json['source_instruction_id'] as String? ?? '').trim(),
+      sourceChannelId: (json['source_channel_id'] as String? ?? '').trim(),
+      events: [
+        for (final item in (json['events'] as List? ?? const []))
+          if (item is Map)
+            JadeSlipEvent.fromJson(item.cast<String, dynamic>()),
+      ],
       removedItemIds: [
         for (final id in (json['removed_items'] as List? ?? const []))
           id.toString().trim(),
@@ -672,6 +702,53 @@ class JadeSlipComment {
         id: (json['id'] as String? ?? '').trim(),
         authorId: (json['author_id'] as String? ?? '').trim(),
         authorName: (json['author_name'] as String? ?? '').trim(),
+        itemId: (json['item_id'] as String? ?? '').trim(),
+        text: json['text'] as String? ?? '',
+        createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+      );
+
+  static String newId() => JadeSlipItem.newId();
+}
+
+/// 玉简上的一次状态变更。谁做的、对哪一项、发生了什么。
+class JadeSlipEvent {
+  const JadeSlipEvent({
+    required this.id,
+    required this.kind,
+    this.actorId = '',
+    this.actorName = '',
+    this.itemId = '',
+    required this.text,
+    required this.createdAt,
+  });
+
+  final String id;
+
+  /// submitted / accepted / returned / assigned / evidence。
+  final String kind;
+  final String actorId;
+  final String actorName;
+  final String itemId;
+  final String text;
+  final int createdAt;
+
+  String get displayName => actorName.isEmpty ? actorId : actorName;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'kind': kind,
+        if (actorId.isNotEmpty) 'actor_id': actorId,
+        if (actorName.isNotEmpty) 'actor_name': actorName,
+        if (itemId.isNotEmpty) 'item_id': itemId,
+        'text': text,
+        'created_at': createdAt,
+      };
+
+  factory JadeSlipEvent.fromJson(Map<String, dynamic> json) => JadeSlipEvent(
+        id: (json['id'] as String? ?? '').trim(),
+        kind: (json['kind'] as String? ?? '').trim(),
+        actorId: (json['actor_id'] as String? ?? '').trim(),
+        actorName: (json['actor_name'] as String? ?? '').trim(),
         itemId: (json['item_id'] as String? ?? '').trim(),
         text: json['text'] as String? ?? '',
         createdAt: (json['created_at'] as num?)?.toInt() ?? 0,

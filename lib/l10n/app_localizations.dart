@@ -11595,6 +11595,36 @@ abstract class AppLocalizations {
   /// **'验收'**
   String get jadeSlip_acceptItem;
 
+  /// No description provided for @jadeSlip_addEvidence.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加证据'**
+  String get jadeSlip_addEvidence;
+
+  /// No description provided for @jadeSlip_evidenceHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'store:// 或产物地址'**
+  String get jadeSlip_evidenceHint;
+
+  /// No description provided for @jadeSlip_activity.
+  ///
+  /// In zh, this message translates to:
+  /// **'动态'**
+  String get jadeSlip_activity;
+
+  /// No description provided for @jadeSlip_sourceSession.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看来源会话'**
+  String get jadeSlip_sourceSession;
+
+  /// No description provided for @jadeSlip_sourceInstruction.
+  ///
+  /// In zh, this message translates to:
+  /// **'来自指令 {id}'**
+  String jadeSlip_sourceInstruction(String id);
+
   /// No description provided for @jadeSlip_returnItem.
   ///
   /// In zh, this message translates to:

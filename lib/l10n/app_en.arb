@@ -3277,6 +3277,16 @@
   "jadeSlip_doneWhen": "Done when",
   "jadeSlip_doneWhenHint": "How you will know it is finished",
   "jadeSlip_acceptItem": "Accept",
+  "jadeSlip_addEvidence": "Add evidence",
+  "jadeSlip_evidenceHint": "store:// or a result address",
+  "jadeSlip_activity": "Activity",
+  "jadeSlip_sourceSession": "Open the source session",
+  "jadeSlip_sourceInstruction": "From instruction {id}",
+  "@jadeSlip_sourceInstruction": {
+    "placeholders": {
+      "id": {"type": "String"}
+    }
+  },
   "jadeSlip_returnItem": "Send back",
   "jadeSlip_blockItem": "Mark blocked",
   "jadeSlip_itemSubmitted": "Waiting for acceptance",

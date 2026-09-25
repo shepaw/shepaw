@@ -48,6 +48,7 @@ void main() {
     final mid = await JadeSlipService.instance.getById(created.id);
     expect(mid!.status, JadeSlipStatus.inProgress);
     expect(mid.submittedCount, 1);
+    expect(mid.events.map((e) => e.kind).toList(), ['submitted']);
 
     await JadeSlipService.instance.removeItem(
       id: created.id,
@@ -61,6 +62,7 @@ void main() {
     final done = await JadeSlipService.instance.getById(created.id);
     expect(done!.status, JadeSlipStatus.done);
     expect(done.allItemsDone, isTrue);
+    expect(done.events.map((e) => e.kind), contains('accepted'));
   });
 
   test('notes CLI add / item / complete / delete', () async {

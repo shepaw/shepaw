@@ -336,14 +336,28 @@ class JadeSlipService {
     if (items.every((e) => e.id != itemId)) {
       throw StateError('jade slip item not found: $itemId');
     }
-    return update(slip.copyWith(items: items));
+    final changed = items.firstWhere((e) => e.id == itemId);
+    return update(slip.copyWith(
+      items: items,
+      events: [
+        ...slip.events,
+        _event(
+          kind: done ? 'submitted' : 'reopened',
+          text: done ? '提交「${changed.text}」' : '重新打开「${changed.text}」',
+          itemId: itemId,
+          actorId: actorId,
+          actorName: actorName,
+        ),
+      ],
+    ));
   }
 
   Future<JadeSlip> _mapItem(
     String id,
     String itemId,
-    JadeSlipItem Function(JadeSlipItem item) change,
-  ) async {
+    JadeSlipItem Function(JadeSlipItem item) change, {
+    JadeSlipEvent? event,
+  }) async {
     final slip = await getById(id);
     if (slip == null) throw StateError('jade slip not found: $id');
     var found = false;
@@ -357,7 +371,10 @@ class JadeSlipService {
       }
     }
     if (!found) throw StateError('jade slip item not found: $itemId');
-    return update(slip.copyWith(items: items));
+    return update(slip.copyWith(
+      items: items,
+      events: event == null ? slip.events : [...slip.events, event],
+    ));
   }
 
   /// 人验收某一项。Agent 的勾选只表示已提交。
@@ -377,6 +394,13 @@ class JadeSlipService {
         actorName: actorName,
         blockedReason: '',
         updatedAt: now,
+      ),
+      event: _event(
+        kind: 'accepted',
+        text: '验收通过',
+        itemId: itemId,
+        actorId: actorId,
+        actorName: actorName,
       ),
     );
     await _rollupAcceptedChild(slip);
@@ -448,6 +472,13 @@ class JadeSlipService {
         blockedReason: reason.trim(),
         updatedAt: now,
       ),
+      event: _event(
+        kind: 'returned',
+        text: reason.trim().isEmpty ? '退回' : '退回：${reason.trim()}',
+        itemId: itemId,
+        actorId: actorId,
+        actorName: actorName,
+      ),
     );
     if (reason.trim().isEmpty) return slip;
     return addComment(
@@ -495,6 +526,11 @@ class JadeSlipService {
         evidence: [...item.evidence, ref],
         updatedAt: now,
       ),
+      event: _event(
+        kind: 'evidence',
+        text: '附上证据 $ref',
+        itemId: itemId,
+      ),
     );
   }
 
@@ -531,7 +567,6 @@ class JadeSlipService {
     if (previous == null) {
       throw StateError('jade slip item not found: $itemId');
     }
-    await update(slip.copyWith(items: items));
     final from = previous.assigneeAgentName.isEmpty
         ? previous.assigneeAgentId
         : previous.assigneeAgentName;
@@ -539,6 +574,19 @@ class JadeSlipService {
     final note = agentId.isEmpty
         ? '取消「${previous.text}」的协作指派'
         : '「${previous.text}」交给 $to${from.isEmpty ? '' : '（原 $from）'}';
+    await update(slip.copyWith(
+      items: items,
+      events: [
+        ...slip.events,
+        _event(
+          kind: 'assigned',
+          text: note,
+          itemId: itemId,
+          actorId: agentId,
+          actorName: to,
+        ),
+      ],
+    ));
     return addComment(
       id: id,
       text: note,
@@ -748,6 +796,24 @@ class JadeSlipService {
       if (e.code != StoreError.notFound) rethrow;
     }
     _notify();
+  }
+
+  JadeSlipEvent _event({
+    required String kind,
+    required String text,
+    String itemId = '',
+    String actorId = '',
+    String actorName = '',
+  }) {
+    return JadeSlipEvent(
+      id: JadeSlipItem.newId(),
+      kind: kind,
+      actorId: actorId,
+      actorName: actorName,
+      itemId: itemId,
+      text: text,
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+    );
   }
 
   /// 本机 store:// URI，Agent 也可用 `shepaw store read`。

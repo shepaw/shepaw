@@ -90,6 +90,20 @@ Map<String, dynamic> _slipJson(JadeSlip slip, {bool full = false}) {
             },
         ],
       'device_id': slip.deviceId,
+      if (slip.sourceChannelId.isNotEmpty)
+        'source_channel_id': slip.sourceChannelId,
+      if (slip.events.isNotEmpty)
+        'events': [
+          for (final e in slip.events)
+            {
+              'id': e.id,
+              'kind': e.kind,
+              'actor': e.displayName,
+              'item_id': e.itemId,
+              'text': e.text,
+              'created_at': e.createdAt,
+            },
+        ],
       'created_at': slip.createdAt,
     } else if (slip.items.isNotEmpty)
       'open_items': [
@@ -456,6 +470,7 @@ class NotesItemCommand extends CliCommand {
         actorName: actorName,
         sessionId: done ? ChatAgentScope.channelId.trim() : '',
       );
+      if (done) await JadeSlipWake.notify(slip, '有一项已提交，等验收');
       return {
         'success': true,
         'action': done ? 'checked' : 'unchecked',
@@ -495,6 +510,7 @@ class NotesAcceptCommand extends CliCommand {
           actorId: LocalUserIdentity.id,
           actorName: LocalUserIdentity.displayName,
         );
+        await JadeSlipWake.notify(slip, '已验收');
         return {
           'success': true,
           'action': 'accepted',
@@ -507,6 +523,7 @@ class NotesAcceptCommand extends CliCommand {
         actorId: LocalUserIdentity.id,
         actorName: LocalUserIdentity.displayName,
       );
+      await JadeSlipWake.notify(slip, '有一项已验收');
       return {
         'success': true,
         'action': 'accepted',

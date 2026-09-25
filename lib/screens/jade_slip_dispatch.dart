@@ -98,6 +98,12 @@ Future<bool> dispatchJadeSlip(
               chatService.generateChannelId(userId, agentId);
   }
 
+  if (slip.sourceChannelId.isEmpty) {
+    await JadeSlipService.instance.update(
+      slip.copyWith(sourceChannelId: targetChannelId),
+    );
+  }
+
   final prompt =
       slip.toAgentPrompt(focusItem: focusItem, onlyOpenItems: onlyOpenItems);
   final target = await getIt<RemoteAgentService>().getAgentById(agentId);

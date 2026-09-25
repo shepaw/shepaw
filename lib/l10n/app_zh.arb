@@ -3752,6 +3752,16 @@
   "jadeSlip_doneWhen": "完成标准",
   "jadeSlip_doneWhenHint": "怎样算做完",
   "jadeSlip_acceptItem": "验收",
+  "jadeSlip_addEvidence": "添加证据",
+  "jadeSlip_evidenceHint": "store:// 或产物地址",
+  "jadeSlip_activity": "动态",
+  "jadeSlip_sourceSession": "查看来源会话",
+  "jadeSlip_sourceInstruction": "来自指令 {id}",
+  "@jadeSlip_sourceInstruction": {
+    "placeholders": {
+      "id": {"type": "String"}
+    }
+  },
   "jadeSlip_returnItem": "退回",
   "jadeSlip_blockItem": "标记阻塞",
   "jadeSlip_itemSubmitted": "待验收",

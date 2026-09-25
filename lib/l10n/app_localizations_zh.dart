@@ -6343,6 +6343,23 @@ class AppLocalizationsZh extends AppLocalizations {
   String get jadeSlip_acceptItem => '验收';
 
   @override
+  String get jadeSlip_addEvidence => '添加证据';
+
+  @override
+  String get jadeSlip_evidenceHint => 'store:// 或产物地址';
+
+  @override
+  String get jadeSlip_activity => '动态';
+
+  @override
+  String get jadeSlip_sourceSession => '查看来源会话';
+
+  @override
+  String jadeSlip_sourceInstruction(String id) {
+    return '来自指令 $id';
+  }
+
+  @override
   String get jadeSlip_returnItem => '退回';
 
   @override

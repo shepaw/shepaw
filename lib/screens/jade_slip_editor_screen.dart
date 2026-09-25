@@ -594,11 +594,7 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                 _ChecklistRow(
                   key: ValueKey(item.id),
                   item: item,
-                  onChanged: (v) => unawaited(_service.setItemDone(
-                    id: slip.id,
-                    itemId: item.id,
-                    done: v,
-                  )),
+                  onChanged: (v) => unawaited(_toggleItem(slip, item, v)),
                   onDelete: () => unawaited(_removeItem(item.id)),
                   onRename: (text) => unawaited(_renameItem(item.id, text)),
                   onHandOff: () => unawaited(_handOffItem(slip, item)),
@@ -607,13 +603,9 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                       ? null
                       : () => unawaited(_assignItem(item, clear: true)),
                   onAccept: item.state == JadeSlipItemState.submitted
-                      ? () => unawaited(_service.acceptItem(
-                            id: slip.id,
-                            itemId: item.id,
-                            actorId: LocalUserIdentity.id,
-                            actorName: LocalUserIdentity.displayName,
-                          ))
+                      ? () => unawaited(_acceptItem(slip, item))
                       : null,
+                  onEvidence: () => unawaited(_addEvidence(item)),
                   onReturn: item.state == JadeSlipItemState.submitted
                       ? () => unawaited(_returnItem(item))
                       : null,
@@ -755,6 +747,51 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                 onLocal: () => unawaited(_addLocalAttachments()),
                 onStore: () => unawaited(_addStoreAttachments()),
               ),
+              if (slip.sourceInstructionId.isNotEmpty ||
+                  slip.sourceChannelId.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                if (slip.sourceInstructionId.isNotEmpty)
+                  Text(
+                    l10n.jadeSlip_sourceInstruction(slip.sourceInstructionId),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                if (slip.sourceChannelId.isNotEmpty)
+                  GestureDetector(
+                    onTap: () => ChatNavigationService.instance.openChannel(
+                      channelId: slip.sourceChannelId,
+                      agentId: slip.assigneeAgentId,
+                      agentName: slip.assigneeAgentName,
+                    ),
+                    child: Text(
+                      l10n.jadeSlip_sourceSession,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.primary,
+                      ),
+                    ),
+                  ),
+              ],
+              if (slip.events.isNotEmpty) ...[
+                const SizedBox(height: 28),
+                _SectionLabel(
+                  label: l10n.jadeSlip_activity,
+                  trailing: '${slip.events.length}',
+                ),
+                const SizedBox(height: 6),
+                for (final event in slip.events)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Text(
+                      event.displayName.isEmpty
+                          ? event.text
+                          : '${event.displayName} · ${event.text}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+              ],
               const SizedBox(height: 28),
               _SectionLabel(
                 label: l10n.jadeSlip_comments,
@@ -877,6 +914,58 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   /// 清单项右侧菜单「交给 Agent」：只派发这一项。
   Future<void> _handOffItem(JadeSlip slip, JadeSlipItem item) =>
       _dispatch(slip, focusItem: item);
+
+  Future<void> _toggleItem(JadeSlip slip, JadeSlipItem item, bool done) async {
+    final updated = await _service.setItemDone(
+      id: slip.id,
+      itemId: item.id,
+      done: done,
+      actorId: LocalUserIdentity.id,
+      actorName: LocalUserIdentity.displayName,
+    );
+    if (done) await JadeSlipWake.notify(updated, '有一项已提交，等验收');
+  }
+
+  Future<void> _acceptItem(JadeSlip slip, JadeSlipItem item) async {
+    final updated = await _service.acceptItem(
+      id: slip.id,
+      itemId: item.id,
+      actorId: LocalUserIdentity.id,
+      actorName: LocalUserIdentity.displayName,
+    );
+    await JadeSlipWake.notify(updated, '有一项已验收');
+  }
+
+  Future<void> _addEvidence(JadeSlipItem item) async {
+    final l10n = AppLocalizations.of(context);
+    final uri = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.jadeSlip_addEvidence),
+        content: TextField(
+          controller: uri,
+          autofocus: true,
+          decoration: InputDecoration(hintText: l10n.jadeSlip_evidenceHint),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.common_cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.common_save),
+          ),
+        ],
+      ),
+    );
+    final ref = uri.text.trim();
+    uri.dispose();
+    if (ok != true || ref.isEmpty) return;
+    await _service.addEvidence(id: widget.slipId, itemId: item.id, uri: ref);
+    widget.onChanged?.call();
+  }
 
   /// 把这一项记到另一个 Agent 名下，不另开一轮对话。对方下次读玉简就能领走。
   Future<void> _assignItem(JadeSlipItem item, {bool clear = false}) async {
@@ -1362,6 +1451,7 @@ class _ChecklistRow extends StatefulWidget {
     this.onUnassign,
     this.onAccept,
     this.onReturn,
+    this.onEvidence,
     this.onSplit,
     this.onEditComplete,
   });
@@ -1379,6 +1469,7 @@ class _ChecklistRow extends StatefulWidget {
   final VoidCallback? onUnassign;
   final VoidCallback? onAccept;
   final VoidCallback? onReturn;
+  final VoidCallback? onEvidence;
   final VoidCallback? onSplit;
 
   /// 回车保存后回调（用于把焦点移到「添加一项」）。
@@ -1562,6 +1653,19 @@ class _ChecklistRowState extends State<_ChecklistRow> {
                                   color: scheme.error,
                                 ),
                               ),
+                            for (final ref in item.evidence)
+                              GestureDetector(
+                                onTap: () => StoreOpenService.instance
+                                    .openStoreUri(context, ref),
+                                child: Text(
+                                  ref,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: scheme.primary,
+                                  ),
+                                ),
+                              ),
                           ],
                         ),
                       ),
@@ -1587,6 +1691,7 @@ class _ChecklistRowState extends State<_ChecklistRow> {
                   if (v == 'unassign') widget.onUnassign?.call();
                   if (v == 'accept') widget.onAccept?.call();
                   if (v == 'return') widget.onReturn?.call();
+                  if (v == 'evidence') widget.onEvidence?.call();
                   if (v == 'split') widget.onSplit?.call();
                   if (v == 'edit') _beginEdit();
                   if (v == 'delete') widget.onDelete();
@@ -1606,6 +1711,10 @@ class _ChecklistRowState extends State<_ChecklistRow> {
                       value: 'return',
                       child: Text(l10n.jadeSlip_returnItem),
                     ),
+                  PopupMenuItem(
+                    value: 'evidence',
+                    child: Text(l10n.jadeSlip_addEvidence),
+                  ),
                   PopupMenuItem(
                     value: 'split',
                     child: Text(
