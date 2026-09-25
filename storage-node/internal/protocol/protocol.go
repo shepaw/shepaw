@@ -63,7 +63,7 @@ func IsValidDeviceID(device string) bool {
 func BuiltinSpaces() []string {
 	return []string{
 		"workspaces", "runtime", "files", "notes", "instructions", "public", "backups", "cognition", "memory",
-		"artifacts", "attachments",
+		"artifacts", "attachments", "tools",
 	}
 }
 
@@ -79,7 +79,7 @@ func IsValidSpace(s string) bool {
 // SharedReadable: owner 默认可跨端读（不含 private runtime）。
 func SharedReadable(s string) bool {
 	switch s {
-	case "workspaces", "files", "notes", "instructions", "public", "artifacts":
+	case "workspaces", "files", "notes", "instructions", "public", "artifacts", "tools":
 		return true
 	default:
 		return false
@@ -121,7 +121,7 @@ func IsReservedDeclareName(s string) bool {
 		return true
 	}
 	switch s {
-	case "system", "recycle", "versions", "staging", "nexuspouch", "tools":
+	case "system", "recycle", "versions", "staging", "nexuspouch":
 		return true
 	default:
 		return false

@@ -189,6 +189,7 @@ class ScopeCard {
     ScopeCardInjected injected = const ScopeCardInjected(
       soul: ScopeInjectLevel.full,
     ),
+    ScopeCardCliSurface cliSurface = ScopeCardCliSurface.shepawTool,
   }) {
     final entriesRel =
         '${MemoryPaths.entriesDir(agentId, peerClientId: peerClientId)}/';
@@ -221,6 +222,7 @@ class ScopeCard {
       ),
       injected: injected,
       capabilities: ScopeCardCapabilities.peerDefault,
+      cliSurface: cliSurface,
     );
   }
 
@@ -346,17 +348,22 @@ class ScopeCard {
               ' 或 `--file <path>` / `--content-base64`（可选 `--task` / `--desc` / `--space public`）；'
               '**不要**传 `agent_id` / `owner` / 个人 channel，由系统落到本作用域袋';
 
-  /// 玉简（slip 命名空间）：用户的待办本，Agent 领取 / 勾选 / 完成。
-  ///
-  /// 与 `_storeReadLine` 同款两态——`hubStoreCli` 也走 shim，落在同一支。
+  /// 玉简只留约定。子命令以 `shepaw slip`（或 hub 上的同名 namespace）为准。
   String get _notesLine => _hubCli
-      ? '- 玉简: ACP `hub.cli.execute` `{namespace:"slip",'
-          'subcommand:"list"},$_hubSessionId}` · 读: subcommand=get flags.id · '
-          '勾选: subcommand=item flags.id+flags.item+flags.done=true · '
-          '交给另一个 Agent: flags.item+flags.assignee'
-      : '- 玉简: `shepaw slip list` / `slip get --id <id>` / '
-          '`slip item --id <id> --item <itemId> --done true` / '
-          '`slip item --id <id> --item <itemId> --assignee <agent_id>`';
+      ? '- 玉简: 人和 Agent 的契约。ACP `hub.cli.execute` '
+          '`{namespace:"slip",subcommand:"list"},$_hubSessionId}`。'
+          '勾选是提交，验收才算完成。用法问 namespace=slip，不要猜参数'
+      : '- 玉简: 人和 Agent 的契约。`shepaw slip` 看子命令。'
+          '勾选是提交，验收才算完成';
+
+  /// 系统技能全文在储物袋。每轮只给地址。
+  String get systemSkillUri =>
+      storeUriWithRef(StoreSpace.tools, deviceId, StoreSpace.systemSkillRelPath);
+
+  String get _systemSkillLine => _hubCli
+      ? '- 系统技能: ACP `hub.cli.execute` `{namespace:"store",subcommand:"read",'
+          'flags:{uri:"$systemSkillUri"},$_hubSessionId}`'
+      : '- 系统技能: `shepaw store read --uri $systemSkillUri`';
 
   String get _memoryWriteLine => _hubCli
       ? '- 写记忆: ACP `hub.cli.execute` `{namespace:"context",'
@@ -441,6 +448,7 @@ class ScopeCard {
     }
     if (capabilities.readStore) {
       buf.writeln(_notesLine);
+      buf.writeln(_systemSkillLine);
     }
     if (capabilities.writeMemory) {
       buf.writeln(_memoryWriteLine);

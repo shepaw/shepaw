@@ -145,6 +145,8 @@ void main() {
       expect(StoreSpace.isOwnerCrossWritable(StoreSpace.runtime), isFalse);
       expect(StoreSpace.browserSpaces, contains(StoreSpace.workspaces));
       expect(StoreSpace.browserSpaces, isNot(contains(StoreSpace.public_)));
+      expect(StoreSpace.browserSpaces, isNot(contains(StoreSpace.tools)));
+      expect(StoreSpace.sharedReadable, contains(StoreSpace.tools));
       expect(StoreSpace.browserSpaces, contains(StoreSpace.cognition));
       expect(StoreSpace.browserSpaces, isNot(contains(StoreSpace.memory)));
       expect(StoreSpace.userBrowserSpaces, [StoreSpace.files]);

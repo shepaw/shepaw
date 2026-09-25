@@ -360,6 +360,11 @@ class AgentPromptBuilder {
             deviceId: deviceId,
             peerClientId: peerId,
             injected: injected,
+            cliSurface: ScopeCard.surfaceFor(
+              isLocal: agent.isLocal,
+              isPeerAgent: agent.isPeerAgent,
+              isHubPeerEngine: agent.usesHubStoreCli,
+            ),
           ).toStableMarkdown();
         }
       }

@@ -140,6 +140,21 @@ void main() {
     );
   });
 
+  test('Hub peer card says slip is forwarded and points at the system skill', () {
+    final md = ScopeCard.forPeerAgent(
+      agentId: 'agent_p',
+      deviceId: 'cccccccccccccccc',
+      peerClientId: 'peer_device',
+      cliSurface: ScopeCardCliSurface.hubStoreCli,
+    ).toStableMarkdown();
+    expect(md, contains('玉简'));
+    expect(md, contains('转到配对 App'));
+    expect(md, contains('不要 `hub.cli.execute`'));
+    expect(md, contains('store://tools/cccccccccccccccc/skills/shepaw-system/SKILL.md'));
+    expect(md, contains('shepaw store read'));
+    expect(md, contains('勾选是提交'));
+  });
+
   test('hub store surface teaches local store plus App-forwarded CLI', () {
     final md = ScopeCard.forGroup(
       groupId: 'g1',

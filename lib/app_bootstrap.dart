@@ -33,6 +33,8 @@ import 'peer/services/peer_agent_host_service.dart';
 import 'peer/services/peer_agent_client_service.dart';
 import 'storage/folder_binding_service.dart';
 import 'storage/scheduled_snapshot_service.dart';
+import 'storage/device_identity.dart';
+import 'storage/store_protocol.dart';
 import 'storage/store_service.dart';
 import 'storage/sync_engine.dart';
 import 'services/approval/pending_approval_hub.dart';
@@ -319,6 +321,7 @@ class AppBootstrap {
       unawaited(ChatService().drainAllMailboxReplies());
       // 存储空间（docs/storage_protocol_spec.md v1）：master 帧处理 + staging GC。
       await StoreService.instance.start();
+      await _publishSystemSkill();
       // 同步引擎（spec v3 §6）：未同步队列 + 变更游标 + 批量原子上传。
       await SyncEngine.instance.start(
         storeRoot: await StoreService.instance.storeRoot(),
@@ -371,40 +374,64 @@ class AppBootstrap {
       'skill_shepaw_app_usage_guide';
   static const String _builtinAppGuideAssetDir =
       'assets/skills/app-usage-guide';
+  static const String _builtinSystemSkillDir = 'assets/skills/shepaw-system';
+
+  /// 把系统技能原稿写进本机储物袋。Hub 和配对设备用 `store read` 读这个地址。
+  static Future<void> _publishSystemSkill() async {
+    try {
+      final data = await rootBundle.load('assets/skills/shepaw-system/SKILL.md');
+      final bytes = data.buffer.asUint8List(
+        data.offsetInBytes,
+        data.lengthInBytes,
+      );
+      final store = await StoreService.instance.localStore();
+      await store.putBytes(
+        deviceId: await DeviceIdentity.deviceId(),
+        space: StoreSpace.tools,
+        path: StoreSpace.systemSkillRelPath,
+        bytes: bytes,
+      );
+      _log.info('Published system skill to tools/', tag: 'App');
+    } catch (e) {
+      _log.error('Publish system skill failed', tag: 'App', error: e);
+    }
+  }
 
   static Future<void> _seedBuiltinSkills() async {
     final Directory tempDir =
         await Directory.systemTemp.createTemp('shepaw_builtin_skill_');
     try {
-      // 1. 枚举 assets 下内置技能目录的全部文件（SKILL.md + references/*.md），
-      //    物化到临时目录后以「目录包」形式导入，保留 SKILL.md 与 references/
-      //    的相对结构——readSkillContent 会按 SKILL.md 在前、其余按路径排序拼接。
+      // 枚举 assets 下内置技能目录的全部文件，物化后以目录包导入。
+      // 系统技能不写入某个 Agent 的 enabled_skills。对外全文在储物袋
+      // tools 分区，见 [_publishSystemSkill]。
       final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
-      final assetKeys = manifest
-          .listAssets()
-          .where((k) => k.startsWith('$_builtinAppGuideAssetDir/'))
-          .toList();
-      if (assetKeys.isEmpty) {
-        _log.warning(
-          'No assets found under $_builtinAppGuideAssetDir/, skip seeding',
-          tag: 'App',
-        );
-        return;
+      for (final assetDir in [
+        _builtinAppGuideAssetDir,
+        _builtinSystemSkillDir,
+      ]) {
+        final assetKeys = manifest
+            .listAssets()
+            .where((k) => k.startsWith('$assetDir/'))
+            .toList();
+        if (assetKeys.isEmpty) {
+          _log.warning('No assets found under $assetDir/, skip seeding', tag: 'App');
+          continue;
+        }
+        final leaf = assetDir.split('/').last;
+        final sourceDir = Directory(p.join(tempDir.path, leaf));
+        for (final key in assetKeys) {
+          final rel = key.substring(assetDir.length + 1);
+          final target = File(p.join(sourceDir.path, rel));
+          await target.parent.create(recursive: true);
+          final data = await rootBundle.load(key);
+          await target.writeAsBytes(
+            data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+          );
+        }
+        await SkillRegistry.instance
+            .importSkillDirectory(sourceDir.path, overwrite: true);
+        _log.info('Seeded built-in skill from $assetDir', tag: 'App');
       }
-      final sourceDir = Directory(p.join(tempDir.path, 'app-usage-guide'));
-      for (final key in assetKeys) {
-        final rel = key.substring(_builtinAppGuideAssetDir.length + 1);
-        final target = File(p.join(sourceDir.path, rel));
-        await target.parent.create(recursive: true);
-        final data = await rootBundle.load(key);
-        await target.writeAsBytes(
-          data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
-        );
-      }
-
-      await SkillRegistry.instance
-          .importSkillDirectory(sourceDir.path, overwrite: true);
-      _log.info('Seeded built-in skill $_builtinAppGuideSkillTool', tag: 'App');
 
       // 2. 确保 She 已启用该技能——enabled_skills 决定 She 的 prompt 里的
       //    技能列表与其可调用的技能工具

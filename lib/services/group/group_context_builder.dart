@@ -193,12 +193,13 @@ class GroupContextBuilder {
         'note':
             'Agent Hub shepaw CLI on this host. Local pouch (URI device = '
             'Hub) uses shepaw store read/write/list. Foreign store:// and '
-            'other namespaces (os/chat/context/events/slip, except she-only) '
+            'other namespaces (including slip and skills, except she-only) '
             'are forwarded to the paired App gate. Do not use hub.cli.execute. '
             'Pass store:// URIs verbatim. '
-            'Jade slips (玉简) are namespace "slip": '
-            'shepaw slip list / slip get --id <id> / slip item --id <id> '
-            '--item <itemId> --done true / slip complete --id <id>.',
+            'Jade slips (玉简) are namespace "slip": checking an item submits it; '
+            'the person accepts. Subcommands: shepaw slip. '
+            'The system skill is the store://tools/.../SKILL.md URI on the scope card; '
+            'read it with shepaw store read.',
         'params': {
           'namespace': 'store',
           'subcommand': 'write',
@@ -215,9 +216,10 @@ class GroupContextBuilder {
             'session — do not send agent_id, owner, or channel_id. Pass '
             'session_id from agent.chat. This is ACP only; Agent Hub engines '
             'use the PATH shepaw shim instead. '
-            'Jade slips (玉简) are namespace "slip": '
-            'list / get (flags.id) / item (flags.id + flags.item + '
-            'flags.done=true) / complete (flags.id).',
+            'Jade slips (玉简) are namespace "slip": checking an item submits it; '
+            'the person accepts. Ask namespace "slip" for subcommands. '
+            'The system skill is the store://tools/.../SKILL.md URI on the scope card; '
+            'read it with namespace "store" subcommand "read".',
         'params': {
           'namespace': 'store',
           'subcommand': 'write',

@@ -31,6 +31,7 @@ func builtinSpaceProfiles() []spaceProfile {
 		{Name: "memory", Visibility: "private", Encryption: "none", Retention: "none", ImportGrant: "allowed", Builtin: true},
 		{Name: "artifacts", Visibility: "shared", Encryption: "none", Retention: "none", ImportGrant: "allowed", Builtin: true},
 		{Name: "attachments", Visibility: "private", Encryption: "client", Retention: "none", ImportGrant: "allowed", Builtin: true},
+		{Name: "tools", Visibility: "shared", Encryption: "none", Retention: "none", ImportGrant: "allowed", Builtin: true},
 	}
 }
 

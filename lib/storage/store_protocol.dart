@@ -140,9 +140,12 @@ class StoreSpace {
   /// Legacy：旧认知空间名（只读兼容；新写入走 [cognition]）。
   static const memory = 'memory';
 
-  /// 预留：技能包 / CLI 清单等（尚未落盘，勿写入）。
-  /// 预期：`tools/<agentId>/skills/…`、`tools/<agentId>/cli/…`
+  /// 系统技能与 CLI 说明。不进普通文件夹。
+  /// 落盘：`tools/<device>/skills/<name>/SKILL.md`。
   static const tools = 'tools';
+
+  /// 系统技能在 [tools] 分区内的相对路径。
+  static const systemSkillRelPath = 'skills/shepaw-system/SKILL.md';
 
   /// 同步/导出枚举：新内置 + legacy（旧树仍需镜像）。
   static const all = <String>[
@@ -157,6 +160,7 @@ class StoreSpace {
     memory, // legacy
     artifacts,
     attachments,
+    tools,
   ];
 
   /// 浏览「我的」：用户文件面。玉简 / 指令集走专属入口，不进普通文件夹列表。
@@ -175,6 +179,7 @@ class StoreSpace {
   /// 协议保留、用户分区列表隐藏。
   static const hiddenUserBrowserSpaces = <String>{
     public_,
+    tools,
   };
 
   /// 浏览「智能体」：工作区 / 运行时 / 认知 / 产物。
@@ -253,6 +258,7 @@ class StoreSpace {
     instructions,
     public_,
     artifacts,
+    tools,
   ];
 
   /// Owner 默认可跨 device **写** 的分区（仅 workspaces）。
@@ -276,7 +282,7 @@ class StoreSpace {
       s.length <= 32 &&
       RegExp(r'^[a-z][a-z0-9-]*$').hasMatch(s);
 
-  /// 系统保留名（不可 `space.declare`）：内置分区 + 点目录机制名 + 预留 `tools`。
+  /// 系统保留名（不可 `space.declare`）：内置分区 + 点目录机制名。
   static const reservedDeclareNames = <String>{
     'system',
     'recycle',
@@ -314,6 +320,7 @@ class StoreSpace {
         SpaceProfile.builtin(artifacts, visibility: 'shared'),
         SpaceProfile.builtin(attachments,
             visibility: 'private', encryption: 'client'),
+        SpaceProfile.builtin(tools, visibility: 'shared'),
       ];
 }
 
@@ -656,7 +663,8 @@ bool? _builtinVisibility(String space) => switch (space) {
       StoreSpace.notes ||
       StoreSpace.instructions ||
       StoreSpace.public_ ||
-      StoreSpace.artifacts =>
+      StoreSpace.artifacts ||
+      StoreSpace.tools =>
         true,
       StoreSpace.runtime ||
       StoreSpace.cognition ||

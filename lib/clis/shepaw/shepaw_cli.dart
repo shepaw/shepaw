@@ -176,41 +176,12 @@ class ShepawCLI {
 
   /// 内置 CLI 的基础描述
   static const String _builtinToolDescription =
-      'ShePaw built-in CLI. Use "shepaw help" to see all namespaces. '
-      'Use "shepaw <namespace>" to see sub-commands. '
-      'Use dot notation for nested commands (e.g. "shepaw context profile.query"). '
-      'Add flags={"help":""} for detailed usage. '
-      'IMPORTANT: chat history images are metadata-only — to read/analyze a past image, '
-      'call namespace=chat subcommand=message.get with flags id=<message_id> analyze=<question>. '
-      'Face/person recognition runs on-device: namespace=vision subcommand=album.enroll '
-      '(flags person=, image=|message_id=) to register a person, recognize (flags image=|message_id=) '
-      'to identify faces, album.list / profile.build / profile.get to manage profiles. '
-      'Reusable tasks: when the user asks to save or generate an instruction from a task, '
-      'call namespace=instructions subcommand=save (flags name=, content=, desc=) — it records '
-      'you as the owning agent, and instructions run later auto-routes execution back to you. '
-      'Use instructions list / get / update / delete / run to manage and execute the instruction set. '
-      'Jade slips (玉简, user to-dos in Nexus Pouch): when the user asks you to do, list, or '
-      'check off their to-dos, call namespace=slip. Start with slip list (optional flags '
-      'status=open|in_progress|done, query=). Get the checklist with slip get --id. As soon as '
-      'you finish a step, call slip item --id --item <itemId> --done true. Mark the whole slip '
-      'done with slip complete --id. Add a slip with slip add --title --items "a;b". '
-      'Attachments: slip attach --id --file <path> (or --uri store://…); '
-      'slip detach --id --attachment <id>. Read files with store read --uri. '
-      'Do the work — do not only acknowledge. '
-      'Model configuration: when the user asks to configure AI models — e.g. a provider like '
-      'DeepSeek just released a model and they want it set up, or they want to switch which '
-      'model an agent chats with — call namespace=models (subcommands: list / providers / '
-      'add / update / remove / agent-main; pass flags {"help": ""} for usage). '
-      'Start with "shepaw models list"; verify brand-new model ids from the provider '
-      'docs via web search, then add with namespace=models subcommand=add. Confirm '
-      'changes with the user; never print API keys (outputs expose only has_api_key). '
-      'Device pairing (shepaw://peer): Initiator — peer pair --link <URL> (optional '
-      'events wait --correlation <id> --type peer.pairing.completed --timeout 30). '
-      'Responder — peer offer (returns correlation_id + qr_link); She is auto-notified '
-      'via active subscription — then peer accept (do NOT long-block events wait). '
-      'Events: namespace=events — wait/inbox/ack/types/subscribe/list/emit/providers. '
-      'RPC uses --correlation; human-speed flows use active subscription wake. '
-      'shepaw://pair?... is agent enrollment — not peer pair.';
+      'ShePaw built-in CLI. Call namespace "help" to list namespaces, '
+      'or a namespace with no subcommand to list its commands. '
+      'Dotted subcommands (e.g. "context.profile.query"). '
+      'flags={"help":""} for usage. Do not invent commands. '
+      'When to use each namespace, including jade slips (玉简): '
+      'read the system-skill URI on the scope card with namespace=store subcommand=read.';
 
   /// 动态生成工具描述（包含外部工具信息）
   String _buildToolDescription({
