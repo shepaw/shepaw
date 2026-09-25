@@ -3583,8 +3583,10 @@ class PeerAgentClientService {
     if (metadata.isEmpty) return;
     final p = _pending[requestId];
     if (p == null) return;
-    p.idleSince = DateTime.now();
-    p.upstreamReconnectingSince = null;
+    if (metadataResetsIdleClock(metadata)) {
+      p.idleSince = DateTime.now();
+      p.upstreamReconnectingSince = null;
+    }
     p.onMetadata?.call(metadata);
   }
 

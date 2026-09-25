@@ -306,6 +306,32 @@ void main() {
     });
   });
 
+  group('metadataResetsIdleClock', () {
+    test('keepalive 不重置空闲计时', () {
+      expect(
+        metadataResetsIdleClock({
+          'keepalive': true,
+          'upstream_status': 'working',
+        }),
+        isFalse,
+      );
+    });
+
+    test('真正的工具/正文 metadata 仍重置', () {
+      expect(
+        metadataResetsIdleClock({
+          'keepalive': true,
+          'collapsibleTitle': 'Bash',
+        }),
+        isTrue,
+      );
+      expect(
+        metadataResetsIdleClock({'collapsible': true}),
+        isTrue,
+      );
+    });
+  });
+
   group('shouldCompleteSettledReply', () {
     final startedAt = DateTime(2026, 7, 20, 12, 0, 0);
     const settle = Duration(seconds: 180);

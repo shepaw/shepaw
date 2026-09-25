@@ -124,6 +124,18 @@ bool shouldProbeStalledTurn({
   return true;
 }
 
+/// Hub keepalive (`{keepalive: true, upstream_status: working}`) must not
+/// restart the idle clock. It exists so a silent tool does not trip the
+/// 30-minute failure timeout, but counting it as output also blocks
+/// [shouldCompleteSettledReply] and the stall probe forever.
+bool metadataResetsIdleClock(Map<String, dynamic> metadata) {
+  if (metadata['keepalive'] != true) return true;
+  for (final key in metadata.keys) {
+    if (key != 'keepalive' && key != 'upstream_status') return true;
+  }
+  return false;
+}
+
 /// 系统观察到回复已经结束：有助手正文、没有未决审批、流已静止。
 ///
 /// 断连 / 上游重连期间不算结束（对端本来就不会再吐帧）。
