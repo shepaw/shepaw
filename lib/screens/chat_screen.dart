@@ -2010,6 +2010,9 @@ class _ChatScreenState extends State<ChatScreen>
   Widget _buildPinnedPanel(AppLocalizations l10n) {
     return ChatPanelScope(
       popRouteIfAny: () {},
+      // 面板不关，删掉的会话行不会自己消失：显式重查一次列表。
+      onSessionDeleted: () =>
+          unawaited(_refreshPinnedPanelSessions(force: true)),
       child: ValueListenableBuilder<int>(
         valueListenable: _pinnedPanelStructTick,
         builder: (context, _, __) {

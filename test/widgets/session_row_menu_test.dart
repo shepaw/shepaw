@@ -35,6 +35,8 @@ void main() {
     WidgetTester tester, {
     Channel? channel,
     String? sessionTitle,
+    bool isCurrentSession = true,
+    VoidCallback? onDelete,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -49,7 +51,8 @@ void main() {
                   context,
                   session: channel ?? session(),
                   sessionTitle: sessionTitle ?? 'First sentence title',
-                  isCurrentSession: true,
+                  isCurrentSession: isCurrentSession,
+                  onDeleteSession: onDelete,
                 ),
                 child: const Text('open'),
               ),
@@ -119,6 +122,79 @@ void main() {
       'channel ID：group_family-root',
     );
     await flushToastTimers(tester);
+  });
+
+  testWidgets('非当前会话的长按菜单里有删除，点了触发回调', (tester) async {
+    var deleted = false;
+    await openMenu(
+      tester,
+      isCurrentSession: false,
+      onDelete: () => deleted = true,
+    );
+
+    expect(find.text('删除会话'), findsOneWidget);
+    await tester.tap(find.text('删除会话'));
+    await tester.pumpAndSettle();
+    // 菜单只负责派发动作，确认弹窗由调用方（会话面板）弹。
+    expect(deleted, isTrue);
+  });
+
+  testWidgets('当前会话不出现删除，即使调用方传了回调', (tester) async {
+    await openMenu(
+      tester,
+      isCurrentSession: true,
+      onDelete: () => fail('当前会话不该有删除入口'),
+    );
+
+    expect(find.text('删除会话'), findsNothing);
+  });
+
+  testWidgets('非当前会话没传删除回调时不出现删除', (tester) async {
+    await openMenu(tester, isCurrentSession: false);
+    expect(find.text('删除会话'), findsNothing);
+  });
+
+  testWidgets('桌面的更多下拉菜单同样给出删除', (tester) async {
+    var deleted = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('zh'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: SessionRowHoverHost(
+            enabled: true,
+            builder: (context, hover) {
+              return ListTile(
+                title: const Text('Session row'),
+                trailing: sessionRowTrailing(
+                  context: context,
+                  showMore: hover.showMore,
+                  timeText: '9/12',
+                  onMorePressed: hover.showMore
+                      ? (buttonContext) => hover.holdWhileOpen(
+                            () => showSessionRowPopupMenu(
+                              context,
+                              buttonContext: buttonContext,
+                              session: session(),
+                              isCurrentSession: false,
+                              onDeleteSession: () => deleted = true,
+                            ),
+                          )
+                      : null,
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('session_row_more')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除会话'));
+    await tester.pumpAndSettle();
+    expect(deleted, isTrue);
   });
 
   testWidgets('桌面会话行同时显示时间和更多，点击出下拉而不是底部菜单', (tester) async {

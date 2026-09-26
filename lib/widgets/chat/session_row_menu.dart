@@ -14,16 +14,21 @@ import '../../utils/session_utils.dart';
 /// - 复制到（复制当前会话到另一个 agent 的新会话）
 /// - 重置会话（仅当前会话且回调非空）
 /// - 复制会话信息（标题、会话 ID、channel ID）
+/// - 删除会话（仅非当前会话：正在查看的会话与批量选择一样不允许删除）
 class _SessionRowAction {
   const _SessionRowAction({
     required this.value,
     required this.icon,
     required this.label,
+    this.destructive = false,
   });
 
   final String value;
   final IconData icon;
   final String label;
+
+  /// 破坏性操作（删除）：菜单里用红色显示，并与上方操作隔一条分隔线。
+  final bool destructive;
 }
 
 List<_SessionRowAction> _sessionRowActions({
@@ -34,6 +39,7 @@ List<_SessionRowAction> _sessionRowActions({
   required VoidCallback? onForkSession,
   required VoidCallback? onCopyToAgent,
   required VoidCallback? onResetSession,
+  required VoidCallback? onDeleteSession,
 }) {
   return [
     if (!isCurrentSession && onViewSession != null)
@@ -71,6 +77,13 @@ List<_SessionRowAction> _sessionRowActions({
       icon: Icons.copy_all,
       label: l10n.chat_copySessionInfo,
     ),
+    if (!isCurrentSession && onDeleteSession != null)
+      _SessionRowAction(
+        value: 'delete',
+        icon: Icons.delete_outline,
+        label: l10n.chat_deleteSession,
+        destructive: true,
+      ),
   ];
 }
 
@@ -84,6 +97,7 @@ Future<void> _applySessionRowAction(
   required VoidCallback? onForkSession,
   required VoidCallback? onCopyToAgent,
   required VoidCallback? onResetSession,
+  required VoidCallback? onDeleteSession,
 }) async {
   if (!context.mounted || action == null) return;
   final l10n = AppLocalizations.of(context);
@@ -107,6 +121,8 @@ Future<void> _applySessionRowAction(
           SessionUtils.familyChannelId(session),
         ),
       );
+    case 'delete':
+      onDeleteSession?.call();
   }
 }
 
@@ -127,6 +143,7 @@ Future<void> showSessionRowMenu(
   VoidCallback? onForkSession,
   VoidCallback? onCopyToAgent,
   VoidCallback? onResetSession,
+  VoidCallback? onDeleteSession,
 }) async {
   final l10n = AppLocalizations.of(context);
   final actions = _sessionRowActions(
@@ -137,21 +154,32 @@ Future<void> showSessionRowMenu(
     onForkSession: onForkSession,
     onCopyToAgent: onCopyToAgent,
     onResetSession: onResetSession,
+    onDeleteSession: onDeleteSession,
   );
   final action = await showModalBottomSheet<String>(
     context: context,
     showDragHandle: true,
     builder: (sheetContext) {
+      final dangerColor = Theme.of(sheetContext).colorScheme.error;
       return SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            for (final item in actions)
+            for (final item in actions) ...[
+              if (item.destructive) const Divider(height: 1),
               ListTile(
-                leading: Icon(item.icon),
-                title: Text(item.label),
+                leading: Icon(
+                  item.icon,
+                  color: item.destructive ? dangerColor : null,
+                ),
+                title: Text(
+                  item.label,
+                  style:
+                      item.destructive ? TextStyle(color: dangerColor) : null,
+                ),
                 onTap: () => Navigator.pop(sheetContext, item.value),
               ),
+            ],
           ],
         ),
       );
@@ -168,6 +196,7 @@ Future<void> showSessionRowMenu(
     onForkSession: onForkSession,
     onCopyToAgent: onCopyToAgent,
     onResetSession: onResetSession,
+    onDeleteSession: onDeleteSession,
   );
 }
 
@@ -183,6 +212,7 @@ Future<void> showSessionRowPopupMenu(
   VoidCallback? onForkSession,
   VoidCallback? onCopyToAgent,
   VoidCallback? onResetSession,
+  VoidCallback? onDeleteSession,
 }) async {
   final overlayBox =
       Overlay.of(buttonContext).context.findRenderObject() as RenderBox?;
@@ -200,27 +230,42 @@ Future<void> showSessionRowPopupMenu(
     onForkSession: onForkSession,
     onCopyToAgent: onCopyToAgent,
     onResetSession: onResetSession,
+    onDeleteSession: onDeleteSession,
   );
+  final dangerColor = Theme.of(context).colorScheme.error;
   final action = await showMenu<String>(
     context: context,
     position: RelativeRect.fromSize(rect, overlayBox.size),
     constraints: const BoxConstraints(
       minWidth: 2.0 * 56.0,
       maxWidth: 5.0 * 56.0,
-      maxHeight: 280,
+      // 最多 7 项（含删除）+ 一条分隔线，留够高度免得菜单自身滚动。
+      maxHeight: 360,
     ),
     items: [
-      for (final item in actions)
+      for (final item in actions) ...[
+        if (item.destructive) const PopupMenuDivider(),
         PopupMenuItem<String>(
           value: item.value,
           child: Row(
             children: [
-              Icon(item.icon, size: 18),
+              Icon(
+                item.icon,
+                size: 18,
+                color: item.destructive ? dangerColor : null,
+              ),
               const SizedBox(width: 10),
-              Expanded(child: Text(item.label)),
+              Expanded(
+                child: Text(
+                  item.label,
+                  style:
+                      item.destructive ? TextStyle(color: dangerColor) : null,
+                ),
+              ),
             ],
           ),
         ),
+      ],
     ],
   );
   if (!context.mounted) return;
@@ -234,6 +279,7 @@ Future<void> showSessionRowPopupMenu(
     onForkSession: onForkSession,
     onCopyToAgent: onCopyToAgent,
     onResetSession: onResetSession,
+    onDeleteSession: onDeleteSession,
   );
 }
 

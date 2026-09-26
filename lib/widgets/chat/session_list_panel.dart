@@ -606,6 +606,8 @@ class _SessionListContentState extends State<_SessionListContent> {
         ? null
         : () => widget.onCopyToAgent!(session);
     final resetSession = isCurrentSession ? widget.onResetSession : null;
+    // 正在查看的会话不给删（与批量选择里那条禁用规则一致）。
+    final deleteSession = isCurrentSession ? null : () => _deleteSession(session);
     final isDesktop = LayoutUtils.isDesktopLayout(context);
 
     return SessionRowHoverHost(
@@ -735,6 +737,7 @@ class _SessionListContentState extends State<_SessionListContent> {
                     onForkSession: forkSession,
                     onCopyToAgent: copyToAgent,
                     onResetSession: resetSession,
+                    onDeleteSession: deleteSession,
                   ),
                 )
             : null,
@@ -759,10 +762,26 @@ class _SessionListContentState extends State<_SessionListContent> {
                 onForkSession: forkSession,
                 onCopyToAgent: copyToAgent,
                 onResetSession: resetSession,
+                onDeleteSession: deleteSession,
               ),
         );
       },
     );
+  }
+
+  /// 删除单个会话：确认后走批量删除同一条路径（关面板 → 交给调用方删）。
+  Future<void> _deleteSession(Channel session) async {
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await showConfirmDialog(
+      context,
+      title: l10n.chat_deleteSession,
+      message: l10n.chat_deleteSessionContent,
+      confirmLabel: l10n.common_delete,
+    );
+    if (!confirmed || !mounted) return;
+    ChatPanelScope.notifySessionDeleted(context);
+    closePanelRoute(context);
+    widget.onBatchDelete([session.id]);
   }
 
   Widget _buildBottomBar(AppLocalizations l10n) {

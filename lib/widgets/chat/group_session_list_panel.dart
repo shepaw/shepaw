@@ -758,6 +758,11 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
         ? null
         : () => widget.onForkSession!(session);
     final resetSession = isCurrentSession ? widget.onResetSession : null;
+    // 正在查看的会话不给删（与批量选择里那条禁用规则一致）；群根会话也
+    // 不给删 —— 批量删除路径本来就会跳过它，菜单里不该摆一个删不掉的项。
+    final deleteSession = isCurrentSession || session.parentGroupId == null
+        ? null
+        : () => _deleteSession(session);
     final isDesktop = LayoutUtils.isDesktopLayout(context);
     final orchestrationChip = isOrchestrating
         ? InkWell(
@@ -886,6 +891,7 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
                     onViewTrace: viewTrace,
                     onForkSession: forkSession,
                     onResetSession: resetSession,
+                    onDeleteSession: deleteSession,
                   ),
                 )
             : null,
@@ -909,10 +915,26 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
                 onViewTrace: viewTrace,
                 onForkSession: forkSession,
                 onResetSession: resetSession,
+                onDeleteSession: deleteSession,
               ),
         );
       },
     );
+  }
+
+  /// 删除单个群子会话：确认后走批量删除同一条路径（关面板 → 交给调用方删）。
+  Future<void> _deleteSession(Channel session) async {
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await showConfirmDialog(
+      context,
+      title: l10n.chat_deleteSession,
+      message: l10n.chat_deleteSessionContent,
+      confirmLabel: l10n.common_delete,
+    );
+    if (!confirmed || !mounted) return;
+    ChatPanelScope.notifySessionDeleted(context);
+    closePanelRoute(context);
+    widget.onBatchDelete([session.id]);
   }
 
   Widget _buildBottomBar(AppLocalizations l10n) {
