@@ -19,7 +19,7 @@ String fmtStorageBytes(int bytes) {
   return '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
 }
 
-/// 储物袋分区显示名（我的：文件；智能体：工作区/运行时/认知/产物）。
+/// 储物袋分区显示名（我的：文件 + 玉简/指令集/系统技能；智能体：工作区/运行时/认知/产物）。
 String storageSpaceLabel(AppLocalizations l10n, String space) {
   switch (space) {
     case StoreSpace.workspaces:
@@ -38,6 +38,8 @@ String storageSpaceLabel(AppLocalizations l10n, String space) {
       return l10n.storage_spaceCognition;
     case StoreSpace.artifacts:
       return l10n.storage_spaceArtifacts;
+    case StoreSpace.tools:
+      return l10n.storage_spaceTools;
     default:
       return space;
   }

@@ -405,6 +405,7 @@ class AppBootstrap {
       // 系统技能不写入某个 Agent 的 enabled_skills。对外全文在储物袋
       // tools 分区，见 [_publishSystemSkill]。
       final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+      var appGuideSeeded = false;
       for (final assetDir in [
         _builtinAppGuideAssetDir,
         _builtinSystemSkillDir,
@@ -414,7 +415,13 @@ class AppBootstrap {
             .where((k) => k.startsWith('$assetDir/'))
             .toList();
         if (assetKeys.isEmpty) {
-          _log.warning('No assets found under $assetDir/, skip seeding', tag: 'App');
+          // 目录资产不递归：漏了 pubspec 的子目录条目就会走到这里，
+          // 表现为内置技能静默缺失。
+          _log.warning(
+            'No assets found under $assetDir/, skip seeding '
+            '(check pubspec.yaml assets entries)',
+            tag: 'App',
+          );
           continue;
         }
         final leaf = assetDir.split('/').last;
@@ -430,11 +437,14 @@ class AppBootstrap {
         }
         await SkillRegistry.instance
             .importSkillDirectory(sourceDir.path, overwrite: true);
+        if (assetDir == _builtinAppGuideAssetDir) appGuideSeeded = true;
         _log.info('Seeded built-in skill from $assetDir', tag: 'App');
       }
 
       // 2. 确保 She 已启用该技能——enabled_skills 决定 She 的 prompt 里的
-      //    技能列表与其可调用的技能工具
+      //    技能列表与其可调用的技能工具。仅在真的导入成功后才登记，
+      //    否则会把一个不存在的技能写进 She 的 prompt。
+      if (!appGuideSeeded) return;
       final she =
           await LocalDatabaseService().getRemoteAgentById(SheService.sheId);
       if (she != null && !she.enabledSkills.contains(_builtinAppGuideSkillTool)) {

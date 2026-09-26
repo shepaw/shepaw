@@ -144,7 +144,12 @@ flutter:
   assets:
     - assets/images/
     - assets/icons/
-    - assets/skills/
+    # 目录资产不递归：只收该目录下的直接文件，子目录必须逐个列出，
+    # 否则 assets/skills/ 会一个文件都不打包（内置技能 seed 与系统技能
+    # 发布都会静默失败）。
+    - assets/skills/shepaw-system/
+    - assets/skills/app-usage-guide/
+    - assets/skills/app-usage-guide/references/
     - assets/models/face/
 
   fonts:

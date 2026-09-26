@@ -6904,6 +6904,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_spaceAdvanced => 'Advanced';
 
   @override
+  String get storage_spaceTools => 'System skills';
+
+  @override
+  String get storage_spaceToolsHint =>
+      'Conventions every agent turn references';
+
+  @override
   String storage_browserLastAccessed(String time) {
     return 'Last accessed $time';
   }

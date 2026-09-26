@@ -12135,6 +12135,18 @@ abstract class AppLocalizations {
   /// **'高级'**
   String get storage_spaceAdvanced;
 
+  /// No description provided for @storage_spaceTools.
+  ///
+  /// In zh, this message translates to:
+  /// **'系统技能'**
+  String get storage_spaceTools;
+
+  /// No description provided for @storage_spaceToolsHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'Agent 每轮引用的系统约定'**
+  String get storage_spaceToolsHint;
+
   /// No description provided for @storage_browserLastAccessed.
   ///
   /// In zh, this message translates to:

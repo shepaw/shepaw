@@ -6644,6 +6644,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_spaceAdvanced => '高级';
 
   @override
+  String get storage_spaceTools => '系统技能';
+
+  @override
+  String get storage_spaceToolsHint => 'Agent 每轮引用的系统约定';
+
+  @override
   String storage_browserLastAccessed(String time) {
     return '最近访问于 $time';
   }

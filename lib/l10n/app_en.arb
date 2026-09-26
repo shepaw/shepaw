@@ -3409,6 +3409,8 @@
   "storage_spaceCognition": "Cognition",
   "storage_spaceArtifacts": "Artifacts",
   "storage_spaceAdvanced": "Advanced",
+  "storage_spaceTools": "System skills",
+  "storage_spaceToolsHint": "Conventions every agent turn references",
   "storage_browserLastAccessed": "Last accessed {time}",
   "@storage_browserLastAccessed": {
     "placeholders": {

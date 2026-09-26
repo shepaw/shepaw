@@ -2770,6 +2770,19 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     );
   }
 
+  /// 系统技能：分区由本机 App 发布，配对设备的袋里通常没有，别给死入口。
+  bool get _showSystemSkillRow =>
+      !_isRemote || _spaces.contains(StoreSpace.tools);
+
+  Widget _buildMobileSystemSkillRow(AppLocalizations l10n) {
+    return _buildMobileSpecialSpaceRow(
+      icon: Icons.menu_book_outlined,
+      title: l10n.storage_spaceTools,
+      subtitle: l10n.storage_spaceToolsHint,
+      onTap: _busy ? null : () => _enterSpace(StoreSpace.tools),
+    );
+  }
+
   Widget _buildMobileSpecialSpaceRow({
     required IconData icon,
     required String title,
@@ -2926,6 +2939,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
           _buildSpaceCategoryHeader(l10n, l10n.storage_categoryMine),
           _buildMobileNotesRow(l10n),
           _buildMobileInstructionsRow(l10n),
+          if (_showSystemSkillRow) _buildMobileSystemSkillRow(l10n),
           for (final space in userSpaces) _buildMobileSpaceRootRow(l10n, space),
         ],
         if (agentSpaces.isNotEmpty) ...[
@@ -2960,6 +2974,14 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
             subtitle: Text(l10n.instructionSet_subtitle),
             onTap: () => _enterSpace(StoreSpace.instructions),
           ),
+          if (_showSystemSkillRow)
+            ListTile(
+              leading: Icon(Icons.menu_book_outlined,
+                  color: Theme.of(context).colorScheme.primary),
+              title: Text(l10n.storage_spaceTools),
+              subtitle: Text(l10n.storage_spaceToolsHint),
+              onTap: () => _enterSpace(StoreSpace.tools),
+            ),
           for (final space in userSpaces)
             _buildDesktopSpaceRootRow(l10n, space),
         ],
