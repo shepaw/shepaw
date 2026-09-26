@@ -140,11 +140,33 @@ class StoreSpace {
   /// Legacy：旧认知空间名（只读兼容；新写入走 [cognition]）。
   static const memory = 'memory';
 
-  /// 系统技能与 CLI 说明。不进普通文件夹。
-  /// 落盘：`tools/<device>/skills/<name>/SKILL.md`。
+  /// App 与各智能体的 MCP、规则、技能。用户可见，归在「智能体」。
+  ///
+  /// 相对 device 目录：
+  /// - [toolsMcpDir]`/<name>/` App 安装的 MCP
+  /// - [toolsRulesDir]`/<name>/` App 级规则
+  /// - [toolsSkillsDir]`/<name>/SKILL.md` App 级技能
+  /// - [toolsAgentsDir]`/<agentId>/{mcp,rules,skills}/` 该智能体自己的一份
   static const tools = 'tools';
 
-  /// 系统技能在 [tools] 分区内的相对路径。
+  static const toolsMcpDir = 'mcp';
+  static const toolsRulesDir = 'rules';
+  static const toolsSkillsDir = 'skills';
+  static const toolsAgentsDir = 'agents';
+
+  /// 工具分区根上的四个目录，浏览时按这个顺序理解。
+  static const toolsTopDirs = <String>[
+    toolsMcpDir,
+    toolsRulesDir,
+    toolsSkillsDir,
+    toolsAgentsDir,
+  ];
+
+  /// `agents/<agentId>/<mcp|rules|skills>`。
+  static String toolsAgentRel(String agentId, String kind) =>
+      '$toolsAgentsDir/$agentId/$kind';
+
+  /// 系统技能在 [tools] 分区内的相对路径（App 级技能）。
   static const systemSkillRelPath = 'skills/shepaw-system/SKILL.md';
 
   /// 同步/导出枚举：新内置 + legacy（旧树仍需镜像）。
@@ -176,18 +198,18 @@ class StoreSpace {
     instructions,
   };
 
-  /// 协议保留、用户分区列表隐藏。
+  /// 协议保留、用户分区列表隐藏。`public` 不再单独展示。
   static const hiddenUserBrowserSpaces = <String>{
     public_,
-    tools,
   };
 
-  /// 浏览「智能体」：工作区 / 运行时 / 认知 / 产物。
+  /// 浏览「智能体」：工作区 / 运行时 / 认知 / 产物 / 工具。
   static const agentBrowserSpaces = <String>[
     workspaces,
     runtime,
     cognition,
     artifacts,
+    tools,
   ];
 
   /// 「最近」收录的分区：浏览面 + 玉简/指令集 + 仍可能有存量的 public。

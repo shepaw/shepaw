@@ -3884,8 +3884,12 @@
   "storage_spaceCognition": "认知",
   "storage_spaceArtifacts": "产物",
   "storage_spaceAdvanced": "高级",
-  "storage_spaceTools": "系统技能",
-  "storage_spaceToolsHint": "Agent 每轮引用的系统约定",
+  "storage_spaceTools": "工具",
+  "storage_spaceToolsHint": "App 与各智能体的 MCP、规则和技能",
+  "storage_toolsFolderMcp": "MCP",
+  "storage_toolsFolderRules": "规则",
+  "storage_toolsFolderSkills": "技能",
+  "storage_toolsFolderAgents": "智能体",
   "storage_browserLastAccessed": "最近访问于 {time}",
   "@storage_browserLastAccessed": {
     "placeholders": {

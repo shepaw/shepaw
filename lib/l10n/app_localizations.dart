@@ -12138,14 +12138,38 @@ abstract class AppLocalizations {
   /// No description provided for @storage_spaceTools.
   ///
   /// In zh, this message translates to:
-  /// **'系统技能'**
+  /// **'工具'**
   String get storage_spaceTools;
 
   /// No description provided for @storage_spaceToolsHint.
   ///
   /// In zh, this message translates to:
-  /// **'Agent 每轮引用的系统约定'**
+  /// **'App 与各智能体的 MCP、规则和技能'**
   String get storage_spaceToolsHint;
+
+  /// No description provided for @storage_toolsFolderMcp.
+  ///
+  /// In zh, this message translates to:
+  /// **'MCP'**
+  String get storage_toolsFolderMcp;
+
+  /// No description provided for @storage_toolsFolderRules.
+  ///
+  /// In zh, this message translates to:
+  /// **'规则'**
+  String get storage_toolsFolderRules;
+
+  /// No description provided for @storage_toolsFolderSkills.
+  ///
+  /// In zh, this message translates to:
+  /// **'技能'**
+  String get storage_toolsFolderSkills;
+
+  /// No description provided for @storage_toolsFolderAgents.
+  ///
+  /// In zh, this message translates to:
+  /// **'智能体'**
+  String get storage_toolsFolderAgents;
 
   /// No description provided for @storage_browserLastAccessed.
   ///

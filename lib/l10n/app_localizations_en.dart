@@ -6904,11 +6904,23 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_spaceAdvanced => 'Advanced';
 
   @override
-  String get storage_spaceTools => 'System skills';
+  String get storage_spaceTools => 'Tools';
 
   @override
   String get storage_spaceToolsHint =>
-      'Conventions every agent turn references';
+      'MCP, rules, and skills for the app and each agent';
+
+  @override
+  String get storage_toolsFolderMcp => 'MCP';
+
+  @override
+  String get storage_toolsFolderRules => 'Rules';
+
+  @override
+  String get storage_toolsFolderSkills => 'Skills';
+
+  @override
+  String get storage_toolsFolderAgents => 'Agents';
 
   @override
   String storage_browserLastAccessed(String time) {

@@ -109,7 +109,7 @@ class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
       case StoreSpace.artifacts:
         return Icons.extension_outlined;
       case StoreSpace.tools:
-        return Icons.menu_book_outlined;
+        return Icons.build_outlined;
       default:
         return Icons.folder_outlined;
     }
@@ -229,23 +229,15 @@ class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
     );
   }
 
-  /// 系统技能：协议保留分区，不进普通分区列表，只给这一个入口。
-  Widget _buildSystemSkillRow(AppLocalizations l10n) {
-    return _hubRow(
-      leading: _leadingIconBox(Icons.menu_book_outlined),
-      title: l10n.storage_spaceTools,
-      subtitle: l10n.storage_spaceToolsHint,
-      selected: widget.selectedSpace == StoreSpace.tools,
-      onTap: () => widget.onSpaceSelected?.call(StoreSpace.tools),
-    );
-  }
-
   Widget _buildSpaceRow(AppLocalizations l10n, String space) {
     final bytes = _spaceBytes[space];
+    final subtitle = space == StoreSpace.tools
+        ? l10n.storage_spaceToolsHint
+        : (bytes == null ? null : fmtStorageBytes(bytes));
     return _hubRow(
       leading: _leadingIconBox(_spaceIcon(space)),
       title: storageSpaceLabel(l10n, space),
-      subtitle: bytes == null ? null : fmtStorageBytes(bytes),
+      subtitle: subtitle,
       selected: widget.selectedSpace == space,
       onTap: () => widget.onSpaceSelected?.call(space),
     );
@@ -271,7 +263,6 @@ class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
           _buildSectionHeader(l10n, l10n.storage_categoryMine),
           _buildNotesRow(l10n),
           _buildInstructionsRow(l10n),
-          _buildSystemSkillRow(l10n),
           if (userSpaces.isNotEmpty) ...[
             for (final space in userSpaces) _buildSpaceRow(l10n, space),
           ],

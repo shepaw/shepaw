@@ -11,6 +11,7 @@ const _labelResolvableSpaces = <String>{
   StoreSpace.cognition,
   StoreSpace.memory, // legacy：cognition 别名，同样按 <agentId> 布局
   StoreSpace.artifacts, // legacy：owner 目录布局，命中不了则原样
+  StoreSpace.tools, // agents/<agentId>/ 下的智能体目录
 };
 
 /// 储物袋中 agent/群 id 目录的可读标签。

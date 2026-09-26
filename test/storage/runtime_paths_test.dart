@@ -145,7 +145,7 @@ void main() {
       expect(StoreSpace.isOwnerCrossWritable(StoreSpace.runtime), isFalse);
       expect(StoreSpace.browserSpaces, contains(StoreSpace.workspaces));
       expect(StoreSpace.browserSpaces, isNot(contains(StoreSpace.public_)));
-      expect(StoreSpace.browserSpaces, isNot(contains(StoreSpace.tools)));
+      expect(StoreSpace.browserSpaces, contains(StoreSpace.tools));
       expect(StoreSpace.sharedReadable, contains(StoreSpace.tools));
       expect(StoreSpace.browserSpaces, contains(StoreSpace.cognition));
       expect(StoreSpace.browserSpaces, isNot(contains(StoreSpace.memory)));
@@ -158,6 +158,7 @@ void main() {
         StoreSpace.runtime,
         StoreSpace.cognition,
         StoreSpace.artifacts,
+        StoreSpace.tools,
       ]);
       expect(
         StoreSpace.userVisibleSpaces(StoreSpace.browserSpaces),
@@ -174,8 +175,14 @@ void main() {
           StoreSpace.runtime,
           StoreSpace.cognition,
           StoreSpace.artifacts,
+          StoreSpace.tools,
         ],
       );
+      expect(
+        StoreSpace.toolsAgentRel('agent_1', StoreSpace.toolsSkillsDir),
+        'agents/agent_1/skills',
+      );
+      expect(StoreSpace.systemSkillRelPath, 'skills/shepaw-system/SKILL.md');
       expect(
         StoreSpace.userVisibleSpaces([StoreSpace.files, 'vault']),
         [StoreSpace.files, 'vault'],

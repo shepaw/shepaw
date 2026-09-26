@@ -100,6 +100,17 @@ void main() {
     expect(label.avatar, isEmpty);
   });
 
+  test('tools 分区下 agent id 目录解析为 Agent', () async {
+    await seedAgent('agent_xyz', '小助手', avatar: '🦊');
+
+    final label =
+        await resolveStorageFolderLabel(StoreSpace.tools, 'agent_xyz');
+
+    expect(label.resolved, isTrue);
+    expect(label.label, '小助手');
+    expect(label.avatar, '🦊');
+  });
+
   test('files 分区即使目录名等于已播种 agent id 也不解析', () async {
     await seedAgent('agent_xyz', '小助手');
 

@@ -3409,8 +3409,12 @@
   "storage_spaceCognition": "Cognition",
   "storage_spaceArtifacts": "Artifacts",
   "storage_spaceAdvanced": "Advanced",
-  "storage_spaceTools": "System skills",
-  "storage_spaceToolsHint": "Conventions every agent turn references",
+  "storage_spaceTools": "Tools",
+  "storage_spaceToolsHint": "MCP, rules, and skills for the app and each agent",
+  "storage_toolsFolderMcp": "MCP",
+  "storage_toolsFolderRules": "Rules",
+  "storage_toolsFolderSkills": "Skills",
+  "storage_toolsFolderAgents": "Agents",
   "storage_browserLastAccessed": "Last accessed {time}",
   "@storage_browserLastAccessed": {
     "placeholders": {

@@ -1786,6 +1786,9 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   }
 
   String? _spaceSubtitle(String space) {
+    if (space == StoreSpace.tools) {
+      return AppLocalizations.of(context).storage_spaceToolsHint;
+    }
     if (!_spaceBytes.containsKey(space)) return null;
     return _fmtBytes(_spaceBytes[space] ?? 0);
   }
@@ -1943,13 +1946,32 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
 
   StorageFolderLabel _folderLabelFor(String space, String name) {
     if (name.isEmpty) return StorageFolderLabel.unresolved(name);
+    final l10n = AppLocalizations.of(context);
     if (space == StoreSpace.workspaces && name == 'members') {
       return StorageFolderLabel(
-        label: AppLocalizations.of(context).storage_browserMembersFolder,
+        label: l10n.storage_browserMembersFolder,
         avatar: '',
         isGroup: true,
         resolved: true,
       );
+    }
+    if (space == StoreSpace.tools) {
+      final friendly = switch (name) {
+        StoreSpace.toolsMcpDir => l10n.storage_toolsFolderMcp,
+        StoreSpace.toolsRulesDir => l10n.storage_toolsFolderRules,
+        StoreSpace.toolsSkillsDir => l10n.storage_toolsFolderSkills,
+        StoreSpace.toolsAgentsDir => l10n.storage_toolsFolderAgents,
+        _ => null,
+      };
+      // 固定目录保持文件夹图标；智能体 id 仍走下面的缓存解析。
+      if (friendly != null) {
+        return StorageFolderLabel(
+          label: friendly,
+          avatar: '',
+          isGroup: false,
+          resolved: false,
+        );
+      }
     }
     return _folderLabelCache['$space:$name'] ??
         StorageFolderLabel.unresolved(name);
@@ -2770,19 +2792,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     );
   }
 
-  /// 系统技能：分区由本机 App 发布，配对设备的袋里通常没有，别给死入口。
-  bool get _showSystemSkillRow =>
-      !_isRemote || _spaces.contains(StoreSpace.tools);
-
-  Widget _buildMobileSystemSkillRow(AppLocalizations l10n) {
-    return _buildMobileSpecialSpaceRow(
-      icon: Icons.menu_book_outlined,
-      title: l10n.storage_spaceTools,
-      subtitle: l10n.storage_spaceToolsHint,
-      onTap: _busy ? null : () => _enterSpace(StoreSpace.tools),
-    );
-  }
-
   Widget _buildMobileSpecialSpaceRow({
     required IconData icon,
     required String title,
@@ -2939,7 +2948,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
           _buildSpaceCategoryHeader(l10n, l10n.storage_categoryMine),
           _buildMobileNotesRow(l10n),
           _buildMobileInstructionsRow(l10n),
-          if (_showSystemSkillRow) _buildMobileSystemSkillRow(l10n),
           for (final space in userSpaces) _buildMobileSpaceRootRow(l10n, space),
         ],
         if (agentSpaces.isNotEmpty) ...[
@@ -2974,14 +2982,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
             subtitle: Text(l10n.instructionSet_subtitle),
             onTap: () => _enterSpace(StoreSpace.instructions),
           ),
-          if (_showSystemSkillRow)
-            ListTile(
-              leading: Icon(Icons.menu_book_outlined,
-                  color: Theme.of(context).colorScheme.primary),
-              title: Text(l10n.storage_spaceTools),
-              subtitle: Text(l10n.storage_spaceToolsHint),
-              onTap: () => _enterSpace(StoreSpace.tools),
-            ),
           for (final space in userSpaces)
             _buildDesktopSpaceRootRow(l10n, space),
         ],

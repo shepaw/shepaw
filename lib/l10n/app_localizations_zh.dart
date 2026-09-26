@@ -6644,10 +6644,22 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_spaceAdvanced => '高级';
 
   @override
-  String get storage_spaceTools => '系统技能';
+  String get storage_spaceTools => '工具';
 
   @override
-  String get storage_spaceToolsHint => 'Agent 每轮引用的系统约定';
+  String get storage_spaceToolsHint => 'App 与各智能体的 MCP、规则和技能';
+
+  @override
+  String get storage_toolsFolderMcp => 'MCP';
+
+  @override
+  String get storage_toolsFolderRules => '规则';
+
+  @override
+  String get storage_toolsFolderSkills => '技能';
+
+  @override
+  String get storage_toolsFolderAgents => '智能体';
 
   @override
   String storage_browserLastAccessed(String time) {
