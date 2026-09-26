@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -30,5 +32,13 @@ void main() {
   test('系统技能全文可 load（每轮 scope card 给的地址依赖它）', () async {
     final data = await rootBundle.load(systemSkill);
     expect(data.lengthInBytes, greaterThan(0));
+    final text = utf8.decode(
+      data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+    );
+    expect(text, contains('cognition 认知'));
+    expect(text, contains('runtime 运行时'));
+    expect(text, contains('workspaces 工作区'));
+    expect(text, contains('tools 工具'));
+    expect(text, contains('旧分区 `store://artifacts/...` 只用来读历史'));
   });
 }

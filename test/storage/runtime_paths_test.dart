@@ -149,15 +149,16 @@ void main() {
       expect(StoreSpace.sharedReadable, contains(StoreSpace.tools));
       expect(StoreSpace.browserSpaces, contains(StoreSpace.cognition));
       expect(StoreSpace.browserSpaces, isNot(contains(StoreSpace.memory)));
+      expect(StoreSpace.browserSpaces, isNot(contains(StoreSpace.artifacts)));
       expect(StoreSpace.userBrowserSpaces, [StoreSpace.files]);
       expect(StoreSpace.recentSpaces, contains(StoreSpace.slips));
       expect(StoreSpace.recentSpaces, contains(StoreSpace.instructions));
       expect(StoreSpace.recentSpaces, contains(StoreSpace.public_));
+      expect(StoreSpace.recentSpaces, contains(StoreSpace.artifacts));
       expect(StoreSpace.agentBrowserSpaces, [
         StoreSpace.workspaces,
         StoreSpace.runtime,
         StoreSpace.cognition,
-        StoreSpace.artifacts,
         StoreSpace.tools,
       ]);
       expect(
@@ -174,7 +175,6 @@ void main() {
           StoreSpace.workspaces,
           StoreSpace.runtime,
           StoreSpace.cognition,
-          StoreSpace.artifacts,
           StoreSpace.tools,
         ],
       );

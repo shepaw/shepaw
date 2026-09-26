@@ -130,12 +130,12 @@
 
 ### 2.5 储物袋（Store）与存储
 
-- **Store 协议**：`store://<space>/<device>/<path>`。分区：`workspaces`（群/Agent 工作空间）、`runtime`（运行产物）、`files`（文件）、`public`（公开）、`backups`（备份）、`cognition`（认知）；遗留 `artifacts` / `attachments` / `memory`。
+- **Store 协议**：`store://<space>/<device>/<path>`。智能体常用：`cognition`（认知：soul/记忆）、`runtime`（运行时：会话与产物，产物在 `…/artifacts/`）、`workspaces`（工作区）、`tools`（工具：MCP、规则、技能，App 级与 `agents/<agentId>/` 各一份）。用户文件在 `files`，公开引用在 `public`。旧分区 `artifacts` / `memory` 只读。
 - **储物袋 UI**：浏览、搜索、管理文件；「最近」标签；可隐藏内部/系统文件。
 - **快照**：定时加密快照，GFS 保留策略，回收站与版本管理；在 **储物袋 → 备份与恢复** 创建/导出/恢复。
 - **目录绑定**（桌面端）：绑定本地文件夹，FS watcher 自动同步（附周期兜底）。
 - **WebDAV**：导出到 WebDAV、恢复、管理快照。
-- **Agent 工作空间**：每个 Agent/群在储物袋有工作空间；Agent 简历 `resume.md` 存于此，用 `shepaw store` 读写。
+- **Agent 简历**：`store://files/<device>/<agentId>/resume.md`，用 `shepaw store` 读写。群共享文件在 `store://workspaces/<device>/group_<gid>/…`。
 - **NexusPouch / Storage Node**（可选）：无头 Go store master，扫码配对 + mDNS 发现，经 Noise 加密 WebSocket 提供 `store.*` 帧服务。
 
 ### 2.6 设备配对与 P2P / She 网络

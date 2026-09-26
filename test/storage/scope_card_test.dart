@@ -15,6 +15,14 @@ void main() {
     expect(md, contains('不要'));
     expect(md, contains('agents.memory-write --id agent_xxx'));
     expect(md, isNot(contains('--owner')));
+    expect(md, contains('`cognition` 认知'));
+    expect(md, contains('`runtime` 运行时'));
+    expect(md, contains('`workspaces` 工作区'));
+    expect(md, contains('`tools` 工具'));
+    expect(md, contains('旧分区 `artifacts` 不要再写'));
+    expect(md, contains('store://tools/aaaaaaaaaaaaaaaa/'));
+    expect(md, contains('store://tools/aaaaaaaaaaaaaaaa/agents/agent_xxx/'));
+    expect(md, isNot(contains('产物/runtime')));
   });
 
   test('uri_only notes tell agent to store read', () {

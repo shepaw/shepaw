@@ -360,6 +360,42 @@ class ScopeCard {
   String get systemSkillUri =>
       storeUriWithRef(StoreSpace.tools, deviceId, StoreSpace.systemSkillRelPath);
 
+  /// `store://tools/<device>/`，里面是 App 的 mcp / rules / skills。
+  String get toolsRootUri => storeUriWithRef(StoreSpace.tools, deviceId, '');
+
+  /// `store://tools/<device>/agents/<owner>/`。
+  String get agentToolsUri => storeUriWithRef(
+        StoreSpace.tools,
+        deviceId,
+        '${StoreSpace.toolsAgentsDir}/${RuntimePaths.sanitizeSegment(ownerId)}/',
+      );
+
+  /// 每轮都给的分区地图。全文约定在系统技能里，这里只定去向。
+  void _writeSpaceMap(StringBuffer buf) {
+    buf
+      ..writeln(
+        '- 优先用储物袋。`store://` 只用 store read/list/search；'
+        '不要编造 URI，不要用 os.file。',
+      )
+      ..writeln(
+        '- `cognition` 认知：soul 与记忆的权威。用 context/soul CLI 写，'
+        '不要 store write。',
+      )
+      ..writeln(
+        '- `runtime` 运行时：本轮会话、附件和产物'
+        '（`…/artifacts/<task>/<file>`）。`store write` 默认落这里。'
+        '旧分区 `artifacts` 不要再写。',
+      )
+      ..writeln(
+        '- `workspaces` 工作区：已挂载的目录，或群里要跨设备共享的文件'
+        '（space=workspaces，并带 group）。',
+      )
+      ..writeln(
+        '- `tools` 工具：`mcp/`、`rules/`、`skills/`；'
+        '本智能体自己的在 `agents/<owner>/` 下同样三份。先 list/read 再动手。',
+      );
+  }
+
   String get _systemSkillLine => _hubCli
       ? '- 系统技能: ACP `hub.cli.execute` `{namespace:"store",subcommand:"read",'
           'flags:{uri:"$systemSkillUri"},$_hubSessionId}`'
@@ -389,18 +425,14 @@ class ScopeCard {
       )
       ..writeln('- device: `$deviceId`')
       ..writeln('- URI 形如 `store://<space>/<device_id>/<path>`');
+    _writeSpaceMap(buf);
 
     if (mode == ScopeCardMode.group) {
       buf.writeln(
         '- 本群**无**个人 `cognition/`（soul/记忆）；岗位与人格摘要见群身份段，'
         '禁止在本任务读写个人认知袋',
       );
-    } else if (mode == ScopeCardMode.acp) {
-      buf.writeln(
-        '- 分区：`files` 沉淀 · `public` 公开引用 · `runtime` 会话产物 · '
-        '`cognition` Soul/结构化记忆权威 · `workspaces` 工作区 · `backups` 本端灾备',
-      );
-    } else {
+    } else if (mode != ScopeCardMode.acp) {
       if (cognitionRootUri != null) {
         buf.writeln('- 认知权威: `$cognitionRootUri`');
       }
@@ -427,7 +459,11 @@ class ScopeCard {
     }
 
     if (runtimeRootUri != null) {
-      buf.writeln('- 产物/runtime: `$runtimeRootUri`');
+      buf.writeln('- 运行时: `$runtimeRootUri`');
+    }
+    buf.writeln('- 工具根: `$toolsRootUri`');
+    if (ownerKind == 'agent') {
+      buf.writeln('- 本智能体工具: `$agentToolsUri`');
     }
     if (manifestUri != null) {
       buf.writeln('- manifest: `$manifestUri`');

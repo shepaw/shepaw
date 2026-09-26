@@ -198,26 +198,28 @@ class StoreSpace {
     instructions,
   };
 
-  /// 协议保留、用户分区列表隐藏。`public` 不再单独展示。
+  /// 协议保留、分区列表隐藏。`public` 不再单独展示。
+  /// `artifacts` 是旧产物区，新文件在 runtime/…/artifacts/，不再给入口。
   static const hiddenUserBrowserSpaces = <String>{
     public_,
+    artifacts,
   };
 
-  /// 浏览「智能体」：工作区 / 运行时 / 认知 / 产物 / 工具。
+  /// 浏览「智能体」：工作区 / 运行时 / 认知 / 工具。
   static const agentBrowserSpaces = <String>[
     workspaces,
     runtime,
     cognition,
-    artifacts,
     tools,
   ];
 
-  /// 「最近」收录的分区：浏览面 + 玉简/指令集 + 仍可能有存量的 public。
+  /// 「最近」收录的分区：浏览面 + 玉简/指令集 + 仍可能有存量的 public / 旧产物。
   static const recentSpaces = <String>[
     files,
     slips,
     instructions,
     public_,
+    artifacts,
     ...agentBrowserSpaces,
   ];
 
