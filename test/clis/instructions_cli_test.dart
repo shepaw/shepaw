@@ -6,6 +6,7 @@ import 'package:shepaw/clis/shepaw/instructions/update_command.dart';
 import 'package:shepaw/clis/shepaw/instructions/delete_command.dart';
 import 'package:shepaw/clis/shepaw/instructions/run_command.dart';
 import 'package:shepaw/services/instruction_set_service.dart';
+import 'package:shepaw/services/jade_slip_service.dart';
 import 'package:shepaw/services/local_database_service.dart';
 import 'package:shepaw/services/she_service.dart';
 
@@ -171,7 +172,10 @@ void main() {
       final result = await asAgent('agent-a',
           () => RunInstructionCommand().execute({'name': 'task'}));
       expect(result['success'], true);
-      expect(result['content'], 'do the thing');
+      expect(result['content'], contains('do the thing'));
+      // 普通指令仍然用玉简跟踪进度。
+      expect(result['content'], contains('玉简「task」'));
+      expect(result['jade_slip_id'], isNotNull);
     });
 
     test('returns content for direct execution when owner is She', () async {
@@ -180,7 +184,31 @@ void main() {
       final result = await asAgent(SheService.sheId,
           () => RunInstructionCommand().execute({'name': 'task'}));
       expect(result['success'], true);
-      expect(result['content'], 'do the thing');
+      expect(result['content'], contains('do the thing'));
+    });
+
+    test('built-in 沉淀指令 targets 指令集 and creates no jade slip', () async {
+      await InstructionSetService.instance.seedSystemInstructions();
+      final before = await JadeSlipService.instance.list();
+      final result = await asAgent(SheService.sheId, () =>
+          RunInstructionCommand()
+              .execute({'name': InstructionSetService.systemInstructionName}));
+      expect(result['success'], true);
+
+      final content = result['content'] as String;
+      expect(content, contains('指令集'));
+      expect(content, contains('shepaw instructions save'));
+      expect(content, isNot(contains('玉简「')));
+      expect(content, isNot(contains('shepaw slip')));
+      expect(result.containsKey('jade_slip_id'), false);
+
+      final after = await JadeSlipService.instance.list();
+      expect(after.length, before.length);
+      expect(
+        after.any((s) =>
+            s.title == InstructionSetService.systemInstructionName),
+        false,
+      );
     });
 
     test('unknown instruction returns error', () async {

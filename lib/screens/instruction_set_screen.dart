@@ -446,14 +446,19 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
     final chatService = getIt<ChatService>();
     const userId = LocalUserIdentity.id;
     final ownerId = item.ownerAgentId;
-    final slip = await JadeSlipService.instance.create(
-      title: item.name,
-      goal: item.content,
-      assigneeAgentId: ownerId,
-      assigneeAgentName: item.ownerAgentName,
-      sourceInstructionId: item.id,
-    );
-    final tracked = '这次执行记在玉简「${slip.title}」（id=${slip.id}）。\n${item.content}';
+    // 内置「沉淀指令」的产出是一条指令，只落指令集；其余指令用玉简跟踪进度。
+    final slip = InstructionSetService.isSystemInstruction(item)
+        ? null
+        : await JadeSlipService.instance.create(
+            title: item.name,
+            goal: item.content,
+            assigneeAgentId: ownerId,
+            assigneeAgentName: item.ownerAgentName,
+            sourceInstructionId: item.id,
+          );
+    final tracked = slip == null
+        ? InstructionSetService.systemInstructionRunPrompt(item.content)
+        : '这次执行记在玉简「${slip.title}」（id=${slip.id}）。\n${item.content}';
 
     final currentChannelId = widget.channelId;
     if (currentChannelId != null && currentChannelId.isNotEmpty) {

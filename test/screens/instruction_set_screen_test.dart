@@ -4,7 +4,9 @@ import 'package:shepaw/l10n/app_localizations.dart';
 import 'package:shepaw/models/remote_agent.dart';
 import 'package:shepaw/screens/instruction_set_screen.dart';
 import 'package:shepaw/service_locator.dart';
+import 'package:shepaw/services/composer_draft_service.dart';
 import 'package:shepaw/services/instruction_set_service.dart';
+import 'package:shepaw/services/jade_slip_service.dart';
 import 'package:shepaw/services/local_database_service.dart';
 import 'package:shepaw/services/she_service.dart';
 
@@ -43,17 +45,20 @@ void main() {
     ));
   });
 
-  Future<void> pumpScreen(WidgetTester tester) async {
+  Future<void> pumpScreen(WidgetTester tester, {String? channelId}) async {
     tester.view.physicalSize = const Size(1200 * 2, 900 * 2);
     tester.view.devicePixelRatio = 2.0;
     addTearDown(tester.view.reset);
     await tester.runAsync(() async {
       await tester.pumpWidget(
-        const MaterialApp(
+        MaterialApp(
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
-          locale: Locale('zh'),
-          home: InstructionSetScreen(),
+          locale: const Locale('zh'),
+          home: InstructionSetScreen(
+            channelId: channelId,
+            agentId: channelId == null ? null : SheService.sheId,
+          ),
         ),
       );
       await Future<void>.delayed(const Duration(milliseconds: 300));
@@ -113,6 +118,36 @@ void main() {
     expect(
       after.where((e) => e.name != InstructionSetService.systemInstructionName),
       isEmpty,
+    );
+  });
+
+  /// 内置「沉淀指令」的执行指向：预填当前会话的正文提到指令集，且不建玉简。
+  testWidgets('running 沉淀指令 drafts into 指令集 without a jade slip',
+      (tester) async {
+    await pumpScreen(tester, channelId: 'ch-run');
+    await tester.tap(find.text('沉淀指令'));
+    await tester.pump();
+
+    final before =
+        await tester.runAsync(() => JadeSlipService.instance.list()) ?? [];
+
+    await tester.runAsync(() async {
+      await tester.tap(find.text('填入当前对话'));
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 200));
+    });
+
+    final draft = getIt<ComposerDraftService>().getDraft('ch-run');
+    expect(draft, contains('指令集'));
+    expect(draft, contains('shepaw instructions save'));
+    expect(draft, isNot(contains('玉简「')));
+
+    final after =
+        await tester.runAsync(() => JadeSlipService.instance.list()) ?? [];
+    expect(after.length, before.length);
+    expect(
+      after.any((s) => s.title == InstructionSetService.systemInstructionName),
+      false,
     );
   });
 }

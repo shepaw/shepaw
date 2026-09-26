@@ -56,6 +56,18 @@ class InstructionSetService {
     }
   }
 
+  /// 是否内置系统指令「沉淀指令」。
+  ///
+  /// 它的执行产出本身就是一条指令（落到指令集），
+  /// 因此执行时不建玉简跟踪，消息也指向指令集。
+  static bool isSystemInstruction(InstructionSet item) =>
+      item.name == systemInstructionName;
+
+  /// 内置「沉淀指令」执行时下发给 agent 的正文：结果落在指令集。
+  static String systemInstructionRunPrompt(String content) =>
+      '这次执行的结果记在指令集：把要沉淀的内容总结成一条指令，'
+      '用 shepaw instructions save 保存，不要新建玉简。\n$content';
+
   /// 按主键查询。
   Future<InstructionSet?> getById(String id) =>
       _db.queryInstructionSetById(id);

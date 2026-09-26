@@ -44,15 +44,20 @@ class RunInstructionCommand extends CliCommand {
         ? item.ownerAgentName
         : ownerId;
 
-    final slip = await JadeSlipService.instance.create(
-      title: item.name,
-      goal: item.content,
-      assigneeAgentId: ownerId,
-      assigneeAgentName: item.ownerAgentName,
-      sourceInstructionId: item.id,
-    );
-    final tracked = '这次执行记在玉简「${slip.title}」（id=${slip.id}）。'
-        '进度用 shepaw slip 写回，不要只留在对话里。\n${item.content}';
+    // 内置「沉淀指令」的产出是一条指令，只落指令集；其余指令用玉简跟踪进度。
+    final slip = InstructionSetService.isSystemInstruction(item)
+        ? null
+        : await JadeSlipService.instance.create(
+            title: item.name,
+            goal: item.content,
+            assigneeAgentId: ownerId,
+            assigneeAgentName: item.ownerAgentName,
+            sourceInstructionId: item.id,
+          );
+    final tracked = slip == null
+        ? InstructionSetService.systemInstructionRunPrompt(item.content)
+        : '这次执行记在玉简「${slip.title}」（id=${slip.id}）。'
+            '进度用 shepaw slip 写回，不要只留在对话里。\n${item.content}';
 
     // 所属 agent 是当前执行者或 She → 就地执行。
     if (ownerId == currentAgent || ownerId == SheService.sheId) {
@@ -61,7 +66,7 @@ class RunInstructionCommand extends CliCommand {
         'instruction': item.name,
         'description': item.description ?? '',
         'content': tracked,
-        'jade_slip_id': slip.id,
+        if (slip != null) 'jade_slip_id': slip.id,
         'owner_agent_id': ownerId,
         'owner_agent_name': item.ownerAgentName,
         'note': ownerId == SheService.sheId && ownerId != currentAgent
@@ -79,7 +84,7 @@ class RunInstructionCommand extends CliCommand {
         'success': true,
         'instruction': item.name,
         'content': tracked,
-        'jade_slip_id': slip.id,
+        if (slip != null) 'jade_slip_id': slip.id,
         'owner_agent_id': ownerId,
         'owner_agent_name': item.ownerAgentName,
         'note': 'This instruction belongs to $ownerLabel. There is no active '
@@ -95,7 +100,7 @@ class RunInstructionCommand extends CliCommand {
         'error': 'Owner agent not found: $ownerId. Cannot auto-route execution.',
         'instruction': item.name,
         'content': tracked,
-        'jade_slip_id': slip.id,
+        if (slip != null) 'jade_slip_id': slip.id,
         'note': 'Perform the task described above yourself, or create the '
             'agent again and re-run.',
       };
