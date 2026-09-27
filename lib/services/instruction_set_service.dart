@@ -37,7 +37,8 @@ class InstructionSetService {
   /// 播种失败（如数据库尚未就绪）不阻塞列表读取。
   Future<void> seedSystemInstructions() async {
     try {
-      final existing = await _db.queryInstructionSetByName(systemInstructionName);
+      final existing =
+          await _db.queryInstructionSetByName(systemInstructionName);
       if (existing != null) return;
       final now = DateTime.now().millisecondsSinceEpoch;
       await _db.upsertInstructionSet(
@@ -69,8 +70,7 @@ class InstructionSetService {
       '用 shepaw instructions save 保存，不要新建玉简。\n$content';
 
   /// 按主键查询。
-  Future<InstructionSet?> getById(String id) =>
-      _db.queryInstructionSetById(id);
+  Future<InstructionSet?> getById(String id) => _db.queryInstructionSetById(id);
 
   /// 按唯一名称查询。
   Future<InstructionSet?> getByName(String name) =>
@@ -112,11 +112,16 @@ class InstructionSetService {
   }
 
   /// 更新已有指令（描述传空字符串可清空）。
+  ///
+  /// [ownerAgentId] 非空时改所属 Agent，并一并写入 [ownerAgentName]。
+  /// 不传则保持原所属人。
   Future<InstructionSet> update({
     required String id,
     String? name,
     String? description,
     String? content,
+    String? ownerAgentId,
+    String? ownerAgentName,
   }) async {
     final existing = await _db.queryInstructionSetById(id);
     if (existing == null) {
@@ -145,11 +150,19 @@ class InstructionSetService {
       newDescription = existing.description;
     }
 
+    final nextOwnerId = (ownerAgentId == null || ownerAgentId.trim().isEmpty)
+        ? existing.ownerAgentId
+        : ownerAgentId.trim();
+    final nextOwnerName = ownerAgentId == null
+        ? existing.ownerAgentName
+        : (ownerAgentName ?? existing.ownerAgentName);
     final updated = existing.copyWith(
       name: newName,
       description: newDescription,
       clearDescription: clearDescription,
       content: content?.trim(),
+      ownerAgentId: nextOwnerId,
+      ownerAgentName: nextOwnerName,
       updatedAt: DateTime.now().millisecondsSinceEpoch,
     );
     await _db.upsertInstructionSet(updated.toRow());

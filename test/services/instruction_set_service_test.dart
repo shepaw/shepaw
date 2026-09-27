@@ -105,8 +105,19 @@ void main() {
       expect(updated.content, '新内容');
       expect(updated.ownerAgentId, 'agent-a');
 
+      final reassigned = await service.update(
+        id: created.id,
+        ownerAgentId: 'agent-b',
+        ownerAgentName: '助手 B',
+      );
+      expect(reassigned.ownerAgentId, 'agent-b');
+      expect(reassigned.ownerAgentName, '助手 B');
+      expect(reassigned.name, '新名');
+
       final reloaded = await service.getByName('新名');
       expect(reloaded!.content, '新内容');
+      expect(reloaded.ownerAgentId, 'agent-b');
+      expect(reloaded.ownerAgentName, '助手 B');
       expect(await service.getByName('原始'), isNull);
     });
 
@@ -162,12 +173,14 @@ void main() {
           .where((e) => e.name == InstructionSetService.systemInstructionName)
           .toList();
       expect(system, hasLength(1));
-      expect(system.single.content, InstructionSetService.systemInstructionContent);
+      expect(system.single.content,
+          InstructionSetService.systemInstructionContent);
       expect(system.single.ownerAgentId, SheService.sheId);
       // 幂等：重复 list 不会产生重复系统指令。
       final again = await service.list();
       expect(
-        again.where((e) => e.name == InstructionSetService.systemInstructionName),
+        again.where(
+            (e) => e.name == InstructionSetService.systemInstructionName),
         hasLength(1),
       );
     });

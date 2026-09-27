@@ -135,6 +135,27 @@ void main() {
     expect(find.text('执行'), findsOneWidget);
     expect(find.byIcon(Icons.delete_outline), findsOneWidget);
     expect(find.textContaining('总结上周进度与本周计划'), findsOneWidget);
+    expect(find.byKey(const ValueKey('instruction-owner')), findsOneWidget);
+
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('instruction-owner')));
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.text('惜宝'),
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 1200));
+      await tester.pump(const Duration(milliseconds: 300));
+    });
+    await tester.pump();
+    final reassigned =
+        (await tester.runAsync(() => InstructionSetService.instance.list())) ??
+            const [];
+    final moved = reassigned.where((e) => e.name == '周报').toList();
+    expect(moved, hasLength(1));
+    expect(moved.single.ownerAgentId, SheService.sheId);
+    expect(moved.single.ownerAgentName, '惜宝');
 
     await tester.runAsync(() async {
       await tester.tap(find.byIcon(Icons.delete_outline));

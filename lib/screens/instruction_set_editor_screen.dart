@@ -110,7 +110,7 @@ class InstructionSetEditorScreenState
     _descController = TextEditingController(text: item?.description ?? '');
     _contentController = TextEditingController(text: item?.content ?? '');
     _ownerId = item?.ownerAgentId ?? SheService.sheId;
-    if (item == null) unawaited(_loadAgents());
+    unawaited(_loadAgents());
     widget.onEditorReady?.call(this, active: true);
   }
 
@@ -173,7 +173,8 @@ class InstructionSetEditorScreenState
     if (current != null &&
         current.name == name &&
         (current.description ?? '') == desc &&
-        current.content == content) {
+        current.content == content &&
+        current.ownerAgentId == _ownerId) {
       return current;
     }
     return _persist(name: name, content: content);
@@ -200,6 +201,8 @@ class InstructionSetEditorScreenState
               name: name,
               description: _descController.text,
               content: content,
+              ownerAgentId: _ownerId,
+              ownerAgentName: _ownerName(l10n),
             );
       widget.onPersisted?.call(saved, created: created);
       if (!mounted) return saved;
@@ -257,10 +260,12 @@ class InstructionSetEditorScreenState
     );
     if (picked == null || !mounted) return;
     setState(() {
+      _showSaved = false;
       _ownerId = picked.id;
       _pickedName = picked.name;
       _pickedAvatar = picked.avatar;
     });
+    if (widget.embedded && _current != null) _schedule();
   }
 
   String _formatTime(int millis) {
@@ -365,9 +370,9 @@ class InstructionSetEditorScreenState
                       _descField(l10n),
                       const SizedBox(height: 16),
                       _contentField(l10n, validate: true),
+                      const SizedBox(height: 16),
+                      _ownerField(l10n),
                       if (!_isEditing) ...[
-                        const SizedBox(height: 16),
-                        _ownerField(l10n),
                         const SizedBox(height: 8),
                         Text(
                           l10n.instructionSet_createHint,
@@ -451,15 +456,15 @@ class InstructionSetEditorScreenState
                           const SizedBox(height: 12),
                           _descField(l10n),
                           const SizedBox(height: 12),
-                          if (!_isEditing)
-                            _ownerField(l10n)
-                          else
+                          _ownerField(l10n),
+                          if (_isEditing) ...[
+                            const SizedBox(height: 8),
                             Text(
-                              '${l10n.instructionSet_ownerLabel} $owner'
-                              ' · ${l10n.instructionSet_updatedLabel} ${_formatTime(_current!.updatedAt)}',
+                              '${l10n.instructionSet_updatedLabel} ${_formatTime(_current!.updatedAt)}',
                               style: theme.textTheme.bodySmall
                                   ?.copyWith(color: muted),
                             ),
+                          ],
                           if (widget.fillCurrentChat || !_isEditing) ...[
                             const SizedBox(height: 8),
                             Text(
