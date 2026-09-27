@@ -16,7 +16,10 @@ import '../storage/volume_usage.dart';
 String fmtStorageBytes(int bytes) {
   if (bytes < 1024) return '$bytes B';
   if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-  return '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
+  if (bytes < 1024 * 1024 * 1024) {
+    return '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
+  }
+  return '${(bytes / 1024 / 1024 / 1024).toStringAsFixed(1)} GB';
 }
 
 /// 储物袋分区显示名（我的：文件 + 玉简/指令集；智能体：工作区/运行时/认知/工具）。
@@ -106,6 +109,21 @@ class StorageBusyOverlay extends StatelessWidget {
       child: const Center(child: CircularProgressIndicator()),
     );
   }
+}
+
+/// 本机 store 已计入的占用：各设备分区 + 暂存 + 回收站。
+int storageBagUsedBytes(Map<String, dynamic>? stats) {
+  final devices = (stats?['devices'] as Map?) ?? const {};
+  var total = 0;
+  for (final device in devices.values) {
+    if (device is! Map) continue;
+    for (final value in device.values) {
+      total += (value as num?)?.toInt() ?? 0;
+    }
+  }
+  total += (stats?['staging_bytes'] as num?)?.toInt() ?? 0;
+  total += (stats?['recycle_bytes'] as num?)?.toInt() ?? 0;
+  return total;
 }
 
 int storageDeviceUsedBytes(Map<String, dynamic>? stats, String deviceId) {

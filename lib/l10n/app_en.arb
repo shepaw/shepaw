@@ -3873,6 +3873,9 @@
     }
   },
   "storage_usageTitle": "Usage",
+  "storage_usageSystemTotal": "System total",
+  "storage_usageSystemUsed": "Used space",
+  "storage_usageBagUsed": "Pouch used",
   "storage_volumeFree": "Volume free {free} / {total}",
   "storage_volumeWarning": "Storage volume is about {percent}% full (≥80%). Free space or empty the recycle bin to avoid sync/snapshot failures.",
   "@storage_volumeFree": {

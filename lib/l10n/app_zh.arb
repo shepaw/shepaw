@@ -4348,6 +4348,9 @@
     }
   },
   "storage_usageTitle": "用量",
+  "storage_usageSystemTotal": "系统总空间",
+  "storage_usageSystemUsed": "已使用空间",
+  "storage_usageBagUsed": "储物袋使用空间",
   "storage_volumeFree": "卷剩余 {free} / {total}",
   "storage_volumeWarning": "存储卷已用约 {percent}%（≥80%）。请清理文件或回收站，避免同步与快照失败。",
   "@storage_volumeFree": {

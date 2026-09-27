@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../storage/device_identity.dart';
 import '../storage/local_store.dart';
-import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
 import '../storage/sync_engine.dart';
 import '../storage/volume_usage.dart';
@@ -186,89 +185,82 @@ class _StorageSpaceSettingsScreenState
   Widget _buildUsageCard(AppLocalizations l10n) {
     final volumeTotal = _stats?['volume_total_bytes'] as int?;
     final volumeFree = _stats?['volume_free_bytes'] as int?;
+    final int? volumeUsed = (volumeTotal != null && volumeFree != null)
+        ? (volumeTotal - volumeFree).clamp(0, volumeTotal).toInt()
+        : null;
     final volumeWarn = _stats?['volume_warn'] == true;
     final double? ratio =
-        (volumeTotal != null && volumeFree != null && volumeTotal > 0)
-            ? ((volumeTotal - volumeFree) / volumeTotal).clamp(0.0, 1.0)
+        (volumeTotal != null && volumeUsed != null && volumeTotal > 0)
+            ? (volumeUsed / volumeTotal).clamp(0.0, 1.0)
             : null;
+    final bagUsed = _stats == null ? null : storageBagUsedBytes(_stats);
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(vertical: 8),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: [
-                Icon(Icons.pie_chart_outline,
-                    color: Theme.of(context).colorScheme.primary, size: 20),
-                const SizedBox(width: 8),
-                Text(l10n.storage_usageTitle,
-                    style: Theme.of(context).textTheme.titleSmall),
-                const Spacer(),
-                if (volumeTotal != null && volumeFree != null)
-                  Text(
-                    l10n.storage_volumeFree(fmtStorageBytes(volumeFree),
-                        fmtStorageBytes(volumeTotal)),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: volumeWarn
-                              ? Theme.of(context).colorScheme.error
-                              : Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                  ),
-              ],
+            _usageMetric(l10n.storage_usageSystemTotal, volumeTotal),
+            _usageMetric(
+              l10n.storage_usageSystemUsed,
+              volumeUsed,
+              alert: volumeWarn,
             ),
-            if (ratio != null) ...[
-              const SizedBox(height: 12),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: ratio,
-                  minHeight: 8,
-                  backgroundColor:
-                      Theme.of(context).colorScheme.surfaceContainerHighest,
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    volumeWarn
-                        ? Theme.of(context).colorScheme.error
-                        : Theme.of(context).colorScheme.primary,
+            if (ratio != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: ratio,
+                    minHeight: 8,
+                    backgroundColor:
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      volumeWarn
+                          ? Theme.of(context).colorScheme.error
+                          : Theme.of(context).colorScheme.primary,
+                    ),
                   ),
                 ),
               ),
-            ],
-            if (_stats != null) ...[
-              const SizedBox(height: 12),
-              _buildUsageChips(l10n),
-              _buildPendingUploadStatus(l10n),
-              _buildVolumeWarning(l10n),
-            ],
+            _usageMetric(l10n.storage_usageBagUsed, bagUsed),
+            if (_stats != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildPendingUploadStatus(l10n),
+                    _buildVolumeWarning(l10n),
+                  ],
+                ),
+              ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildUsageChips(AppLocalizations l10n) {
-    final devices = (_stats!['devices'] as Map?)?.cast<String, dynamic>() ?? {};
-    final mine = (devices[_selfId] as Map?)?.cast<String, dynamic>() ?? {};
-    final staging = _stats!['staging_bytes'] as int? ?? 0;
-    final recycle = _stats!['recycle_bytes'] as int? ?? 0;
-    final chips = <Widget>[
-      for (final space in StoreSpace.all)
-        Chip(
-          label: Text('$space ${fmtStorageBytes(mine[space] as int? ?? 0)}'),
-          visualDensity: VisualDensity.compact,
-        ),
-      if (staging > 0)
-        Chip(
-          label: Text('staging ${fmtStorageBytes(staging)}'),
-          visualDensity: VisualDensity.compact,
-        ),
-      if (recycle > 0)
-        Chip(
-          label: Text('.recycle ${fmtStorageBytes(recycle)}'),
-          visualDensity: VisualDensity.compact,
-        ),
-    ];
-    return Wrap(spacing: 8, runSpacing: 4, children: chips);
+  Widget _usageMetric(String label, int? bytes, {bool alert = false}) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(label, style: Theme.of(context).textTheme.bodyLarge),
+          ),
+          Text(
+            bytes == null ? '—' : fmtStorageBytes(bytes),
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: alert ? scheme.error : null,
+                ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildVolumeWarning(AppLocalizations l10n) {

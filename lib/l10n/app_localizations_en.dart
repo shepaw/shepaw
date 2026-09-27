@@ -7427,6 +7427,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_usageTitle => 'Usage';
 
   @override
+  String get storage_usageSystemTotal => 'System total';
+
+  @override
+  String get storage_usageSystemUsed => 'Used space';
+
+  @override
+  String get storage_usageBagUsed => 'Pouch used';
+
+  @override
   String storage_volumeFree(String free, String total) {
     return 'Volume free $free / $total';
   }

@@ -13005,6 +13005,24 @@ abstract class AppLocalizations {
   /// **'用量'**
   String get storage_usageTitle;
 
+  /// No description provided for @storage_usageSystemTotal.
+  ///
+  /// In zh, this message translates to:
+  /// **'系统总空间'**
+  String get storage_usageSystemTotal;
+
+  /// No description provided for @storage_usageSystemUsed.
+  ///
+  /// In zh, this message translates to:
+  /// **'已使用空间'**
+  String get storage_usageSystemUsed;
+
+  /// No description provided for @storage_usageBagUsed.
+  ///
+  /// In zh, this message translates to:
+  /// **'储物袋使用空间'**
+  String get storage_usageBagUsed;
+
   /// No description provided for @storage_volumeFree.
   ///
   /// In zh, this message translates to:

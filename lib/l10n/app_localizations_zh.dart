@@ -7157,6 +7157,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_usageTitle => '用量';
 
   @override
+  String get storage_usageSystemTotal => '系统总空间';
+
+  @override
+  String get storage_usageSystemUsed => '已使用空间';
+
+  @override
+  String get storage_usageBagUsed => '储物袋使用空间';
+
+  @override
   String storage_volumeFree(String free, String total) {
     return '卷剩余 $free / $total';
   }
