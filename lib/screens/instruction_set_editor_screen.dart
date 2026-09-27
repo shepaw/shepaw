@@ -8,6 +8,7 @@ import '../models/remote_agent.dart';
 import '../services/instruction_set_service.dart';
 import '../services/local_database_service.dart';
 import '../services/she_service.dart';
+import '../theme/app_theme.dart';
 import '../widgets/agent_list_avatar.dart';
 import '../widgets/discard_changes_scope.dart';
 import '../widgets/form_bottom_bar.dart';
@@ -15,8 +16,8 @@ import 'jade_slip_agent_picker.dart';
 
 /// 指令集新建 / 编辑。
 ///
-/// [embedded] 为 true 时，已有指令就地编辑并自动保存（桌面主从、窄面板详情）；
-/// 新建要等用户点保存，避免还在选所属 Agent 时就被写成一条指令。
+/// [embedded] 为 true 时就地编辑并自动保存（桌面主从、窄面板详情），
+/// 标题、保存状态和执行/删除的位置与玉简一致。
 /// 为 false 时是独立页：显式保存后 pop 回指令名称（储物袋文件预览）。
 class InstructionSetEditorScreen extends StatefulWidget {
   /// 非空表示编辑该指令；为空表示新建。
@@ -71,7 +72,6 @@ class InstructionSetEditorScreenState
   InstructionSet? _current;
   bool _saving = false;
   bool _queued = false;
-  bool _showSaved = false;
   Timer? _debounce;
 
   static const _autosaveDelay = Duration(milliseconds: 500);
@@ -82,8 +82,18 @@ class InstructionSetEditorScreenState
   bool get hasUnsavedNewDraft =>
       widget.item == null && _current == null && _pageDirty;
 
-  /// 独立页始终显式保存；内嵌只有新建走保存按钮，编辑继续自动保存。
-  bool get _explicitSave => !widget.embedded || widget.item == null;
+  /// 独立页显式保存。内嵌页（指令集主从）停笔后自动保存。
+  bool get _explicitSave => !widget.embedded;
+
+  /// 已落盘，且当前输入与库里的记录一致。
+  bool get _clean {
+    final current = _current;
+    if (current == null) return false;
+    return _nameController.text.trim() == current.name &&
+        _descController.text.trim() == (current.description ?? '') &&
+        _contentController.text.trim() == current.content &&
+        _ownerId == current.ownerAgentId;
+  }
 
   final _discardKey = GlobalKey<DiscardChangesScopeState>();
 
@@ -131,9 +141,18 @@ class InstructionSetEditorScreenState
   }
 
   void _onEdited() {
-    _showSaved = false;
-    if (widget.embedded && _current != null) _schedule();
+    if (widget.embedded) _schedule();
     setState(() {});
+  }
+
+  @override
+  void didUpdateWidget(InstructionSetEditorScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final next = widget.item;
+    final current = _current;
+    if (next != null && current != null && next.id == current.id) {
+      _current = next;
+    }
   }
 
   void _schedule() {
@@ -166,8 +185,6 @@ class InstructionSetEditorScreenState
       }
       return null;
     }
-    // 新建只在用户点保存，或点执行（notify）时落盘。
-    if (_current == null && !notify) return null;
     final desc = _descController.text.trim();
     final current = _current;
     if (current != null &&
@@ -209,7 +226,6 @@ class InstructionSetEditorScreenState
       setState(() {
         _current = saved;
         _saving = false;
-        _showSaved = true;
       });
       return saved;
     } catch (e) {
@@ -260,25 +276,19 @@ class InstructionSetEditorScreenState
     );
     if (picked == null || !mounted) return;
     setState(() {
-      _showSaved = false;
       _ownerId = picked.id;
       _pickedName = picked.name;
       _pickedAvatar = picked.avatar;
     });
-    if (widget.embedded && _current != null) _schedule();
+    if (widget.embedded) _schedule();
   }
 
-  String _formatTime(int millis) {
+  String _formatDateTime(int millis) {
     final local = DateTime.fromMillisecondsSinceEpoch(millis).toLocal();
-    final now = DateTime.now();
-    if (local.year == now.year &&
-        local.month == now.month &&
-        local.day == now.day) {
-      return '${local.hour.toString().padLeft(2, '0')}:'
-          '${local.minute.toString().padLeft(2, '0')}';
-    }
+    final hh = local.hour.toString().padLeft(2, '0');
+    final mm = local.minute.toString().padLeft(2, '0');
     return '${local.year}-${local.month.toString().padLeft(2, '0')}-'
-        '${local.day.toString().padLeft(2, '0')}';
+        '${local.day.toString().padLeft(2, '0')} $hh:$mm';
   }
 
   Future<void> _saveExplicit() async {
@@ -419,29 +429,37 @@ class InstructionSetEditorScreenState
                         height: 14,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    else if (_showSaved)
+                    else if (_clean)
                       Text(
                         l10n.common_savedStatus,
                         style:
                             theme.textTheme.bodySmall?.copyWith(color: muted),
                       ),
                     const Spacer(),
-                    if (_isEditing)
-                      IconButton(
-                        tooltip: l10n.common_delete,
-                        icon: Icon(Icons.delete_outline, color: scheme.error),
-                        onPressed: () => unawaited(_confirmDelete()),
-                      ),
                     if (widget.onRun != null)
                       FilledButton.icon(
                         onPressed: (!ready || _saving)
                             ? null
                             : () => unawaited(_run()),
+                        style: FilledButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                        ),
                         icon: const Icon(Icons.play_arrow_rounded, size: 20),
                         label: Text(widget.fillCurrentChat
                             ? l10n.instructionSet_fillCurrent
                             : l10n.instructionSet_run),
                       ),
+                    if (_isEditing) ...[
+                      const SizedBox(width: 4),
+                      IconButton(
+                        tooltip: l10n.common_delete,
+                        icon: Icon(Icons.delete_outline,
+                            color: scheme.onSurfaceVariant),
+                        onPressed: () => unawaited(_confirmDelete()),
+                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -452,19 +470,26 @@ class InstructionSetEditorScreenState
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          _nameField(l10n, validate: _explicitSave),
-                          const SizedBox(height: 12),
-                          _descField(l10n),
-                          const SizedBox(height: 12),
-                          _ownerField(l10n),
+                          _titleField(l10n, theme),
                           if (_isEditing) ...[
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 4),
                             Text(
-                              '${l10n.instructionSet_updatedLabel} ${_formatTime(_current!.updatedAt)}',
+                              [
+                                if (_current!.createdAt > 0)
+                                  l10n.jadeSlip_createdAt(
+                                      _formatDateTime(_current!.createdAt)),
+                                if (_current!.updatedAt > 0)
+                                  l10n.jadeSlip_updatedAt(
+                                      _formatDateTime(_current!.updatedAt)),
+                              ].join(' · '),
                               style: theme.textTheme.bodySmall
                                   ?.copyWith(color: muted),
                             ),
                           ],
+                          const SizedBox(height: 12),
+                          _descField(l10n),
+                          const SizedBox(height: 12),
+                          _ownerField(l10n),
                           if (widget.fillCurrentChat || !_isEditing) ...[
                             const SizedBox(height: 8),
                             Text(
@@ -500,6 +525,26 @@ class InstructionSetEditorScreenState
         icon: Icons.save,
         label: l10n.common_save,
       ),
+    );
+  }
+
+  Widget _titleField(AppLocalizations l10n, ThemeData theme) {
+    return TextFormField(
+      key: const ValueKey('instruction-name'),
+      controller: _nameController,
+      maxLines: null,
+      keyboardType: TextInputType.multiline,
+      style: theme.textTheme.headlineSmall?.copyWith(
+        fontWeight: FontWeight.w700,
+        height: 1.25,
+      ),
+      decoration: InputDecoration(
+        hintText: l10n.instructionSet_nameLabel,
+        border: InputBorder.none,
+        isDense: true,
+        contentPadding: EdgeInsets.zero,
+      ),
+      onChanged: (_) => _onEdited(),
     );
   }
 

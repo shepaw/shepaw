@@ -13,7 +13,7 @@ import 'package:shepaw/services/she_service.dart';
 import '../storage/test_harness.dart';
 
 /// 真实 UI 链路：真实 [InstructionSetScreen] + 真实（ffi）数据库。
-/// 宽窗口走主从：空列表里的系统指令 → 右侧新建、选所属 Agent、点保存 → 删除。
+/// 宽窗口走主从：空列表里的系统指令 → 右侧新建、选所属 Agent、自动保存 → 删除。
 ///
 /// DB 走真实异步，testWidgets 的 FakeAsync 下无法完成，因此所有涉及 DB
 /// 的操作（含测试里的验证读取）都必须包在 runAsync 里，否则 `await` 真实
@@ -84,7 +84,6 @@ void main() {
 
     await tester.tap(find.byTooltip('新建指令'));
     await tester.pump();
-    expect(find.byKey(const ValueKey('instruction-save')), findsOneWidget);
 
     await tester.runAsync(() async {
       await tester.tap(find.byKey(const ValueKey('instruction-owner')));
@@ -100,22 +99,7 @@ void main() {
           find.byKey(const ValueKey('instruction-desc')), '每周一自动输出');
       await tester.enterText(
           find.byKey(const ValueKey('instruction-content')), '总结上周进度与本周计划');
-      // 停笔不会自动落盘，要点保存。
-      await Future<void>.delayed(const Duration(milliseconds: 800));
-      await tester.pump(const Duration(milliseconds: 200));
-    });
-    await tester.pump();
-    final pending =
-        (await tester.runAsync(() => InstructionSetService.instance.list())) ??
-            const [];
-    expect(
-      pending.where((e) => e.name == '周报'),
-      isEmpty,
-    );
-
-    await tester.runAsync(() async {
-      await tester.tap(find.byKey(const ValueKey('instruction-save')));
-      await Future<void>.delayed(const Duration(milliseconds: 500));
+      await Future<void>.delayed(const Duration(milliseconds: 1200));
       await tester.pump(const Duration(milliseconds: 300));
     });
     await tester.pump();
@@ -132,8 +116,15 @@ void main() {
     expect(mine.first.ownerAgentId, 'agent-weekly');
     expect(mine.first.ownerAgentName, '周报助手');
 
+    expect(find.text('已保存'), findsOneWidget);
+    expect(find.textContaining('创建时间'), findsOneWidget);
+    expect(find.textContaining('最近更新'), findsOneWidget);
     expect(find.text('执行'), findsOneWidget);
     expect(find.byIcon(Icons.delete_outline), findsOneWidget);
+    expect(
+      tester.getCenter(find.text('执行')).dx,
+      lessThan(tester.getCenter(find.byIcon(Icons.delete_outline)).dx),
+    );
     expect(find.textContaining('总结上周进度与本周计划'), findsOneWidget);
     expect(find.byKey(const ValueKey('instruction-owner')), findsOneWidget);
 

@@ -59,6 +59,9 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
   final Map<String, String> _ownerNames = {};
   String? _selectedId;
   bool _creating = false;
+
+  /// 同一次打开详情时保持不变，避免首次自动保存把编辑器拆掉。
+  int _detailToken = 0;
   String? _hoveredId;
   InstructionSetEditorScreenState? _editor;
 
@@ -131,6 +134,7 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
     if (!await _releaseEditor()) return;
     if (!mounted) return;
     setState(() {
+      _detailToken++;
       _creating = true;
       _selectedId = null;
     });
@@ -141,6 +145,7 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
     if (!await _releaseEditor()) return;
     if (!mounted) return;
     setState(() {
+      _detailToken++;
       _creating = false;
       _selectedId = item.id;
     });
@@ -155,11 +160,13 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
     });
   }
 
-  /// 已有指令先落盘。新建还没保存时，先问要不要放弃。
+  /// 能落盘的先写入。名称或正文还空着、写不进去时，再问要不要放弃。
   Future<bool> _releaseEditor() async {
     final editor = _editor;
     if (editor == null) return true;
     if (editor.hasUnsavedNewDraft) {
+      final saved = await editor.flush();
+      if (saved != null || !mounted) return mounted;
       final discard = await confirmDiscardChanges(context);
       return discard && mounted;
     }
@@ -296,7 +303,7 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
       );
     }
     return InstructionSetEditorScreen(
-      key: ValueKey(_creating ? 'creating' : selected!.id),
+      key: ValueKey('instruction-detail-$_detailToken'),
       item: _creating ? null : selected,
       embedded: true,
       fillCurrentChat: _fillCurrent,
