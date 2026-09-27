@@ -6203,7 +6203,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get jadeSlip_run => '交给 Agent';
+  String get jadeSlip_run => '执行';
 
   @override
   String get jadeSlip_runHint => '已交给 Agent，正在会话中按清单执行。';
@@ -6266,7 +6266,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get jadeSlip_noOpenItems => '清单已全部完成，没有待办项可以交给 Agent';
 
   @override
-  String get jadeSlip_handOffTitle => '交给 Agent';
+  String get jadeSlip_handOffTitle => '执行';
 
   @override
   String get jadeSlip_handOffAgent => '执行 Agent';

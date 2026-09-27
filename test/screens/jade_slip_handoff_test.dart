@@ -83,7 +83,7 @@ void main() {
     await tester.runAsync(() async {
       await pumpEditor(tester, await seedSlip());
 
-      await tester.tap(find.text('交给 Agent'));
+      await tester.tap(find.text('执行'));
       await settle(tester);
       await settle(tester);
 
@@ -110,10 +110,10 @@ void main() {
       await tester.tap(find.byIcon(Icons.more_vert).first);
       await pumpAnim(tester);
 
-      // 顶栏按钮也叫「交给 Agent」，这里要的是清单项弹层里的那一条。
+      // 顶栏按钮也叫「执行」，这里要的是清单项弹层里的那一条。
       final menuItem = find.descendant(
         of: find.byType(PopupMenuItem<String>),
-        matching: find.text('交给 Agent'),
+        matching: find.text('执行'),
       );
       expect(menuItem, findsOneWidget);
 
@@ -138,7 +138,7 @@ void main() {
           .setItemDone(id: slip.id, itemId: 'only', done: true);
       await pumpEditor(tester, slip.id);
 
-      await tester.tap(find.text('交给 Agent'));
+      await tester.tap(find.text('执行'));
       await settle(tester, 500);
 
       expect(find.byType(AlertDialog), findsNothing);

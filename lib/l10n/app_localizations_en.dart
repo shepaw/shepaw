@@ -6449,7 +6449,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get jadeSlip_run => 'Hand to agent';
+  String get jadeSlip_run => 'Run';
 
   @override
   String get jadeSlip_runHint =>
@@ -6515,7 +6515,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Everything is done — nothing pending to hand off';
 
   @override
-  String get jadeSlip_handOffTitle => 'Hand to agent';
+  String get jadeSlip_handOffTitle => 'Run';
 
   @override
   String get jadeSlip_handOffAgent => 'Agent';

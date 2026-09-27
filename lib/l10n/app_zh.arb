@@ -3685,7 +3685,7 @@
       "total": {"type": "int"}
     }
   },
-  "jadeSlip_run": "交给 Agent",
+  "jadeSlip_run": "执行",
   "jadeSlip_runHint": "已交给 Agent，正在会话中按清单执行。",
   "jadeSlip_sendFailed": "找不到该 Agent，内容已预填到输入框，可手动发送。",
   "jadeSlip_pickAgent": "选择执行的 Agent",
@@ -3721,7 +3721,7 @@
   "jadeSlip_itemHint": "添加一项…",
   "jadeSlip_itemAdd": "添加清单项",
   "jadeSlip_noOpenItems": "清单已全部完成，没有待办项可以交给 Agent",
-  "jadeSlip_handOffTitle": "交给 Agent",
+  "jadeSlip_handOffTitle": "执行",
   "jadeSlip_handOffAgent": "执行 Agent",
   "jadeSlip_handOffScope": "交给它的内容",
   "jadeSlip_handOffScopeItem": "清单项「{text}」",

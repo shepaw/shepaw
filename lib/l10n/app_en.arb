@@ -3210,7 +3210,7 @@
       "total": {"type": "int"}
     }
   },
-  "jadeSlip_run": "Hand to agent",
+  "jadeSlip_run": "Run",
   "jadeSlip_runHint": "Sent to the agent — it is working the checklist in the chat.",
   "jadeSlip_sendFailed": "That agent could not be found. The content is pre-filled in the composer so you can send it manually.",
   "jadeSlip_pickAgent": "Choose an agent",
@@ -3246,7 +3246,7 @@
   "jadeSlip_itemHint": "Add an item…",
   "jadeSlip_itemAdd": "Add checklist item",
   "jadeSlip_noOpenItems": "Everything is done — nothing pending to hand off",
-  "jadeSlip_handOffTitle": "Hand to agent",
+  "jadeSlip_handOffTitle": "Run",
   "jadeSlip_handOffAgent": "Agent",
   "jadeSlip_handOffScope": "What it gets",
   "jadeSlip_handOffScopeItem": "Checklist item \"{text}\"",

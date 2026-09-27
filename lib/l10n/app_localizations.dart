@@ -11334,7 +11334,7 @@ abstract class AppLocalizations {
   /// No description provided for @jadeSlip_run.
   ///
   /// In zh, this message translates to:
-  /// **'交给 Agent'**
+  /// **'执行'**
   String get jadeSlip_run;
 
   /// No description provided for @jadeSlip_runHint.
@@ -11448,7 +11448,7 @@ abstract class AppLocalizations {
   /// No description provided for @jadeSlip_handOffTitle.
   ///
   /// In zh, this message translates to:
-  /// **'交给 Agent'**
+  /// **'执行'**
   String get jadeSlip_handOffTitle;
 
   /// No description provided for @jadeSlip_handOffAgent.

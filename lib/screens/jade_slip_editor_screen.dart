@@ -15,8 +15,10 @@ import '../services/jade_slip_service.dart';
 import '../services/jade_slip_wake.dart';
 import '../services/local_database_service.dart';
 import '../services/local_user_identity.dart';
+import '../services/she_service.dart';
 import '../services/store_open_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/agent_list_avatar.dart';
 import '../widgets/chat/storage_file_picker_screen.dart';
 import '../widgets/discard_changes_scope.dart';
 import 'jade_slip_agent_picker.dart';
@@ -1340,6 +1342,17 @@ class _AssigneePill extends StatelessWidget {
   final String? currentAgentId;
   final void Function(String id, String name) onSelected;
 
+  /// 已选 Agent 的头像。未选择时返回 null，沿用占位图标。
+  String? get _avatar {
+    final id = currentAgentId;
+    if (id == null || id.isEmpty) return null;
+    if (id == SheService.sheId) return SheService.sheAvatar;
+    for (final agent in agents) {
+      if (agent.id == id) return agent.avatar;
+    }
+    return '';
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -1366,11 +1379,14 @@ class _AssigneePill extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                Icons.smart_toy_outlined,
-                size: 16,
-                color: active ? AppColors.primary : fg,
-              ),
+              if (_avatar == null)
+                Icon(
+                  Icons.smart_toy_outlined,
+                  size: 16,
+                  color: active ? AppColors.primary : fg,
+                )
+              else
+                AgentListAvatar(avatar: _avatar!, name: label, size: 18),
               const SizedBox(width: 6),
               Text(
                 label,
