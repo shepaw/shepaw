@@ -6489,6 +6489,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get jadeSlip_titleHint => 'Title';
 
   @override
+  String jadeSlip_createdAt(String time) {
+    return 'Created $time';
+  }
+
+  @override
+  String jadeSlip_updatedAt(String time) {
+    return 'Updated $time';
+  }
+
+  @override
   String get jadeSlip_titleRequired => 'Please enter a title';
 
   @override

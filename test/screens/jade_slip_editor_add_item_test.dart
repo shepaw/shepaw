@@ -88,6 +88,8 @@ void main() {
       );
       await settle(tester);
 
+      expect(find.textContaining('创建时间'), findsOneWidget);
+      expect(find.textContaining('最近更新'), findsOneWidget);
       expect(addItemField(), findsOneWidget);
 
       for (final text in ['第一项', '第二项', '第三项']) {

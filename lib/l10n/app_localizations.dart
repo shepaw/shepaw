@@ -11403,6 +11403,18 @@ abstract class AppLocalizations {
   /// **'标题'**
   String get jadeSlip_titleHint;
 
+  /// No description provided for @jadeSlip_createdAt.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建时间 {time}'**
+  String jadeSlip_createdAt(String time);
+
+  /// No description provided for @jadeSlip_updatedAt.
+  ///
+  /// In zh, this message translates to:
+  /// **'最近更新 {time}'**
+  String jadeSlip_updatedAt(String time);
+
   /// No description provided for @jadeSlip_titleRequired.
   ///
   /// In zh, this message translates to:

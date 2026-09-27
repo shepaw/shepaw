@@ -6241,6 +6241,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get jadeSlip_titleHint => '标题';
 
   @override
+  String jadeSlip_createdAt(String time) {
+    return '创建时间 $time';
+  }
+
+  @override
+  String jadeSlip_updatedAt(String time) {
+    return '最近更新 $time';
+  }
+
+  @override
   String get jadeSlip_titleRequired => '请填写玉简标题';
 
   @override

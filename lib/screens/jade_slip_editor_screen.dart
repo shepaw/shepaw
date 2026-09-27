@@ -544,6 +544,20 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                 ),
                 onChanged: (_) => _onTextChanged(),
               ),
+              if (slip.createdAt > 0 || slip.updatedAt > 0) ...[
+                const SizedBox(height: 4),
+                Text(
+                  [
+                    if (slip.createdAt > 0)
+                      l10n.jadeSlip_createdAt(_fmtDateTime(slip.createdAt)),
+                    if (slip.updatedAt > 0)
+                      l10n.jadeSlip_updatedAt(_fmtDateTime(slip.updatedAt)),
+                  ].join(' · '),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               Wrap(
                 spacing: 8,
@@ -2063,6 +2077,14 @@ class _AddAttachmentRow extends StatelessWidget {
       ),
     );
   }
+}
+
+String _fmtDateTime(int ms) {
+  final d = DateTime.fromMillisecondsSinceEpoch(ms).toLocal();
+  final hh = d.hour.toString().padLeft(2, '0');
+  final mm = d.minute.toString().padLeft(2, '0');
+  return '${d.year}-${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')} $hh:$mm';
 }
 
 String _fmtDay(int ms) {

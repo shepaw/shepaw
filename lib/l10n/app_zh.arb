@@ -3704,6 +3704,18 @@
   "jadeSlip_commentEmpty": "还没有评论",
   "jadeSlip_commentMine": "我",
   "jadeSlip_titleHint": "标题",
+  "jadeSlip_createdAt": "创建时间 {time}",
+  "@jadeSlip_createdAt": {
+    "placeholders": {
+      "time": {"type": "String"}
+    }
+  },
+  "jadeSlip_updatedAt": "最近更新 {time}",
+  "@jadeSlip_updatedAt": {
+    "placeholders": {
+      "time": {"type": "String"}
+    }
+  },
   "jadeSlip_titleRequired": "请填写玉简标题",
   "jadeSlip_checklist": "清单",
   "jadeSlip_itemHint": "添加一项…",

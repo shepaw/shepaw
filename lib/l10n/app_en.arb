@@ -3229,6 +3229,18 @@
   "jadeSlip_commentEmpty": "No comments yet",
   "jadeSlip_commentMine": "Me",
   "jadeSlip_titleHint": "Title",
+  "jadeSlip_createdAt": "Created {time}",
+  "@jadeSlip_createdAt": {
+    "placeholders": {
+      "time": {"type": "String"}
+    }
+  },
+  "jadeSlip_updatedAt": "Updated {time}",
+  "@jadeSlip_updatedAt": {
+    "placeholders": {
+      "time": {"type": "String"}
+    }
+  },
   "jadeSlip_titleRequired": "Please enter a title",
   "jadeSlip_checklist": "Checklist",
   "jadeSlip_itemHint": "Add an item…",
