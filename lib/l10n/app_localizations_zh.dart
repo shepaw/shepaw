@@ -6678,6 +6678,24 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_spaceToolsHint => 'App 与各智能体的 MCP、规则和技能';
 
   @override
+  String get agentBag_runtimeHint => '产物、附件与会话';
+
+  @override
+  String get agentBag_cognitionHint => 'Soul 与结构化记忆';
+
+  @override
+  String get agentBag_toolsHint => '这个智能体自己的 MCP、规则和技能';
+
+  @override
+  String get agentBag_workspaceEmpty => '尚未挂载';
+
+  @override
+  String get agentBag_legacyMemory => '旧认知';
+
+  @override
+  String get agentBag_legacyMemoryHint => '迁移前的记忆，只读';
+
+  @override
   String get storage_toolsFolderMcp => 'MCP';
 
   @override

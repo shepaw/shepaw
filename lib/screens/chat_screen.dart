@@ -58,7 +58,7 @@ import 'agent_resume_edit_screen.dart';
 import 'remote_agent_detail_screen.dart';
 import 'group_detail_screen.dart';
 import 'group_member_detail_screen.dart';
-import 'agent_runtime_context_screen.dart';
+import 'agent_storage_bag_screen.dart';
 import 'storage_directory_opener.dart';
 import '../services/logger_service.dart';
 import '../services/error_handler_service.dart';
@@ -1877,7 +1877,7 @@ class _ChatScreenState extends State<ChatScreen>
     if (!mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => AgentRuntimeContextScreen(
+        builder: (_) => AgentStorageBagScreen(
           ownerId: agentId,
           displayName: c.agentName ?? remoteAgent?.name ?? agentId,
           agent: remoteAgent,

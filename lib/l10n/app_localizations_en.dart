@@ -6939,6 +6939,25 @@ class AppLocalizationsEn extends AppLocalizations {
       'MCP, rules, and skills for the app and each agent';
 
   @override
+  String get agentBag_runtimeHint => 'Artifacts, attachments, and sessions';
+
+  @override
+  String get agentBag_cognitionHint => 'Soul and structured memory';
+
+  @override
+  String get agentBag_toolsHint => 'This agent\'s own MCP, rules, and skills';
+
+  @override
+  String get agentBag_workspaceEmpty => 'None mounted';
+
+  @override
+  String get agentBag_legacyMemory => 'Legacy cognition';
+
+  @override
+  String get agentBag_legacyMemoryHint =>
+      'Memories from before migration. Read only.';
+
+  @override
   String get storage_toolsFolderMcp => 'MCP';
 
   @override

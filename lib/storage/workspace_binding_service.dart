@@ -37,6 +37,23 @@ class WorkspaceBindingService {
     return ids;
   }
 
+  /// 读取已绑定的 workspace_id，不创建 runtime 脚手架。
+  ///
+  /// 浏览专属储物袋时用这个，避免只是打开页面就写入 `workspace.md`。
+  Future<List<String>> peekBoundIds(
+    String ownerId, {
+    String? deviceId,
+  }) async {
+    final device = (deviceId == null || deviceId.isEmpty)
+        ? await DeviceIdentity.deviceId()
+        : deviceId;
+    final text = await _readRuntimeText(
+      device,
+      RuntimePaths.workspaceMd(ownerId),
+    );
+    return parseWorkspaceIds(text ?? '');
+  }
+
   /// 当前已绑定的 workspace_id 列表。
   Future<List<String>> loadBoundIds(String ownerId) async {
     await RuntimeMirrorService.instance.ensureRuntimeScaffold(ownerId);

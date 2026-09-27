@@ -54,5 +54,8 @@ void main() {
     final bound =
         await WorkspaceBindingService.instance.loadBoundIds('agent-soul-ws');
     expect(bound, contains('ws-bind-demo'));
+    final peeked =
+        await WorkspaceBindingService.instance.peekBoundIds('agent-soul-ws');
+    expect(peeked, bound);
   });
 }

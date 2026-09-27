@@ -12195,6 +12195,42 @@ abstract class AppLocalizations {
   /// **'App 与各智能体的 MCP、规则和技能'**
   String get storage_spaceToolsHint;
 
+  /// No description provided for @agentBag_runtimeHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'产物、附件与会话'**
+  String get agentBag_runtimeHint;
+
+  /// No description provided for @agentBag_cognitionHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'Soul 与结构化记忆'**
+  String get agentBag_cognitionHint;
+
+  /// No description provided for @agentBag_toolsHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个智能体自己的 MCP、规则和技能'**
+  String get agentBag_toolsHint;
+
+  /// No description provided for @agentBag_workspaceEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'尚未挂载'**
+  String get agentBag_workspaceEmpty;
+
+  /// No description provided for @agentBag_legacyMemory.
+  ///
+  /// In zh, this message translates to:
+  /// **'旧认知'**
+  String get agentBag_legacyMemory;
+
+  /// No description provided for @agentBag_legacyMemoryHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'迁移前的记忆，只读'**
+  String get agentBag_legacyMemoryHint;
+
   /// No description provided for @storage_toolsFolderMcp.
   ///
   /// In zh, this message translates to:
