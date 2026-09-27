@@ -9,7 +9,6 @@ import '../services/chat_navigation_service.dart';
 import '../services/chat_service.dart';
 import '../services/composer_draft_service.dart';
 import '../services/instruction_set_service.dart';
-import '../services/jade_slip_service.dart';
 import '../services/local_database_service.dart';
 import '../services/local_user_identity.dart';
 import '../services/she_service.dart';
@@ -469,19 +468,11 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
     final chatService = getIt<ChatService>();
     const userId = LocalUserIdentity.id;
     final ownerId = item.ownerAgentId;
-    // 内置「沉淀指令」的产出是一条指令，只落指令集；其余指令用玉简跟踪进度。
-    final slip = InstructionSetService.isSystemInstruction(item)
-        ? null
-        : await JadeSlipService.instance.create(
-            title: item.name,
-            goal: item.content,
-            assigneeAgentId: ownerId,
-            assigneeAgentName: item.ownerAgentName,
-            sourceInstructionId: item.id,
-          );
-    final tracked = slip == null
+    // 内置「沉淀指令」的产出是一条指令，正文指向指令集。
+    // 其余指令直接执行正文，不再另建玉简跟踪。
+    final tracked = InstructionSetService.isSystemInstruction(item)
         ? InstructionSetService.systemInstructionRunPrompt(item.content)
-        : '这次执行记在玉简「${slip.title}」（id=${slip.id}）。\n${item.content}';
+        : item.content;
 
     final currentChannelId = widget.channelId;
     if (currentChannelId != null && currentChannelId.isNotEmpty) {

@@ -176,6 +176,35 @@ void main() {
     );
   });
 
+  /// 普通指令直接把正文填进当前会话，不另建玉简。
+  testWidgets(
+      'running a saved instruction drafts its content without a jade slip',
+      (tester) async {
+    await tester.runAsync(() => InstructionSetService.instance.create(
+          name: '周报',
+          content: '总结上周进度',
+          ownerAgentId: SheService.sheId,
+          ownerAgentName: '惜宝',
+        ));
+    await pumpScreen(tester, channelId: 'ch-weekly');
+    await tester.tap(find.text('周报'));
+    await tester.pump();
+
+    final before =
+        await tester.runAsync(() => JadeSlipService.instance.list()) ?? [];
+
+    await tester.runAsync(() async {
+      await tester.tap(find.text('填入当前对话'));
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 200));
+    });
+
+    expect(getIt<ComposerDraftService>().getDraft('ch-weekly'), '总结上周进度');
+    final after =
+        await tester.runAsync(() => JadeSlipService.instance.list()) ?? [];
+    expect(after.length, before.length);
+  });
+
   /// 内置「沉淀指令」的执行指向：预填当前会话的正文提到指令集，且不建玉简。
   testWidgets('running 沉淀指令 drafts into 指令集 without a jade slip',
       (tester) async {

@@ -41,22 +41,27 @@ void main() {
 
   group('instructions save', () {
     test('records the calling agent as owner', () async {
-      final result = await asAgent('agent-a', () => SaveInstructionCommand()
-          .execute({'name': '日报', 'content': '输出今日工作日报'}));
+      final result = await asAgent(
+          'agent-a',
+          () => SaveInstructionCommand()
+              .execute({'name': '日报', 'content': '输出今日工作日报'}));
       expect(result['success'], true);
       expect(result['action'], 'created');
       expect(result['owner_agent_id'], 'agent-a');
 
-      final loaded =
-          await InstructionSetService.instance.getByName('日报');
+      final loaded = await InstructionSetService.instance.getByName('日报');
       expect(loaded!.ownerAgentId, 'agent-a');
     });
 
     test('save same name by owner updates instead of creating', () async {
-      await asAgent('agent-a', () => SaveInstructionCommand()
-          .execute({'name': 'x', 'content': 'v1'}));
-      final result = await asAgent('agent-a', () => SaveInstructionCommand()
-          .execute({'name': 'x', 'content': 'v2'}));
+      await asAgent(
+          'agent-a',
+          () =>
+              SaveInstructionCommand().execute({'name': 'x', 'content': 'v1'}));
+      final result = await asAgent(
+          'agent-a',
+          () =>
+              SaveInstructionCommand().execute({'name': 'x', 'content': 'v2'}));
       expect(result['success'], true);
       expect(result['action'], 'updated');
 
@@ -69,14 +74,18 @@ void main() {
     });
 
     test('save same name by non-owner is denied', () async {
-      await asAgent('agent-a', () => SaveInstructionCommand()
-          .execute({'name': 'x', 'content': 'v1'}));
-      final result = await asAgent('agent-b', () => SaveInstructionCommand()
-          .execute({'name': 'x', 'content': 'v2'}));
+      await asAgent(
+          'agent-a',
+          () =>
+              SaveInstructionCommand().execute({'name': 'x', 'content': 'v1'}));
+      final result = await asAgent(
+          'agent-b',
+          () =>
+              SaveInstructionCommand().execute({'name': 'x', 'content': 'v2'}));
       expect(result['error'], isNotNull);
       expect(result['error'] as String, contains('Permission denied'));
-      expect((await InstructionSetService.instance.getByName('x'))!.content,
-          'v1');
+      expect(
+          (await InstructionSetService.instance.getByName('x'))!.content, 'v1');
     });
 
     test('missing flags return structured errors', () async {
@@ -91,47 +100,63 @@ void main() {
 
   group('instructions update / delete permission', () {
     test('owner can update', () async {
-      await asAgent('agent-a', () => SaveInstructionCommand()
-          .execute({'name': 'x', 'content': 'v1'}));
-      final result = await asAgent('agent-a', () => UpdateInstructionCommand()
-          .execute({'name': 'x', 'content': 'v2'}));
+      await asAgent(
+          'agent-a',
+          () =>
+              SaveInstructionCommand().execute({'name': 'x', 'content': 'v1'}));
+      final result = await asAgent(
+          'agent-a',
+          () => UpdateInstructionCommand()
+              .execute({'name': 'x', 'content': 'v2'}));
       expect(result['success'], true);
-      expect((await InstructionSetService.instance.getByName('x'))!.content,
-          'v2');
+      expect(
+          (await InstructionSetService.instance.getByName('x'))!.content, 'v2');
     });
 
     test('She can update any instruction', () async {
-      await asAgent('agent-a', () => SaveInstructionCommand()
-          .execute({'name': 'x', 'content': 'v1'}));
-      final result = await asAgent(SheService.sheId,
-          () => UpdateInstructionCommand().execute({'name': 'x', 'content': 'v2'}));
+      await asAgent(
+          'agent-a',
+          () =>
+              SaveInstructionCommand().execute({'name': 'x', 'content': 'v1'}));
+      final result = await asAgent(
+          SheService.sheId,
+          () => UpdateInstructionCommand()
+              .execute({'name': 'x', 'content': 'v2'}));
       expect(result['success'], true);
     });
 
     test('non-owner agent cannot update', () async {
-      await asAgent('agent-a', () => SaveInstructionCommand()
-          .execute({'name': 'x', 'content': 'v1'}));
-      final result = await asAgent('agent-b', () => UpdateInstructionCommand()
-          .execute({'name': 'x', 'content': 'v2'}));
+      await asAgent(
+          'agent-a',
+          () =>
+              SaveInstructionCommand().execute({'name': 'x', 'content': 'v1'}));
+      final result = await asAgent(
+          'agent-b',
+          () => UpdateInstructionCommand()
+              .execute({'name': 'x', 'content': 'v2'}));
       expect(result['error'], isNotNull);
       expect(result['error'] as String, contains('Permission denied'));
     });
 
     test('non-owner agent cannot delete', () async {
-      await asAgent('agent-a', () => SaveInstructionCommand()
-          .execute({'name': 'x', 'content': 'v1'}));
-      final result = await asAgent('agent-b', () => DeleteInstructionCommand()
-          .execute({'name': 'x'}));
+      await asAgent(
+          'agent-a',
+          () =>
+              SaveInstructionCommand().execute({'name': 'x', 'content': 'v1'}));
+      final result = await asAgent(
+          'agent-b', () => DeleteInstructionCommand().execute({'name': 'x'}));
       expect(result['error'], isNotNull);
       expect(result['error'] as String, contains('Permission denied'));
       expect(await InstructionSetService.instance.getByName('x'), isNotNull);
     });
 
     test('owner can delete', () async {
-      await asAgent('agent-a', () => SaveInstructionCommand()
-          .execute({'name': 'x', 'content': 'v1'}));
-      final result = await asAgent('agent-a', () => DeleteInstructionCommand()
-          .execute({'name': 'x'}));
+      await asAgent(
+          'agent-a',
+          () =>
+              SaveInstructionCommand().execute({'name': 'x', 'content': 'v1'}));
+      final result = await asAgent(
+          'agent-a', () => DeleteInstructionCommand().execute({'name': 'x'}));
       expect(result['success'], true);
       expect(await InstructionSetService.instance.getByName('x'), isNull);
     });
@@ -139,9 +164,12 @@ void main() {
 
   group('instructions get / list', () {
     test('get returns full content', () async {
-      await asAgent('agent-a', () => SaveInstructionCommand().execute(
-          {'name': 'y', 'content': 'content-y', 'desc': 'desc-y'}));
-      final result = await asAgent('agent-b',
+      await asAgent(
+          'agent-a',
+          () => SaveInstructionCommand().execute(
+              {'name': 'y', 'content': 'content-y', 'desc': 'desc-y'}));
+      final result = await asAgent(
+          'agent-b',
           () => InstructionsNamespace.instance.commands['get']!.execute({
                 'name': 'y',
               }));
@@ -151,8 +179,10 @@ void main() {
     });
 
     test('list shows saved instructions', () async {
-      await asAgent('agent-a', () => SaveInstructionCommand()
-          .execute({'name': 'y', 'content': 'content-y'}));
+      await asAgent(
+          'agent-a',
+          () => SaveInstructionCommand()
+              .execute({'name': 'y', 'content': 'content-y'}));
       final result = await asAgent('agent-b',
           () => InstructionsNamespace.instance.commands['list']!.execute({}));
       // 内置系统指令「沉淀指令」始终存在，故 count 为 2。
@@ -167,31 +197,37 @@ void main() {
 
   group('instructions run', () {
     test('returns content for direct execution when owner is caller', () async {
-      await asAgent('agent-a', () => SaveInstructionCommand()
-          .execute({'name': 'task', 'content': 'do the thing'}));
-      final result = await asAgent('agent-a',
-          () => RunInstructionCommand().execute({'name': 'task'}));
+      await asAgent(
+          'agent-a',
+          () => SaveInstructionCommand()
+              .execute({'name': 'task', 'content': 'do the thing'}));
+      final result = await asAgent(
+          'agent-a', () => RunInstructionCommand().execute({'name': 'task'}));
       expect(result['success'], true);
-      expect(result['content'], contains('do the thing'));
-      // 普通指令仍然用玉简跟踪进度。
-      expect(result['content'], contains('玉简「task」'));
-      expect(result['jade_slip_id'], isNotNull);
+      expect(result['content'], 'do the thing');
+      expect(result.containsKey('jade_slip_id'), false);
+      final slips = await JadeSlipService.instance.list();
+      expect(slips.any((s) => s.title == 'task'), false);
     });
 
     test('returns content for direct execution when owner is She', () async {
-      await asAgent(SheService.sheId, () => SaveInstructionCommand()
-          .execute({'name': 'task', 'content': 'do the thing'}));
+      await asAgent(
+          SheService.sheId,
+          () => SaveInstructionCommand()
+              .execute({'name': 'task', 'content': 'do the thing'}));
       final result = await asAgent(SheService.sheId,
           () => RunInstructionCommand().execute({'name': 'task'}));
       expect(result['success'], true);
-      expect(result['content'], contains('do the thing'));
+      expect(result['content'], 'do the thing');
+      expect(result.containsKey('jade_slip_id'), false);
     });
 
     test('built-in 沉淀指令 targets 指令集 and creates no jade slip', () async {
       await InstructionSetService.instance.seedSystemInstructions();
       final before = await JadeSlipService.instance.list();
-      final result = await asAgent(SheService.sheId, () =>
-          RunInstructionCommand()
+      final result = await asAgent(
+          SheService.sheId,
+          () => RunInstructionCommand()
               .execute({'name': InstructionSetService.systemInstructionName}));
       expect(result['success'], true);
 
@@ -205,8 +241,8 @@ void main() {
       final after = await JadeSlipService.instance.list();
       expect(after.length, before.length);
       expect(
-        after.any((s) =>
-            s.title == InstructionSetService.systemInstructionName),
+        after
+            .any((s) => s.title == InstructionSetService.systemInstructionName),
         false,
       );
     });

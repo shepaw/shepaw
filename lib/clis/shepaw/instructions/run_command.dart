@@ -3,7 +3,6 @@ import '../../../services/agent_resolver.dart';
 import '../../../services/dispatch/dispatch_service.dart';
 import '../../../services/instruction_set_service.dart';
 import '../../../services/local_database_service.dart';
-import '../../../services/jade_slip_service.dart';
 import '../../../services/she_service.dart';
 import '../chat/chat_agent_scope.dart';
 
@@ -40,24 +39,14 @@ class RunInstructionCommand extends CliCommand {
 
     final currentAgent = ChatAgentScope.agentId.trim();
     final ownerId = item.ownerAgentId.trim();
-    final ownerLabel = item.ownerAgentName.isNotEmpty
-        ? item.ownerAgentName
-        : ownerId;
+    final ownerLabel =
+        item.ownerAgentName.isNotEmpty ? item.ownerAgentName : ownerId;
 
-    // 内置「沉淀指令」的产出是一条指令，只落指令集；其余指令用玉简跟踪进度。
-    final slip = InstructionSetService.isSystemInstruction(item)
-        ? null
-        : await JadeSlipService.instance.create(
-            title: item.name,
-            goal: item.content,
-            assigneeAgentId: ownerId,
-            assigneeAgentName: item.ownerAgentName,
-            sourceInstructionId: item.id,
-          );
-    final tracked = slip == null
+    // 内置「沉淀指令」的产出是一条指令，正文指向指令集。
+    // 其余指令直接执行正文，不再另建玉简跟踪。
+    final tracked = InstructionSetService.isSystemInstruction(item)
         ? InstructionSetService.systemInstructionRunPrompt(item.content)
-        : '这次执行记在玉简「${slip.title}」（id=${slip.id}）。'
-            '进度用 shepaw slip 写回，不要只留在对话里。\n${item.content}';
+        : item.content;
 
     // 所属 agent 是当前执行者或 She → 就地执行。
     if (ownerId == currentAgent || ownerId == SheService.sheId) {
@@ -66,7 +55,6 @@ class RunInstructionCommand extends CliCommand {
         'instruction': item.name,
         'description': item.description ?? '',
         'content': tracked,
-        if (slip != null) 'jade_slip_id': slip.id,
         'owner_agent_id': ownerId,
         'owner_agent_name': item.ownerAgentName,
         'note': ownerId == SheService.sheId && ownerId != currentAgent
@@ -78,13 +66,13 @@ class RunInstructionCommand extends CliCommand {
     }
 
     // 所属 agent 是其他 agent → 派发给它执行。
-    final sourceChannelId = flags['channel_id']?.trim() ?? ChatAgentScope.channelId;
+    final sourceChannelId =
+        flags['channel_id']?.trim() ?? ChatAgentScope.channelId;
     if (sourceChannelId.isEmpty) {
       return {
         'success': true,
         'instruction': item.name,
         'content': tracked,
-        if (slip != null) 'jade_slip_id': slip.id,
         'owner_agent_id': ownerId,
         'owner_agent_name': item.ownerAgentName,
         'note': 'This instruction belongs to $ownerLabel. There is no active '
@@ -97,10 +85,10 @@ class RunInstructionCommand extends CliCommand {
         await AgentResolver.byIdOrName(LocalDatabaseService(), ownerId);
     if (targetAgent == null) {
       return {
-        'error': 'Owner agent not found: $ownerId. Cannot auto-route execution.',
+        'error':
+            'Owner agent not found: $ownerId. Cannot auto-route execution.',
         'instruction': item.name,
         'content': tracked,
-        if (slip != null) 'jade_slip_id': slip.id,
         'note': 'Perform the task described above yourself, or create the '
             'agent again and re-run.',
       };
