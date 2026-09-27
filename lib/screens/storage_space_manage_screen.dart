@@ -99,10 +99,18 @@ class StorageSpaceManageScreen extends StatefulWidget {
   const StorageSpaceManageScreen({
     super.key,
     this.initialSpace,
+    this.initialPath,
+    this.initialOpenPath,
   });
 
   /// 初始分区。null = 空间列表。
   final String? initialSpace;
+
+  /// 分区内初始目录（无首尾 `/`）。
+  final String? initialPath;
+
+  /// 进入后打开的文件相对路径。
+  final String? initialOpenPath;
 
   @override
   State<StorageSpaceManageScreen> createState() =>
@@ -159,6 +167,8 @@ class _StorageSpaceManageScreenState extends State<StorageSpaceManageScreen> {
     return StorageBrowserScreen(
       usedBytes: _usedBytes,
       initialSpace: widget.initialSpace,
+      initialPath: widget.initialPath,
+      initialOpenPath: widget.initialOpenPath,
       hideInternalFiles: _hideInternalFiles,
       onHideInternalFilesChanged: (v) => setState(() => _hideInternalFiles = v),
       extraActions: [

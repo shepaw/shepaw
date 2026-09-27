@@ -34,12 +34,16 @@ class InstructionSetScreen extends StatefulWidget {
   /// 嵌在桌面右栏时不显示外层返回。
   final bool embedded;
 
+  /// 打开时在桌面分栏里选中这条指令。
+  final String? initialInstructionId;
+
   const InstructionSetScreen({
     super.key,
     this.channelId,
     this.agentId,
     this.groupFamilyId,
     this.embedded = false,
+    this.initialInstructionId,
   });
 
   @override
@@ -66,6 +70,8 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
   @override
   void initState() {
     super.initState();
+    final initial = widget.initialInstructionId;
+    if (initial != null && initial.isNotEmpty) _selectedId = initial;
     unawaited(_load());
   }
 

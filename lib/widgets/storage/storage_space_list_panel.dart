@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 import '../../screens/storage_shared.dart';
 import '../../storage/device_identity.dart';
+import '../../storage/storage_continue.dart';
 import '../../storage/store_protocol.dart';
 import '../../storage/store_service.dart';
 import '../../theme/app_theme.dart';
@@ -19,6 +20,9 @@ class StorageSpaceListPanel extends StatefulWidget {
 
   final ValueChanged<String>? onSpaceSelected;
 
+  /// 桌面右栏打开「接着打开」的条目。不传则整页推入当前导航。
+  final Future<void> Function(StorageContinueItem item)? onContinueSelected;
+
   /// 追加在列表底部的入口。
   final List<Widget> footer;
 
@@ -26,6 +30,7 @@ class StorageSpaceListPanel extends StatefulWidget {
     super.key,
     this.selectedSpace,
     this.onSpaceSelected,
+    this.onContinueSelected,
     this.footer = const [],
   });
 
@@ -247,7 +252,10 @@ class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
-          StorageContinueSection(key: _continueKey),
+          StorageContinueSection(
+            key: _continueKey,
+            onItemTap: widget.onContinueSelected,
+          ),
           _buildSectionHeader(l10n, l10n.storage_categoryMine),
           _buildNotesRow(l10n),
           _buildInstructionsRow(l10n),
