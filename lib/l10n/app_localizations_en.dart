@@ -6889,6 +6889,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_spaceRuntime => 'Runtime';
 
   @override
+  String get storage_runtimeAttachments => 'Attachments';
+
+  @override
+  String get storage_runtimeSessions => 'Sessions';
+
+  @override
+  String get storage_runtimeEmptyArtifacts => 'No artifacts yet';
+
+  @override
+  String get storage_runtimeEmptyAttachments => 'No attachments yet';
+
+  @override
   String get storage_spaceFiles => 'Files';
 
   @override

@@ -16,9 +16,13 @@ import '../peer/models/peer_store_share.dart';
 import '../peer/services/peer_storage_service.dart';
 import '../services/instruction_set_service.dart';
 import '../services/jade_slip_service.dart';
+import '../services/local_database_service.dart';
 import '../services/store_open_service.dart';
+import '../services/workflow/workflow_service.dart';
 import '../storage/device_identity.dart';
 import '../storage/local_store.dart';
+import '../storage/runtime_browse.dart';
+import '../storage/runtime_paths.dart';
 import '../storage/store_file_visual.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
@@ -202,6 +206,14 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   bool get _hideInternalFiles =>
       widget.hideInternalFiles ?? _internalHideInternalFiles;
 
+  /// 运行时某个 owner 下的三块视图（产物 / 附件 / 会话）。
+  bool _runtimeGrouped = false;
+  bool _runtimeSessionsOpen = false;
+  List<_BrowsedFile> _runtimeArtifacts = const [];
+  List<_BrowsedFile> _runtimeAttachments = const [];
+  List<_BrowsedFile> _runtimeSessions = const [];
+  Map<String, String> _runtimeFileContext = const {};
+
   /// 最近文件的归属 owner 标签缓存，key 为 `'$space:$owner'`。
   final Map<String, StorageFolderLabel> _recentOwnerLabels = {};
 
@@ -285,6 +297,13 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
 
   bool get _atNavFloor =>
       _hasNavFloor && _navSpace == _navFloorSpace && _navPath == _navFloorPath;
+
+  /// 路径栏返回只在空间内部往上走。已经在该空间首页时不可点，避免回到分区列表。
+  bool get _breadcrumbCanGoBack {
+    if (_navSpace == null) return false;
+    if (_hasNavFloor) return !_atNavFloor;
+    return _navPath.isNotEmpty;
+  }
 
   bool _isPathAtOrUnderFloor(String path) {
     if (!_hasNavFloor) return true;
@@ -703,7 +722,20 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     final path = _navPath;
     if (space == null || _targetId.isEmpty) return;
     final gen = ++_dirLoadGen;
-    if (mounted) setState(() => _folderLoading = true);
+    final runtimeOwner =
+        space == StoreSpace.runtime && _isRuntimeOwnerPath(path);
+    if (mounted) {
+      setState(() {
+        _folderLoading = true;
+        _runtimeGrouped = false;
+        if (runtimeOwner) {
+          _runtimeArtifacts = const [];
+          _runtimeAttachments = const [];
+          _runtimeSessions = const [];
+          _runtimeFileContext = const {};
+        }
+      });
+    }
     try {
       if (!await _canReachRemoteStore()) {
         if (!mounted || gen != _dirLoadGen) return;
@@ -714,6 +746,10 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
           _dirFiles = const [];
         });
         unawaited(_refreshFolderLabels(space, path, const []));
+        return;
+      }
+      if (runtimeOwner) {
+        await _loadRuntimeOwner(space, path, gen);
         return;
       }
       final entries = await StoreService.instance.listDevice(
@@ -769,6 +805,137 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       });
       unawaited(_refreshFolderLabels(space, path, const []));
     }
+  }
+
+  bool _isRuntimeOwnerPath(String path) =>
+      path.isNotEmpty && !path.contains('/');
+
+  Future<void> _loadRuntimeOwner(String space, String owner, int gen) async {
+    final entries = await StoreService.instance.listDevice(
+      deviceId: _targetId,
+      space: space,
+      prefix: '$owner/',
+      limit: 2000,
+      computeHash: false,
+      preferLocalCache: _preferLocal,
+    );
+    if (!mounted || gen != _dirLoadGen) return;
+    if (_navSpace != space || _navPath != owner) return;
+    final placed = <RuntimePlacedFile>[];
+    final byPath = <String, _BrowsedFile>{};
+    for (final e in entries) {
+      if (e.isDir) continue;
+      final hit = classifyRuntimeOwnerFile(owner, e.path);
+      if (hit == null) continue;
+      placed.add(hit);
+      byPath[e.path] = _BrowsedFile(space: space, entry: e);
+    }
+    int newer(_BrowsedFile a, _BrowsedFile b) => b.mtimeMs.compareTo(a.mtimeMs);
+    final artifacts = <_BrowsedFile>[];
+    final attachments = <_BrowsedFile>[];
+    final sessions = <_BrowsedFile>[];
+    for (final item in placed) {
+      final file = byPath[item.path];
+      if (file == null) continue;
+      switch (item.bucket) {
+        case RuntimeBucket.artifacts:
+          artifacts.add(file);
+        case RuntimeBucket.attachments:
+          attachments.add(file);
+        case RuntimeBucket.sessions:
+          sessions.add(file);
+      }
+    }
+    artifacts.sort(newer);
+    attachments.sort(newer);
+    sessions.sort(newer);
+    final context = await _runtimeFileContextFor(placed);
+    if (!mounted || gen != _dirLoadGen) return;
+    if (_navSpace != space || _navPath != owner) return;
+    setState(() {
+      _runtimeGrouped = true;
+      _runtimeSessionsOpen = false;
+      _runtimeArtifacts = artifacts;
+      _runtimeAttachments = attachments;
+      _runtimeSessions = sessions;
+      _runtimeFileContext = context;
+      _dirFolders = const [];
+      _dirFiles = const [];
+      _folderLoading = false;
+    });
+  }
+
+  Future<Map<String, String>> _runtimeFileContextFor(
+    List<RuntimePlacedFile> placed,
+  ) async {
+    final channelNames = <String, String>{};
+    final stepNames = <String, String>{};
+    final db = LocalDatabaseService();
+    for (final item in placed) {
+      if (!channelNames.containsKey(item.channelId)) {
+        channelNames[item.channelId] = await _runtimeChannelLabel(db, item.channelId);
+      }
+      final wf = item.workflowDir;
+      if (wf != null && !stepNames.containsKey(wf)) {
+        stepNames[wf] = await _runtimeStepLabel(wf);
+      }
+    }
+    final out = <String, String>{};
+    for (final item in placed) {
+      final bits = <String>[
+        if ((channelNames[item.channelId] ?? '').isNotEmpty)
+          channelNames[item.channelId]!,
+        if (item.workflowDir != null &&
+            (stepNames[item.workflowDir] ?? '').isNotEmpty)
+          stepNames[item.workflowDir]!,
+      ];
+      if (bits.isNotEmpty) out[item.path] = bits.join(' · ');
+    }
+    return out;
+  }
+
+  Future<String> _runtimeChannelLabel(
+    LocalDatabaseService db,
+    String channelId,
+  ) async {
+    try {
+      final channel = await db.getChannelById(channelId);
+      final name = channel?.name.trim() ?? '';
+      if (name.isNotEmpty) return name;
+    } catch (_) {}
+    if (channelId.length <= 8) return channelId;
+    return '${channelId.substring(0, 8)}…';
+  }
+
+  Future<String> _runtimeStepLabel(String workflowDir) async {
+    final parsed = RuntimePaths.parseWorkflowScopeDir(workflowDir);
+    if (parsed == null) return '';
+    try {
+      final exec = await WorkflowService.instance
+          .getWorkflowExecutionWithSteps(parsed.workflowId);
+      if (exec == null) return '';
+      for (final step in exec.steps) {
+        if (step.id != parsed.stepId) continue;
+        final stage = step.stageName.trim();
+        if (stage.isNotEmpty) return stage;
+        final line = step.instruction.trim().split('\n').first.trim();
+        if (line.isEmpty) return exec.title;
+        return line.length <= 24 ? line : '${line.substring(0, 24)}…';
+      }
+      return exec.title;
+    } catch (_) {
+      return '';
+    }
+  }
+
+  String _runtimeFileSubtitle(AppLocalizations l10n, _BrowsedFile file) {
+    final where = _runtimeFileContext[file.path] ?? '';
+    final time = _fmtLastModified(file.mtimeMs, l10n);
+    return [
+      if (where.isNotEmpty) where,
+      _fmtBytes(file.size),
+      if (time.isNotEmpty) time,
+    ].join(' · ');
   }
 
   Future<void> _previewFile(_BrowsedFile file) async {
@@ -1903,17 +2070,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     });
   }
 
-  void _navToRoot() {
-    if (_hasNavFloor) {
-      Navigator.of(context).maybePop();
-      return;
-    }
-    setState(() {
-      _navSpace = null;
-      _navPath = '';
-    });
-  }
-
   void _navToSpaceRoot() {
     if (_hasNavFloor) {
       setState(() {
@@ -2059,9 +2215,13 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   }
 
   /// 「空间」Tab 文件夹列表；开启隐藏内部文件时同步过滤目录与文件。
+  /// 运行时里的会话镜像和 soul 镜像始终不出现，不受这个开关影响。
   ({List<String> folders, List<_BrowsedFile> files}) _visibleSpaceChildren() {
     final children = _folderChildren();
-    if (!_hideInternalFiles || _navSpace == null) return children;
+    final hideRuntimeMirrors = _navSpace == StoreSpace.runtime;
+    if ((!_hideInternalFiles && !hideRuntimeMirrors) || _navSpace == null) {
+      return children;
+    }
     final space = _navSpace!;
     return (
       folders: [
@@ -2668,6 +2828,99 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     );
   }
 
+  Widget _buildRuntimeOwnerView(AppLocalizations l10n, {required bool mobile}) {
+    if (_folderLoading &&
+        _runtimeArtifacts.isEmpty &&
+        _runtimeAttachments.isEmpty &&
+        _runtimeSessions.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    final rows = <Widget>[
+      _buildSpaceCategoryHeader(l10n, l10n.storage_spaceArtifacts),
+      if (_runtimeArtifacts.isEmpty)
+        _runtimeEmptyLine(l10n.storage_runtimeEmptyArtifacts)
+      else
+        for (final f in _runtimeArtifacts)
+          _buildFileRow(
+            f,
+            l10n,
+            showMoreButton: !_pickMode,
+            contextSubtitle: _runtimeFileSubtitle(l10n, f),
+          ),
+      _buildSpaceCategoryHeader(l10n, l10n.storage_runtimeAttachments),
+      if (_runtimeAttachments.isEmpty)
+        _runtimeEmptyLine(l10n.storage_runtimeEmptyAttachments)
+      else
+        for (final f in _runtimeAttachments)
+          _buildFileRow(
+            f,
+            l10n,
+            showMoreButton: !_pickMode,
+            contextSubtitle: _runtimeFileSubtitle(l10n, f),
+          ),
+      if (_runtimeSessions.isNotEmpty) ...[
+        InkWell(
+          onTap: () =>
+              setState(() => _runtimeSessionsOpen = !_runtimeSessionsOpen),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 8, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    l10n.storage_runtimeSessions,
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ),
+                Icon(
+                  _runtimeSessionsOpen ? Icons.expand_less : Icons.expand_more,
+                  size: 20,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_runtimeSessionsOpen)
+          for (final f in _runtimeSessions)
+            _buildFileRow(
+              f,
+              l10n,
+              showMoreButton: !_pickMode,
+              contextSubtitle: _runtimeFileSubtitle(l10n, f),
+            ),
+      ],
+    ];
+    final list = ListView(
+      padding: const EdgeInsets.only(top: 4, bottom: 16),
+      children: rows,
+    );
+    if (mobile) return list;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildBreadcrumb(),
+        const Divider(height: 1),
+        Expanded(child: list),
+      ],
+    );
+  }
+
+  Widget _runtimeEmptyLine(String text) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Text(
+        text,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+      ),
+    );
+  }
+
   Widget _buildSpaceTab(AppLocalizations l10n, {required bool mobile}) {
     if (_error != null) {
       return Center(
@@ -2687,6 +2940,10 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     // store 根：列出各分区，不默认进入 files。
     if (_navSpace == null) {
       return _buildSpaceRootList(l10n, mobile: mobile);
+    }
+
+    if (_runtimeGrouped) {
+      return _buildRuntimeOwnerView(l10n, mobile: mobile);
     }
 
     final children = _visibleSpaceChildren();
@@ -3039,28 +3296,23 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
           ));
         }
       }
-    } else {
+    } else if (_navSpace != null) {
+      // 首页就是当前空间的根，不再回到储物袋分区列表，因此路径里不重复空间名。
       segments.add((
         label: l10n.storage_browserHome,
-        onTap: _navSpace == null && _navPath.isEmpty ? null : _navToRoot,
+        onTap: _navPath.isEmpty ? null : _navToSpaceRoot,
       ));
-      if (_navSpace != null) {
-        segments.add((
-          label: storageSpaceLabel(l10n, _navSpace!),
-          onTap: _navPath.isEmpty ? null : _navToSpaceRoot,
-        ));
-        if (_navPath.isNotEmpty) {
-          final parts = _navPath.split('/');
-          var acc = '';
-          for (var i = 0; i < parts.length; i++) {
-            acc = acc.isEmpty ? parts[i] : '$acc/${parts[i]}';
-            final target = acc;
-            final isLast = i == parts.length - 1;
-            segments.add((
-              label: _breadcrumbLabel(_navSpace!, parts[i]),
-              onTap: isLast ? null : () => _navToPath(target),
-            ));
-          }
+      if (_navPath.isNotEmpty) {
+        final parts = _navPath.split('/');
+        var acc = '';
+        for (var i = 0; i < parts.length; i++) {
+          acc = acc.isEmpty ? parts[i] : '$acc/${parts[i]}';
+          final target = acc;
+          final isLast = i == parts.length - 1;
+          segments.add((
+            label: _breadcrumbLabel(_navSpace!, parts[i]),
+            onTap: isLast ? null : () => _navToPath(target),
+          ));
         }
       }
     }
@@ -3072,9 +3324,9 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         child: Row(
           children: [
             IconButton(
-              icon: const Icon(Icons.arrow_upward, size: 18),
+              icon: const Icon(Icons.arrow_back, size: 18),
               tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-              onPressed: _navSpace == null ? null : _navUp,
+              onPressed: _breadcrumbCanGoBack ? _navUp : null,
             ),
             Expanded(
               child: SingleChildScrollView(

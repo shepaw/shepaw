@@ -59,6 +59,18 @@ class RuntimePaths {
     return 'wf_${sanitizeSegment(workflowId)}__step_${sanitizeSegment(workflowStepId)}';
   }
 
+  /// 拆开 [workflowScopeDir] 生成的目录名。对不上时返回 null。
+  static ({String workflowId, String stepId})? parseWorkflowScopeDir(String dir) {
+    const marker = '__step_';
+    if (!dir.startsWith('wf_')) return null;
+    final i = dir.indexOf(marker);
+    if (i <= 3) return null;
+    final workflowId = dir.substring(3, i);
+    final stepId = dir.substring(i + marker.length);
+    if (workflowId.isEmpty || stepId.isEmpty) return null;
+    return (workflowId: workflowId, stepId: stepId);
+  }
+
   /// 将 `channel__wf_x__step_y` 拆成 channel + `wf_x__step_y`。
   static ({String channelId, String? workflowScope}) splitChannelId(
     String raw,

@@ -12105,6 +12105,30 @@ abstract class AppLocalizations {
   /// **'运行时'**
   String get storage_spaceRuntime;
 
+  /// No description provided for @storage_runtimeAttachments.
+  ///
+  /// In zh, this message translates to:
+  /// **'附件'**
+  String get storage_runtimeAttachments;
+
+  /// No description provided for @storage_runtimeSessions.
+  ///
+  /// In zh, this message translates to:
+  /// **'会话'**
+  String get storage_runtimeSessions;
+
+  /// No description provided for @storage_runtimeEmptyArtifacts.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没有产物'**
+  String get storage_runtimeEmptyArtifacts;
+
+  /// No description provided for @storage_runtimeEmptyAttachments.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没有附件'**
+  String get storage_runtimeEmptyAttachments;
+
   /// No description provided for @storage_spaceFiles.
   ///
   /// In zh, this message translates to:

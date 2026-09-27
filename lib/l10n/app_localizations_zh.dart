@@ -6629,6 +6629,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_spaceRuntime => '运行时';
 
   @override
+  String get storage_runtimeAttachments => '附件';
+
+  @override
+  String get storage_runtimeSessions => '会话';
+
+  @override
+  String get storage_runtimeEmptyArtifacts => '还没有产物';
+
+  @override
+  String get storage_runtimeEmptyAttachments => '还没有附件';
+
+  @override
   String get storage_spaceFiles => '文件';
 
   @override
