@@ -1312,21 +1312,28 @@ class ChatInputAreaState extends State<ChatInputArea> {
                     ),
                     if (widget.hasAudioModel && widget.onSendVoice != null)
                       _buildDesktopHoldToTalk(iconColor, l10n),
-                    if (_sessionModeAvailable) ...[
-                      const SizedBox(width: 4),
-                      Flexible(
-                        fit: FlexFit.loose,
-                        child: _buildSessionModeChip(),
+                    // 芯片单独占中间弹性区。若和 Spacer 一起当 flex 子节点，
+                    // 宽松 flex 没用完的份额会堆在行尾，把发送按钮顶离右缘。
+                    Expanded(
+                      child: Row(
+                        children: [
+                          if (_sessionModeAvailable) ...[
+                            const SizedBox(width: 4),
+                            Flexible(
+                              fit: FlexFit.loose,
+                              child: _buildSessionModeChip(),
+                            ),
+                          ],
+                          if (_modelEntryAvailable) ...[
+                            const SizedBox(width: 4),
+                            Flexible(
+                              fit: FlexFit.loose,
+                              child: _buildMainModelChip(),
+                            ),
+                          ],
+                        ],
                       ),
-                    ],
-                    if (_modelEntryAvailable) ...[
-                      const SizedBox(width: 4),
-                      Flexible(
-                        fit: FlexFit.loose,
-                        child: _buildMainModelChip(),
-                      ),
-                    ],
-                    const Spacer(),
+                    ),
                     if (widget.isLoading)
                       SizedBox(
                         width: 22,
