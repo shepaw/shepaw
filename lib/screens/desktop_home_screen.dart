@@ -2,8 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/channel.dart';
 import '../models/conversation_selection.dart';
-import '../models/instruction_set.dart';
-import '../models/jade_slip.dart';
 import '../models/remote_agent.dart';
 import '../l10n/app_localizations.dart';
 import '../config/product_features.dart';
@@ -28,7 +26,6 @@ import 'storage_space_manage_screen.dart';
 import 'instruction_set_screen.dart';
 import 'jade_slip_screen.dart';
 import '../widgets/storage/storage_space_list_panel.dart';
-import '../storage/storage_continue.dart';
 import '../storage/store_protocol.dart';
 import '../utils/layout_utils.dart';
 import '../services/logger_service.dart';
@@ -81,6 +78,7 @@ class _DeskSlot {
   _DeskSlot({
     required this.mode,
     required this.rightPanel,
+    this.storageSpace,
   }) {
     routeArgs = _RouteArgs.fromSlot(this);
   }
@@ -93,12 +91,6 @@ class _DeskSlot {
   Channel? contactGroup;
   PairedPeer? contactPeer;
   String? storageSpace;
-
-  /// 「接着打开」要在右栏选中的玉简或指令 id。
-  String? storageRecordId;
-
-  /// 「接着打开」要在右栏预览的文件相对路径。
-  String? storageOpenPath;
   String? tracesChannelId;
   String? taskChannelId;
   String? taskChannelName;
@@ -118,8 +110,6 @@ class _RouteArgs {
     this.contactGroup,
     this.contactPeer,
     this.storageSpace,
-    this.storageRecordId,
-    this.storageOpenPath,
     this.tracesChannelId,
     this.taskChannelId,
     this.taskChannelName,
@@ -136,8 +126,6 @@ class _RouteArgs {
       contactGroup: slot.contactGroup,
       contactPeer: slot.contactPeer,
       storageSpace: slot.storageSpace,
-      storageRecordId: slot.storageRecordId,
-      storageOpenPath: slot.storageOpenPath,
       tracesChannelId: slot.tracesChannelId,
       taskChannelId: slot.taskChannelId,
       taskChannelName: slot.taskChannelName,
@@ -153,8 +141,6 @@ class _RouteArgs {
   final Channel? contactGroup;
   final PairedPeer? contactPeer;
   final String? storageSpace;
-  final String? storageRecordId;
-  final String? storageOpenPath;
   final String? tracesChannelId;
   final String? taskChannelId;
   final String? taskChannelName;
@@ -316,7 +302,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     ),
     _LeftPanelMode.storage: _DeskSlot(
       mode: _LeftPanelMode.storage,
-      rightPanel: _RightPanelView.empty,
+      rightPanel: _RightPanelView.jadeSlips,
+      storageSpace: StoreSpace.slips,
     ),
   };
 
@@ -581,8 +568,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     setState(() {
       final slot = _slots[_LeftPanelMode.storage]!;
       slot.storageSpace = space;
-      slot.storageRecordId = null;
-      slot.storageOpenPath = null;
       slot.selected = null;
       slot.rightPanel = switch (space) {
         StoreSpace.slips => _RightPanelView.jadeSlips,
@@ -591,40 +576,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       };
       _publishRoute(slot);
     });
-  }
-
-  /// 在右栏打开，不把编辑页推到盖住左侧菜单的那层导航上。
-  Future<void> _onStorageContinueSelected(StorageContinueItem item) async {
-    setState(() {
-      final slot = _slots[_LeftPanelMode.storage]!;
-      slot.selected = null;
-      slot.storageRecordId = null;
-      slot.storageOpenPath = null;
-      if (item.space == StoreSpace.slips && JadeSlip.isRecordPath(item.path)) {
-        slot.storageSpace = StoreSpace.slips;
-        slot.storageRecordId = JadeSlip.idFromRecordPath(item.path);
-        slot.rightPanel = _RightPanelView.jadeSlips;
-      } else if (item.space == StoreSpace.instructions &&
-          InstructionSet.isRecordPath(item.path)) {
-        slot.storageSpace = StoreSpace.instructions;
-        slot.storageRecordId = InstructionSet.idFromRecordPath(item.path);
-        slot.rightPanel = _RightPanelView.instructions;
-      } else {
-        slot.storageSpace = item.space;
-        slot.storageOpenPath = item.path;
-        slot.rightPanel = _RightPanelView.storageSpaceManage;
-      }
-      _publishRoute(slot);
-    });
-  }
-
-  /// 文件所在目录；就在分区根时返回 null。
-  String? _storageParentPath(String? path) {
-    if (path == null || path.isEmpty) return null;
-    final normalized = path.replaceAll(RegExp(r'^/+|/+$'), '');
-    final slash = normalized.lastIndexOf('/');
-    if (slash <= 0) return null;
-    return normalized.substring(0, slash);
   }
 
   void _onContactAgentSelected(RemoteAgent agent) {
@@ -716,7 +667,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                   key: _storageKey,
                   selectedSpace: _slots[_LeftPanelMode.storage]!.storageSpace,
                   onSpaceSelected: _onStorageSpaceSelected,
-                  onContinueSelected: _onStorageContinueSelected,
                 ),
               ],
             ),
@@ -937,24 +887,13 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         if (space == null || space.isEmpty) {
           return _buildEmptyState(args.mode);
         }
-        final openPath = args.storageOpenPath;
-        return StorageSpaceManageScreen(
-          initialSpace: space,
-          initialPath: _storageParentPath(openPath),
-          initialOpenPath: openPath,
-        );
+        return StorageSpaceManageScreen(initialSpace: space);
 
       case _RightPanelView.jadeSlips:
-        return JadeSlipScreen(
-          embedded: true,
-          initialSlipId: args.storageRecordId,
-        );
+        return const JadeSlipScreen(embedded: true);
 
       case _RightPanelView.instructions:
-        return InstructionSetScreen(
-          embedded: true,
-          initialInstructionId: args.storageRecordId,
-        );
+        return const InstructionSetScreen(embedded: true);
 
       case _RightPanelView.empty:
         return _buildEmptyState(args.mode);

@@ -41,14 +41,7 @@ List<JadeSlip> insertRetainedJadeSlip({
 class JadeSlipScreen extends StatefulWidget {
   final bool embedded;
 
-  /// 打开时在桌面分栏里选中这条玉简。
-  final String? initialSlipId;
-
-  const JadeSlipScreen({
-    super.key,
-    this.embedded = false,
-    this.initialSlipId,
-  });
+  const JadeSlipScreen({super.key, this.embedded = false});
 
   @override
   State<JadeSlipScreen> createState() => _JadeSlipScreenState();
@@ -103,8 +96,6 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
   @override
   void initState() {
     super.initState();
-    final initial = widget.initialSlipId;
-    if (initial != null && initial.isNotEmpty) _selectedId = initial;
     unawaited(_load());
     _sub = _service.changes.listen((_) {
       if (mounted) unawaited(_load());

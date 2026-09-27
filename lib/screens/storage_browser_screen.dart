@@ -85,7 +85,6 @@ class StorageBrowserScreen extends StatefulWidget {
     this.manageLocalMirror = false,
     this.initialSpace,
     this.initialPath,
-    this.initialOpenPath,
     this.lockToInitialEntry = false,
     this.title,
     this.extraActions,
@@ -121,9 +120,6 @@ class StorageBrowserScreen extends StatefulWidget {
 
   /// 分区内初始相对路径（无首尾 `/`）；需配合 [initialSpace]。
   final String? initialPath;
-
-  /// 进入后在当前导航里打开的文件（桌面右栏预览，不盖住左侧菜单）。
-  final String? initialOpenPath;
 
   /// 从外部深链进入（如 Agent 工作区）时：返回键在入口路径即 pop，
   /// 不会退到储物袋分区根 / 空间列表。
@@ -169,8 +165,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
 
   /// Align with chat store-open confirm threshold.
   static const _confirmExportBytes = StoreOpenService.confirmMaterializeBytes;
-
-  bool _didOpenInitialFile = false;
 
   String _selfId = '';
   String _targetId = '';
@@ -445,20 +439,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     if (!_isRemote) {
       unawaited(_subscribeUsage());
     }
-    await _openInitialFile();
-  }
-
-  /// 只打开一次。调用方的 context 在右栏 Navigator 里，预览不会盖住左侧菜单。
-  Future<void> _openInitialFile() async {
-    if (_didOpenInitialFile || !mounted) return;
-    final path = widget.initialOpenPath?.replaceAll(RegExp(r'^/+|/+$'), '');
-    final space = _navSpace;
-    if (path == null || path.isEmpty || space == null || space.isEmpty) return;
-    _didOpenInitialFile = true;
-    await _previewFile(_BrowsedFile(
-      space: space,
-      entry: StoreEntry(path: path, size: 0, sha256: '', mtimeMs: 0),
-    ));
   }
 
   Future<void> _subscribeUsage() async {
@@ -2834,7 +2814,8 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     );
   }
 
-  bool get _showContinueStrip => !_isRemote && !_preferLocal;
+  bool get _showContinueStrip =>
+      !_isRemote && !_preferLocal && _isMobileLayout(context);
 
   Future<void> _onContinueTap(StorageContinueItem item) async {
     final file = _BrowsedFile(

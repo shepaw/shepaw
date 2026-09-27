@@ -5,23 +5,18 @@ import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 import '../../screens/storage_shared.dart';
 import '../../storage/device_identity.dart';
-import '../../storage/storage_continue.dart';
 import '../../storage/store_protocol.dart';
 import '../../storage/store_service.dart';
 import '../../theme/app_theme.dart';
-import 'storage_continue_section.dart';
 
-/// 桌面储物袋左侧面板：「接着打开」+ 「我的」/「智能体」分区列表。
+/// 桌面储物袋左侧面板：「我的」/「智能体」分区列表。
 ///
-/// 选中分区后，父级在右侧展示该分区。点「接着打开」里的文件则直接打开。
+/// 选中分区后，父级在右侧展示该分区。
 class StorageSpaceListPanel extends StatefulWidget {
   /// 当前选中的分区。
   final String? selectedSpace;
 
   final ValueChanged<String>? onSpaceSelected;
-
-  /// 桌面右栏打开「接着打开」的条目。不传则整页推入当前导航。
-  final Future<void> Function(StorageContinueItem item)? onContinueSelected;
 
   /// 追加在列表底部的入口。
   final List<Widget> footer;
@@ -30,7 +25,6 @@ class StorageSpaceListPanel extends StatefulWidget {
     super.key,
     this.selectedSpace,
     this.onSpaceSelected,
-    this.onContinueSelected,
     this.footer = const [],
   });
 
@@ -40,9 +34,6 @@ class StorageSpaceListPanel extends StatefulWidget {
 
 class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
   static const double _avatarSize = 36;
-
-  final GlobalKey<StorageContinueSectionState> _continueKey =
-      GlobalKey<StorageContinueSectionState>();
 
   String _selfId = '';
   bool _loading = true;
@@ -77,7 +68,6 @@ class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
-    unawaited(_continueKey.currentState?.reload() ?? Future<void>.value());
   }
 
   Future<void> _subscribeUsage() async {
@@ -252,10 +242,6 @@ class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
-          StorageContinueSection(
-            key: _continueKey,
-            onItemTap: widget.onContinueSelected,
-          ),
           _buildSectionHeader(l10n, l10n.storage_categoryMine),
           _buildNotesRow(l10n),
           _buildInstructionsRow(l10n),
