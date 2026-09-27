@@ -14,6 +14,7 @@ import '../services/local_database_service.dart';
 import '../services/local_user_identity.dart';
 import '../services/she_service.dart';
 import '../utils/layout_utils.dart';
+import '../widgets/discard_changes_scope.dart';
 import 'instruction_set_editor_screen.dart';
 
 /// 指令集：查看 / 新建 / 编辑 / 删除 / 一键执行可复用的任务指令。
@@ -127,32 +128,48 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
         item.content.toLowerCase().contains(q);
   }
 
-  void _startCreate() {
-    unawaited(_editor?.flush());
+  Future<void> _startCreate() async {
+    if (!await _releaseEditor()) return;
+    if (!mounted) return;
     setState(() {
       _creating = true;
       _selectedId = null;
     });
   }
 
-  void _select(InstructionSet item) {
+  Future<void> _select(InstructionSet item) async {
     if (!_creating && item.id == _selectedId) return;
-    unawaited(_editor?.flush());
+    if (!await _releaseEditor()) return;
+    if (!mounted) return;
     setState(() {
       _creating = false;
       _selectedId = item.id;
     });
   }
 
-  void _closeDetail() {
-    unawaited(_editor?.flush());
+  Future<void> _closeDetail() async {
+    if (!await _releaseEditor()) return;
+    if (!mounted) return;
     setState(() {
       _creating = false;
       _selectedId = null;
     });
   }
 
-  void _setEditor(InstructionSetEditorScreenState state, {required bool active}) {
+  /// 已有指令先落盘。新建还没保存时，先问要不要放弃。
+  Future<bool> _releaseEditor() async {
+    final editor = _editor;
+    if (editor == null) return true;
+    if (editor.hasUnsavedNewDraft) {
+      final discard = await confirmDiscardChanges(context);
+      return discard && mounted;
+    }
+    await editor.flush();
+    return mounted;
+  }
+
+  void _setEditor(InstructionSetEditorScreenState state,
+      {required bool active}) {
     if (active) {
       _editor = state;
     } else if (identical(_editor, state)) {
@@ -195,8 +212,7 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
       builder: (context, constraints) {
         final wide = _wideFor(constraints);
         final selected = _selectedItem(items);
-        final showingNarrowDetail =
-            !wide && (_creating || selected != null);
+        final showingNarrowDetail = !wide && (_creating || selected != null);
         final hideOuterAppBar = widget.embedded && wide;
         return Scaffold(
           appBar: hideOuterAppBar
@@ -211,14 +227,14 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
                   automaticallyImplyLeading:
                       !widget.embedded && !showingNarrowDetail,
                   leading: showingNarrowDetail
-                      ? BackButton(onPressed: _closeDetail)
+                      ? BackButton(onPressed: () => unawaited(_closeDetail()))
                       : null,
                   actions: [
                     if (!showingNarrowDetail)
                       IconButton(
                         tooltip: l10n.instructionSet_create,
                         icon: const Icon(Icons.add),
-                        onPressed: _startCreate,
+                        onPressed: () => unawaited(_startCreate()),
                       ),
                   ],
                 ),
@@ -245,7 +261,8 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
                     )
                   : showingNarrowDetail
                       ? _buildDetail(l10n, selected)
-                      : _buildListPane(l10n, items, wide: false, showHeader: false),
+                      : _buildListPane(l10n, items,
+                          wide: false, showHeader: false),
         );
       },
     );
@@ -337,7 +354,7 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
                   IconButton(
                     tooltip: l10n.instructionSet_create,
                     icon: const Icon(Icons.add),
-                    onPressed: _startCreate,
+                    onPressed: () => unawaited(_startCreate()),
                   ),
                 ],
               ),
@@ -400,7 +417,7 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
                       onHover: (hover) => setState(() {
                         _hoveredId = hover ? item.id : null;
                       }),
-                      onTap: () => _select(item),
+                      onTap: () => unawaited(_select(item)),
                       onRun: () => unawaited(_runFromRow(item)),
                     );
                   },
@@ -419,15 +436,15 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              searching
-                  ? Icons.search_off
-                  : Icons.playlist_add_check_outlined,
+              searching ? Icons.search_off : Icons.playlist_add_check_outlined,
               size: 48,
               color: scheme.outline,
             ),
             const SizedBox(height: 12),
             Text(
-              searching ? l10n.instructionSet_noMatch : l10n.instructionSet_empty,
+              searching
+                  ? l10n.instructionSet_noMatch
+                  : l10n.instructionSet_empty,
               textAlign: TextAlign.center,
               style: TextStyle(color: scheme.onSurfaceVariant),
             ),

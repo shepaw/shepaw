@@ -8,12 +8,15 @@ import '../models/remote_agent.dart';
 import '../services/instruction_set_service.dart';
 import '../services/local_database_service.dart';
 import '../services/she_service.dart';
+import '../widgets/agent_list_avatar.dart';
 import '../widgets/discard_changes_scope.dart';
 import '../widgets/form_bottom_bar.dart';
+import 'jade_slip_agent_picker.dart';
 
 /// 指令集新建 / 编辑。
 ///
-/// [embedded] 为 true 时就地编辑并自动保存（桌面主从、窄面板详情）。
+/// [embedded] 为 true 时，已有指令就地编辑并自动保存（桌面主从、窄面板详情）；
+/// 新建要等用户点保存，避免还在选所属 Agent 时就被写成一条指令。
 /// 为 false 时是独立页：显式保存后 pop 回指令名称（储物袋文件预览）。
 class InstructionSetEditorScreen extends StatefulWidget {
   /// 非空表示编辑该指令；为空表示新建。
@@ -29,7 +32,8 @@ class InstructionSetEditorScreen extends StatefulWidget {
       {required bool active})? onEditorReady;
 
   /// 新建或更新已写入数据库。
-  final void Function(InstructionSet saved, {required bool created})? onPersisted;
+  final void Function(InstructionSet saved, {required bool created})?
+      onPersisted;
 
   /// 主按钮。为空则不显示（储物袋预览只编辑）。
   final Future<void> Function(InstructionSet item)? onRun;
@@ -52,7 +56,8 @@ class InstructionSetEditorScreen extends StatefulWidget {
       InstructionSetEditorScreenState();
 }
 
-class InstructionSetEditorScreenState extends State<InstructionSetEditorScreen> {
+class InstructionSetEditorScreenState
+    extends State<InstructionSetEditorScreen> {
   final _service = InstructionSetService.instance;
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameController;
@@ -61,6 +66,8 @@ class InstructionSetEditorScreenState extends State<InstructionSetEditorScreen> 
 
   List<RemoteAgent> _agents = const [];
   late String _ownerId;
+  String? _pickedName;
+  String? _pickedAvatar;
   InstructionSet? _current;
   bool _saving = false;
   bool _queued = false;
@@ -70,6 +77,14 @@ class InstructionSetEditorScreenState extends State<InstructionSetEditorScreen> 
   static const _autosaveDelay = Duration(milliseconds: 500);
 
   bool get _isEditing => _current != null;
+
+  /// 新建还没落盘，且用户已经改过表单。离开时由父级询问是否放弃。
+  bool get hasUnsavedNewDraft =>
+      widget.item == null && _current == null && _pageDirty;
+
+  /// 独立页始终显式保存；内嵌只有新建走保存按钮，编辑继续自动保存。
+  bool get _explicitSave => !widget.embedded || widget.item == null;
+
   final _discardKey = GlobalKey<DiscardChangesScopeState>();
 
   bool get _pageDirty {
@@ -117,7 +132,7 @@ class InstructionSetEditorScreenState extends State<InstructionSetEditorScreen> 
 
   void _onEdited() {
     _showSaved = false;
-    if (widget.embedded) _schedule();
+    if (widget.embedded && _current != null) _schedule();
     setState(() {});
   }
 
@@ -151,6 +166,8 @@ class InstructionSetEditorScreenState extends State<InstructionSetEditorScreen> 
       }
       return null;
     }
+    // 新建只在用户点保存，或点执行（notify）时落盘。
+    if (_current == null && !notify) return null;
     final desc = _descController.text.trim();
     final current = _current;
     if (current != null &&
@@ -208,12 +225,42 @@ class InstructionSetEditorScreenState extends State<InstructionSetEditorScreen> 
   }
 
   String _ownerName(AppLocalizations l10n) {
+    final picked = _pickedName;
+    if (picked != null && picked.isNotEmpty) return picked;
     if (_ownerId == SheService.sheId) return l10n.she_name;
     for (final agent in _agents) {
       if (agent.id == _ownerId) return agent.name;
     }
     final snap = _current?.ownerAgentName ?? '';
     return snap.isNotEmpty ? snap : _ownerId;
+  }
+
+  String get _ownerAvatar {
+    final picked = _pickedAvatar;
+    if (picked != null) return picked;
+    if (_ownerId == SheService.sheId) return SheService.sheAvatar;
+    for (final agent in _agents) {
+      if (agent.id == _ownerId) return agent.avatar;
+    }
+    return '';
+  }
+
+  Future<void> _pickOwner() async {
+    if (_agents.isEmpty) await _loadAgents();
+    if (!mounted) return;
+    final l10n = AppLocalizations.of(context);
+    final picked = await showJadeSlipAgentPicker(
+      context,
+      agents: _agents,
+      currentAgentId: _ownerId,
+      title: l10n.instructionSet_ownerLabel,
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _ownerId = picked.id;
+      _pickedName = picked.name;
+      _pickedAvatar = picked.avatar;
+    });
   }
 
   String _formatTime(int millis) {
@@ -299,50 +346,44 @@ class InstructionSetEditorScreenState extends State<InstructionSetEditorScreen> 
       key: _discardKey,
       dirty: _pageDirty,
       child: Scaffold(
-      appBar: AppBar(
-        title: Text(_isEditing ? l10n.common_edit : l10n.instructionSet_create),
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _nameField(l10n, validate: true),
-                    const SizedBox(height: 16),
-                    _descField(l10n),
-                    const SizedBox(height: 16),
-                    _contentField(l10n, validate: true),
-                    if (!_isEditing) ...[
+        appBar: AppBar(
+          title:
+              Text(_isEditing ? l10n.common_edit : l10n.instructionSet_create),
+        ),
+        body: Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _nameField(l10n, validate: true),
                       const SizedBox(height: 16),
-                      _ownerDropdown(l10n),
-                      const SizedBox(height: 8),
-                      Text(
-                        l10n.instructionSet_createHint,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
+                      _descField(l10n),
+                      const SizedBox(height: 16),
+                      _contentField(l10n, validate: true),
+                      if (!_isEditing) ...[
+                        const SizedBox(height: 16),
+                        _ownerField(l10n),
+                        const SizedBox(height: 8),
+                        Text(
+                          l10n.instructionSet_createHint,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
-                      ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
             ),
-          ),
-          FormBottomBar(
-            child: FormPrimaryButton(
-              onPressed: _saving ? null : _saveExplicit,
-              isLoading: _saving,
-              icon: Icons.save,
-              label: l10n.common_save,
-            ),
-          ),
-        ],
-      ),
+            _saveBar(l10n),
+          ],
+        ),
       ),
     );
   }
@@ -356,76 +397,103 @@ class InstructionSetEditorScreenState extends State<InstructionSetEditorScreen> 
         _contentController.text.trim().isNotEmpty;
     final owner = _ownerName(l10n);
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              if (_saving)
-                const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              else if (_showSaved)
-                Text(
-                  l10n.common_savedStatus,
-                  style: theme.textTheme.bodySmall?.copyWith(color: muted),
-                ),
-              const Spacer(),
-              if (_isEditing)
-                IconButton(
-                  tooltip: l10n.common_delete,
-                  icon: Icon(Icons.delete_outline, color: scheme.error),
-                  onPressed: () => unawaited(_confirmDelete()),
-                ),
-              if (widget.onRun != null)
-                FilledButton.icon(
-                  onPressed:
-                      (!ready || _saving) ? null : () => unawaited(_run()),
-                  icon: const Icon(Icons.play_arrow_rounded, size: 20),
-                  label: Text(widget.fillCurrentChat
-                      ? l10n.instructionSet_fillCurrent
-                      : l10n.instructionSet_run),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _nameField(l10n, validate: false),
-                  const SizedBox(height: 12),
-                  _descField(l10n),
-                  const SizedBox(height: 12),
-                  if (!_isEditing)
-                    _ownerDropdown(l10n)
-                  else
-                    Text(
-                      '${l10n.instructionSet_ownerLabel} $owner'
-                      ' · ${l10n.instructionSet_updatedLabel} ${_formatTime(_current!.updatedAt)}',
-                      style: theme.textTheme.bodySmall?.copyWith(color: muted),
-                    ),
-                  if (widget.fillCurrentChat || !_isEditing) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      widget.fillCurrentChat
-                          ? l10n.instructionSet_fillCurrentHint(owner)
-                          : l10n.instructionSet_createHint,
-                      style: theme.textTheme.bodySmall?.copyWith(color: muted),
-                    ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    if (_saving)
+                      const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    else if (_showSaved)
+                      Text(
+                        l10n.common_savedStatus,
+                        style:
+                            theme.textTheme.bodySmall?.copyWith(color: muted),
+                      ),
+                    const Spacer(),
+                    if (_isEditing)
+                      IconButton(
+                        tooltip: l10n.common_delete,
+                        icon: Icon(Icons.delete_outline, color: scheme.error),
+                        onPressed: () => unawaited(_confirmDelete()),
+                      ),
+                    if (widget.onRun != null)
+                      FilledButton.icon(
+                        onPressed: (!ready || _saving)
+                            ? null
+                            : () => unawaited(_run()),
+                        icon: const Icon(Icons.play_arrow_rounded, size: 20),
+                        label: Text(widget.fillCurrentChat
+                            ? l10n.instructionSet_fillCurrent
+                            : l10n.instructionSet_run),
+                      ),
                   ],
-                  const SizedBox(height: 12),
-                  _contentField(l10n, validate: false),
-                ],
-              ),
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _nameField(l10n, validate: _explicitSave),
+                          const SizedBox(height: 12),
+                          _descField(l10n),
+                          const SizedBox(height: 12),
+                          if (!_isEditing)
+                            _ownerField(l10n)
+                          else
+                            Text(
+                              '${l10n.instructionSet_ownerLabel} $owner'
+                              ' · ${l10n.instructionSet_updatedLabel} ${_formatTime(_current!.updatedAt)}',
+                              style: theme.textTheme.bodySmall
+                                  ?.copyWith(color: muted),
+                            ),
+                          if (widget.fillCurrentChat || !_isEditing) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              widget.fillCurrentChat
+                                  ? l10n.instructionSet_fillCurrentHint(owner)
+                                  : l10n.instructionSet_createHint,
+                              style: theme.textTheme.bodySmall
+                                  ?.copyWith(color: muted),
+                            ),
+                          ],
+                          const SizedBox(height: 12),
+                          _contentField(l10n, validate: _explicitSave),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
+        ),
+        if (_explicitSave) _saveBar(l10n),
+      ],
+    );
+  }
+
+  Widget _saveBar(AppLocalizations l10n) {
+    return FormBottomBar(
+      child: FormPrimaryButton(
+        key: const ValueKey('instruction-save'),
+        onPressed: _saving ? null : _saveExplicit,
+        isLoading: _saving,
+        icon: Icons.save,
+        label: l10n.common_save,
       ),
     );
   }
@@ -482,32 +550,37 @@ class InstructionSetEditorScreenState extends State<InstructionSetEditorScreen> 
     );
   }
 
-  Widget _ownerDropdown(AppLocalizations l10n) {
-    return DropdownButtonFormField<String>(
-      initialValue: _ownerId,
-      decoration: InputDecoration(
-        labelText: l10n.instructionSet_ownerLabel,
-        border: const OutlineInputBorder(),
-      ),
-      items: [
-        DropdownMenuItem(
-          value: SheService.sheId,
-          child: Text(l10n.she_name),
+  Widget _ownerField(AppLocalizations l10n) {
+    final name = _ownerName(l10n);
+    final scheme = Theme.of(context).colorScheme;
+    return Semantics(
+      button: true,
+      label: l10n.instructionSet_ownerLabel,
+      child: InkWell(
+        key: const ValueKey('instruction-owner'),
+        onTap: () => unawaited(_pickOwner()),
+        borderRadius: BorderRadius.circular(4),
+        child: InputDecorator(
+          decoration: InputDecoration(
+            labelText: l10n.instructionSet_ownerLabel,
+            border: const OutlineInputBorder(),
+          ),
+          child: Row(
+            children: [
+              AgentListAvatar(avatar: _ownerAvatar, name: name, size: 28),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Icon(Icons.expand_more, color: scheme.onSurfaceVariant),
+            ],
+          ),
         ),
-        // She 自身也存在于 agents 表，需排除避免
-        // DropdownButton 出现重复 value 断言崩溃。
-        for (final agent in _agents)
-          if (agent.id != SheService.sheId)
-            DropdownMenuItem(
-              value: agent.id,
-              child: Text(agent.name, overflow: TextOverflow.ellipsis),
-            ),
-      ],
-      onChanged: (value) {
-        if (value == null) return;
-        setState(() => _ownerId = value);
-        if (widget.embedded) _schedule();
-      },
+      ),
     );
   }
 }

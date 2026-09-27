@@ -27,12 +27,14 @@ Future<JadeSlipAgentPick?> showJadeSlipAgentPicker(
   BuildContext context, {
   required List<RemoteAgent> agents,
   String? currentAgentId,
+  String? title,
 }) {
   return showDialog<JadeSlipAgentPick>(
     context: context,
     builder: (ctx) => _JadeSlipAgentPickerDialog(
       agents: agents,
       currentAgentId: currentAgentId,
+      title: title,
     ),
   );
 }
@@ -41,10 +43,12 @@ class _JadeSlipAgentPickerDialog extends StatefulWidget {
   const _JadeSlipAgentPickerDialog({
     required this.agents,
     this.currentAgentId,
+    this.title,
   });
 
   final List<RemoteAgent> agents;
   final String? currentAgentId;
+  final String? title;
 
   @override
   State<_JadeSlipAgentPickerDialog> createState() =>
@@ -72,11 +76,10 @@ class _JadeSlipAgentPickerDialogState
       final device = a.sourcePeerName ?? '';
       return device.toLowerCase().contains(q);
     }).toList();
-    final sheMatches =
-        q.isEmpty || l10n.she_name.toLowerCase().contains(q);
+    final sheMatches = q.isEmpty || l10n.she_name.toLowerCase().contains(q);
 
     return AlertDialog(
-      title: Text(l10n.jadeSlip_pickAgent),
+      title: Text(widget.title ?? l10n.jadeSlip_pickAgent),
       content: SizedBox(
         width: 420,
         height: 380,
@@ -88,7 +91,8 @@ class _JadeSlipAgentPickerDialogState
               onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
                 hintText: l10n.jadeSlip_searchAgent,
-                prefixIcon: Icon(Icons.search, size: 18, color: scheme.onSurfaceVariant),
+                prefixIcon: Icon(Icons.search,
+                    size: 18, color: scheme.onSurfaceVariant),
                 isDense: true,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
@@ -193,8 +197,7 @@ class _AgentOptionRow extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodyLarge?.copyWith(
-                    fontWeight:
-                        selected ? FontWeight.w600 : FontWeight.w500,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                   ),
                 ),
               ),

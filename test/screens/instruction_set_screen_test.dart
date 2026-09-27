@@ -13,7 +13,7 @@ import 'package:shepaw/services/she_service.dart';
 import '../storage/test_harness.dart';
 
 /// 真实 UI 链路：真实 [InstructionSetScreen] + 真实（ffi）数据库。
-/// 宽窗口走主从：空列表里的系统指令 → 右侧新建并自动保存 → 删除。
+/// 宽窗口走主从：空列表里的系统指令 → 右侧新建、选所属 Agent、点保存 → 删除。
 ///
 /// DB 走真实异步，testWidgets 的 FakeAsync 下无法完成，因此所有涉及 DB
 /// 的操作（含测试里的验证读取）都必须包在 runAsync 里，否则 `await` 真实
@@ -30,12 +30,21 @@ void main() {
     final handle = await db.database;
     await handle.delete('instruction_sets');
     await handle.delete('agents');
-    // 模拟真实环境：agents 表里已有 She 自身。新建对话框的下拉必须排除
-    // She（已有硬编码项），否则 DropdownButton 出现重复 value 断言崩溃。
+    // 模拟真实环境：agents 表里已有 She 自身，再加一个可指派的 Agent。
     final now = DateTime.now().millisecondsSinceEpoch;
     await db.createRemoteAgent(RemoteAgent(
       id: SheService.sheId,
       name: '惜宝',
+      token: 't',
+      endpoint: 'local',
+      protocol: ProtocolType.acp,
+      connectionType: ConnectionType.http,
+      createdAt: now,
+      updatedAt: now,
+    ));
+    await db.createRemoteAgent(RemoteAgent(
+      id: 'agent-weekly',
+      name: '周报助手',
       token: 't',
       endpoint: 'local',
       protocol: ProtocolType.acp,
@@ -67,36 +76,61 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
   }
 
-  testWidgets('full journey: system seeded → create → detail → delete', (tester) async {
+  testWidgets('full journey: system seeded → create → detail → delete',
+      (tester) async {
     await pumpScreen(tester);
     expect(find.text('指令集'), findsOneWidget);
     expect(find.text('沉淀指令'), findsOneWidget);
 
     await tester.tap(find.byTooltip('新建指令'));
     await tester.pump();
+    expect(find.byKey(const ValueKey('instruction-save')), findsOneWidget);
 
     await tester.runAsync(() async {
-      await tester.enterText(find.byKey(const ValueKey('instruction-name')), '周报');
+      await tester.tap(find.byKey(const ValueKey('instruction-owner')));
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('周报助手'), findsOneWidget);
+      await tester.tap(find.text('周报助手'));
+      await tester.pump(const Duration(milliseconds: 200));
+
+      await tester.enterText(
+          find.byKey(const ValueKey('instruction-name')), '周报');
       await tester.enterText(
           find.byKey(const ValueKey('instruction-desc')), '每周一自动输出');
       await tester.enterText(
           find.byKey(const ValueKey('instruction-content')), '总结上周进度与本周计划');
-      // 停笔后自动保存，并等真实数据库写完。
-      await Future<void>.delayed(const Duration(milliseconds: 1200));
+      // 停笔不会自动落盘，要点保存。
+      await Future<void>.delayed(const Duration(milliseconds: 800));
+      await tester.pump(const Duration(milliseconds: 200));
+    });
+    await tester.pump();
+    final pending =
+        (await tester.runAsync(() => InstructionSetService.instance.list())) ??
+            const [];
+    expect(
+      pending.where((e) => e.name == '周报'),
+      isEmpty,
+    );
+
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('instruction-save')));
+      await Future<void>.delayed(const Duration(milliseconds: 500));
       await tester.pump(const Duration(milliseconds: 300));
     });
     await tester.pump();
 
     expect(find.text('周报'), findsWidgets);
-    final items = (await tester.runAsync(
-            () => InstructionSetService.instance.list())) ??
-        const [];
+    final items =
+        (await tester.runAsync(() => InstructionSetService.instance.list())) ??
+            const [];
     final mine = items
         .where((e) => e.name != InstructionSetService.systemInstructionName)
         .toList();
     expect(mine.length, 1);
     expect(mine.first.name, '周报');
-    expect(mine.first.ownerAgentId, SheService.sheId);
+    expect(mine.first.ownerAgentId, 'agent-weekly');
+    expect(mine.first.ownerAgentName, '周报助手');
 
     expect(find.text('执行'), findsOneWidget);
     expect(find.byIcon(Icons.delete_outline), findsOneWidget);
