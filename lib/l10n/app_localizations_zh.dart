@@ -6617,6 +6617,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_spaceRecent => '最近';
 
   @override
+  String get storage_continueTitle => '接着打开';
+
+  @override
   String get storage_spaceWorkspaces => '工作区';
 
   @override

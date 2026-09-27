@@ -12081,6 +12081,12 @@ abstract class AppLocalizations {
   /// **'最近'**
   String get storage_spaceRecent;
 
+  /// No description provided for @storage_continueTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'接着打开'**
+  String get storage_continueTitle;
+
   /// No description provided for @storage_spaceWorkspaces.
   ///
   /// In zh, this message translates to:

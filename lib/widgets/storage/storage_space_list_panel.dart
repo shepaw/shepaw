@@ -8,19 +8,15 @@ import '../../storage/device_identity.dart';
 import '../../storage/store_protocol.dart';
 import '../../storage/store_service.dart';
 import '../../theme/app_theme.dart';
+import 'storage_continue_section.dart';
 
-/// 桌面储物袋左侧面板：最近 + 「我的」/「智能体」分区列表。
+/// 桌面储物袋左侧面板：「接着打开」+ 「我的」/「智能体」分区列表。
 ///
-/// 选中回调由父级在右侧 master-detail 展示对应内容：
-/// 「最近」→ 最近文件列表；分区 → 该分区文件浏览。
+/// 选中分区后，父级在右侧展示该分区。点「接着打开」里的文件则直接打开。
 class StorageSpaceListPanel extends StatefulWidget {
-  /// 是否高亮「最近」。
-  final bool recentSelected;
-
-  /// 当前选中的分区（null = 最近）。
+  /// 当前选中的分区。
   final String? selectedSpace;
 
-  final VoidCallback? onRecentSelected;
   final ValueChanged<String>? onSpaceSelected;
 
   /// 追加在列表底部的入口。
@@ -28,9 +24,7 @@ class StorageSpaceListPanel extends StatefulWidget {
 
   const StorageSpaceListPanel({
     super.key,
-    this.recentSelected = false,
     this.selectedSpace,
-    this.onRecentSelected,
     this.onSpaceSelected,
     this.footer = const [],
   });
@@ -41,6 +35,9 @@ class StorageSpaceListPanel extends StatefulWidget {
 
 class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
   static const double _avatarSize = 36;
+
+  final GlobalKey<StorageContinueSectionState> _continueKey =
+      GlobalKey<StorageContinueSectionState>();
 
   String _selfId = '';
   bool _loading = true;
@@ -75,6 +72,7 @@ class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+    unawaited(_continueKey.currentState?.reload() ?? Future<void>.value());
   }
 
   Future<void> _subscribeUsage() async {
@@ -200,15 +198,6 @@ class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
     );
   }
 
-  Widget _buildRecentRow(AppLocalizations l10n) {
-    return _hubRow(
-      leading: _leadingIconBox(Icons.history),
-      title: l10n.storage_spaceRecent,
-      selected: widget.recentSelected,
-      onTap: widget.onRecentSelected,
-    );
-  }
-
   Widget _buildNotesRow(AppLocalizations l10n) {
     return _hubRow(
       leading: _leadingIconBox(Icons.auto_stories_outlined),
@@ -258,8 +247,7 @@ class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
-          _buildRecentRow(l10n),
-          const Divider(height: 16, indent: 64),
+          StorageContinueSection(key: _continueKey),
           _buildSectionHeader(l10n, l10n.storage_categoryMine),
           _buildNotesRow(l10n),
           _buildInstructionsRow(l10n),

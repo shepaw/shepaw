@@ -27,12 +27,12 @@ import '../storage/store_file_visual.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
 import '../storage/store_uri_reader.dart';
+import '../storage/storage_continue.dart';
 import '../storage/storage_folder_label.dart';
-import '../storage/sync_engine.dart';
-import '../storage/sync_journal.dart';
 import '../utils/layout_utils.dart';
 import '../widgets/avatar_image.dart';
 import '../widgets/mobile_shell_scope.dart';
+import '../widgets/storage/storage_continue_section.dart';
 import '../widgets/storage/store_file_list_avatar.dart';
 import 'storage_shared.dart';
 import 'store_text_editor_screen.dart';
@@ -71,9 +71,9 @@ class _BrowsedFile {
 
 /// 浏览 App store 正式文件。
 ///
-/// - 默认浏览本机全部空间，可删/导出；
+/// - 默认停在空间列表，顶部有几条「接着打开」；
+/// - 进入分区后按文件夹层级导航，目录内按修改时间倒序；
 /// - 传入 [deviceId] 可浏览配对设备的共享分区（[readOnly] 默认 true，不可删）。
-/// - 「最近」平铺按修改时间倒序；「空间」按分区/文件夹层级导航。
 class StorageBrowserScreen extends StatefulWidget {
   const StorageBrowserScreen({
     super.key,
@@ -85,13 +85,11 @@ class StorageBrowserScreen extends StatefulWidget {
     this.manageLocalMirror = false,
     this.initialSpace,
     this.initialPath,
-    this.openOnSpaceTab = false,
     this.lockToInitialEntry = false,
     this.title,
     this.extraActions,
     this.extraMenuItems,
     this.onExtraMenuSelected,
-    this.showTabHeader = true,
     this.usedBytes,
     this.hideInternalFiles,
     this.onHideInternalFilesChanged,
@@ -120,11 +118,8 @@ class StorageBrowserScreen extends StatefulWidget {
   /// 初始分区（仅影响「空间」Tab 起始位置）；远端默认 files。
   final String? initialSpace;
 
-  /// 「空间」Tab 内初始相对路径（无首尾 `/`）；需配合 [initialSpace]。
+  /// 分区内初始相对路径（无首尾 `/`）；需配合 [initialSpace]。
   final String? initialPath;
-
-  /// 打开时直接选中「空间」Tab（分区根列表）。默认仍是「最近」。
-  final bool openOnSpaceTab;
 
   /// 从外部深链进入（如 Agent 工作区）时：返回键在入口路径即 pop，
   /// 不会退到储物袋分区根 / 空间列表。
@@ -143,19 +138,12 @@ class StorageBrowserScreen extends StatefulWidget {
   /// [extraMenuItems] 选中回调。
   final void Function(dynamic value)? onExtraMenuSelected;
 
-  /// 是否在 AppBar 展示「最近 / 空间」Tab 头（默认 true）。
-  ///
-  /// 桌面左右分栏（左侧已有「最近 / 分区」列表）传 false：标题改为回显
-  /// 当前位置，不再重复放切换入口。Tab 状态本身仍由父级驱动。
-  final bool showTabHeader;
-
   /// 非 null 时在 AppBar 展示「已使用 xxx」轻量 badge。
   final int? usedBytes;
 
-  /// 「最近」是否隐藏内部记账文件（受控）。
+  /// 是否隐藏内部记账文件（受控）。
   ///
-  /// 非 null 时由父级持有开关状态（如储物袋「更多」菜单），
-  /// 列表中不再展示 [FilterChip]；null 时内部自管理并显示开关。
+  /// 非 null 时由父级持有开关状态（如储物袋「更多」菜单）。
   final bool? hideInternalFiles;
 
   /// [hideInternalFiles] 变化回调；仅在受控模式下使用。
@@ -171,22 +159,17 @@ class StorageBrowserScreen extends StatefulWidget {
   State<StorageBrowserScreen> createState() => _StorageBrowserScreenState();
 }
 
-class _StorageBrowserScreenState extends State<StorageBrowserScreen>
-    with SingleTickerProviderStateMixin {
+class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
   static const _listLimit = 5000;
   static const _folderMarker = '__folder__';
 
   /// Align with chat store-open confirm threshold.
   static const _confirmExportBytes = StoreOpenService.confirmMaterializeBytes;
 
-  late final TabController _tabs;
-
   String _selfId = '';
   String _targetId = '';
   bool _busy = false;
-  bool _loading = true;
   bool _folderLoading = false;
-  List<_BrowsedFile> _files = const [];
   List<StoreEntry> _dirFolders = const [];
   List<_BrowsedFile> _dirFiles = const [];
   Map<String, int> _spaceBytes = {};
@@ -194,17 +177,12 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   final Map<String, _BrowsedFile> _selectedFiles = {};
   int _dirLoadGen = 0;
   StreamSubscription<void>? _usageSub;
-  StreamSubscription<void>? _jadeSub;
 
   /// 目录名 → 可读标签缓存，key 为 `'$space:$name'`；同一 (space, name) 只解析一次。
   final Map<String, StorageFolderLabel> _folderLabelCache = {};
 
-  /// 「最近」内部自管理的隐藏状态；受控时以 [StorageBrowserScreen.hideInternalFiles] 为准。
-  bool _internalHideInternalFiles = true;
-
-  /// 「最近」是否隐藏内部记账文件（默认隐藏，用户可开关）。
-  bool get _hideInternalFiles =>
-      widget.hideInternalFiles ?? _internalHideInternalFiles;
+  /// 是否隐藏内部记账文件。未受控时默认隐藏。
+  bool get _hideInternalFiles => widget.hideInternalFiles ?? true;
 
   /// 运行时某个 owner 下的三块视图（产物 / 附件 / 会话）。
   bool _runtimeGrouped = false;
@@ -214,10 +192,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   List<_BrowsedFile> _runtimeSessions = const [];
   Map<String, String> _runtimeFileContext = const {};
 
-  /// 最近文件的归属 owner 标签缓存，key 为 `'$space:$owner'`。
-  final Map<String, StorageFolderLabel> _recentOwnerLabels = {};
-
-  /// 「空间」Tab：null = 分区根列表；非 null = 已进入某分区。
+  /// null = 分区根列表；非 null = 已进入某分区。
   String? _navSpace;
 
   /// 当前分区内路径（无首尾 `/`）；空串 = 分区根。
@@ -283,7 +258,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
 
   /// 移动端：已进入某分区（含分区根），可返回上级 / store 根。
   bool _mobileInFolder(BuildContext context) =>
-      _isMobileLayout(context) && _tabs.index == 1 && _navSpace != null;
+      _isMobileLayout(context) && _navSpace != null;
 
   bool get _hasNavFloor =>
       widget.lockToInitialEntry &&
@@ -311,9 +286,9 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     return path == _navFloorPath || path.startsWith('$_navFloorPath/');
   }
 
-  /// 移动端：仅在空间 Tab 且已进入分区时可新建/上传。
+  /// 移动端：已进入分区时可新建/上传。
   bool _mobileMineWritable(BuildContext context) =>
-      _isMobileLayout(context) && _tabs.index == 1 && _canCreate;
+      _isMobileLayout(context) && _navSpace != null && _canCreate;
 
   bool _isFolderMarkerPath(String path) => p.basename(path) == _folderMarker;
 
@@ -389,20 +364,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   void initState() {
     super.initState();
     final initial = widget.initialSpace;
-    final openOnSpace =
-        widget.openOnSpaceTab || (initial != null && initial.isNotEmpty);
-    _tabs = TabController(
-      length: 2,
-      vsync: this,
-      initialIndex: openOnSpace ? 1 : 0,
-    );
-    _tabs.addListener(() {
-      if (_tabs.indexIsChanging) return;
-      if (mounted) setState(() {});
-      if (_tabs.index == 0 && !_isRemote) {
-        unawaited(_loadRecent());
-      }
-    });
     if (initial != null && initial.isNotEmpty) {
       _navSpace = initial;
       final path =
@@ -415,8 +376,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   @override
   void dispose() {
     _usageSub?.cancel();
-    _jadeSub?.cancel();
-    _tabs.dispose();
     super.dispose();
   }
 
@@ -479,10 +438,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     await _reload();
     if (!_isRemote) {
       unawaited(_subscribeUsage());
-      _jadeSub?.cancel();
-      _jadeSub = JadeSlipService.instance.changes.listen((_) {
-        if (mounted) unawaited(_loadRecent());
-      });
     }
   }
 
@@ -491,10 +446,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       final store = await StoreService.instance.localStore();
       _usageSub?.cancel();
       _usageSub = store.usageUpdates.listen((_) {
-        if (mounted) {
-          unawaited(_loadSpaceBytes());
-          unawaited(_loadRecent());
-        }
+        if (mounted) unawaited(_loadSpaceBytes());
       });
     } catch (_) {}
   }
@@ -510,13 +462,10 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
         if (!mounted) return;
         setState(() {
           _error = AppLocalizations.of(context).storage_deviceOffline;
-          _files = const [];
-          _loading = false;
         });
         return;
       }
       await Future.wait([
-        _loadRecent(),
         _loadSpaceBytes(),
         if (_navSpace != null) _loadCurrentDir() else Future<void>.value(),
       ]);
@@ -524,8 +473,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       if (!mounted) return;
       setState(() {
         _error = _friendlyStoreError(e);
-        _files = const [];
-        _loading = false;
       });
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -566,144 +513,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     return l10n.storage_deviceOffline;
   }
 
-  Future<void> _loadRecent() async {
-    if (_targetId.isEmpty) return;
-    try {
-      final all = <_BrowsedFile>[];
-      Object? lastError;
-      var anyOk = false;
-      if (_isRemote) {
-        for (final space in _spaces) {
-          try {
-            final entries = await StoreService.instance.listDevice(
-              deviceId: _targetId,
-              space: space,
-              limit: 200,
-              computeHash: false,
-              preferLocalCache: _preferLocal,
-            );
-            anyOk = true;
-            for (final e in entries) {
-              if (e.isDir || _isFolderMarkerPath(e.path)) continue;
-              if (_pickMode && _isDedicatedRecord(space, e.path)) continue;
-              all.add(_BrowsedFile(space: space, entry: e));
-            }
-          } on StoreException catch (e) {
-            if (e.code == StoreError.aclDenied ||
-                e.code == StoreError.untrusted) {
-              lastError = e;
-              continue;
-            }
-            rethrow;
-          }
-        }
-        all.sort((a, b) => b.mtimeMs.compareTo(a.mtimeMs));
-        if (all.length > 80) all.removeRange(80, all.length);
-      } else {
-        anyOk = true;
-        final journal = await _localJournal();
-        final allowed = StoreSpace.recentSpaces.toSet();
-        for (final item in await journal.recent()) {
-          if (!allowed.contains(item.space)) continue;
-          if (_isFolderMarkerPath(item.path)) continue;
-          if (_pickMode && _isDedicatedRecord(item.space, item.path)) continue;
-          all.add(_BrowsedFile(
-            space: item.space,
-            entry: StoreEntry(
-              path: item.path,
-              size: item.size,
-              sha256: item.sha256,
-              mtimeMs: item.mtimeMs,
-            ),
-          ));
-        }
-        if (!_pickMode) {
-          await _overlayInstructionSets(all);
-        }
-        all.sort((a, b) => b.mtimeMs.compareTo(a.mtimeMs));
-        if (all.length > SyncJournal.recentLimit) {
-          all.removeRange(SyncJournal.recentLimit, all.length);
-        }
-      }
-      await _applyJadeSlipTitles(all);
-      await _refreshRecentOwnerLabels(all);
-      if (!mounted) return;
-      setState(() {
-        _files = all;
-        _loading = false;
-        if (_isRemote && !anyOk && lastError != null) {
-          _error = _friendlyStoreError(lastError);
-        }
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = _friendlyStoreError(e);
-        _files = const [];
-        _loading = false;
-      });
-    }
-  }
-
-  bool _isDedicatedRecord(String space, String path) =>
-      (space == StoreSpace.slips && JadeSlip.isRecordPath(path)) ||
-      (space == StoreSpace.instructions && InstructionSet.isRecordPath(path));
-
-  Future<void> _overlayInstructionSets(List<_BrowsedFile> all) async {
-    try {
-      final items = await InstructionSetService.instance.list();
-      final existing = {
-        for (final f in all)
-          if (f.space == StoreSpace.instructions) f.path,
-      };
-      for (final item in items) {
-        if (item.name == InstructionSetService.systemInstructionName) continue;
-        if (existing.contains(item.relPath)) continue;
-        all.add(_BrowsedFile(
-          space: StoreSpace.instructions,
-          displayTitle: item.name,
-          virtual: true,
-          entry: StoreEntry(
-            path: item.relPath,
-            size: item.content.length,
-            sha256: '',
-            mtimeMs: item.updatedAt,
-          ),
-        ));
-      }
-    } catch (_) {
-      // 指令集未就绪时「最近」仍展示 store 文件。
-    }
-  }
-
-  Future<void> _applyJadeSlipTitles(List<_BrowsedFile> files) async {
-    final need = files.any((f) => f.isJadeSlipRecord && f.displayTitle == null);
-    if (!need) return;
-    try {
-      final slips = await JadeSlipService.instance.list(includeArchived: true);
-      final byPath = {for (final s in slips) s.relPath: s.title};
-      for (var i = 0; i < files.length; i++) {
-        final f = files[i];
-        if (!f.isJadeSlipRecord || f.displayTitle != null) continue;
-        final title = byPath[f.path];
-        if (title == null || title.isEmpty) continue;
-        files[i] = _BrowsedFile(
-          space: f.space,
-          entry: f.entry,
-          snippet: f.snippet,
-          displayTitle: title,
-          virtual: f.virtual,
-        );
-      }
-    } catch (_) {}
-  }
-
-  Future<SyncJournal> _localJournal() async {
-    final existing = SyncEngine.instance.journal;
-    if (existing != null) return existing;
-    final store = await StoreService.instance.localStore();
-    return SyncJournal(storeRoot: store.root, ownerDeviceId: _selfId);
-  }
 
   Future<void> _loadSpaceBytes() async {
     if (_isRemote && !_preferLocal) return;
@@ -947,7 +756,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
           builder: (_) => JadeSlipEditorScreen(slipId: id),
         ),
       );
-      if (mounted) unawaited(_loadRecent());
       return;
     }
     if (file.isInstructionRecord) {
@@ -964,7 +772,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
           builder: (_) => InstructionSetEditorScreen(item: item),
         ),
       );
-      if (mounted) unawaited(_loadRecent());
       return;
     }
     if (file.virtual) return;
@@ -1601,11 +1408,9 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   }
 
   Future<void> _openSearch() async {
-    final onSpaceTab = _tabs.index == 1;
-    final spaceFilter = onSpaceTab ? _navSpace : null;
-    final pathPrefix = (onSpaceTab && _navSpace != null && _navPath.isNotEmpty)
-        ? '$_navPath/'
-        : '';
+    final spaceFilter = _navSpace;
+    final pathPrefix =
+        (_navSpace != null && _navPath.isNotEmpty) ? '$_navPath/' : '';
     final allowed =
         _isRemote ? _spaces.toSet() : StoreSpace.recentSpaces.toSet();
     await showSearch<void>(
@@ -1704,7 +1509,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     try {
       corpus = await _listAllNames(limit: _isRemote ? 500 : _listLimit);
     } catch (_) {
-      corpus = [..._files, ..._dirFiles];
+      corpus = _dirFiles;
     }
     final tokens =
         query.toLowerCase().split(RegExp(r'\s+')).where((t) => t.isNotEmpty);
@@ -1879,8 +1684,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
   String _uniqueBaseName(String base, String ext) {
     final existing = {
       for (final f in _dirFiles) f.path,
-      for (final f in _files)
-        if (f.space == _mineSpace) f.path,
     };
     var i = 0;
     while (true) {
@@ -2163,45 +1966,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     }
   }
 
-  /// 解析「最近」文件各自的归属 owner 标签（只写缓存，不 setState）。
-  Future<void> _refreshRecentOwnerLabels(List<_BrowsedFile> files) async {
-    final keys = <String>{};
-    for (final f in files) {
-      final owner = StoreFileVisual.ownerSegmentOf(f.space, f.path);
-      if (owner != null && owner.isNotEmpty) keys.add('${f.space}:$owner');
-    }
-    final missing =
-        keys.where((k) => !_recentOwnerLabels.containsKey(k)).toList();
-    if (missing.isEmpty) return;
-
-    Future<void> safe(String key) async {
-      final i = key.indexOf(':');
-      final space = key.substring(0, i);
-      final owner = key.substring(i + 1);
-      try {
-        _recentOwnerLabels[key] = await resolveStorageFolderLabel(space, owner);
-      } catch (_) {
-        _recentOwnerLabels[key] = StorageFolderLabel.unresolved(owner);
-      }
-    }
-
-    await Future.wait([for (final k in missing) safe(k)]);
-  }
-
-  /// 「最近」行副标题：归属（Agent/群名）· 分区 · 大小 · 时间。
-  String _recentFileContext(AppLocalizations l10n, _BrowsedFile file) {
-    final parts = <String>[];
-    final owner = StoreFileVisual.ownerSegmentOf(file.space, file.path);
-    if (owner != null) {
-      final label = _recentOwnerLabels['${file.space}:$owner'];
-      if (label != null && label.resolved) parts.add(label.label);
-    }
-    parts.add(storageSpaceLabel(l10n, file.space));
-    parts.add(_fmtBytes(file.size));
-    final time = _fmtRecentAccess(file.mtimeMs, l10n);
-    if (time.isNotEmpty) parts.add(time);
-    return parts.join(' · ');
-  }
 
   /// 当前目录下的子文件夹名（排序）与文件。
   ({List<String> folders, List<_BrowsedFile> files}) _folderChildren() {
@@ -2214,7 +1978,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     return (folders: folders, files: _dirFiles);
   }
 
-  /// 「空间」Tab 文件夹列表；开启隐藏内部文件时同步过滤目录与文件。
+  /// 当前分区的文件夹列表；开启隐藏内部文件时同步过滤目录与文件。
   /// 运行时里的会话镜像和 soul 镜像始终不出现，不受这个开关影响。
   ({List<String> folders, List<_BrowsedFile> files}) _visibleSpaceChildren() {
     final children = _folderChildren();
@@ -2286,13 +2050,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
                 ? _buildMobileFolderAppBar(l10n)
                 : _buildMobileAppBar(l10n))
             : _buildDesktopAppBar(l10n),
-        body: TabBarView(
-          controller: _tabs,
-          children: [
-            _buildFlatTab(l10n),
-            _buildSpaceTab(l10n, mobile: mobile),
-          ],
-        ),
+        body: _buildSpaceTab(l10n, mobile: mobile),
       ),
     );
   }
@@ -2328,7 +2086,12 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       // 底栏根页不显示返回；从储物袋再推进来的浏览页仍要能返回。
       automaticallyImplyLeading:
           !MobileShellScope.isActive(context) || Navigator.canPop(context),
-      title: _buildTabHeader(l10n),
+      title: Text(
+        widget.title ?? l10n.storage_title,
+        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+      ),
       actions: [
         if (_pickMode) ..._pickModeActions(l10n),
         if (!_pickMode)
@@ -2344,14 +2107,12 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
       elevation: 0,
       scrolledUnderElevation: 0,
       centerTitle: true,
-      title: widget.showTabHeader
-          ? _buildTabHeader(l10n)
-          : Text(
-              _locationTitle(l10n),
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+      title: Text(
+        _locationTitle(l10n),
+        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
             ),
+      ),
       actions: [
         if (used != null)
           Padding(
@@ -2384,74 +2145,13 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     );
   }
 
-  /// 不展示 Tab 头时的标题：回显「最近」或当前分区 / 文件夹位置。
-  ///
-  /// 分区根列表（点了面包屑「首页」）与「最近」同为 `_navSpace == null`，
-  /// 故用 Tab 下标区分。
+  /// 标题：空间根用储物袋名，进入分区后回显当前位置。
   String _locationTitle(AppLocalizations l10n) {
-    if (_navSpace == null && _tabs.index == 0) return l10n.storage_spaceRecent;
     final folder = _currentFolderTitle();
-    return folder.isEmpty ? l10n.storage_browserHome : folder;
+    if (folder.isNotEmpty) return folder;
+    return widget.title ?? l10n.storage_title;
   }
 
-  Widget _buildTabHeader(AppLocalizations l10n) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _tabChip(
-          label: l10n.storage_browserTabRecent,
-          selected: _tabs.index == 0,
-          onTap: () => _tabs.animateTo(0),
-        ),
-        const SizedBox(width: 28),
-        _tabChip(
-          label: l10n.storage_browserTabSpace,
-          selected: _tabs.index == 1,
-          onTap: () => _tabs.animateTo(1),
-        ),
-      ],
-    );
-  }
-
-  Widget _tabChip({
-    required String label,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    final theme = Theme.of(context);
-    final color = selected
-        ? theme.colorScheme.onSurface
-        : theme.colorScheme.onSurfaceVariant;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(4),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                color: color,
-              ),
-            ),
-            const SizedBox(height: 6),
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              height: 3,
-              width: selected ? 28 : 0,
-              decoration: BoxDecoration(
-                color: theme.colorScheme.onSurface,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   List<Widget> _buildMobileActions(
     AppLocalizations l10n, {
@@ -2745,88 +2445,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     );
   }
 
-  Widget _buildFlatTab(AppLocalizations l10n) {
-    if (_error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            _error!,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-          ),
-        ),
-      );
-    }
-    if (_loading && _files.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_files.isEmpty) {
-      return Center(
-        child: Text(l10n.storage_browserEmpty,
-            style: Theme.of(context).textTheme.bodySmall),
-      );
-    }
-    final visible = _hideInternalFiles
-        ? _files
-            .where((f) => !StoreFileVisual.isInternalStoreFile(f.space, f.path))
-            .toList()
-        : _files;
-    return Column(
-      children: [
-        _buildRecentFilterChip(l10n),
-        Expanded(
-          child: visible.isEmpty
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: Text(
-                      l10n.storage_recentAllHidden,
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color:
-                                Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
-                    ),
-                  ),
-                )
-              : ListView.separated(
-                  padding: const EdgeInsets.only(top: 4, bottom: 16),
-                  itemCount: visible.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 2),
-                  itemBuilder: (context, i) => _buildFileRow(
-                    visible[i],
-                    l10n,
-                    showMoreButton: !_pickMode,
-                    contextSubtitle: _recentFileContext(l10n, visible[i]),
-                  ),
-                ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildRecentFilterChip(AppLocalizations l10n) {
-    // 受控模式：开关收进储物袋「更多」菜单，列表中不再重复展示。
-    if (widget.hideInternalFiles != null) {
-      return const SizedBox.shrink();
-    }
-    return Align(
-      alignment: Alignment.centerRight,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
-        child: FilterChip(
-          label: Text(l10n.storage_recentHideInternal),
-          selected: _hideInternalFiles,
-          onSelected: (v) => setState(() => _internalHideInternalFiles = v),
-          visualDensity: VisualDensity.compact,
-          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        ),
-      ),
-    );
-  }
 
   Widget _buildRuntimeOwnerView(AppLocalizations l10n, {required bool mobile}) {
     if (_folderLoading &&
@@ -3196,11 +2814,45 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     );
   }
 
+  bool get _showContinueStrip => !_isRemote && !_preferLocal;
+
+  Future<void> _onContinueTap(StorageContinueItem item) async {
+    final file = _BrowsedFile(
+      space: item.space,
+      displayTitle: item.displayTitle,
+      virtual: item.virtual,
+      entry: StoreEntry(
+        path: item.path,
+        size: item.size,
+        sha256: item.sha256,
+        mtimeMs: item.mtimeMs,
+      ),
+    );
+    if (_pickMode) {
+      _togglePick(file);
+      return;
+    }
+    await _previewFile(file);
+  }
+
+  Widget _buildContinueStrip() {
+    if (!_showContinueStrip) return const SizedBox.shrink();
+    return StorageContinueSection(
+      includeDedicatedRecords: !_pickMode,
+      isSelected: _pickMode
+          ? (item) => _selectedFiles.containsKey('${item.space}:${item.path}')
+          : null,
+      onItemTap: _onContinueTap,
+    );
+  }
+
   Widget _buildSpaceRootList(AppLocalizations l10n, {required bool mobile}) {
     final userSpaces = _userVisibleSpaces;
     final agentSpaces = _agentVisibleSpaces;
+    final continueStrip = _buildContinueStrip();
     if (mobile) {
       final rows = <Widget>[
+        continueStrip,
         if (userSpaces.isNotEmpty) ...[
           _buildSpaceCategoryHeader(l10n, l10n.storage_categoryMine),
           _buildMobileNotesRow(l10n),
@@ -3223,6 +2875,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen>
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 8),
       children: [
+        continueStrip,
         if (userSpaces.isNotEmpty) ...[
           _buildSpaceCategoryHeader(l10n, l10n.storage_categoryMine),
           ListTile(

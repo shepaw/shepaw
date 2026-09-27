@@ -63,9 +63,7 @@ class _MobileHomeShellState extends State<MobileHomeShell> {
         onGenerateRoute: (settings) {
           return MaterialPageRoute<void>(
             settings: settings,
-            builder: (_) => const StorageSpaceManageScreen(
-              openOnSpaceTab: true,
-            ),
+            builder: (_) => const StorageSpaceManageScreen(),
           );
         },
       ),

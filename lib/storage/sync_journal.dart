@@ -83,7 +83,7 @@ class SyncJournal {
 
   static const pendingDisplayLimit = 200;
 
-  /// 「最近」Tab 保留的变更文件上限（出队后仍在）。
+  /// 变更日志里保留的近期文件上限（出队后仍在，「接着打开」从这里取）。
   static const recentLimit = 200;
 
   Future<void>? _appendLock;

@@ -3400,6 +3400,7 @@
   "storage_browserTabRecent": "Recent",
   "storage_browserTabMine": "Mine",
   "storage_spaceRecent": "Recent",
+  "storage_continueTitle": "Continue",
   "storage_spaceWorkspaces": "Workspace",
   "storage_categoryMine": "Mine",
   "storage_categoryAgents": "Agents",

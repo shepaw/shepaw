@@ -97,9 +97,6 @@ class _DeskSlot {
   _RightPanelView? previousPanel;
   int navGeneration = 0;
   late _RouteArgs routeArgs;
-
-  bool get storageRecentSelected =>
-      rightPanel == _RightPanelView.storageSpaceManage && storageSpace == null;
 }
 
 /// 右栏 Navigator 初次生成路由时用的快照。之后不再跟着别的菜单变。
@@ -304,7 +301,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     ),
     _LeftPanelMode.storage: _DeskSlot(
       mode: _LeftPanelMode.storage,
-      rightPanel: _RightPanelView.storageSpaceManage,
+      rightPanel: _RightPanelView.empty,
     ),
   };
 
@@ -502,7 +499,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         return;
       }
       if (_isStorageDetail(slot)) {
-        // 根路由被关掉时，按当前分区重新铺一页，不要退回「最近」。
+        // 根路由被关掉时，按当前分区重新铺一页。
         setState(() => _publishRoute(slot));
         _reloadStorage();
       }
@@ -561,16 +558,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         slot.contactGroup = null;
         slot.contactPeer = null;
       }
-      _publishRoute(slot);
-    });
-  }
-
-  void _onStorageRecentSelected() {
-    setState(() {
-      final slot = _slots[_LeftPanelMode.storage]!;
-      slot.storageSpace = null;
-      slot.selected = null;
-      slot.rightPanel = _RightPanelView.storageSpaceManage;
       _publishRoute(slot);
     });
   }
@@ -676,10 +663,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                 ),
                 StorageSpaceListPanel(
                   key: _storageKey,
-                  recentSelected:
-                      _slots[_LeftPanelMode.storage]!.storageRecentSelected,
                   selectedSpace: _slots[_LeftPanelMode.storage]!.storageSpace,
-                  onRecentSelected: _onStorageRecentSelected,
                   onSpaceSelected: _onStorageSpaceSelected,
                 ),
               ],
@@ -897,11 +881,11 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         );
 
       case _RightPanelView.storageSpaceManage:
-        // 左侧面板已列出「最近 / 我的 / 智能体」入口，右侧不再重复放 Tab。
-        return StorageSpaceManageScreen(
-          initialSpace: args.storageSpace,
-          showTabHeader: false,
-        );
+        final space = args.storageSpace;
+        if (space == null || space.isEmpty) {
+          return _buildEmptyState(args.mode);
+        }
+        return StorageSpaceManageScreen(initialSpace: space);
 
       case _RightPanelView.jadeSlips:
         return const JadeSlipScreen(embedded: true);
