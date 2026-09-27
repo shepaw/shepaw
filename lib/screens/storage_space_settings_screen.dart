@@ -155,14 +155,16 @@ class _StorageSpaceSettingsScreenState
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final body = switch (widget.section) {
-      StorageSpaceSettingsSection.usage => _buildUsageCard(l10n),
-      StorageSpaceSettingsSection.recycle => _buildRecycleCard(l10n),
-    };
+    final isRecycle = widget.section == StorageSpaceSettingsSection.recycle;
     return Scaffold(
       appBar: AppBar(
         title: Text(_title(l10n)),
         actions: [
+          if (isRecycle && _recycle.isNotEmpty)
+            TextButton(
+              onPressed: _busy ? null : _recyclePurgeAll,
+              child: Text(l10n.storage_recyclePurgeAll),
+            ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: l10n.common_refresh,
@@ -172,10 +174,13 @@ class _StorageSpaceSettingsScreenState
       ),
       body: Stack(
         children: [
-          ListView(
-            padding: const EdgeInsets.all(16),
-            children: [body],
-          ),
+          switch (widget.section) {
+            StorageSpaceSettingsSection.usage => ListView(
+                padding: const EdgeInsets.all(16),
+                children: [_buildUsageCard(l10n)],
+              ),
+            StorageSpaceSettingsSection.recycle => _buildRecycleBody(l10n),
+          },
           if (_busy) const StorageBusyOverlay(),
         ],
       ),
@@ -332,70 +337,54 @@ class _StorageSpaceSettingsScreenState
     );
   }
 
-  Widget _buildRecycleCard(AppLocalizations l10n) {
+  Widget _buildRecycleBody(AppLocalizations l10n) {
+    if (_stats == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_recycle.isEmpty) {
+      return Center(
+        child: Text(
+          l10n.storage_recycleEmptyHint,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+        ),
+      );
+    }
     const pageSize = 20;
     final visible = _recycleExpanded || _recycle.length <= pageSize
         ? _recycle
         : _recycle.take(pageSize).toList();
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.delete_outline,
-                    color: Theme.of(context).colorScheme.primary, size: 20),
-                const SizedBox(width: 8),
-                Text(l10n.storage_recycleSection,
-                    style: Theme.of(context).textTheme.bodyMedium),
-                const Spacer(),
-                if (_recycle.isNotEmpty)
-                  TextButton(
-                    onPressed: _busy ? null : _recyclePurgeAll,
-                    child: Text(l10n.storage_recyclePurgeAll),
-                  ),
-              ],
+    return ListView(
+      children: [
+        for (final e in visible)
+          ListTile(
+            leading: const Icon(Icons.insert_drive_file_outlined),
+            title: Text(
+              '${e['space']}/${e['origin_path']}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
-            if (_recycle.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Text(l10n.storage_recycleEmptyHint,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant)),
-              )
-            else ...[
-              ...visible.map((e) => ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading:
-                        const Icon(Icons.insert_drive_file_outlined, size: 18),
-                    title: Text('${e['space']}/${e['origin_path']}',
-                        style: Theme.of(context).textTheme.bodySmall,
-                        overflow: TextOverflow.ellipsis),
-                    subtitle: Text(
-                        '${fmtStorageBytes(e['size'] as int? ?? 0)} · ${l10n.storage_deletedAt(_fmtRecycleDate(e['recycle_path'] as String))}'),
-                    trailing: TextButton(
-                      onPressed: _busy ? null : () => _recycleRestore(e),
-                      child: Text(l10n.storage_recycleRestore),
-                    ),
-                  )),
-              if (_recycle.length > pageSize)
-                Align(
-                  alignment: Alignment.center,
-                  child: TextButton(
-                    onPressed: () =>
-                        setState(() => _recycleExpanded = !_recycleExpanded),
-                    child: Text(_recycleExpanded
-                        ? l10n.storage_recycleShowLess
-                        : l10n.storage_recycleShowMore(_recycle.length)),
-                  ),
-                ),
-            ],
-          ],
-        ),
-      ),
+            subtitle: Text(
+              '${fmtStorageBytes(e['size'] as int? ?? 0)} · ${l10n.storage_deletedAt(_fmtRecycleDate(e['recycle_path'] as String))}',
+            ),
+            trailing: TextButton(
+              onPressed: _busy ? null : () => _recycleRestore(e),
+              child: Text(l10n.storage_recycleRestore),
+            ),
+          ),
+        if (_recycle.length > pageSize)
+          Align(
+            alignment: Alignment.center,
+            child: TextButton(
+              onPressed: () =>
+                  setState(() => _recycleExpanded = !_recycleExpanded),
+              child: Text(_recycleExpanded
+                  ? l10n.storage_recycleShowLess
+                  : l10n.storage_recycleShowMore(_recycle.length)),
+            ),
+          ),
+      ],
     );
   }
 
