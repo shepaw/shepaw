@@ -43,9 +43,13 @@ class _StorageSnapshotsScreenState extends State<StorageSnapshotsScreen> {
   int _passwordChangedAtMs = 0;
 
   StreamSubscription<SyncStatus>? _syncSub;
+  StreamSubscription<void>? _usageSub;
   SyncStatus _syncStatus = SyncStatus.empty;
   bool _isMaster = false;
   List<MirroredDeviceRow> _mirrored = const [];
+
+  /// 后台校验代数。刷新时递增，丢掉还在跑的上一轮哈希。
+  int _verifyGen = 0;
 
   @override
   void initState() {
@@ -55,22 +59,30 @@ class _StorageSnapshotsScreenState extends State<StorageSnapshotsScreen> {
       if (mounted) setState(() => _syncStatus = s);
     });
     unawaited(SyncEngine.instance.currentStatus());
+    unawaited(_listenUsage());
     _future = _load();
   }
 
   @override
   void dispose() {
+    _verifyGen++;
     _syncSub?.cancel();
+    _usageSub?.cancel();
     super.dispose();
+  }
+
+  Future<void> _listenUsage() async {
+    try {
+      final store = await StoreService.instance.localStore();
+      _usageSub?.cancel();
+      _usageSub = store.usageUpdates.listen((_) {
+        if (mounted) unawaited(_reloadMirrored());
+      });
+    } catch (_) {}
   }
 
   Future<List<SnapshotInfo>> _load() async {
     final list = await SnapshotService.instance.listSnapshots();
-    for (final s in list) {
-      if (!_verifyCache.containsKey(s.id)) {
-        _verifyCache[s.id] = await SnapshotService.instance.verifySnapshot(s);
-      }
-    }
     _schedStatus = await ScheduledSnapshotService.instance.status();
     _passwordChangedAtMs =
         await ScheduledSnapshotService.instance.passwordChangedAtMs();
@@ -78,22 +90,47 @@ class _StorageSnapshotsScreenState extends State<StorageSnapshotsScreen> {
 
     _isMaster = await StoreService.instance.isMaster();
     if (_isMaster) {
-      final self = await DeviceIdentity.deviceId();
-      final store = await StoreService.instance.localStore();
-      final stats = await store.stats();
-      final peers = await PeerStorageService().loadAllPeers();
-      _mirrored = await loadMirroredDevices(
-        selfId: self,
-        peers: peers,
-        stats: stats,
-      );
+      await _reloadMirrored();
     } else {
       _mirrored = const [];
     }
+    _startVerify(list);
     return list;
   }
 
+  /// 镜像设备占用先读缓存。缓存不完整时 stats 会在后台重算，完成后经 usageUpdates 再刷。
+  Future<void> _reloadMirrored() async {
+    if (!_isMaster) return;
+    final self = await DeviceIdentity.deviceId();
+    final store = await StoreService.instance.localStore();
+    final stats = await store.stats(blocking: false);
+    final peers = await PeerStorageService().loadAllPeers();
+    final mirrored = await loadMirroredDevices(
+      selfId: self,
+      peers: peers,
+      stats: stats,
+    );
+    if (!mounted) return;
+    setState(() => _mirrored = mirrored);
+  }
+
+  void _startVerify(List<SnapshotInfo> list) {
+    final gen = ++_verifyGen;
+    unawaited(_verifyInBackground(list, gen));
+  }
+
+  Future<void> _verifyInBackground(List<SnapshotInfo> list, int gen) async {
+    for (final s in list) {
+      if (!mounted || gen != _verifyGen) return;
+      if (_verifyCache.containsKey(s.id)) continue;
+      final status = await SnapshotService.instance.verifySnapshot(s);
+      if (!mounted || gen != _verifyGen) return;
+      setState(() => _verifyCache[s.id] = status);
+    }
+  }
+
   Future<void> _refresh() async {
+    _verifyGen++;
     _verifyCache.clear();
     final future = _load();
     setState(() => _future = future);
@@ -141,7 +178,9 @@ class _StorageSnapshotsScreenState extends State<StorageSnapshotsScreen> {
       } on SnapshotDecryptException {
         if (mounted) storageToast(context, l10n.storage_passwordWrong);
       } catch (e) {
-        if (mounted) storageToast(context, l10n.storage_decryptCheckFailed('$e'));
+        if (mounted) {
+          storageToast(context, l10n.storage_decryptCheckFailed('$e'));
+        }
       } finally {
         if (mounted) setState(() => _busy = false);
       }
@@ -154,8 +193,8 @@ class _StorageSnapshotsScreenState extends State<StorageSnapshotsScreen> {
   /// 解密自检（§10）。
   Future<void> _decryptSelfCheck() async {
     final l10n = AppLocalizations.of(context);
-    final password =
-        await askStoragePassword(context, title: l10n.storage_decryptCheckTitle);
+    final password = await askStoragePassword(context,
+        title: l10n.storage_decryptCheckTitle);
     if (password == null) return;
     setState(() => _busy = true);
     try {
@@ -212,8 +251,8 @@ class _StorageSnapshotsScreenState extends State<StorageSnapshotsScreen> {
       final preview =
           await RestoreService.instance.prepareRestore(info, password);
       final safetyHash = await SnapshotCrypto.cachedPasswordHash();
-      await RestoreService.instance.executeRestore(preview, password,
-          safetyPasswordHash: safetyHash);
+      await RestoreService.instance
+          .executeRestore(preview, password, safetyPasswordHash: safetyHash);
       if (mounted) {
         storageToast(context, l10n.storage_restoreDone,
             duration: const Duration(seconds: 6));
@@ -624,7 +663,8 @@ class _StorageSnapshotsScreenState extends State<StorageSnapshotsScreen> {
                   foregroundColor: scheme.error,
                   side: BorderSide(color: scheme.error),
                 ),
-                onPressed: _busy ? null : () => unawaited(_confirmClearAllData()),
+                onPressed:
+                    _busy ? null : () => unawaited(_confirmClearAllData()),
                 child: Text(l10n.storage_clearAllData),
               ),
             ),
@@ -895,10 +935,7 @@ class _StatusChip extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: Theme.of(context)
-            .textTheme
-            .labelSmall
-            ?.copyWith(color: color),
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(color: color),
       ),
     );
   }

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math' show min;
 import 'dart:typed_data';
 
@@ -88,8 +89,7 @@ class SnapshotManifest {
       treeRoot: json['tree_root'] as String,
       kdfSalt: json['kdf_salt'] as String?,
       kdfIterations: json['kdf_iterations'] as int?,
-      attachments:
-          (json['attachments'] as List?)?.cast<String>() ?? const [],
+      attachments: (json['attachments'] as List?)?.cast<String>() ?? const [],
     );
   }
 
@@ -97,8 +97,7 @@ class SnapshotManifest {
   static String computeTreeRoot(Map<String, String> fileHashes) {
     final sorted = fileHashes.entries.toList()
       ..sort((a, b) => a.key.compareTo(b.key));
-    final payload =
-        sorted.map((e) => '${e.key}:${e.value}').join('\n');
+    final payload = sorted.map((e) => '${e.key}:${e.value}').join('\n');
     return crypto.sha256.convert(utf8.encode(payload)).toString();
   }
 }
@@ -383,7 +382,8 @@ class SnapshotService {
       if (await runtimeDir.exists()) {
         await for (final f in runtimeDir.list(recursive: true)) {
           if (f is! File) continue;
-          final rel = p.relative(f.path, from: runtimeDir.path)
+          final rel = p
+              .relative(f.path, from: runtimeDir.path)
               .replaceAll(p.separator, '/');
           if (rel.split('/').any((s) => s.startsWith('.'))) continue;
           if (RuntimePaths.isRuntimeAttachmentPath(rel)) {
@@ -433,9 +433,11 @@ class SnapshotService {
             as Map<String, dynamic>;
         if (json['kind'] == 'mirror_reprotect') continue;
         final manifest = SnapshotManifest.fromJson(json);
+        // 只加清单里的密文。递归扫整个快照目录会在打开备份页时卡住界面。
         var total = 0;
-        await for (final f in entry.list(recursive: true)) {
-          if (f is File) total += await f.length();
+        for (final name in manifest.fileHashes.keys) {
+          final f = File(p.join(entry.path, name));
+          if (await f.exists()) total += await f.length();
         }
         result.add(SnapshotInfo(
             id: id, path: entry.path, manifest: manifest, totalBytes: total));
@@ -472,8 +474,8 @@ class SnapshotService {
   /// 读取并解密 DB（恢复前必须先经 [verifySnapshot] 与密码校验）。
   Future<Uint8List> decryptDb(SnapshotInfo info, String password) async {
     final key = await _keyFor(info, password: password);
-    final packed = await File(p.join(info.path, SnapshotManifest.fileDbEnc))
-        .readAsBytes();
+    final packed =
+        await File(p.join(info.path, SnapshotManifest.fileDbEnc)).readAsBytes();
     final plain = await SnapshotCrypto.decrypt(packed, key);
     // 内容级校验：解密成功但明文哈希不符 = manifest 被换过
     if (crypto.sha256.convert(plain).toString() != info.manifest.dbSha256) {
@@ -529,17 +531,24 @@ class SnapshotService {
           jsonDecode(await manifestFile.readAsString())
               as Map<String, dynamic>);
       // 树根自洽
-      final expected =
-          SnapshotManifest.computeTreeRoot(manifest.fileHashes);
+      final expected = SnapshotManifest.computeTreeRoot(manifest.fileHashes);
       if (expected != manifest.treeRoot) {
         return SnapshotVerifyStatus.manifestTampered;
       }
-      // 各文件哈希一致
+      // 各文件哈希一致。哈希在独立 isolate 里算，避免大快照堵住界面线程。
+      final paths = <String>[];
+      final expectedHashes = <String>[];
       for (final entry in manifest.fileHashes.entries) {
-        final f = File(p.join(info.path, entry.key));
-        if (!await f.exists()) return SnapshotVerifyStatus.fileTampered;
-        final digest = await crypto.sha256.bind(f.openRead()).first;
-        if (digest.toString() != entry.value) {
+        final path = p.join(info.path, entry.key);
+        if (!await File(path).exists()) {
+          return SnapshotVerifyStatus.fileTampered;
+        }
+        paths.add(path);
+        expectedHashes.add(entry.value);
+      }
+      final actual = await Isolate.run(() => _sha256FilesSync(paths));
+      for (var i = 0; i < expectedHashes.length; i++) {
+        if (actual[i] != expectedHashes[i]) {
           return SnapshotVerifyStatus.fileTampered;
         }
       }
@@ -609,4 +618,12 @@ class SnapshotService {
     return '${utc.year}${two(utc.month)}${two(utc.day)}-'
         '${two(utc.hour)}${two(utc.minute)}${two(utc.second)}';
   }
+}
+
+/// 在独立 isolate 里同步哈希。路径列表可跨 isolate 传递。
+List<String> _sha256FilesSync(List<String> paths) {
+  return [
+    for (final path in paths)
+      crypto.sha256.convert(File(path).readAsBytesSync()).toString(),
+  ];
 }
