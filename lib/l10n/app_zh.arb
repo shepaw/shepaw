@@ -3891,6 +3891,7 @@
   "storage_spaceWorkspaces": "工作区",
   "storage_categoryMine": "我的",
   "storage_categoryAgents": "智能体",
+  "storage_categoryManage": "管理",
   "storage_spaceRuntime": "运行时",
   "storage_runtimeAttachments": "附件",
   "storage_runtimeSessions": "会话",

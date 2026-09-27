@@ -7,19 +7,13 @@ import '../storage/device_identity.dart';
 import '../storage/store_service.dart';
 import 'storage_browser_screen.dart';
 import 'storage_shared.dart';
-import 'storage_snapshots_screen.dart';
-import 'storage_space_settings_screen.dart';
 
 /// 储物袋本机浏览页「更多」菜单动作。
 enum StorageMoreAction {
   hideInternal,
-  usage,
-  bindings,
-  recycle,
-  snapshots,
 }
 
-/// 储物袋「更多」菜单：隐藏内部文件 / 用量 / 目录绑定 / 回收站 / 备份与恢复。
+/// 各空间「更多」只保留视图开关。用量、回收站、备份与恢复在储物袋顶级菜单。
 List<PopupMenuEntry<StorageMoreAction>> storageMoreMenuItems(
   BuildContext context,
   AppLocalizations l10n, {
@@ -41,54 +35,7 @@ List<PopupMenuEntry<StorageMoreAction>> storageMoreMenuItems(
         ],
       ),
     ),
-    PopupMenuItem(
-      value: StorageMoreAction.usage,
-      child: Text(l10n.storage_usageTitle),
-    ),
-    PopupMenuItem(
-      value: StorageMoreAction.bindings,
-      child: Text(l10n.storage_bindingsSection),
-    ),
-    PopupMenuItem(
-      value: StorageMoreAction.recycle,
-      child: Text(l10n.storage_recycleSection),
-    ),
-    PopupMenuItem(
-      value: StorageMoreAction.snapshots,
-      child: Text(l10n.storage_entrySnapshots),
-    ),
   ];
-}
-
-/// 打开储物袋「更多」菜单对应页面。
-Future<void> openStorageMoreAction(
-  BuildContext context,
-  StorageMoreAction action,
-) async {
-  switch (action) {
-    case StorageMoreAction.hideInternal:
-      // 视图开关，由持有状态的页面处理，不打开新页面。
-      return;
-    case StorageMoreAction.usage:
-    case StorageMoreAction.bindings:
-    case StorageMoreAction.recycle:
-      final section = switch (action) {
-        StorageMoreAction.usage => StorageSpaceSettingsSection.usage,
-        StorageMoreAction.bindings => StorageSpaceSettingsSection.bindings,
-        _ => StorageSpaceSettingsSection.recycle,
-      };
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => StorageSpaceSettingsScreen(initialSection: section),
-        ),
-      );
-    case StorageMoreAction.snapshots:
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => const StorageSnapshotsScreen(),
-        ),
-      );
-  }
 }
 
 /// 储物袋：本机空间浏览（其他设备空间不在此进入）。
@@ -116,13 +63,11 @@ class _StorageSpaceManageScreenState extends State<StorageSpaceManageScreen> {
   /// 空间内是否隐藏内部记账文件；由本页「更多」菜单持有并下发给浏览页。
   bool _hideInternalFiles = true;
 
-  /// 「更多」菜单选中：隐藏内部文件为开关，其余打开对应页面。
   void _handleMoreAction(StorageMoreAction action) {
-    if (action == StorageMoreAction.hideInternal) {
-      setState(() => _hideInternalFiles = !_hideInternalFiles);
-      return;
+    switch (action) {
+      case StorageMoreAction.hideInternal:
+        setState(() => _hideInternalFiles = !_hideInternalFiles);
     }
-    unawaited(openStorageMoreAction(context, action));
   }
 
   @override

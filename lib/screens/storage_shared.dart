@@ -128,6 +128,16 @@ Map<String, int> storageDeviceSpaceBytes(
   };
 }
 
+/// 储物袋顶级菜单「管理」类入口。不是 store 分区，不能当作空间路径。
+abstract final class StorageBagMenu {
+  static const usage = 'menu:usage';
+  static const recycle = 'menu:recycle';
+  static const snapshots = 'menu:snapshots';
+
+  static bool contains(String id) =>
+      id == usage || id == recycle || id == snapshots;
+}
+
 /// 储物袋主页需要的轻量汇总（仅本机 App 数据；不含多设备镜像管理）。
 class StorageOverviewSummary {
   StorageOverviewSummary({

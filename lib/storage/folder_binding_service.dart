@@ -1,5 +1,7 @@
 //! 目录绑定（M6a）：用户选择的本地目录 → store 摄取。
 //!
+//! 产品入口暂不展示（使用场景未定）。服务与自动同步仍保留，需要时再接回界面。
+//!
 //! - 单向输入源：外部目录内容摄取进 `files/<device>/<folder>/`（copy），
 //!   删除进回收站；store 内始终是真实文件（无符号链接）；
 //! - 对账 = 全量扫描 + sha256/size/mtime 对比（事件只是唤醒信号，
@@ -61,8 +63,8 @@ class FolderBinding {
         space: j['space'] as String? ?? StoreSpace.files,
         folder: j['folder'] as String? ?? '',
         ignore: ((j['ignore'] as List?) ?? const []).cast<String>(),
-        createdAt:
-            DateTime.tryParse(j['created_at'] as String? ?? '') ?? DateTime.now(),
+        createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ??
+            DateTime.now(),
       );
 }
 
@@ -424,8 +426,7 @@ class FolderBindingService {
     if (!await f.exists()) return <String, Map<String, dynamic>>{};
     final raw = await f.readAsString();
     final obj = jsonDecode(raw) as Map<String, dynamic>;
-    return obj.map((k, v) => MapEntry(
-        k, ((v as Map).cast<String, dynamic>())));
+    return obj.map((k, v) => MapEntry(k, ((v as Map).cast<String, dynamic>())));
   }
 
   Stream<({String rel, File file})> _walk(
@@ -442,9 +443,7 @@ class FolderBindingService {
       if (ent is Directory) {
         yield* _walk(root, ent, ignore);
       } else if (ent is File) {
-        final rel = p
-            .relative(ent.path, from: root.path)
-            .replaceAll('\\', '/');
+        final rel = p.relative(ent.path, from: root.path).replaceAll('\\', '/');
         yield (rel: rel, file: ent);
       }
     }
@@ -454,7 +453,8 @@ class FolderBindingService {
     for (final pat in ignore) {
       if (pat == name) return true;
       if (pat.startsWith('*') && name.endsWith(pat.substring(1))) return true;
-      if (pat.endsWith('*') && name.startsWith(pat.substring(0, pat.length - 1))) {
+      if (pat.endsWith('*') &&
+          name.startsWith(pat.substring(0, pat.length - 1))) {
         return true;
       }
     }

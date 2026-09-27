@@ -9,7 +9,7 @@ import '../../storage/store_protocol.dart';
 import '../../storage/store_service.dart';
 import '../../theme/app_theme.dart';
 
-/// 桌面储物袋左侧面板：「我的」/「智能体」分区列表。
+/// 桌面储物袋左侧面板：「我的」/「智能体」/「管理」分区列表。
 ///
 /// 选中分区后，父级在右侧展示该分区。
 class StorageSpaceListPanel extends StatefulWidget {
@@ -38,6 +38,8 @@ class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
   String _selfId = '';
   bool _loading = true;
   Map<String, int> _spaceBytes = const {};
+  int? _usedBytes;
+  int? _recycleBytes;
   StreamSubscription<void>? _usageSub;
 
   @override
@@ -63,6 +65,8 @@ class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
       setState(() {
         _selfId = self;
         _spaceBytes = bytes;
+        _usedBytes = storageDeviceUsedBytes(stats, self);
+        _recycleBytes = (stats['recycle_bytes'] as num?)?.toInt() ?? 0;
         _loading = false;
       });
     } catch (_) {
@@ -78,7 +82,13 @@ class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
         if (!mounted || _selfId.isEmpty) return;
         final stats = await store.stats(blocking: false);
         final bytes = storageDeviceSpaceBytes(stats, _selfId);
-        if (mounted) setState(() => _spaceBytes = bytes);
+        if (mounted) {
+          setState(() {
+            _spaceBytes = bytes;
+            _usedBytes = storageDeviceUsedBytes(stats, _selfId);
+            _recycleBytes = (stats['recycle_bytes'] as num?)?.toInt() ?? 0;
+          });
+        }
       });
     } catch (_) {}
   }
@@ -213,6 +223,22 @@ class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
     );
   }
 
+  Widget _buildManageRow(
+    AppLocalizations l10n, {
+    required String id,
+    required IconData icon,
+    required String title,
+    String? subtitle,
+  }) {
+    return _hubRow(
+      leading: _leadingIconBox(icon),
+      title: title,
+      subtitle: subtitle,
+      selected: widget.selectedSpace == id,
+      onTap: () => widget.onSpaceSelected?.call(id),
+    );
+  }
+
   Widget _buildSpaceRow(AppLocalizations l10n, String space) {
     final bytes = _spaceBytes[space];
     final subtitle = space == StoreSpace.tools
@@ -232,10 +258,8 @@ class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    final userSpaces =
-        StoreSpace.userVisibleSpaces(StoreSpace.browserSpaces);
-    final agentSpaces =
-        StoreSpace.agentVisibleSpaces(StoreSpace.browserSpaces);
+    final userSpaces = StoreSpace.userVisibleSpaces(StoreSpace.browserSpaces);
+    final agentSpaces = StoreSpace.agentVisibleSpaces(StoreSpace.browserSpaces);
 
     return RefreshIndicator(
       onRefresh: reload,
@@ -253,6 +277,30 @@ class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
             _buildSectionHeader(l10n, l10n.storage_categoryAgents),
             for (final space in agentSpaces) _buildSpaceRow(l10n, space),
           ],
+          const Divider(height: 16, indent: 64),
+          _buildSectionHeader(l10n, l10n.storage_categoryManage),
+          _buildManageRow(
+            l10n,
+            id: StorageBagMenu.usage,
+            icon: Icons.pie_chart_outline,
+            title: l10n.storage_usageTitle,
+            subtitle: _usedBytes == null ? null : fmtStorageBytes(_usedBytes!),
+          ),
+          _buildManageRow(
+            l10n,
+            id: StorageBagMenu.recycle,
+            icon: Icons.restore_from_trash_outlined,
+            title: l10n.storage_recycleSection,
+            subtitle:
+                _recycleBytes == null ? null : fmtStorageBytes(_recycleBytes!),
+          ),
+          _buildManageRow(
+            l10n,
+            id: StorageBagMenu.snapshots,
+            icon: Icons.backup_outlined,
+            title: l10n.storage_entrySnapshots,
+            subtitle: l10n.storage_entrySnapshotsSub,
+          ),
           ...widget.footer,
           const SizedBox(height: 24),
         ],

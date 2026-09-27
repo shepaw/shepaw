@@ -6899,6 +6899,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_categoryAgents => 'Agents';
 
   @override
+  String get storage_categoryManage => 'Manage';
+
+  @override
   String get storage_spaceRuntime => 'Runtime';
 
   @override

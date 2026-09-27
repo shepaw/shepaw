@@ -35,6 +35,8 @@ import '../widgets/mobile_shell_scope.dart';
 import '../widgets/storage/storage_continue_section.dart';
 import '../widgets/storage/store_file_list_avatar.dart';
 import 'storage_shared.dart';
+import 'storage_snapshots_screen.dart';
+import 'storage_space_settings_screen.dart';
 import 'store_text_editor_screen.dart';
 import 'jade_slip_editor_screen.dart';
 import 'jade_slip_screen.dart';
@@ -173,6 +175,8 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
   List<StoreEntry> _dirFolders = const [];
   List<_BrowsedFile> _dirFiles = const [];
   Map<String, int> _spaceBytes = {};
+  int? _usedBytes;
+  int? _recycleBytes;
   String? _error;
   final Map<String, _BrowsedFile> _selectedFiles = {};
   int _dirLoadGen = 0;
@@ -513,7 +517,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     return l10n.storage_deviceOffline;
   }
 
-
   Future<void> _loadSpaceBytes() async {
     if (_isRemote && !_preferLocal) return;
     try {
@@ -522,6 +525,8 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
       if (!mounted) return;
       setState(() {
         _spaceBytes = storageDeviceSpaceBytes(stats, _targetId);
+        _usedBytes = storageDeviceUsedBytes(stats, _targetId);
+        _recycleBytes = (stats['recycle_bytes'] as num?)?.toInt() ?? 0;
       });
     } catch (_) {}
   }
@@ -682,7 +687,8 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     final db = LocalDatabaseService();
     for (final item in placed) {
       if (!channelNames.containsKey(item.channelId)) {
-        channelNames[item.channelId] = await _runtimeChannelLabel(db, item.channelId);
+        channelNames[item.channelId] =
+            await _runtimeChannelLabel(db, item.channelId);
       }
       final wf = item.workflowDir;
       if (wf != null && !stepNames.containsKey(wf)) {
@@ -1966,7 +1972,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     }
   }
 
-
   /// 当前目录下的子文件夹名（排序）与文件。
   ({List<String> folders, List<_BrowsedFile> files}) _folderChildren() {
     if (_effectiveNavSpace == null) {
@@ -2151,7 +2156,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     if (folder.isNotEmpty) return folder;
     return widget.title ?? l10n.storage_title;
   }
-
 
   List<Widget> _buildMobileActions(
     AppLocalizations l10n, {
@@ -2445,7 +2449,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     );
   }
 
-
   Widget _buildRuntimeOwnerView(AppLocalizations l10n, {required bool mobile}) {
     if (_folderLoading &&
         _runtimeArtifacts.isEmpty &&
@@ -2667,10 +2670,25 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     );
   }
 
+  void _openBagMenu(String id) {
+    final Widget screen = switch (id) {
+      StorageBagMenu.recycle => const StorageSpaceSettingsScreen(
+          section: StorageSpaceSettingsSection.recycle,
+        ),
+      StorageBagMenu.snapshots => const StorageSnapshotsScreen(),
+      _ => const StorageSpaceSettingsScreen(
+          section: StorageSpaceSettingsSection.usage,
+        ),
+    };
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => screen),
+    );
+  }
+
   Widget _buildMobileSpecialSpaceRow({
     required IconData icon,
     required String title,
-    required String subtitle,
+    String? subtitle,
     required VoidCallback? onTap,
   }) {
     return InkWell(
@@ -2703,13 +2721,16 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
                           height: 1.35,
                         ),
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    subtitle,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                  ),
+                  if (subtitle != null && subtitle.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      subtitle,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -2847,6 +2868,61 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     );
   }
 
+  List<Widget> _buildManageCategory(
+    AppLocalizations l10n, {
+    required bool mobile,
+  }) {
+    if (_pickMode || _isRemote) return const [];
+    final usageSubtitle = _usedBytes == null ? null : _fmtBytes(_usedBytes!);
+    final recycleSubtitle =
+        _recycleBytes == null ? null : _fmtBytes(_recycleBytes!);
+    if (mobile) {
+      return [
+        _buildSpaceCategoryHeader(l10n, l10n.storage_categoryManage),
+        _buildMobileSpecialSpaceRow(
+          icon: Icons.pie_chart_outline,
+          title: l10n.storage_usageTitle,
+          subtitle: usageSubtitle,
+          onTap: _busy ? null : () => _openBagMenu(StorageBagMenu.usage),
+        ),
+        _buildMobileSpecialSpaceRow(
+          icon: Icons.restore_from_trash_outlined,
+          title: l10n.storage_recycleSection,
+          subtitle: recycleSubtitle,
+          onTap: _busy ? null : () => _openBagMenu(StorageBagMenu.recycle),
+        ),
+        _buildMobileSpecialSpaceRow(
+          icon: Icons.backup_outlined,
+          title: l10n.storage_entrySnapshots,
+          subtitle: l10n.storage_entrySnapshotsSub,
+          onTap: _busy ? null : () => _openBagMenu(StorageBagMenu.snapshots),
+        ),
+      ];
+    }
+    final primary = Theme.of(context).colorScheme.primary;
+    return [
+      _buildSpaceCategoryHeader(l10n, l10n.storage_categoryManage),
+      ListTile(
+        leading: Icon(Icons.pie_chart_outline, color: primary),
+        title: Text(l10n.storage_usageTitle),
+        subtitle: usageSubtitle == null ? null : Text(usageSubtitle),
+        onTap: () => _openBagMenu(StorageBagMenu.usage),
+      ),
+      ListTile(
+        leading: Icon(Icons.restore_from_trash_outlined, color: primary),
+        title: Text(l10n.storage_recycleSection),
+        subtitle: recycleSubtitle == null ? null : Text(recycleSubtitle),
+        onTap: () => _openBagMenu(StorageBagMenu.recycle),
+      ),
+      ListTile(
+        leading: Icon(Icons.backup_outlined, color: primary),
+        title: Text(l10n.storage_entrySnapshots),
+        subtitle: Text(l10n.storage_entrySnapshotsSub),
+        onTap: () => _openBagMenu(StorageBagMenu.snapshots),
+      ),
+    ];
+  }
+
   Widget _buildSpaceRootList(AppLocalizations l10n, {required bool mobile}) {
     final userSpaces = _userVisibleSpaces;
     final agentSpaces = _agentVisibleSpaces;
@@ -2865,6 +2941,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
           for (final space in agentSpaces)
             _buildMobileSpaceRootRow(l10n, space),
         ],
+        ..._buildManageCategory(l10n, mobile: true),
       ];
       return ListView.separated(
         padding: const EdgeInsets.only(top: 4, bottom: 16),
@@ -2901,6 +2978,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
           for (final space in agentSpaces)
             _buildDesktopSpaceRootRow(l10n, space),
         ],
+        ..._buildManageCategory(l10n, mobile: false),
       ],
     );
   }

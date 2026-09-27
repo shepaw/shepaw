@@ -23,6 +23,9 @@ import 'remote_agent_detail_screen.dart';
 import 'settings_screen.dart';
 import 'contacts_screen.dart';
 import 'storage_space_manage_screen.dart';
+import 'storage_space_settings_screen.dart';
+import 'storage_snapshots_screen.dart';
+import 'storage_shared.dart';
 import 'instruction_set_screen.dart';
 import 'jade_slip_screen.dart';
 import '../widgets/storage/storage_space_list_panel.dart';
@@ -67,6 +70,7 @@ enum _RightPanelView {
   traces,
   groupTasks,
   storageSpaceManage,
+  storageBagMenu,
   jadeSlips,
   instructions,
 }
@@ -206,7 +210,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           LoggerService().info('_maybeOpenSheFirstRun done', tag: 'HomeBoot');
           if (!mounted) return;
           await maybePromptLocalAgentHub(context);
-          LoggerService().info('maybePromptLocalAgentHub done', tag: 'HomeBoot');
+          LoggerService()
+              .info('maybePromptLocalAgentHub done', tag: 'HomeBoot');
         } catch (e, stack) {
           LoggerService().error(
             'DesktopHome postFrame failed',
@@ -328,6 +333,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
   bool _isStorageDetail(_DeskSlot slot) =>
       slot.rightPanel == _RightPanelView.storageSpaceManage ||
+      slot.rightPanel == _RightPanelView.storageBagMenu ||
       slot.rightPanel == _RightPanelView.jadeSlips ||
       slot.rightPanel == _RightPanelView.instructions;
 
@@ -572,6 +578,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       slot.rightPanel = switch (space) {
         StoreSpace.slips => _RightPanelView.jadeSlips,
         StoreSpace.instructions => _RightPanelView.instructions,
+        _ when StorageBagMenu.contains(space) => _RightPanelView.storageBagMenu,
         _ => _RightPanelView.storageSpaceManage,
       };
       _publishRoute(slot);
@@ -755,8 +762,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             return FutureBuilder<PairedPeer?>(
               key: ValueKey('peer_${selected.peerId}'),
               future: PeerConnectionManager.instance.getAllPeers().then(
-                (peers) => peers.where((p) => p.id == selected.peerId).firstOrNull,
-              ),
+                    (peers) =>
+                        peers.where((p) => p.id == selected.peerId).firstOrNull,
+                  ),
               builder: (context, snapshot) {
                 // 仅在加载中显示转圈
                 if (snapshot.connectionState == ConnectionState.waiting) {
@@ -889,6 +897,17 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         }
         return StorageSpaceManageScreen(initialSpace: space);
 
+      case _RightPanelView.storageBagMenu:
+        return switch (args.storageSpace) {
+          StorageBagMenu.recycle => const StorageSpaceSettingsScreen(
+              section: StorageSpaceSettingsSection.recycle,
+            ),
+          StorageBagMenu.snapshots => const StorageSnapshotsScreen(),
+          _ => const StorageSpaceSettingsScreen(
+              section: StorageSpaceSettingsSection.usage,
+            ),
+        };
+
       case _RightPanelView.jadeSlips:
         return const JadeSlipScreen(embedded: true);
 
@@ -920,8 +939,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         tooltip: l10n.drawer_myProfile,
         colorBuilder: (_) =>
             _leftMode == _LeftPanelMode.conversations && !_settingsOpen
-            ? activeColor
-            : iconColor,
+                ? activeColor
+                : iconColor,
         onTap: _showConversations,
       ),
       _SidebarItemDef(
@@ -929,8 +948,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         tooltip: l10n.drawer_contacts,
         colorBuilder: (_) =>
             _leftMode == _LeftPanelMode.contacts && !_settingsOpen
-            ? activeColor
-            : iconColor,
+                ? activeColor
+                : iconColor,
         onTap: _showContacts,
       ),
       _SidebarItemDef(
@@ -938,8 +957,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         tooltip: l10n.storage_title,
         colorBuilder: (_) =>
             _leftMode == _LeftPanelMode.storage && !_settingsOpen
-            ? activeColor
-            : iconColor,
+                ? activeColor
+                : iconColor,
         onTap: _showStorage,
       ),
     ];
@@ -955,8 +974,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _SidebarItemDef(
         icon: Icons.settings_outlined,
         tooltip: l10n.drawer_settings,
-        colorBuilder: (_) =>
-            _settingsOpen ? activeColor : iconColor,
+        colorBuilder: (_) => _settingsOpen ? activeColor : iconColor,
         onTap: () {
           UpdateService().dismissSettingsIconBadge();
           _showPanel(_RightPanelView.settings);

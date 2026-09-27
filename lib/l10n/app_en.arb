@@ -3416,6 +3416,7 @@
   "storage_spaceWorkspaces": "Workspace",
   "storage_categoryMine": "Mine",
   "storage_categoryAgents": "Agents",
+  "storage_categoryManage": "Manage",
   "storage_spaceRuntime": "Runtime",
   "storage_runtimeAttachments": "Attachments",
   "storage_runtimeSessions": "Sessions",

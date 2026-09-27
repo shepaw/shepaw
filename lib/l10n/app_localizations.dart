@@ -12117,6 +12117,12 @@ abstract class AppLocalizations {
   /// **'智能体'**
   String get storage_categoryAgents;
 
+  /// No description provided for @storage_categoryManage.
+  ///
+  /// In zh, this message translates to:
+  /// **'管理'**
+  String get storage_categoryManage;
+
   /// No description provided for @storage_spaceRuntime.
   ///
   /// In zh, this message translates to:

@@ -1,10 +1,7 @@
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:path/path.dart' as p;
 
 import '../l10n/app_localizations.dart';
 import '../storage/device_identity.dart';
-import '../storage/folder_binding_service.dart';
 import '../storage/local_store.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
@@ -12,60 +9,39 @@ import '../storage/sync_engine.dart';
 import '../storage/volume_usage.dart';
 import 'storage_shared.dart';
 
-/// 本机空间「更多设置」分区。
+/// 用量与回收站各自独立成页。
 enum StorageSpaceSettingsSection {
   usage,
-  bindings,
   recycle,
 }
 
-/// 用量 / 目录绑定 / 回收站（从本机空间主界面收口）。
+/// 用量或回收站。一次只展示 [section] 对应的一页。
 class StorageSpaceSettingsScreen extends StatefulWidget {
   const StorageSpaceSettingsScreen({
     super.key,
-    this.initialSection = StorageSpaceSettingsSection.usage,
+    required this.section,
   });
 
-  final StorageSpaceSettingsSection initialSection;
+  final StorageSpaceSettingsSection section;
 
   @override
   State<StorageSpaceSettingsScreen> createState() =>
       _StorageSpaceSettingsScreenState();
 }
 
-class _StorageSpaceSettingsScreenState extends State<StorageSpaceSettingsScreen>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabs;
+class _StorageSpaceSettingsScreenState
+    extends State<StorageSpaceSettingsScreen> {
   bool _busy = false;
 
   String _selfId = '';
   Map<String, dynamic>? _stats;
   List<Map<String, dynamic>> _recycle = [];
   bool _recycleExpanded = false;
-  List<FolderBinding> _bindings = [];
-  final _bindPath = TextEditingController();
-  final _bindFolder = TextEditingController();
-
-  static const _sections = StorageSpaceSettingsSection.values;
 
   @override
   void initState() {
     super.initState();
-    final initialIndex = _sections.indexOf(widget.initialSection);
-    _tabs = TabController(
-      length: _sections.length,
-      vsync: this,
-      initialIndex: initialIndex < 0 ? 0 : initialIndex,
-    );
     _load();
-  }
-
-  @override
-  void dispose() {
-    _tabs.dispose();
-    _bindPath.dispose();
-    _bindFolder.dispose();
-    super.dispose();
   }
 
   Future<void> _load() async {
@@ -90,8 +66,6 @@ class _StorageSpaceSettingsScreenState extends State<StorageSpaceSettingsScreen>
       stats['volume_warn'] = volume.needsAttention;
     }
 
-    _bindings = await FolderBindingService.instance.list();
-
     final recycle = await store.recycleList();
     final selfRecycle = recycle
         .where((e) => e.originDevice == _selfId)
@@ -107,65 +81,6 @@ class _StorageSpaceSettingsScreenState extends State<StorageSpaceSettingsScreen>
   }
 
   Future<void> _refresh() => _load();
-
-  Future<void> _pickBindDir() async {
-    final dir = await FilePicker.platform.getDirectoryPath();
-    if (dir == null || !mounted) return;
-    setState(() {
-      _bindPath.text = dir;
-      if (_bindFolder.text.trim().isEmpty) {
-        _bindFolder.text = p.basename(dir);
-      }
-    });
-  }
-
-  Future<void> _addBinding() async {
-    final path = _bindPath.text.trim();
-    final folder = _bindFolder.text.trim();
-    if (path.isEmpty || folder.isEmpty) {
-      storageToast(context, '请选择或输入外部目录路径与映射文件夹名');
-      return;
-    }
-    setState(() => _busy = true);
-    try {
-      await FolderBindingService.instance.add(
-        label: folder,
-        external: path,
-        space: 'files',
-        folder: folder,
-      );
-      _bindPath.clear();
-      _bindFolder.clear();
-      await _refresh();
-      if (!mounted) return;
-      storageToast(context, '目录绑定已添加，正在首次同步…');
-      await FolderBindingService.instance.syncAll();
-      if (mounted) await _refresh();
-    } catch (e) {
-      if (mounted) storageToast(context, '绑定失败：$e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _syncBindings() async {
-    setState(() => _busy = true);
-    try {
-      await FolderBindingService.instance.syncAll();
-      await _refresh();
-      if (!mounted) return;
-      storageToast(context, '目录绑定同步完成');
-    } catch (e) {
-      if (mounted) storageToast(context, '同步失败：$e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _removeBinding(String id) async {
-    await FolderBindingService.instance.remove(id);
-    await _refresh();
-  }
 
   Future<void> _recycleRestore(Map<String, dynamic> entry) async {
     final l10n = AppLocalizations.of(context);
@@ -219,7 +134,8 @@ class _StorageSpaceSettingsScreenState extends State<StorageSpaceSettingsScreen>
       final store = await StoreService.instance.localStore();
       final purged = await store.recycleEmpty();
       if (!mounted) return;
-      storageToast(context, l10n.storage_recyclePurged(fmtStorageBytes(purged)));
+      storageToast(
+          context, l10n.storage_recyclePurged(fmtStorageBytes(purged)));
       await _refresh();
     } catch (e) {
       if (mounted) storageToast(context, l10n.storage_recyclePurgeFailed('$e'));
@@ -228,12 +144,10 @@ class _StorageSpaceSettingsScreenState extends State<StorageSpaceSettingsScreen>
     }
   }
 
-  String _sectionLabel(AppLocalizations l10n, StorageSpaceSettingsSection s) {
-    switch (s) {
+  String _title(AppLocalizations l10n) {
+    switch (widget.section) {
       case StorageSpaceSettingsSection.usage:
         return l10n.storage_usageTitle;
-      case StorageSpaceSettingsSection.bindings:
-        return l10n.storage_bindingsSection;
       case StorageSpaceSettingsSection.recycle:
         return l10n.storage_recycleSection;
     }
@@ -242,9 +156,13 @@ class _StorageSpaceSettingsScreenState extends State<StorageSpaceSettingsScreen>
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final body = switch (widget.section) {
+      StorageSpaceSettingsSection.usage => _buildUsageCard(l10n),
+      StorageSpaceSettingsSection.recycle => _buildRecycleCard(l10n),
+    };
     return Scaffold(
       appBar: AppBar(
-        title: Text(l10n.storage_moreSettings),
+        title: Text(_title(l10n)),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -252,128 +170,15 @@ class _StorageSpaceSettingsScreenState extends State<StorageSpaceSettingsScreen>
             onPressed: _busy ? null : _refresh,
           ),
         ],
-        bottom: TabBar(
-          controller: _tabs,
-          tabs: [
-            for (final s in _sections) Tab(text: _sectionLabel(l10n, s)),
-          ],
-        ),
       ),
       body: Stack(
         children: [
-          TabBarView(
-            controller: _tabs,
-            children: [
-              ListView(
-                padding: const EdgeInsets.all(16),
-                children: [_buildUsageCard(l10n)],
-              ),
-              ListView(
-                padding: const EdgeInsets.all(16),
-                children: [_buildBindingsCard(l10n)],
-              ),
-              ListView(
-                padding: const EdgeInsets.all(16),
-                children: [_buildRecycleCard(l10n)],
-              ),
-            ],
+          ListView(
+            padding: const EdgeInsets.all(16),
+            children: [body],
           ),
           if (_busy) const StorageBusyOverlay(),
         ],
-      ),
-    );
-  }
-
-  Widget _buildBindingsCard(AppLocalizations l10n) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.folder_copy_outlined,
-                    color: Theme.of(context).colorScheme.primary, size: 20),
-                const SizedBox(width: 8),
-                Text(l10n.storage_bindingsSection,
-                    style: Theme.of(context).textTheme.titleSmall),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.sync),
-                  tooltip: '立即同步',
-                  onPressed: _busy ? null : _syncBindings,
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _bindPath,
-                    decoration: const InputDecoration(
-                      isDense: true,
-                      hintText: '外部目录路径，如 /Users/me/Downloads',
-                    ),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.folder_open),
-                  tooltip: '选择目录',
-                  onPressed: _busy ? null : _pickBindDir,
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _bindFolder,
-                    decoration: const InputDecoration(
-                      isDense: true,
-                      hintText: '映射文件夹名（files/<name>）',
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                FilledButton.tonal(
-                  onPressed: _busy ? null : _addBinding,
-                  child: const Text('添加'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            for (final b in _bindings)
-              ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.folder_outlined, size: 18),
-                title:
-                    Text(b.folder, style: Theme.of(context).textTheme.bodyMedium),
-                subtitle: Text(b.external,
-                    style: Theme.of(context).textTheme.bodySmall,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
-                trailing: IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 18),
-                  onPressed: () => _removeBinding(b.id),
-                ),
-              ),
-            if (_bindings.isEmpty)
-              Text('未配置绑定目录',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant)),
-            const SizedBox(height: 4),
-            Text(
-              '单向：目录内容摄取进 files/<folder> 并镜像到 master；删除进回收站；'
-              '本地目录变更会事件驱动同步，并辅以低频周期兜底。',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -572,8 +377,8 @@ class _StorageSpaceSettingsScreenState extends State<StorageSpaceSettingsScreen>
               ...visible.map((e) => ListTile(
                     dense: true,
                     contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.insert_drive_file_outlined,
-                        size: 18),
+                    leading:
+                        const Icon(Icons.insert_drive_file_outlined, size: 18),
                     title: Text('${e['space']}/${e['origin_path']}',
                         style: Theme.of(context).textTheme.bodySmall,
                         overflow: TextOverflow.ellipsis),
