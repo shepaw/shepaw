@@ -161,6 +161,17 @@ class StoreWriteCommand extends CliCommand {
     }
     final content = resolved.bytes;
     final space = flags['space'] ?? '';
+    // 只 public / workspaces 有独立落点，其余（含 `files`）过去会静默落到 runtime。
+    if (space.isNotEmpty &&
+        space != StoreSpace.runtime &&
+        space != StoreSpace.public_ &&
+        space != StoreSpace.workspaces) {
+      return {
+        'success': false,
+        'error': 'unsupported --space $space '
+            '(write targets: runtime, public, workspaces)',
+      };
+    }
     if (space == StoreSpace.public_) {
       try {
         final uri = await PublicStoreService.instance.writeBytes(

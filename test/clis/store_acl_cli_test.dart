@@ -86,6 +86,18 @@ void main() {
     expect(uris.any((u) => u.contains('/agent-a/')), isFalse);
   });
 
+  test('store write rejects unsupported --space instead of falling back', () async {
+    final result = await asAgent('agent-b', () {
+      return writeCmd.execute({
+        'filename': 'note.md',
+        'content': 'x',
+        'space': 'files',
+      });
+    });
+    expect(result['success'], isFalse);
+    expect(result['error'], contains('unsupported --space files'));
+  });
+
   test('shared files space remains readable to non-She', () async {
     final written = await asAgent('agent-a', () {
       return writeCmd.execute({
