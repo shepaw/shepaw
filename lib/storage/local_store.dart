@@ -13,6 +13,7 @@ import 'commit_retention.dart';
 import 'space_registry.dart';
 import 'store_event_log.dart';
 import 'volume_usage.dart';
+import 'workspace_mount_registry.dart';
 
 /// store 层错误（StoreService 转为 error 帧）。
 class StoreException implements Exception {
@@ -189,6 +190,7 @@ class LocalStore {
   final StreamController<void> _usageTick = StreamController<void>.broadcast();
   SpaceRegistry? _spaces;
   StoreEventLog? _events;
+  WorkspaceMountRegistry? _mounts;
 
   LocalStore({
     required this.root,
@@ -198,6 +200,11 @@ class LocalStore {
 
   SpaceRegistry get spaceRegistry => _spaces ??= SpaceRegistry(root);
   StoreEventLog get eventLog => _events ??= StoreEventLog(root);
+
+  /// 工作区挂载（A 档视图）：命中挂载点时穿透到用户磁盘，见
+  /// `docs/workspace_mount_decision.md`。
+  WorkspaceMountRegistry get mounts =>
+      _mounts ??= WorkspaceMountRegistry(root);
 
   /// `true`=shared / `false`=private / `null`=未知。
   bool? spaceVisibility(String space) => spaceRegistry.visibility(space);
@@ -233,6 +240,23 @@ class LocalStore {
       throw StoreException(StoreError.badPath, 'escapes device dir');
     }
     return abs;
+  }
+
+  /// 读路径解析：命中挂载点时穿透到外部真实目录，否则走袋内解析。
+  ///
+  /// 挂载点**不是副本**——外部目录就是本体，所以不进版本 / 不进 journal /
+  /// 不镜像，且不做袋内的 symlink 逃逸校验（路径本就在袋外）。
+  Future<({String abs, bool mounted})> _resolveReadTarget(
+      String deviceId, String space, String relPath) async {
+    final mount = await mounts.covering(space, relPath);
+    if (mount != null) {
+      final abs = mounts.externalPath(mount, relPath);
+      if (abs == null) {
+        throw StoreException(StoreError.badPath, 'escapes mount root');
+      }
+      return (abs: abs, mounted: true);
+    }
+    return (abs: _resolveInSpace(deviceId, space, relPath), mounted: false);
   }
 
   /// 已存在实体的符号链接校验（防 symlink 逃逸）。
@@ -278,15 +302,48 @@ class LocalStore {
   }) async {
     final baseAbs = _spaceDir(deviceId, space);
     final base = Directory(baseAbs);
-    if (!await base.exists()) return const [];
     final maxDepth = (depth != null && depth > 0) ? depth : 0;
+    final startRel = (prefix ?? '').replaceAll(RegExp(r'^/+|/+$'), '');
+
+    // 挂载视图：前缀落在挂载点内时，直接列外部真实目录（袋里没有实体）。
+    if (maxDepth > 0) {
+      final mounted = await mounts.covering(space, startRel);
+      if (mounted != null) {
+        final mountedEntries = <StoreEntry>[];
+        await _walkMounted(
+          mounted,
+          mounts.restOf(mounted, startRel),
+          maxDepth,
+          limit,
+          computeHash,
+          mountedEntries,
+        );
+        mountedEntries.sort((a, b) => a.path.compareTo(b.path));
+        return mountedEntries;
+      }
+    }
+
+    // 挂载点条目：space 目录本身可能不存在（袋里没实体），也要能列出来。
+    final mountRoots = <StoreEntry>[];
+    if (maxDepth > 0) {
+      await _appendMountRoots(
+        space: space,
+        prefix: startRel,
+        limit: limit,
+        entries: mountRoots,
+      );
+    }
+    if (!await base.exists()) {
+      mountRoots.sort((a, b) => a.path.compareTo(b.path));
+      return mountRoots;
+    }
     final entries = <StoreEntry>[];
+    entries.addAll(mountRoots);
 
     Future<String> hashOf(File entity, FileStat stat) async =>
         computeHash ? await _hashOf(entity, stat) : '';
 
     if (maxDepth > 0) {
-      final startRel = (prefix ?? '').replaceAll(RegExp(r'^/+|/+$'), '');
       final startAbs =
           startRel.isEmpty ? baseAbs : _resolveInSpace(deviceId, space, startRel);
       final startType =
@@ -350,6 +407,91 @@ class LocalStore {
     return entries;
   }
 
+  /// 把 [prefix] 的直接子级挂载点补进列目录结果（袋内没有实体目录）。
+  Future<void> _appendMountRoots({
+    required String space,
+    required String prefix,
+    required int limit,
+    required List<StoreEntry> entries,
+  }) async {
+    // 挂载点可能是多级路径（如 `Users/me/proj`）；列祖先时只暴露它的下一级。
+    final seen = <String>{};
+    for (final mount in await mounts.list()) {
+      if (mount.space != space || entries.length >= limit) continue;
+      final rest = prefix.isEmpty
+          ? mount.path
+          : (mount.path.startsWith('$prefix/')
+              ? mount.path.substring(prefix.length + 1)
+              : '');
+      if (rest.isEmpty) continue;
+      final seg = rest.split('/').first;
+      final entryPath = prefix.isEmpty ? seg : '$prefix/$seg';
+      if (!seen.add(entryPath)) continue;
+      // 暴露的是挂载路径上的中间目录时，对应外部侧的祖先目录。
+      final remainder = entryPath == mount.path
+          ? ''
+          : mount.path.substring(entryPath.length + 1);
+      // 中间目录在外部可能并不存在（它是挂载路径上的虚拟层），仍要暴露。
+      final dir = Directory(
+          remainder.isEmpty ? mount.external : p.join(mount.external, remainder));
+      var mtimeMs = 0;
+      if (await dir.exists()) {
+        mtimeMs = (await dir.stat()).modified.millisecondsSinceEpoch;
+      }
+      entries.add(StoreEntry(
+        path: entryPath,
+        size: 0,
+        sha256: '',
+        mtimeMs: mtimeMs,
+        kind: 'dir',
+      ));
+    }
+  }
+
+  /// 列挂载点内的外部目录（[rel] 相对挂载根；路径前缀还原成袋内挂载点）。
+  Future<void> _walkMounted(
+    WorkspaceMount mount,
+    String rel,
+    int remaining,
+    int limit,
+    bool computeHash,
+    List<StoreEntry> entries,
+  ) async {
+    if (remaining < 1 || entries.length >= limit) return;
+    final dirAbs = rel.isEmpty ? mount.external : p.join(mount.external, rel);
+    final dir = Directory(dirAbs);
+    if (!await dir.exists()) return;
+    await for (final entity in dir.list(followLinks: true)) {
+      if (entries.length >= limit) return;
+      final name = p.basename(entity.path);
+      if (name.startsWith('.')) continue;
+      final childRel = rel.isEmpty ? name : '$rel/$name';
+      final storeRel = '${mount.path}/$childRel';
+      if (entity is Directory) {
+        final stat = await entity.stat();
+        entries.add(StoreEntry(
+          path: storeRel,
+          size: 0,
+          sha256: '',
+          mtimeMs: stat.modified.millisecondsSinceEpoch,
+          kind: 'dir',
+        ));
+        if (remaining > 1) {
+          await _walkMounted(
+              mount, childRel, remaining - 1, limit, computeHash, entries);
+        }
+      } else if (entity is File) {
+        final stat = await entity.stat();
+        entries.add(StoreEntry(
+          path: storeRel,
+          size: stat.size,
+          sha256: computeHash ? await _hashOf(entity, stat) : '',
+          mtimeMs: stat.modified.millisecondsSinceEpoch,
+        ));
+      }
+    }
+  }
+
   /// 带 [cursor] 的分页 list（协议 `next_cursor`）。
   ///
   /// 浏览路径（[computeHash] = false）会多扫一页再切片；同步路径保持原 [limit]。
@@ -392,7 +534,7 @@ class LocalStore {
   /// meta：文件 → 单条元数据；目录 → 清单（spec §2.2）。
   Future<Map<String, dynamic>> meta(
       String deviceId, String space, String relPath) async {
-    final abs = _resolveInSpace(deviceId, space, relPath);
+    final abs = (await _resolveReadTarget(deviceId, space, relPath)).abs;
     final type = await FileSystemEntity.type(abs, followLinks: false);
     if (type == FileSystemEntityType.notFound) {
       throw StoreException(StoreError.notFound, relPath);
@@ -439,7 +581,7 @@ class LocalStore {
       }
       return 'dir';
     }
-    final abs = _resolveInSpace(deviceId, space, relPath);
+    final abs = (await _resolveReadTarget(deviceId, space, relPath)).abs;
     final type = await FileSystemEntity.type(abs, followLinks: true);
     if (type == FileSystemEntityType.notFound ||
         type == FileSystemEntityType.link) {
@@ -456,10 +598,13 @@ class LocalStore {
           StoreError.badOp, 'length must be 1..$maxBinaryReadChunk');
     }
     if (offset < 0) throw StoreException(StoreError.badOp, 'negative offset');
-    final abs = _resolveInSpace(deviceId, space, relPath);
+    final target = await _resolveReadTarget(deviceId, space, relPath);
+    final abs = target.abs;
     final f = File(abs);
     if (!await f.exists()) throw StoreException(StoreError.notFound, relPath);
-    await _checkNoSymlinkEscape(deviceId, space, abs, relPath);
+    if (!target.mounted) {
+      await _checkNoSymlinkEscape(deviceId, space, abs, relPath);
+    }
     final size = await f.length();
     if (offset >= size) return (Uint8List(0), size, true);
     final raf = await f.open();
@@ -485,6 +630,11 @@ class LocalStore {
   }) async {
     if (size < 0) throw StoreException(StoreError.badOp, 'negative size');
     final normalized = normalizeStorePath(path);
+    if (await mounts.covering(space, normalized) != null) {
+      // 挂载视图没有副本，写它会直接改用户磁盘，且绕开版本 / journal / 配额。
+      throw StoreException(
+          StoreError.badOp, 'workspace mount is a read-only view');
+    }
     _resolveInSpace(deviceId, space, normalized); // 仅校验
     await _enforceWriteQuota(deviceId: deviceId, space: space, size: size);
     final stagingDir = Directory(_stagingDir(deviceId, space));
@@ -1147,6 +1297,11 @@ class LocalStore {
   /// 成功后经 [syncJournal] 内联记日志。
   Future<String> delete(
       String targetDeviceId, String space, String relPath) async {
+    if (await mounts.covering(space, relPath) != null) {
+      // 挂载视图下删除 = 删用户磁盘上的真文件，默认拒绝。
+      throw StoreException(StoreError.badOp,
+          'workspace mount is a read-only view (delete would touch user disk)');
+    }
     final abs = _resolveInSpace(targetDeviceId, space, relPath);
     final type = await FileSystemEntity.type(abs, followLinks: false);
     if (type == FileSystemEntityType.notFound) {
