@@ -141,8 +141,9 @@ class StoreWriteCommand extends CliCommand {
       'store:// URI (prefer this over os.file.write for reports/code/docs). '
       'Text via --content; binary via --file or --content-base64. '
       'Use --space public for the public partition. '
-      '--desc is only echoed in the returned reference line (not persisted, '
-      'not searchable); --task becomes the artifacts/<task>/ path segment.';
+      '--desc is persisted in a <file>.meta.json sidecar (searchable via '
+      'store search --desc) and echoed in the returned reference line; '
+      '--task becomes the artifacts/<task>/ path segment.';
 
   @override
   String get usage =>
@@ -253,7 +254,7 @@ class StoreWriteCommand extends CliCommand {
         agentId: agentId.isNotEmpty ? agentId : ChatAgentScope.agentId,
         channelId: channelId.isNotEmpty ? channelId : null,
       );
-      final reference = await ArtifactService.instance.writeArtifact(
+      final written = await ArtifactService.instance.writeArtifact(
         taskId: taskId,
         filename: filename,
         content: content,
@@ -263,7 +264,7 @@ class StoreWriteCommand extends CliCommand {
         channelId: target.channelId,
       );
       final uri = ArtifactService.instance
-          .parseReferences(reference)
+          .parseReferences(written.reference)
           .single
           .uri
           .toString();
@@ -274,9 +275,10 @@ class StoreWriteCommand extends CliCommand {
       return {
         'success': true,
         'uri': uri,
-        'reference': reference,
+        'reference': written.reference,
         'owner_id': target.ownerId,
         'channel_id': target.channelId,
+        'meta_written': written.metaWritten,
         'bag': isGroupBag ? 'group' : 'agent',
         'note': isGroupBag
             ? '已写入本群储物袋 runtime/${target.ownerId}/（不是你个人的储物袋）。引用时原样使用 reference 单行。'
@@ -512,6 +514,48 @@ class StoreListCommand extends CliCommand {
   return (space: space, device: device, path: path);
 }
 
+/// 把 `.meta.json` 命中映射回产物本体：丢弃孤儿 sidecar（产物已不在），
+/// 折叠重复（产物本体与其 sidecar 同时命中同一词时只留本体）。
+///
+/// [metaOnly] 为 true 时只保留 sidecar 命中——`--desc` 的文本只写在 sidecar 里。
+Future<List<Map<String, dynamic>>> mapArtifactMetaHits(
+  List<Map<String, dynamic>> hits, {
+  required Future<bool> Function(String space, String device, String path)
+      exists,
+  bool metaOnly = false,
+}) async {
+  final suffix = ArtifactService.metaSuffix;
+  bool isMeta(Map<String, dynamic> h) =>
+      '${h['path'] ?? ''}'.endsWith(suffix);
+
+  final direct = [for (final h in hits) if (!isMeta(h)) h];
+  // metaOnly 时本体命中会被丢掉，不能用它们去折叠 sidecar 命中。
+  final added = <String>{
+    if (!metaOnly) for (final h in direct) '${h['path'] ?? ''}',
+  };
+  final out = <Map<String, dynamic>>[];
+  if (!metaOnly) out.addAll(direct);
+
+  for (final hit in hits) {
+    if (!isMeta(hit)) continue;
+    final path = '${hit['path'] ?? ''}';
+    final artifactPath = path.substring(0, path.length - suffix.length);
+    if (added.contains(artifactPath)) continue;
+    final space = '${hit['space'] ?? ''}';
+    final device = '${hit['device'] ?? ''}';
+    if (space.isEmpty || device.isEmpty) continue;
+    if (!await exists(space, device, artifactPath)) continue;
+    added.add(artifactPath);
+    out.add(<String, dynamic>{
+      ...hit,
+      'path': artifactPath,
+      'uri': 'store://$space/$device/$artifactPath',
+      'via': 'meta',
+    });
+  }
+  return out;
+}
+
 int _cliInt(Map<String, String> flags, String key, int fallback) {
   final raw = flags[key];
   if (raw == null || raw.isEmpty) return fallback;
@@ -539,11 +583,14 @@ class StoreSearchCommand extends CliCommand {
   String get description =>
       'Search store:// by path (and small text files by body). Prefer this '
       'over recursively listing when looking for a filename or keyword. '
-      '--task keeps only hits under artifacts/<task>/.';
+      '--task keeps only hits under artifacts/<task>/. '
+      '--desc matches the persisted metadata sidecar and maps hits back to '
+      'the artifact itself.';
 
   @override
   String get usage => 'shepaw store search --query report --space files\n'
       'shepaw store search --task task-41\n'
+      'shepaw store search --desc "Q2 销售报告"\n'
       'shepaw store search --query unique-token --uri store://runtime/<device>/<agent-id>/';
 
   @override
@@ -552,9 +599,11 @@ class StoreSearchCommand extends CliCommand {
     final taskSeg = task.isEmpty
         ? ''
         : 'artifacts/${RuntimePaths.sanitizeSegment(task)}/';
+    final desc = (flags['desc'] ?? '').trim();
     var q = (flags['query'] ?? flags['q'] ?? '').trim();
-    // `--task` 单独给时，task 段本身就在路径里，直接拿它当检索词。
-    if (q.isEmpty) q = task;
+    // `--task` 单独给时，task 段本身就在路径里；`--desc` 的文本只在 sidecar 里，
+    // 两者都可以直接当检索词。
+    if (q.isEmpty) q = task.isNotEmpty ? task : desc;
     if (q.isEmpty) {
       return {'success': false, 'error': 'missing --query'};
     }
@@ -599,12 +648,26 @@ class StoreSearchCommand extends CliCommand {
           filtered.add(hit);
         }
       }
+      final store = await StoreService.instance.localStore();
+      final results = await mapArtifactMetaHits(
+        filtered,
+        metaOnly: desc.isNotEmpty,
+        exists: (space, device, path) async {
+          try {
+            final entries = await store.list(device, space, prefix: path);
+            return entries.any((e) => e.path == path);
+          } catch (_) {
+            return false;
+          }
+        },
+      );
       return {
         'success': true,
         'query': q,
         if (task.isNotEmpty) 'task': task,
-        'total': filtered.length,
-        'results': filtered,
+        if (desc.isNotEmpty) 'desc': desc,
+        'total': results.length,
+        'results': results,
       };
     } on StoreException catch (e) {
       return {

@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/clis/shepaw/chat/chat_agent_scope.dart';
 import 'package:shepaw/clis/shepaw/store/store_namespace.dart';
 import 'package:shepaw/services/she_service.dart';
+import 'package:shepaw/storage/artifact_service.dart';
 import 'package:shepaw/storage/store_service.dart';
 
 import '../storage/test_harness.dart';
@@ -120,18 +121,51 @@ void main() {
     expect(uris.any((u) => u.contains('/artifacts/other-task/')), isFalse);
   });
 
-  test('store write --desc is echoed but never persisted', () async {
-    await asAgent('agent-a', () {
+  test('store write --desc lands in a sidecar and maps back on search', () async {
+    final written = await asAgent('agent-a', () {
       return writeCmd.execute({
         'filename': 'desc-note.md',
         'content': 'plain body',
         'desc': 'zzz-desc-token',
       });
     });
+    expect(written['meta_written'], isTrue, reason: '$written');
+
     final hit = await asAgent('agent-a', () {
-      return searchCmd.execute({'query': 'zzz-desc-token'});
+      return searchCmd.execute({'desc': 'zzz-desc-token'});
     });
-    expect(hit['total'], 0, reason: '$hit');
+    expect(hit['success'], isTrue, reason: '$hit');
+    expect(hit['total'], 1);
+    final uri = ((hit['results'] as List).first as Map)['uri'].toString();
+    expect(uri, endsWith('desc-note.md'));
+    expect(uri, isNot(contains('.meta.json')));
+  });
+
+  test('mapArtifactMetaHits folds duplicates and drops orphan sidecars', () async {
+    const space = 'runtime';
+    const device = '0123456789abcdef';
+    Map<String, dynamic> hit(String path) => {
+          'space': space,
+          'device': device,
+          'path': path,
+          'uri': 'store://$space/$device/$path',
+        };
+    final hits = [
+      hit('a/artifacts/t/r.md'),
+      hit('a/artifacts/t/r.md${ArtifactService.metaSuffix}'),
+      hit('a/artifacts/t/gone.md${ArtifactService.metaSuffix}'),
+    ];
+
+    final folded = await mapArtifactMetaHits(hits,
+        exists: (_, __, path) async => path.endsWith('r.md'));
+    expect(folded.length, 1);
+    expect(folded.single['path'], 'a/artifacts/t/r.md');
+
+    final metaOnly = await mapArtifactMetaHits(hits, metaOnly: true,
+        exists: (_, __, path) async => path.endsWith('r.md'));
+    expect(metaOnly.length, 1);
+    expect(metaOnly.single['via'], 'meta');
+    expect(metaOnly.single['uri'], endsWith('r.md'));
   });
 
   test('shared files space remains readable to non-She', () async {

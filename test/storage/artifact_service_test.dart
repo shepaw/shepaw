@@ -88,7 +88,7 @@ void main() {
   group('ArtifactService 写入/读取/引用', () {
     test('writeArtifact 经 store 落盘并返回单行 Markdown 引用', () async {
       final content = Uint8List.fromList(utf8.encode('# Q2 销售报告\n'));
-      final ref = await ArtifactService.instance.writeArtifact(
+      final written = await ArtifactService.instance.writeArtifact(
         taskId: 'task-m5',
         filename: 'report.md',
         content: content,
@@ -98,6 +98,8 @@ void main() {
         channelId: 'ch-x',
       );
 
+      final ref = written.reference;
+      expect(written.metaWritten, isTrue);
       expect(ref, startsWith('[report.md](store://runtime/'));
       expect(ref, contains('/agent-x/ch-x/artifacts/task-m5/report.md)'));
       expect(ref, contains('— Q2 销售报告，markdown'));
@@ -162,11 +164,11 @@ void main() {
     });
 
     test('filename 路径穿越防护', () async {
-      final ref = await ArtifactService.instance.writeArtifact(
+      final ref = (await ArtifactService.instance.writeArtifact(
         taskId: 'task-x',
         filename: '../../../etc/evil.txt',
         content: Uint8List.fromList([1]),
-      );
+      )).reference;
       // 只保留 basename
       expect(ref, contains('/task-x/evil.txt'));
     });
@@ -176,10 +178,10 @@ void main() {
     test('同 task+filename 重写后读取为新版', () async {
       final v1 = Uint8List.fromList(utf8.encode('v1'));
       final v2 = Uint8List.fromList(utf8.encode('v2!!'));
-      final ref1 = await ArtifactService.instance.writeArtifact(
-          taskId: 'task-ov', filename: 'a.txt', content: v1);
-      final ref2 = await ArtifactService.instance.writeArtifact(
-          taskId: 'task-ov', filename: 'a.txt', content: v2);
+      final ref1 = (await ArtifactService.instance.writeArtifact(
+          taskId: 'task-ov', filename: 'a.txt', content: v1)).reference;
+      final ref2 = (await ArtifactService.instance.writeArtifact(
+          taskId: 'task-ov', filename: 'a.txt', content: v2)).reference;
       // URI 稳定（last-write-wins，内容更新）
       expect(ArtifactService.instance.parseReferences(ref2).single.uri
           .toString(), ArtifactService.instance.parseReferences(ref1).single.uri.toString());

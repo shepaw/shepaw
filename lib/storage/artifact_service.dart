@@ -1,9 +1,11 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 
 import '../services/logger_service.dart';
 import 'device_identity.dart';
+import 'local_store.dart';
 import 'runtime_paths.dart';
 import 'store_protocol.dart';
 import 'store_service.dart';
@@ -135,11 +137,17 @@ class ArtifactService {
   static final _referencePattern = RegExp(
       r'\[([^\]]+)\]\((store://(?:artifacts|runtime)/[0-9a-f]{16}/[^)]+)\)(?:\s*—\s*([^\n]+))?');
 
-  /// 写入产物并返回单行 Markdown 引用。
+  /// 产物元数据 sidecar 后缀：`artifacts/<task>/<file>.meta.json`。
+  static const metaSuffix = '.meta.json';
+
+  /// 写入产物、尽力补写元数据 sidecar，返回单行 Markdown 引用。
+  ///
+  /// [metaWritten] 为 false 表示 sidecar 没写成（产物本身已落盘）；此时 desc /
+  /// producer 只存在于返回的引用行里，检索不到。
   ///
   /// [runtimeOwnerId] / [channelId] 缺省时分别回退到 `default` / [taskId]
   /// （CLI 应始终注入真实 agent/channel，避免落到 default/general）。
-  Future<String> writeArtifact({
+  Future<({String reference, bool metaWritten})> writeArtifact({
     required String taskId,
     required String filename,
     required Uint8List content,
@@ -181,12 +189,58 @@ class ArtifactService {
     );
     _log.info('artifact written: $uri (${content.length} bytes)', tag: _tag);
 
-    return ArtifactReference(
-      uri: uri,
-      linkText: safeName,
-      description: _buildDescription(
-          description: description, content: content, producer: producer),
-    ).toMarkdownLine();
+    final metaWritten = await _writeMeta(
+      store: store,
+      deviceId: deviceId,
+      path: '$relPath$metaSuffix',
+      taskId: RuntimePaths.sanitizeSegment(taskId),
+      filename: safeName,
+      description: description,
+      producer: producer,
+      size: content.length,
+    );
+    return (
+      reference: ArtifactReference(
+        uri: uri,
+        linkText: safeName,
+        description: _buildDescription(
+            description: description, content: content, producer: producer),
+      ).toMarkdownLine(),
+      metaWritten: metaWritten,
+    );
+  }
+
+  /// 元数据 sidecar：只记写入事实，写失败不影响产物（尽力而为）。
+  Future<bool> _writeMeta({
+    required LocalStore store,
+    required String deviceId,
+    required String path,
+    required String taskId,
+    required String filename,
+    required int size,
+    String? description,
+    String? producer,
+  }) async {
+    final payload = jsonEncode(<String, dynamic>{
+      'artifact': filename,
+      'task': taskId,
+      if (description != null && description.isNotEmpty) 'desc': description,
+      if (producer != null && producer.isNotEmpty) 'producer': producer,
+      'size': size,
+      'written_at': DateTime.now().toUtc().toIso8601String(),
+    });
+    try {
+      await store.putBytes(
+        deviceId: deviceId,
+        space: StoreSpace.runtime,
+        path: path,
+        bytes: Uint8List.fromList(utf8.encode(payload)),
+      );
+      return true;
+    } catch (e) {
+      _log.info('artifact meta not written: $path ($e)', tag: _tag);
+      return false;
+    }
   }
 
   /// 读取产物（legacy artifacts 与 runtime 均可）。
