@@ -1824,6 +1824,60 @@ class LocalStore {
     return purgedBytes;
   }
 
+  /// runtime 用量按子类拆分（`docs/runtime_lifecycle_decision.md` 第 1 步）。
+  ///
+  /// 分类决定"哪些能安全清理"：会话与附件可以有 TTL，产物不该自动过期。
+  /// - `sessions` — `…/sessions/**`
+  /// - `attachments` — `…/attachments/**`
+  /// - `artifacts` — `…/artifacts/**`（含 `.meta.json` sidecar）
+  /// - `mirrors` — soul / memory / workspace 镜像
+  /// - `other` — 其余 runtime 文件
+  /// - `versions` — `.versions/<device>/**（不在 space 目录内，单列）
+  Future<Map<String, int>> runtimeUsageBreakdown(String deviceId) async {
+    final out = <String, int>{
+      'sessions': 0,
+      'attachments': 0,
+      'artifacts': 0,
+      'mirrors': 0,
+      'other': 0,
+      'versions': 0,
+    };
+    final dir = Directory(p.join(_deviceDir(deviceId).path, StoreSpace.runtime));
+    if (await dir.exists()) {
+      await for (final entity in dir.list(recursive: true)) {
+        if (entity is! File) continue;
+        final rel =
+            p.relative(entity.path, from: dir.path).replaceAll(p.separator, '/');
+        if (rel.split('/').any((s) => s.startsWith('.'))) continue;
+        int size;
+        try {
+          size = await entity.length();
+        } on FileSystemException {
+          continue;
+        }
+        final bucket = _runtimeBucket(rel);
+        out[bucket] = (out[bucket] ?? 0) + size;
+      }
+    }
+    out['versions'] =
+        await _dirSize(Directory(p.join(root.path, '.versions', deviceId)));
+    return out;
+  }
+
+  static String _runtimeBucket(String rel) {
+    final segments = rel.split('/');
+    for (final seg in segments) {
+      if (seg == 'sessions') return 'sessions';
+      if (seg == 'attachments') return 'attachments';
+      if (seg == 'artifacts') return 'artifacts';
+    }
+    final name = segments.isEmpty ? '' : segments.last;
+    if (name == 'soul.md' || name == 'memory.md' || name == 'workspace.md') {
+      return 'mirrors';
+    }
+    return 'other';
+  }
+
   // ────────────────────────────── 用量缓存 ──
 
   bool get _usageComplete => _usageCache?['complete'] == true;

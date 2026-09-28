@@ -21,12 +21,18 @@
 `{runtime, artifacts, attachments, cognition}`），加上卷余量 64MiB
 （`volumeHeadroomBytes`）。命中后是 **`quotaExceeded` 直接拒绝写入**——不清理、不淘汰。
 
-其余两条同样只增不减：
+**已有的清理**（`StoreService.start()` 各跑一次，不周期执行）：
+
+- `.recycle/<date>/…`：`gcRecycle()` 清 30 天前的日期目录；
+- `.staging/`：`gcStaging()` 清残留会话。
+
+两者都只在**启动时触发一次**——长期不重启的进程不会周期运行。
+
+**真正只增不减的**：
 
 - `.versions/<device>/<space>/…`：同窗口内合并（`versionCoalesceWindow`），
   但**没有版本数量上限也没有过期**，频繁重写的文件版本无限累积；
-- `.recycle/<date>/…`：删除只是移进回收站，只有用户在 App 里手动清空
-  （`recycle.empty` 且需 loopback）。
+- runtime 内的会话归档、附件、产物：没有任何 TTL 或数量上限。
 
 `CommitRetention`（`keep_last` / `gfs`）**不适用**于 runtime——它作用域是某分区下的顶层
 目录，服务的是快照与再保护包。
@@ -35,8 +41,8 @@
 
 1. 配额是硬墙且是"拒绝写入"：一个长期跑的 agent 攒到 2GiB 后，产物、附件、镜像
    全部写失败，用户只在失败那一刻才察觉。
-2. `.versions` 与 `.recycle` 不占 agent 配额（不在 `agentQuotaSpaces` 里），
-   所以它们能悄悄吃掉整卷空间，绕过唯一的闸门。
+2. `.versions` 不占 agent 配额（不在 `agentQuotaSpaces` 里），且清理只在启动时跑，
+   所以它能悄悄吃掉整卷空间，绕过唯一的闸门。
 3. 跨端镜像：任何自动删除都会进 `SyncJournal` 镜像到 master，等于**在所有设备上删**。
 
 ## 3. 方案对比
@@ -56,7 +62,7 @@
 - **会话 `sessions/`（含 archive）：TTL**，如 30 天；或按 channel `keep_last N`。
 - **附件 `attachments/`：TTL**，与会话同策略（它们是会话上下文的一部分）。
 - **`.versions`：每文件 `keep_last`（建议默认 10）**，超出的最老版本直接丢（不进回收站）。
-- **`.recycle`：自动过期**（建议 30 天），避免回收站无限膨胀。
+- **`.recycle` / `.staging`：把启动一次的清理改成周期执行**（已有实现，缺调度）。
 - **可观测**：用量页显示 runtime 各子类占用；接近配额（如 80%）时提示。
 
 **执行约束（必须遵守）**：
@@ -74,8 +80,8 @@
 
 ## 6. 落地顺序（确认后）
 
-1. 用量按子类统计（sessions / attachments / artifacts / versions / recycle）+ 用量页展示
+1. 用量按子类统计（sessions / attachments / artifacts / mirrors / versions）+ 用量页展示
 2. `.versions` `keep_last` 上限（纯系统目录，风险最低）
-3. `.recycle` 自动过期
+3. `.recycle` / `.staging` 清理改周期执行（复用现有实现）
 4. sessions / attachments TTL（默认 30 天，只在 master 跑）
 5. 配额阈值提示

@@ -122,6 +122,12 @@ class StoreService {
   /// 本机 LocalStore（同步引擎读取本机正式区用）。
   Future<LocalStore> localStore() => _localStore();
 
+  /// runtime 用量按子类拆分（sessions / attachments / artifacts / mirrors /
+  /// other / versions）。遍历一次目录，供用量页按需调用（不进 stats 帧，
+  /// 避免每次 stats 都全量走动 runtime）。
+  Future<Map<String, int>> runtimeUsageBreakdown(String deviceId) async =>
+      (await _localStore()).runtimeUsageBreakdown(deviceId);
+
   /// store 根目录（同步引擎/授权服务共用）。
   Future<Directory> storeRoot() async => (await _localStore()).root;
 
