@@ -65,13 +65,34 @@
   体积计入 runtime 软配额（`StoreSpace.agentQuotaSpaces`），增量极小。
 - **隐私**：desc 可能含敏感信息；runtime 是 private 分区，跨端不可读，与现状一致。
 
-## 5. 未决问题
+## 5. 未决问题与推荐（结合现状给出，待确认）
 
-1. **要不要给 meta 单独开检索字段**：现在只能"正文命中后再映射"，不能
-   `search --desc "Q2"` 精确过滤。精确过滤需要 store 层支持结构化元数据索引（更大改动）。
-2. **孤儿 sidecar**：容忍缺失还是要连带删除？
-3. **写入失败**：产物写成功、sidecar 写失败时如何取舍（倾向：产物成功即成功，sidecar 尽力而为）。
-4. **是否与群任务清单统一检索入口**：CLI 层是否把两者合并成一个"这个 task 的产物清单"。
+1. **要不要给 meta 单独开检索字段** → **不做 store 层结构化索引**。
+   精确 `--desc` 过滤要新增协议 op（Rust / Dart / TS 三端 + fixtures），而 sidecar 是
+   文本文件，`LocalStore.search` 的正文回退（`_peekTextSnippet`）已经能命中它。
+   所以在 CLI 层加 `--desc` 即可：正文检索 + 只保留 `.meta.json` 命中 + 映射回产物 URI。
+   规模上也够用——runtime 是单 agent 的软配额分区，`searchScanLimit = 5000` 即便因
+   sidecar 翻倍也远大于实际产物数。
+
+2. **孤儿 sidecar** → **容忍缺失**，并在映射时顺手清掉噪音。
+   产物没有服务层删除入口（`ArtifactService` 只有 write / read），删除实际来自
+   `store delete`、UI、回收站、sync delete——任何一条都会留下孤儿，做"连带删除"堵不完。
+   做法：命中 meta 后映射回产物 URI 时校验产物存在，不存在就丢弃这条命中。
+   既不需要新协议，也不会让 Agent 拿到指向空气的 URI。
+
+3. **产物成功、sidecar 失败** → **产物成功即成功，sidecar 尽力而为**。
+   先写产物、再写 sidecar；sidecar 失败不回滚、不报错，只在返回里加
+   `meta_written: false`。理由：产物本体才是价值，元数据是增强；因为元数据失败
+   而报写失败会诱导 Agent 重写一遍，反而制造重复产物。
+
+4. **是否与群任务清单统一检索入口** → **先不统一**。
+   两者语义不同：群清单在 workspaces（shared），是规划与验收（slots、assigned_agent）；
+   产物 sidecar 在 runtime（private），只记写入事实。群清单已有自己的读取路径
+   （`GroupWorkspaceService` + 编排层注入），合并入口属于没被要求的工作量。
+   若将来真要合并，再给命中加 `source: runtime_meta | group_manifest` 区分。
+
+**附带一条实现约束**：sidecar 让搜索命中可能重复（产物本体与它的 meta 同时命中同一个词）。
+映射阶段要折叠成一条，优先保留**产物本体**的命中。
 
 ## 6. 落地顺序（确认后）
 
