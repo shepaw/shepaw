@@ -98,6 +98,42 @@ void main() {
     expect(result['error'], contains('unsupported --space files'));
   });
 
+  test('store search --task keeps only that task artifacts', () async {
+    for (final task in ['task-scope', 'other-task']) {
+      await asAgent('agent-a', () {
+        return writeCmd.execute({
+          'filename': 'r-$task.md',
+          'content': 'task-scope-body',
+          'task': task,
+        });
+      });
+    }
+
+    final hit = await asAgent('agent-a', () {
+      return searchCmd.execute({'task': 'task-scope'});
+    });
+    expect(hit['success'], isTrue, reason: '$hit');
+    final uris = [
+      for (final h in (hit['results'] as List)) (h as Map)['uri'].toString(),
+    ];
+    expect(uris.any((u) => u.contains('/artifacts/task-scope/')), isTrue);
+    expect(uris.any((u) => u.contains('/artifacts/other-task/')), isFalse);
+  });
+
+  test('store write --desc is echoed but never persisted', () async {
+    await asAgent('agent-a', () {
+      return writeCmd.execute({
+        'filename': 'desc-note.md',
+        'content': 'plain body',
+        'desc': 'zzz-desc-token',
+      });
+    });
+    final hit = await asAgent('agent-a', () {
+      return searchCmd.execute({'query': 'zzz-desc-token'});
+    });
+    expect(hit['total'], 0, reason: '$hit');
+  });
+
   test('shared files space remains readable to non-She', () async {
     final written = await asAgent('agent-a', () {
       return writeCmd.execute({

@@ -140,7 +140,9 @@ class StoreWriteCommand extends CliCommand {
       'Preferred path for produced artifacts: write to store and get a shareable '
       'store:// URI (prefer this over os.file.write for reports/code/docs). '
       'Text via --content; binary via --file or --content-base64. '
-      'Use --space public for the public partition.';
+      'Use --space public for the public partition. '
+      '--desc is only echoed in the returned reference line (not persisted, '
+      'not searchable); --task becomes the artifacts/<task>/ path segment.';
 
   @override
   String get usage =>
@@ -528,7 +530,7 @@ Map<String, dynamic> _cliStoreResult(Map<String, dynamic>? data) {
   return {'success': true, ...data};
 }
 
-/// `shepaw store search --query <q> [--space files] [--device <id>] [--uri store://…]`
+/// `shepaw store search --query <q> [--task <id>] [--space files] [--device <id>] [--uri store://…]`
 class StoreSearchCommand extends CliCommand {
   @override
   String get name => 'search';
@@ -536,15 +538,23 @@ class StoreSearchCommand extends CliCommand {
   @override
   String get description =>
       'Search store:// by path (and small text files by body). Prefer this '
-      'over recursively listing when looking for a filename or keyword.';
+      'over recursively listing when looking for a filename or keyword. '
+      '--task keeps only hits under artifacts/<task>/.';
 
   @override
   String get usage => 'shepaw store search --query report --space files\n'
+      'shepaw store search --task task-41\n'
       'shepaw store search --query unique-token --uri store://runtime/<device>/<agent-id>/';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
-    final q = (flags['query'] ?? flags['q'] ?? '').trim();
+    final task = (flags['task'] ?? '').trim();
+    final taskSeg = task.isEmpty
+        ? ''
+        : 'artifacts/${RuntimePaths.sanitizeSegment(task)}/';
+    var q = (flags['query'] ?? flags['q'] ?? '').trim();
+    // `--task` 单独给时，task 段本身就在路径里，直接拿它当检索词。
+    if (q.isEmpty) q = task;
     if (q.isEmpty) {
       return {'success': false, 'error': 'missing --query'};
     }
@@ -582,6 +592,9 @@ class StoreSearchCommand extends CliCommand {
       for (final hit in prefixFiltered) {
         final hitUri = hit['uri']?.toString() ?? '';
         if (hitUri.isEmpty) continue;
+        if (taskSeg.isNotEmpty && !'${hit['path'] ?? ''}'.contains(taskSeg)) {
+          continue;
+        }
         if (await storeAgentAccessError(hitUri) == null) {
           filtered.add(hit);
         }
@@ -589,6 +602,7 @@ class StoreSearchCommand extends CliCommand {
       return {
         'success': true,
         'query': q,
+        if (task.isNotEmpty) 'task': task,
         'total': filtered.length,
         'results': filtered,
       };
