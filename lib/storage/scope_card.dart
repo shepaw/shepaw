@@ -390,8 +390,8 @@ class ScopeCard {
         '旧分区 `artifacts` 不要再写。',
       )
       ..writeln(
-        '- `workspaces` 工作区：群里要跨设备共享的文件（真文件，space=workspaces '
-        '并带 group），或本机挂载目录（软链接视图：改磁盘即改袋，不跨设备、不版本化）。',
+        '- `workspaces` 工作区：群共享文件（真文件，space=workspaces 并带 group），'
+        '或本机挂载视图（与磁盘同一份，改磁盘即改袋；不版本、不镜像、不跨设备）。',
       )
       ..writeln(
         '- `cognition` 认知：soul 与记忆补充（不同步，靠 agent 主动写；'
