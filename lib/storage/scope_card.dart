@@ -378,8 +378,11 @@ class ScopeCard {
         '不要编造 URI，不要用 os.file。',
       )
       ..writeln(
-        '- `cognition` 认知：soul 与记忆的权威。用 context/soul CLI 写，'
-        '不要 store write。',
+        '- `files` 沉淀：用户文件。`store write` 写不进（会报错），'
+        '产物一律走 runtime。',
+      )
+      ..writeln(
+        '- `public` 公开：`--space public` 可写；跨端能否看到由分享白名单决定。',
       )
       ..writeln(
         '- `runtime` 运行时：本轮会话、附件和产物'
@@ -387,8 +390,12 @@ class ScopeCard {
         '旧分区 `artifacts` 不要再写。',
       )
       ..writeln(
-        '- `workspaces` 工作区：已挂载的目录，或群里要跨设备共享的文件'
-        '（space=workspaces，并带 group）。',
+        '- `workspaces` 工作区：群里要跨设备共享的文件（真文件，space=workspaces '
+        '并带 group），或本机挂载目录（软链接视图：改磁盘即改袋，不跨设备、不版本化）。',
+      )
+      ..writeln(
+        '- `cognition` 认知：soul 与记忆补充（不同步，靠 agent 主动写；'
+        '记忆权威在文件系统记忆）。用 context/soul CLI 写，不要 store write。',
       )
       ..writeln(
         '- `tools` 工具：`mcp/`、`rules/`、`skills/`；'
@@ -424,7 +431,10 @@ class ScopeCard {
         '${peerClientId != null && peerClientId!.isNotEmpty ? ' · peer: `$peerClientId`' : ''}',
       )
       ..writeln('- device: `$deviceId`')
-      ..writeln('- URI 形如 `store://<space>/<device_id>/<path>`');
+      ..writeln(
+        '- URI 形如 `store://<space>/<device_id>/<path>`'
+        '（可加 `@v<n>` / `@<hash>` 固定到某一版本）',
+      );
     _writeSpaceMap(buf);
 
     if (mode == ScopeCardMode.group) {

@@ -19,6 +19,11 @@ void main() {
     expect(md, contains('`runtime` 运行时'));
     expect(md, contains('`workspaces` 工作区'));
     expect(md, contains('`tools` 工具'));
+    expect(md, contains('`files` 沉淀'));
+    expect(md, contains('`public` 公开'));
+    expect(md, contains('@v<n>'));
+    expect(md, contains('记忆补充'));
+    expect(md, contains('改磁盘即改袋'));
     expect(md, contains('旧分区 `artifacts` 不要再写'));
     expect(md, contains('store://tools/aaaaaaaaaaaaaaaa/'));
     expect(md, contains('store://tools/aaaaaaaaaaaaaaaa/agents/agent_xxx/'));
