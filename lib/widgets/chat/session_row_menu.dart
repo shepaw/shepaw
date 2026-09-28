@@ -14,7 +14,7 @@ import '../../utils/session_utils.dart';
 /// - 复制到（复制当前会话到另一个 agent 的新会话）
 /// - 重置会话（仅当前会话且回调非空）
 /// - 复制会话信息（标题、会话 ID、channel ID）
-/// - 删除会话（仅非当前会话：正在查看的会话与批量选择一样不允许删除）
+/// - 删除会话（调用方传入回调即显示；正在查看的会话也可以删）
 class _SessionRowAction {
   const _SessionRowAction({
     required this.value,
@@ -77,7 +77,7 @@ List<_SessionRowAction> _sessionRowActions({
       icon: Icons.copy_all,
       label: l10n.chat_copySessionInfo,
     ),
-    if (!isCurrentSession && onDeleteSession != null)
+    if (onDeleteSession != null)
       _SessionRowAction(
         value: 'delete',
         icon: Icons.delete_outline,

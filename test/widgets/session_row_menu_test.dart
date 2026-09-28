@@ -139,14 +139,18 @@ void main() {
     expect(deleted, isTrue);
   });
 
-  testWidgets('当前会话不出现删除，即使调用方传了回调', (tester) async {
+  testWidgets('当前会话的长按菜单也有删除，点了触发回调', (tester) async {
+    var deleted = false;
     await openMenu(
       tester,
       isCurrentSession: true,
-      onDelete: () => fail('当前会话不该有删除入口'),
+      onDelete: () => deleted = true,
     );
 
-    expect(find.text('删除会话'), findsNothing);
+    expect(find.text('删除会话'), findsOneWidget);
+    await tester.tap(find.text('删除会话'));
+    await tester.pumpAndSettle();
+    expect(deleted, isTrue);
   });
 
   testWidgets('非当前会话没传删除回调时不出现删除', (tester) async {

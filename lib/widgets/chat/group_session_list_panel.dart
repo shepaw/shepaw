@@ -758,9 +758,9 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
         ? null
         : () => widget.onForkSession!(session);
     final resetSession = isCurrentSession ? widget.onResetSession : null;
-    // 正在查看的会话不给删（与批量选择里那条禁用规则一致）；群根会话也
-    // 不给删 —— 批量删除路径本来就会跳过它，菜单里不该摆一个删不掉的项。
-    final deleteSession = isCurrentSession || session.parentGroupId == null
+    // 群根会话不给删 —— 批量删除路径本来就会跳过它，菜单里不该摆一个删不掉的项。
+    // 正在查看的子会话可以删，删完由调用方切到其余会话或群本身。
+    final deleteSession = session.parentGroupId == null
         ? null
         : () => _deleteSession(session);
     final isDesktop = LayoutUtils.isDesktopLayout(context);

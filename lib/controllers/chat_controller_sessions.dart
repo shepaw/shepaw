@@ -407,6 +407,22 @@ mixin _SessionOps on _ChatControllerBase {
       final idsToDelete = isGroup && parentGroupId != null
           ? sessionIds.where((id) => id != parentGroupId).toList()
           : sessionIds;
+      if (idsToDelete.isEmpty) {
+        _emit(DismissOverlayEvent());
+        return;
+      }
+
+      final deletingCurrent =
+          currentChannelId != null && idsToDelete.contains(currentChannelId);
+      // 先停掉这条会话上还在跑的回复，再删库，避免停止标记写进即将消失的会话。
+      if (deletingCurrent) {
+        final id = currentChannelId!;
+        if (isGroup) {
+          chatService.cancelActiveGroupTasks(id);
+        } else {
+          await chatService.cancelActiveDmTask(id);
+        }
+      }
 
       for (final id in idsToDelete) {
         if (isGroup) {
@@ -422,10 +438,64 @@ mixin _SessionOps on _ChatControllerBase {
       }
 
       _emit(DismissOverlayEvent());
+
+      if (deletingCurrent) {
+        messages.clear();
+        messageIdMap.clear();
+        _notify();
+        final fallback = await _channelToOpenAfterDelete(
+          deletedIds: idsToDelete.toSet(),
+          isGroup: isGroup,
+        );
+        if (fallback != null) {
+          _emit(NavigateToSessionEvent(
+            channelId: fallback,
+            agentId: isGroup ? null : agentId,
+            agentName: isGroup ? null : agentName,
+            agentAvatar: isGroup ? null : agentAvatar,
+            embedded: embedded,
+          ));
+        } else if (!isGroup) {
+          // 最后一个单聊会话：开一个空会话，避免停在已删除的 channel 上。
+          await createNewSession();
+        }
+      }
+
       _emit(ShowSnackBarEvent('chat_batchDeleteSuccess:${idsToDelete.length}'));
     } catch (e) {
       _emit(DismissOverlayEvent());
       _emit(ShowErrorSnackBarEvent('chat_clearSessionFailed:$e'));
     }
+  }
+
+  /// 删掉当前正在看的会话后，该打开哪一条。
+  ///
+  /// 单聊按最近活跃挑一条剩余会话；一条不剩则返回 null，由调用方新建。
+  /// 群聊优先其余子会话，否则回到群本身（群根不会被删）。
+  Future<String?> _channelToOpenAfterDelete({
+    required Set<String> deletedIds,
+    required bool isGroup,
+  }) async {
+    if (isGroup) {
+      final parentGroupId = groupChannel?.groupFamilyId;
+      if (parentGroupId == null || deletedIds.contains(parentGroupId)) {
+        return null;
+      }
+      final sessions =
+          await chatService.getGroupSessions(parentGroupId: parentGroupId);
+      for (final session in sessions) {
+        if (deletedIds.contains(session.id)) continue;
+        if (session.parentGroupId == null) continue;
+        return session.id;
+      }
+      return parentGroupId;
+    }
+
+    if (agentId == null) return null;
+    final sessions = await chatService.getAgentSessions(agentId: agentId!);
+    for (final session in sessions) {
+      if (!deletedIds.contains(session.id)) return session.id;
+    }
+    return null;
   }
 }

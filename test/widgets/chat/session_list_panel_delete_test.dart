@@ -125,20 +125,28 @@ void main() {
     expect(find.text('s1'), findsOneWidget);
   });
 
-  testWidgets('正在查看的会话长按菜单里没有删除', (tester) async {
+  testWidgets('正在查看的会话长按确认后按该会话 id 删除', (tester) async {
+    List<String>? deletedIds;
     await pumpPanel(
       tester,
       dmPanel(
         sessions: [dm('s1'), dm('s2')],
         currentChannelId: 's2',
-        onBatchDelete: (_) => fail('当前会话不该触发删除'),
+        onBatchDelete: (ids) => deletedIds = ids,
       ),
     );
 
     await tester.longPress(find.text('s2'));
     await tester.pumpAndSettle();
     expect(find.text('复制会话信息'), findsOneWidget, reason: '菜单确实弹出来了');
-    expect(find.text('删除会话'), findsNothing);
+    expect(find.text('删除会话'), findsOneWidget);
+
+    await tester.tap(find.text('删除会话'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+
+    expect(deletedIds, ['s2']);
   });
 
   testWidgets('群根会话没有删除，群子会话有', (tester) async {
@@ -178,5 +186,35 @@ void main() {
     await tester.longPress(find.text('group root'));
     await tester.pumpAndSettle();
     expect(find.text('删除会话'), findsNothing, reason: '群根会话只能解散，不能这样删');
+  });
+
+  testWidgets('正在查看的群子会话长按菜单里有删除', (tester) async {
+    final sessions = [
+      Channel(id: 'g1', name: 'group root', type: 'group', members: const []),
+      Channel(
+        id: 'g2',
+        name: 'child',
+        type: 'group',
+        members: const [],
+        parentGroupId: 'g1',
+      ),
+    ];
+    await pumpPanel(
+      tester,
+      GroupSessionListPanel(
+        sessions: sessions,
+        currentChannelId: 'g2',
+        controller: controller,
+        onNewSession: () {},
+        onSwitchSession: (_) {},
+        onBatchDelete: (_) {},
+        listRefreshTick: ValueNotifier(0),
+        selectionModeRequest: ValueNotifier(0),
+      ),
+    );
+
+    await tester.longPress(find.text('child'));
+    await tester.pumpAndSettle();
+    expect(find.text('删除会话'), findsOneWidget);
   });
 }

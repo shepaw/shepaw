@@ -606,8 +606,8 @@ class _SessionListContentState extends State<_SessionListContent> {
         ? null
         : () => widget.onCopyToAgent!(session);
     final resetSession = isCurrentSession ? widget.onResetSession : null;
-    // 正在查看的会话不给删（与批量选择里那条禁用规则一致）。
-    final deleteSession = isCurrentSession ? null : () => _deleteSession(session);
+    // 长按 /「更多」可以删正在查看的会话；批量选择仍禁用当前行，避免多选误删。
+    final deleteSession = () => _deleteSession(session);
     final isDesktop = LayoutUtils.isDesktopLayout(context);
 
     return SessionRowHoverHost(
