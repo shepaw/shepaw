@@ -11,6 +11,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import '../../storage/store_service.dart';
 import '../../services/noise_identity.dart';
 import '../../services/noise/noise_session.dart';
 import '../../services/noise/noise_envelope.dart';
@@ -24,6 +25,7 @@ import 'peer_advertise.dart';
 import 'peer_endpoint_utils.dart';
 import 'peer_local_server.dart';
 import 'peer_pairing_service.dart';
+import '../pouch_roster.dart';
 import 'peer_storage_service.dart';
 import 'peer_delivery_trace_service.dart';
 
@@ -450,8 +452,14 @@ class PeerConnectionManager {
     }
   }
 
-  /// 删除配对并断开连接
+  /// 删除配对并断开连接。主机上这台 Hub 的名册卡留下，只清拨号。
   Future<void> removePeer(String peerId) async {
+    String? fingerprint;
+    try {
+      fingerprint = (await _storage.getPeerById(peerId))?.fingerprint;
+    } catch (e) {
+      _log.warning('卸掉设备前读不到指纹: $e', tag: _tag);
+    }
     await disconnectPeer(peerId);
     await _storage.removePeer(peerId);
     // 清理重连/回退状态，避免删除后又被定时器拉起
@@ -461,6 +469,16 @@ class PeerConnectionManager {
     _connecting.remove(peerId);
     _log.info('Peer removed: $peerId', tag: _tag);
     notifyPeerListChanged();
+    final hub = fingerprint?.trim() ?? '';
+    if (hub.isEmpty) return;
+    try {
+      await PouchRosterSync.detachHub(
+        root: await StoreService.instance.storeRoot(),
+        hubFingerprint: hub,
+      );
+    } catch (e) {
+      _log.warning('名册拨号没有清掉: $e', tag: _tag);
+    }
   }
 
   /// 获取指定 peer 的连接状态

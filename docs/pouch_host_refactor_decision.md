@@ -135,7 +135,9 @@ Hub 仪表盘取码（只取票据、不配对）同样处理：应用可以帮�
 - 启动时 `DeviceIdentity.ensureFromPouch`：袋子里有 `.system/pouch_identity.v1` 就导入钥匙串；没有就把当前密钥种进袋子。
 - `AgentRosterStore`（`.system/agent_roster.json`）：展示信息永久保留，拨号在 `detachHub` 时清掉，同一工人 Hub 指纹 + 远端 id 再连对上原卡。惜宝用 `ensurePouchBound` 种一张没有拨号的卡。
 
-还没做：`runtime/.../session.json` 仍是单向镜像。配对成功的当下还不会把对方的 Agent 写进名册，要等主机之后拉到那张名单。
+还没做：`runtime/.../session.json` 仍是单向镜像。
+
+主机收到工人 Hub 的 `agent_list_resp` 后把 Agent 写进名册。同一指纹 + 远端 id 对上原卡；这次名单里没有的卡只清拨号。卸掉这台设备同样只清拨号。客户端不写这份名册。握手返回时还没有名单，所以不在那一刻写卡。
 
 已接上的回合交接点（默认仍是主机，没有 `pouch_role.json` 时行为与原来一样）：
 

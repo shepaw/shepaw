@@ -34,7 +34,9 @@ import '../../service_locator.dart' show getIt;
 import '../../utils/engine_avatars.dart';
 import '../../utils/session_utils.dart';
 import '../../services/messaging/chat_history_content.dart';
+import '../../storage/store_service.dart';
 import '../pouch_pair.dart';
+import '../pouch_roster.dart';
 import '../pouch_turn_relay.dart';
 import 'peer_connection.dart' show PeerConnectionEvent, PeerConnectionEventType;
 import '../peer_approval_payload.dart';
@@ -4316,6 +4318,23 @@ class PeerAgentClientService {
     } catch (e) {
       _log.warning('Failed to inject peer agents: $e', tag: _tag);
       _completeAgentListWaiters(peerId);
+    }
+    unawaited(_syncPouchRoster(peerId, list));
+  }
+
+  /// 名单进 SQLite 之外，主机再写进储物袋名册。失败不影响会话列表。
+  Future<void> _syncPouchRoster(String peerId, List<Object?> agents) async {
+    try {
+      final peer = await _storage.getPeerById(peerId);
+      final fingerprint = peer?.fingerprint.trim() ?? '';
+      if (fingerprint.isEmpty) return;
+      await PouchRosterSync.applyAgentList(
+        root: await StoreService.instance.storeRoot(),
+        hubFingerprint: fingerprint,
+        agents: agents,
+      );
+    } catch (e) {
+      _log.warning('名册没有写上: $e', tag: _tag);
     }
   }
 

@@ -95,6 +95,35 @@ void main() {
     expect(await roster.load(), hasLength(1));
   });
 
+  test('整份名单对上原卡，缺席的只清拨号', () async {
+    final roster = store();
+    await roster.ensurePouchBound(id: 'she', name: 'She');
+    await roster.applyHubList(
+      hubFingerprint: 'hubaaaa',
+      agents: const [
+        HubAgentReport(remoteAgentId: 'a', name: 'A', running: true),
+        HubAgentReport(remoteAgentId: 'a', name: '重复'),
+        HubAgentReport(remoteAgentId: 'b', name: 'B'),
+      ],
+    );
+    await roster.applyHubList(
+      hubFingerprint: ' hubaaaa ',
+      agents: const [
+        HubAgentReport(remoteAgentId: 'a', name: 'A2', engine: 'codex'),
+      ],
+    );
+
+    final cards = await roster.load();
+    expect(cards.map((c) => c.id), ['she', 'card-0', 'card-1']);
+    expect(cards[0].dial, isNull);
+    expect(cards[1].name, 'A2');
+    expect(cards[1].engine, 'codex');
+    expect(cards[1].dialable, isTrue);
+    expect(cards[2].name, 'B');
+    expect(cards[2].dial, isNull);
+    expect(cards[2].hubFingerprint, 'hubaaaa');
+  });
+
   test('头像字节跟卡一起落在 .system', () async {
     final roster = store();
     final card = await roster.upsertWorker(

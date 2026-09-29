@@ -123,6 +123,27 @@ class AgentRosterCard {
   }
 }
 
+/// 一台工人 Hub 这次报上来的一个 Agent。
+class HubAgentReport {
+  const HubAgentReport({
+    required this.remoteAgentId,
+    required this.name,
+    this.avatar = '',
+    this.engine = '',
+    this.running = false,
+    this.workspaceUri,
+    this.avatarBytes,
+  });
+
+  final String remoteAgentId;
+  final String name;
+  final String avatar;
+  final String engine;
+  final bool running;
+  final String? workspaceUri;
+  final Uint8List? avatarBytes;
+}
+
 /// `.system/agent_roster.json`。群编排只读 [dialable]，历史展示读整本。
 class AgentRosterStore {
   AgentRosterStore(
@@ -243,6 +264,72 @@ class AgentRosterStore {
     cards.add(card);
     await _save(cards);
     return card;
+  }
+
+  /// 用这台工人 Hub 刚报上来的整份名单刷新拨号。
+  ///
+  /// 名单里有的对上原卡；没有的只清拨号，展示信息留下。一次写盘。
+  Future<void> applyHubList({
+    required String hubFingerprint,
+    required List<HubAgentReport> agents,
+  }) async {
+    final hub = hubFingerprint.trim();
+    if (hub.isEmpty) return;
+    final cards = [...await load()];
+    final seen = <String>{};
+    for (final report in agents) {
+      final remote = report.remoteAgentId.trim();
+      final name = report.name.trim();
+      if (remote.isEmpty || name.isEmpty || !seen.add(remote)) continue;
+      final dial = AgentDial(
+        running: report.running,
+        workspaceUri: report.workspaceUri,
+      );
+      final index = cards.indexWhere(
+        (c) =>
+            !c.boundToPouch &&
+            c.hubFingerprint == hub &&
+            c.remoteAgentId == remote,
+      );
+      if (index >= 0) {
+        var card = cards[index].copyWith(
+          name: name,
+          avatar: report.avatar,
+          engine: report.engine,
+          dial: dial,
+        );
+        final bytes = report.avatarBytes;
+        if (bytes != null && bytes.isNotEmpty) {
+          card = await _writeAvatar(card, bytes);
+        }
+        cards[index] = card;
+        continue;
+      }
+      var card = AgentRosterCard(
+        id: _newId(),
+        name: name,
+        avatar: report.avatar,
+        engine: report.engine,
+        hubFingerprint: hub,
+        remoteAgentId: remote,
+        dial: dial,
+      );
+      final bytes = report.avatarBytes;
+      if (bytes != null && bytes.isNotEmpty) {
+        card = await _writeAvatar(card, bytes);
+      }
+      cards.add(card);
+    }
+    final synced = [
+      for (final c in cards)
+        if (!c.boundToPouch &&
+            c.hubFingerprint == hub &&
+            !seen.contains(c.remoteAgentId))
+          c.copyWith(clearDial: true)
+        else
+          c,
+    ];
+    await _save(synced);
   }
 
   /// 卸掉一台工人 Hub：清掉它名下卡的拨号，卡本身留下。
