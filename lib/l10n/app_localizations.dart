@@ -13059,6 +13059,30 @@ abstract class AppLocalizations {
   /// **'储物袋使用空间'**
   String get storage_usageBagUsed;
 
+  /// No description provided for @storage_usageRuntimeBreakdown.
+  ///
+  /// In zh, this message translates to:
+  /// **'运行时构成'**
+  String get storage_usageRuntimeBreakdown;
+
+  /// No description provided for @storage_usageRuntimeMirrors.
+  ///
+  /// In zh, this message translates to:
+  /// **'镜像'**
+  String get storage_usageRuntimeMirrors;
+
+  /// No description provided for @storage_usageRuntimeVersions.
+  ///
+  /// In zh, this message translates to:
+  /// **'历史版本'**
+  String get storage_usageRuntimeVersions;
+
+  /// No description provided for @storage_agentQuotaWarning.
+  ///
+  /// In zh, this message translates to:
+  /// **'运行时占用已达配额约 {percent}%。产物不会自动删除，请手动清理不需要的文件。'**
+  String storage_agentQuotaWarning(int percent);
+
   /// No description provided for @storage_volumeFree.
   ///
   /// In zh, this message translates to:

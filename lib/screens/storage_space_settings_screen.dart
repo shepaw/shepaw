@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../storage/device_identity.dart';
 import '../storage/local_store.dart';
+import '../storage/runtime_retention.dart';
 import '../storage/store_service.dart';
 import '../storage/sync_engine.dart';
 import '../storage/volume_usage.dart';
@@ -34,6 +35,7 @@ class _StorageSpaceSettingsScreenState
 
   String _selfId = '';
   Map<String, dynamic>? _stats;
+  Map<String, int>? _runtimeBreakdown;
   List<Map<String, dynamic>> _recycle = [];
   bool _recycleExpanded = false;
 
@@ -71,9 +73,12 @@ class _StorageSpaceSettingsScreenState
         .map((e) => e.toJson())
         .toList();
 
+    final breakdown = await StoreService.instance.runtimeUsageBreakdown(_selfId);
+
     if (mounted) {
       setState(() {
         _stats = stats;
+        _runtimeBreakdown = breakdown;
         _recycle = selfRecycle;
       });
     }
@@ -230,6 +235,7 @@ class _StorageSpaceSettingsScreenState
                 ),
               ),
             _usageMetric(l10n.storage_usageBagUsed, bagUsed),
+            ..._runtimeBreakdownRows(l10n),
             if (_stats != null)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
@@ -238,6 +244,7 @@ class _StorageSpaceSettingsScreenState
                   children: [
                     _buildPendingUploadStatus(l10n),
                     _buildVolumeWarning(l10n),
+                    _buildAgentQuotaWarning(l10n),
                   ],
                 ),
               ),
@@ -245,6 +252,46 @@ class _StorageSpaceSettingsScreenState
         ),
       ),
     );
+  }
+
+  /// runtime 构成：区分"可以有 TTL 的"与"不该自动清理的"
+  /// （docs/runtime_lifecycle_decision.md）。
+  List<Widget> _runtimeBreakdownRows(AppLocalizations l10n) {
+    final breakdown = _runtimeBreakdown;
+    if (breakdown == null) return const [];
+    final rows = <(String, int)>[
+      (l10n.storage_spaceArtifacts, breakdown['artifacts'] ?? 0),
+      (l10n.storage_runtimeSessions, breakdown['sessions'] ?? 0),
+      (l10n.storage_runtimeAttachments, breakdown['attachments'] ?? 0),
+      (l10n.storage_usageRuntimeMirrors, breakdown['mirrors'] ?? 0),
+      (l10n.storage_usageRuntimeVersions, breakdown['versions'] ?? 0),
+    ].where((r) => r.$2 > 0).toList();
+    if (rows.isEmpty) return const [];
+    return [
+      const Divider(height: 1),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+        child: Text(
+          l10n.storage_usageRuntimeBreakdown,
+          style: Theme.of(context).textTheme.titleSmall,
+        ),
+      ),
+      for (final row in rows)
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(row.$1,
+                    style: Theme.of(context).textTheme.bodyMedium),
+              ),
+              Text(fmtStorageBytes(row.$2),
+                  style: Theme.of(context).textTheme.bodyMedium),
+            ],
+          ),
+        ),
+      const SizedBox(height: 8),
+    ];
   }
 
   Widget _usageMetric(String label, int? bytes, {bool alert = false}) {
@@ -262,6 +309,34 @@ class _StorageSpaceSettingsScreenState
                   fontWeight: FontWeight.w600,
                   color: alert ? scheme.error : null,
                 ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAgentQuotaWarning(AppLocalizations l10n) {
+    final used = agentQuotaUsedBytes(_stats, _selfId);
+    final cap = LocalStore.defaultAgentSpaceQuotaBytes;
+    if (!agentQuotaNeedsAttention(used, capBytes: cap)) {
+      return const SizedBox.shrink();
+    }
+    final pct = ((used * 100) / cap).round().clamp(0, 999);
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.errorContainer,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.inventory_2_outlined,
+              size: 18, color: Theme.of(context).colorScheme.error),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(l10n.storage_agentQuotaWarning(pct),
+                style: Theme.of(context).textTheme.bodySmall),
           ),
         ],
       ),

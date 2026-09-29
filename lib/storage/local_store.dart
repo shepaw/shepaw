@@ -1616,6 +1616,9 @@ class LocalStore {
     }
   }
 
+  /// 本 store 根下的合法 device 目录（不含 `.versions` / `.recycle`）。
+  Future<List<String>> listDeviceIds() => _listDeviceIds();
+
   Future<List<String>> _listDeviceIds() async {
     if (!await root.exists()) return const [];
     final out = <String>[];
@@ -1824,12 +1827,155 @@ class LocalStore {
     return purgedBytes;
   }
 
-  /// runtime 用量按子类拆分（`docs/runtime_lifecycle_decision.md` 第 1 步）。
+  /// 每个 `sessions/` 目录只留最新 [keep] 份 `archive-*.json`。
   ///
-  /// 分类决定"哪些能安全清理"：会话与附件可以有 TTL，产物不该自动过期。
-  /// - `sessions` — `…/sessions/**`
-  /// - `attachments` — `…/attachments/**`
-  /// - `artifacts` — `…/artifacts/**`（含 `.meta.json` sidecar）
+  /// `session.json` 是当前窗口镜像，不删。归档走 [delete]（进回收站 +
+  /// SyncJournal）。群 runtime 与个人 runtime 同一套，因为它们都在这棵树下。
+  Future<int> pruneSessionArchives(String deviceId, {int keep = 3}) async {
+    if (!isValidDeviceId(deviceId)) {
+      throw StoreException(StoreError.badOp, 'invalid device_id');
+    }
+    if (keep < 0) keep = 0;
+    final runtime = Directory(
+        p.join(_deviceDir(deviceId).path, StoreSpace.runtime));
+    if (!await runtime.exists()) return 0;
+    final byDir = <String, List<File>>{};
+    await for (final entity in runtime.list(recursive: true)) {
+      if (entity is! File) continue;
+      final name = p.basename(entity.path);
+      if (!name.startsWith('archive-') || !name.endsWith('.json')) continue;
+      if (p.basename(entity.parent.path) != 'sessions') continue;
+      (byDir[entity.parent.path] ??= []).add(entity);
+    }
+    var removed = 0;
+    for (final files in byDir.values) {
+      files.sort((a, b) => p.basename(a.path).compareTo(p.basename(b.path)));
+      if (files.length <= keep) continue;
+      for (final file in files.take(files.length - keep)) {
+        final rel = p
+            .relative(file.path, from: runtime.path)
+            .replaceAll(p.separator, '/');
+        try {
+          await delete(deviceId, StoreSpace.runtime, rel);
+          removed++;
+        } on StoreException catch (e) {
+          if (e.code != StoreError.notFound) rethrow;
+        }
+      }
+    }
+    return removed;
+  }
+
+  /// `.versions/<deviceId>` 每个文件索引超出 [keep] 的最老版本直接丢。
+  ///
+  /// `protected: true` 的条目不丢；因此受保护版本很多时，总数可以超过 [keep]。
+  /// 这是系统目录，硬删 blob，不进回收站。
+  Future<int> pruneOldVersions(String deviceId, {int keep = 10}) async {
+    if (!isValidDeviceId(deviceId)) {
+      throw StoreException(StoreError.badOp, 'invalid device_id');
+    }
+    if (keep < 1) keep = 1;
+    final versionsRoot = Directory(p.join(root.path, '.versions', deviceId));
+    if (!await versionsRoot.exists()) return 0;
+    var dropped = 0;
+    await for (final entity in versionsRoot.list(recursive: true)) {
+      if (entity is! File || p.basename(entity.path) != 'index.json') continue;
+      dropped += await _pruneVersionIndex(entity, keep);
+    }
+    return dropped;
+  }
+
+  Future<int> _pruneVersionIndex(File indexFile, int keep) async {
+    Map<String, dynamic> json;
+    try {
+      final decoded = jsonDecode(await indexFile.readAsString());
+      if (decoded is! Map) return 0;
+      json = Map<String, dynamic>.from(decoded);
+    } catch (_) {
+      return 0;
+    }
+    final raw = json['versions'];
+    if (raw is! List) return 0;
+    final entries = [
+      for (final e in raw)
+        if (e is Map) Map<String, dynamic>.from(e)
+    ];
+    final protected = entries.where((e) => e['protected'] == true).toList();
+    final rest = entries.where((e) => e['protected'] != true).toList()
+      ..sort((a, b) => _versionNumber(a).compareTo(_versionNumber(b)));
+    final dropped = <Map<String, dynamic>>[];
+    while (protected.length + rest.length > keep && rest.isNotEmpty) {
+      dropped.add(rest.removeAt(0));
+    }
+    if (dropped.isEmpty) return 0;
+    final kept = [...protected, ...rest];
+    final keptSha = {for (final e in kept) '${e['sha256'] ?? ''}'};
+    final dir = indexFile.parent;
+    for (final e in dropped) {
+      final sha = '${e['sha256'] ?? ''}';
+      if (sha.isEmpty || keptSha.contains(sha)) continue;
+      final blob = File(p.join(dir.path, sha));
+      if (await blob.exists()) {
+        try {
+          await blob.delete();
+        } catch (_) {}
+      }
+    }
+    json['versions'] = kept;
+    await indexFile.writeAsString(jsonEncode(json));
+    return dropped.length;
+  }
+
+  static int _versionNumber(Map<String, dynamic> entry) =>
+      (entry['v'] as num?)?.toInt() ?? 0;
+
+  /// 删掉 [deviceId] 自己的 runtime 附件里、超过 [minAge] 且不在
+  /// [referencedRelPaths] 中的文件。
+  ///
+  /// [referencedRelPaths] 是 runtime 空间内的相对路径（消息 `store_uri` 解析而来）。
+  /// 刚写入、消息还没落库的附件靠 [minAge] 躲开。删除走 [delete]。
+  Future<int> pruneOrphanAttachments(
+    String deviceId,
+    Set<String> referencedRelPaths, {
+    Duration minAge = const Duration(hours: 24),
+  }) async {
+    if (!isValidDeviceId(deviceId)) {
+      throw StoreException(StoreError.badOp, 'invalid device_id');
+    }
+    final runtime = Directory(
+        p.join(_deviceDir(deviceId).path, StoreSpace.runtime));
+    if (!await runtime.exists()) return 0;
+    final referenced = {
+      for (final path in referencedRelPaths) normalizeStorePath(path),
+    };
+    final cutoff = DateTime.now().subtract(minAge);
+    var removed = 0;
+    await for (final entity in runtime.list(recursive: true)) {
+      if (entity is! File) continue;
+      if (p.basename(entity.parent.path) != 'attachments') continue;
+      final name = p.basename(entity.path);
+      if (name.startsWith('.')) continue;
+      final rel = p
+          .relative(entity.path, from: runtime.path)
+          .replaceAll(p.separator, '/');
+      if (referenced.contains(normalizeStorePath(rel))) continue;
+      final modified = (await entity.stat()).modified;
+      if (modified.isAfter(cutoff)) continue;
+      try {
+        await delete(deviceId, StoreSpace.runtime, rel);
+        removed++;
+      } on StoreException catch (e) {
+        if (e.code != StoreError.notFound) rethrow;
+      }
+    }
+    return removed;
+  }
+
+  /// runtime 用量按子类拆分（`docs/runtime_lifecycle_decision.md`）。
+  ///
+  /// - `sessions` — `…/sessions/**`（`session.json` 保留；归档可裁）
+  /// - `attachments` — `…/attachments/**`（只清没有消息再引用的）
+  /// - `artifacts` — `…/artifacts/**`（含 `.meta.json` sidecar，不自动删）
   /// - `mirrors` — soul / memory / workspace 镜像
   /// - `other` — 其余 runtime 文件
   /// - `versions` — `.versions/<device>/**（不在 space 目录内，单列）

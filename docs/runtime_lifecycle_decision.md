@@ -1,7 +1,7 @@
 # `runtime` 生命周期（决策记录）
 
 - 日期：2026-09-28
-- 状态：**方案待确认，未实现**
+- 状态：**已裁定，保留清理已落地**（2026-09-28）
 - 关联：`docs/storage_space_plan.md`、`docs/storage_protocol_spec.md` §2.6/§2.8
 
 ## 1. 现状：`runtime` 只增不减
@@ -54,34 +54,38 @@
 | C 分类保留（**推荐**） | 会话/附件有 TTL、产物不过期、版本与回收站有上限 | 需要区分"哪些能删"，实现比 B 复杂 |
 | D 只做可观测 | 用量页 + 阈值告警 | 不解决增长，只让人早点发现 |
 
-## 4. 推荐：C + D（分类保留 + 可观测）
+## 4. 裁定：分类保留 + 可观测
 
-按"删错了会有多痛"分层，而不是一刀切 TTL：
+聊天权威在 SQLite。`sessions/session.json` 只是单向镜像（`RuntimeMirrorService`，
+失败不影响聊天，不从文件回灌），窗口本身有上限。真正只增不减的是滚动出去的
+`archive-*.json`。附件字节被消息 `store_uri` 引用，按时间删会让旧消息里的文件打不开。
 
-- **产物 `artifacts/<task>/`：不过期**。这是用户要的东西，只受配额约束。
-- **会话 `sessions/`（含 archive）：TTL**，如 30 天；或按 channel `keep_last N`。
-- **附件 `attachments/`：TTL**，与会话同策略（它们是会话上下文的一部分）。
-- **`.versions`：每文件 `keep_last`（建议默认 10）**，超出的最老版本直接丢（不进回收站）。
-- **`.recycle` / `.staging`：把启动一次的清理改成周期执行**（已有实现，缺调度）。
-- **可观测**：用量页显示 runtime 各子类占用；接近配额（如 80%）时提示。
+- **产物 `artifacts/<task>/`：不删**。接近配额只提示。
+- **`session.json`：不删**。
+- **`archive-*.json`：每个 `sessions/` 留最新 3 份**，更老的走 `delete`（回收站 + journal）。
+- **附件：只删没有消息再引用、且超过 24 小时的孤儿**。仍被引用的不删。
+- **`.versions`：每文件 `keep_last` 10**。`protected` 条目不丢，所以总数可以超过 10。硬删，不进回收站。
+- **`.recycle` / `.staging`：前台每小时再跑一遍**（启动时那次保留）。
+- **群 runtime 与个人 runtime 同一套**（都在同一棵 `runtime/` 下）。
+- **只在 App 前台跑**。长期不打开就不会清。
 
-**执行约束（必须遵守）**：
-- 清理走既有 `LocalStore.delete` 语义（进回收站 + 入 SyncJournal），
-  只有版本与回收站这两种"系统目录"可以硬删；
-- 只在 master 设备上跑清理定时任务，避免多端各删一遍互相打架；
-- 默认策略保守（TTL 30 天、产物不过期），清理动作可审计（记事件）。
+**执行约束**：
+- 归档和孤儿附件走 `LocalStore.delete`；版本与回收站可以硬删。
+- 归档与孤儿附件**只在 master 上跑**，避免多端各删一遍。版本目录不进 journal，每台设备清自己的 `.versions`。
+- 孤儿判断只用本机消息库。消息库读失败就跳过附件清理，不冒险删。
+- master 上其他 device 的归档会一并裁（删除经 journal 回到属主）；它们的附件不裁，因为本机消息库看不见那些引用。
 
-## 5. 未决问题
+## 5. 已关闭的问题
 
-1. TTL 默认值与是否用户可配（App 设置项？还是写死）。
-2. 产物要不要也加"长期未访问"的软淘汰（而不是硬删）——比如只提示不删。
-3. 群 runtime（owner 是群）与个人 runtime 是否同一套策略。
-4. 清理任务是前台定时（App 运行时）还是后台任务（已有 `ForegroundTaskService`）。
+1. 不做成设置项。归档留 3 份、版本留 10、附件孤儿 24 小时，写死。
+2. 产物只提示，不删。
+3. 群与个人同一套。
+4. 清理走前台（`RuntimeRetentionService`，每小时 + 回到前台时）。
 
-## 6. 落地顺序（确认后）
+## 6. 落地
 
-1. 用量按子类统计（sessions / attachments / artifacts / mirrors / versions）+ 用量页展示
-2. `.versions` `keep_last` 上限（纯系统目录，风险最低）
-3. `.recycle` / `.staging` 清理改周期执行（复用现有实现）
-4. sessions / attachments TTL（默认 30 天，只在 master 跑）
-5. 配额阈值提示
+1. 用量按子类统计 + 用量页展示 — 已做
+2. `.versions` `keep_last` — 已做
+3. `.recycle` / `.staging` 前台周期执行 — 已做
+4. 归档 `keep_last` + 孤儿附件 — 已做（不是整段 TTL）
+5. 配额 80% 提示（写明产物不会自动删除）— 已做

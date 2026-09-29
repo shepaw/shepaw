@@ -3881,7 +3881,15 @@
   "storage_usageTitle": "Usage",
   "storage_usageSystemTotal": "System total",
   "storage_usageSystemUsed": "Used space",
-  "storage_usageBagUsed": "Pouch used",
+  "storage_usageBagUsed":
+ "Pouch used",
+  "storage_usageRuntimeBreakdown":
+ "Runtime breakdown",
+  "storage_usageRuntimeMirrors":
+ "Mirrors",
+  "storage_usageRuntimeVersions":
+ "Version history",
+  "storage_agentQuotaWarning": "Runtime is about {percent}% of its quota. Artifacts are not deleted automatically; remove files you no longer need.",
   "storage_volumeFree": "Volume free {free} / {total}",
   "storage_volumeWarning": "Storage volume is about {percent}% full (≥80%). Free space or empty the recycle bin to avoid sync/snapshot failures.",
   "@storage_volumeFree": {
@@ -3895,6 +3903,13 @@
     }
   },
   "@storage_volumeWarning": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "@storage_agentQuotaWarning": {
     "placeholders": {
       "percent": {
         "type": "int"

@@ -32,6 +32,7 @@ import 'peer/services/peer_connection_manager.dart';
 import 'peer/services/peer_agent_host_service.dart';
 import 'peer/services/peer_agent_client_service.dart';
 import 'storage/folder_binding_service.dart';
+import 'storage/runtime_retention.dart';
 import 'storage/scheduled_snapshot_service.dart';
 import 'storage/device_identity.dart';
 import 'storage/store_protocol.dart';
@@ -321,6 +322,7 @@ class AppBootstrap {
       unawaited(ChatService().drainAllMailboxReplies());
       // 存储空间（docs/storage_protocol_spec.md v1）：master 帧处理 + staging GC。
       await StoreService.instance.start();
+      RuntimeRetentionService.instance.start();
       await _publishSystemSkill();
       // 同步引擎（spec v3 §6）：未同步队列 + 变更游标 + 批量原子上传。
       await SyncEngine.instance.start(

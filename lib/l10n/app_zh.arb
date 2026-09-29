@@ -4357,6 +4357,10 @@
   "storage_usageSystemTotal": "系统总空间",
   "storage_usageSystemUsed": "已使用空间",
   "storage_usageBagUsed": "储物袋使用空间",
+  "storage_usageRuntimeBreakdown": "运行时构成",
+  "storage_usageRuntimeMirrors": "镜像",
+  "storage_usageRuntimeVersions": "历史版本",
+  "storage_agentQuotaWarning": "运行时占用已达配额约 {percent}%。产物不会自动删除，请手动清理不需要的文件。",
   "storage_volumeFree": "卷剩余 {free} / {total}",
   "storage_volumeWarning": "存储卷已用约 {percent}%（≥80%）。请清理文件或回收站，避免同步与快照失败。",
   "@storage_volumeFree": {
@@ -4370,6 +4374,13 @@
     }
   },
   "@storage_volumeWarning": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "@storage_agentQuotaWarning": {
     "placeholders": {
       "percent": {
         "type": "int"

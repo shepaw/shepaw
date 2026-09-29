@@ -7184,6 +7184,20 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_usageBagUsed => '储物袋使用空间';
 
   @override
+  String get storage_usageRuntimeBreakdown => '运行时构成';
+
+  @override
+  String get storage_usageRuntimeMirrors => '镜像';
+
+  @override
+  String get storage_usageRuntimeVersions => '历史版本';
+
+  @override
+  String storage_agentQuotaWarning(int percent) {
+    return '运行时占用已达配额约 $percent%。产物不会自动删除，请手动清理不需要的文件。';
+  }
+
+  @override
   String storage_volumeFree(String free, String total) {
     return '卷剩余 $free / $total';
   }

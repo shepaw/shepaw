@@ -7455,6 +7455,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_usageBagUsed => 'Pouch used';
 
   @override
+  String get storage_usageRuntimeBreakdown => 'Runtime breakdown';
+
+  @override
+  String get storage_usageRuntimeMirrors => 'Mirrors';
+
+  @override
+  String get storage_usageRuntimeVersions => 'Version history';
+
+  @override
+  String storage_agentQuotaWarning(int percent) {
+    return 'Runtime is about $percent% of its quota. Artifacts are not deleted automatically; remove files you no longer need.';
+  }
+
+  @override
   String storage_volumeFree(String free, String total) {
     return 'Volume free $free / $total';
   }
