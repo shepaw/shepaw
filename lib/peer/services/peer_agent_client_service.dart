@@ -30,6 +30,7 @@ import '../../services/logger_service.dart';
 import '../../services/session/cli_execute_peer_handler.dart';
 import '../../services/session/session_create_peer_handler.dart';
 import '../../services/she_agent_impression_service.dart';
+import '../../services/she_service.dart';
 import '../../service_locator.dart' show getIt;
 import '../../utils/engine_avatars.dart';
 import '../../utils/session_utils.dart';
@@ -37,6 +38,7 @@ import '../../services/messaging/chat_history_content.dart';
 import '../../storage/agent_roster.dart';
 import '../../storage/pouch_role.dart';
 import '../../storage/store_service.dart';
+import '../pouch_duties.dart';
 import '../pouch_pair.dart';
 import '../pouch_roster.dart';
 import '../pouch_turn_relay.dart';
@@ -4258,6 +4260,8 @@ class PeerAgentClientService {
             'source_peer_name': peerName,
             'remote_agent_id': remoteId,
             if (hostRoster != null) 'roster_hub_fingerprint': hostRoster.fingerprint,
+            if (!PouchDutyState.isHost && remoteId == SheService.sheId)
+              'is_she': true,
             // 宿主边界开关的最近一次广播，详情页据此默认只读/可编辑；
             // 打开编辑页时仍会用 agent_resume_get 权威刷新。
             if (raw['resume_editable'] is bool) 'resume_editable': raw['resume_editable'],
@@ -4356,6 +4360,30 @@ class PeerAgentClientService {
     required String remoteId,
     required ({String fingerprint, List<AgentRosterCard> cards})? hostRoster,
   }) async {
+    if (hostRoster == null && remoteId == SheService.sheId) {
+      final root = await StoreService.instance.storeRoot();
+      final role = await PouchRoleStore(root).load();
+      final existing = await _db.getRemoteAgentById(SheService.sheId);
+      final taken = existing != null &&
+          !(existing.isPeerAgent && existing.sourcePeerId == peerId);
+      if (PouchDuties.adoptHostSheRow(
+        isHost: role.isHost,
+        hostPeerId: role.hostPeerId,
+        peerId: peerId,
+        remoteAgentId: remoteId,
+        sheIdTakenBySomeoneElse: taken,
+      )) {
+        final legacy = legacyPeerAgentLocalId(peerId, remoteId);
+        final old = await _db.getRemoteAgentById(legacy);
+        if (old != null &&
+            old.isPeerAgent &&
+            old.sourcePeerId == peerId &&
+            old.remoteAgentId == remoteId) {
+          await _db.deleteRemoteAgent(legacy);
+        }
+        return SheService.sheId;
+      }
+    }
     final fallback = await resolvePeerAgentRowId(_db, peerId, remoteId);
     if (hostRoster == null) return fallback;
     final cardId = PouchRosterSync.cardIdFor(

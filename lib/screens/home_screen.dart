@@ -17,6 +17,7 @@ import '../widgets/agent_list_avatar.dart';
 import '../widgets/chat/session_unread_badge.dart';
 import '../widgets/local_agent_hub_prompt.dart';
 import '../services/message_search_service.dart';
+import '../peer/pouch_duties.dart';
 import '../services/onboarding_service.dart';
 import '../services/she_service.dart';
 import '../l10n/app_localizations.dart';
@@ -149,6 +150,7 @@ class HomeScreenState extends State<HomeScreen> {
     if (widget.embedded) return;
     final pending = await OnboardingService().consumeFirstEntryPending();
     if (!pending || !mounted) return;
+    if (!PouchDutyState.isHost) return;
 
     final RemoteAgent? agent =
         await _databaseService.getRemoteAgentById(SheService.sheId);

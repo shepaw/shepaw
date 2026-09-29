@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/widgets.dart';
 import '../task/services/scheduled_task_service.dart';
+import '../peer/pouch_duties.dart';
 import '../peer/services/peer_connection_manager.dart';
 import 'event/event_bus.dart';
 import 'event/event_scope.dart';
@@ -68,16 +69,19 @@ class AppLifecycleService with WidgetsBindingObserver {
     if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
       // Record when the app entered background (only on the first transition).
       _backgroundedAtMs ??= DateTime.now().millisecondsSinceEpoch;
-      // Pause scheduled tasks when app goes to background
-      ScheduledTaskService().pauseScheduler();
+      // 客户端没有时钟。主机上的时钟不随进后台停。
+      if (PouchDuties.schedulerFollowsAppBackground(PouchDutyState.isHost)) {
+        ScheduledTaskService().pauseScheduler();
+      }
     } else if (state == AppLifecycleState.resumed && _backgroundedAtMs != null) {
       final duration = Duration(
         milliseconds: DateTime.now().millisecondsSinceEpoch - _backgroundedAtMs!,
       );
       _backgroundedAtMs = null;
       _onResumeController.add(duration);
-      // Resume scheduled tasks when app returns to foreground
-      ScheduledTaskService().resumeScheduler();
+      if (PouchDuties.schedulerFollowsAppBackground(PouchDutyState.isHost)) {
+        ScheduledTaskService().resumeScheduler();
+      }
       // 立即恢复 P2P 连接（手机亮屏后不等心跳周期）。
       // 传入后台时长：较久后台后强制刷新可能已半开的陈旧连接。
       PeerConnectionManager.instance.resumeAll(backgroundedFor: duration);

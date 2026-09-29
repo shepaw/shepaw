@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:uuid/uuid.dart';
 
 import '../helpers/cron_parser.dart';
+import '../../peer/pouch_duties.dart';
 import '../models/scheduled_task.dart';
 import '../../services/local_database_service.dart';
 import '../../services/logger_service.dart';
@@ -75,6 +76,7 @@ class ScheduledTaskService {
   /// 
   /// Should be called once during app initialization.
   Future<void> startScheduler() async {
+    if (!PouchDuties.runsScheduler(PouchDutyState.isHost)) return;
     if (_initialized) return;
     _initialized = true;
     _running = true;
@@ -95,6 +97,9 @@ class ScheduledTaskService {
   /// 
   /// Call this when the app goes to the background.
   Future<void> pauseScheduler() async {
+    if (!PouchDuties.schedulerFollowsAppBackground(PouchDutyState.isHost)) {
+      return;
+    }
     _running = false;
     _cancelAllTimers();
     _stopHeartbeat();
@@ -105,6 +110,9 @@ class ScheduledTaskService {
   /// 
   /// Call this when the app comes back to the foreground.
   Future<void> resumeScheduler() async {
+    if (!PouchDuties.schedulerFollowsAppBackground(PouchDutyState.isHost)) {
+      return;
+    }
     if (!_initialized) {
       await startScheduler();
       return;

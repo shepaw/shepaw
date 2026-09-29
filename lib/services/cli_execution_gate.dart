@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../peer/pouch_duties.dart';
 import '../clis/cli_command_allowlist.dart';
 import '../clis/shepaw/os/os_executor.dart' as os_exec;
 import '../clis/shepaw/os/os_tool_registry.dart';
@@ -48,6 +49,15 @@ class CliExecutionGate {
   }) async {
     final namespace = (args['namespace'] as String?)?.trim() ?? '';
     final subcommand = (args['subcommand'] as String?)?.trim() ?? '';
+    if (!PouchDuties.cliAllowed(
+      isHost: PouchDutyState.isHost,
+      namespace: namespace,
+    )) {
+      return jsonEncode({
+        'success': false,
+        'error': PouchDuties.dataPlaneMessage,
+      });
+    }
     final id = commandId(namespace, subcommand);
 
     // `help` is callable regardless of the allowlist — the same decision

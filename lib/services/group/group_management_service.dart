@@ -8,6 +8,7 @@ import '../chat_service.dart';
 import '../local_database_service.dart';
 import '../local_user_identity.dart';
 import '../logger_service.dart';
+import '../../peer/pouch_duties.dart';
 import '../she_service.dart';
 import '../../storage/group_workspace_service.dart';
 import 'group_admin_gate.dart';
@@ -129,6 +130,11 @@ class GroupManagementService {
     return out;
   }
 
+  GroupManagementResult? _onlyHost() {
+    if (PouchDutyState.isHost) return null;
+    return GroupManagementResult.failure('群只能在储物袋主机上改');
+  }
+
   /// Create a group. Only [SheService.sheId] may create; She is always admin.
   Future<GroupManagementResult> createGroup({
     required String name,
@@ -140,6 +146,8 @@ class GroupManagementService {
     int? maxLoopRounds,
     String userId = LocalUserIdentity.id,
   }) async {
+    final hostOnly = _onlyHost();
+    if (hostOnly != null) return hostOnly;
     if (actorId != SheService.sheId) {
       return GroupManagementResult.failure(
         'Permission denied: only She can create group chats via CLI.',
@@ -288,6 +296,8 @@ class GroupManagementService {
     String? groupBio,
     String userId = LocalUserIdentity.id,
   }) {
+    final hostOnly = _onlyHost();
+    if (hostOnly != null) return Future.value(hostOnly);
     return _runSerializedMemberMutation(channelId, () async {
       final gate = await _requireAdminGroup(channelId, actorId);
       if (gate.error != null) {
@@ -403,6 +413,8 @@ class GroupManagementService {
     required String agentRef,
     required String actorId,
   }) {
+    final hostOnly = _onlyHost();
+    if (hostOnly != null) return Future.value(hostOnly);
     return _runSerializedMemberMutation(channelId, () async {
       final gate = await _requireAdminGroup(channelId, actorId);
       if (gate.error != null) {
@@ -512,6 +524,8 @@ class GroupManagementService {
     required String actorId,
     String? groupBio,
   }) async {
+    final hostOnly = _onlyHost();
+    if (hostOnly != null) return hostOnly;
     final channel = await _db.getChannelById(channelId);
     if (channel == null) {
       return GroupManagementResult.failure('Channel not found: $channelId');
@@ -565,6 +579,8 @@ class GroupManagementService {
     required String description,
     required String actorId,
   }) async {
+    final hostOnly = _onlyHost();
+    if (hostOnly != null) return hostOnly;
     final trimmed = description.trim();
     final gate = await _requireAdminGroup(channelId, actorId);
     if (gate.error != null) {
@@ -589,6 +605,8 @@ class GroupManagementService {
     required String name,
     required String actorId,
   }) async {
+    final hostOnly = _onlyHost();
+    if (hostOnly != null) return hostOnly;
     final trimmed = name.trim();
     if (trimmed.isEmpty) {
       return GroupManagementResult.failure('Missing required flag: --name');
@@ -649,6 +667,8 @@ class GroupManagementService {
     String? avatar,
     bool clearAvatar = false,
   }) async {
+    final hostOnly = _onlyHost();
+    if (hostOnly != null) return hostOnly;
     final gate = await _requireAdminGroup(channelId, actorId);
     if (gate.error != null) {
       return GroupManagementResult.failure(gate.error!);

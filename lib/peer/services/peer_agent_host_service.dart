@@ -48,6 +48,7 @@ import '../pouch_turn_host.dart';
 import '../../services/local_database_service.dart';
 import '../../services/logger_service.dart';
 import '../../services/she_agent_impression_service.dart';
+import '../../services/she_service.dart';
 import '../../services/task/task_models.dart';
 import '../../service_locator.dart' show getIt;
 import '../../storage/attachment_store_writer.dart';
@@ -363,7 +364,11 @@ class PeerAgentHostService {
     try {
       final eligible = await _eligibleAgents();
       final sharedIds = await PeerStorageService().getSharedAgentIds(peerId);
+      final pouchShe = await _pouchSheForOwner(peerId);
       final shared = eligible.where((a) => sharedIds.contains(a.id)).toList();
+      if (pouchShe != null && !shared.any((a) => a.id == pouchShe.id)) {
+        shared.insert(0, pouchShe);
+      }
 
       final exposed = <Map<String, dynamic>>[];
       // 所有头像共享一个传输预算：agent_list_resp 是单条控制消息，受帧大小限制，
@@ -429,6 +434,25 @@ class PeerAgentHostService {
     }
   }
 
+  Future<bool> _peerMayUse(String peerId, RemoteAgent? agent) async {
+    if (agent == null) return false;
+    if (agent.id == SheService.sheId && !agent.isPeerAgent) {
+      return await _pouchSheForOwner(peerId) != null;
+    }
+    if (!agent.isLocal || !agent.allowExternalAccess) return false;
+    final sharedIds = await PeerStorageService().getSharedAgentIds(peerId);
+    return sharedIds.contains(agent.id);
+  }
+
+  /// 自己的设备总能看到这份袋子的惜宝，不必再单独打开分享开关。
+  Future<RemoteAgent?> _pouchSheForOwner(String peerId) async {
+    final peer = await PeerStorageService().getPeerById(peerId);
+    if (peer == null || peer.trustLevel == 'friend') return null;
+    final she = await _db.getRemoteAgentById(SheService.sheId);
+    if (she == null || she.isPeerAgent) return null;
+    return she;
+  }
+
   /// 本机所有「本地且允许外部访问」的 agent —— 可被分享的候选集。
   Future<List<RemoteAgent>> _eligibleAgents() async {
     final agents = await _db.getAllRemoteAgents();
@@ -448,6 +472,10 @@ class PeerAgentHostService {
     if (agent == null) {
       _log.warning('resolveSharedAgent: not found id=$agentId', tag: _tag);
       return 'not_found';
+    }
+    if (agent.id == SheService.sheId && !agent.isPeerAgent) {
+      final owner = await _pouchSheForOwner(peerId);
+      if (owner != null) return null;
     }
     if (!agent.isLocal) {
       _log.warning(
@@ -1141,13 +1169,8 @@ class PeerAgentHostService {
 
     try {
       final agent = await _db.getRemoteAgentById(agentId);
-      if (agent == null || !agent.isLocal || !agent.allowExternalAccess) {
+      if (!await _peerMayUse(peerId, agent)) {
         await reject('Agent not available for external access');
-        return;
-      }
-      final sharedIds = await PeerStorageService().getSharedAgentIds(peerId);
-      if (!sharedIds.contains(agentId)) {
-        await reject('Agent is not shared with this peer');
         return;
       }
     } catch (e) {
@@ -1400,16 +1423,12 @@ class PeerAgentHostService {
     );
 
     try {
-      final agent = await _db.getRemoteAgentById(agentId);
-      if (agent == null || !agent.isLocal || !agent.allowExternalAccess) {
+      final loaded = await _db.getRemoteAgentById(agentId);
+      if (!await _peerMayUse(peerId, loaded)) {
         await failTurn('Agent not available for external access');
         return;
       }
-      final sharedIds = await PeerStorageService().getSharedAgentIds(peerId);
-      if (!sharedIds.contains(agentId)) {
-        await failTurn('Agent is not shared with this peer');
-        return;
-      }
+      final agent = loaded!;
 
       // 为该来源设备的入站会话维护持久化 channel（与旧 ACP 远程连接逻辑对齐），
       // 标题统一标注「Agent 名 ← 来源设备名」，使本机能在会话列表中分辨出这条

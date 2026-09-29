@@ -36,7 +36,9 @@ import 'storage/runtime_retention.dart';
 import 'storage/scheduled_snapshot_service.dart';
 import 'storage/agent_roster.dart';
 import 'storage/device_identity.dart';
+import 'peer/pouch_duties.dart';
 import 'storage/pouch_chat_log.dart';
+import 'storage/pouch_role.dart';
 import 'storage/store_protocol.dart';
 import 'storage/store_service.dart';
 import 'storage/sync_engine.dart';
@@ -105,17 +107,20 @@ class AppBootstrap {
     await DeviceIdentity.ensureFromPouch(
       await StoreService.instance.storeRoot(),
     );
-    PouchChatLog.bind(PouchChatLog(await StoreService.instance.storeRoot()));
+    final storeRoot = await StoreService.instance.storeRoot();
+    PouchChatLog.bind(PouchChatLog(storeRoot));
+    final pouchRole = await PouchRoleStore(storeRoot).load();
+    PouchDutyState.bind(pouchRole);
 
     // 检查远端 Agent 健康状态
     await _checkRemoteAgentsHealth();
 
-    // 初始化 She（内置守护 Agent）
-    await SheService.instance.ensureSheExists();
-    await _seedPouchSheCard();
-
-    // 启动 She 任务派发服务（订阅 agent 回合完成事件、清扫上次遗留的在途派发）
-    DispatchService.instance.ensureStarted();
+    // 惜宝、名册卡和派发只在主机上。客户端看到的是主机那一份。
+    if (PouchDuties.runsLocalShe(pouchRole.isHost)) {
+      await SheService.instance.ensureSheExists();
+      await _seedPouchSheCard();
+      DispatchService.instance.ensureStarted();
+    }
 
     // 初始化 ACP Server
     final acp = await _initializeACPServer();
@@ -145,7 +150,9 @@ class AppBootstrap {
     await PendingApprovalHub.instance.hydrate();
     ApprovalReachabilityNotifier.instance.init(navigatorKey: navigatorKey);
     ForegroundTaskService().init();
-    await ScheduledTaskService().startScheduler();
+    if (PouchDuties.runsScheduler(pouchRole.isHost)) {
+      await ScheduledTaskService().startScheduler();
+    }
 
     // 目录绑定：FS watcher + 周期兜底（失败不阻断启动）
     try {

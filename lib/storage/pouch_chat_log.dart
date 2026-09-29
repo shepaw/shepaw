@@ -110,6 +110,15 @@ class PouchChatLog {
   }
 
   final _lastId = <String, String>{};
+  final _tails = <String, Future<void>>{};
+
+  /// 同一频道的追加串行，避免流式更新和删除交错写坏最后一行。
+  Future<void> _enqueue(String channelId, Future<void> Function() action) {
+    final prev = _tails[channelId] ?? Future<void>.value();
+    final done = prev.catchError((Object _) {}).then((_) => action());
+    _tails[channelId] = done;
+    return done;
+  }
 
   File fileFor(String channelId) {
     final digest = crypto.sha256.convert(utf8.encode(channelId)).toString();
@@ -123,8 +132,12 @@ class PouchChatLog {
   }
 
   /// 追加一条。若文件最后一条就是同一个 id（流式更新），改写这一行而不是再追加。
-  Future<void> upsert(PouchChatRecord record) async {
-    if (record.id.isEmpty || record.channelId.isEmpty) return;
+  Future<void> upsert(PouchChatRecord record) {
+    if (record.id.isEmpty || record.channelId.isEmpty) return Future.value();
+    return _enqueue(record.channelId, () => _upsertNow(record));
+  }
+
+  Future<void> _upsertNow(PouchChatRecord record) async {
     final file = fileFor(record.channelId);
     await file.parent.create(recursive: true);
     final line = '${jsonEncode(record.toJson())}\n';
@@ -159,10 +172,12 @@ class PouchChatLog {
     ));
   }
 
-  Future<void> deleteChannel(String channelId) async {
-    final file = fileFor(channelId);
-    _lastId.remove(channelId);
-    if (await file.exists()) await file.delete();
+  Future<void> deleteChannel(String channelId) {
+    return _enqueue(channelId, () async {
+      final file = fileFor(channelId);
+      _lastId.remove(channelId);
+      if (await file.exists()) await file.delete();
+    });
   }
 
   /// 折叠修订后的当前消息，按写入顺序。已删除的不返回。
