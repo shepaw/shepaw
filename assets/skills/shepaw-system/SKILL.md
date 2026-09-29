@@ -60,7 +60,7 @@ App 和各智能体的 MCP、规则、技能。先读这里，再决定怎么做
 ### 其余
 
 - `files`：用户自己的文件。简历在 `files/<device>/<agentId>/resume.md`。
-- `public`：要公开引用时，`store write --space public`。
+- `public`：用途未定，不要写入。
 - 玉简在 `slips`。用 `slip` 改，不要 `store write` 覆盖那份 JSON。
 
 ## 玉简

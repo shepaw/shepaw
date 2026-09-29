@@ -20,7 +20,8 @@ void main() {
     expect(md, contains('`workspaces` 工作区'));
     expect(md, contains('`tools` 工具'));
     expect(md, contains('`files` 沉淀'));
-    expect(md, contains('`public` 公开'));
+    expect(md, contains('`public` 用途未定，不要写入'));
+    expect(md, isNot(contains('--space public')));
     expect(md, contains('@v<n>'));
     expect(md, contains('记忆补充'));
     expect(md, contains('改磁盘即改袋'));

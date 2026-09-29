@@ -338,14 +338,14 @@ class ScopeCard {
   String get _storeWriteLine => _hubCli
       ? '- 写产物: ACP `hub.cli.execute` `{namespace:"store",subcommand:"write",'
           'flags:{filename:"<名>",content:"..."},$_hubSessionId}`'
-          '（可选 flags.task / flags.desc / flags.space=public）；'
+          '（可选 flags.task / flags.desc）；'
           '**不要**传 `agent_id` / `owner` / `channel_id`，由系统落到本作用域袋'
       : _hubStore
           ? '- 写产物: `shepaw store write --filename <名> --content "..."`'
-              '（可选 `--task` / `--desc` / `--space public`）；'
+              '（可选 `--task` / `--desc`）；'
               '写落 **本机 device** 目录，返回的 `store://` 原样引用；**不要**传 `agent_id` / `owner`'
           : '- 写产物: `shepaw store write --filename <名> --content "..."`'
-              ' 或 `--file <path>` / `--content-base64`（可选 `--task` / `--desc` / `--space public`）；'
+              ' 或 `--file <path>` / `--content-base64`（可选 `--task` / `--desc`）；'
               '**不要**传 `agent_id` / `owner` / 个人 channel，由系统落到本作用域袋';
 
   /// 玉简只留约定。子命令以 `shepaw slip`（或 hub 上的同名 namespace）为准。
@@ -382,7 +382,7 @@ class ScopeCard {
         '产物一律走 runtime。',
       )
       ..writeln(
-        '- `public` 公开：`--space public` 可写；跨端能否看到由分享白名单决定。',
+        '- `public` 用途未定，不要写入。',
       )
       ..writeln(
         '- `runtime` 运行时：本轮会话、附件和产物'
