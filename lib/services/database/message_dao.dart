@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 import '../local_database_service.dart';
 import '../logger_service.dart';
+import '../../storage/pouch_chat_log.dart';
 import '../../storage/runtime_mirror_service.dart';
 
 /// 一次 [MessageDao.createMessages] 要写入的行。
@@ -71,8 +73,21 @@ extension MessageDao on LocalDatabaseService {
       },
       conflictAlgorithm: conflictAlgorithm,
     );
-    // SQLite 权威；runtime session.json 单向镜像（fail-open）
+    // SQLite 仍是界面读取来源；储物袋日志是随袋子迁移的副本（fail-open）。
     RuntimeMirrorService.instance.onMessageCreated(channelId);
+    _notePouchChat(PouchChatRecord(
+      id: id,
+      channelId: channelId,
+      senderId: senderId,
+      senderType: senderType,
+      senderName: senderName,
+      content: content,
+      messageType: messageType,
+      createdAt: (createdAt ?? DateTime.now()).toIso8601String(),
+      metadata: metadata,
+      replyToId: replyToId,
+      isRead: isRead,
+    ));
   }
 
   /// 批量写入。历史同步用它替代逐条 [createMessage]，避免几百次往返。
@@ -105,6 +120,22 @@ extension MessageDao on LocalDatabaseService {
     for (final channelId in channels) {
       RuntimeMirrorService.instance.onMessageCreated(channelId);
     }
+    _notePouchChatAll([
+      for (final row in rows)
+        PouchChatRecord(
+          id: row.id,
+          channelId: row.channelId,
+          senderId: row.senderId,
+          senderType: row.senderType,
+          senderName: row.senderName,
+          content: row.content,
+          messageType: row.messageType,
+          createdAt: row.createdAt.toIso8601String(),
+          metadata: row.metadata,
+          replyToId: row.replyToId,
+          isRead: row.isRead,
+        ),
+    ]);
   }
 
   /// 按 id 批量删除。SQLite 变量数有上限，所以分块。
@@ -112,6 +143,26 @@ extension MessageDao on LocalDatabaseService {
     if (ids.isEmpty) return;
     final db = await database;
     const chunkSize = 400;
+    final located = <({String id, String channelId})>[];
+    if (PouchChatLog.bound != null) {
+      for (var i = 0; i < ids.length; i += chunkSize) {
+        final end = i + chunkSize < ids.length ? i + chunkSize : ids.length;
+        final chunk = ids.sublist(i, end);
+        final placeholders = List.filled(chunk.length, '?').join(',');
+        final rows = await db.query(
+          'messages',
+          columns: ['id', 'channel_id'],
+          where: 'id IN ($placeholders)',
+          whereArgs: chunk,
+        );
+        for (final row in rows) {
+          located.add((
+            id: row['id'] as String? ?? '',
+            channelId: row['channel_id'] as String? ?? '',
+          ));
+        }
+      }
+    }
     for (var i = 0; i < ids.length; i += chunkSize) {
       final end = i + chunkSize < ids.length ? i + chunkSize : ids.length;
       final chunk = ids.sublist(i, end);
@@ -121,6 +172,19 @@ extension MessageDao on LocalDatabaseService {
         where: 'id IN ($placeholders)',
         whereArgs: chunk,
       );
+    }
+    final log = PouchChatLog.bound;
+    if (log == null) return;
+    for (final row in located) {
+      if (row.id.isEmpty || row.channelId.isEmpty) continue;
+      unawaited(log.tombstone(channelId: row.channelId, messageId: row.id).catchError(
+        (Object e) {
+          LoggerService().warning(
+            'pouch chat tombstone failed: $e',
+            tag: 'PouchChat',
+          );
+        },
+      ));
     }
   }
 
@@ -270,6 +334,15 @@ extension MessageDao on LocalDatabaseService {
       where: 'channel_id = ?',
       whereArgs: [channelId],
     );
+    final log = PouchChatLog.bound;
+    if (log != null) {
+      unawaited(log.deleteChannel(channelId).catchError((Object e) {
+        LoggerService().warning(
+          'pouch chat channel delete failed: $e',
+          tag: 'PouchChat',
+        );
+      }));
+    }
   }
 
   /// 更新消息内容
@@ -293,6 +366,7 @@ extension MessageDao on LocalDatabaseService {
       where: 'id = ?',
       whereArgs: [messageId],
     );
+    _notePouchFromSqlite(messageId);
   }
 
   Future<void> updateMessageMetadata(String messageId, Map<String, dynamic> metadata) async {
@@ -303,6 +377,7 @@ extension MessageDao on LocalDatabaseService {
       where: 'id = ?',
       whereArgs: [messageId],
     );
+    _notePouchFromSqlite(messageId);
   }
 
   /// Create or update a partial streaming message.
@@ -384,6 +459,7 @@ extension MessageDao on LocalDatabaseService {
       rethrow;
     }
 
+    _notePouchFromSqlite(messageId);
     return messageId;
   }
 
@@ -653,4 +729,41 @@ extension MessageDao on LocalDatabaseService {
       return 0;
     }
   }
+
+  void _notePouchFromSqlite(String messageId) {
+    final log = PouchChatLog.bound;
+    if (log == null) return;
+    unawaited(() async {
+      final db = await database;
+      final rows = await db.query(
+        'messages',
+        where: 'id = ?',
+        whereArgs: [messageId],
+        limit: 1,
+      );
+      if (rows.isEmpty) return;
+      await log.upsert(PouchChatRecord.fromSqliteRow(rows.first));
+    }().then((_) {}, onError: (Object e, StackTrace _) {
+      LoggerService().warning(
+        'pouch chat mirror failed: $e',
+        tag: 'PouchChat',
+      );
+    }));
+  }
+}
+
+void _notePouchChat(PouchChatRecord record) {
+  final log = PouchChatLog.bound;
+  if (log == null) return;
+  unawaited(log.upsert(record).then((_) {}, onError: (Object e, StackTrace _) {
+    LoggerService().warning('pouch chat mirror failed: $e', tag: 'PouchChat');
+  }));
+}
+
+void _notePouchChatAll(List<PouchChatRecord> records) {
+  final log = PouchChatLog.bound;
+  if (log == null || records.isEmpty) return;
+  unawaited(log.upsertAll(records).then((_) {}, onError: (Object e, StackTrace _) {
+    LoggerService().warning('pouch chat mirror failed: $e', tag: 'PouchChat');
+  }));
 }

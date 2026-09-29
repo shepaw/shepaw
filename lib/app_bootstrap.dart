@@ -36,6 +36,7 @@ import 'storage/runtime_retention.dart';
 import 'storage/scheduled_snapshot_service.dart';
 import 'storage/agent_roster.dart';
 import 'storage/device_identity.dart';
+import 'storage/pouch_chat_log.dart';
 import 'storage/store_protocol.dart';
 import 'storage/store_service.dart';
 import 'storage/sync_engine.dart';
@@ -104,6 +105,7 @@ class AppBootstrap {
     await DeviceIdentity.ensureFromPouch(
       await StoreService.instance.storeRoot(),
     );
+    PouchChatLog.bind(PouchChatLog(await StoreService.instance.storeRoot()));
 
     // 检查远端 Agent 健康状态
     await _checkRemoteAgentsHealth();

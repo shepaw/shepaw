@@ -113,7 +113,7 @@ class HistoryService {
     int limit = 100,
   }) async {
     final activeChannelId = await _db.getLatestActiveChannelForUserAndAgent(userId, agentId);
-    final channelId = activeChannelId ?? _generateChannelId(userId, agentId);
+    final channelId = activeChannelId ?? generateChannelId(userId, agentId);
     return await loadChannelMessages(channelId, limit: limit);
   }
 
@@ -231,7 +231,7 @@ class HistoryService {
     required String userId,
   }) async {
     final activeChannelId = await _db.getLatestActiveChannelForUserAndAgent(userId, agentId);
-    final channelId = activeChannelId ?? _generateChannelId(userId, agentId);
+    final channelId = activeChannelId ?? generateChannelId(userId, agentId);
     await _db.deleteChannel(channelId);
     await _toolResultDb.deleteByChannel(channelId);
     InferenceLogService.instance.removeByChannel(channelId);
@@ -516,7 +516,7 @@ class HistoryService {
     );
   }
 
-  String _generateChannelId(String userId, String agentId) {
+  String generateChannelId(String userId, String agentId) {
     final ids = [userId, agentId]..sort();
     return 'dm_${ids.join('_')}';
   }
