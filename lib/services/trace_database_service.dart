@@ -1,6 +1,5 @@
 import 'package:sqflite/sqflite.dart';
-import 'package:path/path.dart';
-import 'app_paths.dart';
+import '../storage/pouch_sqlite.dart';
 
 /// Manages the independent `agent_traces.db` SQLite database.
 ///
@@ -23,8 +22,7 @@ class TraceDatabaseService {
   }
 
   Future<Database> _initDatabase() async {
-    final directory = await AppPaths.documents();
-    final path = join(directory.path, _dbName);
+    final path = await PouchSqlite.openPath(_dbName);
 
     return await openDatabase(
       path,
@@ -111,10 +109,8 @@ class TraceDatabaseService {
   /// Delete the entire database file and reset. Does not affect main db.
   Future<void> deleteDatabase() async {
     await close();
-    final directory = await AppPaths.documents();
-    final path = join(directory.path, _dbName);
     try {
-      await databaseFactory.deleteDatabase(path);
+      await PouchSqlite.delete(_dbName);
     } catch (_) {}
   }
 }

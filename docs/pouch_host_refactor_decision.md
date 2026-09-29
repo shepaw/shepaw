@@ -141,6 +141,6 @@ Hub 仪表盘取码（只取票据、不配对）同样处理：应用可以帮�
 
 - `.system/pouch_role.json` 写成 `client` 并带上 `host_peer_id` 后，这台 App 不再本地跑群编排，也不再本地跑本机 LLM 回合。
 - 群消息走 `pouch_group_turn`，本机 Agent 回合走 `pouch_dm_turn`。主机确认自己是 host 之后，调用现有的 `ChatService`，再用 `pouch_turn_event` 把流式块送回。需要用户确认时，主机发 `kind: interaction`，客户端用原来的确认回调问用户，再以 `pouch_interaction_resp` 把结果送回；本机工具确认走 `os_tool`。三十分钟没人答就按没确认继续。
-- 应用库都在 `store://app/shepaw/sqlite/`：`shepaw.db`、`tool_results.db`、`she_profile.db`、`she_memory.db`、`minds.db`、`agent_traces.db`，以及遗留的 `agent_memory_*.db`。第一次打开时，若这里还没有文件，就从 `.system/sqlite/` 或文稿目录把旧库（含 `-wal` / `-shm`）搬进来。界面读消息仍只走 `ChatService`：本机读这份库，客户端用 `pouch_chat_read` 向主机要同一页。`.system/chat/` 的追加日志还不是读的来源。
+- 应用库直接建在 `store://app/shepaw/sqlite/`：`shepaw.db`、`tool_results.db`、`she_profile.db`、`she_memory.db`、`minds.db`、`agent_traces.db`，以及 `agent_memory_*.db`。不从文稿目录或 `.system/sqlite/` 搬旧文件。界面读消息仍只走 `ChatService`：本机读这份库，客户端用 `pouch_chat_read` 向主机要同一页。`.system/chat/` 的追加日志还不是读的来源。
 - 客户端回合可以带附件。先用 `pouch_file_begin` / `pouch_file_chunk` / `pouch_file_end` 把字节交给主机（单片 48KB，整文件不超过 20MB）。主机确认自己是 host 之后写入 `runtime/…/attachments/<sha256>`，再把同一份字节交给现有的 `ChatService`。单聊和群聊都在主机的消息库里留下附件气泡。这些帧和回合帧都要写进 `PeerConnection` 的控制帧名单，否则到不了另一端。
 - 客户端扫码或粘贴配对链接时，先给用户看指纹。确认后把票据交给主机，自己不发起握手，也不把对方写进本机名单。主机用储物袋的密钥去连，外网优先走二维码里的 `channel` 端点。通讯录和会话列表读的是主机的设备名单。没有 `pouch_role.json` 时仍在本机配对。

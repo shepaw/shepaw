@@ -1,6 +1,5 @@
 import 'package:sqflite/sqflite.dart';
-import 'package:path/path.dart';
-import 'app_paths.dart';
+import '../storage/pouch_sqlite.dart';
 
 /// 独立的 She 档案数据库服务。
 ///
@@ -37,8 +36,7 @@ class SheProfileDatabaseService {
   }
 
   Future<Database> _initDatabase() async {
-    final directory = await AppPaths.documents();
-    final path = join(directory.path, _dbName);
+    final path = await PouchSqlite.openPath(_dbName);
 
     return await openDatabase(
       path,
@@ -207,10 +205,8 @@ class SheProfileDatabaseService {
   /// 删除整个数据库文件并重置（不影响主库 shepaw.db）。
   Future<void> deleteDatabase() async {
     await close();
-    final directory = await AppPaths.documents();
-    final path = join(directory.path, _dbName);
     try {
-      await databaseFactory.deleteDatabase(path);
+      await PouchSqlite.delete(_dbName);
     } catch (_) {}
   }
 }

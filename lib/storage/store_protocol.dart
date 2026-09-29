@@ -140,6 +140,12 @@ class StoreSpace {
   /// Legacy：旧认知空间名（只读兼容；新写入走 [cognition]）。
   static const memory = 'memory';
 
+  /// 应用自己的库。不挂在宿主指纹下，URI 固定为 `store://app/shepaw/...`。
+  static const app = 'app';
+
+  /// [app] 分区的设备段。不是 Noise 指纹，换宿主后地址不变。
+  static const appDevice = 'shepaw';
+
   /// App 与各智能体的 MCP、规则、技能。用户可见，归在「智能体」。
   ///
   /// 相对 device 目录：
@@ -183,6 +189,7 @@ class StoreSpace {
     artifacts,
     attachments,
     tools,
+    app,
   ];
 
   /// 浏览「我的」：用户文件面。玉简 / 指令集走专属入口，不进普通文件夹列表。
@@ -345,6 +352,7 @@ class StoreSpace {
         SpaceProfile.builtin(attachments,
             visibility: 'private', encryption: 'client'),
         SpaceProfile.builtin(tools, visibility: 'shared'),
+        SpaceProfile.builtin(app, visibility: 'private'),
       ];
 }
 
@@ -503,6 +511,13 @@ String normalizeStorePath(String raw) {
 bool isValidDeviceId(String? device) =>
     device != null && RegExp(r'^[0-9a-f]{16}$').hasMatch(device);
 
+/// `store://app/shepaw/...` 的设备段。只和 [StoreSpace.app] 一起用。
+bool isPouchAppDevice(String? device) => device == StoreSpace.appDevice;
+
+bool isAddressableStoreDevice(String? device, String? space) =>
+    isValidDeviceId(device) ||
+    (space == StoreSpace.app && isPouchAppDevice(device));
+
 /// 内容哈希形态（64 hex）。
 bool isValidContentSha256(String? sha) =>
     sha != null && RegExp(r'^[0-9a-f]{64}$').hasMatch(sha);
@@ -560,7 +575,7 @@ class StoreUriRef {
     throw FormatException('bad_uri: unknown space $space');
   }
   final device = segments[1];
-  if (!isValidDeviceId(device)) {
+  if (!isAddressableStoreDevice(device, space)) {
     throw FormatException('bad_uri: invalid device id');
   }
   // Markdown / Uri.tryParse 常把非 ASCII 路径编成 %XX；磁盘上是 UTF-8 文件名。
@@ -694,7 +709,8 @@ bool? _builtinVisibility(String space) => switch (space) {
       StoreSpace.cognition ||
       StoreSpace.memory ||
       StoreSpace.attachments ||
-      StoreSpace.backups =>
+      StoreSpace.backups ||
+      StoreSpace.app =>
         false,
       _ => null,
     };
@@ -775,6 +791,11 @@ StoreAcl checkStoreAclWith(
         return StoreAcl.denyBadOp;
       }
       if (device != null && device != callerDeviceId) {
+        if (isOwner &&
+            isAddressableStoreDevice(device, space) &&
+            isPouchAppDevice(device)) {
+          return StoreAcl.allow;
+        }
         // workspaces：owner 可写任意 owner 设备目录；friend / 其它 space 拒绝
         if (space != null &&
             StoreSpace.isOwnerCrossWritable(space) &&
@@ -794,6 +815,9 @@ StoreAcl checkStoreAclWith(
       }
       final targetOwn = device == null || device == callerDeviceId;
       if (!targetOwn) {
+        if (isOwner && isPouchAppDevice(device) && space == StoreSpace.app) {
+          return StoreAcl.allow;
+        }
         if (!shared(space) || !isOwner) return StoreAcl.denyAcl;
         final cross = _crossSharedAccess(
           trustLevel: trustLevel,
@@ -833,6 +857,9 @@ StoreAcl checkStoreAclWith(
         );
         if (cross != StoreAcl.allow) return cross;
       } else if (!targetOwn && !shared(space)) {
+        if (isOwner && isPouchAppDevice(device) && space == StoreSpace.app) {
+          return StoreAcl.allow;
+        }
         // 显式分享（白名单命中）的私有分区前缀可跨端读（如 runtime 分享；
         // 文件级细粒度策略由服务侧执行，见 store_service._dispatch）
         if (shareAllowed != null && shareAllowed(space, path)) {

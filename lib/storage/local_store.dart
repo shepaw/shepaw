@@ -195,16 +195,14 @@ class LocalStore {
   LocalStore({
     required this.root,
     this.versionCoalesceWindow = defaultVersionCoalesceWindow,
-  }) : _usageCacheFile =
-            File(p.join(root.path, '.system', 'usage_cache.json'));
+  }) : _usageCacheFile = File(p.join(root.path, '.system', 'usage_cache.json'));
 
   SpaceRegistry get spaceRegistry => _spaces ??= SpaceRegistry(root);
   StoreEventLog get eventLog => _events ??= StoreEventLog(root);
 
   /// 工作区挂载（A 档视图）：命中挂载点时穿透到用户磁盘，见
   /// `docs/workspace_mount_decision.md`。
-  WorkspaceMountRegistry get mounts =>
-      _mounts ??= WorkspaceMountRegistry(root);
+  WorkspaceMountRegistry get mounts => _mounts ??= WorkspaceMountRegistry(root);
 
   /// `true`=shared / `false`=private / `null`=未知。
   bool? spaceVisibility(String space) => spaceRegistry.visibility(space);
@@ -215,7 +213,7 @@ class LocalStore {
   // ────────────────────────────── 路径解析（防逃逸，spec §4）──
 
   Directory _deviceDir(String deviceId) {
-    if (!isValidDeviceId(deviceId)) {
+    if (!isValidDeviceId(deviceId) && !isPouchAppDevice(deviceId)) {
       throw StoreException(StoreError.badOp, 'invalid device_id');
     }
     return Directory(p.join(root.path, deviceId));
@@ -224,7 +222,8 @@ class LocalStore {
   String _spaceDir(String deviceId, String space) {
     // 内置 + 已声明自定义空间（如 memory）：语法合法即可寻址；
     // 属性/ACL 由上层 space registry 裁定（spec §0.5）。
-    if (!StoreSpace.isValidSyntax(space)) {
+    if (!isAddressableStoreDevice(deviceId, space) ||
+        !StoreSpace.isValidSyntax(space)) {
       throw StoreException(StoreError.badOp, 'invalid space');
     }
     return p.join(_deviceDir(deviceId).path, space);
@@ -344,14 +343,14 @@ class LocalStore {
         computeHash ? await _hashOf(entity, stat) : '';
 
     if (maxDepth > 0) {
-      final startAbs =
-          startRel.isEmpty ? baseAbs : _resolveInSpace(deviceId, space, startRel);
+      final startAbs = startRel.isEmpty
+          ? baseAbs
+          : _resolveInSpace(deviceId, space, startRel);
       final startType =
           await FileSystemEntity.type(startAbs, followLinks: true);
       if (startType != FileSystemEntityType.directory) return const [];
 
-      Future<void> walkShallow(
-          String dirAbs, String rel, int remaining) async {
+      Future<void> walkShallow(String dirAbs, String rel, int remaining) async {
         if (entries.length >= limit || remaining < 1) return;
         final dir = Directory(dirAbs);
         await for (final entity in dir.list(followLinks: true)) {
@@ -432,8 +431,9 @@ class LocalStore {
           ? ''
           : mount.path.substring(entryPath.length + 1);
       // 中间目录在外部可能并不存在（它是挂载路径上的虚拟层），仍要暴露。
-      final dir = Directory(
-          remainder.isEmpty ? mount.external : p.join(mount.external, remainder));
+      final dir = Directory(remainder.isEmpty
+          ? mount.external
+          : p.join(mount.external, remainder));
       var mtimeMs = 0;
       if (await dir.exists()) {
         mtimeMs = (await dir.stat()).modified.millisecondsSinceEpoch;
@@ -505,9 +505,8 @@ class LocalStore {
     String? cursor,
   }) async {
     final pageLimit = limit < 1 ? 1 : limit;
-    final scanLimit = computeHash
-        ? pageLimit
-        : (pageLimit >= 5000 ? pageLimit : 5000);
+    final scanLimit =
+        computeHash ? pageLimit : (pageLimit >= 5000 ? pageLimit : 5000);
     var entries = await list(
       deviceId,
       space,
@@ -658,8 +657,7 @@ class LocalStore {
         throw StoreException(
             StoreError.stagingState, 'upload_id conflicts with existing');
       }
-      final received =
-          await partFile.exists() ? await partFile.length() : 0;
+      final received = await partFile.exists() ? await partFile.length() : 0;
       return (id, received);
     }
 
@@ -720,8 +718,7 @@ class LocalStore {
   /// 可选 [manifest]：写入任务 `.nexuspouch/manifest.json`（血缘）。
   /// 可选 [publish]：标记版本 `protected`（发布产物修剪时保留）。
   /// 返回（已转正文件清单，失败项）。
-  Future<(List<({String path, int size, String sha256})>, List<String>)>
-      commit(
+  Future<(List<({String path, int size, String sha256})>, List<String>)> commit(
     String deviceId,
     String space,
     List<String> uploadIds, {
@@ -765,10 +762,7 @@ class LocalStore {
       verified.add((id, meta, partFile));
     }
     if (failed.isNotEmpty) {
-      return (
-        const <({String path, int size, String sha256})>[],
-        failed
-      );
+      return (const <({String path, int size, String sha256})>[], failed);
     }
 
     // 阶段二：逐个转正（同卷 rename 原子；单文件失败其余继续）
@@ -797,8 +791,7 @@ class LocalStore {
           size: meta.size,
           protected: publish,
         );
-        committed.add(
-            (path: meta.path, size: meta.size, sha256: meta.sha256));
+        committed.add((path: meta.path, size: meta.size, sha256: meta.sha256));
         spaceDelta += meta.size - oldSize;
       } catch (e) {
         failed.add('$id: promote failed: $e');
@@ -914,8 +907,7 @@ class LocalStore {
         while (true) {
           final n = await raf.readInto(buf);
           if (n <= 0) break;
-          await writeChunk(
-              deviceId, space, uid, offset, buf.sublist(0, n));
+          await writeChunk(deviceId, space, uid, offset, buf.sublist(0, n));
           offset += n;
         }
       } finally {
@@ -962,7 +954,8 @@ class LocalStore {
   String _versionsDir(String deviceId, String space, String normalizedRel) =>
       p.join(root.path, '.versions', deviceId, space, normalizedRel);
 
-  String _versionsIndexPath(String deviceId, String space, String normalizedRel) =>
+  String _versionsIndexPath(
+          String deviceId, String space, String normalizedRel) =>
       p.join(_versionsDir(deviceId, space, normalizedRel), 'index.json');
 
   String _versionsBlobPath(
@@ -971,8 +964,7 @@ class LocalStore {
 
   Future<List<Map<String, dynamic>>> _loadVersionEntries(
       String deviceId, String space, String normalizedRel) async {
-    final indexFile =
-        File(_versionsIndexPath(deviceId, space, normalizedRel));
+    final indexFile = File(_versionsIndexPath(deviceId, space, normalizedRel));
     if (!await indexFile.exists()) return [];
     try {
       final json = jsonDecode(await indexFile.readAsString());
@@ -990,8 +982,7 @@ class LocalStore {
       String normalizedRel, List<Map<String, dynamic>> entries) async {
     final dir = Directory(_versionsDir(deviceId, space, normalizedRel));
     await dir.create(recursive: true);
-    final indexFile =
-        File(_versionsIndexPath(deviceId, space, normalizedRel));
+    final indexFile = File(_versionsIndexPath(deviceId, space, normalizedRel));
     await indexFile.writeAsString(jsonEncode({'versions': entries}));
   }
 
@@ -1141,8 +1132,8 @@ class LocalStore {
       throw StoreException(StoreError.badUri, 'invalid version ref $ref');
     }
 
-    final entries = (await versionsList(deviceId, space, normalized))['versions']
-        as List;
+    final entries =
+        (await versionsList(deviceId, space, normalized))['versions'] as List;
     Map<String, dynamic>? hit;
     if (parsed.kind == StoreUriRefKind.seq) {
       final v = parsed.value as int;
@@ -1239,15 +1230,14 @@ class LocalStore {
   ) async {
     final normalized = normalizeStorePath(fileRelPath);
     final segments = normalized.split('/');
-    final taskRel =
-        segments.length > 1 ? segments.first : normalized;
+    final taskRel = segments.length > 1 ? segments.first : normalized;
     // 点前缀目录不走 normalizeStorePath；直接拼在 space 下
-    final dir = Directory(
-        p.join(_spaceDir(deviceId, space), taskRel, '.nexuspouch'));
+    final dir =
+        Directory(p.join(_spaceDir(deviceId, space), taskRel, '.nexuspouch'));
     await dir.create(recursive: true);
     final file = File(p.join(dir.path, 'manifest.json'));
-    await file.writeAsString(
-        const JsonEncoder.withIndent('  ').convert(manifest));
+    await file
+        .writeAsString(const JsonEncoder.withIndent('  ').convert(manifest));
   }
 
   // ────────────────────────────── rename ──
@@ -1267,8 +1257,7 @@ class LocalStore {
     if (fromNorm == toNorm) return;
     final fromAbs = _resolveInSpace(deviceId, space, fromNorm);
     final toAbs = _resolveInSpace(deviceId, space, toNorm);
-    final fromType =
-        await FileSystemEntity.type(fromAbs, followLinks: false);
+    final fromType = await FileSystemEntity.type(fromAbs, followLinks: false);
     if (fromType == FileSystemEntityType.notFound) {
       throw StoreException(StoreError.notFound, fromNorm);
     }
@@ -1347,8 +1336,7 @@ class LocalStore {
     }
     if (await FileSystemEntity.type(dest, followLinks: false) !=
         FileSystemEntityType.notFound) {
-      recycleRel =
-          '$recycleRel~${DateTime.now().millisecondsSinceEpoch}';
+      recycleRel = '$recycleRel~${DateTime.now().millisecondsSinceEpoch}';
       dest = p.join(root.path, recycleRel);
     }
     await Directory(p.dirname(dest)).create(recursive: true);
@@ -1382,8 +1370,7 @@ class LocalStore {
             if (name.startsWith('.')) continue;
             final rel = p.relative(entity.path, from: spaceDir.path);
             final relParts = p.split(rel);
-            relParts[relParts.length - 1] =
-                _stripRecycleSuffix(relParts.last);
+            relParts[relParts.length - 1] = _stripRecycleSuffix(relParts.last);
             entries.add(RecycleEntry(
               recyclePath: p
                   .relative(entity.path, from: root.path)
@@ -1421,8 +1408,7 @@ class LocalStore {
     final device = parts[2];
     final space = parts[3];
     final originParts = parts.sublist(4).toList();
-    originParts[originParts.length - 1] =
-        _stripRecycleSuffix(originParts.last);
+    originParts[originParts.length - 1] = _stripRecycleSuffix(originParts.last);
     final originRel = originParts.join('/');
     final destAbs = _resolveInSpace(device, space, originRel);
     if (await FileSystemEntity.type(destAbs, followLinks: false) !=
@@ -1480,9 +1466,8 @@ class LocalStore {
     final tokens =
         needle.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
     final cap = limit < 1 ? 1 : (limit > 200 ? 200 : limit);
-    final devices = device != null && device.isNotEmpty
-        ? [device]
-        : await _listDeviceIds();
+    final devices =
+        device != null && device.isNotEmpty ? [device] : await _listDeviceIds();
     final spaces = space != null && space.isNotEmpty
         ? [space]
         : [
@@ -1592,7 +1577,8 @@ class LocalStore {
         final buf = Uint8List(want);
         final n = await raf.readInto(buf);
         if (n <= 0) return null;
-        final text = utf8.decode(buf.sublist(0, n), allowMalformed: true).toLowerCase();
+        final text =
+            utf8.decode(buf.sublist(0, n), allowMalformed: true).toLowerCase();
         for (final token in tokens) {
           if (!text.contains(token)) return null;
         }
@@ -1638,9 +1624,7 @@ class LocalStore {
     final vol = debugVolumeUsage ??
         (debugSkipVolumeQuota ? null : await VolumeUsage.probe(root.path));
     if (vol != null) {
-      final need = debugVolumeUsage != null
-          ? size + volumeHeadroomBytes
-          : size;
+      final need = debugVolumeUsage != null ? size + volumeHeadroomBytes : size;
       if (vol.freeBytes < need) {
         throw StoreException(StoreError.quotaExceeded, 'volume budget');
       }
@@ -1714,7 +1698,8 @@ class LocalStore {
   /// 永久删除某设备目录（方案 §5.4 / §7.2：换机后旧镜像手删）。
   ///
   /// 禁止删除 [selfDeviceId]；返回删除前占用字节数。
-  Future<int> purgeDevice(String deviceId, {required String selfDeviceId}) async {
+  Future<int> purgeDevice(String deviceId,
+      {required String selfDeviceId}) async {
     if (!isValidDeviceId(deviceId)) {
       throw StoreException(StoreError.badPath, 'invalid device id');
     }
@@ -1749,7 +1734,8 @@ class LocalStore {
 
   /// 清理超时未 commit 的暂存（默认 24h，spec §2.4）。
   /// 优先用 `.json` 的 `created_ms`，避免活跃 chunk 写刷新 mtime 绕过 GC。
-  Future<int> gcStaging({Duration olderThan = const Duration(hours: 24)}) async {
+  Future<int> gcStaging(
+      {Duration olderThan = const Duration(hours: 24)}) async {
     var removed = 0;
     final deadline = DateTime.now().subtract(olderThan);
     if (!await root.exists()) return 0;
@@ -1808,8 +1794,8 @@ class LocalStore {
     final recycleDir = Directory(p.join(root.path, '.recycle'));
     if (!await recycleDir.exists()) return 0;
     final today = DateTime.now();
-    final cutoff = DateTime(today.year, today.month, today.day)
-        .subtract(olderThan);
+    final cutoff =
+        DateTime(today.year, today.month, today.day).subtract(olderThan);
     var purgedBytes = 0;
     await for (final dateDir in recycleDir.list()) {
       if (dateDir is! Directory) continue;
@@ -1836,8 +1822,8 @@ class LocalStore {
       throw StoreException(StoreError.badOp, 'invalid device_id');
     }
     if (keep < 0) keep = 0;
-    final runtime = Directory(
-        p.join(_deviceDir(deviceId).path, StoreSpace.runtime));
+    final runtime =
+        Directory(p.join(_deviceDir(deviceId).path, StoreSpace.runtime));
     if (!await runtime.exists()) return 0;
     final byDir = <String, List<File>>{};
     await for (final entity in runtime.list(recursive: true)) {
@@ -1942,8 +1928,8 @@ class LocalStore {
     if (!isValidDeviceId(deviceId)) {
       throw StoreException(StoreError.badOp, 'invalid device_id');
     }
-    final runtime = Directory(
-        p.join(_deviceDir(deviceId).path, StoreSpace.runtime));
+    final runtime =
+        Directory(p.join(_deviceDir(deviceId).path, StoreSpace.runtime));
     if (!await runtime.exists()) return 0;
     final referenced = {
       for (final path in referencedRelPaths) normalizeStorePath(path),
@@ -1988,12 +1974,14 @@ class LocalStore {
       'other': 0,
       'versions': 0,
     };
-    final dir = Directory(p.join(_deviceDir(deviceId).path, StoreSpace.runtime));
+    final dir =
+        Directory(p.join(_deviceDir(deviceId).path, StoreSpace.runtime));
     if (await dir.exists()) {
       await for (final entity in dir.list(recursive: true)) {
         if (entity is! File) continue;
-        final rel =
-            p.relative(entity.path, from: dir.path).replaceAll(p.separator, '/');
+        final rel = p
+            .relative(entity.path, from: dir.path)
+            .replaceAll(p.separator, '/');
         if (rel.split('/').any((s) => s.startsWith('.'))) continue;
         int size;
         try {

@@ -41,6 +41,7 @@
 | `files` | shared | none | none | allowed |
 | `public` | shared | none | none | allowed |
 | `backups` | private | client | gfs（属主设备本机执行） | allowed |
+| `app` | private | none | none | allowed |
 | `artifacts`（legacy） | shared | none | none | allowed |
 | `attachments`（legacy） | private | client | none | allowed |
 
@@ -100,7 +101,7 @@ store://<space>/<device>/<relpath>[@<ref>]
 ```
 
 - `space` ∈ 内置/legacy 分区名（见 §0.5）；必填单值。
-- `device` = 16 位小写 hex（Noise 公钥哈希）。
+- `device` = 16 位小写 hex（Noise 公钥哈希）。例外：`space=app` 时 device 固定为 `shepaw`，地址是 `store://app/shepaw/<relpath>`，不随宿主指纹改变。
 - `<relpath>` 必须相对路径，符合 §4 规范化（拒绝 `..`、绝对路径、盘符、NUL、反斜杠统一为 `/`）。
 - 兼容路径式写法：`store:///artifacts/<device>/<relpath>`（三段式）与 host 式等价。
 - **点前缀段保留**：`<relpath>` 任何段不得以 `.` 开头（`.staging` / `.recycle` / `.versions` / `.nexuspouch` 等系统目录机制上不可寻址），否则 `bad_path`。

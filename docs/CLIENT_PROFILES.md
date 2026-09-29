@@ -72,6 +72,7 @@ URI：`store://<space>/<device_id>/<relpath>`。
 | `memory` | private（legacy） | 只读兼容；新写入走 `cognition` |
 | `files` / `public` | shared | 仅本端 |
 | `backups` | private | 仅本端 |
+| `app` | private | 仅本端。地址固定 `store://app/shepaw/...`，不跟宿主指纹 |
 | `artifacts` / `attachments` | legacy | 旧数据可读；新写入走 runtime |
 
 ## 3. Runtime owner 解析

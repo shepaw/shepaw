@@ -1,10 +1,8 @@
-import 'dart:io' show File;
 import 'package:sqflite/sqflite.dart';
-import 'package:path/path.dart';
-import 'app_paths.dart';
 import '../models/agent_memory_entry.dart';
-import 'logger_service.dart';
+import '../storage/pouch_sqlite.dart';
 import '../storage/runtime_mirror_service.dart';
+import 'logger_service.dart';
 
 /// Agent 独立记忆数据库服务（**遗留**）。
 ///
@@ -40,16 +38,7 @@ class AgentMemoryDbService {
   static Future<void> deleteAllDatabases() async {
     await closeAll();
     try {
-      final directory = await AppPaths.documents();
-      await for (final entity in directory.list()) {
-        if (entity is File && entity.path.contains('agent_memory_') && entity.path.endsWith('.db')) {
-          await entity.delete();
-          LoggerService().info(
-            'Memory database deleted: ${entity.path}',
-            tag: 'AgentMemoryDbService',
-          );
-        }
-      }
+      await PouchSqlite.deletePrefixed('agent_memory_');
     } catch (e) {
       LoggerService().error(
         'Failed to delete agent memory databases',
@@ -92,8 +81,7 @@ class AgentMemoryDbService {
   }
 
   Future<Database> _initDatabase() async {
-    final directory = await AppPaths.documents();
-    final path = join(directory.path, _dbFileName);
+    final path = await PouchSqlite.openPath(_dbFileName);
 
     return await openDatabase(
       path,
@@ -454,9 +442,7 @@ class AgentMemoryDbService {
   Future<void> deleteDatabase() async {
     await close();
     try {
-      final directory = await AppPaths.documents();
-      final path = join(directory.path, _dbFileName);
-      await databaseFactory.deleteDatabase(path);
+      await PouchSqlite.delete(_dbFileName);
       LoggerService().info(
         'Memory database deleted: $_dbFileName',
         tag: 'AgentMemoryDbService[$_agentId]',

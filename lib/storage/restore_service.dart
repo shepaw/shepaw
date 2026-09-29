@@ -1,9 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:path/path.dart' as p;
-import '../services/app_paths.dart';
-
 import '../services/agent_memory_db_service.dart';
 import '../services/agent_memory_store_service.dart';
 import '../services/local_database_service.dart';
@@ -12,6 +9,7 @@ import '../services/minds_database_service.dart';
 import '../services/she_memory_db_service.dart';
 import '../services/she_profile_database_service.dart';
 import 'device_identity.dart';
+import 'pouch_sqlite.dart';
 import 'snapshot_crypto.dart';
 import 'snapshot_service.dart';
 
@@ -90,9 +88,8 @@ class RestoreService {
     await _closeAllDatabases();
 
     // 3. 全量替换主库（保留 .pre-restore 兜底）
-    final docs = await AppPaths.documents();
-    final dbFile = File(p.join(docs.path, 'shepaw.db'));
-    final backup = File(p.join(docs.path, 'shepaw.db.pre-restore'));
+    final dbFile = await PouchSqlite.file(PouchSqlite.mainDb);
+    final backup = File('${dbFile.path}.pre-restore');
     if (await backup.exists()) await backup.delete();
     if (await dbFile.exists()) {
       await dbFile.rename(backup.path);
@@ -118,8 +115,8 @@ class RestoreService {
 
   /// 恢复后清理：删除 .pre-restore 兜底文件（用户确认恢复成功后）。
   Future<void> discardPreRestoreBackup() async {
-    final docs = await AppPaths.documents();
-    final backup = File(p.join(docs.path, 'shepaw.db.pre-restore'));
+    final dbFile = await PouchSqlite.file(PouchSqlite.mainDb);
+    final backup = File('${dbFile.path}.pre-restore');
     if (await backup.exists()) await backup.delete();
   }
 

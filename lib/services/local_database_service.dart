@@ -1,7 +1,5 @@
-import 'dart:io' show File, Directory;
 import 'package:sqflite/sqflite.dart';
-import 'package:path/path.dart';
-import 'app_paths.dart';
+import '../storage/pouch_sqlite.dart';
 import 'she_profile_database_service.dart';
 import 'she_memory_db_service.dart';
 import 'minds_database_service.dart';
@@ -53,8 +51,7 @@ class LocalDatabaseService {
 
   /// 初始化数据库
   Future<Database> _initDatabase() async {
-    final directory = await AppPaths.documents();
-    final path = join(directory.path, 'shepaw.db');
+    final path = await PouchSqlite.openPath(PouchSqlite.mainDb);
     return await openDatabase(
       path,
       version: 34,
@@ -946,8 +943,6 @@ class LocalDatabaseService {
   ///
   /// 注意：调用前应已通过 [VaultService.createVault] 完成数据备份。
   static Future<void> clearAllDatabases() async {
-    final dbDir = (await AppPaths.documents()).path;
-
     // 1. 关闭所有数据库连接（将各 DB 服务的 _database 置 null）
     await LocalDatabaseService().close();
     await SheProfileDatabaseService().close();
@@ -957,29 +952,17 @@ class LocalDatabaseService {
     await AgentMemoryStoreService.closeAll();
     await AgentMemoryStoreService.deleteAllAgentMemories();
 
-    // 2. 删除核心 DB 文件
-    const coreNames = [
-      'shepaw.db',
+    // 2. 删除核心库。这些文件都在 store://app/shepaw/sqlite/。
+    await PouchSqlite.delete(PouchSqlite.mainDb);
+    await PouchSqlite.delete(PouchSqlite.toolResultsDb);
+    for (final name in const [
       'she_profile.db',
       'she_memory.db',
       'minds.db',
-    ];
-    for (final name in coreNames) {
-      final file = File(join(dbDir, name));
-      if (await file.exists()) {
-        await file.delete();
-      }
+      'agent_traces.db',
+    ]) {
+      await PouchSqlite.delete(name);
     }
-
-    // 3. 删除遗留 agent_memory_*.db（store 权威已在上面清掉）
-    final dir = Directory(dbDir);
-    await for (final entity in dir.list()) {
-      if (entity is File) {
-        final name = basename(entity.path);
-        if (name.startsWith('agent_memory_') && name.endsWith('.db')) {
-          await entity.delete();
-        }
-      }
-    }
+    await PouchSqlite.deletePrefixed('agent_memory_');
   }
 }

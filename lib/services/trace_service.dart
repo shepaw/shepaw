@@ -1,13 +1,11 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:path/path.dart';
-import 'app_paths.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 import '../models/inference_log_entry.dart';
 import '../models/model_token_pricing.dart';
 import '../models/trace_models.dart';
+import '../storage/pouch_sqlite.dart';
 import 'trace_database_service.dart';
 
 /// Persistent trace storage service backed by the independent `agent_traces.db`.
@@ -573,9 +571,9 @@ class TraceService extends ChangeNotifier {
   /// Get the size of the trace database file in bytes, or null if unavailable.
   Future<int?> getDatabaseSizeBytes() async {
     try {
-      final directory = await AppPaths.documents();
-      final path = join(directory.path, 'agent_traces.db');
-      final file = File(path);
+      final file = await PouchSqlite.file(
+        '${PouchSqlite.sqliteDir}/agent_traces.db',
+      );
       if (await file.exists()) return await file.length();
       return null;
     } catch (_) {

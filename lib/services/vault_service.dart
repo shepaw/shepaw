@@ -8,8 +8,8 @@ import 'package:crypto/crypto.dart';
 import 'package:encrypt/encrypt.dart' as enc;
 import 'package:path/path.dart' as p;
 import 'app_paths.dart';
-
 import 'logger_service.dart';
+import '../storage/pouch_sqlite.dart';
 
 /// 历史数据保险库信息
 class VaultInfo {
@@ -90,7 +90,6 @@ class VaultService {
     required String salt,
   }) async {
     try {
-      final dbDir = await _getDbDirectory();
       final vaultsDir = await _getVaultsDirectory();
 
       // 收集需要打包的文件
@@ -98,22 +97,23 @@ class VaultService {
 
       // 核心 DB 文件
       for (final name in _coreDbNames) {
-        final file = File(p.join(dbDir, name));
+        final file = await _coreDbFile(name);
         if (await file.exists()) {
           filesToPack[name] = await file.readAsBytes();
           _logger.info('Packing: $name (${filesToPack[name]!.length} bytes)', tag: 'Vault');
         }
       }
 
-      // agent_memory_*.db 文件
-      final dir = Directory(dbDir);
-      await for (final entity in dir.list()) {
-        if (entity is File) {
+      final sqliteDir = await PouchSqlite.sqliteDirectory();
+      if (await sqliteDir.exists()) {
+        await for (final entity in sqliteDir.list()) {
+          if (entity is! File) continue;
           final name = p.basename(entity.path);
-          if (name.startsWith('agent_memory_') && name.endsWith('.db')) {
-            filesToPack[name] = await entity.readAsBytes();
-            _logger.info('Packing: $name (${filesToPack[name]!.length} bytes)', tag: 'Vault');
+          if (!name.startsWith('agent_memory_') || !name.endsWith('.db')) {
+            continue;
           }
+          filesToPack[name] = await entity.readAsBytes();
+          _logger.info('Packing: $name (${filesToPack[name]!.length} bytes)', tag: 'Vault');
         }
       }
 
@@ -294,12 +294,12 @@ class VaultService {
 
       // 解压 ZIP
       final archive = ZipDecoder().decodeBytes(zipBytes);
-      final dbDir = await _getDbDirectory();
 
       for (final file in archive) {
         if (file.isFile) {
-          final outPath = p.join(dbDir, file.name);
-          final outFile = File(outPath);
+          final outFile = await PouchSqlite.file(
+            '${PouchSqlite.sqliteDir}/${file.name}',
+          );
           await outFile.writeAsBytes(file.content as List<int>);
           _logger.info('Restored: ${file.name} (${file.size} bytes)', tag: 'Vault');
         }
@@ -348,11 +348,9 @@ class VaultService {
   // 私有工具方法
   // ---------------------------------------------------------------------------
 
-  /// 获取 DB 目录路径（与各 DB Service 保持一致）
-  Future<String> _getDbDirectory() async {
-    final dir = await AppPaths.documents();
-    return dir.path;
-  }
+  /// 主库和其余应用库都在 store://app/shepaw/sqlite/。
+  Future<File> _coreDbFile(String name) =>
+      PouchSqlite.file('${PouchSqlite.sqliteDir}/$name');
 
   /// 获取 vaults 存储目录（自动创建）
   Future<String> _getVaultsDirectory() async {

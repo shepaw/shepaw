@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
-import 'package:path/path.dart';
-import 'app_paths.dart';
+import '../storage/pouch_sqlite.dart';
 
 /// 独立的工具执行结果数据库服务。
 ///
@@ -26,7 +25,6 @@ class ToolResultDatabaseService {
   Database? _database;
 
   static const int _version = 1;
-  static const String _dbName = 'tool_results.db';
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -35,8 +33,7 @@ class ToolResultDatabaseService {
   }
 
   Future<Database> _initDatabase() async {
-    final directory = await AppPaths.documents();
-    final path = join(directory.path, _dbName);
+    final path = await PouchSqlite.openPath(PouchSqlite.toolResultsDb);
 
     return await openDatabase(
       path,
@@ -232,10 +229,8 @@ class ToolResultDatabaseService {
   /// 删除整个数据库文件并重置（不影响主库 shepaw.db）。
   Future<void> deleteDatabase() async {
     await close();
-    final directory = await AppPaths.documents();
-    final path = join(directory.path, _dbName);
     try {
-      await databaseFactory.deleteDatabase(path);
+      await PouchSqlite.delete(PouchSqlite.toolResultsDb);
     } catch (_) {}
   }
 }
