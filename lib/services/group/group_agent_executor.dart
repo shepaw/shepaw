@@ -48,6 +48,7 @@ import 'group_turn_result.dart';
 import 'group_turn_outcome.dart';
 import 'group_task_status.dart';
 import 'group_interaction_handler.dart';
+import '../../peer/pouch_roster.dart';
 import '../../peer/services/peer_agent_client_service.dart';
 import '../../peer/peer_approval_selection.dart';
 import 'peer_approval_policy.dart';
@@ -1371,9 +1372,9 @@ class GroupAgentExecutor {
       }
     } else if (agent.isPeerAgent) {
       // ── Peer agent path (P2P relay to paired device's local agent) ──
-      final peerId = agent.sourcePeerId;
-      final remoteAgentId = agent.remoteAgentId;
-      if (peerId == null || remoteAgentId == null) {
+      final sourcePeerId = agent.sourcePeerId;
+      final sourceRemoteAgentId = agent.remoteAgentId;
+      if (sourcePeerId == null || sourceRemoteAgentId == null) {
         LoggerService().error(
           'Peer agent ${agent.name} missing source_peer_id/remote_agent_id',
           tag: 'GroupAgentExecutor',
@@ -1389,6 +1390,29 @@ class GroupAgentExecutor {
         onAgentDone?.call(agent.id, agent.name, true);
         return const GroupTurnResult();
       }
+
+      final dial = await PouchRosterDial.decideLive(
+        fallbackPeerId: sourcePeerId,
+        remoteAgentId: sourceRemoteAgentId,
+      );
+      if (dial.blocked) {
+        LoggerService().info(
+          'Peer agent ${agent.name} roster dial cleared',
+          tag: 'GroupAgentExecutor',
+        );
+        await _saveGroupAgentErrorMessage(
+          channelId: channelId,
+          agentName: agent.name,
+          error: PouchRosterDial.blockedMessage,
+        );
+        _releaseGroupTurn(channelId, agent, groupTask);
+        infLogGroup.endSession(groupTraceId, InferenceStatus.error,
+            error: 'roster dial cleared');
+        onAgentDone?.call(agent.id, agent.name, true);
+        return const GroupTurnResult();
+      }
+      final peerId = dial.peerId ?? sourcePeerId;
+      final remoteAgentId = dial.remoteAgentId ?? sourceRemoteAgentId;
 
       // Per-agent stop: abort only this peer's pending turn (host cancels by
       // request_id), leaving the shared token and other members untouched.

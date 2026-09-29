@@ -96,4 +96,64 @@ void main() {
     expect(left.dial, isNull);
     expect(left.hubFingerprint, 'hubaaaa');
   });
+
+  test('能拨的卡按指纹找设备，卸掉或对不上就停', () {
+    final dialable = AgentRosterCard(
+      id: 'card-a',
+      name: 'Codex',
+      avatar: '',
+      engine: 'codex',
+      hubFingerprint: 'hubaaaa',
+      remoteAgentId: 'remote-1',
+      dial: const AgentDial(running: true),
+    );
+    final detached = dialable.copyWith(clearDial: true);
+    const peers = [(id: 'peer-9', fingerprint: 'hubaaaa')];
+
+    final hit = PouchRosterDial.decide(
+      cards: [dialable],
+      peers: peers,
+      hubFingerprint: 'hubaaaa',
+      remoteAgentId: 'remote-1',
+    );
+    expect(hit.blocked, isFalse);
+    expect(hit.peerId, 'peer-9');
+    expect(hit.remoteAgentId, 'remote-1');
+
+    expect(
+      PouchRosterDial.decide(
+        cards: [detached],
+        peers: peers,
+        hubFingerprint: 'hubaaaa',
+        remoteAgentId: 'remote-1',
+      ).blocked,
+      isTrue,
+    );
+    expect(
+      PouchRosterDial.decide(
+        cards: [dialable],
+        peers: const [(id: 'peer-9', fingerprint: 'other')],
+        hubFingerprint: 'hubaaaa',
+        remoteAgentId: 'remote-1',
+      ).blocked,
+      isTrue,
+    );
+
+    final missing = PouchRosterDial.decide(
+      cards: [
+        const AgentRosterCard(
+          id: 'she',
+          name: 'She',
+          avatar: '',
+          engine: 'she',
+          boundToPouch: true,
+        ),
+      ],
+      peers: peers,
+      hubFingerprint: 'hubaaaa',
+      remoteAgentId: 'remote-1',
+    );
+    expect(missing.blocked, isFalse);
+    expect(missing.peerId, isNull);
+  });
 }

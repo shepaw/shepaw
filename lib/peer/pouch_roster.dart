@@ -4,6 +4,9 @@ import 'dart:typed_data';
 
 import '../storage/agent_roster.dart';
 import '../storage/pouch_role.dart';
+import '../storage/store_service.dart';
+import 'models/paired_peer.dart';
+import 'services/peer_storage_service.dart';
 
 /// 主机把工人 Hub 报上来的 Agent 名单写进储物袋名册。
 ///
@@ -80,6 +83,101 @@ class PouchRosterSync {
       return bytes.isEmpty ? null : bytes;
     } catch (_) {
       return null;
+    }
+  }
+}
+
+/// 这次能不能按名册拨到一台工人 Hub。
+class PouchDialDecision {
+  const PouchDialDecision._({
+    required this.blocked,
+    this.peerId,
+    this.remoteAgentId,
+  });
+
+  /// 名册里还没有这张卡，调用方继续用原来的 peer id。
+  const PouchDialDecision.absent() : this._(blocked: false);
+
+  /// 卡还在，但拨号已清，或对不上任何已配对设备。
+  const PouchDialDecision.blocked() : this._(blocked: true);
+
+  const PouchDialDecision.dial({
+    required String peerId,
+    required String remoteAgentId,
+  }) : this._(
+          blocked: false,
+          peerId: peerId,
+          remoteAgentId: remoteAgentId,
+        );
+
+  final bool blocked;
+  final String? peerId;
+  final String? remoteAgentId;
+}
+
+/// 群编排和单聊在真正发出去之前问名册。客户端不拦。
+class PouchRosterDial {
+  PouchRosterDial._();
+
+  static const blockedMessage = '这台工人 Hub 已卸掉，不能再拨';
+
+  static PouchDialDecision decide({
+    required List<AgentRosterCard> cards,
+    required List<({String id, String fingerprint})> peers,
+    required String hubFingerprint,
+    required String remoteAgentId,
+  }) {
+    final hub = hubFingerprint.trim();
+    final remote = remoteAgentId.trim();
+    if (hub.isEmpty || remote.isEmpty) return const PouchDialDecision.absent();
+    AgentRosterCard? card;
+    for (final c in cards) {
+      if (c.boundToPouch) continue;
+      if (c.hubFingerprint == hub && c.remoteAgentId == remote) {
+        card = c;
+        break;
+      }
+    }
+    if (card == null) return const PouchDialDecision.absent();
+    if (!card.dialable) return const PouchDialDecision.blocked();
+    for (final peer in peers) {
+      final id = peer.id.trim();
+      if (peer.fingerprint.trim() == hub && id.isNotEmpty) {
+        return PouchDialDecision.dial(peerId: id, remoteAgentId: remote);
+      }
+    }
+    return const PouchDialDecision.blocked();
+  }
+
+  /// 读不到名册或还不是主机时当作没有这张卡，不打断原来的拨号。
+  static Future<PouchDialDecision> decideLive({
+    required String fallbackPeerId,
+    required String remoteAgentId,
+    Directory? root,
+    Future<PairedPeer?> Function(String id)? peerById,
+    Future<List<PairedPeer>> Function()? loadPeers,
+  }) async {
+    try {
+      final storeRoot = root ?? await StoreService.instance.storeRoot();
+      if (!(await PouchRoleStore(storeRoot).load()).isHost) {
+        return const PouchDialDecision.absent();
+      }
+      final peer = await (peerById ?? PeerStorageService().getPeerById)(
+        fallbackPeerId,
+      );
+      final fingerprint = peer?.fingerprint.trim() ?? '';
+      if (fingerprint.isEmpty) return const PouchDialDecision.absent();
+      final listed = await (loadPeers ?? PeerStorageService().loadAllPeers)();
+      return decide(
+        cards: await AgentRosterStore(storeRoot).load(),
+        peers: [
+          for (final item in listed) (id: item.id, fingerprint: item.fingerprint),
+        ],
+        hubFingerprint: fingerprint,
+        remoteAgentId: remoteAgentId,
+      );
+    } catch (_) {
+      return const PouchDialDecision.absent();
     }
   }
 }

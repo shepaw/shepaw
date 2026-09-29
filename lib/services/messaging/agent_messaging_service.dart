@@ -23,6 +23,7 @@ import '../inference_log_service.dart';
 import '../trace_service.dart';
 import '../foreground_task_service.dart';
 import '../logger_service.dart';
+import '../../peer/pouch_roster.dart';
 import '../../peer/pouch_turn_relay.dart';
 import '../peer_key_utils.dart';
 import '../she_service.dart';
@@ -1727,11 +1728,20 @@ class AgentMessagingService {
     ACPCancellationToken? acpCancellationToken,
     List<AttachmentData>? attachments,
   }) async {
-    final peerId = agent.sourcePeerId;
-    final remoteAgentId = agent.remoteAgentId;
-    if (peerId == null || remoteAgentId == null) {
+    final sourcePeerId = agent.sourcePeerId;
+    final sourceRemoteAgentId = agent.remoteAgentId;
+    if (sourcePeerId == null || sourceRemoteAgentId == null) {
       throw Exception('Peer agent missing source_peer_id/remote_agent_id');
     }
+    final dial = await PouchRosterDial.decideLive(
+      fallbackPeerId: sourcePeerId,
+      remoteAgentId: sourceRemoteAgentId,
+    );
+    if (dial.blocked) {
+      throw Exception(PouchRosterDial.blockedMessage);
+    }
+    final peerId = dial.peerId ?? sourcePeerId;
+    final remoteAgentId = dial.remoteAgentId ?? sourceRemoteAgentId;
 
     final effectiveChannelId = sessionId ?? '';
     final activeTask = ActiveTask(
