@@ -45,6 +45,8 @@ enum TurnWatchdogVerdict {
 ///   不计入），且不设超时上限 —— 审批等多久由用户决定；
 /// - 其余情况：距上次 agent 输出（或 turn 开始 / 审批结束）超过 chatTimeout
 ///   → idleTimeout。持续流式输出的健康长任务不受总时长限制。
+///   Hub keepalive（[lastKeepaliveAt]）只推迟这一失败判定：静默跑长工具时
+///   Hub 仍在报 working 就不判超时；Hub 停止报活后照常从最后一次报活起算。
 TurnWatchdogVerdict evaluateTurnWatchdog({
   required DateTime now,
   required DateTime startedAt,
@@ -54,6 +56,7 @@ TurnWatchdogVerdict evaluateTurnWatchdog({
   required int openApprovals,
   required Duration chatTimeout,
   required Duration suspendWaitHardCap,
+  DateTime? lastKeepaliveAt,
 }) {
   final suspended = suspendedSince;
   if (suspended != null) {
@@ -69,7 +72,10 @@ TurnWatchdogVerdict evaluateTurnWatchdog({
     }
     return TurnWatchdogVerdict.none;
   }
-  if (openApprovals == 0 && now.difference(idleSince) > chatTimeout) {
+  final keepalive = lastKeepaliveAt;
+  final lastSign =
+      keepalive != null && keepalive.isAfter(idleSince) ? keepalive : idleSince;
+  if (openApprovals == 0 && now.difference(lastSign) > chatTimeout) {
     return TurnWatchdogVerdict.idleTimeout;
   }
   return TurnWatchdogVerdict.none;
@@ -125,9 +131,12 @@ bool shouldProbeStalledTurn({
 }
 
 /// Hub keepalive (`{keepalive: true, upstream_status: working}`) must not
-/// restart the idle clock. It exists so a silent tool does not trip the
-/// 30-minute failure timeout, but counting it as output also blocks
+/// restart the idle clock. It only feeds `lastKeepaliveAt` of
+/// [evaluateTurnWatchdog] so a silent tool does not trip the 30-minute
+/// failure timeout; counting it as output would block
 /// [shouldCompleteSettledReply] and the stall probe forever.
+bool isHubKeepalive(Map<String, dynamic> metadata) =>
+    metadata['keepalive'] == true;
 bool metadataResetsIdleClock(Map<String, dynamic> metadata) {
   if (metadata['keepalive'] != true) return true;
   for (final key in metadata.keys) {

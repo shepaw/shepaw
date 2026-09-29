@@ -209,6 +209,42 @@ void main() {
         TurnWatchdogVerdict.none,
       );
     });
+
+    test('Hub keepalive 推迟 idle 超时（静默长工具不判失败）', () {
+      final now = startedAt.add(const Duration(minutes: 40));
+      expect(
+        evaluateTurnWatchdog(
+          now: now,
+          startedAt: startedAt,
+          idleSince: startedAt,
+          suspendedSince: null,
+          upstreamReconnectingSince: null,
+          openApprovals: 0,
+          chatTimeout: chatTimeout,
+          suspendWaitHardCap: suspendCap,
+          lastKeepaliveAt: now.subtract(const Duration(seconds: 90)),
+        ),
+        TurnWatchdogVerdict.none,
+      );
+    });
+
+    test('Hub 停止 keepalive 后从最后一次报活起算 idle 超时', () {
+      final lastKeepalive = startedAt.add(const Duration(minutes: 20));
+      expect(
+        evaluateTurnWatchdog(
+          now: lastKeepalive.add(const Duration(seconds: 301)),
+          startedAt: startedAt,
+          idleSince: startedAt,
+          suspendedSince: null,
+          upstreamReconnectingSince: null,
+          openApprovals: 0,
+          chatTimeout: chatTimeout,
+          suspendWaitHardCap: suspendCap,
+          lastKeepaliveAt: lastKeepalive,
+        ),
+        TurnWatchdogVerdict.idleTimeout,
+      );
+    });
   });
 
   group('shouldProbeStalledTurn', () {

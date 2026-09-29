@@ -757,6 +757,9 @@ class _PendingRequest {
   /// Hub 通知上游 ACP 正在重连 —— idle 计时冻结，避免 P2P 仍连着但
   /// Hub↔Agent 恢复期间误触 30min 超时。
   DateTime? upstreamReconnectingSince;
+  /// 最近一次 Hub keepalive（上游仍在 working）。只推迟 idle 超时判失败，
+  /// 不参与 settle / stall probe。
+  DateTime? lastKeepaliveAt;
   /// 发出 resume_req 时的 receivedLength 基准，用于 delta 去重（drop-prefix）。
   int? resumeBaseLength;
   _PendingRequest({
@@ -821,9 +824,9 @@ class PeerAgentClientService {
 
   /// 断连挂起（等待重连续传）的最长时长。挂起期间 idle 计时冻结（对端本来
   /// 就不可能有帧到达），超过该时长说明重连无望，判 turn 失败。
-  /// 略长于 hub 侧 TURN_RESULT_TTL_MS（25min，终态结果的可回放窗口）——
-  /// app 先于 hub 放弃会让「hub 还留着结果、app 已判死」的窗口白白浪费。
-  static const Duration suspendWaitHardCap = Duration(minutes: 30);
+  /// 须长于 hub 的审批期限 / TURN_RESULT_TTL_MS（默认 2h）—— hub 在期限内
+  /// 让 turn 继续跑并保留结果，app 先放弃会丢掉本可续传的回复。
+  static const Duration suspendWaitHardCap = Duration(minutes: 150);
 
   /// resume_req 发出后对端无应答的容忍时长（旧版本 hub 不支持续传时
   /// 不会回复），超时按「对端不支持续传」失败，避免无限悬挂。
@@ -1604,6 +1607,7 @@ class PeerAgentClientService {
         openApprovals: pending.openApprovals,
         chatTimeout: chatTimeout,
         suspendWaitHardCap: suspendWaitHardCap,
+        lastKeepaliveAt: pending.lastKeepaliveAt,
       );
       if (verdict != TurnWatchdogVerdict.none) {
         timer.cancel();
@@ -3583,6 +3587,7 @@ class PeerAgentClientService {
     if (metadata.isEmpty) return;
     final p = _pending[requestId];
     if (p == null) return;
+    if (isHubKeepalive(metadata)) p.lastKeepaliveAt = DateTime.now();
     if (metadataResetsIdleClock(metadata)) {
       p.idleSince = DateTime.now();
       p.upstreamReconnectingSince = null;
