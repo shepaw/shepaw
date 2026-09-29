@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shepaw/peer/models/paired_peer.dart';
 import 'package:shepaw/peer/pouch_roster.dart';
 import 'package:shepaw/storage/agent_roster.dart';
 import 'package:shepaw/storage/pouch_role.dart';
@@ -155,5 +157,71 @@ void main() {
     );
     expect(missing.blocked, isFalse);
     expect(missing.peerId, isNull);
+  });
+
+  test('客户端不返回名册，主机行 id 就是卡 id', () async {
+    await PouchRoleStore(root).save(PouchRole.client('host-peer'));
+    expect(
+      await PouchRosterSync.applyIfHost(
+        root: root,
+        hubFingerprint: 'hubaaaa',
+        agents: const [
+          {'id': 'remote-1', 'name': 'Codex'},
+        ],
+      ),
+      isNull,
+    );
+
+    await File('${root.path}/.system/${PouchRoleStore.fileName}').delete();
+    final cards = await PouchRosterSync.applyIfHost(
+      root: root,
+      hubFingerprint: 'hubaaaa',
+      agents: const [
+        {'id': 'remote-1', 'name': 'Codex'},
+      ],
+    );
+    expect(cards, isNotNull);
+    final cardId = PouchRosterSync.cardIdFor(cards!, 'hubaaaa', 'remote-1');
+    expect(cardId, isNotNull);
+
+    await PouchRosterSync.detachHub(root: root, hubFingerprint: 'hubaaaa');
+    final stopped = await PouchRosterDial.decideLive(
+      fallbackPeerId: 'peer-old',
+      remoteAgentId: 'remote-1',
+      hubFingerprint: 'hubaaaa',
+      root: root,
+      peerById: (_) async => null,
+      loadPeers: () async => const [],
+    );
+    expect(stopped.blocked, isTrue);
+
+    await AgentRosterStore(root).applyHubList(
+      hubFingerprint: 'hubaaaa',
+      agents: const [
+        HubAgentReport(remoteAgentId: 'remote-1', name: 'Codex', running: true),
+      ],
+    );
+    final again = await PouchRosterDial.decideLive(
+      fallbackPeerId: 'peer-old',
+      remoteAgentId: 'remote-1',
+      hubFingerprint: 'hubaaaa',
+      root: root,
+      peerById: (_) async => null,
+      loadPeers: () async => [
+        PairedPeer(
+          id: 'peer-9',
+          deviceName: 'hub',
+          deviceId: 'dev',
+          publicKey: Uint8List(32),
+          fingerprint: 'hubaaaa',
+          pairedAt: 1,
+        ),
+      ],
+    );
+    expect(again.peerId, 'peer-9');
+    expect(
+      (await AgentRosterStore(root).load()).single.id,
+      cardId,
+    );
   });
 }

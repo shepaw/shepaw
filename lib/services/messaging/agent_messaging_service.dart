@@ -1736,6 +1736,7 @@ class AgentMessagingService {
     final dial = await PouchRosterDial.decideLive(
       fallbackPeerId: sourcePeerId,
       remoteAgentId: sourceRemoteAgentId,
+      hubFingerprint: agent.metadata['roster_hub_fingerprint'] as String?,
     );
     if (dial.blocked) {
       throw Exception(PouchRosterDial.blockedMessage);

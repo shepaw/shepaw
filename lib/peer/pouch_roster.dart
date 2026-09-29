@@ -34,6 +34,38 @@ class PouchRosterSync {
     return out;
   }
 
+  /// 主机写入名单并返回整本名册。客户端返回 null，不写盘。
+  static Future<List<AgentRosterCard>?> applyIfHost({
+    required Directory root,
+    required String hubFingerprint,
+    required List<Object?> agents,
+  }) async {
+    if (!await _isHost(root)) return null;
+    final roster = AgentRosterStore(root);
+    await roster.applyHubList(
+      hubFingerprint: hubFingerprint,
+      agents: reportsFromAgentList(agents),
+    );
+    return roster.load();
+  }
+
+  static String? cardIdFor(
+    List<AgentRosterCard> cards,
+    String hubFingerprint,
+    String remoteAgentId,
+  ) {
+    final hub = hubFingerprint.trim();
+    final remote = remoteAgentId.trim();
+    if (hub.isEmpty || remote.isEmpty) return null;
+    for (final card in cards) {
+      if (card.boundToPouch) continue;
+      if (card.hubFingerprint == hub && card.remoteAgentId == remote) {
+        return card.id;
+      }
+    }
+    return null;
+  }
+
   /// 没有角色文件时视为主机，和回合交接点一样。
   static Future<void> applyAgentList({
     required Directory root,
@@ -153,6 +185,7 @@ class PouchRosterDial {
   static Future<PouchDialDecision> decideLive({
     required String fallbackPeerId,
     required String remoteAgentId,
+    String? hubFingerprint,
     Directory? root,
     Future<PairedPeer?> Function(String id)? peerById,
     Future<List<PairedPeer>> Function()? loadPeers,
@@ -165,7 +198,8 @@ class PouchRosterDial {
       final peer = await (peerById ?? PeerStorageService().getPeerById)(
         fallbackPeerId,
       );
-      final fingerprint = peer?.fingerprint.trim() ?? '';
+      var fingerprint = peer?.fingerprint.trim() ?? '';
+      if (fingerprint.isEmpty) fingerprint = hubFingerprint?.trim() ?? '';
       if (fingerprint.isEmpty) return const PouchDialDecision.absent();
       final listed = await (loadPeers ?? PeerStorageService().loadAllPeers)();
       return decide(

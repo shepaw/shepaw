@@ -34,6 +34,8 @@ import '../../service_locator.dart' show getIt;
 import '../../utils/engine_avatars.dart';
 import '../../utils/session_utils.dart';
 import '../../services/messaging/chat_history_content.dart';
+import '../../storage/agent_roster.dart';
+import '../../storage/pouch_role.dart';
 import '../../storage/store_service.dart';
 import '../pouch_pair.dart';
 import '../pouch_roster.dart';
@@ -4202,6 +4204,7 @@ class PeerAgentClientService {
     final seenRemoteIds = <String>{};
     final syncedLocalIds = <String>[];
     final peerName = await _peerDisplayName(peerId);
+    final hostRoster = await _syncPouchRoster(peerId, list);
 
     try {
       for (final raw in list) {
@@ -4210,7 +4213,11 @@ class PeerAgentClientService {
         if (remoteId == null) continue;
         seenRemoteIds.add(remoteId);
 
-        final localId = await resolvePeerAgentRowId(_db, peerId, remoteId);
+        final localId = await _localIdForPeerAgent(
+          peerId: peerId,
+          remoteId: remoteId,
+          hostRoster: hostRoster,
+        );
         final existing = await _db.getRemoteAgentById(localId);
         final capabilities = (raw['capabilities'] as List?)?.cast<String>() ?? const [];
         final supportedModalities = (raw['supported_modalities'] as List?)
@@ -4250,6 +4257,7 @@ class PeerAgentClientService {
             'source_peer_id': peerId,
             'source_peer_name': peerName,
             'remote_agent_id': remoteId,
+            if (hostRoster != null) 'roster_hub_fingerprint': hostRoster.fingerprint,
             // 宿主边界开关的最近一次广播，详情页据此默认只读/可编辑；
             // 打开编辑页时仍会用 agent_resume_get 权威刷新。
             if (raw['resume_editable'] is bool) 'resume_editable': raw['resume_editable'],
@@ -4319,23 +4327,59 @@ class PeerAgentClientService {
       _log.warning('Failed to inject peer agents: $e', tag: _tag);
       _completeAgentListWaiters(peerId);
     }
-    unawaited(_syncPouchRoster(peerId, list));
   }
 
-  /// 名单进 SQLite 之外，主机再写进储物袋名册。失败不影响会话列表。
-  Future<void> _syncPouchRoster(String peerId, List<Object?> agents) async {
+  /// 主机先把名单写进名册，本机行再用卡的 id。客户端返回 null。
+  Future<({String fingerprint, List<AgentRosterCard> cards})?> _syncPouchRoster(
+    String peerId,
+    List<Object?> agents,
+  ) async {
     try {
       final peer = await _storage.getPeerById(peerId);
       final fingerprint = peer?.fingerprint.trim() ?? '';
-      if (fingerprint.isEmpty) return;
-      await PouchRosterSync.applyAgentList(
+      if (fingerprint.isEmpty) return null;
+      final cards = await PouchRosterSync.applyIfHost(
         root: await StoreService.instance.storeRoot(),
         hubFingerprint: fingerprint,
         agents: agents,
       );
+      if (cards == null) return null;
+      return (fingerprint: fingerprint, cards: cards);
     } catch (e) {
       _log.warning('名册没有写上: $e', tag: _tag);
+      return null;
     }
+  }
+
+  Future<String> _localIdForPeerAgent({
+    required String peerId,
+    required String remoteId,
+    required ({String fingerprint, List<AgentRosterCard> cards})? hostRoster,
+  }) async {
+    final fallback = await resolvePeerAgentRowId(_db, peerId, remoteId);
+    if (hostRoster == null) return fallback;
+    final cardId = PouchRosterSync.cardIdFor(
+      hostRoster.cards,
+      hostRoster.fingerprint,
+      remoteId,
+    );
+    if (cardId == null ||
+        cardId == fallback ||
+        isReservedLocalAgentId(cardId)) {
+      return fallback;
+    }
+    final legacy = legacyPeerAgentLocalId(peerId, remoteId);
+    for (final other in {legacy, remoteId}) {
+      if (other == cardId || isReservedLocalAgentId(other)) continue;
+      final row = await _db.getRemoteAgentById(other);
+      if (row != null &&
+          row.isPeerAgent &&
+          row.sourcePeerId == peerId &&
+          row.remoteAgentId == remoteId) {
+        await _db.deleteRemoteAgent(other);
+      }
+    }
+    return cardId;
   }
 
   /// 解析对端 agent 的头像值，落地为本地可展示的形式。
@@ -4410,13 +4454,31 @@ class PeerAgentClientService {
 
   Future<void> _removeStalePeerAgents(String peerId, {required Set<String> keep}) async {
     final agents = await _db.getAllRemoteAgents();
+    final retain = await _rosterCardIds();
     for (final a in agents) {
-      if (a.protocol == ProtocolType.peer &&
-          a.sourcePeerId == peerId &&
-          !keep.contains(a.remoteAgentId)) {
-        await _db.deleteRemoteAgent(a.id);
-        unawaited(SheAgentImpressionService.instance.removeImpression(a.id));
+      if (a.protocol != ProtocolType.peer || a.sourcePeerId != peerId) continue;
+      if (keep.contains(a.remoteAgentId)) continue;
+      if (retain.contains(a.id)) {
+        await _db.updateRemoteAgentStatus(a.id, 'offline');
+        continue;
       }
+      await _db.deleteRemoteAgent(a.id);
+      unawaited(SheAgentImpressionService.instance.removeImpression(a.id));
+    }
+  }
+
+  Future<Set<String>> _rosterCardIds() async {
+    try {
+      final root = await StoreService.instance.storeRoot();
+      final role = await PouchRoleStore(root).load();
+      if (!role.isHost) return const {};
+      final cards = await AgentRosterStore(root).load();
+      return {
+        for (final card in cards)
+          if (!card.boundToPouch) card.id,
+      };
+    } catch (_) {
+      return const {};
     }
   }
 
@@ -4436,14 +4498,21 @@ class PeerAgentClientService {
       final pairedIds =
           (await PeerConnectionManager.instance.getAllPeers()).map((p) => p.id).toSet();
       final agents = await _db.getAllRemoteAgents();
+      final retain = await _rosterCardIds();
       var changed = false;
       for (final a in agents) {
-        if (a.protocol == ProtocolType.peer &&
-            (a.sourcePeerId == null || !pairedIds.contains(a.sourcePeerId))) {
-          await _db.deleteRemoteAgent(a.id);
-          unawaited(SheAgentImpressionService.instance.removeImpression(a.id));
-          changed = true;
+        if (a.protocol != ProtocolType.peer) continue;
+        if (a.sourcePeerId != null && pairedIds.contains(a.sourcePeerId)) {
+          continue;
         }
+        if (retain.contains(a.id)) {
+          await _db.updateRemoteAgentStatus(a.id, 'offline');
+          changed = true;
+          continue;
+        }
+        await _db.deleteRemoteAgent(a.id);
+        unawaited(SheAgentImpressionService.instance.removeImpression(a.id));
+        changed = true;
       }
       if (changed) PeerConnectionManager.instance.notifyPeerListChanged();
     } catch (e) {
