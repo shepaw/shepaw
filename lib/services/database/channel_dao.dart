@@ -170,6 +170,20 @@ extension ChannelDao on LocalDatabaseService {
     );
   }
 
+  /// 只改标题，不动 [updated_at]。
+  ///
+  /// 远端历史同步刷新 IDE 会话名时用这条。走 [updateChannel] 会把 updated_at
+  /// 写成现在，历史会话就会变成「最近打开」的那条，盖住本机新建的会话。
+  Future<void> updateChannelName(String channelId, String name) async {
+    final db = await database;
+    await db.update(
+      'channels',
+      {'name': name},
+      where: 'id = ?',
+      whereArgs: [channelId],
+    );
+  }
+
   /// 更新 Channel 的 updated_at 时间戳
   Future<void> touchChannelUpdatedAt(String channelId) async {
     final db = await database;

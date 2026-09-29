@@ -78,6 +78,11 @@ const Duration kPeerHistorySyncOverlap = Duration(minutes: 2);
 String peerHistoryLastSyncPrefsKey(String localAgentId) =>
     'peer_history_last_sync_$localAgentId';
 
+/// SharedPreferences key for remote session ids already mirrored with no
+/// `updatedAt`. See [selectDirtySessions].
+String peerHistoryUnstampedPrefsKey(String localAgentId) =>
+    'peer_history_unstamped_$localAgentId';
+
 /// 由远端 sessionId 生成本地已同步会话的 channel id。
 String syncedPeerChannelId(String remoteSessionId) =>
     '$kSyncedPeerSessionPrefix$remoteSessionId';
@@ -151,22 +156,33 @@ bool localChannelBindsRemoteSession(
 /// Sessions whose transcripts should be re-fetched for an incremental sync.
 ///
 /// When [lastSyncAt] is null (first sync), every session is dirty. Otherwise a
-/// session is dirty if it has no `updatedAt` or `updatedAt >= lastSyncAt - overlap`.
+/// session is dirty if `updatedAt >= lastSyncAt - overlap`.
+///
+/// A session with no `updatedAt` is dirty only until it has been mirrored once.
+/// Treating "no stamp" as forever-dirty re-pulls the same Cursor IDE transcripts
+/// on every app open; the replay then re-anchors unstamped turns to "now" and
+/// those historical sessions sort above conversations just created on device.
+/// [syncedUnstampedIds] is that already-mirrored set.
+///
 /// When [prioritizeSessionId] is set, that session is moved to the front.
 List<PeerRemoteSession> selectDirtySessions(
   List<PeerRemoteSession> sessions, {
   DateTime? lastSyncAt,
   Duration overlap = kPeerHistorySyncOverlap,
   String? prioritizeSessionId,
+  Set<String> syncedUnstampedIds = const {},
 }) {
   final List<PeerRemoteSession> dirty;
   if (lastSyncAt == null) {
     dirty = List<PeerRemoteSession>.of(sessions);
   } else {
     final since = lastSyncAt.subtract(overlap);
-    dirty = sessions
-        .where((s) => s.updatedAt == null || !s.updatedAt!.isBefore(since))
-        .toList();
+    dirty = sessions.where((s) {
+      if (s.updatedAt == null) {
+        return !syncedUnstampedIds.contains(s.sessionId);
+      }
+      return !s.updatedAt!.isBefore(since);
+    }).toList();
   }
   final prioritize = prioritizeSessionId;
   if (prioritize != null && prioritize.isNotEmpty) {
@@ -216,6 +232,14 @@ class PeerRemoteSession {
     final rawUpdated = json['updated_at'];
     if (rawUpdated is String && rawUpdated.isNotEmpty) {
       updated = DateTime.tryParse(rawUpdated);
+    } else if (rawUpdated is num) {
+      final ms = rawUpdated.toInt();
+      if (ms > 0) {
+        updated = DateTime.fromMillisecondsSinceEpoch(
+          ms < 1000000000000 ? ms * 1000 : ms,
+          isUtc: true,
+        );
+      }
     }
     final title = (json['title'] as String?)?.trim();
     return PeerRemoteSession(
@@ -351,6 +375,46 @@ List<DateTime> assignPeerHistoryTimestamps(
     }
   }
   return out;
+}
+
+/// Whether [syncHistory] must rewrite local rows for this transcript.
+///
+/// Role, text, or progress changes always rewrite. A timestamp-only change
+/// rewrites only when a remote stamp moves earlier — that corrects a previous
+/// import that anchored an unstamped IDE transcript to "now". A later stamp on
+/// unchanged text is repeated-sync drift and must be ignored, or the historical
+/// session sorts above a conversation the user just started on this device.
+bool peerHistoryNeedsRewrite({
+  required List<PeerHistoryMessage> history,
+  required List<Map<String, dynamic>> existingAsc,
+  required List<DateTime> createdAts,
+}) {
+  if (existingAsc.length != history.length || createdAts.length != history.length) {
+    return true;
+  }
+  var stampsMovedEarlier = false;
+  for (var i = 0; i < history.length; i++) {
+    final row = existingAsc[i];
+    final role = (row['sender_type'] as String?) == 'user' ? 'user' : 'agent';
+    if (role != history[i].role ||
+        (row['content'] as String? ?? '') != history[i].content) {
+      return true;
+    }
+    if (_rowProgressContent(row) != (history[i].progressContent ?? '')) {
+      return true;
+    }
+    final localAt = DateTime.tryParse(row['created_at'] as String? ?? '');
+    final remoteAt = createdAts[i];
+    if (localAt == null) return true;
+    if (localAt.toUtc().millisecondsSinceEpoch ==
+        remoteAt.toUtc().millisecondsSinceEpoch) {
+      continue;
+    }
+    if (remoteAt.toUtc().isBefore(localAt.toUtc())) {
+      stampsMovedEarlier = true;
+    }
+  }
+  return stampsMovedEarlier;
 }
 
 String peerHistoryMessageId(PeerHistoryMessage m, String channelId, int index) {
@@ -2817,7 +2881,9 @@ class PeerAgentClientService {
         }
         if (repaired) linked++;
         if (existing.name != name && name.isNotEmpty) {
-          await _db.updateChannel(existing.copyWith(name: name));
+          // Title only. [updateChannel] also stamps updated_at = now, which
+          // would make this historical session the one re-entry opens.
+          await _db.updateChannelName(channelId, name);
         }
       }
       // Seed recency from the remote only when the channel is first created.
@@ -2849,6 +2915,32 @@ class PeerAgentClientService {
     await prefs.setString(
       peerHistoryLastSyncPrefsKey(localAgentId),
       at.toUtc().toIso8601String(),
+    );
+  }
+
+  /// Remote session ids already mirrored while they had no `updatedAt`.
+  Future<Set<String>> getSyncedUnstampedSessionIds(String localAgentId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(peerHistoryUnstampedPrefsKey(localAgentId));
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return {};
+      return decoded.whereType<String>().where((id) => id.isNotEmpty).toSet();
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Future<void> setSyncedUnstampedSessionIds(
+    String localAgentId,
+    Set<String> ids,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final sorted = ids.toList()..sort();
+    await prefs.setString(
+      peerHistoryUnstampedPrefsKey(localAgentId),
+      jsonEncode(sorted),
     );
   }
 
@@ -2891,6 +2983,7 @@ class PeerAgentClientService {
     );
 
     final lastSyncAt = await getLastHistorySyncAt(localAgentId);
+    final syncedUnstamped = await getSyncedUnstampedSessionIds(localAgentId);
     final remoteSessionIds =
         sessions.map((s) => s.sessionId).toSet();
     final prioritizeSessionId = peerRemoteSessionIdForLocalChannel(
@@ -2901,12 +2994,14 @@ class PeerAgentClientService {
       sessions,
       lastSyncAt: lastSyncAt,
       prioritizeSessionId: prioritizeSessionId,
+      syncedUnstampedIds: syncedUnstamped,
     );
 
     var historySessionsWritten = 0;
     var totalMessagesWritten = 0;
     var currentChannelMessagesWritten = 0;
     var prioritizedDone = false;
+    final mirroredUnstamped = <String>{};
 
     try {
       for (final session in dirty) {
@@ -2945,6 +3040,10 @@ class PeerAgentClientService {
           historySessionsWritten++;
           totalMessagesWritten += written;
         }
+        if (session.updatedAt == null &&
+            (written > 0 || await _db.countChannelMessages(channelId) > 0)) {
+          mirroredUnstamped.add(session.sessionId);
+        }
         if (prioritizeSessionId != null &&
             session.sessionId == prioritizeSessionId) {
           currentChannelMessagesWritten = written;
@@ -2982,6 +3081,12 @@ class PeerAgentClientService {
       await onPrioritizedChannelDone(0);
     }
 
+    final nextUnstamped = Set<String>.of(syncedUnstamped);
+    for (final session in sessions) {
+      if (session.updatedAt != null) nextUnstamped.remove(session.sessionId);
+    }
+    nextUnstamped.addAll(mirroredUnstamped);
+    await setSyncedUnstampedSessionIds(localAgentId, nextUnstamped);
     await setLastHistorySyncAt(localAgentId, syncStartedAt);
     _log.info(
       'Incremental sync for $localAgentId: '
@@ -3071,31 +3176,15 @@ class PeerAgentClientService {
       idFor: (m, i) => peerHistoryMessageId(m, channelId, i),
     );
 
-    // Skip the rewrite (and UI flicker) when local already matches remote
-    // content, resolved send times, and progress sections.
-    if (existingAsc.length == history.length) {
-      var identical = true;
-      for (var i = 0; i < history.length; i++) {
-        final row = existingAsc[i];
-        final role = (row['sender_type'] as String?) == 'user' ? 'user' : 'agent';
-        if (role != history[i].role ||
-            (row['content'] as String? ?? '') != history[i].content) {
-          identical = false;
-          break;
-        }
-        final localAt = DateTime.tryParse(row['created_at'] as String? ?? '');
-        if (localAt == null ||
-            localAt.toUtc().millisecondsSinceEpoch !=
-                createdAts[i].toUtc().millisecondsSinceEpoch) {
-          identical = false;
-          break;
-        }
-        if (_rowProgressContent(row) != (history[i].progressContent ?? '')) {
-          identical = false;
-          break;
-        }
-      }
-      if (identical) return 0;
+    // Skip the rewrite when text already matches. A later stamp on the same
+    // text is repeated-sync drift (unstamped IDE turns re-anchored to now)
+    // and must not move this session above a newer local conversation.
+    if (!peerHistoryNeedsRewrite(
+      history: history,
+      existingAsc: existingAsc,
+      createdAts: createdAts,
+    )) {
+      return 0;
     }
 
     // Live rows of a turn still in flight (the user's prompt, the streaming

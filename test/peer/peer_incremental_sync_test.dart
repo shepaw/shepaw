@@ -35,12 +35,19 @@ void main() {
       expect(dirty.map((s) => s.sessionId).toList(), ['edge']);
     });
 
-    test('missing updatedAt is always dirty when watermark exists', () {
+    test('missing updatedAt is dirty once, then skipped after it is mirrored', () {
       final dirty = selectDirtySessions(
         [PeerRemoteSession(sessionId: 'no-ts')],
         lastSyncAt: t0,
       );
       expect(dirty.single.sessionId, 'no-ts');
+
+      final again = selectDirtySessions(
+        [PeerRemoteSession(sessionId: 'no-ts')],
+        lastSyncAt: t0,
+        syncedUnstampedIds: {'no-ts'},
+      );
+      expect(again, isEmpty);
     });
 
     test('prioritizeSessionId moves matching session to front', () {
@@ -59,6 +66,61 @@ void main() {
         prioritizeSessionId: 'a',
       );
       expect(dirty.map((s) => s.sessionId).toList(), ['b', 'c', 'd']);
+    });
+  });
+
+  group('peerHistoryNeedsRewrite', () {
+    Map<String, dynamic> row(String role, String content, DateTime at) => {
+          'sender_type': role,
+          'content': content,
+          'created_at': at.toIso8601String(),
+        };
+
+    test('ignores a later stamp on unchanged text', () {
+      final local = DateTime.utc(2026, 7, 1, 10);
+      final later = local.add(const Duration(hours: 5));
+      final history = [
+        PeerHistoryMessage(role: 'user', content: 'hello', createdAt: later),
+      ];
+      expect(
+        peerHistoryNeedsRewrite(
+          history: history,
+          existingAsc: [row('user', 'hello', local)],
+          createdAts: [later],
+        ),
+        isFalse,
+      );
+    });
+
+    test('applies an earlier stamp so a bad now-anchor can correct', () {
+      final local = DateTime.utc(2026, 9, 29, 8);
+      final earlier = DateTime.utc(2026, 7, 1, 10);
+      final history = [
+        PeerHistoryMessage(role: 'user', content: 'hello', createdAt: earlier),
+      ];
+      expect(
+        peerHistoryNeedsRewrite(
+          history: history,
+          existingAsc: [row('user', 'hello', local)],
+          createdAts: [earlier],
+        ),
+        isTrue,
+      );
+    });
+
+    test('rewrites when the text changed', () {
+      final at = DateTime.utc(2026, 7, 1, 10);
+      final history = [
+        PeerHistoryMessage(role: 'agent', content: 'new', createdAt: at),
+      ];
+      expect(
+        peerHistoryNeedsRewrite(
+          history: history,
+          existingAsc: [row('agent', 'old', at)],
+          createdAts: [at],
+        ),
+        isTrue,
+      );
     });
   });
 
