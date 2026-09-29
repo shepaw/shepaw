@@ -2112,9 +2112,6 @@ class AgentMessagingService {
 
     final route = await PouchTurnRelay.currentRoute();
     if (!route.runLocal) {
-      if (attachments != null && attachments.isNotEmpty) {
-        throw StateError('客户端回合还不能带附件');
-      }
       final text = await PouchTurnRelay.instance.forwardDm(
         hostPeerId: route.hostPeerId!,
         agentId: agent.id,
@@ -2122,7 +2119,23 @@ class AgentMessagingService {
         userId: userId,
         userName: userName,
         channelId: channelId,
+        attachments: attachments,
         onStreamChunk: onStreamChunk,
+        onInteractionRequest: (agentId, agentName, interactionType, data) async {
+          if (interactionType != 'os_tool' || onOsToolConfirmation == null) {
+            return null;
+          }
+          final riskName = data['risk'] as String? ?? '';
+          final risk = os_exec.RiskLevel.values.asNameMap()[riskName] ??
+              os_exec.RiskLevel.highRisk;
+          final args = data['args'];
+          final approved = await onOsToolConfirmation(
+            data['tool_name'] as String? ?? '',
+            args is Map ? args.cast<String, dynamic>() : <String, dynamic>{},
+            risk,
+          );
+          return {'approved': approved};
+        },
       );
       final agentResponse = Message(
         id: _uuid.v4(),

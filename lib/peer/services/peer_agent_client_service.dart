@@ -1812,6 +1812,9 @@ class PeerAgentClientService {
       case 'pouch_turn_event':
         PouchTurnRelay.instance.onEvent(event.data);
         break;
+      case 'pouch_file_ack':
+        PouchTurnRelay.instance.onFileAck(event.data);
+        break;
       case 'agent_turn_resume_resp':
         _onTurnResumeResp(event.data);
         break;

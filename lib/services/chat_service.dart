@@ -2013,14 +2013,21 @@ $originalQuestion
     required String agentId,
     required String userId,
     int limit = 100,
-  }) =>
-      _historyService.loadMessageHistory(
-          agentId: agentId, userId: userId, limit: limit);
+  }) async {
+    final activeChannelId =
+        await _databaseService.getLatestActiveChannelForUserAndAgent(
+      userId,
+      agentId,
+    );
+    final channelId = activeChannelId ??
+        _historyService.generateChannelId(userId, agentId);
+    return loadChannelMessages(channelId, limit: limit);
+  }
 
-  /// Load messages from a channel
+  /// Load messages from a channel。本机读本地库，客户端向储物袋主机要同一页。
   Future<List<Message>> loadChannelMessages(String channelId,
           {int limit = 100}) =>
-      _historyService.loadChannelMessages(channelId, limit: limit);
+      _readMessages(channelId, op: 'messages', limit: limit);
 
   /// Load messages older than [beforeCreatedAt] for upward pagination.
   Future<List<Message>> loadOlderChannelMessages(
@@ -2028,27 +2035,77 @@ $originalQuestion
     required String beforeCreatedAt,
     int limit = 50,
   }) =>
-      _historyService.loadOlderChannelMessages(
+      _readMessages(
         channelId,
-        beforeCreatedAt: beforeCreatedAt,
+        op: 'older',
         limit: limit,
+        beforeCreatedAt: beforeCreatedAt,
       );
 
   /// Total message rows in a channel.
-  Future<int> countChannelMessages(String channelId) =>
-      _historyService.countChannelMessages(channelId);
+  Future<int> countChannelMessages(String channelId) async {
+    final route = await PouchTurnRelay.currentRoute();
+    if (route.runLocal) {
+      return _historyService.countChannelMessages(channelId);
+    }
+    final body = await PouchTurnRelay.instance.readChat(
+      hostPeerId: route.hostPeerId!,
+      op: 'count',
+      channelId: channelId,
+    );
+    return body.count ?? 0;
+  }
+
+  Future<List<Message>> _readMessages(
+    String channelId, {
+    required String op,
+    int limit = 100,
+    String? beforeCreatedAt,
+  }) async {
+    final route = await PouchTurnRelay.currentRoute();
+    if (route.runLocal) {
+      if (op == 'older') {
+        return _historyService.loadOlderChannelMessages(
+          channelId,
+          beforeCreatedAt: beforeCreatedAt ?? '',
+          limit: limit,
+        );
+      }
+      return _historyService.loadChannelMessages(channelId, limit: limit);
+    }
+    final body = await PouchTurnRelay.instance.readChat(
+      hostPeerId: route.hostPeerId!,
+      op: op,
+      channelId: channelId,
+      limit: limit,
+      beforeCreatedAt: beforeCreatedAt,
+    );
+    return body.messages;
+  }
 
   /// Load recent messages sufficient to include [messageId] for scroll-to-search.
   Future<List<Message>> loadChannelMessagesIncluding(
     String channelId,
     String messageId, {
     int paddingAfter = 30,
-  }) =>
-      _historyService.loadChannelMessagesIncluding(
+  }) async {
+    final route = await PouchTurnRelay.currentRoute();
+    if (route.runLocal) {
+      return _historyService.loadChannelMessagesIncluding(
         channelId,
         messageId,
         paddingAfter: paddingAfter,
       );
+    }
+    final body = await PouchTurnRelay.instance.readChat(
+      hostPeerId: route.hostPeerId!,
+      op: 'including',
+      channelId: channelId,
+      limit: paddingAfter,
+      messageId: messageId,
+    );
+    return body.messages;
+  }
 
   /// Get channel ID for user-agent conversation
   String generateChannelId(String userId, String agentId) =>
@@ -2475,8 +2532,17 @@ $originalQuestion
       _sessionService.getAgentSessions(agentId: agentId);
 
   /// Get a single message by ID, converted to Message object
-  Future<Message?> getMessageById(String messageId) =>
-      _historyService.getMessageById(messageId);
+  Future<Message?> getMessageById(String messageId) async {
+    final route = await PouchTurnRelay.currentRoute();
+    if (route.runLocal) return _historyService.getMessageById(messageId);
+    final body = await PouchTurnRelay.instance.readChat(
+      hostPeerId: route.hostPeerId!,
+      op: 'one',
+      channelId: '',
+      messageId: messageId,
+    );
+    return body.messages.isEmpty ? null : body.messages.first;
+  }
 
   /// Build a group-aware system prompt for a specific agent in a group chat.
   /// Load channel messages and truncate to fit within a character budget.
@@ -2563,9 +2629,6 @@ $originalQuestion
   }) async {
     final route = await PouchTurnRelay.currentRoute();
     if (!route.runLocal) {
-      if (attachments != null && attachments.isNotEmpty) {
-        throw StateError('客户端群回合还不能带附件');
-      }
       await PouchTurnRelay.instance.forwardGroup(
         hostPeerId: route.hostPeerId!,
         channelId: channelId,
@@ -2578,10 +2641,12 @@ $originalQuestion
         flowMode: flowMode,
         replyToId: replyToId,
         replyQuoteText: replyQuoteText,
+        attachments: attachments,
         onStreamChunk: onStreamChunk,
         onAgentStart: onAgentStart,
         onAgentDone: onAgentDone,
         onAllDone: onAllDone,
+        onInteractionRequest: onInteractionRequest,
       );
       return;
     }

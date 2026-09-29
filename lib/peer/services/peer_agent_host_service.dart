@@ -42,6 +42,7 @@ import '../../services/agent_soul_service.dart';
 import '../../services/local_resume_generator.dart';
 import '../../models/agent_memory_entry.dart';
 import '../../services/chat_service.dart';
+import '../pouch_attachment.dart';
 import '../pouch_turn_host.dart';
 import '../../services/local_database_service.dart';
 import '../../services/logger_service.dart';
@@ -283,7 +284,20 @@ class PeerAgentHostService {
         break;
       case 'pouch_group_turn':
       case 'pouch_dm_turn':
+      case 'pouch_chat_read':
         unawaited(PouchTurnHost.handle(event.peerId, event.data));
+        break;
+      case 'pouch_interaction_resp':
+        PouchTurnHost.onInteractionResponse(event.data);
+        break;
+      case 'pouch_file_begin':
+        unawaited(PouchAttachmentHost.onBegin(event.peerId, event.data));
+        break;
+      case 'pouch_file_chunk':
+        PouchAttachmentHost.onChunk(event.peerId, event.data);
+        break;
+      case 'pouch_file_end':
+        unawaited(PouchAttachmentHost.onEnd(event.peerId, event.data));
         break;
     }
   }
