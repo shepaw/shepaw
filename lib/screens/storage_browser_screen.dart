@@ -277,6 +277,16 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
   bool get _atNavFloor =>
       _hasNavFloor && _navSpace == _navFloorSpace && _navPath == _navFloorPath;
 
+  /// 已在某个目录里，且还没回到可直接关掉本页的那一层。
+  bool _blockRoutePop(BuildContext context) {
+    if (_navSpace == null) return false;
+    if (_hasNavFloor) return !_atNavFloor;
+    return _isMobileLayout(context);
+  }
+
+  /// 从 agent / 群深链进来时不画路径栏，返回交给标题栏。
+  bool get _showPathBar => !_hasNavFloor;
+
   /// 路径栏返回只在空间内部往上走。已经在该空间首页时不可点，避免回到分区列表。
   bool get _breadcrumbCanGoBack {
     if (_navSpace == null) return false;
@@ -2043,11 +2053,13 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     final l10n = AppLocalizations.of(context);
     final mobile = _isMobileLayout(context);
 
+    final blockPop = _blockRoutePop(context);
     return PopScope(
       // 锁定入口时：在 floor 允许直接 pop；更深路径先 _navUp。
-      canPop: !_mobileInFolder(context) || (_hasNavFloor && _atNavFloor),
+      // 桌面专属袋没有路径栏，返回键同样先退出子目录。
+      canPop: !blockPop,
       onPopInvokedWithResult: (didPop, result) {
-        if (!didPop && _mobileInFolder(context)) _navUp();
+        if (!didPop && blockPop) _navUp();
       },
       child: Scaffold(
         appBar: mobile
@@ -2108,10 +2120,19 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
 
   PreferredSizeWidget _buildDesktopAppBar(AppLocalizations l10n) {
     final used = widget.usedBytes;
+    final walkUp = _hasNavFloor && !_atNavFloor;
     return AppBar(
       elevation: 0,
       scrolledUnderElevation: 0,
       centerTitle: true,
+      automaticallyImplyLeading: !walkUp,
+      leading: walkUp
+          ? IconButton(
+              icon: const Icon(Icons.arrow_back),
+              tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+              onPressed: _navUp,
+            )
+          : null,
       title: Text(
         _locationTitle(l10n),
         style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -2519,7 +2540,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
       padding: const EdgeInsets.only(top: 4, bottom: 16),
       children: rows,
     );
-    if (mobile) return list;
+    if (mobile || !_showPathBar) return list;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -2591,8 +2612,10 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildBreadcrumb(),
-        const Divider(height: 1),
+        if (_showPathBar) ...[
+          _buildBreadcrumb(),
+          const Divider(height: 1),
+        ],
         Expanded(
           child: empty
               ? Center(

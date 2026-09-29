@@ -162,18 +162,32 @@ class _AgentStorageBagScreenState extends State<AgentStorageBagScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    // 从当前 agent 进来，左边会话列表或系统返回已经能离开。
+    // 不再加一条带标题的导航栏。
     return Scaffold(
-      appBar: AppBar(
-        title: Text('${widget.displayName} · ${l10n.chat_storageSpace}'),
-        actions: [
-          IconButton(
-            tooltip: MaterialLocalizations.of(context).refreshIndicatorSemanticLabel,
-            icon: const Icon(Icons.refresh),
-            onPressed: _loading ? null : _load,
-          ),
-        ],
+      body: SafeArea(
+        child: Column(
+          children: [
+            Row(
+              children: [
+                IconButton(
+                  tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () => Navigator.of(context).maybePop(),
+                ),
+                const Spacer(),
+                IconButton(
+                  tooltip: MaterialLocalizations.of(context)
+                      .refreshIndicatorSemanticLabel,
+                  icon: const Icon(Icons.refresh),
+                  onPressed: _loading ? null : _load,
+                ),
+              ],
+            ),
+            Expanded(child: _buildBody(l10n)),
+          ],
+        ),
       ),
-      body: _buildBody(l10n),
     );
   }
 
