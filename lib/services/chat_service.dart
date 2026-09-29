@@ -42,6 +42,7 @@ import '../models/workflow_models.dart';
 import 'messaging/agent_messaging_service.dart';
 import 'messaging/chat_history_content.dart';
 import '../peer/services/peer_agent_client_service.dart';
+import '../peer/pouch_turn_relay.dart';
 import 'group/group_session_service.dart';
 import 'group/group_member_session_service.dart';
 import 'group/peer_approval_policy.dart';
@@ -2560,6 +2561,31 @@ $originalQuestion
     void Function(String? workflowId)? onActiveWorkflowChanged,
     bool throwIfBusy = false,
   }) async {
+    final route = await PouchTurnRelay.currentRoute();
+    if (!route.runLocal) {
+      if (attachments != null && attachments.isNotEmpty) {
+        throw StateError('客户端群回合还不能带附件');
+      }
+      await PouchTurnRelay.instance.forwardGroup(
+        hostPeerId: route.hostPeerId!,
+        channelId: channelId,
+        content: content,
+        userId: userId,
+        userName: userName,
+        agentIds: agentIds,
+        mentionedAgentIds: mentionedAgentIds,
+        adminAgentId: adminAgentId,
+        flowMode: flowMode,
+        replyToId: replyToId,
+        replyQuoteText: replyQuoteText,
+        onStreamChunk: onStreamChunk,
+        onAgentStart: onAgentStart,
+        onAgentDone: onAgentDone,
+        onAllDone: onAllDone,
+      );
+      return;
+    }
+
     // H1: per-channel in-flight 守卫。控制器路径已被 `isProcessing` 串行化，
     // 但 CLI `group send`（group_management_service，unawaited）与定时任务
     // （group_task_executor）会绕过它——若无守卫，同一 channel 可并发跑两套

@@ -34,6 +34,7 @@ import 'peer/services/peer_agent_client_service.dart';
 import 'storage/folder_binding_service.dart';
 import 'storage/runtime_retention.dart';
 import 'storage/scheduled_snapshot_service.dart';
+import 'storage/agent_roster.dart';
 import 'storage/device_identity.dart';
 import 'storage/store_protocol.dart';
 import 'storage/store_service.dart';
@@ -99,11 +100,17 @@ class AppBootstrap {
     // 初始化本地数据库与示例数据
     await _initializeLocalStorage();
 
+    // 身份以储物袋为准，必须早于任何 Noise 握手。
+    await DeviceIdentity.ensureFromPouch(
+      await StoreService.instance.storeRoot(),
+    );
+
     // 检查远端 Agent 健康状态
     await _checkRemoteAgentsHealth();
 
     // 初始化 She（内置守护 Agent）
     await SheService.instance.ensureSheExists();
+    await _seedPouchSheCard();
 
     // 启动 She 任务派发服务（订阅 agent 回合完成事件、清扫上次遗留的在途派发）
     DispatchService.instance.ensureStarted();
@@ -307,6 +314,26 @@ class AppBootstrap {
     } catch (e) {
       _log.error('ACP Server initialization failed', tag: 'App', error: e);
       return null;
+    }
+  }
+
+  /// 惜宝的名册卡绑在储物袋上。已有卡不覆盖，避免每次启动把改过的名字写回去。
+  static Future<void> _seedPouchSheCard() async {
+    try {
+      final root = await StoreService.instance.storeRoot();
+      final she = await LocalDatabaseService().getRemoteAgentById(
+        SheService.sheId,
+      );
+      await AgentRosterStore(root).ensurePouchBound(
+        id: SheService.sheId,
+        name: (she == null || she.name.trim().isEmpty)
+            ? SheService.sheName
+            : she.name,
+        avatar: she?.avatar ?? SheService.sheAvatar,
+        engine: 'she',
+      );
+    } catch (e) {
+      _log.error('Pouch She card seed failed', tag: 'App', error: e);
     }
   }
 

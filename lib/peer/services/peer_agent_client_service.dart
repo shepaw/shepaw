@@ -34,6 +34,7 @@ import '../../service_locator.dart' show getIt;
 import '../../utils/engine_avatars.dart';
 import '../../utils/session_utils.dart';
 import '../../services/messaging/chat_history_content.dart';
+import '../pouch_turn_relay.dart';
 import 'peer_connection.dart' show PeerConnectionEvent, PeerConnectionEventType;
 import '../peer_approval_payload.dart';
 import 'peer_agent_ids.dart';
@@ -1807,6 +1808,9 @@ class PeerAgentClientService {
         break;
       case 'agent_chunk':
         _onChunk(event.data);
+        break;
+      case 'pouch_turn_event':
+        PouchTurnRelay.instance.onEvent(event.data);
         break;
       case 'agent_turn_resume_resp':
         _onTurnResumeResp(event.data);

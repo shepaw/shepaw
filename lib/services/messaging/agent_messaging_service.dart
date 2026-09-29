@@ -23,6 +23,7 @@ import '../inference_log_service.dart';
 import '../trace_service.dart';
 import '../foreground_task_service.dart';
 import '../logger_service.dart';
+import '../../peer/pouch_turn_relay.dart';
 import '../peer_key_utils.dart';
 import '../she_service.dart';
 import '../agent_soul_service.dart';
@@ -2107,6 +2108,32 @@ class AgentMessagingService {
       );
       await saveMessageToChannel(userMessage, agent.id, channelId: channelId);
       LoggerService().debug('User message saved', tag: 'AgentMessagingService');
+    }
+
+    final route = await PouchTurnRelay.currentRoute();
+    if (!route.runLocal) {
+      if (attachments != null && attachments.isNotEmpty) {
+        throw StateError('客户端回合还不能带附件');
+      }
+      final text = await PouchTurnRelay.instance.forwardDm(
+        hostPeerId: route.hostPeerId!,
+        agentId: agent.id,
+        content: content,
+        userId: userId,
+        userName: userName,
+        channelId: channelId,
+        onStreamChunk: onStreamChunk,
+      );
+      final agentResponse = Message(
+        id: _uuid.v4(),
+        content: text,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
+        to: MessageFrom(id: userId, type: 'user', name: userName),
+        type: MessageType.text,
+      );
+      await saveMessageToChannel(agentResponse, agent.id, channelId: channelId);
+      return agentResponse;
     }
 
     // Create ActiveTask for background tracking

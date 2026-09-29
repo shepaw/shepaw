@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import '../services/noise_identity.dart';
+import 'pouch_identity_store.dart';
 
 /// 设备身份（docs/storage_space_plan.md §5.4）。
 ///
@@ -26,5 +28,21 @@ class DeviceIdentity {
   /// 从快照恢复身份（覆盖当前密钥对）。
   static Future<void> importIdentity(Uint8List record) async {
     await NoiseIdentity.importRecord(utf8.decode(record));
+  }
+
+  /// 启动时把身份锚到储物袋。
+  ///
+  /// 袋子里已有记录则导入钥匙串（换主机后指纹不变）。袋子是空的则把
+  /// 当前安装的密钥种进去，已有配对不会因此换成新指纹。
+  static Future<PouchIdentitySource> ensureFromPouch(Directory storeRoot) async {
+    final store = PouchIdentityStore(storeRoot);
+    final pouch = await store.readRecord();
+    if (pouch != null) {
+      await importIdentity(Uint8List.fromList(utf8.encode(pouch)));
+      return PouchIdentitySource.pouch;
+    }
+    final exported = utf8.decode(await exportIdentity());
+    await store.writeRecord(exported);
+    return PouchIdentitySource.keychain;
   }
 }
