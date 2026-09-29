@@ -56,13 +56,13 @@ class PairingRequest {
   }
 
   Map<String, dynamic> toJson() => {
-    'pairing_code': pairingCode,
-    'device_name': deviceName,
-    'device_id': deviceId,
-    if (channelEndpoint != null) 'channel_endpoint': channelEndpoint,
-    if (localEndpoint != null) 'local_endpoint': localEndpoint,
-    'timestamp': timestamp,
-  };
+        'pairing_code': pairingCode,
+        'device_name': deviceName,
+        'device_id': deviceId,
+        if (channelEndpoint != null) 'channel_endpoint': channelEndpoint,
+        if (localEndpoint != null) 'local_endpoint': localEndpoint,
+        'timestamp': timestamp,
+      };
 
   Uint8List toBytes() => Uint8List.fromList(utf8.encode(jsonEncode(toJson())));
 
@@ -118,14 +118,14 @@ class PairingResponse {
   }
 
   Map<String, dynamic> toJson() => {
-    'accepted': accepted,
-    'device_name': deviceName,
-    'device_id': deviceId,
-    'peer_id': peerId,
-    if (channelEndpoint != null) 'channel_endpoint': channelEndpoint,
-    if (localEndpoint != null) 'local_endpoint': localEndpoint,
-    if (rejectReason != null) 'reject_reason': rejectReason,
-  };
+        'accepted': accepted,
+        'device_name': deviceName,
+        'device_id': deviceId,
+        'peer_id': peerId,
+        if (channelEndpoint != null) 'channel_endpoint': channelEndpoint,
+        if (localEndpoint != null) 'local_endpoint': localEndpoint,
+        if (rejectReason != null) 'reject_reason': rejectReason,
+      };
 
   Uint8List toBytes() => Uint8List.fromList(utf8.encode(jsonEncode(toJson())));
 
@@ -139,6 +139,7 @@ class PairingResponse {
 enum PeerConnectMode {
   /// 内网直连（同一局域网，WebSocket 直连）
   local,
+
   /// 外网穿透（通过 Channel 服务中继）
   channel,
 }
@@ -212,7 +213,7 @@ class PeerPairingInfo {
     required this.publicKey,
     this.name,
   }) : assert(localEndpoint != null || channelEndpoint != null,
-          'At least one endpoint must be provided');
+            'At least one endpoint must be provided');
 
   /// 供展示的设备名：已剥掉控制/双向字符、折叠空白、按 rune 截断。
   /// 没有名字时返回 null。
@@ -246,6 +247,27 @@ class PeerPairingInfo {
 
   /// 获取首选连接端点（优先内网）
   String get preferredEndpoint => localEndpoint ?? channelEndpoint!;
+
+  /// 主机代客户端握手时外网优先：二维码里的内网地址是扫描那台设备能看见的，
+  /// 主机未必在同一局域网。
+  List<({String url, bool channel})> connectOrder(
+      {bool preferChannel = false}) {
+    final ordered = <({String url, bool channel})>[];
+    void add(String? url, bool channel) {
+      if (url != null && url.isNotEmpty) {
+        ordered.add((url: url, channel: channel));
+      }
+    }
+
+    if (preferChannel) {
+      add(channelEndpoint, true);
+      add(localEndpoint, false);
+    } else {
+      add(localEndpoint, false);
+      add(channelEndpoint, true);
+    }
+    return ordered;
+  }
 
   /// 连接模式
   PeerConnectMode get mode =>
@@ -293,7 +315,8 @@ class PeerPairingInfo {
       // 名字存原始值；清洗与截断只在 displayName getter 里做，
       // 这样往返测试是精确的，防伪造逻辑也能单独测。
       final rawName = uri.queryParameters['name'];
-      final name = (rawName != null && rawName.trim().isNotEmpty) ? rawName : null;
+      final name =
+          (rawName != null && rawName.trim().isNotEmpty) ? rawName : null;
 
       return PeerPairingInfo(
         localEndpoint: effectiveLocal,
@@ -334,7 +357,8 @@ class PeerPairingInfo {
     params.add('code=$code');
     if (name != null && name.trim().isNotEmpty) {
       // Uri.encodeComponent 用 %20 编码空格（不是 +），与 encodeURIComponent 一致。
-      params.add('name=${Uri.encodeComponent(_truncateRunes(name, kPeerQrNameMaxRunes))}');
+      params.add(
+          'name=${Uri.encodeComponent(_truncateRunes(name, kPeerQrNameMaxRunes))}');
     }
     return 'shepaw://peer?${params.join('&')}#fp=$fingerprint&pk=$pk';
   }

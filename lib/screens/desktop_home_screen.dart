@@ -11,6 +11,7 @@ import '../peer/screens/peer_manual_input_screen.dart';
 import '../peer/screens/peer_pairing_screen.dart';
 import '../peer/screens/peer_settings_screen.dart';
 import '../peer/services/peer_connection.dart';
+import '../peer/pouch_pair.dart';
 import '../peer/services/peer_connection_manager.dart';
 import 'home_screen.dart';
 import 'chat_screen.dart';
@@ -243,7 +244,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   void _resetIfSelectedPeerRemoved(String? peerId) {
     final slot = _slots[_LeftPanelMode.conversations]!;
     if (peerId == null || slot.selected?.peerId != peerId) return;
-    PeerConnectionManager.instance.getAllPeers().then((peers) {
+    PouchPairing.visiblePeers().then((peers) {
       if (mounted &&
           slot.selected?.peerId == peerId &&
           !peers.any((p) => p.id == peerId)) {
@@ -265,7 +266,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     if (peerId == null || slot.rightPanel != _RightPanelView.contactPeer) {
       return;
     }
-    PeerConnectionManager.instance.getAllPeers().then((peers) {
+    PouchPairing.visiblePeers().then((peers) {
       if (mounted &&
           slot.contactPeer?.id == peerId &&
           !peers.any((p) => p.id == peerId)) {
@@ -761,7 +762,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             }
             return FutureBuilder<PairedPeer?>(
               key: ValueKey('peer_${selected.peerId}'),
-              future: PeerConnectionManager.instance.getAllPeers().then(
+              future: PouchPairing.visiblePeers().then(
                     (peers) =>
                         peers.where((p) => p.id == selected.peerId).firstOrNull,
                   ),

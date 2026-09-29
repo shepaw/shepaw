@@ -34,6 +34,7 @@ import '../../service_locator.dart' show getIt;
 import '../../utils/engine_avatars.dart';
 import '../../utils/session_utils.dart';
 import '../../services/messaging/chat_history_content.dart';
+import '../pouch_pair.dart';
 import '../pouch_turn_relay.dart';
 import 'peer_connection.dart' show PeerConnectionEvent, PeerConnectionEventType;
 import '../peer_approval_payload.dart';
@@ -1814,6 +1815,10 @@ class PeerAgentClientService {
         break;
       case 'pouch_file_ack':
         PouchTurnRelay.instance.onFileAck(event.data);
+        break;
+      case 'pouch_pair_resp':
+      case 'pouch_peer_list_resp':
+        PouchPairRelay.instance.onResponse(event.data);
         break;
       case 'agent_turn_resume_resp':
         _onTurnResumeResp(event.data);

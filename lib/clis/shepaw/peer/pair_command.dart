@@ -1,5 +1,6 @@
 import '../../cli_base.dart';
 import '../../../peer/models/pairing_payload.dart';
+import '../../../peer/pouch_pair.dart';
 import '../../../peer/services/peer_pairing_service.dart';
 import '../../../services/pair_deeplink.dart';
 import 'peer_cli_helpers.dart';
@@ -61,7 +62,7 @@ class PeerPairCommand extends CliCommand {
 
     try {
       final correlationId = resolveInitiatorCorrelation(flags);
-      final peer = await PeerPairingService.instance.requestPairing(
+      final peer = await PouchPairing.request(
         info,
         correlationId: correlationId,
       );

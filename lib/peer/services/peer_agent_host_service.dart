@@ -43,6 +43,7 @@ import '../../services/local_resume_generator.dart';
 import '../../models/agent_memory_entry.dart';
 import '../../services/chat_service.dart';
 import '../pouch_attachment.dart';
+import '../pouch_pair.dart';
 import '../pouch_turn_host.dart';
 import '../../services/local_database_service.dart';
 import '../../services/logger_service.dart';
@@ -298,6 +299,10 @@ class PeerAgentHostService {
         break;
       case 'pouch_file_end':
         unawaited(PouchAttachmentHost.onEnd(event.peerId, event.data));
+        break;
+      case 'pouch_pair_req':
+      case 'pouch_peer_list_req':
+        unawaited(PouchPairHost.handle(event.peerId, event.data));
         break;
     }
   }

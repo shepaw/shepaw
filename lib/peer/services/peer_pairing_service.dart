@@ -44,9 +44,9 @@ import '../../services/event/event_bus.dart';
 /// 配对会话状态
 enum PairingSessionState {
   idle,
-  waitingForScanner,    // Responder: QR 已展示，等待对方扫描
-  receivedRequest,      // Responder: 收到配对请求，等待用户确认
-  waitingForConfirm,    // Initiator: 请求已发送，等待对方确认
+  waitingForScanner, // Responder: QR 已展示，等待对方扫描
+  receivedRequest, // Responder: 收到配对请求，等待用户确认
+  waitingForConfirm, // Initiator: 请求已发送，等待对方确认
   completed,
   failed,
   cancelled,
@@ -152,8 +152,10 @@ class PeerPairingService {
   Uint8List? _responderPeerPublicKey;
 
   /// 入站配对请求通知（Responder 侧）
-  final _incomingRequestController = StreamController<IncomingPairingRequest>.broadcast();
-  Stream<IncomingPairingRequest> get incomingPairingRequests => _incomingRequestController.stream;
+  final _incomingRequestController =
+      StreamController<IncomingPairingRequest>.broadcast();
+  Stream<IncomingPairingRequest> get incomingPairingRequests =>
+      _incomingRequestController.stream;
 
   // ═══════════════════════════════════════════════════════════════════════
   // Responder 流程（QR 生成方）
@@ -168,10 +170,9 @@ class PeerPairingService {
       await cancelPairing();
     }
 
-    _responderCorrelationId =
-        correlationId?.trim().isNotEmpty == true
-            ? correlationId!.trim()
-            : generateCorrelationId();
+    _responderCorrelationId = correlationId?.trim().isNotEmpty == true
+        ? correlationId!.trim()
+        : generateCorrelationId();
     _initiatorCorrelationId = null;
 
     await ensureDeviceInfo();
@@ -204,8 +205,10 @@ class PeerPairingService {
     try {
       final tunnelConfig = await ChannelTunnelService.instance.loadConfig();
       if (tunnelConfig != null &&
-          ChannelTunnelService.instance.currentStatus == TunnelStatus.connected) {
-        final endpoint = ChannelTunnelService.instance.getPublicEndpoint(tunnelConfig);
+          ChannelTunnelService.instance.currentStatus ==
+              TunnelStatus.connected) {
+        final endpoint =
+            ChannelTunnelService.instance.getPublicEndpoint(tunnelConfig);
         if (endpoint != null) {
           channelEndpoint = endpoint.replaceFirst('/acp/ws', '/peer/ws');
         }
@@ -272,7 +275,8 @@ class PeerPairingService {
     try {
       final tunnelConfig = await ChannelTunnelService.instance.loadConfig();
       if (tunnelConfig != null) {
-        final endpoint = ChannelTunnelService.instance.getPublicEndpoint(tunnelConfig);
+        final endpoint =
+            ChannelTunnelService.instance.getPublicEndpoint(tunnelConfig);
         if (endpoint != null) {
           myChannelEndpoint = endpoint.replaceFirst('/acp/ws', '/peer/ws');
         }
@@ -291,7 +295,8 @@ class PeerPairingService {
       localEndpoint: PeerLocalServer.instance.getLocalEndpoint(),
     );
 
-    final msg2Bytes = await _responderSession!.writeHandshake2(response.toBytes());
+    final msg2Bytes =
+        await _responderSession!.writeHandshake2(response.toBytes());
     final frame = encodeFrame(Frame(t: FrameType.hs, payload: msg2Bytes));
     _responderStream!.send(Uint8List.fromList(utf8.encode(frame)));
 
@@ -341,7 +346,8 @@ class PeerPairingService {
     await PeerAgentHostService.instance.pushAgentList(peer.id);
     await StoreService.instance.pushShareAnnounce(peer.id);
 
-    _log.info('Pairing confirmed: ${peer.deviceName} (${peer.fingerprint})', tag: _tag);
+    _log.info('Pairing confirmed: ${peer.deviceName} (${peer.fingerprint})',
+        tag: _tag);
     if (cid != null) {
       PeerEventProvider.emitCompleted(
         correlationId: cid,
@@ -368,7 +374,8 @@ class PeerPairingService {
     );
 
     try {
-      final msg2Bytes = await _responderSession!.writeHandshake2(response.toBytes());
+      final msg2Bytes =
+          await _responderSession!.writeHandshake2(response.toBytes());
       final frame = encodeFrame(Frame(t: FrameType.hs, payload: msg2Bytes));
       _responderStream!.send(Uint8List.fromList(utf8.encode(frame)));
     } catch (_) {}
@@ -409,12 +416,12 @@ class PeerPairingService {
   Future<PairedPeer> requestPairing(
     PeerPairingInfo info, {
     String? correlationId,
+    bool preferChannel = false,
   }) async {
     _state = PairingSessionState.waitingForConfirm;
-    _initiatorCorrelationId =
-        correlationId?.trim().isNotEmpty == true
-            ? correlationId!.trim()
-            : generateCorrelationId();
+    _initiatorCorrelationId = correlationId?.trim().isNotEmpty == true
+        ? correlationId!.trim()
+        : generateCorrelationId();
     _responderCorrelationId = null;
 
     await ensureDeviceInfo();
@@ -425,46 +432,47 @@ class PeerPairingService {
     try {
       final tunnelConfig = await ChannelTunnelService.instance.loadConfig();
       if (tunnelConfig != null) {
-        final endpoint = ChannelTunnelService.instance.getPublicEndpoint(tunnelConfig);
+        final endpoint =
+            ChannelTunnelService.instance.getPublicEndpoint(tunnelConfig);
         if (endpoint != null) {
           myChannelEndpoint = endpoint.replaceFirst('/acp/ws', '/peer/ws');
         }
       }
     } catch (_) {}
 
-    // 尝试连接：优先内网，回退外网
+    // 本机扫码优先内网。主机替客户端握手时外网优先。
     WebSocketChannel? ws;
-
-    // 1. 优先尝试内网直连
-    if (info.localEndpoint != null) {
-      try {
-        _log.info('Trying local endpoint: ${info.localEndpoint}', tag: _tag);
-        final ioSocket = await io.WebSocket.connect(info.localEndpoint!)
-            .timeout(const Duration(seconds: 3));
-        ws = IOWebSocketChannel(ioSocket);
-        _log.info('Connected via local network', tag: _tag);
-      } catch (e) {
-        _log.debug('Local connection failed: $e, trying channel...', tag: _tag);
-      }
+    Object? lastError;
+    final endpoints = info.connectOrder(preferChannel: preferChannel);
+    if (endpoints.isEmpty) {
+      _state = PairingSessionState.failed;
+      throw StateError('无可用端点');
     }
-
-    // 2. 回退到 Channel 穿透
-    if (ws == null && info.channelEndpoint != null) {
+    for (final endpoint in endpoints) {
+      final timeout = endpoint.channel
+          ? const Duration(seconds: 10)
+          : const Duration(seconds: 3);
       try {
-        _log.info('Trying channel endpoint: ${info.channelEndpoint}', tag: _tag);
-        final ioSocket = await io.WebSocket.connect(info.channelEndpoint!)
-            .timeout(const Duration(seconds: 10));
+        _log.info(
+            'Trying ${endpoint.channel ? 'channel' : 'local'} endpoint: ${endpoint.url}',
+            tag: _tag);
+        final ioSocket =
+            await io.WebSocket.connect(endpoint.url).timeout(timeout);
         ws = IOWebSocketChannel(ioSocket);
-        _log.info('Connected via channel relay', tag: _tag);
+        _log.info(
+          'Connected via ${endpoint.channel ? 'channel relay' : 'local network'}',
+          tag: _tag,
+        );
+        break;
       } catch (e) {
-        _state = PairingSessionState.failed;
-        throw StateError('无法连接到对方设备（内网和外网均失败）: $e');
+        lastError = e;
+        _log.debug('Endpoint failed: $e', tag: _tag);
       }
     }
 
     if (ws == null) {
       _state = PairingSessionState.failed;
-      throw StateError('无可用端点');
+      throw StateError('无法连接到对方设备: $lastError');
     }
 
     try {
@@ -504,7 +512,8 @@ class PeerPairingService {
         onTimeout: () => throw PairingTimeoutException(),
       );
 
-      final msg2Str = msg2Raw is String ? msg2Raw : utf8.decode(msg2Raw as List<int>);
+      final msg2Str =
+          msg2Raw is String ? msg2Raw : utf8.decode(msg2Raw as List<int>);
       final msg2Frame = decodeFrame(msg2Str);
       if (msg2Frame.t != FrameType.hs) {
         throw StateError('Expected handshake frame, got ${msg2Frame.t}');
@@ -579,7 +588,8 @@ class PeerPairingService {
         _log.warning('Post-pairing connect failed: $e', tag: _tag);
       });
 
-      _log.info('Pairing successful: ${peer.deviceName} (${peer.fingerprint})', tag: _tag);
+      _log.info('Pairing successful: ${peer.deviceName} (${peer.fingerprint})',
+          tag: _tag);
       final cid = _initiatorCorrelationId;
       if (cid != null) {
         PeerEventProvider.emitCompleted(
@@ -592,7 +602,8 @@ class PeerPairingService {
       return peer;
     } catch (e) {
       ws.sink.close();
-      if (e is PairingRejectedException || e is PairingTimeoutException) rethrow;
+      if (e is PairingRejectedException || e is PairingTimeoutException)
+        rethrow;
       _state = PairingSessionState.failed;
       rethrow;
     }
@@ -606,7 +617,9 @@ class PeerPairingService {
   void _handleIncomingPeerStream(PeerTunnelStream stream) async {
     if (_state != PairingSessionState.waitingForScanner) {
       // 非配对状态，可能是已配对设备的重连，交给 ConnectionManager
-      _log.debug('Incoming peer stream in non-pairing state, stream=${stream.streamId}', tag: _tag);
+      _log.debug(
+          'Incoming peer stream in non-pairing state, stream=${stream.streamId}',
+          tag: _tag);
       return;
     }
 
@@ -651,7 +664,8 @@ class PeerPairingService {
           channelEndpoint: null,
           rejectReason: 'Invalid pairing code',
         );
-        final msg2 = await _responderSession!.writeHandshake2(rejectResponse.toBytes());
+        final msg2 =
+            await _responderSession!.writeHandshake2(rejectResponse.toBytes());
         final rejectFrame = encodeFrame(Frame(t: FrameType.hs, payload: msg2));
         stream.send(Uint8List.fromList(utf8.encode(rejectFrame)));
         final cidReject = _responderCorrelationId;
@@ -686,7 +700,6 @@ class PeerPairingService {
           correlationId: cid,
         );
       }
-
     } catch (e) {
       _log.error('Error handling incoming peer stream', tag: _tag, error: e);
       _state = PairingSessionState.failed;
@@ -700,7 +713,8 @@ class PeerPairingService {
   String _generatePairingCode() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     final random = Random.secure();
-    return List.generate(_pairingCodeLength, (_) => chars[random.nextInt(chars.length)]).join();
+    return List.generate(
+        _pairingCodeLength, (_) => chars[random.nextInt(chars.length)]).join();
   }
 
   /// 常量时间字符串比较（防止时序攻击）
@@ -770,7 +784,8 @@ class PeerPairingService {
 
     // Device Name（可改）
     _cachedDeviceName = prefs.getString(_prefKeyDeviceName);
-    if (_cachedDeviceName == null || _cachedDeviceName!.isEmpty ||
+    if (_cachedDeviceName == null ||
+        _cachedDeviceName!.isEmpty ||
         _cachedDeviceName == 'localhost') {
       // 尝试获取有意义的设备名
       var name = io.Platform.localHostname;

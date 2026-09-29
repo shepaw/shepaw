@@ -8,6 +8,7 @@ import '../../services/hub_address.dart';
 import '../../services/remote_hub_pairing_service.dart';
 import '../models/paired_peer.dart';
 import '../models/pairing_payload.dart';
+import '../pouch_pair.dart';
 import '../services/peer_pairing_service.dart';
 import '../widgets/peer_pairing_confirm_card.dart';
 
@@ -235,7 +236,7 @@ class _PeerManualInputScreenState extends State<PeerManualInputScreen> {
     });
 
     try {
-      final peer = await PeerPairingService.instance.requestPairing(info);
+      final peer = await PouchPairing.request(info);
       if (!mounted) return;
       setState(() => _statusMessage = l10n.peerManual_success);
       await Future.delayed(const Duration(milliseconds: 500));

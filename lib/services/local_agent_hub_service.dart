@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../peer/models/pairing_payload.dart';
-import '../peer/services/peer_pairing_service.dart';
+import '../peer/pouch_pair.dart';
 import '../peer/services/peer_storage_service.dart';
 import 'hub_api_client.dart';
 import 'local_agent_hub_host.dart';
@@ -63,7 +63,7 @@ class LocalAgentHubService {
   }
 
   static Future<void> _defaultPair(PeerPairingInfo info) {
-    return PeerPairingService.instance.requestPairing(info);
+    return PouchPairing.request(info);
   }
 
   Uri get _dashboardUri => Uri.parse(dashboardUrl);

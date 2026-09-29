@@ -10,6 +10,7 @@ import '../peer/screens/peer_settings_screen.dart';
 import '../peer/widgets/peer_device_icon.dart';
 import '../peer/screens/peer_manual_input_screen.dart';
 import '../peer/screens/peer_pairing_screen.dart';
+import '../peer/pouch_pair.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_storage_service.dart';
 import '../utils/platform_utils.dart';
@@ -201,7 +202,7 @@ class ContactsScreenState extends State<ContactsScreen> {
   Future<({List<PairedPeer> peers, String? masterId})> _loadPeers() async {
     try {
       await PeerConnectionManager.instance.start();
-      final peers = await PeerConnectionManager.instance.getAllPeers();
+      final peers = await PouchPairing.visiblePeers();
       final masterId = await StoreService.instance.masterDeviceId();
       return (peers: peers, masterId: masterId);
     } catch (_) {

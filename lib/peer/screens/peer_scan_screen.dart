@@ -5,6 +5,8 @@ import '../../services/logger_service.dart';
 import '../../widgets/qr_scanner_view.dart';
 import '../models/paired_peer.dart';
 import '../models/pairing_payload.dart';
+import '../pouch_pair.dart';
+import '../pouch_turn_relay.dart';
 import '../services/peer_pairing_service.dart';
 
 /// P2P 配对扫码页（Initiator 侧）—— 独立全屏路由。
@@ -69,6 +71,30 @@ class _PeerScanScreenState extends State<PeerScanScreen> {
       return QrScannerOutcome.retry;
     }
 
+    final route = await PouchTurnRelay.currentRoute();
+    if (!route.runLocal) {
+      if (!mounted) return QrScannerOutcome.consumed;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(l10n.peerManual_confirmTitle),
+          content: Text(l10n.peerManual_fingerprint(info.fingerprint)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(l10n.common_cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(l10n.peerManual_confirmConnect),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return QrScannerOutcome.retry;
+      if (!mounted) return QrScannerOutcome.consumed;
+    }
+
     setState(() {
       _processing = true;
       _error = null;
@@ -82,9 +108,9 @@ class _PeerScanScreenState extends State<PeerScanScreen> {
       }
     });
 
-    _ownsSession = true;
+    _ownsSession = route.runLocal;
     try {
-      final peer = await PeerPairingService.instance.requestPairing(info);
+      final peer = await PouchPairing.request(info);
       if (!mounted) return QrScannerOutcome.consumed;
       setState(() => _statusMessage = l10n.peerManual_success);
       await Future.delayed(const Duration(milliseconds: 500));

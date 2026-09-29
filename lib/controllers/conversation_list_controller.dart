@@ -9,6 +9,7 @@ import '../models/conversation_selection.dart';
 import '../peer/models/paired_peer.dart';
 import '../peer/models/peer_message.dart';
 import '../peer/services/peer_connection.dart';
+import '../peer/pouch_pair.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_pairing_service.dart';
 import '../peer/services/peer_storage_service.dart';
@@ -446,7 +447,7 @@ class ConversationListController extends ChangeNotifier {
   /// 已配对设备；P2P 不可用时静默降级为空列表。
   Future<List<PairedPeer>> _loadPeers() async {
     try {
-      final peers = await PeerConnectionManager.instance.getAllPeers();
+      final peers = await PouchPairing.visiblePeers();
       final liveIds = peers.map((p) => p.id).toSet();
       _peerLatestContent.removeWhere((id, _) => !liveIds.contains(id));
       _peerLatestTime.removeWhere((id, _) => !liveIds.contains(id));

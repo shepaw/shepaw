@@ -1,5 +1,5 @@
 import '../../cli_base.dart';
-import '../../../peer/services/peer_connection_manager.dart';
+import '../../../peer/pouch_pair.dart';
 
 /// 列出已配对的 ShePaw 设备及连接状态。
 class PeerListCommand extends CliCommand {
@@ -17,7 +17,7 @@ class PeerListCommand extends CliCommand {
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
-    final peers = await PeerConnectionManager.instance.getAllPeers();
+    final peers = await PouchPairing.visiblePeers();
     return {
       'count': peers.length,
       'peers': peers.map((p) => p.toJson()).toList(),
