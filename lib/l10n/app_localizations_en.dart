@@ -283,7 +283,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get home_noAgents => 'No Agents';
 
   @override
-  String get home_noAgentsHint => 'Add an agent to start chatting';
+  String get home_noAgentsHint => 'Agents from a connected Hub show up here';
 
   @override
   String get home_noMessages => 'No messages';
@@ -4846,8 +4846,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get peerSettings_noPeerAgentsConnected =>
-      'This device has not shared any agents';
+  String get peerSettings_noPeerAgentsConnected => 'This Hub has no agents yet';
 
   @override
   String get peerSettings_noPeerAgentsOffline =>
@@ -4855,11 +4854,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get peerSettings_peerEnableExternalHint =>
-      'The peer can enable \"Share with Paired Devices\" in agent settings';
+      'Agents added on the Hub show up here over this connection';
 
   @override
   String get peerSettings_syncAgentsOnConnect =>
-      'Available agents will sync automatically when connected';
+      'This Hub\'s agents sync after it connects';
 
   @override
   String get peerSettings_connectableAgentsTitle => 'Connectable Agents';

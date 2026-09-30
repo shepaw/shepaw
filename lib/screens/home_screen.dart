@@ -8,7 +8,6 @@ import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
 import '../services/chat_service.dart';
 import '../services/composer_draft_service.dart';
-import 'add_remote_agent_screen.dart';
 import 'create_group_screen.dart';
 import 'chat_screen.dart';
 import '../widgets/agent_search_delegate.dart';
@@ -51,7 +50,6 @@ class HomeScreen extends StatefulWidget {
   final ValueChanged<ConversationSelection>? onConversationSelected;
 
   /// 桌面嵌入模式：标题栏添加菜单回调。
-  final VoidCallback? onAddAgent;
   final VoidCallback? onCreateGroup;
   final VoidCallback? onPairDevice;
 
@@ -60,7 +58,6 @@ class HomeScreen extends StatefulWidget {
     this.embedded = false,
     this.selectedConversation,
     this.onConversationSelected,
-    this.onAddAgent,
     this.onCreateGroup,
     this.onPairDevice,
   }) : super(key: key);
@@ -720,7 +717,7 @@ class HomeScreenState extends State<HomeScreen> {
                 height: 24,
                 colorFilter: ColorFilter.mode(iconColor, BlendMode.srcIn),
               ),
-              tooltip: l10n.home_addAgent,
+              tooltip: l10n.common_more,
               onPressed: _showAddMenu,
             ),
           ],
@@ -753,7 +750,7 @@ class HomeScreenState extends State<HomeScreen> {
               height: 24,
               colorFilter: ColorFilter.mode(iconColor, BlendMode.srcIn),
             ),
-            tooltip: l10n.home_addAgent,
+            tooltip: l10n.common_more,
             onPressed: _showAddMenu,
           ),
         ],
@@ -1232,9 +1229,9 @@ class HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 16),
             FilledButton.icon(
-              onPressed: _showAddMenu,
-              icon: const Icon(Icons.add),
-              label: Text(l10n.home_addAgent),
+              onPressed: _pairDevice,
+              icon: const Icon(Icons.devices_outlined),
+              label: Text(l10n.home_addDevice),
             ),
           ],
         ),
@@ -1314,11 +1311,6 @@ class HomeScreenState extends State<HomeScreen> {
       ),
       items: [
         _buildAddMenuItem(
-          value: 'agent',
-          icon: Icons.person_add_outlined,
-          label: l10n.home_addAgent,
-        ),
-        _buildAddMenuItem(
           value: 'group',
           icon: Icons.group_add,
           label: l10n.home_createGroup,
@@ -1339,18 +1331,6 @@ class HomeScreenState extends State<HomeScreen> {
 
     if (!mounted || action == null) return;
     switch (action) {
-      case 'agent':
-        if (widget.embedded && widget.onAddAgent != null) {
-          widget.onAddAgent!();
-        } else {
-          await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const AddRemoteAgentScreen(),
-            ),
-          );
-          if (mounted) _loadAgents(silent: true);
-        }
       case 'group':
         if (widget.embedded && widget.onCreateGroup != null) {
           widget.onCreateGroup!();
@@ -1364,16 +1344,20 @@ class HomeScreenState extends State<HomeScreen> {
           if (mounted) _loadAgents(silent: true);
         }
       case 'device':
-        if (widget.embedded && widget.onPairDevice != null) {
-          widget.onPairDevice!();
-        } else {
-          await PeerPairingScreen.show(context);
-          if (mounted) _loadAgents(silent: true);
-        }
+        await _pairDevice();
       case 'scan':
         await PeerScanScreen.show(context);
         if (mounted) _loadAgents(silent: true);
     }
+  }
+
+  Future<void> _pairDevice() async {
+    if (widget.embedded && widget.onPairDevice != null) {
+      widget.onPairDevice!();
+      return;
+    }
+    await PeerPairingScreen.show(context);
+    if (mounted) _loadAgents(silent: true);
   }
 
   PopupMenuItem<String> _buildAddMenuItem({

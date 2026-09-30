@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:uuid/uuid.dart';
 import '../models/remote_agent.dart';
 import '../peer/models/paired_peer.dart' show PeerConnectionState;
-import '../peer/services/peer_agent_host_service.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../storage/device_identity.dart';
 import '../storage/store_protocol.dart';
@@ -213,18 +212,6 @@ class RemoteAgentService {
     await _databaseService.updateRemoteAgent(updatedAgent);
     notifyAgentsChanged();
     SheAgentImpressionService.instance.scheduleRefresh(updatedAgent.id);
-
-    // 本地 agent 元数据（名称/头像/简历等）变更后，把最新列表推送给
-    // 已连接且共享该 agent 的对端，让对端的 peer agent 即时同步。
-    // best-effort：无对端 / 推送失败均不影响本次保存。
-    try {
-      await PeerAgentHostService.instance.pushAgentListToSharingPeers(agent.id);
-    } catch (e) {
-      LoggerService().debug(
-        'Push agent list to peers skipped after update ${agent.id}: $e',
-        tag: 'RemoteAgent',
-      );
-    }
   }
 
   /// 删除远端助手

@@ -82,7 +82,7 @@
   "changePassword_wrongCurrent": "Incorrect current password. Please try again",
   "changePassword_failed": "Failed to change password: {error}",
   "home_noAgents": "No Agents",
-  "home_noAgentsHint": "Add an agent to start chatting",
+  "home_noAgentsHint": "Agents from a connected Hub show up here",
   "home_noMessages": "No messages",
   "home_draftPrefix": "[Draft]",
   "home_typing": "Typing...",
@@ -2155,10 +2155,10 @@
       }
     }
   },
-  "peerSettings_noPeerAgentsConnected": "This device has not shared any agents",
+  "peerSettings_noPeerAgentsConnected": "This Hub has no agents yet",
   "peerSettings_noPeerAgentsOffline": "Device offline, no agents available",
-  "peerSettings_peerEnableExternalHint": "The peer can enable \"Share with Paired Devices\" in agent settings",
-  "peerSettings_syncAgentsOnConnect": "Available agents will sync automatically when connected",
+  "peerSettings_peerEnableExternalHint": "Agents added on the Hub show up here over this connection",
+  "peerSettings_syncAgentsOnConnect": "This Hub's agents sync after it connects",
   "peerSettings_connectableAgentsTitle": "Connectable Agents",
   "peerSettings_connectableAgentsTitleCount": "Connectable Agents ({count})",
   "@peerSettings_connectableAgentsTitleCount": {

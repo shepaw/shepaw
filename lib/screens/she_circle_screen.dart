@@ -4,10 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../peer/models/paired_peer.dart';
-import '../peer/services/peer_agent_client_service.dart' show resolvePeerAgentRowId;
 import '../peer/services/peer_storage_service.dart';
 import '../service_locator.dart';
-import '../services/local_database_service.dart';
 import '../services/remote_agent_service.dart';
 import '../services/she_service.dart';
 import '../she_network/digest_service.dart';
@@ -146,13 +144,7 @@ class _SheCircleScreenState extends State<SheCircleScreen> {
       ),
     );
     if (picked == null || !mounted) return;
-    // Hub UUID when safe; reserved ids (惜宝) and legacy rows resolve via
-    // resolvePeerAgentRowId / decidePeerAgentRowId.
-    final localId = await resolvePeerAgentRowId(
-      getIt<LocalDatabaseService>(),
-      peer.id,
-      picked.id,
-    );
+    final localId = picked.id;
     try {
       final agent = await getIt<RemoteAgentService>().getAgentById(localId);
       if (agent == null || !mounted) {

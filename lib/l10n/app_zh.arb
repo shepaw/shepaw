@@ -124,7 +124,7 @@
     }
   },
   "home_noAgents": "暂无 Agent",
-  "home_noAgentsHint": "添加一个智能体后即可开始对话",
+  "home_noAgentsHint": "连上 Hub 后，它的 Agent 会出现在这里",
   "home_noMessages": "暂无消息",
   "home_draftPrefix": "[草稿]",
   "home_typing": "对方正在输入...",
@@ -2630,10 +2630,10 @@
       }
     }
   },
-  "peerSettings_noPeerAgentsConnected": "该设备暂未开放任何 Agent",
+  "peerSettings_noPeerAgentsConnected": "这台 Hub 还没有 Agent",
   "peerSettings_noPeerAgentsOffline": "设备离线，暂无可连接的 Agent",
-  "peerSettings_peerEnableExternalHint": "对方可在 Agent 设置中开启「分享给配对设备」",
-  "peerSettings_syncAgentsOnConnect": "连接后将自动同步可连接的 Agent",
+  "peerSettings_peerEnableExternalHint": "在 Hub 上添加实例后，会经这条连接出现在这里",
+  "peerSettings_syncAgentsOnConnect": "连上后会同步这台 Hub 的 Agent",
   "peerSettings_connectableAgentsTitle": "可连接的 Agent",
   "peerSettings_connectableAgentsTitleCount": "可连接的 Agent ({count})",
   "@peerSettings_connectableAgentsTitleCount": {

@@ -55,23 +55,6 @@ import '../../storage/store_protocol.dart';
 export 'peer_agent_ids.dart';
 export 'peer_inflight_turn.dart' show PeerTurnInFlightException;
 
-/// Resolve which local agent row id to use for a hub remote agent id.
-Future<String> resolvePeerAgentRowId(
-  LocalDatabaseService db,
-  String peerId,
-  String remoteAgentId,
-) async {
-  final legacy = legacyPeerAgentLocalId(peerId, remoteAgentId);
-  final byLegacy = await db.getRemoteAgentById(legacy);
-  final byRemote = await db.getRemoteAgentById(remoteAgentId);
-  return decidePeerAgentRowId(
-    peerId: peerId,
-    remoteAgentId: remoteAgentId,
-    existingByRemoteId: byRemote,
-    existingByLegacyId: byLegacy,
-  );
-}
-
 /// 「已同步的远端 peer 会话」在本地 channel id 上的前缀。
 ///
 /// 本地 channel id = `psess_<远端 sessionId>`。发消息时会剥离前缀，把裸的远端
@@ -3414,23 +3397,17 @@ class PeerAgentClientService {
         // Skip malformed entries rather than dropping the whole list.
       }
     }
-    unawaited(_applyCommandsResp(peerId, remoteId, commands));
+    _applyCommandsResp(remoteId, commands);
   }
 
-  Future<void> _applyCommandsResp(
-    String peerId,
+  void _applyCommandsResp(
     String remoteId,
     List<SlashCommandInfo> commands,
-  ) async {
-    final localId = await resolvePeerAgentRowId(_db, peerId, remoteId);
-    _commandsCache[localId] = commands;
-    // Also index by Hub UUID so callers that already reuse remote id hit cache.
-    if (localId != remoteId) {
-      _commandsCache[remoteId] = commands;
-    }
+  ) {
+    _commandsCache[remoteId] = commands;
     // Mirror ACP's snapshot hook so the "/" resolver can read from either path.
-    ACPAgentConnection.slashCommandsSnapshotHook?.call(localId, commands);
-    final stream = _slashCommandsStreams[localId];
+    ACPAgentConnection.slashCommandsSnapshotHook?.call(remoteId, commands);
+    final stream = _slashCommandsStreams[remoteId];
     if (stream != null && !stream.isClosed) {
       stream.add(List.unmodifiable(commands));
     }
@@ -4216,7 +4193,7 @@ class PeerAgentClientService {
         if (remoteId == null) continue;
         seenRemoteIds.add(remoteId);
 
-        final localId = await _localIdForPeerAgent(
+        final localId = _localIdForPeerAgent(
           peerId: peerId,
           remoteId: remoteId,
           hostRoster: hostRoster,
@@ -4356,59 +4333,20 @@ class PeerAgentClientService {
     }
   }
 
-  Future<String> _localIdForPeerAgent({
+  String _localIdForPeerAgent({
     required String peerId,
     required String remoteId,
     required ({String fingerprint, List<AgentRosterCard> cards})? hostRoster,
-  }) async {
-    if (hostRoster == null && remoteId == SheService.sheId) {
-      final root = await StoreService.instance.storeRoot();
-      final role = await PouchRoleStore(root).load();
-      final existing = await _db.getRemoteAgentById(SheService.sheId);
-      final taken = existing != null &&
-          !(existing.isPeerAgent && existing.sourcePeerId == peerId);
-      if (PouchDuties.adoptHostSheRow(
-        isHost: role.isHost,
-        hostPeerId: role.hostPeerId,
-        peerId: peerId,
-        remoteAgentId: remoteId,
-        sheIdTakenBySomeoneElse: taken,
-      )) {
-        final legacy = legacyPeerAgentLocalId(peerId, remoteId);
-        final old = await _db.getRemoteAgentById(legacy);
-        if (old != null &&
-            old.isPeerAgent &&
-            old.sourcePeerId == peerId &&
-            old.remoteAgentId == remoteId) {
-          await _db.deleteRemoteAgent(legacy);
-        }
-        return SheService.sheId;
-      }
+  }) {
+    if (hostRoster != null) {
+      final cardId = PouchRosterSync.cardIdFor(
+        hostRoster.cards,
+        hostRoster.fingerprint,
+        remoteId,
+      );
+      if (cardId != null && cardId.isNotEmpty) return cardId;
     }
-    final fallback = await resolvePeerAgentRowId(_db, peerId, remoteId);
-    if (hostRoster == null) return fallback;
-    final cardId = PouchRosterSync.cardIdFor(
-      hostRoster.cards,
-      hostRoster.fingerprint,
-      remoteId,
-    );
-    if (cardId == null ||
-        cardId == fallback ||
-        isReservedLocalAgentId(cardId)) {
-      return fallback;
-    }
-    final legacy = legacyPeerAgentLocalId(peerId, remoteId);
-    for (final other in {legacy, remoteId}) {
-      if (other == cardId || isReservedLocalAgentId(other)) continue;
-      final row = await _db.getRemoteAgentById(other);
-      if (row != null &&
-          row.isPeerAgent &&
-          row.sourcePeerId == peerId &&
-          row.remoteAgentId == remoteId) {
-        await _db.deleteRemoteAgent(other);
-      }
-    }
-    return cardId;
+    return peerAgentLocalId(peerId, remoteId);
   }
 
   /// 解析对端 agent 的头像值，落地为本地可展示的形式。

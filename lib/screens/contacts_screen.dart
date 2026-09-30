@@ -24,11 +24,10 @@ import '../widgets/mobile_shell_scope.dart';
 import '../models/remote_agent.dart';
 import 'remote_agent_detail_screen.dart';
 import 'group_detail_screen.dart';
-import 'add_remote_agent_screen.dart';
 import 'create_group_screen.dart';
 
-/// WeChat-style contacts screen with collapsible sections.
-/// Order: each paired device (foldable, with peer agents) → Group Chats → Built-in.
+/// 通讯录：每台已配对的 Hub（下面是它的 Agent）→ 群聊。
+/// App 自己不列一份内置 Agent。
 ///
 /// When [embedded] is true (desktop middle column), selection callbacks open
 /// details in the parent right panel instead of pushing a new route.
@@ -38,7 +37,6 @@ class ContactsScreen extends StatefulWidget {
   final ValueChanged<RemoteAgent>? onAgentSelected;
   final ValueChanged<Channel>? onGroupSelected;
   final ValueChanged<PairedPeer>? onPeerSelected;
-  final VoidCallback? onAddAgent;
   final VoidCallback? onCreateGroup;
   final VoidCallback? onPairDevice;
 
@@ -49,7 +47,6 @@ class ContactsScreen extends StatefulWidget {
     this.onAgentSelected,
     this.onGroupSelected,
     this.onPeerSelected,
-    this.onAddAgent,
     this.onCreateGroup,
     this.onPairDevice,
   });
@@ -58,7 +55,7 @@ class ContactsScreen extends StatefulWidget {
   State<ContactsScreen> createState() => ContactsScreenState();
 }
 
-enum _ContactsSection { groups, local }
+enum _ContactsSection { groups }
 
 /// 一次加载完成后的数据快照。
 class _ContactsSnapshot {
@@ -103,7 +100,6 @@ class ContactsScreenState extends State<ContactsScreen> {
 
   final Set<_ContactsSection> _expanded = {
     _ContactsSection.groups,
-    _ContactsSection.local,
   };
 
   /// Peer ids whose nested agent list is expanded.
@@ -210,8 +206,6 @@ class ContactsScreenState extends State<ContactsScreen> {
     }
   }
 
-  Set<String> get _pairedPeerIds => _peers.map((p) => p.id).toSet();
-
   List<Agent> _agentsForPeer(String peerId) {
     final list = _agents
         .where((a) =>
@@ -219,19 +213,6 @@ class ContactsScreenState extends State<ContactsScreen> {
             a.sourcePeerId == peerId &&
             !a.hiddenOnThisApp)
         .toList();
-    if (_query.isEmpty) return list;
-    return list.where(_agentMatchesQuery).toList();
-  }
-
-  List<Agent> get _localAgents {
-    final paired = _pairedPeerIds;
-    final list = _agents.where((a) {
-      if (a.hiddenOnThisApp) return false;
-      // App 内置：非 peer agent；若 peer 已解配则暂挂在这里以免丢失入口。
-      if (!a.isPeerAgent) return true;
-      final src = a.sourcePeerId;
-      return src == null || !paired.contains(src);
-    }).toList();
     if (_query.isEmpty) return list;
     return list.where(_agentMatchesQuery).toList();
   }
@@ -310,12 +291,6 @@ class ContactsScreenState extends State<ContactsScreen> {
                   } else {
                     _createGroup();
                   }
-                case 'agent':
-                  if (widget.onAddAgent != null) {
-                    widget.onAddAgent!();
-                  } else {
-                    _addAgent();
-                  }
               }
             },
             itemBuilder: (context) => [
@@ -326,10 +301,6 @@ class ContactsScreenState extends State<ContactsScreen> {
               PopupMenuItem(
                 value: 'group',
                 child: Text(l10n.home_createGroup),
-              ),
-              PopupMenuItem(
-                value: 'agent',
-                child: Text(l10n.home_addAgent),
               ),
             ],
           ),
@@ -382,7 +353,6 @@ class ContactsScreenState extends State<ContactsScreen> {
   Widget _buildSectionList(AppLocalizations l10n) {
     final peers = _filteredPeers;
     final groups = _filteredGroups;
-    final localAgents = _localAgents;
     final nothingLoaded =
         _agents.isEmpty && _groups.isEmpty && _peers.isEmpty;
 
@@ -410,10 +380,7 @@ class ContactsScreenState extends State<ContactsScreen> {
       );
     }
 
-    if (_query.isNotEmpty &&
-        peers.isEmpty &&
-        groups.isEmpty &&
-        localAgents.isEmpty) {
+    if (_query.isNotEmpty && peers.isEmpty && groups.isEmpty) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
@@ -457,17 +424,6 @@ class ContactsScreenState extends State<ContactsScreen> {
       ),
       if (_expanded.contains(_ContactsSection.groups))
         ..._buildGroupChildren(groups, l10n),
-
-      // App 内置（非 peer；用来和本机 Agent Hub 那台配对设备区分）
-      _buildSectionHeader(
-        section: _ContactsSection.local,
-        title: l10n.contacts_agents,
-        count: localAgents.length,
-        icon: Icons.apps_outlined,
-        iconColor: AppColors.primary,
-      ),
-      if (_expanded.contains(_ContactsSection.local))
-        ..._buildLocalAgentChildren(localAgents, l10n),
       const SizedBox(height: 24),
     ];
 
@@ -692,24 +648,6 @@ class ContactsScreenState extends State<ContactsScreen> {
     return groups.map(_buildGroupTile).toList();
   }
 
-  List<Widget> _buildLocalAgentChildren(
-    List<Agent> agents,
-    AppLocalizations l10n,
-  ) {
-    if (agents.isEmpty) {
-      if (_query.isNotEmpty) return const [];
-      return [
-        _buildEmptyHint(
-          icon: Icons.smart_toy_outlined,
-          message: l10n.contacts_noAgents,
-          actionLabel: l10n.home_addAgent,
-          onAction: _addAgent,
-        ),
-      ];
-    }
-    return agents.map((a) => _buildAgentTile(a)).toList();
-  }
-
   Widget _buildEmptyHint({
     required IconData icon,
     required String message,
@@ -742,20 +680,6 @@ class ContactsScreenState extends State<ContactsScreen> {
         ],
       ),
     );
-  }
-
-  Future<void> _addAgent() async {
-    if (widget.onAddAgent != null) {
-      widget.onAddAgent!();
-      return;
-    }
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const AddRemoteAgentScreen(),
-      ),
-    );
-    if (mounted) _loadData();
   }
 
   Future<void> _createGroup() async {

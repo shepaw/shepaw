@@ -33,7 +33,6 @@ import '../../storage/store_service.dart';
 import '../models/paired_peer.dart';
 import '../models/pairing_payload.dart';
 import '../models/peer_store_share.dart';
-import 'peer_agent_host_service.dart';
 import 'peer_channel_bridge.dart';
 import 'peer_connection_manager.dart';
 import 'peer_local_server.dart';
@@ -343,7 +342,6 @@ class PeerPairingService {
     PeerConnectionManager.instance.connectToPeer(peer).catchError((Object e) {
       _log.warning('Post-pairing connect failed: $e', tag: _tag);
     });
-    await PeerAgentHostService.instance.pushAgentList(peer.id);
     await StoreService.instance.pushShareAnnounce(peer.id);
 
     _log.info('Pairing confirmed: ${peer.deviceName} (${peer.fingerprint})',

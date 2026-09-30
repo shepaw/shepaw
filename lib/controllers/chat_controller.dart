@@ -502,10 +502,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
         return;
       }
 
-      if (peerAgentLocalId(peerId, remoteId) != agentId &&
-          legacyPeerAgentLocalId(peerId, remoteId) != agentId) {
-        return;
-      }
+      if (peerAgentLocalId(peerId, remoteId) != agentId) return;
       _handleStreamingActionConfirmation(event);
     });
   }

@@ -6,7 +6,6 @@ import '../models/cli_command_config.dart';
 import '../models/cognition.dart';
 import '../models/prompt_stack_config.dart';
 import '../models/remote_agent.dart';
-import '../peer/services/peer_agent_ids.dart';
 import '../she_network/external_memory_store.dart';
 import 'cli_command_config_service.dart';
 import 'local_database_service.dart';
@@ -145,12 +144,7 @@ class SheService {
   Future<void> ensureSheExists() async {
     final existing = await _db.getRemoteAgentById(sheId);
     if (existing != null) {
-      // Peer agent sync once reused Hub/remote ids as local primary keys.
-      // Remote 惜宝 shares the same fixed id as local She, so the local row
-      // could be overwritten as protocol=peer with source_peer_*. Restore it.
-      if (existing.isPeerAgent || existing.protocol == ProtocolType.peer) {
-        await _restoreSheOverwrittenByPeer(existing);
-      } else if (existing.avatar != sheAvatar) {
+      if (!existing.isPeerAgent && existing.avatar != sheAvatar) {
         // 迁移旧版头像（如花朵 emoji、旧 logo）到默认灵宠头像
         await _db.updateRemoteAgent(existing.copyWith(avatar: sheAvatar));
         LoggerService().info(
@@ -182,83 +176,6 @@ class SheService {
 
     await _healSelfCognitionFromMinds();
     unawaited(SheAgentImpressionService.instance.refreshStaleImpressions());
-  }
-
-  /// Rebuild local She after a peer-agent upsert stole [sheId].
-  ///
-  /// Moves the stolen peer identity onto a namespaced id first (so an offline
-  /// paired 惜宝 is not lost until the next agent_list), then restores She.
-  Future<void> _restoreSheOverwrittenByPeer(RemoteAgent stolen) async {
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final peerId = stolen.sourcePeerId;
-    final remoteId = stolen.remoteAgentId ?? stolen.id;
-    if (peerId != null && peerId.isNotEmpty) {
-      final legacyId = legacyPeerAgentLocalId(peerId, remoteId);
-      final existingPeer = await _db.getRemoteAgentById(legacyId);
-      if (existingPeer == null) {
-        await _db.createRemoteAgent(
-          stolen.copyWith(
-            id: legacyId,
-            updatedAt: now,
-            metadata: {
-              ...stolen.metadata,
-              'source_peer_id': peerId,
-              'remote_agent_id': remoteId,
-            },
-          ),
-        );
-        // Keep synced peer shells discoverable under the new local id.
-        await _remountPsessChannels(
-          fromAgentId: sheId,
-          toAgentId: legacyId,
-        );
-        LoggerService().info(
-          'Migrated stolen peer She identity to $legacyId',
-          tag: 'She',
-        );
-      }
-    }
-
-    // Keep a user-facing custom name when present; drop peer device labeling.
-    final keptName = (stolen.name.trim().isNotEmpty && stolen.name != sheName)
-        ? stolen.name
-        : sheName;
-    final restored = _newLocalSheAgent(
-      name: keptName,
-      createdAt: stolen.createdAt,
-      updatedAt: now,
-    );
-    await _db.updateRemoteAgent(restored);
-    LoggerService().warning(
-      'Restored local She after peer agent overwrote id=$sheId '
-      '(was peer from ${stolen.sourcePeerId})',
-      tag: 'She',
-    );
-  }
-
-  /// Re-attach `psess_*` channel membership from [fromAgentId] to [toAgentId].
-  Future<void> _remountPsessChannels({
-    required String fromAgentId,
-    required String toAgentId,
-  }) async {
-    try {
-      final channels = await _db.getChannelsForAgent(fromAgentId);
-      for (final ch in channels) {
-        if (!ch.id.startsWith('psess_')) continue;
-        final members = await _db.getChannelMemberIds(ch.id);
-        if (!members.contains(toAgentId)) {
-          await _db.addChannelMember(ch.id, toAgentId);
-        }
-        if (members.contains(fromAgentId)) {
-          await _db.removeChannelMember(ch.id, fromAgentId);
-        }
-      }
-    } catch (e) {
-      LoggerService().warning(
-        'Failed to remount psess channels $fromAgentId → $toAgentId: $e',
-        tag: 'She',
-      );
-    }
   }
 
   RemoteAgent _newLocalSheAgent({

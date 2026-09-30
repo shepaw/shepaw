@@ -269,7 +269,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get home_noAgents => '暂无 Agent';
 
   @override
-  String get home_noAgentsHint => '添加一个智能体后即可开始对话';
+  String get home_noAgentsHint => '连上 Hub 后，它的 Agent 会出现在这里';
 
   @override
   String get home_noMessages => '暂无消息';
@@ -4666,16 +4666,16 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get peerSettings_noPeerAgentsConnected => '该设备暂未开放任何 Agent';
+  String get peerSettings_noPeerAgentsConnected => '这台 Hub 还没有 Agent';
 
   @override
   String get peerSettings_noPeerAgentsOffline => '设备离线，暂无可连接的 Agent';
 
   @override
-  String get peerSettings_peerEnableExternalHint => '对方可在 Agent 设置中开启「分享给配对设备」';
+  String get peerSettings_peerEnableExternalHint => '在 Hub 上添加实例后，会经这条连接出现在这里';
 
   @override
-  String get peerSettings_syncAgentsOnConnect => '连接后将自动同步可连接的 Agent';
+  String get peerSettings_syncAgentsOnConnect => '连上后会同步这台 Hub 的 Agent';
 
   @override
   String get peerSettings_connectableAgentsTitle => '可连接的 Agent';

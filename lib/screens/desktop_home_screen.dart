@@ -17,7 +17,6 @@ import 'home_screen.dart';
 import 'chat_screen.dart';
 import 'channel_trace_screen.dart';
 import 'group_task_list_screen.dart';
-import 'add_remote_agent_screen.dart';
 import 'create_group_screen.dart';
 import 'group_detail_screen.dart';
 import 'remote_agent_detail_screen.dart';
@@ -61,7 +60,6 @@ enum _RightPanelView {
   empty,
   chat,
   settings,
-  addAgent,
   createGroup,
   pairDevice,
   pairDeviceInput,
@@ -654,7 +652,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                   selectedConversation:
                       _slots[_LeftPanelMode.conversations]!.selected,
                   onConversationSelected: _onConversationSelected,
-                  onAddAgent: () => _showPanel(_RightPanelView.addAgent),
                   onCreateGroup: () => _showPanel(_RightPanelView.createGroup),
                   onPairDevice: () => _showPanel(_RightPanelView.pairDevice),
                 ),
@@ -666,7 +663,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                   onAgentSelected: _onContactAgentSelected,
                   onGroupSelected: _onContactGroupSelected,
                   onPeerSelected: _onContactPeerSelected,
-                  onAddAgent: () => _showPanel(_RightPanelView.addAgent),
                   onCreateGroup: () => _showPanel(_RightPanelView.createGroup),
                   onPairDevice: () =>
                       _showPanel(_RightPanelView.pairDeviceInput),
@@ -812,15 +808,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
       case _RightPanelView.settings:
         return const SettingsScreen();
-
-      case _RightPanelView.addAgent:
-        return AddRemoteAgentScreen(
-          onDone: () {
-            _reloadAgents();
-            _reloadContacts();
-            _showPanel(_RightPanelView.empty);
-          },
-        );
 
       case _RightPanelView.createGroup:
         return CreateGroupScreen(

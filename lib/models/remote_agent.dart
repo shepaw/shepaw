@@ -38,12 +38,11 @@ enum ProtocolType {
   acp,
   custom,
 
-  /// 通过已配对设备的 P2P 隧道访问对端开放的本地 agent。
+  /// Hub 上的 Agent，经已配对设备的 P2P 连到这台 App。
   ///
-  /// 此类 agent 由 [PeerAgentClientService] 在配对设备连上后自动注入，
-  /// `metadata['source_peer_id']` 指向来源配对设备，`metadata['remote_agent_id']`
-  /// 指向对端那个本地 agent 的 UUID。发送路径走 [PeerConnectionManager] 而非
-  /// ACP / 本机 LLM。
+  /// App 不另建本机 Agent。这类行由 [PeerAgentClientService] 在 Hub 连上后写入，
+  /// `metadata['source_peer_id']` 是那台 Hub，`metadata['remote_agent_id']`
+  /// 是 Hub 上的 id。回合交给那台 Hub，不在这台 App 里跑。
   peer;
 
   String toJson() => name;

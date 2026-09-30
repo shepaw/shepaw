@@ -593,7 +593,7 @@ abstract class AppLocalizations {
   /// No description provided for @home_noAgentsHint.
   ///
   /// In zh, this message translates to:
-  /// **'添加一个智能体后即可开始对话'**
+  /// **'连上 Hub 后，它的 Agent 会出现在这里'**
   String get home_noAgentsHint;
 
   /// No description provided for @home_noMessages.
@@ -8622,7 +8622,7 @@ abstract class AppLocalizations {
   /// No description provided for @peerSettings_noPeerAgentsConnected.
   ///
   /// In zh, this message translates to:
-  /// **'该设备暂未开放任何 Agent'**
+  /// **'这台 Hub 还没有 Agent'**
   String get peerSettings_noPeerAgentsConnected;
 
   /// No description provided for @peerSettings_noPeerAgentsOffline.
@@ -8634,13 +8634,13 @@ abstract class AppLocalizations {
   /// No description provided for @peerSettings_peerEnableExternalHint.
   ///
   /// In zh, this message translates to:
-  /// **'对方可在 Agent 设置中开启「分享给配对设备」'**
+  /// **'在 Hub 上添加实例后，会经这条连接出现在这里'**
   String get peerSettings_peerEnableExternalHint;
 
   /// No description provided for @peerSettings_syncAgentsOnConnect.
   ///
   /// In zh, this message translates to:
-  /// **'连接后将自动同步可连接的 Agent'**
+  /// **'连上后会同步这台 Hub 的 Agent'**
   String get peerSettings_syncAgentsOnConnect;
 
   /// No description provided for @peerSettings_connectableAgentsTitle.
