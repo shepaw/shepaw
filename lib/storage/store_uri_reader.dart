@@ -14,10 +14,10 @@ import 'store_protocol.dart';
 import 'store_remote_fetcher.dart';
 import 'store_service.dart';
 
-/// `store://` 指向的是文件还是目录。
+/// `pouch://` 指向的是文件还是目录。
 enum StoreUriKind { file, directory }
 
-/// 按 `store://` URI 读取内容（Agent CLI / 附件引用共用）。
+/// 按 `pouch://` URI 读取内容（Agent CLI / 附件引用共用）。
 ///
 /// - `workspaces` / `files` / `public`（及 legacy `artifacts`）：本机直读；他端优先直连属主，属主离线再走 master 镜像；
 /// - 私有分区（`runtime` / `attachments` / `backups` 等）：仅本机自身 device 可读（或显式分享/授权）；

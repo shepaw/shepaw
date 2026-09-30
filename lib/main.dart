@@ -22,6 +22,7 @@ import 'providers/notification_provider.dart';
 import 'providers/theme_provider.dart';
 import 'screens/password_setup_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/pouch_login_screen.dart';
 import 'screens/adaptive_home_screen.dart';
 import 'widgets/window_title_sync.dart';
 import 'widgets/approval/pending_approval_banner.dart';
@@ -304,6 +305,7 @@ class _MyAppState extends State<MyApp> {
               routes: {
                 '/setup': (context) => const PasswordSetupScreen(),
                 '/login': (context) => const LoginScreen(),
+                '/pouch': (context) => const PouchLoginScreen(),
                 '/home': (context) => const AdaptiveHomeScreen(),
               },
             ),

@@ -124,9 +124,9 @@ void main() {
 
   test('attachment refs only keep this device runtime paths', () {
     final refs = referencedRuntimeAttachmentPaths('aaaaaaaaaaaaaaaa', [
-      'see store://runtime/aaaaaaaaaaaaaaaa/agent/ch/attachments/abc',
-      'store://runtime/bbbbbbbbbbbbbbbb/agent/ch/attachments/other',
-      'store://files/aaaaaaaaaaaaaaaa/resume.md',
+      'see pouch://runtime/aaaaaaaaaaaaaaaa/agent/ch/attachments/abc',
+      'pouch://runtime/bbbbbbbbbbbbbbbb/agent/ch/attachments/other',
+      'pouch://files/aaaaaaaaaaaaaaaa/resume.md',
     ]);
     expect(refs, {'agent/ch/attachments/abc'});
   });

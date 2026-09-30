@@ -6,7 +6,7 @@ import '../services/noise_identity.dart';
 
 /// 储物袋身份记录的落点。
 ///
-/// 文件在袋根 `.system/` 下，不进 `store://`，agent 读不到私钥。
+/// 文件在袋根 `.system/` 下，不进 `pouch://`，agent 读不到私钥。
 /// 换主机时整袋拷走，新机器启动时以这份记录为准。
 class PouchIdentityStore {
   PouchIdentityStore(this.root);

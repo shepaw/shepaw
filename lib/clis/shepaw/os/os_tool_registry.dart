@@ -132,15 +132,15 @@ class OsToolRegistry {
       name: 'file_read',
       cliPath: 'os.file.read',
       description:
-          'Read an OS filesystem path. Not for store:// URIs — '
-          'use `shepaw store read --uri <store://…>` instead.',
+          'Read an OS filesystem path. Not for pouch:// URIs — '
+          'use `shepaw pouch read --uri <pouch://…>` instead.',
       parameterSchema: {
         'type': 'object',
         'properties': {
           'path': {
             'type': 'string',
             'description':
-                'Absolute OS path (never a store:// URI)',
+                'Absolute OS path (never a pouch:// URI)',
           },
           'max_bytes': {'type': 'integer', 'description': 'Maximum bytes to read (default: 10240)'},
         },
@@ -155,7 +155,7 @@ class OsToolRegistry {
       cliPath: 'os.file.write',
       description:
           'Write content to an OS filesystem path. Not for shareable artifacts — '
-          'prefer `shepaw store write` for reports/code/docs; use this only when '
+          'prefer `shepaw pouch write` for reports/code/docs; use this only when '
           'the user names an OS path or you need a real system file.',
       parameterSchema: {
         'type': 'object',

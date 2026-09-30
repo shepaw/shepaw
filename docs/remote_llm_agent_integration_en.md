@@ -1403,7 +1403,7 @@ Your Agent can proactively start a new conversation with the user (requires App 
 
 Identity is the **authenticated ACP session**. Do not send `agent_id` / `owner` / `channel_id` (they are stripped from `flags`). Prefer `session_id` from `agent.chat`; if omitted, the App fills the agent's **in-flight group or DM turn** so group artifacts do not land in personal runtime. A group-bound member session writes into that group's bag.
 
-**Agent Hub engines (Cursor, Claude Code, …) are not this path.** Hub is a paired store client: writes land on the Hub `<device_id>/`, reads follow the store protocol (local / master / owner). Engines should only see `shepaw store` (read / write / list / meta) — not `os`, `chat`, or `hub.cli.execute`. Legacy MCP `store_read` / `store_write` should map to that local store client, not forward `hub.cli.execute`.
+**Agent Hub engines (Cursor, Claude Code, …) are not this path.** Hub is a paired store client: writes land on the Hub `<device_id>/`, reads follow the store protocol (local / master / owner). Engines should only see `shepaw pouch` (read / write / list / meta) — not `os`, `chat`, or `hub.cli.execute`. Bag reads and writes use the local `shepaw pouch` client, not `hub.cli.execute`.
 
 Peer inbound (a paired device talking to a local agent) is **not** this allowlist — it stays on `PeerBoundaryConfig` (deny `os.*` / host memory writes).
 
@@ -1413,9 +1413,9 @@ Peer inbound (a paired device talking to a local agent) is **not** this allowlis
   "method": "hub.cli.execute",
   "id": "req_007",
   "params": {
-    "namespace": "store",
+    "namespace": "pouch",
     "subcommand": "read",
-    "flags": { "uri": "store://runtime/<device>/<agent>/notes.md" },
+    "flags": { "uri": "pouch://runtime/<device>/<agent>/notes.md" },
     "session_id": "<session_id from agent.chat>"
   }
 }
@@ -1429,7 +1429,7 @@ Write example:
   "method": "hub.cli.execute",
   "id": "req_008",
   "params": {
-    "namespace": "store",
+    "namespace": "pouch",
     "subcommand": "write",
     "flags": { "filename": "notes.md", "content": "hello" },
     "session_id": "<session_id from agent.chat>"
@@ -1437,7 +1437,7 @@ Write example:
 }
 ```
 
-On success `result.ok == true` plus the CLI JSON. Gate denials (command not allowed, user tapped deny) are still JSON-RPC success with `result.ok == false` and `error`. ACP remotes map old `store_read` / `store_write` to `store read` / `store write` above. Agent Hub engines use the local `shepaw` shim (Hub pouch locally; other commands forwarded to the App gate), not `hub.cli.execute`.
+On success `result.ok == true` plus the CLI JSON. Gate denials (command not allowed, user tapped deny) are still JSON-RPC success with `result.ok == false` and `error`. ACP remotes use `pouch read` / `pouch write` above. Agent Hub engines use the local `shepaw` shim (Hub pouch locally; other commands forwarded to the App gate), not `hub.cli.execute`.
 
 Local LLM agents get a shepaw function tool whose `namespace` enum is trimmed to that agent's `enabled_cli_commands` (and the group-member store/help role list). Specific ids such as `store.write` also trim the `subcommand` enum. Remote agents should trim their own tool list the same way, or only expose `hub.cli.execute` and rely on the gate.
 

@@ -1,11 +1,11 @@
 import '../services/she_service.dart';
 import '../storage/pouch_role.dart';
 
-/// 这一进程是储物袋主机还是客户端。启动时绑定，默认视为主机。
+/// 这一进程是不是储物袋主机。App 默认不是，主机在 agent-hub 上。
 class PouchDutyState {
   PouchDutyState._();
 
-  static bool isHost = true;
+  static bool isHost = false;
 
   static void bind(PouchRole role) {
     isHost = role.isHost;

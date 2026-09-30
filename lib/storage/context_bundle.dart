@@ -7,6 +7,7 @@ import 'group_workspace_service.dart';
 import 'runtime_paths.dart';
 import 'scope_card.dart';
 import 'store_uri_reader.dart';
+import 'store_protocol.dart';
 
 /// ContextBundle：runtime 上下文清单（docs/CLIENT_PROFILES.md）。
 ///
@@ -73,7 +74,7 @@ class ContextBundle {
         },
       };
 
-  /// 注入用的 store://（默认 omitPersona：群不收个人 cognition）。
+  /// 注入用的 pouch://（默认 omitPersona：群不收个人 cognition）。
   List<String> collectUris({
     String? preferChannelId,
     bool omitPersona = false,
@@ -84,7 +85,7 @@ class ContextBundle {
       if (memoryUri != null && memoryUri!.isNotEmpty) out.add(memoryUri!);
     }
     for (final w in workspaceRefs) {
-      if (w.startsWith('store://')) out.add(w);
+      if (isPouchUri(w)) out.add(w);
     }
     if (preferChannelId != null && channels.containsKey(preferChannelId)) {
       out.add(channels[preferChannelId]!);
@@ -159,7 +160,7 @@ class ContextBundleService {
       // 作为成员可见 URI 注入——agent 经 store 工具按需读。
       final meta = await GroupWorkspaceService.instance.loadMeta(ownerId);
       final home = meta?.homeDevice ?? deviceId;
-      extras.add('store://workspaces/$home/'
+      extras.add('pouch://workspaces/$home/'
           '${GroupWorkspaceService.instance.workspaceRoot(ownerId)}/shared');
       return ScopeCard.forGroup(
         groupId: ownerId,

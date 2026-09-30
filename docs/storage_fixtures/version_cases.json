@@ -5,7 +5,7 @@
   "cases": [
     {
       "name": "latest_no_ref",
-      "uri": "store://artifacts/aaaaaaaaaaaaaaaa/task-1/out.txt",
+      "uri": "pouch://artifacts/aaaaaaaaaaaaaaaa/task-1/out.txt",
       "expect": "ok",
       "space": "artifacts",
       "device": "aaaaaaaaaaaaaaaa",
@@ -14,7 +14,7 @@
     },
     {
       "name": "hash_ref_short",
-      "uri": "store://artifacts/aaaaaaaaaaaaaaaa/task-1/out.txt@3f9a2c1d4e5f6071",
+      "uri": "pouch://artifacts/aaaaaaaaaaaaaaaa/task-1/out.txt@3f9a2c1d4e5f6071",
       "expect": "ok",
       "space": "artifacts",
       "device": "aaaaaaaaaaaaaaaa",
@@ -24,7 +24,7 @@
     },
     {
       "name": "hash_ref_full",
-      "uri": "store://files/aaaaaaaaaaaaaaaa/docs/a.md@3f9a2c1d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef",
+      "uri": "pouch://files/aaaaaaaaaaaaaaaa/docs/a.md@3f9a2c1d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef",
       "expect": "ok",
       "space": "files",
       "device": "aaaaaaaaaaaaaaaa",
@@ -33,17 +33,17 @@
     },
     {
       "name": "hash_ref_too_short",
-      "uri": "store://artifacts/aaaaaaaaaaaaaaaa/a.txt@3f9a2c1d",
+      "uri": "pouch://artifacts/aaaaaaaaaaaaaaaa/a.txt@3f9a2c1d",
       "expect": "bad_uri"
     },
     {
       "name": "hash_ref_bad_chars",
-      "uri": "store://artifacts/aaaaaaaaaaaaaaaa/a.txt@zzzzzzzzzzzzzzzz",
+      "uri": "pouch://artifacts/aaaaaaaaaaaaaaaa/a.txt@zzzzzzzzzzzzzzzz",
       "expect": "bad_uri"
     },
     {
       "name": "seq_ref",
-      "uri": "store://artifacts/aaaaaaaaaaaaaaaa/task-1/out.txt@v3",
+      "uri": "pouch://artifacts/aaaaaaaaaaaaaaaa/task-1/out.txt@v3",
       "expect": "ok",
       "space": "artifacts",
       "device": "aaaaaaaaaaaaaaaa",
@@ -53,17 +53,17 @@
     },
     {
       "name": "seq_ref_v0",
-      "uri": "store://artifacts/aaaaaaaaaaaaaaaa/a.txt@v0",
+      "uri": "pouch://artifacts/aaaaaaaaaaaaaaaa/a.txt@v0",
       "expect": "bad_uri"
     },
     {
       "name": "seq_ref_bad",
-      "uri": "store://artifacts/aaaaaaaaaaaaaaaa/a.txt@vx",
+      "uri": "pouch://artifacts/aaaaaaaaaaaaaaaa/a.txt@vx",
       "expect": "bad_uri"
     },
     {
       "name": "query_ref_equivalent",
-      "uri": "store://artifacts/aaaaaaaaaaaaaaaa/a.txt?ref=v2",
+      "uri": "pouch://artifacts/aaaaaaaaaaaaaaaa/a.txt?ref=v2",
       "expect": "ok",
       "space": "artifacts",
       "device": "aaaaaaaaaaaaaaaa",
@@ -73,7 +73,7 @@
     },
     {
       "name": "path_style_uri",
-      "uri": "store:///files/aaaaaaaaaaaaaaaa/docs/readme.md",
+      "uri": "pouch:///files/aaaaaaaaaaaaaaaa/docs/readme.md",
       "expect": "ok",
       "space": "files",
       "device": "aaaaaaaaaaaaaaaa",
@@ -82,27 +82,27 @@
     },
     {
       "name": "dot_versions_access",
-      "uri": "store://files/aaaaaaaaaaaaaaaa/.versions/x",
+      "uri": "pouch://files/aaaaaaaaaaaaaaaa/.versions/x",
       "expect": "bad_path"
     },
     {
       "name": "dot_nexuspouch_access",
-      "uri": "store://artifacts/aaaaaaaaaaaaaaaa/task-1/.nexuspouch/manifest.json",
+      "uri": "pouch://artifacts/aaaaaaaaaaaaaaaa/task-1/.nexuspouch/manifest.json",
       "expect": "bad_path"
     },
     {
       "name": "dot_staging_access",
-      "uri": "store://artifacts/aaaaaaaaaaaaaaaa/.staging/u-1/data.bin",
+      "uri": "pouch://artifacts/aaaaaaaaaaaaaaaa/.staging/u-1/data.bin",
       "expect": "bad_path"
     },
     {
       "name": "traversal_in_path",
-      "uri": "store://files/aaaaaaaaaaaaaaaa/a/../../b.txt",
+      "uri": "pouch://files/aaaaaaaaaaaaaaaa/a/../../b.txt",
       "expect": "bad_path"
     },
     {
       "name": "custom_space_syntax",
-      "uri": "store://videos/aaaaaaaaaaaaaaaa/a.mp4",
+      "uri": "pouch://videos/aaaaaaaaaaaaaaaa/a.mp4",
       "expect": "ok",
       "space": "videos",
       "device": "aaaaaaaaaaaaaaaa",
@@ -112,23 +112,23 @@
     },
     {
       "name": "bad_space",
-      "uri": "store://Videos/aaaaaaaaaaaaaaaa/a.mp4",
+      "uri": "pouch://Videos/aaaaaaaaaaaaaaaa/a.mp4",
       "expect": "bad_uri"
     },
     {
       "name": "bad_device",
-      "uri": "store://artifacts/not-a-device/a.txt",
+      "uri": "pouch://artifacts/not-a-device/a.txt",
       "expect": "bad_uri"
     },
     {
       "name": "hash_prefix_conflict",
-      "uri": "store://artifacts/aaaaaaaaaaaaaaaa/a.txt@3f9a2c1d4e5f6071",
+      "uri": "pouch://artifacts/aaaaaaaaaaaaaaaa/a.txt@3f9a2c1d4e5f6071",
       "note": "Contract only: server resolves hash prefix; two versions sharing this prefix MUST return ambiguous_ref. Fixture marks the resolution outcome, not parse validity.",
       "expect": "ambiguous_ref"
     },
     {
       "name": "hash_ref_unknown",
-      "uri": "store://artifacts/aaaaaaaaaaaaaaaa/a.txt@3f9a2c1d4e5f6071",
+      "uri": "pouch://artifacts/aaaaaaaaaaaaaaaa/a.txt@3f9a2c1d4e5f6071",
       "note": "Contract only: valid syntax, no matching version in store -> not_found. Implemented in M2.",
       "expect": "not_found"
     }

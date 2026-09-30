@@ -16,7 +16,7 @@
 - App 聊天消息与搜索 **只信 SQLite**；永不把 session 镜像当主库。
 - Agent **结构化记忆与 Soul 权威在储物袋 `cognition/`**（旧 `memory/` 只读兼容）；旧 SQLite 仅作一次性迁移源。
 - runtime 镜像为 **单向**（debounce 覆盖写）；`memory.md` / `soul.md`（runtime 下）**禁止**回灌权威。
-- 镜像用途：人可读浏览、`store://` **分享**、跨设备 **只读上下文**。
+- 镜像用途：人可读浏览、`pouch://` **分享**、跨设备 **只读上下文**。
 - 灾难恢复权威仍是 `backups/` 加密快照。
 
 ## 2. 设备目录（内置 space）
@@ -51,7 +51,7 @@
 └── attachments/...                   # legacy 私有区
 ```
 
-URI：`store://<space>/<device_id>/<relpath>`。
+URI：`pouch://<space>/<device_id>/<relpath>`。
 
 ### Scope Card（Agent 感知）
 
@@ -72,7 +72,7 @@ URI：`store://<space>/<device_id>/<relpath>`。
 | `memory` | private（legacy） | 只读兼容；新写入走 `cognition` |
 | `files` / `public` | shared | 仅本端 |
 | `backups` | private | 仅本端 |
-| `app` | private | 仅本端。地址固定 `store://app/shepaw/...`，不跟宿主指纹 |
+| `app` | private | 仅本端。地址固定 `pouch://app/shepaw/...`，不跟宿主指纹 |
 | `artifacts` / `attachments` | legacy | 旧数据可读；新写入走 runtime |
 
 ## 3. Runtime owner 解析
@@ -81,7 +81,7 @@ URI：`store://<space>/<device_id>/<relpath>`。
 |------|------------------------|-------------|
 | 本机 LLM 单聊 | `agent_id` | 本机 |
 | 群聊 | `parentGroupId` 或群 `channel_id` | 群主设备（metadata `runtime_owner_device_id`；缺省本机） |
-| Peer 隧道 agent | 对端 `remote_agent_id` | **对端权威 + 本机同 URI 缓存**：附件与 `sessions/session.json` 均落 `store://runtime/<对端fingerprint>/<A>/<peer__…>/…`；App1 在本机 store 根下按同一 `<device>/runtime/…` 路径缓存（`placement=local_fallback`），气泡 / 镜像 URI 与宿主一致。不在对端 device 树下伪造 soul/memory。 |
+| Peer 隧道 agent | 对端 `remote_agent_id` | **对端权威 + 本机同 URI 缓存**：附件与 `sessions/session.json` 均落 `pouch://runtime/<对端fingerprint>/<A>/<peer__…>/…`；App1 在本机 store 根下按同一 `<device>/runtime/…` 路径缓存（`placement=local_fallback`），气泡 / 镜像 URI 与宿主一致。不在对端 device 树下伪造 soul/memory。 |
 | 外接 ACP | agent id | Hub device；否则本机 fallback |
 
 群聊 key：优先 `parentGroupId`，否则群 channel `id`。
@@ -99,12 +99,12 @@ URI：`store://<space>/<device_id>/<relpath>`。
   "owner_id": "<agent_or_group_id>",
   "source_device": "<device_id>",
   "updated_at": "ISO-8601",
-  "soul_uri": "store://cognition/<device>/<agent>/soul.md",
-  "memory_uri": "store://cognition/<device>/<agent>/entries/",
-  "workspace_refs": ["store://workspaces/<device>/<workspace_id>/"],
+  "soul_uri": "pouch://cognition/<device>/<agent>/soul.md",
+  "memory_uri": "pouch://cognition/<device>/<agent>/entries/",
+  "workspace_refs": ["pouch://workspaces/<device>/<workspace_id>/"],
   "channels": {
     "<channel_id>": {
-      "session_uri": "store://runtime/.../sessions/session.json"
+      "session_uri": "pouch://runtime/.../sessions/session.json"
     }
   }
 }
@@ -125,18 +125,18 @@ URI：`store://<space>/<device_id>/<relpath>`。
     "schema_version": 1,
     "window_size": 100,
     "archived_at": "ISO-8601?",
-    "archive_uri": "store://runtime/.../sessions/archive-....json?"
+    "archive_uri": "pouch://runtime/.../sessions/archive-....json?"
   },
-  "messages": [ { "id", "sender_id", "sender_type", "content", "message_type", "created_at", "store_uri?" } ]
+  "messages": [ { "id", "sender_id", "sender_type", "content", "message_type", "created_at", "pouch_uri?" } ]
 }
 ```
 
-附件只存 `store_uri`，不内嵌字节。滚动阈值：≥200 条或序列化 ≥256KB 时归档全量并保留最近 100 条。
+附件只存 `pouch_uri`，不内嵌字节。滚动阈值：≥200 条或序列化 ≥256KB 时归档全量并保留最近 100 条。
 
 `memory.md` / `soul.md`（runtime 下）：UTF-8 人读镜像；权威见 `cognition/` 空间。
 
 ## 6. 引用不复制
 
-- 聊天引用已有 `store://`：只写 metadata，不复制 blob。
-- `public/` 可用清单指向 `store://files/...`。
+- 聊天引用已有 `pouch://`：只写 metadata，不复制 blob。
+- `public/` 可用清单指向 `pouch://files/...`。
 - `workspace.md` 只列 `workspace_ids`，不复制 `workspaces/` 树。

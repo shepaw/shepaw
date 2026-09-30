@@ -200,7 +200,7 @@ class RuntimeMirrorService {
           'content': row['content'],
           'message_type': row['message_type'],
           'created_at': row['created_at'],
-          if (meta?['store_uri'] != null) 'store_uri': meta!['store_uri'],
+          if (meta?['pouch_uri'] != null) 'pouch_uri': meta!['pouch_uri'],
         });
       }
       final payload = <String, dynamic>{

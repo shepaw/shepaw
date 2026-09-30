@@ -6,6 +6,7 @@ import '../../models/mention_entry.dart';
 import '../../models/remote_agent.dart';
 import '../logger_service.dart';
 import 'group_dispatch_parser.dart';
+import '../../storage/store_protocol.dart';
 
 /// First-class tools for group-admin orchestration (tool-first dispatch).
 ///
@@ -94,7 +95,7 @@ class GroupOrchestrationTools {
           'name': artifactPlanName,
           'description':
               'Plan where task deliverables should be stored before dispatch. '
-              'Sets the unified store write --task id and expected artifact '
+              'Sets the unified pouch write --task id and expected artifact '
               'slots so members write under one directory. Call after '
               'requirement is clear and before or with group_plan_publish.',
           'parameters': _artifactPlanSchema(agentNames),
@@ -105,7 +106,7 @@ class GroupOrchestrationTools {
         'function': {
           'name': artifactRegisterName,
           'description':
-              'Register one or more store:// artifact URIs under the current '
+              'Register one or more pouch:// artifact URIs under the current '
               'task manifest (artifacts.json). Use to consolidate scattered '
               'deliverables, attach recon findings, or record URIs members '
               'forgot to link.',
@@ -162,14 +163,14 @@ class GroupOrchestrationTools {
         'name': artifactPlanName,
         'description':
             'Plan where task deliverables should be stored before dispatch. '
-            'Sets the unified store write --task id and expected artifact '
+            'Sets the unified pouch write --task id and expected artifact '
             'slots so members write under one directory.',
         'input_schema': _artifactPlanSchema(agentNames),
       },
       {
         'name': artifactRegisterName,
         'description':
-            'Register store:// artifact URIs under the current task manifest '
+            'Register pouch:// artifact URIs under the current task manifest '
             '(artifacts.json) to consolidate scattered deliverables.',
         'input_schema': _artifactRegisterSchema(),
       },
@@ -419,7 +420,7 @@ class GroupOrchestrationTools {
         'store_task_id': {
           'type': 'string',
           'description':
-              'Unified shepaw store write --task id for ALL deliverables of '
+              'Unified shepaw pouch write --task id for ALL deliverables of '
               'this task. Prefer the current orchestration id (sanitized).',
         },
         'notes': {
@@ -455,7 +456,7 @@ class GroupOrchestrationTools {
               'properties': {
                 'uri': {
                   'type': 'string',
-                  'description': 'store:// URI of the artifact',
+                  'description': 'pouch:// URI of the artifact',
                 },
                 'label': {
                   'type': 'string',
@@ -883,7 +884,7 @@ class GroupOrchestrationTools {
       if (item is! Map) continue;
       final map = Map<String, dynamic>.from(item);
       final uri = map['uri']?.toString().trim() ?? '';
-      if (uri.isEmpty || !uri.startsWith('store://')) continue;
+      if (uri.isEmpty || !isPouchUri(uri)) continue;
       entries.add(GroupTaskArtifactEntry(
         uri: uri,
         label: map['label']?.toString().trim() ?? '',
@@ -895,7 +896,7 @@ class GroupOrchestrationTools {
     if (entries.isEmpty) {
       return (
         entries: const [],
-        parseError: 'group_artifact_register produced no valid store:// URIs',
+        parseError: 'group_artifact_register produced no valid pouch:// URIs',
       );
     }
     return (entries: entries, parseError: null);

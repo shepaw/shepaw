@@ -12,8 +12,8 @@ import 'store_service.dart';
 import 'store_uri_reader.dart';
 
 /// 产物 URI：
-/// - 新：`store://runtime/<device>/<owner>/<channel>/artifacts/<task>/<file>`
-/// - legacy：`store://artifacts/<device>/<task>/<file>`
+/// - 新：`pouch://runtime/<device>/<owner>/<channel>/artifacts/<task>/<file>`
+/// - legacy：`pouch://artifacts/<device>/<task>/<file>`
 class ArtifactUri {
   ArtifactUri({
     required this.deviceId,
@@ -31,7 +31,7 @@ class ArtifactUri {
   final String? channelId;
   final String space;
 
-  static const scheme = 'store';
+  static const scheme = 'pouch';
 
   bool get isLegacy => space == StoreSpace.artifacts;
 
@@ -135,7 +135,7 @@ class ArtifactService {
   final _log = LoggerService();
 
   static final _referencePattern = RegExp(
-      r'\[([^\]]+)\]\((store://(?:artifacts|runtime)/[0-9a-f]{16}/[^)]+)\)(?:\s*—\s*([^\n]+))?');
+      r'\[([^\]]+)\]\((pouch://(?:artifacts|runtime)/[0-9a-f]{16}/[^)]+)\)(?:\s*—\s*([^\n]+))?');
 
   /// 产物元数据 sidecar 后缀：`artifacts/<task>/<file>.meta.json`。
   static const metaSuffix = '.meta.json';
@@ -273,8 +273,8 @@ class ArtifactService {
     for (final ref in refs) {
       buffer.writeln('- ${ref.toMarkdownLine()}');
     }
-    buffer.writeln('新产出优先 `shepaw store write`（勿默认写 OS 路径）；'
-        '读 `store://` 遵循消息内 `[implicit]` 提示（`shepaw store read`）。');
+    buffer.writeln('新产出优先 `shepaw pouch write`（勿默认写 OS 路径）；'
+        '读 `pouch://` 遵循消息内 `[implicit]` 提示（`shepaw pouch read`）。');
     return buffer.toString();
   }
 
@@ -286,7 +286,7 @@ class ArtifactService {
     }
   }
 
-  /// 工作流步骤摘要：超长时优先保留末尾的 store:// 引用行。
+  /// 工作流步骤摘要：超长时优先保留末尾的 pouch:// 引用行。
   String truncateStepSummary(String output, {int maxLen = 500}) {
     if (output.length <= maxLen) return output;
     final refs = parseReferences(output);

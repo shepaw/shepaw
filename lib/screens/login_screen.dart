@@ -6,6 +6,7 @@ import '../services/logger_service.dart';
 import '../services/password_service.dart';
 import '../services/biometric_service.dart';
 import '../services/desktop_window_auto_size.dart';
+import '../storage/pouch_session.dart';
 import '../theme/app_theme.dart';
 
 /// 登录页面
@@ -70,7 +71,8 @@ class _LoginScreenState extends State<LoginScreen> {
       reason: l10n.login_biometricPrompt,
     );
     if (success && mounted) {
-      LoggerService().info('Biometric login OK, navigating to /home', tag: 'Login');
+      LoggerService()
+          .info('Biometric login OK, navigating to /home', tag: 'Login');
       await _goHome();
     }
   }
@@ -84,7 +86,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _beginLockout() {
     _lockSecondsLeft = _lockoutSeconds;
-    _errorMessage = AppLocalizations.of(context).login_retryIn(_lockSecondsLeft);
+    _errorMessage =
+        AppLocalizations.of(context).login_retryIn(_lockSecondsLeft);
     _lockTimer?.cancel();
     _lockTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) {
@@ -111,7 +114,11 @@ class _LoginScreenState extends State<LoginScreen> {
     await Future<void>.delayed(const Duration(milliseconds: 150));
     await DesktopWindowAutoSize.bringToFront();
     if (!mounted) return;
-    Navigator.of(context).pushReplacementNamed('/home');
+    final session = await PouchSessionStore.readActive();
+    if (!mounted) return;
+    Navigator.of(context).pushReplacementNamed(
+      session == null ? '/pouch' : '/home',
+    );
   }
 
   /// 提交登录
@@ -141,7 +148,8 @@ class _LoginScreenState extends State<LoginScreen> {
       if (success) {
         // 登录成功，跳转到主页
         if (mounted) {
-          LoggerService().info('Password verified, navigating to /home', tag: 'Login');
+          LoggerService()
+              .info('Password verified, navigating to /home', tag: 'Login');
           await _goHome();
         }
       } else {
@@ -195,8 +203,8 @@ class _LoginScreenState extends State<LoginScreen> {
               Text(
                 l10n.login_title,
                 style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+                      fontWeight: FontWeight.bold,
+                    ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 8),
@@ -204,8 +212,8 @@ class _LoginScreenState extends State<LoginScreen> {
               Text(
                 l10n.login_subtitle,
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
+                      color: scheme.onSurfaceVariant,
+                    ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 48),
@@ -223,8 +231,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   suffixIcon: IconButton(
                     icon: Icon(
                       _isPasswordVisible
-                        ? Icons.visibility
-                        : Icons.visibility_off,
+                          ? Icons.visibility
+                          : Icons.visibility_off,
                     ),
                     onPressed: () {
                       setState(() {
@@ -261,14 +269,11 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
 
-              if (_errorMessage.isNotEmpty)
-                const SizedBox(height: 24),
+              if (_errorMessage.isNotEmpty) const SizedBox(height: 24),
 
               // 登录按钮
               ElevatedButton(
-                onPressed: (_isLoading || _isLocked)
-                  ? null
-                  : _submitLogin,
+                onPressed: (_isLoading || _isLocked) ? null : _submitLogin,
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
@@ -276,18 +281,20 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 child: _isLoading
-                  ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    : Text(
+                        l10n.login_button,
+                        style: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold),
                       ),
-                    )
-                  : Text(
-                      l10n.login_button,
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
               ),
               const SizedBox(height: 16),
 
@@ -357,12 +364,14 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.info_outline, color: AppColors.primaryDark, size: 18),
+                  const Icon(Icons.info_outline,
+                      color: AppColors.primaryDark, size: 18),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       l10n.login_resetPasswordVaultHint,
-                      style: const TextStyle(color: AppColors.primaryDark, fontSize: 13),
+                      style: const TextStyle(
+                          color: AppColors.primaryDark, fontSize: 13),
                     ),
                   ),
                 ],

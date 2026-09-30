@@ -3,7 +3,7 @@ import 'package:shepaw/controllers/inbound_file_message_parser.dart';
 import 'package:shepaw/services/attachment_service.dart';
 
 const _storeUri =
-    'store://runtime/680a477ce6563798/she-builtin-agent-001/'
+    'pouch://runtime/680a477ce6563798/she-builtin-agent-001/'
     'dm_she-builtin-agent-001_user_1787875105064/artifacts/general/tetris.html';
 
 void main() {
@@ -18,11 +18,11 @@ void main() {
       expect(draft, isNotNull);
       expect(draft!.metadata['download_status'], 'pending');
       expect(draft.metadata['source_url'], 'https://host/files/abc123');
-      expect(draft.metadata['store_uri'], isNull);
+      expect(draft.metadata['pouch_uri'], isNull);
       expect(draft.metadata['size'], 1024);
     });
 
-    test('store:// url is already available (completed + store_uri)', () {
+    test('pouch:// url is already available (completed + pouch_uri)', () {
       final draft = InboundFileMessageParser.parse({
         'url': _storeUri,
         'filename': 'tetris.html',
@@ -31,13 +31,13 @@ void main() {
       expect(draft, isNotNull);
       expect(draft!.metadata['download_status'], 'completed');
       expect(draft.metadata['source_url'], _storeUri);
-      expect(draft.metadata['store_uri'], _storeUri);
+      expect(draft.metadata['pouch_uri'], _storeUri);
       // size not provided → 0, bubble resolves lazily from the store.
       expect(draft.metadata['size'], 0);
       expect(draft.metadata['file_id'], isNull);
     });
 
-    test('store:// url keeps explicit file_id but stays completed', () {
+    test('pouch:// url keeps explicit file_id but stays completed', () {
       final draft = InboundFileMessageParser.parse({
         'url': _storeUri,
         'file_id': 'abc123',
@@ -46,7 +46,7 @@ void main() {
       });
       expect(draft, isNotNull);
       expect(draft!.metadata['download_status'], 'completed');
-      expect(draft.metadata['store_uri'], _storeUri);
+      expect(draft.metadata['pouch_uri'], _storeUri);
       expect(draft.metadata['file_id'], 'abc123');
     });
 
@@ -58,7 +58,7 @@ void main() {
       });
       expect(draft, isNotNull);
       expect(draft!.metadata['download_status'], 'pending');
-      expect(draft.metadata['store_uri'], isNull);
+      expect(draft.metadata['pouch_uri'], isNull);
       expect(draft.metadata['file_id'], 'abc123');
     });
 
@@ -83,21 +83,21 @@ void main() {
   });
 
   group('AttachmentService.storeUriOf', () {
-    test('explicit store_uri wins', () {
+    test('explicit pouch_uri wins', () {
       expect(
-        AttachmentService.storeUriOf({'store_uri': _storeUri}),
+        AttachmentService.storeUriOf({'pouch_uri': _storeUri}),
         _storeUri,
       );
     });
 
-    test('store:// source_url fallback for legacy messages', () {
+    test('pouch:// source_url fallback for legacy messages', () {
       expect(
         AttachmentService.storeUriOf({'source_url': _storeUri}),
         _storeUri,
       );
     });
 
-    test('http source_url without store_uri → null', () {
+    test('http source_url without pouch_uri → null', () {
       expect(
         AttachmentService.storeUriOf({
           'source_url': 'https://host/files/abc123',
@@ -106,10 +106,10 @@ void main() {
       );
     });
 
-    test('explicit store_uri preferred over conflicting source_url', () {
+    test('explicit pouch_uri preferred over conflicting source_url', () {
       expect(
         AttachmentService.storeUriOf({
-          'store_uri': _storeUri,
+          'pouch_uri': _storeUri,
           'source_url': 'https://host/files/abc123',
         }),
         _storeUri,

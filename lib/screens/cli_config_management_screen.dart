@@ -59,7 +59,7 @@ const Map<String, IconData> _namespaceIcons = {
   'tools': Icons.build_outlined,
   'os': Icons.computer_outlined,
   'skills': Icons.extension_outlined,
-  'store': Icons.inventory_2_outlined,
+  'pouch': Icons.inventory_2_outlined,
   'workflow': Icons.account_tree_outlined,
   'instructions': Icons.rule_outlined,
   'vision': Icons.visibility_outlined,

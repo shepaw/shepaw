@@ -276,13 +276,13 @@ void main() {
   });
 
   test('extractStoreUris pulls unique store URIs and trims punctuation', () {
-    const reply = '完成，产物见 [a](store://workspaces/dev/group_1/shared/a.md)。'
-        '以及 store://workspaces/dev/group_1/shared/b.md, '
-        '重复的 store://workspaces/dev/group_1/shared/a.md';
+    const reply = '完成，产物见 [a](pouch://workspaces/dev/group_1/shared/a.md)。'
+        '以及 pouch://workspaces/dev/group_1/shared/b.md, '
+        '重复的 pouch://workspaces/dev/group_1/shared/a.md';
     final uris = GroupOrchestrationService.extractStoreUris(reply);
     expect(uris, [
-      'store://workspaces/dev/group_1/shared/a.md',
-      'store://workspaces/dev/group_1/shared/b.md',
+      'pouch://workspaces/dev/group_1/shared/a.md',
+      'pouch://workspaces/dev/group_1/shared/b.md',
     ]);
     expect(GroupOrchestrationService.extractStoreUris('没有产物'), isEmpty);
   });
@@ -290,7 +290,7 @@ void main() {
   test('buildMemberArtifactsBlock lists member artifacts', () {
     final results = <String, GroupTurnResult>{
       'a1': const GroupTurnResult(
-        content: '产物：store://workspaces/dev/group_1/shared/c.md',
+        content: '产物：pouch://workspaces/dev/group_1/shared/c.md',
       ),
       'a2': const GroupTurnResult(content: '纯文本回复'),
     };
@@ -300,7 +300,7 @@ void main() {
     );
     expect(block, contains('【成员产物】'));
     expect(block, contains('Coder'));
-    expect(block, contains('store://workspaces/dev/group_1/shared/c.md'));
+    expect(block, contains('pouch://workspaces/dev/group_1/shared/c.md'));
     expect(block, isNot(contains('Reviewer')));
 
     expect(

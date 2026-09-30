@@ -31,7 +31,7 @@ void main() {
       name: 'Codex',
       engine: 'codex',
       running: true,
-      workspaceUri: 'store://workspaces/hubaaaa/proj',
+      workspaceUri: 'pouch://workspaces/hubaaaa/proj',
     );
     expect(first.id, 'card-0');
     expect(first.dialable, isTrue);

@@ -213,4 +213,4 @@ class CliExecutionGate {
 /// 放开整个命名空间是安全的：`slip.delete` 在命令内部就有 ACL（非 She、
 /// 非本机用户直接拒），不依赖审批开关——审批只在 agent 自己开了
 /// `cliRequireApproval` 时才问，单靠它不算拦。
-const kGroupMemberCliAllowlist = {'store', 'help', 'slip'};
+const kGroupMemberCliAllowlist = {'pouch', 'help', 'slip'};

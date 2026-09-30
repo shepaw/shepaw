@@ -11,13 +11,13 @@ void main() {
         memoryNote: '',
         taskPlanNote: GroupDispatchParser.buildTaskPlanNote(
           body: '## 目标\n交付 OpenAPI 3 文档',
-          planUri: 'store://workspaces/dev/group_x/shared/tasks/msg/plan.md',
+          planUri: 'pouch://workspaces/dev/group_x/shared/tasks/msg/plan.md',
         ),
       );
       expect(content, contains('【全局需求】'));
       expect(content, contains('OpenAPI 文档'));
       expect(content, contains('【正式任务计划】'));
-      expect(content, contains('store://'));
+      expect(content, contains('pouch://'));
       expect(content, contains('【你的任务】'));
       expect(content, contains('实现登录'));
       final globalIdx = content.indexOf('【全局需求】');
@@ -43,9 +43,9 @@ void main() {
       GroupOrchestrationFeatures.requirementUriOnlyPrompts = true;
       final content = GroupDispatchParser.buildMemberTurnContent(
         memberBrief: '做 recon 探测',
-        globalRequirement: '（定稿需求见 `store://workspaces/dev/tasks/o1/requirement.md`，请 store read 后执行）',
+        globalRequirement: '（定稿需求见 `pouch://workspaces/dev/tasks/o1/requirement.md`，请 pouch read 后执行）',
         memoryNote: '',
-        requirementUri: 'store://workspaces/dev/tasks/o1/requirement.md',
+        requirementUri: 'pouch://workspaces/dev/tasks/o1/requirement.md',
         isFollowUpRound: false,
       );
       expect(content, contains('【你的任务】'));
@@ -59,7 +59,7 @@ void main() {
         memberBrief: '补交 app-recon 摘要',
         globalRequirement: '用户完整需求原文很长很长',
         memoryNote: '',
-        requirementUri: 'store://workspaces/dev/shared/tasks/o1/requirement.md',
+        requirementUri: 'pouch://workspaces/dev/shared/tasks/o1/requirement.md',
         isFollowUpRound: true,
       );
       expect(content, contains('【你的任务】'));
@@ -75,7 +75,7 @@ void main() {
         memberBrief: global,
         globalRequirement: global,
         memoryNote: '',
-        requirementUri: 'store://workspaces/dev/shared/tasks/o1/requirement.md',
+        requirementUri: 'pouch://workspaces/dev/shared/tasks/o1/requirement.md',
         isFollowUpRound: true,
       );
       expect(content, contains('【你的任务】'));

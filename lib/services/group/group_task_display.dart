@@ -2,6 +2,7 @@ import '../../models/group_task.dart';
 import '../../models/group_task_artifact.dart';
 import '../../storage/artifact_service.dart';
 import 'group_member_history.dart';
+import '../../storage/store_protocol.dart';
 
 /// Read-side helpers for group task UI.
 ///
@@ -47,7 +48,7 @@ class GroupTaskDisplay {
     final out = <String>[];
     void add(String raw) {
       final uri = raw.trim();
-      if (uri.isEmpty || !uri.startsWith('store://')) return;
+      if (uri.isEmpty || !isPouchUri(uri)) return;
       if (_taskRecordFile.hasMatch(uri)) return;
       if (seen.add(uri)) out.add(uri);
     }
@@ -64,7 +65,7 @@ class GroupTaskDisplay {
         }
       }
     }
-    if (archive != null && archive.contains('store://')) {
+    if (archive != null && containsPouchUri(archive)) {
       for (final uri in GroupMemberHistory.extractStoreUris(archive)) {
         add(uri);
       }

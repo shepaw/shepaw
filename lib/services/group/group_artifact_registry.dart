@@ -179,14 +179,14 @@ class GroupArtifactRegistry {
       );
       if (plan == null) return '';
       return '\n\n${plan.toAdminBlock()}\n'
-          '写入产物时务必 `shepaw store write --task ${plan.storeTaskId} …`，'
-          '并在回复中原样引用 store:// URI。';
+          '写入产物时务必 `shepaw pouch write --task ${plan.storeTaskId} …`，'
+          '并在回复中原样引用 pouch:// URI。';
     } catch (_) {
       return '';
     }
   }
 
-  /// 从任意文本批量提取 store:// 并登记（admin 整理散落产物时用）。
+  /// 从任意文本批量提取 pouch:// 并登记（admin 整理散落产物时用）。
   static List<GroupTaskArtifactEntry> entriesFromText(
     String text, {
     String source = GroupTaskArtifactEntry.sourceAdmin,

@@ -1,7 +1,8 @@
 import '../../models/attachment_data.dart';
 import '../../models/message.dart';
+import '../../storage/store_protocol.dart';
 
-/// Per-message implicit prompts for store:// / pouch attachments.
+/// Per-message implicit prompts for pouch:// / pouch attachments.
 ///
 /// Persisted on the message row as [metaKey] (and optional [urisMetaKey]),
 /// kept out of user-visible [Message.content]. Assembled into LLM / peer wire
@@ -16,18 +17,18 @@ class MessageImplicitPrompt {
   static const metaKey = 'implicit_prompt';
 
   /// Optional structured URI list alongside [metaKey].
-  static const urisMetaKey = 'store_uris';
+  static const urisMetaKey = 'pouch_uris';
 
-  /// Matches well-formed `store://<space>/<16-hex device>/<path>` URIs
+  /// Matches well-formed `pouch://<space>/<16-hex device>/<path>` URIs
   /// (stops at whitespace / `]` / `)`).
   ///
-  /// Strict on purpose: placeholders (`store://xxx`) and doc templates
-  /// (`store://<space>/<device>/<path>`) mentioned while *discussing* the
+  /// Strict on purpose: placeholders (`pouch://xxx`) and doc templates
+  /// (`pouch://<space>/<device>/<path>`) mentioned while *discussing* the
   /// protocol must not trigger the implicit read hint. The store layer
   /// always mints this shape (see ArtifactService / DeviceIdentity).
   /// Spaces are intentionally not enumerated so new spaces need no change.
   static final RegExp storeUriPattern = RegExp(
-    r'store://[a-z]+/[0-9a-f]{16}/[^\s\]\)<>]+',
+    r'pouch://[a-z]+/[0-9a-f]{16}/[^\s\]\)<>]+',
   );
 
   static final RegExp _blockPattern = RegExp(
@@ -61,7 +62,7 @@ class MessageImplicitPrompt {
     }
   }
 
-  /// Build metadata map for a new message that may reference store://.
+  /// Build metadata map for a new message that may reference pouch://.
   static Map<String, dynamic>? metadataForTurn({
     required String text,
     List<AttachmentData>? attachments,
@@ -74,7 +75,7 @@ class MessageImplicitPrompt {
     return meta;
   }
 
-  /// Collect store:// URIs from text + attachment extras / descriptions.
+  /// Collect pouch:// URIs from text + attachment extras / descriptions.
   static Set<String> collectUris({
     String text = '',
     List<AttachmentData>? attachments,
@@ -82,7 +83,7 @@ class MessageImplicitPrompt {
     final uris = <String>{...extractStoreUris(text)};
     if (attachments != null) {
       for (final a in attachments) {
-        final uri = a.extraMetadata?['store_uri'] as String?;
+        final uri = a.extraMetadata?['pouch_uri'] as String?;
         if (uri != null && uri.isNotEmpty) uris.add(uri);
         uris.addAll(extractStoreUris(a.textDescription));
         final listed = a.extraMetadata?[urisMetaKey];
@@ -122,7 +123,7 @@ class MessageImplicitPrompt {
   /// Structured + inline store URIs on a single message (no long hint render).
   static Set<String> urisFromMessage(Message m) {
     final uris = <String>{};
-    final metaUri = m.metadata?['store_uri'] as String?;
+    final metaUri = m.metadata?['pouch_uri'] as String?;
     if (metaUri != null && metaUri.isNotEmpty) uris.add(metaUri);
     final listed = m.metadata?[urisMetaKey];
     if (listed is List) {
@@ -145,7 +146,7 @@ class MessageImplicitPrompt {
     return out;
   }
 
-  /// Scan chat-map history (role/content) for store:// after enrich/strip.
+  /// Scan chat-map history (role/content) for pouch:// after enrich/strip.
   static Set<String> collectUrisFromChatMaps(
     Iterable<Map<String, dynamic>> messages,
   ) {
@@ -162,8 +163,8 @@ class MessageImplicitPrompt {
         }
       }
       final info = m['attachment_info'];
-      if (info is Map && info['store_uri'] is String) {
-        final u = info['store_uri'] as String;
+      if (info is Map && info['pouch_uri'] is String) {
+        final u = info['pouch_uri'] as String;
         if (u.isNotEmpty) out.add(u);
       }
     }
@@ -209,9 +210,9 @@ class MessageImplicitPrompt {
     return appendHint(message, hint);
   }
 
-  /// Extract distinct store:// URIs from [text], stripping trailing punctuation.
+  /// Extract distinct pouch:// URIs from [text], stripping trailing punctuation.
   static Set<String> extractStoreUris(String text) {
-    if (!text.contains('store://')) return const {};
+    if (!containsPouchUri(text)) return const {};
     final out = <String>{};
     for (final match in storeUriPattern.allMatches(text)) {
       var uri = match.group(0)!;
@@ -222,7 +223,7 @@ class MessageImplicitPrompt {
               uri.endsWith(':'))) {
         uri = uri.substring(0, uri.length - 1);
       }
-      if (uri.startsWith('store://')) out.add(uri);
+      if (isPouchUri(uri)) out.add(uri);
     }
     return out;
   }
@@ -239,11 +240,11 @@ class MessageImplicitPrompt {
     if (list.isEmpty) return null;
     final buf = StringBuffer()
       ..writeln(markerOpen)
-      ..writeln('This message mentions store:// URI(s). If you need their')
+      ..writeln('This message mentions pouch:// URI(s). If you need their')
       ..writeln('contents, read each with:')
-      ..writeln('`shepaw store read --uri <uri-as-is>`')
+      ..writeln('`shepaw pouch read --uri <uri-as-is>`')
       ..writeln(
-          'store:// URIs are not OS paths; never read them as local files.')
+          'pouch:// URIs are not OS paths; never read them as local files.')
       ..writeln(
           'Across paired Nexus Pouch devices the same URI is readable via store CLI.')
       ..writeln(

@@ -114,7 +114,7 @@ void main() {
         relPath: 'a1/soul.md',
       );
       expect(
-          uri, startsWith('store://${StoreSpace.runtime}/0123456789abcdef/'));
+          uri, startsWith('pouch://${StoreSpace.runtime}/0123456789abcdef/'));
       expect(uri, contains('a1/soul.md'));
     });
   });

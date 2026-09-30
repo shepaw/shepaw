@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// pubspec 的目录资产条目**不递归**：`assets/skills/` 只收该目录下的直接
 /// 文件，而那里全是子目录，于是内置技能一个文件都没进包，`_seedBuiltinSkills`
 /// 与 `_publishSystemSkill` 双双静默失败（线上表现为 She 读到
-/// `store://tools/<device>/skills/shepaw-system/SKILL.md` 时 not_found）。
+/// `pouch://tools/<device>/skills/shepaw-system/SKILL.md` 时 not_found）。
 ///
 /// 这组断言盯住打包结果，而不是源码目录是否存在。
 void main() {
@@ -39,6 +39,6 @@ void main() {
     expect(text, contains('runtime 运行时'));
     expect(text, contains('workspaces 工作区'));
     expect(text, contains('tools 工具'));
-    expect(text, contains('旧分区 `store://artifacts/...` 只用来读历史'));
+    expect(text, contains('旧分区 `pouch://artifacts/...` 只用来读历史'));
   });
 }

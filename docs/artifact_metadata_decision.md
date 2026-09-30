@@ -6,7 +6,7 @@
 
 ## 1. 背景与问题
 
-`shepaw store write --task <id> --desc <text>` 现在：
+`shepaw pouch write --task <id> --desc <text>` 现在：
 
 - `--task` 只作为路径段落盘：`runtime/<owner>/<channel>/artifacts/<task>/<file>`
   （`lib/storage/artifact_service.dart` `ArtifactUri.storePath`）——可按路径检索；
@@ -98,5 +98,5 @@
 
 1. `ArtifactService.writeArtifact` 写产物后追加写 sidecar（尽力而为，失败不回滚产物）
 2. `StoreSearchCommand` 把 `.meta.json` 命中映射回产物 URI，并从扫描结果里折叠掉 meta 条目
-3. `store read` / `list` 对 meta 的展示策略（默认隐藏 or 保留）
+3. `pouch read` / `list` 对 meta 的展示策略（默认隐藏 or 保留）
 4. 卡面 / CLI 描述同步：说清 desc 现在可检索

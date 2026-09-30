@@ -28,7 +28,7 @@ void main() {
         sessionId: 'ch',
         status: GroupTask.statusPlanned,
         userGoal: 'goal',
-        planJsonUri: 'store://workspaces/dev/group_x/shared/tasks/msg-002/plan.json',
+        planJsonUri: 'pouch://workspaces/dev/group_x/shared/tasks/msg-002/plan.json',
       );
       expect(task.hasPublishedPlan, isTrue);
     });
@@ -108,7 +108,7 @@ void main() {
         agentName: 'Alice',
         taskStatus: GroupTaskMemberResult.statusDone,
         summary: '已完成',
-        artifactUris: ['store://workspaces/dev/f/out.md'],
+        artifactUris: ['pouch://workspaces/dev/f/out.md'],
       );
 
       final once = base.upsertMember(first);

@@ -88,7 +88,7 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
   }
 
   Future<void> _onTap() async {
-    // store_uri → 本机文件
+    // pouch_uri → 本机文件
     final file = await AttachmentService.resolveFile(widget.message.metadata);
     if (file == null) return;
     await _playbackService.playOrToggle(widget.message.id, file.path);

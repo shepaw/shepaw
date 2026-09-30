@@ -77,11 +77,11 @@ void main() {
       // Detailed store read/write commands live in the Scope Card (当前储物袋
       // 作用域), which is the single pouch manual; the system prompt only
       // points at it and pins the two hard rules.
-      expect(block, contains('### Store'));
+      expect(block, contains('### Pouch'));
       expect(block, contains('当前储物袋作用域'));
       expect(block, contains('Scope Card'));
-      expect(block, contains('Do not invent `store://` URIs'));
-      expect(block, contains('store write'));
+      expect(block, contains('Do not invent `pouch://` URIs'));
+      expect(block, contains('pouch write'));
       expect(block, isNot(contains('[implicit]')));
       // Detailed MUST/Do-NOT store-read lecture moved off the system prompt.
       expect(block, isNot(contains('MUST** read/operate via store CLI')));
@@ -146,7 +146,7 @@ void main() {
       expect(prompt, contains('Your name is Coder.'));
       expect(prompt, contains('Tool Discovery'));
       // Store guidance is a pointer to the Scope Card, not a CLI lecture.
-      expect(prompt, contains('### Store'));
+      expect(prompt, contains('### Pouch'));
       expect(prompt, contains('Scope Card'));
       expect(prompt, isNot(contains('[implicit]')));
       expect(prompt, isNot(contains('shepaw CLI — Data Access')));

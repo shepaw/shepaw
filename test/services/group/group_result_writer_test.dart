@@ -38,7 +38,7 @@ void main() {
         agentId: 'coder',
         agentName: 'Coder',
         turn: const GroupTurnResult(
-          content: '实现完成，见 store://workspaces/dev/out.md\n[TASK_STATUS: done]',
+          content: '实现完成，见 pouch://workspaces/dev/out.md\n[TASK_STATUS: done]',
         ),
         round: 2,
       );
@@ -46,7 +46,7 @@ void main() {
       expect(member, isNotNull);
       expect(member!.taskStatus, GroupTaskMemberResult.statusDone);
       expect(member.summary, contains('实现完成'));
-      expect(member.artifactUris, contains('store://workspaces/dev/out.md'));
+      expect(member.artifactUris, contains('pouch://workspaces/dev/out.md'));
       expect(member.round, 2);
     });
 
@@ -237,7 +237,7 @@ void main() {
         orchestrationId: orchId,
         turns: {
           'coder': const GroupTurnResult(
-            content: '完成文档 store://workspaces/dev/doc.md\n[TASK_STATUS: done]',
+            content: '完成文档 pouch://workspaces/dev/doc.md\n[TASK_STATUS: done]',
           ),
         },
         agents: [_agent('coder', 'Coder')],
@@ -273,7 +273,7 @@ void main() {
       const groupId = 'group_result_writer_replay';
       const orchId = 'orch-replay-done';
       await ensureTask(groupId, orchId);
-      const uri = 'store://workspaces/dev/doc.md';
+      const uri = 'pouch://workspaces/dev/doc.md';
 
       await GroupResultWriter.persistFromMembersDonePayload(
         groupId: groupId,
@@ -508,7 +508,7 @@ void main() {
               round: 1,
               taskStatus: GroupTaskMemberResult.statusDone,
               summary: '完成 API',
-              artifactUris: ['store://workspaces/dev/api.md'],
+              artifactUris: ['pouch://workspaces/dev/api.md'],
             ),
           ],
         ),
@@ -516,7 +516,7 @@ void main() {
 
       expect(block, contains('【结构化成员结果（results.json）】'));
       expect(block, contains('Coder (done'));
-      expect(block, contains('store://workspaces/dev/api.md'));
+      expect(block, contains('pouch://workspaces/dev/api.md'));
     });
 
     test('filters to current and prior round only', () {

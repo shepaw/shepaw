@@ -27,7 +27,7 @@ void main() {
         'avatar': '/tmp/a.png',
         'engine': 'codex',
         'running': true,
-        'workspace_uri': 'store://workspaces/x',
+        'workspace_uri': 'pouch://workspaces/x',
         'avatar_data': base64Encode([1, 2, 3]),
       },
       {'id': '  ', 'name': '空白'},
@@ -43,7 +43,7 @@ void main() {
     expect(reports, hasLength(2));
     expect(reports[0].avatar, isEmpty);
     expect(reports[0].avatarBytes, [1, 2, 3]);
-    expect(reports[0].workspaceUri, 'store://workspaces/x');
+    expect(reports[0].workspaceUri, 'pouch://workspaces/x');
     expect(reports[0].running, isTrue);
     expect(reports[0].engine, 'codex');
     expect(reports[1].name, 'remote-2');

@@ -106,6 +106,7 @@ void main() {
       expect(namespaces, contains('peer'));
       expect(namespaces, isNot(contains('os')));
       expect(namespaces, isNot(contains('store')));
+      expect(namespaces, isNot(contains('pouch')));
       expect(namespaces, isNot(contains('workflow')));
       expect(namespaces, isNot(contains('context')));
     });
@@ -133,7 +134,7 @@ void main() {
         },
       );
       final namespaces = (result['namespaces'] as Map).keys.toSet();
-      expect(namespaces, containsAll(['os', 'store', 'workflow', 'peer']));
+      expect(namespaces, containsAll(['os', 'pouch', 'workflow', 'peer']));
     });
   });
 

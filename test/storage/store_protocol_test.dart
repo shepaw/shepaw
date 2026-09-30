@@ -24,10 +24,10 @@ void main() {
       expect(parsed.payload.containsKey('type'), isFalse);
     });
 
-    test('非 store 帧返回 null；缺 op 抛异常', () {
+    test('非 pouch 帧返回 null；缺 op 抛异常', () {
       expect(StoreFrame.tryParse({'ns': 'sync', 'op': 'x'}), isNull);
-      expect(() => StoreFrame.tryParse({'ns': 'store'}),
-          throwsFormatException);
+      expect(StoreFrame.tryParse({'ns': 'store', 'op': 'read'}), isNull);
+      expect(() => StoreFrame.tryParse({'ns': 'pouch'}), throwsFormatException);
     });
 
     test('result/error 构造器', () {
@@ -401,7 +401,7 @@ void main() {
   group('store URI 与版本引用（spec §1.5，v4.2）', () {
     test('parseStoreUri 基本形态', () {
       final u = parseStoreUri(
-          'store://artifacts/aaaaaaaaaaaaaaaa/task-1/out.txt@v3');
+          'pouch://artifacts/aaaaaaaaaaaaaaaa/task-1/out.txt@v3');
       expect(u.space, 'artifacts');
       expect(u.device, 'aaaaaaaaaaaaaaaa');
       expect(u.path, 'task-1/out.txt');
@@ -410,35 +410,35 @@ void main() {
       expect(
           storeUriWithRef('artifacts', 'aaaaaaaaaaaaaaaa', 'a.txt',
               const StoreUriRef.seq(2)),
-          'store://artifacts/aaaaaaaaaaaaaaaa/a.txt@v2');
+          'pouch://artifacts/aaaaaaaaaaaaaaaa/a.txt@v2');
       expect(
         formatStoreMarkdownLink(
           'report.md',
-          'store://runtime/aaaaaaaaaaaaaaaa/a/b/artifacts/t/report.md',
+          'pouch://runtime/aaaaaaaaaaaaaaaa/a/b/artifacts/t/report.md',
         ),
-        '[report.md](store://runtime/aaaaaaaaaaaaaaaa/a/b/artifacts/t/report.md)',
+        '[report.md](pouch://runtime/aaaaaaaaaaaaaaaa/a/b/artifacts/t/report.md)',
       );
       // 文件名里的 @ 不误伤（后缀非引用形态）。
       expect(
-          parseStoreUri('store://files/aaaaaaaaaaaaaaaa/contact@home.txt').path,
+          parseStoreUri('pouch://files/aaaaaaaaaaaaaaaa/contact@home.txt').path,
           'contact@home.txt');
       final root = parseStoreUri(
-          'store://workspaces/aaaaaaaaaaaaaaaa',
+          'pouch://workspaces/aaaaaaaaaaaaaaaa',
           allowEmptyPath: true);
       expect(root.space, 'workspaces');
       expect(root.device, 'aaaaaaaaaaaaaaaa');
       expect(root.path, isEmpty);
       expect(
-        () => parseStoreUri('store://workspaces/aaaaaaaaaaaaaaaa'),
+        () => parseStoreUri('pouch://workspaces/aaaaaaaaaaaaaaaa'),
         throwsFormatException,
       );
     });
 
     test('parseStoreUri 解码 Markdown 百分号编码的中文路径', () {
       const encoded =
-          'store://artifacts/352821253aefdfba/general/%E6%95%B0%E7%8B%AC%E5%B0%8F%E6%B8%B8%E6%88%8F%E8%AE%BE%E8%AE%A1%E6%96%87%E6%A1%A3.md';
+          'pouch://artifacts/352821253aefdfba/general/%E6%95%B0%E7%8B%AC%E5%B0%8F%E6%B8%B8%E6%88%8F%E8%AE%BE%E8%AE%A1%E6%96%87%E6%A1%A3.md';
       const raw =
-          'store://artifacts/352821253aefdfba/general/数独小游戏设计文档.md';
+          'pouch://artifacts/352821253aefdfba/general/数独小游戏设计文档.md';
       final fromEncoded = parseStoreUri(encoded);
       final fromRaw = parseStoreUri(raw);
       expect(fromEncoded.path, 'general/数独小游戏设计文档.md');

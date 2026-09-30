@@ -5,7 +5,7 @@ import 'package:shepaw/services/messaging/message_implicit_prompt.dart';
 
 void main() {
   test('enrichHistoryContent strips [implicit] store tutorials', () {
-    const uri = 'store://files/0123456789abcdef/docs/a.txt';
+    const uri = 'pouch://files/0123456789abcdef/docs/a.txt';
     final hint = MessageImplicitPrompt.renderStoreReadHint({uri})!;
     final m = Message(
       id: 'm1',
@@ -13,7 +13,7 @@ void main() {
       type: MessageType.text,
       content: 'please read\n$hint',
       timestampMs: 0,
-      metadata: {'store_uri': uri},
+      metadata: {'pouch_uri': uri},
     );
     final out = LocalLLMHelpers.enrichHistoryContent(m, m.content);
     expect(out, isNot(contains('[implicit]')));
@@ -22,7 +22,7 @@ void main() {
 
   test('buildUserMessageContent folds this-turn URIs into Scope Card volatile',
       () {
-    const uri = 'store://files/0123456789abcdef/docs/note.txt';
+    const uri = 'pouch://files/0123456789abcdef/docs/note.txt';
     final msg = LocalLLMHelpers.buildUserMessageContent(
       'please read $uri',
       null,
@@ -35,9 +35,9 @@ void main() {
     expect(content, contains('please read'));
   });
 
-  test('follow-up without this-turn store:// does not re-append the URI card',
+  test('follow-up without this-turn pouch:// does not re-append the URI card',
       () {
-    const uri = 'store://files/0123456789abcdef/docs/note.txt';
+    const uri = 'pouch://files/0123456789abcdef/docs/note.txt';
     final history = [
       Message(
         id: 'h1',
@@ -45,7 +45,7 @@ void main() {
         type: MessageType.text,
         content: 'earlier $uri',
         timestampMs: 0,
-        metadata: {'store_uri': uri},
+        metadata: {'pouch_uri': uri},
       ),
     ];
     // History still carries the URI in content; the current user turn must

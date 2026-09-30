@@ -124,18 +124,18 @@
 
 简单/单步请求直接做；整件事明显属于某个 Agent → `agents.dispatch`；需要可见计划且分阶段 → 1:1 用 `workflow create`，群聊用 Flow Mode。
 
-**群记忆与工作空间**：群共享记忆会蒸馏；成员产物落到群工作空间（`store://workspaces/<device>/group_<gid>/…`），跨设备可见；群上下文注入每位成员的每一轮。
+**群记忆与工作空间**：群共享记忆会蒸馏；成员产物落到群工作空间（`pouch://workspaces/<device>/group_<gid>/…`），跨设备可见；群上下文注入每位成员的每一轮。
 
 **权限模型**：Admin（或 She）拥有完整群管理权限（创建/加人/踢人/改群名/改描述/设职责）；普通成员只能自助编辑自己的 bio / 群内角色介绍。
 
 ### 2.5 储物袋（Store）与存储
 
-- **Store 协议**：`store://<space>/<device>/<path>`。智能体常用：`cognition`（认知：soul/记忆）、`runtime`（运行时：会话与产物，产物在 `…/artifacts/`）、`workspaces`（工作区）、`tools`（工具：MCP、规则、技能，App 级与 `agents/<agentId>/` 各一份）。用户文件在 `files`，公开引用在 `public`。旧分区 `artifacts` / `memory` 只读。
+- **Store 协议**：`pouch://<space>/<device>/<path>`。智能体常用：`cognition`（认知：soul/记忆）、`runtime`（运行时：会话与产物，产物在 `…/artifacts/`）、`workspaces`（工作区）、`tools`（工具：MCP、规则、技能，App 级与 `agents/<agentId>/` 各一份）。用户文件在 `files`，公开引用在 `public`。旧分区 `artifacts` / `memory` 只读。
 - **储物袋 UI**：浏览、搜索、管理文件；「最近」标签；可隐藏内部/系统文件。
 - **快照**：定时加密快照，GFS 保留策略，回收站与版本管理；在 **储物袋 → 备份与恢复** 创建/导出/恢复。
 - **目录绑定**（桌面端）：绑定本地文件夹，FS watcher 自动同步（附周期兜底）。
 - **WebDAV**：导出到 WebDAV、恢复、管理快照。
-- **Agent 简历**：`store://files/<device>/<agentId>/resume.md`，用 `shepaw store` 读写。群共享文件在 `store://workspaces/<device>/group_<gid>/…`。
+- **Agent 简历**：`pouch://files/<device>/<agentId>/resume.md`，用 `shepaw pouch` 读写。群共享文件在 `pouch://workspaces/<device>/group_<gid>/…`。
 - **NexusPouch / Storage Node**（可选）：无头 Go store master，扫码配对 + mDNS 发现，经 Noise 加密 WebSocket 提供 `store.*` 帧服务。
 
 ### 2.6 设备配对与 P2P / She 网络

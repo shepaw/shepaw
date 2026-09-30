@@ -205,7 +205,7 @@ class PouchAttachmentDesk {
       if (bytes == null || bytes.isEmpty) {
         throw StateError('附件不在主机上: ${item.ref['file_id']}');
       }
-      final extra = <String, dynamic>{'store_uri': item.stored.storeUri};
+      final extra = <String, dynamic>{'pouch_uri': item.stored.storeUri};
       final hint =
           MessageImplicitPrompt.renderStoreReadHint([item.stored.storeUri]);
       MessageImplicitPrompt.putInMetadata(
@@ -217,7 +217,7 @@ class PouchAttachmentDesk {
       if (clientExtra is Map) {
         for (final entry in clientExtra.entries) {
           final key = entry.key.toString();
-          if (key == 'store_uri' ||
+          if (key == 'pouch_uri' ||
               key == MessageImplicitPrompt.metaKey ||
               key == MessageImplicitPrompt.urisMetaKey) {
             continue;
@@ -393,7 +393,7 @@ class PouchAttachmentHost {
       'file_id': fileId,
       'ok': done.error == null,
       'stage': 'end',
-      if (done.storeUri != null) 'store_uri': done.storeUri,
+      if (done.storeUri != null) 'pouch_uri': done.storeUri,
       if (done.error != null) 'error': done.error,
     });
   }

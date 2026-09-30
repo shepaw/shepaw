@@ -124,9 +124,9 @@ class ScopeCard {
     return ScopeCardCliSurface.shepawTool;
   }
 
-  /// Pull `device_id` out of a `store://<space>/<device>/…` URI.
+  /// Pull `device_id` out of a `pouch://<space>/<device>/…` URI.
   static String? deviceIdFromStoreUri(String? uri) {
-    if (uri == null || !uri.startsWith('store://')) return null;
+    if (uri == null || !isPouchUri(uri)) return null;
     try {
       return parseStoreUri(uri, allowEmptyPath: true).device;
     } catch (_) {
@@ -323,28 +323,28 @@ class ScopeCard {
       'session_id=本轮 agent.chat 的 session_id';
 
   String get _soulReadNote => _hubCli
-      ? '（未内嵌；需要时 `hub.cli.execute` store read 本 URI，带 $_hubSessionId）'
-      : '（未内嵌；需要时 `shepaw store read --uri` 本 URI）';
+      ? '（未内嵌；需要时 `hub.cli.execute` pouch read 本 URI，带 $_hubSessionId）'
+      : '（未内嵌；需要时 `shepaw pouch read --uri` 本 URI）';
 
   String get _storeReadLine => _hubCli
-      ? '- 读: ACP `hub.cli.execute` `{namespace:"store",subcommand:"read",'
+      ? '- 读: ACP `hub.cli.execute` `{namespace:"pouch",subcommand:"read",'
           'flags:{uri:"<uri-as-is>"},$_hubSessionId}` · '
           '列: subcommand=list flags.uri + flags.depth=1 · '
           '搜: subcommand=search flags.query'
-      : '- 读: `shepaw store read --uri <uri-as-is>` · '
-          '列: `shepaw store list --uri <uri> --depth 1` · '
-          '搜: `shepaw store search --query <关键词> [--space files]`';
+      : '- 读: `shepaw pouch read --uri <uri-as-is>` · '
+          '列: `shepaw pouch list --uri <uri> --depth 1` · '
+          '搜: `shepaw pouch search --query <关键词> [--space files]`';
 
   String get _storeWriteLine => _hubCli
-      ? '- 写产物: ACP `hub.cli.execute` `{namespace:"store",subcommand:"write",'
+      ? '- 写产物: ACP `hub.cli.execute` `{namespace:"pouch",subcommand:"write",'
           'flags:{filename:"<名>",content:"..."},$_hubSessionId}`'
           '（可选 flags.task / flags.desc）；'
           '**不要**传 `agent_id` / `owner` / `channel_id`，由系统落到本作用域袋'
       : _hubStore
-          ? '- 写产物: `shepaw store write --filename <名> --content "..."`'
+          ? '- 写产物: `shepaw pouch write --filename <名> --content "..."`'
               '（可选 `--task` / `--desc`）；'
-              '写落 **本机 device** 目录，返回的 `store://` 原样引用；**不要**传 `agent_id` / `owner`'
-          : '- 写产物: `shepaw store write --filename <名> --content "..."`'
+              '写落 **本机 device** 目录，返回的 `pouch://` 原样引用；**不要**传 `agent_id` / `owner`'
+          : '- 写产物: `shepaw pouch write --filename <名> --content "..."`'
               ' 或 `--file <path>` / `--content-base64`（可选 `--task` / `--desc`）；'
               '**不要**传 `agent_id` / `owner` / 个人 channel，由系统落到本作用域袋';
 
@@ -360,10 +360,10 @@ class ScopeCard {
   String get systemSkillUri =>
       storeUriWithRef(StoreSpace.tools, deviceId, StoreSpace.systemSkillRelPath);
 
-  /// `store://tools/<device>/`，里面是 App 的 mcp / rules / skills。
+  /// `pouch://tools/<device>/`，里面是 App 的 mcp / rules / skills。
   String get toolsRootUri => storeUriWithRef(StoreSpace.tools, deviceId, '');
 
-  /// `store://tools/<device>/agents/<owner>/`。
+  /// `pouch://tools/<device>/agents/<owner>/`。
   String get agentToolsUri => storeUriWithRef(
         StoreSpace.tools,
         deviceId,
@@ -374,11 +374,11 @@ class ScopeCard {
   void _writeSpaceMap(StringBuffer buf) {
     buf
       ..writeln(
-        '- 优先用储物袋。`store://` 只用 store read/list/search；'
+        '- 优先用储物袋。`pouch://` 只用 pouch read/list/search；'
         '不要编造 URI，不要用 os.file。',
       )
       ..writeln(
-        '- `files` 沉淀：用户文件。`store write` 写不进（会报错），'
+        '- `files` 沉淀：用户文件。`pouch write` 写不进（会报错），'
         '产物一律走 runtime。',
       )
       ..writeln(
@@ -386,7 +386,7 @@ class ScopeCard {
       )
       ..writeln(
         '- `runtime` 运行时：本轮会话、附件和产物'
-        '（`…/artifacts/<task>/<file>`）。`store write` 默认落这里。'
+        '（`…/artifacts/<task>/<file>`）。`pouch write` 默认落这里。'
         '旧分区 `artifacts` 不要再写。',
       )
       ..writeln(
@@ -395,7 +395,7 @@ class ScopeCard {
       )
       ..writeln(
         '- `cognition` 认知：soul 与记忆补充（不同步，靠 agent 主动写；'
-        '记忆权威在文件系统记忆）。用 context/soul CLI 写，不要 store write。',
+        '记忆权威在文件系统记忆）。用 context/soul CLI 写，不要 pouch write。',
       )
       ..writeln(
         '- `tools` 工具：`mcp/`、`rules/`、`skills/`；'
@@ -404,9 +404,9 @@ class ScopeCard {
   }
 
   String get _systemSkillLine => _hubCli
-      ? '- 系统技能: ACP `hub.cli.execute` `{namespace:"store",subcommand:"read",'
+      ? '- 系统技能: ACP `hub.cli.execute` `{namespace:"pouch",subcommand:"read",'
           'flags:{uri:"$systemSkillUri"},$_hubSessionId}`'
-      : '- 系统技能: `shepaw store read --uri $systemSkillUri`';
+      : '- 系统技能: `shepaw pouch read --uri $systemSkillUri`';
 
   String get _memoryWriteLine => _hubCli
       ? '- 写记忆: ACP `hub.cli.execute` `{namespace:"context",'
@@ -415,9 +415,9 @@ class ScopeCard {
       : '- 写记忆: `shepaw context agents.memory-write --id $ownerId --content "..."`';
 
   String get _volatileReadHint => _hubCli
-      ? '- 需要内容时用 ACP `hub.cli.execute` store read（带 $_hubSessionId）；'
+      ? '- 需要内容时用 ACP `hub.cli.execute` pouch read（带 $_hubSessionId）；'
           '勿假设已内嵌 session/产物全文'
-      : '- 需要内容时用 `shepaw store read --uri …`；'
+      : '- 需要内容时用 `shepaw pouch read --uri …`；'
           '勿假设已内嵌 session/产物全文';
 
   /// 稳定段：适合 system / 会话首包。
@@ -432,7 +432,7 @@ class ScopeCard {
       )
       ..writeln('- device: `$deviceId`')
       ..writeln(
-        '- URI 形如 `store://<space>/<device_id>/<path>`'
+        '- URI 形如 `pouch://<space>/<device_id>/<path>`'
         '（可加 `@v<n>` / `@<hash>` 固定到某一版本）',
       );
     _writeSpaceMap(buf);
@@ -448,7 +448,7 @@ class ScopeCard {
       }
       if (soulUri != null) {
         final soulNote = injected.soul == ScopeInjectLevel.full
-            ? '（soul 本轮已内嵌全文，勿再 store read）'
+            ? '（soul 本轮已内嵌全文，勿再 pouch read）'
             : injected.soul == ScopeInjectLevel.summary
                 ? '（soul 本轮已内嵌摘要）'
                 : _soulReadNote;
@@ -487,8 +487,8 @@ class ScopeCard {
     }
     if (_hubStore) {
       buf.writeln(
-        '- 本宿主 `shepaw store` 只直接碰 **本机 device**；其他设备的 '
-        '`store://` 以及 `os` / `chat` / `context` / `events` 由 shim 转到'
+        '- 本宿主 `shepaw pouch` 只直接碰 **本机 device**；其他设备的 '
+        '`pouch://` 以及 `os` / `chat` / `context` / `events` 由 shim 转到'
         '配对 App（闸门 + She 专属）。不要 `hub.cli.execute`',
       );
     }
@@ -505,8 +505,8 @@ class ScopeCard {
       buf.writeln('- 写 Soul: 经既有 cognition/soul CLI（勿写 runtime 镜像）');
     }
 
-    buf.writeln('- 禁止: 回写 `runtime/*/soul.md` 与 `memory.md` 镜像；编造 `store://`；'
-        '用 `os.file.*` 读 store URI');
+    buf.writeln('- 禁止: 回写 `runtime/*/soul.md` 与 `memory.md` 镜像；编造 `pouch://`；'
+        '用 `os.file.*` 读 pouch URI');
     if (mode == ScopeCardMode.group) {
       buf.writeln(
         '- 禁止: 把群产出写到 `runtime/<你的agentId>/` 或 `cognition/<你的agentId>/`',
@@ -618,7 +618,7 @@ class ScopeCard {
     final byKey = <String, String>{};
     for (final raw in uris) {
       final t = raw.trim();
-      if (t.isEmpty || !t.startsWith('store://')) continue;
+      if (t.isEmpty || !isPouchUri(t)) continue;
       final key = normalizeUriKey(t);
       byKey.putIfAbsent(key, () => t);
     }
@@ -644,12 +644,12 @@ class ScopeCard {
     final list = dedupeUris(uris);
     if (list.isEmpty) return '';
     final readHint = cliSurface == ScopeCardCliSurface.hubExecuteCli
-        ? '需要内容时 `hub.cli.execute` store read（带 session_id）'
-        : '需要内容时 `shepaw store read --uri …`';
+        ? '需要内容时 `hub.cli.execute` pouch read（带 session_id）'
+        : '需要内容时 `shepaw pouch read --uri …`';
     final buf = StringBuffer()
       ..writeln('## 当前储物袋作用域 · 本轮')
-      ..writeln('- 本轮/近期 store URI（已归一化；$readHint）:')
-      ..writeln('- 勿用 os.file 读 store://；历史消息不再重复长读法教程');
+      ..writeln('- 本轮/近期 pouch URI（已归一化；$readHint）:')
+      ..writeln('- 勿用 os.file 读 pouch://；历史消息不再重复长读法教程');
     for (final u in list) {
       buf.writeln('  - `$u`');
     }

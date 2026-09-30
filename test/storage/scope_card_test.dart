@@ -10,7 +10,7 @@ void main() {
     );
     final md = card.toStableMarkdown();
     expect(md, contains('## 当前储物袋作用域'));
-    expect(md, contains('store://cognition/aaaaaaaaaaaaaaaa/'));
+    expect(md, contains('pouch://cognition/aaaaaaaaaaaaaaaa/'));
     expect(md, contains('已内嵌全文'));
     expect(md, contains('不要'));
     expect(md, contains('agents.memory-write --id agent_xxx'));
@@ -26,8 +26,8 @@ void main() {
     expect(md, contains('记忆补充'));
     expect(md, contains('改磁盘即改袋'));
     expect(md, contains('旧分区 `artifacts` 不要再写'));
-    expect(md, contains('store://tools/aaaaaaaaaaaaaaaa/'));
-    expect(md, contains('store://tools/aaaaaaaaaaaaaaaa/agents/agent_xxx/'));
+    expect(md, contains('pouch://tools/aaaaaaaaaaaaaaaa/'));
+    expect(md, contains('pouch://tools/aaaaaaaaaaaaaaaa/agents/agent_xxx/'));
     expect(md, isNot(contains('产物/runtime')));
   });
 
@@ -38,8 +38,8 @@ void main() {
       injected: const ScopeCardInjected(),
     ).toStableMarkdown();
     expect(md, contains('未内嵌'));
-    expect(md, contains('store read'));
-    expect(md, contains('store search'));
+    expect(md, contains('pouch read'));
+    expect(md, contains('pouch search'));
   });
 
   test('Group card: no personal cognition URI, no memory write', () {
@@ -77,31 +77,31 @@ void main() {
 
   test('dedupeUris strips ref/query', () {
     final out = ScopeCard.dedupeUris([
-      'store://runtime/aa/a/x.md@abc',
-      'store://runtime/aa/a/x.md',
-      'store://runtime/aa/a/x.md?ref=1',
+      'pouch://runtime/aa/a/x.md@abc',
+      'pouch://runtime/aa/a/x.md',
+      'pouch://runtime/aa/a/x.md?ref=1',
     ]);
     expect(out.length, 1);
   });
 
   test('dedupeUris folds ancestor roots under file URIs', () {
     final out = ScopeCard.dedupeUris([
-      'store://runtime/aaaaaaaaaaaaaaaa/agent1/',
-      'store://runtime/aaaaaaaaaaaaaaaa/agent1/ch/artifacts/t/a.md',
-      'store://cognition/aaaaaaaaaaaaaaaa/agent1/soul.md',
+      'pouch://runtime/aaaaaaaaaaaaaaaa/agent1/',
+      'pouch://runtime/aaaaaaaaaaaaaaaa/agent1/ch/artifacts/t/a.md',
+      'pouch://cognition/aaaaaaaaaaaaaaaa/agent1/soul.md',
     ]);
     expect(
       out,
-      contains('store://runtime/aaaaaaaaaaaaaaaa/agent1/ch/artifacts/t/a.md'),
+      contains('pouch://runtime/aaaaaaaaaaaaaaaa/agent1/ch/artifacts/t/a.md'),
     );
     expect(
       out,
-      contains('store://cognition/aaaaaaaaaaaaaaaa/agent1/soul.md'),
+      contains('pouch://cognition/aaaaaaaaaaaaaaaa/agent1/soul.md'),
     );
     expect(
       out.any((u) =>
           ScopeCard.normalizeUriKey(u) ==
-          'store://runtime/aaaaaaaaaaaaaaaa/agent1/'),
+          'pouch://runtime/aaaaaaaaaaaaaaaa/agent1/'),
       isFalse,
     );
   });
@@ -114,20 +114,20 @@ void main() {
     ).toStableMarkdown();
     expect(md, contains('hub.cli.execute'));
     expect(md, contains('session_id'));
-    expect(md, contains('store'));
-    expect(md, isNot(contains('shepaw store read')));
-    expect(md, isNot(contains('shepaw store write')));
+    expect(md, contains('pouch'));
+    expect(md, isNot(contains('shepaw pouch read')));
+    expect(md, isNot(contains('shepaw pouch write')));
     expect(md, contains('不要'));
     expect(md, contains('agent_id'));
   });
 
   test('volatileUrisMarkdown hub surface uses hub.cli.execute', () {
     final md = ScopeCard.volatileUrisMarkdown(
-      ['store://files/0123456789abcdef/a.txt'],
+      ['pouch://files/0123456789abcdef/a.txt'],
       cliSurface: ScopeCardCliSurface.hubExecuteCli,
     );
     expect(md, contains('hub.cli.execute'));
-    expect(md, isNot(contains('shepaw store read')));
+    expect(md, isNot(contains('shepaw pouch read')));
   });
 
   test('surfaceFor: remote ACP uses hub, local and peer use shepaw, Hub engine uses store',
@@ -164,8 +164,8 @@ void main() {
     expect(md, contains('玉简'));
     expect(md, contains('转到配对 App'));
     expect(md, contains('不要 `hub.cli.execute`'));
-    expect(md, contains('store://tools/cccccccccccccccc/skills/shepaw-system/SKILL.md'));
-    expect(md, contains('shepaw store read'));
+    expect(md, contains('pouch://tools/cccccccccccccccc/skills/shepaw-system/SKILL.md'));
+    expect(md, contains('shepaw pouch read'));
     expect(md, contains('勾选是提交'));
   });
 
@@ -175,10 +175,10 @@ void main() {
       deviceId: 'dddddddddddddddd',
       cliSurface: ScopeCardCliSurface.hubStoreCli,
       workspaceUris: const [
-        'store://workspaces/dddddddddddddddd/Users/me/proj/',
+        'pouch://workspaces/dddddddddddddddd/Users/me/proj/',
       ],
     ).toStableMarkdown();
-    expect(md, contains('shepaw store write'));
+    expect(md, contains('shepaw pouch write'));
     expect(md, contains('本机 device'));
     expect(md, contains('转到配对 App'));
     expect(md, contains('工作区已挂载'));
@@ -191,7 +191,7 @@ void main() {
   test('deviceIdFromStoreUri reads the device segment', () {
     expect(
       ScopeCard.deviceIdFromStoreUri(
-        'store://workspaces/0123456789abcdef/Users/me/proj/',
+        'pouch://workspaces/0123456789abcdef/Users/me/proj/',
       ),
       '0123456789abcdef',
     );
@@ -200,11 +200,11 @@ void main() {
 
   test('volatileUrisMarkdown lists folded URIs once', () {
     final md = ScopeCard.volatileUrisMarkdown([
-      'store://files/0123456789abcdef/a.txt',
-      'store://files/0123456789abcdef/a.txt@deadbeef',
+      'pouch://files/0123456789abcdef/a.txt',
+      'pouch://files/0123456789abcdef/a.txt@deadbeef',
     ]);
     expect(md, contains('当前储物袋作用域 · 本轮'));
-    expect(md, contains('store://files/0123456789abcdef/a.txt'));
+    expect(md, contains('pouch://files/0123456789abcdef/a.txt'));
     expect('[implicit]'.allMatches(md).length, 0);
   });
 }

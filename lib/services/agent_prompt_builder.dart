@@ -145,7 +145,7 @@ class AgentPromptBuilder {
         final desc = await _buildDescriptionBlock();
         if (desc.isNotEmpty) staticParts.add(desc);
       }
-      // Non-She uri_only: Soul 不内嵌，靠 Scope Card soul_uri + store read
+      // Non-She uri_only: Soul 不内嵌，靠 Scope Card soul_uri + pouch read
     }
 
     // ③ Tools documentation

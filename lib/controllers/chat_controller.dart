@@ -15,6 +15,7 @@ import '../services/chat_service.dart';
 import '../services/messaging/agent_messaging_service.dart';
 import '../services/local_database_service.dart';
 import '../services/attachment_service.dart';
+import '../storage/store_protocol.dart';
 import '../services/message_search_service.dart';
 import '../services/acp_agent_connection.dart';
 import '../services/app_lifecycle_service.dart';
@@ -1066,7 +1067,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   ///
   /// 队列清空（消息不再留在面板），由 [RestoreQueueToComposerEvent] 通知 UI
   /// 填输入框并聚焦。多条以 `\n\n` 分隔保持发送顺序；附件按同样顺序收集，
-  /// UI 侧依据 `store_uri` 重建待发送附件（storeRef 引用，不复制文件）。
+  /// UI 侧依据 `pouch_uri` 重建待发送附件（storeRef 引用，不复制文件）。
   ///
   /// 页面已离开（controller 已销毁）时事件流已关闭、事件无法送达，队列却已
   /// 清空——改为把倒回文本写入频道草稿，重进时由 [ComposerDraftService] /

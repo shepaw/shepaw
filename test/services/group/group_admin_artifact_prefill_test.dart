@@ -23,8 +23,8 @@ void main() {
     test('needsPrefill when summary mentions 全文见', () {
       final m = _member(
         id: 'b',
-        summary: '…（全文见 store://workspaces/dev/b.md）',
-        uris: ['store://workspaces/dev/b.md'],
+        summary: '…（全文见 pouch://workspaces/dev/b.md）',
+        uris: ['pouch://workspaces/dev/b.md'],
       );
       expect(GroupAdminArtifactPrefill.needsPrefillForTest(m), isTrue);
     });
@@ -36,13 +36,13 @@ void main() {
             id: 'a',
             summary:
                 '已完成：链路正常、无阻断项、产物 URI 已在上方摘要中完整引用，管理员可直接采纳本段结论。',
-            uris: ['store://workspaces/dev/a.md'],
+            uris: ['pouch://workspaces/dev/a.md'],
           ),
           _member(
             id: 'b',
             summary:
-                '${'x' * GroupResultWriter.maxSummaryChars}（全文见 store://workspaces/dev/b.md）',
-            uris: ['store://workspaces/dev/b.md'],
+                '${'x' * GroupResultWriter.maxSummaryChars}（全文见 pouch://workspaces/dev/b.md）',
+            uris: ['pouch://workspaces/dev/b.md'],
           ),
         ],
         round: 1,
@@ -56,13 +56,13 @@ void main() {
           _member(
             id: 'a',
             summary: 'r1',
-            uris: ['store://x'],
+            uris: ['pouch://x'],
             round: 1,
           ),
           _member(
             id: 'b',
             summary: 'r2',
-            uris: ['store://y'],
+            uris: ['pouch://y'],
             round: 2,
           ),
         ],

@@ -82,7 +82,7 @@ void main() {
       relPath: 'ws-demo/hello.txt',
       content: Uint8List.fromList(utf8.encode('hello workspace')),
     );
-    expect(uri, contains('store://workspaces/$deviceId/ws-demo/hello.txt'));
+    expect(uri, contains('pouch://workspaces/$deviceId/ws-demo/hello.txt'));
     final store = await StoreService.instance.localStore();
     final (bytes, _, _) = await store.read(
       deviceId,

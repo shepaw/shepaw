@@ -1,4 +1,4 @@
-/// Peer 隧道附件落点：本机缓存与宿主权威共用同一条 `store://runtime/<host>/…`。
+/// Peer 隧道附件落点：本机缓存与宿主权威共用同一条 `pouch://runtime/<host>/…`。
 library;
 
 import '../../models/remote_agent.dart';

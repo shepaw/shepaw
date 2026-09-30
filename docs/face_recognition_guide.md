@@ -100,7 +100,7 @@ score < low       → unknown      未知
 
 - embedding 与照片仅存本机：
   - `shepaw.db`：`face_persons` / `face_photos` 元数据（SQLite）。
-  - 储物袋 `store://cognition/<device>/<she>/face_vectors/<photo_id>.json`：人脸 embedding 向量（逐照片一个 JSON 文件，与 Agent 记忆同生命周期——备份 / 恢复 / `store wipe` / 跨设备镜像统一）。
+  - 储物袋 `pouch://cognition/<device>/<she>/face_vectors/<photo_id>.json`：人脸 embedding 向量（逐照片一个 JSON 文件，与 Agent 记忆同生命周期——备份 / 恢复 / `store wipe` / 跨设备镜像统一）。
   - `<Documents>/shepaw/images/`：参考照原图。
 - 无云端索引、无上传；`agent-bridge` / `channel` 不参与任何计算。
 - 删除操作经 `album.remove` 会清理对应向量与照片文件。

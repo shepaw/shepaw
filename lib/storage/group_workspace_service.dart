@@ -168,7 +168,7 @@ class OrchestrationInbox {
 /// ```
 /// workspaces/<homeDevice>/group_<gid>/
 /// ├── group-workspace.json         # 成员表（读写权限唯一依据）
-/// ├── members/<agentId>/...        # 成员私有区（store write 落点，只写自己的）
+/// ├── members/<agentId>/...        # 成员私有区（pouch write 落点，只写自己的）
 /// └── shared/
 ///     ├── tasks/
 ///     │   ├── index.json
@@ -266,7 +266,7 @@ class GroupWorkspaceService {
   }) async {
     final meta = await loadMeta(groupId);
     if (meta == null) return null;
-    return 'store://workspaces/${meta.homeDevice}/$relPath';
+    return 'pouch://workspaces/${meta.homeDevice}/$relPath';
   }
 
   /// 幂等创建群工作空间骨架 + 元数据。已存在时补缺成员，返回空间根。
@@ -347,7 +347,7 @@ class GroupWorkspaceService {
   Future<String?> metaUri(String groupId) async {
     final self = await DeviceIdentity.deviceId();
     // 优先本机（M1 空间归属创建设备）；跨设备读取后续接 ACL 后补齐。
-    return 'store://workspaces/$self/${metaRelPath(groupId)}';
+    return 'pouch://workspaces/$self/${metaRelPath(groupId)}';
   }
 
   /// 新增/更新成员（role 为空时保持原值）。
@@ -466,7 +466,7 @@ class GroupWorkspaceService {
       if (!name.endsWith('.json')) continue;
       final seq = int.tryParse(name.substring(0, name.length - 5));
       if (seq == null) continue;
-      final payload = await _readJson('store://workspaces/$home/${e.path}');
+      final payload = await _readJson('pouch://workspaces/$home/${e.path}');
       if (payload == null) continue;
       results.add((seq: seq, payload: payload));
     }
@@ -500,7 +500,7 @@ class GroupWorkspaceService {
     final meta = await loadMeta(groupId);
     if (meta == null) return null;
     return _readJson(
-      'store://workspaces/${meta.homeDevice}/'
+      'pouch://workspaces/${meta.homeDevice}/'
       '${roundDir(groupId, sessionId, round)}/state.json',
     );
   }
@@ -514,7 +514,7 @@ class GroupWorkspaceService {
     final meta = await loadMeta(groupId);
     if (meta == null) return null;
     return _readJson(
-      'store://workspaces/${meta.homeDevice}/'
+      'pouch://workspaces/${meta.homeDevice}/'
       '${roundDir(groupId, sessionId, round)}/dispatch.json',
     );
   }
@@ -539,7 +539,7 @@ class GroupWorkspaceService {
 
     Future<Map<String, dynamic>?> readIfFresh(String file) async {
       final data = await _readJson(
-        'store://workspaces/$homeDevice/$dir/$file',
+        'pouch://workspaces/$homeDevice/$dir/$file',
       );
       if (data == null) return null;
       final issued = data['issued_at'] as String?;
@@ -582,7 +582,7 @@ class GroupWorkspaceService {
     final meta = await loadMeta(groupId);
     if (meta == null) return null;
     return _readJson(
-      'store://workspaces/${meta.homeDevice}/'
+      'pouch://workspaces/${meta.homeDevice}/'
       '${orchestrationRoot(groupId, sessionId)}/latest.json',
     );
   }
@@ -609,7 +609,7 @@ class GroupWorkspaceService {
     final root = workspaceRoot(groupId);
     try {
       final bytes = await StoreUriReader.instance.read(
-        'store://workspaces/${meta.homeDevice}/'
+        'pouch://workspaces/${meta.homeDevice}/'
         '$root/shared/memory/latest.md',
       );
       final text = utf8.decode(bytes).trim();
@@ -652,8 +652,8 @@ class GroupWorkspaceService {
         content: Uint8List.fromList(utf8.encode(markdownContent)),
       );
       return (
-        jsonUri: 'store://workspaces/$home/$jsonRel',
-        mdUri: 'store://workspaces/$home/$mdRel',
+        jsonUri: 'pouch://workspaces/$home/$jsonRel',
+        mdUri: 'pouch://workspaces/$home/$mdRel',
       );
     } catch (e) {
       LoggerService().error(
@@ -694,7 +694,7 @@ class GroupWorkspaceService {
         relPath: latestRel,
         content: bytes,
       );
-      return 'store://workspaces/$home/$latestRel';
+      return 'pouch://workspaces/$home/$latestRel';
     } catch (e) {
       LoggerService().error(
         'group workspace memory write failed: $groupId',
@@ -714,7 +714,7 @@ class GroupWorkspaceService {
     final meta = await loadMeta(groupId);
     if (meta == null) return GroupTaskIndex();
     final json = await _readJson(
-      'store://workspaces/${meta.homeDevice}/${taskIndexRelPath(groupId)}',
+      'pouch://workspaces/${meta.homeDevice}/${taskIndexRelPath(groupId)}',
     );
     if (json == null) return GroupTaskIndex();
     return GroupTaskIndex.fromJson(json);
@@ -791,7 +791,7 @@ class GroupWorkspaceService {
     final meta = await loadMeta(groupId);
     if (meta == null) return null;
     final json = await _readJson(
-      'store://workspaces/${meta.homeDevice}/'
+      'pouch://workspaces/${meta.homeDevice}/'
       '${taskJsonRelPath(groupId, orchestrationId)}',
     );
     if (json == null) return null;
@@ -860,7 +860,7 @@ class GroupWorkspaceService {
       relPath: rel,
       content: content,
     );
-    final uri = 'store://workspaces/${meta.homeDevice}/$rel';
+    final uri = 'pouch://workspaces/${meta.homeDevice}/$rel';
     final task = await writeTask(
       groupId: groupId,
       task: existing.copyWith(requirementUri: uri),
@@ -877,7 +877,7 @@ class GroupWorkspaceService {
     final meta = await loadMeta(groupId);
     if (meta == null) return null;
     return _readText(
-      'store://workspaces/${meta.homeDevice}/'
+      'pouch://workspaces/${meta.homeDevice}/'
       '${taskRequirementRelPath(groupId, orchestrationId)}',
     );
   }
@@ -910,8 +910,8 @@ class GroupWorkspaceService {
       payload: plan.toJson(),
     );
 
-    final planUri = 'store://workspaces/${meta.homeDevice}/$mdRel';
-    final planJsonUri = 'store://workspaces/${meta.homeDevice}/$jsonRel';
+    final planUri = 'pouch://workspaces/${meta.homeDevice}/$mdRel';
+    final planJsonUri = 'pouch://workspaces/${meta.homeDevice}/$jsonRel';
     final task = await writeTask(
       groupId: groupId,
       task: existing.copyWith(
@@ -932,7 +932,7 @@ class GroupWorkspaceService {
     final meta = await loadMeta(groupId);
     if (meta == null) return null;
     final json = await _readJson(
-      'store://workspaces/${meta.homeDevice}/'
+      'pouch://workspaces/${meta.homeDevice}/'
       '${taskPlanJsonRelPath(groupId, orchestrationId)}',
     );
     if (json == null) return null;
@@ -947,7 +947,7 @@ class GroupWorkspaceService {
     final meta = await loadMeta(groupId);
     if (meta == null) return null;
     return _readText(
-      'store://workspaces/${meta.homeDevice}/'
+      'pouch://workspaces/${meta.homeDevice}/'
       '${taskPlanMdRelPath(groupId, orchestrationId)}',
     );
   }
@@ -972,7 +972,7 @@ class GroupWorkspaceService {
       relPath: rel,
       payload: results.toJson(),
     );
-    final uri = 'store://workspaces/${meta.homeDevice}/$rel';
+    final uri = 'pouch://workspaces/${meta.homeDevice}/$rel';
     await writeTask(
       groupId: groupId,
       task: existing.copyWith(resultsUri: uri),
@@ -1028,7 +1028,7 @@ class GroupWorkspaceService {
     final meta = await loadMeta(groupId);
     if (meta == null) return null;
     final json = await _readJson(
-      'store://workspaces/${meta.homeDevice}/'
+      'pouch://workspaces/${meta.homeDevice}/'
       '${taskResultsRelPath(groupId, orchestrationId)}',
     );
     if (json == null) return null;
@@ -1056,7 +1056,7 @@ class GroupWorkspaceService {
       relPath: rel,
       content: content,
     );
-    final uri = 'store://workspaces/${meta.homeDevice}/$rel';
+    final uri = 'pouch://workspaces/${meta.homeDevice}/$rel';
     final task = await writeTask(
       groupId: groupId,
       task: existing.copyWith(
@@ -1076,7 +1076,7 @@ class GroupWorkspaceService {
     final meta = await loadMeta(groupId);
     if (meta == null) return null;
     return _readText(
-      'store://workspaces/${meta.homeDevice}/'
+      'pouch://workspaces/${meta.homeDevice}/'
       '${taskArchiveRelPath(groupId, orchestrationId)}',
     );
   }
@@ -1101,7 +1101,7 @@ class GroupWorkspaceService {
       relPath: rel,
       payload: plan.toJson(),
     );
-    final uri = 'store://workspaces/${meta.homeDevice}/$rel';
+    final uri = 'pouch://workspaces/${meta.homeDevice}/$rel';
     await writeTask(
       groupId: groupId,
       task: existing.copyWith(artifactPlanUri: uri),
@@ -1117,7 +1117,7 @@ class GroupWorkspaceService {
     final meta = await loadMeta(groupId);
     if (meta == null) return null;
     final json = await _readJson(
-      'store://workspaces/${meta.homeDevice}/'
+      'pouch://workspaces/${meta.homeDevice}/'
       '${taskArtifactPlanRelPath(groupId, orchestrationId)}',
     );
     if (json == null) return null;
@@ -1154,7 +1154,7 @@ class GroupWorkspaceService {
       relPath: rel,
       payload: merged.toJson(),
     );
-    final uri = 'store://workspaces/${meta.homeDevice}/$rel';
+    final uri = 'pouch://workspaces/${meta.homeDevice}/$rel';
     await writeTask(
       groupId: groupId,
       task: existing.copyWith(artifactsUri: uri),
@@ -1170,7 +1170,7 @@ class GroupWorkspaceService {
     final meta = await loadMeta(groupId);
     if (meta == null) return null;
     final json = await _readJson(
-      'store://workspaces/${meta.homeDevice}/'
+      'pouch://workspaces/${meta.homeDevice}/'
       '${taskArtifactsRelPath(groupId, orchestrationId)}',
     );
     if (json == null) return null;

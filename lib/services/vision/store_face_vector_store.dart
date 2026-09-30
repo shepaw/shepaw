@@ -22,7 +22,7 @@ class _StoredVector {
 
 /// 储物袋形态的人脸向量存储：逐向量一个 JSON 文件。
 ///
-/// 落点：`store://cognition/<device>/<agent>/face_vectors/<photo_id>.json`
+/// 落点：`pouch://cognition/<device>/<agent>/face_vectors/<photo_id>.json`
 /// 与 Agent 记忆（soul / entries）同一分区，天然获得备份 / 恢复 / `store wipe` /
 /// 跨设备镜像的生命周期统一，且默认私有（跨端只读不放行文件）。
 ///

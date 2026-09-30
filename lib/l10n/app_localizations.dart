@@ -11616,7 +11616,7 @@ abstract class AppLocalizations {
   /// No description provided for @jadeSlip_evidenceHint.
   ///
   /// In zh, this message translates to:
-  /// **'store:// 或产物地址'**
+  /// **'pouch:// 或产物地址'**
   String get jadeSlip_evidenceHint;
 
   /// No description provided for @jadeSlip_activity.

@@ -472,14 +472,14 @@ void main() {
       await store.writeChunk(dev, 'artifacts', u, 0, c);
       await store.commit(dev, 'artifacts', [u], manifest: {
         'producer': 'agent-a',
-        'parent_uris': ['store://files/$dev/in.txt'],
+        'parent_uris': ['pouch://files/$dev/in.txt'],
         'summary': 'demo',
         'state': 'published',
       });
       final m = await store.readManifest(dev, 'artifacts', 'task-1/out.txt');
       expect(m['producer'], 'agent-a');
       expect(m['state'], 'published');
-      expect(m['parent_uris'], ['store://files/$dev/in.txt']);
+      expect(m['parent_uris'], ['pouch://files/$dev/in.txt']);
     });
 
     test('还原时原位置有文件：现有文件先回收入站', () async {

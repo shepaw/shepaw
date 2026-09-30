@@ -5,7 +5,7 @@ import 'package:uuid/uuid.dart';
 import '../../models/attachment_data.dart';
 import '../../models/message.dart';
 import '../../storage/pouch_role.dart';
-import '../../storage/store_service.dart';
+import '../../storage/pouch_session.dart';
 import 'pouch_attachment.dart';
 import 'services/peer_connection_manager.dart';
 
@@ -40,11 +40,13 @@ class PouchTurnRelay {
 
   void onFileAck(Map<String, dynamic> data) => _files.onAck(data);
 
-  /// 没有角色文件时在本机跑。读失败抛出，避免客户端悄悄在本地把编排跑起来。
+  /// App 不在本机跑回合。没登录袋子就停，不退回本地编排。
   static Future<PouchTurnRoute> currentRoute() async {
-    final root = await StoreService.instance.storeRoot();
-    final role = await PouchRoleStore(root).load();
-    return PouchTurnRoute.decide(role);
+    final session = await PouchSessionStore.readActive();
+    if (session == null) {
+      throw StateError('请先登录储物袋');
+    }
+    return PouchTurnRoute.decide(PouchRole.client(session.hostPeerId));
   }
 
   Future<void> forwardGroup({

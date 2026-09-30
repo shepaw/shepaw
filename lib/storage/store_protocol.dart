@@ -8,7 +8,22 @@ library;
 const int kStoreProtocolVersion = 4;
 
 /// peer 层控制帧路由 type / 协议命名空间。
-const String kStoreControlType = 'store';
+const String kStoreControlType = 'pouch';
+
+/// 袋子 URI 前缀。
+const String kPouchUriPrefix = 'pouch://';
+
+/// 是不是袋子地址。
+bool isPouchUri(String uri) => uri.startsWith(kPouchUriPrefix);
+
+/// 正文里是否出现袋子地址。
+bool containsPouchUri(String text) => text.contains(kPouchUriPrefix);
+
+/// 去掉 `pouch://`。不是袋子地址时返回 null。
+String? stripPouchUriPrefix(String uri) {
+  if (!isPouchUri(uri)) return null;
+  return uri.substring(kPouchUriPrefix.length);
+}
 
 /// 远端读传输参数（spec §2.3：`encoding=bin` 可选，旧对端回退 JSON/base64）。
 class StoreTransfer {
@@ -140,7 +155,7 @@ class StoreSpace {
   /// Legacy：旧认知空间名（只读兼容；新写入走 [cognition]）。
   static const memory = 'memory';
 
-  /// 应用自己的库。不挂在宿主指纹下，URI 固定为 `store://app/shepaw/...`。
+  /// 应用自己的库。不挂在宿主指纹下，URI 固定为 `pouch://app/shepaw/...`。
   static const app = 'app';
 
   /// [app] 分区的设备段。不是 Noise 指纹，换宿主后地址不变。
@@ -511,7 +526,7 @@ String normalizeStorePath(String raw) {
 bool isValidDeviceId(String? device) =>
     device != null && RegExp(r'^[0-9a-f]{16}$').hasMatch(device);
 
-/// `store://app/shepaw/...` 的设备段。只和 [StoreSpace.app] 一起用。
+/// `pouch://app/shepaw/...` 的设备段。只和 [StoreSpace.app] 一起用。
 bool isPouchAppDevice(String? device) => device == StoreSpace.appDevice;
 
 bool isAddressableStoreDevice(String? device, String? space) =>
@@ -528,7 +543,7 @@ bool isValidContentSha256(String? sha) =>
 
 enum StoreUriRefKind { latest, hash, seq }
 
-/// `store://<space>/<device>/<path>@<ref>` 的版本引用段。
+/// `pouch://<space>/<device>/<path>@<ref>` 的版本引用段。
 class StoreUriRef {
   const StoreUriRef.latest()
       : kind = StoreUriRefKind.latest,
@@ -551,18 +566,18 @@ class StoreUriRef {
       };
 }
 
-/// 解析 store:// URI（含可选 `@ref` / `?ref=`），返回 space/device/path/ref。
+/// 解析 pouch:// URI（含可选 `@ref` / `?ref=`），返回 space/device/path/ref。
 /// 与 Rust `src/uri.rs` 对齐：畸形引用 → [FormatException](bad_uri)；
 /// 点段/穿越 → [BadPathException]。
 ///
-/// [allowEmptyPath] 为 true 时允许分区根 `store://<space>/<device>`（浏览/list）；
+/// [allowEmptyPath] 为 true 时允许分区根 `pouch://<space>/<device>`（浏览/list）；
 /// 读文件仍应保持默认（必须带 path）。
 ({String space, String device, String path, StoreUriRef ref}) parseStoreUri(
     String raw,
     {bool allowEmptyPath = false}) {
   final withoutQuery = raw.split('?').first;
-  final rest =
-      withoutQuery.startsWith('store://') ? withoutQuery.substring(8) : raw;
+  final stripped = stripPouchUriPrefix(withoutQuery);
+  final rest = stripped ?? raw;
   final segments = rest.split('/').where((s) => s.isNotEmpty).toList();
   if (segments.length < 2 || (!allowEmptyPath && segments.length < 3)) {
     throw FormatException(allowEmptyPath
@@ -648,7 +663,7 @@ bool _looksLikeRefAttempt(String s) =>
 /// 格式化带版本引用的 store URI。
 String storeUriWithRef(String space, String device, String path,
         [StoreUriRef? ref]) =>
-    'store://$space/$device/$path${ref?.toString() ?? ''}';
+    'pouch://$space/$device/$path${ref?.toString() ?? ''}';
 
 /// 文件分享链接：Markdown `[displayName](storeUri)`。
 String formatStoreMarkdownLink(String displayName, String storeUri) =>

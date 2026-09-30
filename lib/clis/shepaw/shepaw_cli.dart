@@ -77,7 +77,7 @@ class ShepawCLI {
     'os': OsCliNamespace.instance,
     'workflow': WorkflowNamespace.instance,
     // 存储空间产物读写（docs/storage_space_plan.md §6.3）
-    'store': StoreNamespace.instance,
+    'pouch': StoreNamespace.instance,
     // 可复用的任务指令集（save/list/get/update/delete/run）
     'instructions': InstructionsNamespace.instance,
     // 储物袋玉简：用户待办，Agent 勾选执行
@@ -181,7 +181,7 @@ class ShepawCLI {
       'Dotted subcommands (e.g. "context.profile.query"). '
       'flags={"help":""} for usage. Do not invent commands. '
       'When to use each namespace, including jade slips (玉简): '
-      'read the system-skill URI on the scope card with namespace=store subcommand=read.';
+      'read the system-skill URI on the scope card with namespace=pouch subcommand=read.';
 
   /// 动态生成工具描述（包含外部工具信息）
   String _buildToolDescription({
@@ -320,7 +320,7 @@ class ShepawCLI {
         return jsonEncode(_buildHelpResult(allowlist: allowlist));
       }
 
-      // 透传当前执行者的 agentId / channelId / 群 runtime owner（store write 等
+      // 透传当前执行者的 agentId / channelId / 群 runtime owner（pouch write 等
       // 依赖）。并发成员工具调用必须在各自 Zone 内执行：读取点优先取 Zone 值，
       // 避免原先静态全局被并发覆盖的串号竞态。
       final flagChannel =

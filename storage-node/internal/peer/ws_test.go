@@ -153,7 +153,7 @@ func TestReconnectKnownPeer(t *testing.T) {
 	if reply["op"] != "result" {
 		t.Fatalf("reply=%v", reply)
 	}
-	if reply["ns"] != "store" || reply["type"] != "store" {
+	if reply["ns"] != "pouch" || reply["type"] != "pouch" {
 		t.Fatalf("expected Dart store frame shape, got %v", reply)
 	}
 }
@@ -224,7 +224,7 @@ func TestFlatStoreFrameAndMasterPointer(t *testing.T) {
 
 	// Dart-style flat frame with req_id
 	req, _ := json.Marshal(map[string]any{
-		"type": "store", "ns": "store", "op": "master.pointer.query", "v": 1,
+		"type": "pouch", "ns": "pouch", "op": "master.pointer.query", "v": 1,
 		"req_id": "r-1",
 	})
 	ct, err := initSess.Encrypt(req)
@@ -254,7 +254,7 @@ func TestFlatStoreFrameAndMasterPointer(t *testing.T) {
 
 	// Notification: master.pointer without req_id — no reply
 	notify, _ := json.Marshal(map[string]any{
-		"type": "store", "ns": "store", "op": "master.pointer", "v": 1,
+		"type": "pouch", "ns": "pouch", "op": "master.pointer", "v": 1,
 		"master": clientID.Fingerprint(), "epoch": 5,
 	})
 	ct2, err := initSess.Encrypt(notify)
@@ -429,7 +429,7 @@ func TestMigrateFanoutMasterPointer(t *testing.T) {
 	}
 
 	req, _ := json.Marshal(map[string]any{
-		"type": "store", "ns": "store", "op": "master.migrate", "v": 1,
+		"type": "pouch", "ns": "pouch", "op": "master.migrate", "v": 1,
 		"req_id": "r-migrate",
 	})
 	ct, err := sessA.Encrypt(req)
@@ -684,7 +684,7 @@ func TestImportGrantPushInboundNoReply(t *testing.T) {
 	}
 
 	notify, _ := json.Marshal(map[string]any{
-		"type": "store", "ns": "store", "op": "import.grant", "v": 1,
+		"type": "pouch", "ns": "pouch", "op": "import.grant", "v": 1,
 		"grant_id": "ig-inbound-b", "old_device": lostOld,
 		"spaces": []string{"backups"}, "issued_at": 1, "expires_at": 9999999999999,
 	})

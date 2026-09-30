@@ -2,7 +2,7 @@ import '../peer/models/paired_peer.dart';
 import '../peer/services/peer_storage_service.dart';
 import 'device_identity.dart';
 
-/// `store://<space>/<device>/…` 里 device 段解析后的读写目标。
+/// `pouch://<space>/<device>/…` 里 device 段解析后的读写目标。
 class StoreDeviceTarget {
   const StoreDeviceTarget({
     required this.deviceId,

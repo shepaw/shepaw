@@ -66,7 +66,7 @@ class GroupOrchestrationFeatures {
   /// Set to 0 to disable budgeting.
   static int adminContextBudgetChars = 12000;
 
-  /// Auto `store read` member artifact URIs into admin summarize (Phase 0 D).
+  /// Auto `pouch read` member artifact URIs into admin summarize (Phase 0 D).
   static bool adminArtifactPrefill = true;
 
   /// User goal only in `requirement.md`; admin/member prompts use URI refs (Phase J).

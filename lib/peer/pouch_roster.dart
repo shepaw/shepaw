@@ -7,6 +7,7 @@ import '../storage/pouch_role.dart';
 import '../storage/store_service.dart';
 import 'models/paired_peer.dart';
 import 'services/peer_storage_service.dart';
+import '../storage/store_protocol.dart';
 
 /// 主机把工人 Hub 报上来的 Agent 名单写进储物袋名册。
 ///
@@ -104,7 +105,7 @@ class PouchRosterSync {
     final a = raw['workspace_uri'];
     final b = raw['workspaceUri'];
     final s = a is String ? a : (b is String ? b : null);
-    if (s == null || !s.startsWith('store://')) return null;
+    if (s == null || !isPouchUri(s)) return null;
     return s;
   }
 

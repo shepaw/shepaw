@@ -26,7 +26,7 @@ String _description(Map<String, dynamic> tool) {
 
 void main() {
   group('cliFilterNamespaces', () {
-    const all = ['store', 'help', 'os', 'peer'];
+    const all = ['pouch', 'help', 'os', 'peer'];
 
     test('unrestricted keeps every namespace', () {
       expect(cliFilterNamespaces(all), all);
@@ -34,8 +34,8 @@ void main() {
 
     test('per-agent namespace entry keeps that namespace', () {
       expect(
-        cliFilterNamespaces(all, enabledCliCommands: const {'store'}),
-        ['store'],
+        cliFilterNamespaces(all, enabledCliCommands: const {'pouch'}),
+        ['pouch'],
       );
     });
 
@@ -50,10 +50,10 @@ void main() {
       expect(
         cliFilterNamespaces(
           all,
-          enabledCliCommands: const {'store', 'os'},
+          enabledCliCommands: const {'pouch', 'os'},
           extraAllowlist: kGroupMemberCliAllowlist,
         ),
-        ['store'],
+        ['pouch'],
       );
     });
 
@@ -72,13 +72,13 @@ void main() {
   group('cliFilterSubcommands', () {
     test('unrestricted or whole-namespace allowlist leaves subcommand open', () {
       expect(
-        cliFilterSubcommands(namespaces: const ['store', 'help']),
+        cliFilterSubcommands(namespaces: const ['pouch', 'help']),
         isNull,
       );
       expect(
         cliFilterSubcommands(
-          namespaces: const ['store'],
-          enabledCliCommands: const {'store'},
+          namespaces: const ['pouch'],
+          enabledCliCommands: const {'pouch'},
         ),
         isNull,
       );
@@ -87,8 +87,8 @@ void main() {
     test('specific command ids become a subcommand enum', () {
       expect(
         cliFilterSubcommands(
-          namespaces: const ['store', 'help'],
-          enabledCliCommands: const {'store.write', 'help'},
+          namespaces: const ['pouch', 'help'],
+          enabledCliCommands: const {'pouch.write', 'help'},
         ),
         ['write'],
       );
@@ -97,7 +97,7 @@ void main() {
     test('group-member store/help role does not trim store subcommands', () {
       expect(
         cliFilterSubcommands(
-          namespaces: const ['store', 'help'],
+          namespaces: const ['pouch', 'help'],
           extraAllowlist: kGroupMemberCliAllowlist,
         ),
         isNull,
@@ -108,27 +108,27 @@ void main() {
   group('ShepawCLI tool schema', () {
     test('openAITool enum is unfiltered by default', () {
       final ns = _namespaceEnum(ShepawCLI.instance.openAITool());
-      expect(ns, containsAll(['store', 'help', 'os']));
+      expect(ns, containsAll(['pouch', 'help', 'os']));
     });
 
     test('openAITool enum follows enabledCliCommands', () {
       final tool = ShepawCLI.instance.openAITool(
-        enabledCliCommands: const {'store.write', 'help'},
+        enabledCliCommands: const {'pouch.write', 'help'},
       );
-      expect(_namespaceEnum(tool), ['store', 'help']);
+      expect(_namespaceEnum(tool), ['pouch', 'help']);
       expect(_subcommandEnum(tool), ['write']);
-      expect(_description(tool), contains('per-agent: help, store.write'));
+      expect(_description(tool), contains('per-agent: help, pouch.write'));
       expect(_description(tool), contains('subcommands'));
     });
 
-    test('claudeTool extraAllowlist trims to store/slip and help', () {
+    test('claudeTool extraAllowlist trims to pouch/slip and help', () {
       final tool = ShepawCLI.instance.claudeTool(
         extraAllowlist: kGroupMemberCliAllowlist,
       );
-      // schema 枚举跟命名空间注册顺序（store → slip → … → help）。
-      expect(_namespaceEnum(tool), ['store', 'slip', 'help']);
+      // schema 枚举跟命名空间注册顺序（pouch → slip → … → help）。
+      expect(_namespaceEnum(tool), ['pouch', 'slip', 'help']);
       // 描述里的 role 是字典序，跟上面的 schema 顺序不是一回事。
-      expect(_description(tool), contains('role: help, slip, store'));
+      expect(_description(tool), contains('role: help, pouch, slip'));
     });
   });
 }

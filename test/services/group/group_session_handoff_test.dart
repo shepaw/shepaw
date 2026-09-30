@@ -50,12 +50,12 @@ void main() {
         sourceSessionId: 'group_abc12345',
       );
       final text = handoff.formatFirstMessage(
-        handoffUri: 'store://workspaces/dev/group_x/shared/handoffs/ho_test.md',
+        handoffUri: 'pouch://workspaces/dev/group_x/shared/handoffs/ho_test.md',
       );
       expect(text, contains('【任务继续'));
       expect(text, contains('Build v2 filter API'));
       expect(text, contains('Backward compatible'));
-      expect(text, contains('store://workspaces/dev/group_x/shared/handoffs/ho_test.md'));
+      expect(text, contains('pouch://workspaces/dev/group_x/shared/handoffs/ho_test.md'));
     });
 
     test('toJson round-trip', () {
@@ -69,7 +69,7 @@ void main() {
         constraints: const ['Use PostgreSQL'],
         artifacts: const [
           GroupSessionHandoffArtifact(
-            uri: 'store://workspaces/dev/group_1/shared/design.md',
+            uri: 'pouch://workspaces/dev/group_1/shared/design.md',
             label: 'Design',
           ),
         ],

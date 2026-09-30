@@ -9,8 +9,8 @@ String cliCommandId(String namespace, String subcommand) {
   return '$ns.$sub';
 }
 
-/// [allowlist] entry may be a full command (`store.write`) or a namespace
-/// (`store` / `help`) that allows every descendant.
+/// [allowlist] entry may be a full command (`pouch.write`) or a namespace
+/// (`pouch` / `help`) that allows every descendant.
 bool cliCommandAllowed(Set<String> allowlist, String commandId) {
   if (allowlist.contains(commandId)) return true;
   final parts = commandId.split('.');
@@ -23,7 +23,7 @@ bool cliCommandAllowed(Set<String> allowlist, String commandId) {
 /// Prefix-aware intersection of two allowlists.
 ///
 /// Plain set intersection is wrong here: entries allow a *subtree*, so
-/// `{'store'} ∩ {'store.read'}` must be `{'store.read'}`, not `{}`.
+/// `{'pouch'} ∩ {'pouch.read'}` must be `{'pouch.read'}`, not `{}`.
 ///
 /// For `a ∈ A`, `b ∈ B`: if one is a dot-boundary prefix of the other (or they
 /// are equal), the longer one is the tighter grant and is contributed;
@@ -55,21 +55,21 @@ Set<String>? cliIntersectAllowlists(Set<String>? a, Set<String>? b) {
 /// Namespaces that skip `cliRequireApproval` (except
 /// [kCliApprovalRequiredCommands]).
 ///
-/// `store` is a sandboxed bag with its own ACL, so everyday read/write should
+/// `pouch` is a sandboxed bag with its own ACL, so everyday read/write should
 /// not stop for a tap. `os.*` non-safe still goes through OS confirmation
 /// even when a command is listed here.
 const kCliApprovalExemptNamespaces = {
   'help',
-  'store',
+  'pouch',
   'slip',
 };
 
 /// Commands that still need a tap even when their namespace is exempt.
 ///
-/// `store.declare` creates a new space. `store.write --file` copies a host
+/// `pouch.declare` creates a new space. `pouch.write --file` copies a host
 /// path into the bag — that is closer to `os.file.read` than an in-bag write.
 const kCliApprovalRequiredCommands = {
-  'store.declare',
+  'pouch.declare',
   'slip.delete',
 };
 
@@ -82,7 +82,7 @@ bool cliCommandApprovalExempt(
   if (kCliApprovalRequiredCommands.contains(commandId)) return false;
   final ns = commandId.split('.').first;
   if (!kCliApprovalExemptNamespaces.contains(ns)) return false;
-  if (commandId == 'store.write' && _hasNonEmptyFlag(flags, 'file')) {
+  if (commandId == 'pouch.write' && _hasNonEmptyFlag(flags, 'file')) {
     return false;
   }
   return true;

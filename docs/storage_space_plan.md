@@ -144,14 +144,14 @@
 ### 6.1 协议（client → master，含 master 本机 loopback）
 
 ```json
-{"ns": "store", "op": "list",  "space": "artifacts", "device": "pc-b", "path": "task-41/"}
-{"ns": "store", "op": "read",  "space": "artifacts", "device": "pc-b", "path": "task-41/x.py", "offset": 0, "length": 65536}
-{"ns": "store", "op": "meta",  "space": "artifacts", "device": "pc-b", "path": "task-41/x.py"}
-{"ns": "store", "op": "write.begin", "space": "artifacts", "path": "task-41/x.py", "size": 4096, "sha256": "..."}
-{"ns": "store", "op": "write.chunk", "space": "artifacts", "path": "task-41/x.py", "offset": 0, "eof": true}
-{"ns": "store", "op": "commit", "space": "backups", "path": "snapshot-20260718/", "retention": {...}}
-{"ns": "store", "op": "delete", "space": "files", "path": "old.zip"}
-{"ns": "store", "op": "stats"}
+{"ns": "pouch", "op": "list",  "space": "artifacts", "device": "pc-b", "path": "task-41/"}
+{"ns": "pouch", "op": "read",  "space": "artifacts", "device": "pc-b", "path": "task-41/x.py", "offset": 0, "length": 65536}
+{"ns": "pouch", "op": "meta",  "space": "artifacts", "device": "pc-b", "path": "task-41/x.py"}
+{"ns": "pouch", "op": "write.begin", "space": "artifacts", "path": "task-41/x.py", "size": 4096, "sha256": "..."}
+{"ns": "pouch", "op": "write.chunk", "space": "artifacts", "path": "task-41/x.py", "offset": 0, "eof": true}
+{"ns": "pouch", "op": "commit", "space": "backups", "path": "snapshot-20260718/", "retention": {...}}
+{"ns": "pouch", "op": "delete", "space": "files", "path": "old.zip"}
+{"ns": "pouch", "op": "stats"}
 ```
 
 - `space` ∈ `artifacts | files | attachments | backups`，必填单值；**写操作永远落在调用者自己的 `<device_id>/` 下**（跨目录写在机制上不可能）；`device` 参数仅用于读取/列举其他端目录，缺省为调用者。
@@ -169,22 +169,22 @@
 
 ### 6.3 产物引用与跨端协作
 
-- **统一引用规范**：`store://artifacts/<device_id>/<task_id>/<filename>`。URI 与具体 master 解耦，由 `artifact_service` 解析。
+- **统一引用规范**：`pouch://artifacts/<device_id>/<task_id>/<filename>`。URI 与具体 master 解耦，由 `artifact_service` 解析。
 - **引用表达格式**（Agent 间传递的唯一格式）：Markdown 链接 + 一句话描述，单行——
 
-  `[report.md](store://artifacts/pc-b/task-41/report.md) — Q2 销售报告，markdown，12KB（codebot 产出）`
+  `[report.md](pouch://artifacts/pc-b/task-41/report.md) — Q2 销售报告，markdown，12KB（codebot 产出）`
 
   理由：LLM 原生擅长 Markdown 链接；URI 是唯一机器 token，正则可解析；聊天 UI 直接渲染为可点击附件。
 - **Agent 侧纪律**（由编排层注入）：
   - 引用：原样引用 URI，不改写、不拼接路径——Agent 只"转述"URI，从不"构造"URI；
-  - 读取：本机 `shepaw store read --uri <uri>`；远端 ACP `hub.cli.execute` `{namespace:"store",subcommand:"read",flags:{uri}}`；Agent Hub 引擎本机 `shepaw store read`（store 协议，写落 Hub `device_id`）。分块、缓存、大文件落盘由工具层处理。
-  - 写入：本机 `shepaw store write --filename … --content …`；远端 ACP 走 `hub.cli.execute` store write；Agent Hub 同样 `shepaw store write`，返回新 URI 即完成共享（本地优先，后台同步）。旧 MCP `store_read` / `store_write` 映射到本机 store 客户端，不要转发 `hub.cli.execute`。
+  - 读取：本机 `shepaw pouch read --uri <uri>`；远端 ACP `hub.cli.execute` `{namespace:"pouch",subcommand:"read",flags:{uri}}`；Agent Hub 引擎本机 `shepaw pouch read`（写落 Hub `device_id`）。分块、缓存、大文件落盘由工具层处理。
+  - 写入：本机 `shepaw pouch write --filename … --content …`；远端 ACP 走 `hub.cli.execute`（namespace=`pouch`，subcommand=`write`）；Agent Hub 同样 `shepaw pouch write`，返回新 URI 即完成共享（本地优先，后台同步）。不要转发 `hub.cli.execute` 给 Agent Hub 引擎。
 - **工作流注入**：群组编排跨端派活时，编排层在任务上下文注入标准片段（改造点在 `lib/services/group/`）：
 
   ```
   ## 可用产物
-  - [report.md](store://artifacts/pc-b/task-41/report.md) — Q2 销售报告，markdown，12KB（上游 codebot 产出）
-  读取：shepaw store read / hub.cli.execute store read / Hub 本机 shepaw store read，原样传入括号内 URI；产出：store write 返回新 URI 即完成共享。
+  - [report.md](pouch://artifacts/pc-b/task-41/report.md) — Q2 销售报告，markdown，12KB（上游 codebot 产出）
+  读取：shepaw pouch read / hub.cli.execute pouch read / Hub 本机 shepaw pouch read，原样传入括号内 URI；产出：pouch write 返回新 URI 即完成共享。
   ```
 
 - **统一写入路径**：任何端的 Agent（含 master 本机的 Agent）产出都经 `artifact_service` → `store.*` 写入自己设备目录，无特权路径。

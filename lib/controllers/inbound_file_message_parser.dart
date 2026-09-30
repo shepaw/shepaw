@@ -1,4 +1,5 @@
 import '../models/message.dart';
+import '../storage/store_protocol.dart';
 
 /// Parsed inbound agent file payload ready for DB persistence.
 class InboundFileDraft {
@@ -68,8 +69,8 @@ class InboundFileMessageParser {
     final mimeType = fileMimeType ?? 'application/octet-stream';
     final isImage = mimeType.startsWith('image/');
     final safeName = filename ?? (isImage ? 'image' : 'file');
-    // store:// 引用已在本机储物袋中，无需下载；http/local path 才需要 pending 下载。
-    final isStoreUri = url != null && url.startsWith('store://');
+    // pouch:// 引用已在本机储物袋中，无需下载；http/local path 才需要 pending 下载。
+    final isStoreUri = url != null && isPouchUri(url);
     final metadata = <String, dynamic>{
       'download_status': isStoreUri ? 'completed' : 'pending',
       'name': filename ?? 'file',
@@ -78,7 +79,7 @@ class InboundFileMessageParser {
     };
     if (url != null && url.isNotEmpty) {
       metadata['source_url'] = url;
-      if (isStoreUri) metadata['store_uri'] = url;
+      if (isStoreUri) metadata['pouch_uri'] = url;
     }
     if (thumbnailBase64 != null && thumbnailBase64.isNotEmpty) {
       metadata['thumbnail_base64'] = thumbnailBase64;

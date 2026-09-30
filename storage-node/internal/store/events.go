@@ -34,7 +34,7 @@ func (l *Local) appendEvent(kind, device, space, path string, detail map[string]
 	seq := l.latestEventSeq() + 1
 	ev := map[string]any{
 		"seq": seq, "kind": kind, "device": device, "space": space, "path": path,
-		"uri": "store://" + space + "/" + device + "/" + path,
+		"uri": "pouch://" + space + "/" + device + "/" + path,
 		"ts_ms": time.Now().UnixMilli(),
 	}
 	if detail != nil {

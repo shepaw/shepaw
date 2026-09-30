@@ -573,10 +573,10 @@ class RemoteAgentService {
   // ==================== 储物袋简历（resume.md） ====================
 
   /// Agent 简历在储物袋的固定位置：
-  /// `store://files/<device_id>/<agent_id>/resume.md`。
+  /// `pouch://files/<device_id>/<agent_id>/resume.md`。
   ///
   /// 网关首次推导与每次重建（`agent.resume.rebuild`）都会把完整简历写到这个
-  /// 位置；agent 可用 `store read` / `store write` 工具读写同一 URI。
+  /// 位置；agent 可用 `pouch read` / `pouch write` 工具读写同一 URI。
   Future<String> resumeStoreUriFor(String agentId) async {
     final device = await DeviceIdentity.deviceId();
     return storeUriWithRef(StoreSpace.files, device, '$agentId/resume.md');

@@ -361,12 +361,12 @@ func (s *Server) handleStoreRequest(
 			msg = oe.Msg
 		}
 		reply = map[string]any{
-			"type": "store", "ns": "store", "op": "error", "v": 1,
+			"type": "pouch", "ns": "pouch", "op": "error", "v": 1,
 			"code": code, "message": msg,
 		}
 	} else {
 		reply = map[string]any{
-			"type": "store", "ns": "store", "op": "result", "v": 1,
+			"type": "pouch", "ns": "pouch", "op": "result", "v": 1,
 			"data": data,
 		}
 	}

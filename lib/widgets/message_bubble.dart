@@ -35,6 +35,7 @@ import 'chat/sticky_in_view_header.dart';
 import '../services/she_service.dart';
 import '../services/error_handler_service.dart';
 import '../services/group/group_task_status.dart';
+import '../storage/store_protocol.dart';
 
 class MessageBubble extends StatelessWidget {
   static const double avatarSize = 32;
@@ -802,7 +803,7 @@ class MessageBubble extends StatelessWidget {
   /// Replace cc-only mention tokens with an annotated form.
   /// For mentions with notify:false, appends "(cc)" so readers can
   /// tell at a glance that the mentioned agent was not triggered.
-  /// Open store:// files (preview) or folders (storage browser).
+  /// Open pouch:// files (preview) or folders (storage browser).
   Future<void> _openStoreLink(BuildContext context, String uriString) async {
     registerStorageDirectoryOpener();
     await StoreOpenService.instance.openStoreUri(context, uriString);
@@ -810,8 +811,8 @@ class MessageBubble extends StatelessWidget {
 
   Future<void> _handleTapLink(BuildContext context, String href) async {
     final resolved = resolveWorkspaceHref(href, workspaceUris) ??
-        (href.startsWith('store://') ? href : null);
-    if (resolved != null && resolved.startsWith('store://')) {
+        (isPouchUri(href) ? href : null);
+    if (resolved != null && isPouchUri(resolved)) {
       await _openStoreLink(context, resolved);
       return;
     }

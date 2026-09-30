@@ -125,7 +125,7 @@ class AttachmentData {
 
   /// Human-readable text description, e.g. "[Image: photo.jpg (2.1MB)]"
   ///
-  /// When [extraMetadata] contains `store_uri`, appends a Markdown link.
+  /// When [extraMetadata] contains `pouch_uri`, appends a Markdown link.
   /// How-to-read instructions are injected as a per-message `[implicit]`
   /// block at LLM assembly time (not this string).
   String get textDescription {
@@ -147,7 +147,7 @@ class AttachmentData {
     }
 
     final base = '[$prefix: $fileName ($formattedSize$extra)]';
-    final storeUri = extraMetadata?['store_uri'] as String?;
+    final storeUri = extraMetadata?['pouch_uri'] as String?;
     if (storeUri == null || storeUri.isEmpty) return base;
     return '$base\n[$fileName]($storeUri)';
   }
@@ -171,9 +171,9 @@ class AttachmentData {
     Map<String, dynamic>? extra = extraMetadata;
     if (stripClientStoreUri && extra != null) {
       final filtered = Map<String, dynamic>.from(extra)
-        ..remove('store_uri')
+        ..remove('pouch_uri')
         ..remove('implicit_prompt')
-        ..remove('store_uris');
+        ..remove('pouch_uris');
       extra = filtered.isEmpty ? null : filtered;
     }
     return {

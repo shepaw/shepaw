@@ -44,7 +44,7 @@ class PublicStoreService {
     return uri;
   }
 
-  /// 写引用清单（Markdown），条目为已有 `store://files/...`（或其它 URI），不复制。
+  /// 写引用清单（Markdown），条目为已有 `pouch://files/...`（或其它 URI），不复制。
   Future<String> writeReferenceList({
     required String listName,
     required List<String> storeUris,
@@ -53,9 +53,9 @@ class PublicStoreService {
     final safe = p.basename(listName).replaceAll(RegExp(r'[^\w.\-]+'), '_');
     final name = safe.endsWith('.md') ? safe : '$safe.md';
     final buf = StringBuffer('# ${title ?? name}\n\n');
-    buf.writeln('引用清单（不复制字节；请用 store read 拉取）：\n');
+    buf.writeln('引用清单（不复制字节；请用 pouch read 拉取）：\n');
     for (final u in storeUris) {
-      if (u.startsWith('store://')) {
+      if (isPouchUri(u)) {
         buf.writeln('- `$u`');
       }
     }

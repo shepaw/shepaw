@@ -15,7 +15,7 @@ import 'store_service.dart';
 class AttachmentStoreWriter {
   AttachmentStoreWriter._();
 
-  /// 写入本机 store，返回 `store://runtime/…` URI。
+  /// 写入本机 store，返回 `pouch://runtime/…` URI。
   static Future<String> storeBytes(
     Uint8List bytes, {
     required String ownerId,

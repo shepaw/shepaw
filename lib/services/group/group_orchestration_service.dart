@@ -25,6 +25,7 @@ import 'group_verbal_dispatch.dart';
 import 'planning_helpers.dart';
 import '../../models/mention_entry.dart';
 import '../../storage/context_bundle.dart';
+import '../../storage/store_protocol.dart';
 import '../../storage/group_workspace_service.dart';
 import 'group_member_task_context.dart';
 import 'group_member_history.dart';
@@ -157,7 +158,7 @@ class GroupOrchestrationService {
     );
   }
 
-  /// Extract unique `store://…` artifact URIs referenced in a member reply.
+  /// Extract unique `pouch://…` artifact URIs referenced in a member reply.
   ///
   /// 单一事实源见 [GroupMemberHistory.extractStoreUris]（此前本类与历史层各存
   /// 一份相同实现，#12 收敛）。
@@ -165,7 +166,7 @@ class GroupOrchestrationService {
       GroupMemberHistory.extractStoreUris(text);
 
   /// Build the 【成员产物】 block for the admin's summarize turn: each member's
-  /// produced store:// links. Empty when no member referenced an artifact.
+  /// produced pouch:// links. Empty when no member referenced an artifact.
   static String buildMemberArtifactsBlock(
     Map<String, GroupTurnResult> results,
     List<RemoteAgent> agents,
@@ -179,7 +180,7 @@ class GroupOrchestrationService {
       lines.add('- $name: ${uris.join('  ')}');
     }
     if (lines.isEmpty) return '';
-    return '\n\n【成员产物】本轮成员产出并引用的 store:// 链接（若成员未在回复中列出，可能未写文件）：\n'
+    return '\n\n【成员产物】本轮成员产出并引用的 pouch:// 链接（若成员未在回复中列出，可能未写文件）：\n'
         '${lines.join('\n')}';
   }
 
@@ -430,8 +431,9 @@ class GroupOrchestrationService {
     String? groupHubDevice;
     for (final a in agents) {
       final ws = a.metadata['workspace_uri'] as String?;
-      if (ws != null && ws.startsWith('store://workspaces/')) {
-        final rest = ws.substring('store://workspaces/'.length);
+      final body = ws == null ? null : stripPouchUriPrefix(ws);
+      if (body != null && body.startsWith('workspaces/')) {
+        final rest = body.substring('workspaces/'.length);
         final device = rest.split('/').first.trim();
         if (device.isNotEmpty) {
           groupHubDevice = device;
@@ -1172,7 +1174,7 @@ class GroupOrchestrationService {
         int currentRound = 0;
         String adminResponseContent = '';
         var adminTurn = const GroupTurnResult();
-        // M8: 跨轮累积本轮全部成员（含 cascade）引用的产物 store:// URI，
+        // M8: 跨轮累积本轮全部成员（含 cascade）引用的产物 pouch:// URI，
         // finish 轮随 final_summary 一起蒸馏进群记忆，供后续轮次成员直接引用。
         final roundArtifactUris = <String>{};
 
@@ -2959,7 +2961,7 @@ class GroupOrchestrationService {
                     'wants_continue': e.value.wantsContinue,
                     'is_done': e.value.isDone,
                     'has_dispatch': e.value.hasDispatch,
-                    // 成员回复中引用的产物 store:// URI，落盘供审计/恢复
+                    // 成员回复中引用的产物 pouch:// URI，落盘供审计/恢复
                     // （含 cascade 级联成员，M7）。
                     'artifacts': extractStoreUris(e.value.content),
                     'task_status': e.value.taskStatusInfo?.status.name,

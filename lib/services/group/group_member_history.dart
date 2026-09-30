@@ -50,7 +50,7 @@ class GroupMemberHistoryPack {
 /// per member is the dominant token cost; this pack keeps:
 /// - a short recent tail (sibling / previous-step output)
 /// - the member's own recent replies (so they remember what they already did)
-/// - `store://` URIs referenced in omitted turns
+/// - `pouch://` URIs referenced in omitted turns
 class GroupMemberHistory {
   GroupMemberHistory._();
 
@@ -64,8 +64,8 @@ class GroupMemberHistory {
   static const int memberKeepOwnCount = 6;
   static const int maxOmittedUris = 12;
 
-  /// Same `store://` tokenizer as [GroupOrchestrationService.extractStoreUris].
-  static final RegExp storeUriPattern = RegExp(r'store://[^\s\]\[\)\},，;]+');
+  /// Same `pouch://` tokenizer as [GroupOrchestrationService.extractStoreUris].
+  static final RegExp storeUriPattern = RegExp(r'pouch://[^\s\]\[\)\},，;]+');
 
   /// Admin, loop-close, abort, and closing-summary turns still need the
   /// full group transcript. Member task turns do not.

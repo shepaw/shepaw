@@ -17,7 +17,7 @@ import '../storage/store_file_visual.dart';
 import '../widgets/store_file_preview.dart';
 import 'logger_service.dart';
 
-/// Opens / previews `store://` files for chat UI, and opens directories
+/// Opens / previews `pouch://` files for chat UI, and opens directories
 /// in the storage browser.
 ///
 /// Size tiers (files):
@@ -47,7 +47,7 @@ class StoreOpenService {
     required String path,
   })? openDirectory;
 
-  /// Open a `store://…` URI from a markdown link or attachment metadata.
+  /// Open a `pouch://…` URI from a markdown link or attachment metadata.
   ///
   /// Directories open the storage browser at that folder; files preview / open.
   /// If kind probe fails, still jump to the nearest existing pouch folder.
@@ -169,12 +169,12 @@ class StoreOpenService {
     );
   }
 
-  /// Open from chat attachment metadata (`store_uri` preferred).
+  /// Open from chat attachment metadata (`pouch_uri` preferred).
   Future<void> openFromMetadata(
     BuildContext context,
     Map<String, dynamic>? metadata,
   ) async {
-    final storeUri = metadata?['store_uri'] as String?;
+    final storeUri = metadata?['pouch_uri'] as String?;
     if (storeUri != null && storeUri.isNotEmpty) {
       await openStoreUri(context, storeUri);
       return;

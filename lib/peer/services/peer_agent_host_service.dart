@@ -1265,7 +1265,7 @@ class PeerAgentHostService {
         'file_id': fileId,
         'ok': true,
         'stage': 'end',
-        'store_uri': storeUri,
+        'pouch_uri': storeUri,
       });
     } catch (e) {
       _log.warning('agent_file_end failed: $e', tag: _tag);
@@ -1297,10 +1297,10 @@ class PeerAgentHostService {
         throw Exception('Attachment file missing on host: $fileId');
       }
       final bytes = await file.readAsBytes();
-      // Host-authored store_uri only — drop client-side store:// pointing at
+      // Host-authored pouch_uri only — drop client-side pouch:// pointing at
       // the peer's own device (agent cannot read those).
       final extra = <String, dynamic>{
-        'store_uri': stored.storeUri,
+        'pouch_uri': stored.storeUri,
       };
       final hint = MessageImplicitPrompt.renderStoreReadHint([stored.storeUri]);
       MessageImplicitPrompt.putInMetadata(
@@ -1312,7 +1312,7 @@ class PeerAgentHostService {
       if (clientExtra is Map) {
         for (final e in clientExtra.entries) {
           final key = e.key.toString();
-          if (key == 'store_uri' ||
+          if (key == 'pouch_uri' ||
               key == MessageImplicitPrompt.metaKey ||
               key == MessageImplicitPrompt.urisMetaKey) {
             continue;
@@ -1350,7 +1350,7 @@ class PeerAgentHostService {
         _ => 'file',
       };
       final metadata = <String, dynamic>{
-        'store_uri': stored.storeUri,
+        'pouch_uri': stored.storeUri,
         'name': stored.fileName,
         'type': stored.semanticType,
         'size': stored.size,
@@ -1358,7 +1358,7 @@ class PeerAgentHostService {
       };
       if (att.extraMetadata != null) {
         for (final e in att.extraMetadata!.entries) {
-          if (e.key == 'store_uri' ||
+          if (e.key == 'pouch_uri' ||
               e.key == MessageImplicitPrompt.metaKey ||
               e.key == MessageImplicitPrompt.urisMetaKey) {
             continue;

@@ -20,14 +20,14 @@ void main() {
   group('HubCliExecute.sanitizeFlags', () {
     test('drops forged identity fields and keeps the rest', () {
       final flags = HubCliExecute.sanitizeFlags({
-        'uri': 'store://runtime/d/a/x',
+        'uri': 'pouch://runtime/d/a/x',
         'agent_id': 'forged-agent',
         'owner': 'forged-owner',
         'channel_id': 'forged-channel',
         'channel': 'also-forged',
         'filename': 'notes.md',
       });
-      expect(flags['uri'], 'store://runtime/d/a/x');
+      expect(flags['uri'], 'pouch://runtime/d/a/x');
       expect(flags['filename'], 'notes.md');
       expect(flags.containsKey('agent_id'), isFalse);
       expect(flags.containsKey('owner'), isFalse);
@@ -148,13 +148,13 @@ void main() {
       );
       final result = jsonDecode(raw) as Map<String, dynamic>;
       expect(result['error'], contains('not allowed'));
-      expect(result['allowed_commands'], contains('store'));
+      expect(result['allowed_commands'], contains('pouch'));
     });
 
     test('管理员（allowlist 为 null）不会被角色闸门拦下', () async {
       final raw = await CliExecutionGate.instance.execute(
         args: {
-          'namespace': 'store',
+          'namespace': 'pouch',
           'subcommand': 'read',
           'flags': {},
         },

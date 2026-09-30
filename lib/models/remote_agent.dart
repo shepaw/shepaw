@@ -6,6 +6,7 @@ import 'agent_scenario_models.dart';
 import 'prompt_stack_config.dart';
 import 'peer_boundary_config.dart';
 import '../services/model_registry.dart';
+import '../storage/store_protocol.dart';
 
 /// Detect and repair a string corrupted by a UTF-16 encoding bug.
 ///
@@ -357,7 +358,7 @@ class RemoteAgent {
   /// 本机袋留在 Hub，其余经 peer 转到 App 闸门，不是这条 ACP 方法。
   bool get usesHubCliExecute => !isLocal && !isPeerAgent;
 
-  /// Hub 上报的可管理实例：本机 `shepaw store` + 其余命令转 App。
+  /// Hub 上报的可管理实例：本机 `shepaw pouch` + 其余命令转 App。
   bool get usesHubStoreCli => isPeerAgent && peerAgentManageable;
 
   /// Whether this agent can handle content of the given [modality].
@@ -545,10 +546,10 @@ class RemoteAgent {
   /// 来源配对设备的显示名（仅 [isPeerAgent] 有意义）。
   String? get sourcePeerName => metadata['source_peer_name'] as String?;
 
-  /// 对端挂载的储物袋工作区（`store://workspaces/…`）。
+  /// 对端挂载的储物袋工作区（`pouch://workspaces/…`）。
   String? get workspaceUri {
     final v = metadata['workspace_uri'] ?? metadata['workspaceUri'];
-    if (v is String && v.startsWith('store://')) return v;
+    if (v is String && isPouchUri(v)) return v;
     return null;
   }
 

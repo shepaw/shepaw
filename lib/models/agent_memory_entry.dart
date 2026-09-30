@@ -46,8 +46,8 @@ class MemorySourceType {
 /// Agent 记忆条目
 ///
 /// 表示一个 Agent 的单条结构化记忆，权威存储在储物袋：
-/// - 本机：`store://cognition/<device>/<agentId>/entries/<id>.json`
-/// - Peer 子记忆：`store://cognition/<device>/<agentId>/peers/<peerId>/entries/<id>.json`
+/// - 本机：`pouch://cognition/<device>/<agentId>/entries/<id>.json`
+/// - Peer 子记忆：`pouch://cognition/<device>/<agentId>/peers/<peerId>/entries/<id>.json`
 ///
 /// ### 字段说明
 /// - [memoryId]       整数主键（由 cognition/meta.json 的 next_id 分配）

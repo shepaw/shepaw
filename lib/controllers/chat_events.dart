@@ -106,7 +106,7 @@ class AgentInfoUpdatedEvent extends ChatEvent {
 /// 发送失败后，把当前失败内容 + 待发送队列中的消息倒回输入框。
 /// [content] 为按发送顺序合并后的文本（多条以换行分隔）。
 /// [attachments] 为按发送顺序收集的全部附件（失败消息在前、队列消息在后），
-/// 由 UI 侧根据 `store_uri` 重建为待发送附件，避免附件随失败丢失。
+/// 由 UI 侧根据 `pouch_uri` 重建为待发送附件，避免附件随失败丢失。
 class RestoreQueueToComposerEvent extends ChatEvent {
   final String content;
   final List<AttachmentData> attachments;

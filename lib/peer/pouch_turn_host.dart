@@ -126,7 +126,7 @@ class PouchTurnHost {
   }) async {
     final db = LocalDatabaseService();
     for (final attachment in attachments) {
-      final storeUri = attachment.extraMetadata?['store_uri'] as String?;
+      final storeUri = attachment.extraMetadata?['pouch_uri'] as String?;
       if (storeUri == null || storeUri.isEmpty) continue;
       final messageType = switch (attachment.semanticType) {
         'image' => 'image',
@@ -134,7 +134,7 @@ class PouchTurnHost {
         _ => 'file',
       };
       final metadata = <String, dynamic>{
-        'store_uri': storeUri,
+        'pouch_uri': storeUri,
         'name': attachment.fileName,
         'type': attachment.semanticType,
         'size': attachment.sizeBytes,
@@ -143,7 +143,7 @@ class PouchTurnHost {
       final extra = attachment.extraMetadata;
       if (extra != null) {
         for (final entry in extra.entries) {
-          if (entry.key == 'store_uri' ||
+          if (entry.key == 'pouch_uri' ||
               entry.key == MessageImplicitPrompt.metaKey ||
               entry.key == MessageImplicitPrompt.urisMetaKey) {
             continue;

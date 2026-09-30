@@ -189,19 +189,19 @@ class GroupContextBuilder {
 
     if (currentAgent != null && currentAgent.usesHubStoreCli) {
       ctx['cli'] = {
-        'method': 'shepaw store',
+        'method': 'shepaw pouch',
         'note':
             'Agent Hub shepaw CLI on this host. Local pouch (URI device = '
-            'Hub) uses shepaw store read/write/list. Foreign store:// and '
+            'Hub) uses shepaw pouch read/write/list. Foreign pouch:// and '
             'other namespaces (including slip and skills, except she-only) '
             'are forwarded to the paired App gate. Do not use hub.cli.execute. '
-            'Pass store:// URIs verbatim. '
+            'Pass pouch:// URIs verbatim. '
             'Jade slips (玉简) are namespace "slip": checking an item submits it; '
             'the person accepts. Subcommands: shepaw slip. '
-            'The system skill is the store://tools/.../SKILL.md URI on the scope card; '
-            'read it with shepaw store read.',
+            'The system skill is the pouch://tools/.../SKILL.md URI on the scope card; '
+            'read it with shepaw pouch read.',
         'params': {
-          'namespace': 'store',
+          'namespace': 'pouch',
           'subcommand': 'write',
         },
       };
@@ -218,10 +218,10 @@ class GroupContextBuilder {
             'use the PATH shepaw shim instead. '
             'Jade slips (玉简) are namespace "slip": checking an item submits it; '
             'the person accepts. Ask namespace "slip" for subcommands. '
-            'The system skill is the store://tools/.../SKILL.md URI on the scope card; '
-            'read it with namespace "store" subcommand "read".',
+            'The system skill is the pouch://tools/.../SKILL.md URI on the scope card; '
+            'read it with namespace "pouch" subcommand "read".',
         'params': {
-          'namespace': 'store',
+          'namespace': 'pouch',
           'subcommand': 'write',
           'flags': <String, dynamic>{},
           'session_id': '<agent.chat session_id>',
@@ -272,7 +272,7 @@ class GroupContextBuilder {
         'pinned_co_dispatch_sibling_replies',
         'pinned_mentioner_replies',
         'channel_compaction_summary',
-        'omitted_store_uris',
+        'omitted_pouch_uris',
       ],
       'excludes': historyPolicyExcludes,
       'note': _historyPolicyNote,

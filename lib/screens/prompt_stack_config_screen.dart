@@ -126,8 +126,8 @@ class _PromptStackConfigScreenState extends State<PromptStackConfigScreen> {
                             'Embed full text',
                           ),
                           CognitionInjectMode.uriOnly: _tr(
-                            '仅 URI（按需 store read）',
-                            'URI only (store read on demand)',
+                            '仅 URI（按需 pouch read）',
+                            'URI only (pouch read on demand)',
                           ),
                         },
                         onChanged: (v) {

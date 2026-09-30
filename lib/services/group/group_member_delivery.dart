@@ -60,12 +60,12 @@ class GroupMemberDelivery {
       lines.add('- ⚠️ 派发前探测：当前不可达；若仍收到任务，请聊天条目化交付或说明阻塞原因');
     }
     if (agent.isPeerAgent) {
-      lines.add('- 宿主：Agent Hub 对端引擎（peer）；`store://runtime/…` 跨设备只读受限');
+      lines.add('- 宿主：Agent Hub 对端引擎（peer）；`pouch://runtime/…` 跨设备只读受限');
       lines.add('- 产物：优先写 **workspace 挂载目录** 或群 `shared/`（管理员可读）；');
-      lines.add('  若 `shepaw store write` 不可用，直写 repo 根目录并给出绝对路径');
+      lines.add('  若 `shepaw pouch write` 不可用，直写 repo 根目录并给出绝对路径');
       lines.add('- 聊天条目化回答也算交付（管理员会读全文）');
     } else if (agent.usesHubStoreCli) {
-      lines.add('- 宿主：Agent Hub 本机引擎；`shepaw store` 写 Hub device');
+      lines.add('- 宿主：Agent Hub 本机引擎；`shepaw pouch` 写 Hub device');
       lines.add('- 跨设备共享：另写一份到群 workspace `shared/` 或挂载路径');
       if (probe?.storeCliAvailable == false) {
         lines.add('- ⚠️ Hub 实例未运行：禁止依赖 CLI，改 workspace/shared 或聊天交付');
@@ -73,12 +73,12 @@ class GroupMemberDelivery {
     } else if (agent.usesHubCliExecute) {
       lines.add('- 宿主：外接 ACP（经 App shim）；store 经 `hub.cli.execute`');
       if (probe?.storeCliAvailable == false) {
-        lines.add('- ⚠️ CLI 探测不可用：**禁止** `shepaw store write`；直写 workspace 挂载路径');
+        lines.add('- ⚠️ CLI 探测不可用：**禁止** `shepaw pouch write`；直写 workspace 挂载路径');
       } else {
         lines.add('- shim 缺失时：直写 workspace 挂载路径，勿反复重试 CLI');
       }
     } else if (agent.isLocal) {
-      lines.add('- 宿主：App 本地 LLM；`shepaw store write` 可用');
+      lines.add('- 宿主：App 本地 LLM；`shepaw pouch write` 可用');
     } else {
       lines.add('- 宿主：外接 ACP；产物见作用域卡片');
     }

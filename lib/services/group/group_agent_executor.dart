@@ -62,6 +62,7 @@ import '../session/history_compaction_cache_service.dart';
 import '../session/session_slash_commands.dart';
 import '../../storage/group_workspace_service.dart';
 import '../../storage/runtime_paths.dart';
+import '../../storage/store_protocol.dart';
 
 /// Executes a single agent's response turn within a group chat.
 ///
@@ -197,8 +198,8 @@ class GroupAgentExecutor {
         return;
       }
 
-      // store:// 引用已在本机储物袋中，无需下载；本地路径才需要立即复制。
-      final isStoreUri = url.startsWith('store://');
+      // pouch:// 引用已在本机储物袋中，无需下载；本地路径才需要立即复制。
+      final isStoreUri = isPouchUri(url);
 
       // If the url is a local file path, try to copy the file immediately so the
       // user doesn't need to manually "download" it (local LLM agents produce files
@@ -222,7 +223,7 @@ class GroupAgentExecutor {
         }
       }
 
-      // Agent 产物只给 store:// 引用时，向储物袋取真实大小用于展示。
+      // Agent 产物只给 pouch:// 引用时，向储物袋取真实大小用于展示。
       if (isStoreUri && (size == null || size == 0)) {
         try {
           size = await StoreUriReader.instance.sizeOf(url);
@@ -264,7 +265,7 @@ class GroupAgentExecutor {
       };
 
       if (isStoreUri) {
-        metadata['store_uri'] = url;
+        metadata['pouch_uri'] = url;
       }
       if (copiedRelativePath != null) {
         metadata['path'] = copiedRelativePath;
@@ -2124,7 +2125,7 @@ class GroupAgentExecutor {
               final meta = await GroupWorkspaceService.instance
                   .loadMeta(groupChannel.groupFamilyId);
               if (meta != null) {
-                groupWorkspaceUri = 'store://workspaces/${meta.homeDevice}/'
+                groupWorkspaceUri = 'pouch://workspaces/${meta.homeDevice}/'
                     '${GroupWorkspaceService.instance.workspaceRoot(groupChannel.groupFamilyId)}'
                     '/shared';
               }

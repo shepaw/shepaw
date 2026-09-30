@@ -152,7 +152,7 @@ func (r *SessionRegistry) CallStore(fp, op string, payload map[string]any, timeo
 	}
 	reqID := fmt.Sprintf("rpc-%d", r.seq.Add(1))
 	frame := map[string]any{
-		"type": "store", "ns": "store", "op": op, "v": 1, "req_id": reqID,
+		"type": "pouch", "ns": "pouch", "op": op, "v": 1, "req_id": reqID,
 	}
 	for k, v := range payload {
 		frame[k] = v
@@ -228,7 +228,7 @@ func (r *SessionRegistry) FanoutJSON(plain map[string]any) int {
 // FanoutMasterPointer sends a no-req_id master.pointer notification to all live sessions.
 func (r *SessionRegistry) FanoutMasterPointer(master string, epoch int64, fromDevice string) int {
 	return r.FanoutJSON(map[string]any{
-		"type": "store", "ns": "store", "op": "master.pointer", "v": 1,
+		"type": "pouch", "ns": "pouch", "op": "master.pointer", "v": 1,
 		"master": master, "epoch": epoch, "from": fromDevice,
 	})
 }
@@ -260,7 +260,7 @@ func (r *SessionRegistry) PushImportGrant(grant map[string]any) bool {
 		return false
 	}
 	return r.SendJSON(newDevice, map[string]any{
-		"type": "store", "ns": "store", "op": "import.grant", "v": 1,
+		"type": "pouch", "ns": "pouch", "op": "import.grant", "v": 1,
 		"grant_id":   grant["grant_id"],
 		"old_device": grant["old_device"],
 		"spaces":     grant["spaces"],

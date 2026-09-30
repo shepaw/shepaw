@@ -61,7 +61,7 @@ class _ImageMessageBubbleState extends State<ImageMessageBubble> {
     final meta = widget.message.metadata;
     // Default to 'completed' for backward compat with existing messages
     _downloadStatus = meta?['download_status'] as String? ?? 'completed';
-    // store:// 引用已在本机储物袋中，无需下载；本机缓存可解析则直接展示，
+    // pouch:// 引用已在本机储物袋中，无需下载；本机缓存可解析则直接展示，
     // 否则保持 pending（点击走 StoreOpenService 预览）。
     if (_storeUri != null && _downloadStatus == 'pending') {
       _promoteStoreImageIfLocal();
@@ -80,10 +80,10 @@ class _ImageMessageBubbleState extends State<ImageMessageBubble> {
     }
   }
 
-  /// `store://` 引用：显式 `store_uri`，或旧消息 `source_url` 里的 store://。
+  /// `pouch://` 引用：显式 `pouch_uri`，或旧消息 `source_url` 里的 pouch://。
   String? get _storeUri => AttachmentService.storeUriOf(widget.message.metadata);
 
-  /// 本机储物袋缓存存在时把 store:// 图片升级为 completed 直接展示。
+  /// 本机储物袋缓存存在时把 pouch:// 图片升级为 completed 直接展示。
   Future<void> _promoteStoreImageIfLocal() async {
     try {
       final file = await AttachmentService.resolveFile(widget.message.metadata);
@@ -100,7 +100,7 @@ class _ImageMessageBubbleState extends State<ImageMessageBubble> {
   Future<void> _loadLocalImage() async {
     final metadata = widget.message.metadata;
     try {
-      // store_uri → 本机文件
+      // pouch_uri → 本机文件
       final file = await AttachmentService.resolveFile(metadata);
       if (file != null && await file.exists()) {
         if (mounted) {
@@ -117,7 +117,7 @@ class _ImageMessageBubbleState extends State<ImageMessageBubble> {
     final fileId = widget.message.metadata?['file_id'] as String?;
     if ((url == null || url.isEmpty) && (fileId == null || fileId.isEmpty)) return;
 
-    // store:// 引用已在本机储物袋中，无需下载；本机缓存可解析则直接展示，
+    // pouch:// 引用已在本机储物袋中，无需下载；本机缓存可解析则直接展示，
     // 否则交给 StoreOpenService 预览/物化。
     final storeUri = _storeUri;
     if (storeUri != null) {

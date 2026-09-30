@@ -51,14 +51,14 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
     // Default to 'completed' for backward compat with existing messages
     _downloadStatus =
         widget.message.metadata?['download_status'] as String? ?? 'completed';
-    // store:// 引用已在本机储物袋中，无需下载（兼容历史消息 download_status=pending）。
+    // pouch:// 引用已在本机储物袋中，无需下载（兼容历史消息 download_status=pending）。
     if (_storeUri != null && _downloadStatus == 'pending') {
       _downloadStatus = 'completed';
     }
     _resolveStoreSize();
   }
 
-  /// `store://` 引用：显式 `store_uri`，或旧消息 `source_url` 里的 store://。
+  /// `pouch://` 引用：显式 `pouch_uri`，或旧消息 `source_url` 里的 pouch://。
   String? get _storeUri => AttachmentService.storeUriOf(widget.message.metadata);
 
   String get _fileName =>
@@ -200,7 +200,7 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
     final fileId = widget.message.metadata?['file_id'] as String?;
     if ((url == null || url.isEmpty) && (fileId == null || fileId.isEmpty)) return;
 
-    // store:// 引用已在本机储物袋中，无需下载，直接打开/预览。
+    // pouch:// 引用已在本机储物袋中，无需下载，直接打开/预览。
     if (_storeUri != null) {
       await _openFile();
       return;

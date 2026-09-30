@@ -83,7 +83,7 @@ void main() {
 
     final fileUri = storeUriWithRef(StoreSpace.files, deviceId, relPath);
     final dirUri = storeUriWithRef(StoreSpace.files, deviceId, 'docs');
-    final spaceUri = 'store://${StoreSpace.files}/$deviceId';
+    final spaceUri = 'pouch://${StoreSpace.files}/$deviceId';
     expect(await StoreUriReader.instance.kindOf(fileUri), StoreUriKind.file);
     expect(
         await StoreUriReader.instance.kindOf(dirUri), StoreUriKind.directory);

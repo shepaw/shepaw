@@ -15,7 +15,7 @@ import '../services/store_open_service.dart';
 import '../storage/store_protocol.dart';
 import '../utils/layout_utils.dart';
 
-/// In-app preview for store:// files (image / text).
+/// In-app preview for pouch:// files (image / text).
 ///
 /// - Desktop (left list + chat pane): pushed on the chat [Navigator], fills
 ///   the entire chat area without covering the left panel.

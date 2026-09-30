@@ -92,7 +92,7 @@ void main() {
         sessionId: sessionId,
         task: task,
         finalSummary: '任务完成，卷宗已生成。',
-        artifactUris: ['store://workspaces/dev/out.md'],
+        artifactUris: ['pouch://workspaces/dev/out.md'],
         rounds: 1,
       );
 
@@ -107,7 +107,7 @@ void main() {
       expect(archive, contains('## 最终结论'));
       expect(archive, contains('任务完成，卷宗已生成'));
       expect(archive, contains('## 产物'));
-      expect(archive, contains('store://workspaces/dev/out.md'));
+      expect(archive, contains('pouch://workspaces/dev/out.md'));
     });
 
     test('excludes legacy untagged rounds from the task archive', () async {
@@ -214,13 +214,13 @@ void main() {
         content: '定稿 finish 测试',
       );
 
-      const memoryUri = 'store://workspaces/dev/latest.md';
+      const memoryUri = 'pouch://workspaces/dev/latest.md';
       await GroupTaskBootstrap.onFinish(
         groupId: groupId,
         orchestrationId: orchId,
         sessionId: sessionId,
         finalSummary: '全部完成。',
-        artifactUris: const ['store://workspaces/dev/a.md'],
+        artifactUris: const ['pouch://workspaces/dev/a.md'],
         finalSummaryUri: memoryUri,
         rounds: 1,
       );

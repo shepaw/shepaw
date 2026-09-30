@@ -5,8 +5,8 @@ import 'package:path/path.dart' as p;
 
 /// 这份安装是储物袋的主机，还是连到主机上的客户端。
 ///
-/// 没有 `.system/pouch_role.json` 时视为主机，已有设备不用改配置。
-enum PouchRuntimeKind { host, client }
+/// App 不是主机。没有角色文件时不做任何回合。主机是 agent-hub。
+enum PouchRuntimeKind { host, client, absent }
 
 class PouchRole {
   const PouchRole.host()
@@ -16,6 +16,10 @@ class PouchRole {
   const PouchRole.client(String peerId)
       : kind = PouchRuntimeKind.client,
         hostPeerId = peerId;
+
+  const PouchRole.absent()
+      : kind = PouchRuntimeKind.absent,
+        hostPeerId = null;
 
   final PouchRuntimeKind kind;
   final String? hostPeerId;
@@ -28,11 +32,12 @@ class PouchRole {
       };
 
   static PouchRole fromJson(Map<String, dynamic> json) {
-    final role = json['role'] as String? ?? 'host';
+    final role = json['role'] as String? ?? '';
     if (role == 'client') {
       return PouchRole.client((json['host_peer_id'] as String?)?.trim() ?? '');
     }
-    return const PouchRole.host();
+    if (role == 'host') return const PouchRole.host();
+    return const PouchRole.absent();
   }
 }
 
@@ -46,7 +51,7 @@ class PouchRoleStore {
   File get file => File(p.join(root.path, '.system', fileName));
 
   Future<PouchRole> load() async {
-    if (!await file.exists()) return const PouchRole.host();
+    if (!await file.exists()) return const PouchRole.absent();
     final decoded = jsonDecode(await file.readAsString());
     if (decoded is! Map) {
       throw const FormatException('pouch role root must be an object');
@@ -78,8 +83,8 @@ class PouchTurnRoute {
   static PouchTurnRoute decide(PouchRole role) {
     if (role.isHost) return const PouchTurnRoute.local();
     final peerId = role.hostPeerId?.trim() ?? '';
-    if (peerId.isEmpty) {
-      throw StateError('客户端未指定储物袋主机');
+    if (role.kind != PouchRuntimeKind.client || peerId.isEmpty) {
+      throw StateError('请先登录储物袋');
     }
     return PouchTurnRoute.forward(peerId);
   }

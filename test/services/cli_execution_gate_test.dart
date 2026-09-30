@@ -21,9 +21,9 @@ void main() {
 
   group('cliCommandAllowed', () {
     test('namespace entry allows descendants', () {
-      expect(cliCommandAllowed({'store', 'help'}, 'store.write'), isTrue);
-      expect(cliCommandAllowed({'store', 'help'}, 'help'), isTrue);
-      expect(cliCommandAllowed({'store', 'help'}, 'os.command.exec'), isFalse);
+      expect(cliCommandAllowed({'pouch', 'help'}, 'pouch.write'), isTrue);
+      expect(cliCommandAllowed({'pouch', 'help'}, 'help'), isTrue);
+      expect(cliCommandAllowed({'pouch', 'help'}, 'os.command.exec'), isFalse);
     });
 
     test('full command id still matches exactly', () {
@@ -36,21 +36,21 @@ void main() {
     test('help and everyday store I/O skip approval', () {
       expect(cliCommandApprovalExempt('help'), isTrue);
       expect(cliCommandApprovalExempt('help.foo'), isTrue);
-      expect(cliCommandApprovalExempt('store.read'), isTrue);
-      expect(cliCommandApprovalExempt('store.list'), isTrue);
-      expect(cliCommandApprovalExempt('store.search'), isTrue);
-      expect(cliCommandApprovalExempt('store.write'), isTrue);
-      expect(cliCommandApprovalExempt('store'), isTrue);
-      expect(cliCommandApprovalExempt('store.events'), isTrue);
-      expect(cliCommandApprovalExempt('store.spaces'), isTrue);
+      expect(cliCommandApprovalExempt('pouch.read'), isTrue);
+      expect(cliCommandApprovalExempt('pouch.list'), isTrue);
+      expect(cliCommandApprovalExempt('pouch.search'), isTrue);
+      expect(cliCommandApprovalExempt('pouch.write'), isTrue);
+      expect(cliCommandApprovalExempt('pouch'), isTrue);
+      expect(cliCommandApprovalExempt('pouch.events'), isTrue);
+      expect(cliCommandApprovalExempt('pouch.spaces'), isTrue);
       expect(cliCommandApprovalExempt('slip.list'), isTrue);
       expect(cliCommandApprovalExempt('slip.item'), isTrue);
       expect(cliCommandApprovalExempt('slip.complete'), isTrue);
       expect(cliCommandApprovalExempt('slip.delete'), isFalse);
-      expect(cliCommandApprovalExempt('store.declare'), isFalse);
+      expect(cliCommandApprovalExempt('pouch.declare'), isFalse);
       expect(
         cliCommandApprovalExempt(
-          'store.write',
+          'pouch.write',
           flags: const {'file': '/tmp/shot.png'},
         ),
         isFalse,
@@ -101,7 +101,7 @@ void main() {
       );
       final result = jsonDecode(raw) as Map<String, dynamic>;
       expect(result['error'], contains('not allowed'));
-      expect(result['allowed_commands'], contains('store'));
+      expect(result['allowed_commands'], contains('pouch'));
     });
 
     test('peer boundary blocks os.*', () async {
@@ -166,11 +166,11 @@ void main() {
       expect(result['command'], 'peer.list');
     });
 
-    test('requireApproval skips store.write without --file', () async {
+    test('requireApproval skips pouch.write without --file', () async {
       var asked = false;
       final raw = await CliExecutionGate.instance.execute(
         args: {
-          'namespace': 'store',
+          'namespace': 'pouch',
           'subcommand': 'write',
           'flags': {},
         },
@@ -187,11 +187,11 @@ void main() {
       expect(result['error'], contains('missing --filename'));
     });
 
-    test('requireApproval still asks store.write --file', () async {
+    test('requireApproval still asks pouch.write --file', () async {
       var asked = false;
       final raw = await CliExecutionGate.instance.execute(
         args: {
-          'namespace': 'store',
+          'namespace': 'pouch',
           'subcommand': 'write',
           'flags': {'file': '/tmp/shot.png', 'filename': 'shot.png'},
         },
@@ -302,9 +302,9 @@ void main() {
       // 旧行为下这就漏了：Gate 只转发 extraAllowlist，help 拿到的 allowlist
       // 是 null → 13 个命名空间全吐。
       final visible = await helpNamespaces(
-        enabledCliCommands: const {'store.read'},
+        enabledCliCommands: const {'pouch.read'},
       );
-      expect(visible, {'store'});
+      expect(visible, {'pouch'});
       for (final leaked in ['os', 'workflow', 'peer', 'vision', 'models']) {
         expect(visible, isNot(contains(leaked)), reason: '$leaked 泄漏了');
       }
@@ -334,21 +334,21 @@ void main() {
       // 而不是互相覆盖。
       expect(
         await helpNamespaces(
-          enabledCliCommands: const {'store.read', 'os.command.exec'},
+          enabledCliCommands: const {'pouch.read', 'os.command.exec'},
           extraAllowlist: kGroupMemberCliAllowlist,
         ),
         // notes 在成员轴里、但不在这个 agent 的 per-agent 轴里 —— 交集把它去掉。
-        {'store'},
+        {'pouch'},
       );
       expect(
         await helpNamespaces(extraAllowlist: kGroupMemberCliAllowlist),
-        {'store', 'slip'},
+        {'pouch', 'slip'},
       );
     });
 
     test('不带任何白名单：help 列出全部（默认不受限）', () async {
       final visible = await helpNamespaces();
-      expect(visible, containsAll(['os', 'store', 'workflow']));
+      expect(visible, containsAll(['os', 'pouch', 'workflow']));
     });
 
     test('UI 操作不受 per-agent 白名单约束', () async {
@@ -356,10 +356,10 @@ void main() {
       // 反向锁住。
       expect(
         await helpNamespaces(
-          enabledCliCommands: const {'store.read'},
+          enabledCliCommands: const {'pouch.read'},
           isUiOperation: true,
         ),
-        containsAll(['os', 'store', 'workflow']),
+        containsAll(['os', 'pouch', 'workflow']),
       );
     });
 
@@ -367,7 +367,7 @@ void main() {
       final raw = await CliExecutionGate.instance.execute(
         args: {'namespace': 'os', 'subcommand': 'command.exec', 'flags': {}},
         agentId: 'agent-other',
-        enabledCliCommands: const {'store.read'},
+        enabledCliCommands: const {'pouch.read'},
       );
       final result = jsonDecode(raw) as Map<String, dynamic>;
       expect(result['error'], contains('not allowed for this agent'));

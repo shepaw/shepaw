@@ -6609,7 +6609,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get jadeSlip_addEvidence => 'Add evidence';
 
   @override
-  String get jadeSlip_evidenceHint => 'store:// or a result address';
+  String get jadeSlip_evidenceHint => 'pouch:// or a result address';
 
   @override
   String get jadeSlip_activity => 'Activity';

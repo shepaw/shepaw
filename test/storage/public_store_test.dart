@@ -20,7 +20,7 @@ void main() {
       content: '# hello public',
     );
     final deviceId = await DeviceIdentity.deviceId();
-    expect(uri, 'store://public/$deviceId/notes/hello.md');
+    expect(uri, 'pouch://public/$deviceId/notes/hello.md');
 
     final store = await StoreService.instance.localStore();
     final (bytes, _, _) = await store.read(
@@ -35,13 +35,13 @@ void main() {
 
   test('writeReferenceList 不复制字节', () async {
     final deviceId = await DeviceIdentity.deviceId();
-    final filesUri = 'store://files/$deviceId/docs/a.txt';
+    final filesUri = 'pouch://files/$deviceId/docs/a.txt';
     final listUri = await PublicStoreService.instance.writeReferenceList(
       listName: 'exports',
       storeUris: [filesUri, 'not-a-uri'],
       title: 'Exports',
     );
-    expect(listUri, 'store://public/$deviceId/exports.md');
+    expect(listUri, 'pouch://public/$deviceId/exports.md');
     final store = await StoreService.instance.localStore();
     final (bytes, _, _) = await store.read(
       deviceId,

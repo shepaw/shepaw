@@ -160,8 +160,8 @@ class PeerConnection {
     'session_create_resp',
     'cli_execute_req',
     'cli_execute_resp',
-    // 存储空间协议帧（docs/storage_protocol_spec.md v1，载荷内含 ns/op 子路由）。
-    'store',
+    // 袋子协议帧（docs/storage_protocol_spec.md，载荷内含 ns/op 子路由）。
+    'pouch',
     // 多 she 网络（docs/storage_space_plan.md §8，M8）。
     'memory',
     'she',

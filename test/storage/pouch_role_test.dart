@@ -14,10 +14,13 @@ void main() {
     if (await root.exists()) await root.delete(recursive: true);
   });
 
-  test('没有角色文件时在本机跑回合', () async {
+  test('没有角色文件时不是主机，不能在本机跑回合', () async {
     final role = await PouchRoleStore(root).load();
-    expect(role.isHost, isTrue);
-    expect(PouchTurnRoute.decide(role).runLocal, isTrue);
+    expect(role.isHost, isFalse);
+    expect(
+      () => PouchTurnRoute.decide(role),
+      throwsStateError,
+    );
   });
 
   test('客户端把回合交给指定主机', () async {

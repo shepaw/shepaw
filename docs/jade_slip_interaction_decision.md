@@ -31,11 +31,11 @@
     store / memory / soul，**没有 notes**。
   - `HubCliExecute.groupContextHint()`（`hub_cli_execute.dart`）与
     `GroupContextBuilder.build()` 里 `ctx['cli']` 那一支
-    （`group_context_builder.dart`）只给 `namespace: 'store'`
+    （`group_context_builder.dart`）只给 `namespace: 'pouch'`
     一个例子，没说「还有别的命名空间，跑 `shepaw help` 看」。
   - `SheService._nonSheMetaCliBlock()`（`she_service.dart`，搜
     `_nonSheMetaCliBlock`）逐项列 Web / Store / Vision / OS / Meta，**没有玉简**。
-  - 群成员被 `kGroupMemberCliAllowlist = {'store', 'help'}`
+  - 群成员被 `kGroupMemberCliAllowlist = {'pouch', 'help', 'slip'}`
     （`cli_execution_gate.dart`）收窄，即使知道了也执行不了。
 - 唯一让外接 agent 明白的通路是用户点玉简「交给 Agent」→
   `JadeSlip.toAgentPrompt()` 预填的草稿。用户随口说「记到玉简」时它不会想到。

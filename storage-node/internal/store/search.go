@@ -114,7 +114,7 @@ func (l *Local) search(frame protocol.Frame, caller string) (map[string]any, err
 				size := int64(num(e["size"]))
 				sha, _ := e["sha256"].(string)
 				hits = append(hits, hit{row: map[string]any{
-					"uri": "store://" + sp + "/" + dev + "/" + path,
+					"uri": "pouch://" + sp + "/" + dev + "/" + path,
 					"space": sp, "device": dev, "path": path,
 					"sha256": sha, "size": size, "state": "committed",
 					"snippet": snippet, "score": float64(score),

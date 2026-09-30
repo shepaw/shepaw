@@ -46,11 +46,11 @@ void main() {
         isFalse,
       );
       expect(
-        c.blocksCli(namespace: 'store', subcommand: 'write'),
+        c.blocksCli(namespace: 'pouch', subcommand: 'write'),
         isFalse,
       );
       expect(
-        c.blocksCli(namespace: 'store', subcommand: 'read'),
+        c.blocksCli(namespace: 'pouch', subcommand: 'read'),
         isFalse,
       );
     });
@@ -100,7 +100,7 @@ void main() {
       expect(text, contains('External serving mode'));
       expect(text, contains('Phone'));
       expect(text, contains('Do not reveal'));
-      expect(text, contains('shepaw store write'));
+      expect(text, contains('shepaw pouch write'));
       expect(text, contains('os.*'));
       expect(text, isNot(contains('non-mutating tools only')));
     });

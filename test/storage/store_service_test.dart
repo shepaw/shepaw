@@ -12,7 +12,7 @@ import 'package:shepaw/storage/device_identity.dart';
 import 'package:shepaw/storage/import_auth_service.dart';
 import 'package:shepaw/storage/local_store.dart';
 import 'package:shepaw/storage/store_protocol.dart';
-import 'package:shepaw/clis/shepaw/store/store_namespace.dart';
+import 'package:shepaw/clis/shepaw/pouch/store_namespace.dart';
 import 'package:shepaw/storage/store_service.dart';
 
 import 'test_harness.dart';
@@ -187,7 +187,7 @@ void main() {
       const oldDev = 'bbbbbbbbbbbbbbbb';
       final self = await DeviceIdentity.deviceId();
       final docs = await getApplicationDocumentsDirectory();
-      final storeRoot = Directory(p.join(docs.path, 'shepaw', 'store'));
+      final storeRoot = Directory(p.join(docs.path, 'shepaw', 'pouch'));
       // 在旧设备 backups 下直接落一份可读文件
       final snapDir = Directory(
           p.join(storeRoot.path, oldDev, 'backups', '20260726-120000'));
@@ -235,7 +235,7 @@ void main() {
       const masterIssuer = 'eeeeeeeeeeeeeeee'; // ≠ old_device
       final self = await DeviceIdentity.deviceId();
       final docs = await getApplicationDocumentsDirectory();
-      final storeRoot = Directory(p.join(docs.path, 'shepaw', 'store'));
+      final storeRoot = Directory(p.join(docs.path, 'shepaw', 'pouch'));
       final auth = ImportAuthService(storeRoot: storeRoot);
 
       await StoreService.instance.receivePushedGrantForTest(
@@ -327,7 +327,7 @@ void main() {
 
     setUpAll(() async {
       final docs = await getApplicationDocumentsDirectory();
-      final storeRoot = Directory(p.join(docs.path, 'shepaw', 'store'));
+      final storeRoot = Directory(p.join(docs.path, 'shepaw', 'pouch'));
       final runtimeRoot =
           Directory(p.join(storeRoot.path, other, 'runtime', 'agent_1'));
       final attachDir =

@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/clis/shepaw/chat/chat_agent_scope.dart';
-import 'package:shepaw/clis/shepaw/store/store_namespace.dart';
+import 'package:shepaw/clis/shepaw/pouch/store_namespace.dart';
 import 'package:shepaw/peer/models/paired_peer.dart';
 import 'package:shepaw/peer/services/peer_storage_service.dart';
 import 'package:shepaw/storage/group_workspace_service.dart';
@@ -205,7 +205,7 @@ void main() {
       );
       // dispatch 文件可经 URI 读回（成员可见性路径）。
       final bytes = await StoreUriReader.instance.read(
-        'store://workspaces/${(await ws.loadMeta('group_test3'))!.homeDevice}/'
+        'pouch://workspaces/${(await ws.loadMeta('group_test3'))!.homeDevice}/'
         'group_group_test3/shared/orchestration/group_session1/'
         'round-0000/dispatch.json',
       );
@@ -242,7 +242,7 @@ void main() {
       // 可经 URI 读回（补零 6 位序号）
       final home = (await ws.loadMeta('group_test4'))!.homeDevice;
       final bytes = await StoreUriReader.instance.read(
-        'store://workspaces/$home/group_group_test4/shared/orchestration/'
+        'pouch://workspaces/$home/group_group_test4/shared/orchestration/'
         'session_event/events/000002.json',
       );
       final json = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
@@ -271,7 +271,7 @@ void main() {
         ],
       );
       final meta = await ws.loadMeta('group_perm');
-      final root = 'store://workspaces/${meta!.homeDevice}/group_group_perm';
+      final root = 'pouch://workspaces/${meta!.homeDevice}/group_group_perm';
       const member = 'agent-member';
       const stranger = 'agent-stranger';
 
@@ -302,7 +302,7 @@ void main() {
 
       // 非群空间（files / runtime）不校验
       expect(
-        await groupWorkspaceAccessError('store://files/aaaa/note.txt'),
+        await groupWorkspaceAccessError('pouch://files/aaaa/note.txt'),
         isNull,
       );
     });
@@ -334,7 +334,7 @@ void main() {
       expect(utf8.decode(latestBytes), '任务 B 结论：修复了调度 bug。');
 
       final sessionABytes = await StoreUriReader.instance.read(
-        'store://workspaces/${(await ws.loadMeta('group_mem'))!.homeDevice}/'
+        'pouch://workspaces/${(await ws.loadMeta('group_mem'))!.homeDevice}/'
         'group_group_mem/shared/memory/group_session_a.md',
       );
       expect(utf8.decode(sessionABytes), '任务 A 结论：完成基础架构。');
@@ -652,7 +652,7 @@ void main() {
         round: 1,
         taskStatus: GroupTaskMemberResult.statusDone,
         summary: '已实现模型与测试',
-        artifactUris: ['store://workspaces/dev/group_group_task1/members/agent-coder/plan_impl.md'],
+        artifactUris: ['pouch://workspaces/dev/group_group_task1/members/agent-coder/plan_impl.md'],
         messageId: 'reply-1',
       );
       final results = await ws.upsertTaskMemberResult(
@@ -673,7 +673,7 @@ void main() {
         groupId: 'group_task1',
         orchestrationId: orchId,
         content: '# 任务卷宗\n\nPR-1 已完成。',
-        finalSummaryUri: 'store://workspaces/dev/latest.md',
+        finalSummaryUri: 'pouch://workspaces/dev/latest.md',
       );
       expect(archive, isNotNull);
       expect(await ws.readTaskArchive(

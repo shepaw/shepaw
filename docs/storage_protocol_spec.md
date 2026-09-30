@@ -1,4 +1,4 @@
-# ShePaw 存储空间协议规范（store.*）
+# ShePaw 存储空间协议规范（pouch.*）
 
 > 版本：v4.3（Step 1 文档化：空间属性模型 + 三层边界。承接 v4.2：store URI 规范、
 > op 扩展策略、agent 身份承载。与方案 v1.1 对齐：跨端读权威=master；CAS=远端读缓存；GFS 本机执行）
@@ -61,10 +61,10 @@
 ## 1. 帧格式
 
 ```json
-{"type": "store", "ns": "store", "op": "<操作>", "v": 1, "req_id": "<uuid>", "...": "op 特有字段"}
+{"type": "pouch", "ns": "pouch", "op": "<操作>", "v": 1, "req_id": "<uuid>", "...": "op 特有字段"}
 ```
 
-- `type`/`ns` 恒为 `"store"`：peer 层按 `type` 路由控制帧；`ns` 供协议层与各端实现校验。
+- `type`/`ns` 恒为 `"pouch"`：peer 层按 `type` 路由控制帧；`ns` 供协议层与各端实现校验。URI 为 `pouch://`。
 - `req_id`：请求方生成的 uuid。**响应帧**回带同一 `req_id`：
   - 成功：`{"op": "result", "req_id": ..., "data": {...}}`
   - 失败：`{"op": "error", "req_id": ..., "code": "...", "message": "..."}`
@@ -97,13 +97,13 @@
 ### 1.5.1 语法
 
 ```
-store://<space>/<device>/<relpath>[@<ref>]
+pouch://<space>/<device>/<relpath>[@<ref>]
 ```
 
 - `space` ∈ 内置/legacy 分区名（见 §0.5）；必填单值。
-- `device` = 16 位小写 hex（Noise 公钥哈希）。例外：`space=app` 时 device 固定为 `shepaw`，地址是 `store://app/shepaw/<relpath>`，不随宿主指纹改变。
+- `device` = 16 位小写 hex（Noise 公钥哈希）。例外：`space=app` 时 device 固定为 `shepaw`，地址是 `pouch://app/shepaw/<relpath>`，不随宿主指纹改变。
 - `<relpath>` 必须相对路径，符合 §4 规范化（拒绝 `..`、绝对路径、盘符、NUL、反斜杠统一为 `/`）。
-- 兼容路径式写法：`store:///artifacts/<device>/<relpath>`（三段式）与 host 式等价。
+- 兼容路径式写法：`pouch:///artifacts/<device>/<relpath>`（三段式）与 host 式等价。
 - **点前缀段保留**：`<relpath>` 任何段不得以 `.` 开头（`.staging` / `.recycle` / `.versions` / `.nexuspouch` 等系统目录机制上不可寻址），否则 `bad_path`。
 
 ### 1.5.2 版本引用 `<ref>`
@@ -118,7 +118,7 @@ store://<space>/<device>/<relpath>[@<ref>]
 
 - 版本解析失败（格式非法）→ `bad_uri`；格式合法但不存在 → `not_found`。
 - 版本语义（M2）：commit 使目标不可变；被覆盖旧版本迁入 `.versions` 并保留索引；同一路径在合并窗口（默认 30s）内的连续未保护覆盖视为**一次完整变更**，只保留最终内容（替换索引末条，不递增 v）；窗口外或 `publish: true` 则新开版本。发布产物永久保留，非发布产物按 §8 空间预算（方案）修剪。
-- Agent 纪律：**引用原样传递，不构造、不改写 URI**；本机用 `shepaw store read` / `shepaw store write`，远端 ACP 用 `hub.cli.execute`（namespace=`store`），Agent Hub 引擎用本机 `shepaw store`（store 协议）。旧 MCP `store_read` / `store_write` 映射到本机 store 客户端，不要转发 `hub.cli.execute`（方案 §6.3）。
+- Agent 纪律：**引用原样传递，不构造、不改写 URI**；本机用 `shepaw pouch read` / `shepaw pouch write`，远端 ACP 用 `hub.cli.execute`（namespace=`pouch`），Agent Hub 引擎用本机 `shepaw pouch`。不要把袋子读写转发给 `hub.cli.execute`（方案 §6.3）。
 
 ### 1.5.3 版本操作（M2 实现）
 
@@ -252,15 +252,15 @@ store://<space>/<device>/<relpath>[@<ref>]
 // 交接：commit + 发布 + 上下文（to_agent 可选，事件 handoff.created）
 {"op": "handoff.create", "space": "artifacts", "upload_ids": ["u-1"],
  "context": "精修后 ack", "to_agent": "a-desktop", "manifest": {...}}
-→ {"op": "result", "data": {"committed": [...], "handoff_uri": "store://...",
+→ {"op": "result", "data": {"committed": [...], "handoff_uri": "pouch://...",
     "state": "published"}}
 
 // 消费方确认（幂等；重复 ack 返回 already_acked=true）
-{"op": "handoff.ack", "uri": "store://artifacts/pc-a/t-41/out.md", "agent_id": "a-desktop"}
+{"op": "handoff.ack", "uri": "pouch://artifacts/pc-a/t-41/out.md", "agent_id": "a-desktop"}
 → {"op": "result", "data": {"uri": "...", "state": "acked", "acked_by": "a-desktop"}}
 
 // 状态 + 血缘查询（uri 可带 @ref 查旧版本）
-{"op": "artifact.state", "uri": "store://artifacts/pc-a/t-41/out.md@v1"}
+{"op": "artifact.state", "uri": "pouch://artifacts/pc-a/t-41/out.md@v1"}
 → {"op": "result", "data": {"uri": "...", "state": "superseded",
     "producer": {...}, "parent_uris": [...], "context": "..."}}
 ```
@@ -296,7 +296,7 @@ App 经 Noise 配对调用，与 HTTP `/api/v1/search`、`/api/v1/events*` 语�
 // 全文检索（FTS5；q 必填非空）
 {"op": "search", "q": "关键词", "space": "artifacts", "device": "…", "state": "…", "limit": 50}
 → {"op": "result", "data": {"query": "关键词", "total": 1, "results": [
-    {"uri": "store://…", "space": "artifacts", "device": "…", "path": "…",
+    {"uri": "pouch://…", "space": "artifacts", "device": "…", "path": "…",
      "sha256": "…", "size": 35, "state": "committed", "snippet": "…", "score": -1.0}]}}
 
 // 事件列表（seq > since；升序；可选 kind 过滤）

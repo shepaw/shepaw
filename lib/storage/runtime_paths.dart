@@ -103,7 +103,7 @@ class RuntimePaths {
     ).ownerId;
   }
 
-  /// `store write` 落点：群产物进群 runtime，不进成员自己的储物袋。
+  /// `pouch write` 落点：群产物进群 runtime，不进成员自己的储物袋。
   ///
   /// - 群频道 → owner=群，channel=该群
   /// - 群绑定成员 DM（[sourceGroupChannelId]）→ owner/channel=该群

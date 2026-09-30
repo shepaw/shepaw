@@ -50,6 +50,7 @@ import 'peer_inflight_turn.dart';
 import 'peer_storage_service.dart';
 import 'peer_turn_resume.dart';
 import '../../storage/agent_workspace_uris.dart';
+import '../../storage/store_protocol.dart';
 
 export 'peer_agent_ids.dart';
 export 'peer_inflight_turn.dart' show PeerTurnInFlightException;
@@ -874,7 +875,7 @@ class _PendingRequest {
 
 class _PendingFilePush {
   final Completer<void> begin = Completer<void>();
-  /// Completes with host `store_uri` (may be null on legacy hosts).
+  /// Completes with host `pouch_uri` (may be null on legacy hosts).
   final Completer<String?> end = Completer<String?>();
 }
 
@@ -1913,7 +1914,7 @@ class PeerAgentClientService {
     final ok = data['ok'] != false;
     final stage = data['stage'] as String? ?? 'end';
     final error = data['error'] as String? ?? '附件推送被对端拒绝';
-    final storeUri = data['store_uri'] as String?;
+    final storeUri = data['pouch_uri'] as String?;
 
     void failBegin() {
       if (!pending.begin.isCompleted) {
@@ -4196,7 +4197,7 @@ class PeerAgentClientService {
     final a = raw['workspace_uri'];
     final b = raw['workspaceUri'];
     final s = a is String ? a : (b is String ? b : null);
-    if (s == null || !s.startsWith('store://')) return null;
+    if (s == null || !isPouchUri(s)) return null;
     return canonicalizeStoreWorkspaceUri(s) ?? s;
   }
 

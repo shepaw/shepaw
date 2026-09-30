@@ -626,12 +626,12 @@ class NotesAttachCommand extends CliCommand {
 
   @override
   String get description =>
-      'Attach a local file (--file) or an existing pouch file (--uri store://)';
+      'Attach a local file (--file) or an existing pouch file (--uri pouch://)';
 
   @override
   String get usage =>
       'shepaw slip attach --id <slipId> --file /path/to/file\n'
-      'shepaw slip attach --id <slipId> --uri store://files/<device>/...';
+      'shepaw slip attach --id <slipId> --uri pouch://files/<device>/...';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {

@@ -52,7 +52,7 @@ class PouchPairTicket {
   }
 }
 
-/// 没有角色文件时在本机配对。客户端只转发，不把对方写进自己的名单。
+/// 已登录时，扫码配对交给当前这只袋子的主机。App 自己连本机 Hub 不走这里。
 class PouchPairing {
   PouchPairing._();
 

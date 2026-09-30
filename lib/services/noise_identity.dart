@@ -147,6 +147,10 @@ class NoiseIdentity {
 
   // ── Internals ───────────────────────────────────────────────────────────
 
+  /// 新开一把钥匙，只交给调用方。不写入本机钥匙串。
+  /// 袋子的身份落在袋子里，不能变成这台 App 的设备密钥。
+  static Future<NoiseIdentity> generateDetached() => _generate();
+
   static Future<NoiseIdentity> _generate() async {
     final algorithm = X25519();
     final keyPair = await algorithm.newKeyPair();

@@ -30,7 +30,7 @@ RemoteAgent _agent(
           'manageable': true,
           'engine': 'cursor',
           'workspace_uri':
-              'store://workspaces/0123456789abcdef/Users/me/proj/',
+              'pouch://workspaces/0123456789abcdef/Users/me/proj/',
         },
       },
     );
@@ -222,7 +222,7 @@ void main() {
     expect(prompt, isNot(contains('session create **只有本群管理员')));
   });
 
-  test('remote ACP admin prompt teaches hub.cli.execute, not shepaw store',
+  test('remote ACP admin prompt teaches hub.cli.execute, not shepaw pouch',
       () async {
     final prompt = await builder.buildGroupSystemPrompt(
       groupName: '项目群',
@@ -239,11 +239,11 @@ void main() {
     // **写法**（委派/工作流/群管理等段落都用这套记法）：【CLI 调用方式】前言
     // 已声明「下文出现的 shepaw … 一律通过 hub.cli.execute 执行」，所以这里
     // 断言通道本身，而不是禁用字符串。
-    expect(prompt, contains('ACP `hub.cli.execute` store write'));
+    expect(prompt, contains('ACP `hub.cli.execute` pouch write'));
     expect(prompt, isNot(contains('你有 shepaw CLI 工具')));
   });
 
-  test('local LLM admin prompt still teaches shepaw store write', () async {
+  test('local LLM admin prompt still teaches shepaw pouch write', () async {
     final localAdmin = _agent('admin-local', 'LocalPM', local: true);
     final prompt = await builder.buildGroupSystemPrompt(
       groupName: '项目群',
@@ -253,7 +253,7 @@ void main() {
       isAdmin: true,
     );
 
-    expect(prompt, contains('shepaw store write'));
+    expect(prompt, contains('shepaw pouch write'));
     expect(prompt, isNot(contains('你没有 shepaw function tool')));
     expect(prompt, isNot(contains('hub.cli.execute')));
   });
@@ -268,8 +268,8 @@ void main() {
     );
 
     expect(prompt, contains('hub.cli.execute'));
-    expect(prompt, contains('namespace=store'));
-    expect(prompt, isNot(contains('shepaw store write')));
+    expect(prompt, contains('namespace=pouch'));
+    expect(prompt, isNot(contains('shepaw pouch write')));
   });
 
   test('Hub peer engine prompt teaches shepaw plus App-forwarded CLI',
@@ -283,7 +283,7 @@ void main() {
       isAdmin: true,
     );
 
-    expect(prompt, contains('shepaw store write'));
+    expect(prompt, contains('shepaw pouch write'));
     expect(prompt, contains('转到配对 App'));
     expect(prompt, contains('不要 `hub.cli.execute`'));
     expect(prompt, isNot(contains('你没有 shepaw function tool')));

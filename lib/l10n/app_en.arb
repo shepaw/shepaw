@@ -3290,7 +3290,7 @@
   "jadeSlip_doneWhenHint": "How you will know it is finished",
   "jadeSlip_acceptItem": "Accept",
   "jadeSlip_addEvidence": "Add evidence",
-  "jadeSlip_evidenceHint": "store:// or a result address",
+  "jadeSlip_evidenceHint": "pouch:// or a result address",
   "jadeSlip_activity": "Activity",
   "jadeSlip_sourceSession": "Open the source session",
   "jadeSlip_sourceInstruction": "From instruction {id}",

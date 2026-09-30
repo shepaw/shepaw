@@ -4,9 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'package:shepaw/widgets/store_uri_link_syntax.dart';
 
-/// 聊天正文里裸 `store://` URI 的自动链接化。
+/// 聊天正文里裸 `pouch://` URI 的自动链接化。
 void main() {
-  const uri = 'store://workspaces/aaaaaaaaaaaaaaaa/group_x/snake-game.html';
+  const uri = 'pouch://workspaces/aaaaaaaaaaaaaaaa/group_x/snake-game.html';
 
   List<({String href, String text})> parseLinks(String source) {
     final doc = md.Document(
@@ -39,7 +39,7 @@ void main() {
     return links;
   }
 
-  group('裸 store:// URI', () {
+  group('裸 pouch:// URI', () {
     test('渲染为链接，文本取路径末段', () {
       final links = parseLinks('下载地址 $uri');
       expect(links, hasLength(1));
@@ -73,7 +73,7 @@ void main() {
     });
 
     test('目录 URI（无文件末段）仍可链接', () {
-      const dirUri = 'store://workspaces/aaaaaaaaaaaaaaaa/group_x/notes';
+      const dirUri = 'pouch://workspaces/aaaaaaaaaaaaaaaa/group_x/notes';
       final links = parseLinks(dirUri);
       expect(links, hasLength(1));
       expect(links.single.href, dirUri);
@@ -102,20 +102,20 @@ void main() {
   });
 
   group('非法形态不链接化', () {
-    test('store://xxx（无 device）不链接', () {
-      expect(parseLinks('store://xxx'), isEmpty);
+    test('pouch://xxx（无 device）不链接', () {
+      expect(parseLinks('pouch://xxx'), isEmpty);
     });
 
     test('模板占位符不链接', () {
-      expect(parseLinks('store://<space>/<device>/<path>'), isEmpty);
+      expect(parseLinks('pouch://<space>/<device>/<path>'), isEmpty);
     });
 
     test('device 非 16 位 hex 不链接', () {
-      expect(parseLinks('store://files/abc/readme.md'), isEmpty);
+      expect(parseLinks('pouch://files/abc/readme.md'), isEmpty);
     });
 
     test('路径为空不链接', () {
-      expect(parseLinks('store://workspaces/aaaaaaaaaaaaaaaa/'), isEmpty);
+      expect(parseLinks('pouch://workspaces/aaaaaaaaaaaaaaaa/'), isEmpty);
     });
   });
 }

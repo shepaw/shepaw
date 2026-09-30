@@ -348,7 +348,7 @@ class VaultService {
   // 私有工具方法
   // ---------------------------------------------------------------------------
 
-  /// 主库和其余应用库都在 store://app/shepaw/sqlite/。
+  /// 主库和其余应用库都在 pouch://app/shepaw/sqlite/。
   Future<File> _coreDbFile(String name) =>
       PouchSqlite.file('${PouchSqlite.sqliteDir}/$name');
 

@@ -52,15 +52,15 @@ void main() {
             agentName: 'Writer',
             taskStatus: GroupTaskMemberResult.statusDone,
             artifactUris: [
-              'store://runtime/0123456789abcdef/owner/ch/artifacts/t/game.py',
+              'pouch://runtime/0123456789abcdef/owner/ch/artifacts/t/game.py',
             ],
           ),
         ],
       );
       final archive = '''
 # 任务卷宗 orch-1
-- store://workspaces/0123456789abcdef/group_x/shared/tasks/orch-1/archive.md
-- store://runtime/0123456789abcdef/owner/ch/artifacts/t/readme.md
+- pouch://workspaces/0123456789abcdef/group_x/shared/tasks/orch-1/archive.md
+- pouch://runtime/0123456789abcdef/owner/ch/artifacts/t/readme.md
 ''';
       final uris = GroupTaskDisplay.artifactUris(
         results: results,
@@ -69,8 +69,8 @@ void main() {
       expect(
         uris,
         [
-          'store://runtime/0123456789abcdef/owner/ch/artifacts/t/game.py',
-          'store://runtime/0123456789abcdef/owner/ch/artifacts/t/readme.md',
+          'pouch://runtime/0123456789abcdef/owner/ch/artifacts/t/game.py',
+          'pouch://runtime/0123456789abcdef/owner/ch/artifacts/t/readme.md',
         ],
       );
     });
@@ -80,20 +80,20 @@ void main() {
         orchestrationId: 'orch-1',
         entries: [
           GroupTaskArtifactEntry(
-            uri: 'store://runtime/dev/gr/ch/artifacts/t/manifest.md',
+            uri: 'pouch://runtime/dev/gr/ch/artifacts/t/manifest.md',
             label: 'from manifest',
           ),
         ],
       );
       final uris = GroupTaskDisplay.artifactUris(manifest: manifest);
       expect(uris, [
-        'store://runtime/dev/gr/ch/artifacts/t/manifest.md',
+        'pouch://runtime/dev/gr/ch/artifacts/t/manifest.md',
       ]);
     });
 
     test('dedupes the same uri from results and archive', () {
       const uri =
-          'store://runtime/0123456789abcdef/owner/ch/artifacts/t/out.md';
+          'pouch://runtime/0123456789abcdef/owner/ch/artifacts/t/out.md';
       final results = GroupTaskResults(
         orchestrationId: 'orch-1',
         members: [
@@ -116,7 +116,7 @@ void main() {
     test('uses the filename segment', () {
       expect(
         GroupTaskDisplay.artifactLabel(
-          'store://runtime/0123456789abcdef/owner/ch/artifacts/t/game.py',
+          'pouch://runtime/0123456789abcdef/owner/ch/artifacts/t/game.py',
         ),
         'game.py',
       );

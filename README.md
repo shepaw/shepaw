@@ -58,12 +58,12 @@ Designed with a local-first philosophy: all your data stays on your device. SheP
 - **Web tools** — built-in web search (Brave / Tavily) and web fetch services for agents
 
 ### Storage Bag (储物袋) & Local-first Data
-- **Store protocol** (`store://`) — a structured, device-scoped storage space with spaces: `workspaces` / `runtime` / `files` / `public` / `backups` / `cognition` (plus legacy `artifacts` / `attachments` / `memory`)
+- **Store protocol** (`pouch://`) — a structured, device-scoped storage space with spaces: `workspaces` / `runtime` / `files` / `public` / `backups` / `cognition` (plus legacy `artifacts` / `attachments` / `memory`)
 - **Storage bag UI** — browse, search, and manage files; friendly recent-tab; internal/system files can be hidden
 - **Snapshots** — scheduled encrypted snapshots with GFS retention and recycle bin / versioning
 - **P2P mirror sync** — offline-friendly sync engine with change cursors and batched atomic uploads; cross-device mirroring
 - **Folder binding** — bind a local folder on desktop and sync it via FS watcher (with periodic fallback)
-- **Agent workspaces** — each agent/group gets a workspace in the pouch; agent resumes (`resume.md`) live there and are readable/writable via `shepaw store`
+- **Agent workspaces** — each agent/group gets a workspace in the pouch; agent resumes (`resume.md`) live there and are readable/writable via `shepaw pouch`
 - **WebDAV export & backups** — export your store to WebDAV, restore, and manage snapshots
 - **NexusPouch / Storage Node** — optional headless Go store master, paired by QR and discovered over mDNS, serving `store.*` frames over Noise-encrypted WebSocket
 
@@ -283,7 +283,7 @@ flutter test test/integration/
 | [Agent Integration Guide](docs/agent_integration_guide.md) | ACP protocol integration docs (SDK reference) |
 | [Remote LLM Agent Integration](docs/remote_llm_agent_integration_en.md) | Complete guide for third-party Remote Agent integration (English) |
 | [Remote LLM Agent 接入指南](docs/remote_llm_agent_integration.md) | 第三方 Remote Agent 完整接入文档（中文） |
-| [Store Protocol Specification](docs/storage_protocol_spec.md) | `store://` protocol spec (Dart + Go authority) |
+| [Store Protocol Specification](docs/storage_protocol_spec.md) | `pouch://` protocol spec (Dart + Go authority) |
 | [Tool Model Architecture](docs/tool_model_architecture.md) | Tool model system overview |
 | [Group Chat Flow](docs/gorup_chat_flow.md) | Group channel workflow documentation |
 

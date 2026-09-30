@@ -9,33 +9,33 @@ void main() {
   group('MessageImplicitPrompt', () {
     test('extractStoreUris from markdown and plain text', () {
       const text =
-          'See [a.txt](store://files/0123456789abcdef/docs/a.txt) and '
-          'store://artifacts/fedcba9876543210/t/b.md.';
+          'See [a.txt](pouch://files/0123456789abcdef/docs/a.txt) and '
+          'pouch://artifacts/fedcba9876543210/t/b.md.';
       final uris = MessageImplicitPrompt.extractStoreUris(text);
       expect(
         uris,
         {
-          'store://files/0123456789abcdef/docs/a.txt',
-          'store://artifacts/fedcba9876543210/t/b.md',
+          'pouch://files/0123456789abcdef/docs/a.txt',
+          'pouch://artifacts/fedcba9876543210/t/b.md',
         },
       );
     });
 
     test('extractStoreUris ignores placeholders and doc templates', () {
       const text =
-          'Talking about the store://xxx protocol, the '
-          'store://<space>/<device>/<path> shape, a malformed '
-          'store://files/notahexdevice/x.txt and a pathless '
-          'store://files/0123456789abcdef — but do read '
-          'store://files/0123456789abcdef/docs/a.txt please';
+          'Talking about the pouch://xxx protocol, the '
+          'pouch://<space>/<device>/<path> shape, a malformed '
+          'pouch://files/notahexdevice/x.txt and a pathless '
+          'pouch://files/0123456789abcdef — but do read '
+          'pouch://files/0123456789abcdef/docs/a.txt please';
       final uris = MessageImplicitPrompt.extractStoreUris(text);
-      expect(uris, {'store://files/0123456789abcdef/docs/a.txt'});
+      expect(uris, {'pouch://files/0123456789abcdef/docs/a.txt'});
     });
 
     test('forUserText null when message only discusses the protocol', () {
       expect(
         MessageImplicitPrompt.forUserText(
-          '现在外接 agent 是如何认识 store://xxx 协议的 uri 呢',
+          '现在外接 agent 是如何认识 pouch://xxx 协议的 uri 呢',
         ),
         isNull,
       );
@@ -45,7 +45,7 @@ void main() {
       expect(MessageImplicitPrompt.forUserText('hello'), isNull);
     });
 
-    test('forAttachments from extraMetadata store_uri', () {
+    test('forAttachments from extraMetadata pouch_uri', () {
       final att = AttachmentData(
         fileName: 'note.txt',
         mimeType: 'text/plain',
@@ -53,27 +53,27 @@ void main() {
         bytes: Uint8List.fromList([1, 2, 3, 4]),
         semanticType: 'document',
         extraMetadata: {
-          'store_uri': 'store://files/0123456789abcdef/docs/note.txt',
+          'pouch_uri': 'pouch://files/0123456789abcdef/docs/note.txt',
         },
       );
       final hint = MessageImplicitPrompt.forAttachments([att]);
       expect(hint, isNotNull);
       expect(hint!, contains('[implicit]'));
       expect(hint, contains('[/implicit]'));
-      expect(hint, contains('shepaw store read'));
-      expect(hint, contains('store://files/0123456789abcdef/docs/note.txt'));
+      expect(hint, contains('shepaw pouch read'));
+      expect(hint, contains('pouch://files/0123456789abcdef/docs/note.txt'));
       expect(hint, contains('not OS paths'));
     });
 
     test('forCurrentTurn dedupes uri from text and attachment', () {
-      const uri = 'store://files/0123456789abcdef/docs/note.txt';
+      const uri = 'pouch://files/0123456789abcdef/docs/note.txt';
       final att = AttachmentData(
         fileName: 'note.txt',
         mimeType: 'text/plain',
         sizeBytes: 1,
         bytes: Uint8List(0),
         semanticType: 'document',
-        extraMetadata: {'store_uri': uri},
+        extraMetadata: {'pouch_uri': uri},
       );
       final hint = MessageImplicitPrompt.forCurrentTurn(
         text: 'Please read [$uri]($uri)',
@@ -90,21 +90,21 @@ void main() {
         id: 'm1',
         from: MessageFrom(id: 'u', type: 'user', name: 'U'),
         type: MessageType.file,
-        content: '📎 File: x\n[x](store://files/aaaaaaaaaaaaaaaa/x.txt)',
+        content: '📎 File: x\n[x](pouch://files/aaaaaaaaaaaaaaaa/x.txt)',
         timestampMs: 0,
         metadata: {
-          'store_uri': 'store://files/aaaaaaaaaaaaaaaa/x.txt',
+          'pouch_uri': 'pouch://files/aaaaaaaaaaaaaaaa/x.txt',
           'name': 'x.txt',
         },
       );
       final hint = MessageImplicitPrompt.forHistoryMessage(m);
-      expect(hint, contains('store://files/aaaaaaaaaaaaaaaa/x.txt'));
+      expect(hint, contains('pouch://files/aaaaaaaaaaaaaaaa/x.txt'));
       expect(hint, contains('[implicit]'));
     });
 
     test('metadataForTurn / fromMetadata / forHistoryMessage prefer DB field',
         () {
-      const uri = 'store://files/0123456789abcdef/docs/note.txt';
+      const uri = 'pouch://files/0123456789abcdef/docs/note.txt';
       final meta = MessageImplicitPrompt.metadataForTurn(
         text: 'see $uri',
       );
@@ -116,7 +116,7 @@ void main() {
         id: 'm1',
         from: MessageFrom(id: 'u', type: 'user', name: 'U'),
         type: MessageType.text,
-        content: 'see note', // clean bubble — no store:// in content
+        content: 'see note', // clean bubble — no pouch:// in content
         timestampMs: 0,
         metadata: meta,
       );
@@ -147,7 +147,7 @@ void main() {
         bytes: Uint8List(0),
         semanticType: 'document',
         extraMetadata: {
-          'store_uri': 'store://files/0123456789abcdef/docs/note.txt',
+          'pouch_uri': 'pouch://files/0123456789abcdef/docs/note.txt',
         },
       );
       final wire = MessageImplicitPrompt.forPeerWireMessage(
@@ -157,19 +157,19 @@ void main() {
       expect(wire, startsWith('please summarize'));
       expect(wire, contains('[implicit]'));
       expect(wire, contains('Nexus Pouch'));
-      expect(wire, contains('store://files/0123456789abcdef/docs/note.txt'));
+      expect(wire, contains('pouch://files/0123456789abcdef/docs/note.txt'));
     });
 
     test('forCurrentTurn skips when wire already has implicit (no double inject)',
         () {
-      const uri = 'store://files/0123456789abcdef/docs/note.txt';
+      const uri = 'pouch://files/0123456789abcdef/docs/note.txt';
       final att = AttachmentData(
         fileName: 'note.txt',
         mimeType: 'text/plain',
         sizeBytes: 1,
         bytes: Uint8List(0),
         semanticType: 'document',
-        extraMetadata: {'store_uri': uri},
+        extraMetadata: {'pouch_uri': uri},
       );
       final wire = MessageImplicitPrompt.forPeerWireMessage(
         message: 'hi',
@@ -191,17 +191,17 @@ void main() {
     test('urisFromMessage reads metadata and content', () {
       final m = Message(
         id: 'm1',
-        content: 'see store://files/0123456789abcdef/docs/b.txt',
+        content: 'see pouch://files/0123456789abcdef/docs/b.txt',
         type: MessageType.text,
         from: MessageFrom(id: 'u', type: 'user', name: 'U'),
         timestampMs: 1,
         metadata: {
-          'store_uri': 'store://files/0123456789abcdef/docs/a.txt',
+          'pouch_uri': 'pouch://files/0123456789abcdef/docs/a.txt',
         },
       );
       final uris = MessageImplicitPrompt.urisFromMessage(m);
-      expect(uris, contains('store://files/0123456789abcdef/docs/a.txt'));
-      expect(uris, contains('store://files/0123456789abcdef/docs/b.txt'));
+      expect(uris, contains('pouch://files/0123456789abcdef/docs/a.txt'));
+      expect(uris, contains('pouch://files/0123456789abcdef/docs/b.txt'));
     });
 
     test('stripImplicitBlocks removes hint for UI persistence', () {
@@ -212,7 +212,7 @@ void main() {
         bytes: Uint8List(0),
         semanticType: 'document',
         extraMetadata: {
-          'store_uri': 'store://files/0123456789abcdef/docs/note.txt',
+          'pouch_uri': 'pouch://files/0123456789abcdef/docs/note.txt',
         },
       );
       final wire = MessageImplicitPrompt.forPeerWireMessage(

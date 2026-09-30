@@ -130,7 +130,7 @@ class _StagingMeta {
 /// .recycle/<yyyy-MM-dd>/<device_id>/<space>/...  回收站
 /// ```
 class LocalStore {
-  /// store 根目录（…/shepaw/store）。
+  /// store 根目录（…/shepaw/pouch）。
   final Directory root;
 
   /// 同一路径连续覆盖时，窗口内未保护版本合并为一次变更（替换索引末条）。
@@ -1511,7 +1511,7 @@ class LocalStore {
           }
           scored.add((
             hit: <String, dynamic>{
-              'uri': 'store://$sp/$dev/${e.path}',
+              'uri': 'pouch://$sp/$dev/${e.path}',
               'space': sp,
               'device': dev,
               'path': e.path,
@@ -1918,7 +1918,7 @@ class LocalStore {
   /// 删掉 [deviceId] 自己的 runtime 附件里、超过 [minAge] 且不在
   /// [referencedRelPaths] 中的文件。
   ///
-  /// [referencedRelPaths] 是 runtime 空间内的相对路径（消息 `store_uri` 解析而来）。
+  /// [referencedRelPaths] 是 runtime 空间内的相对路径（消息 `pouch_uri` 解析而来）。
   /// 刚写入、消息还没落库的附件靠 [minAge] 躲开。删除走 [delete]。
   Future<int> pruneOrphanAttachments(
     String deviceId,

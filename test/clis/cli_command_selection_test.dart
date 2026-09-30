@@ -65,7 +65,7 @@ void main() {
       expect(result, isNot(isEmpty));
       expect(
         result.map((id) => id.split('.').first).toSet(),
-        containsAll(['os', 'store', 'workflow']),
+        containsAll(['os', 'pouch', 'workflow']),
       );
       expect(result, isNot(contains(dropped)));
     });
@@ -73,10 +73,10 @@ void main() {
     test('部分选中原样返回', () {
       expect(
         cliSelectionToAllowlist(
-          selected: const {'store.read'},
+          selected: const {'pouch.read'},
           allCommandIds: all,
         ),
-        {'store.read'},
+        {'pouch.read'},
       );
     });
   });
@@ -97,9 +97,9 @@ void main() {
 
     test('非空 → 该集合', () {
       final agent = _agentWith(const {
-        'enabled_cli_commands': ['store.read'],
+        'enabled_cli_commands': ['pouch.read'],
       });
-      expect(agent.enabledCliCommands, {'store.read'});
+      expect(agent.enabledCliCommands, {'pouch.read'});
       expect(agent.hasEnabledCliCommands, isTrue);
     });
   });
@@ -111,7 +111,7 @@ void main() {
     test('metadata 无 key 的 agent 仍然能调 CLI', () async {
       final agent = _agentWith(const {});
       final raw = await CliExecutionGate.instance.execute(
-        args: {'namespace': 'store', 'subcommand': 'read', 'flags': {}},
+        args: {'namespace': 'pouch', 'subcommand': 'read', 'flags': {}},
         agentId: agent.id,
         enabledCliCommands: agent.enabledCliCommands,
       );
@@ -122,7 +122,7 @@ void main() {
     test('metadata 为 [] 的 agent 被拒绝', () async {
       final agent = _agentWith(const {'enabled_cli_commands': <String>[]});
       final raw = await CliExecutionGate.instance.execute(
-        args: {'namespace': 'store', 'subcommand': 'read', 'flags': {}},
+        args: {'namespace': 'pouch', 'subcommand': 'read', 'flags': {}},
         agentId: agent.id,
         enabledCliCommands: agent.enabledCliCommands,
       );

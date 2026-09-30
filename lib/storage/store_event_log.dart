@@ -59,7 +59,7 @@ class StoreEventLog {
       'device': device,
       'space': space,
       'path': path,
-      'uri': 'store://$space/$device/$path',
+      'uri': 'pouch://$space/$device/$path',
       'ts_ms': DateTime.now().millisecondsSinceEpoch,
       if (detail != null) 'detail': detail,
     };

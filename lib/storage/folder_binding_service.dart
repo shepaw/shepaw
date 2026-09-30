@@ -409,7 +409,7 @@ class FolderBindingService {
         type: 'store.file.changed',
         payload: {
           'summary': '$rel 已${_changeVerb[change]}',
-          'uri': 'store://$rel',
+          'uri': 'pouch://$rel',
           'change': change,
           'path': event.path,
         },

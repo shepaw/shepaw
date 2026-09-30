@@ -17,7 +17,7 @@ import '../../../storage/store_protocol.dart';
 import '../../../storage/store_service.dart';
 import '../../../storage/store_uri_reader.dart';
 
-/// 校验对群工作空间（`store://workspaces/<device>/group_<gid>/…`）的访问：
+/// 校验对群工作空间（`pouch://workspaces/<device>/group_<gid>/…`）的访问：
 /// 执行者（[ChatAgentScope.agentId]）必须是群成员。非群工作空间 URI 返回
 /// null（放行）。返回错误文案时调用方应拒绝。
 Future<String?> groupWorkspaceAccessError(String uri) async {
@@ -90,29 +90,29 @@ String? sanitizeMemberRelPath(String raw) {
 /// [TOOLING 层] store 命名空间 - 存储空间产物/文件读写
 ///
 /// 对应 docs/storage_space_plan.md §6.3 的 Agent 侧纪律
-///（本机 `shepaw store …` / 远端 ACP `hub.cli.execute` / Agent Hub 本机
-/// `shepaw store` 走 store 协议；不要把 Hub MCP 转成 `hub.cli.execute`）：
+///（本机 `shepaw pouch …` / 远端 ACP `hub.cli.execute` / Agent Hub 本机
+/// `shepaw pouch` 走 store 协议；不要把 Hub MCP 转成 `hub.cli.execute`）：
 /// - `write`：产出写入自己设备目录，返回新 URI 即完成共享；
 /// - `read`：单参数 URI 读取（`artifacts` / `files` 等），分块/缓存由工具层处理；
 /// - `list`：默认 `--depth 1` 一层一层列目录（含 `kind:dir`），
-///   便于跨 agent（`store://runtime/<device>/<agentId>/`）遍历；`--depth 0` 才递归全量文件。
-/// - `search`：按路径/小文本正文检索，返回 `store://` 命中。
+///   便于跨 agent（`pouch://runtime/<device>/<agentId>/`）遍历；`--depth 0` 才递归全量文件。
+/// - `search`：按路径/小文本正文检索，返回 `pouch://` 命中。
 /// - `events`：commit/delete 事件；`spaces` / `declare` 列出或声明分区。
 ///
 /// Agent 只"转述"URI，不构造 URI（URI 从本命令输出或用户/上游输入获得）。
-/// 遇到 `store://...` 一律用本命名空间，不要用 OS `file_read`。
+/// 遇到 `pouch://...` 一律用本命名空间，不要用 OS `file_read`。
 class StoreNamespace extends CliNamespace {
   static final instance = StoreNamespace._();
   StoreNamespace._();
 
   @override
-  String get namespace => 'store';
+  String get namespace => 'pouch';
 
   @override
   String get description =>
-      'Store URIs (store://…): write artifacts, read files, list folders, '
+      'Store URIs (pouch://…): write artifacts, read files, list folders, '
       'search, events, spaces — prefer over OS paths whenever you see a '
-      'store:// link';
+      'pouch:// link';
 
   @override
   Map<String, CliCommand> get commands => {
@@ -126,7 +126,7 @@ class StoreNamespace extends CliNamespace {
       };
 }
 
-/// `shepaw store write --filename <name> --content <text> [--task <id>] [--desc <text>]`
+/// `shepaw pouch write --filename <name> --content <text> [--task <id>] [--desc <text>]`
 /// 或 `… write --space public --filename <name> --content <text>`
 ///
 /// 落点：`runtime/<owner>/<channel>/artifacts/<task>/<file>`。
@@ -138,7 +138,7 @@ class StoreWriteCommand extends CliCommand {
   @override
   String get description =>
       'Preferred path for produced artifacts: write to store and get a shareable '
-      'store:// URI (prefer this over os.file.write for reports/code/docs). '
+      'pouch:// URI (prefer this over os.file.write for reports/code/docs). '
       'Text via --content; binary via --file or --content-base64. '
       'Use --space public for the public partition. '
       '--desc is persisted in a <file>.meta.json sidecar (searchable via '
@@ -147,10 +147,10 @@ class StoreWriteCommand extends CliCommand {
 
   @override
   String get usage =>
-      'shepaw store write --filename report.md --content "# Q2 report" '
+      'shepaw pouch write --filename report.md --content "# Q2 report" '
       '--task task-41 --desc "Q2 销售报告"\n'
-      'shepaw store write --space public --filename note.md --content "hello"\n'
-      'shepaw store write --filename shot.png --file /tmp/shot.png';
+      'shepaw pouch write --space public --filename note.md --content "hello"\n'
+      'shepaw pouch write --filename shot.png --file /tmp/shot.png';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
@@ -185,7 +185,7 @@ class StoreWriteCommand extends CliCommand {
           'success': true,
           'uri': uri,
           'space': StoreSpace.public_,
-          'note': '已写入 public/；可用 store:// 引用。',
+          'note': '已写入 public/；可用 pouch:// 引用。',
         };
       } catch (e) {
         return {'success': false, 'error': '$e'};
@@ -236,7 +236,7 @@ class StoreWriteCommand extends CliCommand {
           );
         }
         LoggerService().info(
-          'store write: group member $executorId not routed to workspace '
+          'pouch write: group member $executorId not routed to workspace '
           '(space uninitialized or not a member), falling back to runtime',
           tag: 'StoreNamespace',
         );
@@ -391,20 +391,20 @@ class StoreWriteCommand extends CliCommand {
   }
 }
 
-/// `shepaw store read --uri <store://...>`
+/// `shepaw pouch read --uri <pouch://...>`
 class StoreReadCommand extends CliCommand {
   @override
   String get name => 'read';
 
   @override
   String get description =>
-      'Read a store:// URI (artifacts, files, or own-device private spaces; '
-      'cache-validated). Use this for ANY store:// link — never os.file.read.';
+      'Read a pouch:// URI (artifacts, files, or own-device private spaces; '
+      'cache-validated). Use this for ANY pouch:// link — never os.file.read.';
 
   @override
   String get usage =>
-      'shepaw store read --uri store://files/0123456789abcdef/docs/note.txt\n'
-      'shepaw store read --uri store://artifacts/0123456789abcdef/task-41/report.md';
+      'shepaw pouch read --uri pouch://files/0123456789abcdef/docs/note.txt\n'
+      'shepaw pouch read --uri pouch://artifacts/0123456789abcdef/task-41/report.md';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
@@ -437,7 +437,7 @@ class StoreReadCommand extends CliCommand {
   }
 }
 
-/// `shepaw store list --uri <store://...> [--depth 1]`
+/// `shepaw pouch list --uri <pouch://...> [--depth 1]`
 ///
 /// 默认 depth=1：只列当前目录一层（含文件夹），便于跨 agent 目录逐层下钻。
 class StoreListCommand extends CliCommand {
@@ -446,15 +446,15 @@ class StoreListCommand extends CliCommand {
 
   @override
   String get description =>
-      'List a store:// directory. Default --depth 1 for one folder level '
+      'List a pouch:// directory. Default --depth 1 for one folder level '
       '(includes dirs); use --depth 0 for full recursive files. Prefer this '
-      'over os.file.list for store://runtime/… and store://workspaces/… trees.';
+      'over os.file.list for pouch://runtime/… and pouch://workspaces/… trees.';
 
   @override
   String get usage =>
-      'shepaw store list --uri store://runtime/0123456789abcdef --depth 1\n'
-      'shepaw store list --uri store://runtime/0123456789abcdef/<agent-id>/ --depth 1\n'
-      'shepaw store list --uri store://files/0123456789abcdef/docs --depth 0';
+      'shepaw pouch list --uri pouch://runtime/0123456789abcdef --depth 1\n'
+      'shepaw pouch list --uri pouch://runtime/0123456789abcdef/<agent-id>/ --depth 1\n'
+      'shepaw pouch list --uri pouch://files/0123456789abcdef/docs --depth 0';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
@@ -487,12 +487,11 @@ class StoreListCommand extends CliCommand {
   }
 }
 
-/// Allow `store://space/device` (space root) for list; stricter [parseStoreUri]
+/// Allow `pouch://space/device` (space root) for list; stricter [parseStoreUri]
 /// still requires a path segment for read.
 ({String space, String device, String path}) parseStoreUriLoose(String raw) {
   final withoutQuery = raw.split('?').first;
-  final rest =
-      withoutQuery.startsWith('store://') ? withoutQuery.substring(8) : raw;
+  final rest = stripPouchUriPrefix(withoutQuery) ?? raw;
   final segments = rest.split('/').where((s) => s.isNotEmpty).toList();
   if (segments.length < 2) {
     throw const FormatException('bad_uri: missing space/device');
@@ -549,7 +548,7 @@ Future<List<Map<String, dynamic>>> mapArtifactMetaHits(
     out.add(<String, dynamic>{
       ...hit,
       'path': artifactPath,
-      'uri': 'store://$space/$device/$artifactPath',
+      'uri': 'pouch://$space/$device/$artifactPath',
       'via': 'meta',
     });
   }
@@ -574,24 +573,24 @@ Map<String, dynamic> _cliStoreResult(Map<String, dynamic>? data) {
   return {'success': true, ...data};
 }
 
-/// `shepaw store search --query <q> [--task <id>] [--space files] [--device <id>] [--uri store://…]`
+/// `shepaw pouch search --query <q> [--task <id>] [--space files] [--device <id>] [--uri pouch://…]`
 class StoreSearchCommand extends CliCommand {
   @override
   String get name => 'search';
 
   @override
   String get description =>
-      'Search store:// by path (and small text files by body). Prefer this '
+      'Search pouch:// by path (and small text files by body). Prefer this '
       'over recursively listing when looking for a filename or keyword. '
       '--task keeps only hits under artifacts/<task>/. '
       '--desc matches the persisted metadata sidecar and maps hits back to '
       'the artifact itself.';
 
   @override
-  String get usage => 'shepaw store search --query report --space files\n'
-      'shepaw store search --task task-41\n'
-      'shepaw store search --desc "Q2 销售报告"\n'
-      'shepaw store search --query unique-token --uri store://runtime/<device>/<agent-id>/';
+  String get usage => 'shepaw pouch search --query report --space files\n'
+      'shepaw pouch search --task task-41\n'
+      'shepaw pouch search --desc "Q2 销售报告"\n'
+      'shepaw pouch search --query unique-token --uri pouch://runtime/<device>/<agent-id>/';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
@@ -681,7 +680,7 @@ class StoreSearchCommand extends CliCommand {
   }
 }
 
-/// `shepaw store events [--since 0] [--limit 50] [--kind file.committed]`
+/// `shepaw pouch events [--since 0] [--limit 50] [--kind file.committed]`
 class StoreEventsCommand extends CliCommand {
   @override
   String get name => 'events';
@@ -692,8 +691,8 @@ class StoreEventsCommand extends CliCommand {
       'events=[] and latest_seq=0.';
 
   @override
-  String get usage => 'shepaw store events --since 0 --limit 50\n'
-      'shepaw store events --kind file.committed';
+  String get usage => 'shepaw pouch events --since 0 --limit 50\n'
+      'shepaw pouch events --kind file.committed';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
@@ -709,7 +708,7 @@ class StoreEventsCommand extends CliCommand {
   }
 }
 
-/// `shepaw store spaces`
+/// `shepaw pouch spaces`
 class StoreSpacesCommand extends CliCommand {
   @override
   String get name => 'spaces';
@@ -719,7 +718,7 @@ class StoreSpacesCommand extends CliCommand {
       'List builtin and declared store spaces (name + visibility).';
 
   @override
-  String get usage => 'shepaw store spaces';
+  String get usage => 'shepaw pouch spaces';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {
@@ -731,7 +730,7 @@ class StoreSpacesCommand extends CliCommand {
   }
 }
 
-/// `shepaw store declare --name models [--visibility shared]`
+/// `shepaw pouch declare --name models [--visibility shared]`
 class StoreDeclareCommand extends CliCommand {
   @override
   String get name => 'declare';
@@ -742,7 +741,7 @@ class StoreDeclareCommand extends CliCommand {
       'Name: [a-z][a-z0-9-]{0,31}.';
 
   @override
-  String get usage => 'shepaw store declare --name models --visibility shared';
+  String get usage => 'shepaw pouch declare --name models --visibility shared';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {

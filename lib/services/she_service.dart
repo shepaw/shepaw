@@ -88,7 +88,7 @@ class SheService {
   static const String _defaultCapabilities =
       'user_profile (master profile) | she_memory (soul/self_notes/long_term_memory/heartbeat)'
       '| agents (AI assistant list) | messages (conversation history) | skills (skills)'
-      '| os_tools (system tools) | store (store:// pouch) | workflow (1:1 staged plans)'
+      '| os_tools (system tools) | pouch (pouch://) | workflow (1:1 staged plans)'
       '| vision (on-device face album & visual profiles)';
 
   /// Core profile fields: always injected, foundation for She to know the user
@@ -449,8 +449,8 @@ class SheService {
 
   /// Shared store preference (She + non-She) — details live in Scope Card.
   static const String _artifactStorePreferenceSection = '''
-### Store
-See **当前储物袋作用域** (Scope Card) for read/write commands. Do not invent `store://` URIs; do not pass `agent_id`/`owner` on `store write`.''';
+### Pouch
+See **当前储物袋作用域** (Scope Card) for read/write commands. Do not invent `pouch://` URIs; do not pass `agent_id`/`owner` on `pouch write`.''';
 
   /// Meta-cognition block: capability index + hard rules. Command details live
   /// behind `shepaw help` so this stays short enough to cache as a static prefix.
@@ -476,7 +476,7 @@ $_artifactStorePreferenceSection
 ${buildAgentsDiscoveryGuideBlock()}
 - Complex multi-step plans: `shepaw workflow --help` (create, then wait for master approval — do not start executing)
 - Groups: `shepaw chat group --help` (you are always admin on create)
-- Jade slips (玉简): `shepaw slip` — check submits, the person accepts. The system skill URI is on the scope card; `shepaw store read --uri` that address
+- Jade slips (玉简): `shepaw slip` — check submits, the person accepts. The system skill URI is on the scope card; `shepaw pouch read --uri` that address
 - App UI how-tos: skill `skill_shepaw_app_usage_guide` (or `shepaw skills detail --name app-usage-guide`)
 - AI models & providers: `shepaw models --help` (list / providers / add / update / remove / agent-main)
 - OS: `shepaw os --help` — file tools only for real OS paths the user named; prefer store for artifacts. Place: `shepaw os location.get`''';
@@ -672,14 +672,14 @@ ${parts.join('\n')}''';
       parts.add('$whenToUseWeb### Web\n${webLines.join('\n')}');
     }
 
-    if (allowed('store')) {
+    if (allowed('pouch')) {
       parts.add(_artifactStorePreferenceSection);
     }
 
     if (allowed('slip')) {
       parts.add('''### Jade Slips (玉简)
 - Shared contract between the person and agents. Checking an item submits it; the person accepts.
-- Subcommands: `shepaw slip`. The system skill URI is on the scope card; read it with `shepaw store read`.''');
+- Subcommands: `shepaw slip`. The system skill URI is on the scope card; read it with `shepaw pouch read`.''');
     }
 
     if (allowed('vision')) {

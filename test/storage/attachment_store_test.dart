@@ -34,7 +34,7 @@ void main() {
     return f;
   }
 
-  test('saveAttachment：写入 runtime/.../attachments/<hash>，metadata 以 store_uri 引用', () async {
+  test('saveAttachment：写入 runtime/.../attachments/<hash>，metadata 以 pouch_uri 引用', () async {
     final content = Uint8List.fromList('attachment bytes'.codeUnits);
     final f = await tempFile('report.txt', content);
     final hash = crypto.sha256.convert(content).toString();
@@ -55,7 +55,7 @@ void main() {
       agentId: 'a1',
     );
     expect(msg, isNotNull);
-    expect(msg!.metadata!['store_uri'], expectedUri);
+    expect(msg!.metadata!['pouch_uri'], expectedUri);
     expect(msg.metadata!['name'], 'report.txt');
     expect(msg.metadata!.containsKey('hash'), isFalse);
     expect(msg.metadata!.containsKey('path'), isFalse);
@@ -93,7 +93,7 @@ void main() {
       parentGroupId: groupId,
     );
     expect(msg, isNotNull);
-    final uri = msg!.metadata!['store_uri'] as String;
+    final uri = msg!.metadata!['pouch_uri'] as String;
     expect(
       uri,
       storeUriWithRef(
@@ -117,7 +117,7 @@ void main() {
     expect(await blob.exists(), isTrue);
   });
 
-  test('hash 去重：同内容两次保存共用一个 blob 与 store_uri', () async {
+  test('hash 去重：同内容两次保存共用一个 blob 与 pouch_uri', () async {
     final content = Uint8List.fromList('dedup me'.codeUnits);
     final f1 = await tempFile('a.txt', content);
     final f2 = await tempFile('b.txt', content);
@@ -134,10 +134,10 @@ void main() {
         userId: 'u1',
         userName: 'U',
         agentId: 'a1');
-    expect(m1!.metadata!['store_uri'], m2!.metadata!['store_uri']);
+    expect(m1!.metadata!['pouch_uri'], m2!.metadata!['pouch_uri']);
   });
 
-  test('buildAttachmentData 按 store_uri 读回内容', () async {
+  test('buildAttachmentData 按 pouch_uri 读回内容', () async {
     final content = Uint8List.fromList('read back'.codeUnits);
     final f = await tempFile('rb.txt', content);
     final svc = newService();
@@ -151,10 +151,10 @@ void main() {
     expect(data, isNotNull);
     expect(data!.bytes, content);
     expect(data.fileName, 'rb.txt');
-    expect(data.extraMetadata?['store_uri'], msg.metadata!['store_uri']);
+    expect(data.extraMetadata?['pouch_uri'], msg.metadata!['pouch_uri']);
   });
 
-  test('resolveAttachmentFile：按 store_uri 解析', () async {
+  test('resolveAttachmentFile：按 pouch_uri 解析', () async {
     final content = Uint8List.fromList('resolve'.codeUnits);
     final f = await tempFile('r.txt', content);
     final svc = newService();
@@ -170,7 +170,7 @@ void main() {
     expect(await svc.resolveAttachmentFile({'name': 'x'}), isNull);
   });
 
-  test('saveAttachment store_uri：引用储物袋文件，不写入 chat/', () async {
+  test('saveAttachment pouch_uri：引用储物袋文件，不写入 chat/', () async {
     final store = await StoreService.instance.localStore();
     final deviceId = await DeviceIdentity.deviceId();
     final content = Uint8List.fromList('store ref bytes'.codeUnits);
@@ -211,7 +211,7 @@ void main() {
       agentId: 'a1',
     );
     expect(msg, isNotNull);
-    expect(msg!.metadata!['store_uri'], ref.storeUri);
+    expect(msg!.metadata!['pouch_uri'], ref.storeUri);
     expect(msg.metadata!['name'], 'ref-report.txt');
     expect(msg.metadata!.containsKey('hash'), isFalse);
     expect(msg.metadata![MessageImplicitPrompt.metaKey], isNotNull);
@@ -230,7 +230,7 @@ void main() {
     final data = await svc.buildAttachmentData(msg);
     expect(data, isNotNull);
     expect(data!.bytes, content);
-    expect(data.extraMetadata?['store_uri'], ref.storeUri);
+    expect(data.extraMetadata?['pouch_uri'], ref.storeUri);
 
     final resolved = await svc.resolveAttachmentFile(msg.metadata!);
     expect(resolved, isNotNull);

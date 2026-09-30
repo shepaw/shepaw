@@ -82,7 +82,7 @@ class GroupMemberCapabilityProbe {
       return const MemberCapabilitySnapshot(
         reachable: true,
         storeCliAvailable: true,
-        notes: ['本地 LLM：shepaw store 工具可用'],
+        notes: ['本地 LLM：shepaw pouch 工具可用'],
       );
     }
 
@@ -153,7 +153,7 @@ class GroupMemberCapabilityProbe {
             notes.add('Hub store /api/v1/health 可达');
             storeCliAvailable = running ? true : false;
           } else if (manage.hubStoreOk == false) {
-            notes.add('Hub /api/v1/health 不可用（shepaw store shim 可能失效）');
+            notes.add('Hub /api/v1/health 不可用（shepaw pouch shim 可能失效）');
             storeCliAvailable = false;
           }
         }
@@ -188,7 +188,7 @@ class GroupMemberCapabilityProbe {
           .sendRequest(
             ACPMethod.hubExecuteCli,
             params: {
-              'namespace': 'store',
+              'namespace': 'pouch',
               'subcommand': 'list',
               'flags': <String, dynamic>{},
             },

@@ -3,11 +3,11 @@
 /// 权威 space：[StoreSpace.cognition]（旧 [StoreSpace.memory] 只读兼容）。
 ///
 /// 本机 / 宿主自身：
-/// `store://cognition/<device>/<agentId>/entries/<id>.json`
-/// `store://cognition/<device>/<agentId>/soul.md`
+/// `pouch://cognition/<device>/<agentId>/entries/<id>.json`
+/// `pouch://cognition/<device>/<agentId>/soul.md`
 ///
 /// 配对设备经 peer 中继写入的子记忆（按客户端 peerId 隔离）：
-/// `store://cognition/<device>/<agentId>/peers/<peerId>/entries/<id>.json`
+/// `pouch://cognition/<device>/<agentId>/peers/<peerId>/entries/<id>.json`
 ///
 /// `runtime/<owner>/memory.md` 仍可作人读镜像（非权威）。
 library;

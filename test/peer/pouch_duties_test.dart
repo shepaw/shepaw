@@ -9,10 +9,10 @@ void main() {
     expect(PouchDuties.schedulerFollowsAppBackground(true), isFalse);
     expect(PouchDuties.schedulerFollowsAppBackground(false), isTrue);
 
-    expect(PouchDuties.cliAllowed(isHost: true, namespace: 'store'), isTrue);
+    expect(PouchDuties.cliAllowed(isHost: true, namespace: 'pouch'), isTrue);
     expect(PouchDuties.cliAllowed(isHost: false, namespace: 'os'), isTrue);
     expect(PouchDuties.cliAllowed(isHost: false, namespace: 'help'), isTrue);
-    expect(PouchDuties.cliAllowed(isHost: false, namespace: 'store'), isFalse);
+    expect(PouchDuties.cliAllowed(isHost: false, namespace: 'pouch'), isFalse);
     expect(PouchDuties.cliAllowed(isHost: false, namespace: 'chat'), isFalse);
     expect(PouchDuties.cliAllowed(isHost: false, namespace: 'workflow'), isFalse);
     expect(PouchDuties.cliAllowed(isHost: false, namespace: 'context'), isFalse);

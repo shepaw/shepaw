@@ -25,7 +25,7 @@ void main() {
   testWidgets('有 storeUri 时显示「在储物袋中显示」按钮', (tester) async {
     await pumpPage(
       tester,
-      'store://workspaces/aaaaaaaaaaaaaaaa/group_x/snake-game.html',
+      'pouch://workspaces/aaaaaaaaaaaaaaaa/group_x/snake-game.html',
     );
     expect(find.byIcon(Icons.folder_open_outlined), findsOneWidget);
     expect(find.byIcon(Icons.link), findsOneWidget);

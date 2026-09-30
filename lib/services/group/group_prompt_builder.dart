@@ -150,7 +150,7 @@ class GroupPromptBuilder {
 
       final loopSummarizeSection = isClosingSummary
           ? '\n\n【当前状态】工作流全部阶段已执行完毕。请根据群聊历史中各成员的执行结果，向用户做**最终总结汇报**：\n'
-              '- 如实说明完成情况、产物 store:// URI（若成员已在回复中提供）、未完成或失败的部分\n'
+              '- 如实说明完成情况、产物 pouch:// URI（若成员已在回复中提供）、未完成或失败的部分\n'
               '- 若历史中找不到产物 URI，如实告知用户「成员未在回复中提供可访问的产物链接」，**禁止**猜测或编造 URI\n'
               '- 若仍需成员补交产物，可调用 `group_dispatch`；若任务整体已结束，调用 `group_finish`（action=`done`）\n'
               '- **务必输出完整的自然语言总结**，禁止在只调用工具而不向用户输出总结的情况下结束'
@@ -245,10 +245,10 @@ ${_cliTransportPreamble(currentAgent)}
    - `action=continue`：你自己继续工作，不委派
    - `action=pause`：需要用户输入才能继续（本轮暂停）
 4. **`group_artifact_plan`** — 规划本任务产物落点（派活前或与之同时）
-   - `store_task_id`：成员写产物时统一的 `shepaw store write --task` id（默认用当前编排 id）
+   - `store_task_id`：成员写产物时统一的 `shepaw pouch write --task` id（默认用当前编排 id）
    - `slots[]`：预期文件名、说明、负责人（可选）
    - 澄清表单回复会**续接同一任务**，不会新建第二条任务记录
-5. **`group_artifact_register`** — 把散落或遗漏的 `store://` 登记到本任务 `artifacts.json`
+5. **`group_artifact_register`** — 把散落或遗漏的 `pouch://` 登记到本任务 `artifacts.json`
    - 任务结束时产物应聚合在**同一任务**下；成员忘了在回复里贴链接、或摸底阶段产出的 URI，用此工具补登记
 
 **硬性规则：**
@@ -359,7 +359,7 @@ ${_cliTransportPreamble(currentAgent)}
 7. 如果你发现自己在重复执行相同的任务且反复失败，应主动换一种方法或策略，而不是用同样的方式继续重试。如果确实无法完成，请如实说明遇到的困难
 8. 如果任务执行过程中需要用户确认信息或做出选择，请用**文字描述**所有选项和所需信息，不要调用 form、action_confirmation、single_select、multi_select 等 UI 工具。管理员会读取你的描述并做出决策。
 ${_storeWriteRule(currentAgent, memberMust: true)}
-10. 在每次回复的**最后一行**，必须输出任务状态标注，格式为：\n   - 任务已完成（且已写入 store 并引用 URI，或确实无文件产出）：`[TASK_STATUS: done]`\n   - 任务未完成或需要更多信息：`[TASK_STATUS: pending] 原因：<简要说明>`\n   - 若需管理员 mid-loop 决策，在 pending 原因**首行**写 `[NEED_ADMIN]` 并描述选项\n管理员会根据此标注决定下一步安排。$allMembersMentionSection
+10. 在每次回复的**最后一行**，必须输出任务状态标注，格式为：\n   - 任务已完成（且已写入 pouch 并引用 URI，或确实无文件产出）：`[TASK_STATUS: done]`\n   - 任务未完成或需要更多信息：`[TASK_STATUS: pending] 原因：<简要说明>`\n   - 若需管理员 mid-loop 决策，在 pending 原因**首行**写 `[NEED_ADMIN]` 并描述选项\n管理员会根据此标注决定下一步安排。$allMembersMentionSection
 
 【任务上下文】
 你被委派时会收到【全局需求】（定稿 requirement.md）与【正式任务计划】（plan.md 摘要）；请以它们为准，不要只依赖聊天历史里的原始用户消息。同轮派发时【同轮完成情况】会列出已完成同伴的摘要，避免重复劳动。
@@ -458,7 +458,7 @@ $groupScopeSection''';
   static String _cliTransportPreamble(RemoteAgent agent) {
     if (agent.usesHubStoreCli) {
       return '''
-【CLI 调用方式】本宿主（Agent Hub）用 PATH 上的 `shepaw`。本机袋（`store://` 的 device 是 Hub）直接 `shepaw store`；读其他设备的袋、以及 store 以外的命令（`os` / `chat` / `context` / `events` …）由 shim 转到配对 App，闸门与 She 专属限制在手机上裁决。不要 `hub.cli.execute`。She 专属命令会被拒绝。
+【CLI 调用方式】本宿主（Agent Hub）用 PATH 上的 `shepaw`。本机袋（`pouch://` 的 device 是 Hub）直接 `shepaw pouch`；读其他设备的袋、以及 store 以外的命令（`os` / `chat` / `context` / `events` …）由 shim 转到配对 App，闸门与 She 专属限制在手机上裁决。不要 `hub.cli.execute`。She 专属命令会被拒绝。
 ''';
     }
     if (!agent.usesHubCliExecute) return '';
@@ -472,20 +472,20 @@ params：`namespace`、`subcommand`、`flags`（对象，对应去掉 `--` 的�
   static String _storeWriteRule(RemoteAgent agent, {required bool memberMust}) {
     if (agent.usesHubCliExecute) {
       return memberMust
-          ? '9. **产物优先写入 store**：需要持久化/可分享的文件产出时，**必须**调用 ACP `hub.cli.execute`，namespace=store subcommand=write，flags.filename / flags.content（可选 flags.task / flags.desc），session_id=本轮 agent.chat 的 session_id，并在回复中**原样**引用返回的 `[filename](store://...)`；禁止编造 URI；**不要**传 agent_id/owner。读法见下方作用域卡片。仅用户明确指定 OS 路径时才用 hub.cli.execute 调 os.file.write'
-          : '- **产物优先写入 store**：需要持久化/可分享的文件产出时，优先用 ACP `hub.cli.execute` store write，在回复中原样引用返回的 `store://` URI；不要默认写 `/tmp`；**不要**传 agent_id/owner。读法见作用域卡片，勿用 `os.file.read`';
+          ? '9. **产物优先写入 pouch**：需要持久化/可分享的文件产出时，**必须**调用 ACP `hub.cli.execute`，namespace=pouch subcommand=write，flags.filename / flags.content（可选 flags.task / flags.desc），session_id=本轮 agent.chat 的 session_id，并在回复中**原样**引用返回的 `[filename](pouch://...)`；禁止编造 URI；**不要**传 agent_id/owner。读法见下方作用域卡片。仅用户明确指定 OS 路径时才用 hub.cli.execute 调 os.file.write'
+          : '- **产物优先写入 pouch**：需要持久化/可分享的文件产出时，优先用 ACP `hub.cli.execute` pouch write，在回复中原样引用返回的 `pouch://` URI；不要默认写 `/tmp`；**不要**传 agent_id/owner。读法见作用域卡片，勿用 `os.file.read`';
     }
     if (agent.usesHubStoreCli) {
       return memberMust
-          ? '9. **产物优先写入 store**：需要持久化/可分享的文件产出时，**必须**调用 `shepaw store write --filename <名> --content "..."`（可选 `--task` / `--desc`），并在回复中**原样**引用返回的 `[filename](store://...)`；禁止编造 URI；写落 Hub 本机 device。跨设备共享时另写 workspace 挂载路径或群 `shared/`。不要 `hub.cli.execute`'
-          : '- **产物优先写入 store**：需要持久化/可分享的文件产出时，优先用 `shepaw store write`，在回复中原样引用返回的 `store://` URI；写落 Hub 本机 device；跨设备共享另写 workspace/shared；不要默认写 `/tmp`；不要 `hub.cli.execute`';
+          ? '9. **产物优先写入 pouch**：需要持久化/可分享的文件产出时，**必须**调用 `shepaw pouch write --filename <名> --content "..."`（可选 `--task` / `--desc`），并在回复中**原样**引用返回的 `[filename](pouch://...)`；禁止编造 URI；写落 Hub 本机 device。跨设备共享时另写 workspace 挂载路径或群 `shared/`。不要 `hub.cli.execute`'
+          : '- **产物优先写入 pouch**：需要持久化/可分享的文件产出时，优先用 `shepaw pouch write`，在回复中原样引用返回的 `pouch://` URI；写落 Hub 本机 device；跨设备共享另写 workspace/shared；不要默认写 `/tmp`；不要 `hub.cli.execute`';
     }
     final crossDevice = memberMust
-        ? '跨设备共享时**必须**另写一份到群 workspace `shared/` 或 repo 挂载路径（`store://runtime/…` 对其他设备常不可读）。'
+        ? '跨设备共享时**必须**另写一份到群 workspace `shared/` 或 repo 挂载路径（`pouch://runtime/…` 对其他设备常不可读）。'
         : '跨设备共享产物优先写群 workspace `shared/` 或挂载路径。';
     return memberMust
-        ? '9. **产物优先写入 store**：需要持久化/可分享的文件产出时，**必须**调用 `shepaw store write --filename <名> --content "..."`（可选 `--task` / `--desc`），并在回复中**原样**引用返回的 `[filename](store://...)`；禁止编造 URI；**不要**传 agent_id/owner。$crossDevice CLI 不可用时直写 workspace 挂载路径并给出绝对路径。读法见下方作用域卡片。仅用户明确指定 OS 路径时才用 `os.file.write`'
-        : '- **产物优先写入 store**：需要持久化/可分享的文件产出时，优先用 `shepaw store write`，在回复中原样引用返回的 `store://` URI；$crossDevice 不要默认写 `/tmp`；**不要**传 agent_id/owner。读法见作用域卡片，勿用 `os.file.read`';
+        ? '9. **产物优先写入 pouch**：需要持久化/可分享的文件产出时，**必须**调用 `shepaw pouch write --filename <名> --content "..."`（可选 `--task` / `--desc`），并在回复中**原样**引用返回的 `[filename](pouch://...)`；禁止编造 URI；**不要**传 agent_id/owner。$crossDevice CLI 不可用时直写 workspace 挂载路径并给出绝对路径。读法见下方作用域卡片。仅用户明确指定 OS 路径时才用 `os.file.write`'
+        : '- **产物优先写入 pouch**：需要持久化/可分享的文件产出时，优先用 `shepaw pouch write`，在回复中原样引用返回的 `pouch://` URI；$crossDevice 不要默认写 `/tmp`；**不要**传 agent_id/owner。读法见作用域卡片，勿用 `os.file.read`';
   }
 
   static String _setBioCommand(RemoteAgent agent) {
@@ -507,7 +507,7 @@ params：`namespace`、`subcommand`、`flags`（对象，对应去掉 `--` 的�
 群聊历史中，图片/文件/语音消息**只保留文字占位符**（如 "📷 Image: xxx.jpg"），不含实际像素或文件内容。
 当用户追问历史图片/附件「说了什么」「内容是什么」「这张图什么意思」时：
 1. **禁止**凭占位符文字猜测或编造
-2. 有 `store://` 时用 `shepaw store read --uri` 原样读取
+2. 有 `pouch://` 时用 `shepaw pouch read --uri` 原样读取
 3. 否则 `shepaw chat message get --id <message_id> --analyze "用户的具体问题"`（经 App 闸门）
 ''';
     }

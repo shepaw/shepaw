@@ -22,11 +22,11 @@ void main() {
       'owner_id': 'agent-a',
       'source_device': 'aaaaaaaaaaaaaaaa',
       'updated_at': '2026-01-01T00:00:00Z',
-      'soul_uri': 'store://runtime/aaaaaaaaaaaaaaaa/agent-a/soul.md',
-      'memory_uri': 'store://runtime/aaaaaaaaaaaaaaaa/agent-a/memory.md',
-      'workspace_refs': ['store://workspaces/aaaaaaaaaaaaaaaa/ws1/'],
+      'soul_uri': 'pouch://runtime/aaaaaaaaaaaaaaaa/agent-a/soul.md',
+      'memory_uri': 'pouch://runtime/aaaaaaaaaaaaaaaa/agent-a/memory.md',
+      'workspace_refs': ['pouch://workspaces/aaaaaaaaaaaaaaaa/ws1/'],
       'channels': {
-        'ch1': {'session_uri': 'store://runtime/aaaaaaaaaaaaaaaa/agent-a/ch1/sessions/session.json'},
+        'ch1': {'session_uri': 'pouch://runtime/aaaaaaaaaaaaaaaa/agent-a/ch1/sessions/session.json'},
       },
     });
     expect(bundle.ownerId, 'agent-a');
@@ -42,7 +42,7 @@ void main() {
     await mirror.ensureRuntimeScaffold('agent-bundle');
 
     final out = await ContextBundleService.instance.wrapWithContextBundle(
-      'do the thing\n[report.md](store://artifacts/aaaaaaaaaaaaaaaa/t/report.md)',
+      'do the thing\n[report.md](pouch://artifacts/aaaaaaaaaaaaaaaa/t/report.md)',
       ownerId: 'agent-bundle',
       channelId: 'ch-1',
     );

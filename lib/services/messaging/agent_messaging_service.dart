@@ -500,7 +500,7 @@ class AgentMessagingService {
     }
   }
 
-  /// Build user-message metadata: implicit-prompt (store://) hints merged
+  /// Build user-message metadata: implicit-prompt (pouch://) hints merged
   /// with the instruction-set title marker (bubble shows only the title).
   static Map<String, dynamic>? _userMessageMetadata({
     required String content,

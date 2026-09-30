@@ -8,7 +8,7 @@ import '../storage/store_device_target.dart';
 import '../storage/store_protocol.dart';
 import 'storage_browser_screen.dart';
 
-/// Register the pouch-browser jump used by chat `store://` folder links.
+/// Register the pouch-browser jump used by chat `pouch://` folder links.
 ///
 /// Kept out of [StoreOpenService] to avoid an import cycle with this screen.
 void registerStorageDirectoryOpener() {

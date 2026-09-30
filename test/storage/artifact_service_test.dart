@@ -23,7 +23,7 @@ void main() {
           filename: 'report.md',
           space: StoreSpace.artifacts);
       final text = uri.toString();
-      expect(text, 'store://artifacts/0123456789abcdef/task-41/report.md');
+      expect(text, 'pouch://artifacts/0123456789abcdef/task-41/report.md');
       final parsed = ArtifactUri.tryParse(text)!;
       expect(parsed.deviceId, uri.deviceId);
       expect(parsed.taskId, uri.taskId);
@@ -43,7 +43,7 @@ void main() {
       final text = uri.toString();
       expect(
         text,
-        'store://runtime/0123456789abcdef/agent-1/ch-1/artifacts/task-41/report.md',
+        'pouch://runtime/0123456789abcdef/agent-1/ch-1/artifacts/task-41/report.md',
       );
       final parsed = ArtifactUri.tryParse(text)!;
       expect(parsed.ownerId, 'agent-1');
@@ -62,7 +62,7 @@ void main() {
       final text = uri.toString();
       expect(
         text,
-        'store://runtime/0123456789abcdef/peeragent_x_claude/'
+        'pouch://runtime/0123456789abcdef/peeragent_x_claude/'
         'psess_group_abc/wf_w1__step_s1/artifacts/task-41/report.md',
       );
       final parsed = ArtifactUri.tryParse(text)!;
@@ -74,10 +74,10 @@ void main() {
     test('非法 URI 拒绝', () {
       for (final bad in [
         'http://artifacts/0123456789abcdef/t/f',
-        'store://files/0123456789abcdef/t/f', // 非 artifacts/runtime
-        'store://artifacts/not-a-device/t/f',
-        'store://artifacts/0123456789abcdef/t', // 缺文件名
-        'store://artifacts/0123456789abcdef/t/../x',
+        'pouch://files/0123456789abcdef/t/f', // 非 artifacts/runtime
+        'pouch://artifacts/not-a-device/t/f',
+        'pouch://artifacts/0123456789abcdef/t', // 缺文件名
+        'pouch://artifacts/0123456789abcdef/t/../x',
         '',
       ]) {
         expect(ArtifactUri.tryParse(bad), isNull, reason: bad);
@@ -100,7 +100,7 @@ void main() {
 
       final ref = written.reference;
       expect(written.metaWritten, isTrue);
-      expect(ref, startsWith('[report.md](store://runtime/'));
+      expect(ref, startsWith('[report.md](pouch://runtime/'));
       expect(ref, contains('/agent-x/ch-x/artifacts/task-m5/report.md)'));
       expect(ref, contains('— Q2 销售报告，markdown'));
       expect(ref, contains('codebot 产出'));
@@ -115,8 +115,8 @@ void main() {
     test('parseReferences 提取多个引用', () {
       const text = '''
 上游产物：
-- [report.md](store://artifacts/0123456789abcdef/task-41/report.md) — Q2 报告，12KB
-- [data.csv](store://artifacts/fedcba9876543210/task-42/data.csv)
+- [report.md](pouch://artifacts/0123456789abcdef/task-41/report.md) — Q2 报告，12KB
+- [data.csv](pouch://artifacts/fedcba9876543210/task-42/data.csv)
 普通链接 [example](https://example.com) 不算。
 ''';
       final refs = ArtifactService.instance.parseReferences(text);
@@ -128,14 +128,14 @@ void main() {
 
     test('buildAvailableArtifactsSection 生成注入片段', () {
       final refs = ArtifactService.instance.parseReferences(
-          '[report.md](store://artifacts/0123456789abcdef/task-41/report.md) — Q2 报告');
+          '[report.md](pouch://artifacts/0123456789abcdef/task-41/report.md) — Q2 报告');
       final section =
           ArtifactService.instance.buildAvailableArtifactsSection(refs);
       expect(section, startsWith('## 可用产物\n'));
       expect(section, contains('- [report.md]'));
-      expect(section, contains('shepaw store write'));
+      expect(section, contains('shepaw pouch write'));
       expect(section, contains('勿默认写 OS 路径'));
-      expect(section, contains('shepaw store read'));
+      expect(section, contains('shepaw pouch read'));
       expect(
           ArtifactService.instance.buildAvailableArtifactsSection(const []),
           isEmpty);
@@ -144,7 +144,7 @@ void main() {
     test('mergeReferenceLines 去重累积引用行', () {
       final lines = <String>[];
       const ref =
-          '[a.md](store://artifacts/0123456789abcdef/task-41/a.md) — desc';
+          '[a.md](pouch://artifacts/0123456789abcdef/task-41/a.md) — desc';
       ArtifactService.instance.mergeReferenceLines(lines, ref);
       ArtifactService.instance.mergeReferenceLines(lines, ref);
       expect(lines.length, 1);
@@ -154,12 +154,12 @@ void main() {
     test('truncateStepSummary 超长时保留 store 引用行', () {
       final longBody = 'x' * 600;
       const ref =
-          '[report.md](store://artifacts/0123456789abcdef/task-41/report.md)';
+          '[report.md](pouch://artifacts/0123456789abcdef/task-41/report.md)';
       final output = '$longBody\n$ref';
       final summary =
           ArtifactService.instance.truncateStepSummary(output, maxLen: 500);
       expect(summary.length, lessThanOrEqualTo(500));
-      expect(summary, contains('store://artifacts/'));
+      expect(summary, contains('pouch://artifacts/'));
       expect(summary, contains('report.md'));
     });
 

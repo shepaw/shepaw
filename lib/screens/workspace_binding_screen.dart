@@ -112,8 +112,8 @@ class _WorkspaceBindingScreenState extends State<WorkspaceBindingScreen> {
                   children: [
                     Text(
                       _zh
-                          ? '勾选要绑定到此 Agent/群的工作区（store://workspaces/…）。绑定写入 runtime/workspace.md，并更新 ContextBundle。'
-                          : 'Select workspaces to bind (store://workspaces/…). Saved to runtime/workspace.md and ContextBundle.',
+                          ? '勾选要绑定到此 Agent/群的工作区（pouch://workspaces/…）。绑定写入 runtime/workspace.md，并更新 ContextBundle。'
+                          : 'Select workspaces to bind (pouch://workspaces/…). Saved to runtime/workspace.md and ContextBundle.',
                       style: TextStyle(
                         color: colorScheme.onSurfaceVariant,
                         fontSize: 13,

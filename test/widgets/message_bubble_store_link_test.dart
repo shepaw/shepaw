@@ -4,12 +4,12 @@ import 'package:shepaw/l10n/app_localizations.dart';
 import 'package:shepaw/models/message.dart';
 import 'package:shepaw/widgets/message_bubble.dart';
 
-/// 聊天正文里裸 `store://` URI 渲染成可点击链接。
+/// 聊天正文里裸 `pouch://` URI 渲染成可点击链接。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   const surface = Size(400, 800);
-  const uri = 'store://workspaces/aaaaaaaaaaaaaaaa/group_x/snake-game.html';
+  const uri = 'pouch://workspaces/aaaaaaaaaaaaaaaa/group_x/snake-game.html';
 
   Message textMessage(String content) {
     return Message(
@@ -39,12 +39,12 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('bare store:// URI renders as basename link', (tester) async {
+  testWidgets('bare pouch:// URI renders as basename link', (tester) async {
     await pumpBubble(tester, textMessage(uri));
     // 整个段落 plain text 就是 basename：证明已被链接化，而非原文输出。
     expect(find.text('snake-game.html', findRichText: true), findsOneWidget);
     expect(
-      find.textContaining('store://workspaces', findRichText: true),
+      find.textContaining('pouch://workspaces', findRichText: true),
       findsNothing,
     );
   });

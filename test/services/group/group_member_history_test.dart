@@ -220,11 +220,11 @@ void main() {
       expect(pack.kept.map((m) => m.id), contains('o9'));
     });
 
-    test('lists store:// URIs from omitted messages only', () {
+    test('lists pouch:// URIs from omitted messages only', () {
       final messages = [
         _msg(
           id: 'old',
-          content: 'wrote store://workspaces/dev/a.md and store://files/dev/b.txt',
+          content: 'wrote pouch://workspaces/dev/a.md and pouch://files/dev/b.txt',
           fromId: 'other',
           name: 'Other',
         ),
@@ -233,7 +233,7 @@ void main() {
           (i) => _msg(
             id: 'r$i',
             content: i >= 5
-                ? 'recent $i store://workspaces/dev/recent.md'
+                ? 'recent $i pouch://workspaces/dev/recent.md'
                 : 'recent $i',
             fromId: 'other',
             name: 'Other',
@@ -249,10 +249,10 @@ void main() {
         keepOwnCount: 0,
       );
       expect(pack.dropped.map((m) => m.id), contains('old'));
-      expect(pack.artifactUriNote, contains('store://workspaces/dev/a.md'));
-      expect(pack.artifactUriNote, contains('store://files/dev/b.txt'));
+      expect(pack.artifactUriNote, contains('pouch://workspaces/dev/a.md'));
+      expect(pack.artifactUriNote, contains('pouch://files/dev/b.txt'));
       expect(
-        pack.artifactUriNote.contains('store://workspaces/dev/recent.md'),
+        pack.artifactUriNote.contains('pouch://workspaces/dev/recent.md'),
         isFalse,
       );
     });

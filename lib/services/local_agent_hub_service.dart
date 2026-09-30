@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../peer/models/pairing_payload.dart';
-import '../peer/pouch_pair.dart';
+import '../peer/services/peer_pairing_service.dart';
 import '../peer/services/peer_storage_service.dart';
 import 'hub_api_client.dart';
 import 'local_agent_hub_host.dart';
@@ -63,7 +63,7 @@ class LocalAgentHubService {
   }
 
   static Future<void> _defaultPair(PeerPairingInfo info) {
-    return PouchPairing.request(info);
+    return PeerPairingService.instance.requestPairing(info);
   }
 
   Uri get _dashboardUri => Uri.parse(dashboardUrl);
@@ -385,12 +385,12 @@ class LocalAgentHubService {
           .firstWhere((s) => s.isNotEmpty, orElse: () => '');
       if (first.isNotEmpty) return first;
     }
-    final suffix = _host.isWindows
-        ? <String>['.cmd', '.exe', '']
-        : <String>[''];
+    final suffix =
+        _host.isWindows ? <String>['.cmd', '.exe', ''] : <String>[''];
     for (final dir in _host.extraBinDirs()) {
       for (final ext in suffix) {
-        final candidate = joinPathSegments([dir, '$name$ext'], windows: _host.isWindows);
+        final candidate =
+            joinPathSegments([dir, '$name$ext'], windows: _host.isWindows);
         if (_host.fileExists(candidate)) return candidate;
       }
     }

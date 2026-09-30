@@ -1,3 +1,4 @@
+import '../storage/store_protocol.dart';
 /// 任务级产物规划与聚合清单（`shared/tasks/<orchestrationId>/`）。
 class GroupTaskArtifactPlanSlot {
   GroupTaskArtifactPlanSlot({
@@ -42,7 +43,7 @@ class GroupTaskArtifactPlan {
 
   final String orchestrationId;
 
-  /// `shepaw store write --task` 的统一 task id，成员产物应写入此目录。
+  /// `shepaw pouch write --task` 的统一 task id，成员产物应写入此目录。
   final String storeTaskId;
   final List<GroupTaskArtifactPlanSlot> slots;
   final String notes;
@@ -91,7 +92,7 @@ class GroupTaskArtifactPlan {
 
   String toAdminBlock() {
     final lines = <String>[
-      '【产物落点规划】store write 统一使用 --task $storeTaskId',
+      '【产物落点规划】pouch write 统一使用 --task $storeTaskId',
     ];
     if (notes.trim().isNotEmpty) {
       lines.add('说明: ${notes.trim()}');
@@ -181,7 +182,7 @@ class GroupTaskArtifactManifest {
     final merged = [...entries];
     for (final entry in incoming) {
       final uri = entry.uri.trim();
-      if (uri.isEmpty || !uri.startsWith('store://')) continue;
+      if (uri.isEmpty || !isPouchUri(uri)) continue;
       if (seen.add(uri)) merged.add(entry);
     }
     return GroupTaskArtifactManifest(

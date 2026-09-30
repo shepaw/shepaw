@@ -73,6 +73,7 @@ import '../clis/shepaw/os/os_executor.dart' as os_exec;
 import 'local_llm_agent_service.dart';
 import '../models/llm_stream_event.dart';
 import '../models/llm_token_usage.dart';
+import '../storage/store_protocol.dart';
 
 /// Result of a history supplement request, carrying both the agent's
 /// re-answer message and how many history entries were actually sent.
@@ -2208,8 +2209,8 @@ $originalQuestion
       final isImage = mimeType != null && mimeType.startsWith('image/');
       final msgType = isImage ? MessageType.image : MessageType.file;
 
-      // store:// 引用已在本机储物袋中，无需下载；http / file_id 才需要 pending。
-      final isStoreUri = url != null && url.startsWith('store://');
+      // pouch:// 引用已在本机储物袋中，无需下载；http / file_id 才需要 pending。
+      final isStoreUri = url != null && isPouchUri(url);
       final metadata = <String, dynamic>{
         'name': filename ?? 'file',
         'type': mimeType ?? 'application/octet-stream',
@@ -2218,14 +2219,14 @@ $originalQuestion
       };
       if (url != null && url.isNotEmpty) {
         metadata['source_url'] = url;
-        if (isStoreUri) metadata['store_uri'] = url;
+        if (isStoreUri) metadata['pouch_uri'] = url;
       }
       if (resolvedFileId != null) metadata['file_id'] = resolvedFileId;
       if (thumbnailBase64 != null && thumbnailBase64.isNotEmpty) {
         metadata['thumbnail_base64'] = thumbnailBase64;
       }
 
-      // Agent 产物只给 store:// 引用时，向储物袋取真实大小用于展示。
+      // Agent 产物只给 pouch:// 引用时，向储物袋取真实大小用于展示。
       if (isStoreUri && (size == null || size == 0)) {
         try {
           final realSize = await StoreUriReader.instance.sizeOf(url);
@@ -3318,7 +3319,7 @@ $originalQuestion
               .where(ChatHistoryContent.shouldReplay)
               .toList();
 
-      // §6.3：工作流跨步骤累积 store:// 引用，注入后续步骤 instruction。
+      // §6.3：工作流跨步骤累积 pouch:// 引用，注入后续步骤 instruction。
       final workflowArtifactLines = <String>[];
       for (final step in effectiveWorkflow.steps) {
         if (step.status == StepExecutionStatus.completed) {

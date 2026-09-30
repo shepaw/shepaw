@@ -72,7 +72,7 @@ Manual notes
     test('resumeStoreUriFor builds the fixed pouch location', () async {
       final device = await DeviceIdentity.deviceId();
       final uri = await service.resumeStoreUriFor('acp_agent_abcd');
-      expect(uri, 'store://files/$device/acp_agent_abcd/resume.md');
+      expect(uri, 'pouch://files/$device/acp_agent_abcd/resume.md');
     });
 
     test('readResumeMarkdownFromStore reads back what was written', () async {

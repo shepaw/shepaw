@@ -21,7 +21,7 @@ class GroupSessionCreateCommand extends CliCommand {
   String get usage =>
       'shepaw chat group session create --reason topic_shift '
       '--handoff-json \'{"task":{"user_goal":"...","acceptance_criteria":["..."],"status":"in_progress"}}\' '
-      '[--reason-detail "..."] [--handoff-uri store://...] [--no-first-message]';
+      '[--reason-detail "..."] [--handoff-uri pouch://...] [--no-first-message]';
 
   @override
   Map<String, dynamic> getHelp() {

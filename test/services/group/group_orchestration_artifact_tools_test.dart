@@ -32,7 +32,7 @@ void main() {
       final ok = GroupOrchestrationTools.parseArtifactRegisterArgs({
         'artifacts': [
           {
-            'uri': 'store://runtime/dev/gr/ch/artifacts/t/out.md',
+            'uri': 'pouch://runtime/dev/gr/ch/artifacts/t/out.md',
             'label': '报告',
           },
         ],

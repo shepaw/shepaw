@@ -371,7 +371,7 @@ void main() {
       const scopeCard = '## 当前储物袋作用域\n'
           '- schema: v1 · mode: `acp` · owner: device\n'
           '- device: `abc`\n'
-          '- 读: `shepaw store read`';
+          '- 读: `shepaw pouch read`';
 
       test('isHubInternalPromptArtifact 识别纯 Scope Card', () {
         expect(SessionUtils.isHubInternalPromptArtifact(scopeCard), isTrue);

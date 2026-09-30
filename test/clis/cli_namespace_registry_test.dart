@@ -40,7 +40,7 @@ void main() {
             '命令选择器会把它当成「未注册」并静默丢弃',
       );
       // 显式点名，防止将来有人把派生改回硬编码时只保留旧的 11 项。
-      expect(covered, containsAll(['os', 'store', 'workflow']));
+      expect(covered, containsAll(['os', 'pouch', 'workflow']));
     });
 
     test('label 由 id 首字母大写推导，description 取自命名空间', () {
@@ -75,7 +75,7 @@ void main() {
       // 必须包含这两个（旧硬编码列表漏了它们）。
       expect(
         ShepawCLI.instance.builtinNamespaceNames,
-        containsAll(['store', 'workflow']),
+        containsAll(['pouch', 'workflow']),
       );
     });
 

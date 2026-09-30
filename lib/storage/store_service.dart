@@ -100,7 +100,7 @@ class StoreService {
     final existing = _store;
     if (existing != null) return existing;
     final docs = await AppPaths.documents();
-    final root = Directory(p.join(docs.path, 'shepaw', 'store'));
+    final root = Directory(p.join(docs.path, 'shepaw', 'pouch'));
     await root.create(recursive: true);
     return _store = LocalStore(root: root);
   }
@@ -155,7 +155,7 @@ class StoreService {
 
   /// 写入 workspaces（可跨 owner device）。本机直接落盘；他端经属主/master。
   ///
-  /// 返回 `store://workspaces/<homeDeviceId>/<relPath>`。
+  /// 返回 `pouch://workspaces/<homeDeviceId>/<relPath>`。
   Future<String> writeWorkspaceFile({
     required String homeDeviceId,
     required String relPath,

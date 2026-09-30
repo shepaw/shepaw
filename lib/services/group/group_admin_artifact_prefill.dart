@@ -37,7 +37,7 @@ class GroupAdminArtifactPrefill {
       final targets = _selectMembers(results.members, round: round);
       if (targets.isEmpty) return '';
 
-      final lines = <String>['【成员产物摘录 · store read】'];
+      final lines = <String>['【成员产物摘录 · pouch read】'];
       var readCount = 0;
       for (final member in targets) {
         if (readCount >= maxArtifacts) break;

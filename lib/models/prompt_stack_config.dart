@@ -11,7 +11,7 @@ library;
 /// How cognition (Soul / structured memory) is presented in the prompt.
 ///
 /// - [full]: embed text in the system prompt (default).
-/// - [uriOnly]: do not embed; agent reads via Scope Card `store://` + CLI.
+/// - [uriOnly]: do not embed; agent reads via Scope Card `pouch://` + CLI.
 class CognitionInjectMode {
   CognitionInjectMode._();
 

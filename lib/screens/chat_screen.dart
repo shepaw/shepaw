@@ -593,7 +593,7 @@ class _ChatScreenState extends State<ChatScreen>
         break;
       case RestoreQueueToComposerEvent(:final content, :final attachments):
         // 发送失败：队列内容倒回输入框，聚焦让用户重新编辑；
-        // 附件按 store_uri 引用重建（不复制），无 store_uri 时写临时文件兜底。
+        // 附件按 pouch_uri 引用重建（不复制），无 pouch_uri 时写临时文件兜底。
         _messageController.value = TextEditingValue(
           text: content,
           selection: TextSelection.collapsed(offset: content.length),
@@ -611,8 +611,8 @@ class _ChatScreenState extends State<ChatScreen>
 
   /// 发送失败倒回输入框后，重建待发送附件。
   ///
-  /// 优先用附件持久化时写入的 `store_uri` 重建 [StoreAttachmentRef] 引用
-  ///（发送时 `saveAttachment` 直接引用储物袋文件，不复制）；无 store_uri
+  /// 优先用附件持久化时写入的 `pouch_uri` 重建 [StoreAttachmentRef] 引用
+  ///（发送时 `saveAttachment` 直接引用储物袋文件，不复制）；无 pouch_uri
   ///（异常中间态）时把字节写临时文件兜底。
   Future<void> _restorePendingAttachments(
     List<AttachmentData> attachments,
@@ -640,9 +640,9 @@ class _ChatScreenState extends State<ChatScreen>
     if (mounted) setState(() {});
   }
 
-  /// 尝试用 [AttachmentData] 的 `store_uri` 引用方式重建附件；失败返回 false。
+  /// 尝试用 [AttachmentData] 的 `pouch_uri` 引用方式重建附件；失败返回 false。
   Future<bool> _tryRestoreStoreRefAttachment(AttachmentData att) async {
-    final storeUri = att.extraMetadata?['store_uri'] as String?;
+    final storeUri = att.extraMetadata?['pouch_uri'] as String?;
     if (storeUri == null || storeUri.isEmpty) return false;
     try {
       final parsed = parseStoreUri(storeUri);

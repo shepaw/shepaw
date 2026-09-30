@@ -6356,7 +6356,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get jadeSlip_addEvidence => '添加证据';
 
   @override
-  String get jadeSlip_evidenceHint => 'store:// 或产物地址';
+  String get jadeSlip_evidenceHint => 'pouch:// 或产物地址';
 
   @override
   String get jadeSlip_activity => '动态';

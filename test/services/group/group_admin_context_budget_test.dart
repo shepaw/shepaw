@@ -13,7 +13,7 @@ void main() {
       final content = GroupAdminContextBudget.assembleLoopSummarizeContent(
         adminSummarizeBase: 'base',
         lastDispatchNote: 'step1→A',
-        dispatchUri: 'store://workspaces/d/g/round-0001/dispatch.json',
+        dispatchUri: 'pouch://workspaces/d/g/round-0001/dispatch.json',
         memberArtifactsBlock: '',
         structuredResultsBlock: '\n\n【结构化成员结果】\n- A (done): ok',
         structuredResultsCompactBlock: '\n\n【成员结果摘要】\n- A (done): ok',
@@ -36,11 +36,11 @@ void main() {
         bundledContent: '用户：排查外接 agent\n\n## 当前储物袋作用域\n' + ('x' * 3000),
         groupMemoryBlock:
             '[群历史任务总结（shared/memory/latest.md）]\n$longMemory',
-        groupMemoryUri: 'store://workspaces/d/g/shared/memory/latest.md',
+        groupMemoryUri: 'pouch://workspaces/d/g/shared/memory/latest.md',
         crossTaskNotes: '[上一任务摘要]\nDone.\n\n[当前任务定稿需求（requirement.md）]\nReq',
         artifactNotes: '\n\n【已登记产物】\n- big plan block',
-        artifactCompactNotes: '\n\n【产物链接】\n- store://a',
-        requirementUri: 'store://workspaces/d/tasks/o1/requirement.md',
+        artifactCompactNotes: '\n\n【产物链接】\n- pouch://a',
+        requirementUri: 'pouch://workspaces/d/tasks/o1/requirement.md',
         userGoal: '排查外接 agent',
       );
       expect(out.length, lessThanOrEqualTo(500));
@@ -64,7 +64,7 @@ void main() {
     test('buildNudgeContent uses short prefix not full effectiveContent stack', () {
       GroupOrchestrationFeatures.adminContextBudgetChars = 10000;
       final nudge = GroupAdminContextBudget.buildNudgeContent(
-        adminSummarizeBase: '【本轮续编 · 第 2 轮】定稿需求 `store://req`。',
+        adminSummarizeBase: '【本轮续编 · 第 2 轮】定稿需求 `pouch://req`。',
         systemNote: '[SYSTEM] 请重新 group_dispatch',
       );
       expect(nudge, contains('【本轮续编'));
@@ -78,15 +78,15 @@ void main() {
       final content = GroupAdminContextBudget.assembleLoopSummarizeContent(
         adminSummarizeBase: 'base',
         lastDispatchNote: longDispatch,
-        dispatchUri: 'store://workspaces/dev/group/s/round-0001/dispatch.json',
+        dispatchUri: 'pouch://workspaces/dev/group/s/round-0001/dispatch.json',
         memberArtifactsBlock: '',
         structuredResultsBlock: '\n\n【结构化】\n${'y' * 300}',
         structuredResultsCompactBlock: '\n\n【摘要】\n- A (done): short',
         summarizeArtifactNotes: '',
-        summarizeArtifactCompactNotes: '\n\n【产物链接】\n- store://a',
+        summarizeArtifactCompactNotes: '\n\n【产物链接】\n- pouch://a',
         pendingNote: '',
         sessionHandoffSuffix: '',
-        resultsUri: 'store://workspaces/dev/results.json',
+        resultsUri: 'pouch://workspaces/dev/results.json',
       );
       expect(content, contains('摘要模式'));
       expect(content, contains('dispatch.json'));

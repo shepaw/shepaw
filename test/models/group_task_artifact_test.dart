@@ -4,13 +4,13 @@ import 'package:shepaw/models/group_task_artifact.dart';
 void main() {
   group('GroupTaskArtifactManifest', () {
     test('registerAll deduplicates by uri', () {
-      const uri = 'store://runtime/dev/gr/ch/artifacts/t/a.md';
+      const uri = 'pouch://runtime/dev/gr/ch/artifacts/t/a.md';
       final manifest = GroupTaskArtifactManifest(orchestrationId: 'orch-1');
       final merged = manifest.registerAll([
         GroupTaskArtifactEntry(uri: uri, label: 'a'),
         GroupTaskArtifactEntry(uri: uri, label: 'dup'),
         GroupTaskArtifactEntry(
-          uri: 'store://runtime/dev/gr/ch/artifacts/t/b.md',
+          uri: 'pouch://runtime/dev/gr/ch/artifacts/t/b.md',
           label: 'b',
         ),
       ]);

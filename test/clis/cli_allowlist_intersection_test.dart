@@ -18,8 +18,8 @@ void main() {
 
   group('cliIntersectAllowlists', () {
     test('namespace 与更具体的命令取较紧的那条', () {
-      expect(cliIntersectAllowlists({'store'}, {'store.read'}), {'store.read'});
-      expect(cliIntersectAllowlists({'store.read'}, {'store'}), {'store.read'});
+      expect(cliIntersectAllowlists({'pouch'}, {'pouch.read'}), {'pouch.read'});
+      expect(cliIntersectAllowlists({'pouch.read'}, {'pouch'}), {'pouch.read'});
     });
 
     test('点号子命名空间同理', () {
@@ -35,13 +35,13 @@ void main() {
 
     test('不可比的条目被丢弃', () {
       expect(
-        cliIntersectAllowlists({'store', 'help'}, {'os'}),
+        cliIntersectAllowlists({'pouch', 'help'}, {'os'}),
         isEmpty,
       );
       // 只有 store 重合，os / help 各自落单。
       expect(
-        cliIntersectAllowlists({'store', 'os'}, {'store', 'help'}),
-        {'store'},
+        cliIntersectAllowlists({'pouch', 'os'}, {'pouch', 'help'}),
+        {'pouch'},
       );
     });
 
@@ -51,12 +51,12 @@ void main() {
     });
 
     test('null 侧表示该轴不限制，返回另一侧原值', () {
-      expect(cliIntersectAllowlists(null, {'store'}), {'store'});
-      expect(cliIntersectAllowlists({'store'}, null), {'store'});
+      expect(cliIntersectAllowlists(null, {'pouch'}), {'pouch'});
+      expect(cliIntersectAllowlists({'pouch'}, null), {'pouch'});
       expect(cliIntersectAllowlists(null, null), isNull);
       // 空集不是「不限制」——它是明确的「什么都不许」。
       expect(cliIntersectAllowlists(null, const <String>{}), isEmpty);
-      expect(cliIntersectAllowlists(const <String>{}, {'store'}), isEmpty);
+      expect(cliIntersectAllowlists(const <String>{}, {'pouch'}), isEmpty);
     });
 
     test('空集与任何一侧相交都是空集', () {
@@ -69,10 +69,10 @@ void main() {
       // 因此对任意 c，allowed(A∩B, c) == allowed(A, c) && allowed(B, c)。
       // 不靠证明的自觉 —— 用随机集合对拍。
       const corpus = [
-        'store',
-        'store.read',
-        'store.write',
-        'store.list',
+        'pouch',
+        'pouch.read',
+        'pouch.write',
+        'pouch.list',
         'os',
         'os.command.exec',
         'os.file.read',
@@ -109,17 +109,17 @@ void main() {
 
   group('空集语义统一', () {
     test('cliNamespaceVisible 对空集返回 false', () {
-      expect(cliNamespaceVisible(const <String>{}, 'store'), isFalse);
+      expect(cliNamespaceVisible(const <String>{}, 'pouch'), isFalse);
       expect(cliNamespaceVisible(const <String>{}, 'help'), isFalse);
     });
 
     test('cliCommandAllowed 对空集返回 false（与上一条一致）', () {
-      expect(cliCommandAllowed(const <String>{}, 'store'), isFalse);
+      expect(cliCommandAllowed(const <String>{}, 'pouch'), isFalse);
       expect(cliCommandAllowed(const <String>{}, 'help'), isFalse);
     });
 
     test('cliFilterNamespaces 把 null 当不受限、把 {} 当全禁', () {
-      const all = ['store', 'help', 'os'];
+      const all = ['pouch', 'help', 'os'];
       expect(cliFilterNamespaces(all), all);
       // 空集 = 一条都不许 → 回退到 help（模型仍需一个可调用的命名空间）。
       expect(cliFilterNamespaces(all, enabledCliCommands: const {}), ['help']);
@@ -135,8 +135,8 @@ void main() {
       // 旧实现里 isEmpty 会被当成 fullyGranted → 返回 null（枚举全开）。
       expect(
         cliFilterSubcommands(
-          namespaces: const ['store'],
-          enabledCliCommands: const {'store.write'},
+          namespaces: const ['pouch'],
+          enabledCliCommands: const {'pouch.write'},
         ),
         ['write'],
       );
@@ -146,16 +146,16 @@ void main() {
   group('CliExecutionGate 的三态', () {
     test('null = 不受限：放行任意命令', () async {
       final raw = await CliExecutionGate.instance.execute(
-        args: {'namespace': 'store', 'subcommand': 'read', 'flags': {}},
+        args: {'namespace': 'pouch', 'subcommand': 'read', 'flags': {}},
         agentId: 'agent-other',
       );
       final result = _decode(raw);
       expect(result['error']?.toString() ?? '', isNot(contains('not allowed')));
     });
 
-    test('{} = 全禁：连 store.read 也拒绝', () async {
+    test('{} = 全禁：连 pouch.read 也拒绝', () async {
       final raw = await CliExecutionGate.instance.execute(
-        args: {'namespace': 'store', 'subcommand': 'read', 'flags': {}},
+        args: {'namespace': 'pouch', 'subcommand': 'read', 'flags': {}},
         agentId: 'agent-other',
         enabledCliCommands: const {},
       );
@@ -166,14 +166,14 @@ void main() {
 
     test('非空 = 只放行列出的命令', () async {
       final allowed = _decode(await CliExecutionGate.instance.execute(
-        args: {'namespace': 'store', 'subcommand': 'read', 'flags': {}},
+        args: {'namespace': 'pouch', 'subcommand': 'read', 'flags': {}},
         agentId: 'agent-other',
-        enabledCliCommands: const {'store'},
+        enabledCliCommands: const {'pouch'},
       ));
       expect(allowed['error']?.toString() ?? '', isNot(contains('not allowed')));
 
       final denied = _decode(await CliExecutionGate.instance.execute(
-        args: {'namespace': 'store', 'subcommand': 'read', 'flags': {}},
+        args: {'namespace': 'pouch', 'subcommand': 'read', 'flags': {}},
         agentId: 'agent-other',
         enabledCliCommands: const {'os'},
       ));

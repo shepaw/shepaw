@@ -179,7 +179,7 @@ class AlbumPhoto {
   final String personId;
   final String vedaId; // 向量库主键，删除时反查
   final String filePath; // 照片相对应用数据目录的路径（经 LocalFileStorageService.getFullPath 解析）
-  final String? sourceRef; // 来源（message_id / 本地路径 / store_uri）
+  final String? sourceRef; // 来源（message_id / 本地路径 / pouch_uri）
   final String engine; // 产生 embedding 的引擎 id
   final String faceBoxJson; // FaceBox 归一化 JSON
   final int createdAt;

@@ -155,7 +155,7 @@ class SnapshotDecryptCheckResult {
 
 /// 快照引擎（docs/storage_space_plan.md §5.2，M1）。
 ///
-/// 目录布局：`<documents>/shepaw/store/<device_id>/backups/<ts>/`
+/// 目录布局：`<documents>/shepaw/pouch/<device_id>/backups/<ts>/`
 /// - manifest.json / db.sqlite.enc / identity.enc
 ///
 /// M1 范围说明：快照目录只含主库与设备身份；附件按 hash 列入 manifest，
@@ -173,7 +173,7 @@ class SnapshotService {
   Future<Directory> deviceStoreRoot() async {
     final docs = await AppPaths.documents();
     final deviceId = await DeviceIdentity.deviceId();
-    final dir = Directory(p.join(docs.path, 'shepaw', 'store', deviceId));
+    final dir = Directory(p.join(docs.path, 'shepaw', 'pouch', deviceId));
     await dir.create(recursive: true);
     return dir;
   }
@@ -302,7 +302,7 @@ class SnapshotService {
   /// 与 [StoreService] 同根的 LocalStore（本机 loopback 写路径）。
   Future<LocalStore> _openLocalStore() async {
     final docs = await AppPaths.documents();
-    final root = Directory(p.join(docs.path, 'shepaw', 'store'));
+    final root = Directory(p.join(docs.path, 'shepaw', 'pouch'));
     await root.create(recursive: true);
     return LocalStore(root: root);
   }

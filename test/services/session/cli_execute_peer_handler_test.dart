@@ -48,7 +48,7 @@ void main() {
         run: ({required agentId, params}) async => {'ok': true},
       );
       expect(
-        await h.handle({'namespace': 'store', 'subcommand': 'read'}),
+        await h.handle({'namespace': 'pouch', 'subcommand': 'read'}),
         {'ok': false, 'error': 'missing agent_id'},
       );
       expect(
@@ -65,7 +65,7 @@ void main() {
       expect(
         await h.handle({
           'agent_id': 'missing',
-          'namespace': 'store',
+          'namespace': 'pouch',
         }),
         {'ok': false, 'error': 'unknown agent'},
       );

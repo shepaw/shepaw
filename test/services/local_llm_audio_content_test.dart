@@ -8,7 +8,7 @@ import 'package:shepaw/services/messaging/local_llm_handler.dart';
 
 void main() {
   group('LocalLLMHelpers store Scope Card folding', () {
-    test('buildUserMessageContent folds store_uri attachment into Scope Card',
+    test('buildUserMessageContent folds pouch_uri attachment into Scope Card',
         () {
       final att = AttachmentData(
         fileName: 'note.txt',
@@ -17,7 +17,7 @@ void main() {
         bytes: Uint8List.fromList([1, 2, 3, 4]),
         semanticType: 'document',
         extraMetadata: {
-          'store_uri': 'store://files/0123456789abcdef/docs/note.txt',
+          'pouch_uri': 'pouch://files/0123456789abcdef/docs/note.txt',
         },
       );
       final msg = LocalLLMHelpers.buildUserMessageContent(
@@ -26,11 +26,11 @@ void main() {
         false,
       );
       final text = msg['content'] as String;
-      // store:// refs fold into the Scope Card volatile section — no
+      // pouch:// refs fold into the Scope Card volatile section — no
       // per-message [implicit] block anymore.
       expect(text, contains('当前储物袋作用域'));
-      expect(text, contains('shepaw store read'));
-      expect(text, contains('store://files/0123456789abcdef/docs/note.txt'));
+      expect(text, contains('shepaw pouch read'));
+      expect(text, contains('pouch://files/0123456789abcdef/docs/note.txt'));
       expect(text, contains('summarize this'));
       expect(text, isNot(contains('[implicit]')));
     });
@@ -43,7 +43,7 @@ void main() {
         content: '📎 File: note.txt',
         timestampMs: 0,
         metadata: {
-          'store_uri': 'store://files/aaaaaaaaaaaaaaaa/note.txt',
+          'pouch_uri': 'pouch://files/aaaaaaaaaaaaaaaa/note.txt',
           'name': 'note.txt',
         },
       );
@@ -55,16 +55,16 @@ void main() {
       expect(enriched, contains('chat message get'));
     });
 
-    test('enrichHistoryContent text with store:// stays untouched', () {
+    test('enrichHistoryContent text with pouch:// stays untouched', () {
       final m = Message(
         id: 'msg-2',
         from: MessageFrom(id: 'u', type: 'user', name: 'U'),
         type: MessageType.text,
-        content: 'read store://files/aaaaaaaaaaaaaaaa/a.txt please',
+        content: 'read pouch://files/aaaaaaaaaaaaaaaa/a.txt please',
         timestampMs: 0,
       );
       final enriched = LocalLLMHelpers.enrichHistoryContent(m, m.content);
-      expect(enriched, contains('store://files/aaaaaaaaaaaaaaaa/a.txt'));
+      expect(enriched, contains('pouch://files/aaaaaaaaaaaaaaaa/a.txt'));
       expect(enriched, isNot(contains('[implicit]')));
       expect(enriched, isNot(contains('chat message get')));
     });

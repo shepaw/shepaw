@@ -1,47 +1,25 @@
-import 'dart:io' show Platform, Directory, File;
-import 'dart:async';
-import 'package:flutter/services.dart' show rootBundle, AssetManifest;
+import 'dart:io' show Platform;
 import 'package:flutter/widgets.dart';
-import 'package:path/path.dart' as p;
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:uuid/uuid.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'services/local_database_service.dart';
-import 'services/local_api_service.dart';
-import 'services/local_storage_service.dart';
 import 'services/permission_service.dart';
 import 'services/acp_server_service.dart';
-import 'services/remote_agent_service.dart';
 import 'services/notification_service.dart';
 import 'services/update_notification_service.dart';
 import 'services/app_lifecycle_service.dart';
 import 'services/network_monitor_service.dart';
 import 'services/channel_tunnel_service.dart';
-import 'services/skill_registry.dart';
 import 'services/cli_tool_registry.dart';
 import 'clis/shepaw/shepaw_cli.dart';
-import 'services/model_registry.dart';
 import 'services/logger_service.dart';
 import 'services/frame_timing_monitor.dart';
 import 'services/foreground_task_service.dart';
-import 'task/services/scheduled_task_service.dart';
-import 'services/trace_service.dart';
-import 'services/chat_service.dart';
 import 'peer/services/peer_connection_manager.dart';
-import 'peer/services/peer_agent_host_service.dart';
 import 'peer/services/peer_agent_client_service.dart';
-import 'storage/folder_binding_service.dart';
-import 'storage/runtime_retention.dart';
-import 'storage/scheduled_snapshot_service.dart';
-import 'storage/agent_roster.dart';
-import 'storage/device_identity.dart';
 import 'peer/pouch_duties.dart';
-import 'storage/pouch_chat_log.dart';
 import 'storage/pouch_role.dart';
-import 'storage/store_protocol.dart';
 import 'storage/store_service.dart';
-import 'storage/sync_engine.dart';
 import 'services/approval/pending_approval_hub.dart';
 import 'services/approval/pending_approval_item.dart';
 import 'services/approval/approval_reachability_notifier.dart';
@@ -49,10 +27,6 @@ import 'services/chat_navigation_service.dart';
 import 'screens/storage_directory_opener.dart';
 import 'services/composer_draft_service.dart';
 import 'services/task/plan_approval_service.dart';
-import 'she_network/memory_exchange_service.dart';
-import 'she_network/presence_service.dart';
-import 'services/she_service.dart';
-import 'services/dispatch/dispatch_service.dart';
 import 'service_locator.dart';
 import 'services/event/setup_event_bus.dart';
 
@@ -100,32 +74,9 @@ class AppBootstrap {
     // 慢帧埋点：只写超预算的帧，日志页可导出（真机性能问题只能靠现场数据）
     FrameTimingMonitor().start();
 
-    // 初始化本地数据库与示例数据
+    // App 不是储物袋主机。身份在登录的那只袋子里，由 agent-hub 持有。
+    PouchDutyState.bind(const PouchRole.absent());
     await _initializeLocalStorage();
-
-    // 身份以储物袋为准，必须早于任何 Noise 握手。
-    await DeviceIdentity.ensureFromPouch(
-      await StoreService.instance.storeRoot(),
-    );
-    final storeRoot = await StoreService.instance.storeRoot();
-    PouchChatLog.bind(PouchChatLog(storeRoot));
-    final pouchRole = await PouchRoleStore(storeRoot).load();
-    PouchDutyState.bind(pouchRole);
-
-    // 检查远端 Agent 健康状态
-    await _checkRemoteAgentsHealth();
-
-    // 惜宝、名册卡和派发只在主机上。客户端看到的是主机那一份。
-    if (PouchDuties.runsLocalShe(pouchRole.isHost)) {
-      await SheService.instance.ensureSheExists();
-      await _seedPouchSheCard();
-      DispatchService.instance.ensureStarted();
-    }
-
-    // 初始化 ACP Server
-    final acp = await _initializeACPServer();
-
-    // 启动 P2P 连接管理器（后台监听入站连接、自动重连已配对设备）
     await _initializePeerConnection();
 
     // 自动建立 Channel 隧道（若已配置 autoConnect）。
@@ -150,35 +101,12 @@ class AppBootstrap {
     await PendingApprovalHub.instance.hydrate();
     ApprovalReachabilityNotifier.instance.init(navigatorKey: navigatorKey);
     ForegroundTaskService().init();
-    if (PouchDuties.runsScheduler(pouchRole.isHost)) {
-      await ScheduledTaskService().startScheduler();
-    }
 
-    // 目录绑定：FS watcher + 周期兜底（失败不阻断启动）
-    try {
-      await FolderBindingService.instance.startAutoSync();
-    } catch (_) {}
-
-    // 初始化技能注册表
-    await SkillRegistry.instance.initialize();
-
-    // seed 内置技能（ShePaw App Usage Guide），并确保 She 已启用该技能
-    await _seedBuiltinSkills();
-
-    // 初始化外部 CLI 工具注册表并加载进 ShepawCLI
+    // 本机只留 os / help。惜宝、模型和技能在登录的那台主机上。
     await CliToolRegistry.instance.initialize();
     ShepawCLI.instance.reloadExternalTools();
 
-    // 初始化工具模型注册表
-    await ModelRegistry.instance.initialize();
-
-    // 初始化追踪数据库并执行保留期清理
-    await TraceService.instance.cleanup();
-
-    return BootstrapResult(
-      acpServer: acp?.$1,
-      permissionService: acp?.$2,
-    );
+    return const BootstrapResult();
   }
 
   /// Wire [PlanApprovalService] Completer registry into [PendingApprovalHub].
@@ -230,18 +158,13 @@ class AppBootstrap {
     }
   }
 
-  /// 初始化本地存储
+  /// 初始化本地界面库。不种示例 Agent，也不把这台 App 当成袋子。
   static Future<void> _initializeLocalStorage() async {
     try {
       _log.info('Initializing local storage...', tag: 'App');
 
-      // 初始化数据库
       final db = LocalDatabaseService();
-      await db.database; // 触发数据库初始化
-
-      // 初始化示例数据（仅首次启动）
-      final api = LocalApiService();
-      await api.initializeSampleData();
+      await db.database;
 
       await setupEventBusAfterDb();
 
@@ -251,131 +174,13 @@ class AppBootstrap {
     }
   }
 
-  /// 检查远端 Agent 健康状态
-  static Future<void> _checkRemoteAgentsHealth() async {
-    try {
-      _log.info('Checking remote agents health...', tag: 'App');
-
-      final onlineCount = await getIt<RemoteAgentService>().checkAllAgentsHealth(
-        timeout: const Duration(seconds: 3),
-      );
-
-      _log.info('Remote agents health check done, online: $onlineCount', tag: 'App');
-    } catch (e) {
-      _log.error('Remote agents health check failed', tag: 'App', error: e);
-    }
-  }
-
-  /// 初始化 ACP Server。
-  ///
-  /// 成功时返回 `(server, permissionService)`，失败时返回 `null`（调用方据此
-  /// 决定是否赋值全局引用，与重构前"失败则全局变量保持未赋值"的语义一致）。
-  static Future<(ACPServerService, PermissionService)?> _initializeACPServer() async {
-    try {
-      _log.info('Initializing ACP Server...', tag: 'App');
-
-      final storageService = LocalStorageService();
-      final permissionService = PermissionService(storageService);
-      final apiService = LocalApiService();
-
-      // 初始化权限数据库
-      await permissionService.initialize();
-
-      // 读取持久化的端口配置
-      final prefs = await SharedPreferences.getInstance();
-      final port = prefs.getInt(kAcpServerPortKey) ?? kAcpServerDefaultPort;
-
-      // 读取或自动生成连接 Token
-      String? token = prefs.getString(kAcpServerTokenKey);
-      if (token == null || token.isEmpty) {
-        token = const Uuid().v4();
-        await prefs.setString(kAcpServerTokenKey, token);
-        _log.info('Generated new ACP Server token', tag: 'App');
-      }
-
-      final acpServer = ACPServerService(
-        config: ACPServerConfig(
-          // Loopback by default; LAN bind must be an explicit product decision.
-          host: '127.0.0.1',
-          port: port,
-          heartbeatInterval: 30,
-          token: token,
-        ),
-        permissionService: permissionService,
-        apiService: apiService,
-        databaseService: LocalDatabaseService(),
-      );
-
-      // 入站 Agent 的 ui.fileMessage 通知交由 ChatService 走统一写入路径处理。
-      acpServer.onFileMessage = (agentId, agentName, params) =>
-          ChatService().handleInboundFileMessage(agentId, agentName, params);
-
-      // 启动服务器（仅当用户开启了本地服务开关时）
-      final enabled = prefs.getBool(kAcpServerEnabledKey) ?? true;
-      if (enabled) {
-        await acpServer.start();
-        _log.info('ACP Server started (port: $port)', tag: 'App');
-      } else {
-        _log.info('ACP Server disabled by user, skipping start', tag: 'App');
-      }
-
-      return (acpServer, permissionService);
-    } catch (e) {
-      _log.error('ACP Server initialization failed', tag: 'App', error: e);
-      return null;
-    }
-  }
-
-  /// 惜宝的名册卡绑在储物袋上。已有卡不覆盖，避免每次启动把改过的名字写回去。
-  static Future<void> _seedPouchSheCard() async {
-    try {
-      final root = await StoreService.instance.storeRoot();
-      final she = await LocalDatabaseService().getRemoteAgentById(
-        SheService.sheId,
-      );
-      await AgentRosterStore(root).ensurePouchBound(
-        id: SheService.sheId,
-        name: (she == null || she.name.trim().isEmpty)
-            ? SheService.sheName
-            : she.name,
-        avatar: she?.avatar ?? SheService.sheAvatar,
-        engine: 'she',
-      );
-    } catch (e) {
-      _log.error('Pouch She card seed failed', tag: 'App', error: e);
-    }
-  }
-
-  /// 启动 P2P 连接管理器
+  /// 只作为主机的客户端：连上去、收名单、应答存储帧。
   static Future<void> _initializePeerConnection() async {
     try {
       await PeerConnectionManager.instance.start();
-      // Agent-over-Peer：host 暴露本机本地 agent；client 注入配对设备 agent。
-      // 两侧都启动，使任意设备既可作提供方也可作消费方。
-      PeerAgentHostService.instance.start();
       await PeerAgentClientService.instance.start();
-      await ChatService().restorePeerInflightTurns();
-      unawaited(ChatService().drainAllMailboxReplies());
-      // 存储空间（docs/storage_protocol_spec.md v1）：master 帧处理 + staging GC。
       await StoreService.instance.start();
-      RuntimeRetentionService.instance.start();
-      await _publishSystemSkill();
-      // 同步引擎（spec v3 §6）：未同步队列 + 变更游标 + 批量原子上传。
-      await SyncEngine.instance.start(
-        storeRoot: await StoreService.instance.storeRoot(),
-        store: await StoreService.instance.localStore(),
-        transport: StoreServiceTransport(
-          (frame) => StoreService.instance.call(frame),
-          () => StoreService.instance.masterOnline(),
-        ),
-        masterDeviceIdFn: () => StoreService.instance.masterDeviceId(),
-      );
-      // 定期快照（§5.1）：App 打开时检查今日快照，GFS 清理，改密自动新快照。
-      await ScheduledSnapshotService.instance.ensureStarted();
-      // 多 she 网络（§8）：presence 广播 + 记忆交换。
-      await PresenceService.instance.start();
-      await MemoryExchangeService.instance.start();
-      _log.info('P2P connection manager started', tag: 'App');
+      _log.info('P2P client started', tag: 'App');
     } catch (e) {
       _log.error('P2P connection manager start failed', tag: 'App', error: e);
     }
@@ -395,113 +200,11 @@ class AppBootstrap {
         await ChannelTunnelService.instance.startWithConfig(config);
         _log.info('Channel tunnel auto-started', tag: 'App');
       } else {
-        _log.info('Channel tunnel auto-start skipped (no config / disabled)', tag: 'App');
+        _log.info('Channel tunnel auto-start skipped (no config / disabled)',
+            tag: 'App');
       }
     } catch (e) {
       _log.error('Channel tunnel auto-start failed', tag: 'App', error: e);
-    }
-  }
-
-  /// Seed 内置技能「ShePaw App Usage Guide」到技能目录，并确保 She 已启用。
-  ///
-  /// 预发布阶段：每次启动都从 assets 覆盖同步内置技能（改 assets 里的
-  /// SKILL.md / references/*.md 重启即生效）。发布后如需保护用户改动，
-  /// 再改为「仅缺失时写入」。
-  /// She 启用是幂等的：已启用则跳过。单步失败只记日志，绝不阻断启动。
-  static const String _builtinAppGuideSkillTool =
-      'skill_shepaw_app_usage_guide';
-  static const String _builtinAppGuideAssetDir =
-      'assets/skills/app-usage-guide';
-  static const String _builtinSystemSkillDir = 'assets/skills/shepaw-system';
-
-  /// 把系统技能原稿写进本机储物袋。Hub 和配对设备用 `store read` 读这个地址。
-  static Future<void> _publishSystemSkill() async {
-    try {
-      final data = await rootBundle.load('assets/skills/shepaw-system/SKILL.md');
-      final bytes = data.buffer.asUint8List(
-        data.offsetInBytes,
-        data.lengthInBytes,
-      );
-      final store = await StoreService.instance.localStore();
-      await store.putBytes(
-        deviceId: await DeviceIdentity.deviceId(),
-        space: StoreSpace.tools,
-        path: StoreSpace.systemSkillRelPath,
-        bytes: bytes,
-      );
-      _log.info('Published system skill to tools/', tag: 'App');
-    } catch (e) {
-      _log.error('Publish system skill failed', tag: 'App', error: e);
-    }
-  }
-
-  static Future<void> _seedBuiltinSkills() async {
-    final Directory tempDir =
-        await Directory.systemTemp.createTemp('shepaw_builtin_skill_');
-    try {
-      // 枚举 assets 下内置技能目录的全部文件，物化后以目录包导入。
-      // 系统技能不写入某个 Agent 的 enabled_skills。对外全文在储物袋
-      // tools 分区，见 [_publishSystemSkill]。
-      final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
-      var appGuideSeeded = false;
-      for (final assetDir in [
-        _builtinAppGuideAssetDir,
-        _builtinSystemSkillDir,
-      ]) {
-        final assetKeys = manifest
-            .listAssets()
-            .where((k) => k.startsWith('$assetDir/'))
-            .toList();
-        if (assetKeys.isEmpty) {
-          // 目录资产不递归：漏了 pubspec 的子目录条目就会走到这里，
-          // 表现为内置技能静默缺失。
-          _log.warning(
-            'No assets found under $assetDir/, skip seeding '
-            '(check pubspec.yaml assets entries)',
-            tag: 'App',
-          );
-          continue;
-        }
-        final leaf = assetDir.split('/').last;
-        final sourceDir = Directory(p.join(tempDir.path, leaf));
-        for (final key in assetKeys) {
-          final rel = key.substring(assetDir.length + 1);
-          final target = File(p.join(sourceDir.path, rel));
-          await target.parent.create(recursive: true);
-          final data = await rootBundle.load(key);
-          await target.writeAsBytes(
-            data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
-          );
-        }
-        await SkillRegistry.instance
-            .importSkillDirectory(sourceDir.path, overwrite: true);
-        if (assetDir == _builtinAppGuideAssetDir) appGuideSeeded = true;
-        _log.info('Seeded built-in skill from $assetDir', tag: 'App');
-      }
-
-      // 2. 确保 She 已启用该技能——enabled_skills 决定 She 的 prompt 里的
-      //    技能列表与其可调用的技能工具。仅在真的导入成功后才登记，
-      //    否则会把一个不存在的技能写进 She 的 prompt。
-      if (!appGuideSeeded) return;
-      final she =
-          await LocalDatabaseService().getRemoteAgentById(SheService.sheId);
-      if (she != null && !she.enabledSkills.contains(_builtinAppGuideSkillTool)) {
-        final skills = {...she.enabledSkills, _builtinAppGuideSkillTool}.toList();
-        final metadata = Map<String, dynamic>.from(she.metadata);
-        metadata['enabled_skills'] = skills;
-        await LocalDatabaseService()
-            .updateRemoteAgent(she.copyWith(metadata: metadata));
-        _log.info(
-          'Enabled built-in skill $_builtinAppGuideSkillTool for She',
-          tag: 'App',
-        );
-      }
-    } catch (e) {
-      _log.error('Seed built-in skill failed', tag: 'App', error: e);
-    } finally {
-      if (await tempDir.exists()) {
-        await tempDir.delete(recursive: true);
-      }
     }
   }
 }

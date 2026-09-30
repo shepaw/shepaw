@@ -309,7 +309,7 @@ class StoreFileVisual {
   /// `results.json`）、`.keep` 占位、认知记忆记账 `meta.json`
   /// （`cognition/<agentId>/meta.json` 及 peer 子树）。
   ///
-  /// `workspaces/.../members/<agentId>/` 是群成员储物袋（store write 落点），
+  /// `workspaces/.../members/<agentId>/` 是群成员储物袋（pouch write 落点），
   /// 不是内部记账，不能藏掉——否则从产物「在储物袋中显示」会进空白页。
   static bool isInternalStoreFile(String space, String path) {
     final leaf = p.basename(path);

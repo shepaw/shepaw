@@ -4,24 +4,24 @@ import 'store_protocol.dart';
 import 'workspace_binding_service.dart';
 
 final _deviceFirstWorkspace = RegExp(
-  r'^store://([a-f0-9]{16})/workspaces(?:/(.*))?$',
+  r'^pouch://([a-f0-9]{16})/workspaces(?:/(.*))?$',
   caseSensitive: false,
 );
 
-/// Normalize a Hub/App workspace URI to space-first `store://workspaces/<device>/…`.
+/// Normalize a Hub/App workspace URI to space-first `pouch://workspaces/<device>/…`.
 ///
-/// Also accepts the on-disk device-first form `store://<device>/workspaces/…`
+/// Also accepts the on-disk device-first form `pouch://<device>/workspaces/…`
 /// that some UIs copy from the store tree.
 String? canonicalizeStoreWorkspaceUri(String raw) {
   final uri = raw.trim();
-  if (!uri.startsWith('store://')) return null;
+  if (!isPouchUri(uri)) return null;
   final deviceFirst = _deviceFirstWorkspace.firstMatch(uri);
   if (deviceFirst != null) {
     final device = deviceFirst.group(1)!.toLowerCase();
     final rest = (deviceFirst.group(2) ?? '').replaceAll(RegExp(r'/+$'), '');
     return rest.isEmpty
-        ? 'store://workspaces/$device/'
-        : 'store://workspaces/$device/$rest/';
+        ? 'pouch://workspaces/$device/'
+        : 'pouch://workspaces/$device/$rest/';
   }
   return uri.endsWith('/') ? uri : '$uri/';
 }
@@ -31,7 +31,7 @@ String? _workspaceUriFromValue(Object? value) {
   return canonicalizeStoreWorkspaceUri(value);
 }
 
-/// Collect unique `store://workspaces/…` roots advertised on [metadata].
+/// Collect unique `pouch://workspaces/…` roots advertised on [metadata].
 List<String> workspaceUrisFromMetadata(Map<String, dynamic> metadata) {
   final out = <String>[];
   final seen = <String>{};
@@ -78,12 +78,12 @@ Future<List<String>> collectAgentWorkspaceUris(RemoteAgent agent) async {
 String? primaryWorkspaceUri(Iterable<String> uris) {
   for (final uri in uris) {
     final trimmed = uri.trim();
-    if (trimmed.startsWith('store://')) return trimmed;
+    if (isPouchUri(trimmed)) return trimmed;
   }
   return null;
 }
 
-/// Decode a `store://workspaces/<device>/…` URI back to a host absolute path.
+/// Decode a `pouch://workspaces/<device>/…` URI back to a host absolute path.
 ///
 /// Hub encodes `/Users/foo` → `Users/foo` and `C:/Users/foo` → `C/Users/foo`.
 String? absolutePathFromWorkspaceUri(String rawUri) {

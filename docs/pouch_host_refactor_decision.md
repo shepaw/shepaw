@@ -30,9 +30,15 @@
 
 Channel 继续只做密文收件箱和 NAT 隧道，不跑编排，不存放明文。
 
+### 2.1 应用登录一只袋子（2026-09-30）
+
+App 不持有主机逻辑。手机和电脑都先连一台 agent-hub，再从这台机器上的袋子里选一个登录。一台机器可以放多个袋子，一个袋子一个身份，密钥留在那只袋子里。没登录之前不进主页，也不在 App 里把回合跑起来。App 和 Hub 在同一台电脑上时，同样要先选袋子。
+
+袋子目录在 Hub 家目录下的 `pouches/<id>/`。App 自己只记下当前登录的是哪一只、连的是哪台 Hub。
+
 ## 3. 身份
 
-现在没有账号。`device_id` 是本机 Noise 公钥的哈希，身份落在宿主机器上。换机器又不带上这份密钥，就变成另一台设备，配对和 `store://` 路径都要重来。
+现在没有账号。`device_id` 是本机 Noise 公钥的哈希，身份落在宿主机器上。换机器又不带上这份密钥，就变成另一台设备，配对和 `pouch://` 路径都要重来。
 
 重构后：
 
@@ -72,9 +78,9 @@ Channel 继续只做密文收件箱和 NAT 隧道，不跑编排，不存放明�
 
 | 数据 | 现在的权威 | 重构后 |
 |---|---|---|
-| 灵魂、结构化记忆 | `cognition/`；另有 `she_profile.db` / `she_memory.db` / `minds.db` | `cognition/` 不变。这三份库改到 `store://app/shepaw/sqlite/` |
-| 聊天消息、搜索 | App SQLite `messages` | `store://app/shepaw/sqlite/shepaw.db` |
-| 群、编排游标、定时任务、配对名单 | App SQLite | 同一份库；工具输出在 `store://app/shepaw/sqlite/tool_results.db` |
+| 灵魂、结构化记忆 | `cognition/`；另有 `she_profile.db` / `she_memory.db` / `minds.db` | `cognition/` 不变。这三份库改到 `pouch://app/shepaw/sqlite/` |
+| 聊天消息、搜索 | App SQLite `messages` | `pouch://app/shepaw/sqlite/shepaw.db` |
+| 群、编排游标、定时任务、配对名单 | App SQLite | 同一份库；工具输出在 `pouch://app/shepaw/sqlite/tool_results.db` |
 | 主机身份 | 系统钥匙串；快照里另有 `identity.enc` | 以袋子里的身份记录为准，启动时导入 |
 
 `runtime/` 下的 `soul.md` / `memory.md` 仍是人读镜像，不回灌 `cognition/`。
@@ -143,12 +149,14 @@ Hub 仪表盘取码（只取票据、不配对）同样处理：应用可以帮�
 
 主机同步工人 Hub 时，本机 agent 行的 id 用名册卡的 id。群成员存的就是这个 id。名单里不再出现、或设备卸掉之后，这行留下并标成离线，方便旧消息和群成员还能画出名字。惜宝的固定 id 不会被盖掉。
 
-客户端不创建本机惜宝，也不跑定时任务和派发。主机上的时钟不随 App 进后台停，服务本身也会拒绝在主机上暂停、在客户端上启动。客户端执行 CLI 时只放行 `os` 和 `help`；记忆、store、chat、workflow 等数据面命令留在主机。自己的设备不用另开分享开关就能看到主机的惜宝，客户端把她落在 `she-builtin-agent-001` 上，回合发给主机，不在本地跑。已经有一条本机惜宝时不覆盖。客户端不能在本机改群，群的创建和成员变更留在主机。没有 `pouch_role.json` 时仍是主机，惜宝和时钟都在本机。
+客户端不创建本机惜宝，也不跑定时任务和派发。主机上的时钟不随 App 进后台停，服务本身也会拒绝在主机上暂停、在客户端上启动。客户端执行 CLI 时只放行 `os` 和 `help`；记忆、store、chat、workflow 等数据面命令留在主机。自己的设备不用另开分享开关就能看到主机的惜宝，客户端把她落在 `she-builtin-agent-001` 上，回合发给主机，不在本地跑。已经有一条本机惜宝时不覆盖。客户端不能在本机改群，群的创建和成员变更留在主机。没有登录记录时 App 不是主机，回合不会在本机开跑。
 
-已接上的回合交接点（默认仍是主机，没有 `pouch_role.json` 时行为与原来一样）：
+客户端启动时不再把主机运行时拉起来：不检查工人健康、不开 ACP、不暴露本机 Agent、不恢复本机回合、不同步第二份袋子、不播 presence、不做记忆交换、不种技能和模型、不跑快照和目录绑定。连接、通知，以及本机的 `os` / `help` 仍在。
+
+已接上的回合交接点（App 登录一只袋子之后，把回合交给那台 agent-hub）：
 
 - `.system/pouch_role.json` 写成 `client` 并带上 `host_peer_id` 后，这台 App 不再本地跑群编排，也不再本地跑本机 LLM 回合。
 - 群消息走 `pouch_group_turn`，本机 Agent 回合走 `pouch_dm_turn`。主机确认自己是 host 之后，调用现有的 `ChatService`，再用 `pouch_turn_event` 把流式块送回。需要用户确认时，主机发 `kind: interaction`，客户端用原来的确认回调问用户，再以 `pouch_interaction_resp` 把结果送回；本机工具确认走 `os_tool`。三十分钟没人答就按没确认继续。
-- 应用库直接建在 `store://app/shepaw/sqlite/`：`shepaw.db`、`tool_results.db`、`she_profile.db`、`she_memory.db`、`minds.db`、`agent_traces.db`，以及 `agent_memory_*.db`。不从文稿目录或 `.system/sqlite/` 搬旧文件。界面读消息仍只走 `ChatService`：本机读这份库，客户端用 `pouch_chat_read` 向主机要同一页。`.system/chat/` 的追加日志还不是读的来源。
+- 应用库直接建在 `pouch://app/shepaw/sqlite/`：`shepaw.db`、`tool_results.db`、`she_profile.db`、`she_memory.db`、`minds.db`、`agent_traces.db`，以及 `agent_memory_*.db`。不从文稿目录或 `.system/sqlite/` 搬旧文件。界面读消息仍只走 `ChatService`：本机读这份库，客户端用 `pouch_chat_read` 向主机要同一页。`.system/chat/` 的追加日志还不是读的来源。
 - 客户端回合可以带附件。先用 `pouch_file_begin` / `pouch_file_chunk` / `pouch_file_end` 把字节交给主机（单片 48KB，整文件不超过 20MB）。主机确认自己是 host 之后写入 `runtime/…/attachments/<sha256>`，再把同一份字节交给现有的 `ChatService`。单聊和群聊都在主机的消息库里留下附件气泡。这些帧和回合帧都要写进 `PeerConnection` 的控制帧名单，否则到不了另一端。
-- 客户端扫码或粘贴配对链接时，先给用户看指纹。确认后把票据交给主机，自己不发起握手，也不把对方写进本机名单。主机用储物袋的密钥去连，外网优先走二维码里的 `channel` 端点。通讯录和会话列表读的是主机的设备名单。没有 `pouch_role.json` 时仍在本机配对。
+- 客户端扫码或粘贴配对链接时，先给用户看指纹。确认后把票据交给主机，自己不发起握手，也不把对方写进本机名单。主机用储物袋的密钥去连，外网优先走二维码里的 `channel` 端点。通讯录和会话列表读的是主机的设备名单。App 连上本机 agent-hub 时用自己的设备密钥配对，不把袋子的密钥装进 App。

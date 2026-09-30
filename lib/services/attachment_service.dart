@@ -14,9 +14,10 @@ import '../storage/runtime_mirror_service.dart';
 import '../storage/runtime_paths.dart';
 import 'messaging/message_implicit_prompt.dart';
 import 'package:uuid/uuid.dart';
+import '../storage/store_protocol.dart';
 
 /// 附件服务：聊天附件经 store 写入
-/// `runtime/<owner>/<channel>/attachments/<hash>`，消息 metadata 存 `store_uri`。
+/// `runtime/<owner>/<channel>/attachments/<hash>`，消息 metadata 存 `pouch_uri`。
 /// 旧 `files/chat/<hash>` URI 仍可读。
 class AttachmentService {
   final LocalDatabaseService _database;
@@ -29,22 +30,22 @@ class AttachmentService {
   static AttachmentService get shared =>
       AttachmentService(LocalDatabaseService());
 
-  /// 静态解析附件文件（`store_uri` → 本机 [File]）。
+  /// 静态解析附件文件（`pouch_uri` → 本机 [File]）。
   static Future<File?> resolveFile(Map<String, dynamic>? metadata) {
     if (metadata == null) return Future.value(null);
     return shared.resolveAttachmentFile(metadata);
   }
 
-  /// 从消息 metadata 提取 `store://` 引用。
+  /// 从消息 metadata 提取 `pouch://` 引用。
   ///
-  /// 优先显式 `store_uri`；兼容旧消息只把 `store://` 放在 `source_url`
+  /// 优先显式 `pouch_uri`；兼容旧消息只把 `pouch://` 放在 `source_url`
   /// （Agent 产物 `ui.fileMessage` 链路）的情况。非 store 引用返回 null。
   static String? storeUriOf(Map<String, dynamic>? metadata) {
     if (metadata == null) return null;
-    final explicit = metadata['store_uri'] as String?;
+    final explicit = metadata['pouch_uri'] as String?;
     if (explicit != null && explicit.isNotEmpty) return explicit;
     final url = metadata['source_url'] as String?;
-    if (url != null && url.startsWith('store://')) return url;
+    if (url != null && isPouchUri(url)) return url;
     return null;
   }
 
@@ -231,7 +232,7 @@ class AttachmentService {
             );
 
       final attachmentData = {
-        'store_uri': resolvedUri,
+        'pouch_uri': resolvedUri,
         'name': name,
         'type': fileType,
         'size': fileSize,
@@ -321,7 +322,7 @@ class AttachmentService {
       );
 
       final metadata = {
-        'store_uri': storeUri,
+        'pouch_uri': storeUri,
         'name': path.basename(filePath),
         'type': 'audio',
         'size': bytes.length,
@@ -401,7 +402,7 @@ class AttachmentService {
       final metadata = message.metadata;
       if (metadata == null) return null;
 
-      final storeUri = metadata['store_uri'] as String?;
+      final storeUri = metadata['pouch_uri'] as String?;
       if (storeUri == null || storeUri.isEmpty) return null;
 
       final file = await StoreAttachmentRef.fileFromStoreUri(storeUri);
@@ -419,7 +420,7 @@ class AttachmentService {
       final sizeBytes = metadata['size'] as int? ?? bytes.length;
       final mimeType = _getMimeType(fileName, semanticType);
 
-      // Collect extra metadata (e.g. duration_ms for audio, store_uri for pouch)
+      // Collect extra metadata (e.g. duration_ms for audio, pouch_uri for pouch)
       Map<String, dynamic>? extra;
       void putExtra(String key, dynamic value) {
         extra ??= <String, dynamic>{};
@@ -428,7 +429,7 @@ class AttachmentService {
       if (metadata.containsKey('duration_ms')) {
         putExtra('duration_ms', metadata['duration_ms']);
       }
-      putExtra('store_uri', storeUri);
+      putExtra('pouch_uri', storeUri);
       final implicit = MessageImplicitPrompt.fromMetadata(metadata);
       if (implicit != null) {
         putExtra(MessageImplicitPrompt.metaKey, implicit);
@@ -512,7 +513,7 @@ class AttachmentService {
     final fileName = attachmentData['name'] ?? 'Unknown file';
     final fileType = attachmentData['type'] ?? 'file';
     final fileSize = attachmentData['size'] ?? 0;
-    final storeUri = attachmentData['store_uri'] as String?;
+    final storeUri = attachmentData['pouch_uri'] as String?;
 
     // 格式化文件大小
     String formattedSize;

@@ -60,7 +60,7 @@ void main() {
           type: 'store.file.changed',
           payload: {
             'summary': 'notes.md 已修改',
-            'uri': 'store://notes.md',
+            'uri': 'pouch://notes.md',
             'change': change,
           },
           scope: const EventScope(ownerId: 'owner_dedupe'),

@@ -116,10 +116,10 @@ class HubCliExecute {
             'Jade slips (玉简) are namespace="slip" on this method. '
             'Checking an item submits it; the person accepts. '
             'Ask namespace "slip" for subcommands. The system skill is the '
-            'store://tools/.../SKILL.md URI on the scope card; read it with '
-            'namespace="store" subcommand="read".',
+            'pouch://tools/.../SKILL.md URI on the scope card; read it with '
+            'namespace="pouch" subcommand="read".',
         'params': {
-          'namespace': 'store',
+          'namespace': 'pouch',
           'subcommand': 'write',
           'flags': <String, dynamic>{},
           'session_id': '<agent.chat session_id>',

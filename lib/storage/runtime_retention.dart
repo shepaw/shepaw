@@ -12,7 +12,7 @@ import 'store_service.dart';
 
 /// 从文本里抽出「本机 runtime 附件」的相对路径。
 ///
-/// 消息 metadata / 正文里的 `store://runtime/<device>/…/attachments/…`。
+/// 消息 metadata / 正文里的 `pouch://runtime/<device>/…/attachments/…`。
 /// 其他分区、其他 device 忽略。
 Set<String> referencedRuntimeAttachmentPaths(
   String deviceId,
@@ -20,7 +20,7 @@ Set<String> referencedRuntimeAttachmentPaths(
 ) {
   final out = <String>{};
   final re = RegExp(
-    r'''store://runtime/[0-9a-f]{16}/[^\s"'`<>)\]]+''',
+    r'''pouch://runtime/[0-9a-f]{16}/[^\s"'`<>)\]]+''',
   );
   for (final text in texts) {
     for (final match in re.allMatches(text)) {

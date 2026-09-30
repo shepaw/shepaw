@@ -134,7 +134,7 @@ void main() {
         expect(audioNoDuration.textDescription, '[Audio: clip.mp3 (1.0 KB)]');
       });
 
-      test('should include store_uri markdown link without CLI lecture', () {
+      test('should include pouch_uri markdown link without CLI lecture', () {
         final storeFile = AttachmentData(
           fileName: 'note.txt',
           mimeType: 'text/plain',
@@ -142,8 +142,8 @@ void main() {
           bytes: Uint8List.fromList('hello'.codeUnits),
           semanticType: 'document',
           extraMetadata: {
-            'store_uri':
-                'store://files/0123456789abcdef/docs/note.txt',
+            'pouch_uri':
+                'pouch://files/0123456789abcdef/docs/note.txt',
           },
         );
         final desc = storeFile.textDescription;
@@ -151,8 +151,8 @@ void main() {
         expect(
             desc,
             contains(
-                '[note.txt](store://files/0123456789abcdef/docs/note.txt)'));
-        expect(desc, isNot(contains('shepaw store read')));
+                '[note.txt](pouch://files/0123456789abcdef/docs/note.txt)'));
+        expect(desc, isNot(contains('shepaw pouch read')));
         expect(desc, isNot(contains('[implicit]')));
       });
     });
@@ -263,17 +263,17 @@ void main() {
           bytes: Uint8List.fromList([1]),
           semanticType: 'file',
           extraMetadata: {
-            'store_uri': 'store://runtime/dev1/a/ch/attachments/x',
+            'pouch_uri': 'pouch://runtime/dev1/a/ch/attachments/x',
             'implicit_prompt': 'hint',
-            'store_uris': ['store://runtime/dev1/a/ch/attachments/x'],
+            'pouch_uris': ['pouch://runtime/dev1/a/ch/attachments/x'],
             'duration_ms': 12,
           },
         );
         final ref = att.toPeerRefJson('fid', stripClientStoreUri: true);
         final extra = ref['extra'] as Map<String, dynamic>;
-        expect(extra.containsKey('store_uri'), isFalse);
+        expect(extra.containsKey('pouch_uri'), isFalse);
         expect(extra.containsKey('implicit_prompt'), isFalse);
-        expect(extra.containsKey('store_uris'), isFalse);
+        expect(extra.containsKey('pouch_uris'), isFalse);
         expect(extra['duration_ms'], 12);
       });
     });

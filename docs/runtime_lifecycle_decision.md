@@ -12,7 +12,7 @@
 |---|---|---|
 | 会话 | `sessions/session.json` + `sessions/archive-<utc>.json` | 每轮归档一份，**无上限** |
 | 附件 | `…/attachments/<sha256>` | 每收到一个附件一份，**无清理** |
-| 产物 | `…/artifacts/<task>/<file>`（+ `.meta.json` sidecar） | agent 每次 `store write` 一份 |
+| 产物 | `…/artifacts/<task>/<file>`（+ `.meta.json` sidecar） | agent 每次 `pouch write` 一份 |
 | 镜像 | `soul.md` / `memory.md` / `workspace.md` | 覆盖写，但每次写都进 `.versions` |
 | manifest | `context.manifest.json` | 覆盖写 |
 
@@ -58,7 +58,7 @@
 
 聊天权威在 SQLite。`sessions/session.json` 只是单向镜像（`RuntimeMirrorService`，
 失败不影响聊天，不从文件回灌），窗口本身有上限。真正只增不减的是滚动出去的
-`archive-*.json`。附件字节被消息 `store_uri` 引用，按时间删会让旧消息里的文件打不开。
+`archive-*.json`。附件字节被消息 `pouch_uri` 引用，按时间删会让旧消息里的文件打不开。
 
 - **产物 `artifacts/<task>/`：不删**。接近配额只提示。
 - **`session.json`：不删**。

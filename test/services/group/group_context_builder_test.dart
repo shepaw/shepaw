@@ -97,7 +97,7 @@ void main() {
       expect(cli['note'], contains('no shepaw function tool'));
     });
 
-    test('Hub peer engine gets shepaw store cli hint, not hub.cli.execute', () {
+    test('Hub peer engine gets shepaw pouch cli hint, not hub.cli.execute', () {
       final hub = _agent(id: 'h1', name: 'Cursor', hubPeer: true);
       final ctx = GroupContextBuilder.build(
         channelId: 'ch1',
@@ -109,7 +109,7 @@ void main() {
         currentAgent: hub,
       );
       final cli = ctx['cli'] as Map<String, dynamic>;
-      expect(cli['method'], 'shepaw store');
+      expect(cli['method'], 'shepaw pouch');
       expect(cli['note'], contains('Hub'));
       expect(cli['note'], contains('forwarded to the paired App'));
       expect(cli['note'], contains('Do not use hub.cli.execute'));

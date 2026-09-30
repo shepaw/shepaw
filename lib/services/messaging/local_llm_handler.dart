@@ -173,10 +173,10 @@ class LocalLLMHelpers {
       if (m.metadata!['duration_ms'] != null) {
         info['duration_ms'] = m.metadata!['duration_ms'];
       }
-      final storeUri = m.metadata!['store_uri'] as String?;
+      final storeUri = m.metadata!['pouch_uri'] as String?;
       if (storeUri != null && storeUri.isNotEmpty) {
-        info['store_uri'] = storeUri;
-        info['store_read_command'] = 'shepaw store read --uri $storeUri';
+        info['pouch_uri'] = storeUri;
+        info['pouch_read_command'] = 'shepaw pouch read --uri $storeUri';
       }
     }
     return info;
@@ -217,7 +217,7 @@ class LocalLLMHelpers {
   /// - Audio is embedded as OpenAI `input_audio` for non-Claude providers.
   ///   Claude Messages API has no stable audio-input block, so audio becomes a
   ///   text description there (same as other non-image files).
-  /// - store:// refs **from this turn** fold into a Scope Card · 本轮 URI
+  /// - pouch:// refs **from this turn** fold into a Scope Card · 本轮 URI
   ///   section ([additionalStoreUris] + current text/attachments). History
   ///   URIs stay in their original messages (already visible) so we do not
   ///   re-append the card on every follow-up — that would bust prefix cache

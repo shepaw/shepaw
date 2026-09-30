@@ -813,7 +813,7 @@ class JadeSlipService {
     );
   }
 
-  /// 本机 store:// URI，Agent 也可用 `shepaw store read`。
+  /// 本机 pouch:// URI，Agent 也可用 `shepaw pouch read`。
   Future<String> uriOf(JadeSlip slip) async {
     return storeUriWithRef(StoreSpace.slips, slip.deviceId, slip.relPath);
   }
