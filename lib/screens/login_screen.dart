@@ -6,6 +6,7 @@ import '../services/logger_service.dart';
 import '../services/password_service.dart';
 import '../services/biometric_service.dart';
 import '../services/desktop_window_auto_size.dart';
+import '../storage/pouch_login.dart';
 import '../storage/pouch_session.dart';
 import '../theme/app_theme.dart';
 
@@ -116,8 +117,15 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
     final session = await PouchSessionStore.readActive();
     if (!mounted) return;
+    final start = afterDeviceUnlock(
+      session,
+      nowMs: DateTime.now().millisecondsSinceEpoch,
+    );
+    if (start == AppStart.home && session != null) {
+      PouchChannel.install(session);
+    }
     Navigator.of(context).pushReplacementNamed(
-      session == null ? '/pouch' : '/home',
+      start == AppStart.home ? '/home' : '/pouch',
     );
   }
 

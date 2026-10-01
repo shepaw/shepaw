@@ -16,6 +16,7 @@ import '../../services/noise_identity.dart';
 import '../../services/noise/noise_session.dart';
 import '../../services/noise/noise_envelope.dart';
 import '../../services/logger_service.dart';
+import '../../storage/pouch_login.dart';
 import '../../storage/store_binary_frame.dart';
 import '../models/paired_peer.dart';
 import '../models/peer_message.dart';
@@ -152,6 +153,12 @@ class PeerConnection {
     'pouch_file_chunk',
     'pouch_file_end',
     'pouch_file_ack',
+    'pouch_login',
+    'pouch_login_resp',
+    'pouch_login_required',
+    'pouch_list',
+    'pouch_list_resp',
+    'pouch_sealed',
     'pouch_pair_req',
     'pouch_pair_resp',
     'pouch_peer_list_req',
@@ -310,7 +317,8 @@ class PeerConnection {
 
   /// 发送控制消息（agent-over-peer）。[json] 必须含 `type` 字段（agent_* 之一）。
   Future<void> sendControl(Map<String, dynamic> json) async {
-    await _serializedSend(Uint8List.fromList(utf8.encode(jsonEncode(json))));
+    final outgoing = await PouchChannel.sealIfNeeded(json);
+    await _serializedSend(Uint8List.fromList(utf8.encode(jsonEncode(outgoing))));
     _lastActivity = DateTime.now();
   }
 
@@ -512,7 +520,10 @@ class PeerConnection {
         _lastReceivedAt = _lastActivity;
         return;
       }
-      final json = jsonDecode(utf8.decode(plaintext)) as Map<String, dynamic>;
+      var json = jsonDecode(utf8.decode(plaintext)) as Map<String, dynamic>;
+      if (json['type'] == 'pouch_sealed') {
+        json = await PouchChannel.openIfSealed(json);
+      }
 
       _lastActivity = DateTime.now();
       _lastReceivedAt = _lastActivity;

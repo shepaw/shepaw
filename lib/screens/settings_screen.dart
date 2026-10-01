@@ -12,6 +12,8 @@ import 'language_settings_screen.dart';
 import 'appearance_settings_screen.dart';
 import 'location_settings_screen.dart';
 import '../services/location_service.dart';
+import '../storage/pouch_login.dart';
+import '../storage/pouch_session.dart';
 import 'inference_log_screen.dart';
 import 'log_viewer_screen.dart';
 import 'user_profile_settings_screen.dart';
@@ -583,24 +585,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
               style: const TextStyle(color: Colors.red),
             ),
             onTap: () {
+              final screenContext = context;
               showDialog(
-                context: context,
-                builder: (context) {
-                  final dialogL10n = AppLocalizations.of(context);
+                context: screenContext,
+                builder: (dialogContext) {
+                  final dialogL10n = AppLocalizations.of(dialogContext);
                   return AlertDialog(
                     title: Text(dialogL10n.logout_confirmTitle),
                     content: Text(dialogL10n.logout_confirmContent),
                     actions: [
                       TextButton(
-                        onPressed: () => Navigator.pop(context),
+                        onPressed: () => Navigator.pop(dialogContext),
                         child: Text(dialogL10n.common_cancel),
                       ),
                       TextButton(
-                        onPressed: () {
-                          Navigator.of(context).pushNamedAndRemoveUntil(
-                            '/login',
-                            (route) => false,
-                          );
+                        onPressed: () async {
+                          Navigator.pop(dialogContext);
+                          await PouchSessionStore(await PouchSessionStore.appFile())
+                              .forget();
+                          PouchChannel.clear();
+                          if (screenContext.mounted) {
+                            Navigator.of(screenContext).pushNamedAndRemoveUntil(
+                              '/login',
+                              (route) => false,
+                            );
+                          }
                         },
                         child: Text(
                           dialogL10n.drawer_logout,

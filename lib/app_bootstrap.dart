@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 import 'package:flutter/widgets.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -18,7 +19,9 @@ import 'services/foreground_task_service.dart';
 import 'peer/services/peer_connection_manager.dart';
 import 'peer/services/peer_agent_client_service.dart';
 import 'peer/pouch_duties.dart';
+import 'storage/pouch_login.dart';
 import 'storage/pouch_role.dart';
+import 'storage/pouch_session.dart';
 import 'storage/store_service.dart';
 import 'services/approval/pending_approval_hub.dart';
 import 'services/approval/pending_approval_item.dart';
@@ -74,8 +77,10 @@ class AppBootstrap {
     // 慢帧埋点：只写超预算的帧，日志页可导出（真机性能问题只能靠现场数据）
     FrameTimingMonitor().start();
 
-    // App 不是储物袋主机。身份在登录的那只袋子里，由 agent-hub 持有。
+    // App 不是储物袋主机。身份在登录的那只袋子里。
+    // 登录态还在时先装上通道密钥，后面的重连才会用 token 密封业务帧。
     PouchDutyState.bind(const PouchRole.absent());
+    await _restorePouchLogin();
     await _initializeLocalStorage();
     await _initializePeerConnection();
 
@@ -88,6 +93,12 @@ class AppBootstrap {
 
     // 初始化通知与生命周期相关服务
     AppLifecycleService().init();
+    AppLifecycleService().onLock.listen((_) {
+      PouchChannel.clear();
+    });
+    AppLifecycleService().onResume.listen((_) {
+      unawaited(_restorePouchLogin());
+    });
     // 监听网络变化：切网后主动重连隧道与 P2P 连接，避免半开连接拖到活性超时
     NetworkMonitorService().init();
     await NotificationService().init();
@@ -155,6 +166,23 @@ class AppBootstrap {
     if (Platform.isWindows || Platform.isLinux) {
       sqfliteFfiInit();
       databaseFactory = databaseFactoryFfi;
+    }
+  }
+
+  /// 手机和电脑同一条：过期或没有 token 就不装通道，启动页会去登录袋子。
+  static Future<void> _restorePouchLogin() async {
+    try {
+      final session = await PouchSessionStore.readActive();
+      if (session != null &&
+          session.isLoggedIn(DateTime.now().millisecondsSinceEpoch)) {
+        PouchChannel.install(session);
+        _log.info('Pouch login restored for ${session.pouchId}', tag: 'App');
+      } else {
+        PouchChannel.clear();
+      }
+    } catch (e) {
+      PouchChannel.clear();
+      _log.error('Pouch login restore failed', tag: 'App', error: e);
     }
   }
 

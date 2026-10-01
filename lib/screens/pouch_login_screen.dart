@@ -5,6 +5,8 @@ import '../peer/services/peer_storage_service.dart';
 import '../services/local_agent_hub_models.dart';
 import '../services/local_agent_hub_service.dart';
 import '../storage/pouch_catalog.dart';
+import '../storage/pouch_login.dart';
+import '../storage/pouch_login_client.dart';
 import '../storage/pouch_session.dart';
 
 /// 先连上这台机器的 agent-hub，再选一个袋子进入。
@@ -39,9 +41,18 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
   }
 
   Future<void> _reload() async {
-    final pouches = await _catalog.list();
+    final local = await _catalog.list();
     if (!mounted) return;
-    setState(() => _pouches = pouches);
+    setState(() => _pouches = local);
+    final remote = await requestPouchList().catchError(
+      (_) => const <PouchDescriptor>[],
+    );
+    if (!mounted || remote.isEmpty) return;
+    final byId = <String, PouchDescriptor>{
+      for (final pouch in remote) pouch.id: pouch,
+      for (final pouch in local) pouch.id: pouch,
+    };
+    setState(() => _pouches = byId.values.toList());
   }
 
   Future<void> _create() async {
@@ -82,14 +93,21 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
       if (peer == null) {
         throw StateError('还没连上这台主机');
       }
-      await PouchSessionStore(await PouchSessionStore.appFile()).save(
-        PouchSession(
-          hubUrl: _hub.dashboardUrl,
-          pouchId: pouch.id,
-          pouchName: pouch.name,
-          hostPeerId: peer.id,
-        ),
+      final grant = await requestPouchLogin(
+        hostPeerId: peer.id,
+        pouchId: pouch.id,
       );
+      final session = PouchSession(
+        hubUrl: _hub.dashboardUrl,
+        pouchId: pouch.id,
+        pouchName: pouch.name,
+        hostPeerId: peer.id,
+        token: grant.token,
+        sessionId: grant.sessionId,
+        expiresAtMs: grant.expiresAtMs,
+      );
+      await PouchSessionStore(await PouchSessionStore.appFile()).save(session);
+      PouchChannel.install(session);
       if (!mounted) return;
       Navigator.of(context).pushReplacementNamed('/home');
     } on LocalHubException catch (e) {
@@ -117,7 +135,7 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
         padding: const EdgeInsets.all(24),
         children: [
           Text(
-            '这台机器上的袋子都在 agent-hub 里。选一个登录。',
+            '手机和电脑登录同一只袋子。成功之后登录态会留下来，业务帧用这枚 token 加密。',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: 16),

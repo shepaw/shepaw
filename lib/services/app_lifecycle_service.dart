@@ -29,6 +29,12 @@ class AppLifecycleService with WidgetsBindingObserver {
   final StreamController<Duration> _onResumeController =
       StreamController<Duration>.broadcast();
 
+  /// 进入后台或锁屏。用来把袋子登录密钥从内存清掉。
+  final StreamController<void> _onLockController =
+      StreamController<void>.broadcast();
+
+  Stream<void> get onLock => _onLockController.stream;
+
   /// Stream that fires when the app resumes from background,
   /// carrying the duration it was backgrounded.
   Stream<Duration> get onResume => _onResumeController.stream;
@@ -66,6 +72,12 @@ class AppLifecycleService with WidgetsBindingObserver {
     _emitLifecycleEvent(state);
     isInForeground = state == AppLifecycleState.resumed;
 
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      if (_backgroundedAtMs == null && !_onLockController.isClosed) {
+        _onLockController.add(null);
+      }
+    }
     if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
       // Record when the app entered background (only on the first transition).
       _backgroundedAtMs ??= DateTime.now().millisecondsSinceEpoch;
@@ -114,6 +126,7 @@ class AppLifecycleService with WidgetsBindingObserver {
       _observing = false;
     }
     _onResumeController.close();
+    _onLockController.close();
     _activeChannelController.close();
   }
 }
