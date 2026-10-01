@@ -266,6 +266,8 @@ class PeerHistoryMessage {
   /// Hub history protocol annotations (`ui_hidden`, `history_exclude`, `kind`).
   final Map<String, dynamic>? metadata;
 
+  final String? replyTo;
+
   PeerHistoryMessage({
     required this.role,
     required this.content,
@@ -275,6 +277,7 @@ class PeerHistoryMessage {
     this.progressTitle,
     this.progressAutoCollapse,
     this.metadata,
+    this.replyTo,
   });
 
   static PeerHistoryMessage? fromJson(Map<String, dynamic> json) {
@@ -302,6 +305,7 @@ class PeerHistoryMessage {
       progressTitle: json['progress_title'] as String?,
       progressAutoCollapse: json['progress_auto_collapse'] as bool?,
       metadata: metadata,
+      replyTo: json['reply_to'] as String?,
     );
   }
 }
@@ -416,6 +420,15 @@ String peerHistoryMessageId(PeerHistoryMessage m, String channelId, int index) {
   return 'peerhist_${channelId}_$index';
 }
 
+/// Hub `reply_to` is the remote message id. Synced rows are stored as
+/// `peerhist_<id>`, so the local reply link has to use that same id.
+String? peerHistoryReplyToId(String? replyTo) {
+  final raw = replyTo?.trim() ?? '';
+  if (raw.isEmpty) return null;
+  if (raw.startsWith('peerhist_')) return raw;
+  return 'peerhist_$raw';
+}
+
 /// `progress_content` stored in a local message row's metadata JSON ('' if none).
 String _rowProgressContent(Map<String, dynamic> row) {
   final raw = row['metadata'] as String?;
@@ -448,6 +461,10 @@ Map<String, dynamic>? peerHistoryMessageMetadata(PeerHistoryMessage m) {
     final kind = protocol['kind'];
     if (kind is String && kind.isNotEmpty) {
       meta['kind'] = kind;
+    }
+    final quote = protocol['reply_quote'];
+    if (quote is String && quote.isNotEmpty) {
+      meta['reply_quote'] = quote;
     }
   }
   final progress = m.progressContent;
@@ -3253,7 +3270,8 @@ class PeerAgentClientService {
           // ConflictAlgorithm.replace rewrites the whole row, so the reply link
           // has to be carried over explicitly — it is the only causal edge
           // MessageUtils.orderForDisplay can fall back on when stamps are coarse.
-          replyToId: existingRow?['reply_to_id'] as String?,
+          replyToId: peerHistoryReplyToId(m.replyTo) ??
+              existingRow?['reply_to_id'] as String?,
           createdAt: createdAts[i],
           isRead: isRead,
           conflictAlgorithm: ConflictAlgorithm.replace,

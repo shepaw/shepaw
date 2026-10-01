@@ -67,6 +67,8 @@ class PouchTurnRelay {
     void Function(String agentId, String agentName)? onAgentStart,
     void Function(String agentId, String agentName, bool skipped)? onAgentDone,
     void Function()? onAllDone,
+    void Function(String agentId, String agentName, Map<String, dynamic> metadata)?
+        onMessageMetadata,
     Future<Map<String, dynamic>?> Function(
       String agentId,
       String agentName,
@@ -111,6 +113,15 @@ class PouchTurnRelay {
         switch (event['kind']) {
           case 'start':
             onAgentStart?.call(agentId, agentName);
+          case 'metadata':
+            final raw = event['metadata'];
+            if (raw is Map) {
+              onMessageMetadata?.call(
+                agentId,
+                agentName,
+                Map<String, dynamic>.from(raw),
+              );
+            }
           case 'chunk':
             onStreamChunk?.call(
               agentId,

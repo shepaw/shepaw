@@ -2647,6 +2647,7 @@ $originalQuestion
         onAgentStart: onAgentStart,
         onAgentDone: onAgentDone,
         onAllDone: onAllDone,
+        onMessageMetadata: onMessageMetadata,
         onInteractionRequest: onInteractionRequest,
       );
       return;
