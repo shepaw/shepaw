@@ -14,30 +14,23 @@ AppStart afterDeviceUnlock(PouchSession? session, {required int nowMs}) {
   return AppStart.pouchLogin;
 }
 
-/// 与 `shepaw-protocol` 的 `login_seal_required` 同一份名单。
-bool loginSealRequired(String kind) {
-  if (kind.startsWith('agent_')) return true;
-  const names = <String>{
-    'pouch',
-    'pouch_dm_turn',
-    'pouch_chat_read',
-    'pouch_group_turn',
-    'pouch_interaction_resp',
-    'pouch_turn_event',
-    'pouch_file_begin',
-    'pouch_file_chunk',
-    'pouch_file_end',
-    'pouch_file_ack',
-    'pouch_peer_list_req',
-    'pouch_peer_list_resp',
-    'memory',
-    'she',
-    'session_create_req',
-    'session_create_resp',
-    'cli_execute_req',
+/// 与 Hub `login_clear_allowed` 同一份规则：名单之外的业务帧都要密封。
+///
+/// 明文只留给心跳、登录、拆封，以及 Hub 在进业务处理之前就要对上的回包。
+bool loginSealRequired(String kind, {String? op}) {
+  if (kind.isEmpty) return false;
+  const clear = <String>{
+    'ping',
+    'pong',
+    'pouch_login',
+    'pouch_list',
+    'pouch_sealed',
     'cli_execute_resp',
+    'session_create_resp',
   };
-  return names.contains(kind);
+  if (clear.contains(kind)) return false;
+  if (kind == 'pouch' && (op == 'result' || op == 'error')) return false;
+  return true;
 }
 
 /// 当前登录态对应的通道密钥。业务帧经它密封后再进 Noise。
@@ -66,7 +59,10 @@ class PouchChannel {
   ) async {
     final channel = active;
     final type = json['type'];
-    if (channel == null || type is! String || !loginSealRequired(type)) {
+    final op = json['op'];
+    if (channel == null ||
+        type is! String ||
+        !loginSealRequired(type, op: op is String ? op : null)) {
       return json;
     }
     return channel.seal(json);
@@ -103,7 +99,8 @@ class PouchChannel {
   }
 
   Future<Map<String, dynamic>> open(Map<String, dynamic> frame) async {
-    if (frame['sid'] != session.sessionId || frame['pouch_id'] != session.pouchId) {
+    if (frame['sid'] != session.sessionId ||
+        frame['pouch_id'] != session.pouchId) {
       throw StateError('密封帧不属于这次登录');
     }
     final combined = _b64d(frame['c'] as String);

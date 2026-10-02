@@ -526,6 +526,60 @@ String normalizeStorePath(String raw) {
 bool isValidDeviceId(String? device) =>
     device != null && RegExp(r'^[0-9a-f]{16}$').hasMatch(device);
 
+/// Hub 转发袋子帧时盖上的请求者。直连对端自报的字段不采用。
+class StoreCaller {
+  const StoreCaller({required this.deviceId, required this.trustLevel});
+
+  final String deviceId;
+  final String trustLevel;
+}
+
+class KnownRelayPeer {
+  const KnownRelayPeer({
+    required this.id,
+    required this.fingerprint,
+    required this.trustLevel,
+  });
+
+  final String id;
+  final String fingerprint;
+  final String trustLevel;
+}
+
+/// 连接方是自己的 Hub（owner）时，用帧上的 `from_device` / `from_peer_id` 做 ACL。
+/// 这两个字段由 Hub 写入，并会删掉请求方自带的副本。
+/// 能对上本地配对记录时用那台设备的信任级；对不上则按 friend，不升成 owner。
+StoreCaller callerForStoreFrame({
+  required String connectedPeerId,
+  required String connectedFingerprint,
+  required String connectedTrust,
+  String? fromDevice,
+  String? fromPeerId,
+  KnownRelayPeer? knownOrigin,
+}) {
+  final fallback = StoreCaller(
+    deviceId: connectedFingerprint,
+    trustLevel: connectedTrust,
+  );
+  if (connectedTrust != TrustLevel.owner) return fallback;
+  final device = fromDevice?.trim().toLowerCase() ?? '';
+  final originPeer = fromPeerId?.trim() ?? '';
+  if (!isValidDeviceId(device) || originPeer.isEmpty) return fallback;
+  if (originPeer == connectedPeerId) return fallback;
+  if (device == connectedFingerprint.toLowerCase()) return fallback;
+  if (knownOrigin != null) {
+    if (knownOrigin.id != originPeer ||
+        knownOrigin.fingerprint.toLowerCase() != device) {
+      return fallback;
+    }
+    return StoreCaller(
+      deviceId: knownOrigin.fingerprint,
+      trustLevel: knownOrigin.trustLevel,
+    );
+  }
+  return StoreCaller(deviceId: device, trustLevel: TrustLevel.friend);
+}
+
 /// `pouch://app/shepaw/...` 的设备段。只和 [StoreSpace.app] 一起用。
 bool isPouchAppDevice(String? device) => device == StoreSpace.appDevice;
 

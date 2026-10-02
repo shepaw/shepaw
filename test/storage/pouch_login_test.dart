@@ -96,9 +96,16 @@ void main() {
     );
   });
 
-  test('心跳和登录本身不密封', () {
+  test('心跳、登录和 Hub 要提前对上的回包不密封', () {
     expect(loginSealRequired('ping'), isFalse);
     expect(loginSealRequired('pouch_login'), isFalse);
+    expect(loginSealRequired('cli_execute_resp'), isFalse);
+    expect(loginSealRequired('session_create_resp'), isFalse);
+    expect(loginSealRequired('pouch', op: 'result'), isFalse);
+    expect(loginSealRequired('pouch', op: 'error'), isFalse);
+    expect(loginSealRequired('pouch', op: 'read'), isTrue);
+    expect(loginSealRequired('fs_browse_req'), isTrue);
+    expect(loginSealRequired('pouch_pair_req'), isTrue);
     expect(loginSealRequired('agent_chat'), isTrue);
     expect(loginSealRequired('she'), isTrue);
   });

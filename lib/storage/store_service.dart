@@ -753,11 +753,28 @@ class StoreService {
         if (seeded) await pushShareAnnounce(peerId);
       }());
     }
-    // 调用者身份 = 配对指纹（= 其 device_id），写路径收敛的锚点
+    final originId = frame.payload['from_peer_id'] as String?;
+    final origin =
+        originId == null ? null : await _peerStorage.getPeerById(originId);
+    final caller = callerForStoreFrame(
+      connectedPeerId: peer.id,
+      connectedFingerprint: peer.fingerprint,
+      connectedTrust: peer.trustLevel,
+      fromDevice: frame.payload['from_device'] as String?,
+      fromPeerId: originId,
+      knownOrigin: origin == null
+          ? null
+          : KnownRelayPeer(
+              id: origin.id,
+              fingerprint: origin.fingerprint,
+              trustLevel: origin.trustLevel,
+            ),
+    );
+    // 调用者身份：Hub 转发时用盖章的请求者，直连时用这条 Noise 通道。
     final data = await _dispatch(
       frame,
-      callerDeviceId: peer.fingerprint,
-      trustLevel: peer.trustLevel,
+      callerDeviceId: caller.deviceId,
+      trustLevel: caller.trustLevel,
       loopback: false,
       shareAllowlist: allowlist,
     );
@@ -927,9 +944,7 @@ class StoreService {
       return;
     }
     final bin = data['_bin'];
-    if (bin is Uint8List &&
-        frame.reqId != null &&
-        _wantsBinary(frame)) {
+    if (bin is Uint8List && frame.reqId != null && _wantsBinary(frame)) {
       final ok = await _manager.sendPlain(
         peerId,
         StoreBinaryChunk(
@@ -945,8 +960,7 @@ class StoreService {
       }
       return;
     }
-    await _manager.sendControl(
-        peerId, storeResult(frame.reqId, data).toJson());
+    await _manager.sendControl(peerId, storeResult(frame.reqId, data).toJson());
   }
 
   static bool _wantsBinary(StoreFrame frame) =>
