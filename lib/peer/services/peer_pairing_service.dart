@@ -415,6 +415,7 @@ class PeerPairingService {
     PeerPairingInfo info, {
     String? correlationId,
     bool preferChannel = false,
+    bool connectAfter = true,
   }) async {
     _state = PairingSessionState.waitingForConfirm;
     _initiatorCorrelationId = correlationId?.trim().isNotEmpty == true
@@ -576,6 +577,20 @@ class PeerPairingService {
       // 配对 ≠ 指定 store master。master 由用户在储物袋显式设置
       // （「设为 master」/ NAS「连接并设为 master」），避免新配对设备抢走备份目标。
       PeerConnectionManager.instance.notifyPeerListChanged();
+      final cidEarly = _initiatorCorrelationId;
+      if (cidEarly != null) {
+        PeerEventProvider.emitCompleted(
+          correlationId: cidEarly,
+          peerId: peer.id,
+          deviceName: peer.deviceName,
+          role: 'initiator',
+        );
+      }
+      if (!connectAfter) {
+        _log.info('Pairing successful: ${peer.deviceName} (${peer.fingerprint})',
+            tag: _tag);
+        return peer;
+      }
       PeerConnectionManager.instance.connectToPeer(peer).then((_) async {
         try {
           await StoreService.instance.pushShareAnnounce(peer.id);
@@ -588,15 +603,6 @@ class PeerPairingService {
 
       _log.info('Pairing successful: ${peer.deviceName} (${peer.fingerprint})',
           tag: _tag);
-      final cid = _initiatorCorrelationId;
-      if (cid != null) {
-        PeerEventProvider.emitCompleted(
-          correlationId: cid,
-          peerId: peer.id,
-          deviceName: peer.deviceName,
-          role: 'initiator',
-        );
-      }
       return peer;
     } catch (e) {
       ws.sink.close();

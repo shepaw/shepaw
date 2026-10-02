@@ -6,6 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path/path.dart' as p;
 
 import '../services/app_paths.dart';
+import '../services/secure_key_manager.dart';
 
 /// App 当前登录的袋子。token 是这次登录态，通道加密用它派生密钥。
 class PouchSession {
@@ -121,12 +122,20 @@ class SecurePouchTokenVault implements PouchTokenVault {
     try {
       await _storage.delete(key: keyFor(sessionId));
     } catch (_) {}
+    try {
+      await SecureKeyManager.deleteSecureValue(keyFor(sessionId));
+    } catch (_) {}
   }
 
   @override
   Future<String?> read(String sessionId) async {
     try {
       final value = await _storage.read(key: keyFor(sessionId));
+      final trimmed = value?.trim() ?? '';
+      if (trimmed.isNotEmpty) return trimmed;
+    } catch (_) {}
+    try {
+      final value = await SecureKeyManager.getSecureValue(keyFor(sessionId));
       final trimmed = value?.trim() ?? '';
       return trimmed.isEmpty ? null : trimmed;
     } catch (_) {
@@ -136,7 +145,12 @@ class SecurePouchTokenVault implements PouchTokenVault {
 
   @override
   Future<void> write(String sessionId, String token) async {
-    await _storage.write(key: keyFor(sessionId), value: token);
+    try {
+      await _storage.write(key: keyFor(sessionId), value: token);
+      return;
+    } catch (_) {}
+    // 未签名的调试包没有钥匙串权限（-34018），退回应用目录里的加密文件。
+    await SecureKeyManager.saveSecureValue(keyFor(sessionId), token);
   }
 }
 

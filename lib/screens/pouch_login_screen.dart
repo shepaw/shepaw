@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../peer/models/paired_peer.dart';
+import '../peer/services/peer_connection_manager.dart';
+import '../peer/services/peer_pairing_service.dart';
 import '../peer/services/peer_storage_service.dart';
+import '../services/cli_host.dart';
 import '../services/local_agent_hub_models.dart';
+import '../services/logger_service.dart';
 import '../services/local_agent_hub_service.dart';
 import '../storage/pouch_catalog.dart';
 import '../storage/pouch_login.dart';
@@ -42,17 +46,32 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
 
   Future<void> _reload() async {
     final local = await _catalog.list();
+    LoggerService().info(
+      'pouches=${local.length} hub=${_hub.hubRoot}',
+      tag: 'PouchLogin',
+    );
     if (!mounted) return;
     setState(() => _pouches = local);
     final remote = await requestPouchList().catchError(
       (_) => const <PouchDescriptor>[],
     );
-    if (!mounted || remote.isEmpty) return;
+    if (!mounted || remote.isEmpty) {
+      await _enterRunningCli();
+      return;
+    }
     final byId = <String, PouchDescriptor>{
       for (final pouch in remote) pouch.id: pouch,
       for (final pouch in local) pouch.id: pouch,
     };
     setState(() => _pouches = byId.values.toList());
+    await _enterRunningCli();
+  }
+
+  /// 本机 CLI 主机已在听，且只有一只袋子时直接登录。
+  Future<void> _enterRunningCli() async {
+    if (_busy || _pouches.length != 1) return;
+    if (await CliHost.detect() == null) return;
+    await _enter(_pouches.single);
   }
 
   Future<void> _create() async {
@@ -80,25 +99,55 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
       _error = '';
     });
     try {
-      var detection = await _hub.detect();
-      if (detection.presence != LocalHubPresence.running) {
-        throw StateError('先在这台机器上启动 agent-hub');
-      }
-      var peer = await _peerFor(detection.hubFingerprint);
-      if (peer == null) {
-        await _hub.join();
-        detection = await _hub.detect();
-        peer = await _peerFor(detection.hubFingerprint);
-      }
-      if (peer == null) {
-        throw StateError('还没连上这台主机');
+      final cli = await CliHost.detect();
+      final PairedPeer peer;
+      final String hubUrl;
+      if (cli != null) {
+        final info = await CliHost.mintPairing(cli);
+        peer = await PeerPairingService.instance.requestPairing(
+          info,
+          connectAfter: false,
+        );
+        final local = info.localEndpoint;
+        if (local != null && local.isNotEmpty) {
+          await PeerStorageService().updateLocalEndpoint(peer.id, local);
+        }
+        // 同一指纹以前可能连在旧 Hub 上。先拆掉，再拨 CLI 的回环地址。
+        await PeerConnectionManager.instance.disconnectPeer(peer.id);
+        final stored = await PeerStorageService().getPeerById(peer.id);
+        LoggerService().info(
+          'dial ${stored?.localEndpoint ?? local} for ${peer.id}',
+          tag: 'PouchLogin',
+        );
+        await PeerConnectionManager.instance.connectToPeer(
+          stored ?? peer,
+          ignoreTieBreak: true,
+        );
+        await _waitConnected(peer.id);
+        hubUrl = cli.localEndpoint;
+      } else {
+        var detection = await _hub.detect();
+        if (detection.presence != LocalHubPresence.running) {
+          throw StateError('先在这台机器上启动 shepaw');
+        }
+        var found = await _peerFor(detection.hubFingerprint);
+        if (found == null) {
+          await _hub.join();
+          detection = await _hub.detect();
+          found = await _peerFor(detection.hubFingerprint);
+        }
+        if (found == null) {
+          throw StateError('还没连上这台主机');
+        }
+        peer = found;
+        hubUrl = _hub.dashboardUrl;
       }
       final grant = await requestPouchLogin(
         hostPeerId: peer.id,
         pouchId: pouch.id,
       );
       final session = PouchSession(
-        hubUrl: _hub.dashboardUrl,
+        hubUrl: hubUrl,
         pouchId: pouch.id,
         pouchName: pouch.name,
         hostPeerId: peer.id,
@@ -111,14 +160,28 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
       if (!mounted) return;
       Navigator.of(context).pushReplacementNamed('/home');
     } on LocalHubException catch (e) {
+      LoggerService().error('pouch login failed', tag: 'PouchLogin', error: e);
       if (mounted) setState(() => _error = e.message);
     } on StateError catch (e) {
+      LoggerService().error('pouch login failed', tag: 'PouchLogin', error: e);
       if (mounted) setState(() => _error = e.message);
-    } catch (_) {
+    } catch (e) {
+      LoggerService().error('pouch login failed', tag: 'PouchLogin', error: e);
       if (mounted) setState(() => _error = '登录失败');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _waitConnected(String peerId) async {
+    final deadline = DateTime.now().add(const Duration(seconds: 8));
+    while (DateTime.now().isBefore(deadline)) {
+      if (PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+    throw StateError('还没连上这台主机');
   }
 
   Future<PairedPeer?> _peerFor(String? fingerprint) async {

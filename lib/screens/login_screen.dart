@@ -6,6 +6,7 @@ import '../services/logger_service.dart';
 import '../services/password_service.dart';
 import '../services/biometric_service.dart';
 import '../services/desktop_window_auto_size.dart';
+import '../services/cli_host.dart';
 import '../storage/pouch_login.dart';
 import '../storage/pouch_session.dart';
 import '../theme/app_theme.dart';
@@ -116,10 +117,15 @@ class _LoginScreenState extends State<LoginScreen> {
     await DesktopWindowAutoSize.bringToFront();
     if (!mounted) return;
     final session = await PouchSessionStore.readActive();
+    final cli = await CliHost.detect();
     if (!mounted) return;
-    final start = afterDeviceUnlock(
-      session,
-      nowMs: DateTime.now().millisecondsSinceEpoch,
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final start = cli != null
+        ? AppStart.pouchLogin
+        : afterDeviceUnlock(session, nowMs: nowMs);
+    LoggerService().info(
+      'unlock -> ${start.name} cli=${cli?.localEndpoint ?? '-'} pouch=${session?.pouchId ?? '-'}',
+      tag: 'Login',
     );
     if (start == AppStart.home && session != null) {
       PouchChannel.install(session);

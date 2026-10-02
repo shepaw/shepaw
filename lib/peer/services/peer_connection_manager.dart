@@ -295,7 +295,10 @@ class PeerConnectionManager {
   ///
   /// 若最终未连上，抛出 [StateError] 供 UI 提示；后台重连仍由
   /// [_scheduleReconnect] 静默继续，避免刷屏。
-  Future<void> connectToPeer(PairedPeer peer) async {
+  Future<void> connectToPeer(
+    PairedPeer peer, {
+    bool ignoreTieBreak = false,
+  }) async {
     // 确保管理器已启动（监听入站连接 + 本地服务器运行）
     await start();
 
@@ -304,7 +307,11 @@ class PeerConnectionManager {
       return; // 已连接
     }
 
-    await _doConnect(peer, connectionTraceTrigger: 'user');
+    await _doConnect(
+      peer,
+      ignoreTieBreak: ignoreTieBreak,
+      connectionTraceTrigger: 'user',
+    );
 
     final conn = _connections[peer.id];
     if (conn == null || conn.state != PeerConnectionState.connected) {
@@ -322,6 +329,8 @@ class PeerConnectionManager {
   Future<void> disconnectPeer(String peerId) async {
     _reconnectTimers[peerId]?.cancel();
     _reconnectTimers.remove(peerId);
+    _fallbackTimers[peerId]?.cancel();
+    _fallbackTimers.remove(peerId);
     _reconnectAttempts.remove(peerId);
     _cancelConnectionSubs(peerId);
 
@@ -1109,10 +1118,11 @@ class PeerConnectionManager {
         connectedTransport = 'local_fixed';
       }
 
+      final loopback = _isLoopbackEndpoint(storedLocal);
       if (!connected &&
-          onPeerLan &&
           storedLocal != null &&
           storedLocal != fixedUrl &&
+          (onPeerLan || loopback) &&
           await _tryLocalWs(
             conn,
             peer,
@@ -1208,6 +1218,16 @@ class PeerConnectionManager {
       }
     } finally {
       _connecting.remove(peer.id);
+    }
+  }
+
+  bool _isLoopbackEndpoint(String? endpoint) {
+    if (endpoint == null || endpoint.isEmpty) return false;
+    try {
+      final host = Uri.parse(endpoint).host;
+      return host == '127.0.0.1' || host == 'localhost' || host == '::1';
+    } catch (_) {
+      return false;
     }
   }
 

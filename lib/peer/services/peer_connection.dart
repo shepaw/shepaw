@@ -274,7 +274,11 @@ class PeerConnection {
           if (!handshakeCompleter.isCompleted) {
             handshakeCompleter.completeError(StateError('WebSocket closed during handshake'));
           }
-          _log.debug('WebSocket closed during connect for ${peer.deviceName}', tag: _tag);
+          _log.debug(
+            'WebSocket closed for ${peer.deviceName} '
+            'code=${ioSocket.closeCode} reason=${ioSocket.closeReason}',
+            tag: _tag,
+          );
           _setState(PeerConnectionState.disconnected);
         },
       );
