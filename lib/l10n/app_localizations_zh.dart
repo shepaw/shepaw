@@ -7885,6 +7885,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_mainModelSwitchFailed => '切换主模型失败';
 
   @override
+  String get chat_peerDeviceOffline => '设备离线，暂不能切换模型';
+
+  @override
+  String get chat_modelConfiguredOnComputer => '这个 Agent 的模型在电脑上配置';
+
+  @override
   String get common_discardUnsaved => '有未保存的修改，放弃更改？';
 
   @override

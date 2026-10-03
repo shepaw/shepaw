@@ -39,6 +39,18 @@ class _SoulPanelState extends State<SoulPanel> {
     super.dispose();
   }
 
+  @override
+  void didUpdateWidget(SoulPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialSoul != oldWidget.initialSoul &&
+        _controller.text == oldWidget.initialSoul) {
+      _controller.value = TextEditingValue(
+        text: widget.initialSoul,
+        selection: TextSelection.collapsed(offset: widget.initialSoul.length),
+      );
+    }
+  }
+
   Future<void> _handleSave() async {
     if (_saving || widget.readOnly) return;
     setState(() => _saving = true);

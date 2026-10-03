@@ -575,14 +575,28 @@ class PeerAgentModel {
       description: (json['description'] as String?) ?? '',
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'value': value,
+        'display_name': displayName,
+        'description': description,
+      };
 }
 
 /// Upstream model list + current selection (`agent_models_resp`).
+///
+/// [switchable] 缺省为 true，兼容不发这个字段的旧 Hub。false 表示模型在
+/// 对端电脑上配置，App 只能展示当前值。
 class PeerModelsList {
   final List<PeerAgentModel> models;
   final String? current;
+  final bool switchable;
 
-  const PeerModelsList({required this.models, this.current});
+  const PeerModelsList({
+    required this.models,
+    this.current,
+    this.switchable = true,
+  });
 }
 
 /// One upstream session-mode option from `agent_modes_resp`.
@@ -613,6 +627,12 @@ class PeerAgentMode {
       description: (json['description'] as String?) ?? '',
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'value': value,
+        'display_name': displayName,
+        'description': description,
+      };
 }
 
 /// Upstream session-mode list + current selection (`agent_modes_resp`).
@@ -1070,6 +1090,16 @@ class PeerAgentClientService {
   /// Outstanding agent_models_req per remote agent id.
   final Map<String, Completer<PeerModelsList>> _pendingModels = {};
 
+  /// 本次连接内已经用 agent_commands_resp 刷新过的 agent。预热进内存的旧
+  /// 命令不算，否则 ensureCommandsForLocalAgent 会永远跳过网络刷新。
+  final Set<String> _commandsFreshThisConnection = {};
+
+  /// remoteAgentId → 刷新这条命令时所属的 peer，断线时按 peer 清新鲜标记。
+  final Map<String, String> _commandsFreshPeer = {};
+
+  /// agent_soul_set_req 的待写正文。响应里没有 soul 时用它更新缓存。
+  final Map<String, ({String agentId, String soul})> _pendingSoulText = {};
+
   /// Outstanding agent_models_set_req per "agentId::model" key.
   final Map<String, Completer<bool>> _pendingModelSet = {};
 
@@ -1153,6 +1183,13 @@ class PeerAgentClientService {
     if (_running) return;
     _running = true;
 
+    try {
+      _db.onRemoteAgentDeleted = forgetPeerAgentMeta;
+    } catch (e) {
+      _log.warning('peer meta forget hook skipped: $e', tag: _tag);
+    }
+    unawaited(_warmCommandsCache());
+
     _controlSub = PeerConnectionManager.instance.controlEvents.listen(_onControl);
     _eventSub = PeerConnectionManager.instance.events.listen(_onConnectionEvent);
     _peerListSub =
@@ -1177,6 +1214,14 @@ class PeerAgentClientService {
   void stop() {
     _running = false;
     _handlersReadyForResume = false;
+    _commandsFreshThisConnection.clear();
+    _commandsFreshPeer.clear();
+    _pendingSoulText.clear();
+    try {
+      if (_db.onRemoteAgentDeleted == forgetPeerAgentMeta) {
+        _db.onRemoteAgentDeleted = null;
+      }
+    } catch (_) {}
     PeerConnectionManager.instance.hasInFlightTurnForPeer = null;
     _controlSub?.cancel();
     _controlSub = null;
@@ -1365,6 +1410,56 @@ class PeerAgentClientService {
       peerId: peerId,
       data: {'type': type, ...data},
     ));
+  }
+
+  /// Test seam: treat these peers as connected inside [ensureCommandsForLocalAgent].
+  @visibleForTesting
+  Set<String>? debugConnectedPeerIdsOverride;
+
+  /// Test seam: shrink model/mode list timeouts.
+  @visibleForTesting
+  Duration? debugMetaFetchTimeoutOverride;
+
+  /// Test seam: load persisted slash commands without the rest of [start].
+  @visibleForTesting
+  Future<void> debugWarmSlashCommandsForTest() => _warmCommandsCache();
+
+  /// Test seam: deliver a connection event without a live peer.
+  @visibleForTesting
+  void debugInjectConnectionEvent(PeerConnectionEvent event) {
+    _onConnectionEvent(event);
+  }
+
+  /// Test seam: drop in-memory meta bookkeeping so singleton tests don't leak.
+  @visibleForTesting
+  void debugResetPeerMetaForTest() {
+    debugSendControlOverride = null;
+    debugConnectedPeerIdsOverride = null;
+    debugMetaFetchTimeoutOverride = null;
+    _commandsCache.clear();
+    _commandsFreshThisConnection.clear();
+    _commandsFreshPeer.clear();
+    _pendingSoulText.clear();
+    for (final c in _pendingModels.values) {
+      if (!c.isCompleted) c.complete(const PeerModelsList(models: []));
+    }
+    _pendingModels.clear();
+    for (final c in _pendingModes.values) {
+      if (!c.isCompleted) c.complete(const PeerModesList(modes: []));
+    }
+    _pendingModes.clear();
+    for (final c in _pendingCommands.values) {
+      if (!c.isCompleted) c.complete(const []);
+    }
+    _pendingCommands.clear();
+    for (final c in _pendingModelSet.values) {
+      if (!c.isCompleted) c.complete(false);
+    }
+    _pendingModelSet.clear();
+    for (final c in _pendingModeSet.values) {
+      if (!c.isCompleted) c.complete(false);
+    }
+    _pendingModeSet.clear();
   }
 
   /// Test seam: register a synthetic in-flight turn (as [sendChat] would)
@@ -2083,16 +2178,57 @@ class PeerAgentClientService {
     if (!pending.end.isCompleted) pending.end.completeError(err);
   }
 
+  Duration get _metaListTimeout =>
+      debugMetaFetchTimeoutOverride ?? const Duration(seconds: 15);
+
+  Future<bool> _sendMetaControl(String peerId, Map<String, dynamic> json) {
+    final send =
+        debugSendControlOverride ?? PeerConnectionManager.instance.sendControl;
+    return send(peerId, json);
+  }
+
+  /// 从没缓存过返回 null；空列表表示对端明确不支持。
+  Future<PeerModelsList?> cachedModels(String localAgentId) =>
+      _readCachedModels(localAgentId);
+
+  Future<PeerModesList?> cachedModes(String localAgentId) =>
+      _readCachedModes(localAgentId);
+
+  Future<PeerSoulInfo?> cachedSoul(String localAgentId) =>
+      _readCachedSoul(localAgentId);
+
   /// Fetch upstream model options (`agent.models.list` relay). Returns empty
   /// list on failure/timeout. [sessionId] is the bare remote session id when
   /// scoping to a synced session; omit for the agent default.
+  ///
+  /// 缓存只记 agent 级。Hub 目前忽略请求里的 session_id。
   Future<PeerModelsList> fetchModels({
     required String peerId,
     required String remoteAgentId,
     String? sessionId,
   }) async {
-    if (_pendingModels.containsKey(remoteAgentId)) {
-      return _pendingModels[remoteAgentId]!.future;
+    final outcome = await fetchModelsResult(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      sessionId: sessionId,
+    );
+    return outcome.list;
+  }
+
+  /// 与 [fetchModels] 相同，但用 [completed] 区分「对端回答了」和超时 / 没发出。
+  Future<({PeerModelsList list, bool completed})> fetchModelsResult({
+    required String peerId,
+    required String remoteAgentId,
+    String? sessionId,
+  }) async {
+    final existing = _pendingModels[remoteAgentId];
+    if (existing != null) {
+      try {
+        final list = await existing.future.timeout(_metaListTimeout);
+        return (list: list, completed: true);
+      } on TimeoutException {
+        return (list: const PeerModelsList(models: []), completed: false);
+      }
     }
     final completer = Completer<PeerModelsList>();
     _pendingModels[remoteAgentId] = completer;
@@ -2103,15 +2239,22 @@ class PeerAgentClientService {
     if (sessionId != null && sessionId.isNotEmpty) {
       payload['session_id'] = sessionId;
     }
-    final sent = await PeerConnectionManager.instance.sendControl(peerId, payload);
+    final sent = await _sendMetaControl(peerId, payload);
     if (!sent) {
-      _pendingModels.remove(remoteAgentId);
-      return const PeerModelsList(models: []);
+      if (identical(_pendingModels[remoteAgentId], completer)) {
+        _pendingModels.remove(remoteAgentId);
+      }
+      return (list: const PeerModelsList(models: []), completed: false);
     }
-    return completer.future.timeout(const Duration(seconds: 15), onTimeout: () {
-      _pendingModels.remove(remoteAgentId);
-      return const PeerModelsList(models: []);
-    });
+    try {
+      final list = await completer.future.timeout(_metaListTimeout);
+      return (list: list, completed: true);
+    } on TimeoutException {
+      if (identical(_pendingModels[remoteAgentId], completer)) {
+        _pendingModels.remove(remoteAgentId);
+      }
+      return (list: const PeerModelsList(models: []), completed: false);
+    }
   }
 
   void _onModelsResp(Map<String, dynamic> data) {
@@ -2119,15 +2262,21 @@ class PeerAgentClientService {
     if (remoteId == null) return;
     final raw = (data['models'] as List?) ?? const [];
     final models = raw
-        .whereType<Map<String, dynamic>>()
-        .map(PeerAgentModel.fromJson)
+        .whereType<Map>()
+        .map((item) => PeerAgentModel.fromJson(Map<String, dynamic>.from(item)))
         .whereType<PeerAgentModel>()
         .toList();
     final current = data['current'] as String?;
+    // 缺省视为可切换，兼容旧 Hub。
+    final switchable = data['switchable'] != false;
+    final list = PeerModelsList(
+      models: models,
+      current: current,
+      switchable: switchable,
+    );
+    _rememberModels(remoteId, list);
     final completer = _pendingModels.remove(remoteId);
-    if (completer != null && !completer.isCompleted) {
-      completer.complete(PeerModelsList(models: models, current: current));
-    }
+    if (completer != null && !completer.isCompleted) completer.complete(list);
   }
 
   /// Switch the upstream model (`agent.models.setCurrent` relay).
@@ -2149,7 +2298,7 @@ class PeerAgentClientService {
     if (sessionId != null && sessionId.isNotEmpty) {
       payload['session_id'] = sessionId;
     }
-    final sent = await PeerConnectionManager.instance.sendControl(peerId, payload);
+    final sent = await _sendMetaControl(peerId, payload);
     if (!sent) {
       _pendingModelSet.remove(key);
       return false;
@@ -2167,6 +2316,7 @@ class PeerAgentClientService {
     final ok = data['ok'] == true;
     final completer = _pendingModelSet.remove('$remoteId::$model');
     if (completer != null && !completer.isCompleted) completer.complete(ok);
+    if (ok) _patchCachedCurrent(remoteId, PeerAgentMetaKind.models, model);
   }
 
   /// Fetch upstream session modes (`agent.modes.list` relay). Returns empty
@@ -2176,8 +2326,28 @@ class PeerAgentClientService {
     required String remoteAgentId,
     String? sessionId,
   }) async {
-    if (_pendingModes.containsKey(remoteAgentId)) {
-      return _pendingModes[remoteAgentId]!.future;
+    final outcome = await fetchModesResult(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      sessionId: sessionId,
+    );
+    return outcome.list;
+  }
+
+  /// 与 [fetchModes] 相同，但用 [completed] 区分「对端回答了」和超时 / 没发出。
+  Future<({PeerModesList list, bool completed})> fetchModesResult({
+    required String peerId,
+    required String remoteAgentId,
+    String? sessionId,
+  }) async {
+    final existing = _pendingModes[remoteAgentId];
+    if (existing != null) {
+      try {
+        final list = await existing.future.timeout(_metaListTimeout);
+        return (list: list, completed: true);
+      } on TimeoutException {
+        return (list: const PeerModesList(modes: []), completed: false);
+      }
     }
     final completer = Completer<PeerModesList>();
     _pendingModes[remoteAgentId] = completer;
@@ -2188,15 +2358,22 @@ class PeerAgentClientService {
     if (sessionId != null && sessionId.isNotEmpty) {
       payload['session_id'] = sessionId;
     }
-    final sent = await PeerConnectionManager.instance.sendControl(peerId, payload);
+    final sent = await _sendMetaControl(peerId, payload);
     if (!sent) {
-      _pendingModes.remove(remoteAgentId);
-      return const PeerModesList(modes: []);
+      if (identical(_pendingModes[remoteAgentId], completer)) {
+        _pendingModes.remove(remoteAgentId);
+      }
+      return (list: const PeerModesList(modes: []), completed: false);
     }
-    return completer.future.timeout(const Duration(seconds: 15), onTimeout: () {
-      _pendingModes.remove(remoteAgentId);
-      return const PeerModesList(modes: []);
-    });
+    try {
+      final list = await completer.future.timeout(_metaListTimeout);
+      return (list: list, completed: true);
+    } on TimeoutException {
+      if (identical(_pendingModes[remoteAgentId], completer)) {
+        _pendingModes.remove(remoteAgentId);
+      }
+      return (list: const PeerModesList(modes: []), completed: false);
+    }
   }
 
   void _onModesResp(Map<String, dynamic> data) {
@@ -2210,10 +2387,10 @@ class PeerAgentClientService {
       if (parsed != null) modes.add(parsed);
     }
     final current = data['current'] as String?;
+    final list = PeerModesList(modes: modes, current: current);
+    _rememberModes(remoteId, list);
     final completer = _pendingModes.remove(remoteId);
-    if (completer != null && !completer.isCompleted) {
-      completer.complete(PeerModesList(modes: modes, current: current));
-    }
+    if (completer != null && !completer.isCompleted) completer.complete(list);
   }
 
   /// Switch the upstream session mode (`agent.modes.setCurrent` relay).
@@ -2235,7 +2412,7 @@ class PeerAgentClientService {
     if (sessionId != null && sessionId.isNotEmpty) {
       payload['session_id'] = sessionId;
     }
-    final sent = await PeerConnectionManager.instance.sendControl(peerId, payload);
+    final sent = await _sendMetaControl(peerId, payload);
     if (!sent) {
       _pendingModeSet.remove(key);
       return false;
@@ -2253,6 +2430,7 @@ class PeerAgentClientService {
     final ok = data['ok'] == true;
     final completer = _pendingModeSet.remove('$remoteId::$mode');
     if (completer != null && !completer.isCompleted) completer.complete(ok);
+    if (ok) _patchCachedCurrent(remoteId, PeerAgentMetaKind.modes, mode);
   }
 
   static const _soulRelayTimeout = Duration(seconds: 12);
@@ -2339,6 +2517,15 @@ class PeerAgentClientService {
         info = PeerSoulInfo.fail(err);
       }
 
+      if (info.isOk) {
+        final agentId = (remoteId != null && remoteId.isNotEmpty)
+            ? remoteId
+            : _agentIdForSoulRequest(requestId);
+        if (agentId != null) {
+          _rememberSoul(agentId, info.soul, info.editable);
+        }
+      }
+
       if (requestId != null && requestId.isNotEmpty) {
         _completeSoulGet(requestId, info);
         return;
@@ -2376,25 +2563,27 @@ class PeerAgentClientService {
     final requestId = _uuid.v4();
     final completer = Completer<bool>();
     _pendingSoulSet[requestId] = completer;
+    _pendingSoulText[requestId] = (agentId: remoteAgentId, soul: soul);
     try {
-      final sent = await PeerConnectionManager.instance
-          .sendControl(peerId, {
-            'type': 'agent_soul_set_req',
-            'agent_id': remoteAgentId,
-            'soul': soul,
-            'request_id': requestId,
-          })
-          .timeout(const Duration(seconds: 5));
+      final sent = await _sendMetaControl(peerId, {
+        'type': 'agent_soul_set_req',
+        'agent_id': remoteAgentId,
+        'soul': soul,
+        'request_id': requestId,
+      }).timeout(const Duration(seconds: 5));
       if (!sent) {
+        _pendingSoulText.remove(requestId);
         _completeSoulSet(requestId, false);
         return false;
       }
       return await completer.future.timeout(_soulRelayTimeout);
     } on TimeoutException {
+      _pendingSoulText.remove(requestId);
       _completeSoulSet(requestId, false);
       return false;
     } catch (e) {
       _log.warning('agent_soul_set_req failed: $e', tag: _tag);
+      _pendingSoulText.remove(requestId);
       _completeSoulSet(requestId, false);
       return false;
     }
@@ -2403,6 +2592,16 @@ class PeerAgentClientService {
   void _onSoulSetResp(Map<String, dynamic> data) {
     final requestId = data['request_id']?.toString();
     final ok = data['ok'] == true;
+    final pending = _takePendingSoulText(
+      requestId != null && requestId.isNotEmpty ? requestId : null,
+    );
+    if (ok) {
+      final agentId = _nonEmpty(data['agent_id']) ?? pending?.agentId;
+      final soul = data['soul'] is String ? data['soul'] as String : pending?.soul;
+      if (agentId != null && soul != null) {
+        _rememberSoul(agentId, soul, true);
+      }
+    }
     if (requestId != null && requestId.isNotEmpty) {
       _completeSoulSet(requestId, ok);
       return;
@@ -2411,6 +2610,225 @@ class PeerAgentClientService {
     for (final e in match) {
       _completeSoulSet(e.key, ok);
       break;
+    }
+  }
+
+  String? _nonEmpty(Object? value) {
+    if (value is! String || value.isEmpty) return null;
+    return value;
+  }
+
+  String? _agentIdForSoulRequest(String? requestId) {
+    if (requestId == null || requestId.isEmpty) return null;
+    for (final entry in _soulGetRequestByAgent.entries) {
+      if (entry.value == requestId) return entry.key;
+    }
+    return null;
+  }
+
+  ({String agentId, String soul})? _takePendingSoulText(String? requestId) {
+    if (requestId != null && requestId.isNotEmpty) {
+      return _pendingSoulText.remove(requestId);
+    }
+    if (_pendingSoulText.isEmpty) return null;
+    final key = _pendingSoulText.keys.first;
+    return _pendingSoulText.remove(key);
+  }
+
+  void _rememberModels(String agentId, PeerModelsList list) {
+    _writeMeta(
+      agentId: agentId,
+      kind: PeerAgentMetaKind.models,
+      payload: {
+        'models': [for (final model in list.models) model.toJson()],
+        'current': list.current,
+        'switchable': list.switchable,
+      },
+    );
+  }
+
+  void _rememberModes(String agentId, PeerModesList list) {
+    _writeMeta(
+      agentId: agentId,
+      kind: PeerAgentMetaKind.modes,
+      payload: {
+        'modes': [for (final mode in list.modes) mode.toJson()],
+        'current': list.current,
+      },
+    );
+  }
+
+  void _rememberSoul(String agentId, String soul, bool editable) {
+    _writeMeta(
+      agentId: agentId,
+      kind: PeerAgentMetaKind.soul,
+      payload: {'soul': soul, 'editable': editable},
+    );
+  }
+
+  void _rememberCommands(String agentId, List<SlashCommandInfo> commands) {
+    _writeMeta(
+      agentId: agentId,
+      kind: PeerAgentMetaKind.commands,
+      payload: {
+        'commands': [for (final command in commands) command.toJson()],
+      },
+    );
+  }
+
+  void _patchCachedCurrent(String agentId, String kind, String current) {
+    unawaited(() async {
+      try {
+        final row = await _db.getPeerAgentMeta(agentId, kind);
+        if (row == null) return;
+        final payload = Map<String, dynamic>.from(row.payload);
+        payload['current'] = current;
+        await _db.upsertPeerAgentMeta(PeerAgentMetaCacheEntry(
+          agentId: agentId,
+          kind: kind,
+          payload: payload,
+          fetchedAt: DateTime.now().millisecondsSinceEpoch,
+        ));
+      } catch (e) {
+        _log.warning('peer meta current update failed: $e', tag: _tag);
+      }
+    }());
+  }
+
+  void _writeMeta({
+    required String agentId,
+    required String kind,
+    required Map<String, dynamic> payload,
+  }) {
+    unawaited(() async {
+      try {
+        await _db.upsertPeerAgentMeta(PeerAgentMetaCacheEntry(
+          agentId: agentId,
+          kind: kind,
+          payload: payload,
+          fetchedAt: DateTime.now().millisecondsSinceEpoch,
+        ));
+      } catch (e) {
+        _log.warning('peer meta cache write failed: $e', tag: _tag);
+      }
+    }());
+  }
+
+  Future<PeerModelsList?> _readCachedModels(String agentId) async {
+    try {
+      final row = await _db.getPeerAgentMeta(agentId, PeerAgentMetaKind.models);
+      if (row == null) return null;
+      final raw = row.payload['models'];
+      if (raw is! List) return null;
+      final models = <PeerAgentModel>[];
+      for (final item in raw) {
+        if (item is! Map) continue;
+        final parsed = PeerAgentModel.fromJson(Map<String, dynamic>.from(item));
+        if (parsed != null) models.add(parsed);
+      }
+      final current = row.payload['current'];
+      return PeerModelsList(
+        models: models,
+        current: current is String ? current : null,
+        switchable: row.payload['switchable'] != false,
+      );
+    } catch (e) {
+      _log.warning('read models cache failed: $e', tag: _tag);
+      return null;
+    }
+  }
+
+  Future<PeerModesList?> _readCachedModes(String agentId) async {
+    try {
+      final row = await _db.getPeerAgentMeta(agentId, PeerAgentMetaKind.modes);
+      if (row == null) return null;
+      final raw = row.payload['modes'];
+      if (raw is! List) return null;
+      final modes = <PeerAgentMode>[];
+      for (final item in raw) {
+        if (item is! Map) continue;
+        final parsed = PeerAgentMode.fromJson(Map<String, dynamic>.from(item));
+        if (parsed != null) modes.add(parsed);
+      }
+      final current = row.payload['current'];
+      return PeerModesList(
+        modes: modes,
+        current: current is String ? current : null,
+      );
+    } catch (e) {
+      _log.warning('read modes cache failed: $e', tag: _tag);
+      return null;
+    }
+  }
+
+  Future<PeerSoulInfo?> _readCachedSoul(String agentId) async {
+    try {
+      final row = await _db.getPeerAgentMeta(agentId, PeerAgentMetaKind.soul);
+      if (row == null) return null;
+      final soul = row.payload['soul'];
+      if (soul is! String) return null;
+      return PeerSoulInfo.ok(
+        soul: soul,
+        editable: row.payload['editable'] == true,
+      );
+    } catch (e) {
+      _log.warning('read soul cache failed: $e', tag: _tag);
+      return null;
+    }
+  }
+
+  Future<void> _warmCommandsCache() async {
+    try {
+      final rows = await _db.getAllPeerAgentMeta(PeerAgentMetaKind.commands);
+      for (final row in rows) {
+        final commands = _parseCachedCommands(row.payload);
+        if (commands == null) continue;
+        _commandsCache[row.agentId] = commands;
+        final stream = _slashCommandsStreams[row.agentId];
+        if (stream != null && !stream.isClosed) {
+          stream.add(List.unmodifiable(commands));
+        }
+      }
+    } catch (e) {
+      _log.warning('warm slash commands failed: $e', tag: _tag);
+    }
+  }
+
+  List<SlashCommandInfo>? _parseCachedCommands(Map<String, dynamic> payload) {
+    final raw = payload['commands'];
+    if (raw is! List) return null;
+    final commands = <SlashCommandInfo>[];
+    for (final item in raw) {
+      if (item is! Map) continue;
+      try {
+        commands.add(
+          SlashCommandInfo.fromJson(Map<String, dynamic>.from(item)),
+        );
+      } catch (_) {}
+    }
+    return commands;
+  }
+
+  /// 删掉 agent 时清内存里的斜杠命令，并通知已打开的 `/` 面板。
+  @visibleForTesting
+  void forgetPeerAgentMeta(String agentId) {
+    _commandsCache.remove(agentId);
+    _commandsFreshThisConnection.remove(agentId);
+    _commandsFreshPeer.remove(agentId);
+    final stream = _slashCommandsStreams[agentId];
+    if (stream != null && !stream.isClosed) {
+      stream.add(const []);
+    }
+  }
+
+  void _dropFreshCommands(String peerId) {
+    final stale = [
+      for (final entry in _commandsFreshPeer.entries)
+        if (entry.value == peerId) entry.key,
+    ];
+    for (final id in stale) {
+      _commandsFreshThisConnection.remove(id);
+      _commandsFreshPeer.remove(id);
     }
   }
 
@@ -3600,17 +4018,20 @@ class PeerAgentClientService {
         .stream;
   }
 
-  /// Ensure slash commands are cached for [localAgentId]. No-op when the cache
-  /// is already populated; otherwise issues agent_commands_req (e.g. on chat
-  /// entry when the connect-time prefetch timed out on a cold agent-bridge).
+  /// Ensure slash commands are cached for [localAgentId]. Skips the request
+  /// only after a refresh on the current connection; a warmed disk cache is
+  /// shown immediately but still refreshed once the peer is up.
   Future<void> ensureCommandsForLocalAgent(String localAgentId) async {
-    if (_commandsCache[localAgentId]?.isNotEmpty ?? false) return;
+    if (_commandsFreshThisConnection.contains(localAgentId)) return;
     final agent = await _db.getRemoteAgentById(localAgentId);
     if (agent == null || !agent.isPeerAgent) return;
     final peerId = agent.sourcePeerId;
     final remoteId = agent.remoteAgentId;
     if (peerId == null || remoteId == null) return;
-    if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) return;
+    if (_commandsFreshThisConnection.contains(remoteId)) return;
+    final connected = debugConnectedPeerIdsOverride?.contains(peerId) ??
+        PeerConnectionManager.instance.connectedPeerIds.contains(peerId);
+    if (!connected) return;
     await fetchCommands(peerId: peerId, remoteAgentId: remoteId);
   }
 
@@ -3624,7 +4045,7 @@ class PeerAgentClientService {
     }
     final completer = Completer<List<SlashCommandInfo>>();
     _pendingCommands[remoteAgentId] = completer;
-    final sent = await PeerConnectionManager.instance.sendControl(peerId, {
+    final sent = await _sendMetaControl(peerId, {
       'type': 'agent_commands_req',
       'agent_id': remoteAgentId,
     });
@@ -3654,14 +4075,20 @@ class PeerAgentClientService {
         // Skip malformed entries rather than dropping the whole list.
       }
     }
-    _applyCommandsResp(remoteId, commands);
+    _applyCommandsResp(remoteId, commands, peerId: peerId);
   }
 
   void _applyCommandsResp(
     String remoteId,
-    List<SlashCommandInfo> commands,
-  ) {
+    List<SlashCommandInfo> commands, {
+    String? peerId,
+  }) {
     _commandsCache[remoteId] = commands;
+    _commandsFreshThisConnection.add(remoteId);
+    if (peerId != null && peerId.isNotEmpty) {
+      _commandsFreshPeer[remoteId] = peerId;
+    }
+    _rememberCommands(remoteId, commands);
     // Mirror ACP's snapshot hook so the "/" resolver can read from either path.
     ACPAgentConnection.slashCommandsSnapshotHook?.call(remoteId, commands);
     final stream = _slashCommandsStreams[remoteId];
@@ -4056,6 +4483,7 @@ class PeerAgentClientService {
       }
       _flushReconcileHints(event.peerId);
     } else if (event.type == PeerConnectionEventType.disconnected) {
+      _dropFreshCommands(event.peerId);
       _suspendPendingForPeer(event.peerId);
       unawaited(_markPeerAgentsOffline(event.peerId));
     }
@@ -4624,6 +5052,8 @@ class PeerAgentClientService {
 
     final engine = (raw['engine'] as String?)?.trim();
     final engineDefault = defaultAvatarForEngine(engine);
+    // 内置引擎直接用打包的 SVG，不再把 Hub 下发的同一份字节另存一份。
+    if (engineDefault != kGenericDefaultAvatar) return engineDefault;
 
     final data = raw['avatar_data'] as String?;
     if (data != null && data.isNotEmpty) {

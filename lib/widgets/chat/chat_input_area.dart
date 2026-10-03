@@ -188,8 +188,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
 
   // ── 会话模式（Peer agent 的原生 mode）──
   // 只有 Peer 接入的 agent 有上游 mode 可切，本地 agent / 群聊整个入口不
-  // 出现。列表与当前值都来自上游（离线时退回引擎目录），切换走
-  // setMode(sessionId:) —— 会话级，不落本地库。
+  // 出现。列表与当前值先读本地缓存（没有则退回引擎目录），在线时再刷新。
+  // 切换走 setMode(sessionId:) —— 会话级，不落本地库。
   final GlobalKey _modeChipKey = GlobalKey();
   List<PeerAgentMode> _sessionModes = const [];
   String? _currentSessionMode;
@@ -201,6 +201,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
   /// 会话切换时作废在途的拉取（fetchModes 最长 15s），避免旧会话的结果
   /// 覆盖新会话的 chip。
   int _controlsToken = 0;
+  /// 对端不在线：模式 / 模型 chip 仍显示缓存，但不能切换。
+  bool _peerControlsOffline = false;
 
   bool get _sessionModeAvailable => _sessionModes.isNotEmpty;
 
@@ -210,7 +212,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
   // ── 模型（§5.1.6 / §6 #8）──
   // 两类 agent 的数据来源不同：
   // - 本地 agent → `metadata['main_model_id']` + ModelRegistry（可「添加模型」）
-  // - Peer agent → 上游 `fetchModels` / `setModel`，按会话生效
+  // - Peer agent → 上游 `fetchModels` / `setModel`。先显示缓存；
+  //   switchable == false 时只展示当前模型。
   final GlobalKey _mainModelChipKey = GlobalKey();
   ModelDefinition? _mainModelDef;
   /// 存了 id 但定义已被删除：显示原始 id 而不是假装没选过。
@@ -218,6 +221,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
   bool _mainModelAvailable = false;
   List<PeerAgentModel> _peerModels = const [];
   String? _currentPeerModel;
+  /// 对端声明模型在电脑上配置，App 不能切换。缺省可切换。
+  bool _peerModelsSwitchable = true;
   bool _modelSetting = false;
 
   /// 本地 agent 未配置模型、或 Peer agent 上游没给列表 → 入口都不出现。
@@ -302,6 +307,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
       _mainModelAvailable = false;
       _peerModels = const [];
       _currentPeerModel = null;
+      _peerModelsSwitchable = true;
+      _peerControlsOffline = false;
       unawaited(_loadAgentControls());
     }
   }
@@ -362,72 +369,136 @@ class ChatInputAreaState extends State<ChatInputArea> {
     }
     if (!mounted || token != _controlsToken || agent == null) return;
     if (agent.isPeerAgent) {
-      await _loadSessionModes(agent, token);
-      await _loadPeerModels(agent, token);
+      await _showCachedPeerControls(agent, token);
+      if (!mounted || token != _controlsToken) return;
+      final peerId = agent.sourcePeerId;
+      final remoteAgentId = agent.remoteAgentId;
+      if (peerId == null || remoteAgentId == null) return;
+      if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
+        return;
+      }
+      await Future.wait([
+        _refreshSessionModes(agent, token),
+        _refreshPeerModels(agent, token),
+      ]);
     }
     if (agent.isLocal) {
       _readMainModel(agent);
     }
   }
 
-  /// Peer agent 的上游模型列表。与会话模式不同，模型没有本地目录可兜底，
-  /// 所以离线时直接不显示入口，而不是给一份对端未必认的候选。
-  Future<void> _loadPeerModels(RemoteAgent agent, int token) async {
+  /// 先把上次的模式和模型画出来。模型没有缓存（或缓存是空列表）时不显示入口。
+  /// 离线时两个入口都保留上次的值，但不能切换。
+  Future<void> _showCachedPeerControls(RemoteAgent agent, int token) async {
     final peerId = agent.sourcePeerId;
     final remoteAgentId = agent.remoteAgentId;
     if (peerId == null || remoteAgentId == null) return;
-    if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
-      return;
-    }
-    // 与 fetchModes 同款：按 remoteAgentId 去重（不含 sessionId），会话间
-    // 并发拉取时 current 可能取到另一会话的值。
-    final list = await PeerAgentClientService.instance.fetchModels(
-      peerId: peerId,
-      remoteAgentId: remoteAgentId,
-      sessionId: _sessionIdForMode,
-    );
+    final catalog = catalogModesList(agent.metadata['engine'] as String?);
+    PeerModesList? cachedModes;
+    PeerModelsList? cachedModels;
+    try {
+      final client = PeerAgentClientService.instance;
+      cachedModes = await client.cachedModes(agent.id);
+      cachedModels = await client.cachedModels(agent.id);
+    } catch (_) {}
     if (!mounted || token != _controlsToken) return;
+    final connected =
+        PeerConnectionManager.instance.connectedPeerIds.contains(peerId);
+    final modes = (cachedModes != null && cachedModes.modes.isNotEmpty)
+        ? cachedModes
+        : catalog;
     setState(() {
-      _peerModels = list.models;
-      _currentPeerModel = list.current;
+      _peerId = peerId;
+      _remoteAgentId = remoteAgentId;
+      _peerControlsOffline = !connected;
+      _sessionModes = modes.modes;
+      _currentSessionMode = modes.current ?? catalog.current;
+      if (cachedModels != null && cachedModels.models.isNotEmpty) {
+        _peerModels = cachedModels.models;
+        _currentPeerModel = cachedModels.current;
+        _peerModelsSwitchable = cachedModels.switchable;
+      } else {
+        _peerModels = const [];
+        _currentPeerModel = null;
+        _peerModelsSwitchable = true;
+      }
     });
   }
 
-  /// 拉取当前会话可用的模式（Peer agent 的原生 mode）。
-  Future<void> _loadSessionModes(RemoteAgent agent, int token) async {
+  Future<void> _refreshPeerModels(RemoteAgent agent, int token) async {
     final peerId = agent.sourcePeerId;
     final remoteAgentId = agent.remoteAgentId;
     if (peerId == null || remoteAgentId == null) return;
-
-    final catalog = catalogModesList(agent.metadata['engine'] as String?);
-    _peerId = peerId;
-    _remoteAgentId = remoteAgentId;
-    if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
-      // 离线：退回引擎目录（已知引擎的原生档位），至少不让入口消失。
-      setState(() {
-        _sessionModes = catalog.modes;
-        _currentSessionMode = catalog.current;
-      });
-      return;
-    }
-    // 注：fetchModes 内部按 remoteAgentId 去重（不含 sessionId），同一
-    // agent 的并发请求会复用同一个 future。列表是 agent 级的、本来一致，
-    // 只有 current 可能取到另一会话的值 —— 会话间来回切时以 chip 上显示
-    // 的为准，必要时再点开菜单重选。
-    final list = await PeerAgentClientService.instance.fetchModes(
+    final outcome = await PeerAgentClientService.instance.fetchModelsResult(
       peerId: peerId,
       remoteAgentId: remoteAgentId,
       sessionId: _sessionIdForMode,
     );
     if (!mounted || token != _controlsToken) return;
-    final live = list.modes.isNotEmpty ? list : catalog;
+    if (!outcome.completed) return;
+    setState(() {
+      _peerModels = outcome.list.models;
+      _currentPeerModel = outcome.list.current;
+      _peerModelsSwitchable = outcome.list.switchable;
+    });
+  }
+
+  Future<void> _refreshSessionModes(RemoteAgent agent, int token) async {
+    final peerId = agent.sourcePeerId;
+    final remoteAgentId = agent.remoteAgentId;
+    if (peerId == null || remoteAgentId == null) return;
+    final catalog = catalogModesList(agent.metadata['engine'] as String?);
+    final outcome = await PeerAgentClientService.instance.fetchModesResult(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      sessionId: _sessionIdForMode,
+    );
+    if (!mounted || token != _controlsToken) return;
+    if (!outcome.completed) return;
+    final live = outcome.list.modes.isNotEmpty ? outcome.list : catalog;
     setState(() {
       _sessionModes = live.modes;
       _currentSessionMode = live.current ?? catalog.current;
     });
   }
 
+  void _toastPeerOffline() {
+    showTopToast(
+      context,
+      AppLocalizations.of(context).chat_peerDeviceOffline,
+      icon: Icons.cloud_off_outlined,
+      color: Colors.blueGrey,
+    );
+  }
+
+  void _toastModelConfiguredOnComputer() {
+    showTopToast(
+      context,
+      AppLocalizations.of(context).chat_modelConfiguredOnComputer,
+      icon: Icons.info_outline,
+      color: Colors.blueGrey,
+    );
+  }
+
+  /// 模型 chip 点不开菜单时的原因。不可切换优先于离线。
+  bool _blockPeerModelSwitch() {
+    if (_peerModels.isEmpty) return false;
+    if (!_peerModelsSwitchable) {
+      _toastModelConfiguredOnComputer();
+      return true;
+    }
+    if (_peerControlsOffline) {
+      _toastPeerOffline();
+      return true;
+    }
+    return false;
+  }
+
   Future<void> _setSessionMode(String mode) async {
+    if (_peerControlsOffline) {
+      _toastPeerOffline();
+      return;
+    }
     final peerId = _peerId;
     final remoteAgentId = _remoteAgentId;
     if (peerId == null || remoteAgentId == null) return;
@@ -575,6 +646,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
 
   /// 切上游模型：与会话模式一样按会话下发（sessionId），失败回退显示。
   Future<void> _setPeerModel(String value) async {
+    if (_blockPeerModelSwitch()) return;
     final peerId = _peerId;
     final remoteAgentId = _remoteAgentId;
     if (peerId == null || remoteAgentId == null) return;
@@ -606,6 +678,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
   ///（`ModelRegistry` 的全局定义），末尾带「添加模型」直达模型管理页
   ///（§6 #8 要求能顺手添加）。
   Future<void> _showMainModelMenu() async {
+    if (_blockPeerModelSwitch()) return;
     final peerModels = _peerModels;
     final defs = ModelRegistry.instance.definitions;
     if (peerModels.isEmpty && defs.isEmpty) {
@@ -779,6 +852,10 @@ class ChatInputAreaState extends State<ChatInputArea> {
 
   /// 全部档位菜单（带描述），当前档位打勾；plan 档另有 Shift+Tab 快捷入口。
   Future<void> _showSessionModeMenu() async {
+    if (_peerControlsOffline) {
+      _toastPeerOffline();
+      return;
+    }
     final modes = _sessionModes;
     if (modes.isEmpty) return;
     final overlayBox =

@@ -4361,6 +4361,8 @@
   "chat_sessionModeSwitchFailed": "Failed to switch session mode",
   "chat_mainModelUnset": "No model set",
   "chat_mainModelSwitchFailed": "Failed to switch main model",
+  "chat_peerDeviceOffline": "Device is offline, so the model can't be switched right now",
+  "chat_modelConfiguredOnComputer": "This agent's model is configured on the computer",
   "common_discardUnsaved": "You have unsaved changes. Discard them?",
   "chat_deleteMessageTitle": "Delete message",
   "chat_deleteMessageContent": "Delete this message? This cannot be undone.",

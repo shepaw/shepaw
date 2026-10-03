@@ -20,6 +20,7 @@ export 'database/config_dao.dart';
 export 'database/scheduled_task_dao.dart';
 export 'database/dispatch_task_dao.dart';
 export 'database/history_compaction_cache_dao.dart';
+export 'database/peer_agent_meta_cache_dao.dart';
 export 'database/face_album_dao.dart';
 export 'database/instruction_set_dao.dart';
 
@@ -34,6 +35,9 @@ class LocalDatabaseService {
 
   Database? _database;
   Future<Database>? _databaseFuture;
+
+  /// 删除 agent 行之后的通知。PeerAgentClientService 用来清斜杠命令内存缓存。
+  void Function(String agentId)? onRemoteAgentDeleted;
 
   /// 获取数据库实例
   ///
@@ -54,7 +58,7 @@ class LocalDatabaseService {
     final path = await PouchSqlite.openPath(PouchSqlite.mainDb);
     return await openDatabase(
       path,
-      version: 34,
+      version: 35,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -436,6 +440,21 @@ class LocalDatabaseService {
     // 事件订阅（v34）
     await _createEventSubscriptionsTable(db);
 
+    // Peer agent 元数据缓存（v35）
+    await _createPeerAgentMetaCacheTable(db);
+  }
+
+  Future<void> _createPeerAgentMetaCacheTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS peer_agent_meta_cache (
+        agent_id   TEXT NOT NULL,
+        kind       TEXT NOT NULL,
+        scope      TEXT NOT NULL DEFAULT '',
+        payload    TEXT NOT NULL,
+        fetched_at INTEGER NOT NULL,
+        PRIMARY KEY (agent_id, kind, scope)
+      )
+    ''');
   }
 
   Future<void> _createEventSubscriptionsTable(Database db) async {
@@ -907,6 +926,19 @@ class LocalDatabaseService {
       }
     }
 
+    if (oldVersion < 35) {
+      // 版本 34 -> 35: peer agent 的模型 / 模式 / 命令 / 灵魂本地缓存
+      try {
+        await _createPeerAgentMetaCacheTable(db);
+      } catch (e) {
+        LoggerService().error(
+          'Failed to create peer_agent_meta_cache (v35)',
+          tag: 'Migration',
+          error: e,
+        );
+      }
+    }
+
   }
 
   // ==================== 数据库维护 ====================
@@ -922,6 +954,7 @@ class LocalDatabaseService {
     await db.delete('conversation_requests');
     await db.delete('resources');
     await db.delete('event_subscriptions');
+    await db.delete('peer_agent_meta_cache');
   }
 
   /// 关闭数据库

@@ -97,6 +97,10 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   bool _peerModelsLoading = false;
   bool _peerModelSetting = false;
   String? _peerModelsError;
+  /// false：模型在对端电脑上配置，详情页只展示当前值。
+  bool _peerModelsSwitchable = true;
+  /// 上次写进灵魂输入框的文本。用户改过之后，后台刷新不能覆盖。
+  String? _soulApplied;
 
   /// Upstream session-mode list from the paired device's agent (peer agents only).
   List<PeerAgentMode> _peerModes = const [];
@@ -247,58 +251,109 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     } catch (_) {}
   }
 
+  bool get _peerLinkUp {
+    final peerId = _agent.sourcePeerId;
+    if (peerId == null) return false;
+    return PeerConnectionManager.instance.connectedPeerIds.contains(peerId);
+  }
+
+  void _applySoul(String soul, {required bool editable}) {
+    final canReplace = _systemPromptController.text.isEmpty ||
+        _systemPromptController.text == _soulApplied;
+    setState(() {
+      _displaySoul = soul;
+      _peerSoulEditable = editable;
+      if (canReplace) {
+        _systemPromptController.text = soul;
+        _soulApplied = soul;
+      }
+    });
+  }
+
   Future<void> _loadSoul() async {
     if (!mounted) return;
-    setState(() {
-      _soulLoading = true;
-      _soulFetchFailed = false;
-    });
-    try {
-      if (_agent.isPeerAgent) {
-        final peerId = _agent.sourcePeerId;
-        final remoteId = _agent.remoteAgentId;
-        if (peerId == null ||
-            remoteId == null ||
-            !PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
-          if (!mounted) return;
-          setState(() {
-            _displaySoul = '';
-            _peerSoulEditable = false;
-            _systemPromptController.text = '';
-            _soulFetchFailed = false;
-            _soulLoading = false;
-          });
-          return;
-        }
-        final info = await PeerAgentClientService.instance.fetchSoulInfo(
-          peerId: peerId,
-          remoteAgentId: remoteId,
-        );
+    if (!_agent.isPeerAgent) {
+      setState(() {
+        _soulLoading = true;
+        _soulFetchFailed = false;
+      });
+      try {
+        final soul = await AgentSoulService.instance.getSoul(_agent);
         if (!mounted) return;
-        final ok = info != null && info.isOk;
         setState(() {
-          _displaySoul = ok ? info.soul : '';
-          _peerSoulEditable = ok ? info.editable : false;
-          _systemPromptController.text = _displaySoul;
-          _soulFetchFailed = !ok;
+          _displaySoul = soul;
+          _systemPromptController.text = soul;
+          _soulFetchFailed = false;
+          _soulLoading = false;
+        });
+      } catch (_) {
+        if (!mounted) return;
+        setState(() {
+          _soulFetchFailed = false;
+          _soulLoading = false;
+        });
+      }
+      return;
+    }
+
+    final peerId = _agent.sourcePeerId;
+    final remoteId = _agent.remoteAgentId;
+    final cached = await PeerAgentClientService.instance.cachedSoul(_agent.id);
+    if (!mounted) return;
+    final connected = peerId != null &&
+        remoteId != null &&
+        PeerConnectionManager.instance.connectedPeerIds.contains(peerId);
+    if (cached != null) {
+      _applySoul(cached.soul, editable: connected && cached.editable);
+      setState(() {
+        _soulFetchFailed = false;
+        _soulLoading = false;
+      });
+    } else {
+      setState(() {
+        _soulLoading = true;
+        _soulFetchFailed = false;
+      });
+    }
+    if (!connected) {
+      if (cached == null && mounted) {
+        setState(() {
+          _displaySoul = '';
+          _peerSoulEditable = false;
+          _soulFetchFailed = false;
+          _soulLoading = false;
+        });
+      } else if (mounted) {
+        setState(() => _peerSoulEditable = false);
+      }
+      return;
+    }
+    try {
+      final info = await PeerAgentClientService.instance.fetchSoulInfo(
+        peerId: peerId,
+        remoteAgentId: remoteId,
+      );
+      if (!mounted) return;
+      if (info != null && info.isOk) {
+        _applySoul(info.soul, editable: info.editable);
+        setState(() {
+          _soulFetchFailed = false;
           _soulLoading = false;
         });
         return;
       }
-
-      final soul = await AgentSoulService.instance.getSoul(_agent);
-      if (!mounted) return;
       setState(() {
-        _displaySoul = soul;
-        _systemPromptController.text = soul;
-        _soulFetchFailed = false;
         _soulLoading = false;
+        if (cached == null) {
+          _soulFetchFailed = true;
+          _peerSoulEditable = false;
+        }
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _soulFetchFailed = _agent.isPeerAgent;
         _soulLoading = false;
+        if (cached == null) _soulFetchFailed = true;
       });
     }
   }
@@ -309,35 +364,56 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     final peerId = _agent.sourcePeerId;
     final remoteId = _agent.remoteAgentId;
     if (peerId == null || remoteId == null) return;
-    if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
-      if (mounted) {
-        setState(() {
-          _peerModels = const [];
-          _peerCurrentModel = null;
-          _peerModelsError = l10n.agentDetail_peerOffline;
-          _peerModelsLoading = false;
-        });
+    final cached = await PeerAgentClientService.instance.cachedModels(_agent.id);
+    if (!mounted) return;
+    final connected =
+        PeerConnectionManager.instance.connectedPeerIds.contains(peerId);
+    if (cached != null) {
+      final models = _uniqueByValue(cached.models, (m) => m.value);
+      setState(() {
+        _peerModels = models;
+        _peerCurrentModel = cached.current;
+        _peerModelsSwitchable = cached.switchable;
+        _peerModelsError =
+            models.isEmpty ? l10n.agentDetail_modelSwitchUnsupported : null;
+        _peerModelsLoading = connected;
+      });
+      if (!connected) {
+        setState(() => _peerModelsLoading = false);
+        return;
       }
+    } else if (!connected) {
+      setState(() {
+        _peerModels = const [];
+        _peerCurrentModel = null;
+        _peerModelsSwitchable = true;
+        _peerModelsError = l10n.agentDetail_peerOffline;
+        _peerModelsLoading = false;
+      });
       return;
-    }
-    if (mounted) {
+    } else {
       setState(() {
         _peerModelsLoading = true;
         _peerModelsError = null;
       });
     }
-    final list = await PeerAgentClientService.instance.fetchModels(
+    final outcome = await PeerAgentClientService.instance.fetchModelsResult(
       peerId: peerId,
       remoteAgentId: remoteId,
     );
     if (!mounted) return;
+    if (!outcome.completed) {
+      setState(() => _peerModelsLoading = false);
+      return;
+    }
+    final models = _uniqueByValue(outcome.list.models, (m) => m.value);
     setState(() {
       _peerModelsLoading = false;
-      _peerModels = _uniqueByValue(list.models, (m) => m.value);
-      _peerCurrentModel = list.current;
-      if (_peerModels.isEmpty) {
-        _peerModelsError = l10n.agentDetail_modelSwitchUnsupported;
-      }
+      _peerModels = models;
+      _peerCurrentModel = outcome.list.current;
+      _peerModelsSwitchable = outcome.list.switchable;
+      _peerModelsError =
+          models.isEmpty ? l10n.agentDetail_modelSwitchUnsupported : null;
     });
   }
 
@@ -376,20 +452,31 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     final catalog = catalogModesList(
       _agent.metadata['engine'] as String?,
     );
-    if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
-      if (mounted) {
-        setState(() {
-          _peerModes = _uniqueByValue(catalog.modes, (m) => m.value);
-          _peerCurrentMode = catalog.current;
-          _peerModesError = catalog.modes.isEmpty
-              ? l10n.agentDetail_peerOffline
-              : null;
-          _peerModesLoading = false;
-        });
+    final cached = await PeerAgentClientService.instance.cachedModes(_agent.id);
+    if (!mounted) return;
+    final connected =
+        PeerConnectionManager.instance.connectedPeerIds.contains(peerId);
+    if (cached != null && cached.modes.isNotEmpty) {
+      setState(() {
+        _peerModes = _uniqueByValue(cached.modes, (m) => m.value);
+        _peerCurrentMode = cached.current;
+        _peerModesError = null;
+        _peerModesLoading = connected;
+      });
+      if (!connected) {
+        setState(() => _peerModesLoading = false);
+        return;
       }
+    } else if (!connected) {
+      setState(() {
+        _peerModes = _uniqueByValue(catalog.modes, (m) => m.value);
+        _peerCurrentMode = catalog.current;
+        _peerModesError =
+            catalog.modes.isEmpty ? l10n.agentDetail_peerOffline : null;
+        _peerModesLoading = false;
+      });
       return;
-    }
-    if (mounted) {
+    } else {
       setState(() {
         _peerModesLoading = true;
         _peerModesError = null;
@@ -399,19 +486,23 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         }
       });
     }
-    final list = await PeerAgentClientService.instance.fetchModes(
+    final outcome = await PeerAgentClientService.instance.fetchModesResult(
       peerId: peerId,
       remoteAgentId: remoteId,
     );
     if (!mounted) return;
-    final live = list.modes.isNotEmpty ? list : catalog;
+    if (!outcome.completed) {
+      setState(() => _peerModesLoading = false);
+      return;
+    }
+    final live = outcome.list.modes.isNotEmpty ? outcome.list : catalog;
+    final modes = _uniqueByValue(live.modes, (m) => m.value);
     setState(() {
       _peerModesLoading = false;
-      _peerModes = _uniqueByValue(live.modes, (m) => m.value);
+      _peerModes = modes;
       _peerCurrentMode = live.current;
-      if (live.modes.isEmpty) {
-        _peerModesError = l10n.agentDetail_modeSwitchUnsupported;
-      }
+      _peerModesError =
+          modes.isEmpty ? l10n.agentDetail_modeSwitchUnsupported : null;
     });
   }
 
@@ -684,6 +775,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     _bioController.text = _agent.bio ?? '';
     _endpointController.text = _agent.endpoint;
     _systemPromptController.text = _displaySoul;
+    _soulApplied = _displaySoul;
     _remoteAgentIdController.text =
         (_agent.metadata['target_agent_id'] as String?) ?? '';
     _maxToolRoundsController.text =
@@ -1544,7 +1636,11 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           ),
           const SizedBox(height: 4),
           Text(
-            l10n.agentDetail_switchModelHint,
+            !_peerModelsSwitchable
+                ? l10n.chat_modelConfiguredOnComputer
+                : (!_peerLinkUp && models.isNotEmpty)
+                    ? l10n.chat_peerDeviceOffline
+                    : l10n.agentDetail_switchModelHint,
             style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 10),
@@ -1559,6 +1655,18 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
             Text(
               l10n.agentDetail_noModels,
               style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+            )
+          else if (!_peerModelsSwitchable)
+            Text(
+              dropdownValue == null
+                  ? l10n.chat_mainModelUnset
+                  : models
+                      .firstWhere(
+                        (m) => m.value == dropdownValue,
+                        orElse: () => models.first,
+                      )
+                      .displayName,
+              style: const TextStyle(fontSize: 14),
             )
           else
             DropdownButtonFormField<String>(
@@ -1606,7 +1714,9 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                     ),
                   ),
               ],
-              onChanged: busy ? null : _onPeerModelSelected,
+              onChanged: (_peerModelSetting || !_peerLinkUp)
+                  ? null
+                  : _onPeerModelSelected,
             ),
         ],
       ),
@@ -1667,7 +1777,9 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           ),
           const SizedBox(height: 4),
           Text(
-            l10n.agentDetail_switchModeHint,
+            !_peerLinkUp && modes.isNotEmpty
+                ? l10n.chat_peerDeviceOffline
+                : l10n.agentDetail_switchModeHint,
             style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 10),
@@ -1729,7 +1841,9 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                     ),
                   ),
               ],
-              onChanged: busy ? null : _onPeerModeSelected,
+              onChanged: (_peerModeSetting || !_peerLinkUp)
+                  ? null
+                  : _onPeerModeSelected,
             ),
         ],
       ),

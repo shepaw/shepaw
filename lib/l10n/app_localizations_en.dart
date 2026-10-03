@@ -8186,6 +8186,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_mainModelSwitchFailed => 'Failed to switch main model';
 
   @override
+  String get chat_peerDeviceOffline =>
+      'Device is offline, so the model can\'t be switched right now';
+
+  @override
+  String get chat_modelConfiguredOnComputer =>
+      'This agent\'s model is configured on the computer';
+
+  @override
   String get common_discardUnsaved => 'You have unsaved changes. Discard them?';
 
   @override

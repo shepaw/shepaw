@@ -4832,6 +4832,8 @@
   "chat_sessionModeSwitchFailed": "切换会话模式失败",
   "chat_mainModelUnset": "未设置模型",
   "chat_mainModelSwitchFailed": "切换主模型失败",
+  "chat_peerDeviceOffline": "设备离线，暂不能切换模型",
+  "chat_modelConfiguredOnComputer": "这个 Agent 的模型在电脑上配置",
   "common_discardUnsaved": "有未保存的修改，放弃更改？",
   "chat_deleteMessageTitle": "删除消息",
   "chat_deleteMessageContent": "确定删除这条消息？此操作不可撤销。",

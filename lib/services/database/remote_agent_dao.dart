@@ -134,9 +134,17 @@ extension RemoteAgentDao on LocalDatabaseService {
     );
   }
 
-  /// 删除远端助手
+  /// 删除远端助手，并清掉它的元数据缓存。
   Future<void> deleteRemoteAgent(String id) async {
     final db = await database;
-    await db.delete('agents', where: 'id = ?', whereArgs: [id]);
+    await db.transaction((txn) async {
+      await txn.delete('agents', where: 'id = ?', whereArgs: [id]);
+      await txn.delete(
+        'peer_agent_meta_cache',
+        where: 'agent_id = ?',
+        whereArgs: [id],
+      );
+    });
+    onRemoteAgentDeleted?.call(id);
   }
 }

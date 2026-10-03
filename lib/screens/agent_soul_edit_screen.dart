@@ -42,6 +42,8 @@ class _AgentSoulEditScreenState extends State<AgentSoulEditScreen> {
   Timer? _uiTimeout;
   /// 重试时忽略详情页预取，强制重新中继。
   bool _usePrefetch = true;
+  /// 已经把灵魂画出来（缓存或预取）。之后的失败不能再盖成错误页。
+  bool _showingSoul = false;
 
   @override
   void initState() {
@@ -87,78 +89,116 @@ class _AgentSoulEditScreenState extends State<AgentSoulEditScreen> {
     });
   }
 
+  void _presentSoul({
+    required String soul,
+    required bool readOnly,
+    bool background = false,
+  }) {
+    _showingSoul = true;
+    if (background && !_loading && _loadError == null) {
+      if (!mounted) return;
+      _uiTimeout?.cancel();
+      setState(() {
+        _initialSoul = soul;
+        _readOnly = readOnly;
+        _soulMissing = soul.trim().isEmpty;
+      });
+      return;
+    }
+    _finishLoad(soul: soul, readOnly: readOnly);
+  }
+
   Future<void> _load() async {
     final l10n = AppLocalizations.of(context);
     final agent = widget.agent;
 
     try {
-      // 详情页已有确定结果时，不再二次中继（editable=false 也不影响查看）。
-      if (_usePrefetch && widget.prefetchFailed) {
-        _finishLoad(soul: '', readOnly: true, error: l10n.chat_soulFetchFailed);
-        return;
-      }
-      if (_usePrefetch && widget.prefetchedSoul != null) {
-        final editable = widget.prefetchedEditable ?? !agent.isPeerAgent;
-        _finishLoad(
-          soul: widget.prefetchedSoul!,
-          readOnly: agent.isPeerAgent ? !editable : false,
-        );
+      if (!agent.isPeerAgent) {
+        if (_usePrefetch && widget.prefetchFailed) {
+          _finishLoad(soul: '', readOnly: true, error: l10n.chat_soulFetchFailed);
+          return;
+        }
+        if (_usePrefetch && widget.prefetchedSoul != null) {
+          _finishLoad(soul: widget.prefetchedSoul!, readOnly: false);
+          return;
+        }
+        final soul = await AgentSoulService.instance
+            .getSoul(agent)
+            .timeout(_uiLoadTimeout);
+        _finishLoad(soul: soul, readOnly: false);
         return;
       }
 
-      if (agent.isPeerAgent) {
-        final peerId = agent.sourcePeerId;
-        final remoteId = agent.remoteAgentId;
-        if (peerId == null ||
-            remoteId == null ||
-            !PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
+      final peerId = agent.sourcePeerId;
+      final remoteId = agent.remoteAgentId;
+      final connected = peerId != null &&
+          remoteId != null &&
+          PeerConnectionManager.instance.connectedPeerIds.contains(peerId);
+
+      PeerSoulInfo? cached;
+      if (_usePrefetch && !widget.prefetchFailed && widget.prefetchedSoul != null) {
+        cached = PeerSoulInfo.ok(
+          soul: widget.prefetchedSoul!,
+          editable: widget.prefetchedEditable ?? false,
+        );
+      } else {
+        cached = await PeerAgentClientService.instance.cachedSoul(agent.id);
+      }
+
+      if (cached != null && cached.isOk) {
+        _presentSoul(
+          soul: cached.soul,
+          readOnly: !connected || !cached.editable,
+        );
+      }
+
+      if (!connected) {
+        if (cached == null) {
           _finishLoad(
             soul: '',
             readOnly: true,
             error: l10n.agentDetail_peerOffline,
           );
-          return;
         }
-        // editable 仅决定只读展示；allowPeerSoulEdit=false 时仍应返回正文。
-        final info = await PeerAgentClientService.instance
-            .fetchSoulInfo(peerId: peerId, remoteAgentId: remoteId)
-            .timeout(_uiLoadTimeout);
-        if (info == null) {
-          _finishLoad(
-            soul: '',
-            readOnly: true,
-            error: l10n.chat_soulFetchFailed,
-          );
-          return;
-        }
-        if (!info.isOk) {
-          _finishLoad(
-            soul: '',
-            readOnly: true,
-            error: _soulErrorMessage(l10n, info.error),
-          );
-          return;
-        }
-        _finishLoad(soul: info.soul, readOnly: !info.editable);
         return;
       }
 
-      final soul = await AgentSoulService.instance
-          .getSoul(agent)
+      final info = await PeerAgentClientService.instance
+          .fetchSoulInfo(peerId: peerId, remoteAgentId: remoteId)
           .timeout(_uiLoadTimeout);
-      _finishLoad(soul: soul, readOnly: false);
+      if (info == null || !info.isOk) {
+        if (!_showingSoul) {
+          _finishLoad(
+            soul: '',
+            readOnly: true,
+            error: info == null
+                ? l10n.chat_soulFetchFailed
+                : _soulErrorMessage(l10n, info.error),
+          );
+        }
+        return;
+      }
+      _presentSoul(
+        soul: info.soul,
+        readOnly: !info.editable,
+        background: cached != null,
+      );
     } on TimeoutException {
-      _finishLoad(
-        soul: '',
-        readOnly: true,
-        error: l10n.chat_soulFetchFailed,
-      );
+      if (!_showingSoul) {
+        _finishLoad(
+          soul: '',
+          readOnly: true,
+          error: l10n.chat_soulFetchFailed,
+        );
+      }
     } catch (e) {
-      _finishLoad(
-        soul: '',
-        readOnly: true,
-        error: l10n.agentDetail_saveFailed('$e'),
-      );
+      if (!_showingSoul) {
+        _finishLoad(
+          soul: '',
+          readOnly: true,
+          error: l10n.agentDetail_saveFailed('$e'),
+        );
+      }
     }
   }
 

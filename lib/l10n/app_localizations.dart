@@ -14283,6 +14283,18 @@ abstract class AppLocalizations {
   /// **'切换主模型失败'**
   String get chat_mainModelSwitchFailed;
 
+  /// No description provided for @chat_peerDeviceOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备离线，暂不能切换模型'**
+  String get chat_peerDeviceOffline;
+
+  /// No description provided for @chat_modelConfiguredOnComputer.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个 Agent 的模型在电脑上配置'**
+  String get chat_modelConfiguredOnComputer;
+
   /// No description provided for @common_discardUnsaved.
   ///
   /// In zh, this message translates to:
