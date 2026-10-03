@@ -59,6 +59,26 @@ void main() {
       expect(dirty.map((s) => s.sessionId).toList(), ['c', 'b', 'd']);
     });
 
+    test('sessionsMissingLocalTranscript keeps empty shells that the watermark skipped', () {
+      final missing = sessionsMissingLocalTranscript(
+        sessions,
+        alreadyDirty: {'b', 'c', 'd'},
+        syncedUnstampedIds: {},
+        emptyLocalSessionIds: {'a'},
+      );
+      expect(missing.map((s) => s.sessionId).toList(), ['a']);
+    });
+
+    test('sessionsMissingLocalTranscript skips a shell already recorded as empty', () {
+      final missing = sessionsMissingLocalTranscript(
+        sessions,
+        alreadyDirty: {'b', 'c', 'd'},
+        syncedUnstampedIds: {'a'},
+        emptyLocalSessionIds: {'a'},
+      );
+      expect(missing, isEmpty);
+    });
+
     test('prioritizeSessionId is a no-op when session is not dirty', () {
       final dirty = selectDirtySessions(
         sessions,
@@ -382,6 +402,20 @@ void main() {
       expect(meta['collapsible'], isTrue);
       expect(meta['collapsible_title'], 'Thinking');
       expect(meta['auto_collapse'], isTrue);
+    });
+
+    test('keeps a reply quote from hub history', () {
+      final meta = peerHistoryMessageMetadata(
+        PeerHistoryMessage(
+          role: 'user',
+          content: '二',
+          metadata: {'reply_quote': '一'},
+        ),
+      )!;
+      expect(meta['reply_quote'], '一');
+      expect(peerHistoryReplyToId('m1'), 'peerhist_m1');
+      expect(peerHistoryReplyToId('peerhist_m1'), 'peerhist_m1');
+      expect(peerHistoryReplyToId('  '), isNull);
     });
 
     test('falls back to Details title and null when no progress', () {
