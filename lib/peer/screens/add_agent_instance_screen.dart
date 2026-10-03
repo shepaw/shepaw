@@ -12,6 +12,7 @@ import '../../storage/pouch_session.dart';
 import '../../widgets/host_directory_picker.dart';
 import '../add_agent_instance_logic.dart';
 import '../models/paired_peer.dart';
+import 'engine_setup_screen.dart';
 import '../services/peer_agent_client_service.dart';
 import '../services/peer_connection_manager.dart';
 import '../services/peer_storage_service.dart';
@@ -78,10 +79,20 @@ class _AddAgentInstanceScreenState extends State<AddAgentInstanceScreen> {
   bool _submitted = false;
   bool _nameTouched = false;
   bool _applyingName = false;
+  StreamSubscription<dynamic>? _connectionSub;
+
+  bool get _hostOnline {
+    final peerId = _peerId;
+    if (peerId == null) return false;
+    return PeerConnectionManager.instance.connectedPeerIds.contains(peerId);
+  }
 
   @override
   void initState() {
     super.initState();
+    _connectionSub = PeerConnectionManager.instance.events.listen((_) {
+      if (mounted) setState(() {});
+    });
     final draft = AddAgentInstanceScreen.draft;
     if (draft != null &&
         widget.presetPeerId != null &&
@@ -97,6 +108,7 @@ class _AddAgentInstanceScreenState extends State<AddAgentInstanceScreen> {
 
   @override
   void dispose() {
+    _connectionSub?.cancel();
     if (!_submitted) {
       AddAgentInstanceScreen.draft = AddAgentInstanceDraft(
         peerId: _peerId,
@@ -318,6 +330,7 @@ class _AddAgentInstanceScreenState extends State<AddAgentInstanceScreen> {
         _peerId != null &&
         engine != null &&
         engine.available &&
+        _hostOnline &&
         _cwd.trim().isNotEmpty;
   }
 
@@ -454,32 +467,39 @@ class _AddAgentInstanceScreenState extends State<AddAgentInstanceScreen> {
                     style: Theme.of(context).textTheme.titleSmall),
                 const SizedBox(height: 8),
                 _deviceField(l10n),
-                const SizedBox(height: 20),
-                if (!anyAvailable)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Text(
-                      l10n.addAgent_noEngines,
-                      style:
-                          TextStyle(color: Theme.of(context).colorScheme.error),
+                if (_peerId == null) ...[
+                  const SizedBox(height: 12),
+                  Text(l10n.pouch_hostOffline),
+                ] else ...[
+                  const SizedBox(height: 20),
+                  if (!anyAvailable)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Text(
+                        l10n.addAgent_noEngines,
+                        style: TextStyle(
+                            color: Theme.of(context).colorScheme.error),
+                      ),
                     ),
-                  ),
-                Text(l10n.addAgent_engine,
-                    style: Theme.of(context).textTheme.titleSmall),
-                if (_engines.length > 8) ...[
+                  Text(l10n.addAgent_engine,
+                      style: Theme.of(context).textTheme.titleSmall),
+                  if (_engines.length > 8) ...[
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _engineQuery,
+                      decoration: InputDecoration(
+                        hintText: l10n.addAgent_searchEngines,
+                        prefixIcon: const Icon(Icons.search),
+                      ),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  ],
                   const SizedBox(height: 8),
-                  TextField(
-                    controller: _engineQuery,
-                    decoration: InputDecoration(
-                      hintText: l10n.addAgent_searchEngines,
-                      prefixIcon: const Icon(Icons.search),
-                    ),
-                    onChanged: (_) => setState(() {}),
-                  ),
+                  ..._visibleEngines.map(_engineTile),
                 ],
-                const SizedBox(height: 8),
-                ..._visibleEngines.map(_engineTile),
-                if (engine != null && engine.sessionModes.isNotEmpty) ...[
+                if (engine != null &&
+                    engine.available &&
+                    engine.sessionModes.isNotEmpty) ...[
                   const SizedBox(height: 20),
                   Text(
                     l10n.addAgent_sessionMode,
@@ -506,69 +526,83 @@ class _AddAgentInstanceScreenState extends State<AddAgentInstanceScreen> {
                     ),
                   ),
                 ],
-                const SizedBox(height: 20),
-                TextField(
-                  controller: _nameController,
-                  decoration: InputDecoration(labelText: l10n.addAgent_name),
-                ),
-                const SizedBox(height: 16),
-                Text(l10n.addAgent_cwd,
-                    style: Theme.of(context).textTheme.titleSmall),
-                const SizedBox(height: 8),
-                _pathRow(
-                  text: _cwd.isEmpty ? l10n.peerSettings_chooseWorkspace : _cwd,
-                  muted: _cwd.isEmpty,
-                  onBrowse: () => _pickDirectory(),
-                ),
-                if (_suggestions.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final path in _suggestions)
-                        ActionChip(
-                          label: Text(path, overflow: TextOverflow.ellipsis),
-                          onPressed: () => _setCwd(path),
-                        ),
-                    ],
+                if (engine != null && engine.available) ...[
+                  const SizedBox(height: 20),
+                  TextField(
+                    controller: _nameController,
+                    decoration: InputDecoration(labelText: l10n.addAgent_name),
                   ),
-                ],
-                const SizedBox(height: 20),
-                Text(
-                  l10n.addAgent_additional,
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-                const SizedBox(height: 8),
-                for (var i = 0; i < _extraControllers.length; i++)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: _pathRow(
-                      text: _extraControllers[i].text.isEmpty
-                          ? l10n.peerSettings_chooseWorkspace
-                          : _extraControllers[i].text,
-                      muted: _extraControllers[i].text.isEmpty,
-                      onBrowse: () =>
-                          _pickDirectory(into: _extraControllers[i]),
-                      onDelete: () {
+                  const SizedBox(height: 16),
+                  Text(l10n.addAgent_cwd,
+                      style: Theme.of(context).textTheme.titleSmall),
+                  const SizedBox(height: 8),
+                  _pathRow(
+                    text:
+                        _cwd.isEmpty ? l10n.peerSettings_chooseWorkspace : _cwd,
+                    muted: _cwd.isEmpty,
+                    onBrowse: () => _pickDirectory(),
+                  ),
+                  if (_suggestions.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final path in _suggestions)
+                          ActionChip(
+                            label: Text(path, overflow: TextOverflow.ellipsis),
+                            onPressed: () => _setCwd(path),
+                          ),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+                  Text(
+                    l10n.addAgent_additional,
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  for (var i = 0; i < _extraControllers.length; i++)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _pathRow(
+                        text: _extraControllers[i].text.isEmpty
+                            ? l10n.peerSettings_chooseWorkspace
+                            : _extraControllers[i].text,
+                        muted: _extraControllers[i].text.isEmpty,
+                        onBrowse: () =>
+                            _pickDirectory(into: _extraControllers[i]),
+                        onDelete: () {
+                          setState(() {
+                            _extraControllers.removeAt(i).dispose();
+                          });
+                        },
+                      ),
+                    ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () {
                         setState(() {
-                          _extraControllers.removeAt(i).dispose();
+                          _extraControllers.add(TextEditingController());
                         });
                       },
+                      icon: const Icon(Icons.add),
+                      label: Text(l10n.addAgent_addDirectory),
                     ),
                   ),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        _extraControllers.add(TextEditingController());
-                      });
-                    },
-                    icon: const Icon(Icons.add),
-                    label: Text(l10n.addAgent_addDirectory),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: _canSubmit ? _submit : null,
+                    child: _submitting
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Text(l10n.addAgent_submit),
                   ),
-                ),
+                ],
                 if (_error.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   Text(
@@ -577,66 +611,102 @@ class _AddAgentInstanceScreenState extends State<AddAgentInstanceScreen> {
                         TextStyle(color: Theme.of(context).colorScheme.error),
                   ),
                 ],
-                const SizedBox(height: 12),
-                FilledButton(
-                  onPressed: _canSubmit ? _submit : null,
-                  child: _submitting
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Text(l10n.addAgent_submit),
-                ),
               ],
             ),
     );
   }
 
   Widget _deviceField(AppLocalizations l10n) {
-    if (_devices.length <= 1) {
-      final name = _devices.isEmpty ? '' : _devices.first.deviceName;
-      return Text(name.isEmpty ? l10n.pouch_hostOffline : name);
-    }
-    return DropdownButtonFormField<String>(
-      initialValue: _peerId,
-      isExpanded: true,
-      items: [
+    if (_devices.isEmpty) return Text(l10n.pouch_hostOffline);
+    final connected = PeerConnectionManager.instance.connectedPeerIds;
+    return Column(
+      children: [
         for (final peer in _devices)
-          DropdownMenuItem(value: peer.id, child: Text(peer.deviceName)),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            selected: peer.id == _peerId,
+            title: Text(peer.deviceName),
+            trailing: EngineStatusChip(
+              label: connected.contains(peer.id)
+                  ? l10n.addAgent_online
+                  : l10n.addAgent_offline,
+              positive: connected.contains(peer.id),
+            ),
+            onTap: _submitting ? null : () => unawaited(_selectDevice(peer.id)),
+          ),
       ],
-      onChanged: _submitting
-          ? null
-          : (value) {
-              if (value != null) unawaited(_selectDevice(value));
-            },
     );
   }
 
   Widget _engineTile(PeerEngineEntry engine) {
-    final selected = engine.id == _engineId;
-    final color = engine.available
-        ? null
-        : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38);
+    final l10n = AppLocalizations.of(context);
+    final selected = engine.id == _engineId && engine.available;
+    final usable = engine.available && _hostOnline && !_submitting;
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      enabled: engine.available && !_submitting,
-      selected: selected && engine.available,
-      title: Text(engine.name, style: TextStyle(color: color)),
-      subtitle: !engine.available && engine.unavailableReason.isNotEmpty
-          ? Text(engine.unavailableReason,
-              style: TextStyle(color: color, fontSize: 12))
+      leading: EngineAvatar(engine: engine),
+      title: Text(engine.name),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              EngineStatusChip(
+                label:
+                    _hostOnline ? l10n.addAgent_online : l10n.addAgent_offline,
+                positive: _hostOnline,
+              ),
+              EngineStatusChip(
+                label: engine.available
+                    ? l10n.addAgent_available
+                    : l10n.addAgent_unavailable,
+                positive: engine.available,
+              ),
+            ],
+          ),
+          if (!engine.available && engine.unavailableReason.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(engine.unavailableReason,
+                  style: const TextStyle(fontSize: 12)),
+            ),
+        ],
+      ),
+      trailing: engine.available
+          ? (selected ? const Icon(Icons.check) : null)
+          : TextButton(
+              onPressed: () => unawaited(_openSetup(engine)),
+              child: Text(l10n.addAgent_configure),
+            ),
+      onTap: usable
+          ? () {
+              setState(() {
+                _engineId = engine.id;
+                AddAgentInstanceScreen.draft = null;
+              });
+              _applySessionDefault();
+              setState(() {});
+            }
           : null,
-      trailing: selected && engine.available ? const Icon(Icons.check) : null,
-      onTap: () {
-        setState(() {
-          _engineId = engine.id;
-          AddAgentInstanceScreen.draft = null;
-        });
-        _applySessionDefault();
-        setState(() {});
-      },
     );
+  }
+
+  Future<void> _openSetup(PeerEngineEntry engine) async {
+    final again = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => EngineSetupScreen(
+          engine: engine,
+          hostOnline: _hostOnline,
+        ),
+      ),
+    );
+    final peerId = _peerId;
+    if (again == true && peerId != null && mounted) {
+      await _selectDevice(peerId, restoreDraft: true);
+    }
   }
 
   Widget _pathRow({

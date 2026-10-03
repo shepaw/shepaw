@@ -8465,4 +8465,37 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get addAgent_searchEngines => 'Search engines';
+
+  @override
+  String get addAgent_online => 'Online';
+
+  @override
+  String get addAgent_offline => 'Offline';
+
+  @override
+  String get addAgent_available => 'Available';
+
+  @override
+  String get addAgent_unavailable => 'Unavailable';
+
+  @override
+  String get addAgent_configure => 'Set up';
+
+  @override
+  String addAgent_setupTitle(String name) {
+    return 'Set up $name';
+  }
+
+  @override
+  String get addAgent_setupIntro =>
+      'This host cannot start the engine yet. Install and sign in using the docs, then come back and choose it again.';
+
+  @override
+  String get addAgent_setupCommand => 'Launch command';
+
+  @override
+  String get addAgent_openDocs => 'Open docs';
+
+  @override
+  String get addAgent_redetect => 'Detect again';
 }

@@ -8148,4 +8148,36 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get addAgent_searchEngines => '搜索引擎';
+
+  @override
+  String get addAgent_online => '在线';
+
+  @override
+  String get addAgent_offline => '离线';
+
+  @override
+  String get addAgent_available => '可用';
+
+  @override
+  String get addAgent_unavailable => '不可用';
+
+  @override
+  String get addAgent_configure => '去配置';
+
+  @override
+  String addAgent_setupTitle(String name) {
+    return '配置 $name';
+  }
+
+  @override
+  String get addAgent_setupIntro => '这台主机上还不能启动这个引擎。按文档装好并登录之后，回到添加页面再选一次。';
+
+  @override
+  String get addAgent_setupCommand => '启动命令';
+
+  @override
+  String get addAgent_openDocs => '查看文档';
+
+  @override
+  String get addAgent_redetect => '重新检测';
 }

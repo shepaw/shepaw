@@ -4950,5 +4950,20 @@
   "addAgent_submit": "创建并打开",
   "addAgent_noEngines": "这台设备上还没有装好的引擎",
   "addAgent_syncing": "已创建，名单同步中",
-  "addAgent_searchEngines": "搜索引擎"
+  "addAgent_searchEngines": "搜索引擎",
+  "addAgent_online": "在线",
+  "addAgent_offline": "离线",
+  "addAgent_available": "可用",
+  "addAgent_unavailable": "不可用",
+  "addAgent_configure": "去配置",
+  "addAgent_setupTitle": "配置 {name}",
+  "@addAgent_setupTitle": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
+  "addAgent_setupIntro": "这台主机上还不能启动这个引擎。按文档装好并登录之后，回到添加页面再选一次。",
+  "addAgent_setupCommand": "启动命令",
+  "addAgent_openDocs": "查看文档",
+  "addAgent_redetect": "重新检测"
 }

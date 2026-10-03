@@ -765,6 +765,16 @@ class PeerEngineEntry {
   final List<PeerSessionMode> sessionModes;
   final String? defaultSessionMode;
 
+  /// 主机下发的 SVG，标准 base64。
+  final String avatarData;
+  final String avatarExt;
+
+  /// 安装和登录说明。没有文档时为空。
+  final String docsUrl;
+
+  /// 主机上实际拉起的命令。
+  final String acpCommand;
+
   const PeerEngineEntry({
     required this.id,
     required this.name,
@@ -773,6 +783,10 @@ class PeerEngineEntry {
     this.unavailableReason = '',
     this.sessionModes = const [],
     this.defaultSessionMode,
+    this.avatarData = '',
+    this.avatarExt = '',
+    this.docsUrl = '',
+    this.acpCommand = '',
   });
 
   factory PeerEngineEntry.fromJson(Map<String, dynamic> json) {
@@ -793,6 +807,10 @@ class PeerEngineEntry {
       sessionModes: modes,
       defaultSessionMode:
           fallback == null || fallback.trim().isEmpty ? null : fallback.trim(),
+      avatarData: (json['avatar_data'] as String?)?.trim() ?? '',
+      avatarExt: (json['avatar_ext'] as String?)?.trim() ?? '',
+      docsUrl: (json['docs_url'] as String?)?.trim() ?? '',
+      acpCommand: (json['acp_command'] as String?)?.trim() ?? '',
     );
   }
 }

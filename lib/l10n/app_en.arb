@@ -4479,5 +4479,20 @@
   "addAgent_submit": "Create and open",
   "addAgent_noEngines": "This device has no engine ready to use",
   "addAgent_syncing": "Created. The list is still syncing",
-  "addAgent_searchEngines": "Search engines"
+  "addAgent_searchEngines": "Search engines",
+  "addAgent_online": "Online",
+  "addAgent_offline": "Offline",
+  "addAgent_available": "Available",
+  "addAgent_unavailable": "Unavailable",
+  "addAgent_configure": "Set up",
+  "addAgent_setupTitle": "Set up {name}",
+  "@addAgent_setupTitle": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
+  "addAgent_setupIntro": "This host cannot start the engine yet. Install and sign in using the docs, then come back and choose it again.",
+  "addAgent_setupCommand": "Launch command",
+  "addAgent_openDocs": "Open docs",
+  "addAgent_redetect": "Detect again"
 }

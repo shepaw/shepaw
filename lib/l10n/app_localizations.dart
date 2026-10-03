@@ -14792,6 +14792,66 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'搜索引擎'**
   String get addAgent_searchEngines;
+
+  /// No description provided for @addAgent_online.
+  ///
+  /// In zh, this message translates to:
+  /// **'在线'**
+  String get addAgent_online;
+
+  /// No description provided for @addAgent_offline.
+  ///
+  /// In zh, this message translates to:
+  /// **'离线'**
+  String get addAgent_offline;
+
+  /// No description provided for @addAgent_available.
+  ///
+  /// In zh, this message translates to:
+  /// **'可用'**
+  String get addAgent_available;
+
+  /// No description provided for @addAgent_unavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'不可用'**
+  String get addAgent_unavailable;
+
+  /// No description provided for @addAgent_configure.
+  ///
+  /// In zh, this message translates to:
+  /// **'去配置'**
+  String get addAgent_configure;
+
+  /// No description provided for @addAgent_setupTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'配置 {name}'**
+  String addAgent_setupTitle(String name);
+
+  /// No description provided for @addAgent_setupIntro.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台主机上还不能启动这个引擎。按文档装好并登录之后，回到添加页面再选一次。'**
+  String get addAgent_setupIntro;
+
+  /// No description provided for @addAgent_setupCommand.
+  ///
+  /// In zh, this message translates to:
+  /// **'启动命令'**
+  String get addAgent_setupCommand;
+
+  /// No description provided for @addAgent_openDocs.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看文档'**
+  String get addAgent_openDocs;
+
+  /// No description provided for @addAgent_redetect.
+  ///
+  /// In zh, this message translates to:
+  /// **'重新检测'**
+  String get addAgent_redetect;
 }
 
 class _AppLocalizationsDelegate
