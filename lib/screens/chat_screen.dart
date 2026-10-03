@@ -69,6 +69,7 @@ import 'group_workflow_screen.dart';
 import 'instruction_set_screen.dart';
 import '../widgets/workflow/workflow_progress_panel.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../peer/services/peer_connection.dart' show PeerConnectionEventType;
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_agent_client_service.dart';
 import '../service_locator.dart' show getIt;
@@ -4411,10 +4412,10 @@ class _ChatScreenState extends State<ChatScreen>
     final syncDisabled = prefs.getBool('peer_sync_disabled_$agentId');
     if (syncDisabled == true) return;
 
-    // Need a live connection to enumerate remote sessions; retry on a later
-    // open if the peer isn't connected yet.
-    if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId))
-      return;
+    // Opening right after resume races the reconnect; returning here left the
+    // session empty until the user reopened it.
+    if (!await _waitForPeerConnected(peerId)) return;
+    if (!mounted) return;
 
     // Undecided — prompt only when there are remote sessions not yet mirrored.
     var showToastOnFirstLink = false;
@@ -4459,6 +4460,21 @@ class _ChatScreenState extends State<ChatScreen>
       agentName: agent.name,
       showToastOnFirstLink: showToastOnFirstLink,
     );
+  }
+
+  Future<bool> _waitForPeerConnected(String peerId) async {
+    final manager = PeerConnectionManager.instance;
+    if (manager.connectedPeerIds.contains(peerId)) return true;
+    try {
+      await manager.events
+          .firstWhere((event) =>
+              event.peerId == peerId &&
+              event.type == PeerConnectionEventType.connected)
+          .timeout(const Duration(seconds: 20));
+      return true;
+    } catch (_) {
+      return manager.connectedPeerIds.contains(peerId);
+    }
   }
 
   /// Run agent-wide incremental sync; spinner only covers the open channel.
