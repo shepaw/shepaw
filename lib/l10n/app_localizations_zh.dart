@@ -326,6 +326,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get home_scanConnect => '扫码连接';
 
   @override
+  String get home_addAgentInstance => '添加 Agent 实例';
+
+  @override
   String get home_searchEmptyHint => '搜索 Agent、群组、消息和设备聊天';
 
   @override
@@ -4720,6 +4723,45 @@ class AppLocalizationsZh extends AppLocalizations {
   String get peerSettings_agentManageOffline => '设备离线，暂无已同步的 Agent';
 
   @override
+  String get peerSettings_newAgent => '新建 Agent';
+
+  @override
+  String get peerSettings_newAgentTitle => '在这台设备上新建 Agent';
+
+  @override
+  String get peerSettings_engineLabel => '引擎';
+
+  @override
+  String get peerSettings_engineUnavailable => '未安装';
+
+  @override
+  String get peerSettings_noEnginesAvailable =>
+      '这台设备上没有找到可用的引擎，请先安装一个（例如 Cursor 的 agent、Claude Code、Codex）';
+
+  @override
+  String get peerSettings_agentNameLabel => '名称';
+
+  @override
+  String get peerSettings_agentNameHint => '留空则使用引擎名';
+
+  @override
+  String get peerSettings_workspaceLabel => '工作目录';
+
+  @override
+  String get peerSettings_chooseWorkspace => '选择设备上的目录';
+
+  @override
+  String get peerSettings_create => '创建';
+
+  @override
+  String get peerSettings_removeAgent => '删除 Agent';
+
+  @override
+  String peerSettings_removeAgentConfirm(String name) {
+    return '从这台设备上删除「$name」？引擎自己的会话记录不会被删除。';
+  }
+
+  @override
   String get peerSettings_noManagedAgents => '该设备上还没有 Agent';
 
   @override
@@ -7990,4 +8032,120 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get scheduledTasks_actionFailed => '操作失败，请重试';
+
+  @override
+  String get pouch_title => '选择储物袋';
+
+  @override
+  String get pouch_intro => '选一只储物袋登录。登录态会留下来，业务帧用这次登录的密钥加密。';
+
+  @override
+  String get pouch_hostSection => '主机';
+
+  @override
+  String get pouch_pouchSection => '这台主机上的袋子';
+
+  @override
+  String get pouch_thisComputer => '这台电脑';
+
+  @override
+  String get pouch_startCli => '启动 shepaw';
+
+  @override
+  String get pouch_cliMissing => '这台电脑上没有找到 shepaw。请先安装，然后点重新检测。';
+
+  @override
+  String get pouch_redetect => '重新检测';
+
+  @override
+  String get pouch_noPouches => '还没有袋子';
+
+  @override
+  String get pouch_newName => '新袋子的名字';
+
+  @override
+  String get pouch_createAndEnter => '新建并登录';
+
+  @override
+  String get pouch_current => '当前';
+
+  @override
+  String get pouch_busy => '请稍候';
+
+  @override
+  String get pouch_loginFailed => '登录失败';
+
+  @override
+  String get pouch_createFailed => '没能建好袋子';
+
+  @override
+  String get pouch_nameRequired => '袋子需要一个名字';
+
+  @override
+  String get pouch_hostOffline => '连不上这台主机';
+
+  @override
+  String get pouch_startFailed => '没能启动 shepaw';
+
+  @override
+  String get pouch_pairFirst => '先和一台装了 shepaw 的电脑配对';
+
+  @override
+  String get pouch_pair => '去配对';
+
+  @override
+  String get pouch_addHost => '添加主机';
+
+  @override
+  String get settings_switchPouch => '切换储物袋';
+
+  @override
+  String settings_switchPouchCurrent(String pouch, String host) {
+    return '当前：$pouch · $host';
+  }
+
+  @override
+  String get settings_switchPouchConfirmTitle => '切换储物袋';
+
+  @override
+  String get settings_switchPouchConfirm => '要离开当前袋子，去选择另一只吗？和主机的连接会保持。';
+
+  @override
+  String get addAgent_title => '添加 Agent 实例';
+
+  @override
+  String get addAgent_device => '设备';
+
+  @override
+  String get addAgent_engine => '引擎';
+
+  @override
+  String get addAgent_sessionMode => '会话模式';
+
+  @override
+  String get addAgent_name => '名称';
+
+  @override
+  String get addAgent_cwd => '工作目录';
+
+  @override
+  String get addAgent_browse => '浏览';
+
+  @override
+  String get addAgent_additional => '附加目录';
+
+  @override
+  String get addAgent_addDirectory => '添加目录';
+
+  @override
+  String get addAgent_submit => '创建并打开';
+
+  @override
+  String get addAgent_noEngines => '这台设备上还没有装好的引擎';
+
+  @override
+  String get addAgent_syncing => '已创建，名单同步中';
+
+  @override
+  String get addAgent_searchEngines => '搜索引擎';
 }

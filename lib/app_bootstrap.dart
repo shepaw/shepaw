@@ -20,6 +20,7 @@ import 'peer/services/peer_connection_manager.dart';
 import 'peer/services/peer_agent_client_service.dart';
 import 'peer/pouch_duties.dart';
 import 'storage/pouch_login.dart';
+import 'storage/pouch_login_keeper.dart';
 import 'storage/pouch_role.dart';
 import 'storage/pouch_session.dart';
 import 'storage/store_service.dart';
@@ -206,6 +207,7 @@ class AppBootstrap {
   static Future<void> _initializePeerConnection() async {
     try {
       await PeerConnectionManager.instance.start();
+      PouchLoginKeeper.instance.start();
       await PeerAgentClientService.instance.start();
       await StoreService.instance.start();
       _log.info('P2P client started', tag: 'App');

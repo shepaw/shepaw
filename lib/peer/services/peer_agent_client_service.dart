@@ -187,6 +187,23 @@ List<PeerRemoteSession> selectDirtySessions(
   return dirty;
 }
 
+/// 本地还没有正文的会话。水位只看远端 `updatedAt`，刚建出来的空壳
+/// 往往比水位旧，会被整段跳过，标题在、内容永远空着。
+List<PeerRemoteSession> sessionsMissingLocalTranscript(
+  List<PeerRemoteSession> sessions, {
+  required Set<String> alreadyDirty,
+  required Set<String> syncedUnstampedIds,
+  required Set<String> emptyLocalSessionIds,
+}) {
+  return [
+    for (final session in sessions)
+      if (!alreadyDirty.contains(session.sessionId) &&
+          !syncedUnstampedIds.contains(session.sessionId) &&
+          emptyLocalSessionIds.contains(session.sessionId))
+        session,
+  ];
+}
+
 /// [PeerAgentClientService.sendChat] 的结果。
 class PeerChatResult {
   final String content;
@@ -682,6 +699,7 @@ class PeerAgentManageEntry {
   final String id;
   final String name;
   final String engine;
+  final String cwd;
   final bool running;
   final bool enabled;
   final bool manageable;
@@ -690,6 +708,7 @@ class PeerAgentManageEntry {
     required this.id,
     required this.name,
     this.engine = '',
+    this.cwd = '',
     required this.running,
     required this.enabled,
     required this.manageable,
@@ -700,9 +719,80 @@ class PeerAgentManageEntry {
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
       engine: json['engine'] as String? ?? '',
+      cwd: json['cwd'] as String? ?? '',
       running: json['running'] == true,
       enabled: json['enabled'] != false,
       manageable: json['manageable'] == true,
+    );
+  }
+}
+
+/// 引擎自己的一种会话模式。
+class PeerSessionMode {
+  final String value;
+  final String displayName;
+  final String description;
+
+  const PeerSessionMode({
+    required this.value,
+    required this.displayName,
+    this.description = '',
+  });
+
+  factory PeerSessionMode.fromJson(Map<String, dynamic> json) {
+    final value = (json['value'] as String?)?.trim() ?? '';
+    final name = (json['display_name'] as String?)?.trim() ?? '';
+    return PeerSessionMode(
+      value: value,
+      displayName: name.isEmpty ? value : name,
+      description: (json['description'] as String?)?.trim() ?? '',
+    );
+  }
+}
+
+/// An engine the host could launch, from `agent_manage_resp.engines`.
+class PeerEngineEntry {
+  final String id;
+  final String name;
+  final String command;
+
+  /// Whether the engine's command is on the host's PATH.
+  final bool available;
+
+  /// 命令不在主机上时，主机给出的原因。可用时为空。
+  final String unavailableReason;
+
+  final List<PeerSessionMode> sessionModes;
+  final String? defaultSessionMode;
+
+  const PeerEngineEntry({
+    required this.id,
+    required this.name,
+    this.command = '',
+    required this.available,
+    this.unavailableReason = '',
+    this.sessionModes = const [],
+    this.defaultSessionMode,
+  });
+
+  factory PeerEngineEntry.fromJson(Map<String, dynamic> json) {
+    final id = json['id'] as String? ?? '';
+    final name = json['name'] as String?;
+    final modes = <PeerSessionMode>[
+      for (final item in (json['session_modes'] as List?) ?? const [])
+        if (item is Map)
+          PeerSessionMode.fromJson(Map<String, dynamic>.from(item)),
+    ].where((mode) => mode.value.isNotEmpty).toList();
+    final fallback = json['default_session_mode'] as String?;
+    return PeerEngineEntry(
+      id: id,
+      name: name == null || name.isEmpty ? id : name,
+      command: json['command'] as String? ?? '',
+      available: json['available'] == true,
+      unavailableReason: (json['unavailable_reason'] as String?)?.trim() ?? '',
+      sessionModes: modes,
+      defaultSessionMode:
+          fallback == null || fallback.trim().isEmpty ? null : fallback.trim(),
     );
   }
 }
@@ -711,7 +801,11 @@ class PeerAgentManageResult {
   final bool ok;
   final String? error;
   final List<PeerAgentManageEntry> agents;
+  final List<PeerEngineEntry> engines;
   final bool unsupported;
+
+  /// Host-side id of the agent made by `create`.
+  final String? createdAgentId;
 
   /// Live probe of hub-local `GET /api/v1/health` (agent_manage list).
   final bool? hubStoreOk;
@@ -723,7 +817,9 @@ class PeerAgentManageResult {
     required this.ok,
     this.error,
     this.agents = const [],
+    this.engines = const [],
     this.unsupported = false,
+    this.createdAgentId,
     this.hubStoreOk,
     this.hubStoreDevice,
   });
@@ -2562,6 +2658,9 @@ class PeerAgentClientService {
   ///
   /// Allowed ops from the app:
   /// - `list`
+  /// - `engines` (engines the host knows, with whether each is installed)
+  /// - `create` ([engine] + [cwd] + optional [name], [sessionMode], [additionalDirectories])
+  /// - `remove` ([agentId])
   /// - `set_cwd` (primary workspace absolute path on the hub host)
   /// - `set_additional_directories` (full-replace absolute paths on the hub host)
   ///
@@ -2573,8 +2672,19 @@ class PeerAgentClientService {
     bool? enabled,
     String? cwd,
     List<String>? additionalDirectories,
+    String? engine,
+    String? name,
+    String? sessionMode,
+    Duration timeout = const Duration(seconds: 30),
   }) async {
-    const allowed = {'list', 'set_cwd', 'set_additional_directories'};
+    const allowed = {
+      'list',
+      'engines',
+      'create',
+      'remove',
+      'set_cwd',
+      'set_additional_directories',
+    };
     if (!allowed.contains(op)) {
       _log.warning(
         'Rejected remote agent lifecycle op "$op"; hub owns start/stop/enable',
@@ -2594,13 +2704,17 @@ class PeerAgentClientService {
       if (cwd != null) 'cwd': cwd,
       if (additionalDirectories != null)
         'additional_directories': additionalDirectories,
+      if (engine != null) 'engine': engine,
+      if (name != null) 'name': name,
+      if (sessionMode != null && sessionMode.isNotEmpty)
+        'session_mode': sessionMode,
     };
     final sent = await PeerConnectionManager.instance.sendControl(peerId, payload);
     if (!sent) {
       _pendingManage.remove(requestId);
       return const PeerAgentManageResult(ok: false, error: 'offline');
     }
-    return completer.future.timeout(const Duration(seconds: 30), onTimeout: () {
+    return completer.future.timeout(timeout, onTimeout: () {
       _pendingManage.remove(requestId);
       return const PeerAgentManageResult(
         ok: false,
@@ -2608,6 +2722,38 @@ class PeerAgentClientService {
         error: 'timeout',
       );
     });
+  }
+
+  /// Register a new agent on the host. Refresh the agent list afterwards so
+  /// the new agent shows up in this app.
+  Future<PeerAgentManageResult> createAgent({
+    required String peerId,
+    required String engine,
+    required String cwd,
+    String? name,
+    String? sessionMode,
+    List<String>? additionalDirectories,
+  }) {
+    return manageAgents(
+      peerId: peerId,
+      op: 'create',
+      engine: engine,
+      cwd: cwd,
+      name: name,
+      sessionMode: sessionMode,
+      additionalDirectories: additionalDirectories,
+    );
+  }
+
+  Future<PeerAgentManageResult> removeAgent({
+    required String peerId,
+    required String remoteAgentId,
+  }) {
+    return manageAgents(
+      peerId: peerId,
+      op: 'remove',
+      agentId: remoteAgentId,
+    );
   }
 
   /// Set the hub instance's primary workspace root (absolute path).
@@ -2710,6 +2856,10 @@ class PeerAgentClientService {
       if (item is! Map) continue;
       agents.add(PeerAgentManageEntry.fromJson(Map<String, dynamic>.from(item)));
     }
+    final engines = <PeerEngineEntry>[
+      for (final item in (data['engines'] as List?) ?? const [])
+        if (item is Map) PeerEngineEntry.fromJson(Map<String, dynamic>.from(item)),
+    ];
     final error = data['error'] as String?;
     bool? hubStoreOk;
     String? hubStoreDevice;
@@ -2725,7 +2875,9 @@ class PeerAgentClientService {
       ok: data['ok'] == true,
       error: error,
       agents: agents,
+      engines: engines,
       unsupported: error == 'unsupported',
+      createdAgentId: data['agent_id'] as String?,
       hubStoreOk: hubStoreOk,
       hubStoreDevice: hubStoreDevice,
     ));
@@ -2739,8 +2891,25 @@ class PeerAgentClientService {
     required String remoteAgentId,
     required String sessionId,
   }) async {
+    final outcome = await _fetchHistory(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      sessionId: sessionId,
+    );
+    return outcome.messages;
+  }
+
+  /// [completed] 为 false 表示请求没发出或超时，和「远端确实没有正文」分开。
+  Future<({List<PeerHistoryMessage> messages, bool completed})> _fetchHistory({
+    required String peerId,
+    required String remoteAgentId,
+    required String sessionId,
+  }) async {
     final key = '$remoteAgentId::$sessionId';
-    if (_pendingHistory.containsKey(key)) return _pendingHistory[key]!.future;
+    if (_pendingHistory.containsKey(key)) {
+      final messages = await _pendingHistory[key]!.future;
+      return (messages: messages, completed: true);
+    }
     final completer = Completer<List<PeerHistoryMessage>>();
     _pendingHistory[key] = completer;
     final sent = await PeerConnectionManager.instance.sendControl(peerId, {
@@ -2750,12 +2919,15 @@ class PeerAgentClientService {
     });
     if (!sent) {
       _pendingHistory.remove(key);
-      return const [];
+      return (messages: <PeerHistoryMessage>[], completed: false);
     }
-    return completer.future.timeout(const Duration(seconds: 45), onTimeout: () {
+    try {
+      final messages = await completer.future.timeout(const Duration(seconds: 45));
+      return (messages: messages, completed: true);
+    } catch (_) {
       _pendingHistory.remove(key);
-      return const [];
-    });
+      return (messages: <PeerHistoryMessage>[], completed: false);
+    }
   }
 
   void _onSessionHistoryResp(Map<String, dynamic> data) {
@@ -2920,6 +3092,15 @@ class PeerAgentClientService {
     return linked;
   }
 
+  Future<String> _localChannelIdForRemoteSession(String sessionId) async {
+    final psessId = syncedPeerChannelId(sessionId);
+    return resolveLocalPeerChannelId(
+      sessionId,
+      psessExists: await _db.getChannelById(psessId) != null,
+      legacyExists: await _db.getChannelById(sessionId) != null,
+    );
+  }
+
   /// Agent-level watermark for peer history incremental sync.
   Future<DateTime?> getLastHistorySyncAt(String localAgentId) async {
     final prefs = await SharedPreferences.getInstance();
@@ -3015,6 +3196,38 @@ class PeerAgentClientService {
       prioritizeSessionId: prioritizeSessionId,
       syncedUnstampedIds: syncedUnstamped,
     );
+    final emptyLocal = <String>{};
+    for (final session in sessions) {
+      if (dirty.any((item) => item.sessionId == session.sessionId)) continue;
+      if (syncedUnstamped.contains(session.sessionId)) continue;
+      final channelId = await _localChannelIdForRemoteSession(session.sessionId);
+      if (await _db.countChannelMessages(channelId) == 0) {
+        emptyLocal.add(session.sessionId);
+      }
+    }
+    final openChannelId = prioritizeChannelId;
+    if (openChannelId != null &&
+        openChannelId.isNotEmpty &&
+        await _db.countChannelMessages(openChannelId) == 0) {
+      final openRemote = remoteSessionIdFromChannelId(openChannelId) ?? openChannelId;
+      if (!dirty.any((item) => item.sessionId == openRemote)) {
+        dirty.insert(0, PeerRemoteSession(sessionId: openRemote));
+      }
+    }
+    dirty.addAll(sessionsMissingLocalTranscript(
+      sessions,
+      alreadyDirty: dirty.map((item) => item.sessionId).toSet(),
+      syncedUnstampedIds: syncedUnstamped,
+      emptyLocalSessionIds: emptyLocal,
+    ));
+    if (prioritizeSessionId != null && prioritizeSessionId.isNotEmpty) {
+      final index = dirty.indexWhere(
+        (item) => item.sessionId == prioritizeSessionId,
+      );
+      if (index > 0) {
+        dirty.insert(0, dirty.removeAt(index));
+      }
+    }
 
     var historySessionsWritten = 0;
     var totalMessagesWritten = 0;
@@ -3055,20 +3268,26 @@ class PeerAgentClientService {
           userName: userName,
           sessionUpdatedAt: session.updatedAt,
         );
-        if (written > 0) {
+        final fetchFailed = written < 0;
+        final stored = fetchFailed ? 0 : written;
+        if (stored > 0) {
           historySessionsWritten++;
-          totalMessagesWritten += written;
+          totalMessagesWritten += stored;
         }
-        if (session.updatedAt == null &&
-            (written > 0 || await _db.countChannelMessages(channelId) > 0)) {
+        if (!fetchFailed &&
+            stored == 0 &&
+            await _db.countChannelMessages(channelId) == 0) {
+          mirroredUnstamped.add(session.sessionId);
+        } else if (session.updatedAt == null &&
+            (stored > 0 || await _db.countChannelMessages(channelId) > 0)) {
           mirroredUnstamped.add(session.sessionId);
         }
         if (prioritizeSessionId != null &&
             session.sessionId == prioritizeSessionId) {
-          currentChannelMessagesWritten = written;
+          currentChannelMessagesWritten = stored;
           prioritizedDone = true;
           if (onPrioritizedChannelDone != null) {
-            await onPrioritizedChannelDone(written);
+            await onPrioritizedChannelDone(stored);
           }
         }
       }
@@ -3128,9 +3347,9 @@ class PeerAgentClientService {
   /// Fetches the remote transcript; if it differs from what's stored locally
   /// (content or resolved send times), upserts by stable `peerhist_*` ids and
   /// removes local rows that are no longer present remotely. If the fetch is
-  /// empty (agent can't replay / timeout), local messages are kept untouched.
-  /// Returns the number of messages written, or 0 when nothing changed / local
-  /// was kept.
+  /// empty, local messages are kept untouched. Returns the number of messages
+  /// written, 0 when the transcript was empty or unchanged, or -1 when the
+  /// request failed and should be retried.
   Future<int> syncHistory({
     required String peerId,
     required String remoteAgentId,
@@ -3144,11 +3363,13 @@ class PeerAgentClientService {
     final remoteSessionId =
         remoteSessionIdFromChannelId(channelId) ?? channelId;
 
-    final history = await fetchHistory(
+    final fetched = await _fetchHistory(
       peerId: peerId,
       remoteAgentId: remoteAgentId,
       sessionId: remoteSessionId,
     );
+    if (!fetched.completed) return -1;
+    final history = fetched.messages;
     if (history.isEmpty) return 0;
 
     // Group/workflow turns stream on the group channel but persist on this

@@ -93,7 +93,7 @@ class ConnectionManager {
         agent.token,
         targetAgentId: agent.metadata['target_agent_id'] as String?,
         // v2.1: pinned peer fingerprint from the original pairing URL.
-        // Stored in metadata by `AddRemoteAgentScreen._connectToAgent` —
+        // Stored in metadata when the agent was paired —
         // required for the Noise handshake to pin the agent's identity.
         pinnedFingerprint: (agent.metadata['noise_peer_fp'] as String?) ?? '',
         cachedPeerStaticPublicKey: decodeCachedPeerPublicKey(

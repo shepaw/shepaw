@@ -158,6 +158,8 @@ class PeerConnection {
     'pouch_login_required',
     'pouch_list',
     'pouch_list_resp',
+    'pouch_create',
+    'pouch_create_resp',
     'pouch_sealed',
     'pouch_pair_req',
     'pouch_pair_resp',

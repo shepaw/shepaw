@@ -11,9 +11,10 @@ import '../../services/remote_agent_service.dart';
 import '../../widgets/agent_list_avatar.dart';
 import '../services/peer_agent_client_service.dart';
 import '../services/peer_connection_manager.dart';
+import '../screens/add_agent_instance_screen.dart';
 
-/// Device-details section: list peer agents and toggle whether they appear
-/// in this app. Start / stop / disable stay on the remote hub.
+/// Device-details section: list peer agents, toggle whether they appear in
+/// this app, and create or remove agents on the device.
 class PeerAgentManagePanel extends StatefulWidget {
   final String peerId;
   final bool isPeerConnected;
@@ -134,6 +135,62 @@ class _PeerAgentManagePanelState extends State<PeerAgentManagePanel> {
     }
   }
 
+  Future<void> _createAgent() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => AddAgentInstanceScreen(presetPeerId: widget.peerId),
+      ),
+    );
+    if (!mounted) return;
+    await PeerAgentClientService.instance.refreshAgentList(widget.peerId);
+    await _load(quiet: true);
+  }
+
+  Future<void> _removeAgent(PeerAgentManageEntry entry) async {
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.peerSettings_removeAgent),
+        content: Text(l10n.peerSettings_removeAgentConfirm(entry.name)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(l10n.common_cancel),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(l10n.common_delete),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() {
+      _busyId = entry.id;
+      _error = null;
+    });
+    try {
+      final service = PeerAgentClientService.instance;
+      final removed = await service.removeAgent(
+        peerId: widget.peerId,
+        remoteAgentId: entry.id,
+      );
+      if (!mounted) return;
+      if (!removed.ok) {
+        setState(() => _error = removed.error ?? 'unknown');
+        return;
+      }
+      await service.refreshAgentList(widget.peerId);
+      await _load(quiet: true);
+    } finally {
+      if (mounted) setState(() => _busyId = null);
+    }
+  }
+
   void _openChat(PeerAgentManageEntry entry) {
     final local = _localFor(entry);
     if (local == null) return;
@@ -157,12 +214,24 @@ class _PeerAgentManagePanelState extends State<PeerAgentManagePanel> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Text(
-            l10n.peerSettings_sectionAgents,
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: Colors.grey[600],
+          padding: const EdgeInsets.fromLTRB(16, 0, 8, 0),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  l10n.peerSettings_sectionAgents,
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: Colors.grey[600],
+                      ),
                 ),
+              ),
+              if (widget.isPeerConnected)
+                TextButton.icon(
+                  onPressed: _createAgent,
+                  icon: const Icon(Icons.add, size: 18),
+                  label: Text(l10n.peerSettings_newAgent),
+                ),
+            ],
           ),
         ),
         Padding(
@@ -254,7 +323,7 @@ class _PeerAgentManagePanelState extends State<PeerAgentManagePanel> {
         style: TextStyle(color: statusColor, fontSize: 12),
       ),
       onTap: local == null ? null : () => _openChat(entry),
-      trailing: local == null
+      trailing: local == null && !(entry.manageable && widget.isPeerConnected)
           ? null
           : Row(
               mainAxisSize: MainAxisSize.min,
@@ -268,21 +337,27 @@ class _PeerAgentManagePanelState extends State<PeerAgentManagePanel> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     ),
                   ),
-                Tooltip(
-                  message: l10n.peerSettings_agentShowOnApp,
-                  child: SizedBox(
-                    height: 28,
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Switch(
-                        value: !hidden,
-                        onChanged: busy
-                            ? null
-                            : (v) => _setVisibleOnApp(local, v),
+                if (local != null)
+                  Tooltip(
+                    message: l10n.peerSettings_agentShowOnApp,
+                    child: SizedBox(
+                      height: 28,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Switch(
+                          value: !hidden,
+                          onChanged:
+                              busy ? null : (v) => _setVisibleOnApp(local, v),
+                        ),
                       ),
                     ),
                   ),
-                ),
+                if (entry.manageable && widget.isPeerConnected)
+                  IconButton(
+                    tooltip: l10n.peerSettings_removeAgent,
+                    icon: const Icon(Icons.delete_outline, size: 20),
+                    onPressed: busy ? null : () => _removeAgent(entry),
+                  ),
               ],
             ),
     );

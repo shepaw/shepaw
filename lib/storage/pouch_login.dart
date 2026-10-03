@@ -16,7 +16,7 @@ AppStart afterDeviceUnlock(PouchSession? session, {required int nowMs}) {
 
 /// 与 Hub `login_clear_allowed` 同一份规则：名单之外的业务帧都要密封。
 ///
-/// 明文只留给心跳、登录、拆封，以及 Hub 在进业务处理之前就要对上的回包。
+/// 明文只留给心跳、登录、建袋子、拆封，以及 Hub 在进业务处理之前就要对上的回包。
 bool loginSealRequired(String kind, {String? op}) {
   if (kind.isEmpty) return false;
   const clear = <String>{
@@ -24,6 +24,8 @@ bool loginSealRequired(String kind, {String? op}) {
     'pong',
     'pouch_login',
     'pouch_list',
+    'pouch_create',
+    'pouch_create_resp',
     'pouch_sealed',
     'cli_execute_resp',
     'session_create_resp',

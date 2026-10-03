@@ -143,6 +143,7 @@
   "home_createGroup": "创建群组",
   "home_addDevice": "设备配对",
   "home_scanConnect": "扫码连接",
+  "home_addAgentInstance": "添加 Agent 实例",
   "home_searchEmptyHint": "搜索 Agent、群组、消息和设备聊天",
   "home_searchNoResults": "未找到相关结果",
   "home_searchSectionAgents": "Agent",
@@ -2654,6 +2655,25 @@
   "peerSettings_agentRunning": "运行中",
   "peerSettings_agentStopped": "已停止",
   "peerSettings_agentManageOffline": "设备离线，暂无已同步的 Agent",
+  "peerSettings_newAgent": "新建 Agent",
+  "peerSettings_newAgentTitle": "在这台设备上新建 Agent",
+  "peerSettings_engineLabel": "引擎",
+  "peerSettings_engineUnavailable": "未安装",
+  "peerSettings_noEnginesAvailable": "这台设备上没有找到可用的引擎，请先安装一个（例如 Cursor 的 agent、Claude Code、Codex）",
+  "peerSettings_agentNameLabel": "名称",
+  "peerSettings_agentNameHint": "留空则使用引擎名",
+  "peerSettings_workspaceLabel": "工作目录",
+  "peerSettings_chooseWorkspace": "选择设备上的目录",
+  "peerSettings_create": "创建",
+  "peerSettings_removeAgent": "删除 Agent",
+  "peerSettings_removeAgentConfirm": "从这台设备上删除「{name}」？引擎自己的会话记录不会被删除。",
+  "@peerSettings_removeAgentConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "peerSettings_noManagedAgents": "该设备上还没有 Agent",
   "peerSettings_agentOpFailed": "操作失败：{error}",
   "@peerSettings_agentOpFailed": {
@@ -4886,5 +4906,49 @@
   "peer_pairingFailedRetry": "配对失败，请重试",
   "peerSettings_trustUpdateFailed": "修改信任级别失败，请重试",
   "groupMemberDetail_adminFailed": "修改管理员失败，请重试",
-  "scheduledTasks_actionFailed": "操作失败，请重试"
+  "scheduledTasks_actionFailed": "操作失败，请重试",
+  "pouch_title": "选择储物袋",
+  "pouch_intro": "选一只储物袋登录。登录态会留下来，业务帧用这次登录的密钥加密。",
+  "pouch_hostSection": "主机",
+  "pouch_pouchSection": "这台主机上的袋子",
+  "pouch_thisComputer": "这台电脑",
+  "pouch_startCli": "启动 shepaw",
+  "pouch_cliMissing": "这台电脑上没有找到 shepaw。请先安装，然后点重新检测。",
+  "pouch_redetect": "重新检测",
+  "pouch_noPouches": "还没有袋子",
+  "pouch_newName": "新袋子的名字",
+  "pouch_createAndEnter": "新建并登录",
+  "pouch_current": "当前",
+  "pouch_busy": "请稍候",
+  "pouch_loginFailed": "登录失败",
+  "pouch_createFailed": "没能建好袋子",
+  "pouch_nameRequired": "袋子需要一个名字",
+  "pouch_hostOffline": "连不上这台主机",
+  "pouch_startFailed": "没能启动 shepaw",
+  "pouch_pairFirst": "先和一台装了 shepaw 的电脑配对",
+  "pouch_pair": "去配对",
+  "pouch_addHost": "添加主机",
+  "settings_switchPouch": "切换储物袋",
+  "settings_switchPouchCurrent": "当前：{pouch} · {host}",
+  "@settings_switchPouchCurrent": {
+    "placeholders": {
+      "pouch": {"type": "String"},
+      "host": {"type": "String"}
+    }
+  },
+  "settings_switchPouchConfirmTitle": "切换储物袋",
+  "settings_switchPouchConfirm": "要离开当前袋子，去选择另一只吗？和主机的连接会保持。",
+  "addAgent_title": "添加 Agent 实例",
+  "addAgent_device": "设备",
+  "addAgent_engine": "引擎",
+  "addAgent_sessionMode": "会话模式",
+  "addAgent_name": "名称",
+  "addAgent_cwd": "工作目录",
+  "addAgent_browse": "浏览",
+  "addAgent_additional": "附加目录",
+  "addAgent_addDirectory": "添加目录",
+  "addAgent_submit": "创建并打开",
+  "addAgent_noEngines": "这台设备上还没有装好的引擎",
+  "addAgent_syncing": "已创建，名单同步中",
+  "addAgent_searchEngines": "搜索引擎"
 }

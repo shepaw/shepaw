@@ -8,6 +8,7 @@ import '../theme/app_theme.dart';
 import '../peer/models/paired_peer.dart';
 import '../peer/screens/peer_settings_screen.dart';
 import '../peer/widgets/peer_device_icon.dart';
+import '../peer/screens/add_agent_instance_screen.dart';
 import '../peer/screens/peer_manual_input_screen.dart';
 import '../peer/screens/peer_pairing_screen.dart';
 import '../peer/pouch_pair.dart';
@@ -39,6 +40,7 @@ class ContactsScreen extends StatefulWidget {
   final ValueChanged<PairedPeer>? onPeerSelected;
   final VoidCallback? onCreateGroup;
   final VoidCallback? onPairDevice;
+  final VoidCallback? onAddAgentInstance;
 
   const ContactsScreen({
     super.key,
@@ -49,6 +51,7 @@ class ContactsScreen extends StatefulWidget {
     this.onPeerSelected,
     this.onCreateGroup,
     this.onPairDevice,
+    this.onAddAgentInstance,
   });
 
   @override
@@ -283,6 +286,17 @@ class ContactsScreenState extends State<ContactsScreen> {
             position: PopupMenuPosition.under,
             onSelected: (value) {
               switch (value) {
+                case 'agent':
+                  if (widget.embedded && widget.onAddAgentInstance != null) {
+                    widget.onAddAgentInstance!();
+                  } else {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const AddAgentInstanceScreen(),
+                      ),
+                    );
+                  }
                 case 'device':
                   _startPeerPairing();
                 case 'group':
@@ -294,6 +308,16 @@ class ContactsScreenState extends State<ContactsScreen> {
               }
             },
             itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'agent',
+                child: Row(
+                  children: [
+                    const Icon(Icons.smart_toy_outlined, size: 22),
+                    const SizedBox(width: 12),
+                    Expanded(child: Text(l10n.home_addAgentInstance)),
+                  ],
+                ),
+              ),
               PopupMenuItem(
                 value: 'device',
                 child: Text(l10n.contacts_addPairingDevice),

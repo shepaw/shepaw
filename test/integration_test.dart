@@ -1,55 +1,13 @@
 @Tags(['needs-plugins'])
 library;
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/remote_agent.dart';
 import 'package:shepaw/services/token_service.dart';
 import 'package:shepaw/services/local_database_service.dart';
 import 'package:shepaw/services/remote_agent_service.dart';
-import 'package:shepaw/screens/add_remote_agent_screen.dart';
-import 'package:shepaw/screens/remote_agent_list_screen.dart';
 
 void main() {
-  testWidgets('Add Remote Agent Screen UI Test', (WidgetTester tester) async {
-    // 构建添加助手界面
-    await tester.pumpWidget(
-      const MaterialApp(
-        home: AddRemoteAgentScreen(),
-      ),
-    );
-
-    // 等待界面渲染
-    await tester.pumpAndSettle();
-
-    // 验证界面元素存在
-    expect(find.text('添加远端助手'), findsOneWidget);
-    expect(find.text('助手名称'), findsOneWidget);
-    expect(find.text('协议类型'), findsOneWidget);
-    expect(find.text('连接类型'), findsOneWidget);
-    expect(find.text('创建助手'), findsOneWidget);
-
-    print('✅ 添加助手界面渲染正常');
-  });
-
-  testWidgets('Remote Agent List Screen UI Test', (WidgetTester tester) async {
-    // 构建助手列表界面
-    await tester.pumpWidget(
-      const MaterialApp(
-        home: RemoteAgentListScreen(),
-      ),
-    );
-
-    // 等待界面渲染
-    await tester.pumpAndSettle();
-
-    // 验证界面元素
-    expect(find.text('远端助手'), findsOneWidget);
-    expect(find.text('添加助手'), findsOneWidget);
-
-    print('✅ 助手列表界面渲染正常');
-  });
-
   group('Service Layer Integration Tests', () {
     test('Create agent workflow', () async {
       // 模拟创建助手的完整流程

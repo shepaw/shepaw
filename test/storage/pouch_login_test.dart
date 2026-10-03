@@ -99,6 +99,8 @@ void main() {
   test('心跳、登录和 Hub 要提前对上的回包不密封', () {
     expect(loginSealRequired('ping'), isFalse);
     expect(loginSealRequired('pouch_login'), isFalse);
+    expect(loginSealRequired('pouch_create'), isFalse);
+    expect(loginSealRequired('pouch_create_resp'), isFalse);
     expect(loginSealRequired('cli_execute_resp'), isFalse);
     expect(loginSealRequired('session_create_resp'), isFalse);
     expect(loginSealRequired('pouch', op: 'result'), isFalse);

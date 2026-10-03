@@ -30,6 +30,7 @@ import '../service_locator.dart' show getIt;
 import '../peer/models/paired_peer.dart';
 import '../peer/screens/peer_chat_screen.dart';
 import '../peer/widgets/peer_device_icon.dart';
+import '../peer/screens/add_agent_instance_screen.dart';
 import '../peer/screens/peer_pairing_screen.dart';
 import '../peer/screens/peer_scan_screen.dart';
 import '../peer/services/peer_connection_manager.dart';
@@ -52,6 +53,7 @@ class HomeScreen extends StatefulWidget {
   /// 桌面嵌入模式：标题栏添加菜单回调。
   final VoidCallback? onCreateGroup;
   final VoidCallback? onPairDevice;
+  final VoidCallback? onAddAgentInstance;
 
   const HomeScreen({
     Key? key,
@@ -60,6 +62,7 @@ class HomeScreen extends StatefulWidget {
     this.onConversationSelected,
     this.onCreateGroup,
     this.onPairDevice,
+    this.onAddAgentInstance,
   }) : super(key: key);
 
   @override
@@ -1272,7 +1275,7 @@ class HomeScreenState extends State<HomeScreen> {
     final l10n = AppLocalizations.of(context);
     final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
     final overlaySize = overlay.size;
-    const menuWidth = 180.0;
+    const menuWidth = 240.0;
     const gap = 6.0;
 
     RelativeRect position;
@@ -1311,6 +1314,11 @@ class HomeScreenState extends State<HomeScreen> {
       ),
       items: [
         _buildAddMenuItem(
+          value: 'agent',
+          icon: Icons.smart_toy_outlined,
+          label: l10n.home_addAgentInstance,
+        ),
+        _buildAddMenuItem(
           value: 'group',
           icon: Icons.group_add,
           label: l10n.home_createGroup,
@@ -1331,6 +1339,18 @@ class HomeScreenState extends State<HomeScreen> {
 
     if (!mounted || action == null) return;
     switch (action) {
+      case 'agent':
+        if (widget.embedded && widget.onAddAgentInstance != null) {
+          widget.onAddAgentInstance!();
+        } else {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const AddAgentInstanceScreen(),
+            ),
+          );
+          if (mounted) _loadAgents(silent: true);
+        }
       case 'group':
         if (widget.embedded && widget.onCreateGroup != null) {
           widget.onCreateGroup!();

@@ -20,8 +20,7 @@ enum _ScheduleMode { interval, cron, once }
 /// Enum for the cron frequency sub-mode.
 enum _CronFrequency { daily, weekly, monthly, custom }
 
-/// Full-page form for creating or editing a scheduled task.
-/// Uses the same embedded-page pattern as [AddRemoteAgentScreen].
+/// Full-page form for creating or editing a scheduled task, including in the desktop right panel.
 class ScheduledTaskFormScreen extends StatefulWidget {
   /// If null, we are creating a new task.
   final ScheduledTask? task;

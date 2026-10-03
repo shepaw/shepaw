@@ -2,9 +2,7 @@ import 'dart:async';
 
 import 'package:uuid/uuid.dart';
 
-import '../peer/models/paired_peer.dart';
 import '../peer/services/peer_connection_manager.dart';
-import '../peer/services/peer_storage_service.dart';
 import 'pouch_catalog.dart';
 
 /// 服务端签发的一次袋子登录。
@@ -53,26 +51,48 @@ Future<PouchLoginGrant> requestPouchLogin({
   );
 }
 
-/// 问服务端这台机器上有哪些袋子。手机读不到主机磁盘时靠它。
+/// 问指定主机上有哪些袋子。手机读不到主机磁盘时靠它。
 Future<List<PouchDescriptor>> requestPouchList({
+  required String hostPeerId,
   Duration timeout = const Duration(seconds: 4),
 }) async {
-  final peers = await PeerStorageService().loadAllPeers();
-  PairedPeer? host;
-  for (final peer in peers) {
-    if (!peer.isBlocked) {
-      host = peer;
-      break;
-    }
-  }
-  if (host == null) return const [];
   final listed = await _request<List<dynamic>>(
-    hostPeerId: host.id,
+    hostPeerId: hostPeerId,
     type: 'pouch_list',
     responseType: 'pouch_list_resp',
     timeout: timeout,
     parse: (data) => (data['pouches'] as List?) ?? const [],
   );
+  return _pouchesFrom(listed);
+}
+
+/// 在主机上新建一只袋子。还没登录，所以这一帧是明文。
+Future<PouchDescriptor> requestPouchCreate({
+  required String hostPeerId,
+  required String name,
+  Duration timeout = const Duration(seconds: 8),
+}) {
+  return _request(
+    hostPeerId: hostPeerId,
+    type: 'pouch_create',
+    responseType: 'pouch_create_resp',
+    extra: <String, dynamic>{'name': name},
+    timeout: timeout,
+    parse: (data) {
+      if (data['ok'] != true) {
+        final error = (data['error'] as String?)?.trim() ?? '';
+        throw StateError(error.isEmpty ? '没能建好袋子' : error);
+      }
+      final raw = data['pouch'];
+      if (raw is! Map) throw StateError('建袋子的响应不完整');
+      final pouch = _pouchesFrom([raw]);
+      if (pouch.isEmpty) throw StateError('建袋子的响应不完整');
+      return pouch.single;
+    },
+  );
+}
+
+List<PouchDescriptor> _pouchesFrom(List<dynamic> listed) {
   return listed
       .whereType<Map>()
       .map((raw) {

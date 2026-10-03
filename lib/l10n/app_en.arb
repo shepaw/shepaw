@@ -101,6 +101,7 @@
   "home_createGroup": "Create Group",
   "home_addDevice": "Device Pairing",
   "home_scanConnect": "Scan to Connect",
+  "home_addAgentInstance": "Add agent instance",
   "home_searchEmptyHint": "Search agents, groups, messages, and peer chats",
   "home_searchNoResults": "No results found",
   "home_searchSectionAgents": "Agents",
@@ -2179,6 +2180,25 @@
   "peerSettings_agentRunning": "Running",
   "peerSettings_agentStopped": "Stopped",
   "peerSettings_agentManageOffline": "Device is offline. No synced agents yet.",
+  "peerSettings_newAgent": "New agent",
+  "peerSettings_newAgentTitle": "New agent on this device",
+  "peerSettings_engineLabel": "Engine",
+  "peerSettings_engineUnavailable": "Not installed",
+  "peerSettings_noEnginesAvailable": "No engine is installed on this device. Install one first (for example Cursor's agent, Claude Code, or Codex).",
+  "peerSettings_agentNameLabel": "Name",
+  "peerSettings_agentNameHint": "Leave empty to use the engine name",
+  "peerSettings_workspaceLabel": "Working directory",
+  "peerSettings_chooseWorkspace": "Choose a directory on the device",
+  "peerSettings_create": "Create",
+  "peerSettings_removeAgent": "Remove agent",
+  "peerSettings_removeAgentConfirm": "Remove \"{name}\" from this device? The engine's own session history is kept.",
+  "@peerSettings_removeAgentConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "peerSettings_noManagedAgents": "This device has no agents yet",
   "peerSettings_agentOpFailed": "Operation failed: {error}",
   "@peerSettings_agentOpFailed": {
@@ -4415,5 +4435,49 @@
   "peer_pairingFailedRetry": "Pairing failed. Try again.",
   "peerSettings_trustUpdateFailed": "Couldn't change the trust level. Try again.",
   "groupMemberDetail_adminFailed": "Couldn't change the admin. Try again.",
-  "scheduledTasks_actionFailed": "Couldn't complete that. Try again."
+  "scheduledTasks_actionFailed": "Couldn't complete that. Try again.",
+  "pouch_title": "Choose a pouch",
+  "pouch_intro": "Pick a pouch to sign in. The session stays on this device, and later frames are sealed with it.",
+  "pouch_hostSection": "Host",
+  "pouch_pouchSection": "Pouches on this host",
+  "pouch_thisComputer": "This computer",
+  "pouch_startCli": "Start shepaw",
+  "pouch_cliMissing": "shepaw was not found on this computer. Install it, then detect again.",
+  "pouch_redetect": "Detect again",
+  "pouch_noPouches": "No pouches yet",
+  "pouch_newName": "Name for the new pouch",
+  "pouch_createAndEnter": "Create and enter",
+  "pouch_current": "Current",
+  "pouch_busy": "Please wait",
+  "pouch_loginFailed": "Couldn't sign in",
+  "pouch_createFailed": "Couldn't create the pouch",
+  "pouch_nameRequired": "A pouch needs a name",
+  "pouch_hostOffline": "Can't reach this host",
+  "pouch_startFailed": "Couldn't start shepaw",
+  "pouch_pairFirst": "Pair with a computer running shepaw first",
+  "pouch_pair": "Pair",
+  "pouch_addHost": "Add a host",
+  "settings_switchPouch": "Switch pouch",
+  "settings_switchPouchCurrent": "Current: {pouch} · {host}",
+  "@settings_switchPouchCurrent": {
+    "placeholders": {
+      "pouch": {"type": "String"},
+      "host": {"type": "String"}
+    }
+  },
+  "settings_switchPouchConfirmTitle": "Switch pouch",
+  "settings_switchPouchConfirm": "Leave this pouch and choose another? The connection to the host stays up.",
+  "addAgent_title": "Add agent instance",
+  "addAgent_device": "Device",
+  "addAgent_engine": "Engine",
+  "addAgent_sessionMode": "Session mode",
+  "addAgent_name": "Name",
+  "addAgent_cwd": "Working directory",
+  "addAgent_browse": "Browse",
+  "addAgent_additional": "Additional directories",
+  "addAgent_addDirectory": "Add directory",
+  "addAgent_submit": "Create and open",
+  "addAgent_noEngines": "This device has no engine ready to use",
+  "addAgent_syncing": "Created. The list is still syncing",
+  "addAgent_searchEngines": "Search engines"
 }

@@ -12,6 +12,8 @@ import 'language_settings_screen.dart';
 import 'appearance_settings_screen.dart';
 import 'location_settings_screen.dart';
 import '../services/location_service.dart';
+import '../peer/services/peer_storage_service.dart';
+import '../storage/pouch_entry.dart';
 import '../storage/pouch_login.dart';
 import '../storage/pouch_session.dart';
 import 'inference_log_screen.dart';
@@ -50,6 +52,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _biometricLoading = true;
   bool _batteryOptIgnored = false;
   Map<String, dynamic>? _locationStatus;
+  String _pouchName = '';
+  String _pouchHost = '';
 
   @override
   void initState() {
@@ -64,6 +68,52 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _loadBiometricState();
     _loadBatteryOptimizationState();
     _loadLocationState();
+    _loadPouchLabel();
+  }
+
+  Future<void> _loadPouchLabel() async {
+    final session = await PouchSessionStore.readActive();
+    if (session == null || !mounted) return;
+    final peer = await PeerStorageService().getPeerById(session.hostPeerId);
+    if (!mounted) return;
+    setState(() {
+      _pouchName = session.pouchName;
+      _pouchHost = peer?.deviceName.trim().isNotEmpty == true
+          ? peer!.deviceName
+          : session.hostPeerId;
+    });
+  }
+
+  Future<void> _confirmSwitchPouch(BuildContext screenContext) async {
+    final confirmed = await showDialog<bool>(
+      context: screenContext,
+      builder: (dialogContext) {
+        final dialogL10n = AppLocalizations.of(dialogContext);
+        return AlertDialog(
+          title: Text(dialogL10n.settings_switchPouchConfirmTitle),
+          content: Text(dialogL10n.settings_switchPouchConfirm),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text(dialogL10n.common_cancel),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(dialogL10n.common_confirm),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true || !screenContext.mounted) return;
+    await PouchSessionStore(await PouchSessionStore.appFile()).forget();
+    PouchChannel.clear();
+    if (!screenContext.mounted) return;
+    Navigator.of(screenContext, rootNavigator: true).pushNamedAndRemoveUntil(
+      '/pouch',
+      (_) => false,
+      arguments: const PouchLoginArgs(switching: true),
+    );
   }
 
   Future<void> _loadBiometricState() async {
@@ -106,7 +156,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            value ? l10n.settings_biometricEnabled : l10n.settings_biometricDisabled,
+            value
+                ? l10n.settings_biometricEnabled
+                : l10n.settings_biometricDisabled,
           ),
         ),
       );
@@ -204,9 +256,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Text(
               l10n.settings_security,
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                color: Colors.grey[600],
-                fontWeight: FontWeight.bold,
-              ),
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.bold,
+                  ),
             ),
           ),
 
@@ -255,9 +307,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Text(
               l10n.settings_account,
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                color: Colors.grey[600],
-                fontWeight: FontWeight.bold,
-              ),
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.bold,
+                  ),
             ),
           ),
 
@@ -298,7 +350,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ListTile(
             leading: const Icon(Icons.language),
             title: Text(l10n.settings_language),
-            subtitle: Text(context.watch<LocaleProvider>().currentLabel(context)),
+            subtitle:
+                Text(context.watch<LocaleProvider>().currentLabel(context)),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               Navigator.push(
@@ -315,7 +368,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ListTile(
             leading: const Icon(Icons.dark_mode_outlined),
             title: Text(l10n.settings_appearance),
-            subtitle: Text(context.watch<ThemeProvider>().currentLabel(context)),
+            subtitle:
+                Text(context.watch<ThemeProvider>().currentLabel(context)),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               Navigator.push(
@@ -364,9 +418,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Text(
               l10n.settings_toolsSection,
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                color: Colors.grey[600],
-                fontWeight: FontWeight.bold,
-              ),
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.bold,
+                  ),
             ),
           ),
 
@@ -390,7 +444,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             subtitle: Text(
               SkillRegistry.instance.skills.isEmpty
                   ? l10n.settings_skillsSub
-                  : l10n.skillMgmt_skillCount(SkillRegistry.instance.skills.length),
+                  : l10n.skillMgmt_skillCount(
+                      SkillRegistry.instance.skills.length),
             ),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _openAndRefresh(
@@ -447,9 +502,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Text(
               l10n.settings_developerTools,
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                color: Colors.grey[600],
-                fontWeight: FontWeight.bold,
-              ),
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.bold,
+                  ),
             ),
           ),
 
@@ -493,9 +548,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Text(
               l10n.settings_about,
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                color: Colors.grey[600],
-                fontWeight: FontWeight.bold,
-              ),
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.bold,
+                  ),
             ),
           ),
 
@@ -534,8 +589,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     alignment: Alignment.centerLeft,
                     child: TextButton(
                       onPressed: () async {
-                        final uri = Uri.parse('https://github.com/shepaw/shepaw');
-                        await launchUrl(uri, mode: LaunchMode.externalApplication);
+                        final uri =
+                            Uri.parse('https://github.com/shepaw/shepaw');
+                        await launchUrl(uri,
+                            mode: LaunchMode.externalApplication);
                       },
                       child: Text(l10n.about_sourceRepo),
                     ),
@@ -569,13 +626,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => const PrivacyPolicyScreen(showTerms: true),
+                  builder: (context) =>
+                      const PrivacyPolicyScreen(showTerms: true),
                 ),
               );
             },
           ),
 
           const Divider(),
+
+          ListTile(
+            leading: const Icon(Icons.inventory_2_outlined),
+            title: Text(l10n.settings_switchPouch),
+            subtitle: _pouchName.isEmpty
+                ? null
+                : Text(
+                    l10n.settings_switchPouchCurrent(_pouchName, _pouchHost)),
+            onTap: () => _confirmSwitchPouch(context),
+          ),
 
           // Logout
           ListTile(
@@ -601,7 +669,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       TextButton(
                         onPressed: () async {
                           Navigator.pop(dialogContext);
-                          await PouchSessionStore(await PouchSessionStore.appFile())
+                          await PouchSessionStore(
+                                  await PouchSessionStore.appFile())
                               .forget();
                           PouchChannel.clear();
                           if (screenContext.mounted) {

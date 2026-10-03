@@ -1,12 +1,16 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../peer/services/peer_connection_manager.dart';
+import '../peer/services/peer_storage_service.dart';
 import '../services/logger_service.dart';
 import '../services/password_service.dart';
 import '../services/biometric_service.dart';
 import '../services/desktop_window_auto_size.dart';
 import '../services/cli_host.dart';
+import '../storage/pouch_entry.dart';
 import '../storage/pouch_login.dart';
 import '../storage/pouch_session.dart';
 import '../theme/app_theme.dart';
@@ -118,21 +122,30 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
     final session = await PouchSessionStore.readActive();
     final cli = await CliHost.detect();
+    final host = session == null
+        ? null
+        : await PeerStorageService().getPeerById(session.hostPeerId);
     if (!mounted) return;
-    final nowMs = DateTime.now().millisecondsSinceEpoch;
-    final start = cli != null
-        ? AppStart.pouchLogin
-        : afterDeviceUnlock(session, nowMs: nowMs);
+    final decision = decidePouchEntry(
+      session: session,
+      nowMs: DateTime.now().millisecondsSinceEpoch,
+      isDesktop: Platform.isMacOS || Platform.isWindows || Platform.isLinux,
+      localCliFingerprint: cli?.fingerprint,
+      sessionHostFingerprint: host?.fingerprint,
+    );
     LoggerService().info(
-      'unlock -> ${start.name} cli=${cli?.localEndpoint ?? '-'} pouch=${session?.pouchId ?? '-'}',
+      'unlock -> ${decision.name} cli=${cli?.localEndpoint ?? '-'} pouch=${session?.pouchId ?? '-'}',
       tag: 'Login',
     );
-    if (start == AppStart.home && session != null) {
+    if (decision == PouchEntryDecision.resume && session != null) {
       PouchChannel.install(session);
+      if (host != null) {
+        unawaited(PeerConnectionManager.instance.connectToPeer(host));
+      }
+      Navigator.of(context).pushReplacementNamed('/home');
+      return;
     }
-    Navigator.of(context).pushReplacementNamed(
-      start == AppStart.home ? '/home' : '/pouch',
-    );
+    Navigator.of(context).pushReplacementNamed('/pouch');
   }
 
   /// 提交登录

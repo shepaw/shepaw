@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:uuid/uuid.dart';
 
 import '../storage/pouch_role.dart';
+import '../storage/pouch_session.dart';
 import '../storage/store_service.dart';
 import 'models/paired_peer.dart';
 import 'models/pairing_payload.dart';
@@ -60,6 +61,13 @@ class PouchPairing {
     PeerPairingInfo info, {
     String? correlationId,
   }) async {
+    // 还没登录袋子时不能把配对交给主机，直接在本机握手。
+    if (await PouchSessionStore.readActive() == null) {
+      return PeerPairingService.instance.requestPairing(
+        info,
+        correlationId: correlationId,
+      );
+    }
     final route = await PouchTurnRelay.currentRoute();
     if (route.runLocal) {
       return PeerPairingService.instance.requestPairing(

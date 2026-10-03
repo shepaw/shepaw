@@ -14,7 +14,7 @@ import '../widgets/qr_scanner_view.dart';
 /// the caller as a `PairDeeplink`. Anything that doesn't parse keeps the
 /// camera running with a toast, so the user can just try another QR.
 ///
-/// The caller (AddRemoteAgentScreen) receives either `PairDeeplink` or null
+/// The caller receives either `PairDeeplink` or null
 /// via `Navigator.push<PairDeeplink?>`. null covers all three "no result"
 /// paths: user cancelled, permission denied, unsupported platform.
 class AgentPairingScannerScreen extends StatefulWidget {

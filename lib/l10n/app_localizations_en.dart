@@ -340,6 +340,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get home_scanConnect => 'Scan to Connect';
 
   @override
+  String get home_addAgentInstance => 'Add agent instance';
+
+  @override
   String get home_searchEmptyHint =>
       'Search agents, groups, messages, and peer chats';
 
@@ -4904,6 +4907,45 @@ class AppLocalizationsEn extends AppLocalizations {
       'Device is offline. No synced agents yet.';
 
   @override
+  String get peerSettings_newAgent => 'New agent';
+
+  @override
+  String get peerSettings_newAgentTitle => 'New agent on this device';
+
+  @override
+  String get peerSettings_engineLabel => 'Engine';
+
+  @override
+  String get peerSettings_engineUnavailable => 'Not installed';
+
+  @override
+  String get peerSettings_noEnginesAvailable =>
+      'No engine is installed on this device. Install one first (for example Cursor\'s agent, Claude Code, or Codex).';
+
+  @override
+  String get peerSettings_agentNameLabel => 'Name';
+
+  @override
+  String get peerSettings_agentNameHint => 'Leave empty to use the engine name';
+
+  @override
+  String get peerSettings_workspaceLabel => 'Working directory';
+
+  @override
+  String get peerSettings_chooseWorkspace => 'Choose a directory on the device';
+
+  @override
+  String get peerSettings_create => 'Create';
+
+  @override
+  String get peerSettings_removeAgent => 'Remove agent';
+
+  @override
+  String peerSettings_removeAgentConfirm(String name) {
+    return 'Remove \"$name\" from this device? The engine\'s own session history is kept.';
+  }
+
+  @override
   String get peerSettings_noManagedAgents => 'This device has no agents yet';
 
   @override
@@ -8304,4 +8346,123 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get scheduledTasks_actionFailed =>
       'Couldn\'t complete that. Try again.';
+
+  @override
+  String get pouch_title => 'Choose a pouch';
+
+  @override
+  String get pouch_intro =>
+      'Pick a pouch to sign in. The session stays on this device, and later frames are sealed with it.';
+
+  @override
+  String get pouch_hostSection => 'Host';
+
+  @override
+  String get pouch_pouchSection => 'Pouches on this host';
+
+  @override
+  String get pouch_thisComputer => 'This computer';
+
+  @override
+  String get pouch_startCli => 'Start shepaw';
+
+  @override
+  String get pouch_cliMissing =>
+      'shepaw was not found on this computer. Install it, then detect again.';
+
+  @override
+  String get pouch_redetect => 'Detect again';
+
+  @override
+  String get pouch_noPouches => 'No pouches yet';
+
+  @override
+  String get pouch_newName => 'Name for the new pouch';
+
+  @override
+  String get pouch_createAndEnter => 'Create and enter';
+
+  @override
+  String get pouch_current => 'Current';
+
+  @override
+  String get pouch_busy => 'Please wait';
+
+  @override
+  String get pouch_loginFailed => 'Couldn\'t sign in';
+
+  @override
+  String get pouch_createFailed => 'Couldn\'t create the pouch';
+
+  @override
+  String get pouch_nameRequired => 'A pouch needs a name';
+
+  @override
+  String get pouch_hostOffline => 'Can\'t reach this host';
+
+  @override
+  String get pouch_startFailed => 'Couldn\'t start shepaw';
+
+  @override
+  String get pouch_pairFirst => 'Pair with a computer running shepaw first';
+
+  @override
+  String get pouch_pair => 'Pair';
+
+  @override
+  String get pouch_addHost => 'Add a host';
+
+  @override
+  String get settings_switchPouch => 'Switch pouch';
+
+  @override
+  String settings_switchPouchCurrent(String pouch, String host) {
+    return 'Current: $pouch · $host';
+  }
+
+  @override
+  String get settings_switchPouchConfirmTitle => 'Switch pouch';
+
+  @override
+  String get settings_switchPouchConfirm =>
+      'Leave this pouch and choose another? The connection to the host stays up.';
+
+  @override
+  String get addAgent_title => 'Add agent instance';
+
+  @override
+  String get addAgent_device => 'Device';
+
+  @override
+  String get addAgent_engine => 'Engine';
+
+  @override
+  String get addAgent_sessionMode => 'Session mode';
+
+  @override
+  String get addAgent_name => 'Name';
+
+  @override
+  String get addAgent_cwd => 'Working directory';
+
+  @override
+  String get addAgent_browse => 'Browse';
+
+  @override
+  String get addAgent_additional => 'Additional directories';
+
+  @override
+  String get addAgent_addDirectory => 'Add directory';
+
+  @override
+  String get addAgent_submit => 'Create and open';
+
+  @override
+  String get addAgent_noEngines => 'This device has no engine ready to use';
+
+  @override
+  String get addAgent_syncing => 'Created. The list is still syncing';
+
+  @override
+  String get addAgent_searchEngines => 'Search engines';
 }

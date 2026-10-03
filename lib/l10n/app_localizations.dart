@@ -704,6 +704,12 @@ abstract class AppLocalizations {
   /// **'扫码连接'**
   String get home_scanConnect;
 
+  /// No description provided for @home_addAgentInstance.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加 Agent 实例'**
+  String get home_addAgentInstance;
+
   /// No description provided for @home_searchEmptyHint.
   ///
   /// In zh, this message translates to:
@@ -8721,6 +8727,78 @@ abstract class AppLocalizations {
   /// **'设备离线，暂无已同步的 Agent'**
   String get peerSettings_agentManageOffline;
 
+  /// No description provided for @peerSettings_newAgent.
+  ///
+  /// In zh, this message translates to:
+  /// **'新建 Agent'**
+  String get peerSettings_newAgent;
+
+  /// No description provided for @peerSettings_newAgentTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'在这台设备上新建 Agent'**
+  String get peerSettings_newAgentTitle;
+
+  /// No description provided for @peerSettings_engineLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'引擎'**
+  String get peerSettings_engineLabel;
+
+  /// No description provided for @peerSettings_engineUnavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'未安装'**
+  String get peerSettings_engineUnavailable;
+
+  /// No description provided for @peerSettings_noEnginesAvailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台设备上没有找到可用的引擎，请先安装一个（例如 Cursor 的 agent、Claude Code、Codex）'**
+  String get peerSettings_noEnginesAvailable;
+
+  /// No description provided for @peerSettings_agentNameLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'名称'**
+  String get peerSettings_agentNameLabel;
+
+  /// No description provided for @peerSettings_agentNameHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'留空则使用引擎名'**
+  String get peerSettings_agentNameHint;
+
+  /// No description provided for @peerSettings_workspaceLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作目录'**
+  String get peerSettings_workspaceLabel;
+
+  /// No description provided for @peerSettings_chooseWorkspace.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择设备上的目录'**
+  String get peerSettings_chooseWorkspace;
+
+  /// No description provided for @peerSettings_create.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建'**
+  String get peerSettings_create;
+
+  /// No description provided for @peerSettings_removeAgent.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除 Agent'**
+  String get peerSettings_removeAgent;
+
+  /// No description provided for @peerSettings_removeAgentConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'从这台设备上删除「{name}」？引擎自己的会话记录不会被删除。'**
+  String peerSettings_removeAgentConfirm(String name);
+
   /// No description provided for @peerSettings_noManagedAgents.
   ///
   /// In zh, this message translates to:
@@ -14486,6 +14564,234 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'操作失败，请重试'**
   String get scheduledTasks_actionFailed;
+
+  /// No description provided for @pouch_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择储物袋'**
+  String get pouch_title;
+
+  /// No description provided for @pouch_intro.
+  ///
+  /// In zh, this message translates to:
+  /// **'选一只储物袋登录。登录态会留下来，业务帧用这次登录的密钥加密。'**
+  String get pouch_intro;
+
+  /// No description provided for @pouch_hostSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机'**
+  String get pouch_hostSection;
+
+  /// No description provided for @pouch_pouchSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台主机上的袋子'**
+  String get pouch_pouchSection;
+
+  /// No description provided for @pouch_thisComputer.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台电脑'**
+  String get pouch_thisComputer;
+
+  /// No description provided for @pouch_startCli.
+  ///
+  /// In zh, this message translates to:
+  /// **'启动 shepaw'**
+  String get pouch_startCli;
+
+  /// No description provided for @pouch_cliMissing.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台电脑上没有找到 shepaw。请先安装，然后点重新检测。'**
+  String get pouch_cliMissing;
+
+  /// No description provided for @pouch_redetect.
+  ///
+  /// In zh, this message translates to:
+  /// **'重新检测'**
+  String get pouch_redetect;
+
+  /// No description provided for @pouch_noPouches.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没有袋子'**
+  String get pouch_noPouches;
+
+  /// No description provided for @pouch_newName.
+  ///
+  /// In zh, this message translates to:
+  /// **'新袋子的名字'**
+  String get pouch_newName;
+
+  /// No description provided for @pouch_createAndEnter.
+  ///
+  /// In zh, this message translates to:
+  /// **'新建并登录'**
+  String get pouch_createAndEnter;
+
+  /// No description provided for @pouch_current.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前'**
+  String get pouch_current;
+
+  /// No description provided for @pouch_busy.
+  ///
+  /// In zh, this message translates to:
+  /// **'请稍候'**
+  String get pouch_busy;
+
+  /// No description provided for @pouch_loginFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'登录失败'**
+  String get pouch_loginFailed;
+
+  /// No description provided for @pouch_createFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'没能建好袋子'**
+  String get pouch_createFailed;
+
+  /// No description provided for @pouch_nameRequired.
+  ///
+  /// In zh, this message translates to:
+  /// **'袋子需要一个名字'**
+  String get pouch_nameRequired;
+
+  /// No description provided for @pouch_hostOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'连不上这台主机'**
+  String get pouch_hostOffline;
+
+  /// No description provided for @pouch_startFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'没能启动 shepaw'**
+  String get pouch_startFailed;
+
+  /// No description provided for @pouch_pairFirst.
+  ///
+  /// In zh, this message translates to:
+  /// **'先和一台装了 shepaw 的电脑配对'**
+  String get pouch_pairFirst;
+
+  /// No description provided for @pouch_pair.
+  ///
+  /// In zh, this message translates to:
+  /// **'去配对'**
+  String get pouch_pair;
+
+  /// No description provided for @pouch_addHost.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加主机'**
+  String get pouch_addHost;
+
+  /// No description provided for @settings_switchPouch.
+  ///
+  /// In zh, this message translates to:
+  /// **'切换储物袋'**
+  String get settings_switchPouch;
+
+  /// No description provided for @settings_switchPouchCurrent.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前：{pouch} · {host}'**
+  String settings_switchPouchCurrent(String pouch, String host);
+
+  /// No description provided for @settings_switchPouchConfirmTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'切换储物袋'**
+  String get settings_switchPouchConfirmTitle;
+
+  /// No description provided for @settings_switchPouchConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'要离开当前袋子，去选择另一只吗？和主机的连接会保持。'**
+  String get settings_switchPouchConfirm;
+
+  /// No description provided for @addAgent_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加 Agent 实例'**
+  String get addAgent_title;
+
+  /// No description provided for @addAgent_device.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备'**
+  String get addAgent_device;
+
+  /// No description provided for @addAgent_engine.
+  ///
+  /// In zh, this message translates to:
+  /// **'引擎'**
+  String get addAgent_engine;
+
+  /// No description provided for @addAgent_sessionMode.
+  ///
+  /// In zh, this message translates to:
+  /// **'会话模式'**
+  String get addAgent_sessionMode;
+
+  /// No description provided for @addAgent_name.
+  ///
+  /// In zh, this message translates to:
+  /// **'名称'**
+  String get addAgent_name;
+
+  /// No description provided for @addAgent_cwd.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作目录'**
+  String get addAgent_cwd;
+
+  /// No description provided for @addAgent_browse.
+  ///
+  /// In zh, this message translates to:
+  /// **'浏览'**
+  String get addAgent_browse;
+
+  /// No description provided for @addAgent_additional.
+  ///
+  /// In zh, this message translates to:
+  /// **'附加目录'**
+  String get addAgent_additional;
+
+  /// No description provided for @addAgent_addDirectory.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加目录'**
+  String get addAgent_addDirectory;
+
+  /// No description provided for @addAgent_submit.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建并打开'**
+  String get addAgent_submit;
+
+  /// No description provided for @addAgent_noEngines.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台设备上还没有装好的引擎'**
+  String get addAgent_noEngines;
+
+  /// No description provided for @addAgent_syncing.
+  ///
+  /// In zh, this message translates to:
+  /// **'已创建，名单同步中'**
+  String get addAgent_syncing;
+
+  /// No description provided for @addAgent_searchEngines.
+  ///
+  /// In zh, this message translates to:
+  /// **'搜索引擎'**
+  String get addAgent_searchEngines;
 }
 
 class _AppLocalizationsDelegate

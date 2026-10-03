@@ -1,14 +1,24 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '../peer/models/paired_peer.dart';
 import '../peer/models/pairing_payload.dart';
+import '../peer/services/peer_pairing_service.dart';
+import '../peer/services/peer_storage_service.dart';
 
 /// 本机 `shepaw` CLI 正在听的主机。电脑上的 App 用它配对，不再走旧的仪表盘。
 class CliHostEndpoint {
-  const CliHostEndpoint({required this.port, required this.binary});
+  const CliHostEndpoint({
+    required this.port,
+    required this.binary,
+    required this.fingerprint,
+    required this.pid,
+  });
 
   final int port;
   final String binary;
+  final String fingerprint;
+  final int pid;
 
   String get localEndpoint => 'ws://127.0.0.1:$port/peer/ws';
 }
@@ -24,7 +34,7 @@ class CliHost {
     return '$base/shepaw-hub';
   }
 
-  /// `peer-state.json` 带 `version` 时，是这次 CLI 写下的主机。
+  /// `peer-state.json` 带 `version`，而且里面的 pid 还活着，才算这台主机在跑。
   static Future<CliHostEndpoint?> detect() async {
     final file = File('${hubRoot()}/peer-state.json');
     if (!file.existsSync()) return null;
@@ -32,10 +42,78 @@ class CliHost {
     if (decoded is! Map) return null;
     final version = (decoded['version'] as String?)?.trim() ?? '';
     final port = decoded['port'];
+    final pid = decoded['pid'];
     if (version.isEmpty || port is! int || port <= 0) return null;
+    if (pid is! int || pid <= 0 || !await _processAlive(pid)) return null;
     final binary = await resolveBinary();
     if (binary == null) return null;
-    return CliHostEndpoint(port: port, binary: binary);
+    final fingerprint = (decoded['fingerprint'] as String?)?.trim() ?? '';
+    return CliHostEndpoint(
+      port: port,
+      binary: binary,
+      fingerprint: fingerprint,
+      pid: pid,
+    );
+  }
+
+  /// 执行 `shepaw start`，最多等 10 秒直到 [detect] 看到进程。
+  static Future<void> start(String binary) async {
+    await Process.start(
+      binary,
+      const ['start'],
+      mode: ProcessStartMode.detached,
+    );
+    final deadline = DateTime.now().add(const Duration(seconds: 10));
+    while (DateTime.now().isBefore(deadline)) {
+      if (await detect() != null) return;
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+    throw StateError('shepaw 没有在时限内就绪');
+  }
+
+  /// 指纹已经配对过就直接用，并刷新回环地址。否则才签发新的配对码。
+  static Future<PairedPeer> ensurePaired(CliHostEndpoint cli) async {
+    final fingerprint = cli.fingerprint.trim();
+    if (fingerprint.isNotEmpty) {
+      final existing =
+          await PeerStorageService().getPeerByFingerprint(fingerprint);
+      if (existing != null) {
+        await PeerStorageService().updateLocalEndpoint(
+          existing.id,
+          cli.localEndpoint,
+        );
+        return (await PeerStorageService().getPeerById(existing.id)) ??
+            existing;
+      }
+    }
+    final info = await mintPairing(cli);
+    final peer = await PeerPairingService.instance.requestPairing(
+      info,
+      connectAfter: false,
+    );
+    final local = info.localEndpoint;
+    if (local != null && local.isNotEmpty) {
+      await PeerStorageService().updateLocalEndpoint(peer.id, local);
+    }
+    return (await PeerStorageService().getPeerById(peer.id)) ?? peer;
+  }
+
+  static Future<bool> _processAlive(int pid) async {
+    if (Platform.isWindows) {
+      final result = await Process.run('tasklist', [
+        '/FI',
+        'PID eq $pid',
+        '/FO',
+        'CSV',
+        '/NH',
+      ]);
+      final text = result.stdout.toString();
+      return result.exitCode == 0 &&
+          text.contains('$pid') &&
+          !text.toUpperCase().contains('INFO:');
+    }
+    final result = await Process.run('kill', ['-0', '$pid']);
+    return result.exitCode == 0;
   }
 
   static Future<String?> resolveBinary() async {

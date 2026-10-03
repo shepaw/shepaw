@@ -6,6 +6,7 @@ import '../models/remote_agent.dart';
 import '../l10n/app_localizations.dart';
 import '../config/product_features.dart';
 import '../peer/models/paired_peer.dart';
+import '../peer/screens/add_agent_instance_screen.dart';
 import '../peer/screens/peer_chat_screen.dart';
 import '../peer/screens/peer_manual_input_screen.dart';
 import '../peer/screens/peer_pairing_screen.dart';
@@ -72,6 +73,7 @@ enum _RightPanelView {
   storageBagMenu,
   jadeSlips,
   instructions,
+  addAgentInstance,
 }
 
 /// 某个主菜单（消息 / 通讯录 / 储物袋）自己的右栏状态。
@@ -654,6 +656,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                   onConversationSelected: _onConversationSelected,
                   onCreateGroup: () => _showPanel(_RightPanelView.createGroup),
                   onPairDevice: () => _showPanel(_RightPanelView.pairDevice),
+                  onAddAgentInstance: () =>
+                      _showPanel(_RightPanelView.addAgentInstance),
                 ),
                 ContactsScreen(
                   key: _contactsKey,
@@ -666,6 +670,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                   onCreateGroup: () => _showPanel(_RightPanelView.createGroup),
                   onPairDevice: () =>
                       _showPanel(_RightPanelView.pairDeviceInput),
+                  onAddAgentInstance: () =>
+                      _showPanel(_RightPanelView.addAgentInstance),
                 ),
                 StorageSpaceListPanel(
                   key: _storageKey,
@@ -901,6 +907,21 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
       case _RightPanelView.instructions:
         return const InstructionSetScreen(embedded: true);
+
+      case _RightPanelView.addAgentInstance:
+        return AddAgentInstanceScreen(
+          embedded: true,
+          onClose: () => _showPanel(_RightPanelView.empty),
+          onCreated: (agent) {
+            _onConversationSelected(ConversationSelection(
+              agentId: agent.id,
+              agentName: agent.name,
+              agentAvatar: agent.avatar,
+            ));
+            _reloadAgents();
+            _reloadContacts();
+          },
+        );
 
       case _RightPanelView.empty:
         return _buildEmptyState(args.mode);
