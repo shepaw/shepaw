@@ -108,7 +108,7 @@ class _PeerScanScreenState extends State<PeerScanScreen> {
       }
     });
 
-    _ownsSession = route.runLocal;
+    _ownsSession = await PouchPairing.runsOnThisDevice(info);
     try {
       final peer = await PouchPairing.request(info);
       if (!mounted) return QrScannerOutcome.consumed;

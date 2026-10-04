@@ -7,6 +7,33 @@ import 'package:shepaw/peer/models/pairing_payload.dart';
 import 'package:shepaw/peer/pouch_pair.dart';
 
 void main() {
+  test('二维码就是当前主机时，握手留在本机', () {
+    expect(
+      pouchPairRunsLocal(
+        runLocal: false,
+        hostFingerprint: 'C1B74877DEBB2FD6',
+        qrFingerprint: 'c1b74877debb2fd6',
+      ),
+      isTrue,
+    );
+    expect(
+      pouchPairRunsLocal(
+        runLocal: false,
+        hostFingerprint: 'aaaaaaaaaaaaaaaa',
+        qrFingerprint: 'c1b74877debb2fd6',
+      ),
+      isFalse,
+    );
+    expect(
+      pouchPairRunsLocal(
+        runLocal: true,
+        hostFingerprint: null,
+        qrFingerprint: 'c1b74877debb2fd6',
+      ),
+      isTrue,
+    );
+  });
+
   test('主机代连时先走外网端点', () {
     final info = PeerPairingInfo(
       localEndpoint: 'ws://192.168.1.9/peer/ws',

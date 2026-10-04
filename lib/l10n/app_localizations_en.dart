@@ -4614,20 +4614,21 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get peerConnect_pasteSubtitle =>
-      'A shepaw:// pairing link from the other app, or the Agent Hub address on the other computer';
+      'A pairing link from the other app or from shepaw pair, or a Hub address';
 
   @override
-  String get peerConnect_guideTitle => 'No Agent Hub on the other device yet?';
+  String get peerConnect_guideTitle =>
+      'No Shepaw Hub on the other computer yet?';
 
   @override
-  String get peerConnect_guideAction => 'See how to install it';
+  String get peerConnect_guideAction => 'See how to start it';
 
   @override
   String get peerManual_title => 'Enter pairing details';
 
   @override
   String get peerManual_desc =>
-      'Paste the pairing link from the other device\'s \"My QR Code\" page, or enter the Agent Hub dashboard address (for example 192.168.1.5:4000).';
+      'Paste the pairing link from the other device\'s \"My QR Code\" page or from shepaw pair, or enter a Hub address.';
 
   @override
   String get peerManual_inputHint => 'shepaw://peer?... or 192.168.1.5:4000';
@@ -4640,7 +4641,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get peerManual_guideHint =>
-      'Run these commands on the other computer, then paste the dashboard address back here.';
+      'Run these commands on the other computer, then scan the QR in the terminal or paste the pairing link it prints.';
 
   @override
   String get peerManual_recognizedLink => 'Pairing link';
@@ -6239,11 +6240,11 @@ class AppLocalizationsEn extends AppLocalizations {
       'This is a public address over plain http — the access token will be sent in the clear.';
 
   @override
-  String get peerHub_guideTitle => 'No Agent Hub on the other device yet?';
+  String get peerHub_guideTitle => 'No Shepaw Hub on the other computer yet?';
 
   @override
   String get peerHub_guideBody =>
-      '# Run this on the other computer (needs Node.js >= 18.20)\nnpm install -g shepaw-agent-hub\nshepaw-hub init\n\n# Set the token BEFORE binding a non-loopback address --\n# the Hub refuses to start if you do it the other way around\nexport SHEPAW_HUB_TOKEN=<a long random string>\nshepaw-hub web --host 0.0.0.0';
+      '# Run this on the other computer\nshepaw start\nshepaw pair';
 
   @override
   String get peerHub_guideCopy => 'Copy commands';

@@ -4442,20 +4442,20 @@ class AppLocalizationsZh extends AppLocalizations {
   String get peerConnect_pasteTitle => '粘贴链接或 Hub 地址';
 
   @override
-  String get peerConnect_pasteSubtitle => '对方 App 的配对链接，或对方电脑上 Agent Hub 的地址';
+  String get peerConnect_pasteSubtitle =>
+      '对方 App 或 shepaw pair 打印的配对链接，也可填 Hub 地址';
 
   @override
-  String get peerConnect_guideTitle => '对方还没有 Agent Hub？';
+  String get peerConnect_guideTitle => '对方电脑还没有 Shepaw Hub？';
 
   @override
-  String get peerConnect_guideAction => '查看安装方法';
+  String get peerConnect_guideAction => '查看启动方法';
 
   @override
   String get peerManual_title => '输入配对信息';
 
   @override
-  String get peerManual_desc =>
-      '粘贴对方「我的二维码」里的配对链接，或填入对方 Agent Hub 的仪表盘地址（如 192.168.1.5:4000）。';
+  String get peerManual_desc => '粘贴对方「我的二维码」或 shepaw pair 打印的配对链接，也可以填 Hub 地址。';
 
   @override
   String get peerManual_inputHint => 'shepaw://peer?... 或 192.168.1.5:4000';
@@ -4467,7 +4467,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get peerManual_submit => '发起配对';
 
   @override
-  String get peerManual_guideHint => '在对方电脑上执行这些命令，装好后把仪表盘地址贴回来。';
+  String get peerManual_guideHint => '在对方电脑上执行这些命令，然后扫描终端里的二维码，或把打印出的配对链接贴回来。';
 
   @override
   String get peerManual_recognizedLink => '配对链接';
@@ -6005,11 +6005,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get peerHub_insecureWarning => '这是公网地址且走明文 http，访问令牌会以明文发送。';
 
   @override
-  String get peerHub_guideTitle => '对方还没有 Agent Hub？';
+  String get peerHub_guideTitle => '对方电脑还没有 Shepaw Hub？';
 
   @override
-  String get peerHub_guideBody =>
-      '# 在对方电脑上执行（需要 Node.js ≥ 18.20）\nnpm install -g shepaw-agent-hub\nshepaw-hub init\n\n# 先设令牌，再绑定非回环地址 ——\n# 顺序反了 Hub 会拒绝启动\nexport SHEPAW_HUB_TOKEN=换成一个足够长的随机串\nshepaw-hub web --host 0.0.0.0';
+  String get peerHub_guideBody => '# 在对方电脑上执行\nshepaw start\nshepaw pair';
 
   @override
   String get peerHub_guideCopy => '复制命令';

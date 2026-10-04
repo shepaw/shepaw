@@ -10,8 +10,22 @@ import 'models/pairing_payload.dart';
 import 'pouch_turn_relay.dart';
 import 'services/peer_connection_manager.dart';
 import 'services/peer_pairing_service.dart';
+import 'services/peer_storage_service.dart';
 
 /// 客户端把扫到的配对票据交给主机。主机用储物袋的密钥去握手。
+///
+/// 二维码指纹和当前主机相同，说明用户是在把 App 配上这台 Hub，握手留在本机。
+bool pouchPairRunsLocal({
+  required bool runLocal,
+  String? hostFingerprint,
+  required String qrFingerprint,
+}) {
+  if (runLocal) return true;
+  final host = hostFingerprint?.trim().toLowerCase() ?? '';
+  if (host.isEmpty) return false;
+  return host == qrFingerprint.trim().toLowerCase();
+}
+
 class PouchPair {
   PouchPair._();
 
@@ -53,7 +67,8 @@ class PouchPairTicket {
   }
 }
 
-/// 已登录时，扫码配对交给当前这只袋子的主机。App 自己连本机 Hub 不走这里。
+/// 已登录时，扫码配对交给当前这只袋子的主机。
+/// 二维码就是这台主机自己时，在本机握手：主机当时往往还不在线，转交不出去。
 class PouchPairing {
   PouchPairing._();
 
@@ -61,23 +76,29 @@ class PouchPairing {
     PeerPairingInfo info, {
     String? correlationId,
   }) async {
-    // 还没登录袋子时不能把配对交给主机，直接在本机握手。
-    if (await PouchSessionStore.readActive() == null) {
+    if (await runsOnThisDevice(info)) {
       return PeerPairingService.instance.requestPairing(
         info,
         correlationId: correlationId,
       );
     }
     final route = await PouchTurnRelay.currentRoute();
-    if (route.runLocal) {
-      return PeerPairingService.instance.requestPairing(
-        info,
-        correlationId: correlationId,
-      );
-    }
     return PouchPairRelay.instance.forward(
       hostPeerId: route.hostPeerId!,
       info: info,
+    );
+  }
+
+  /// 本机发起 Noise 握手，而不是把票据转给储物袋主机。
+  static Future<bool> runsOnThisDevice(PeerPairingInfo info) async {
+    if (await PouchSessionStore.readActive() == null) return true;
+    final route = await PouchTurnRelay.currentRoute();
+    if (route.runLocal) return true;
+    final host = await PeerStorageService().getPeerById(route.hostPeerId!);
+    return pouchPairRunsLocal(
+      runLocal: false,
+      hostFingerprint: host?.fingerprint,
+      qrFingerprint: info.fingerprint,
     );
   }
 

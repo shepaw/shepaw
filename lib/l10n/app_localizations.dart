@@ -8226,19 +8226,19 @@ abstract class AppLocalizations {
   /// No description provided for @peerConnect_pasteSubtitle.
   ///
   /// In zh, this message translates to:
-  /// **'对方 App 的配对链接，或对方电脑上 Agent Hub 的地址'**
+  /// **'对方 App 或 shepaw pair 打印的配对链接，也可填 Hub 地址'**
   String get peerConnect_pasteSubtitle;
 
   /// No description provided for @peerConnect_guideTitle.
   ///
   /// In zh, this message translates to:
-  /// **'对方还没有 Agent Hub？'**
+  /// **'对方电脑还没有 Shepaw Hub？'**
   String get peerConnect_guideTitle;
 
   /// No description provided for @peerConnect_guideAction.
   ///
   /// In zh, this message translates to:
-  /// **'查看安装方法'**
+  /// **'查看启动方法'**
   String get peerConnect_guideAction;
 
   /// No description provided for @peerManual_title.
@@ -8250,7 +8250,7 @@ abstract class AppLocalizations {
   /// No description provided for @peerManual_desc.
   ///
   /// In zh, this message translates to:
-  /// **'粘贴对方「我的二维码」里的配对链接，或填入对方 Agent Hub 的仪表盘地址（如 192.168.1.5:4000）。'**
+  /// **'粘贴对方「我的二维码」或 shepaw pair 打印的配对链接，也可以填 Hub 地址。'**
   String get peerManual_desc;
 
   /// No description provided for @peerManual_inputHint.
@@ -8274,7 +8274,7 @@ abstract class AppLocalizations {
   /// No description provided for @peerManual_guideHint.
   ///
   /// In zh, this message translates to:
-  /// **'在对方电脑上执行这些命令，装好后把仪表盘地址贴回来。'**
+  /// **'在对方电脑上执行这些命令，然后扫描终端里的二维码，或把打印出的配对链接贴回来。'**
   String get peerManual_guideHint;
 
   /// No description provided for @peerManual_recognizedLink.
@@ -10968,13 +10968,13 @@ abstract class AppLocalizations {
   /// No description provided for @peerHub_guideTitle.
   ///
   /// In zh, this message translates to:
-  /// **'对方还没有 Agent Hub？'**
+  /// **'对方电脑还没有 Shepaw Hub？'**
   String get peerHub_guideTitle;
 
   /// No description provided for @peerHub_guideBody.
   ///
   /// In zh, this message translates to:
-  /// **'# 在对方电脑上执行（需要 Node.js ≥ 18.20）\nnpm install -g shepaw-agent-hub\nshepaw-hub init\n\n# 先设令牌，再绑定非回环地址 ——\n# 顺序反了 Hub 会拒绝启动\nexport SHEPAW_HUB_TOKEN=换成一个足够长的随机串\nshepaw-hub web --host 0.0.0.0'**
+  /// **'# 在对方电脑上执行\nshepaw start\nshepaw pair'**
   String get peerHub_guideBody;
 
   /// No description provided for @peerHub_guideCopy.

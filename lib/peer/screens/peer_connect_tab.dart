@@ -61,10 +61,10 @@ class PeerConnectTab extends StatelessWidget {
     );
   }
 
-  /// 指向 Agent Hub 的安装指引卡片。
+  /// 指向 Shepaw CLI Hub 的启动指引卡片。
   ///
   /// 只做指路，不复制一份命令 —— 指引正文只有 [PeerManualInputScreen] 一份，
-  /// 「先设 token，再说 --host 0.0.0.0」的顺序才不会在两个地方各错一次。
+  /// `shepaw start` 再 `shepaw pair` 不会在两个地方各写一次。
   Widget _buildGuideCard(BuildContext context, AppLocalizations l10n) {
     final colorScheme = Theme.of(context).colorScheme;
     return Container(

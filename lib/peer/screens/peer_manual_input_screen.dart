@@ -33,7 +33,7 @@ class PeerManualInputScreen extends StatefulWidget {
 
   final void Function(PairedPeer peer)? onPaired;
 
-  /// 打开时是否直接展开「怎么装 Agent Hub」的指引。
+  /// 打开时是否直接展开「怎么启动 Shepaw Hub」的指引。
   final bool showGuide;
 
   /// 测试注入；生产路径走 [getIt]。
