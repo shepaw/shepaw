@@ -308,7 +308,7 @@ class CliHost {
   }
 
   static Future<PeerPairingInfo> mintPairing(CliHostEndpoint host) async {
-    final result = await Process.run(host.binary, [
+    final base = [
       'pair',
       '--host',
       '127.0.0.1',
@@ -316,9 +316,11 @@ class CliHost {
       '${host.port}',
       '--local',
       host.localEndpoint,
-      '--name',
-      '这台电脑',
-    ]);
+    ];
+    var result = await Process.run(host.binary, [...base, '--json']);
+    if (result.exitCode != 0) {
+      result = await Process.run(host.binary, base);
+    }
     if (result.exitCode != 0) {
       final detail = [
         result.stderr.toString().trim(),
@@ -326,18 +328,34 @@ class CliHost {
       ].where((part) => part.isNotEmpty).join('\n');
       throw StateError(detail.isEmpty ? 'shepaw pair 失败' : detail);
     }
-    String? qr;
-    for (final line in result.stdout.toString().split('\n')) {
-      final trimmed = line.trim();
-      if (trimmed.startsWith('shepaw://')) {
-        qr = trimmed;
-        break;
-      }
-    }
-    final info = qr == null ? null : PeerPairingInfo.tryParse(qr);
+    final info = pairingInfoFromOutput(result.stdout.toString());
     if (info == null) {
       throw StateError('shepaw pair 没有给出配对票据');
     }
     return info;
   }
+}
+
+/// `--json` 里的 `link`，或旧版本直接打印的 `shepaw://` 行。
+PeerPairingInfo? pairingInfoFromOutput(String stdout) {
+  for (final line in stdout.split('\n')) {
+    final trimmed = line.trim();
+    if (trimmed.startsWith('{')) {
+      try {
+        final decoded = jsonDecode(trimmed);
+        if (decoded is Map) {
+          final link = decoded['link'];
+          if (link is String) {
+            final info = PeerPairingInfo.tryParse(link);
+            if (info != null) return info;
+          }
+        }
+      } catch (_) {}
+    }
+    if (trimmed.startsWith('shepaw://')) {
+      final info = PeerPairingInfo.tryParse(trimmed);
+      if (info != null) return info;
+    }
+  }
+  return null;
 }
