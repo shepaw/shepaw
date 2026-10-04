@@ -208,6 +208,7 @@ List<PeerRemoteSession> sessionsMissingLocalTranscript(
 class PeerChatResult {
   final String content;
   final Map<String, dynamic>? metadata;
+
   /// P2P `agent_chat` request id — correlates frames, approvals, and traces.
   final String? requestId;
   PeerChatResult({
@@ -227,7 +228,15 @@ class PeerRemoteSession {
   final String? title;
   final DateTime? updatedAt;
 
-  PeerRemoteSession({required this.sessionId, this.title, this.updatedAt});
+  /// 远端完整记录的条数。缺省表示这一来源没给出可靠条数，判脏时退回 `updatedAt`。
+  final int? messageCount;
+
+  PeerRemoteSession({
+    required this.sessionId,
+    this.title,
+    this.updatedAt,
+    this.messageCount,
+  });
 
   static PeerRemoteSession? fromJson(Map<String, dynamic> json) {
     final rawId = json['session_id'];
@@ -251,12 +260,44 @@ class PeerRemoteSession {
       }
     }
     final title = (json['title'] as String?)?.trim();
+    int? messageCount;
+    final rawCount = json['message_count'];
+    if (rawCount is num) messageCount = rawCount.toInt();
     return PeerRemoteSession(
       sessionId: id,
       title: (title != null && title.isNotEmpty) ? title : null,
       updatedAt: updated,
+      messageCount: messageCount,
     );
   }
+}
+
+/// 一页 `agent_session_history_resp`。
+///
+/// [supportsCursor] 只看响应里有没有 `cursor` 字段。旧 Hub 没有这个字段。
+class PeerHistoryPage {
+  final List<PeerHistoryMessage> messages;
+  final int from;
+  final int total;
+  final String? cursor;
+  final bool hasMore;
+  final bool reset;
+  final bool completed;
+  final bool supportsCursor;
+
+  const PeerHistoryPage({
+    this.messages = const [],
+    this.from = 0,
+    this.total = 0,
+    this.cursor,
+    this.hasMore = false,
+    this.reset = false,
+    this.completed = false,
+    this.supportsCursor = false,
+  });
+
+  static const incomplete = PeerHistoryPage();
+  static const empty = PeerHistoryPage(completed: true);
 }
 
 /// One replayed conversation turn from a peer session's transcript
@@ -317,8 +358,7 @@ class PeerHistoryMessage {
       content: content,
       messageId: json['message_id'] as String?,
       createdAt: createdAt,
-      progressContent:
-          (rawProgress?.isNotEmpty ?? false) ? rawProgress : null,
+      progressContent: (rawProgress?.isNotEmpty ?? false) ? rawProgress : null,
       progressTitle: json['progress_title'] as String?,
       progressAutoCollapse: json['progress_auto_collapse'] as bool?,
       metadata: metadata,
@@ -390,44 +430,192 @@ List<DateTime> assignPeerHistoryTimestamps(
   return out;
 }
 
-/// Whether [syncHistory] must rewrite local rows for this transcript.
+/// Whether one mirrored row should be written again.
 ///
 /// Role, text, or progress changes always rewrite. A timestamp-only change
 /// rewrites only when a remote stamp moves earlier — that corrects a previous
 /// import that anchored an unstamped IDE transcript to "now". A later stamp on
-/// unchanged text is repeated-sync drift and must be ignored, or the historical
-/// session sorts above a conversation the user just started on this device.
+/// unchanged text is repeated-sync drift and must be ignored.
+bool peerHistoryRowNeedsWrite({
+  required PeerHistoryMessage message,
+  required Map<String, dynamic>? existingRow,
+  required DateTime createdAt,
+}) {
+  if (existingRow == null) return true;
+  final role =
+      (existingRow['sender_type'] as String?) == 'user' ? 'user' : 'agent';
+  if (role != message.role ||
+      (existingRow['content'] as String? ?? '') != message.content) {
+    return true;
+  }
+  if (_rowProgressContent(existingRow) != (message.progressContent ?? '')) {
+    return true;
+  }
+  final localAt = DateTime.tryParse(existingRow['created_at'] as String? ?? '');
+  if (localAt == null) return true;
+  if (localAt.toUtc().millisecondsSinceEpoch ==
+      createdAt.toUtc().millisecondsSinceEpoch) {
+    return false;
+  }
+  return createdAt.toUtc().isBefore(localAt.toUtc());
+}
+
+/// Whether [syncHistory] must rewrite local rows for a full transcript.
+///
+/// A length mismatch rewrites. Otherwise each row uses [peerHistoryRowNeedsWrite].
 bool peerHistoryNeedsRewrite({
   required List<PeerHistoryMessage> history,
   required List<Map<String, dynamic>> existingAsc,
   required List<DateTime> createdAts,
 }) {
-  if (existingAsc.length != history.length || createdAts.length != history.length) {
+  if (existingAsc.length != history.length ||
+      createdAts.length != history.length) {
     return true;
   }
-  var stampsMovedEarlier = false;
   for (var i = 0; i < history.length; i++) {
-    final row = existingAsc[i];
-    final role = (row['sender_type'] as String?) == 'user' ? 'user' : 'agent';
-    if (role != history[i].role ||
-        (row['content'] as String? ?? '') != history[i].content) {
+    if (peerHistoryRowNeedsWrite(
+      message: history[i],
+      existingRow: existingAsc[i],
+      createdAt: createdAts[i],
+    )) {
       return true;
-    }
-    if (_rowProgressContent(row) != (history[i].progressContent ?? '')) {
-      return true;
-    }
-    final localAt = DateTime.tryParse(row['created_at'] as String? ?? '');
-    final remoteAt = createdAts[i];
-    if (localAt == null) return true;
-    if (localAt.toUtc().millisecondsSinceEpoch ==
-        remoteAt.toUtc().millisecondsSinceEpoch) {
-      continue;
-    }
-    if (remoteAt.toUtc().isBefore(localAt.toUtc())) {
-      stampsMovedEarlier = true;
     }
   }
-  return stampsMovedEarlier;
+  return false;
+}
+
+/// 冷启动每页条数。Hub 上限是 500。
+const int kPeerHistoryPageLimit = 200;
+
+enum PeerHistoryFetchMode { full, cold, incremental }
+
+enum PeerHistoryApplyKind { full, slice, keepLocal }
+
+enum PeerHistoryCursorAction { store, delete, skip }
+
+/// 没有游标、但本地已经有 `peerhist_*` 行：升级前同步过，走一次全量。
+/// 本地也没有：冷启动，从 0 开始分页。有游标：增量。
+PeerHistoryFetchMode peerHistoryFetchMode({
+  required String? storedCursor,
+  required bool hasLocalMirroredRows,
+}) {
+  if (storedCursor != null && storedCursor.isNotEmpty) {
+    return PeerHistoryFetchMode.incremental;
+  }
+  if (hasLocalMirroredRows) return PeerHistoryFetchMode.full;
+  return PeerHistoryFetchMode.cold;
+}
+
+PeerHistoryApplyKind peerHistoryApplyKind({
+  required bool supportsCursor,
+  required PeerHistoryFetchMode mode,
+  required bool reset,
+  required bool messagesEmpty,
+}) {
+  if (!supportsCursor) return PeerHistoryApplyKind.full;
+  if (reset && messagesEmpty) return PeerHistoryApplyKind.keepLocal;
+  if (reset || mode == PeerHistoryFetchMode.full) {
+    return PeerHistoryApplyKind.full;
+  }
+  return PeerHistoryApplyKind.slice;
+}
+
+PeerHistoryCursorAction peerHistoryCursorAction({
+  required bool supportsCursor,
+  required bool reset,
+  required bool messagesEmpty,
+  required String? cursor,
+}) {
+  if (!supportsCursor) return PeerHistoryCursorAction.skip;
+  if (reset && messagesEmpty) return PeerHistoryCursorAction.delete;
+  if (cursor == null || cursor.isEmpty) return PeerHistoryCursorAction.skip;
+  return PeerHistoryCursorAction.store;
+}
+
+/// 切片里需要 upsert 的下标。id 用绝对位置 [from] + i。
+List<int> peerHistorySliceWriteIndexes({
+  required List<PeerHistoryMessage> history,
+  required int from,
+  required String channelId,
+  required Map<String, Map<String, dynamic>> existingById,
+  required List<DateTime> createdAts,
+}) {
+  final indexes = <int>[];
+  for (var i = 0; i < history.length && i < createdAts.length; i++) {
+    final id = peerHistoryMessageId(history[i], channelId, from + i);
+    if (peerHistoryRowNeedsWrite(
+      message: history[i],
+      existingRow: existingById[id],
+      createdAt: createdAts[i],
+    )) {
+      indexes.add(i);
+    }
+  }
+  return indexes;
+}
+
+/// 增量删除时，`remoteIds` 要带上切片 id 和本地全部 `peerhist_*` id，这样更早的历史不会被删掉。
+Set<String> peerHistorySliceDeleteRemoteIds({
+  required Iterable<String> sliceIds,
+  required Iterable<String> localPeerhistIds,
+}) {
+  return {...sliceIds, ...localPeerhistIds};
+}
+
+/// 远端给了 `message_count`，且和本地游标的 `total` 不一致（或本地还没有游标）。
+bool sessionNeedsSyncForMessageCount(
+  PeerRemoteSession session,
+  Map<String, int> cursorTotals,
+) {
+  final count = session.messageCount;
+  if (count == null) return false;
+  final known = cursorTotals[session.sessionId];
+  return known == null || known != count;
+}
+
+/// 水位、缺正文、`message_count` 三条里满足任意一条就同步。
+List<PeerRemoteSession> assembleSessionsToSync({
+  required List<PeerRemoteSession> sessions,
+  required DateTime? lastSyncAt,
+  Duration overlap = kPeerHistorySyncOverlap,
+  required Set<String> syncedUnstampedIds,
+  required Set<String> emptyLocalSessionIds,
+  required Map<String, int> cursorTotals,
+  String? prioritizeSessionId,
+  String? openEmptySessionId,
+}) {
+  final dirty = selectDirtySessions(
+    sessions,
+    lastSyncAt: lastSyncAt,
+    overlap: overlap,
+    prioritizeSessionId: prioritizeSessionId,
+    syncedUnstampedIds: syncedUnstampedIds,
+  );
+  final openEmpty = openEmptySessionId;
+  if (openEmpty != null &&
+      openEmpty.isNotEmpty &&
+      !dirty.any((item) => item.sessionId == openEmpty)) {
+    dirty.insert(0, PeerRemoteSession(sessionId: openEmpty));
+  }
+  dirty.addAll(sessionsMissingLocalTranscript(
+    sessions,
+    alreadyDirty: dirty.map((item) => item.sessionId).toSet(),
+    syncedUnstampedIds: syncedUnstampedIds,
+    emptyLocalSessionIds: emptyLocalSessionIds,
+  ));
+  for (final session in sessions) {
+    if (!sessionNeedsSyncForMessageCount(session, cursorTotals)) continue;
+    if (dirty.any((item) => item.sessionId == session.sessionId)) continue;
+    dirty.add(session);
+  }
+  final prioritize = prioritizeSessionId;
+  if (prioritize != null && prioritize.isNotEmpty) {
+    final index = dirty.indexWhere((item) => item.sessionId == prioritize);
+    if (index > 0) {
+      dirty.insert(0, dirty.removeAt(index));
+    }
+  }
+  return dirty;
 }
 
 String peerHistoryMessageId(PeerHistoryMessage m, String channelId, int index) {
@@ -531,7 +719,8 @@ int preservedReadStateForHistorySync({
       (existingRow['sender_type'] as String?) == 'user' ? 'user' : 'agent';
   if (prevRole != remote.role) return 0;
   final stored = existingRow['content'] as String? ?? '';
-  if (stored != remote.content && _rowWireContent(existingRow) != remote.content) {
+  if (stored != remote.content &&
+      _rowWireContent(existingRow) != remote.content) {
     return 0;
   }
   return existingRow['is_read'] as int? ?? 0;
@@ -647,6 +836,7 @@ class PeerModesList {
 class PeerSoulInfo {
   final String soul;
   final bool editable;
+
   /// 非空表示宿主明确拒绝 / 出错（与超时、未发出区分）。
   final String? error;
 
@@ -669,6 +859,7 @@ class PeerSoulInfo {
 class PeerResumeInfo {
   final String resume;
   final bool editable;
+
   /// 非空表示宿主明确拒绝 / 出错（与超时、未发出区分）。
   final String? error;
 
@@ -690,6 +881,7 @@ class PeerResumeInfo {
 /// Result of `agent_resume_set_resp` / `agent_resume_rebuild_resp`.
 class PeerResumeResult {
   final bool ok;
+
   /// rebuild 成功时宿主返回的新简历文本。
   final String? resume;
   final String? error;
@@ -931,42 +1123,56 @@ class _PendingRequest {
   void Function(Map<String, dynamic>)? onMetadata;
   void Function(Map<String, dynamic>)? onActionConfirmation;
   final Completer<PeerChatResult> completer = Completer<PeerChatResult>();
+
   /// In-flight tool approvals not yet submitted by the user.
   int openApprovals = 0;
+
   /// Last moment this turn had agent output or entered a non-idle state (turn
   /// start, each chunk/metadata, when the last open approval was submitted, or
   /// after a successful turn resume). The chat watchdog measures idle from
   /// here so streaming output and time spent reading an approval card never
   /// count against the 300s turn budget.
   DateTime idleSince = DateTime.now();
+
   /// agent_done payload held until [openApprovals] reaches zero.
   Map<String, dynamic>? bufferedDone;
+
   /// 已接收 chunk 内容的累计长度（UTF-16 码元，与 hub 的 accumulated 对齐）。
   /// resume_req 的 known_content_length 即取此值。
   int receivedLength = 0;
+
   /// Answer text (progress stripped) for UI seed after a process restart.
   String answerContent = '';
+
   /// SQLite id of the streaming-flush partial row backing this turn. Bridged
   /// in via [PeerAgentClientService.noteInflightPartialMessageId] so the
   /// persisted record lets a post-process-kill restore delete/reuse that exact
   /// row instead of leaving a stale half-reply next to the final message.
   String? partialMessageId;
+
   /// 非 null 表示该 turn 因 peer 断连而挂起，等待重连续传。
   DateTime? suspendedSince;
+
   /// 是否已发出 resume_req 且尚未收到应答（防止重复发送）。
   bool resumeInFlight = false;
+
   /// resume_req 的用途：断连续传 vs 停滞探测（后者失败不判死 turn）。
   _ResumePurpose resumePurpose = _ResumePurpose.none;
+
   /// 上次向 Hub 发 stall-probe resume_req 的时刻（节流重复探测）。
   DateTime? lastStallProbeAt;
+
   /// 最近一张审批卡到达的时刻。闸门过期后允许 stall probe。
   DateTime? lastApprovalOpenedAt;
+
   /// Hub 通知上游 ACP 正在重连 —— idle 计时冻结，避免 P2P 仍连着但
   /// Hub↔Agent 恢复期间误触 30min 超时。
   DateTime? upstreamReconnectingSince;
+
   /// 最近一次 Hub keepalive（上游仍在 working）。只推迟 idle 超时判失败，
   /// 不参与 settle / stall probe。
   DateTime? lastKeepaliveAt;
+
   /// 发出 resume_req 时的 receivedLength 基准，用于 delta 去重（drop-prefix）。
   int? resumeBaseLength;
   _PendingRequest({
@@ -1009,6 +1215,7 @@ class _PendingRequest {
 
 class _PendingFilePush {
   final Completer<void> begin = Completer<void>();
+
   /// Completes with host `pouch_uri` (may be null on legacy hosts).
   final Completer<String?> end = Completer<String?>();
 }
@@ -1060,6 +1267,7 @@ class PeerAgentClientService {
   StreamSubscription<void>? _peerListSub;
   final Map<String, List<Completer<void>>> _agentListWaiters = {};
   bool _running = false;
+
   /// False until [resumeHydratedTurns] so a `connected` event during
   /// bootstrap cannot complete a restored turn before ActiveTask handlers
   /// are attached.
@@ -1074,18 +1282,21 @@ class PeerAgentClientService {
   /// Slash-command cache (localAgentId → commands), populated by
   /// agent_commands_resp after agent_list_resp prefetches them.
   final Map<String, List<SlashCommandInfo>> _commandsCache = {};
+
   /// Outstanding agent_commands_req per remote agent id.
   final Map<String, Completer<List<SlashCommandInfo>>> _pendingCommands = {};
+
   /// Broadcast streams so the "/" palette can refresh when a prefetch completes
   /// after the chat screen is already open (peer agents have no ACP connection).
-  final Map<String, StreamController<List<SlashCommandInfo>>> _slashCommandsStreams =
-      {};
+  final Map<String, StreamController<List<SlashCommandInfo>>>
+      _slashCommandsStreams = {};
 
   /// Outstanding agent_sessions_req per remote agent id.
   final Map<String, Completer<List<PeerRemoteSession>>> _pendingSessions = {};
 
   /// Outstanding agent_session_history_req per "agentId::sessionId" key.
-  final Map<String, Completer<List<PeerHistoryMessage>>> _pendingHistory = {};
+  /// 同一会话的分页是串行发的，所以按会话去重不会把两页混在一起。
+  final Map<String, Completer<PeerHistoryPage>> _pendingHistory = {};
 
   /// Outstanding agent_models_req per remote agent id.
   final Map<String, Completer<PeerModelsList>> _pendingModels = {};
@@ -1145,7 +1356,8 @@ class PeerAgentClientService {
   /// 若裁决其实已提交成功（只是 resp 没到达 hub），重发的卡片用这里存储的
   /// 裁决自动应答，不再计数、不再弹卡（E24）。
   /// 有界：超过 50 条时淘汰最旧。
-  final Map<String, ({String actionId, String? label})> _submittedApprovals = {};
+  final Map<String, ({String actionId, String? label})> _submittedApprovals =
+      {};
 
   /// 断连挂起期间用户本地取消的 turn（requestId → peerId）。
   /// 重连后对这些 requestId 补发 agent_cancel 而非 resume_req。
@@ -1167,7 +1379,8 @@ class PeerAgentClientService {
   /// approval that outlives its sendChat request (e.g. the hub restarted
   /// mid-approval and re-sent it after reconnect) can still be routed to the
   /// right chat screen. Bounded — oldest entries are evicted.
-  final Map<String, ({String peerId, String remoteAgentId})> _requestAgents = {};
+  final Map<String, ({String peerId, String remoteAgentId})> _requestAgents =
+      {};
 
   /// Orphan approvals republished for open chat screens. Carries the
   /// actionConfirmation payload plus `peer_id` / `remote_agent_id`.
@@ -1190,14 +1403,17 @@ class PeerAgentClientService {
     }
     unawaited(_warmCommandsCache());
 
-    _controlSub = PeerConnectionManager.instance.controlEvents.listen(_onControl);
-    _eventSub = PeerConnectionManager.instance.events.listen(_onConnectionEvent);
-    _peerListSub =
-        PeerConnectionManager.instance.peerListChanged.listen((_) => _reconcileDeletions());
+    _controlSub =
+        PeerConnectionManager.instance.controlEvents.listen(_onControl);
+    _eventSub =
+        PeerConnectionManager.instance.events.listen(_onConnectionEvent);
+    _peerListSub = PeerConnectionManager.instance.peerListChanged
+        .listen((_) => _reconcileDeletions());
 
     // resumeAll 刷新连接前会征询此钩子：有在途 turn / 待决审批的连接必须保留，
     // 否则恢复前台（尤其桌面端，连接其实仍存活）会杀死整轮交互。
-    PeerConnectionManager.instance.hasInFlightTurnForPeer = _hasInFlightTurnForPeer;
+    PeerConnectionManager.instance.hasInFlightTurnForPeer =
+        _hasInFlightTurnForPeer;
 
     // 对已连接的 peer 立即拉取一次列表，并清理已删除配对的残留 agent。
     await _reconcileDeletions();
@@ -1256,7 +1472,7 @@ class PeerAgentClientService {
     }
     _pendingSessions.clear();
     for (final c in _pendingHistory.values) {
-      if (!c.isCompleted) c.complete(const []);
+      if (!c.isCompleted) c.complete(PeerHistoryPage.empty);
     }
     _pendingHistory.clear();
     for (final c in _pendingCommands.values) {
@@ -1631,7 +1847,8 @@ class PeerAgentClientService {
     try {
       await _storage.upsertInflightTurn(p.toRecord(requestId));
     } catch (e) {
-      _log.warning('persist inflight $requestId failed: $e', tag: _tag, error: e);
+      _log.warning('persist inflight $requestId failed: $e',
+          tag: _tag, error: e);
     }
   }
 
@@ -1703,7 +1920,8 @@ class PeerAgentClientService {
           ? offset + chunkSize
           : bytes.length;
       final slice = bytes.sublist(offset, end);
-      final chunkSent = await PeerConnectionManager.instance.sendControl(peerId, {
+      final chunkSent =
+          await PeerConnectionManager.instance.sendControl(peerId, {
         'type': 'agent_file_chunk',
         'file_id': fileId,
         'index': index,
@@ -1757,6 +1975,7 @@ class PeerAgentClientService {
     void Function(String chunk)? onChunk,
     void Function(Map<String, dynamic>)? onMetadata,
     void Function(Map<String, dynamic>)? onActionConfirmation,
+
     /// Fired once [requestId] is allocated, before the control frame is sent.
     void Function(String requestId)? onRequestStarted,
     ACPCancellationToken? cancelToken,
@@ -1833,7 +2052,8 @@ class PeerAgentClientService {
       if (sessionId != null && sessionId.isNotEmpty) 'session_id': sessionId,
       if (history != null && history.isNotEmpty) 'history': history,
       if (attachmentRefs != null) 'attachments': attachmentRefs,
-      if (extraTools != null && extraTools.isNotEmpty) 'extra_tools': extraTools,
+      if (extraTools != null && extraTools.isNotEmpty)
+        'extra_tools': extraTools,
     });
 
     if (!sent) {
@@ -1957,7 +2177,8 @@ class PeerAgentClientService {
     // 之后（resumeAll 对在途 turn 保留连接不重建 → 之后可能再无 connected
     // 事件；或 resume 应答 lost 时连接早已在位），提示会一直压在队列里，
     // 结果永久留在远端 transcript。连接已在位就立刻补发一次。
-    if (PeerConnectionManager.instance.connectedPeerIds.contains(owner.peerId)) {
+    if (PeerConnectionManager.instance.connectedPeerIds
+        .contains(owner.peerId)) {
       scheduleMicrotask(() => _flushReconcileHints(owner.peerId));
     }
   }
@@ -2459,13 +2680,11 @@ class PeerAgentClientService {
       tag: _tag,
     );
     try {
-      final sent = await PeerConnectionManager.instance
-          .sendControl(peerId, {
-            'type': 'agent_soul_req',
-            'agent_id': remoteAgentId,
-            'request_id': requestId,
-          })
-          .timeout(const Duration(seconds: 5));
+      final sent = await PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'agent_soul_req',
+        'agent_id': remoteAgentId,
+        'request_id': requestId,
+      }).timeout(const Duration(seconds: 5));
       if (!sent) {
         _completeSoulGet(requestId, null);
         return null;
@@ -2597,7 +2816,8 @@ class PeerAgentClientService {
     );
     if (ok) {
       final agentId = _nonEmpty(data['agent_id']) ?? pending?.agentId;
-      final soul = data['soul'] is String ? data['soul'] as String : pending?.soul;
+      final soul =
+          data['soul'] is String ? data['soul'] as String : pending?.soul;
       if (agentId != null && soul != null) {
         _rememberSoul(agentId, soul, true);
       }
@@ -3051,7 +3271,8 @@ class PeerAgentClientService {
       if (entry != null) 'entry': entry.toJson(),
       if (memoryId != null) 'memory_id': memoryId,
     };
-    final sent = await PeerConnectionManager.instance.sendControl(peerId, payload);
+    final sent =
+        await PeerConnectionManager.instance.sendControl(peerId, payload);
     if (!sent) {
       _pendingMemory.remove(requestId);
       return const PeerMemoryResult(ok: false, error: 'offline');
@@ -3145,7 +3366,8 @@ class PeerAgentClientService {
       if (sessionMode != null && sessionMode.isNotEmpty)
         'session_mode': sessionMode,
     };
-    final sent = await PeerConnectionManager.instance.sendControl(peerId, payload);
+    final sent =
+        await PeerConnectionManager.instance.sendControl(peerId, payload);
     if (!sent) {
       _pendingManage.remove(requestId);
       return const PeerAgentManageResult(ok: false, error: 'offline');
@@ -3290,11 +3512,13 @@ class PeerAgentClientService {
     final agents = <PeerAgentManageEntry>[];
     for (final item in raw) {
       if (item is! Map) continue;
-      agents.add(PeerAgentManageEntry.fromJson(Map<String, dynamic>.from(item)));
+      agents
+          .add(PeerAgentManageEntry.fromJson(Map<String, dynamic>.from(item)));
     }
     final engines = <PeerEngineEntry>[
       for (final item in (data['engines'] as List?) ?? const [])
-        if (item is Map) PeerEngineEntry.fromJson(Map<String, dynamic>.from(item)),
+        if (item is Map)
+          PeerEngineEntry.fromJson(Map<String, dynamic>.from(item)),
     ];
     final error = data['error'] as String?;
     bool? hubStoreOk;
@@ -3327,43 +3551,57 @@ class PeerAgentClientService {
     required String remoteAgentId,
     required String sessionId,
   }) async {
-    final outcome = await _fetchHistory(
+    final page = await _fetchHistory(
       peerId: peerId,
       remoteAgentId: remoteAgentId,
       sessionId: sessionId,
     );
-    return outcome.messages;
+    return page.messages;
   }
 
-  /// [completed] 为 false 表示请求没发出或超时，和「远端确实没有正文」分开。
-  Future<({List<PeerHistoryMessage> messages, bool completed})> _fetchHistory({
+  /// [PeerHistoryPage.completed] 为 false 表示请求没发出或超时，和「远端确实没有正文」分开。
+  Future<PeerHistoryPage> _fetchHistory({
     required String peerId,
     required String remoteAgentId,
     required String sessionId,
+    String? cursor,
+    int? limit,
   }) async {
     final key = '$remoteAgentId::$sessionId';
     if (_pendingHistory.containsKey(key)) {
-      final messages = await _pendingHistory[key]!.future;
-      return (messages: messages, completed: true);
+      return _pendingHistory[key]!.future;
     }
-    final completer = Completer<List<PeerHistoryMessage>>();
+    final completer = Completer<PeerHistoryPage>();
     _pendingHistory[key] = completer;
-    final sent = await PeerConnectionManager.instance.sendControl(peerId, {
+    final payload = <String, dynamic>{
       'type': 'agent_session_history_req',
       'agent_id': remoteAgentId,
       'session_id': sessionId,
-    });
+    };
+    if (cursor != null && cursor.isNotEmpty) payload['cursor'] = cursor;
+    if (limit != null) payload['limit'] = limit;
+    final sent =
+        await PeerConnectionManager.instance.sendControl(peerId, payload);
     if (!sent) {
       _pendingHistory.remove(key);
-      return (messages: <PeerHistoryMessage>[], completed: false);
+      if (!completer.isCompleted)
+        completer.complete(PeerHistoryPage.incomplete);
+      return PeerHistoryPage.incomplete;
     }
     try {
-      final messages = await completer.future.timeout(const Duration(seconds: 45));
-      return (messages: messages, completed: true);
+      return await completer.future.timeout(const Duration(seconds: 45));
     } catch (_) {
       _pendingHistory.remove(key);
-      return (messages: <PeerHistoryMessage>[], completed: false);
+      if (!completer.isCompleted)
+        completer.complete(PeerHistoryPage.incomplete);
+      return PeerHistoryPage.incomplete;
     }
+  }
+
+  int _historyJsonInt(Object? value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return 0;
   }
 
   void _onSessionHistoryResp(Map<String, dynamic> data) {
@@ -3376,8 +3614,21 @@ class PeerAgentClientService {
         .map(PeerHistoryMessage.fromJson)
         .whereType<PeerHistoryMessage>()
         .toList();
+    final rawCursor = data['cursor'];
+    final page = PeerHistoryPage(
+      messages: messages,
+      from: _historyJsonInt(data['from']),
+      total: data.containsKey('total')
+          ? _historyJsonInt(data['total'])
+          : messages.length,
+      cursor: rawCursor is String && rawCursor.isNotEmpty ? rawCursor : null,
+      hasMore: data['has_more'] == true,
+      reset: data['reset'] == true,
+      completed: true,
+      supportsCursor: data.containsKey('cursor'),
+    );
     final completer = _pendingHistory.remove('$remoteId::$sessionId');
-    if (completer != null && !completer.isCompleted) completer.complete(messages);
+    if (completer != null && !completer.isCompleted) completer.complete(page);
   }
 
   /// Fetch an agent's known sessions from the hub (agent.sessions.list relay).
@@ -3417,7 +3668,8 @@ class PeerAgentClientService {
         .whereType<PeerRemoteSession>()
         .toList();
     final completer = _pendingSessions.remove(remoteId);
-    if (completer != null && !completer.isCompleted) completer.complete(sessions);
+    if (completer != null && !completer.isCompleted)
+      completer.complete(sessions);
   }
 
   /// Drop a redundant `psess_` shell when the live legacy channel already
@@ -3477,8 +3729,7 @@ class PeerAgentClientService {
         psessExists: psessExisting != null,
         legacyExists: legacyExisting != null,
       );
-      final name =
-          SessionUtils.cleanClaudeSessionTitle(s.title) ?? 'Session';
+      final name = SessionUtils.cleanClaudeSessionTitle(s.title) ?? 'Session';
       final existing = await _db.getChannelById(channelId);
       if (existing == null) {
         final channel = Channel.withMemberIds(
@@ -3589,8 +3840,8 @@ class PeerAgentClientService {
   ///    without throwing.
   ///
   /// [onPrioritizedChannelDone] is invoked after the prioritized channel's
-  /// history attempt (even when 0 messages were written) so the UI can stop
-  /// its spinner and reload.
+  /// first history page is written (even when 0 messages were written) so the
+  /// UI can show it. Later pages keep downloading in the background.
   Future<PeerAgentIncrementalSyncResult> syncAgentIncremental({
     required String peerId,
     required String remoteAgentId,
@@ -3620,13 +3871,13 @@ class PeerAgentClientService {
 
     final lastSyncAt = await getLastHistorySyncAt(localAgentId);
     final syncedUnstamped = await getSyncedUnstampedSessionIds(localAgentId);
-    final remoteSessionIds =
-        sessions.map((s) => s.sessionId).toSet();
+    final remoteSessionIds = sessions.map((s) => s.sessionId).toSet();
     final prioritizeSessionId = peerRemoteSessionIdForLocalChannel(
       prioritizeChannelId,
       knownRemoteSessionIds: remoteSessionIds,
     );
-    final dirty = selectDirtySessions(
+    final cursorTotals = await _db.peerHistoryCursorTotalsByRemoteSession();
+    final preliminary = selectDirtySessions(
       sessions,
       lastSyncAt: lastSyncAt,
       prioritizeSessionId: prioritizeSessionId,
@@ -3634,36 +3885,33 @@ class PeerAgentClientService {
     );
     final emptyLocal = <String>{};
     for (final session in sessions) {
-      if (dirty.any((item) => item.sessionId == session.sessionId)) continue;
+      if (preliminary.any((item) => item.sessionId == session.sessionId)) {
+        continue;
+      }
       if (syncedUnstamped.contains(session.sessionId)) continue;
-      final channelId = await _localChannelIdForRemoteSession(session.sessionId);
+      final channelId =
+          await _localChannelIdForRemoteSession(session.sessionId);
       if (await _db.countChannelMessages(channelId) == 0) {
         emptyLocal.add(session.sessionId);
       }
     }
+    String? openEmptySessionId;
     final openChannelId = prioritizeChannelId;
     if (openChannelId != null &&
         openChannelId.isNotEmpty &&
         await _db.countChannelMessages(openChannelId) == 0) {
-      final openRemote = remoteSessionIdFromChannelId(openChannelId) ?? openChannelId;
-      if (!dirty.any((item) => item.sessionId == openRemote)) {
-        dirty.insert(0, PeerRemoteSession(sessionId: openRemote));
-      }
+      openEmptySessionId =
+          remoteSessionIdFromChannelId(openChannelId) ?? openChannelId;
     }
-    dirty.addAll(sessionsMissingLocalTranscript(
-      sessions,
-      alreadyDirty: dirty.map((item) => item.sessionId).toSet(),
+    final dirty = assembleSessionsToSync(
+      sessions: sessions,
+      lastSyncAt: lastSyncAt,
       syncedUnstampedIds: syncedUnstamped,
       emptyLocalSessionIds: emptyLocal,
-    ));
-    if (prioritizeSessionId != null && prioritizeSessionId.isNotEmpty) {
-      final index = dirty.indexWhere(
-        (item) => item.sessionId == prioritizeSessionId,
-      );
-      if (index > 0) {
-        dirty.insert(0, dirty.removeAt(index));
-      }
-    }
+      cursorTotals: cursorTotals,
+      prioritizeSessionId: prioritizeSessionId,
+      openEmptySessionId: openEmptySessionId,
+    );
 
     var historySessionsWritten = 0;
     var totalMessagesWritten = 0;
@@ -3694,6 +3942,9 @@ class PeerAgentClientService {
           }
           continue;
         }
+        var notifiedFirstPage = false;
+        final isPrioritized = prioritizeSessionId != null &&
+            session.sessionId == prioritizeSessionId;
         final written = await syncHistory(
           peerId: peerId,
           remoteAgentId: remoteAgentId,
@@ -3703,6 +3954,16 @@ class PeerAgentClientService {
           userId: userId,
           userName: userName,
           sessionUpdatedAt: session.updatedAt,
+          onFirstPageDone: isPrioritized
+              ? (pageWritten) async {
+                  notifiedFirstPage = true;
+                  currentChannelMessagesWritten = pageWritten;
+                  prioritizedDone = true;
+                  if (onPrioritizedChannelDone != null) {
+                    await onPrioritizedChannelDone(pageWritten);
+                  }
+                }
+              : null,
         );
         final fetchFailed = written < 0;
         final stored = fetchFailed ? 0 : written;
@@ -3718,12 +3979,13 @@ class PeerAgentClientService {
             (stored > 0 || await _db.countChannelMessages(channelId) > 0)) {
           mirroredUnstamped.add(session.sessionId);
         }
-        if (prioritizeSessionId != null &&
-            session.sessionId == prioritizeSessionId) {
+        if (isPrioritized) {
           currentChannelMessagesWritten = stored;
-          prioritizedDone = true;
-          if (onPrioritizedChannelDone != null) {
-            await onPrioritizedChannelDone(stored);
+          if (!notifiedFirstPage) {
+            prioritizedDone = true;
+            if (onPrioritizedChannelDone != null) {
+              await onPrioritizedChannelDone(stored);
+            }
           }
         }
       }
@@ -3780,12 +4042,14 @@ class PeerAgentClientService {
 
   /// Pull a synced session's transcript from the remote and mirror it locally.
   ///
-  /// Fetches the remote transcript; if it differs from what's stored locally
-  /// (content or resolved send times), upserts by stable `peerhist_*` ids and
-  /// removes local rows that are no longer present remotely. If the fetch is
-  /// empty, local messages are kept untouched. Returns the number of messages
-  /// written, 0 when the transcript was empty or unchanged, or -1 when the
-  /// request failed and should be retried.
+  /// A stored cursor pulls only the previous tail plus new messages. No cursor
+  /// and no local `peerhist_*` rows pages from the start. No cursor but local
+  /// rows already exist (an upgrade) still does one full compare. An old Hub
+  /// omits `cursor`; that response is applied with the full compare and no
+  /// cursor is stored. Returns the number of messages written, 0 when nothing
+  /// changed, or -1 when the request failed and should be retried.
+  ///
+  /// [onFirstPageDone] runs after the first page is applied, before later pages.
   Future<int> syncHistory({
     required String peerId,
     required String remoteAgentId,
@@ -3795,17 +4059,269 @@ class PeerAgentClientService {
     required String userId,
     required String userName,
     DateTime? sessionUpdatedAt,
+    Future<void> Function(int written)? onFirstPageDone,
   }) async {
     final remoteSessionId =
         remoteSessionIdFromChannelId(channelId) ?? channelId;
-
-    final fetched = await _fetchHistory(
-      peerId: peerId,
-      remoteAgentId: remoteAgentId,
-      sessionId: remoteSessionId,
+    final stored = await _db.getPeerHistoryCursor(channelId);
+    final hasMirrored = await _db.channelHasPeerhistMessages(channelId);
+    final mode = peerHistoryFetchMode(
+      storedCursor: stored?.cursor,
+      hasLocalMirroredRows: hasMirrored,
     );
-    if (!fetched.completed) return -1;
-    final history = fetched.messages;
+    String? cursor =
+        mode == PeerHistoryFetchMode.incremental ? stored?.cursor : null;
+    final int? limit =
+        mode == PeerHistoryFetchMode.full ? null : kPeerHistoryPageLimit;
+
+    var written = 0;
+    var pageIndex = 0;
+    while (true) {
+      final page = await _fetchHistory(
+        peerId: peerId,
+        remoteAgentId: remoteAgentId,
+        sessionId: remoteSessionId,
+        cursor: cursor,
+        limit: limit,
+      );
+      if (!page.completed) return -1;
+
+      final kind = peerHistoryApplyKind(
+        supportsCursor: page.supportsCursor,
+        mode: mode,
+        reset: page.reset,
+        messagesEmpty: page.messages.isEmpty,
+      );
+      if (kind == PeerHistoryApplyKind.keepLocal) {
+        await _db.deletePeerHistoryCursor(channelId);
+        if (pageIndex == 0 && onFirstPageDone != null) {
+          await onFirstPageDone(0);
+        }
+        return written;
+      }
+
+      final int pageWritten;
+      if (page.messages.isEmpty) {
+        pageWritten = 0;
+      } else if (kind == PeerHistoryApplyKind.full) {
+        pageWritten = await _mirrorFullHistory(
+          history: page.messages,
+          remoteSessionId: remoteSessionId,
+          channelId: channelId,
+          localAgentId: localAgentId,
+          agentName: agentName,
+          userId: userId,
+          userName: userName,
+          sessionUpdatedAt: sessionUpdatedAt,
+        );
+      } else {
+        pageWritten = await _mirrorSliceHistory(
+          history: page.messages,
+          from: page.from,
+          remoteSessionId: remoteSessionId,
+          channelId: channelId,
+          localAgentId: localAgentId,
+          agentName: agentName,
+          userId: userId,
+          userName: userName,
+          sessionUpdatedAt: sessionUpdatedAt,
+        );
+      }
+      written += pageWritten;
+
+      if (peerHistoryCursorAction(
+            supportsCursor: page.supportsCursor,
+            reset: page.reset,
+            messagesEmpty: page.messages.isEmpty,
+            cursor: page.cursor,
+          ) ==
+          PeerHistoryCursorAction.store) {
+        // 还没拉完时不要把远端总条数写进去，否则 message_count 对得上，
+        // 剩下的页就不会再拉。游标本身已经指向这一页的末尾，下次接着拉。
+        final syncedThrough = page.from + page.messages.length;
+        await _db.upsertPeerHistoryCursor(PeerHistoryCursorEntry(
+          channelId: channelId,
+          remoteSessionId: remoteSessionId,
+          cursor: page.cursor!,
+          total: page.hasMore ? syncedThrough : page.total,
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        ));
+      }
+
+      if (pageIndex == 0 && onFirstPageDone != null) {
+        await onFirstPageDone(pageWritten);
+      }
+      pageIndex++;
+      final nextCursor = page.cursor;
+      if (kind != PeerHistoryApplyKind.slice ||
+          !page.hasMore ||
+          nextCursor == null ||
+          nextCursor.isEmpty) {
+        if (written > 0) {
+          _log.info(
+            'Synced $written history message(s) into $channelId',
+            tag: _tag,
+          );
+        }
+        return written;
+      }
+      cursor = nextCursor;
+    }
+  }
+
+  Future<int> _mirrorSliceHistory({
+    required List<PeerHistoryMessage> history,
+    required int from,
+    required String remoteSessionId,
+    required String channelId,
+    required String localAgentId,
+    required String agentName,
+    required String userId,
+    required String userName,
+    DateTime? sessionUpdatedAt,
+  }) async {
+    if (history.isEmpty) return 0;
+    _completeInflightTurnsFromRemoteHistory(
+      remoteSessionId: remoteSessionId,
+      history: history,
+    );
+
+    final ids = <String>[
+      for (var i = 0; i < history.length; i++)
+        peerHistoryMessageId(history[i], channelId, from + i),
+    ];
+    final existingRows = await _db.getChannelMessagesByIds(channelId, ids);
+    final existingRowsById = <String, Map<String, dynamic>>{
+      for (final row in existingRows)
+        if (row['id'] is String) row['id'] as String: row,
+    };
+    final existingById = <String, DateTime>{};
+    for (final row in existingRows) {
+      final id = row['id'] as String?;
+      final at = DateTime.tryParse(row['created_at'] as String? ?? '');
+      if (id != null && at != null) existingById[id] = at;
+    }
+
+    final sliceIds = ids.toSet();
+    final peerhist = await _db.listPeerhistStamps(channelId);
+    DateTime? latestMirroredLocalAt;
+    for (final stamp in peerhist) {
+      if (sliceIds.contains(stamp.id)) continue;
+      final at = DateTime.tryParse(stamp.createdAt);
+      if (at == null) continue;
+      if (latestMirroredLocalAt == null || at.isAfter(latestMirroredLocalAt)) {
+        latestMirroredLocalAt = at;
+      }
+    }
+    final createdAts = assignPeerHistoryTimestamps(
+      history,
+      existingById: existingById,
+      sessionUpdatedAt: sessionUpdatedAt,
+      latestMirroredLocalAt: latestMirroredLocalAt,
+      idFor: (m, i) => peerHistoryMessageId(m, channelId, from + i),
+    );
+
+    final preserveIds = _inflightPreserveIds(channelId);
+    final missingPreserve = [
+      for (final id in preserveIds)
+        if (!existingRowsById.containsKey(id)) id,
+    ];
+    if (missingPreserve.isNotEmpty) {
+      final extra =
+          await _db.getChannelMessagesByIds(channelId, missingPreserve);
+      for (final row in extra) {
+        final id = row['id'] as String?;
+        if (id != null) existingRowsById[id] = row;
+      }
+    }
+    final preservedRoleContentKeys = <String>{};
+    for (final id in preserveIds) {
+      final row = existingRowsById[id];
+      if (row == null) continue;
+      final role = (row['sender_type'] as String?) == 'user' ? 'user' : 'agent';
+      preservedRoleContentKeys.add(
+        peerHistoryRoleContentKey(role, row['content'] as String? ?? ''),
+      );
+    }
+
+    final indexes = peerHistorySliceWriteIndexes(
+      history: history,
+      from: from,
+      channelId: channelId,
+      existingById: existingRowsById,
+      createdAts: createdAts,
+    );
+    final inserts = <StoredMessageInsert>[];
+    for (final i in indexes) {
+      final message = history[i];
+      final msgId = ids[i];
+      if (!existingRowsById.containsKey(msgId) &&
+          preservedRoleContentKeys.contains(
+            peerHistoryRoleContentKey(message.role, message.content),
+          )) {
+        continue;
+      }
+      inserts.add(_historyStoredRow(
+        message: message,
+        id: msgId,
+        channelId: channelId,
+        userId: userId,
+        userName: userName,
+        localAgentId: localAgentId,
+        agentName: agentName,
+        createdAt: createdAts[i],
+        existingRow: existingRowsById[msgId],
+      ));
+    }
+    await _db.createMessages(inserts);
+
+    final localRows = await _db.listNonPeerhistMessages(channelId);
+    final toDelete = localMessageIdsToDeleteOnPeerHistorySync(
+      localRows: [
+        for (final row in localRows)
+          PeerHistorySyncLocalRow(
+            id: row['id'] as String? ?? '',
+            senderType: row['sender_type'] as String? ?? '',
+            content: row['content'] as String? ?? '',
+            metadataJson: row['metadata'] as String?,
+            replyToId: row['reply_to_id'] as String?,
+          ),
+      ],
+      remoteIds: peerHistorySliceDeleteRemoteIds(
+        sliceIds: sliceIds,
+        localPeerhistIds: [for (final stamp in peerhist) stamp.id],
+      ),
+      remoteRoleContentKeys: {
+        for (final message in history)
+          peerHistoryRoleContentKey(message.role, message.content),
+      },
+      preserveIds: preserveIds,
+      remoteAgentContents: [
+        for (final message in history)
+          if (message.role != 'user') message.content,
+      ],
+      remoteTranscript: [
+        for (final message in history)
+          PeerHistoryRemoteEntry(role: message.role, content: message.content),
+      ],
+    );
+    await _db.deleteMessagesByIds(toDelete.toList());
+    if (AppLifecycleService().shouldSuppressNotification(channelId)) {
+      await _db.markChannelMessagesAsRead(channelId);
+    }
+    return inserts.length;
+  }
+
+  Future<int> _mirrorFullHistory({
+    required List<PeerHistoryMessage> history,
+    required String remoteSessionId,
+    required String channelId,
+    required String localAgentId,
+    required String agentName,
+    required String userId,
+    required String userName,
+    DateTime? sessionUpdatedAt,
+  }) async {
     if (history.isEmpty) return 0;
 
     // Group/workflow turns stream on the group channel but persist on this
@@ -3967,12 +4483,53 @@ class PeerAgentClientService {
     if (AppLifecycleService().shouldSuppressNotification(channelId)) {
       await _db.markChannelMessagesAsRead(channelId);
     }
-
-    _log.info(
-      'Synced ${history.length} history message(s) into $channelId',
-      tag: _tag,
-    );
     return history.length;
+  }
+
+  Set<String> _inflightPreserveIds(String channelId) {
+    final preserveIds = <String>{};
+    for (final rec in snapshotInflightTurns()) {
+      if (rec.channelId != channelId) continue;
+      if (rec.userMessageId.isNotEmpty) preserveIds.add(rec.userMessageId);
+      final partial = rec.partialMessageId;
+      if (partial != null && partial.isNotEmpty) preserveIds.add(partial);
+    }
+    return preserveIds;
+  }
+
+  StoredMessageInsert _historyStoredRow({
+    required PeerHistoryMessage message,
+    required String id,
+    required String channelId,
+    required String userId,
+    required String userName,
+    required String localAgentId,
+    required String agentName,
+    required DateTime createdAt,
+    required Map<String, dynamic>? existingRow,
+  }) {
+    final isUser = message.role == 'user';
+    final display = peerHistoryDisplayFields(
+      message,
+      baseMetadata: peerHistoryMessageMetadata(message),
+    );
+    return StoredMessageInsert(
+      id: id,
+      channelId: channelId,
+      senderId: isUser ? userId : localAgentId,
+      senderType: isUser ? 'user' : 'agent',
+      senderName: isUser ? userName : agentName,
+      content: display.content,
+      metadata: display.metadata,
+      replyToId: peerHistoryReplyToId(message.replyTo) ??
+          existingRow?['reply_to_id'] as String?,
+      createdAt: createdAt,
+      isRead: preservedReadStateForHistorySync(
+        remote: message,
+        existingRow: existingRow,
+      ),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   void _completeInflightTurnsFromRemoteHistory({
@@ -4070,7 +4627,8 @@ class PeerAgentClientService {
     for (final item in raw) {
       if (item is! Map) continue;
       try {
-        commands.add(SlashCommandInfo.fromJson(Map<String, dynamic>.from(item)));
+        commands
+            .add(SlashCommandInfo.fromJson(Map<String, dynamic>.from(item)));
       } catch (_) {
         // Skip malformed entries rather than dropping the whole list.
       }
@@ -4096,7 +4654,8 @@ class PeerAgentClientService {
       stream.add(List.unmodifiable(commands));
     }
     final completer = _pendingCommands.remove(remoteId);
-    if (completer != null && !completer.isCompleted) completer.complete(commands);
+    if (completer != null && !completer.isCompleted)
+      completer.complete(commands);
   }
 
   /// Tool-call approval request forwarded by the hub. Surface it to the chat
@@ -4107,7 +4666,8 @@ class PeerAgentClientService {
   void _onApprovalReq(String peerId, Map<String, dynamic> data) {
     final requestId = data['request_id'] as String?;
     if (requestId == null) {
-      _log.warning('agent_approval_req: missing request_id', tag: 'PeerApproval');
+      _log.warning('agent_approval_req: missing request_id',
+          tag: 'PeerApproval');
       return;
     }
     final rawApprovalId = data['approval_id'] as String?;
@@ -4194,7 +4754,8 @@ class PeerAgentClientService {
       }
     }
 
-    final rawActions = actions is List ? List<dynamic>.from(actions) : <dynamic>[];
+    final rawActions =
+        actions is List ? List<dynamic>.from(actions) : <dynamic>[];
     final effectiveActions = PeerApprovalPayload.effectiveActions(rawActions);
     final actionData = PeerApprovalPayload.buildActionConfirmationData(
       data: data,
@@ -4350,9 +4911,8 @@ class PeerAgentClientService {
     final requestId = data['request_id'] as String?;
     if (requestId == null) return;
     final raw = data['metadata'];
-    final metadata = raw is Map
-        ? Map<String, dynamic>.from(raw)
-        : <String, dynamic>{};
+    final metadata =
+        raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
     if (metadata.isEmpty) return;
     final p = _pending[requestId];
     if (p == null) return;
@@ -4569,7 +5129,8 @@ class PeerAgentClientService {
         p.resumeBaseLength = null;
         continue;
       }
-      _watchResumeResponse(peerId, requestId, resumeRetryCount, failOnExhausted: true);
+      _watchResumeResponse(peerId, requestId, resumeRetryCount,
+          failOnExhausted: true);
     }
   }
 
@@ -4884,7 +5445,8 @@ class PeerAgentClientService {
           hostRoster: hostRoster,
         );
         final existing = await _db.getRemoteAgentById(localId);
-        final capabilities = (raw['capabilities'] as List?)?.cast<String>() ?? const [];
+        final capabilities =
+            (raw['capabilities'] as List?)?.cast<String>() ?? const [];
         final supportedModalities = (raw['supported_modalities'] as List?)
                 ?.map((e) => e.toString())
                 .toList() ??
@@ -4922,12 +5484,14 @@ class PeerAgentClientService {
             'source_peer_id': peerId,
             'source_peer_name': peerName,
             'remote_agent_id': remoteId,
-            if (hostRoster != null) 'roster_hub_fingerprint': hostRoster.fingerprint,
+            if (hostRoster != null)
+              'roster_hub_fingerprint': hostRoster.fingerprint,
             if (!PouchDutyState.isHost && remoteId == SheService.sheId)
               'is_she': true,
             // 宿主边界开关的最近一次广播，详情页据此默认只读/可编辑；
             // 打开编辑页时仍会用 agent_resume_get 权威刷新。
-            if (raw['resume_editable'] is bool) 'resume_editable': raw['resume_editable'],
+            if (raw['resume_editable'] is bool)
+              'resume_editable': raw['resume_editable'],
             if (engine != null && engine.isNotEmpty) 'engine': engine,
             if (supportedModalities.isNotEmpty)
               'supported_modalities': supportedModalities,
@@ -4981,7 +5545,8 @@ class PeerAgentClientService {
         announce: false,
       );
 
-      _log.debug('Injected ${seenRemoteIds.length} peer agents from $peerId', tag: _tag);
+      _log.debug('Injected ${seenRemoteIds.length} peer agents from $peerId',
+          tag: _tag);
       PeerConnectionManager.instance.notifyPeerListChanged();
       _completeAgentListWaiters(peerId);
 
@@ -5106,7 +5671,8 @@ class PeerAgentClientService {
     }
   }
 
-  Future<void> _removeStalePeerAgents(String peerId, {required Set<String> keep}) async {
+  Future<void> _removeStalePeerAgents(String peerId,
+      {required Set<String> keep}) async {
     final agents = await _db.getAllRemoteAgents();
     final retain = await _rosterCardIds();
     for (final a in agents) {
@@ -5149,8 +5715,9 @@ class PeerAgentClientService {
   /// 删除已不再配对的设备遗留的 peer agent。
   Future<void> _reconcileDeletions() async {
     try {
-      final pairedIds =
-          (await PeerConnectionManager.instance.getAllPeers()).map((p) => p.id).toSet();
+      final pairedIds = (await PeerConnectionManager.instance.getAllPeers())
+          .map((p) => p.id)
+          .toSet();
       final agents = await _db.getAllRemoteAgents();
       final retain = await _rosterCardIds();
       var changed = false;

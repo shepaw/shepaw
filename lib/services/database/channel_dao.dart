@@ -61,7 +61,8 @@ extension ChannelDao on LocalDatabaseService {
 
     // 添加成员（保留角色信息）
     for (final member in channel.members) {
-      await addChannelMember(channel.id, member.id, role: member.role, groupBio: member.groupBio);
+      await addChannelMember(channel.id, member.id,
+          role: member.role, groupBio: member.groupBio);
     }
   }
 
@@ -69,7 +70,7 @@ extension ChannelDao on LocalDatabaseService {
   Future<List<Channel>> getAllChannels() async {
     final db = await database;
     final results = await db.query('channels', orderBy: 'created_at DESC');
-    
+
     List<Channel> channels = [];
     for (final map in results) {
       final members = await getChannelMembers(map['id'] as String);
@@ -137,7 +138,8 @@ extension ChannelDao on LocalDatabaseService {
   /// 根据 ID 获取 Channel
   Future<Channel?> getChannelById(String id) async {
     final db = await database;
-    final results = await db.query('channels', where: 'id = ?', whereArgs: [id]);
+    final results =
+        await db.query('channels', where: 'id = ?', whereArgs: [id]);
     if (results.isEmpty) return null;
 
     final members = await getChannelMembers(id);
@@ -210,10 +212,17 @@ extension ChannelDao on LocalDatabaseService {
   Future<void> deleteChannel(String id) async {
     final db = await database;
     await db.delete('channels', where: 'id = ?', whereArgs: [id]);
+    // 游标还在的话，下次同步只会拿到最后一条，删掉的历史回不来。
+    await db.delete(
+      'peer_history_cursor',
+      where: 'channel_id = ?',
+      whereArgs: [id],
+    );
   }
 
   /// 添加 Channel 成员
-  Future<void> addChannelMember(String channelId, String agentId, {String role = 'member', String? groupBio}) async {
+  Future<void> addChannelMember(String channelId, String agentId,
+      {String role = 'member', String? groupBio}) async {
     final db = await database;
     await db.insert(
       'channel_members',
@@ -229,7 +238,8 @@ extension ChannelDao on LocalDatabaseService {
   }
 
   /// 更新 Channel 成员角色
-  Future<void> updateChannelMemberRole(String channelId, String agentId, String role) async {
+  Future<void> updateChannelMemberRole(
+      String channelId, String agentId, String role) async {
     final db = await database;
     await db.update(
       'channel_members',
@@ -240,7 +250,8 @@ extension ChannelDao on LocalDatabaseService {
   }
 
   /// 更新 Channel 成员的群内能力描述
-  Future<void> updateChannelMemberGroupBio(String channelId, String agentId, String? groupBio) async {
+  Future<void> updateChannelMemberGroupBio(
+      String channelId, String agentId, String? groupBio) async {
     final db = await database;
     await db.update(
       'channel_members',
@@ -295,20 +306,26 @@ extension ChannelDao on LocalDatabaseService {
       whereArgs: memberIds,
     );
     final agentIdSet = agentRows.map((r) => r['id'] as String).toSet();
-    return results.map((r) => ChannelMember(
-      id: r['agent_id'] as String,
-      type: agentIdSet.contains(r['agent_id'] as String) ? 'agent' : 'user',
-      role: r['role'] as String? ?? 'member',
-      groupBio: r['group_bio'] as String?,
-      joinedAt: DateTime.tryParse(r['joined_at'] as String? ?? '')
-              ?.millisecondsSinceEpoch ?? 0,
-    )).toList();
+    return results
+        .map((r) => ChannelMember(
+              id: r['agent_id'] as String,
+              type: agentIdSet.contains(r['agent_id'] as String)
+                  ? 'agent'
+                  : 'user',
+              role: r['role'] as String? ?? 'member',
+              groupBio: r['group_bio'] as String?,
+              joinedAt: DateTime.tryParse(r['joined_at'] as String? ?? '')
+                      ?.millisecondsSinceEpoch ??
+                  0,
+            ))
+        .toList();
   }
 
   /// 获取某 user 和 agent 之间最近活跃的 channel（按最新消息时间排序）
   ///
   /// 排除群聊 / She 自动创建的绑定会话，避免打开单聊时落到派生上下文。
-  Future<String?> getLatestActiveChannelForUserAndAgent(String userId, String agentId) async {
+  Future<String?> getLatestActiveChannelForUserAndAgent(
+      String userId, String agentId) async {
     final db = await database;
     // 查找同时包含 userId 和 agentId 的 dm channel，按最近访问时间排序
     final results = await db.rawQuery('''
@@ -383,7 +400,8 @@ extension ChannelDao on LocalDatabaseService {
   }
 
   /// 查询绑定到指定群会话的所有成员 DM 会话。
-  Future<List<Channel>> getMemberSessionsForGroupChannel(String groupChannelId) async {
+  Future<List<Channel>> getMemberSessionsForGroupChannel(
+      String groupChannelId) async {
     final db = await database;
     final results = await db.query(
       'channels',
@@ -506,7 +524,8 @@ extension ChannelDao on LocalDatabaseService {
   }
 
   /// 获取 channel 最新一条消息（用于会话列表预览）
-  Future<Map<String, dynamic>?> getLatestChannelMessage(String channelId) async {
+  Future<Map<String, dynamic>?> getLatestChannelMessage(
+      String channelId) async {
     final db = await database;
     final results = await db.query(
       'messages',

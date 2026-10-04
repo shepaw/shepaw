@@ -21,6 +21,7 @@ export 'database/scheduled_task_dao.dart';
 export 'database/dispatch_task_dao.dart';
 export 'database/history_compaction_cache_dao.dart';
 export 'database/peer_agent_meta_cache_dao.dart';
+export 'database/peer_history_cursor_dao.dart';
 export 'database/face_album_dao.dart';
 export 'database/instruction_set_dao.dart';
 
@@ -29,7 +30,8 @@ export 'database/instruction_set_dao.dart';
 /// 仅保留数据库生命周期与建表/迁移逻辑；各表的 CRUD 已按领域拆分为
 /// `database/*_dao.dart` 中的 extension（见上方 export）。
 class LocalDatabaseService {
-  static final LocalDatabaseService _instance = LocalDatabaseService._internal();
+  static final LocalDatabaseService _instance =
+      LocalDatabaseService._internal();
   factory LocalDatabaseService() => _instance;
   LocalDatabaseService._internal();
 
@@ -58,7 +60,7 @@ class LocalDatabaseService {
     final path = await PouchSqlite.openPath(PouchSqlite.mainDb);
     return await openDatabase(
       path,
-      version: 35,
+      version: 36,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -226,39 +228,56 @@ class LocalDatabaseService {
     // 创建索引 (P0: 性能优化)
     await db.execute('CREATE INDEX idx_agents_token ON agents(token)');
     await db.execute('CREATE INDEX idx_agents_status ON agents(status)');
-    await db.execute('CREATE INDEX idx_agents_last_heartbeat ON agents(last_heartbeat)');
+    await db.execute(
+        'CREATE INDEX idx_agents_last_heartbeat ON agents(last_heartbeat)');
     await db.execute('CREATE INDEX idx_tasks_agent ON tasks(agent_id)');
     await db.execute('CREATE INDEX idx_tasks_state ON tasks(state)');
     await db.execute('CREATE INDEX idx_tasks_created ON tasks(created_at)');
-    await db.execute('CREATE INDEX idx_messages_channel ON messages(channel_id)');
-    await db.execute('CREATE INDEX idx_messages_created ON messages(created_at DESC)');
+    await db
+        .execute('CREATE INDEX idx_messages_channel ON messages(channel_id)');
+    await db.execute(
+        'CREATE INDEX idx_messages_created ON messages(created_at DESC)');
     await db.execute('CREATE INDEX idx_messages_sender ON messages(sender_id)');
     await db.execute('CREATE INDEX idx_messages_read ON messages(is_read)');
-    await db.execute('CREATE INDEX idx_channels_created_by ON channels(created_by)');
+    await db.execute(
+        'CREATE INDEX idx_channels_created_by ON channels(created_by)');
     await db.execute('CREATE INDEX idx_channels_type ON channels(type)');
-    await db.execute('CREATE INDEX idx_channels_source_group ON channels(source_group_channel_id)');
-    await db.execute('CREATE INDEX idx_channels_source_she ON channels(source_she_channel_id)');
-    await db.execute('CREATE INDEX idx_channel_members_agent ON channel_members(agent_id)');
-    await db.execute('CREATE INDEX idx_conversation_requests_status ON conversation_requests(status)');
-    await db.execute('CREATE INDEX idx_conversation_requests_target ON conversation_requests(target_id)');
-    await db.execute('CREATE INDEX idx_resources_owner ON resources(owner_id, owner_type)');
+    await db.execute(
+        'CREATE INDEX idx_channels_source_group ON channels(source_group_channel_id)');
+    await db.execute(
+        'CREATE INDEX idx_channels_source_she ON channels(source_she_channel_id)');
+    await db.execute(
+        'CREATE INDEX idx_channel_members_agent ON channel_members(agent_id)');
+    await db.execute(
+        'CREATE INDEX idx_conversation_requests_status ON conversation_requests(status)');
+    await db.execute(
+        'CREATE INDEX idx_conversation_requests_target ON conversation_requests(target_id)');
+    await db.execute(
+        'CREATE INDEX idx_resources_owner ON resources(owner_id, owner_type)');
 
     // 复合索引用于常见查询
-    await db.execute('CREATE INDEX idx_messages_channel_created ON messages(channel_id, created_at DESC)');
-    await db.execute('CREATE INDEX idx_tasks_agent_state ON tasks(agent_id, state)');
+    await db.execute(
+        'CREATE INDEX idx_messages_channel_created ON messages(channel_id, created_at DESC)');
+    await db.execute(
+        'CREATE INDEX idx_tasks_agent_state ON tasks(agent_id, state)');
 
     // Phase 2 优化: 未读消息查询
-    await db.execute('CREATE INDEX idx_messages_channel_read ON messages(channel_id, is_read, created_at DESC)');
+    await db.execute(
+        'CREATE INDEX idx_messages_channel_read ON messages(channel_id, is_read, created_at DESC)');
 
     // Phase 2 优化: Agent Card 缓存管理
-    await db.execute('CREATE INDEX idx_agent_cards_cached ON agent_cards(cached_at)');
+    await db.execute(
+        'CREATE INDEX idx_agent_cards_cached ON agent_cards(cached_at)');
 
     // Phase 2 优化: 对话请求查询
-    await db.execute('CREATE INDEX idx_conversation_requests_target_status ON conversation_requests(target_id, status)');
-    await db.execute('CREATE INDEX idx_conversation_requests_requester ON conversation_requests(requester_id, requested_at DESC)');
+    await db.execute(
+        'CREATE INDEX idx_conversation_requests_target_status ON conversation_requests(target_id, status)');
+    await db.execute(
+        'CREATE INDEX idx_conversation_requests_requester ON conversation_requests(requester_id, requested_at DESC)');
 
     // Phase 2 优化: 发送者在 Channel 中的消息
-    await db.execute('CREATE INDEX idx_messages_sender_channel ON messages(sender_id, channel_id, created_at DESC)');
+    await db.execute(
+        'CREATE INDEX idx_messages_sender_channel ON messages(sender_id, channel_id, created_at DESC)');
 
     // 工具配置表
     await db.execute('''
@@ -311,11 +330,16 @@ class LocalDatabaseService {
         mentioned_agent_ids TEXT
       )
     ''');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_status ON scheduled_tasks(status)');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_next_run ON scheduled_tasks(next_run_at)');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_agent ON scheduled_tasks(agent_id)');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_channel ON scheduled_tasks(channel_id)');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_target ON scheduled_tasks(execution_target)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_status ON scheduled_tasks(status)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_next_run ON scheduled_tasks(next_run_at)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_agent ON scheduled_tasks(agent_id)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_channel ON scheduled_tasks(channel_id)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_target ON scheduled_tasks(execution_target)');
 
     // 工作流执行记录表 (v22)
     await db.execute('''
@@ -333,8 +357,10 @@ class LocalDatabaseService {
         error_message TEXT
       )
     ''');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_workflow_executions_channel ON workflow_executions(channel_id, created_at DESC)');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_workflow_executions_status ON workflow_executions(status)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_workflow_executions_channel ON workflow_executions(channel_id, created_at DESC)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_workflow_executions_status ON workflow_executions(status)');
 
     // 工作流步骤执行记录表 (v22)
     await db.execute('''
@@ -354,7 +380,8 @@ class LocalDatabaseService {
         FOREIGN KEY (workflow_execution_id) REFERENCES workflow_executions(id)
       )
     ''');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_workflow_steps_execution ON workflow_step_executions(workflow_execution_id, stage_index, step_index)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_workflow_steps_execution ON workflow_step_executions(workflow_execution_id, stage_index, step_index)');
 
     // 工作流 peer 工具审批待办 (v23)
     await db.execute('''
@@ -377,8 +404,10 @@ class LocalDatabaseService {
         FOREIGN KEY (workflow_id) REFERENCES workflow_executions(id)
       )
     ''');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_wf_pending_channel ON workflow_pending_approvals(channel_id, status, created_at DESC)');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_wf_pending_workflow ON workflow_pending_approvals(workflow_id, status)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_wf_pending_channel ON workflow_pending_approvals(channel_id, status, created_at DESC)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_wf_pending_workflow ON workflow_pending_approvals(workflow_id, status)');
 
     // She 单聊任务派发记录表 (v25)；kind 列区分任务派发与对话转发 (v26)
     await db.execute('''
@@ -399,9 +428,12 @@ class LocalDatabaseService {
         kind TEXT NOT NULL DEFAULT 'task'
       )
     ''');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_dispatch_tasks_status ON dispatch_tasks(status)');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_dispatch_tasks_target_channel ON dispatch_tasks(target_channel_id, status)');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_dispatch_tasks_source_channel ON dispatch_tasks(source_channel_id, created_at DESC)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_dispatch_tasks_status ON dispatch_tasks(status)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_dispatch_tasks_target_channel ON dispatch_tasks(target_channel_id, status)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_dispatch_tasks_source_channel ON dispatch_tasks(source_channel_id, created_at DESC)');
 
     // Per-channel history compaction summaries (v28)
     await db.execute('''
@@ -427,8 +459,7 @@ class LocalDatabaseService {
         received_at INTEGER NOT NULL
       )
     ''');
-    await db.execute(
-        'CREATE INDEX IF NOT EXISTS idx_external_memories_from '
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_external_memories_from '
         'ON external_memories(from_device, received_at DESC)');
 
     // 人脸相册（v32）
@@ -442,6 +473,21 @@ class LocalDatabaseService {
 
     // Peer agent 元数据缓存（v35）
     await _createPeerAgentMetaCacheTable(db);
+
+    // 会话历史游标（v36）
+    await _createPeerHistoryCursorTable(db);
+  }
+
+  Future<void> _createPeerHistoryCursorTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS peer_history_cursor (
+        channel_id        TEXT PRIMARY KEY,
+        remote_session_id TEXT NOT NULL,
+        cursor            TEXT NOT NULL,
+        total             INTEGER NOT NULL,
+        updated_at        INTEGER NOT NULL
+      )
+    ''');
   }
 
   Future<void> _createPeerAgentMetaCacheTable(Database db) async {
@@ -475,12 +521,11 @@ class LocalDatabaseService {
 
   /// 数据库升级
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    
     if (oldVersion < 12) {
       // 版本 11 -> 12: 添加 flow_mode 字段到 channels 表，支持 Flow 模式
       try {
         await db.execute(
-          'ALTER TABLE channels ADD COLUMN flow_mode INTEGER DEFAULT 0');
+            'ALTER TABLE channels ADD COLUMN flow_mode INTEGER DEFAULT 0');
       } catch (_) {}
     }
 
@@ -488,7 +533,8 @@ class LocalDatabaseService {
       // 版本 12 -> 13: 加 is_pinned 字段
       // （she_memory 表已迁移到 she_profile.db，此处不再创建）
       try {
-        await db.execute('ALTER TABLE agents ADD COLUMN is_pinned INTEGER DEFAULT 0');
+        await db.execute(
+            'ALTER TABLE agents ADD COLUMN is_pinned INTEGER DEFAULT 0');
       } catch (_) {}
     }
 
@@ -552,10 +598,9 @@ class LocalDatabaseService {
       // 版本 18 -> 19: tool_configs 表补充 she_exclusive 列
       try {
         await db.execute(
-          'ALTER TABLE tool_configs ADD COLUMN she_exclusive INTEGER DEFAULT 0');
+            'ALTER TABLE tool_configs ADD COLUMN she_exclusive INTEGER DEFAULT 0');
       } catch (_) {}
     }
-
 
     if (oldVersion < 20) {
       // 版本 19 -> 20: 定时任务表
@@ -582,12 +627,17 @@ class LocalDatabaseService {
             FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
           )
         ''');
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_status ON scheduled_tasks(status)');
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_next_run ON scheduled_tasks(next_run_at)');
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_agent ON scheduled_tasks(agent_id)');
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_channel ON scheduled_tasks(channel_id)');
+        await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_status ON scheduled_tasks(status)');
+        await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_next_run ON scheduled_tasks(next_run_at)');
+        await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_agent ON scheduled_tasks(agent_id)');
+        await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_channel ON scheduled_tasks(channel_id)');
       } catch (e) {
-        LoggerService().error('Failed to create scheduled_tasks table', tag: 'Migration', error: e);
+        LoggerService().error('Failed to create scheduled_tasks table',
+            tag: 'Migration', error: e);
       }
     }
 
@@ -596,7 +646,8 @@ class LocalDatabaseService {
       // SQLite 不支持直接 DROP CONSTRAINT，使用 rename-create-copy-drop 模式迁移。
       try {
         // 1. 备份旧表
-        await db.execute('ALTER TABLE scheduled_tasks RENAME TO scheduled_tasks_v20');
+        await db.execute(
+            'ALTER TABLE scheduled_tasks RENAME TO scheduled_tasks_v20');
         // 2. 建新表（agent_id 可空、无 FK、三个新列）
         await db.execute('''
           CREATE TABLE scheduled_tasks (
@@ -640,13 +691,19 @@ class LocalDatabaseService {
         // 4. 删除备份表
         await db.execute('DROP TABLE scheduled_tasks_v20');
         // 5. 重建索引
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_status ON scheduled_tasks(status)');
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_next_run ON scheduled_tasks(next_run_at)');
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_agent ON scheduled_tasks(agent_id)');
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_channel ON scheduled_tasks(channel_id)');
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_target ON scheduled_tasks(execution_target)');
+        await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_status ON scheduled_tasks(status)');
+        await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_next_run ON scheduled_tasks(next_run_at)');
+        await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_agent ON scheduled_tasks(agent_id)');
+        await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_channel ON scheduled_tasks(channel_id)');
+        await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_target ON scheduled_tasks(execution_target)');
       } catch (e) {
-        LoggerService().error('Failed to migrate scheduled_tasks to v21', tag: 'Migration', error: e);
+        LoggerService().error('Failed to migrate scheduled_tasks to v21',
+            tag: 'Migration', error: e);
       }
     }
 
@@ -668,8 +725,10 @@ class LocalDatabaseService {
             error_message TEXT
           )
         ''');
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_workflow_executions_channel ON workflow_executions(channel_id, created_at DESC)');
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_workflow_executions_status ON workflow_executions(status)');
+        await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_workflow_executions_channel ON workflow_executions(channel_id, created_at DESC)');
+        await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_workflow_executions_status ON workflow_executions(status)');
 
         await db.execute('''
           CREATE TABLE IF NOT EXISTS workflow_step_executions (
@@ -688,9 +747,11 @@ class LocalDatabaseService {
             FOREIGN KEY (workflow_execution_id) REFERENCES workflow_executions(id)
           )
         ''');
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_workflow_steps_execution ON workflow_step_executions(workflow_execution_id, stage_index, step_index)');
+        await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_workflow_steps_execution ON workflow_step_executions(workflow_execution_id, stage_index, step_index)');
       } catch (e) {
-        LoggerService().error('Failed to create workflow tables (v22)', tag: 'Migration', error: e);
+        LoggerService().error('Failed to create workflow tables (v22)',
+            tag: 'Migration', error: e);
       }
     }
 
@@ -716,10 +777,15 @@ class LocalDatabaseService {
             FOREIGN KEY (workflow_id) REFERENCES workflow_executions(id)
           )
         ''');
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_wf_pending_channel ON workflow_pending_approvals(channel_id, status, created_at DESC)');
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_wf_pending_workflow ON workflow_pending_approvals(workflow_id, status)');
+        await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_wf_pending_channel ON workflow_pending_approvals(channel_id, status, created_at DESC)');
+        await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_wf_pending_workflow ON workflow_pending_approvals(workflow_id, status)');
       } catch (e) {
-        LoggerService().error('Failed to create workflow_pending_approvals (v23)', tag: 'Migration', error: e);
+        LoggerService().error(
+            'Failed to create workflow_pending_approvals (v23)',
+            tag: 'Migration',
+            error: e);
       }
     }
 
@@ -727,10 +793,9 @@ class LocalDatabaseService {
       // 版本 23 -> 24: 群成员绑定会话（DM.source_group_channel_id ↔ 群会话 1:1）
       try {
         await db.execute(
-          'ALTER TABLE channels ADD COLUMN source_group_channel_id TEXT');
-        await db.execute(
-          'CREATE INDEX IF NOT EXISTS idx_channels_source_group '
-          'ON channels(source_group_channel_id)');
+            'ALTER TABLE channels ADD COLUMN source_group_channel_id TEXT');
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_channels_source_group '
+            'ON channels(source_group_channel_id)');
       } catch (e) {
         LoggerService().error(
           'Failed to add source_group_channel_id (v24)',
@@ -760,11 +825,15 @@ class LocalDatabaseService {
             completed_at INTEGER
           )
         ''');
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_dispatch_tasks_status ON dispatch_tasks(status)');
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_dispatch_tasks_target_channel ON dispatch_tasks(target_channel_id, status)');
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_dispatch_tasks_source_channel ON dispatch_tasks(source_channel_id, created_at DESC)');
+        await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_dispatch_tasks_status ON dispatch_tasks(status)');
+        await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_dispatch_tasks_target_channel ON dispatch_tasks(target_channel_id, status)');
+        await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_dispatch_tasks_source_channel ON dispatch_tasks(source_channel_id, created_at DESC)');
       } catch (e) {
-        LoggerService().error('Failed to create dispatch_tasks (v25)', tag: 'Migration', error: e);
+        LoggerService().error('Failed to create dispatch_tasks (v25)',
+            tag: 'Migration', error: e);
       }
     }
 
@@ -784,8 +853,7 @@ class LocalDatabaseService {
       try {
         await db.execute(
             'ALTER TABLE channels ADD COLUMN source_she_channel_id TEXT');
-        await db.execute(
-            'CREATE INDEX IF NOT EXISTS idx_channels_source_she '
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_channels_source_she '
             'ON channels(source_she_channel_id)');
       } catch (e) {
         LoggerService().error(
@@ -862,9 +930,9 @@ class LocalDatabaseService {
             received_at INTEGER NOT NULL
           )
         ''');
-        await db.execute(
-            'CREATE INDEX IF NOT EXISTS idx_external_memories_from '
-            'ON external_memories(from_device, received_at DESC)');
+        await db
+            .execute('CREATE INDEX IF NOT EXISTS idx_external_memories_from '
+                'ON external_memories(from_device, received_at DESC)');
       } catch (e) {
         LoggerService().error(
           'Failed to create external_memories (v30)',
@@ -878,7 +946,7 @@ class LocalDatabaseService {
       // 版本 30 -> 31: channels 表增加 enable_stage_gate（阶段门闸开关，默认关）
       try {
         await db.execute(
-          'ALTER TABLE channels ADD COLUMN enable_stage_gate INTEGER DEFAULT 0');
+            'ALTER TABLE channels ADD COLUMN enable_stage_gate INTEGER DEFAULT 0');
       } catch (e) {
         LoggerService().error(
           'Failed to add enable_stage_gate (v31)',
@@ -939,6 +1007,18 @@ class LocalDatabaseService {
       }
     }
 
+    if (oldVersion < 36) {
+      // 版本 35 -> 36: 会话历史游标，增量拉取用
+      try {
+        await _createPeerHistoryCursorTable(db);
+      } catch (e) {
+        LoggerService().error(
+          'Failed to create peer_history_cursor (v36)',
+          tag: 'Migration',
+          error: e,
+        );
+      }
+    }
   }
 
   // ==================== 数据库维护 ====================
@@ -955,6 +1035,7 @@ class LocalDatabaseService {
     await db.delete('resources');
     await db.delete('event_subscriptions');
     await db.delete('peer_agent_meta_cache');
+    await db.delete('peer_history_cursor');
   }
 
   /// 关闭数据库
