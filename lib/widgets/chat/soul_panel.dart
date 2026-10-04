@@ -11,12 +11,14 @@ class SoulPanel extends StatefulWidget {
   final String initialSoul;
   final Future<bool> Function(String soul) onSave;
   final bool readOnly;
+  final ValueChanged<bool>? onDraftDirty;
 
   const SoulPanel({
     super.key,
     required this.initialSoul,
     required this.onSave,
     this.readOnly = false,
+    this.onDraftDirty,
   });
 
   @override
@@ -31,6 +33,11 @@ class _SoulPanelState extends State<SoulPanel> {
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.initialSoul);
+    _controller.addListener(_reportDraftDirty);
+  }
+
+  void _reportDraftDirty() {
+    widget.onDraftDirty?.call(_controller.text != widget.initialSoul);
   }
 
   @override
@@ -48,6 +55,9 @@ class _SoulPanelState extends State<SoulPanel> {
         text: widget.initialSoul,
         selection: TextSelection.collapsed(offset: widget.initialSoul.length),
       );
+    }
+    if (widget.initialSoul != oldWidget.initialSoul) {
+      _reportDraftDirty();
     }
   }
 

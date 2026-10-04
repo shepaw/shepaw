@@ -5681,6 +5681,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get agentDetail_peerOffline => 'Paired device not connected';
 
   @override
+  String get agentDetail_soulChangedElsewhere => 'Changed on another device';
+
+  @override
   String get agentDetail_modelSwitchUnsupported =>
       'This agent does not support model switching';
 

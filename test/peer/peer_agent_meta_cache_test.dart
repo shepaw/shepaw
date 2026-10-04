@@ -5,6 +5,7 @@ import 'package:shepaw/peer/services/peer_agent_client_service.dart';
 import 'package:shepaw/peer/services/peer_connection.dart';
 import 'package:shepaw/service_locator.dart';
 import 'package:shepaw/services/local_database_service.dart';
+import 'package:shepaw/widgets/chat/chat_input_area.dart';
 
 import '../storage/test_harness.dart';
 
@@ -365,5 +366,276 @@ void main() {
       expect(calls, 2);
       await sub.cancel();
     });
+  });
+
+  group('hub meta push', () {
+    test('soul push writes the cache and does not finish a pending fetch',
+        () async {
+      const id = 'meta-push-soul';
+      created.add(id);
+      final events = <({String agentId, String kind})>[];
+      final sub = svc.metaChanged.listen(events.add);
+      svc.debugSendControlOverride = (peerId, json) async => true;
+      var completed = false;
+      final pending = svc.fetchSoulInfo(peerId: 'peer', remoteAgentId: id);
+      pending.whenComplete(() => completed = true);
+      await Future<void>.delayed(Duration.zero);
+
+      svc.debugInjectControlForTest('agent_meta_changed', {
+        'agent_id': id,
+        'kind': 'soul',
+        'rev': 'rev-soul',
+        'data': {
+          'ok': true,
+          'soul': 'from-push',
+          'editable': true,
+          'exists': true,
+        },
+      });
+      final cached = await poll(
+        () => svc.cachedSoul(id),
+        (value) => value?.soul == 'from-push',
+      );
+      expect(cached?.editable, isTrue);
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      expect(completed, isFalse);
+      expect(
+        events.where((event) => event.agentId == id && event.kind == 'soul'),
+        isNotEmpty,
+      );
+
+      svc.debugInjectControlForTest('agent_soul_resp', {
+        'agent_id': id,
+        'ok': true,
+        'soul': 'from-resp',
+        'editable': false,
+      });
+      final info = await pending;
+      expect(info?.isOk, isTrue);
+      expect(info?.soul, 'from-resp');
+      await sub.cancel();
+    });
+
+    test('commands push updates the palette stream and leaves fetch pending',
+        () async {
+      const id = 'meta-push-cmd';
+      created.add(id);
+      final seen = <List<SlashCommandInfo>>[];
+      final sub = svc.slashCommandsStream(id).listen(seen.add);
+      svc.debugSendControlOverride = (peerId, json) async => true;
+      var completed = false;
+      final pending = svc.fetchCommands(peerId: 'peer', remoteAgentId: id);
+      pending.whenComplete(() => completed = true);
+      await Future<void>.delayed(Duration.zero);
+
+      svc.debugInjectControlForTest(
+        'agent_meta_changed',
+        {
+          'agent_id': id,
+          'kind': 'commands',
+          'rev': 'rev-cmd',
+          'data': {
+            'commands': [
+              {'name': 'pushed'},
+            ],
+          },
+        },
+        peerId: 'peer',
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      expect(completed, isFalse);
+      expect(svc.getSlashCommands(id).map((command) => command.name), ['pushed']);
+      expect(seen, isNotEmpty);
+      expect(seen.last.map((command) => command.name), ['pushed']);
+
+      svc.debugInjectControlForTest('agent_commands_resp', {
+        'agent_id': id,
+        'commands': [
+          {'name': 'real'},
+        ],
+      });
+      final commands = await pending;
+      expect(commands.map((command) => command.name), ['real']);
+      await sub.cancel();
+    });
+
+    test('the same rev is not written again; an empty rev always is', () async {
+      const id = 'meta-rev';
+      created.add(id);
+      final events = <({String agentId, String kind})>[];
+      final sub = svc.metaChanged.listen(events.add);
+
+      void modes(String current, {String? rev}) {
+        svc.debugInjectControlForTest('agent_modes_resp', {
+          'agent_id': id,
+          'modes': [
+            {'value': current, 'display_name': current},
+          ],
+          'current': current,
+          'scope': 'agent',
+          if (rev != null) 'rev': rev,
+        });
+      }
+
+      modes('ask', rev: 'same');
+      await poll(() => svc.cachedModes(id), (value) => value?.current == 'ask');
+      final first = await db.getPeerAgentMeta(id, PeerAgentMetaKind.modes);
+      final fetchedAt = first!.fetchedAt;
+      final emitted = events.where((event) => event.agentId == id).length;
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+
+      modes('plan', rev: 'same');
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      final second = await db.getPeerAgentMeta(id, PeerAgentMetaKind.modes);
+      expect(second?.fetchedAt, fetchedAt);
+      expect(second?.payload['current'], 'ask');
+      expect(events.where((event) => event.agentId == id).length, emitted);
+
+      modes('plan');
+      await poll(() => svc.cachedModes(id), (value) => value?.current == 'plan');
+      expect(
+        events.where((event) => event.agentId == id).length,
+        greaterThan(emitted),
+      );
+      await sub.cancel();
+    });
+
+    test('a session-scoped response is not cached', () async {
+      const id = 'meta-scope';
+      created.add(id);
+      svc.debugSendControlOverride = (peerId, json) async {
+        Future<void>.microtask(() {
+          svc.debugInjectControlForTest('agent_models_resp', {
+            'agent_id': id,
+            'scope': 'session',
+            'models': [
+              {'value': 'm', 'display_name': 'M'},
+            ],
+            'current': 'm',
+          });
+        });
+        return true;
+      };
+      final outcome = await svc.fetchModelsResult(
+        peerId: 'peer',
+        remoteAgentId: id,
+      );
+      expect(outcome.completed, isTrue);
+      expect(outcome.list.current, 'm');
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      expect(await svc.cachedModels(id), isNull);
+    });
+
+    test('not_switchable clears switchable and keeps current', () async {
+      const id = 'meta-not-switchable';
+      created.add(id);
+      await seedModels(id, current: 'm1', switchable: true);
+      svc.debugSendControlOverride = (peerId, json) async {
+        Future<void>.microtask(() {
+          svc.debugInjectControlForTest('agent_models_set_resp', {
+            'agent_id': id,
+            'model': 'm9',
+            'ok': false,
+            'error': 'not_switchable',
+          });
+        });
+        return true;
+      };
+      final result = await svc.setModelResult(
+        peerId: 'peer',
+        remoteAgentId: id,
+        model: 'm9',
+      );
+      expect(result.ok, isFalse);
+      expect(result.error, 'not_switchable');
+      final cached = await poll(
+        () => svc.cachedModels(id),
+        (value) => value != null && value.switchable == false,
+      );
+      expect(cached?.current, 'm1');
+    });
+
+    test('exists false is stored as an empty soul', () async {
+      const id = 'meta-soul-missing';
+      created.add(id);
+      svc.debugInjectControlForTest('agent_soul_resp', {
+        'agent_id': id,
+        'ok': true,
+        'exists': false,
+        'soul': 'ignored',
+        'editable': true,
+      });
+      final cached = await poll(
+        () => svc.cachedSoul(id),
+        (value) => value != null,
+      );
+      expect(cached?.isOk, isTrue);
+      expect(cached?.soul, isEmpty);
+      expect(cached?.editable, isTrue);
+    });
+  });
+
+  test('cursor totals for one remote session keep the smaller total', () async {
+    await db.upsertPeerHistoryCursor(const PeerHistoryCursorEntry(
+      channelId: 'psess_shared',
+      remoteSessionId: 'shared-session',
+      cursor: 'v1.10.aaa',
+      total: 10,
+      updatedAt: 1,
+    ));
+    await db.upsertPeerHistoryCursor(const PeerHistoryCursorEntry(
+      channelId: 'dm_shared',
+      remoteSessionId: 'shared-session',
+      cursor: 'v1.4.bbb',
+      total: 4,
+      updatedAt: 2,
+    ));
+    final totals = await db.peerHistoryCursorTotalsByRemoteSession();
+    expect(totals['shared-session'], 4);
+    await db.deletePeerHistoryCursor('psess_shared');
+    await db.deletePeerHistoryCursor('dm_shared');
+  });
+
+  test('chat input reloads controls when its peer connects or drops', () {
+    expect(
+      chatInputShouldReloadPeerControls(
+        loadedPeerId: null,
+        eventPeerId: 'peer',
+        type: PeerConnectionEventType.connected,
+      ),
+      isFalse,
+    );
+    expect(
+      chatInputShouldReloadPeerControls(
+        loadedPeerId: 'peer',
+        eventPeerId: 'other',
+        type: PeerConnectionEventType.connected,
+      ),
+      isFalse,
+    );
+    expect(
+      chatInputShouldReloadPeerControls(
+        loadedPeerId: 'peer',
+        eventPeerId: 'peer',
+        type: PeerConnectionEventType.connected,
+      ),
+      isTrue,
+    );
+    expect(
+      chatInputShouldReloadPeerControls(
+        loadedPeerId: 'peer',
+        eventPeerId: 'peer',
+        type: PeerConnectionEventType.disconnected,
+      ),
+      isTrue,
+    );
+    expect(
+      chatInputShouldReloadPeerControls(
+        loadedPeerId: 'peer',
+        eventPeerId: 'peer',
+        type: PeerConnectionEventType.messageReceived,
+      ),
+      isFalse,
+    );
   });
 }

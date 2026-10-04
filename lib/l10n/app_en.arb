@@ -2774,6 +2774,7 @@
     }
   },
   "agentDetail_peerOffline": "Paired device not connected",
+  "agentDetail_soulChangedElsewhere": "Changed on another device",
   "agentDetail_modelSwitchUnsupported": "This agent does not support model switching",
   "agentDetail_modelSwitched": "Model switched",
   "agentDetail_modelSwitchFailed": "Failed to switch model",

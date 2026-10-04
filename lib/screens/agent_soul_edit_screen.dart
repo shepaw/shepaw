@@ -7,6 +7,7 @@ import '../models/remote_agent.dart';
 import '../peer/services/peer_agent_client_service.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../services/agent_soul_service.dart';
+import '../services/database/peer_agent_meta_cache_dao.dart';
 import '../widgets/chat/soul_panel.dart';
 
 /// Full-screen Soul editor for agent edit flow.
@@ -44,6 +45,9 @@ class _AgentSoulEditScreenState extends State<AgentSoulEditScreen> {
   bool _usePrefetch = true;
   /// 已经把灵魂画出来（缓存或预取）。之后的失败不能再盖成错误页。
   bool _showingSoul = false;
+  /// 输入框已经偏离 [_initialSoul]。别的设备改了灵魂时不能覆盖。
+  bool _draftDirty = false;
+  StreamSubscription<({String agentId, String kind})>? _metaSub;
 
   @override
   void initState() {
@@ -60,12 +64,48 @@ class _AgentSoulEditScreenState extends State<AgentSoulEditScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_load());
     });
+    if (widget.agent.isPeerAgent) {
+      _metaSub =
+          PeerAgentClientService.instance.metaChanged.listen(_onSoulMetaChanged);
+    }
   }
 
   @override
   void dispose() {
     _uiTimeout?.cancel();
+    _metaSub?.cancel();
     super.dispose();
+  }
+
+  void _onSoulMetaChanged(({String agentId, String kind}) event) {
+    if (!mounted) return;
+    final agent = widget.agent;
+    if (event.agentId != agent.id && event.agentId != agent.remoteAgentId) {
+      return;
+    }
+    if (event.kind != PeerAgentMetaKind.soul) return;
+    unawaited(_applyPushedSoul());
+  }
+
+  Future<void> _applyPushedSoul() async {
+    final cached =
+        await PeerAgentClientService.instance.cachedSoul(widget.agent.id);
+    if (!mounted || cached == null || !cached.isOk) return;
+    if (!_draftDirty) {
+      _presentSoul(
+        soul: cached.soul,
+        readOnly: !cached.editable,
+        background: true,
+      );
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          AppLocalizations.of(context).agentDetail_soulChangedElsewhere,
+        ),
+      ),
+    );
   }
 
   void _finishLoad({
@@ -343,6 +383,7 @@ class _AgentSoulEditScreenState extends State<AgentSoulEditScreen> {
                       initialSoul: _initialSoul,
                       readOnly: _readOnly,
                       onSave: _save,
+                      onDraftDirty: (dirty) => _draftDirty = dirty,
                     ),
     );
   }

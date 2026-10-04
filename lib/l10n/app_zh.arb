@@ -3249,6 +3249,7 @@
     }
   },
   "agentDetail_peerOffline": "配对设备未连接",
+  "agentDetail_soulChangedElsewhere": "已在其他设备修改",
   "agentDetail_modelSwitchUnsupported": "该 agent 暂不支持切换模型",
   "agentDetail_modelSwitched": "已切换模型",
   "agentDetail_modelSwitchFailed": "切换模型失败",

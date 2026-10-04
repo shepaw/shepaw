@@ -11,6 +11,8 @@ import '../../models/pending_attachment.dart';
 import '../../models/remote_agent.dart';
 import '../../peer/engine_session_modes.dart';
 import '../../peer/services/peer_agent_client_service.dart';
+import '../../peer/services/peer_connection.dart'
+    show PeerConnectionEvent, PeerConnectionEventType;
 import '../../peer/services/peer_connection_manager.dart';
 import '../../screens/model_management_screen.dart';
 import '../../services/agent_metadata_builder.dart';
@@ -33,6 +35,18 @@ const _kComposerChoiceMenuConstraints = BoxConstraints(
   maxWidth: 5.0 * 56.0,
   maxHeight: 280,
 );
+
+/// 设备连上或断开时重拉模式和模型。第一次加载完成前 [loadedPeerId] 还是 null，
+/// 这时的事件直接忽略，加载流程自己会读当前连接状态。
+bool chatInputShouldReloadPeerControls({
+  required String? loadedPeerId,
+  required String eventPeerId,
+  required PeerConnectionEventType type,
+}) {
+  if (loadedPeerId == null || loadedPeerId != eventPeerId) return false;
+  return type == PeerConnectionEventType.connected ||
+      type == PeerConnectionEventType.disconnected;
+}
 
 /// The chat input area widget (supports both desktop and mobile layouts).
 ///
@@ -165,6 +179,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
   final ScrollController _slashScrollController = ScrollController();
   late List<SlashCommandInfo> _slashCommands;
   StreamSubscription<List<SlashCommandInfo>>? _slashCommandsSub;
+  StreamSubscription<PeerConnectionEvent>? _peerConnSub;
+  StreamSubscription<({String agentId, String kind})>? _metaSub;
 
   List<SlashCommandInfo> get _effectiveSlashCommands =>
       ShepawSessionSlashCommands.merge(
@@ -254,6 +270,10 @@ class ChatInputAreaState extends State<ChatInputArea> {
       }
     });
     unawaited(_loadAgentControls());
+    _peerConnSub =
+        PeerConnectionManager.instance.events.listen(_onPeerConnectionEvent);
+    _metaSub = PeerAgentClientService.instance.metaChanged
+        .listen(_onPeerMetaChanged);
   }
 
   @override
@@ -264,6 +284,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
     _mentionScrollController.dispose();
     _slashScrollController.dispose();
     _slashCommandsSub?.cancel();
+    _peerConnSub?.cancel();
+    _metaSub?.cancel();
     super.dispose();
   }
 
@@ -385,6 +407,48 @@ class ChatInputAreaState extends State<ChatInputArea> {
     if (agent.isLocal) {
       _readMainModel(agent);
     }
+  }
+
+  void _onPeerConnectionEvent(PeerConnectionEvent event) {
+    if (!mounted) return;
+    if (!chatInputShouldReloadPeerControls(
+      loadedPeerId: _peerId,
+      eventPeerId: event.peerId,
+      type: event.type,
+    )) {
+      return;
+    }
+    unawaited(_loadAgentControls());
+  }
+
+  void _onPeerMetaChanged(({String agentId, String kind}) event) {
+    if (!mounted) return;
+    final localId = widget.agentId;
+    if (localId == null || localId.isEmpty) return;
+    if (event.agentId != localId && event.agentId != _remoteAgentId) return;
+    if (event.kind != PeerAgentMetaKind.models &&
+        event.kind != PeerAgentMetaKind.modes) {
+      return;
+    }
+    if (_modelSetting || _sessionModeSetting) return;
+    unawaited(_reloadPeerControlsFromCache());
+  }
+
+  /// 别的设备改了模式或模型。只重读缓存，并用 [_controlsToken] 丢掉过期结果。
+  Future<void> _reloadPeerControlsFromCache() async {
+    final token = _controlsToken;
+    final agentId = widget.agentId;
+    if (agentId == null || agentId.isEmpty) return;
+    if (!getIt.isRegistered<LocalDatabaseService>()) return;
+    RemoteAgent? agent;
+    try {
+      agent = await getIt<LocalDatabaseService>().getRemoteAgentById(agentId);
+    } catch (_) {
+      return;
+    }
+    if (!mounted || token != _controlsToken || agent == null) return;
+    if (!agent.isPeerAgent) return;
+    await _showCachedPeerControls(agent, token);
   }
 
   /// 先把上次的模式和模型画出来。模型没有缓存（或缓存是空列表）时不显示入口。
@@ -656,7 +720,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
       _modelSetting = true;
       _currentPeerModel = value;
     });
-    final ok = await PeerAgentClientService.instance.setModel(
+    final result = await PeerAgentClientService.instance.setModelResult(
       peerId: peerId,
       remoteAgentId: remoteAgentId,
       model: value,
@@ -664,8 +728,13 @@ class ChatInputAreaState extends State<ChatInputArea> {
     );
     if (!mounted) return;
     setState(() => _modelSetting = false);
-    if (ok) return;
+    if (result.ok) return;
     setState(() => _currentPeerModel = previous);
+    if (result.error == 'not_switchable') {
+      setState(() => _peerModelsSwitchable = false);
+      _toastModelConfiguredOnComputer();
+      return;
+    }
     showTopToast(
       context,
       AppLocalizations.of(context).chat_mainModelSwitchFailed,

@@ -13,6 +13,7 @@ import '../models/remote_agent.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_agent_client_service.dart';
 import '../peer/engine_session_modes.dart';
+import '../services/database/peer_agent_meta_cache_dao.dart';
 import '../peer/services/peer_connection.dart' show PeerConnectionEvent, PeerConnectionEventType;
 import '../peer/models/paired_peer.dart' show PeerConnectionState;
 import '../services/remote_agent_service.dart';
@@ -157,6 +158,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
   /// peer 连接状态变化订阅：peer agent 的在线状态需实时跟随来源设备上/下线。
   StreamSubscription<PeerConnectionEvent>? _peerConnSub;
+  StreamSubscription<({String agentId, String kind})>? _metaSub;
 
   /// True when this agent should be treated as a local LLM agent.
   /// She is always treated as local even before a model is configured.
@@ -210,6 +212,22 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           unawaited(_loadSoul());
         }
         setState(() {});
+      });
+      _metaSub = PeerAgentClientService.instance.metaChanged.listen((event) {
+        if (!mounted) return;
+        if (event.agentId != _agent.id && event.agentId != _agent.remoteAgentId) {
+          return;
+        }
+        switch (event.kind) {
+          case PeerAgentMetaKind.models:
+            if (_peerModelSetting) return;
+            unawaited(_showCachedPeerModels());
+          case PeerAgentMetaKind.modes:
+            if (_peerModeSetting) return;
+            unawaited(_showCachedPeerModes());
+          case PeerAgentMetaKind.soul:
+            unawaited(_applyPushedSoul());
+        }
       });
       _loadPeerSyncPref();
       unawaited(_refreshPeerAgentRow());
@@ -268,6 +286,55 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         _soulApplied = soul;
       }
     });
+  }
+
+  Future<void> _showCachedPeerModels() async {
+    if (!mounted || !_agent.isPeerAgent) return;
+    final cached =
+        await PeerAgentClientService.instance.cachedModels(_agent.id);
+    if (!mounted || cached == null) return;
+    final l10n = AppLocalizations.of(context);
+    final models = _uniqueByValue(cached.models, (m) => m.value);
+    setState(() {
+      _peerModels = models;
+      _peerCurrentModel = cached.current;
+      _peerModelsSwitchable = cached.switchable;
+      _peerModelsError =
+          models.isEmpty ? l10n.agentDetail_modelSwitchUnsupported : null;
+      _peerModelsLoading = false;
+    });
+  }
+
+  Future<void> _showCachedPeerModes() async {
+    if (!mounted || !_agent.isPeerAgent) return;
+    final cached = await PeerAgentClientService.instance.cachedModes(_agent.id);
+    if (!mounted || cached == null) return;
+    final l10n = AppLocalizations.of(context);
+    final modes = _uniqueByValue(cached.modes, (m) => m.value);
+    setState(() {
+      _peerModes = modes;
+      _peerCurrentMode = cached.current;
+      _peerModesError =
+          modes.isEmpty ? l10n.agentDetail_modeSwitchUnsupported : null;
+      _peerModesLoading = false;
+    });
+  }
+
+  Future<void> _applyPushedSoul() async {
+    final cached = await PeerAgentClientService.instance.cachedSoul(_agent.id);
+    if (!mounted || cached == null || !cached.isOk) return;
+    final canReplace = _systemPromptController.text.isEmpty ||
+        _systemPromptController.text == _soulApplied;
+    _applySoul(cached.soul, editable: _peerLinkUp && cached.editable);
+    if (!canReplace && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            AppLocalizations.of(context).agentDetail_soulChangedElsewhere,
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _loadSoul() async {
@@ -424,7 +491,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     final remoteId = _agent.remoteAgentId;
     if (peerId == null || remoteId == null) return;
     setState(() => _peerModelSetting = true);
-    final ok = await PeerAgentClientService.instance.setModel(
+    final result = await PeerAgentClientService.instance.setModelResult(
       peerId: peerId,
       remoteAgentId: remoteId,
       model: value,
@@ -432,12 +499,18 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     if (!mounted) return;
     setState(() {
       _peerModelSetting = false;
-      if (ok) _peerCurrentModel = value;
+      if (result.ok) _peerCurrentModel = value;
+      if (result.error == 'not_switchable') _peerModelsSwitchable = false;
     });
     if (!mounted) return;
+    final message = result.ok
+        ? l10n.agentDetail_modelSwitched
+        : result.error == 'not_switchable'
+            ? l10n.chat_modelConfiguredOnComputer
+            : l10n.agentDetail_modelSwitchFailed;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(ok ? l10n.agentDetail_modelSwitched : l10n.agentDetail_modelSwitchFailed),
+        content: Text(message),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -667,6 +740,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     _maxToolRoundsController.dispose();
     _taskTimeoutController.dispose();
     _peerConnSub?.cancel();
+    _metaSub?.cancel();
     super.dispose();
   }
 

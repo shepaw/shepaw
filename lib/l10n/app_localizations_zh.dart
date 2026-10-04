@@ -5476,6 +5476,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get agentDetail_peerOffline => '配对设备未连接';
 
   @override
+  String get agentDetail_soulChangedElsewhere => '已在其他设备修改';
+
+  @override
   String get agentDetail_modelSwitchUnsupported => '该 agent 暂不支持切换模型';
 
   @override

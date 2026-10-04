@@ -10029,6 +10029,12 @@ abstract class AppLocalizations {
   /// **'配对设备未连接'**
   String get agentDetail_peerOffline;
 
+  /// No description provided for @agentDetail_soulChangedElsewhere.
+  ///
+  /// In zh, this message translates to:
+  /// **'已在其他设备修改'**
+  String get agentDetail_soulChangedElsewhere;
+
   /// No description provided for @agentDetail_modelSwitchUnsupported.
   ///
   /// In zh, this message translates to:

@@ -1375,13 +1375,15 @@ class PeerAgentClientService {
   final Map<String, ({String agentId, String soul})> _pendingSoulText = {};
 
   /// Outstanding agent_models_set_req per "agentId::model" key.
-  final Map<String, Completer<bool>> _pendingModelSet = {};
+  final Map<String, Completer<({bool ok, String? error})>> _pendingModelSet =
+      {};
 
   /// Outstanding agent_modes_req per remote agent id.
   final Map<String, Completer<PeerModesList>> _pendingModes = {};
 
   /// Outstanding agent_modes_set_req per "agentId::mode" key.
-  final Map<String, Completer<bool>> _pendingModeSet = {};
+  final Map<String, Completer<({bool ok, String? error})>> _pendingModeSet =
+      {};
 
   /// Outstanding agent_soul_req keyed by request_id.
   final Map<String, Completer<PeerSoulInfo?>> _pendingSoulGet = {};
@@ -1437,6 +1439,14 @@ class PeerAgentClientService {
   /// 聊天页订阅后在 consent 允许时触发增量同步。
   final _reconcileController = StreamController<String>.broadcast();
   Stream<String> get reconcileRequests => _reconcileController.stream;
+
+  /// 缓存真正写入之后发出。`kind` 用 [PeerAgentMetaKind] 的常量。
+  /// 删除 agent 时按 kind 各发一条，打开着的页面就能清掉对应入口。
+  /// 这是单例上的长期流，[stop] 不关闭它。
+  final _metaChanged =
+      StreamController<({String agentId, String kind})>.broadcast();
+  Stream<({String agentId, String kind})> get metaChanged =>
+      _metaChanged.stream;
 
   /// requestId → owning agent, retained briefly after a turn finishes so an
   /// approval that outlives its sendChat request (e.g. the hub restarted
@@ -1547,9 +1557,13 @@ class PeerAgentClientService {
     }
     _pendingModels.clear();
     for (final c in _pendingModelSet.values) {
-      if (!c.isCompleted) c.complete(false);
+      if (!c.isCompleted) c.complete((ok: false, error: null));
     }
     _pendingModelSet.clear();
+    for (final c in _pendingModeSet.values) {
+      if (!c.isCompleted) c.complete((ok: false, error: null));
+    }
+    _pendingModeSet.clear();
     for (final c in _pendingManage.values) {
       if (!c.isCompleted) {
         c.complete(const PeerAgentManageResult(ok: false, error: 'stopped'));
@@ -1731,12 +1745,16 @@ class PeerAgentClientService {
       if (!c.isCompleted) c.complete(const []);
     }
     _pendingCommands.clear();
+    for (final c in _pendingHistory.values) {
+      if (!c.isCompleted) c.complete(PeerHistoryPage.incomplete);
+    }
+    _pendingHistory.clear();
     for (final c in _pendingModelSet.values) {
-      if (!c.isCompleted) c.complete(false);
+      if (!c.isCompleted) c.complete((ok: false, error: null));
     }
     _pendingModelSet.clear();
     for (final c in _pendingModeSet.values) {
-      if (!c.isCompleted) c.complete(false);
+      if (!c.isCompleted) c.complete((ok: false, error: null));
     }
     _pendingModeSet.clear();
   }
@@ -2350,6 +2368,9 @@ class PeerAgentClientService {
       case 'agent_commands_resp':
         _onCommandsResp(event.peerId, event.data);
         break;
+      case 'agent_meta_changed':
+        _onAgentMetaChanged(event);
+        break;
       case 'agent_sessions_resp':
         _onSessionsResp(event.data);
         break;
@@ -2544,21 +2565,10 @@ class PeerAgentClientService {
   void _onModelsResp(Map<String, dynamic> data) {
     final remoteId = data['agent_id'] as String?;
     if (remoteId == null) return;
-    final raw = (data['models'] as List?) ?? const [];
-    final models = raw
-        .whereType<Map>()
-        .map((item) => PeerAgentModel.fromJson(Map<String, dynamic>.from(item)))
-        .whereType<PeerAgentModel>()
-        .toList();
-    final current = data['current'] as String?;
-    // 缺省视为可切换，兼容旧 Hub。
-    final switchable = data['switchable'] != false;
-    final list = PeerModelsList(
-      models: models,
-      current: current,
-      switchable: switchable,
-    );
-    _rememberModels(remoteId, list);
+    final list = _parseModelsData(data);
+    if (_isAgentLevelMeta(data)) {
+      _rememberModels(remoteId, list, rev: _nonEmpty(data['rev']));
+    }
     final completer = _pendingModels.remove(remoteId);
     if (completer != null && !completer.isCompleted) completer.complete(list);
   }
@@ -2570,9 +2580,26 @@ class PeerAgentClientService {
     required String model,
     String? sessionId,
   }) async {
+    final result = await setModelResult(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      model: model,
+      sessionId: sessionId,
+    );
+    return result.ok;
+  }
+
+  /// 与 [setModel] 相同，但带回 Hub 的 `error`（例如 `not_switchable`）。
+  Future<({bool ok, String? error})> setModelResult({
+    required String peerId,
+    required String remoteAgentId,
+    required String model,
+    String? sessionId,
+  }) async {
     final key = '$remoteAgentId::$model';
-    if (_pendingModelSet.containsKey(key)) return _pendingModelSet[key]!.future;
-    final completer = Completer<bool>();
+    final existing = _pendingModelSet[key];
+    if (existing != null) return existing.future;
+    final completer = Completer<({bool ok, String? error})>();
     _pendingModelSet[key] = completer;
     final payload = <String, dynamic>{
       'type': 'agent_models_set_req',
@@ -2585,11 +2612,11 @@ class PeerAgentClientService {
     final sent = await _sendMetaControl(peerId, payload);
     if (!sent) {
       _pendingModelSet.remove(key);
-      return false;
+      return (ok: false, error: null);
     }
     return completer.future.timeout(const Duration(seconds: 15), onTimeout: () {
       _pendingModelSet.remove(key);
-      return false;
+      return (ok: false, error: null);
     });
   }
 
@@ -2598,9 +2625,16 @@ class PeerAgentClientService {
     final model = data['model'] as String?;
     if (remoteId == null || model == null) return;
     final ok = data['ok'] == true;
+    final error = _nonEmpty(data['error']);
     final completer = _pendingModelSet.remove('$remoteId::$model');
-    if (completer != null && !completer.isCompleted) completer.complete(ok);
-    if (ok) _patchCachedCurrent(remoteId, PeerAgentMetaKind.models, model);
+    if (completer != null && !completer.isCompleted) {
+      completer.complete((ok: ok, error: error));
+    }
+    if (ok) {
+      _patchCachedCurrent(remoteId, PeerAgentMetaKind.models, model);
+    } else if (error == 'not_switchable') {
+      _patchCachedSwitchable(remoteId, PeerAgentMetaKind.models, false);
+    }
   }
 
   /// Fetch upstream session modes (`agent.modes.list` relay). Returns empty
@@ -2663,16 +2697,10 @@ class PeerAgentClientService {
   void _onModesResp(Map<String, dynamic> data) {
     final remoteId = data['agent_id'] as String?;
     if (remoteId == null) return;
-    final raw = (data['modes'] as List?) ?? const [];
-    final modes = <PeerAgentMode>[];
-    for (final item in raw) {
-      if (item is! Map) continue;
-      final parsed = PeerAgentMode.fromJson(Map<String, dynamic>.from(item));
-      if (parsed != null) modes.add(parsed);
+    final list = _parseModesData(data);
+    if (_isAgentLevelMeta(data)) {
+      _rememberModes(remoteId, list, rev: _nonEmpty(data['rev']));
     }
-    final current = data['current'] as String?;
-    final list = PeerModesList(modes: modes, current: current);
-    _rememberModes(remoteId, list);
     final completer = _pendingModes.remove(remoteId);
     if (completer != null && !completer.isCompleted) completer.complete(list);
   }
@@ -2684,9 +2712,26 @@ class PeerAgentClientService {
     required String mode,
     String? sessionId,
   }) async {
+    final result = await setModeResult(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      mode: mode,
+      sessionId: sessionId,
+    );
+    return result.ok;
+  }
+
+  /// 与 [setMode] 相同，但带回 Hub 的 `error`（例如 `unknown_mode`）。
+  Future<({bool ok, String? error})> setModeResult({
+    required String peerId,
+    required String remoteAgentId,
+    required String mode,
+    String? sessionId,
+  }) async {
     final key = '$remoteAgentId::$mode';
-    if (_pendingModeSet.containsKey(key)) return _pendingModeSet[key]!.future;
-    final completer = Completer<bool>();
+    final existing = _pendingModeSet[key];
+    if (existing != null) return existing.future;
+    final completer = Completer<({bool ok, String? error})>();
     _pendingModeSet[key] = completer;
     final payload = <String, dynamic>{
       'type': 'agent_modes_set_req',
@@ -2699,11 +2744,11 @@ class PeerAgentClientService {
     final sent = await _sendMetaControl(peerId, payload);
     if (!sent) {
       _pendingModeSet.remove(key);
-      return false;
+      return (ok: false, error: null);
     }
     return completer.future.timeout(const Duration(seconds: 15), onTimeout: () {
       _pendingModeSet.remove(key);
-      return false;
+      return (ok: false, error: null);
     });
   }
 
@@ -2712,8 +2757,11 @@ class PeerAgentClientService {
     final mode = data['mode'] as String?;
     if (remoteId == null || mode == null) return;
     final ok = data['ok'] == true;
+    final error = _nonEmpty(data['error']);
     final completer = _pendingModeSet.remove('$remoteId::$mode');
-    if (completer != null && !completer.isCompleted) completer.complete(ok);
+    if (completer != null && !completer.isCompleted) {
+      completer.complete((ok: ok, error: error));
+    }
     if (ok) _patchCachedCurrent(remoteId, PeerAgentMetaKind.modes, mode);
   }
 
@@ -2743,7 +2791,7 @@ class PeerAgentClientService {
       tag: _tag,
     );
     try {
-      final sent = await PeerConnectionManager.instance.sendControl(peerId, {
+      final sent = await _sendMetaControl(peerId, {
         'type': 'agent_soul_req',
         'agent_id': remoteAgentId,
         'request_id': requestId,
@@ -2784,19 +2832,12 @@ class PeerAgentClientService {
     try {
       final requestId = data['request_id']?.toString();
       final remoteId = data['agent_id']?.toString();
-      final PeerSoulInfo info;
-      if (data['ok'] == true) {
-        info = PeerSoulInfo.ok(
-          soul: data['soul'] as String? ?? '',
-          editable: data['editable'] == true,
-        );
-      } else {
-        final err = data['error']?.toString() ?? 'unknown';
+      final info = _parseSoulData(data);
+      if (!info.isOk) {
         _log.warning(
-          'agent_soul_resp ok=false agent=$remoteId error=$err req=$requestId',
+          'agent_soul_resp ok=false agent=$remoteId error=${info.error} req=$requestId',
           tag: _tag,
         );
-        info = PeerSoulInfo.fail(err);
       }
 
       if (info.isOk) {
@@ -2804,7 +2845,12 @@ class PeerAgentClientService {
             ? remoteId
             : _agentIdForSoulRequest(requestId);
         if (agentId != null) {
-          _rememberSoul(agentId, info.soul, info.editable);
+          _rememberSoul(
+            agentId,
+            info.soul,
+            info.editable,
+            rev: _nonEmpty(data['rev']),
+          );
         }
       }
 
@@ -2876,13 +2922,14 @@ class PeerAgentClientService {
     final ok = data['ok'] == true;
     final pending = _takePendingSoulText(
       requestId != null && requestId.isNotEmpty ? requestId : null,
+      agentId: _nonEmpty(data['agent_id']),
     );
     if (ok) {
       final agentId = _nonEmpty(data['agent_id']) ?? pending?.agentId;
       final soul =
           data['soul'] is String ? data['soul'] as String : pending?.soul;
       if (agentId != null && soul != null) {
-        _rememberSoul(agentId, soul, true);
+        _rememberSoul(agentId, soul, true, rev: _nonEmpty(data['rev']));
       }
     }
     if (requestId != null && requestId.isNotEmpty) {
@@ -2909,16 +2956,137 @@ class PeerAgentClientService {
     return null;
   }
 
-  ({String agentId, String soul})? _takePendingSoulText(String? requestId) {
+  ({String agentId, String soul})? _takePendingSoulText(
+    String? requestId, {
+    String? agentId,
+  }) {
     if (requestId != null && requestId.isNotEmpty) {
       return _pendingSoulText.remove(requestId);
+    }
+    if (agentId != null && agentId.isNotEmpty) {
+      String? match;
+      for (final entry in _pendingSoulText.entries) {
+        if (entry.value.agentId == agentId) {
+          match = entry.key;
+          break;
+        }
+      }
+      if (match != null) return _pendingSoulText.remove(match);
     }
     if (_pendingSoulText.isEmpty) return null;
     final key = _pendingSoulText.keys.first;
     return _pendingSoulText.remove(key);
   }
 
-  void _rememberModels(String agentId, PeerModelsList list) {
+  /// `scope` 缺省或 `"agent"` 才写 agent 级缓存。`"session"` 留给以后的按会话模式。
+  bool _isAgentLevelMeta(Map<String, dynamic> data) {
+    final scope = data['scope'];
+    if (scope == null) return true;
+    if (scope is! String || scope.isEmpty) return true;
+    return scope == 'agent';
+  }
+
+  PeerModelsList _parseModelsData(Map<String, dynamic> data) {
+    final raw = (data['models'] as List?) ?? const [];
+    final models = raw
+        .whereType<Map>()
+        .map((item) => PeerAgentModel.fromJson(Map<String, dynamic>.from(item)))
+        .whereType<PeerAgentModel>()
+        .toList();
+    final current = data['current'];
+    return PeerModelsList(
+      models: models,
+      current: current is String ? current : null,
+      switchable: data['switchable'] != false,
+    );
+  }
+
+  PeerModesList _parseModesData(Map<String, dynamic> data) {
+    final raw = (data['modes'] as List?) ?? const [];
+    final modes = <PeerAgentMode>[];
+    for (final item in raw) {
+      if (item is! Map) continue;
+      final parsed = PeerAgentMode.fromJson(Map<String, dynamic>.from(item));
+      if (parsed != null) modes.add(parsed);
+    }
+    final current = data['current'];
+    return PeerModesList(
+      modes: modes,
+      current: current is String ? current : null,
+    );
+  }
+
+  /// `exists: false` 是合法的空灵魂。`ok: false` 不写缓存。
+  PeerSoulInfo _parseSoulData(Map<String, dynamic> data) {
+    if (data['exists'] == false && data['ok'] != false) {
+      return PeerSoulInfo.ok(
+        soul: '',
+        editable: data['editable'] == true,
+      );
+    }
+    if (data['ok'] == true) {
+      final soul = data['soul'];
+      return PeerSoulInfo.ok(
+        soul: soul is String ? soul : '',
+        editable: data['editable'] == true,
+      );
+    }
+    return PeerSoulInfo.fail(data['error']?.toString() ?? 'unknown');
+  }
+
+  List<SlashCommandInfo> _parseCommandList(Object? raw) {
+    final commands = <SlashCommandInfo>[];
+    if (raw is! List) return commands;
+    for (final item in raw) {
+      if (item is! Map) continue;
+      try {
+        commands.add(
+          SlashCommandInfo.fromJson(Map<String, dynamic>.from(item)),
+        );
+      } catch (_) {}
+    }
+    return commands;
+  }
+
+  void _onAgentMetaChanged(PeerControlEvent event) {
+    final frame = event.data;
+    final agentId = frame['agent_id']?.toString();
+    final kind = frame['kind']?.toString();
+    if (agentId == null || agentId.isEmpty || kind == null || kind.isEmpty) {
+      return;
+    }
+    final body = frame['data'];
+    if (body is! Map) {
+      _log.debug('agent_meta_changed missing data kind=$kind', tag: _tag);
+      return;
+    }
+    final data = Map<String, dynamic>.from(body);
+    final rev = _nonEmpty(frame['rev']);
+    switch (kind) {
+      case PeerAgentMetaKind.models:
+        if (!_isAgentLevelMeta(data)) return;
+        _rememberModels(agentId, _parseModelsData(data), rev: rev);
+      case PeerAgentMetaKind.modes:
+        if (!_isAgentLevelMeta(data)) return;
+        _rememberModes(agentId, _parseModesData(data), rev: rev);
+      case PeerAgentMetaKind.soul:
+        final info = _parseSoulData(data);
+        if (!info.isOk) return;
+        _rememberSoul(agentId, info.soul, info.editable, rev: rev);
+      case PeerAgentMetaKind.commands:
+        _applyCommandsResp(
+          agentId,
+          _parseCommandList(data['commands']),
+          peerId: event.peerId,
+          completePending: false,
+          rev: rev,
+        );
+      default:
+        _log.debug('ignore agent_meta_changed kind=$kind', tag: _tag);
+    }
+  }
+
+  void _rememberModels(String agentId, PeerModelsList list, {String? rev}) {
     _writeMeta(
       agentId: agentId,
       kind: PeerAgentMetaKind.models,
@@ -2926,35 +3094,51 @@ class PeerAgentClientService {
         'models': [for (final model in list.models) model.toJson()],
         'current': list.current,
         'switchable': list.switchable,
+        if (rev != null && rev.isNotEmpty) 'rev': rev,
       },
     );
   }
 
-  void _rememberModes(String agentId, PeerModesList list) {
+  void _rememberModes(String agentId, PeerModesList list, {String? rev}) {
     _writeMeta(
       agentId: agentId,
       kind: PeerAgentMetaKind.modes,
       payload: {
         'modes': [for (final mode in list.modes) mode.toJson()],
         'current': list.current,
+        if (rev != null && rev.isNotEmpty) 'rev': rev,
       },
     );
   }
 
-  void _rememberSoul(String agentId, String soul, bool editable) {
+  void _rememberSoul(
+    String agentId,
+    String soul,
+    bool editable, {
+    String? rev,
+  }) {
     _writeMeta(
       agentId: agentId,
       kind: PeerAgentMetaKind.soul,
-      payload: {'soul': soul, 'editable': editable},
+      payload: {
+        'soul': soul,
+        'editable': editable,
+        if (rev != null && rev.isNotEmpty) 'rev': rev,
+      },
     );
   }
 
-  void _rememberCommands(String agentId, List<SlashCommandInfo> commands) {
+  void _rememberCommands(
+    String agentId,
+    List<SlashCommandInfo> commands, {
+    String? rev,
+  }) {
     _writeMeta(
       agentId: agentId,
       kind: PeerAgentMetaKind.commands,
       payload: {
         'commands': [for (final command in commands) command.toJson()],
+        if (rev != null && rev.isNotEmpty) 'rev': rev,
       },
     );
   }
@@ -2972,10 +3156,36 @@ class PeerAgentClientService {
           payload: payload,
           fetchedAt: DateTime.now().millisecondsSinceEpoch,
         ));
+        _emitMetaChanged(agentId, kind);
       } catch (e) {
         _log.warning('peer meta current update failed: $e', tag: _tag);
       }
     }());
+  }
+
+  void _patchCachedSwitchable(String agentId, String kind, bool switchable) {
+    unawaited(() async {
+      try {
+        final row = await _db.getPeerAgentMeta(agentId, kind);
+        if (row == null) return;
+        final payload = Map<String, dynamic>.from(row.payload);
+        payload['switchable'] = switchable;
+        await _db.upsertPeerAgentMeta(PeerAgentMetaCacheEntry(
+          agentId: agentId,
+          kind: kind,
+          payload: payload,
+          fetchedAt: DateTime.now().millisecondsSinceEpoch,
+        ));
+        _emitMetaChanged(agentId, kind);
+      } catch (e) {
+        _log.warning('peer meta switchable update failed: $e', tag: _tag);
+      }
+    }());
+  }
+
+  void _emitMetaChanged(String agentId, String kind) {
+    if (_metaChanged.isClosed) return;
+    _metaChanged.add((agentId: agentId, kind: kind));
   }
 
   void _writeMeta({
@@ -2985,12 +3195,23 @@ class PeerAgentClientService {
   }) {
     unawaited(() async {
       try {
+        final existing = await _db.getPeerAgentMeta(agentId, kind);
+        final nextRev = payload['rev'];
+        final prevRev = existing?.payload['rev'];
+        if (nextRev is String &&
+            nextRev.isNotEmpty &&
+            prevRev is String &&
+            prevRev.isNotEmpty &&
+            nextRev == prevRev) {
+          return;
+        }
         await _db.upsertPeerAgentMeta(PeerAgentMetaCacheEntry(
           agentId: agentId,
           kind: kind,
           payload: payload,
           fetchedAt: DateTime.now().millisecondsSinceEpoch,
         ));
+        _emitMetaChanged(agentId, kind);
       } catch (e) {
         _log.warning('peer meta cache write failed: $e', tag: _tag);
       }
@@ -3093,6 +3314,7 @@ class PeerAgentClientService {
   }
 
   /// 删掉 agent 时清内存里的斜杠命令，并通知已打开的 `/` 面板。
+  /// 同时按 kind 各发一条 [metaChanged]，让还停在页面上的入口一起清掉。
   @visibleForTesting
   void forgetPeerAgentMeta(String agentId) {
     _commandsCache.remove(agentId);
@@ -3102,6 +3324,10 @@ class PeerAgentClientService {
     if (stream != null && !stream.isClosed) {
       stream.add(const []);
     }
+    _emitMetaChanged(agentId, PeerAgentMetaKind.models);
+    _emitMetaChanged(agentId, PeerAgentMetaKind.modes);
+    _emitMetaChanged(agentId, PeerAgentMetaKind.soul);
+    _emitMetaChanged(agentId, PeerAgentMetaKind.commands);
   }
 
   void _dropFreshCommands(String peerId) {
@@ -3643,20 +3869,23 @@ class PeerAgentClientService {
     };
     if (cursor != null && cursor.isNotEmpty) payload['cursor'] = cursor;
     if (limit != null) payload['limit'] = limit;
-    final sent =
-        await PeerConnectionManager.instance.sendControl(peerId, payload);
+    final send = debugSendControlOverride ??
+        PeerConnectionManager.instance.sendControl;
+    final sent = await send(peerId, payload);
     if (!sent) {
       _pendingHistory.remove(key);
-      if (!completer.isCompleted)
+      if (!completer.isCompleted) {
         completer.complete(PeerHistoryPage.incomplete);
+      }
       return PeerHistoryPage.incomplete;
     }
     try {
       return await completer.future.timeout(const Duration(seconds: 45));
     } catch (_) {
       _pendingHistory.remove(key);
-      if (!completer.isCompleted)
+      if (!completer.isCompleted) {
         completer.complete(PeerHistoryPage.incomplete);
+      }
       return PeerHistoryPage.incomplete;
     }
   }
@@ -3731,8 +3960,9 @@ class PeerAgentClientService {
         .whereType<PeerRemoteSession>()
         .toList();
     final completer = _pendingSessions.remove(remoteId);
-    if (completer != null && !completer.isCompleted)
+    if (completer != null && !completer.isCompleted) {
       completer.complete(sessions);
+    }
   }
 
   /// Drop a redundant `psess_` shell when the live legacy channel already
@@ -4106,11 +4336,11 @@ class PeerAgentClientService {
   /// Pull a synced session's transcript from the remote and mirror it locally.
   ///
   /// A stored cursor pulls only the previous tail plus new messages. No cursor
-  /// and no local `peerhist_*` rows pages from the start. No cursor but local
-  /// rows already exist (an upgrade) still does one full compare. An old Hub
-  /// omits `cursor`; that response is applied with the full compare and no
-  /// cursor is stored. Returns the number of messages written, 0 when nothing
-  /// changed, or -1 when the request failed and should be retried.
+  /// pages from the start. If local `peerhist_*` rows already exist, the last
+  /// page drops mirrored rows the remote no longer has. An old Hub omits
+  /// `cursor`; that response is applied with the full compare and no cursor is
+  /// stored. Returns the number of messages written, 0 when nothing changed,
+  /// or -1 when the request failed and should be retried.
   ///
   /// [onFirstPageDone] runs after the first page is applied, before later pages.
   Future<int> syncHistory({
@@ -4128,14 +4358,14 @@ class PeerAgentClientService {
         remoteSessionIdFromChannelId(channelId) ?? channelId;
     final stored = await _db.getPeerHistoryCursor(channelId);
     final hasMirrored = await _db.channelHasPeerhistMessages(channelId);
-    final mode = peerHistoryFetchMode(
-      storedCursor: stored?.cursor,
-      hasLocalMirroredRows: hasMirrored,
+    var mode = peerHistoryFetchMode(storedCursor: stored?.cursor);
+    var needsCleanup = mode == PeerHistoryFetchMode.rebuild && hasMirrored;
+    final seenIds = <String>{};
+    final request = peerHistoryHistoryRequest(
+      mode: mode,
+      cursor: stored?.cursor,
     );
-    String? cursor =
-        mode == PeerHistoryFetchMode.incremental ? stored?.cursor : null;
-    final int? limit =
-        mode == PeerHistoryFetchMode.full ? null : kPeerHistoryPageLimit;
+    String? cursor = request.cursor;
 
     var written = 0;
     var pageIndex = 0;
@@ -4145,70 +4375,91 @@ class PeerAgentClientService {
         remoteAgentId: remoteAgentId,
         sessionId: remoteSessionId,
         cursor: cursor,
-        limit: limit,
+        limit: kPeerHistoryPageLimit,
       );
       if (!page.completed) return -1;
 
-      final kind = peerHistoryApplyKind(
+      final step = peerHistoryStep(
         supportsCursor: page.supportsCursor,
-        mode: mode,
         reset: page.reset,
         messagesEmpty: page.messages.isEmpty,
+        hasMore: page.hasMore,
+        pageCursor: page.cursor,
+        needsCleanup: needsCleanup,
       );
-      if (kind == PeerHistoryApplyKind.keepLocal) {
-        await _db.deletePeerHistoryCursor(channelId);
+      if (step.kind == PeerHistoryApplyKind.full) {
+        final pageWritten = page.messages.isEmpty
+            ? 0
+            : await _mirrorFullHistory(
+                history: page.messages,
+                remoteSessionId: remoteSessionId,
+                channelId: channelId,
+                localAgentId: localAgentId,
+                agentName: agentName,
+                userId: userId,
+                userName: userName,
+                sessionUpdatedAt: sessionUpdatedAt,
+              );
+        written += pageWritten;
+        if (pageIndex == 0 && onFirstPageDone != null) {
+          await onFirstPageDone(pageWritten);
+        }
+        return written;
+      }
+      if (step.kind == PeerHistoryApplyKind.emptyReset) {
+        await _storeHistoryCursor(
+          channelId: channelId,
+          remoteSessionId: remoteSessionId,
+          cursor: '',
+          total: 0,
+        );
         if (pageIndex == 0 && onFirstPageDone != null) {
           await onFirstPageDone(0);
         }
         return written;
       }
 
-      final int pageWritten;
-      if (page.messages.isEmpty) {
-        pageWritten = 0;
-      } else if (kind == PeerHistoryApplyKind.full) {
-        pageWritten = await _mirrorFullHistory(
-          history: page.messages,
-          remoteSessionId: remoteSessionId,
-          channelId: channelId,
-          localAgentId: localAgentId,
-          agentName: agentName,
-          userId: userId,
-          userName: userName,
-          sessionUpdatedAt: sessionUpdatedAt,
-        );
-      } else {
-        pageWritten = await _mirrorSliceHistory(
-          history: page.messages,
-          from: page.from,
-          remoteSessionId: remoteSessionId,
-          channelId: channelId,
-          localAgentId: localAgentId,
-          agentName: agentName,
-          userId: userId,
-          userName: userName,
-          sessionUpdatedAt: sessionUpdatedAt,
-        );
+      if (step.restartCleanup) {
+        mode = PeerHistoryFetchMode.rebuild;
+        needsCleanup = true;
+        seenIds.clear();
+        await _db.deletePeerHistoryCursor(channelId);
       }
-      written += pageWritten;
 
-      if (peerHistoryCursorAction(
-            supportsCursor: page.supportsCursor,
-            reset: page.reset,
-            messagesEmpty: page.messages.isEmpty,
-            cursor: page.cursor,
-          ) ==
-          PeerHistoryCursorAction.store) {
-        // 还没拉完时不要把远端总条数写进去，否则 message_count 对得上，
-        // 剩下的页就不会再拉。游标本身已经指向这一页的末尾，下次接着拉。
+      final pageIds = <String>[
+        for (var i = 0; i < page.messages.length; i++)
+          peerHistoryMessageId(page.messages[i], channelId, page.from + i),
+      ];
+      final pageWritten = page.messages.isEmpty
+          ? 0
+          : await _mirrorSliceHistory(
+              history: page.messages,
+              from: page.from,
+              remoteSessionId: remoteSessionId,
+              channelId: channelId,
+              localAgentId: localAgentId,
+              agentName: agentName,
+              userId: userId,
+              userName: userName,
+              sessionUpdatedAt: sessionUpdatedAt,
+              floorIds: needsCleanup ? seenIds : null,
+            );
+      written += pageWritten;
+      if (mode == PeerHistoryFetchMode.rebuild) {
+        seenIds.addAll(pageIds);
+      }
+      if (step.finishCleanup) {
+        await _dropUnseenPeerhist(channelId, seenIds);
+      }
+      if (step.cursorAction == PeerHistoryCursorAction.store &&
+          page.cursor != null) {
         final syncedThrough = page.from + page.messages.length;
-        await _db.upsertPeerHistoryCursor(PeerHistoryCursorEntry(
+        await _storeHistoryCursor(
           channelId: channelId,
           remoteSessionId: remoteSessionId,
           cursor: page.cursor!,
           total: page.hasMore ? syncedThrough : page.total,
-          updatedAt: DateTime.now().millisecondsSinceEpoch,
-        ));
+        );
       }
 
       if (pageIndex == 0 && onFirstPageDone != null) {
@@ -4216,10 +4467,7 @@ class PeerAgentClientService {
       }
       pageIndex++;
       final nextCursor = page.cursor;
-      if (kind != PeerHistoryApplyKind.slice ||
-          !page.hasMore ||
-          nextCursor == null ||
-          nextCursor.isEmpty) {
+      if (!page.hasMore || nextCursor == null || nextCursor.isEmpty) {
         if (written > 0) {
           _log.info(
             'Synced $written history message(s) into $channelId',
@@ -4232,6 +4480,34 @@ class PeerAgentClientService {
     }
   }
 
+  Future<void> _storeHistoryCursor({
+    required String channelId,
+    required String remoteSessionId,
+    required String cursor,
+    required int total,
+  }) {
+    return _db.upsertPeerHistoryCursor(PeerHistoryCursorEntry(
+      channelId: channelId,
+      remoteSessionId: remoteSessionId,
+      cursor: cursor,
+      total: total,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+    ));
+  }
+
+  Future<void> _dropUnseenPeerhist(
+    String channelId,
+    Set<String> seenIds,
+  ) async {
+    final stamps = await _db.listPeerhistStamps(channelId);
+    final doomed = peerHistoryRebuildDeletes(
+      localPeerhistIds: [for (final stamp in stamps) stamp.id],
+      seenIds: seenIds,
+      preserveIds: _inflightPreserveIds(channelId),
+    );
+    await _db.deleteMessagesByIds(doomed.toList());
+  }
+
   Future<int> _mirrorSliceHistory({
     required List<PeerHistoryMessage> history,
     required int from,
@@ -4242,6 +4518,7 @@ class PeerAgentClientService {
     required String userId,
     required String userName,
     DateTime? sessionUpdatedAt,
+    Set<String>? floorIds,
   }) async {
     if (history.isEmpty) return 0;
     _completeInflightTurnsFromRemoteHistory(
@@ -4270,6 +4547,7 @@ class PeerAgentClientService {
     DateTime? latestMirroredLocalAt;
     for (final stamp in peerhist) {
       if (sliceIds.contains(stamp.id)) continue;
+      if (floorIds != null && !floorIds.contains(stamp.id)) continue;
       final at = DateTime.tryParse(stamp.createdAt);
       if (at == null) continue;
       if (latestMirroredLocalAt == null || at.isAfter(latestMirroredLocalAt)) {
@@ -4685,40 +4963,38 @@ class PeerAgentClientService {
   void _onCommandsResp(String peerId, Map<String, dynamic> data) {
     final remoteId = data['agent_id'] as String?;
     if (remoteId == null) return;
-    final raw = (data['commands'] as List?) ?? const [];
-    final commands = <SlashCommandInfo>[];
-    for (final item in raw) {
-      if (item is! Map) continue;
-      try {
-        commands
-            .add(SlashCommandInfo.fromJson(Map<String, dynamic>.from(item)));
-      } catch (_) {
-        // Skip malformed entries rather than dropping the whole list.
-      }
-    }
-    _applyCommandsResp(remoteId, commands, peerId: peerId);
+    _applyCommandsResp(
+      remoteId,
+      _parseCommandList(data['commands']),
+      peerId: peerId,
+      rev: _nonEmpty(data['rev']),
+    );
   }
 
   void _applyCommandsResp(
     String remoteId,
     List<SlashCommandInfo> commands, {
     String? peerId,
+    bool completePending = true,
+    String? rev,
   }) {
     _commandsCache[remoteId] = commands;
     _commandsFreshThisConnection.add(remoteId);
     if (peerId != null && peerId.isNotEmpty) {
       _commandsFreshPeer[remoteId] = peerId;
     }
-    _rememberCommands(remoteId, commands);
+    _rememberCommands(remoteId, commands, rev: rev);
     // Mirror ACP's snapshot hook so the "/" resolver can read from either path.
     ACPAgentConnection.slashCommandsSnapshotHook?.call(remoteId, commands);
     final stream = _slashCommandsStreams[remoteId];
     if (stream != null && !stream.isClosed) {
       stream.add(List.unmodifiable(commands));
     }
+    if (!completePending) return;
     final completer = _pendingCommands.remove(remoteId);
-    if (completer != null && !completer.isCompleted)
+    if (completer != null && !completer.isCompleted) {
       completer.complete(commands);
+    }
   }
 
   /// Tool-call approval request forwarded by the hub. Surface it to the chat
