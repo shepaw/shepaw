@@ -3,17 +3,11 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
-import '../peer/services/peer_connection_manager.dart';
-import '../peer/services/peer_storage_service.dart';
 import '../services/logger_service.dart';
 import '../services/password_service.dart';
 import '../services/biometric_service.dart';
 import '../services/desktop_window_auto_size.dart';
-import '../peer/pairing_endpoints.dart';
-import '../services/cli_host.dart';
-import '../storage/pouch_entry.dart';
-import '../storage/pouch_login.dart';
-import '../storage/pouch_session.dart';
+import '../onboarding/host_entry_flow.dart';
 import '../theme/app_theme.dart';
 
 /// 登录页面
@@ -121,47 +115,10 @@ class _LoginScreenState extends State<LoginScreen> {
     await Future<void>.delayed(const Duration(milliseconds: 150));
     await DesktopWindowAutoSize.bringToFront();
     if (!mounted) return;
-    final session = await PouchSessionStore.readActive();
-    final cli = await CliHost.detect();
-    final host = session == null
-        ? null
-        : await PeerStorageService().getPeerById(session.hostPeerId);
-    if (!mounted) return;
-    final decision = decidePouchEntry(
-      session: session,
-      nowMs: DateTime.now().millisecondsSinceEpoch,
+    await HostEntryNavigator.go(
+      context,
       isDesktop: Platform.isMacOS || Platform.isWindows || Platform.isLinux,
-      localCliFingerprint: cli?.fingerprint,
-      sessionHostFingerprint: host?.fingerprint,
     );
-    LoggerService().info(
-      'unlock -> ${decision.name} cli=${cli?.localEndpoint ?? '-'} pouch=${session?.pouchId ?? '-'}',
-      tag: 'Login',
-    );
-    if (decision == PouchEntryDecision.resume && session != null) {
-      if (cli != null &&
-          sameFingerprint(cli.fingerprint, host?.fingerprint)) {
-        try {
-          await CliHost.attach(cli);
-        } on HostUnresponsiveException {
-          if (!mounted) return;
-          Navigator.of(context).pushReplacementNamed(
-            '/pouch',
-            arguments: const PouchLoginArgs(hostUnresponsive: true),
-          );
-          return;
-        }
-      } else {
-        PouchChannel.install(session);
-        if (host != null) {
-          unawaited(PeerConnectionManager.instance.connectToPeer(host));
-        }
-      }
-      if (!mounted) return;
-      Navigator.of(context).pushReplacementNamed('/home');
-      return;
-    }
-    Navigator.of(context).pushReplacementNamed('/pouch');
   }
 
   /// 提交登录

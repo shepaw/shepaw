@@ -357,7 +357,9 @@ class ContactsScreenState extends State<ContactsScreen> {
         ListTile(
           leading: const Icon(Icons.dns_outlined),
           title: Text(l10n.contacts_noHost),
-          onTap: () => Navigator.of(context).pushNamed('/pouch'),
+          onTap: () => Navigator.of(context).pushNamed(
+            isDesktopPlatform ? '/host-setup' : '/pouch',
+          ),
         )
       else ...[
         _buildSectionHeader(

@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 
 import '../peer/models/paired_peer.dart';
 import '../peer/models/pairing_payload.dart';
+import '../onboarding/host_entry.dart';
 import '../peer/pairing_endpoints.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_pairing_service.dart';
@@ -100,6 +101,26 @@ class CliHost {
     return p.Context(
       style: style ?? (Platform.isWindows ? p.Style.windows : p.Style.posix),
     );
+  }
+
+  /// 找到二进制才问 `shepaw status --json`。老版本没有这个命令时，退回 [detect]。
+  static Future<LocalCliStatus> probe() async {
+    final binary = await resolveBinary();
+    if (binary == null) return LocalCliStatus.notInstalled;
+    try {
+      final result = await Process.run(binary, const ['status', '--json']);
+      if (result.exitCode == 0) {
+        final decoded = jsonDecode(result.stdout.toString());
+        if (decoded is Map && decoded['running'] == true) {
+          return LocalCliStatus.running;
+        }
+        if (decoded is Map && decoded['running'] == false) {
+          return LocalCliStatus.installedStopped;
+        }
+      }
+    } catch (_) {}
+    if (await detect() != null) return LocalCliStatus.running;
+    return LocalCliStatus.installedStopped;
   }
 
   /// `peer-state.json` 带 `version`，而且里面的 pid 还活着，才算这台主机在跑。

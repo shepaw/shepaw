@@ -5650,8 +5650,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get agentPair_torch => '手电筒';
 
   @override
-  String get agentPair_scanHint =>
-      '对准 agent 主机上 `<gateway> enroll` / `shepaw-hub pair` 打印的二维码';
+  String get agentPair_scanHint => '对准主机上 `shepaw pair` 打印的二维码';
 
   @override
   String get agentPair_cameraDeniedTitle => '无法访问相机';
@@ -7794,111 +7793,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_pickDelegateAgent => '选择委托 Agent';
 
   @override
-  String get localHub_detectedTitle => '检测到本机 Agent Hub';
-
-  @override
-  String get localHub_detectedBody =>
-      '这台电脑已安装 Shepaw Agent Hub。加入后，Hub 上的 Agent 会出现在通讯录里。若仪表盘未运行，将自动启动。';
-
-  @override
-  String get localHub_nudgeJoinTitle => '本机 Agent Hub';
-
-  @override
-  String get localHub_nudgeJoinBody =>
-      '已安装。加入后，Hub 上的 Agent 会出现在通讯录。关闭后不再提醒，也可在设置里加入。';
-
-  @override
-  String get localHub_nudgeInstallBody =>
-      '用来接入本机 Claude Code、Codex 等。关闭后不再提醒，也可在设置里安装。';
-
-  @override
-  String get localHub_dontAskAgain => '不再提示';
-
-  @override
-  String get localHub_connectedSnack => '已连接到本机 Agent Hub';
-
-  @override
-  String get localHub_emptyGuideSnack => '在仪表盘添加实例后，Agent 会出现在通讯录';
-
-  @override
-  String get settings_localHub => '本机 Agent Hub';
-
-  @override
-  String get settings_localHubSub => '接入本机 Claude Code、Codex 等 Agent';
-
-  @override
-  String get settings_localHubConnected => '已连接，Hub 上的 Agent 在通讯录中';
-
-  @override
-  String get settings_localHubInstalled => '已安装，点这里加入';
-
-  @override
-  String get settings_localHubMissing => '未安装，点这里安装';
-
-  @override
-  String get localHub_join => '加入';
-
-  @override
-  String get localHub_later => '稍后再说';
-
-  @override
-  String get localHub_missingTitle => '尚未安装 Agent Hub';
-
-  @override
-  String get localHub_missingBody =>
-      '桌面版通过 Agent Hub 接入本机 Claude Code、Codex 等 Agent。现在自动安装并打开仪表盘，然后在 Hub 里添加 Agent。';
-
-  @override
-  String get localHub_installAndOpen => '安装并打开';
-
-  @override
-  String get localHub_workingTitle => '正在准备 Agent Hub';
-
-  @override
-  String get localHub_stepCheckingNode => '正在检查 Node.js…';
-
-  @override
-  String get localHub_stepInstalling => '正在安装 shepaw-agent-hub…';
-
-  @override
-  String get localHub_stepStarting => '正在启动仪表盘…';
-
-  @override
-  String get localHub_stepPairing => '正在加入本机 Hub…';
-
-  @override
-  String get localHub_joinedTitle => '已加入 Agent Hub';
-
-  @override
-  String get localHub_joinedBody =>
-      '本机 Agent Hub 已连接到惜宝。Hub 上的 Agent 会出现在通讯录里。';
-
-  @override
-  String get localHub_joinedEmptyBody =>
-      '接下来请在打开的仪表盘中点击「添加实例」，选择引擎（如 Claude Code、Codex）和工作目录。添加完成后，Agent 会出现在惜宝通讯录。';
-
-  @override
-  String get localHub_openDashboard => '打开仪表盘';
-
-  @override
-  String get localHub_failedTitle => '无法完成';
-
-  @override
-  String localHub_failedBody(String error) {
-    return '$error';
-  }
-
-  @override
-  String get localHub_nodeMissingTitle => '需要先安装 Node.js';
-
-  @override
-  String get localHub_nodeMissingBody =>
-      '安装 Agent Hub 需要 Node.js 18.17 或更高版本。安装 Node 后重新打开惜宝，或在终端执行：npm install -g shepaw-agent-hub';
-
-  @override
-  String get localHub_installNode => '安装 Node.js';
-
-  @override
   String get chat_sessionMode => '会话模式';
 
   @override
@@ -8093,9 +7987,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pouch_startCli => '启动 shepaw';
 
   @override
-  String get pouch_cliMissing => '这台电脑上没有找到 shepaw。请先安装，然后点重新检测。';
-
-  @override
   String get pouch_redetect => '重新检测';
 
   @override
@@ -8105,7 +7996,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pouch_newName => '新袋子的名字';
 
   @override
-  String get pouch_createAndEnter => '新建并登录';
+  String get pouch_createAndEnter => '新建并进入';
 
   @override
   String get pouch_current => '当前';
@@ -8221,4 +8112,84 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get addAgent_redetect => '重新检测';
+
+  @override
+  String get hostSetup_title => '把主机放在哪里？';
+
+  @override
+  String get hostSetup_intro => '主机保存你的储物袋、惜宝和智能体，需要一直开着。';
+
+  @override
+  String get hostSetup_thisComputer => '用这台电脑当主机';
+
+  @override
+  String get hostSetup_thisComputerDesc => '自动下载并启动 Shepaw 主机';
+
+  @override
+  String get hostSetup_recommended => '推荐';
+
+  @override
+  String get hostSetup_installAndStart => '一键安装并开始';
+
+  @override
+  String get hostSetup_remote => '连接另一台电脑上的主机';
+
+  @override
+  String get hostSetup_remoteDesc => '主机已经装在家里或公司的电脑上';
+
+  @override
+  String get hostSetup_goConnect => '去连接';
+
+  @override
+  String get hostSetup_redetect => '我已经装过 shepaw · 重新检测';
+
+  @override
+  String get hostSetup_afterCopy => '装好后点重新检测';
+
+  @override
+  String get hostSetup_switchRemote => '不想放在这台电脑？连接另一台电脑上的主机';
+
+  @override
+  String get hostInstall_copyCommand => '复制终端安装命令';
+
+  @override
+  String get hostStart_starting => '正在启动主机…';
+
+  @override
+  String get onboarding_agentCardTitle => '让惜宝有帮手';
+
+  @override
+  String get onboarding_agentCardBody => '在主机上添加一个编程智能体，比如 Claude Code、Codex。';
+
+  @override
+  String get onboarding_agentCardLater => '稍后';
+
+  @override
+  String get remoteHost_intro => '在主机那台电脑上打开终端，执行：';
+
+  @override
+  String get remoteHost_pasteHint => '把终端里打印出来的 shepaw://peer?... 链接粘贴到下面：';
+
+  @override
+  String get remoteHost_connect => '连接';
+
+  @override
+  String get remoteHost_scan => '扫描二维码';
+
+  @override
+  String get remoteHost_offline => '主机已记下，但现在连不上。确认那台电脑开着、和这台在同一网络，或者已经开启隧道';
+
+  @override
+  String get remoteHost_enterAnyway => '仍然进入';
+
+  @override
+  String get pouch_notInstalled => '未安装 · 去安装';
+
+  @override
+  String get pouch_defaultName => '我的储物袋';
+
+  @override
+  String pouch_namedBag(String name) {
+    return '$name的储物袋';
+  }
 }

@@ -243,8 +243,7 @@ void main() {
       expect(same.publicKey, key);
       expect(same.name, 'Hub Alpha');
 
-      // local_agent_hub_service 把 LAN 端点改写成 loopback 时走的正是这条路径；
-      // name 必须活下来。
+      // 改写回环地址时 name 必须活下来。
       final rewritten = base.copyWith(localEndpoint: 'ws://127.0.0.1:18793/peer/ws');
       expect(rewritten.localEndpoint, 'ws://127.0.0.1:18793/peer/ws');
       expect(rewritten.name, 'Hub Alpha');

@@ -2863,7 +2863,7 @@
   "agentPair_unsupportedPlatform": "This platform does not support scanning. Paste the URL and pairing code manually, or scan with a phone.",
   "agentPair_scanTitle": "Scan Pairing QR Code",
   "agentPair_torch": "Flashlight",
-  "agentPair_scanHint": "Point at the QR printed by `<gateway> enroll` / `shepaw-hub pair` on the agent host",
+  "agentPair_scanHint": "Point at the QR code printed by `shepaw pair` on the host",
   "agentPair_cameraDeniedTitle": "Camera access denied",
   "agentPair_cameraDeniedBody": "Scanning requires camera permission. Allow Shepaw camera access in system settings, or go back and enter the pairing code manually.",
   "agentPair_unsupportedShort": "Scanning is not supported on this platform",
@@ -4327,45 +4327,6 @@
     }
   },
   "storage_pickDelegateAgent": "Pick an agent to delegate",
-  "localHub_detectedTitle": "Local Agent Hub found",
-  "localHub_detectedBody": "Shepaw Agent Hub is installed on this computer. Join it so Hub agents appear in Contacts. The dashboard will start automatically if it is not running.",
-  "localHub_nudgeJoinTitle": "Local Agent Hub",
-  "localHub_nudgeJoinBody": "It's installed. Join so Hub agents appear in Contacts. Dismiss to stop reminders, or join later from Settings.",
-  "localHub_nudgeInstallBody": "Use it to connect local agents such as Claude Code and Codex. Dismiss to stop reminders, or install later from Settings.",
-  "localHub_dontAskAgain": "Don't ask again",
-  "localHub_connectedSnack": "Connected to the local Agent Hub",
-  "localHub_emptyGuideSnack": "Add an instance in the dashboard so the agent appears in Contacts",
-  "settings_localHub": "Local Agent Hub",
-  "settings_localHubSub": "Connect local agents such as Claude Code and Codex",
-  "settings_localHubConnected": "Connected. Hub agents are in Contacts",
-  "settings_localHubInstalled": "Installed. Tap to join",
-  "settings_localHubMissing": "Not installed. Tap to install",
-  "localHub_join": "Join",
-  "localHub_later": "Later",
-  "localHub_missingTitle": "Agent Hub is not installed",
-  "localHub_missingBody": "The desktop app uses Agent Hub to connect local agents such as Claude Code and Codex. Install it now, open the dashboard, then add agents there.",
-  "localHub_installAndOpen": "Install and open",
-  "localHub_workingTitle": "Setting up Agent Hub",
-  "localHub_stepCheckingNode": "Checking Node.js…",
-  "localHub_stepInstalling": "Installing shepaw-agent-hub…",
-  "localHub_stepStarting": "Starting the dashboard…",
-  "localHub_stepPairing": "Joining the local Hub…",
-  "localHub_joinedTitle": "Joined Agent Hub",
-  "localHub_joinedBody": "This computer's Agent Hub is connected. Its agents will show up in Contacts.",
-  "localHub_joinedEmptyBody": "Next, in the dashboard click Add instance, pick an engine (Claude Code, Codex, …) and a working directory. After that, the agent appears in Shepaw Contacts.",
-  "localHub_openDashboard": "Open dashboard",
-  "localHub_failedTitle": "Could not finish",
-  "localHub_failedBody": "{error}",
-  "@localHub_failedBody": {
-    "placeholders": {
-      "error": {
-        "type": "String"
-      }
-    }
-  },
-  "localHub_nodeMissingTitle": "Node.js is required",
-  "localHub_nodeMissingBody": "Installing Agent Hub needs Node.js 18.17 or newer. Install Node, then reopen Shepaw, or run: npm install -g shepaw-agent-hub",
-  "localHub_installNode": "Install Node.js",
   "chat_sessionMode": "Session mode",
   "chat_planModeOn": "Planning",
   "chat_planModeHint": "Describe what you want — the agent will plan first",
@@ -4456,7 +4417,6 @@
   "pouch_pouchSection": "Pouches on this host",
   "pouch_thisComputer": "This computer",
   "pouch_startCli": "Start shepaw",
-  "pouch_cliMissing": "shepaw was not found on this computer. Install it, then detect again.",
   "pouch_redetect": "Detect again",
   "pouch_noPouches": "No pouches yet",
   "pouch_newName": "Name for the new pouch",
@@ -4508,5 +4468,38 @@
   "addAgent_setupIntro": "This host cannot start the engine yet. Install and sign in using the docs, then come back and choose it again.",
   "addAgent_setupCommand": "Launch command",
   "addAgent_openDocs": "Open docs",
-  "addAgent_redetect": "Detect again"
+  "addAgent_redetect": "Detect again",
+  "hostSetup_title": "Where should the host live?",
+  "hostSetup_intro": "The host keeps your pouch, She, and agents, and needs to stay on.",
+  "hostSetup_thisComputer": "Use this computer as the host",
+  "hostSetup_thisComputerDesc": "Download and start the Shepaw host",
+  "hostSetup_recommended": "Recommended",
+  "hostSetup_installAndStart": "Install and start",
+  "hostSetup_remote": "Connect to a host on another computer",
+  "hostSetup_remoteDesc": "The host is already running at home or at work",
+  "hostSetup_goConnect": "Connect",
+  "hostSetup_redetect": "I already installed shepaw · Detect again",
+  "hostSetup_afterCopy": "After it is installed, detect again",
+  "hostSetup_switchRemote": "Not this computer? Connect to a host on another computer",
+  "hostInstall_copyCommand": "Copy the install command",
+  "hostStart_starting": "Starting the host…",
+  "onboarding_agentCardTitle": "Give She a helper",
+  "onboarding_agentCardBody": "Add a coding agent on the host, such as Claude Code or Codex.",
+  "onboarding_agentCardLater": "Later",
+  "remoteHost_intro": "On the host computer, open a terminal and run:",
+  "remoteHost_pasteHint": "Paste the shepaw://peer?... link printed in the terminal:",
+  "remoteHost_connect": "Connect",
+  "remoteHost_scan": "Scan QR code",
+  "remoteHost_offline": "The host is saved, but it is not reachable. Make sure that computer is on and on the same network, or that a tunnel is open.",
+  "remoteHost_enterAnyway": "Enter anyway",
+  "pouch_notInstalled": "Not installed · Install",
+  "pouch_defaultName": "My pouch",
+  "pouch_namedBag": "{name}'s pouch",
+  "@pouch_namedBag": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  }
 }

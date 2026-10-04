@@ -14,10 +14,11 @@ import '../widgets/agent_search_delegate.dart';
 import '../widgets/shepaw_search_page.dart';
 import '../widgets/agent_list_avatar.dart';
 import '../widgets/chat/session_unread_badge.dart';
-import '../widgets/local_agent_hub_prompt.dart';
+import '../widgets/onboarding_agent_card.dart';
 import '../services/message_search_service.dart';
 import '../peer/pouch_duties.dart';
 import '../services/onboarding_service.dart';
+import '../services/contacts_directory.dart';
 import '../services/she_service.dart';
 import '../storage/pouch_session.dart';
 import 'agent_source_badge.dart';
@@ -35,6 +36,7 @@ import '../peer/widgets/peer_device_icon.dart';
 import '../peer/screens/add_agent_instance_screen.dart';
 import '../peer/screens/peer_pairing_screen.dart';
 import '../peer/screens/peer_scan_screen.dart';
+import '../peer/services/peer_connection.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_storage_service.dart';
 import 'package:provider/provider.dart';
@@ -86,6 +88,10 @@ class HomeScreenState extends State<HomeScreen> {
   bool _isSearchActive = false;
   Timer? _searchDebounce;
   String? _hostPeerId;
+  String? _pouchId;
+  bool _hostOnline = true;
+  bool _agentCardDismissed = false;
+  StreamSubscription<PeerConnectionEvent>? _hostConnectionSub;
 
   // Convenience accessors for tiles (backed by ConversationListController).
   List<Agent> get _agents => _list.agents;
@@ -115,8 +121,19 @@ class HomeScreenState extends State<HomeScreen> {
     final session = await PouchSessionStore.readActive();
     if (!mounted) return;
     final id = session?.hostPeerId;
-    if (id == _hostPeerId) return;
-    setState(() => _hostPeerId = id);
+    final pouchId = session?.pouchId;
+    final dismissed = pouchId == null
+        ? false
+        : await OnboardingAgentCardStore.isDismissed(pouchId);
+    if (!mounted) return;
+    final online = id != null &&
+        PeerConnectionManager.instance.connectedPeerIds.contains(id);
+    setState(() {
+      _hostPeerId = id;
+      _pouchId = pouchId;
+      _hostOnline = id == null || online;
+      _agentCardDismissed = dismissed;
+    });
   }
 
   /// Public accessor for the current agents list (used by desktop sidebar search).
@@ -146,6 +163,16 @@ class HomeScreenState extends State<HomeScreen> {
     _messageSearchService = MessageSearchService(_databaseService);
     _list.refresh();
     unawaited(_loadHostPeerId());
+    _hostConnectionSub = PeerConnectionManager.instance.events.listen((event) {
+      if (event.peerId != _hostPeerId) return;
+      if (event.type != PeerConnectionEventType.connected &&
+          event.type != PeerConnectionEventType.disconnected) {
+        return;
+      }
+      final online = event.type == PeerConnectionEventType.connected;
+      if (!mounted || online == _hostOnline) return;
+      setState(() => _hostOnline = online);
+    });
     _searchController.addListener(_onSearchChanged);
     // 首次设密登录后：首帧自动打开惜宝聊天页引导配置 AI 模型（一次性标记）。
     // 桌面嵌入实例（embedded == true）不在此处理，由 DesktopHomeScreen 负责。
@@ -153,8 +180,6 @@ class HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       unawaited(() async {
         await _maybeOpenSheFirstRun();
-        if (!mounted || widget.embedded) return;
-        await maybePromptLocalAgentHub(context);
       }());
     });
   }
@@ -216,9 +241,9 @@ class HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _searchDebounce?.cancel();
+    _hostConnectionSub?.cancel();
     _searchController.dispose();
     _list.dispose();
-    if (!widget.embedded) removeLocalAgentHubNudge();
     super.dispose();
   }
 
@@ -1256,33 +1281,105 @@ class HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    final totalItems = _sortedConversations.length;
+    final items = _sortedConversations;
+    final sheIndex = items.indexWhere((item) {
+      final agent = item.agent;
+      return agent != null &&
+          SheService.isSheIdentity(agent.id, agent.metadata);
+    });
+    final showCard = _showOnboardingCard;
+    final rows = <Widget>[
+      if (_hostPeerId != null && !_hostOnline) _buildHostOfflineBanner(l10n),
+      if (showCard && sheIndex < 0) _buildOnboardingCard(),
+      for (var i = 0; i < items.length; i++) ...[
+        _buildConversationRow(items[i]),
+        if (showCard && i == sheIndex) _buildOnboardingCard(),
+      ],
+    ];
 
     return RefreshIndicator(
       onRefresh: () => _loadAgents(silent: true),
-      child: ListView.builder(
-        itemCount: totalItems,
-        itemBuilder: (context, index) {
-          final item = _sortedConversations[index];
-          if (item.isGroup) {
-            return KeyedSubtree(
-              key: ValueKey('group_${item.group!.id}'),
-              child: _buildGroupTile(item.group!),
-            );
-          }
-          if (item.isPeer) {
-            return KeyedSubtree(
-              key: ValueKey('peer_${item.peer!.id}'),
-              child: _buildPeerTile(item.peer!),
-            );
-          }
-          return KeyedSubtree(
-            key: ValueKey('agent_${item.agent!.id}'),
-            child: _buildAgentTile(item.agent!),
-          );
-        },
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: rows,
       ),
     );
+  }
+
+  bool get _showOnboardingCard {
+    final hostId = _hostPeerId;
+    if (_agentCardDismissed || hostId == null || hostId.isEmpty) return false;
+    return !_agents.any((agent) =>
+        agent.isPeerAgent &&
+        agent.sourcePeerId == hostId &&
+        !agent.hiddenOnThisApp &&
+        !SheService.isSheIdentity(agent.id, agent.metadata));
+  }
+
+  Widget _buildConversationRow(ConversationListItem item) {
+    if (item.isGroup) {
+      return KeyedSubtree(
+        key: ValueKey('group_${item.group!.id}'),
+        child: _buildGroupTile(item.group!),
+      );
+    }
+    if (item.isPeer) {
+      return KeyedSubtree(
+        key: ValueKey('peer_${item.peer!.id}'),
+        child: _buildPeerTile(item.peer!),
+      );
+    }
+    return KeyedSubtree(
+      key: ValueKey('agent_${item.agent!.id}'),
+      child: _buildAgentTile(item.agent!),
+    );
+  }
+
+  Widget _buildHostOfflineBanner(AppLocalizations l10n) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.errorContainer,
+      child: ListTile(
+        dense: true,
+        title: Text(
+          l10n.hostOffline_banner,
+          style: TextStyle(color: scheme.onErrorContainer),
+        ),
+        onTap: _reconnectHomeHost,
+      ),
+    );
+  }
+
+  Widget _buildOnboardingCard() {
+    return OnboardingAgentCard(
+      onAdd: () {
+        if (widget.embedded && widget.onAddAgentInstance != null) {
+          widget.onAddAgentInstance!();
+          return;
+        }
+        Navigator.push(
+          context,
+          MaterialPageRoute<void>(
+            builder: (context) => const AddAgentInstanceScreen(),
+          ),
+        );
+      },
+      onLater: () async {
+        final pouchId = _pouchId;
+        if (pouchId != null) {
+          await OnboardingAgentCardStore.dismiss(pouchId);
+        }
+        if (!mounted) return;
+        setState(() => _agentCardDismissed = true);
+      },
+    );
+  }
+
+  Future<void> _reconnectHomeHost() async {
+    final directory = getIt<ContactsDirectory>();
+    directory.start();
+    await directory.reconnectHost();
+    await _loadHostPeerId();
   }
 
   /// 标题栏添加按钮：从按钮下方弹出菜单。

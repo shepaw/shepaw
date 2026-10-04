@@ -10356,7 +10356,7 @@ abstract class AppLocalizations {
   /// No description provided for @agentPair_scanHint.
   ///
   /// In zh, this message translates to:
-  /// **'对准 agent 主机上 `<gateway> enroll` / `shepaw-hub pair` 打印的二维码'**
+  /// **'对准主机上 `shepaw pair` 打印的二维码'**
   String get agentPair_scanHint;
 
   /// No description provided for @agentPair_cameraDeniedTitle.
@@ -14121,198 +14121,6 @@ abstract class AppLocalizations {
   /// **'选择委托 Agent'**
   String get storage_pickDelegateAgent;
 
-  /// No description provided for @localHub_detectedTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'检测到本机 Agent Hub'**
-  String get localHub_detectedTitle;
-
-  /// No description provided for @localHub_detectedBody.
-  ///
-  /// In zh, this message translates to:
-  /// **'这台电脑已安装 Shepaw Agent Hub。加入后，Hub 上的 Agent 会出现在通讯录里。若仪表盘未运行，将自动启动。'**
-  String get localHub_detectedBody;
-
-  /// No description provided for @localHub_nudgeJoinTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'本机 Agent Hub'**
-  String get localHub_nudgeJoinTitle;
-
-  /// No description provided for @localHub_nudgeJoinBody.
-  ///
-  /// In zh, this message translates to:
-  /// **'已安装。加入后，Hub 上的 Agent 会出现在通讯录。关闭后不再提醒，也可在设置里加入。'**
-  String get localHub_nudgeJoinBody;
-
-  /// No description provided for @localHub_nudgeInstallBody.
-  ///
-  /// In zh, this message translates to:
-  /// **'用来接入本机 Claude Code、Codex 等。关闭后不再提醒，也可在设置里安装。'**
-  String get localHub_nudgeInstallBody;
-
-  /// No description provided for @localHub_dontAskAgain.
-  ///
-  /// In zh, this message translates to:
-  /// **'不再提示'**
-  String get localHub_dontAskAgain;
-
-  /// No description provided for @localHub_connectedSnack.
-  ///
-  /// In zh, this message translates to:
-  /// **'已连接到本机 Agent Hub'**
-  String get localHub_connectedSnack;
-
-  /// No description provided for @localHub_emptyGuideSnack.
-  ///
-  /// In zh, this message translates to:
-  /// **'在仪表盘添加实例后，Agent 会出现在通讯录'**
-  String get localHub_emptyGuideSnack;
-
-  /// No description provided for @settings_localHub.
-  ///
-  /// In zh, this message translates to:
-  /// **'本机 Agent Hub'**
-  String get settings_localHub;
-
-  /// No description provided for @settings_localHubSub.
-  ///
-  /// In zh, this message translates to:
-  /// **'接入本机 Claude Code、Codex 等 Agent'**
-  String get settings_localHubSub;
-
-  /// No description provided for @settings_localHubConnected.
-  ///
-  /// In zh, this message translates to:
-  /// **'已连接，Hub 上的 Agent 在通讯录中'**
-  String get settings_localHubConnected;
-
-  /// No description provided for @settings_localHubInstalled.
-  ///
-  /// In zh, this message translates to:
-  /// **'已安装，点这里加入'**
-  String get settings_localHubInstalled;
-
-  /// No description provided for @settings_localHubMissing.
-  ///
-  /// In zh, this message translates to:
-  /// **'未安装，点这里安装'**
-  String get settings_localHubMissing;
-
-  /// No description provided for @localHub_join.
-  ///
-  /// In zh, this message translates to:
-  /// **'加入'**
-  String get localHub_join;
-
-  /// No description provided for @localHub_later.
-  ///
-  /// In zh, this message translates to:
-  /// **'稍后再说'**
-  String get localHub_later;
-
-  /// No description provided for @localHub_missingTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'尚未安装 Agent Hub'**
-  String get localHub_missingTitle;
-
-  /// No description provided for @localHub_missingBody.
-  ///
-  /// In zh, this message translates to:
-  /// **'桌面版通过 Agent Hub 接入本机 Claude Code、Codex 等 Agent。现在自动安装并打开仪表盘，然后在 Hub 里添加 Agent。'**
-  String get localHub_missingBody;
-
-  /// No description provided for @localHub_installAndOpen.
-  ///
-  /// In zh, this message translates to:
-  /// **'安装并打开'**
-  String get localHub_installAndOpen;
-
-  /// No description provided for @localHub_workingTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'正在准备 Agent Hub'**
-  String get localHub_workingTitle;
-
-  /// No description provided for @localHub_stepCheckingNode.
-  ///
-  /// In zh, this message translates to:
-  /// **'正在检查 Node.js…'**
-  String get localHub_stepCheckingNode;
-
-  /// No description provided for @localHub_stepInstalling.
-  ///
-  /// In zh, this message translates to:
-  /// **'正在安装 shepaw-agent-hub…'**
-  String get localHub_stepInstalling;
-
-  /// No description provided for @localHub_stepStarting.
-  ///
-  /// In zh, this message translates to:
-  /// **'正在启动仪表盘…'**
-  String get localHub_stepStarting;
-
-  /// No description provided for @localHub_stepPairing.
-  ///
-  /// In zh, this message translates to:
-  /// **'正在加入本机 Hub…'**
-  String get localHub_stepPairing;
-
-  /// No description provided for @localHub_joinedTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'已加入 Agent Hub'**
-  String get localHub_joinedTitle;
-
-  /// No description provided for @localHub_joinedBody.
-  ///
-  /// In zh, this message translates to:
-  /// **'本机 Agent Hub 已连接到惜宝。Hub 上的 Agent 会出现在通讯录里。'**
-  String get localHub_joinedBody;
-
-  /// No description provided for @localHub_joinedEmptyBody.
-  ///
-  /// In zh, this message translates to:
-  /// **'接下来请在打开的仪表盘中点击「添加实例」，选择引擎（如 Claude Code、Codex）和工作目录。添加完成后，Agent 会出现在惜宝通讯录。'**
-  String get localHub_joinedEmptyBody;
-
-  /// No description provided for @localHub_openDashboard.
-  ///
-  /// In zh, this message translates to:
-  /// **'打开仪表盘'**
-  String get localHub_openDashboard;
-
-  /// No description provided for @localHub_failedTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'无法完成'**
-  String get localHub_failedTitle;
-
-  /// No description provided for @localHub_failedBody.
-  ///
-  /// In zh, this message translates to:
-  /// **'{error}'**
-  String localHub_failedBody(String error);
-
-  /// No description provided for @localHub_nodeMissingTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'需要先安装 Node.js'**
-  String get localHub_nodeMissingTitle;
-
-  /// No description provided for @localHub_nodeMissingBody.
-  ///
-  /// In zh, this message translates to:
-  /// **'安装 Agent Hub 需要 Node.js 18.17 或更高版本。安装 Node 后重新打开惜宝，或在终端执行：npm install -g shepaw-agent-hub'**
-  String get localHub_nodeMissingBody;
-
-  /// No description provided for @localHub_installNode.
-  ///
-  /// In zh, this message translates to:
-  /// **'安装 Node.js'**
-  String get localHub_installNode;
-
   /// No description provided for @chat_sessionMode.
   ///
   /// In zh, this message translates to:
@@ -14685,12 +14493,6 @@ abstract class AppLocalizations {
   /// **'启动 shepaw'**
   String get pouch_startCli;
 
-  /// No description provided for @pouch_cliMissing.
-  ///
-  /// In zh, this message translates to:
-  /// **'这台电脑上没有找到 shepaw。请先安装，然后点重新检测。'**
-  String get pouch_cliMissing;
-
   /// No description provided for @pouch_redetect.
   ///
   /// In zh, this message translates to:
@@ -14712,7 +14514,7 @@ abstract class AppLocalizations {
   /// No description provided for @pouch_createAndEnter.
   ///
   /// In zh, this message translates to:
-  /// **'新建并登录'**
+  /// **'新建并进入'**
   String get pouch_createAndEnter;
 
   /// No description provided for @pouch_current.
@@ -14936,6 +14738,162 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'重新检测'**
   String get addAgent_redetect;
+
+  /// No description provided for @hostSetup_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'把主机放在哪里？'**
+  String get hostSetup_title;
+
+  /// No description provided for @hostSetup_intro.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机保存你的储物袋、惜宝和智能体，需要一直开着。'**
+  String get hostSetup_intro;
+
+  /// No description provided for @hostSetup_thisComputer.
+  ///
+  /// In zh, this message translates to:
+  /// **'用这台电脑当主机'**
+  String get hostSetup_thisComputer;
+
+  /// No description provided for @hostSetup_thisComputerDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'自动下载并启动 Shepaw 主机'**
+  String get hostSetup_thisComputerDesc;
+
+  /// No description provided for @hostSetup_recommended.
+  ///
+  /// In zh, this message translates to:
+  /// **'推荐'**
+  String get hostSetup_recommended;
+
+  /// No description provided for @hostSetup_installAndStart.
+  ///
+  /// In zh, this message translates to:
+  /// **'一键安装并开始'**
+  String get hostSetup_installAndStart;
+
+  /// No description provided for @hostSetup_remote.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接另一台电脑上的主机'**
+  String get hostSetup_remote;
+
+  /// No description provided for @hostSetup_remoteDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机已经装在家里或公司的电脑上'**
+  String get hostSetup_remoteDesc;
+
+  /// No description provided for @hostSetup_goConnect.
+  ///
+  /// In zh, this message translates to:
+  /// **'去连接'**
+  String get hostSetup_goConnect;
+
+  /// No description provided for @hostSetup_redetect.
+  ///
+  /// In zh, this message translates to:
+  /// **'我已经装过 shepaw · 重新检测'**
+  String get hostSetup_redetect;
+
+  /// No description provided for @hostSetup_afterCopy.
+  ///
+  /// In zh, this message translates to:
+  /// **'装好后点重新检测'**
+  String get hostSetup_afterCopy;
+
+  /// No description provided for @hostSetup_switchRemote.
+  ///
+  /// In zh, this message translates to:
+  /// **'不想放在这台电脑？连接另一台电脑上的主机'**
+  String get hostSetup_switchRemote;
+
+  /// No description provided for @hostInstall_copyCommand.
+  ///
+  /// In zh, this message translates to:
+  /// **'复制终端安装命令'**
+  String get hostInstall_copyCommand;
+
+  /// No description provided for @hostStart_starting.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在启动主机…'**
+  String get hostStart_starting;
+
+  /// No description provided for @onboarding_agentCardTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'让惜宝有帮手'**
+  String get onboarding_agentCardTitle;
+
+  /// No description provided for @onboarding_agentCardBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'在主机上添加一个编程智能体，比如 Claude Code、Codex。'**
+  String get onboarding_agentCardBody;
+
+  /// No description provided for @onboarding_agentCardLater.
+  ///
+  /// In zh, this message translates to:
+  /// **'稍后'**
+  String get onboarding_agentCardLater;
+
+  /// No description provided for @remoteHost_intro.
+  ///
+  /// In zh, this message translates to:
+  /// **'在主机那台电脑上打开终端，执行：'**
+  String get remoteHost_intro;
+
+  /// No description provided for @remoteHost_pasteHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'把终端里打印出来的 shepaw://peer?... 链接粘贴到下面：'**
+  String get remoteHost_pasteHint;
+
+  /// No description provided for @remoteHost_connect.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接'**
+  String get remoteHost_connect;
+
+  /// No description provided for @remoteHost_scan.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫描二维码'**
+  String get remoteHost_scan;
+
+  /// No description provided for @remoteHost_offline.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机已记下，但现在连不上。确认那台电脑开着、和这台在同一网络，或者已经开启隧道'**
+  String get remoteHost_offline;
+
+  /// No description provided for @remoteHost_enterAnyway.
+  ///
+  /// In zh, this message translates to:
+  /// **'仍然进入'**
+  String get remoteHost_enterAnyway;
+
+  /// No description provided for @pouch_notInstalled.
+  ///
+  /// In zh, this message translates to:
+  /// **'未安装 · 去安装'**
+  String get pouch_notInstalled;
+
+  /// No description provided for @pouch_defaultName.
+  ///
+  /// In zh, this message translates to:
+  /// **'我的储物袋'**
+  String get pouch_defaultName;
+
+  /// No description provided for @pouch_namedBag.
+  ///
+  /// In zh, this message translates to:
+  /// **'{name}的储物袋'**
+  String pouch_namedBag(String name);
 }
 
 class _AppLocalizationsDelegate

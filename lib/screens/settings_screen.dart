@@ -13,7 +13,7 @@ import 'appearance_settings_screen.dart';
 import 'location_settings_screen.dart';
 import '../services/location_service.dart';
 import '../peer/services/peer_storage_service.dart';
-import '../storage/pouch_entry.dart';
+import '../onboarding/host_entry.dart';
 import '../storage/pouch_login.dart';
 import '../storage/pouch_session.dart';
 import 'inference_log_screen.dart';
@@ -29,7 +29,6 @@ import '../services/biometric_service.dart';
 import '../widgets/update_dialog.dart';
 import '../services/update_service.dart';
 import '../widgets/model_icon.dart';
-import '../widgets/local_agent_hub_prompt.dart';
 import '../widgets/mobile_shell_scope.dart';
 import '../services/model_registry.dart';
 import '../services/skill_registry.dart';
@@ -491,7 +490,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             const Divider(),
-            const LocalAgentHubSettingsTile(),
+            ListTile(
+              leading: const Icon(Icons.dns_outlined),
+              title: Text(l10n.contacts_host),
+              subtitle: Text(l10n.hostSetup_title),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).pushNamed('/host-setup'),
+            ),
           ],
 
           const Divider(height: 32),

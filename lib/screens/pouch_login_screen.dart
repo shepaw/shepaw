@@ -10,10 +10,12 @@ import '../peer/screens/peer_manual_input_screen.dart';
 import '../peer/screens/peer_scan_screen.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_storage_service.dart';
+import '../onboarding/host_entry.dart';
+import '../peer/pairing_endpoints.dart';
 import '../services/cli_host.dart';
+import '../services/local_user_identity.dart';
 import '../services/logger_service.dart';
 import '../storage/pouch_catalog.dart';
-import '../storage/pouch_entry.dart';
 import '../storage/pouch_login.dart';
 import '../storage/pouch_login_client.dart';
 import '../storage/pouch_session.dart';
@@ -29,8 +31,12 @@ class PouchLoginScreen extends StatefulWidget {
 class _PouchLoginScreenState extends State<PouchLoginScreen> {
   final _nameController = TextEditingController();
 
+  static const _localChoice = '__this_computer__';
+
   bool _switching = false;
   bool _hostUnresponsive = false;
+  String? _preferredHostId;
+  LocalCliStatus _cliStatus = LocalCliStatus.notInstalled;
   bool _argsRead = false;
   bool _desktop = false;
   bool _busy = false;
@@ -62,6 +68,7 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
     final args = ModalRoute.of(context)?.settings.arguments;
     _switching = args is PouchLoginArgs && args.switching;
     _hostUnresponsive = args is PouchLoginArgs && args.hostUnresponsive;
+    _preferredHostId = args is PouchLoginArgs ? args.hostPeerId : null;
     _reload();
   }
 
@@ -83,7 +90,7 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
       if (_desktop) {
         await _loadDesktop();
       } else {
-        await _loadPhone(session?.hostPeerId);
+        await _loadPhone(_preferredHostId ?? session?.hostPeerId);
       }
     } catch (error) {
       LoggerService()
@@ -127,14 +134,35 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
   }
 
   Future<void> _loadDesktop() async {
+    final status = await CliHost.probe();
     final cli = await CliHost.detect();
-    final binary = cli == null ? await CliHost.resolveBinary() : cli.binary;
+    final binary = cli?.binary ?? await CliHost.resolveBinary();
+    final peers = await PeerStorageService().loadAllPeers();
+    final remotes = peers
+        .where((peer) =>
+            !peer.isBlocked &&
+            !sameFingerprint(peer.fingerprint, cli?.fingerprint))
+        .toList();
     if (!mounted) return;
+    final preferRemote = _preferredHostId != null &&
+        remotes.any((peer) => peer.id == _preferredHostId);
     setState(() {
+      _cliStatus = status;
       _cli = cli;
       _binary = binary;
-      _hosts = const [];
+      _hosts = remotes;
+      _hostId = preferRemote ? _preferredHostId : _localChoice;
+      _host = preferRemote
+          ? remotes.where((peer) => peer.id == _preferredHostId).firstOrNull
+          : null;
     });
+    if (preferRemote) {
+      final host = _host;
+      if (host == null) return;
+      await _connect(host);
+      if (_hostReady) await _loadPouches(host.id);
+      return;
+    }
     if (cli == null) return;
     final peer = await CliHost.ensurePaired(cli);
     if (!mounted) return;
@@ -203,10 +231,19 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
     final pouches = await requestPouchList(hostPeerId: hostPeerId);
     if (!mounted) return;
     setState(() => _pouches = pouches);
+    if (pouches.isEmpty) _prefillPouchName();
     if (!_switching && !_autoEntered && pouches.length == 1) {
       _autoEntered = true;
       await _enter(pouches.single);
     }
+  }
+
+  void _prefillPouchName() {
+    if (_nameController.text.trim().isNotEmpty || !mounted) return;
+    final l10n = AppLocalizations.of(context);
+    final display = LocalUserIdentity.displayName.trim();
+    _nameController.text =
+        display.isEmpty ? l10n.pouch_defaultName : l10n.pouch_namedBag(display);
   }
 
   Future<void> _startCli() async {
@@ -424,29 +461,62 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
 
   List<Widget> _hostSection(AppLocalizations l10n) {
     if (_desktop) {
+      final localSubtitle = switch (_cliStatus) {
+        LocalCliStatus.notInstalled => l10n.pouch_notInstalled,
+        LocalCliStatus.installedStopped => l10n.pouch_hostOffline,
+        LocalCliStatus.running =>
+          _cli?.localEndpoint ?? l10n.home_statusOnline,
+      };
       return [
-        ListTile(
-          title: Text(l10n.pouch_thisComputer),
-          subtitle:
-              Text(_cli == null ? l10n.pouch_hostOffline : _cli!.localEndpoint),
+        RadioGroup<String>(
+          groupValue: _hostId,
+          onChanged: (value) {
+            if (_busy || value == null) return;
+            if (value == _localChoice) {
+              if (_cliStatus == LocalCliStatus.notInstalled) {
+                Navigator.of(context).pushNamed('/host-setup');
+                return;
+              }
+              _preferredHostId = null;
+              unawaited(_reload());
+              return;
+            }
+            final peer = _hosts.where((item) => item.id == value).firstOrNull;
+            if (peer != null) unawaited(_selectHost(peer));
+          },
+          child: Column(
+            children: [
+              RadioListTile<String>(
+                value: _localChoice,
+                title: Text(l10n.pouch_thisComputer),
+                subtitle: Text(localSubtitle),
+              ),
+              for (final peer in _hosts)
+                RadioListTile<String>(
+                  value: peer.id,
+                  title: Text(peer.deviceName),
+                  subtitle: Text(
+                    PeerConnectionManager.instance.connectedPeerIds
+                            .contains(peer.id)
+                        ? l10n.peerList_connected
+                        : l10n.peerList_disconnected,
+                  ),
+                ),
+            ],
+          ),
         ),
-        if (_cli == null && _binary != null)
+        if (_cliStatus == LocalCliStatus.installedStopped && _binary != null)
           FilledButton(
             onPressed: _busy ? null : _startCli,
             child: Text(l10n.pouch_startCli),
-          )
-        else if (_cli == null)
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(l10n.pouch_cliMissing),
-              const SizedBox(height: 8),
-              OutlinedButton(
-                onPressed: _busy ? null : _reload,
-                child: Text(l10n.pouch_redetect),
-              ),
-            ],
           ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton(
+            onPressed: _busy ? null : _addHost,
+            child: Text(l10n.pouch_addHost),
+          ),
+        ),
       ];
     }
     if (_hosts.isEmpty) {

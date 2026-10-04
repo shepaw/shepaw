@@ -5865,7 +5865,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get agentPair_scanHint =>
-      'Point at the QR printed by `<gateway> enroll` / `shepaw-hub pair` on the agent host';
+      'Point at the QR code printed by `shepaw pair` on the host';
 
   @override
   String get agentPair_cameraDeniedTitle => 'Camera access denied';
@@ -8093,114 +8093,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_pickDelegateAgent => 'Pick an agent to delegate';
 
   @override
-  String get localHub_detectedTitle => 'Local Agent Hub found';
-
-  @override
-  String get localHub_detectedBody =>
-      'Shepaw Agent Hub is installed on this computer. Join it so Hub agents appear in Contacts. The dashboard will start automatically if it is not running.';
-
-  @override
-  String get localHub_nudgeJoinTitle => 'Local Agent Hub';
-
-  @override
-  String get localHub_nudgeJoinBody =>
-      'It\'s installed. Join so Hub agents appear in Contacts. Dismiss to stop reminders, or join later from Settings.';
-
-  @override
-  String get localHub_nudgeInstallBody =>
-      'Use it to connect local agents such as Claude Code and Codex. Dismiss to stop reminders, or install later from Settings.';
-
-  @override
-  String get localHub_dontAskAgain => 'Don\'t ask again';
-
-  @override
-  String get localHub_connectedSnack => 'Connected to the local Agent Hub';
-
-  @override
-  String get localHub_emptyGuideSnack =>
-      'Add an instance in the dashboard so the agent appears in Contacts';
-
-  @override
-  String get settings_localHub => 'Local Agent Hub';
-
-  @override
-  String get settings_localHubSub =>
-      'Connect local agents such as Claude Code and Codex';
-
-  @override
-  String get settings_localHubConnected =>
-      'Connected. Hub agents are in Contacts';
-
-  @override
-  String get settings_localHubInstalled => 'Installed. Tap to join';
-
-  @override
-  String get settings_localHubMissing => 'Not installed. Tap to install';
-
-  @override
-  String get localHub_join => 'Join';
-
-  @override
-  String get localHub_later => 'Later';
-
-  @override
-  String get localHub_missingTitle => 'Agent Hub is not installed';
-
-  @override
-  String get localHub_missingBody =>
-      'The desktop app uses Agent Hub to connect local agents such as Claude Code and Codex. Install it now, open the dashboard, then add agents there.';
-
-  @override
-  String get localHub_installAndOpen => 'Install and open';
-
-  @override
-  String get localHub_workingTitle => 'Setting up Agent Hub';
-
-  @override
-  String get localHub_stepCheckingNode => 'Checking Node.js…';
-
-  @override
-  String get localHub_stepInstalling => 'Installing shepaw-agent-hub…';
-
-  @override
-  String get localHub_stepStarting => 'Starting the dashboard…';
-
-  @override
-  String get localHub_stepPairing => 'Joining the local Hub…';
-
-  @override
-  String get localHub_joinedTitle => 'Joined Agent Hub';
-
-  @override
-  String get localHub_joinedBody =>
-      'This computer\'s Agent Hub is connected. Its agents will show up in Contacts.';
-
-  @override
-  String get localHub_joinedEmptyBody =>
-      'Next, in the dashboard click Add instance, pick an engine (Claude Code, Codex, …) and a working directory. After that, the agent appears in Shepaw Contacts.';
-
-  @override
-  String get localHub_openDashboard => 'Open dashboard';
-
-  @override
-  String get localHub_failedTitle => 'Could not finish';
-
-  @override
-  String localHub_failedBody(String error) {
-    return '$error';
-  }
-
-  @override
-  String get localHub_nodeMissingTitle => 'Node.js is required';
-
-  @override
-  String get localHub_nodeMissingBody =>
-      'Installing Agent Hub needs Node.js 18.17 or newer. Install Node, then reopen Shepaw, or run: npm install -g shepaw-agent-hub';
-
-  @override
-  String get localHub_installNode => 'Install Node.js';
-
-  @override
   String get chat_sessionMode => 'Session mode';
 
   @override
@@ -8412,10 +8304,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pouch_startCli => 'Start shepaw';
 
   @override
-  String get pouch_cliMissing =>
-      'shepaw was not found on this computer. Install it, then detect again.';
-
-  @override
   String get pouch_redetect => 'Detect again';
 
   @override
@@ -8543,4 +8431,91 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get addAgent_redetect => 'Detect again';
+
+  @override
+  String get hostSetup_title => 'Where should the host live?';
+
+  @override
+  String get hostSetup_intro =>
+      'The host keeps your pouch, She, and agents, and needs to stay on.';
+
+  @override
+  String get hostSetup_thisComputer => 'Use this computer as the host';
+
+  @override
+  String get hostSetup_thisComputerDesc => 'Download and start the Shepaw host';
+
+  @override
+  String get hostSetup_recommended => 'Recommended';
+
+  @override
+  String get hostSetup_installAndStart => 'Install and start';
+
+  @override
+  String get hostSetup_remote => 'Connect to a host on another computer';
+
+  @override
+  String get hostSetup_remoteDesc =>
+      'The host is already running at home or at work';
+
+  @override
+  String get hostSetup_goConnect => 'Connect';
+
+  @override
+  String get hostSetup_redetect => 'I already installed shepaw · Detect again';
+
+  @override
+  String get hostSetup_afterCopy => 'After it is installed, detect again';
+
+  @override
+  String get hostSetup_switchRemote =>
+      'Not this computer? Connect to a host on another computer';
+
+  @override
+  String get hostInstall_copyCommand => 'Copy the install command';
+
+  @override
+  String get hostStart_starting => 'Starting the host…';
+
+  @override
+  String get onboarding_agentCardTitle => 'Give She a helper';
+
+  @override
+  String get onboarding_agentCardBody =>
+      'Add a coding agent on the host, such as Claude Code or Codex.';
+
+  @override
+  String get onboarding_agentCardLater => 'Later';
+
+  @override
+  String get remoteHost_intro =>
+      'On the host computer, open a terminal and run:';
+
+  @override
+  String get remoteHost_pasteHint =>
+      'Paste the shepaw://peer?... link printed in the terminal:';
+
+  @override
+  String get remoteHost_connect => 'Connect';
+
+  @override
+  String get remoteHost_scan => 'Scan QR code';
+
+  @override
+  String get remoteHost_offline =>
+      'The host is saved, but it is not reachable. Make sure that computer is on and on the same network, or that a tunnel is open.';
+
+  @override
+  String get remoteHost_enterAnyway => 'Enter anyway';
+
+  @override
+  String get pouch_notInstalled => 'Not installed · Install';
+
+  @override
+  String get pouch_defaultName => 'My pouch';
+
+  @override
+  String pouch_namedBag(String name) {
+    return '$name\'s pouch';
+  }
 }

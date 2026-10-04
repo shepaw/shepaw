@@ -23,6 +23,7 @@ import 'providers/theme_provider.dart';
 import 'screens/password_setup_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/pouch_login_screen.dart';
+import 'onboarding/host_setup_screen.dart';
 import 'screens/adaptive_home_screen.dart';
 import 'widgets/window_title_sync.dart';
 import 'widgets/approval/pending_approval_banner.dart';
@@ -306,6 +307,7 @@ class _MyAppState extends State<MyApp> {
                 '/setup': (context) => const PasswordSetupScreen(),
                 '/login': (context) => const LoginScreen(),
                 '/pouch': (context) => const PouchLoginScreen(),
+                '/host-setup': (context) => const HostSetupScreen(),
                 '/home': (context) => const AdaptiveHomeScreen(),
               },
             ),
