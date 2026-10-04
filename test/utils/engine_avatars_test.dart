@@ -3,8 +3,12 @@ import 'package:shepaw/utils/engine_avatars.dart';
 
 void main() {
   group('defaultAvatarForEngine', () {
-    test('always falls back — logos come from Hub avatar_data', () {
-      expect(defaultAvatarForEngine('cursor'), kGenericDefaultAvatar);
+    test('known engines use the bundled svg, unknown ones stay generic', () {
+      expect(
+        defaultAvatarForEngine('cursor'),
+        'assets/images/engines/cursor.svg',
+      );
+      expect(defaultAvatarForEngine('not-an-engine'), kGenericDefaultAvatar);
       expect(defaultAvatarForEngine(null), kGenericDefaultAvatar);
       expect(defaultAvatarForEngine(''), kGenericDefaultAvatar);
     });

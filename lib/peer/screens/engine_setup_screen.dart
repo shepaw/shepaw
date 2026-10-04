@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -7,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/engine_avatars.dart';
 import '../services/peer_agent_client_service.dart';
 
 /// 引擎不可用时的配置说明。文档链接和启动命令来自主机，版式对齐 agent-bridge 的引擎设置。
@@ -109,21 +108,15 @@ class EngineAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final plate = AppColors.avatarPlateFor(Theme.of(context).brightness);
-    Widget child;
-    final data = engine.avatarData;
-    if (data.isNotEmpty && engine.avatarExt == 'svg') {
-      try {
-        child = SvgPicture.memory(
-          base64Decode(data),
-          width: size - 8,
-          height: size - 8,
-        );
-      } catch (_) {
-        child = _fallback();
-      }
-    } else {
-      child = _fallback();
-    }
+    final asset = defaultAvatarForEngine(engine.id);
+    final child = asset == kGenericDefaultAvatar
+        ? _fallback()
+        : SvgPicture.asset(
+            asset,
+            width: size - 8,
+            height: size - 8,
+            placeholderBuilder: (_) => _fallback(),
+          );
     return Container(
       width: size,
       height: size,

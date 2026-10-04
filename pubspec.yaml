@@ -143,6 +143,7 @@ flutter:
   
   assets:
     - assets/images/
+    - assets/images/engines/
     - assets/icons/
     # 目录资产不递归：只收该目录下的直接文件，子目录必须逐个列出，
     # 否则 assets/skills/ 会一个文件都不打包（内置技能 seed 与系统技能
