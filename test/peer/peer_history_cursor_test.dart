@@ -54,8 +54,8 @@ void main() {
       }
       expect(covered, {for (var i = 0; i < 250; i++) i});
       expect(
-        peerHistoryFetchMode(storedCursor: null, hasLocalMirroredRows: false),
-        PeerHistoryFetchMode.cold,
+        peerHistoryFetchMode(storedCursor: null),
+        PeerHistoryFetchMode.rebuild,
       );
     });
 
@@ -156,66 +156,184 @@ void main() {
       expect(toDelete, {'local-question'});
     });
 
-    test('reset reapplies the full transcript; an empty reset drops the cursor',
+    test('a paged reset rebuilds and drops peerhist rows the remote lost', () {
+      final local = {for (var i = 0; i < 300; i++) 'peerhist_m$i'};
+      var needsCleanup = false;
+      final seen = <String>{};
+      String? storedCursor = 'v1.300.old';
+
+      void apply({
+        required bool reset,
+        required int from,
+        required int length,
+        required bool hasMore,
+        required String cursor,
+      }) {
+        final step = peerHistoryStep(
+          supportsCursor: true,
+          reset: reset,
+          messagesEmpty: length == 0,
+          hasMore: hasMore,
+          pageCursor: cursor,
+          needsCleanup: needsCleanup,
+        );
+        expect(step.kind, PeerHistoryApplyKind.slice);
+        if (step.restartCleanup) {
+          needsCleanup = true;
+          seen.clear();
+          storedCursor = null;
+        }
+        seen.addAll([for (var i = 0; i < length; i++) 'peerhist_m${from + i}']);
+        if (step.finishCleanup) {
+          local.removeAll(peerHistoryRebuildDeletes(
+            localPeerhistIds: local,
+            seenIds: seen,
+            preserveIds: const {},
+          ));
+        }
+        if (step.cursorAction == PeerHistoryCursorAction.store) {
+          storedCursor = cursor;
+        }
+      }
+
+      apply(reset: true, from: 0, length: 200, hasMore: true, cursor: 'page-1');
+      expect(storedCursor, isNull);
+      expect(local.length, 300);
+      apply(
+        reset: false,
+        from: 199,
+        length: 51,
+        hasMore: false,
+        cursor: 'page-2',
+      );
+      expect(storedCursor, 'page-2');
+      expect(local, {for (var i = 0; i < 250; i++) 'peerhist_m$i'});
+    });
+
+    test('an interrupted rebuild keeps the stale rows and no new cursor', () {
+      var needsCleanup = false;
+      String? storedCursor = 'v1.300.old';
+      final seen = <String>{};
+      final step = peerHistoryStep(
+        supportsCursor: true,
+        reset: true,
+        messagesEmpty: false,
+        hasMore: true,
+        pageCursor: 'page-1',
+        needsCleanup: needsCleanup,
+      );
+      expect(step.restartCleanup, isTrue);
+      expect(step.cursorAction, PeerHistoryCursorAction.skip);
+      expect(step.finishCleanup, isFalse);
+      needsCleanup = true;
+      seen.addAll([for (var i = 0; i < 200; i++) 'peerhist_m$i']);
+      storedCursor = null;
+
+      expect(
+        peerHistoryFetchMode(storedCursor: storedCursor),
+        PeerHistoryFetchMode.rebuild,
+      );
+      expect(needsCleanup, isTrue);
+      expect(seen, isNot(contains('peerhist_m299')));
+    });
+
+    test(
+        'an upgrade rebuild requests a limit and finishes only on the last page',
         () {
-      expect(
-        peerHistoryApplyKind(
-          supportsCursor: true,
-          mode: PeerHistoryFetchMode.incremental,
-          reset: true,
-          messagesEmpty: false,
-        ),
-        PeerHistoryApplyKind.full,
+      final request = peerHistoryHistoryRequest(
+        mode: PeerHistoryFetchMode.rebuild,
       );
-      expect(
-        peerHistoryApplyKind(
-          supportsCursor: true,
-          mode: PeerHistoryFetchMode.incremental,
-          reset: true,
-          messagesEmpty: true,
-        ),
-        PeerHistoryApplyKind.keepLocal,
+      expect(request.cursor, isNull);
+      expect(request.limit, kPeerHistoryPageLimit);
+      final middle = peerHistoryStep(
+        supportsCursor: true,
+        reset: false,
+        messagesEmpty: false,
+        hasMore: true,
+        pageCursor: 'page-1',
+        needsCleanup: true,
       );
-      expect(
-        peerHistoryCursorAction(
-          supportsCursor: true,
-          reset: true,
-          messagesEmpty: true,
-          cursor: 'v1.0.abc',
-        ),
-        PeerHistoryCursorAction.delete,
+      expect(middle.cursorAction, PeerHistoryCursorAction.skip);
+      expect(middle.finishCleanup, isFalse);
+      final last = peerHistoryStep(
+        supportsCursor: true,
+        reset: false,
+        messagesEmpty: false,
+        hasMore: false,
+        pageCursor: 'page-2',
+        needsCleanup: true,
       );
+      expect(last.cursorAction, PeerHistoryCursorAction.store);
+      expect(last.finishCleanup, isTrue);
+    });
+
+    test('dropping the remote tail deletes the local last row on reset', () {
+      final local = {for (var i = 0; i < 300; i++) 'peerhist_m$i'};
+      final seen = {for (var i = 0; i < 299; i++) 'peerhist_m$i'};
+      final step = peerHistoryStep(
+        supportsCursor: true,
+        reset: true,
+        messagesEmpty: false,
+        hasMore: false,
+        pageCursor: 'v1.299.new',
+        needsCleanup: false,
+      );
+      expect(step.restartCleanup, isTrue);
+      expect(step.finishCleanup, isTrue);
+      local.removeAll(peerHistoryRebuildDeletes(
+        localPeerhistIds: local,
+        seenIds: seen,
+        preserveIds: const {},
+      ));
+      expect(local.contains('peerhist_m299'), isFalse);
+      expect(local.length, 299);
+    });
+
+    test('an empty reset keeps local rows and stores a zero cursor', () {
+      final step = peerHistoryStep(
+        supportsCursor: true,
+        reset: true,
+        messagesEmpty: true,
+        hasMore: false,
+        pageCursor: 'v1.0.empty',
+        needsCleanup: false,
+      );
+      expect(step.kind, PeerHistoryApplyKind.emptyReset);
+      expect(step.cursorAction, PeerHistoryCursorAction.storeEmpty);
+      expect(step.finishCleanup, isFalse);
+      final quiet = assembleSessionsToSync(
+        sessions: [
+          PeerRemoteSession(
+            sessionId: 'empty',
+            updatedAt: DateTime.utc(2026, 1, 1),
+            messageCount: 0,
+          ),
+        ],
+        lastSyncAt: DateTime.utc(2026, 8, 1),
+        syncedUnstampedIds: const {},
+        emptyLocalSessionIds: const {},
+        cursorTotals: const {'empty': 0},
+      );
+      expect(quiet, isEmpty);
       expect(
-        peerHistoryCursorAction(
-          supportsCursor: true,
-          reset: true,
-          messagesEmpty: false,
-          cursor: 'v1.4.abc',
-        ),
-        PeerHistoryCursorAction.store,
+        peerHistoryFetchMode(storedCursor: ''),
+        PeerHistoryFetchMode.rebuild,
       );
     });
 
     test('an old hub response is a full compare and does not store a cursor',
         () {
-      expect(
-        peerHistoryApplyKind(
-          supportsCursor: false,
-          mode: PeerHistoryFetchMode.cold,
-          reset: false,
-          messagesEmpty: false,
-        ),
-        PeerHistoryApplyKind.full,
+      final step = peerHistoryStep(
+        supportsCursor: false,
+        reset: false,
+        messagesEmpty: false,
+        hasMore: false,
+        pageCursor: null,
+        needsCleanup: false,
       );
-      expect(
-        peerHistoryCursorAction(
-          supportsCursor: false,
-          reset: false,
-          messagesEmpty: false,
-          cursor: null,
-        ),
-        PeerHistoryCursorAction.skip,
-      );
+      expect(step.kind, PeerHistoryApplyKind.full);
+      expect(step.cursorAction, PeerHistoryCursorAction.skip);
+      expect(step.finishCleanup, isFalse);
     });
 
     test('message_count skips a quiet session and syncs an unstamped growth',
@@ -245,21 +363,18 @@ void main() {
       expect(dirty.map((session) => session.sessionId), ['grew']);
     });
 
-    test('clearing history with no cursor is a cold start', () {
+    test('clearing history with no cursor rebuilds from the start', () {
       expect(
-        peerHistoryFetchMode(storedCursor: null, hasLocalMirroredRows: false),
-        PeerHistoryFetchMode.cold,
+        peerHistoryFetchMode(storedCursor: null),
+        PeerHistoryFetchMode.rebuild,
       );
       expect(
-        peerHistoryFetchMode(
-          storedCursor: 'v1.3.abc',
-          hasLocalMirroredRows: true,
-        ),
+        peerHistoryFetchMode(storedCursor: 'v1.3.abc'),
         PeerHistoryFetchMode.incremental,
       );
       expect(
-        peerHistoryFetchMode(storedCursor: null, hasLocalMirroredRows: true),
-        PeerHistoryFetchMode.full,
+        peerHistoryFetchMode(storedCursor: ''),
+        PeerHistoryFetchMode.rebuild,
       );
     });
 

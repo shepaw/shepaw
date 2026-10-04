@@ -81,7 +81,10 @@ extension PeerHistoryCursorDao on LocalDatabaseService {
       final id = row['remote_session_id'] as String?;
       final total = row['total'] as int?;
       if (id == null || id.isEmpty || total == null) continue;
-      totals[id] = total;
+      // 同一个远端会话可能同时对应 `psess_` 和旧 channel。取较小的 total，
+      // 宁可多同步一次，也不要因为较大的那条把会话判成已经对齐。
+      final previous = totals[id];
+      if (previous == null || total < previous) totals[id] = total;
     }
     return totals;
   }

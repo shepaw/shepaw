@@ -484,52 +484,115 @@ bool peerHistoryNeedsRewrite({
   return false;
 }
 
-/// 冷启动每页条数。Hub 上限是 500。
+/// 冷启动和重建每页条数。新版 App 每次请求都带它。Hub 上限是 500。
 const int kPeerHistoryPageLimit = 200;
 
-enum PeerHistoryFetchMode { full, cold, incremental }
+enum PeerHistoryFetchMode { incremental, rebuild }
 
-enum PeerHistoryApplyKind { full, slice, keepLocal }
+enum PeerHistoryApplyKind { full, slice, emptyReset }
 
-enum PeerHistoryCursorAction { store, delete, skip }
+enum PeerHistoryCursorAction { store, skip, storeEmpty }
 
-/// 没有游标、但本地已经有 `peerhist_*` 行：升级前同步过，走一次全量。
-/// 本地也没有：冷启动，从 0 开始分页。有游标：增量。
-PeerHistoryFetchMode peerHistoryFetchMode({
-  required String? storedCursor,
-  required bool hasLocalMirroredRows,
-}) {
+/// 游标非空才增量。空字符串、没有记录，都从 0 开始重建。
+PeerHistoryFetchMode peerHistoryFetchMode({required String? storedCursor}) {
   if (storedCursor != null && storedCursor.isNotEmpty) {
     return PeerHistoryFetchMode.incremental;
   }
-  if (hasLocalMirroredRows) return PeerHistoryFetchMode.full;
-  return PeerHistoryFetchMode.cold;
+  return PeerHistoryFetchMode.rebuild;
+}
+
+/// 新版请求永远带 [limit]。重建的第一页不带 cursor。
+({String? cursor, int limit}) peerHistoryHistoryRequest({
+  required PeerHistoryFetchMode mode,
+  String? cursor,
+}) {
+  return (
+    cursor: mode == PeerHistoryFetchMode.incremental ? cursor : null,
+    limit: kPeerHistoryPageLimit,
+  );
 }
 
 PeerHistoryApplyKind peerHistoryApplyKind({
   required bool supportsCursor,
-  required PeerHistoryFetchMode mode,
   required bool reset,
   required bool messagesEmpty,
 }) {
   if (!supportsCursor) return PeerHistoryApplyKind.full;
-  if (reset && messagesEmpty) return PeerHistoryApplyKind.keepLocal;
-  if (reset || mode == PeerHistoryFetchMode.full) {
-    return PeerHistoryApplyKind.full;
-  }
+  if (reset && messagesEmpty) return PeerHistoryApplyKind.emptyReset;
   return PeerHistoryApplyKind.slice;
 }
 
+/// 需要收尾的重建，中间页不存游标。空的 reset 存一条空游标。
 PeerHistoryCursorAction peerHistoryCursorAction({
   required bool supportsCursor,
   required bool reset,
   required bool messagesEmpty,
+  required bool needsCleanup,
+  required bool hasMore,
   required String? cursor,
 }) {
   if (!supportsCursor) return PeerHistoryCursorAction.skip;
-  if (reset && messagesEmpty) return PeerHistoryCursorAction.delete;
+  if (reset && messagesEmpty) return PeerHistoryCursorAction.storeEmpty;
+  if (needsCleanup && hasMore) return PeerHistoryCursorAction.skip;
   if (cursor == null || cursor.isEmpty) return PeerHistoryCursorAction.skip;
   return PeerHistoryCursorAction.store;
+}
+
+/// 一页响应要怎么落库。带消息的 reset 会把这次同步转成需要收尾的重建。
+class PeerHistoryStep {
+  final PeerHistoryApplyKind kind;
+  final bool restartCleanup;
+  final PeerHistoryCursorAction cursorAction;
+  final bool finishCleanup;
+
+  const PeerHistoryStep({
+    required this.kind,
+    required this.restartCleanup,
+    required this.cursorAction,
+    required this.finishCleanup,
+  });
+}
+
+PeerHistoryStep peerHistoryStep({
+  required bool supportsCursor,
+  required bool reset,
+  required bool messagesEmpty,
+  required bool hasMore,
+  required String? pageCursor,
+  required bool needsCleanup,
+}) {
+  final kind = peerHistoryApplyKind(
+    supportsCursor: supportsCursor,
+    reset: reset,
+    messagesEmpty: messagesEmpty,
+  );
+  final restartCleanup = supportsCursor && reset && !messagesEmpty;
+  final cleanup = needsCleanup || restartCleanup;
+  return PeerHistoryStep(
+    kind: kind,
+    restartCleanup: restartCleanup,
+    cursorAction: peerHistoryCursorAction(
+      supportsCursor: supportsCursor,
+      reset: reset,
+      messagesEmpty: messagesEmpty,
+      needsCleanup: kind == PeerHistoryApplyKind.slice && cleanup,
+      hasMore: hasMore,
+      cursor: pageCursor,
+    ),
+    finishCleanup: kind == PeerHistoryApplyKind.slice && cleanup && !hasMore,
+  );
+}
+
+/// 重建收尾：删掉这次重建没再见到、也不在在途回合里的 `peerhist_*` 行。
+Set<String> peerHistoryRebuildDeletes({
+  required Iterable<String> localPeerhistIds,
+  required Set<String> seenIds,
+  required Set<String> preserveIds,
+}) {
+  return {
+    for (final id in localPeerhistIds)
+      if (!seenIds.contains(id) && !preserveIds.contains(id)) id,
+  };
 }
 
 /// 切片里需要 upsert 的下标。id 用绝对位置 [from] + i。
