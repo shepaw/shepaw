@@ -36,9 +36,9 @@ class PouchSession {
   bool isLoggedIn(int nowMs) =>
       token.isNotEmpty && sessionId.isNotEmpty && expiresAtMs > nowMs;
 
-  PouchSession copyWith({String? token}) {
+  PouchSession copyWith({String? token, String? hubUrl}) {
     return PouchSession(
-      hubUrl: hubUrl,
+      hubUrl: hubUrl ?? this.hubUrl,
       pouchId: pouchId,
       pouchName: pouchName,
       hostPeerId: hostPeerId,

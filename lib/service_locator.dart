@@ -7,6 +7,7 @@ import 'services/acp_server_service.dart';
 import 'services/permission_service.dart';
 import 'services/token_service.dart';
 import 'services/remote_agent_service.dart';
+import 'services/contacts_directory.dart';
 import 'services/remote_hub_pairing_service.dart';
 import 'services/message_collapse_preference.dart';
 import 'services/composer_draft_service.dart';
@@ -62,6 +63,7 @@ void setupServiceLocator() {
   getIt.registerLazySingleton<RemoteHubPairingService>(
     () => RemoteHubPairingService(),
   );
+  getIt.registerLazySingleton<ContactsDirectory>(() => ContactsDirectory());
 
   if (!getIt.isRegistered<EventBus>()) {
     final bus = EventBus();

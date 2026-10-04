@@ -193,6 +193,7 @@ class PairedPeer {
     Uint8List? publicKey,
     String? fingerprint,
     String? channelEndpoint,
+    bool clearChannelEndpoint = false,
     String? localEndpoint,
     int? pairedAt,
     int? lastSeen,
@@ -207,7 +208,9 @@ class PairedPeer {
       deviceId: deviceId ?? this.deviceId,
       publicKey: publicKey ?? this.publicKey,
       fingerprint: fingerprint ?? this.fingerprint,
-      channelEndpoint: channelEndpoint ?? this.channelEndpoint,
+      channelEndpoint: clearChannelEndpoint
+          ? null
+          : (channelEndpoint ?? this.channelEndpoint),
       localEndpoint: localEndpoint ?? this.localEndpoint,
       pairedAt: pairedAt ?? this.pairedAt,
       lastSeen: lastSeen ?? this.lastSeen,

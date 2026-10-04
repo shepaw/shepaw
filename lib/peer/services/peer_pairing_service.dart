@@ -32,6 +32,7 @@ import '../../storage/store_protocol.dart' show TrustLevel;
 import '../../storage/store_service.dart';
 import '../models/paired_peer.dart';
 import '../models/pairing_payload.dart';
+import '../pairing_endpoints.dart';
 import '../models/peer_store_share.dart';
 import 'peer_channel_bridge.dart';
 import 'peer_connection_manager.dart';
@@ -550,14 +551,22 @@ class PeerPairingService {
             'fingerprint collision with different public key');
       }
 
+      final localCli = await lookupLocalCli?.call();
+      final endpoints = pairingEndpointsForPeer(
+        peerFingerprint: peerFingerprint,
+        localCliFingerprint: localCli?.fingerprint,
+        loopbackEndpoint: localCli?.localEndpoint,
+        offeredLocal: response.localEndpoint ?? info.localEndpoint,
+        offeredChannel: response.channelEndpoint ?? info.channelEndpoint,
+      );
       final peer = PairedPeer(
         id: existingPeer?.id ?? response.peerId, // 复用已有 ID
         deviceName: response.deviceName,
         deviceId: response.deviceId,
         publicKey: info.publicKey,
         fingerprint: peerFingerprint,
-        channelEndpoint: response.channelEndpoint ?? info.channelEndpoint,
-        localEndpoint: response.localEndpoint ?? info.localEndpoint,
+        channelEndpoint: endpoints.channelEndpoint,
+        localEndpoint: endpoints.localEndpoint,
         pairedAt: DateTime.now().millisecondsSinceEpoch,
         // 本机扫码主动发起连接 → 发起方
         pairingRole: PeerPairingRole.initiator,

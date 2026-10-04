@@ -264,6 +264,17 @@ class PeerStorageService {
     );
   }
 
+  /// 清掉隧道地址。本机主机只走回环。
+  Future<void> clearChannelEndpoint(String peerId) async {
+    final db = await _db;
+    await db.update(
+      'paired_peers',
+      {'channel_endpoint': null},
+      where: 'id = ?',
+      whereArgs: [peerId],
+    );
+  }
+
   /// 更新内网端点
   Future<void> updateLocalEndpoint(String peerId, String endpoint) async {
     final db = await _db;

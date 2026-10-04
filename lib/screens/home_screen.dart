@@ -19,6 +19,8 @@ import '../services/message_search_service.dart';
 import '../peer/pouch_duties.dart';
 import '../services/onboarding_service.dart';
 import '../services/she_service.dart';
+import '../storage/pouch_session.dart';
+import 'agent_source_badge.dart';
 import '../l10n/app_localizations.dart';
 import '../theme/app_theme.dart';
 import '../providers/notification_provider.dart';
@@ -83,6 +85,7 @@ class HomeScreenState extends State<HomeScreen> {
   bool _isEmbeddedSearching = false;
   bool _isSearchActive = false;
   Timer? _searchDebounce;
+  String? _hostPeerId;
 
   // Convenience accessors for tiles (backed by ConversationListController).
   List<Agent> get _agents => _list.agents;
@@ -103,7 +106,18 @@ class HomeScreenState extends State<HomeScreen> {
   Map<String, int> get _peerUnreadCounts => _list.peerUnreadCounts;
 
   /// Public accessor so DesktopHomeScreen can trigger a refresh via GlobalKey.
-  void reloadAgents() => _list.refresh(silent: true);
+  void reloadAgents() {
+    _list.refresh(silent: true);
+    unawaited(_loadHostPeerId());
+  }
+
+  Future<void> _loadHostPeerId() async {
+    final session = await PouchSessionStore.readActive();
+    if (!mounted) return;
+    final id = session?.hostPeerId;
+    if (id == _hostPeerId) return;
+    setState(() => _hostPeerId = id);
+  }
 
   /// Public accessor for the current agents list (used by desktop sidebar search).
   List<Agent> get agents => _list.agents;
@@ -131,6 +145,7 @@ class HomeScreenState extends State<HomeScreen> {
     _list.attach();
     _messageSearchService = MessageSearchService(_databaseService);
     _list.refresh();
+    unawaited(_loadHostPeerId());
     _searchController.addListener(_onSearchChanged);
     // 首次设密登录后：首帧自动打开惜宝聊天页引导配置 AI 模型（一次性标记）。
     // 桌面嵌入实例（embedded == true）不在此处理，由 DesktopHomeScreen 负责。
@@ -1649,9 +1664,14 @@ class HomeScreenState extends State<HomeScreen> {
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            if (agent.isPeerAgent) ...[
+                            if (agentSourceBadge(
+                                  agentId: agent.id,
+                                  metadata: agent.metadata,
+                                  hostPeerId: _hostPeerId,
+                                )
+                                case final badge?) ...[
                               const SizedBox(width: 6),
-                              _buildPeerSourceBadge(agent.sourcePeerName),
+                              _buildPeerSourceBadge(badge),
                             ],
                           ],
                         ),

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -5,6 +6,7 @@ import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/peer/models/pairing_payload.dart';
 import 'package:shepaw/peer/pouch_pair.dart';
+import 'package:shepaw/peer/services/peer_pairing_service.dart';
 
 void main() {
   test('二维码就是当前主机时，握手留在本机', () {
@@ -86,6 +88,62 @@ void main() {
     tampered['qr'] = (tampered['qr'] as String)
         .replaceFirst(fingerprint, 'ffffffffffffffff');
     expect(() => PouchPairTicket.decode(tampered), throwsFormatException);
+  });
+
+  test('收到 login_required 后等 relogged 再重发一次', () async {
+    var calls = 0;
+    var generation = 0;
+    final result = await sendWithReloginRetry(
+      retryOnRelogin: true,
+      reloginGeneration: () => generation,
+      waitForRelogin: (seen) async {
+        expect(seen, 0);
+        generation = 1;
+      },
+      send: () async {
+        calls += 1;
+        if (calls == 1) throw const PouchLoginRequired();
+        return {'ok': true, 'peers': <Object>[]};
+      },
+    );
+
+    expect(result['ok'], isTrue);
+    expect(calls, 2);
+  });
+
+  test('重登没有发生就不再发第三次', () async {
+    var calls = 0;
+    await expectLater(
+      sendWithReloginRetry(
+        retryOnRelogin: true,
+        reloginGeneration: () => 0,
+        waitForRelogin: (_) async {},
+        send: () async {
+          calls += 1;
+          throw const PouchLoginRequired();
+        },
+      ),
+      throwsA(isA<PouchLoginRequired>()),
+    );
+    expect(calls, 2);
+  });
+
+  test('等不到重登时改报超时', () async {
+    await expectLater(
+      sendWithReloginRetry<Map<String, dynamic>>(
+        retryOnRelogin: true,
+        reloginGeneration: () => 0,
+        waitForRelogin: (_) =>
+            Future<void>.error(TimeoutException('relogin')),
+        send: () async => throw const PouchLoginRequired(),
+      ),
+      throwsA(isA<PairingTimeoutException>()),
+    );
+  });
+
+  test('名单超时是 10 秒，确认配对仍等 6 分钟', () {
+    expect(PouchPairRelay.listTimeout, const Duration(seconds: 10));
+    expect(PouchPairRelay.forwardTimeout, const Duration(minutes: 6));
   });
 
   test('配对控制帧写进了连接放行名单', () {

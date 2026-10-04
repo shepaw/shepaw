@@ -3112,7 +3112,40 @@ class AppLocalizationsEn extends AppLocalizations {
   String get contacts_devices => 'Devices';
 
   @override
-  String get contacts_noPeers => 'No paired devices yet';
+  String get contacts_host => 'Host';
+
+  @override
+  String get contacts_workers => 'Work devices';
+
+  @override
+  String get contacts_myDevices => 'My devices';
+
+  @override
+  String get contacts_thisDevice => 'This device';
+
+  @override
+  String get contacts_thisComputer => 'This computer';
+
+  @override
+  String get contacts_listFailed => 'Couldn\'t read the device list · Retry';
+
+  @override
+  String get contacts_noHost => 'No host connected · Set up';
+
+  @override
+  String get contacts_offlineReconnect => 'Offline · Reconnect';
+
+  @override
+  String get contacts_other => 'Other';
+
+  @override
+  String get hostOffline_banner => 'Host offline · Reconnect';
+
+  @override
+  String get hostAttach_unresponsive => 'The host isn\'t responding';
+
+  @override
+  String get hostAttach_restart => 'Restart host';
 
   @override
   String get contacts_startPairing => 'Start Pairing';

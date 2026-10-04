@@ -11,6 +11,7 @@ import 'services/update_notification_service.dart';
 import 'services/app_lifecycle_service.dart';
 import 'services/network_monitor_service.dart';
 import 'services/channel_tunnel_service.dart';
+import 'services/cli_host.dart';
 import 'services/cli_tool_registry.dart';
 import 'clis/shepaw/shepaw_cli.dart';
 import 'services/logger_service.dart';
@@ -206,6 +207,7 @@ class AppBootstrap {
   /// 只作为主机的客户端：连上去、收名单、应答存储帧。
   static Future<void> _initializePeerConnection() async {
     try {
+      CliHost.installLookup();
       await PeerConnectionManager.instance.start();
       PouchLoginKeeper.instance.start();
       await PeerAgentClientService.instance.start();

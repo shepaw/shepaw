@@ -30,6 +30,7 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
   final _nameController = TextEditingController();
 
   bool _switching = false;
+  bool _hostUnresponsive = false;
   bool _argsRead = false;
   bool _desktop = false;
   bool _busy = false;
@@ -60,6 +61,7 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
     _argsRead = true;
     final args = ModalRoute.of(context)?.settings.arguments;
     _switching = args is PouchLoginArgs && args.switching;
+    _hostUnresponsive = args is PouchLoginArgs && args.hostUnresponsive;
     _reload();
   }
 
@@ -87,6 +89,38 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
       LoggerService()
           .error('pouch hosts failed', tag: 'PouchLogin', error: error);
       if (mounted) setState(() => _error = '$error');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          if (_hostReady) {
+            _hostUnresponsive = false;
+          } else if (_hostUnresponsive && _error.isEmpty) {
+            _error = AppLocalizations.of(context).hostAttach_unresponsive;
+          }
+        });
+      }
+    }
+  }
+
+  Future<void> _restartHost() async {
+    final binary = _binary ?? _cli?.binary ?? await CliHost.resolveBinary();
+    if (binary == null || !mounted) return;
+    setState(() {
+      _busy = true;
+      _error = '';
+    });
+    try {
+      await CliHost.restart(binary);
+      if (mounted) await _reload();
+    } catch (error) {
+      LoggerService()
+          .error('shepaw restart failed', tag: 'PouchLogin', error: error);
+      if (mounted) {
+        setState(
+          () => _error = AppLocalizations.of(context).hostAttach_unresponsive,
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -374,6 +408,13 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
             Text(
               _error,
               style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
+          if (_hostUnresponsive) ...[
+            const SizedBox(height: 8),
+            OutlinedButton(
+              onPressed: _busy ? null : _restartHost,
+              child: Text(l10n.hostAttach_restart),
             ),
           ],
         ],

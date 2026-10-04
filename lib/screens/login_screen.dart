@@ -9,6 +9,7 @@ import '../services/logger_service.dart';
 import '../services/password_service.dart';
 import '../services/biometric_service.dart';
 import '../services/desktop_window_auto_size.dart';
+import '../peer/pairing_endpoints.dart';
 import '../services/cli_host.dart';
 import '../storage/pouch_entry.dart';
 import '../storage/pouch_login.dart';
@@ -138,10 +139,25 @@ class _LoginScreenState extends State<LoginScreen> {
       tag: 'Login',
     );
     if (decision == PouchEntryDecision.resume && session != null) {
-      PouchChannel.install(session);
-      if (host != null) {
-        unawaited(PeerConnectionManager.instance.connectToPeer(host));
+      if (cli != null &&
+          sameFingerprint(cli.fingerprint, host?.fingerprint)) {
+        try {
+          await CliHost.attach(cli);
+        } on HostUnresponsiveException {
+          if (!mounted) return;
+          Navigator.of(context).pushReplacementNamed(
+            '/pouch',
+            arguments: const PouchLoginArgs(hostUnresponsive: true),
+          );
+          return;
+        }
+      } else {
+        PouchChannel.install(session);
+        if (host != null) {
+          unawaited(PeerConnectionManager.instance.connectToPeer(host));
+        }
       }
+      if (!mounted) return;
       Navigator.of(context).pushReplacementNamed('/home');
       return;
     }

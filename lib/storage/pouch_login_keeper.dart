@@ -13,7 +13,7 @@ typedef PouchRelogin = Future<PouchLoginGrant> Function({
 
 /// 主机重启后登录态只活在内存里。收到 `pouch_login_required` 时用同一只袋子再登一次。
 ///
-/// 被拦下的那一帧不在这里重发，调用方按原来的超时和重试处理。
+/// 被拦下的那一帧不在这里重发。重新登录成功后 [relogged] 响一次，调用方重发自己的请求。
 class PouchLoginKeeper {
   PouchLoginKeeper({
     required this.events,
@@ -62,6 +62,32 @@ class PouchLoginKeeper {
 
   StreamSubscription<PeerControlEvent>? _sub;
   Future<void>? _inflight;
+  final _relogged = StreamController<void>.broadcast();
+  int _reloginGeneration = 0;
+
+  /// 重新登录成功。不缓冲，错过的一方用 [reloginGeneration] 判断。
+  Stream<void> get relogged => _relogged.stream;
+
+  /// 成功重登的次数。用来避免在监听 [relogged] 之前就错过事件。
+  int get reloginGeneration => _reloginGeneration;
+
+  /// 等到一次比 [seenGeneration] 更新的重登，最多 8 秒。
+  Future<void> waitForRelogin({
+    required int seenGeneration,
+    Duration timeout = const Duration(seconds: 8),
+  }) async {
+    if (_reloginGeneration > seenGeneration) return;
+    final done = Completer<void>();
+    final sub = _relogged.stream.listen((_) {
+      if (!done.isCompleted) done.complete();
+    });
+    try {
+      if (_reloginGeneration > seenGeneration) return;
+      await done.future.timeout(timeout);
+    } finally {
+      await sub.cancel();
+    }
+  }
 
   void start() {
     _sub ??= events.listen(_onEvent);
@@ -93,6 +119,8 @@ class PouchLoginKeeper {
       );
       await persist(next);
       install(next);
+      _reloginGeneration += 1;
+      if (!_relogged.isClosed) _relogged.add(null);
     } catch (error) {
       if (!_pouchGone(error)) return;
       await forgetSession();

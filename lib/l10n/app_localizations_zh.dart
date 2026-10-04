@@ -2994,7 +2994,40 @@ class AppLocalizationsZh extends AppLocalizations {
   String get contacts_devices => '设备';
 
   @override
-  String get contacts_noPeers => '尚未配对任何设备';
+  String get contacts_host => '主机';
+
+  @override
+  String get contacts_workers => '工作设备';
+
+  @override
+  String get contacts_myDevices => '我的设备';
+
+  @override
+  String get contacts_thisDevice => '本机';
+
+  @override
+  String get contacts_thisComputer => '这台电脑';
+
+  @override
+  String get contacts_listFailed => '读不到设备名单 · 重试';
+
+  @override
+  String get contacts_noHost => '还没有连接主机 · 去设置';
+
+  @override
+  String get contacts_offlineReconnect => '离线 · 重新连接';
+
+  @override
+  String get contacts_other => '其他';
+
+  @override
+  String get hostOffline_banner => '主机离线 · 重新连接';
+
+  @override
+  String get hostAttach_unresponsive => '主机没有响应';
+
+  @override
+  String get hostAttach_restart => '重启主机';
 
   @override
   String get contacts_startPairing => '开始配对';

@@ -5522,11 +5522,77 @@ abstract class AppLocalizations {
   /// **'设备'**
   String get contacts_devices;
 
-  /// No description provided for @contacts_noPeers.
+  /// No description provided for @contacts_host.
   ///
   /// In zh, this message translates to:
-  /// **'尚未配对任何设备'**
-  String get contacts_noPeers;
+  /// **'主机'**
+  String get contacts_host;
+
+  /// No description provided for @contacts_workers.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作设备'**
+  String get contacts_workers;
+
+  /// No description provided for @contacts_myDevices.
+  ///
+  /// In zh, this message translates to:
+  /// **'我的设备'**
+  String get contacts_myDevices;
+
+  /// No description provided for @contacts_thisDevice.
+  ///
+  /// In zh, this message translates to:
+  /// **'本机'**
+  String get contacts_thisDevice;
+
+  /// No description provided for @contacts_thisComputer.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台电脑'**
+  String get contacts_thisComputer;
+
+  /// No description provided for @contacts_listFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'读不到设备名单 · 重试'**
+  String get contacts_listFailed;
+
+  /// No description provided for @contacts_noHost.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没有连接主机 · 去设置'**
+  String get contacts_noHost;
+
+  /// No description provided for @contacts_offlineReconnect.
+  ///
+  /// In zh, this message translates to:
+  /// **'离线 · 重新连接'**
+  String get contacts_offlineReconnect;
+
+  /// No description provided for @contacts_other.
+  ///
+  /// In zh, this message translates to:
+  /// **'其他'**
+  String get contacts_other;
+
+  /// No description provided for @hostOffline_banner.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机离线 · 重新连接'**
+  String get hostOffline_banner;
+
+  /// No description provided for @hostAttach_unresponsive.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机没有响应'**
+  String get hostAttach_unresponsive;
+
+  /// No description provided for @hostAttach_restart.
+  ///
+  /// In zh, this message translates to:
+  /// **'重启主机'**
+  String get hostAttach_restart;
 
   /// No description provided for @contacts_startPairing.
   ///

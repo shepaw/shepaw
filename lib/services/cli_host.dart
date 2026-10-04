@@ -1,10 +1,22 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
+
 import '../peer/models/paired_peer.dart';
 import '../peer/models/pairing_payload.dart';
+import '../peer/pairing_endpoints.dart';
+import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_pairing_service.dart';
 import '../peer/services/peer_storage_service.dart';
+import '../storage/pouch_login.dart';
+import '../storage/pouch_session.dart';
+
+/// 本机主机在时限内没有连上。
+class HostUnresponsiveException implements Exception {
+  const HostUnresponsiveException();
+}
 
 /// 本机 `shepaw` CLI 正在听的主机。电脑上的 App 用它配对，不再走旧的仪表盘。
 class CliHostEndpoint {
@@ -24,14 +36,70 @@ class CliHostEndpoint {
 }
 
 class CliHost {
-  static String hubRoot() {
-    final env = Platform.environment;
+  static void installLookup() {
+    lookupLocalCli ??= () async {
+      final cli = await detect();
+      final fingerprint = cli?.fingerprint.trim() ?? '';
+      if (cli == null || fingerprint.isEmpty) return null;
+      return (fingerprint: fingerprint, localEndpoint: cli.localEndpoint);
+    };
+  }
+
+  static String hubRoot() => hubRootFromEnv(Platform.environment);
+
+  /// 与 CLI `hub_root` 一致：`SHEPAW_HUB_HOME`，否则 XDG，否则
+  /// `HOME` / `USERPROFILE` 下的 `.config/shepaw-hub`。
+  static String hubRootFromEnv(Map<String, String> env, {p.Style? style}) {
+    final ctx = _paths(style);
     final explicit = env['SHEPAW_HUB_HOME'];
     if (explicit != null && explicit.isNotEmpty) return explicit;
     final xdg = env['XDG_CONFIG_HOME'];
-    final home = env['HOME'] ?? '';
-    final base = (xdg != null && xdg.isNotEmpty) ? xdg : '$home/.config';
-    return '$base/shepaw-hub';
+    if (xdg != null && xdg.isNotEmpty) return ctx.join(xdg, 'shepaw-hub');
+    return ctx.join(homeDirFromEnv(env), '.config', 'shepaw-hub');
+  }
+
+  static String homeDirFromEnv(Map<String, String> env) {
+    for (final key in const ['HOME', 'USERPROFILE']) {
+      final value = env[key];
+      if (value != null && value.isNotEmpty) return value;
+    }
+    return '.';
+  }
+
+  /// 已安装的 CLI。macOS / Linux 在 `~/.shepaw/bin`，Windows 在
+  /// `%LOCALAPPDATA%\Shepaw\bin`。
+  static String? installedBinaryFromEnv(
+    Map<String, String> env, {
+    required bool windows,
+    p.Style? style,
+  }) {
+    final ctx = _paths(style ?? (windows ? p.Style.windows : p.Style.posix));
+    if (windows) {
+      final local = env['LOCALAPPDATA'];
+      if (local == null || local.isEmpty) return null;
+      return ctx.join(local, 'Shepaw', 'bin', 'shepaw.exe');
+    }
+    return ctx.join(homeDirFromEnv(env), '.shepaw', 'bin', 'shepaw');
+  }
+
+  static List<String> debugBinaryCandidates(
+    Map<String, String> env, {
+    required bool windows,
+    p.Style? style,
+  }) {
+    final ctx = _paths(style ?? (windows ? p.Style.windows : p.Style.posix));
+    final name = windows ? 'shepaw.exe' : 'shepaw';
+    final home = homeDirFromEnv(env);
+    return [
+      ctx.join(home, 'workspace', 'shepaw', 'shepaw-cli', 'target', 'debug', name),
+      ctx.join(home, 'workspace', 'shepaw', 'shepaw-cli', 'target', 'release', name),
+    ];
+  }
+
+  static p.Context _paths(p.Style? style) {
+    return p.Context(
+      style: style ?? (Platform.isWindows ? p.Style.windows : p.Style.posix),
+    );
   }
 
   /// `peer-state.json` 带 `version`，而且里面的 pid 还活着，才算这台主机在跑。
@@ -73,10 +141,10 @@ class CliHost {
 
   /// 指纹已经配对过就直接用，并刷新回环地址。否则才签发新的配对码。
   static Future<PairedPeer> ensurePaired(CliHostEndpoint cli) async {
+    installLookup();
     final fingerprint = cli.fingerprint.trim();
     if (fingerprint.isNotEmpty) {
-      final existing =
-          await PeerStorageService().getPeerByFingerprint(fingerprint);
+      final existing = await _peerByFingerprint(fingerprint);
       if (existing != null) {
         await PeerStorageService().updateLocalEndpoint(
           existing.id,
@@ -98,6 +166,73 @@ class CliHost {
     return (await PeerStorageService().getPeerById(peer.id)) ?? peer;
   }
 
+  /// 进主页前把本机主机的地址收回环，并重拨。
+  ///
+  /// 连不上时抛 [HostUnresponsiveException]，调用方停在储物袋页。
+  static Future<PairedPeer> attach(CliHostEndpoint cli) async {
+    installLookup();
+    final paired = await ensurePaired(cli);
+    final storage = PeerStorageService();
+    await storage.updateLocalEndpoint(paired.id, cli.localEndpoint);
+    await storage.clearChannelEndpoint(paired.id);
+    final stored = await storage.getPeerById(paired.id) ?? paired;
+    final refreshed = stored.copyWith(
+      localEndpoint: cli.localEndpoint,
+      clearChannelEndpoint: true,
+    );
+
+    final session = await PouchSessionStore.readActive();
+    if (session != null && session.hostPeerId == refreshed.id) {
+      final next = session.hubUrl == cli.localEndpoint
+          ? session
+          : session.copyWith(hubUrl: cli.localEndpoint);
+      if (next.hubUrl != session.hubUrl) {
+        await PouchSessionStore(await PouchSessionStore.appFile()).save(next);
+      }
+      PouchChannel.install(next);
+    }
+
+    try {
+      await PeerConnectionManager.instance
+          .connectToPeer(refreshed, ignoreTieBreak: true)
+          .timeout(const Duration(seconds: 8));
+    } catch (_) {
+      throw const HostUnresponsiveException();
+    }
+    return refreshed;
+  }
+
+  /// 执行 `shepaw restart`，然后等到 [detect] 再次看到进程。
+  static Future<void> restart(String binary) async {
+    final result = await Process.run(binary, const ['restart']);
+    if (result.exitCode != 0) {
+      final detail = [
+        result.stderr.toString().trim(),
+        result.stdout.toString().trim(),
+      ].where((part) => part.isNotEmpty).join('\n');
+      throw StateError(detail.isEmpty ? 'shepaw restart 失败' : detail);
+    }
+    final deadline = DateTime.now().add(const Duration(seconds: 15));
+    while (DateTime.now().isBefore(deadline)) {
+      if (await detect() != null) return;
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+    throw StateError('shepaw 没有在时限内就绪');
+  }
+
+  static Future<PairedPeer?> _peerByFingerprint(String fingerprint) async {
+    final storage = PeerStorageService();
+    final exact = await storage.getPeerByFingerprint(fingerprint);
+    if (exact != null) return exact;
+    final want = fingerprint.trim().toLowerCase();
+    if (want.isEmpty) return null;
+    final all = await storage.loadAllPeers();
+    for (final peer in all) {
+      if (peer.fingerprint.trim().toLowerCase() == want) return peer;
+    }
+    return null;
+  }
+
   static Future<bool> _processAlive(int pid) async {
     if (Platform.isWindows) {
       final result = await Process.run('tasklist', [
@@ -116,20 +251,37 @@ class CliHost {
     return result.exitCode == 0;
   }
 
+  /// 先 `SHEPAW_BIN`，再安装目录，再 `which` / `where.exe`。
+  /// 开发目录只在调试构建里查。
   static Future<String?> resolveBinary() async {
-    final env = Platform.environment['SHEPAW_BIN'];
-    if (env != null && env.isNotEmpty && File(env).existsSync()) return env;
-    final home = Platform.environment['HOME'] ?? '';
-    for (final path in [
-      '$home/workspace/shepaw/shepaw-cli/target/debug/shepaw',
-      '$home/workspace/shepaw/shepaw-cli/target/release/shepaw',
-    ]) {
-      if (File(path).existsSync()) return path;
+    final env = Platform.environment;
+    final explicit = env['SHEPAW_BIN'];
+    if (explicit != null && explicit.isNotEmpty && File(explicit).existsSync()) {
+      return explicit;
     }
-    final which = await Process.run('/usr/bin/which', ['shepaw']);
-    final found = which.stdout.toString().trim();
-    if (which.exitCode == 0 && found.isNotEmpty && File(found).existsSync()) {
-      return found;
+    final installed = installedBinaryFromEnv(env, windows: Platform.isWindows);
+    if (installed != null && File(installed).existsSync()) return installed;
+    final found = await _whichShepaw();
+    if (found != null) return found;
+    if (kDebugMode) {
+      for (final path in debugBinaryCandidates(env, windows: Platform.isWindows)) {
+        if (File(path).existsSync()) return path;
+      }
+    }
+    return null;
+  }
+
+  static Future<String?> _whichShepaw() async {
+    final ProcessResult result;
+    if (Platform.isWindows) {
+      result = await Process.run('where.exe', const ['shepaw']);
+    } else {
+      result = await Process.run('/usr/bin/which', const ['shepaw']);
+    }
+    if (result.exitCode != 0) return null;
+    for (final line in result.stdout.toString().split(RegExp(r'\r?\n'))) {
+      final found = line.trim();
+      if (found.isNotEmpty && File(found).existsSync()) return found;
     }
     return null;
   }

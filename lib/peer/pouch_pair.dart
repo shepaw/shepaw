@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:uuid/uuid.dart';
 
+import '../storage/pouch_login_keeper.dart';
 import '../storage/pouch_role.dart';
 import '../storage/pouch_session.dart';
 import '../storage/store_service.dart';
@@ -112,10 +113,39 @@ class PouchPairing {
   }
 }
 
+/// 主机要求先重新登录。调用方等 [PouchLoginKeeper.relogged] 后重发一次。
+class PouchLoginRequired implements Exception {
+  const PouchLoginRequired();
+}
+
+/// 发出一帧。收到 [PouchLoginRequired] 时等重登成功，再发一次，只重发一次。
+Future<T> sendWithReloginRetry<T>({
+  required Future<T> Function() send,
+  required bool retryOnRelogin,
+  required int Function() reloginGeneration,
+  required Future<void> Function(int seenGeneration) waitForRelogin,
+}) async {
+  if (!retryOnRelogin) return send();
+  final seen = reloginGeneration();
+  try {
+    return await send();
+  } on PouchLoginRequired {
+    try {
+      await waitForRelogin(seen);
+    } on TimeoutException {
+      throw PairingTimeoutException();
+    }
+    return send();
+  }
+}
+
 class PouchPairRelay {
   PouchPairRelay._();
 
   static final PouchPairRelay instance = PouchPairRelay._();
+
+  static const listTimeout = Duration(seconds: 10);
+  static const forwardTimeout = Duration(minutes: 6);
 
   final _uuid = const Uuid();
   final _pending = <String, Completer<Map<String, dynamic>>>{};
@@ -131,10 +161,14 @@ class PouchPairRelay {
     required String hostPeerId,
     required PeerPairingInfo info,
   }) async {
-    final done = await _send(hostPeerId, <String, dynamic>{
-      'type': PouchPair.requestType,
-      ...PouchPairTicket.encode(info),
-    });
+    final done = await _send(
+      hostPeerId,
+      <String, dynamic>{
+        'type': PouchPair.requestType,
+        ...PouchPairTicket.encode(info),
+      },
+      timeout: forwardTimeout,
+    );
     if (done['ok'] != true) {
       final code = done['code'] as String? ?? 'error';
       final message = done['message'] as String?;
@@ -148,9 +182,14 @@ class PouchPairRelay {
   }
 
   Future<List<PairedPeer>> list({required String hostPeerId}) async {
-    final done = await _send(hostPeerId, <String, dynamic>{
-      'type': PouchPair.listRequestType,
-    });
+    final done = await _send(
+      hostPeerId,
+      <String, dynamic>{
+        'type': PouchPair.listRequestType,
+      },
+      timeout: listTimeout,
+      retryOnRelogin: true,
+    );
     if (done['ok'] != true) {
       throw StateError(done['message'] as String? ?? '读不到主机的设备名单');
     }
@@ -164,25 +203,66 @@ class PouchPairRelay {
 
   Future<Map<String, dynamic>> _send(
     String hostPeerId,
-    Map<String, dynamic> frame,
-  ) async {
+    Map<String, dynamic> frame, {
+    required Duration timeout,
+    bool retryOnRelogin = false,
+  }) {
+    return sendWithReloginRetry(
+      retryOnRelogin: retryOnRelogin,
+      reloginGeneration: () => PouchLoginKeeper.instance.reloginGeneration,
+      waitForRelogin: (seen) =>
+          PouchLoginKeeper.instance.waitForRelogin(seenGeneration: seen),
+      send: () => _sendOnce(
+        hostPeerId,
+        Map<String, dynamic>.from(frame),
+        timeout: timeout,
+        watchLogin: retryOnRelogin,
+      ),
+    );
+  }
+
+  Future<Map<String, dynamic>> _sendOnce(
+    String hostPeerId,
+    Map<String, dynamic> frame, {
+    required Duration timeout,
+    bool watchLogin = false,
+  }) async {
     final requestId = _uuid.v4();
     final pending = Completer<Map<String, dynamic>>();
     _pending[requestId] = pending;
     frame['request_id'] = requestId;
-    final sent = await PeerConnectionManager.instance.sendControl(
-      hostPeerId,
-      frame,
-    );
-    if (!sent) {
-      _pending.remove(requestId);
-      throw StateError('无法把配对交给储物袋主机');
+
+    var abandoned = false;
+    StreamSubscription<PeerControlEvent>? loginSub;
+    if (watchLogin) {
+      loginSub = PeerConnectionManager.instance.controlEvents.listen((event) {
+        if (abandoned || pending.isCompleted) return;
+        if (event.peerId != hostPeerId || event.type != 'pouch_login_required') {
+          return;
+        }
+        pending.completeError(const PouchLoginRequired());
+      });
     }
+
     try {
-      return await pending.future.timeout(const Duration(minutes: 6));
-    } on TimeoutException {
+      final sent = await PeerConnectionManager.instance.sendControl(
+        hostPeerId,
+        frame,
+      );
+      if (!sent) {
+        throw StateError('无法把配对交给储物袋主机');
+      }
+      return await pending.future.timeout(
+        timeout,
+        onTimeout: () {
+          abandoned = true;
+          throw PairingTimeoutException();
+        },
+      );
+    } finally {
+      abandoned = true;
+      await loginSub?.cancel();
       _pending.remove(requestId);
-      throw PairingTimeoutException();
     }
   }
 }

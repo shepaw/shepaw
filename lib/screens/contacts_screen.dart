@@ -11,15 +11,14 @@ import '../peer/widgets/peer_device_icon.dart';
 import '../peer/screens/add_agent_instance_screen.dart';
 import '../peer/screens/peer_manual_input_screen.dart';
 import '../peer/screens/peer_pairing_screen.dart';
-import '../peer/pouch_pair.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_storage_service.dart';
 import '../utils/platform_utils.dart';
-import '../services/local_api_service.dart';
+import '../services/contacts_directory.dart';
 import '../services/local_database_service.dart';
 import '../services/she_service.dart';
 import '../services/logger_service.dart';
-import '../storage/store_service.dart';
+import '../service_locator.dart';
 import '../widgets/avatar_image.dart';
 import '../widgets/mobile_shell_scope.dart';
 import '../models/remote_agent.dart';
@@ -27,7 +26,7 @@ import 'remote_agent_detail_screen.dart';
 import 'group_detail_screen.dart';
 import 'create_group_screen.dart';
 
-/// 通讯录：每台已配对的 Hub（下面是它的 Agent）→ 群聊。
+/// 通讯录：主机（惜宝和主机上的智能体）→ 工作设备 → 我的设备 → 群聊。
 /// App 自己不列一份内置 Agent。
 ///
 /// When [embedded] is true (desktop middle column), selection callbacks open
@@ -58,27 +57,7 @@ class ContactsScreen extends StatefulWidget {
   State<ContactsScreen> createState() => ContactsScreenState();
 }
 
-enum _ContactsSection { groups }
-
-/// 一次加载完成后的数据快照。
-class _ContactsSnapshot {
-  final List<Agent> agents;
-  final List<Channel> groups;
-  final List<PairedPeer> peers;
-  final String? masterId;
-
-  const _ContactsSnapshot({
-    required this.agents,
-    required this.groups,
-    required this.peers,
-    required this.masterId,
-  });
-}
-
-/// 进程内缓存：桌面端切走再切回、移动端 push/pop 都会重建 State，缓存让首帧
-/// 直接用上次结果渲染，随后再静默刷新，不必每次打开通讯录都转圈等数据库。
-/// 仅用于首帧快速渲染，不替代刷新——数据仍会在后台重新拉取。
-_ContactsSnapshot? _cachedSnapshot;
+enum _ContactsSection { host, workers, mine, groups }
 
 class ContactsScreenState extends State<ContactsScreen> {
   /// 折叠箭头列宽 + 间距，使子项头像与父节点头像左对齐。
@@ -89,30 +68,31 @@ class ContactsScreenState extends State<ContactsScreen> {
   static const double _childIndent =
       _rowPadH + _chevronSize + _chevronGap; // 对齐父节点头像
 
-  final LocalApiService _apiService = LocalApiService();
   final LocalDatabaseService _databaseService = LocalDatabaseService();
   final TextEditingController _searchController = TextEditingController();
+  late final ContactsDirectory _directory;
 
-  List<Agent> _agents = [];
+  ContactsView? _view;
+  bool _pinnedHost = false;
   List<Channel> _groups = [];
-  List<PairedPeer> _peers = [];
-  String? _masterId;
   bool _isLoading = true;
-  bool _loadFailed = false;
   String _query = '';
 
   final Set<_ContactsSection> _expanded = {
+    _ContactsSection.host,
+    _ContactsSection.workers,
+    _ContactsSection.mine,
     _ContactsSection.groups,
   };
 
   /// Peer ids whose nested agent list is expanded.
   final Set<String> _expandedPeerIds = {};
 
-  StreamSubscription<void>? _peerListSub;
+  StreamSubscription<ContactsView>? _directorySub;
 
   /// 外部（桌面端新建助手/群/配对后）触发的刷新：列表已有内容，静默更新即可，
   /// 不必把整页换成转圈。
-  Future<void> reload() => _loadData(quiet: true);
+  Future<void> reload() => _reload(quiet: true);
 
   @override
   void initState() {
@@ -123,26 +103,31 @@ class ContactsScreenState extends State<ContactsScreen> {
         setState(() => _query = next);
       }
     });
-    final cached = _cachedSnapshot;
-    if (cached == null) {
-      _loadData();
-    } else {
-      _agents = cached.agents;
-      _groups = cached.groups;
-      _peers = cached.peers;
-      _masterId = cached.masterId;
+    _directory = getIt<ContactsDirectory>();
+    _directory.start();
+    final cached = _directory.latest;
+    if (cached != null) {
+      _view = cached;
       _isLoading = false;
-      // 已有缓存：先渲染，再在后台静默刷新。
-      _loadData(quiet: true);
     }
-    _peerListSub = PeerConnectionManager.instance.peerListChanged.listen((_) {
-      _loadData(quiet: true);
+    _directorySub = _directory.snapshots.listen((view) {
+      if (!mounted) return;
+      setState(() {
+        _view = view;
+        _isLoading = false;
+        final hostId = view.host?.id;
+        if (hostId != null && !_pinnedHost) {
+          _expandedPeerIds.add(hostId);
+          _pinnedHost = true;
+        }
+      });
     });
+    _reload(quiet: cached != null);
   }
 
   @override
   void dispose() {
-    _peerListSub?.cancel();
+    _directorySub?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -154,84 +139,42 @@ class ContactsScreenState extends State<ContactsScreen> {
     final selected = widget.selectedContactId;
     if (selected != null &&
         selected != oldWidget.selectedContactId &&
-        _peers.any((p) => p.id == selected)) {
+        _peerIds.any((id) => id == selected)) {
       _expandedPeerIds.add(selected);
     }
   }
 
-  Future<void> _loadData({bool quiet = false}) async {
+  Future<void> _reload({bool quiet = false}) async {
     if (!quiet && mounted) setState(() => _isLoading = true);
     try {
-      // 三路互不依赖，并行等待；任一路失败由下面的 catch 统一处理。
-      final (agents, groups, peerSnapshot) = await (
-        _apiService.getAgents(),
-        _databaseService.getTopLevelGroups(),
-        _loadPeers(),
-      ).wait;
-
-      _cachedSnapshot = _ContactsSnapshot(
-        agents: agents,
-        groups: groups,
-        peers: peerSnapshot.peers,
-        masterId: peerSnapshot.masterId,
-      );
-
-      if (mounted) {
-        setState(() {
-          _agents = agents;
-          _groups = groups;
-          _peers = peerSnapshot.peers;
-          _masterId = peerSnapshot.masterId;
-          _isLoading = false;
-          _loadFailed = false;
-        });
-      }
+      final groups = await _databaseService.getTopLevelGroups();
+      if (mounted) setState(() => _groups = groups);
     } catch (e) {
-      LoggerService().error('Failed to load contacts data', tag: 'Contacts', error: e);
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _loadFailed = true;
-        });
-      }
+      LoggerService().error('Failed to load groups', tag: 'Contacts', error: e);
     }
+    await _directory.refresh();
+    if (mounted) setState(() => _isLoading = false);
   }
 
-  /// 已配对设备与主机 ID。Peer 子系统不可用时退化为空，不影响其余部分显示。
-  Future<({List<PairedPeer> peers, String? masterId})> _loadPeers() async {
-    try {
-      await PeerConnectionManager.instance.start();
-      final peers = await PouchPairing.visiblePeers();
-      final masterId = await StoreService.instance.masterDeviceId();
-      return (peers: peers, masterId: masterId);
-    } catch (_) {
-      return (peers: const <PairedPeer>[], masterId: null);
-    }
+  List<String> get _peerIds {
+    final view = _view;
+    if (view == null) return const [];
+    return [
+      if (view.host != null) view.host!.id,
+      for (final device in view.workers) device.peer.id,
+      for (final device in view.myDevices) device.peer.id,
+    ];
   }
 
-  List<Agent> _agentsForPeer(String peerId) {
-    final list = _agents
-        .where((a) =>
-            a.isPeerAgent &&
-            a.sourcePeerId == peerId &&
-            !a.hiddenOnThisApp)
-        .toList();
-    if (_query.isEmpty) return list;
-    return list.where(_agentMatchesQuery).toList();
+  List<Agent> _matchingAgents(List<Agent> agents) {
+    if (_query.isEmpty) return agents;
+    return agents.where(_agentMatchesQuery).toList();
   }
 
   bool _agentMatchesQuery(Agent a) {
     final name = a.name.toLowerCase();
     final bio = a.bio?.toLowerCase() ?? '';
     return name.contains(_query) || bio.contains(_query);
-  }
-
-  List<PairedPeer> get _filteredPeers {
-    if (_query.isEmpty) return _peers;
-    return _peers.where((p) {
-      if (p.deviceName.toLowerCase().contains(_query)) return true;
-      return _agentsForPeer(p.id).isNotEmpty;
-    }).toList();
   }
 
   List<Channel> get _filteredGroups {
@@ -337,7 +280,7 @@ class ContactsScreenState extends State<ContactsScreen> {
                 _buildSearchBar(l10n),
                 Expanded(
                   child: RefreshIndicator(
-                    onRefresh: _loadData,
+                    onRefresh: () => _reload(),
                     child: _buildSectionList(l10n),
                   ),
                 ),
@@ -375,36 +318,25 @@ class ContactsScreenState extends State<ContactsScreen> {
   }
 
   Widget _buildSectionList(AppLocalizations l10n) {
-    final peers = _filteredPeers;
+    final view = _view;
+    if (view == null) return _buildSkeleton();
+
     final groups = _filteredGroups;
-    final nothingLoaded =
-        _agents.isEmpty && _groups.isEmpty && _peers.isEmpty;
+    final hostAgents = _matchingAgents(view.hostAgents);
+    final otherAgents = _matchingAgents(view.otherAgents);
+    final workers = _matchingDevices(view.workers);
+    final myDevices = _matchingDevices(view.myDevices);
+    final hostVisible = view.host != null &&
+        (_query.isEmpty ||
+            view.host!.deviceName.toLowerCase().contains(_query) ||
+            hostAgents.isNotEmpty ||
+            otherAgents.isNotEmpty);
 
-    if (_loadFailed && nothingLoaded && _query.isEmpty) {
-      return ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        children: [
-          const SizedBox(height: 72),
-          Icon(Icons.cloud_off_outlined, size: 48, color: Colors.grey[400]),
-          const SizedBox(height: 12),
-          Text(
-            l10n.contacts_loadFailed,
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-          ),
-          const SizedBox(height: 16),
-          Center(
-            child: OutlinedButton.icon(
-              onPressed: () => _loadData(),
-              icon: const Icon(Icons.refresh),
-              label: Text(l10n.widget_retry),
-            ),
-          ),
-        ],
-      );
-    }
-
-    if (_query.isNotEmpty && peers.isEmpty && groups.isEmpty) {
+    if (_query.isNotEmpty &&
+        !hostVisible &&
+        workers.isEmpty &&
+        myDevices.isEmpty &&
+        groups.isEmpty) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
@@ -419,26 +351,95 @@ class ContactsScreenState extends State<ContactsScreen> {
     }
 
     final children = <Widget>[
-      // Each paired device is its own foldable row (with nested peer agents).
-      if (peers.isEmpty && _query.isEmpty)
-        _buildEmptyHint(
-          icon: Icons.devices_other,
-          message: l10n.contacts_noPeers,
-          actionLabel: l10n.contacts_startPairing,
-          onAction: _startPeerPairing,
-          indent: 16,
+      if (view.hasSession && view.host != null && !view.hostOnline)
+        _buildOfflineBanner(l10n),
+      if (!view.hasSession)
+        ListTile(
+          leading: const Icon(Icons.dns_outlined),
+          title: Text(l10n.contacts_noHost),
+          onTap: () => Navigator.of(context).pushNamed('/pouch'),
         )
-      else
-        for (final peer in peers) ...[
-          _buildPeerFoldHeader(peer, l10n),
-          if (_expandedPeerIds.contains(peer.id) ||
-              (_query.isNotEmpty && _agentsForPeer(peer.id).isNotEmpty))
-            ..._agentsForPeer(peer.id).map(
-              (a) => _buildAgentTile(a),
+      else ...[
+        _buildSectionHeader(
+          section: _ContactsSection.host,
+          title: l10n.contacts_host,
+          count: hostAgents.length + otherAgents.length,
+          icon: Icons.dns_outlined,
+          iconColor: Theme.of(context).colorScheme.primary,
+        ),
+        if (_expanded.contains(_ContactsSection.host) && hostVisible) ...[
+          _buildPeerFoldHeader(
+            view.host!,
+            l10n,
+            agents: [...hostAgents, ...otherAgents],
+            statusText: _hostStatus(view, l10n),
+            online: view.hostOnline,
+            onStatusTap: view.hostOnline ? null : _reconnectHost,
+          ),
+          if (_expandedPeerIds.contains(view.host!.id) || _query.isNotEmpty) ...[
+            ...hostAgents.map(_buildAgentTile),
+            if (otherAgents.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.only(left: _childIndent, top: 4),
+                child: Text(
+                  l10n.contacts_other,
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                ),
+              ),
+              ...otherAgents.map(_buildAgentTile),
+            ],
+            if (_query.isEmpty)
+              ListTile(
+                contentPadding:
+                    const EdgeInsets.only(left: _childIndent, right: 16),
+                leading: const Icon(Icons.add, size: 20),
+                title: Text(l10n.home_addAgentInstance),
+                onTap: _addAgent,
+              ),
+          ],
+        ],
+        if (view.rosterFailed)
+          ListTile(
+            title: Text(l10n.contacts_listFailed),
+            onTap: () => _directory.refresh(),
+          )
+        else ...[
+          _buildSectionHeader(
+            section: _ContactsSection.workers,
+            title: l10n.contacts_workers,
+            count: workers.length,
+            icon: Icons.computer_outlined,
+            iconColor: const Color(0xFF5B6C8F),
+          ),
+          if (_expanded.contains(_ContactsSection.workers))
+            Opacity(
+              opacity: view.hostOnline ? 1 : 0.45,
+              child: Column(
+                children: [
+                  for (final device in workers)
+                    ..._deviceRows(device, l10n),
+                ],
+              ),
+            ),
+          _buildSectionHeader(
+            section: _ContactsSection.mine,
+            title: l10n.contacts_myDevices,
+            count: myDevices.length,
+            icon: Icons.devices_other_outlined,
+            iconColor: const Color(0xFF8A6A3B),
+          ),
+          if (_expanded.contains(_ContactsSection.mine))
+            Opacity(
+              opacity: view.hostOnline ? 1 : 0.45,
+              child: Column(
+                children: [
+                  for (final device in myDevices)
+                    ..._deviceRows(device, l10n),
+                ],
+              ),
             ),
         ],
-
-      // Group chats
+      ],
       _buildSectionHeader(
         section: _ContactsSection.groups,
         title: l10n.contacts_groups,
@@ -454,6 +455,90 @@ class ContactsScreenState extends State<ContactsScreen> {
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       children: children,
+    );
+  }
+
+  Widget _buildSkeleton() {
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: [
+        for (var i = 0; i < 6; i++)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Container(
+              height: 36,
+              decoration: BoxDecoration(
+                color: Colors.grey.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildOfflineBanner(AppLocalizations l10n) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Material(
+      color: colorScheme.errorContainer,
+      child: ListTile(
+        dense: true,
+        leading: Icon(Icons.cloud_off_outlined, color: colorScheme.onErrorContainer),
+        title: Text(
+          l10n.hostOffline_banner,
+          style: TextStyle(color: colorScheme.onErrorContainer),
+        ),
+        onTap: _reconnectHost,
+      ),
+    );
+  }
+
+  List<ContactDevice> _matchingDevices(List<ContactDevice> devices) {
+    if (_query.isEmpty) return devices;
+    return devices.where((device) {
+      if (device.peer.deviceName.toLowerCase().contains(_query)) return true;
+      return _matchingAgents(device.agents).isNotEmpty;
+    }).toList();
+  }
+
+  List<Widget> _deviceRows(ContactDevice device, AppLocalizations l10n) {
+    final agents = _matchingAgents(device.agents);
+    final expanded = _expandedPeerIds.contains(device.peer.id) ||
+        (_query.isNotEmpty && agents.isNotEmpty);
+    return [
+      _buildPeerFoldHeader(
+        device.peer,
+        l10n,
+        agents: agents,
+        thisDevice: device.isThisDevice,
+        online: device.online,
+      ),
+      if (expanded) ...agents.map(_buildAgentTile),
+    ];
+  }
+
+  String _hostStatus(ContactsView view, AppLocalizations l10n) {
+    if (!view.hostOnline) return l10n.contacts_offlineReconnect;
+    if (view.hostIsThisComputer) {
+      return '${l10n.home_statusOnline} · ${l10n.contacts_thisComputer}';
+    }
+    return l10n.home_statusOnline;
+  }
+
+  Future<void> _reconnectHost() async {
+    await _directory.reconnectHost();
+  }
+
+  void _addAgent() {
+    if (widget.embedded && widget.onAddAgentInstance != null) {
+      widget.onAddAgentInstance!();
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const AddAgentInstanceScreen(),
+      ),
     );
   }
 
@@ -519,14 +604,21 @@ class ContactsScreenState extends State<ContactsScreen> {
   }
 
   /// Device row: chevron + device icon + name; tap toggles fold (mobile) or fold + detail (desktop).
-  Widget _buildPeerFoldHeader(PairedPeer peer, AppLocalizations l10n) {
-    final isConnected = peer.state == PeerConnectionState.connected;
-    final isMaster = _masterId == peer.fingerprint;
+  Widget _buildPeerFoldHeader(
+    PairedPeer peer,
+    AppLocalizations l10n, {
+    required List<Agent> agents,
+    String? statusText,
+    bool thisDevice = false,
+    bool? online,
+    VoidCallback? onStatusTap,
+  }) {
+    final isConnected = online ?? peer.state == PeerConnectionState.connected;
     final expanded = _expandedPeerIds.contains(peer.id) ||
-        (_query.isNotEmpty && _agentsForPeer(peer.id).isNotEmpty);
-    final agentCount = _agents
-        .where((a) => a.isPeerAgent && a.sourcePeerId == peer.id)
-        .length;
+        (_query.isNotEmpty && agents.isNotEmpty);
+    final agentCount = agents.length;
+    final status = statusText ??
+        peer.state.listStatusLabel(l10n, showE2eWhenConnected: true);
     final selected = widget.selectedContactId == peer.id;
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -594,7 +686,7 @@ class ContactsScreenState extends State<ContactsScreen> {
                             ),
                           ),
                         ),
-                        if (isMaster) ...[
+                        if (thisDevice) ...[
                           const SizedBox(width: 6),
                           Container(
                             padding: const EdgeInsets.symmetric(
@@ -604,7 +696,7 @@ class ContactsScreenState extends State<ContactsScreen> {
                               borderRadius: BorderRadius.circular(999),
                             ),
                             child: Text(
-                              l10n.storage_masterBadge,
+                              l10n.contacts_thisDevice,
                               style: TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w600,
@@ -615,13 +707,16 @@ class ContactsScreenState extends State<ContactsScreen> {
                         ],
                       ],
                     ),
-                    Text(
-                      peer.state.listStatusLabel(l10n, showE2eWhenConnected: true),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: isConnected ? Colors.green : Colors.grey,
+                    GestureDetector(
+                      onTap: onStatusTap,
+                      child: Text(
+                        status,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isConnected ? Colors.green : Colors.grey,
+                        ),
                       ),
                     ),
                   ],
@@ -717,7 +812,7 @@ class ContactsScreenState extends State<ContactsScreen> {
         builder: (context) => const CreateGroupScreen(),
       ),
     );
-    if (mounted) _loadData();
+    if (mounted) _reload();
   }
 
   Widget _buildAgentTile(Agent agent) {
@@ -852,7 +947,7 @@ class ContactsScreenState extends State<ContactsScreen> {
         builder: (context) => RemoteAgentDetailScreen(agent: remoteAgent),
       ),
     );
-    _loadData();
+    _reload();
   }
 
   Future<void> _openGroupDetail(Channel group) async {
@@ -867,7 +962,7 @@ class ContactsScreenState extends State<ContactsScreen> {
         builder: (context) => GroupDetailScreen(channel: group),
       ),
     );
-    _loadData();
+    _reload();
   }
 
   Future<void> _showPeerActions(PairedPeer peer) async {
@@ -945,7 +1040,7 @@ class ContactsScreenState extends State<ContactsScreen> {
 
     if (newName != null && newName.isNotEmpty && newName != peer.deviceName) {
       await PeerStorageService().updateDeviceName(peer.id, newName);
-      _loadData();
+      _reload();
     }
   }
 
@@ -976,7 +1071,7 @@ class ContactsScreenState extends State<ContactsScreen> {
 
     if (confirm == true) {
       await PeerConnectionManager.instance.removePeer(peer.id);
-      _loadData();
+      _reload();
     }
   }
 
@@ -997,7 +1092,7 @@ class ContactsScreenState extends State<ContactsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(l10n.peerList_pairedSuccess(peer.deviceName))),
       );
-      _loadData();
+      _reload();
     }
   }
 
@@ -1007,6 +1102,6 @@ class ContactsScreenState extends State<ContactsScreen> {
       return;
     }
     await PeerSettingsScreen.show(context, peer);
-    if (mounted) _loadData();
+    if (mounted) _reload();
   }
 }

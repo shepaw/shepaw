@@ -46,11 +46,16 @@ void main() {
       clearChannel: () => fail('should keep the channel'),
       openChooser: () => fail('should stay on the home page'),
     );
+    var heard = 0;
+    final sub = keeper.relogged.listen((_) => heard += 1);
     keeper.start();
     events.add(required());
     await Future<void>.delayed(Duration.zero);
     await Future<void>.delayed(Duration.zero);
     expect(saved?.token, 'new-token');
+    expect(keeper.reloginGeneration, 1);
+    expect(heard, 1);
+    await sub.cancel();
     expect(saved?.sessionId, 'sid-new');
     expect(saved?.pouchId, 'pouch-a');
     expect(installed?.token, 'new-token');
