@@ -5,12 +5,20 @@ part of 'chat_controller.dart';
 // ---------------------------------------------------------------------------
 
 mixin _LoadOps on _ChatControllerBase {
+  /// 进页加载代际。信箱拉取改到输入框解锁之后，切会话时用它丢掉过期结果。
+  int _messageLoadEpoch = 0;
+
+  /// [_setupInboxPush] 的安装序号。只让最后一次安装清掉并重建订阅，
+  /// 避免过期的进页拉取把新会话的订阅清掉。
+  int _inboxSetupTicket = 0;
+
   // ---------------------------------------------------------------------------
   // Message loading
   // ---------------------------------------------------------------------------
 
   @override
   Future<void> loadMessages() async {
+    final epoch = ++_messageLoadEpoch;
     isLoading = true;
     _notify();
 
@@ -138,15 +146,18 @@ mixin _LoadOps on _ChatControllerBase {
         }
       }
 
+      // 标题「连接中」只等这一次本地查询，不跟后面的消息/信箱加载绑在一起。
+      _rememberStatusAgent(channel);
+
       await _refreshWorkspaceUris();
 
-      var loadedMessages = List<Message>.from(await chatService.loadChannelMessages(
+      final loadedMessages = List<Message>.from(await chatService.loadChannelMessages(
         currentChannelId!,
         limit: ChatMessageWindow.initialLimit,
       ));
 
-      // 进页收信：channel 中继 agent 拉信箱。群聊按成员拉取，按 group_id 路由回群；
-      // 无 group_id 的回复才进 fallback DM，不会写进当前群。
+      // 进页收信改到输入框解锁之后：信箱 HTTP 最长 15s，之前会把
+      // isLoading 一直拉着，发送按钮转圈、输入框不可用。
       final inboxAgents = <RemoteAgent>[];
       if (isGroupMode) {
         inboxAgents.addAll(groupAgents);
@@ -154,24 +165,6 @@ mixin _LoadOps on _ChatControllerBase {
         final agent = await localDatabaseService.getRemoteAgentById(agentId!);
         if (agent != null) inboxAgents.add(agent);
       }
-      var mailboxInserted = false;
-      for (final agent in inboxAgents) {
-        if (!ChannelMailboxService.agentHasChannelInbox(agent)) continue;
-        final mailboxMsgs = await chatService.fetchMailboxReplies(
-          channelId: isGroupMode ? null : currentChannelId,
-          agentId: agent.id,
-          userId: userId,
-        );
-        final forHere =
-            mailboxMsgs.where((m) => m.channelId == currentChannelId);
-        if (forHere.isEmpty) continue;
-        loadedMessages.addAll(forHere);
-        mailboxInserted = true;
-      }
-      if (mailboxInserted) {
-        loadedMessages.sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
-      }
-      await _setupInboxPush(agents: inboxAgents, userId: userId);
 
       _preserveInMemoryPlanApprovalResponses();
       if (isGroupMode) {
@@ -196,13 +189,25 @@ mixin _LoadOps on _ChatControllerBase {
       await _refreshHasMoreOlderMessages();
       _reapplyStashedPlanApprovalResponses();
       _expireStaleCliApprovalCards();
+      // 本地历史一上屏就解锁输入。审批对账、信箱拉取都不该继续转圈。
+      isLoading = false;
+      _notify();
+
       await PendingApprovalHub.instance.reconcileForChannel(
         currentChannelId!,
         messages,
         workflowService: WorkflowService(db: localDatabaseService),
       );
-      isLoading = false;
-      _notify();
+
+      if (inboxAgents.isNotEmpty && epoch == _messageLoadEpoch) {
+        unawaited(_pullMailboxAfterInteractive(
+          epoch: epoch,
+          channelId: currentChannelId!,
+          inboxAgents: inboxAgents,
+          userId: userId,
+          groupMode: isGroupMode,
+        ));
+      }
 
       markMessagesAsReadIfAtBottom();
 
@@ -483,10 +488,66 @@ mixin _LoadOps on _ChatControllerBase {
     }
   }
 
+  /// 本地历史已经上屏、输入框已解锁之后再拉信箱。新回复到了再补进列表，
+  /// 不替换当前列表，避免这段等待期间用户发出的消息被盖掉。
+  Future<void> _pullMailboxAfterInteractive({
+    required int epoch,
+    required String channelId,
+    required List<RemoteAgent> inboxAgents,
+    required String userId,
+    required bool groupMode,
+  }) async {
+    try {
+      final inserted = <Message>[];
+      for (final agent in inboxAgents) {
+        if (epoch != _messageLoadEpoch || currentChannelId != channelId) {
+          return;
+        }
+        if (!ChannelMailboxService.agentHasChannelInbox(agent)) continue;
+        final mailboxMsgs = await chatService.fetchMailboxReplies(
+          channelId: groupMode ? null : channelId,
+          agentId: agent.id,
+          userId: userId,
+        );
+        inserted.addAll(mailboxMsgs.where((m) => m.channelId == channelId));
+      }
+      if (epoch != _messageLoadEpoch || currentChannelId != channelId) return;
+      await _setupInboxPush(agents: inboxAgents, userId: userId);
+      if (epoch != _messageLoadEpoch || currentChannelId != channelId) return;
+      final fresh =
+          inserted.where((m) => !messageIdMap.containsKey(m.id)).toList();
+      if (fresh.isEmpty) return;
+      messages.addAll(fresh);
+      messages.sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+      rebuildMessageIdMap();
+      streaming.repointAnchor(messages);
+      _notify();
+    } catch (e) {
+      LoggerService().warning(
+        'Background mailbox pull failed: $e',
+        tag: 'ChatController',
+        error: e,
+      );
+    }
+  }
+
+  /// 频道解析出来后立刻用本地在线状态结束「连接中」，不必等消息加载。
+  void _rememberStatusAgent(Channel? channel) {
+    if (isGroupMode) return;
+    final id = agentId ??
+        (channel == null
+            ? null
+            : ChatLoadChannelPlanner.firstAgentMemberId(channel));
+    if (id == null || id.isEmpty) return;
+    _statusAgentId = id;
+    unawaited(refreshAgentStatus());
+  }
+
   Future<void> _setupInboxPush({
     required List<RemoteAgent> agents,
     required String userId,
   }) async {
+    final ticket = ++_inboxSetupTicket;
     _clearInboxPush();
 
     final inboxAgents =
@@ -494,10 +555,12 @@ mixin _LoadOps on _ChatControllerBase {
     if (inboxAgents.isEmpty) return;
 
     final identity = await NoiseIdentity.loadOrCreate();
+    if (ticket != _inboxSetupTicket) return;
     String? connectedBase;
     final acpIdToAgent = <String, RemoteAgent>{};
 
     for (final agent in inboxAgents) {
+      if (ticket != _inboxSetupTicket) return;
       final channelBase =
           ChannelMailboxService.channelBaseFromEndpoint(agent.endpoint);
       final acpAgentId = ChannelMailboxService.acpAgentIdFor(agent);
@@ -509,6 +572,7 @@ mixin _LoadOps on _ChatControllerBase {
           channelBase: channelBase,
           callerFp: identity.fingerprintHex,
         );
+        if (ticket != _inboxSetupTicket) return;
         connectedBase = channelBase;
       } else if (channelBase != connectedBase) {
         continue;
@@ -519,7 +583,7 @@ mixin _LoadOps on _ChatControllerBase {
       acpIdToAgent[acpAgentId] = agent;
     }
 
-    if (acpIdToAgent.isEmpty) return;
+    if (ticket != _inboxSetupTicket || acpIdToAgent.isEmpty) return;
 
     _inboxPushSub = InboxSubscribeService.instance.onMailReply.listen(
       (event) async {

@@ -198,6 +198,10 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   bool isCheckingHealth = true;
   Timer? _healthCheckTimer;
 
+  /// 健康检查实际查询的 agent。构造时已知 [agentId] 就用它；只带 channelId
+  /// 进来时，等频道解析出成员后再填上。
+  String? _statusAgentId;
+
   /// 当前 agent 若来自配对设备（peer agent），记录其来源 peerId。其在线状态跟随
   /// 该设备的 P2P 连接状态，而非普通的健康轮询；为 null 表示非 peer agent。
   String? _agentSourcePeerId;
@@ -464,8 +468,13 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
 
   /// Initialize the controller. Call this after constructing.
   Future<void> init() async {
+    // 在线状态是本地库里已有的字段（会话列表据此显示「在线」）。
+    // 不能等 loadMessages：那里会先拉信箱，标题会空转「连接中...」。
+    if (agentId != null) {
+      _statusAgentId = agentId;
+      unawaited(refreshAgentStatus());
+    }
     await loadMessages();
-    refreshAgentStatus();
     _healthCheckTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       refreshAgentStatus();
     });
@@ -870,35 +879,42 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   // ---------------------------------------------------------------------------
 
   Future<void> refreshAgentStatus() async {
-    if (agentId == null) return;
+    final id = _statusAgentId ?? agentId;
+    if (id == null) return;
     try {
-      final agent = await localDatabaseService.getAgentById(agentId!);
-      if (agent != null) {
-        final bool nextOnline;
-        if (agent.isPeerAgent) {
-          // peer agent 通过 P2P 隧道访问对端本地 agent，其可用性完全取决于来源
-          // 配对设备是否在线，因此在线状态直接跟随该设备的连接状态。
-          _agentSourcePeerId = agent.sourcePeerId;
-          final peerId = agent.sourcePeerId;
-          nextOnline = peerId != null &&
-              PeerConnectionManager.instance.getPeerState(peerId) ==
-                  PeerConnectionState.connected;
-        } else {
-          _agentSourcePeerId = null;
-          nextOnline = agent.status.isOnline;
-        }
-        final changed = isAgentOnline != nextOnline || isCheckingHealth;
-        isAgentOnline = nextOnline;
-        isCheckingHealth = false;
-        // 10s 轮询即使状态没变也会 _notify，整页 Markdown 重布局，滑动会突然变钝。
-        if (changed) _notify();
+      final agent = await localDatabaseService.getAgentById(id);
+      if (agent == null) {
+        _applyAgentOnline(false);
+        return;
       }
+      final bool nextOnline;
+      if (agent.isPeerAgent) {
+        // peer agent 通过 P2P 隧道访问对端本地 agent，其可用性完全取决于来源
+        // 配对设备是否在线，因此在线状态直接跟随该设备的连接状态。
+        _agentSourcePeerId = agent.sourcePeerId;
+        final peerId = agent.sourcePeerId;
+        nextOnline = peerId != null &&
+            PeerConnectionManager.instance.getPeerState(peerId) ==
+                PeerConnectionState.connected;
+      } else {
+        _agentSourcePeerId = null;
+        nextOnline = agent.status.isOnline;
+      }
+      _applyAgentOnline(nextOnline);
     } catch (_) {
       if (isCheckingHealth) {
         isCheckingHealth = false;
         _notify();
       }
     }
+  }
+
+  void _applyAgentOnline(bool nextOnline) {
+    final changed = isAgentOnline != nextOnline || isCheckingHealth;
+    isAgentOnline = nextOnline;
+    isCheckingHealth = false;
+    // 10s 轮询即使状态没变也会 _notify，整页 Markdown 重布局，滑动会突然变钝。
+    if (changed) _notify();
   }
 
   // ---------------------------------------------------------------------------
