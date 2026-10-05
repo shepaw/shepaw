@@ -93,6 +93,22 @@ class HistorySupplementResult {
 // ActiveTask, GroupActiveTask → see lib/services/task/task_models.dart
 // PlanApprovalHandle → see lib/services/task/plan_approval_service.dart
 
+/// 主机聊天日志和本机库按消息 id 合成一页。主机这一页是空的时，留下本机记录。
+List<Message> mergeHostAndLocalMessages(
+  List<Message> local,
+  List<Message> host,
+) {
+  if (host.isEmpty) return local;
+  if (local.isEmpty) return host;
+  final hostIds = host.map((message) => message.id).toSet();
+  final merged = <Message>[
+    for (final message in local)
+      if (!hostIds.contains(message.id)) message,
+    ...host,
+  ]..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+  return merged;
+}
+
 /// Chat Service
 /// Handles message sending and receiving with agents
 class ChatService {
@@ -2045,16 +2061,22 @@ $originalQuestion
 
   /// Total message rows in a channel.
   Future<int> countChannelMessages(String channelId) async {
-    final route = await PouchTurnRelay.currentRoute();
-    if (route.runLocal) {
-      return _historyService.countChannelMessages(channelId);
+    final local = await _historyService.countChannelMessages(channelId);
+    try {
+      final route = await PouchTurnRelay.currentRoute();
+      if (route.runLocal) return local;
+      final body = await PouchTurnRelay.instance
+          .readChat(
+            hostPeerId: route.hostPeerId!,
+            op: 'count',
+            channelId: channelId,
+          )
+          .timeout(const Duration(seconds: 8));
+      final remote = body.count ?? 0;
+      return remote > local ? remote : local;
+    } catch (_) {
+      return local;
     }
-    final body = await PouchTurnRelay.instance.readChat(
-      hostPeerId: route.hostPeerId!,
-      op: 'count',
-      channelId: channelId,
-    );
-    return body.count ?? 0;
   }
 
   Future<List<Message>> _readMessages(
@@ -2063,25 +2085,31 @@ $originalQuestion
     int limit = 100,
     String? beforeCreatedAt,
   }) async {
-    final route = await PouchTurnRelay.currentRoute();
-    if (route.runLocal) {
-      if (op == 'older') {
-        return _historyService.loadOlderChannelMessages(
-          channelId,
-          beforeCreatedAt: beforeCreatedAt ?? '',
-          limit: limit,
-        );
-      }
-      return _historyService.loadChannelMessages(channelId, limit: limit);
+    final local = op == 'older'
+        ? await _historyService.loadOlderChannelMessages(
+            channelId,
+            beforeCreatedAt: beforeCreatedAt ?? '',
+            limit: limit,
+          )
+        : await _historyService.loadChannelMessages(channelId, limit: limit);
+    try {
+      final route = await PouchTurnRelay.currentRoute();
+      if (route.runLocal) return local;
+      final body = await PouchTurnRelay.instance
+          .readChat(
+            hostPeerId: route.hostPeerId!,
+            op: op,
+            channelId: channelId,
+            limit: limit,
+            beforeCreatedAt: beforeCreatedAt,
+          )
+          .timeout(const Duration(seconds: 8));
+      // 会话列表仍读本机库。主机上的聊天日志是后加的，旧记录只在本机。
+      // 主机没有这一页时用本机的，两边都有时按 id 合并。
+      return mergeHostAndLocalMessages(local, body.messages);
+    } catch (_) {
+      return local;
     }
-    final body = await PouchTurnRelay.instance.readChat(
-      hostPeerId: route.hostPeerId!,
-      op: op,
-      channelId: channelId,
-      limit: limit,
-      beforeCreatedAt: beforeCreatedAt,
-    );
-    return body.messages;
   }
 
   /// Load recent messages sufficient to include [messageId] for scroll-to-search.
@@ -2090,22 +2118,27 @@ $originalQuestion
     String messageId, {
     int paddingAfter = 30,
   }) async {
-    final route = await PouchTurnRelay.currentRoute();
-    if (route.runLocal) {
-      return _historyService.loadChannelMessagesIncluding(
-        channelId,
-        messageId,
-        paddingAfter: paddingAfter,
-      );
-    }
-    final body = await PouchTurnRelay.instance.readChat(
-      hostPeerId: route.hostPeerId!,
-      op: 'including',
-      channelId: channelId,
-      limit: paddingAfter,
-      messageId: messageId,
+    final local = await _historyService.loadChannelMessagesIncluding(
+      channelId,
+      messageId,
+      paddingAfter: paddingAfter,
     );
-    return body.messages;
+    try {
+      final route = await PouchTurnRelay.currentRoute();
+      if (route.runLocal) return local;
+      final body = await PouchTurnRelay.instance
+          .readChat(
+            hostPeerId: route.hostPeerId!,
+            op: 'including',
+            channelId: channelId,
+            limit: paddingAfter,
+            messageId: messageId,
+          )
+          .timeout(const Duration(seconds: 8));
+      return mergeHostAndLocalMessages(local, body.messages);
+    } catch (_) {
+      return local;
+    }
   }
 
   /// Get channel ID for user-agent conversation

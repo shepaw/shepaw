@@ -478,7 +478,12 @@ class ConversationListController extends ChangeNotifier {
       final latestMsg =
           await _databaseService.getLatestMessageForAgent(agentId);
       var unreadCount = await _databaseService.getUnreadCountForAgent(agentId);
-      _agentChannelIds[agentId] = channelId;
+      final previewChannel = latestMsg?['channel_id'] as String?;
+      // 预览来自有消息的那条会话。最近被碰过的空壳不能把点击带进空白页。
+      _agentChannelIds[agentId] =
+          (previewChannel != null && previewChannel.isNotEmpty)
+              ? previewChannel
+              : channelId;
       _latestMessages[agentId] = latestMsg;
       // 用户正在该频道里查看 → 角标按 0 计。
       if (AppLifecycleService().activeChannelId == channelId) {
