@@ -7820,6 +7820,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_modelConfiguredOnComputer => '这个 Agent 的模型在电脑上配置';
 
   @override
+  String get chat_peerFastMode => 'Fast 模式';
+
+  @override
+  String get chat_peerFastModeHint => '响应更快，价格更高';
+
+  @override
+  String get chat_peerFastSwitchFailed => '切换 Fast 模式失败';
+
+  @override
   String get common_discardUnsaved => '有未保存的修改，放弃更改？';
 
   @override

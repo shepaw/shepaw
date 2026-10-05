@@ -100,6 +100,9 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   String? _peerModelsError;
   /// false：模型在对端电脑上配置，详情页只展示当前值。
   bool _peerModelsSwitchable = true;
+  /// Agent 级模型参数覆盖，例如 `fast: false`。
+  Map<String, String> _peerModelOptionValues = const {};
+  bool _peerFastSetting = false;
   /// 上次写进灵魂输入框的文本。用户改过之后，后台刷新不能覆盖。
   String? _soulApplied;
 
@@ -220,7 +223,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         }
         switch (event.kind) {
           case PeerAgentMetaKind.models:
-            if (_peerModelSetting) return;
+            if (_peerModelSetting || _peerFastSetting) return;
             unawaited(_showCachedPeerModels());
           case PeerAgentMetaKind.modes:
             if (_peerModeSetting) return;
@@ -299,6 +302,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       _peerModels = models;
       _peerCurrentModel = cached.current;
       _peerModelsSwitchable = cached.switchable;
+      _peerModelOptionValues = cached.optionValues;
       _peerModelsError =
           models.isEmpty ? l10n.agentDetail_modelSwitchUnsupported : null;
       _peerModelsLoading = false;
@@ -441,6 +445,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         _peerModels = models;
         _peerCurrentModel = cached.current;
         _peerModelsSwitchable = cached.switchable;
+        _peerModelOptionValues = cached.optionValues;
         _peerModelsError =
             models.isEmpty ? l10n.agentDetail_modelSwitchUnsupported : null;
         _peerModelsLoading = connected;
@@ -454,6 +459,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         _peerModels = const [];
         _peerCurrentModel = null;
         _peerModelsSwitchable = true;
+        _peerModelOptionValues = const {};
         _peerModelsError = l10n.agentDetail_peerOffline;
         _peerModelsLoading = false;
       });
@@ -479,9 +485,64 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       _peerModels = models;
       _peerCurrentModel = outcome.list.current;
       _peerModelsSwitchable = outcome.list.switchable;
+      _peerModelOptionValues = outcome.list.optionValues;
       _peerModelsError =
           models.isEmpty ? l10n.agentDetail_modelSwitchUnsupported : null;
     });
+  }
+
+  PeerModelOption? get _currentFastOption {
+    final current = _peerCurrentModel;
+    if (current == null) return null;
+    for (final model in _peerModels) {
+      if (model.value == current) return model.optionById('fast');
+    }
+    return null;
+  }
+
+  String? get _effectiveFast => PeerModelsList(
+        models: _peerModels,
+        current: _peerCurrentModel,
+        optionValues: _peerModelOptionValues,
+      ).effectiveOption('fast');
+
+  Future<void> _setPeerFast(bool enabled) async {
+    final l10n = AppLocalizations.of(context);
+    if (_peerFastSetting || !_peerModelsSwitchable || !_peerLinkUp) return;
+    final peerId = _agent.sourcePeerId;
+    final remoteId = _agent.remoteAgentId;
+    if (peerId == null || remoteId == null) return;
+    final next = enabled ? 'true' : 'false';
+    if (next == _effectiveFast) return;
+    final previous = Map<String, String>.from(_peerModelOptionValues);
+    setState(() {
+      _peerFastSetting = true;
+      _peerModelOptionValues = {
+        ..._peerModelOptionValues,
+        'fast': next,
+      };
+    });
+    final result = await PeerAgentClientService.instance.setModelOptionResult(
+      peerId: peerId,
+      remoteAgentId: remoteId,
+      option: 'fast',
+      value: next,
+    );
+    if (!mounted) return;
+    setState(() {
+      _peerFastSetting = false;
+      if (!result.ok) _peerModelOptionValues = previous;
+    });
+    if (result.ok) return;
+    final message = result.error == 'not_switchable'
+        ? l10n.chat_modelConfiguredOnComputer
+        : l10n.chat_peerFastSwitchFailed;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   Future<void> _onPeerModelSelected(String? value) async {
@@ -1791,6 +1852,25 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
               onChanged: (_peerModelSetting || !_peerLinkUp)
                   ? null
                   : _onPeerModelSelected,
+            ),
+          if (_currentFastOption != null)
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                l10n.chat_peerFastMode,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+              subtitle: Text(
+                l10n.chat_peerFastModeHint,
+                style: const TextStyle(fontSize: 12),
+              ),
+              value: _effectiveFast == 'true',
+              onChanged: (_peerFastSetting ||
+                      _peerModelSetting ||
+                      !_peerModelsSwitchable ||
+                      !_peerLinkUp)
+                  ? null
+                  : (enabled) => unawaited(_setPeerFast(enabled)),
             ),
         ],
       ),

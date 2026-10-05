@@ -122,6 +122,8 @@ class PeerConnection {
     'agent_models_resp',
     'agent_models_set_req',
     'agent_models_set_resp',
+    'agent_model_option_set_req',
+    'agent_model_option_set_resp',
     'agent_modes_req',
     'agent_modes_resp',
     'agent_modes_set_req',

@@ -805,26 +805,92 @@ String? _rowWireContent(Map<String, dynamic> row) {
   return wire is String && wire.isNotEmpty ? wire : null;
 }
 
+/// 模型参数，例如 Cursor 的 Fast。字段名对应 Hub 的 `options[]`。
+class PeerModelOption {
+  final String id;
+  final String displayName;
+  final String description;
+  final List<String> values;
+  final String defaultValue;
+
+  const PeerModelOption({
+    required this.id,
+    required this.displayName,
+    this.description = '',
+    this.values = const [],
+    this.defaultValue = '',
+  });
+
+  static PeerModelOption? fromJson(Map<String, dynamic> json) {
+    final id = (json['id'] as String?)?.trim() ?? '';
+    if (id.isEmpty) return null;
+    final display = (json['display_name'] as String?)?.trim();
+    final rawValues = json['values'];
+    final values = <String>[];
+    if (rawValues is List) {
+      for (final item in rawValues) {
+        if (item is String && item.isNotEmpty) values.add(item);
+      }
+    }
+    final fallback = json['default'];
+    return PeerModelOption(
+      id: id,
+      displayName: (display != null && display.isNotEmpty) ? display : id,
+      description: (json['description'] as String?) ?? '',
+      values: values,
+      defaultValue: fallback is String ? fallback : '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'display_name': displayName,
+        'description': description,
+        'values': values,
+        'default': defaultValue,
+      };
+}
+
 /// One upstream model option from `agent_models_resp`.
 class PeerAgentModel {
   final String value;
   final String displayName;
   final String description;
+  final List<PeerModelOption> options;
 
   PeerAgentModel({
     required this.value,
     required this.displayName,
     this.description = '',
+    this.options = const [],
   });
+
+  PeerModelOption? optionById(String id) {
+    for (final option in options) {
+      if (option.id == id) return option;
+    }
+    return null;
+  }
 
   static PeerAgentModel? fromJson(Map<String, dynamic> json) {
     final value = json['value'] as String?;
     if (value == null || value.isEmpty) return null;
     final display = (json['display_name'] as String?)?.trim();
+    final rawOptions = json['options'];
+    final options = <PeerModelOption>[];
+    if (rawOptions is List) {
+      for (final item in rawOptions) {
+        if (item is! Map) continue;
+        final parsed =
+            PeerModelOption.fromJson(Map<String, dynamic>.from(item));
+        if (parsed != null) options.add(parsed);
+      }
+    }
     return PeerAgentModel(
       value: value,
       displayName: (display != null && display.isNotEmpty) ? display : value,
       description: (json['description'] as String?) ?? '',
+      options: options,
     );
   }
 
@@ -832,6 +898,8 @@ class PeerAgentModel {
         'value': value,
         'display_name': displayName,
         'description': description,
+        if (options.isNotEmpty)
+          'options': [for (final option in options) option.toJson()],
       };
 }
 
@@ -839,16 +907,77 @@ class PeerAgentModel {
 ///
 /// [switchable] 缺省为 true，兼容不发这个字段的旧 Hub。false 表示模型在
 /// 对端电脑上配置，App 只能展示当前值。
+///
+/// [optionValues] 是 Agent 级覆盖（如 `fast: false`）。缺省为空，兼容旧缓存。
 class PeerModelsList {
   final List<PeerAgentModel> models;
   final String? current;
   final bool switchable;
+  final Map<String, String> optionValues;
 
   const PeerModelsList({
     required this.models,
     this.current,
     this.switchable = true,
+    this.optionValues = const {},
   });
+
+  /// 当前模型该参数的生效值：覆盖值优先，否则用模型默认值。
+  /// 当前模型不支持这个参数时返回 null。
+  String? effectiveOption(String optionId) {
+    final currentId = current;
+    if (currentId == null || currentId.isEmpty) return null;
+    PeerAgentModel? model;
+    for (final item in models) {
+      if (item.value == currentId) {
+        model = item;
+        break;
+      }
+    }
+    final option = model?.optionById(optionId);
+    if (option == null) return null;
+    final override = optionValues[optionId];
+    if (override != null && override.isNotEmpty) return override;
+    if (option.defaultValue.isEmpty) return null;
+    return option.defaultValue;
+  }
+
+  factory PeerModelsList.fromJson(Map<String, dynamic> data) {
+    final raw = (data['models'] as List?) ?? const [];
+    final models = raw
+        .whereType<Map>()
+        .map((item) => PeerAgentModel.fromJson(Map<String, dynamic>.from(item)))
+        .whereType<PeerAgentModel>()
+        .toList();
+    final current = data['current'];
+    return PeerModelsList(
+      models: models,
+      current: current is String ? current : null,
+      switchable: data['switchable'] != false,
+      optionValues: _optionValuesOf(data['option_values']),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'models': [for (final model in models) model.toJson()],
+        'current': current,
+        'switchable': switchable,
+        'option_values': optionValues,
+      };
+}
+
+Map<String, String> _optionValuesOf(Object? raw) {
+  if (raw is! Map) return const {};
+  final values = <String, String>{};
+  for (final entry in raw.entries) {
+    final key = entry.key;
+    final value = entry.value;
+    if (key is! String || key.isEmpty || value is! String || value.isEmpty) {
+      continue;
+    }
+    values[key] = value;
+  }
+  return values;
 }
 
 /// One upstream session-mode option from `agent_modes_resp`.
@@ -1378,6 +1507,10 @@ class PeerAgentClientService {
   final Map<String, Completer<({bool ok, String? error})>> _pendingModelSet =
       {};
 
+  /// Outstanding agent_model_option_set_req per "agentId::option" key.
+  final Map<String, Completer<({bool ok, String? error})>>
+      _pendingModelOptionSet = {};
+
   /// Outstanding agent_modes_req per remote agent id.
   final Map<String, Completer<PeerModesList>> _pendingModes = {};
 
@@ -1560,6 +1693,10 @@ class PeerAgentClientService {
       if (!c.isCompleted) c.complete((ok: false, error: null));
     }
     _pendingModelSet.clear();
+    for (final c in _pendingModelOptionSet.values) {
+      if (!c.isCompleted) c.complete((ok: false, error: null));
+    }
+    _pendingModelOptionSet.clear();
     for (final c in _pendingModeSet.values) {
       if (!c.isCompleted) c.complete((ok: false, error: null));
     }
@@ -1753,6 +1890,10 @@ class PeerAgentClientService {
       if (!c.isCompleted) c.complete((ok: false, error: null));
     }
     _pendingModelSet.clear();
+    for (final c in _pendingModelOptionSet.values) {
+      if (!c.isCompleted) c.complete((ok: false, error: null));
+    }
+    _pendingModelOptionSet.clear();
     for (final c in _pendingModeSet.values) {
       if (!c.isCompleted) c.complete((ok: false, error: null));
     }
@@ -2383,6 +2524,9 @@ class PeerAgentClientService {
       case 'agent_models_set_resp':
         _onModelsSetResp(event.data);
         break;
+      case 'agent_model_option_set_resp':
+        _onModelOptionSetResp(event.data);
+        break;
       case 'agent_modes_resp':
         _onModesResp(event.data);
         break;
@@ -2635,6 +2779,55 @@ class PeerAgentClientService {
     } else if (error == 'not_switchable') {
       _patchCachedSwitchable(remoteId, PeerAgentMetaKind.models, false);
     }
+  }
+
+  /// 设置 Agent 级模型参数（目前只有 Cursor 的 `fast`）。
+  /// [value] 为 `true` / `false`，空字符串表示清掉覆盖、回到模型默认值。
+  Future<({bool ok, String? error})> setModelOptionResult({
+    required String peerId,
+    required String remoteAgentId,
+    required String option,
+    required String value,
+    String? sessionId,
+  }) async {
+    final key = '$remoteAgentId::$option';
+    final existing = _pendingModelOptionSet[key];
+    if (existing != null) return existing.future;
+    final completer = Completer<({bool ok, String? error})>();
+    _pendingModelOptionSet[key] = completer;
+    final payload = <String, dynamic>{
+      'type': 'agent_model_option_set_req',
+      'agent_id': remoteAgentId,
+      'option': option,
+      'value': value,
+    };
+    if (sessionId != null && sessionId.isNotEmpty) {
+      payload['session_id'] = sessionId;
+    }
+    final sent = await _sendMetaControl(peerId, payload);
+    if (!sent) {
+      _pendingModelOptionSet.remove(key);
+      return (ok: false, error: null);
+    }
+    return completer.future.timeout(const Duration(seconds: 15), onTimeout: () {
+      _pendingModelOptionSet.remove(key);
+      return (ok: false, error: null);
+    });
+  }
+
+  void _onModelOptionSetResp(Map<String, dynamic> data) {
+    final remoteId = data['agent_id'] as String?;
+    final option = data['option'] as String?;
+    if (remoteId == null || option == null || option.isEmpty) return;
+    final rawValue = data['value'];
+    final value = rawValue is String ? rawValue : '';
+    final ok = data['ok'] == true;
+    final error = _nonEmpty(data['error']);
+    final completer = _pendingModelOptionSet.remove('$remoteId::$option');
+    if (completer != null && !completer.isCompleted) {
+      completer.complete((ok: ok, error: error));
+    }
+    if (ok) _patchCachedOptionValue(remoteId, option, value);
   }
 
   /// Fetch upstream session modes (`agent.modes.list` relay). Returns empty
@@ -2986,20 +3179,8 @@ class PeerAgentClientService {
     return scope == 'agent';
   }
 
-  PeerModelsList _parseModelsData(Map<String, dynamic> data) {
-    final raw = (data['models'] as List?) ?? const [];
-    final models = raw
-        .whereType<Map>()
-        .map((item) => PeerAgentModel.fromJson(Map<String, dynamic>.from(item)))
-        .whereType<PeerAgentModel>()
-        .toList();
-    final current = data['current'];
-    return PeerModelsList(
-      models: models,
-      current: current is String ? current : null,
-      switchable: data['switchable'] != false,
-    );
-  }
+  PeerModelsList _parseModelsData(Map<String, dynamic> data) =>
+      PeerModelsList.fromJson(data);
 
   PeerModesList _parseModesData(Map<String, dynamic> data) {
     final raw = (data['modes'] as List?) ?? const [];
@@ -3091,9 +3272,7 @@ class PeerAgentClientService {
       agentId: agentId,
       kind: PeerAgentMetaKind.models,
       payload: {
-        'models': [for (final model in list.models) model.toJson()],
-        'current': list.current,
-        'switchable': list.switchable,
+        ...list.toJson(),
         if (rev != null && rev.isNotEmpty) 'rev': rev,
       },
     );
@@ -3163,6 +3342,35 @@ class PeerAgentClientService {
     }());
   }
 
+  void _patchCachedOptionValue(String agentId, String option, String value) {
+    unawaited(() async {
+      try {
+        final row =
+            await _db.getPeerAgentMeta(agentId, PeerAgentMetaKind.models);
+        if (row == null) return;
+        final payload = Map<String, dynamic>.from(row.payload);
+        final raw = payload['option_values'];
+        final values =
+            raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+        if (value.isEmpty) {
+          values.remove(option);
+        } else {
+          values[option] = value;
+        }
+        payload['option_values'] = values;
+        await _db.upsertPeerAgentMeta(PeerAgentMetaCacheEntry(
+          agentId: agentId,
+          kind: PeerAgentMetaKind.models,
+          payload: payload,
+          fetchedAt: DateTime.now().millisecondsSinceEpoch,
+        ));
+        _emitMetaChanged(agentId, PeerAgentMetaKind.models);
+      } catch (e) {
+        _log.warning('peer meta option update failed: $e', tag: _tag);
+      }
+    }());
+  }
+
   void _patchCachedSwitchable(String agentId, String kind, bool switchable) {
     unawaited(() async {
       try {
@@ -3222,20 +3430,8 @@ class PeerAgentClientService {
     try {
       final row = await _db.getPeerAgentMeta(agentId, PeerAgentMetaKind.models);
       if (row == null) return null;
-      final raw = row.payload['models'];
-      if (raw is! List) return null;
-      final models = <PeerAgentModel>[];
-      for (final item in raw) {
-        if (item is! Map) continue;
-        final parsed = PeerAgentModel.fromJson(Map<String, dynamic>.from(item));
-        if (parsed != null) models.add(parsed);
-      }
-      final current = row.payload['current'];
-      return PeerModelsList(
-        models: models,
-        current: current is String ? current : null,
-        switchable: row.payload['switchable'] != false,
-      );
+      if (row.payload['models'] is! List) return null;
+      return PeerModelsList.fromJson(row.payload);
     } catch (e) {
       _log.warning('read models cache failed: $e', tag: _tag);
       return null;

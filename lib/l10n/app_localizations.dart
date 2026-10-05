@@ -14175,6 +14175,24 @@ abstract class AppLocalizations {
   /// **'这个 Agent 的模型在电脑上配置'**
   String get chat_modelConfiguredOnComputer;
 
+  /// No description provided for @chat_peerFastMode.
+  ///
+  /// In zh, this message translates to:
+  /// **'Fast 模式'**
+  String get chat_peerFastMode;
+
+  /// No description provided for @chat_peerFastModeHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'响应更快，价格更高'**
+  String get chat_peerFastModeHint;
+
+  /// No description provided for @chat_peerFastSwitchFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'切换 Fast 模式失败'**
+  String get chat_peerFastSwitchFailed;
+
   /// No description provided for @common_discardUnsaved.
   ///
   /// In zh, this message translates to:

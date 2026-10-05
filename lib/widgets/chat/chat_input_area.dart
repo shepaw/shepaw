@@ -240,6 +240,9 @@ class ChatInputAreaState extends State<ChatInputArea> {
   /// 对端声明模型在电脑上配置，App 不能切换。缺省可切换。
   bool _peerModelsSwitchable = true;
   bool _modelSetting = false;
+  /// Agent 级模型参数覆盖，例如 `fast: false`。空表示跟随模型默认值。
+  Map<String, String> _peerModelOptionValues = const {};
+  bool _fastSetting = false;
 
   /// 本地 agent 未配置模型、或 Peer agent 上游没给列表 → 入口都不出现。
   bool get _modelEntryAvailable =>
@@ -247,6 +250,15 @@ class ChatInputAreaState extends State<ChatInputArea> {
 
   /// 主模型菜单里的「添加模型」哨兵值（仅本地 agent 的菜单有）。
   static const _addModelSentinel = '__add_model__';
+
+  /// 模型菜单里的 Fast 开关，避免被当成模型 id。
+  static const _fastToggleSentinel = '__peer_fast__';
+
+  String? get _effectiveFast => PeerModelsList(
+        models: _peerModels,
+        current: _currentPeerModel,
+        optionValues: _peerModelOptionValues,
+      ).effectiveOption('fast');
 
   @override
   void initState() {
@@ -330,6 +342,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
       _peerModels = const [];
       _currentPeerModel = null;
       _peerModelsSwitchable = true;
+      _peerModelOptionValues = const {};
+      _fastSetting = false;
       _peerControlsOffline = false;
       unawaited(_loadAgentControls());
     }
@@ -430,7 +444,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
         event.kind != PeerAgentMetaKind.modes) {
       return;
     }
-    if (_modelSetting || _sessionModeSetting) return;
+    if (_modelSetting || _sessionModeSetting || _fastSetting) return;
     unawaited(_reloadPeerControlsFromCache());
   }
 
@@ -481,10 +495,12 @@ class ChatInputAreaState extends State<ChatInputArea> {
         _peerModels = cachedModels.models;
         _currentPeerModel = cachedModels.current;
         _peerModelsSwitchable = cachedModels.switchable;
+        _peerModelOptionValues = cachedModels.optionValues;
       } else {
         _peerModels = const [];
         _currentPeerModel = null;
         _peerModelsSwitchable = true;
+        _peerModelOptionValues = const {};
       }
     });
   }
@@ -504,6 +520,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
       _peerModels = outcome.list.models;
       _currentPeerModel = outcome.list.current;
       _peerModelsSwitchable = outcome.list.switchable;
+      _peerModelOptionValues = outcome.list.optionValues;
     });
   }
 
@@ -693,6 +710,10 @@ class ChatInputAreaState extends State<ChatInputArea> {
                 ),
               ),
             ),
+            if (_effectiveFast == 'true') ...[
+              const SizedBox(width: 2),
+              Icon(Icons.bolt, size: 12, color: fg),
+            ],
             const SizedBox(width: 2),
             Icon(Icons.arrow_drop_down, size: 16, color: fg),
           ],
@@ -743,6 +764,44 @@ class ChatInputAreaState extends State<ChatInputArea> {
     );
   }
 
+  Future<void> _setPeerFast(bool enabled) async {
+    if (_blockPeerModelSwitch()) return;
+    final peerId = _peerId;
+    final remoteAgentId = _remoteAgentId;
+    if (peerId == null || remoteAgentId == null || _fastSetting) return;
+    final next = enabled ? 'true' : 'false';
+    if (next == _effectiveFast) return;
+    final previous = Map<String, String>.from(_peerModelOptionValues);
+    setState(() {
+      _fastSetting = true;
+      _peerModelOptionValues = {
+        ..._peerModelOptionValues,
+        'fast': next,
+      };
+    });
+    final result = await PeerAgentClientService.instance.setModelOptionResult(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      option: 'fast',
+      value: next,
+      sessionId: _sessionIdForMode,
+    );
+    if (!mounted) return;
+    setState(() => _fastSetting = false);
+    if (result.ok) return;
+    setState(() => _peerModelOptionValues = previous);
+    if (result.error == 'not_switchable') {
+      _toastModelConfiguredOnComputer();
+      return;
+    }
+    showTopToast(
+      context,
+      AppLocalizations.of(context).chat_peerFastSwitchFailed,
+      icon: Icons.error_outline,
+      color: Colors.red.shade400,
+    );
+  }
+
   /// Peer agent → 上游模型列表；本地 agent → 与 Agent 设置页同一套候选
   ///（`ModelRegistry` 的全局定义），末尾带「添加模型」直达模型管理页
   ///（§6 #8 要求能顺手添加）。
@@ -766,6 +825,9 @@ class ChatInputAreaState extends State<ChatInputArea> {
         : Rect.fromLTWH(24, overlayBox.size.height - 240, 200, 0);
     final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
+    final fastOption =
+        _findPeerModel(_currentPeerModel ?? '')?.optionById('fast');
+    final fastOn = _effectiveFast == 'true';
     final picked = await showMenu<String>(
       context: context,
       position: RelativeRect.fromSize(rect, overlayBox.size),
@@ -774,7 +836,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
           ? _currentPeerModel
           : _mainModelDef?.id,
       items: [
-        if (peerModels.isNotEmpty)
+        if (peerModels.isNotEmpty) ...[
           for (final m in peerModels)
             PopupMenuItem<String>(
               value: m.value,
@@ -784,8 +846,30 @@ class ChatInputAreaState extends State<ChatInputArea> {
                 selected: m.value == _currentPeerModel,
                 colorScheme: colorScheme,
               ),
-            )
-        else ...[
+            ),
+          if (fastOption != null) ...[
+            const PopupMenuDivider(),
+            CheckedPopupMenuItem<String>(
+              value: _fastToggleSentinel,
+              checked: fastOn,
+              height: 64,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(l10n.chat_peerFastMode),
+                  Text(
+                    l10n.chat_peerFastModeHint,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ] else ...[
           for (final def in defs)
             PopupMenuItem<String>(
               value: def.id,
@@ -816,6 +900,10 @@ class ChatInputAreaState extends State<ChatInputArea> {
       ],
     );
     if (!mounted || picked == null) return;
+    if (picked == _fastToggleSentinel) {
+      await _setPeerFast(!fastOn);
+      return;
+    }
     if (peerModels.isNotEmpty) {
       await _setPeerModel(picked);
       return;

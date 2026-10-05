@@ -8123,6 +8123,15 @@ class AppLocalizationsEn extends AppLocalizations {
       'This agent\'s model is configured on the computer';
 
   @override
+  String get chat_peerFastMode => 'Fast mode';
+
+  @override
+  String get chat_peerFastModeHint => 'Faster responses, higher cost';
+
+  @override
+  String get chat_peerFastSwitchFailed => 'Failed to switch Fast mode';
+
+  @override
   String get common_discardUnsaved => 'You have unsaved changes. Discard them?';
 
   @override
