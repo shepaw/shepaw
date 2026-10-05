@@ -45,6 +45,53 @@ void main() {
       optionValues: const {'fast': 'false'},
     );
     expect(unsupported.effectiveOption('fast'), isNull);
+
+    final labeled = PeerModelsList.fromJson({
+      'models': [
+        {
+          'value': 'grok-4.7',
+          'display_name': 'Grok 4.7',
+          'options': [
+            {
+              'id': 'context',
+              'display_name': 'Context',
+              'values': ['256k', '500k'],
+              'labels': ['256K', '500K'],
+              'default': '256k',
+            },
+            {
+              'id': 'reasoning_effort',
+              'display_name': 'Effort',
+              'values': ['low', 'high'],
+              'default': 'high',
+            },
+          ],
+        },
+        {
+          'value': 'sonnet',
+          'display_name': 'Sonnet',
+          'options': [
+            {
+              'id': 'context',
+              'display_name': 'Context',
+              'values': ['200k'],
+              'default': '200k',
+            },
+          ],
+        },
+      ],
+      'current': 'grok-4.7',
+      'option_values': {'context': '500k', 'reasoning_effort': 'low'},
+    });
+    expect(labeled.effectiveOption('context'), '500k');
+    expect(labeled.effectiveOptionLabel('context'), '500K');
+    expect(labeled.effectiveOptionLabel('reasoning_effort'), 'Low');
+    final other = PeerModelsList(
+      models: labeled.models,
+      current: 'sonnet',
+      optionValues: labeled.optionValues,
+    );
+    expect(other.effectiveOption('context'), '200k');
   });
 
   test('old model payloads without options still parse', () {

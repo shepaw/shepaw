@@ -7829,6 +7829,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_peerFastSwitchFailed => '切换 Fast 模式失败';
 
   @override
+  String get chat_peerOptionSwitchFailed => '切换失败';
+
+  @override
   String get common_discardUnsaved => '有未保存的修改，放弃更改？';
 
   @override

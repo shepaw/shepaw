@@ -8132,6 +8132,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_peerFastSwitchFailed => 'Failed to switch Fast mode';
 
   @override
+  String get chat_peerOptionSwitchFailed => 'Couldn\'t change this setting';
+
+  @override
   String get common_discardUnsaved => 'You have unsaved changes. Discard them?';
 
   @override

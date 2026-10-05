@@ -811,6 +811,7 @@ class PeerModelOption {
   final String displayName;
   final String description;
   final List<String> values;
+  final List<String> labels;
   final String defaultValue;
 
   const PeerModelOption({
@@ -818,26 +819,34 @@ class PeerModelOption {
     required this.displayName,
     this.description = '',
     this.values = const [],
+    this.labels = const [],
     this.defaultValue = '',
   });
+
+  /// Fast 用胶囊开关，其余参数进二级菜单。
+  bool get isSwitch => id == 'fast';
+
+  String labelFor(String value) {
+    final index = values.indexOf(value);
+    if (index >= 0 && index < labels.length && labels[index].isNotEmpty) {
+      return labels[index];
+    }
+    return formatCursorOptionValue(id, value);
+  }
 
   static PeerModelOption? fromJson(Map<String, dynamic> json) {
     final id = (json['id'] as String?)?.trim() ?? '';
     if (id.isEmpty) return null;
     final display = (json['display_name'] as String?)?.trim();
-    final rawValues = json['values'];
-    final values = <String>[];
-    if (rawValues is List) {
-      for (final item in rawValues) {
-        if (item is String && item.isNotEmpty) values.add(item);
-      }
-    }
+    final values = _stringList(json['values']);
+    final labels = _stringList(json['labels']);
     final fallback = json['default'];
     return PeerModelOption(
       id: id,
       displayName: (display != null && display.isNotEmpty) ? display : id,
       description: (json['description'] as String?) ?? '',
       values: values,
+      labels: labels,
       defaultValue: fallback is String ? fallback : '',
     );
   }
@@ -847,8 +856,50 @@ class PeerModelOption {
         'display_name': displayName,
         'description': description,
         'values': values,
+        if (labels.isNotEmpty) 'labels': labels,
         'default': defaultValue,
       };
+}
+
+List<String> _stringList(Object? raw) {
+  if (raw is! List) return const [];
+  final values = <String>[];
+  for (final item in raw) {
+    if (item is String && item.isNotEmpty) values.add(item);
+  }
+  return values;
+}
+
+/// Hub 没给展示文案时，把 `500k` / `high` 显示成 Cursor 菜单里的样子。
+String formatCursorOptionValue(String id, String value) {
+  switch (id) {
+    case 'context':
+      if (value.endsWith('k') || value.endsWith('m')) {
+        return '${value.substring(0, value.length - 1)}${value[value.length - 1].toUpperCase()}';
+      }
+      return value;
+    case 'reasoning_effort':
+      switch (value) {
+        case 'low':
+          return 'Low';
+        case 'medium':
+        case 'med':
+          return 'Medium';
+        case 'high':
+          return 'High';
+        case 'xhigh':
+        case 'extra-high':
+        case 'extra_high':
+          return 'Extra High';
+        case 'max':
+          return 'Max';
+        default:
+          if (value.isEmpty) return value;
+          return '${value[0].toUpperCase()}${value.substring(1)}';
+      }
+    default:
+      return value;
+  }
 }
 
 /// One upstream model option from `agent_models_resp`.
@@ -937,9 +988,26 @@ class PeerModelsList {
     final option = model?.optionById(optionId);
     if (option == null) return null;
     final override = optionValues[optionId];
-    if (override != null && override.isNotEmpty) return override;
+    if (override != null &&
+        override.isNotEmpty &&
+        (option.values.isEmpty || option.values.contains(override))) {
+      return override;
+    }
     if (option.defaultValue.isEmpty) return null;
     return option.defaultValue;
+  }
+
+  /// 生效值的展示文案。当前模型没有这个参数时返回 null。
+  String? effectiveOptionLabel(String optionId) {
+    final value = effectiveOption(optionId);
+    if (value == null) return null;
+    final currentId = current;
+    if (currentId == null) return value;
+    for (final item in models) {
+      if (item.value != currentId) continue;
+      return item.optionById(optionId)?.labelFor(value) ?? value;
+    }
+    return value;
   }
 
   factory PeerModelsList.fromJson(Map<String, dynamic> data) {

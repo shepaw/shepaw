@@ -12,6 +12,7 @@ import '../l10n/app_localizations.dart';
 import '../models/remote_agent.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_agent_client_service.dart';
+import '../widgets/chat/cursor_model_panel.dart';
 import '../peer/engine_session_modes.dart';
 import '../services/database/peer_agent_meta_cache_dao.dart';
 import '../peer/services/peer_connection.dart' show PeerConnectionEvent, PeerConnectionEventType;
@@ -491,42 +492,31 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     });
   }
 
-  PeerModelOption? get _currentFastOption {
-    final current = _peerCurrentModel;
-    if (current == null) return null;
-    for (final model in _peerModels) {
-      if (model.value == current) return model.optionById('fast');
-    }
-    return null;
-  }
-
-  String? get _effectiveFast => PeerModelsList(
-        models: _peerModels,
-        current: _peerCurrentModel,
-        optionValues: _peerModelOptionValues,
-      ).effectiveOption('fast');
-
-  Future<void> _setPeerFast(bool enabled) async {
+  Future<void> _setPeerOption(String option, String value) async {
     final l10n = AppLocalizations.of(context);
     if (_peerFastSetting || !_peerModelsSwitchable || !_peerLinkUp) return;
     final peerId = _agent.sourcePeerId;
     final remoteId = _agent.remoteAgentId;
     if (peerId == null || remoteId == null) return;
-    final next = enabled ? 'true' : 'false';
-    if (next == _effectiveFast) return;
+    final current = PeerModelsList(
+      models: _peerModels,
+      current: _peerCurrentModel,
+      optionValues: _peerModelOptionValues,
+    ).effectiveOption(option);
+    if (value == current) return;
     final previous = Map<String, String>.from(_peerModelOptionValues);
     setState(() {
       _peerFastSetting = true;
       _peerModelOptionValues = {
         ..._peerModelOptionValues,
-        'fast': next,
+        option: value,
       };
     });
     final result = await PeerAgentClientService.instance.setModelOptionResult(
       peerId: peerId,
       remoteAgentId: remoteId,
-      option: 'fast',
-      value: next,
+      option: option,
+      value: value,
     );
     if (!mounted) return;
     setState(() {
@@ -536,7 +526,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     if (result.ok) return;
     final message = result.error == 'not_switchable'
         ? l10n.chat_modelConfiguredOnComputer
-        : l10n.chat_peerFastSwitchFailed;
+        : l10n.chat_peerOptionSwitchFailed;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -1724,6 +1714,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     final colorScheme = Theme.of(context).colorScheme;
     final busy = _peerModelsLoading || _peerModelSetting;
     final models = _uniqueByValue(_peerModels, (m) => m.value);
+    final parameterized = models.any((model) => model.options.isNotEmpty);
     final effectiveCurrent = _peerCurrentModel ??
         (models.length == 1 ? models.first.value : null);
     final dropdownValue = effectiveCurrent != null &&
@@ -1803,6 +1794,20 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                       .displayName,
               style: const TextStyle(fontSize: 14),
             )
+          else if (parameterized)
+            CursorModelSettings(
+              models: models,
+              currentModel: dropdownValue,
+              optionValues: _peerModelOptionValues,
+              modelLabel: l10n.agentDetail_model,
+              enabled: !_peerFastSetting && !_peerModelSetting && _peerLinkUp,
+              onFastChanged: (enabled) => unawaited(
+                _setPeerOption('fast', enabled ? 'true' : 'false'),
+              ),
+              onOptionChanged: (option, value) =>
+                  unawaited(_setPeerOption(option, value)),
+              onModelChanged: _onPeerModelSelected,
+            )
           else
             DropdownButtonFormField<String>(
               value: dropdownValue,
@@ -1852,25 +1857,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
               onChanged: (_peerModelSetting || !_peerLinkUp)
                   ? null
                   : _onPeerModelSelected,
-            ),
-          if (_currentFastOption != null)
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(
-                l10n.chat_peerFastMode,
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-              ),
-              subtitle: Text(
-                l10n.chat_peerFastModeHint,
-                style: const TextStyle(fontSize: 12),
-              ),
-              value: _effectiveFast == 'true',
-              onChanged: (_peerFastSetting ||
-                      _peerModelSetting ||
-                      !_peerModelsSwitchable ||
-                      !_peerLinkUp)
-                  ? null
-                  : (enabled) => unawaited(_setPeerFast(enabled)),
             ),
         ],
       ),

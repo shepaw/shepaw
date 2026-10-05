@@ -14193,6 +14193,12 @@ abstract class AppLocalizations {
   /// **'切换 Fast 模式失败'**
   String get chat_peerFastSwitchFailed;
 
+  /// No description provided for @chat_peerOptionSwitchFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'切换失败'**
+  String get chat_peerOptionSwitchFailed;
+
   /// No description provided for @common_discardUnsaved.
   ///
   /// In zh, this message translates to:

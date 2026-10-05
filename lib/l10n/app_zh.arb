@@ -4810,6 +4810,7 @@
   "chat_peerFastMode": "Fast 模式",
   "chat_peerFastModeHint": "响应更快，价格更高",
   "chat_peerFastSwitchFailed": "切换 Fast 模式失败",
+  "chat_peerOptionSwitchFailed": "切换失败",
   "common_discardUnsaved": "有未保存的修改，放弃更改？",
   "chat_deleteMessageTitle": "删除消息",
   "chat_deleteMessageContent": "确定删除这条消息？此操作不可撤销。",

@@ -4339,6 +4339,7 @@
   "chat_peerFastMode": "Fast mode",
   "chat_peerFastModeHint": "Faster responses, higher cost",
   "chat_peerFastSwitchFailed": "Failed to switch Fast mode",
+  "chat_peerOptionSwitchFailed": "Couldn't change this setting",
   "common_discardUnsaved": "You have unsaved changes. Discard them?",
   "chat_deleteMessageTitle": "Delete message",
   "chat_deleteMessageContent": "Delete this message? This cannot be undone.",
