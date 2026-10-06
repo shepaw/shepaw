@@ -114,7 +114,6 @@ void main() {
       'EDENZOU-MB2',
       '公司 Mac mini',
       'Android-AA38',
-      'EDENZOU-MB2',
     ]);
     expect(view.devices.first.isHost, isTrue);
     expect(view.devices.first.isThisDevice, isTrue);
@@ -125,9 +124,69 @@ void main() {
     expect(view.devices[1].online, isTrue);
     expect(view.devices[1].isHost, isFalse);
     expect(view.devices[1].isThisDevice, isFalse);
-    expect(view.devices[2].isThisDevice, isFalse);
-    expect(view.devices.last.isThisDevice, isTrue);
+    expect(view.devices.last.isThisDevice, isFalse);
     expect(view.devices.last.isHost, isFalse);
+  });
+
+  test('主机就在这台电脑时，名单里的本机镜像并进主机行', () {
+    final view = buildContacts(
+      hostPeerId: hostId,
+      hostPeer: peer(hostId, 'EDENZOU-MB2', hostFp),
+      roster: [
+        peer(
+          hostId,
+          'EDENZOU-MB2',
+          appFp,
+          state: PeerConnectionState.connected,
+        ),
+        peer('phone', 'Android-AA38', 'cccccccccccccccc'),
+      ],
+      agents: [
+        agent(
+          id: 'on-app',
+          name: '挂在镜像上的',
+          sourcePeerId: 'somewhere',
+          rosterFingerprint: appFp,
+        ),
+      ],
+      appFingerprint: appFp,
+      localCliFingerprint: hostFp,
+      connectedPeerIds: {hostId},
+      rosterFailed: false,
+    );
+
+    expect(view.devices.map((d) => d.peer.id), [hostId, 'phone']);
+    expect(view.devices.first.isHost, isTrue);
+    expect(view.devices.first.isThisDevice, isTrue);
+    expect(view.devices.first.agents.single.name, '挂在镜像上的');
+    expect(view.devices.map((d) => d.rowKey).toSet().length, 2);
+  });
+
+  test('手机上看远程主机时，本机仍单独列出', () {
+    final view = buildContacts(
+      hostPeerId: hostId,
+      hostPeer: peer(hostId, '家里的 Mac', hostFp),
+      roster: [
+        peer(
+          hostId,
+          'Android-AA38',
+          appFp,
+          state: PeerConnectionState.connected,
+        ),
+      ],
+      agents: const [],
+      appFingerprint: appFp,
+      localCliFingerprint: null,
+      connectedPeerIds: {hostId},
+      rosterFailed: false,
+    );
+
+    expect(view.devices.map((d) => d.peer.deviceName), ['家里的 Mac', 'Android-AA38']);
+    expect(view.devices.first.isHost, isTrue);
+    expect(view.devices.first.isThisDevice, isFalse);
+    expect(view.devices.last.isHost, isFalse);
+    expect(view.devices.last.isThisDevice, isTrue);
+    expect(view.devices.first.rowKey, isNot(view.devices.last.rowKey));
   });
 
   test('名单里等于主机指纹的项被去掉', () {

@@ -82,8 +82,10 @@ class ContactsScreenState extends State<ContactsScreen> {
     _ContactsSection.groups,
   };
 
-  /// Peer ids whose nested agent list is expanded.
+  /// Peer ids whose nested agent list is expanded. Keyed by [ContactDevice.rowKey],
+  /// because one pairing id can belong to two rows.
   final Set<String> _expandedPeerIds = {};
+  String? _selectedRowKey;
 
   StreamSubscription<ContactsView>? _directorySub;
 
@@ -112,9 +114,9 @@ class ContactsScreenState extends State<ContactsScreen> {
       setState(() {
         _view = view;
         _isLoading = false;
-        final hostId = view.host?.id;
-        if (hostId != null && !_pinnedHost) {
-          _expandedPeerIds.add(hostId);
+        final host = view.devices.where((device) => device.isHost).firstOrNull;
+        if (host != null && !_pinnedHost) {
+          _expandedPeerIds.add(host.rowKey);
           _pinnedHost = true;
         }
       });
@@ -134,11 +136,10 @@ class ContactsScreenState extends State<ContactsScreen> {
     super.didUpdateWidget(oldWidget);
     // Keep the selected peer's agent list expanded when details open on the right.
     final selected = widget.selectedContactId;
-    if (selected != null &&
-        selected != oldWidget.selectedContactId &&
-        _peerIds.any((id) => id == selected)) {
-      _expandedPeerIds.add(selected);
-    }
+    if (selected == null || selected == oldWidget.selectedContactId) return;
+    final matches = _view?.devices.where((device) => device.peer.id == selected);
+    final only = matches?.length == 1 ? matches!.single : null;
+    if (only != null) _expandedPeerIds.add(only.rowKey);
   }
 
   Future<void> _reload({bool quiet = false}) async {
@@ -151,12 +152,6 @@ class ContactsScreenState extends State<ContactsScreen> {
     }
     await _directory.refresh();
     if (mounted) setState(() => _isLoading = false);
-  }
-
-  List<String> get _peerIds {
-    final view = _view;
-    if (view == null) return const [];
-    return [for (final device in view.devices) device.peer.id];
   }
 
   List<Agent> _matchingAgents(List<Agent> agents) {
@@ -189,22 +184,24 @@ class ContactsScreenState extends State<ContactsScreen> {
     });
   }
 
-  void _togglePeerExpanded(PairedPeer peer) {
+  void _togglePeerExpanded(ContactDevice device) {
+    final key = device.rowKey;
     setState(() {
-      if (_expandedPeerIds.contains(peer.id)) {
-        _expandedPeerIds.remove(peer.id);
+      if (_expandedPeerIds.contains(key)) {
+        _expandedPeerIds.remove(key);
       } else {
-        _expandedPeerIds.add(peer.id);
+        _expandedPeerIds.add(key);
       }
     });
   }
 
   /// Desktop: expand + show detail in the right panel.
   /// Mobile: expand/collapse only — settings via info button or long-press menu.
-  void _onPeerTap(PairedPeer peer) {
-    _togglePeerExpanded(peer);
+  void _onPeerTap(ContactDevice device) {
+    _selectedRowKey = device.rowKey;
+    _togglePeerExpanded(device);
     if (widget.embedded) {
-      _openPeerDetail(peer);
+      _openPeerDetail(device.peer);
     }
   }
 
@@ -345,6 +342,7 @@ class ContactsScreenState extends State<ContactsScreen> {
       else ...[
         for (final device in devices)
           Opacity(
+            key: ValueKey(device.rowKey),
             opacity: device.isHost || view.hostOnline ? 1 : 0.45,
             child: Column(
               children: _deviceRows(device, view, l10n),
@@ -428,15 +426,13 @@ class ContactsScreenState extends State<ContactsScreen> {
     final extras =
         device.isHost ? _matchingAgents(view.otherAgents) : const <Agent>[];
     final visibleAgents = [...agents, ...extras];
-    final expanded = _expandedPeerIds.contains(device.peer.id) ||
+    final expanded = _expandedPeerIds.contains(device.rowKey) ||
         (_query.isNotEmpty && visibleAgents.isNotEmpty);
     return [
       _buildPeerFoldHeader(
-        device.peer,
+        device,
         l10n,
         agents: visibleAgents,
-        isHost: device.isHost,
-        thisDevice: device.isThisDevice,
         online: device.isHost ? view.hostOnline : device.online,
         statusText: device.isHost ? _hostStatus(view, l10n) : null,
         onStatusTap: device.isHost && !view.hostOnline ? _reconnectHost : null,
@@ -462,6 +458,15 @@ class ContactsScreenState extends State<ContactsScreen> {
           ),
       ],
     ];
+  }
+
+  bool _isDeviceSelected(ContactDevice device) {
+    final selected = widget.selectedContactId;
+    if (selected == null || selected != device.peer.id) return false;
+    final matches =
+        _view?.devices.where((item) => item.peer.id == selected).length ?? 0;
+    if (matches <= 1) return true;
+    return _selectedRowKey == device.rowKey;
   }
 
   String _hostStatus(ContactsView view, AppLocalizations l10n) {
@@ -571,22 +576,21 @@ class ContactsScreenState extends State<ContactsScreen> {
 
   /// Device row: chevron + device icon + name; tap toggles fold (mobile) or fold + detail (desktop).
   Widget _buildPeerFoldHeader(
-    PairedPeer peer,
+    ContactDevice device,
     AppLocalizations l10n, {
     required List<Agent> agents,
     String? statusText,
-    bool isHost = false,
-    bool thisDevice = false,
     bool? online,
     VoidCallback? onStatusTap,
   }) {
+    final peer = device.peer;
     final isConnected = online ?? peer.state == PeerConnectionState.connected;
-    final expanded = _expandedPeerIds.contains(peer.id) ||
+    final expanded = _expandedPeerIds.contains(device.rowKey) ||
         (_query.isNotEmpty && agents.isNotEmpty);
     final agentCount = agents.length;
     final status = statusText ??
         peer.state.listStatusLabel(l10n, showE2eWhenConnected: true);
-    final selected = widget.selectedContactId == peer.id;
+    final selected = _isDeviceSelected(device);
     final colorScheme = Theme.of(context).colorScheme;
 
     return Material(
@@ -594,7 +598,7 @@ class ContactsScreenState extends State<ContactsScreen> {
           ? colorScheme.primary.withValues(alpha: 0.08)
           : Colors.transparent,
       child: InkWell(
-        onTap: () => _onPeerTap(peer),
+        onTap: () => _onPeerTap(device),
         onLongPress: widget.embedded ? null : () => _showPeerActions(peer),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -653,7 +657,7 @@ class ContactsScreenState extends State<ContactsScreen> {
                             ),
                           ),
                         ),
-                        if (isHost) ...[
+                        if (device.isHost) ...[
                           const SizedBox(width: 6),
                           _roleTag(
                             l10n.contacts_host,
@@ -661,7 +665,7 @@ class ContactsScreenState extends State<ContactsScreen> {
                             foreground: colorScheme.onTertiaryContainer,
                           ),
                         ],
-                        if (thisDevice) ...[
+                        if (device.isThisDevice) ...[
                           const SizedBox(width: 6),
                           _roleTag(
                             l10n.contacts_thisDevice,

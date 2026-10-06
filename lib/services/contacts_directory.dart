@@ -31,6 +31,10 @@ class ContactDevice {
   final bool isHost;
   final bool isThisDevice;
   final bool online;
+
+  /// 折叠和选中不能只用 [PairedPeer.id]：一次配对的两边会共用这个 id。
+  String get rowKey =>
+      '${isHost ? 'host' : 'peer'}:${peer.id}:${peer.fingerprint}';
 }
 
 /// 通讯录里的全部设备。主机只是其中一台，群聊不在这里。
@@ -70,6 +74,9 @@ class ContactsView {
 ///
 /// 主机名单里的 id 和本机配对行不是同一套，所以智能体只按
 /// `roster_hub_fingerprint` 挂到对应设备上。主机本身排在设备列表最前。
+///
+/// 一次配对的两边共用同一个 peer id、指纹却不同。主机就在这台电脑上时，
+/// 名单里指向本 App 的那一行是同一台机器，不再单独占一行。
 ContactsView buildContacts({
   required String? hostPeerId,
   required PairedPeer? hostPeer,
@@ -121,25 +128,40 @@ ContactsView buildContacts({
 
   final hostIsThisComputer =
       sameFingerprint(hostPeer?.fingerprint, localCliFingerprint);
+  final absorbedAgents = <Agent>[];
+  final rosterDevices = <ContactDevice>[];
+  for (final peer in filteredRoster) {
+    final hanging = byFingerprint[peer.fingerprint.trim().toLowerCase()] ??
+        const <Agent>[];
+    if (_isThisComputerMirror(
+      peer: peer,
+      hostPeer: hostPeer,
+      hostIsThisComputer: hostIsThisComputer,
+      appFingerprint: appFingerprint,
+    )) {
+      absorbedAgents.addAll(hanging);
+      continue;
+    }
+    rosterDevices.add(ContactDevice(
+      peer: peer,
+      agents: hanging,
+      isHost: false,
+      isThisDevice: sameFingerprint(peer.fingerprint, appFingerprint),
+      online: peer.state == PeerConnectionState.connected,
+    ));
+  }
+
   final devices = <ContactDevice>[
     if (hostPeer != null)
       ContactDevice(
         peer: hostPeer,
-        agents: hostAgents,
+        agents: [...hostAgents, ...absorbedAgents],
         isHost: true,
         isThisDevice: sameFingerprint(hostPeer.fingerprint, appFingerprint) ||
             hostIsThisComputer,
         online: hostOnline,
       ),
-    for (final peer in filteredRoster)
-      ContactDevice(
-        peer: peer,
-        agents: byFingerprint[peer.fingerprint.trim().toLowerCase()] ??
-            const <Agent>[],
-        isHost: false,
-        isThisDevice: sameFingerprint(peer.fingerprint, appFingerprint),
-        online: peer.state == PeerConnectionState.connected,
-      ),
+    ...rosterDevices,
   ];
 
   return ContactsView(
@@ -151,6 +173,18 @@ ContactsView buildContacts({
     hostIsThisComputer: hostIsThisComputer,
     rosterFailed: rosterFailed,
   );
+}
+
+/// 主机在这台电脑上时，名单里的本 App 是同一台机器的另一面。
+bool _isThisComputerMirror({
+  required PairedPeer peer,
+  required PairedPeer? hostPeer,
+  required bool hostIsThisComputer,
+  required String? appFingerprint,
+}) {
+  if (!hostIsThisComputer || hostPeer == null) return false;
+  if (peer.id == hostPeer.id) return true;
+  return sameFingerprint(peer.fingerprint, appFingerprint);
 }
 
 String? _rosterFingerprint(Agent agent) {
