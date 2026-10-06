@@ -4399,17 +4399,20 @@ class PeerAgentClientService {
 
   /// Incrementally sync all dirty remote sessions for a peer agent.
   ///
-  /// 1. If the open channel has no local transcript yet, start its history
-  ///    pull immediately so it does not wait on the full session list.
+  /// 1. Open the current channel before any other session. Local messages are
+  ///    already on screen; if the channel is empty, its history is pulled to
+  ///    completion and [onPrioritizedChannelDone] runs before the session list.
+  ///    Entering an agent shows this session without waiting for the others.
   /// 2. Enumerate remote sessions and ensure local channel shells exist.
   /// 3. Select dirty sessions via [selectDirtySessions] (watermark + overlap).
-  /// 4. Pull history for each dirty session (prioritized channel first).
+  /// 4. Pull history for each remaining dirty session.
   /// 5. Advance the watermark to [syncStartedAt] only if every attempt finishes
   ///    without throwing.
   ///
-  /// [onPrioritizedChannelDone] is invoked after the prioritized channel's
-  /// first history page is written (even when 0 messages were written) so the
-  /// UI can show it. Later pages keep downloading in the background.
+  /// [onPrioritizedChannelDone] may run more than once: after the first page
+  /// (so the chat opens) and again when that channel's history is fully
+  /// mirrored (so the latest window replaces the oldest page). `written == 0`
+  /// means the channel was already readable and the UI should drop its wait.
   Future<PeerAgentIncrementalSyncResult> syncAgentIncremental({
     required String peerId,
     required String remoteAgentId,
@@ -4423,8 +4426,9 @@ class PeerAgentClientService {
     final syncStartedAt = DateTime.now().toUtc();
     final openChannelId = prioritizeChannelId;
     var prioritizedDone = false;
-    Future<int>? earlyHistory;
     String? earlyRemoteId;
+    // 当前会话已在枚举其他会话之前拉完。null 表示没有提前拉。
+    int? prefetchedWritten;
     if (openChannelId != null &&
         openChannelId.isNotEmpty &&
         !hasInflightForChannel(openChannelId)) {
@@ -4438,39 +4442,32 @@ class PeerAgentClientService {
       );
       final stored = await _db.getPeerHistoryCursor(openChannelId);
       final count = await _db.countChannelMessages(openChannelId);
-      if (resolved == openChannelId &&
+      if (count > 0 && onPrioritizedChannelDone != null) {
+        // 本地已有这份聊天记录。先撤掉进页等待，再去同步其他会话。
+        prioritizedDone = true;
+        await onPrioritizedChannelDone(0);
+        await Future<void>.delayed(Duration.zero);
+      } else if (resolved == openChannelId &&
           peerHistoryShouldPrefetchOpenChannel(
             localMessageCount: count,
             hasCursorRow: stored != null,
           )) {
         earlyRemoteId = remoteId;
-        earlyHistory = syncHistory(
-          peerId: peerId,
-          remoteAgentId: remoteAgentId,
-          localAgentId: localAgentId,
-          agentName: agentName,
-          channelId: openChannelId,
-          userId: userId,
-          userName: userName,
-          onFirstPageDone: (written) async {
-            prioritizedDone = true;
-            if (onPrioritizedChannelDone != null) {
-              await onPrioritizedChannelDone(written);
-            }
-          },
-        );
-      }
-    }
-    final sessions = await fetchSessions(
-      peerId: peerId,
-      remoteAgentId: remoteAgentId,
-    );
-    if (sessions.isEmpty) {
-      if (earlyHistory != null) {
         try {
-          final written = await earlyHistory;
-          return PeerAgentIncrementalSyncResult(
-            currentChannelMessagesWritten: written < 0 ? 0 : written,
+          prefetchedWritten = await syncHistory(
+            peerId: peerId,
+            remoteAgentId: remoteAgentId,
+            localAgentId: localAgentId,
+            agentName: agentName,
+            channelId: openChannelId,
+            userId: userId,
+            userName: userName,
+            onFirstPageDone: (written) async {
+              prioritizedDone = true;
+              if (onPrioritizedChannelDone != null) {
+                await onPrioritizedChannelDone(written);
+              }
+            },
           );
         } catch (e, st) {
           _log.warning(
@@ -4478,7 +4475,30 @@ class PeerAgentClientService {
             tag: _tag,
             error: e,
           );
+          prefetchedWritten = -1;
         }
+        final shown = prefetchedWritten;
+        if (shown > 0 && onPrioritizedChannelDone != null) {
+          // 第一页是最旧的一页。整段拉完再刷新一次，打开的才是最近的记录。
+          prioritizedDone = true;
+          await onPrioritizedChannelDone(shown);
+        } else if (!prioritizedDone && onPrioritizedChannelDone != null) {
+          prioritizedDone = true;
+          await onPrioritizedChannelDone(0);
+        }
+        await Future<void>.delayed(Duration.zero);
+      }
+    }
+    final sessions = await fetchSessions(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+    );
+    if (sessions.isEmpty) {
+      final prefetched = prefetchedWritten ?? 0;
+      if (prefetched > 0) {
+        return PeerAgentIncrementalSyncResult(
+          currentChannelMessagesWritten: prefetched,
+        );
       }
       return const PeerAgentIncrementalSyncResult();
     }
@@ -4548,12 +4568,11 @@ class PeerAgentClientService {
           psessExists: await _db.getChannelById(psessId) != null,
           legacyExists: await _db.getChannelById(legacyId) != null,
         );
-        if (earlyRemoteId != null &&
-            session.sessionId == earlyRemoteId &&
-            earlyHistory != null) {
-          final written = await earlyHistory!;
-          earlyHistory = null;
-          if (written >= 0) {
+        if (earlyRemoteId != null && session.sessionId == earlyRemoteId) {
+          final written = prefetchedWritten;
+          earlyRemoteId = null;
+          prefetchedWritten = null;
+          if (written != null && written >= 0) {
             if (written > 0) {
               historySessionsWritten++;
               totalMessagesWritten += written;
@@ -4629,6 +4648,9 @@ class PeerAgentClientService {
             if (onPrioritizedChannelDone != null) {
               await onPrioritizedChannelDone(stored);
             }
+          } else if (stored > 0 && onPrioritizedChannelDone != null) {
+            // 第一页只覆盖最旧的记录。这一会话全部落库后再刷新最近一窗。
+            await onPrioritizedChannelDone(stored);
           }
         }
       }
@@ -4638,13 +4660,6 @@ class PeerAgentClientService {
         tag: _tag,
         error: e,
       );
-      if (earlyHistory != null) {
-        try {
-          final written = await earlyHistory!;
-          earlyHistory = null;
-          if (written > 0) currentChannelMessagesWritten = written;
-        } catch (_) {}
-      }
       if (!prioritizedDone &&
           prioritizeSessionId != null &&
           onPrioritizedChannelDone != null) {
@@ -4658,15 +4673,6 @@ class PeerAgentClientService {
         currentChannelMessagesWritten: currentChannelMessagesWritten,
         watermarkAdvanced: false,
       );
-    }
-
-    if (earlyHistory != null) {
-      final written = await earlyHistory!;
-      if (written > 0) {
-        historySessionsWritten++;
-        totalMessagesWritten += written;
-        currentChannelMessagesWritten = written;
-      }
     }
 
     // Prioritized session was not dirty — still notify so UI can clear spinner.

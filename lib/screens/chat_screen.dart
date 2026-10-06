@@ -350,17 +350,14 @@ class _ChatScreenState extends State<ChatScreen>
       HardwareKeyboard.instance.addHandler(_handleHardwareKey);
     }
 
-    unawaited(_controller.init().then((_) {
-      if (!mounted) return;
-      _trackedMessageCount = _controller.messages.length;
-      _refreshOtherSessionsUnread();
-    }));
+    // 本地记录先上屏，再做 agent 级会话同步。两者并行时同步会占住数据库，
+    // 首次进入要等整次同步结束才看得到聊天。
+    unawaited(_openChatThenSyncPeerAgent());
     _audioRecordingService.requestPermission();
     _pendingHighlightMessageId = widget.highlightMessageId;
     _checkSheNeedsConfig();
     _checkAgentAudioSupport();
     _checkAgentImageSupport();
-    _maybeSyncPeerAgent();
     _ensurePeerSlashCommands();
     _restorePinnedPanelState();
     // 断连期间被判死的 turn，其结果可能仍留在远端 —— 重连后 service 会发
@@ -4336,6 +4333,20 @@ class _ChatScreenState extends State<ChatScreen>
     await _controller.reloadMessagesFromDB();
   }
 
+  /// 进页：先完成本地加载并画出一帧，再同步远端。同步不挡当前会话打开。
+  Future<void> _openChatThenSyncPeerAgent() async {
+    await _controller.init();
+    if (!mounted) return;
+    _trackedMessageCount = _controller.messages.length;
+    _refreshOtherSessionsUnread();
+    // 先登记帧末回调再 scheduleFrame，避免当前没有待绘制帧时一直等不到。
+    final painted = WidgetsBinding.instance.endOfFrame;
+    WidgetsBinding.instance.scheduleFrame();
+    await painted;
+    if (!mounted) return;
+    await _maybeSyncPeerAgent();
+  }
+
   /// On entry to a peer agent chat, incrementally sync remote sessions + dirty
   /// history — but only after the user has decided whether to sync.
   ///
@@ -4434,9 +4445,13 @@ class _ChatScreenState extends State<ChatScreen>
     required String agentName,
     bool showToastOnFirstLink = false,
   }) async {
-    final channelId = widget.channelId;
-    final prioritizeCurrent = channelId != null;
-    if (prioritizeCurrent && mounted) {
+    // init 之后 currentChannelId 才是真正打开的会话（列表没带 channelId 时
+    // 也会解析到最近一条）。用它优先同步，而不是只看构造参数。
+    final channelId = _controller.currentChannelId ?? widget.channelId;
+    // 本地已经有记录时不再转「同步远端」：聊天已经打开，其余会话在后台补。
+    final waitingOnRemote =
+        channelId != null && _controller.messages.isEmpty;
+    if (waitingOnRemote && mounted) {
       setState(() => _syncingPeerHistory = true);
     }
 
