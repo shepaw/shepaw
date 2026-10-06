@@ -22,6 +22,7 @@ import '../models/peer_message.dart';
 import 'peer_connection.dart';
 import 'peer_channel_bridge.dart';
 import 'peer_advertise.dart';
+import 'local_cli_dial.dart';
 import 'peer_endpoint_utils.dart';
 import 'peer_local_server.dart';
 import 'peer_pairing_service.dart';
@@ -614,6 +615,11 @@ class PeerConnectionManager {
       return;
     }
     var peer = matchedPeer;
+    final cliLoopback = await localCliDialEndpoint(peer.fingerprint);
+    if (cliLoopback != null && peer.localEndpoint != cliLoopback) {
+      await _storage.updateLocalEndpoint(peer.id, cliLoopback);
+      peer = peer.copyWith(localEndpoint: cliLoopback);
+    }
 
     // 从 reconnect msg1 学习对端广告的 channel / local 端点。
     try {
@@ -631,7 +637,8 @@ class PeerConnectionManager {
           tag: _tag,
         );
       }
-      if (local != null &&
+      if (cliLoopback == null &&
+          local != null &&
           local.isNotEmpty &&
           local != peer.localEndpoint &&
           !_isOwnLocalEndpoint(local)) {
@@ -644,7 +651,9 @@ class PeerConnectionManager {
     // 只刷新 host，保留已有 port/path——本机 Nexuspouch 等节点端口 ≠ 18792，
     // 若强行写成 defaultPort 会把端点学成 App 自己的 PeerLocalServer。
     final learnedAddr = stream.remoteAddress;
-    if (learnedAddr != null && learnedAddr.isNotEmpty) {
+    if (cliLoopback == null &&
+        learnedAddr != null &&
+        learnedAddr.isNotEmpty) {
       final localServer = PeerLocalServer.instance;
       final learnedEndpoint = learnLocalEndpointFromRemoteAddress(
         remoteAddress: learnedAddr,
@@ -1017,6 +1026,14 @@ class PeerConnectionManager {
     // 当前 IP，避免一直用换网前的旧地址反复超时。
     final fresh = await _storage.getPeerById(peer.id);
     if (fresh != null) peer = fresh;
+    final cliLoopback = await localCliDialEndpoint(peer.fingerprint);
+    if (cliLoopback != null) {
+      ignoreTieBreak = true;
+      if (peer.localEndpoint != cliLoopback) {
+        await _storage.updateLocalEndpoint(peer.id, cliLoopback);
+        peer = peer.copyWith(localEndpoint: cliLoopback);
+      }
+    }
 
     // 如果已有活跃连接，跳过
     final existing = _connections[peer.id];

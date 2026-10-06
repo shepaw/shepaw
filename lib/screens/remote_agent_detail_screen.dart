@@ -164,11 +164,10 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   StreamSubscription<PeerConnectionEvent>? _peerConnSub;
   StreamSubscription<({String agentId, String kind})>? _metaSub;
 
-  /// True when this agent should be treated as a local LLM agent.
-  /// She is always treated as local even before a model is configured.
+  /// 本机自己跑的 LLM。主机上的惜宝是 peer agent，模型在对端，不在这里配。
   bool get _isLocalMode =>
-      _agent.isLocal ||
-      _agent.metadata['is_she'] == true;
+      !_agent.isPeerAgent &&
+      (_agent.isLocal || _agent.metadata['is_she'] == true);
 
   bool get _canEditSoul => !_agent.isPeerAgent || _peerSoulEditable;
 
@@ -1060,10 +1059,20 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
       // LLM config（只动主模型相关键）。主模型悬空时这里会保住
       // main_model_id / llm_provider，避免把本地 agent 改写成远端 ACP。
-      final llm = buildLlmMetadata(
-        metadata,
-        selectedMainModelId: _selectedMainModelId,
-      );
+      // peer 行上的这两个键会把主机惜宝误判成要在本机跑的回合。
+      if (_agent.isPeerAgent) {
+        metadata.remove('llm_provider');
+        metadata.remove('main_model_id');
+        metadata.remove('llm_model');
+        metadata.remove('llm_api_base');
+        metadata.remove('llm_api_key');
+      }
+      final llm = _agent.isPeerAgent
+          ? (state: MainModelState.unset, danglingRef: null)
+          : buildLlmMetadata(
+              metadata,
+              selectedMainModelId: _selectedMainModelId,
+            );
       // 直接赋值（不 setState）：紧随其后的 `_agent` 更新已经会触发重建，
       // 而 deactivate() 里的保存发生在 Overlay 拆栈期间，此时调度重建不安全。
       _danglingMainModelId = llm.danglingRef;

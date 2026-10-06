@@ -185,6 +185,7 @@ void main() {
       expect(hub.usesHubCliExecute, isFalse);
       expect(phonePeer.usesHubStoreCli, isFalse);
       expect(phonePeer.usesHubCliExecute, isFalse);
+      expect(phonePeer.isLocal, isFalse);
     });
 
     test('cliRequireApproval defaults She off and others on', () {

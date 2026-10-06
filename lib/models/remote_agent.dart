@@ -346,10 +346,10 @@ class RemoteAgent {
 
   /// 是否为本地 LLM agent（由 App 直接驱动 LLM 循环，无需远端 endpoint）。
   ///
-  /// 判定依据：metadata 中存在非空的 `llm_provider`。这是「本地 vs 远端 ACP」
-  /// agent 区分的唯一权威入口，全代码库应统一使用本 getter，避免在各处散落
-  /// `metadata.containsKey('llm_provider')` 之类的隐式判断。
-  bool get isLocal => metadata['llm_provider'] != null;
+  /// 判定依据：metadata 中存在非空的 `llm_provider`，且这行不是 peer agent。
+  /// 主机上的惜宝行 id 仍是 `she-builtin-agent-001`，详情页保存会留下
+  /// `llm_provider`；她实际走 peer 协议，不能因此改走本机回合。
+  bool get isLocal => !isPeerAgent && metadata['llm_provider'] != null;
 
   /// 远端 ACP：没有 shepaw function tool，CLI 一律走 `hub.cli.execute`。
   /// 本机 LLM 与普通 Peer（对端 App 上的本地 Agent）仍走 `shepaw …`。

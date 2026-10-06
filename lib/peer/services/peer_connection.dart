@@ -23,6 +23,7 @@ import '../models/peer_message.dart';
 import 'peer_advertise.dart';
 import 'peer_channel_bridge.dart';
 import 'peer_delivery_trace_service.dart';
+import 'local_cli_dial.dart';
 import 'peer_endpoint_utils.dart';
 import 'peer_local_server.dart';
 import 'peer_storage_service.dart';
@@ -452,6 +453,13 @@ class PeerConnection {
         await storage.updateChannelEndpoint(peer.id, channel);
         _log.debug('Learned channel endpoint for ${peer.deviceName}: $channel',
             tag: _tag);
+      }
+      final cliLoopback = await localCliDialEndpoint(peer.fingerprint);
+      if (cliLoopback != null) {
+        if (peer.localEndpoint != cliLoopback) {
+          await storage.updateLocalEndpoint(peer.id, cliLoopback);
+        }
+        return;
       }
       if (local != null &&
           local.isNotEmpty &&

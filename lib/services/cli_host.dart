@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
+import '../peer/services/local_cli_dial.dart';
 import '../peer/models/paired_peer.dart';
 import '../peer/models/pairing_payload.dart';
 import '../onboarding/host_entry.dart';
@@ -50,14 +51,8 @@ class CliHost {
 
   /// 与 CLI `hub_root` 一致：`SHEPAW_HUB_HOME`，否则 XDG，否则
   /// `HOME` / `USERPROFILE` 下的 `.config/shepaw-hub`。
-  static String hubRootFromEnv(Map<String, String> env, {p.Style? style}) {
-    final ctx = _paths(style);
-    final explicit = env['SHEPAW_HUB_HOME'];
-    if (explicit != null && explicit.isNotEmpty) return explicit;
-    final xdg = env['XDG_CONFIG_HOME'];
-    if (xdg != null && xdg.isNotEmpty) return ctx.join(xdg, 'shepaw-hub');
-    return ctx.join(homeDirFromEnv(env), '.config', 'shepaw-hub');
-  }
+  static String hubRootFromEnv(Map<String, String> env, {p.Style? style}) =>
+      cliHubRootFromEnv(env, style: style);
 
   static String homeDirFromEnv(Map<String, String> env) {
     for (final key in const ['HOME', 'USERPROFILE']) {
