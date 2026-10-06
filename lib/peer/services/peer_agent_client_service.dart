@@ -501,6 +501,16 @@ PeerHistoryFetchMode peerHistoryFetchMode({required String? storedCursor}) {
   return PeerHistoryFetchMode.rebuild;
 }
 
+/// 本地还没有正文、也没有同步过时，进页先拉当前会话，不必等会话列表。
+///
+/// 已经有游标（包括远端确实为空）就交给增量同步，避免每次进页都打一次历史请求。
+bool peerHistoryShouldPrefetchOpenChannel({
+  required int localMessageCount,
+  required bool hasCursorRow,
+}) {
+  return localMessageCount == 0 && !hasCursorRow;
+}
+
 /// 新版请求永远带 [limit]。重建的第一页不带 cursor。
 ({String? cursor, int limit}) peerHistoryHistoryRequest({
   required PeerHistoryFetchMode mode,
@@ -1583,8 +1593,7 @@ class PeerAgentClientService {
   final Map<String, Completer<PeerModesList>> _pendingModes = {};
 
   /// Outstanding agent_modes_set_req per "agentId::mode" key.
-  final Map<String, Completer<({bool ok, String? error})>> _pendingModeSet =
-      {};
+  final Map<String, Completer<({bool ok, String? error})>> _pendingModeSet = {};
 
   /// Outstanding agent_soul_req keyed by request_id.
   final Map<String, Completer<PeerSoulInfo?>> _pendingSoulGet = {};
@@ -4133,8 +4142,8 @@ class PeerAgentClientService {
     };
     if (cursor != null && cursor.isNotEmpty) payload['cursor'] = cursor;
     if (limit != null) payload['limit'] = limit;
-    final send = debugSendControlOverride ??
-        PeerConnectionManager.instance.sendControl;
+    final send =
+        debugSendControlOverride ?? PeerConnectionManager.instance.sendControl;
     final sent = await send(peerId, payload);
     if (!sent) {
       _pendingHistory.remove(key);
@@ -4390,10 +4399,12 @@ class PeerAgentClientService {
 
   /// Incrementally sync all dirty remote sessions for a peer agent.
   ///
-  /// 1. Enumerate remote sessions and ensure local channel shells exist.
-  /// 2. Select dirty sessions via [selectDirtySessions] (watermark + overlap).
-  /// 3. Pull history for each dirty session (prioritized channel first).
-  /// 4. Advance the watermark to [syncStartedAt] only if every attempt finishes
+  /// 1. If the open channel has no local transcript yet, start its history
+  ///    pull immediately so it does not wait on the full session list.
+  /// 2. Enumerate remote sessions and ensure local channel shells exist.
+  /// 3. Select dirty sessions via [selectDirtySessions] (watermark + overlap).
+  /// 4. Pull history for each dirty session (prioritized channel first).
+  /// 5. Advance the watermark to [syncStartedAt] only if every attempt finishes
   ///    without throwing.
   ///
   /// [onPrioritizedChannelDone] is invoked after the prioritized channel's
@@ -4410,11 +4421,65 @@ class PeerAgentClientService {
     Future<void> Function(int written)? onPrioritizedChannelDone,
   }) async {
     final syncStartedAt = DateTime.now().toUtc();
+    final openChannelId = prioritizeChannelId;
+    var prioritizedDone = false;
+    Future<int>? earlyHistory;
+    String? earlyRemoteId;
+    if (openChannelId != null &&
+        openChannelId.isNotEmpty &&
+        !hasInflightForChannel(openChannelId)) {
+      final remoteId =
+          remoteSessionIdFromChannelId(openChannelId) ?? openChannelId;
+      final resolved = resolveLocalPeerChannelId(
+        remoteId,
+        psessExists:
+            await _db.getChannelById(syncedPeerChannelId(remoteId)) != null,
+        legacyExists: await _db.getChannelById(remoteId) != null,
+      );
+      final stored = await _db.getPeerHistoryCursor(openChannelId);
+      final count = await _db.countChannelMessages(openChannelId);
+      if (resolved == openChannelId &&
+          peerHistoryShouldPrefetchOpenChannel(
+            localMessageCount: count,
+            hasCursorRow: stored != null,
+          )) {
+        earlyRemoteId = remoteId;
+        earlyHistory = syncHistory(
+          peerId: peerId,
+          remoteAgentId: remoteAgentId,
+          localAgentId: localAgentId,
+          agentName: agentName,
+          channelId: openChannelId,
+          userId: userId,
+          userName: userName,
+          onFirstPageDone: (written) async {
+            prioritizedDone = true;
+            if (onPrioritizedChannelDone != null) {
+              await onPrioritizedChannelDone(written);
+            }
+          },
+        );
+      }
+    }
     final sessions = await fetchSessions(
       peerId: peerId,
       remoteAgentId: remoteAgentId,
     );
     if (sessions.isEmpty) {
+      if (earlyHistory != null) {
+        try {
+          final written = await earlyHistory;
+          return PeerAgentIncrementalSyncResult(
+            currentChannelMessagesWritten: written < 0 ? 0 : written,
+          );
+        } catch (e, st) {
+          _log.warning(
+            'Open-channel history prefetch failed for $localAgentId: $e\n$st',
+            tag: _tag,
+            error: e,
+          );
+        }
+      }
       return const PeerAgentIncrementalSyncResult();
     }
 
@@ -4453,7 +4518,6 @@ class PeerAgentClientService {
       }
     }
     String? openEmptySessionId;
-    final openChannelId = prioritizeChannelId;
     if (openChannelId != null &&
         openChannelId.isNotEmpty &&
         await _db.countChannelMessages(openChannelId) == 0) {
@@ -4473,7 +4537,6 @@ class PeerAgentClientService {
     var historySessionsWritten = 0;
     var totalMessagesWritten = 0;
     var currentChannelMessagesWritten = 0;
-    var prioritizedDone = false;
     final mirroredUnstamped = <String>{};
 
     try {
@@ -4485,6 +4548,29 @@ class PeerAgentClientService {
           psessExists: await _db.getChannelById(psessId) != null,
           legacyExists: await _db.getChannelById(legacyId) != null,
         );
+        if (earlyRemoteId != null &&
+            session.sessionId == earlyRemoteId &&
+            earlyHistory != null) {
+          final written = await earlyHistory!;
+          earlyHistory = null;
+          if (written >= 0) {
+            if (written > 0) {
+              historySessionsWritten++;
+              totalMessagesWritten += written;
+            }
+            if (written == 0 &&
+                await _db.countChannelMessages(channelId) == 0) {
+              mirroredUnstamped.add(session.sessionId);
+            } else if (session.updatedAt == null &&
+                (written > 0 ||
+                    await _db.countChannelMessages(channelId) > 0)) {
+              mirroredUnstamped.add(session.sessionId);
+            }
+            currentChannelMessagesWritten = written;
+            prioritizedDone = true;
+            continue;
+          }
+        }
         if (hasInflightForChannel(channelId)) {
           _log.info(
             'skip history sync for $channelId — inflight turn in progress',
@@ -4552,6 +4638,13 @@ class PeerAgentClientService {
         tag: _tag,
         error: e,
       );
+      if (earlyHistory != null) {
+        try {
+          final written = await earlyHistory!;
+          earlyHistory = null;
+          if (written > 0) currentChannelMessagesWritten = written;
+        } catch (_) {}
+      }
       if (!prioritizedDone &&
           prioritizeSessionId != null &&
           onPrioritizedChannelDone != null) {
@@ -4565,6 +4658,15 @@ class PeerAgentClientService {
         currentChannelMessagesWritten: currentChannelMessagesWritten,
         watermarkAdvanced: false,
       );
+    }
+
+    if (earlyHistory != null) {
+      final written = await earlyHistory!;
+      if (written > 0) {
+        historySessionsWritten++;
+        totalMessagesWritten += written;
+        currentChannelMessagesWritten = written;
+      }
     }
 
     // Prioritized session was not dirty — still notify so UI can clear spinner.

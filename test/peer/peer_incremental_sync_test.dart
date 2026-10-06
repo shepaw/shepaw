@@ -5,9 +5,12 @@ void main() {
   group('selectDirtySessions', () {
     final t0 = DateTime.utc(2026, 7, 12, 12, 0);
     final sessions = [
-      PeerRemoteSession(sessionId: 'a', updatedAt: t0.subtract(const Duration(hours: 2))),
-      PeerRemoteSession(sessionId: 'b', updatedAt: t0.subtract(const Duration(minutes: 1))),
-      PeerRemoteSession(sessionId: 'c', updatedAt: t0.add(const Duration(minutes: 5))),
+      PeerRemoteSession(
+          sessionId: 'a', updatedAt: t0.subtract(const Duration(hours: 2))),
+      PeerRemoteSession(
+          sessionId: 'b', updatedAt: t0.subtract(const Duration(minutes: 1))),
+      PeerRemoteSession(
+          sessionId: 'c', updatedAt: t0.add(const Duration(minutes: 5))),
       PeerRemoteSession(sessionId: 'd'), // no updatedAt
     ];
 
@@ -35,7 +38,8 @@ void main() {
       expect(dirty.map((s) => s.sessionId).toList(), ['edge']);
     });
 
-    test('missing updatedAt is dirty once, then skipped after it is mirrored', () {
+    test('missing updatedAt is dirty once, then skipped after it is mirrored',
+        () {
       final dirty = selectDirtySessions(
         [PeerRemoteSession(sessionId: 'no-ts')],
         lastSyncAt: t0,
@@ -59,7 +63,9 @@ void main() {
       expect(dirty.map((s) => s.sessionId).toList(), ['c', 'b', 'd']);
     });
 
-    test('sessionsMissingLocalTranscript keeps empty shells that the watermark skipped', () {
+    test(
+        'sessionsMissingLocalTranscript keeps empty shells that the watermark skipped',
+        () {
       final missing = sessionsMissingLocalTranscript(
         sessions,
         alreadyDirty: {'b', 'c', 'd'},
@@ -69,7 +75,9 @@ void main() {
       expect(missing.map((s) => s.sessionId).toList(), ['a']);
     });
 
-    test('sessionsMissingLocalTranscript skips a shell already recorded as empty', () {
+    test(
+        'sessionsMissingLocalTranscript skips a shell already recorded as empty',
+        () {
       final missing = sessionsMissingLocalTranscript(
         sessions,
         alreadyDirty: {'b', 'c', 'd'},
@@ -458,7 +466,8 @@ void main() {
         history,
         sessionUpdatedAt: end,
         existingById: {
-          'peerhist_x': DateTime.utc(2026, 7, 12, 11, 59), // ignored: no remote stamps
+          'peerhist_x':
+              DateTime.utc(2026, 7, 12, 11, 59), // ignored: no remote stamps
         },
         idFor: (m, i) => 'peerhist_$i',
       );
@@ -469,7 +478,9 @@ void main() {
       ]);
     });
 
-    test('preserves existing local time for unstamped gaps when any remote stamp exists', () {
+    test(
+        'preserves existing local time for unstamped gaps when any remote stamp exists',
+        () {
       final remote = DateTime.utc(2026, 7, 1, 10);
       final local = DateTime.utc(2026, 7, 1, 10, 0, 30);
       final history = [
@@ -486,7 +497,9 @@ void main() {
       expect(times[1], local);
     });
 
-    test('reuses existing local time over the session anchor (idempotent resync)', () {
+    test(
+        'reuses existing local time over the session anchor (idempotent resync)',
+        () {
       final local0 = DateTime.utc(2026, 7, 1, 10);
       final local1 = DateTime.utc(2026, 7, 1, 10, 0, 30);
       final history = [
@@ -589,6 +602,39 @@ void main() {
         existing = {'peerhist_0': times[0], 'peerhist_1': times[1]};
         mirroredLatest = times.last;
       }
+    });
+  });
+
+  group('peerHistoryShouldPrefetchOpenChannel', () {
+    test(
+        'blank channel without a cursor starts history before the session list',
+        () {
+      expect(
+        peerHistoryShouldPrefetchOpenChannel(
+          localMessageCount: 0,
+          hasCursorRow: false,
+        ),
+        isTrue,
+      );
+    });
+
+    test(
+        'a stored cursor, including an empty transcript, waits for incremental sync',
+        () {
+      expect(
+        peerHistoryShouldPrefetchOpenChannel(
+          localMessageCount: 0,
+          hasCursorRow: true,
+        ),
+        isFalse,
+      );
+      expect(
+        peerHistoryShouldPrefetchOpenChannel(
+          localMessageCount: 12,
+          hasCursorRow: false,
+        ),
+        isFalse,
+      );
     });
   });
 }
