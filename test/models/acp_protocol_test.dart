@@ -302,7 +302,6 @@ void main() {
       expect(ACPMethod.agentChat, 'agent.chat');
       expect(ACPMethod.agentCancelTask, 'agent.cancelTask');
       expect(ACPMethod.agentSubmitResponse, 'agent.submitResponse');
-      expect(ACPMethod.agentRollback, 'agent.rollback');
       expect(ACPMethod.agentGetCard, 'agent.getCard');
       expect(ACPMethod.ping, 'ping');
     });

@@ -3,8 +3,6 @@ import 'package:flutter/rendering.dart' show SelectedContent;
 import 'package:flutter/services.dart';
 import '../../models/message.dart';
 import '../../services/group/group_task_status.dart';
-import '../../services/local_user_identity.dart';
-import '../../utils/message_utils.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/error_handler_service.dart';
 
@@ -43,17 +41,12 @@ OverlayEntry showMessageContextMenu(
   required Rect anchorRect,
   required bool isGroupMode,
   required void Function(String? selectedText) onReply,
-  required VoidCallback onRollback,
-  required VoidCallback onReEdit,
-  required VoidCallback onDelete,
   VoidCallback? onViewTrace,
   VoidCallback? onDismiss,
   void Function(Rect panelRect)? onPanelBoundsChanged,
   SelectedContent? Function()? getSelectedContent,
 }) {
   final menuL10n = AppLocalizations.of(context);
-  final userId = LocalUserIdentity.id;
-  final primaryColor = Theme.of(context).colorScheme.primary;
 
   OverlayEntry? menuEntry;
 
@@ -108,24 +101,6 @@ OverlayEntry showMessageContextMenu(
             onReply((selected == null || selected.isEmpty) ? null : selected);
           },
         ),
-      ),
-    if (message.from.isUser) ...[
-      MessageMenuAction(
-        label: menuL10n.chat_rollback,
-        color: Colors.orange,
-        onTap: () => closeMenu(afterClose: onRollback),
-      ),
-      MessageMenuAction(
-        label: menuL10n.chat_reEdit,
-        color: primaryColor,
-        onTap: () => closeMenu(afterClose: onReEdit),
-      ),
-    ],
-    if (MessageUtils.canDeleteMessage(message, userId))
-      MessageMenuAction(
-        label: menuL10n.common_delete,
-        color: Colors.red,
-        onTap: () => closeMenu(afterClose: onDelete),
       ),
   ];
 

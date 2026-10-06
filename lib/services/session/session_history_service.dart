@@ -99,7 +99,7 @@ class SessionService {
   }
 }
 
-/// Handles message history loading, rollback, and deletion for conversations.
+/// Handles message history loading and deletion for conversations.
 class HistoryService {
   final LocalDatabaseService _db;
   final ToolResultDatabaseService _toolResultDb;

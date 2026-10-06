@@ -3572,66 +3572,6 @@ abstract class AppLocalizations {
   /// **'搜索出错: {error}'**
   String chat_searchError(String error);
 
-  /// No description provided for @chat_cannotDelete.
-  ///
-  /// In zh, this message translates to:
-  /// **'无法删除此消息'**
-  String get chat_cannotDelete;
-
-  /// No description provided for @chat_deleteTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'删除消息'**
-  String get chat_deleteTitle;
-
-  /// No description provided for @chat_deleteContent.
-  ///
-  /// In zh, this message translates to:
-  /// **'确定要删除这条消息吗？'**
-  String get chat_deleteContent;
-
-  /// No description provided for @chat_deleted.
-  ///
-  /// In zh, this message translates to:
-  /// **'消息已删除'**
-  String get chat_deleted;
-
-  /// No description provided for @chat_rollbackTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'回滚消息'**
-  String get chat_rollbackTitle;
-
-  /// No description provided for @chat_reEditTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'重新编辑消息'**
-  String get chat_reEditTitle;
-
-  /// No description provided for @chat_rollbackContent.
-  ///
-  /// In zh, this message translates to:
-  /// **'这将删除此消息及之后的所有消息，此操作不可撤销。'**
-  String get chat_rollbackContent;
-
-  /// No description provided for @chat_rollbackSuccess.
-  ///
-  /// In zh, this message translates to:
-  /// **'已回滚 {count} 条消息'**
-  String chat_rollbackSuccess(int count);
-
-  /// No description provided for @chat_reEditSuccess.
-  ///
-  /// In zh, this message translates to:
-  /// **'重新编辑消息：已回滚 {count} 条消息'**
-  String chat_reEditSuccess(int count);
-
-  /// No description provided for @chat_rollbackFailed.
-  ///
-  /// In zh, this message translates to:
-  /// **'回滚失败: {error}'**
-  String chat_rollbackFailed(String error);
-
   /// No description provided for @chat_copiedToClipboard.
   ///
   /// In zh, this message translates to:
@@ -3643,30 +3583,6 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'下载'**
   String get chat_download;
-
-  /// No description provided for @chat_rollback.
-  ///
-  /// In zh, this message translates to:
-  /// **'回滚'**
-  String get chat_rollback;
-
-  /// No description provided for @chat_rollbackSub.
-  ///
-  /// In zh, this message translates to:
-  /// **'删除此消息及之后的所有消息'**
-  String get chat_rollbackSub;
-
-  /// No description provided for @chat_reEdit.
-  ///
-  /// In zh, this message translates to:
-  /// **'重新编辑'**
-  String get chat_reEdit;
-
-  /// No description provided for @chat_reEditSub.
-  ///
-  /// In zh, this message translates to:
-  /// **'回滚并编辑此消息'**
-  String get chat_reEditSub;
 
   /// No description provided for @chat_sendQueueCount.
   ///
@@ -14204,18 +14120,6 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'有未保存的修改，放弃更改？'**
   String get common_discardUnsaved;
-
-  /// No description provided for @chat_deleteMessageTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'删除消息'**
-  String get chat_deleteMessageTitle;
-
-  /// No description provided for @chat_deleteMessageContent.
-  ///
-  /// In zh, this message translates to:
-  /// **'确定删除这条消息？此操作不可撤销。'**
-  String get chat_deleteMessageContent;
 
   /// No description provided for @chat_resetDmConfirm.
   ///

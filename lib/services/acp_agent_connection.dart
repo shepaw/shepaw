@@ -958,20 +958,6 @@ class ACPAgentConnection implements AcpInteractiveConnection {
     );
   }
 
-  /// Rollback a message.
-  Future<ACPResponse> rollback({
-    required String sessionId,
-    required String messageId,
-  }) async {
-    return await sendRequest(
-      ACPMethod.agentRollback,
-      params: {
-        'session_id': sessionId,
-        'message_id': messageId,
-      },
-    );
-  }
-
   /// Get the Agent card.
   Future<ACPResponse> getAgentCard() async {
     return await sendRequest(ACPMethod.agentGetCard);

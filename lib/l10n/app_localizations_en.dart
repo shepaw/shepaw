@@ -1970,60 +1970,10 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get chat_cannotDelete => 'Cannot delete this message';
-
-  @override
-  String get chat_deleteTitle => 'Delete Message';
-
-  @override
-  String get chat_deleteContent =>
-      'Are you sure you want to delete this message?';
-
-  @override
-  String get chat_deleted => 'Message deleted';
-
-  @override
-  String get chat_rollbackTitle => 'Rollback Messages';
-
-  @override
-  String get chat_reEditTitle => 'Re-edit Message';
-
-  @override
-  String get chat_rollbackContent =>
-      'This will delete this message and all messages after it. This action cannot be undone.';
-
-  @override
-  String chat_rollbackSuccess(int count) {
-    return 'Rolled back $count messages';
-  }
-
-  @override
-  String chat_reEditSuccess(int count) {
-    return 'Re-editing message: rolled back $count messages';
-  }
-
-  @override
-  String chat_rollbackFailed(String error) {
-    return 'Rollback failed: $error';
-  }
-
-  @override
   String get chat_copiedToClipboard => 'Copied to clipboard';
 
   @override
   String get chat_download => 'Download';
-
-  @override
-  String get chat_rollback => 'Rollback';
-
-  @override
-  String get chat_rollbackSub => 'Delete this and all later messages';
-
-  @override
-  String get chat_reEdit => 'Re-edit';
-
-  @override
-  String get chat_reEditSub => 'Rollback and edit this message';
 
   @override
   String chat_sendQueueCount(int count) {
@@ -8136,13 +8086,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get common_discardUnsaved => 'You have unsaved changes. Discard them?';
-
-  @override
-  String get chat_deleteMessageTitle => 'Delete message';
-
-  @override
-  String get chat_deleteMessageContent =>
-      'Delete this message? This cannot be undone.';
 
   @override
   String get chat_resetDmConfirm =>

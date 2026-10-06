@@ -36,9 +36,6 @@ void main() {
               isGroupMode: false,
               hasSelectableText: true,
               onReply: (_) {},
-              onRollback: () {},
-              onReEdit: () {},
-              onDelete: () {},
               builder: ({
                 required textSelectionEnabled,
                 required menuActive,

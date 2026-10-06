@@ -1057,43 +1057,8 @@
       }
     }
   },
-  "chat_cannotDelete": "无法删除此消息",
-  "chat_deleteTitle": "删除消息",
-  "chat_deleteContent": "确定要删除这条消息吗？",
-  "chat_deleted": "消息已删除",
-  "chat_rollbackTitle": "回滚消息",
-  "chat_reEditTitle": "重新编辑消息",
-  "chat_rollbackContent": "这将删除此消息及之后的所有消息，此操作不可撤销。",
-  "chat_rollbackSuccess": "已回滚 {count} 条消息",
-  "@chat_rollbackSuccess": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "chat_reEditSuccess": "重新编辑消息：已回滚 {count} 条消息",
-  "@chat_reEditSuccess": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "chat_rollbackFailed": "回滚失败: {error}",
-  "@chat_rollbackFailed": {
-    "placeholders": {
-      "error": {
-        "type": "String"
-      }
-    }
-  },
   "chat_copiedToClipboard": "已复制到剪贴板",
   "chat_download": "下载",
-  "chat_rollback": "回滚",
-  "chat_rollbackSub": "删除此消息及之后的所有消息",
-  "chat_reEdit": "重新编辑",
-  "chat_reEditSub": "回滚并编辑此消息",
   "chat_sendQueueCount": "待发送 {count} 条",
   "@chat_sendQueueCount": {
     "placeholders": {
@@ -4812,8 +4777,6 @@
   "chat_peerFastSwitchFailed": "切换 Fast 模式失败",
   "chat_peerOptionSwitchFailed": "切换失败",
   "common_discardUnsaved": "有未保存的修改，放弃更改？",
-  "chat_deleteMessageTitle": "删除消息",
-  "chat_deleteMessageContent": "确定删除这条消息？此操作不可撤销。",
   "chat_resetDmConfirm": "将向当前会话发送重置指令，清空远端上下文。",
   "chat_resetGroupConfirm": "这将删除当前群会话的所有消息，此操作不可撤销。",
   "chat_currentSessionCannotDelete": "正在查看，无法删除",

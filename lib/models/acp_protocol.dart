@@ -199,9 +199,6 @@ class ACPMethod {
   /// 提交交互响应
   static const String agentSubmitResponse = 'agent.submitResponse';
 
-  /// 消息回滚
-  static const String agentRollback = 'agent.rollback';
-
   /// 获取 Agent 卡片
   static const String agentGetCard = 'agent.getCard';
 

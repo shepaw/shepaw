@@ -1005,46 +1005,6 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Message operations
-  // ---------------------------------------------------------------------------
-
-  Future<void> deleteMessage(Message message) async {
-    if (message.type == MessageType.image || message.type == MessageType.file || message.type == MessageType.audio) {
-      await attachmentService.deleteAttachment(message);
-    } else {
-      await chatService.deleteMessage(message.id);
-    }
-
-    messages.removeWhere((m) => m.id == message.id);
-    messageIdMap.remove(message.id);
-    _notify();
-  }
-
-  /// 回滚 [message] 之后的所有消息。成功返回 `true`；守卫失败或异常返回
-  /// `false`（异常时已发出错误 snackbar）。`reEdit` 供调用方在成功后把原文
-  /// 预填进输入框（预填本身由调用方完成，这里只负责回滚结果）。
-  Future<bool> rollbackMessage(Message message, {bool reEdit = false}) async {
-    if (agentId == null || currentChannelId == null) return false;
-
-    try {
-      final remoteAgent = await localDatabaseService.getRemoteAgentById(agentId!);
-      if (remoteAgent == null) throw Exception('Agent not found');
-
-      await chatService.rollbackFromMessage(
-        messageId: message.id,
-        channelId: currentChannelId!,
-        agent: remoteAgent,
-      );
-
-      await loadMessages();
-      return true;
-    } catch (e) {
-      _emit(ShowErrorSnackBarEvent('chat_rollbackFailed:$e'));
-      return false;
-    }
-  }
-
   // ---- 待发送队列逐条管理 ----
 
   /// 编辑队列中 [id] 的消息内容。trim 后为空会被拒绝。返回是否命中。

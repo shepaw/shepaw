@@ -309,17 +309,6 @@ extension MessageDao on LocalDatabaseService {
     return results.isEmpty ? null : results.first['created_at'] as String?;
   }
 
-  /// 删除指定 channel 中某个时间戳及之后的所有消息
-  Future<void> deleteMessagesFromTimestamp(
-      String channelId, String createdAt) async {
-    final db = await database;
-    await db.delete(
-      'messages',
-      where: 'channel_id = ? AND created_at >= ?',
-      whereArgs: [channelId, createdAt],
-    );
-  }
-
   /// 获取 Channel 中文本消息的总数
   Future<int> getChannelMessageCount(String channelId) async {
     final db = await database;

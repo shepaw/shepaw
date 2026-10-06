@@ -39,9 +39,6 @@ class ChatMessageList extends StatefulWidget {
   final void Function(Message message, String formId, Map<String, dynamic> values, String summary) onFormSubmitted;
   final void Function(Message message, bool approved, {String? feedback, List<String>? skippedTaskIds})? onPlanApprovalResponded;
   final void Function(Message message, String? selectedText) onReply;
-  final void Function(Message message) onRollback;
-  final void Function(Message message, {bool reEdit}) onRollbackReEdit;
-  final void Function(Message message) onDelete;
   final void Function(String agentId) onAgentAvatarTap;
   final void Function(String messageId) onScrollToMessage;
   final String? highlightedMessageId;
@@ -84,9 +81,6 @@ class ChatMessageList extends StatefulWidget {
     required this.onFormSubmitted,
     this.onPlanApprovalResponded,
     required this.onReply,
-    required this.onRollback,
-    required this.onRollbackReEdit,
-    required this.onDelete,
     required this.onAgentAvatarTap,
     required this.onScrollToMessage,
     this.highlightedMessageId,
@@ -371,10 +365,6 @@ class _ChatMessageListState extends State<ChatMessageList> {
                         !live.isSystemMessage,
                     onReply: (selectedText) =>
                         widget.onReply(live, selectedText),
-                    onRollback: () => widget.onRollback(live),
-                    onReEdit: () =>
-                        widget.onRollbackReEdit(live, reEdit: true),
-                    onDelete: () => widget.onDelete(live),
                     onViewTrace: (live.from.isAgent &&
                             live.metadata?['trace_id'] != null)
                         ? () => widget.onViewTrace?.call(live)

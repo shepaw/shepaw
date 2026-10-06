@@ -381,17 +381,6 @@ class AttachmentService {
     }
   }
 
-  /// 删除附件消息（blob 内容寻址可共享，仅删 DB 记录）。
-  Future<bool> deleteAttachment(Message message) async {
-    try {
-      await _database.deleteMessage(message.id);
-      return true;
-    } catch (e) {
-      LoggerService().error('Error deleting attachment', tag: 'Attachment', error: e);
-      return false;
-    }
-  }
-
   /// Build an [AttachmentData] from a saved attachment [Message].
   ///
   /// Reads the file bytes from local storage and constructs the data object

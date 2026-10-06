@@ -1894,58 +1894,10 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get chat_cannotDelete => '无法删除此消息';
-
-  @override
-  String get chat_deleteTitle => '删除消息';
-
-  @override
-  String get chat_deleteContent => '确定要删除这条消息吗？';
-
-  @override
-  String get chat_deleted => '消息已删除';
-
-  @override
-  String get chat_rollbackTitle => '回滚消息';
-
-  @override
-  String get chat_reEditTitle => '重新编辑消息';
-
-  @override
-  String get chat_rollbackContent => '这将删除此消息及之后的所有消息，此操作不可撤销。';
-
-  @override
-  String chat_rollbackSuccess(int count) {
-    return '已回滚 $count 条消息';
-  }
-
-  @override
-  String chat_reEditSuccess(int count) {
-    return '重新编辑消息：已回滚 $count 条消息';
-  }
-
-  @override
-  String chat_rollbackFailed(String error) {
-    return '回滚失败: $error';
-  }
-
-  @override
   String get chat_copiedToClipboard => '已复制到剪贴板';
 
   @override
   String get chat_download => '下载';
-
-  @override
-  String get chat_rollback => '回滚';
-
-  @override
-  String get chat_rollbackSub => '删除此消息及之后的所有消息';
-
-  @override
-  String get chat_reEdit => '重新编辑';
-
-  @override
-  String get chat_reEditSub => '回滚并编辑此消息';
 
   @override
   String chat_sendQueueCount(int count) {
@@ -7833,12 +7785,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get common_discardUnsaved => '有未保存的修改，放弃更改？';
-
-  @override
-  String get chat_deleteMessageTitle => '删除消息';
-
-  @override
-  String get chat_deleteMessageContent => '确定删除这条消息？此操作不可撤销。';
 
   @override
   String get chat_resetDmConfirm => '将向当前会话发送重置指令，清空远端上下文。';

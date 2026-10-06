@@ -191,7 +191,7 @@ class ChatService {
   /// Sub-service: session management (create/list DM sessions)
   late final SessionService _sessionService = SessionService(_databaseService);
 
-  /// Sub-service: message history (load/delete/rollback)
+  /// Sub-service: message history (load/delete)
   late final HistoryService _historyService =
       HistoryService(_databaseService, _toolResultService);
 
@@ -2323,31 +2323,6 @@ $originalQuestion
     required String userId,
   }) =>
       _historyService.deleteChatHistory(agentId: agentId, userId: userId);
-
-  /// Rollback from a specific message: delete it and all subsequent messages,
-  /// then notify the remote agent.
-  Future<void> rollbackFromMessage({
-    required String messageId,
-    required String channelId,
-    required RemoteAgent agent,
-  }) async {
-    final createdAt = await _databaseService.getMessageCreatedAt(messageId);
-    if (createdAt == null) {
-      throw Exception('Message not found: $messageId');
-    }
-    await _databaseService.deleteMessagesFromTimestamp(channelId, createdAt);
-
-    final connection = _acpConnections[agent.id];
-    if (connection != null && connection.isConnected) {
-      connection
-          .rollback(
-            sessionId: channelId,
-            messageId: messageId,
-          )
-          .catchError((_) => ACPResponse(jsonrpc: '2.0', id: 0));
-    }
-    _notifyChannelUpdate(channelId);
-  }
 
   /// Delete a single message
   Future<void> deleteMessage(String messageId) =>

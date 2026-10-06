@@ -20,9 +20,6 @@ class MessageLongPressHandler extends StatefulWidget {
     required ValueChanged<SelectedContent?> onSelectionChanged,
   }) builder;
   final void Function(String? selectedText) onReply;
-  final VoidCallback onRollback;
-  final VoidCallback onReEdit;
-  final VoidCallback onDelete;
   final VoidCallback? onViewTrace;
 
   const MessageLongPressHandler({
@@ -32,9 +29,6 @@ class MessageLongPressHandler extends StatefulWidget {
     required this.hasSelectableText,
     required this.builder,
     required this.onReply,
-    required this.onRollback,
-    required this.onReEdit,
-    required this.onDelete,
     this.onViewTrace,
   });
 
@@ -200,9 +194,6 @@ class _MessageLongPressHandlerState extends State<MessageLongPressHandler> {
       anchorRect: rect,
       isGroupMode: widget.isGroupMode,
       onReply: widget.onReply,
-      onRollback: widget.onRollback,
-      onReEdit: widget.onReEdit,
-      onDelete: widget.onDelete,
       onViewTrace: widget.onViewTrace,
       onDismiss: _onMenuDismissed,
       onPanelBoundsChanged: (panelRect) {

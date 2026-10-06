@@ -288,40 +288,6 @@ class MessageUtils {
     return null;
   }
 
-  /// 编辑消息
-  static Message editMessage(Message originalMessage, String newContent) {
-    return Message(
-      id: originalMessage.id,
-      from: originalMessage.from,
-      to: originalMessage.to,
-      channelId: originalMessage.channelId,
-      type: originalMessage.type,
-      content: newContent,
-      timestampMs: originalMessage.timestampMs,
-      replyTo: originalMessage.replyTo,
-      metadata: {
-        ...?originalMessage.metadata,
-        'edited': true,
-        'edited_at': DateTime.now().millisecondsSinceEpoch,
-        'original_content': originalMessage.content,
-      },
-    );
-  }
-
-  /// 检查消息是否已被编辑
-  static bool isMessageEdited(Message message) {
-    return message.metadata?['edited'] == true;
-  }
-
-  /// 获取编辑时间
-  static String getEditedTimeText(Message message) {
-    final editedAt = message.metadata?['edited_at'];
-    if (editedAt == null) return '';
-    
-    final editedDateTime = DateTime.fromMillisecondsSinceEpoch(editedAt);
-    return 'edited ${DateFormat('HH:mm').format(editedDateTime)}';
-  }
-
   /// 消息摘要（用于通知或预览）
   static String getMessageSummary(Message message, {int maxLength = 50}) {
     String summary = message.content;
@@ -370,42 +336,6 @@ class MessageUtils {
     
     // 更早
     return DateFormat('MM/dd HH:mm').format(messageTime);
-  }
-
-  /// 检查消息是否可以被编辑
-  static bool canEditMessage(Message message, String currentUserId, {Duration maxAge = const Duration(hours: 24)}) {
-    // 只能编辑自己的消息
-    if (message.senderId != currentUserId) {
-      return false;
-    }
-    
-    // 不能编辑系统消息
-    if (message.type == MessageType.system) {
-      return false;
-    }
-    
-    // 消息太旧不能编辑
-    final age = DateTime.now().difference(message.timestamp);
-    if (age > maxAge) {
-      return false;
-    }
-    
-    return true;
-  }
-
-  /// 检查消息是否可以被删除
-  static bool canDeleteMessage(Message message, String currentUserId) {
-    // 可以删除自己的消息
-    if (message.senderId == currentUserId) {
-      return true;
-    }
-    
-    // 系统消息可以删除
-    if (message.type == MessageType.system) {
-      return true;
-    }
-    
-    return false;
   }
 
   /// 获取消息类型图标

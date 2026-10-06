@@ -719,8 +719,6 @@ class _ChatScreenState extends State<ChatScreen>
         return l10n.chat_loadFailed(param);
       case 'chat_searchError':
         return l10n.chat_searchError(param);
-      case 'chat_rollbackFailed':
-        return l10n.chat_rollbackFailed(param);
       case 'chat_groupChatError':
         return l10n.chat_groupChatError(param);
       case 'chat_fileMessageFailed':
@@ -3806,55 +3804,6 @@ class _ChatScreenState extends State<ChatScreen>
                                       skippedTaskIds: skippedTaskIds),
                               onReply: (msg, selectedText) =>
                                   c.startReply(msg, selectedText: selectedText),
-                              onRollback: (msg) async {
-                                final l10n = AppLocalizations.of(context);
-                                if (!await showConfirmDialog(
-                                  context,
-                                  title: l10n.chat_rollbackTitle,
-                                  message: l10n.chat_rollbackContent,
-                                )) {
-                                  return;
-                                }
-                                if (!mounted) return;
-                                await c.rollbackMessage(msg);
-                              },
-                              onRollbackReEdit: (msg, {bool reEdit = false}) async {
-                                final l10n = AppLocalizations.of(context);
-                                if (!await showConfirmDialog(
-                                  context,
-                                  title: reEdit
-                                      ? l10n.chat_reEditTitle
-                                      : l10n.chat_rollbackTitle,
-                                  message: l10n.chat_rollbackContent,
-                                )) {
-                                  return;
-                                }
-                                if (!mounted) return;
-                                final ok = await c.rollbackMessage(msg,
-                                    reEdit: reEdit);
-                                // 回滚成功后预填原文并聚焦输入框（重新编辑）。
-                                if (ok && reEdit && mounted) {
-                                  _messageController.value = TextEditingValue(
-                                    text: msg.content,
-                                    selection: TextSelection.collapsed(
-                                        offset: msg.content.length),
-                                  );
-                                  _textFieldFocusNode.requestFocus();
-                                }
-                              },
-                              onDelete: (msg) async {
-                                final l10n = AppLocalizations.of(context);
-                                if (!await showConfirmDialog(
-                                  context,
-                                  title: l10n.chat_deleteMessageTitle,
-                                  message: l10n.chat_deleteMessageContent,
-                                  confirmLabel: l10n.common_delete,
-                                )) {
-                                  return;
-                                }
-                                if (!mounted) return;
-                                await c.deleteMessage(msg);
-                              },
                               onAgentAvatarTap: _navigateToAgentDetailById,
                               onScrollToMessage: _scrollToMessage,
                               highlightedMessageId: c.highlightedMessageId,
