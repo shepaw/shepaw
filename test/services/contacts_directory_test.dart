@@ -54,7 +54,7 @@ void main() {
   const hostFp = 'c1b74877debb2fd6';
   const appFp = 'aaaaaaaaaaaaaaaa';
 
-  test('主机、工作设备和我的设备按指纹分组', () {
+  test('全部设备平铺，主机排在最前', () {
     final host = peer(hostId, 'EDENZOU-MB2', hostFp);
     final worker = peer(
       'worker-local',
@@ -110,15 +110,24 @@ void main() {
     expect(view.hasSession, isTrue);
     expect(view.hostOnline, isTrue);
     expect(view.hostIsThisComputer, isTrue);
-    expect(view.hostAgents.map((a) => a.id).toList(), [SheService.sheId, 'cli']);
+    expect(view.devices.map((d) => d.peer.deviceName), [
+      'EDENZOU-MB2',
+      '公司 Mac mini',
+      'Android-AA38',
+      'EDENZOU-MB2',
+    ]);
+    expect(view.devices.first.isHost, isTrue);
+    expect(view.devices.first.isThisDevice, isTrue);
+    expect(view.devices.first.agents.map((a) => a.id).toList(),
+        [SheService.sheId, 'cli']);
     expect(view.otherAgents.map((a) => a.name), ['迷路的']);
-    expect(view.workers.map((d) => d.peer.deviceName), ['公司 Mac mini']);
-    expect(view.workers.single.agents.single.name, 'Codex');
-    expect(view.workers.single.online, isTrue);
-    expect(view.myDevices.map((d) => d.peer.deviceName),
-        ['Android-AA38', 'EDENZOU-MB2']);
-    expect(view.myDevices.last.isThisDevice, isTrue);
-    expect(view.myDevices.first.isThisDevice, isFalse);
+    expect(view.devices[1].agents.single.name, 'Codex');
+    expect(view.devices[1].online, isTrue);
+    expect(view.devices[1].isHost, isFalse);
+    expect(view.devices[1].isThisDevice, isFalse);
+    expect(view.devices[2].isThisDevice, isFalse);
+    expect(view.devices.last.isThisDevice, isTrue);
+    expect(view.devices.last.isHost, isFalse);
   });
 
   test('名单里等于主机指纹的项被去掉', () {
@@ -136,11 +145,12 @@ void main() {
       rosterFailed: false,
     );
 
-    expect(view.workers, isEmpty);
-    expect(view.myDevices.map((d) => d.peer.id), ['phone']);
+    expect(view.devices.map((d) => d.peer.id), [hostId, 'phone']);
+    expect(view.devices.first.isHost, isTrue);
+    expect(view.devices.last.isHost, isFalse);
   });
 
-  test('没有登录态就没有主机节', () {
+  test('没有登录态就没有设备', () {
     final view = buildContacts(
       hostPeerId: null,
       hostPeer: null,
@@ -156,8 +166,7 @@ void main() {
 
     expect(view.hasSession, isFalse);
     expect(view.host, isNull);
-    expect(view.hostAgents, isEmpty);
-    expect(view.workers, isEmpty);
+    expect(view.devices, isEmpty);
   });
 
   test('主机不在连接集合里就是离线，名单失败单独标出', () {

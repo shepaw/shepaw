@@ -26,7 +26,7 @@ import 'remote_agent_detail_screen.dart';
 import 'group_detail_screen.dart';
 import 'create_group_screen.dart';
 
-/// 通讯录：主机（惜宝和主机上的智能体）→ 工作设备 → 我的设备 → 群聊。
+/// 通讯录：全部设备平铺（主机、本机只在设备名旁标出来）→ 群聊。
 /// App 自己不列一份内置 Agent。
 ///
 /// When [embedded] is true (desktop middle column), selection callbacks open
@@ -57,7 +57,7 @@ class ContactsScreen extends StatefulWidget {
   State<ContactsScreen> createState() => ContactsScreenState();
 }
 
-enum _ContactsSection { host, workers, mine, groups }
+enum _ContactsSection { groups }
 
 class ContactsScreenState extends State<ContactsScreen> {
   /// 折叠箭头列宽 + 间距，使子项头像与父节点头像左对齐。
@@ -79,9 +79,6 @@ class ContactsScreenState extends State<ContactsScreen> {
   String _query = '';
 
   final Set<_ContactsSection> _expanded = {
-    _ContactsSection.host,
-    _ContactsSection.workers,
-    _ContactsSection.mine,
     _ContactsSection.groups,
   };
 
@@ -159,11 +156,7 @@ class ContactsScreenState extends State<ContactsScreen> {
   List<String> get _peerIds {
     final view = _view;
     if (view == null) return const [];
-    return [
-      if (view.host != null) view.host!.id,
-      for (final device in view.workers) device.peer.id,
-      for (final device in view.myDevices) device.peer.id,
-    ];
+    return [for (final device in view.devices) device.peer.id];
   }
 
   List<Agent> _matchingAgents(List<Agent> agents) {
@@ -322,21 +315,9 @@ class ContactsScreenState extends State<ContactsScreen> {
     if (view == null) return _buildSkeleton();
 
     final groups = _filteredGroups;
-    final hostAgents = _matchingAgents(view.hostAgents);
-    final otherAgents = _matchingAgents(view.otherAgents);
-    final workers = _matchingDevices(view.workers);
-    final myDevices = _matchingDevices(view.myDevices);
-    final hostVisible = view.host != null &&
-        (_query.isEmpty ||
-            view.host!.deviceName.toLowerCase().contains(_query) ||
-            hostAgents.isNotEmpty ||
-            otherAgents.isNotEmpty);
+    final devices = _matchingDevices(view.devices);
 
-    if (_query.isNotEmpty &&
-        !hostVisible &&
-        workers.isEmpty &&
-        myDevices.isEmpty &&
-        groups.isEmpty) {
+    if (_query.isNotEmpty && devices.isEmpty && groups.isEmpty) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
@@ -362,85 +343,18 @@ class ContactsScreenState extends State<ContactsScreen> {
           ),
         )
       else ...[
-        _buildSectionHeader(
-          section: _ContactsSection.host,
-          title: l10n.contacts_host,
-          count: hostAgents.length + otherAgents.length,
-          icon: Icons.dns_outlined,
-          iconColor: Theme.of(context).colorScheme.primary,
-        ),
-        if (_expanded.contains(_ContactsSection.host) && hostVisible) ...[
-          _buildPeerFoldHeader(
-            view.host!,
-            l10n,
-            agents: [...hostAgents, ...otherAgents],
-            statusText: _hostStatus(view, l10n),
-            online: view.hostOnline,
-            onStatusTap: view.hostOnline ? null : _reconnectHost,
+        for (final device in devices)
+          Opacity(
+            opacity: device.isHost || view.hostOnline ? 1 : 0.45,
+            child: Column(
+              children: _deviceRows(device, view, l10n),
+            ),
           ),
-          if (_expandedPeerIds.contains(view.host!.id) || _query.isNotEmpty) ...[
-            ...hostAgents.map(_buildAgentTile),
-            if (otherAgents.isNotEmpty) ...[
-              Padding(
-                padding: const EdgeInsets.only(left: _childIndent, top: 4),
-                child: Text(
-                  l10n.contacts_other,
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                ),
-              ),
-              ...otherAgents.map(_buildAgentTile),
-            ],
-            if (_query.isEmpty)
-              ListTile(
-                contentPadding:
-                    const EdgeInsets.only(left: _childIndent, right: 16),
-                leading: const Icon(Icons.add, size: 20),
-                title: Text(l10n.home_addAgentInstance),
-                onTap: _addAgent,
-              ),
-          ],
-        ],
         if (view.rosterFailed)
           ListTile(
             title: Text(l10n.contacts_listFailed),
             onTap: () => _directory.refresh(),
-          )
-        else ...[
-          _buildSectionHeader(
-            section: _ContactsSection.workers,
-            title: l10n.contacts_workers,
-            count: workers.length,
-            icon: Icons.computer_outlined,
-            iconColor: const Color(0xFF5B6C8F),
           ),
-          if (_expanded.contains(_ContactsSection.workers))
-            Opacity(
-              opacity: view.hostOnline ? 1 : 0.45,
-              child: Column(
-                children: [
-                  for (final device in workers)
-                    ..._deviceRows(device, l10n),
-                ],
-              ),
-            ),
-          _buildSectionHeader(
-            section: _ContactsSection.mine,
-            title: l10n.contacts_myDevices,
-            count: myDevices.length,
-            icon: Icons.devices_other_outlined,
-            iconColor: const Color(0xFF8A6A3B),
-          ),
-          if (_expanded.contains(_ContactsSection.mine))
-            Opacity(
-              opacity: view.hostOnline ? 1 : 0.45,
-              child: Column(
-                children: [
-                  for (final device in myDevices)
-                    ..._deviceRows(device, l10n),
-                ],
-              ),
-            ),
-        ],
       ],
       _buildSectionHeader(
         section: _ContactsSection.groups,
@@ -497,33 +411,61 @@ class ContactsScreenState extends State<ContactsScreen> {
 
   List<ContactDevice> _matchingDevices(List<ContactDevice> devices) {
     if (_query.isEmpty) return devices;
+    final other = _view?.otherAgents ?? const <Agent>[];
     return devices.where((device) {
       if (device.peer.deviceName.toLowerCase().contains(_query)) return true;
-      return _matchingAgents(device.agents).isNotEmpty;
+      if (_matchingAgents(device.agents).isNotEmpty) return true;
+      return device.isHost && _matchingAgents(other).isNotEmpty;
     }).toList();
   }
 
-  List<Widget> _deviceRows(ContactDevice device, AppLocalizations l10n) {
+  List<Widget> _deviceRows(
+    ContactDevice device,
+    ContactsView view,
+    AppLocalizations l10n,
+  ) {
     final agents = _matchingAgents(device.agents);
+    final extras =
+        device.isHost ? _matchingAgents(view.otherAgents) : const <Agent>[];
+    final visibleAgents = [...agents, ...extras];
     final expanded = _expandedPeerIds.contains(device.peer.id) ||
-        (_query.isNotEmpty && agents.isNotEmpty);
+        (_query.isNotEmpty && visibleAgents.isNotEmpty);
     return [
       _buildPeerFoldHeader(
         device.peer,
         l10n,
-        agents: agents,
+        agents: visibleAgents,
+        isHost: device.isHost,
         thisDevice: device.isThisDevice,
-        online: device.online,
+        online: device.isHost ? view.hostOnline : device.online,
+        statusText: device.isHost ? _hostStatus(view, l10n) : null,
+        onStatusTap: device.isHost && !view.hostOnline ? _reconnectHost : null,
       ),
-      if (expanded) ...agents.map(_buildAgentTile),
+      if (expanded) ...[
+        ...agents.map(_buildAgentTile),
+        if (extras.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.only(left: _childIndent, top: 4),
+            child: Text(
+              l10n.contacts_other,
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+          ),
+          ...extras.map(_buildAgentTile),
+        ],
+        if (device.isHost && _query.isEmpty)
+          ListTile(
+            contentPadding: const EdgeInsets.only(left: _childIndent, right: 16),
+            leading: const Icon(Icons.add, size: 20),
+            title: Text(l10n.home_addAgentInstance),
+            onTap: _addAgent,
+          ),
+      ],
     ];
   }
 
   String _hostStatus(ContactsView view, AppLocalizations l10n) {
     if (!view.hostOnline) return l10n.contacts_offlineReconnect;
-    if (view.hostIsThisComputer) {
-      return '${l10n.home_statusOnline} · ${l10n.contacts_thisComputer}';
-    }
     return l10n.home_statusOnline;
   }
 
@@ -605,12 +547,35 @@ class ContactsScreenState extends State<ContactsScreen> {
     );
   }
 
+  Widget _roleTag(
+    String label, {
+    required Color background,
+    required Color foreground,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          color: foreground,
+        ),
+      ),
+    );
+  }
+
   /// Device row: chevron + device icon + name; tap toggles fold (mobile) or fold + detail (desktop).
   Widget _buildPeerFoldHeader(
     PairedPeer peer,
     AppLocalizations l10n, {
     required List<Agent> agents,
     String? statusText,
+    bool isHost = false,
     bool thisDevice = false,
     bool? online,
     VoidCallback? onStatusTap,
@@ -688,23 +653,20 @@ class ContactsScreenState extends State<ContactsScreen> {
                             ),
                           ),
                         ),
+                        if (isHost) ...[
+                          const SizedBox(width: 6),
+                          _roleTag(
+                            l10n.contacts_host,
+                            background: colorScheme.tertiaryContainer,
+                            foreground: colorScheme.onTertiaryContainer,
+                          ),
+                        ],
                         if (thisDevice) ...[
                           const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: colorScheme.primaryContainer,
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              l10n.contacts_thisDevice,
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                                color: colorScheme.onPrimaryContainer,
-                              ),
-                            ),
+                          _roleTag(
+                            l10n.contacts_thisDevice,
+                            background: colorScheme.primaryContainer,
+                            foreground: colorScheme.onPrimaryContainer,
                           ),
                         ],
                       ],

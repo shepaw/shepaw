@@ -21,25 +21,25 @@ class ContactDevice {
   const ContactDevice({
     required this.peer,
     required this.agents,
+    required this.isHost,
     required this.isThisDevice,
     required this.online,
   });
 
   final PairedPeer peer;
   final List<Agent> agents;
+  final bool isHost;
   final bool isThisDevice;
   final bool online;
 }
 
-/// 通讯录三节：主机、工作设备、我的设备。群聊不在这里。
+/// 通讯录里的全部设备。主机只是其中一台，群聊不在这里。
 class ContactsView {
   const ContactsView({
     required this.hasSession,
     required this.host,
-    required this.hostAgents,
+    required this.devices,
     required this.otherAgents,
-    required this.workers,
-    required this.myDevices,
     required this.hostOnline,
     required this.hostIsThisComputer,
     required this.rosterFailed,
@@ -47,10 +47,10 @@ class ContactsView {
 
   final bool hasSession;
   final PairedPeer? host;
-  final List<Agent> hostAgents;
+
+  /// 主机在最前，其余设备按名单顺序。
+  final List<ContactDevice> devices;
   final List<Agent> otherAgents;
-  final List<ContactDevice> workers;
-  final List<ContactDevice> myDevices;
   final bool hostOnline;
   final bool hostIsThisComputer;
   final bool rosterFailed;
@@ -58,10 +58,8 @@ class ContactsView {
   static const empty = ContactsView(
     hasSession: false,
     host: null,
-    hostAgents: <Agent>[],
+    devices: <ContactDevice>[],
     otherAgents: <Agent>[],
-    workers: <ContactDevice>[],
-    myDevices: <ContactDevice>[],
     hostOnline: false,
     hostIsThisComputer: false,
     rosterFailed: false,
@@ -71,7 +69,7 @@ class ContactsView {
 /// 把登录态、本机主机行、主机名单和智能体合成一份通讯录。
 ///
 /// 主机名单里的 id 和本机配对行不是同一套，所以智能体只按
-/// `roster_hub_fingerprint` 往工作设备上挂。
+/// `roster_hub_fingerprint` 挂到对应设备上。主机本身排在设备列表最前。
 ContactsView buildContacts({
   required String? hostPeerId,
   required PairedPeer? hostPeer,
@@ -121,34 +119,36 @@ ContactsView buildContacts({
     }
   }
 
-  final workers = <ContactDevice>[];
-  final myDevices = <ContactDevice>[];
-  for (final peer in filteredRoster) {
-    final hanging =
-        byFingerprint[peer.fingerprint.trim().toLowerCase()] ?? const <Agent>[];
-    final device = ContactDevice(
-      peer: peer,
-      agents: hanging,
-      isThisDevice: sameFingerprint(peer.fingerprint, appFingerprint),
-      online: peer.state == PeerConnectionState.connected,
-    );
-    if (hanging.isNotEmpty) {
-      workers.add(device);
-    } else {
-      myDevices.add(device);
-    }
-  }
+  final hostIsThisComputer =
+      sameFingerprint(hostPeer?.fingerprint, localCliFingerprint);
+  final devices = <ContactDevice>[
+    if (hostPeer != null)
+      ContactDevice(
+        peer: hostPeer,
+        agents: hostAgents,
+        isHost: true,
+        isThisDevice: sameFingerprint(hostPeer.fingerprint, appFingerprint) ||
+            hostIsThisComputer,
+        online: hostOnline,
+      ),
+    for (final peer in filteredRoster)
+      ContactDevice(
+        peer: peer,
+        agents: byFingerprint[peer.fingerprint.trim().toLowerCase()] ??
+            const <Agent>[],
+        isHost: false,
+        isThisDevice: sameFingerprint(peer.fingerprint, appFingerprint),
+        online: peer.state == PeerConnectionState.connected,
+      ),
+  ];
 
   return ContactsView(
     hasSession: true,
     host: hostPeer,
-    hostAgents: hostAgents,
+    devices: devices,
     otherAgents: otherAgents,
-    workers: workers,
-    myDevices: myDevices,
     hostOnline: hostOnline,
-    hostIsThisComputer:
-        sameFingerprint(hostPeer?.fingerprint, localCliFingerprint),
+    hostIsThisComputer: hostIsThisComputer,
     rosterFailed: rosterFailed,
   );
 }
