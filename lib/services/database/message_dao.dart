@@ -7,6 +7,20 @@ import '../logger_service.dart';
 import '../../storage/pouch_chat_log.dart';
 import '../../storage/runtime_mirror_service.dart';
 
+/// `messages.created_at` 的唯一写法：UTC、毫秒，和主机同步下来的行同一格式。
+///
+/// 这一列按字符串比较排序。混进不带时区的本地时间，会排到 UTC 行的后面。
+String messageCreatedAt(DateTime time) => DateTime.fromMillisecondsSinceEpoch(
+      time.millisecondsSinceEpoch,
+      isUtc: true,
+    ).toIso8601String();
+
+/// 把外部带进来的 `created_at` 改成 [messageCreatedAt] 的格式。不带时区的按本机时区算。
+String normalizeMessageCreatedAt(String raw) {
+  final parsed = DateTime.tryParse(raw);
+  return parsed == null ? raw : messageCreatedAt(parsed);
+}
+
 /// 一次 [MessageDao.createMessages] 要写入的行。
 class StoredMessageInsert {
   final String id;
@@ -56,6 +70,7 @@ extension MessageDao on LocalDatabaseService {
     ConflictAlgorithm conflictAlgorithm = ConflictAlgorithm.abort,
   }) async {
     final db = await database;
+    final at = messageCreatedAt(createdAt ?? DateTime.now());
     await db.insert(
       'messages',
       {
@@ -68,7 +83,7 @@ extension MessageDao on LocalDatabaseService {
         'message_type': messageType,
         'metadata': metadata != null ? jsonEncode(metadata) : null,
         'reply_to_id': replyToId,
-        'created_at': (createdAt ?? DateTime.now()).toIso8601String(),
+        'created_at': at,
         'is_read': isRead,
       },
       conflictAlgorithm: conflictAlgorithm,
@@ -83,7 +98,7 @@ extension MessageDao on LocalDatabaseService {
       senderName: senderName,
       content: content,
       messageType: messageType,
-      createdAt: (createdAt ?? DateTime.now()).toIso8601String(),
+      createdAt: at,
       metadata: metadata,
       replyToId: replyToId,
       isRead: isRead,
@@ -109,7 +124,7 @@ extension MessageDao on LocalDatabaseService {
           'message_type': row.messageType,
           'metadata': row.metadata != null ? jsonEncode(row.metadata) : null,
           'reply_to_id': row.replyToId,
-          'created_at': row.createdAt.toIso8601String(),
+          'created_at': messageCreatedAt(row.createdAt),
           'is_read': row.isRead,
         },
         conflictAlgorithm: row.conflictAlgorithm,
@@ -130,7 +145,7 @@ extension MessageDao on LocalDatabaseService {
           senderName: row.senderName,
           content: row.content,
           messageType: row.messageType,
-          createdAt: row.createdAt.toIso8601String(),
+          createdAt: messageCreatedAt(row.createdAt),
           metadata: row.metadata,
           replyToId: row.replyToId,
           isRead: row.isRead,
@@ -470,7 +485,7 @@ extension MessageDao on LocalDatabaseService {
   }) async {
     final db = await database;
     final messageId = existingMessageId ?? const Uuid().v4();
-    final now = DateTime.now().toIso8601String();
+    final now = messageCreatedAt(DateTime.now());
 
     metadata ??= {};
     metadata['status'] = status;
@@ -756,8 +771,9 @@ extension MessageDao on LocalDatabaseService {
   Future<int> cleanupAbandonedPartialMessages({int daysOld = 30}) async {
     final db = await database;
     try {
-      final cutoffDate =
-          DateTime.now().subtract(Duration(days: daysOld)).toIso8601String();
+      final cutoffDate = messageCreatedAt(
+        DateTime.now().subtract(Duration(days: daysOld)),
+      );
 
       // Find abandoned partial messages
       const jsonQuery = r'json_extract(metadata, "$.status")';

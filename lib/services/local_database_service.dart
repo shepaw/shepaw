@@ -60,7 +60,7 @@ class LocalDatabaseService {
     final path = await PouchSqlite.openPath(PouchSqlite.mainDb);
     return await openDatabase(
       path,
-      version: 36,
+      version: 37,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -1019,6 +1019,31 @@ class LocalDatabaseService {
         );
       }
     }
+
+    if (oldVersion < 37) {
+      // 版本 36 -> 37: 本机写的 created_at 不带时区，改成和主机行一样的 UTC
+      try {
+        await migrateLocalMessageTimesToUtc(db);
+      } catch (e) {
+        LoggerService().error(
+          'Failed to normalize messages.created_at (v37)',
+          tag: 'Migration',
+          error: e,
+        );
+      }
+    }
+  }
+
+  /// 不带 `Z` / 偏移的 `created_at` 按本机时区换成 UTC 毫秒，格式同 [messageCreatedAt]。
+  static Future<int> migrateLocalMessageTimesToUtc(DatabaseExecutor db) {
+    const utc = "strftime('%Y-%m-%dT%H:%M:%fZ', created_at, 'utc')";
+    return db.rawUpdate(
+      "UPDATE messages SET created_at = $utc "
+      "WHERE created_at NOT LIKE '%Z' "
+      "AND substr(created_at, 20) NOT LIKE '%+%' "
+      "AND substr(created_at, 20) NOT LIKE '%-%' "
+      "AND $utc IS NOT NULL",
+    );
   }
 
   // ==================== 数据库维护 ====================

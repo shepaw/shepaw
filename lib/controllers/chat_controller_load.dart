@@ -366,8 +366,9 @@ mixin _LoadOps on _ChatControllerBase {
       final oldest = messages.first;
       final beforeCreatedAt =
           await localDatabaseService.getMessageCreatedAt(oldest.id) ??
-              DateTime.fromMillisecondsSinceEpoch(oldest.timestampMs)
-                  .toIso8601String();
+              messageCreatedAt(
+                DateTime.fromMillisecondsSinceEpoch(oldest.timestampMs),
+              );
       final older = await chatService.loadOlderChannelMessages(
         channelId,
         beforeCreatedAt: beforeCreatedAt,

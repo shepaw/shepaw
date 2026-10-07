@@ -145,8 +145,8 @@ class MessageSearchService {
       ''';
 
       List<dynamic> args = [
-        startDate.toIso8601String(),
-        endDate.toIso8601String(),
+        messageCreatedAt(startDate),
+        messageCreatedAt(endDate),
       ];
       if (channelId != null) {
         args.add(channelId);

@@ -195,7 +195,12 @@ class DataExportImportService {
 
       // 导入消息
       for (final message in data['messages'] as List) {
-        await db.insert('messages', message);
+        final row = Map<String, dynamic>.from(message as Map);
+        final createdAt = row['created_at'];
+        if (createdAt is String) {
+          row['created_at'] = normalizeMessageCreatedAt(createdAt);
+        }
+        await db.insert('messages', row);
       }
 
       _logger.info('Channel import completed');
