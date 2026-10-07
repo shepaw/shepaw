@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/remote_agent.dart';
 import 'package:shepaw/peer/host_she_turn.dart';
@@ -121,5 +123,17 @@ void main() {
     applyHostSheModelMetadata(metadata, {'has_main_model': false});
     expect(metadata.containsKey('has_main_model'), isFalse);
     expect(metadata.containsKey('she_model'), isFalse);
+  });
+
+  test('惜宝切主模型的回包在连接放行名单里', () {
+    final source =
+        File('lib/peer/services/peer_connection.dart').readAsStringSync();
+    for (final type in const [
+      'she_model_set_req',
+      'she_model_set_resp',
+      'agent_meta_changed',
+    ]) {
+      expect(source, contains("'$type'"), reason: type);
+    }
   });
 }
