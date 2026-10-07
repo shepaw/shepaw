@@ -15,6 +15,7 @@ import 'services/composer_draft_service.dart';
 import 'services/vision/reference_album_service.dart';
 import 'peer/services/hub_event_client.dart';
 import 'peer/services/hub_group_registry.dart';
+import 'peer/services/hub_she_mind.dart';
 import 'services/event/event_bus.dart';
 import 'services/event/setup_event_bus.dart';
 
@@ -72,6 +73,7 @@ void setupServiceLocator() {
         },
       ));
   getIt.registerLazySingleton<HubGroupRegistry>(() => HubGroupRegistry());
+  getIt.registerLazySingleton<HubSheMind>(() => HubSheMind());
 
   if (!getIt.isRegistered<EventBus>()) {
     final bus = EventBus();

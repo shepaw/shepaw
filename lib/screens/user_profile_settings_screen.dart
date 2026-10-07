@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../services/cognition_service.dart';
+import '../peer/services/hub_she_mind.dart';
+import '../service_locator.dart';
 import '../services/logger_service.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/discard_changes_scope.dart';
@@ -19,7 +20,7 @@ class UserProfileSettingsScreen extends StatefulWidget {
 }
 
 class _UserProfileSettingsScreenState extends State<UserProfileSettingsScreen> {
-  final CognitionService _cognition = CognitionService.instance;
+  final HubSheMind _mind = getIt<HubSheMind>();
 
   // ── 预设字段 key 列表（顺序固定）────────────────────────────────────────────
   static const List<String> _coreFieldKeys = [
@@ -196,7 +197,7 @@ class _UserProfileSettingsScreenState extends State<UserProfileSettingsScreen> {
 
   Future<void> _loadProfile() async {
     try {
-      final profile = await _cognition.getAllUserProfile();
+      final profile = await _mind.profile();
       final customAttrs = <_CustomAttr>[];
 
       for (final entry in profile.entries) {
@@ -260,18 +261,7 @@ class _UserProfileSettingsScreenState extends State<UserProfileSettingsScreen> {
         }
       }
 
-      // 删除值为空的字段
-      final allKeys = {..._reservedKeys, ..._customAttrs.map((a) => a.key)};
-      for (final key in allKeys) {
-        if (!toSave.containsKey(key) && key != '_initialized') {
-          await _cognition.deleteUserProfileField(key);
-        }
-      }
-
-      // 批量写入
-      for (final entry in toSave.entries) {
-        await _cognition.updateUserProfileField(entry.key, entry.value);
-      }
+      await _mind.saveProfile(toSave);
 
       if (mounted) {
         _captureBaseline();
@@ -302,7 +292,7 @@ class _UserProfileSettingsScreenState extends State<UserProfileSettingsScreen> {
     if (confirmed != true) return;
 
     try {
-      await _cognition.clearUserProfile();
+      await _mind.saveProfile(const {});
       for (final c in _controllers.values) {
         c.text = '';
       }
