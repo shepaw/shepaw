@@ -17,20 +17,19 @@ import '../../../storage/store_protocol.dart';
 import '../../../storage/store_service.dart';
 import '../../../storage/store_uri_reader.dart';
 
-/// 校验对群工作空间（`pouch://workspaces/<device>/group_<gid>/…`）的访问：
-/// 执行者（[ChatAgentScope.agentId]）必须是群成员。非群工作空间 URI 返回
-/// null（放行）。返回错误文案时调用方应拒绝。
+/// 校验对群工作空间（`pouch://workspaces/<device>/<group id>/…`）的访问：
+/// 目录名就是群 id。执行者（[ChatAgentScope.agentId]）必须是群成员。
+/// 非群工作空间 URI 返回 null（放行）。返回错误文案时调用方应拒绝。
 Future<String?> groupWorkspaceAccessError(String uri) async {
   final parsed = parseStoreUriLoose(uri);
   if (parsed.space != StoreSpace.workspaces) return null;
   final segs = parsed.path.split('/').where((s) => s.isNotEmpty).toList();
   if (segs.isEmpty || !segs.first.startsWith('group_')) return null;
-  final gid = segs.first.substring('group_'.length);
-  if (gid.isEmpty) return null;
+  final gid = segs.first;
   final agentId = ChatAgentScope.agentId.trim();
   if (agentId.isEmpty) return 'unknown executor agent id';
   final isMember = await GroupWorkspaceService.instance.isMember(gid, agentId);
-  if (!isMember) return 'not a member of group workspace (group_$gid)';
+  if (!isMember) return 'not a member of group workspace ($gid)';
   return null;
 }
 

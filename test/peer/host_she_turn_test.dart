@@ -30,7 +30,7 @@ void main() {
       metadata: const {
         'is_she': true,
         'remote_agent_id': SheService.sheId,
-        'llm_provider': 'openai',
+        'has_main_model': true,
       },
     );
     final cursor = agent(
@@ -58,18 +58,6 @@ void main() {
     expect(chatUsesRegistryMainModel(cursor), isFalse);
   });
 
-  test('同步主机名单时留下本机选的主模型', () {
-    final metadata = <String, dynamic>{'is_she': true, 'engine': 'she'};
-    keepPeerLocalModelChoice(metadata, {
-      'main_model_id': 'm1',
-      'llm_provider': 'openai',
-      'engine': 'old',
-    });
-    expect(metadata['main_model_id'], 'm1');
-    expect(metadata['llm_provider'], 'openai');
-    expect(metadata['engine'], 'she');
-  });
-
   test('行 id 不是惜宝 id 时，用远端 id', () {
     final she = agent(
       id: 'card-1',
@@ -80,11 +68,11 @@ void main() {
     expect(hostSheTurnAgentId(she), SheService.sheId);
   });
 
-  test('主机惜宝选了本机已有的模型，就算已配置', () {
+  test('主机惜宝看 Hub 回来的 has_main_model', () {
     final she = agent(
       id: SheService.sheId,
       protocol: ProtocolType.peer,
-      metadata: const {'is_she': true, 'main_model_id': 'm1'},
+      metadata: const {'is_she': true, 'has_main_model': true},
     );
     final unset = agent(
       id: SheService.sheId,
@@ -96,29 +84,42 @@ void main() {
       protocol: ProtocolType.acp,
       metadata: const {'llm_provider': 'openai'},
     );
-    bool known(String id) => id == 'm1';
 
-    expect(sheHasMainModel(she, isKnownModel: known), isTrue);
-    expect(sheHasMainModel(she, isKnownModel: (_) => false), isFalse);
-    expect(sheHasMainModel(unset, isKnownModel: known), isFalse);
-    expect(sheHasMainModel(local, isKnownModel: (_) => false), isTrue);
+    expect(sheHasMainModel(she), isTrue);
+    expect(sheHasMainModel(unset), isFalse);
+    expect(sheHasMainModel(local), isTrue);
   });
 
-  test('主模型地址从选中的定义里取出', () {
-    final endpoint = hostSheEndpointFromMetadata(
-      const {'main_model_id': 'm1'},
-      lookup: (id) => HostSheEndpoint(
-        model: 'gpt-4o',
-        baseUrl: 'https://api.example.com/v1',
-        apiKey: 'sk-$id',
-      ),
-    );
-    expect(endpoint?.model, 'gpt-4o');
-    expect(endpoint?.baseUrl, 'https://api.example.com/v1');
-    expect(endpoint?.isReady, isTrue);
+  test('Hub 元数据写入缓存时不留密钥，并能对上本机模型', () {
+    final metadata = <String, dynamic>{
+      'is_she': true,
+      'main_model_id': 'local-only',
+      'llm_api_key': 'sk-local',
+    };
+    applyHostSheModelMetadata(metadata, {
+      'has_main_model': true,
+      'model': 'gpt-4o',
+      'base_url': 'https://api.example.com/v1',
+      'api_key': 'sk-should-not-stick',
+    });
+    expect(metadata.containsKey('main_model_id'), isFalse);
+    expect(metadata.containsKey('llm_api_key'), isFalse);
+    expect(metadata.containsKey('api_key'), isFalse);
+    expect(metadata['she_model'], 'gpt-4o');
+    expect(metadata['has_main_model'], isTrue);
     expect(
-      hostSheEndpointFromMetadata(const {}, lookup: (_) => null),
-      isNull,
+      hostSheRegistryModelId(
+        metadata,
+        models: [
+          (id: 'm1', model: 'gpt-4o', baseUrl: 'https://api.example.com/v1'),
+          (id: 'm2', model: 'gpt-4o', baseUrl: 'https://other.example/v1'),
+        ],
+      ),
+      'm1',
     );
+
+    applyHostSheModelMetadata(metadata, {'has_main_model': false});
+    expect(metadata.containsKey('has_main_model'), isFalse);
+    expect(metadata.containsKey('she_model'), isFalse);
   });
 }

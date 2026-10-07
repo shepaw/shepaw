@@ -46,9 +46,8 @@ class StorageFolderLabel {
 
 /// 把储物袋目录名解析为可读标签。
 ///
-/// - 群：先按原始名查 channel（runtime owner 目录名 == channel id），未命中且
-///   带 `group_` 前缀时再剥一层（workspaces 根为 `group_group_<uuid>`）。命中且
-///   [Channel.isGroup] 才标为群，避免把 DM 会话误标成群。
+/// - 群：目录名就是群 id（`group_<uuid>`）。先按原名查 channel，未命中且带
+///   `group_` 前缀时再剥一层。命中且 [Channel.isGroup] 才标为群，避免把 DM 误标成群。
 /// - Agent：本地与远端共用 `agents` 表，[LocalDatabaseService.getAgentById] 即可。
 /// - 解析失败一律返回 [StorageFolderLabel.unresolved]，不抛异常。
 Future<StorageFolderLabel> resolveStorageFolderLabel(

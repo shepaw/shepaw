@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:uuid/uuid.dart';
 import '../../models/message.dart';
 import '../../models/remote_agent.dart';
-import '../../models/agent_scenario_models.dart';
 import '../../models/attachment_data.dart';
 import '../../models/llm_stream_event.dart';
 import '../../models/llm_token_usage.dart';
@@ -2125,21 +2124,6 @@ class AgentMessagingService {
 
     final route = await PouchTurnRelay.currentRoute();
     if (!route.runLocal) {
-      final sheModel = relaysHostSheTurn(agent)
-          ? hostSheEndpointFromMetadata(
-              agent.metadata,
-              lookup: (id) {
-                final def = ModelRegistry.instance.getById(id);
-                if (def == null) return null;
-                final config = AgentScenarioModels.configFromDefinition(def);
-                return HostSheEndpoint(
-                  model: config.model,
-                  baseUrl: config.apiBase,
-                  apiKey: config.apiKey,
-                );
-              },
-            )
-          : null;
       final result = await PouchTurnRelay.instance.forwardDm(
         hostPeerId: route.hostPeerId!,
         agentId: relaysHostSheTurn(agent)
@@ -2150,9 +2134,6 @@ class AgentMessagingService {
         userName: userName,
         channelId: channelId,
         userMessageId: userMessage.id,
-        model: sheModel?.model,
-        baseUrl: sheModel?.baseUrl,
-        apiKey: sheModel?.apiKey,
         attachments: attachments,
         onStreamChunk: onStreamChunk,
         onInteractionRequest: (agentId, agentName, interactionType, data) async {

@@ -166,7 +166,7 @@ class OrchestrationInbox {
 ///
 /// 空间布局：
 /// ```
-/// workspaces/<homeDevice>/group_<gid>/
+/// workspaces/<homeDevice>/<group id>/
 /// ├── group-workspace.json         # 成员表（读写权限唯一依据）
 /// ├── members/<agentId>/...        # 成员私有区（pouch write 落点，只写自己的）
 /// └── shared/
@@ -192,19 +192,19 @@ class GroupWorkspaceService {
   /// 元数据文件名（无前导点：协议层 normalizeStorePath 拒绝 dot segment）。
   static const metaFileName = 'group-workspace.json';
 
-  /// 目录根（`group_<gid>`，段已 sanitize）。
+  /// 目录根。群 id 就是 `group_<uuid>`，不再另加前缀。
   String workspaceRoot(String groupId) =>
-      'group_${RuntimePaths.sanitizeSegment(groupId)}';
+      RuntimePaths.sanitizeSegment(groupId);
 
   String metaRelPath(String groupId) =>
       '${workspaceRoot(groupId)}/$metaFileName';
 
-  /// 成员私有区：`group_<gid>/members/<agentId>`。
+  /// 成员私有区：`<group id>/members/<agentId>`。
   String membersDir(String groupId, String agentId) =>
       '${workspaceRoot(groupId)}/members/'
       '${RuntimePaths.sanitizeSegment(agentId)}';
 
-  /// 单任务编排根：`group_<gid>/shared/orchestration/<sessionId>`。
+  /// 单任务编排根：`<group id>/shared/orchestration/<sessionId>`。
   String orchestrationRoot(String groupId, String sessionId) =>
       '${workspaceRoot(groupId)}/shared/orchestration/'
       '${RuntimePaths.sanitizeSegment(sessionId)}';
@@ -224,7 +224,7 @@ class GroupWorkspaceService {
   String inboxDir(String groupId, String sessionId) =>
       '${orchestrationRoot(groupId, sessionId)}/inbox';
 
-  /// 群任务根：`group_<gid>/shared/tasks`。
+  /// 群任务根：`<group id>/shared/tasks`。
   String tasksRoot(String groupId) =>
       '${workspaceRoot(groupId)}/shared/tasks';
 

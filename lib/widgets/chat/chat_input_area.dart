@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../models/acp_protocol.dart';
 import '../../models/mention_entry.dart';
+import '../../models/agent_scenario_models.dart';
 import '../../models/model_definition.dart';
 import '../../models/pending_attachment.dart';
 import '../../models/remote_agent.dart';
@@ -623,8 +624,23 @@ class ChatInputAreaState extends State<ChatInputArea> {
   // Main model（§5.1.6 / §6 #8）
   // ---------------------------------------------------------------------------
 
+  Iterable<({String id, String model, String baseUrl})> _registryModelRefs() {
+    return ModelRegistry.instance.definitions.map(
+      (def) => (
+        id: def.id,
+        model: def.route.model ?? '',
+        baseUrl: def.route.apiBase ?? '',
+      ),
+    );
+  }
+
   void _readMainModel(RemoteAgent agent, {bool hostShe = false}) {
-    final id = agent.metadata['main_model_id'] as String?;
+    final id = hostShe
+        ? hostSheRegistryModelId(
+            agent.metadata,
+            models: _registryModelRefs(),
+          )
+        : agent.metadata['main_model_id'] as String?;
     final def = id == null ? null : ModelRegistry.instance.getById(id);
     setState(() {
       _hostSheModel = hostShe;
@@ -652,6 +668,39 @@ class ChatInputAreaState extends State<ChatInputArea> {
     }
     if (!mounted || agent == null) return;
     if (!agent.isLocal && !relaysHostSheTurn(agent)) return;
+    if (relaysHostSheTurn(agent)) {
+      final def = ModelRegistry.instance.getById(id);
+      final peerId = agent.metadata['source_peer_id'] as String? ?? '';
+      if (def == null || peerId.isEmpty) {
+        showTopToast(
+          context,
+          AppLocalizations.of(context).chat_mainModelSwitchFailed,
+          icon: Icons.error_outline,
+          color: Colors.red.shade400,
+        );
+        return;
+      }
+      final config = AgentScenarioModels.configFromDefinition(def);
+      final ok = await PeerAgentClientService.instance.setSheModel(
+        peerId: peerId,
+        model: config.model,
+        baseUrl: config.apiBase,
+        apiKey: config.apiKey,
+      );
+      if (!mounted) return;
+      if (!ok) {
+        showTopToast(
+          context,
+          AppLocalizations.of(context).chat_mainModelSwitchFailed,
+          icon: Icons.error_outline,
+          color: Colors.red.shade400,
+        );
+        return;
+      }
+      setState(() => _mainModelDef = def);
+      widget.onMainModelChanged?.call();
+      return;
+    }
     final metadata = Map<String, dynamic>.from(agent.metadata);
     final result = buildLlmMetadata(metadata, selectedMainModelId: id);
     if (result.state != MainModelState.resolved) {

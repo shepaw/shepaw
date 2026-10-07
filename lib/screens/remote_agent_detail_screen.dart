@@ -10,6 +10,7 @@ import '../widgets/avatar_image.dart';
 import '../l10n/l10n_helpers.dart';
 import '../l10n/app_localizations.dart';
 import '../models/remote_agent.dart';
+import '../peer/host_she_turn.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_agent_client_service.dart';
 import '../widgets/chat/cursor_model_panel.dart';
@@ -748,6 +749,21 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   /// 主模型」与「主模型被删了」—— 后者要额外保住 `llm_provider`。
   ({String? id, String? danglingId}) _resolveMainModelSelection() {
     final metadata = _agent.metadata;
+    if (_isHostShe) {
+      return (
+        id: hostSheRegistryModelId(
+          metadata,
+          models: ModelRegistry.instance.definitions.map(
+            (def) => (
+              id: def.id,
+              model: def.route.model ?? '',
+              baseUrl: def.route.apiBase ?? '',
+            ),
+          ),
+        ),
+        danglingId: null,
+      );
+    }
     final storedId = metadata['main_model_id'] as String?;
     if (storedId != null && storedId.isNotEmpty) {
       return ModelRegistry.instance.getById(storedId) != null
@@ -1066,15 +1082,15 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
       // LLM config（只动主模型相关键）。主模型悬空时这里会保住
       // main_model_id / llm_provider，避免把本地 agent 改写成远端 ACP。
-      // 外接引擎的 peer 行不存本机主模型。主机惜宝要在这里选主模型，再交给 Hub。
-      if (_agent.isPeerAgent && !_isHostShe) {
+      // 外接引擎和主机惜宝都不把密钥留在本机。惜宝的选择发给 Hub。
+      if (_agent.isPeerAgent) {
         metadata.remove('llm_provider');
         metadata.remove('main_model_id');
         metadata.remove('llm_model');
         metadata.remove('llm_api_base');
         metadata.remove('llm_api_key');
       }
-      final llm = _agent.isPeerAgent && !_isHostShe
+      final llm = _agent.isPeerAgent
           ? (state: MainModelState.unset, danglingRef: null)
           : buildLlmMetadata(
               metadata,
@@ -1156,6 +1172,17 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
       final agentService = getIt<RemoteAgentService>();
       await agentService.updateAgent(updatedAgent);
+      _agent = updatedAgent;
+      if (_isHostShe && _selectedMainModelId != null) {
+        final pushed = await _pushHostSheModel(agentService);
+        if (!pushed) {
+          _safeSetState(() {
+            _isSaving = false;
+            _autosaveError = l10n.agentDetail_autosaveFailed;
+          });
+          return false;
+        }
+      }
 
       _safeSetState(() {
         _agent = updatedAgent;
@@ -1179,6 +1206,36 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       });
       return false;
     }
+  }
+
+  Future<bool> _pushHostSheModel(RemoteAgentService agentService) async {
+    final id = _selectedMainModelId;
+    if (id == null || id.isEmpty) return true;
+    final def = ModelRegistry.instance.getById(id);
+    if (def == null) return false;
+    final config = AgentScenarioModels.configFromDefinition(def);
+    final peerId = _agent.metadata['source_peer_id'] as String? ?? '';
+    if (peerId.isEmpty) return false;
+    final ok = await PeerAgentClientService.instance.setSheModel(
+      peerId: peerId,
+      model: config.model,
+      baseUrl: config.apiBase,
+      apiKey: config.apiKey,
+    );
+    if (!ok) return false;
+    final metadata = Map<String, dynamic>.from(_agent.metadata);
+    applyHostSheModelMetadata(metadata, {
+      'has_main_model': true,
+      'model': config.model,
+      'base_url': config.apiBase,
+    });
+    final updated = _agent.copyWith(
+      metadata: metadata,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+    );
+    await agentService.updateAgent(updated);
+    _agent = updated;
+    return true;
   }
 
   Color _getStatusColor(AgentStatus status) {

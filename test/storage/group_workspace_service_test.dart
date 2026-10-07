@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/clis/shepaw/chat/chat_agent_scope.dart';
-import 'package:shepaw/clis/shepaw/pouch/store_namespace.dart';
+import 'package:shepaw/clis/shepaw/store/store_namespace.dart';
 import 'package:shepaw/peer/models/paired_peer.dart';
 import 'package:shepaw/peer/services/peer_storage_service.dart';
 import 'package:shepaw/storage/group_workspace_service.dart';
@@ -35,15 +35,15 @@ void main() {
         ],
       );
 
-      expect(ws.workspaceRoot('group_test1'), 'group_group_test1');
+      expect(ws.workspaceRoot('group_test1'), 'group_test1');
       expect(ws.metaRelPath('group_test1'),
-          'group_group_test1/group-workspace.json');
+          'group_test1/group-workspace.json');
       expect(
         ws.membersDir(
           'group_13df0417-800c-4af5-b9d6-83eb202709b3',
           '9c899927-c661-4e10-9e5a-57536a621d69',
         ),
-        'group_group_13df0417-800c-4af5-b9d6-83eb202709b3/'
+        'group_13df0417-800c-4af5-b9d6-83eb202709b3/'
         'members/9c899927-c661-4e10-9e5a-57536a621d69',
       );
 
@@ -136,7 +136,7 @@ void main() {
       // 目录结构符合约定
       expect(
         ws.roundDir('group_test3', sessionId, 1),
-        'group_group_test3/shared/orchestration/group_session1/round-0001',
+        'group_test3/shared/orchestration/group_session1/round-0001',
       );
     });
 
@@ -206,7 +206,7 @@ void main() {
       // dispatch 文件可经 URI 读回（成员可见性路径）。
       final bytes = await StoreUriReader.instance.read(
         'pouch://workspaces/${(await ws.loadMeta('group_test3'))!.homeDevice}/'
-        'group_group_test3/shared/orchestration/group_session1/'
+        'group_test3/shared/orchestration/group_session1/'
         'round-0000/dispatch.json',
       );
       final json = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
@@ -236,13 +236,13 @@ void main() {
       // 目录结构与轮次隔离
       expect(
         ws.eventsDir('group_test4', 'session_event'),
-        'group_group_test4/shared/orchestration/session_event/events',
+        'group_test4/shared/orchestration/session_event/events',
       );
 
       // 可经 URI 读回（补零 6 位序号）
       final home = (await ws.loadMeta('group_test4'))!.homeDevice;
       final bytes = await StoreUriReader.instance.read(
-        'pouch://workspaces/$home/group_group_test4/shared/orchestration/'
+        'pouch://workspaces/$home/group_test4/shared/orchestration/'
         'session_event/events/000002.json',
       );
       final json = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
@@ -271,7 +271,7 @@ void main() {
         ],
       );
       final meta = await ws.loadMeta('group_perm');
-      final root = 'pouch://workspaces/${meta!.homeDevice}/group_group_perm';
+      final root = 'pouch://workspaces/${meta!.homeDevice}/group_perm';
       const member = 'agent-member';
       const stranger = 'agent-stranger';
 
@@ -321,7 +321,7 @@ void main() {
         content: '任务 A 结论：完成基础架构。',
       );
       expect(uri1, isNotNull);
-      expect(uri1, contains('group_group_mem/shared/memory/latest.md'));
+      expect(uri1, contains('group_mem/shared/memory/latest.md'));
 
       // 第二个任务覆盖 latest，session 文件保留
       await ws.writeSharedMemory(
@@ -335,7 +335,7 @@ void main() {
 
       final sessionABytes = await StoreUriReader.instance.read(
         'pouch://workspaces/${(await ws.loadMeta('group_mem'))!.homeDevice}/'
-        'group_group_mem/shared/memory/group_session_a.md',
+        'group_mem/shared/memory/group_session_a.md',
       );
       expect(utf8.decode(sessionABytes), '任务 A 结论：完成基础架构。');
     });
@@ -514,8 +514,8 @@ void main() {
           .where((e) => e.space == 'workspaces')
           .map((e) => e.path)
           .toList();
-      expect(friendPaths, contains('group_group_acl/members/agent-peer'));
-      expect(friendPaths, contains('group_group_acl/shared'));
+      expect(friendPaths, contains('group_acl/members/agent-peer'));
+      expect(friendPaths, contains('group_acl/shared'));
 
       // owner：不动（默认整区开放，显式前缀会收窄访问）
       final ownerPaths = (await ps.getSharedStoreEntries('peer-owner'))
@@ -566,8 +566,8 @@ void main() {
           .where((e) => e.space == 'workspaces')
           .map((e) => e.path)
           .toList();
-      expect(paths, isNot(contains('group_group_acl2/members/agent-peer')));
-      expect(paths, contains('group_group_acl2/shared')); // shared 保留
+      expect(paths, isNot(contains('group_acl2/members/agent-peer')));
+      expect(paths, contains('group_acl2/shared')); // shared 保留
     });
   });
 
@@ -652,7 +652,7 @@ void main() {
         round: 1,
         taskStatus: GroupTaskMemberResult.statusDone,
         summary: '已实现模型与测试',
-        artifactUris: ['pouch://workspaces/dev/group_group_task1/members/agent-coder/plan_impl.md'],
+        artifactUris: ['pouch://workspaces/dev/group_task1/members/agent-coder/plan_impl.md'],
         messageId: 'reply-1',
       );
       final results = await ws.upsertTaskMemberResult(
@@ -694,7 +694,7 @@ void main() {
 
       expect(
         ws.taskDir('group_task1', orchId),
-        'group_group_task1/shared/tasks/$orchId',
+        'group_task1/shared/tasks/$orchId',
       );
     });
 
@@ -767,7 +767,7 @@ void main() {
       expect(result!['group'], 'group_m9');
       expect(
         result!['uri'],
-        contains('group_group_m9/members/agent-member/report.md'),
+        contains('group_m9/members/agent-member/report.md'),
       );
 
       final bytes =
@@ -790,7 +790,7 @@ void main() {
       expect(result, isNotNull);
       expect(result!['success'], isTrue, reason: '$result');
       expect(result!['space'], isNot(StoreSpace.workspaces));
-      expect(result!['uri'], isNot(contains('group_group_m9')));
+      expect(result!['uri'], isNot(contains('group_m9')));
     });
   });
 }

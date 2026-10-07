@@ -1586,6 +1586,9 @@ class PeerAgentClientService {
   final Map<String, Completer<({bool ok, String? error})>> _pendingModelSet =
       {};
 
+  /// Outstanding she_model_set_req keyed by request_id.
+  final Map<String, Completer<bool>> _pendingSheModel = {};
+
   /// Outstanding agent_model_option_set_req per "agentId::option" key.
   final Map<String, Completer<({bool ok, String? error})>>
       _pendingModelOptionSet = {};
@@ -2602,6 +2605,9 @@ class PeerAgentClientService {
       case 'agent_models_set_resp':
         _onModelsSetResp(event.data);
         break;
+      case 'she_model_set_resp':
+        _onSheModelSetResp(event.peerId, event.data);
+        break;
       case 'agent_model_option_set_resp':
         _onModelOptionSetResp(event.data);
         break;
@@ -2793,6 +2799,64 @@ class PeerAgentClientService {
     }
     final completer = _pendingModels.remove(remoteId);
     if (completer != null && !completer.isCompleted) completer.complete(list);
+  }
+
+  /// 把惜宝的主模型写到 Hub。密钥只在这一帧里走，不进本机 metadata。
+  Future<bool> setSheModel({
+    required String peerId,
+    required String model,
+    required String baseUrl,
+    required String apiKey,
+  }) async {
+    final requestId = _uuid.v4();
+    final completer = Completer<bool>();
+    _pendingSheModel[requestId] = completer;
+    final sent = await _sendMetaControl(peerId, {
+      'type': 'she_model_set_req',
+      'request_id': requestId,
+      'model': model,
+      'base_url': baseUrl,
+      'api_key': apiKey,
+    });
+    if (!sent) {
+      _pendingSheModel.remove(requestId);
+      return false;
+    }
+    return completer.future.timeout(const Duration(seconds: 15), onTimeout: () {
+      _pendingSheModel.remove(requestId);
+      return false;
+    });
+  }
+
+  void _onSheModelSetResp(String peerId, Map<String, dynamic> data) {
+    final requestId = data['request_id']?.toString() ?? '';
+    final completer = _pendingSheModel.remove(requestId);
+    final ok = data['ok'] == true;
+    unawaited(() async {
+      if (ok) await _rememberHostSheModel(peerId, data);
+      if (completer != null && !completer.isCompleted) {
+        completer.complete(ok);
+      }
+    }());
+  }
+
+  Future<void> _rememberHostSheModel(
+    String peerId,
+    Map<String, dynamic> data,
+  ) async {
+    final existing = await _db.getRemoteAgentByEndpoint(
+      'peer://$peerId/${SheService.sheId}',
+    );
+    if (existing == null) return;
+    final metadata = Map<String, dynamic>.from(existing.metadata);
+    applyHostSheModelMetadata(metadata, data);
+    await _db.updateRemoteAgent(
+      existing.copyWith(
+        metadata: metadata,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+    PeerConnectionManager.instance.notifyPeerListChanged();
   }
 
   /// Switch the upstream model (`agent.models.setCurrent` relay).
@@ -3332,6 +3396,8 @@ class PeerAgentClientService {
         final info = _parseSoulData(data);
         if (!info.isOk) return;
         _rememberSoul(agentId, info.soul, info.editable, rev: rev);
+      case 'she_model':
+        unawaited(_rememberHostSheModel(event.peerId, data));
       case PeerAgentMetaKind.commands:
         _applyCommandsResp(
           agentId,
@@ -6225,7 +6291,13 @@ class PeerAgentClientService {
               'additional_directories':
                   existing!.metadata['additional_directories'],
           };
-        keepPeerLocalModelChoice(metadata, existing?.metadata);
+        if (remoteId == SheService.sheId) {
+          applyHostSheModelMetadata(metadata, {
+            'has_main_model': raw['has_main_model'] == true,
+            'model': raw['model'],
+            'base_url': raw['base_url'],
+          });
+        }
         final agent = RemoteAgent(
           id: localId,
           name: raw['name'] as String? ?? 'Agent',

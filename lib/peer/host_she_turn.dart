@@ -13,37 +13,11 @@ bool relaysHostSheTurn(RemoteAgent agent) {
 bool chatUsesRegistryMainModel(RemoteAgent agent) =>
     agent.isLocal || relaysHostSheTurn(agent);
 
-/// 惜宝能不能开聊。主机惜宝没有 `llm_provider`，看本机列表里有没有选中的主模型。
-bool sheHasMainModel(
-  RemoteAgent agent, {
-  required bool Function(String id) isKnownModel,
-}) {
+/// 惜宝能不能开聊。主机惜宝看 Hub 名单里的 `has_main_model`，密钥不在客户端。
+bool sheHasMainModel(RemoteAgent agent) {
   if (agent.isLocal) return true;
   if (!relaysHostSheTurn(agent)) return false;
-  final id = (agent.metadata['main_model_id'] as String?)?.trim() ?? '';
-  return id.isNotEmpty && isKnownModel(id);
-}
-
-/// 主机名单同步会整行重写 metadata。本机选的主模型不在名单里，要留下。
-const peerLocalModelKeys = <String>[
-  'main_model_id',
-  'llm_provider',
-  'llm_model',
-  'llm_api_base',
-  'llm_api_key',
-];
-
-void keepPeerLocalModelChoice(
-  Map<String, dynamic> metadata,
-  Map<String, dynamic>? existing,
-) {
-  if (existing == null) return;
-  for (final key in peerLocalModelKeys) {
-    if (!existing.containsKey(key)) continue;
-    final value = existing[key];
-    if (value == null) continue;
-    metadata[key] = value;
-  }
+  return agent.metadata['has_main_model'] == true;
 }
 
 /// 交给主机时用主机上的 id。本机行 id 和它不一致时，用远端 id。
@@ -53,26 +27,50 @@ String hostSheTurnAgentId(RemoteAgent agent) {
   return agent.id;
 }
 
-/// 主机惜宝在编辑页选中的主模型。Hub 自己没有这份地址和密钥。
-class HostSheEndpoint {
-  const HostSheEndpoint({
-    required this.model,
-    required this.baseUrl,
-    required this.apiKey,
-  });
-
-  final String model;
-  final String baseUrl;
-  final String apiKey;
-
-  bool get isReady => baseUrl.trim().isNotEmpty;
+/// 把 Hub 公布的主模型写进本机缓存。不含密钥。
+void applyHostSheModelMetadata(
+  Map<String, dynamic> metadata,
+  Map<String, dynamic> hub,
+) {
+  metadata.remove('main_model_id');
+  metadata.remove('llm_provider');
+  metadata.remove('llm_model');
+  metadata.remove('llm_api_base');
+  metadata.remove('llm_api_key');
+  if (hub['has_main_model'] != true) {
+    metadata.remove('has_main_model');
+    metadata.remove('she_model');
+    metadata.remove('she_base_url');
+    return;
+  }
+  metadata['has_main_model'] = true;
+  final model = (hub['model'] as String?)?.trim() ?? '';
+  final base = (hub['base_url'] as String?)?.trim() ?? '';
+  if (model.isNotEmpty) {
+    metadata['she_model'] = model;
+  } else {
+    metadata.remove('she_model');
+  }
+  if (base.isNotEmpty) {
+    metadata['she_base_url'] = base;
+  } else {
+    metadata.remove('she_base_url');
+  }
 }
 
-HostSheEndpoint? hostSheEndpointFromMetadata(
+/// 用 Hub 回来的模型名和地址，对上本机列表里的一条定义。
+String? hostSheRegistryModelId(
   Map<String, dynamic> metadata, {
-  required HostSheEndpoint? Function(String id) lookup,
+  required Iterable<({String id, String model, String baseUrl})> models,
 }) {
-  final id = (metadata['main_model_id'] as String?)?.trim() ?? '';
-  if (id.isEmpty) return null;
-  return lookup(id);
+  final model = (metadata['she_model'] as String?)?.trim() ?? '';
+  final base = (metadata['she_base_url'] as String?)?.trim() ?? '';
+  if (model.isEmpty) return null;
+  for (final item in models) {
+    if (item.model == model && item.baseUrl == base) return item.id;
+  }
+  for (final item in models) {
+    if (item.model == model) return item.id;
+  }
+  return null;
 }

@@ -73,7 +73,6 @@ import '../peer/services/peer_connection.dart' show PeerConnectionEventType;
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_agent_client_service.dart';
 import '../peer/host_she_turn.dart' show sheHasMainModel;
-import '../services/model_registry.dart';
 import '../service_locator.dart' show getIt;
 
 /// User's response to the "sync remote sessions" prompt.
@@ -4226,11 +4225,7 @@ class _ChatScreenState extends State<ChatScreen>
     final agent =
         await _controller.localDatabaseService.getRemoteAgentById(agentId);
     if (!mounted) return;
-    final needsConfig = agent != null &&
-        !sheHasMainModel(
-          agent,
-          isKnownModel: (id) => ModelRegistry.instance.getById(id) != null,
-        );
+    final needsConfig = agent != null && !sheHasMainModel(agent);
     if (needsConfig != _sheNeedsConfig) {
       setState(() => _sheNeedsConfig = needsConfig);
     }
