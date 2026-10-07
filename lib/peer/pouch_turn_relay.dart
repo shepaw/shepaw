@@ -145,6 +145,9 @@ class PouchTurnRelay {
     required String userId,
     required String userName,
     String? channelId,
+    String? model,
+    String? baseUrl,
+    String? apiKey,
     List<AttachmentData>? attachments,
     void Function(String chunk)? onStreamChunk,
     Future<Map<String, dynamic>?> Function(
@@ -171,6 +174,9 @@ class PouchTurnRelay {
         'user_id': userId,
         'user_name': userName,
         if (channelId != null) 'channel_id': channelId,
+        if (model != null && model.isNotEmpty) 'model': model,
+        if (baseUrl != null && baseUrl.isNotEmpty) 'base_url': baseUrl,
+        if (apiKey != null && apiKey.isNotEmpty) 'api_key': apiKey,
         if (refs != null) 'attachments': refs,
       },
       onEvent: (event) {

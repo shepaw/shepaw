@@ -164,10 +164,17 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   StreamSubscription<PeerConnectionEvent>? _peerConnSub;
   StreamSubscription<({String agentId, String kind})>? _metaSub;
 
-  /// 本机自己跑的 LLM。主机上的惜宝是 peer agent，模型在对端，不在这里配。
+  /// 本机自己跑的 LLM，或主机上的惜宝。惜宝的主模型在这页选，不走外接引擎的模型菜单。
+  bool get _isHostShe =>
+      _agent.isPeerAgent &&
+      (_agent.isShe ||
+          _agent.id == SheService.sheId ||
+          _agent.remoteAgentId == SheService.sheId);
+
   bool get _isLocalMode =>
-      !_agent.isPeerAgent &&
-      (_agent.isLocal || _agent.metadata['is_she'] == true);
+      _isHostShe ||
+      (!_agent.isPeerAgent &&
+          (_agent.isLocal || _agent.metadata['is_she'] == true));
 
   bool get _canEditSoul => !_agent.isPeerAgent || _peerSoulEditable;
 
@@ -1059,15 +1066,15 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
       // LLM config（只动主模型相关键）。主模型悬空时这里会保住
       // main_model_id / llm_provider，避免把本地 agent 改写成远端 ACP。
-      // peer 行上的这两个键会把主机惜宝误判成要在本机跑的回合。
-      if (_agent.isPeerAgent) {
+      // 外接引擎的 peer 行不存本机主模型。主机惜宝要在这里选主模型，再交给 Hub。
+      if (_agent.isPeerAgent && !_isHostShe) {
         metadata.remove('llm_provider');
         metadata.remove('main_model_id');
         metadata.remove('llm_model');
         metadata.remove('llm_api_base');
         metadata.remove('llm_api_key');
       }
-      final llm = _agent.isPeerAgent
+      final llm = _agent.isPeerAgent && !_isHostShe
           ? (state: MainModelState.unset, danglingRef: null)
           : buildLlmMetadata(
               metadata,
@@ -1552,7 +1559,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         _buildRuntimeContextEntry(),
         const SizedBox(height: 16),
         _buildWorkspaceViewEntry(),
-        if (_agent.isShe && !_agent.isPeerAgent) ...[
+        if (_agent.isShe) ...[
           const SizedBox(height: 16),
           _buildSheCircleEntry(),
         ],
@@ -2686,7 +2693,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                   (_agent.metadata['target_agent_id'] as String?) ?? _agent.id),
             ],
             // Peer agent：来源设备 + P2P 隧道连接
-            if (_agent.isPeerAgent) ...[
+            if (_agent.isPeerAgent && !_isHostShe) ...[
               _buildInfoRow(l10n.agentDetail_sourceDevice,
                   _agent.sourcePeerName ?? _agent.sourcePeerId ?? '-'),
               const SizedBox(height: 8),
@@ -3277,8 +3284,8 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           const SizedBox(height: 16),
         ],
 
-        // peer agent：会话同步 + 远端模型（编辑页配置）
-        if (_agent.isPeerAgent) ...[
+        // 外接引擎：会话同步和远端模型。惜宝用下面的主模型卡片。
+        if (_agent.isPeerAgent && !_isHostShe) ...[
           _buildPeerSyncToggle(),
           const SizedBox(height: 16),
           _buildPeerModelPicker(),

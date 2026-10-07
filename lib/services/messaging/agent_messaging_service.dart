@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:uuid/uuid.dart';
 import '../../models/message.dart';
 import '../../models/remote_agent.dart';
+import '../../models/agent_scenario_models.dart';
 import '../../models/attachment_data.dart';
 import '../../models/llm_stream_event.dart';
 import '../../models/llm_token_usage.dart';
@@ -23,6 +24,7 @@ import '../inference_log_service.dart';
 import '../trace_service.dart';
 import '../foreground_task_service.dart';
 import '../logger_service.dart';
+import '../../peer/host_she_turn.dart';
 import '../../peer/pouch_roster.dart';
 import '../../peer/pouch_turn_relay.dart';
 import '../peer_key_utils.dart';
@@ -567,8 +569,8 @@ class AgentMessagingService {
     LoggerService().debug('sendMessageToAgent: agentId=${agent.id}, name=${agent.name}, protocol=${agent.protocol}, status=${agent.status}, endpoint=${agent.endpoint}', tag: 'AgentMessagingService');
 
     try {
-      // Check if this is a local LLM agent — bypass status/endpoint checks
-      if (agent.isLocal) {
+      // 本机 LLM，或主机上的惜宝。后者不走 agent_chat：CLI 只在储物袋回合里认她。
+      if (agent.isLocal || relaysHostSheTurn(agent)) {
         LoggerService().debug('Detected local LLM agent, using local LLM path', tag: 'AgentMessagingService');
         return await _sendViaLocalLLM(
           content: content,
@@ -2123,13 +2125,33 @@ class AgentMessagingService {
 
     final route = await PouchTurnRelay.currentRoute();
     if (!route.runLocal) {
+      final sheModel = relaysHostSheTurn(agent)
+          ? hostSheEndpointFromMetadata(
+              agent.metadata,
+              lookup: (id) {
+                final def = ModelRegistry.instance.getById(id);
+                if (def == null) return null;
+                final config = AgentScenarioModels.configFromDefinition(def);
+                return HostSheEndpoint(
+                  model: config.model,
+                  baseUrl: config.apiBase,
+                  apiKey: config.apiKey,
+                );
+              },
+            )
+          : null;
       final text = await PouchTurnRelay.instance.forwardDm(
         hostPeerId: route.hostPeerId!,
-        agentId: agent.id,
+        agentId: relaysHostSheTurn(agent)
+            ? hostSheTurnAgentId(agent)
+            : agent.id,
         content: content,
         userId: userId,
         userName: userName,
         channelId: channelId,
+        model: sheModel?.model,
+        baseUrl: sheModel?.baseUrl,
+        apiKey: sheModel?.apiKey,
         attachments: attachments,
         onStreamChunk: onStreamChunk,
         onInteractionRequest: (agentId, agentName, interactionType, data) async {
