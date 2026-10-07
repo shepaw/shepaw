@@ -9,7 +9,6 @@ import 'package:shepaw/services/group/group_event.dart';
 import 'package:shepaw/services/group/group_event_perception.dart';
 import 'package:shepaw/services/group/group_event_store.dart';
 import 'package:shepaw/services/group/group_interaction_handler.dart';
-import 'package:shepaw/services/group/group_prompt_builder.dart';
 import 'package:shepaw/services/local_database_service.dart';
 import 'package:shepaw/services/task/task_models.dart';
 import 'package:uuid/uuid.dart';
@@ -26,7 +25,6 @@ GroupEventPerceptionScheduler _buildScheduler({
     db: db,
     uuid: uuid,
     activeGroupTasks: <String, Map<String, GroupActiveTask>>{},
-    promptBuilder: const GroupPromptBuilder(),
     interactionHandler: GroupInteractionHandler(
       db: db,
       uuid: uuid,

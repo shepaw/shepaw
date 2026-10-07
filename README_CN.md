@@ -214,7 +214,6 @@ shepaw/
 │   ├── storage_protocol_spec.md         # Store 协议规范
 │   ├── tool_model_architecture.md       # 工具模型系统文档
 │   └── gorup_chat_flow.md               # Group Channel 流程文档
-├── storage-node/                        # 无头 Store master（Go，可选）
 ├── cli-tools/                           # 外部 CLI 工具包（如 Brave 搜索）
 ├── android/ ios/ macos/ windows/        # 各平台入口
 ├── assets/                              # 静态资源

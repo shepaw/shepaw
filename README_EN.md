@@ -216,7 +216,6 @@ shepaw/
 │   ├── storage_protocol_spec.md         # Store protocol specification
 │   ├── tool_model_architecture.md       # Tool model architecture
 │   └── gorup_chat_flow.md               # Group channel flow documentation
-├── storage-node/                        # Headless store master (Go, optional)
 ├── cli-tools/                           # External CLI tool packages (e.g. Brave search)
 ├── android/ ios/ macos/ windows/        # Platform entry points
 ├── assets/                              # Static assets

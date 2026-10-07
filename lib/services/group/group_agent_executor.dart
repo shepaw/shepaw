@@ -43,7 +43,6 @@ import 'group_task_bootstrap.dart';
 import 'group_session_create_service.dart';
 import 'group_session_handoff.dart';
 import 'group_context_builder.dart';
-import 'group_prompt_builder.dart';
 import 'group_turn_result.dart';
 import 'group_turn_outcome.dart';
 import 'group_task_status.dart';
@@ -72,7 +71,6 @@ class GroupAgentExecutor {
   final LocalDatabaseService _db;
   final Uuid _uuid;
   final Map<String, Map<String, GroupActiveTask>> _activeGroupTasks;
-  final GroupPromptBuilder _promptBuilder;
   final GroupInteractionHandler _interactionHandler;
   final void Function(String channelId) notifyChannelUpdate;
   final void Function() updateTypingAgentIds;
@@ -97,7 +95,6 @@ class GroupAgentExecutor {
     required LocalDatabaseService db,
     required Uuid uuid,
     required Map<String, Map<String, GroupActiveTask>> activeGroupTasks,
-    required GroupPromptBuilder promptBuilder,
     required GroupInteractionHandler interactionHandler,
     required this.notifyChannelUpdate,
     required this.updateTypingAgentIds,
@@ -106,7 +103,6 @@ class GroupAgentExecutor {
   })  : _db = db,
         _uuid = uuid,
         _activeGroupTasks = activeGroupTasks,
-        _promptBuilder = promptBuilder,
         _interactionHandler = interactionHandler;
 
   List<Map<String, dynamic>> buildGroupChatHistoryWithImages({

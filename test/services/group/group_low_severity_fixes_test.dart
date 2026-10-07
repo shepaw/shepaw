@@ -15,7 +15,6 @@ import 'package:shepaw/services/group/group_member_capability_probe.dart';
 import 'package:shepaw/services/group/group_member_session_service.dart';
 import 'package:shepaw/services/group/group_membership_perception.dart';
 import 'package:shepaw/services/group/group_orchestration_tools.dart';
-import 'package:shepaw/services/group/group_prompt_builder.dart';
 import 'package:shepaw/services/group/group_session_service.dart';
 import 'package:shepaw/services/group/group_turn_result.dart';
 import 'package:shepaw/services/local_database_service.dart';
@@ -484,7 +483,6 @@ class _NoopExecutor extends GroupAgentExecutor {
           db: db,
           uuid: const Uuid(),
           activeGroupTasks: {},
-          promptBuilder: const GroupPromptBuilder(),
           interactionHandler: GroupInteractionHandler(
             db: db,
             uuid: const Uuid(),

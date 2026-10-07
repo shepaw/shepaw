@@ -6,7 +6,7 @@ import '../models/attachment_data.dart';
 import '../models/llm_stream_event.dart';
 import '../models/model_routing_config.dart';
 import '../models/remote_agent.dart';
-import 'agent_prompt_builder.dart';
+import 'prompt_cache.dart';
 import 'model_registry.dart';
 
 /// 本机不再调用模型。对话和群编排都在 Hub 上。

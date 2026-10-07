@@ -7,12 +7,25 @@ import '../messaging/chat_history_content.dart';
 import 'group_member_capability_probe.dart';
 import 'group_member_delivery.dart';
 import 'group_member_history.dart';
-import 'group_prompt_builder.dart';
 
 /// Builds the machine-readable `group_context` payload sent to remote / peer
 /// agents on each group turn, and helpers for human-readable mention hints.
 class GroupContextBuilder {
   GroupContextBuilder._();
+
+  static const int maxRoleChars = 80;
+
+  /// One-line group role for rosters (group bio, else agent bio).
+  static String oneLineRole(
+    RemoteAgent agent, {
+    List<ChannelMember> channelMembers = const [],
+    int maxChars = maxRoleChars,
+  }) {
+    final cm = channelMembers.where((m) => m.id == agent.id).firstOrNull;
+    final raw = (cm?.groupBio ?? agent.bio ?? '').trim();
+    if (raw.isEmpty) return '';
+    return raw.length <= maxChars ? raw : '${raw.substring(0, maxChars)}…';
+  }
 
   /// JSON Schema fragment for a single mention entry (shared by prompt,
   /// `group_context.member_mention`, and persisted message metadata).
@@ -126,7 +139,7 @@ class GroupContextBuilder {
               'id': a.id,
               'name': a.name,
               'type': 'agent',
-              'bio': GroupPromptBuilder.oneLineRole(
+              'bio': oneLineRole(
                 a,
                 channelMembers: channelMembers,
               ),

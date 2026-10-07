@@ -18,7 +18,6 @@ import 'notification_service.dart';
 import 'task/task_models.dart';
 import 'task/plan_approval_service.dart';
 import 'group/group_dispatch_parser.dart';
-import 'group/group_prompt_builder.dart';
 import 'group/group_interaction_handler.dart';
 import 'group/group_agent_executor.dart';
 import 'remote_agent_service.dart';
@@ -205,9 +204,6 @@ class ChatService {
   late final HistoryService _historyService =
       HistoryService(_databaseService, _toolResultService);
 
-  /// Sub-service: group system prompt and modality detection
-  final GroupPromptBuilder _groupPromptBuilder = const GroupPromptBuilder();
-
   /// Sub-service: admin interaction decisions and group system messages
   late final GroupInteractionHandler _groupInteractionHandler =
       GroupInteractionHandler(
@@ -224,7 +220,6 @@ class ChatService {
     db: _databaseService,
     uuid: _uuid,
     activeGroupTasks: _activeGroupTasks,
-    promptBuilder: _groupPromptBuilder,
     interactionHandler: _groupInteractionHandler,
     notifyChannelUpdate: _notifyChannelUpdate,
     updateTypingAgentIds: _updateTypingAgentIds,

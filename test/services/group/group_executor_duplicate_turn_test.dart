@@ -5,7 +5,6 @@ import 'package:shepaw/models/remote_agent.dart';
 import 'package:shepaw/services/acp_agent_connection.dart';
 import 'package:shepaw/services/group/group_agent_executor.dart';
 import 'package:shepaw/services/group/group_interaction_handler.dart';
-import 'package:shepaw/services/group/group_prompt_builder.dart';
 import 'package:shepaw/services/group/group_turn_result.dart';
 import 'package:shepaw/services/local_database_service.dart';
 import 'package:shepaw/services/task/task_models.dart';
@@ -53,7 +52,6 @@ void main() {
         db: db,
         uuid: const Uuid(),
         activeGroupTasks: activeTasks,
-        promptBuilder: const GroupPromptBuilder(),
         interactionHandler: GroupInteractionHandler(
           db: db,
           uuid: const Uuid(),
@@ -157,7 +155,6 @@ void main() {
         db: db,
         uuid: const Uuid(),
         activeGroupTasks: activeTasks,
-        promptBuilder: const GroupPromptBuilder(),
         interactionHandler: GroupInteractionHandler(
           db: db,
           uuid: const Uuid(),
