@@ -24,7 +24,30 @@ class ModelRegistry {
   ModelRegistry._();
   static final ModelRegistry instance = ModelRegistry._();
 
+  final Set<String> _deletedIds = {};
   List<ModelDefinition> _definitions = [];
+
+  /// 内存里的列表可能比磁盘短（启动时没读全就保存）。写回时保留磁盘上还在、
+  /// 且没有被 [delete] 掉的定义。
+  static List<Map<String, dynamic>> mergeDefinitionJson({
+    required List<dynamic> stored,
+    required List<Map<String, dynamic>> memory,
+    required Set<String> deletedIds,
+  }) {
+    final byId = <String, Map<String, dynamic>>{};
+    for (final item in stored) {
+      if (item is! Map) continue;
+      final id = item['id'] as String?;
+      if (id == null || id.isEmpty || deletedIds.contains(id)) continue;
+      byId[id] = Map<String, dynamic>.from(item);
+    }
+    for (final item in memory) {
+      final id = item['id'] as String?;
+      if (id == null || id.isEmpty || deletedIds.contains(id)) continue;
+      byId[id] = item;
+    }
+    return byId.values.toList();
+  }
 
   /// All currently loaded tool model definitions.
   List<ModelDefinition> get definitions =>
@@ -51,8 +74,13 @@ class ModelRegistry {
             .where((d) => !d.isEmpty)
             .toList();
       } catch (e) {
-        LoggerService().error('Failed to load definitions', tag: 'ModelRegistry', error: e);
-        _definitions = [];
+        LoggerService().error(
+          'Failed to load definitions',
+          tag: 'ModelRegistry',
+          error: e,
+        );
+        // 解析失败不要把空列表写回去，否则会清掉已经添加的模型。
+        return;
       }
     }
 
@@ -140,7 +168,20 @@ class ModelRegistry {
       sanitized.add(json);
     }
 
-    await prefs.setString(_prefsKey, jsonEncode(sanitized));
+    List<dynamic> stored = const [];
+    final existing = prefs.getString(_prefsKey);
+    if (existing != null && existing.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(existing);
+        if (decoded is List) stored = decoded;
+      } catch (_) {}
+    }
+    final merged = mergeDefinitionJson(
+      stored: stored,
+      memory: sanitized,
+      deletedIds: _deletedIds,
+    );
+    await prefs.setString(_prefsKey, jsonEncode(merged));
   }
 
   // ---------------------------------------------------------------------------
@@ -179,6 +220,7 @@ class ModelRegistry {
 
   /// Delete a tool model definition by [id].
   Future<void> delete(String id) async {
+    _deletedIds.add(id);
     _definitions.removeWhere((d) => d.id == id);
     await SecureKeyManager.deleteSecureValue(
       SecureKeyManager.modelApiKeyStorageKey(id),

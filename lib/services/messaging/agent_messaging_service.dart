@@ -2140,7 +2140,7 @@ class AgentMessagingService {
               },
             )
           : null;
-      final text = await PouchTurnRelay.instance.forwardDm(
+      final result = await PouchTurnRelay.instance.forwardDm(
         hostPeerId: route.hostPeerId!,
         agentId: relaysHostSheTurn(agent)
             ? hostSheTurnAgentId(agent)
@@ -2149,6 +2149,7 @@ class AgentMessagingService {
         userId: userId,
         userName: userName,
         channelId: channelId,
+        userMessageId: userMessage.id,
         model: sheModel?.model,
         baseUrl: sheModel?.baseUrl,
         apiKey: sheModel?.apiKey,
@@ -2171,8 +2172,8 @@ class AgentMessagingService {
         },
       );
       final agentResponse = Message(
-        id: _uuid.v4(),
-        content: text,
+        id: result.agentMessageId ?? _uuid.v4(),
+        content: result.text,
         timestampMs: DateTime.now().millisecondsSinceEpoch,
         from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
         to: MessageFrom(id: userId, type: 'user', name: userName),

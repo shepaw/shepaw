@@ -58,6 +58,18 @@ void main() {
     expect(chatUsesRegistryMainModel(cursor), isFalse);
   });
 
+  test('同步主机名单时留下本机选的主模型', () {
+    final metadata = <String, dynamic>{'is_she': true, 'engine': 'she'};
+    keepPeerLocalModelChoice(metadata, {
+      'main_model_id': 'm1',
+      'llm_provider': 'openai',
+      'engine': 'old',
+    });
+    expect(metadata['main_model_id'], 'm1');
+    expect(metadata['llm_provider'], 'openai');
+    expect(metadata['engine'], 'she');
+  });
+
   test('行 id 不是惜宝 id 时，用远端 id', () {
     final she = agent(
       id: 'card-1',

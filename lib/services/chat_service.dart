@@ -94,6 +94,8 @@ class HistorySupplementResult {
 // PlanApprovalHandle → see lib/services/task/plan_approval_service.dart
 
 /// 主机聊天日志和本机库按消息 id 合成一页。主机这一页是空的时，留下本机记录。
+///
+/// 同一回合会在两边各写一行、id 不同。内容、发送人相同且时间接近时只留本机那行。
 List<Message> mergeHostAndLocalMessages(
   List<Message> local,
   List<Message> host,
@@ -101,12 +103,28 @@ List<Message> mergeHostAndLocalMessages(
   if (host.isEmpty) return local;
   if (local.isEmpty) return host;
   final hostIds = host.map((message) => message.id).toSet();
+  final echoedHostIds = <String>{
+    for (final hostMessage in host)
+      if (local.any(
+        (item) => item.id != hostMessage.id && _samePouchTurn(item, hostMessage),
+      ))
+        hostMessage.id,
+  };
   final merged = <Message>[
     for (final message in local)
       if (!hostIds.contains(message.id)) message,
-    ...host,
+    for (final message in host)
+      if (!echoedHostIds.contains(message.id)) message,
   ]..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
   return merged;
+}
+
+/// 主机行和本机行是同一次发送。回复落在主机上的时间是回合开始，本机是回合结束。
+bool _samePouchTurn(Message local, Message host) {
+  if (local.from.id != host.from.id) return false;
+  if (local.from.type != host.from.type) return false;
+  if (local.content != host.content) return false;
+  return (local.timestampMs - host.timestampMs).abs() <= 120000;
 }
 
 /// Chat Service

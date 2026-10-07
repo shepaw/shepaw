@@ -137,14 +137,15 @@ class PouchTurnRelay {
     );
   }
 
-  /// 把本机 LLM 回合交给主机。返回主机流式拼出的正文。
-  Future<String> forwardDm({
+  /// 把本机 LLM 回合交给主机。返回主机流式拼出的正文，以及主机记下的回复 id。
+  Future<({String text, String? agentMessageId})> forwardDm({
     required String hostPeerId,
     required String agentId,
     required String content,
     required String userId,
     required String userName,
     String? channelId,
+    String? userMessageId,
     String? model,
     String? baseUrl,
     String? apiKey,
@@ -165,7 +166,7 @@ class PouchTurnRelay {
       channelId: channelId ?? '',
       placement: 'dm',
     );
-    await _forward(
+    final done = await _forward(
       hostPeerId: hostPeerId,
       frame: <String, dynamic>{
         'type': dmRequestType,
@@ -173,6 +174,7 @@ class PouchTurnRelay {
         'content': content,
         'user_id': userId,
         'user_name': userName,
+        if (userMessageId != null) 'user_message_id': userMessageId,
         if (channelId != null) 'channel_id': channelId,
         if (model != null && model.isNotEmpty) 'model': model,
         if (baseUrl != null && baseUrl.isNotEmpty) 'base_url': baseUrl,
@@ -195,7 +197,12 @@ class PouchTurnRelay {
         }
       },
     );
-    return buffer.toString();
+    final agentMessageId = (done['agent_message_id'] as String?)?.trim();
+    return (
+      text: buffer.toString(),
+      agentMessageId:
+          agentMessageId == null || agentMessageId.isEmpty ? null : agentMessageId,
+    );
   }
 
   /// 向主机要一页消息，或一个条数。本机和远程都从这里进。

@@ -13,6 +13,28 @@ bool relaysHostSheTurn(RemoteAgent agent) {
 bool chatUsesRegistryMainModel(RemoteAgent agent) =>
     agent.isLocal || relaysHostSheTurn(agent);
 
+/// 主机名单同步会整行重写 metadata。本机选的主模型不在名单里，要留下。
+const peerLocalModelKeys = <String>[
+  'main_model_id',
+  'llm_provider',
+  'llm_model',
+  'llm_api_base',
+  'llm_api_key',
+];
+
+void keepPeerLocalModelChoice(
+  Map<String, dynamic> metadata,
+  Map<String, dynamic>? existing,
+) {
+  if (existing == null) return;
+  for (final key in peerLocalModelKeys) {
+    if (!existing.containsKey(key)) continue;
+    final value = existing[key];
+    if (value == null) continue;
+    metadata[key] = value;
+  }
+}
+
 /// 交给主机时用主机上的 id。本机行 id 和它不一致时，用远端 id。
 String hostSheTurnAgentId(RemoteAgent agent) {
   final remote = agent.remoteAgentId?.trim() ?? '';

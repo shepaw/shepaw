@@ -44,6 +44,7 @@ import '../pouch_roster.dart';
 import '../pouch_turn_relay.dart';
 import 'peer_connection.dart' show PeerConnectionEvent, PeerConnectionEventType;
 import '../peer_approval_payload.dart';
+import '../host_she_turn.dart';
 import 'peer_agent_ids.dart';
 import 'peer_connection_manager.dart';
 import 'peer_inflight_turn.dart';
@@ -6179,19 +6180,7 @@ class PeerAgentClientService {
                 ? raw['additionalDirectories']
                 : null);
 
-        final agent = RemoteAgent(
-          id: localId,
-          name: raw['name'] as String? ?? 'Agent',
-          avatar: avatar,
-          bio: raw['bio'] as String?,
-          token: '',
-          endpoint: 'peer://$peerId/$remoteId',
-          protocol: ProtocolType.peer,
-          connectionType: ConnectionType.websocket,
-          status: online ? AgentStatus.online : AgentStatus.offline,
-          connectedAt: now,
-          capabilities: capabilities,
-          metadata: {
+        final metadata = <String, dynamic>{
             'source_peer_id': peerId,
             'source_peer_name': peerName,
             'remote_agent_id': remoteId,
@@ -6235,7 +6224,21 @@ class PeerAgentClientService {
             else if (existing?.metadata['additional_directories'] is List)
               'additional_directories':
                   existing!.metadata['additional_directories'],
-          },
+          };
+        keepPeerLocalModelChoice(metadata, existing?.metadata);
+        final agent = RemoteAgent(
+          id: localId,
+          name: raw['name'] as String? ?? 'Agent',
+          avatar: avatar,
+          bio: raw['bio'] as String?,
+          token: '',
+          endpoint: 'peer://$peerId/$remoteId',
+          protocol: ProtocolType.peer,
+          connectionType: ConnectionType.websocket,
+          status: online ? AgentStatus.online : AgentStatus.offline,
+          connectedAt: now,
+          capabilities: capabilities,
+          metadata: metadata,
           createdAt: existing?.createdAt ?? now,
           updatedAt: now,
         );
