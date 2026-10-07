@@ -17,7 +17,7 @@ class PouchDuties {
   PouchDuties._();
 
   /// 客户端可在本机执行的 CLI 命名空间。`os` 覆盖定位、文件和本机命令。
-  static const clientNamespaces = <String>{'os', 'help'};
+  static const clientNamespaces = <String>{'os', 'vision', 'help'};
 
   static const dataPlaneMessage = '数据面命令在储物袋主机上执行';
 
