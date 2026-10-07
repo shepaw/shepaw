@@ -191,6 +191,12 @@ class PeerConnection {
     'cmd.invoke',
     'cmd.result',
     'cmd.cancel',
+    'approval.req',
+    'approval.resp',
+    'approval.ack',
+    'approval.closed',
+    'device.hello',
+    'device.welcome',
     // 袋子协议帧（docs/storage_protocol_spec.md，载荷内含 ns/op 子路由）。
     'pouch',
     // 多 she 网络（docs/storage_space_plan.md §8，M8）。
