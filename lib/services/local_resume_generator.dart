@@ -1,6 +1,4 @@
-import '../models/llm_stream_event.dart';
 import '../models/remote_agent.dart';
-import 'local_llm_agent_service.dart';
 
 /// 本机 LLM 简历重写：供本地 agent 直接调用、peer 宿主代其共享的本地 agent 调用。
 ///
@@ -48,30 +46,6 @@ class LocalResumeGenerator {
     if (prompt.trim().isEmpty) {
       throw ArgumentError('prompt is required for resume regeneration');
     }
-    final buf = StringBuffer();
-    await for (final event in LocalLLMAgentService.instance.chat(
-      agent: agent,
-      message: buildRegenUserMessage(
-        userPrompt: prompt,
-        currentResume: agent.bio,
-        capabilities: agent.capabilities,
-      ),
-      enableUITools: false,
-      includeShepawCli: false,
-      skipSheMemoryStack: true,
-      systemPromptOverride: buildRegenSystemPrompt(agent),
-    )) {
-      switch (event) {
-        case LLMTextEvent():
-          buf.write(event.text);
-        case LLMToolCallEvent() || LLMDoneEvent():
-          break;
-      }
-    }
-    final out = buf.toString().trim();
-    if (out.isEmpty) {
-      throw StateError('本地模型未返回简历内容');
-    }
-    return out;
+    throw StateError('模型已经搬到 Hub，这台设备不再调用。');
   }
 }

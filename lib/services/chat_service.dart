@@ -63,8 +63,6 @@ import 'mailbox/mailbox_reply_router.dart';
 import 'mailbox/mailbox_turn_claims.dart';
 import 'dispatch/she_relay_session_service.dart';
 import '../clis/shepaw/os/os_executor.dart' as os_exec;
-import 'local_llm_agent_service.dart';
-import '../models/llm_stream_event.dart';
 import '../models/llm_token_usage.dart';
 import '../storage/store_protocol.dart';
 
@@ -1332,125 +1330,7 @@ class ChatService {
     void Function(Map<String, dynamic>)? onRequestHistory,
     ACPCancellationToken? acpCancellationToken,
   }) async {
-    final cancelKey = 'hist_supp_${_uuid.v4()}';
-    acpCancellationToken?.addOnCancelled(() {
-      LocalLLMAgentService.instance.abort(cancelKey);
-    });
-
-    final historyBlock =
-        chatHistory.map((e) => '${e['role']}: ${e['content']}').join('\n');
-    final userMessage = '''
-[HISTORY_SUPPLEMENT]
-Older messages that were missing from your previous context:
-
-$historyBlock
-
-Using the history above, answer the original question:
-$originalQuestion
-''';
-
-    final responseBuffer = StringBuffer();
-    Map<String, dynamic>? capturedHistoryRequest;
-    var turnTokenUsage = const LlmTokenUsage();
-
-    try {
-      await for (final event in LocalLLMAgentService.instance.runWithCancelKey(
-        cancelKey,
-        () => LocalLLMAgentService.instance.chat(
-          agent: agent,
-          message: userMessage,
-          enableUITools: true,
-          includeShepawCli: false,
-        ),
-      )) {
-        if (acpCancellationToken?.isCancelled == true) break;
-
-        switch (event) {
-          case LLMTextEvent():
-            responseBuffer.write(event.text);
-            onStreamChunk?.call(event.text);
-          case LLMToolCallEvent():
-            if (event.name == 'request_history') {
-              final payload = Map<String, dynamic>.from(event.arguments);
-              payload['reason'] ??= 'Agent needs more context';
-              payload['requested_count'] ??= 40;
-              payload['request_id'] ??=
-                  'local_hist_${DateTime.now().millisecondsSinceEpoch}';
-              capturedHistoryRequest = payload;
-              onRequestHistory?.call(payload);
-            }
-          case LLMDoneEvent():
-            turnTokenUsage = turnTokenUsage.plus(LlmTokenUsage(
-              inputTokens: event.inputTokens,
-              outputTokens: event.outputTokens,
-            ));
-            break;
-        }
-      }
-    } catch (e) {
-      LoggerService().error(
-        'Local history supplement failed',
-        tag: 'ChatService',
-        error: e,
-      );
-      rethrow;
-    }
-
-    final responseContent = responseBuffer.toString();
-    final wasCancelled = acpCancellationToken?.isCancelled == true;
-    final tokenUsageMeta = turnTokenUsage.hasAny
-        ? <String, dynamic>{LlmTokenUsage.metadataKey: turnTokenUsage.toJson()}
-        : null;
-
-    if (wasCancelled) {
-      final responseMessage = Message(
-        id: _uuid.v4(),
-        content: responseContent.isNotEmpty ? responseContent : '[Stopped]',
-        timestampMs: DateTime.now().millisecondsSinceEpoch,
-        from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
-        type: MessageType.text,
-        metadata: tokenUsageMeta,
-      );
-      if (responseContent.isNotEmpty) {
-        await _saveMessageToChannel(responseMessage, agent.id,
-            channelId: sessionId);
-      }
-      return HistorySupplementResult(
-        message: responseMessage,
-        actualSentCount: chatHistory.length,
-      );
-    }
-
-    if (responseContent.isEmpty && capturedHistoryRequest != null) {
-      return HistorySupplementResult(
-        message: Message(
-          id: _uuid.v4(),
-          content: '',
-          timestampMs: DateTime.now().millisecondsSinceEpoch,
-          from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
-          type: MessageType.text,
-        ),
-        actualSentCount: chatHistory.length,
-        pendingHistoryRequest: capturedHistoryRequest,
-      );
-    }
-
-    final responseMessage = Message(
-      id: _uuid.v4(),
-      content: responseContent.isNotEmpty ? responseContent : 'Task completed',
-      timestampMs: DateTime.now().millisecondsSinceEpoch,
-      from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
-      type: MessageType.text,
-      metadata: tokenUsageMeta,
-    );
-    await _saveMessageToChannel(responseMessage, agent.id,
-        channelId: sessionId);
-
-    return HistorySupplementResult(
-      message: responseMessage,
-      actualSentCount: chatHistory.length,
-      pendingHistoryRequest: capturedHistoryRequest,
-    );
+    return null;
   }
 
   /// Send history supplement via ACP WebSocket protocol.

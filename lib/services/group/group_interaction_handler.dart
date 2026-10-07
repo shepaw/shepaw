@@ -2,9 +2,7 @@ import 'package:uuid/uuid.dart';
 import '../../models/message.dart';
 import '../../models/remote_agent.dart';
 import '../../models/acp_protocol.dart';
-import '../../models/llm_stream_event.dart';
 import '../local_database_service.dart';
-import '../local_llm_agent_service.dart';
 import '../acp_agent_connection.dart';
 import '../logger_service.dart';
 
@@ -204,66 +202,7 @@ class GroupInteractionHandler {
     required String channelId,
     required String subAgentName,
   }) async {
-    try {
-      final question = formatInteractionForAdmin(
-        interactionType: interactionType,
-        data: data,
-        subAgentName: subAgentName,
-      );
-
-      final recentMessages = await loadChannelMessages(channelId, limit: 10);
-      final historyLines = recentMessages.map((m) {
-        final tag = m.from.isAgent ? 'Agent' : 'User';
-        final content = (m.type != MessageType.text && m.type != MessageType.system)
-            ? '${m.content} [id:${m.id}]'
-            : m.content;
-        return '[${m.from.name}($tag)]: $content';
-      }).join('\n');
-
-      final history = historyLines.isNotEmpty
-          ? <Map<String, dynamic>>[
-              {'role': 'user', 'content': '以下是群聊的近期记录：\n$historyLines'},
-            ]
-          : <Map<String, dynamic>>[];
-
-      const decisionSystemPrompt = '你正在代替用户为子Agent的交互请求做决策。\n'
-          '根据群聊上下文和子Agent的请求，选择最合适的选项。\n'
-          '规则：\n'
-          '- 只回复选项编号（如"1"），不要解释\n'
-          '- 如果你确实无法判断，回复 [ASK_USER]\n'
-          '- 优先选择能推进任务完成的选项';
-
-      final responseBuffer = StringBuffer();
-      await for (final event in LocalLLMAgentService.instance.chat(
-        agent: adminAgent,
-        message: question,
-        history: history.isNotEmpty ? history : null,
-        enableUITools: false,
-        systemPromptOverride: decisionSystemPrompt,
-        skipSheMemoryStack: true, // 纯决策任务：不叠加 She 的全量人格 prompt
-      ).timeout(const Duration(seconds: 30))) {
-        if (event is LLMTextEvent) {
-          responseBuffer.write(event.text);
-        }
-      }
-
-      final adminResponse = responseBuffer.toString().trim();
-      if (adminResponse.isEmpty) return null;
-
-      LoggerService().debug(
-        'Admin decision for $subAgentName ($interactionType): "$adminResponse"',
-        tag: 'GroupInteractionHandler',
-      );
-
-      return parseAdminDecision(
-        interactionType: interactionType,
-        adminResponse: adminResponse,
-        data: data,
-      );
-    } catch (e) {
-      LoggerService().error('resolveInteractionViaAdmin error', tag: 'GroupInteractionHandler', error: e);
-      return null;
-    }
+    return null;
   }
 
   /// Pick a safe default option when the admin LLM cannot decide.

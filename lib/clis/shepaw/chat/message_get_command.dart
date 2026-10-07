@@ -2,11 +2,9 @@ import 'dart:convert';
 
 import '../../cli_base.dart';
 import '../../../models/attachment_data.dart';
-import '../../../models/llm_stream_event.dart';
 import '../../../models/message.dart';
 import '../../../services/attachment_service.dart';
 import '../../../services/local_database_service.dart';
-import '../../../services/local_llm_agent_service.dart';
 import '../../../services/messaging/local_llm_handler.dart';
 import '../../../models/model_routing_config.dart';
 import 'chat_agent_scope.dart';
@@ -238,33 +236,7 @@ class MessageGetCommand extends CliCommand {
           'Configure Scenario Models or tag the main model with imageUnderstanding.';
     }
 
-    final buffer = StringBuffer();
-    try {
-      final stream = LocalLLMAgentService.instance.chat(
-        agent: agent,
-        message: prompt,
-        enableUITools: false,
-        includeShepawCli: false,
-        systemPromptOverride: '',
-        skipSheMemoryStack: true, // 纯分析任务：不叠加 She 的全量人格 prompt
-        attachments: [attachment],
-      );
-      await for (final event in stream) {
-        switch (event) {
-          case LLMTextEvent(:final text):
-            buffer.write(text);
-          case LLMDoneEvent():
-            break;
-          default:
-            break;
-        }
-      }
-    } catch (e) {
-      return 'Error: image analysis failed: $e';
-    }
-
-    final text = buffer.toString().trim();
-    return text.isEmpty ? 'Error: vision model returned empty response.' : text;
+    return '模型已经搬到 Hub，这台设备不再调用。';
   }
 
   bool _flagIsTrue(String? value) {

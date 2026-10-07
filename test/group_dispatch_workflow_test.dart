@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/remote_agent.dart';
 import 'package:shepaw/services/group/group_dispatch_parser.dart';
-import 'package:shepaw/services/group/group_orchestration_service.dart';
+import 'package:shepaw/services/group/group_member_history.dart';
 import 'package:shepaw/services/group/group_turn_result.dart';
 import 'package:shepaw/services/local_database_service.dart';
 
@@ -279,12 +279,12 @@ void main() {
     const reply = '完成，产物见 [a](pouch://workspaces/dev/group_1/shared/a.md)。'
         '以及 pouch://workspaces/dev/group_1/shared/b.md, '
         '重复的 pouch://workspaces/dev/group_1/shared/a.md';
-    final uris = GroupOrchestrationService.extractStoreUris(reply);
+    final uris = GroupMemberHistory.extractStoreUris(reply);
     expect(uris, [
       'pouch://workspaces/dev/group_1/shared/a.md',
       'pouch://workspaces/dev/group_1/shared/b.md',
     ]);
-    expect(GroupOrchestrationService.extractStoreUris('没有产物'), isEmpty);
+    expect(GroupMemberHistory.extractStoreUris('没有产物'), isEmpty);
   });
 
   test('buildMemberArtifactsBlock lists member artifacts', () {
@@ -294,7 +294,7 @@ void main() {
       ),
       'a2': const GroupTurnResult(content: '纯文本回复'),
     };
-    final block = GroupOrchestrationService.buildMemberArtifactsBlock(
+    final block = GroupMemberHistory.buildMemberArtifactsBlock(
       results,
       agents,
     );
@@ -304,7 +304,7 @@ void main() {
     expect(block, isNot(contains('Reviewer')));
 
     expect(
-      GroupOrchestrationService.buildMemberArtifactsBlock(
+      GroupMemberHistory.buildMemberArtifactsBlock(
         const {'a1': GroupTurnResult(content: '无产物')},
         agents,
       ),

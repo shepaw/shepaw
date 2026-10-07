@@ -1,8 +1,10 @@
 import '../../models/message.dart';
+import '../../models/remote_agent.dart';
 import '../messaging/chat_history_content.dart';
 import '../session/history_compactor.dart';
 import 'group_orchestration_features.dart';
 import 'group_orchestration_metadata.dart';
+import 'group_turn_result.dart';
 
 /// Group orchestration alias for [ChatHistoryContent] (see `history_policy`).
 class GroupHistoryContent {
@@ -64,7 +66,7 @@ class GroupMemberHistory {
   static const int memberKeepOwnCount = 6;
   static const int maxOmittedUris = 12;
 
-  /// Same `pouch://` tokenizer as [GroupOrchestrationService.extractStoreUris].
+  /// Unique `pouch://` artifact URIs referenced in a member reply.
   static final RegExp storeUriPattern = RegExp(r'pouch://[^\s\]\[\)\},，;]+');
 
   /// Admin, loop-close, abort, and closing-summary turns still need the
@@ -308,6 +310,24 @@ class GroupMemberHistory {
     if (uris.isEmpty) return '';
     final shown = uris.take(maxOmittedUris).join('、');
     return '[省略消息中引用的产物：$shown]';
+  }
+
+  /// 【成员产物】：每个成员回复里引用的 pouch:// 链接。没有产物时为空。
+  static String buildMemberArtifactsBlock(
+    Map<String, GroupTurnResult> results,
+    List<RemoteAgent> agents,
+  ) {
+    final lines = <String>[];
+    for (final entry in results.entries) {
+      final agent = agents.where((a) => a.id == entry.key).firstOrNull;
+      final name = agent?.name ?? entry.key;
+      final uris = extractStoreUris(entry.value.content);
+      if (uris.isEmpty) continue;
+      lines.add('- $name: ${uris.join('  ')}');
+    }
+    if (lines.isEmpty) return '';
+    return '\n\n【成员产物】本轮成员产出并引用的 pouch:// 链接（若成员未在回复中列出，可能未写文件）：\n'
+        '${lines.join('\n')}';
   }
 }
 
