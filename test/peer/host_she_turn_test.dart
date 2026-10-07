@@ -53,6 +53,9 @@ void main() {
     expect(relaysHostSheTurn(local), isFalse);
     expect(she.isLocal, isFalse);
     expect(local.isLocal, isTrue);
+    expect(chatUsesRegistryMainModel(she), isTrue);
+    expect(chatUsesRegistryMainModel(local), isTrue);
+    expect(chatUsesRegistryMainModel(cursor), isFalse);
   });
 
   test('行 id 不是惜宝 id 时，用远端 id', () {

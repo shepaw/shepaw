@@ -9,6 +9,7 @@ import '../../models/mention_entry.dart';
 import '../../models/model_definition.dart';
 import '../../models/pending_attachment.dart';
 import '../../models/remote_agent.dart';
+import '../../peer/host_she_turn.dart';
 import '../../peer/engine_session_modes.dart';
 import '../../peer/services/peer_agent_client_service.dart';
 import 'cursor_model_panel.dart';
@@ -236,6 +237,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
   /// 存了 id 但定义已被删除：显示原始 id 而不是假装没选过。
   String? _mainModelDanglingId;
   bool _mainModelAvailable = false;
+  /// 主机惜宝：菜单用已添加的模型，不跟 Hub 下发的默认目录。
+  bool _hostSheModel = false;
   List<PeerAgentModel> _peerModels = const [];
   String? _currentPeerModel;
   /// 对端声明模型在电脑上配置，App 不能切换。缺省可切换。
@@ -339,6 +342,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
       _mainModelDef = null;
       _mainModelDanglingId = null;
       _mainModelAvailable = false;
+      _hostSheModel = false;
       _peerModels = const [];
       _currentPeerModel = null;
       _peerModelsSwitchable = true;
@@ -405,6 +409,10 @@ class ChatInputAreaState extends State<ChatInputArea> {
       return;
     }
     if (!mounted || token != _controlsToken || agent == null) return;
+    if (chatUsesRegistryMainModel(agent)) {
+      _readMainModel(agent, hostShe: relaysHostSheTurn(agent));
+      return;
+    }
     if (agent.isPeerAgent) {
       await _showCachedPeerControls(agent, token);
       if (!mounted || token != _controlsToken) return;
@@ -418,9 +426,6 @@ class ChatInputAreaState extends State<ChatInputArea> {
         _refreshSessionModes(agent, token),
         _refreshPeerModels(agent, token),
       ]);
-    }
-    if (agent.isLocal) {
-      _readMainModel(agent);
     }
   }
 
@@ -462,6 +467,10 @@ class ChatInputAreaState extends State<ChatInputArea> {
       return;
     }
     if (!mounted || token != _controlsToken || agent == null) return;
+    if (chatUsesRegistryMainModel(agent)) {
+      _readMainModel(agent, hostShe: relaysHostSheTurn(agent));
+      return;
+    }
     if (!agent.isPeerAgent) return;
     await _showCachedPeerControls(agent, token);
   }
@@ -564,7 +573,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
 
   /// 模型 chip 点不开菜单时的原因。不可切换优先于离线。
   bool _blockPeerModelSwitch() {
-    if (_peerModels.isEmpty) return false;
+    if (_hostSheModel || _peerModels.isEmpty) return false;
     if (!_peerModelsSwitchable) {
       _toastModelConfiguredOnComputer();
       return true;
@@ -613,13 +622,19 @@ class ChatInputAreaState extends State<ChatInputArea> {
   // Main model（§5.1.6 / §6 #8）
   // ---------------------------------------------------------------------------
 
-  void _readMainModel(RemoteAgent agent) {
+  void _readMainModel(RemoteAgent agent, {bool hostShe = false}) {
     final id = agent.metadata['main_model_id'] as String?;
     final def = id == null ? null : ModelRegistry.instance.getById(id);
     setState(() {
+      _hostSheModel = hostShe;
       _mainModelAvailable = true;
       _mainModelDef = def;
       _mainModelDanglingId = (def == null && id != null) ? id : null;
+      if (hostShe) {
+        _peerModels = const [];
+        _currentPeerModel = null;
+        _peerModelOptionValues = const {};
+      }
     });
   }
 
@@ -635,7 +650,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
     } catch (_) {
       return;
     }
-    if (!mounted || agent == null || !agent.isLocal) return;
+    if (!mounted || agent == null) return;
+    if (!agent.isLocal && !relaysHostSheTurn(agent)) return;
     final metadata = Map<String, dynamic>.from(agent.metadata);
     final result = buildLlmMetadata(metadata, selectedMainModelId: id);
     if (result.state != MainModelState.resolved) {
@@ -660,6 +676,23 @@ class ChatInputAreaState extends State<ChatInputArea> {
     });
   }
 
+  /// 新模型写进全局列表，并设成惜宝当前的主模型。
+  Future<void> _addSheModel() async {
+    final result = await Navigator.push<ModelDefinition>(
+      context,
+      MaterialPageRoute(builder: (_) => const ModelEditScreen()),
+    );
+    if (!mounted || result == null) return;
+    final created = await ModelRegistry.instance.add(
+      displayName: result.displayName,
+      description: result.description,
+      route: result.route,
+      modelTypes: result.modelTypes,
+    );
+    if (!mounted) return;
+    await _setMainModel(created.id);
+  }
+
   Future<void> _openModelManagement() async {
     await Navigator.push(
       context,
@@ -675,9 +708,9 @@ class ChatInputAreaState extends State<ChatInputArea> {
     final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
     final def = _mainModelDef;
-    final unset = _peerModels.isNotEmpty
-        ? (_currentPeerModel ?? '').isEmpty
-        : def == null && _mainModelDanglingId == null;
+    final unset = _hostSheModel || _peerModels.isEmpty
+        ? def == null && _mainModelDanglingId == null
+        : (_currentPeerModel ?? '').isEmpty;
     final fg = unset ? colorScheme.error : colorScheme.onSurfaceVariant;
     return InkWell(
       key: _mainModelChipKey,
@@ -697,11 +730,11 @@ class ChatInputAreaState extends State<ChatInputArea> {
             const SizedBox(width: 4),
             Flexible(
               child: Text(
-                _peerModels.isNotEmpty
-                    ? _peerModelChipLabel(l10n)
-                    : (def?.displayName ??
+                _hostSheModel || _peerModels.isEmpty
+                    ? (def?.displayName ??
                         _mainModelDanglingId ??
-                        l10n.chat_mainModelUnset),
+                        l10n.chat_mainModelUnset)
+                    : _peerModelChipLabel(l10n),
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 12,
@@ -854,11 +887,14 @@ class ChatInputAreaState extends State<ChatInputArea> {
   ///（§6 #8 要求能顺手添加）。
   Future<void> _showMainModelMenu() async {
     if (_blockPeerModelSwitch()) return;
-    final peerModels = _peerModels;
+    final useRegistry = _hostSheModel || _peerModels.isEmpty;
     final defs = ModelRegistry.instance.definitions;
-    if (peerModels.isEmpty && defs.isEmpty) {
-      // 本地 agent 一个定义都没有：菜单里只有「添加模型」，直接跳过去。
-      await _openModelManagement();
+    if (useRegistry && defs.isEmpty) {
+      if (_hostSheModel) {
+        await _addSheModel();
+      } else {
+        await _openModelManagement();
+      }
       return;
     }
     final overlayBox =
@@ -872,7 +908,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
         : Rect.fromLTWH(24, overlayBox.size.height - 240, 200, 0);
     final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
-    if (peerModels.any((model) => model.options.isNotEmpty)) {
+    if (!useRegistry && _peerModels.any((model) => model.options.isNotEmpty)) {
       _openCursorModelPanel(l10n);
       return;
     }
@@ -880,12 +916,10 @@ class ChatInputAreaState extends State<ChatInputArea> {
       context: context,
       position: RelativeRect.fromSize(rect, overlayBox.size),
       constraints: _kComposerChoiceMenuConstraints,
-      initialValue: peerModels.isNotEmpty
-          ? _currentPeerModel
-          : _mainModelDef?.id,
+      initialValue: useRegistry ? _mainModelDef?.id : _currentPeerModel,
       items: [
-        if (peerModels.isNotEmpty)
-          for (final m in peerModels)
+        if (!useRegistry)
+          for (final m in _peerModels)
             PopupMenuItem<String>(
               value: m.value,
               child: _ModelMenuItem(
@@ -926,12 +960,16 @@ class ChatInputAreaState extends State<ChatInputArea> {
       ],
     );
     if (!mounted || picked == null) return;
-    if (peerModels.isNotEmpty) {
+    if (!useRegistry) {
       await _setPeerModel(picked);
       return;
     }
     if (picked == _addModelSentinel) {
-      await _openModelManagement();
+      if (_hostSheModel) {
+        await _addSheModel();
+      } else {
+        await _openModelManagement();
+      }
       return;
     }
     await _setMainModel(picked);

@@ -9,6 +9,10 @@ bool relaysHostSheTurn(RemoteAgent agent) {
       SheService.isSheIdentity(agent.remoteAgentId, null);
 }
 
+/// 聊天框主模型用本机已添加的列表。主机惜宝不跟 Hub 的默认模型目录。
+bool chatUsesRegistryMainModel(RemoteAgent agent) =>
+    agent.isLocal || relaysHostSheTurn(agent);
+
 /// 交给主机时用主机上的 id。本机行 id 和它不一致时，用远端 id。
 String hostSheTurnAgentId(RemoteAgent agent) {
   final remote = agent.remoteAgentId?.trim() ?? '';
