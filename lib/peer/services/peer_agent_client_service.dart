@@ -3371,6 +3371,23 @@ class PeerAgentClientService {
     return commands;
   }
 
+  void applyHubAgentMeta({
+    required String peerId,
+    required String agentId,
+    required String kind,
+    required Map<String, dynamic> data,
+  }) {
+    _onAgentMetaChanged(PeerControlEvent(
+      peerId: peerId,
+      data: {
+        'type': 'agent_meta_changed',
+        'agent_id': agentId,
+        'kind': kind,
+        'data': data,
+      },
+    ));
+  }
+
   void _onAgentMetaChanged(PeerControlEvent event) {
     final frame = event.data;
     final agentId = frame['agent_id']?.toString();

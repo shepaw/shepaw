@@ -286,6 +286,8 @@ class PouchTurnRelay {
     });
   }
 
+  bool isWatching(String turnId) => _pending.containsKey(turnId);
+
   void onEvent(Map<String, dynamic> data) {
     final requestId = data['request_id'] as String? ?? '';
     final pending = _pending[requestId];

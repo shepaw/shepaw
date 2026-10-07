@@ -2160,7 +2160,17 @@ class AgentMessagingService {
         to: MessageFrom(id: userId, type: 'user', name: userName),
         type: MessageType.text,
       );
-      await saveMessageToChannel(agentResponse, agent.id, channelId: channelId);
+      try {
+        await saveMessageToChannel(
+          agentResponse,
+          agent.id,
+          channelId: channelId,
+        );
+      } catch (error) {
+        final duplicate = result.agentMessageId != null &&
+            error.toString().contains('UNIQUE');
+        if (!duplicate) rethrow;
+      }
       return agentResponse;
     }
 
