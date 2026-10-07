@@ -20,11 +20,7 @@ import 'task/plan_approval_service.dart';
 import 'group/group_dispatch_parser.dart';
 import 'group/group_prompt_builder.dart';
 import 'group/group_interaction_handler.dart';
-import 'group/planning_helpers.dart';
 import 'group/group_agent_executor.dart';
-import 'group/group_orchestration_service.dart';
-import 'group/group_member_capability_probe.dart';
-import '../service_locator.dart';
 import 'remote_agent_service.dart';
 import 'group/group_membership_perception.dart';
 import 'group/group_event.dart';
@@ -32,9 +28,6 @@ import 'group/group_event_store.dart';
 import 'group/group_event_perception.dart';
 import 'group/group_stage_gate.dart';
 import 'group/group_background_interrupt.dart';
-import 'group/group_channel_busy_exception.dart';
-import 'group/group_task_bootstrap.dart';
-import 'group/group_result_writer.dart';
 import '../storage/group_workspace_service.dart';
 import 'workflow/workflow_service.dart';
 import 'workflow/workflow_step_agent_resolver.dart';
@@ -228,12 +221,6 @@ class ChatService {
         loadChannelMessages(channelId, limit: limit),
   );
 
-  /// Sub-service: flow-mode helpers (strip blocks)
-  late final PlanningHelpers _planningHelpers = PlanningHelpers(
-    db: _databaseService,
-    notifyChannelUpdate: _notifyChannelUpdate,
-  );
-
   /// Sub-service: per-agent group chat execution (local LLM + remote ACP)
   late final GroupAgentExecutor _groupAgentExecutor = GroupAgentExecutor(
     db: _databaseService,
@@ -251,7 +238,6 @@ class ChatService {
   late final AgentMessagingService _agentMessagingService =
       AgentMessagingService(
     db: _databaseService,
-    toolResultDb: _toolResultService,
     uuid: _uuid,
     acpConnections: _acpConnections,
     activeTasks: _activeTasks,
@@ -265,77 +251,6 @@ class ChatService {
     getMessageById: (id) => getMessageById(id),
   );
 
-  /// Sub-service: group message orchestration (sendMessageToGroup routing)
-  late final GroupOrchestrationService _groupOrchestrationService =
-      GroupOrchestrationService(
-    db: _databaseService,
-    uuid: _uuid,
-    executor: _groupAgentExecutor,
-    dispatchParser: _groupDispatchParser,
-    planningHelpers: _planningHelpers,
-    workflowService: _workflowService,
-    notifyChannelUpdate: _notifyChannelUpdate,
-    loadAndTruncateHistory: _loadAndTruncateHistory,
-    awaitPlanApproval: ({
-      required String channelId,
-      required String agentId,
-      required String agentName,
-      required Map<String, dynamic> planData,
-      required String messageId,
-    }) =>
-        awaitPlanApproval(
-      channelId: channelId,
-      agentId: agentId,
-      agentName: agentName,
-      planData: planData,
-      messageId: messageId,
-    ),
-    loadChannelMessages: (channelId, {int limit = 100}) =>
-        loadChannelMessages(channelId, limit: limit),
-    getMessageById: (id) => getMessageById(id),
-    onOrchestrationRound: _persistOrchestrationRound,
-    // M5：loop 模式每轮完成 → 记入事件日志（被动，不触发管理员回合）。
-    onGroupEvent: _groupEventPerceptionScheduler.schedule,
-    // M5：下一轮成员上下文注入最近几轮 loopRoundCompleted 事件行。
-    // M4：只取当前编排会话（触发用户消息 id）的事件——同一 channel 连续两次
-    // 任务时，避免把上一任务第 3/4/5 轮事件注入本任务第 1 轮成员上下文。
-    loopEventLines: (channelId, {String? orchestrationId}) {
-      final events = _groupEventStore
-          .recent(channelId, limit: 20)
-          .where((e) => e.type == GroupEventType.loopRoundCompleted)
-          .where((e) =>
-              orchestrationId == null || e.orchestrationId == orchestrationId)
-          .toList();
-      final tail =
-          events.length <= 3 ? events : events.sublist(events.length - 3);
-      return tail.map(renderEventLine).toList();
-    },
-    // L1/L2：mention-direct / broadcast / cascade / admin 收尾回合注入近期
-    // 事件感知行（工作流节点成败 + loop 轮次）。loop 派发成员回合已有
-    // loopEventLines（上轮事件），这里给其余回合补上事件 digest。
-    eventDigestLines: (channelId) {
-      final events = _groupEventStore
-          .recent(channelId, limit: 30)
-          .where(
-            (e) =>
-                isWorkflowStepEvent(e) ||
-                e.type == GroupEventType.loopRoundCompleted,
-          )
-          .toList();
-      final tail =
-          events.length <= 5 ? events : events.sublist(events.length - 5);
-      return tail.map(renderEventLine).toList();
-    },
-    memberCapabilityProbe: GroupMemberCapabilityProbe(
-      checkHealth: (id, {timeout = const Duration(seconds: 3)}) =>
-          getIt<RemoteAgentService>().checkAgentHealth(id, timeout: timeout),
-      connectionLookup: (id) => _acpConnections[id],
-      peerHubLister: (peerId) => PeerAgentClientService.instance.manageAgents(
-            peerId: peerId,
-            op: 'list',
-          ),
-    ),
-  );
 
   /// Sub-service: membership join/leave event log + optional admin perception
   /// when a departing member still has in-flight work.
@@ -380,135 +295,6 @@ class ChatService {
         _groupOrchestratingChannels.contains(channelId),
   );
 
-  /// 群工作空间编排落盘适配：按 kind 写 round 状态或 dispatch 决定。
-  /// 空间按群家族归属（幂等补缺）；失败仅记录，不阻断编排循环。
-  Future<void> _persistOrchestrationRound({
-    required String channelId,
-    required int round,
-    required String kind,
-    required Map<String, dynamic> payload,
-  }) async {
-    try {
-      final channel = await _databaseService.getChannelById(channelId);
-      if (channel == null || !channel.isGroup) return;
-      final groupId = channel.groupFamilyId;
-      final orchestrationId = payload['orchestration_id'] as String? ??
-          payload['message_id'] as String?;
-      final ws = GroupWorkspaceService.instance;
-      await ws.ensureGroupWorkspace(
-        groupId: groupId,
-        members: [
-          for (final m in channel.members)
-            if (m.isAgent) (agentId: m.id, role: m.role),
-        ],
-      );
-      if (kind == 'dispatch_decision') {
-        await ws.writeRoundDispatch(
-          groupId: groupId,
-          sessionId: channelId,
-          round: round,
-          payload: payload,
-        );
-        // 记录消费时间：inbox 读取基准用「最后消费时间」而非本轮开始——
-        // 崩溃重启后，重启前未消费的外接 agent 决定仍会被消费。
-        await ws.writeRoundState(
-          groupId: groupId,
-          sessionId: channelId,
-          round: round,
-          payload: {
-            'status': 'dispatched',
-            'round': round,
-            'consumed_at': DateTime.now().toUtc().toIso8601String(),
-          },
-        );
-        if (orchestrationId != null && orchestrationId.isNotEmpty) {
-          await GroupTaskBootstrap.onDispatchDecision(
-            groupId: groupId,
-            orchestrationId: orchestrationId,
-          );
-        }
-        return;
-      }
-      await ws.writeRoundState(
-        groupId: groupId,
-        sessionId: channelId,
-        round: round,
-        payload: payload,
-      );
-      if (orchestrationId != null && orchestrationId.isNotEmpty) {
-        if (kind == 'members_done') {
-          await GroupTaskBootstrap.onSummarizeRound(
-            groupId: groupId,
-            orchestrationId: orchestrationId,
-          );
-          final memberAgents = <RemoteAgent>[];
-          for (final m in channel.members) {
-            if (!m.isAgent) continue;
-            final agent = await _databaseService.getRemoteAgentById(m.id);
-            if (agent != null) memberAgents.add(agent);
-          }
-          await GroupResultWriter.persistFromMembersDonePayload(
-            groupId: groupId,
-            orchestrationId: orchestrationId,
-            payload: payload,
-            agents: memberAgents,
-          );
-        }
-      }
-      // 任务完成：把最终 admin 总结蒸馏到群共享记忆（latest.md 覆盖式）。
-      if (kind == 'finish') {
-        final finalSummary = payload['final_summary'] as String? ?? '';
-        String? memoryUri;
-        if (finalSummary.trim().isNotEmpty) {
-          // M8: 把跨轮成员产物 URI 追加进群记忆，后续轮次成员可直接引用
-          // 历史产物，而不是只看到一段文本摘要。
-          final artifactUris = (payload['artifact_uris'] as List?)
-                  ?.whereType<String>()
-                  .where((u) => u.trim().isNotEmpty)
-                  .toList() ??
-              const <String>[];
-          final memoryContent = StringBuffer(finalSummary.trim());
-          if (artifactUris.isNotEmpty) {
-            memoryContent
-              ..write('\n\n【相关产物】')
-              ..writeln()
-              ..write(artifactUris.join('\n'));
-          }
-          memoryUri = await ws.writeSharedMemory(
-            groupId: groupId,
-            sessionId: channelId,
-            content: memoryContent.toString(),
-          );
-        }
-        if (orchestrationId != null && orchestrationId.isNotEmpty) {
-          final artifactUris = (payload['artifact_uris'] as List?)
-                  ?.whereType<String>()
-                  .where((u) => u.trim().isNotEmpty)
-                  .toList() ??
-              const <String>[];
-          final rounds = (payload['rounds'] as num?)?.toInt();
-          await GroupTaskBootstrap.onFinish(
-            groupId: groupId,
-            orchestrationId: orchestrationId,
-            sessionId: channelId,
-            finalSummary: finalSummary,
-            artifactUris: artifactUris,
-            finalSummaryUri: memoryUri,
-            rounds: rounds,
-            // 编排终态（done/paused/failed）。旧 payload 无此字段时 onFinish
-            // 回退到 done，保持与历史行为一致。
-            status: payload['terminal_status']?.toString(),
-          );
-        }
-      }
-    } catch (e) {
-      LoggerService().error(
-        'persist orchestration round failed ($kind)',
-        tag: 'ChatService',
-        error: e,
-      );
-    }
-  }
 
   /// Best-effort workspace persistence of one group event (mutual-perception
   /// event log). Failures are logged and swallowed.
@@ -2572,17 +2358,6 @@ $originalQuestion
     return body.messages.isEmpty ? null : body.messages.first;
   }
 
-  /// Build a group-aware system prompt for a specific agent in a group chat.
-  /// Load channel messages and truncate to fit within a character budget.
-  ///
-  /// Returns eligible (non-system) messages with oldest messages trimmed
-  /// to stay under [maxChars] total characters. If [excludeMessageId] is
-  /// provided, that message is removed from the result (useful when the
-  /// message will be sent separately as the direct content parameter).
-  Future<List<Message>> _loadAndTruncateHistory(String channelId,
-          {int maxChars = 60000, int limit = 100, String? excludeMessageId}) =>
-      _historyService.loadAndTruncateHistory(channelId,
-          maxChars: maxChars, limit: limit, excludeMessageId: excludeMessageId);
 
   /// Notify group members about a membership change (join/leave).
   ///
@@ -2677,76 +2452,21 @@ $originalQuestion
       return;
     }
 
-    // H1: per-channel in-flight 守卫。控制器路径已被 `isProcessing` 串行化，
-    // 但 CLI `group send`（group_management_service，unawaited）与定时任务
-    // （group_task_executor）会绕过它——若无守卫，同一 channel 可并发跑两套
-    // `while(true)` 编排循环：管理员双回合、成员重复派发、_activeGroupTasks
-    // 互相覆盖、重复 loopRoundCompleted。后到的请求以可见系统消息拒绝。
-    if (_groupOrchestratingChannels.contains(channelId)) {
-      LoggerService().warning(
-        'sendMessageToGroup: channel $channelId already orchestrating; '
-        'ignoring duplicate request',
-        tag: 'ChatService',
-      );
-      final noticeId = _uuid.v4();
-      await _databaseService.createMessage(
-        id: noticeId,
-        channelId: channelId,
-        senderId: 'system',
-        senderType: 'system',
-        senderName: 'System',
-        content: '⚠️ 群聊正在处理上一条消息，本次输入已忽略，请稍后再试。',
-        messageType: 'system',
-      );
-      await _databaseService.markMessageAsRead(noticeId);
-      notifyChannelUpdate(channelId);
-      if (throwIfBusy) {
-        throw GroupChannelBusyException(channelId);
-      }
-      return;
-    }
-    _groupOrchestratingChannels.add(channelId);
-    _groupOrchestrationOrigins[channelId] = {
-      'content': content,
-      'userId': userId,
-      'userName': userName,
-    };
-    if (acpCancellationToken != null) {
-      _groupOrchestrationTokens[channelId] = acpCancellationToken;
-    }
-    try {
-      // H3: 崩溃重启后回放持久化事件，让本轮编排/成员上下文感知重启前的节点
-      // 成败与 loop 轮次（best-effort，失败不阻断编排）。
-      await _restoreGroupEvents(channelId);
-      return await _groupOrchestrationService.sendMessageToGroup(
-        channelId: channelId,
-        content: content,
-        userId: userId,
-        userName: userName,
-        agentIds: agentIds,
-        mentionedAgentIds: mentionedAgentIds,
-        mentionOnlyMode: mentionOnlyMode,
-        adminAgentId: adminAgentId,
-        replyToId: replyToId,
-        replyQuoteText: replyQuoteText,
-        flowMode: flowMode,
-        userMessageMetadata: userMessageMetadata,
-        continueOrchestrationId: continueOrchestrationId,
-        attachments: attachments,
-        acpCancellationToken: acpCancellationToken,
-        onStreamChunk: onStreamChunk,
-        onMessageMetadata: onMessageMetadata,
-        onAgentStart: onAgentStart,
-        onAgentDone: onAgentDone,
-        onAllDone: onAllDone,
-        onActiveWorkflowChanged: onActiveWorkflowChanged,
-        onInteractionRequest: onInteractionRequest,
-      );
-    } finally {
-      _groupOrchestratingChannels.remove(channelId);
-      _groupOrchestrationTokens.remove(channelId);
-      _groupOrchestrationOrigins.remove(channelId);
-    }
+    // 群编排在 Hub 上。本机只留一条说明，不再跑管理员循环。
+    final noticeId = _uuid.v4();
+    await _databaseService.createMessage(
+      id: noticeId,
+      channelId: channelId,
+      senderId: 'system',
+      senderType: 'system',
+      senderName: 'System',
+      content: '群编排已经搬到 Hub，这台设备不再编排。',
+      messageType: 'system',
+    );
+    await _databaseService.markMessageAsRead(noticeId);
+    notifyChannelUpdate(channelId);
+    onAllDone?.call();
+    return;
   }
 
   /// Track which workflows are currently being executed to prevent concurrent runs.

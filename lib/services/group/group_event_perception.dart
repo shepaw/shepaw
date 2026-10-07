@@ -171,8 +171,7 @@ class GroupEventPerceptionScheduler {
     // 群编排感知仍走本 scheduler。投影失败不能影响群事件记录（见 try/catch）。
     _emitGroupProjection(event);
     if (_policy.isActiveNotify(event)) {
-      _pending.putIfAbsent(event.channelId, () => []).add(event);
-      _arm(event.channelId);
+      // 群编排在 Hub 上，本机不再叫醒管理员。
     }
   }
 
