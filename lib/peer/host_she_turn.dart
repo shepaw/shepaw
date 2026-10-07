@@ -13,6 +13,17 @@ bool relaysHostSheTurn(RemoteAgent agent) {
 bool chatUsesRegistryMainModel(RemoteAgent agent) =>
     agent.isLocal || relaysHostSheTurn(agent);
 
+/// 惜宝能不能开聊。主机惜宝没有 `llm_provider`，看本机列表里有没有选中的主模型。
+bool sheHasMainModel(
+  RemoteAgent agent, {
+  required bool Function(String id) isKnownModel,
+}) {
+  if (agent.isLocal) return true;
+  if (!relaysHostSheTurn(agent)) return false;
+  final id = (agent.metadata['main_model_id'] as String?)?.trim() ?? '';
+  return id.isNotEmpty && isKnownModel(id);
+}
+
 /// 主机名单同步会整行重写 metadata。本机选的主模型不在名单里，要留下。
 const peerLocalModelKeys = <String>[
   'main_model_id',

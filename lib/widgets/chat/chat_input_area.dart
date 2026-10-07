@@ -118,6 +118,9 @@ class ChatInputArea extends StatefulWidget {
   /// 当前会话 id：切模式时按会话下发（sessionId = psess_ 解码值 ?? 本身）。
   final String? channelId;
 
+  /// 输入框里换了主模型（或新加一条并选中）之后调用。
+  final VoidCallback? onMainModelChanged;
+
   const ChatInputArea({
     super.key,
     required this.messageController,
@@ -145,6 +148,7 @@ class ChatInputArea extends StatefulWidget {
     this.slashCommandsResolver,
     this.agentId,
     this.channelId,
+    this.onMainModelChanged,
   });
 
   @override
@@ -234,8 +238,6 @@ class ChatInputAreaState extends State<ChatInputArea> {
   //   switchable == false 时只展示当前模型。
   final GlobalKey _mainModelChipKey = GlobalKey();
   ModelDefinition? _mainModelDef;
-  /// 存了 id 但定义已被删除：显示原始 id 而不是假装没选过。
-  String? _mainModelDanglingId;
   bool _mainModelAvailable = false;
   /// 主机惜宝：菜单用已添加的模型，不跟 Hub 下发的默认目录。
   bool _hostSheModel = false;
@@ -340,7 +342,6 @@ class ChatInputAreaState extends State<ChatInputArea> {
       _peerId = null;
       _remoteAgentId = null;
       _mainModelDef = null;
-      _mainModelDanglingId = null;
       _mainModelAvailable = false;
       _hostSheModel = false;
       _peerModels = const [];
@@ -629,7 +630,6 @@ class ChatInputAreaState extends State<ChatInputArea> {
       _hostSheModel = hostShe;
       _mainModelAvailable = true;
       _mainModelDef = def;
-      _mainModelDanglingId = (def == null && id != null) ? id : null;
       if (hostShe) {
         _peerModels = const [];
         _currentPeerModel = null;
@@ -670,10 +670,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
       ),
     );
     if (!mounted) return;
-    setState(() {
-      _mainModelDef = ModelRegistry.instance.getById(id);
-      _mainModelDanglingId = null;
-    });
+    setState(() => _mainModelDef = ModelRegistry.instance.getById(id));
+    widget.onMainModelChanged?.call();
   }
 
   /// 新模型写进全局列表，并设成惜宝当前的主模型。
@@ -708,10 +706,14 @@ class ChatInputAreaState extends State<ChatInputArea> {
     final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
     final def = _mainModelDef;
-    final unset = _hostSheModel || _peerModels.isEmpty
-        ? def == null && _mainModelDanglingId == null
+    final registryModel = _hostSheModel || _peerModels.isEmpty;
+    final missingRegistryModel = registryModel && def == null;
+    final unset = registryModel
+        ? missingRegistryModel
         : (_currentPeerModel ?? '').isEmpty;
-    final fg = unset ? colorScheme.error : colorScheme.onSurfaceVariant;
+    final fg = missingRegistryModel
+        ? colorScheme.primary
+        : (unset ? colorScheme.error : colorScheme.onSurfaceVariant);
     return InkWell(
       key: _mainModelChipKey,
       onTap: _showMainModelMenu,
@@ -730,10 +732,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
             const SizedBox(width: 4),
             Flexible(
               child: Text(
-                _hostSheModel || _peerModels.isEmpty
-                    ? (def?.displayName ??
-                        _mainModelDanglingId ??
-                        l10n.chat_mainModelUnset)
+                registryModel
+                    ? (def?.displayName ?? l10n.toolModel_addTitle)
                     : _peerModelChipLabel(l10n),
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(

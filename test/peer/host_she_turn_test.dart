@@ -80,6 +80,30 @@ void main() {
     expect(hostSheTurnAgentId(she), SheService.sheId);
   });
 
+  test('主机惜宝选了本机已有的模型，就算已配置', () {
+    final she = agent(
+      id: SheService.sheId,
+      protocol: ProtocolType.peer,
+      metadata: const {'is_she': true, 'main_model_id': 'm1'},
+    );
+    final unset = agent(
+      id: SheService.sheId,
+      protocol: ProtocolType.peer,
+      metadata: const {'is_she': true},
+    );
+    final local = agent(
+      id: 'local-1',
+      protocol: ProtocolType.acp,
+      metadata: const {'llm_provider': 'openai'},
+    );
+    bool known(String id) => id == 'm1';
+
+    expect(sheHasMainModel(she, isKnownModel: known), isTrue);
+    expect(sheHasMainModel(she, isKnownModel: (_) => false), isFalse);
+    expect(sheHasMainModel(unset, isKnownModel: known), isFalse);
+    expect(sheHasMainModel(local, isKnownModel: (_) => false), isTrue);
+  });
+
   test('主模型地址从选中的定义里取出', () {
     final endpoint = hostSheEndpointFromMetadata(
       const {'main_model_id': 'm1'},
