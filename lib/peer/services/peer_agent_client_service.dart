@@ -27,6 +27,7 @@ import '../../services/app_lifecycle_service.dart';
 import '../../services/local_database_service.dart';
 import '../../services/local_file_storage_service.dart';
 import '../../services/logger_service.dart';
+import '../../services/device_node/command_approval_inbox.dart';
 import '../../services/device_node/device_command_runner.dart';
 import '../../services/session/cli_execute_peer_handler.dart';
 import '../../services/session/session_create_peer_handler.dart';
@@ -1496,6 +1497,8 @@ class PeerAgentClientService {
   PeerAgentClientService._();
   static final PeerAgentClientService instance = PeerAgentClientService._();
 
+  final CommandApprovalInbox commandApprovals = CommandApprovalInbox();
+
   static const _tag = 'PeerAgentClient';
 
   /// Upper bound for a single peer agent chat request when the agent produces
@@ -2590,6 +2593,11 @@ class PeerAgentClientService {
         break;
       case 'cmd.invoke':
         unawaited(_onCmdInvoke(event.peerId, event.data));
+        break;
+      case 'approval.req':
+      case 'approval.closed':
+      case 'approval.ack':
+        commandApprovals.apply(event.data);
         break;
       case 'agent_commands_resp':
         _onCommandsResp(event.peerId, event.data);
