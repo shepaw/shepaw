@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shepaw/services/group/group_channel_busy_exception.dart';
 import 'package:shepaw/task/helpers/scheduled_task_prompt.dart';
 import 'package:shepaw/task/models/scheduled_task.dart';
 import 'package:shepaw/task/services/scheduled_task_notifier.dart';
@@ -62,12 +61,5 @@ void main() {
       expect(ScheduledTaskNotifier.channelIdFromPayload('approval:x:y'), isNull);
       expect(ScheduledTaskNotifier.channelIdFromPayload('scheduled_task:'), isNull);
     });
-  });
-
-  test('GroupChannelBusyException names the channel', () {
-    expect(
-      const GroupChannelBusyException('ch-9').toString(),
-      contains('ch-9'),
-    );
   });
 }

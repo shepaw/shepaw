@@ -58,11 +58,10 @@ void main() {
       );
     });
 
-    test('LLM failure is swallowed → empty profile (never throws)',
+    test('a visual agent no longer extracts a profile on this device',
         () async {
       final ex = VisualProfileExtractor(agents: _FakeAgentService(_stubVisualAgent()));
       final profile = await ex.extract(personName: '妈妈', photos: [_photo()]);
-      // 真实 LLM 链路会因 apiBase 为空抛出 → extract 捕获并返回空档案
       expect(profile.ageGroup, isNull);
     });
   });

@@ -6,7 +6,6 @@
 library;
 
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
@@ -382,104 +381,15 @@ $lines''';
   // Execution
   // ---------------------------------------------------------------------------
 
-  /// Execute a tool model call. Sends the prompt to the configured endpoint
-  /// and returns the result string.
+  /// 工具模型不再在这台设备上请求。配置还在，调用直接返回说明。
   Future<String> executeToolModel(
     String toolName,
     Map<String, dynamic> arguments,
   ) async {
-    final def = getDefinition(toolName);
-    if (def == null) return 'Error: tool model "$toolName" not found.';
-
-    final route = def.route;
-    final prompt = arguments['prompt'] as String? ?? '';
-
-    // Resolve configuration
-    final model = route.model ?? '';
-    final apiBase = route.apiBase ?? '';
-    final apiKey = route.apiKey ?? '';
-    final apiPath = route.apiPath;
-    final requestBodyTemplate = route.requestBodyTemplate;
-    final responseBodyPath = route.responseBodyPath;
-
-    if (apiBase.isEmpty || model.isEmpty) {
-      return 'Error: tool model "$toolName" is not fully configured (missing apiBase or model).';
+    if (getDefinition(toolName) == null) {
+      return 'Error: tool model "$toolName" not found.';
     }
-
-    // Build URL
-    final base =
-        apiBase.endsWith('/') ? apiBase.substring(0, apiBase.length - 1) : apiBase;
-    final String url;
-    if (apiPath != null && apiPath.isNotEmpty) {
-      final path = apiPath.startsWith('/') ? apiPath : '/$apiPath';
-      url = '$base$path';
-    } else {
-      url = '$base/chat/completions';
-    }
-
-    // Build request body
-    final String body;
-    if (requestBodyTemplate != null && requestBodyTemplate.isNotEmpty) {
-      body = requestBodyTemplate
-          .replaceAll(r'$model', model)
-          .replaceAll(r'$prompt', prompt);
-    } else {
-      body = jsonEncode({
-        'model': model,
-        'messages': [
-          {'role': 'user', 'content': prompt},
-        ],
-        'stream': false,
-      });
-    }
-
-    // Build headers
-    final headers = <String, String>{
-      'Content-Type': 'application/json',
-      if (apiKey.isNotEmpty) 'Authorization': 'Bearer $apiKey',
-    };
-
-    // Execute HTTP request
-    final client = HttpClient();
-    try {
-      final request = await client.postUrl(Uri.parse(url));
-      for (final entry in headers.entries) {
-        request.headers.set(entry.key, entry.value);
-      }
-      request.add(utf8.encode(body));
-      final response = await request.close();
-      final responseBody = await response.transform(utf8.decoder).join();
-
-      if (response.statusCode != 200) {
-        return 'Error: tool model API returned status ${response.statusCode}: $responseBody';
-      }
-
-      final json = jsonDecode(responseBody) as Map<String, dynamic>;
-
-      // Extract content
-      if (responseBodyPath != null && responseBodyPath.isNotEmpty) {
-        final value = resolveJsonPath(json, responseBodyPath);
-        if (value == null) return responseBody;
-        return value.toString();
-      }
-
-      // Standard OpenAI-compatible response
-      try {
-        final choices = json['choices'] as List<dynamic>?;
-        if (choices != null && choices.isNotEmpty) {
-          final message = choices[0]['message'] as Map<String, dynamic>?;
-          if (message != null) {
-            return message['content'] as String? ?? responseBody;
-          }
-        }
-      } catch (_) {}
-
-      return responseBody;
-    } catch (e) {
-      return 'Error calling tool model "$toolName": $e';
-    } finally {
-      client.close();
-    }
+    return '模型已经搬到 Hub，这台设备不再调用。';
   }
 
   // ---------------------------------------------------------------------------
