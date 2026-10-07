@@ -15,6 +15,7 @@ import 'services/cli_host.dart';
 import 'services/cli_tool_registry.dart';
 import 'clis/shepaw/shepaw_cli.dart';
 import 'services/logger_service.dart';
+import 'services/model_registry.dart';
 import 'services/frame_timing_monitor.dart';
 import 'services/foreground_task_service.dart';
 import 'peer/services/peer_connection_manager.dart';
@@ -118,6 +119,9 @@ class AppBootstrap {
     // 本机只留 os / help。惜宝、模型和技能在登录的那台主机上。
     await CliToolRegistry.instance.initialize();
     ShepawCLI.instance.reloadExternalTools();
+
+    // 输入框和惜宝主模型都直接读本机模型列表，不能等到导入导出时才加载。
+    await ModelRegistry.instance.initialize();
 
     return const BootstrapResult();
   }
