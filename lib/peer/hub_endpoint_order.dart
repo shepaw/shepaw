@@ -1,3 +1,9 @@
+/// 用户在设置里填的 Hub 地址。连接时排在局域网前面。
+class HubEndpoints {
+  static final List<String> custom = <String>[];
+  static bool channelEnabled = true;
+}
+
 /// 连接 Hub 时的探测顺序：自定义地址，然后局域网，然后 channel。
 List<String> hubEndpointOrder({
   List<String> custom = const [],

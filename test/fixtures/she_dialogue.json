@@ -1,0 +1,61 @@
+{
+  "cases": [
+    {
+      "name": "dm first meeting",
+      "mode": "dm",
+      "profile": {},
+      "now_local": "2026-10-07 18:00",
+      "must_contain": [
+        "You are She",
+        "惜宝",
+        "## First Meeting",
+        "profile.write",
+        "## Task Dispatch",
+        "context agents.dispatch",
+        "## Current Time",
+        "2026-10-07 18:00"
+      ],
+      "must_not_contain": [
+        "## About Them",
+        "Current Room Context"
+      ]
+    },
+    {
+      "name": "dm known user",
+      "mode": "dm",
+      "profile": {"name": "Eden", "city": "Shanghai"},
+      "long_term_memory": "Likes tea",
+      "must_contain": [
+        "## About Them",
+        "Name: Eden",
+        "City: Shanghai",
+        "## Getting to Know Them",
+        "[Recent Activity]",
+        "Likes tea",
+        "context agents.list"
+      ],
+      "must_not_contain": [
+        "## First Meeting",
+        "Current Room Context"
+      ]
+    },
+    {
+      "name": "group room",
+      "mode": "group",
+      "room_name": "Launch",
+      "she_is_admin": true,
+      "must_contain": [
+        "You are She",
+        "Current Room Context",
+        "Group: Launch",
+        "You are the admin of this room",
+        "ephemeral room"
+      ],
+      "must_not_contain": [
+        "## Task Dispatch",
+        "## First Meeting",
+        "## About Them"
+      ]
+    }
+  ]
+}

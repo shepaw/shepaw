@@ -5765,6 +5765,26 @@ class PeerAgentClientService {
     });
   }
 
+  Future<void> submitCommandApproval({
+    required String peerId,
+    required String approvalId,
+    required String decision,
+    required String argsDigest,
+    String remember = 'once',
+    String deviceId = '',
+    String deviceName = '',
+  }) async {
+    await PeerConnectionManager.instance.sendControl(peerId, {
+      'type': 'approval.resp',
+      'approval_id': approvalId,
+      'decision': decision,
+      'remember': remember,
+      'args_digest': argsDigest,
+      if (deviceId.isNotEmpty) 'device_id': deviceId,
+      if (deviceName.isNotEmpty) 'device_name': deviceName,
+    });
+  }
+
   Future<void> _onCmdInvoke(String peerId, Map<String, dynamic> data) async {
     Map<String, dynamic> result;
     try {

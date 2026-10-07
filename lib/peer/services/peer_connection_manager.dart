@@ -17,6 +17,7 @@ import '../../services/noise/noise_session.dart';
 import '../../services/noise/noise_envelope.dart';
 import '../../services/channel_tunnel_service.dart';
 import '../../services/logger_service.dart';
+import '../hub_endpoint_order.dart';
 import '../models/paired_peer.dart';
 import '../models/peer_message.dart';
 import 'peer_connection.dart';
@@ -1124,7 +1125,24 @@ class PeerConnectionManager {
         );
       }
 
-      if (fixedUrl != null &&
+      for (final url in hubEndpointOrder(
+        custom: HubEndpoints.custom,
+        channelEnabled: false,
+      )) {
+        if (await _tryLocalWs(
+          conn,
+          peer,
+          url: url,
+          transport: 'custom',
+        )) {
+          connected = true;
+          connectedTransport = 'custom';
+          break;
+        }
+      }
+
+      if (!connected &&
+          fixedUrl != null &&
           await _tryLocalWs(
             conn,
             peer,

@@ -511,6 +511,69 @@ ${parts.join('\n')}''';
   /// Session-end guidance for ephemeral rooms (group / temporary context).
   static String buildEphemeralSessionEndBlock() => _ephemeralSessionInstructions();
 
+  /// 和 Hub `build_system_prompt` 对齐的惜宝分段，给对话 fixture 对比用。
+  /// 只用本类已经在正式 prompt 里用的分段，不另写一套文案。
+  static String assembleComparisonPrompt({
+    required String mode,
+    Map<String, String> profile = const {},
+    String? soul,
+    String? longTermMemory,
+    List<String> skills = const [],
+    String nowLocal = '',
+    String? roomName,
+    bool sheIsAdmin = true,
+  }) {
+    final group = mode == 'group';
+    final parts = <String>[_coreIdentityPrompt()];
+    final empty = profile.values.every((value) => value.trim().isEmpty);
+    if (!group) {
+      parts.add(
+        '## Connected Agents & Groups\n\n'
+        'No other agents registered yet — you cannot dispatch tasks until your master adds one.',
+      );
+      parts.add(buildDmDispatchPlaybookBlock());
+      parts.add(buildDmGroupManagementPlaybookBlock());
+      if (empty) {
+        parts.add(_firstMeetingInstruction());
+      } else {
+        parts.add(_buildProfileSnapshot(
+          profile,
+          '(not yet known)',
+          (longTermMemory == null || longTermMemory.trim().isEmpty)
+              ? '(no memories yet)'
+              : longTermMemory,
+          'first_launch',
+        ));
+        parts.add(_knowUserStrategyPrompt(profile));
+      }
+    }
+    final soulText = soul?.trim() ?? '';
+    if (soulText.isNotEmpty) parts.add(_soulPrompt(soulText));
+    if (skills.isNotEmpty) {
+      parts.add(
+        '## Skills\nLoaded skill modules: ${skills.join(', ')}.\n'
+        'Read one with `shepaw skills detail --name <name>`.',
+      );
+    }
+    parts.add(_pawCliPrompt());
+    if (nowLocal.trim().isNotEmpty) {
+      parts.add(
+        '## Current Time\n$nowLocal\n\n'
+        '(This is the actual device time. Use this as the reference when you mention "today", "now", or "recently".)',
+      );
+    }
+    if (group) {
+      parts.add(_ephemeralSessionInstructions());
+      if (roomName != null && roomName.trim().isNotEmpty) {
+        final role = sheIsAdmin
+            ? 'You are the admin of this room.'
+            : 'You are a member of this room, not the admin.';
+        parts.add(wrapEphemeralContextPrompt('Group: $roomName\n$role'));
+      }
+    }
+    return parts.join('\n\n');
+  }
+
   /// Unified shepaw CLI guidance block for any agent.
   ///
   /// - **She**: returns the full capability-discovery guide ([buildMetaCognitionBlock]).
