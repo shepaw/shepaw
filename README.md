@@ -194,7 +194,6 @@ shepaw/
 │   │   ├── services/                    # Pairing / connection / agent host
 │   │   ├── screens/                     # Pairing UI screens
 │   │   └── models/                      # Paired peer models
-│   ├── she_network/                     # She network (presence + memory exchange)
 │   ├── task/                            # Scheduled tasks (cron)
 │   ├── clis/                            # ShePaw CLI for agents
 │   │   └── shepaw/                      # shepaw <namespace> <command> tree

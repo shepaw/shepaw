@@ -6,7 +6,6 @@ import '../models/cli_command_config.dart';
 import '../models/cognition.dart';
 import '../models/prompt_stack_config.dart';
 import '../models/remote_agent.dart';
-import '../she_network/external_memory_store.dart';
 import 'cli_command_config_service.dart';
 import 'local_database_service.dart';
 import 'she_agent_impression_service.dart';
@@ -1187,31 +1186,6 @@ As you learn: write immediately
 
 > These calls are silent. `ok: true` = success. Use what you know to make every response personal.''';
 
-  /// 来自 owner 配对设备的蒸馏摘要（按来源分组，最近若干条）。
-  Future<String> buildExternalMemoriesBlock({int limit = 12}) async {
-    try {
-      final rows = await ExternalMemoryStore.instance.list(limit: limit);
-      if (rows.isEmpty) return '';
-      final byDevice = <String, List<ExternalMemory>>{};
-      for (final r in rows) {
-        byDevice.putIfAbsent(r.fromDevice, () => []).add(r);
-      }
-      final buf = StringBuffer();
-      buf.writeln('## Digests from paired devices');
-      buf.writeln(
-          'Summaries from other devices\' She instances. Cite as "the She on device … told me…".');
-      for (final e in byDevice.entries) {
-        final short = e.key.length > 8 ? e.key.substring(0, 8) : e.key;
-        buf.writeln('### Device $short…');
-        for (final m in e.value.take(4)) {
-          buf.writeln('- [${m.kind}] ${m.text}');
-        }
-      }
-      return buf.toString().trimRight();
-    } catch (_) {
-      return '';
-    }
-  }
 }
 
 /// Prefetched She prompt context — one parallel read of all DB-backed prompt

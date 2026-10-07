@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../peer/services/peer_storage_service.dart';
-import '../she_network/exchange_settings.dart';
 import '../storage/device_identity.dart';
 import '../storage/scheduled_snapshot_service.dart';
 import '../storage/snapshot_service.dart';
@@ -163,7 +162,6 @@ class StorageOverviewSummary {
     required this.stats,
     required this.schedStatus,
     required this.snapshotCount,
-    required this.exchangeEnabled,
     required this.ownerPeerCount,
     required this.isMaster,
   });
@@ -172,7 +170,6 @@ class StorageOverviewSummary {
   final Map<String, dynamic>? stats;
   final ScheduledSnapshotStatus? schedStatus;
   final int snapshotCount;
-  final bool exchangeEnabled;
   final int ownerPeerCount;
   final bool isMaster;
 
@@ -227,7 +224,6 @@ Future<StorageOverviewSummary> loadStorageOverview() async {
   final schedStatus = await ScheduledSnapshotService.instance.status();
   final snapshots = await SnapshotService.instance.listSnapshots();
 
-  final exchange = await ExchangeSettings.load();
   final peers = await PeerStorageService().loadAllPeers();
   final ownerPeerCount =
       peers.where((p) => p.trustLevel == TrustLevel.owner).length;
@@ -238,7 +234,6 @@ Future<StorageOverviewSummary> loadStorageOverview() async {
     stats: stats,
     schedStatus: schedStatus,
     snapshotCount: snapshots.length,
-    exchangeEnabled: exchange.enabled,
     ownerPeerCount: ownerPeerCount,
     isMaster: masterId == selfId,
   );

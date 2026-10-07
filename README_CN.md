@@ -194,7 +194,6 @@ shepaw/
 │   │   ├── services/                    # 配对 / 连接 / agent host
 │   │   ├── screens/                     # 配对 UI 页面
 │   │   └── models/                      # 配对设备模型
-│   ├── she_network/                     # She 网络（在线状态 + 记忆交换）
 │   ├── task/                            # 定时任务（cron）
 │   ├── clis/                            # ShePaw CLI（Agent 命令树）
 │   │   └── shepaw/                      # shepaw <namespace> <command>
