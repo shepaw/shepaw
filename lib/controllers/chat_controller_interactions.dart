@@ -567,6 +567,18 @@ mixin _InteractionOps on _ChatControllerBase {
       tag: 'ChatController',
     );
 
+    if (await _answerHubInteraction(originalMessage, {
+      'selected_action_id': actionId,
+      'selected_action_label': actionLabel,
+    })) {
+      _markActionConfirmationSelected(
+        originalMessage.id,
+        actionId: actionId,
+        actionLabel: actionLabel,
+      );
+      return;
+    }
+
     PendingApprovalHub.instance.resolveByConfirmationId(confirmationId);
 
     if (confirmationContext == 'cli') {
@@ -666,6 +678,13 @@ mixin _InteractionOps on _ChatControllerBase {
     String optionId,
     String optionLabel,
   ) async {
+    if (await _answerHubInteraction(originalMessage, {
+      'selected': [optionId],
+      'selected_option_id': optionId,
+      'selected_option_label': optionLabel,
+    })) {
+      return;
+    }
     final pending = pendingGroupInteractions[originalMessage.id];
     if (pending != null && !pending.result.isCompleted) {
       pending.result.complete({
@@ -699,6 +718,11 @@ mixin _InteractionOps on _ChatControllerBase {
     List<String> optionIds,
     String summary,
   ) async {
+    if (await _answerHubInteraction(originalMessage, {
+      'selected': optionIds,
+    })) {
+      return;
+    }
     final pending = pendingGroupInteractions[originalMessage.id];
     if (pending != null && !pending.result.isCompleted) {
       pending.result.complete({'selected_option_ids': optionIds});
@@ -760,6 +784,11 @@ mixin _InteractionOps on _ChatControllerBase {
     Map<String, dynamic> values,
     String summary,
   ) async {
+    if (await _answerHubInteraction(originalMessage, {
+      'values': values,
+    })) {
+      return;
+    }
     final pending = pendingGroupInteractions[originalMessage.id];
     if (pending != null && !pending.result.isCompleted) {
       pending.result.complete({'submitted_values': values});
@@ -782,5 +811,22 @@ mixin _InteractionOps on _ChatControllerBase {
     } catch (e) {
       _emit(ShowErrorSnackBarEvent('$e'));
     }
+  }
+
+  Future<bool> _answerHubInteraction(
+    Message message,
+    Map<String, dynamic> result,
+  ) async {
+    final hub = message.metadata?['hub_interaction'];
+    if (hub is! Map) return false;
+    final peerId = hub['host_peer_id']?.toString() ?? '';
+    final interactionId = hub['interaction_id']?.toString() ?? '';
+    if (peerId.isEmpty || interactionId.isEmpty) return false;
+    await PeerConnectionManager.instance.sendControl(peerId, {
+      'type': 'pouch_interaction_resp',
+      'interaction_id': interactionId,
+      'result': result,
+    });
+    return true;
   }
 }

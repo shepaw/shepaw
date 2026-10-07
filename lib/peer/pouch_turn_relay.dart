@@ -272,6 +272,7 @@ class PouchTurnRelay {
     } catch (_) {
       result = null;
     }
+    if (result == null) return;
     await PeerConnectionManager.instance.sendControl(hostPeerId, {
       'type': interactionResponseType,
       'request_id': event['request_id'],

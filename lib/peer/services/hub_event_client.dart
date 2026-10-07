@@ -6,7 +6,9 @@ import 'package:uuid/uuid.dart';
 
 import '../../service_locator.dart';
 import '../../services/chat_service.dart';
+import '../../services/cli_execution_gate.dart';
 import '../../services/local_database_service.dart';
+import '../../services/noise_identity.dart';
 import '../../services/logger_service.dart';
 import '../../storage/pouch_login_keeper.dart';
 import '../../storage/pouch_session.dart';
@@ -175,6 +177,10 @@ class HubEventClient {
       case 'turn.finished':
         await _onTurnFinished(event);
       case 'interaction.pending':
+        await _showInteraction(peerId, event);
+        if (!_notices.isClosed) {
+          _notices.add(HubNotice(peerId: peerId, event: event));
+        }
       case 'interaction.resolved':
         if (!_notices.isClosed) {
           _notices.add(HubNotice(peerId: peerId, event: event));
@@ -187,6 +193,63 @@ class HubEventClient {
           _notices.add(HubNotice(peerId: peerId, event: event));
         }
     }
+  }
+
+  Future<void> _showInteraction(String peerId, HubEvent event) async {
+    final data = event.data['data'];
+    final body = data is Map ? Map<String, dynamic>.from(data) : <String, dynamic>{};
+    final kind = event.data['interaction_type'] as String? ?? '';
+    final interactionId = event.data['interaction_id'] as String? ?? '';
+    if (kind == 'client_cli') {
+      final target = body['target_fingerprint'] as String? ?? '';
+      final mine = (await NoiseIdentity.loadOrCreate()).fingerprintHex;
+      if (target.isNotEmpty && mine == target) {
+        final output = await CliExecutionGate.instance.execute(
+          args: {
+            'namespace': body['namespace'] ?? 'os',
+            'subcommand': body['subcommand'] ?? '',
+            'flags': body['flags'] is Map
+                ? Map<String, dynamic>.from(body['flags'] as Map)
+                : <String, dynamic>{},
+          },
+          agentId: 'she-builtin-agent-001',
+        );
+        await _send(peerId, {
+          'type': 'pouch_interaction_resp',
+          'interaction_id': interactionId,
+          'result': {'output': output},
+        });
+        return;
+      }
+    }
+    if (!getIt.isRegistered<LocalDatabaseService>() || event.channelId.isEmpty) {
+      return;
+    }
+    final metadata = <String, dynamic>{
+      'hub_interaction': {
+        'host_peer_id': peerId,
+        'interaction_id': interactionId,
+        'interaction_type': kind,
+      },
+    };
+    if (kind == 'action_confirmation' ||
+        kind == 'single_select' ||
+        kind == 'multi_select' ||
+        kind == 'form') {
+      metadata[kind] = body;
+    }
+    final prompt = body['prompt'] as String? ?? body['title'] as String? ?? '';
+    await getIt<LocalDatabaseService>().createMessage(
+      id: 'hub-ix-$interactionId',
+      channelId: event.channelId,
+      senderId: event.agentId.isEmpty ? 'she-builtin-agent-001' : event.agentId,
+      senderType: 'agent',
+      senderName: '惜宝',
+      content: kind == 'client_cli' ? '在另一台设备上执行' : prompt,
+      metadata: metadata,
+      conflictAlgorithm: ConflictAlgorithm.ignore,
+    );
+    _notify(event.channelId);
   }
 
   Future<void> _insertMessage(HubEvent event) async {

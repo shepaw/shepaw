@@ -18,6 +18,7 @@ import '../storage/pouch_login.dart';
 import '../storage/pouch_session.dart';
 import 'inference_log_screen.dart';
 import 'log_viewer_screen.dart';
+import 'she_memory_screen.dart';
 import 'user_profile_settings_screen.dart';
 import 'model_management_screen.dart';
 import 'skill_management_screen.dart';
@@ -322,6 +323,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 context,
                 MaterialPageRoute(
                   builder: (context) => const UserProfileSettingsScreen(),
+                ),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.menu_book_outlined),
+            title: const Text('惜宝的长期记忆'),
+            subtitle: const Text('存在主机上，换一台设备也能看到'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const SheMemoryScreen(),
                 ),
               );
             },
