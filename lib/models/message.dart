@@ -33,6 +33,22 @@ enum MessageType {
   permissionAudit,
 }
 
+/// 按时间升序排。时间相同时保留传入的先后。
+///
+/// 主机给同一回合的提问和回复打同一个戳，`List.sort` 不稳定，超过 32 条就会
+/// 把回复换到提问上面。
+void sortMessagesByTime(List<Message> messages) {
+  final indexed = [
+    for (var i = 0; i < messages.length; i++) (i, messages[i]),
+  ]..sort((a, b) {
+      final byTime = a.$2.timestampMs.compareTo(b.$2.timestampMs);
+      return byTime != 0 ? byTime : a.$1.compareTo(b.$1);
+    });
+  for (var i = 0; i < indexed.length; i++) {
+    messages[i] = indexed[i].$2;
+  }
+}
+
 /// 消息
 class Message {
   final String id;

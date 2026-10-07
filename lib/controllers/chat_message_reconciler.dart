@@ -212,7 +212,7 @@ class ChatMessageReconciler {
       );
     }
 
-    messages.sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+    sortMessagesByTime(messages);
     return messages;
   }
 
@@ -352,7 +352,7 @@ class ChatMessageReconciler {
       }
     }
 
-    messages.sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+    sortMessagesByTime(messages);
     return GroupReconcileResult(
       messages: messages,
       pendingKeyMigrations: pendingKeyMigrations,

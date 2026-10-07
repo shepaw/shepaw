@@ -35,6 +35,32 @@ void main() {
     expect(merged.map((message) => message.id), ['local-u', 'local-a']);
   });
 
+  test('提问和回复同一个时间戳时，回复不会排到提问上面', () {
+    Message line(String id, String type, int at) {
+      return Message(
+        id: id,
+        from: MessageFrom(id: type, type: type, name: type),
+        type: MessageType.text,
+        content: id,
+        timestampMs: at,
+      );
+    }
+
+    // 超过 32 条，List.sort 不再走插入排序，平局的先后会被打乱。
+    final local = [
+      for (var i = 0; i < 60; i++) ...[
+        line('u$i', 'user', i * 1000),
+        line('a$i', 'agent', i * 1000),
+      ],
+    ];
+    final host = [line('extra', 'agent', 999999)];
+    final merged = mergeHostAndLocalMessages(local, host);
+    expect(
+      merged.map((message) => message.id),
+      [...local.map((message) => message.id), 'extra'],
+    );
+  });
+
   test('同一条消息不重复，主机上多出来的接在后面', () {
     final local = [text('m1', '你好', 1)];
     final host = [text('m1', '你好', 1), text('m3', '新的', 3)];

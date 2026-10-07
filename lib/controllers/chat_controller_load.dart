@@ -518,7 +518,7 @@ mixin _LoadOps on _ChatControllerBase {
           inserted.where((m) => !messageIdMap.containsKey(m.id)).toList();
       if (fresh.isEmpty) return;
       messages.addAll(fresh);
-      messages.sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+      sortMessagesByTime(messages);
       rebuildMessageIdMap();
       streaming.repointAnchor(messages);
       _notify();
@@ -611,7 +611,7 @@ mixin _LoadOps on _ChatControllerBase {
             newMsgs.where((m) => m.channelId == channelId).toList();
         if (forHere.isEmpty) return;
         messages.addAll(forHere);
-        messages.sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+        sortMessagesByTime(messages);
         rebuildMessageIdMap();
         _notify();
       },

@@ -115,7 +115,8 @@ List<Message> mergeHostAndLocalMessages(
       if (!hostIds.contains(message.id)) message,
     for (final message in host)
       if (!echoedHostIds.contains(message.id)) message,
-  ]..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+  ];
+  sortMessagesByTime(merged);
   return merged;
 }
 
