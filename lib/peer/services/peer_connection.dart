@@ -188,6 +188,9 @@ class PeerConnection {
     'session_create_resp',
     'cli_execute_req',
     'cli_execute_resp',
+    'cmd.invoke',
+    'cmd.result',
+    'cmd.cancel',
     // 袋子协议帧（docs/storage_protocol_spec.md，载荷内含 ns/op 子路由）。
     'pouch',
     // 多 she 网络（docs/storage_space_plan.md §8，M8）。

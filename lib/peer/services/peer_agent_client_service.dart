@@ -27,6 +27,7 @@ import '../../services/app_lifecycle_service.dart';
 import '../../services/local_database_service.dart';
 import '../../services/local_file_storage_service.dart';
 import '../../services/logger_service.dart';
+import '../../services/device_node/device_command_runner.dart';
 import '../../services/session/cli_execute_peer_handler.dart';
 import '../../services/session/session_create_peer_handler.dart';
 import '../../services/she_agent_impression_service.dart';
@@ -2586,6 +2587,9 @@ class PeerAgentClientService {
         break;
       case 'cli_execute_req':
         unawaited(_onCliExecuteReq(event.peerId, event.data));
+        break;
+      case 'cmd.invoke':
+        unawaited(_onCmdInvoke(event.peerId, event.data));
         break;
       case 'agent_commands_resp':
         _onCommandsResp(event.peerId, event.data);
@@ -5750,6 +5754,29 @@ class PeerAgentClientService {
       'type': PeerCliExecuteHandler.respType,
       if (reqId != null) 'req_id': reqId,
       ...result,
+    });
+  }
+
+  Future<void> _onCmdInvoke(String peerId, Map<String, dynamic> data) async {
+    Map<String, dynamic> result;
+    try {
+      result = await DeviceCommandRunner().handle(data);
+    } catch (e) {
+      result = {
+        'type': 'cmd.result',
+        'call_id': data['call_id'],
+        'ok': false,
+        'error': {
+          'code': 'internal',
+          'message': e.toString(),
+          'retryable': false,
+        },
+      };
+    }
+    final reqId = data['req_id'];
+    await PeerConnectionManager.instance.sendControl(peerId, {
+      ...result,
+      if (reqId != null) 'req_id': reqId,
     });
   }
 
