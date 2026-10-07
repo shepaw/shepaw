@@ -168,7 +168,7 @@ class _HostTurnBuffer {
 /// 旧的「这台 App 把自己的 Agent 分享给对端」主机。
 ///
 /// App 现在只有经 peer 进来的 Hub Agent，启动时不再跑这份服务，
-/// 也不再把本机名单推给 Hub。袋子回合仍由 [PouchTurnHost] 在真正的主机上处理。
+/// 也不再把本机名单推给 Hub。聊天记录仍由 [PouchTurnHost] 回答，回合在 Hub 上跑。
 class PeerAgentHostService {
   PeerAgentHostService._();
   static final PeerAgentHostService instance = PeerAgentHostService._();
