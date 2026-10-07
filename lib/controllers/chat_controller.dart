@@ -49,6 +49,7 @@ import '../services/mailbox/channel_mailbox_service.dart';
 import '../services/mailbox/inbox_subscribe_service.dart';
 import '../services/noise_identity.dart';
 import '../services/composer_draft_service.dart';
+import '../peer/services/hub_group_registry.dart';
 import '../service_locator.dart' show getIt;
 import '../utils/session_utils.dart';
 import 'chat_workflow_coordinator.dart';

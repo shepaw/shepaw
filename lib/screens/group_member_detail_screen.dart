@@ -8,6 +8,8 @@ import '../peer/models/paired_peer.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/widgets/peer_source_badge.dart';
 import '../services/agent_soul_service.dart';
+import '../peer/services/hub_group_registry.dart';
+import '../service_locator.dart';
 import '../services/local_database_service.dart';
 import '../services/logger_service.dart';
 import '../services/model_registry.dart';
@@ -120,14 +122,16 @@ class _GroupMemberDetailScreenState extends State<GroupMemberDetailScreen> {
 
     setState(() => _savingBio = true);
     try {
+      final registry = getIt<HubGroupRegistry>();
       final parentGroupId = widget.groupChannel.groupFamilyId;
       final sessions = await _db.getGroupSessions(parentGroupId);
       for (final session in sessions) {
-        await _db.updateChannelMemberGroupBio(
-          session.id,
-          widget.agent.id,
-          newBio,
-        );
+        final saved = await registry.commit('set_member_bio', {
+          'group_id': session.id,
+          'agent_id': widget.agent.id,
+          'bio': newBio ?? '',
+        });
+        if (!saved.ok) throw Exception(saved.error ?? 'save failed');
       }
       if (!mounted) return;
       setState(() {
@@ -170,16 +174,17 @@ class _GroupMemberDetailScreenState extends State<GroupMemberDetailScreen> {
 
     setState(() => _changingAdmin = true);
     try {
+      final registry = getIt<HubGroupRegistry>();
       final parentGroupId = widget.groupChannel.groupFamilyId;
       final sessions = await _db.getGroupSessions(parentGroupId);
       for (final session in sessions) {
-        if (makeAdmin) {
-          final oldAdmin = session.adminAgentId;
-          if (oldAdmin != null && oldAdmin != agentId) {
-            await _db.updateChannelMemberRole(session.id, oldAdmin, 'member');
-          }
-          await _db.updateChannelMemberRole(session.id, agentId, 'admin');
-        }
+        if (!makeAdmin) continue;
+        final saved = await registry.commit('set_role', {
+          'group_id': session.id,
+          'agent_id': agentId,
+          'role': 'admin',
+        });
+        if (!saved.ok) throw Exception(saved.error ?? 'admin failed');
       }
       if (!mounted) return;
       setState(() {

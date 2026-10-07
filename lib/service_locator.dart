@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:get_it/get_it.dart';
 
@@ -12,6 +14,7 @@ import 'services/message_collapse_preference.dart';
 import 'services/composer_draft_service.dart';
 import 'services/vision/reference_album_service.dart';
 import 'peer/services/hub_event_client.dart';
+import 'peer/services/hub_group_registry.dart';
 import 'services/event/event_bus.dart';
 import 'services/event/setup_event_bus.dart';
 
@@ -61,7 +64,14 @@ void setupServiceLocator() {
 
   // 远端 Agent Hub 取码（无状态，仅持有 http.Client）。
   getIt.registerLazySingleton<ContactsDirectory>(() => ContactsDirectory());
-  getIt.registerLazySingleton<HubEventClient>(() => HubEventClient());
+  getIt.registerLazySingleton<HubEventClient>(() => HubEventClient(
+        onCaughtUp: (peerId) {
+          if (getIt.isRegistered<HubGroupRegistry>()) {
+            unawaited(getIt<HubGroupRegistry>().refresh(peerId));
+          }
+        },
+      ));
+  getIt.registerLazySingleton<HubGroupRegistry>(() => HubGroupRegistry());
 
   if (!getIt.isRegistered<EventBus>()) {
     final bus = EventBus();

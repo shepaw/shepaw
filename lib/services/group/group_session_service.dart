@@ -1,6 +1,8 @@
 import 'package:uuid/uuid.dart';
 import '../../models/channel.dart';
 import '../../storage/group_workspace_service.dart';
+import '../../peer/services/hub_group_registry.dart';
+import '../../service_locator.dart';
 import '../local_database_service.dart';
 import '../acp_agent_connection.dart';
 import '../inference_log_service.dart';
@@ -42,25 +44,37 @@ class GroupSessionService {
     if (currentChannel == null) throw Exception('Channel not found');
 
     final parentGroupId = currentChannel.groupFamilyId;
-    final newChannelId = 'group_${_uuid.v4()}';
-
-    final channel = Channel(
-      id: newChannelId,
-      name: currentChannel.name,
-      type: 'group',
-      members: currentChannel.members,
-      description: currentChannel.description,
-      isPrivate: currentChannel.isPrivate,
-      parentGroupId: parentGroupId,
-      sourceSheChannelId: sourceSheChannelId,
-      systemPrompt: currentChannel.systemPrompt,
-      maxLoopRounds: currentChannel.maxLoopRounds,
-      mentionMode: currentChannel.mentionMode,
-      flowMode: currentChannel.flowMode,
-      enableStageGate: currentChannel.enableStageGate,
-    );
-    await _db.createChannel(channel, userId);
-    // Each member gets a fresh bound DM for this new group session.
+    final created = await getIt<HubGroupRegistry>().commit('create', {
+      'name': currentChannel.name,
+      'description': currentChannel.description ?? '',
+      'system_prompt': currentChannel.systemPrompt ?? '',
+      'mention_mode': currentChannel.mentionMode ?? '',
+      'max_loop_rounds': currentChannel.maxLoopRounds ?? 0,
+      'parent_group_id': parentGroupId,
+      'admin_id': currentChannel.adminAgentId,
+      'agents': [
+        for (final member in currentChannel.members)
+          if (member.isAgent) member.id,
+      ],
+      'flow_mode': currentChannel.flowMode,
+      'enable_stage_gate': currentChannel.enableStageGate,
+    });
+    if (!created.ok || created.groupId == null) {
+      throw Exception(created.error ?? '创建群会话失败');
+    }
+    final newChannelId = created.groupId!;
+    await getIt<HubGroupRegistry>().commit('update', {
+      'group_id': newChannelId,
+      'flow_mode': currentChannel.flowMode,
+      'enable_stage_gate': currentChannel.enableStageGate,
+    });
+    final channel = await _db.getChannelById(newChannelId);
+    if (channel == null) throw Exception('创建群会话失败');
+    if (sourceSheChannelId != null && sourceSheChannelId.isNotEmpty) {
+      await _db.updateChannel(
+        channel.copyWith(sourceSheChannelId: sourceSheChannelId),
+      );
+    }
     await _memberSessions.ensureMemberSessionsForGroup(
       groupChannel: channel,
       userId: userId,

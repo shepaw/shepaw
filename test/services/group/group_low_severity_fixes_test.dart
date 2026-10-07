@@ -6,6 +6,7 @@ import 'package:shepaw/models/remote_agent.dart';
 import 'package:shepaw/services/acp_agent_connection.dart';
 import 'package:shepaw/services/group/group_agent_executor.dart';
 import 'package:shepaw/services/group/group_dispatch_parser.dart';
+import 'package:shepaw/peer/services/hub_group_registry.dart';
 import 'package:shepaw/services/group/group_management_service.dart';
 import 'package:shepaw/services/group/group_event.dart';
 import 'package:shepaw/services/group/group_event_store.dart';
@@ -121,7 +122,9 @@ void main() {
       // 直接走 UI 保存所用的真实入口（GroupManagementService.updateGroup
       // Settings），不再在测试里复刻一份重建逻辑——真实实现漏搬字段时这里
       // 必然失败。
-      final result = await GroupManagementService().updateGroupSettings(
+      final result = await GroupManagementService(
+        mutations: EchoGroupMutations(db),
+      ).updateGroupSettings(
         channelId: channelId,
         actorId: SheService.sheId,
         name: 'Renamed',

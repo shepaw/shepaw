@@ -20,6 +20,7 @@ import 'services/frame_timing_monitor.dart';
 import 'services/foreground_task_service.dart';
 import 'peer/services/peer_connection_manager.dart';
 import 'peer/services/hub_event_client.dart';
+import 'peer/services/hub_group_registry.dart';
 import 'peer/services/peer_agent_client_service.dart';
 import 'peer/pouch_duties.dart';
 import 'storage/pouch_login.dart';
@@ -218,6 +219,9 @@ class AppBootstrap {
       await PeerAgentClientService.instance.start();
       if (getIt.isRegistered<HubEventClient>()) {
         getIt<HubEventClient>().start();
+      }
+      if (getIt.isRegistered<HubGroupRegistry>()) {
+        getIt<HubGroupRegistry>().start();
       }
       await StoreService.instance.start();
       _log.info('P2P client started', tag: 'App');

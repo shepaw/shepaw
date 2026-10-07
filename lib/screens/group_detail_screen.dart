@@ -11,8 +11,9 @@ import '../theme/app_theme.dart';
 import '../widgets/group_avatar_picker.dart';
 import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
+import '../peer/services/hub_group_registry.dart';
+import '../service_locator.dart';
 import '../services/group/group_management_service.dart';
-import '../services/group/group_member_session_service.dart';
 import '../services/logger_service.dart';
 import '../services/she_service.dart';
 import '../storage/group_workspace_service.dart';
@@ -992,18 +993,19 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
 
     try {
       // Delete all sessions in this group family (and bound member DMs)
+      final registry = getIt<HubGroupRegistry>();
       final sessions =
           await _databaseService.getGroupSessions(_channel.groupFamilyId);
-      final memberSessions = GroupMemberSessionService(_databaseService);
-      for (final session in sessions) {
-        await memberSessions.deleteMemberSessionsForGroupChannel(session.id);
-        await _databaseService.deleteChannelMessages(session.id);
-        await _databaseService.deleteChannel(session.id);
+      final ids = <String>{
+        _channel.id,
+        for (final session in sessions) session.id,
+      };
+      for (final id in ids) {
+        final deleted = await registry.commit('delete', {'group_id': id});
+        if (!deleted.ok) {
+          throw Exception(deleted.error ?? 'delete failed');
+        }
       }
-      // Delete the parent group itself
-      await memberSessions.deleteMemberSessionsForGroupChannel(_channel.id);
-      await _databaseService.deleteChannelMessages(_channel.id);
-      await _databaseService.deleteChannel(_channel.id);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

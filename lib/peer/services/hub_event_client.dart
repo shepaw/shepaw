@@ -27,6 +27,7 @@ class HubEventClient {
     HubSeqStore? seqStore,
     this.fingerprintOf,
     this.watchingTurn,
+    this.onCaughtUp,
   })  : events = events ?? PeerConnectionManager.instance.controlEvents,
         seqStore = seqStore ?? PrefsHubSeqStore();
 
@@ -35,6 +36,7 @@ class HubEventClient {
   final HubSeqStore seqStore;
   final Future<String> Function(String peerId)? fingerprintOf;
   final bool Function(String turnId)? watchingTurn;
+  final void Function(String peerId)? onCaughtUp;
 
   final _uuid = const Uuid();
   final _log = LoggerService();
@@ -111,6 +113,7 @@ class HubEventClient {
         cursor = cursorAfterPage(base, page);
         await seqStore.write(key, cursor);
         if (syncCaughtUp(cursor, page.headSeq) || page.events.isEmpty) {
+          onCaughtUp?.call(peerId);
           return;
         }
       }

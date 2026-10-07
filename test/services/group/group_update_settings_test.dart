@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/channel.dart';
+import 'package:shepaw/peer/services/hub_group_registry.dart';
 import 'package:shepaw/services/group/group_management_service.dart';
 import 'package:shepaw/services/local_database_service.dart';
 import 'package:shepaw/services/she_service.dart';
@@ -32,7 +33,7 @@ void main() {
       final channelId = 'grp_$suffix';
       await _createAdminGroup(db, channelId, suffix);
 
-      final service = GroupManagementService();
+      final service = GroupManagementService(mutations: EchoGroupMutations(db));
       final result = await service.updateGroupSettings(
         channelId: channelId,
         actorId: SheService.sheId,
@@ -59,7 +60,7 @@ void main() {
       await _createAdminGroup(db, channelId, suffix,
           systemPrompt: 'old', maxLoopRounds: 7);
 
-      final service = GroupManagementService();
+      final service = GroupManagementService(mutations: EchoGroupMutations(db));
       final result = await service.updateGroupSettings(
         channelId: channelId,
         actorId: SheService.sheId,
@@ -99,7 +100,7 @@ void main() {
         'user',
       );
 
-      final service = GroupManagementService();
+      final service = GroupManagementService(mutations: EchoGroupMutations(db));
       final result = await service.updateGroupSettings(
         channelId: channelId,
         actorId: SheService.sheId,
@@ -141,7 +142,7 @@ void main() {
         'user',
       );
 
-      final service = GroupManagementService();
+      final service = GroupManagementService(mutations: EchoGroupMutations(db));
       final result = await service.updateGroupSettings(
         channelId: channelId,
         actorId: SheService.sheId,
@@ -177,7 +178,7 @@ void main() {
         'user',
       );
 
-      final service = GroupManagementService();
+      final service = GroupManagementService(mutations: EchoGroupMutations(db));
       final setResult = await service.updateGroupSettings(
         channelId: channelId,
         actorId: SheService.sheId,
@@ -204,7 +205,7 @@ void main() {
       final channelId = 'grp_$suffix';
       await _createAdminGroup(db, channelId, suffix, description: 'desc');
 
-      final service = GroupManagementService();
+      final service = GroupManagementService(mutations: EchoGroupMutations(db));
       final result = await service.updateGroupSettings(
         channelId: channelId,
         actorId: SheService.sheId,
@@ -225,7 +226,7 @@ void main() {
       final channelId = 'grp_$suffix';
       await _createAdminGroup(db, channelId, suffix);
 
-      final service = GroupManagementService();
+      final service = GroupManagementService(mutations: EchoGroupMutations(db));
       final result = await service.updateGroupSettings(
         channelId: channelId,
         actorId: SheService.sheId,
@@ -260,7 +261,7 @@ void main() {
         'user',
       );
 
-      final service = GroupManagementService();
+      final service = GroupManagementService(mutations: EchoGroupMutations(db));
       final result = await service.updateGroupSettings(
         channelId: channelId,
         actorId: nonAdminId,
@@ -289,7 +290,7 @@ void main() {
         'user',
       );
 
-      final service = GroupManagementService();
+      final service = GroupManagementService(mutations: EchoGroupMutations(db));
       final result = await service.updateGroupSettings(
         channelId: channelId,
         actorId: SheService.sheId,

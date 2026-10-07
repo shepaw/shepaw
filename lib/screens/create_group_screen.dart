@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:uuid/uuid.dart';
 import '../l10n/app_localizations.dart';
 import '../models/agent.dart';
-import '../models/channel.dart';
 import '../peer/widgets/peer_source_badge.dart';
+import '../peer/services/hub_group_registry.dart';
+import '../service_locator.dart';
 import '../services/local_api_service.dart';
-import '../services/local_database_service.dart';
-import '../services/group/group_member_session_service.dart';
 import '../services/she_service.dart';
 import '../utils/resume_utils.dart';
 import '../widgets/agent_list_avatar.dart';
@@ -35,7 +33,6 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
   String? _adminAgentId;
   String _mentionMode = 'adminOnly';
   final LocalApiService _apiService = LocalApiService();
-  final LocalDatabaseService _databaseService = LocalDatabaseService();
   List<Agent> _agents = [];
   bool _isLoading = true;
   bool _creating = false;
@@ -198,45 +195,29 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
 
     setState(() => _creating = true);
     try {
-    // Generate a UUID channel ID for the group
-    final channelId = 'group_${const Uuid().v4()}';
-    const userId = 'user';
-
-    // Build members with roles
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final members = <ChannelMember>[
-      ChannelMember(id: userId, type: 'user', role: 'member', joinedAt: now),
-      ..._selectedAgentIds.map((agentId) => ChannelMember(
-        id: agentId,
-        type: 'agent',
-        role: agentId == effectiveAdminId ? 'admin' : 'member',
-        joinedAt: now,
-        groupBio: _groupBioControllers[agentId]?.text.trim().isNotEmpty == true
-            ? _groupBioControllers[agentId]!.text.trim()
-            : null,
-      )),
-    ];
-
-    final channel = Channel(
-      id: channelId,
-      name: name,
-      type: 'group',
-      members: members,
-      description: purpose.isNotEmpty ? purpose : null,
-      systemPrompt: systemPrompt.isNotEmpty ? systemPrompt : null,
-      maxLoopRounds: maxLoopRounds,
-      mentionMode: _mentionMode != 'adminOnly' ? _mentionMode : null,
-      isPrivate: true,
-    );
-
-    await _databaseService.createChannel(channel, userId);
-
-    // Create a bound member DM for each agent so group context stays isolated
-    // from personal 1:1 sessions (and appears in each agent's session history).
-    await GroupMemberSessionService(_databaseService).ensureMemberSessionsForGroup(
-      groupChannel: channel,
-      userId: userId,
-    );
+    final registry = getIt<HubGroupRegistry>();
+    final created = await registry.commit('create', {
+      'name': name,
+      'description': purpose,
+      'system_prompt': systemPrompt,
+      'mention_mode': _mentionMode,
+      'max_loop_rounds': maxLoopRounds ?? 0,
+      'admin_id': effectiveAdminId,
+      'agents': _selectedAgentIds,
+    });
+    if (!created.ok || created.groupId == null) {
+      throw Exception(created.error ?? 'create failed');
+    }
+    final channelId = created.groupId!;
+    for (final agentId in _selectedAgentIds) {
+      final bio = _groupBioControllers[agentId]?.text.trim() ?? '';
+      if (bio.isEmpty) continue;
+      await registry.commit('set_member_bio', {
+        'group_id': channelId,
+        'agent_id': agentId,
+        'bio': bio,
+      });
+    }
 
     if (!mounted) return;
     await _discardKey.currentState?.allowPop();

@@ -12,33 +12,21 @@ mixin _GroupMemberOps on _ChatControllerBase {
   Future<void> addGroupMember(RemoteAgent agent) async {
     if (currentChannelId == null) return;
 
-    // She joins as admin by default when added to a group.
-    final role = agent.isShe ? 'admin' : 'member';
-    await localDatabaseService.addChannelMember(
-      currentChannelId!,
-      agent.id,
-      role: role,
-    );
-
-    if (role == 'admin') {
-      final parentGroupId =
-          groupChannel?.groupFamilyId ?? currentChannelId!;
-      final sessions =
-          await localDatabaseService.getGroupSessions(parentGroupId);
-      final previousAdminId = groupAdminAgentId;
+    final registry = getIt<HubGroupRegistry>();
+    final added = await registry.commit('add_member', {
+      'group_id': currentChannelId,
+      'agent_id': agent.id,
+    });
+    if (!added.ok) return;
+    if (agent.isShe) {
+      final parentGroupId = groupChannel?.groupFamilyId ?? currentChannelId!;
+      final sessions = await localDatabaseService.getGroupSessions(parentGroupId);
       for (final session in sessions) {
-        if (previousAdminId != null && previousAdminId != agent.id) {
-          await localDatabaseService.updateChannelMemberRole(
-            session.id,
-            previousAdminId,
-            'member',
-          );
-        }
-        await localDatabaseService.updateChannelMemberRole(
-          session.id,
-          agent.id,
-          'admin',
-        );
+        await registry.commit('set_role', {
+          'group_id': session.id,
+          'agent_id': agent.id,
+          'role': 'admin',
+        });
       }
     }
 
@@ -73,7 +61,11 @@ mixin _GroupMemberOps on _ChatControllerBase {
   Future<void> removeGroupMember(RemoteAgent agent) async {
     if (currentChannelId == null) return;
 
-    await localDatabaseService.removeChannelMember(currentChannelId!, agent.id);
+    final removed = await getIt<HubGroupRegistry>().commit('remove_member', {
+      'group_id': currentChannelId,
+      'agent_id': agent.id,
+    });
+    if (!removed.ok) return;
     await GroupMemberSessionService(localDatabaseService).deleteMemberSession(
       groupChannelId: currentChannelId!,
       agentId: agent.id,
@@ -120,10 +112,15 @@ mixin _GroupMemberOps on _ChatControllerBase {
   Future<List<ChannelMember>> saveMemberGroupBio(RemoteAgent agent, String? newGroupBio) async {
     if (currentChannelId == null) return groupChannel?.members ?? [];
 
+    final registry = getIt<HubGroupRegistry>();
     final parentGroupId = groupChannel?.groupFamilyId ?? currentChannelId!;
     final sessions = await localDatabaseService.getGroupSessions(parentGroupId);
     for (final session in sessions) {
-      await localDatabaseService.updateChannelMemberGroupBio(session.id, agent.id, newGroupBio);
+      await registry.commit('set_member_bio', {
+        'group_id': session.id,
+        'agent_id': agent.id,
+        'bio': newGroupBio ?? '',
+      });
     }
 
     await refreshGroupMembers();

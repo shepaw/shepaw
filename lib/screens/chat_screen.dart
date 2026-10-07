@@ -73,6 +73,7 @@ import '../peer/services/peer_connection.dart' show PeerConnectionEventType;
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_agent_client_service.dart';
 import '../peer/host_she_turn.dart' show sheHasMainModel;
+import '../peer/services/hub_group_registry.dart';
 import '../service_locator.dart' show getIt;
 
 /// User's response to the "sync remote sessions" prompt.
@@ -3269,17 +3270,17 @@ class _ChatScreenState extends State<ChatScreen>
           _controller.saveMemberGroupBio(agent, bio),
       onChangeAdmin: (agent) async {
         if (agent.id == _controller.groupAdminAgentId) return;
+        final registry = getIt<HubGroupRegistry>();
         final parentGroupId = _controller.groupChannel?.groupFamilyId ??
             _controller.currentChannelId!;
         final sessions = await _controller.localDatabaseService
             .getGroupSessions(parentGroupId);
         for (final session in sessions) {
-          if (_controller.groupAdminAgentId != null) {
-            await _controller.localDatabaseService.updateChannelMemberRole(
-                session.id, _controller.groupAdminAgentId!, 'member');
-          }
-          await _controller.localDatabaseService
-              .updateChannelMemberRole(session.id, agent.id, 'admin');
+          await registry.commit('set_role', {
+            'group_id': session.id,
+            'agent_id': agent.id,
+            'role': 'admin',
+          });
         }
         await _controller.refreshGroupMembers();
         if (mounted) {

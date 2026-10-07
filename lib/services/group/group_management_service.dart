@@ -1,14 +1,13 @@
 import 'dart:async';
 
-import 'package:uuid/uuid.dart';
-
 import '../../models/channel.dart';
 import '../../models/remote_agent.dart';
 import '../chat_service.dart';
 import '../local_database_service.dart';
 import '../local_user_identity.dart';
 import '../logger_service.dart';
-import '../../peer/pouch_duties.dart';
+import '../../peer/services/hub_group_registry.dart';
+import '../../service_locator.dart';
 import '../she_service.dart';
 import '../../storage/group_workspace_service.dart';
 import 'group_admin_gate.dart';
@@ -53,8 +52,10 @@ class GroupManagementService {
     LocalDatabaseService? db,
     ChatService? chatService,
     SheGroupApprovalBridge? approvalBridge,
+    GroupMutations? mutations,
   })  : _db = db ?? LocalDatabaseService(),
         _chat = chatService ?? ChatService(),
+        _mutations = mutations,
         _approvalBridge = approvalBridge ??
             SheGroupApprovalBridge(
               db: db,
@@ -63,7 +64,25 @@ class GroupManagementService {
 
   final LocalDatabaseService _db;
   final ChatService _chat;
+  final GroupMutations? _mutations;
   final SheGroupApprovalBridge _approvalBridge;
+
+  GroupMutations? get _gateway {
+    if (_mutations != null) return _mutations;
+    if (getIt.isRegistered<HubGroupRegistry>()) {
+      return getIt<HubGroupRegistry>();
+    }
+    return null;
+  }
+
+  Future<GroupCommit> _commit(String op, Map<String, dynamic> fields) {
+    final gateway = _gateway;
+    if (gateway == null) {
+      return Future.value(GroupCommit.failure('群注册表没有接上'));
+    }
+    return gateway.commit(op, fields);
+  }
+
   static const _tag = 'GroupManagement';
 
   /// M13d: 每频道成员变更尾随链——addMember/kickMember 的 read-modify-write
@@ -130,11 +149,6 @@ class GroupManagementService {
     return out;
   }
 
-  GroupManagementResult? _onlyHost() {
-    if (PouchDutyState.isHost) return null;
-    return GroupManagementResult.failure('群只能在储物袋主机上改');
-  }
-
   /// Create a group. Only [SheService.sheId] may create; She is always admin.
   Future<GroupManagementResult> createGroup({
     required String name,
@@ -146,8 +160,6 @@ class GroupManagementService {
     int? maxLoopRounds,
     String userId = LocalUserIdentity.id,
   }) async {
-    final hostOnly = _onlyHost();
-    if (hostOnly != null) return hostOnly;
     if (actorId != SheService.sheId) {
       return GroupManagementResult.failure(
         'Permission denied: only She can create group chats via CLI.',
@@ -179,7 +191,6 @@ class GroupManagementService {
       if (seen.add(a.id)) memberAgents.add(a);
     }
 
-    final channelId = 'group_${const Uuid().v4()}';
     final now = DateTime.now().millisecondsSinceEpoch;
     final members = <ChannelMember>[
       ChannelMember(
@@ -200,7 +211,7 @@ class GroupManagementService {
     ];
 
     final channel = Channel(
-      id: channelId,
+      id: '',
       name: trimmed,
       type: 'group',
       members: members,
@@ -221,10 +232,28 @@ class GroupManagementService {
       );
     }
 
+    final committed = await _commit('create', {
+      'name': trimmed,
+      'description': channel.description ?? '',
+      'system_prompt': channel.systemPrompt ?? '',
+      'mention_mode': channel.mentionMode ?? '',
+      'max_loop_rounds': channel.maxLoopRounds ?? 0,
+      'admin_id': SheService.sheId,
+      'agents': [
+        for (final agent in memberAgents)
+          if (agent.id != SheService.sheId) agent.id,
+      ],
+      'preview': channel.toJson(),
+    });
+    if (!committed.ok || committed.groupId == null) {
+      return GroupManagementResult.failure(committed.error ?? '创建群失败');
+    }
+    final channelId = committed.groupId!;
+    final stored = await _db.getChannelById(channelId) ?? channel;
+
     try {
-      await _db.createChannel(channel, userId);
       await GroupMemberSessionService(_db).ensureMemberSessionsForGroup(
-        groupChannel: channel,
+        groupChannel: stored,
         userId: userId,
       );
       // 初始化群工作空间（骨架 + 成员表；She 恒为 admin）。
@@ -295,9 +324,7 @@ class GroupManagementService {
     required String actorId,
     String? groupBio,
     String userId = LocalUserIdentity.id,
-  }) {
-    final hostOnly = _onlyHost();
-    if (hostOnly != null) return Future.value(hostOnly);
+  }  ) {
     return _runSerializedMemberMutation(channelId, () async {
       final gate = await _requireAdminGroup(channelId, actorId);
       if (gate.error != null) {
@@ -315,16 +342,16 @@ class GroupManagementService {
         );
       }
 
-      // New members are never admin; admin cannot be granted via add.
+      final bio = groupBio?.trim().isNotEmpty == true ? groupBio!.trim() : null;
+      final added = await _commit('add_member', {
+        'group_id': channelId,
+        'agent_id': agent.id,
+        if (bio != null) 'bio': bio,
+      });
+      if (!added.ok) {
+        return GroupManagementResult.failure(added.error ?? '添加成员失败');
+      }
       try {
-        await _db.addChannelMember(
-          channelId,
-          agent.id,
-          role: 'member',
-          groupBio:
-              groupBio?.trim().isNotEmpty == true ? groupBio!.trim() : null,
-        );
-
         final refreshed = await _db.getChannelById(channelId);
         if (refreshed != null) {
           await GroupMemberSessionService(_db).ensureMemberSession(
@@ -413,8 +440,6 @@ class GroupManagementService {
     required String agentRef,
     required String actorId,
   }) {
-    final hostOnly = _onlyHost();
-    if (hostOnly != null) return Future.value(hostOnly);
     return _runSerializedMemberMutation(channelId, () async {
       final gate = await _requireAdminGroup(channelId, actorId);
       if (gate.error != null) {
@@ -451,8 +476,14 @@ class GroupManagementService {
         }
       }
 
+      final removed = await _commit('remove_member', {
+        'group_id': channelId,
+        'agent_id': agent.id,
+      });
+      if (!removed.ok) {
+        return GroupManagementResult.failure(removed.error ?? '移除成员失败');
+      }
       try {
-        await _db.removeChannelMember(channelId, agent.id);
         await GroupMemberSessionService(_db).deleteMemberSession(
           groupChannelId: channelId,
           agentId: agent.id,
@@ -524,8 +555,6 @@ class GroupManagementService {
     required String actorId,
     String? groupBio,
   }) async {
-    final hostOnly = _onlyHost();
-    if (hostOnly != null) return hostOnly;
     final channel = await _db.getChannelById(channelId);
     if (channel == null) {
       return GroupManagementResult.failure('Channel not found: $channelId');
@@ -559,7 +588,14 @@ class GroupManagementService {
     final bio = groupBio?.trim().isNotEmpty == true ? groupBio!.trim() : null;
     final sessions = await _db.getGroupSessions(channel.groupFamilyId);
     for (final session in sessions) {
-      await _db.updateChannelMemberGroupBio(session.id, agent.id, bio);
+      final saved = await _commit('set_member_bio', {
+        'group_id': session.id,
+        'agent_id': agent.id,
+        'bio': bio ?? '',
+      });
+      if (!saved.ok) {
+        return GroupManagementResult.failure(saved.error ?? '改职责失败');
+      }
     }
     _chat.notifyChannelUpdate(channelId);
 
@@ -579,8 +615,6 @@ class GroupManagementService {
     required String description,
     required String actorId,
   }) async {
-    final hostOnly = _onlyHost();
-    if (hostOnly != null) return hostOnly;
     final trimmed = description.trim();
     final gate = await _requireAdminGroup(channelId, actorId);
     if (gate.error != null) {
@@ -588,10 +622,20 @@ class GroupManagementService {
     }
     final channel = gate.channel!;
 
-    final updated = channel.copyWith(
+    final updated = channel.copyWithGroupEdit(
+      name: channel.name,
       description: trimmed.isEmpty ? null : trimmed,
+      systemPrompt: channel.systemPrompt,
+      maxLoopRounds: channel.maxLoopRounds,
     );
-    await _db.updateChannel(updated);
+    final saved = await _commit('set_description', {
+      'group_id': channelId,
+      'description': trimmed,
+      'preview': updated.toJson(),
+    });
+    if (!saved.ok) {
+      return GroupManagementResult.failure(saved.error ?? '改简介失败');
+    }
     _chat.notifyChannelUpdate(channelId);
 
     return GroupManagementResult.success({
@@ -605,8 +649,6 @@ class GroupManagementService {
     required String name,
     required String actorId,
   }) async {
-    final hostOnly = _onlyHost();
-    if (hostOnly != null) return hostOnly;
     final trimmed = name.trim();
     if (trimmed.isEmpty) {
       return GroupManagementResult.failure('Missing required flag: --name');
@@ -618,8 +660,20 @@ class GroupManagementService {
     }
     final channel = gate.channel!;
 
-    final updated = channel.copyWith(name: trimmed);
-    await _db.updateChannel(updated);
+    final updated = channel.copyWithGroupEdit(
+      name: trimmed,
+      description: channel.description,
+      systemPrompt: channel.systemPrompt,
+      maxLoopRounds: channel.maxLoopRounds,
+    );
+    final saved = await _commit('rename', {
+      'group_id': channelId,
+      'name': trimmed,
+      'preview': updated.toJson(),
+    });
+    if (!saved.ok) {
+      return GroupManagementResult.failure(saved.error ?? '改群名失败');
+    }
     await GroupMemberSessionService(_db).syncTitlesForGroupFamily(
       parentGroupId: updated.groupFamilyId,
       groupName: trimmed,
@@ -667,8 +721,6 @@ class GroupManagementService {
     String? avatar,
     bool clearAvatar = false,
   }) async {
-    final hostOnly = _onlyHost();
-    if (hostOnly != null) return hostOnly;
     final gate = await _requireAdminGroup(channelId, actorId);
     if (gate.error != null) {
       return GroupManagementResult.failure(gate.error!);
@@ -727,7 +779,22 @@ class GroupManagementService {
       clearAvatar: clearAvatar,
     );
 
-    await _db.updateChannel(updated);
+    final saved = await _commit('update', {
+      'group_id': channelId,
+      if (name != null) 'name': nextName,
+      if (description != null) 'description': nextDescription ?? '',
+      if (systemPrompt != null) 'system_prompt': nextSystemPrompt ?? '',
+      if (maxLoopRounds != null) 'max_loop_rounds': nextMaxLoopRounds ?? 0,
+      if (mentionMode != null) 'mention_mode': nextMentionMode,
+      if (flowMode != null) 'flow_mode': flowMode,
+      if (enableStageGate != null) 'enable_stage_gate': enableStageGate,
+      if (avatar != null) 'avatar': avatar,
+      if (clearAvatar) 'avatar': '',
+      'preview': updated.toJson(),
+    });
+    if (!saved.ok) {
+      return GroupManagementResult.failure(saved.error ?? '改群设置失败');
+    }
     if (name != null) {
       await GroupMemberSessionService(_db).syncTitlesForGroupFamily(
         parentGroupId: updated.groupFamilyId,
