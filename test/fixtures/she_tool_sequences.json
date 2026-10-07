@@ -1,0 +1,46 @@
+{
+  "cases": [
+    {
+      "name": "greeting needs no tool",
+      "mode": "dm",
+      "user": "你好",
+      "tools": []
+    },
+    {
+      "name": "name is written to the profile",
+      "mode": "dm",
+      "user": "我叫 Eden",
+      "tools": ["context.profile.write"]
+    },
+    {
+      "name": "city is written to the profile",
+      "mode": "dm",
+      "user": "我住在上海",
+      "tools": ["context.profile.write"]
+    },
+    {
+      "name": "a preference is appended to memory",
+      "mode": "dm",
+      "user": "记住我喜欢茶",
+      "tools": ["context.memory.append"]
+    },
+    {
+      "name": "delegation lists agents then dispatches",
+      "mode": "dm",
+      "user": "让 Claude 跑测试",
+      "tools": ["context.agents.list", "context.agents.dispatch"]
+    },
+    {
+      "name": "a group request is sent into the room",
+      "mode": "group",
+      "user": "把这个需求派给群里",
+      "tools": ["chat.group.send"]
+    },
+    {
+      "name": "a group greeting does not dispatch",
+      "mode": "group",
+      "user": "大家好",
+      "tools": []
+    }
+  ]
+}
