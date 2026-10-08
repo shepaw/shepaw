@@ -121,9 +121,9 @@ String clipAccumulated(String text, {int maxChars = PeerInflightTurnRecord.maxAc
   return text.substring(text.length - maxChars);
 }
 
-/// Aligns with app suspendWaitHardCap (and stays above hub
-/// `TURN_RESULT_TTL_MS` so the replay window is fully usable).
-const Duration kPeerInflightTurnTtl = Duration(minutes: 150);
+/// Aligns with app suspendWaitHardCap so a turn paused on an approval
+/// can still be resumed after the phone was away for up to a day.
+const Duration kPeerInflightTurnTtl = Duration(hours: 25);
 
 bool isPeerInflightTurnExpired(
   PeerInflightTurnRecord record, {

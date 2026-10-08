@@ -192,12 +192,11 @@ class PeerAgentHostService {
   final Map<String, _HostTurnBuffer> _turnBuffers = {};
   Timer? _turnReapTimer;
 
-  /// 终态 turn 缓冲的保留时长。客户端侧挂起硬顶为 30min（且 App 进程重启后仍会
-  /// 从持久化 inflight 记录继续 resume），30min 足够覆盖「断线后重连」的窗口。
+  /// 终态 turn 缓冲的保留时长。回合已经结束，只给迟到的 resume 留一个短窗口。
   static const Duration hostTurnTerminalTtl = Duration(minutes: 30);
-  /// 仍在跑（streaming）的 turn 缓冲上限 —— 审批等待不受 30min 限制，可合法地
-  /// 停很久，但病理级驻留不应无限占内存。
-  static const Duration hostTurnLiveTtl = Duration(hours: 24);
+  /// 仍在跑（streaming）的 turn 缓冲上限 —— 审批可以等一天，缓冲要比这更长，
+  /// 但病理级驻留不应无限占内存。
+  static const Duration hostTurnLiveTtl = Duration(hours: 25);
 
   /// In-progress file pushes (fileId → buffer state).
   final Map<String, _IncomingPeerFile> _incomingFiles = {};

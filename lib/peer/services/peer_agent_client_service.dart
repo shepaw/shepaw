@@ -1513,9 +1513,9 @@ class PeerAgentClientService {
 
   /// 断连挂起（等待重连续传）的最长时长。挂起期间 idle 计时冻结（对端本来
   /// 就不可能有帧到达），超过该时长说明重连无望，判 turn 失败。
-  /// 须长于 hub 的审批期限 / TURN_RESULT_TTL_MS（默认 2h）—— hub 在期限内
-  /// 让 turn 继续跑并保留结果，app 先放弃会丢掉本可续传的回复。
-  static const Duration suspendWaitHardCap = Duration(minutes: 150);
+  /// 须长于 hub 的审批期限（一天）—— hub 在期限内让 turn 继续跑，
+  /// app 先放弃会丢掉本可续传的回复。
+  static const Duration suspendWaitHardCap = Duration(hours: 25);
 
   /// resume_req 发出后对端无应答的容忍时长（旧版本 hub 不支持续传时
   /// 不会回复），超时按「对端不支持续传」失败，避免无限悬挂。
