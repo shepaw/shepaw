@@ -37,8 +37,8 @@ mixin _LoadOps on _ChatControllerBase {
         case ChatLoadChannelAction.resolveFromAgent:
           final latestChannelId =
               await chatService.getLatestActiveChannelId(userId, agentId!);
-          currentChannelId =
-              latestChannelId ?? chatService.generateChannelId(userId, agentId!);
+          currentChannelId = latestChannelId ??
+              chatService.generateChannelId(userId, agentId!);
         case ChatLoadChannelAction.abort:
           isLoading = false;
           _notify();
@@ -66,7 +66,8 @@ mixin _LoadOps on _ChatControllerBase {
       }
 
       // Detect group mode & resolve agent info from channel metadata
-      final channel = await localDatabaseService.getChannelById(currentChannelId!);
+      final channel =
+          await localDatabaseService.getChannelById(currentChannelId!);
       // channel 已落库时按 channel 解析；全新会话（channel 尚未持久化）回退到
       // 构造参数 agentId，确保 peer agent 首次对话也能展示来源设备标签。
       sourceDeviceLabel = channel != null
@@ -122,7 +123,8 @@ mixin _LoadOps on _ChatControllerBase {
         if (agentName == null) {
           // Resolve agent name/avatar from channel when not provided
           // (e.g. navigating from search results by channelId only)
-          final agentMemberId = ChatLoadChannelPlanner.firstAgentMemberId(channel);
+          final agentMemberId =
+              ChatLoadChannelPlanner.firstAgentMemberId(channel);
           if (agentMemberId != null) {
             final agent =
                 await localDatabaseService.getRemoteAgentById(agentMemberId);
@@ -135,7 +137,8 @@ mixin _LoadOps on _ChatControllerBase {
       } else if (channel != null && !channel.isGroup && agentName == null) {
         isGroupMode = false;
         // Non-group, non-DM typed channel — resolve agent name from channel
-        final agentMemberId = ChatLoadChannelPlanner.firstAgentMemberId(channel);
+        final agentMemberId =
+            ChatLoadChannelPlanner.firstAgentMemberId(channel);
         if (agentMemberId != null) {
           final agent =
               await localDatabaseService.getRemoteAgentById(agentMemberId);
@@ -151,10 +154,12 @@ mixin _LoadOps on _ChatControllerBase {
 
       await _refreshWorkspaceUris();
 
-      final loadedMessages = List<Message>.from(await chatService.loadChannelMessages(
-        currentChannelId!,
-        limit: ChatMessageWindow.initialLimit,
-      ));
+      final loadedMessages = List<Message>.from(
+        await chatService.loadLocalChannelMessages(
+          currentChannelId!,
+          limit: ChatMessageWindow.initialLimit,
+        ),
+      );
 
       // 进页收信改到输入框解锁之后：信箱 HTTP 最长 15s，之前会把
       // isLoading 一直拉着，发送按钮转圈、输入框不可用。
@@ -166,32 +171,22 @@ mixin _LoadOps on _ChatControllerBase {
         if (agent != null) inboxAgents.add(agent);
       }
 
-      _preserveInMemoryPlanApprovalResponses();
-      if (isGroupMode) {
-        messages = loadedMessages;
-      } else {
-        _mergeDmStreamingPlaceholders(loadedMessages);
+      _installLoadedMessages(loadedMessages);
+      // 条数先看本机。主机 count 跟在历史页后面，不挡这一帧。
+      await _refreshLocalHasMoreOlderMessages();
+      final channelId = currentChannelId!;
+      // 本机已有记录就先画出来。本机是空的才等主机最近一页，
+      // 避免空会话先闪「还没有消息」。
+      final holdLoading = messages.isEmpty;
+      if (!holdLoading) {
+        isLoading = false;
+        _notify();
       }
-      rebuildMessageIdMap();
-      // 占位若被 merge 折叠进 DB 行（id 改名），立即回指锚点，恢复
-      // streaming 标记与后续 chunk 的应用目标。
-      streaming.repointAnchor(messages);
-      // 锚点已不在 messages（占位被替换且无宿主可回指）且没有存活任务 →
-      // 孤儿 streaming 会话。留着会让 streaming.isActive 永远为 true，
-      // 后续 reloadMessagesFromDB 全部被 defer（UI 卡「等待回复」，
-      // 重进才恢复）。活回合由后面的 reattachToActiveTask 重新 begin。
-      if (streaming.isOrphan(
-        messages: messages,
-        hasLiveTask: chatService.getActiveTask(currentChannelId!) != null,
-      )) {
-        streaming.clear();
-      }
-      await _refreshHasMoreOlderMessages();
-      _reapplyStashedPlanApprovalResponses();
-      _expireStaleCliApprovalCards();
-      // 本地历史一上屏就解锁输入。审批对账、信箱拉取都不该继续转圈。
-      isLoading = false;
-      _notify();
+      unawaited(_pullHostHistory(
+        epoch: epoch,
+        channelId: channelId,
+        holdLoading: holdLoading,
+      ));
 
       await PendingApprovalHub.instance.reconcileForChannel(
         currentChannelId!,
@@ -223,7 +218,8 @@ mixin _LoadOps on _ChatControllerBase {
         // 进程被杀后内存编排循环消亡：检查群工作空间最新编排状态，
         // 非终态时提示用户「发消息即可从断点继续」（幂等，同一轮次只提示一次）。
         // 切群再回来时循环仍在 ChatService 里，这里会直接跳过。
-        await chatService.maybeNotifyInterruptedOrchestration(currentChannelId!);
+        await chatService
+            .maybeNotifyInterruptedOrchestration(currentChannelId!);
         final interruptedInfo =
             chatService.getInterruptedTaskInfo(currentChannelId!);
         if (interruptedInfo != null) {
@@ -406,6 +402,137 @@ mixin _LoadOps on _ChatControllerBase {
     }
   }
 
+  /// 把一页查询结果装进列表，并接上还在流式输出的占位。
+  void _installLoadedMessages(List<Message> loadedMessages) {
+    _preserveInMemoryPlanApprovalResponses();
+    if (isGroupMode) {
+      messages = loadedMessages;
+    } else {
+      _mergeDmStreamingPlaceholders(loadedMessages);
+    }
+    rebuildMessageIdMap();
+    // 占位若被 merge 折叠进 DB 行（id 改名），立即回指锚点，恢复
+    // streaming 标记与后续 chunk 的应用目标。
+    streaming.repointAnchor(messages);
+    // 锚点已不在 messages（占位被替换且无宿主可回指）且没有存活任务 →
+    // 孤儿 streaming 会话。留着会让 streaming.isActive 永远为 true，
+    // 后续 reloadMessagesFromDB 全部被 defer（UI 卡「等待回复」，
+    // 重进才恢复）。活回合由后面的 reattachToActiveTask 重新 begin。
+    final channelId = currentChannelId;
+    if (channelId != null &&
+        streaming.isOrphan(
+          messages: messages,
+          hasLiveTask: chatService.getActiveTask(channelId) != null,
+        )) {
+      streaming.clear();
+    }
+    _reapplyStashedPlanApprovalResponses();
+    _expireStaleCliApprovalCards();
+  }
+
+  /// 本机页先上屏。主机最近一页回来再合并。本机为空时先要一小段预览再补全页。
+  Future<void> _pullHostHistory({
+    required int epoch,
+    required String channelId,
+    required bool holdLoading,
+  }) async {
+    var released = !holdLoading;
+    try {
+      if (holdLoading) {
+        final preview = await chatService.readHostChannelMessages(
+          channelId: channelId,
+          limit: ChatMessageWindow.hostPreviewLimit,
+          compact: true,
+        );
+        if (!_hostHistoryStillCurrent(epoch, channelId)) return;
+        if (preview != null && preview.isNotEmpty) {
+          _mergeHostIntoView(preview);
+        }
+        isLoading = false;
+        released = true;
+        _notify();
+        if (messages.isNotEmpty) {
+          _emit(RequestScrollToBottomEvent(force: true));
+        }
+        // 预览没回来就别马上再要更大的一页，否则失败要连等两个超时。
+        if (preview == null || preview.isEmpty) return;
+      }
+
+      final page = await chatService.readHostChannelMessages(
+        channelId: channelId,
+        limit: ChatMessageWindow.initialLimit,
+      );
+      if (!_hostHistoryStillCurrent(epoch, channelId)) return;
+      if (page != null && page.isNotEmpty) {
+        _mergeHostIntoView(page);
+        _notify();
+        // 人还在底部就跟上新进来的主机记录。已经往上翻了就不动。
+        _emit(RequestScrollToBottomEvent(force: holdLoading));
+        await PendingApprovalHub.instance.reconcileForChannel(
+          channelId,
+          messages,
+          workflowService: WorkflowService(db: localDatabaseService),
+        );
+      }
+      if (_hostHistoryStillCurrent(epoch, channelId)) {
+        await _refreshHasMoreOlderMessages();
+      }
+    } catch (e, st) {
+      LoggerService().warning(
+        'host history pull failed: $e\n$st',
+        tag: 'ChatController',
+        error: e,
+      );
+    } finally {
+      if (!released && _hostHistoryStillCurrent(epoch, channelId)) {
+        isLoading = false;
+        _notify();
+      }
+    }
+  }
+
+  bool _hostHistoryStillCurrent(int epoch, String channelId) =>
+      epoch == _messageLoadEpoch && currentChannelId == channelId;
+
+  void _mergeHostIntoView(List<Message> hostMessages) {
+    _preserveInMemoryPlanApprovalResponses();
+    messages = mergeHostAndLocalMessages(
+      List<Message>.from(messages),
+      hostMessages,
+    );
+    rebuildMessageIdMap();
+    streaming.repointAnchor(messages);
+    final channelId = currentChannelId;
+    if (channelId != null &&
+        streaming.isOrphan(
+          messages: messages,
+          hasLiveTask: chatService.getActiveTask(channelId) != null,
+        )) {
+      streaming.clear();
+    }
+    _reapplyStashedPlanApprovalResponses();
+    _expireStaleCliApprovalCards();
+  }
+
+  Future<void> _refreshLocalHasMoreOlderMessages() async {
+    final channelId = currentChannelId;
+    if (channelId == null) {
+      hasMoreOlderMessages = false;
+      return;
+    }
+    final total = await chatService.countLocalChannelMessages(channelId);
+    hasMoreOlderMessages = total > _persistedMessageCount();
+  }
+
+  int _persistedMessageCount() {
+    return messages.where((m) {
+      final id = m.id;
+      return !id.startsWith('streaming_') &&
+          !id.startsWith('group_streaming_') &&
+          !id.startsWith('hint_');
+    }).length;
+  }
+
   @override
   Future<void> _refreshHasMoreOlderMessages() async {
     final channelId = currentChannelId;
@@ -415,17 +542,10 @@ mixin _LoadOps on _ChatControllerBase {
     }
     try {
       final total = await chatService.countChannelMessages(channelId);
-      // In-memory may include optimistic streaming placeholders not in DB.
-      final persistedApprox = messages.where((m) {
-        final id = m.id;
-        return !id.startsWith('streaming_') &&
-            !id.startsWith('group_streaming_') &&
-            !id.startsWith('hint_');
-      }).length;
-      hasMoreOlderMessages = total > persistedApprox;
+      // 内存里可能有还没落库的流式占位，条数对比时去掉。
+      hasMoreOlderMessages = total > _persistedMessageCount();
     } catch (_) {
-      hasMoreOlderMessages =
-          messages.length >= ChatMessageWindow.initialLimit;
+      hasMoreOlderMessages = messages.length >= ChatMessageWindow.initialLimit;
     }
   }
 
@@ -465,7 +585,8 @@ mixin _LoadOps on _ChatControllerBase {
     if (targetAgentId == null) return null;
 
     try {
-      final agent = await localDatabaseService.getRemoteAgentById(targetAgentId);
+      final agent =
+          await localDatabaseService.getRemoteAgentById(targetAgentId);
       if (agent == null) return null;
       final peers = await _peerDeviceEntries();
       return PeerDeviceLabelResolver.clientPeerAgentLabel(
@@ -608,8 +729,7 @@ mixin _LoadOps on _ChatControllerBase {
             ),
           );
         }
-        final forHere =
-            newMsgs.where((m) => m.channelId == channelId).toList();
+        final forHere = newMsgs.where((m) => m.channelId == channelId).toList();
         if (forHere.isEmpty) return;
         messages.addAll(forHere);
         sortMessagesByTime(messages);

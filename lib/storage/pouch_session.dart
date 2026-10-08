@@ -165,6 +165,24 @@ class PouchSessionStore {
   @visibleForTesting
   static Future<PouchSession?> Function()? readOverride;
 
+  static PouchSession? _cached;
+  static bool _hasCache = false;
+  static int _cacheGeneration = 0;
+
+  /// 登录态进内存。进聊天页会反复问当前会话，不能每次都打钥匙串。
+  static void remember(PouchSession? session) {
+    _cacheGeneration++;
+    _cached = session;
+    _hasCache = true;
+  }
+
+  @visibleForTesting
+  static void debugResetCache() {
+    _cached = null;
+    _hasCache = false;
+    _cacheGeneration++;
+  }
+
   static Future<File> appFile() async {
     final docs = await AppPaths.documents();
     return File(p.join(docs.path, 'shepaw', 'pouch_session.json'));
@@ -173,7 +191,13 @@ class PouchSessionStore {
   static Future<PouchSession?> readActive() async {
     final override = readOverride;
     if (override != null) return override();
-    return PouchSessionStore(await appFile()).load();
+    if (_hasCache) return _cached;
+    final generation = _cacheGeneration;
+    final loaded = await PouchSessionStore(await appFile()).load();
+    if (generation != _cacheGeneration) return _cached;
+    _cached = loaded;
+    _hasCache = true;
+    return loaded;
   }
 
   Future<PouchSession?> load() async {
@@ -199,6 +223,7 @@ class PouchSessionStore {
       await vault.write(session.sessionId, session.token);
     }
     await _writeMeta(session);
+    PouchSessionStore.remember(session);
   }
 
   /// 退出登录：钥匙串里的 token 和会话文件一起清掉。
@@ -213,6 +238,7 @@ class PouchSessionStore {
       } catch (_) {}
       await file.delete();
     }
+    PouchSessionStore.remember(null);
   }
 
   Future<void> _writeMeta(PouchSession session) async {

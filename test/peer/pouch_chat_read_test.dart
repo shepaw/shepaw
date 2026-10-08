@@ -28,6 +28,38 @@ void main() {
     expect(decoded.messages.single.timestampMs, 10);
   });
 
+  test('compact preview drops progress text without changing the message', () {
+    final message = Message(
+      id: 'm1',
+      from: MessageFrom(id: 'a', type: 'agent', name: 'She'),
+      channelId: 'ch',
+      type: MessageType.text,
+      content: '正文',
+      timestampMs: 10,
+      metadata: {
+        'progress_content': '很长的思考过程',
+        'collapsible': true,
+      },
+    );
+
+    final encoded = PouchChatReadBody.encode(
+      messages: [message],
+      compact: true,
+    );
+    final wire = (encoded['messages'] as List).single as Map;
+    final meta = wire['metadata'] as Map;
+    expect(meta.containsKey('progress_content'), isFalse);
+    expect(meta['collapsible'], isTrue);
+    expect(message.metadata?['progress_content'], '很长的思考过程');
+
+    final decoded = PouchChatReadBody.decode(encoded);
+    expect(decoded.messages.single.content, '正文');
+    expect(
+      decoded.messages.single.metadata?.containsKey('progress_content'),
+      isFalse,
+    );
+  });
+
   test('interaction response completes the waiting turn', () async {
     final pending = PouchInteractionWait.wait('i1');
     PouchInteractionWait.complete({

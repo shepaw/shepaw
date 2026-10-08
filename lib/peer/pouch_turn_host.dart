@@ -51,39 +51,44 @@ class PouchTurnHost {
     final limit = (data['limit'] as num?)?.toInt() ?? 100;
     final op = data['op'] as String? ?? 'messages';
     final chat = ChatService();
+    final compact = data['compact'] == true;
     if (op == 'count') {
-      final count = await chat.countChannelMessages(channelId);
+      final count = await chat.countLocalChannelMessages(channelId);
       await send(PouchChatReadBody.encode(count: count));
       return;
     }
     if (op == 'older') {
       final before = data['before_created_at'] as String? ?? '';
-      final messages = await chat.loadOlderChannelMessages(
+      final messages = await chat.loadLocalOlderChannelMessages(
         channelId,
         beforeCreatedAt: before,
         limit: limit,
       );
-      await send(PouchChatReadBody.encode(messages: messages));
+      await send(
+          PouchChatReadBody.encode(messages: messages, compact: compact));
       return;
     }
     if (op == 'including') {
-      final messages = await chat.loadChannelMessagesIncluding(
+      final messages = await chat.loadLocalChannelMessagesIncluding(
         channelId,
         data['message_id'] as String? ?? '',
         paddingAfter: limit,
       );
-      await send(PouchChatReadBody.encode(messages: messages));
+      await send(
+          PouchChatReadBody.encode(messages: messages, compact: compact));
       return;
     }
     if (op == 'one') {
       final message =
-          await chat.getMessageById(data['message_id'] as String? ?? '');
+          await chat.loadLocalMessageById(data['message_id'] as String? ?? '');
       await send(PouchChatReadBody.encode(
         messages: message == null ? const [] : [message],
+        compact: compact,
       ));
       return;
     }
-    final messages = await chat.loadChannelMessages(channelId, limit: limit);
-    await send(PouchChatReadBody.encode(messages: messages));
+    final messages =
+        await chat.loadLocalChannelMessages(channelId, limit: limit);
+    await send(PouchChatReadBody.encode(messages: messages, compact: compact));
   }
 }

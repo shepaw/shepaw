@@ -64,7 +64,8 @@ class PouchTurnRelay {
     void Function(String agentId, String agentName)? onAgentStart,
     void Function(String agentId, String agentName, bool skipped)? onAgentDone,
     void Function()? onAllDone,
-    void Function(String agentId, String agentName, Map<String, dynamic> metadata)?
+    void Function(
+            String agentId, String agentName, Map<String, dynamic> metadata)?
         onMessageMetadata,
     Future<Map<String, dynamic>?> Function(
       String agentId,
@@ -188,8 +189,9 @@ class PouchTurnRelay {
     final agentMessageId = (done['agent_message_id'] as String?)?.trim();
     return (
       text: buffer.toString(),
-      agentMessageId:
-          agentMessageId == null || agentMessageId.isEmpty ? null : agentMessageId,
+      agentMessageId: agentMessageId == null || agentMessageId.isEmpty
+          ? null
+          : agentMessageId,
     );
   }
 
@@ -201,6 +203,7 @@ class PouchTurnRelay {
     int? limit,
     String? beforeCreatedAt,
     String? messageId,
+    bool compact = false,
   }) async {
     final done = await _forward(
       hostPeerId: hostPeerId,
@@ -211,6 +214,7 @@ class PouchTurnRelay {
         if (limit != null) 'limit': limit,
         if (beforeCreatedAt != null) 'before_created_at': beforeCreatedAt,
         if (messageId != null) 'message_id': messageId,
+        if (compact) 'compact': true,
       },
       onEvent: (_) {},
     );
@@ -348,19 +352,35 @@ class PouchChatReadBody {
   static Map<String, dynamic> encode({
     List<Message> messages = const [],
     int? count,
+    bool compact = false,
   }) =>
       <String, dynamic>{
         'kind': 'done',
         if (count != null) 'count': count,
         'messages': [
           for (final message in messages)
-            <String, dynamic>{
-              ...message.toJson(),
-              'type': _wireType(message.type),
-              if (message.replyTo != null) 'reply_to': message.replyTo,
-            },
+            _wireMessage(message, compact: compact),
         ],
       };
+
+  /// 预览帧去掉思考/工具折叠块。它和正文一样大，首屏不靠它。
+  static Map<String, dynamic> _wireMessage(
+    Message message, {
+    required bool compact,
+  }) {
+    final json = <String, dynamic>{
+      ...message.toJson(),
+      'type': _wireType(message.type),
+      if (message.replyTo != null) 'reply_to': message.replyTo,
+    };
+    if (!compact) return json;
+    final meta = json['metadata'];
+    if (meta is! Map || !meta.containsKey('progress_content')) return json;
+    final copy = Map<String, dynamic>.from(meta);
+    copy.remove('progress_content');
+    json['metadata'] = copy.isEmpty ? null : copy;
+    return json;
+  }
 
   static PouchChatReadBody decode(Map<String, dynamic> done) {
     final raw = done['messages'];

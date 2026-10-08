@@ -96,7 +96,8 @@ List<Message> mergeHostAndLocalMessages(
   final echoedHostIds = <String>{
     for (final hostMessage in host)
       if (local.any(
-        (item) => item.id != hostMessage.id && _samePouchTurn(item, hostMessage),
+        (item) =>
+            item.id != hostMessage.id && _samePouchTurn(item, hostMessage),
       ))
         hostMessage.id,
   };
@@ -244,7 +245,6 @@ class ChatService {
     getMessageById: (id) => getMessageById(id),
   );
 
-
   /// Sub-service: membership join/leave event log + optional admin perception
   /// when a departing member still has in-flight work.
   late final GroupMembershipPerceptionScheduler
@@ -287,7 +287,6 @@ class ChatService {
     isChannelOrchestrating: (channelId) =>
         _groupOrchestratingChannels.contains(channelId),
   );
-
 
   /// Best-effort workspace persistence of one group event (mutual-perception
   /// event log). Failures are logged and swallowed.
@@ -569,15 +568,13 @@ class ChatService {
     required String targetChannelId,
     required List<EventEnvelope> events,
   }) async {
-    final lines = events
-        .map((e) {
-          final summary = e.payload['summary'];
-          if (summary is String && summary.isNotEmpty) {
-            return '- $summary (${e.type})';
-          }
-          return '- ${e.type}';
-        })
-        .join('\n');
+    final lines = events.map((e) {
+      final summary = e.payload['summary'];
+      if (summary is String && summary.isNotEmpty) {
+        return '- $summary (${e.type})';
+      }
+      return '- ${e.type}';
+    }).join('\n');
 
     final cliAllowlist = perceptionCliAllowlistForEvents(
       events,
@@ -595,8 +592,7 @@ class ChatService {
         userName: LocalUserIdentity.displayName,
         channelId: targetChannelId,
         executionMode: 'event_perception',
-        dmSystemPrompt:
-            '【系统事件通知回合】这不是用户主动发的消息。请用简短中文说明发生了什么，'
+        dmSystemPrompt: '【系统事件通知回合】这不是用户主动发的消息。请用简短中文说明发生了什么，'
             '并在设备配对场景建议用户确认后调用 peer accept 或 peer reject。'
             '不要展开无关话题。',
       ),
@@ -1146,6 +1142,7 @@ class ChatService {
     required String userName,
     String? channelId,
     String? replyToId,
+
     /// 引用回复时选中的部分文字（可选）；为空表示引用整条消息。
     String? replyQuoteText,
     String? dmSystemPrompt,
@@ -1716,10 +1713,43 @@ class ChatService {
       userId,
       agentId,
     );
-    final channelId = activeChannelId ??
-        _historyService.generateChannelId(userId, agentId);
+    final channelId =
+        activeChannelId ?? _historyService.generateChannelId(userId, agentId);
     return loadChannelMessages(channelId, limit: limit);
   }
+
+  /// 只读本机库。主机回答 `pouch_chat_read` 时用这条，避免再按客户端转一跳。
+  Future<List<Message>> loadLocalChannelMessages(String channelId,
+          {int limit = 100}) =>
+      _historyService.loadChannelMessages(channelId, limit: limit);
+
+  Future<List<Message>> loadLocalOlderChannelMessages(
+    String channelId, {
+    required String beforeCreatedAt,
+    int limit = 50,
+  }) =>
+      _historyService.loadOlderChannelMessages(
+        channelId,
+        beforeCreatedAt: beforeCreatedAt,
+        limit: limit,
+      );
+
+  Future<List<Message>> loadLocalChannelMessagesIncluding(
+    String channelId,
+    String messageId, {
+    int paddingAfter = 30,
+  }) =>
+      _historyService.loadChannelMessagesIncluding(
+        channelId,
+        messageId,
+        paddingAfter: paddingAfter,
+      );
+
+  Future<Message?> loadLocalMessageById(String messageId) =>
+      _historyService.getMessageById(messageId);
+
+  Future<int> countLocalChannelMessages(String channelId) =>
+      _historyService.countChannelMessages(channelId);
 
   /// Load messages from a channel。本机读本地库，客户端向储物袋主机要同一页。
   Future<List<Message>> loadChannelMessages(String channelId,
@@ -1759,22 +1789,18 @@ class ChatService {
     }
   }
 
-  Future<List<Message>> _readMessages(
-    String channelId, {
-    required String op,
+  /// 主机上的同一页。本机就是主机、没登录、或请求失败时返回 null，调用方留本机记录。
+  Future<List<Message>?> readHostChannelMessages({
+    required String channelId,
+    String op = 'messages',
     int limit = 100,
     String? beforeCreatedAt,
+    String? messageId,
+    bool compact = false,
   }) async {
-    final local = op == 'older'
-        ? await _historyService.loadOlderChannelMessages(
-            channelId,
-            beforeCreatedAt: beforeCreatedAt ?? '',
-            limit: limit,
-          )
-        : await _historyService.loadChannelMessages(channelId, limit: limit);
     try {
       final route = await PouchTurnRelay.currentRoute();
-      if (route.runLocal) return local;
+      if (route.runLocal) return null;
       final body = await PouchTurnRelay.instance
           .readChat(
             hostPeerId: route.hostPeerId!,
@@ -1782,14 +1808,39 @@ class ChatService {
             channelId: channelId,
             limit: limit,
             beforeCreatedAt: beforeCreatedAt,
+            messageId: messageId,
+            compact: compact,
           )
           .timeout(const Duration(seconds: 8));
-      // 会话列表仍读本机库。主机上的聊天日志是后加的，旧记录只在本机。
-      // 主机没有这一页时用本机的，两边都有时按 id 合并。
-      return mergeHostAndLocalMessages(local, body.messages);
+      return body.messages;
     } catch (_) {
-      return local;
+      return null;
     }
+  }
+
+  Future<List<Message>> _readMessages(
+    String channelId, {
+    required String op,
+    int limit = 100,
+    String? beforeCreatedAt,
+  }) async {
+    final local = op == 'older'
+        ? await loadLocalOlderChannelMessages(
+            channelId,
+            beforeCreatedAt: beforeCreatedAt ?? '',
+            limit: limit,
+          )
+        : await loadLocalChannelMessages(channelId, limit: limit);
+    final host = await readHostChannelMessages(
+      channelId: channelId,
+      op: op,
+      limit: limit,
+      beforeCreatedAt: beforeCreatedAt,
+    );
+    if (host == null || host.isEmpty) return local;
+    // 会话列表仍读本机库。主机上的聊天日志是后加的，旧记录只在本机。
+    // 主机没有这一页时用本机的，两边都有时按 id 合并。
+    return mergeHostAndLocalMessages(local, host);
   }
 
   /// Load recent messages sufficient to include [messageId] for scroll-to-search.
@@ -2233,7 +2284,6 @@ class ChatService {
     return body.messages.isEmpty ? null : body.messages.first;
   }
 
-
   /// Notify group members about a membership change (join/leave).
   ///
   /// Persists a system message, refreshes the UI stream, and sends an ACP
@@ -2282,6 +2332,7 @@ class ChatService {
     bool mentionOnlyMode = false,
     String? adminAgentId,
     String? replyToId,
+
     /// 引用回复时选中的部分文字（可选）；为空表示引用整条消息。
     String? replyQuoteText,
     bool flowMode = false,
@@ -2683,8 +2734,7 @@ class ChatService {
         if (adminAgent == null) return;
         // M2: 占用该 admin 的全局回合锁（抢占），让后台感知回合让位。
         final holderId =
-            GroupEventPerceptionScheduler.beginExplicitAdminTurn(
-                adminAgent.id);
+            GroupEventPerceptionScheduler.beginExplicitAdminTurn(adminAgent.id);
         activeExec.onAgentStart?.call(adminAgent.id, adminAgent.name);
         try {
           final summaryHistory =
@@ -2934,10 +2984,9 @@ class ChatService {
       // 成员看到上一阶段的聊天输出（而不只依赖 artifact URI + 事件 digest）。
       // L6：与编排路径一致过滤 system/permissionAudit，避免成员上下文把
       // 「X 加入了群聊」等系统消息错标为 [System(User)]。
-      var historyMessages =
-          (await loadChannelMessages(channelId, limit: 50))
-              .where(ChatHistoryContent.shouldReplay)
-              .toList();
+      var historyMessages = (await loadChannelMessages(channelId, limit: 50))
+          .where(ChatHistoryContent.shouldReplay)
+          .toList();
 
       // §6.3：工作流跨步骤累积 pouch:// 引用，注入后续步骤 instruction。
       final workflowArtifactLines = <String>[];
@@ -3332,10 +3381,9 @@ class ChatService {
 
         // M2：阶段开始前刷新历史快照，后续阶段成员能看到已执行阶段的聊天输出。
         // L6：同样过滤 system/permissionAudit（与上方初始加载一致）。
-        historyMessages =
-            (await loadChannelMessages(channelId, limit: 50))
-                .where(ChatHistoryContent.shouldReplay)
-                .toList();
+        historyMessages = (await loadChannelMessages(channelId, limit: 50))
+            .where(ChatHistoryContent.shouldReplay)
+            .toList();
 
         // 被动事件：成员感知「工作流进入新阶段」（不唤醒管理员，仅注入上下文）。
         _emitWorkflowMacroEvent(
@@ -3701,8 +3749,8 @@ class ChatService {
 
   /// 页面退出时调用，仅关闭 UI 流，ACP 连接保持存活
   void detachUI() {
-    for (final timer in (_channelUpdateDebounceTimers?.values ??
-        const <Timer>[])) {
+    for (final timer
+        in (_channelUpdateDebounceTimers?.values ?? const <Timer>[])) {
       timer.cancel();
     }
     _channelUpdateDebounceTimers?.clear();

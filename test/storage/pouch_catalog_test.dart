@@ -14,6 +14,7 @@ void main() {
   });
 
   tearDown(() async {
+    PouchSessionStore.debugResetCache();
     if (await root.exists()) await root.delete(recursive: true);
   });
 
@@ -65,5 +66,24 @@ void main() {
     final loaded = await PouchSessionStore(file).load();
     expect(loaded?.pouchId, 'p1');
     expect(loaded?.hostPeerId, 'peer-1');
+  });
+
+  test('readActive 复用内存里的登录态', () async {
+    PouchSessionStore.debugResetCache();
+    const session = PouchSession(
+      hubUrl: 'http://127.0.0.1:4000',
+      pouchId: 'p1',
+      pouchName: '家里',
+      hostPeerId: 'peer-1',
+    );
+    PouchSessionStore.remember(session);
+    addTearDown(PouchSessionStore.debugResetCache);
+
+    final read = await PouchSessionStore.readActive();
+    expect(read?.hostPeerId, 'peer-1');
+    expect(identical(read, session), isTrue);
+
+    PouchSessionStore.remember(null);
+    expect(await PouchSessionStore.readActive(), isNull);
   });
 }
