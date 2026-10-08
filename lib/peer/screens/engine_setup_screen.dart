@@ -56,6 +56,9 @@ class EngineSetupScreen extends StatelessWidget {
                     ? l10n.addAgent_available
                     : l10n.addAgent_unavailable,
                 positive: engine.available,
+                color: engine.available
+                    ? EngineStatusChip.availableColor(context)
+                    : null,
               ),
             ],
           ),
@@ -140,22 +143,172 @@ class EngineStatusChip extends StatelessWidget {
     super.key,
     required this.label,
     required this.positive,
+    this.color,
   });
 
   final String label;
   final bool positive;
 
+  /// 指定后覆盖正/负态的默认色。「可用」传入 [availableColor]。
+  final Color? color;
+
+  /// 「可用」标签的绿色。深色模式用更亮的绿，保证在深色底上还能看清。
+  static Color availableColor(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return dark ? const Color(0xFF81C784) : const Color(0xFF2E7D32);
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final color = positive ? scheme.primary : scheme.error;
+    final resolved = color ?? (positive ? scheme.primary : scheme.error);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
+        color: resolved.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Text(label, style: TextStyle(color: color, fontSize: 11)),
+      child: Text(label, style: TextStyle(color: resolved, fontSize: 11)),
+    );
+  }
+}
+
+/// 添加 Agent 实例时用来选引擎。可用项写入选择，不可用项打开配置，不改当前值。
+class AgentEngineDropdown extends StatelessWidget {
+  const AgentEngineDropdown({
+    super.key,
+    required this.engines,
+    required this.selectedId,
+    required this.enabled,
+    required this.onSelected,
+    required this.onUnavailable,
+  });
+
+  final List<PeerEngineEntry> engines;
+  final String? selectedId;
+  final bool enabled;
+  final ValueChanged<PeerEngineEntry> onSelected;
+  final ValueChanged<PeerEngineEntry> onUnavailable;
+
+  @override
+  Widget build(BuildContext context) {
+    if (engines.isEmpty) return const SizedBox.shrink();
+    final l10n = AppLocalizations.of(context);
+    final selected =
+        engines.any((engine) => engine.id == selectedId) ? selectedId : null;
+    return InputDecorator(
+      decoration: const InputDecoration(
+        isDense: true,
+        contentPadding: EdgeInsets.symmetric(vertical: 8),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: selected,
+          isExpanded: true,
+          itemHeight: null,
+          menuMaxHeight: 360,
+          hint: Text(l10n.addAgent_engine),
+          borderRadius: BorderRadius.circular(8),
+          selectedItemBuilder: (context) => [
+            for (final engine in engines) _label(context, engine),
+          ],
+          items: [
+            for (final engine in engines)
+              DropdownMenuItem<String>(
+                value: engine.id,
+                child: _menuEntry(context, engine),
+              ),
+          ],
+          onChanged: enabled ? (id) => _onChanged(id) : null,
+        ),
+      ),
+    );
+  }
+
+  void _onChanged(String? id) {
+    if (id == null) return;
+    final engine = engines.where((item) => item.id == id).firstOrNull;
+    if (engine == null) return;
+    if (!engine.available) {
+      onUnavailable(engine);
+      return;
+    }
+    onSelected(engine);
+  }
+
+  Widget _label(BuildContext context, PeerEngineEntry engine) {
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: Row(
+        children: [
+          EngineAvatar(engine: engine, size: 28),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              engine.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 8),
+          _availabilityChip(context, engine),
+        ],
+      ),
+    );
+  }
+
+  Widget _menuEntry(BuildContext context, PeerEngineEntry engine) {
+    final l10n = AppLocalizations.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            EngineAvatar(engine: engine, size: 28),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                engine.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 8),
+            _availabilityChip(context, engine),
+            if (!engine.available) ...[
+              const SizedBox(width: 8),
+              Text(
+                l10n.addAgent_configure,
+                style: TextStyle(color: scheme.primary, fontSize: 13),
+              ),
+            ],
+          ],
+        ),
+        if (!engine.available && engine.unavailableReason.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(left: 38, top: 2),
+            child: Text(
+              engine.unavailableReason,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _availabilityChip(BuildContext context, PeerEngineEntry engine) {
+    final l10n = AppLocalizations.of(context);
+    return EngineStatusChip(
+      label: engine.available
+          ? l10n.addAgent_available
+          : l10n.addAgent_unavailable,
+      positive: engine.available,
+      color:
+          engine.available ? EngineStatusChip.availableColor(context) : null,
     );
   }
 }

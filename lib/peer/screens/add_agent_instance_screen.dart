@@ -62,7 +62,6 @@ class AddAgentInstanceScreen extends StatefulWidget {
 
 class _AddAgentInstanceScreenState extends State<AddAgentInstanceScreen> {
   final _nameController = TextEditingController();
-  final _engineQuery = TextEditingController();
   final _extraControllers = <TextEditingController>[];
 
   List<PairedPeer> _devices = const [];
@@ -121,7 +120,6 @@ class _AddAgentInstanceScreenState extends State<AddAgentInstanceScreen> {
       );
     }
     _nameController.dispose();
-    _engineQuery.dispose();
     for (final field in _extraControllers) {
       field.dispose();
     }
@@ -261,18 +259,6 @@ class _AddAgentInstanceScreenState extends State<AddAgentInstanceScreen> {
       if (engine.id == _engineId) return engine;
     }
     return null;
-  }
-
-  List<PeerEngineEntry> get _visibleEngines {
-    return _engines
-        .where(
-          (engine) => matchEngineKeyword(
-            id: engine.id,
-            name: engine.name,
-            query: _engineQuery.text,
-          ),
-        )
-        .toList();
   }
 
   void _applyNameFromCwd() {
@@ -483,19 +469,21 @@ class _AddAgentInstanceScreenState extends State<AddAgentInstanceScreen> {
                     ),
                   Text(l10n.addAgent_engine,
                       style: Theme.of(context).textTheme.titleSmall),
-                  if (_engines.length > 8) ...[
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _engineQuery,
-                      decoration: InputDecoration(
-                        hintText: l10n.addAgent_searchEngines,
-                        prefixIcon: const Icon(Icons.search),
-                      ),
-                      onChanged: (_) => setState(() {}),
-                    ),
-                  ],
                   const SizedBox(height: 8),
-                  ..._visibleEngines.map(_engineTile),
+                  AgentEngineDropdown(
+                    engines: _engines,
+                    selectedId: _engineId,
+                    enabled: !_submitting,
+                    onSelected: (engine) {
+                      if (!_hostOnline) return;
+                      setState(() {
+                        _engineId = engine.id;
+                        AddAgentInstanceScreen.draft = null;
+                        _applySessionDefault();
+                      });
+                    },
+                    onUnavailable: (engine) => unawaited(_openSetup(engine)),
+                  ),
                 ],
                 if (engine != null &&
                     engine.available &&
@@ -635,62 +623,6 @@ class _AddAgentInstanceScreenState extends State<AddAgentInstanceScreen> {
             onTap: _submitting ? null : () => unawaited(_selectDevice(peer.id)),
           ),
       ],
-    );
-  }
-
-  Widget _engineTile(PeerEngineEntry engine) {
-    final l10n = AppLocalizations.of(context);
-    final selected = engine.id == _engineId && engine.available;
-    final usable = engine.available && _hostOnline && !_submitting;
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: EngineAvatar(engine: engine),
-      title: Text(engine.name),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 4),
-          Wrap(
-            spacing: 6,
-            runSpacing: 4,
-            children: [
-              EngineStatusChip(
-                label:
-                    _hostOnline ? l10n.addAgent_online : l10n.addAgent_offline,
-                positive: _hostOnline,
-              ),
-              EngineStatusChip(
-                label: engine.available
-                    ? l10n.addAgent_available
-                    : l10n.addAgent_unavailable,
-                positive: engine.available,
-              ),
-            ],
-          ),
-          if (!engine.available && engine.unavailableReason.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(engine.unavailableReason,
-                  style: const TextStyle(fontSize: 12)),
-            ),
-        ],
-      ),
-      trailing: engine.available
-          ? (selected ? const Icon(Icons.check) : null)
-          : TextButton(
-              onPressed: () => unawaited(_openSetup(engine)),
-              child: Text(l10n.addAgent_configure),
-            ),
-      onTap: usable
-          ? () {
-              setState(() {
-                _engineId = engine.id;
-                AddAgentInstanceScreen.draft = null;
-              });
-              _applySessionDefault();
-              setState(() {});
-            }
-          : null,
     );
   }
 
