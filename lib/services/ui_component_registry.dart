@@ -241,11 +241,17 @@ class UIComponentRegistry {
       name: 'form',
       description:
           'Present a structured form with various field types '
-          '(text_input, single_select, multi_select, file_upload).',
+          '(text_input, textarea, select, radio, checkbox, single_select, multi_select, file_upload).',
       acpNotificationMethod: ACPMethod.uiForm,
       isToolCallable: true,
       usageNotes:
-          'Field types: "text_input", "single_select", "multi_select", "file_upload". '
+          'Field types: "text_input" (alias "text"), "textarea", '
+          '"select"/"dropdown" (one option, dropdown), '
+          '"radio"/"single_select" (one option, radio list), '
+          '"checkbox" (yes/no when options is omitted; checkbox group when options is set), '
+          '"multi_select"/"checkbox_group", "file_upload". '
+          'Option id or value is accepted; a plain string is also an option. '
+          '"default" pre-fills a field and counts toward required. '
           'The user\'s response will be: "Form submitted: field1: value1; field2: value2; ..."',
       parameterSchema: {
         'type': 'object',
@@ -271,25 +277,53 @@ class UIComponentRegistry {
                   'type': 'string',
                   'enum': [
                     'text_input',
+                    'text',
+                    'textarea',
+                    'select',
+                    'dropdown',
+                    'radio',
+                    'radio_group',
                     'single_select',
+                    'checkbox',
+                    'checkbox_group',
                     'multi_select',
                     'file_upload',
                   ],
+                  'description':
+                      'text_input/text: one line. textarea: multiline. '
+                      'select/dropdown: pick one from a menu. '
+                      'radio/radio_group/single_select: pick one from radio buttons. '
+                      'checkbox without options: a single yes/no box (required means it must be checked). '
+                      'checkbox with options, checkbox_group, or multi_select: pick any number of options. '
+                      'file_upload: attach files.',
                 },
                 'field_id': {'type': 'string'},
+                'name': {
+                  'type': 'string',
+                  'description': 'Alias of field_id.',
+                },
                 'label': {'type': 'string'},
                 'required': {'type': 'boolean'},
                 'placeholder': {'type': 'string'},
+                'default': {
+                  'description':
+                      'Initial value. Counts as filled for required validation.',
+                },
                 'max_lines': {'type': 'integer'},
                 'options': {
                   'type': 'array',
+                  'description':
+                      'Choices for select, radio, and checkbox groups. '
+                      'Each item is {"id"|"value", "label"} or a plain string.',
                   'items': {
                     'type': 'object',
                     'properties': {
                       'id': {'type': 'string'},
+                      'value': {'type': 'string'},
                       'label': {'type': 'string'},
+                      'description': {'type': 'string'},
                     },
-                    'required': ['id', 'label'],
+                    'required': ['label'],
                   },
                 },
                 'accept_types': {
@@ -661,7 +695,16 @@ Present a structured form with multiple fields.
 }
 >>>
 ```
-- Field types: "text_input", "single_select", "multi_select", "file_upload"
+- Field types:
+  - `text_input` / `text`: single-line text. `textarea` is multiline.
+  - `radio` / `single_select` / `radio_group`: pick exactly one, shown as radio buttons.
+  - `select` / `dropdown`: pick exactly one, shown as a dropdown.
+  - `checkbox` with `options`, or `multi_select` / `checkbox_group`: pick any number of options.
+  - `checkbox` without `options`: a single yes/no box. Required means it must be checked.
+  - `file_upload`
+- An option is `{"id": "...", "label": "..."}` or `{"value": "...", "label": "..."}`. A plain string is also an option.
+- Field identity is `field_id` or `name`.
+- `default` pre-fills the control and counts toward required validation.
 - The user's response will be: "Form submitted: field1: value1; field2: value2; ..."
 
 #### 6. file_message

@@ -5,15 +5,17 @@ import 'file_upload_bubble.dart';
 /// Widget that renders a composite form inline in a message bubble.
 ///
 /// Supports mixing multiple field types in a single form:
-/// - text_input / text: free-text input field
-/// - single_select / radio_group: radio-style selection
-/// - multi_select / checkbox_group: checkbox-style selection
+/// - text_input / text / textarea: free-text input field
+/// - select / dropdown: dropdown, pick one
+/// - radio / single_select / radio_group: radio list, pick one
+/// - checkbox (no options): a single yes/no box
+/// - checkbox (with options) / multi_select / checkbox_group: checkbox list
 /// - file_upload: file picker
-/// - action_buttons: action buttons (within form context)
 ///
 /// The widget is lenient about field/option shape so it can render both
 /// the legacy Shepaw wire format (`field_id`, option `id`) and the newer
 /// form format emitted by non-blocking agents (`name`, option `value`).
+/// `default` / `value` pre-fills a control and counts toward required.
 ///
 /// All fields are collected and submitted together as a single form response.
 class FormBubble extends StatefulWidget {
@@ -34,41 +36,248 @@ class _FormBubbleState extends State<FormBubble> {
   final Map<String, dynamic> _fieldValues = {};
   final Map<String, TextEditingController> _textControllers = {};
 
-  /// The stable per-field key used for storing the user's input.
-  ///
-  /// Accepts both the legacy `field_id` and the newer `name` keys so the
-  /// widget renders forms emitted by either variant of the agent SDK.
-  static String _fieldKey(Map<String, dynamic> field) {
-    final fid = field['field_id'] as String?;
-    if (fid != null && fid.isNotEmpty) return fid;
-    final name = field['name'] as String?;
-    return name ?? '';
+  @override
+  void initState() {
+    super.initState();
+    _seedDefaults(widget.formData);
   }
 
-  /// Canonicalise the field `type` into one of the values this widget
-  /// knows how to render. Returns the original string if no mapping
-  /// applies so the "Unknown field type" fallback still works.
-  static String _canonicalFieldType(String type) {
+  @override
+  void didUpdateWidget(FormBubble oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.formData, widget.formData)) {
+      _seedDefaults(widget.formData);
+    }
+  }
+
+  /// The stable per-field key used for storing the user's input.
+  ///
+  /// Accepts both the legacy `field_id` and the newer `name` / `id` keys so
+  /// the widget renders forms emitted by either variant of the agent SDK.
+  static String _fieldKey(Map<String, dynamic> field) {
+    for (final key in const ['field_id', 'name', 'id', 'key']) {
+      final text = _asString(field[key]);
+      if (text != null && text.isNotEmpty) return text;
+    }
+    return '';
+  }
+
+  static String _rawType(Map<String, dynamic> field) {
+    return (_asString(field['type']) ?? 'text_input').trim().toLowerCase();
+  }
+
+  /// Canonicalise [type] into a kind this widget knows how to render.
+  ///
+  /// A bare `checkbox` is a yes/no box; the same type with `options` is a
+  /// checkbox group. Unknown types are returned as-is so the fallback still
+  /// shows "Unknown field type".
+  static String _fieldKind(Map<String, dynamic> field) {
+    final type = _rawType(field);
+    if (type == 'checkbox' || type == 'check') {
+      final options = field['options'];
+      if (options is List && options.isNotEmpty) return 'multi_select';
+      return 'checkbox';
+    }
     switch (type) {
+      case 'radio':
       case 'radio_group':
+      case 'single_select':
+      case 'singleselect':
         return 'single_select';
+      case 'select':
+      case 'dropdown':
+      case 'enum':
+        return 'select';
       case 'checkbox_group':
+      case 'checkboxes':
+      case 'multi_select':
+      case 'multiselect':
+      case 'multi-select':
         return 'multi_select';
+      case 'switch':
+      case 'toggle':
+      case 'boolean':
+      case 'bool':
+        return 'checkbox';
+      case 'textarea':
+      case 'multiline':
+        return 'textarea';
       case 'text':
+      case 'text_input':
+      case 'input':
+      case 'string':
+      case 'number':
+      case 'integer':
+      case 'email':
+      case 'password':
+      case 'url':
+      case 'tel':
+      case 'phone':
         return 'text_input';
       default:
         return type;
     }
   }
 
-  /// The stable per-option key; accepts both the legacy `id` and the
-  /// newer `value` shapes.
-  static String _optionKey(Map<String, dynamic> option) {
-    final id = option['id'] as String?;
-    if (id != null && id.isNotEmpty) return id;
-    final value = option['value'] as String?;
-    return value ?? '';
+  static bool _isRequired(Map<String, dynamic> field) {
+    final raw = field['required'];
+    if (raw is bool) return raw;
+    if (raw is num) return raw != 0;
+    final text = _asString(raw)?.trim().toLowerCase();
+    return text == 'true' || text == '1' || text == 'yes' || text == 'required';
   }
+
+  static String? _asString(dynamic value) {
+    if (value == null) return null;
+    if (value is String) return value;
+    return '$value';
+  }
+
+  static bool _asBool(dynamic value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    final text = _asString(value)?.trim().toLowerCase();
+    return text == 'true' || text == '1' || text == 'yes' || text == 'on';
+  }
+
+  static List<String> _asStringList(dynamic value) {
+    if (value is List) {
+      return value
+          .map(_asString)
+          .whereType<String>()
+          .where((item) => item.isNotEmpty)
+          .toList();
+    }
+    final one = _asString(value);
+    if (one == null || one.isEmpty) return <String>[];
+    return [one];
+  }
+
+  static bool _isBlank(dynamic value) {
+    if (value == null) return true;
+    if (value is String) return value.trim().isEmpty;
+    if (value is List) return value.isEmpty;
+    return false;
+  }
+
+  /// The stable per-option key; accepts both the legacy `id` and the
+  /// newer `value` shapes, including non-string ids.
+  static String _optionKey(Map<String, dynamic> option) {
+    for (final key in const ['id', 'value', 'name']) {
+      final text = _asString(option[key]);
+      if (text != null && text.isNotEmpty) return text;
+    }
+    return '';
+  }
+
+  static String _optionLabel(Map<String, dynamic> option, String fallback) {
+    for (final key in const ['label', 'text', 'name']) {
+      final text = _asString(option[key]);
+      if (text != null && text.isNotEmpty) return text;
+    }
+    return fallback;
+  }
+
+  /// Options may be maps (`id`/`value` + `label`) or plain strings.
+  static List<Map<String, dynamic>> _normalizeOptions(dynamic raw) {
+    if (raw is! List) return const [];
+    final out = <Map<String, dynamic>>[];
+    final seen = <String>{};
+    for (var i = 0; i < raw.length; i++) {
+      final item = raw[i];
+      final Map<String, dynamic> option;
+      if (item is Map) {
+        option = Map<String, dynamic>.from(item);
+      } else {
+        final text = _asString(item);
+        if (text == null || text.isEmpty) continue;
+        option = {'id': text, 'label': text};
+      }
+      var id = _optionKey(option);
+      if (id.isEmpty) {
+        id = '__idx_$i';
+        option['id'] = id;
+      }
+      if (!seen.add(id)) continue;
+      out.add(option);
+    }
+    return out;
+  }
+
+  static dynamic _rawInitial(Map<String, dynamic> field) {
+    for (final key in const [
+      'default',
+      'default_value',
+      'initial',
+      'initial_value',
+      'value',
+    ]) {
+      if (!field.containsKey(key)) continue;
+      final raw = field[key];
+      if (raw != null) return raw;
+    }
+    return null;
+  }
+
+  static dynamic _coerceInitial(String kind, dynamic initial) {
+    switch (kind) {
+      case 'checkbox':
+        return _asBool(initial);
+      case 'multi_select':
+        return _asStringList(initial);
+      case 'text_input':
+      case 'textarea':
+      case 'select':
+      case 'single_select':
+        if (initial is List) {
+          return initial.isEmpty ? '' : (_asString(initial.first) ?? '');
+        }
+        return _asString(initial) ?? '';
+      default:
+        return initial;
+    }
+  }
+
+  void _seedDefaults(Map<String, dynamic> formData) {
+    final fields = formData['fields'];
+    if (fields is! List) return;
+    for (final raw in fields) {
+      if (raw is! Map) continue;
+      final field = Map<String, dynamic>.from(raw);
+      final fieldId = _fieldKey(field);
+      if (fieldId.isEmpty || _fieldValues.containsKey(fieldId)) continue;
+      final initial = _rawInitial(field);
+      if (initial == null) continue;
+      _fieldValues[fieldId] = _coerceInitial(_fieldKind(field), initial);
+    }
+  }
+
+  bool _isSatisfied(Map<String, dynamic> field) {
+    if (!_isRequired(field)) return true;
+    final fieldId = _fieldKey(field);
+    final kind = _fieldKind(field);
+    if (kind == 'text_input' || kind == 'textarea') {
+      final live = _textControllers[fieldId]?.text ?? _fieldValues[fieldId];
+      return live is String && live.trim().isNotEmpty;
+    }
+    final value = _fieldValues[fieldId];
+    if (kind == 'checkbox') return value == true;
+    if (value == null) return false;
+    if (value is String) return value.trim().isNotEmpty;
+    if (value is List) return value.isNotEmpty;
+    if (value is bool) return value;
+    return true;
+  }
+
+  String _selectedOptionLabel(Map<String, dynamic> field, dynamic value) {
+    final key = _asString(value) ?? '';
+    for (final option in _normalizeOptions(field['options'])) {
+      if (_optionKey(option) == key) return _optionLabel(option, key);
+    }
+    return key;
+  }
+
+  List<String> _selectedIds(String fieldId) => _asStringList(_fieldValues[fieldId]);
 
   @override
   void dispose() {
@@ -204,10 +413,21 @@ class _FormBubbleState extends State<FormBubble> {
   }
 
   Widget _buildField(BuildContext context, Map<String, dynamic> field) {
-    final type = field['type'] as String? ?? 'text_input';
-    final label = field['label'] as String?;
+    final label = _asString(field['label']);
     final fieldId = _fieldKey(field);
-    final required = field['required'] as bool? ?? false;
+    final required = _isRequired(field);
+    final kind = _fieldKind(field);
+
+    // A single checkbox keeps its label on the same row as the box.
+    if (kind == 'checkbox') {
+      return _buildCheckbox(
+        context,
+        field,
+        fieldId,
+        label: label,
+        required: required,
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -225,15 +445,22 @@ class _FormBubbleState extends State<FormBubble> {
               ),
             ),
           ),
-        _buildFieldInput(context, type, field, fieldId),
+        _buildFieldInput(context, field, fieldId),
       ],
     );
   }
 
-  Widget _buildFieldInput(BuildContext context, String type, Map<String, dynamic> field, String fieldId) {
-    switch (_canonicalFieldType(type)) {
+  Widget _buildFieldInput(
+    BuildContext context,
+    Map<String, dynamic> field,
+    String fieldId,
+  ) {
+    switch (_fieldKind(field)) {
       case 'text_input':
+      case 'textarea':
         return _buildTextInput(context, field, fieldId);
+      case 'select':
+        return _buildSelect(context, field, fieldId);
       case 'single_select':
         return _buildSingleSelect(context, field, fieldId);
       case 'multi_select':
@@ -241,65 +468,213 @@ class _FormBubbleState extends State<FormBubble> {
       case 'file_upload':
         return _buildFileUpload(context, field, fieldId);
       default:
-        return Text('Unknown field type: $type',
-            style: TextStyle(fontSize: 12, color: Colors.grey[500]));
+        return Text(
+          'Unknown field type: ${_rawType(field)}',
+          style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+        );
     }
   }
 
-  Widget _buildTextInput(BuildContext context, Map<String, dynamic> field, String fieldId) {
-    final placeholder = field['placeholder'] as String? ?? '';
-    final maxLines = field['max_lines'] as int? ?? 1;
+  InputDecoration _fieldDecoration(BuildContext context, String hint) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: TextStyle(fontSize: 13, color: Colors.grey[400]),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      filled: true,
+      fillColor: Colors.white,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide(color: Colors.grey[300]!),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide(color: Colors.grey[300]!),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 1.5),
+      ),
+    );
+  }
+
+  int _maxLines(Map<String, dynamic> field, String raw) {
+    final specified = field['max_lines'] ?? field['rows'];
+    if (specified is int && specified > 0) return specified;
+    if (specified is num && specified > 0) return specified.toInt();
+    if (raw == 'textarea' || raw == 'multiline') return 4;
+    return 1;
+  }
+
+  TextInputType _keyboardFor(String raw) {
+    switch (raw) {
+      case 'number':
+      case 'integer':
+      case 'float':
+        return TextInputType.number;
+      case 'email':
+        return TextInputType.emailAddress;
+      case 'url':
+        return TextInputType.url;
+      case 'tel':
+      case 'phone':
+        return TextInputType.phone;
+      case 'textarea':
+      case 'multiline':
+        return TextInputType.multiline;
+      default:
+        return TextInputType.text;
+    }
+  }
+
+  Widget _buildTextInput(
+    BuildContext context,
+    Map<String, dynamic> field,
+    String fieldId,
+  ) {
+    final raw = _rawType(field);
+    final placeholder = _asString(field['placeholder']) ?? '';
+    final maxLines = _maxLines(field, raw);
 
     _textControllers.putIfAbsent(fieldId, () {
-      final controller = TextEditingController(text: _fieldValues[fieldId] as String? ?? '');
-      controller.addListener(() {
-        _fieldValues[fieldId] = controller.text;
-      });
-      return controller;
+      return TextEditingController(text: _asString(_fieldValues[fieldId]) ?? '');
     });
 
     return TextField(
       controller: _textControllers[fieldId],
       maxLines: maxLines,
-      decoration: InputDecoration(
-        hintText: placeholder,
-        hintStyle: TextStyle(fontSize: 13, color: Colors.grey[400]),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: Colors.grey[300]!),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: Colors.grey[300]!),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 1.5),
-        ),
-      ),
+      keyboardType: _keyboardFor(raw),
+      obscureText: raw == 'password',
+      onChanged: (text) {
+        // 只在「空 / 非空」切换时重建。每次按键都 setState 会打断中文输入法，
+        // 而提交按钮只关心必填项有没有内容。
+        final previous = _fieldValues[fieldId];
+        _fieldValues[fieldId] = text;
+        if (_isBlank(previous) != _isBlank(text)) {
+          setState(() {});
+        }
+      },
+      decoration: _fieldDecoration(context, placeholder),
       style: const TextStyle(fontSize: 14),
     );
   }
 
+  Widget _buildSelect(
+    BuildContext context,
+    Map<String, dynamic> field,
+    String fieldId,
+  ) {
+    final options = _normalizeOptions(field['options']);
+    final placeholder = _asString(field['placeholder']) ?? '';
+    final selected = _asString(_fieldValues[fieldId]);
+    final valid = options.map(_optionKey).toSet();
+    final value = (selected != null && valid.contains(selected)) ? selected : null;
+
+    return DropdownButtonFormField<String>(
+      initialValue: value,
+      isExpanded: true,
+      hint: placeholder.isEmpty
+          ? null
+          : Text(
+              placeholder,
+              style: TextStyle(fontSize: 13, color: Colors.grey[400]),
+              overflow: TextOverflow.ellipsis,
+            ),
+      decoration: _fieldDecoration(context, ''),
+      items: options.map((option) {
+        final id = _optionKey(option);
+        return DropdownMenuItem<String>(
+          value: id,
+          child: Text(
+            _optionLabel(option, id),
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 14),
+          ),
+        );
+      }).toList(),
+      onChanged: (next) {
+        if (next == null) return;
+        setState(() => _fieldValues[fieldId] = next);
+      },
+    );
+  }
+
+  Widget _buildCheckbox(
+    BuildContext context,
+    Map<String, dynamic> field,
+    String fieldId, {
+    required String? label,
+    required bool required,
+  }) {
+    final checked = _fieldValues[fieldId] == true;
+    final description = _asString(field['description']) ?? _asString(field['placeholder']);
+    final primary = Theme.of(context).primaryColor;
+
+    return GestureDetector(
+      onTap: () => setState(() => _fieldValues[fieldId] = !checked),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: checked ? primary.withOpacity(0.08) : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: checked ? primary.withOpacity(0.3) : Colors.grey[300]!,
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 1),
+              child: Icon(
+                checked ? Icons.check_box : Icons.check_box_outline_blank,
+                size: 20,
+                color: checked ? primary : Colors.grey[400],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (label != null && label.isNotEmpty)
+                    _buildFieldLabel(
+                      label,
+                      required: required,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Theme.of(context).colorScheme.onSurface,
+                        fontWeight: checked ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                    ),
+                  if (description != null && description.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        description,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildSingleSelect(BuildContext context, Map<String, dynamic> field, String fieldId) {
-    final options = (field['options'] as List<dynamic>?) ?? [];
-    final selectedId = _fieldValues[fieldId] as String?;
+    final options = _normalizeOptions(field['options']);
+    final selectedId = _asString(_fieldValues[fieldId]);
 
     return Column(
-      children: options.asMap().entries.map<Widget>((entry) {
-        final index = entry.key;
-        final option = entry.value;
-        final optionMap = option as Map<String, dynamic>;
-        // If the option has neither `id` nor `value` (or both are empty),
-        // fall back to a synthetic per-index id so rows don't all collapse
-        // to the same "" key — otherwise selecting one would "select" all.
-        var id = _optionKey(optionMap);
-        if (id.isEmpty) id = '__idx_$index';
-        final label = optionMap['label'] as String? ?? '';
-        final description = optionMap['description'] as String?;
+      children: options.map<Widget>((option) {
+        final id = _optionKey(option);
+        final label = _optionLabel(option, id);
+        final description = _asString(option['description']);
         final isSelected = selectedId == id;
 
         return GestureDetector(
@@ -371,14 +746,13 @@ class _FormBubbleState extends State<FormBubble> {
   }
 
   Widget _buildMultiSelect(BuildContext context, Map<String, dynamic> field, String fieldId) {
-    final options = (field['options'] as List<dynamic>?) ?? [];
-    final selectedIds = (_fieldValues[fieldId] as List<String>?) ?? [];
+    final options = _normalizeOptions(field['options']);
+    final selectedIds = _selectedIds(fieldId);
 
     return Column(
       children: options.map<Widget>((option) {
-        final optionMap = option as Map<String, dynamic>;
-        final id = _optionKey(optionMap);
-        final label = optionMap['label'] as String? ?? '';
+        final id = _optionKey(option);
+        final label = _optionLabel(option, id);
         final isSelected = selectedIds.contains(id);
 
         return GestureDetector(
@@ -525,8 +899,7 @@ class _FormBubbleState extends State<FormBubble> {
     Map<String, dynamic> field,
     Map<String, dynamic> submittedValues,
   ) {
-    final type = field['type'] as String? ?? 'text_input';
-    final label = field['label'] as String?;
+    final label = _asString(field['label']);
     final fieldId = _fieldKey(field);
     final value = submittedValues[fieldId];
 
@@ -546,19 +919,19 @@ class _FormBubbleState extends State<FormBubble> {
               ),
             ),
           ),
-        _buildSubmittedValue(context, type, field, value),
+        _buildSubmittedValue(context, field, value),
       ],
     );
   }
 
   Widget _buildSubmittedValue(
     BuildContext context,
-    String type,
     Map<String, dynamic> field,
     dynamic value,
   ) {
-    switch (_canonicalFieldType(type)) {
+    switch (_fieldKind(field)) {
       case 'text_input':
+      case 'textarea':
         return Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -570,7 +943,7 @@ class _FormBubbleState extends State<FormBubble> {
             ),
           ),
           child: Text(
-            (value as String?) ?? '-',
+            _asString(value) ?? '-',
             style: TextStyle(
               fontSize: 14,
               color: Theme.of(context).colorScheme.onSurface,
@@ -579,31 +952,45 @@ class _FormBubbleState extends State<FormBubble> {
         );
 
       case 'single_select':
-        final options = (field['options'] as List<dynamic>?) ?? [];
-        final selectedOption = options.firstWhere(
-          (o) => _optionKey(o as Map<String, dynamic>) == value,
-          orElse: () => <String, dynamic>{},
-        ) as Map<String, dynamic>;
-        final selectedLabel = selectedOption['label'] as String? ?? '-';
+      case 'select':
+        final selectedLabel = _selectedOptionLabel(field, value);
+        final shown = selectedLabel.isEmpty ? '-' : selectedLabel;
         return Row(
           children: [
             Icon(Icons.check_circle, size: 16, color: Theme.of(context).primaryColor),
             const SizedBox(width: 6),
             Expanded(
               child: Text(
-                selectedLabel,
+                shown,
                 style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
               ),
             ),
           ],
         );
 
+      case 'checkbox':
+        final on = value == true;
+        return Row(
+          children: [
+            Icon(
+              on ? Icons.check_box : Icons.check_box_outline_blank,
+              size: 16,
+              color: on ? Theme.of(context).primaryColor : Colors.grey[500],
+            ),
+            const SizedBox(width: 6),
+            Text(
+              on ? 'true' : 'false',
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            ),
+          ],
+        );
+
       case 'multi_select':
-        final options = (field['options'] as List<dynamic>?) ?? [];
-        final selectedIds = (value as List<dynamic>?)?.cast<String>() ?? [];
+        final options = _normalizeOptions(field['options']);
+        final selectedIds = _asStringList(value);
         final selectedLabels = options
-            .where((o) => selectedIds.contains(_optionKey(o as Map<String, dynamic>)))
-            .map((o) => (o as Map<String, dynamic>)['label'] as String? ?? '')
+            .where((option) => selectedIds.contains(_optionKey(option)))
+            .map((option) => _optionLabel(option, _optionKey(option)))
             .toList();
         return Wrap(
           spacing: 6,
@@ -653,74 +1040,64 @@ class _FormBubbleState extends State<FormBubble> {
   }
 
   Widget _buildFormSubmitButton(BuildContext context, String formId, List<dynamic> fields) {
-    // Check if all required fields have values
-    bool allRequiredFilled = true;
-    for (final field in fields) {
-      final fieldMap = field as Map<String, dynamic>;
-      final required = fieldMap['required'] as bool? ?? false;
-      final fieldId = _fieldKey(fieldMap);
-      if (required) {
-        final value = _fieldValues[fieldId];
-        if (value == null || (value is String && value.trim().isEmpty) || (value is List && value.isEmpty)) {
-          allRequiredFilled = false;
-          break;
-        }
-      }
-    }
+    final allRequiredFilled = fields.every((field) {
+      if (field is! Map) return true;
+      return _isSatisfied(Map<String, dynamic>.from(field));
+    });
 
     return Align(
       alignment: Alignment.centerRight,
       child: ElevatedButton.icon(
         onPressed: allRequiredFilled
             ? () {
-                // Collect all field values
                 final values = <String, dynamic>{};
                 final summaryParts = <String>[];
 
                 for (final field in fields) {
-                  final fieldMap = field as Map<String, dynamic>;
+                  if (field is! Map) continue;
+                  final fieldMap = Map<String, dynamic>.from(field);
                   final fieldId = _fieldKey(fieldMap);
-                  final label = fieldMap['label'] as String? ?? fieldId;
-                  final type = fieldMap['type'] as String? ?? 'text_input';
-                  final value = _fieldValues[fieldId];
+                  final label = _asString(fieldMap['label']) ?? fieldId;
+                  final kind = _fieldKind(fieldMap);
+                  final value = (kind == 'text_input' || kind == 'textarea')
+                      ? (_textControllers[fieldId]?.text ?? _fieldValues[fieldId])
+                      : _fieldValues[fieldId];
 
-                  if (value != null) {
-                    values[fieldId] = value;
+                  if (value == null) continue;
+                  if (value is String && value.isEmpty) continue;
+                  values[fieldId] = value;
 
-                    // Build summary
-                    switch (_canonicalFieldType(type)) {
-                      case 'text_input':
-                        if ((value as String).isNotEmpty) {
-                          summaryParts.add('$label: $value');
-                        }
-                        break;
-                      case 'single_select':
-                        final options = (fieldMap['options'] as List<dynamic>?) ?? [];
-                        final opt = options.firstWhere(
-                          (o) => _optionKey(o as Map<String, dynamic>) == value,
-                          orElse: () => <String, dynamic>{},
-                        ) as Map<String, dynamic>;
-                        summaryParts.add('$label: ${opt['label'] ?? value}');
-                        break;
-                      case 'multi_select':
-                        final ids = (value as List<String>);
-                        final options = (fieldMap['options'] as List<dynamic>?) ?? [];
-                        final selectedLabels = options
-                            .where((o) => ids.contains(_optionKey(o as Map<String, dynamic>)))
-                            .map((o) => (o as Map<String, dynamic>)['label'] as String? ?? '')
-                            .where((s) => s.isNotEmpty)
-                            .toList();
-                        summaryParts.add(
-                          selectedLabels.isEmpty
-                              ? '$label: ${ids.length} selected'
-                              : '$label: ${selectedLabels.join(", ")}',
-                        );
-                        break;
-                      case 'file_upload':
-                        final files = (value as List<Map<String, dynamic>>);
-                        summaryParts.add('$label: ${files.length} file(s)');
-                        break;
-                    }
+                  switch (kind) {
+                    case 'text_input':
+                    case 'textarea':
+                      final text = _asString(value) ?? '';
+                      if (text.isNotEmpty) summaryParts.add('$label: $text');
+                      break;
+                    case 'select':
+                    case 'single_select':
+                      summaryParts.add('$label: ${_selectedOptionLabel(fieldMap, value)}');
+                      break;
+                    case 'checkbox':
+                      summaryParts.add('$label: ${value == true}');
+                      break;
+                    case 'multi_select':
+                      final ids = _asStringList(value);
+                      final options = _normalizeOptions(fieldMap['options']);
+                      final selectedLabels = options
+                          .where((option) => ids.contains(_optionKey(option)))
+                          .map((option) => _optionLabel(option, ''))
+                          .where((text) => text.isNotEmpty)
+                          .toList();
+                      summaryParts.add(
+                        selectedLabels.isEmpty
+                            ? '$label: ${ids.length} selected'
+                            : '$label: ${selectedLabels.join(", ")}',
+                      );
+                      break;
+                    case 'file_upload':
+                      final files = value is List ? value : const [];
+                      summaryParts.add('$label: ${files.length} file(s)');
+                      break;
                   }
                 }
 

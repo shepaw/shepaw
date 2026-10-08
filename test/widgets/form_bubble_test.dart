@@ -51,6 +51,8 @@ void main() {
     WidgetTester tester, {
     required Map<String, dynamic> data,
     double width = 360,
+    void Function(String formId, Map<String, dynamic> values, String summary)?
+        onSubmitted,
   }) async {
     await tester.binding.setSurfaceSize(Size(width, narrow.height));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -63,7 +65,10 @@ void main() {
           body: SizedBox(
             width: width,
             child: SingleChildScrollView(
-              child: FormBubble(formData: data),
+              child: FormBubble(
+                formData: data,
+                onFormSubmitted: onSubmitted,
+              ),
             ),
           ),
         ),
@@ -142,5 +147,178 @@ void main() {
     final formWidth = tester.getSize(form).width;
     expect(formWidth, lessThanOrEqualTo(narrow.width));
     expect(formWidth, greaterThan(200));
+  });
+
+  bool submitEnabled(WidgetTester tester) {
+    final button = tester.widget<ElevatedButton>(
+      find.widgetWithText(ElevatedButton, '提交'),
+    );
+    return button.onPressed != null;
+  }
+
+  testWidgets('filled required text fields enable submit', (tester) async {
+    Map<String, dynamic>? submitted;
+    await pumpForm(
+      tester,
+      data: {
+        'form_id': 'new-agent',
+        'title': '新建 agent',
+        'fields': [
+          {
+            'type': 'text',
+            'name': 'engine',
+            'label': '引擎 (engine id)',
+            'required': true,
+          },
+          {
+            'type': 'text_input',
+            'field_id': 'display_name',
+            'label': '显示名',
+            'required': 'true',
+          },
+          {
+            'type': 'text_input',
+            'field_id': 'cwd',
+            'label': '工作目录（须已存在）',
+            'required': true,
+          },
+        ],
+      },
+      onSubmitted: (_, values, __) => submitted = values,
+    );
+
+    expect(submitEnabled(tester), isFalse);
+
+    final inputs = find.byType(TextField);
+    await tester.enterText(inputs.at(0), 'claude-code');
+    await tester.pump();
+    expect(submitEnabled(tester), isFalse);
+
+    await tester.enterText(inputs.at(1), 'website-dev');
+    await tester.enterText(inputs.at(2), '~/workspace/shepaw/website');
+    await tester.pump();
+    expect(submitEnabled(tester), isTrue);
+
+    await tester.tap(find.widgetWithText(ElevatedButton, '提交'));
+    await tester.pump();
+    expect(submitted, {
+      'engine': 'claude-code',
+      'display_name': 'website-dev',
+      'cwd': '~/workspace/shepaw/website',
+    });
+  });
+
+  testWidgets('default values count as filled without extra typing', (tester) async {
+    await pumpForm(
+      tester,
+      data: {
+        'form_id': 'prefilled',
+        'title': '新建 agent',
+        'fields': [
+          {
+            'type': 'text_input',
+            'field_id': 'engine',
+            'label': '引擎',
+            'required': true,
+            'default': 'claude-code',
+          },
+          {
+            'type': 'text_input',
+            'field_id': 'name',
+            'label': '显示名',
+            'required': true,
+            'value': 'website-dev',
+          },
+        ],
+      },
+    );
+
+    expect(find.text('claude-code'), findsOneWidget);
+    expect(find.text('website-dev'), findsOneWidget);
+    expect(submitEnabled(tester), isTrue);
+  });
+
+  testWidgets('select, radio and checkbox satisfy required fields', (tester) async {
+    Map<String, dynamic>? submitted;
+    String? summary;
+    await pumpForm(
+      tester,
+      width: 480,
+      data: {
+        'form_id': 'choices',
+        'title': '项目设置',
+        'fields': [
+          {
+            'type': 'select',
+            'name': 'engine',
+            'label': '引擎',
+            'required': true,
+            'options': ['claude-code', 'cursor'],
+          },
+          {
+            'type': 'radio',
+            'name': 'kind',
+            'label': '类型',
+            'required': true,
+            'options': [
+              {'value': 'web', 'label': '网站'},
+              {'value': 'cli', 'label': '命令行'},
+            ],
+          },
+          {
+            'type': 'checkbox',
+            'name': 'confirm',
+            'label': '目录已存在',
+            'required': true,
+          },
+          {
+            'type': 'checkbox',
+            'name': 'extras',
+            'label': '附加',
+            'options': [
+              {'id': 'docs', 'label': '文档'},
+              {'id': 'tests', 'label': '测试'},
+            ],
+          },
+        ],
+      },
+      onSubmitted: (_, values, text) {
+        submitted = values;
+        summary = text;
+      },
+    );
+
+    expect(find.textContaining('Unknown field type'), findsNothing);
+    expect(find.byType(DropdownButtonFormField<String>), findsOneWidget);
+    expect(find.byIcon(Icons.radio_button_off), findsNWidgets(2));
+    expect(find.byIcon(Icons.check_box_outline_blank), findsNWidgets(3));
+    expect(submitEnabled(tester), isFalse);
+
+    await tester.tap(find.byType(DropdownButtonFormField<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('claude-code').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('网站'));
+    await tester.pump();
+    expect(submitEnabled(tester), isFalse);
+
+    await tester.tap(find.textContaining('目录已存在'));
+    await tester.pump();
+    expect(submitEnabled(tester), isTrue);
+
+    await tester.tap(find.text('文档'));
+    await tester.pump();
+    await tester.tap(find.widgetWithText(ElevatedButton, '提交'));
+    await tester.pump();
+
+    expect(submitted?['engine'], 'claude-code');
+    expect(submitted?['kind'], 'web');
+    expect(submitted?['confirm'], isTrue);
+    expect(submitted?['extras'], ['docs']);
+    expect(summary, contains('引擎: claude-code'));
+    expect(summary, contains('类型: 网站'));
+    expect(summary, contains('目录已存在: true'));
+    expect(summary, contains('附加: 文档'));
   });
 }
