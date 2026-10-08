@@ -46,6 +46,11 @@ class ShowPouchChooser extends HostEntry {
   const ShowPouchChooser({super.recordMode});
 }
 
+/// 手机去连远端主机：扫码，或输入配对地址。
+class ShowRemoteConnect extends HostEntry {
+  const ShowRemoteConnect({super.recordMode});
+}
+
 /// 储物袋选择页的路由参数。`switching` 时不自动进入唯一的那只袋子。
 class PouchLoginArgs {
   const PouchLoginArgs({
@@ -86,10 +91,15 @@ HostEntry resolveHostEntry({
   required int nowMs,
   String? localCliFingerprint,
   String? sessionHostFingerprint,
+  bool hasPairedHost = false,
 }) {
   final loggedIn = session != null && session.isLoggedIn(nowMs);
   if (!isDesktop) {
-    return loggedIn ? const EnterHome() : const ShowPouchChooser();
+    if (loggedIn) return const EnterHome();
+    if (!hasPairedHost) {
+      return const ShowRemoteConnect(recordMode: HostMode.remote);
+    }
+    return const ShowPouchChooser();
   }
   if (mode == HostMode.remote) {
     return loggedIn ? const EnterHome() : const ShowPouchChooser();
@@ -104,8 +114,7 @@ HostEntry resolveHostEntry({
     return const ShowHostSetup();
   }
 
-  final record =
-      mode == HostMode.unset ? HostMode.thisComputer : null;
+  final record = mode == HostMode.unset ? HostMode.thisComputer : null;
   switch (cli) {
     case LocalCliStatus.notInstalled:
       return ShowHostSetup(recordMode: record);

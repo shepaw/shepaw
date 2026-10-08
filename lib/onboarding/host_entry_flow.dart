@@ -24,16 +24,31 @@ class HostEntryNavigator {
         ? null
         : await PeerStorageService().getPeerById(session.hostPeerId);
     final mode = await HostModeStore.read();
-    final cliStatus = await CliHost.probe();
-    final cli = await CliHost.detect();
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final loggedIn = session != null && session.isLoggedIn(nowMs);
+    // 手机没有本机 shepaw，解锁后去连远端主机。
+    final LocalCliStatus cliStatus;
+    final CliHostEndpoint? cli;
+    if (isDesktop) {
+      cliStatus = await CliHost.probe();
+      cli = await CliHost.detect();
+    } else {
+      cliStatus = LocalCliStatus.notInstalled;
+      cli = null;
+    }
+    final hasPairedHost = !isDesktop &&
+        !loggedIn &&
+        (await PeerStorageService().loadAllPeers())
+            .any((peer) => !peer.isBlocked);
     final entry = resolveHostEntry(
       isDesktop: isDesktop,
       mode: mode,
       cli: cliStatus,
       session: session,
-      nowMs: DateTime.now().millisecondsSinceEpoch,
+      nowMs: nowMs,
       localCliFingerprint: cli?.fingerprint,
       sessionHostFingerprint: host?.fingerprint,
+      hasPairedHost: hasPairedHost,
     );
     final record = entry.recordMode;
     if (record != null) await HostModeStore.write(record);
@@ -49,6 +64,9 @@ class HostEntryNavigator {
         _replace(context, '/host-setup');
       case ShowPouchChooser():
         _replace(context, '/pouch');
+      case ShowRemoteConnect():
+        if (here == '/remote-connect') return;
+        _replace(context, '/remote-connect');
       case EnterHome():
         await _enterHome(context, session: session, cli: cli, host: host);
       case AutoLocal(:final needsStart):
@@ -123,7 +141,8 @@ Future<void> _autoLocal(
     try {
       await CliHost.start(binary);
     } catch (error) {
-      LoggerService().error('shepaw start failed', tag: 'HostEntry', error: error);
+      LoggerService()
+          .error('shepaw start failed', tag: 'HostEntry', error: error);
       if (context.mounted) Navigator.of(context).pop();
       if (context.mounted) _replace(context, '/host-setup');
       return;

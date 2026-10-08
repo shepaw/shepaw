@@ -23,6 +23,7 @@ void main() {
     int nowMs = 10,
     String? localCliFingerprint,
     String? sessionHostFingerprint,
+    bool hasPairedHost = false,
   }) {
     return resolveHostEntry(
       isDesktop: isDesktop,
@@ -32,14 +33,21 @@ void main() {
       nowMs: nowMs,
       localCliFingerprint: localCliFingerprint,
       sessionHostFingerprint: sessionHostFingerprint,
+      hasPairedHost: hasPairedHost,
     );
   }
 
-  test('手机：登录态有效进主页，否则去选袋子', () {
+  test('手机：登录态有效进主页，否则去连远端主机', () {
     expect(resolve(isDesktop: false, session: live()), isA<EnterHome>());
-    expect(resolve(isDesktop: false), isA<ShowPouchChooser>());
+    final connect = resolve(isDesktop: false);
+    expect(connect, isA<ShowRemoteConnect>());
+    expect(connect.recordMode, HostMode.remote);
     expect(
       resolve(isDesktop: false, session: live(expiresAtMs: 10), nowMs: 10),
+      isA<ShowRemoteConnect>(),
+    );
+    expect(
+      resolve(isDesktop: false, hasPairedHost: true),
       isA<ShowPouchChooser>(),
     );
   });

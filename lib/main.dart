@@ -24,6 +24,7 @@ import 'screens/password_setup_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/pouch_login_screen.dart';
 import 'onboarding/host_setup_screen.dart';
+import 'onboarding/remote_connect_screen.dart';
 import 'screens/adaptive_home_screen.dart';
 import 'widgets/window_title_sync.dart';
 import 'widgets/approval/pending_approval_banner.dart';
@@ -31,7 +32,11 @@ import 'widgets/approval/pending_approval_banner.dart';
 // 重新导出 ACP 常量，保持 settings_screen / remote_agent_detail_screen 等
 // 现有 `import '../main.dart' show kAcpServer...` 的引用不受影响。
 export 'app_bootstrap.dart'
-    show kAcpServerPortKey, kAcpServerDefaultPort, kAcpServerEnabledKey, kAcpServerTokenKey;
+    show
+        kAcpServerPortKey,
+        kAcpServerDefaultPort,
+        kAcpServerEnabledKey,
+        kAcpServerTokenKey;
 
 Locale _resolveAppLocale(Locale? preferred) {
   if (preferred != null) return preferred;
@@ -196,11 +201,14 @@ class _MyAppState extends State<MyApp> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildInfoRow(AppLocalizations.of(ctx).permissionDialog_agent, request.agentName),
+              _buildInfoRow(AppLocalizations.of(ctx).permissionDialog_agent,
+                  request.agentName),
               const SizedBox(height: 8),
-              _buildInfoRow(AppLocalizations.of(ctx).permissionDialog_action, request.permissionType.name),
+              _buildInfoRow(AppLocalizations.of(ctx).permissionDialog_action,
+                  request.permissionType.name),
               const SizedBox(height: 8),
-              _buildInfoRow(AppLocalizations.of(ctx).permissionDialog_reason, request.reason),
+              _buildInfoRow(AppLocalizations.of(ctx).permissionDialog_reason,
+                  request.reason),
               const SizedBox(height: 8),
               _buildInfoRow(
                 AppLocalizations.of(ctx).permissionDialog_time,
@@ -216,7 +224,8 @@ class _MyAppState extends State<MyApp> {
                 service.rejectPermission(request.id);
                 Navigator.of(dialogCtx).pop();
               },
-              child: Text(AppLocalizations.of(ctx).permissionDialog_reject, style: const TextStyle(color: Colors.red)),
+              child: Text(AppLocalizations.of(ctx).permissionDialog_reject,
+                  style: const TextStyle(color: Colors.red)),
             ),
             ElevatedButton(
               onPressed: () {
@@ -308,6 +317,7 @@ class _MyAppState extends State<MyApp> {
                 '/login': (context) => const LoginScreen(),
                 '/pouch': (context) => const PouchLoginScreen(),
                 '/host-setup': (context) => const HostSetupScreen(),
+                '/remote-connect': (context) => const RemoteConnectScreen(),
                 '/home': (context) => const AdaptiveHomeScreen(),
               },
             ),
@@ -338,12 +348,12 @@ class _SplashScreenState extends State<SplashScreen> {
   Future<void> _checkPasswordStatus() async {
     // 短暂延迟，显示启动画面
     await Future.delayed(const Duration(seconds: 1));
-    
+
     if (!mounted) return;
-    
+
     // 检查是否已设置密码
     final isPasswordSet = await _passwordService.isPasswordSet();
-    
+
     if (isPasswordSet) {
       // 已设置密码，跳转到登录页
       Navigator.of(context).pushReplacementNamed('/login');
@@ -364,46 +374,46 @@ class _SplashScreenState extends State<SplashScreen> {
           gradient: AppTheme.brandGradient,
         ),
         child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Logo
-            ClipRRect(
-              borderRadius: BorderRadius.circular(30),
-              child: Image.asset(
-                'assets/images/shepaw_icon.png',
-                width: 120,
-                height: 120,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Logo
+              ClipRRect(
+                borderRadius: BorderRadius.circular(30),
+                child: Image.asset(
+                  'assets/images/shepaw_icon.png',
+                  width: 120,
+                  height: 120,
+                ),
               ),
-            ),
-            const SizedBox(height: 32),
-            
-            // 应用名称
-            Text(
-              l10n.appTitle,
-              style: const TextStyle(
-                fontSize: 32,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 16),
+              const SizedBox(height: 32),
 
-            // 加载指示器
-            const CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-            ),
-            const SizedBox(height: 16),
-
-            Text(
-              l10n.splash_loading,
-              style: const TextStyle(
-                fontSize: 16,
-                color: Colors.white70,
+              // 应用名称
+              Text(
+                l10n.appTitle,
+                style: const TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
               ),
-            ),
-          ],
-        ),
+              const SizedBox(height: 16),
+
+              // 加载指示器
+              const CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+              const SizedBox(height: 16),
+
+              Text(
+                l10n.splash_loading,
+                style: const TextStyle(
+                  fontSize: 16,
+                  color: Colors.white70,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

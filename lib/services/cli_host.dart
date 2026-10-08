@@ -87,8 +87,10 @@ class CliHost {
     final name = windows ? 'shepaw.exe' : 'shepaw';
     final home = homeDirFromEnv(env);
     return [
-      ctx.join(home, 'workspace', 'shepaw', 'shepaw-cli', 'target', 'debug', name),
-      ctx.join(home, 'workspace', 'shepaw', 'shepaw-cli', 'target', 'release', name),
+      ctx.join(
+          home, 'workspace', 'shepaw', 'shepaw-cli', 'target', 'debug', name),
+      ctx.join(
+          home, 'workspace', 'shepaw', 'shepaw-cli', 'target', 'release', name),
     ];
   }
 
@@ -98,8 +100,12 @@ class CliHost {
     );
   }
 
+  /// 手机连的是远端主机，本机没有 `shepaw` 可查。
+  static bool get localCliSupported => !Platform.isAndroid && !Platform.isIOS;
+
   /// 找到二进制才问 `shepaw status --json`。老版本没有这个命令时，退回 [detect]。
   static Future<LocalCliStatus> probe() async {
+    if (!localCliSupported) return LocalCliStatus.notInstalled;
     final binary = await resolveBinary();
     if (binary == null) return LocalCliStatus.notInstalled;
     try {
@@ -120,6 +126,7 @@ class CliHost {
 
   /// `peer-state.json` 带 `version`，而且里面的 pid 还活着，才算这台主机在跑。
   static Future<CliHostEndpoint?> detect() async {
+    if (!localCliSupported) return null;
     final file = File('${hubRoot()}/peer-state.json');
     if (!file.existsSync()) return null;
     final decoded = jsonDecode(await file.readAsString());
@@ -268,11 +275,14 @@ class CliHost {
   }
 
   /// 先 `SHEPAW_BIN`，再安装目录，再 `which` / `where.exe`。
-  /// 开发目录只在调试构建里查。
+  /// 开发目录只在调试构建里查。手机不查本机 CLI。
   static Future<String?> resolveBinary() async {
+    if (!localCliSupported) return null;
     final env = Platform.environment;
     final explicit = env['SHEPAW_BIN'];
-    if (explicit != null && explicit.isNotEmpty && File(explicit).existsSync()) {
+    if (explicit != null &&
+        explicit.isNotEmpty &&
+        File(explicit).existsSync()) {
       return explicit;
     }
     final installed = installedBinaryFromEnv(env, windows: Platform.isWindows);
@@ -280,7 +290,8 @@ class CliHost {
     final found = await _whichShepaw();
     if (found != null) return found;
     if (kDebugMode) {
-      for (final path in debugBinaryCandidates(env, windows: Platform.isWindows)) {
+      for (final path
+          in debugBinaryCandidates(env, windows: Platform.isWindows)) {
         if (File(path).existsSync()) return path;
       }
     }
@@ -289,10 +300,14 @@ class CliHost {
 
   static Future<String?> _whichShepaw() async {
     final ProcessResult result;
-    if (Platform.isWindows) {
-      result = await Process.run('where.exe', const ['shepaw']);
-    } else {
-      result = await Process.run('/usr/bin/which', const ['shepaw']);
+    try {
+      if (Platform.isWindows) {
+        result = await Process.run('where.exe', const ['shepaw']);
+      } else {
+        result = await Process.run('/usr/bin/which', const ['shepaw']);
+      }
+    } on ProcessException {
+      return null;
     }
     if (result.exitCode != 0) return null;
     for (final line in result.stdout.toString().split(RegExp(r'\r?\n'))) {

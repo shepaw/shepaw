@@ -11,6 +11,7 @@ import '../peer/screens/peer_scan_screen.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_storage_service.dart';
 import '../onboarding/host_entry.dart';
+import '../onboarding/remote_connect_screen.dart';
 import '../peer/pairing_endpoints.dart';
 import '../services/cli_host.dart';
 import '../services/local_user_identity.dart';
@@ -289,6 +290,17 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
   }
 
   Future<void> _addHost() async {
+    if (!_desktop) {
+      final peer = await Navigator.of(context).push<PairedPeer>(
+        MaterialPageRoute<PairedPeer>(
+          builder: (_) => const RemoteConnectScreen(popOnPaired: true),
+        ),
+      );
+      if (!mounted) return;
+      final session = await PouchSessionStore.readActive();
+      await _loadPhone(peer?.id ?? session?.hostPeerId ?? _hostId);
+      return;
+    }
     final cameraOk = await _cameraUsable();
     if (!mounted) return;
     if (!cameraOk) {
@@ -464,8 +476,7 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
       final localSubtitle = switch (_cliStatus) {
         LocalCliStatus.notInstalled => l10n.pouch_notInstalled,
         LocalCliStatus.installedStopped => l10n.pouch_hostOffline,
-        LocalCliStatus.running =>
-          _cli?.localEndpoint ?? l10n.home_statusOnline,
+        LocalCliStatus.running => _cli?.localEndpoint ?? l10n.home_statusOnline,
       };
       return [
         RadioGroup<String>(
