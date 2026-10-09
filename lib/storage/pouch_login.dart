@@ -27,6 +27,8 @@ bool loginSealRequired(String kind, {String? op}) {
     'pouch_create',
     'pouch_create_resp',
     'pouch_sealed',
+    'pouch_password_status',
+    'pouch_password_set',
     'cli_execute_resp',
     'session_create_resp',
   };

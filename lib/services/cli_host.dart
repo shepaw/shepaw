@@ -225,6 +225,28 @@ class CliHost {
     return refreshed;
   }
 
+  /// 在这台电脑上覆盖主机登录密码。密码从标准输入送进去。
+  static Future<void> setHostPassword(String password) async {
+    if (!localCliSupported) {
+      throw StateError('请在主机那台电脑上执行 shepaw password set');
+    }
+    final binary = await resolveBinary();
+    if (binary == null) {
+      throw StateError('这台电脑还没有 shepaw。请在终端执行 shepaw password set');
+    }
+    final process = await Process.start(binary, const ['password', 'set']);
+    final stderr = process.stderr.transform(utf8.decoder).join();
+    final stdout = process.stdout.transform(utf8.decoder).join();
+    process.stdin.writeln(password);
+    await process.stdin.close();
+    final code = await process.exitCode;
+    final err = (await stderr).trim();
+    await stdout;
+    if (code != 0) {
+      throw StateError(err.isEmpty ? '重设密码失败' : err);
+    }
+  }
+
   /// 执行 `shepaw restart`，然后等到 [detect] 再次看到进程。
   static Future<void> restart(String binary) async {
     final result = await Process.run(binary, const ['restart']);

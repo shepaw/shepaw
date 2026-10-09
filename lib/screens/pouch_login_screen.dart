@@ -356,6 +356,34 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
     }
   }
 
+  Future<String?> _askHostPassword() {
+    final l10n = AppLocalizations.of(context);
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(l10n.phoneAuth_confirmTitle),
+        content: TextField(
+          controller: controller,
+          obscureText: true,
+          autofocus: true,
+          decoration: InputDecoration(labelText: l10n.login_password),
+          onSubmitted: (value) => Navigator.pop(dialogContext, value),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(l10n.common_cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, controller.text),
+            child: Text(l10n.login_button),
+          ),
+        ],
+      ),
+    ).whenComplete(controller.dispose);
+  }
+
   Future<void> _enter(PouchDescriptor pouch) async {
     final host = _host;
     final l10n = AppLocalizations.of(context);
@@ -365,10 +393,22 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
       _error = '';
     });
     try {
-      final grant = await requestPouchLogin(
-        hostPeerId: host.id,
-        pouchId: pouch.id,
-      );
+      PouchLoginGrant grant;
+      try {
+        grant = await requestPouchLogin(
+          hostPeerId: host.id,
+          pouchId: pouch.id,
+        );
+      } on PouchPasswordRequired {
+        if (!mounted) return;
+        final password = await _askHostPassword();
+        if (password == null || !mounted) return;
+        grant = await requestPouchLogin(
+          hostPeerId: host.id,
+          pouchId: pouch.id,
+          password: password,
+        );
+      }
       final hubUrl = _desktop
           ? (_cli?.localEndpoint ??
               host.localEndpoint ??

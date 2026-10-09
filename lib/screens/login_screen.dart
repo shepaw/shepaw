@@ -3,12 +3,12 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../services/cli_host.dart';
 import '../services/logger_service.dart';
 import '../services/password_service.dart';
 import '../services/biometric_service.dart';
 import '../services/desktop_window_auto_size.dart';
 import '../onboarding/host_entry_flow.dart';
-import '../theme/app_theme.dart';
 
 /// 登录页面
 class LoginScreen extends StatefulWidget {
@@ -335,96 +335,98 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  /// 显示重置密码对话框
+  /// 在这台电脑上重设主机登录密码。手机和别的电脑之后都用新密码。
   void _showResetPasswordDialog() {
     final l10n = AppLocalizations.of(context);
-    showDialog(
+    final next = TextEditingController();
+    final again = TextEditingController();
+    var error = '';
+    var busy = false;
+    showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.orange[700]),
-            const SizedBox(width: 8),
-            Text(l10n.login_resetPasswordTitle),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(l10n.login_resetPasswordContent),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.primaryContainer,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.primaryLight),
-              ),
-              child: Row(
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setLocal) {
+            return AlertDialog(
+              title: Text(l10n.phoneAuth_hostResetTitle),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.info_outline,
-                      color: AppColors.primaryDark, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      l10n.login_resetPasswordVaultHint,
-                      style: const TextStyle(
-                          color: AppColors.primaryDark, fontSize: 13),
+                  Text(l10n.phoneAuth_hostResetBody),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: next,
+                    obscureText: true,
+                    enabled: !busy,
+                    decoration: InputDecoration(
+                      labelText: l10n.phoneAuth_newPassword,
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: again,
+                    obscureText: true,
+                    enabled: !busy,
+                    decoration: InputDecoration(
+                      labelText: l10n.phoneAuth_confirmPassword,
+                    ),
+                  ),
+                  if (error.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      error,
+                      style:
+                          TextStyle(color: Theme.of(context).colorScheme.error),
+                    ),
+                  ],
                 ],
               ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(l10n.common_cancel),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              if (!mounted) return;
-
-              // 显示进度对话框
-              showDialog(
-                context: context,
-                barrierDismissible: false,
-                builder: (dialogContext) => AlertDialog(
-                  content: Row(
-                    children: [
-                      const CircularProgressIndicator(),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Text(
-                          AppLocalizations.of(dialogContext).login_backingUp,
-                        ),
-                      ),
-                    ],
-                  ),
+              actions: [
+                TextButton(
+                  onPressed: busy ? null : () => Navigator.pop(dialogContext),
+                  child: Text(l10n.common_cancel),
                 ),
-              );
-
-              try {
-                await _passwordService.resetPassword();
-              } finally {
-                if (mounted) Navigator.of(context, rootNavigator: true).pop();
-              }
-
-              if (mounted) {
-                Navigator.of(context).pushReplacementNamed('/setup');
-              }
-            },
-            child: Text(
-              l10n.login_confirmReset,
-              style: const TextStyle(color: Colors.red),
-            ),
-          ),
-        ],
-      ),
-    );
+                FilledButton(
+                  onPressed: busy
+                      ? null
+                      : () async {
+                          if (next.text.length < 6) {
+                            setLocal(() => error = l10n.passwordSetup_tooShort);
+                            return;
+                          }
+                          if (next.text != again.text) {
+                            setLocal(
+                              () => error = l10n.passwordSetup_mismatch,
+                            );
+                            return;
+                          }
+                          setLocal(() {
+                            busy = true;
+                            error = '';
+                          });
+                          try {
+                            await CliHost.setHostPassword(next.text);
+                            if (dialogContext.mounted) {
+                              Navigator.pop(dialogContext);
+                            }
+                          } catch (e) {
+                            setLocal(() {
+                              busy = false;
+                              error = '$e';
+                            });
+                          }
+                        },
+                  child: Text(l10n.common_confirm),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    ).whenComplete(() {
+      next.dispose();
+      again.dispose();
+    });
   }
 }

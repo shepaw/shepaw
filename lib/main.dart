@@ -24,7 +24,10 @@ import 'screens/password_setup_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/pouch_login_screen.dart';
 import 'onboarding/host_setup_screen.dart';
+import 'onboarding/phone_auth_screen.dart';
+import 'onboarding/phone_host_store.dart';
 import 'onboarding/remote_connect_screen.dart';
+import 'utils/platform_utils.dart';
 import 'screens/adaptive_home_screen.dart';
 import 'widgets/window_title_sync.dart';
 import 'widgets/approval/pending_approval_banner.dart';
@@ -318,6 +321,7 @@ class _MyAppState extends State<MyApp> {
                 '/pouch': (context) => const PouchLoginScreen(),
                 '/host-setup': (context) => const HostSetupScreen(),
                 '/remote-connect': (context) => const RemoteConnectScreen(),
+                '/phone-login': (context) => const PhoneAuthScreen(),
                 '/home': (context) => const AdaptiveHomeScreen(),
               },
             ),
@@ -351,8 +355,24 @@ class _SplashScreenState extends State<SplashScreen> {
 
     if (!mounted) return;
 
+    // 手机没有本机密码。没配过主机就去扫码或输入配对码，配过了就用主机密码登录。
+    if (!isDesktopPlatform) {
+      final hostId = await PhoneHostStore.read();
+      if (!mounted) return;
+      if (hostId == null) {
+        Navigator.of(context).pushReplacementNamed('/remote-connect');
+      } else {
+        Navigator.of(context).pushReplacementNamed(
+          '/phone-login',
+          arguments: PhoneAuthArgs(hostPeerId: hostId),
+        );
+      }
+      return;
+    }
+
     // 检查是否已设置密码
     final isPasswordSet = await _passwordService.isPasswordSet();
+    if (!mounted) return;
 
     if (isPasswordSet) {
       // 已设置密码，跳转到登录页

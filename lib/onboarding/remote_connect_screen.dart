@@ -3,14 +3,15 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../peer/models/paired_peer.dart';
 import '../peer/screens/peer_connect_tab.dart';
-import 'host_entry.dart';
+import 'phone_auth_screen.dart';
+import 'phone_host_store.dart';
 
 /// 手机连远端主机：扫码，或输入配对地址。
 class RemoteConnectScreen extends StatelessWidget {
   const RemoteConnectScreen({super.key, this.popOnPaired = false});
 
   /// 从储物袋页推进来时，配对成功后把主机交回去。
-  /// 解锁后作为下一页时，配对成功后进入选袋子。
+  /// 首次打开时，配对成功后去设置或确认主机密码。
   final bool popOnPaired;
 
   @override
@@ -24,14 +25,16 @@ class RemoteConnectScreen extends StatelessWidget {
     );
   }
 
-  void _onPaired(BuildContext context, PairedPeer peer) {
+  Future<void> _onPaired(BuildContext context, PairedPeer peer) async {
     if (popOnPaired) {
       Navigator.of(context).pop(peer);
       return;
     }
+    await PhoneHostStore.write(peer.id);
+    if (!context.mounted) return;
     Navigator.of(context).pushReplacementNamed(
-      '/pouch',
-      arguments: PouchLoginArgs(hostPeerId: peer.id),
+      '/phone-login',
+      arguments: PhoneAuthArgs(hostPeerId: peer.id, justPaired: true),
     );
   }
 }

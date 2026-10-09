@@ -8470,6 +8470,46 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pouch_defaultName => 'My pouch';
 
   @override
+  String get phoneAuth_setTitle => 'Set a login password';
+
+  @override
+  String get phoneAuth_setBody =>
+      'This pouch has no password yet. After you set one, every phone and computer uses it.';
+
+  @override
+  String get phoneAuth_confirmTitle => 'Confirm the login password';
+
+  @override
+  String get phoneAuth_confirmBody =>
+      'This pouch already has a password. Confirm it after pairing.';
+
+  @override
+  String get phoneAuth_loginBody => 'Enter the password stored on the host';
+
+  @override
+  String get phoneAuth_forgotBody =>
+      'A phone cannot reset this password. On the host computer, run shepaw password set, or open Shepaw there and use Forgot password.';
+
+  @override
+  String get phoneAuth_repair => 'Pair again';
+
+  @override
+  String get phoneAuth_setAndEnter => 'Set and continue';
+
+  @override
+  String get phoneAuth_hostResetTitle => 'Reset the host password';
+
+  @override
+  String get phoneAuth_hostResetBody =>
+      'This replaces the login password on the host. Every phone and computer will use the new one. You can also run shepaw password set in a terminal.';
+
+  @override
+  String get phoneAuth_newPassword => 'New password';
+
+  @override
+  String get phoneAuth_confirmPassword => 'Enter it again';
+
+  @override
   String pouch_namedBag(String name) {
     return '$name\'s pouch';
   }

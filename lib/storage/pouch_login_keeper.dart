@@ -2,6 +2,7 @@ import 'dart:async';
 
 import '../peer/services/peer_connection_manager.dart';
 import '../service_locator.dart';
+import '../utils/platform_utils.dart';
 import 'pouch_login.dart';
 import 'pouch_login_client.dart';
 import 'pouch_session.dart';
@@ -32,7 +33,10 @@ class PouchLoginKeeper {
     return PouchLoginKeeper(
       events: PeerConnectionManager.instance.controlEvents,
       readSession: PouchSessionStore.readActive,
-      login: requestPouchLogin,
+      login: ({required hostPeerId, required pouchId}) => requestPouchLogin(
+        hostPeerId: hostPeerId,
+        pouchId: pouchId,
+      ),
       persist: (session) async {
         await PouchSessionStore(await PouchSessionStore.appFile())
             .save(session);
@@ -43,8 +47,9 @@ class PouchLoginKeeper {
       },
       clearChannel: PouchChannel.clear,
       openChooser: () {
+        final route = isDesktopPlatform ? '/pouch' : '/phone-login';
         navigatorKey.currentState?.pushNamedAndRemoveUntil(
-          '/pouch',
+          route,
           (_) => false,
         );
       },
@@ -122,10 +127,16 @@ class PouchLoginKeeper {
       _reloginGeneration += 1;
       if (!_relogged.isClosed) _relogged.add(null);
     } catch (error) {
-      if (!_pouchGone(error)) return;
-      await forgetSession();
-      clearChannel();
-      openChooser();
+      if (_pouchGone(error)) {
+        await forgetSession();
+        clearChannel();
+        openChooser();
+        return;
+      }
+      if (error is PouchPasswordRequired) {
+        clearChannel();
+        openChooser();
+      }
     }
   }
 }

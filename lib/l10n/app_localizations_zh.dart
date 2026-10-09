@@ -8147,6 +8147,44 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pouch_defaultName => '我的储物袋';
 
   @override
+  String get phoneAuth_setTitle => '设置登录密码';
+
+  @override
+  String get phoneAuth_setBody => '这只储物袋还没有密码。设好之后，手机和电脑都用它登录。';
+
+  @override
+  String get phoneAuth_confirmTitle => '确认登录密码';
+
+  @override
+  String get phoneAuth_confirmBody => '这只储物袋已经设了密码，配对之后再确认一次。';
+
+  @override
+  String get phoneAuth_loginBody => '输入主机上的登录密码';
+
+  @override
+  String get phoneAuth_forgotBody =>
+      '手机不能重设密码。在主机那台电脑上执行 shepaw password set，或打开那台电脑上的惜宝，用「忘记密码」重设。';
+
+  @override
+  String get phoneAuth_repair => '重新配对';
+
+  @override
+  String get phoneAuth_setAndEnter => '设置并进入';
+
+  @override
+  String get phoneAuth_hostResetTitle => '重设主机密码';
+
+  @override
+  String get phoneAuth_hostResetBody =>
+      '这会改掉主机上的登录密码，之后每台手机和电脑都用新密码。也可以在终端执行 shepaw password set。';
+
+  @override
+  String get phoneAuth_newPassword => '新密码';
+
+  @override
+  String get phoneAuth_confirmPassword => '再输入一次';
+
+  @override
   String pouch_namedBag(String name) {
     return '$name的储物袋';
   }

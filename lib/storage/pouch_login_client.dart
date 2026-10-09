@@ -5,6 +5,21 @@ import 'package:uuid/uuid.dart';
 import '../peer/services/peer_connection_manager.dart';
 import 'pouch_catalog.dart';
 
+/// 这次进程里用户刚输入的主机密码。重登时带上，不写入磁盘。
+class PouchPasswordMemory {
+  static String? value;
+}
+
+/// 主机已经设了密码，这次登录没对上。
+class PouchPasswordRequired implements Exception {
+  const PouchPasswordRequired(this.reason);
+
+  final String reason;
+
+  @override
+  String toString() => reason;
+}
+
 /// 服务端签发的一次袋子登录。
 class PouchLoginGrant {
   const PouchLoginGrant({
@@ -18,23 +33,73 @@ class PouchLoginGrant {
   final int expiresAtMs;
 }
 
-/// 向已经配对的 shepaw 要一枚登录 token。没连上就失败，不在本地伪造登录态。
-Future<PouchLoginGrant> requestPouchLogin({
+/// 主机上是否已经有登录密码。
+Future<bool> requestPouchPasswordStatus({
   required String hostPeerId,
-  required String pouchId,
   Duration timeout = const Duration(seconds: 8),
 }) {
   return _request(
     hostPeerId: hostPeerId,
+    type: 'pouch_password_status',
+    responseType: 'pouch_password_status_resp',
+    timeout: timeout,
+    parse: (data) => data['set'] == true,
+  );
+}
+
+/// 第一次设置主机密码。已经有密码时主机拒绝，只能在主机电脑上覆盖。
+Future<void> requestPouchPasswordSet({
+  required String hostPeerId,
+  required String password,
+  Duration timeout = const Duration(seconds: 8),
+}) {
+  return _request(
+    hostPeerId: hostPeerId,
+    type: 'pouch_password_set',
+    responseType: 'pouch_password_set_resp',
+    extra: <String, dynamic>{'password': password},
+    timeout: timeout,
+    parse: (data) {
+      if (data['ok'] == true) return;
+      final error = (data['error'] as String?)?.trim() ?? '';
+      throw StateError(error.isEmpty ? '没能设好密码' : error);
+    },
+  );
+}
+
+/// 向已经配对的 shepaw 要一枚登录 token。没连上就失败，不在本地伪造登录态。
+///
+/// [password] 缺省时用本进程里刚输入过的密码。主机没设密码时可以不带。
+Future<PouchLoginGrant> requestPouchLogin({
+  required String hostPeerId,
+  required String pouchId,
+  String? password,
+  Duration timeout = const Duration(seconds: 8),
+}) {
+  final secret = (password != null && password.isNotEmpty)
+      ? password
+      : PouchPasswordMemory.value;
+  return _request(
+    hostPeerId: hostPeerId,
     type: 'pouch_login',
     responseType: 'pouch_login_resp',
-    extra: <String, dynamic>{'pouch_id': pouchId},
+    extra: <String, dynamic>{
+      'pouch_id': pouchId,
+      if (secret != null && secret.isNotEmpty) 'password': secret,
+    },
     timeout: timeout,
     parse: (data) {
       if (data['accepted'] != true) {
-        throw StateError((data['reason'] as String?)?.trim().isNotEmpty == true
+        final reason = (data['reason'] as String?)?.trim().isNotEmpty == true
             ? data['reason'] as String
-            : '登录被拒绝');
+            : '登录被拒绝';
+        if (data['password_required'] == true) {
+          throw PouchPasswordRequired(reason);
+        }
+        throw StateError(reason);
+      }
+      if (secret != null && secret.isNotEmpty) {
+        PouchPasswordMemory.value = secret;
       }
       final token = (data['token'] as String?)?.trim() ?? '';
       final sid = (data['sid'] as String?)?.trim() ?? '';

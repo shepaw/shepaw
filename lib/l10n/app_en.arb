@@ -4482,6 +4482,18 @@
   "remoteHost_enterAnyway": "Enter anyway",
   "pouch_notInstalled": "Not installed · Install",
   "pouch_defaultName": "My pouch",
+  "phoneAuth_setTitle": "Set a login password",
+  "phoneAuth_setBody": "This pouch has no password yet. After you set one, every phone and computer uses it.",
+  "phoneAuth_confirmTitle": "Confirm the login password",
+  "phoneAuth_confirmBody": "This pouch already has a password. Confirm it after pairing.",
+  "phoneAuth_loginBody": "Enter the password stored on the host",
+  "phoneAuth_forgotBody": "A phone cannot reset this password. On the host computer, run shepaw password set, or open Shepaw there and use Forgot password.",
+  "phoneAuth_repair": "Pair again",
+  "phoneAuth_setAndEnter": "Set and continue",
+  "phoneAuth_hostResetTitle": "Reset the host password",
+  "phoneAuth_hostResetBody": "This replaces the login password on the host. Every phone and computer will use the new one. You can also run shepaw password set in a terminal.",
+  "phoneAuth_newPassword": "New password",
+  "phoneAuth_confirmPassword": "Enter it again",
   "pouch_namedBag": "{name}'s pouch",
   "@pouch_namedBag": {
     "placeholders": {

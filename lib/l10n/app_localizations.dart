@@ -14817,6 +14817,78 @@ abstract class AppLocalizations {
   /// **'我的储物袋'**
   String get pouch_defaultName;
 
+  /// No description provided for @phoneAuth_setTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'设置登录密码'**
+  String get phoneAuth_setTitle;
+
+  /// No description provided for @phoneAuth_setBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'这只储物袋还没有密码。设好之后，手机和电脑都用它登录。'**
+  String get phoneAuth_setBody;
+
+  /// No description provided for @phoneAuth_confirmTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'确认登录密码'**
+  String get phoneAuth_confirmTitle;
+
+  /// No description provided for @phoneAuth_confirmBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'这只储物袋已经设了密码，配对之后再确认一次。'**
+  String get phoneAuth_confirmBody;
+
+  /// No description provided for @phoneAuth_loginBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入主机上的登录密码'**
+  String get phoneAuth_loginBody;
+
+  /// No description provided for @phoneAuth_forgotBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'手机不能重设密码。在主机那台电脑上执行 shepaw password set，或打开那台电脑上的惜宝，用「忘记密码」重设。'**
+  String get phoneAuth_forgotBody;
+
+  /// No description provided for @phoneAuth_repair.
+  ///
+  /// In zh, this message translates to:
+  /// **'重新配对'**
+  String get phoneAuth_repair;
+
+  /// No description provided for @phoneAuth_setAndEnter.
+  ///
+  /// In zh, this message translates to:
+  /// **'设置并进入'**
+  String get phoneAuth_setAndEnter;
+
+  /// No description provided for @phoneAuth_hostResetTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'重设主机密码'**
+  String get phoneAuth_hostResetTitle;
+
+  /// No description provided for @phoneAuth_hostResetBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'这会改掉主机上的登录密码，之后每台手机和电脑都用新密码。也可以在终端执行 shepaw password set。'**
+  String get phoneAuth_hostResetBody;
+
+  /// No description provided for @phoneAuth_newPassword.
+  ///
+  /// In zh, this message translates to:
+  /// **'新密码'**
+  String get phoneAuth_newPassword;
+
+  /// No description provided for @phoneAuth_confirmPassword.
+  ///
+  /// In zh, this message translates to:
+  /// **'再输入一次'**
+  String get phoneAuth_confirmPassword;
+
   /// No description provided for @pouch_namedBag.
   ///
   /// In zh, this message translates to:
