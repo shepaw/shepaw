@@ -56,7 +56,7 @@
 **不做**
 
 - 不在用户没点按钮时偷偷安装或启动主机。主机是常驻的后台服务，持有袋子的密钥和全部数据，用户可能想把它放在家里那台常开的电脑上，所以必须让用户确认一次（见 3.2）。
-- 不把 CLI 塞进 App 安装包。两边版本独立发布，CLI 已经有签名清单和 `shepaw update`。
+- 桌面安装包带上 CLI（macOS 为 `Contents/Resources/shepaw`，Windows 为 `cli/shepaw.exe`）。App 启动时同步到 `~/.shepaw/bin`，只升级不降级；正在跑的 Hub 才跟着重启。还没选过主机位置时不自动启动。`shepaw update` 装过更新的版本时，旧的安装包不能把它盖回去。
 - 不改主机、客户端、袋子的角色划分。
 - 不做局域网自动发现主机（mDNS），留作后续。
 
@@ -169,7 +169,7 @@ HostEntry resolveHostEntry({
 │                                              │
 │  ┌──────────────────────────────────────┐   │
 │  │ 🖥  用这台电脑当主机            推荐    │   │
-│  │ 自动下载并启动 Shepaw 主机（约 30 MB）   │   │
+│  │ 安装应用自带的 Shepaw 主机并启动          │   │
 │  │ [ 一键安装并开始 ]                      │   │
 │  └──────────────────────────────────────┘   │
 │  ┌──────────────────────────────────────┐   │
@@ -365,7 +365,7 @@ Claude Code
 | `hostSetup_title` | 把主机放在哪里？ |
 | `hostSetup_intro` | 主机保存你的储物袋、惜宝和智能体，需要一直开着。 |
 | `hostSetup_thisComputer` | 用这台电脑当主机 |
-| `hostSetup_thisComputerDesc` | 自动下载并启动 Shepaw 主机 |
+| `hostSetup_thisComputerDesc` | 安装应用自带的 Shepaw 主机并启动 |
 | `hostSetup_installAndStart` | 一键安装并开始 |
 | `hostSetup_remote` | 连接另一台电脑上的主机 |
 | `hostSetup_remoteDesc` | 主机已经装在家里或公司的电脑上 |

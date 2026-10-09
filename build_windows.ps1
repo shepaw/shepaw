@@ -193,6 +193,37 @@ if (Test-Path $VendoredSqlite) {
   Write-Warn "windows\sqlite3.dll not found; build will ship without it and the app will fail to start (missing sqlite3.dll)."
 }
 
+# ── bundle shepaw CLI ────────────────────────────────────────────────
+# The app copies this to %LOCALAPPDATA%\Shepaw\bin on launch.
+# Keep it under cli\ so it does not collide with shepaw.exe.
+function Find-ShepawCli {
+  if ($env:SHEPAW_CLI_BIN -and (Test-Path -LiteralPath $env:SHEPAW_CLI_BIN)) {
+    return $env:SHEPAW_CLI_BIN
+  }
+  $repo = Join-Path (Split-Path -Parent $Root) 'shepaw-cli'
+  $candidates = @(
+    (Join-Path $repo 'target\x86_64-pc-windows-msvc\release\shepaw.exe'),
+    (Join-Path $repo 'target\release\shepaw.exe')
+  )
+  foreach ($candidate in $candidates) {
+    if (Test-Path -LiteralPath $candidate) { return $candidate }
+  }
+  return $null
+}
+
+$CliSrc = Find-ShepawCli
+if ($CliSrc) {
+  $CliDir = Join-Path $RunnerDir 'cli'
+  New-Item -ItemType Directory -Force -Path $CliDir | Out-Null
+  Copy-Item -LiteralPath $CliSrc -Destination (Join-Path $CliDir 'shepaw.exe') -Force
+  Write-Ok "Bundled CLI → $CliDir\shepaw.exe"
+} elseif ($Mode -eq 'release') {
+  Write-Err 'shepaw CLI binary not found. Build ..\shepaw-cli or set SHEPAW_CLI_BIN.'
+  exit 1
+} else {
+  Write-Warn "shepaw CLI not bundled ($Mode build, binary missing)."
+}
+
 # ── package ─────────────────────────────────────────────────────────
 $ZipName = "$ArtifactPrefix-windows-$Mode.zip"
 $ZipPath = Join-Path $OutDir $ZipName

@@ -440,6 +440,8 @@ EOF
   if ! app="$(find_macos_app)"; then
     die "macOS .app not found under build/macos/Build/Products/Release"
   fi
+  "$ROOT_DIR/tool/bundle_cli.sh" --mode "$BUILD_MODE" "$app" \
+    || die "Failed to bundle shepaw CLI into $app"
   local app_name
   app_name="$(basename "$app")"
   if [[ -n "$team" ]]; then

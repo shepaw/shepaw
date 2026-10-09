@@ -8072,6 +8072,39 @@ class AppLocalizationsZh extends AppLocalizations {
   String get addAgent_redetect => '重新检测';
 
   @override
+  String get pouchGate_initTitle => '创建储物袋';
+
+  @override
+  String get pouchGate_initBody => '这台电脑会成为主机。名称只是给人看的，储物袋 ID 才是身份。';
+
+  @override
+  String get pouchGate_unlockTitle => '进入储物袋';
+
+  @override
+  String get pouchGate_unlockBody => '输入储物袋名称和密码。';
+
+  @override
+  String get pouchGate_name => '储物袋名称';
+
+  @override
+  String get pouchGate_nameHint => '例如：我的储物袋';
+
+  @override
+  String get pouchGate_create => '创建并进入';
+
+  @override
+  String get pouchGate_enter => '进入';
+
+  @override
+  String get pouchGate_missing => '没有这只储物袋';
+
+  @override
+  String get pouchGate_ambiguous => '有多只同名储物袋。名称不是身份，请改用上次进入的那一只。';
+
+  @override
+  String get pouchGate_remote => '主机在另一台电脑上';
+
+  @override
   String get hostSetup_title => '把主机放在哪里？';
 
   @override
@@ -8081,7 +8114,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get hostSetup_thisComputer => '用这台电脑当主机';
 
   @override
-  String get hostSetup_thisComputerDesc => '自动下载并启动 Shepaw 主机';
+  String get hostSetup_thisComputerDesc => '安装应用自带的 Shepaw 主机并启动';
 
   @override
   String get hostSetup_recommended => '推荐';

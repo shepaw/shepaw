@@ -118,7 +118,7 @@ void main() {
     );
   });
 
-  test('老用户没选过：CLI 在就记成本机，再按本机规则走', () {
+  test('老用户没选过：CLI 在跑就记成本机；只是装了还没跑就去设置', () {
     final running = resolve(
       cli: LocalCliStatus.running,
       session: live(),
@@ -129,9 +129,8 @@ void main() {
     expect(running.recordMode, HostMode.thisComputer);
 
     final stopped = resolve(cli: LocalCliStatus.installedStopped);
-    expect(stopped, isA<AutoLocal>());
-    expect((stopped as AutoLocal).needsStart, isTrue);
-    expect(stopped.recordMode, HostMode.thisComputer);
+    expect(stopped, isA<ShowHostSetup>());
+    expect(stopped.recordMode, isNull);
   });
 
   test('没装 CLI：登录的主机不是本机就记成远端并进主页，否则去设置', () {

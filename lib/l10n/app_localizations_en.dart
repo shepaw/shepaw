@@ -8388,6 +8388,41 @@ class AppLocalizationsEn extends AppLocalizations {
   String get addAgent_redetect => 'Detect again';
 
   @override
+  String get pouchGate_initTitle => 'Create a pouch';
+
+  @override
+  String get pouchGate_initBody =>
+      'This computer becomes the host. The name is only a label. The pouch ID is the identity.';
+
+  @override
+  String get pouchGate_unlockTitle => 'Open a pouch';
+
+  @override
+  String get pouchGate_unlockBody => 'Enter the pouch name and password.';
+
+  @override
+  String get pouchGate_name => 'Pouch name';
+
+  @override
+  String get pouchGate_nameHint => 'For example: My pouch';
+
+  @override
+  String get pouchGate_create => 'Create and open';
+
+  @override
+  String get pouchGate_enter => 'Open';
+
+  @override
+  String get pouchGate_missing => 'No pouch with that name';
+
+  @override
+  String get pouchGate_ambiguous =>
+      'More than one pouch has this name. The name is not the identity. Use the one you opened last time.';
+
+  @override
+  String get pouchGate_remote => 'The host is on another computer';
+
+  @override
   String get hostSetup_title => 'Where should the host live?';
 
   @override
@@ -8398,7 +8433,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get hostSetup_thisComputer => 'Use this computer as the host';
 
   @override
-  String get hostSetup_thisComputerDesc => 'Download and start the Shepaw host';
+  String get hostSetup_thisComputerDesc =>
+      'Install the bundled Shepaw host and start it';
 
   @override
   String get hostSetup_recommended => 'Recommended';

@@ -14667,6 +14667,72 @@ abstract class AppLocalizations {
   /// **'重新检测'**
   String get addAgent_redetect;
 
+  /// No description provided for @pouchGate_initTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建储物袋'**
+  String get pouchGate_initTitle;
+
+  /// No description provided for @pouchGate_initBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台电脑会成为主机。名称只是给人看的，储物袋 ID 才是身份。'**
+  String get pouchGate_initBody;
+
+  /// No description provided for @pouchGate_unlockTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'进入储物袋'**
+  String get pouchGate_unlockTitle;
+
+  /// No description provided for @pouchGate_unlockBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入储物袋名称和密码。'**
+  String get pouchGate_unlockBody;
+
+  /// No description provided for @pouchGate_name.
+  ///
+  /// In zh, this message translates to:
+  /// **'储物袋名称'**
+  String get pouchGate_name;
+
+  /// No description provided for @pouchGate_nameHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'例如：我的储物袋'**
+  String get pouchGate_nameHint;
+
+  /// No description provided for @pouchGate_create.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建并进入'**
+  String get pouchGate_create;
+
+  /// No description provided for @pouchGate_enter.
+  ///
+  /// In zh, this message translates to:
+  /// **'进入'**
+  String get pouchGate_enter;
+
+  /// No description provided for @pouchGate_missing.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有这只储物袋'**
+  String get pouchGate_missing;
+
+  /// No description provided for @pouchGate_ambiguous.
+  ///
+  /// In zh, this message translates to:
+  /// **'有多只同名储物袋。名称不是身份，请改用上次进入的那一只。'**
+  String get pouchGate_ambiguous;
+
+  /// No description provided for @pouchGate_remote.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机在另一台电脑上'**
+  String get pouchGate_remote;
+
   /// No description provided for @hostSetup_title.
   ///
   /// In zh, this message translates to:
@@ -14688,7 +14754,7 @@ abstract class AppLocalizations {
   /// No description provided for @hostSetup_thisComputerDesc.
   ///
   /// In zh, this message translates to:
-  /// **'自动下载并启动 Shepaw 主机'**
+  /// **'安装应用自带的 Shepaw 主机并启动'**
   String get hostSetup_thisComputerDesc;
 
   /// No description provided for @hostSetup_recommended.

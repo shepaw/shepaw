@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../l10n/app_localizations.dart';
+import '../services/cli_bundle.dart';
+import '../services/cli_host.dart';
 import 'host_entry.dart';
 import 'host_entry_flow.dart';
 import 'remote_host_guide.dart';
@@ -22,13 +24,30 @@ class _HostSetupScreenState extends State<HostSetupScreen> {
   String _error = '';
 
   Future<void> _install() async {
-    await HostModeStore.write(HostMode.thisComputer);
-    await Clipboard.setData(ClipboardData(text: cliInstallCommand()));
-    if (!mounted) return;
     setState(() {
-      _waitingForInstall = true;
+      _busy = true;
       _error = '';
+      _waitingForInstall = false;
     });
+    try {
+      await HostModeStore.write(HostMode.thisComputer);
+      final bundled = await CliBundle.sync();
+      if (!mounted) return;
+      if (bundled.binary != null || await CliHost.resolveBinary() != null) {
+        await HostEntryNavigator.go(
+          context,
+          isDesktop: Platform.isMacOS || Platform.isWindows || Platform.isLinux,
+        );
+        return;
+      }
+      await Clipboard.setData(ClipboardData(text: cliInstallCommand()));
+      if (!mounted) return;
+      setState(() => _waitingForInstall = true);
+    } catch (error) {
+      if (mounted) setState(() => _error = '$error');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _connectRemote() async {
@@ -66,7 +85,8 @@ class _HostSetupScreenState extends State<HostSetupScreen> {
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
-          Text(l10n.hostSetup_intro, style: Theme.of(context).textTheme.bodyLarge),
+          Text(l10n.hostSetup_intro,
+              style: Theme.of(context).textTheme.bodyLarge),
           const SizedBox(height: 20),
           _ChoiceCard(
             icon: Icons.computer,

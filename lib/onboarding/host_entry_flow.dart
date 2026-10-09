@@ -8,6 +8,7 @@ import '../peer/pairing_endpoints.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_storage_service.dart';
 import '../services/cli_host.dart';
+import '../services/cli_pouch.dart';
 import '../services/logger_service.dart';
 import '../storage/pouch_login.dart';
 import '../storage/pouch_session.dart';
@@ -182,5 +183,8 @@ Future<void> _autoLocal(
     _replace(context, '/home');
     return;
   }
-  _replace(context, '/pouch');
+  final binary = running.binary;
+  final initialized = await CliPouch.passwordIsSet(binary);
+  if (!context.mounted) return;
+  _replace(context, initialized ? '/pouch-unlock' : '/pouch-init');
 }

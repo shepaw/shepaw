@@ -105,7 +105,9 @@ HostEntry resolveHostEntry({
     return loggedIn ? const EnterHome() : const ShowPouchChooser();
   }
 
-  if (mode == HostMode.unset && cli == LocalCliStatus.notInstalled) {
+  // 只装了还没跑：先问主机放哪。App 会在启动时把自带 CLI 拷进安装目录，
+  // 不能把这次拷贝当成「用户已经决定用这台电脑」。
+  if (mode == HostMode.unset && cli != LocalCliStatus.running) {
     final host = sessionHostFingerprint?.trim() ?? '';
     final hostIsLocal = sameFingerprint(localCliFingerprint, host);
     if (loggedIn && host.isNotEmpty && !hostIsLocal) {

@@ -7,8 +7,9 @@ import 'package:provider/provider.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'l10n/app_localizations.dart';
 import 'services/app_paths.dart';
+import 'services/cli_bundle.dart';
+import 'services/cli_host.dart';
 import 'services/desktop_window_auto_size.dart';
-import 'services/password_service.dart';
 import 'services/permission_service.dart';
 import 'services/logger_service.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
@@ -24,6 +25,8 @@ import 'screens/password_setup_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/pouch_login_screen.dart';
 import 'onboarding/host_setup_screen.dart';
+import 'onboarding/pouch_gate_screen.dart';
+import 'services/cli_pouch.dart';
 import 'onboarding/phone_auth_screen.dart';
 import 'onboarding/phone_host_store.dart';
 import 'onboarding/remote_connect_screen.dart';
@@ -92,6 +95,25 @@ Future<void> main(List<String> args) async {
 
       // 初始化日志服务（最先初始化，确保后续日志可写入文件）
       await LoggerService().initialize();
+
+      if (CliHost.localCliSupported) {
+        try {
+          final bundled = await CliBundle.sync();
+          if (bundled.warning != null) {
+            LoggerService().warning(
+              'cli bundle path: ${bundled.warning}',
+              tag: 'CliBundle',
+            );
+          }
+        } catch (error, stack) {
+          LoggerService().error(
+            'cli bundle sync failed',
+            tag: 'CliBundle',
+            error: error,
+            stackTrace: stack,
+          );
+        }
+      }
 
       final migrationNote = AppPaths.migrationNote;
       if (migrationNote != null) {
@@ -320,6 +342,10 @@ class _MyAppState extends State<MyApp> {
                 '/login': (context) => const LoginScreen(),
                 '/pouch': (context) => const PouchLoginScreen(),
                 '/host-setup': (context) => const HostSetupScreen(),
+                '/pouch-init': (context) =>
+                    const PouchGateScreen(initializing: true),
+                '/pouch-unlock': (context) =>
+                    const PouchGateScreen(initializing: false),
                 '/remote-connect': (context) => const RemoteConnectScreen(),
                 '/phone-login': (context) => const PhoneAuthScreen(),
                 '/home': (context) => const AdaptiveHomeScreen(),
@@ -341,8 +367,6 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
-  final _passwordService = PasswordService();
-
   @override
   void initState() {
     super.initState();
@@ -370,16 +394,28 @@ class _SplashScreenState extends State<SplashScreen> {
       return;
     }
 
-    // 检查是否已设置密码
-    final isPasswordSet = await _passwordService.isPasswordSet();
+    // 电脑上的门是储物袋，不是本机另一套密码。初始化由 shepaw CLI 完成。
+    final binary = await CliHost.resolveBinary();
     if (!mounted) return;
-
-    if (isPasswordSet) {
-      // 已设置密码，跳转到登录页
-      Navigator.of(context).pushReplacementNamed('/login');
-    } else {
-      // 未设置密码，跳转到设置页
-      Navigator.of(context).pushReplacementNamed('/setup');
+    if (binary == null) {
+      Navigator.of(context).pushReplacementNamed('/host-setup');
+      return;
+    }
+    try {
+      final initialized = await CliPouch.passwordIsSet(binary);
+      if (!mounted) return;
+      Navigator.of(context).pushReplacementNamed(
+        initialized ? '/pouch-unlock' : '/pouch-init',
+      );
+    } catch (error, stack) {
+      LoggerService().error(
+        'pouch gate failed',
+        tag: 'PouchGate',
+        error: error,
+        stackTrace: stack,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pushReplacementNamed('/pouch-init');
     }
   }
 
