@@ -11,7 +11,7 @@ class RemoteConnectScreen extends StatelessWidget {
   const RemoteConnectScreen({super.key, this.popOnPaired = false});
 
   /// 从储物袋页推进来时，配对成功后把主机交回去。
-  /// 首次打开时，配对成功后去设置或确认主机密码。
+  /// 首次打开时，配对成功后去登录储物袋。
   final bool popOnPaired;
 
   @override
@@ -34,7 +34,7 @@ class RemoteConnectScreen extends StatelessWidget {
     if (!context.mounted) return;
     Navigator.of(context).pushReplacementNamed(
       '/phone-login',
-      arguments: PhoneAuthArgs(hostPeerId: peer.id, justPaired: true),
+      arguments: PhoneAuthArgs(hostPeerId: peer.id),
     );
   }
 }

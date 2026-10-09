@@ -6,6 +6,7 @@ import '../l10n/app_localizations.dart';
 import '../peer/models/paired_peer.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_storage_service.dart';
+import '../services/cli_pouch.dart';
 import '../services/logger_service.dart';
 import '../storage/pouch_catalog.dart';
 import '../storage/pouch_login.dart';
@@ -15,28 +16,28 @@ import 'phone_host_store.dart';
 
 /// 解锁后的手机登录参数。配对成功先记下主机，再进这一页。
 class PhoneAuthArgs {
-  const PhoneAuthArgs({required this.hostPeerId, this.justPaired = false});
+  const PhoneAuthArgs({required this.hostPeerId});
 
   final String hostPeerId;
-  final bool justPaired;
 }
 
-/// 已有袋子时用上次那只，否则用列表里的第一只。没有就返回 null，由调用方新建。
-PouchDescriptor? chooseExistingPouch(
-  List<PouchDescriptor> pouches, {
-  String? preferredId,
+/// 按名称选出储物袋。名称只对上一只就用它；同名多只时只认上次的 ID。
+PouchPickResult pickPhonePouch({
+  required String typedName,
+  required List<PouchDescriptor> pouches,
+  String? savedId,
 }) {
-  if (pouches.isEmpty) return null;
-  final want = preferredId?.trim() ?? '';
-  if (want.isNotEmpty) {
-    for (final pouch in pouches) {
-      if (pouch.id == want) return pouch;
-    }
-  }
-  return pouches.first;
+  return pickPouchAccount(
+    typedName: typedName,
+    accounts: [
+      for (final pouch in pouches)
+        CliPouchAccount(id: pouch.id, name: pouch.name),
+    ],
+    savedId: savedId,
+  );
 }
 
-/// 手机登录：密码在主机上。没设过就在这里设，设过了就输入确认。
+/// 手机登录：主机已经在电脑上初始化。这里只输入名称和密码。
 class PhoneAuthScreen extends StatefulWidget {
   const PhoneAuthScreen({super.key});
 
@@ -45,16 +46,17 @@ class PhoneAuthScreen extends StatefulWidget {
 }
 
 class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
+  final _name = TextEditingController();
   final _password = TextEditingController();
-  final _confirm = TextEditingController();
 
   bool _argsRead = false;
-  bool _justPaired = false;
   bool _busy = false;
   bool _probing = false;
   bool _ready = false;
   bool _passwordSet = false;
+  bool _nameFilled = false;
   String _hostId = '';
+  String? _savedId;
   String _error = '';
 
   @override
@@ -65,15 +67,14 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
     final args = ModalRoute.of(context)?.settings.arguments;
     if (args is PhoneAuthArgs) {
       _hostId = args.hostPeerId;
-      _justPaired = args.justPaired;
     }
     _prepare();
   }
 
   @override
   void dispose() {
+    _name.dispose();
     _password.dispose();
-    _confirm.dispose();
     super.dispose();
   }
 
@@ -103,6 +104,15 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
       await _connect(peer);
       if (!mounted) return;
       final set = await requestPouchPasswordStatus(hostPeerId: hostId);
+      if (!_nameFilled) {
+        final session = await PouchSessionStore.readActive();
+        _savedId = session?.pouchId;
+        final savedName = session?.pouchName.trim() ?? '';
+        if (savedName.isNotEmpty && _name.text.isEmpty) {
+          _name.text = savedName;
+        }
+        _nameFilled = true;
+      }
       if (!mounted) return;
       setState(() {
         _passwordSet = set;
@@ -115,7 +125,7 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
         setState(() {
           // 问失败也要能输入。返回用户按已有密码登录，刚配对的按首次设置。
           _ready = true;
-          _passwordSet = !_justPaired;
+          _passwordSet = true;
           _error = error is TimeoutException
               ? '主机没有回应。请确认电脑上的 shepaw 已重启，然后再登录。'
               : error is StateError
@@ -149,7 +159,13 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
   Future<void> _submit() async {
     final l10n = AppLocalizations.of(context);
     if (_busy || !_ready) return;
+    if (!_passwordSet) return;
+    final name = _name.text.trim();
     final password = _password.text;
+    if (name.isEmpty) {
+      setState(() => _error = l10n.pouch_nameRequired);
+      return;
+    }
     if (password.isEmpty) {
       setState(() => _error = l10n.login_emptyPassword);
       return;
@@ -158,33 +174,29 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
       setState(() => _error = l10n.passwordSetup_tooShort);
       return;
     }
-    if (!_passwordSet && password != _confirm.text) {
-      setState(() => _error = l10n.passwordSetup_mismatch);
-      return;
-    }
     setState(() {
       _busy = true;
       _error = '';
     });
     try {
-      if (!_passwordSet) {
-        await requestPouchPasswordSet(hostPeerId: _hostId, password: password);
-        _passwordSet = true;
-      }
-      final sessionBefore = await PouchSessionStore.readActive();
       final pouches = await requestPouchList(hostPeerId: _hostId);
-      final existing = chooseExistingPouch(
-        pouches,
-        preferredId: sessionBefore?.pouchId,
+      final picked = pickPhonePouch(
+        typedName: name,
+        pouches: pouches,
+        savedId: _savedId,
       );
-      final pouch = existing ??
-          await requestPouchCreate(
-            hostPeerId: _hostId,
-            name: l10n.pouch_defaultName,
-          );
+      final CliPouchAccount account;
+      switch (picked.kind) {
+        case PouchPick.found:
+          account = picked.account!;
+        case PouchPick.missing:
+          throw StateError(l10n.pouchGate_missing);
+        case PouchPick.ambiguous:
+          throw StateError(l10n.pouchGate_ambiguous);
+      }
       final grant = await requestPouchLogin(
         hostPeerId: _hostId,
-        pouchId: pouch.id,
+        pouchId: account.id,
         password: password,
       );
       final peer = await PeerStorageService().getPeerById(_hostId);
@@ -192,8 +204,8 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
       final hubUrl = local.isNotEmpty ? local : (peer?.channelEndpoint ?? '');
       final session = PouchSession(
         hubUrl: hubUrl,
-        pouchId: pouch.id,
-        pouchName: pouch.name,
+        pouchId: account.id,
+        pouchName: account.name,
         hostPeerId: _hostId,
         token: grant.token,
         sessionId: grant.sessionId,
@@ -245,11 +257,9 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final setting = _ready && !_passwordSet;
-    final title = setting ? l10n.phoneAuth_setTitle : l10n.login_title;
-    final body = setting
-        ? l10n.phoneAuth_setBody
-        : (_justPaired ? l10n.phoneAuth_confirmBody : l10n.phoneAuth_loginBody);
+    final waiting = _ready && !_passwordSet;
+    final title = waiting ? l10n.phoneAuth_setTitle : l10n.login_title;
+    final body = waiting ? l10n.phoneAuth_setBody : l10n.phoneAuth_loginBody;
     return Scaffold(
       body: SafeArea(
         child: ListView(
@@ -265,34 +275,37 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
             Text(body, textAlign: TextAlign.center),
             const SizedBox(height: 32),
             if (_probing) const LinearProgressIndicator(),
-            TextField(
-              controller: _password,
-              obscureText: true,
-              enabled: !_busy,
-              autofocus: true,
-              decoration: InputDecoration(
-                labelText:
-                    setting ? l10n.phoneAuth_newPassword : l10n.login_password,
+            if (!waiting) ...[
+              TextField(
+                controller: _name,
+                enabled: _ready && !_busy,
+                decoration: InputDecoration(
+                  labelText: l10n.pouchGate_name,
+                  hintText: l10n.pouchGate_nameHint,
+                ),
+                textInputAction: TextInputAction.next,
               ),
-              onSubmitted: (_) => _submit(),
-            ),
-            if (setting) ...[
               const SizedBox(height: 12),
               TextField(
-                controller: _confirm,
+                controller: _password,
                 obscureText: true,
-                enabled: !_busy,
+                enabled: _ready && !_busy,
+                autofocus: true,
                 decoration: InputDecoration(
-                  labelText: l10n.phoneAuth_confirmPassword,
+                  labelText: l10n.login_password,
                 ),
                 onSubmitted: (_) => _submit(),
               ),
             ],
             const SizedBox(height: 20),
             FilledButton(
-              onPressed: _ready && !_busy ? _submit : null,
+              onPressed: !_ready || _busy
+                  ? null
+                  : waiting
+                      ? _prepare
+                      : _submit,
               child: Text(
-                setting ? l10n.phoneAuth_setAndEnter : l10n.login_button,
+                waiting ? l10n.phoneAuth_setAndEnter : l10n.login_button,
               ),
             ),
             if (_error.isNotEmpty) ...[

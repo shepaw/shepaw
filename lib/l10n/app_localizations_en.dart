@@ -8506,11 +8506,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pouch_defaultName => 'My pouch';
 
   @override
-  String get phoneAuth_setTitle => 'Set a login password';
+  String get phoneAuth_setTitle => 'Create the pouch on a computer first';
 
   @override
   String get phoneAuth_setBody =>
-      'This pouch has no password yet. After you set one, every phone and computer uses it.';
+      'This host is not set up yet. Open Shepaw on the computer, create a pouch and set a password, then come back here.';
 
   @override
   String get phoneAuth_confirmTitle => 'Confirm the login password';
@@ -8520,7 +8520,8 @@ class AppLocalizationsEn extends AppLocalizations {
       'This pouch already has a password. Confirm it after pairing.';
 
   @override
-  String get phoneAuth_loginBody => 'Enter the password stored on the host';
+  String get phoneAuth_loginBody =>
+      'Enter the pouch name and password. The name is only a label. The pouch ID is the identity.';
 
   @override
   String get phoneAuth_forgotBody =>
@@ -8530,7 +8531,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get phoneAuth_repair => 'Pair again';
 
   @override
-  String get phoneAuth_setAndEnter => 'Set and continue';
+  String get phoneAuth_setAndEnter => 'I already created it';
 
   @override
   String get phoneAuth_hostResetTitle => 'Reset the host password';

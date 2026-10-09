@@ -14886,13 +14886,13 @@ abstract class AppLocalizations {
   /// No description provided for @phoneAuth_setTitle.
   ///
   /// In zh, this message translates to:
-  /// **'设置登录密码'**
+  /// **'先在电脑上创建储物袋'**
   String get phoneAuth_setTitle;
 
   /// No description provided for @phoneAuth_setBody.
   ///
   /// In zh, this message translates to:
-  /// **'这只储物袋还没有密码。设好之后，手机和电脑都用它登录。'**
+  /// **'这台主机还没有初始化。在电脑上打开惜宝，创建储物袋并设置密码，然后回到这里。'**
   String get phoneAuth_setBody;
 
   /// No description provided for @phoneAuth_confirmTitle.
@@ -14910,7 +14910,7 @@ abstract class AppLocalizations {
   /// No description provided for @phoneAuth_loginBody.
   ///
   /// In zh, this message translates to:
-  /// **'输入主机上的登录密码'**
+  /// **'输入储物袋名称和密码。名称只是给人看的，身份是储物袋 ID。'**
   String get phoneAuth_loginBody;
 
   /// No description provided for @phoneAuth_forgotBody.
@@ -14928,7 +14928,7 @@ abstract class AppLocalizations {
   /// No description provided for @phoneAuth_setAndEnter.
   ///
   /// In zh, this message translates to:
-  /// **'设置并进入'**
+  /// **'我已经创建好了'**
   String get phoneAuth_setAndEnter;
 
   /// No description provided for @phoneAuth_hostResetTitle.

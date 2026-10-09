@@ -8180,10 +8180,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pouch_defaultName => '我的储物袋';
 
   @override
-  String get phoneAuth_setTitle => '设置登录密码';
+  String get phoneAuth_setTitle => '先在电脑上创建储物袋';
 
   @override
-  String get phoneAuth_setBody => '这只储物袋还没有密码。设好之后，手机和电脑都用它登录。';
+  String get phoneAuth_setBody => '这台主机还没有初始化。在电脑上打开惜宝，创建储物袋并设置密码，然后回到这里。';
 
   @override
   String get phoneAuth_confirmTitle => '确认登录密码';
@@ -8192,7 +8192,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get phoneAuth_confirmBody => '这只储物袋已经设了密码，配对之后再确认一次。';
 
   @override
-  String get phoneAuth_loginBody => '输入主机上的登录密码';
+  String get phoneAuth_loginBody => '输入储物袋名称和密码。名称只是给人看的，身份是储物袋 ID。';
 
   @override
   String get phoneAuth_forgotBody =>
@@ -8202,7 +8202,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get phoneAuth_repair => '重新配对';
 
   @override
-  String get phoneAuth_setAndEnter => '设置并进入';
+  String get phoneAuth_setAndEnter => '我已经创建好了';
 
   @override
   String get phoneAuth_hostResetTitle => '重设主机密码';
