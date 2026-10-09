@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
@@ -49,6 +51,7 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
   bool _argsRead = false;
   bool _justPaired = false;
   bool _busy = false;
+  bool _probing = false;
   bool _ready = false;
   bool _passwordSet = false;
   String _hostId = '';
@@ -76,7 +79,7 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
 
   Future<void> _prepare() async {
     setState(() {
-      _busy = true;
+      _probing = true;
       _error = '';
       _ready = false;
     });
@@ -108,9 +111,20 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
     } catch (error) {
       LoggerService()
           .error('phone auth prepare failed', tag: 'PhoneAuth', error: error);
-      if (mounted) setState(() => _error = '$error');
+      if (mounted) {
+        setState(() {
+          // 问失败也要能输入。返回用户按已有密码登录，刚配对的按首次设置。
+          _ready = true;
+          _passwordSet = !_justPaired;
+          _error = error is TimeoutException
+              ? '主机没有回应。请确认电脑上的 shepaw 已重启，然后再登录。'
+              : error is StateError
+                  ? error.message
+                  : '$error';
+        });
+      }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) setState(() => _probing = false);
     }
   }
 
@@ -250,11 +264,12 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
             const SizedBox(height: 12),
             Text(body, textAlign: TextAlign.center),
             const SizedBox(height: 32),
-            if (!_ready && _busy) const LinearProgressIndicator(),
+            if (_probing) const LinearProgressIndicator(),
             TextField(
               controller: _password,
               obscureText: true,
-              enabled: _ready && !_busy,
+              enabled: !_busy,
+              autofocus: true,
               decoration: InputDecoration(
                 labelText:
                     setting ? l10n.phoneAuth_newPassword : l10n.login_password,

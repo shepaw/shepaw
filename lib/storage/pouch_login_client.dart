@@ -182,7 +182,12 @@ Future<T> _request<T>({
   final done = Completer<T>();
   final sub = PeerConnectionManager.instance.controlEvents.listen((event) {
     if (done.isCompleted) return;
-    if (event.peerId != hostPeerId || event.type != responseType) return;
+    if (event.peerId != hostPeerId) return;
+    if (event.type == 'pouch_login_required' && event.data['for'] == type) {
+      done.completeError(StateError('主机还是旧版本，请在电脑上重启 shepaw'));
+      return;
+    }
+    if (event.type != responseType) return;
     if (event.data['request_id'] != requestId) return;
     try {
       done.complete(parse(event.data));
