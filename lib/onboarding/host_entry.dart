@@ -132,6 +132,18 @@ HostEntry resolveHostEntry({
   }
 }
 
+/// 连接页已经是栈底、并且还记着一台已配对主机时，返回应打开登录页。
+/// 路由还能 pop 时返回 null，交给系统返回。
+String? remoteConnectLoginHost({
+  required bool canPop,
+  required String? rememberedHostId,
+}) {
+  if (canPop) return null;
+  final id = rememberedHostId?.trim() ?? '';
+  if (id.isEmpty) return null;
+  return id;
+}
+
 /// 退出登录后去哪。设置页嵌在子 Navigator 里，调用方要用根导航打开。
 String logoutRoute({
   required bool isDesktop,

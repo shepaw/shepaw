@@ -13,6 +13,7 @@ import '../storage/pouch_login.dart';
 import '../storage/pouch_login_client.dart';
 import '../storage/pouch_session.dart';
 import 'phone_host_store.dart';
+import 'phone_pouch_memory.dart';
 
 /// 解锁后的手机登录参数。配对成功先记下主机，再进这一页。
 class PhoneAuthArgs {
@@ -34,6 +35,15 @@ PouchDescriptor? choosePhonePouch(
     }
   }
   return pouches.first;
+}
+
+/// 主机已经回答就用它的名单，空名单也算回答。还没问到时用记住的。
+List<PouchDescriptor> phonePouchesToShow({
+  required List<PouchDescriptor>? live,
+  required List<PouchDescriptor> remembered,
+}) {
+  if (live != null) return live;
+  return remembered;
 }
 
 /// 按名称选出储物袋。名称只对上一只就用它；同名多只时只认上次的 ID。
@@ -117,19 +127,32 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
         await _repair();
         return;
       }
+      final remembered = await _loadRemembered(hostId);
+      if (remembered.isNotEmpty) {
+        await PhonePouchMemory.write(hostId, remembered);
+        if (!mounted) return;
+        setState(() {
+          _passwordSet = true;
+          _pouches = remembered;
+          _selected = choosePhonePouch(remembered, savedId: _savedId);
+          _ready = true;
+        });
+      }
       await _connect(peer);
       if (!mounted) return;
       final set = await requestPouchPasswordStatus(hostPeerId: hostId);
-      final session = await PouchSessionStore.readActive();
-      _savedId = session?.pouchId;
-      final pouches =
-          set ? await requestPouchList(hostPeerId: hostId) : const <PouchDescriptor>[];
-      final selected = choosePhonePouch(pouches, savedId: _savedId);
+      final List<PouchDescriptor> live = set
+          ? await requestPouchList(hostPeerId: hostId)
+          : const <PouchDescriptor>[];
+      if (set && live.isNotEmpty) {
+        await PhonePouchMemory.write(hostId, live);
+      }
+      final shown = phonePouchesToShow(live: live, remembered: remembered);
       if (!mounted) return;
       setState(() {
         _passwordSet = set;
-        _pouches = pouches;
-        _selected = selected;
+        _pouches = shown;
+        _selected = choosePhonePouch(shown, savedId: _savedId);
         _ready = true;
       });
     } catch (error) {
@@ -150,6 +173,36 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
     } finally {
       if (mounted) setState(() => _probing = false);
     }
+  }
+
+  /// 先用本机记住的袋子。连上主机之后再换成那边的名单。
+  Future<List<PouchDescriptor>> _loadRemembered(String hostId) async {
+    var pouches = await PhonePouchMemory.read(hostId);
+    final session = await PouchSessionStore.readActive();
+    if (session != null && session.hostPeerId == hostId) {
+      _savedId = session.pouchId;
+      pouches = rememberPhonePouch(
+        pouches,
+        id: session.pouchId,
+        name: session.pouchName,
+      );
+    }
+    final memory = await PouchLoginMemory.read();
+    if (memory != null) {
+      final known = pouches.any((pouch) => pouch.id == memory.id);
+      if (known) {
+        _savedId ??= memory.id;
+      } else if (pouches.isEmpty &&
+          (session == null || session.hostPeerId == hostId)) {
+        _savedId ??= memory.id;
+        pouches = rememberPhonePouch(
+          pouches,
+          id: memory.id,
+          name: memory.name,
+        );
+      }
+    }
+    return pouches;
   }
 
   Future<void> _connect(PairedPeer peer) async {
@@ -233,6 +286,15 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
       await PouchSessionStore(await PouchSessionStore.appFile()).save(session);
       PouchChannel.install(session);
       await PhoneHostStore.write(_hostId);
+      await PouchLoginMemory.write(id: account.id, name: account.name);
+      await PhonePouchMemory.write(
+        _hostId,
+        rememberPhonePouch(
+          _pouches,
+          id: account.id,
+          name: account.name,
+        ),
+      );
       if (!mounted) return;
       Navigator.of(context).pushReplacementNamed('/home');
     } on PouchPasswordRequired catch (error) {
@@ -249,6 +311,11 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// 重新配对叠在登录页上。系统返回还能回到刚才那一页。
+  void _pairAgain() {
+    Navigator.of(context).pushNamed('/remote-connect');
   }
 
   Future<void> _repair() async {
@@ -277,9 +344,19 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final waiting = _ready && !_passwordSet;
-    final title = waiting ? l10n.phoneAuth_setTitle : l10n.login_title;
-    final body = waiting ? l10n.phoneAuth_setBody : l10n.phoneAuth_confirmBody;
-    final selected = _selected;
+    final choosing = !waiting && _pouches.isNotEmpty;
+    final title = waiting
+        ? l10n.phoneAuth_setTitle
+        : choosing
+            ? l10n.pouchGate_unlockTitle
+            : l10n.login_title;
+    final body = waiting
+        ? l10n.phoneAuth_setBody
+        : choosing
+            ? l10n.pouchGate_unlockBody
+            : l10n.phoneAuth_confirmBody;
+    final selected =
+        _selected ?? choosePhonePouch(_pouches, savedId: _savedId);
     return Scaffold(
       body: SafeArea(
         child: ListView(
@@ -296,38 +373,27 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
             const SizedBox(height: 32),
             if (_probing) const LinearProgressIndicator(),
             if (!waiting) ...[
-              if (selected != null && _pouches.length == 1)
-                InputDecorator(
-                  decoration: InputDecoration(
-                    labelText: l10n.pouchGate_name,
+              if (_pouches.isNotEmpty)
+                RadioGroup<String>(
+                  groupValue: selected?.id,
+                  onChanged: (value) {
+                    if (_busy || value == null) return;
+                    setState(() {
+                      _selected = choosePhonePouch(_pouches, savedId: value);
+                    });
+                  },
+                  child: Column(
+                    children: [
+                      for (final pouch in _pouches)
+                        RadioListTile<String>(
+                          value: pouch.id,
+                          title: Text(pouch.name),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                    ],
                   ),
-                  child: Text(selected.name),
                 )
-              else if (_pouches.length > 1)
-                DropdownButtonFormField<String>(
-                  initialValue: selected?.id,
-                  decoration: InputDecoration(
-                    labelText: l10n.pouchGate_name,
-                  ),
-                  items: [
-                    for (final pouch in _pouches)
-                      DropdownMenuItem(
-                        value: pouch.id,
-                        child: Text(pouch.name),
-                      ),
-                  ],
-                  onChanged: _ready && !_busy
-                      ? (id) {
-                          setState(() {
-                            _selected = choosePhonePouch(
-                              _pouches,
-                              savedId: id,
-                            );
-                          });
-                        }
-                      : null,
-                )
-              else
+              else if (!_probing)
                 TextField(
                   controller: _name,
                   enabled: _ready && !_busy,
@@ -351,13 +417,17 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
             ],
             const SizedBox(height: 20),
             FilledButton(
-              onPressed: !_ready || _busy
+              onPressed: !_ready || _busy || _probing
                   ? null
                   : waiting
                       ? _prepare
                       : _submit,
               child: Text(
-                waiting ? l10n.phoneAuth_setAndEnter : l10n.login_button,
+                waiting
+                    ? l10n.phoneAuth_setAndEnter
+                    : choosing
+                        ? l10n.pouchGate_enter
+                        : l10n.login_button,
               ),
             ),
             if (_error.isNotEmpty) ...[
@@ -372,7 +442,7 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
               child: Text(l10n.login_forgotPassword),
             ),
             TextButton(
-              onPressed: _busy ? null : _repair,
+              onPressed: _busy ? null : _pairAgain,
               child: Text(l10n.phoneAuth_repair),
             ),
           ],

@@ -16,6 +16,7 @@ import '../peer/services/peer_storage_service.dart';
 import '../onboarding/host_entry.dart';
 import '../onboarding/phone_auth_screen.dart';
 import '../onboarding/phone_host_store.dart';
+import '../onboarding/phone_pouch_memory.dart';
 import '../service_locator.dart';
 import '../services/cli_host.dart';
 import '../services/cli_pouch.dart';
@@ -95,6 +96,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// 桌面设置盖在子 Navigator 上，那个导航的 `onGenerateRoute` 不管名字，
   /// 一律再生成一张设置页。所以不能用离按钮最近的 Navigator。
   Future<void> _logoutToGate() async {
+    final session = await PouchSessionStore.readActive();
+    await PhonePouchMemory.rememberSession(session);
     await PouchSessionStore(await PouchSessionStore.appFile()).forget();
     PouchChannel.clear();
     final nav = navigatorKey.currentState;
@@ -150,6 +153,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       },
     );
     if (confirmed != true || !screenContext.mounted) return;
+    final session = await PouchSessionStore.readActive();
+    await PhonePouchMemory.rememberSession(session);
     await PouchSessionStore(await PouchSessionStore.appFile()).forget();
     PouchChannel.clear();
     if (!screenContext.mounted) return;

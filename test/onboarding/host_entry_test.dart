@@ -90,6 +90,25 @@ void main() {
     );
   });
 
+  test('连接页在栈底且已有配对主机时，返回去登录', () {
+    expect(
+      remoteConnectLoginHost(canPop: false, rememberedHostId: 'peer-1'),
+      'peer-1',
+    );
+    expect(
+      remoteConnectLoginHost(canPop: true, rememberedHostId: 'peer-1'),
+      isNull,
+    );
+    expect(
+      remoteConnectLoginHost(canPop: false, rememberedHostId: null),
+      isNull,
+    );
+    expect(
+      remoteConnectLoginHost(canPop: false, rememberedHostId: '  '),
+      isNull,
+    );
+  });
+
   test('手机：登录态有效进主页，否则去连远端主机', () {
     expect(resolve(isDesktop: false, session: live()), isA<EnterHome>());
     final connect = resolve(isDesktop: false);

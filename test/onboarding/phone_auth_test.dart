@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/onboarding/phone_auth_screen.dart';
+import 'package:shepaw/onboarding/phone_pouch_memory.dart';
 import 'package:shepaw/services/cli_pouch.dart';
 import 'package:shepaw/storage/pouch_catalog.dart';
 
@@ -39,5 +40,41 @@ void main() {
       savedId: 'missing',
     );
     expect(ambiguous.kind, PouchPick.ambiguous);
+  });
+
+  test('连不上主机时用记住的袋子，主机回答了就用它的名单', () {
+    expect(
+      phonePouchesToShow(live: null, remembered: const [study, work]).map((p) => p.id),
+      ['a', 'c'],
+    );
+    expect(
+      phonePouchesToShow(live: const [work], remembered: const [study]).single.id,
+      'c',
+    );
+    expect(
+      phonePouchesToShow(live: const [], remembered: const [study]),
+      isEmpty,
+    );
+  });
+
+  test('上次进入的袋子不在名单里就补上，已有的不重复', () {
+    final added = rememberPhonePouch(const [study], id: 'c', name: '公司');
+    expect(added.map((pouch) => pouch.id), ['a', 'c']);
+    expect(
+      rememberPhonePouch(added, id: 'a', name: '书房').length,
+      2,
+    );
+    expect(
+      rememberPhonePouch(const [study], id: ' ', name: '公司'),
+      [study],
+    );
+  });
+
+  test('记住的袋子名单能从文本还原', () {
+    final raw = PhonePouchMemory.encode(const [study, work]);
+    final decoded = PhonePouchMemory.decode(raw);
+    expect(decoded.map((pouch) => pouch.name), ['书房', '公司']);
+    expect(PhonePouchMemory.decode('not-json'), isEmpty);
+    expect(PhonePouchMemory.decode('[{"id":"","name":"书房"}]'), isEmpty);
   });
 }
