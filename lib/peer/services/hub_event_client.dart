@@ -72,7 +72,9 @@ class HubEventClient {
     switch (event.type) {
       case 'pouch_login_resp':
         if (event.data['accepted'] == true) {
-          await catchUp(event.peerId);
+          // 调用方要等这一帧返回后才装上登录通道。立刻补洞会以明文发出去。
+          final peerId = event.peerId;
+          unawaited(Future<void>(() => catchUp(peerId)));
         }
       case 'hub_event':
         final parsed = HubEvent.parse(event.data['event']);

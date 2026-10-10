@@ -8,6 +8,16 @@ void main() {
   const studyAgain = PouchDescriptor(id: 'b', name: '书房', rootPath: '');
   const work = PouchDescriptor(id: 'c', name: '公司', rootPath: '');
 
+  test('刚配上的主机有一只袋子就用它，多只时认上次的', () {
+    expect(choosePhonePouch(const [study])?.id, 'a');
+    expect(
+      choosePhonePouch(const [study, work], savedId: 'c')?.name,
+      '公司',
+    );
+    expect(choosePhonePouch(const [study, work])?.id, 'a');
+    expect(choosePhonePouch(const []), isNull);
+  });
+
   test('名称只对上一只就用它，同名时认上次的储物袋 ID', () {
     final unique = pickPhonePouch(
       typedName: '书房',

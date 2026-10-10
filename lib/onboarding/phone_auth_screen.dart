@@ -21,6 +21,21 @@ class PhoneAuthArgs {
   final String hostPeerId;
 }
 
+/// 刚配上的主机已经有袋子。一只就用它；多只时优先上次登录的那只。
+PouchDescriptor? choosePhonePouch(
+  List<PouchDescriptor> pouches, {
+  String? savedId,
+}) {
+  if (pouches.isEmpty) return null;
+  final saved = savedId?.trim() ?? '';
+  if (saved.isNotEmpty) {
+    for (final pouch in pouches) {
+      if (pouch.id == saved) return pouch;
+    }
+  }
+  return pouches.first;
+}
+
 /// 按名称选出储物袋。名称只对上一只就用它；同名多只时只认上次的 ID。
 PouchPickResult pickPhonePouch({
   required String typedName,
@@ -54,9 +69,10 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
   bool _probing = false;
   bool _ready = false;
   bool _passwordSet = false;
-  bool _nameFilled = false;
   String _hostId = '';
   String? _savedId;
+  List<PouchDescriptor> _pouches = const [];
+  PouchDescriptor? _selected;
   String _error = '';
 
   @override
@@ -104,18 +120,16 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
       await _connect(peer);
       if (!mounted) return;
       final set = await requestPouchPasswordStatus(hostPeerId: hostId);
-      if (!_nameFilled) {
-        final session = await PouchSessionStore.readActive();
-        _savedId = session?.pouchId;
-        final savedName = session?.pouchName.trim() ?? '';
-        if (savedName.isNotEmpty && _name.text.isEmpty) {
-          _name.text = savedName;
-        }
-        _nameFilled = true;
-      }
+      final session = await PouchSessionStore.readActive();
+      _savedId = session?.pouchId;
+      final pouches =
+          set ? await requestPouchList(hostPeerId: hostId) : const <PouchDescriptor>[];
+      final selected = choosePhonePouch(pouches, savedId: _savedId);
       if (!mounted) return;
       setState(() {
         _passwordSet = set;
+        _pouches = pouches;
+        _selected = selected;
         _ready = true;
       });
     } catch (error) {
@@ -160,9 +174,10 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
     final l10n = AppLocalizations.of(context);
     if (_busy || !_ready) return;
     if (!_passwordSet) return;
-    final name = _name.text.trim();
+    final selected = _selected;
+    final typedName = _name.text.trim();
     final password = _password.text;
-    if (name.isEmpty) {
+    if (selected == null && typedName.isEmpty) {
       setState(() => _error = l10n.pouch_nameRequired);
       return;
     }
@@ -179,20 +194,24 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
       _error = '';
     });
     try {
-      final pouches = await requestPouchList(hostPeerId: _hostId);
-      final picked = pickPhonePouch(
-        typedName: name,
-        pouches: pouches,
-        savedId: _savedId,
-      );
       final CliPouchAccount account;
-      switch (picked.kind) {
-        case PouchPick.found:
-          account = picked.account!;
-        case PouchPick.missing:
-          throw StateError(l10n.pouchGate_missing);
-        case PouchPick.ambiguous:
-          throw StateError(l10n.pouchGate_ambiguous);
+      if (selected != null) {
+        account = CliPouchAccount(id: selected.id, name: selected.name);
+      } else {
+        final pouches = await requestPouchList(hostPeerId: _hostId);
+        final picked = pickPhonePouch(
+          typedName: typedName,
+          pouches: pouches,
+          savedId: _savedId,
+        );
+        switch (picked.kind) {
+          case PouchPick.found:
+            account = picked.account!;
+          case PouchPick.missing:
+            throw StateError(l10n.pouchGate_missing);
+          case PouchPick.ambiguous:
+            throw StateError(l10n.pouchGate_ambiguous);
+        }
       }
       final grant = await requestPouchLogin(
         hostPeerId: _hostId,
@@ -259,7 +278,8 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
     final l10n = AppLocalizations.of(context);
     final waiting = _ready && !_passwordSet;
     final title = waiting ? l10n.phoneAuth_setTitle : l10n.login_title;
-    final body = waiting ? l10n.phoneAuth_setBody : l10n.phoneAuth_loginBody;
+    final body = waiting ? l10n.phoneAuth_setBody : l10n.phoneAuth_confirmBody;
+    final selected = _selected;
     return Scaffold(
       body: SafeArea(
         child: ListView(
@@ -276,15 +296,47 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
             const SizedBox(height: 32),
             if (_probing) const LinearProgressIndicator(),
             if (!waiting) ...[
-              TextField(
-                controller: _name,
-                enabled: _ready && !_busy,
-                decoration: InputDecoration(
-                  labelText: l10n.pouchGate_name,
-                  hintText: l10n.pouchGate_nameHint,
+              if (selected != null && _pouches.length == 1)
+                InputDecorator(
+                  decoration: InputDecoration(
+                    labelText: l10n.pouchGate_name,
+                  ),
+                  child: Text(selected.name),
+                )
+              else if (_pouches.length > 1)
+                DropdownButtonFormField<String>(
+                  initialValue: selected?.id,
+                  decoration: InputDecoration(
+                    labelText: l10n.pouchGate_name,
+                  ),
+                  items: [
+                    for (final pouch in _pouches)
+                      DropdownMenuItem(
+                        value: pouch.id,
+                        child: Text(pouch.name),
+                      ),
+                  ],
+                  onChanged: _ready && !_busy
+                      ? (id) {
+                          setState(() {
+                            _selected = choosePhonePouch(
+                              _pouches,
+                              savedId: id,
+                            );
+                          });
+                        }
+                      : null,
+                )
+              else
+                TextField(
+                  controller: _name,
+                  enabled: _ready && !_busy,
+                  decoration: InputDecoration(
+                    labelText: l10n.pouchGate_name,
+                    hintText: l10n.pouchGate_nameHint,
+                  ),
+                  textInputAction: TextInputAction.next,
                 ),
-                textInputAction: TextInputAction.next,
-              ),
               const SizedBox(height: 12),
               TextField(
                 controller: _password,

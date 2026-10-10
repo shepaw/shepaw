@@ -2551,6 +2551,13 @@ class PeerAgentClientService {
       case 'agent_list_resp':
         unawaited(_onAgentList(event.peerId, event.data));
         break;
+      case 'pouch_login_resp':
+        // 登录完成前发出的名单会被主机丢掉。等这次登录把通道装上再要。
+        if (event.data['accepted'] == true) {
+          final peerId = event.peerId;
+          unawaited(Future<void>(() => _requestAgentList(peerId)));
+        }
+        break;
       case 'agent_chunk':
         _onChunk(event.data);
         break;
