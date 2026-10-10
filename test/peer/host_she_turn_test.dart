@@ -86,6 +86,47 @@ void main() {
     expect(chatUsesRegistryMainModel(cursor), isFalse);
   });
 
+  test('Cursor 模型菜单不走惜宝的注册表下拉', () {
+    expect(
+      composerUsesRegistryMenu(
+        hostShe: false,
+        hasPeerModels: true,
+        usesPouchCatalog: false,
+      ),
+      isFalse,
+    );
+    expect(
+      composerOpensCursorModelPanel(
+        useRegistry: false,
+        hasModelOptions: true,
+      ),
+      isTrue,
+    );
+    expect(
+      composerUsesRegistryMenu(
+        hostShe: true,
+        hasPeerModels: true,
+        usesPouchCatalog: false,
+      ),
+      isTrue,
+    );
+    expect(
+      composerUsesRegistryMenu(
+        hostShe: true,
+        hasPeerModels: true,
+        usesPouchCatalog: true,
+      ),
+      isFalse,
+    );
+    expect(
+      composerOpensCursorModelPanel(
+        useRegistry: false,
+        hasModelOptions: false,
+      ),
+      isFalse,
+    );
+  });
+
   test('行 id 不是惜宝 id 时，用远端 id', () {
     final she = agent(
       id: 'card-1',

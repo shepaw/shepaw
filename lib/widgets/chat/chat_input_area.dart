@@ -791,8 +791,11 @@ class ChatInputAreaState extends State<ChatInputArea> {
     final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
     final def = _mainModelDef;
-    final registryModel =
-        _peerModels.isEmpty || (_hostSheModel && !_usesPouchCatalog);
+    final registryModel = composerUsesRegistryMenu(
+      hostShe: _hostSheModel,
+      hasPeerModels: _peerModels.isNotEmpty,
+      usesPouchCatalog: _usesPouchCatalog,
+    );
     final missingRegistryModel = registryModel && def == null;
     final unset = registryModel
         ? missingRegistryModel
@@ -1059,7 +1062,11 @@ class ChatInputAreaState extends State<ChatInputArea> {
   ///（§6 #8 要求能顺手添加）。
   Future<void> _showMainModelMenu() async {
     if (_blockPeerModelSwitch()) return;
-    final useRegistry = !_usesPouchCatalog;
+    final useRegistry = composerUsesRegistryMenu(
+      hostShe: _hostSheModel,
+      hasPeerModels: _peerModels.isNotEmpty,
+      usesPouchCatalog: _usesPouchCatalog,
+    );
     if (_hostSheModel && useRegistry && ModelRegistry.instance.definitions.isEmpty) {
       await _addSheModel();
       return;
@@ -1084,7 +1091,10 @@ class ChatInputAreaState extends State<ChatInputArea> {
         : Rect.fromLTWH(24, overlayBox.size.height - 240, 200, 0);
     final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
-    if (!useRegistry && _peerModels.any((model) => model.options.isNotEmpty)) {
+    if (composerOpensCursorModelPanel(
+      useRegistry: useRegistry,
+      hasModelOptions: _peerModels.any((model) => model.options.isNotEmpty),
+    )) {
       _openCursorModelPanel(l10n);
       return;
     }

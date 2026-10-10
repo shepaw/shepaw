@@ -13,6 +13,24 @@ bool relaysHostSheTurn(RemoteAgent agent) {
 bool chatUsesRegistryMainModel(RemoteAgent agent) =>
     agent.isLocal || relaysHostSheTurn(agent);
 
+/// 点模型 chip 时用本机已添加的名单。
+///
+/// Cursor 这类引擎的模型没有 `baseUrl`，不能据此当成惜宝的注册表菜单。
+/// 只有还没有上游名单，或主机惜宝还没用储物袋目录时，才走注册表。
+bool composerUsesRegistryMenu({
+  required bool hostShe,
+  required bool hasPeerModels,
+  required bool usesPouchCatalog,
+}) =>
+    !hasPeerModels || (hostShe && !usesPouchCatalog);
+
+/// 上游模型带了 Fast / Context 这类参数时，打开 Cursor 面板，而不是平铺下拉。
+bool composerOpensCursorModelPanel({
+  required bool useRegistry,
+  required bool hasModelOptions,
+}) =>
+    !useRegistry && hasModelOptions;
+
 /// 惜宝能不能开聊。主机惜宝看 Hub 名单里的 `has_main_model`，密钥不在客户端。
 bool sheHasMainModel(RemoteAgent agent) {
   if (agent.isLocal) return true;
