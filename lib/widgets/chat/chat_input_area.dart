@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:math' as math;
 
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../models/acp_protocol.dart';
 import '../../models/mention_entry.dart';
 import '../../models/agent_scenario_models.dart';
@@ -70,15 +73,19 @@ class ChatInputArea extends StatefulWidget {
   final AudioRecordingService audioRecordingService;
   final bool isRecording;
   final bool isCancelZone;
+
   /// Finger moved far enough up during hold-to-talk to cancel on release.
   final ValueChanged<bool>? onCancelZoneChanged;
   final VoidCallback onSend;
+
   /// Mobile: toggles the WeChat-style attachment panel (grid of emoji /
   /// album / camera / file / storage-bag / instruction actions).
   final VoidCallback onToggleAttachmentPanel;
+
   /// Whether the mobile attachment panel is currently open. Drives the
   /// "+" button icon — shown as a keyboard icon while the panel is open.
   final bool showAttachmentPanel;
+
   /// Desktop attachment popover actions (mobile uses the attachment panel
   /// rendered by the parent screen).
   final VoidCallback onPickFile;
@@ -86,6 +93,7 @@ class ChatInputArea extends StatefulWidget {
   final VoidCallback? onSendVoice;
   final ValueChanged<PendingAttachment> onRemoveAttachment;
   final VoidCallback? onMentionPickerChanged;
+
   /// Desktop-only: called when user pastes from clipboard and it contains
   /// image bytes or file paths. Return true if the paste was handled
   /// (so TextField's default paste is suppressed).
@@ -218,12 +226,15 @@ class ChatInputAreaState extends State<ChatInputArea> {
   String? _currentSessionMode;
   String? _peerId;
   String? _remoteAgentId;
+
   /// 进入规划模式前的档位，Shift+Tab 再按一次时用它切回。
   String? _modeBeforePlan;
   bool _sessionModeSetting = false;
+
   /// 会话切换时作废在途的拉取（fetchModes 最长 15s），避免旧会话的结果
   /// 覆盖新会话的 chip。
   int _controlsToken = 0;
+
   /// 对端不在线：模式 / 模型 chip 仍显示缓存，但不能切换。
   bool _peerControlsOffline = false;
 
@@ -240,13 +251,20 @@ class ChatInputAreaState extends State<ChatInputArea> {
   final GlobalKey _mainModelChipKey = GlobalKey();
   ModelDefinition? _mainModelDef;
   bool _mainModelAvailable = false;
-  /// 主机惜宝：菜单用已添加的模型，不跟 Hub 下发的默认目录。
+
+  /// 主机惜宝：菜单用储物袋里那一份名单，各端相同。
   bool _hostSheModel = false;
+
+  /// 电脑把本机名单补进储物袋的过程中，避免同一次打开补两遍。
+  bool _sheCatalogMigrating = false;
+  static const _sheCatalogMigratedKey = 'she_catalog_desktop_migrated_v1';
   List<PeerAgentModel> _peerModels = const [];
   String? _currentPeerModel;
+
   /// 对端声明模型在电脑上配置，App 不能切换。缺省可切换。
   bool _peerModelsSwitchable = true;
   bool _modelSetting = false;
+
   /// Agent 级模型参数覆盖，例如 `fast: false`。空表示跟随模型默认值。
   Map<String, String> _peerModelOptionValues = const {};
   bool _fastSetting = false;
@@ -289,8 +307,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
     unawaited(_loadAgentControls());
     _peerConnSub =
         PeerConnectionManager.instance.events.listen(_onPeerConnectionEvent);
-    _metaSub = PeerAgentClientService.instance.metaChanged
-        .listen(_onPeerMetaChanged);
+    _metaSub =
+        PeerAgentClientService.instance.metaChanged.listen(_onPeerMetaChanged);
   }
 
   @override
@@ -525,23 +543,25 @@ class ChatInputAreaState extends State<ChatInputArea> {
     });
   }
 
-  Future<void> _refreshPeerModels(RemoteAgent agent, int token) async {
+  /// 拉到了返回 true。超时或没发出时不改当前显示。
+  Future<bool> _refreshPeerModels(RemoteAgent agent, int token) async {
     final peerId = agent.sourcePeerId;
     final remoteAgentId = agent.remoteAgentId;
-    if (peerId == null || remoteAgentId == null) return;
+    if (peerId == null || remoteAgentId == null) return false;
     final outcome = await PeerAgentClientService.instance.fetchModelsResult(
       peerId: peerId,
       remoteAgentId: remoteAgentId,
       sessionId: _sessionIdForMode,
     );
-    if (!mounted || token != _controlsToken) return;
-    if (!outcome.completed) return;
+    if (!mounted || token != _controlsToken) return false;
+    if (!outcome.completed) return false;
     setState(() {
       _peerModels = outcome.list.models;
       _currentPeerModel = outcome.list.current;
       _peerModelsSwitchable = outcome.list.switchable;
       _peerModelOptionValues = outcome.list.optionValues;
     });
+    return true;
   }
 
   Future<void> _refreshSessionModes(RemoteAgent agent, int token) async {
@@ -848,7 +868,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
 
   /// 惜宝的可选模型只有储物袋里那一份，各端读到的是同一份。
   ///
-  /// 这台设备本机的 `ModelRegistry` 不参与，也不往主机上传。
+  /// 电脑上原来的名单在本机 `ModelRegistry` 里，储物袋还没有时补进去一次。
+  /// 手机不补，只读储物袋。
   Future<void> _loadHostSheModels(RemoteAgent agent, int token) async {
     final peerId = agent.sourcePeerId;
     final remoteAgentId = agent.remoteAgentId;
@@ -860,7 +881,73 @@ class ChatInputAreaState extends State<ChatInputArea> {
       _remoteAgentId = remoteAgentId;
     });
     if (peerId == null || remoteAgentId == null) return;
-    await _refreshPeerModels(agent, token);
+    final fetched = await _refreshPeerModels(agent, token);
+    if (!mounted || token != _controlsToken || !fetched) return;
+    await _migrateDesktopModels(agent, peerId, token);
+  }
+
+  bool get _isPhoneClient => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
+  /// 储物袋名单还缺电脑上已有的模型时，补进去一次，然后两边都读这一份。
+  Future<void> _migrateDesktopModels(
+    RemoteAgent agent,
+    String peerId,
+    int token,
+  ) async {
+    if (_sheCatalogMigrating) return;
+    if (!sheCatalogMigratesLocalRegistry(phone: _isPhoneClient)) return;
+    SharedPreferences prefs;
+    try {
+      prefs = await SharedPreferences.getInstance();
+    } catch (_) {
+      return;
+    }
+    if (prefs.getBool(_sheCatalogMigratedKey) == true) return;
+    if (!mounted || token != _controlsToken) return;
+    final local = [
+      for (final def in ModelRegistry.instance.definitions)
+        (
+          displayName: def.displayName,
+          model: def.route.model ?? '',
+          baseUrl: def.route.apiBase ?? '',
+          apiKey: def.route.apiKey ?? '',
+        ),
+    ];
+    final missing = sheCatalogMissingFromDevice(
+      local: local,
+      remote: [
+        for (final model in _peerModels)
+          (model: model.description, baseUrl: model.baseUrl),
+      ],
+    );
+    if (missing.isEmpty) {
+      if (local.isNotEmpty) {
+        await prefs.setBool(_sheCatalogMigratedKey, true);
+      }
+      return;
+    }
+    _sheCatalogMigrating = true;
+    var failed = false;
+    try {
+      for (final item in missing) {
+        if (!mounted || token != _controlsToken) return;
+        final ok = await PeerAgentClientService.instance.putSheCatalog(
+          peerId: peerId,
+          displayName: item.displayName,
+          model: item.model,
+          baseUrl: item.baseUrl,
+          apiKey: item.apiKey,
+        );
+        if (!ok) failed = true;
+      }
+    } finally {
+      _sheCatalogMigrating = false;
+    }
+    if (!mounted || token != _controlsToken || failed) return;
+    final refreshed = await _refreshPeerModels(agent, token);
+    if (!mounted || token != _controlsToken || !refreshed) return;
+    if (_peerModels.isEmpty) return;
+    await prefs.setBool(_sheCatalogMigratedKey, true);
   }
 
   Future<void> _selectSheCatalog(String catalogId) async {
@@ -1270,7 +1357,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
   @override
   Widget build(BuildContext context) {
     final isDesktop = LayoutUtils.isDesktopLayout(context);
-    final inputArea = isDesktop ? _buildDesktopInputArea() : _buildMobileInputArea();
+    final inputArea =
+        isDesktop ? _buildDesktopInputArea() : _buildMobileInputArea();
     final showMention = widget.isGroupMode && _showMentionPicker;
     final showSlash = _showSlashPicker;
     // Always wrap in a Column so toggling picker visibility doesn't
@@ -1337,30 +1425,31 @@ class ChatInputAreaState extends State<ChatInputArea> {
           padding: EdgeInsets.zero,
           itemCount: totalCount,
           itemBuilder: (context, index) {
-          final isSelected = index == _mentionSelectedIndex;
-          final showSubMenu = _mentionSubMenuIndex == index;
+            final isSelected = index == _mentionSelectedIndex;
+            final showSubMenu = _mentionSubMenuIndex == index;
 
-          Widget itemTile;
-          if (showAll && index == 0) {
-            itemTile = _buildMentionAllTile(isSelected, showSubMenu);
-          } else {
-            final agentIndex = showAll ? index - 1 : index;
-            final agent = filtered[agentIndex];
-            itemTile = _buildMentionAgentTile(agent, isSelected, showSubMenu, index);
-          }
+            Widget itemTile;
+            if (showAll && index == 0) {
+              itemTile = _buildMentionAllTile(isSelected, showSubMenu);
+            } else {
+              final agentIndex = showAll ? index - 1 : index;
+              final agent = filtered[agentIndex];
+              itemTile =
+                  _buildMentionAgentTile(agent, isSelected, showSubMenu, index);
+            }
 
-          if (showSubMenu) {
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                itemTile,
-                _buildInlineSubMenu(),
-              ],
-            );
-          }
-          return itemTile;
-        },
-      ),
+            if (showSubMenu) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  itemTile,
+                  _buildInlineSubMenu(),
+                ],
+              );
+            }
+            return itemTile;
+          },
+        ),
       ),
     );
   }
@@ -1395,11 +1484,13 @@ class ChatInputAreaState extends State<ChatInputArea> {
             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
           ),
           subtitle: Text(
-            AppLocalizations.of(context).chat_mentionAllSub(widget.groupAgents.length),
+            AppLocalizations.of(context)
+                .chat_mentionAllSub(widget.groupAgents.length),
             style: TextStyle(fontSize: 12, color: Colors.grey[500]),
           ),
           trailing: isSelected
-              ? const Icon(Icons.chevron_right, size: 16, color: AppColors.primary)
+              ? const Icon(Icons.chevron_right,
+                  size: 16, color: AppColors.primary)
               : null,
         ),
       ),
@@ -1450,7 +1541,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
           ),
           trailing: isSelected
-              ? const Icon(Icons.chevron_right, size: 16, color: AppColors.primary)
+              ? const Icon(Icons.chevron_right,
+                  size: 16, color: AppColors.primary)
               : null,
         ),
       ),
@@ -1520,9 +1612,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
               child: Container(
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: ccSelected
-                      ? Colors.orange.withOpacity(0.12)
-                      : null,
+                  color: ccSelected ? Colors.orange.withOpacity(0.12) : null,
                   borderRadius: const BorderRadius.only(
                     bottomRight: Radius.circular(12),
                   ),
@@ -1645,81 +1735,84 @@ class ChatInputAreaState extends State<ChatInputArea> {
                         : Colors.transparent,
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
-                      color:
-                          _planModeActive ? colorScheme.primary : Colors.transparent,
+                      color: _planModeActive
+                          ? colorScheme.primary
+                          : Colors.transparent,
                       width: 1,
                     ),
                   ),
                   child: Actions(
-                  actions: widget.onDesktopPaste != null
-                      ? {
-                          PasteTextIntent: CallbackAction<PasteTextIntent>(
-                            onInvoke: (intent) async {
-                              final handled = await widget.onDesktopPaste!();
-                              if (!handled) {
-                                // Not a file/image — paste plain text into the controller
-                                final data =
-                                    await Clipboard.getData(Clipboard.kTextPlain);
-                                final text = data?.text;
-                                if (text != null && text.isNotEmpty) {
-                                  final ctrl = widget.messageController;
-                                  final sel = ctrl.selection;
-                                  final newText = ctrl.text.replaceRange(
-                                    sel.start < 0 ? ctrl.text.length : sel.start,
-                                    sel.end < 0 ? ctrl.text.length : sel.end,
-                                    text,
-                                  );
-                                  final newOffset = (sel.start < 0
+                    actions: widget.onDesktopPaste != null
+                        ? {
+                            PasteTextIntent: CallbackAction<PasteTextIntent>(
+                              onInvoke: (intent) async {
+                                final handled = await widget.onDesktopPaste!();
+                                if (!handled) {
+                                  // Not a file/image — paste plain text into the controller
+                                  final data = await Clipboard.getData(
+                                      Clipboard.kTextPlain);
+                                  final text = data?.text;
+                                  if (text != null && text.isNotEmpty) {
+                                    final ctrl = widget.messageController;
+                                    final sel = ctrl.selection;
+                                    final newText = ctrl.text.replaceRange(
+                                      sel.start < 0
                                           ? ctrl.text.length
-                                          : sel.start) +
-                                      text.length;
-                                  ctrl.value = ctrl.value.copyWith(
-                                    text: newText,
-                                    selection: TextSelection.collapsed(
-                                        offset: newOffset),
-                                  );
+                                          : sel.start,
+                                      sel.end < 0 ? ctrl.text.length : sel.end,
+                                      text,
+                                    );
+                                    final newOffset = (sel.start < 0
+                                            ? ctrl.text.length
+                                            : sel.start) +
+                                        text.length;
+                                    ctrl.value = ctrl.value.copyWith(
+                                      text: newText,
+                                      selection: TextSelection.collapsed(
+                                          offset: newOffset),
+                                    );
+                                  }
                                 }
-                              }
-                              return null;
-                            },
-                          ),
-                        }
-                      : const {},
-                  child: Focus(
-                    onKeyEvent: _handleInputKeyEvent,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(
-                        minHeight: 100,
-                        maxHeight: 220,
-                      ),
-                      child: TextField(
-                        controller: widget.messageController,
-                        focusNode: widget.textFieldFocusNode,
-                        style: TextStyle(
-                          fontSize: 14,
-                          height: 1.5,
-                          color: Theme.of(context).colorScheme.onSurface,
+                                return null;
+                              },
+                            ),
+                          }
+                        : const {},
+                    child: Focus(
+                      onKeyEvent: _handleInputKeyEvent,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          minHeight: 100,
+                          maxHeight: 220,
                         ),
-                        decoration: InputDecoration(
-                          hintText: _planModeActive
-                              ? l10n.chat_planModeHint
-                              : l10n.chat_messageHint,
-                          hintStyle: TextStyle(
+                        child: TextField(
+                          controller: widget.messageController,
+                          focusNode: widget.textFieldFocusNode,
+                          style: TextStyle(
                             fontSize: 14,
-                            color: Colors.grey[400],
+                            height: 1.5,
+                            color: Theme.of(context).colorScheme.onSurface,
                           ),
-                          border: InputBorder.none,
-                          isDense: true,
-                          contentPadding:
-                              const EdgeInsets.symmetric(vertical: 8),
+                          decoration: InputDecoration(
+                            hintText: _planModeActive
+                                ? l10n.chat_planModeHint
+                                : l10n.chat_messageHint,
+                            hintStyle: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[400],
+                            ),
+                            border: InputBorder.none,
+                            isDense: true,
+                            contentPadding:
+                                const EdgeInsets.symmetric(vertical: 8),
+                          ),
+                          maxLines: null,
+                          textInputAction: TextInputAction.newline,
+                          enabled: !widget.isLoading,
                         ),
-                        maxLines: null,
-                        textInputAction: TextInputAction.newline,
-                        enabled: !widget.isLoading,
                       ),
                     ),
                   ),
-                ),
                 ),
               ),
               // Bottom toolbar: icons left, Send right
@@ -1891,8 +1984,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
     );
     // Keep the caret aimed at the emoji button even when the panel is
     // shifted horizontally to stay on-screen.
-    final caretLeft =
-        (buttonCenterX - left - caretSize.width / 2).clamp(8.0, popoverWidth - 22.0);
+    final caretLeft = (buttonCenterX - left - caretSize.width / 2)
+        .clamp(8.0, popoverWidth - 22.0);
 
     final primary = Theme.of(context).primaryColor;
     final surface = Theme.of(context).colorScheme.surface;
@@ -2071,8 +2164,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
       edgePadding,
       math.max(edgePadding, overlayBox.size.height - panelHeight - edgePadding),
     );
-    final caretLeft =
-        (buttonCenterX - left - caretSize.width / 2).clamp(8.0, popoverWidth - 22.0);
+    final caretLeft = (buttonCenterX - left - caretSize.width / 2)
+        .clamp(8.0, popoverWidth - 22.0);
 
     void select(VoidCallback action) {
       _removeDesktopAttachmentOverlay();
@@ -2108,7 +2201,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
                     ),
                     clipBehavior: Clip.antiAlias,
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: verticalPadding),
+                      padding:
+                          const EdgeInsets.symmetric(vertical: verticalPadding),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -2243,7 +2337,9 @@ class ChatInputAreaState extends State<ChatInputArea> {
                 if (widget.hasAudioModel)
                   IconButton(
                     icon: Icon(
-                      _isVoiceMode ? Icons.keyboard_alt_outlined : Icons.mic_none,
+                      _isVoiceMode
+                          ? Icons.keyboard_alt_outlined
+                          : Icons.mic_none,
                     ),
                     color: Colors.grey[600],
                     onPressed: () {
@@ -2321,12 +2417,12 @@ class ChatInputAreaState extends State<ChatInputArea> {
                           ),
                         )
                       : (_hasText || hasPendingAttachments)
-                              ? IconButton(
-                                  icon: const Icon(Icons.send),
-                                  color: Theme.of(context).primaryColor,
-                                  onPressed: widget.onSend,
-                                )
-                              : const SizedBox.shrink(),
+                          ? IconButton(
+                              icon: const Icon(Icons.send),
+                              color: Theme.of(context).primaryColor,
+                              onPressed: widget.onSend,
+                            )
+                          : const SizedBox.shrink(),
               ],
             ),
           ],
@@ -2395,9 +2491,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
           child: Icon(
             recording ? Icons.mic : Icons.mic_none,
             size: 22,
-            color: recording
-                ? Theme.of(context).colorScheme.error
-                : iconColor,
+            color: recording ? Theme.of(context).colorScheme.error : iconColor,
           ),
         ),
       ),
@@ -2533,7 +2627,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
           ),
           child: Row(
             children: [
-              const Icon(Icons.insert_drive_file, size: 32, color: AppColors.primary),
+              const Icon(Icons.insert_drive_file,
+                  size: 32, color: AppColors.primary),
               const SizedBox(width: 8),
               Expanded(
                 child: Column(
@@ -2544,7 +2639,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
                       att.fileName,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                      style: const TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w500),
                     ),
                     const SizedBox(height: 2),
                     Text(
@@ -2673,9 +2769,13 @@ class ChatInputAreaState extends State<ChatInputArea> {
 
     if (event.logicalKey == LogicalKeyboardKey.escape && _showMentionPicker) {
       if (_mentionSubMenuIndex != null) {
-        setState(() { _mentionSubMenuIndex = null; });
+        setState(() {
+          _mentionSubMenuIndex = null;
+        });
       } else {
-        setState(() { _showMentionPicker = false; });
+        setState(() {
+          _showMentionPicker = false;
+        });
         widget.onMentionPickerChanged?.call();
       }
       return KeyEventResult.handled;
@@ -2684,11 +2784,15 @@ class ChatInputAreaState extends State<ChatInputArea> {
     // Left/Right switch sub-menu option when sub-menu is open
     if (_showMentionPicker && _mentionSubMenuIndex != null) {
       if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
-        setState(() { _mentionSubMenuSelectedIndex = 0; });
+        setState(() {
+          _mentionSubMenuSelectedIndex = 0;
+        });
         return KeyEventResult.handled;
       }
       if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
-        setState(() { _mentionSubMenuSelectedIndex = 1; });
+        setState(() {
+          _mentionSubMenuSelectedIndex = 1;
+        });
         return KeyEventResult.handled;
       }
     }
@@ -2705,11 +2809,13 @@ class ChatInputAreaState extends State<ChatInputArea> {
             _mentionSubMenuIndex = newIndex;
           }
         });
-        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToSelectedItem());
+        WidgetsBinding.instance
+            .addPostFrameCallback((_) => _scrollToSelectedItem());
       }
       return KeyEventResult.handled;
     }
-    if (event.logicalKey == LogicalKeyboardKey.arrowDown && _showMentionPicker) {
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown &&
+        _showMentionPicker) {
       final totalCount = _getMentionPickerItemCount(_mentionQuery);
       if (totalCount > 0) {
         final newIndex = (_mentionSelectedIndex + 1).clamp(0, totalCount - 1);
@@ -2720,7 +2826,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
             _mentionSubMenuIndex = newIndex;
           }
         });
-        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToSelectedItem());
+        WidgetsBinding.instance
+            .addPostFrameCallback((_) => _scrollToSelectedItem());
       }
       return KeyEventResult.handled;
     }
@@ -2739,7 +2846,9 @@ class ChatInputAreaState extends State<ChatInputArea> {
 
     if (cursorPos < 0 || cursorPos > text.length) {
       if (_showMentionPicker) {
-        setState(() { _showMentionPicker = false; });
+        setState(() {
+          _showMentionPicker = false;
+        });
         widget.onMentionPickerChanged?.call();
       }
       return;
@@ -2785,7 +2894,9 @@ class ChatInputAreaState extends State<ChatInputArea> {
     }
 
     if (_showMentionPicker) {
-      setState(() { _showMentionPicker = false; });
+      setState(() {
+        _showMentionPicker = false;
+      });
       widget.onMentionPickerChanged?.call();
     }
   }
@@ -2848,7 +2959,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
 
     if (slashPos >= 0) {
       final query = text.substring(slashPos + 1, cursorPos);
-      final filtered = SlashCommandPicker.filter(_effectiveSlashCommands, query);
+      final filtered =
+          SlashCommandPicker.filter(_effectiveSlashCommands, query);
       if (filtered.isNotEmpty) {
         final queryChanged = query != _slashQuery;
         setState(() {
@@ -2883,8 +2995,9 @@ class ChatInputAreaState extends State<ChatInputArea> {
     if (cursorPos < _slashTriggerOffset) return;
 
     final insert = '/${cmd.name} ';
-    final newText =
-        text.substring(0, _slashTriggerOffset) + insert + text.substring(cursorPos);
+    final newText = text.substring(0, _slashTriggerOffset) +
+        insert +
+        text.substring(cursorPos);
     final newCursor = _slashTriggerOffset + insert.length;
 
     _insertingMention = true;
@@ -2913,17 +3026,21 @@ class ChatInputAreaState extends State<ChatInputArea> {
 
   int _getMentionPickerItemCount(String query) {
     final q = query.toLowerCase();
-    final agentCount = widget.groupAgents.where(
-      (a) => a.name.toLowerCase().contains(q),
-    ).length;
+    final agentCount = widget.groupAgents
+        .where(
+          (a) => a.name.toLowerCase().contains(q),
+        )
+        .length;
     final allCount = _mentionAllMatches(q) ? 1 : 0;
     return allCount + agentCount;
   }
 
   List<RemoteAgent> _getFilteredMentionAgents() {
-    return widget.groupAgents.where(
-      (a) => a.name.toLowerCase().contains(_mentionQuery.toLowerCase()),
-    ).toList();
+    return widget.groupAgents
+        .where(
+          (a) => a.name.toLowerCase().contains(_mentionQuery.toLowerCase()),
+        )
+        .toList();
   }
 
   void _insertMentionAtCursor(RemoteAgent agent) async {
@@ -2939,7 +3056,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
   void _insertMentionDirect(RemoteAgent agent, bool notify) {
     _insertMentionText('@${agent.name} ');
     _pendingMentions.removeWhere((m) => m.id == agent.id);
-    _pendingMentions.add(MentionEntry(id: agent.id, name: agent.name, notify: notify));
+    _pendingMentions
+        .add(MentionEntry(id: agent.id, name: agent.name, notify: notify));
   }
 
   void _insertMentionAllDirect(bool notify) {

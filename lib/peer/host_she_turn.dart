@@ -75,6 +75,57 @@ void applyHostSheModelMetadata(
   }
 }
 
+/// 电脑上的本机名单还没进储物袋时，由这台电脑补进去一次。
+///
+/// 手机不补。手机上的名单是另一份，写进去会让同一只惜宝在两端看到的不一样。
+bool sheCatalogMigratesLocalRegistry({required bool phone}) => !phone;
+
+/// 储物袋名单里已经有同一模型名和地址时，不必再上传。
+///
+/// 模型名或地址是空的也当成「不用上传」：主机不收这种条目。
+bool sheCatalogContains({
+  required Iterable<({String model, String baseUrl})> remote,
+  required String model,
+  required String baseUrl,
+}) {
+  final wantedModel = model.trim();
+  final wantedBase = baseUrl.trim();
+  if (wantedModel.isEmpty || wantedBase.isEmpty) return true;
+  for (final item in remote) {
+    if (item.model.trim() == wantedModel && item.baseUrl.trim() == wantedBase) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// 本机名单里、储物袋还没有的那些。已经在名单里的、以及没有地址的，都不返回。
+List<({String displayName, String model, String baseUrl, String apiKey})>
+    sheCatalogMissingFromDevice({
+  required Iterable<
+          ({String displayName, String model, String baseUrl, String apiKey})>
+      local,
+  required Iterable<({String model, String baseUrl})> remote,
+}) {
+  final have = [
+    for (final item in remote) (model: item.model, baseUrl: item.baseUrl),
+  ];
+  final missing =
+      <({String displayName, String model, String baseUrl, String apiKey})>[];
+  for (final item in local) {
+    if (sheCatalogContains(
+      remote: have,
+      model: item.model,
+      baseUrl: item.baseUrl,
+    )) {
+      continue;
+    }
+    missing.add(item);
+    have.add((model: item.model, baseUrl: item.baseUrl));
+  }
+  return missing;
+}
+
 /// 用 Hub 回来的模型名和地址，对上本机列表里的一条定义。
 String? hostSheRegistryModelId(
   Map<String, dynamic> metadata, {

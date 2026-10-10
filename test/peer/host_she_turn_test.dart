@@ -60,6 +60,50 @@ void main() {
     expect(chatUsesRegistryMainModel(cursor), isFalse);
   });
 
+  test('只有电脑把本机名单补进空的储物袋', () {
+    expect(sheCatalogMigratesLocalRegistry(phone: false), isTrue);
+    expect(sheCatalogMigratesLocalRegistry(phone: true), isFalse);
+  });
+
+  test('储物袋里已经有的模型不再上传', () {
+    final missing = sheCatalogMissingFromDevice(
+      local: [
+        (
+          displayName: '书房',
+          model: 'gpt-4o',
+          baseUrl: 'https://api.example/v1',
+          apiKey: 'sk-a',
+        ),
+        (
+          displayName: '备用',
+          model: 'gpt-4o-mini',
+          baseUrl: 'https://api.example/v1',
+          apiKey: 'sk-b',
+        ),
+        (
+          displayName: '没地址',
+          model: 'local-only',
+          baseUrl: '',
+          apiKey: '',
+        ),
+      ],
+      remote: [
+        (model: 'gpt-4o', baseUrl: 'https://api.example/v1'),
+      ],
+    );
+    expect(missing, hasLength(1));
+    expect(missing.single.displayName, '备用');
+    expect(missing.single.model, 'gpt-4o-mini');
+    expect(
+      sheCatalogContains(
+        remote: const [(model: 'gpt-4o', baseUrl: 'https://api.example/v1')],
+        model: 'gpt-4o',
+        baseUrl: 'https://api.example/v1',
+      ),
+      isTrue,
+    );
+  });
+
   test('惜宝的模型菜单永远不走本机注册表', () {
     // 名单在储物袋里，各端共用；上游一条都没有时也只留「添加模型」。
     expect(
