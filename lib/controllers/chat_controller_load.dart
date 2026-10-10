@@ -591,6 +591,7 @@ mixin _LoadOps on _ChatControllerBase {
       final peers = await _peerDeviceEntries();
       return PeerDeviceLabelResolver.clientPeerAgentLabel(
         isPeerAgent: agent.isPeerAgent,
+        isShe: relaysHostSheTurn(agent),
         sourcePeerId: agent.sourcePeerId,
         sourcePeerNameSnapshot: agent.sourcePeerName,
         peers: peers,

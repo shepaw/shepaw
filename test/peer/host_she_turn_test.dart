@@ -25,32 +25,6 @@ void main() {
     );
   }
 
-  test('储物袋里已有的模型名和地址不再上传', () {
-    const remote = [
-      (model: 'gpt-4o', baseUrl: 'https://api.example/v1'),
-    ];
-    expect(
-      sheCatalogContains(
-        remote: remote,
-        model: 'gpt-4o',
-        baseUrl: 'https://api.example/v1',
-      ),
-      isTrue,
-    );
-    expect(
-      sheCatalogContains(
-        remote: remote,
-        model: 'gpt-4o-mini',
-        baseUrl: 'https://api.example/v1',
-      ),
-      isFalse,
-    );
-    expect(
-      sheCatalogContains(remote: remote, model: '', baseUrl: 'https://x'),
-      isTrue,
-    );
-  });
-
   test('主机惜宝走储物袋回合，引擎实例走 agent_chat', () {
     final she = agent(
       id: SheService.sheId,
@@ -86,15 +60,28 @@ void main() {
     expect(chatUsesRegistryMainModel(cursor), isFalse);
   });
 
-  test('Cursor 模型菜单不走惜宝的注册表下拉', () {
+  test('惜宝的模型菜单永远不走本机注册表', () {
+    // 名单在储物袋里，各端共用；上游一条都没有时也只留「添加模型」。
     expect(
-      composerUsesRegistryMenu(
-        hostShe: false,
-        hasPeerModels: true,
-        usesPouchCatalog: false,
-      ),
+      composerUsesRegistryMenu(hostShe: true, hasPeerModels: true),
       isFalse,
     );
+    expect(
+      composerUsesRegistryMenu(hostShe: true, hasPeerModels: false),
+      isFalse,
+    );
+    // 别的 peer agent：上游给了名单就用上游的，没给才退回本机注册表。
+    expect(
+      composerUsesRegistryMenu(hostShe: false, hasPeerModels: true),
+      isFalse,
+    );
+    expect(
+      composerUsesRegistryMenu(hostShe: false, hasPeerModels: false),
+      isTrue,
+    );
+  });
+
+  test('Cursor 模型菜单不走注册表下拉', () {
     expect(
       composerOpensCursorModelPanel(
         useRegistry: false,
@@ -103,25 +90,16 @@ void main() {
       isTrue,
     );
     expect(
-      composerUsesRegistryMenu(
-        hostShe: true,
-        hasPeerModels: true,
-        usesPouchCatalog: false,
-      ),
-      isTrue,
-    );
-    expect(
-      composerUsesRegistryMenu(
-        hostShe: true,
-        hasPeerModels: true,
-        usesPouchCatalog: true,
+      composerOpensCursorModelPanel(
+        useRegistry: false,
+        hasModelOptions: false,
       ),
       isFalse,
     );
     expect(
       composerOpensCursorModelPanel(
-        useRegistry: false,
-        hasModelOptions: false,
+        useRegistry: true,
+        hasModelOptions: true,
       ),
       isFalse,
     );

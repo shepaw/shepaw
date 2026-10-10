@@ -256,7 +256,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
   bool get _modelEntryAvailable =>
       _mainModelAvailable || _peerModels.isNotEmpty;
 
-  /// 主模型菜单里的「添加模型」哨兵值（仅本地 agent 的菜单有）。
+  /// 主模型菜单里的「添加模型」哨兵值。
   static const _addModelSentinel = '__add_model__';
 
   String? get _effectiveFast => PeerModelsList(
@@ -416,7 +416,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
       return;
     }
     if (chatUsesRegistryMainModel(agent)) {
-      _readMainModel(agent, hostShe: false);
+      _readMainModel(agent);
       return;
     }
     if (agent.isPeerAgent) {
@@ -478,7 +478,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
       return;
     }
     if (chatUsesRegistryMainModel(agent)) {
-      _readMainModel(agent, hostShe: false);
+      _readMainModel(agent);
       return;
     }
     if (!agent.isPeerAgent) return;
@@ -632,33 +632,14 @@ class ChatInputAreaState extends State<ChatInputArea> {
   // Main model（§5.1.6 / §6 #8）
   // ---------------------------------------------------------------------------
 
-  Iterable<({String id, String model, String baseUrl})> _registryModelRefs() {
-    return ModelRegistry.instance.definitions.map(
-      (def) => (
-        id: def.id,
-        model: def.route.model ?? '',
-        baseUrl: def.route.apiBase ?? '',
-      ),
-    );
-  }
-
-  void _readMainModel(RemoteAgent agent, {bool hostShe = false}) {
-    final id = hostShe
-        ? hostSheRegistryModelId(
-            agent.metadata,
-            models: _registryModelRefs(),
-          )
-        : agent.metadata['main_model_id'] as String?;
+  /// 本机 agent 的主模型：`metadata['main_model_id']` 指向本机注册表里的一条。
+  void _readMainModel(RemoteAgent agent) {
+    final id = agent.metadata['main_model_id'] as String?;
     final def = id == null ? null : ModelRegistry.instance.getById(id);
     setState(() {
-      _hostSheModel = hostShe;
+      _hostSheModel = false;
       _mainModelAvailable = true;
       _mainModelDef = def;
-      if (hostShe) {
-        _peerModels = const [];
-        _currentPeerModel = null;
-        _peerModelOptionValues = const {};
-      }
     });
   }
 
@@ -731,31 +712,34 @@ class ChatInputAreaState extends State<ChatInputArea> {
     widget.onMainModelChanged?.call();
   }
 
-  /// 新模型写进全局列表，并设成惜宝当前的主模型。
+  /// 新模型写进储物袋名单，并设成惜宝当前的主模型。
+  ///
+  /// 主机惜宝不走本机 `ModelRegistry`——名单是各端共用的那一份，
+  /// 从这台设备添的也应该出现在别的设备上。
   Future<void> _addSheModel() async {
     final result = await Navigator.push<ModelDefinition>(
       context,
       MaterialPageRoute(builder: (_) => const ModelEditScreen()),
     );
     if (!mounted || result == null) return;
-    final created = await ModelRegistry.instance.add(
-      displayName: result.displayName,
-      description: result.description,
-      route: result.route,
-      modelTypes: result.modelTypes,
-    );
-    if (!mounted) return;
     final peerId = _peerId;
-    if (peerId == null || peerId.isEmpty) {
+    if (!_hostSheModel || peerId == null || peerId.isEmpty) {
+      final created = await ModelRegistry.instance.add(
+        displayName: result.displayName,
+        description: result.description,
+        route: result.route,
+        modelTypes: result.modelTypes,
+      );
+      if (!mounted) return;
       await _setMainModel(created.id);
       return;
     }
     final ok = await PeerAgentClientService.instance.putSheCatalog(
       peerId: peerId,
-      displayName: created.displayName,
-      model: created.route.model ?? '',
-      baseUrl: created.route.apiBase ?? '',
-      apiKey: created.route.apiKey ?? '',
+      displayName: result.displayName,
+      model: result.route.model ?? '',
+      baseUrl: result.route.apiBase ?? '',
+      apiKey: result.route.apiKey ?? '',
       select: true,
     );
     if (!mounted) return;
@@ -794,7 +778,6 @@ class ChatInputAreaState extends State<ChatInputArea> {
     final registryModel = composerUsesRegistryMenu(
       hostShe: _hostSheModel,
       hasPeerModels: _peerModels.isNotEmpty,
-      usesPouchCatalog: _usesPouchCatalog,
     );
     final missingRegistryModel = registryModel && def == null;
     final unset = registryModel
@@ -863,7 +846,9 @@ class ChatInputAreaState extends State<ChatInputArea> {
     return null;
   }
 
-  /// 惜宝的可选模型在储物袋里。本机注册表里多出来的，补进那份名单。
+  /// 惜宝的可选模型只有储物袋里那一份，各端读到的是同一份。
+  ///
+  /// 这台设备本机的 `ModelRegistry` 不参与，也不往主机上传。
   Future<void> _loadHostSheModels(RemoteAgent agent, int token) async {
     final peerId = agent.sourcePeerId;
     final remoteAgentId = agent.remoteAgentId;
@@ -876,48 +861,6 @@ class ChatInputAreaState extends State<ChatInputArea> {
     });
     if (peerId == null || remoteAgentId == null) return;
     await _refreshPeerModels(agent, token);
-    if (!mounted || token != _controlsToken) return;
-    if (!_usesPouchCatalog && !_sheCatalogSeeded) {
-      _sheCatalogSeeded = true;
-      final uploaded = await _publishLocalModels(peerId);
-      if (!mounted || token != _controlsToken) return;
-      if (uploaded) await _refreshPeerModels(agent, token);
-    }
-    if (!mounted || token != _controlsToken) return;
-    if (!_usesPouchCatalog) {
-      _readMainModel(agent, hostShe: true);
-    }
-  }
-
-  bool get _usesPouchCatalog =>
-      _peerModels.any((model) => model.baseUrl.isNotEmpty);
-
-  bool _sheCatalogSeeded = false;
-
-  Future<bool> _publishLocalModels(String peerId) async {
-    final remote = [
-      for (final model in _peerModels)
-        (model: model.description, baseUrl: model.baseUrl),
-    ];
-    var uploaded = false;
-    for (final def in ModelRegistry.instance.definitions) {
-      final model = def.route.model?.trim() ?? '';
-      final baseUrl = def.route.apiBase?.trim() ?? '';
-      if (sheCatalogContains(remote: remote, model: model, baseUrl: baseUrl)) {
-        continue;
-      }
-      final ok = await PeerAgentClientService.instance.putSheCatalog(
-        peerId: peerId,
-        displayName: def.displayName,
-        model: model,
-        baseUrl: baseUrl,
-        apiKey: def.route.apiKey ?? '',
-      );
-      if (!ok) continue;
-      uploaded = true;
-      remote.add((model: model, baseUrl: baseUrl));
-    }
-    return uploaded;
   }
 
   Future<void> _selectSheCatalog(String catalogId) async {
@@ -1057,27 +1000,18 @@ class ChatInputAreaState extends State<ChatInputArea> {
     );
   }
 
-  /// Peer agent → 上游模型列表；本地 agent → 与 Agent 设置页同一套候选
-  ///（`ModelRegistry` 的全局定义），末尾带「添加模型」直达模型管理页
-  ///（§6 #8 要求能顺手添加）。
+  /// 主机惜宝 → 储物袋名单；别的 peer agent → 上游模型列表；
+  /// 本地 agent → 与 Agent 设置页同一套候选（`ModelRegistry` 的全局定义），
+  /// 末尾带「添加模型」（§6 #8 要求能顺手添加）。
   Future<void> _showMainModelMenu() async {
     if (_blockPeerModelSwitch()) return;
     final useRegistry = composerUsesRegistryMenu(
       hostShe: _hostSheModel,
       hasPeerModels: _peerModels.isNotEmpty,
-      usesPouchCatalog: _usesPouchCatalog,
     );
-    if (_hostSheModel && useRegistry && ModelRegistry.instance.definitions.isEmpty) {
-      await _addSheModel();
-      return;
-    }
     final defs = ModelRegistry.instance.definitions;
     if (useRegistry && defs.isEmpty) {
-      if (_hostSheModel) {
-        await _addSheModel();
-      } else {
-        await _openModelManagement();
-      }
+      await _openModelManagement();
       return;
     }
     final overlayBox =
@@ -1172,11 +1106,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
       return;
     }
     if (picked == _addModelSentinel) {
-      if (_hostSheModel) {
-        await _addSheModel();
-      } else {
-        await _openModelManagement();
-      }
+      await _openModelManagement();
       return;
     }
     await _setMainModel(picked);

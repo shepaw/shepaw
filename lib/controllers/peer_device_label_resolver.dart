@@ -60,13 +60,17 @@ class PeerDeviceLabelResolver {
   }
 
   /// Client DM label for a peer-shared agent.
+  ///
+  /// 惜宝是这只袋子的身份，不指某一台设备，不画来源设备名。
   static String? clientPeerAgentLabel({
     required bool isPeerAgent,
+    required bool isShe,
     required String? sourcePeerId,
     required String? sourcePeerNameSnapshot,
     required Iterable<({String id, String deviceName})> peers,
   }) {
     if (!isPeerAgent) return null;
+    if (isShe) return null;
     final byId = deviceNameById(peers, sourcePeerId);
     if (byId != null) return byId;
     if (sourcePeerNameSnapshot != null && sourcePeerNameSnapshot.isNotEmpty) {

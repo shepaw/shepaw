@@ -198,6 +198,7 @@ void main() {
       expect(
         PeerDeviceLabelResolver.clientPeerAgentLabel(
           isPeerAgent: false,
+          isShe: false,
           sourcePeerId: 'p1',
           sourcePeerNameSnapshot: 'Snap',
           peers: [(id: 'p1', deviceName: 'Live')],
@@ -207,6 +208,7 @@ void main() {
       expect(
         PeerDeviceLabelResolver.clientPeerAgentLabel(
           isPeerAgent: true,
+          isShe: false,
           sourcePeerId: 'p1',
           sourcePeerNameSnapshot: 'Snap',
           peers: [(id: 'p1', deviceName: 'Live')],
@@ -216,11 +218,23 @@ void main() {
       expect(
         PeerDeviceLabelResolver.clientPeerAgentLabel(
           isPeerAgent: true,
+          isShe: false,
           sourcePeerId: 'missing',
           sourcePeerNameSnapshot: 'Snap',
           peers: const [],
         ),
         'Snap',
+      );
+      // 惜宝是这只袋子的身份，不指某一台设备，有设备名也不画。
+      expect(
+        PeerDeviceLabelResolver.clientPeerAgentLabel(
+          isPeerAgent: true,
+          isShe: true,
+          sourcePeerId: 'p1',
+          sourcePeerNameSnapshot: 'Snap',
+          peers: [(id: 'p1', deviceName: 'Live')],
+        ),
+        isNull,
       );
     });
   });
