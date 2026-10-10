@@ -5,6 +5,8 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../services/channel_tunnel_service.dart';
+import '../../services/cli_host.dart';
+import '../../utils/platform_utils.dart';
 import '../models/paired_peer.dart';
 import '../services/peer_pairing_service.dart';
 import 'peer_pairing_confirm_screen.dart';
@@ -55,6 +57,9 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
   String? _pairingCode;
   String? _error;
   bool _loading = true;
+
+  /// 桌面端展示的是 Hub 的配对链接，本进程没有 Responder 会话。
+  bool _hubLink = false;
   StreamSubscription? _requestSub;
 
   // ── Channel 外网配置相关 ──────────────────────────────────────────────
@@ -91,7 +96,10 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
     // 换来的是不再把 Responder 会话留在后台：`PeerPairingService` 是单会话的，
     // 残存的 Responder 会被随后在「我连它」发起的 `requestPairing` 直接冲掉，
     // 留着一个已经不响应的码比换一个码更糟。
-    PeerPairingService.instance.cancelPairing();
+    // Hub 链接没有本进程会话，cancel 会把别的配对流程一起清掉。
+    if (!_hubLink) {
+      PeerPairingService.instance.cancelPairing();
+    }
     super.dispose();
   }
 
@@ -199,6 +207,29 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
     // 连接成功后 statusStream 会触发 QR 刷新
   }
 
+  /// 桌面端「它连我」展示 Hub 的配对链接。手机贴上后直接和主机握手。
+  Future<void> _showHubLink(CliHostEndpoint cli) async {
+    try {
+      final link = await CliHost.mintShareLink(cli);
+      final code = Uri.parse(link).queryParameters['code'] ?? '';
+      if (!mounted) return;
+      setState(() {
+        _hubLink = true;
+        _qrData = link;
+        _pairingCode = code;
+        _loading = false;
+        _error = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _hubLink = false;
+        _error = e.toString();
+        _loading = false;
+      });
+    }
+  }
+
   Future<void> _startPairing() async {
     // 取消旧的监听，避免重复订阅导致多次弹窗
     _requestSub?.cancel();
@@ -209,7 +240,16 @@ class _PeerQrDisplayScreenState extends State<PeerQrDisplayScreen> {
       _error = null;
     });
 
+    if (isDesktopPlatform) {
+      final cli = await CliHost.detect();
+      if (cli != null) {
+        await _showHubLink(cli);
+        return;
+      }
+    }
+
     try {
+      _hubLink = false;
       final qrData = await PeerPairingService.instance.startPairing();
 
       // 提取配对码（从 QR 数据中解析）

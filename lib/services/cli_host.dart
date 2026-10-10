@@ -366,10 +366,33 @@ class CliHost {
     }
     return info;
   }
+
+  /// 给另一台设备看的配对链接。地址来自正在听的 Hub，不写死回环。
+  ///
+  /// 桌面 App 自己的 18792 不是主机。把那个码贴到手机上，主机会来拨本进程，
+  /// 握手对不上，手机只看到配对失败，而且原来的主机连接会被挤掉。
+  static Future<String> mintShareLink(CliHostEndpoint host) async {
+    final result = await Process.run(host.binary, const ['pair', '--json']);
+    if (result.exitCode != 0) {
+      final detail = [
+        result.stderr.toString().trim(),
+        result.stdout.toString().trim(),
+      ].where((part) => part.isNotEmpty).join('\n');
+      throw StateError(detail.isEmpty ? 'shepaw pair 失败' : detail);
+    }
+    final link = pairingLinkFromOutput(result.stdout.toString());
+    if (link == null) {
+      throw StateError('shepaw pair 没有给出配对票据');
+    }
+    if (pairingLinkIsLoopback(link)) {
+      throw StateError('Hub 只监听本机回环，别的设备连不上。执行 shepaw restart 后再配对。');
+    }
+    return link;
+  }
 }
 
 /// `--json` 里的 `link`，或旧版本直接打印的 `shepaw://` 行。
-PeerPairingInfo? pairingInfoFromOutput(String stdout) {
+String? pairingLinkFromOutput(String stdout) {
   for (final line in stdout.split('\n')) {
     final trimmed = line.trim();
     if (trimmed.startsWith('{')) {
@@ -377,17 +400,30 @@ PeerPairingInfo? pairingInfoFromOutput(String stdout) {
         final decoded = jsonDecode(trimmed);
         if (decoded is Map) {
           final link = decoded['link'];
-          if (link is String) {
-            final info = PeerPairingInfo.tryParse(link);
-            if (info != null) return info;
+          if (link is String && PeerPairingInfo.tryParse(link) != null) {
+            return link;
           }
         }
       } catch (_) {}
     }
-    if (trimmed.startsWith('shepaw://')) {
-      final info = PeerPairingInfo.tryParse(trimmed);
-      if (info != null) return info;
+    if (trimmed.startsWith('shepaw://') &&
+        PeerPairingInfo.tryParse(trimmed) != null) {
+      return trimmed;
     }
   }
   return null;
+}
+
+PeerPairingInfo? pairingInfoFromOutput(String stdout) {
+  final link = pairingLinkFromOutput(stdout);
+  if (link == null) return null;
+  return PeerPairingInfo.tryParse(link);
+}
+
+/// 别的设备连不上回环地址。
+bool pairingLinkIsLoopback(String link) {
+  final local = PeerPairingInfo.tryParse(link)?.localEndpoint ?? '';
+  return local.startsWith('ws://127.0.0.1:') ||
+      local.startsWith('ws://[::1]:') ||
+      local.startsWith('ws://localhost:');
 }

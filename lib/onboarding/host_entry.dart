@@ -131,3 +131,19 @@ HostEntry resolveHostEntry({
       return AutoLocal(needsStart: false, recordMode: record);
   }
 }
+
+/// 退出登录后去哪。设置页嵌在子 Navigator 里，调用方要用根导航打开。
+String logoutRoute({
+  required bool isDesktop,
+  required HostMode mode,
+  required bool cliInstalled,
+  required bool pouchInitialized,
+  required bool phoneHasHost,
+}) {
+  if (!isDesktop) {
+    return phoneHasHost ? '/phone-login' : '/remote-connect';
+  }
+  if (mode == HostMode.remote) return '/pouch';
+  if (!cliInstalled) return '/host-setup';
+  return pouchInitialized ? '/pouch-unlock' : '/pouch-init';
+}

@@ -663,8 +663,23 @@ class PeerPairingService {
       final result = await _responderSession!.readHandshake1(frame.payload);
       _responderPeerPublicKey = result.peerStaticPublicKey;
 
-      // 解析配对请求
-      final request = PairingRequest.fromBytes(result.msg1Payload);
+      // 重连帧没有 pairing_code。解析失败不能把整段「它连我」作废，
+      // 否则手机随后贴进来的真配对请求没有人接。
+      final PairingRequest request;
+      try {
+        request = PairingRequest.fromBytes(result.msg1Payload);
+      } on FormatException {
+        _log.debug(
+          'Inbound stream is not a pairing request, stream=${stream.streamId}',
+          tag: _tag,
+        );
+        _responderSession?.close();
+        _responderSession = null;
+        _responderStream = null;
+        _responderPeerPublicKey = null;
+        stream.close();
+        return;
+      }
 
       // 验证配对码（常量时间比较）
       if (!_constantTimeEquals(request.pairingCode, _currentPairingCode!)) {

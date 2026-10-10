@@ -14,8 +14,14 @@ import 'location_settings_screen.dart';
 import '../services/location_service.dart';
 import '../peer/services/peer_storage_service.dart';
 import '../onboarding/host_entry.dart';
+import '../onboarding/phone_auth_screen.dart';
+import '../onboarding/phone_host_store.dart';
+import '../service_locator.dart';
+import '../services/cli_host.dart';
+import '../services/cli_pouch.dart';
 import '../storage/pouch_login.dart';
 import '../storage/pouch_session.dart';
+import '../utils/platform_utils.dart';
 import 'inference_log_screen.dart';
 import 'log_viewer_screen.dart';
 import 'she_memory_screen.dart';
@@ -82,6 +88,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ? peer!.deviceName
           : session.hostPeerId;
     });
+  }
+
+  /// 清掉登录态，用根导航离开设置页。
+  ///
+  /// 桌面设置盖在子 Navigator 上，那个导航的 `onGenerateRoute` 不管名字，
+  /// 一律再生成一张设置页。所以不能用离按钮最近的 Navigator。
+  Future<void> _logoutToGate() async {
+    await PouchSessionStore(await PouchSessionStore.appFile()).forget();
+    PouchChannel.clear();
+    final nav = navigatorKey.currentState;
+    if (nav == null) return;
+    final desktop = isDesktopPlatform;
+    final mode = await HostModeStore.read();
+    var binary = desktop ? await CliHost.resolveBinary() : null;
+    var initialized = false;
+    if (binary != null && mode != HostMode.remote) {
+      try {
+        initialized = await CliPouch.passwordIsSet(binary);
+      } catch (_) {
+        initialized = true;
+      }
+    }
+    if (mode == HostMode.remote) binary = null;
+    final phoneHost = desktop ? null : await PhoneHostStore.read();
+    final route = logoutRoute(
+      isDesktop: desktop,
+      mode: mode,
+      cliInstalled: binary != null,
+      pouchInitialized: initialized,
+      phoneHasHost: phoneHost != null,
+    );
+    nav.pushNamedAndRemoveUntil(
+      route,
+      (_) => false,
+      arguments: phoneHost == null
+          ? null
+          : PhoneAuthArgs(hostPeerId: phoneHost),
+    );
   }
 
   Future<void> _confirmSwitchPouch(BuildContext screenContext) async {
@@ -689,16 +733,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       TextButton(
                         onPressed: () async {
                           Navigator.pop(dialogContext);
-                          await PouchSessionStore(
-                                  await PouchSessionStore.appFile())
-                              .forget();
-                          PouchChannel.clear();
-                          if (screenContext.mounted) {
-                            Navigator.of(screenContext).pushNamedAndRemoveUntil(
-                              '/login',
-                              (route) => false,
-                            );
-                          }
+                          await _logoutToGate();
                         },
                         child: Text(
                           dialogL10n.drawer_logout,

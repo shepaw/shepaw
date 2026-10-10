@@ -30,6 +30,17 @@ void main() {
     expect(info.displayName, 'EDENZOU-MB2');
   });
 
+  test('回环地址不能拿去给别的设备', () {
+    expect(pairingLinkIsLoopback(link), isTrue);
+    final lan = PeerPairingInfo.encode(
+      localEndpoint: 'ws://192.168.31.21:18794/peer/ws',
+      code: 'ABCD2345',
+      fingerprint: '66687aadf862bd77',
+      publicKey: key,
+    );
+    expect(pairingLinkIsLoopback(lan), isFalse);
+  });
+
   test('旧版本直接打印的 shepaw:// 行仍然能用', () {
     final info = pairingInfoFromOutput('code: ABCD2345\n$link\n');
     expect(info, isNotNull);

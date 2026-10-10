@@ -45,13 +45,18 @@ class PairingRequest {
   });
 
   factory PairingRequest.fromJson(Map<String, dynamic> json) {
+    final code = json['pairing_code'];
+    if (code is! String || code.isEmpty) {
+      throw const FormatException('not a pairing request');
+    }
+    final timestamp = json['timestamp'];
     return PairingRequest(
-      pairingCode: json['pairing_code'] as String,
-      deviceName: json['device_name'] as String,
-      deviceId: json['device_id'] as String,
+      pairingCode: code,
+      deviceName: json['device_name'] as String? ?? '',
+      deviceId: json['device_id'] as String? ?? '',
       channelEndpoint: json['channel_endpoint'] as String?,
       localEndpoint: json['local_endpoint'] as String?,
-      timestamp: json['timestamp'] as int,
+      timestamp: timestamp is int ? timestamp : 0,
     );
   }
 

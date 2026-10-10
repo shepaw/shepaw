@@ -253,4 +253,18 @@ void main() {
       expect(rewritten.publicKey, key);
     });
   });
+
+  test('重连帧不是配对请求，主机省略 timestamp 仍能解析', () {
+    expect(
+      () => PairingRequest.fromJson({'type': 'reconnect'}),
+      throwsFormatException,
+    );
+    final request = PairingRequest.fromJson({
+      'pairing_code': 'ABCD2345',
+      'device_name': 'hub',
+      'device_id': 'fp',
+    });
+    expect(request.pairingCode, 'ABCD2345');
+    expect(request.timestamp, 0);
+  });
 }

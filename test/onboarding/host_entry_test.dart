@@ -37,6 +37,59 @@ void main() {
     );
   }
 
+  test('退出登录离开设置页，回到对应的门', () {
+    expect(
+      logoutRoute(
+        isDesktop: true,
+        mode: HostMode.thisComputer,
+        cliInstalled: true,
+        pouchInitialized: true,
+        phoneHasHost: false,
+      ),
+      '/pouch-unlock',
+    );
+    expect(
+      logoutRoute(
+        isDesktop: true,
+        mode: HostMode.thisComputer,
+        cliInstalled: true,
+        pouchInitialized: false,
+        phoneHasHost: false,
+      ),
+      '/pouch-init',
+    );
+    expect(
+      logoutRoute(
+        isDesktop: true,
+        mode: HostMode.remote,
+        cliInstalled: true,
+        pouchInitialized: true,
+        phoneHasHost: false,
+      ),
+      '/pouch',
+    );
+    expect(
+      logoutRoute(
+        isDesktop: false,
+        mode: HostMode.remote,
+        cliInstalled: false,
+        pouchInitialized: false,
+        phoneHasHost: true,
+      ),
+      '/phone-login',
+    );
+    expect(
+      logoutRoute(
+        isDesktop: false,
+        mode: HostMode.unset,
+        cliInstalled: false,
+        pouchInitialized: false,
+        phoneHasHost: false,
+      ),
+      '/remote-connect',
+    );
+  });
+
   test('手机：登录态有效进主页，否则去连远端主机', () {
     expect(resolve(isDesktop: false, session: live()), isA<EnterHome>());
     final connect = resolve(isDesktop: false);
