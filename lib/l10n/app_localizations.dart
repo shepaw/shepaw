@@ -14688,7 +14688,7 @@ abstract class AppLocalizations {
   /// No description provided for @pouchGate_unlockBody.
   ///
   /// In zh, this message translates to:
-  /// **'输入储物袋名称和密码。'**
+  /// **'选择要进入的储物袋，再输入密码。'**
   String get pouchGate_unlockBody;
 
   /// No description provided for @pouchGate_name.

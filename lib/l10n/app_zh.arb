@@ -4910,7 +4910,7 @@
   "pouchGate_initTitle": "创建储物袋",
   "pouchGate_initBody": "这台电脑会成为主机。名称只是给人看的，储物袋 ID 才是身份。",
   "pouchGate_unlockTitle": "进入储物袋",
-  "pouchGate_unlockBody": "输入储物袋名称和密码。",
+  "pouchGate_unlockBody": "选择要进入的储物袋，再输入密码。",
   "pouchGate_name": "储物袋名称",
   "pouchGate_nameHint": "例如：我的储物袋",
   "pouchGate_create": "创建并进入",

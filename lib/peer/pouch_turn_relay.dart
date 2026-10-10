@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../models/attachment_data.dart';
 import '../../models/message.dart';
+import '../../storage/pouch_login.dart';
 import '../../storage/pouch_role.dart';
 import '../../storage/pouch_session.dart';
 import 'pouch_attachment.dart';
@@ -45,6 +46,9 @@ class PouchTurnRelay {
     final session = await PouchSessionStore.readActive();
     if (session == null) {
       throw StateError('请先登录储物袋');
+    }
+    if (session.isLoggedIn(DateTime.now().millisecondsSinceEpoch)) {
+      PouchChannel.install(session);
     }
     return PouchTurnRoute.decide(PouchRole.client(session.hostPeerId));
   }

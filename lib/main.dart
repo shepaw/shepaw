@@ -25,8 +25,10 @@ import 'screens/password_setup_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/pouch_login_screen.dart';
 import 'onboarding/host_setup_screen.dart';
+import 'onboarding/host_entry_flow.dart';
 import 'onboarding/pouch_gate_screen.dart';
 import 'services/cli_pouch.dart';
+import 'storage/pouch_session.dart';
 import 'onboarding/phone_auth_screen.dart';
 import 'onboarding/phone_host_store.dart';
 import 'onboarding/remote_connect_screen.dart';
@@ -402,6 +404,13 @@ class _SplashScreenState extends State<SplashScreen> {
       return;
     }
     try {
+      final session = await PouchSessionStore.readActive();
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (session != null && session.isLoggedIn(now)) {
+        if (!mounted) return;
+        await HostEntryNavigator.go(context, isDesktop: true);
+        return;
+      }
       final initialized = await CliPouch.passwordIsSet(binary);
       if (!mounted) return;
       Navigator.of(context).pushReplacementNamed(
@@ -415,7 +424,7 @@ class _SplashScreenState extends State<SplashScreen> {
         stackTrace: stack,
       );
       if (!mounted) return;
-      Navigator.of(context).pushReplacementNamed('/pouch-init');
+      Navigator.of(context).pushReplacementNamed('/pouch-unlock');
     }
   }
 

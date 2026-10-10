@@ -27,7 +27,8 @@ class _PouchGateScreenState extends State<PouchGateScreen> {
   bool _busy = false;
   bool _ready = false;
   String _error = '';
-  String? _savedId;
+  List<CliPouchAccount> _accounts = const [];
+  String? _selectedId;
 
   @override
   void initState() {
@@ -40,13 +41,26 @@ class _PouchGateScreenState extends State<PouchGateScreen> {
       if (mounted) setState(() => _ready = true);
       return;
     }
+    final remembered = await PouchLoginMemory.read();
     final session = await PouchSessionStore.readActive();
-    if (!mounted) return;
-    _savedId = session?.pouchId;
-    if (session != null && session.pouchName.isNotEmpty) {
-      _name.text = session.pouchName;
+    final recentId = remembered?.id ?? session?.pouchId;
+    final binary = await CliHost.resolveBinary();
+    var accounts = const <CliPouchAccount>[];
+    if (binary != null) {
+      try {
+        accounts = await CliPouch.list(binary);
+      } catch (error) {
+        LoggerService()
+            .error('pouch list failed', tag: 'PouchGate', error: error);
+      }
     }
-    setState(() => _ready = true);
+    if (!mounted) return;
+    final selected = defaultPouchAccount(accounts, recentId: recentId);
+    setState(() {
+      _accounts = accounts;
+      _selectedId = selected?.id;
+      _ready = true;
+    });
   }
 
   @override
@@ -60,10 +74,19 @@ class _PouchGateScreenState extends State<PouchGateScreen> {
   Future<void> _submit() async {
     final l10n = AppLocalizations.of(context);
     if (_busy || !_ready) return;
-    final name = _name.text.trim();
+    final name = widget.initializing
+        ? _name.text.trim()
+        : _accounts
+            .where((account) => account.id == _selectedId)
+            .map((account) => account.name)
+            .firstOrNull;
     final password = _password.text;
-    if (name.isEmpty) {
+    if (widget.initializing && (name == null || name.isEmpty)) {
       setState(() => _error = l10n.pouch_nameRequired);
+      return;
+    }
+    if (!widget.initializing && (name == null || _selectedId == null)) {
+      setState(() => _error = l10n.pouch_noPouches);
       return;
     }
     if (password.length < 6) {
@@ -86,17 +109,17 @@ class _PouchGateScreenState extends State<PouchGateScreen> {
       if (widget.initializing) {
         grant = await CliPouch.init(
           binary: binary,
-          name: name,
+          name: name!,
           password: password,
           fingerprint: fingerprint,
         );
       } else {
         grant = await CliPouch.login(
           binary: binary,
-          name: name,
+          name: name!,
           password: password,
           fingerprint: fingerprint,
-          savedId: _savedId,
+          savedId: _selectedId,
         );
       }
       await CliPouch.openLocal(grant);
@@ -136,22 +159,44 @@ class _PouchGateScreenState extends State<PouchGateScreen> {
             initializing ? l10n.pouchGate_initBody : l10n.pouchGate_unlockBody,
           ),
           const SizedBox(height: 20),
-          TextField(
-            controller: _name,
-            enabled: _ready && !_busy,
-            decoration: InputDecoration(
-              labelText: l10n.pouchGate_name,
-              hintText: l10n.pouchGate_nameHint,
+          if (initializing)
+            TextField(
+              controller: _name,
+              enabled: _ready && !_busy,
+              decoration: InputDecoration(
+                labelText: l10n.pouchGate_name,
+                hintText: l10n.pouchGate_nameHint,
+              ),
+              textInputAction: TextInputAction.next,
+            )
+          else if (_accounts.isEmpty)
+            Text(l10n.pouch_noPouches)
+          else
+            RadioGroup<String>(
+              groupValue: _selectedId,
+              onChanged: (value) {
+                if (_busy) return;
+                setState(() => _selectedId = value);
+              },
+              child: Column(
+                children: [
+                  for (final account in _accounts)
+                    RadioListTile<String>(
+                      value: account.id,
+                      title: Text(account.name),
+                    ),
+                ],
+              ),
             ),
-            textInputAction: TextInputAction.next,
-          ),
           const SizedBox(height: 12),
           TextField(
             controller: _password,
             enabled: _ready && !_busy,
             obscureText: true,
             decoration: InputDecoration(
-              labelText: l10n.passwordSetup_password,
+              labelText: initializing
+                  ? l10n.passwordSetup_password
+                  : l10n.login_password,
             ),
             onSubmitted: (_) {
               if (!initializing) _submit();

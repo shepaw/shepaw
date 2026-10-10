@@ -49,5 +49,22 @@ void main() {
     expect(grant?.id, 'a');
     expect(grant?.expiresAtMs, 9);
     expect(parseLoginGrant('{"id":"a","name":"书房"}\n'), isNull);
+    expect(
+      defaultPouchAccount(
+        const [
+          CliPouchAccount(id: 'a', name: '书房'),
+          CliPouchAccount(id: 'b', name: '工作'),
+        ],
+        recentId: 'b',
+      )?.id,
+      'b',
+    );
+    expect(
+      defaultPouchAccount(
+        const [CliPouchAccount(id: 'a', name: '书房')],
+        recentId: 'missing',
+      )?.id,
+      'a',
+    );
   });
 }

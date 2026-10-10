@@ -4460,7 +4460,7 @@
   "pouchGate_initTitle": "Create a pouch",
   "pouchGate_initBody": "This computer becomes the host. The name is only a label. The pouch ID is the identity.",
   "pouchGate_unlockTitle": "Open a pouch",
-  "pouchGate_unlockBody": "Enter the pouch name and password.",
+  "pouchGate_unlockBody": "Choose a pouch, then enter the password.",
   "pouchGate_name": "Pouch name",
   "pouchGate_nameHint": "For example: My pouch",
   "pouchGate_create": "Create and open",

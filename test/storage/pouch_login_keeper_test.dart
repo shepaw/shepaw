@@ -122,6 +122,40 @@ void main() {
     await events.close();
   });
 
+  test('还没过期的登录态在重登失败时保留', () async {
+    final events = StreamController<PeerControlEvent>();
+    var forgotten = false;
+    PouchSession? installed;
+    final live = PouchSession(
+      hubUrl: 'ws://127.0.0.1:18792/peer/ws',
+      pouchId: 'pouch-a',
+      pouchName: '书房',
+      hostPeerId: 'host-1',
+      token: 'old-token',
+      sessionId: 'sid-old',
+      expiresAtMs: DateTime.now().millisecondsSinceEpoch + 60000,
+    );
+    final keeper = PouchLoginKeeper(
+      events: events.stream,
+      readSession: () async => live,
+      login: ({required hostPeerId, required pouchId}) async {
+        throw StateError('没有这只袋子');
+      },
+      persist: (_) async => fail('should not save'),
+      install: (next) => installed = next,
+      forgetSession: () async => forgotten = true,
+      clearChannel: () => fail('should keep the channel'),
+      openChooser: () => fail('should stay'),
+    );
+    keeper.start();
+    events.add(required());
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+    expect(forgotten, isFalse);
+    expect(installed?.token, 'old-token');
+    await events.close();
+  });
+
   test('网络超时不清登录态', () async {
     final events = StreamController<PeerControlEvent>();
     var forgotten = false;

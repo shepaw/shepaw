@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../onboarding/host_entry.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../storage/pouch_login.dart';
@@ -45,6 +47,21 @@ PouchPickResult pickPouchAccount({
     return const PouchPickResult(PouchPick.ambiguous);
   }
   return const PouchPickResult(PouchPick.missing);
+}
+
+/// 最近用过的在列表里就选它，否则选第一只。
+CliPouchAccount? defaultPouchAccount(
+  List<CliPouchAccount> accounts, {
+  String? recentId,
+}) {
+  if (accounts.isEmpty) return null;
+  final recent = recentId?.trim() ?? '';
+  if (recent.isNotEmpty) {
+    for (final account in accounts) {
+      if (account.id == recent) return account;
+    }
+  }
+  return accounts.first;
 }
 
 CliPouchAccount? parsePouchAccount(String stdout) {
@@ -139,6 +156,26 @@ CliLoginGrant? parseLoginGrant(String stdout) {
     } catch (_) {}
   }
   return null;
+}
+
+/// 上次进入的储物袋。登录 token 被清掉之后，名称还在，重启不用重新创建。
+class PouchLoginMemory {
+  static const idKey = 'pouch_login_id';
+  static const nameKey = 'pouch_login_name';
+
+  static Future<void> write({required String id, required String name}) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(idKey, id);
+    await prefs.setString(nameKey, name);
+  }
+
+  static Future<({String id, String name})?> read() async {
+    final prefs = await SharedPreferences.getInstance();
+    final id = prefs.getString(idKey)?.trim() ?? '';
+    final name = prefs.getString(nameKey)?.trim() ?? '';
+    if (id.isEmpty || name.isEmpty) return null;
+    return (id: id, name: name);
+  }
 }
 
 String cliFailureText(String stderr) {
@@ -241,6 +278,7 @@ class CliPouch {
       expiresAtMs: grant.expiresAtMs,
     );
     await PouchSessionStore(await PouchSessionStore.appFile()).save(session);
+    await PouchLoginMemory.write(id: grant.id, name: grant.name);
     PouchChannel.install(session);
   }
 

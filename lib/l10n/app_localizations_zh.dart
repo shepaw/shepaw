@@ -8081,7 +8081,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pouchGate_unlockTitle => '进入储物袋';
 
   @override
-  String get pouchGate_unlockBody => '输入储物袋名称和密码。';
+  String get pouchGate_unlockBody => '选择要进入的储物袋，再输入密码。';
 
   @override
   String get pouchGate_name => '储物袋名称';

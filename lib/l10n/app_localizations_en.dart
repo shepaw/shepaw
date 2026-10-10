@@ -8398,7 +8398,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pouchGate_unlockTitle => 'Open a pouch';
 
   @override
-  String get pouchGate_unlockBody => 'Enter the pouch name and password.';
+  String get pouchGate_unlockBody => 'Choose a pouch, then enter the password.';
 
   @override
   String get pouchGate_name => 'Pouch name';
