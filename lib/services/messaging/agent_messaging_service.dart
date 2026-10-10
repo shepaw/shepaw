@@ -298,6 +298,13 @@ class AgentMessagingService {
         activeTask.metadata = meta;
         activeTask.onActionConfirmation?.call(data);
       },
+      onForm: (data) {
+        final form = Map<String, dynamic>.from(data);
+        final meta = Map<String, dynamic>.from(activeTask.metadata ?? {});
+        meta['form'] = form;
+        activeTask.metadata = meta;
+        activeTask.onMessageMetadata?.call({'form': form});
+      },
     );
   }
 
@@ -675,6 +682,7 @@ class AgentMessagingService {
           messageToSend, agent,
           onStreamChunk: onStreamChunk,
           onActionConfirmation: onActionConfirmation,
+          onForm: onForm,
           onMessageMetadata: onMessageMetadata,
           sessionId: channelId,
           acpCancellationToken: acpCancellationToken,
@@ -1703,6 +1711,7 @@ class AgentMessagingService {
     RemoteAgent agent, {
     void Function(String chunk)? onStreamChunk,
     void Function(Map<String, dynamic> actionData)? onActionConfirmation,
+    void Function(Map<String, dynamic> formData)? onForm,
     void Function(Map<String, dynamic> metadata)? onMessageMetadata,
     String? sessionId,
     ACPCancellationToken? acpCancellationToken,
@@ -1926,6 +1935,18 @@ class AgentMessagingService {
             );
           }
         },
+        onForm: (data) {
+          final form = Map<String, dynamic>.from(data);
+          final meta = Map<String, dynamic>.from(activeTask.metadata ?? {});
+          meta['form'] = form;
+          activeTask.metadata = meta;
+          final cb = onForm ?? activeTask.onMessageMetadata;
+          if (onForm != null) {
+            onForm(form);
+          } else {
+            cb?.call({'form': form});
+          }
+        },
       );
 
       activeTask.isComplete = true;
@@ -1986,6 +2007,10 @@ class AgentMessagingService {
       } else if (relayedAc != null) {
         relayedAc['confirmation_context'] ??= 'peer';
         meta['action_confirmation'] = relayedAc;
+      }
+      final liveForm = activeTask.metadata?['form'];
+      if (liveForm is Map) {
+        meta['form'] = Map<String, dynamic>.from(liveForm);
       }
       activeTask.metadata = meta;
 

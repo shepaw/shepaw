@@ -113,6 +113,8 @@ class PeerConnection {
     'agent_turn_resume_resp',
     'agent_approval_req',
     'agent_approval_resp',
+    'agent_form_req',
+    'agent_form_resp',
     'agent_commands_req',
     'agent_commands_resp',
     'agent_sessions_req',

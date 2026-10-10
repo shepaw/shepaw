@@ -784,6 +784,26 @@ mixin _InteractionOps on _ChatControllerBase {
     Map<String, dynamic> values,
     String summary,
   ) async {
+    final formMeta = originalMessage.metadata?['form'];
+    final peerForm = formMeta is Map ? formMeta['peer_form'] : null;
+    if (peerForm is Map) {
+      final peerId = peerForm['peer_id']?.toString() ?? '';
+      final approvalId = peerForm['approval_id']?.toString() ?? formId;
+      if (peerId.isEmpty || approvalId.isEmpty) {
+        return;
+      }
+      try {
+        await PeerAgentClientService.instance.submitForm(
+          peerId: peerId,
+          approvalId: approvalId,
+          values: values,
+        );
+        _markPeerFormSubmitted(originalMessage, values);
+      } catch (e) {
+        _emit(ShowErrorSnackBarEvent('$e'));
+      }
+      return;
+    }
     if (await _answerHubInteraction(originalMessage, {
       'values': values,
     })) {
@@ -811,6 +831,35 @@ mixin _InteractionOps on _ChatControllerBase {
     } catch (e) {
       _emit(ShowErrorSnackBarEvent('$e'));
     }
+  }
+
+  void _markPeerFormSubmitted(
+    Message original,
+    Map<String, dynamic> values,
+  ) {
+    final idx = messages.indexWhere((message) => message.id == original.id);
+    if (idx != -1) {
+      final form = Map<String, dynamic>.from(
+        (messages[idx].metadata?['form'] as Map?) ?? const {},
+      );
+      form['submitted_values'] = values;
+      final updated = ChatStreamingText.withMergedMetadata(
+        messages[idx],
+        {'form': form},
+      );
+      messages[idx] = updated;
+      messageIdMap[updated.id] = updated;
+    }
+    final channelId = currentChannelId;
+    final task = channelId == null ? null : chatService.getActiveTask(channelId);
+    if (task != null) {
+      final meta = Map<String, dynamic>.from(task.metadata ?? {});
+      final form = Map<String, dynamic>.from((meta['form'] as Map?) ?? const {});
+      form['submitted_values'] = values;
+      meta['form'] = form;
+      task.metadata = meta;
+    }
+    _notify();
   }
 
   Future<bool> _answerHubInteraction(

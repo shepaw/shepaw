@@ -1399,6 +1399,7 @@ class _PendingRequest {
   void Function(String chunk)? onChunk;
   void Function(Map<String, dynamic>)? onMetadata;
   void Function(Map<String, dynamic>)? onActionConfirmation;
+  void Function(Map<String, dynamic>)? onForm;
   final Completer<PeerChatResult> completer = Completer<PeerChatResult>();
 
   /// In-flight tool approvals not yet submitted by the user.
@@ -1465,6 +1466,7 @@ class _PendingRequest {
     int? startedAtMs,
     this.onChunk,
     this.onActionConfirmation,
+    this.onForm,
     this.onMetadata,
   }) : startedAtMs = startedAtMs ?? DateTime.now().millisecondsSinceEpoch;
 
@@ -1649,6 +1651,9 @@ class PeerAgentClientService {
   final Map<String, ({String actionId, String? label})> _submittedApprovals =
       {};
 
+  /// 已提交的 AskUserQuestion 表单。重连重发 `agent_form_req` 时用它自动回填。
+  final Map<String, Map<String, dynamic>> _submittedForms = {};
+
   /// 断连挂起期间用户本地取消的 turn（requestId → peerId）。
   /// 重连后对这些 requestId 补发 agent_cancel 而非 resume_req。
   /// 有界：超过 100 条时淘汰最旧。
@@ -1762,6 +1767,7 @@ class PeerAgentClientService {
     _approvalToRequest.clear();
     _orphanedApprovals.clear();
     _submittedApprovals.clear();
+    _submittedForms.clear();
     _cancelledWhileSuspended.clear();
     _reconcileNeeded.clear();
     _requestAgents.clear();
@@ -2044,12 +2050,14 @@ class PeerAgentClientService {
     void Function(String chunk)? onChunk,
     void Function(Map<String, dynamic>)? onMetadata,
     void Function(Map<String, dynamic>)? onActionConfirmation,
+    void Function(Map<String, dynamic>)? onForm,
   }) {
     final p = _pending[requestId];
     if (p == null) return;
     p.onChunk = onChunk;
     p.onMetadata = onMetadata;
     p.onActionConfirmation = onActionConfirmation;
+    p.onForm = onForm;
   }
 
   void noteInflightAnswer(String requestId, String answer) {
@@ -2289,6 +2297,7 @@ class PeerAgentClientService {
     void Function(String chunk)? onChunk,
     void Function(Map<String, dynamic>)? onMetadata,
     void Function(Map<String, dynamic>)? onActionConfirmation,
+    void Function(Map<String, dynamic>)? onForm,
 
     /// Fired once [requestId] is allocated, before the control frame is sent.
     void Function(String requestId)? onRequestStarted,
@@ -2344,6 +2353,7 @@ class PeerAgentClientService {
       agentName: agentName ?? '',
       onChunk: onChunk,
       onActionConfirmation: onActionConfirmation,
+      onForm: onForm,
       onMetadata: onMetadata,
     );
     _pending[requestId] = pending;
@@ -2598,6 +2608,9 @@ class PeerAgentClientService {
         break;
       case 'agent_approval_req':
         _onApprovalReq(event.peerId, event.data);
+        break;
+      case 'agent_form_req':
+        _onFormReq(event.peerId, event.data);
         break;
       case 'session_create_req':
         unawaited(_onSessionCreateReq(event.peerId, event.data));
@@ -5520,6 +5533,113 @@ class PeerAgentClientService {
     final completer = _pendingCommands.remove(remoteId);
     if (completer != null && !completer.isCompleted) {
       completer.complete(commands);
+    }
+  }
+
+  /// AskUserQuestion（ACP `elicitation/create`）被 hub 收成一张表单。
+  /// 占用和工具审批同一道闸门，用户填表期间回合不会被空闲超时关掉。
+  void _onFormReq(String peerId, Map<String, dynamic> data) {
+    final requestId = data['request_id'] as String?;
+    final approvalId = data['approval_id'] as String? ?? '';
+    if (requestId == null || approvalId.isEmpty) {
+      _log.warning('agent_form_req: missing request_id or approval_id',
+          tag: 'PeerApproval');
+      return;
+    }
+    final stored = _submittedForms[approvalId];
+    if (stored != null) {
+      unawaited(PeerConnectionManager.instance.sendControl(peerId, {
+        'type': 'agent_form_resp',
+        'approval_id': approvalId,
+        'action': stored['action'] ?? 'accept',
+        if (stored['content'] != null) 'content': stored['content'],
+      }));
+      return;
+    }
+    final pending = _pending[requestId];
+    if (pending == null) {
+      _log.warning(
+        'agent_form_req: no pending request for requestId=$requestId',
+        tag: 'PeerApproval',
+      );
+      return;
+    }
+    if (_approvalToRequest.containsKey(approvalId)) {
+      return;
+    }
+    pending.openApprovals++;
+    pending.lastApprovalOpenedAt = DateTime.now();
+    _approvalToRequest[approvalId] = requestId;
+    final fields = data['fields'];
+    pending.onForm?.call({
+      'form_id': approvalId,
+      'title': data['title'] ?? '',
+      if (data['description'] != null) 'description': data['description'],
+      'fields': fields is List ? fields : const <dynamic>[],
+      'peer_form': {
+        'peer_id': peerId,
+        'approval_id': approvalId,
+      },
+    });
+  }
+
+  /// 把表单答案送回 hub，解开正在等的 `elicitation/create`。
+  Future<void> submitForm({
+    required String peerId,
+    required String approvalId,
+    required Map<String, dynamic> values,
+  }) async {
+    final tracked = _approvalToRequest.containsKey(approvalId) ||
+        _orphanedApprovals.containsKey(approvalId);
+    if (!tracked) {
+      throw const PeerApprovalExpiredException();
+    }
+    final payload = <String, dynamic>{
+      'type': 'agent_form_resp',
+      'approval_id': approvalId,
+      'action': 'accept',
+      'content': values,
+    };
+    var sent = false;
+    Object? lastErr;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        sent = await PeerConnectionManager.instance
+            .sendControl(peerId, payload)
+            .timeout(const Duration(seconds: 8), onTimeout: () => false);
+        if (sent) break;
+        lastErr = 'peer not connected';
+      } catch (e) {
+        lastErr = e;
+      }
+      if (attempt < 2) {
+        await Future<void>.delayed(Duration(milliseconds: 200 * (attempt + 1)));
+      }
+    }
+    if (!sent) {
+      _log.warning(
+        'submitForm FAILED approvalId=$approvalId err=$lastErr',
+        tag: 'PeerApproval',
+      );
+      throw Exception('表单发送失败，请确认配对设备在线后重试');
+    }
+    final requestId = _approvalToRequest.remove(approvalId);
+    _submittedForms[approvalId] = {
+      'action': 'accept',
+      'content': values,
+    };
+    if (_submittedForms.length > 50) {
+      _submittedForms.remove(_submittedForms.keys.first);
+    }
+    if (requestId != null) {
+      final pending = _pending[requestId];
+      if (pending != null && pending.openApprovals > 0) {
+        pending.openApprovals--;
+        if (pending.openApprovals == 0) {
+          pending.idleSince = DateTime.now();
+        }
+      }
+      _tryCompleteBufferedDone(requestId);
     }
   }
 
