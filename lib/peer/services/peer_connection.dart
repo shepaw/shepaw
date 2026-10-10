@@ -174,6 +174,8 @@ class PeerConnection {
     'she_memory_set_resp',
     'she_model_set_req',
     'she_model_set_resp',
+    'she_catalog_put_req',
+    'she_catalog_put_resp',
     'turn_attach_req',
     'pouch_login',
     'pouch_login_resp',

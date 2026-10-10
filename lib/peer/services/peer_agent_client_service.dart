@@ -920,12 +920,14 @@ class PeerAgentModel {
   final String value;
   final String displayName;
   final String description;
+  final String baseUrl;
   final List<PeerModelOption> options;
 
   PeerAgentModel({
     required this.value,
     required this.displayName,
     this.description = '',
+    this.baseUrl = '',
     this.options = const [],
   });
 
@@ -954,6 +956,7 @@ class PeerAgentModel {
       value: value,
       displayName: (display != null && display.isNotEmpty) ? display : value,
       description: (json['description'] as String?) ?? '',
+      baseUrl: (json['base_url'] as String?) ?? '',
       options: options,
     );
   }
@@ -962,6 +965,7 @@ class PeerAgentModel {
         'value': value,
         'display_name': displayName,
         'description': description,
+        if (baseUrl.isNotEmpty) 'base_url': baseUrl,
         if (options.isNotEmpty)
           'options': [for (final option in options) option.toJson()],
       };
@@ -1592,6 +1596,9 @@ class PeerAgentClientService {
 
   /// Outstanding she_model_set_req keyed by request_id.
   final Map<String, Completer<bool>> _pendingSheModel = {};
+
+  /// Outstanding she_catalog_put_req keyed by request_id.
+  final Map<String, Completer<bool>> _pendingSheCatalog = {};
 
   /// Outstanding agent_model_option_set_req per "agentId::option" key.
   final Map<String, Completer<({bool ok, String? error})>>
@@ -2627,6 +2634,9 @@ class PeerAgentClientService {
       case 'she_model_set_resp':
         _onSheModelSetResp(event.peerId, event.data);
         break;
+      case 'she_catalog_put_resp':
+        _onSheCatalogPutResp(event.data);
+        break;
       case 'agent_model_option_set_resp':
         _onModelOptionSetResp(event.data);
         break;
@@ -2823,9 +2833,10 @@ class PeerAgentClientService {
   /// 把惜宝的主模型写到 Hub。密钥只在这一帧里走，不进本机 metadata。
   Future<bool> setSheModel({
     required String peerId,
-    required String model,
-    required String baseUrl,
-    required String apiKey,
+    String model = '',
+    String baseUrl = '',
+    String apiKey = '',
+    String catalogId = '',
   }) async {
     final requestId = _uuid.v4();
     final completer = Completer<bool>();
@@ -2833,6 +2844,7 @@ class PeerAgentClientService {
     final sent = await _sendMetaControl(peerId, {
       'type': 'she_model_set_req',
       'request_id': requestId,
+      if (catalogId.isNotEmpty) 'catalog_id': catalogId,
       'model': model,
       'base_url': baseUrl,
       'api_key': apiKey,
@@ -2845,6 +2857,45 @@ class PeerAgentClientService {
       _pendingSheModel.remove(requestId);
       return false;
     });
+  }
+
+  /// 把一条模型写进储物袋名单。密钥留在主机上，响应里不带回。
+  Future<bool> putSheCatalog({
+    required String peerId,
+    required String displayName,
+    required String model,
+    required String baseUrl,
+    required String apiKey,
+    bool select = false,
+  }) async {
+    final requestId = _uuid.v4();
+    final completer = Completer<bool>();
+    _pendingSheCatalog[requestId] = completer;
+    final sent = await _sendMetaControl(peerId, {
+      'type': 'she_catalog_put_req',
+      'request_id': requestId,
+      'display_name': displayName,
+      'model': model,
+      'base_url': baseUrl,
+      'api_key': apiKey,
+      if (select) 'select': true,
+    });
+    if (!sent) {
+      _pendingSheCatalog.remove(requestId);
+      return false;
+    }
+    return completer.future.timeout(const Duration(seconds: 15), onTimeout: () {
+      _pendingSheCatalog.remove(requestId);
+      return false;
+    });
+  }
+
+  void _onSheCatalogPutResp(Map<String, dynamic> data) {
+    final requestId = data['request_id']?.toString() ?? '';
+    final completer = _pendingSheCatalog.remove(requestId);
+    if (completer != null && !completer.isCompleted) {
+      completer.complete(data['ok'] == true);
+    }
   }
 
   void _onSheModelSetResp(String peerId, Map<String, dynamic> data) {

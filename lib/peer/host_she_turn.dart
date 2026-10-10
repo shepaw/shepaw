@@ -58,6 +58,23 @@ void applyHostSheModelMetadata(
   }
 }
 
+/// 储物袋名单里已经有同一模型名和地址时，不必再上传。
+bool sheCatalogContains({
+  required Iterable<({String model, String baseUrl})> remote,
+  required String model,
+  required String baseUrl,
+}) {
+  final wantedModel = model.trim();
+  final wantedBase = baseUrl.trim();
+  if (wantedModel.isEmpty || wantedBase.isEmpty) return true;
+  for (final item in remote) {
+    if (item.model.trim() == wantedModel && item.baseUrl.trim() == wantedBase) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /// 用 Hub 回来的模型名和地址，对上本机列表里的一条定义。
 String? hostSheRegistryModelId(
   Map<String, dynamic> metadata, {

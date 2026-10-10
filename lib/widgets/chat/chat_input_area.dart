@@ -411,8 +411,12 @@ class ChatInputAreaState extends State<ChatInputArea> {
       return;
     }
     if (!mounted || token != _controlsToken || agent == null) return;
+    if (relaysHostSheTurn(agent)) {
+      await _loadHostSheModels(agent, token);
+      return;
+    }
     if (chatUsesRegistryMainModel(agent)) {
-      _readMainModel(agent, hostShe: relaysHostSheTurn(agent));
+      _readMainModel(agent, hostShe: false);
       return;
     }
     if (agent.isPeerAgent) {
@@ -469,8 +473,12 @@ class ChatInputAreaState extends State<ChatInputArea> {
       return;
     }
     if (!mounted || token != _controlsToken || agent == null) return;
+    if (relaysHostSheTurn(agent)) {
+      await _refreshPeerModels(agent, token);
+      return;
+    }
     if (chatUsesRegistryMainModel(agent)) {
-      _readMainModel(agent, hostShe: relaysHostSheTurn(agent));
+      _readMainModel(agent, hostShe: false);
       return;
     }
     if (!agent.isPeerAgent) return;
@@ -737,7 +745,35 @@ class ChatInputAreaState extends State<ChatInputArea> {
       modelTypes: result.modelTypes,
     );
     if (!mounted) return;
-    await _setMainModel(created.id);
+    final peerId = _peerId;
+    if (peerId == null || peerId.isEmpty) {
+      await _setMainModel(created.id);
+      return;
+    }
+    final ok = await PeerAgentClientService.instance.putSheCatalog(
+      peerId: peerId,
+      displayName: created.displayName,
+      model: created.route.model ?? '',
+      baseUrl: created.route.apiBase ?? '',
+      apiKey: created.route.apiKey ?? '',
+      select: true,
+    );
+    if (!mounted) return;
+    if (!ok) {
+      showTopToast(
+        context,
+        AppLocalizations.of(context).chat_mainModelSwitchFailed,
+        icon: Icons.error_outline,
+        color: Colors.red.shade400,
+      );
+      return;
+    }
+    final agentId = widget.agentId;
+    if (agentId == null) return;
+    final agent =
+        await getIt<LocalDatabaseService>().getRemoteAgentById(agentId);
+    if (!mounted || agent == null) return;
+    await _refreshPeerModels(agent, _controlsToken);
   }
 
   Future<void> _openModelManagement() async {
@@ -755,7 +791,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
     final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
     final def = _mainModelDef;
-    final registryModel = _hostSheModel || _peerModels.isEmpty;
+    final registryModel =
+        _peerModels.isEmpty || (_hostSheModel && !_usesPouchCatalog);
     final missingRegistryModel = registryModel && def == null;
     final unset = registryModel
         ? missingRegistryModel
@@ -823,8 +860,94 @@ class ChatInputAreaState extends State<ChatInputArea> {
     return null;
   }
 
+  /// 惜宝的可选模型在储物袋里。本机注册表里多出来的，补进那份名单。
+  Future<void> _loadHostSheModels(RemoteAgent agent, int token) async {
+    final peerId = agent.sourcePeerId;
+    final remoteAgentId = agent.remoteAgentId;
+    if (!mounted || token != _controlsToken) return;
+    setState(() {
+      _hostSheModel = true;
+      _mainModelAvailable = true;
+      _peerId = peerId;
+      _remoteAgentId = remoteAgentId;
+    });
+    if (peerId == null || remoteAgentId == null) return;
+    await _refreshPeerModels(agent, token);
+    if (!mounted || token != _controlsToken) return;
+    if (!_usesPouchCatalog && !_sheCatalogSeeded) {
+      _sheCatalogSeeded = true;
+      final uploaded = await _publishLocalModels(peerId);
+      if (!mounted || token != _controlsToken) return;
+      if (uploaded) await _refreshPeerModels(agent, token);
+    }
+    if (!mounted || token != _controlsToken) return;
+    if (!_usesPouchCatalog) {
+      _readMainModel(agent, hostShe: true);
+    }
+  }
+
+  bool get _usesPouchCatalog =>
+      _peerModels.any((model) => model.baseUrl.isNotEmpty);
+
+  bool _sheCatalogSeeded = false;
+
+  Future<bool> _publishLocalModels(String peerId) async {
+    final remote = [
+      for (final model in _peerModels)
+        (model: model.description, baseUrl: model.baseUrl),
+    ];
+    var uploaded = false;
+    for (final def in ModelRegistry.instance.definitions) {
+      final model = def.route.model?.trim() ?? '';
+      final baseUrl = def.route.apiBase?.trim() ?? '';
+      if (sheCatalogContains(remote: remote, model: model, baseUrl: baseUrl)) {
+        continue;
+      }
+      final ok = await PeerAgentClientService.instance.putSheCatalog(
+        peerId: peerId,
+        displayName: def.displayName,
+        model: model,
+        baseUrl: baseUrl,
+        apiKey: def.route.apiKey ?? '',
+      );
+      if (!ok) continue;
+      uploaded = true;
+      remote.add((model: model, baseUrl: baseUrl));
+    }
+    return uploaded;
+  }
+
+  Future<void> _selectSheCatalog(String catalogId) async {
+    final peerId = _peerId;
+    if (peerId == null || peerId.isEmpty || _modelSetting) return;
+    if (catalogId == _currentPeerModel) return;
+    final previous = _currentPeerModel;
+    setState(() {
+      _modelSetting = true;
+      _currentPeerModel = catalogId;
+    });
+    final ok = await PeerAgentClientService.instance.setSheModel(
+      peerId: peerId,
+      catalogId: catalogId,
+    );
+    if (!mounted) return;
+    setState(() => _modelSetting = false);
+    if (ok) return;
+    setState(() => _currentPeerModel = previous);
+    showTopToast(
+      context,
+      AppLocalizations.of(context).chat_mainModelSwitchFailed,
+      icon: Icons.error_outline,
+      color: Colors.red.shade400,
+    );
+  }
+
   /// 切上游模型：与会话模式一样按会话下发（sessionId），失败回退显示。
   Future<void> _setPeerModel(String value) async {
+    if (_hostSheModel) {
+      await _selectSheCatalog(value);
+      return;
+    }
     if (_blockPeerModelSwitch()) return;
     final peerId = _peerId;
     final remoteAgentId = _remoteAgentId;
@@ -936,7 +1059,11 @@ class ChatInputAreaState extends State<ChatInputArea> {
   ///（§6 #8 要求能顺手添加）。
   Future<void> _showMainModelMenu() async {
     if (_blockPeerModelSwitch()) return;
-    final useRegistry = _hostSheModel || _peerModels.isEmpty;
+    final useRegistry = !_usesPouchCatalog;
+    if (_hostSheModel && useRegistry && ModelRegistry.instance.definitions.isEmpty) {
+      await _addSheModel();
+      return;
+    }
     final defs = ModelRegistry.instance.definitions;
     if (useRegistry && defs.isEmpty) {
       if (_hostSheModel) {
@@ -967,7 +1094,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
       constraints: _kComposerChoiceMenuConstraints,
       initialValue: useRegistry ? _mainModelDef?.id : _currentPeerModel,
       items: [
-        if (!useRegistry)
+        if (!useRegistry) ...[
           for (final m in _peerModels)
             PopupMenuItem<String>(
               value: m.value,
@@ -977,8 +1104,25 @@ class ChatInputAreaState extends State<ChatInputArea> {
                 selected: m.value == _currentPeerModel,
                 colorScheme: colorScheme,
               ),
-            )
-        else ...[
+            ),
+          if (_hostSheModel)
+            PopupMenuItem<String>(
+              value: _addModelSentinel,
+              child: Row(
+                children: [
+                  Icon(Icons.add, size: 18, color: colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Text(
+                    l10n.toolModel_addTitle,
+                    style: TextStyle(
+                      color: colorScheme.primary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ] else ...[
           for (final def in defs)
             PopupMenuItem<String>(
               value: def.id,
@@ -1010,6 +1154,10 @@ class ChatInputAreaState extends State<ChatInputArea> {
     );
     if (!mounted || picked == null) return;
     if (!useRegistry) {
+      if (picked == _addModelSentinel) {
+        await _addSheModel();
+        return;
+      }
       await _setPeerModel(picked);
       return;
     }

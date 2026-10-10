@@ -25,6 +25,32 @@ void main() {
     );
   }
 
+  test('储物袋里已有的模型名和地址不再上传', () {
+    const remote = [
+      (model: 'gpt-4o', baseUrl: 'https://api.example/v1'),
+    ];
+    expect(
+      sheCatalogContains(
+        remote: remote,
+        model: 'gpt-4o',
+        baseUrl: 'https://api.example/v1',
+      ),
+      isTrue,
+    );
+    expect(
+      sheCatalogContains(
+        remote: remote,
+        model: 'gpt-4o-mini',
+        baseUrl: 'https://api.example/v1',
+      ),
+      isFalse,
+    );
+    expect(
+      sheCatalogContains(remote: remote, model: '', baseUrl: 'https://x'),
+      isTrue,
+    );
+  });
+
   test('主机惜宝走储物袋回合，引擎实例走 agent_chat', () {
     final she = agent(
       id: SheService.sheId,
