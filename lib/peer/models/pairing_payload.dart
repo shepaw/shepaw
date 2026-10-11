@@ -35,6 +35,15 @@ class PairingRequest {
   /// 时间戳（毫秒）
   final int timestamp;
 
+  /// 发起方在主机名册里的身份，App 一律是 `client`。
+  final String? role;
+
+  /// 发起方形态（`desktop` / `mobile` / `server`）。
+  final String? form;
+
+  /// 发起方平台（`macos`、`android`……）。
+  final String? platform;
+
   PairingRequest({
     required this.pairingCode,
     required this.deviceName,
@@ -42,6 +51,9 @@ class PairingRequest {
     this.channelEndpoint,
     this.localEndpoint,
     required this.timestamp,
+    this.role,
+    this.form,
+    this.platform,
   });
 
   factory PairingRequest.fromJson(Map<String, dynamic> json) {
@@ -57,6 +69,9 @@ class PairingRequest {
       channelEndpoint: json['channel_endpoint'] as String?,
       localEndpoint: json['local_endpoint'] as String?,
       timestamp: timestamp is int ? timestamp : 0,
+      role: json['role'] as String?,
+      form: json['form'] as String?,
+      platform: json['platform'] as String?,
     );
   }
 
@@ -67,6 +82,9 @@ class PairingRequest {
         if (channelEndpoint != null) 'channel_endpoint': channelEndpoint,
         if (localEndpoint != null) 'local_endpoint': localEndpoint,
         'timestamp': timestamp,
+        if (role != null) 'role': role,
+        if (form != null) 'form': form,
+        if (platform != null) 'platform': platform,
       };
 
   Uint8List toBytes() => Uint8List.fromList(utf8.encode(jsonEncode(toJson())));
@@ -100,6 +118,15 @@ class PairingResponse {
   /// 拒绝原因（accepted=false 时）
   final String? rejectReason;
 
+  /// 响应方身份。CLI 主机回 `host`，旧版本不带。
+  final String? role;
+
+  /// 响应方形态。
+  final String? form;
+
+  /// 响应方平台。
+  final String? platform;
+
   PairingResponse({
     required this.accepted,
     required this.deviceName,
@@ -108,6 +135,9 @@ class PairingResponse {
     this.channelEndpoint,
     this.localEndpoint,
     this.rejectReason,
+    this.role,
+    this.form,
+    this.platform,
   });
 
   factory PairingResponse.fromJson(Map<String, dynamic> json) {
@@ -119,6 +149,9 @@ class PairingResponse {
       channelEndpoint: json['channel_endpoint'] as String?,
       localEndpoint: json['local_endpoint'] as String?,
       rejectReason: json['reject_reason'] as String?,
+      role: json['role'] as String?,
+      form: json['form'] as String?,
+      platform: json['platform'] as String?,
     );
   }
 
@@ -130,6 +163,9 @@ class PairingResponse {
         if (channelEndpoint != null) 'channel_endpoint': channelEndpoint,
         if (localEndpoint != null) 'local_endpoint': localEndpoint,
         if (rejectReason != null) 'reject_reason': rejectReason,
+        if (role != null) 'role': role,
+        if (form != null) 'form': form,
+        if (platform != null) 'platform': platform,
       };
 
   Uint8List toBytes() => Uint8List.fromList(utf8.encode(jsonEncode(toJson())));

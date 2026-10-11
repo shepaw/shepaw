@@ -19,6 +19,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../models/attachment_data.dart';
 import '../../models/channel.dart';
+import '../../models/agent_node.dart';
 import '../../models/remote_agent.dart';
 import '../../models/agent_memory_entry.dart';
 import '../../models/acp_protocol.dart';
@@ -29,6 +30,7 @@ import '../../services/local_file_storage_service.dart';
 import '../../services/logger_service.dart';
 import '../../services/device_node/command_approval_inbox.dart';
 import '../../services/device_node/device_command_runner.dart';
+import '../../services/device_node/device_hello.dart';
 import '../../services/session/cli_execute_peer_handler.dart';
 import '../../services/session/session_create_peer_handler.dart';
 import '../../services/she_agent_impression_service.dart';
@@ -1328,6 +1330,9 @@ class PeerAgentManageResult {
   /// Device id from hub store health when [hubStoreOk] is true.
   final String? hubStoreDevice;
 
+  /// 机器可读的错误码，比如工作节点离线时的 `node_offline`。
+  final String? code;
+
   const PeerAgentManageResult({
     required this.ok,
     this.error,
@@ -1337,7 +1342,10 @@ class PeerAgentManageResult {
     this.createdAgentId,
     this.hubStoreOk,
     this.hubStoreDevice,
+    this.code,
   });
+
+  bool get nodeOffline => code == 'node_offline';
 }
 
 /// Hub host directory listing from `fs_browse_resp`.
@@ -1348,6 +1356,7 @@ class PeerFsBrowseResult {
   final String? parent;
   final List<({String name, String path})> entries;
   final bool unsupported;
+  final String? code;
 
   const PeerFsBrowseResult({
     required this.ok,
@@ -1356,7 +1365,10 @@ class PeerFsBrowseResult {
     this.parent,
     this.entries = const [],
     this.unsupported = false,
+    this.code,
   });
+
+  bool get nodeOffline => code == 'node_offline';
 }
 
 /// Result of [PeerAgentClientService.syncAgentIncremental].
@@ -1733,7 +1745,7 @@ class PeerAgentClientService {
       _handlersReadyForResume = true;
     }
     for (final peerId in PeerConnectionManager.instance.connectedPeerIds) {
-      if (_pouchLoginReady(peerId)) _requestAgentList(peerId);
+      if (_pouchLoginReady(peerId)) _greetHost(peerId);
     }
     _log.info('PeerAgentClientService started', tag: _tag);
   }
@@ -2580,7 +2592,7 @@ class PeerAgentClientService {
         // 登录完成前发出的名单会被主机丢掉。等这次登录把通道装上再要。
         if (event.data['accepted'] == true) {
           final peerId = event.peerId;
-          unawaited(Future<void>(() => _requestAgentList(peerId)));
+          unawaited(Future<void>(() => _greetHost(peerId)));
         }
         break;
       case 'pouch_login_required':
@@ -4085,9 +4097,12 @@ class PeerAgentClientService {
   /// - `set_additional_directories` (full-replace absolute paths on the hub host)
   ///
   /// Start / stop / set_enabled stay hub-owned; this client refuses them.
+  ///
+  /// [nodeId] 是工作节点指纹：请求仍发给主机连接，由主机转给这个节点。
   Future<PeerAgentManageResult> manageAgents({
     required String peerId,
     required String op,
+    String? nodeId,
     String? agentId,
     bool? enabled,
     String? cwd,
@@ -4119,6 +4134,7 @@ class PeerAgentClientService {
       'type': 'agent_manage_req',
       'request_id': requestId,
       'op': op,
+      if (nodeId != null) 'node_id': nodeId,
       if (agentId != null) 'agent_id': agentId,
       if (enabled != null) 'enabled': enabled,
       if (cwd != null) 'cwd': cwd,
@@ -4151,6 +4167,7 @@ class PeerAgentClientService {
     required String peerId,
     required String engine,
     required String cwd,
+    String? nodeId,
     String? name,
     String? sessionMode,
     List<String>? additionalDirectories,
@@ -4158,6 +4175,7 @@ class PeerAgentClientService {
     return manageAgents(
       peerId: peerId,
       op: 'create',
+      nodeId: nodeId,
       engine: engine,
       cwd: cwd,
       name: name,
@@ -4231,6 +4249,7 @@ class PeerAgentClientService {
   Future<PeerFsBrowseResult> browseRemoteFs({
     required String peerId,
     String? path,
+    String? nodeId,
   }) async {
     if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
       return const PeerFsBrowseResult(ok: false, error: 'offline');
@@ -4242,6 +4261,7 @@ class PeerAgentClientService {
       'type': 'fs_browse_req',
       'request_id': requestId,
       if (path != null) 'path': path,
+      if (nodeId != null) 'node_id': nodeId,
     };
     final sent =
         await PeerConnectionManager.instance.sendControl(peerId, payload);
@@ -4268,6 +4288,7 @@ class PeerAgentClientService {
       completer.complete(PeerFsBrowseResult(
         ok: false,
         error: data['error'] as String? ?? 'browse failed',
+        code: data['code'] as String?,
       ));
       return;
     }
@@ -4325,6 +4346,7 @@ class PeerAgentClientService {
       createdAgentId: data['agent_id'] as String?,
       hubStoreOk: hubStoreOk,
       hubStoreDevice: hubStoreDevice,
+      code: data['code'] as String?,
     ));
   }
 
@@ -6122,7 +6144,7 @@ class PeerAgentClientService {
   void _onConnectionEvent(PeerConnectionEvent event) {
     if (event.type == PeerConnectionEventType.connected) {
       // 还没登录就要名单，主机会回 pouch_login_required，登录页会被反复推掉。
-      if (_pouchLoginReady(event.peerId)) _requestAgentList(event.peerId);
+      if (_pouchLoginReady(event.peerId)) _greetHost(event.peerId);
       if (_handlersReadyForResume) {
         unawaited(_resumeSuspendedTurns(event.peerId));
       }
@@ -6471,6 +6493,14 @@ class PeerAgentClientService {
     return session.isLoggedIn(DateTime.now().millisecondsSinceEpoch);
   }
 
+  /// 登录好主机后报上本机能力，再要 Agent 名单。
+  void _greetHost(String peerId) {
+    unawaited(DeviceHello.send(peerId).catchError((Object e) {
+      _log.warning('device.hello failed: $e', tag: _tag);
+    }));
+    _requestAgentList(peerId);
+  }
+
   void _requestAgentList(String peerId) {
     unawaited(PeerConnectionManager.instance.sendControl(peerId, {
       'type': 'agent_list_req',
@@ -6547,7 +6577,9 @@ class PeerAgentClientService {
         final manageable = raw['manageable'] == true;
         final enabled = raw['enabled'] != false;
         final running = raw['running'] == true;
-        final online = !manageable || (enabled && running);
+        final node = AgentNodeInfo.fromAgentListEntry(raw);
+        final online =
+            node.online && (!manageable || (enabled && running));
         final workspaceUri = _workspaceUriFromAgentListEntry(raw);
         final workspaceUris = raw['workspace_uris'] is List
             ? raw['workspace_uris']
@@ -6565,6 +6597,7 @@ class PeerAgentClientService {
           'remote_agent_id': remoteId,
           if (hostRoster != null)
             'roster_hub_fingerprint': hostRoster.fingerprint,
+          ...node.toMetadata(),
           if (!PouchDutyState.isHost && remoteId == SheService.sheId)
             'is_she': true,
           // 宿主边界开关的最近一次广播，详情页据此默认只读/可编辑；

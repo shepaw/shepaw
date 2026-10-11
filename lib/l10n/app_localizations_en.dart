@@ -1114,6 +1114,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'No agents available. Please add an agent first';
 
   @override
+  String get createGroup_nodeOfflineHint =>
+      'Its worker node is offline. It can\'t speak in the group until the node reconnects.';
+
+  @override
   String get createGroup_setAsAdmin => 'Set as Admin';
 
   @override
@@ -3065,10 +3069,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get contacts_host => 'Host';
 
   @override
-  String get contacts_workers => 'Work devices';
+  String get contacts_workerNodes => 'Worker nodes';
 
   @override
-  String get contacts_myDevices => 'My devices';
+  String get contacts_pcClients => 'PC clients';
+
+  @override
+  String get contacts_mobileClients => 'Mobile clients';
+
+  @override
+  String get contacts_nodeOffline => 'Node offline';
 
   @override
   String get contacts_thisDevice => 'This device';
@@ -8381,6 +8391,19 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get addAgent_setupIntro =>
       'This host cannot start the engine yet. Install and sign in using the docs, then come back and choose it again.';
+
+  @override
+  String get addAgent_node => 'Node';
+
+  @override
+  String addAgent_nodeOffline(String name) {
+    return '$name is offline. You can add instances on it once it reconnects.';
+  }
+
+  @override
+  String addAgent_setupIntroOnNode(String node) {
+    return '$node can\'t start this engine yet. Install it on that node and sign in by following the docs, then come back and pick it again.';
+  }
 
   @override
   String get addAgent_setupCommand => 'Launch command';

@@ -58,4 +58,20 @@ void main() {
       isNull,
     );
   });
+
+  test('工作节点上的智能体画节点名，离线时置灰', () {
+    const metadata = {
+      'source_peer_id': 'host',
+      'source_peer_name': 'Hub',
+      'node_id': 'fc57',
+      'node_name': 'gpu-box',
+      'online': false,
+    };
+    expect(
+      agentSourceBadge(agentId: 'a@fc57', metadata: metadata, hostPeerId: 'host'),
+      'gpu-box',
+    );
+    expect(agentNodeOffline(metadata), isTrue);
+    expect(agentNodeOffline(const {'source_peer_id': 'host'}), isFalse);
+  });
 }

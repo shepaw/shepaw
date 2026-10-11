@@ -9,6 +9,7 @@ import '../services/she_service.dart';
 import '../utils/resume_utils.dart';
 import '../widgets/agent_list_avatar.dart';
 import '../widgets/discard_changes_scope.dart';
+import 'agent_source_badge.dart';
 import 'chat_screen.dart';
 
 class CreateGroupScreen extends StatefulWidget {
@@ -355,9 +356,10 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
               ),
               if (agent.isPeerAgent) ...[
                 const SizedBox(width: 6),
-                PeerSourceBadge(
+                PeerSourceBadge.forAgent(
                   peerId: agent.sourcePeerId,
-                  fallbackName: agent.sourcePeerName,
+                  peerName: agent.sourcePeerName,
+                  metadata: agent.metadata,
                 ),
               ],
               if (isSelected && _adminAgentId == agent.id) ...[
@@ -403,6 +405,14 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
           ),
         ),
         if (isSelected) ...[
+          if (agentNodeOffline(agent.metadata))
+            Padding(
+              padding: const EdgeInsets.only(left: 56, right: 16, bottom: 8),
+              child: Text(
+                l10n.createGroup_nodeOfflineHint,
+                style: TextStyle(fontSize: 12, color: Colors.orange[800]),
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.only(left: 56, right: 16, bottom: 8),
             child: TextField(

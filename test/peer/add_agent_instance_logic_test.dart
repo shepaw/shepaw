@@ -46,4 +46,18 @@ void main() {
     );
     expect(merged, ['/home/me/app/', '/tmp/other', '/srv/new']);
   });
+
+  test('工作节点的目标键和最近目录键带上节点指纹，主机沿用原来的键', () {
+    const host = AgentTarget(peerId: 'hub', name: 'Hub', online: true);
+    const worker = AgentTarget(
+      peerId: 'hub',
+      nodeId: 'fc57',
+      name: 'gpu-box',
+      online: false,
+    );
+    expect(host.key, 'hub');
+    expect(worker.key, 'hub@fc57');
+    expect(cwdHistoryKey('hub', null), 'agent_instance_cwd_history:hub');
+    expect(cwdHistoryKey('hub', 'fc57'), 'agent_instance_cwd_history:hub@fc57');
+  });
 }

@@ -7,20 +7,20 @@ import '../../l10n/app_localizations.dart';
 import '../../models/remote_agent.dart';
 import '../../screens/chat_screen.dart';
 import '../../service_locator.dart';
+import '../../services/contacts_directory.dart';
 import '../../services/local_database_service.dart';
 import '../../storage/pouch_session.dart';
 import '../../widgets/host_directory_picker.dart';
 import '../add_agent_instance_logic.dart';
-import '../models/paired_peer.dart';
 import 'engine_setup_screen.dart';
 import '../services/peer_agent_client_service.dart';
 import '../services/peer_connection_manager.dart';
 import '../services/peer_storage_service.dart';
 
-/// 没提交就关掉时留下的表单。换设备或提交成功后清掉。
+/// 没提交就关掉时留下的表单。换节点或提交成功后清掉。
 class AddAgentInstanceDraft {
   AddAgentInstanceDraft({
-    required this.peerId,
+    required this.targetKey,
     required this.engineId,
     required this.sessionMode,
     required this.name,
@@ -29,7 +29,8 @@ class AddAgentInstanceDraft {
     required this.extras,
   });
 
-  final String? peerId;
+  /// [AgentTarget.key]：主机是连接 id，工作节点是 `<连接 id>@<节点指纹>`。
+  final String? targetKey;
   final String? engineId;
   final String? sessionMode;
   final String name;
@@ -42,12 +43,16 @@ class AddAgentInstanceScreen extends StatefulWidget {
   const AddAgentInstanceScreen({
     super.key,
     this.presetPeerId,
+    this.presetNodeId,
     this.embedded = false,
     this.onCreated,
     this.onClose,
   });
 
   final String? presetPeerId;
+
+  /// 从通讯录某个工作节点进来时预选这个节点。
+  final String? presetNodeId;
   final bool embedded;
 
   /// 桌面右栏：交给外层去打开聊天。手机端为 null 时，自己 push ChatScreen。
@@ -64,8 +69,8 @@ class _AddAgentInstanceScreenState extends State<AddAgentInstanceScreen> {
   final _nameController = TextEditingController();
   final _extraControllers = <TextEditingController>[];
 
-  List<PairedPeer> _devices = const [];
-  String? _peerId;
+  List<AgentTarget> _targets = const [];
+  AgentTarget? _target;
   List<PeerEngineEntry> _engines = const [];
   String? _engineId;
   String? _sessionMode;
@@ -79,11 +84,22 @@ class _AddAgentInstanceScreenState extends State<AddAgentInstanceScreen> {
   bool _nameTouched = false;
   bool _applyingName = false;
   StreamSubscription<dynamic>? _connectionSub;
+  StreamSubscription<ContactsView>? _directorySub;
 
+  String? get _peerId => _target?.peerId;
+  String? get _nodeId => _target?.nodeId;
+
+  /// 请求要经过的连接在线；工作节点还要节点本身在线。
   bool get _hostOnline {
-    final peerId = _peerId;
-    if (peerId == null) return false;
-    return PeerConnectionManager.instance.connectedPeerIds.contains(peerId);
+    final target = _target;
+    if (target == null) return false;
+    return _isOnline(target);
+  }
+
+  bool _isOnline(AgentTarget target) {
+    final connected = PeerConnectionManager.instance.connectedPeerIds;
+    if (!connected.contains(target.peerId)) return false;
+    return target.nodeId == null || target.online;
   }
 
   @override
@@ -93,9 +109,8 @@ class _AddAgentInstanceScreenState extends State<AddAgentInstanceScreen> {
       if (mounted) setState(() {});
     });
     final draft = AddAgentInstanceScreen.draft;
-    if (draft != null &&
-        widget.presetPeerId != null &&
-        draft.peerId != widget.presetPeerId) {
+    final preset = widget.presetPeerId != null || widget.presetNodeId != null;
+    if (draft != null && preset && !_draftMatchesPreset(draft.targetKey)) {
       AddAgentInstanceScreen.draft = null;
     }
     _nameController.addListener(() {
@@ -108,9 +123,10 @@ class _AddAgentInstanceScreenState extends State<AddAgentInstanceScreen> {
   @override
   void dispose() {
     _connectionSub?.cancel();
+    _directorySub?.cancel();
     if (!_submitted) {
       AddAgentInstanceScreen.draft = AddAgentInstanceDraft(
-        peerId: _peerId,
+        targetKey: _target?.key,
         engineId: _engineId,
         sessionMode: _sessionMode,
         name: _nameController.text,
@@ -126,15 +142,29 @@ class _AddAgentInstanceScreenState extends State<AddAgentInstanceScreen> {
     super.dispose();
   }
 
+  bool _draftMatchesPreset(String? key) {
+    if (key == null) return false;
+    final node = widget.presetNodeId;
+    if (node != null) return key.endsWith('@$node');
+    return key == widget.presetPeerId;
+  }
+
   Future<void> _loadDevices() async {
     final session = await PouchSessionStore.readActive();
     final peers = await PeerStorageService().loadAllPeers();
     final byId = {for (final peer in peers) peer.id: peer};
     final hostId = widget.presetPeerId ?? session?.hostPeerId;
     final connected = PeerConnectionManager.instance.connectedPeerIds;
-    final devices = <PairedPeer>[];
+    final targets = <AgentTarget>[];
     final host = hostId == null ? null : byId[hostId];
-    if (host != null && !host.isBlocked) devices.add(host);
+    if (host != null && !host.isBlocked) {
+      targets.add(AgentTarget(
+        peerId: host.id,
+        name: host.deviceName,
+        online: true,
+      ));
+      targets.addAll(await _workerTargets(host.id));
+    }
     final others = peers.where((peer) {
       if (peer.isBlocked || peer.id == hostId) return false;
       return connected.contains(peer.id);
@@ -148,31 +178,104 @@ class _AddAgentInstanceScreenState extends State<AddAgentInstanceScreen> {
       return listed.ok && !listed.unsupported ? peer : null;
     }));
     for (final peer in probed) {
-      if (peer != null) devices.add(peer);
+      if (peer != null) {
+        targets.add(AgentTarget(
+          peerId: peer.id,
+          name: peer.deviceName,
+          online: true,
+        ));
+      }
     }
     if (!mounted) return;
     final draft = AddAgentInstanceScreen.draft;
-    final preferred = widget.presetPeerId ?? draft?.peerId ?? hostId;
-    final selected = devices.any((peer) => peer.id == preferred)
+    final presetNode = widget.presetNodeId;
+    final preferred = presetNode != null && hostId != null
+        ? targetKey(hostId, presetNode)
+        : (widget.presetPeerId ?? draft?.targetKey ?? hostId);
+    final selected = targets.any((target) => target.key == preferred)
         ? preferred
-        : (devices.isEmpty ? null : devices.first.id);
-    setState(() => _devices = devices);
+        : (targets.isEmpty ? null : targets.first.key);
+    setState(() => _targets = targets);
+    if (host != null) _watchWorkers(host.id);
     if (selected != null) {
-      await _selectDevice(selected, restoreDraft: draft?.peerId == selected);
+      await _selectTarget(selected, restoreDraft: draft?.targetKey == selected);
     } else if (mounted) {
       setState(() => _loading = false);
     }
   }
 
-  Future<void> _selectDevice(String peerId, {bool restoreDraft = false}) async {
-    if (_peerId != null && _peerId != peerId) {
+  /// 主机名单里的工作节点，来自通讯录的工作节点节。
+  Future<List<AgentTarget>> _workerTargets(String hostId) async {
+    if (!getIt.isRegistered<ContactsDirectory>()) return const [];
+    final directory = getIt<ContactsDirectory>()..start();
+    if (directory.latest?.host?.id != hostId ||
+        directory.latest!.inSection(ContactSection.worker).isEmpty) {
+      await directory
+          .refresh()
+          .timeout(const Duration(seconds: 5), onTimeout: () {});
+    }
+    return _workersIn(directory.latest, hostId);
+  }
+
+  List<AgentTarget> _workersIn(ContactsView? view, String hostId) {
+    if (view == null || view.host?.id != hostId) return const [];
+    return [
+      for (final device in view.inSection(ContactSection.worker))
+        if (device.nodeId != null)
+          AgentTarget(
+            peerId: hostId,
+            nodeId: device.nodeId,
+            name: device.peer.deviceName,
+            online: device.online,
+          ),
+    ];
+  }
+
+  /// 节点上下线时刷新选项；正在用的节点掉线，提交按钮跟着置灰。
+  void _watchWorkers(String hostId) {
+    if (!getIt.isRegistered<ContactsDirectory>()) return;
+    _directorySub ??= getIt<ContactsDirectory>().snapshots.listen((view) {
+      if (!mounted) return;
+      final workers = {
+        for (final worker in _workersIn(view, hostId)) worker.key: worker,
+      };
+      setState(() {
+        _targets = [
+          for (final target in _targets)
+            if (target.nodeId == null)
+              target
+            else
+              workers.remove(target.key) ??
+                  AgentTarget(
+                    peerId: target.peerId,
+                    nodeId: target.nodeId,
+                    name: target.name,
+                    online: false,
+                  ),
+          ...workers.values,
+        ];
+        final current = _target;
+        if (current != null) {
+          _target = _targets.where((t) => t.key == current.key).firstOrNull ??
+              current;
+        }
+      });
+    });
+  }
+
+  Future<void> _selectTarget(String key, {bool restoreDraft = false}) async {
+    final target = _targets.where((item) => item.key == key).firstOrNull;
+    if (target == null) return;
+    if (_target != null && _target!.key != key) {
       AddAgentInstanceScreen.draft = null;
       restoreDraft = false;
     }
+    final peerId = target.peerId;
+    final nodeId = target.nodeId;
     setState(() {
       _loading = true;
       _error = '';
-      _peerId = peerId;
+      _target = target;
       _engines = const [];
       _engineId = null;
       _sessionMode = null;
@@ -186,16 +289,32 @@ class _AddAgentInstanceScreenState extends State<AddAgentInstanceScreen> {
     });
     final service = PeerAgentClientService.instance;
     if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
-      final peer = _devices.where((item) => item.id == peerId).firstOrNull;
+      final peer = await PeerStorageService().getPeerById(peerId);
       if (peer != null) {
         await PeerConnectionManager.instance.connectToPeer(peer);
       }
     }
-    final listed = await service.manageAgents(peerId: peerId, op: 'engines');
-    final agents = await service.manageAgents(peerId: peerId, op: 'list');
-    final home = await service.browseRemoteFs(peerId: peerId);
-    final history = await _readHistory(peerId);
-    if (!mounted) return;
+    final listed = await service.manageAgents(
+      peerId: peerId,
+      op: 'engines',
+      nodeId: nodeId,
+    );
+    if (listed.nodeOffline) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = AppLocalizations.of(context).addAgent_nodeOffline(target.name);
+      });
+      return;
+    }
+    final agents = await service.manageAgents(
+      peerId: peerId,
+      op: 'list',
+      nodeId: nodeId,
+    );
+    final home = await service.browseRemoteFs(peerId: peerId, nodeId: nodeId);
+    final history = await _readHistory(peerId, nodeId);
+    if (!mounted || _target?.key != key) return;
     final engines = sortEnginesUnavailableLast(
       listed.engines,
       (engine) => engine.available,
@@ -279,6 +398,7 @@ class _AddAgentInstanceScreenState extends State<AddAgentInstanceScreen> {
     final result = await PeerAgentClientService.instance.browseRemoteFs(
       peerId: peerId,
       path: path,
+      nodeId: _nodeId,
     );
     if (!result.ok) throw Exception(result.error ?? 'browse failed');
     return HostFsBrowseResult(
@@ -323,6 +443,7 @@ class _AddAgentInstanceScreenState extends State<AddAgentInstanceScreen> {
   Future<void> _submit() async {
     final l10n = AppLocalizations.of(context);
     final peerId = _peerId;
+    final nodeId = _nodeId;
     final engine = _selectedEngine;
     if (peerId == null || engine == null || !_canSubmit) return;
     setState(() {
@@ -336,6 +457,7 @@ class _AddAgentInstanceScreenState extends State<AddAgentInstanceScreen> {
     final name = _nameController.text.trim();
     final created = await PeerAgentClientService.instance.createAgent(
       peerId: peerId,
+      nodeId: nodeId,
       engine: engine.id,
       cwd: _cwd.trim(),
       name: name.isEmpty ? null : name,
@@ -346,12 +468,14 @@ class _AddAgentInstanceScreenState extends State<AddAgentInstanceScreen> {
     if (!created.ok || (created.createdAgentId ?? '').isEmpty) {
       setState(() {
         _submitting = false;
-        _error = created.error ?? l10n.pouch_loginFailed;
+        _error = created.nodeOffline
+            ? l10n.addAgent_nodeOffline(_target?.name ?? '')
+            : (created.error ?? l10n.pouch_loginFailed);
       });
       return;
     }
     final history = rememberCwd(_history, _cwd);
-    await _writeHistory(peerId, history);
+    await _writeHistory(peerId, nodeId, history);
     await PeerAgentClientService.instance.refreshAgentList(peerId);
     final local = await _waitLocal(peerId, created.createdAgentId!);
     if (!mounted) return;
@@ -404,10 +528,9 @@ class _AddAgentInstanceScreenState extends State<AddAgentInstanceScreen> {
     if (Navigator.of(context).canPop()) Navigator.of(context).pop();
   }
 
-  Future<List<String>> _readHistory(String peerId) async {
+  Future<List<String>> _readHistory(String peerId, String? nodeId) async {
     final prefs = await SharedPreferences.getInstance();
-    final raw =
-        prefs.getStringList('agent_instance_cwd_history:$peerId') ?? const [];
+    final raw = prefs.getStringList(cwdHistoryKey(peerId, nodeId)) ?? const [];
     final seen = <String>{};
     final out = <String>[];
     for (final item in raw) {
@@ -419,10 +542,14 @@ class _AddAgentInstanceScreenState extends State<AddAgentInstanceScreen> {
     return out;
   }
 
-  Future<void> _writeHistory(String peerId, List<String> paths) async {
+  Future<void> _writeHistory(
+    String peerId,
+    String? nodeId,
+    List<String> paths,
+  ) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(
-      'agent_instance_cwd_history:$peerId',
+      cwdHistoryKey(peerId, nodeId),
       paths.take(30).toList(),
     );
   }
@@ -449,7 +576,7 @@ class _AddAgentInstanceScreenState extends State<AddAgentInstanceScreen> {
           : ListView(
               padding: const EdgeInsets.all(20),
               children: [
-                Text(l10n.addAgent_device,
+                Text(l10n.addAgent_node,
                     style: Theme.of(context).textTheme.titleSmall),
                 const SizedBox(height: 8),
                 _deviceField(l10n),
@@ -605,23 +732,37 @@ class _AddAgentInstanceScreenState extends State<AddAgentInstanceScreen> {
   }
 
   Widget _deviceField(AppLocalizations l10n) {
-    if (_devices.isEmpty) return Text(l10n.pouch_hostOffline);
-    final connected = PeerConnectionManager.instance.connectedPeerIds;
+    if (_targets.isEmpty) return Text(l10n.pouch_hostOffline);
     return Column(
       children: [
-        for (final peer in _devices)
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            selected: peer.id == _peerId,
-            title: Text(peer.deviceName),
-            trailing: EngineStatusChip(
-              label: connected.contains(peer.id)
-                  ? l10n.addAgent_online
-                  : l10n.addAgent_offline,
-              positive: connected.contains(peer.id),
-            ),
-            onTap: _submitting ? null : () => unawaited(_selectDevice(peer.id)),
-          ),
+        for (final target in _targets)
+          Builder(builder: (context) {
+            final online = _isOnline(target);
+            final selectable = online || target.nodeId == null;
+            return ListTile(
+              contentPadding: EdgeInsets.zero,
+              selected: target.key == _target?.key,
+              enabled: selectable,
+              leading: Icon(
+                target.nodeId == null
+                    ? Icons.dns_outlined
+                    : Icons.memory_outlined,
+              ),
+              title: Text(target.name),
+              subtitle: Text(
+                target.nodeId == null
+                    ? l10n.contacts_host
+                    : l10n.contacts_workerNodes,
+              ),
+              trailing: EngineStatusChip(
+                label: online ? l10n.addAgent_online : l10n.addAgent_offline,
+                positive: online,
+              ),
+              onTap: _submitting || !selectable
+                  ? null
+                  : () => unawaited(_selectTarget(target.key)),
+            );
+          }),
       ],
     );
   }
@@ -632,12 +773,13 @@ class _AddAgentInstanceScreenState extends State<AddAgentInstanceScreen> {
         builder: (_) => EngineSetupScreen(
           engine: engine,
           hostOnline: _hostOnline,
+          nodeName: _nodeId == null ? null : _target?.name,
         ),
       ),
     );
-    final peerId = _peerId;
-    if (again == true && peerId != null && mounted) {
-      await _selectDevice(peerId, restoreDraft: true);
+    final key = _target?.key;
+    if (again == true && key != null && mounted) {
+      await _selectTarget(key, restoreDraft: true);
     }
   }
 

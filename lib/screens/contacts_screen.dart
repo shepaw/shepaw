@@ -26,8 +26,8 @@ import 'remote_agent_detail_screen.dart';
 import 'group_detail_screen.dart';
 import 'create_group_screen.dart';
 
-/// 通讯录：全部设备平铺（主机、本机只在设备名旁标出来）→ 群聊。
-/// App 自己不列一份内置 Agent。
+/// 通讯录：主机 → 工作节点 → PC 客户端 → 移动客户端 → 群聊。
+/// 主机和工作节点下挂各自的 Agent，客户端只是设备；本机在设备名旁标出来。
 ///
 /// When [embedded] is true (desktop middle column), selection callbacks open
 /// details in the parent right panel instead of pushing a new route.
@@ -39,7 +39,8 @@ class ContactsScreen extends StatefulWidget {
   final ValueChanged<PairedPeer>? onPeerSelected;
   final VoidCallback? onCreateGroup;
   final VoidCallback? onPairDevice;
-  final VoidCallback? onAddAgentInstance;
+  /// 添加 Agent 实例。从工作节点行进来时带上节点指纹，主机为 null。
+  final ValueChanged<String?>? onAddAgentInstance;
 
   const ContactsScreen({
     super.key,
@@ -57,7 +58,14 @@ class ContactsScreen extends StatefulWidget {
   State<ContactsScreen> createState() => ContactsScreenState();
 }
 
-enum _ContactsSection { groups }
+enum _ContactsSection { host, workers, pcClients, mobileClients, groups }
+
+const _deviceSections = <ContactSection, _ContactsSection>{
+  ContactSection.host: _ContactsSection.host,
+  ContactSection.worker: _ContactsSection.workers,
+  ContactSection.pcClient: _ContactsSection.pcClients,
+  ContactSection.mobileClient: _ContactsSection.mobileClients,
+};
 
 class ContactsScreenState extends State<ContactsScreen> {
   /// 折叠箭头列宽 + 间距，使子项头像与父节点头像左对齐。
@@ -78,9 +86,7 @@ class ContactsScreenState extends State<ContactsScreen> {
   bool _isLoading = true;
   String _query = '';
 
-  final Set<_ContactsSection> _expanded = {
-    _ContactsSection.groups,
-  };
+  final Set<_ContactsSection> _expanded = {..._ContactsSection.values};
 
   /// Peer ids whose nested agent list is expanded. Keyed by [ContactDevice.rowKey],
   /// because one pairing id can belong to two rows.
@@ -220,16 +226,7 @@ class ContactsScreenState extends State<ContactsScreen> {
             onSelected: (value) {
               switch (value) {
                 case 'agent':
-                  if (widget.embedded && widget.onAddAgentInstance != null) {
-                    widget.onAddAgentInstance!();
-                  } else {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const AddAgentInstanceScreen(),
-                      ),
-                    );
-                  }
+                  _addAgent();
                 case 'device':
                   _startPeerPairing();
                 case 'group':
@@ -340,13 +337,15 @@ class ContactsScreenState extends State<ContactsScreen> {
           ),
         )
       else ...[
-        for (final device in devices)
-          Opacity(
-            key: ValueKey(device.rowKey),
-            opacity: device.isHost || view.hostOnline ? 1 : 0.45,
-            child: Column(
-              children: _deviceRows(device, view, l10n),
-            ),
+        for (final entry in _deviceSections.entries)
+          ..._buildDeviceSection(
+            entry.value,
+            [
+              for (final device in devices)
+                if (device.section == entry.key) device,
+            ],
+            view,
+            l10n,
           ),
         if (view.rosterFailed)
           ListTile(
@@ -370,6 +369,55 @@ class ContactsScreenState extends State<ContactsScreen> {
       physics: const AlwaysScrollableScrollPhysics(),
       children: children,
     );
+  }
+
+  List<Widget> _buildDeviceSection(
+    _ContactsSection section,
+    List<ContactDevice> devices,
+    ContactsView view,
+    AppLocalizations l10n,
+  ) {
+    if (devices.isEmpty) return const [];
+    final (title, icon, color) = switch (section) {
+      _ContactsSection.host => (
+          l10n.contacts_host,
+          Icons.dns_outlined,
+          const Color(0xFF1677FF),
+        ),
+      _ContactsSection.workers => (
+          l10n.contacts_workerNodes,
+          Icons.memory_outlined,
+          const Color(0xFF722ED1),
+        ),
+      _ContactsSection.pcClients => (
+          l10n.contacts_pcClients,
+          Icons.computer_outlined,
+          const Color(0xFF13A8A8),
+        ),
+      _ => (
+          l10n.contacts_mobileClients,
+          Icons.smartphone_outlined,
+          const Color(0xFFFA8C16),
+        ),
+    };
+    return [
+      _buildSectionHeader(
+        section: section,
+        title: title,
+        count: devices.length,
+        icon: icon,
+        iconColor: color,
+      ),
+      if (_expanded.contains(section) || _query.isNotEmpty)
+        for (final device in devices)
+          Opacity(
+            key: ValueKey(device.rowKey),
+            opacity: device.isHost || view.hostOnline ? 1 : 0.45,
+            child: Column(
+              children: _deviceRows(device, view, l10n),
+            ),
+          ),
+    ];
   }
 
   Widget _buildSkeleton() {
@@ -434,7 +482,11 @@ class ContactsScreenState extends State<ContactsScreen> {
         l10n,
         agents: visibleAgents,
         online: device.isHost ? view.hostOnline : device.online,
-        statusText: device.isHost ? _hostStatus(view, l10n) : null,
+        statusText: device.isHost
+            ? _hostStatus(view, l10n)
+            : (device.section == ContactSection.worker && !device.online
+                ? l10n.contacts_nodeOffline
+                : null),
         onStatusTap: device.isHost && !view.hostOnline ? _reconnectHost : null,
       ),
       if (expanded) ...[
@@ -449,13 +501,17 @@ class ContactsScreenState extends State<ContactsScreen> {
           ),
           ...extras.map(_buildAgentTile),
         ],
-        if (device.isHost && _query.isEmpty)
-          ListTile(
-            contentPadding: const EdgeInsets.only(left: _childIndent, right: 16),
-            leading: const Icon(Icons.add, size: 20),
-            title: Text(l10n.home_addAgentInstance),
-            onTap: _addAgent,
-          ),
+        if (device.section == ContactSection.host ||
+            device.section == ContactSection.worker)
+          if (_query.isEmpty)
+            ListTile(
+              contentPadding:
+                  const EdgeInsets.only(left: _childIndent, right: 16),
+              leading: const Icon(Icons.add, size: 20),
+              title: Text(l10n.home_addAgentInstance),
+              enabled: device.isHost || device.online,
+              onTap: () => _addAgent(nodeId: device.nodeId),
+            ),
       ],
     ];
   }
@@ -478,15 +534,15 @@ class ContactsScreenState extends State<ContactsScreen> {
     await _directory.reconnectHost();
   }
 
-  void _addAgent() {
+  void _addAgent({String? nodeId}) {
     if (widget.embedded && widget.onAddAgentInstance != null) {
-      widget.onAddAgentInstance!();
+      widget.onAddAgentInstance!(nodeId);
       return;
     }
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => const AddAgentInstanceScreen(),
+        builder: (context) => AddAgentInstanceScreen(presetNodeId: nodeId),
       ),
     );
   }

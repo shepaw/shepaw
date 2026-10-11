@@ -60,6 +60,9 @@ class IncomingPairingRequest {
   final String? channelEndpoint;
   final String? localEndpoint;
   final int streamId;
+  final String? role;
+  final String? form;
+  final String? platform;
 
   IncomingPairingRequest({
     required this.deviceName,
@@ -68,6 +71,9 @@ class IncomingPairingRequest {
     this.channelEndpoint,
     this.localEndpoint,
     required this.streamId,
+    this.role,
+    this.form,
+    this.platform,
   });
 
   Map<String, dynamic> toJson() => {
@@ -315,6 +321,9 @@ class PeerPairingService {
       pairedAt: existingPeer?.pairedAt ?? DateTime.now().millisecondsSinceEpoch,
       // 本机展示二维码、被对方扫码连接 → 被连接方
       pairingRole: PeerPairingRole.responder,
+      nodeRole: request.role,
+      form: request.form,
+      platform: request.platform,
       trustLevel: trustLevel == TrustLevel.friend
           ? TrustLevel.friend
           : TrustLevel.owner,
@@ -499,6 +508,9 @@ class PeerPairingService {
         channelEndpoint: myChannelEndpoint,
         localEndpoint: myLocalEndpoint,
         timestamp: DateTime.now().millisecondsSinceEpoch,
+        role: NodeRole.client,
+        form: DeviceForm.forPlatform(io.Platform.operatingSystem),
+        platform: io.Platform.operatingSystem,
       );
 
       // 发送 Noise handshake msg1
@@ -570,6 +582,9 @@ class PeerPairingService {
         pairedAt: DateTime.now().millisecondsSinceEpoch,
         // 本机扫码主动发起连接 → 发起方
         pairingRole: PeerPairingRole.initiator,
+        nodeRole: response.role,
+        form: response.form,
+        platform: response.platform,
       );
 
       await _storage.savePeer(peer);
@@ -717,6 +732,9 @@ class PeerPairingService {
         channelEndpoint: request.channelEndpoint,
         localEndpoint: request.localEndpoint,
         streamId: stream.streamId,
+        role: request.role,
+        form: request.form,
+        platform: request.platform,
       );
       _pendingIncomingRequest = incoming;
       _incomingRequestController.add(incoming);

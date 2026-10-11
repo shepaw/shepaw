@@ -14,10 +14,14 @@ class EngineSetupScreen extends StatelessWidget {
     super.key,
     required this.engine,
     required this.hostOnline,
+    this.nodeName,
   });
 
   final PeerEngineEntry engine;
   final bool hostOnline;
+
+  /// 引擎在工作节点上时的节点名，主机为 null。
+  final String? nodeName;
 
   @override
   Widget build(BuildContext context) {
@@ -63,7 +67,9 @@ class EngineSetupScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          Text(l10n.addAgent_setupIntro),
+          Text(nodeName == null
+              ? l10n.addAgent_setupIntro
+              : l10n.addAgent_setupIntroOnNode(nodeName!)),
           if (engine.unavailableReason.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(

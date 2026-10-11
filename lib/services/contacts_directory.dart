@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import '../models/agent.dart';
+import '../models/agent_node.dart';
 import '../peer/models/paired_peer.dart';
 import '../peer/pairing_endpoints.dart';
 import '../peer/pouch_pair.dart';
@@ -15,6 +17,9 @@ import '../storage/device_identity.dart';
 import '../storage/pouch_login_keeper.dart';
 import '../storage/pouch_session.dart';
 import '../service_locator.dart';
+
+/// 通讯录分节。群聊不在设备名单里，由页面单独渲染。
+enum ContactSection { host, worker, pcClient, mobileClient }
 
 /// 通讯录里的一台设备，以及挂在它名下的智能体。
 class ContactDevice {
@@ -35,6 +40,21 @@ class ContactDevice {
   /// 折叠和选中不能只用 [PairedPeer.id]：一次配对的两边会共用这个 id。
   String get rowKey =>
       '${isHost ? 'host' : 'peer'}:${peer.id}:${peer.fingerprint}';
+
+  /// 工作节点的指纹，也就是 `agent_manage_req` 里的 `node_id`。主机和客户端为 null。
+  String? get nodeId =>
+      section == ContactSection.worker ? peer.fingerprint.trim().toLowerCase() : null;
+
+  /// 旧版主机不报身份，挂着智能体的设备只可能是工作节点。
+  ContactSection get section {
+    if (isHost) return ContactSection.host;
+    if (peer.effectiveRole == NodeRole.worker || agents.isNotEmpty) {
+      return ContactSection.worker;
+    }
+    return peer.effectiveForm == DeviceForm.mobile
+        ? ContactSection.mobileClient
+        : ContactSection.pcClient;
+  }
 }
 
 /// 通讯录里的全部设备。主机只是其中一台，群聊不在这里。
@@ -58,6 +78,11 @@ class ContactsView {
   final bool hostOnline;
   final bool hostIsThisComputer;
   final bool rosterFailed;
+
+  List<ContactDevice> inSection(ContactSection section) => [
+        for (final device in devices)
+          if (device.section == section) device,
+      ];
 
   static const empty = ContactsView(
     hasSession: false,
@@ -100,11 +125,17 @@ ContactsView buildContacts({
   };
 
   final hostAgents = <Agent>[];
+  final nodeAgents = <String, List<Agent>>{};
   final pending = <Agent>[];
   for (final agent in agents) {
     if (!agent.isPeerAgent || agent.hiddenOnThisApp) continue;
     if (agent.sourcePeerId == hostId) {
-      hostAgents.add(agent);
+      final nodeId = AgentNodeInfo.fromMetadata(agent.metadata).nodeId;
+      if (nodeId == null) {
+        hostAgents.add(agent);
+      } else {
+        nodeAgents.putIfAbsent(nodeId.toLowerCase(), () => <Agent>[]).add(agent);
+      }
     } else {
       pending.add(agent);
     }
@@ -131,8 +162,11 @@ ContactsView buildContacts({
   final absorbedAgents = <Agent>[];
   final rosterDevices = <ContactDevice>[];
   for (final peer in filteredRoster) {
-    final hanging = byFingerprint[peer.fingerprint.trim().toLowerCase()] ??
-        const <Agent>[];
+    final fingerprint = peer.fingerprint.trim().toLowerCase();
+    final hanging = <Agent>[
+      ...?nodeAgents.remove(fingerprint),
+      ...?byFingerprint[fingerprint],
+    ];
     if (_isThisComputerMirror(
       peer: peer,
       hostPeer: hostPeer,
@@ -162,6 +196,8 @@ ContactsView buildContacts({
         online: hostOnline,
       ),
     ...rosterDevices,
+    for (final entry in nodeAgents.entries)
+      _unlistedWorker(entry.key, entry.value),
   ];
 
   return ContactsView(
@@ -172,6 +208,32 @@ ContactsView buildContacts({
     hostOnline: hostOnline,
     hostIsThisComputer: hostIsThisComputer,
     rosterFailed: rosterFailed,
+  );
+}
+
+/// 名单没拉到或还没刷新时，工作节点只出现在 Agent 名单里，按 Agent 带的节点信息补一行。
+ContactDevice _unlistedWorker(String fingerprint, List<Agent> agents) {
+  final node = AgentNodeInfo.fromMetadata(agents.first.metadata);
+  final online = agents.any(
+    (agent) => AgentNodeInfo.fromMetadata(agent.metadata).online,
+  );
+  return ContactDevice(
+    peer: PairedPeer(
+      id: 'node:$fingerprint',
+      deviceName: node.nodeName ?? fingerprint,
+      deviceId: fingerprint,
+      publicKey: Uint8List(0),
+      fingerprint: fingerprint,
+      pairedAt: 0,
+      state: online
+          ? PeerConnectionState.connected
+          : PeerConnectionState.disconnected,
+      nodeRole: NodeRole.worker,
+    ),
+    agents: agents,
+    isHost: false,
+    isThisDevice: false,
+    online: online,
   );
 }
 

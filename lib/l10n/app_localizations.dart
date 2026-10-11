@@ -2066,6 +2066,12 @@ abstract class AppLocalizations {
   /// **'暂无 Agent，请先添加 Agent'**
   String get createGroup_noAgents;
 
+  /// No description provided for @createGroup_nodeOfflineHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'所在工作节点离线，节点重新连上之前它在群里不能发言'**
+  String get createGroup_nodeOfflineHint;
+
   /// No description provided for @createGroup_setAsAdmin.
   ///
   /// In zh, this message translates to:
@@ -5444,17 +5450,29 @@ abstract class AppLocalizations {
   /// **'主机'**
   String get contacts_host;
 
-  /// No description provided for @contacts_workers.
+  /// No description provided for @contacts_workerNodes.
   ///
   /// In zh, this message translates to:
-  /// **'工作设备'**
-  String get contacts_workers;
+  /// **'工作节点'**
+  String get contacts_workerNodes;
 
-  /// No description provided for @contacts_myDevices.
+  /// No description provided for @contacts_pcClients.
   ///
   /// In zh, this message translates to:
-  /// **'我的设备'**
-  String get contacts_myDevices;
+  /// **'PC 客户端'**
+  String get contacts_pcClients;
+
+  /// No description provided for @contacts_mobileClients.
+  ///
+  /// In zh, this message translates to:
+  /// **'移动客户端'**
+  String get contacts_mobileClients;
+
+  /// No description provided for @contacts_nodeOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'节点离线'**
+  String get contacts_nodeOffline;
 
   /// No description provided for @contacts_thisDevice.
   ///
@@ -14654,6 +14672,24 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'这台主机上还不能启动这个引擎。按文档装好并登录之后，回到添加页面再选一次。'**
   String get addAgent_setupIntro;
+
+  /// No description provided for @addAgent_node.
+  ///
+  /// In zh, this message translates to:
+  /// **'节点'**
+  String get addAgent_node;
+
+  /// No description provided for @addAgent_nodeOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'{name} 离线，重新连上之前不能在上面添加实例'**
+  String addAgent_nodeOffline(String name);
+
+  /// No description provided for @addAgent_setupIntroOnNode.
+  ///
+  /// In zh, this message translates to:
+  /// **'{node} 上还不能启动这个引擎。在这个节点上按文档装好并登录之后，回到添加页面再选一次。'**
+  String addAgent_setupIntroOnNode(String node);
 
   /// No description provided for @addAgent_setupCommand.
   ///

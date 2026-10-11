@@ -57,6 +57,35 @@ enum PeerPairingRole {
   }
 }
 
+/// 设备在主机名册里的身份：主机、工作节点、客户端。
+class NodeRole {
+  NodeRole._();
+
+  static const host = 'host';
+  static const worker = 'worker';
+  static const client = 'client';
+}
+
+/// 设备形态：桌面、移动、服务器。
+class DeviceForm {
+  DeviceForm._();
+
+  static const desktop = 'desktop';
+  static const mobile = 'mobile';
+  static const server = 'server';
+
+  /// 本机形态，按平台给出。
+  static String forPlatform(String platform) {
+    switch (platform.toLowerCase()) {
+      case 'android':
+      case 'ios':
+        return mobile;
+      default:
+        return desktop;
+    }
+  }
+}
+
 /// 已配对的远端 Shepaw 设备
 class PairedPeer {
   /// 配对关系唯一 ID
@@ -100,6 +129,15 @@ class PairedPeer {
   /// `friend`（他人的设备，预留；store.*/memory.* 一律拒绝并审计）。
   final String trustLevel;
 
+  /// 对方在主机名册里的身份（`host` / `worker` / `client`），旧数据为 null。
+  final String? nodeRole;
+
+  /// 对方形态（`desktop` / `mobile` / `server`），旧数据为 null。
+  final String? form;
+
+  /// 对方平台（`macos`、`android`……），旧数据为 null。
+  final String? platform;
+
   PairedPeer({
     required this.id,
     required this.deviceName,
@@ -114,7 +152,34 @@ class PairedPeer {
     this.isBlocked = false,
     this.pairingRole,
     this.trustLevel = 'owner',
+    this.nodeRole,
+    this.form,
+    this.platform,
   });
+
+  /// 身份，旧数据一律当作客户端。
+  String get effectiveRole {
+    switch (nodeRole) {
+      case NodeRole.host:
+      case NodeRole.worker:
+      case NodeRole.client:
+        return nodeRole!;
+      default:
+        return NodeRole.client;
+    }
+  }
+
+  /// 形态，旧数据按平台推断：工作节点是服务器，手机平台是移动端，其余是桌面。
+  String get effectiveForm {
+    switch (form) {
+      case DeviceForm.desktop:
+      case DeviceForm.mobile:
+      case DeviceForm.server:
+        return form!;
+    }
+    if (effectiveRole == NodeRole.worker) return DeviceForm.server;
+    return DeviceForm.forPlatform(platform ?? '');
+  }
 
   /// 获取首选连接端点（优先内网直连）
   String? get preferredEndpoint => localEndpoint ?? channelEndpoint;
@@ -164,6 +229,9 @@ class PairedPeer {
       isBlocked: (json['is_blocked'] as int? ?? 0) == 1,
       pairingRole: PeerPairingRole.fromJson(json['pairing_role'] as String?),
       trustLevel: json['trust_level'] as String? ?? 'owner',
+      nodeRole: _nonEmpty(json['role']),
+      form: _nonEmpty(json['form']),
+      platform: _nonEmpty(json['platform']),
     );
   }
 
@@ -182,6 +250,9 @@ class PairedPeer {
       'is_blocked': isBlocked ? 1 : 0,
       'pairing_role': pairingRole?.toJson(),
       'trust_level': trustLevel,
+      'role': nodeRole,
+      'form': form,
+      'platform': platform,
     };
   }
 
@@ -201,6 +272,9 @@ class PairedPeer {
     bool? isBlocked,
     PeerPairingRole? pairingRole,
     String? trustLevel,
+    String? nodeRole,
+    String? form,
+    String? platform,
   }) {
     return PairedPeer(
       id: id ?? this.id,
@@ -218,9 +292,18 @@ class PairedPeer {
       isBlocked: isBlocked ?? this.isBlocked,
       pairingRole: pairingRole ?? this.pairingRole,
       trustLevel: trustLevel ?? this.trustLevel,
+      nodeRole: nodeRole ?? this.nodeRole,
+      form: form ?? this.form,
+      platform: platform ?? this.platform,
     );
   }
 
   @override
   String toString() => 'PairedPeer($deviceName, fp=$fingerprint)';
+}
+
+String? _nonEmpty(Object? value) {
+  if (value is! String) return null;
+  final text = value.trim();
+  return text.isEmpty ? null : text;
 }

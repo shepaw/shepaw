@@ -289,6 +289,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   _LeftPanelMode _leftMode = _LeftPanelMode.conversations;
   bool _settingsOpen = false;
 
+  /// 右栏添加 Agent 实例页预选的工作节点，主机为 null。
+  String? _addAgentNodeId;
+
   /// 每个主菜单一份右栏。切菜单只改 [_leftMode]，不重建另外两个 Navigator。
   final Map<_LeftPanelMode, _DeskSlot> _slots = {
     _LeftPanelMode.conversations: _DeskSlot(
@@ -649,8 +652,10 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                   onConversationSelected: _onConversationSelected,
                   onCreateGroup: () => _showPanel(_RightPanelView.createGroup),
                   onPairDevice: () => _showPanel(_RightPanelView.pairDevice),
-                  onAddAgentInstance: () =>
-                      _showPanel(_RightPanelView.addAgentInstance),
+                  onAddAgentInstance: () {
+                    _addAgentNodeId = null;
+                    _showPanel(_RightPanelView.addAgentInstance);
+                  },
                 ),
                 ContactsScreen(
                   key: _contactsKey,
@@ -663,8 +668,10 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                   onCreateGroup: () => _showPanel(_RightPanelView.createGroup),
                   onPairDevice: () =>
                       _showPanel(_RightPanelView.pairDeviceInput),
-                  onAddAgentInstance: () =>
-                      _showPanel(_RightPanelView.addAgentInstance),
+                  onAddAgentInstance: (nodeId) {
+                    _addAgentNodeId = nodeId;
+                    _showPanel(_RightPanelView.addAgentInstance);
+                  },
                 ),
                 StorageSpaceListPanel(
                   key: _storageKey,
@@ -903,7 +910,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
       case _RightPanelView.addAgentInstance:
         return AddAgentInstanceScreen(
+          key: ValueKey('add-agent:${_addAgentNodeId ?? ''}'),
           embedded: true,
+          presetNodeId: _addAgentNodeId,
           onClose: () => _showPanel(_RightPanelView.empty),
           onCreated: (agent) {
             _onConversationSelected(ConversationSelection(

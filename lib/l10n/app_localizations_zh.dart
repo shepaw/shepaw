@@ -1070,6 +1070,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get createGroup_noAgents => '暂无 Agent，请先添加 Agent';
 
   @override
+  String get createGroup_nodeOfflineHint => '所在工作节点离线，节点重新连上之前它在群里不能发言';
+
+  @override
   String get createGroup_setAsAdmin => '设为管理员';
 
   @override
@@ -2949,10 +2952,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get contacts_host => '主机';
 
   @override
-  String get contacts_workers => '工作设备';
+  String get contacts_workerNodes => '工作节点';
 
   @override
-  String get contacts_myDevices => '我的设备';
+  String get contacts_pcClients => 'PC 客户端';
+
+  @override
+  String get contacts_mobileClients => '移动客户端';
+
+  @override
+  String get contacts_nodeOffline => '节点离线';
 
   @override
   String get contacts_thisDevice => '本机';
@@ -8064,6 +8073,19 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get addAgent_setupIntro => '这台主机上还不能启动这个引擎。按文档装好并登录之后，回到添加页面再选一次。';
+
+  @override
+  String get addAgent_node => '节点';
+
+  @override
+  String addAgent_nodeOffline(String name) {
+    return '$name 离线，重新连上之前不能在上面添加实例';
+  }
+
+  @override
+  String addAgent_setupIntroOnNode(String node) {
+    return '$node 上还不能启动这个引擎。在这个节点上按文档装好并登录之后，回到添加页面再选一次。';
+  }
 
   @override
   String get addAgent_setupCommand => '启动命令';

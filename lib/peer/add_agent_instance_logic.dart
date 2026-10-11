@@ -107,3 +107,30 @@ List<String> cleanAdditionalDirectories(String cwd, Iterable<String> raw) {
   }
   return out;
 }
+
+/// 添加页可以选的节点：主机本身，或者经主机中继的工作节点。
+class AgentTarget {
+  const AgentTarget({
+    required this.peerId,
+    required this.name,
+    required this.online,
+    this.nodeId,
+  });
+
+  /// 请求发往的连接。工作节点也走主机连接。
+  final String peerId;
+
+  /// 工作节点指纹，主机为 null。
+  final String? nodeId;
+  final String name;
+  final bool online;
+
+  String get key => targetKey(peerId, nodeId);
+}
+
+String targetKey(String peerId, String? nodeId) =>
+    nodeId == null ? peerId : '$peerId@$nodeId';
+
+/// 最近目录按节点分开存，主机沿用原来的键。
+String cwdHistoryKey(String peerId, String? nodeId) =>
+    'agent_instance_cwd_history:${targetKey(peerId, nodeId)}';

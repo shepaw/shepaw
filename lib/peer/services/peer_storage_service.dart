@@ -46,7 +46,10 @@ class PeerStorageService {
         last_seen INTEGER,
         is_blocked INTEGER DEFAULT 0,
         pairing_role TEXT,
-        trust_level TEXT NOT NULL DEFAULT 'owner'
+        trust_level TEXT NOT NULL DEFAULT 'owner',
+        role TEXT,
+        form TEXT,
+        platform TEXT
       )
     ''');
     // 老库迁移：仅当列不存在时 ALTER，避免每次启动刷 sqflite 原生 duplicate column 日志。
@@ -58,6 +61,11 @@ class PeerStorageService {
     if (!columnNames.contains('trust_level')) {
       await db.execute(
           "ALTER TABLE paired_peers ADD COLUMN trust_level TEXT NOT NULL DEFAULT 'owner'");
+    }
+    for (final column in const ['role', 'form', 'platform']) {
+      if (!columnNames.contains(column)) {
+        await db.execute('ALTER TABLE paired_peers ADD COLUMN $column TEXT');
+      }
     }
     await db.execute('''
       CREATE TABLE IF NOT EXISTS peer_messages (

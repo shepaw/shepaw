@@ -1768,7 +1768,10 @@ class HomeScreenState extends State<HomeScreen> {
                                 )
                                 case final badge?) ...[
                               const SizedBox(width: 6),
-                              _buildPeerSourceBadge(badge),
+                              _buildPeerSourceBadge(
+                                badge,
+                                offline: agentNodeOffline(agent.metadata),
+                              ),
                             ],
                           ],
                         ),
@@ -1842,24 +1845,28 @@ class HomeScreenState extends State<HomeScreen> {
   }
 
   /// 来源标识小徽标：标记该 agent 来自某台配对设备。
-  Widget _buildPeerSourceBadge(String? sourceName) {
+  Widget _buildPeerSourceBadge(String? sourceName, {bool offline = false}) {
     final colorScheme = Theme.of(context).colorScheme;
+    final foreground =
+        offline ? colorScheme.onSurfaceVariant : colorScheme.primary;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: colorScheme.primaryContainer.withValues(alpha: 0.5),
+        color: offline
+            ? colorScheme.surfaceContainerHighest
+            : colorScheme.primaryContainer.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.devices_outlined, size: 11, color: colorScheme.primary),
+          Icon(Icons.devices_outlined, size: 11, color: foreground),
           const SizedBox(width: 3),
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 120),
             child: Text(
               sourceName ?? AppLocalizations.of(context).peerPairing_title,
-              style: TextStyle(fontSize: 10, color: colorScheme.primary),
+              style: TextStyle(fontSize: 10, color: foreground),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),

@@ -72,30 +72,30 @@ Object? commandField(String id, String field) {
   return null;
 }
 
-String? _toolName(String command) {
-  const tools = {
-    'os.file.read': 'file_read',
-    'os.file.write': 'file_write',
-    'os.file.delete': 'file_delete',
-    'os.file.move': 'file_move',
-    'os.file.list': 'file_list',
-    'os.command.exec': 'shell_exec',
-    'os.command.sysinfo': 'system_info',
-    'os.process.list': 'process_list',
-    'os.process.kill': 'process_kill',
-    'os.process.detail': 'process_detail',
-    'os.process.connections': 'network_connections',
-    'os.app.open': 'app_open',
-    'os.app.url': 'url_open',
-    'os.app.screenshot': 'screenshot',
-    'os.clipboard.read': 'clipboard_read',
-    'os.clipboard.write': 'clipboard_write',
-    'os.location.get': 'location_get',
-    'os.location.status': 'location_status',
-    'os.macos.exec': 'applescript_exec',
-  };
-  return tools[command];
-}
+String? _toolName(String command) => deviceCommandTools[command];
+
+/// 命令 id 到本机 OS 执行器工具名。
+const deviceCommandTools = {
+  'os.file.read': 'file_read',
+  'os.file.write': 'file_write',
+  'os.file.delete': 'file_delete',
+  'os.file.move': 'file_move',
+  'os.file.list': 'file_list',
+  'os.command.exec': 'shell_exec',
+  'os.command.sysinfo': 'system_info',
+  'os.process.list': 'process_list',
+  'os.process.kill': 'process_kill',
+  'os.process.detail': 'process_detail',
+  'os.process.connections': 'network_connections',
+  'os.app.open': 'app_open',
+  'os.app.url': 'url_open',
+  'os.app.screenshot': 'screenshot',
+  'os.clipboard.read': 'clipboard_read',
+  'os.clipboard.write': 'clipboard_write',
+  'os.location.get': 'location_get',
+  'os.location.status': 'location_status',
+  'os.macos.exec': 'applescript_exec',
+};
 
 Map<String, dynamic> _error(String callId, String code, String message) {
   return {
