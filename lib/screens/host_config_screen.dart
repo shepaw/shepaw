@@ -14,6 +14,7 @@ class HostConfigScreen extends StatefulWidget {
 
 class _HostConfigScreenState extends State<HostConfigScreen> {
   final _server = TextEditingController();
+  final _serverFocus = FocusNode();
   final _id = TextEditingController();
   final _secret = TextEditingController();
   final _alias = TextEditingController();
@@ -28,12 +29,18 @@ class _HostConfigScreenState extends State<HostConfigScreen> {
   @override
   void initState() {
     super.initState();
+    _server.addListener(() => _takeChannelAddress(_server, force: false));
+    _id.addListener(() => _takeChannelAddress(_id, force: false));
+    _serverFocus.addListener(() {
+      if (!_serverFocus.hasFocus) _takeChannelAddress(_server, force: true);
+    });
     _load();
   }
 
   @override
   void dispose() {
     _server.dispose();
+    _serverFocus.dispose();
     _id.dispose();
     _secret.dispose();
     _alias.dispose();
@@ -60,6 +67,17 @@ class _HostConfigScreenState extends State<HostConfigScreen> {
         _loading = false;
       });
     }
+  }
+
+  /// 贴进 `http://host/proxy/<id>` 时，服务地址只留主机，编号填到 Channel ID。
+  void _takeChannelAddress(TextEditingController source, {required bool force}) {
+    final parts = splitChannelAddress(source.text);
+    if (parts == null || (!force && !parts.ready)) return;
+    _server.text = parts.serverUrl;
+    final id = parts.channelId;
+    if (id != null && id.isNotEmpty) _id.text = id;
+    final alias = parts.endpoint;
+    if (alias != null && alias.isNotEmpty) _alias.text = alias;
   }
 
   void _apply(HostChannelConfig config) {
@@ -122,6 +140,7 @@ class _HostConfigScreenState extends State<HostConfigScreen> {
                     const SizedBox(height: 8),
                     TextField(
                       controller: _server,
+                      focusNode: _serverFocus,
                       decoration: InputDecoration(
                         labelText: l10n.hostConfig_server,
                         hintText: l10n.hostConfig_serverHint,
