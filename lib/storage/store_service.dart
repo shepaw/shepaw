@@ -250,6 +250,204 @@ class StoreService {
     return storeUriWithRef(StoreSpace.workspaces, homeDeviceId, path);
   }
 
+  /// 写入任意分区。本机直接落盘；主机目录经已登录的主机连接，手机和电脑同一条协议。
+  Future<void> writeDeviceBytes({
+    required String deviceId,
+    required String space,
+    required String path,
+    required Uint8List bytes,
+  }) async {
+    final self = await DeviceIdentity.deviceId();
+    final normalized = normalizeStorePath(path);
+    if (deviceId == self) {
+      final store = await _localStore();
+      await store.putBytes(
+        deviceId: self,
+        space: space,
+        path: normalized,
+        bytes: bytes,
+      );
+      return;
+    }
+    final hash = crypto.sha256.convert(bytes).toString();
+    Future<Map<String, dynamic>?> send(StoreFrame frame) =>
+        callPeer(deviceId, frame);
+    final begin = await send(StoreFrame(
+      op: StoreOp.writeBegin,
+      payload: <String, dynamic>{
+        'space': space,
+        'device': deviceId,
+        'path': normalized,
+        'size': bytes.length,
+        'sha256': hash,
+      },
+    ));
+    _throwStoreResult(begin, 'write.begin failed');
+    final uploadId = begin!['upload_id'] as String;
+    if (bytes.isEmpty) {
+      _throwStoreResult(
+        await send(StoreFrame(
+          op: StoreOp.writeChunk,
+          payload: <String, dynamic>{
+            'space': space,
+            'device': deviceId,
+            'upload_id': uploadId,
+            'offset': 0,
+            'data': '',
+          },
+        )),
+        'write.chunk failed',
+      );
+    } else {
+      var offset = 0;
+      while (offset < bytes.length) {
+        final end = (offset + LocalStore.maxReadChunk) > bytes.length
+            ? bytes.length
+            : offset + LocalStore.maxReadChunk;
+        _throwStoreResult(
+          await send(StoreFrame(
+            op: StoreOp.writeChunk,
+            payload: <String, dynamic>{
+              'space': space,
+              'device': deviceId,
+              'upload_id': uploadId,
+              'offset': offset,
+              'data': base64Encode(bytes.sublist(offset, end)),
+            },
+          )),
+          'write.chunk failed',
+        );
+        offset = end;
+      }
+    }
+    _throwStoreResult(
+      await send(StoreFrame(
+        op: StoreOp.commit,
+        payload: <String, dynamic>{
+          'space': space,
+          'device': deviceId,
+          'upload_ids': [uploadId],
+        },
+      )),
+      'commit failed',
+    );
+  }
+
+  /// 删除文件；[folder] 时删掉该前缀下的全部文件。
+  Future<void> deleteDevicePath({
+    required String deviceId,
+    required String space,
+    required String path,
+    bool folder = false,
+  }) async {
+    final self = await DeviceIdentity.deviceId();
+    final normalized = normalizeStorePath(path);
+    if (deviceId == self) {
+      final store = await _localStore();
+      await store.delete(self, space, normalized);
+      return;
+    }
+    if (!folder) {
+      await _remoteDelete(deviceId, space, normalized);
+      return;
+    }
+    final entries = await listDevice(
+      deviceId: deviceId,
+      space: space,
+      prefix: normalized,
+      limit: 5000,
+      computeHash: false,
+    );
+    final paths = <String>[
+      for (final entry in entries)
+        if (!entry.isDir && entry.path.isNotEmpty) entry.path,
+    ];
+    for (final item in paths) {
+      await _remoteDelete(deviceId, space, item);
+    }
+  }
+
+  /// 同分区改名。远端没有单独的 rename，读出后写到新路径再删旧的。
+  Future<void> renameDevicePath({
+    required String deviceId,
+    required String space,
+    required String fromPath,
+    required String toPath,
+    String sha256 = '',
+    int size = 0,
+  }) async {
+    final self = await DeviceIdentity.deviceId();
+    final from = normalizeStorePath(fromPath);
+    final to = normalizeStorePath(toPath);
+    if (deviceId == self) {
+      final store = await _localStore();
+      await store.rename(self, space, from, to, sha256: sha256, size: size);
+      return;
+    }
+    final bytes = await _readDeviceBytes(deviceId, space, from);
+    await writeDeviceBytes(
+      deviceId: deviceId,
+      space: space,
+      path: to,
+      bytes: bytes,
+    );
+    await _remoteDelete(deviceId, space, from);
+  }
+
+  Future<Uint8List> _readDeviceBytes(
+    String deviceId,
+    String space,
+    String path,
+  ) async {
+    final out = BytesBuilder(copy: false);
+    var offset = 0;
+    while (true) {
+      final chunk = await readRemoteChunk(
+        serverDeviceId: deviceId,
+        deviceId: deviceId,
+        space: space,
+        path: path,
+        offset: offset,
+        length: StoreTransfer.jsonChunk,
+        binary: false,
+      );
+      if (chunk.bytes.isNotEmpty) out.add(chunk.bytes);
+      if (chunk.eof || chunk.bytes.isEmpty) break;
+      offset += chunk.bytes.length;
+      if (offset >= chunk.fileSize && chunk.fileSize > 0) break;
+    }
+    return out.takeBytes();
+  }
+
+  Future<void> _remoteDelete(
+    String deviceId,
+    String space,
+    String path,
+  ) async {
+    final result = await callPeer(
+      deviceId,
+      StoreFrame(
+        op: StoreOp.delete,
+        payload: <String, dynamic>{
+          'space': space,
+          'device': deviceId,
+          'path': path,
+        },
+      ),
+    );
+    if (result?['_error'] == StoreError.notFound) return;
+    _throwStoreResult(result, 'delete failed');
+  }
+
+  void _throwStoreResult(Map<String, dynamic>? result, String fallback) {
+    if (result == null || result.containsKey('_error')) {
+      throw StoreException(
+        result?['_error'] as String? ?? StoreError.internal,
+        result?['message'] as String? ?? fallback,
+      );
+    }
+  }
+
   /// 跨端读优先服务端：属主在线 → 直读属主；否则走 master（镜像备份）。
   ///
   /// 共享储物袋产品语义：owner 配对默认互读对方当前分享内容（双方写出站

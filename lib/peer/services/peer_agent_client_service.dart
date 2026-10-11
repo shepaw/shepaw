@@ -922,6 +922,9 @@ class PeerAgentModel {
   final String displayName;
   final String description;
   final String baseUrl;
+
+  /// 主机是否已保存密钥。旧 Hub 不带这个字段时为 null，明文永远不在这里。
+  final bool? hasApiKey;
   final List<PeerModelOption> options;
 
   PeerAgentModel({
@@ -929,6 +932,7 @@ class PeerAgentModel {
     required this.displayName,
     this.description = '',
     this.baseUrl = '',
+    this.hasApiKey,
     this.options = const [],
   });
 
@@ -958,6 +962,8 @@ class PeerAgentModel {
       displayName: (display != null && display.isNotEmpty) ? display : value,
       description: (json['description'] as String?) ?? '',
       baseUrl: (json['base_url'] as String?) ?? '',
+      hasApiKey:
+          json.containsKey('has_api_key') ? json['has_api_key'] == true : null,
       options: options,
     );
   }
@@ -967,6 +973,7 @@ class PeerAgentModel {
         'display_name': displayName,
         'description': description,
         if (baseUrl.isNotEmpty) 'base_url': baseUrl,
+        if (hasApiKey != null) 'has_api_key': hasApiKey,
         if (options.isNotEmpty)
           'options': [for (final option in options) option.toJson()],
       };
@@ -2897,6 +2904,9 @@ class PeerAgentClientService {
   }
 
   /// 把一条模型写进储物袋名单。密钥留在主机上，响应里不带回。
+  ///
+  /// [apiKey] 空着时，主机保留同一条模型已有的密钥；同一地址上别的模型
+  /// 已有密钥时，新条目也沿用那一把。
   Future<bool> putSheCatalog({
     required String peerId,
     required String displayName,
@@ -4159,12 +4169,34 @@ class PeerAgentClientService {
   Future<PeerAgentManageResult> removeAgent({
     required String peerId,
     required String remoteAgentId,
-  }) {
-    return manageAgents(
+  }) async {
+    final result = await manageAgents(
       peerId: peerId,
       op: 'remove',
       agentId: remoteAgentId,
     );
+    if (!result.ok) return result;
+    // 主机已经删掉实例。先清本机行，会话列表不必等下一轮 agent_list 或重启。
+    await _deleteLocalPeerAgent(peerId: peerId, remoteAgentId: remoteAgentId);
+    PeerConnectionManager.instance.notifyPeerListChanged();
+    return result;
+  }
+
+  Future<void> _deleteLocalPeerAgent({
+    required String peerId,
+    required String remoteAgentId,
+  }) async {
+    final remote = remoteAgentId.trim();
+    if (remote.isEmpty) return;
+    final agents = await _db.getAllRemoteAgents();
+    for (final agent in agents) {
+      if (agent.protocol != ProtocolType.peer || agent.sourcePeerId != peerId) {
+        continue;
+      }
+      if (agent.remoteAgentId != remote) continue;
+      await _db.deleteRemoteAgent(agent.id);
+      unawaited(SheAgentImpressionService.instance.removeImpression(agent.id));
+    }
   }
 
   /// Set the hub instance's primary workspace root (absolute path).

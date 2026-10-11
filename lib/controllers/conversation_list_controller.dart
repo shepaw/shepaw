@@ -78,6 +78,14 @@ class ConversationListController extends ChangeNotifier {
   Timer? _healthCheckTimer;
 
   bool _refreshInFlight = false;
+
+  /// 刷新进行中又来了名单变化时，当前这一轮结束后立刻再读一次。
+  /// 否则先发出的查询可能更晚返回，把已经删掉的 agent 写回列表，直到下次冷启动。
+  bool _refreshQueued = false;
+
+  /// 每次真正开始读库时加一。更早开始的那一轮返回时如果代数已经变了，丢弃结果。
+  int _loadGeneration = 0;
+
   Timer? _pendingRefreshTimer;
 
   /// 上一次 refresh 是否至少有一路数据源失败。UI 据此区分「加载失败」与
@@ -253,16 +261,37 @@ class ConversationListController extends ChangeNotifier {
     _pendingRefreshTimer?.cancel();
     _pendingRefreshTimer = Timer(_kSilentRefreshDebounce, () {
       _pendingRefreshTimer = null;
-      if (_refreshInFlight) {
-        _scheduleSilentRefresh();
-        return;
-      }
+      if (_disposed) return;
       refresh(silent: true);
     });
   }
 
   /// Load agents / groups / peers. [silent] skips full-screen loading.
+  ///
+  /// 进行中的一轮不会再开并行查询。名单变化只登记补刷，等这一轮结束后用新代数重读，
+  /// 避免旧查询晚到把已删除的 agent 写回内存。
   Future<void> refresh({bool silent = false}) async {
+    if (_disposed) return;
+    if (_refreshInFlight) {
+      _refreshQueued = true;
+      return;
+    }
+    _refreshInFlight = true;
+    var silentNow = silent;
+    try {
+      while (!_disposed) {
+        _refreshQueued = false;
+        await _refreshOnce(silent: silentNow);
+        if (!_refreshQueued) break;
+        silentNow = true;
+      }
+    } finally {
+      _refreshInFlight = false;
+    }
+  }
+
+  Future<void> _refreshOnce({bool silent = false}) async {
+    final generation = ++_loadGeneration;
     final showLoading = !silent &&
         _agents.isEmpty &&
         _groupChannels.isEmpty &&
@@ -272,9 +301,7 @@ class ConversationListController extends ChangeNotifier {
       notifyListeners();
     }
 
-    _refreshInFlight = true;
-    try {
-      // 三路数据源互不依赖，并行拉取：串行会把各自的往返时间累加。
+    // 三路数据源互不依赖，并行拉取：串行会把各自的往返时间累加。
       //
       // 各路独立成败：成功一路立即生效，失败一路只记日志并降级为空，不再把
       // 整批结果一起丢弃（否则首刷任一路抛错会把其它两路已成功的结果也清空，
@@ -310,7 +337,7 @@ class ConversationListController extends ChangeNotifier {
         ),
       ]);
 
-      if (_disposed) return;
+      if (_disposed || generation != _loadGeneration) return;
 
       if (agentsOk) {
         _agents = agents!;
@@ -341,9 +368,6 @@ class ConversationListController extends ChangeNotifier {
         );
       }
       _runHealthCheckInBackground();
-    } finally {
-      _refreshInFlight = false;
-    }
   }
 
   /// 并行数据源的独立 try/catch：单路失败记录日志后降级，不让异常逃逸到
@@ -596,8 +620,9 @@ class ConversationListController extends ChangeNotifier {
           timeout: const Duration(seconds: 3),
         );
         if (_disposed) return;
+        final generation = ++_loadGeneration;
         final freshAgents = _visibleOnThisApp(await _apiService.getAgents());
-        if (_disposed) return;
+        if (_disposed || generation != _loadGeneration) return;
         if (!_agentOnlineStatusChanged(freshAgents, _agents)) return;
 
         _agents = freshAgents;

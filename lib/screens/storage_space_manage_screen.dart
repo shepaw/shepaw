@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../storage/device_identity.dart';
+import '../storage/host_pouch_target.dart';
 import '../storage/store_service.dart';
 import 'storage_browser_screen.dart';
 import 'storage_shared.dart';
@@ -59,6 +60,7 @@ class StorageSpaceManageScreen extends StatefulWidget {
 class _StorageSpaceManageScreenState extends State<StorageSpaceManageScreen> {
   int? _usedBytes;
   StreamSubscription<void>? _usageSub;
+  HostPouchTarget? _pouch;
 
   /// 空间内是否隐藏内部记账文件；由本页「更多」菜单持有并下发给浏览页。
   bool _hideInternalFiles = true;
@@ -73,7 +75,14 @@ class _StorageSpaceManageScreenState extends State<StorageSpaceManageScreen> {
   @override
   void initState() {
     super.initState();
-    _loadUsedBytes();
+    unawaited(_resolvePouch());
+  }
+
+  Future<void> _resolvePouch() async {
+    final target = await HostPouchTarget.resolve();
+    if (!mounted) return;
+    setState(() => _pouch = target);
+    if (!target.isRemote) unawaited(_loadUsedBytes());
   }
 
   @override
@@ -100,8 +109,17 @@ class _StorageSpaceManageScreenState extends State<StorageSpaceManageScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final pouch = _pouch;
+    if (pouch == null) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
     final l10n = AppLocalizations.of(context);
     return StorageBrowserScreen(
+      deviceId: pouch.isRemote ? pouch.deviceId : null,
+      peerId: pouch.peerId,
+      ownHostPouch: pouch.isRemote,
       usedBytes: _usedBytes,
       initialSpace: widget.initialSpace,
       hideInternalFiles: _hideInternalFiles,

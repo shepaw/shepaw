@@ -82,6 +82,7 @@ class StorageBrowserScreen extends StatefulWidget {
     this.deviceId,
     this.deviceName,
     this.peerId,
+    this.ownHostPouch = false,
     this.readOnly = false,
     this.preferLocalCache = false,
     this.manageLocalMirror = false,
@@ -107,6 +108,9 @@ class StorageBrowserScreen extends StatefulWidget {
 
   /// 配对关系 id；远端浏览时用于读取入站分享目录。
   final String? peerId;
+
+  /// 打开已登录的主机袋子。分区和读写与本机浏览相同，不按「别人分享给我」收窄。
+  final bool ownHostPouch;
 
   /// 只读模式：隐藏删除；远端默认只读。
   final bool readOnly;
@@ -212,7 +216,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
 
   bool get _readOnly =>
       widget.readOnly ||
-      _isRemote ||
+      (_isRemote && !widget.ownHostPouch) ||
       (widget.preferLocalCache && !widget.manageLocalMirror);
 
   bool get _canWrite => !_readOnly && !widget.manageLocalMirror;
@@ -226,7 +230,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
 
   List<String> get _spaces {
     List<String> base;
-    if (!_isRemote) {
+    if (!_isRemote || widget.ownHostPouch) {
       base = List<String>.from(StoreSpace.browserSpaces);
     } else {
       final inbound = _inboundShares;
@@ -932,15 +936,13 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     if (toRel == file.path) return;
     setState(() => _busy = true);
     try {
-      final store = await StoreService.instance.localStore();
-      final meta = await store.meta(_targetId, file.space, file.path);
-      await store.rename(
-        _targetId,
-        file.space,
-        file.path,
-        toRel,
-        sha256: meta['sha256'] as String? ?? '',
-        size: (meta['size'] as num?)?.toInt() ?? file.size,
+      await StoreService.instance.renameDevicePath(
+        deviceId: _targetId,
+        space: file.space,
+        fromPath: file.path,
+        toPath: toRel,
+        sha256: file.entry.sha256,
+        size: file.size,
       );
       _toast(l10n.storage_browserRenamed(name));
       await _reload();
@@ -1012,8 +1014,12 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
           await InstructionSetService.instance.delete(id);
         }
       } else {
-        final store = await StoreService.instance.localStore();
-        await store.delete(_targetId, space, relPath);
+        await StoreService.instance.deleteDevicePath(
+          deviceId: _targetId,
+          space: space,
+          path: relPath,
+          folder: isFolder,
+        );
       }
       _toast(l10n.storage_browserDeleted(relPath));
       await _reload();
@@ -1609,8 +1615,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     required String path,
     required Uint8List bytes,
   }) async {
-    final store = await StoreService.instance.localStore();
-    await store.putBytes(
+    await StoreService.instance.writeDeviceBytes(
       deviceId: _targetId,
       space: space,
       path: path,
@@ -1678,12 +1683,10 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
         final file = File(localPath);
         if (!await file.exists()) continue;
         final dest = _destRelPath(p.basename(localPath));
-        final store = await StoreService.instance.localStore();
-        await store.putFile(
-          deviceId: _targetId,
+        await _commitBytes(
           space: _mineSpace,
           path: dest,
-          file: file,
+          bytes: await file.readAsBytes(),
         );
         if (mounted) {
           _toast(l10n.storage_browserUploadDone(p.basename(localPath)));

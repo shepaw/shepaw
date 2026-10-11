@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../screens/storage_shared.dart';
-import '../../storage/device_identity.dart';
+import '../../storage/host_pouch_target.dart';
 import '../../storage/store_protocol.dart';
 import '../../storage/store_service.dart';
 import '../../theme/app_theme.dart';
@@ -56,7 +56,21 @@ class StorageSpaceListPanelState extends State<StorageSpaceListPanel> {
 
   Future<void> reload() async {
     try {
-      final self = await DeviceIdentity.deviceId();
+      final target = await HostPouchTarget.resolve();
+      if (target.isRemote) {
+        _usageSub?.cancel();
+        _usageSub = null;
+        if (!mounted) return;
+        setState(() {
+          _selfId = target.deviceId;
+          _spaceBytes = const {};
+          _usedBytes = null;
+          _recycleBytes = null;
+          _loading = false;
+        });
+        return;
+      }
+      final self = target.deviceId;
       final store = await StoreService.instance.localStore();
       final stats = await store.stats(blocking: false);
       final bytes = storageDeviceSpaceBytes(stats, self);

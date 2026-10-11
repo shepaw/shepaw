@@ -1301,6 +1301,22 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     setState(() => _isDeleting = true);
 
     try {
+      final peerId = _agent.sourcePeerId;
+      final remoteId = _agent.remoteAgentId;
+      if (_agent.isPeerAgent &&
+          _agent.peerAgentManageable &&
+          peerId != null &&
+          peerId.isNotEmpty &&
+          remoteId != null &&
+          remoteId.isNotEmpty) {
+        final removed = await PeerAgentClientService.instance.removeAgent(
+          peerId: peerId,
+          remoteAgentId: remoteId,
+        );
+        if (!removed.ok) {
+          throw StateError(removed.error ?? 'remove failed');
+        }
+      }
       final agentService = getIt<RemoteAgentService>();
       await agentService.deleteAgent(_agent.id);
 

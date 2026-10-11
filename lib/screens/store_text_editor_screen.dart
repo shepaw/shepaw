@@ -6,7 +6,6 @@ import 'package:path/path.dart' as p;
 
 import '../l10n/app_localizations.dart';
 import '../widgets/discard_changes_scope.dart';
-import '../storage/local_store.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
 import '../storage/store_uri_reader.dart';
@@ -87,8 +86,7 @@ class _StoreTextEditorScreenState extends State<StoreTextEditorScreen> {
     final l10n = AppLocalizations.of(context);
     setState(() => _saving = true);
     try {
-      final store = await StoreService.instance.localStore();
-      await store.putBytes(
+      await StoreService.instance.writeDeviceBytes(
         deviceId: widget.deviceId,
         space: widget.space,
         path: widget.relPath,
