@@ -19,6 +19,36 @@ void main() {
     });
   });
 
+  group('SheService.displayAvatar', () {
+    test('惜宝一律用灵宠图，忽略库里的旧爪印', () {
+      expect(
+        SheService.displayAvatar(
+          id: SheService.sheId,
+          stored: '/tmp/old-paw.png',
+        ),
+        SheService.sheAvatar,
+      );
+      expect(
+        SheService.displayAvatar(
+          id: 'peer-local',
+          stored: '/tmp/old-paw.png',
+          metadata: const {'is_she': true},
+        ),
+        SheService.sheAvatar,
+      );
+    });
+
+    test('其他助手保持自己的头像', () {
+      expect(
+        SheService.displayAvatar(
+          id: 'agent-1',
+          stored: 'assets/images/engines/cursor.svg',
+        ),
+        'assets/images/engines/cursor.svg',
+      );
+    });
+  });
+
   group('SheService.normalizeStoredName', () {
     test('collapses localized default and She back to functional She', () {
       expect(SheService.normalizeStoredName('She', '惜宝'), 'She');

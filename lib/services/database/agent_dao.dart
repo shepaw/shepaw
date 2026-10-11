@@ -3,6 +3,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 import '../../models/agent.dart';
 import '../local_database_service.dart';
+import '../she_service.dart';
 
 /// 本地 Agent 表的数据访问层。
 ///
@@ -82,10 +83,15 @@ Agent _agentFromMap(Map<String, dynamic> map) {
       ? Map<String, dynamic>.from(jsonDecode(map['metadata']))
       : <String, dynamic>{};
 
+  final id = map['id'] ?? '';
   return Agent(
-    id: map['id'] ?? '',
+    id: id,
     name: map['name'] ?? 'Unknown Agent',
-    avatar: map['avatar'] ?? '🤖',
+    avatar: SheService.displayAvatar(
+      id: id,
+      stored: map['avatar'] as String? ?? '🤖',
+      metadata: metadata,
+    ),
     // `agents.bio` 列同时映射到 `bio`（联系人/群成员列表用的简历字段）与
     // `description`（home 等界面沿用的旧字段），与 `Agent.fromJson` 一致。
     bio: map['bio'],

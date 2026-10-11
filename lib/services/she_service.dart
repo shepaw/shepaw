@@ -71,6 +71,17 @@ class SheService {
   /// She 默认头像（橘猫灵宠形象）。
   static const String sheAvatar = 'assets/images/she_avatar.png';
 
+  /// 惜宝对外展示的头像。库里可能还留着旧爪印，或对端同步来的文件；
+  /// 这些都不采用，固定用 [sheAvatar]。
+  static String displayAvatar({
+    required String? id,
+    required String? stored,
+    Map<String, dynamic>? metadata,
+  }) {
+    if (isSheIdentity(id, metadata)) return sheAvatar;
+    return stored ?? '';
+  }
+
   /// Internal flag field for user_profile, not exposed to She
   static const String _profileInitKey = '_initialized';
 
@@ -141,7 +152,12 @@ class SheService {
   // ── Initialization ──────────────────────────────────────────────
 
   Future<void> ensureSheExists() async {
-    final existing = await _db.getRemoteAgentById(sheId);
+    // 读原始头像再迁移。展示层会把惜宝收成灵宠图，若走那条读路径，
+    // 这里会误以为库里已经是新图，旧爪印就留在库里。
+    final existing = await _db.getRemoteAgentById(
+      sheId,
+      presentSheAvatar: false,
+    );
     if (existing != null) {
       if (!existing.isPeerAgent && existing.avatar != sheAvatar) {
         // 迁移旧版头像（如花朵 emoji、旧 logo）到默认灵宠头像

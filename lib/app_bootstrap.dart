@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'services/local_database_service.dart';
+import 'services/she_service.dart';
 import 'services/permission_service.dart';
 import 'services/acp_server_service.dart';
 import 'services/notification_service.dart';
@@ -201,6 +202,7 @@ class AppBootstrap {
 
       final db = LocalDatabaseService();
       await db.database;
+      await SheService.instance.ensureSheExists();
 
       await setupEventBusAfterDb();
 

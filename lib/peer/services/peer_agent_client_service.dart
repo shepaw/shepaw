@@ -6706,6 +6706,12 @@ class PeerAgentClientService {
   /// - 无字节：直接用 `avatar` 字符串（emoji / asset / 网络 URL 可在本端解析）；
   ///   若是对端本机绝对路径、空值或通用占位 🤖，则按 `engine` 回退到引擎默认头像。
   Future<String> _resolvePeerAvatar(Map raw, RemoteAgent? existing) async {
+    // 惜宝固定用本机灵宠图。对端若还在发旧爪印文件，不落盘、也不覆盖。
+    if (SheService.isSheIdentity(raw['id'] as String?) ||
+        SheService.isSheIdentity(existing?.id, existing?.metadata)) {
+      return SheService.sheAvatar;
+    }
+
     // 本地已自定义该 peer agent 头像 → 以本地为准，忽略对端分享的头像。
     final existingAvatar = existing?.avatar;
     if (existing?.metadata['avatar_overridden'] == true &&
