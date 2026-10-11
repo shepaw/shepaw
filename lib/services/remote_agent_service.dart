@@ -6,6 +6,7 @@ import '../models/remote_agent.dart';
 import '../peer/models/paired_peer.dart' show PeerConnectionState;
 import '../peer/services/peer_connection_manager.dart';
 import '../storage/device_identity.dart';
+import '../storage/memory_paths.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_uri_reader.dart';
 import 'local_database_service.dart';
@@ -560,25 +561,36 @@ class RemoteAgentService {
   // ==================== 储物袋简历（resume.md） ====================
 
   /// Agent 简历在储物袋的固定位置：
-  /// `pouch://files/<device_id>/<agent_id>/resume.md`。
+  /// `pouch://cognition/<device_id>/<agent_id>/resume.md`。
   ///
-  /// 网关首次推导与每次重建（`agent.resume.rebuild`）都会把完整简历写到这个
-  /// 位置；agent 可用 `pouch read` / `pouch write` 工具读写同一 URI。
+  /// 和 soul 放在一起。文件分区只给用户自己的文件，新简历不要再写到那里。
+  /// 早先写在 `files/<agent_id>/resume.md` 的旧件，读取时仍会兜底。
   Future<String> resumeStoreUriFor(String agentId) async {
     final device = await DeviceIdentity.deviceId();
-    return storeUriWithRef(StoreSpace.files, device, '$agentId/resume.md');
+    return MemoryPaths.uri(
+      deviceId: device,
+      relPath: MemoryPaths.resumeMd(agentId),
+    );
   }
 
   /// 读取储物袋里的简历全文（resume.md）。文件不存在 / 读失败返回 null。
   Future<String?> readResumeMarkdownFromStore(String agentId) async {
-    try {
-      final uri = await resumeStoreUriFor(agentId);
-      final bytes = await StoreUriReader.instance.read(uri);
-      if (bytes.isEmpty) return null;
-      return utf8.decode(bytes);
-    } catch (_) {
-      return null;
+    final device = await DeviceIdentity.deviceId();
+    final legacy = storeUriWithRef(
+      StoreSpace.files,
+      device,
+      MemoryPaths.resumeMd(agentId),
+    );
+    for (final uri in [await resumeStoreUriFor(agentId), legacy]) {
+      try {
+        final bytes = await StoreUriReader.instance.read(uri);
+        if (bytes.isEmpty) continue;
+        final text = utf8.decode(bytes);
+        if (text.trim().isEmpty) continue;
+        return text;
+      } catch (_) {}
     }
+    return null;
   }
 
   /// 详情页打开时刷新：读储物袋 resume.md 全文供预览；若本地 `bio` 为空，

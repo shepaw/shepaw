@@ -65,7 +65,7 @@ Designed with a local-first philosophy: all your data stays on your device. SheP
 - **Snapshots** — scheduled encrypted snapshots with GFS retention and recycle bin / versioning
 - **P2P mirror sync** — offline-friendly sync engine with change cursors and batched atomic uploads; cross-device mirroring
 - **Folder binding** — bind a local folder on desktop and sync it via FS watcher (with periodic fallback)
-- **Agent workspaces** — each agent/group gets a workspace in the pouch; agent resumes (`resume.md`) live there and are readable/writable via `shepaw pouch`
+- **Agent workspaces** — each agent/group gets a workspace in the pouch; agent resumes live in cognition (`cognition/<agentId>/resume.md`) and are readable/writable via `shepaw pouch`
 - **WebDAV export & backups** — export your store to WebDAV, restore, and manage snapshots
 - **NexusPouch / Storage Node** — optional headless Go store master, paired by QR and discovered over mDNS, serving `store.*` frames over Noise-encrypted WebSocket
 

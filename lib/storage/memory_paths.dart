@@ -48,6 +48,9 @@ class MemoryPaths {
   /// Soul 权威正文（与 entries 并列，不按 peer 拆分）。
   static String soulMd(String agentId) => '${agentRoot(agentId)}/soul.md';
 
+  /// 简历。和 soul 一样属于这个 Agent，不进用户的文件分区。
+  static String resumeMd(String agentId) => '${agentRoot(agentId)}/resume.md';
+
   static String uri({
     required String deviceId,
     required String relPath,

@@ -63,7 +63,7 @@ Shepaw是一个跨平台的 AI助理们交互协作的平台，但"她"可以帮
 - **快照** — 定时加密快照，GFS 保留策略，回收站与版本管理
 - **P2P 镜像同步** — 离线友好的同步引擎：变更游标 + 批量原子上传，跨设备镜像
 - **目录绑定** — 桌面端绑定本地文件夹，通过 FS watcher 自动同步（附周期兜底）
-- **Agent 工作空间** — 每个 Agent / 群组在储物袋中拥有工作空间；Agent 简历（`resume.md`）存放于此，可用 `shepaw pouch` 读写
+- **Agent 工作空间** — 每个 Agent / 群组在储物袋中拥有工作空间；Agent 简历在认知分区（`cognition/<agentId>/resume.md`），可用 `shepaw pouch` 读写
 - **WebDAV 导出与备份** — 导出到 WebDAV、恢复、管理快照
 - **NexusPouch / Storage Node** — 可选的无头 Go store master，扫码配对 + mDNS 发现，经 Noise 加密 WebSocket 提供 `store.*` 帧服务
 

@@ -72,7 +72,7 @@ Manual notes
     test('resumeStoreUriFor builds the fixed pouch location', () async {
       final device = await DeviceIdentity.deviceId();
       final uri = await service.resumeStoreUriFor('acp_agent_abcd');
-      expect(uri, 'pouch://files/$device/acp_agent_abcd/resume.md');
+      expect(uri, 'pouch://cognition/$device/acp_agent_abcd/resume.md');
     });
 
     test('readResumeMarkdownFromStore reads back what was written', () async {
@@ -80,6 +80,27 @@ Manual notes
       final device = await DeviceIdentity.deviceId();
       final content =
           Uint8List.fromList(utf8.encode('# resume\n\nbody\n'));
+      final store = await StoreService.instance.localStore();
+      final (uploadId, _) = await store.writeBegin(
+        deviceId: device,
+        space: StoreSpace.cognition,
+        path: '$agentId/resume.md',
+        size: content.length,
+        sha256: crypto.sha256.convert(content).toString(),
+      );
+      await store.writeChunk(device, StoreSpace.cognition, uploadId, 0, content);
+      await store.commit(device, StoreSpace.cognition, [uploadId]);
+
+      final md = await service.readResumeMarkdownFromStore(agentId);
+      expect(md, '# resume\n\nbody\n');
+    });
+
+    test('readResumeMarkdownFromStore still finds a legacy files resume',
+        () async {
+      const agentId = 'acp_agent_legacy';
+      final device = await DeviceIdentity.deviceId();
+      final content =
+          Uint8List.fromList(utf8.encode('# legacy\n\n## Summary\nold\n'));
       final store = await StoreService.instance.localStore();
       final (uploadId, _) = await store.writeBegin(
         deviceId: device,
@@ -92,7 +113,7 @@ Manual notes
       await store.commit(device, StoreSpace.files, [uploadId]);
 
       final md = await service.readResumeMarkdownFromStore(agentId);
-      expect(md, '# resume\n\nbody\n');
+      expect(md, contains('## Summary'));
     });
 
     test('readResumeMarkdownFromStore returns null for a missing file',

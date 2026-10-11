@@ -31,6 +31,7 @@ URI 是 `pouch://<space>/<device_id>/<path>`。看到它就用 `pouch read` / `l
 
 - 读 scope card 上的认知地址。
 - 写入走 `shepaw context` 的 memory / soul 子命令。不要 `pouch write`。
+- 简历是 `pouch://cognition/<device>/<agentId>/resume.md`，和 `soul.md` 并列。用 `pouch read` / `pouch write` 读写这一份。不要写到 `files`。
 - `runtime/.../soul.md` 和 `memory.md` 只是镜像，禁止回写。
 - 群任务没有个人认知袋。
 
@@ -59,7 +60,7 @@ App 和各智能体的 MCP、规则、技能。先读这里，再决定怎么做
 
 ### 其余
 
-- `files`：用户自己的文件。简历在 `files/<device>/<agentId>/resume.md`。
+- `files`：用户自己的文件。不要把 Agent 简历、灵魂或记忆写到这里。
 - `public`：用途未定，不要写入。
 - 玉简在 `slips`。用 `slip` 改，不要 `pouch write` 覆盖那份 JSON。
 

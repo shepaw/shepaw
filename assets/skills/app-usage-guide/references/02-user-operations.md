@@ -135,7 +135,7 @@
 - **快照**：定时加密快照，GFS 保留策略，回收站与版本管理；在 **储物袋 → 备份与恢复** 创建/导出/恢复。
 - **目录绑定**（桌面端）：绑定本地文件夹，FS watcher 自动同步（附周期兜底）。
 - **WebDAV**：导出到 WebDAV、恢复、管理快照。
-- **Agent 简历**：`pouch://files/<device>/<agentId>/resume.md`，用 `shepaw pouch` 读写。群共享文件在 `pouch://workspaces/<device>/group_<gid>/…`。
+- **Agent 简历**：`pouch://cognition/<device>/<agentId>/resume.md`，和灵魂放在一起，用 `shepaw pouch` 读写。不要写进用户的 `files`。群共享文件在 `pouch://workspaces/<device>/group_<gid>/…`。
 - **NexusPouch / Storage Node**（可选）：无头 Go store master，扫码配对 + mDNS 发现，经 Noise 加密 WebSocket 提供 `store.*` 帧服务。
 
 ### 2.6 设备配对与 P2P / She 网络
