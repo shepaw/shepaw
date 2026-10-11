@@ -21,6 +21,7 @@ import '../service_locator.dart';
 import '../services/cli_host.dart';
 import '../services/cli_pouch.dart';
 import '../storage/pouch_login.dart';
+import '../storage/pouch_login_client.dart';
 import '../storage/pouch_session.dart';
 import '../utils/platform_utils.dart';
 import 'inference_log_screen.dart';
@@ -129,6 +130,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ? null
           : PhoneAuthArgs(hostPeerId: phoneHost),
     );
+  }
+
+  /// 一台主机只有一只储物袋，只能改名，不能新建。
+  Future<void> _renamePouch(BuildContext screenContext) async {
+    final name = await showDialog<String>(
+      context: screenContext,
+      builder: (_) => _PouchRenameDialog(initial: _pouchName),
+    );
+    final trimmed = name?.trim() ?? '';
+    if (trimmed.isEmpty || trimmed == _pouchName || !screenContext.mounted) {
+      return;
+    }
+    final l10n = AppLocalizations.of(screenContext);
+    final messenger = ScaffoldMessenger.of(screenContext);
+    try {
+      final session = await PouchSessionStore.readActive();
+      if (session == null) throw StateError(l10n.pouch_loginFailed);
+      final pouch = await requestPouchRename(
+        hostPeerId: session.hostPeerId,
+        name: trimmed,
+      );
+      final updated = session.copyWith(pouchName: pouch.name);
+      await PouchSessionStore(await PouchSessionStore.appFile()).save(updated);
+      await PouchLoginMemory.write(id: pouch.id, name: pouch.name);
+      await PhonePouchMemory.write(session.hostPeerId, [pouch]);
+      if (!mounted) return;
+      setState(() => _pouchName = pouch.name);
+    } catch (error) {
+      final message = error is StateError ? error.message : '$error';
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.settings_renamePouchFailed(message))),
+      );
+    }
   }
 
   Future<void> _confirmSwitchPouch(BuildContext screenContext) async {
@@ -704,6 +738,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const Divider(),
 
+          if (_pouchName.isNotEmpty)
+            ListTile(
+              leading: const Icon(Icons.drive_file_rename_outline),
+              title: Text(l10n.settings_renamePouch),
+              subtitle: Text(_pouchName),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _renamePouch(context),
+            ),
+
           ListTile(
             leading: const Icon(Icons.inventory_2_outlined),
             title: Text(l10n.settings_switchPouch),
@@ -755,6 +798,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 32),
         ],
       ),
+    );
+  }
+}
+
+/// 改名框自己持有 controller。对话框关掉的动画还在跑时不能提前 dispose。
+class _PouchRenameDialog extends StatefulWidget {
+  const _PouchRenameDialog({required this.initial});
+
+  final String initial;
+
+  @override
+  State<_PouchRenameDialog> createState() => _PouchRenameDialogState();
+}
+
+class _PouchRenameDialogState extends State<_PouchRenameDialog> {
+  late final _controller = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() => Navigator.pop(context, _controller.text);
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return AlertDialog(
+      title: Text(l10n.settings_renamePouch),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        maxLength: 64,
+        decoration: InputDecoration(labelText: l10n.pouchGate_name),
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(l10n.common_cancel),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: Text(l10n.common_confirm),
+        ),
+      ],
     );
   }
 }

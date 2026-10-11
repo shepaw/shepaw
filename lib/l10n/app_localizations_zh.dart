@@ -8007,6 +8007,14 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get settings_renamePouch => '储物袋名称';
+
+  @override
+  String settings_renamePouchFailed(String reason) {
+    return '没能改名：$reason';
+  }
+
+  @override
   String get settings_switchPouchConfirmTitle => '切换储物袋';
 
   @override

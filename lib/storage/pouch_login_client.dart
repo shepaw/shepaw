@@ -157,6 +157,31 @@ Future<PouchDescriptor> requestPouchCreate({
   );
 }
 
+/// 给主机上那只袋子改名。一台主机只有一只，不能再新建。要已经登录。
+Future<PouchDescriptor> requestPouchRename({
+  required String hostPeerId,
+  required String name,
+  Duration timeout = const Duration(seconds: 8),
+}) {
+  return _request(
+    hostPeerId: hostPeerId,
+    type: 'pouch_rename_req',
+    responseType: 'pouch_rename_resp',
+    extra: <String, dynamic>{'name': name},
+    timeout: timeout,
+    parse: (data) {
+      if (data['ok'] != true) {
+        final error = (data['error'] as String?)?.trim() ?? '';
+        throw StateError(error.isEmpty ? '没能改名' : error);
+      }
+      final raw = data['pouch'];
+      final pouch = raw is Map ? _pouchesFrom([raw]) : const <PouchDescriptor>[];
+      if (pouch.isEmpty) throw StateError('改名的响应不完整');
+      return pouch.single;
+    },
+  );
+}
+
 List<PouchDescriptor> _pouchesFrom(List<dynamic> listed) {
   return listed
       .whereType<Map>()

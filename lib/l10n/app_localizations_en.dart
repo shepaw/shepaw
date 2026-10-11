@@ -8323,6 +8323,14 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get settings_renamePouch => 'Pouch name';
+
+  @override
+  String settings_renamePouchFailed(String reason) {
+    return 'Couldn\'t rename: $reason';
+  }
+
+  @override
   String get settings_switchPouchConfirmTitle => 'Switch pouch';
 
   @override

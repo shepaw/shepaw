@@ -6,9 +6,9 @@ import '../services/cli_pouch.dart';
 import '../storage/pouch_catalog.dart';
 import '../storage/pouch_session.dart';
 
-/// 这台手机在某台主机上见过的储物袋。
+/// 这台手机在某台主机上见过的储物袋。一台主机只有一只，只记最新的。
 ///
-/// 主机暂时连不上时，登录页仍用这份名单，让人点选后再输密码。
+/// 主机暂时连不上时，登录页仍用它，让人点选后再输密码。
 class PhonePouchMemory {
   static String keyFor(String hostId) => 'phone_pouches_${hostId.trim()}';
 
@@ -41,7 +41,7 @@ class PhonePouchMemory {
         if (id.isEmpty || name.isEmpty) continue;
         pouches.add(PouchDescriptor(id: id, name: name, rootPath: ''));
       }
-      return pouches;
+      return pouches.isEmpty ? const [] : [pouches.last];
     } catch (_) {
       return const [];
     }
@@ -68,7 +68,7 @@ class PhonePouchMemory {
   }
 }
 
-/// 把上次进入的那一只补进名单。已经在里面就不重复。
+/// 一台主机只有一只袋子。上次进入的那只替换掉名单里原来的，名字也用新的。
 List<PouchDescriptor> rememberPhonePouch(
   List<PouchDescriptor> pouches, {
   required String id,
@@ -77,9 +77,5 @@ List<PouchDescriptor> rememberPhonePouch(
   final pouchId = id.trim();
   final pouchName = name.trim();
   if (pouchId.isEmpty || pouchName.isEmpty) return pouches;
-  if (pouches.any((pouch) => pouch.id == pouchId)) return pouches;
-  return [
-    ...pouches,
-    PouchDescriptor(id: pouchId, name: pouchName, rootPath: ''),
-  ];
+  return [PouchDescriptor(id: pouchId, name: pouchName, rootPath: '')];
 }

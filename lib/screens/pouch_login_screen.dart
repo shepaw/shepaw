@@ -331,7 +331,7 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
   Future<void> _create() async {
     final host = _host;
     final l10n = AppLocalizations.of(context);
-    if (_busy || host == null || !_hostReady) return;
+    if (_busy || host == null || !_hostReady || _pouches.isNotEmpty) return;
     final name = _nameController.text.trim();
     if (name.isEmpty) {
       setState(() => _error = l10n.pouch_nameRequired);
@@ -462,18 +462,20 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
                 onTap: () => _enter(pouch),
               ),
             ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _nameController,
-            decoration: InputDecoration(labelText: l10n.pouch_newName),
-            enabled: pouchesEnabled,
-            onSubmitted: (_) => _create(),
-          ),
-          const SizedBox(height: 12),
-          FilledButton(
-            onPressed: pouchesEnabled ? _create : null,
-            child: Text(_busy ? l10n.pouch_busy : l10n.pouch_createAndEnter),
-          ),
+          if (_hostReady && _pouches.isEmpty) ...[
+            const SizedBox(height: 12),
+            TextField(
+              controller: _nameController,
+              decoration: InputDecoration(labelText: l10n.pouch_newName),
+              enabled: pouchesEnabled,
+              onSubmitted: (_) => _create(),
+            ),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: pouchesEnabled ? _create : null,
+              child: Text(_busy ? l10n.pouch_busy : l10n.pouch_createAndEnter),
+            ),
+          ],
           if (_error.isNotEmpty) ...[
             const SizedBox(height: 16),
             Text(

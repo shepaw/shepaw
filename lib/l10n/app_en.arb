@@ -4431,6 +4431,13 @@
       "host": {"type": "String"}
     }
   },
+  "settings_renamePouch": "Pouch name",
+  "settings_renamePouchFailed": "Couldn't rename: {reason}",
+  "@settings_renamePouchFailed": {
+    "placeholders": {
+      "reason": {"type": "String"}
+    }
+  },
   "settings_switchPouchConfirmTitle": "Switch pouch",
   "settings_switchPouchConfirm": "Leave this pouch and choose another? The connection to the host stays up.",
   "addAgent_title": "Add agent instance",

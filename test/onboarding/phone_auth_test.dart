@@ -57,23 +57,22 @@ void main() {
     );
   });
 
-  test('上次进入的袋子不在名单里就补上，已有的不重复', () {
-    final added = rememberPhonePouch(const [study], id: 'c', name: '公司');
-    expect(added.map((pouch) => pouch.id), ['a', 'c']);
-    expect(
-      rememberPhonePouch(added, id: 'a', name: '书房').length,
-      2,
-    );
+  test('一台主机只记一只袋子，上次进入的替换原来的', () {
+    final replaced = rememberPhonePouch(const [study], id: 'c', name: '公司');
+    expect(replaced.map((pouch) => pouch.id), ['c']);
+    final renamed = rememberPhonePouch(const [study], id: 'a', name: '新书房');
+    expect(renamed.single.id, 'a');
+    expect(renamed.single.name, '新书房');
     expect(
       rememberPhonePouch(const [study], id: ' ', name: '公司'),
       [study],
     );
   });
 
-  test('记住的袋子名单能从文本还原', () {
+  test('记住的袋子能从文本还原，旧数据里有多只时只留最后一只', () {
     final raw = PhonePouchMemory.encode(const [study, work]);
     final decoded = PhonePouchMemory.decode(raw);
-    expect(decoded.map((pouch) => pouch.name), ['书房', '公司']);
+    expect(decoded.map((pouch) => pouch.name), ['公司']);
     expect(PhonePouchMemory.decode('not-json'), isEmpty);
     expect(PhonePouchMemory.decode('[{"id":"","name":"书房"}]'), isEmpty);
   });

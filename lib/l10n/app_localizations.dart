@@ -14541,6 +14541,18 @@ abstract class AppLocalizations {
   /// **'当前：{pouch} · {host}'**
   String settings_switchPouchCurrent(String pouch, String host);
 
+  /// No description provided for @settings_renamePouch.
+  ///
+  /// In zh, this message translates to:
+  /// **'储物袋名称'**
+  String get settings_renamePouch;
+
+  /// No description provided for @settings_renamePouchFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'没能改名：{reason}'**
+  String settings_renamePouchFailed(String reason);
+
   /// No description provided for @settings_switchPouchConfirmTitle.
   ///
   /// In zh, this message translates to:

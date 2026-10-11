@@ -190,6 +190,8 @@ class PeerConnection {
     'pouch_list_resp',
     'pouch_create',
     'pouch_create_resp',
+    'pouch_rename_req',
+    'pouch_rename_resp',
     'pouch_sealed',
     'pouch_pair_req',
     'pouch_pair_resp',

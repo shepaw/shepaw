@@ -4881,6 +4881,13 @@
       "host": {"type": "String"}
     }
   },
+  "settings_renamePouch": "储物袋名称",
+  "settings_renamePouchFailed": "没能改名：{reason}",
+  "@settings_renamePouchFailed": {
+    "placeholders": {
+      "reason": {"type": "String"}
+    }
+  },
   "settings_switchPouchConfirmTitle": "切换储物袋",
   "settings_switchPouchConfirm": "要离开当前袋子，去选择另一只吗？和主机的连接会保持。",
   "addAgent_title": "添加 Agent 实例",
