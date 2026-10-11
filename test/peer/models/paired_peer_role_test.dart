@@ -6,13 +6,20 @@ import 'package:shepaw/peer/models/paired_peer.dart';
 import 'package:shepaw/peer/models/pairing_payload.dart';
 import 'package:shepaw/services/device_node/device_hello.dart';
 
-PairedPeer _peer({String? role, String? form, String? platform}) => PairedPeer(
+PairedPeer _peer({
+  String? role,
+  String? form,
+  String? platform,
+  PeerPairingRole? pairing,
+}) =>
+    PairedPeer(
       id: 'p1',
       deviceName: 'box',
       deviceId: 'd1',
       publicKey: Uint8List(32),
       fingerprint: 'abcd',
       pairedAt: 1,
+      pairingRole: pairing,
       nodeRole: role,
       form: form,
       platform: platform,
@@ -47,6 +54,21 @@ void main() {
       expect(back.effectiveRole, NodeRole.host);
       expect(back.effectiveForm, DeviceForm.server);
       expect(back.platform, 'linux');
+    });
+
+    test('只有主机能登录储物袋，工作节点和客户端都不算', () {
+      expect(_peer(role: NodeRole.host).isHost, isTrue);
+      expect(
+        _peer(role: NodeRole.worker, pairing: PeerPairingRole.initiator).isHost,
+        isFalse,
+      );
+      expect(
+        _peer(role: NodeRole.client, pairing: PeerPairingRole.initiator).isHost,
+        isFalse,
+      );
+      expect(_peer(pairing: PeerPairingRole.initiator).isHost, isTrue);
+      expect(_peer(pairing: PeerPairingRole.responder).isHost, isFalse);
+      expect(_peer().isHost, isFalse);
     });
 
     test('空字符串当作没给', () {

@@ -145,6 +145,7 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
     final remotes = peers
         .where((peer) =>
             !peer.isBlocked &&
+            peer.isHost &&
             !sameFingerprint(peer.fingerprint, cli?.fingerprint))
         .toList();
     if (!mounted) return;
@@ -177,7 +178,8 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
 
   Future<void> _loadPhone(String? preferredHostId) async {
     final peers = await PeerStorageService().loadAllPeers();
-    final hosts = peers.where((peer) => !peer.isBlocked).toList();
+    final hosts =
+        peers.where((peer) => !peer.isBlocked && peer.isHost).toList();
     if (!mounted) return;
     String? selected;
     if (preferredHostId != null &&

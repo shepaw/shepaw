@@ -169,6 +169,12 @@ class PairedPeer {
     }
   }
 
+  /// 能登录储物袋的主机。没记身份的旧数据里，只有本机扫码连上的那一方可能是主机。
+  bool get isHost {
+    if (nodeRole != null) return nodeRole == NodeRole.host;
+    return pairingRole == PeerPairingRole.initiator;
+  }
+
   /// 形态，旧数据按平台推断：工作节点是服务器，手机平台是移动端，其余是桌面。
   String get effectiveForm {
     switch (form) {
