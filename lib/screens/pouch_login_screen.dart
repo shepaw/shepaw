@@ -19,6 +19,7 @@ import '../services/logger_service.dart';
 import '../storage/pouch_catalog.dart';
 import '../storage/pouch_login.dart';
 import '../storage/pouch_login_client.dart';
+import '../storage/pouch_login_keeper.dart';
 import '../storage/pouch_session.dart';
 
 /// 先选主机，再选这台主机上的一只袋子进入。
@@ -58,6 +59,7 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
   @override
   void initState() {
     super.initState();
+    PouchLoginKeeper.instance.retainGate();
     _desktop = _isDesktop;
   }
 
@@ -75,6 +77,7 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
 
   @override
   void dispose() {
+    PouchLoginKeeper.instance.releaseGate();
     _nameController.dispose();
     super.dispose();
   }
@@ -357,31 +360,10 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
   }
 
   Future<String?> _askHostPassword() {
-    final l10n = AppLocalizations.of(context);
-    final controller = TextEditingController();
     return showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(l10n.phoneAuth_confirmTitle),
-        content: TextField(
-          controller: controller,
-          obscureText: true,
-          autofocus: true,
-          decoration: InputDecoration(labelText: l10n.login_password),
-          onSubmitted: (value) => Navigator.pop(dialogContext, value),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: Text(l10n.common_cancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, controller.text),
-            child: Text(l10n.login_button),
-          ),
-        ],
-      ),
-    ).whenComplete(controller.dispose);
+      builder: (dialogContext) => const _HostPasswordDialog(),
+    );
   }
 
   Future<void> _enter(PouchDescriptor pouch) async {
@@ -524,6 +506,7 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
           onChanged: (value) {
             if (_busy || value == null) return;
             if (value == _localChoice) {
+              if (_hostId == _localChoice) return;
               if (_cliStatus == LocalCliStatus.notInstalled) {
                 Navigator.of(context).pushNamed('/host-setup');
                 return;
@@ -612,5 +595,50 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
         ),
       ),
     ];
+  }
+}
+
+/// 密码框自己持有 controller。对话框关掉的动画还在跑时不能提前 dispose。
+class _HostPasswordDialog extends StatefulWidget {
+  const _HostPasswordDialog();
+
+  @override
+  State<_HostPasswordDialog> createState() => _HostPasswordDialogState();
+}
+
+class _HostPasswordDialogState extends State<_HostPasswordDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() => Navigator.pop(context, _controller.text);
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return AlertDialog(
+      title: Text(l10n.phoneAuth_confirmTitle),
+      content: TextField(
+        controller: _controller,
+        obscureText: true,
+        autofocus: true,
+        decoration: InputDecoration(labelText: l10n.login_password),
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(l10n.common_cancel),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: Text(l10n.login_button),
+        ),
+      ],
+    );
   }
 }

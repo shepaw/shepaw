@@ -5,6 +5,7 @@ import '../services/cli_host.dart';
 import '../services/cli_pouch.dart';
 import '../services/logger_service.dart';
 import '../services/noise_identity.dart';
+import '../storage/pouch_login_keeper.dart';
 import '../storage/pouch_session.dart';
 import 'host_entry_flow.dart';
 
@@ -33,6 +34,7 @@ class _PouchGateScreenState extends State<PouchGateScreen> {
   @override
   void initState() {
     super.initState();
+    PouchLoginKeeper.instance.retainGate();
     _loadSavedName();
   }
 
@@ -65,6 +67,7 @@ class _PouchGateScreenState extends State<PouchGateScreen> {
 
   @override
   void dispose() {
+    PouchLoginKeeper.instance.releaseGate();
     _name.dispose();
     _password.dispose();
     _confirm.dispose();

@@ -11,6 +11,7 @@ import '../services/logger_service.dart';
 import '../storage/pouch_catalog.dart';
 import '../storage/pouch_login.dart';
 import '../storage/pouch_login_client.dart';
+import '../storage/pouch_login_keeper.dart';
 import '../storage/pouch_session.dart';
 import 'phone_host_store.dart';
 import 'phone_pouch_memory.dart';
@@ -86,6 +87,12 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
   String _error = '';
 
   @override
+  void initState() {
+    super.initState();
+    PouchLoginKeeper.instance.retainGate();
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_argsRead) return;
@@ -99,6 +106,7 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
 
   @override
   void dispose() {
+    PouchLoginKeeper.instance.releaseGate();
     _name.dispose();
     _password.dispose();
     super.dispose();

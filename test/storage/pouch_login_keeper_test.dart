@@ -122,6 +122,42 @@ void main() {
     await events.close();
   });
 
+  test('已经在登录页时，主机要密码不再把页面推掉', () async {
+    final events = StreamController<PeerControlEvent>();
+    var opened = 0;
+    var cleared = false;
+    final live = PouchSession(
+      hubUrl: 'ws://127.0.0.1:18792/peer/ws',
+      pouchId: 'pouch-a',
+      pouchName: '书房',
+      hostPeerId: 'host-1',
+      token: 'old-token',
+      sessionId: 'sid-old',
+      expiresAtMs: DateTime.now().millisecondsSinceEpoch + 60000,
+    );
+    final keeper = PouchLoginKeeper(
+      events: events.stream,
+      readSession: () async => live,
+      login: ({required hostPeerId, required pouchId}) async {
+        throw const PouchPasswordRequired('密码不对');
+      },
+      persist: (_) async => fail('should not save'),
+      install: (_) => fail('should not keep the dead session'),
+      forgetSession: () async => fail('session file stays until they log in'),
+      clearChannel: () => cleared = true,
+      openChooser: () => opened += 1,
+    );
+    keeper.retainGate();
+    keeper.start();
+    events.add(required());
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+    expect(cleared, isTrue);
+    expect(opened, 0);
+    keeper.releaseGate();
+    await events.close();
+  });
+
   test('主机要密码时，没过期的旧登录也要回登录页', () async {
     final events = StreamController<PeerControlEvent>();
     var cleared = false;

@@ -38,6 +38,7 @@ import '../../utils/engine_avatars.dart';
 import '../../utils/session_utils.dart';
 import '../../services/messaging/chat_history_content.dart';
 import '../../storage/agent_roster.dart';
+import '../../storage/pouch_login.dart';
 import '../../storage/pouch_role.dart';
 import '../../storage/store_service.dart';
 import '../pouch_duties.dart';
@@ -1725,7 +1726,7 @@ class PeerAgentClientService {
       _handlersReadyForResume = true;
     }
     for (final peerId in PeerConnectionManager.instance.connectedPeerIds) {
-      _requestAgentList(peerId);
+      if (_pouchLoginReady(peerId)) _requestAgentList(peerId);
     }
     _log.info('PeerAgentClientService started', tag: _tag);
   }
@@ -6088,7 +6089,8 @@ class PeerAgentClientService {
 
   void _onConnectionEvent(PeerConnectionEvent event) {
     if (event.type == PeerConnectionEventType.connected) {
-      _requestAgentList(event.peerId);
+      // 还没登录就要名单，主机会回 pouch_login_required，登录页会被反复推掉。
+      if (_pouchLoginReady(event.peerId)) _requestAgentList(event.peerId);
       if (_handlersReadyForResume) {
         unawaited(_resumeSuspendedTurns(event.peerId));
       }
@@ -6429,6 +6431,12 @@ class PeerAgentClientService {
         });
         break;
     }
+  }
+
+  bool _pouchLoginReady(String peerId) {
+    final session = PouchChannel.active?.session;
+    if (session == null || session.hostPeerId != peerId) return false;
+    return session.isLoggedIn(DateTime.now().millisecondsSinceEpoch);
   }
 
   void _requestAgentList(String peerId) {

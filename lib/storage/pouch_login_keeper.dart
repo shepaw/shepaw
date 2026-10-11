@@ -70,6 +70,12 @@ class PouchLoginKeeper {
   final _relogged = StreamController<void>.broadcast();
   int _reloginGeneration = 0;
 
+  /// 登录页（选主机 / 选袋子 / 输密码）还在树上的层数。
+  ///
+  /// 主机再要密码时如果把当前页 `pushNamedAndRemoveUntil` 掉，新页面一连上
+  /// 又会收到 `pouch_login_required`，再推一次。页面和密码框就这样死循环。
+  int _gateDepth = 0;
+
   /// 重新登录成功。不缓冲，错过的一方用 [reloginGeneration] 判断。
   Stream<void> get relogged => _relogged.stream;
 
@@ -92,6 +98,21 @@ class PouchLoginKeeper {
     } finally {
       await sub.cancel();
     }
+  }
+
+  /// 登录页 `initState` 调用。和 [releaseGate] 成对。
+  void retainGate() {
+    _gateDepth += 1;
+  }
+
+  /// 登录页 `dispose` 调用。
+  void releaseGate() {
+    if (_gateDepth > 0) _gateDepth -= 1;
+  }
+
+  void _requestChooser() {
+    if (_gateDepth > 0) return;
+    openChooser();
   }
 
   void start() {
@@ -131,7 +152,7 @@ class PouchLoginKeeper {
       // 密封请求会被丢掉，界面一直是空的。要密码就回登录页。
       if (error is PouchPasswordRequired) {
         clearChannel();
-        openChooser();
+        _requestChooser();
         return;
       }
       final existing = await readSession();
@@ -143,7 +164,7 @@ class PouchLoginKeeper {
       if (_pouchGone(error)) {
         await forgetSession();
         clearChannel();
-        openChooser();
+        _requestChooser();
       }
     }
   }
