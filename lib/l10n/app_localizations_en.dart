@@ -8460,6 +8460,53 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pouchGate_remote => 'The host is on another computer';
 
   @override
+  String get hostConfig_title => 'Host settings';
+
+  @override
+  String get hostConfig_subtitle =>
+      'Channel, so a phone on another network can reach this host';
+
+  @override
+  String get hostConfig_enabled => 'Allow connections from the internet';
+
+  @override
+  String get hostConfig_server => 'Channel server';
+
+  @override
+  String get hostConfig_serverHint => 'https://channel.example.com';
+
+  @override
+  String get hostConfig_id => 'Channel ID';
+
+  @override
+  String get hostConfig_secret => 'Secret';
+
+  @override
+  String get hostConfig_alias => 'Alias';
+
+  @override
+  String get hostConfig_aliasHint =>
+      'Optional. With an alias the public address uses /c/alias';
+
+  @override
+  String get hostConfig_publicUrl => 'Public address';
+
+  @override
+  String get hostConfig_hint =>
+      'After saving, the host connects to the Channel. Phones on the same network still use the local address. Phones elsewhere pair with the public address.';
+
+  @override
+  String get hostConfig_saved => 'Saved';
+
+  @override
+  String get hostConfig_needCli => 'The host program is not on this computer';
+
+  @override
+  String hostConfig_failed(String error) {
+    return 'Couldn\'t save: $error';
+  }
+
+  @override
   String get hostSetup_title => 'Where should the host live?';
 
   @override

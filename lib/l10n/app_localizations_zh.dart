@@ -8140,6 +8140,50 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pouchGate_remote => '主机在另一台电脑上';
 
   @override
+  String get hostConfig_title => '主机配置';
+
+  @override
+  String get hostConfig_subtitle => '外网 Channel，让别的网络上的手机连上这台主机';
+
+  @override
+  String get hostConfig_enabled => '启用外网连接';
+
+  @override
+  String get hostConfig_server => 'Channel 服务地址';
+
+  @override
+  String get hostConfig_serverHint => 'https://channel.example.com';
+
+  @override
+  String get hostConfig_id => 'Channel ID';
+
+  @override
+  String get hostConfig_secret => '密钥';
+
+  @override
+  String get hostConfig_alias => '别名';
+
+  @override
+  String get hostConfig_aliasHint => '可选。有别名时外网地址用 /c/别名';
+
+  @override
+  String get hostConfig_publicUrl => '外网地址';
+
+  @override
+  String get hostConfig_hint => '保存后主机会连上 Channel。同一局域网仍走本机地址，外网手机用上面的地址配对。';
+
+  @override
+  String get hostConfig_saved => '已保存';
+
+  @override
+  String get hostConfig_needCli => '这台电脑上没有主机程序';
+
+  @override
+  String hostConfig_failed(String error) {
+    return '保存失败: $error';
+  }
+
+  @override
   String get hostSetup_title => '把主机放在哪里？';
 
   @override

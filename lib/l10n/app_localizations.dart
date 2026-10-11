@@ -14787,6 +14787,90 @@ abstract class AppLocalizations {
   /// **'主机在另一台电脑上'**
   String get pouchGate_remote;
 
+  /// No description provided for @hostConfig_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机配置'**
+  String get hostConfig_title;
+
+  /// No description provided for @hostConfig_subtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'外网 Channel，让别的网络上的手机连上这台主机'**
+  String get hostConfig_subtitle;
+
+  /// No description provided for @hostConfig_enabled.
+  ///
+  /// In zh, this message translates to:
+  /// **'启用外网连接'**
+  String get hostConfig_enabled;
+
+  /// No description provided for @hostConfig_server.
+  ///
+  /// In zh, this message translates to:
+  /// **'Channel 服务地址'**
+  String get hostConfig_server;
+
+  /// No description provided for @hostConfig_serverHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'https://channel.example.com'**
+  String get hostConfig_serverHint;
+
+  /// No description provided for @hostConfig_id.
+  ///
+  /// In zh, this message translates to:
+  /// **'Channel ID'**
+  String get hostConfig_id;
+
+  /// No description provided for @hostConfig_secret.
+  ///
+  /// In zh, this message translates to:
+  /// **'密钥'**
+  String get hostConfig_secret;
+
+  /// No description provided for @hostConfig_alias.
+  ///
+  /// In zh, this message translates to:
+  /// **'别名'**
+  String get hostConfig_alias;
+
+  /// No description provided for @hostConfig_aliasHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'可选。有别名时外网地址用 /c/别名'**
+  String get hostConfig_aliasHint;
+
+  /// No description provided for @hostConfig_publicUrl.
+  ///
+  /// In zh, this message translates to:
+  /// **'外网地址'**
+  String get hostConfig_publicUrl;
+
+  /// No description provided for @hostConfig_hint.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存后主机会连上 Channel。同一局域网仍走本机地址，外网手机用上面的地址配对。'**
+  String get hostConfig_hint;
+
+  /// No description provided for @hostConfig_saved.
+  ///
+  /// In zh, this message translates to:
+  /// **'已保存'**
+  String get hostConfig_saved;
+
+  /// No description provided for @hostConfig_needCli.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台电脑上没有主机程序'**
+  String get hostConfig_needCli;
+
+  /// No description provided for @hostConfig_failed.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存失败: {error}'**
+  String hostConfig_failed(String error);
+
   /// No description provided for @hostSetup_title.
   ///
   /// In zh, this message translates to:

@@ -24,6 +24,7 @@ import '../storage/pouch_login.dart';
 import '../storage/pouch_login_client.dart';
 import '../storage/pouch_session.dart';
 import '../utils/platform_utils.dart';
+import 'host_config_screen.dart';
 import 'inference_log_screen.dart';
 import 'log_viewer_screen.dart';
 import 'she_memory_screen.dart';
@@ -594,6 +595,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               subtitle: Text(l10n.hostSetup_title),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.of(context).pushNamed('/host-setup'),
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.cloud_outlined),
+              title: Text(l10n.hostConfig_title),
+              subtitle: Text(l10n.hostConfig_subtitle),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _openAndRefresh(const HostConfigScreen()),
             ),
           ],
 

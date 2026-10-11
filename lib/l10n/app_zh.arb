@@ -4941,6 +4941,27 @@
   "pouchGate_missing": "没有这只储物袋",
   "pouchGate_ambiguous": "有多只同名储物袋。名称不是身份，请改用上次进入的那一只。",
   "pouchGate_remote": "主机在另一台电脑上",
+  "hostConfig_title": "主机配置",
+  "hostConfig_subtitle": "外网 Channel，让别的网络上的手机连上这台主机",
+  "hostConfig_enabled": "启用外网连接",
+  "hostConfig_server": "Channel 服务地址",
+  "hostConfig_serverHint": "https://channel.example.com",
+  "hostConfig_id": "Channel ID",
+  "hostConfig_secret": "密钥",
+  "hostConfig_alias": "别名",
+  "hostConfig_aliasHint": "可选。有别名时外网地址用 /c/别名",
+  "hostConfig_publicUrl": "外网地址",
+  "hostConfig_hint": "保存后主机会连上 Channel。同一局域网仍走本机地址，外网手机用上面的地址配对。",
+  "hostConfig_saved": "已保存",
+  "hostConfig_needCli": "这台电脑上没有主机程序",
+  "hostConfig_failed": "保存失败: {error}",
+  "@hostConfig_failed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "hostSetup_title": "把主机放在哪里？",
   "hostSetup_intro": "主机保存你的储物袋、惜宝和智能体，需要一直开着。",
   "hostSetup_thisComputer": "用这台电脑当主机",

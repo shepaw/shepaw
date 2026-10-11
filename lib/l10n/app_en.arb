@@ -4489,6 +4489,27 @@
   "pouchGate_missing": "No pouch with that name",
   "pouchGate_ambiguous": "More than one pouch has this name. The name is not the identity. Use the one you opened last time.",
   "pouchGate_remote": "The host is on another computer",
+  "hostConfig_title": "Host settings",
+  "hostConfig_subtitle": "Channel, so a phone on another network can reach this host",
+  "hostConfig_enabled": "Allow connections from the internet",
+  "hostConfig_server": "Channel server",
+  "hostConfig_serverHint": "https://channel.example.com",
+  "hostConfig_id": "Channel ID",
+  "hostConfig_secret": "Secret",
+  "hostConfig_alias": "Alias",
+  "hostConfig_aliasHint": "Optional. With an alias the public address uses /c/alias",
+  "hostConfig_publicUrl": "Public address",
+  "hostConfig_hint": "After saving, the host connects to the Channel. Phones on the same network still use the local address. Phones elsewhere pair with the public address.",
+  "hostConfig_saved": "Saved",
+  "hostConfig_needCli": "The host program is not on this computer",
+  "hostConfig_failed": "Couldn't save: {error}",
+  "@hostConfig_failed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "hostSetup_title": "Where should the host live?",
   "hostSetup_intro": "The host keeps your pouch, She, and agents, and needs to stay on.",
   "hostSetup_thisComputer": "Use this computer as the host",
