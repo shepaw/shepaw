@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import '../l10n/app_localizations.dart';
+import '../peer/host_she_turn.dart';
 import '../widgets/discard_changes_scope.dart';
 import '../widgets/model_icon.dart';
 import '../models/llm_provider_config.dart';
@@ -323,7 +324,14 @@ class _ModelManagementScreenState
 class ModelEditScreen extends StatefulWidget {
   final ModelDefinition? existing;
 
-  const ModelEditScreen({super.key, this.existing});
+  /// 惜宝储物袋里已经有的模型。手机本机没有这份名单时，用它回填地址。
+  final List<SheCatalogEntry> catalog;
+
+  const ModelEditScreen({
+    super.key,
+    this.existing,
+    this.catalog = const [],
+  });
 
   @override
   State<ModelEditScreen> createState() => _ModelEditScreenState();
@@ -341,6 +349,12 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
   late TextEditingController _responseBodyPathController;
   bool _streamEnabled = true;
   bool _obscureApiKey = true;
+
+  /// 上一次按储物袋名单填上的地址。用户改过之后不再覆盖。
+  String? _catalogFilledBase;
+
+  /// 主机上已有密钥，输入框留空提交即可沿用。
+  bool _catalogKeepsKey = false;
 
   /// Index into [llmProviders], or -1 for "custom" (no preset selected).
   int _selectedProviderIndex = -1;
@@ -407,6 +421,7 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
     _streamEnabled = e?.route.stream ?? true;
     _selectedModelTypes = Set<ModelType>.from(e?.modelTypes ?? {});
     _apiKeyController.addListener(_repairApiKeyIfGarbled);
+    _modelController.addListener(_onCatalogModelChanged);
 
     // Pre-select provider chip if editing an existing model.
     // Priority: match by apiBase first (exact), then fall back to providerType.
@@ -454,10 +469,18 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
   }
 
   void _selectProvider(int index) {
+    final provider = llmProviders[index];
+    final fill = sheCatalogAutofill(
+      catalog: widget.catalog,
+      model: _modelController.text,
+      providerDefaultBase: provider.defaultApiBase,
+    );
+    final base = fill?.baseUrl ?? provider.defaultApiBase;
     setState(() {
       _selectedProviderIndex = index;
-      final provider = llmProviders[index];
-      _apiBaseController.text = provider.defaultApiBase;
+      _apiBaseController.text = base;
+      _catalogFilledBase = fill == null ? null : base;
+      _catalogKeepsKey = fill?.keepsApiKey ?? false;
       _providerController.text = provider.providerType;
       if (!provider.requiresApiKey) {
         _apiKeyController.clear();
@@ -467,10 +490,39 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
       _loadingModels = false;
     });
 
-    // 如果当前没有 API Key，尝试从缓存回填
+    // 如果当前没有 API Key，尝试从本机缓存回填。共享名单里的密钥不拉下来。
     if (_apiKeyController.text.trim().isEmpty) {
-      _loadCachedApiKey(llmProviders[index].defaultApiBase);
+      _loadCachedApiKey(base);
     }
+  }
+
+  void _onCatalogModelChanged() {
+    if (widget.catalog.isEmpty) return;
+    final preset = _selectedPreset?.defaultApiBase ?? '';
+    final fill = sheCatalogAutofill(
+      catalog: widget.catalog,
+      model: _modelController.text,
+      providerDefaultBase: preset,
+    );
+    final keeps = fill?.keepsApiKey ?? false;
+    final keepsChanged = keeps != _catalogKeepsKey;
+    _catalogKeepsKey = keeps;
+    var wroteBase = false;
+    if (fill != null &&
+        sheCatalogShouldWriteBase(
+          current: _apiBaseController.text,
+          next: fill.baseUrl,
+          previousAutofill: _catalogFilledBase,
+          providerDefaultBase: preset,
+        )) {
+      _catalogFilledBase = fill.baseUrl;
+      _apiBaseController.text = fill.baseUrl;
+      wroteBase = true;
+    } else if (fill != null &&
+        _apiBaseController.text.trim() == fill.baseUrl) {
+      _catalogFilledBase = fill.baseUrl;
+    }
+    if (!wroteBase && keepsChanged && mounted) setState(() {});
   }
 
   /// 从安全存储读取该 provider 缓存的 API Key 并回填
@@ -771,6 +823,7 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
   @override
   void dispose() {
     _apiKeyController.removeListener(_repairApiKeyIfGarbled);
+    _modelController.removeListener(_onCatalogModelChanged);
     for (final controller in _draftControllers) {
       controller.removeListener(_onDraftChanged);
     }
@@ -1124,7 +1177,9 @@ class _ModelEditScreenState extends State<ModelEditScreen> {
                 controller: _apiKeyController,
                 decoration: InputDecoration(
                   labelText: l10n.toolModel_apiKey,
-                  hintText: l10n.toolModel_apiKeyHint,
+                  hintText: _catalogKeepsKey
+                      ? l10n.toolModel_apiKeyKeptOnHost
+                      : l10n.toolModel_apiKeyHint,
                   border: const OutlineInputBorder(),
                   prefixIcon: const Icon(Icons.key),
                   suffixIcon: IconButton(

@@ -3281,6 +3281,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get toolModel_apiKeyHint => 'Enter API Key (optional)';
 
   @override
+  String get toolModel_apiKeyKeptOnHost =>
+      'Already saved on the host. Leave blank to keep it.';
+
+  @override
   String get toolModel_provider => 'Provider';
 
   @override

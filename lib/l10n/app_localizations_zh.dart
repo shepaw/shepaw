@@ -3163,6 +3163,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get toolModel_apiKeyHint => '输入 API Key（可选）';
 
   @override
+  String get toolModel_apiKeyKeptOnHost => '主机已保存密钥，留空则沿用';
+
+  @override
   String get toolModel_provider => '服务商';
 
   @override

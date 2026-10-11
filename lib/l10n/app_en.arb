@@ -1371,6 +1371,7 @@
   "toolModel_apiBaseRequired": "API Base URL is required",
   "toolModel_apiKey": "API Key",
   "toolModel_apiKeyHint": "Enter API Key (optional)",
+  "toolModel_apiKeyKeptOnHost": "Already saved on the host. Leave blank to keep it.",
   "toolModel_provider": "Provider",
   "toolModel_providerHint": "e.g., openai",
   "toolModel_selectProvider": "Select provider (auto-fill API base)",

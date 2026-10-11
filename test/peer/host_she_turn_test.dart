@@ -247,6 +247,102 @@ void main() {
     expect(metadata.containsKey('she_model'), isFalse);
   });
 
+  test('输入共享名单里已有的模型时回填地址，密钥留在主机', () {
+    const custom = 'https://proxy.example/v1';
+    const preset = 'https://api.deepseek.com/v1';
+    final catalog = [
+      const SheCatalogEntry(model: 'deepseek-chat', baseUrl: custom),
+      const SheCatalogEntry(
+        model: 'gpt-4o',
+        baseUrl: preset,
+        hasApiKey: true,
+      ),
+      const SheCatalogEntry(
+        model: 'gpt-4o-mini',
+        baseUrl: preset,
+        hasApiKey: false,
+      ),
+    ];
+
+    final typed = sheCatalogAutofill(
+      catalog: catalog,
+      model: 'deepseek-chat',
+      providerDefaultBase: preset,
+    );
+    expect(typed?.baseUrl, custom);
+    expect(typed?.keepsApiKey, isTrue);
+
+    final providerOnly = sheCatalogAutofill(
+      catalog: catalog,
+      model: '',
+      providerDefaultBase: preset,
+    );
+    expect(providerOnly?.baseUrl, preset);
+    expect(providerOnly?.keepsApiKey, isTrue);
+
+    final explicitMissing = sheCatalogAutofill(
+      catalog: catalog,
+      model: 'gpt-4o-mini',
+      providerDefaultBase: preset,
+    );
+    expect(explicitMissing?.baseUrl, preset);
+    expect(explicitMissing?.keepsApiKey, isFalse);
+
+    final freshOnKnownBase = sheCatalogAutofill(
+      catalog: catalog,
+      model: 'gpt-4.1',
+      providerDefaultBase: preset,
+    );
+    expect(freshOnKnownBase?.baseUrl, preset);
+    expect(freshOnKnownBase?.keepsApiKey, isTrue);
+
+    final oldHubNewModel = sheCatalogAutofill(
+      catalog: const [
+        SheCatalogEntry(model: 'deepseek-chat', baseUrl: preset),
+      ],
+      model: 'deepseek-reasoner',
+      providerDefaultBase: preset,
+    );
+    expect(oldHubNewModel?.keepsApiKey, isFalse);
+
+    expect(
+      sheCatalogAutofill(
+        catalog: catalog,
+        model: 'unknown',
+        providerDefaultBase: 'https://other.example/v1',
+      ),
+      isNull,
+    );
+
+    expect(
+      sheCatalogShouldWriteBase(
+        current: preset,
+        next: custom,
+        previousAutofill: null,
+        providerDefaultBase: preset,
+      ),
+      isTrue,
+    );
+    expect(
+      sheCatalogShouldWriteBase(
+        current: 'https://mine.example/v1',
+        next: custom,
+        previousAutofill: preset,
+        providerDefaultBase: preset,
+      ),
+      isFalse,
+    );
+    expect(
+      sheCatalogShouldWriteBase(
+        current: custom,
+        next: custom,
+        previousAutofill: custom,
+        providerDefaultBase: preset,
+      ),
+      isFalse,
+    );
+  });
+
   test('惜宝切主模型的回包在连接放行名单里', () {
     final source =
         File('lib/peer/services/peer_connection.dart').readAsStringSync();

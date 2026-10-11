@@ -164,6 +164,125 @@ List<({String displayName, String model, String baseUrl, String apiKey})>
   return missing;
 }
 
+/// 储物袋名单里的一条。密钥明文不在这里，[hasApiKey] 只表示主机有没有保存。
+///
+/// 旧 Hub 不带这个字段时 [hasApiKey] 为 null。
+class SheCatalogEntry {
+  final String model;
+  final String baseUrl;
+  final bool? hasApiKey;
+
+  const SheCatalogEntry({
+    required this.model,
+    required this.baseUrl,
+    this.hasApiKey,
+  });
+}
+
+/// 添加页该填上的地址，以及密钥能不能留空交给主机沿用。
+class SheCatalogAutofill {
+  final String baseUrl;
+  final bool keepsApiKey;
+
+  const SheCatalogAutofill({
+    required this.baseUrl,
+    required this.keepsApiKey,
+  });
+}
+
+/// 输入的模型已经在共享名单里时，用那条的地址。
+///
+/// 模型名还空着时，选中厂商的默认地址若已在名单里，就用这个地址。
+/// 同一条模型留空密钥时主机本来就会保留原密钥。别的模型要沿用，
+/// 只有 Hub 明确说这个地址上已经有密钥才行。
+SheCatalogAutofill? sheCatalogAutofill({
+  required Iterable<SheCatalogEntry> catalog,
+  required String model,
+  String providerDefaultBase = '',
+}) {
+  final wanted = model.trim();
+  final preset = providerDefaultBase.trim();
+  final entries = <SheCatalogEntry>[
+    for (final item in catalog)
+      if (item.baseUrl.trim().isNotEmpty)
+        SheCatalogEntry(
+          model: item.model.trim(),
+          baseUrl: item.baseUrl.trim(),
+          hasApiKey: item.hasApiKey,
+        ),
+  ];
+
+  String? base;
+  if (wanted.isNotEmpty) {
+    final matches = [
+      for (final item in entries)
+        if (item.model == wanted) item,
+    ];
+    if (matches.isNotEmpty) {
+      base = matches
+          .firstWhere(
+            (item) => preset.isNotEmpty && item.baseUrl == preset,
+            orElse: () => matches.first,
+          )
+          .baseUrl;
+    }
+  }
+  if (base == null && preset.isNotEmpty) {
+    for (final item in entries) {
+      if (item.baseUrl == preset) {
+        base = preset;
+        break;
+      }
+    }
+  }
+  if (base == null) return null;
+
+  return SheCatalogAutofill(
+    baseUrl: base,
+    keepsApiKey: _catalogKeepsApiKey(
+      entries: entries,
+      base: base,
+      wanted: wanted,
+    ),
+  );
+}
+
+bool _catalogKeepsApiKey({
+  required List<SheCatalogEntry> entries,
+  required String base,
+  required String wanted,
+}) {
+  if (wanted.isNotEmpty) {
+    final same = [
+      for (final item in entries)
+        if (item.model == wanted && item.baseUrl == base) item,
+    ];
+    if (same.isNotEmpty) {
+      final told = same.where((item) => item.hasApiKey != null);
+      if (told.isEmpty) return true;
+      return told.any((item) => item.hasApiKey == true);
+    }
+  }
+  return entries.any((item) => item.baseUrl == base && item.hasApiKey == true);
+}
+
+/// 自动填上的地址可以被下一次匹配换掉。用户自己改过的地址留着。
+bool sheCatalogShouldWriteBase({
+  required String current,
+  required String next,
+  required String? previousAutofill,
+  required String providerDefaultBase,
+}) {
+  final now = current.trim();
+  final wanted = next.trim();
+  if (wanted.isEmpty || now == wanted) return false;
+  if (now.isEmpty) return true;
+  final filled = previousAutofill?.trim() ?? '';
+  if (filled.isNotEmpty && now == filled) return true;
+  final preset = providerDefaultBase.trim();
+  return preset.isNotEmpty && now == preset;
+}
+
 /// 用 Hub 回来的模型名和地址，对上本机列表里的一条定义。
 String? hostSheRegistryModelId(
   Map<String, dynamic> metadata, {

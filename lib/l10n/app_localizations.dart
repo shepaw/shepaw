@@ -5846,6 +5846,12 @@ abstract class AppLocalizations {
   /// **'输入 API Key（可选）'**
   String get toolModel_apiKeyHint;
 
+  /// No description provided for @toolModel_apiKeyKeptOnHost.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机已保存密钥，留空则沿用'**
+  String get toolModel_apiKeyKeptOnHost;
+
   /// No description provided for @toolModel_provider.
   ///
   /// In zh, this message translates to:

@@ -1828,6 +1828,7 @@
   "toolModel_apiBaseRequired": "请输入 API 地址",
   "toolModel_apiKey": "API Key",
   "toolModel_apiKeyHint": "输入 API Key（可选）",
+  "toolModel_apiKeyKeptOnHost": "主机已保存密钥，留空则沿用",
   "toolModel_provider": "服务商",
   "toolModel_providerHint": "例如：openai",
   "toolModel_selectProvider": "选择服务商（自动填充 API 地址）",

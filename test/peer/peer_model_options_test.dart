@@ -94,6 +94,28 @@ void main() {
     expect(other.effectiveOption('context'), '200k');
   });
 
+  test('catalog entries carry the base url and whether a key is saved', () {
+    final listed = PeerAgentModel.fromJson({
+      'value': 'id-1',
+      'display_name': '书房',
+      'description': 'deepseek-chat',
+      'base_url': 'https://api.deepseek.com/v1',
+      'has_api_key': true,
+    });
+    expect(listed?.description, 'deepseek-chat');
+    expect(listed?.baseUrl, 'https://api.deepseek.com/v1');
+    expect(listed?.hasApiKey, isTrue);
+    expect(listed?.toJson()['has_api_key'], isTrue);
+    expect(listed?.toJson().containsKey('api_key'), isFalse);
+
+    final older = PeerAgentModel.fromJson({
+      'value': 'id-2',
+      'display_name': '旧名单',
+    });
+    expect(older?.hasApiKey, isNull);
+    expect(older?.toJson().containsKey('has_api_key'), isFalse);
+  });
+
   test('old model payloads without options still parse', () {
     final list = PeerModelsList.fromJson({
       'models': [

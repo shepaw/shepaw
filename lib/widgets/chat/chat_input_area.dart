@@ -738,6 +738,15 @@ class ChatInputAreaState extends State<ChatInputArea> {
     widget.onMainModelChanged?.call();
   }
 
+  List<SheCatalogEntry> _sheCatalogEntries() => [
+        for (final model in _peerModels)
+          SheCatalogEntry(
+            model: model.description,
+            baseUrl: model.baseUrl,
+            hasApiKey: model.hasApiKey,
+          ),
+      ];
+
   /// 新模型写进储物袋名单，并设成惜宝当前的主模型。
   ///
   /// 主机惜宝不走本机 `ModelRegistry`——名单是各端共用的那一份，
@@ -745,7 +754,11 @@ class ChatInputAreaState extends State<ChatInputArea> {
   Future<void> _addSheModel() async {
     final result = await Navigator.push<ModelDefinition>(
       context,
-      MaterialPageRoute(builder: (_) => const ModelEditScreen()),
+      MaterialPageRoute(
+        builder: (_) => ModelEditScreen(
+          catalog: _hostSheModel ? _sheCatalogEntries() : const [],
+        ),
+      ),
     );
     if (!mounted || result == null) return;
     final peerId = _peerId;
