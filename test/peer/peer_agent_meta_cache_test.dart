@@ -223,6 +223,28 @@ void main() {
       expect(cleared?.switchable, isFalse);
     });
 
+    test('pouch_login_required abandons an in-flight model fetch', () async {
+      const id = 'meta-login';
+      created.add(id);
+      await seedModels(id, current: 'kept');
+      svc.debugSendControlOverride = (peerId, json) async {
+        Future<void>.microtask(() {
+          svc.debugInjectControlForTest('pouch_login_required', {
+            'for': 'pouch_sealed',
+          });
+        });
+        return true;
+      };
+      final outcome = await svc.fetchModelsResult(
+        peerId: 'peer',
+        remoteAgentId: id,
+      );
+      expect(outcome.completed, isFalse);
+      expect(outcome.list.models, isEmpty);
+      final cached = await svc.cachedModels(id);
+      expect(cached?.current, 'kept');
+    });
+
     test('fetch timeout leaves the previous cache alone', () async {
       const id = 'meta-timeout';
       created.add(id);
@@ -444,7 +466,8 @@ void main() {
       );
       await Future<void>.delayed(const Duration(milliseconds: 40));
       expect(completed, isFalse);
-      expect(svc.getSlashCommands(id).map((command) => command.name), ['pushed']);
+      expect(
+          svc.getSlashCommands(id).map((command) => command.name), ['pushed']);
       expect(seen, isNotEmpty);
       expect(seen.last.map((command) => command.name), ['pushed']);
 
@@ -492,7 +515,8 @@ void main() {
       expect(events.where((event) => event.agentId == id).length, emitted);
 
       modes('plan');
-      await poll(() => svc.cachedModes(id), (value) => value?.current == 'plan');
+      await poll(
+          () => svc.cachedModes(id), (value) => value?.current == 'plan');
       expect(
         events.where((event) => event.agentId == id).length,
         greaterThan(emitted),

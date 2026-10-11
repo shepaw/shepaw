@@ -127,21 +127,21 @@ class PouchLoginKeeper {
       _reloginGeneration += 1;
       if (!_relogged.isClosed) _relogged.add(null);
     } catch (error) {
+      // 主机重启后不认磁盘上那张还没过期的登录。沿用它的话，模型名单这类
+      // 密封请求会被丢掉，界面一直是空的。要密码就回登录页。
+      if (error is PouchPasswordRequired) {
+        clearChannel();
+        openChooser();
+        return;
+      }
       final existing = await readSession();
       final now = DateTime.now().millisecondsSinceEpoch;
-      // 本机 CLI 已经签发过还没过期的登录态。密码不在内存里，
-      // 重登失败不能把这次登录清掉，否则发消息会变成「请先登录储物袋」。
       if (existing != null && existing.isLoggedIn(now)) {
         install(existing);
         return;
       }
       if (_pouchGone(error)) {
         await forgetSession();
-        clearChannel();
-        openChooser();
-        return;
-      }
-      if (error is PouchPasswordRequired) {
         clearChannel();
         openChooser();
       }

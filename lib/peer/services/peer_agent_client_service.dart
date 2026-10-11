@@ -2575,6 +2575,11 @@ class PeerAgentClientService {
           unawaited(Future<void>(() => _requestAgentList(peerId)));
         }
         break;
+      case 'pouch_login_required':
+        // 主机重启后不认旧登录。挂着的模型请求不会再有回包，立刻放开，
+        // 等重新登录后由聊天框再要一次。
+        _abandonModelFetches();
+        break;
       case 'agent_chunk':
         _onChunk(event.data);
         break;
@@ -2803,6 +2808,8 @@ class PeerAgentClientService {
         return (list: list, completed: true);
       } on TimeoutException {
         return (list: const PeerModelsList(models: []), completed: false);
+      } catch (_) {
+        return (list: const PeerModelsList(models: []), completed: false);
       }
     }
     final completer = Completer<PeerModelsList>();
@@ -2829,6 +2836,22 @@ class PeerAgentClientService {
         _pendingModels.remove(remoteAgentId);
       }
       return (list: const PeerModelsList(models: []), completed: false);
+    } catch (_) {
+      if (identical(_pendingModels[remoteAgentId], completer)) {
+        _pendingModels.remove(remoteAgentId);
+      }
+      return (list: const PeerModelsList(models: []), completed: false);
+    }
+  }
+
+  /// 登录失效时，进行中的模型请求不会再收到回包。
+  void _abandonModelFetches() {
+    final pending = _pendingModels.values.toList();
+    _pendingModels.clear();
+    for (final completer in pending) {
+      if (!completer.isCompleted) {
+        completer.completeError(StateError('pouch_login_required'));
+      }
     }
   }
 
@@ -6497,50 +6520,50 @@ class PeerAgentClientService {
                 : null);
 
         final metadata = <String, dynamic>{
-            'source_peer_id': peerId,
-            'source_peer_name': peerName,
-            'remote_agent_id': remoteId,
-            if (hostRoster != null)
-              'roster_hub_fingerprint': hostRoster.fingerprint,
-            if (!PouchDutyState.isHost && remoteId == SheService.sheId)
-              'is_she': true,
-            // 宿主边界开关的最近一次广播，详情页据此默认只读/可编辑；
-            // 打开编辑页时仍会用 agent_resume_get 权威刷新。
-            if (raw['resume_editable'] is bool)
-              'resume_editable': raw['resume_editable'],
-            if (engine != null && engine.isNotEmpty) 'engine': engine,
-            if (supportedModalities.isNotEmpty)
-              'supported_modalities': supportedModalities,
-            if (manageable) 'manageable': true,
-            'enabled': enabled,
-            'running': running,
-            // 保留本地头像自定义标记，使其在每次同步后依然生效。
-            if (existing?.metadata['avatar_overridden'] == true)
-              'avatar_overridden': true,
-            // 本机「是否在此 App 显示」由用户在设备详情里控制，同步时不得覆盖。
-            if (existing?.metadata['hidden_on_this_app'] == true)
-              'hidden_on_this_app': true,
-            if (workspaceUri != null)
-              'workspace_uri': workspaceUri
-            else if (existing?.metadata['workspace_uri'] is String)
-              'workspace_uri': existing!.metadata['workspace_uri'],
-            if (workspaceUris is List)
-              'workspace_uris': workspaceUris
-            else if (manageable && workspaceUri != null)
-              // Hub sent only primary — clear any stale multi-root list.
-              'workspace_uris': [workspaceUri]
-            else if (existing?.metadata['workspace_uris'] is List)
-              'workspace_uris': existing!.metadata['workspace_uris'],
-            if (cwd != null && cwd.isNotEmpty) 'cwd': cwd,
-            if (additionalDirectories is List)
-              'additional_directories': additionalDirectories
-            else if (manageable)
-              // Hub omitted the field → extras cleared.
-              'additional_directories': const <String>[]
-            else if (existing?.metadata['additional_directories'] is List)
-              'additional_directories':
-                  existing!.metadata['additional_directories'],
-          };
+          'source_peer_id': peerId,
+          'source_peer_name': peerName,
+          'remote_agent_id': remoteId,
+          if (hostRoster != null)
+            'roster_hub_fingerprint': hostRoster.fingerprint,
+          if (!PouchDutyState.isHost && remoteId == SheService.sheId)
+            'is_she': true,
+          // 宿主边界开关的最近一次广播，详情页据此默认只读/可编辑；
+          // 打开编辑页时仍会用 agent_resume_get 权威刷新。
+          if (raw['resume_editable'] is bool)
+            'resume_editable': raw['resume_editable'],
+          if (engine != null && engine.isNotEmpty) 'engine': engine,
+          if (supportedModalities.isNotEmpty)
+            'supported_modalities': supportedModalities,
+          if (manageable) 'manageable': true,
+          'enabled': enabled,
+          'running': running,
+          // 保留本地头像自定义标记，使其在每次同步后依然生效。
+          if (existing?.metadata['avatar_overridden'] == true)
+            'avatar_overridden': true,
+          // 本机「是否在此 App 显示」由用户在设备详情里控制，同步时不得覆盖。
+          if (existing?.metadata['hidden_on_this_app'] == true)
+            'hidden_on_this_app': true,
+          if (workspaceUri != null)
+            'workspace_uri': workspaceUri
+          else if (existing?.metadata['workspace_uri'] is String)
+            'workspace_uri': existing!.metadata['workspace_uri'],
+          if (workspaceUris is List)
+            'workspace_uris': workspaceUris
+          else if (manageable && workspaceUri != null)
+            // Hub sent only primary — clear any stale multi-root list.
+            'workspace_uris': [workspaceUri]
+          else if (existing?.metadata['workspace_uris'] is List)
+            'workspace_uris': existing!.metadata['workspace_uris'],
+          if (cwd != null && cwd.isNotEmpty) 'cwd': cwd,
+          if (additionalDirectories is List)
+            'additional_directories': additionalDirectories
+          else if (manageable)
+            // Hub omitted the field → extras cleared.
+            'additional_directories': const <String>[]
+          else if (existing?.metadata['additional_directories'] is List)
+            'additional_directories':
+                existing!.metadata['additional_directories'],
+        };
         if (remoteId == SheService.sheId) {
           applyHostSheModelMetadata(metadata, {
             'has_main_model': raw['has_main_model'] == true,

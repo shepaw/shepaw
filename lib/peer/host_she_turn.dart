@@ -15,7 +15,7 @@ bool chatUsesRegistryMainModel(RemoteAgent agent) =>
 
 /// 点模型 chip 时用本机注册表里的名单。
 ///
-/// 主机惜宝的名单在储物袋里，各端共用，永远不走本机注册表。
+/// 主机惜宝的名单在储物袋里，各端共用，电脑和手机都不退回本机注册表。
 /// 别的 agent 只有在上游还没给名单时才退回本机注册表。
 bool composerUsesRegistryMenu({
   required bool hostShe,
@@ -97,6 +97,44 @@ bool sheCatalogContains({
     }
   }
   return false;
+}
+
+/// 储物袋里这条还没有自己的名字（名字空着，或就等于模型 id）时，
+/// 用电脑上同一模型、同一地址的那条名字补上。
+///
+/// 只改名，不把电脑上多出来的模型写进储物袋。
+List<({String displayName, String model, String baseUrl, String apiKey})>
+    sheCatalogNamesFromDevice({
+  required Iterable<
+          ({String displayName, String model, String baseUrl, String apiKey})>
+      local,
+  required Iterable<({String displayName, String model, String baseUrl})>
+      remote,
+}) {
+  final updates =
+      <({String displayName, String model, String baseUrl, String apiKey})>[];
+  for (final item in remote) {
+    final shown = item.displayName.trim();
+    final model = item.model.trim();
+    final base = item.baseUrl.trim();
+    if (model.isEmpty || base.isEmpty) continue;
+    if (shown.isNotEmpty && shown != model) continue;
+    for (final localItem in local) {
+      if (localItem.model.trim() != model || localItem.baseUrl.trim() != base) {
+        continue;
+      }
+      final name = localItem.displayName.trim();
+      if (name.isEmpty || name == model) continue;
+      updates.add((
+        displayName: name,
+        model: model,
+        baseUrl: base,
+        apiKey: localItem.apiKey,
+      ));
+      break;
+    }
+  }
+  return updates;
 }
 
 /// 本机名单里、储物袋还没有的那些。已经在名单里的、以及没有地址的，都不返回。

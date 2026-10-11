@@ -6,7 +6,6 @@ import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../models/acp_protocol.dart';
 import '../../models/mention_entry.dart';
 import '../../models/agent_scenario_models.dart';
@@ -14,6 +13,7 @@ import '../../models/model_definition.dart';
 import '../../models/pending_attachment.dart';
 import '../../models/remote_agent.dart';
 import '../../peer/host_she_turn.dart';
+import '../../storage/pouch_login_keeper.dart';
 import '../../peer/engine_session_modes.dart';
 import '../../peer/services/peer_agent_client_service.dart';
 import 'cursor_model_panel.dart';
@@ -196,6 +196,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
   StreamSubscription<List<SlashCommandInfo>>? _slashCommandsSub;
   StreamSubscription<PeerConnectionEvent>? _peerConnSub;
   StreamSubscription<({String agentId, String kind})>? _metaSub;
+  StreamSubscription<void>? _reloginSub;
 
   List<SlashCommandInfo> get _effectiveSlashCommands =>
       ShepawSessionSlashCommands.merge(
@@ -255,9 +256,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
   /// 主机惜宝：菜单用储物袋里那一份名单，各端相同。
   bool _hostSheModel = false;
 
-  /// 电脑把本机名单补进储物袋的过程中，避免同一次打开补两遍。
+  /// 电脑把储物袋里的模型名补上时，避免同一次打开补两遍。
   bool _sheCatalogMigrating = false;
-  static const _sheCatalogMigratedKey = 'she_catalog_desktop_migrated_v1';
   List<PeerAgentModel> _peerModels = const [];
   String? _currentPeerModel;
 
@@ -309,6 +309,11 @@ class ChatInputAreaState extends State<ChatInputArea> {
         PeerConnectionManager.instance.events.listen(_onPeerConnectionEvent);
     _metaSub =
         PeerAgentClientService.instance.metaChanged.listen(_onPeerMetaChanged);
+    // 主机重启后旧登录作废。模型请求被丢掉时，登录恢复后要再要一次。
+    _reloginSub = PouchLoginKeeper.instance.relogged.listen((_) {
+      if (!mounted) return;
+      unawaited(_loadAgentControls());
+    });
   }
 
   @override
@@ -322,6 +327,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
     _slashCommandsSub?.cancel();
     _peerConnSub?.cancel();
     _metaSub?.cancel();
+    _reloginSub?.cancel();
     super.dispose();
   }
 
@@ -866,10 +872,9 @@ class ChatInputAreaState extends State<ChatInputArea> {
     return null;
   }
 
-  /// 惜宝的可选模型只有储物袋里那一份，各端读到的是同一份。
+  /// 惜宝的可选模型只有储物袋里那一份，电脑和手机读到的是同一份。
   ///
-  /// 电脑上原来的名单在本机 `ModelRegistry` 里，储物袋还没有时补进去一次。
-  /// 手机不补，只读储物袋。
+  /// 电脑上如果给同一条模型起过名字，补进储物袋，手机就能看到这个名字。
   Future<void> _loadHostSheModels(RemoteAgent agent, int token) async {
     final peerId = agent.sourcePeerId;
     final remoteAgentId = agent.remoteAgentId;
@@ -877,59 +882,61 @@ class ChatInputAreaState extends State<ChatInputArea> {
     setState(() {
       _hostSheModel = true;
       _mainModelAvailable = true;
+      _mainModelDef = null;
       _peerId = peerId;
       _remoteAgentId = remoteAgentId;
     });
-    if (peerId == null || remoteAgentId == null) return;
+    if (peerId == null || remoteAgentId == null || peerId.isEmpty) return;
     final fetched = await _refreshPeerModels(agent, token);
-    if (!mounted || token != _controlsToken || !fetched) return;
-    await _migrateDesktopModels(agent, peerId, token);
+    if (!mounted || token != _controlsToken) return;
+    if (!fetched) {
+      final seen = PouchLoginKeeper.instance.reloginGeneration;
+      try {
+        await PouchLoginKeeper.instance.waitForRelogin(seenGeneration: seen);
+      } on TimeoutException {
+        return;
+      }
+      if (!mounted || token != _controlsToken) return;
+      final again = await _refreshPeerModels(agent, token);
+      if (!mounted || token != _controlsToken || !again) return;
+    }
+    await _applyLocalNamesToCatalog(agent, peerId, token);
   }
 
   bool get _isPhoneClient => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
-  /// 储物袋名单还缺电脑上已有的模型时，补进去一次，然后两边都读这一份。
-  Future<void> _migrateDesktopModels(
+  /// 储物袋里这条还只有模型 id 时，用电脑上起过的名字覆盖。不新增别的模型。
+  Future<void> _applyLocalNamesToCatalog(
     RemoteAgent agent,
     String peerId,
     int token,
   ) async {
     if (_sheCatalogMigrating) return;
     if (!sheCatalogMigratesLocalRegistry(phone: _isPhoneClient)) return;
-    SharedPreferences prefs;
-    try {
-      prefs = await SharedPreferences.getInstance();
-    } catch (_) {
-      return;
-    }
-    if (prefs.getBool(_sheCatalogMigratedKey) == true) return;
-    if (!mounted || token != _controlsToken) return;
-    final local = [
-      for (final def in ModelRegistry.instance.definitions)
-        (
-          displayName: def.displayName,
-          model: def.route.model ?? '',
-          baseUrl: def.route.apiBase ?? '',
-          apiKey: def.route.apiKey ?? '',
-        ),
-    ];
-    final missing = sheCatalogMissingFromDevice(
-      local: local,
+    final names = sheCatalogNamesFromDevice(
+      local: [
+        for (final def in ModelRegistry.instance.definitions)
+          (
+            displayName: def.displayName,
+            model: def.route.model ?? '',
+            baseUrl: def.route.apiBase ?? '',
+            apiKey: def.route.apiKey ?? '',
+          ),
+      ],
       remote: [
         for (final model in _peerModels)
-          (model: model.description, baseUrl: model.baseUrl),
+          (
+            displayName: model.displayName,
+            model: model.description,
+            baseUrl: model.baseUrl,
+          ),
       ],
     );
-    if (missing.isEmpty) {
-      if (local.isNotEmpty) {
-        await prefs.setBool(_sheCatalogMigratedKey, true);
-      }
-      return;
-    }
+    if (names.isEmpty) return;
     _sheCatalogMigrating = true;
-    var failed = false;
+    var updated = false;
     try {
-      for (final item in missing) {
+      for (final item in names) {
         if (!mounted || token != _controlsToken) return;
         final ok = await PeerAgentClientService.instance.putSheCatalog(
           peerId: peerId,
@@ -938,16 +945,13 @@ class ChatInputAreaState extends State<ChatInputArea> {
           baseUrl: item.baseUrl,
           apiKey: item.apiKey,
         );
-        if (!ok) failed = true;
+        if (ok) updated = true;
       }
     } finally {
       _sheCatalogMigrating = false;
     }
-    if (!mounted || token != _controlsToken || failed) return;
-    final refreshed = await _refreshPeerModels(agent, token);
-    if (!mounted || token != _controlsToken || !refreshed) return;
-    if (_peerModels.isEmpty) return;
-    await prefs.setBool(_sheCatalogMigratedKey, true);
+    if (!mounted || token != _controlsToken || !updated) return;
+    await _refreshPeerModels(agent, token);
   }
 
   Future<void> _selectSheCatalog(String catalogId) async {
@@ -1098,7 +1102,11 @@ class ChatInputAreaState extends State<ChatInputArea> {
     );
     final defs = ModelRegistry.instance.definitions;
     if (useRegistry && defs.isEmpty) {
-      await _openModelManagement();
+      if (_hostSheModel) {
+        await _addSheModel();
+      } else {
+        await _openModelManagement();
+      }
       return;
     }
     final overlayBox =
@@ -1193,7 +1201,11 @@ class ChatInputAreaState extends State<ChatInputArea> {
       return;
     }
     if (picked == _addModelSentinel) {
-      await _openModelManagement();
+      if (_hostSheModel) {
+        await _addSheModel();
+      } else {
+        await _openModelManagement();
+      }
       return;
     }
     await _setMainModel(picked);

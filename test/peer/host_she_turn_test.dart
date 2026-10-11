@@ -104,8 +104,41 @@ void main() {
     );
   });
 
+  test('储物袋里只有模型 id 时，用电脑上的名字', () {
+    final names = sheCatalogNamesFromDevice(
+      local: [
+        (
+          displayName: 'tokenhub-ds-v4.1-flash',
+          model: 'deepseek/deepseek-flash',
+          baseUrl: 'https://tokenhub.example/v1',
+          apiKey: 'sk',
+        ),
+        (
+          displayName: '书房',
+          model: 'gpt-4o',
+          baseUrl: 'https://api.example/v1',
+          apiKey: 'sk-a',
+        ),
+      ],
+      remote: [
+        (
+          displayName: 'deepseek/deepseek-flash',
+          model: 'deepseek/deepseek-flash',
+          baseUrl: 'https://tokenhub.example/v1',
+        ),
+        (
+          displayName: '已有名字',
+          model: 'gpt-4o',
+          baseUrl: 'https://api.example/v1',
+        ),
+      ],
+    );
+    expect(names, hasLength(1));
+    expect(names.single.displayName, 'tokenhub-ds-v4.1-flash');
+    expect(names.single.model, 'deepseek/deepseek-flash');
+  });
+
   test('惜宝的模型菜单永远不走本机注册表', () {
-    // 名单在储物袋里，各端共用；上游一条都没有时也只留「添加模型」。
     expect(
       composerUsesRegistryMenu(hostShe: true, hasPeerModels: true),
       isFalse,
