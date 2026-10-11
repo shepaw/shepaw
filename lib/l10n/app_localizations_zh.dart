@@ -2955,10 +2955,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get contacts_workerNodes => '工作节点';
 
   @override
-  String get contacts_pcClients => 'PC 客户端';
-
-  @override
-  String get contacts_mobileClients => '移动客户端';
+  String get contacts_clients => '客户端';
 
   @override
   String get contacts_nodeOffline => '节点离线';
@@ -4644,6 +4641,11 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get peerSettings_editAliasHint => '输入备注名称';
+
+  @override
+  String peerSettings_deleteFailed(String error) {
+    return '删除配对失败: $error';
+  }
 
   @override
   String peerSettings_deleteConfirm(String name) {

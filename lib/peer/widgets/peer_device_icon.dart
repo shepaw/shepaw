@@ -41,7 +41,7 @@ class PeerDeviceStyle {
   }
 }
 
-/// 配对设备统一头像图标（smartphone + 按发起方着色的背景）。
+/// 配对设备统一头像：移动端用手机图标，桌面和服务器用电脑图标，背景按发起方着色。
 class PeerDeviceIcon extends StatelessWidget {
   final PairedPeer peer;
   final double size;
@@ -53,6 +53,12 @@ class PeerDeviceIcon extends StatelessWidget {
     this.size = 48,
     this.borderRadius = 12,
   });
+
+  static IconData _iconFor(PairedPeer peer) {
+    return peer.effectiveForm == DeviceForm.mobile
+        ? Icons.smartphone
+        : Icons.computer;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -66,7 +72,7 @@ class PeerDeviceIcon extends StatelessWidget {
         borderRadius: BorderRadius.circular(borderRadius),
       ),
       alignment: Alignment.center,
-      child: Icon(Icons.smartphone, size: iconSize, color: style.iconColor),
+      child: Icon(_iconFor(peer), size: iconSize, color: style.iconColor),
     );
   }
 }

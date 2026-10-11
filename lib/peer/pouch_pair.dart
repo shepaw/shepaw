@@ -34,13 +34,28 @@ class PouchPair {
   static const responseType = 'pouch_pair_resp';
   static const listRequestType = 'pouch_peer_list_req';
   static const listResponseType = 'pouch_peer_list_resp';
+  static const removeRequestType = 'pouch_peer_remove_req';
+  static const removeResponseType = 'pouch_peer_remove_resp';
 
   static const controlTypes = <String>[
     requestType,
     responseType,
     listRequestType,
     listResponseType,
+    removeRequestType,
+    removeResponseType,
   ];
+
+  static String responseTypeFor(String requestType) {
+    switch (requestType) {
+      case listRequestType:
+        return listResponseType;
+      case removeRequestType:
+        return removeResponseType;
+      default:
+        return responseType;
+    }
+  }
 }
 
 /// 票据就是一条已经校验过的配对链接。主机再解析一次，不信客户端改过的指纹。
@@ -101,6 +116,18 @@ class PouchPairing {
       hostFingerprint: host?.fingerprint,
       qrFingerprint: info.fingerprint,
     );
+  }
+
+  /// 从主机名册删掉这台设备。名单来自主机，只清本机记录的话刷新后又会出现。
+  static Future<void> remove(PairedPeer peer) async {
+    final route = await PouchTurnRelay.currentRoute();
+    if (!route.runLocal) {
+      await PouchPairRelay.instance.remove(
+        hostPeerId: route.hostPeerId!,
+        fingerprint: peer.fingerprint,
+      );
+    }
+    await PeerConnectionManager.instance.removePeer(peer.id);
   }
 
   /// 界面上的设备名单。客户端读主机的，不读自己扫过的记录。
@@ -201,6 +228,28 @@ class PouchPairRelay {
     ];
   }
 
+  Future<void> remove({
+    required String hostPeerId,
+    required String fingerprint,
+  }) async {
+    final hub = fingerprint.trim().toLowerCase();
+    if (hub.isEmpty) {
+      throw StateError('缺少设备指纹');
+    }
+    final done = await _send(
+      hostPeerId,
+      <String, dynamic>{
+        'type': PouchPair.removeRequestType,
+        'fingerprint': hub,
+      },
+      timeout: listTimeout,
+      retryOnRelogin: true,
+    );
+    if (done['ok'] != true) {
+      throw StateError(done['message'] as String? ?? '主机没有删除这台设备');
+    }
+  }
+
   Future<Map<String, dynamic>> _send(
     String hostPeerId,
     Map<String, dynamic> frame, {
@@ -286,12 +335,34 @@ class PouchPairHost {
       ).load();
       if (!role.isHost) {
         await send({
-          'type': type == PouchPair.listRequestType
-              ? PouchPair.listResponseType
-              : PouchPair.responseType,
+          'type': PouchPair.responseTypeFor(type),
           'ok': false,
           'code': 'error',
           'message': '这台设备不是储物袋主机',
+        });
+        return;
+      }
+      if (type == PouchPair.removeRequestType) {
+        final fingerprint = (data['fingerprint'] as String? ?? '').trim();
+        if (fingerprint.isEmpty) {
+          await send({
+            'type': PouchPair.removeResponseType,
+            'ok': false,
+            'code': 'error',
+            'message': '缺少设备指纹',
+          });
+          return;
+        }
+        final peers = await PeerConnectionManager.instance.getAllPeers();
+        for (final peer in peers) {
+          if (peer.fingerprint.trim().toLowerCase() ==
+              fingerprint.toLowerCase()) {
+            await PeerConnectionManager.instance.removePeer(peer.id);
+          }
+        }
+        await send({
+          'type': PouchPair.removeResponseType,
+          'ok': true,
         });
         return;
       }
@@ -329,9 +400,7 @@ class PouchPairHost {
       });
     } catch (e) {
       await send({
-        'type': type == PouchPair.listRequestType
-            ? PouchPair.listResponseType
-            : PouchPair.responseType,
+        'type': PouchPair.responseTypeFor(type),
         'ok': false,
         'code': 'error',
         'message': '$e',

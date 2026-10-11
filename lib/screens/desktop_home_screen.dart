@@ -867,6 +867,10 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         return PeerSettingsScreen(
           key: ValueKey('contact_peer_${peer.id}'),
           peer: peer,
+          onDeleted: () {
+            _showPanel(_RightPanelView.empty);
+            _reloadContacts();
+          },
         );
 
       case _RightPanelView.traces:

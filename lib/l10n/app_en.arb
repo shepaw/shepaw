@@ -1264,8 +1264,7 @@
   "contacts_devices": "Devices",
   "contacts_host": "Host",
   "contacts_workerNodes": "Worker nodes",
-  "contacts_pcClients": "PC clients",
-  "contacts_mobileClients": "Mobile clients",
+  "contacts_clients": "Clients",
   "contacts_nodeOffline": "Node offline",
   "contacts_thisDevice": "This device",
   "contacts_thisComputer": "This computer",
@@ -2135,6 +2134,14 @@
   "peerSettings_deletePairing": "Remove Pairing",
   "peerSettings_editAliasTitle": "Edit Display Name",
   "peerSettings_editAliasHint": "Enter display name",
+  "peerSettings_deleteFailed": "Couldn't remove pairing: {error}",
+  "@peerSettings_deleteFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "peerSettings_deleteConfirm": "Are you sure you want to remove pairing with {name}?\nAll message history will also be deleted.",
   "@peerSettings_deleteConfirm": {
     "placeholders": {

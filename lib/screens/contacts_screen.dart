@@ -6,12 +6,12 @@ import '../models/agent.dart';
 import '../models/channel.dart';
 import '../theme/app_theme.dart';
 import '../peer/models/paired_peer.dart';
+import '../peer/pouch_pair.dart';
 import '../peer/screens/peer_settings_screen.dart';
 import '../peer/widgets/peer_device_icon.dart';
 import '../peer/screens/add_agent_instance_screen.dart';
 import '../peer/screens/peer_manual_input_screen.dart';
 import '../peer/screens/peer_pairing_screen.dart';
-import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_storage_service.dart';
 import '../utils/platform_utils.dart';
 import '../services/contacts_directory.dart';
@@ -26,7 +26,7 @@ import 'remote_agent_detail_screen.dart';
 import 'group_detail_screen.dart';
 import 'create_group_screen.dart';
 
-/// 通讯录：主机 → 工作节点 → PC 客户端 → 移动客户端 → 群聊。
+/// 通讯录：工作节点（主机排第一并打标）→ 客户端（桌面 + 移动）→ 群聊。
 /// 主机和工作节点下挂各自的 Agent，客户端只是设备；本机在设备名旁标出来。
 ///
 /// When [embedded] is true (desktop middle column), selection callbacks open
@@ -58,13 +58,14 @@ class ContactsScreen extends StatefulWidget {
   State<ContactsScreen> createState() => ContactsScreenState();
 }
 
-enum _ContactsSection { host, workers, pcClients, mobileClients, groups }
+enum _ContactsSection { workers, clients, groups }
 
-const _deviceSections = <ContactSection, _ContactsSection>{
-  ContactSection.host: _ContactsSection.host,
-  ContactSection.worker: _ContactsSection.workers,
-  ContactSection.pcClient: _ContactsSection.pcClients,
-  ContactSection.mobileClient: _ContactsSection.mobileClients,
+const _deviceSections = <_ContactsSection, Set<ContactSection>>{
+  _ContactsSection.workers: {ContactSection.host, ContactSection.worker},
+  _ContactsSection.clients: {
+    ContactSection.pcClient,
+    ContactSection.mobileClient,
+  },
 };
 
 class ContactsScreenState extends State<ContactsScreen> {
@@ -339,10 +340,10 @@ class ContactsScreenState extends State<ContactsScreen> {
       else ...[
         for (final entry in _deviceSections.entries)
           ..._buildDeviceSection(
-            entry.value,
+            entry.key,
             [
               for (final device in devices)
-                if (device.section == entry.key) device,
+                if (entry.value.contains(device.section)) device,
             ],
             view,
             l10n,
@@ -357,8 +358,6 @@ class ContactsScreenState extends State<ContactsScreen> {
         section: _ContactsSection.groups,
         title: l10n.contacts_groups,
         count: groups.length,
-        icon: Icons.group_outlined,
-        iconColor: const Color(0xFF07C160),
       ),
       if (_expanded.contains(_ContactsSection.groups))
         ..._buildGroupChildren(groups, l10n),
@@ -378,35 +377,14 @@ class ContactsScreenState extends State<ContactsScreen> {
     AppLocalizations l10n,
   ) {
     if (devices.isEmpty) return const [];
-    final (title, icon, color) = switch (section) {
-      _ContactsSection.host => (
-          l10n.contacts_host,
-          Icons.dns_outlined,
-          const Color(0xFF1677FF),
-        ),
-      _ContactsSection.workers => (
-          l10n.contacts_workerNodes,
-          Icons.memory_outlined,
-          const Color(0xFF722ED1),
-        ),
-      _ContactsSection.pcClients => (
-          l10n.contacts_pcClients,
-          Icons.computer_outlined,
-          const Color(0xFF13A8A8),
-        ),
-      _ => (
-          l10n.contacts_mobileClients,
-          Icons.smartphone_outlined,
-          const Color(0xFFFA8C16),
-        ),
-    };
+    final title = section == _ContactsSection.workers
+        ? l10n.contacts_workerNodes
+        : l10n.contacts_clients;
     return [
       _buildSectionHeader(
         section: section,
         title: title,
         count: devices.length,
-        icon: icon,
-        iconColor: color,
       ),
       if (_expanded.contains(section) || _query.isNotEmpty)
         for (final device in devices)
@@ -551,8 +529,6 @@ class ContactsScreenState extends State<ContactsScreen> {
     required _ContactsSection section,
     required String title,
     required int count,
-    required IconData icon,
-    required Color iconColor,
   }) {
     final expanded = _expanded.contains(section);
     final colorScheme = Theme.of(context).colorScheme;
@@ -573,17 +549,6 @@ class ContactsScreenState extends State<ContactsScreen> {
               ),
             ),
             const SizedBox(width: _chevronGap),
-            Container(
-              width: _avatarSize,
-              height: _avatarSize,
-              decoration: BoxDecoration(
-                color: iconColor.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              alignment: Alignment.center,
-              child: Icon(icon, size: 20, color: iconColor),
-            ),
-            const SizedBox(width: 12),
             Expanded(
               child: Text(
                 title,
@@ -1094,8 +1059,20 @@ class ContactsScreenState extends State<ContactsScreen> {
     );
 
     if (confirm == true) {
-      await PeerConnectionManager.instance.removePeer(peer.id);
-      _reload();
+      try {
+        await PouchPairing.remove(peer);
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              AppLocalizations.of(context).peerSettings_deleteFailed('$e'),
+            ),
+          ),
+        );
+        return;
+      }
+      if (mounted) _reload();
     }
   }
 

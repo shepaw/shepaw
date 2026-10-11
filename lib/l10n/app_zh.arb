@@ -1721,8 +1721,7 @@
   "contacts_devices": "设备",
   "contacts_host": "主机",
   "contacts_workerNodes": "工作节点",
-  "contacts_pcClients": "PC 客户端",
-  "contacts_mobileClients": "移动客户端",
+  "contacts_clients": "客户端",
   "contacts_nodeOffline": "节点离线",
   "contacts_thisDevice": "本机",
   "contacts_thisComputer": "这台电脑",
@@ -2589,6 +2588,14 @@
   "peerSettings_deletePairing": "删除配对",
   "peerSettings_editAliasTitle": "修改备注名称",
   "peerSettings_editAliasHint": "输入备注名称",
+  "peerSettings_deleteFailed": "删除配对失败: {error}",
+  "@peerSettings_deleteFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "peerSettings_deleteConfirm": "确定要删除与 {name} 的配对吗？\n所有消息记录也会被删除。",
   "@peerSettings_deleteConfirm": {
     "placeholders": {

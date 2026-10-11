@@ -5456,17 +5456,11 @@ abstract class AppLocalizations {
   /// **'工作节点'**
   String get contacts_workerNodes;
 
-  /// No description provided for @contacts_pcClients.
+  /// No description provided for @contacts_clients.
   ///
   /// In zh, this message translates to:
-  /// **'PC 客户端'**
-  String get contacts_pcClients;
-
-  /// No description provided for @contacts_mobileClients.
-  ///
-  /// In zh, this message translates to:
-  /// **'移动客户端'**
-  String get contacts_mobileClients;
+  /// **'客户端'**
+  String get contacts_clients;
 
   /// No description provided for @contacts_nodeOffline.
   ///
@@ -8600,6 +8594,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'输入备注名称'**
   String get peerSettings_editAliasHint;
+
+  /// No description provided for @peerSettings_deleteFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除配对失败: {error}'**
+  String peerSettings_deleteFailed(String error);
 
   /// No description provided for @peerSettings_deleteConfirm.
   ///

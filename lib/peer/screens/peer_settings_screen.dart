@@ -10,6 +10,7 @@ import '../../storage/store_protocol.dart' show TrustLevel;
 import '../../storage/store_service.dart';
 import '../../widgets/form_bottom_bar.dart';
 import '../models/paired_peer.dart';
+import '../pouch_pair.dart';
 import '../services/peer_connection_manager.dart';
 import '../services/peer_storage_service.dart';
 import '../widgets/peer_agent_manage_panel.dart';
@@ -23,7 +24,10 @@ import '../widgets/peer_device_icon.dart';
 class PeerSettingsScreen extends StatefulWidget {
   final PairedPeer peer;
 
-  const PeerSettingsScreen({super.key, required this.peer});
+  /// 嵌在桌面右栏时没有可弹出的路由。删除成功后由外层收起面板。
+  final VoidCallback? onDeleted;
+
+  const PeerSettingsScreen({super.key, required this.peer, this.onDeleted});
 
   /// 返回 true 表示 peer 被删除了
   static Future<bool?> show(BuildContext context, PairedPeer peer) {
@@ -247,11 +251,23 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
       ),
     );
 
-    if (confirm == true) {
-      await PeerConnectionManager.instance.removePeer(widget.peer.id);
-      if (mounted) {
-        Navigator.of(context).pop(true); // 返回 true 表示已删除
-      }
+    if (confirm != true || !mounted) return;
+    final l10nAfter = AppLocalizations.of(context);
+    try {
+      await PouchPairing.remove(widget.peer);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10nAfter.peerSettings_deleteFailed('$e'))),
+      );
+      return;
+    }
+    if (!mounted) return;
+    final onDeleted = widget.onDeleted;
+    if (onDeleted != null) {
+      onDeleted();
+    } else {
+      Navigator.of(context).pop(true);
     }
   }
 

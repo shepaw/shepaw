@@ -3072,10 +3072,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get contacts_workerNodes => 'Worker nodes';
 
   @override
-  String get contacts_pcClients => 'PC clients';
-
-  @override
-  String get contacts_mobileClients => 'Mobile clients';
+  String get contacts_clients => 'Clients';
 
   @override
   String get contacts_nodeOffline => 'Node offline';
@@ -4825,6 +4822,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get peerSettings_editAliasHint => 'Enter display name';
+
+  @override
+  String peerSettings_deleteFailed(String error) {
+    return 'Couldn\'t remove pairing: $error';
+  }
 
   @override
   String peerSettings_deleteConfirm(String name) {

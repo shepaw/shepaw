@@ -2611,6 +2611,7 @@ class PeerAgentClientService {
         break;
       case 'pouch_pair_resp':
       case 'pouch_peer_list_resp':
+      case 'pouch_peer_remove_resp':
         PouchPairRelay.instance.onResponse(event.data);
         break;
       case 'agent_turn_resume_resp':

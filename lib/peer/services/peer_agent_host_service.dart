@@ -306,6 +306,7 @@ class PeerAgentHostService {
         break;
       case 'pouch_pair_req':
       case 'pouch_peer_list_req':
+      case 'pouch_peer_remove_req':
         unawaited(PouchPairHost.handle(event.peerId, event.data));
         break;
     }

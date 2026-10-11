@@ -197,6 +197,8 @@ class PeerConnection {
     'pouch_pair_resp',
     'pouch_peer_list_req',
     'pouch_peer_list_resp',
+    'pouch_peer_remove_req',
+    'pouch_peer_remove_resp',
     'session_create_req',
     'session_create_resp',
     'cli_execute_req',
