@@ -195,7 +195,7 @@ class PeerAgentHostService {
   /// 终态 turn 缓冲的保留时长。回合已经结束，只给迟到的 resume 留一个短窗口。
   static const Duration hostTurnTerminalTtl = Duration(minutes: 30);
   /// 仍在跑（streaming）的 turn 缓冲上限。审批卡最多等到 hub 的
-  /// `SHEPAW_ACP_APPROVAL_SECS`（默认 10 分钟）就自行降级，回合之后跑到自己
+  /// `SHEPAW_ACP_APPROVAL_SECS`（默认 30 分钟）就自行降级，回合之后跑到自己
   /// 的时限；留得宽是因为多占一点内存只是浪费，丢掉缓冲却会丢掉回复。
   static const Duration hostTurnLiveTtl = Duration(hours: 25);
 
