@@ -81,7 +81,7 @@ class HubEventClient {
         if (parsed == null) return;
         await _onLive(event.peerId, parsed);
       case 'pouch_turn_event':
-        _onAttachedChunk(event.data);
+        await _onAttachedChunk(event.peerId, event.data);
       case 'events_sync_resp':
         break;
     }
@@ -197,21 +197,40 @@ class HubEventClient {
     }
   }
 
-  Future<void> _showInteraction(String peerId, HubEvent event) async {
-    final data = event.data['data'];
-    final body = data is Map ? Map<String, dynamic>.from(data) : <String, dynamic>{};
-    final kind = event.data['interaction_type'] as String? ?? '';
-    final interactionId = event.data['interaction_id'] as String? ?? '';
+  Future<void> _showInteraction(String peerId, HubEvent event) => _renderInteraction(
+        peerId: peerId,
+        channelId: event.channelId,
+        agentId: event.agentId,
+        interactionId: event.data['interaction_id'] as String? ?? '',
+        kind: event.data['interaction_type'] as String? ?? '',
+        body: event.data['data'],
+      );
+
+  /// 把一张交互卡渲染成消息。两个入口共用：hub 的 `interaction.pending`
+  /// 事件，和重连续传时补发回来的卡片（`pouch_turn_event kind=interaction`）。
+  /// 后者载荷里的 `data` / `interaction_type` / `interaction_id` 与前者同形，
+  /// 所以「答」的路径（`hub_interaction` 元数据 → `pouch_interaction_resp`）
+  /// 不用区分来源。
+  Future<void> _renderInteraction({
+    required String peerId,
+    required String channelId,
+    required String agentId,
+    required String interactionId,
+    required String kind,
+    required Object? body,
+  }) async {
+    final data = body;
+    final payload = data is Map ? Map<String, dynamic>.from(data) : <String, dynamic>{};
     if (kind == 'client_cli') {
-      final target = body['target_fingerprint'] as String? ?? '';
+      final target = payload['target_fingerprint'] as String? ?? '';
       final mine = (await NoiseIdentity.loadOrCreate()).fingerprintHex;
       if (target.isNotEmpty && mine == target) {
         final output = await CliExecutionGate.instance.execute(
           args: {
-            'namespace': body['namespace'] ?? 'os',
-            'subcommand': body['subcommand'] ?? '',
-            'flags': body['flags'] is Map
-                ? Map<String, dynamic>.from(body['flags'] as Map)
+            'namespace': payload['namespace'] ?? 'os',
+            'subcommand': payload['subcommand'] ?? '',
+            'flags': payload['flags'] is Map
+                ? Map<String, dynamic>.from(payload['flags'] as Map)
                 : <String, dynamic>{},
           },
           agentId: 'she-builtin-agent-001',
@@ -224,7 +243,7 @@ class HubEventClient {
         return;
       }
     }
-    if (!getIt.isRegistered<LocalDatabaseService>() || event.channelId.isEmpty) {
+    if (!getIt.isRegistered<LocalDatabaseService>() || channelId.isEmpty) {
       return;
     }
     final metadata = <String, dynamic>{
@@ -238,20 +257,20 @@ class HubEventClient {
         kind == 'single_select' ||
         kind == 'multi_select' ||
         kind == 'form') {
-      metadata[kind] = body;
+      metadata[kind] = payload;
     }
-    final prompt = body['prompt'] as String? ?? body['title'] as String? ?? '';
+    final prompt = payload['prompt'] as String? ?? payload['title'] as String? ?? '';
     await getIt<LocalDatabaseService>().createMessage(
       id: 'hub-ix-$interactionId',
-      channelId: event.channelId,
-      senderId: event.agentId.isEmpty ? 'she-builtin-agent-001' : event.agentId,
+      channelId: channelId,
+      senderId: agentId.isEmpty ? 'she-builtin-agent-001' : agentId,
       senderType: 'agent',
       senderName: '惜宝',
       content: kind == 'client_cli' ? '在另一台设备上执行' : prompt,
       metadata: metadata,
       conflictAlgorithm: ConflictAlgorithm.ignore,
     );
-    _notify(event.channelId);
+    _notify(channelId);
   }
 
   Future<void> _insertMessage(HubEvent event) async {
@@ -352,9 +371,25 @@ class HubEventClient {
     if (channelId != null) _notify(channelId);
   }
 
-  void _onAttachedChunk(Map<String, dynamic> data) {
+  Future<void> _onAttachedChunk(String peerId, Map<String, dynamic> data) async {
     final turnId = data['request_id'] as String? ?? '';
     if (!_attached.contains(turnId)) return;
+    if (data['kind'] == 'interaction') {
+      // 主机在我们断线时问的问题：重连续传时补发回来（宿主侧
+      // PhoneState::pending_interaction_for_turn → LiveTurns::attach）。
+      // 不渲染的话只能等主机自己放弃（30 分钟），用户连「被问过」都不知道。
+      final channelId = _liveChannels[turnId];
+      if (channelId == null) return;
+      await _renderInteraction(
+        peerId: peerId,
+        channelId: channelId,
+        agentId: data['agent_id'] as String? ?? '',
+        interactionId: data['interaction_id'] as String? ?? '',
+        kind: data['interaction_type'] as String? ?? '',
+        body: data['data'],
+      );
+      return;
+    }
     if (data['kind'] == 'chunk') {
       final chunk = data['chunk'] as String? ?? '';
       final next = (_liveBuffers[turnId] ?? '') + chunk;
