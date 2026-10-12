@@ -30,6 +30,7 @@ import '../services/cli_approval_coordinator.dart';
 import '../services/cli_approval_service.dart';
 import '../clis/shepaw/os/os_executor.dart' as os_exec;
 import '../models/workflow_models.dart';
+import '../peer/pouch_roster.dart';
 import '../peer/host_she_turn.dart';
 import '../peer/pouch_turn_relay.dart';
 import '../peer/services/peer_agent_client_service.dart';

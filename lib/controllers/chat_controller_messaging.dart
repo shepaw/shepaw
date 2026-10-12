@@ -404,6 +404,13 @@ mixin _MessagingOps on _ChatControllerBase {
         disposition = ChatSendDisposition.queueText;
       }
     }
+    // 主机上这路会话还有回合或排队时，新消息继续交给主机，不在手机另开一条。
+    if (disposition == ChatSendDisposition.sendDm &&
+        currentChannelId != null &&
+        PeerAgentClientService.instance
+            .hasInflightForChannel(currentChannelId!)) {
+      disposition = ChatSendDisposition.queueText;
+    }
 
     switch (disposition) {
       case ChatSendDisposition.empty:
@@ -663,14 +670,12 @@ mixin _MessagingOps on _ChatControllerBase {
     _notify();
   }
 
-  /// 先放进本机队列（面板不变）。这路会话的回合还在主机上时，把正文一并交过去。
+  /// 面板仍显示这条，发送交给主机上的会话队列，不在手机本地出队。
   void _offerQueuedMessage(QueuedMessage item) {
-    final channelId = currentChannelId ?? '';
-    final park = PouchTurnRelay.instance.isWatchingChannel(channelId);
-    if (park) item.hostOwned = true;
+    item.hostOwned = true;
     messageQueue.add(item);
     _notify();
-    if (park) unawaited(_parkQueuedOnHost(item));
+    unawaited(_parkQueuedOnHost(item));
   }
 
   Future<void> _parkQueuedOnHost(QueuedMessage item) async {
@@ -715,24 +720,51 @@ mixin _MessagingOps on _ChatControllerBase {
         final agent = agentId == null
             ? null
             : await localDatabaseService.getRemoteAgentById(agentId!);
-        if (agent == null || !relaysHostSheTurn(agent)) {
+        if (agent != null && relaysHostSheTurn(agent)) {
+          parked = await PouchTurnRelay.instance.enqueueDm(
+            hostPeerId: hostPeerId,
+            requestId: item.id,
+            channelId: channelId,
+            agentId: hostSheTurnAgentId(agent),
+            content: () => item.content,
+            stillQueued: stillQueued,
+            userId: getUserId(),
+            userName: getUserName(),
+            replyToId: item.replyToId,
+            replyQuoteText: item.replyQuoteText,
+            attachments: item.attachments,
+          );
+        } else if (agent != null &&
+            agent.sourcePeerId != null &&
+            agent.remoteAgentId != null) {
+          final dial = await PouchRosterDial.decideLive(
+            fallbackPeerId: agent.sourcePeerId!,
+            remoteAgentId: agent.remoteAgentId!,
+            hubFingerprint: agent.metadata['roster_hub_fingerprint'] as String?,
+          );
+          if (dial.blocked) {
+            throw Exception(PouchRosterDial.blockedMessage);
+          }
+          final sessionId =
+              remoteSessionIdFromChannelId(channelId) ?? channelId;
+          parked = await PeerAgentClientService.instance.enqueueChat(
+            peerId: dial.peerId ?? agent.sourcePeerId!,
+            remoteAgentId: dial.remoteAgentId ?? agent.remoteAgentId!,
+            requestId: item.id,
+            message: item.content,
+            sessionId: sessionId,
+            channelId: channelId,
+            localAgentId: agent.id,
+            userId: getUserId(),
+            userName: getUserName(),
+            agentName: agent.name,
+            attachments: item.attachments,
+          );
+        } else {
           item.hostOwned = false;
           if (!isProcessing && isMounted) unawaited(processNextInQueue());
           return;
         }
-        parked = await PouchTurnRelay.instance.enqueueDm(
-          hostPeerId: hostPeerId,
-          requestId: item.id,
-          channelId: channelId,
-          agentId: hostSheTurnAgentId(agent),
-          content: () => item.content,
-          stillQueued: stillQueued,
-          userId: getUserId(),
-          userName: getUserName(),
-          replyToId: item.replyToId,
-          replyQuoteText: item.replyQuoteText,
-          attachments: item.attachments,
-        );
       }
       if (!parked && stillQueued()) {
         chatService
@@ -746,8 +778,9 @@ mixin _MessagingOps on _ChatControllerBase {
         tag: 'HostQueue',
       );
       if (!stillQueued()) return;
-      item.hostOwned = false;
-      if (!isProcessing && isMounted) unawaited(processNextInQueue());
+      if (isMounted) {
+        _emit(ShowErrorSnackBarEvent('$e'));
+      }
     }
   }
 

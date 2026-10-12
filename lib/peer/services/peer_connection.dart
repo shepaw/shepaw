@@ -104,6 +104,7 @@ class PeerConnection {
     'fs_browse_req',
     'fs_browse_resp',
     'agent_chat',
+    'agent_queued',
     'agent_chunk',
     'agent_metadata',
     'agent_done',

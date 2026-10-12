@@ -24,6 +24,7 @@ import '../../models/remote_agent.dart';
 import '../../models/agent_memory_entry.dart';
 import '../../models/acp_protocol.dart';
 import '../../services/acp_agent_connection.dart';
+import '../../services/chat_service.dart';
 import '../../services/app_lifecycle_service.dart';
 import '../../services/local_database_service.dart';
 import '../../services/local_file_storage_service.dart';
@@ -1471,6 +1472,15 @@ class _PendingRequest {
   /// 不参与 settle / stall probe。
   DateTime? lastKeepaliveAt;
 
+  /// 这条已经交给主机排队，还没轮到它。空闲超时不能把它判死。
+  bool heldOnHost = false;
+
+  /// 主机收下排队（true）或已经直接开跑（false）。
+  Completer<bool>? queueAck;
+
+  /// 排队消息的用户正文。回合真正结束时补进本地聊天记录。
+  String? parkedText;
+
   /// 发出 resume_req 时的 receivedLength 基准，用于 delta 去重（drop-prefix）。
   int? resumeBaseLength;
   _PendingRequest({
@@ -2474,6 +2484,134 @@ class PeerAgentClientService {
     );
   }
 
+  /// 会话正忙时把下一条交给主机排队。返回 true 表示主机先收下了。
+  Future<bool> enqueueChat({
+    required String peerId,
+    required String remoteAgentId,
+    required String requestId,
+    required String message,
+    String? sessionId,
+    String? channelId,
+    String? localAgentId,
+    String? userId,
+    String? userName,
+    String? agentName,
+    List<AttachmentData>? attachments,
+  }) async {
+    List<Map<String, dynamic>>? attachmentRefs;
+    if (attachments != null && attachments.isNotEmpty) {
+      attachmentRefs = <Map<String, dynamic>>[];
+      for (final att in attachments) {
+        if (att.exceedsSizeLimit) {
+          throw Exception(
+            '附件过大（上限 ${AttachmentData.maxSizeBytes ~/ (1024 * 1024)}MB）: '
+            '${att.fileName}',
+          );
+        }
+        final pushed = await pushFile(
+          peerId: peerId,
+          remoteAgentId: remoteAgentId,
+          attachment: att,
+          sessionId: sessionId,
+        );
+        attachmentRefs.add(att.toPeerRefJson(
+          pushed.fileId,
+          stripClientStoreUri: true,
+        ));
+      }
+    }
+    final ack = Completer<bool>();
+    final pending = _PendingRequest(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      localAgentId: localAgentId ?? '',
+      channelId: channelId ?? '',
+      sessionId: sessionId ?? '',
+      userId: userId ?? '',
+      userName: userName ?? '',
+      agentName: agentName ?? '',
+    );
+    pending.heldOnHost = true;
+    pending.parkedText = message;
+    pending.queueAck = ack;
+    _pending[requestId] = pending;
+    unawaited(pending.completer.future.then((result) {
+      unawaited(_saveParkedReply(pending, requestId, result.content));
+    }).catchError((Object _) {
+      ChatService().dropQueuedMessage(requestId);
+    }));
+    final sent = await PeerConnectionManager.instance.sendControl(peerId, {
+      'type': 'agent_chat',
+      'request_id': requestId,
+      'agent_id': remoteAgentId,
+      'message': message,
+      if (sessionId != null && sessionId.isNotEmpty) 'session_id': sessionId,
+      if (channelId != null && channelId.isNotEmpty) 'channel_id': channelId,
+      if (attachmentRefs != null) 'attachments': attachmentRefs,
+    });
+    if (!sent) {
+      _pending.remove(requestId);
+      if (!pending.completer.isCompleted) {
+        pending.completer.completeError(Exception('配对设备未连接，无法发送'));
+      }
+      throw Exception('配对设备未连接，无法发送');
+    }
+    unawaited(_awaitTurnCompletion(requestId, pending, peerId));
+    try {
+      return await ack.future.timeout(const Duration(seconds: 20));
+    } on TimeoutException {
+      _pending.remove(requestId);
+      if (!ack.isCompleted) {
+        ack.completeError(TimeoutException('主机没有收下排队消息'));
+      }
+      if (!pending.completer.isCompleted) {
+        pending.completer.completeError(TimeoutException('主机没有收下排队消息'));
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> _saveParkedReply(
+    _PendingRequest pending,
+    String requestId,
+    String reply,
+  ) async {
+    ChatService().dropQueuedMessage(requestId);
+    final channelId = pending.channelId;
+    final text = pending.parkedText;
+    if (channelId.isEmpty || text == null || text.trim().isEmpty) return;
+    if (!getIt.isRegistered<LocalDatabaseService>()) return;
+    final db = getIt<LocalDatabaseService>();
+    final userMessageId =
+        pending.userMessageId.isEmpty ? requestId : pending.userMessageId;
+    try {
+      await db.createMessage(
+        id: userMessageId,
+        channelId: channelId,
+        senderId: pending.userId,
+        senderType: 'user',
+        senderName: pending.userName,
+        content: text,
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+      await db.createMessage(
+        id: '$requestId-reply',
+        channelId: channelId,
+        senderId: pending.localAgentId.isEmpty
+            ? pending.remoteAgentId
+            : pending.localAgentId,
+        senderType: 'agent',
+        senderName: pending.agentName,
+        content: reply,
+        replyToId: userMessageId,
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+    } catch (error) {
+      _log.warning('save parked reply failed: $error', tag: _tag);
+    }
+    ChatService().notifyChannelUpdate(channelId);
+  }
+
   /// Await the turn with an approval-aware watchdog.
   ///
   /// [chatTimeout] only runs while no approval card is open and the agent has
@@ -2496,6 +2634,7 @@ class PeerAgentClientService {
         timer.cancel();
         return;
       }
+      if (pending.heldOnHost) return;
       final now = DateTime.now();
       final verdict = evaluateTurnWatchdog(
         now: now,
@@ -2648,6 +2787,9 @@ class PeerAgentClientService {
         break;
       case 'agent_chunk':
         _onChunk(event.data);
+        break;
+      case 'agent_queued':
+        _onAgentQueued(event.data);
         break;
       case 'pouch_turn_event':
         PouchTurnRelay.instance.onEvent(event.data);
@@ -6077,6 +6219,13 @@ class PeerAgentClientService {
     if (requestId == null) return;
     final p = _pending[requestId];
     if (p == null) return;
+    if (p.heldOnHost) {
+      p.heldOnHost = false;
+      p.idleSince = DateTime.now();
+      final ack = p.queueAck;
+      if (ack != null && !ack.isCompleted) ack.complete(false);
+      ChatService().dropQueuedMessage(requestId);
+    }
     // 先计数再分发：与 hub 的 accumulated 同序列（同为 UTF-16 码元长度），
     // resume 的断点偏移才精确。
     p.receivedLength += content.length;
@@ -6299,11 +6448,27 @@ class PeerAgentClientService {
     _finishPending(requestId, data);
   }
 
+  void _onAgentQueued(Map<String, dynamic> data) {
+    final requestId = data['request_id'] as String?;
+    if (requestId == null) return;
+    final pending = _pending[requestId];
+    if (pending == null) return;
+    pending.heldOnHost = true;
+    final ack = pending.queueAck;
+    if (ack != null && !ack.isCompleted) ack.complete(true);
+  }
+
   void _onError(Map<String, dynamic> data) {
     final requestId = data['request_id'] as String?;
     if (requestId == null) return;
     final p = _pending.remove(requestId);
     if (p == null || p.completer.isCompleted) return;
+    final ack = p.queueAck;
+    if (ack != null && !ack.isCompleted) {
+      ack.completeError(
+        Exception(data['message'] as String? ?? 'Peer agent error'),
+      );
+    }
     _clearPersistedTurn(requestId);
     _closeCardsOfRequest(requestId, 'turn_ended');
     p.completer.completeError(
@@ -6809,8 +6974,7 @@ class PeerAgentClientService {
         final enabled = raw['enabled'] != false;
         final running = raw['running'] == true;
         final node = AgentNodeInfo.fromAgentListEntry(raw);
-        final online =
-            node.online && (!manageable || (enabled && running));
+        final online = node.online && (!manageable || (enabled && running));
         final workspaceUri = _workspaceUriFromAgentListEntry(raw);
         final workspaceUris = raw['workspace_uris'] is List
             ? raw['workspace_uris']
