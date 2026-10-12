@@ -44,10 +44,10 @@ mailbox 不是「从主机读消息」的通道，而是**主机不可达时的�
 删除：presence 路由 `_tryChannelInboxRoute`（`agent_messaging_service.dart:2301`）、建连失败的信箱兜底（`:1012-1026`）、busy 分支（`:1487-1503`）、群成员不可达 `_collectGroupMailboxReply`（`group_agent_executor.dart:435`）、投信主流程 `leaveMailboxAndCollect`（`:2358`）。
 改为按裁定 2 直接落一条系统消息。做完之后 App 不再往 Channel 投任何信，只保留收信侧读历史的能力。
 
-### 轮 B：ACP 路径从主机拉 transcript（主干，需单独设计）
+### 轮 B：让「主机持有 transcript」覆盖到 ACP agent
 
-主机把 `agent_session_history_req`（cursor + limit + total）也挂到 ACP 帧路由上（现在只在 `shepaw-cli/crates/api/src/lib.rs:979` 的 hub/peer 分支里），客户端进页 / 回前台按游标增量拉，本地库降级为渲染缓存，每轮打包 history 一并去掉。
-这一轮跨仓库改协议，**单独出一份设计文档**（游标语义、与 `taskResume` 的分工、本地库怎么收敛、历史消息怎么迁移）后再动手。
+> **前提已修正**。我原先写「`agent_session_history_req` 只在 hub/peer 帧路由上，要把它挂到 ACP 上」——**这句是错的**。深挖后的地形见 `docs/session_history_authority_decision.md`，结论是：Rust 主机只有一个 WS 服务端点 `/peer/ws`，`agent_session_history_req` 就在 App 连进来的那条路的同一个 `match` 里（`shepaw-cli/crates/api/src/lib.rs:986`）；而 App 的 ACP 路径走的是 `/acp/ws` + JSON-RPC，是另一个东西。
+> 因此轮 B 的形状取决于一个还没定的问题：**ACP 这条路要不要长期存在**。设计文档单独出，见上。
 
 ### 轮 C：拆收信侧（依赖轮 B）
 
