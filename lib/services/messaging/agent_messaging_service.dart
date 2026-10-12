@@ -20,11 +20,6 @@ import '../../peer/pouch_roster.dart';
 import '../../peer/pouch_turn_relay.dart';
 import '../peer_key_utils.dart';
 import '../agent_soul_service.dart';
-import '../noise_identity.dart';
-import '../mailbox/mailbox_seal.dart';
-import '../mailbox/channel_mailbox_service.dart';
-import '../mailbox/mailbox_inbox_poller.dart';
-import '../mailbox/mailbox_turn_claims.dart';
 import '../session/session_slash_commands.dart';
 import '../remote_agent_service.dart';
 import '../../peer/services/peer_agent_client_service.dart';
@@ -666,18 +661,7 @@ class AgentMessagingService {
       Message? agentResponse;
       LoggerService().debug('Preparing to send message via ${agent.protocol} protocol', tag: 'AgentMessagingService');
 
-      // Channel 接入后：离线或繁忙不把全文塞进设备级 tunnel，只投收件箱；
-      // 元信息由 channel 经 tunnel `mail_waiting` 推给接收端，回复同样走 inbox。
-      if (ChannelMailboxService.agentHasChannelInbox(agent)) {
-        agentResponse = await _tryChannelInboxRoute(
-          agent: agent,
-          userMessage: messageToSend,
-          sessionId: channelId,
-          onStreamChunk: onStreamChunk,
-        );
-      }
-
-      if (agentResponse == null && agent.protocol == ProtocolType.peer) {
+      if (agent.protocol == ProtocolType.peer) {
         LoggerService().debug('Using peer protocol', tag: 'AgentMessagingService');
         agentResponse = await _sendViaPeerProtocol(
           messageToSend, agent,
@@ -689,7 +673,7 @@ class AgentMessagingService {
           acpCancellationToken: acpCancellationToken,
           attachments: attachments,
         );
-      } else if (agentResponse == null && agent.protocol == ProtocolType.acp) {
+      } else if (agent.protocol == ProtocolType.acp) {
         LoggerService().debug('Using ACP protocol', tag: 'AgentMessagingService');
         agentResponse = await _sendViaACPProtocol(
           messageToSend, agent,
@@ -709,7 +693,7 @@ class AgentMessagingService {
           onReconnecting: onReconnecting,
           foldProgressContent: foldProgressContent,
         );
-      } else if (agentResponse == null) {
+      } else {
         // For other protocols, use generic HTTP POST
         LoggerService().debug('Using generic protocol', tag: 'AgentMessagingService');
         agentResponse = await _sendViaGenericProtocol(messageToSend, agent);
@@ -1009,23 +993,15 @@ class AgentMessagingService {
           onReconnecting: onReconnecting,
         );
       } catch (e) {
-        if (ChannelMailboxService.agentHasChannelInbox(agent) &&
-            isRetriableConnectionError(e)) {
+        // 连不上主机（切网 / 主机不在 / 隧道不通）。以前会把消息投进 Channel
+        // 信箱等主机上线来取；主机常开之后不需要暂存，直接告诉用户没发出去。
+        // 身份、授权、指纹这类错误不在这条路上 —— 它们要继续抛给上层走重新配对。
+        if (isRetriableConnectionError(e)) {
           LoggerService().info(
-            'ACP unreachable after retries; leaving mailbox: $e',
+            'ACP unreachable after retries: $e',
             tag: 'AgentMessagingService',
           );
-          return leaveMailboxAndCollect(
-            agent: agent,
-            userMessage: userMessage,
-            sessionId: sessionId ?? '',
-            requestId: _uuid.v4(),
-            chatHistory: await _mailboxHistoryForSession(
-              sessionId,
-              excludeMessageId: userMessage.id,
-            ),
-            onStreamChunk: onStreamChunk,
-          );
+          return _systemNotice('连不上主机，消息没有发出');
         }
         rethrow;
       }
@@ -1474,7 +1450,8 @@ class AgentMessagingService {
         attachments: serializedAttachments,
       );
 
-      // 超并发：agent 回 busy → 结束本会话，密文留言到 channel 信箱
+      // 超并发：同一段对话一次只能跑一个回合。以前会把消息加密投进 Channel
+      // 信箱等主机来取；主机常开之后不需要暂存，直接告诉用户这条没发出去。
       final busyStatus = chatResp.result is Map
           ? (chatResp.result as Map)['status']?.toString()
           : null;
@@ -1483,24 +1460,10 @@ class AgentMessagingService {
         if (!taskCompleter.isCompleted) {
           taskCompleter.complete();
         }
-
-        final left = await leaveMailboxAndCollect(
-          agent: agent,
-          userMessage: userMessage,
-          sessionId: sessionId ?? '',
-          requestId: effectiveTaskId,
-          chatHistory: chatHistory,
-          onStreamChunk: (chunk) {
-            activeTask.accumulatedContent += chunk;
-            activeTask.onStreamChunk?.call(chunk);
-            flushHelper?.schedule();
-          },
-        );
-
         flushHelper.cancel();
         flushHelper.deletePartialUnawaited();
         activeTask.isComplete = true;
-        return left;
+        return _systemNotice('主机正忙，等当前这个回合跑完再发');
       }
 
       // Async-confirmation path: don't block on `task.completed`. The
@@ -2275,251 +2238,17 @@ class AgentMessagingService {
     return '$y-$mo-$d $h:$mi:$s';
   }
 
-  Future<List<Map<String, dynamic>>?> _mailboxHistoryForSession(
-    String? sessionId, {
-    String? excludeMessageId,
-  }) async {
-    if (sessionId == null || sessionId.isEmpty) return null;
-    final messages = await loadChannelMessages(sessionId, limit: 40);
-    if (messages.isEmpty) return null;
-    return messages
-        .where((m) =>
-            ChatHistoryContent.shouldReplay(m) && m.id != excludeMessageId)
-        .map((m) {
-      final isAgent = m.from.isAgent;
-      return <String, dynamic>{
-        'role': isAgent ? 'assistant' : 'user',
-        'content': ChatHistoryContent.replayContentFormatted(
-          m,
-          formatUserTimestamp: _formatTimestamp,
-        ),
-      };
-    }).toList();
-  }
-
-  /// Probe channel presence. Offline / busy → inbox only (no full body on tunnel).
-  Future<Message?> _tryChannelInboxRoute({
-    required RemoteAgent agent,
-    required Message userMessage,
-    String? sessionId,
-    void Function(String chunk)? onStreamChunk,
-  }) async {
-    try {
-      final channelBase =
-          ChannelMailboxService.channelBaseFromEndpoint(agent.endpoint);
-      final acpAgentId = (agent.metadata['target_agent_id'] as String?) ??
-          ChannelMailboxService.resolveAgentId(
-            agent.endpoint,
-            fallback: agent.id,
-          );
-      if (channelBase == null || acpAgentId.isEmpty) return null;
-
-      final identity = await NoiseIdentity.loadOrCreate();
-      final presence = await ChannelMailboxService().probePresence(
-        channelBase: channelBase,
-        agentId: acpAgentId,
-        callerFp: identity.fingerprintHex,
-      );
-      if (presence == null || !presence.useInbox) return null;
-
-      LoggerService().info(
-        'Channel inbox route: online=${presence.online} busy=${presence.busy} '
-        'active=${presence.activeCount}/${presence.capacity}',
-        tag: 'AgentMessagingService',
-      );
-      return leaveMailboxAndCollect(
-        agent: agent,
-        userMessage: userMessage,
-        sessionId: sessionId ?? '',
-        requestId: _uuid.v4(),
-        chatHistory: await _mailboxHistoryForSession(
-          sessionId,
-          excludeMessageId: userMessage.id,
-        ),
-        onStreamChunk: onStreamChunk,
-      );
-    } catch (e) {
-      LoggerService().debug(
-        'Channel inbox route skipped: $e',
-        tag: 'AgentMessagingService',
-      );
-      return null;
-    }
-  }
-
-  /// Agent busy / unreachable → seal message into channel inbox, poll for reply.
+  /// 主机不可达 / 正忙时落在会话里的系统消息。
   ///
-  /// [groupId] is recorded on the inbound so the agent can attribute a group
-  /// turn. [groupContext] (group name / member roster / workspace URI) is
-  /// sealed into the ciphertext payload so the agent's mailbox path can
-  /// reconstruct a full `group_context` (group tools + shared workspace stay
-  /// usable while the app is offline). History is omitted or truncated so
-  /// ciphertext stays under quota.
-  Future<Message> leaveMailboxAndCollect({
-    required RemoteAgent agent,
-    required Message userMessage,
-    required String sessionId,
-    required String requestId,
-    List<Map<String, dynamic>>? chatHistory,
-    void Function(String chunk)? onStreamChunk,
-    String? groupId,
-    Map<String, dynamic>? groupContext,
-    bool persistLeaveMetadata = true,
-  }) async {
-    Message notice({required String content}) => Message(
-          id: const Uuid().v4(),
-          content: content,
-          timestampMs: DateTime.now().millisecondsSinceEpoch,
-          from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
-          to: MessageFrom(
-            id: userMessage.from.id,
-            type: 'user',
-            name: userMessage.from.name,
-          ),
-          type: MessageType.system,
-          replyTo: userMessage.id,
-          metadata: {'status': 'left_message'},
-        );
-
-    try {
-      final channelBase =
-          ChannelMailboxService.channelBaseFromEndpoint(agent.endpoint);
-      final agentPub = decodeCachedPeerPublicKey(
-        agent.metadata['cached_peer_static_public_key'],
+  /// 以前这种情况会把消息加密投进 Channel 信箱，等主机上线来取。主机常开之后
+  /// 不需要暂存了 —— 发不出去就直接告诉用户，别让他以为发出去了。
+  Message _systemNotice(String content) => Message(
+        id: _uuid.v4(),
+        content: content,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        from: MessageFrom(id: 'system', type: 'system', name: 'System'),
+        type: MessageType.system,
       );
-      final acpAgentId = ChannelMailboxService.acpAgentIdFor(agent);
-
-      if (channelBase == null || agentPub == null || acpAgentId.isEmpty) {
-        LoggerService().warning(
-          'Cannot leave mailbox message: missing channelBase/pubkey/agentId '
-          '(LAN/local agents have no channel mailbox — this is expected)',
-          tag: 'AgentMessagingService',
-        );
-        return notice(content: '对方正忙，请稍后再试。');
-      }
-
-      final identity = await NoiseIdentity.loadOrCreate();
-      final trimmedHistory = _trimMailboxHistory(chatHistory);
-      final ciphertext = await mailboxSealJson(
-        {
-          'message': userMessage.content,
-          'message_id': userMessage.id,
-          'request_id': requestId,
-          'session_id': sessionId,
-          if (groupId != null && groupId.isNotEmpty) 'group_id': groupId,
-          if (groupContext != null && groupContext.isNotEmpty)
-            'group_context': groupContext,
-          if (trimmedHistory != null) 'history': trimmedHistory,
-          'caller_pubkey': base64Encode(identity.publicKey),
-          'ts': DateTime.now().millisecondsSinceEpoch,
-        },
-        agentPub,
-      );
-
-      // Claim the turn BEFORE depositing: a fast reply push would otherwise
-      // let the controller's inbox listener fetch+ack the reply before the
-      // poller below starts, and the poller would wait out its full timeout.
-      MailboxTurnClaims.instance.claim(acpAgentId, requestId, userMessage.id);
-      try {
-        final mailbox = ChannelMailboxService();
-        final pending = await mailbox.depositMessage(
-          channelBase: channelBase,
-          agentId: acpAgentId,
-          callerFp: identity.fingerprintHex,
-          messageId: userMessage.id,
-          requestId: requestId,
-          sessionId: sessionId,
-          ciphertext: ciphertext,
-          groupId: groupId,
-        );
-
-        if (persistLeaveMetadata) {
-          try {
-            await _db.updateMessageMetadata(userMessage.id, {
-              ...?userMessage.metadata,
-              'status': 'left_message',
-              'request_id': requestId,
-              'mailbox_pending': pending,
-            });
-          } catch (e) {
-            LoggerService().warning(
-              'Mailbox leave metadata update skipped: $e',
-              tag: 'AgentMessagingService',
-            );
-          }
-        }
-
-        try {
-          final result = await MailboxInboxPoller(mailbox: mailbox)
-              .pollUntilComplete(
-            channelBase: channelBase,
-            agentId: acpAgentId,
-            callerFp: identity.fingerprintHex,
-            userMessageId: userMessage.id,
-            requestId: requestId,
-            sessionId: sessionId,
-            onStreamChunk: onStreamChunk,
-          );
-
-          return Message(
-            id: 'inbox_${userMessage.id}',
-            content: result.content,
-            timestampMs: DateTime.now().millisecondsSinceEpoch,
-            from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
-            to: MessageFrom(
-              id: userMessage.from.id,
-              type: 'user',
-              name: userMessage.from.name,
-            ),
-            type: MessageType.text,
-            replyTo: userMessage.id,
-            metadata: {
-              'status': 'completed',
-              'from_mailbox': true,
-              'mailbox_entry_id': result.entryId,
-              'request_id': result.requestId,
-              'session_id': result.sessionId,
-              if (result.groupId != null && result.groupId!.isNotEmpty)
-                'group_id': result.groupId,
-            },
-          );
-        } on TimeoutException {
-          return notice(
-            content: pending > 0
-                ? '对方正忙，消息已留言（前面还有 ${pending - 1} 条）。稍后会继续收取回复。'
-                : '对方正忙，消息已留言。稍后会继续收取回复。',
-          );
-        }
-      } finally {
-        MailboxTurnClaims.instance.release(acpAgentId, requestId, userMessage.id);
-      }
-    } catch (e, st) {
-      LoggerService().error(
-        'Leave mailbox failed: $e',
-        tag: 'AgentMessagingService',
-        error: e,
-        stackTrace: st,
-      );
-      return notice(content: '对方正忙，留言失败：$e');
-    }
-  }
-
-  /// Keep mailbox ciphertext well under [MailboxMaxCipherBytes] (32KB).
-  /// Session resume is the primary history source; this is a first-contact hint.
-  static const _mailboxHistoryBudgetBytes = 8 * 1024;
-
-  static List<Map<String, dynamic>>? _trimMailboxHistory(
-    List<Map<String, dynamic>>? history,
-  ) {
-    if (history == null || history.isEmpty) return null;
-    var trimmed = List<Map<String, dynamic>>.from(history);
-    while (trimmed.isNotEmpty) {
-      final bytes = utf8.encode(jsonEncode(trimmed)).length;
-      if (bytes <= _mailboxHistoryBudgetBytes) return trimmed;
-      trimmed.removeAt(0);
-    }
-    return null;
-  }
 }
 
 /// 停滞看门狗的判定纯函数：返回「连接存活 + 距上次活动超过 stallTimeout」

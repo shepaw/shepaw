@@ -76,17 +76,6 @@ class GroupAgentExecutor {
   final void Function() updateTypingAgentIds;
   final Future<ACPAgentConnection> Function(RemoteAgent agent)
       getOrCreateACPConnection;
-  final Future<Message> Function({
-    required RemoteAgent agent,
-    required Message userMessage,
-    required String sessionId,
-    required String requestId,
-    List<Map<String, dynamic>>? chatHistory,
-    void Function(String chunk)? onStreamChunk,
-    String? groupId,
-    Map<String, dynamic>? groupContext,
-    bool persistLeaveMetadata,
-  })? leaveMailboxAndCollect;
   late final GroupMemberSessionService _memberSessions =
       GroupMemberSessionService(_db);
   late final GroupDispatchParser _dispatchParser = GroupDispatchParser(_db);
@@ -99,7 +88,6 @@ class GroupAgentExecutor {
     required this.notifyChannelUpdate,
     required this.updateTypingAgentIds,
     required this.getOrCreateACPConnection,
-    this.leaveMailboxAndCollect,
   })  : _db = db,
         _uuid = uuid,
         _activeGroupTasks = activeGroupTasks,
@@ -418,49 +406,6 @@ class GroupAgentExecutor {
     }
     buf.write(content);
     return buf.toString();
-  }
-
-  Future<Message> _collectGroupMailboxReply({
-    required RemoteAgent agent,
-    required String content,
-    required String userId,
-    required String userName,
-    required String sessionId,
-    required String requestId,
-    required String channelId,
-    List<Map<String, dynamic>>? chatHistory,
-    Map<String, dynamic>? groupContext,
-    void Function(String chunk)? onChunk,
-  }) async {
-    final leave = leaveMailboxAndCollect;
-    if (leave == null) {
-      return Message(
-        id: _uuid.v4(),
-        content: '对方正忙，请稍后再试。',
-        timestampMs: DateTime.now().millisecondsSinceEpoch,
-        from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
-        type: MessageType.system,
-      );
-    }
-    final userMessage = Message(
-      id: _uuid.v4(),
-      content: content,
-      timestampMs: DateTime.now().millisecondsSinceEpoch,
-      from: MessageFrom(id: userId, type: 'user', name: userName),
-      to: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
-      type: MessageType.text,
-    );
-    return leave(
-      agent: agent,
-      userMessage: userMessage,
-      sessionId: sessionId,
-      requestId: requestId,
-      chatHistory: chatHistory,
-      onStreamChunk: onChunk,
-      groupId: channelId,
-      groupContext: groupContext,
-      persistLeaveMetadata: false,
-    );
   }
 
   /// Local / peer / ACP catch: classify, log, unbind ACP, then either persist
