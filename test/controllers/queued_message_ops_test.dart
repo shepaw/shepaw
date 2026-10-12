@@ -137,4 +137,11 @@ void main() {
       expect(empty.attachments, isEmpty);
     });
   });
+
+  group('QueuedMessageOps.localQueueShouldSend', () {
+    test('a message already on the host is not sent again', () {
+      expect(QueuedMessageOps.localQueueShouldSend(hostOwned: true), isFalse);
+      expect(QueuedMessageOps.localQueueShouldSend(hostOwned: false), isTrue);
+    });
+  });
 }

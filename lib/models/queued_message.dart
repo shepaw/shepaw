@@ -27,6 +27,9 @@ class QueuedMessage {
   /// 指令集预填标记：出队发送时写入消息 metadata，气泡只展示标题。
   final String? instructionName;
 
+  /// 已经交到主机排队。本机不再出队重发，主机回合结束自己接着跑。
+  bool hostOwned;
+
   final DateTime createdAt;
 
   QueuedMessage({
@@ -37,6 +40,7 @@ class QueuedMessage {
     this.mentions = const [],
     this.attachments,
     this.instructionName,
+    this.hostOwned = false,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 }

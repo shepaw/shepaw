@@ -155,6 +155,7 @@ class PeerConnection {
     'pouch_chat_read',
     'pouch_turn_event',
     'pouch_interaction_resp',
+    'pouch_session_queue',
     'pouch_file_begin',
     'pouch_file_chunk',
     'pouch_file_end',
@@ -317,7 +318,8 @@ class PeerConnection {
         },
         onDone: () {
           if (!handshakeCompleter.isCompleted) {
-            handshakeCompleter.completeError(StateError('WebSocket closed during handshake'));
+            handshakeCompleter
+                .completeError(StateError('WebSocket closed during handshake'));
           }
           _log.debug(
             'WebSocket closed for ${peer.deviceName} '
@@ -367,7 +369,8 @@ class PeerConnection {
   /// 发送控制消息（agent-over-peer）。[json] 必须含 `type` 字段（agent_* 之一）。
   Future<void> sendControl(Map<String, dynamic> json) async {
     final outgoing = await PouchChannel.sealIfNeeded(json);
-    await _serializedSend(Uint8List.fromList(utf8.encode(jsonEncode(outgoing))));
+    await _serializedSend(
+        Uint8List.fromList(utf8.encode(jsonEncode(outgoing))));
     _lastActivity = DateTime.now();
   }
 
@@ -501,9 +504,7 @@ class PeerConnection {
         }
         return;
       }
-      if (local != null &&
-          local.isNotEmpty &&
-          local != peer.localEndpoint) {
+      if (local != null && local.isNotEmpty && local != peer.localEndpoint) {
         final server = PeerLocalServer.instance;
         if (isOwnLocalEndpoint(
           local,
@@ -516,8 +517,8 @@ class PeerConnection {
           );
         } else {
           await storage.updateLocalEndpoint(peer.id, local);
-          _log.debug(
-              'Learned local endpoint for ${peer.deviceName}: $local', tag: _tag);
+          _log.debug('Learned local endpoint for ${peer.deviceName}: $local',
+              tag: _tag);
         }
       }
     } catch (e) {
@@ -606,7 +607,8 @@ class PeerConnection {
         case 'ack':
           final messageId = json['message_id'] as String;
           final status = json['status'] as String;
-          _ackController.add(PeerAckEvent(messageId: messageId, status: status));
+          _ackController
+              .add(PeerAckEvent(messageId: messageId, status: status));
           break;
 
         case 'ping':

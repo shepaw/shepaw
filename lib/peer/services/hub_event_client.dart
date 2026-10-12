@@ -199,7 +199,8 @@ class HubEventClient {
     }
   }
 
-  Future<void> _showInteraction(String peerId, HubEvent event) => _renderInteraction(
+  Future<void> _showInteraction(String peerId, HubEvent event) =>
+      _renderInteraction(
         peerId: peerId,
         channelId: event.channelId,
         agentId: event.agentId,
@@ -222,7 +223,8 @@ class HubEventClient {
     required Object? body,
   }) async {
     final data = body;
-    final payload = data is Map ? Map<String, dynamic>.from(data) : <String, dynamic>{};
+    final payload =
+        data is Map ? Map<String, dynamic>.from(data) : <String, dynamic>{};
     if (kind == 'client_cli') {
       final target = payload['target_fingerprint'] as String? ?? '';
       final mine = (await NoiseIdentity.loadOrCreate()).fingerprintHex;
@@ -261,7 +263,8 @@ class HubEventClient {
         kind == 'form') {
       metadata[kind] = payload;
     }
-    final prompt = payload['prompt'] as String? ?? payload['title'] as String? ?? '';
+    final prompt =
+        payload['prompt'] as String? ?? payload['title'] as String? ?? '';
     await getIt<LocalDatabaseService>().createMessage(
       id: hubCardMessageId(interactionId),
       channelId: channelId,
@@ -276,7 +279,8 @@ class HubEventClient {
   }
 
   /// 交互卡在本地的那条消息 id。渲染和作废都按它找，免得两处各写一份走样。
-  static String hubCardMessageId(String interactionId) => 'hub-ix-$interactionId';
+  static String hubCardMessageId(String interactionId) =>
+      'hub-ix-$interactionId';
 
   /// 主机宣布这个交互结束了：别处作答、等不到回答（30 分钟）、回合取消、
   /// 或主机重启时还悬着。
@@ -326,7 +330,8 @@ class HubEventClient {
     if (kind.isEmpty || data is! Map) return;
     // 本地已经有裁决就不动它。自己那一下点击主机也会广播一条
     // `interaction.resolved` 回来，别把自己刚答的卡盖成「作废」。
-    if (data['selected_action_id'] != null || data['submitted_values'] != null) {
+    if (data['selected_action_id'] != null ||
+        data['submitted_values'] != null) {
       return;
     }
     if (data['closed'] != null) return;
@@ -401,6 +406,9 @@ class HubEventClient {
     final turnId = event.data['turn_id'] as String? ?? '';
     final channelId = event.data['channel_id'] as String? ?? event.channelId;
     if (turnId.isEmpty || channelId.isEmpty) return;
+    if (getIt.isRegistered<ChatService>()) {
+      getIt<ChatService>().dropQueuedMessage(turnId);
+    }
     final watching = watchingTurn?.call(turnId) ??
         PouchTurnRelay.instance.isWatching(turnId);
     if (watching) return;
@@ -434,7 +442,8 @@ class HubEventClient {
     if (channelId != null) _notify(channelId);
   }
 
-  Future<void> _onAttachedChunk(String peerId, Map<String, dynamic> data) async {
+  Future<void> _onAttachedChunk(
+      String peerId, Map<String, dynamic> data) async {
     final turnId = data['request_id'] as String? ?? '';
     if (!_attached.contains(turnId)) return;
     if (data['kind'] == 'interaction') {

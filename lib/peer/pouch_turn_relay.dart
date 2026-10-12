@@ -24,16 +24,20 @@ class PouchTurnRelay {
   static const interactionResponseType = 'pouch_interaction_resp';
   static const eventType = 'pouch_turn_event';
 
+  static const queueRequestType = 'pouch_session_queue';
+
   static const controlTypes = <String>[
     groupRequestType,
     dmRequestType,
     readRequestType,
     interactionResponseType,
     eventType,
+    queueRequestType,
   ];
 
   final _uuid = const Uuid();
   final _pending = <String, _PendingTurn>{};
+  final _lanes = <String, Future<void>>{};
   final _files = PouchAttachmentClient(
     send: (peerId, frame) =>
         PeerConnectionManager.instance.sendControl(peerId, frame),
@@ -87,6 +91,7 @@ class PouchTurnRelay {
     );
     await _forward(
       hostPeerId: hostPeerId,
+      channelId: channelId,
       frame: <String, dynamic>{
         'type': groupRequestType,
         'channel_id': channelId,
@@ -164,6 +169,7 @@ class PouchTurnRelay {
     );
     final done = await _forward(
       hostPeerId: hostPeerId,
+      channelId: channelId,
       frame: <String, dynamic>{
         'type': dmRequestType,
         'agent_id': agentId,
@@ -291,6 +297,141 @@ class PouchTurnRelay {
 
   bool isWatching(String turnId) => _pending.containsKey(turnId);
 
+  /// 这路会话的回合还在主机上跑。跟进的消息可以先交到主机排队。
+  bool isWatchingChannel(String channelId) {
+    if (channelId.isEmpty) return false;
+    for (final pending in _pending.values) {
+      if (!pending.completer.isCompleted && pending.channelId == channelId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// 同一会话还有回合在跑时，把下一条先放到主机上。
+  ///
+  /// 返回 true 表示主机只是收下了，还没开始跑。返回 false 表示主机当时
+  /// 正好空着，这条已经跑完。
+  Future<bool> enqueueDm({
+    required String hostPeerId,
+    required String requestId,
+    required String channelId,
+    required String agentId,
+    required String Function() content,
+    required bool Function() stillQueued,
+    required String userId,
+    required String userName,
+    String? replyToId,
+    String? replyQuoteText,
+    List<AttachmentData>? attachments,
+  }) {
+    return _lane(channelId, () async {
+      if (!stillQueued()) return true;
+      final text = content().trim();
+      if (text.isEmpty) return true;
+      final refs = await _attachmentRefs(
+        hostPeerId: hostPeerId,
+        attachments: attachments,
+        agentId: agentId,
+        channelId: channelId,
+        placement: 'dm',
+      );
+      if (!stillQueued()) return true;
+      final done = await _forward(
+        hostPeerId: hostPeerId,
+        requestId: requestId,
+        channelId: channelId,
+        frame: <String, dynamic>{
+          'type': dmRequestType,
+          'agent_id': agentId,
+          'content': text,
+          'user_id': userId,
+          'user_name': userName,
+          'channel_id': channelId,
+          if (replyToId != null) 'reply_to_id': replyToId,
+          if (replyQuoteText != null) 'reply_quote_text': replyQuoteText,
+          if (refs != null) 'attachments': refs,
+        },
+        onEvent: (_) {},
+        completeOn: const {'done', 'queued', 'queue_ok', 'start'},
+      );
+      return done['kind'] == 'queued';
+    });
+  }
+
+  /// 群里的下一条，同样先落到主机。
+  Future<bool> enqueueGroup({
+    required String hostPeerId,
+    required String requestId,
+    required String channelId,
+    required String Function() content,
+    required bool Function() stillQueued,
+    required String userId,
+    required String userName,
+    List<String> mentionedAgentIds = const [],
+    String? replyToId,
+    String? replyQuoteText,
+    List<AttachmentData>? attachments,
+  }) {
+    return _lane(channelId, () async {
+      if (!stillQueued()) return true;
+      final text = content().trim();
+      if (text.isEmpty) return true;
+      final refs = await _attachmentRefs(
+        hostPeerId: hostPeerId,
+        attachments: attachments,
+        agentId: 'she-builtin-agent-001',
+        channelId: channelId,
+        placement: 'group',
+      );
+      if (!stillQueued()) return true;
+      final done = await _forward(
+        hostPeerId: hostPeerId,
+        requestId: requestId,
+        channelId: channelId,
+        frame: <String, dynamic>{
+          'type': groupRequestType,
+          'channel_id': channelId,
+          'content': text,
+          'user_id': userId,
+          'user_name': userName,
+          'mentioned_agent_ids': mentionedAgentIds,
+          if (replyToId != null) 'reply_to_id': replyToId,
+          if (replyQuoteText != null) 'reply_quote_text': replyQuoteText,
+          if (refs != null) 'attachments': refs,
+        },
+        onEvent: (_) {},
+        completeOn: const {'done', 'queued', 'queue_ok', 'start'},
+      );
+      return done['kind'] == 'queued';
+    });
+  }
+
+  /// 手机上改了队列：编辑、删除、调顺序、清空。和入队走同一条车道，避免改到旧文。
+  Future<void> mutateQueue({
+    required String hostPeerId,
+    required String channelId,
+    required String op,
+    String? itemId,
+    String? content,
+    int? delta,
+  }) {
+    return _lane(channelId, () async {
+      await _forward(
+        hostPeerId: hostPeerId,
+        frame: <String, dynamic>{
+          'type': queueRequestType,
+          'op': op,
+          'channel_id': channelId,
+          if (itemId != null) 'item_id': itemId,
+          if (content != null) 'content': content,
+          if (delta != null) 'delta': delta,
+        },
+        onEvent: (_) {},
+      );
+    });
+  }
+
   void onEvent(Map<String, dynamic> data) {
     final requestId = data['request_id'] as String? ?? '';
     final pending = _pending[requestId];
@@ -305,28 +446,54 @@ class PouchTurnRelay {
       return;
     }
     pending.onEvent(data);
-    if (kind == 'done') {
+    if (pending.completeOn.contains(kind)) {
       pending.done = data;
       _pending.remove(requestId);
       if (!pending.completer.isCompleted) pending.completer.complete();
     }
   }
 
+  Future<T> _lane<T>(String channelId, Future<T> Function() action) {
+    final previous = _lanes[channelId] ?? Future<void>.value();
+    late final Future<T> result;
+    result = previous.then(
+      (_) => action(),
+      onError: (Object _, StackTrace __) => action(),
+    );
+    final settled = result.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
+    _lanes[channelId] = settled;
+    return result.whenComplete(() {
+      if (identical(_lanes[channelId], settled)) {
+        _lanes.remove(channelId);
+      }
+    });
+  }
+
   Future<Map<String, dynamic>> _forward({
     required String hostPeerId,
     required Map<String, dynamic> frame,
     required void Function(Map<String, dynamic> event) onEvent,
+    String? requestId,
+    String? channelId,
+    Set<String> completeOn = const {'done', 'queued', 'queue_ok'},
   }) async {
-    final requestId = _uuid.v4();
-    final pending = _PendingTurn(onEvent);
-    _pending[requestId] = pending;
-    frame['request_id'] = requestId;
+    final id = requestId ?? _uuid.v4();
+    final pending = _PendingTurn(
+      onEvent,
+      channelId: channelId ?? '',
+      completeOn: completeOn,
+    );
+    _pending[id] = pending;
+    frame['request_id'] = id;
     final sent = await PeerConnectionManager.instance.sendControl(
       hostPeerId,
       frame,
     );
     if (!sent) {
-      _pending.remove(requestId);
+      _pending.remove(id);
       throw StateError('无法把回合交给储物袋主机');
     }
     await pending.completer.future;
@@ -440,9 +607,15 @@ class PouchInteractionWait {
 }
 
 class _PendingTurn {
-  _PendingTurn(this.onEvent);
+  _PendingTurn(
+    this.onEvent, {
+    required this.channelId,
+    this.completeOn = const {'done', 'queued', 'queue_ok'},
+  });
 
   final void Function(Map<String, dynamic> event) onEvent;
+  final String channelId;
+  final Set<String> completeOn;
   final Completer<void> completer = Completer<void>();
   Map<String, dynamic> done = const {};
 }

@@ -181,6 +181,11 @@ class ChatService {
   // messages queued behind an in-flight turn are not lost when the user
   // leaves and re-enters the chat.
   final Map<String, List<QueuedMessage>> _pendingSendQueues = {};
+  final StreamController<String> _queuedMessageDropped =
+      StreamController<String>.broadcast();
+
+  /// 主机开始跑某一条排队消息时发出它的 id。聊天页用来收起队列面板。
+  Stream<String> get queuedMessageDropped => _queuedMessageDropped.stream;
 
   /// Sub-service: group session management (create/list/clear sessions)
   late final GroupSessionService _groupSessionService = GroupSessionService(
@@ -873,6 +878,20 @@ class ChatService {
   /// disposal so re-entering the chat resumes the queue.
   List<QueuedMessage> pendingSendQueue(String channelId) =>
       _pendingSendQueues.putIfAbsent(channelId, () => []);
+
+  /// 主机已经开始处理这条排队消息，面板上不再留着。
+  void dropQueuedMessage(String id) {
+    if (id.isEmpty) return;
+    var dropped = false;
+    for (final queue in _pendingSendQueues.values) {
+      final before = queue.length;
+      queue.removeWhere((item) => item.id == id);
+      if (queue.length != before) dropped = true;
+    }
+    if (dropped && !_queuedMessageDropped.isClosed) {
+      _queuedMessageDropped.add(id);
+    }
+  }
 
   /// Query whether there is an in-progress task for [channelId].
   ActiveTask? getActiveTask(String channelId) {

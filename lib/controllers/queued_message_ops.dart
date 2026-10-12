@@ -28,6 +28,9 @@ class QueuedMessageOps {
     return true;
   }
 
+  /// 队首已经在主机上时，本机不要再发一次。
+  static bool localQueueShouldSend({required bool hostOwned}) => !hostOwned;
+
   /// 将 [id] 对应的消息移动 [delta] 位（上移 -1 / 下移 +1）。
   /// 目标下标越界、`delta == 0` 或未命中时返回 false。
   static bool move(List<QueuedMessage> queue, String id, int delta) {

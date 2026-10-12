@@ -97,7 +97,7 @@ mixin _MessagingOps on _ChatControllerBase {
 
     chatService.attachTaskUI(
       currentChannelId!,
-        onStreamChunk: (chunk) {
+      onStreamChunk: (chunk) {
         streaming.append(chunk);
         streaming.applyContentTo(messages, messageIdMap);
         scheduleStreamingRebuild();
@@ -277,7 +277,8 @@ mixin _MessagingOps on _ChatControllerBase {
   @override
   void _reattachPendingPlanApproval() {
     if (currentChannelId == null) return;
-    final pendingApproval = chatService.getPendingPlanApproval(currentChannelId!);
+    final pendingApproval =
+        chatService.getPendingPlanApproval(currentChannelId!);
     if (pendingApproval == null) return;
 
     final msgId = pendingApproval.messageId;
@@ -302,9 +303,11 @@ mixin _MessagingOps on _ChatControllerBase {
     required List<PendingAttachment> pendingAttachments,
     required VoidCallback clearMessageController,
     String? replyToId,
+
     /// 引用回复时选中的部分文字（可选）；为空表示引用整条消息。
     String? replyQuoteText,
     List<MentionEntry> mentions = const [],
+
     /// 指令集预填标记：发送指令时携带指令标题，写入消息 metadata，
     /// 气泡只展示标题、完整内容作为隐式消息投递给 agent。
     String? instructionName,
@@ -419,7 +422,7 @@ mixin _MessagingOps on _ChatControllerBase {
             await sendAttachmentToAgent(msg);
           }
         }
-        messageQueue.add(
+        _offerQueuedMessage(
           QueuedMessage(
             id: const Uuid().v4(),
             content: content,
@@ -432,7 +435,6 @@ mixin _MessagingOps on _ChatControllerBase {
                 (isGroupMode && hasAttachments) ? attachmentDataList : null,
           ),
         );
-        _notify();
         // 兜底恢复：残留队列时入队后立即排空（正常态 isProcessing=true，
         // 由当前回合的 finally 负责排空，这里不触发）。
         if (!isProcessing) {
@@ -470,7 +472,8 @@ mixin _MessagingOps on _ChatControllerBase {
   /// Stop only the current message being streamed, but leave the queue intact
   /// so that the next queued message can be processed.
   void stopCurrentMessageOnly() {
-    LoggerService().debug('Stopping current message only (queue preserved)', tag: 'ChatController');
+    LoggerService().debug('Stopping current message only (queue preserved)',
+        tag: 'ChatController');
 
     if (streamingMessageId != null) {
       final stoppedId = streamingMessageId!;
@@ -491,8 +494,7 @@ mixin _MessagingOps on _ChatControllerBase {
     if (currentChannelId != null) {
       unawaited(chatService.cancelActiveDmTask(
         currentChannelId!,
-        contentOverride:
-            streamingContent.isNotEmpty ? streamingContent : null,
+        contentOverride: streamingContent.isNotEmpty ? streamingContent : null,
       ));
     }
 
@@ -590,8 +592,7 @@ mixin _MessagingOps on _ChatControllerBase {
     if (currentChannelId != null) {
       unawaited(chatService.cancelActiveDmTask(
         currentChannelId!,
-        contentOverride:
-            streamingContent.isNotEmpty ? streamingContent : null,
+        contentOverride: streamingContent.isNotEmpty ? streamingContent : null,
       ));
     }
 
@@ -662,6 +663,94 @@ mixin _MessagingOps on _ChatControllerBase {
     _notify();
   }
 
+  /// 先放进本机队列（面板不变）。这路会话的回合还在主机上时，把正文一并交过去。
+  void _offerQueuedMessage(QueuedMessage item) {
+    final channelId = currentChannelId ?? '';
+    final park = PouchTurnRelay.instance.isWatchingChannel(channelId);
+    if (park) item.hostOwned = true;
+    messageQueue.add(item);
+    _notify();
+    if (park) unawaited(_parkQueuedOnHost(item));
+  }
+
+  Future<void> _parkQueuedOnHost(QueuedMessage item) async {
+    final channelId = currentChannelId;
+    if (channelId == null || channelId.isEmpty) {
+      item.hostOwned = false;
+      return;
+    }
+    bool stillQueued() => chatService
+        .pendingSendQueue(channelId)
+        .any((queued) => queued.id == item.id);
+    try {
+      final route = await PouchTurnRelay.currentRoute();
+      final hostPeerId = route.hostPeerId;
+      if (route.runLocal || hostPeerId == null || hostPeerId.isEmpty) {
+        item.hostOwned = false;
+        return;
+      }
+      final bool parked;
+      if (isGroupMode) {
+        final mentionedAgentIds = GroupMentionResolver.resolveAgentIds(
+          content: item.content,
+          mentions: item.mentions,
+          agents: [
+            for (final agent in groupAgents) (id: agent.id, name: agent.name),
+          ],
+        );
+        parked = await PouchTurnRelay.instance.enqueueGroup(
+          hostPeerId: hostPeerId,
+          requestId: item.id,
+          channelId: channelId,
+          content: () => item.content,
+          stillQueued: stillQueued,
+          userId: getUserId(),
+          userName: getUserName(),
+          mentionedAgentIds: mentionedAgentIds,
+          replyToId: item.replyToId,
+          replyQuoteText: item.replyQuoteText,
+          attachments: item.attachments,
+        );
+      } else {
+        final agent = agentId == null
+            ? null
+            : await localDatabaseService.getRemoteAgentById(agentId!);
+        if (agent == null || !relaysHostSheTurn(agent)) {
+          item.hostOwned = false;
+          if (!isProcessing && isMounted) unawaited(processNextInQueue());
+          return;
+        }
+        parked = await PouchTurnRelay.instance.enqueueDm(
+          hostPeerId: hostPeerId,
+          requestId: item.id,
+          channelId: channelId,
+          agentId: hostSheTurnAgentId(agent),
+          content: () => item.content,
+          stillQueued: stillQueued,
+          userId: getUserId(),
+          userName: getUserName(),
+          replyToId: item.replyToId,
+          replyQuoteText: item.replyQuoteText,
+          attachments: item.attachments,
+        );
+      }
+      if (!parked && stillQueued()) {
+        chatService
+            .pendingSendQueue(channelId)
+            .removeWhere((queued) => queued.id == item.id);
+        if (isMounted) _notify();
+      }
+    } catch (e) {
+      LoggerService().warning(
+        'park queue on host failed: $e',
+        tag: 'HostQueue',
+      );
+      if (!stillQueued()) return;
+      item.hostOwned = false;
+      if (!isProcessing && isMounted) unawaited(processNextInQueue());
+    }
+  }
+
   @override
   Future<void> processNextInQueue() async {
     // 页面已离开：不再于已销毁的 Controller 上后台排空——队列保留在
@@ -684,6 +773,12 @@ mixin _MessagingOps on _ChatControllerBase {
     if (chatService.getActiveTask(channelId) != null) return;
     if (!isGroupMode &&
         PeerAgentClientService.instance.hasInflightForChannel(channelId)) {
+      return;
+    }
+
+    if (!QueuedMessageOps.localQueueShouldSend(
+      hostOwned: queue.first.hostOwned,
+    )) {
       return;
     }
 
@@ -716,7 +811,12 @@ mixin _MessagingOps on _ChatControllerBase {
   // ---------------------------------------------------------------------------
 
   @override
-  Future<void> processMessage(String content, {String? replyToId, String? replyQuoteText, List<AttachmentData>? attachments, List<Message>? attachmentMessages, String? instructionName}) async {
+  Future<void> processMessage(String content,
+      {String? replyToId,
+      String? replyQuoteText,
+      List<AttachmentData>? attachments,
+      List<Message>? attachmentMessages,
+      String? instructionName}) async {
     final userId = getUserId();
     final userName = getUserName();
 
@@ -736,7 +836,8 @@ mixin _MessagingOps on _ChatControllerBase {
     bool sendFailed = false;
 
     try {
-      final remoteAgent = await localDatabaseService.getRemoteAgentById(agentId!);
+      final remoteAgent =
+          await localDatabaseService.getRemoteAgentById(agentId!);
       if (remoteAgent == null) throw Exception('Agent not found');
 
       final isLocal = remoteAgent.isLocal;
@@ -786,9 +887,11 @@ mixin _MessagingOps on _ChatControllerBase {
 
       if (currentChannelId != null) {
         final currentMessages = await chatService.loadChannelMessages(
-          currentChannelId!, limit: 40,
+          currentChannelId!,
+          limit: 40,
         );
-        historySentCount = currentMessages.where((m) => m.type == MessageType.text).length;
+        historySentCount =
+            currentMessages.where((m) => m.type == MessageType.text).length;
       }
 
       final agentResponse = await chatService.sendMessageToAgent(
@@ -818,16 +921,20 @@ mixin _MessagingOps on _ChatControllerBase {
         },
         onActionConfirmation: _handleStreamingActionConfirmation,
         onSingleSelect: (selectData) {
-          _updateStreamingMetadata({'single_select': Map<String, dynamic>.from(selectData)});
+          _updateStreamingMetadata(
+              {'single_select': Map<String, dynamic>.from(selectData)});
         },
         onMultiSelect: (selectData) {
-          _updateStreamingMetadata({'multi_select': Map<String, dynamic>.from(selectData)});
+          _updateStreamingMetadata(
+              {'multi_select': Map<String, dynamic>.from(selectData)});
         },
         onFileUpload: (uploadData) {
-          _updateStreamingMetadata({'file_upload': Map<String, dynamic>.from(uploadData)});
+          _updateStreamingMetadata(
+              {'file_upload': Map<String, dynamic>.from(uploadData)});
         },
         onForm: (formData) {
-          _updateStreamingMetadata({'form': Map<String, dynamic>.from(formData)});
+          _updateStreamingMetadata(
+              {'form': Map<String, dynamic>.from(formData)});
         },
         onFileMessage: (fileData) async {
           await _handleFileMessage(fileData);
@@ -909,7 +1016,8 @@ mixin _MessagingOps on _ChatControllerBase {
         await loadMessages();
       }
     } catch (e, stackTrace) {
-      LoggerService().error('Send message failed', tag: 'ChatController', error: e, stackTrace: stackTrace);
+      LoggerService().error('Send message failed',
+          tag: 'ChatController', error: e, stackTrace: stackTrace);
       await loadMessages();
       final err = e.toString();
       if (e is PeerTurnInFlightException) {
@@ -1003,7 +1111,8 @@ mixin _MessagingOps on _ChatControllerBase {
 
     final reanswer = ChatStreamingText.placeholder(
       id: streaming.messageId!,
-      from: MessageFrom(id: remoteAgent.id, type: 'agent', name: remoteAgent.name),
+      from: MessageFrom(
+          id: remoteAgent.id, type: 'agent', name: remoteAgent.name),
       to: MessageFrom(id: userId, type: 'user', name: userName),
       timestampMs: DateTime.now().millisecondsSinceEpoch + 1,
     );
@@ -1477,7 +1586,8 @@ mixin _MessagingOps on _ChatControllerBase {
   }
 
   @override
-  void _updateGroupStreamingMetadata(String streamingId, String key, Map<String, dynamic> data) {
+  void _updateGroupStreamingMetadata(
+      String streamingId, String key, Map<String, dynamic> data) {
     ChatGroupStreamingTracker.putMetadataKey(
       streamingId,
       key,
@@ -1493,8 +1603,7 @@ mixin _MessagingOps on _ChatControllerBase {
       int? resolvedSize;
       final url = fileData['url'] as String?;
       final rawSize = (fileData['size'] as num?)?.toInt();
-      if (url != null && isPouchUri(url) &&
-          (rawSize == null || rawSize == 0)) {
+      if (url != null && isPouchUri(url) && (rawSize == null || rawSize == 0)) {
         // Agent 产物只给 pouch:// 引用时，向储物袋取真实大小用于展示。
         try {
           resolvedSize = await StoreUriReader.instance.sizeOf(url);
@@ -1537,9 +1646,17 @@ mixin _MessagingOps on _ChatControllerBase {
   // ---------------------------------------------------------------------------
 
   @override
-  Future<void> processGroupMessage(String content, {String? replyToId, String? replyQuoteText, List<AttachmentData>? attachments, List<MentionEntry> mentions = const [], String? instructionName, String? continueOrchestrationId}) async {
+  Future<void> processGroupMessage(String content,
+      {String? replyToId,
+      String? replyQuoteText,
+      List<AttachmentData>? attachments,
+      List<MentionEntry> mentions = const [],
+      String? instructionName,
+      String? continueOrchestrationId}) async {
     if (currentChannelId == null || groupAgents.isEmpty) {
-      LoggerService().debug('processGroupMessage ABORTED: channelId=$currentChannelId, groupAgents=${groupAgents.length}', tag: 'ChatController');
+      LoggerService().debug(
+          'processGroupMessage ABORTED: channelId=$currentChannelId, groupAgents=${groupAgents.length}',
+          tag: 'ChatController');
       return;
     }
     if (isProcessing) {
@@ -1547,7 +1664,7 @@ mixin _MessagingOps on _ChatControllerBase {
         'processGroupMessage queued (already processing): ${content.length} chars',
         tag: 'ChatController',
       );
-      messageQueue.add(
+      _offerQueuedMessage(
         QueuedMessage(
           id: const Uuid().v4(),
           content: content,
@@ -1555,12 +1672,14 @@ mixin _MessagingOps on _ChatControllerBase {
           replyQuoteText: replyQuoteText,
           mentions: mentions,
           attachments: attachments,
+          instructionName: instructionName,
         ),
       );
-      _notify();
       return;
     }
-    LoggerService().debug('processGroupMessage: channelId=$currentChannelId, agents=${groupAgents.map((a) => a.name).toList()}, adminId=$groupAdminAgentId', tag: 'ChatController');
+    LoggerService().debug(
+        'processGroupMessage: channelId=$currentChannelId, agents=${groupAgents.map((a) => a.name).toList()}, adminId=$groupAdminAgentId',
+        tag: 'ChatController');
 
     final userId = getUserId();
     final userName = getUserName();
@@ -1711,7 +1830,8 @@ mixin _MessagingOps on _ChatControllerBase {
           if (!groupTurnGate.isCurrent(epoch)) return;
           setActiveWorkflowId(workflowId);
         },
-        onInteractionRequest: (agentId, agentName, interactionType, data) async {
+        onInteractionRequest:
+            (agentId, agentName, interactionType, data) async {
           if (!groupTurnGate.isCurrent(epoch)) return null;
           return _handleProcessGroupInteractionRequest(
             turn: turn,
@@ -1728,7 +1848,8 @@ mixin _MessagingOps on _ChatControllerBase {
         markMessagesAsReadIfAtBottom();
       }
     } catch (e, stackTrace) {
-      LoggerService().error('processGroupMessage error: $e', tag: 'ChatController', error: e, stackTrace: stackTrace);
+      LoggerService().error('processGroupMessage error: $e',
+          tag: 'ChatController', error: e, stackTrace: stackTrace);
       groupFailed = true;
       // 失败后把当前群消息（含附件）+ 队列剩余消息倒回输入框。
       _restoreQueueToComposer(
@@ -1875,7 +1996,8 @@ mixin _MessagingOps on _ChatControllerBase {
   }
 
   Future<void> sendAttachmentToAgent(Message attachmentMessage) async {
-    final attachmentData = await attachmentService.buildAttachmentData(attachmentMessage);
+    final attachmentData =
+        await attachmentService.buildAttachmentData(attachmentMessage);
     if (attachmentData == null) return;
     if (attachmentData.exceedsSizeLimit) {
       _emit(ShowSnackBarEvent('File too large (max 20MB) to send to agent'));
@@ -1902,7 +2024,8 @@ mixin _MessagingOps on _ChatControllerBase {
     bool fileFailed = false;
 
     try {
-      final remoteAgent = await localDatabaseService.getRemoteAgentById(agentId!);
+      final remoteAgent =
+          await localDatabaseService.getRemoteAgentById(agentId!);
       if (remoteAgent == null) throw Exception('Agent not found');
 
       final isLocal = remoteAgent.isLocal;
@@ -1913,7 +2036,8 @@ mixin _MessagingOps on _ChatControllerBase {
       streaming.begin('streaming_${DateTime.now().millisecondsSinceEpoch}');
       final sm = ChatStreamingText.placeholder(
         id: streaming.messageId!,
-        from: MessageFrom(id: remoteAgent.id, type: 'agent', name: remoteAgent.name),
+        from: MessageFrom(
+            id: remoteAgent.id, type: 'agent', name: remoteAgent.name),
         to: MessageFrom(id: userId, type: 'user', name: userName),
         timestampMs: DateTime.now().millisecondsSinceEpoch + 1,
       );
@@ -1994,5 +2118,4 @@ mixin _MessagingOps on _ChatControllerBase {
       if (refreshListNow) contentListenable.notifyListeners();
     });
   }
-
 }

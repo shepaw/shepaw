@@ -31,6 +31,7 @@ import '../services/cli_approval_service.dart';
 import '../clis/shepaw/os/os_executor.dart' as os_exec;
 import '../models/workflow_models.dart';
 import '../peer/host_she_turn.dart';
+import '../peer/pouch_turn_relay.dart';
 import '../peer/services/peer_agent_client_service.dart';
 import '../peer/services/peer_agent_host_service.dart' show isPeerAgentChannel;
 import '../peer/services/peer_storage_service.dart';
@@ -99,7 +100,8 @@ part 'chat_controller_load.dart';
 ///
 /// 持有全部字段、构造与核心方法；低耦合的方法簇通过 part 文件中的 mixin
 /// （[_MessagingOps]、[_SessionOps]、[_GroupMemberOps]、[_InteractionOps]）挂载到具体的 [ChatController] 子类上。
-abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStreamingContext {
+abstract class _ChatControllerBase extends ChangeNotifier
+    with InteractiveStreamingContext {
   // ---- Constructor parameters ----
   final String? agentId;
   final String? initialAgentName;
@@ -244,6 +246,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   /// messages, member failure notices) so they surface in the chat
   /// immediately instead of waiting for the next full reconcile.
   StreamSubscription<List<Message>>? _channelUpdateSub;
+  StreamSubscription<String>? _queueDropSub;
   StreamSubscription<AgentTaskCompletion>? _agentTaskCompletionSub;
   StreamSubscription<InboxMailReplyEvent>? _inboxPushSub;
   final List<String> _inboxSubscribeTargetIds = [];
@@ -305,10 +308,12 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     }
     workspaceUrisByAgentId = map;
   }
+
   Set<String> respondingAgentNames = {};
   bool mentionOnlyMode = false;
   String? groupAdminAgentId;
   Set<String> groupStreamingMessageIds = {};
+
   /// Shared across send / reattach / reconcile so mid-turn DB folds keep
   /// applying chunks (and CLI approval can find the live host).
   final groupTurn = ChatGroupStreamingTracker();
@@ -390,11 +395,11 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   void _reapplyStashedPlanApprovalResponses();
   Future<void> _flushAllStashedPlanApprovalResponses();
   Future<void> loadMessages();
+
   /// Prefetch older history when the user scrolls up. Returns how many
   /// messages were prepended (0 if none / busy / exhausted).
   Future<int> loadOlderMessages();
   Future<void> _refreshHasMoreOlderMessages();
-
 
   _ChatControllerBase({
     required this.agentId,
@@ -420,6 +425,11 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     streaming.onClear = _onStreamingSessionCleared;
     _cliApprovalHandler = requestCliApproval;
     CliApprovalCoordinator.instance.register(_cliApprovalHandler);
+    _queueDropSub = chatService.queuedMessageDropped.listen((_) {
+      if (_eventController.isClosed) return;
+      _notify();
+      if (!isProcessing) unawaited(processNextInQueue());
+    });
   }
 
   /// 流式回合结束：若期间有 DB 写入通知被推迟，补一次 reconcile（把
@@ -556,9 +566,9 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     // 卡片的等待有上限（主机侧 SHEPAW_ACP_APPROVAL_SECS，默认 30 分钟）。到点
     // 主机不再等人、自己按默认往下跑，并告诉你这张卡作废了。收到就要收起可点
     // 态，否则屏幕上一直留着一张点下去只会报「已失效」的卡。
-    _interactionClosedSub =
-        PeerAgentClientService.instance.interactionClosedEvents
-            .listen(_handleInteractionClosed);
+    _interactionClosedSub = PeerAgentClientService
+        .instance.interactionClosedEvents
+        .listen(_handleInteractionClosed);
   }
 
   @override
@@ -583,6 +593,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     _orphanApprovalSub?.cancel();
     _orphanFormSub?.cancel();
     _interactionClosedSub?.cancel();
+    _queueDropSub?.cancel();
     _channelUpdateSub?.cancel();
     _clearInboxPush();
     _agentTaskCompletionSub?.cancel();
@@ -723,12 +734,14 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       await chatService.handleAppResumed(duration);
     } catch (e) {
       // Database may still be recovering from background on iOS.
-      LoggerService().error('handleAppResumed failed', tag: 'ChatController', error: e);
+      LoggerService()
+          .error('handleAppResumed failed', tag: 'ChatController', error: e);
       return;
     }
     await Future.delayed(const Duration(milliseconds: 200));
 
-    final interruptedInfo = chatService.getInterruptedTaskInfo(currentChannelId!);
+    final interruptedInfo =
+        chatService.getInterruptedTaskInfo(currentChannelId!);
     if (interruptedInfo != null) {
       chatService.clearInterruptedTaskInfo(currentChannelId!);
 
@@ -783,7 +796,6 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     }
   }
 
-
   // ---- Messaging hooks (implemented by [_MessagingOps]) ----
   void reattachToActiveTask();
   void reattachToGroupActiveTasks();
@@ -792,8 +804,18 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   void scheduleStreamingRebuild({bool refreshList = false});
   Future<void> processNextInQueue();
   void _updateStreamingMetadata(Map<String, dynamic> metadata);
-  Future<void> processMessage(String content, {String? replyToId, List<AttachmentData>? attachments, List<Message>? attachmentMessages, String? instructionName});
-  Future<void> processGroupMessage(String content, {String? replyToId, String? replyQuoteText, List<AttachmentData>? attachments, List<MentionEntry> mentions = const [], String? instructionName, String? continueOrchestrationId});
+  Future<void> processMessage(String content,
+      {String? replyToId,
+      List<AttachmentData>? attachments,
+      List<Message>? attachmentMessages,
+      String? instructionName});
+  Future<void> processGroupMessage(String content,
+      {String? replyToId,
+      String? replyQuoteText,
+      List<AttachmentData>? attachments,
+      List<MentionEntry> mentions = const [],
+      String? instructionName,
+      String? continueOrchestrationId});
   String? _resolveGroupInteractionMessageId({
     required String agentId,
     required String agentName,
@@ -801,10 +823,12 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     required Map<String, dynamic> data,
     String? preferredSid,
   });
-  void _updateGroupStreamingMetadata(String streamingId, String key, Map<String, dynamic> data);
+  void _updateGroupStreamingMetadata(
+      String streamingId, String key, Map<String, dynamic> data);
 
   // ---- Workflow hooks (implemented by [_WorkflowOps]) ----
-  void _handleDmWorkflowPlanCreated(String workflowId, Map<String, dynamic> planData);
+  void _handleDmWorkflowPlanCreated(
+      String workflowId, Map<String, dynamic> planData);
   void _handleWorkflowAutoStart(String workflowId);
 
   Future<void> reloadMessagesFromDB() async {
@@ -990,9 +1014,11 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   /// Persists to the database and updates the in-memory value.
   Future<void> updateDmSystemPrompt(String? prompt) async {
     if (currentChannelId == null) return;
-    final channel = await localDatabaseService.getChannelById(currentChannelId!);
+    final channel =
+        await localDatabaseService.getChannelById(currentChannelId!);
     if (channel == null) return;
-    final updated = channel.copyWith(systemPrompt: prompt?.isNotEmpty == true ? prompt : null);
+    final updated = channel.copyWith(
+        systemPrompt: prompt?.isNotEmpty == true ? prompt : null);
     await localDatabaseService.updateChannel(updated);
     dmSystemPrompt = updated.systemPrompt;
     _notify();
@@ -1015,10 +1041,10 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       // On iOS, SQLite can be temporarily readonly after returning from
       // background. Swallow the error — messages will be marked read on the
       // next successful attempt.
-      LoggerService().error('markMessagesAsRead failed (db may be recovering)', tag: 'ChatController', error: e);
+      LoggerService().error('markMessagesAsRead failed (db may be recovering)',
+          tag: 'ChatController', error: e);
     }
   }
-
 
   // ---------------------------------------------------------------------------
   // Reply
@@ -1075,23 +1101,29 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   /// 编辑队列中 [id] 的消息内容。trim 后为空会被拒绝。返回是否命中。
   bool editQueuedMessage(String id, String newContent) {
     final hit = QueuedMessageOps.edit(messageQueue, id, newContent);
-    if (hit) _notify();
-    return hit;
+    if (!hit) return false;
+    _notify();
+    _syncHostQueue(op: 'edit', itemId: id, content: newContent.trim());
+    return true;
   }
 
   /// 删除队列中 [id] 的消息。返回是否命中。
   bool removeQueuedMessage(String id) {
     final hit = QueuedMessageOps.remove(messageQueue, id);
-    if (hit) _notify();
-    return hit;
+    if (!hit) return false;
+    _notify();
+    _syncHostQueue(op: 'remove', itemId: id);
+    return true;
   }
 
   /// 将队列中 [id] 的消息移动 [delta] 位（-1 上移 / +1 下移）。
   /// 越界或 `delta == 0` 时无操作。返回是否命中。
   bool moveQueuedMessage(String id, int delta) {
     final hit = QueuedMessageOps.move(messageQueue, id, delta);
-    if (hit) _notify();
-    return hit;
+    if (!hit) return false;
+    _notify();
+    _syncHostQueue(op: 'move', itemId: id, delta: delta);
+    return true;
   }
 
   /// 清空当前频道的待发送队列。
@@ -1099,6 +1131,34 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     if (messageQueue.isEmpty) return;
     messageQueue.clear();
     _notify();
+    _syncHostQueue(op: 'clear');
+  }
+
+  /// 把队列改动交到主机。入队和改动走同一条车道，后发出的改动能盖住先入队的正文。
+  void _syncHostQueue({
+    required String op,
+    String? itemId,
+    String? content,
+    int? delta,
+  }) {
+    final channelId = currentChannelId;
+    if (channelId == null || channelId.isEmpty) return;
+    unawaited(() async {
+      try {
+        final route = await PouchTurnRelay.currentRoute();
+        if (route.runLocal || route.hostPeerId == null) return;
+        await PouchTurnRelay.instance.mutateQueue(
+          hostPeerId: route.hostPeerId!,
+          channelId: channelId,
+          op: op,
+          itemId: itemId,
+          content: content,
+          delta: delta,
+        );
+      } catch (e) {
+        LoggerService().warning('host queue $op failed: $e', tag: 'HostQueue');
+      }
+    }());
   }
 
   /// 发送失败后把当前失败消息 + 待发送队列中的消息合并倒回输入框。
@@ -1122,6 +1182,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     );
     if (payload.parts.isEmpty && payload.attachments.isEmpty) return;
     queue.clear();
+    _syncHostQueue(op: 'clear');
     if (!isMounted) {
       // 注意：草稿只持久化文本；附件（仅群聊队列携带）在离开页面场景无法
       // 重建，仍会丢失。这是边缘中的边缘，暂不扩 scope。
