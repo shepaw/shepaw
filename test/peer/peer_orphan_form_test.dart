@@ -5,8 +5,8 @@ import 'package:shepaw/peer/services/peer_agent_client_service.dart';
 /// 手机掉线时发出的 AskUserQuestion 卡片，曾经被彻底丢掉。
 ///
 /// 背景：`agent_form_req` 只在 ACP `elicitation/create` 那一下发一次；手机不在线
-/// 就进了黑洞，而主机还在按 `approval_wait()`（默认 24h）等回答。表现就是
-/// 「会话卡了几个小时、app 里没有任何审核组件」。
+/// 就进了黑洞，而主机还在按 `approval_wait()`（默认 10 分钟）等回答。表现就是
+/// 「会话卡着、app 里没有任何审核组件」。
 ///
 /// hub 现在会在重连后补发卡片，但本地未必有地方能投递：`_pending` 可能已被
 /// resume 重试耗尽清掉，或者 turn 刚从磁盘恢复、UI 还没重新挂上 `onForm`。
