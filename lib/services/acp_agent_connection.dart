@@ -37,6 +37,12 @@ const Duration acpTaskTimeout = Duration(minutes: 10);
 /// 15s 足够穿过一次隧道重建，又不至于让"点发送"等太久。
 const Duration acpConnectTimeout = Duration(seconds: 15);
 
+/// 掉线后给「重连 + 续传」留的窗口，见 [ACPAgentConnection.reconnectGrace]。
+///
+/// 20s 覆盖 WiFi 重关联 + 隧道重建的典型耗时。取这个值的代价是主机真的挂了
+/// 时，错误提示晚 20 秒才出来；换来的是切一下网不再丢掉正在跑的回合。
+const Duration acpReconnectGrace = Duration(seconds: 20);
+
 /// 1:1 回合等待 `task.completed` 的默认上限（agent metadata 的
 /// `task_timeout_seconds` 可覆盖）。
 ///
@@ -232,6 +238,16 @@ class ACPAgentConnection implements AcpInteractiveConnection {
   /// 建连兜底超时，见 [acpConnectTimeout]。
   final Duration connectTimeout;
 
+  /// 掉线后给重连留的窗口。窗口内在跑的回合不判失败：主机上的回合照常在跑，
+  /// 连回来用 `agent.taskResume` 就能把落下的输出续回来。窗口到点还没连上才
+  /// 真正判失败。见 [acpReconnectGrace]。
+  final Duration reconnectGrace;
+  Timer? _graceTimer;
+
+  /// 掉线后重连成功时触发。订阅方用它把在跑的回合 resume 回去 —— resume 需要
+  /// 的 `known_length` 只有订阅方的 ActiveTask 知道。
+  void Function()? onReconnected;
+
   /// 关 WS 时等关闭握手的上限。半开连接上对端收不到 close 帧，`sink.close()`
   /// 可能一直不返回 —— 但调用方要的是"断开"这个事实，不是一次干净挥手。
   static const Duration _closeTimeout = Duration(seconds: 2);
@@ -240,6 +256,9 @@ class ACPAgentConnection implements AcpInteractiveConnection {
 
   /// Per-task callback registry. key = task_id (UUID string).
   final Map<String, TaskCallbacks> _taskCallbacks = {};
+
+  /// 正在续传中的 task_id，防止 [resumeTaskAndDispatch] 重入。
+  final Set<String> _resumingTasks = {};
 
   void registerTaskCallbacks(String taskId, TaskCallbacks callbacks) {
     _taskCallbacks[taskId] = callbacks;
@@ -296,6 +315,7 @@ class ACPAgentConnection implements AcpInteractiveConnection {
     this.maxReconnectAttempts = 5,
     this.maxHeartbeatFailures = 3,
     this.connectTimeout = acpConnectTimeout,
+    this.reconnectGrace = acpReconnectGrace,
   }) : _hubHandlers = hubHandlers;
 
   /// The targetAgentId used during the initial [connect] call.
@@ -310,6 +330,14 @@ class ACPAgentConnection implements AcpInteractiveConnection {
   @override
   bool get isConnected => _isConnected;
   bool get isAuthenticated => _isAuthenticated;
+
+  /// [dispose] 是否已调用。连接表用它判断这个对象是不是已经被主动淘汰 ——
+  /// 被淘汰的旧连接重连成功后不该把自己再塞回表里。
+  bool get isDisposed => _disposed;
+
+  /// 这个 task_id 的回调是否还挂在本连接上。重连后续传前先确认，否则 resume
+  /// 回来也无处投递。
+  bool hasTask(String taskId) => _taskCallbacks.containsKey(taskId);
 
   /// Whether this agent advertised the `async_confirmation` capability in its
   /// card. Populated after a successful [connect] by [_refreshCapabilities].
@@ -467,6 +495,14 @@ class ACPAgentConnection implements AcpInteractiveConnection {
 
       // Start heartbeat
       _startHeartbeat();
+
+      // 掉线期间在跑的回合：连回来了，交给订阅方 resume（它才知道每个回合
+      // 已经显示到哪儿）。重连窗口在此一并取消。
+      _cancelReconnectGrace();
+      final onUp = onReconnected;
+      if (onUp != null) {
+        onUp();
+      }
 
       LoggerService().debug('Connected to $wsUrl (v2.1)', tag: 'ACP');
 
@@ -770,9 +806,25 @@ class ACPAgentConnection implements AcpInteractiveConnection {
   }
 
   /// Disconnect from the Agent.
-  Future<void> disconnect() async {
+  ///
+  /// [failTasks] 表示「这是掉线，不是主动断开」时为 false：在跑的回合不立刻判
+  /// 失败，而是进 [reconnectGrace] 的重连窗口，连回来由 [onReconnected] 把输出
+  /// resume 续上；窗口到点还没连上才判失败。
+  ///
+  /// 默认 true —— 用户主动断开、或连接被淘汰时，等待方应当立刻知道。
+  Future<void> disconnect({bool failTasks = true}) async {
+    final canWaitForReconnect = !failTasks && autoReconnect && !_disposed;
+    await _teardown(failTasks: failTasks || !canWaitForReconnect);
+    if (canWaitForReconnect) {
+      _tryReconnect();
+    }
+  }
+
+  Future<void> _teardown({required bool failTasks}) async {
     _stopHeartbeat();
-    _subscription?.cancel();
+    try {
+      await _subscription?.cancel();
+    } catch (_) {}
     _subscription = null;
 
     try {
@@ -795,11 +847,48 @@ class ACPAgentConnection implements AcpInteractiveConnection {
     }
     _pendingRequests.clear();
 
-    // Fail all in-flight tasks so their task completers unblock immediately
-    // rather than waiting for their own timeout.
-    _failInFlightTasks('Connection closed');
+    if (failTasks) {
+      _cancelReconnectGrace();
+      _failInFlightTasks('Connection closed');
+    } else {
+      _startReconnectGrace();
+    }
 
     await _closeChannel();
+  }
+
+  /// 开一个重连窗口：窗口内连回来由 [onReconnected] resume 回合，连不回来就
+  /// 把在跑的回合判失败，不让它们等到各自的超时。
+  void _startReconnectGrace() {
+    _graceTimer?.cancel();
+    _graceTimer = Timer(reconnectGrace, () {
+      _graceTimer = null;
+      if (_isConnected) return;
+      LoggerService().info(
+        'Reconnect grace expired — failing ${_taskCallbacks.length} in-flight task(s)',
+        tag: 'ACP',
+      );
+      _failInFlightTasks('Connection lost');
+    });
+  }
+
+  void _cancelReconnectGrace() {
+    _graceTimer?.cancel();
+    _graceTimer = null;
+  }
+
+  /// 短超时探活。
+  ///
+  /// 切网后 TCP 常常是「半开」：没收到 FIN，[isConnected] 还是 true，但收发
+  /// 全不通。OS 不会主动报错，只能靠探测把它找出来。
+  Future<bool> probeAlive({Duration timeout = const Duration(seconds: 5)}) async {
+    if (!isConnected) return false;
+    try {
+      await ping().timeout(timeout);
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// v2.1: ask the agent to remove this device from its `authorized_peers.json`
@@ -958,6 +1047,9 @@ class ACPAgentConnection implements AcpInteractiveConnection {
   Future<void> resumeTaskAndDispatch(String taskId, int knownLength) async {
     final cb = _taskCallbacks[taskId];
     if (cb == null) return;
+    // 重连后续传和停滞看门狗可能同时盯上同一个回合。两次 resume 带同样的
+    // known_length，回来的 delta 也相同 —— 不禁重入就会把同一段文本贴两遍。
+    if (!_resumingTasks.add(taskId)) return;
 
     final ACPResponse resp;
     try {
@@ -968,6 +1060,8 @@ class ACPAgentConnection implements AcpInteractiveConnection {
         tag: 'ACP',
       );
       return;
+    } finally {
+      _resumingTasks.remove(taskId);
     }
     if (!resp.isSuccess) return;
     final result = resp.result;
@@ -1567,19 +1661,9 @@ class ACPAgentConnection implements AcpInteractiveConnection {
       hsErr(StateError('ws closed before handshake 2'), null);
       return;
     }
-    _isConnected = false;
-    _isAuthenticated = false;
-    _stopHeartbeat();
-    onConnectionStateChanged?.call(false);
-
-    // Notify all in-flight tasks that the connection was lost so callers
-    // (e.g. taskCompleter in ChatService) unblock immediately instead of
-    // spinning until their 300-second timeout fires.
-    _failInFlightTasks('Connection lost');
-
-    if (autoReconnect && !_disposed) {
-      _tryReconnect();
-    }
+    // 掉线不立刻判在跑的回合失败：主机上的回合照常在跑，先按 disconnect 的
+    // 重连窗口处理，连回来就把输出续上（重连本身也在里面发起）。
+    unawaited(disconnect(failTasks: false));
   }
 
   /// Fire [TaskCallbacks.onTaskError] for every registered task and clear
@@ -1680,6 +1764,7 @@ class ACPAgentConnection implements AcpInteractiveConnection {
   /// 重试循环）——旧实例被 dispose 后不会与新实例抢生命周期。
   void dispose() {
     _disposed = true;
+    _cancelReconnectGrace();
     disconnect();
     _slashCommandsController.close();
   }

@@ -14,6 +14,7 @@ import '../inference_log_service.dart';
 import '../trace_service.dart';
 import '../foreground_task_service.dart';
 import '../logger_service.dart';
+import '../network_monitor_service.dart';
 import '../../peer/host_she_turn.dart';
 import '../../peer/pouch_roster.dart';
 import '../../peer/pouch_turn_relay.dart';
@@ -920,6 +921,61 @@ class AgentMessagingService {
     }
   }
 
+  /// 掉线后重连成功：把还没结束的回合用 `agent.taskResume` 续回来。
+  ///
+  /// WS 断掉时主机上的回合照常在跑，SDK 会把 replay buffer 里落下的输出补回来
+  /// —— [ActiveTask.rawStreamLength] 是已经显示过的前缀长度，正好是 resume 需要
+  /// 的 `known_length`。续不回来时 resume 会回 `lost`，走正常的 onTaskError。
+  ///
+  /// 只续回调还挂在这条连接上的回合：回调是注册在连接对象上的，换了对象就无处
+  /// 投递，这种情况交给那条旧连接自己的重连窗口去收尾。
+  void _resumeTurnsAfterReconnect(String agentId, ACPAgentConnection connection) {
+    final pending = _activeTasks.values
+        .where((t) => t.agentId == agentId && !t.isComplete)
+        .where((t) => connection.hasTask(t.taskId))
+        .toList();
+    if (pending.isEmpty) return;
+    LoggerService().info(
+      'ACP reconnected, resuming ${pending.length} in-flight turn(s) for $agentId',
+      tag: 'AgentMessagingService',
+    );
+    for (final task in pending) {
+      unawaited(
+        connection.resumeTaskAndDispatch(task.taskId, task.rawStreamLength),
+      );
+    }
+  }
+
+  StreamSubscription<void>? _netSettleSub;
+
+  /// 订阅网络稳定事件：切网后半开连接要主动体检。
+  void _ensureNetworkSettleHook() {
+    if (_netSettleSub != null) return;
+    _netSettleSub = NetworkMonitorService().onNetworkSettled.listen((_) {
+      unawaited(_probeAcpConnections());
+    });
+  }
+
+  /// 切网稳定后体检所有 ACP 连接。
+  ///
+  /// 半开连接（TCP 还"连着"但收发不通）OS 不会报错，`isConnected` 一直是 true，
+  /// 只能靠探测发现。探不通就按掉线处理 —— 在跑的回合进重连窗口，连回来 resume
+  /// 续上，而不是直接判失败。探得通的说明切网没伤到它，什么都不做，免得把正在
+  /// 流的回合自己打断。
+  Future<void> _probeAcpConnections() async {
+    final snapshot = Map<String, ACPAgentConnection>.of(_acpConnections);
+    for (final entry in snapshot.entries) {
+      final conn = entry.value;
+      if (!conn.isConnected) continue; // 已经掉线的自有重连窗口在跑
+      if (await conn.probeAlive()) continue;
+      LoggerService().info(
+        'ACP connection ${entry.key} looks half-open after network change; dropping',
+        tag: 'AgentMessagingService',
+      );
+      await conn.disconnect(failTasks: false);
+    }
+  }
+
   /// Send message via ACP WebSocket protocol
   Future<Message?> _sendViaACPProtocol(Message userMessage, RemoteAgent agent, {
     void Function(String chunk)? onStreamChunk,
@@ -1014,6 +1070,7 @@ class AgentMessagingService {
         activeTask.stallTimeout = Duration(seconds: stallSeconds);
       }
       _ensureStallWatchdog();
+      _ensureNetworkSettleHook();
 
       // Declare effectiveTaskId early so flush functions can reference it
       final effectiveTaskId = taskId;
@@ -1545,7 +1602,16 @@ class AgentMessagingService {
           _acpConnections.remove(agent.id);
         }
         LoggerService().info('ACP connection offline: ${agent.name}', tag: 'AgentMessagingService');
+      } else if (_acpConnections[agent.id] == null && !newConnection.isDisposed) {
+        // 掉线时把自己从表里摘掉了；自己重连回来要放回去，否则后续回合和停滞
+        // 看门狗都找不到这条连接（看门狗靠它判定"连接还活着"）。
+        _acpConnections[agent.id] = newConnection;
       }
+    };
+
+    // 掉线后重连成功：把还没结束的回合用 agent.taskResume 续回来。
+    connection.onReconnected = () {
+      _resumeTurnsAfterReconnect(agent.id, newConnection);
     };
 
     // 每次建连/重连成功拿到 AgentCard 后，自动把网关自述简历同步到本地
