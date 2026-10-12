@@ -1520,7 +1520,15 @@ class _PendingFilePush {
 }
 
 class PeerAgentClientService {
-  PeerAgentClientService._();
+  PeerAgentClientService._() {
+    // 登录回包比通道更早到。这时候拉名单，帧还没密封，主机会丢掉，
+    // 会话列表和惜宝的模型就一直是空的。等通道真正装上再拉。
+    PouchChannel.installed.listen((session) {
+      if (!_running && !debugTreatAsRunning) return;
+      _greetHostIfConnected(session.hostPeerId);
+    });
+  }
+
   static final PeerAgentClientService instance = PeerAgentClientService._();
 
   final CommandApprovalInbox commandApprovals = CommandApprovalInbox();
@@ -1664,6 +1672,14 @@ class PeerAgentClientService {
   /// Kept briefly so a late UI path can still surface / submit them.
   final Map<String, Map<String, dynamic>> _orphanedApprovals = {};
 
+  /// 挂不上活动 turn 的 AskUserQuestion 表单（approvalId → 原始帧）。
+  /// 和 [_orphanedApprovals] 同一个成因：hub 现在会在手机重连后补发卡片，
+  /// 但那时的 `_pending` 可能已被 resume 重试耗尽清掉、或 turn 刚从磁盘
+  /// 恢复还没重新挂上 onForm —— 两种情况都没有回调可投递。丢掉就等于主机
+  /// 一直卡在 elicitation 上等回答，所以先存下来交给打开的聊天页渲染。
+  /// 有界：超过 50 条时淘汰最旧。
+  final Map<String, Map<String, dynamic>> _orphanedForms = {};
+
   /// 已成功提交的裁决（approvalId → 裁决内容）。hub 断连重连后会重发卡片；
   /// 若裁决其实已提交成功（只是 resp 没到达 hub），重发的卡片用这里存储的
   /// 裁决自动应答，不再计数、不再弹卡（E24）。
@@ -1711,6 +1727,14 @@ class PeerAgentClientService {
       StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get orphanApprovalEvents =>
       _orphanApprovalController.stream;
+
+  /// 孤儿表单（重连后补发、但没有活动 turn 可挂）交给打开的聊天页渲染。
+  /// 载荷形状与 [PeerChatRequest.onForm] 一致，另外带 `peer_id` /
+  /// `remote_agent_id` 用于路由，前端只需照常喂给 FormBubble。
+  final _orphanFormController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  Stream<Map<String, dynamic>> get orphanFormEvents =>
+      _orphanFormController.stream;
 
   LocalDatabaseService get _db => getIt<LocalDatabaseService>();
   final _fileStorage = LocalFileStorageService();
@@ -1786,6 +1810,7 @@ class PeerAgentClientService {
     _pending.clear();
     _approvalToRequest.clear();
     _orphanedApprovals.clear();
+    _orphanedForms.clear();
     _submittedApprovals.clear();
     _submittedForms.clear();
     _cancelledWhileSuspended.clear();
@@ -1968,6 +1993,10 @@ class PeerAgentClientService {
   @visibleForTesting
   Duration? debugMetaFetchTimeoutOverride;
 
+  /// 单测里没有走 [start]，但要观察「通道装上之后拉名单」。
+  @visibleForTesting
+  bool debugTreatAsRunning = false;
+
   /// Test seam: load persisted slash commands without the rest of [start].
   @visibleForTesting
   Future<void> debugWarmSlashCommandsForTest() => _warmCommandsCache();
@@ -1984,6 +2013,7 @@ class PeerAgentClientService {
     debugSendControlOverride = null;
     debugConnectedPeerIdsOverride = null;
     debugMetaFetchTimeoutOverride = null;
+    debugTreatAsRunning = false;
     _commandsCache.clear();
     _commandsFreshThisConnection.clear();
     _commandsFreshPeer.clear();
@@ -2049,6 +2079,11 @@ class PeerAgentClientService {
   @visibleForTesting
   Map<String, String> get debugCancelledWhileSuspended =>
       Map.unmodifiable(_cancelledWhileSuspended);
+
+  /// Test seam: 这张表单是否已经存成了待渲染的孤儿卡。
+  @visibleForTesting
+  bool debugIsOrphanFormBuffered(String approvalId) =>
+      _orphanedForms.containsKey(approvalId);
 
   bool hasInflightForSession({
     required String peerId,
@@ -2587,13 +2622,6 @@ class PeerAgentClientService {
     switch (event.type) {
       case 'agent_list_resp':
         unawaited(_onAgentList(event.peerId, event.data));
-        break;
-      case 'pouch_login_resp':
-        // 登录完成前发出的名单会被主机丢掉。等这次登录把通道装上再要。
-        if (event.data['accepted'] == true) {
-          final peerId = event.peerId;
-          unawaited(Future<void>(() => _greetHost(peerId)));
-        }
         break;
       case 'pouch_login_required':
         // 主机重启后不认旧登录。挂着的模型请求不会再有回包，立刻放开，
@@ -5636,14 +5664,23 @@ class PeerAgentClientService {
       return;
     }
     final pending = _pending[requestId];
-    if (pending == null) {
-      _log.warning(
-        'agent_form_req: no pending request for requestId=$requestId',
-        tag: 'PeerApproval',
-      );
+    if (_approvalToRequest.containsKey(approvalId)) {
       return;
     }
-    if (_approvalToRequest.containsKey(approvalId)) {
+    // hub 会在手机重连后把没答过的卡片补发回来，但那时未必还有能投递的地方：
+    // `_pending` 可能已被 resume 重试耗尽清掉，或者 turn 刚从磁盘恢复、UI 还
+    // 没重新挂上 onForm。这两种都不能静默丢弃 —— 主机那边正卡在 elicitation
+    // 上等回答（最长 24h），丢了卡片就等于整轮永远不动。
+    if (pending == null || pending.onForm == null) {
+      _republishOrphanForm(
+        peerId: peerId,
+        requestId: requestId,
+        approvalId: approvalId,
+        data: data,
+        hasPendingTurn: pending != null,
+      );
+    }
+    if (pending == null) {
       return;
     }
     pending.openApprovals++;
@@ -5662,6 +5699,61 @@ class PeerAgentClientService {
     });
   }
 
+  /// 把一张投递不出去的表单存下来，并交给打开的聊天页渲染。
+  /// 幂等：hub 重复补发同一张卡时不再灌一次流，免得清掉用户已填的内容。
+  /// 提交走 [submitForm]，它只需要 peer_id + approval_id。
+  void _republishOrphanForm({
+    required String peerId,
+    required String requestId,
+    required String approvalId,
+    required Map<String, dynamic> data,
+    required bool hasPendingTurn,
+  }) {
+    if (_orphanedForms.containsKey(approvalId)) {
+      _log.info(
+        'agent_form_req: duplicate orphan form approvalId=$approvalId — '
+        'skip UI refresh',
+        tag: 'PeerApproval',
+      );
+      return;
+    }
+    _log.warning(
+      'agent_form_req: no deliverable onForm for requestId=$requestId '
+      '(hasPendingTurn=$hasPendingTurn) — buffering as orphan form '
+      'approvalId=$approvalId',
+      tag: 'PeerApproval',
+    );
+    _orphanedForms[approvalId] = Map<String, dynamic>.from(data);
+    if (_orphanedForms.length > 50) {
+      _orphanedForms.remove(_orphanedForms.keys.first);
+    }
+    final owner = _requestAgents[requestId];
+    if (owner == null) {
+      _log.warning(
+        'agent_form_req: no owning agent for requestId=$requestId — orphan '
+        'form approvalId=$approvalId has nowhere to render',
+        tag: 'PeerApproval',
+      );
+      return;
+    }
+    if (_orphanFormController.isClosed) return;
+    final fields = data['fields'];
+    _orphanFormController.add({
+      'form_id': approvalId,
+      'title': data['title'] ?? '',
+      if (data['description'] != null) 'description': data['description'],
+      'fields': fields is List ? fields : const <dynamic>[],
+      'peer_form': {
+        'peer_id': peerId,
+        'approval_id': approvalId,
+      },
+      'peer_id': peerId,
+      'remote_agent_id': owner.remoteAgentId,
+      // 没有活动 turn 撑着这张卡，UI 不该显示提交中的转圈。
+      'orphan': true,
+    });
+  }
+
   /// 把表单答案送回 hub，解开正在等的 `elicitation/create`。
   Future<void> submitForm({
     required String peerId,
@@ -5669,7 +5761,8 @@ class PeerAgentClientService {
     required Map<String, dynamic> values,
   }) async {
     final tracked = _approvalToRequest.containsKey(approvalId) ||
-        _orphanedApprovals.containsKey(approvalId);
+        _orphanedApprovals.containsKey(approvalId) ||
+        _orphanedForms.containsKey(approvalId);
     if (!tracked) {
       throw const PeerApprovalExpiredException();
     }
@@ -5703,6 +5796,8 @@ class PeerAgentClientService {
       throw Exception('表单发送失败，请确认配对设备在线后重试');
     }
     final requestId = _approvalToRequest.remove(approvalId);
+    // 孤儿表单提交成功后清掉占位，避免重复点击落到 NO MATCH。
+    _orphanedForms.remove(approvalId);
     _submittedForms[approvalId] = {
       'action': 'accept',
       'content': values,
@@ -6421,6 +6516,17 @@ class PeerAgentClientService {
   void _onTurnResumeResp(Map<String, dynamic> data) {
     final requestId = data['request_id'] as String?;
     if (requestId == null) return;
+    // 先补交互卡。帧在生成时只发过一次，断线那一下就丢了，续传带回的这张
+    // 可能是唯一的机会。放在 `_pending` 判空之前 —— turn 恰好刚被清掉时，
+    // 卡片更需要走孤儿路径而不是被一起丢掉。
+    final peerForInteraction =
+        _pending[requestId]?.peerId ?? _requestAgents[requestId]?.peerId;
+    if (peerForInteraction != null) {
+      _redispatchPendingInteraction(
+        peerForInteraction,
+        data['pending_interaction'],
+      );
+    }
     final p = _pending[requestId];
     if (p == null) return;
     p.resumeInFlight = false;
@@ -6488,6 +6594,39 @@ class PeerAgentClientService {
     }
   }
 
+  /// 把 hub 补交回来的交互帧走一遍实时帧的分发。
+  /// 只可能是这两类：它们的本地簿记（孤儿缓存、已答回填、openApprovals
+  /// 计数、`_approvalToRequest`）全在 [_onFormReq] / [_onApprovalReq] 里，
+  /// 若当成 metadata 直接并进消息，这些簿记会被绕过 —— 用户点下去会被
+  /// 判成过期卡（`PeerApprovalExpiredException`），卡片看着能点其实发不出去。
+  void _redispatchPendingInteraction(String peerId, Object? frame) {
+    if (frame is! Map) return;
+    final data = Map<String, dynamic>.from(frame);
+    switch (data['type']) {
+      case 'agent_form_req':
+        _log.info(
+          'pending_interaction: re-dispatching form approvalId='
+          '${data['approval_id']}',
+          tag: 'PeerApproval',
+        );
+        _onFormReq(peerId, data);
+        break;
+      case 'agent_approval_req':
+        _log.info(
+          'pending_interaction: re-dispatching approval approvalId='
+          '${data['approval_id']}',
+          tag: 'PeerApproval',
+        );
+        _onApprovalReq(peerId, data);
+        break;
+      default:
+        _log.warning(
+          'pending_interaction: unsupported frame type=${data['type']}',
+          tag: 'PeerApproval',
+        );
+    }
+  }
+
   bool _pouchLoginReady(String peerId) {
     final session = PouchChannel.active?.session;
     if (session == null || session.hostPeerId != peerId) return false;
@@ -6502,8 +6641,23 @@ class PeerAgentClientService {
     _requestAgentList(peerId);
   }
 
+  /// 通道刚装上时，只有已经连着的主机才拉名单。还没连上的等下一次 connected。
+  void _greetHostIfConnected(String peerId) {
+    final id = peerId.trim();
+    if (id.isEmpty || !_peerIsConnected(id)) return;
+    _greetHost(id);
+  }
+
+  bool _peerIsConnected(String peerId) {
+    final override = debugConnectedPeerIdsOverride;
+    if (override != null) return override.contains(peerId);
+    return PeerConnectionManager.instance.connectedPeerIds.contains(peerId);
+  }
+
   void _requestAgentList(String peerId) {
-    unawaited(PeerConnectionManager.instance.sendControl(peerId, {
+    final send =
+        debugSendControlOverride ?? PeerConnectionManager.instance.sendControl;
+    unawaited(send(peerId, {
       'type': 'agent_list_req',
     }));
   }
@@ -6687,6 +6841,10 @@ class PeerAgentClientService {
       // peer agents (which have no ACP connection to read them from).
       for (final remoteId in seenRemoteIds) {
         unawaited(fetchCommands(peerId: peerId, remoteAgentId: remoteId));
+        // 惜宝的模型不在本机注册表里。名单一到就向主机要，聊天框不用再等一轮。
+        if (remoteId == SheService.sheId) {
+          unawaited(fetchModels(peerId: peerId, remoteAgentId: remoteId));
+        }
       }
     } catch (e) {
       _log.warning('Failed to inject peer agents: $e', tag: _tag);

@@ -220,6 +220,10 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   /// 重放的待决审批）订阅，让卡片仍能渲染在当前会话里。
   StreamSubscription<Map<String, dynamic>>? _orphanApprovalSub;
 
+  /// 孤儿表单（无活动 turn 可挂 onForm 的 agent_form_req，如手机重连后 hub
+  /// 补发的 AskUserQuestion）订阅，同上。
+  StreamSubscription<Map<String, dynamic>>? _orphanFormSub;
+
   // ---- Reply state ----
   Message? replyingToMessage;
 
@@ -516,6 +520,34 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       if (peerAgentLocalId(peerId, remoteId) != agentId) return;
       _handleStreamingActionConfirmation(event);
     });
+    // 孤儿表单：hub 在手机重连后补发的 AskUserQuestion，但本地已经没有活动
+    // turn 能挂 onForm 了。和上面的孤儿审批同一条路由（群聊按 groupAgents
+    // 匹配成员，DM 按 peerAgentLocalId 过滤），否则卡片会静默丢失，主机的
+    // elicitation 一直等下去。
+    _orphanFormSub =
+        PeerAgentClientService.instance.orphanFormEvents.listen((event) {
+      final peerId = event['peer_id'] as String?;
+      final remoteId = event['remote_agent_id'] as String?;
+      if (peerId == null || remoteId == null) return;
+
+      if (isGroupMode) {
+        final member = matchGroupPeerAgent(
+          groupAgents: groupAgents,
+          peerId: peerId,
+          remoteAgentId: remoteId,
+        );
+        if (member == null) return;
+        _handleGroupOrphanPeerForm(
+          agentId: member.id,
+          agentName: member.name,
+          formData: event,
+        );
+        return;
+      }
+
+      if (peerAgentLocalId(peerId, remoteId) != agentId) return;
+      _handleStreamingForm(event);
+    });
   }
 
   @override
@@ -538,6 +570,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     _dmReconcileFallbackTimer?.cancel();
     _peerConnSub?.cancel();
     _orphanApprovalSub?.cancel();
+    _orphanFormSub?.cancel();
     _channelUpdateSub?.cancel();
     _clearInboxPush();
     _agentTaskCompletionSub?.cancel();
@@ -578,6 +611,20 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   /// Implemented by [_MessagingOps]: attach/replace an action-confirmation
   /// card on a host bubble. Called from the base's orphan-approval listener.
   void _handleStreamingActionConfirmation(Map<String, dynamic> actionData);
+
+  /// Implemented by [_MessagingOps]: surface a peer orphan AskUserQuestion form
+  /// onto a host bubble. Same shape as the `onForm` payload, so FormBubble and
+  /// the submit path work unchanged.
+  void _handleStreamingForm(Map<String, dynamic> formData);
+
+  /// Implemented by [_MessagingOps]: group-chat variant of
+  /// [_handleStreamingForm] — the card belongs to a peer member of the group,
+  /// not to `agentId`.
+  void _handleGroupOrphanPeerForm({
+    required String agentId,
+    required String agentName,
+    required Map<String, dynamic> formData,
+  });
 
   /// Implemented by [_MessagingOps]: surface a peer orphan approval onto a
   /// group-chat host bubble (and PendingApprovalHub) when sendChat already

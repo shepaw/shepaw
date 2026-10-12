@@ -1206,6 +1206,94 @@ mixin _MessagingOps on _ChatControllerBase {
         .ignore();
   }
 
+  /// 渲染一张孤儿 AskUserQuestion 表单：hub 在手机重连后补发，但本地已经没有
+  /// 活动 turn 能挂 `onForm` 了。载荷与 sendChat 的 `onForm` 同形，所以
+  /// FormBubble 和 `handleFormSubmitted` 都不用改 —— 提交只需要 metadata 里的
+  /// `form.peer_form`。
+  @override
+  void _handleStreamingForm(Map<String, dynamic> formData) {
+    final formId = formData['form_id'] as String? ?? '';
+    LoggerService().info(
+      'onForm(orphan): formId=$formId streamingMessageId=$streamingMessageId '
+      'channelId=$currentChannelId',
+      tag: 'PeerApproval',
+    );
+    // 路由字段只用来定位会话；写进消息 metadata 会混进卡片数据里。
+    final data = Map<String, dynamic>.from(formData)
+      ..remove('peer_id')
+      ..remove('remote_agent_id')
+      ..remove('orphan');
+
+    final streamingId = StreamingActionConfirmation.resolveHostMessageId(
+      preferredId: streamingMessageId,
+      messageIdMap: messageIdMap,
+      messages: messages,
+    );
+
+    if (streamingId == null) {
+      // 宿主气泡早被 reconcile 掉了 —— 自己造一个，别让卡片静默消失。
+      if (agentId == null || currentChannelId == null) {
+        LoggerService().warning(
+          'onForm(orphan): no host bubble and no agentId — UI not attached',
+          tag: 'PeerApproval',
+        );
+        return;
+      }
+      final displayName = agentName ?? 'Agent';
+      final sid = StreamingActionConfirmation.dmFallbackId(agentId!);
+      final sm = StreamingActionConfirmation.buildFallbackBubble(
+        id: sid,
+        agentId: agentId!,
+        agentName: displayName,
+        userId: getUserId(),
+        userName: getUserName(),
+        actionData: {...data, 'prompt': data['title'] ?? ''},
+        metadataKey: 'form',
+      );
+      messages.add(sm);
+      messageIdMap[sid] = sm;
+      streamingMessageId = sid;
+      streamingContent = sm.content;
+      // 孤儿卡背后没有活动 turn，不能给转圈信号（永远清不掉）。
+      _notify();
+      _emit(RequestScrollToBottomEvent(force: true));
+      localDatabaseService
+          .createMessage(
+            id: sid,
+            channelId: currentChannelId!,
+            senderId: agentId!,
+            senderType: 'agent',
+            senderName: displayName,
+            content: sm.content,
+            messageType: 'text',
+            metadata: sm.metadata,
+          )
+          .ignore();
+      return;
+    }
+
+    final idx = messages.indexWhere((m) => m.id == streamingId);
+    if (idx == -1) {
+      LoggerService().warning(
+        'onForm(orphan): message not found for id=$streamingId',
+        tag: 'PeerApproval',
+      );
+      return;
+    }
+    final updated = ChatStreamingText.withMergedMetadata(
+      messages[idx],
+      {'form': data},
+    );
+    messages[idx] = updated;
+    messageIdMap[updated.id] = updated;
+    streamingMessageId ??= streamingId;
+    _notify();
+    // 落库，否则下一次 loadMessages 会把卡片冲掉。
+    localDatabaseService
+        .updateMessageMetadata(streamingId, updated.metadata ?? {})
+        .ignore();
+  }
+
   /// Resolve (or create) the group message bubble that should host an interactive
   /// component. For peer-relayed tool approvals, ensures a visible card even when
   /// the streaming placeholder was already reconciled away.
@@ -1329,6 +1417,60 @@ mixin _MessagingOps on _ChatControllerBase {
     if (hubItem != null) {
       PendingApprovalHub.instance.upsert(hubItem);
     }
+
+    _notify();
+    _emit(RequestScrollToBottomEvent(force: true));
+  }
+
+  /// 群聊版孤儿表单：卡片属于群里的某个 peer 成员，不属于 `agentId`。
+  /// 与 [_handleGroupOrphanPeerApproval] 同构，只是挂到 `form` 键上。
+  @override
+  void _handleGroupOrphanPeerForm({
+    required String agentId,
+    required String agentName,
+    required Map<String, dynamic> formData,
+  }) {
+    if (currentChannelId == null) return;
+
+    final data = Map<String, dynamic>.from(formData)
+      ..remove('peer_id')
+      ..remove('remote_agent_id')
+      ..remove('orphan');
+    final formId = data['form_id'] as String? ?? '';
+    LoggerService().info(
+      'group orphan peer form: agent=$agentName formId=$formId '
+      'channelId=$currentChannelId',
+      tag: 'PeerApproval',
+    );
+
+    String? preferredSid;
+    for (final m in messages.reversed) {
+      if (m.from.isAgent && m.from.id == agentId) {
+        preferredSid = m.id;
+        break;
+      }
+    }
+
+    final sid = _resolveGroupInteractionMessageId(
+      agentId: agentId,
+      agentName: agentName,
+      interactionType: 'form',
+      data: data,
+      preferredSid: preferredSid,
+    );
+    if (sid == null) return;
+
+    _updateGroupStreamingMetadata(sid, 'form', data);
+    localDatabaseService
+        .updateMessageMetadata(
+          sid,
+          GroupInteractionPlanner.metadataForPersist(
+            existing: messageIdMap[sid]?.metadata,
+            interactionType: 'form',
+            data: data,
+          ),
+        )
+        .ignore();
 
     _notify();
     _emit(RequestScrollToBottomEvent(force: true));
