@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/interaction_payload.dart';
 
 /// Widget that renders a multi-select (checkbox) list inline in a message bubble.
 ///
@@ -26,8 +27,8 @@ class _MultiSelectBubbleState extends State<MultiSelectBubble> {
   @override
   Widget build(BuildContext context) {
     final prompt = widget.selectData['prompt'] as String?;
-    final options = (widget.selectData['options'] as List<dynamic>?) ?? [];
-    final selectId = widget.selectData['select_id'] as String? ?? '';
+    final options = interactionOptions(widget.selectData['options']);
+    final selectId = interactionSelectId(widget.selectData);
     final confirmedIds = widget.selectData['selected_option_ids'] as List<dynamic>?;
     final isConfirmed = confirmedIds != null;
     final confirmedIdSet = isConfirmed ? confirmedIds.cast<String>().toSet() : <String>{};
@@ -55,9 +56,7 @@ class _MultiSelectBubbleState extends State<MultiSelectBubble> {
             ),
           ),
         ...options.map<Widget>((option) {
-          final optionMap = option as Map<String, dynamic>;
-          final id = optionMap['id'] as String? ?? '';
-          final label = optionMap['label'] as String? ?? '';
+          final id = option.id;
 
           final isSelected = isConfirmed
               ? confirmedIdSet.contains(id)
@@ -67,7 +66,7 @@ class _MultiSelectBubbleState extends State<MultiSelectBubble> {
           return _buildOptionRow(
             context,
             id: id,
-            label: label,
+            label: option.label,
             isSelected: isSelected,
             isDisabled: isDisabled,
             isConfirmed: isConfirmed,
@@ -151,7 +150,7 @@ class _MultiSelectBubbleState extends State<MultiSelectBubble> {
   Widget _buildSubmitButton(
     BuildContext context,
     String selectId,
-    List<dynamic> options,
+    List<InteractionOption> options,
     int minSelect,
   ) {
     final count = _tempSelectedIds.length;
@@ -163,8 +162,8 @@ class _MultiSelectBubbleState extends State<MultiSelectBubble> {
         onPressed: hasEnough
             ? () {
                 final selectedLabels = options
-                    .where((o) => _tempSelectedIds.contains((o as Map<String, dynamic>)['id']))
-                    .map((o) => (o as Map<String, dynamic>)['label'] as String? ?? '')
+                    .where((o) => _tempSelectedIds.contains(o.id))
+                    .map((o) => o.label)
                     .toList();
                 final summary = selectedLabels.join(', ');
                 widget.onSelectSubmitted?.call(

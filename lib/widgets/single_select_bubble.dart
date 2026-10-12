@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../utils/interaction_payload.dart';
 
 /// Widget that renders a single-select (radio) list inline in a message bubble.
 ///
@@ -26,8 +27,8 @@ class _SingleSelectBubbleState extends State<SingleSelectBubble> {
   @override
   Widget build(BuildContext context) {
     final prompt = widget.selectData['prompt'] as String?;
-    final options = (widget.selectData['options'] as List<dynamic>?) ?? [];
-    final selectId = widget.selectData['select_id'] as String? ?? '';
+    final options = interactionOptions(widget.selectData['options']);
+    final selectId = interactionSelectId(widget.selectData);
     final confirmedOptionId = widget.selectData['selected_option_id'] as String?;
     final isConfirmed = confirmedOptionId != null;
 
@@ -52,10 +53,7 @@ class _SingleSelectBubbleState extends State<SingleSelectBubble> {
             ),
           ),
         ...options.map<Widget>((option) {
-          final optionMap = option as Map<String, dynamic>;
-          final id = optionMap['id'] as String? ?? '';
-          final label = optionMap['label'] as String? ?? '';
-
+          final id = option.id;
           final isSelected = isConfirmed
               ? confirmedOptionId == id
               : _tempSelectedId == id;
@@ -64,7 +62,7 @@ class _SingleSelectBubbleState extends State<SingleSelectBubble> {
           return _buildOptionRow(
             context,
             id: id,
-            label: label,
+            label: option.label,
             isSelected: isSelected,
             isDisabled: isDisabled,
             isConfirmed: isConfirmed,
@@ -137,7 +135,11 @@ class _SingleSelectBubbleState extends State<SingleSelectBubble> {
     );
   }
 
-  Widget _buildConfirmButton(BuildContext context, String selectId, List<dynamic> options) {
+  Widget _buildConfirmButton(
+    BuildContext context,
+    String selectId,
+    List<InteractionOption> options,
+  ) {
     final hasSelection = _tempSelectedId != null;
     return Align(
       alignment: Alignment.centerRight,
@@ -145,11 +147,14 @@ class _SingleSelectBubbleState extends State<SingleSelectBubble> {
         onPressed: hasSelection
             ? () {
                 final selectedOption = options.firstWhere(
-                  (o) => (o as Map<String, dynamic>)['id'] == _tempSelectedId,
-                  orElse: () => <String, dynamic>{},
-                ) as Map<String, dynamic>;
-                final label = selectedOption['label'] as String? ?? '';
-                widget.onSelectSubmitted?.call(selectId, _tempSelectedId!, label);
+                  (o) => o.id == _tempSelectedId,
+                  orElse: () => const InteractionOption(id: '', label: ''),
+                );
+                widget.onSelectSubmitted?.call(
+                  selectId,
+                  _tempSelectedId!,
+                  selectedOption.label,
+                );
               }
             : null,
         style: ElevatedButton.styleFrom(
