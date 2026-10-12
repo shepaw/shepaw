@@ -62,6 +62,16 @@ void main() {
       ).connectOrder(preferChannel: true).single.url,
       'wss://only',
     );
+    expect(
+      dialableChannelUrl(
+        'ws://channel.shepaw.com/proxy/2b1fbbdb-1a48-4645-86c8-eca415b584ad/peer/ws',
+      ),
+      'wss://channel.shepaw.com/proxy/2b1fbbdb-1a48-4645-86c8-eca415b584ad/peer/ws',
+    );
+    expect(
+      dialableChannelUrl('ws://192.168.1.9:18793/peer/ws'),
+      'ws://192.168.1.9:18793/peer/ws',
+    );
   });
 
   test('票据往返后指纹仍等于公钥，改过的指纹作废', () {

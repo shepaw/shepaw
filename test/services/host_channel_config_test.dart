@@ -7,7 +7,7 @@ void main() {
       'http://channel.shepaw.com/proxy/2b1fbbdb-1a48-4645-86c8-eca415b584ad',
     );
     expect(parts, isNotNull);
-    expect(parts!.serverUrl, 'http://channel.shepaw.com');
+    expect(parts!.serverUrl, 'https://channel.shepaw.com');
     expect(parts.channelId, '2b1fbbdb-1a48-4645-86c8-eca415b584ad');
     expect(parts.ready, isTrue);
   });
@@ -33,6 +33,14 @@ void main() {
     expect(parts!.serverUrl, 'https://channel.shepaw.com');
     expect(parts.endpoint, 'home');
     expect(parts.channelId, isNull);
+  });
+
+  test('本机 http 地址不改成 https', () {
+    final parts = splitChannelAddress(
+      'http://127.0.0.1:8080/proxy/2b1fbbdb-1a48-4645-86c8-eca415b584ad/peer/ws',
+    );
+    expect(parts!.serverUrl, 'http://127.0.0.1:8080');
+    expect(parts.ready, isTrue);
   });
 
   test('只有主机地址时不拆', () {

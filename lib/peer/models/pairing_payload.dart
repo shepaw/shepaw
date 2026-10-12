@@ -185,6 +185,24 @@ enum PeerConnectMode {
   channel,
 }
 
+/// 公网 Channel 的 `ws://` 改成 `wss://`。服务会把明文 HTTP 转到 HTTPS，
+/// 手机用 `ws://` 连不上去。局域网地址不动。
+String dialableChannelUrl(String url) {
+  final uri = Uri.tryParse(url);
+  if (uri == null || uri.scheme != 'ws' || !_publicChannelHost(uri.host)) {
+    return url;
+  }
+  return uri.replace(scheme: 'wss').toString();
+}
+
+bool _publicChannelHost(String host) {
+  final name = host.toLowerCase();
+  if (name.isEmpty || name == 'localhost') return false;
+  if (RegExp(r'^\d{1,3}(\.\d{1,3}){3}$').hasMatch(name)) return false;
+  if (name.contains(':')) return false;
+  return true;
+}
+
 /// QR 中设备名允许的最大 Unicode rune 数。
 ///
 /// 与 hub 侧 `PEER_QR_NAME_MAX_RUNES` 保持一致（跨仓 golden 测试的前提）。
@@ -295,9 +313,11 @@ class PeerPairingInfo {
       {bool preferChannel = false}) {
     final ordered = <({String url, bool channel})>[];
     void add(String? url, bool channel) {
-      if (url != null && url.isNotEmpty) {
-        ordered.add((url: url, channel: channel));
-      }
+      if (url == null || url.isEmpty) return;
+      ordered.add((
+        url: channel ? dialableChannelUrl(url) : url,
+        channel: channel,
+      ));
     }
 
     if (preferChannel) {

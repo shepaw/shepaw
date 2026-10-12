@@ -19,6 +19,7 @@ import '../../services/channel_tunnel_service.dart';
 import '../../services/logger_service.dart';
 import '../hub_endpoint_order.dart';
 import '../models/paired_peer.dart';
+import '../models/pairing_payload.dart';
 import '../models/peer_message.dart';
 import 'peer_connection.dart';
 import 'peer_channel_bridge.dart';
@@ -309,11 +310,18 @@ class PeerConnectionManager {
       return; // 已连接
     }
 
-    await _doConnect(
-      peer,
-      ignoreTieBreak: ignoreTieBreak,
-      connectionTraceTrigger: 'user',
-    );
+    // 配对刚结束时，后台已经在连。外网比局域网慢，这里直接返回的话登录页会
+    // 在连上之前就报「无法连接」，储物袋名字也就取不到。
+    if (!_connecting.contains(peer.id)) {
+      await _doConnect(
+        peer,
+        ignoreTieBreak: ignoreTieBreak,
+        connectionTraceTrigger: 'user',
+      );
+    }
+    if (_connecting.contains(peer.id)) {
+      await _waitForConnectAttempt(peer.id);
+    }
 
     final conn = _connections[peer.id];
     if (conn == null || conn.state != PeerConnectionState.connected) {
@@ -324,6 +332,13 @@ class PeerConnectionManager {
         data: message,
       ));
       throw StateError(message);
+    }
+  }
+
+  Future<void> _waitForConnectAttempt(String peerId) async {
+    final deadline = DateTime.now().add(const Duration(seconds: 25));
+    while (_connecting.contains(peerId) && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
     }
   }
 
@@ -1027,6 +1042,14 @@ class PeerConnectionManager {
     // 当前 IP，避免一直用换网前的旧地址反复超时。
     final fresh = await _storage.getPeerById(peer.id);
     if (fresh != null) peer = fresh;
+    final rawChannel = peer.channelEndpoint;
+    if (rawChannel != null && rawChannel.isNotEmpty) {
+      final dial = dialableChannelUrl(rawChannel);
+      if (dial != rawChannel) {
+        await _storage.updateChannelEndpoint(peer.id, dial);
+        peer = peer.copyWith(channelEndpoint: dial);
+      }
+    }
     final cliLoopback = await localCliDialEndpoint(peer.fingerprint);
     if (cliLoopback != null) {
       ignoreTieBreak = true;

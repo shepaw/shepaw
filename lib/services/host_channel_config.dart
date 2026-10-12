@@ -29,6 +29,24 @@ class ChannelAddressParts {
       closed || (channelId != null && _channelUuid.hasMatch(channelId!));
 }
 
+/// 公网地址用 https。本机和 IP 地址保持调用方写的协议。
+String channelServerScheme(String scheme, String host) {
+  final secure = switch (scheme) {
+    'https' || 'wss' => true,
+    'http' || 'ws' => _publicChannelHost(host),
+    _ => false,
+  };
+  return secure ? 'https' : 'http';
+}
+
+bool _publicChannelHost(String host) {
+  final name = host.toLowerCase();
+  if (name.isEmpty || name == 'localhost') return false;
+  if (RegExp(r'^\d{1,3}(\.\d{1,3}){3}$').hasMatch(name)) return false;
+  if (name.contains(':')) return false;
+  return true;
+}
+
 ChannelAddressParts? splitChannelAddress(String raw) {
   final uri = Uri.tryParse(raw.trim());
   if (uri == null || uri.host.isEmpty) return null;
@@ -43,11 +61,7 @@ ChannelAddressParts? splitChannelAddress(String raw) {
   }
   final value = segments[1];
   if (value.isEmpty) return null;
-  final httpScheme = switch (scheme) {
-    'ws' => 'http',
-    'wss' => 'https',
-    _ => scheme,
-  };
+  final httpScheme = channelServerScheme(scheme, uri.host);
   final port = uri.hasPort ? ':${uri.port}' : '';
   return ChannelAddressParts(
     serverUrl: '$httpScheme://${uri.host}$port',

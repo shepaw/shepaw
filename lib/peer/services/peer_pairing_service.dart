@@ -564,12 +564,15 @@ class PeerPairingService {
       }
 
       final localCli = await lookupLocalCli?.call();
+      final offeredChannel = response.channelEndpoint ?? info.channelEndpoint;
       final endpoints = pairingEndpointsForPeer(
         peerFingerprint: peerFingerprint,
         localCliFingerprint: localCli?.fingerprint,
         loopbackEndpoint: localCli?.localEndpoint,
         offeredLocal: response.localEndpoint ?? info.localEndpoint,
-        offeredChannel: response.channelEndpoint ?? info.channelEndpoint,
+        offeredChannel: offeredChannel == null || offeredChannel.isEmpty
+            ? null
+            : dialableChannelUrl(offeredChannel),
       );
       final peer = PairedPeer(
         id: existingPeer?.id ?? response.peerId, // 复用已有 ID

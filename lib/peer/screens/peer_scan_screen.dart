@@ -6,7 +6,6 @@ import '../../widgets/qr_scanner_view.dart';
 import '../models/paired_peer.dart';
 import '../models/pairing_payload.dart';
 import '../pouch_pair.dart';
-import '../pouch_turn_relay.dart';
 import '../services/peer_pairing_service.dart';
 
 /// P2P 配对扫码页（Initiator 侧）—— 独立全屏路由。
@@ -71,8 +70,17 @@ class _PeerScanScreenState extends State<PeerScanScreen> {
       return QrScannerOutcome.retry;
     }
 
-    final route = await PouchTurnRelay.currentRoute();
-    if (!route.runLocal) {
+    // 还没登录储物袋时，握手就在这台手机上。currentRoute 在那种情况下会抛错，
+    // 扫码壳会把它当成失败并重新开相机，页面只闪一下。
+    final bool local;
+    try {
+      local = await PouchPairing.runsOnThisDevice(info);
+    } catch (e) {
+      LoggerService().error('scan pairing failed', tag: 'PeerScan', error: e);
+      _showError(l10n.peer_pairingFailedRetry);
+      return QrScannerOutcome.retry;
+    }
+    if (!local) {
       if (!mounted) return QrScannerOutcome.consumed;
       final confirmed = await showDialog<bool>(
         context: context,
@@ -108,7 +116,7 @@ class _PeerScanScreenState extends State<PeerScanScreen> {
       }
     });
 
-    _ownsSession = await PouchPairing.runsOnThisDevice(info);
+    _ownsSession = local;
     try {
       final peer = await PouchPairing.request(info);
       if (!mounted) return QrScannerOutcome.consumed;
