@@ -53,6 +53,23 @@ void main() {
   });
 
   group('resumeTaskAndDispatch', () {
+    test('补拉偶尔失败一次不动回合，连续失败到上限才判死', () async {
+      final conn = _FakeResumeConnection(const [], resumeThrows: true);
+      Map<String, dynamic>? errored;
+      conn.registerTaskCallbacks(
+        't1',
+        TaskCallbacks(onTaskError: (d) => errored = d),
+      );
+
+      // 第一次失败只记数：可能只是抖动，重连窗口还在跑。
+      await conn.resumeTaskAndDispatch('t1', 0);
+      expect(errored, isNull);
+
+      // 连续第二次失败说明这条连接补不回来了，不能再让回合挂着等任务超时。
+      await conn.resumeTaskAndDispatch('t1', 0);
+      expect(errored, isNotNull);
+    });
+
     test('同一回合并发续传只发一次请求', () async {
       final conn = _FakeResumeConnection([
         {'status': 'streaming', 'delta': 'more'},
@@ -95,9 +112,11 @@ class _PingConnection extends ACPAgentConnection {
 
 /// 可控的 ACP 连接 double：覆写 sendRequest 返回 canned 的 taskResume 响应。
 class _FakeResumeConnection extends ACPAgentConnection {
-  _FakeResumeConnection(this.responses) : super(agentId: 'fake');
+  _FakeResumeConnection(this.responses, {this.resumeThrows = false})
+      : super(agentId: 'fake');
 
   final List<Map<String, dynamic>> responses;
+  final bool resumeThrows;
   int resumeCalls = 0;
   int? lastKnownLength;
 
@@ -112,6 +131,7 @@ class _FakeResumeConnection extends ACPAgentConnection {
     if (method != ACPMethod.agentTaskResume) {
       return ACPResponse.error(id: -1, code: -32601, message: 'unexpected');
     }
+    if (resumeThrows) throw Exception('transport gone');
     lastKnownLength = params?['known_length'] as int?;
     final idx = resumeCalls++;
     if (idx >= responses.length) {

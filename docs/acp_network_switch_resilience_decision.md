@@ -1,6 +1,6 @@
 # ACP 连接抗切网（agent 输出中切换网络不卡死、不中断）
 
-状态：待确认
+状态：轮 1-3 已落地（根因 1-7 已修），轮 4（HTTP `connectionTimeout`）未做，影响面小
 范围：App（`shepaw/lib`）。主机侧（`shepaw-cli`）已有 `idle_limit 120s` / `turn_limit 30min` 兜底，本轮不改。
 
 ## 背景
@@ -60,11 +60,16 @@ ACP 是 App ↔ 远端 agent 的唯一长连（Noise IK + JSON-RPC over WebSocke
    - 通 → 什么都不做（不打断正在流的回合）；
    - 不通 → 主动 `disconnect()` + 重建，触发第 5 条的宽限 + resume。
 
-### 轮 3：看门狗兜底
+### 轮 3：看门狗兜底（已落地）
 
-7. `resumeTaskAndDispatch()` 失败计数，连续 2 次失败才判任务失败；`stalledTurns` 保持跳过断连任务（由宽限期负责），但补一个「总宽限上限」，避免无限续。
+7. `resumeTaskAndDispatch()` 计连续失败次数：失败 1 次只记数（可能只是抖动，重连窗口还在跑），连续 2 次才把这个回合判死。收到该任务的真帧时清零。
+   `stalledTurns` 保持跳过断连任务（断连由宽限期负责）。
 
-### 轮 4（可选）：mailbox 兜底路径
+   原计划的「总宽限上限」没做：重连续传想要成功，前提是重连成功且 resume 回
+   `streaming`，那说明主机确实还在跑，让它继续是对的；真正会挂死的是「连接看着
+   活着但补拉一直失败」，已被上面的失败计数兜住，不必再加一层时间预算。
+
+### 轮 4（未做，影响面小）：mailbox 兜底路径
 
 8. 给 `channel_mailbox_service` 等长生命周期 `http.Client` 补 `connectionTimeout`（10s）。
 

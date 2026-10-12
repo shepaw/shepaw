@@ -260,12 +260,18 @@ class ACPAgentConnection implements AcpInteractiveConnection {
   /// 正在续传中的 task_id，防止 [resumeTaskAndDispatch] 重入。
   final Set<String> _resumingTasks = {};
 
+  /// 每个回合连续补拉失败的次数。连续失败到上限说明这条连接已经救不回来了
+  /// （连接看着还活着，但补拉一直失败），再等下去回合只会挂到任务超时才报错。
+  final Map<String, int> _resumeFailures = {};
+  static const int _maxResumeFailures = 2;
+
   void registerTaskCallbacks(String taskId, TaskCallbacks callbacks) {
     _taskCallbacks[taskId] = callbacks;
   }
 
   void unregisterTaskCallbacks(String taskId) {
     _taskCallbacks.remove(taskId);
+    _resumeFailures.remove(taskId);
   }
 
   // ==================== Slash commands (agent.commands.list) ====================
@@ -1055,15 +1061,16 @@ class ACPAgentConnection implements AcpInteractiveConnection {
     try {
       resp = await resumeTask(taskId, knownLength: knownLength);
     } catch (e) {
-      LoggerService().warning(
-        'taskResume failed for task $taskId: $e',
-        tag: 'ACP',
-      );
+      _noteResumeFailure(taskId, e.toString());
       return;
     } finally {
       _resumingTasks.remove(taskId);
     }
-    if (!resp.isSuccess) return;
+    if (!resp.isSuccess) {
+      _noteResumeFailure(taskId, 'taskResume 返回错误响应');
+      return;
+    }
+    _resumeFailures.remove(taskId);
     final result = resp.result;
     if (result is! Map) return;
 
@@ -1092,6 +1099,25 @@ class ACPAgentConnection implements AcpInteractiveConnection {
       case 'streaming':
         break; // 任务仍在跑；时钟已由看门狗重置，继续等 live 帧
     }
+  }
+
+  /// 记一次补拉失败。连续失败到上限就把这个回合判死 —— 否则连接"看着还活着"
+  /// 但补拉一直失败时，回合会一直挂到任务超时才报错。
+  void _noteResumeFailure(String taskId, String detail) {
+    final count = (_resumeFailures[taskId] ?? 0) + 1;
+    LoggerService().warning(
+      'taskResume failed for task $taskId ($count/$_maxResumeFailures): $detail',
+      tag: 'ACP',
+    );
+    if (count < _maxResumeFailures) {
+      _resumeFailures[taskId] = count;
+      return;
+    }
+    final cb = _taskCallbacks.remove(taskId);
+    _resumeFailures.remove(taskId);
+    cb?.onTaskError?.call({
+      'message': '补拉输出连续失败，这个回合先停在这里',
+    });
   }
 
   /// Submit an interactive response (action confirmation, select, form, etc.)
@@ -1531,8 +1557,12 @@ class ACPAgentConnection implements AcpInteractiveConnection {
     final taskId = params['task_id'] as String?;
     final cb = (taskId != null) ? _taskCallbacks[taskId] : null;
 
-    // 任何该任务的通知都视为「回合有活动」——停滞看门狗据此刷新时钟。
+    // 任何该任务的通知都视为「回合有活动」——停滞看门狗据此刷新时钟，
+    // 补拉失败的计数也一并清零（真帧进来了，说明连接是好的）。
     cb?.onTaskActivity?.call();
+    if (taskId != null) {
+      _resumeFailures.remove(taskId);
+    }
 
     if (cb == null && taskId != null) {
       LoggerService().debug(
