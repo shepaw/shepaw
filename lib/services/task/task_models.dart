@@ -2,6 +2,14 @@ import 'dart:async';
 import '../../clis/shepaw/os/os_executor.dart' as os_exec;
 import '../../models/workflow_models.dart';
 
+/// 等待 [ActiveTask.dbSaveCompleter] 的上限。
+///
+/// UI 收尾流程 await 这个 completer 之后才放开 `isProcessing` 并推进消息队列
+/// （`processNextInQueue`）。任一终态路径漏了 complete，没有上限就会让界面永久
+/// 转圈、队列永久冻住。这是「永不卡死」的最后一道保险：正常落库远快于此值，
+/// 真到点了宁可带着可能不完整的内容解卡，也不要停在转圈上。
+const Duration dbSaveTimeout = Duration(seconds: 30);
+
 /// Tracks an in-flight ACP task so it can continue in the background
 /// when the user navigates away from the chat screen.
 class ActiveTask {
@@ -80,8 +88,17 @@ class ActiveTask {
   // ===================================================================
 
   /// Completes after the agent response has been persisted to the database.
-  /// UI should await this before reloading messages.
+  /// UI should await this before reloading messages — use [waitForSave], which
+  /// caps the wait so a missed completion can't freeze the UI forever.
   final Completer<void> dbSaveCompleter = Completer<void>();
+
+  /// 等回复落库，最多 [dbSaveTimeout]，到点没落库也照样返回。
+  ///
+  /// UI 收尾（`isProcessing = false` 与推进消息队列）都挂在 await 它后面，
+  /// 任一终态路径漏了 complete，直接 await completer 会让界面永久转圈、
+  /// 队列永久冻住。宁可带着可能不完整的内容解卡，也不要停在转圈上。
+  Future<void> waitForSave() =>
+      dbSaveCompleter.future.timeout(dbSaveTimeout, onTimeout: () {});
 
   // Detachable UI callbacks — set to null when user leaves the screen
   void Function(String chunk)? onStreamChunk;

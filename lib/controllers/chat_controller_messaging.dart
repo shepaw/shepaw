@@ -108,7 +108,7 @@ mixin _MessagingOps on _ChatControllerBase {
         scheduleStreamingRebuild();
       },
       onTaskFinished: () async {
-        await activeTask.dbSaveCompleter.future;
+        await activeTask.waitForSave();
         acpCancellationToken = null;
         streaming.clear();
         isProcessing = false;
@@ -963,7 +963,7 @@ mixin _MessagingOps on _ChatControllerBase {
           final channelAtDispatch = currentChannelId;
           activeTask.onTaskFinished = () async {
             try {
-              await activeTask.dbSaveCompleter.future;
+              await activeTask.waitForSave();
             } catch (_) {}
             // Only clean up if we're still on the same channel (user may have
             // navigated away). If they did, the values are already detached

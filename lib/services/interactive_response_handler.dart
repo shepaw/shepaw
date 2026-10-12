@@ -157,7 +157,7 @@ class InteractiveResponseHandler {
             awaitingAsyncTask = true;
             activeTask.onTaskFinished = () async {
               try {
-                await activeTask.dbSaveCompleter.future;
+                await activeTask.waitForSave();
               } catch (_) {}
               if (!ctx.isMounted) return;
               await ctx.loadMessages();
@@ -244,7 +244,7 @@ class InteractiveResponseHandler {
           awaitingAsyncTask = true;
           activeTask.onTaskFinished = () async {
             try {
-              await activeTask.dbSaveCompleter.future;
+              await activeTask.waitForSave();
             } catch (_) {}
             if (!ctx.isMounted) return;
             await ctx.loadMessages();

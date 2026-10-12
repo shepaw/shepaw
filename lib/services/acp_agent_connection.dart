@@ -28,6 +28,22 @@ import 'ui_component_registry.dart';
 /// [TimeoutException] 由调用方按失败处理。
 const Duration acpTaskTimeout = Duration(minutes: 10);
 
+/// 建连（DNS + TCP + WebSocket 握手）的兜底超时。
+///
+/// `dart:io` 的 `WebSocket.connect` 没有默认连接超时。切网瞬间 DNS 解析或
+/// TCP 握手常挂在已经失效的网卡上，没有上限就会把调用方永久挂住 —— 而重连
+/// 路径还会把它放大成好几次。给一个上限，挂住就变成可重试的
+/// [TimeoutException]（`isRetriableConnectionError` 已把它判为可重试）。
+/// 15s 足够穿过一次隧道重建，又不至于让"点发送"等太久。
+const Duration acpConnectTimeout = Duration(seconds: 15);
+
+/// 1:1 回合等待 `task.completed` 的默认上限（agent metadata 的
+/// `task_timeout_seconds` 可覆盖）。
+///
+/// 对齐主机侧 `SHEPAW_ACP_TURN_SECS`（默认 30 分钟）：主机到点会自己结束回
+/// 合并报错，App 再等下去没有意义，只会把一个已经死掉的回合多挂几小时。
+const Duration acpDmTaskTimeout = Duration(minutes: 30);
+
 /// Cancellation token for ACP protocol operations.
 /// Sends `agent.cancelTask` to every bound remote Agent task when cancelled,
 /// and invokes all registered cancel callbacks so every waiting
@@ -213,6 +229,13 @@ class ACPAgentConnection implements AcpInteractiveConnection {
   int _reconnectAttempts = 0;
   final int maxReconnectAttempts;
 
+  /// 建连兜底超时，见 [acpConnectTimeout]。
+  final Duration connectTimeout;
+
+  /// 关 WS 时等关闭握手的上限。半开连接上对端收不到 close 帧，`sink.close()`
+  /// 可能一直不返回 —— 但调用方要的是"断开"这个事实，不是一次干净挥手。
+  static const Duration _closeTimeout = Duration(seconds: 2);
+
   // ==================== Per-task Callback Registry ====================
 
   /// Per-task callback registry. key = task_id (UUID string).
@@ -272,6 +295,7 @@ class ACPAgentConnection implements AcpInteractiveConnection {
     this.reconnectDelayMs = 3000,
     this.maxReconnectAttempts = 5,
     this.maxHeartbeatFailures = 3,
+    this.connectTimeout = acpConnectTimeout,
   }) : _hubHandlers = hubHandlers;
 
   /// The targetAgentId used during the initial [connect] call.
@@ -401,9 +425,16 @@ class ACPAgentConnection implements AcpInteractiveConnection {
       // Open the WS. No Authorization header in v2.1 — authorization is
       // by the app's static public key presented during the Noise handshake
       // and checked against the agent's allowlist.
-      final ioSocket = await io.WebSocket.connect(uri.toString());
+      //
+      // 两步都得套 [connectTimeout]：`dart:io` 的 `WebSocket.connect` 没有连接
+      // 超时，切网时 DNS/TCP 常挂在已经失效的网卡上，future 既不返回也不报错；
+      // `ready` 同理。不套上限，一次卡顿就是永久挂住。
+      final ioSocket = await _openSocket(uri.toString());
       _channel = IOWebSocketChannel(ioSocket);
-      await _channel!.ready;
+      await _channel!.ready.timeout(
+        connectTimeout,
+        onTimeout: () => throw TimeoutException('ACP websocket ready timed out'),
+      );
 
       // Attach the (single) stream subscription NOW — `WebSocketChannel.stream`
       // is single-subscription, so we can't listen again after the handshake.
@@ -472,14 +503,43 @@ class ACPAgentConnection implements AcpInteractiveConnection {
         await _subscription?.cancel();
       } catch (_) {}
       _subscription = null;
-      try {
-        await _channel?.sink.close();
-      } catch (_) {}
-      _channel = null;
+      await _closeChannel();
       onConnectionStateChanged?.call(false);
       if (translated != null) throw translated;
       rethrow;
     }
+  }
+
+  /// 打开 WebSocket，并给 DNS + TCP + WS 握手套上 [connectTimeout]。
+  ///
+  /// 超时后调用方先走人（按可重试错误处理），这里再挂一个回调：等那个迟到的
+  /// socket 终于建上时把它关掉，免得留下一条没人认领的活连接。
+  Future<io.WebSocket> _openSocket(String url) {
+    final pending = io.WebSocket.connect(url);
+    return pending.timeout(
+      connectTimeout,
+      onTimeout: () {
+        unawaited(
+          pending.then((socket) => socket.close()).catchError((Object _) {}),
+        );
+        throw TimeoutException(
+          'ACP connect timed out after ${connectTimeout.inSeconds}s',
+        );
+      },
+    );
+  }
+
+  /// 关掉 WS 并置空 [_channel]，最多等 [_closeTimeout]。
+  ///
+  /// 半开连接上对端收不到 close 帧，`sink.close()` 可能一直不返回；调用方要
+  /// 的是"已经断开"这个事实，不是一次干净的挥手，所以不等到底。
+  Future<void> _closeChannel() async {
+    final channel = _channel;
+    _channel = null;
+    if (channel == null) return;
+    try {
+      await channel.sink.close().timeout(_closeTimeout);
+    } catch (_) {}
   }
 
   /// Map the WS close code the server sent (visible on [WebSocketException]
@@ -721,16 +781,13 @@ class ACPAgentConnection implements AcpInteractiveConnection {
     _noise = null;
     _peerStaticPublicKeyAfterHandshake = null;
 
-    try {
-      await _channel?.sink.close();
-    } catch (_) {}
-
-    _channel = null;
     _isConnected = false;
     _isAuthenticated = false;
     onConnectionStateChanged?.call(false);
 
-    // Fail all pending JSON-RPC requests.
+    // 先把等待方解封，再去关 socket。反过来的话，关闭握手一旦卡在半开连接上
+    // （`sink.close()` 迟迟不返回），这一整段就停在 await 上，在跑的回合永远
+    // 等不到人解封 —— 正是切网卡死的样子。
     for (final completer in _pendingRequests.values) {
       if (!completer.isCompleted) {
         completer.completeError(Exception('Connection closed'));
@@ -739,8 +796,10 @@ class ACPAgentConnection implements AcpInteractiveConnection {
     _pendingRequests.clear();
 
     // Fail all in-flight tasks so their task completers unblock immediately
-    // rather than waiting for a 300-second timeout.
+    // rather than waiting for their own timeout.
     _failInFlightTasks('Connection closed');
+
+    await _closeChannel();
   }
 
   /// v2.1: ask the agent to remove this device from its `authorized_peers.json`

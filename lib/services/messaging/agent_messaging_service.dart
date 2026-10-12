@@ -1474,7 +1474,11 @@ class AgentMessagingService {
       }
 
       // Wait for task.completed, task.error, or local cancellation
-      final taskTimeoutSeconds = (agent.metadata['task_timeout_seconds'] as num?)?.toInt() ?? 10800;
+      // 原来默认 3 小时：主机侧 `SHEPAW_ACP_TURN_SECS` 到点就会自己结束回合，
+      // App 再等下去只是把一个已经死掉的回合多挂两小时。
+      final taskTimeoutSeconds =
+          (agent.metadata['task_timeout_seconds'] as num?)?.toInt() ??
+              acpDmTaskTimeout.inSeconds;
       await taskCompleter.future.timeout(
         Duration(seconds: taskTimeoutSeconds),
         onTimeout: () {
