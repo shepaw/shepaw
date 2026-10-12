@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
@@ -184,6 +185,7 @@ class HubEventClient {
           _notices.add(HubNotice(peerId: peerId, event: event));
         }
       case 'interaction.resolved':
+        await _onInteractionResolved(event);
         if (!_notices.isClosed) {
           _notices.add(HubNotice(peerId: peerId, event: event));
         }
@@ -261,7 +263,7 @@ class HubEventClient {
     }
     final prompt = payload['prompt'] as String? ?? payload['title'] as String? ?? '';
     await getIt<LocalDatabaseService>().createMessage(
-      id: 'hub-ix-$interactionId',
+      id: hubCardMessageId(interactionId),
       channelId: channelId,
       senderId: agentId.isEmpty ? 'she-builtin-agent-001' : agentId,
       senderType: 'agent',
@@ -271,6 +273,67 @@ class HubEventClient {
       conflictAlgorithm: ConflictAlgorithm.ignore,
     );
     _notify(channelId);
+  }
+
+  /// 交互卡在本地的那条消息 id。渲染和作废都按它找，免得两处各写一份走样。
+  static String hubCardMessageId(String interactionId) => 'hub-ix-$interactionId';
+
+  /// 主机宣布这个交互结束了：别处作答、等不到回答（30 分钟）、回合取消、
+  /// 或主机重启时还悬着。
+  ///
+  /// 以前这条只当成一条通知丢掉，卡片就一直可点。可点是骗人的：记录已从
+  /// `PhoneState` 摘掉，再点 `pouch_interaction_resp` 到了主机直接被扔
+  /// （`complete_interaction` 返回 false），而本地照样把用户的选择记成已生效。
+  /// 所以把卡片按作废态收起来 —— 和直连路径的 `agent_interaction_closed` 同理。
+  Future<void> _onInteractionResolved(HubEvent event) async {
+    final interactionId = event.data['interaction_id'] as String? ?? '';
+    if (interactionId.isEmpty) return;
+    if (!getIt.isRegistered<LocalDatabaseService>()) return;
+    final by = event.data['by'] as String? ?? '';
+    await _closeHubCard(interactionId, _hubClosedReason(by));
+  }
+
+  /// `by` 是主机给的理由，或者是作答那台设备的 peer id。
+  ///
+  /// 超时那条复用直连路径的文案；主机重启意味着这个回合没了，按「回合已结束」
+  /// 说。剩下的（一个 peer id）就是有设备答了 —— 可能是另一台。
+  static String _hubClosedReason(String by) {
+    switch (by) {
+      case 'timeout':
+        return 'timeout';
+      case 'cancelled':
+        return 'cancelled';
+      case 'hub_restart':
+        return 'turn_ended';
+      default:
+        return 'answered_elsewhere';
+    }
+  }
+
+  Future<void> _closeHubCard(String interactionId, String reason) async {
+    final db = getIt<LocalDatabaseService>();
+    final messageId = hubCardMessageId(interactionId);
+    final row = await db.getMessageById(messageId);
+    if (row == null) return;
+    final raw = row['metadata'];
+    if (raw is! String || raw.isEmpty) return;
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map) return;
+    final metadata = Map<String, dynamic>.from(decoded);
+    final hub = metadata['hub_interaction'];
+    final kind = hub is Map ? hub['interaction_type']?.toString() ?? '' : '';
+    final data = metadata[kind];
+    if (kind.isEmpty || data is! Map) return;
+    // 本地已经有裁决就不动它。自己那一下点击主机也会广播一条
+    // `interaction.resolved` 回来，别把自己刚答的卡盖成「作废」。
+    if (data['selected_action_id'] != null || data['submitted_values'] != null) {
+      return;
+    }
+    if (data['closed'] != null) return;
+    metadata[kind] = Map<String, dynamic>.from(data)..['closed'] = reason;
+    await db.updateMessageMetadata(messageId, metadata);
+    final channelId = row['channel_id'] as String? ?? '';
+    if (channelId.isNotEmpty) _notify(channelId);
   }
 
   Future<void> _insertMessage(HubEvent event) async {

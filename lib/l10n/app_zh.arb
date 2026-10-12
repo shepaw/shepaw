@@ -1343,6 +1343,7 @@
   "widget_interactionExpired": "已作废：没等到回答，主机已按默认继续",
   "widget_interactionCancelled": "已作废：回合已停止",
   "widget_interactionClosed": "已作废：回合已结束，这张卡片不再有效",
+  "widget_interactionAnsweredElsewhere": "已作废：这个问题已在别处作答",
   "widget_submit": "提交",
   "widget_confirm": "确认",
   "widget_changeFiles": "更换文件",

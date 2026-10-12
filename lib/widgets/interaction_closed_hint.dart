@@ -15,6 +15,8 @@ String interactionClosedLabel(BuildContext context, String? reason) {
       return l10n.widget_interactionExpired;
     case 'cancelled':
       return l10n.widget_interactionCancelled;
+    case 'answered_elsewhere':
+      return l10n.widget_interactionAnsweredElsewhere;
     default:
       return l10n.widget_interactionClosed;
   }

@@ -928,6 +928,7 @@
   "widget_interactionExpired": "Closed — no answer in time, the host carried on with a default",
   "widget_interactionCancelled": "Closed — the turn was stopped",
   "widget_interactionClosed": "Closed — the turn ended, this card is no longer valid",
+  "widget_interactionAnsweredElsewhere": "Closed — this was already answered elsewhere",
   "widget_submit": "Submit",
   "widget_confirm": "Confirm",
   "widget_changeFiles": "Change files",

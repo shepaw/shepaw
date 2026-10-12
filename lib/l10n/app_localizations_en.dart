@@ -2430,6 +2430,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Closed — the turn ended, this card is no longer valid';
 
   @override
+  String get widget_interactionAnsweredElsewhere =>
+      'Closed — this was already answered elsewhere';
+
+  @override
   String get widget_submit => 'Submit';
 
   @override

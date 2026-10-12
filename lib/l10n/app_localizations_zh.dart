@@ -2338,6 +2338,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get widget_interactionClosed => '已作废：回合已结束，这张卡片不再有效';
 
   @override
+  String get widget_interactionAnsweredElsewhere => '已作废：这个问题已在别处作答';
+
+  @override
   String get widget_submit => '提交';
 
   @override

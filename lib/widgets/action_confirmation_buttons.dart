@@ -32,8 +32,12 @@ class ActionConfirmationButtons extends StatelessWidget {
     final hasSelection = selectedActionId != null;
     // 主机不再等这张卡了（超时按默认继续 / 回合被停止 / 回合已结束）。按钮
     // 全部失效并说明原因 —— 留着可点的话，用户点下去只会撞上「已失效」。
+    //
+    // 但作废和作答是两条会先后脚到的消息（自己那一下点击，主机也会广播一条
+    // `interaction.resolved` 回来），所以裁决优先：答过了就按作答渲染，
+    // 免得自己刚点的选择被随后到的作废帧说成「没答」。表单卡同理。
     final closedReason = actionData['closed'] as String?;
-    final isClosed = closedReason != null;
+    final isClosed = closedReason != null && selectedActionId == null;
 
     if (actions.isEmpty) return const SizedBox.shrink();
 

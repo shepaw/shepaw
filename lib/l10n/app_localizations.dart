@@ -4364,6 +4364,12 @@ abstract class AppLocalizations {
   /// **'已作废：回合已结束，这张卡片不再有效'**
   String get widget_interactionClosed;
 
+  /// No description provided for @widget_interactionAnsweredElsewhere.
+  ///
+  /// In zh, this message translates to:
+  /// **'已作废：这个问题已在别处作答'**
+  String get widget_interactionAnsweredElsewhere;
+
   /// No description provided for @widget_submit.
   ///
   /// In zh, this message translates to:

@@ -93,4 +93,21 @@ void main() {
     // 用户的裁决留着：勾还在「允许」上。
     expect(find.byIcon(Icons.check), findsOneWidget);
   });
+
+  testWidgets('作答与作废都到了，按作答渲染', (tester) async {
+    // 自己那一下点击，主机也会广播一条 `interaction.resolved` 回来。两条
+    // 落地的先后不定，谁的先到都不能让用户的裁决看起来像「没答」。
+    await pumpCard(tester, actionData(selectedActionId: 'allow', closed: 'answered_elsewhere'));
+
+    expect(find.byType(InteractionClosedHint), findsNothing);
+    expect(find.text('已作废：这个问题已在别处作答'), findsNothing);
+    expect(find.byIcon(Icons.check), findsOneWidget);
+  });
+
+  testWidgets('在别处作答的卡片收起可点态', (tester) async {
+    await pumpCard(tester, actionData(closed: 'answered_elsewhere'));
+
+    expect(find.text('已作废：这个问题已在别处作答'), findsOneWidget);
+    expect(find.byType(ElevatedButton), findsNothing);
+  });
 }
