@@ -4346,6 +4346,24 @@ abstract class AppLocalizations {
   /// **'表单已提交'**
   String get widget_formSubmitted;
 
+  /// No description provided for @widget_interactionExpired.
+  ///
+  /// In zh, this message translates to:
+  /// **'已作废：没等到回答，主机已按默认继续'**
+  String get widget_interactionExpired;
+
+  /// No description provided for @widget_interactionCancelled.
+  ///
+  /// In zh, this message translates to:
+  /// **'已作废：回合已停止'**
+  String get widget_interactionCancelled;
+
+  /// No description provided for @widget_interactionClosed.
+  ///
+  /// In zh, this message translates to:
+  /// **'已作废：回合已结束，这张卡片不再有效'**
+  String get widget_interactionClosed;
+
   /// No description provided for @widget_submit.
   ///
   /// In zh, this message translates to:

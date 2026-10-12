@@ -1736,6 +1736,18 @@ class PeerAgentClientService {
   Stream<Map<String, dynamic>> get orphanFormEvents =>
       _orphanFormController.stream;
 
+  /// 主机不再等这张卡片了：等不到回答（`timeout`，按默认继续往下跑）或者回合
+  /// 被停止（`cancelled`）。卡片本身不会从屏幕上消失 —— 它是「问过但没答」的
+  /// 记录，留着才诚实 —— 但要收起可点态，不然用户点一下只会撞上「已失效」。
+  ///
+  /// 只带 `approval_id`：卡片落在哪条消息上由 UI 按 id 反查（和 cli 审批卡
+  /// 一样），DM / 群聊 / 孤儿卡三条路径就都不用再传路由信息。
+  /// 单例上的长期流，[stop] 不关闭它。
+  final _interactionClosedController =
+      StreamController<({String approvalId, String reason})>.broadcast();
+  Stream<({String approvalId, String reason})> get interactionClosedEvents =>
+      _interactionClosedController.stream;
+
   LocalDatabaseService get _db => getIt<LocalDatabaseService>();
   final _fileStorage = LocalFileStorageService();
 
@@ -2098,6 +2110,12 @@ class PeerAgentClientService {
     }
     return false;
   }
+
+  /// 测试用：这张卡片还在本地账簿里（未答、未作废）。
+  bool debugIsCardActive(String approvalId) =>
+      _approvalToRequest.containsKey(approvalId) ||
+      _orphanedApprovals.containsKey(approvalId) ||
+      _orphanedForms.containsKey(approvalId);
 
   /// Rebind UI/persistence callbacks on a hydrated turn after process restart.
   void attachPendingHandlers(
@@ -2665,6 +2683,9 @@ class PeerAgentClientService {
         break;
       case 'agent_form_req':
         _onFormReq(event.peerId, event.data);
+        break;
+      case 'agent_interaction_closed':
+        _onInteractionClosed(event.data);
         break;
       case 'session_create_req':
         unawaited(_onSessionCreateReq(event.peerId, event.data));
@@ -6181,15 +6202,73 @@ class PeerAgentClientService {
     });
   }
 
+  /// 主机放弃这张卡片了。reason 见帧里的 `reason` 字段（`timeout` / `cancelled`）。
+  ///
+  /// 收到就得把本地账簿一起收掉：卡片还留在 [_approvalToRequest] 里的话，它
+  /// 继续撑着 `openApprovals`，`agent_done` 会被无限缓冲、这个回合永远不结束；
+  /// 用户再点一下也只会发一条对端必然丢弃的裁决。
+  void _onInteractionClosed(Map<String, dynamic> data) {
+    final approvalId = data['approval_id'] as String?;
+    if (approvalId == null || approvalId.isEmpty) {
+      _log.warning('agent_interaction_closed: missing approval_id',
+          tag: 'PeerApproval');
+      return;
+    }
+    final reason = data['reason'] as String? ?? 'timeout';
+    _log.info(
+      'agent_interaction_closed: approvalId=$approvalId reason=$reason',
+      tag: 'PeerApproval',
+    );
+    _applyInteractionClosed(approvalId, reason);
+  }
+
+  /// 把一张作废的卡片从本地账簿里摘掉，并通知 UI 收起可点态。
+  ///
+  /// 已提交过裁决的卡片只摘账簿、不改界面：那说明主机其实收到了答案，卡上的
+  /// 勾是对的，不能因为一条迟到的 closed 帧把用户的真实操作抹掉（最坏情况是
+  /// 提交与超时撞在一起，主机没采纳 —— 那就由对话里模型的下一句来说明）。
+  void _applyInteractionClosed(String approvalId, String reason) {
+    final answered = _submittedApprovals.containsKey(approvalId) ||
+        _submittedForms.containsKey(approvalId);
+    final requestId = _approvalToRequest.remove(approvalId);
+    _orphanedApprovals.remove(approvalId);
+    _orphanedForms.remove(approvalId);
+    if (requestId != null) {
+      final pending = _pending[requestId];
+      if (pending != null && pending.openApprovals > 0) {
+        pending.openApprovals--;
+        if (pending.openApprovals == 0) pending.idleSince = DateTime.now();
+      }
+      _tryCompleteBufferedDone(requestId);
+    }
+    if (answered || _interactionClosedController.isClosed) return;
+    _interactionClosedController.add((approvalId: approvalId, reason: reason));
+  }
+
+  /// 回合结束时，把还挂在这个回合上的卡片一并判为作废。
+  ///
+  /// `agent_interaction_closed` 只发一次（主机超时后自己往下跑），手机当时不
+  /// 在线就收不到。回合结束是同一件事的第二个信号，用它兜底，免得屏幕上永远
+  /// 留一张点不动的卡。只扫「没答过」的：答过的在 submit 时就已从这些表里摘掉。
+  void _closeCardsOfRequest(String requestId, String reason) {
+    final ids = <String>{
+      for (final e in _approvalToRequest.entries)
+        if (e.value == requestId) e.key,
+      for (final e in _orphanedApprovals.entries)
+        if (e.value['request_id'] == requestId) e.key,
+      for (final e in _orphanedForms.entries)
+        if (e.value['request_id'] == requestId) e.key,
+    };
+    for (final id in ids) {
+      _applyInteractionClosed(id, reason);
+    }
+  }
+
   void _finishPending(String requestId, Map<String, dynamic> data) {
     final p = _pending.remove(requestId);
     if (p == null || p.completer.isCompleted) return;
     _clearPersistedTurn(requestId);
-    for (final entry in _approvalToRequest.entries.toList()) {
-      if (entry.value == requestId) {
-        _approvalToRequest.remove(entry.key);
-      }
-    }
+    _closeCardsOfRequest(requestId, 'turn_ended');
     p.completer.complete(PeerChatResult(
       content: data['content'] as String? ?? '',
       metadata: (data['metadata'] as Map?)?.cast<String, dynamic>(),
@@ -6226,11 +6305,7 @@ class PeerAgentClientService {
     final p = _pending.remove(requestId);
     if (p == null || p.completer.isCompleted) return;
     _clearPersistedTurn(requestId);
-    for (final entry in _approvalToRequest.entries.toList()) {
-      if (entry.value == requestId) {
-        _approvalToRequest.remove(entry.key);
-      }
-    }
+    _closeCardsOfRequest(requestId, 'turn_ended');
     p.completer.completeError(
       Exception(data['message'] as String? ?? 'Peer agent error'),
     );

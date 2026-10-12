@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/l10n/app_localizations.dart';
 import 'package:shepaw/models/message.dart';
 import 'package:shepaw/widgets/form_bubble.dart';
+import 'package:shepaw/widgets/interaction_closed_hint.dart';
 import 'package:shepaw/widgets/message_bubble.dart';
 
 /// 群聊表单在窄宽度下必须换行，不能把气泡撑出父级（PC 端 RenderFlex overflow）。
@@ -17,6 +18,7 @@ void main() {
   Map<String, dynamic> formData({
     Map<String, dynamic>? submittedValues,
     bool required = true,
+    String? closed,
   }) =>
       {
         'form_id': 'form-1',
@@ -45,6 +47,7 @@ void main() {
           },
         ],
         if (submittedValues != null) 'submitted_values': submittedValues,
+        if (closed != null) 'closed': closed,
       };
 
   Future<void> pumpForm(
@@ -106,6 +109,61 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.textContaining('清單'), findsOneWidget);
+  });
+
+  testWidgets('作废的表单不再给提交入口，只说明原因', (tester) async {
+    await pumpForm(tester, data: formData(closed: 'timeout'));
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('已作废：没等到回答，主机已按默认继续'), findsOneWidget);
+    expect(find.byType(InteractionClosedHint), findsOneWidget);
+    // 提交入口整个撤掉 —— 主机已经不等了，这个按钮送不出去。
+    expect(find.widgetWithText(ElevatedButton, '提交'), findsNothing);
+    expect(find.text('表单已提交'), findsNothing);
+    // 字段还在：当时问了什么是这条对话记录的一部分。
+    expect(find.textContaining('清單'), findsOneWidget);
+    expect(find.byType(TextField), findsOneWidget);
+  });
+
+  testWidgets('作废的字段填不动', (tester) async {
+    await pumpForm(tester, data: formData(closed: 'timeout'));
+
+    // 控件照原样画，但被 IgnorePointer 罩住 + 压暗：填了也送不出去。
+    final guard = tester.widget<IgnorePointer>(
+      find
+          .ancestor(
+            of: find.byType(TextField),
+            matching: find.byType(IgnorePointer),
+          )
+          .first,
+    );
+    expect(guard.ignoring, isTrue);
+    expect(
+      find.ancestor(
+        of: find.byType(TextField),
+        matching: find.byType(Opacity),
+      ),
+      findsWidgets,
+    );
+    // 点也点不进去：IgnorePointer 吃掉了命中测试，真实用户碰不到它。
+    // （enterText 是直接改 EditableText 的值，绕过命中测试，测不出这件事。）
+    final focusBefore = FocusManager.instance.primaryFocus;
+    await tester.tap(find.byType(TextField), warnIfMissed: false);
+    await tester.pump();
+    expect(FocusManager.instance.primaryFocus, same(focusBefore));
+  });
+
+  testWidgets('已提交优先于作废 —— 不抹掉用户答过的', (tester) async {
+    await pumpForm(
+      tester,
+      data: formData(
+        submittedValues: {'q1': 'Cursor', 'q2': ['a']},
+        closed: 'timeout',
+      ),
+    );
+
+    expect(find.text('表单已提交'), findsOneWidget);
+    expect(find.byType(InteractionClosedHint), findsNothing);
   });
 
   testWidgets('group sticky message bubble keeps long form inside parent',

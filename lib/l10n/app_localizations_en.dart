@@ -2419,6 +2419,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get widget_formSubmitted => 'Form submitted';
 
   @override
+  String get widget_interactionExpired =>
+      'Closed — no answer in time, the host carried on with a default';
+
+  @override
+  String get widget_interactionCancelled => 'Closed — the turn was stopped';
+
+  @override
+  String get widget_interactionClosed =>
+      'Closed — the turn ended, this card is no longer valid';
+
+  @override
   String get widget_submit => 'Submit';
 
   @override

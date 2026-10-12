@@ -58,6 +58,82 @@ mixin _InteractionOps on _ChatControllerBase {
     return null;
   }
 
+  /// 卡片落在哪条消息上：审批卡看 `confirmation_id`，表单卡看 `form_id`。
+  /// 主机发的「卡片作废」帧只带 id，DM / 群聊 / 孤儿卡都靠这里反查 ——
+  /// 三条路径落到的都是消息 metadata 里的同一张卡。
+  String? _messageIdForInteraction(String interactionId) {
+    if (interactionId.isEmpty) return null;
+    for (final msg in messages) {
+      final ac = msg.metadata?['action_confirmation'];
+      if (ac is Map && ac['confirmation_id'] == interactionId) return msg.id;
+      final form = msg.metadata?['form'];
+      if (form is Map && form['form_id'] == interactionId) return msg.id;
+    }
+    return null;
+  }
+
+  /// 主机不再等这张卡了：等不到回答（`timeout`，按默认继续）或回合被停止
+  /// （`cancelled`），本地兜底时用 `turn_ended`。
+  ///
+  /// 卡片留在对话里（「问过但没答」这个事实值得留着），只是收起可点态：不作废
+  /// 的话，用户点下去只会撞上 PeerApprovalExpiredException 弹一句「已失效」，
+  /// 而这本来是可以预知的。
+  void _handleInteractionClosed(({String approvalId, String reason}) event) {
+    final messageId = _messageIdForInteraction(event.approvalId);
+    if (messageId == null) return;
+    final meta = messageIdMap[messageId]?.metadata;
+    final ac = meta?['action_confirmation'];
+    if (ac is Map) {
+      // 已经作答（或已作废）的卡不动：用户的裁决/先到的作废帧都更可信。
+      if (ac['selected_action_id'] != null || ac['closed'] != null) return;
+      _markActionConfirmationClosed(messageId, reason: event.reason);
+      return;
+    }
+    final form = meta?['form'];
+    if (form is Map) {
+      if (form['submitted_values'] != null || form['closed'] != null) return;
+      _markFormClosed(messageId, reason: event.reason);
+    }
+  }
+
+  /// 审批卡作废：复用 cli 审批卡的 `expired` 约定收起可点态（那套渲染与对账
+  /// 已经按「不是用户选的」处理），再记下原因给 UI 显示。
+  ///
+  /// 不写 `action_confirmation_responded` —— 那是「用户答过了」，会牵动工作流
+  /// 续跑与对账，作废不是回答。
+  void _markActionConfirmationClosed(
+    String messageId, {
+    required String reason,
+  }) {
+    final existing = messageIdMap[messageId]?.metadata?['action_confirmation'];
+    final merged = existing is Map
+        ? Map<String, dynamic>.from(existing)
+        : <String, dynamic>{};
+    PeerApprovalSelection.applySelection(merged, {
+      'selected_action_id': _cliExpiredActionId,
+      'selected_action_label': _cliExpiredActionId,
+    });
+    merged['closed'] = reason;
+    _updateGroupStreamingMetadata(messageId, 'action_confirmation', merged);
+    // 落库：否则下一次 loadMessages 会把卡片又画成「等你点」。
+    final meta =
+        Map<String, dynamic>.from(messageIdMap[messageId]?.metadata ?? {});
+    localDatabaseService.updateMessageMetadata(messageId, meta).ignore();
+  }
+
+  /// 表单卡作废。不能借 `submitted_values` 表达 —— 那会谎称用户提交过。
+  void _markFormClosed(String messageId, {required String reason}) {
+    final existing = messageIdMap[messageId]?.metadata?['form'];
+    final merged = existing is Map
+        ? Map<String, dynamic>.from(existing)
+        : <String, dynamic>{};
+    merged['closed'] = reason;
+    _updateGroupStreamingMetadata(messageId, 'form', merged);
+    final meta =
+        Map<String, dynamic>.from(messageIdMap[messageId]?.metadata ?? {});
+    localDatabaseService.updateMessageMetadata(messageId, meta).ignore();
+  }
+
   void _expireCliCardByConfirmationId(String confirmationId) {
     final messageId = _messageIdForCliConfirmation(confirmationId);
     if (messageId == null) return;

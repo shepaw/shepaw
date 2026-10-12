@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'interaction_closed_hint.dart';
+
 /// Widget that renders action confirmation buttons inline in a message bubble.
 ///
 /// Displays a list of buttons based on action data from the agent.
@@ -28,6 +30,10 @@ class ActionConfirmationButtons extends StatelessWidget {
     final confirmationId = actionData['confirmation_id'] as String? ?? '';
     final selectedActionId = actionData['selected_action_id'] as String?;
     final hasSelection = selectedActionId != null;
+    // 主机不再等这张卡了（超时按默认继续 / 回合被停止 / 回合已结束）。按钮
+    // 全部失效并说明原因 —— 留着可点的话，用户点下去只会撞上「已失效」。
+    final closedReason = actionData['closed'] as String?;
+    final isClosed = closedReason != null;
 
     if (actions.isEmpty) return const SizedBox.shrink();
 
@@ -56,11 +62,16 @@ class ActionConfirmationButtons extends StatelessWidget {
               ),
             ),
           ),
+        if (isClosed)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: InteractionClosedHint(reason: closedReason),
+          )
         // "Offline — will reconnect on tap" hint. Only shown while the user
         // still has a pending choice to make; once they've tapped a button
         // the hint is pointless (the verdict is already in flight or saved
         // locally, waiting for the reconnect to flush it).
-        if (isAgentOffline && !hasSelection)
+        else if (isAgentOffline && !hasSelection)
           Padding(
             padding: const EdgeInsets.only(bottom: 6),
             child: Row(
@@ -95,8 +106,8 @@ class ActionConfirmationButtons extends StatelessWidget {
                 ?? '';
             final label = actionMap['label'] as String? ?? '';
             final style = actionMap['style'] as String? ?? 'secondary';
-            final isSelected = selectedActionId == id;
-            final isDisabled = hasSelection && !isSelected;
+            final isSelected = !isClosed && selectedActionId == id;
+            final isDisabled = isClosed || (hasSelection && !isSelected);
 
             return _buildButton(
               context,

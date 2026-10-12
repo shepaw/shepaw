@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import 'file_upload_bubble.dart';
+import 'interaction_closed_hint.dart';
 
 /// Widget that renders a composite form inline in a message bubble.
 ///
@@ -295,6 +296,10 @@ class _FormBubbleState extends State<FormBubble> {
     final fields = (widget.formData['fields'] as List<dynamic>?) ?? [];
     final submittedValues = widget.formData['submitted_values'] as Map<String, dynamic>?;
     final isSubmitted = submittedValues != null;
+    // 主机不再等这张表单了（超时按默认继续 / 回合被停止）。字段留着给用户看
+    // 当时问了什么，但不能再填 —— 提交按钮换成一句说明。
+    final closedReason = widget.formData['closed'] as String?;
+    final isClosed = !isSubmitted && closedReason != null;
 
     if (fields.isEmpty) return const SizedBox.shrink();
 
@@ -350,14 +355,20 @@ class _FormBubbleState extends State<FormBubble> {
                 return Padding(
                   padding: EdgeInsets.only(
                       bottom: index < fields.length - 1 ? 12 : 0),
-                  child: isSubmitted
-                      ? _buildSubmittedField(context, field, submittedValues)
-                      : _buildField(context, field),
+                  child: _buildFieldSlot(
+                    context,
+                    field,
+                    submittedValues: submittedValues,
+                    isClosed: isClosed,
+                  ),
                 );
               }),
 
               // Submit button
-              if (!isSubmitted) ...[
+              if (isClosed) ...[
+                const SizedBox(height: 8),
+                InteractionClosedHint(reason: closedReason),
+              ] else if (!isSubmitted) ...[
                 const SizedBox(height: 12),
                 _buildFormSubmitButton(context, formId, fields),
               ] else ...[
@@ -385,6 +396,25 @@ class _FormBubbleState extends State<FormBubble> {
         );
       },
     );
+  }
+
+  /// 一个字段该画成什么样：已提交 → 展示答案；作废 → 照原样画但吃掉点击并
+  /// 压暗（填了也送不出去，不如一眼看出来它已经不该填）；否则 → 正常可填。
+  Widget _buildFieldSlot(
+    BuildContext context,
+    Map<String, dynamic> field, {
+    required Map<String, dynamic>? submittedValues,
+    required bool isClosed,
+  }) {
+    if (submittedValues != null) {
+      return _buildSubmittedField(context, field, submittedValues);
+    }
+    if (isClosed) {
+      return IgnorePointer(
+        child: Opacity(opacity: 0.55, child: _buildField(context, field)),
+      );
+    }
+    return _buildField(context, field);
   }
 
   /// Label + optional required mark that wraps instead of overflowing a Row.

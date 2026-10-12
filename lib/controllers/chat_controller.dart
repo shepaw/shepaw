@@ -224,6 +224,11 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   /// 补发的 AskUserQuestion）订阅，同上。
   StreamSubscription<Map<String, dynamic>>? _orphanFormSub;
 
+  /// 主机放弃等待的卡片（超时按默认继续 / 回合被停止）订阅：把还画成「等你点」
+  /// 的那张卡收起可点态。
+  StreamSubscription<({String approvalId, String reason})>?
+      _interactionClosedSub;
+
   // ---- Reply state ----
   Message? replyingToMessage;
 
@@ -548,6 +553,12 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
       if (peerAgentLocalId(peerId, remoteId) != agentId) return;
       _handleStreamingForm(event);
     });
+    // 卡片的等待有上限（主机侧 SHEPAW_ACP_APPROVAL_SECS，默认 30 分钟）。到点
+    // 主机不再等人、自己按默认往下跑，并告诉你这张卡作废了。收到就要收起可点
+    // 态，否则屏幕上一直留着一张点下去只会报「已失效」的卡。
+    _interactionClosedSub =
+        PeerAgentClientService.instance.interactionClosedEvents
+            .listen(_handleInteractionClosed);
   }
 
   @override
@@ -571,6 +582,7 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
     _peerConnSub?.cancel();
     _orphanApprovalSub?.cancel();
     _orphanFormSub?.cancel();
+    _interactionClosedSub?.cancel();
     _channelUpdateSub?.cancel();
     _clearInboxPush();
     _agentTaskCompletionSub?.cancel();
@@ -616,6 +628,10 @@ abstract class _ChatControllerBase extends ChangeNotifier with InteractiveStream
   /// onto a host bubble. Same shape as the `onForm` payload, so FormBubble and
   /// the submit path work unchanged.
   void _handleStreamingForm(Map<String, dynamic> formData);
+
+  /// Implemented by [_InteractionOps]: 主机不再等这张卡了（超时按默认继续 /
+  /// 回合被停止 / app 自己的回合结束兜底）—— 按 id 找到那张卡，收起可点态。
+  void _handleInteractionClosed(({String approvalId, String reason}) event);
 
   /// Implemented by [_MessagingOps]: group-chat variant of
   /// [_handleStreamingForm] — the card belongs to a peer member of the group,
