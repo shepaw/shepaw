@@ -301,14 +301,6 @@ class ACPAgentConnection implements AcpInteractiveConnection {
   /// Called when connection state changes
   void Function(bool isConnected)? onConnectionStateChanged;
 
-  /// Process-wide hook invoked whenever any `ACPAgentConnection` receives a
-  /// fresh slash-command list (via prefetch response or `agent.commands.changed`
-  /// notification). Lets `ChatService` persist the snapshot across the
-  /// connection's lifetime — useful for short-lived health-check connections
-  /// that dispose before the user interacts with the chat screen.
-  static void Function(String agentId, List<SlashCommandInfo> commands)?
-      slashCommandsSnapshotHook;
-
   ACPAgentConnection({
     required this.agentId,
     this.heartbeatIntervalSeconds = 30,
@@ -1244,14 +1236,6 @@ class ACPAgentConnection implements AcpInteractiveConnection {
     _slashCommands = next;
     if (!_slashCommandsController.isClosed) {
       _slashCommandsController.add(List.unmodifiable(next));
-    }
-    // Notify the process-wide snapshot cache so short-lived health-check
-    // connections can still seed the "/" palette for the persistent chat
-    // connection that comes later.
-    try {
-      slashCommandsSnapshotHook?.call(agentId, next);
-    } catch (_) {
-      /* hook must never break connection state */
     }
   }
 

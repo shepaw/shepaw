@@ -5794,7 +5794,7 @@ class PeerAgentClientService {
     }
     _rememberCommands(remoteId, commands, rev: rev);
     // Mirror ACP's snapshot hook so the "/" resolver can read from either path.
-    ACPAgentConnection.slashCommandsSnapshotHook?.call(remoteId, commands);
+    ChatService.slashCommandsSnapshotHook?.call(remoteId, commands);
     final stream = _slashCommandsStreams[remoteId];
     if (stream != null && !stream.isClosed) {
       stream.add(List.unmodifiable(commands));

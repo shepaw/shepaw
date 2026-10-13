@@ -3989,17 +3989,11 @@ class _ChatScreenState extends State<ChatScreen>
                   onMainModelChanged: _checkSheNeedsConfig,
                   slashCommands: c.agentId == null
                       ? const []
-                      : (c.chatService
-                              .getACPConnection(c.agentId!)
-                              ?.slashCommands ??
-                          c.chatService.getSlashCommandsSnapshot(c.agentId!)),
+                      : c.chatService.getSlashCommandsSnapshot(c.agentId!),
                   slashCommandsStream: c.agentId == null
                       ? null
-                      : (c.chatService
-                              .getACPConnection(c.agentId!)
-                              ?.slashCommandsStream ??
-                          PeerAgentClientService.instance
-                              .slashCommandsStream(c.agentId!)),
+                      : PeerAgentClientService.instance
+                          .slashCommandsStream(c.agentId!),
                   // Live resolver: read the current snapshot on every keystroke.
                   // Falls back to the process-wide snapshot cache (populated by
                   // any past ACP connection — including the short-lived
@@ -4008,14 +4002,10 @@ class _ChatScreenState extends State<ChatScreen>
                   // the user has sent their first message.
                   slashCommandsResolver: () {
                     if (c.agentId == null) return const [];
-                    final conn = c.chatService.getACPConnection(c.agentId!);
-                    final live = conn?.slashCommands ?? const [];
-                    if (live.isNotEmpty) return live;
                     final snap =
                         c.chatService.getSlashCommandsSnapshot(c.agentId!);
                     if (snap.isNotEmpty) return snap;
-                    // Peer agents have no ACP connection — use the prefetched
-                    // slash-command cache from PeerAgentClientService.
+                    // 进程内快照为空时退回 PeerAgentClientService 的预取缓存。
                     return PeerAgentClientService.instance
                         .getSlashCommands(c.agentId!);
                   },

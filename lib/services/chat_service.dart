@@ -424,7 +424,7 @@ class ChatService {
     // process-wide snapshot map. This lets the "/" palette populate from
     // commands seen during short-lived health-check connections, even
     // though those connections are disposed before the chat screen opens.
-    ACPAgentConnection.slashCommandsSnapshotHook = cacheSlashCommandsSnapshot;
+    ChatService.slashCommandsSnapshotHook = cacheSlashCommandsSnapshot;
     HubCliExecute.activeSessionLookup = findActiveSessionId;
     // 步骤被显式跳过 → 发射 stepSkipped 事件（被动，不唤醒管理员）。
     // 闭包内才访问 _groupEventPerceptionScheduler，避免在构造期提前初始化。
@@ -1245,6 +1245,13 @@ class ChatService {
       () => PeerAcpConnection(agentId: agent.id, peerId: peerId),
     );
   }
+
+  /// 任何来源拿到新鲜斜杠指令表时调它，灌进进程内快照供 "/" 面板读取。
+  ///
+  /// 以前挂在 `ACPAgentConnection` 上（直连 ACP 退役前的中转），现在由
+  /// [ChatService] 自持——peer 侧的预取直接调这里。
+  static void Function(String agentId, List<SlashCommandInfo> commands)?
+      slashCommandsSnapshotHook;
 
   /// Update the cached slash-command snapshot for [agentId].
   ///
