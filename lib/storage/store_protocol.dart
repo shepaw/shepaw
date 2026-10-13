@@ -307,8 +307,15 @@ class StoreSpace {
     tools,
   ];
 
-  /// Owner 默认可跨 device **写** 的分区（仅 workspaces）。
-  static const ownerCrossWritable = <String>[workspaces];
+  /// Owner 默认可跨 device **写** 的分区。
+  ///
+  /// - `workspaces`：群工作区的属主目录。
+  /// - `slips`：玉简权威在主机，客户端直接写主机的 `slips/<主机指纹>/`，
+  ///   本地只留读缓存（见 docs/jade_slip_host_authority_decision.md）。
+  ///
+  /// 进入这张清单 = 任一 owner 设备可写任一 owner 设备的 `<device>/<space>/`
+  /// 树（ACL 写分支与 `StoreService._writeDeviceId` 共用这一份判断）。
+  static const ownerCrossWritable = <String>[workspaces, slips];
 
   static bool isValid(String s) => all.contains(s);
 

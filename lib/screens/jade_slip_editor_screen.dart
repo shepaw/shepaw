@@ -17,6 +17,10 @@ import '../services/local_database_service.dart';
 import '../services/local_user_identity.dart';
 import '../services/she_service.dart';
 import '../services/store_open_service.dart';
+import '../storage/host_pouch_documents.dart';
+import '../storage/local_store.dart';
+import '../storage/store_protocol.dart';
+import '../storage/store_uri_reader.dart';
 import '../theme/app_theme.dart';
 import '../widgets/agent_list_avatar.dart';
 import '../widgets/chat/storage_file_picker_screen.dart';
@@ -73,6 +77,8 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   bool _didFocusTitle = false;
   bool _contractOpen = false;
   String _untitledLabel = '';
+  /// 一次附件导入里给临时文件编号，避免同名互相覆盖。
+  int _tempSeq = 0;
   Timer? _textDebounce;
   StreamSubscription<void>? _sub;
 
@@ -117,20 +123,23 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     _textDebounce?.cancel();
     final slip = _slip;
     if (!_closed && slip != null) {
+      // 走主机写，离线时会失败；这里已经无 UI 可提示，吞掉别变成未捕获异常。
       if (_shouldDiscardBlankDraft(slip)) {
         unawaited(_service.delete(slip.id).then((_) {
           widget.onChanged?.call();
-        }));
+        }).catchError((_) {}));
       } else if (_dirty) {
         final title = _title.text.trim();
         if (title.isNotEmpty) {
-          unawaited(_service.update(slip.copyWith(
-            title: title,
-            goal: _goal.text,
-            constraints: _constraints.text,
-            doneWhen: _doneWhen.text,
-            body: _body.text,
-          )));
+          unawaited(_service
+              .update(slip.copyWith(
+                title: title,
+                goal: _goal.text,
+                constraints: _constraints.text,
+                doneWhen: _doneWhen.text,
+                body: _body.text,
+              ))
+              .catchError((_) => slip));
         }
       }
     }
@@ -153,7 +162,14 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   }
 
   Future<void> _load() async {
-    final slip = await _service.getById(widget.slipId);
+    JadeSlip? slip;
+    try {
+      slip = await _service.getById(widget.slipId);
+    } on HostOfflineException catch (e) {
+      // 主机连不上：保留已在屏幕上的那份，只提示。
+      _showError(e);
+      return;
+    }
     if (!mounted) return;
     if (slip == null) {
       if (!widget.embedded) Navigator.pop(context);
@@ -164,19 +180,26 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     _constraints.text = slip.constraints;
     _doneWhen.text = slip.doneWhen;
     _body.text = slip.body;
-    final parent = slip.parentId.isEmpty
-        ? null
-        : await _service.getById(slip.parentId);
-    final children = await _service.childrenOf(slip.id);
+    JadeSlip? parent;
+    var children = const <JadeSlip>[];
+    try {
+      parent = slip.parentId.isEmpty
+          ? null
+          : await _service.getById(slip.parentId);
+      children = await _service.childrenOf(slip.id);
+    } on HostOfflineException {
+      // 父简/子简都要额外读一次主机；读不到就先只显示这一条。
+    }
+    final loaded = slip;
     if (!mounted) return;
     setState(() {
-      _slip = slip;
+      _slip = loaded;
       _parent = parent;
       _children = children;
       _dirty = false;
-      _contractOpen = slip.goal.trim().isNotEmpty ||
-          slip.constraints.trim().isNotEmpty ||
-          slip.doneWhen.trim().isNotEmpty;
+      _contractOpen = loaded.goal.trim().isNotEmpty ||
+          loaded.constraints.trim().isNotEmpty ||
+          loaded.doneWhen.trim().isNotEmpty;
     });
     _maybeFocusTitle();
     _maybeFocusChecklist();
@@ -241,6 +264,50 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     setState(() => _slip = slip);
   }
 
+  /// 主机连不上时给专用文案：权威在主机，写不进去就是没保存。
+  ///
+  /// 其余错误保持原来的「保存失败（原因）」。
+  String _errorText(Object e) {
+    final l10n = AppLocalizations.of(context);
+    if (e is HostOfflineException) return l10n.pouch_hostOffline;
+    if (e is StoreException &&
+        (e.code == StoreError.masterOffline ||
+            e.code == StoreError.notPaired)) {
+      return l10n.pouch_hostOffline;
+    }
+    return l10n.jadeSlip_saveFailed('$e');
+  }
+
+  void _showError(Object e) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(_errorText(e))));
+  }
+
+  /// 兜住没有 try/catch 的编辑动作。
+  ///
+  /// 这些动作以前只在本地写盘，失败面很小；现在每次写都要经主机，离线时必须
+  /// 有提示，不能变成未捕获的异步错误。
+  Future<bool> _guard(Future<void> Function() action) async {
+    try {
+      await action();
+      return true;
+    } catch (e) {
+      _showError(e);
+      return false;
+    }
+  }
+
+  /// 同 [_guard]，但要把结果带出来（派发通知要用写回后的那条）。
+  Future<T?> _guardValue<T>(Future<T> Function() action) async {
+    try {
+      return await action();
+    } catch (e) {
+      _showError(e);
+      return null;
+    }
+  }
+
   Future<bool> _persist(JadeSlip next) async {
     setState(() => _saving = true);
     try {
@@ -256,11 +323,7 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     } catch (e) {
       if (!mounted) return false;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content:
-                Text(AppLocalizations.of(context).jadeSlip_saveFailed('$e'))),
-      );
+      _showError(e);
       return false;
     }
   }
@@ -302,9 +365,11 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     if (text.isEmpty || _slip == null) return;
     _item.clear();
     await _flush();
-    await _service.addItem(id: widget.slipId, text: text);
+    final ok = await _guard(
+      () => _service.addItem(id: widget.slipId, text: text),
+    );
     widget.onChanged?.call();
-    await _load();
+    if (ok) await _load();
     if (!mounted) return;
     // 列表插入新行、父页面随后刷新都会重建子树。拉住焦点，才能连续添加。
     _holdAddItemFocus();
@@ -329,20 +394,27 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     final l10n = AppLocalizations.of(context);
     _comment.clear();
     await _flush();
-    await _service.addComment(
-      id: widget.slipId,
-      text: text,
-      authorId: LocalUserIdentity.id,
-      authorName: l10n.jadeSlip_commentMine,
+    final ok = await _guard(
+      () => _service.addComment(
+        id: widget.slipId,
+        text: text,
+        authorId: LocalUserIdentity.id,
+        authorName: l10n.jadeSlip_commentMine,
+      ),
     );
     widget.onChanged?.call();
-    await _load();
+    if (ok) await _load();
   }
 
   Future<void> _removeComment(String commentId) async {
     final slip = _slip;
     if (slip == null) return;
     await _flush();
+    final ok = await _guard(
+      () => _service.removeComment(id: widget.slipId, commentId: commentId),
+    );
+    if (!ok || !mounted) return;
+    // 写成了才改本地视图，否则会留下一条其实还在主机上的评论。
     setState(() {
       _slip = slip.copyWith(
         comments: [
@@ -351,7 +423,6 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
         ],
       );
     });
-    await _service.removeComment(id: widget.slipId, commentId: commentId);
     widget.onChanged?.call();
     await _load();
   }
@@ -451,13 +522,18 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     if (refs == null || refs.isEmpty || !mounted) return;
     await _flush();
     setState(() => _saving = true);
+    Directory? tmp;
     try {
+      // 被选中的文件在储物袋里，客户端本机没有；按 URI 取内容落到临时文件，
+      // 再由助手写进主机。`resolveLocalFile()` 只认本地 device 布局，客户端
+      // 上永远返回 null（选了文件却什么都没附上）。
       for (final ref in refs) {
-        final file = await ref.resolveLocalFile();
-        if (file == null) continue;
+        final dir = tmp ??= await Directory.systemTemp.createTemp('shepaw_slip_att');
+        final dest = File(p.join(dir.path, _tempName(ref)));
+        await StoreUriReader.instance.copyTo(ref.storeUri, dest);
         await _service.addAttachment(
           id: widget.slipId,
-          file: file,
+          file: dest,
           displayName: ref.displayName,
         );
       }
@@ -473,8 +549,24 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
         ),
       );
     } finally {
+      if (tmp != null) {
+        unawaited(tmp.delete(recursive: true).catchError((_) => tmp!));
+      }
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  /// 临时文件名：同名文件互相覆盖，加序号区分。
+  String _tempName(StoreAttachmentRef ref) {
+    final base = _safeName(ref.displayName);
+    final n = _tempSeq++;
+    return n == 0 ? base : '$n-$base';
+  }
+
+  static String _safeName(String name) {
+    final base = p.basename(name.trim());
+    final cleaned = base.replaceAll(RegExp(r'[\\/:\0]+'), '_');
+    return cleaned.isEmpty ? 'file' : cleaned;
   }
 
   @override
@@ -979,17 +1071,21 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     final ref = uri.text.trim();
     uri.dispose();
     if (ok != true || ref.isEmpty) return;
-    await _service.addEvidence(id: widget.slipId, itemId: item.id, uri: ref);
+    await _guard(
+      () => _service.addEvidence(id: widget.slipId, itemId: item.id, uri: ref),
+    );
     widget.onChanged?.call();
   }
 
   /// 把这一项记到另一个 Agent 名下，不另开一轮对话。对方下次读玉简就能领走。
   Future<void> _assignItem(JadeSlipItem item, {bool clear = false}) async {
     if (clear) {
-      await _service.assignItem(
-        id: widget.slipId,
-        itemId: item.id,
-        assigneeAgentId: '',
+      await _guard(
+        () => _service.assignItem(
+          id: widget.slipId,
+          itemId: item.id,
+          assigneeAgentId: '',
+        ),
       );
       widget.onChanged?.call();
       return;
@@ -1001,13 +1097,16 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
       currentAgentId: item.assigneeAgentId,
     );
     if (picked == null || picked.id.isEmpty) return;
-    final updated = await _service.assignItem(
-      id: widget.slipId,
-      itemId: item.id,
-      assigneeAgentId: picked.id,
-      assigneeAgentName: picked.name,
+    final updated = await _guardValue(
+      () => _service.assignItem(
+        id: widget.slipId,
+        itemId: item.id,
+        assigneeAgentId: picked.id,
+        assigneeAgentName: picked.name,
+      ),
     );
     widget.onChanged?.call();
+    if (updated == null) return;
     await JadeSlipWake.notify(updated, '已把一项交给 ${picked.name}');
   }
 
@@ -1038,14 +1137,17 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     final text = reason.text.trim();
     reason.dispose();
     if (ok != true || text.isEmpty) return;
-    final updated = await _service.returnItem(
-      id: widget.slipId,
-      itemId: item.id,
-      reason: text,
-      actorId: LocalUserIdentity.id,
-      actorName: LocalUserIdentity.displayName,
+    final updated = await _guardValue(
+      () => _service.returnItem(
+        id: widget.slipId,
+        itemId: item.id,
+        reason: text,
+        actorId: LocalUserIdentity.id,
+        actorName: LocalUserIdentity.displayName,
+      ),
     );
     widget.onChanged?.call();
+    if (updated == null) return;
     await JadeSlipWake.notify(updated, '有一项被退回');
   }
 
@@ -1054,8 +1156,11 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
       _openSlip(item.childSlipId);
       return;
     }
-    final child = await _service.splitItem(id: widget.slipId, itemId: item.id);
+    final child = await _guardValue(
+      () => _service.splitItem(id: widget.slipId, itemId: item.id),
+    );
     widget.onChanged?.call();
+    if (child == null) return; // 没拆成就别把用户带进一条不存在的简
     _openSlip(child.id);
   }
 

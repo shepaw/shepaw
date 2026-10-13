@@ -12,7 +12,7 @@ import 'package:shepaw/storage/device_identity.dart';
 import 'package:shepaw/storage/import_auth_service.dart';
 import 'package:shepaw/storage/local_store.dart';
 import 'package:shepaw/storage/store_protocol.dart';
-import 'package:shepaw/clis/shepaw/pouch/store_namespace.dart';
+import 'package:shepaw/clis/shepaw/store/store_namespace.dart';
 import 'package:shepaw/storage/store_service.dart';
 
 import 'test_harness.dart';

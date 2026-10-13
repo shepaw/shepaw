@@ -82,7 +82,9 @@ class JadeSlip {
   /// 已删除的清单项 id。合并时用来避免把另一端已删的项加回来。
   final List<String> removedItemIds;
 
-  /// 权威副本所在设备（写入该 device 目录，便于镜像回源）。
+  /// 权威副本所在设备 = 主机（Noise 指纹）。
+  ///
+  /// 客户端本地只有读缓存，不是权威；服务端唯一那份在主机自己这个目录里。
   final String deviceId;
   final int createdAt;
   final int updatedAt;

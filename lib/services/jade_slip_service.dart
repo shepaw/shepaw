@@ -7,16 +7,17 @@ import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 
 import '../models/jade_slip.dart';
-import '../storage/device_identity.dart';
+import '../storage/host_pouch_documents.dart';
 import '../storage/local_store.dart';
 import '../storage/store_protocol.dart';
-import '../storage/store_service.dart';
+import 'jade_slip_rehome.dart';
 import 'logger_service.dart';
 
-/// 玉简业务服务：读写储物袋 `notes` 分区里的待办。
+/// 玉简业务服务：读写储物袋 `slips` 分区里的待办。
 ///
-/// 权威副本在 [JadeSlip.deviceId] 目录；本机打开时会合并各设备（含镜像）
-/// 同 id 的最新版本，便于手机记下、电脑上交给 Agent 执行。
+/// 权威只有一份：主机的 `slips/<主机指纹>/<id>.json`。本机就是主机时直接读写
+/// 本机磁盘；登录了别的主机时直接读写那一台，本地只留读缓存
+/// （见 docs/jade_slip_host_authority_decision.md）。
 class JadeSlipService {
   JadeSlipService._();
   static final JadeSlipService instance = JadeSlipService._();
@@ -34,125 +35,79 @@ class JadeSlipService {
   @visibleForTesting
   String? debugDeviceId;
 
+  /// 测试注入：整个读写面换掉（含远端形态的假实现）。
+  @visibleForTesting
+  HostPouchDocuments Function()? debugDocuments;
+
   Stream<void> get changes => _changes.stream;
 
   void _notify() {
     if (!_changes.isClosed) _changes.add(null);
   }
 
-  Future<LocalStore> _store() async {
-    final injected = debugStore;
-    if (injected != null) return injected;
-    return StoreService.instance.localStore();
-  }
-
-  Future<String> _selfId() async {
-    final injected = debugDeviceId;
-    if (injected != null && injected.isNotEmpty) return injected;
-    return DeviceIdentity.deviceId();
-  }
-
-  Future<List<String>> _deviceIds(LocalStore store) async {
-    final ids = <String>[];
-    if (!await store.root.exists()) return ids;
-    await for (final entity in store.root.list()) {
-      if (entity is! Directory) continue;
-      final name = p.basename(entity.path);
-      if (isValidDeviceId(name)) ids.add(name);
+  /// 权威在哪台设备、怎么读写。
+  ///
+  /// 每次操作解析一次（要读 PouchSession），所以调用方解析后往下传，
+  /// 不要在循环里反复取。
+  Future<HostPouchDocuments> _docs() async {
+    final injected = debugDocuments;
+    if (injected != null) return injected();
+    final store = debugStore;
+    final deviceId = debugDeviceId;
+    if (store != null && deviceId != null && deviceId.isNotEmpty) {
+      return LocalHostPouchDocuments(store: store, deviceId: deviceId);
     }
-    ids.sort();
-    return ids;
+    return HostPouchDocumentsFactory.resolve();
   }
 
-  Future<Uint8List> _readAll(
-    LocalStore store,
-    String deviceId,
-    String path,
-  ) async {
-    const chunk = LocalStore.maxBinaryReadChunk;
-    final pieces = <int>[];
-    var offset = 0;
-    while (true) {
-      final (data, _, eof) = await store.read(
-        deviceId,
-        StoreSpace.slips,
-        path,
-        offset,
-        chunk,
-      );
-      pieces.addAll(data);
-      if (eof) break;
-      offset += data.length;
-      if (data.isEmpty) break;
-    }
-    return Uint8List.fromList(pieces);
-  }
-
-  Future<JadeSlip?> _readSlip(
-    LocalStore store,
-    String deviceId,
-    String path,
-  ) async {
+  Future<JadeSlip?> _readSlip(HostPouchDocuments docs, String path) async {
     try {
-      final bytes = await _readAll(store, deviceId, path);
+      final bytes = await docs.read(StoreSpace.slips, path);
+      if (bytes == null) return null;
       final decoded = jsonDecode(utf8.decode(bytes));
       if (decoded is! Map) return null;
       final slip = JadeSlip.fromJson(
         decoded.cast<String, dynamic>(),
-        deviceId: deviceId,
+        deviceId: docs.deviceId,
       );
       if (slip.id.isEmpty) return null;
-      return slip;
-    } on StoreException catch (e) {
-      if (e.code == StoreError.notFound) return null;
-      _log.warning('read slip $deviceId/$path: $e', tag: _tag);
-      return null;
+      // 旧记录里可能嵌着别的设备 id；权威已统一，读出来就归一。
+      return slip.deviceId == docs.deviceId
+          ? slip
+          : slip.copyWith(deviceId: docs.deviceId);
+    } on HostOfflineException {
+      rethrow; // 「连不上主机」不能降级成「这条简不存在」。
     } catch (e) {
-      _log.warning('parse slip $deviceId/$path: $e', tag: _tag);
+      _log.warning('read slip ${docs.deviceId}/$path: $e', tag: _tag);
       return null;
     }
   }
 
-  Future<void> _writeSlip(LocalStore store, JadeSlip slip) async {
+  Future<void> _writeSlip(HostPouchDocuments docs, JadeSlip slip) async {
     final bytes = Uint8List.fromList(
-      utf8.encode(const JsonEncoder.withIndent('  ').convert(slip.toJson())),
+      utf8.encode(const JsonEncoder.withIndent('  ')
+          .convert(slip.copyWith(deviceId: docs.deviceId).toJson())),
     );
-    await store.putBytes(
-      deviceId: slip.deviceId,
-      space: StoreSpace.slips,
-      path: slip.relPath,
-      bytes: bytes,
-    );
+    await docs.writeBytes(StoreSpace.slips, slip.relPath, bytes);
   }
 
-  /// 列出玉简。同 id 多设备副本只保留 updatedAt 最新的一条。
+  /// 列出主机上的玉简。主机不可达时抛 [HostOfflineException]。
   Future<List<JadeSlip>> list({
     JadeSlipStatus? status,
     String? query,
     bool includeArchived = false,
   }) async {
-    final store = await _store();
-    final byId = <String, JadeSlip>{};
-    for (final deviceId in await _deviceIds(store)) {
-      final entries = await store.list(
-        deviceId,
-        StoreSpace.slips,
-        computeHash: false,
-      );
-      for (final entry in entries) {
-        if (entry.isDir || !JadeSlip.isRecordPath(entry.path)) continue;
-        final slip = await _readSlip(store, deviceId, entry.path);
-        if (slip == null) continue;
-        final existing = byId[slip.id];
-        if (existing == null) {
-          byId[slip.id] = slip;
-        } else {
-          byId[slip.id] = JadeSlip.mergeCopies(existing, slip);
-        }
-      }
+    final docs = await _docs();
+    await JadeSlipRehome.ensure(docs: docs);
+    final entries = await docs.list(StoreSpace.slips);
+    var list = <JadeSlip>[];
+    for (final entry in entries) {
+      // 顶层同时有 `<id>.json` 记录和 `<id>/files/…` 附件目录。
+      if (entry.isDir || !JadeSlip.isRecordPath(entry.path)) continue;
+      final slip = await _readSlip(docs, entry.path);
+      if (slip != null) list.add(slip);
     }
-    var list = byId.values.toList()
-      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     if (!includeArchived) {
       list = list.where((s) => s.status != JadeSlipStatus.archived).toList();
     }
@@ -175,14 +130,16 @@ class JadeSlipService {
     return all.where((s) => s.isOpen).length;
   }
 
+  /// 按 id 取一条。直接读 `slips/<主机>/<id>.json`，不列全目录 —— 主机离线时
+  /// 还能从读缓存里把看过的那条打开（只读）。
+  ///
+  /// 主机不可达且无缓存时抛 [HostOfflineException]。
   Future<JadeSlip?> getById(String id) async {
     final trimmed = id.trim();
     if (trimmed.isEmpty) return null;
-    final all = await list(includeArchived: true);
-    for (final slip in all) {
-      if (slip.id == trimmed) return slip;
-    }
-    return null;
+    final docs = await _docs();
+    await JadeSlipRehome.ensure(docs: docs);
+    return _readSlip(docs, '$trimmed.json');
   }
 
   Future<List<JadeSlip>> childrenOf(String id) async {
@@ -251,6 +208,7 @@ class JadeSlipService {
         (p) => !(items ?? const []).any((i) => i.text == p.text),
       ),
     ];
+    final docs = await _docs();
     final slip = JadeSlip(
       id: _uuid.v4(),
       title: trimmedTitle,
@@ -267,11 +225,11 @@ class JadeSlipService {
       sourceInstructionId: sourceInstructionId.trim(),
       parentId: parentId.trim(),
       sourceItemId: sourceItemId.trim(),
-      deviceId: await _selfId(),
+      deviceId: docs.deviceId,
       createdAt: now,
       updatedAt: now,
     ).withDerivedStatus();
-    await _writeSlip(await _store(), slip);
+    await _writeSlip(docs, slip);
     _notify();
     return slip;
   }
@@ -280,25 +238,15 @@ class JadeSlipService {
     if (next.title.trim().isEmpty) {
       throw ArgumentError('jade slip title cannot be empty');
     }
-    final existing = await getById(next.id);
-    final self = await _selfId();
-    var deviceId = next.deviceId;
-    if (deviceId.isEmpty) deviceId = existing?.deviceId ?? self;
-    final store = await _store();
-    final originExists = existing != null &&
-        await Directory(
-          p.join(store.root.path, existing.deviceId, StoreSpace.slips),
-        ).exists();
-    if (!originExists) deviceId = self;
-
+    final docs = await _docs();
     final slip = next
         .copyWith(
           title: next.title.trim(),
-          deviceId: deviceId,
+          deviceId: docs.deviceId,
           updatedAt: DateTime.now().millisecondsSinceEpoch,
         )
         .withDerivedStatus();
-    await _writeSlip(store, slip);
+    await _writeSlip(docs, slip);
     _notify();
     return slip;
   }
@@ -711,18 +659,13 @@ class JadeSlipService {
     final name = (displayName ?? p.basename(file.path)).trim();
     final safe = _safeFileName(name.isEmpty ? attId : name);
     final rel = '${slip.id}/files/$attId-$safe';
-    final store = await _store();
-    final put = await store.putFile(
-      deviceId: slip.deviceId,
-      space: StoreSpace.slips,
-      path: rel,
-      file: file,
-    );
+    final docs = await _docs();
+    final size = await docs.writeFile(StoreSpace.slips, rel, file);
     final att = JadeSlipAttachment(
       id: attId,
       name: name.isEmpty ? safe : name,
       path: rel,
-      sizeBytes: put.size,
+      sizeBytes: size,
     );
     return update(slip.copyWith(attachments: [...slip.attachments, att]));
   }
@@ -747,12 +690,8 @@ class JadeSlipService {
     if (found == null) {
       throw StateError('jade slip attachment not found: $attachmentId');
     }
-    final store = await _store();
-    try {
-      await store.delete(slip.deviceId, StoreSpace.slips, found.path);
-    } on StoreException catch (e) {
-      if (e.code != StoreError.notFound) rethrow;
-    }
+    final docs = await _docs();
+    await docs.delete(StoreSpace.slips, found.path);
     return update(slip.copyWith(attachments: remaining));
   }
 
@@ -777,21 +716,13 @@ class JadeSlipService {
   }
 
   Future<void> delete(String id) async {
-    final slip = await getById(id);
+    final docs = await _docs();
+    final slip = await _readSlip(docs, '${id.trim()}.json');
     if (slip == null) return;
-    final store = await _store();
     for (final att in slip.attachments) {
-      try {
-        await store.delete(slip.deviceId, StoreSpace.slips, att.path);
-      } on StoreException catch (e) {
-        if (e.code != StoreError.notFound) rethrow;
-      }
+      await docs.delete(StoreSpace.slips, att.path);
     }
-    try {
-      await store.delete(slip.deviceId, StoreSpace.slips, slip.relPath);
-    } on StoreException catch (e) {
-      if (e.code != StoreError.notFound) rethrow;
-    }
+    await docs.delete(StoreSpace.slips, slip.relPath);
     _notify();
   }
 

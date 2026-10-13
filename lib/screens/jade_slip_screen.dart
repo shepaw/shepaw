@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../models/jade_slip.dart';
 import '../services/jade_slip_service.dart';
+import '../storage/host_pouch_documents.dart';
 import '../theme/app_theme.dart';
 import '../utils/layout_utils.dart';
 import 'jade_slip_editor_screen.dart';
@@ -74,6 +75,9 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
   final _searchFocus = FocusNode();
 
   List<JadeSlip>? _items;
+
+  /// 上一次列目录没连上主机。列表可能因此是空的，要说清原因。
+  bool _hostOffline = false;
   JadeSlipListFilter _filter = JadeSlipListFilter.all;
   String? _selectedId;
   String? _focusChecklistId;
@@ -114,10 +118,22 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
     final serial = ++_loadSerial;
     final includeArchived = _filter == JadeSlipListFilter.all;
     final selectedId = _selectedId;
-    var items = await _service.list(
-      query: _search.text,
-      includeArchived: includeArchived,
-    );
+    final List<JadeSlip> raw;
+    try {
+      raw = await _service.list(
+        query: _search.text,
+        includeArchived: includeArchived,
+      );
+    } on HostOfflineException {
+      // 权威在主机，而且列目录没有本地索引：离线时不能把空列表说成「没有玉简」。
+      if (!mounted || serial != _loadSerial) return;
+      setState(() {
+        _hostOffline = true;
+        _items ??= const <JadeSlip>[];
+      });
+      return;
+    }
+    var items = raw;
     if (_filter != JadeSlipListFilter.all) {
       items = [
         for (final slip in items)
@@ -151,6 +167,7 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
     setState(() {
       _items = items;
       _selectedId = nextSelected;
+      _hostOffline = false;
     });
   }
 
@@ -493,21 +510,33 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
 
   Widget _buildEmpty(AppLocalizations l10n) {
     final scheme = Theme.of(context).colorScheme;
+    final offline = _hostOffline;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.auto_stories_outlined, size: 48, color: scheme.outline),
+            Icon(
+              offline ? Icons.cloud_off_outlined : Icons.auto_stories_outlined,
+              size: 48,
+              color: scheme.outline,
+            ),
             const SizedBox(height: 12),
             Text(
-              l10n.jadeSlip_empty,
+              offline ? l10n.pouch_hostOffline : l10n.jadeSlip_empty,
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),
             ),
+            if (offline) ...[
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () => unawaited(_load(strict: true)),
+                child: Text(l10n.common_retry),
+              ),
+            ],
           ],
         ),
       ),

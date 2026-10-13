@@ -333,6 +333,100 @@ class StoreService {
     );
   }
 
+  /// 写入任意分区，内容来自磁盘文件（流式，不整份进内存）。
+  ///
+  /// 与 [writeDeviceBytes] 同一条协议；本机落盘走 [LocalStore.putFile]。
+  /// 返回写入的字节数。
+  Future<int> writeDeviceFile({
+    required String deviceId,
+    required String space,
+    required String path,
+    required File file,
+  }) async {
+    final self = await DeviceIdentity.deviceId();
+    final normalized = normalizeStorePath(path);
+    if (deviceId == self) {
+      final store = await _localStore();
+      final put = await store.putFile(
+        deviceId: self,
+        space: space,
+        path: normalized,
+        file: file,
+      );
+      return put.size;
+    }
+    final size = await file.length();
+    final hash =
+        (await crypto.sha256.bind(file.openRead()).first).toString();
+    Future<Map<String, dynamic>?> send(StoreFrame frame) =>
+        callPeer(deviceId, frame);
+    final begin = await send(StoreFrame(
+      op: StoreOp.writeBegin,
+      payload: <String, dynamic>{
+        'space': space,
+        'device': deviceId,
+        'path': normalized,
+        'size': size,
+        'sha256': hash,
+      },
+    ));
+    _throwStoreResult(begin, 'write.begin failed');
+    final uploadId = begin!['upload_id'] as String;
+    if (size == 0) {
+      _throwStoreResult(
+        await send(StoreFrame(
+          op: StoreOp.writeChunk,
+          payload: <String, dynamic>{
+            'space': space,
+            'device': deviceId,
+            'upload_id': uploadId,
+            'offset': 0,
+            'data': '',
+          },
+        )),
+        'write.chunk failed',
+      );
+    } else {
+      final raf = await file.open();
+      try {
+        var offset = 0;
+        final buf = Uint8List(LocalStore.maxReadChunk);
+        while (true) {
+          final n = await raf.readInto(buf);
+          if (n <= 0) break;
+          _throwStoreResult(
+            await send(StoreFrame(
+              op: StoreOp.writeChunk,
+              payload: <String, dynamic>{
+                'space': space,
+                'device': deviceId,
+                'upload_id': uploadId,
+                'offset': offset,
+                'data': base64Encode(buf.sublist(0, n)),
+              },
+            )),
+            'write.chunk failed',
+          );
+          offset += n;
+        }
+      } finally {
+        await raf.close();
+      }
+    }
+    _throwStoreResult(
+      await send(StoreFrame(
+        op: StoreOp.commit,
+        payload: <String, dynamic>{
+          'space': space,
+          'device': deviceId,
+          'upload_ids': [uploadId],
+        },
+      )),
+      'commit failed',
+    );
+    return size;
+  }
+
   /// 删除文件；[folder] 时删掉该前缀下的全部文件。
   Future<void> deleteDevicePath({
     required String deviceId,
@@ -491,6 +585,29 @@ class StoreService {
       computeHash: computeHash,
     );
   }
+
+  /// 直连指定服务端列目录，不走 [preferredReadServer] 的回落。
+  ///
+  /// 权威只在一台设备（如主机上的玉简）时必须用这个：[listDevice] 在属主离线
+  /// 时会回落到本机 master，把本机那份空目录当成对端的。
+  Future<List<StoreEntry>> listViaServer({
+    required String serverDeviceId,
+    required String deviceId,
+    required String space,
+    String? prefix,
+    int limit = 100,
+    int? depth,
+    bool computeHash = true,
+  }) =>
+      _listViaServer(
+        serverId: serverDeviceId,
+        deviceId: deviceId,
+        space: space,
+        prefix: prefix,
+        limit: limit,
+        depth: depth,
+        computeHash: computeHash,
+      );
 
   Future<List<StoreEntry>> _listViaServer({
     required String serverId,
@@ -1202,7 +1319,11 @@ class StoreService {
 
   // ────────────────────────────── 统一执行器（loopback 与远端共用）──
 
-  /// 写目标 device：默认调用者；workspaces 允许 frame.device 指向他端（ACL 已放行）。
+  /// 写目标 device：默认调用者；[StoreSpace.ownerCrossWritable] 里的分区允许
+  /// frame.device 指向他端。
+  ///
+  /// 这里不再复核 device 形态或路径：ACL 写分支（[checkStoreAclWith]）已经要求
+  /// owner + 合法 device id，走得到这一步的都放行过了。
   String _writeDeviceId(StoreFrame frame, String callerDeviceId) {
     final device = frame.device;
     if (device == null || device.isEmpty || device == callerDeviceId) {
