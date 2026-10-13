@@ -11,6 +11,7 @@ import 'package:crypto/crypto.dart' as crypto;
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/acp_protocol.dart';
+import 'task/acp_task_contract.dart';
 import 'acp_interactive_connection.dart';
 import 'logger_service.dart';
 import 'noise/noise_envelope.dart';
@@ -18,14 +19,6 @@ import 'noise/noise_session.dart';
 import 'noise_identity.dart';
 import 'ui_component_registry.dart';
 
-/// 兜底超时：远端 ACP agent 单回合任务的等待上限。
-///
-/// 半开/失活连接由 30s 心跳（[ACPAgentConnection._sendHeartbeat]）在秒级
-/// 发现并断开，断开时会 `_failInFlightTasks` 立即解阻塞等待方；此常量只是
-/// 「连接存活但某任务永不完成」的后备保险。原先 3h 会让用户在编排循环 /
-/// 门闸 / 收尾总结里干等半天。正常远端回合（含流式）远小于此值；超时抛
-/// [TimeoutException] 由调用方按失败处理。
-const Duration acpTaskTimeout = Duration(minutes: 10);
 
 /// 建连（DNS + TCP + WebSocket 握手）的兜底超时。
 ///
@@ -58,94 +51,6 @@ const Duration acpDmTaskTimeout = Duration(minutes: 30);
 /// Multi-binding: group orchestration runs several agents concurrently under
 /// one token, so bindings/callbacks accumulate instead of overwriting each
 /// other. Callbacks/bindings registered after [cancel] fire immediately.
-class ACPCancellationToken {
-  bool _isCancelled = false;
-  final List<({ACPAgentConnection connection, String taskId})> _bindings = [];
-  final List<void Function()> _cancelCallbacks = [];
-
-  bool get isCancelled => _isCancelled;
-
-  void bind(ACPAgentConnection connection, String taskId) {
-    if (_isCancelled) {
-      // Already cancelled — propagate immediately so late-bound tasks stop.
-      connection.cancelTask(taskId).catchError((_) => ACPResponse(jsonrpc: '2.0', id: 0));
-      return;
-    }
-    _bindings.add((connection: connection, taskId: taskId));
-  }
-
-  /// Drop a binding once its task has finished so [cancel] does not send
-  /// cancelTask for tasks that already completed.
-  void unbind(ACPAgentConnection connection, String taskId) {
-    _bindings.removeWhere(
-      (b) => identical(b.connection, connection) && b.taskId == taskId,
-    );
-  }
-
-  /// Register a callback invoked synchronously when [cancel] is called.
-  /// Used by the chat service to complete task completers locally.
-  void addOnCancelled(void Function() callback) {
-    if (_isCancelled) {
-      callback();
-      return;
-    }
-    _cancelCallbacks.add(callback);
-  }
-
-  void cancel() {
-    if (_isCancelled) return;
-    _isCancelled = true;
-    // Notify local listeners first so the UI unblocks immediately.
-    for (final cb in List.of(_cancelCallbacks)) {
-      try {
-        cb();
-      } catch (_) {}
-    }
-    // Then best-effort tell every bound remote Agent to stop.
-    for (final b in List.of(_bindings)) {
-      b.connection
-          .cancelTask(b.taskId)
-          .catchError((_) => ACPResponse(jsonrpc: '2.0', id: 0));
-    }
-  }
-}
-
-/// Per-task callback bundle, keyed by task_id in ACPAgentConnection.
-class TaskCallbacks {
-  final void Function(Map<String, dynamic> data)? onTextContent;
-  final void Function(Map<String, dynamic> data)? onActionConfirmation;
-  final void Function(Map<String, dynamic> data)? onSingleSelect;
-  final void Function(Map<String, dynamic> data)? onMultiSelect;
-  final void Function(Map<String, dynamic> data)? onFileUpload;
-  final void Function(Map<String, dynamic> data)? onForm;
-  final Future<void> Function(Map<String, dynamic> data)? onFileMessage;
-  final void Function(Map<String, dynamic> data)? onMessageMetadata;
-  final void Function(Map<String, dynamic> data)? onRequestHistory;
-  final void Function(Map<String, dynamic> data)? onTaskStarted;
-  final void Function(Map<String, dynamic> data)? onTaskCompleted;
-  final void Function(Map<String, dynamic> data)? onTaskError;
-
-  /// 任一该任务的通知帧到达时触发（无参数）。供停滞看门狗刷新活动时间戳，
-  /// 单点覆盖 task.started / ui.* / task.completed / task.error 全部入站活动。
-  final void Function()? onTaskActivity;
-
-  const TaskCallbacks({
-    this.onTextContent,
-    this.onActionConfirmation,
-    this.onSingleSelect,
-    this.onMultiSelect,
-    this.onFileUpload,
-    this.onForm,
-    this.onFileMessage,
-    this.onMessageMetadata,
-    this.onRequestHistory,
-    this.onTaskStarted,
-    this.onTaskCompleted,
-    this.onTaskError,
-    this.onTaskActivity,
-  });
-}
-
 /// Manages a single WebSocket connection to a remote Agent.
 ///
 /// Implements the full ACP bidirectional JSON-RPC 2.0 protocol:

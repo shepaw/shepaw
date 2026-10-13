@@ -3,7 +3,7 @@ import 'package:shepaw/models/attachment_data.dart';
 import 'package:shepaw/models/channel.dart';
 import 'package:shepaw/models/message.dart';
 import 'package:shepaw/models/remote_agent.dart';
-import 'package:shepaw/services/acp_agent_connection.dart';
+import 'package:shepaw/services/task/acp_task_contract.dart';
 import 'package:shepaw/services/group/group_agent_executor.dart';
 import 'package:shepaw/services/group/group_event.dart';
 import 'package:shepaw/services/group/group_event_perception.dart';

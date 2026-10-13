@@ -1,3 +1,4 @@
+import '../task/acp_task_contract.dart';
 import '../../models/group_task.dart';
 import '../../models/remote_agent.dart';
 import '../../storage/group_workspace_service.dart';

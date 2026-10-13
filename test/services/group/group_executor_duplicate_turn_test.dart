@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/channel.dart';
 import 'package:shepaw/models/message.dart';
 import 'package:shepaw/models/remote_agent.dart';
-import 'package:shepaw/services/acp_agent_connection.dart';
+import 'package:shepaw/services/task/acp_task_contract.dart';
 import 'package:shepaw/services/group/group_agent_executor.dart';
 import 'package:shepaw/services/group/group_interaction_handler.dart';
 import 'package:shepaw/services/group/group_turn_result.dart';

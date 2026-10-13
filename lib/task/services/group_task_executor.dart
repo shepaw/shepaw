@@ -1,4 +1,4 @@
-import '../../services/acp_agent_connection.dart';
+import '../../services/task/acp_task_contract.dart';
 import '../../services/chat_service.dart';
 import '../../services/group/she_group_approval_bridge.dart';
 import '../../services/local_database_service.dart';

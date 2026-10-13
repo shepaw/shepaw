@@ -21,6 +21,7 @@ import '../local_llm_agent_service.dart';
 import '../messaging/local_llm_handler.dart';
 import '../messaging/chat_history_content.dart';
 import '../acp_agent_connection.dart';
+import '../task/acp_task_contract.dart';
 import '../file_download_service.dart';
 import '../../storage/store_uri_reader.dart';
 import '../inference_log_service.dart';
@@ -435,7 +436,6 @@ class GroupAgentExecutor {
     infLog.endSession(groupTraceId, InferenceStatus.error, error: '$error');
     if (connection != null && taskId != null) {
       connection.unregisterTaskCallbacks(taskId);
-      acpCancellationToken?.unbind(connection, taskId);
     }
     final phase = GroupTurnOutcome.classifyFailure(
       streamingStarted: streamingStarted,

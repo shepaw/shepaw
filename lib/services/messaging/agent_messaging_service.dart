@@ -1,3 +1,4 @@
+import '../task/acp_task_contract.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:uuid/uuid.dart';

@@ -2,7 +2,7 @@ import '../models/message.dart';
 import '../peer/peer_approval_payload.dart';
 import '../services/chat_service.dart';
 import '../services/local_database_service.dart';
-import '../services/acp_agent_connection.dart';
+import '../services/task/acp_task_contract.dart';
 import '../services/logger_service.dart';
 
 /// Mixin / interface for the state that [InteractiveResponseHandler] needs

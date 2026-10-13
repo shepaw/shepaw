@@ -17,7 +17,7 @@ import '../services/local_database_service.dart';
 import '../services/attachment_service.dart';
 import '../storage/store_protocol.dart';
 import '../services/message_search_service.dart';
-import '../services/acp_agent_connection.dart';
+import '../services/task/acp_task_contract.dart';
 import '../services/app_lifecycle_service.dart';
 import '../services/notification_service.dart';
 import '../services/interactive_response_handler.dart';

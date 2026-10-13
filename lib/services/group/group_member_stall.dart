@@ -1,4 +1,5 @@
 import '../acp_agent_connection.dart';
+import '../task/acp_task_contract.dart';
 import '../logger_service.dart';
 import '../../models/remote_agent.dart';
 import 'group_member_delivery.dart';

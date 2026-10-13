@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/message.dart';
-import 'package:shepaw/services/acp_agent_connection.dart';
+import 'package:shepaw/services/task/acp_task_contract.dart';
 import 'package:shepaw/services/event/event_bus.dart';
 import 'package:shepaw/services/event/event_pattern.dart';
 import 'package:shepaw/services/event/group_event_types.dart';

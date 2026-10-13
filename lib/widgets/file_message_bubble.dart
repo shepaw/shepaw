@@ -11,7 +11,7 @@ import '../services/attachment_service.dart';
 import '../services/store_open_service.dart';
 import '../storage/store_uri_reader.dart';
 import '../services/ws_file_transfer_service.dart';
-import '../services/acp_agent_connection.dart';
+import '../services/task/acp_task_contract.dart';
 import '../services/chat_service.dart';
 import '../services/peer_key_utils.dart';
 import '../service_locator.dart' show acpServerOrNull;

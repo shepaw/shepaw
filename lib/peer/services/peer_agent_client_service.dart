@@ -23,7 +23,7 @@ import '../../models/agent_node.dart';
 import '../../models/remote_agent.dart';
 import '../../models/agent_memory_entry.dart';
 import '../../models/acp_protocol.dart';
-import '../../services/acp_agent_connection.dart';
+import '../../services/task/acp_task_contract.dart';
 import '../../services/chat_service.dart';
 import '../../services/app_lifecycle_service.dart';
 import '../../services/local_database_service.dart';

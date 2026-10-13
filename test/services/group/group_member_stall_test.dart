@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/group_task.dart';
 import 'package:shepaw/models/remote_agent.dart';
-import 'package:shepaw/services/acp_agent_connection.dart';
+import 'package:shepaw/services/task/acp_task_contract.dart';
 import 'package:shepaw/services/group/group_event.dart';
 import 'package:shepaw/services/group/group_member_stall.dart';
 import 'package:shepaw/services/group/group_orchestration_features.dart';

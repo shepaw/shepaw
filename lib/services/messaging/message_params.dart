@@ -1,3 +1,4 @@
+import '../task/acp_task_contract.dart';
 import 'dart:async';
 import '../../models/message.dart';
 import '../../models/attachment_data.dart';

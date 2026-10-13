@@ -36,7 +36,7 @@ import '../../services/messaging/message_implicit_prompt.dart';
 import '../../models/model_routing_config.dart';
 import '../../models/remote_agent.dart';
 import '../../models/store_attachment_ref.dart';
-import '../../services/acp_agent_connection.dart';
+import '../../services/task/acp_task_contract.dart';
 import '../../services/agent_memory_store_service.dart';
 import '../../services/agent_soul_service.dart';
 import '../../services/local_resume_generator.dart';

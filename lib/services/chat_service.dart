@@ -48,6 +48,7 @@ import 'app_lifecycle_service.dart';
 import '../providers/notification_provider.dart';
 import 'foreground_task_service.dart';
 import 'logger_service.dart';
+import 'task/acp_task_contract.dart';
 import 'event/event_bus.dart';
 import 'event/event_envelope.dart';
 import 'event/event_perception_service.dart';
