@@ -5,7 +5,6 @@ import 'package:get_it/get_it.dart';
 
 import 'services/local_database_service.dart';
 import 'services/chat_service.dart';
-import 'services/acp_server_service.dart';
 import 'services/permission_service.dart';
 import 'services/token_service.dart';
 import 'services/remote_agent_service.dart';
@@ -83,17 +82,13 @@ void setupServiceLocator() {
   }
 }
 
-/// 在 ACP / 权限服务初始化完成后登记其实例。
+/// 在权限服务初始化完成后登记其实例。
 ///
-/// 入参可能为 `null`（对应初始化失败），此时不注册，[acpServerOrNull] /
-/// [permissionServiceOrNull] 将返回 `null`，调用方据此优雅降级。
+/// 入参可能为 `null`（对应初始化失败），此时不注册，[permissionServiceOrNull]
+/// 将返回 `null`，调用方据此优雅降级。
 void registerBootstrapServices({
-  ACPServerService? acpServer,
   PermissionService? permissionService,
 }) {
-  if (acpServer != null && !getIt.isRegistered<ACPServerService>()) {
-    getIt.registerSingleton<ACPServerService>(acpServer);
-  }
   if (permissionService != null && !getIt.isRegistered<PermissionService>()) {
     getIt.registerSingleton<PermissionService>(permissionService);
   }
@@ -104,10 +99,6 @@ void registerBootstrapServices({
 /// 全局 Navigator Key。
 GlobalKey<NavigatorState> get navigatorKey =>
     getIt<GlobalKey<NavigatorState>>();
-
-/// ACP Server 实例；初始化失败（未注册）时为 `null`。
-ACPServerService? get acpServerOrNull =>
-    getIt.isRegistered<ACPServerService>() ? getIt<ACPServerService>() : null;
 
 /// 权限服务实例；初始化失败（未注册）时为 `null`。
 PermissionService? get permissionServiceOrNull =>

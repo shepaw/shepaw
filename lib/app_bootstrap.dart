@@ -6,7 +6,6 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'services/local_database_service.dart';
 import 'services/she_service.dart';
 import 'services/permission_service.dart';
-import 'services/acp_server_service.dart';
 import 'services/notification_service.dart';
 import 'services/update_notification_service.dart';
 import 'services/app_lifecycle_service.dart';
@@ -39,27 +38,14 @@ import 'services/task/plan_approval_service.dart';
 import 'service_locator.dart';
 import 'services/event/setup_event_bus.dart';
 
-/// ACP Server 端口的 SharedPreferences 键
-const kAcpServerPortKey = 'acp_server_port';
-const kAcpServerDefaultPort = 18790;
-
-/// ACP Server 是否启用的 SharedPreferences 键（默认开启）
-const kAcpServerEnabledKey = 'acp_server_enabled';
-
-/// ACP Server 连接 Token 的 SharedPreferences 键
-const kAcpServerTokenKey = 'acp_server_token';
-
 /// [AppBootstrap.initialize] 的结果，承载需要被提升为全局引用的服务实例。
 ///
 /// 字段可空：当对应初始化步骤失败时为 `null`，由调用方决定是否赋值给全局变量。
 class BootstrapResult {
-  /// ACP Server 实例（即使未启动也会返回，供设置页读取运行状态）。
-  final ACPServerService? acpServer;
-
   /// 权限服务实例。
   final PermissionService? permissionService;
 
-  const BootstrapResult({this.acpServer, this.permissionService});
+  const BootstrapResult({this.permissionService});
 }
 
 /// 应用启动编排器。

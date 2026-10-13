@@ -11,7 +11,6 @@ import 'package:crypto/crypto.dart' as crypto;
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/acp_protocol.dart';
-import 'acp_hub_handlers.dart';
 import 'acp_interactive_connection.dart';
 import 'logger_service.dart';
 import 'noise/noise_envelope.dart';
@@ -152,11 +151,9 @@ class TaskCallbacks {
 /// Implements the full ACP bidirectional JSON-RPC 2.0 protocol:
 /// - App -> Agent: requests (agent.chat, agent.cancelTask, etc.)
 /// - Agent -> App: notifications (ui.textContent, task.*, etc.)
-/// - Agent -> App: requests (hub.*) delegated to [ACPHubHandlers]
 class ACPAgentConnection implements AcpInteractiveConnection {
   @override
   final String agentId;
-  final ACPHubHandlers? _hubHandlers;
 
   WebSocketChannel? _channel;
   StreamSubscription? _subscription;
@@ -314,7 +311,6 @@ class ACPAgentConnection implements AcpInteractiveConnection {
 
   ACPAgentConnection({
     required this.agentId,
-    ACPHubHandlers? hubHandlers,
     this.heartbeatIntervalSeconds = 30,
     this.autoReconnect = true,
     this.reconnectDelayMs = 3000,
@@ -322,7 +318,7 @@ class ACPAgentConnection implements AcpInteractiveConnection {
     this.maxHeartbeatFailures = 3,
     this.connectTimeout = acpConnectTimeout,
     this.reconnectGrace = acpReconnectGrace,
-  }) : _hubHandlers = hubHandlers;
+  });
 
   /// The targetAgentId used during the initial [connect] call.
   /// Preserved so that [tryReconnectNow] can pass it through on reconnect.
@@ -1518,20 +1514,8 @@ class ACPAgentConnection implements AcpInteractiveConnection {
   /// Handle an incoming request from the Agent (hub.* methods).
   Future<void> _handleIncomingRequest(Map<String, dynamic> json) async {
     final request = ACPRequest.fromJson(json);
-
-    if (_hubHandlers != null) {
-      final response = await _hubHandlers!.handleRequest(
-        method: request.method,
-        id: request.id,
-        params: request.params,
-        agentId: agentId,
-      );
-      await _sendEncrypted(response.toJsonString());
-    } else {
-      // No full hub handlers — handle lightweight requests directly
-      final response = _handleRequestWithoutHubHandlers(request);
-      await _sendEncrypted(response.toJsonString());
-    }
+    final response = _handleRequestWithoutHubHandlers(request);
+    await _sendEncrypted(response.toJsonString());
   }
 
   /// Handle select hub requests that don't require full ACPHubHandlers.

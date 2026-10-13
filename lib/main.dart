@@ -125,7 +125,6 @@ Future<void> main(List<String> args) async {
       // 执行完整启动编排（数据库、ACP、P2P、通知、注册表等）
       final boot = await AppBootstrap.initialize(navigatorKey: navigatorKey);
       registerBootstrapServices(
-        acpServer: boot.acpServer,
         permissionService: boot.permissionService,
       );
 
