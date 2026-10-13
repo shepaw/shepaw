@@ -53,7 +53,6 @@ class _FakeExecutor extends GroupAgentExecutor {
           interactionHandler: GroupInteractionHandler(
             db: db,
             uuid: const Uuid(),
-            acpConnections: const {},
             notifyChannelUpdate: (_) {},
             loadChannelMessages: (channelId, {int limit = 100}) async =>
                 const <Message>[],
@@ -233,14 +232,12 @@ Future<_Seed> _seedLocalAdminGroup() async {
 
 GroupMembershipPerceptionScheduler _scheduler({
   required _FakeExecutor executor,
-  Map<String, ACPAgentConnection> acpConnections = const {},
   Duration debounce = const Duration(milliseconds: 10),
   bool Function(String channelId, String memberId)? hasInFlightWork,
 }) {
   return GroupMembershipPerceptionScheduler(
     db: LocalDatabaseService(),
     executor: executor,
-    acpConnections: acpConnections,
     loadChannelMessages: (channelId, {int limit = 100}) async =>
         const <Message>[],
     debounce: debounce,
@@ -318,7 +315,6 @@ void main() {
       expect(
         GroupMembershipPerceptionScheduler.canAdminExecuteTurn(
           adminAgent: admin,
-          acpConnections: const {},
         ),
         isTrue,
       );
@@ -333,38 +329,19 @@ void main() {
       expect(
         GroupMembershipPerceptionScheduler.canAdminExecuteTurn(
           adminAgent: admin,
-          acpConnections: const {},
         ),
         isTrue,
       );
     });
 
-    test('remote ACP admin requires a live connection', () {
+    test('非 local 非 peer 的管理员不能执行管理回合', () {
+      // 直连 ACP 已退役，只剩 local / peer 两种可用来源。
       final admin = _agent(id: 'r', name: 'Remote');
       expect(
         GroupMembershipPerceptionScheduler.canAdminExecuteTurn(
           adminAgent: admin,
-          acpConnections: const {},
         ),
         isFalse,
-      );
-      expect(
-        GroupMembershipPerceptionScheduler.canAdminExecuteTurn(
-          adminAgent: admin,
-          acpConnections: {
-            'r': _FakeAcpConnection(agentId: 'r', connected: false),
-          },
-        ),
-        isFalse,
-      );
-      expect(
-        GroupMembershipPerceptionScheduler.canAdminExecuteTurn(
-          adminAgent: admin,
-          acpConnections: {
-            'r': _FakeAcpConnection(agentId: 'r', connected: true),
-          },
-        ),
-        isTrue,
       );
     });
   });

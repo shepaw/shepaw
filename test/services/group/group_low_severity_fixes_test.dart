@@ -72,8 +72,6 @@ void main() {
 
       final service = GroupSessionService(
         db: db,
-        uuid: const Uuid(),
-        acpConnections: const {},
         notifyChannelUpdate: (_) {},
       );
       await service.clearAllGroupSessions(
@@ -376,7 +374,6 @@ void main() {
       final scheduler = GroupMembershipPerceptionScheduler(
         db: LocalDatabaseService(),
         executor: executor,
-        acpConnections: const {},
         loadChannelMessages: (channelId, {int limit = 100}) async =>
             const <Message>[],
         eventStore: store,
@@ -486,7 +483,6 @@ class _NoopExecutor extends GroupAgentExecutor {
           interactionHandler: GroupInteractionHandler(
             db: db,
             uuid: const Uuid(),
-            acpConnections: const {},
             notifyChannelUpdate: (_) {},
             loadChannelMessages: (channelId, {int limit = 100}) async =>
                 const <Message>[],

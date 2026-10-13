@@ -4,15 +4,12 @@ import '../../storage/group_workspace_service.dart';
 import '../../peer/services/hub_group_registry.dart';
 import '../../service_locator.dart';
 import '../local_database_service.dart';
-import '../acp_agent_connection.dart';
 import '../inference_log_service.dart';
 import 'group_member_session_service.dart';
 
 /// Manages group chat sessions (create, list, clear, reset).
 class GroupSessionService {
   final LocalDatabaseService _db;
-  final Uuid _uuid;
-  final Map<String, ACPAgentConnection> _acpConnections;
   final void Function(String channelId) notifyChannelUpdate;
   late final GroupMemberSessionService _memberSessions =
       GroupMemberSessionService(_db);
@@ -24,12 +21,8 @@ class GroupSessionService {
 
   GroupSessionService({
     required LocalDatabaseService db,
-    required Uuid uuid,
-    required Map<String, ACPAgentConnection> acpConnections,
     required this.notifyChannelUpdate,
-  })  : _db = db,
-        _uuid = uuid,
-        _acpConnections = acpConnections;
+  })  : _db = db;
 
   /// Create a new group session with the same members and name as the original group.
   ///
@@ -193,22 +186,9 @@ class GroupSessionService {
         channelId,
         agentId,
       );
-      final connection = _acpConnections[agentId];
-      if (connection != null && connection.isConnected) {
-        try {
-          await connection.sendChatMessage(
-            taskId: _uuid.v4(),
-            sessionId: memberSessionId,
-            message: '/reset',
-            userId: 'user',
-            messageId: _uuid.v4(),
-          );
-        } catch (_) {}
-      } else {
-        // M6：远端 agent 断线时 `/reset` 未能送达，标记待补发；
-        // 下次该成员回合前由群执行器消费，避免远端 session 残留。
-        GroupMemberSessionService.pendingRemoteResets.add(memberSessionId);
-      }
+      // 直连 ACP 退役后这里不再有连接可用：`/reset` 一律标记待补发，
+      // 下次该成员回合前由群执行器消费，避免远端 session 残留（M6）。
+      GroupMemberSessionService.pendingRemoteResets.add(memberSessionId);
     }
 
     await _db.deleteChannelMessages(channelId);
@@ -228,22 +208,9 @@ class GroupSessionService {
         currentChannelId,
         agentId,
       );
-      final connection = _acpConnections[agentId];
-      if (connection != null && connection.isConnected) {
-        try {
-          await connection.sendChatMessage(
-            taskId: _uuid.v4(),
-            sessionId: memberSessionId,
-            message: '/reset-all',
-            userId: 'user',
-            messageId: _uuid.v4(),
-          );
-        } catch (_) {}
-      } else {
-        // M6：断线成员 `/reset-all` 未送达；父群会话重建的成员 DM 复用同一
-        // 确定性 session id，下次回合前补发 reset，清掉远端陈旧上下文。
-        GroupMemberSessionService.pendingRemoteResets.add(memberSessionId);
-      }
+      // 同上：`/reset-all` 一律标记待补发。父群会话重建的成员 DM 复用同一
+      // 确定性 session id，下次回合前补发 reset，清掉远端陈旧上下文（M6）。
+      GroupMemberSessionService.pendingRemoteResets.add(memberSessionId);
     }
 
     final sessions = await _db.getGroupSessions(parentGroupId);

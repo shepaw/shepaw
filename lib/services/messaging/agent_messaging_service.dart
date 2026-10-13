@@ -81,7 +81,6 @@ class AgentTaskCompletion {
 class AgentMessagingService {
   final LocalDatabaseService _db;
   final Uuid _uuid;
-  final Map<String, ACPAgentConnection> _acpConnections;
   final Map<String, ActiveTask> _activeTasks;
   final Future<void> Function(Message message, String agentId, {String? channelId}) saveMessageToChannel;
   final void Function() updateTypingAgentIds;
@@ -92,7 +91,6 @@ class AgentMessagingService {
   AgentMessagingService({
     required LocalDatabaseService db,
     required Uuid uuid,
-    required Map<String, ACPAgentConnection> acpConnections,
     required Map<String, ActiveTask> activeTasks,
     required this.saveMessageToChannel,
     required this.updateTypingAgentIds,
@@ -101,7 +99,6 @@ class AgentMessagingService {
     required this.getMessageById,
   })  : _db = db,
         _uuid = uuid,
-        _acpConnections = acpConnections,
         _activeTasks = activeTasks;
 
   final Map<String, ({
@@ -782,12 +779,6 @@ class AgentMessagingService {
     }
   }
 
-  /// Get the active ACP connection for a given agent ID, or null.
-  ACPAgentConnection? getACPConnection(String agentId) {
-    final conn = _acpConnections[agentId];
-    return (conn != null && conn.isConnected) ? conn : null;
-  }
-
   // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
@@ -877,99 +868,6 @@ class AgentMessagingService {
 
 
 
-
-  /// Public accessor for group executor: get or create an ACP connection.
-  Future<ACPAgentConnection> getOrCreateACPConnection(RemoteAgent agent) =>
-      _getOrCreateACPConnection(agent);
-
-  /// Get or create an ACP connection for a given agent.
-  Future<ACPAgentConnection> _getOrCreateACPConnection(RemoteAgent agent) async {
-    var connection = _acpConnections[agent.id];
-
-    if (connection != null && connection.isConnected) {
-      return connection;
-    }
-
-    // Create new connection
-    connection = ACPAgentConnection(agentId: agent.id);
-    final newConnection = connection;
-    _acpConnections[agent.id] = connection;
-
-    // 监听连接状态变化，实时更新 Agent 在线/离线状态。
-    // 使用 identical(...) 保护：只有当 map 仍然指向自己（而不是之后被"主动
-    // 重试"替换进来的新连接）时才从 map 删除。避免旧连接延迟的 disconnect
-    // 回调把刚建立的新连接误删。
-    connection.onConnectionStateChanged = (bool connected) {
-      if (!connected) {
-        _db.updateRemoteAgentStatus(agent.id, 'offline').catchError((_) {});
-        if (identical(_acpConnections[agent.id], newConnection)) {
-          _acpConnections.remove(agent.id);
-        }
-        LoggerService().info('ACP connection offline: ${agent.name}', tag: 'AgentMessagingService');
-      } else if (_acpConnections[agent.id] == null && !newConnection.isDisposed) {
-        // 掉线时把自己从表里摘掉了；自己重连回来要放回去，否则后续回合和停滞
-        // 看门狗都找不到这条连接（看门狗靠它判定"连接还活着"）。
-        _acpConnections[agent.id] = newConnection;
-      }
-    };
-
-    // 掉线后重连成功：把还没结束的回合用 agent.taskResume 续回来。
-    connection.onReconnected = () {
-      _resumeTurnsAfterReconnect(agent.id, newConnection);
-    };
-
-    // 每次建连/重连成功拿到 AgentCard 后，自动把网关自述简历同步到本地
-    //（仅当本地简历为空，不覆盖用户手动填写）。best-effort。
-    connection.onAgentCardFetched = (card) {
-      getIt<RemoteAgentService>()
-          .syncResumeFromCardData(agent.id, card)
-          .catchError((Object e) {
-        LoggerService().debug(
-          'Sync resume from card skipped for ${agent.id}: $e',
-          tag: 'AgentMessagingService',
-        );
-      });
-    };
-
-    // 网关推送 agent.resume.changed：agent 在聊天中改写了储物袋 resume.md
-    // 并被网关采纳。此时应**覆盖**本地简历（与上面仅空时填充不同），She
-    // 的 roster 与详情页下一轮即见新简历。best-effort。
-    connection.onResumeChanged = () {
-      getIt<RemoteAgentService>()
-          .refreshResumeFromCard(agent.id)
-          .catchError((Object e) {
-        LoggerService().debug(
-          'Resume refresh skipped for ${agent.id}: $e',
-          tag: 'AgentMessagingService',
-        );
-      });
-    };
-
-    // Build the WebSocket URL
-    String wsUrl;
-    if (agent.endpoint.startsWith('ws://') || agent.endpoint.startsWith('wss://')) {
-      wsUrl = agent.endpoint;
-    } else {
-      // Convert http(s) to ws(s)
-      wsUrl = agent.endpoint
-          .replaceFirst('https://', 'wss://')
-          .replaceFirst('http://', 'ws://');
-      if (!wsUrl.contains('/acp/ws')) {
-        wsUrl = wsUrl.endsWith('/') ? '${wsUrl}acp/ws' : '$wsUrl/acp/ws';
-      }
-    }
-
-    await connection.connect(
-      wsUrl,
-      agent.token,
-      targetAgentId: agent.metadata['target_agent_id'] as String?,
-      pinnedFingerprint: (agent.metadata['noise_peer_fp'] as String?) ?? '',
-      cachedPeerStaticPublicKey: decodeCachedPeerPublicKey(
-        agent.metadata['cached_peer_static_public_key'],
-      ),
-    );
-    return connection;
-  }
 
 
   /// Send message via the P2P peer channel to a paired device's local agent.

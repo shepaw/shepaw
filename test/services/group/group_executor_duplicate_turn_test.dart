@@ -55,7 +55,6 @@ void main() {
         interactionHandler: GroupInteractionHandler(
           db: db,
           uuid: const Uuid(),
-          acpConnections: <String, ACPAgentConnection>{},
           notifyChannelUpdate: (_) {},
           loadChannelMessages: (channelId, {int limit = 100}) async =>
               <Message>[],
@@ -156,7 +155,6 @@ void main() {
         interactionHandler: GroupInteractionHandler(
           db: db,
           uuid: const Uuid(),
-          acpConnections: <String, ACPAgentConnection>{},
           notifyChannelUpdate: (_) {},
           loadChannelMessages: (channelId, {int limit = 100}) async =>
               <Message>[],

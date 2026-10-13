@@ -1,6 +1,5 @@
 import '../../models/message.dart';
 import '../../models/remote_agent.dart';
-import '../acp_agent_connection.dart';
 import '../local_database_service.dart';
 import 'group_agent_executor.dart';
 import 'group_dispatch_parser.dart';
@@ -42,7 +41,6 @@ class GroupMembershipPerceptionScheduler {
   GroupMembershipPerceptionScheduler({
     required LocalDatabaseService db,
     required GroupAgentExecutor executor,
-    required Map<String, ACPAgentConnection> acpConnections,
     required Future<List<Message>> Function(String channelId, {int limit})
         loadChannelMessages,
     GroupDispatchParser? dispatchParser,
@@ -62,7 +60,6 @@ class GroupMembershipPerceptionScheduler {
         _inner = GroupEventPerceptionScheduler(
           db: db,
           executor: executor,
-          acpConnections: acpConnections,
           loadChannelMessages: loadChannelMessages,
           dispatchParser: dispatchParser,
           eventStore: eventStore,
@@ -116,15 +113,12 @@ class GroupMembershipPerceptionScheduler {
 
   /// Whether a perception turn can execute for [adminAgent] right now.
   ///
-  /// Local and peer agents always can (the executor has dedicated paths);
-  /// remote ACP admins need a live connection.
+  /// 见 [GroupEventPerceptionScheduler.canAdminExecuteTurn]。
   static bool canAdminExecuteTurn({
     required RemoteAgent adminAgent,
-    required Map<String, ACPAgentConnection> acpConnections,
   }) {
     return GroupEventPerceptionScheduler.canAdminExecuteTurn(
       adminAgent: adminAgent,
-      acpConnections: acpConnections,
     );
   }
 

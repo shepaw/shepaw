@@ -55,7 +55,6 @@ class _FakeExecutor extends GroupAgentExecutor {
           interactionHandler: GroupInteractionHandler(
             db: db,
             uuid: const Uuid(),
-            acpConnections: const {},
             notifyChannelUpdate: (_) {},
             loadChannelMessages: (channelId, {int limit = 100}) async =>
                 const <Message>[],
@@ -235,13 +234,11 @@ Future<_Seed> _seedLocalAdminGroup() async {
 GroupEventPerceptionScheduler _scheduler({
   required _FakeExecutor executor,
   GroupEventStore? eventStore,
-  Map<String, ACPAgentConnection> acpConnections = const {},
   Duration debounce = const Duration(milliseconds: 10),
 }) {
   return GroupEventPerceptionScheduler(
     db: LocalDatabaseService(),
     executor: executor,
-    acpConnections: acpConnections,
     loadChannelMessages: (channelId, {int limit = 100}) async =>
         const <Message>[],
     eventStore: eventStore,

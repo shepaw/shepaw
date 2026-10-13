@@ -10,19 +10,16 @@ import '../logger_service.dart';
 class GroupInteractionHandler {
   final LocalDatabaseService _db;
   final Uuid _uuid;
-  final Map<String, ACPAgentConnection> _acpConnections;
   final void Function(String channelId) notifyChannelUpdate;
   final Future<List<Message>> Function(String channelId, {int limit}) loadChannelMessages;
 
   GroupInteractionHandler({
     required LocalDatabaseService db,
     required Uuid uuid,
-    required Map<String, ACPAgentConnection> acpConnections,
     required this.notifyChannelUpdate,
     required this.loadChannelMessages,
   })  : _db = db,
-        _uuid = uuid,
-        _acpConnections = acpConnections;
+        _uuid = uuid;
 
   // ---------------------------------------------------------------------------
   // Admin interaction resolution
@@ -414,12 +411,8 @@ class GroupInteractionHandler {
       'timestamp': DateTime.now().millisecondsSinceEpoch,
     };
 
-    for (final id in memberIds) {
-      final connection = _acpConnections[id];
-      if (connection != null && connection.isConnected) {
-        connection.sendNotification(method, params: params);
-      }
-    }
+    // 直连 ACP 退役后没有给成员推通知的通道：群成员的事件通知由主机侧编排，
+    // 这里只保留频道内的系统消息。
 
     return systemMessage;
   }

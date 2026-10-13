@@ -2,9 +2,9 @@ import 'dart:async';
 
 import '../../models/message.dart';
 import '../../models/remote_agent.dart';
-import '../acp_agent_connection.dart';
 import '../local_database_service.dart';
 import '../local_user_identity.dart';
+import '../acp_agent_connection.dart';
 import '../logger_service.dart';
 import 'group_agent_executor.dart';
 import 'group_dispatch_parser.dart';
@@ -61,7 +61,6 @@ class GroupEventPerceptionScheduler {
   GroupEventPerceptionScheduler({
     required LocalDatabaseService db,
     required GroupAgentExecutor executor,
-    required Map<String, ACPAgentConnection> acpConnections,
     required Future<List<Message>> Function(String channelId, {int limit})
         loadChannelMessages,
     GroupDispatchParser? dispatchParser,
@@ -76,7 +75,6 @@ class GroupEventPerceptionScheduler {
     bool Function(String channelId)? isChannelOrchestrating,
   })  : _db = db,
         _executor = executor,
-        _acpConnections = acpConnections,
         _loadChannelMessages = loadChannelMessages,
         _dispatchParser = dispatchParser ?? GroupDispatchParser(db),
         _eventStore = eventStore,
@@ -89,7 +87,6 @@ class GroupEventPerceptionScheduler {
 
   final LocalDatabaseService _db;
   final GroupAgentExecutor _executor;
-  final Map<String, ACPAgentConnection> _acpConnections;
   final Future<List<Message>> Function(String channelId, {int limit})
       _loadChannelMessages;
   final GroupDispatchParser _dispatchParser;
@@ -298,10 +295,7 @@ class GroupEventPerceptionScheduler {
 
       final adminAgent = await _db.getRemoteAgentById(adminId);
       if (adminAgent == null) return;
-      if (!canAdminExecuteTurn(
-        adminAgent: adminAgent,
-        acpConnections: _acpConnections,
-      )) {
+      if (!canAdminExecuteTurn(adminAgent: adminAgent)) {
         return;
       }
 
@@ -398,15 +392,12 @@ class GroupEventPerceptionScheduler {
 
   /// Whether a perception turn can execute for [adminAgent] right now.
   ///
-  /// Local and peer agents always can (the executor has dedicated paths);
-  /// remote ACP admins need a live connection.
+  /// Local and peer agents can（执行器各有专门路径）。直连 ACP 退役后没有
+  /// 第三种来源了：非 local 非 peer 的 agent 连不上，不能执行管理回合。
   static bool canAdminExecuteTurn({
     required RemoteAgent adminAgent,
-    required Map<String, ACPAgentConnection> acpConnections,
   }) {
-    if (adminAgent.isLocal) return true;
-    if (adminAgent.isPeerAgent) return true;
-    return acpConnections[adminAgent.id]?.isConnected == true;
+    return adminAgent.isLocal || adminAgent.isPeerAgent;
   }
 }
 

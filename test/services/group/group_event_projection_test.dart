@@ -28,7 +28,6 @@ GroupEventPerceptionScheduler _buildScheduler({
     interactionHandler: GroupInteractionHandler(
       db: db,
       uuid: uuid,
-      acpConnections: const <String, ACPAgentConnection>{},
       notifyChannelUpdate: (_) {},
       loadChannelMessages: loadMessages,
     ),
@@ -39,7 +38,6 @@ GroupEventPerceptionScheduler _buildScheduler({
   return GroupEventPerceptionScheduler(
     db: db,
     executor: executor,
-    acpConnections: const <String, ACPAgentConnection>{},
     loadChannelMessages: loadMessages,
     eventStore: store,
   );

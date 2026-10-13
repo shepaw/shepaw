@@ -190,8 +190,6 @@ class ChatService {
   /// Sub-service: group session management (create/list/clear sessions)
   late final GroupSessionService _groupSessionService = GroupSessionService(
     db: _databaseService,
-    uuid: _uuid,
-    acpConnections: _acpConnections,
     notifyChannelUpdate: _notifyChannelUpdate,
   );
 
@@ -215,7 +213,6 @@ class ChatService {
       GroupInteractionHandler(
     db: _databaseService,
     uuid: _uuid,
-    acpConnections: _acpConnections,
     notifyChannelUpdate: _notifyChannelUpdate,
     loadChannelMessages: (channelId, {int limit = 100}) =>
         loadChannelMessages(channelId, limit: limit),
@@ -236,7 +233,6 @@ class ChatService {
       AgentMessagingService(
     db: _databaseService,
     uuid: _uuid,
-    acpConnections: _acpConnections,
     activeTasks: _activeTasks,
     saveMessageToChannel: (message, agentId, {String? channelId}) =>
         _saveMessageToChannel(message, agentId, channelId: channelId),
@@ -254,7 +250,6 @@ class ChatService {
       _groupMembershipPerceptionScheduler = GroupMembershipPerceptionScheduler(
     db: _databaseService,
     executor: _groupAgentExecutor,
-    acpConnections: _acpConnections,
     loadChannelMessages: (channelId, {int limit = 100}) =>
         loadChannelMessages(channelId, limit: limit),
     dispatchParser: _groupDispatchParser,
@@ -281,7 +276,6 @@ class ChatService {
       GroupEventPerceptionScheduler(
     db: _databaseService,
     executor: _groupAgentExecutor,
-    acpConnections: _acpConnections,
     loadChannelMessages: (channelId, {int limit = 100}) =>
         loadChannelMessages(channelId, limit: limit),
     dispatchParser: _groupDispatchParser,
@@ -1223,20 +1217,12 @@ class ChatService {
         extraTools: extraTools,
       );
 
-  /// Returns the active ACP connection for [agentId], or null.
-  ACPAgentConnection? getACPConnection(String agentId) =>
-      _agentMessagingService.getACPConnection(agentId);
-
-  /// Returns an interactive-connection handle for [agent] — the real ACP
-  /// connection if one is live, otherwise a [PeerAcpConnection] shim for peer
-  /// agents. Callers that only need `submitResponse` / `isConnected` /
-  /// `supportsAsyncConfirmation` (the interactive-response path) use this so
-  /// they don't branch on protocol. ACP-specific surfaces (slash commands,
-  /// reconnect) keep using [getACPConnection].
+  /// Returns an interactive-connection handle for [agent] — a
+  /// [PeerAcpConnection] shim for peer agents. Callers that only need
+  /// `submitResponse` / `isConnected` (the interactive-response path) use this
+  /// so they don't branch on protocol. 直连 ACP 退役后只剩 peer 这条来源。
   final Map<String, PeerAcpConnection> _peerInteractiveConns = {};
   AcpInteractiveConnection? getInteractiveConnection(RemoteAgent agent) {
-    final acp = _acpConnections[agent.id];
-    if (acp != null) return acp;
     if (agent.protocol != ProtocolType.peer) return null;
     final peerId = agent.sourcePeerId;
     if (peerId == null) return null;
@@ -2730,7 +2716,6 @@ class ChatService {
         if (admin == null ||
             !GroupEventPerceptionScheduler.canAdminExecuteTurn(
               adminAgent: admin,
-              acpConnections: _acpConnections,
             )) {
           return autoContinue('管理员不可用');
         }
