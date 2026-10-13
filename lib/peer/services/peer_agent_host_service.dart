@@ -1850,26 +1850,6 @@ class PeerAgentHostService {
         'selected_action_label': selectedActionLabel,
     };
 
-    final acpConn = _chat.getACPConnection(session.agentId);
-    if (acpConn != null &&
-        acpConn.isConnected &&
-        !acpConn.supportsAsyncConfirmation) {
-      try {
-        await acpConn.submitResponse(
-          taskId: effectiveTaskId,
-          responseType: 'action_confirmation',
-          responseData: responseData,
-        );
-        _log.info(
-          'Submitted approval via ACP submitResponse taskId=$effectiveTaskId',
-          tag: _tag,
-        );
-        return true;
-      } catch (e) {
-        _log.warning('ACP submitResponse failed: $e', tag: _tag);
-      }
-    }
-
     final connection = _chat.getInteractiveConnection(agent);
     if (connection != null &&
         !connection.supportsAsyncConfirmation &&

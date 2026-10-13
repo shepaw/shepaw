@@ -982,42 +982,6 @@ mixin _MessagingOps on _ChatControllerBase {
         },
       );
 
-      // Phase 2-A: async-confirmation fast path.
-      // When the agent supports async_confirmation, `sendMessageToAgent`
-      // returns `null` as soon as the agent has ACK'd the request — the
-      // streaming chunks, action_confirmation metadata, and eventual
-      // task.completed all flow through TaskCallbacks asynchronously.
-      final asyncConn = chatService.getACPConnection(remoteAgent.id);
-      final supportsAsync = asyncConn?.supportsAsyncConfirmation ?? false;
-      if (supportsAsync && currentChannelId != null) {
-        final activeTask = chatService.getActiveTask(currentChannelId!);
-        if (activeTask != null) {
-          awaitingAsyncTask = true;
-          final channelAtDispatch = currentChannelId;
-          activeTask.onTaskFinished = () async {
-            try {
-              await activeTask.waitForSave();
-            } catch (_) {}
-            // Only clean up if we're still on the same channel (user may have
-            // navigated away). If they did, the values are already detached
-            // and another call will just be a no-op on stale state.
-            if (currentChannelId == channelAtDispatch) {
-              acpCancellationToken = null;
-              streaming.clear();
-              await loadMessages();
-              isProcessing = false;
-              _notify();
-              processNextInQueue();
-            }
-          };
-        } else {
-          // Fast async completion: task finished (and was removed) before we
-          // could hook onTaskFinished — reload from DB so the reply appears
-          // without leaving the chat.
-          await loadMessages();
-        }
-      }
-
       final handledHistorySupplement = await _handleHistorySupplementIfNeeded(
         remoteAgent: remoteAgent,
         userId: userId,
@@ -1026,7 +990,9 @@ mixin _MessagingOps on _ChatControllerBase {
       );
 
       final turn = DmSendTurnPlanner.afterAgentSend(
-        supportsAsyncConfirmation: supportsAsync,
+        // 异步确认（async_confirmation）是 ACP 独有的能力，peer 侧没有，
+        // 主机也未实现 —— 随 ACP 一起退役，恒为 false。
+        supportsAsyncConfirmation: false,
         hasChannel: currentChannelId != null,
         hasActiveTask: awaitingAsyncTask,
         handledHistorySupplement: handledHistorySupplement,
