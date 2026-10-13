@@ -22,6 +22,8 @@
 | 切网 2 | `4abdc221` | 掉线进 20s 重连窗口 + 重连后续传、切网 ping 体检半开连接、resume 禁重入 |
 | 切网 3 | `afb6652d` | 补拉连续失败 2 次才判死 |
 | mailbox A | `35768a33` | 拆投信侧：主机不可达/正忙直接落系统消息，不再往 Channel 投信 |
+| 惜宝 (a) | `2e218491` | 删掉本机惜宝空壳行，惜宝只由 Hub 提供 |
+| ACP R1+R2 | `25741e45` | DM 不再走 ACP；删 `_sendViaACPProtocol`、停滞看门狗、切网体检 |
 
 > 前三轮切网改造都做在 ACP 路径上。ACP 退役时它们会一起删掉 —— 但**不是白做**：核查确认 peer 侧这些能力本来就齐（建连 10s、断连挂起、无限退避重连、续传幂等、应答看门狗），所以在退役完成前的中间态里用户是受益的，且这份核查本身就是退役的前提。
 
@@ -31,8 +33,10 @@
 
 **爆炸半径（已量）**：22 个文件引用 `ACPAgentConnection`，核心文件 `acp_agent_connection.dart` 1867 行。拆成四小轮，按依赖推进：
 
-- **R1 断路**：发送入口对 `ProtocolType.acp` 不再建连接，直接落「该 agent 已不可用，请在 Hub 上重新配对」。这一步最小，且立刻让死路径不再假装能发。
-- **R2 删发送实现**：`_sendViaACPProtocol`、`_getOrCreateACPConnection*`、`acpConnectTimeout` / `acpDmTaskTimeout`、前三轮切网改造里 ACP 专属的部分。
+- **R1 断路** ✅（`25741e45`）：发送入口对 `ProtocolType.acp` 不再建连接，直接落「这个 Agent 已不可用，请改用 Hub 配对后添加」。
+- **R2 删发送实现** ✅（`25741e45`）：`_sendViaACPProtocol`（574 行）、`_getOrCreateACPConnectionWithRetry`、停滞看门狗、切网体检。前三轮切网改造至此全部退役。
+  - 惜宝的挡路点也一并解决（`2e218491`）。
+  - 群聊不受影响：`GroupAgentExecutor` 里的 `getOrCreateACPConnection` 只有字段声明、从未被调用过。
 - **R3 删连接本体**：`acp_agent_connection.dart`、`acp_protocol_handler.dart`、`acp_interactive_connection.dart` 适配、`ProtocolRouter`（它现在对 peer 直接抛异常，是 ACP 专用）。
 - **R4 收尾**：`ProtocolType.acp` 枚举值、`acpTaskTimeout` 的引用（`group_member_stall.dart`、`chat_service.dart:1410`）、widget 里的 acp 判空、`slash_command_picker`、`ws_file_transfer_service`。
 
