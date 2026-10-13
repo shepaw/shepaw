@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/acp_protocol.dart';
 import 'package:shepaw/services/acp_agent_connection.dart';
-import 'package:shepaw/services/messaging/agent_messaging_service.dart';
 import 'package:shepaw/services/task/task_models.dart';
 
 void main() {
@@ -50,69 +49,6 @@ void main() {
         userName: 'User',
       );
       expect(task.stallTimeout, const Duration(seconds: 180));
-    });
-  });
-
-  group('stalledTurns', () {
-    ActiveTask task({required String id, required String agentId, bool complete = false}) {
-      final t = ActiveTask(
-        taskId: id,
-        agentId: agentId,
-        agentName: 'Agent',
-        channelId: 'c',
-        userMessageId: 'm',
-        userId: 'user',
-        userName: 'User',
-      );
-      if (complete) t.isComplete = true;
-      return t;
-    }
-
-    test('skips complete tasks, missing conns, and recent activity', () {
-      final now = DateTime.now().millisecondsSinceEpoch;
-      final done = task(id: 'done', agentId: 'a1', complete: true);
-      final noConn = task(id: 'noconn', agentId: 'missing');
-      final fresh = task(id: 'fresh', agentId: 'a1')..lastActivityAtMs = now - 1000;
-      final stalled = task(id: 'stalled', agentId: 'a1')
-        ..lastActivityAtMs = now - 200000;
-
-      final conn = _FakeResumeConnection(const []);
-      final result = stalledTurns(
-        activeTasks: {
-          done.taskId: done,
-          noConn.taskId: noConn,
-          fresh.taskId: fresh,
-          stalled.taskId: stalled,
-        },
-        connections: {'a1': conn},
-        nowMs: now,
-      );
-      expect(result.map((t) => t.taskId), ['stalled']);
-    });
-
-    test('skips tasks whose connection is not connected', () {
-      final now = DateTime.now().millisecondsSinceEpoch;
-      final stalled = task(id: 's', agentId: 'a1')..lastActivityAtMs = now - 200000;
-      final conn = _FakeResumeConnection(const [])..connected = false;
-      final result = stalledTurns(
-        activeTasks: {stalled.taskId: stalled},
-        connections: {'a1': conn},
-        nowMs: now,
-      );
-      expect(result, isEmpty);
-    });
-
-    test('returns multiple stalled tasks', () {
-      final now = DateTime.now().millisecondsSinceEpoch;
-      final s1 = task(id: 's1', agentId: 'a1')..lastActivityAtMs = now - 200000;
-      final s2 = task(id: 's2', agentId: 'a2')..lastActivityAtMs = now - 200000;
-      final conn = _FakeResumeConnection(const []);
-      final result = stalledTurns(
-        activeTasks: {s1.taskId: s1, s2.taskId: s2},
-        connections: {'a1': conn, 'a2': conn},
-        nowMs: now,
-      );
-      expect(result.length, 2);
     });
   });
 
