@@ -1,7 +1,7 @@
 # 下线 Channel mailbox
 
-状态：已确认，待施工
-范围：App（`shepaw/lib`）+ 主机侧 `shepaw-cli`（轮 B 需要）+ Channel 服务端（轮 D 清理死代码）。
+状态：已确认。**轮 A 已提交（`35768a33`）**，轮 C / 轮 D 待做。总纲见 `docs/roadmap_host_authority.md`。
+范围：App（`shepaw/lib`）+ Channel 服务端（轮 D 清理死代码）。主机侧不需要改 —— Rust 主机从来没有 channel mailbox 代码，`crates/orchestrate` 里的 `Inbox` 是群编排的 dispatch 文件，同名不同物。
 
 ## 裁定
 
@@ -39,7 +39,7 @@ mailbox 不是「从主机读消息」的通道，而是**主机不可达时的�
 
 把原来串起来的四轮拆成两组：**投信侧（轮 A）不依赖 transcript 拉取，可以立刻做；收信侧（轮 C）必须等轮 B。** 这样投信改造不用等主干工程，主干工程也有充分时间设计。
 
-### 轮 A：拆投信侧（无依赖，先做）
+### 轮 A：拆投信侧 ✅ 已提交（`35768a33`）
 
 删除：presence 路由 `_tryChannelInboxRoute`（`agent_messaging_service.dart:2301`）、建连失败的信箱兜底（`:1012-1026`）、busy 分支（`:1487-1503`）、群成员不可达 `_collectGroupMailboxReply`（`group_agent_executor.dart:435`）、投信主流程 `leaveMailboxAndCollect`（`:2358`）。
 改为按裁定 2 直接落一条系统消息。做完之后 App 不再往 Channel 投任何信，只保留收信侧读历史的能力。

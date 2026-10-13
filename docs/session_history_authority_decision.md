@@ -1,7 +1,9 @@
 # 统一到 Rust 主机 / peer 路径（轮 B 完整设计）
 
-状态：**方向已定，方案待你过**
-关联：`docs/mailbox_retirement_decision.md` 的轮 B、轮 C、轮 D 都建立在这份之上
+状态：**方向已定**（agent-bridge 废弃 ⇒ 只剩统一到 `/peer/ws`）。总纲见 `docs/roadmap_host_authority.md`，冲突时以总纲为准。
+关联：`docs/mailbox_retirement_decision.md` 的轮 C、轮 D 建立在这份之上
+
+> **2026-10-13 补充实证**：agent-bridge 的残留进程已在本机清掉（21 个 `acp-proxy-ts` 服务实例、1 个 `gateway-daemon`、5 个 `peer-store-mcp`、3 个引擎孤儿）。它们的 `--session-store-path` 全指向 `~/.config/shepaw-hub/instances/<id>/sessions.json` —— **和 Rust 主机同一个目录**（`hub_root()`），清掉前两边一直在互相覆盖会话文件。这也坐实了「acp 行的来源就是 agent-bridge」。
 
 ## 一、前提（已确认）
 
