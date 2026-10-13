@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:uuid/uuid.dart';
 import '../models/channel.dart';
 import '../models/cli_command_config.dart';
 import '../models/cognition.dart';
@@ -159,24 +158,35 @@ class SheService {
       presentSheAvatar: false,
     );
     if (existing != null) {
-      if (!existing.isPeerAgent && existing.avatar != sheAvatar) {
-        // 迁移旧版头像（如花朵 emoji、旧 logo）到默认灵宠头像
-        await _db.updateRemoteAgent(existing.copyWith(avatar: sheAvatar));
+      if (existing.isPeerAgent) {
+        // 主机（Hub）上报的惜宝：这才是现在的来源，头像照旧迁移。
+        if (existing.avatar != sheAvatar) {
+          await _db.updateRemoteAgent(existing.copyWith(avatar: sheAvatar));
+          LoggerService().info(
+            'Migrated She avatar to default spirit-pet avatar',
+            tag: 'She',
+          );
+        }
+      } else {
+        // 旧的「本机惜宝」行：protocol 是已废弃的 ACP、endpoint 为空，压根连
+        // 不上，是个点不动的空壳。惜宝改由 Hub 提供，这行删掉。
+        // 只删 agents 行与元信息缓存，不级联频道和消息 —— 历史聊天留着。
         LoggerService().info(
-          'Migrated She avatar to default spirit-pet avatar',
+          'Removing legacy local She row (She now comes from the Hub)',
           tag: 'She',
         );
+        await _db.deleteRemoteAgent(sheId);
       }
       await _healSelfCognitionFromMinds();
       unawaited(SheAgentImpressionService.instance.refreshStaleImpressions());
       return;
     }
 
-    LoggerService().info('Creating She agent for first time', tag: 'She');
-
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final agent = _newLocalSheAgent(createdAt: now, updatedAt: now);
-    await _db.createRemoteAgent(agent);
+    // 没有惜宝行也不再本地创建：主机连上后由 agent_list 自动带出来。
+    LoggerService().info(
+      'No She row yet — waiting for a paired Hub to provide it',
+      tag: 'She',
+    );
 
     // 迁移到独立的 She 记忆 DB
     await _sheMemoryDb.setSheMemory('user_info', '(not yet known)');
@@ -191,31 +201,6 @@ class SheService {
 
     await _healSelfCognitionFromMinds();
     unawaited(SheAgentImpressionService.instance.refreshStaleImpressions());
-  }
-
-  RemoteAgent _newLocalSheAgent({
-    String name = sheName,
-    required int createdAt,
-    required int updatedAt,
-  }) {
-    return RemoteAgent(
-      id: sheId,
-      name: name,
-      avatar: sheAvatar,
-      bio: 'Your devoted spirit pet, always getting to know you better',
-      token: const Uuid().v4(),
-      endpoint: '',
-      protocol: ProtocolType.acp,
-      connectionType: ConnectionType.http,
-      status: AgentStatus.online,
-      isPinned: true,
-      metadata: const {
-        'is_she': true,
-        'system_prompt': '',
-      },
-      createdAt: createdAt,
-      updatedAt: updatedAt,
-    );
   }
 
   /// One-time, idempotent self-heal: older builds could write She's soul /
