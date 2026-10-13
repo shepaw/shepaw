@@ -16,13 +16,9 @@ import '../logger_service.dart';
 import '../../peer/host_she_turn.dart';
 import '../../peer/pouch_roster.dart';
 import '../../peer/pouch_turn_relay.dart';
-import '../peer_key_utils.dart';
 import '../session/session_slash_commands.dart';
-import '../remote_agent_service.dart';
 import '../../peer/services/peer_agent_client_service.dart';
 import '../../peer/services/peer_inflight_turn.dart';
-import '../../service_locator.dart' show getIt;
-import 'chat_history_content.dart';
 import 'message_implicit_prompt.dart';
 import 'stream_content_splitter.dart';
 import 'streaming_flush_helper.dart';
@@ -920,25 +916,10 @@ class AgentMessagingService {
     final peerSessionId = boundRemoteSessionId ??
         (effectiveChannelId.isNotEmpty ? effectiveChannelId : null);
 
-    List<Map<String, dynamic>>? chatHistory;
-    if (effectiveChannelId.isNotEmpty) {
-      final messages = await loadChannelMessages(effectiveChannelId, limit: 40);
-      if (messages.isNotEmpty) {
-        chatHistory = messages
-            .where((m) =>
-                ChatHistoryContent.shouldReplay(m) && m.id != userMessage.id)
-            .map((m) {
-              final isAgent = m.from.isAgent;
-              return <String, dynamic>{
-                'role': isAgent ? 'assistant' : 'user',
-                'content': ChatHistoryContent.replayContent(m),
-              };
-            })
-            .where((e) => (e['content'] as String).trim().isNotEmpty)
-            .toList();
-        if (chatHistory.isEmpty) chatHistory = null;
-      }
-    }
+    // 不再每轮打包历史：主机侧的 agent_chat 帧没有 history 字段
+    // （crates/protocol/src/frames.rs 的 AgentChat），会话由主机记录，
+    // 主机按 session_key + seed 回放（见 crates/api/src/node_runtime.rs）。
+    // 以前这里每轮回读 40 条消息发出去，主机一直是无视的。
 
     // Capture the latest approval so the final persisted message still carries
     // the card after sendChat completes and ChatController reloads from DB.
@@ -999,7 +980,6 @@ class AgentMessagingService {
           ),
         ),
         sessionId: peerSessionId,
-        history: chatHistory,
         attachments: attachments,
         cancelToken: acpCancellationToken,
         localAgentId: agent.id,
