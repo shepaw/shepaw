@@ -1,7 +1,8 @@
 # ACP 连接抗切网（agent 输出中切换网络不卡死、不中断）
 
 状态：轮 1-3 已落地（根因 1-7 已修），轮 4（HTTP `connectionTimeout`）未做，影响面小
-范围：App（`shepaw/lib`）。主机侧（`shepaw-cli`）已有 `idle_limit 120s` / `turn_limit 30min` 兜底，本轮不改。
+范围：App（`shepaw/lib`）。主机侧（`shepaw-cli`）已有 `idle 120s` / 工具静默 15min /
+`turn 30min` 兜底，本轮不改（见 acp_idle_timeout_decision.md）。
 
 ## 背景
 
