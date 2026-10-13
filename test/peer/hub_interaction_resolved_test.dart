@@ -66,6 +66,7 @@ void main() {
     String channelId, {
     String kind = 'action_confirmation',
     Map<String, dynamic> data = const {'prompt': '允许执行 rm -rf build？'},
+    String turnId = 'turn-1',
   }) async {
     final interactionId = nextIx();
     incoming.add(PeerControlEvent(
@@ -79,7 +80,7 @@ void main() {
           'agent_id': 'she',
           'data': {
             'interaction_id': interactionId,
-            'turn_id': 'turn-1',
+            'turn_id': turnId,
             'agent_id': 'she',
             'interaction_type': kind,
             'data': {
@@ -93,6 +94,24 @@ void main() {
     ));
     await until(() async => await db.getMessageById(cardId(interactionId)) != null);
     return interactionId;
+  }
+
+  /// 回合结束。正常顺序下主机先发 `interaction.resolved` 再结束回合，
+  /// 这里不发 resolved —— 测的就是那帧没到手时的兜底。
+  Future<void> finishTurn(String turnId) async {
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: {
+        'type': 'hub_event',
+        'event': {
+          'seq': ++seq,
+          'kind': 'turn.finished',
+          'channel_id': '',
+          'agent_id': 'she',
+          'data': {'turn_id': turnId},
+        },
+      },
+    ));
   }
 
   Future<void> resolve(String interactionId, String by) async {
@@ -248,6 +267,59 @@ void main() {
     expect(
       (await cardPayload(cardId(ix), 'action_confirmation'))['closed'],
       'timeout',
+    );
+  });
+
+  test('回合结束时兜底：作废帧没到手也不留一张能点的卡', () async {
+    final channelId = await newChannel();
+    final ix = await renderCard(channelId, turnId: 'turn-A');
+
+    await finishTurn('turn-A');
+
+    await until(() async => (await cardPayload(cardId(ix), 'action_confirmation'))['closed'] != null);
+    expect(
+      (await cardPayload(cardId(ix), 'action_confirmation'))['closed'],
+      'turn_ended',
+    );
+  });
+
+  test('兜底只收这个回合的卡，别的回合不动', () async {
+    final channelId = await newChannel();
+    final mine = await renderCard(channelId, turnId: 'turn-A');
+    final other = await renderCard(channelId, turnId: 'turn-B');
+
+    await finishTurn('turn-A');
+
+    await until(() async => (await cardPayload(cardId(mine), 'action_confirmation'))['closed'] != null);
+    final untouched = await cardPayload(cardId(other), 'action_confirmation');
+    expect(untouched['closed'], isNull, reason: '另一个回合还在等回答，卡片得留着能点');
+  });
+
+  test('兜底不碰已经答过的卡片', () async {
+    final channelId = await newChannel();
+    final ix = await renderCard(channelId, turnId: 'turn-A');
+    await seedAnswer(cardId(ix), 'action_confirmation', 'selected_action_id', 'allow');
+
+    await finishTurn('turn-A');
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+
+    final payload = await cardPayload(cardId(ix), 'action_confirmation');
+    expect(payload['selected_action_id'], 'allow');
+    expect(payload['closed'], isNull);
+  });
+
+  test('兜底不重复干活：同一个回合结束两次也只作废一次', () async {
+    final channelId = await newChannel();
+    final ix = await renderCard(channelId, turnId: 'turn-A');
+
+    await finishTurn('turn-A');
+    await until(() async => (await cardPayload(cardId(ix), 'action_confirmation'))['closed'] != null);
+    await finishTurn('turn-A');
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+
+    expect(
+      (await cardPayload(cardId(ix), 'action_confirmation'))['closed'],
+      'turn_ended',
     );
   });
 }

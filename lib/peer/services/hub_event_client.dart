@@ -47,6 +47,8 @@ class HubEventClient {
   final _attached = <String>{};
   final _liveBuffers = <String, String>{};
   final _liveChannels = <String, String>{};
+  /// 回合 → 这个回合问过的问题。回合结束时按它兜底收起还没答的卡片。
+  final _turnCards = <String, Set<String>>{};
 
   StreamSubscription<PeerControlEvent>? _sub;
   StreamSubscription<void>? _reloginSub;
@@ -204,6 +206,7 @@ class HubEventClient {
         peerId: peerId,
         channelId: event.channelId,
         agentId: event.agentId,
+        turnId: event.data['turn_id'] as String? ?? '',
         interactionId: event.data['interaction_id'] as String? ?? '',
         kind: event.data['interaction_type'] as String? ?? '',
         body: event.data['data'],
@@ -221,6 +224,7 @@ class HubEventClient {
     required String interactionId,
     required String kind,
     required Object? body,
+    String turnId = '',
   }) async {
     final data = body;
     final payload =
@@ -255,6 +259,7 @@ class HubEventClient {
         'host_peer_id': peerId,
         'interaction_id': interactionId,
         'interaction_type': kind,
+        if (turnId.isNotEmpty) 'turn_id': turnId,
       },
     };
     if (kind == 'action_confirmation' ||
@@ -275,6 +280,9 @@ class HubEventClient {
       metadata: metadata,
       conflictAlgorithm: ConflictAlgorithm.ignore,
     );
+    if (turnId.isNotEmpty) {
+      (_turnCards[turnId] ??= <String>{}).add(interactionId);
+    }
     _notify(channelId);
   }
 
@@ -439,7 +447,21 @@ class HubEventClient {
     final turnId = event.data['turn_id'] as String? ?? '';
     _attached.remove(turnId);
     final channelId = _liveChannels[turnId];
+    await _closeTurnCards(turnId);
     if (channelId != null) _notify(channelId);
+  }
+
+  /// 回合结束了，这个回合问过的、还没答的卡片一律收起可点态。
+  ///
+  /// 正常顺序下主机先发 `interaction.resolved`、再结束回合（`ask_ui` 是阻塞的），
+  /// 所以这一步平时是空转 —— 它兜的是那帧没到手的情况（事件日志被裁、游标丢了、
+  /// 或补发/作废的先后被打乱）。不兜的话卡片会一直可点，而回合早没了。
+  Future<void> _closeTurnCards(String turnId) async {
+    final cards = _turnCards.remove(turnId);
+    if (cards == null || cards.isEmpty) return;
+    for (final interactionId in cards) {
+      await _closeHubCard(interactionId, 'turn_ended');
+    }
   }
 
   Future<void> _onAttachedChunk(
@@ -456,6 +478,7 @@ class HubEventClient {
         peerId: peerId,
         channelId: channelId,
         agentId: data['agent_id'] as String? ?? '',
+        turnId: turnId,
         interactionId: data['interaction_id'] as String? ?? '',
         kind: data['interaction_type'] as String? ?? '',
         body: data['data'],
@@ -481,6 +504,8 @@ class HubEventClient {
     }
     if (data['kind'] == 'done' || data['kind'] == 'error') {
       _attached.remove(turnId);
+      // 续传的回合就这样结束了 —— 补发回来的卡片同样不能留着可点。
+      await _closeTurnCards(turnId);
     }
   }
 
