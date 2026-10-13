@@ -330,7 +330,7 @@ class RemoteAgentService {
 
   /// 从已获取的 AgentCard 数据同步外部 agent 的自述简历到本地 `RemoteAgent.bio`。
   ///
-  /// 供连接层在每次建连拿到新鲜卡片时调用（见 `ACPAgentConnection
+  /// 供连接层在每次建连拿到新鲜卡片时调用（见 peer 侧的卡片处理
   /// .onAgentCardFetched`）。仅当本地简历为空时写入——用户手动填写的简历
   /// 优先保留；peer agent / 无 description 静默跳过。best-effort。
   Future<void> syncResumeFromCardData(String agentId, Map card) =>

@@ -5,7 +5,7 @@
 /// style: ListView of selectable rows, keyboard ↑/↓/Enter support driven
 /// by the parent's focus node, tap-to-insert.
 ///
-/// Data comes from [ACPAgentConnection.slashCommands] (seeded via
+/// Data comes from the slash-command cache (seeded via
 /// `agent.commands.list` on connect, refreshed on `agent.commands.changed`
 /// notifications). The filtering is done locally on the `name` and
 /// `description` fields against the user's typed query after `/`.

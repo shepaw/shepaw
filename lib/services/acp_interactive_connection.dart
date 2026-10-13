@@ -3,7 +3,9 @@ import 'dart:async';
 import '../peer/services/peer_agent_client_service.dart';
 import '../peer/services/peer_connection_manager.dart';
 
-/// The subset of [ACPAgentConnection] the interactive-response path needs.
+/// The subset of an agent connection the interactive-response path needs.
+///
+/// 直连 ACP 退役后只剩 peer 的实现：[PeerAcpConnection]。
 ///
 /// Both the real ACP connection and the peer-backed shim ([PeerAcpConnection])
 /// implement it, so `submitActionConfirmationResponse` /
@@ -32,7 +34,7 @@ abstract class AcpInteractiveConnection {
 ///
 /// Only the interactive path uses this (via `ChatService.getInteractiveConnection`);
 /// ACP-specific surfaces (slash commands, reconnect, heartbeat) keep using the
-/// concrete `ACPAgentConnection` and simply see `null` for peer agents.
+/// concrete connection and simply see `null` for unsupported agents.
 class PeerAcpConnection implements AcpInteractiveConnection {
   @override
   final String agentId;

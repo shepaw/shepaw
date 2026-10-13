@@ -1213,7 +1213,7 @@ class ChatService {
 
   /// Update the cached slash-command snapshot for [agentId].
   ///
-  /// Called by any `ACPAgentConnection` that receives `agent.commands.changed`
+  /// Called by any transport that receives `agent.commands.changed`
   /// or a fresh `agent.commands.list` response — including short-lived
   /// health-check connections that dispose before the user sees the chat
   /// screen. The `/` palette can read from here via

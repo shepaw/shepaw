@@ -1,4 +1,4 @@
-/// High-level Noise session API used by `ACPAgentConnection`.
+/// High-level Noise session API used by the peer transport.
 ///
 /// Wraps [HandshakeState] and the two post-split transport keys. Exposes:
 ///

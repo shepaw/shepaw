@@ -1,6 +1,6 @@
 /// Utility for decoding the cached peer static public key stored in
 /// `RemoteAgent.metadata['cached_peer_static_public_key']` (base64 string)
-/// into the `Uint8List` expected by `ACPAgentConnection.connect()`.
+/// into the `Uint8List` expected by the Noise handshake.
 library;
 
 import 'dart:convert';
