@@ -74,8 +74,6 @@ class GroupAgentExecutor {
   final GroupInteractionHandler _interactionHandler;
   final void Function(String channelId) notifyChannelUpdate;
   final void Function() updateTypingAgentIds;
-  final Future<ACPAgentConnection> Function(RemoteAgent agent)
-      getOrCreateACPConnection;
   late final GroupMemberSessionService _memberSessions =
       GroupMemberSessionService(_db);
   late final GroupDispatchParser _dispatchParser = GroupDispatchParser(_db);
@@ -87,7 +85,6 @@ class GroupAgentExecutor {
     required GroupInteractionHandler interactionHandler,
     required this.notifyChannelUpdate,
     required this.updateTypingAgentIds,
-    required this.getOrCreateACPConnection,
   })  : _db = db,
         _uuid = uuid,
         _activeGroupTasks = activeGroupTasks,

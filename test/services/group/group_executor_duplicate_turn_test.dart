@@ -62,8 +62,6 @@ void main() {
         ),
         notifyChannelUpdate: (_) {},
         updateTypingAgentIds: () => typingCalls++,
-        getOrCreateACPConnection: (_) async =>
-            throw UnimplementedError('not reached in these tests'),
       );
     });
 
@@ -165,8 +163,6 @@ void main() {
         ),
         notifyChannelUpdate: (_) {},
         updateTypingAgentIds: () => typingCalls++,
-        getOrCreateACPConnection: (_) async =>
-            throw UnimplementedError('not reached in these tests'),
       );
       final done = <(String, String, bool)>[];
       try {

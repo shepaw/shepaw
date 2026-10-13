@@ -34,7 +34,6 @@ GroupEventPerceptionScheduler _buildScheduler({
     ),
     notifyChannelUpdate: (_) {},
     updateTypingAgentIds: () {},
-    getOrCreateACPConnection: (_) => throw UnimplementedError(),
   );
 
   return GroupEventPerceptionScheduler(

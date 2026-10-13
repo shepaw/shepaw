@@ -493,7 +493,6 @@ class _NoopExecutor extends GroupAgentExecutor {
           ),
           notifyChannelUpdate: (_) {},
           updateTypingAgentIds: () {},
-          getOrCreateACPConnection: (_) async => throw UnimplementedError(),
         );
 
   @override

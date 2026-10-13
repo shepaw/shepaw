@@ -229,7 +229,6 @@ class ChatService {
     interactionHandler: _groupInteractionHandler,
     notifyChannelUpdate: _notifyChannelUpdate,
     updateTypingAgentIds: _updateTypingAgentIds,
-    getOrCreateACPConnection: _agentMessagingService.getOrCreateACPConnection,
   );
 
   /// Sub-service: 1:1 agent messaging (sendMessageToAgent + ACP + local LLM)
