@@ -12,10 +12,8 @@ import '../storage/store_uri_reader.dart';
 import 'local_database_service.dart';
 import 'logger_service.dart';
 import 'token_service.dart';
-import 'acp_agent_connection.dart';
 import '../peer/services/peer_agent_client_service.dart';
 import 'chat_service.dart';
-import 'peer_key_utils.dart';
 import 'she_agent_impression_service.dart';
 import 'she_service.dart';
 
@@ -228,71 +226,10 @@ class RemoteAgentService {
   /// The user's intent is "forget this agent"; a network hiccup shouldn't
   /// leave a stale local record.
   Future<void> deleteAgent(String agentId) async {
-    final agent = await _databaseService.getRemoteAgentById(agentId);
-    if (agent != null && agent.protocol == ProtocolType.acp) {
-      await _tryUnregisterFromAgent(agent);
-    }
     await _databaseService.deleteRemoteAgent(agentId);
     // 名单变化后通知会话列表等订阅方补刷，否则已删除的 agent 会残留到下次刷新。
     notifyAgentsChanged();
     unawaited(SheAgentImpressionService.instance.removeImpression(agentId));
-  }
-
-  /// Open a one-shot Noise session purely to send `peer.unregister`, then
-  /// tear it down. Swallows all errors — this path must never block the
-  /// user's delete intent.
-  Future<void> _tryUnregisterFromAgent(RemoteAgent agent) async {
-    final pinnedFp = (agent.metadata['noise_peer_fp'] as String?) ?? '';
-    if (pinnedFp.isEmpty) {
-      // Pre-v2.1 record with no pinned fingerprint — skip. The user will
-      // have to `peers remove` manually if they care about allowlist hygiene.
-      return;
-    }
-
-    // Build the same wsUrl the regular connection path uses. Kept inline
-    // here to avoid pulling the whole health-check machinery just for a
-    // one-shot handshake + notification.
-    String wsUrl;
-    final endpoint = agent.endpoint;
-    if (endpoint.isEmpty) return;
-    if (endpoint.startsWith('ws://') || endpoint.startsWith('wss://')) {
-      wsUrl = endpoint;
-    } else {
-      wsUrl = endpoint
-          .replaceFirst('https://', 'wss://')
-          .replaceFirst('http://', 'ws://');
-    }
-    if (!wsUrl.contains('/acp/ws')) {
-      wsUrl = wsUrl.endsWith('/') ? '${wsUrl}acp/ws' : '$wsUrl/acp/ws';
-    }
-
-    final conn = ACPAgentConnection(
-      agentId: agent.id,
-      autoReconnect: false,
-    );
-    try {
-      await conn
-          .connect(
-            wsUrl,
-            agent.token,
-            targetAgentId: agent.metadata['target_agent_id'] as String?,
-            pinnedFingerprint: pinnedFp,
-            cachedPeerStaticPublicKey: decodeCachedPeerPublicKey(
-              agent.metadata['cached_peer_static_public_key'],
-            ),
-          )
-          .timeout(const Duration(seconds: 5));
-      await conn.unregisterSelfFromAgent();
-    } catch (e) {
-      LoggerService().info(
-        'peer.unregister skipped for ${agent.id} (${agent.name}): $e',
-        tag: 'RemoteAgent',
-      );
-    } finally {
-      try {
-        await conn.disconnect();
-      } catch (_) {}
-    }
   }
 
   // ==================== 查询操作 ====================
@@ -389,30 +326,6 @@ class RemoteAgentService {
   /// 标记助手为错误状态
   Future<void> markAgentError(String agentId) async {
     await _databaseService.updateRemoteAgentStatus(agentId, 'error');
-  }
-
-  /// 从 ACP `agent.getCard` 同步外部 agent 的自述简历到本地 `RemoteAgent.bio`。
-  ///
-  /// 仅当本地简历为空时写入（不覆盖用户在表单填写的简历）。best-effort：
-  /// 网关不支持 getCard / 超时 / 无 description 均静默跳过，不影响调用方。
-  Future<void> _syncResumeFromCard(
-    ACPAgentConnection connection,
-    RemoteAgent agent,
-  ) async {
-    if (agent.bio?.trim().isNotEmpty == true) return;
-    try {
-      final card =
-          await connection.getAgentCard().timeout(const Duration(seconds: 3));
-      if (!card.isSuccess) return;
-      final result = card.result;
-      if (result is! Map) return;
-      await syncResumeFromCardData(agent.id, result);
-    } catch (e) {
-      LoggerService().debug(
-        'Sync resume from card skipped for ${agent.id}: $e',
-        tag: 'RemoteAgent',
-      );
-    }
   }
 
   /// 从已获取的 AgentCard 数据同步外部 agent 的自述简历到本地 `RemoteAgent.bio`。
@@ -629,133 +542,18 @@ class RemoteAgentService {
       ));
       return connected;
     }
-
-    // 检查 endpoint 是否有效
-    if (agent.endpoint.trim().isEmpty) {
-      LoggerService().warning('Endpoint 为空，跳过健康检查', tag: 'RemoteAgent');
+    // 直连 ACP 已退役：唯一的服务方 agent-bridge 已下线，主机只认 /peer/ws
+    // —— 这类 endpoint 不可能连上，不必再开临时连接去试。直接判离线。
+    if (agent.protocol == ProtocolType.acp) {
+      await _databaseService.updateRemoteAgent(agent.copyWith(
+        status: AgentStatus.offline,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      ));
       return false;
     }
 
-    // 如果已经是在线状态且有最近的心跳记录（60秒内），直接返回 true
-    final now = DateTime.now().millisecondsSinceEpoch;
-    if (agent.isOnline &&
-        agent.lastHeartbeat != null &&
-        now - agent.lastHeartbeat! < 60000) {
-      return true;
-    }
-
-    try {
-      // 1. Try to ping via the existing ChatService connection (avoids
-      //    creating a throwaway WebSocket that immediately disconnects).
-      final chatService = ChatService();
-      final alive = await chatService.pingAgent(agentId);
-      if (alive) {
-        final now = DateTime.now().millisecondsSinceEpoch;
-        final updatedAgent = agent.copyWith(
-          status: AgentStatus.online,
-          lastHeartbeat: now,
-          connectedAt: agent.connectedAt ?? now,
-          updatedAt: now,
-        );
-        await _databaseService.updateRemoteAgent(updatedAgent);
-        return true;
-      }
-
-      // 2. No existing connection — open a temporary one to verify
-      //    the agent is reachable.
-      String wsUrl;
-      final endpoint = agent.endpoint.trim();
-      if (endpoint.startsWith('ws://') || endpoint.startsWith('wss://')) {
-        wsUrl = endpoint;
-      } else {
-        wsUrl = endpoint
-            .replaceFirst('https://', 'wss://')
-            .replaceFirst('http://', 'ws://');
-        if (!wsUrl.contains('/acp/ws')) {
-          wsUrl = wsUrl.endsWith('/') ? '${wsUrl}acp/ws' : '$wsUrl/acp/ws';
-        }
-      }
-
-      // For local agents accessed externally, the endpoint is a bare
-      // ws://host:port — don't append /acp/ws.
-      // The targetAgentId tells connect() to add ?agentId=yyy to the URL.
-      final targetAgentId = agent.metadata['target_agent_id'] as String?;
-      // v2.1: pinned peer fingerprint from pairing. Required for Noise
-      // handshake to pin the agent's static public key.
-      final pinnedFp = (agent.metadata['noise_peer_fp'] as String?) ?? '';
-
-      final connection = ACPAgentConnection(
-        agentId: agent.id,
-        autoReconnect: false,
-      );
-
-      try {
-        // Wrap both connect and ping in a single shared timeout budget.
-        // Using separate .timeout() on each would restart the clock after
-        // connect() finishes, making the total wait up to 2× the budget.
-        final bool healthy = await Future(() async {
-          await connection.connect(
-            wsUrl,
-            agent.token,
-            targetAgentId: targetAgentId,
-            pinnedFingerprint: pinnedFp,
-            cachedPeerStaticPublicKey: decodeCachedPeerPublicKey(
-              agent.metadata['cached_peer_static_public_key'],
-            ),
-            // One-shot pairing code from the "Add agent" flow. After a
-            // successful first handshake the agent has our pubkey in its
-            // allowlist; all later reconnects pass `null` (no code).
-            enrollmentCode: enrollmentCode,
-          );
-          final pingResponse = await connection.ping();
-          // Seed the process-wide slash-command snapshot BEFORE this temp
-          // connection is disposed. Without this, the next chat-screen
-          // entry has no commands to show when the user types "/" before
-          // sending the first real message. Swallow errors — prefetch is
-          // best-effort and the full chat send path will refresh it later.
-          try {
-            await connection.refreshSlashCommands();
-          } catch (_) {
-            /* ignore — prefetch is best-effort */
-          }
-          return pingResponse.isSuccess;
-        }).timeout(timeout);
-
-        if (healthy) {
-          final now = DateTime.now().millisecondsSinceEpoch;
-          final updatedAgent = agent.copyWith(
-            status: AgentStatus.online,
-            lastHeartbeat: now,
-            connectedAt: agent.connectedAt ?? now,
-            updatedAt: now,
-          );
-
-          await _databaseService.updateRemoteAgent(updatedAgent);
-          // 外部 agent 接入时同步自述简历（仅当本地简历为空时）。
-          await _syncResumeFromCard(connection, updatedAgent);
-          return true;
-        } else {
-          await disconnectAgent(agentId);
-          return false;
-        }
-      } finally {
-        connection.dispose();
-      }
-    } catch (e) {
-      // 503 means the channel tunnel is not yet online (the local agent hasn't
-      // connected yet), not that the remote agent itself is down.  Treat it as
-      // "temporarily unavailable" and preserve the current status rather than
-      // marking the agent offline.
-      final msg = e.toString();
-      if (msg.contains('503') ||
-          msg.contains('502') ||
-          msg.contains('ServiceUnavailable') ||
-          msg.contains('not upgraded')) {
-        return agent.isOnline; // keep whatever the last known status was
-      }
-      await disconnectAgent(agentId);
-      return false;
-    }
+    // custom 等其它协议：没有 endpoint 可探，沿用上次已知状态。
+    return agent.isOnline;
   }
 
   /// 检查所有 Agent 的健康状态
