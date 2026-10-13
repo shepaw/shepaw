@@ -48,11 +48,19 @@
 
 ## 五、施工顺序
 
-### 轮 B1：让 ACP agent 能走 peer（数据侧）
+### 轮 B1：让 ACP agent 能走 peer —— 已具备，不是改造是处置
 
-现存 ACP agent 是 `RemoteAgent` 行、endpoint 为 `/acp/ws`；peer agent 靠 `metadata['source_peer_id']` + `metadata['remote_agent_id']` 定位到某台已配对 Hub。需要：
-- 一条「把已有 ACP agent 重新挂到某台 Hub」的迁移路径（扫描 Hub 上的 agent 列表 → 配对/改写行）。
-- 老行不能原地改协议：要么重新配对，要么提供一次性转换。
+**核查结论：自动发现 + 自动建行这套两端都已经有，B1 不需要「转换行」。**
+
+- Rust 侧：`agent_list_req` → `agent_list()`（`crates/api/src/agent.rs:720`），列出本机「本地 agent 且允许外部访问」的实例（id / name / engine / bio / cwd / workspace_uri / avatar，按 `instance.enabled` 过滤）。路由在 `crates/api/src/lib.rs:834`。
+- App 侧：配对设备连上后**自动**发 `agent_list_req`（`peer_agent_client_service.dart:6902`），把结果落成 `protocol == ProtocolType.peer` 的 `RemoteAgent` 行（`:7049`），使其像普通 agent 一样出现在会话列表；断开标记离线，删除配对时清理。服务头部的注释（`:3-7`）就是这么写的。
+- peer 行的 endpoint 是合成的 `peer://<peerId>/<remoteAgentId>`（`:7047`），**不是 URL** —— 所以不存在「把 `/acp/ws` 地址改成 `/peer/ws` 地址」这种原地改写。
+
+**所以迁移的实际动作是**：用户配对 Hub → Hub 上的 agent 自动出现为新行 → 处置旧的 ACP 行（删除 / 留着自然淘汰 / 标记废弃）。不是逐条转换数据。
+
+顺带回答「Rust 里还有没有 ACP 直连这种形态」：**没有**。Rust 的 agent 来源是 `list_instances()` 读本机实例，只有「配对后对外暴露」这一种，没有独立的 `/acp/ws` 直连入口。
+
+待定：旧 ACP 行怎么处置（见第七节）。
 
 ### 轮 B2：下掉每轮打包 history
 
@@ -69,11 +77,10 @@
 
 ## 六、风险
 
-- **轮 B1 是产品问题不是技术问题**：用户已有的 ACP agent 要重新配对，这一步如果有摩擦，会直接决定迁移能不能落地。建议先确认「现在线上到底有多少 ACP agent、用户怎么加进来的」。
 - **退役 ACP 会删掉我刚做的可靠性改造**。虽然 peer 侧能力齐备，但两边实现不同（比如 peer 是无限重连、ACP 是 20s 宽限），统一后行为会变，值得在真机上再验一次切网。
-- **peer 路径依赖已配对 Hub**：如果用户的场景是「直连一台主机、不经过 Hub 配对」，peer 路径不一定适用，需要先确认。
+- **peer 路径依赖已配对 Hub**：agent 只能「配对后由 Hub 暴露」获得（`peer://<peerId>/<remoteAgentId>`），没有「填一个 URL 直连」的入口。如果用户的场景里有「直连一台主机、不经过配对」，那 peer 覆盖不到，需要先确认这种场景是否存在。
 
 ## 七、需要你定的
 
-1. **轮 B1 的迁移方式**：重新配对，还是做一次性自动转换？（取决于第 6 节那个「现在怎么加进来的」）
+1. **旧 ACP 行怎么处置**：配对 Hub 后新行会自动出现，老行不会自动消失。是让用户手动删、还是按「该 agent 已能在某台 Hub 上找到」自动提示/归档？这决定 B1 要不要写代码，还是纯粹是引导。
 2. **ACP 退役是一次性还是并行一段时间**：并行的话两套都要维护，我刚加的超时/宽限就得留着。
