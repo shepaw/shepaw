@@ -405,10 +405,8 @@ class ChatService {
       ValueNotifier<Set<String>>({});
 
   ChatService._internal(this._databaseService, this._toolResultService) {
-    // Wire every ACPAgentConnection's slash-command updates back into our
-    // process-wide snapshot map. This lets the "/" palette populate from
-    // commands seen during short-lived health-check connections, even
-    // though those connections are disposed before the chat screen opens.
+    // Wire slash-command updates (peer prefetch) into our process-wide
+    // snapshot map, so the "/" palette can populate before a chat screen opens.
     ChatService.slashCommandsSnapshotHook = cacheSlashCommandsSnapshot;
     HubCliExecute.activeSessionLookup = findActiveSessionId;
     // 步骤被显式跳过 → 发射 stepSkipped 事件（被动，不唤醒管理员）。
