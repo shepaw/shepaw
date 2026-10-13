@@ -13,6 +13,7 @@ import 'local_database_service.dart';
 import 'logger_service.dart';
 import 'token_service.dart';
 import 'acp_agent_connection.dart';
+import '../peer/services/peer_agent_client_service.dart';
 import 'chat_service.dart';
 import 'peer_key_utils.dart';
 import 'she_agent_impression_service.dart';
@@ -483,74 +484,41 @@ class RemoteAgentService {
   ///
   /// 仅适用于 ACP WebSocket 接入的远端 agent；peer agent（P2P 隧道）
   /// 不适用，直接抛错。[prompt] 非空时作为自定义生成提示词透传给网关。
+  /// 让主机用自己的 LLM 重新生成 agent 简历，返回新简历文本。
+  ///
+  /// 走 peer 协议：`agent_resume_rebuild_req` → 主机侧 `rebuild_resume`
+  /// （`shepaw-cli/crates/api/src/lib.rs:1559`）。连接失败 / 主机不支持 /
+  /// 超时 / 无简历内容均抛异常，由调用方（详情页按钮）展示错误。
+  /// [prompt] 非空时作为自定义提示词透传给主机。
   Future<String> regenerateResume(String agentId, {String? prompt}) async {
     final agent = await getAgentById(agentId);
     if (agent == null) {
       throw StateError('Agent not found: $agentId');
     }
-    if (agent.isPeerAgent) {
-      throw StateError('Peer agent 经 P2P 隧道访问，不支持远程重建简历');
+    if (!agent.isPeerAgent) {
+      // 直连 ACP 已退役：服务方 agent-bridge 下线，主机只认 /peer/ws。
+      throw StateError('只有 Hub 上的 Agent 能重建简历，请改用配对添加');
     }
-    if (agent.endpoint.trim().isEmpty) {
-      throw StateError('Agent 缺少 endpoint，无法连接');
-    }
-
-    // 与 checkAgentHealth 相同的临时连接构建方式：v2.1 Noise 握手 + 配对元数据。
-    String wsUrl;
-    final endpoint = agent.endpoint.trim();
-    if (endpoint.startsWith('ws://') || endpoint.startsWith('wss://')) {
-      wsUrl = endpoint;
-    } else {
-      wsUrl = endpoint
-          .replaceFirst('https://', 'wss://')
-          .replaceFirst('http://', 'ws://');
-      if (!wsUrl.contains('/acp/ws')) {
-        wsUrl = wsUrl.endsWith('/') ? '${wsUrl}acp/ws' : '$wsUrl/acp/ws';
-      }
+    final peerId = agent.sourcePeerId;
+    final remoteAgentId = agent.remoteAgentId;
+    if (peerId == null || peerId.isEmpty || remoteAgentId == null ||
+        remoteAgentId.isEmpty) {
+      throw StateError('Agent 缺少 Hub 归属信息，无法重建简历');
     }
 
-    final targetAgentId = agent.metadata['target_agent_id'] as String?;
-    final pinnedFp = (agent.metadata['noise_peer_fp'] as String?) ?? '';
-
-    final connection = ACPAgentConnection(
-      agentId: agent.id,
-      autoReconnect: false,
+    final newBio = await PeerAgentClientService.instance.rebuildResumeViaPeer(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      prompt: prompt ?? '',
     );
-    try {
-      await connection.connect(
-        wsUrl,
-        agent.token,
-        targetAgentId: targetAgentId,
-        pinnedFingerprint: pinnedFp,
-        cachedPeerStaticPublicKey: decodeCachedPeerPublicKey(
-          agent.metadata['cached_peer_static_public_key'],
-        ),
-      );
-
-      final response = await connection
-          .resumeRebuild(prompt: prompt)
-          .timeout(const Duration(seconds: 30));
-      if (!response.isSuccess) {
-        throw StateError(
-          'agent.resume.rebuild 失败: ${response.error?.message}',
-        );
-      }
-      final card = response.result;
-      if (card is! Map) {
-        throw StateError('返回的 AgentCard 格式异常');
-      }
-      final desc = (card['bio'] as String?) ?? (card['description'] as String?);
-      if (desc == null || desc.trim().isEmpty) {
-        throw StateError('网关未返回简历内容');
-      }
-      final newBio = desc.trim();
-
-      // 通过 updateAgent 落库并通知，同时把最新简历推送给已共享该 agent 的对端。
-      await updateAgent(agent.copyWith(bio: newBio));
-      return newBio;
-    } finally {
-      connection.dispose();
+    if (newBio.trim().isEmpty) {
+      throw StateError('主机未返回简历内容');
     }
+    final trimmed = newBio.trim();
+
+    // 通过 updateAgent 落库并通知，同时把最新简历推送给已共享该 agent 的对端。
+    await updateAgent(agent.copyWith(bio: trimmed));
+    return trimmed;
   }
 
   /// 重置助手为离线状态（从错误恢复）
