@@ -104,6 +104,24 @@ void main() {
     expect(find.byIcon(Icons.check), findsOneWidget);
   });
 
+  testWidgets('expired 哨兵加上作废原因，仍说明原因而不是当成已选', (tester) async {
+    // 直连审批卡落库时会同时写 selected_action_id=expired 和 closed。
+    // 前者是给对账用的，不能把提示吃掉。
+    await pumpCard(
+      tester,
+      actionData(selectedActionId: 'expired', closed: 'timeout'),
+    );
+
+    expect(find.text('已作废：没等到回答，主机已按默认继续'), findsOneWidget);
+    expect(find.byIcon(Icons.check), findsNothing);
+    expect(find.byType(ElevatedButton), findsNothing);
+    for (final button in tester.widgetList<OutlinedButton>(
+      find.byType(OutlinedButton),
+    )) {
+      expect(button.onPressed, isNull);
+    }
+  });
+
   testWidgets('在别处作答的卡片收起可点态', (tester) async {
     await pumpCard(tester, actionData(closed: 'answered_elsewhere'));
 

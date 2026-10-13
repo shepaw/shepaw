@@ -29,7 +29,11 @@ class ActionConfirmationButtons extends StatelessWidget {
     final actions = (actionData['actions'] as List<dynamic>?) ?? [];
     final confirmationId = actionData['confirmation_id'] as String? ?? '';
     final selectedActionId = actionData['selected_action_id'] as String?;
-    final hasSelection = selectedActionId != null;
+    // `expired` 不是用户的选择。作废落库时会写上它，好让对账把卡片当成已经
+    // 收场（cli 审批卡也认这个哨兵）。把它当成「答过了」的话，作废原因就
+    // 显示不出来，按钮全灰、没有说明。
+    final isExpiredSentinel = selectedActionId == 'expired';
+    final hasSelection = selectedActionId != null && !isExpiredSentinel;
     // 主机不再等这张卡了（超时按默认继续 / 回合被停止 / 回合已结束）。按钮
     // 全部失效并说明原因 —— 留着可点的话，用户点下去只会撞上「已失效」。
     //
@@ -37,7 +41,8 @@ class ActionConfirmationButtons extends StatelessWidget {
     // `interaction.resolved` 回来），所以裁决优先：答过了就按作答渲染，
     // 免得自己刚点的选择被随后到的作废帧说成「没答」。表单卡同理。
     final closedReason = actionData['closed'] as String?;
-    final isClosed = closedReason != null && selectedActionId == null;
+    final isClosed =
+        !hasSelection && (closedReason != null || isExpiredSentinel);
 
     if (actions.isEmpty) return const SizedBox.shrink();
 

@@ -269,6 +269,25 @@ extension MessageDao on LocalDatabaseService {
     );
   }
 
+  /// 不限频道，按 metadata 子串找消息。
+  ///
+  /// 作废帧只带交互 id，当时的聊天页可能已经不在了，只能全库找这张卡。
+  /// [needle] 应是 jsonEncode 后的确定子串（交互 id 本身即可）。
+  Future<List<Map<String, dynamic>>> findMessagesByMetadataMatch(
+    String needle, {
+    int limit = 20,
+  }) async {
+    if (needle.isEmpty) return const [];
+    final db = await database;
+    return await db.query(
+      'messages',
+      where: 'metadata LIKE ?',
+      whereArgs: ['%$needle%'],
+      orderBy: 'created_at DESC',
+      limit: limit,
+    );
+  }
+
   /// 根据 ID 获取单条消息
   Future<Map<String, dynamic>?> getMessageById(String messageId) async {
     final db = await database;

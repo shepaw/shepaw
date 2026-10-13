@@ -37,6 +37,7 @@ import '../../services/session/session_create_peer_handler.dart';
 import '../../services/she_agent_impression_service.dart';
 import '../../services/she_service.dart';
 import '../../service_locator.dart' show getIt;
+import '../interaction_card_close.dart';
 import '../../utils/engine_avatars.dart';
 import '../../utils/session_utils.dart';
 import '../../services/messaging/chat_history_content.dart';
@@ -5853,6 +5854,7 @@ class PeerAgentClientService {
     final fields = data['fields'];
     pending.onForm?.call({
       'form_id': approvalId,
+      'request_id': requestId,
       'title': data['title'] ?? '',
       if (data['description'] != null) 'description': data['description'],
       'fields': fields is List ? fields : const <dynamic>[],
@@ -5904,6 +5906,7 @@ class PeerAgentClientService {
     final fields = data['fields'];
     _orphanFormController.add({
       'form_id': approvalId,
+      'request_id': requestId,
       'title': data['title'] ?? '',
       if (data['description'] != null) 'description': data['description'],
       'fields': fields is List ? fields : const <dynamic>[],
@@ -6085,6 +6088,8 @@ class PeerAgentClientService {
       approvalId: approvalId,
       actions: effectiveActions,
     );
+    // 回合结束时按它把卡片找回来。进程重启后内存账簿是空的，只剩消息上的这个字段。
+    actionData['request_id'] = requestId;
     if (pending == null) {
       // Orphan: no live sendChat turn owns this approval (hub restarted
       // mid-approval and re-sent after reconnect, or agent_done raced ahead).
@@ -6390,6 +6395,10 @@ class PeerAgentClientService {
       }
       _tryCompleteBufferedDone(requestId);
     }
+    // 聊天页不在时没有人听上面的流，卡片会一直可点。写进消息本身，下次打开就是作废态。
+    if (!answered) {
+      unawaited(_persistInteractionClosed(approvalId, reason));
+    }
     if (answered || _interactionClosedController.isClosed) return;
     _interactionClosedController.add((approvalId: approvalId, reason: reason));
   }
@@ -6413,11 +6422,89 @@ class PeerAgentClientService {
     }
   }
 
+  /// 作废帧到了，但聊天页可能不在。按交互 id 把库里的卡片收起来。
+  Future<void> _persistInteractionClosed(
+    String interactionId,
+    String reason,
+  ) async {
+    if (interactionId.isEmpty) return;
+    if (!getIt.isRegistered<LocalDatabaseService>()) return;
+    try {
+      final rows = await _db.findMessagesByMetadataMatch(interactionId);
+      for (final row in rows) {
+        await _writeClosedMetadata(
+          row,
+          (metadata) => metadataClosingInteraction(
+            metadata,
+            interactionId: interactionId,
+            reason: reason,
+          ),
+        );
+      }
+    } catch (e) {
+      _log.warning('persist interaction closed failed: $e',
+          tag: 'PeerApproval', error: e);
+    }
+  }
+
+  /// 回合结束时的兜底。进程重启后内存里没有卡片 id，作废帧也早就丢了，
+  /// 只能按流式消息和 `request_id` 把还开着的卡收起来。
+  Future<void> _persistTurnCardsClosed(
+    _PendingRequest pending,
+    String requestId,
+    String reason,
+  ) async {
+    if (!getIt.isRegistered<LocalDatabaseService>()) return;
+    try {
+      final partialId = pending.partialMessageId;
+      if (partialId != null && partialId.isNotEmpty) {
+        final row = await _db.getMessageById(partialId);
+        if (row != null) {
+          await _writeClosedMetadata(
+            row,
+            (metadata) => metadataClosingOpenCards(metadata, reason: reason),
+          );
+        }
+      }
+      final channelId = pending.channelId;
+      if (channelId.isEmpty || requestId.isEmpty) return;
+      final rows = await _db.getChannelMessagesByMetadataMatch(
+        channelId,
+        requestId,
+      );
+      for (final row in rows) {
+        await _writeClosedMetadata(
+          row,
+          (metadata) => metadataClosingOpenCards(metadata, reason: reason),
+        );
+      }
+    } catch (e) {
+      _log.warning('persist turn cards closed failed: $e',
+          tag: 'PeerApproval', error: e);
+    }
+  }
+
+  Future<void> _writeClosedMetadata(
+    Map<String, dynamic> row,
+    Map<String, dynamic>? Function(Map<String, dynamic> metadata) close,
+  ) async {
+    final id = row['id'] as String? ?? '';
+    if (id.isEmpty) return;
+    final raw = row['metadata'];
+    if (raw is! String || raw.isEmpty) return;
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map) return;
+    final next = close(Map<String, dynamic>.from(decoded));
+    if (next == null) return;
+    await _db.updateMessageMetadata(id, next);
+  }
+
   void _finishPending(String requestId, Map<String, dynamic> data) {
     final p = _pending.remove(requestId);
     if (p == null || p.completer.isCompleted) return;
     _clearPersistedTurn(requestId);
     _closeCardsOfRequest(requestId, 'turn_ended');
+    unawaited(_persistTurnCardsClosed(p, requestId, 'turn_ended'));
     p.completer.complete(PeerChatResult(
       content: data['content'] as String? ?? '',
       metadata: (data['metadata'] as Map?)?.cast<String, dynamic>(),
@@ -6471,6 +6558,7 @@ class PeerAgentClientService {
     }
     _clearPersistedTurn(requestId);
     _closeCardsOfRequest(requestId, 'turn_ended');
+    unawaited(_persistTurnCardsClosed(p, requestId, 'turn_ended'));
     p.completer.completeError(
       Exception(data['message'] as String? ?? 'Peer agent error'),
     );
