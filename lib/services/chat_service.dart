@@ -656,42 +656,6 @@ class ChatService {
 
     await _interruptDeadGroupAcpChannels();
 
-    await drainAllMailboxReplies();
-  }
-
-  /// Cross-agent inbox pull: persist sealed finals into the destination
-  /// channel (`group_id` when present, otherwise the agent's latest unbound DM).
-  /// Best-effort; used on resume and app start so replies are not stuck until
-  /// the user opens that chat.
-  Future<int> drainAllMailboxReplies({String userId = 'user'}) async {
-    var inserted = 0;
-    try {
-      final agents = await _databaseService.getAllRemoteAgents();
-      for (final agent in agents) {
-        if (!ChannelMailboxService.agentHasChannelInbox(agent)) continue;
-        final dms = await _databaseService.getChannelsForAgent(agent.id);
-        Channel? fallback;
-        for (final dm in dms) {
-          if (!dm.isGroupBoundMemberSession && !dm.isSheBoundSession) {
-            fallback = dm;
-            break;
-          }
-        }
-        fallback ??= dms.isEmpty ? null : dms.first;
-        final msgs = await fetchMailboxReplies(
-          channelId: fallback?.id,
-          agentId: agent.id,
-          userId: userId,
-        );
-        inserted += msgs.length;
-      }
-    } catch (e) {
-      LoggerService().warning(
-        'drainAllMailboxReplies failed: $e',
-        tag: 'ChatService',
-      );
-    }
-    return inserted;
   }
 
   /// Mark an active task as interrupted by background, save partial content

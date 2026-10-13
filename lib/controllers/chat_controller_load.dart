@@ -10,7 +10,6 @@ mixin _LoadOps on _ChatControllerBase {
 
   /// [_setupInboxPush] 的安装序号。只让最后一次安装清掉并重建订阅，
   /// 避免过期的进页拉取把新会话的订阅清掉。
-  int _inboxSetupTicket = 0;
 
   // ---------------------------------------------------------------------------
   // Message loading
@@ -194,16 +193,6 @@ mixin _LoadOps on _ChatControllerBase {
         workflowService: WorkflowService(db: localDatabaseService),
       );
 
-      if (inboxAgents.isNotEmpty && epoch == _messageLoadEpoch) {
-        unawaited(_pullMailboxAfterInteractive(
-          epoch: epoch,
-          channelId: currentChannelId!,
-          inboxAgents: inboxAgents,
-          userId: userId,
-          groupMode: isGroupMode,
-        ));
-      }
-
       markMessagesAsReadIfAtBottom();
 
       _emit(RequestScrollToBottomEvent(force: true));
@@ -313,7 +302,6 @@ mixin _LoadOps on _ChatControllerBase {
     _channelUpdateSub = null;
     _agentTaskCompletionSub?.cancel();
     _agentTaskCompletionSub = null;
-    _clearInboxPush();
     if (_typingListener != null) {
       chatService.typingChannelIds.removeListener(_typingListener!);
       _typingListener = null;
@@ -613,47 +601,6 @@ mixin _LoadOps on _ChatControllerBase {
 
   /// 本地历史已经上屏、输入框已解锁之后再拉信箱。新回复到了再补进列表，
   /// 不替换当前列表，避免这段等待期间用户发出的消息被盖掉。
-  Future<void> _pullMailboxAfterInteractive({
-    required int epoch,
-    required String channelId,
-    required List<RemoteAgent> inboxAgents,
-    required String userId,
-    required bool groupMode,
-  }) async {
-    try {
-      final inserted = <Message>[];
-      for (final agent in inboxAgents) {
-        if (epoch != _messageLoadEpoch || currentChannelId != channelId) {
-          return;
-        }
-        if (!ChannelMailboxService.agentHasChannelInbox(agent)) continue;
-        final mailboxMsgs = await chatService.fetchMailboxReplies(
-          channelId: groupMode ? null : channelId,
-          agentId: agent.id,
-          userId: userId,
-        );
-        inserted.addAll(mailboxMsgs.where((m) => m.channelId == channelId));
-      }
-      if (epoch != _messageLoadEpoch || currentChannelId != channelId) return;
-      await _setupInboxPush(agents: inboxAgents, userId: userId);
-      if (epoch != _messageLoadEpoch || currentChannelId != channelId) return;
-      final fresh =
-          inserted.where((m) => !messageIdMap.containsKey(m.id)).toList();
-      if (fresh.isEmpty) return;
-      messages.addAll(fresh);
-      sortMessagesByTime(messages);
-      rebuildMessageIdMap();
-      streaming.repointAnchor(messages);
-      _notify();
-    } catch (e) {
-      LoggerService().warning(
-        'Background mailbox pull failed: $e',
-        tag: 'ChatController',
-        error: e,
-      );
-    }
-  }
-
   /// 频道解析出来后立刻用本地在线状态结束「连接中」，不必等消息加载。
   void _rememberStatusAgent(Channel? channel) {
     if (isGroupMode) return;
@@ -666,77 +613,4 @@ mixin _LoadOps on _ChatControllerBase {
     unawaited(refreshAgentStatus());
   }
 
-  Future<void> _setupInboxPush({
-    required List<RemoteAgent> agents,
-    required String userId,
-  }) async {
-    final ticket = ++_inboxSetupTicket;
-    _clearInboxPush();
-
-    final inboxAgents =
-        agents.where(ChannelMailboxService.agentHasChannelInbox).toList();
-    if (inboxAgents.isEmpty) return;
-
-    final identity = await NoiseIdentity.loadOrCreate();
-    if (ticket != _inboxSetupTicket) return;
-    String? connectedBase;
-    final acpIdToAgent = <String, RemoteAgent>{};
-
-    for (final agent in inboxAgents) {
-      if (ticket != _inboxSetupTicket) return;
-      final channelBase =
-          ChannelMailboxService.channelBaseFromEndpoint(agent.endpoint);
-      final acpAgentId = ChannelMailboxService.acpAgentIdFor(agent);
-      if (channelBase == null || acpAgentId.isEmpty) continue;
-      if (acpIdToAgent.containsKey(acpAgentId)) continue;
-
-      if (connectedBase == null) {
-        await InboxSubscribeService.instance.ensureConnected(
-          channelBase: channelBase,
-          callerFp: identity.fingerprintHex,
-        );
-        if (ticket != _inboxSetupTicket) return;
-        connectedBase = channelBase;
-      } else if (channelBase != connectedBase) {
-        continue;
-      }
-
-      InboxSubscribeService.instance.subscribe(acpAgentId);
-      _inboxSubscribeTargetIds.add(acpAgentId);
-      acpIdToAgent[acpAgentId] = agent;
-    }
-
-    if (ticket != _inboxSetupTicket || acpIdToAgent.isEmpty) return;
-
-    _inboxPushSub = InboxSubscribeService.instance.onMailReply.listen(
-      (event) async {
-        final toFetch = <RemoteAgent>[];
-        if (event.targetId.isEmpty) {
-          toFetch.addAll(acpIdToAgent.values);
-        } else {
-          final matched = acpIdToAgent[event.targetId];
-          if (matched != null) toFetch.add(matched);
-        }
-        if (toFetch.isEmpty) return;
-        final channelId = currentChannelId;
-        if (channelId == null) return;
-        final newMsgs = <Message>[];
-        for (final agent in toFetch) {
-          newMsgs.addAll(
-            await chatService.fetchMailboxReplies(
-              channelId: isGroupMode ? null : channelId,
-              agentId: agent.id,
-              userId: userId,
-            ),
-          );
-        }
-        final forHere = newMsgs.where((m) => m.channelId == channelId).toList();
-        if (forHere.isEmpty) return;
-        messages.addAll(forHere);
-        sortMessagesByTime(messages);
-        rebuildMessageIdMap();
-        _notify();
-      },
-    );
-  }
 }

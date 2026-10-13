@@ -49,7 +49,6 @@ import '../services/group/group_member_session_service.dart';
 import '../services/group/group_orchestration_continuation.dart';
 import '../services/dispatch/she_relay_session_service.dart';
 import '../services/mailbox/channel_mailbox_service.dart';
-import '../services/mailbox/inbox_subscribe_service.dart';
 import '../services/noise_identity.dart';
 import '../services/composer_draft_service.dart';
 import '../peer/services/hub_group_registry.dart';
@@ -249,18 +248,7 @@ abstract class _ChatControllerBase extends ChangeNotifier
   StreamSubscription<List<Message>>? _channelUpdateSub;
   StreamSubscription<String>? _queueDropSub;
   StreamSubscription<AgentTaskCompletion>? _agentTaskCompletionSub;
-  StreamSubscription<InboxMailReplyEvent>? _inboxPushSub;
-  final List<String> _inboxSubscribeTargetIds = [];
   VoidCallback? _typingListener;
-
-  void _clearInboxPush() {
-    _inboxPushSub?.cancel();
-    _inboxPushSub = null;
-    for (final id in _inboxSubscribeTargetIds) {
-      InboxSubscribeService.instance.unsubscribe(id);
-    }
-    _inboxSubscribeTargetIds.clear();
-  }
 
   bool get isAppActive => lifecycle.isAppActive;
 
@@ -596,7 +584,6 @@ abstract class _ChatControllerBase extends ChangeNotifier
     _interactionClosedSub?.cancel();
     _queueDropSub?.cancel();
     _channelUpdateSub?.cancel();
-    _clearInboxPush();
     _agentTaskCompletionSub?.cancel();
     if (_typingListener != null) {
       chatService.typingChannelIds.removeListener(_typingListener!);
