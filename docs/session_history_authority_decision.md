@@ -60,7 +60,24 @@
 
 顺带回答「Rust 里还有没有 ACP 直连这种形态」：**没有**。Rust 的 agent 来源是 `list_instances()` 读本机实例，只有「配对后对外暴露」这一种，没有独立的 `/acp/ws` 直连入口。
 
-待定：旧 ACP 行怎么处置（见第七节）。
+### 但 `/acp/ws` 今天根本连不上 Rust 主机
+
+顺着「旧 ACP 行从哪来」往下挖，挖到一个更硬的事实：
+
+- **直连**：路径白名单硬编码只认 `/peer/ws`（`crates/peer/src/server.rs:450`）。
+- **经 Channel 隧道**：`local_peer_url` 剥掉代理前缀后 `if !stripped.starts_with("/peer/ws") { return None; }`（`crates/peer/src/tunnel.rs:359-361`）——同样只放行 `/peer/ws`。
+
+**结论：endpoint 以 `/acp/ws` 结尾的行，现在是连不上的死行。** 反过来说，今天能用的 agent 一定不是 `/acp/ws`。
+
+### 「旧 ACP 行」的三个来源（含两个有名无实的）
+
+1. **`ProtocolType.acp` 是解析默认值**：`remote_agent.dart:53` 的 `orElse: () => ProtocolType.acp` —— 任何没写 protocol 字段的行都是 acp。
+2. **惜宝被标成 acp**：`she_service.dart:208`，但 `endpoint: ''` + `connectionType: http`，是本地内置 agent，压根不走 ACP WS —— tag 有名无实。
+3. **Channel 授权流程会建 acp 行**：`agent_access_service.dart:196`，带 endpoint + `target_agent_id` + `cached_peer_static_public_key`。这正是 mailbox 服务的那批（`agentHasChannelInbox` 就要求有公钥 + 中继端点）。endpoint 来自 `status.endpoint`，是 Channel 下发的，形态取决于对端注册的是什么。
+
+所以「处置旧 ACP 行」很可能是个**伪问题**：如果现在没有第三方 / 非 Hub 的 agent 接入场景，那么 acp 行要么本来就死（第 3 条里 endpoint 仍指向 `/acp/ws` 的那部分），要么有名无实（第 1、2 条），B1 直接消失。
+
+**待确认**：现在还有没有「非 Hub 来源」的 agent（第三方自建 ACP 服务、或直连某台主机不走配对）？见第七节。
 
 ### 轮 B2：下掉每轮打包 history
 
@@ -82,5 +99,7 @@
 
 ## 七、需要你定的
 
-1. **旧 ACP 行怎么处置**：配对 Hub 后新行会自动出现，老行不会自动消失。是让用户手动删、还是按「该 agent 已能在某台 Hub 上找到」自动提示/归档？这决定 B1 要不要写代码，还是纯粹是引导。
+1. **现在还有没有「非 Hub 来源」的 agent？** 即第三方自建 ACP 服务、或直连某台主机而不走配对。
+   - 有 → ACP 路径要保留，B1 是真实工作，前面几轮的可靠性改造继续有效。
+   - 没有 → `ProtocolType.acp` 整体是死路径（剩下的行要么连不上、要么只是 tag 碰巧是 acp），**B1 直接消失**，可以直接进入 B3 退役。
 2. **ACP 退役是一次性还是并行一段时间**：并行的话两套都要维护，我刚加的超时/宽限就得留着。
