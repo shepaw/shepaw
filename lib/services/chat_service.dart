@@ -1324,16 +1324,10 @@ class ChatService {
       );
     }
 
-    return await _sendHistorySupplementViaACP(
-      agent: agent,
-      sessionId: sessionId,
-      chatHistory: chatHistory,
-      originalQuestion: originalQuestion,
-      offset: offset,
-      onStreamChunk: onStreamChunk,
-      onRequestHistory: onRequestHistory,
-      acpCancellationToken: acpCancellationToken,
-    );
+    // 历史补充是「主机向 App 要更早的聊天记录」的应答，只有本地 LLM 路径会
+    // 触发（local_llm_handler.dart:501）。peer agent 的 transcript 在主机上，
+    // 主机不会向 App 要 —— 直连 ACP 退役后这条路径没有对端，直接返回。
+    return null;
   }
 
   /// Local-LLM re-answer after the user approved a history supplement.
@@ -1347,133 +1341,6 @@ class ChatService {
     ACPCancellationToken? acpCancellationToken,
   }) async {
     return null;
-  }
-
-  /// Send history supplement via ACP WebSocket protocol.
-  Future<HistorySupplementResult?> _sendHistorySupplementViaACP({
-    required RemoteAgent agent,
-    required String sessionId,
-    required List<Map<String, String>> chatHistory,
-    required String originalQuestion,
-    required int offset,
-    void Function(String chunk)? onStreamChunk,
-    void Function(Map<String, dynamic>)? onRequestHistory,
-    ACPCancellationToken? acpCancellationToken,
-  }) async {
-    final connection =
-        await _agentMessagingService.getOrCreateACPConnection(agent);
-    final taskId = _uuid.v4();
-    acpCancellationToken?.bind(connection, taskId);
-
-    final taskCompleter = Completer<void>();
-    String responseContent = '';
-    Map<String, dynamic>? capturedHistoryRequest;
-    LlmTokenUsage? remoteTokenUsage;
-
-    // Hook cancellation token so the completer resolves immediately on cancel.
-    acpCancellationToken?.addOnCancelled(() {
-      if (!taskCompleter.isCompleted) {
-        taskCompleter.complete();
-      }
-    });
-
-    connection.registerTaskCallbacks(
-        taskId,
-        TaskCallbacks(
-          onTextContent: (data) {
-            final content = data['content'] as String? ?? '';
-            responseContent += content;
-            onStreamChunk?.call(content);
-          },
-          onRequestHistory: (data) {
-            capturedHistoryRequest = Map<String, dynamic>.from(data);
-            onRequestHistory?.call(data);
-          },
-          onTaskCompleted: (data) {
-            remoteTokenUsage = LlmTokenUsage.fromJson(data['usage']);
-            if (!taskCompleter.isCompleted) taskCompleter.complete();
-          },
-          onTaskError: (data) {
-            if (!taskCompleter.isCompleted) {
-              taskCompleter
-                  .completeError(Exception(data['message'] ?? 'Task error'));
-            }
-          },
-        ));
-
-    await connection.sendChatMessage(
-      taskId: taskId,
-      sessionId: sessionId,
-      message: '[HISTORY_SUPPLEMENT]',
-      userId: '',
-      messageId: _uuid.v4(),
-      historySupplement: true,
-      additionalHistory: chatHistory,
-      originalQuestion: originalQuestion,
-    );
-
-    await taskCompleter.future.timeout(acpTaskTimeout);
-
-    connection.unregisterTaskCallbacks(taskId);
-
-    final acpUsage = remoteTokenUsage;
-    final tokenUsageMeta = (acpUsage != null && acpUsage.hasAny)
-        ? <String, dynamic>{LlmTokenUsage.metadataKey: acpUsage.toJson()}
-        : null;
-
-    // If cancelled, return partial content immediately.
-    if (acpCancellationToken?.isCancelled == true) {
-      final responseMessage = Message(
-        id: _uuid.v4(),
-        content: responseContent.isNotEmpty ? responseContent : '[Stopped]',
-        timestampMs: DateTime.now().millisecondsSinceEpoch,
-        from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
-        type: MessageType.text,
-        metadata: tokenUsageMeta,
-      );
-      if (responseContent.isNotEmpty) {
-        await _saveMessageToChannel(responseMessage, agent.id,
-            channelId: sessionId);
-      }
-      return HistorySupplementResult(
-        message: responseMessage,
-        actualSentCount: chatHistory.length,
-      );
-    }
-
-    // If the agent's entire response was a request_history directive (no text),
-    // don't save a meaningless placeholder message.
-    if (responseContent.isEmpty && capturedHistoryRequest != null) {
-      return HistorySupplementResult(
-        message: Message(
-          id: _uuid.v4(),
-          content: '',
-          timestampMs: DateTime.now().millisecondsSinceEpoch,
-          from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
-          type: MessageType.text,
-        ),
-        actualSentCount: chatHistory.length,
-        pendingHistoryRequest: capturedHistoryRequest,
-      );
-    }
-
-    final responseMessage = Message(
-      id: _uuid.v4(),
-      content: responseContent.isNotEmpty ? responseContent : 'Task completed',
-      timestampMs: DateTime.now().millisecondsSinceEpoch,
-      from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
-      type: MessageType.text,
-      metadata: tokenUsageMeta,
-    );
-
-    await _saveMessageToChannel(responseMessage, agent.id,
-        channelId: sessionId);
-
-    return HistorySupplementResult(
-      message: responseMessage,
-      actualSentCount: chatHistory.length,
-      pendingHistoryRequest: capturedHistoryRequest,
-    );
   }
 
   /// Submit action confirmation response
