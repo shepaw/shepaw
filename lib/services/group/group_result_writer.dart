@@ -2,7 +2,6 @@ import '../task/acp_task_contract.dart';
 import '../../models/group_task.dart';
 import '../../models/remote_agent.dart';
 import '../../storage/group_workspace_service.dart';
-import '../acp_agent_connection.dart';
 import '../logger_service.dart';
 import 'group_member_history.dart';
 import 'group_artifact_registry.dart';

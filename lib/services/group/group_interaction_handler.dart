@@ -3,7 +3,6 @@ import '../../models/message.dart';
 import '../../models/remote_agent.dart';
 import '../../models/acp_protocol.dart';
 import '../local_database_service.dart';
-import '../acp_agent_connection.dart';
 import '../logger_service.dart';
 
 /// Handles admin-mediated interaction decisions and group system message persistence.

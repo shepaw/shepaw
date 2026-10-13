@@ -7,7 +7,6 @@ import '../../models/remote_agent.dart';
 import '../../models/attachment_data.dart';
 import '../../models/inference_log_entry.dart';
 import '../local_database_service.dart';
-import '../acp_agent_connection.dart';
 import '../task/task_models.dart';
 import '../../clis/shepaw/os/os_executor.dart' as os_exec;
 import '../inference_log_service.dart';
@@ -839,35 +838,6 @@ class AgentMessagingService {
       return msg;
     }
   }
-
-
-
-  /// 掉线后重连成功：把还没结束的回合用 `agent.taskResume` 续回来。
-  ///
-  /// WS 断掉时主机上的回合照常在跑，SDK 会把 replay buffer 里落下的输出补回来
-  /// —— [ActiveTask.rawStreamLength] 是已经显示过的前缀长度，正好是 resume 需要
-  /// 的 `known_length`。续不回来时 resume 会回 `lost`，走正常的 onTaskError。
-  ///
-  /// 只续回调还挂在这条连接上的回合：回调是注册在连接对象上的，换了对象就无处
-  /// 投递，这种情况交给那条旧连接自己的重连窗口去收尾。
-  void _resumeTurnsAfterReconnect(String agentId, ACPAgentConnection connection) {
-    final pending = _activeTasks.values
-        .where((t) => t.agentId == agentId && !t.isComplete)
-        .where((t) => connection.hasTask(t.taskId))
-        .toList();
-    if (pending.isEmpty) return;
-    LoggerService().info(
-      'ACP reconnected, resuming ${pending.length} in-flight turn(s) for $agentId',
-      tag: 'AgentMessagingService',
-    );
-    for (final task in pending) {
-      unawaited(
-        connection.resumeTaskAndDispatch(task.taskId, task.rawStreamLength),
-      );
-    }
-  }
-
-
 
 
 

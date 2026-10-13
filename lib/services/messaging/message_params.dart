@@ -2,7 +2,6 @@ import '../task/acp_task_contract.dart';
 import 'dart:async';
 import '../../models/message.dart';
 import '../../models/attachment_data.dart';
-import '../acp_agent_connection.dart';
 import '../../clis/shepaw/os/os_executor.dart' as os_exec;
 
 /// Parameter object replacing the 18-argument [sendMessageToAgent] signature.

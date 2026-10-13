@@ -344,19 +344,9 @@ class RemoteAgentService {
   /// 应无条件覆盖——否则 She 的 roster 与详情页永远看到旧简历。卡片拉取
   /// 失败 / 无变化 / peer agent 静默跳过。best-effort。
   Future<void> refreshResumeFromCard(String agentId) async {
-    try {
-      final connection = ChatService().activeConnectionFor(agentId);
-      if (connection == null) return;
-      final card =
-          await connection.getAgentCard().timeout(const Duration(seconds: 5));
-      if (!card.isSuccess || card.result is! Map) return;
-      await _applyCardResume(agentId, card.result as Map, overwrite: true);
-    } catch (e) {
-      LoggerService().debug(
-        'Resume refresh from card skipped for $agentId: $e',
-        tag: 'RemoteAgent',
-      );
-    }
+    // 直连 ACP 退役后没有可取卡片的连接：peer agent 的简历变更由
+    // agent.resume.changed 通知驱动（见 syncResumeFromCardData），这里直接返回。
+    return;
   }
 
   /// 卡片简历 → 本地 bio 的公共落地。[overwrite] 为 false 时仅填充空值。

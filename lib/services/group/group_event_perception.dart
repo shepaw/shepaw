@@ -4,7 +4,6 @@ import '../../models/message.dart';
 import '../../models/remote_agent.dart';
 import '../local_database_service.dart';
 import '../local_user_identity.dart';
-import '../acp_agent_connection.dart';
 import '../task/acp_task_contract.dart';
 import '../logger_service.dart';
 import 'group_agent_executor.dart';

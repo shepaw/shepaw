@@ -5,7 +5,6 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/acp_protocol.dart';
-import 'package:shepaw/services/acp_agent_connection.dart';
 import 'package:shepaw/services/chat_service.dart';
 import 'package:shepaw/services/local_database_service.dart';
 import 'package:shepaw/models/remote_agent.dart';
@@ -165,20 +164,8 @@ Manual notes
       expect(after?.bio, 'user written bio');
     });
 
-    test('refreshResumeFromCard overwrites bio when a connection is active',
-        () async {
-      final agent = await seedAgent('agent_overwrite', bio: 'stale bio');
-      final card = <String, dynamic>{'bio': 'brand new resume'};
-
-      // Patch the live connection map so activeConnectionFor finds our fake.
-      final chat = ChatService();
-      chat.connectionsForTest[agent.id] = _FakeCardConnection(card);
-
-      await service.refreshResumeFromCard(agent.id);
-      final after = await service.getAgentById(agent.id);
-      expect(after?.bio, 'brand new resume');
-    });
-
+    // 直连 ACP 退役后没有可取卡片的连接，refreshResumeFromCard 恒为 no-op：
+    // peer agent 的简历变更走 agent.resume.changed → syncResumeFromCardData。
     test('refreshResumeFromCard is a no-op without an active connection',
         () async {
       final agent = await seedAgent('agent_offline', bio: 'stale bio');
@@ -187,31 +174,5 @@ Manual notes
       expect(after?.bio, 'stale bio');
     });
 
-    test('refreshResumeFromCard skips when the card bio is unchanged',
-        () async {
-      final agent = await seedAgent('agent_same', bio: 'same bio');
-      final card = <String, dynamic>{'bio': 'same bio'};
-      final chat = ChatService();
-      chat.connectionsForTest[agent.id] = _FakeCardConnection(card);
-
-      await service.refreshResumeFromCard(agent.id);
-      final after = await service.getAgentById(agent.id);
-      expect(after?.bio, 'same bio');
-    });
   });
-}
-
-/// ACP connection double returning a canned `agent.getCard` result.
-class _FakeCardConnection extends ACPAgentConnection {
-  _FakeCardConnection(this.card) : super(agentId: 'fake');
-
-  final Map<String, dynamic> card;
-
-  @override
-  bool get isConnected => true;
-
-  @override
-  Future<ACPResponse> getAgentCard() async {
-    return ACPResponse.success(id: 1, result: card);
-  }
 }

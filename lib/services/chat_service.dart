@@ -12,7 +12,6 @@ import '../models/queued_message.dart';
 import 'acp_interactive_connection.dart';
 import 'local_database_service.dart';
 import 'tool_result_database_service.dart';
-import 'acp_agent_connection.dart';
 import 'notification_service.dart';
 // Sub-service imports (refactored)
 import 'task/task_models.dart';
@@ -136,15 +135,6 @@ class ChatService {
 
   /// 每频道一条挂起的 notify 去抖 timer（见 _notifyChannelUpdate）。
   Map<String, Timer>? _channelUpdateDebounceTimers;
-
-  // ACP connection pool (keyed by agent ID)
-  final Map<String, ACPAgentConnection> _acpConnections = {};
-
-  /// Test-only access to the connection pool — lets unit tests inject
-  /// fake connections for [activeConnectionFor] consumers. Never use in
-  /// production code.
-  @visibleForTesting
-  Map<String, ACPAgentConnection> get connectionsForTest => _acpConnections;
 
   // Cached slash-command snapshots, keyed by agent ID. Populated by any
   // connection that sees `agent.commands.changed` (including the one-shot
@@ -657,23 +647,9 @@ class ChatService {
       final task = entry.value;
       if (task.isComplete) continue;
 
-      // Check ACP connection liveness — only applies to remote agents that
-      // communicate over WebSocket. Local LLM tasks use plain HTTP SSE which
-      // survives app backgrounding on Android/iOS, so we skip them entirely.
-      final conn = _acpConnections[task.agentId];
-      if (conn != null) {
-        if (!conn.isConnected) {
-          final reconnected = await conn.tryReconnectNow();
-          if (!reconnected) {
-            tasksToCleanup.add(channelId);
-          } else {
-            // Even if reconnect succeeded, the server-side task is likely
-            // lost (agent moved on), so still mark as interrupted.
-            tasksToCleanup.add(channelId);
-          }
-        }
-      }
-      // else: local LLM task — leave it running, don't interrupt.
+      // 直连 ACP 退役后没有需要探活的连接：本地 LLM 走 HTTP SSE，手机切后台
+      // 能活下来；peer 回合由主机常驻 + 挂起 + 断点续传兜住（见
+      // PeerAgentClientService）。两种都不需要在这里中断。
     }
 
     for (final channelId in tasksToCleanup) {
@@ -779,8 +755,9 @@ class ChatService {
   Future<void> _interruptDeadGroupAcpChannels() async {
     final candidates = GroupBackgroundInterrupt.deadAcpChannelIds(
       activeGroupTasks: _activeGroupTasks,
-      hasAcpConnection: (agentId) => _acpConnections.containsKey(agentId),
-      isConnected: (agentId) => _acpConnections[agentId]?.isConnected == true,
+      // 同上：不再有直连 ACP 通道需要中断。
+      hasAcpConnection: (agentId) => false,
+      isConnected: (agentId) => false,
     );
     for (final channelId in candidates) {
       // Same as 1:1: try reconnect, then interrupt anyway — the remote task
@@ -789,10 +766,6 @@ class ChatService {
       if (agentMap != null) {
         for (final task in agentMap.values) {
           if (task.isComplete) continue;
-          final conn = _acpConnections[task.agentId];
-          if (conn != null && !conn.isConnected) {
-            await conn.tryReconnectNow();
-          }
         }
       }
       await _markGroupChannelInterrupted(channelId);
@@ -3649,32 +3622,6 @@ class ChatService {
     }
   }
 
-  /// Get the active ACP connection for [agentId], or null.
-  ///
-  /// 与 [pingAgent] 一样只读现有连接、不建连——供 [RemoteAgentService] 等
-  /// 需要在既有连接上做轻量 RPC（如拉取 AgentCard）的服务使用。
-  ACPAgentConnection? activeConnectionFor(String agentId) {
-    final connection = _acpConnections[agentId];
-    return (connection != null && connection.isConnected) ? connection : null;
-  }
-
-  /// Check if an existing ACP connection for [agentId] is alive.
-  ///
-  /// Returns `true` if there is a connected, authenticated connection and
-  /// a ping succeeds.  Returns `false` otherwise (no connection, not
-  /// connected, ping failed).  Does NOT create a new connection.
-  Future<bool> pingAgent(String agentId) async {
-    final connection = _acpConnections[agentId];
-    if (connection == null || !connection.isConnected) return false;
-
-    try {
-      final resp = await connection.ping().timeout(const Duration(seconds: 5));
-      return resp.isSuccess;
-    } catch (_) {
-      return false;
-    }
-  }
-
   /// 完整清理（App 退出时调用）
   void dispose() {
     detachUI();
@@ -3683,11 +3630,6 @@ class ChatService {
     _groupMembershipPerceptionScheduler.dispose();
     _groupEventPerceptionScheduler.dispose();
 
-    // Clean up ACP connections
-    for (final connection in _acpConnections.values) {
-      connection.dispose();
-    }
-    _acpConnections.clear();
   }
 
   /// Pull sealed replies from channel mailbox, decrypt, persist as assistant

@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import '../../models/remote_agent.dart';
-import '../acp_agent_connection.dart';
 import '../task/acp_task_contract.dart';
 import 'group_dispatch_parser.dart';
 import 'group_member_capability_probe.dart';

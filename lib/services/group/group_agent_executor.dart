@@ -20,7 +20,6 @@ import '../local_database_service.dart';
 import '../local_llm_agent_service.dart';
 import '../messaging/local_llm_handler.dart';
 import '../messaging/chat_history_content.dart';
-import '../acp_agent_connection.dart';
 import '../task/acp_task_contract.dart';
 import '../file_download_service.dart';
 import '../../storage/store_uri_reader.dart';
@@ -30,7 +29,6 @@ import '../foreground_task_service.dart';
 import '../logger_service.dart';
 import '../task/task_models.dart';
 import '../mailbox/channel_mailbox_service.dart';
-import '../messaging/connection_retry_policy.dart';
 import 'group_dispatch_parser.dart';
 import 'group_mailbox_save_plan.dart';
 import 'group_orchestration_metadata.dart';
@@ -422,7 +420,6 @@ class GroupAgentExecutor {
     required bool streamingStarted,
     required StringBuffer responseBuffer,
     required String pathLabel,
-    ACPAgentConnection? connection,
     String? taskId,
     ACPCancellationToken? acpCancellationToken,
   }) async {
@@ -434,9 +431,6 @@ class GroupAgentExecutor {
     final infLog = InferenceLogService.instance;
     infLog.endRound(groupTraceId, stopReason: 'error');
     infLog.endSession(groupTraceId, InferenceStatus.error, error: '$error');
-    if (connection != null && taskId != null) {
-      connection.unregisterTaskCallbacks(taskId);
-    }
     final phase = GroupTurnOutcome.classifyFailure(
       streamingStarted: streamingStarted,
       responseBuffer: responseBuffer,

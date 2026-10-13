@@ -4,7 +4,6 @@ import 'package:shepaw/models/attachment_data.dart';
 import 'package:shepaw/models/channel.dart';
 import 'package:shepaw/models/message.dart';
 import 'package:shepaw/models/remote_agent.dart';
-import 'package:shepaw/services/acp_agent_connection.dart';
 import 'package:shepaw/services/group/group_agent_executor.dart';
 import 'package:shepaw/services/group/group_interaction_handler.dart';
 import 'package:shepaw/services/group/group_member_capability_probe.dart';
@@ -138,16 +137,6 @@ class _FakeExecutor extends GroupAgentExecutor {
   }
 }
 
-/// ACP connection double whose connectivity is pinned.
-class _FakeAcpConnection extends ACPAgentConnection {
-  _FakeAcpConnection({required super.agentId, required bool connected})
-      : _connected = connected;
-
-  final bool _connected;
-
-  @override
-  bool get isConnected => _connected;
-}
 
 // ---------------------------------------------------------------------------
 // Builders

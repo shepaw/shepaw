@@ -9,7 +9,6 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:path/path.dart' as path;
 import '../models/acp_protocol.dart';
-import 'acp_agent_connection.dart';
 import 'local_file_storage_service.dart';
 import 'logger_service.dart';
 
@@ -61,89 +60,6 @@ class WsFileTransferService {
   final LocalFileStorageService _storageService = LocalFileStorageService();
   final Map<String, _ActiveDownload> _activeDownloads = {};
 
-  /// Download a file via a client-side ACP connection (app connected TO agent).
-  Future<WsFileDownloadResult> downloadViaClientConnection({
-    required ACPAgentConnection connection,
-    required String fileId,
-    void Function(int received, int? total)? onProgress,
-  }) async {
-    // Create temp file for accumulating chunks
-    final tempDir = await _storageService.getStorageDirectory();
-    final tempFile = File(path.join(tempDir.path, 'tmp_$fileId'));
-    final fileSink = tempFile.openWrite();
-
-    final completer = Completer<WsFileDownloadResult>();
-    final download = _ActiveDownload(
-      fileId: fileId,
-      fileSink: fileSink,
-      tempFile: tempFile,
-      completer: completer,
-      onProgress: onProgress,
-    );
-    _activeDownloads[fileId] = download;
-
-    // Save previous callbacks so we can chain (support concurrent downloads)
-    final prevOnFileChunk = connection.onFileChunk;
-    final prevOnFileTransferComplete = connection.onFileTransferComplete;
-    final prevOnFileTransferError = connection.onFileTransferError;
-
-    // Wire callbacks
-    connection.onFileChunk = (id, chunk) {
-      if (_activeDownloads.containsKey(id)) {
-        _handleChunk(id, chunk);
-      }
-      prevOnFileChunk?.call(id, chunk);
-    };
-
-    connection.onFileTransferComplete = (id, totalBytes) {
-      if (_activeDownloads.containsKey(id)) {
-        _handleTransferComplete(id, totalBytes);
-      }
-      prevOnFileTransferComplete?.call(id, totalBytes);
-    };
-
-    connection.onFileTransferError = (id, error) {
-      if (_activeDownloads.containsKey(id)) {
-        _handleTransferError(id, error);
-      }
-      prevOnFileTransferError?.call(id, error);
-    };
-
-    try {
-      // Send the request
-      final response = await connection.sendRequest(
-        ACPMethod.agentRequestFileData,
-        params: {'file_id': fileId},
-      );
-
-      if (response.isError) {
-        throw Exception(response.error?.message ?? 'Request failed');
-      }
-
-      // Extract metadata from response
-      final result = response.result as Map<String, dynamic>? ?? {};
-      download.filename = result['filename'] as String?;
-      download.mimeType = result['mime_type'] as String?;
-      download.expectedSize = result['size'] as int? ?? 0;
-
-      // Wait for transfer to complete
-      return await completer.future.timeout(
-        const Duration(minutes: 5),
-        onTimeout: () {
-          _cleanupDownload(fileId);
-          throw TimeoutException('File transfer timed out for $fileId');
-        },
-      );
-    } catch (e) {
-      _cleanupDownload(fileId);
-      rethrow;
-    } finally {
-      // Restore previous callbacks
-      connection.onFileChunk = prevOnFileChunk;
-      connection.onFileTransferComplete = prevOnFileTransferComplete;
-      connection.onFileTransferError = prevOnFileTransferError;
-    }
-  }
 
 
   void _handleChunk(String fileId, Uint8List chunk) {
