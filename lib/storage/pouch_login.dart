@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -43,6 +44,10 @@ class PouchChannel {
 
   static PouchChannel? active;
 
+  /// 通道装上之后发一次。不重放，错过的一方看 [active]。
+  static final _installed = StreamController<PouchSession>.broadcast();
+  static Stream<PouchSession> get installed => _installed.stream;
+
   final PouchSession session;
   final _aes = AesGcm.with256bits();
 
@@ -52,6 +57,7 @@ class PouchChannel {
       return;
     }
     active = PouchChannel(session);
+    if (!_installed.isClosed) _installed.add(session);
   }
 
   static void clear() {

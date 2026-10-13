@@ -197,6 +197,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
   StreamSubscription<PeerConnectionEvent>? _peerConnSub;
   StreamSubscription<({String agentId, String kind})>? _metaSub;
   StreamSubscription<void>? _reloginSub;
+  StreamSubscription<void>? _peerListSub;
 
   List<SlashCommandInfo> get _effectiveSlashCommands =>
       ShepawSessionSlashCommands.merge(
@@ -314,6 +315,12 @@ class ChatInputAreaState extends State<ChatInputArea> {
       if (!mounted) return;
       unawaited(_loadAgentControls());
     });
+    // 手机刚登录时，惜宝还是本机那一行，模型注册表是空的。主机名单写回来
+    // 之后她才变成主机惜宝，这里再要一次储物袋里的模型。
+    _peerListSub = PeerConnectionManager.instance.peerListChanged.listen((_) {
+      if (!mounted || _hostSheModel || _modelSetting) return;
+      unawaited(_loadAgentControls());
+    });
   }
 
   @override
@@ -328,6 +335,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
     _peerConnSub?.cancel();
     _metaSub?.cancel();
     _reloginSub?.cancel();
+    _peerListSub?.cancel();
     super.dispose();
   }
 

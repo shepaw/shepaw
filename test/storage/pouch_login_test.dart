@@ -96,6 +96,20 @@ void main() {
     );
   });
 
+  test('装上有效登录后通知监听者', () async {
+    final seen = <String>[];
+    final sub = PouchChannel.installed.listen((session) {
+      seen.add(session.hostPeerId);
+    });
+    addTearDown(sub.cancel);
+    PouchChannel.install(live(expiresAtMs: 1));
+    PouchChannel.install(live(
+      expiresAtMs: DateTime.now().millisecondsSinceEpoch + 60000,
+    ));
+    await Future<void>.delayed(Duration.zero);
+    expect(seen, ['peer-1']);
+  });
+
   test('心跳、登录和 Hub 要提前对上的回包不密封', () {
     expect(loginSealRequired('ping'), isFalse);
     expect(loginSealRequired('pouch_login'), isFalse);
