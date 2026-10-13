@@ -29,8 +29,24 @@
 
 ### 1. 退役 ACP 路径（前置：下面的待定问题）
 
-删 `ACPAgentConnection` 及 JSON-RPC 方法表、`ProtocolType.acp` 分支、`acpConnectTimeout` / `acpDmTaskTimeout`、前三轮切网改造里只为 ACP 写的部分。
-注意 `group_member_stall.dart`、`chat_service.dart:1410` 引用了 `acpTaskTimeout`，要一并处理。
+**爆炸半径（已量）**：22 个文件引用 `ACPAgentConnection`，核心文件 `acp_agent_connection.dart` 1867 行。拆成四小轮，按依赖推进：
+
+- **R1 断路**：发送入口对 `ProtocolType.acp` 不再建连接，直接落「该 agent 已不可用，请在 Hub 上重新配对」。这一步最小，且立刻让死路径不再假装能发。
+- **R2 删发送实现**：`_sendViaACPProtocol`、`_getOrCreateACPConnection*`、`acpConnectTimeout` / `acpDmTaskTimeout`、前三轮切网改造里 ACP 专属的部分。
+- **R3 删连接本体**：`acp_agent_connection.dart`、`acp_protocol_handler.dart`、`acp_interactive_connection.dart` 适配、`ProtocolRouter`（它现在对 peer 直接抛异常，是 ACP 专用）。
+- **R4 收尾**：`ProtocolType.acp` 枚举值、`acpTaskTimeout` 的引用（`group_member_stall.dart`、`chat_service.dart:1410`）、widget 里的 acp 判空、`slash_command_picker`、`ws_file_transfer_service`。
+
+#### ⚠️ R1 之前必须先解决：惜宝
+
+`she_service.dart:208` 把本地惜宝行建成 `ProtocolType.acp`，且 `endpoint: ''`、无 `llm_provider`（所以 `isLocal` 为 false、`relaysHostSheTurn` 也要求 `isPeerAgent` 才成立）。
+
+**结论：本地惜宝行会落进 ACP 分支，而空 endpoint 必然连不上 —— 它现在就是坏的。** 一旦 R1 把 acp 判为不可用，必须同时决定它的去处：
+
+- (a) **删掉本地惜宝行，惜宝只由 Hub 提供**（peer 行）。与新架构一致，代码最干净；本地行只是首次创建时的兜底（`she_service.dart:158-178`，已有 peer 行时不会建）。
+- (b) 保留本地行但给它一条明确的本地路径（等于把本机 LLM 那套接上）。
+- (c) 保留并标为不可用（最省事，但用户会看到一个点不动的惜宝）。
+
+我倾向 (a)：新架构下惜宝本来就该是主机上的 agent。但这会动到用户可见的内置角色，需要你点头。
 
 ### 2. 下掉每轮打包 history
 
@@ -45,14 +61,15 @@
 删 `lib/services/mailbox/`（含仍在用的 `mailbox_seal`）、`group_mailbox_save_plan.dart` 及相关测试。库里已有消息的 `from_mailbox` / `mailbox_entry_id` 保留不洗。
 另跨仓库清 `shepaw/channel` 的 mailbox 表与路由。
 
-## 一个待定问题（决定第 1 步能不能一次做完）
+## 待定问题
 
-**现在还有没有「非 Hub 来源」的 agent？** 也就是第三方自建 ACP 服务、或直连某台主机而不走配对。
+### 已解决（2026-10-13）：有没有「非 Hub 来源」的 agent？
 
-- **没有** → 按上面 1→4 一次性推完。
-- **有** → ACP 路径要保留，第 1 步拆成「并行一段时间再退」，前三轮切网改造继续有效，mailbox 的投信替代方案也要重新考虑（第三方场景下主机不可达是常态，没有中转就发不出去）。
+**没有第三方自建 ACP 服务** —— 已确认。所以 ACP 路径整体退役，按上面 1→4 一次推完，不需要并行期。
 
-我的判断是「没有」：agent-bridge 是唯一已知的 `/acp/ws` 服务方，已经废弃，残留进程也清了；主机侧除了 `/peer/ws` 没有任何对外入口。但需要你确认，因为这事关要不要保留一整条路径。
+### 待定：本地惜宝行怎么处置（挡住第 1 步的 R1）
+
+见上一节 ⚠️。三个选项里我倾向 (a) 删掉本地行、惜宝只由 Hub 提供，但它是用户可见的内置角色，需要你点头。
 
 ## 风险
 
