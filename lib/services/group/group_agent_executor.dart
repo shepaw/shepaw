@@ -28,7 +28,6 @@ import '../trace_service.dart';
 import '../foreground_task_service.dart';
 import '../logger_service.dart';
 import '../task/task_models.dart';
-import '../mailbox/channel_mailbox_service.dart';
 import 'group_dispatch_parser.dart';
 import 'group_mailbox_save_plan.dart';
 import 'group_orchestration_metadata.dart';

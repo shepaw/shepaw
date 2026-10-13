@@ -48,7 +48,6 @@ import '../services/workflow/workflow_plan_approval_sync.dart';
 import '../services/group/group_member_session_service.dart';
 import '../services/group/group_orchestration_continuation.dart';
 import '../services/dispatch/she_relay_session_service.dart';
-import '../services/mailbox/channel_mailbox_service.dart';
 import '../services/noise_identity.dart';
 import '../services/composer_draft_service.dart';
 import '../peer/services/hub_group_registry.dart';
