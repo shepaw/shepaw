@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/interaction_payload.dart';
+import 'interaction_closed_hint.dart';
 
 /// Widget that renders a single-select (radio) list inline in a message bubble.
 ///
@@ -31,6 +32,9 @@ class _SingleSelectBubbleState extends State<SingleSelectBubble> {
     final selectId = interactionSelectId(widget.selectData);
     final confirmedOptionId = widget.selectData['selected_option_id'] as String?;
     final isConfirmed = confirmedOptionId != null;
+    // 主机不再等这张卡了。答过的优先：作答和作废是两条会先后脚到的消息。
+    final closedReason = widget.selectData['closed'] as String?;
+    final isClosed = closedReason != null && !isConfirmed;
 
     if (options.isEmpty) return const SizedBox.shrink();
 
@@ -54,10 +58,11 @@ class _SingleSelectBubbleState extends State<SingleSelectBubble> {
           ),
         ...options.map<Widget>((option) {
           final id = option.id;
+          // 作废时忽略本地那次未提交的点击 —— 它没送出去，不该看着像选了。
           final isSelected = isConfirmed
               ? confirmedOptionId == id
-              : _tempSelectedId == id;
-          final isDisabled = isConfirmed && confirmedOptionId != id;
+              : (!isClosed && _tempSelectedId == id);
+          final isDisabled = isClosed || (isConfirmed && confirmedOptionId != id);
 
           return _buildOptionRow(
             context,
@@ -69,7 +74,9 @@ class _SingleSelectBubbleState extends State<SingleSelectBubble> {
           );
         }),
         const SizedBox(height: 8),
-        if (!isConfirmed)
+        if (isClosed)
+          InteractionClosedHint(reason: closedReason)
+        else if (!isConfirmed)
           _buildConfirmButton(context, selectId, options),
       ],
     );
@@ -84,7 +91,7 @@ class _SingleSelectBubbleState extends State<SingleSelectBubble> {
     required bool isConfirmed,
   }) {
     return GestureDetector(
-      onTap: isConfirmed
+      onTap: (isConfirmed || isDisabled)
           ? null
           : () {
               setState(() {

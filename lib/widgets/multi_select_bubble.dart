@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../utils/interaction_payload.dart';
+import 'interaction_closed_hint.dart';
 
 /// Widget that renders a multi-select (checkbox) list inline in a message bubble.
 ///
@@ -34,6 +35,9 @@ class _MultiSelectBubbleState extends State<MultiSelectBubble> {
     final confirmedIdSet = isConfirmed ? confirmedIds.cast<String>().toSet() : <String>{};
     final minSelect = widget.selectData['min_select'] as int? ?? 0;
     final maxSelect = widget.selectData['max_select'] as int?;
+    // 主机不再等这张卡了。答过的优先：作答和作废是两条会先后脚到的消息。
+    final closedReason = widget.selectData['closed'] as String?;
+    final isClosed = closedReason != null && !isConfirmed;
 
     if (options.isEmpty) return const SizedBox.shrink();
 
@@ -58,10 +62,11 @@ class _MultiSelectBubbleState extends State<MultiSelectBubble> {
         ...options.map<Widget>((option) {
           final id = option.id;
 
+          // 作废时忽略本地那些未提交的勾选 —— 它们没送出去，不该看着像选了。
           final isSelected = isConfirmed
               ? confirmedIdSet.contains(id)
-              : _tempSelectedIds.contains(id);
-          final isDisabled = isConfirmed && !confirmedIdSet.contains(id);
+              : (!isClosed && _tempSelectedIds.contains(id));
+          final isDisabled = isClosed || (isConfirmed && !confirmedIdSet.contains(id));
 
           return _buildOptionRow(
             context,
@@ -74,7 +79,9 @@ class _MultiSelectBubbleState extends State<MultiSelectBubble> {
           );
         }),
         const SizedBox(height: 8),
-        if (!isConfirmed)
+        if (isClosed)
+          InteractionClosedHint(reason: closedReason)
+        else if (!isConfirmed)
           _buildSubmitButton(context, selectId, options, minSelect),
       ],
     );
@@ -92,7 +99,7 @@ class _MultiSelectBubbleState extends State<MultiSelectBubble> {
     final atMax = maxSelect != null && _tempSelectedIds.length >= maxSelect && !_tempSelectedIds.contains(id);
 
     return GestureDetector(
-      onTap: isConfirmed || (atMax && !isSelected)
+      onTap: (isConfirmed || isDisabled || (atMax && !isSelected))
           ? null
           : () {
               setState(() {

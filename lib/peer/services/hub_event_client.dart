@@ -338,7 +338,10 @@ class HubEventClient {
     if (kind.isEmpty || data is! Map) return;
     // 本地已经有裁决就不动它。自己那一下点击主机也会广播一条
     // `interaction.resolved` 回来，别把自己刚答的卡盖成「作废」。
+    // 四种卡的裁决键各不相同，都得认（见各自的气泡 widget）。
     if (data['selected_action_id'] != null ||
+        data['selected_option_id'] != null ||
+        data['selected_option_ids'] != null ||
         data['submitted_values'] != null) {
       return;
     }

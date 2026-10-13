@@ -410,6 +410,29 @@ mixin _InteractionOps on _ChatControllerBase {
     localDatabaseService.updateMessageMetadata(messageId, meta).ignore();
   }
 
+  /// 把用户选的选项并进卡片的元数据并落盘（单选 / 多选共用）。
+  ///
+  /// hub 那条路以前漏了这一步：`_answerHubInteraction` 成功就直接 return，
+  /// 只把回包发给主机，本地什么都没记。于是卡片看着还是「没答」，而且随后到的
+  /// 作废帧会把它当成没人答过 —— 用户刚点的选择会被说成作废。
+  void _markSelectAnswered(
+    String messageId,
+    String key,
+    Map<String, dynamic> selected,
+  ) {
+    final existing = messageIdMap[messageId]?.metadata?[key];
+    final merged = existing is Map
+        ? Map<String, dynamic>.from(existing)
+        : <String, dynamic>{};
+    merged.addAll(selected);
+    // 和直连那条路（`_optimisticUpdate` / `_handleGroupInteractionLocally`）
+    // 一样记个时间，两条路的答案记录长得一样，对账时不用分辨是哪条路写的。
+    merged['selected_at'] = DateTime.now().millisecondsSinceEpoch;
+    _updateGroupStreamingMetadata(messageId, key, merged);
+    final meta = Map<String, dynamic>.from(messageIdMap[messageId]?.metadata ?? {});
+    localDatabaseService.updateMessageMetadata(messageId, meta).ignore();
+  }
+
   /// Handle peer tool approval from the workflow progress panel (or detail).
   Future<void> handleWorkflowPeerApprovalAction(
     String confirmationId,
@@ -759,6 +782,10 @@ mixin _InteractionOps on _ChatControllerBase {
       'selected_option_id': optionId,
       'selected_option_label': optionLabel,
     })) {
+      _markSelectAnswered(originalMessage.id, 'single_select', {
+        'selected_option_id': optionId,
+        'selected_option_label': optionLabel,
+      });
       return;
     }
     final pending = pendingGroupInteractions[originalMessage.id];
@@ -797,6 +824,9 @@ mixin _InteractionOps on _ChatControllerBase {
     if (await _answerHubInteraction(originalMessage, {
       'selected': optionIds,
     })) {
+      _markSelectAnswered(originalMessage.id, 'multi_select', {
+        'selected_option_ids': optionIds,
+      });
       return;
     }
     final pending = pendingGroupInteractions[originalMessage.id];

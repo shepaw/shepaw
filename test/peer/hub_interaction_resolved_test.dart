@@ -220,6 +220,65 @@ void main() {
     expect(payload['closed'], isNull, reason: '自己答的卡不该被说成「已在别处作答」');
   });
 
+  // 四种卡的裁决键各不相同（审批 `selected_action_id`、单选
+  // `selected_option_id`、多选 `selected_option_ids`、表单 `submitted_values`）。
+  // 只认审批那一种时，用户刚点完的单选 / 多选卡会被随后到的作废帧说成
+  // 「已在别处作答」。
+  test('自己答过的单选卡不被作废帧盖掉', () async {
+    final channelId = await newChannel();
+    final ix = await renderCard(channelId, kind: 'single_select', data: {
+      'prompt': '保留哪个 agent？',
+      'options': [
+        {'label': 'claude-code', 'value': 'aa99befe'},
+        {'label': 'cursor', 'value': 'f729b795'},
+      ],
+    });
+    await seedAnswer(cardId(ix), 'single_select', 'selected_option_id', 'f729b795');
+
+    await resolve(ix, 'peer-9f3a');
+
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    final payload = await cardPayload(cardId(ix), 'single_select');
+    expect(payload['selected_option_id'], 'f729b795');
+    expect(payload['closed'], isNull, reason: '自己答的卡不该被说成「已在别处作答」');
+  });
+
+  test('自己答过的多选卡不被作废帧盖掉', () async {
+    final channelId = await newChannel();
+    final ix = await renderCard(channelId, kind: 'multi_select', data: {
+      'prompt': '要开哪些？',
+      'options': [
+        {'label': 'Alpha', 'value': 'alpha'},
+        {'label': 'Beta', 'value': 'beta'},
+      ],
+    });
+    await seedAnswer(cardId(ix), 'multi_select', 'selected_option_ids', ['beta']);
+
+    await resolve(ix, 'peer-9f3a');
+
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    final payload = await cardPayload(cardId(ix), 'multi_select');
+    expect(payload['selected_option_ids'], ['beta']);
+    expect(payload['closed'], isNull, reason: '自己答的卡不该被说成「已在别处作答」');
+  });
+
+  test('没人答过的单选卡照旧收起', () async {
+    // 上面两条是「别管太宽」，这条确认作废本身还生效。
+    final channelId = await newChannel();
+    final ix = await renderCard(channelId, kind: 'single_select', data: {
+      'prompt': '保留哪个 agent？',
+      'options': [
+        {'label': 'claude-code', 'value': 'aa99befe'},
+      ],
+    });
+
+    await resolve(ix, 'timeout');
+
+    await until(() async =>
+        (await cardPayload(cardId(ix), 'single_select'))['closed'] != null);
+    expect((await cardPayload(cardId(ix), 'single_select'))['closed'], 'timeout');
+  });
+
   test('表单卡走同一套：提交过的不动，没提交的收起来', () async {
     final channelId = await newChannel();
     const form = {

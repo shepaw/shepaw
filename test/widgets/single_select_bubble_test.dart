@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/l10n/app_localizations.dart';
 import 'package:shepaw/models/message.dart';
+import 'package:shepaw/widgets/interaction_closed_hint.dart';
 import 'package:shepaw/widgets/message_bubble.dart';
 import 'package:shepaw/widgets/single_select_bubble.dart';
 
@@ -16,6 +17,7 @@ void main() {
   }) async {
     await tester.pumpWidget(
       MaterialApp(
+        locale: const Locale('zh'),
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         home: Scaffold(
@@ -143,5 +145,50 @@ void main() {
 
     expect(find.byIcon(Icons.radio_button_checked), findsOneWidget);
     expect(find.byIcon(Icons.radio_button_off), findsNWidgets(2));
+  });
+
+  Map<String, dynamic> data({String? selectedOptionId, String? closed}) => {
+        'confirmation_id': 'ix-1',
+        'prompt': 'Pick one',
+        'options': [
+          {'label': 'Alpha', 'value': 'alpha'},
+          {'label': 'Beta', 'value': 'beta'},
+        ],
+        if (selectedOptionId != null) 'selected_option_id': selectedOptionId,
+        if (closed != null) 'closed': closed,
+      };
+
+  // 主机不再等这张卡时（超时 / 回合被停止 / 回合已结束），卡片要收起可点态
+  // 并说明原因。留着能点的话，用户选完按确认只会撞上「已失效」。
+  testWidgets('作废后选不动、也没有确认按钮，并说明原因', (tester) async {
+    await pumpBubble(
+      tester,
+      data(closed: 'timeout'),
+      onSelectSubmitted: (_, __, ___) => fail('作废的卡片不该还能提交'),
+    );
+
+    expect(find.text('已作废：没等到回答，主机已按默认继续'), findsOneWidget);
+    expect(find.byType(ElevatedButton), findsNothing);
+
+    await tester.tap(find.text('Beta'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+    // 本地那次未提交的点击不能看着像选了 —— 它没送出去。
+    expect(find.byIcon(Icons.radio_button_checked), findsNothing);
+  });
+
+  testWidgets('作答与作废都到了，按作答渲染', (tester) async {
+    // 自己那一下点击，主机也会广播一条 `interaction.resolved` 回来。两条落地
+    // 的先后不定，谁的先到都不能让用户的裁决看起来像「没答」。
+    await pumpBubble(tester, data(selectedOptionId: 'beta', closed: 'answered_elsewhere'));
+
+    expect(find.byType(InteractionClosedHint), findsNothing);
+    expect(find.byIcon(Icons.check_circle), findsOneWidget);
+    expect(find.byType(ElevatedButton), findsNothing);
+  });
+
+  testWidgets('未作废时照常能选能确认', (tester) async {
+    await pumpBubble(tester, data());
+    expect(find.byType(InteractionClosedHint), findsNothing);
+    expect(find.byType(ElevatedButton), findsOneWidget);
   });
 }
