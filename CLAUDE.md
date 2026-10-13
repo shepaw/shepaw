@@ -1,5 +1,18 @@
 # Claude 工作规范
 
+## 主机只有 shepaw-cli（Rust），agent-bridge 已废弃
+
+**`../agent-bridge`（TypeScript）已经废弃，被 `../shepaw-cli`（Rust）取代。不要再把它当作候选方案、参照实现或迁移目标。**
+
+这条被误解过好几次，所以写死在这里：
+
+- 唯一在役的主机是 **`../shepaw-cli`**。它只有一个 WebSocket 服务端点 `/peer/ws`（`crates/peer/src/server.rs:450` 的路径白名单是硬编码的），帧格式是 `#[serde(tag = "type")]`（`crates/protocol/src/frames.rs:38`），**不是** JSON-RPC `method`。
+- agent-bridge 目录里还有 `/acp/ws`、`shepaw-acp-sdk-typescript`、文档和调试客户端，**全是历史遗留**。看到它们不要推断「App 连的是 agent-bridge」。
+- 全仓唯一的 `"method"` 出现在 `shepaw-cli/crates/engines/src/stdio.rs`，那是主机跟引擎子进程（Claude/Codex）说的业界 ACP，和 App↔主机的协议不是一回事（`crates/protocol/src/lib.rs:2-7` 明确写了两套 ACP 不要混用）。
+- App 侧 `ProtocolType.acp`（`/acp/ws` + JSON-RPC）是**待收敛的旧路径**；`ProtocolType.peer`（`/peer/ws`）才是对着 Rust 主机的。收敛方向是把 agent 通信统一到 `/peer/ws`。
+
+推论：需要主机侧能力时，先去 `shepaw-cli/crates/` 找；找不到才考虑自己加，不要回 agent-bridge 里找。
+
 ## AI 中间产物目录
 
 **所有由 AI 推理过程生成的文件，必须保存在 `.ai_workspace/` 目录下。**
