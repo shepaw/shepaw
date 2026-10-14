@@ -192,6 +192,7 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
       MaterialPageRoute<void>(
         builder: (_) => JadeSlipEditorScreen(
           slipId: slip.id,
+          initialSlip: slip,
           onOpenSlip: _openRelated,
         ),
       ),
@@ -256,6 +257,7 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
         MaterialPageRoute<void>(
           builder: (_) => JadeSlipEditorScreen(
             slipId: slip.id,
+            initialSlip: slip,
             focusTitle: true,
           ),
         ),
@@ -350,6 +352,7 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
                               : JadeSlipEditorScreen(
                                   key: ValueKey(selected.id),
                                   slipId: selected.id,
+                                  initialSlip: selected,
                                   embedded: true,
                                   focusChecklist:
                                       selected.id == _focusChecklistId,

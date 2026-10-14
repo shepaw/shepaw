@@ -28,6 +28,12 @@ class JadeSlipService {
   final _log = LoggerService();
   final _changes = StreamController<void>.broadcast();
 
+  /// 最近一次在某个 `deviceId` 上读到或写入的玉简内存快照（id -> JadeSlip）。
+  /// 供 `childrenOf` / 详情页秒开复用，避免点击详情时再做整表扫描。
+  String? _snapshotDeviceId;
+  final Map<String, JadeSlip> _snapshotById = <String, JadeSlip>{};
+  bool _snapshotComplete = false;
+
   /// 测试注入，避免走 StoreService / DeviceIdentity。
   @visibleForTesting
   LocalStore? debugStore;
@@ -40,6 +46,46 @@ class JadeSlipService {
   HostPouchDocuments Function()? debugDocuments;
 
   Stream<void> get changes => _changes.stream;
+
+  /// 若内存快照里已有该玉简，同步返回（用于详情页首帧零等待渲染）。
+  JadeSlip? peekById(String id) {
+    final trimmed = id.trim();
+    if (trimmed.isEmpty) return null;
+    return _snapshotById[trimmed];
+  }
+
+  /// 若内存已完成过整表扫描，直接同步返回子简列表。
+  List<JadeSlip>? peekChildrenOf(String id) {
+    if (!_snapshotComplete) return null;
+    final trimmed = id.trim();
+    if (trimmed.isEmpty) return const [];
+    final children = _snapshotById.values
+        .where((s) => s.parentId == trimmed)
+        .toList();
+    children.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return children;
+  }
+
+  void _syncDeviceSnapshot(String deviceId) {
+    if (_snapshotDeviceId != deviceId) {
+      _snapshotDeviceId = deviceId;
+      _snapshotById.clear();
+      _snapshotComplete = false;
+    }
+  }
+
+  void _putSnapshot(JadeSlip slip) {
+    _syncDeviceSnapshot(slip.deviceId);
+    _snapshotById[slip.id] = slip;
+  }
+
+  void _replaceFullSnapshot(String deviceId, Iterable<JadeSlip> slips) {
+    _snapshotDeviceId = deviceId;
+    _snapshotById
+      ..clear()
+      ..addEntries(slips.map((s) => MapEntry(s.id, s)));
+    _snapshotComplete = true;
+  }
 
   void _notify() {
     if (!_changes.isClosed) _changes.add(null);
@@ -60,9 +106,19 @@ class JadeSlipService {
     return HostPouchDocumentsFactory.resolve();
   }
 
-  Future<JadeSlip?> _readSlip(HostPouchDocuments docs, String path) async {
+  Future<JadeSlip?> _readSlip(
+    HostPouchDocuments docs,
+    String path, {
+    String? knownHash,
+    int? knownSize,
+  }) async {
     try {
-      final bytes = await docs.read(StoreSpace.slips, path);
+      final bytes = await docs.read(
+        StoreSpace.slips,
+        path,
+        knownHash: knownHash,
+        knownSize: knownSize,
+      );
       if (bytes == null) return null;
       final decoded = jsonDecode(utf8.decode(bytes));
       if (decoded is! Map) return null;
@@ -72,9 +128,11 @@ class JadeSlipService {
       );
       if (slip.id.isEmpty) return null;
       // 旧记录里可能嵌着别的设备 id；权威已统一，读出来就归一。
-      return slip.deviceId == docs.deviceId
+      final normalized = slip.deviceId == docs.deviceId
           ? slip
           : slip.copyWith(deviceId: docs.deviceId);
+      _putSnapshot(normalized);
+      return normalized;
     } on HostOfflineException {
       rethrow; // 「连不上主机」不能降级成「这条简不存在」。
     } catch (e) {
@@ -84,11 +142,13 @@ class JadeSlipService {
   }
 
   Future<void> _writeSlip(HostPouchDocuments docs, JadeSlip slip) async {
+    final normalized = slip.copyWith(deviceId: docs.deviceId);
     final bytes = Uint8List.fromList(
       utf8.encode(const JsonEncoder.withIndent('  ')
-          .convert(slip.copyWith(deviceId: docs.deviceId).toJson())),
+          .convert(normalized.toJson())),
     );
     await docs.writeBytes(StoreSpace.slips, slip.relPath, bytes);
+    _putSnapshot(normalized);
   }
 
   /// 列出主机上的玉简。主机不可达时抛 [HostOfflineException]。
@@ -100,14 +160,26 @@ class JadeSlipService {
     final docs = await _docs();
     await JadeSlipRehome.ensure(docs: docs);
     final entries = await docs.list(StoreSpace.slips);
-    var list = <JadeSlip>[];
-    for (final entry in entries) {
-      // 顶层同时有 `<id>.json` 记录和 `<id>/files/…` 附件目录。
-      if (entry.isDir || !JadeSlip.isRecordPath(entry.path)) continue;
-      final slip = await _readSlip(docs, entry.path);
-      if (slip != null) list.add(slip);
-    }
+    final recordEntries = [
+      for (final entry in entries)
+        // 顶层同时有 `<id>.json` 记录和 `<id>/files/…` 附件目录。
+        if (!entry.isDir && JadeSlip.isRecordPath(entry.path)) entry,
+    ];
+    final loaded = await Future.wait([
+      for (final entry in recordEntries)
+        _readSlip(
+          docs,
+          entry.path,
+          knownHash: entry.sha256.isEmpty ? null : entry.sha256,
+          knownSize: entry.size,
+        ),
+    ]);
+    var list = <JadeSlip>[
+      for (final slip in loaded)
+        if (slip != null) slip,
+    ];
     list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    _replaceFullSnapshot(docs.deviceId, list);
     if (!includeArchived) {
       list = list.where((s) => s.status != JadeSlipStatus.archived).toList();
     }
@@ -145,6 +217,11 @@ class JadeSlipService {
   Future<List<JadeSlip>> childrenOf(String id) async {
     final trimmed = id.trim();
     if (trimmed.isEmpty) return const [];
+    final docs = await _docs();
+    if (_snapshotComplete && _snapshotDeviceId == docs.deviceId) {
+      final cached = peekChildrenOf(trimmed);
+      if (cached != null) return cached;
+    }
     final all = await list(includeArchived: true);
     return all.where((s) => s.parentId == trimmed).toList();
   }
@@ -716,13 +793,17 @@ class JadeSlipService {
   }
 
   Future<void> delete(String id) async {
+    final trimmed = id.trim();
     final docs = await _docs();
-    final slip = await _readSlip(docs, '${id.trim()}.json');
+    final slip = await _readSlip(docs, '$trimmed.json');
     if (slip == null) return;
     for (final att in slip.attachments) {
       await docs.delete(StoreSpace.slips, att.path);
     }
     await docs.delete(StoreSpace.slips, slip.relPath);
+    if (_snapshotDeviceId == docs.deviceId) {
+      _snapshotById.remove(trimmed);
+    }
     _notify();
   }
 

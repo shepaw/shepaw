@@ -362,5 +362,32 @@ void main() {
       expect(r.fromOwnerFallback, isTrue);
       expect(r.stale, isFalse);
     });
+
+    test('knownHash + knownSize 与 primeCache 配合可零网络往返直读缓存', () async {
+      final content = bytesOf('primed slip json');
+      final hash = sha(content);
+      await RemoteReadService.instance.primeCache(
+        deviceId: device,
+        space: 'slips',
+        path: 's1.json',
+        bytes: content,
+      );
+      opLog.clear();
+
+      final r = await RemoteReadService.instance.readVerified(
+        serverDeviceId: server,
+        deviceId: device,
+        space: 'slips',
+        path: 's1.json',
+        allowOwnerFallback: false,
+        knownHash: hash,
+        knownSize: content.length,
+      );
+      expect(r.bytes, content);
+      expect(r.stale, isFalse);
+      // 仅后台 best-effort 的 handoffAck，无 meta / read 阻塞帧。
+      expect(opLog.where((op) => op == StoreOp.meta || op == StoreOp.read),
+          isEmpty);
+    });
   });
 }

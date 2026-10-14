@@ -48,7 +48,15 @@ abstract class HostPouchDocuments {
   Future<List<StoreEntry>> list(String space, {String? prefix});
 
   /// 读一份文档。不存在返回 null；主机不可达且无缓存时抛 [HostOfflineException]。
-  Future<Uint8List?> read(String space, String path);
+  ///
+  /// 若调用方刚通过 [list] 拿到该文件的 [knownHash] 与 [knownSize]，传入后可跳过
+  /// 远端 `store.meta` 校验往返，直接比对本地缓存或按大小拉取。
+  Future<Uint8List?> read(
+    String space,
+    String path, {
+    String? knownHash,
+    int? knownSize,
+  });
 
   Future<void> writeBytes(String space, String path, Uint8List bytes);
 
@@ -88,7 +96,12 @@ class LocalHostPouchDocuments implements HostPouchDocuments {
       );
 
   @override
-  Future<Uint8List?> read(String space, String path) async {
+  Future<Uint8List?> read(
+    String space,
+    String path, {
+    String? knownHash,
+    int? knownSize,
+  }) async {
     const chunk = LocalStore.maxBinaryReadChunk;
     final pieces = <int>[];
     var offset = 0;
@@ -173,7 +186,9 @@ class RemoteHostPouchDocuments implements HostPouchDocuments {
         space: space,
         prefix: prefix,
         depth: 1,
-        computeHash: false,
+        // 主机 SQLite entries 表已存 sha256，computeHash: true 直接从列中读取，
+        // 让后续批量读取免掉逐条 store.meta 往返。
+        computeHash: true,
       );
     } on StoreException catch (e) {
       final host = _asHostError(e);
@@ -183,7 +198,12 @@ class RemoteHostPouchDocuments implements HostPouchDocuments {
   }
 
   @override
-  Future<Uint8List?> read(String space, String path) async {
+  Future<Uint8List?> read(
+    String space,
+    String path, {
+    String? knownHash,
+    int? knownSize,
+  }) async {
     try {
       final result = await RemoteReadService.instance.readVerified(
         serverDeviceId: deviceId,
@@ -191,6 +211,8 @@ class RemoteHostPouchDocuments implements HostPouchDocuments {
         space: space,
         path: path,
         allowOwnerFallback: false,
+        knownHash: knownHash,
+        knownSize: knownSize,
       );
       return result.bytes;
     } on StoreException catch (e) {
@@ -211,6 +233,12 @@ class RemoteHostPouchDocuments implements HostPouchDocuments {
     await _requireOnline();
     try {
       await StoreService.instance.writeDeviceBytes(
+        deviceId: deviceId,
+        space: space,
+        path: path,
+        bytes: bytes,
+      );
+      await RemoteReadService.instance.primeCache(
         deviceId: deviceId,
         space: space,
         path: path,

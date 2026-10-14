@@ -176,6 +176,30 @@ void main() {
     });
   });
 
+  testWidgets('传入 initialSlip 或命中内存快照时首帧即渲染正文，不等异步 IO', (tester) async {
+    late JadeSlip created;
+    await tester.runAsync(() async {
+      created = await JadeSlipService.instance.create(
+        title: '新建玉简',
+        body: '只写了描述信息',
+      );
+    });
+
+    await tester.pumpWidget(
+      app(Scaffold(
+        body: JadeSlipEditorScreen(
+          slipId: created.id,
+          initialSlip: created,
+          embedded: true,
+        ),
+      )),
+    );
+    // 无需 runAsync 等待文件/网络 IO，首帧直接渲染出标题和备注。
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.text('新建玉简'), findsOneWidget);
+    expect(find.text('只写了描述信息'), findsOneWidget);
+  });
+
   testWidgets('桌面分栏（真实 JadeSlipScreen）里连续添加清单', (tester) async {
     tester.view.physicalSize = const Size(1200 * 2, 900 * 2);
     tester.view.devicePixelRatio = 2.0;

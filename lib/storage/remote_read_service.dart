@@ -338,6 +338,9 @@ class RemoteReadService {
   ///
   /// [serverDeviceId] 通常为当前 master；失败且 [allowOwnerFallback] 时，
   /// 若 [deviceId] ≠ server，再向源设备直读一次。
+  ///
+  /// 若调用方已从 `list` 拿到权威的 [knownHash] 与 [knownSize]，传入后可免掉
+  /// `store.meta` 帧往返，直接比对本地缓存或按已知大小拉取。
   Future<RemoteReadResult> readVerified({
     required String serverDeviceId,
     required String deviceId,
@@ -345,6 +348,8 @@ class RemoteReadService {
     required String path,
     String? grantId,
     bool allowOwnerFallback = true,
+    String? knownHash,
+    int? knownSize,
   }) async {
     try {
       final result = await _readWithNotFoundRetry(
@@ -353,6 +358,8 @@ class RemoteReadService {
         space: space,
         path: path,
         grantId: grantId,
+        knownHash: knownHash,
+        knownSize: knownSize,
       );
       // M3 交接：master 权威读取成功后自动 ack（best-effort，不阻塞调用方）。
       if (result.bytes.isNotEmpty) {
@@ -389,6 +396,28 @@ class RemoteReadService {
     }
   }
 
+  /// 写入直通缓存（Write-Through）：客户端向远端写入成功后，同步更新本机
+  /// CAS 与 `.cache/<device>/<space>/<path>`，避免紧接着读取同一文件时再走
+  /// `store.meta` + `store.read`。
+  Future<void> primeCache({
+    required String deviceId,
+    required String space,
+    required String path,
+    required Uint8List bytes,
+  }) async {
+    try {
+      final cas = await _localCas();
+      final normalized = normalizeStorePath(path);
+      final cacheFile = File(p.join(_cacheRoot!.path, deviceId, space, normalized));
+      final metaFile = File('${cacheFile.path}.meta.json');
+      final hash = crypto.sha256.convert(bytes).toString();
+      await cas.put(bytes, synced: true);
+      await _writeCache(cacheFile, metaFile, hash, bytes);
+    } catch (e) {
+      _log.debug('primeCache failed for $deviceId/$space/$path: $e', tag: _tag);
+    }
+  }
+
   Future<void> _ackHandoff({
     required String serverDeviceId,
     required String deviceId,
@@ -414,6 +443,8 @@ class RemoteReadService {
     required String space,
     required String path,
     String? grantId,
+    String? knownHash,
+    int? knownSize,
   }) async {
     Object? lastError;
     for (var attempt = 0; attempt <= maxNotFoundRetries; attempt++) {
@@ -424,6 +455,8 @@ class RemoteReadService {
           space: space,
           path: path,
           grantId: grantId,
+          knownHash: attempt == 0 ? knownHash : null,
+          knownSize: attempt == 0 ? knownSize : null,
         );
       } on StoreException catch (e) {
         lastError = e;
@@ -446,43 +479,52 @@ class RemoteReadService {
     required String space,
     required String path,
     String? grantId,
+    String? knownHash,
+    int? knownSize,
   }) async {
     final cas = await _localCas();
     final cacheFile = File(p.join(
         _cacheRoot!.path, deviceId, space, path));
     final metaFile = File('${cacheFile.path}.meta.json');
 
-    // 1. meta 校验（在线时）
-    final metaRes = await _callServer(
-        serverDeviceId,
-        StoreFrame(op: StoreOp.meta, payload: {
-          'space': space,
-          'device': deviceId,
-          'path': path,
-          if (grantId != null) 'grant': grantId,
-        }));
-    final offline = metaRes == null ||
-        metaRes['_error'] == StoreError.masterOffline ||
-        metaRes['_error'] == StoreError.notPaired;
+    final String remoteHash;
+    final int remoteSize;
+    if (knownHash != null && knownHash.isNotEmpty && knownSize != null) {
+      remoteHash = knownHash;
+      remoteSize = knownSize;
+    } else {
+      // 1. meta 校验（在线时）
+      final metaRes = await _callServer(
+          serverDeviceId,
+          StoreFrame(op: StoreOp.meta, payload: {
+            'space': space,
+            'device': deviceId,
+            'path': path,
+            if (grantId != null) 'grant': grantId,
+          }));
+      final offline = metaRes == null ||
+          metaRes['_error'] == StoreError.masterOffline ||
+          metaRes['_error'] == StoreError.notPaired;
 
-    if (offline) {
-      // 3. 离线：有缓存则 stale 使用
-      if (await cacheFile.exists() && await metaFile.exists()) {
-        final bytes = await cacheFile.readAsBytes();
-        return RemoteReadResult(bytes: bytes, stale: true);
+      if (offline) {
+        // 3. 离线：有缓存则 stale 使用
+        if (await cacheFile.exists() && await metaFile.exists()) {
+          final bytes = await cacheFile.readAsBytes();
+          return RemoteReadResult(bytes: bytes, stale: true);
+        }
+        throw StateError('master_offline');
       }
-      throw StateError('master_offline');
-    }
-    if (metaRes.containsKey('_error')) {
-      final code = metaRes['_error'] as String;
-      if (code == StoreError.notFound) {
-        throw StoreException(StoreError.notFound, path);
+      if (metaRes.containsKey('_error')) {
+        final code = metaRes['_error'] as String;
+        if (code == StoreError.notFound) {
+          throw StoreException(StoreError.notFound, path);
+        }
+        throw StateError('meta failed: $code');
       }
-      throw StateError('meta failed: $code');
-    }
 
-    final remoteHash = metaRes['sha256'] as String;
-    final remoteSize = metaRes['size'] as int;
+      remoteHash = metaRes['sha256'] as String;
+      remoteSize = metaRes['size'] as int;
+    }
 
     // 2. 缓存命中且 hash 一致 → 零内容流量
     if (await cacheFile.exists() && await metaFile.exists()) {
