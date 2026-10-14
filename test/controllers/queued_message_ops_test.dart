@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/controllers/queued_message_ops.dart';
 import 'package:shepaw/models/attachment_data.dart';
+import 'package:shepaw/models/mention_entry.dart';
 import 'package:shepaw/models/queued_message.dart';
 
 QueuedMessage _msg(String id, String content) =>
@@ -135,6 +136,50 @@ void main() {
       );
       expect(empty.parts, isEmpty);
       expect(empty.attachments, isEmpty);
+    });
+  });
+
+  group('takeQueuedMessage', () {
+    test('removes the matching item and reports its channel', () {
+      final queues = {
+        'dm-1': [_msg('a', 'first'), _msg('b', 'second')],
+        'dm-2': [_msg('c', 'other')],
+      };
+      final taken = takeQueuedMessage(queues, 'b');
+      expect(taken?.channelId, 'dm-1');
+      expect(taken?.message.content, 'second');
+      expect(queues['dm-1']!.map((m) => m.id), ['a']);
+      expect(queues['dm-2']!.map((m) => m.id), ['c']);
+      expect(takeQueuedMessage(queues, 'b'), isNull);
+      expect(takeQueuedMessage(queues, ''), isNull);
+    });
+  });
+
+  group('QueuedMessage.toChatBubble', () {
+    test('keeps the queue id and reply metadata', () {
+      final item = QueuedMessage(
+        id: 'queue-1',
+        content: '接着说',
+        replyToId: 'm-9',
+        replyQuoteText: '上一句',
+        instructionName: '日报',
+        mentions: const [
+          MentionEntry(id: 'agent-1', name: 'She', notify: true),
+        ],
+      );
+      final bubble = item.toChatBubble(
+        userId: 'user',
+        userName: 'User',
+        nowMs: 42,
+      );
+      expect(bubble.id, 'queue-1');
+      expect(bubble.content, '接着说');
+      expect(bubble.timestampMs, 42);
+      expect(bubble.from.type, 'user');
+      expect(bubble.replyTo, 'm-9');
+      expect(bubble.metadata?['reply_quote'], '上一句');
+      expect(bubble.metadata?['instruction'], '日报');
+      expect(bubble.metadata?['mentions'], isNotEmpty);
     });
   });
 

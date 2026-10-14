@@ -170,9 +170,16 @@ class ChatService {
   final Map<String, List<QueuedMessage>> _pendingSendQueues = {};
   final StreamController<String> _queuedMessageDropped =
       StreamController<String>.broadcast();
+  final StreamController<({String channelId, QueuedMessage message})>
+      _queuedMessageReleased =
+      StreamController<({String channelId, QueuedMessage message})>.broadcast();
 
   /// 主机开始跑某一条排队消息时发出它的 id。聊天页用来收起队列面板。
   Stream<String> get queuedMessageDropped => _queuedMessageDropped.stream;
+
+  /// 主机开始执行的那条排队消息。聊天页据此立刻放进气泡，不等下一次同步。
+  Stream<({String channelId, QueuedMessage message})>
+      get queuedMessageReleased => _queuedMessageReleased.stream;
 
   /// Sub-service: group session management (create/list/clear sessions)
   late final GroupSessionService _groupSessionService = GroupSessionService(
@@ -803,16 +810,22 @@ class ChatService {
   List<QueuedMessage> pendingSendQueue(String channelId) =>
       _pendingSendQueues.putIfAbsent(channelId, () => []);
 
-  /// 主机已经开始处理这条排队消息，面板上不再留着。
+  /// 从面板拿掉这条排队消息，不放进对话。发送失败时用。
   void dropQueuedMessage(String id) {
-    if (id.isEmpty) return;
-    var dropped = false;
-    for (final queue in _pendingSendQueues.values) {
-      final before = queue.length;
-      queue.removeWhere((item) => item.id == id);
-      if (queue.length != before) dropped = true;
+    if (takeQueuedMessage(_pendingSendQueues, id) == null) return;
+    if (!_queuedMessageDropped.isClosed) {
+      _queuedMessageDropped.add(id);
     }
-    if (dropped && !_queuedMessageDropped.isClosed) {
+  }
+
+  /// 主机已经开始执行这条排队消息：面板拿掉，并交给聊天页立刻显示气泡。
+  void releaseQueuedMessage(String id) {
+    final taken = takeQueuedMessage(_pendingSendQueues, id);
+    if (taken == null) return;
+    if (!_queuedMessageReleased.isClosed) {
+      _queuedMessageReleased.add(taken);
+    }
+    if (!_queuedMessageDropped.isClosed) {
       _queuedMessageDropped.add(id);
     }
   }

@@ -418,7 +418,7 @@ class HubEventClient {
     final channelId = event.data['channel_id'] as String? ?? event.channelId;
     if (turnId.isEmpty || channelId.isEmpty) return;
     if (getIt.isRegistered<ChatService>()) {
-      getIt<ChatService>().dropQueuedMessage(turnId);
+      getIt<ChatService>().releaseQueuedMessage(turnId);
     }
     final watching = watchingTurn?.call(turnId) ??
         PouchTurnRelay.instance.isWatching(turnId);

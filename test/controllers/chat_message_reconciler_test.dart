@@ -169,6 +169,72 @@ void main() {
       expect(merged.any((m) => m.id.startsWith('streaming_')), isFalse);
     });
 
+    test('surfaces a new user row without the streaming placeholder', () {
+      final streaming = _agent(
+        'streaming_1',
+        agentId: 'agent',
+        content: '还在写',
+        ts: 20,
+      );
+      final flush = _agent(
+        'partial_db',
+        agentId: 'agent',
+        content: 'flush',
+        ts: 21,
+        metadata: const {'status': 'streaming'},
+      );
+      final fresh = ChatMessageReconciler.rowsToSurfaceDuringLiveTurn(
+        current: [_user('u1', ts: 10), streaming],
+        dbMessages: [
+          _user('u1', ts: 10),
+          _user('queued-1', content: '接着说', ts: 30),
+          flush,
+          streaming,
+        ],
+      );
+      expect(fresh.map((m) => m.id), ['queued-1']);
+    });
+
+    test(
+        'does not duplicate optimistic temp_user_* when its persisted UUID row is in dbMessages',
+        () {
+      final tempUser = _user('temp_user_1000', content: '你好', ts: 1000);
+      final streaming = _agent(
+        'streaming_1000',
+        agentId: 'agent',
+        content: '',
+        ts: 1001,
+      );
+      final fresh = ChatMessageReconciler.rowsToSurfaceDuringLiveTurn(
+        current: [tempUser, streaming],
+        dbMessages: [
+          _user('uuid-persisted-1', content: '你好', ts: 1005),
+        ],
+      );
+      expect(fresh, isEmpty);
+    });
+
+    test(
+        'surfaces a second queued user message even when temp_user_* is present',
+        () {
+      final tempUser = _user('temp_user_1000', content: '第一条', ts: 1000);
+      final streaming = _agent(
+        'streaming_1000',
+        agentId: 'agent',
+        content: '回复中',
+        ts: 1001,
+      );
+      final fresh = ChatMessageReconciler.rowsToSurfaceDuringLiveTurn(
+        current: [tempUser, streaming],
+        dbMessages: [
+          _user('uuid-persisted-1', content: '第一条', ts: 1005),
+          _user('queued-2', content: '第一条', ts: 1020),
+          _user('queued-3', content: '第二条', ts: 1030),
+        ],
+      );
+      expect(fresh.map((m) => m.id), ['queued-2', 'queued-3']);
+    });
+
     test('ignores empty streaming temps', () {
       final temp = _agent('streaming_1', agentId: 'agent', content: '');
       final db = [_user('u1'), _agent('a1', agentId: 'agent', content: 'done')];

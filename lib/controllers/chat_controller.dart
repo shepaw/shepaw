@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart' show ChangeNotifier;
 import 'package:flutter/widgets.dart';
+import 'package:sqflite/sqflite.dart' show ConflictAlgorithm;
 import 'package:uuid/uuid.dart';
 import '../models/mention_entry.dart';
 import '../models/message.dart';
@@ -245,6 +246,8 @@ abstract class _ChatControllerBase extends ChangeNotifier
   /// messages, member failure notices) so they surface in the chat
   /// immediately instead of waiting for the next full reconcile.
   StreamSubscription<List<Message>>? _channelUpdateSub;
+  StreamSubscription<({String channelId, QueuedMessage message})>?
+      _queueReleaseSub;
   StreamSubscription<String>? _queueDropSub;
   StreamSubscription<AgentTaskCompletion>? _agentTaskCompletionSub;
   VoidCallback? _typingListener;
@@ -413,11 +416,69 @@ abstract class _ChatControllerBase extends ChangeNotifier
     streaming.onClear = _onStreamingSessionCleared;
     _cliApprovalHandler = requestCliApproval;
     CliApprovalCoordinator.instance.register(_cliApprovalHandler);
+    // 先把气泡放进列表并刷新，drop 再收起队列面板。
+    _queueReleaseSub = chatService.queuedMessageReleased.listen((released) {
+      if (_eventController.isClosed) return;
+      final bubble = released.message.toChatBubble(
+        userId: getUserId(),
+        userName: getUserName(),
+      );
+      if (_showReleasedQueuedBubble(released.channelId, bubble)) {
+        _notify();
+        _emit(RequestScrollToBottomEvent(force: true));
+      }
+      unawaited(
+        _persistReleasedQueuedBubble(released.channelId, bubble),
+      );
+    });
     _queueDropSub = chatService.queuedMessageDropped.listen((_) {
       if (_eventController.isClosed) return;
       _notify();
       if (!isProcessing) unawaited(processNextInQueue());
     });
+  }
+
+  /// 主机开始执行排队消息时，立刻放进当前对话，不等库刷新或下一次同步。
+  /// 返回是否新放进了列表。
+  bool _showReleasedQueuedBubble(String channelId, Message bubble) {
+    if (currentChannelId != channelId) return false;
+    if (messageIdMap.containsKey(bubble.id)) return false;
+    messages.add(bubble);
+    messageIdMap[bubble.id] = bubble;
+    isUserScrolledUp = false;
+    return true;
+  }
+
+  Future<void> _persistReleasedQueuedBubble(
+    String channelId,
+    Message bubble,
+  ) async {
+    try {
+      await localDatabaseService.createMessage(
+        id: bubble.id,
+        channelId: channelId,
+        senderId: bubble.from.id,
+        senderType: 'user',
+        senderName: bubble.from.name,
+        content: bubble.content,
+        metadata: bubble.metadata,
+        replyToId: bubble.replyTo,
+        createdAt: DateTime.fromMillisecondsSinceEpoch(bubble.timestampMs),
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+    } catch (e) {
+      LoggerService().warning(
+        'persist released queue message failed: $e',
+        tag: 'HostQueue',
+      );
+      return;
+    }
+    if (_eventController.isClosed) return;
+    if (_showReleasedQueuedBubble(channelId, bubble)) {
+      _notify();
+      _emit(RequestScrollToBottomEvent(force: true));
+    }
+    chatService.notifyChannelUpdate(channelId);
   }
 
   /// 流式回合结束：若期间有 DB 写入通知被推迟，补一次 reconcile（把
@@ -469,6 +530,20 @@ abstract class _ChatControllerBase extends ChangeNotifier
         )) {
       _dmReconcileAfterStreaming = true;
       _scheduleDmReconcileFallback();
+      if (currentChannelId == cid) {
+        final fresh = ChatMessageReconciler.rowsToSurfaceDuringLiveTurn(
+          current: messages,
+          dbMessages: dbMessages,
+        );
+        if (fresh.isNotEmpty) {
+          messages.addAll(fresh);
+          for (final row in fresh) {
+            messageIdMap[row.id] = row;
+          }
+          sortMessagesByTime(messages);
+          _notify();
+        }
+      }
       return;
     }
     _dmReconcileAfterStreaming = false;
@@ -581,6 +656,7 @@ abstract class _ChatControllerBase extends ChangeNotifier
     _orphanApprovalSub?.cancel();
     _orphanFormSub?.cancel();
     _interactionClosedSub?.cancel();
+    _queueReleaseSub?.cancel();
     _queueDropSub?.cancel();
     _channelUpdateSub?.cancel();
     _agentTaskCompletionSub?.cancel();
@@ -876,6 +952,19 @@ abstract class _ChatControllerBase extends ChangeNotifier
         // reload 会永久挂起（UI 卡「等待回复」，重进才恢复）。定时器轮询
         // DB：回复落库即强制 reconcile；回合正常结束仍由终态事件清理。
         _scheduleDmReconcileFallback();
+        // 整表先不动，但主机刚接走的用户消息已经落库，要马上出现在气泡里。
+        final fresh = ChatMessageReconciler.rowsToSurfaceDuringLiveTurn(
+          current: messages,
+          dbMessages: dbMessages,
+        );
+        if (fresh.isNotEmpty) {
+          messages.addAll(fresh);
+          for (final row in fresh) {
+            messageIdMap[row.id] = row;
+          }
+          sortMessagesByTime(messages);
+          _notify();
+        }
         return;
       }
       if (streaming.isActive) {

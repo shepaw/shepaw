@@ -2577,7 +2577,7 @@ class PeerAgentClientService {
     String requestId,
     String reply,
   ) async {
-    ChatService().dropQueuedMessage(requestId);
+    ChatService().releaseQueuedMessage(requestId);
     final channelId = pending.channelId;
     final text = pending.parkedText;
     if (channelId.isEmpty || text == null || text.trim().isEmpty) return;
@@ -6229,7 +6229,7 @@ class PeerAgentClientService {
       p.idleSince = DateTime.now();
       final ack = p.queueAck;
       if (ack != null && !ack.isCompleted) ack.complete(false);
-      ChatService().dropQueuedMessage(requestId);
+      ChatService().releaseQueuedMessage(requestId);
     }
     // 先计数再分发：与 hub 的 accumulated 同序列（同为 UTF-16 码元长度），
     // resume 的断点偏移才精确。

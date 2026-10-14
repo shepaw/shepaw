@@ -1,5 +1,6 @@
 import 'mention_entry.dart';
 import 'attachment_data.dart';
+import 'message.dart';
 
 /// 一条待发送队列中的消息。
 ///
@@ -43,4 +44,52 @@ class QueuedMessage {
     this.hostOwned = false,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
+
+  /// 主机开始执行这条排队消息时，用队列 id 立刻放进对话。
+  ///
+  /// id 与交给主机的 `user_message_id` 相同，之后的事件和同步不会再插一条。
+  Message toChatBubble({
+    required String userId,
+    required String userName,
+    int? nowMs,
+  }) {
+    final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
+    final metadata = <String, dynamic>{};
+    final instruction = instructionName;
+    if (instruction != null && instruction.isNotEmpty) {
+      metadata['instruction'] = instruction;
+    }
+    final quote = replyQuoteText;
+    if (quote != null && quote.isNotEmpty) {
+      metadata['reply_quote'] = quote;
+    }
+    if (mentions.isNotEmpty) {
+      metadata['mentions'] = [
+        for (final mention in mentions) mention.toJson(),
+      ];
+    }
+    return Message(
+      id: id,
+      content: content,
+      timestampMs: now,
+      from: MessageFrom(id: userId, type: 'user', name: userName),
+      type: MessageType.text,
+      replyTo: replyToId,
+      metadata: metadata.isEmpty ? null : metadata,
+    );
+  }
+}
+
+/// 从各频道队列里取出 [id] 对应的那一条。没有则返回 null。
+({String channelId, QueuedMessage message})? takeQueuedMessage(
+  Map<String, List<QueuedMessage>> queues,
+  String id,
+) {
+  if (id.isEmpty) return null;
+  for (final entry in queues.entries) {
+    final index = entry.value.indexWhere((item) => item.id == id);
+    if (index == -1) continue;
+    return (channelId: entry.key, message: entry.value.removeAt(index));
+  }
+  return null;
 }

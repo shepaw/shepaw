@@ -147,6 +147,71 @@ class ChatMessageReconciler {
   /// When a flushed partial (`status: streaming`) already exists for the same
   /// agent — even if it already has visible text — fold the live temp into
   /// that row so switch-back does not show two near-duplicate bubbles.
+  /// 活回合推迟整表替换时，库里新到的、还没在屏幕上的普通消息。
+  ///
+  /// 流式占位、flush 行、正在流式输出的 agent 新行，以及屏幕已有 `temp_user_*`
+  /// 乐观气泡对应的本轮用户消息都留给正式 merge，避免和正在显示的气泡叠成两条。
+  static List<Message> rowsToSurfaceDuringLiveTurn({
+    required List<Message> current,
+    required List<Message> dbMessages,
+  }) {
+    final seen = {for (final message in current) message.id};
+    final tempUsers = [
+      for (final message in current)
+        if (message.id.startsWith('temp_user_')) message,
+    ];
+    final streamingAgentIds = {
+      for (final message in current)
+        if (isDmStreamingId(message.id) && message.from.isAgent)
+          message.from.id,
+    };
+
+    final matchedTempUserIds = <String>{};
+    final matchedDbIds = <String>{};
+    if (tempUsers.isNotEmpty) {
+      // Pass 1: 精确匹配同发送者 + 同内容，一个 temp_user_* 只消费一条落库行，
+      // 不会误吞后续排队发出、恰好同文的另一条消息。
+      for (final dbMsg in dbMessages) {
+        if (seen.contains(dbMsg.id)) continue;
+        for (final temp in tempUsers) {
+          if (matchedTempUserIds.contains(temp.id)) continue;
+          if (temp.from.id == dbMsg.from.id &&
+              temp.content.trim() == dbMsg.content.trim()) {
+            matchedTempUserIds.add(temp.id);
+            matchedDbIds.add(dbMsg.id);
+            break;
+          }
+        }
+      }
+      // Pass 2: 兜底匹配同发送者且时间戳不早于乐观气泡的落库行。
+      for (final dbMsg in dbMessages) {
+        if (seen.contains(dbMsg.id) || matchedDbIds.contains(dbMsg.id)) {
+          continue;
+        }
+        for (final temp in tempUsers) {
+          if (matchedTempUserIds.contains(temp.id)) continue;
+          if (temp.from.id == dbMsg.from.id &&
+              dbMsg.timestampMs >= temp.timestampMs) {
+            matchedTempUserIds.add(temp.id);
+            matchedDbIds.add(dbMsg.id);
+            break;
+          }
+        }
+      }
+    }
+
+    return [
+      for (final row in dbMessages)
+        if (!seen.contains(row.id) &&
+            !matchedDbIds.contains(row.id) &&
+            !isFlushedStreamingPartial(row) &&
+            !isDmStreamingId(row.id) &&
+            !row.id.startsWith('hub-live-') &&
+            !(row.from.isAgent && streamingAgentIds.contains(row.from.id)))
+          row,
+    ];
+  }
+
   static List<Message> mergeDmStreamingPlaceholders({
     required List<Message> current,
     required List<Message> dbMessages,
