@@ -112,6 +112,7 @@ class ConversationListController extends ChangeNotifier {
   StreamSubscription? _peerListChangedSub;
   StreamSubscription? _agentsChangedSub;
   StreamSubscription<List<PendingApprovalItem>>? _approvalHubSub;
+  StreamSubscription<String>? _channelActivitySub;
 
   ComposerDraftService? _draftService;
 
@@ -217,6 +218,12 @@ class ConversationListController extends ChangeNotifier {
     });
 
     _agentsChangedSub = getIt<RemoteAgentService>().agentsChanged.listen((_) {
+      if (_disposed) return;
+      _scheduleSilentRefresh();
+    });
+
+    _channelActivitySub =
+        _databaseService.channelActivityStream.listen((_) {
       if (_disposed) return;
       _scheduleSilentRefresh();
     });
@@ -501,7 +508,14 @@ class ConversationListController extends ChangeNotifier {
           activeChannelId ?? _chatService.generateChannelId(userId, agentId);
       final latestMsg =
           await _databaseService.getLatestMessageForAgent(agentId);
-      var unreadCount = await _databaseService.getUnreadCountForAgent(agentId);
+      final viewingChannelId = AppLifecycleService().activeChannelId;
+      final unreadCount =
+          (viewingChannelId != null && viewingChannelId.isNotEmpty)
+              ? await _databaseService.getUnreadCountForAgentExcludingChannel(
+                  agentId,
+                  viewingChannelId,
+                )
+              : await _databaseService.getUnreadCountForAgent(agentId);
       final previewChannel = latestMsg?['channel_id'] as String?;
       // 预览来自有消息的那条会话。最近被碰过的空壳不能把点击带进空白页。
       _agentChannelIds[agentId] =
@@ -509,10 +523,6 @@ class ConversationListController extends ChangeNotifier {
               ? previewChannel
               : channelId;
       _latestMessages[agentId] = latestMsg;
-      // 用户正在该频道里查看 → 角标按 0 计。
-      if (AppLifecycleService().activeChannelId == channelId) {
-        unreadCount = 0;
-      }
       _unreadCounts[agentId] = unreadCount;
     } catch (e) {
       LoggerService().error(
@@ -847,6 +857,7 @@ class ConversationListController extends ChangeNotifier {
     _peerListChangedSub?.cancel();
     _agentsChangedSub?.cancel();
     _approvalHubSub?.cancel();
+    _channelActivitySub?.cancel();
     super.dispose();
   }
 }

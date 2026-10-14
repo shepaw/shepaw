@@ -239,11 +239,21 @@ class PeerRemoteSession {
   /// 远端完整记录的条数。缺省表示这一来源没给出可靠条数，判脏时退回 `updatedAt`。
   final int? messageCount;
 
+  /// 主机侧是否已将该会话标记为全部已读（或该会话为外部只读 IDE 会话）。
+  final bool isRead;
+  final bool readOnly;
+  final int? readCount;
+  final DateTime? readAt;
+
   PeerRemoteSession({
     required this.sessionId,
     this.title,
     this.updatedAt,
     this.messageCount,
+    this.isRead = false,
+    this.readOnly = false,
+    this.readCount,
+    this.readAt,
   });
 
   static PeerRemoteSession? fromJson(Map<String, dynamic> json) {
@@ -271,11 +281,34 @@ class PeerRemoteSession {
     int? messageCount;
     final rawCount = json['message_count'];
     if (rawCount is num) messageCount = rawCount.toInt();
+    int? readCount;
+    final rawReadCount = json['read_count'];
+    if (rawReadCount is num) readCount = rawReadCount.toInt();
+    DateTime? readAt;
+    final rawReadAt = json['read_at'];
+    if (rawReadAt is String && rawReadAt.isNotEmpty) {
+      readAt = DateTime.tryParse(rawReadAt);
+    } else if (rawReadAt is num) {
+      final ms = rawReadAt.toInt();
+      if (ms > 0) {
+        readAt = DateTime.fromMillisecondsSinceEpoch(
+          ms < 1000000000000 ? ms * 1000 : ms,
+          isUtc: true,
+        );
+      }
+    }
+    final readOnly = json['read_only'] == true || json['archived'] == true;
+    final isRead =
+        json['is_read'] == true || json['is_read'] == 1 || readOnly;
     return PeerRemoteSession(
       sessionId: id,
       title: (title != null && title.isNotEmpty) ? title : null,
       updatedAt: updated,
       messageCount: messageCount,
+      isRead: isRead,
+      readOnly: readOnly,
+      readCount: readCount,
+      readAt: readAt,
     );
   }
 }
@@ -292,6 +325,10 @@ class PeerHistoryPage {
   final bool reset;
   final bool completed;
   final bool supportsCursor;
+  final bool readOnly;
+  final bool archived;
+  final int? readCount;
+  final DateTime? readAt;
 
   const PeerHistoryPage({
     this.messages = const [],
@@ -302,6 +339,10 @@ class PeerHistoryPage {
     this.reset = false,
     this.completed = false,
     this.supportsCursor = false,
+    this.readOnly = false,
+    this.archived = false,
+    this.readCount,
+    this.readAt,
   });
 
   static const incomplete = PeerHistoryPage();
@@ -334,6 +375,9 @@ class PeerHistoryMessage {
 
   final String? replyTo;
 
+  /// Host-recorded read state for this message (`true` when already read on host).
+  final bool? isRead;
+
   PeerHistoryMessage({
     required this.role,
     required this.content,
@@ -344,6 +388,7 @@ class PeerHistoryMessage {
     this.progressAutoCollapse,
     this.metadata,
     this.replyTo,
+    this.isRead,
   });
 
   static PeerHistoryMessage? fromJson(Map<String, dynamic> json) {
@@ -361,6 +406,12 @@ class PeerHistoryMessage {
     if (rawMeta is Map) {
       metadata = Map<String, dynamic>.from(rawMeta);
     }
+    final rawIsRead = json['is_read'];
+    final bool? isRead = (rawIsRead == true || rawIsRead == 1)
+        ? true
+        : (rawIsRead == false || rawIsRead == 0)
+            ? false
+            : null;
     return PeerHistoryMessage(
       role: role,
       content: content,
@@ -371,6 +422,7 @@ class PeerHistoryMessage {
       progressAutoCollapse: json['progress_auto_collapse'] as bool?,
       metadata: metadata,
       replyTo: json['reply_to'] as String?,
+      isRead: isRead,
     );
   }
 }
@@ -457,6 +509,9 @@ bool peerHistoryRowNeedsWrite({
     return true;
   }
   if (_rowProgressContent(existingRow) != (message.progressContent ?? '')) {
+    return true;
+  }
+  if (message.isRead == true && (existingRow['is_read'] as int? ?? 0) == 0) {
     return true;
   }
   final localAt = DateTime.tryParse(existingRow['created_at'] as String? ?? '');
@@ -789,12 +844,14 @@ Map<String, dynamic>? peerHistoryMessageMetadata(PeerHistoryMessage m) {
 }
 
 /// When re-upserting a synced history row, keep the prior read bit if the
-/// turn content is unchanged. [ConflictAlgorithm.replace] would otherwise reset
-/// `is_read` to 0 and resurrect unread badges for locally-created sessions.
+/// turn content is unchanged, or honor `remote.isRead == true` recorded on the
+/// host. [ConflictAlgorithm.replace] would otherwise reset `is_read` to 0 and
+/// resurrect unread badges for locally-created or cross-device read sessions.
 int preservedReadStateForHistorySync({
   required PeerHistoryMessage remote,
   Map<String, dynamic>? existingRow,
 }) {
+  if (remote.isRead == true) return 1;
   if (existingRow == null) return 0;
   final prevRole =
       (existingRow['sender_type'] as String?) == 'user' ? 'user' : 'agent';
@@ -4618,6 +4675,22 @@ class PeerAgentClientService {
         .whereType<PeerHistoryMessage>()
         .toList();
     final rawCursor = data['cursor'];
+    int? readCount;
+    final rawReadCount = data['read_count'];
+    if (rawReadCount is num) readCount = rawReadCount.toInt();
+    DateTime? readAt;
+    final rawReadAt = data['read_at'];
+    if (rawReadAt is String && rawReadAt.isNotEmpty) {
+      readAt = DateTime.tryParse(rawReadAt);
+    } else if (rawReadAt is num) {
+      final ms = rawReadAt.toInt();
+      if (ms > 0) {
+        readAt = DateTime.fromMillisecondsSinceEpoch(
+          ms < 1000000000000 ? ms * 1000 : ms,
+          isUtc: true,
+        );
+      }
+    }
     final page = PeerHistoryPage(
       messages: messages,
       from: _historyJsonInt(data['from']),
@@ -4629,6 +4702,10 @@ class PeerAgentClientService {
       reset: data['reset'] == true,
       completed: true,
       supportsCursor: data.containsKey('cursor'),
+      readOnly: data['read_only'] == true,
+      archived: data['archived'] == true,
+      readCount: readCount,
+      readAt: readAt,
     );
     final completer = _pendingHistory.remove('$remoteId::$sessionId');
     if (completer != null && !completer.isCompleted) completer.complete(page);
@@ -4774,6 +4851,9 @@ class PeerAgentClientService {
       // from the conversation list jump back to a different session.
       if (existing == null && s.updatedAt != null) {
         await _db.setChannelUpdatedAt(channelId, s.updatedAt!);
+      }
+      if (s.isRead || s.readOnly) {
+        await _db.markChannelMessagesAsRead(channelId, syncToHost: false);
       }
     }
     _log.info(
@@ -5209,6 +5289,9 @@ class PeerAgentClientService {
                 userId: userId,
                 userName: userName,
                 sessionUpdatedAt: sessionUpdatedAt,
+                pageReadOnly: page.readOnly || page.archived,
+                pageReadCount: page.readCount,
+                pageReadAt: page.readAt,
               );
         written += pageWritten;
         if (pageIndex == 0 && onFirstPageDone != null) {
@@ -5253,8 +5336,18 @@ class PeerAgentClientService {
               userName: userName,
               sessionUpdatedAt: sessionUpdatedAt,
               floorIds: needsCleanup ? seenIds : null,
+              pageReadOnly: page.readOnly || page.archived,
+              pageReadCount: page.readCount,
+              pageReadAt: page.readAt,
             );
       written += pageWritten;
+      if (page.readOnly ||
+          page.archived ||
+          (page.readCount != null &&
+              page.total > 0 &&
+              page.readCount! >= page.total)) {
+        await _db.markChannelMessagesAsRead(channelId, syncToHost: false);
+      }
       if (mode == PeerHistoryFetchMode.rebuild) {
         seenIds.addAll(pageIds);
       }
@@ -5329,6 +5422,9 @@ class PeerAgentClientService {
     required String userName,
     DateTime? sessionUpdatedAt,
     Set<String>? floorIds,
+    bool pageReadOnly = false,
+    int? pageReadCount,
+    DateTime? pageReadAt,
   }) async {
     if (history.isEmpty) return 0;
     _completeInflightTurnsFromRemoteHistory(
@@ -5395,6 +5491,26 @@ class PeerAgentClientService {
       );
     }
 
+    final localRows = await _db.listNonPeerhistMessages(channelId);
+    final localReadRoleContentKeys = <String>{};
+    final localReadRequestIds = <String>{};
+    for (final row in localRows) {
+      if ((row['is_read'] as int? ?? 0) == 0) continue;
+      final role = (row['sender_type'] as String?) == 'user' ? 'user' : 'agent';
+      localReadRoleContentKeys.add(
+        peerHistoryRoleContentKey(role, row['content'] as String? ?? ''),
+      );
+      final rawMeta = row['metadata'];
+      if (rawMeta is String && rawMeta.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(rawMeta);
+          if (decoded is Map && decoded['request_id'] is String) {
+            localReadRequestIds.add(decoded['request_id'] as String);
+          }
+        } catch (_) {}
+      }
+    }
+
     final indexes = peerHistorySliceWriteIndexes(
       history: history,
       from: from,
@@ -5412,6 +5528,17 @@ class PeerAgentClientService {
           )) {
         continue;
       }
+      final globalIndex = from + i;
+      final createdAt = createdAts[i];
+      final forceRead = pageReadOnly ||
+          message.role == 'user' ||
+          (pageReadCount != null && globalIndex < pageReadCount) ||
+          (pageReadAt != null && !createdAt.isAfter(pageReadAt)) ||
+          localReadRoleContentKeys.contains(
+            peerHistoryRoleContentKey(message.role, message.content),
+          ) ||
+          (message.messageId != null &&
+              localReadRequestIds.contains(message.messageId));
       inserts.add(_historyStoredRow(
         message: message,
         id: msgId,
@@ -5420,13 +5547,13 @@ class PeerAgentClientService {
         userName: userName,
         localAgentId: localAgentId,
         agentName: agentName,
-        createdAt: createdAts[i],
+        createdAt: createdAt,
         existingRow: existingRowsById[msgId],
+        forceRead: forceRead,
       ));
     }
     await _db.createMessages(inserts);
 
-    final localRows = await _db.listNonPeerhistMessages(channelId);
     final toDelete = localMessageIdsToDeleteOnPeerHistorySync(
       localRows: [
         for (final row in localRows)
@@ -5472,6 +5599,9 @@ class PeerAgentClientService {
     required String userId,
     required String userName,
     DateTime? sessionUpdatedAt,
+    bool pageReadOnly = false,
+    int? pageReadCount,
+    DateTime? pageReadAt,
   }) async {
     if (history.isEmpty) return 0;
 
@@ -5487,6 +5617,8 @@ class PeerAgentClientService {
     final existingAsc = existing.reversed.toList();
     final existingById = <String, DateTime>{};
     final existingRowsById = <String, Map<String, dynamic>>{};
+    final localReadRoleContentKeys = <String>{};
+    final localReadRequestIds = <String>{};
     for (final row in existingAsc) {
       final id = row['id'] as String?;
       final rawAt = row['created_at'] as String?;
@@ -5494,6 +5626,22 @@ class PeerAgentClientService {
       existingRowsById[id] = row;
       final at = DateTime.tryParse(rawAt);
       if (at != null) existingById[id] = at;
+      if (!id.startsWith('peerhist_') && (row['is_read'] as int? ?? 0) != 0) {
+        final role =
+            (row['sender_type'] as String?) == 'user' ? 'user' : 'agent';
+        localReadRoleContentKeys.add(
+          peerHistoryRoleContentKey(role, row['content'] as String? ?? ''),
+        );
+        final rawMeta = row['metadata'];
+        if (rawMeta is String && rawMeta.isNotEmpty) {
+          try {
+            final decoded = jsonDecode(rawMeta);
+            if (decoded is Map && decoded['request_id'] is String) {
+              localReadRequestIds.add(decoded['request_id'] as String);
+            }
+          } catch (_) {}
+        }
+      }
     }
 
     final remoteIds = <String>{
@@ -5578,10 +5726,24 @@ class PeerAgentClientService {
         baseMetadata: peerHistoryMessageMetadata(m),
       );
       final existingRow = existingRowsById[msgId];
-      final isRead = preservedReadStateForHistorySync(
-        remote: m,
-        existingRow: existingRow,
-      );
+      final createdAt = createdAts[i];
+      final forceRead = pageReadOnly ||
+          isUser ||
+          (pageReadCount != null && i < pageReadCount) ||
+          (pageReadAt != null && !createdAt.isAfter(pageReadAt)) ||
+          localReadRoleContentKeys.contains(
+            peerHistoryRoleContentKey(m.role, m.content),
+          ) ||
+          localReadRoleContentKeys.contains(
+            peerHistoryRoleContentKey(m.role, display.content),
+          ) ||
+          (m.messageId != null && localReadRequestIds.contains(m.messageId));
+      final isRead = forceRead
+          ? 1
+          : preservedReadStateForHistorySync(
+              remote: m,
+              existingRow: existingRow,
+            );
       inserts.add(
         StoredMessageInsert(
           id: msgId,
@@ -5596,7 +5758,7 @@ class PeerAgentClientService {
           // MessageUtils.orderForDisplay can fall back on when stamps are coarse.
           replyToId: peerHistoryReplyToId(m.replyTo) ??
               existingRow?['reply_to_id'] as String?,
-          createdAt: createdAts[i],
+          createdAt: createdAt,
           isRead: isRead,
           conflictAlgorithm: ConflictAlgorithm.replace,
         ),
@@ -5658,6 +5820,7 @@ class PeerAgentClientService {
     required String agentName,
     required DateTime createdAt,
     required Map<String, dynamic>? existingRow,
+    bool forceRead = false,
   }) {
     final isUser = message.role == 'user';
     final display = peerHistoryDisplayFields(
@@ -5675,10 +5838,12 @@ class PeerAgentClientService {
       replyToId: peerHistoryReplyToId(message.replyTo) ??
           existingRow?['reply_to_id'] as String?,
       createdAt: createdAt,
-      isRead: preservedReadStateForHistorySync(
-        remote: message,
-        existingRow: existingRow,
-      ),
+      isRead: forceRead
+          ? 1
+          : preservedReadStateForHistorySync(
+              remote: message,
+              existingRow: existingRow,
+            ),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }

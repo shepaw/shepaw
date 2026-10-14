@@ -1,4 +1,5 @@
 import '../../services/chat_service.dart';
+import '../../services/local_database_service.dart';
 import '../../storage/pouch_role.dart';
 import '../../storage/store_service.dart';
 import 'services/peer_connection_manager.dart';
@@ -52,6 +53,28 @@ class PouchTurnHost {
     final op = data['op'] as String? ?? 'messages';
     final chat = ChatService();
     final compact = data['compact'] == true;
+    if (op == 'mark_read') {
+      final ids = <String>{
+        if (channelId.isNotEmpty) channelId,
+        for (final item in (data['channel_ids'] as List?) ?? const [])
+          if (item is String && item.trim().isNotEmpty) item.trim(),
+      };
+      for (final id in ids) {
+        final bare = id.startsWith('psess_') ? id.substring(6) : id;
+        await LocalDatabaseService().markChannelMessagesAsRead(
+          bare,
+          syncToHost: false,
+        );
+        if (bare != id) {
+          await LocalDatabaseService().markChannelMessagesAsRead(
+            id,
+            syncToHost: false,
+          );
+        }
+      }
+      await send(PouchChatReadBody.encode());
+      return;
+    }
     if (op == 'count') {
       final count = await chat.countLocalChannelMessages(channelId);
       await send(PouchChatReadBody.encode(count: count));

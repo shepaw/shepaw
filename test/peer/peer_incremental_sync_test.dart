@@ -381,7 +381,7 @@ void main() {
       );
     });
 
-    test('resets to unread when content changed on remote', () {
+    test('resets to unread when content changed on remote', () async {
       expect(
         preservedReadStateForHistorySync(
           remote: PeerHistoryMessage(role: 'agent', content: 'updated'),
@@ -392,6 +392,29 @@ void main() {
           },
         ),
         0,
+      );
+    });
+
+    test('honors host-recorded is_read=true even when local row is absent or unread', () {
+      final fromHost = PeerHistoryMessage.fromJson({
+        'role': 'agent',
+        'content': 'already read on another client',
+        'is_read': true,
+      })!;
+      expect(fromHost.isRead, isTrue);
+      expect(preservedReadStateForHistorySync(remote: fromHost), 1);
+      expect(
+        peerHistoryRowNeedsWrite(
+          message: fromHost,
+          existingRow: {
+            'sender_type': 'agent',
+            'content': 'already read on another client',
+            'created_at': '2026-07-01T10:00:00.000Z',
+            'is_read': 0,
+          },
+          createdAt: DateTime.utc(2026, 7, 1, 10),
+        ),
+        isTrue,
       );
     });
   });

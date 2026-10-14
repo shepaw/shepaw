@@ -206,6 +206,8 @@ class _ChatScreenState extends State<ChatScreen>
   /// Unread agent/group messages in sessions other than the one being viewed.
   int _otherSessionsUnreadCount = 0;
   int _trackedMessageCount = 0;
+  StreamSubscription<String>? _channelActivitySubscription;
+  Timer? _otherSessionsUnreadDebounce;
 
   /// 防止会话抽屉重复打开（会话加载是异步的，连点会叠出两个抽屉）。
   bool _isChatDrawerOpen = false;
@@ -381,6 +383,17 @@ class _ChatScreenState extends State<ChatScreen>
         PeerAgentClientService.instance.reconcileRequests.listen((key) {
       unawaited(_onPeerReconcileRequest(key));
     });
+    _channelActivitySubscription = _controller
+        .localDatabaseService.channelActivityStream
+        .listen((changedChannelId) {
+      _otherSessionsUnreadDebounce?.cancel();
+      _otherSessionsUnreadDebounce =
+          Timer(const Duration(milliseconds: 120), () {
+        _otherSessionsUnreadDebounce = null;
+        if (!mounted) return;
+        unawaited(_refreshOtherSessionsUnread());
+      });
+    });
   }
 
   @override
@@ -426,6 +439,8 @@ class _ChatScreenState extends State<ChatScreen>
 
     _eventSubscription?.cancel();
     _reconcileSubscription?.cancel();
+    _channelActivitySubscription?.cancel();
+    _otherSessionsUnreadDebounce?.cancel();
     _controller.removeListener(_onControllerChanged);
     _controller.dispose();
     _recordingSubscription?.cancel();
@@ -480,13 +495,14 @@ class _ChatScreenState extends State<ChatScreen>
     if (!mounted) return;
     _maybeMigrateComposerDraftKey();
     final messageCount = _controller.messages.length;
-    if (messageCount != _trackedMessageCount) {
+    final channelId = _controller.currentChannelId;
+    if (messageCount != _trackedMessageCount ||
+        channelId != _pinnedPanelLastChannelId) {
       _trackedMessageCount = messageCount;
       unawaited(_refreshOtherSessionsUnread());
     }
     // 停靠面板只跟随结构性变化：会话切换 / 消息数增减。流式 chunk 只改
     // 内容，不触发面板 rebuild。
-    final channelId = _controller.currentChannelId;
     if (messageCount != _pinnedPanelLastMessageCount ||
         channelId != _pinnedPanelLastChannelId) {
       _pinnedPanelLastMessageCount = messageCount;
@@ -1208,12 +1224,22 @@ class _ChatScreenState extends State<ChatScreen>
             channelId,
           );
         }
-      } else if (widget.agentId != null) {
-        count = await _controller.localDatabaseService
-            .getUnreadCountForAgentExcludingChannel(
-          widget.agentId!,
-          channelId,
-        );
+      } else {
+        var agentId = widget.agentId ?? _controller.agentId;
+        if (agentId == null || agentId.isEmpty) {
+          final ch = await _controller.localDatabaseService
+              .getChannelById(channelId);
+          agentId = ch == null
+              ? null
+              : ChatLoadChannelPlanner.firstAgentMemberId(ch);
+        }
+        if (agentId != null && agentId.isNotEmpty) {
+          count = await _controller.localDatabaseService
+              .getUnreadCountForAgentExcludingChannel(
+            agentId,
+            channelId,
+          );
+        }
       }
     } catch (_) {}
 
@@ -2372,6 +2398,7 @@ class _ChatScreenState extends State<ChatScreen>
       // 「更多」按钮放「新建会话」行右侧，搜索栏只保留输入。
       moreButton: SessionListHeaderMoreButton(
         sessions: sessions,
+        currentChannelId: c.currentChannelId,
         databaseService: c.localDatabaseService,
         refreshTick: refreshTick,
         onMarkAll: () => _markAllDrawerSessionsRead(sessions, refreshTick),
@@ -2420,6 +2447,7 @@ class _ChatScreenState extends State<ChatScreen>
       // 「更多」按钮放「新建会话」行右侧，搜索栏只保留输入。
       moreButton: SessionListHeaderMoreButton(
         sessions: sessions,
+        currentChannelId: c.currentChannelId,
         databaseService: c.localDatabaseService,
         refreshTick: refreshTick,
         onMarkAll: () => _markAllDrawerSessionsRead(sessions, refreshTick),

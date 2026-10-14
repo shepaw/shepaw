@@ -202,24 +202,34 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
     final ids = widget.sessions.map((s) => s.id).toList();
     if (ids.isEmpty) return;
     final times = await _databaseService.getLatestMessageTimesByChannels(ids);
+    final unreads = await _databaseService.getUnreadCountsByChannels(ids);
     if (!mounted) return;
+    var unreadChanged = false;
     for (final id in ids) {
       final entry = _previews[id];
       if (entry == null) continue;
-      final cachedAt = entry.data?.$2?['created_at'] as String?;
+      final data = entry.data;
       // 尚无缓存数据的行保持初始 stale，由 _refreshStalePreviews 补齐。
-      if (cachedAt == null) continue;
-      final cached = DateTime.tryParse(cachedAt);
+      if (data == null) continue;
+      final cachedAt = data.$2?['created_at'] as String?;
+      final cached = cachedAt != null ? DateTime.tryParse(cachedAt) : null;
       final live = times[id];
-      final orchestrationStatus =
-          entry.data?.$4?['status'] as String? ?? '';
-      if (cached == null ||
-          live == null ||
-          !live.isAtSameMomentAs(cached) ||
+      final orchestrationStatus = data.$4?['status'] as String? ?? '';
+      if ((cached == null && live != null) ||
+          (cached != null && (live == null || !live.isAtSameMomentAs(cached))) ||
           (orchestrationStatus.isNotEmpty &&
               orchestrationStatus != 'finished')) {
         entry.stale = true;
+        continue;
       }
+      final liveUnread = unreads[id] ?? 0;
+      if (data.$3 != liveUnread) {
+        entry.data = (data.$1, data.$2, liveUnread, data.$4);
+        unreadChanged = true;
+      }
+    }
+    if (unreadChanged && mounted) {
+      setState(() {});
     }
     _refreshStalePreviews();
   }

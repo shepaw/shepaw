@@ -6,6 +6,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../service_locator.dart';
+import '../../services/app_lifecycle_service.dart';
 import '../../services/chat_service.dart';
 import '../../services/cli_execution_gate.dart';
 import '../../services/local_database_service.dart';
@@ -121,6 +122,7 @@ class HubEventClient {
         await seqStore.write(key, cursor);
         if (syncCaughtUp(cursor, page.headSeq) || page.events.isEmpty) {
           onCaughtUp?.call(peerId);
+          unawaited(PouchTurnRelay.instance.flushPendingReads(peerId));
           return;
         }
       }
@@ -177,6 +179,8 @@ class HubEventClient {
         await _insertMessage(event);
       case 'message.updated':
         await _updateMessage(event);
+      case 'channel.read':
+        await _onChannelRead(event);
       case 'turn.started':
         await _onTurnStarted(peerId, event);
       case 'turn.finished':
@@ -199,6 +203,22 @@ class HubEventClient {
           _notices.add(HubNotice(peerId: peerId, event: event));
         }
     }
+  }
+
+  Future<void> _onChannelRead(HubEvent event) async {
+    if (!getIt.isRegistered<LocalDatabaseService>()) return;
+    final raw = (event.data['channel_id'] as String?)?.trim() ?? '';
+    final channelId = raw.isNotEmpty ? raw : event.channelId.trim();
+    if (channelId.isEmpty) return;
+    final db = getIt<LocalDatabaseService>();
+    final bare = remoteSessionIdFromChannelId(channelId) ?? channelId;
+    final psess = syncedPeerChannelId(bare);
+    await db.markChannelMessagesAsRead(bare, syncToHost: false);
+    if (psess != bare) {
+      await db.markChannelMessagesAsRead(psess, syncToHost: false);
+    }
+    _notify(bare);
+    if (psess != bare) _notify(psess);
   }
 
   Future<void> _showInteraction(String peerId, HubEvent event) =>
@@ -363,13 +383,20 @@ class HubEventClient {
     final db = getIt<LocalDatabaseService>();
     final from = data['from'];
     final sender = from is Map ? Map<String, dynamic>.from(from) : const {};
+    final senderType = sender['type'] as String? ?? 'agent';
     final metadata = data['metadata'];
+    final isRead = (data['is_read'] == true ||
+            data['is_read'] == 1 ||
+            senderType != 'agent' ||
+            AppLifecycleService().shouldSuppressNotification(channelId))
+        ? 1
+        : 0;
     try {
       await db.createMessage(
         id: id,
         channelId: channelId,
         senderId: sender['id'] as String? ?? event.agentId,
-        senderType: sender['type'] as String? ?? 'agent',
+        senderType: senderType,
         senderName: sender['name'] as String? ?? '',
         content: data['content'] as String? ?? '',
         messageType: data['type'] as String? ?? 'text',
@@ -381,20 +408,23 @@ class HubEventClient {
                 isUtc: true,
               )
             : null,
+        isRead: isRead,
         conflictAlgorithm: ConflictAlgorithm.ignore,
       );
     } catch (error) {
       _log.warning('message.created skipped: $error', tag: 'HubEvent');
       return;
     }
-    final turnId = _liveChannels.entries
-        .where((entry) => entry.value == channelId)
-        .map((entry) => entry.key)
-        .toList();
-    for (final id in turnId) {
-      await db.deleteMessage(liveTurnPlaceholderId(id));
-      _liveBuffers.remove(id);
-      _liveChannels.remove(id);
+    if (senderType != 'user') {
+      final turnId = _liveChannels.entries
+          .where((entry) => entry.value == channelId)
+          .map((entry) => entry.key)
+          .toList();
+      for (final id in turnId) {
+        await db.deleteMessage(liveTurnPlaceholderId(id));
+        _liveBuffers.remove(id);
+        _liveChannels.remove(id);
+      }
     }
     _notify(channelId);
   }
@@ -434,6 +464,7 @@ class HubEventClient {
         senderType: 'agent',
         senderName: '',
         content: '',
+        metadata: const {'status': 'streaming'},
         conflictAlgorithm: ConflictAlgorithm.ignore,
       );
       _notify(channelId);
@@ -449,7 +480,12 @@ class HubEventClient {
   Future<void> _onTurnFinished(HubEvent event) async {
     final turnId = event.data['turn_id'] as String? ?? '';
     _attached.remove(turnId);
-    final channelId = _liveChannels[turnId];
+    _liveBuffers.remove(turnId);
+    final channelId = _liveChannels.remove(turnId);
+    if (turnId.isNotEmpty && getIt.isRegistered<LocalDatabaseService>()) {
+      await getIt<LocalDatabaseService>()
+          .deleteMessage(liveTurnPlaceholderId(turnId));
+    }
     await _closeTurnCards(turnId);
     if (channelId != null) _notify(channelId);
   }

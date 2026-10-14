@@ -180,6 +180,43 @@ class PouchChatLog {
     });
   }
 
+  /// 将频道内所有记录标记为已读。
+  Future<void> markChannelRead(String channelId) {
+    if (channelId.isEmpty) return Future.value();
+    return _enqueue(channelId, () async {
+      final records = await readChannel(channelId);
+      if (records.isEmpty || records.every((r) => r.isRead != 0)) return;
+      final file = fileFor(channelId);
+      await file.parent.create(recursive: true);
+      final buf = StringBuffer();
+      String? last;
+      for (final r in records) {
+        final updated = r.isRead != 0
+            ? r
+            : PouchChatRecord(
+                id: r.id,
+                channelId: r.channelId,
+                senderId: r.senderId,
+                senderType: r.senderType,
+                senderName: r.senderName,
+                content: r.content,
+                messageType: r.messageType,
+                createdAt: r.createdAt,
+                metadata: r.metadata,
+                replyToId: r.replyToId,
+                isRead: 1,
+                deleted: r.deleted,
+              );
+        buf.writeln(jsonEncode(updated.toJson()));
+        last = updated.id;
+      }
+      await file.writeAsString(buf.toString(), mode: FileMode.write);
+      if (last != null) {
+        _lastId[channelId] = last;
+      }
+    });
+  }
+
   /// 折叠修订后的当前消息，按写入顺序。已删除的不返回。
   Future<List<PouchChatRecord>> readChannel(String channelId) async {
     final file = fileFor(channelId);

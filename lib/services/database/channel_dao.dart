@@ -1,26 +1,45 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:sqflite/sqflite.dart';
 import '../../models/channel.dart';
+import '../../peer/pouch_turn_relay.dart';
+import '../../storage/pouch_chat_log.dart';
 import '../../utils/session_utils.dart';
 import '../local_database_service.dart';
 import '../messaging/chat_history_content.dart';
 
-/// In-flight streaming/partial flushes are not complete replies yet — exclude
-/// them from unread tallies until the turn finalizes into a normal message row.
+/// In-flight streaming/partial flushes, hidden prompt artifacts, and system/audit
+/// rows are not unread agent replies — exclude them from unread tallies.
 const _kSqlExcludeStreamingUnread = r'''
+  AND m.id NOT GLOB 'hub-live-*'
+  AND m.message_type NOT IN ('system', 'permission_audit')
   AND (
     m.metadata IS NULL
-    OR json_extract(m.metadata, '$.status') IS NULL
-    OR json_extract(m.metadata, '$.status') NOT IN ('streaming', 'partial')
+    OR (
+      (
+        json_extract(m.metadata, '$.status') IS NULL
+        OR json_extract(m.metadata, '$.status') NOT IN ('streaming', 'partial')
+      )
+      AND COALESCE(json_extract(m.metadata, '$.ui_hidden'), 0) != 1
+    )
   )
 ''';
 
 const _kSqlExcludeStreamingUnreadBare = r'''
+  AND id NOT GLOB 'hub-live-*'
+  AND channel_id NOT GLOB 'gmd_*'
+  AND channel_id NOT GLOB 'shed_*'
+  AND message_type NOT IN ('system', 'permission_audit')
   AND (
     metadata IS NULL
-    OR json_extract(metadata, '$.status') IS NULL
-    OR json_extract(metadata, '$.status') NOT IN ('streaming', 'partial')
+    OR (
+      (
+        json_extract(metadata, '$.status') IS NULL
+        OR json_extract(metadata, '$.status') NOT IN ('streaming', 'partial')
+      )
+      AND COALESCE(json_extract(metadata, '$.ui_hidden'), 0) != 1
+    )
   )
 ''';
 
@@ -666,9 +685,9 @@ extension ChannelDao on LocalDatabaseService {
       WHERE c.type = 'dm'
         AND (c.source_group_channel_id IS NULL OR c.source_group_channel_id = '')
         AND (c.source_she_channel_id IS NULL OR c.source_she_channel_id = '')
-        AND m.is_read = 0 AND m.sender_type != ?
+        AND m.is_read = 0 AND m.sender_type = ?
         $_kSqlExcludeStreamingUnread
-    ''', [agentId, 'user']);
+    ''', [agentId, 'agent']);
     return (result.first['count'] as int?) ?? 0;
   }
 
@@ -686,9 +705,9 @@ extension ChannelDao on LocalDatabaseService {
         AND (c.source_group_channel_id IS NULL OR c.source_group_channel_id = '')
         AND (c.source_she_channel_id IS NULL OR c.source_she_channel_id = '')
         AND m.channel_id != ?
-        AND m.is_read = 0 AND m.sender_type != ?
+        AND m.is_read = 0 AND m.sender_type = ?
         $_kSqlExcludeStreamingUnread
-    ''', [agentId, excludeChannelId, 'user']);
+    ''', [agentId, excludeChannelId, 'agent']);
     return (result.first['count'] as int?) ?? 0;
   }
 
@@ -704,9 +723,9 @@ extension ChannelDao on LocalDatabaseService {
       WHERE c.type = 'group'
         AND (c.id = ? OR c.parent_group_id = ?)
         AND m.channel_id != ?
-        AND m.is_read = 0 AND m.sender_type != ?
+        AND m.is_read = 0 AND m.sender_type = ?
         $_kSqlExcludeStreamingUnread
-    ''', [parentGroupId, parentGroupId, excludeChannelId, 'user']);
+    ''', [parentGroupId, parentGroupId, excludeChannelId, 'agent']);
     return (result.first['count'] as int?) ?? 0;
   }
 
@@ -731,9 +750,9 @@ extension ChannelDao on LocalDatabaseService {
     final db = await database;
     final result = await db.rawQuery(
       'SELECT COUNT(*) as count FROM messages '
-      'WHERE channel_id = ? AND is_read = 0 AND sender_type != ?'
+      'WHERE channel_id = ? AND is_read = 0 AND sender_type = ?'
       '$_kSqlExcludeStreamingUnreadBare',
-      [channelId, 'user'],
+      [channelId, 'agent'],
     );
     return (result.first['count'] as int?) ?? 0;
   }
@@ -756,10 +775,10 @@ extension ChannelDao on LocalDatabaseService {
       final rows = await db.rawQuery(
         'SELECT channel_id, COUNT(*) AS count FROM messages '
         'WHERE channel_id IN (${List.filled(chunk.length, '?').join(',')}) '
-        'AND is_read = 0 AND sender_type != ?'
+        'AND is_read = 0 AND sender_type = ?'
         '$_kSqlExcludeStreamingUnreadBare'
         ' GROUP BY channel_id',
-        [...chunk, 'user'],
+        [...chunk, 'agent'],
       );
       for (final r in rows) {
         counts[r['channel_id'] as String] = (r['count'] as int?) ?? 0;
@@ -768,15 +787,28 @@ extension ChannelDao on LocalDatabaseService {
     return counts;
   }
 
-  /// 标记 channel 所有消息为已读
-  Future<void> markChannelMessagesAsRead(String channelId) async {
+  /// 标记 channel 所有消息为已读（默认同步上报主机，使多客户端同步后不复活未读角标）。
+  Future<void> markChannelMessagesAsRead(
+    String channelId, {
+    bool syncToHost = true,
+  }) async {
     final db = await database;
-    await db.update(
+    final updated = await db.update(
       'messages',
       {'is_read': 1},
       where: 'channel_id = ? AND is_read = 0',
       whereArgs: [channelId],
     );
+    final log = PouchChatLog.bound;
+    if (log != null) {
+      unawaited(log.markChannelRead(channelId).catchError((Object _) {}));
+    }
+    if (updated > 0) {
+      notifyChannelActivity(channelId);
+    }
+    if (syncToHost) {
+      PouchTurnRelay.instance.scheduleMarkRead(channelId);
+    }
   }
 }
 

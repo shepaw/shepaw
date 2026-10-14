@@ -90,6 +90,7 @@ extension MessageDao on LocalDatabaseService {
     );
     // SQLite 仍是界面读取来源；储物袋日志是随袋子迁移的副本（fail-open）。
     RuntimeMirrorService.instance.onMessageCreated(channelId);
+    notifyChannelActivity(channelId);
     _notePouchChat(PouchChatRecord(
       id: id,
       channelId: channelId,
@@ -134,6 +135,7 @@ extension MessageDao on LocalDatabaseService {
     final channels = <String>{for (final row in rows) row.channelId};
     for (final channelId in channels) {
       RuntimeMirrorService.instance.onMessageCreated(channelId);
+      notifyChannelActivity(channelId);
     }
     _notePouchChatAll([
       for (final row in rows)
@@ -302,22 +304,29 @@ extension MessageDao on LocalDatabaseService {
   /// 标记消息为已读
   Future<void> markMessageAsRead(String messageId) async {
     final db = await database;
-    await db.update(
+    final updated = await db.update(
       'messages',
       {'is_read': 1},
       where: 'id = ?',
       whereArgs: [messageId],
     );
+    _notePouchFromSqlite(messageId);
+    if (updated > 0) {
+      notifyChannelActivity();
+    }
   }
 
   /// 删除消息
   Future<void> deleteMessage(String messageId) async {
     final db = await database;
-    await db.delete(
+    final deleted = await db.delete(
       'messages',
       where: 'id = ?',
       whereArgs: [messageId],
     );
+    if (deleted > 0) {
+      notifyChannelActivity();
+    }
   }
 
   /// 统计 channel 中 created_at >= [createdAt] 的消息数量（含该时间点）。
@@ -418,6 +427,7 @@ extension MessageDao on LocalDatabaseService {
         'content',
         'metadata',
         'reply_to_id',
+        'is_read',
       ],
       where: "channel_id = ? AND id NOT GLOB 'peerhist_*'",
       whereArgs: [channelId],
@@ -438,6 +448,7 @@ extension MessageDao on LocalDatabaseService {
       where: 'channel_id = ?',
       whereArgs: [channelId],
     );
+    notifyChannelActivity(channelId);
     final log = PouchChatLog.bound;
     if (log != null) {
       unawaited(log.deleteChannel(channelId).catchError((Object e) {

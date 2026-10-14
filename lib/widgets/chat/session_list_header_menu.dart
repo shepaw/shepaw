@@ -16,6 +16,7 @@ import '../../services/local_database_service.dart';
 /// 「点了 ⋯ 要等一下才弹出」。现在只在 sessions 变化或 refreshTick 触发时查一次。
 class SessionListHeaderMoreButton extends StatefulWidget {
   final List<Channel> sessions;
+  final String? currentChannelId;
   final LocalDatabaseService databaseService;
 
   /// 全部已读后调用方自增，按钮据此重新查询未读数（与列表刷新共用）。
@@ -29,6 +30,7 @@ class SessionListHeaderMoreButton extends StatefulWidget {
   const SessionListHeaderMoreButton({
     super.key,
     required this.sessions,
+    this.currentChannelId,
     required this.databaseService,
     required this.refreshTick,
     required this.onMarkAll,
@@ -61,8 +63,9 @@ class _SessionListHeaderMoreButtonState
       oldWidget.refreshTick.removeListener(_onRefreshTick);
       widget.refreshTick.addListener(_onRefreshTick);
     }
-    // sessions 换了引用就重查；否则沿用上一次的 Future，避免每次 build 重跑。
-    if (!identical(oldWidget.sessions, widget.sessions)) {
+    // sessions 换了引用或当前会话变化就重查；否则沿用上一次的 Future，避免每次 build 重跑。
+    if (!identical(oldWidget.sessions, widget.sessions) ||
+        oldWidget.currentChannelId != widget.currentChannelId) {
       _unreadFuture = _loadTotalUnread();
     }
   }
@@ -78,11 +81,15 @@ class _SessionListHeaderMoreButtonState
     setState(() => _unreadFuture = _loadTotalUnread());
   }
 
-  /// 一次查询汇总全部会话未读，替代逐会话查询的 N 次串行往返。
+  /// 一次查询汇总全部会话未读（与列表行一致，排除当前正在查看的会话），
+  /// 替代逐会话查询的 N 次串行往返。
   Future<int> _loadTotalUnread() async {
-    final counts = await widget.databaseService.getUnreadCountsByChannels(
-      widget.sessions.map((s) => s.id).toList(),
-    );
+    final currentId = widget.currentChannelId;
+    final ids = widget.sessions
+        .map((s) => s.id)
+        .where((id) => id != currentId)
+        .toList();
+    final counts = await widget.databaseService.getUnreadCountsByChannels(ids);
     var total = 0;
     for (final count in counts.values) {
       total += count;

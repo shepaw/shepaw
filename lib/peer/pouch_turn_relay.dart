@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../models/attachment_data.dart';
@@ -35,9 +36,14 @@ class PouchTurnRelay {
     queueRequestType,
   ];
 
+  static const _pendingReadPrefsKey = 'pouch_pending_read_channels_v1';
+
   final _uuid = const Uuid();
   final _pending = <String, _PendingTurn>{};
   final _lanes = <String, Future<void>>{};
+  final _pendingReadChannelIds = <String>{};
+  Timer? _markReadDebounceTimer;
+  bool _flushingReads = false;
   final _files = PouchAttachmentClient(
     send: (peerId, frame) =>
         PeerConnectionManager.instance.sendControl(peerId, frame),
@@ -229,6 +235,90 @@ class PouchTurnRelay {
       onEvent: (_) {},
     );
     return PouchChatReadBody.decode(done);
+  }
+
+  /// 将频道已读状态同步到主机（合并短时间内的批量已读；离线时持久化待重连补发）。
+  void scheduleMarkRead(String channelId) {
+    final trimmed = channelId.trim();
+    if (trimmed.isEmpty) return;
+    // 群成员镜像会话 (gmd_) 与 She 中转会话 (shed_) 为本地只读派生会话，无需上报主机。
+    if (trimmed.startsWith('gmd_') || trimmed.startsWith('shed_')) return;
+    _pendingReadChannelIds.add(trimmed);
+    _markReadDebounceTimer?.cancel();
+    _markReadDebounceTimer = Timer(const Duration(milliseconds: 150), () {
+      _markReadDebounceTimer = null;
+      unawaited(flushPendingReads());
+    });
+  }
+
+  /// 立即向主机发送挂起的已读频道列表；离线或发送失败时保留在本地等待下次重连补发。
+  Future<void> flushPendingReads([String? explicitHostPeerId]) async {
+    if (_flushingReads) return;
+    _flushingReads = true;
+    try {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final saved = prefs.getStringList(_pendingReadPrefsKey);
+        if (saved != null && saved.isNotEmpty) {
+          _pendingReadChannelIds.addAll(saved.where((s) => s.isNotEmpty));
+        }
+      } catch (_) {}
+
+      if (_pendingReadChannelIds.isEmpty) return;
+
+      String? hostPeerId = explicitHostPeerId;
+      if (hostPeerId == null || hostPeerId.isEmpty) {
+        try {
+          final route = await currentRoute();
+          if (route.runLocal) {
+            _pendingReadChannelIds.clear();
+            await _savePendingReadPrefs(const {});
+            return;
+          }
+          hostPeerId = route.hostPeerId;
+        } catch (_) {
+          await _savePendingReadPrefs(_pendingReadChannelIds);
+          return;
+        }
+      }
+      if (hostPeerId == null || hostPeerId.isEmpty) {
+        await _savePendingReadPrefs(_pendingReadChannelIds);
+        return;
+      }
+
+      final batch = _pendingReadChannelIds.toList();
+      _pendingReadChannelIds.clear();
+      try {
+        await _forward(
+          hostPeerId: hostPeerId,
+          frame: <String, dynamic>{
+            'type': readRequestType,
+            'op': 'mark_read',
+            'channel_id': batch.first,
+            'channel_ids': batch,
+          },
+          onEvent: (_) {},
+        ).timeout(const Duration(seconds: 6));
+        await _savePendingReadPrefs(_pendingReadChannelIds);
+      } catch (_) {
+        _pendingReadChannelIds.addAll(batch);
+        await _savePendingReadPrefs(_pendingReadChannelIds);
+      }
+    } finally {
+      _flushingReads = false;
+    }
+  }
+
+  Future<void> _savePendingReadPrefs(Iterable<String> ids) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = ids.where((s) => s.isNotEmpty).toSet().toList();
+      if (list.isEmpty) {
+        await prefs.remove(_pendingReadPrefsKey);
+      } else {
+        await prefs.setStringList(_pendingReadPrefsKey, list);
+      }
+    } catch (_) {}
   }
 
   Future<List<Map<String, dynamic>>?> _attachmentRefs({

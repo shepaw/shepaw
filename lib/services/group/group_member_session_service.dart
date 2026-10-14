@@ -132,6 +132,7 @@ class GroupMemberSessionService {
             '本会话由群聊「${groupChannel.name}」自动创建，与该群会话一一对应。'
             '此处记录对该成员的每次调用（请求与回复），不会影响普通单聊上下文。',
         messageType: 'system',
+        isRead: 1,
         conflictAlgorithm: ConflictAlgorithm.ignore,
       );
       LoggerService().debug(
@@ -267,6 +268,7 @@ class GroupMemberSessionService {
           senderName: agentName,
           content: reply,
           messageType: 'text',
+          isRead: 1,
           metadata: {
             if (replyMetadata != null) ...replyMetadata,
             ...baseMeta,

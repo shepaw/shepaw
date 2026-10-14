@@ -81,6 +81,7 @@ class SheRelaySessionService {
         content: '本会话由 She 自动创建，用于 She 与 ${agent.name} 的对话与任务派发，'
             '与你的普通单聊互不影响。此处为只读记录，不能直接对话。',
         messageType: 'system',
+        isRead: 1,
       );
       LoggerService().debug(
         'Created She-bound relay session $sessionId for agent ${agent.id}',

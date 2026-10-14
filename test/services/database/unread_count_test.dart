@@ -200,5 +200,63 @@ void main() {
 
       expect(await db.getUnreadCountsByChannels([a, b]), isEmpty);
     });
+
+    test('system, permission_audit, ui_hidden, hub-live, and gmd_/shed_ rows are excluded from unread counts', () async {
+      final ch = await newDmChannel();
+      await db.createMessage(
+        id: 'sys-1',
+        channelId: ch,
+        senderId: 'system',
+        senderType: 'system',
+        senderName: 'System',
+        content: 'system notice',
+        messageType: 'system',
+        isRead: 0,
+      );
+      await db.createMessage(
+        id: 'audit-1',
+        channelId: ch,
+        senderId: 'agent',
+        senderType: 'agent',
+        senderName: 'Agent',
+        content: 'audit',
+        messageType: 'permission_audit',
+        isRead: 0,
+      );
+      await db.createMessage(
+        id: 'hidden-1',
+        channelId: ch,
+        senderId: 'agent',
+        senderType: 'agent',
+        senderName: 'Agent',
+        content: 'scope card',
+        metadata: {'ui_hidden': true},
+        isRead: 0,
+      );
+      await db.createMessage(
+        id: 'hub-live-turn-1',
+        channelId: ch,
+        senderId: 'agent',
+        senderType: 'agent',
+        senderName: 'Agent',
+        content: '',
+        isRead: 0,
+      );
+
+      final gmdCh = 'gmd_group1__agent1';
+      await db.createMessage(
+        id: 'gmd-msg-1',
+        channelId: gmdCh,
+        senderId: 'agent',
+        senderType: 'agent',
+        senderName: 'Agent',
+        content: 'group mirror',
+        isRead: 0,
+      );
+
+      expect(await db.getUnreadCountByChannel(ch), 0);
+      expect(await db.getUnreadCountByChannel(gmdCh), 0);
+      expect(await db.getUnreadCountsByChannels([ch, gmdCh]), isEmpty);
+    });
   });
 }

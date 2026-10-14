@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:sqflite/sqflite.dart';
 import '../storage/pouch_sqlite.dart';
 import 'she_profile_database_service.dart';
@@ -40,6 +41,18 @@ class LocalDatabaseService {
 
   /// 删除 agent 行之后的通知。PeerAgentClientService 用来清斜杠命令内存缓存。
   void Function(String agentId)? onRemoteAgentDeleted;
+
+  /// 消息创建、删除或已读状态变化通知（参数为 channelId，未知或全量时为空串）。
+  final StreamController<String> _channelActivityController =
+      StreamController<String>.broadcast();
+
+  Stream<String> get channelActivityStream => _channelActivityController.stream;
+
+  void notifyChannelActivity([String channelId = '']) {
+    if (!_channelActivityController.isClosed) {
+      _channelActivityController.add(channelId);
+    }
+  }
 
   /// 获取数据库实例
   ///
