@@ -88,10 +88,8 @@ mixin _MessagingOps on _ChatControllerBase {
       messages.add(seeded);
     }
     messageIdMap[seeded.id] = seeded;
-    // Same sticky-flag race as processMessage — clear before async force-scroll.
-    isUserScrolledUp = false;
     _notify();
-    _emit(RequestScrollToBottomEvent(force: true));
+    _emit(RequestScrollToBottomEvent(force: !isUserScrolledUp));
 
     acpCancellationToken = ACPCancellationToken();
 
@@ -171,9 +169,8 @@ mixin _MessagingOps on _ChatControllerBase {
       messages.add(streamingMessage);
       messageIdMap[streamingMessage.id] = streamingMessage;
     }
-    isUserScrolledUp = false;
     _notify();
-    _emit(RequestScrollToBottomEvent(force: true));
+    _emit(RequestScrollToBottomEvent(force: !isUserScrolledUp));
 
     chatService.attachGroupTaskUI(
       currentChannelId!,
@@ -267,7 +264,7 @@ mixin _MessagingOps on _ChatControllerBase {
     }
     if (added) {
       _notify();
-      _emit(RequestScrollToBottomEvent(force: true));
+      _emit(RequestScrollToBottomEvent(force: !isUserScrolledUp));
     }
   }
 
@@ -1788,7 +1785,7 @@ mixin _MessagingOps on _ChatControllerBase {
           messages.add(sm);
           messageIdMap[sm.id] = sm;
           _notify();
-          _emit(RequestScrollToBottomEvent(force: true));
+          _emit(RequestScrollToBottomEvent(force: !isUserScrolledUp));
         },
         onStreamChunk: (aid, anm, chunk) {
           if (!groupTurnGate.isCurrent(epoch)) return;

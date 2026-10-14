@@ -153,10 +153,16 @@ mixin _LoadOps on _ChatControllerBase {
 
       await _refreshWorkspaceUris();
 
+      final windowLimit = messages.isEmpty
+          ? ChatMessageWindow.initialLimit
+          : messages.length.clamp(
+              ChatMessageWindow.initialLimit,
+              ChatMessageWindow.maxCached,
+            );
       final loadedMessages = List<Message>.from(
         await chatService.loadLocalChannelMessages(
           currentChannelId!,
-          limit: ChatMessageWindow.initialLimit,
+          limit: windowLimit,
         ),
       );
 
@@ -195,7 +201,8 @@ mixin _LoadOps on _ChatControllerBase {
 
       markMessagesAsReadIfAtBottom();
 
-      _emit(RequestScrollToBottomEvent(force: true));
+      // 若用户正在上翻查看历史（如流式回合结束触发的 loadMessages），保留视口位置，不强拉回底部。
+      _emit(RequestScrollToBottomEvent(force: !isUserScrolledUp));
 
       if (!isGroupMode) {
         reattachToActiveTask();
@@ -325,6 +332,7 @@ mixin _LoadOps on _ChatControllerBase {
     // 8. 换频道并清空消息（messageIdMap 同步清空：DM merge 路径按
     //    from.id 折叠占位，带着旧列表跑会把旧频道占位并进新频道气泡）。
     currentChannelId = channelId;
+    isUserScrolledUp = false;
     messages = [];
     rebuildMessageIdMap();
 

@@ -8,6 +8,7 @@ import '../../services/messaging/chat_history_content.dart';
 import '../../services/message_collapse_preference.dart';
 import '../../service_locator.dart';
 import 'message_long_press_handler.dart';
+import 'streaming_scroll_anchor.dart';
 
 /// The scrollable message list for the chat screen.
 ///
@@ -63,6 +64,10 @@ class ChatMessageList extends StatefulWidget {
   /// 流式 chunk 只通知正在输出的气泡，不重建整列。
   final Listenable streamingListenable;
 
+  /// 流式期间滚动锚定：用户在底部时由反向列表自然贴底，用户上滚翻历史时
+  /// 在布局阶段原位补偿流式气泡增高，防止历史视口被顶走或滚动手势被抢占。
+  final StreamingScrollAnchor? streamingScrollAnchor;
+
   const ChatMessageList({
     super.key,
     required this.messages,
@@ -90,6 +95,7 @@ class ChatMessageList extends StatefulWidget {
     this.defaultWorkspaceUris = const [],
     this.workspaceUrisByAgentId = const {},
     required this.streamingListenable,
+    this.streamingScrollAnchor,
   });
 
   @override
@@ -248,6 +254,9 @@ class _ChatMessageListState extends State<ChatMessageList> {
         reverse: true,
         itemScrollController: widget.itemScrollController,
         itemPositionsListener: widget.itemPositionsListener,
+        physics: widget.streamingScrollAnchor != null
+            ? ChatStreamScrollPhysics(anchor: widget.streamingScrollAnchor!)
+            : null,
         padding: const EdgeInsets.all(16),
         // 大约一屏。滑出视口的气泡保留已解析的 Markdown，翻历史时不用重解析。
         minCacheExtent: MediaQuery.sizeOf(context).height,
@@ -477,10 +486,11 @@ class _ChatMessageListState extends State<ChatMessageList> {
           if (!isStreaming) {
             return KeyedSubtree(key: ValueKey(message.id), child: tile);
           }
-          // 只在正在输出的气泡外包一层：高度变化才通知外层贴底，
-          // 不再每个 chunk 都 jumpTo。
-          return SizeChangedLayoutNotifier(
+          // 只在正在输出的气泡外包一层：在底部时通知外层按需对齐，
+          // 用户上滚翻看历史时在布局阶段直接补偿高度增量，不抢占滚动手势。
+          return StreamingSizeTracker(
             key: ValueKey(message.id),
+            anchor: widget.streamingScrollAnchor,
             child: tile,
           );
         },
