@@ -317,21 +317,10 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
         .showSnackBar(SnackBar(content: Text(_errorText(e))));
   }
 
-  /// 兜住没有 try/catch 的编辑动作。
+  /// 兜住没有 try/catch 的编辑动作，并把写回后的结果带出来。
   ///
   /// 这些动作以前只在本地写盘，失败面很小；现在每次写都要经主机，离线时必须
   /// 有提示，不能变成未捕获的异步错误。
-  Future<bool> _guard(Future<void> Function() action) async {
-    try {
-      await action();
-      return true;
-    } catch (e) {
-      _showError(e);
-      return false;
-    }
-  }
-
-  /// 同 [_guard]，但要把结果带出来（派发通知要用写回后的那条）。
   Future<T?> _guardValue<T>(Future<T> Function() action) async {
     try {
       return await action();
@@ -1059,23 +1048,89 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
       _dispatch(slip, focusItem: item);
 
   Future<void> _toggleItem(JadeSlip slip, JadeSlipItem item, bool done) async {
-    final updated = await _service.setItemDone(
-      id: slip.id,
-      itemId: item.id,
-      done: done,
-      actorId: LocalUserIdentity.id,
-      actorName: LocalUserIdentity.displayName,
+    final prev = _slip;
+    if (prev != null) {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      setState(() {
+        _slip = prev
+            .copyWith(
+              items: [
+                for (final e in prev.items)
+                  if (e.id == item.id)
+                    e.copyWith(
+                      state: done
+                          ? JadeSlipItemState.submitted
+                          : JadeSlipItemState.open,
+                      blockedReason: '',
+                      actorId: LocalUserIdentity.id,
+                      actorName: LocalUserIdentity.displayName,
+                      updatedAt: now,
+                    )
+                  else
+                    e,
+              ],
+            )
+            .withDerivedStatus();
+      });
+    }
+    final updated = await _guardValue(
+      () => _service.setItemDone(
+        id: slip.id,
+        itemId: item.id,
+        done: done,
+        actorId: LocalUserIdentity.id,
+        actorName: LocalUserIdentity.displayName,
+      ),
     );
+    if (!mounted) return;
+    if (updated == null) {
+      setState(() => _slip = prev);
+      return;
+    }
+    setState(() => _slip = updated);
+    widget.onChanged?.call();
     if (done) await JadeSlipWake.notify(updated, '有一项已提交，等验收');
   }
 
   Future<void> _acceptItem(JadeSlip slip, JadeSlipItem item) async {
-    final updated = await _service.acceptItem(
-      id: slip.id,
-      itemId: item.id,
-      actorId: LocalUserIdentity.id,
-      actorName: LocalUserIdentity.displayName,
+    final prev = _slip;
+    if (prev != null) {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      setState(() {
+        _slip = prev
+            .copyWith(
+              items: [
+                for (final e in prev.items)
+                  if (e.id == item.id)
+                    e.copyWith(
+                      state: JadeSlipItemState.accepted,
+                      actorId: LocalUserIdentity.id,
+                      actorName: LocalUserIdentity.displayName,
+                      blockedReason: '',
+                      updatedAt: now,
+                    )
+                  else
+                    e,
+              ],
+            )
+            .withDerivedStatus();
+      });
+    }
+    final updated = await _guardValue(
+      () => _service.acceptItem(
+        id: slip.id,
+        itemId: item.id,
+        actorId: LocalUserIdentity.id,
+        actorName: LocalUserIdentity.displayName,
+      ),
     );
+    if (!mounted) return;
+    if (updated == null) {
+      setState(() => _slip = prev);
+      return;
+    }
+    setState(() => _slip = updated);
+    widget.onChanged?.call();
     await JadeSlipWake.notify(updated, '有一项已验收');
   }
 
@@ -1106,22 +1161,28 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     final ref = uri.text.trim();
     uri.dispose();
     if (ok != true || ref.isEmpty) return;
-    await _guard(
+    final updated = await _guardValue(
       () => _service.addEvidence(id: widget.slipId, itemId: item.id, uri: ref),
     );
+    if (updated != null && mounted) {
+      setState(() => _slip = updated);
+    }
     widget.onChanged?.call();
   }
 
   /// 把这一项记到另一个 Agent 名下，不另开一轮对话。对方下次读玉简就能领走。
   Future<void> _assignItem(JadeSlipItem item, {bool clear = false}) async {
     if (clear) {
-      await _guard(
+      final updated = await _guardValue(
         () => _service.assignItem(
           id: widget.slipId,
           itemId: item.id,
           assigneeAgentId: '',
         ),
       );
+      if (updated != null && mounted) {
+        setState(() => _slip = updated);
+      }
       widget.onChanged?.call();
       return;
     }
@@ -1140,6 +1201,9 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
         assigneeAgentName: picked.name,
       ),
     );
+    if (updated != null && mounted) {
+      setState(() => _slip = updated);
+    }
     widget.onChanged?.call();
     if (updated == null) return;
     await JadeSlipWake.notify(updated, '已把一项交给 ${picked.name}');
@@ -1181,6 +1245,9 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
         actorName: LocalUserIdentity.displayName,
       ),
     );
+    if (updated != null && mounted) {
+      setState(() => _slip = updated);
+    }
     widget.onChanged?.call();
     if (updated == null) return;
     await JadeSlipWake.notify(updated, '有一项被退回');

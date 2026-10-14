@@ -91,6 +91,7 @@ class LocalHostPouchDocuments implements HostPouchDocuments {
         deviceId,
         space,
         prefix: prefix,
+        limit: 1000,
         depth: 1,
         computeHash: false,
       );
@@ -185,6 +186,7 @@ class RemoteHostPouchDocuments implements HostPouchDocuments {
         deviceId: deviceId,
         space: space,
         prefix: prefix,
+        limit: 1000,
         depth: 1,
         // 主机 SQLite entries 表已存 sha256，computeHash: true 直接从列中读取，
         // 让后续批量读取免掉逐条 store.meta 往返。

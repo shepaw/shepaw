@@ -227,6 +227,13 @@ void main() {
 
       final slip = (await JadeSlipService.instance.list()).single;
       expect(slip.items.map((i) => i.text), ['第一项']);
+
+      // 勾选复选框：立即变为已勾选，且进度同步更新为 1/1 已完成。
+      await tester.tap(find.byType(Checkbox).first);
+      await tester.pump();
+      expect(tester.widget<Checkbox>(find.byType(Checkbox).first).value, isTrue);
+      await settle(tester);
+      expect(find.textContaining('1/1 已完成'), findsWidgets);
     });
   },
       // 宽屏分栏靠 LayoutUtils.isDesktopLayout（真实 Platform.isMacOS），

@@ -25,6 +25,10 @@ class LocalCas {
   final _log = LoggerService();
 
   Map<String, Map<String, dynamic>>? _index;
+  Future<void>? _saveChain;
+  int _tmpSeq = 0;
+
+  String _nextTmpPath(String base) => '$base.${++_tmpSeq}.tmp';
 
   // ────────────────────────────── 读写 ──
 
@@ -38,9 +42,13 @@ class LocalCas {
     final blob = File(p.join(_blobsDir.path, hash));
     final index = await _loadIndex();
     if (!await blob.exists()) {
-      final tmp = File('${blob.path}.tmp');
+      final tmp = File(_nextTmpPath(blob.path));
       await tmp.writeAsBytes(bytes, flush: true);
-      await tmp.rename(blob.path);
+      if (await blob.exists()) {
+        await tmp.delete().catchError((_) => tmp);
+      } else {
+        await tmp.rename(blob.path);
+      }
     }
     index[hash] = {
       'size': bytes.length,
@@ -65,9 +73,13 @@ class LocalCas {
     final blob = File(p.join(_blobsDir.path, hash));
     final index = await _loadIndex();
     if (!await blob.exists()) {
-      final tmp = File('${blob.path}.tmp');
+      final tmp = File(_nextTmpPath(blob.path));
       await source.copy(tmp.path);
-      await tmp.rename(blob.path);
+      if (await blob.exists()) {
+        await tmp.delete().catchError((_) => tmp);
+      } else {
+        await tmp.rename(blob.path);
+      }
     }
     final resolvedSize = size ?? await source.length();
     index[hash] = {
@@ -191,10 +203,15 @@ class LocalCas {
     }
   }
 
-  Future<void> _saveIndex() async {
-    await _indexFile.parent.create(recursive: true);
-    final tmp = File('${_indexFile.path}.tmp');
-    await tmp.writeAsString(jsonEncode(_index));
-    await tmp.rename(_indexFile.path);
+  Future<void> _saveIndex() {
+    final prev = _saveChain ?? Future<void>.value();
+    final next = prev.catchError((_) {}).then((_) async {
+      await _indexFile.parent.create(recursive: true);
+      final tmp = File(_nextTmpPath(_indexFile.path));
+      await tmp.writeAsString(jsonEncode(_index));
+      await tmp.rename(_indexFile.path);
+    });
+    _saveChain = next;
+    return next;
   }
 }

@@ -89,8 +89,11 @@ class JadeSlip {
   final int createdAt;
   final int updatedAt;
 
-  int get doneCount =>
-      items.where((e) => e.state == JadeSlipItemState.accepted).length;
+  int get doneCount => items
+      .where((e) =>
+          e.state == JadeSlipItemState.accepted ||
+          e.state == JadeSlipItemState.submitted)
+      .length;
 
   int get submittedCount =>
       items.where((e) => e.state == JadeSlipItemState.submitted).length;
@@ -521,8 +524,10 @@ class JadeSlipItem {
   final String text;
   final JadeSlipItemState state;
 
-  /// 已验收。旧数据里的 `done: true` 读成 accepted。
-  bool get done => state == JadeSlipItemState.accepted;
+  /// 已勾选（已提交或已验收）。旧数据里的 `done: true` 读成 accepted。
+  bool get done =>
+      state == JadeSlipItemState.accepted ||
+      state == JadeSlipItemState.submitted;
 
   final String assigneeAgentId;
   final String assigneeAgentName;

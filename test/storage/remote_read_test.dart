@@ -58,6 +58,22 @@ void main() {
       expect(await cas.get(sha(synced)), isNull);
       expect(await cas.get(sha(unsynced)), isNotNull);
     });
+
+    test('并发 put 不因共享 .tmp 互相踩空', () async {
+      final tmp = await Directory.systemTemp.createTemp('cas_concurrent');
+      final cas = LocalCas(storeRoot: tmp);
+      final blobs = await Future.wait([
+        for (var i = 0; i < 32; i++)
+          cas.put(bytesOf('payload-$i'), synced: true),
+        // 含相同内容的并发写入
+        cas.put(bytesOf('payload-0'), synced: true),
+        cas.put(bytesOf('payload-0'), synced: true),
+      ]);
+      expect(blobs.length, 34);
+      for (final b in blobs) {
+        expect(await b.exists(), isTrue);
+      }
+    });
   });
 
   group('RemoteReadService（spec §7 流程）', () {
