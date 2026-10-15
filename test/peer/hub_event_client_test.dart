@@ -142,4 +142,90 @@ void main() {
     expect(await db.getUnreadCountByChannel(psessId), 0);
     await incoming.close();
   });
+
+  test('channel.read 携带 all_sessions=true 时清除该 Agent 名下所有本地 DM 会话未读', () async {
+    final db = LocalDatabaseService();
+    final suffix = DateTime.now().microsecondsSinceEpoch + 1;
+    final agentId = 'agent-all-$suffix';
+    final ch1 = 'dm_user_$agentId';
+    final ch2 = 'psess_sess_$suffix';
+
+    await db.createChannel(
+      Channel.withMemberIds(
+        id: ch1,
+        name: 'Default Shell',
+        type: 'dm',
+        memberIds: ['user', agentId],
+      ),
+      'user',
+    );
+    await db.createChannel(
+      Channel.withMemberIds(
+        id: ch2,
+        name: 'Remote Session 2',
+        type: 'dm',
+        memberIds: ['user', agentId],
+      ),
+      'user',
+    );
+    await db.createMessage(
+      id: 'm1-$suffix',
+      channelId: ch1,
+      senderId: agentId,
+      senderType: 'agent',
+      senderName: 'A',
+      content: 'msg 1',
+      isRead: 0,
+    );
+    await db.createMessage(
+      id: 'm2-$suffix',
+      channelId: ch2,
+      senderId: agentId,
+      senderType: 'agent',
+      senderName: 'A',
+      content: 'msg 2',
+      isRead: 0,
+    );
+    expect(await db.getUnreadCountForAgent(agentId), 2);
+
+    final incoming = StreamController<PeerControlEvent>.broadcast();
+    final store = MemoryHubSeqStore();
+    final client = HubEventClient(
+      events: incoming.stream,
+      send: (peerId, frame) async {
+        incoming.add(PeerControlEvent(
+          peerId: peerId,
+          data: {
+            'type': 'events_sync_resp',
+            'request_id': frame['request_id'],
+            'events': [
+              {
+                'seq': 1,
+                'kind': 'channel.read',
+                'channel_id': ch2,
+                'agent_id': agentId,
+                'data': {
+                  'channel_id': ch2,
+                  'agent_id': agentId,
+                  'all_sessions': true,
+                },
+              },
+            ],
+            'head_seq': 1,
+            'reset': false,
+          },
+        ));
+        return true;
+      },
+      seqStore: store,
+      fingerprintOf: (_) async => 'fp-all-$suffix',
+    );
+
+    await client.catchUp('peer-1');
+
+    expect(await db.getUnreadCountForAgent(agentId), 0);
+    expect(await db.getUnreadCountByChannel(ch1), 0);
+    expect(await db.getUnreadCountByChannel(ch2), 0);
+    await incoming.close();
+  });
 }

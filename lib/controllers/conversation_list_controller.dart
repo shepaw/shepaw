@@ -8,6 +8,8 @@ import '../models/conversation_list_entry.dart';
 import '../models/conversation_selection.dart';
 import '../peer/models/paired_peer.dart';
 import '../peer/models/peer_message.dart';
+import '../peer/services/hub_event_client.dart';
+import '../peer/services/peer_agent_client_service.dart';
 import '../peer/services/peer_connection.dart';
 import '../peer/pouch_pair.dart';
 import '../peer/services/peer_connection_manager.dart';
@@ -279,6 +281,16 @@ class ConversationListController extends ChangeNotifier {
   /// 避免旧查询晚到把已删除的 agent 写回内存。
   Future<void> refresh({bool silent = false}) async {
     if (_disposed) return;
+    if (!silent) {
+      for (final peerId in PeerConnectionManager.instance.connectedPeerIds) {
+        if (getIt.isRegistered<HubEventClient>()) {
+          unawaited(getIt<HubEventClient>().catchUp(peerId));
+        }
+        unawaited(
+          PeerAgentClientService.instance.syncAllPeerAgentsReadState(peerId),
+        );
+      }
+    }
     if (_refreshInFlight) {
       _refreshQueued = true;
       return;

@@ -4854,13 +4854,69 @@ class PeerAgentClientService {
       }
       if (s.isRead || s.readOnly) {
         await _db.markChannelMessagesAsRead(channelId, syncToHost: false);
+      } else if (s.readAt != null) {
+        await _db.markChannelMessagesAsReadBefore(
+          channelId,
+          s.readAt!,
+          syncToHost: false,
+        );
       }
+    }
+    if (sessions.every((s) => s.isRead || s.readOnly)) {
+      DateTime? maxReadAt;
+      for (final s in sessions) {
+        final at = s.readAt ?? s.updatedAt;
+        if (at != null && (maxReadAt == null || at.isAfter(maxReadAt))) {
+          maxReadAt = at;
+        }
+      }
+      await _db.markAllAgentChannelsAsRead(
+        localAgentId,
+        beforeOrAt: maxReadAt,
+        syncToHost: false,
+      );
     }
     _log.info(
       'Synced $linked/${sessions.length} remote session(s) for peer agent $localAgentId',
       tag: _tag,
     );
     return linked;
+  }
+
+  final _syncingReadStatePeers = <String>{};
+
+  /// 后台轻量同步该主机下所有远端 Agent 的会话摘要与已读水位（不拉聊天正文），
+  /// 使对话列表页无需点进聊天窗口即可消掉另一端已读的未读角标。
+  Future<void> syncAllPeerAgentsReadState(String peerId) async {
+    final id = peerId.trim();
+    if (id.isEmpty || !_peerIsConnected(id)) return;
+    if (!_syncingReadStatePeers.add(id)) return;
+    try {
+      final agents = await _db.getAllRemoteAgents();
+      for (final agent in agents) {
+        if (agent.metadata['source_peer_id'] != id) continue;
+        final remoteId =
+            (agent.metadata['remote_agent_id'] as String?)?.trim() ?? '';
+        if (remoteId.isEmpty) continue;
+        final sessions = await fetchSessions(
+          peerId: id,
+          remoteAgentId: remoteId,
+        );
+        if (sessions.isNotEmpty) {
+          await syncSessions(
+            peerId: id,
+            remoteAgentId: remoteId,
+            localAgentId: agent.id,
+            userId: 'user',
+            sessions: sessions,
+          );
+        }
+      }
+    } catch (e) {
+      _log.debug('syncAllPeerAgentsReadState skipped: $e', tag: _tag);
+    } finally {
+      _syncingReadStatePeers.remove(id);
+    }
   }
 
   Future<String> _localChannelIdForRemoteSession(String sessionId) async {
@@ -7339,6 +7395,7 @@ class PeerAgentClientService {
           unawaited(fetchModels(peerId: peerId, remoteAgentId: remoteId));
         }
       }
+      unawaited(syncAllPeerAgentsReadState(peerId));
     } catch (e) {
       _log.warning('Failed to inject peer agents: $e', tag: _tag);
       _completeAgentListWaiters(peerId);

@@ -15,6 +15,7 @@ import 'services/vision/reference_album_service.dart';
 import 'peer/services/hub_event_client.dart';
 import 'peer/services/hub_group_registry.dart';
 import 'peer/services/hub_she_mind.dart';
+import 'peer/services/peer_agent_client_service.dart';
 import 'services/event/event_bus.dart';
 import 'services/event/setup_event_bus.dart';
 
@@ -69,6 +70,9 @@ void setupServiceLocator() {
           if (getIt.isRegistered<HubGroupRegistry>()) {
             unawaited(getIt<HubGroupRegistry>().refresh(peerId));
           }
+          unawaited(
+            PeerAgentClientService.instance.syncAllPeerAgentsReadState(peerId),
+          );
         },
       ));
   getIt.registerLazySingleton<HubGroupRegistry>(() => HubGroupRegistry());

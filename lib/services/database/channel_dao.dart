@@ -807,8 +807,150 @@ extension ChannelDao on LocalDatabaseService {
       notifyChannelActivity(channelId);
     }
     if (syncToHost) {
-      PouchTurnRelay.instance.scheduleMarkRead(channelId);
+      final remoteAgentId = await _resolveRemoteAgentIdForChannel(db, channelId);
+      PouchTurnRelay.instance.scheduleMarkRead(
+        channelId,
+        agentId: remoteAgentId,
+      );
     }
+  }
+
+  /// 按主机已读水位线将该频道内 `created_at <= [readAt]` 的未读消息标为已读。
+  Future<void> markChannelMessagesAsReadBefore(
+    String channelId,
+    DateTime readAt, {
+    bool syncToHost = false,
+  }) async {
+    final db = await database;
+    final cutoffMs = readAt.millisecondsSinceEpoch;
+    if (cutoffMs <= 0) return;
+    final updated = await db.update(
+      'messages',
+      {'is_read': 1},
+      where: 'channel_id = ? AND is_read = 0 AND created_at <= ?',
+      whereArgs: [channelId, cutoffMs],
+    );
+    if (updated > 0) {
+      notifyChannelActivity(channelId);
+    }
+    if (syncToHost) {
+      final remoteAgentId = await _resolveRemoteAgentIdForChannel(db, channelId);
+      PouchTurnRelay.instance.scheduleMarkRead(
+        channelId,
+        agentId: remoteAgentId,
+      );
+    }
+  }
+
+  /// 将指定 Agent（支持本地 agentId 或主机 remote_agent_id）名下所有 DM 会话消息置为已读。
+  Future<void> markAllAgentChannelsAsRead(
+    String agentId, {
+    DateTime? beforeOrAt,
+    bool syncToHost = true,
+  }) async {
+    final trimmed = agentId.trim();
+    if (trimmed.isEmpty) return;
+    final db = await database;
+
+    final agentRows = await db.rawQuery(
+      "SELECT id, json_extract(metadata, '\$.remote_agent_id') AS remote_id "
+      'FROM agents '
+      "WHERE id = ? OR json_extract(metadata, '\$.remote_agent_id') = ?",
+      [trimmed, trimmed],
+    );
+    final localAgentIds = <String>{trimmed};
+    String? remoteAgentId;
+    for (final row in agentRows) {
+      final id = (row['id'] as String?)?.trim() ?? '';
+      final rid = (row['remote_id'] as String?)?.trim() ?? '';
+      if (id.isNotEmpty) localAgentIds.add(id);
+      if (rid.isNotEmpty) remoteAgentId ??= rid;
+    }
+    remoteAgentId ??= trimmed;
+
+    final placeholders = List.filled(localAgentIds.length, '?').join(',');
+    final channelRows = await db.rawQuery(
+      'SELECT DISTINCT c.id AS channel_id '
+      'FROM channels c '
+      'INNER JOIN channel_members cm ON c.id = cm.channel_id '
+      "WHERE c.type = 'dm' AND cm.agent_id IN ($placeholders)",
+      localAgentIds.toList(),
+    );
+    final channelIds = <String>[
+      for (final r in channelRows)
+        if ((r['channel_id'] as String?)?.trim().isNotEmpty == true)
+          (r['channel_id'] as String).trim(),
+    ];
+
+    var totalUpdated = 0;
+    if (channelIds.isNotEmpty) {
+      final cidPlaceholders = List.filled(channelIds.length, '?').join(',');
+      if (beforeOrAt != null && beforeOrAt.millisecondsSinceEpoch > 0) {
+        totalUpdated = await db.update(
+          'messages',
+          {'is_read': 1},
+          where:
+              'channel_id IN ($cidPlaceholders) AND is_read = 0 AND created_at <= ?',
+          whereArgs: [...channelIds, beforeOrAt.millisecondsSinceEpoch],
+        );
+      } else {
+        totalUpdated = await db.update(
+          'messages',
+          {'is_read': 1},
+          where: 'channel_id IN ($cidPlaceholders) AND is_read = 0',
+          whereArgs: channelIds,
+        );
+      }
+      final log = PouchChatLog.bound;
+      if (log != null) {
+        for (final cid in channelIds) {
+          unawaited(log.markChannelRead(cid).catchError((Object _) {}));
+        }
+      }
+    }
+
+    if (totalUpdated > 0) {
+      notifyChannelActivity(channelIds.isNotEmpty ? channelIds.first : trimmed);
+    }
+
+    if (syncToHost) {
+      if (channelIds.isEmpty) {
+        PouchTurnRelay.instance.scheduleMarkRead(
+          '',
+          agentId: remoteAgentId,
+          allSessions: true,
+        );
+      } else {
+        for (var i = 0; i < channelIds.length; i++) {
+          PouchTurnRelay.instance.scheduleMarkRead(
+            channelIds[i],
+            agentId: remoteAgentId,
+            allSessions: i == 0,
+          );
+        }
+      }
+    }
+  }
+
+  Future<String?> _resolveRemoteAgentIdForChannel(
+    Database db,
+    String channelId,
+  ) async {
+    try {
+      final rows = await db.rawQuery(
+        "SELECT COALESCE(json_extract(a.metadata, '\$.remote_agent_id'), a.id) AS remote_id "
+        'FROM channel_members cm '
+        'INNER JOIN agents a ON a.id = cm.agent_id '
+        'WHERE cm.channel_id = ? '
+        'LIMIT 1',
+        [channelId],
+      );
+      if (rows.isNotEmpty) {
+        final rid = (rows.first['remote_id'] as String?)?.trim();
+        if (rid != null && rid.isNotEmpty) return rid;
+      }
+    } catch (_) {}
+    return null;
   }
 }
 

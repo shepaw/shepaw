@@ -3044,6 +3044,17 @@ class _ChatScreenState extends State<ChatScreen>
     for (final s in sessions) {
       await _controller.localDatabaseService.markChannelMessagesAsRead(s.id);
     }
+    if (!_controller.isGroupMode) {
+      var agentId = widget.agentId ?? _controller.agentId;
+      if ((agentId == null || agentId.isEmpty) && sessions.isNotEmpty) {
+        agentId = ChatLoadChannelPlanner.firstAgentMemberId(sessions.first);
+      }
+      if (agentId != null && agentId.isNotEmpty) {
+        await _controller.localDatabaseService.markAllAgentChannelsAsRead(
+          agentId,
+        );
+      }
+    }
     refreshTick.value++;
     if (!mounted) return;
     unawaited(_refreshOtherSessionsUnread());

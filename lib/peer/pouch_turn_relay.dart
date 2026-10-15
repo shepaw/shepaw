@@ -37,11 +37,15 @@ class PouchTurnRelay {
   ];
 
   static const _pendingReadPrefsKey = 'pouch_pending_read_channels_v1';
+  static const _pendingReadAllAgentsPrefsKey =
+      'pouch_pending_read_all_agents_v1';
 
   final _uuid = const Uuid();
   final _pending = <String, _PendingTurn>{};
   final _lanes = <String, Future<void>>{};
   final _pendingReadChannelIds = <String>{};
+  final _pendingReadAgentByChannel = <String, String>{};
+  final _pendingReadAllAgentIds = <String>{};
   Timer? _markReadDebounceTimer;
   bool _flushingReads = false;
   final _files = PouchAttachmentClient(
@@ -240,12 +244,27 @@ class PouchTurnRelay {
   }
 
   /// 将频道已读状态同步到主机（合并短时间内的批量已读；离线时持久化待重连补发）。
-  void scheduleMarkRead(String channelId) {
+  void scheduleMarkRead(
+    String channelId, {
+    String? agentId,
+    bool allSessions = false,
+  }) {
     final trimmed = channelId.trim();
-    if (trimmed.isEmpty) return;
-    // 群成员镜像会话 (gmd_) 与 She 中转会话 (shed_) 为本地只读派生会话，无需上报主机。
-    if (trimmed.startsWith('gmd_') || trimmed.startsWith('shed_')) return;
-    _pendingReadChannelIds.add(trimmed);
+    final trimmedAgent = agentId?.trim() ?? '';
+    if (allSessions && trimmedAgent.isNotEmpty) {
+      _pendingReadAllAgentIds.add(trimmedAgent);
+    }
+    if (trimmed.isNotEmpty &&
+        !trimmed.startsWith('gmd_') &&
+        !trimmed.startsWith('shed_')) {
+      _pendingReadChannelIds.add(trimmed);
+      if (trimmedAgent.isNotEmpty) {
+        _pendingReadAgentByChannel[trimmed] = trimmedAgent;
+      }
+    }
+    if (_pendingReadChannelIds.isEmpty && _pendingReadAllAgentIds.isEmpty) {
+      return;
+    }
     _markReadDebounceTimer?.cancel();
     _markReadDebounceTimer = Timer(const Duration(milliseconds: 150), () {
       _markReadDebounceTimer = null;
@@ -264,9 +283,17 @@ class PouchTurnRelay {
         if (saved != null && saved.isNotEmpty) {
           _pendingReadChannelIds.addAll(saved.where((s) => s.isNotEmpty));
         }
+        final savedAgents = prefs.getStringList(_pendingReadAllAgentsPrefsKey);
+        if (savedAgents != null && savedAgents.isNotEmpty) {
+          _pendingReadAllAgentIds.addAll(
+            savedAgents.where((s) => s.isNotEmpty),
+          );
+        }
       } catch (_) {}
 
-      if (_pendingReadChannelIds.isEmpty) return;
+      if (_pendingReadChannelIds.isEmpty && _pendingReadAllAgentIds.isEmpty) {
+        return;
+      }
 
       String? hostPeerId = explicitHostPeerId;
       if (hostPeerId == null || hostPeerId.isEmpty) {
@@ -274,44 +301,85 @@ class PouchTurnRelay {
           final route = await currentRoute();
           if (route.runLocal) {
             _pendingReadChannelIds.clear();
-            await _savePendingReadPrefs(const {});
+            _pendingReadAgentByChannel.clear();
+            _pendingReadAllAgentIds.clear();
+            await _savePendingReadPrefs(const {}, const {});
             return;
           }
           hostPeerId = route.hostPeerId;
         } catch (_) {
-          await _savePendingReadPrefs(_pendingReadChannelIds);
+          await _savePendingReadPrefs(
+            _pendingReadChannelIds,
+            _pendingReadAllAgentIds,
+          );
           return;
         }
       }
       if (hostPeerId == null || hostPeerId.isEmpty) {
-        await _savePendingReadPrefs(_pendingReadChannelIds);
+        await _savePendingReadPrefs(
+          _pendingReadChannelIds,
+          _pendingReadAllAgentIds,
+        );
         return;
       }
 
-      final batch = _pendingReadChannelIds.toList();
+      final batchChannels = _pendingReadChannelIds.toList();
+      final batchAgentByChannel =
+          Map<String, String>.from(_pendingReadAgentByChannel);
+      final batchAllAgents = _pendingReadAllAgentIds.toList();
       _pendingReadChannelIds.clear();
+      _pendingReadAgentByChannel.clear();
+      _pendingReadAllAgentIds.clear();
+
       try {
-        await _forward(
-          hostPeerId: hostPeerId,
-          frame: <String, dynamic>{
-            'type': readRequestType,
-            'op': 'mark_read',
-            'channel_id': batch.first,
-            'channel_ids': batch,
-          },
-          onEvent: (_) {},
-        ).timeout(const Duration(seconds: 6));
-        await _savePendingReadPrefs(_pendingReadChannelIds);
+        final byAgent = <String, List<String>>{};
+        for (final cid in batchChannels) {
+          final aid = batchAgentByChannel[cid] ?? '';
+          byAgent.putIfAbsent(aid, () => <String>[]).add(cid);
+        }
+        for (final aid in batchAllAgents) {
+          byAgent.putIfAbsent(aid, () => <String>[]);
+        }
+        for (final entry in byAgent.entries) {
+          final aid = entry.key;
+          final cids = entry.value;
+          final markAll = aid.isNotEmpty && batchAllAgents.contains(aid);
+          if (cids.isEmpty && !markAll) continue;
+          await _forward(
+            hostPeerId: hostPeerId,
+            frame: <String, dynamic>{
+              'type': readRequestType,
+              'op': 'mark_read',
+              'channel_id': cids.isNotEmpty ? cids.first : aid,
+              if (cids.isNotEmpty) 'channel_ids': cids,
+              if (aid.isNotEmpty) 'agent_id': aid,
+              if (markAll) 'all_sessions': true,
+            },
+            onEvent: (_) {},
+          ).timeout(const Duration(seconds: 6));
+        }
+        await _savePendingReadPrefs(
+          _pendingReadChannelIds,
+          _pendingReadAllAgentIds,
+        );
       } catch (_) {
-        _pendingReadChannelIds.addAll(batch);
-        await _savePendingReadPrefs(_pendingReadChannelIds);
+        _pendingReadChannelIds.addAll(batchChannels);
+        _pendingReadAgentByChannel.addAll(batchAgentByChannel);
+        _pendingReadAllAgentIds.addAll(batchAllAgents);
+        await _savePendingReadPrefs(
+          _pendingReadChannelIds,
+          _pendingReadAllAgentIds,
+        );
       }
     } finally {
       _flushingReads = false;
     }
   }
 
-  Future<void> _savePendingReadPrefs(Iterable<String> ids) async {
+  Future<void> _savePendingReadPrefs(
+    Iterable<String> ids,
+    Iterable<String> allAgentIds,
+  ) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final list = ids.where((s) => s.isNotEmpty).toSet().toList();
@@ -319,6 +387,13 @@ class PouchTurnRelay {
         await prefs.remove(_pendingReadPrefsKey);
       } else {
         await prefs.setStringList(_pendingReadPrefsKey, list);
+      }
+      final agentList =
+          allAgentIds.where((s) => s.isNotEmpty).toSet().toList();
+      if (agentList.isEmpty) {
+        await prefs.remove(_pendingReadAllAgentsPrefsKey);
+      } else {
+        await prefs.setStringList(_pendingReadAllAgentsPrefsKey, agentList);
       }
     } catch (_) {}
   }

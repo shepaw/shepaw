@@ -12,11 +12,13 @@ import '../../services/cli_execution_gate.dart';
 import '../../services/local_database_service.dart';
 import '../../services/noise_identity.dart';
 import '../../services/logger_service.dart';
+import '../../storage/pouch_login.dart';
 import '../../storage/pouch_login_keeper.dart';
 import '../../storage/pouch_session.dart';
 import '../hub_event_apply.dart';
 import '../pouch_turn_relay.dart';
 import 'peer_agent_client_service.dart';
+import 'peer_connection.dart';
 import 'peer_connection_manager.dart';
 import 'peer_storage_service.dart';
 
@@ -53,6 +55,9 @@ class HubEventClient {
 
   StreamSubscription<PeerControlEvent>? _sub;
   StreamSubscription<void>? _reloginSub;
+  StreamSubscription<PouchSession>? _channelInstalledSub;
+  StreamSubscription<PeerConnectionEvent>? _connSub;
+  StreamSubscription<Duration>? _resumeSub;
   Future<void>? _syncing;
   var _livePaused = false;
 
@@ -63,13 +68,34 @@ class HubEventClient {
     _reloginSub ??= PouchLoginKeeper.instance.relogged.listen((_) {
       unawaited(_syncActiveHost());
     });
+    _channelInstalledSub ??= PouchChannel.installed.listen((session) {
+      unawaited(_catchUpIfConnected(session.hostPeerId));
+    });
+    _connSub ??= PeerConnectionManager.instance.events.listen((event) {
+      if (event.type == PeerConnectionEventType.connected) {
+        unawaited(_catchUpIfActiveHost(event.peerId));
+      }
+    });
+    _resumeSub ??= AppLifecycleService().onResume.listen((_) {
+      unawaited(_syncActiveHost());
+    });
+    final active = PouchChannel.active?.session;
+    if (active != null) {
+      unawaited(_catchUpIfConnected(active.hostPeerId));
+    }
   }
 
   Future<void> dispose() async {
     await _sub?.cancel();
     await _reloginSub?.cancel();
+    await _channelInstalledSub?.cancel();
+    await _connSub?.cancel();
+    await _resumeSub?.cancel();
     _sub = null;
     _reloginSub = null;
+    _channelInstalledSub = null;
+    _connSub = null;
+    _resumeSub = null;
   }
 
   Future<void> _onControl(PeerControlEvent event) async {
@@ -207,18 +233,40 @@ class HubEventClient {
 
   Future<void> _onChannelRead(HubEvent event) async {
     if (!getIt.isRegistered<LocalDatabaseService>()) return;
-    final raw = (event.data['channel_id'] as String?)?.trim() ?? '';
-    final channelId = raw.isNotEmpty ? raw : event.channelId.trim();
-    if (channelId.isEmpty) return;
     final db = getIt<LocalDatabaseService>();
-    final bare = remoteSessionIdFromChannelId(channelId) ?? channelId;
-    final psess = syncedPeerChannelId(bare);
-    await db.markChannelMessagesAsRead(bare, syncToHost: false);
-    if (psess != bare) {
-      await db.markChannelMessagesAsRead(psess, syncToHost: false);
+    final rawAgentId = (event.data['agent_id'] as String?)?.trim() ?? '';
+    final agentId = rawAgentId.isNotEmpty ? rawAgentId : event.agentId.trim();
+    final allSessions = event.data['all_sessions'] == true;
+    final rawReadAt = event.data['read_at'];
+    final readAt = (rawReadAt is int && rawReadAt > 0)
+        ? DateTime.fromMillisecondsSinceEpoch(rawReadAt, isUtc: true)
+        : null;
+
+    if (allSessions && agentId.isNotEmpty) {
+      await db.markAllAgentChannelsAsRead(
+        agentId,
+        beforeOrAt: readAt,
+        syncToHost: false,
+      );
     }
-    _notify(bare);
-    if (psess != bare) _notify(psess);
+
+    final raw = (event.data['channel_id'] as String?)?.trim() ?? '';
+    final primaryId = raw.isNotEmpty ? raw : event.channelId.trim();
+    final ids = <String>{
+      if (primaryId.isNotEmpty) primaryId,
+      for (final item in (event.data['channel_ids'] as List?) ?? const [])
+        if (item is String && item.trim().isNotEmpty) item.trim(),
+    };
+    for (final channelId in ids) {
+      final bare = remoteSessionIdFromChannelId(channelId) ?? channelId;
+      final psess = syncedPeerChannelId(bare);
+      await db.markChannelMessagesAsRead(bare, syncToHost: false);
+      if (psess != bare) {
+        await db.markChannelMessagesAsRead(psess, syncToHost: false);
+      }
+      _notify(bare);
+      if (psess != bare) _notify(psess);
+    }
   }
 
   Future<void> _showInteraction(String peerId, HubEvent event) =>
@@ -568,7 +616,37 @@ class HubEventClient {
   Future<void> _syncActiveHost() async {
     final session = await PouchSessionStore.readActive();
     if (session == null) return;
-    await catchUp(session.hostPeerId);
+    await _catchUpIfConnected(session.hostPeerId);
+  }
+
+  Future<void> _catchUpIfConnected(String peerId) async {
+    final id = peerId.trim();
+    if (id.isEmpty) return;
+    if (send == null &&
+        !PeerConnectionManager.instance.connectedPeerIds.contains(id)) {
+      return;
+    }
+    await catchUp(id);
+  }
+
+  Future<void> _catchUpIfActiveHost(String peerId) async {
+    final id = peerId.trim();
+    if (id.isEmpty) return;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final active = PouchChannel.active?.session;
+    if (active != null &&
+        active.hostPeerId == id &&
+        active.isLoggedIn(nowMs)) {
+      await catchUp(id);
+      return;
+    }
+    final session = await PouchSessionStore.readActive();
+    if (session != null &&
+        session.hostPeerId == id &&
+        session.isLoggedIn(nowMs)) {
+      PouchChannel.install(session);
+      await catchUp(id);
+    }
   }
 
   Future<bool> _send(String peerId, Map<String, dynamic> frame) {
