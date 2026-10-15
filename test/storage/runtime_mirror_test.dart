@@ -156,4 +156,104 @@ void main() {
     expect(sessionMeta['local_channel_id'], localChannel);
     expect(sessionMeta['channel_id'], hostChannel);
   });
+
+  test('debounce 窗口内的连续镜像合并成一次，flushPendingSessions 立即落盘',
+      () async {
+    final mirror = RuntimeMirrorService.instance;
+    // 窗口远大于本测试的等待时间：期间不应该有任何写。
+    mirror.debounce = const Duration(seconds: 30);
+    addTearDown(() => mirror.debounce = Duration.zero);
+
+    const owner = 'agent-flush-coalesce';
+    const channel = 'dm_flush';
+    final deviceId = await DeviceIdentity.deviceId();
+    final store = await StoreService.instance.localStore();
+    final rel = RuntimePaths.sessionJson(owner, channel);
+
+    for (var i = 0; i < 10; i++) {
+      mirror.scheduleSessionMirror(ownerId: owner, channelId: channel);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(
+      () => store.meta(deviceId, StoreSpace.runtime, rel),
+      throwsA(isA<StoreException>()),
+    );
+
+    await mirror.flushPendingSessions();
+    final meta = await store.meta(deviceId, StoreSpace.runtime, rel);
+    expect(meta['size'] as int, greaterThan(0));
+  });
+
+  test('持续写入时靠 maxStaleness 兜底落盘', () async {
+    final mirror = RuntimeMirrorService.instance;
+    mirror.debounce = const Duration(seconds: 30);
+    mirror.maxStaleness = const Duration(milliseconds: 200);
+    addTearDown(() {
+      mirror.debounce = Duration.zero;
+      mirror.maxStaleness = const Duration(seconds: 10);
+    });
+
+    const owner = 'agent-staleness';
+    const channel = 'dm_staleness';
+    final deviceId = await DeviceIdentity.deviceId();
+    final store = await StoreService.instance.localStore();
+    final rel = RuntimePaths.sessionJson(owner, channel);
+
+    // 连续写（模拟流式 flush）：空闲 debounce 永远等不到窗口。
+    for (var i = 0; i < 6; i++) {
+      mirror.scheduleSessionMirror(ownerId: owner, channelId: channel);
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+    }
+
+    final meta = await store.meta(deviceId, StoreSpace.runtime, rel);
+    expect(meta['size'] as int, greaterThan(0));
+  });
+
+  test('session.json 不带缩进', () async {
+    final mirror = RuntimeMirrorService.instance;
+    mirror.debounce = Duration.zero;
+    const owner = 'agent-no-indent';
+    const channel = 'dm_indent';
+
+    mirror.scheduleSessionMirror(ownerId: owner, channelId: channel);
+    await mirror.flushPendingSessions();
+
+    final deviceId = await DeviceIdentity.deviceId();
+    final store = await StoreService.instance.localStore();
+    final (bytes, _, _) = await store.read(
+      deviceId,
+      StoreSpace.runtime,
+      RuntimePaths.sessionJson(owner, channel),
+      0,
+      1 << 16,
+    );
+    final body = utf8.decode(bytes);
+    jsonDecode(body); // 仍是合法 JSON
+    expect(body.contains('\n  "'), isFalse);
+  });
+
+  test('invalidateMirrorRoute 后重新解析落盘路由', () async {
+    final mirror = RuntimeMirrorService.instance;
+    mirror.debounce = Duration.zero;
+    const owner = 'agent-route-cache';
+    const channel = 'dm_route';
+
+    mirror.scheduleSessionMirror(ownerId: owner, channelId: channel);
+    await mirror.flushPendingSessions();
+    mirror.invalidateMirrorRoute();
+
+    // 清空缓存不应影响后续镜像：重新解析后仍能落盘。
+    mirror.scheduleSessionMirror(ownerId: owner, channelId: channel);
+    await mirror.flushPendingSessions();
+
+    final deviceId = await DeviceIdentity.deviceId();
+    final store = await StoreService.instance.localStore();
+    final meta = await store.meta(
+      deviceId,
+      StoreSpace.runtime,
+      RuntimePaths.sessionJson(owner, channel),
+    );
+    expect(meta['size'] as int, greaterThan(0));
+  });
 }

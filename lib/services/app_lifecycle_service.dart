@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/widgets.dart';
+import '../storage/runtime_mirror_service.dart';
 import '../task/services/scheduled_task_service.dart';
 import '../peer/pouch_duties.dart';
 import '../peer/services/peer_connection_manager.dart';
@@ -72,6 +73,12 @@ class AppLifecycleService with WidgetsBindingObserver {
     _emitLifecycleEvent(state);
     isInForeground = state == AppLifecycleState.resumed;
 
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      // 切后台：debounce 里待写的会话镜像立即落盘，不等计时器。
+      unawaited(RuntimeMirrorService.instance.flushPendingSessions());
+    }
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
       if (_backgroundedAtMs == null && !_onLockController.isClosed) {

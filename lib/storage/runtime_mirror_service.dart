@@ -23,9 +23,21 @@ class RuntimeMirrorService {
 
   static const _tag = 'RuntimeMirror';
   final _log = LoggerService();
-  final _pendingSession = <String, Timer>{};
+  final _pendingSession = <String, _PendingSessionMirror>{};
   final _pendingMemory = <String, Timer>{};
-  Duration debounce = const Duration(milliseconds: 400);
+  /// 空闲 debounce。一次会话内的连续写（流式 flush、批量落库、群成员
+  /// 逐条入库）合并成一次全量镜像。
+  Duration debounce = const Duration(seconds: 2);
+
+  /// 待写镜像最长落后多久就强制落盘。
+  ///
+  /// 流式回合里消息持续到达，纯空闲 debounce 的窗口会被一直重置、直到回
+  /// 合结束才写。靠这个上限保证镜像不会一直停在回合开始时的状态。
+  Duration maxStaleness = const Duration(seconds: 10);
+  /// 已建过 scaffold 的 `device::owner::persona`（见 [ensureRuntimeScaffold]）。
+  final _scaffolded = <String>{};
+  /// channel → 镜像落盘路由（见 [_resolveAndScheduleSession]）。
+  final _routeCache = <String, _MirrorRoute>{};
 
   /// session.json 最近窗口条数；超出则滚动到 archive。
   static const sessionWindowSize = 100;
@@ -40,6 +52,18 @@ class RuntimeMirrorService {
   }
 
   Future<void> _resolveAndScheduleSession(String channelId) async {
+    // 同一会话里这个路由结果不会变，但每条消息都要过一遍：缓存后省掉
+    // getChannelById + getRemoteAgentById（+ peer 解析）三次 await。
+    final cached = _routeCache[channelId];
+    if (cached != null) {
+      scheduleSessionMirror(
+        ownerId: cached.ownerId,
+        channelId: cached.channelId,
+        deviceId: cached.deviceId,
+        messagesChannelId: cached.messagesChannelId,
+      );
+      return;
+    }
     try {
       final db = LocalDatabaseService();
       final ch = await db.getChannelById(channelId);
@@ -59,6 +83,12 @@ class RuntimeMirrorService {
             localChannelId: channelId,
           );
           if (peer != null) {
+            _routeCache[channelId] = _MirrorRoute(
+              ownerId: peer.ownerId,
+              channelId: peer.channelId,
+              deviceId: peer.deviceId,
+              messagesChannelId: channelId,
+            );
             scheduleSessionMirror(
               ownerId: peer.ownerId,
               channelId: peer.channelId,
@@ -78,9 +108,20 @@ class RuntimeMirrorService {
         channelType: ch?.type,
         parentGroupId: ch?.parentGroupId,
       );
+      _routeCache[channelId] = _MirrorRoute(ownerId: ownerId, channelId: channelId);
       scheduleSessionMirror(ownerId: ownerId, channelId: channelId);
     } catch (e) {
+      // 解析失败：不缓存路由，下次消息再试一次。
       scheduleSessionMirror(ownerId: channelId, channelId: channelId);
+    }
+  }
+
+  /// store 切换 / 重登录 / 快照导入后调用：落盘路由可能整体变了。
+  void invalidateMirrorRoute([String? channelId]) {
+    if (channelId == null) {
+      _routeCache.clear();
+    } else {
+      _routeCache.remove(channelId);
     }
   }
 
@@ -96,8 +137,30 @@ class RuntimeMirrorService {
     String? messagesChannelId,
   }) {
     final key = '${deviceId ?? '_'}::$ownerId::$channelId';
-    _pendingSession[key]?.cancel();
-    _pendingSession[key] = Timer(debounce, () {
+    final existing = _pendingSession[key];
+    existing?.timer?.cancel();
+    // 已落后超过 [maxStaleness]：不再继续攒，立即写一次。
+    if (existing != null &&
+        DateTime.now().millisecondsSinceEpoch - existing.firstScheduledAtMs >=
+            maxStaleness.inMilliseconds) {
+      _pendingSession.remove(key);
+      unawaited(_mirrorSession(
+        ownerId: ownerId,
+        channelId: channelId,
+        deviceId: deviceId,
+        messagesChannelId: messagesChannelId,
+      ));
+      return;
+    }
+    final pending = _PendingSessionMirror(
+      ownerId: ownerId,
+      channelId: channelId,
+      deviceId: deviceId,
+      messagesChannelId: messagesChannelId,
+      firstScheduledAtMs: existing?.firstScheduledAtMs ??
+          DateTime.now().millisecondsSinceEpoch,
+    );
+    pending.timer = Timer(debounce, () {
       _pendingSession.remove(key);
       unawaited(_mirrorSession(
         ownerId: ownerId,
@@ -106,6 +169,26 @@ class RuntimeMirrorService {
         messagesChannelId: messagesChannelId,
       ));
     });
+    _pendingSession[key] = pending;
+  }
+
+  /// 立即落盘所有待写的会话镜像。
+  ///
+  /// debounce 放宽到 2s 后靠它在回合终态、切后台、页面销毁时收敛，保证
+  /// 静止时 session.json 一定是最新的。
+  Future<void> flushPendingSessions() async {
+    if (_pendingSession.isEmpty) return;
+    final pending = _pendingSession.values.toList();
+    _pendingSession.clear();
+    for (final entry in pending) {
+      entry.timer?.cancel();
+      await _mirrorSession(
+        ownerId: entry.ownerId,
+        channelId: entry.channelId,
+        deviceId: entry.deviceId,
+        messagesChannelId: entry.messagesChannelId,
+      );
+    }
   }
 
   /// 记忆/soul 变更后调用。
@@ -126,7 +209,31 @@ class RuntimeMirrorService {
     final device = deviceId ?? await DeviceIdentity.deviceId();
     final persona =
         includePersonaMirror ?? !await _ownerIsGroupChannel(ownerId);
+    // 语义是「不存在才建」，建过之后每次镜像都探 4 遍 store.meta 纯属浪费。
+    // persona 进 key：群 owner 与 agent owner 建的 scaffold 内容不同。
+    final scaffoldKey = '$device::$ownerId::${persona ? 1 : 0}';
+    if (!_scaffolded.add(scaffoldKey)) return;
     final now = DateTime.now().toUtc().toIso8601String();
+    try {
+      await _ensureRuntimeScaffoldNow(
+        device: device,
+        ownerId: ownerId,
+        persona: persona,
+        now: now,
+      );
+    } catch (e) {
+      // 没建成：忘掉，下次镜像再来一遍。
+      _scaffolded.remove(scaffoldKey);
+      rethrow;
+    }
+  }
+
+  Future<void> _ensureRuntimeScaffoldNow({
+    required String device,
+    required String ownerId,
+    required bool persona,
+    required String now,
+  }) async {
     if (persona) {
       await _writeTextIfAbsent(
         device,
@@ -227,7 +334,9 @@ class RuntimeMirrorService {
         },
         'messages': messages,
       };
-      var body = const JsonEncoder.withIndent('  ').convert(payload);
+      // 不缩进：session.json 是跨设备只读上下文 / 分享用的镜像，不是手改
+      // 的文件；缩进会让体积和编解码耗时都翻 2–3 倍。
+      var body = jsonEncode(payload);
       final shouldRoll = messages.length >= sessionRollMessageThreshold ||
           body.length >= sessionRollBytesThreshold;
       if (shouldRoll && messages.length > sessionWindowSize) {
@@ -249,7 +358,7 @@ class RuntimeMirrorService {
           deviceId: device,
           relPath: RuntimePaths.sessionArchive(ownerId, channelId, ts),
         );
-        body = const JsonEncoder.withIndent('  ').convert(payload);
+        body = jsonEncode(payload);
       }
       await _writeText(
         device,
@@ -326,9 +435,13 @@ class RuntimeMirrorService {
   /// ensureRuntimeScaffold 不再无条件清空 manifest。
   final _registeredManifest = <String>{};
 
-  /// store 切换 / 重登录 / 快照导入后调用：manifest 可能被整体换掉，
-  /// 进程内的「已注册」记忆作废。
-  void invalidateManifestCache() => _registeredManifest.clear();
+  /// store 切换 / 重登录 / 快照导入后调用：manifest、scaffold 与落盘路由
+  /// 都可能被整体换掉，进程内的记忆一并作废。
+  void invalidateManifestCache() {
+    _registeredManifest.clear();
+    _scaffolded.clear();
+    _routeCache.clear();
+  }
 
   Future<void> _touchManifestChannel(
     String deviceId,
@@ -455,4 +568,38 @@ class RuntimeMirrorService {
       throw StateError('runtime mirror commit failed: $failed');
     }
   }
+}
+
+/// 待写的会话镜像（[RuntimeMirrorService.flushPendingSessions] 需要回放参数）。
+class _PendingSessionMirror {
+  _PendingSessionMirror({
+    required this.ownerId,
+    required this.channelId,
+    required this.firstScheduledAtMs,
+    this.deviceId,
+    this.messagesChannelId,
+  });
+
+  final String ownerId;
+  final String channelId;
+  /// 这一轮合并窗口的起点，用于 [RuntimeMirrorService.maxStaleness] 判定。
+  final int firstScheduledAtMs;
+  final String? deviceId;
+  final String? messagesChannelId;
+  Timer? timer;
+}
+
+/// SQLite channel → 镜像落盘路径的解析结果。
+class _MirrorRoute {
+  _MirrorRoute({
+    required this.ownerId,
+    required this.channelId,
+    this.deviceId,
+    this.messagesChannelId,
+  });
+
+  final String ownerId;
+  final String channelId;
+  final String? deviceId;
+  final String? messagesChannelId;
 }
