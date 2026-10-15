@@ -149,8 +149,10 @@ class HubEventClient {
         }
         attempts = 0;
         final base = page.reset ? 0 : cursor;
-        if (page.reset && !_notices.isClosed) {
-          _notices.add(HubNotice.reset(peerId));
+        if (page.reset) {
+          if (!_notices.isClosed) _notices.add(HubNotice.reset(peerId));
+          // 游标还是 0 说明是首次同步，本来就要从头拉，没有进度可作废。
+          if (cursor > 0) await _invalidateHistoryAfterReset();
         }
         var walking = base;
         for (final event in page.events) {
@@ -185,6 +187,17 @@ class HubEventClient {
       case HubCursorStep.apply:
         await _dispatch(peerId, event);
         await seqStore.write(key, event.seq);
+    }
+  }
+
+  /// 主机说它的事件日志已经裁掉一截：这一段事件永远补不回来了，本地记的
+  /// 历史同步进度也就不再可信，作废后交给下次打开会话时从头重建。
+  Future<void> _invalidateHistoryAfterReset() async {
+    try {
+      await PeerAgentClientService.instance.invalidateHistorySync();
+    } catch (error) {
+      _log.warning('history invalidation after reset failed: $error',
+          tag: 'HubEvent');
     }
   }
 

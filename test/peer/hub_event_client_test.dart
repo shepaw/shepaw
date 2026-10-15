@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shepaw/models/channel.dart';
 import 'package:shepaw/peer/services/hub_event_client.dart';
+import 'package:shepaw/peer/services/peer_agent_client_service.dart';
 import 'package:shepaw/peer/services/peer_connection_manager.dart';
 import 'package:shepaw/service_locator.dart';
 import 'package:shepaw/services/local_database_service.dart';
@@ -12,6 +14,7 @@ import '../storage/test_harness.dart';
 void main() {
   setUpAll(() async {
     await StorageTestHarness.init();
+    SharedPreferences.setMockInitialValues({});
     setupServiceLocator();
     await LocalDatabaseService().database;
   });
@@ -290,5 +293,138 @@ void main() {
     await db.deletePendingOps(['test-op-$suffix']);
     final opsAfter = await db.listPendingOps(kind: 'mark_read');
     expect(opsAfter.any((r) => r['op_id'] == 'test-op-$suffix'), isFalse);
+  });
+
+  test('ping 上的 head_seq 比本地游标新就补洞', () async {
+    final incoming = StreamController<PeerControlEvent>.broadcast();
+    final sent = <int>[];
+    final store = MemoryHubSeqStore()..values['fp'] = 3;
+    final client = HubEventClient(
+      events: incoming.stream,
+      send: (peerId, frame) async {
+        sent.add(frame['since_seq'] as int);
+        incoming.add(PeerControlEvent(
+          peerId: peerId,
+          data: {
+            'type': 'events_sync_resp',
+            'request_id': frame['request_id'],
+            'events': [
+              {'seq': 4, 'kind': 'agents.changed', 'data': <String, dynamic>{}},
+            ],
+            'head_seq': 4,
+            'reset': false,
+          },
+        ));
+        return true;
+      },
+      seqStore: store,
+      fingerprintOf: (_) async => 'fp',
+    );
+    client.start();
+    addTearDown(client.dispose);
+
+    // 主机说到了 4，本地停在 3。被丢掉的若是最后一帧，后面再没有帧来，
+    // seq 连续性自检永远发现不了，只有 ping 上这个数字能。
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: {'type': 'ping', 'timestamp': 1, 'head_seq': 4},
+    ));
+    for (var i = 0; i < 20; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+
+    expect(sent, [3]);
+    expect(store.values['fp'], 4);
+    await incoming.close();
+  });
+
+  test('ping 上的 head_seq 不比本地新就不发请求', () async {
+    final incoming = StreamController<PeerControlEvent>.broadcast();
+    final sent = <int>[];
+    final store = MemoryHubSeqStore()..values['fp'] = 3;
+    final client = HubEventClient(
+      events: incoming.stream,
+      send: (peerId, frame) async {
+        sent.add(frame['since_seq'] as int);
+        return true;
+      },
+      seqStore: store,
+      fingerprintOf: (_) async => 'fp',
+    );
+    client.start();
+    addTearDown(client.dispose);
+
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: {'type': 'ping', 'timestamp': 1, 'head_seq': 3},
+    ));
+    for (var i = 0; i < 10; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+
+    expect(sent, isEmpty);
+    await incoming.close();
+  });
+
+  test('reset 之后作废历史同步进度', () async {
+    final db = LocalDatabaseService();
+    final suffix = DateTime.now().microsecondsSinceEpoch;
+    final channelId = 'dm_reset_$suffix';
+    final agentId = 'agent_reset_$suffix';
+
+    await db.createChannel(
+      Channel.withMemberIds(
+        id: channelId,
+        name: 'Reset',
+        type: 'dm',
+        memberIds: ['user', agentId],
+      ),
+      'user',
+    );
+    await db.upsertPeerHistoryCursor(
+      PeerHistoryCursorEntry(
+        channelId: channelId,
+        remoteSessionId: 'remote_$suffix',
+        cursor: 'cursor-1',
+        total: 5,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+    await PeerAgentClientService.instance
+        .setLastHistorySyncAt(agentId, DateTime.now().toUtc());
+
+    final incoming = StreamController<PeerControlEvent>.broadcast();
+    final store = MemoryHubSeqStore()..values['fp'] = 10;
+    final client = HubEventClient(
+      events: incoming.stream,
+      send: (peerId, frame) async {
+        incoming.add(PeerControlEvent(
+          peerId: peerId,
+          data: {
+            'type': 'events_sync_resp',
+            'request_id': frame['request_id'],
+            'events': [
+              {'seq': 20, 'kind': 'agents.changed', 'data': <String, dynamic>{}},
+            ],
+            'head_seq': 20,
+            'reset': true,
+          },
+        ));
+        return true;
+      },
+      seqStore: store,
+      fingerprintOf: (_) async => 'fp',
+    );
+
+    await client.catchUp('peer-1');
+
+    // 事件日志被裁掉那段补不回来，本地记的进度不再可信，交给下次打开会话
+    // 时从头重建。
+    expect(await db.getPeerHistoryCursor(channelId), isNull);
+    expect(
+      await PeerAgentClientService.instance.getLastHistorySyncAt(agentId),
+      isNull,
+    );
+    await incoming.close();
   });
 }

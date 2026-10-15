@@ -69,6 +69,12 @@ extension PeerHistoryCursorDao on LocalDatabaseService {
     );
   }
 
+  /// 主机事件日志被裁过一截时用：所有会话的游标一起作废，下次都从头重建。
+  Future<void> clearAllPeerHistoryCursors() async {
+    final db = await database;
+    await db.delete('peer_history_cursor');
+  }
+
   /// 远端 session id → 上次同步完成时的 `total`。
   Future<Map<String, int>> peerHistoryCursorTotalsByRemoteSession() async {
     final db = await database;

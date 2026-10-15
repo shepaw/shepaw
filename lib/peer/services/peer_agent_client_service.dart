@@ -74,14 +74,21 @@ const String kSyncedPeerSessionPrefix = 'psess_';
 /// updates are not missed across consecutive syncs.
 const Duration kPeerHistorySyncOverlap = Duration(minutes: 2);
 
+/// Prefix of [peerHistoryLastSyncPrefsKey]. 按前缀作废时用它扫 key，
+/// 不必先枚举本机有哪些 Agent。
+const String peerHistoryLastSyncPrefsPrefix = 'peer_history_last_sync_';
+
+/// Prefix of [peerHistoryUnstampedPrefsKey].
+const String peerHistoryUnstampedPrefsPrefix = 'peer_history_unstamped_';
+
 /// SharedPreferences key for the agent-level history sync watermark.
 String peerHistoryLastSyncPrefsKey(String localAgentId) =>
-    'peer_history_last_sync_$localAgentId';
+    '$peerHistoryLastSyncPrefsPrefix$localAgentId';
 
 /// SharedPreferences key for remote session ids already mirrored with no
 /// `updatedAt`. See [selectDirtySessions].
 String peerHistoryUnstampedPrefsKey(String localAgentId) =>
-    'peer_history_unstamped_$localAgentId';
+    '$peerHistoryUnstampedPrefsPrefix$localAgentId';
 
 /// 由远端 sessionId 生成本地已同步会话的 channel id。
 String syncedPeerChannelId(String remoteSessionId) =>
@@ -5109,6 +5116,24 @@ class PeerAgentClientService {
       peerHistoryLastSyncPrefsKey(localAgentId),
       at.toUtc().toIso8601String(),
     );
+  }
+
+  /// 主机事件日志被裁掉一截之后调用。
+  ///
+  /// 事件补不回来的那些消息还在主机的会话记录里，但本地记着「已经同步到
+  /// 某时刻」，增量同步不会再去看它们。所以把水位和会话游标一并作废，下次
+  /// 打开会话时从头重建，把缺的那段补回来。
+  Future<void> invalidateHistorySync() async {
+    await _db.clearAllPeerHistoryCursors();
+    final prefs = await SharedPreferences.getInstance();
+    final stale = prefs.getKeys().where(
+          (key) =>
+              key.startsWith(peerHistoryLastSyncPrefsPrefix) ||
+              key.startsWith(peerHistoryUnstampedPrefsPrefix),
+        );
+    for (final key in stale.toList()) {
+      await prefs.remove(key);
+    }
   }
 
   /// Remote session ids already mirrored while they had no `updatedAt`.
