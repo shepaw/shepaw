@@ -300,11 +300,16 @@ abstract class _ChatControllerBase extends ChangeNotifier
       final agent = await localDatabaseService.getRemoteAgentById(agentId!);
       if (agent != null) agents.add(agent);
     }
-    final map = <String, List<String>>{};
-    for (final agent in agents) {
-      map[agent.id] = await collectAgentWorkspaceUris(agent);
-    }
-    workspaceUrisByAgentId = map;
+    // 各 agent 之间互不依赖，串行会把每个 agent 的往返时间累加（5 人群
+    // 就是 5 倍的 store 读）。
+    final ids = <String>[for (final agent in agents) agent.id];
+    final collected = await Future.wait(
+      agents.map(collectAgentWorkspaceUris),
+      eagerError: false,
+    );
+    workspaceUrisByAgentId = <String, List<String>>{
+      for (var i = 0; i < ids.length; i++) ids[i]: collected[i],
+    };
   }
 
   Set<String> respondingAgentNames = {};
