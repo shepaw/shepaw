@@ -81,6 +81,8 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   String _untitledLabel = '';
   /// 一次附件导入里给临时文件编号，避免同名互相覆盖。
   int _tempSeq = 0;
+  /// 本地编辑版本号，防止旧的 `_load` / `_reloadSilent` 回包覆盖刚勾选或改过的状态。
+  int _localEditSeq = 0;
   Timer? _textDebounce;
   StreamSubscription<void>? _sub;
 
@@ -157,15 +159,16 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
       } else if (_dirty) {
         final title = _title.text.trim();
         if (title.isNotEmpty) {
+          final latest = _service.peekById(slip.id) ?? slip;
           unawaited(_service
-              .update(slip.copyWith(
+              .update(latest.copyWith(
                 title: title,
                 goal: _goal.text,
                 constraints: _constraints.text,
                 doneWhen: _doneWhen.text,
                 body: _body.text,
               ))
-              .catchError((_) => slip));
+              .catchError((_) => latest));
         }
       }
     }
@@ -188,6 +191,7 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   }
 
   Future<void> _load() async {
+    final editSeq = _localEditSeq;
     JadeSlip? slip;
     try {
       slip = await _service.getById(widget.slipId);
@@ -196,12 +200,16 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
       _showError(e);
       return;
     }
-    if (!mounted) return;
+    if (!mounted || editSeq != _localEditSeq) return;
     if (slip == null) {
       if (!widget.embedded) Navigator.pop(context);
       return;
     }
     final loaded = slip;
+    final current = _slip;
+    if (current != null && current.updatedAt > loaded.updatedAt) {
+      return;
+    }
     setState(() {
       if (!_dirty) {
         _applySlipFields(loaded);
@@ -285,15 +293,13 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   }
 
   Future<void> _reloadSilent() async {
-    final slip = await _service.getById(widget.slipId);
-    if (!mounted || slip == null || _dirty) return;
-    if (_title.text != slip.title) _title.text = slip.title;
-    if (_goal.text != slip.goal) _goal.text = slip.goal;
-    if (_constraints.text != slip.constraints) {
-      _constraints.text = slip.constraints;
-    }
-    if (_doneWhen.text != slip.doneWhen) _doneWhen.text = slip.doneWhen;
-    if (_body.text != slip.body) _body.text = slip.body;
+    final editSeq = _localEditSeq;
+    final slip = _service.peekById(widget.slipId) ??
+        await _service.getById(widget.slipId);
+    if (!mounted || slip == null || _dirty || editSeq != _localEditSeq) return;
+    final current = _slip;
+    if (current != null && current.updatedAt > slip.updatedAt) return;
+    _applySlipFields(slip);
     setState(() => _slip = slip);
   }
 
@@ -331,6 +337,7 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   }
 
   Future<bool> _persist(JadeSlip next) async {
+    _localEditSeq++;
     setState(() => _saving = true);
     try {
       final saved = await _service.update(next);
@@ -373,7 +380,9 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
         _body.text == slip.body) {
       return true;
     }
-    return _persist(slip.copyWith(
+    // 始终基于最新 `_slip`（可能刚勾选了清单项）合并输入框文本，防止旧快照冲掉勾选结果。
+    final base = _service.peekById(slip.id) ?? _slip ?? slip;
+    return _persist(base.copyWith(
       title: title,
       goal: _goal.text,
       constraints: _constraints.text,
@@ -385,6 +394,7 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   Future<void> _addItem() async {
     final text = _item.text.trim();
     if (text.isEmpty || _slip == null) return;
+    _localEditSeq++;
     _item.clear();
     await _flush();
     final updated = await _guardValue(
@@ -415,6 +425,7 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   Future<void> _addComment() async {
     final text = _comment.text.trim();
     if (text.isEmpty || _slip == null) return;
+    _localEditSeq++;
     final l10n = AppLocalizations.of(context);
     _comment.clear();
     await _flush();
@@ -435,6 +446,7 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   Future<void> _removeComment(String commentId) async {
     final slip = _slip;
     if (slip == null) return;
+    _localEditSeq++;
     await _flush();
     final updated = await _guardValue(
       () => _service.removeComment(id: widget.slipId, commentId: commentId),
@@ -446,55 +458,67 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   }
 
   Future<void> _renameItem(String itemId, String text) async {
-    final slip = _slip;
-    if (slip == null) return;
+    if (_slip == null) return;
+    _localEditSeq++;
     await _flush();
+    final latest = _slip;
+    if (latest == null) return;
     setState(() {
-      _slip = slip.copyWith(
+      _slip = latest.copyWith(
         items: [
-          for (final item in slip.items)
+          for (final item in latest.items)
             if (item.id == itemId) item.copyWith(text: text) else item,
         ],
       );
     });
-    final updated = await _service.updateItemText(
-        id: widget.slipId, itemId: itemId, text: text);
-    if (mounted) setState(() => _slip = updated);
+    final updated = await _guardValue(
+      () => _service.updateItemText(
+          id: widget.slipId, itemId: itemId, text: text),
+    );
+    if (updated != null && mounted) setState(() => _slip = updated);
     widget.onChanged?.call();
   }
 
   Future<void> _removeItem(String itemId) async {
-    final slip = _slip;
-    if (slip == null) return;
+    if (_slip == null) return;
+    _localEditSeq++;
     await _flush();
+    final latest = _slip;
+    if (latest == null) return;
     setState(() {
-      _slip = slip.copyWith(
+      _slip = latest.copyWith(
         items: [
-          for (final item in slip.items)
+          for (final item in latest.items)
             if (item.id != itemId) item
         ],
       );
     });
-    final updated = await _service.removeItem(id: widget.slipId, itemId: itemId);
-    if (mounted) setState(() => _slip = updated);
+    final updated = await _guardValue(
+      () => _service.removeItem(id: widget.slipId, itemId: itemId),
+    );
+    if (updated != null && mounted) setState(() => _slip = updated);
     widget.onChanged?.call();
   }
 
   Future<void> _removeAttachment(String attachmentId) async {
-    final slip = _slip;
-    if (slip == null) return;
+    if (_slip == null) return;
+    _localEditSeq++;
     await _flush();
+    final latest = _slip;
+    if (latest == null) return;
     setState(() {
-      _slip = slip.copyWith(
+      _slip = latest.copyWith(
         attachments: [
-          for (final a in slip.attachments)
+          for (final a in latest.attachments)
             if (a.id != attachmentId) a,
         ],
       );
     });
-    final updated = await _service.removeAttachment(
-        id: widget.slipId, attachmentId: attachmentId);
-    if (mounted) setState(() => _slip = updated);
+    final updated = await _guardValue(
+      () => _service.removeAttachment(
+          id: widget.slipId, attachmentId: attachmentId),
+    );
+    if (updated != null && mounted) setState(() => _slip = updated);
     widget.onChanged?.call();
   }
 
@@ -1048,31 +1072,31 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
       _dispatch(slip, focusItem: item);
 
   Future<void> _toggleItem(JadeSlip slip, JadeSlipItem item, bool done) async {
-    final prev = _slip;
-    if (prev != null) {
-      final now = DateTime.now().millisecondsSinceEpoch;
-      setState(() {
-        _slip = prev
-            .copyWith(
-              items: [
-                for (final e in prev.items)
-                  if (e.id == item.id)
-                    e.copyWith(
-                      state: done
-                          ? JadeSlipItemState.submitted
-                          : JadeSlipItemState.open,
-                      blockedReason: '',
-                      actorId: LocalUserIdentity.id,
-                      actorName: LocalUserIdentity.displayName,
-                      updatedAt: now,
-                    )
-                  else
-                    e,
-              ],
-            )
-            .withDerivedStatus();
-      });
-    }
+    _localEditSeq++;
+    await _flush();
+    final prev = _slip ?? slip;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    setState(() {
+      _slip = prev
+          .copyWith(
+            items: [
+              for (final e in prev.items)
+                if (e.id == item.id)
+                  e.copyWith(
+                    state: done
+                        ? JadeSlipItemState.submitted
+                        : JadeSlipItemState.open,
+                    blockedReason: '',
+                    actorId: LocalUserIdentity.id,
+                    actorName: LocalUserIdentity.displayName,
+                    updatedAt: now,
+                  )
+                else
+                  e,
+            ],
+          )
+          .withDerivedStatus();
+    });
     final updated = await _guardValue(
       () => _service.setItemDone(
         id: slip.id,
@@ -1093,29 +1117,29 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
   }
 
   Future<void> _acceptItem(JadeSlip slip, JadeSlipItem item) async {
-    final prev = _slip;
-    if (prev != null) {
-      final now = DateTime.now().millisecondsSinceEpoch;
-      setState(() {
-        _slip = prev
-            .copyWith(
-              items: [
-                for (final e in prev.items)
-                  if (e.id == item.id)
-                    e.copyWith(
-                      state: JadeSlipItemState.accepted,
-                      actorId: LocalUserIdentity.id,
-                      actorName: LocalUserIdentity.displayName,
-                      blockedReason: '',
-                      updatedAt: now,
-                    )
-                  else
-                    e,
-              ],
-            )
-            .withDerivedStatus();
-      });
-    }
+    _localEditSeq++;
+    await _flush();
+    final prev = _slip ?? slip;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    setState(() {
+      _slip = prev
+          .copyWith(
+            items: [
+              for (final e in prev.items)
+                if (e.id == item.id)
+                  e.copyWith(
+                    state: JadeSlipItemState.accepted,
+                    actorId: LocalUserIdentity.id,
+                    actorName: LocalUserIdentity.displayName,
+                    blockedReason: '',
+                    updatedAt: now,
+                  )
+                else
+                  e,
+            ],
+          )
+          .withDerivedStatus();
+    });
     final updated = await _guardValue(
       () => _service.acceptItem(
         id: slip.id,

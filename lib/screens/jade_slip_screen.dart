@@ -102,7 +102,7 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
     super.initState();
     unawaited(_load());
     _sub = _service.changes.listen((_) {
-      if (mounted) unawaited(_load());
+      if (mounted) _syncFromSnapshotOrLoad();
     });
   }
 
@@ -112,6 +112,53 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
     _search.dispose();
     _searchFocus.dispose();
     super.dispose();
+  }
+
+  /// 本进程内写操作完成后，`JadeSlipService` 内存快照已是最新，
+  /// 直接同步刷新左侧列表（进度、标题、状态零延迟更新），不再重跑整表网络 IO。
+  void _syncFromSnapshotOrLoad({bool strict = false}) {
+    final includeArchived = _filter == JadeSlipListFilter.all;
+    final peeked = _service.peekList(
+      query: _search.text,
+      includeArchived: includeArchived,
+    );
+    if (peeked == null) {
+      unawaited(_load(strict: strict));
+      return;
+    }
+    _loadSerial++; // 作废此前仍在途的旧 _load 回包，防止把刚改完的状态冲回旧值
+    var items = peeked;
+    if (_filter != JadeSlipListFilter.all) {
+      items = [
+        for (final slip in items)
+          if (jadeSlipMatchesListFilter(slip.status, _filter)) slip,
+      ];
+    }
+    final selectedId = _selectedId;
+    var nextSelected = selectedId;
+    if (selectedId != null && items.every((s) => s.id != selectedId)) {
+      final kept = strict ? null : _service.peekById(selectedId);
+      if (kept != null &&
+          kept.status != JadeSlipStatus.archived &&
+          jadeSlipMatchesQuery(kept, _search.text)) {
+        items = insertRetainedJadeSlip(
+          items: items,
+          retained: kept,
+          anchorIndex: _anchorIndex,
+        );
+      } else {
+        nextSelected = null;
+      }
+    }
+    if (nextSelected != null) {
+      final index = items.indexWhere((s) => s.id == nextSelected);
+      if (index >= 0) _anchorIndex = index;
+    }
+    setState(() {
+      _items = items;
+      _selectedId = nextSelected;
+      _hostOffline = false;
+    });
   }
 
   Future<void> _load({bool strict = false}) async {
@@ -349,7 +396,7 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
                         Expanded(
                           child: selected == null
                               ? _buildEmptyEditorHint(l10n)
-                              : JadeSlipEditorScreen(
+                                : JadeSlipEditorScreen(
                                   key: ValueKey(selected.id),
                                   slipId: selected.id,
                                   initialSlip: selected,
@@ -357,7 +404,7 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
                                   focusChecklist:
                                       selected.id == _focusChecklistId,
                                   focusTitle: selected.id == _focusTitleId,
-                                  onChanged: () => unawaited(_load()),
+                                  onChanged: _syncFromSnapshotOrLoad,
                                   onOpenSlip: _openRelated,
                                 ),
                         ),
@@ -465,7 +512,7 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
                   color: scheme.onSurfaceVariant,
                 ),
               ),
-              onChanged: (_) => unawaited(_load()),
+              onChanged: (_) => _syncFromSnapshotOrLoad(),
             ),
           ),
         if (_filterOpen)
@@ -481,6 +528,7 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
                     selected: _filter == f,
                     onTap: () {
                       setState(() => _filter = f);
+                      _syncFromSnapshotOrLoad(strict: true);
                       unawaited(_load(strict: true));
                     },
                   ),

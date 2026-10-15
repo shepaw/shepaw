@@ -239,4 +239,50 @@ void main() {
       // 宽屏分栏靠 LayoutUtils.isDesktopLayout（真实 Platform.isMacOS），
       // CI 跑在 Linux，这里只在 macOS 本地生效。
       skip: !Platform.isMacOS);
+
+  testWidgets('改完备注未满 500ms 防抖就勾选清单项，勾选状态不会被防抖覆盖重置', (tester) async {
+    await tester.runAsync(() async {
+      final slip = await JadeSlipService.instance.create(
+        title: '防抖竞态',
+        items: const [
+          JadeSlipItem(id: 'i1', text: '事项一'),
+          JadeSlipItem(id: 'i2', text: '事项二'),
+        ],
+      );
+      await tester.pumpWidget(
+        app(Scaffold(
+          body: JadeSlipEditorScreen(
+            slipId: slip.id,
+            initialSlip: slip,
+            embedded: true,
+          ),
+        )),
+      );
+      await settle(tester, 50);
+
+      // 先输入备注（触发 500ms 防抖 _dirty = true），不等 500ms 立即连续勾选两项。
+      final notesField = find.byWidgetPredicate(
+        (w) => w is TextField && w.minLines == 3,
+      );
+      await tester.enterText(notesField, '刚改的备注');
+      await tester.pump();
+
+      await tester.tap(find.byType(Checkbox).at(0));
+      await tester.pump();
+      await tester.tap(find.byType(Checkbox).at(1));
+      await tester.pump();
+
+      // 等超过 500ms 防抖周期，确认勾选没有被重置。
+      await settle(tester, 600);
+      await settle(tester);
+
+      final persisted = await JadeSlipService.instance.getById(slip.id);
+      expect(persisted?.body, '刚改的备注');
+      expect(persisted?.doneCount, 2);
+      expect(
+        persisted?.items.map((e) => e.done).toList(),
+        [true, true],
+      );
+    });
+  });
 }
