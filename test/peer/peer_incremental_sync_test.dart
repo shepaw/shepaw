@@ -417,6 +417,49 @@ void main() {
         isTrue,
       );
     });
+
+    test('host authority: remote unread overrides a local read', () {
+      final fromHost = PeerHistoryMessage.fromJson({
+        'role': 'agent',
+        'content': 'answer',
+      })!;
+      expect(fromHost.isRead, isNot(true));
+      expect(
+        peerHistoryRowNeedsWrite(
+          message: fromHost,
+          existingRow: {
+            'sender_type': 'agent',
+            'content': 'answer',
+            'created_at': '2026-07-01T10:00:00.000Z',
+            'is_read': 1,
+          },
+          createdAt: DateTime.utc(2026, 7, 1, 10),
+        ),
+        isTrue,
+      );
+    });
+
+    test('a still-pending mark_read is not an unread verdict', () {
+      // 上行迟到时主机那边当然还没读到。这时候跟过去会让红点莫名复活。
+      final fromHost = PeerHistoryMessage.fromJson({
+        'role': 'agent',
+        'content': 'answer',
+      })!;
+      expect(
+        peerHistoryRowNeedsWrite(
+          message: fromHost,
+          existingRow: {
+            'sender_type': 'agent',
+            'content': 'answer',
+            'created_at': '2026-07-01T10:00:00.000Z',
+            'is_read': 1,
+          },
+          createdAt: DateTime.utc(2026, 7, 1, 10),
+          keepLocalRead: true,
+        ),
+        isFalse,
+      );
+    });
   });
 
   group('peerHistoryMessageMetadata', () {

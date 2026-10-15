@@ -507,6 +507,8 @@ bool peerHistoryRowNeedsWrite({
   required PeerHistoryMessage message,
   required Map<String, dynamic>? existingRow,
   required DateTime createdAt,
+  /// 本地还有 mark_read 没补发出去时为 true，见下面已读那条的说明。
+  bool keepLocalRead = false,
 }) {
   if (existingRow == null) return true;
   final role =
@@ -519,6 +521,14 @@ bool peerHistoryRowNeedsWrite({
     return true;
   }
   if (message.isRead == true && (existingRow['is_read'] as int? ?? 0) == 0) {
+    return true;
+  }
+  // 主机权威：主机说没读，本地已读也要跟过去（已读口径已定为主机权威）。
+  // 例外是本地还有 mark_read 没补发出去 —— 那时远端未读只是上行迟到，不是
+  // 主机否定了已读，跟过去会让红点莫名复活，补发成功后再说。
+  if (message.isRead != true &&
+      (existingRow['is_read'] as int? ?? 0) == 1 &&
+      !keepLocalRead) {
     return true;
   }
   final localAt = DateTime.tryParse(existingRow['created_at'] as String? ?? '');
@@ -537,6 +547,7 @@ bool peerHistoryNeedsRewrite({
   required List<PeerHistoryMessage> history,
   required List<Map<String, dynamic>> existingAsc,
   required List<DateTime> createdAts,
+  bool keepLocalRead = false,
 }) {
   if (existingAsc.length != history.length ||
       createdAts.length != history.length) {
@@ -547,6 +558,7 @@ bool peerHistoryNeedsRewrite({
       message: history[i],
       existingRow: existingAsc[i],
       createdAt: createdAts[i],
+      keepLocalRead: keepLocalRead,
     )) {
       return true;
     }
@@ -682,6 +694,7 @@ List<int> peerHistorySliceWriteIndexes({
   required String channelId,
   required Map<String, Map<String, dynamic>> existingById,
   required List<DateTime> createdAts,
+  bool keepLocalRead = false,
 }) {
   final indexes = <int>[];
   for (var i = 0; i < history.length && i < createdAts.length; i++) {
@@ -690,6 +703,7 @@ List<int> peerHistorySliceWriteIndexes({
       message: history[i],
       existingRow: existingById[id],
       createdAt: createdAts[i],
+      keepLocalRead: keepLocalRead,
     )) {
       indexes.add(i);
     }
@@ -5489,6 +5503,26 @@ class PeerAgentClientService {
     );
   }
 
+  /// 这个会话有没有还没补发出去的 mark_read。
+  ///
+  /// 有的话远端未读只是上行迟到，不是主机否定了已读，重同步时不能拿它撤销
+  /// 本地已读 —— 否则红点会莫名复活，补发成功后再标回去。
+  Future<bool> _hasPendingReadFor(String channelId) async {
+    final ops = await _db.listPendingOps(kind: 'mark_read');
+    if (ops.isEmpty) return false;
+    final bare = remoteSessionIdFromChannelId(channelId) ?? channelId;
+    final wanted = <String>{channelId, bare, syncedPeerChannelId(bare)};
+    for (final op in ops) {
+      final target = (op['target_id'] as String? ?? '').trim();
+      if (target.isEmpty) continue;
+      if (wanted.contains(target)) return true;
+      if (wanted.contains(remoteSessionIdFromChannelId(target) ?? target)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /// Pull a synced session's transcript from the remote and mirror it locally.
   ///
   /// A stored cursor pulls only the previous tail plus new messages. No cursor
@@ -5512,6 +5546,7 @@ class PeerAgentClientService {
   }) async {
     final remoteSessionId =
         remoteSessionIdFromChannelId(channelId) ?? channelId;
+    final keepLocalRead = await _hasPendingReadFor(channelId);
     final stored = await _db.getPeerHistoryCursor(channelId);
     final hasMirrored = await _db.channelHasPeerhistMessages(channelId);
     var mode = peerHistoryFetchMode(storedCursor: stored?.cursor);
@@ -5554,6 +5589,7 @@ class PeerAgentClientService {
                 agentName: agentName,
                 userId: userId,
                 userName: userName,
+                keepLocalRead: keepLocalRead,
                 sessionUpdatedAt: sessionUpdatedAt,
                 pageReadOnly: page.readOnly || page.archived,
                 pageReadCount: page.readCount,
@@ -5600,6 +5636,7 @@ class PeerAgentClientService {
               agentName: agentName,
               userId: userId,
               userName: userName,
+              keepLocalRead: keepLocalRead,
               sessionUpdatedAt: sessionUpdatedAt,
               floorIds: needsCleanup ? seenIds : null,
               pageReadOnly: page.readOnly || page.archived,
@@ -5686,6 +5723,7 @@ class PeerAgentClientService {
     required String agentName,
     required String userId,
     required String userName,
+    required bool keepLocalRead,
     DateTime? sessionUpdatedAt,
     Set<String>? floorIds,
     bool pageReadOnly = false,
@@ -5868,6 +5906,7 @@ class PeerAgentClientService {
     required String agentName,
     required String userId,
     required String userName,
+    required bool keepLocalRead,
     DateTime? sessionUpdatedAt,
     bool pageReadOnly = false,
     int? pageReadCount,
