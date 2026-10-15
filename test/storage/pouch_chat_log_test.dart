@@ -27,6 +27,34 @@ void main() {
     );
   }
 
+  test('markChannelRead 收敛后不再重读整份文件', () async {
+    final log = PouchChatLog(root);
+    await log.upsert(record('m1', '你好'));
+    await log.upsert(record('m2', '在吗'));
+    await log.markChannelRead('ch-1');
+    expect(
+      await log.readChannel('ch-1'),
+      everyElement((PouchChatRecord r) => r.isRead != 0),
+    );
+
+    // 第二次调用：已收敛，文件不应被重写。
+    final file = log.fileFor('ch-1');
+    final before = await file.stat();
+    await log.markChannelRead('ch-1');
+    final after = await file.stat();
+    expect(after.modified, before.modified);
+    expect(after.size, before.size);
+
+    // 来了新未读：标记作废，重写生效。
+    await log.upsert(
+      record('m3', '新消息'),
+    );
+    await log.markChannelRead('ch-1');
+    final finalRead = await log.readChannel('ch-1');
+    expect(finalRead, hasLength(3));
+    expect(finalRead, everyElement((PouchChatRecord r) => r.isRead != 0));
+  });
+
   test('连续更新同一条消息只留最后一版', () async {
     final log = PouchChatLog(root);
     await log.upsert(record('m1', '你好'));

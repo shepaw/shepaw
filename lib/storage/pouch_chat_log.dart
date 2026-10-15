@@ -110,6 +110,12 @@ class PouchChatLog {
 
   final _lastId = <String, String>{};
   final _tails = <String, Future<void>>{};
+  /// 已经整频道标过已读、且之后没有再写入的频道。
+  ///
+  /// [markChannelRead] 要先 `readChannel` 把整份 jsonl 读回来才能判断「是
+  /// 不是都读过」，而它每回合被调好几次。记下已经收敛过的频道，后续调用
+  /// 直接返回。任何 upsert / tombstone 都会作废。
+  final _readThrough = <String>{};
 
   /// 同一频道的追加串行，避免流式更新和删除交错写坏最后一行。
   Future<void> _enqueue(String channelId, Future<void> Function() action) {
@@ -133,6 +139,9 @@ class PouchChatLog {
   /// 追加一条。若文件最后一条就是同一个 id（流式更新），改写这一行而不是再追加。
   Future<void> upsert(PouchChatRecord record) {
     if (record.id.isEmpty || record.channelId.isEmpty) return Future.value();
+    // 同步作废：写入只是排队，晚到的一条未读不能被已收敛的标记跳过。
+    // 已读的那条不影响「整频道已读」，保留标记。
+    if (record.isRead == 0) _readThrough.remove(record.channelId);
     return _enqueue(record.channelId, () => _upsertNow(record));
   }
 
@@ -172,6 +181,7 @@ class PouchChatLog {
   }
 
   Future<void> deleteChannel(String channelId) {
+    _readThrough.remove(channelId);
     return _enqueue(channelId, () async {
       final file = fileFor(channelId);
       _lastId.remove(channelId);
@@ -182,9 +192,15 @@ class PouchChatLog {
   /// 将频道内所有记录标记为已读。
   Future<void> markChannelRead(String channelId) {
     if (channelId.isEmpty) return Future.value();
+    // 已经收敛过、之后也没有新写入：不再把整份 jsonl 读回来解码一遍。
+    if (_readThrough.contains(channelId)) return Future.value();
     return _enqueue(channelId, () async {
       final records = await readChannel(channelId);
-      if (records.isEmpty || records.every((r) => r.isRead != 0)) return;
+      if (records.isEmpty) return;
+      if (records.every((r) => r.isRead != 0)) {
+        _readThrough.add(channelId);
+        return;
+      }
       final file = fileFor(channelId);
       await file.parent.create(recursive: true);
       final buf = StringBuffer();
@@ -213,6 +229,7 @@ class PouchChatLog {
       if (last != null) {
         _lastId[channelId] = last;
       }
+      _readThrough.add(channelId);
     });
   }
 
