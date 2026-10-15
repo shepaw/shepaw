@@ -88,7 +88,9 @@ class RestoreService {
     await _closeAllDatabases();
 
     // 3. 全量替换主库（保留 .pre-restore 兜底）
-    final dbFile = await PouchSqlite.file(PouchSqlite.mainDb);
+    // 必须走 openPath：主库实际在 `<...>/app/sqlite/shepaw.db`，file() 会
+    // 拼出 `<...>/app/shepaw.db`，写错文件等于什么都没恢复。
+    final dbFile = File(await PouchSqlite.openPath(PouchSqlite.mainDb));
     final backup = File('${dbFile.path}.pre-restore');
     if (await backup.exists()) await backup.delete();
     if (await dbFile.exists()) {
@@ -115,7 +117,7 @@ class RestoreService {
 
   /// 恢复后清理：删除 .pre-restore 兜底文件（用户确认恢复成功后）。
   Future<void> discardPreRestoreBackup() async {
-    final dbFile = await PouchSqlite.file(PouchSqlite.mainDb);
+    final dbFile = File(await PouchSqlite.openPath(PouchSqlite.mainDb));
     final backup = File('${dbFile.path}.pre-restore');
     if (await backup.exists()) await backup.delete();
   }
