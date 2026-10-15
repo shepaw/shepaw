@@ -690,6 +690,9 @@ class ConversationListController extends ChangeNotifier {
 
   void _runHealthCheckInBackground() {
     if (_healthCheckRunning || _disposed) return;
+    // 后台跑没人看：这一轮要做 N 次 agent 读 + N 次状态写（心跳要续，不能
+    // 省）加一次 getAgents 网络往返，纯属白烧。回前台时 refresh 会补上。
+    if (!AppLifecycleService().isInForeground) return;
     _healthCheckRunning = true;
     () async {
       try {
