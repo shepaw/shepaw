@@ -799,6 +799,10 @@ extension ChannelDao on LocalDatabaseService {
       where: 'channel_id = ? AND is_read = 0',
       whereArgs: [channelId],
     );
+    await upsertChannelReadWatermark(
+      channelId,
+      readAtMs: DateTime.now().millisecondsSinceEpoch,
+    );
     final log = PouchChatLog.bound;
     if (log != null) {
       unawaited(log.markChannelRead(channelId).catchError((Object _) {}));
@@ -819,16 +823,25 @@ extension ChannelDao on LocalDatabaseService {
   Future<void> markChannelMessagesAsReadBefore(
     String channelId,
     DateTime readAt, {
+    int? readCount,
+    int? messageCount,
     bool syncToHost = false,
   }) async {
     final db = await database;
     final cutoffMs = readAt.millisecondsSinceEpoch;
     if (cutoffMs <= 0) return;
+    await upsertChannelReadWatermark(
+      channelId,
+      readAtMs: cutoffMs,
+      readCount: readCount,
+      messageCount: messageCount,
+    );
+    final cutoffIso = messageCreatedAt(readAt);
     final updated = await db.update(
       'messages',
       {'is_read': 1},
       where: 'channel_id = ? AND is_read = 0 AND created_at <= ?',
-      whereArgs: [channelId, cutoffMs],
+      whereArgs: [channelId, cutoffIso],
     );
     if (updated > 0) {
       notifyChannelActivity(channelId);
@@ -868,6 +881,11 @@ extension ChannelDao on LocalDatabaseService {
     }
     remoteAgentId ??= trimmed;
 
+    final watermarkMs = (beforeOrAt ?? DateTime.now()).millisecondsSinceEpoch;
+    for (final aid in <String>{...localAgentIds, remoteAgentId}) {
+      await upsertChannelReadWatermark('__agent__$aid', readAtMs: watermarkMs);
+    }
+
     final placeholders = List.filled(localAgentIds.length, '?').join(',');
     final channelRows = await db.rawQuery(
       'SELECT DISTINCT c.id AS channel_id '
@@ -886,12 +904,13 @@ extension ChannelDao on LocalDatabaseService {
     if (channelIds.isNotEmpty) {
       final cidPlaceholders = List.filled(channelIds.length, '?').join(',');
       if (beforeOrAt != null && beforeOrAt.millisecondsSinceEpoch > 0) {
+        final cutoffIso = messageCreatedAt(beforeOrAt);
         totalUpdated = await db.update(
           'messages',
           {'is_read': 1},
           where:
               'channel_id IN ($cidPlaceholders) AND is_read = 0 AND created_at <= ?',
-          whereArgs: [...channelIds, beforeOrAt.millisecondsSinceEpoch],
+          whereArgs: [...channelIds, cutoffIso],
         );
       } else {
         totalUpdated = await db.update(
@@ -902,8 +921,9 @@ extension ChannelDao on LocalDatabaseService {
         );
       }
       final log = PouchChatLog.bound;
-      if (log != null) {
-        for (final cid in channelIds) {
+      for (final cid in channelIds) {
+        await upsertChannelReadWatermark(cid, readAtMs: watermarkMs);
+        if (log != null) {
           unawaited(log.markChannelRead(cid).catchError((Object _) {}));
         }
       }
@@ -930,6 +950,145 @@ extension ChannelDao on LocalDatabaseService {
         }
       }
     }
+  }
+
+  /// 单调递增更新频道的已读水位线（持久化于 `channel_digests` 表）。
+  Future<void> upsertChannelReadWatermark(
+    String channelId, {
+    String? agentId,
+    String? remoteSessionId,
+    required int readAtMs,
+    int? readCount,
+    int? messageCount,
+  }) async {
+    final cid = channelId.trim();
+    if (cid.isEmpty || readAtMs <= 0) return;
+    try {
+      final db = await database;
+      final existing = await db.query(
+        'channel_digests',
+        columns: ['read_at_ms', 'read_count', 'message_count', 'agent_id'],
+        where: 'channel_id = ?',
+        whereArgs: [cid],
+        limit: 1,
+      );
+      final prevReadAt =
+          existing.isNotEmpty ? (existing.first['read_at_ms'] as int? ?? 0) : 0;
+      final prevReadCount =
+          existing.isNotEmpty ? (existing.first['read_count'] as int? ?? 0) : 0;
+      final prevMsgCount = existing.isNotEmpty
+          ? (existing.first['message_count'] as int? ?? 0)
+          : 0;
+      final prevAgent =
+          existing.isNotEmpty ? existing.first['agent_id'] as String? : null;
+
+      final nextReadAt = readAtMs > prevReadAt ? readAtMs : prevReadAt;
+      final nextReadCount = (readCount != null && readCount > prevReadCount)
+          ? readCount
+          : prevReadCount;
+      final nextMsgCount = (messageCount != null && messageCount > prevMsgCount)
+          ? messageCount
+          : prevMsgCount;
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+
+      await db.insert(
+        'channel_digests',
+        {
+          'channel_id': cid,
+          'agent_id': agentId ?? prevAgent,
+          'remote_session_id': remoteSessionId,
+          'message_count': nextMsgCount,
+          'read_count': nextReadCount,
+          'read_at_ms': nextReadAt,
+          'updated_at': nowMs,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    } catch (_) {}
+  }
+
+  /// 查询频道（或对应 Agent 全局）的最大已读时间戳水位线（毫秒）。
+  Future<int> getChannelReadWatermarkMs(
+    String channelId, {
+    String? agentId,
+  }) async {
+    final cid = channelId.trim();
+    if (cid.isEmpty) return 0;
+    try {
+      final db = await database;
+      final bare = cid.startsWith('psess_') ? cid.substring(6) : cid;
+      final psess = 'psess_$bare';
+      final keys = <String>{
+        cid,
+        bare,
+        psess,
+        if (agentId != null && agentId.trim().isNotEmpty)
+          '__agent__${agentId.trim()}',
+      };
+      final placeholders = List.filled(keys.length, '?').join(',');
+      final rows = await db.rawQuery(
+        'SELECT MAX(read_at_ms) AS max_read_at '
+        'FROM channel_digests '
+        'WHERE channel_id IN ($placeholders)',
+        keys.toList(),
+      );
+      if (rows.isNotEmpty) {
+        return (rows.first['max_read_at'] as int?) ?? 0;
+      }
+    } catch (_) {}
+    return 0;
+  }
+
+  /// 将离线待同步的操作写入 `pending_ops` Outbox 表。
+  Future<void> enqueuePendingOp({
+    required String opId,
+    required String kind,
+    required String targetId,
+    required Map<String, dynamic> payload,
+  }) async {
+    try {
+      final db = await database;
+      await db.insert(
+        'pending_ops',
+        {
+          'op_id': opId,
+          'kind': kind,
+          'target_id': targetId,
+          'payload': jsonEncode(payload),
+          'created_at': DateTime.now().millisecondsSinceEpoch,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    } catch (_) {}
+  }
+
+  /// 读取 `pending_ops` 表中挂起的离线操作（按创建时间升序）。
+  Future<List<Map<String, dynamic>>> listPendingOps({String? kind}) async {
+    try {
+      final db = await database;
+      return await db.query(
+        'pending_ops',
+        where: kind != null ? 'kind = ?' : null,
+        whereArgs: kind != null ? [kind] : null,
+        orderBy: 'created_at ASC',
+      );
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// 删除已成功同步到主机的离线操作。
+  Future<void> deletePendingOps(List<String> opIds) async {
+    if (opIds.isEmpty) return;
+    try {
+      final db = await database;
+      final placeholders = List.filled(opIds.length, '?').join(',');
+      await db.delete(
+        'pending_ops',
+        where: 'op_id IN ($placeholders)',
+        whereArgs: opIds,
+      );
+    } catch (_) {}
   }
 
   Future<String?> _resolveRemoteAgentIdForChannel(

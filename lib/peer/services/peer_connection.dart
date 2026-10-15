@@ -120,6 +120,8 @@ class PeerConnection {
     'agent_commands_resp',
     'agent_sessions_req',
     'agent_sessions_resp',
+    'agent_sessions_digest_req',
+    'agent_sessions_digest_resp',
     'agent_session_history_req',
     'agent_session_history_resp',
     'agent_models_req',

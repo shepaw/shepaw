@@ -1671,6 +1671,10 @@ class PeerAgentClientService {
   /// Outstanding agent_sessions_req per remote agent id.
   final Map<String, Completer<List<PeerRemoteSession>>> _pendingSessions = {};
 
+  /// Outstanding agent_sessions_digest_req per peer id.
+  final Map<String, Completer<Map<String, List<PeerRemoteSession>>?>>
+      _pendingSessionsDigest = {};
+
   /// Outstanding agent_session_history_req per "agentId::sessionId" key.
   /// 同一会话的分页是串行发的，所以按会话去重不会把两页混在一起。
   final Map<String, Completer<PeerHistoryPage>> _pendingHistory = {};
@@ -2909,6 +2913,9 @@ class PeerAgentClientService {
         break;
       case 'agent_sessions_resp':
         _onSessionsResp(event.data);
+        break;
+      case 'agent_sessions_digest_resp':
+        _onSessionsDigestResp(event.peerId, event.data);
         break;
       case 'agent_session_history_resp':
         _onSessionHistoryResp(event.data);
@@ -4753,6 +4760,52 @@ class PeerAgentClientService {
     }
   }
 
+  /// 单帧向主机拉取所有 Agent 的会话摘要与已读水位快照。
+  Future<Map<String, List<PeerRemoteSession>>?> fetchSessionsDigest({
+    required String peerId,
+  }) async {
+    if (_pendingSessionsDigest.containsKey(peerId)) {
+      return _pendingSessionsDigest[peerId]!.future;
+    }
+    final completer = Completer<Map<String, List<PeerRemoteSession>>?>();
+    _pendingSessionsDigest[peerId] = completer;
+    final sent = await PeerConnectionManager.instance.sendControl(peerId, {
+      'type': 'agent_sessions_digest_req',
+      'request_id': _uuid.v4(),
+    });
+    if (!sent) {
+      _pendingSessionsDigest.remove(peerId);
+      return null;
+    }
+    return completer.future.timeout(const Duration(seconds: 6), onTimeout: () {
+      _pendingSessionsDigest.remove(peerId);
+      return null;
+    });
+  }
+
+  void _onSessionsDigestResp(String peerId, Map<String, dynamic> data) {
+    final completer = _pendingSessionsDigest.remove(peerId);
+    if (completer == null || completer.isCompleted) return;
+    final rawDigests = data['digests'];
+    if (rawDigests is! Map) {
+      completer.complete(null);
+      return;
+    }
+    final out = <String, List<PeerRemoteSession>>{};
+    rawDigests.forEach((key, value) {
+      if (key is! String || value is! List) return;
+      final parsed = <PeerRemoteSession>[];
+      for (final item in value) {
+        if (item is Map) {
+          final s = PeerRemoteSession.fromJson(Map<String, dynamic>.from(item));
+          if (s != null) parsed.add(s);
+        }
+      }
+      out[key] = parsed;
+    });
+    completer.complete(out);
+  }
+
   /// Drop a redundant `psess_` shell when the live legacy channel already
   /// binds the same remote session id.
   Future<void> _removeDuplicatePeerSessionShell({
@@ -4852,12 +4905,24 @@ class PeerAgentClientService {
       if (existing == null && s.updatedAt != null) {
         await _db.setChannelUpdatedAt(channelId, s.updatedAt!);
       }
+      if (s.readAt != null) {
+        await _db.upsertChannelReadWatermark(
+          channelId,
+          agentId: localAgentId,
+          remoteSessionId: s.sessionId,
+          readAtMs: s.readAt!.millisecondsSinceEpoch,
+          readCount: s.readCount,
+          messageCount: s.messageCount,
+        );
+      }
       if (s.isRead || s.readOnly) {
         await _db.markChannelMessagesAsRead(channelId, syncToHost: false);
       } else if (s.readAt != null) {
         await _db.markChannelMessagesAsReadBefore(
           channelId,
           s.readAt!,
+          readCount: s.readCount,
+          messageCount: s.messageCount,
           syncToHost: false,
         );
       }
@@ -4886,15 +4951,40 @@ class PeerAgentClientService {
   final _syncingReadStatePeers = <String>{};
 
   /// 后台轻量同步该主机下所有远端 Agent 的会话摘要与已读水位（不拉聊天正文），
-  /// 使对话列表页无需点进聊天窗口即可消掉另一端已读的未读角标。
+  /// 优先走单帧 `agent_sessions_digest_req` 快照，一次往返对齐全部 Agent。
   Future<void> syncAllPeerAgentsReadState(String peerId) async {
     final id = peerId.trim();
     if (id.isEmpty || !_peerIsConnected(id)) return;
     if (!_syncingReadStatePeers.add(id)) return;
     try {
       final agents = await _db.getAllRemoteAgents();
-      for (final agent in agents) {
-        if (agent.metadata['source_peer_id'] != id) continue;
+      final peerAgents = [
+        for (final agent in agents)
+          if (agent.metadata['source_peer_id'] == id) agent,
+      ];
+      if (peerAgents.isEmpty) return;
+
+      final digestMap = await fetchSessionsDigest(peerId: id);
+      if (digestMap != null) {
+        for (final agent in peerAgents) {
+          final remoteId =
+              (agent.metadata['remote_agent_id'] as String?)?.trim() ?? '';
+          if (remoteId.isEmpty) continue;
+          final sessions = digestMap[remoteId];
+          if (sessions != null && sessions.isNotEmpty) {
+            await syncSessions(
+              peerId: id,
+              remoteAgentId: remoteId,
+              localAgentId: agent.id,
+              userId: 'user',
+              sessions: sessions,
+            );
+          }
+        }
+        return;
+      }
+
+      for (final agent in peerAgents) {
         final remoteId =
             (agent.metadata['remote_agent_id'] as String?)?.trim() ?? '';
         if (remoteId.isEmpty) continue;
@@ -4916,6 +5006,82 @@ class PeerAgentClientService {
       _log.debug('syncAllPeerAgentsReadState skipped: $e', tag: _tag);
     } finally {
       _syncingReadStatePeers.remove(id);
+    }
+  }
+
+  /// 为 `HubEventClient` 收到普通 Agent 会话（`AgentSessionStore`）实时广播的
+  /// `message.created` 准备本地会话壳与发送方本地 ID，使对话列表实时更新。
+  Future<({String channelId, String senderId, String senderName})>
+      prepareLocalTargetForHubMessage({
+    required String peerId,
+    required String remoteAgentId,
+    required String sessionId,
+    required String rawChannelId,
+    required String senderType,
+    required String fallbackSenderId,
+    required String fallbackSenderName,
+    String? sessionTitle,
+  }) async {
+    final rAgent = remoteAgentId.trim();
+    final rSession = sessionId.trim();
+    if (rAgent.isEmpty || rSession.isEmpty) {
+      return (
+        channelId: rawChannelId,
+        senderId: fallbackSenderId,
+        senderName: fallbackSenderName,
+      );
+    }
+    try {
+      final agents = await _db.getAllRemoteAgents();
+      RemoteAgent? matched;
+      for (final a in agents) {
+        if (a.metadata['remote_agent_id'] == rAgent &&
+            a.metadata['source_peer_id'] == peerId) {
+          matched = a;
+          break;
+        }
+      }
+      matched ??= agents.cast<RemoteAgent?>().firstWhere(
+            (a) =>
+                a != null &&
+                (a.id == rAgent || a.metadata['remote_agent_id'] == rAgent),
+            orElse: () => null,
+          );
+      final localAgentId = matched?.id ?? rAgent;
+      final agentName = matched?.name ?? fallbackSenderName;
+      final channelId = await _localChannelIdForRemoteSession(rSession);
+      final existing = await _db.getChannelById(channelId);
+      final name =
+          SessionUtils.cleanClaudeSessionTitle(sessionTitle) ?? 'Session';
+      if (existing == null) {
+        final channel = Channel.withMemberIds(
+          id: channelId,
+          name: name,
+          type: 'dm',
+          memberIds: ['user', localAgentId],
+          isPrivate: true,
+        );
+        await _db.createChannel(channel, 'user');
+      } else {
+        final members = await _db.getChannelMemberIds(channelId);
+        if (!members.contains('user')) {
+          await _db.addChannelMember(channelId, 'user');
+        }
+        if (!members.contains(localAgentId)) {
+          await _db.addChannelMember(channelId, localAgentId);
+        }
+      }
+      return (
+        channelId: channelId,
+        senderId: senderType == 'user' ? 'user' : localAgentId,
+        senderName: senderType == 'user' ? '' : agentName,
+      );
+    } catch (_) {
+      return (
+        channelId: rawChannelId,
+        senderId: fallbackSenderId,
+        senderName: fallbackSenderName,
+      );
     }
   }
 

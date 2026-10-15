@@ -70,7 +70,18 @@ extension MessageDao on LocalDatabaseService {
     ConflictAlgorithm conflictAlgorithm = ConflictAlgorithm.abort,
   }) async {
     final db = await database;
-    final at = messageCreatedAt(createdAt ?? DateTime.now());
+    final atTime = createdAt ?? DateTime.now();
+    final at = messageCreatedAt(atTime);
+    var effectiveIsRead = isRead;
+    if (effectiveIsRead == 0 && createdAt != null) {
+      final watermarkMs = await getChannelReadWatermarkMs(
+        channelId,
+        agentId: senderId,
+      );
+      if (watermarkMs > 0 && atTime.millisecondsSinceEpoch <= watermarkMs) {
+        effectiveIsRead = 1;
+      }
+    }
     await db.insert(
       'messages',
       {
@@ -84,7 +95,7 @@ extension MessageDao on LocalDatabaseService {
         'metadata': metadata != null ? jsonEncode(metadata) : null,
         'reply_to_id': replyToId,
         'created_at': at,
-        'is_read': isRead,
+        'is_read': effectiveIsRead,
       },
       conflictAlgorithm: conflictAlgorithm,
     );
@@ -102,7 +113,7 @@ extension MessageDao on LocalDatabaseService {
       createdAt: at,
       metadata: metadata,
       replyToId: replyToId,
-      isRead: isRead,
+      isRead: effectiveIsRead,
     ));
   }
 
@@ -111,8 +122,22 @@ extension MessageDao on LocalDatabaseService {
   Future<void> createMessages(List<StoredMessageInsert> rows) async {
     if (rows.isEmpty) return;
     final db = await database;
+    final watermarks = <String, int>{};
+    for (final row in rows) {
+      if (!watermarks.containsKey(row.channelId)) {
+        watermarks[row.channelId] = await getChannelReadWatermarkMs(
+          row.channelId,
+          agentId: row.senderId,
+        );
+      }
+    }
     final batch = db.batch();
     for (final row in rows) {
+      final wm = watermarks[row.channelId] ?? 0;
+      final effectiveIsRead = (row.isRead != 0 ||
+              (wm > 0 && row.createdAt.millisecondsSinceEpoch <= wm))
+          ? 1
+          : 0;
       batch.insert(
         'messages',
         {
@@ -126,7 +151,7 @@ extension MessageDao on LocalDatabaseService {
           'metadata': row.metadata != null ? jsonEncode(row.metadata) : null,
           'reply_to_id': row.replyToId,
           'created_at': messageCreatedAt(row.createdAt),
-          'is_read': row.isRead,
+          'is_read': effectiveIsRead,
         },
         conflictAlgorithm: row.conflictAlgorithm,
       );

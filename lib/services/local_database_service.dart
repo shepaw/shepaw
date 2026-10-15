@@ -73,7 +73,7 @@ class LocalDatabaseService {
     final path = await PouchSqlite.openPath(PouchSqlite.mainDb);
     return await openDatabase(
       path,
-      version: 37,
+      version: 38,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -489,6 +489,46 @@ class LocalDatabaseService {
 
     // 会话历史游标（v36）
     await _createPeerHistoryCursorTable(db);
+
+    // 会话摘要水位与离线操作队列（v38）
+    await _createChannelDigestsAndPendingOpsTables(db);
+  }
+
+  Future<void> _createChannelDigestsAndPendingOpsTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS channel_digests (
+        channel_id               TEXT PRIMARY KEY,
+        agent_id                 TEXT,
+        remote_session_id        TEXT,
+        last_message_id          TEXT,
+        last_message_content     TEXT,
+        last_message_type        TEXT,
+        last_message_sender_type TEXT,
+        last_message_at          TEXT,
+        message_count            INTEGER NOT NULL DEFAULT 0,
+        read_count               INTEGER NOT NULL DEFAULT 0,
+        read_at_ms               INTEGER NOT NULL DEFAULT 0,
+        unread_count             INTEGER NOT NULL DEFAULT 0,
+        updated_at               INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_channel_digests_agent '
+      'ON channel_digests(agent_id, last_message_at DESC)',
+    );
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS pending_ops (
+        op_id      TEXT PRIMARY KEY,
+        kind       TEXT NOT NULL,
+        target_id  TEXT NOT NULL,
+        payload    TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_pending_ops_created '
+      'ON pending_ops(created_at ASC)',
+    );
   }
 
   Future<void> _createPeerHistoryCursorTable(Database db) async {
@@ -1045,6 +1085,19 @@ class LocalDatabaseService {
         );
       }
     }
+
+    if (oldVersion < 38) {
+      // 版本 37 -> 38: 会话摘要/已读水位表与离线操作队列 (Outbox)
+      try {
+        await _createChannelDigestsAndPendingOpsTables(db);
+      } catch (e) {
+        LoggerService().error(
+          'Failed to create channel_digests / pending_ops (v38)',
+          tag: 'Migration',
+          error: e,
+        );
+      }
+    }
   }
 
   /// 不带 `Z` / 偏移的 `created_at` 按本机时区换成 UTC 毫秒，格式同 [messageCreatedAt]。
@@ -1074,6 +1127,8 @@ class LocalDatabaseService {
     await db.delete('event_subscriptions');
     await db.delete('peer_agent_meta_cache');
     await db.delete('peer_history_cursor');
+    await db.delete('channel_digests');
+    await db.delete('pending_ops');
   }
 
   /// 关闭数据库

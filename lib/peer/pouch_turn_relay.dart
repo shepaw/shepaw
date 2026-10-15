@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../models/attachment_data.dart';
 import '../../models/message.dart';
+import '../../services/local_database_service.dart';
 import '../../storage/pouch_login.dart';
 import '../../storage/pouch_role.dart';
 import '../../storage/pouch_session.dart';
@@ -291,6 +293,32 @@ class PouchTurnRelay {
         }
       } catch (_) {}
 
+      final outboxOpIds = <String>[];
+      try {
+        final ops =
+            await LocalDatabaseService().listPendingOps(kind: 'mark_read');
+        for (final row in ops) {
+          final opId = row['op_id'] as String? ?? '';
+          if (opId.isNotEmpty) outboxOpIds.add(opId);
+          final rawPayload = row['payload'] as String? ?? '';
+          if (rawPayload.isEmpty) continue;
+          final decoded = jsonDecode(rawPayload);
+          if (decoded is! Map) continue;
+          final cid = (decoded['channel_id'] as String?)?.trim() ?? '';
+          final aid = (decoded['agent_id'] as String?)?.trim() ?? '';
+          final all = decoded['all_sessions'] == true;
+          if (all && aid.isNotEmpty) {
+            _pendingReadAllAgentIds.add(aid);
+          }
+          if (cid.isNotEmpty) {
+            _pendingReadChannelIds.add(cid);
+            if (aid.isNotEmpty) {
+              _pendingReadAgentByChannel[cid] = aid;
+            }
+          }
+        }
+      } catch (_) {}
+
       if (_pendingReadChannelIds.isEmpty && _pendingReadAllAgentIds.isEmpty) {
         return;
       }
@@ -303,13 +331,17 @@ class PouchTurnRelay {
             _pendingReadChannelIds.clear();
             _pendingReadAgentByChannel.clear();
             _pendingReadAllAgentIds.clear();
-            await _savePendingReadPrefs(const {}, const {});
+            await _savePendingReadPrefs(const {}, const {}, const {});
+            if (outboxOpIds.isNotEmpty) {
+              await LocalDatabaseService().deletePendingOps(outboxOpIds);
+            }
             return;
           }
           hostPeerId = route.hostPeerId;
         } catch (_) {
           await _savePendingReadPrefs(
             _pendingReadChannelIds,
+            _pendingReadAgentByChannel,
             _pendingReadAllAgentIds,
           );
           return;
@@ -318,6 +350,7 @@ class PouchTurnRelay {
       if (hostPeerId == null || hostPeerId.isEmpty) {
         await _savePendingReadPrefs(
           _pendingReadChannelIds,
+          _pendingReadAgentByChannel,
           _pendingReadAllAgentIds,
         );
         return;
@@ -358,8 +391,12 @@ class PouchTurnRelay {
             onEvent: (_) {},
           ).timeout(const Duration(seconds: 6));
         }
+        if (outboxOpIds.isNotEmpty) {
+          await LocalDatabaseService().deletePendingOps(outboxOpIds);
+        }
         await _savePendingReadPrefs(
           _pendingReadChannelIds,
+          _pendingReadAgentByChannel,
           _pendingReadAllAgentIds,
         );
       } catch (_) {
@@ -368,6 +405,7 @@ class PouchTurnRelay {
         _pendingReadAllAgentIds.addAll(batchAllAgents);
         await _savePendingReadPrefs(
           _pendingReadChannelIds,
+          _pendingReadAgentByChannel,
           _pendingReadAllAgentIds,
         );
       }
@@ -378,22 +416,48 @@ class PouchTurnRelay {
 
   Future<void> _savePendingReadPrefs(
     Iterable<String> ids,
+    Map<String, String> agentByChannel,
     Iterable<String> allAgentIds,
   ) async {
+    final list = ids.where((s) => s.isNotEmpty).toSet().toList();
+    final agentList = allAgentIds.where((s) => s.isNotEmpty).toSet().toList();
     try {
       final prefs = await SharedPreferences.getInstance();
-      final list = ids.where((s) => s.isNotEmpty).toSet().toList();
       if (list.isEmpty) {
         await prefs.remove(_pendingReadPrefsKey);
       } else {
         await prefs.setStringList(_pendingReadPrefsKey, list);
       }
-      final agentList =
-          allAgentIds.where((s) => s.isNotEmpty).toSet().toList();
       if (agentList.isEmpty) {
         await prefs.remove(_pendingReadAllAgentsPrefsKey);
       } else {
         await prefs.setStringList(_pendingReadAllAgentsPrefsKey, agentList);
+      }
+    } catch (_) {}
+    try {
+      final db = LocalDatabaseService();
+      for (final cid in list) {
+        final aid = agentByChannel[cid] ?? '';
+        await db.enqueuePendingOp(
+          opId: 'mark_read:ch:$cid',
+          kind: 'mark_read',
+          targetId: cid,
+          payload: <String, dynamic>{
+            'channel_id': cid,
+            if (aid.isNotEmpty) 'agent_id': aid,
+          },
+        );
+      }
+      for (final aid in agentList) {
+        await db.enqueuePendingOp(
+          opId: 'mark_read:agent:$aid',
+          kind: 'mark_read',
+          targetId: aid,
+          payload: <String, dynamic>{
+            'agent_id': aid,
+            'all_sessions': true,
+          },
+        );
       }
     } catch (_) {}
   }

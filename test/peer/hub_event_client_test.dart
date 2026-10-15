@@ -228,4 +228,67 @@ void main() {
     expect(await db.getUnreadCountByChannel(ch2), 0);
     await incoming.close();
   });
+
+  test('channel_digests 已读水位线自动拦截晚到的旧消息，新于水位线的消息仍计未读', () async {
+    final db = LocalDatabaseService();
+    final suffix = DateTime.now().microsecondsSinceEpoch + 2;
+    final agentId = 'agent-wm-$suffix';
+    final channelId = 'psess_wm_$suffix';
+
+    await db.createChannel(
+      Channel.withMemberIds(
+        id: channelId,
+        name: 'Watermark Session',
+        type: 'dm',
+        memberIds: ['user', agentId],
+      ),
+      'user',
+    );
+
+    // 先记录会话已读水位为 t = 2000ms
+    await db.upsertChannelReadWatermark(
+      channelId,
+      agentId: agentId,
+      readAtMs: 2000,
+    );
+
+    // 晚到的旧消息 (t = 1500ms <= 2000ms)，即使传入 isRead: 0，落库时自动按水位线标为已读
+    await db.createMessage(
+      id: 'm-old-$suffix',
+      channelId: channelId,
+      senderId: agentId,
+      senderType: 'agent',
+      senderName: 'A',
+      content: 'old message before watermark',
+      createdAt: DateTime.fromMillisecondsSinceEpoch(1500, isUtc: true),
+      isRead: 0,
+    );
+    expect(await db.getUnreadCountByChannel(channelId), 0);
+
+    // 水位线之后的新消息 (t = 3000ms > 2000ms)，正常计为未读
+    await db.createMessage(
+      id: 'm-new-$suffix',
+      channelId: channelId,
+      senderId: agentId,
+      senderType: 'agent',
+      senderName: 'A',
+      content: 'new message after watermark',
+      createdAt: DateTime.fromMillisecondsSinceEpoch(3000, isUtc: true),
+      isRead: 0,
+    );
+    expect(await db.getUnreadCountByChannel(channelId), 1);
+
+    // 验证 pending_ops 队列读写与删除
+    await db.enqueuePendingOp(
+      opId: 'test-op-$suffix',
+      kind: 'mark_read',
+      targetId: channelId,
+      payload: {'channel_id': channelId, 'agent_id': agentId},
+    );
+    final ops = await db.listPendingOps(kind: 'mark_read');
+    expect(ops.any((r) => r['op_id'] == 'test-op-$suffix'), isTrue);
+    await db.deletePendingOps(['test-op-$suffix']);
+    final opsAfter = await db.listPendingOps(kind: 'mark_read');
+    expect(opsAfter.any((r) => r['op_id'] == 'test-op-$suffix'), isFalse);
+  });
 }

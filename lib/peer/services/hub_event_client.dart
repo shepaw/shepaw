@@ -202,7 +202,7 @@ class HubEventClient {
   Future<void> _dispatch(String peerId, HubEvent event) async {
     switch (event.kind) {
       case 'message.created':
-        await _insertMessage(event);
+        await _insertMessage(peerId, event);
       case 'message.updated':
         await _updateMessage(event);
       case 'channel.read':
@@ -420,19 +420,32 @@ class HubEventClient {
     if (channelId.isNotEmpty) _notify(channelId);
   }
 
-  Future<void> _insertMessage(HubEvent event) async {
+  Future<void> _insertMessage(String peerId, HubEvent event) async {
     final data = event.data;
     final id = data['id'] as String? ?? '';
-    final channelId = (data['channel_id'] as String?)?.trim().isNotEmpty == true
+    final rawChannelId = (data['channel_id'] as String?)?.trim().isNotEmpty == true
         ? data['channel_id'] as String
         : event.channelId;
-    if (id.isEmpty || channelId.isEmpty) return;
+    if (id.isEmpty || rawChannelId.isEmpty) return;
     if (!getIt.isRegistered<LocalDatabaseService>()) return;
     final db = getIt<LocalDatabaseService>();
     final from = data['from'];
     final sender = from is Map ? Map<String, dynamic>.from(from) : const {};
     final senderType = sender['type'] as String? ?? 'agent';
     final metadata = data['metadata'];
+    final sessionId = (data['session_id'] as String?)?.trim() ?? '';
+    final target = await PeerAgentClientService.instance
+        .prepareLocalTargetForHubMessage(
+      peerId: peerId,
+      remoteAgentId: event.agentId,
+      sessionId: sessionId,
+      rawChannelId: rawChannelId,
+      senderType: senderType,
+      fallbackSenderId: sender['id'] as String? ?? event.agentId,
+      fallbackSenderName: sender['name'] as String? ?? '',
+      sessionTitle: data['session_title'] as String?,
+    );
+    final channelId = target.channelId;
     final isRead = (data['is_read'] == true ||
             data['is_read'] == 1 ||
             senderType != 'agent' ||
@@ -443,9 +456,9 @@ class HubEventClient {
       await db.createMessage(
         id: id,
         channelId: channelId,
-        senderId: sender['id'] as String? ?? event.agentId,
+        senderId: target.senderId,
         senderType: senderType,
-        senderName: sender['name'] as String? ?? '',
+        senderName: target.senderName,
         content: data['content'] as String? ?? '',
         messageType: data['type'] as String? ?? 'text',
         metadata: metadata is Map ? Map<String, dynamic>.from(metadata) : null,
