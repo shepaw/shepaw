@@ -17,6 +17,50 @@ void main() {
     await StoreService.instance.start();
   });
 
+  /// 轮询等 manifest 的 channels 里出现 [ids]，返回最后一次读到的内容。
+  ///
+  /// 全量并行跑（多文件争 CPU）时固定 sleep 不够，会偶发地只读到部分会话。
+  Future<Map<String, dynamic>> waitForManifestChannels(
+    String owner,
+    List<String> ids,
+  ) async {
+    final deviceId = await DeviceIdentity.deviceId();
+    final store = await StoreService.instance.localStore();
+    var channels = <String, dynamic>{};
+    for (var i = 0; i < 100; i++) {
+      try {
+        final (bytes, _, _) = await store.read(
+          deviceId,
+          StoreSpace.runtime,
+          RuntimePaths.contextManifest(owner),
+          0,
+          1 << 16,
+        );
+        final json = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+        channels = (json['channels'] as Map?)?.cast<String, dynamic>() ?? {};
+        if (ids.every(channels.containsKey)) break;
+      } catch (_) {}
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    return channels;
+  }
+
+  /// 轮询等 runtime 空间里出现 [rel]。
+  Future<Map<String, dynamic>?> waitForRuntimeFile(
+    String deviceId,
+    String rel,
+  ) async {
+    final store = await StoreService.instance.localStore();
+    for (var i = 0; i < 100; i++) {
+      try {
+        return await store.meta(deviceId, StoreSpace.runtime, rel);
+      } on StoreException {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+    }
+    return null;
+  }
+
   test('mirrorSoul / ensureRuntimeScaffold 写入 runtime', () async {
     final mirror = RuntimeMirrorService.instance;
     mirror.debounce = Duration.zero;
@@ -104,9 +148,9 @@ void main() {
     // 两次镜像必须串行：并发写同一个 manifest 会互相覆盖（后写的读到的
     // 是旧内容）。固定 sleep 在全量并行跑时不够，改成等第一次真的落盘。
     mirror.scheduleSessionMirror(ownerId: owner, channelId: first);
-    await _waitForManifestChannels(owner, [first]);
+    await waitForManifestChannels(owner, [first]);
     mirror.scheduleSessionMirror(ownerId: owner, channelId: second);
-    final channels = await _waitForManifestChannels(owner, [first, second]);
+    final channels = await waitForManifestChannels(owner, [first, second]);
 
     // 第二次镜像曾经会先清空 manifest，导致只剩最后这一个会话。
     expect(channels.keys, containsAll([first, second]));
@@ -188,7 +232,6 @@ void main() {
     const owner = 'agent-staleness';
     const channel = 'dm_staleness';
     final deviceId = await DeviceIdentity.deviceId();
-    final store = await StoreService.instance.localStore();
     final rel = RuntimePaths.sessionJson(owner, channel);
 
     // 连续写（模拟流式 flush）：空闲 debounce 永远等不到窗口。
@@ -198,17 +241,9 @@ void main() {
     }
 
     // 镜像写是异步的，轮询等它落盘（固定 sleep 在全量并行跑时不够）。
-    var size = 0;
-    for (var i = 0; i < 60; i++) {
-      try {
-        size = (await store.meta(deviceId, StoreSpace.runtime, rel))['size']
-                as int? ??
-            0;
-        if (size > 0) break;
-      } catch (_) {}
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-    }
-    expect(size, greaterThan(0));
+    final meta = await waitForRuntimeFile(deviceId, rel);
+    expect(meta, isNotNull);
+    expect(meta!['size'] as int, greaterThan(0));
   });
 
   test('session.json 不带缩进', () async {
