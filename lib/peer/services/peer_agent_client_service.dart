@@ -2544,6 +2544,10 @@ class PeerAgentClientService {
       'request_id': requestId,
       'agent_id': remoteAgentId,
       'message': message,
+      // 本端落库用户消息用的 id。主机拿它当这条记录的 id，回传事件与
+      // 本机 SQLite 行就是同一条，不会在屏幕上叠成两条一样的用户消息。
+      if (userMessageId != null && userMessageId.isNotEmpty)
+        'user_message_id': userMessageId,
       // 把本端会话 id 透传给对端，使对端按会话隔离历史：本端「新开会话」
       // 在对端也得到一条干净、无历史的新会话。
       if (sessionId != null && sessionId.isNotEmpty) 'session_id': sessionId,
@@ -2586,6 +2590,7 @@ class PeerAgentClientService {
     String? userId,
     String? userName,
     String? agentName,
+    String? userMessageId,
     List<AttachmentData>? attachments,
   }) async {
     List<Map<String, dynamic>>? attachmentRefs;
@@ -2620,6 +2625,7 @@ class PeerAgentClientService {
       userId: userId ?? '',
       userName: userName ?? '',
       agentName: agentName ?? '',
+      userMessageId: userMessageId ?? '',
     );
     pending.heldOnHost = true;
     pending.parkedText = message;
@@ -2635,6 +2641,8 @@ class PeerAgentClientService {
       'request_id': requestId,
       'agent_id': remoteAgentId,
       'message': message,
+      if (userMessageId != null && userMessageId.isNotEmpty)
+        'user_message_id': userMessageId,
       if (sessionId != null && sessionId.isNotEmpty) 'session_id': sessionId,
       if (channelId != null && channelId.isNotEmpty) 'channel_id': channelId,
       if (attachmentRefs != null) 'attachments': attachmentRefs,

@@ -497,4 +497,69 @@ void main() {
     );
     await incoming.close();
   });
+
+  test('主机回传的 peerhist_ 行取代本机同 id 的用户消息，不留下两条', () async {
+    final db = LocalDatabaseService();
+    final suffix = DateTime.now().microsecondsSinceEpoch + 4;
+    final channelId = 'dm_twin_$suffix';
+    final agentId = 'agent-twin-$suffix';
+    final localId = 'u-twin-$suffix';
+
+    await db.createChannel(
+      Channel.withMemberIds(
+        id: channelId,
+        name: 'Twin',
+        type: 'dm',
+        memberIds: ['user', agentId],
+      ),
+      'user',
+    );
+    // 发送时本机先用这个 id 落库；主机沿用同一个 id 回传。
+    await db.createMessage(
+      id: localId,
+      channelId: channelId,
+      senderId: 'user',
+      senderType: 'user',
+      senderName: 'Me',
+      content: '同一条提问',
+    );
+
+    final incoming = StreamController<PeerControlEvent>.broadcast();
+    final client = HubEventClient(
+      events: incoming.stream,
+      send: (_, __) async => true,
+      seqStore: MemoryHubSeqStore(),
+      fingerprintOf: (_) async => 'fp-twin-$suffix',
+    );
+    client.start();
+    addTearDown(client.dispose);
+
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: {
+        'type': 'hub_event',
+        'event': {
+          'seq': 1,
+          'kind': 'message.created',
+          'channel_id': channelId,
+          'agent_id': agentId,
+          'data': {
+            'id': 'peerhist_$localId',
+            'channel_id': channelId,
+            'agent_id': agentId,
+            'content': '同一条提问',
+            'type': 'text',
+            'from': {'id': 'user', 'type': 'user', 'name': 'Me'},
+          },
+        },
+      },
+    ));
+    for (var i = 0; i < 20; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+
+    expect(await db.getMessageById(localId), isNull);
+    expect(await db.getMessageById('peerhist_$localId'), isNotNull);
+    await incoming.close();
+  });
 }

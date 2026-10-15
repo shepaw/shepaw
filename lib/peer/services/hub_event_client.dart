@@ -357,6 +357,8 @@ class HubEventClient {
                 : <String, dynamic>{},
           },
           agentId: 'she-builtin-agent-001',
+          // 归属会话：卡要落在这条 peer 会话里，不能落到用户正在看的会话。
+          channelId: channelId,
         );
         await _send(peerId, {
           'type': 'pouch_interaction_resp',
@@ -505,6 +507,13 @@ class HubEventClient {
       sessionTitle: data['session_title'] as String?,
     );
     final channelId = target.channelId;
+    // 主机回传的 `peerhist_<id>` 与本机那条 `<id>` 是同一条消息（客户端把
+    // 自己的用户消息 id 透传给了主机）。不删掉本机的就会显示两条。
+    final bareId =
+        id.startsWith('peerhist_') ? id.substring('peerhist_'.length) : '';
+    if (bareId.isNotEmpty && bareId != id) {
+      await db.deleteMessage(bareId);
+    }
     final isRead = (data['is_read'] == true ||
             data['is_read'] == 1 ||
             senderType != 'agent' ||

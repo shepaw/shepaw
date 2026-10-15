@@ -755,6 +755,8 @@ mixin _MessagingOps on _ChatControllerBase {
             userId: getUserId(),
             userName: getUserName(),
             agentName: agent.name,
+            // 排队消息落库用的就是队列 id，交给主机后两边同一条。
+            userMessageId: item.id,
             attachments: item.attachments,
           );
         } else {
