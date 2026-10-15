@@ -362,6 +362,81 @@ extension ChannelDao on LocalDatabaseService {
     return results.first['id'] as String;
   }
 
+  /// agent → 其 DM 会话 id（按 [channels.updated_at] 倒序）。
+  ///
+  /// 批量版 [getLatestMessageForAgent] / [getUnreadCountForAgent] 的会话集合：
+  /// 口径与这两个查询一致——只要求 agent 是成员，排除群子会话
+  /// （source_group_channel_id）与 She 中转（source_she_channel_id）。
+  Future<Map<String, List<String>>> getAgentDmChannelIds(
+      List<String> agentIds) async {
+    if (agentIds.isEmpty) return const {};
+    final db = await database;
+    final out = <String, List<String>>{};
+    for (var start = 0; start < agentIds.length; start += _kSqlChunkSize) {
+      final end = start + _kSqlChunkSize > agentIds.length
+          ? agentIds.length
+          : start + _kSqlChunkSize;
+      final chunk = agentIds.sublist(start, end);
+      final rows = await db.rawQuery(
+        'SELECT cm.agent_id AS agent_id, c.id AS channel_id '
+        'FROM channel_members cm '
+        'INNER JOIN channels c ON c.id = cm.channel_id '
+        "WHERE cm.agent_id IN (${List.filled(chunk.length, '?').join(',')}) "
+        "AND c.type = 'dm' "
+        'AND (c.source_group_channel_id IS NULL '
+        "OR c.source_group_channel_id = '') "
+        "AND (c.source_she_channel_id IS NULL OR c.source_she_channel_id = '') "
+        'ORDER BY c.updated_at DESC',
+        chunk,
+      );
+      for (final row in rows) {
+        (out[row['agent_id'] as String] ??= <String>[])
+            .add(row['channel_id'] as String);
+      }
+    }
+    return out;
+  }
+
+  /// agent → 同时包含 [userId] 的最近访问 DM 会话 id。
+  ///
+  /// 批量版 [getLatestActiveChannelForUserAndAgent]：比 [getAgentDmChannelIds]
+  /// 多一条「user 也是成员」的约束，会话列表点进空会话时用的就是它。
+  Future<Map<String, String>> getLatestActiveChannelIdsForAgents(
+      String userId, List<String> agentIds) async {
+    if (agentIds.isEmpty) return const {};
+    final db = await database;
+    final out = <String, String>{};
+    for (var start = 0; start < agentIds.length; start += _kSqlChunkSize) {
+      final end = start + _kSqlChunkSize > agentIds.length
+          ? agentIds.length
+          : start + _kSqlChunkSize;
+      final chunk = agentIds.sublist(start, end);
+      final rows = await db.rawQuery(
+        'SELECT cm1.agent_id AS agent_id, c.id AS channel_id '
+        'FROM channels c '
+        'INNER JOIN channel_members cm1 '
+        'ON c.id = cm1.channel_id AND cm1.agent_id IN '
+        '(${List.filled(chunk.length, '?').join(',')}) '
+        'INNER JOIN channel_members cm2 '
+        'ON c.id = cm2.channel_id AND cm2.agent_id = ? '
+        "WHERE c.type = 'dm' "
+        'AND (c.source_group_channel_id IS NULL '
+        "OR c.source_group_channel_id = '') "
+        "AND (c.source_she_channel_id IS NULL OR c.source_she_channel_id = '') "
+        'ORDER BY c.updated_at DESC',
+        [...chunk, userId],
+      );
+      for (final row in rows) {
+        // 已按 updated_at 倒序，先到的就是最近访问的那条。
+        out.putIfAbsent(
+          row['agent_id'] as String,
+          () => row['channel_id'] as String,
+        );
+      }
+    }
+    return out;
+  }
+
   /// 查询绑定到指定 She↔用户 会话的所有 She 中转 DM 会话。
   Future<List<Channel>> getSheBoundSessions(String sheChannelId) async {
     final db = await database;

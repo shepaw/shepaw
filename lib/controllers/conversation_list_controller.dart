@@ -454,7 +454,9 @@ class ConversationListController extends ChangeNotifier {
   }
 
   Future<void> _refreshAgentPreviews(Set<String> agentIds) async {
-    await Future.wait(agentIds.map(_loadAgentPreview));
+    final affected = _agents.where((a) => agentIds.contains(a.id)).toList();
+    if (affected.isEmpty) return;
+    await _loadAgentPreviews(affected);
     if (_disposed) return;
     _rebuildEntries();
     notifyListeners();
@@ -502,46 +504,100 @@ class ConversationListController extends ChangeNotifier {
     }
   }
 
+  /// 全部 agent 的 DM 预览：活跃频道 / 最新消息 / 未读数。
+  ///
+  /// 逐 agent 查是 3N 次 sqflite 往返（N 个 agent ≈ 90 次），而一次列表刷新
+  /// 就要付一遍。改成 4 次批量查询后与 agent 数无关——群预览早就是这么做的。
+  ///
+  /// 任一批量查询失败就保留上一轮的值（不写 map），单个 agent 的组装失败只
+  /// 丢该行预览，绝不把整张列表清空。
   Future<void> _loadAgentPreviews(List<Agent> agents) async {
-    await Future.wait(agents.map((agent) => _loadAgentPreview(agent.id)));
+    if (agents.isEmpty) return;
+    const userId = 'user';
+    final agentIds = [for (final agent in agents) agent.id];
+
+    final dmChannels = await _guardBatch(
+      () => _databaseService.getAgentDmChannelIds(agentIds),
+      'agent dm channels',
+      const <String, List<String>>{},
+    );
+    final allChannelIds = <String>[
+      for (final ids in dmChannels.values) ...ids,
+    ];
+    final activeChannels = await _guardBatch(
+      () => _databaseService.getLatestActiveChannelIdsForAgents(
+        userId,
+        agentIds,
+      ),
+      'agent active channels',
+      const <String, String>{},
+    );
+    final latestByChannel = await _guardBatch(
+      () => _databaseService.getLatestMessagesByChannels(allChannelIds),
+      'agent latest messages',
+      const <String, Map<String, dynamic>>{},
+    );
+    final unreadByChannel = await _guardBatch(
+      () => _databaseService.getUnreadCountsByChannels(allChannelIds),
+      'agent unread counts',
+      const <String, int>{},
+    );
+
+    final viewingChannelId = AppLifecycleService().activeChannelId ?? '';
+    for (final agent in agents) {
+      try {
+        final channelIds = dmChannels[agent.id] ?? const <String>[];
+        Map<String, dynamic>? latest;
+        var unread = 0;
+        for (final channelId in channelIds) {
+          final candidate = latestByChannel[channelId];
+          if (candidate != null &&
+              (latest == null ||
+                  (candidate['created_at'] as String)
+                          .compareTo(latest['created_at'] as String) >
+                      0)) {
+            latest = candidate;
+          }
+          // 正在看的那条会话不计未读，与群预览的口径一致。
+          if (channelId != viewingChannelId) {
+            unread += unreadByChannel[channelId] ?? 0;
+          }
+        }
+        final previewChannel = latest?['channel_id'] as String?;
+        final fallbackChannelId = activeChannels[agent.id] ??
+            _chatService.generateChannelId(userId, agent.id);
+        // 预览来自有消息的那条会话。最近被碰过的空壳不能把点击带进空白页。
+        _agentChannelIds[agent.id] =
+            (previewChannel != null && previewChannel.isNotEmpty)
+                ? previewChannel
+                : fallbackChannelId;
+        _latestMessages[agent.id] = latest;
+        _unreadCounts[agent.id] = unread;
+      } catch (e) {
+        LoggerService().error(
+          'Failed to load preview for agent ${agent.id}',
+          tag: 'ConversationList',
+          error: e,
+        );
+      }
+    }
   }
 
-  /// 单个 agent 的 DM 预览：活跃频道 / 最新消息 / 未读数。
-  ///
-  /// 逐 agent 串行是 3N 次 sqflite 往返，并发后整体等待时间接近一次往返。
-  /// 单个 agent 的任一查询失败只丢弃该行的预览（agent 仍保留、未读按 0），
-  /// 不拖垮整批 —— 否则 1 个坏行会让整轮 Future.wait 抛错、列表被清空。
-  Future<void> _loadAgentPreview(String agentId) async {
+  /// 批量查询失败时降级为 [fallback] 并记日志，不让整轮刷新崩掉。
+  Future<T> _guardBatch<T>(
+    Future<T> Function() query,
+    String what,
+    T fallback,
+  ) async {
     try {
-      const userId = 'user';
-      final activeChannelId =
-          await _chatService.getLatestActiveChannelId(userId, agentId);
-      final channelId =
-          activeChannelId ?? _chatService.generateChannelId(userId, agentId);
-      final latestMsg =
-          await _databaseService.getLatestMessageForAgent(agentId);
-      final viewingChannelId = AppLifecycleService().activeChannelId;
-      final unreadCount =
-          (viewingChannelId != null && viewingChannelId.isNotEmpty)
-              ? await _databaseService.getUnreadCountForAgentExcludingChannel(
-                  agentId,
-                  viewingChannelId,
-                )
-              : await _databaseService.getUnreadCountForAgent(agentId);
-      final previewChannel = latestMsg?['channel_id'] as String?;
-      // 预览来自有消息的那条会话。最近被碰过的空壳不能把点击带进空白页。
-      _agentChannelIds[agentId] =
-          (previewChannel != null && previewChannel.isNotEmpty)
-              ? previewChannel
-              : channelId;
-      _latestMessages[agentId] = latestMsg;
-      _unreadCounts[agentId] = unreadCount;
+      return await query();
     } catch (e) {
       LoggerService().error(
-        'Failed to load preview for agent $agentId',
+        'Failed to load $what in batch',
         tag: 'ConversationList',
         error: e,
       );
+      return fallback;
     }
   }
 
