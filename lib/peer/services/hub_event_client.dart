@@ -30,6 +30,9 @@ class HubEventClient {
   /// 一页没拿到时的重试次数。每次之间退避，见 [_pageRetryDelay]。
   static const _maxPageAttempts = 3;
   static const _pageRetryDelay = Duration(seconds: 1);
+  /// 续传回合的落库合并窗口。主机补发 chunk 可以很密，落库与整列刷新
+  /// 没必要跟着每帧走。
+  static const _liveFlushInterval = Duration(milliseconds: 100);
 
   HubEventClient({
     Stream<PeerControlEvent>? events,
@@ -100,6 +103,9 @@ class HubEventClient {
     _channelInstalledSub = null;
     _connSub = null;
     _resumeSub = null;
+    _liveFlushTimer?.cancel();
+    _liveFlushTimer = null;
+    _liveDirty.clear();
   }
 
   Future<void> _onControl(PeerControlEvent event) async {
@@ -640,25 +646,58 @@ class HubEventClient {
     }
     if (data['kind'] == 'chunk') {
       final chunk = data['chunk'] as String? ?? '';
-      final next = (_liveBuffers[turnId] ?? '') + chunk;
-      _liveBuffers[turnId] = next;
-      final channelId = _liveChannels[turnId];
-      if (channelId == null || !getIt.isRegistered<LocalDatabaseService>()) {
+      _liveBuffers[turnId] = (_liveBuffers[turnId] ?? '') + chunk;
+      if (_liveChannels[turnId] == null ||
+          !getIt.isRegistered<LocalDatabaseService>()) {
         return;
       }
-      unawaited(
-        getIt<LocalDatabaseService>()
-            .updateMessage(
-              messageId: liveTurnPlaceholderId(turnId),
-              content: next,
-            )
-            .then((_) => _notify(channelId)),
-      );
+      // 逐 chunk 落库会把「已累积全文」重写一遍（O(n²)），还要每帧通知
+      // 整列重拉。只记脏，按 [_liveFlushInterval] 合并写出。
+      _scheduleLiveFlush(turnId);
     }
     if (data['kind'] == 'done' || data['kind'] == 'error') {
       _attached.remove(turnId);
+      // 收尾前把还没落库的尾巴补上，别把最后几个 chunk 丢了。
+      await _flushLiveTurn(turnId);
       // 续传的回合就这样结束了 —— 补发回来的卡片同样不能留着可点。
       await _closeTurnCards(turnId);
+    }
+  }
+
+  /// 续传回合的待落库 turnId。落库在 [_flushLiveTurn] 时才读 buffer，
+  /// 因此中途被 _onTurnFinished / _cleanupLiveTurns 清掉的回合自然跳过。
+  final _liveDirty = <String>{};
+  Timer? _liveFlushTimer;
+
+  void _scheduleLiveFlush(String turnId) {
+    _liveDirty.add(turnId);
+    _liveFlushTimer ??= Timer(_liveFlushInterval, () {
+      _liveFlushTimer = null;
+      unawaited(_flushLiveDirty());
+    });
+  }
+
+  Future<void> _flushLiveDirty() async {
+    final turnIds = _liveDirty.toList();
+    _liveDirty.clear();
+    for (final turnId in turnIds) {
+      await _flushLiveTurn(turnId);
+    }
+  }
+
+  Future<void> _flushLiveTurn(String turnId) async {
+    _liveDirty.remove(turnId);
+    final content = _liveBuffers[turnId];
+    final channelId = _liveChannels[turnId];
+    if (content == null || channelId == null) return;
+    try {
+      await getIt<LocalDatabaseService>().updateMessage(
+        messageId: liveTurnPlaceholderId(turnId),
+        content: content,
+      );
+      _notify(channelId);
+    } catch (e) {
+      _log.warning('live turn flush failed: $e', tag: 'HubEvent');
     }
   }
 

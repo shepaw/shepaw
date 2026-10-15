@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shepaw/models/channel.dart';
+import 'package:shepaw/peer/hub_event_apply.dart';
 import 'package:shepaw/peer/services/hub_event_client.dart';
 import 'package:shepaw/peer/services/peer_agent_client_service.dart';
 import 'package:shepaw/peer/services/peer_connection_manager.dart';
@@ -363,6 +364,75 @@ void main() {
     }
 
     expect(sent, isEmpty);
+    await incoming.close();
+  });
+
+  test('续传回合的 chunk 合并落库，最后一个也不丢', () async {
+    final db = LocalDatabaseService();
+    final suffix = DateTime.now().microsecondsSinceEpoch + 3;
+    final channelId = 'dm_live_$suffix';
+    final agentId = 'agent-live-$suffix';
+    await db.createChannel(
+      Channel.withMemberIds(
+        id: channelId,
+        name: 'Live',
+        type: 'dm',
+        memberIds: ['user', agentId],
+      ),
+      'user',
+    );
+
+    final incoming = StreamController<PeerControlEvent>.broadcast();
+    final client = HubEventClient(
+      events: incoming.stream,
+      send: (_, __) async => true,
+      seqStore: MemoryHubSeqStore(),
+      fingerprintOf: (_) async => 'fp-live-$suffix',
+      watchingTurn: (_) => false,
+    );
+    client.start();
+    addTearDown(client.dispose);
+
+    const turnId = 'turn-live';
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: {
+        'type': 'hub_event',
+        'event': {
+          'seq': 1,
+          'kind': 'turn.started',
+          'channel_id': channelId,
+          'agent_id': agentId,
+          'data': {'turn_id': turnId},
+        },
+      },
+    ));
+    for (var i = 0; i < 20; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    for (final piece in const ['你', '好', '呀']) {
+      incoming.add(PeerControlEvent(
+        peerId: 'peer-1',
+        data: {
+          'type': 'pouch_turn_event',
+          'request_id': turnId,
+          'kind': 'chunk',
+          'chunk': piece,
+        },
+      ));
+    }
+    // 合并窗口（100ms）之后，累积正文应完整落在占位行上。
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    final row = await db.getMessageById(liveTurnPlaceholderId(turnId));
+    expect(row?['content'], '你好呀');
+
+    // done 时再补一次，避免尾巴卡在窗口里。
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: {'type': 'pouch_turn_event', 'request_id': turnId, 'kind': 'done'},
+    ));
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    await db.deleteMessage(liveTurnPlaceholderId(turnId));
     await incoming.close();
   });
 
