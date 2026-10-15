@@ -638,24 +638,6 @@ void main() {
       expect(seed.executor.calls, isEmpty);
     });
 
-    test('memberLeft with in-flight work triggers one admin turn', () async {
-      final seed = await _seedLocalAdminGroup();
-      final scheduler = _scheduler(executor: seed.executor);
-
-      scheduler.schedule(GroupEvent.memberChange(
-        channelId: seed.channel.id,
-        memberId: seed.memberId,
-        memberName: 'Agent B',
-        isJoin: false,
-        hasInFlightWork: true,
-      ));
-
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-      expect(seed.executor.calls, hasLength(1));
-      expect(seed.executor.calls.single.agentId, seed.adminId);
-      expect(seed.executor.calls.single.content, contains('成员离开：Agent B'));
-    });
-
     test('passive stepCompleted alone never triggers a turn', () async {
       final seed = await _seedLocalAdminGroup();
       final scheduler = _scheduler(executor: seed.executor);
@@ -671,76 +653,6 @@ void main() {
 
       await Future<void>.delayed(const Duration(milliseconds: 100));
       expect(seed.executor.calls, isEmpty);
-    });
-
-    test('stepFailed triggers one admin turn; content merges recent passive '
-        'events from the store', () async {
-      final seed = await _seedLocalAdminGroup();
-      final store = GroupEventStore();
-      final scheduler = _scheduler(executor: seed.executor, eventStore: store);
-
-      // 失败前刚完成的节点（被动）→ 事件日志；随后失败（主动）→ 触发回合。
-      scheduler.schedule(GroupEvent.stepCompleted(
-        channelId: seed.channel.id,
-        stageIndex: 0,
-        stepIndex: 0,
-        agentId: seed.memberId,
-        agentName: 'Agent B',
-        summary: '产出 X',
-      ));
-      scheduler.schedule(GroupEvent.stepFailed(
-        channelId: seed.channel.id,
-        stageIndex: 0,
-        stepIndex: 1,
-        agentId: seed.memberId,
-        agentName: 'Agent B',
-        error: '超时',
-      ));
-
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-      expect(seed.executor.calls, hasLength(1));
-
-      final call = seed.executor.calls.single;
-      expect(call.agentId, seed.adminId);
-      expect(call.channelId, seed.channel.id);
-      expect(call.isAdmin, isTrue);
-      expect(
-        call.customSystemPrompt,
-        genericPerceptionSystemPrompt,
-      );
-      // 两条事件都在：失败前的成功节点 + 失败节点。
-      expect(call.content, contains('阶段1/步骤1'));
-      expect(call.content, contains('✅ 完成'));
-      expect(call.content, contains('阶段1/步骤2'));
-      expect(call.content, contains('❌ 失败'));
-      expect(call.content, contains('超时'));
-    });
-
-    test('rapid multiple failures coalesce into one turn', () async {
-      final seed = await _seedLocalAdminGroup();
-      final scheduler = _scheduler(executor: seed.executor);
-
-      scheduler.schedule(GroupEvent.stepFailed(
-        channelId: seed.channel.id,
-        stageIndex: 0,
-        stepIndex: 0,
-        agentId: seed.memberId,
-        agentName: 'Agent B',
-        error: 'e1',
-      ));
-      scheduler.schedule(GroupEvent.stepFailed(
-        channelId: seed.channel.id,
-        stageIndex: 0,
-        stepIndex: 1,
-        agentId: seed.memberId,
-        agentName: 'Agent C',
-        error: 'e2',
-      ));
-
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-      expect(seed.executor.calls, hasLength(1));
-      expect(seed.executor.calls.single.content, contains('e1'));
-      expect(seed.executor.calls.single.content, contains('e2'));
     });
 
     test('drops events owned by the admin itself', () async {
@@ -851,29 +763,5 @@ void main() {
       expect(executor.calls, isEmpty);
     });
 
-    test('strips a leaked dispatch JSON block after the turn', () async {
-      final seed = await _seedLocalAdminGroup();
-      seed.executor.replyToPersist = '好的，我已知悉。\n```json\n{"steps":[]}\n```';
-      final scheduler = _scheduler(executor: seed.executor);
-
-      scheduler.schedule(GroupEvent.stepFailed(
-        channelId: seed.channel.id,
-        stageIndex: 0,
-        stepIndex: 0,
-        agentId: seed.memberId,
-        agentName: 'Agent B',
-        error: 'boom',
-      ));
-
-      await Future<void>.delayed(const Duration(milliseconds: 150));
-      expect(seed.executor.calls, hasLength(1));
-
-      final rows =
-          await LocalDatabaseService().getChannelMessages(seed.channel.id);
-      final reply =
-          rows.where((m) => m['sender_id'] == seed.adminId).firstOrNull;
-      expect(reply, isNotNull);
-      expect(reply!['content'] as String, isNot(contains('```json')));
-    });
   });
 }

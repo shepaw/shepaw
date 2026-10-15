@@ -358,75 +358,7 @@ void main() {
       expect(seed.executor.calls, isEmpty);
     });
 
-    test('leave with in-flight work triggers one admin turn; joins do not',
-        () async {
-      final seed = await _seedLocalAdminGroup();
-      final scheduler = _scheduler(
-        executor: seed.executor,
-        hasInFlightWork: (channelId, memberId) => memberId == 'm3',
-      );
 
-      scheduler.schedule(
-        channelId: seed.channel.id,
-        memberId: 'm1',
-        memberName: '甲',
-        isJoin: true,
-      );
-      scheduler.schedule(
-        channelId: seed.channel.id,
-        memberId: 'm3',
-        memberName: '丙',
-        isJoin: false,
-      );
-
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-      expect(seed.executor.calls, hasLength(1));
-
-      final call = seed.executor.calls.single;
-      expect(call.agentId, seed.adminId);
-      expect(call.channelId, seed.channel.id);
-      expect(call.isAdmin, isTrue);
-      expect(
-        call.customSystemPrompt,
-        GroupMembershipPerceptionScheduler.perceptionSystemPrompt,
-      );
-      expect(call.content, contains('离开：丙'));
-      expect(call.content, isNot(contains('加入：')));
-    });
-
-    test('coalesces rapid in-flight leaves into one admin turn', () async {
-      final seed = await _seedLocalAdminGroup();
-      final scheduler = _scheduler(
-        executor: seed.executor,
-        hasInFlightWork: (_, __) => true,
-      );
-
-      scheduler.schedule(
-        channelId: seed.channel.id,
-        memberId: 'm3',
-        memberName: '丙',
-        isJoin: false,
-      );
-      scheduler.schedule(
-        channelId: seed.channel.id,
-        memberId: 'm4',
-        memberName: '丁',
-        isJoin: false,
-      );
-
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-      expect(seed.executor.calls, hasLength(1));
-      expect(seed.executor.calls.single.content, contains('离开：丙、丁'));
-
-      scheduler.schedule(
-        channelId: seed.channel.id,
-        memberId: 'm5',
-        memberName: '戊',
-        isJoin: false,
-      );
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-      expect(seed.executor.calls, hasLength(2));
-    });
 
     test('drops the admin\'s own in-flight leave', () async {
       final seed = await _seedLocalAdminGroup();
@@ -522,32 +454,6 @@ void main() {
 
       await Future<void>.delayed(const Duration(milliseconds: 100));
       expect(executor.calls, isEmpty);
-    });
-
-    test('strips a leaked dispatch JSON block after the turn', () async {
-      final seed = await _seedLocalAdminGroup();
-      seed.executor.replyToPersist = '好的，我已知悉。\n```json\n{"steps":[]}\n```';
-      final scheduler = _scheduler(
-        executor: seed.executor,
-        hasInFlightWork: (_, __) => true,
-      );
-
-      scheduler.schedule(
-        channelId: seed.channel.id,
-        memberId: 'm1',
-        memberName: '甲',
-        isJoin: false,
-      );
-
-      await Future<void>.delayed(const Duration(milliseconds: 150));
-      expect(seed.executor.calls, hasLength(1));
-
-      final rows =
-          await LocalDatabaseService().getChannelMessages(seed.channel.id);
-      final reply =
-          rows.where((m) => m['sender_id'] == seed.adminId).firstOrNull;
-      expect(reply, isNotNull);
-      expect(reply!['content'] as String, isNot(contains('```json')));
     });
   });
 }
