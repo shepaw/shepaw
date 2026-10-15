@@ -264,10 +264,16 @@ class AgentMessagingService {
         }
       },
       onMetadata: (data) {
+        final processed = splitter.onMetadata(data);
         final merged = Map<String, dynamic>.from(activeTask.metadata ?? {});
-        merged.addAll(splitter.onMetadata(data));
+        merged.addAll(processed);
         activeTask.metadata = merged;
-        activeTask.onMessageMetadata?.call(data);
+        final progress = processed['progress_content'];
+        if (progress is String && progress.isNotEmpty) {
+          activeTask.progressContent = progress;
+          flushHelper.schedule();
+        }
+        activeTask.onMessageMetadata?.call(processed);
       },
       onActionConfirmation: (data) {
         final meta = Map<String, dynamic>.from(activeTask.metadata ?? {});
@@ -1044,7 +1050,12 @@ class AgentMessagingService {
           }
         },
         onMetadata: (data) {
-          publishMetadata(splitter.onMetadata(data));
+          final processed = splitter.onMetadata(data);
+          publishMetadata(processed);
+          if (processed['progress_content'] is String &&
+              (processed['progress_content'] as String).isNotEmpty) {
+            flushHelper.schedule();
+          }
         },
         onActionConfirmation: (data) {
           actionConfirmationData = Map<String, dynamic>.from(data);
