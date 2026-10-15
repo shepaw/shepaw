@@ -1678,6 +1678,13 @@ class PeerAgentClientService {
   /// Outstanding agent_sessions_req per remote agent id.
   final Map<String, Completer<List<PeerRemoteSession>>> _pendingSessions = {};
 
+  /// 主机在 agent_sessions_resp 里带回的它自己的时刻（peer id → epoch ms）。
+  ///
+  /// 历史同步的水位要记在主机的时间轴上：会话要不要重拉是拿主机的
+  /// `updatedAt` 比出来的，若水位记的是本机时钟，手机快于主机超过 overlap
+  /// 就会把会话判成不脏而整段跳过。
+  final Map<String, int> _hostNowMs = {};
+
   /// Outstanding agent_sessions_digest_req per peer id.
   final Map<String, Completer<Map<String, List<PeerRemoteSession>>?>>
       _pendingSessionsDigest = {};
@@ -2919,7 +2926,7 @@ class PeerAgentClientService {
         _onAgentMetaChanged(event);
         break;
       case 'agent_sessions_resp':
-        _onSessionsResp(event.data);
+        _onSessionsResp(event.peerId, event.data);
         break;
       case 'agent_sessions_digest_resp':
         _onSessionsDigestResp(event.peerId, event.data);
@@ -4752,9 +4759,13 @@ class PeerAgentClientService {
     });
   }
 
-  void _onSessionsResp(Map<String, dynamic> data) {
+  void _onSessionsResp(String peerId, Map<String, dynamic> data) {
     final remoteId = data['agent_id'] as String?;
     if (remoteId == null) return;
+    final hostNow = data['now_ms'];
+    if (hostNow is int && hostNow > 0) {
+      _hostNowMs[peerId] = hostNow;
+    }
     final raw = (data['sessions'] as List?) ?? const [];
     final sessions = raw
         .whereType<Map<String, dynamic>>()
@@ -5453,7 +5464,15 @@ class PeerAgentClientService {
     }
     nextUnstamped.addAll(mirroredUnstamped);
     await setSyncedUnstampedSessionIds(localAgentId, nextUnstamped);
-    await setLastHistorySyncAt(localAgentId, syncStartedAt);
+    // 水位记在主机的时间轴上：下次判脏是拿它比主机的 `updatedAt`，用本机
+    // 时钟记就会受两端偏差影响。主机没给（旧版本）才退回本地时刻。
+    final hostNow = _hostNowMs[peerId];
+    await setLastHistorySyncAt(
+      localAgentId,
+      hostNow == null
+          ? syncStartedAt
+          : DateTime.fromMillisecondsSinceEpoch(hostNow, isUtc: true),
+    );
     _log.info(
       'Incremental sync for $localAgentId: '
       '${dirty.length} dirty / ${sessions.length} sessions, '
