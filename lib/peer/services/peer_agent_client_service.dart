@@ -5718,6 +5718,10 @@ class PeerAgentClientService {
     final localReadRequestIds = <String>{};
     for (final row in localRows) {
       if ((row['is_read'] as int? ?? 0) == 0) continue;
+      final rowId = row['id'] as String?;
+      if (rowId != null && rowId.isNotEmpty) {
+        localReadRequestIds.add(rowId);
+      }
       final role = (row['sender_type'] as String?) == 'user' ? 'user' : 'agent';
       localReadRoleContentKeys.add(
         peerHistoryRoleContentKey(role, row['content'] as String? ?? ''),
@@ -5849,6 +5853,7 @@ class PeerAgentClientService {
       final at = DateTime.tryParse(rawAt);
       if (at != null) existingById[id] = at;
       if (!id.startsWith('peerhist_') && (row['is_read'] as int? ?? 0) != 0) {
+        localReadRequestIds.add(id);
         final role =
             (row['sender_type'] as String?) == 'user' ? 'user' : 'agent';
         localReadRoleContentKeys.add(

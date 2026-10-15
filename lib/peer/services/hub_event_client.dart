@@ -433,15 +433,27 @@ class HubEventClient {
     final sender = from is Map ? Map<String, dynamic>.from(from) : const {};
     final senderType = sender['type'] as String? ?? 'agent';
     final metadata = data['metadata'];
-    final sessionId = (data['session_id'] as String?)?.trim() ?? '';
+    final rawSessionId = (data['session_id'] as String?)?.trim() ?? '';
+    final isGroup = rawChannelId.startsWith('group_');
+    final sessionId = rawSessionId.isNotEmpty
+        ? rawSessionId
+        : (!isGroup
+            ? (remoteSessionIdFromChannelId(rawChannelId) ?? rawChannelId)
+            : '');
+    final rawAgentId = (data['agent_id'] as String?)?.trim() ?? '';
+    final effectiveRemoteAgentId = rawAgentId.isNotEmpty
+        ? rawAgentId
+        : (event.agentId.isNotEmpty && event.agentId != 'user'
+            ? event.agentId
+            : (!isGroup ? 'she-builtin-agent-001' : ''));
     final target = await PeerAgentClientService.instance
         .prepareLocalTargetForHubMessage(
       peerId: peerId,
-      remoteAgentId: event.agentId,
+      remoteAgentId: effectiveRemoteAgentId,
       sessionId: sessionId,
       rawChannelId: rawChannelId,
       senderType: senderType,
-      fallbackSenderId: sender['id'] as String? ?? event.agentId,
+      fallbackSenderId: sender['id'] as String? ?? effectiveRemoteAgentId,
       fallbackSenderName: sender['name'] as String? ?? '',
       sessionTitle: data['session_title'] as String?,
     );
