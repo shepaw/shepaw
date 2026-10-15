@@ -85,4 +85,39 @@ void main() {
     expect(find.byType(CollapsibleMessageBubble), findsOneWidget);
     expect(find.text('Thinking'), findsOneWidget);
   });
+
+  testWidgets(
+      'live tool title without progress_content shows header and keeps answer visible',
+      (tester) async {
+    final message = Message(
+      id: 'm3',
+      content: 'Analysis complete, running edits...',
+      timestampMs: 0,
+      from: MessageFrom(id: 'agent-1', type: 'agent', name: 'Agent'),
+      type: MessageType.text,
+      metadata: {
+        'collapsible_title': 'Edit',
+        'auto_collapse': true,
+      },
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: MessageBubble(
+            message: message,
+            isMyMessage: false,
+            isStreaming: true,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(CollapsibleMessageBubble), findsOneWidget);
+    expect(find.text('Edit'), findsOneWidget);
+    expect(find.text('Analysis complete, running edits...'), findsOneWidget);
+  });
 }

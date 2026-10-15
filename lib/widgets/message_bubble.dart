@@ -1045,7 +1045,9 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
-  /// Collapsible progress/thinking block from [metadata.progress_content].
+  /// Collapsible progress/thinking block from [metadata.progress_content],
+  /// or a live header indicator while streaming when a tool/thinking title is
+  /// present (`collapsible_title`) even before progress text arrives.
   Widget? _buildProgressCollapsibleSection(
     BuildContext context, {
     required MarkdownStyleSheet styleSheet,
@@ -1053,31 +1055,46 @@ class MessageBubble extends StatelessWidget {
   }) {
     final progressContent =
         message.metadata?['progress_content'] as String?;
-    if (progressContent == null || progressContent.isEmpty) {
+    final progressTitle = message.metadata?['collapsible_title'] as String?;
+    final hasProgressText =
+        progressContent != null && progressContent.isNotEmpty;
+    final hasLiveStepTitle = isStreaming &&
+        message.metadata?['collapsible'] != false &&
+        progressTitle != null &&
+        progressTitle.isNotEmpty;
+    if (!hasProgressText && !hasLiveStepTitle) {
       return null;
     }
 
-    final progressTitle = message.metadata?['collapsible_title'] as String?;
     final autoCollapse = message.metadata?['auto_collapse'] != false;
-    final progressBody = StableMarkdownBody(
-      data: progressContent,
-      styleSheet: styleSheet,
-      isStreaming: isStreaming && !hasAnswer,
-      onTapLink: (text, href, title) async {
-        if (href == null) return;
-        await _handleTapLink(context, href);
-      },
-    );
-    return CollapsibleMessageBubble(
-      title: progressTitle ?? AppLocalizations.of(context).widget_details,
-      initiallyCollapsed: hasAnswer || (!isStreaming && autoCollapse),
-      autoCollapseOnComplete: autoCollapse && hasAnswer,
-      isStreaming: isStreaming && !hasAnswer,
-      isMyMessage: isMyMessage,
-      child: _wrapWithTextSelection(
+    final activelyRunningProgress =
+        isStreaming && (!hasAnswer || message.metadata?['collapsible'] == true);
+    final Widget progressChild;
+    if (hasProgressText) {
+      final progressBody = StableMarkdownBody(
+        data: progressContent,
+        styleSheet: styleSheet,
+        isStreaming: activelyRunningProgress,
+        onTapLink: (text, href, title) async {
+          if (href == null) return;
+          await _handleTapLink(context, href);
+        },
+      );
+      progressChild = _wrapWithTextSelection(
         progressBody,
         useSharedSelectionKey: !hasAnswer,
-      ),
+      );
+    } else {
+      progressChild = const SizedBox.shrink();
+    }
+    return CollapsibleMessageBubble(
+      title: progressTitle ?? AppLocalizations.of(context).widget_details,
+      initiallyCollapsed:
+          !hasProgressText || hasAnswer || (!isStreaming && autoCollapse),
+      autoCollapseOnComplete: autoCollapse && hasAnswer,
+      isStreaming: activelyRunningProgress,
+      isMyMessage: isMyMessage,
+      child: progressChild,
     );
   }
 

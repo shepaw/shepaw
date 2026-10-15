@@ -74,11 +74,42 @@ void main() {
         'auto_collapse': false,
       });
       expect(s.autoCollapse, isFalse);
+      // Before any progress chunk arrives, collapsible is withheld so the
+      // message bubble does not fold existing answer text into legacy whole-message collapse.
+      expect(out.containsKey('collapsible'), isFalse);
       s.onChunk('tool');
       final meta = s.finalProgressMetadata();
       expect(meta['auto_collapse'], isFalse);
       expect(meta['collapsible_title'], 'Details');
-      expect(out['collapsible'], isTrue);
+    });
+
+    test('records tool step into progress_content and withholds collapsible when Thinking is empty',
+        () {
+      final s = StreamContentSplitter();
+      s.onChunk('First part of answer.');
+
+      // 1. Thinking metadata with no thought chunks yet: progressContent stays
+      // empty and collapsible is withheld so answer is not folded.
+      final thinkingOut = s.onMetadata({
+        'collapsible': true,
+        'collapsible_title': 'Thinking',
+        'auto_collapse': true,
+      });
+      expect(thinkingOut.containsKey('collapsible'), isFalse);
+      expect(thinkingOut['collapsible_title'], 'Thinking');
+      expect(s.progressContent, isEmpty);
+
+      // 2. Tool metadata ('Edit') records a step line into progress_content so
+      // silent tool calls are immediately visible in the progress block.
+      final toolOut = s.onMetadata({
+        'collapsible': true,
+        'collapsible_title': 'Edit',
+        'auto_collapse': true,
+      });
+      expect(toolOut['collapsible'], isTrue);
+      expect(toolOut['collapsible_title'], 'Edit');
+      expect(toolOut['progress_content'], '- Edit\n');
+      expect(s.answerContent, 'First part of answer.');
     });
 
     test('collapsible false clears whole-message collapsible when no progress',

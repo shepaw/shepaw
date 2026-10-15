@@ -32,6 +32,19 @@ class StreamContentSplitter {
         final title = data['collapsible_title'] as String?;
         if (title != null && title.isNotEmpty) {
           progressTitle = title;
+          // Record non-thinking tool step titles into progressContent so that
+          // silent tool-heavy phases still show a live step log in the
+          // collapsible block instead of appearing frozen.
+          if (title != 'Thinking' && title != 'Details') {
+            final stepLine = '- $title\n';
+            if (!progressContent.endsWith(stepLine)) {
+              if (progressContent.isNotEmpty &&
+                  !progressContent.endsWith('\n')) {
+                progressContent += '\n';
+              }
+              progressContent += stepLine;
+            }
+          }
         }
         if (data.containsKey('auto_collapse')) {
           autoCollapse = data['auto_collapse'] == true;
@@ -47,6 +60,15 @@ class StreamContentSplitter {
       out['collapsible'] = true;
       out['collapsible_title'] =
           progressTitle ?? (out['collapsible_title'] as String?) ?? 'Details';
+      out['auto_collapse'] = autoCollapse;
+    } else if (!alreadySplitUpstream && divertToProgress) {
+      // Tool/thinking phase started, but no progress text has arrived yet.
+      // Keep the title for live progress indicator without marking the whole
+      // message body as legacy collapsible.
+      out.remove('collapsible');
+      if (progressTitle != null && progressTitle!.isNotEmpty) {
+        out['collapsible_title'] = progressTitle;
+      }
       out['auto_collapse'] = autoCollapse;
     } else if (data['collapsible'] == false) {
       // Answer section — don't keep whole-message collapsible.
