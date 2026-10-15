@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:path/path.dart' as p;
@@ -238,6 +237,13 @@ class PouchChatLog {
     ];
   }
 
+  /// 从尾部按块回读定位最后一个换行。
+  ///
+  /// 逐字节回退扫描在流式写入时会退化成「每字节 2 次 dart:io await」——
+  /// 一条几 KB 的回复每 flush 一次就是上万次往返。按块读把往返数压到
+  /// 常数级（极长单行才需要多读几块）。
+  static const int _tailScanBlockSize = 64 * 1024;
+
   Future<void> _replaceLastLine(File file, String line) async {
     final raf = await file.open(mode: FileMode.append);
     try {
@@ -246,18 +252,20 @@ class PouchChatLog {
         await raf.writeFrom(utf8.encode(line));
         return;
       }
-      var pos = length;
-      // 最后一行以换行结束。往前找到上一条的换行，从那里覆盖。
-      while (pos > 0) {
-        pos -= 1;
-        await raf.setPosition(pos);
-        final byte = Uint8List(1);
-        await raf.readInto(byte);
-        if (byte[0] == 10 && pos < length - 1) {
-          pos += 1;
+      // 最后一行以换行结束，这个结尾换行不参与查找。
+      var searchEnd = length - 1;
+      var pos = 0;
+      while (searchEnd > 0) {
+        final start =
+            searchEnd > _tailScanBlockSize ? searchEnd - _tailScanBlockSize : 0;
+        await raf.setPosition(start);
+        final block = await raf.read(searchEnd - start);
+        final newline = block.lastIndexOf(10);
+        if (newline >= 0) {
+          pos = start + newline + 1;
           break;
         }
-        if (pos == 0) break;
+        searchEnd = start;
       }
       await raf.setPosition(pos);
       await raf.truncate(pos);

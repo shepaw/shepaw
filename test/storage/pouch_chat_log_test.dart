@@ -38,6 +38,18 @@ void main() {
     expect(read.single.content, '你好呀');
   });
 
+  test('改写超长最后一行不丢前面的消息', () async {
+    final log = PouchChatLog(root);
+    await log.upsert(record('m1', '一'));
+    // 超过一次尾部回读的块大小（64KB），必须继续往前翻块才找得到上一行换行。
+    final long = 'x' * (64 * 1024 + 4096);
+    await log.upsert(record('m2', long));
+    await log.upsert(record('m2', '$long-改'));
+    final read = await log.readChannel('ch-1');
+    expect(read.map((m) => m.id), ['m1', 'm2']);
+    expect(read.last.content, '$long-改');
+  });
+
   test('不同消息按写入顺序保留，删除的不再读出', () async {
     final log = PouchChatLog(root);
     await log.upsert(record('m1', '一'));
