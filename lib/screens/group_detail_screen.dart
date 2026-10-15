@@ -131,12 +131,15 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
       for (final agent in agents) {
         map[agent.id] = agent;
       }
-      final remoteMap = <String, RemoteAgent>{};
-      for (final member in _channel.members) {
-        if (member.id == 'user') continue;
-        final remote = await _databaseService.getRemoteAgentById(member.id);
-        if (remote != null) remoteMap[member.id] = remote;
-      }
+      final memberIds = <String>[
+        for (final member in _channel.members)
+          if (member.id != 'user') member.id,
+      ];
+      // 一次 IN (...) 拿全，逐个查是 N 次串行往返。
+      final remotes = await _databaseService.getRemoteAgentsByIds(memberIds);
+      final remoteMap = <String, RemoteAgent>{
+        for (final remote in remotes) remote.id: remote,
+      };
       if (mounted) {
         setState(() {
           _agentMap = map;

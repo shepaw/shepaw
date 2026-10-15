@@ -41,6 +41,28 @@ extension RemoteAgentDao on LocalDatabaseService {
     return _withSheAvatar(agent);
   }
 
+  /// 按 ID 批量获取远端助手。
+  ///
+  /// 群成员 / 会话列表以前是逐个 [getRemoteAgentById]，N 个成员就是 N 次
+  /// 串行 sqflite 往返。这里一次 `IN (...)` 拿全，顺序跟随 [ids]。
+  Future<List<remote_agent.RemoteAgent>> getRemoteAgentsByIds(
+    List<String> ids, {
+    bool presentSheAvatar = true,
+  }) async {
+    final unique = ids.toSet().toList();
+    if (unique.isEmpty) return const <remote_agent.RemoteAgent>[];
+    final db = await database;
+    final results = await db.query(
+      'agents',
+      where: 'id IN (${unique.map((_) => '?').join(', ')})',
+      whereArgs: unique,
+    );
+    return results.map((map) {
+      final agent = remote_agent.RemoteAgent.fromMap(map);
+      return presentSheAvatar ? _withSheAvatar(agent) : agent;
+    }).toList();
+  }
+
   /// 根据 Token 获取远端助手
   Future<remote_agent.RemoteAgent?> getRemoteAgentByToken(String token) async {
     final db = await database;

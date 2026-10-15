@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/agent.dart';
+import 'package:shepaw/models/remote_agent.dart' as ra;
 import 'package:shepaw/services/local_database_service.dart';
 
 import '../../storage/test_harness.dart';
@@ -66,6 +67,46 @@ void main() {
       expect(loaded, isNotNull);
       expect(loaded!.bio, '更新后的简历');
       expect(loaded.description, '更新后的简历');
+    });
+  });
+
+  group('RemoteAgentDao 批量查询', () {
+    late LocalDatabaseService db;
+
+    setUp(() async {
+      db = LocalDatabaseService();
+      await db.database;
+    });
+
+    Future<void> insertAgent(String id) async {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await db.createRemoteAgent(ra.RemoteAgent(
+        id: id,
+        name: id,
+        token: 'tok-$id',
+        endpoint: 'ws://localhost/$id',
+        protocol: ra.ProtocolType.peer,
+        connectionType: ra.ConnectionType.websocket,
+        createdAt: now,
+        updatedAt: now,
+      ));
+    }
+
+    test('一次查询拿回全部存在的 id，缺失的跳过', () async {
+      final stamp = DateTime.now().microsecondsSinceEpoch;
+      final ids = <String>['a-$stamp', 'b-$stamp', 'c-$stamp'];
+      for (final id in ids) {
+        await insertAgent(id);
+      }
+
+      final loaded = await db.getRemoteAgentsByIds([...ids, 'missing-$stamp']);
+      expect(loaded.map((a) => a.id).toSet(), ids.toSet());
+      expect(loaded.any((a) => a.id == 'missing-$stamp'), isFalse);
+    });
+
+    test('空 id 列表不查库', () async {
+      final loaded = await db.getRemoteAgentsByIds(const <String>[]);
+      expect(loaded, isEmpty);
     });
   });
 }
