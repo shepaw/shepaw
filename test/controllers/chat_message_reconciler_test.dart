@@ -562,4 +562,90 @@ void main() {
       );
     });
   });
+
+  group('rowsToSurfaceDuringLiveTurn', () {
+    test('活回合期间后台同步下来的历史 Agent 回复正常浮出，仅拦截本轮新 Agent 回复', () {
+      final current = [
+        _user('u_now', content: '新问题', ts: 100),
+        _agent('streaming_now', agentId: 'she', content: '', ts: 100),
+      ];
+      final db = [
+        _user('peerhist_u_old', content: '历史问题', ts: 10),
+        _agent('peerhist_a_old', agentId: 'she', content: '历史回复', ts: 20),
+        _user('u_now', content: '新问题', ts: 100),
+        _agent('a_now', agentId: 'she', content: '本轮已完成回复', ts: 110),
+      ];
+      final surfaced = ChatMessageReconciler.rowsToSurfaceDuringLiveTurn(
+        current: current,
+        dbMessages: db,
+        turnBeganAtMs: 100,
+      );
+      expect(
+        surfaced.map((m) => m.id).toList(),
+        ['peerhist_u_old', 'peerhist_a_old'],
+      );
+    });
+
+    test('内存中已有裸 ID 的历史消息时，不因 peerhist_ 前缀重复浮出', () {
+      final current = [
+        _user('u_old', content: '历史问题', ts: 10),
+        _agent('a_old', agentId: 'she', content: '历史回复', ts: 20),
+        _user('u_now', content: '新问题', ts: 100),
+        _agent('streaming_now', agentId: 'she', content: '', ts: 100),
+      ];
+      final db = [
+        _user('peerhist_u_old', content: '历史问题', ts: 10),
+        _agent('peerhist_a_old', agentId: 'she', content: '历史回复', ts: 20),
+      ];
+      final surfaced = ChatMessageReconciler.rowsToSurfaceDuringLiveTurn(
+        current: current,
+        dbMessages: db,
+        turnBeganAtMs: 100,
+      );
+      expect(surfaced, isEmpty);
+    });
+
+    test('群回合收尾对账时保留子 Agent 流式思考/工具进度条与 hub_interaction 元数据', () {
+      final temp = _agent(
+        'group_streaming_claude_1',
+        agentId: 'claude',
+        content: '已完成重构。',
+        ts: 100,
+        metadata: {
+          'collapsible': true,
+          'collapsible_title': 'Read src/auth.rs',
+          'progress_content': 'Thinking\n先查看登录模块\n\nRead src/auth.rs',
+          'auto_collapse': true,
+          'hub_interaction': {
+            'host_peer_id': 'host-1',
+            'interaction_id': 'ix-1',
+            'interaction_type': 'action_confirmation',
+          },
+        },
+      );
+      final dbMsg = _agent(
+        'db_claude_1',
+        agentId: 'claude',
+        content: '已完成重构。',
+        ts: 102,
+      );
+      final result = ChatMessageReconciler.reconcileGroupMessages(
+        current: [temp],
+        dbMessages: [dbMsg],
+      );
+      final merged = result.messages.single;
+      expect(merged.id, 'db_claude_1');
+      expect(
+        merged.metadata?['progress_content'],
+        'Thinking\n先查看登录模块\n\nRead src/auth.rs',
+      );
+      expect(merged.metadata?['collapsible_title'], 'Read src/auth.rs');
+      expect(merged.metadata?['collapsible'], isFalse);
+      expect(merged.metadata?['auto_collapse'], isTrue);
+      expect(
+        (merged.metadata?['hub_interaction'] as Map?)?['interaction_id'],
+        'ix-1',
+      );
+    });
+  });
 }
