@@ -3531,6 +3531,17 @@ class PeerAgentClientService {
     required String peerId,
     required String remoteAgentId,
   }) async {
+    final existingReqId = _soulGetRequestByAgent[remoteAgentId];
+    if (existingReqId != null) {
+      final existingCompleter = _pendingSoulGet[existingReqId];
+      if (existingCompleter != null && !existingCompleter.isCompleted) {
+        try {
+          return await existingCompleter.future.timeout(_soulRelayTimeout);
+        } on TimeoutException {
+          return null;
+        }
+      }
+    }
     final requestId = _uuid.v4();
     final completer = Completer<PeerSoulInfo?>();
     _pendingSoulGet[requestId] = completer;
@@ -5825,6 +5836,7 @@ class PeerAgentClientService {
       channelId: channelId,
       existingById: existingRowsById,
       createdAts: createdAts,
+      keepLocalRead: keepLocalRead,
     );
     final inserts = <StoredMessageInsert>[];
     for (final i in indexes) {
@@ -5984,6 +5996,7 @@ class PeerAgentClientService {
       history: history,
       existingAsc: existingAsc,
       createdAts: createdAts,
+      keepLocalRead: keepLocalRead,
     )) {
       return 0;
     }

@@ -27,6 +27,14 @@ class AgentSoulService {
     if (agent.isPeerAgent) {
       final peerId = agent.sourcePeerId;
       final remoteId = agent.remoteAgentId;
+      final cached =
+          await PeerAgentClientService.instance.cachedSoul(agent.id) ??
+              (remoteId != null && remoteId != agent.id
+                  ? await PeerAgentClientService.instance.cachedSoul(remoteId)
+                  : null);
+      if (cached != null && cached.isOk) {
+        return cached.soul;
+      }
       if (peerId == null || remoteId == null) return '';
       if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
         return '';

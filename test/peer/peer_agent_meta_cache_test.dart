@@ -4,6 +4,7 @@ import 'package:shepaw/models/remote_agent.dart';
 import 'package:shepaw/peer/services/peer_agent_client_service.dart';
 import 'package:shepaw/peer/services/peer_connection.dart';
 import 'package:shepaw/service_locator.dart';
+import 'package:shepaw/services/agent_soul_service.dart';
 import 'package:shepaw/services/local_database_service.dart';
 import 'package:shepaw/widgets/chat/chat_input_area.dart';
 
@@ -596,6 +597,55 @@ void main() {
       expect(cached?.isOk, isTrue);
       expect(cached?.soul, isEmpty);
       expect(cached?.editable, isTrue);
+    });
+
+    test('fetchSoulInfo deduplicates concurrent in-flight requests and AgentSoulService uses cachedSoul', () async {
+      const id = 'meta-soul-dedup';
+      created.add(id);
+      var reqCount = 0;
+      svc.debugSendControlOverride = (peerId, json) async {
+        if (json['type'] == 'agent_soul_req') reqCount++;
+        return true;
+      };
+
+      final f1 = svc.fetchSoulInfo(peerId: 'peer', remoteAgentId: id);
+      final f2 = svc.fetchSoulInfo(peerId: 'peer', remoteAgentId: id);
+      await Future<void>.delayed(Duration.zero);
+      expect(reqCount, 1);
+
+      svc.debugInjectControlForTest('agent_soul_resp', {
+        'agent_id': id,
+        'ok': true,
+        'soul': 'cached-soul-body',
+        'editable': true,
+      });
+      final r1 = await f1;
+      final r2 = await f2;
+      expect(r1?.soul, 'cached-soul-body');
+      expect(r2?.soul, 'cached-soul-body');
+      await poll(
+        () => svc.cachedSoul(id),
+        (value) => value?.soul == 'cached-soul-body',
+      );
+
+      final agent = RemoteAgent(
+        id: id,
+        name: 'Peer Agent',
+        token: '',
+        endpoint: 'peer://peer/$id',
+        protocol: ProtocolType.peer,
+        connectionType: ConnectionType.websocket,
+        status: AgentStatus.online,
+        metadata: const {
+          'source_peer_id': 'peer',
+          'remote_agent_id': id,
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      );
+      final fromService = await AgentSoulService.instance.getSoul(agent);
+      expect(fromService, 'cached-soul-body');
+      expect(reqCount, 1);
     });
   });
 
