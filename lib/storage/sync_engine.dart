@@ -67,6 +67,9 @@ class SyncEngine {
 
   static const _tag = 'SyncEngine';
   static const _heartbeat = Duration(seconds: 30);
+  /// 本地写合并窗口：一次镜像会连续 commit 好几个文件（session.json、
+  /// manifest…），逐个 poke 会让每写一个就跑一整轮同步 + 两次状态广播。
+  static const _pokeDebounce = Duration(milliseconds: 500);
   /// 经 peer 控制帧上传时小于 LocalStore.maxReadChunk，避免 base64 后撑爆通道。
   static const _syncChunk = 32 * 1024;
 
@@ -82,6 +85,7 @@ class SyncEngine {
   int? _uploadingSeq;
   String? _lastError;
   Future<void>? _syncFlight;
+  Timer? _pokeTimer;
   final _statusController = StreamController<SyncStatus>.broadcast();
   SyncStatus _latestStatus = SyncStatus.empty;
 
@@ -144,6 +148,8 @@ class SyncEngine {
   Future<void> stop() async {
     _timer?.cancel();
     _timer = null;
+    _pokeTimer?.cancel();
+    _pokeTimer = null;
     await _eventSub?.cancel();
     _eventSub = null;
     LocalStore.syncJournal = null;
@@ -182,8 +188,15 @@ class SyncEngine {
     } catch (_) {}
   }
 
-  /// 追加后立即触发（本地写路径调用）。
-  void poke() => unawaited(syncNow());
+  /// 追加后触发（本地写路径调用）。连续写合并成一轮，[syncNow] 本身已有
+  /// 单飞，这里只把「每写一次都同步」降成「写完 500ms 同步一次」。
+  void poke() {
+    _pokeTimer?.cancel();
+    _pokeTimer = Timer(_pokeDebounce, () {
+      _pokeTimer = null;
+      unawaited(syncNow());
+    });
+  }
 
   Future<void> _emitStatus() async {
     final journal = _journal;

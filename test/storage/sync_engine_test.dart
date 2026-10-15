@@ -429,4 +429,22 @@ void main() {
     await Future.wait([a, b]);
     expect((await engine.journal!.pending()), isEmpty);
   });
+
+  test('连续 poke 合并成一轮同步', () async {
+    await clientCommit('poke.txt', bytesOf('z'));
+    final helloBefore = master.opLog.length;
+    engine.poke();
+    engine.poke();
+    engine.poke();
+    // 防抖窗口内不应该已经开始同步。
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(master.opLog.length, helloBefore);
+
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    expect(
+      master.opLog.where((op) => op == StoreOp.syncHello).length,
+      1,
+    );
+    expect((await engine.journal!.pending()), isEmpty);
+  });
 }
