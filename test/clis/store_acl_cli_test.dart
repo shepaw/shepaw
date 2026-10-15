@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/clis/shepaw/chat/chat_agent_scope.dart';
-import 'package:shepaw/clis/shepaw/pouch/store_namespace.dart';
+import 'package:shepaw/clis/shepaw/store/store_namespace.dart';
 import 'package:shepaw/services/she_service.dart';
 import 'package:shepaw/storage/artifact_service.dart';
 import 'package:shepaw/storage/store_service.dart';

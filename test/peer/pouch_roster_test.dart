@@ -63,9 +63,8 @@ void main() {
     );
     expect(await AgentRosterStore(root).load(), isEmpty);
 
-    await File(
-      '${root.path}/.system/${PouchRoleStore.fileName}',
-    ).delete();
+    // 没有角色文件 = absent，不是主机（见 PouchRole 注释）。要变主机得显式存。
+    await PouchRoleStore(root).save(const PouchRole.host());
     await PouchRosterSync.applyAgentList(
       root: root,
       hubFingerprint: 'hubaaaa',
@@ -86,9 +85,7 @@ void main() {
     );
     expect((await AgentRosterStore(root).load()).single.dialable, isTrue);
 
-    await File(
-      '${root.path}/.system/${PouchRoleStore.fileName}',
-    ).delete();
+    await PouchRoleStore(root).save(const PouchRole.host());
     await PouchRosterSync.detachHub(
       root: root,
       hubFingerprint: 'hubaaaa',
@@ -172,7 +169,7 @@ void main() {
       isNull,
     );
 
-    await File('${root.path}/.system/${PouchRoleStore.fileName}').delete();
+    await PouchRoleStore(root).save(const PouchRole.host());
     final cards = await PouchRosterSync.applyIfHost(
       root: root,
       hubFingerprint: 'hubaaaa',

@@ -50,7 +50,7 @@ void main() {
         await SnapshotService.instance.createSnapshot(password: password);
 
     // 目录布局 <device_id>/backups/<ts>/
-    expect(info.path, contains('/store/$deviceId/backups/'));
+    expect(info.path, contains('/pouch/$deviceId/backups/'));
     expect(File(p.join(info.path, 'manifest.json')).existsSync(), isTrue);
     expect(File(p.join(info.path, 'db.sqlite.enc')).existsSync(), isTrue);
     expect(File(p.join(info.path, 'identity.enc')).existsSync(), isTrue);
@@ -155,8 +155,8 @@ void main() {
     expect(list.length, greaterThanOrEqualTo(2));
 
     // 主库旁留下 .pre-restore 兜底文件
-    final docs = p.dirname(info.path.contains('/store/')
-        ? info.path.split('/store/').first
+    final docs = p.dirname(info.path.contains('/pouch/')
+        ? info.path.split('/pouch/').first
         : info.path);
     expect(docs, isNotEmpty);
   });
