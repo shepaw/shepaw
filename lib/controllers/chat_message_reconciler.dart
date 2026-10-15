@@ -100,6 +100,23 @@ class ChatMessageReconciler {
         changed = true;
       }
     }
+    final tempHubIx = tempMeta['hub_interaction'];
+    if (tempHubIx is Map && merged['hub_interaction'] == null) {
+      merged['hub_interaction'] = Map<String, dynamic>.from(tempHubIx);
+      changed = true;
+    }
+    final tempProgress = tempMeta['progress_content'];
+    if (tempProgress is String &&
+        tempProgress.trim().isNotEmpty &&
+        merged['progress_content'] == null) {
+      merged['progress_content'] = tempProgress;
+      merged['collapsible'] = false;
+      if (tempMeta['collapsible_title'] != null) {
+        merged['collapsible_title'] = tempMeta['collapsible_title'];
+      }
+      merged['auto_collapse'] = tempMeta['auto_collapse'] ?? true;
+      changed = true;
+    }
     if (!changed) return dbMsg;
 
     return Message(

@@ -507,17 +507,30 @@ class PouchTurnRelay {
     try {
       if (onInteractionRequest != null) {
         final raw = event['data'];
+        final payload = raw is Map
+            ? Map<String, dynamic>.from(raw.cast<String, dynamic>())
+            : <String, dynamic>{};
+        final interactionId = event['interaction_id'] as String? ?? '';
+        final interactionType = event['interaction_type'] as String? ?? '';
+        if (hostPeerId.isNotEmpty && interactionId.isNotEmpty) {
+          payload['_hub_interaction'] = <String, dynamic>{
+            'host_peer_id': hostPeerId,
+            'interaction_id': interactionId,
+            'interaction_type': interactionType,
+            if (event['request_id'] is String) 'turn_id': event['request_id'],
+          };
+        }
         result = await onInteractionRequest(
           event['agent_id'] as String? ?? '',
           event['agent_name'] as String? ?? '',
-          event['interaction_type'] as String? ?? '',
-          raw is Map ? raw.cast<String, dynamic>() : <String, dynamic>{},
+          interactionType,
+          payload,
         );
       }
     } catch (_) {
       result = null;
     }
-    if (result == null) return;
+    if (result == null || result['_non_blocking'] == true) return;
     await PeerConnectionManager.instance.sendControl(hostPeerId, {
       'type': interactionResponseType,
       'request_id': event['request_id'],

@@ -1887,6 +1887,10 @@ mixin _MessagingOps on _ChatControllerBase {
     required String interactionType,
     required Map<String, dynamic> data,
   }) async {
+    final hubInteractionRaw = data.remove('_hub_interaction');
+    final hubInteraction = hubInteractionRaw is Map
+        ? Map<String, dynamic>.from(hubInteractionRaw.cast<String, dynamic>())
+        : null;
     final workflowId = GroupInteractionPlanner.workflowIdFromPlanApproval(
       interactionType,
       data,
@@ -1918,15 +1922,19 @@ mixin _MessagingOps on _ChatControllerBase {
 
     if (sid != null) {
       _updateGroupStreamingMetadata(sid, interactionType, data);
+      if (hubInteraction != null) {
+        _updateGroupStreamingMetadata(sid, 'hub_interaction', hubInteraction);
+      }
+      final persistedMeta = GroupInteractionPlanner.metadataForPersist(
+        existing: messageIdMap[sid]?.metadata,
+        interactionType: interactionType,
+        data: data,
+      );
+      if (hubInteraction != null) {
+        persistedMeta['hub_interaction'] = hubInteraction;
+      }
       localDatabaseService
-          .updateMessageMetadata(
-            sid,
-            GroupInteractionPlanner.metadataForPersist(
-              existing: messageIdMap[sid]?.metadata,
-              interactionType: interactionType,
-              data: data,
-            ),
-          )
+          .updateMessageMetadata(sid, persistedMeta)
           .ignore();
     }
 

@@ -913,6 +913,7 @@ mixin _InteractionOps on _ChatControllerBase {
     if (await _answerHubInteraction(originalMessage, {
       'values': values,
     })) {
+      _markPeerFormSubmitted(originalMessage, values);
       return;
     }
     final pending = pendingGroupInteractions[originalMessage.id];
