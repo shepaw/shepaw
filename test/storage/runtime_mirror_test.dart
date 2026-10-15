@@ -94,6 +94,33 @@ void main() {
     expect(utf8.decode(bytes), 'hello workspace');
   });
 
+  test('同一 owner 的多个会话都留在 manifest 的 channels 里', () async {
+    final mirror = RuntimeMirrorService.instance;
+    mirror.debounce = Duration.zero;
+    const owner = 'agent-multi-channel';
+    const first = 'dm_a';
+    const second = 'dm_b';
+
+    mirror.scheduleSessionMirror(ownerId: owner, channelId: first);
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    mirror.scheduleSessionMirror(ownerId: owner, channelId: second);
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    final deviceId = await DeviceIdentity.deviceId();
+    final store = await StoreService.instance.localStore();
+    final (bytes, _, _) = await store.read(
+      deviceId,
+      StoreSpace.runtime,
+      RuntimePaths.contextManifest(owner),
+      0,
+      1 << 16,
+    );
+    final json = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+    final channels = (json['channels'] as Map?)?.cast<String, dynamic>() ?? {};
+    // 第二次镜像曾经会先清空 manifest，导致只剩最后这一个会话。
+    expect(channels.keys, containsAll([first, second]));
+  });
+
   test('peer session mirror 写入对端 device 的 runtime session.json', () async {
     final mirror = RuntimeMirrorService.instance;
     mirror.debounce = Duration.zero;

@@ -1,3 +1,4 @@
+import '../storage/runtime_mirror_service.dart';
 import '../storage/store_wipe_service.dart';
 import 'agent_memory_store_service.dart';
 import 'chat_service.dart';
@@ -63,6 +64,8 @@ class AppDataResetService {
     });
     await step('store', () async {
       await _storeWipe.wipeSelfTree();
+      // 整棵树都清了，runtime 镜像记住的「manifest 已注册」随之作废。
+      RuntimeMirrorService.instance.invalidateManifestCache();
     });
 
     if (errors.isNotEmpty) {

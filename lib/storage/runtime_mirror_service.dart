@@ -184,8 +184,13 @@ class RuntimeMirrorService {
         await ensureRuntimeScaffold(ownerId, deviceId: device);
       }
       final loadChannel = messagesChannelId ?? channelId;
-      final rows = await LocalDatabaseService()
-          .getChannelMessages(loadChannel, limit: 500, offset: 0);
+      // 读够判定滚动的条数即可：第 201 条起既不参与 shouldRoll 也不进
+      // session.json（窗口只有 sessionWindowSize 条）。
+      final rows = await LocalDatabaseService().getChannelMessages(
+        loadChannel,
+        limit: sessionRollMessageThreshold,
+        offset: 0,
+      );
       // DAO returns newest-first; mirror chronological.
       final chronological = rows.reversed.toList();
       final messages = <Map<String, dynamic>>[];
@@ -314,7 +319,34 @@ class RuntimeMirrorService {
     }
   }
 
+  /// 已经写进 manifest 的 (device, owner, channel)。
+  ///
+  /// manifest 里一个 channel 的条目只有 session_uri，落一次就不再变；重复
+  /// 「分块读回整份 manifest → decode → 整体重写」纯属浪费。依赖
+  /// ensureRuntimeScaffold 不再无条件清空 manifest。
+  final _registeredManifest = <String>{};
+
+  /// store 切换 / 重登录 / 快照导入后调用：manifest 可能被整体换掉，
+  /// 进程内的「已注册」记忆作废。
+  void invalidateManifestCache() => _registeredManifest.clear();
+
   Future<void> _touchManifestChannel(
+    String deviceId,
+    String ownerId,
+    String channelId,
+  ) async {
+    final manifestKey = '$deviceId::$ownerId::$channelId';
+    if (!_registeredManifest.add(manifestKey)) return;
+    try {
+      await _touchManifestChannelNow(deviceId, ownerId, channelId);
+    } catch (e) {
+      // 写失败就忘掉，下次镜像再来一遍。
+      _registeredManifest.remove(manifestKey);
+      rethrow;
+    }
+  }
+
+  Future<void> _touchManifestChannelNow(
     String deviceId,
     String ownerId,
     String channelId,
