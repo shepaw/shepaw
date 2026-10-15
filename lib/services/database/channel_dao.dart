@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 
 import 'package:sqflite/sqflite.dart';
@@ -544,6 +545,73 @@ extension ChannelDao on LocalDatabaseService {
     return results.map((r) => r['id'] as String).toList();
   }
 
+  /// 一次拿多个群家族的会话 id（[getGroupSessionIds] 的批量版）。
+  ///
+  /// 会话列表每个群单独查一次，20 个群就是 20 次往返；这里一次 `IN (...)`
+  /// 取回全部再按家族分组，顺序沿用 created_at DESC。
+  Future<Map<String, List<String>>> getGroupSessionIdsByFamilies(
+    List<String> parentGroupIds,
+  ) async {
+    final families = parentGroupIds.toSet().toList();
+    if (families.isEmpty) return const {};
+    final db = await database;
+    final placeholders = families.map((_) => '?').join(', ');
+    final args = <Object?>[...families, ...families];
+    final results = await db.rawQuery(
+      'SELECT c.id, c.parent_group_id FROM channels c '
+      "WHERE c.type = 'group' AND (c.id IN ($placeholders) "
+      'OR c.parent_group_id IN ($placeholders)) '
+      'ORDER BY c.created_at DESC',
+      args,
+    );
+    final byFamily = <String, LinkedHashSet<String>>{};
+    for (final row in results) {
+      final id = row['id'] as String?;
+      if (id == null) continue;
+      final parent = row['parent_group_id'] as String?;
+      // 家族根（id 就是家族）与子会话（parent_group_id 指向家族）都要算进
+      // 对应家族；两者同时成立时两边都进，跟单查版一致。
+      if (families.contains(id)) {
+        (byFamily[id] ??= LinkedHashSet<String>()).add(id);
+      }
+      if (parent != null && families.contains(parent)) {
+        (byFamily[parent] ??= LinkedHashSet<String>()).add(id);
+      }
+    }
+    return {
+      for (final entry in byFamily.entries) entry.key: entry.value.toList(),
+    };
+  }
+
+  /// 一次拿多个群家族里最近活跃的会话（[getLatestActiveGroupChannel] 批量版）。
+  Future<Map<String, String>> getLatestActiveGroupChannels(
+    List<String> parentGroupIds,
+  ) async {
+    final families = parentGroupIds.toSet().toList();
+    if (families.isEmpty) return const {};
+    final db = await database;
+    final placeholders = families.map((_) => '?').join(', ');
+    final results = await db.rawQuery(
+      'SELECT c.id, c.parent_group_id FROM channels c '
+      "WHERE c.type = 'group' AND (c.id IN ($placeholders) "
+      'OR c.parent_group_id IN ($placeholders)) '
+      'ORDER BY c.updated_at DESC',
+      <Object?>[...families, ...families],
+    );
+    final byFamily = <String, String>{};
+    for (final row in results) {
+      final id = row['id'] as String?;
+      if (id == null) continue;
+      final parent = row['parent_group_id'] as String?;
+      // 已按 updated_at DESC 排好，先出现的就是该家族最近活跃的。
+      if (families.contains(id)) byFamily.putIfAbsent(id, () => id);
+      if (parent != null && families.contains(parent)) {
+        byFamily.putIfAbsent(parent, () => id);
+      }
+    }
+    return byFamily;
+  }
+
   /// 获取某个群聊家族中最近活跃的会话（按 updated_at 排序）
   Future<String?> getLatestActiveGroupChannel(String parentGroupId) async {
     final db = await database;
@@ -819,6 +887,52 @@ extension ChannelDao on LocalDatabaseService {
     ''', [parentGroupId, parentGroupId]);
     return results.isEmpty ? null : results.first;
   }
+
+  /// 一次拿多个群家族的最新一条消息（[getLatestMessageForGroupFamily] 批量版）。
+  ///
+  /// 先按 channel 聚合出「每个 channel 的最新一条」（SQLite 的 bare column +
+  /// MAX() 语义），再在内存里按家族取最新。比每个家族查一次少 N-1 次往返。
+  Future<Map<String, Map<String, dynamic>>> getLatestMessagesForGroupFamilies(
+    List<String> parentGroupIds, {
+    Map<String, List<String>>? sessionIdsByFamily,
+  }) async {
+    final families = parentGroupIds.toSet().toList();
+    if (families.isEmpty) return const {};
+    final byFamily = sessionIdsByFamily ?? await getGroupSessionIdsByFamilies(families);
+    final allChannels = <String>{
+      for (final ids in byFamily.values) ...ids,
+    }.toList();
+    if (allChannels.isEmpty) return const {};
+    final db = await database;
+    final placeholders = allChannels.map((_) => '?').join(', ');
+    final results = await db.rawQuery(
+      'SELECT m.*, MAX(m.created_at) FROM messages m '
+      'WHERE m.channel_id IN ($placeholders) '
+      'GROUP BY m.channel_id',
+      allChannels,
+    );
+    final latestByChannel = <String, Map<String, dynamic>>{
+      for (final row in results)
+        if (row['channel_id'] is String) row['channel_id'] as String: row,
+    };
+    final out = <String, Map<String, dynamic>>{};
+    for (final family in families) {
+      Map<String, dynamic>? best;
+      for (final channelId in byFamily[family] ?? const <String>[]) {
+        final row = latestByChannel[channelId];
+        if (row == null) continue;
+        if (best == null ||
+            _createdAtOf(row).compareTo(_createdAtOf(best)) > 0) {
+          best = row;
+        }
+      }
+      if (best != null) out[family] = best;
+    }
+    return out;
+  }
+
+  String _createdAtOf(Map<String, dynamic> row) =>
+      (row['created_at'] as String?) ?? '';
 
   /// 获取 channel 未读消息数（仅统计 agent 发送的未读消息）
   Future<int> getUnreadCountByChannel(String channelId) async {

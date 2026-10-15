@@ -609,19 +609,13 @@ class ConversationListController extends ChangeNotifier {
     //
     // 每个群/每个批量查询独立 try/catch：单个群预览失败只丢该行，群列表仍由
     // refresh() 正常渲染 —— 否则 1 个坏行会让整轮 Future.wait 抛错、列表被清空。
-    final sessionIdsByGroup = <String, List<String>>{};
-    await Future.wait(groups.map((group) async {
-      try {
-        sessionIdsByGroup[group.id] =
-            await _databaseService.getGroupSessionIds(group.groupFamilyId);
-      } catch (e) {
-        LoggerService().error(
-          'Failed to load sessions for group ${group.id}',
-          tag: 'ConversationList',
-          error: e,
-        );
-      }
-    }));
+    final sessionIdsByGroup = await _guardBatch(
+      () => _databaseService.getGroupSessionIdsByFamilies(
+        [for (final group in groups) group.groupFamilyId],
+      ),
+      'group session ids',
+      <String, List<String>>{},
+    );
 
     final allSessionIds = <String>[
       for (final ids in sessionIdsByGroup.values) ...ids,
@@ -638,35 +632,42 @@ class ConversationListController extends ChangeNotifier {
       );
     }
 
-    await Future.wait(groups.map((group) async {
-      try {
-        final sessionIds = sessionIdsByGroup[group.id] ?? const [];
-        _groupSessionChannelIds[group.id] = {...sessionIds};
+    final familyIds = [for (final group in groups) group.groupFamilyId];
+    final activeByFamily = await _guardBatch(
+      () => _databaseService.getLatestActiveGroupChannels(familyIds),
+      'latest active group channel',
+      <String, String>{},
+    );
+    final latestByFamily = await _guardBatch(
+      () => _databaseService.getLatestMessagesForGroupFamilies(
+        familyIds,
+        sessionIdsByFamily: sessionIdsByGroup,
+      ),
+      'latest group message',
+      <String, Map<String, dynamic>>{},
+    );
 
-        final activeChannelId = await _databaseService
-            .getLatestActiveGroupChannel(group.groupFamilyId);
+    for (final group in groups) {
+      // 批量 DAO 按家族 id 归组，而 group.id 只在顶层群时才等于家族 id
+      // （groupFamilyId = parentGroupId ?? id）。
+      final familyId = group.groupFamilyId;
+      final sessionIds = sessionIdsByGroup[familyId] ?? const [];
+      _groupSessionChannelIds[group.id] = {...sessionIds};
 
-        var totalUnread = 0;
-        for (final sessionId in sessionIds) {
-          if (sessionId == AppLifecycleService().activeChannelId) continue;
-          totalUnread += unreadByChannel[sessionId] ?? 0;
-        }
-
-        if (activeChannelId != null) {
-          _groupChannelIds[group.id] = activeChannelId;
-          _groupChannelIds[group.groupFamilyId] = activeChannelId;
-        }
-        _groupLatestMessages[group.id] = await _databaseService
-            .getLatestMessageForGroupFamily(group.groupFamilyId);
-        _groupUnreadCounts[group.id] = totalUnread;
-      } catch (e) {
-        LoggerService().error(
-          'Failed to load preview for group ${group.id}',
-          tag: 'ConversationList',
-          error: e,
-        );
+      var totalUnread = 0;
+      for (final sessionId in sessionIds) {
+        if (sessionId == AppLifecycleService().activeChannelId) continue;
+        totalUnread += unreadByChannel[sessionId] ?? 0;
       }
-    }));
+
+      final activeChannelId = activeByFamily[familyId];
+      if (activeChannelId != null) {
+        _groupChannelIds[group.id] = activeChannelId;
+        _groupChannelIds[familyId] = activeChannelId;
+      }
+      _groupLatestMessages[group.id] = latestByFamily[familyId];
+      _groupUnreadCounts[group.id] = totalUnread;
+    }
   }
 
   Future<void> _loadPeerPreviews(List<PairedPeer> peers) async {
