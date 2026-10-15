@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shepaw/clis/cli_command_allowlist.dart';
 import 'package:shepaw/models/remote_agent.dart';
+import 'package:shepaw/peer/pouch_duties.dart';
 import 'package:shepaw/services/cli_execution_gate.dart';
 import 'package:shepaw/services/cli_namespace_registry.dart';
 
@@ -35,6 +36,9 @@ void main() {
     await StorageTestHarness.init();
     SharedPreferences.setMockInitialValues({});
   });
+
+  setUp(() => PouchDutyState.isHost = true);
+  tearDown(() => PouchDutyState.isHost = false);
 
   group('cliSelectionToAllowlist', () {
     final all = CliNamespaceRegistry.instance.allCommandIds.toSet();

@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shepaw/clis/cli_command_allowlist.dart';
+import 'package:shepaw/peer/pouch_duties.dart';
 import 'package:shepaw/services/cli_execution_gate.dart';
 
 import '../storage/test_harness.dart';
@@ -15,6 +16,9 @@ void main() {
     await StorageTestHarness.init();
     SharedPreferences.setMockInitialValues({});
   });
+
+  setUp(() => PouchDutyState.isHost = true);
+  tearDown(() => PouchDutyState.isHost = false);
 
   group('cliIntersectAllowlists', () {
     test('namespace 与更具体的命令取较紧的那条', () {

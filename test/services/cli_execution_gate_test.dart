@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shepaw/clis/cli_command_allowlist.dart';
 import 'package:shepaw/clis/shepaw/os/os_executor.dart' as os_exec;
 import 'package:shepaw/models/peer_boundary_config.dart';
+import 'package:shepaw/peer/pouch_duties.dart';
 import 'package:shepaw/services/cli_approval_coordinator.dart';
 import 'package:shepaw/services/cli_execution_gate.dart';
 import 'package:shepaw/services/she_service.dart';
@@ -17,7 +18,13 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  setUp(CliApprovalCoordinator.instance.resetForTest);
+  setUp(() {
+    CliApprovalCoordinator.instance.resetForTest();
+    // 数据面命名空间（pouch / peer…）在客户端会被 PouchDuties.cliAllowed
+    // 先挡掉。这里测的是 allowlist 三态和审批，得在主机语境下跑。
+    PouchDutyState.isHost = true;
+  });
+  tearDown(() => PouchDutyState.isHost = false);
 
   group('cliCommandAllowed', () {
     test('namespace entry allows descendants', () {
