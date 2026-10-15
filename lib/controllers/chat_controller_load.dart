@@ -86,12 +86,8 @@ mixin _LoadOps on _ChatControllerBase {
         mentionOnlyMode = channel.isAllMembersMentionMode;
         final agentIds =
             ChatLoadChannelPlanner.groupAgentMemberIds(channel, userId);
-        final agents = <RemoteAgent>[];
-        for (final aid in agentIds) {
-          final agent = await localDatabaseService.getRemoteAgentById(aid);
-          if (agent != null) agents.add(agent);
-        }
-        groupAgents = agents;
+        // 一次 IN (...) 拿全：逐个查是 N 次串行 sqflite 往返。
+        groupAgents = await localDatabaseService.getRemoteAgentsByIds(agentIds);
         groupAdminAgentId = channel.adminAgentId;
       } else if (channel != null && channel.isDM) {
         isGroupMode = false;
@@ -154,7 +150,9 @@ mixin _LoadOps on _ChatControllerBase {
       // 标题「连接中」只等这一次本地查询，不跟后面的消息/信箱加载绑在一起。
       _rememberStatusAgent(channel);
 
-      await _refreshWorkspaceUris();
+      // 工作区 URI 与消息查询没有依赖：先并行起跑，取到消息后再等它
+      // （渲染附件要用），不再把每个 agent 的 store 读排在消息查询前面。
+      final workspaceUris = _refreshWorkspaceUris();
 
       final windowLimit = messages.isEmpty
           ? ChatMessageWindow.initialLimit
@@ -178,6 +176,7 @@ mixin _LoadOps on _ChatControllerBase {
         inboxAgents.add(resolvedAgent);
       }
 
+      await workspaceUris;
       _installLoadedMessages(loadedMessages);
       // 条数先看本机。主机 count 跟在历史页后面，不挡这一帧。
       await _refreshLocalHasMoreOlderMessages();
