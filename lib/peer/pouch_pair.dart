@@ -132,6 +132,12 @@ class PouchPairing {
 
   /// 界面上的设备名单。客户端读主机的，不读自己扫过的记录。
   static Future<List<PairedPeer>> visiblePeers() async {
+    // 没登录袋子（单机）时 currentRoute 会抛「请先登录」，而列设备是纯本地
+    // 信息 —— 桌面首页把它放进 FutureBuilder 也没兜 catch，直接抛就是一个
+    // 未处理的异步错误。单机就返回本机配对过的设备。
+    if (await PouchSessionStore.readActive() == null) {
+      return PeerConnectionManager.instance.getAllPeers();
+    }
     final route = await PouchTurnRelay.currentRoute();
     if (route.runLocal) {
       return PeerConnectionManager.instance.getAllPeers();
