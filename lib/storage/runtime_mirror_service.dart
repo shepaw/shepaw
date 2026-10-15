@@ -144,7 +144,12 @@ class RuntimeMirrorService {
       RuntimePaths.workspaceMd(ownerId),
       '# Workspace bindings\n\nworkspace_ids: []\n',
     );
-    await _writeText(
+    // scaffold 语义是「不存在才建」：这里曾经用 _writeText 无条件覆盖，
+    // 于是每次镜像都先把 manifest 清空（channels 写死 {}、workspace_refs
+    // 写死 []），再由 _touchManifestChannel 加回当前这一个 channel——
+    // 群 owner 下多个子会话共享一份 manifest，除当前会话外的 session_uri
+    // 会永久丢失，workspace_refs 也被抹掉。
+    await _writeTextIfAbsent(
       device,
       RuntimePaths.contextManifest(ownerId),
       const JsonEncoder.withIndent('  ').convert({
