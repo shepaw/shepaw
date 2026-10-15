@@ -514,6 +514,9 @@ class AgentMessagingService {
     ACPCancellationToken? acpCancellationToken,
     List<AttachmentData>? attachments,
     Message? existingUserMessage,
+    /// Optional pre-generated id for the persisted user message (so optimistic
+    /// UI bubble, local DB row, and host `user_message_id` share one UUID).
+    String? userMessageId,
     /// 指令集标题：写入用户消息 metadata，气泡只展示标题、内容隐式投递。
     String? instructionName,
     /// 主动重连进度回调：`(attempt, total)`。
@@ -541,6 +544,7 @@ class AgentMessagingService {
           userName: userName,
           channelId: channelId,
           replyToId: replyToId,
+          replyQuoteText: replyQuoteText,
           dmSystemPrompt: dmSystemPrompt,
           executionMode: executionMode,
           onStreamChunk: onStreamChunk,
@@ -557,6 +561,8 @@ class AgentMessagingService {
           acpCancellationToken: acpCancellationToken,
           attachments: attachments,
           existingUserMessage: existingUserMessage,
+          userMessageId: userMessageId,
+          instructionName: instructionName,
           extraTools: extraTools,
         );
       }
@@ -588,7 +594,9 @@ class AgentMessagingService {
         LoggerService().debug('Using existing user message: ${userMessage.id}', tag: 'AgentMessagingService');
       } else {
         userMessage = Message(
-          id: _uuid.v4(),
+          id: (userMessageId != null && userMessageId.isNotEmpty)
+              ? userMessageId
+              : _uuid.v4(),
           content: content,
           timestampMs: DateTime.now().millisecondsSinceEpoch,
           from: MessageFrom(
@@ -1202,6 +1210,7 @@ class AgentMessagingService {
     required String userName,
     String? channelId,
     String? replyToId,
+    String? replyQuoteText,
     String? dmSystemPrompt,
     String? executionMode,
     void Function(String chunk)? onStreamChunk,
@@ -1220,6 +1229,8 @@ class AgentMessagingService {
     ACPCancellationToken? acpCancellationToken,
     List<AttachmentData>? attachments,
     Message? existingUserMessage,
+    String? userMessageId,
+    String? instructionName,
     List<Map<String, dynamic>>? extraTools,
   }) async {
     LoggerService().info('Starting local LLM chat', tag: 'AgentMessagingService');
@@ -1231,16 +1242,20 @@ class AgentMessagingService {
       LoggerService().debug('Using existing user message: ${userMessage.id}', tag: 'AgentMessagingService');
     } else {
       userMessage = Message(
-        id: _uuid.v4(),
+        id: (userMessageId != null && userMessageId.isNotEmpty)
+            ? userMessageId
+            : _uuid.v4(),
         content: content,
         timestampMs: DateTime.now().millisecondsSinceEpoch,
         from: MessageFrom(id: userId, type: 'user', name: userName),
         to: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
         type: MessageType.text,
         replyTo: replyToId,
-        metadata: MessageImplicitPrompt.metadataForTurn(
-          text: content,
+        metadata: _userMessageMetadata(
+          content: content,
           attachments: attachments,
+          instructionName: instructionName,
+          replyQuoteText: replyQuoteText,
         ),
       );
       await saveMessageToChannel(userMessage, agent.id, channelId: channelId);

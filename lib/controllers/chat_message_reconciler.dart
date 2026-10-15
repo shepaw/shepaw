@@ -219,7 +219,18 @@ class ChatMessageReconciler {
     final streamingTemps = current.where((m) => isDmStreamingId(m.id)).toList();
     if (streamingTemps.isEmpty) return dbMessages;
 
-    final messages = List<Message>.from(dbMessages);
+    // 剔除主机在活回合开始时生成的空占位（hub-live-*）——只要内存中已有本轮
+    // streaming_* 气泡，留着 hub-live-* 只会让屏幕上多出一个或折叠错目标。
+    final streamingAgentIds = {
+      for (final temp in streamingTemps)
+        if (temp.from.isAgent) temp.from.id,
+    };
+    final messages = [
+      for (final m in dbMessages)
+        if (!m.id.startsWith('hub-live-') ||
+            !streamingAgentIds.contains(m.from.id))
+          m,
+    ];
 
     for (final temp in streamingTemps) {
       if (!hasVisibleTempContent(temp)) continue;

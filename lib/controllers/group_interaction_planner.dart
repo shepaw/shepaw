@@ -111,6 +111,7 @@ class GroupInteractionPlanner {
     required String content,
     required String userId,
     required String userName,
+    String? userMessageId,
     String? replyToId,
     /// 引用回复时选中的部分文字（可选）；为空表示引用整条消息。
     String? replyQuoteText,
@@ -129,7 +130,9 @@ class GroupInteractionPlanner {
       metadata['reply_quote'] = replyQuoteText;
     }
     return Message(
-      id: 'temp_user_$now',
+      id: (userMessageId != null && userMessageId.isNotEmpty)
+          ? userMessageId
+          : 'temp_user_$now',
       content: content,
       timestampMs: now,
       from: MessageFrom(id: userId, type: 'user', name: userName),

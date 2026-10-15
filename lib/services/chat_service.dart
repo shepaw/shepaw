@@ -1121,6 +1121,7 @@ class ChatService {
     ACPCancellationToken? acpCancellationToken,
     List<AttachmentData>? attachments,
     Message? existingUserMessage,
+    String? userMessageId,
 
     /// 指令集标题：写入用户消息 metadata，气泡只展示标题、内容隐式投递。
     String? instructionName,
@@ -1156,6 +1157,7 @@ class ChatService {
         acpCancellationToken: acpCancellationToken,
         attachments: attachments,
         existingUserMessage: existingUserMessage,
+        userMessageId: userMessageId,
         instructionName: instructionName,
         onReconnecting: onReconnecting,
         foldProgressContent: foldProgressContent,
@@ -2153,6 +2155,7 @@ class ChatService {
     List<String> mentionedAgentIds = const [],
     bool mentionOnlyMode = false,
     String? adminAgentId,
+    String? userMessageId,
     String? replyToId,
 
     /// 引用回复时选中的部分文字（可选）；为空表示引用整条消息。
@@ -2186,6 +2189,7 @@ class ChatService {
         content: content,
         userId: userId,
         userName: userName,
+        userMessageId: userMessageId,
         mentionedAgentIds: mentionedAgentIds,
         replyToId: replyToId,
         replyQuoteText: replyQuoteText,

@@ -42,6 +42,20 @@ void main() {
       expect(pair.streaming.timestampMs, 1001);
     });
 
+    test('uses explicit userMessageId when provided', () {
+      final pair = DmSendTurnPlanner.buildOptimisticPair(
+        content: 'hello',
+        userId: 'u',
+        userName: 'User',
+        agentId: 'a',
+        agentName: 'Agent',
+        userMessageId: 'uuid-user-123',
+        nowMs: 1000,
+      );
+      expect(pair.user.id, 'uuid-user-123');
+      expect(pair.streaming.id, 'streaming_1000');
+    });
+
     test('instructionName attaches metadata to user bubble', () {
       final pair = DmSendTurnPlanner.buildOptimisticPair(
         content: '执行指令「沉淀指令」：\n内容',

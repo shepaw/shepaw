@@ -235,6 +235,29 @@ void main() {
       expect(fresh.map((m) => m.id), ['queued-2', 'queued-3']);
     });
 
+    test(
+        'drops hub-live-* placeholder when live streaming_* exists for same agent',
+        () {
+      final temp = _agent(
+        'streaming_1000',
+        agentId: 'she',
+        content: '正在回答',
+        ts: 1001,
+      );
+      final hubLive = _agent(
+        'hub-live-turn1',
+        agentId: 'she',
+        content: '',
+        ts: 1002,
+        metadata: const {'status': 'streaming'},
+      );
+      final merged = ChatMessageReconciler.mergeDmStreamingPlaceholders(
+        current: [_user('u1', ts: 1000), temp],
+        dbMessages: [_user('u1', ts: 1000), hubLive],
+      );
+      expect(merged.map((m) => m.id), ['u1', 'streaming_1000']);
+    });
+
     test('ignores empty streaming temps', () {
       final temp = _agent('streaming_1', agentId: 'agent', content: '');
       final db = [_user('u1'), _agent('a1', agentId: 'agent', content: 'done')];

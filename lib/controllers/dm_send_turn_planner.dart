@@ -75,12 +75,18 @@ class DmSendTurnPlanner {
   static const maxHistorySupplementRounds = 3;
 
   /// Optimistic user + streaming agent bubbles shown before the network round-trip.
+  ///
+  /// [userMessageId] defaults to `temp_user_$now` when omitted; callers that
+  /// persist the user row under a known UUID should pass that id so the
+  /// in-memory bubble, local SQLite row, and host `user_message_id` all share
+  /// the exact same id.
   static ({Message user, Message streaming}) buildOptimisticPair({
     required String content,
     required String userId,
     required String userName,
     required String agentId,
     required String agentName,
+    String? userMessageId,
     String? replyToId,
     /// 引用回复时选中的部分文字（可选）；为空表示引用整条消息。
     String? replyQuoteText,
@@ -99,7 +105,9 @@ class DmSendTurnPlanner {
       metadata['reply_quote'] = replyQuoteText;
     }
     final user = Message(
-      id: 'temp_user_$now',
+      id: (userMessageId != null && userMessageId.isNotEmpty)
+          ? userMessageId
+          : 'temp_user_$now',
       content: content,
       timestampMs: now,
       from: MessageFrom(id: userId, type: 'user', name: userName),
