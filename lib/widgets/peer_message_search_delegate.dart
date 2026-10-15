@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
@@ -35,6 +37,26 @@ class PeerMessageSearchDelegate extends SearchDelegate<String> {
     );
   }
 
+  /// 输入防抖窗口。buildSuggestions 每敲一个字符就跑一次，搜索是逐行扫
+  /// 本地消息表，不防抖的话输入 N 个字就是 N 次全表扫。
+  static const _searchDebounce = Duration(milliseconds: 250);
+
+  /// 本次实际要查的关键词；被更新的击键覆盖后，旧的等待直接作废。
+  String _latestQuery = '';
+
+  Future<List<PeerMessageSearchResult>> _debouncedSearch(
+    String searchQuery,
+  ) async {
+    _latestQuery = searchQuery;
+    await Future<void>.delayed(_searchDebounce);
+    if (_latestQuery != searchQuery) return const <PeerMessageSearchResult>[];
+    return storageService.searchMessages(
+      query: searchQuery,
+      peerId: peerId,
+      limit: 50,
+    );
+  }
+
   @override
   Widget buildResults(BuildContext context) {
     return _buildSearchResults(context, query);
@@ -68,11 +90,7 @@ class PeerMessageSearchDelegate extends SearchDelegate<String> {
 
   Widget _buildSearchResults(BuildContext context, String searchQuery) {
     return FutureBuilder<List<PeerMessageSearchResult>>(
-      future: storageService.searchMessages(
-        query: searchQuery,
-        peerId: peerId,
-        limit: 50,
-      ),
+      future: _debouncedSearch(searchQuery),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());

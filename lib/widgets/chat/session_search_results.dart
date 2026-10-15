@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/channel.dart';
@@ -14,7 +16,10 @@ import 'chat_panel_scope.dart';
 ///
 /// 所有点击先经 [closePanelRoute] 关闭面板（抽屉 pop 路由；停靠面板
 /// 保留）再回调，与 [SessionListPanel] 的行为一致。
-class SessionSearchResults extends StatelessWidget {
+///
+/// 用 StatefulWidget 是为了持有防抖状态：消息搜索是 `content LIKE '%q%'`
+/// 全表扫（命中不了索引）且带几百个 channelId，每敲一个字符查一次很贵。
+class SessionSearchResults extends StatefulWidget {
   const SessionSearchResults({
     super.key,
     required this.query,
@@ -42,7 +47,29 @@ class SessionSearchResults extends StatelessWidget {
   /// 群聊模式传入，用于区分会话搜索结果的图标样式。
   final Channel? groupChannel;
 
-  bool get _isGroupMode => groupChannel != null;
+  @override
+  State<SessionSearchResults> createState() => _SessionSearchResultsState();
+}
+
+class _SessionSearchResultsState extends State<SessionSearchResults> {
+  /// 输入防抖窗口。
+  static const _searchDebounce = Duration(milliseconds: 250);
+
+  /// 本次实际要查的关键词；被更新的击键覆盖后，旧的等待直接作废。
+  String _latestQuery = '';
+
+  bool get _isGroupMode => widget.groupChannel != null;
+
+  Future<List<MessageSearchResult>> _debouncedSearch(String q) async {
+    _latestQuery = q;
+    await Future<void>.delayed(_searchDebounce);
+    if (_latestQuery != q) return const <MessageSearchResult>[];
+    return widget.searchService.searchMessages(
+      query: q,
+      channelIds: [for (final s in widget.sessions) s.id],
+      limit: 100,
+    );
+  }
 
   String _sessionLabel(Channel session) {
     return SessionUtils.cleanClaudeSessionTitle(session.name) ?? 'Session';
@@ -86,21 +113,17 @@ class SessionSearchResults extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final q = query.trim();
+    final q = widget.query.trim();
     final qLower = q.toLowerCase();
 
-    final nameMatches = sessions
+    final nameMatches = widget.sessions
         .where((s) => s.name.toLowerCase().contains(qLower))
         .toList();
 
     return FutureBuilder<List<MessageSearchResult>>(
       // 查询变化时重建 Future，旧查询的迟到结果直接丢弃。
       key: ValueKey(q),
-      future: searchService.searchMessages(
-        query: q,
-        channelIds: sessions.map((s) => s.id).toList(),
-        limit: 100,
-      ),
+      future: _debouncedSearch(q),
       builder: (context, snapshot) {
         final results = snapshot.data ?? const <MessageSearchResult>[];
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -192,7 +215,7 @@ class SessionSearchResults extends StatelessWidget {
       ),
       onTap: () {
         closePanelRoute(context);
-        onSwitchSession(session.id);
+        widget.onSwitchSession(session.id);
       },
     );
   }
@@ -203,7 +226,8 @@ class SessionSearchResults extends StatelessWidget {
     List<MessageSearchResult> results,
   ) {
     final channelId = results.first.message.channelId;
-    final session = sessions.where((s) => s.id == channelId).firstOrNull;
+    final session =
+        widget.sessions.where((s) => s.id == channelId).firstOrNull;
     final label = session != null ? _sessionLabel(session) : results.first.channelName;
 
     return [
@@ -238,14 +262,14 @@ class SessionSearchResults extends StatelessWidget {
               children: _highlightSpans(
                 context,
                 r.message.content,
-                query.trim(),
+                widget.query.trim(),
                 TextStyle(fontSize: 13.5, color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
             ),
           ),
           onTap: () {
             closePanelRoute(context);
-            onLocateMessage(r.message, r.message.channelId);
+            widget.onLocateMessage(r.message, r.message.channelId);
           },
         ),
     ];
