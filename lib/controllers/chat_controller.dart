@@ -142,6 +142,13 @@ abstract class _ChatControllerBase extends ChangeNotifier
   List<Message> messages = [];
   Map<String, Message> messageIdMap = {};
   bool isLoading = false;
+
+  /// 本机视图是空的、还在等主机那一页回来判定「是不是真没有消息」。
+  ///
+  /// 和 [isLoading] 分开：进页的主机往返（外网代理下可达数秒）只压住空状态，
+  /// 不再锁输入框和发送按钮。
+  bool awaitingHostHistory = false;
+
   bool isSearching = false;
   String searchQuery = '';
 
@@ -495,13 +502,20 @@ abstract class _ChatControllerBase extends ChangeNotifier
   /// 停在「等待回复中」，重进才恢复）。30s 后：任务已不在（僵尸会话）→
   /// 清掉占位补做 reload；任务仍存活 → 轮询 DB，本回合回复已落库则强制
   /// reconcile 渲染，未落库则保留占位等下一轮（回合结束仍由终态事件清理）。
+  /// 当前 DM 会话是否仍有正在进行中的活回合（涵盖 ActiveTask、PouchTurnRelay
+  /// 主机惜宝回合，以及当前控制器正在执行的 processMessage）。
+  bool _hasLiveDmTurn(String channelId) =>
+      isProcessing ||
+      chatService.getActiveTask(channelId) != null ||
+      PouchTurnRelay.instance.isWatchingChannel(channelId);
+
   void _scheduleDmReconcileFallback() {
     if (_dmReconcileFallbackTimer?.isActive ?? false) return;
     _dmReconcileFallbackTimer = Timer(const Duration(seconds: 30), () {
       _dmReconcileFallbackTimer = null;
       if (!_dmReconcileAfterStreaming) return;
       final cid = currentChannelId;
-      if (cid != null && chatService.getActiveTask(cid) != null) {
+      if (cid != null && _hasLiveDmTurn(cid)) {
         unawaited(_forceDmReconcileWithLiveTask(cid));
         return;
       }
@@ -534,6 +548,7 @@ abstract class _ChatControllerBase extends ChangeNotifier
         final fresh = ChatMessageReconciler.rowsToSurfaceDuringLiveTurn(
           current: messages,
           dbMessages: dbMessages,
+          turnBeganAtMs: streaming.beganAtMs,
         );
         if (fresh.isNotEmpty) {
           messages.addAll(fresh);
@@ -930,7 +945,7 @@ abstract class _ChatControllerBase extends ChangeNotifier
       // 结束补 reconcile；但 DB 已出现本回合的回复行（flush 旁路落库而
       // 终态事件丢失）时直接 merge——占位折叠进 flush 行、锚点改指，
       // 回复立即渲染，chunk 继续应用，不再干等终态事件。
-      final hasLiveTask = chatService.getActiveTask(currentChannelId!) != null;
+      final hasLiveTask = _hasLiveDmTurn(currentChannelId!);
       // 回合一开始任务可能尚未登记（登记在发送流程内）——会话「新鲜」
       // 时按活跃处理，不能凭「没有 ActiveTask」把刚开始的回合当僵尸清掉。
       // 新鲜度以最后一次 chunk/进度帧为准：回合还在出字就永远算活跃，
@@ -956,6 +971,7 @@ abstract class _ChatControllerBase extends ChangeNotifier
         final fresh = ChatMessageReconciler.rowsToSurfaceDuringLiveTurn(
           current: messages,
           dbMessages: dbMessages,
+          turnBeganAtMs: streaming.beganAtMs,
         );
         if (fresh.isNotEmpty) {
           messages.addAll(fresh);
@@ -987,7 +1003,7 @@ abstract class _ChatControllerBase extends ChangeNotifier
       if (streaming.isActive) {
         streaming.repointAnchor(messages);
       }
-      if (chatService.getActiveTask(currentChannelId!) == null) {
+      if (!_hasLiveDmTurn(currentChannelId!)) {
         isProcessing = false;
         acpCancellationToken = null;
       }
@@ -1305,10 +1321,30 @@ abstract class _ChatControllerBase extends ChangeNotifier
   /// bubble whenever the final DB row was missing or still empty (e.g. peer
   /// cancel before answer text). Keep the placeholder when it still has
   /// visible content and no usable DB agent message exists yet.
-  void _mergeDmStreamingPlaceholders(List<Message> dbMessages) {
+  void _mergeDmStreamingPlaceholders(
+    List<Message> dbMessages, {
+    bool preserveInMemoryHistory = false,
+  }) {
+    final cid = currentChannelId;
+    final shouldPreserve = preserveInMemoryHistory ||
+        streaming.isActive ||
+        (cid != null && _hasLiveDmTurn(cid));
+    final existingPersisted = shouldPreserve
+        ? [
+            for (final m in messages)
+              if (!ChatMessageReconciler.isDmStreamingId(m.id) &&
+                  !ChatMessageReconciler.isGroupTempId(m.id) &&
+                  !m.id.startsWith('hub-live-') &&
+                  !m.id.startsWith('hint_'))
+                m,
+          ]
+        : const <Message>[];
+    final combinedDb = existingPersisted.isEmpty
+        ? dbMessages
+        : mergeHostAndLocalMessages(dbMessages, existingPersisted);
     messages = ChatMessageReconciler.mergeDmStreamingPlaceholders(
       current: messages,
-      dbMessages: dbMessages,
+      dbMessages: combinedDb,
     );
   }
 
@@ -1480,14 +1516,13 @@ abstract class _ChatControllerBase extends ChangeNotifier
     _dmReconcileAfterStreaming = false;
     _dmReconcileFallbackTimer?.cancel();
 
-    if (streaming.isActive &&
-        chatService.getActiveTask(event.channelId) == null) {
+    if (streaming.isActive && !_hasLiveDmTurn(event.channelId)) {
       streaming.clear();
     }
 
     await reloadMessagesFromDB();
 
-    if (chatService.getActiveTask(event.channelId) == null) {
+    if (!_hasLiveDmTurn(event.channelId)) {
       isProcessing = false;
       acpCancellationToken = null;
       _notify();

@@ -164,15 +164,26 @@ class ChatMessageReconciler {
   /// When a flushed partial (`status: streaming`) already exists for the same
   /// agent — even if it already has visible text — fold the live temp into
   /// that row so switch-back does not show two near-duplicate bubbles.
+  static String _bareMessageId(String id) =>
+      id.startsWith('peerhist_') ? id.substring(9) : id;
+
   /// 活回合推迟整表替换时，库里新到的、还没在屏幕上的普通消息。
   ///
-  /// 流式占位、flush 行、正在流式输出的 agent 新行，以及屏幕已有 `temp_user_*`
+  /// 流式占位、flush 行、正在流式输出的本轮 agent 新行，以及屏幕已有 `temp_user_*`
   /// 乐观气泡对应的本轮用户消息都留给正式 merge，避免和正在显示的气泡叠成两条。
+  /// 但早于 [turnBeganAtMs] 的历史 agent 回复必须正常放行上屏，否则进页即发送时
+  /// 后台同步下来的历史回复会被拦掉，变成「只有发送的消息、没有历史回复」。
   static List<Message> rowsToSurfaceDuringLiveTurn({
     required List<Message> current,
     required List<Message> dbMessages,
+    int? turnBeganAtMs,
   }) {
-    final seen = {for (final message in current) message.id};
+    final seen = <String>{
+      for (final message in current) ...[
+        message.id,
+        _bareMessageId(message.id),
+      ],
+    };
     final tempUsers = [
       for (final message in current)
         if (message.id.startsWith('temp_user_')) message,
@@ -189,7 +200,10 @@ class ChatMessageReconciler {
       // Pass 1: 精确匹配同发送者 + 同内容，一个 temp_user_* 只消费一条落库行，
       // 不会误吞后续排队发出、恰好同文的另一条消息。
       for (final dbMsg in dbMessages) {
-        if (seen.contains(dbMsg.id)) continue;
+        if (seen.contains(dbMsg.id) ||
+            seen.contains(_bareMessageId(dbMsg.id))) {
+          continue;
+        }
         for (final temp in tempUsers) {
           if (matchedTempUserIds.contains(temp.id)) continue;
           if (temp.from.id == dbMsg.from.id &&
@@ -202,7 +216,9 @@ class ChatMessageReconciler {
       }
       // Pass 2: 兜底匹配同发送者且时间戳不早于乐观气泡的落库行。
       for (final dbMsg in dbMessages) {
-        if (seen.contains(dbMsg.id) || matchedDbIds.contains(dbMsg.id)) {
+        if (seen.contains(dbMsg.id) ||
+            seen.contains(_bareMessageId(dbMsg.id)) ||
+            matchedDbIds.contains(dbMsg.id)) {
           continue;
         }
         for (final temp in tempUsers) {
@@ -220,11 +236,14 @@ class ChatMessageReconciler {
     return [
       for (final row in dbMessages)
         if (!seen.contains(row.id) &&
+            !seen.contains(_bareMessageId(row.id)) &&
             !matchedDbIds.contains(row.id) &&
             !isFlushedStreamingPartial(row) &&
             !isDmStreamingId(row.id) &&
             !row.id.startsWith('hub-live-') &&
-            !(row.from.isAgent && streamingAgentIds.contains(row.from.id)))
+            !(row.from.isAgent &&
+                streamingAgentIds.contains(row.from.id) &&
+                (turnBeganAtMs == null || row.timestampMs >= turnBeganAtMs)))
           row,
     ];
   }

@@ -19,6 +19,7 @@ mixin _LoadOps on _ChatControllerBase {
   Future<void> loadMessages() async {
     final epoch = ++_messageLoadEpoch;
     isLoading = true;
+    awaitingHostHistory = false;
     _notify();
 
     try {
@@ -181,18 +182,33 @@ mixin _LoadOps on _ChatControllerBase {
       // 条数先看本机。主机 count 跟在历史页后面，不挡这一帧。
       await _refreshLocalHasMoreOlderMessages();
       final channelId = currentChannelId!;
-      // 本机已有记录就先画出来。本机是空的才等主机最近一页，
-      // 避免空会话先闪「还没有消息」。
-      final holdLoading = messages.isEmpty;
-      if (!holdLoading) {
-        isLoading = false;
-        _notify();
+      // 本机加载完就解锁输入框：主机那一页（外网代理下数秒）只决定消息区
+      // 显示内容还是空状态，不该再把发送按钮卡成转圈。
+      final hostHistory = ChatLoadChannelPlanner.decideHostHistory(
+        hasLocalMessages: messages.isNotEmpty,
+        hostHasNoRecord: chatService.isFreshLocalChannel(channelId),
+      );
+      isLoading = false;
+      // 等主机那一页时先压住「还没有消息」，避免空会话闪一下。
+      awaitingHostHistory = hostHistory == ChatHostHistoryAction.pullAndWait;
+      _notify();
+      switch (hostHistory) {
+        case ChatHostHistoryAction.skip:
+          // 本机刚建、还没发给主机的会话，主机那边一定没有记录。
+          break;
+        case ChatHostHistoryAction.pullInBackground:
+          unawaited(_pullHostHistory(
+            epoch: epoch,
+            channelId: channelId,
+            waitsForHost: false,
+          ));
+        case ChatHostHistoryAction.pullAndWait:
+          unawaited(_pullHostHistory(
+            epoch: epoch,
+            channelId: channelId,
+            waitsForHost: true,
+          ));
       }
-      unawaited(_pullHostHistory(
-        epoch: epoch,
-        channelId: channelId,
-        holdLoading: holdLoading,
-      ));
 
       await PendingApprovalHub.instance.reconcileForChannel(
         currentChannelId!,
@@ -243,6 +259,8 @@ mixin _LoadOps on _ChatControllerBase {
       await _flushAllStashedPlanApprovalResponses();
     } catch (e) {
       isLoading = false;
+      // 加载失败就别再压着空状态了——主机那一页不会来了。
+      awaitingHostHistory = false;
       _notify();
       _emit(ShowErrorSnackBarEvent('chat_loadFailed:$e'));
     }
@@ -431,14 +449,18 @@ mixin _LoadOps on _ChatControllerBase {
   }
 
   /// 本机页先上屏。主机最近一页回来再合并。本机为空时先要一小段预览再补全页。
+  ///
+  /// [waitsForHost] 表示这一趟挡着「还没有消息」空状态（[awaitingHostHistory]）：
+  /// 本机是空的，主机那一页没回来之前不知道是真没有还是还没到。输入框不受影响，
+  /// 它只跟本机加载绑定。
   Future<void> _pullHostHistory({
     required int epoch,
     required String channelId,
-    required bool holdLoading,
+    required bool waitsForHost,
   }) async {
-    var released = !holdLoading;
+    var released = !waitsForHost;
     try {
-      if (holdLoading) {
+      if (waitsForHost) {
         final preview = await chatService.readHostChannelMessages(
           channelId: channelId,
           limit: ChatMessageWindow.hostPreviewLimit,
@@ -448,7 +470,7 @@ mixin _LoadOps on _ChatControllerBase {
         if (preview != null && preview.isNotEmpty) {
           _mergeHostIntoView(preview);
         }
-        isLoading = false;
+        awaitingHostHistory = false;
         released = true;
         _notify();
         if (messages.isNotEmpty) {
@@ -467,7 +489,7 @@ mixin _LoadOps on _ChatControllerBase {
         _mergeHostIntoView(page);
         _notify();
         // 人还在底部就跟上新进来的主机记录。已经往上翻了就不动。
-        _emit(RequestScrollToBottomEvent(force: holdLoading));
+        _emit(RequestScrollToBottomEvent(force: waitsForHost));
         await PendingApprovalHub.instance.reconcileForChannel(
           channelId,
           messages,
@@ -485,7 +507,7 @@ mixin _LoadOps on _ChatControllerBase {
       );
     } finally {
       if (!released && _hostHistoryStillCurrent(epoch, channelId)) {
-        isLoading = false;
+        awaitingHostHistory = false;
         _notify();
       }
     }

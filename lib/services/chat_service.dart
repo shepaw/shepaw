@@ -38,6 +38,7 @@ import 'group/group_session_service.dart';
 import 'group/group_member_session_service.dart';
 import 'group/peer_approval_policy.dart';
 import 'session/session_history_service.dart';
+import 'session/fresh_local_channel_registry.dart';
 import '../storage/artifact_service.dart';
 import '../storage/context_bundle.dart';
 import '../storage/scope_card.dart';
@@ -107,8 +108,12 @@ List<Message> mergeHostAndLocalMessages(
   return merged;
 }
 
+String _bareMsgId(String id) =>
+    id.startsWith('peerhist_') ? id.substring(9) : id;
+
 /// 主机行和本机行是同一次发送。回复落在主机上的时间是回合开始，本机是回合结束。
 bool _samePouchTurn(Message local, Message host) {
+  if (_bareMsgId(local.id) == _bareMsgId(host.id)) return true;
   if (local.from.id != host.from.id) return false;
   if (local.from.type != host.from.type) return false;
   if (local.content != host.content) return false;
@@ -125,6 +130,11 @@ class ChatService {
   final LocalDatabaseService _databaseService;
   final ToolResultDatabaseService _toolResultService;
   final Uuid _uuid = const Uuid();
+
+  /// 本机刚建、还没往主机发过东西的会话（见 [FreshLocalChannelRegistry]）。
+  /// 进页时这些会话直接跳过主机历史回读——主机侧一定还没有记录。
+  final FreshLocalChannelRegistry _freshLocalChannels =
+      FreshLocalChannelRegistry();
 
   // Stream controllers for real-time updates
   final Map<String, StreamController<List<Message>>> _messageControllers = {};
@@ -1489,6 +1499,10 @@ class ChatService {
       await _databaseService.createChannel(channel, message.from.id);
     }
 
+    // 会话有内容了就不再是「本机刚建的空会话」，主机那边接下来就会有记录。
+    // 这里是所有写库路径的收口，放这儿比放在发送入口覆盖得全。
+    _freshLocalChannels.clear(effectiveChannelId);
+
     // Save message to database
     await _databaseService.createMessage(
       id: message.id,
@@ -1889,13 +1903,25 @@ class ChatService {
     required String userName,
     required String agentId,
     required String agentName,
-  }) =>
-      _sessionService.createNewSession(
-        userId: userId,
-        userName: userName,
-        agentId: agentId,
-        agentName: agentName,
-      );
+  }) async {
+    final channelId = await _sessionService.createNewSession(
+      userId: userId,
+      userName: userName,
+      agentId: agentId,
+      agentName: agentName,
+    );
+    // 纯本机新建：主机那边还没有这条会话，进页时不必白跑一趟历史回读。
+    _freshLocalChannels.mark(channelId);
+    return channelId;
+  }
+
+  /// 这条会话是不是「本机刚建、还没往主机发过东西」。
+  ///
+  /// 只认 [createNewSession] 显式标过的 id：本机没有 channel 行**不**等于主机
+  /// 没有记录（确定性 id 的老会话可能带着主机历史）。见
+  /// [FreshLocalChannelRegistry]。
+  bool isFreshLocalChannel(String channelId) =>
+      _freshLocalChannels.isFresh(channelId);
 
   /// 分叉会话：复制 [sourceChannelId] 的全部消息与工具执行历史到新会话，
   /// 返回新会话 channelId。

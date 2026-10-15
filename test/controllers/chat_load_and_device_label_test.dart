@@ -58,6 +58,58 @@ void main() {
       );
     });
 
+    test('decideHostHistory：本机刚建的会话直接跳过主机回读', () {
+      // 本机刚建、还没发给主机 —— 主机侧一定没有记录，去了也是白等一个超时。
+      // 本机有没有消息都不影响这个判定。
+      expect(
+        ChatLoadChannelPlanner.decideHostHistory(
+          hasLocalMessages: false,
+          hostHasNoRecord: true,
+        ),
+        ChatHostHistoryAction.skip,
+      );
+      expect(
+        ChatLoadChannelPlanner.decideHostHistory(
+          hasLocalMessages: true,
+          hostHasNoRecord: true,
+        ),
+        ChatHostHistoryAction.skip,
+      );
+    });
+
+    test('decideHostHistory：本机有内容就后台合并，不挡任何东西', () {
+      expect(
+        ChatLoadChannelPlanner.decideHostHistory(
+          hasLocalMessages: true,
+          hostHasNoRecord: false,
+        ),
+        ChatHostHistoryAction.pullInBackground,
+      );
+    });
+
+    test('decideHostHistory：本机为空且主机可能有，等它再决定空状态', () {
+      expect(
+        ChatLoadChannelPlanner.decideHostHistory(
+          hasLocalMessages: false,
+          hostHasNoRecord: false,
+        ),
+        ChatHostHistoryAction.pullAndWait,
+      );
+    });
+
+    test('decideHostHistory：判定只看显式标记，不看本机有没有 channel 行', () {
+      // 刻意留个记录：曾想把「本机没有 channel 行」也算成 hostHasNoRecord，
+      // 那是错的。确定性 id 的老会话（generateChannelId / 深链）本机同样没有行，
+      // 但主机那边有历史，跳过就丢消息。只有 createNewSession 标过的才算。
+      expect(
+        ChatLoadChannelPlanner.decideHostHistory(
+          hasLocalMessages: false,
+          hostHasNoRecord: false,
+        ),
+        isNot(ChatHostHistoryAction.skip),
+      );
+    });
+
     test('groupAgentMemberIds excludes user ids', () {
       final channel = _channel(
         id: 'g1',

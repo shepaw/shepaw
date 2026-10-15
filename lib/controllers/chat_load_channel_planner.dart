@@ -15,6 +15,20 @@ enum ChatLoadChannelAction {
   abort,
 }
 
+/// 进页时怎么处理「主机那一页历史」（见 `ChatController.loadMessages`）。
+enum ChatHostHistoryAction {
+  /// 主机一定没有这条会话 —— 连读都不用读。
+  skip,
+
+  /// 本机已有内容：主机那一页回来再合并，不挡任何东西。
+  pullInBackground,
+
+  /// 本机是空的：等主机那一页回来再决定要不要显示「还没有消息」。
+  ///
+  /// 只压住空状态，**不**锁输入框——外网代理下这一趟能走好几秒。
+  pullAndWait,
+}
+
 /// Pure bootstrap decisions for chat message loading.
 class ChatLoadChannelPlanner {
   ChatLoadChannelPlanner._();
@@ -28,6 +42,19 @@ class ChatLoadChannelPlanner {
     if (initialChannelId != null) return ChatLoadChannelAction.useInitial;
     if (agentId != null) return ChatLoadChannelAction.resolveFromAgent;
     return ChatLoadChannelAction.abort;
+  }
+
+  /// 进页要不要回主机读这一页历史，以及要不要等它。
+  ///
+  /// [hostHasNoRecord] 由调用方判定：本机刚建、还没往主机发过东西的会话，
+  /// 主机侧一定没有记录（见 `ChatService.isFreshLocalChannel`）。
+  static ChatHostHistoryAction decideHostHistory({
+    required bool hasLocalMessages,
+    required bool hostHasNoRecord,
+  }) {
+    if (hostHasNoRecord) return ChatHostHistoryAction.skip;
+    if (hasLocalMessages) return ChatHostHistoryAction.pullInBackground;
+    return ChatHostHistoryAction.pullAndWait;
   }
 
   /// 会话面板 family key：群频道用 `group:{groupFamilyId}`，DM 用

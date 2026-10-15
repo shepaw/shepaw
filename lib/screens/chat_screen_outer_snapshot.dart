@@ -17,6 +17,7 @@ class OuterStructuralSnapshot {
   final int respondingAgentCount;
   final bool isProcessing;
   final bool isLoading;
+  final bool awaitingHostHistory;
   final bool isGroupMode;
   final bool mentionOnlyMode;
   final bool isAgentOnline;
@@ -47,6 +48,7 @@ class OuterStructuralSnapshot {
     required this.respondingAgentCount,
     required this.isProcessing,
     required this.isLoading,
+    required this.awaitingHostHistory,
     required this.isGroupMode,
     required this.mentionOnlyMode,
     required this.isAgentOnline,
@@ -79,6 +81,7 @@ class OuterStructuralSnapshot {
       respondingAgentCount: c.respondingAgentNames.length,
       isProcessing: c.isProcessing,
       isLoading: c.isLoading,
+      awaitingHostHistory: c.awaitingHostHistory,
       isGroupMode: c.isGroupMode,
       mentionOnlyMode: c.mentionOnlyMode,
       isAgentOnline: c.isAgentOnline,
@@ -114,6 +117,7 @@ class OuterStructuralSnapshot {
         other.respondingAgentCount == respondingAgentCount &&
         other.isProcessing == isProcessing &&
         other.isLoading == isLoading &&
+        other.awaitingHostHistory == awaitingHostHistory &&
         other.isGroupMode == isGroupMode &&
         other.mentionOnlyMode == mentionOnlyMode &&
         other.isAgentOnline == isAgentOnline &&
@@ -147,6 +151,7 @@ class OuterStructuralSnapshot {
         respondingAgentCount,
         isProcessing,
         isLoading,
+        awaitingHostHistory,
         isGroupMode,
         mentionOnlyMode,
         isAgentOnline,

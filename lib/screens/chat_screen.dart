@@ -3853,7 +3853,11 @@ class _ChatScreenState extends State<ChatScreen>
               Expanded(
                 child: Stack(
                   children: [
-                    c.messages.isEmpty && !c.isLoading
+                    // 主机那一页还在路上时先别下「还没有消息」的结论——只有
+                    // 消息区等内容，输入框不受影响（见 awaitingHostHistory）。
+                    c.messages.isEmpty &&
+                            !c.isLoading &&
+                            !c.awaitingHostHistory
                         ? (_sheNeedsConfig
                             ? _buildSheWelcomeState()
                             : _buildEmptyState())
