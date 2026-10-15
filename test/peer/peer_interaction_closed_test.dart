@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/peer/peer_approval_payload.dart';
 import 'package:shepaw/peer/services/peer_agent_client_service.dart';
+import 'package:shepaw/peer/services/peer_connection.dart';
 
 /// 主机不再等一张卡片时会发 `agent_interaction_closed`。
 ///
@@ -192,6 +193,15 @@ void main() {
       await pumpEventQueue();
 
       expect(closed, isEmpty);
+    });
+
+    test('PeerConnection 控制帧白名单包含 agent_interaction_closed', () {
+      expect(
+        PeerConnection.isControlFrameType('agent_interaction_closed'),
+        isTrue,
+      );
+      expect(PeerConnection.isControlFrameType('agent_form_req'), isTrue);
+      expect(PeerConnection.isControlFrameType('agent_approval_req'), isTrue);
     });
   });
 }

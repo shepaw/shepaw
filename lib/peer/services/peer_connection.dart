@@ -8,6 +8,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'dart:io' as io;
@@ -94,8 +95,12 @@ class PeerConnection {
   final _binaryController = StreamController<Uint8List>.broadcast();
   Stream<Uint8List> get binary => _binaryController.stream;
 
-  /// agent-over-peer 控制消息的 type 前缀。这些帧不走聊天持久化，
+  /// agent-over-peer 控制消息的 type 集合。这些帧不走聊天持久化，
   /// 而是通过 [control] 流交给上层服务处理。
+  @visibleForTesting
+  static bool isControlFrameType(String? type) =>
+      type != null && _controlTypes.contains(type);
+
   static const Set<String> _controlTypes = {
     'agent_list_req',
     'agent_list_resp',
@@ -116,6 +121,7 @@ class PeerConnection {
     'agent_approval_resp',
     'agent_form_req',
     'agent_form_resp',
+    'agent_interaction_closed',
     'agent_commands_req',
     'agent_commands_resp',
     'agent_sessions_req',

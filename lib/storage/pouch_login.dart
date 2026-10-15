@@ -56,8 +56,16 @@ class PouchChannel {
       active = null;
       return;
     }
+    final current = active?.session;
+    final sameSession = current != null &&
+        current.sessionId == session.sessionId &&
+        current.pouchId == session.pouchId &&
+        current.hostPeerId == session.hostPeerId &&
+        current.token == session.token;
     active = PouchChannel(session);
-    if (!_installed.isClosed) _installed.add(session);
+    if (!sameSession && !_installed.isClosed) {
+      _installed.add(session);
+    }
   }
 
   static void clear() {

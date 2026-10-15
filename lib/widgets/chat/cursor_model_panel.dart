@@ -10,6 +10,24 @@ const cursorModelOptionOrder = ['fast', 'context', 'reasoning_effort'];
 const _modelMenuId = '__model__';
 const _menuGap = 4.0;
 
+/// 一级参数面板的宽度上下限（宽屏沿用原来的观感）。
+const _panelMinWidth = 176.0;
+const _panelMaxWidth = 216.0;
+
+/// 二级菜单的宽度上下限。模型名的长度决定它的宽度需求，太窄会被截成
+/// 省略号——一级面板里能显示全的名字，二级里也应该能。
+const _sideMenuMinWidth = 160.0;
+const _sideMenuMaxWidth = 240.0;
+
+/// 一级参数面板的宽度。
+///
+/// 手机屏上收到半屏以内，把剩下的宽度留给二级的模型名列表；宽屏固定宽度。
+/// 二级菜单只能开在一级面板旁边，面板多吃一分，二级就少一分。
+double cursorModelPanelWidth(double screenWidth) {
+  if (screenWidth >= 480) return _panelMaxWidth;
+  return (screenWidth * 0.46).clamp(_panelMinWidth, _panelMaxWidth);
+}
+
 /// 锚定在模型 chip 上的 Cursor 风格参数面板。点外面关闭。
 class CursorModelPanelHandle {
   OverlayEntry? _entry;
@@ -40,7 +58,7 @@ CursorModelPanelHandle showCursorModelPanel({
       final origin = box.localToGlobal(Offset.zero, ancestor: overlayBox);
       final anchor = box.size;
       final screen = overlayBox.size;
-      const width = 248.0;
+      final width = cursorModelPanelWidth(screen.width);
       var left = origin.dx + anchor.width - width;
       if (left < 8) left = 8;
       if (left + width > screen.width - 8) left = screen.width - 8 - width;
@@ -153,7 +171,11 @@ class _CursorModelSettingsState extends State<CursorModelSettings> {
       final spaceLeft = origin.dx - 8;
       toRight = spaceRight >= spaceLeft;
       final space = math.max(0.0, toRight ? spaceRight : spaceLeft);
-      _menuWidth = space.clamp(120.0, 240.0);
+      // 空间够就至少给到 [_sideMenuMinWidth]（模型名比参数值长得多）；
+      // 不够才退回剩余空间，免得菜单被顶出屏幕。
+      final want =
+          math.max(_sideMenuMinWidth, math.min(space, _sideMenuMaxWidth));
+      _menuWidth = math.min(want, space);
       final minTop = padding.top + 8;
       final maxBottom = screen.height - padding.bottom - 8;
       final spaceBelow = maxBottom - origin.dy;

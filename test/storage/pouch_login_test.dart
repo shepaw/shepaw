@@ -96,16 +96,18 @@ void main() {
     );
   });
 
-  test('装上有效登录后通知监听者', () async {
+  test('装上有效登录后通知监听者，重复装同一登录态不重复广播', () async {
     final seen = <String>[];
     final sub = PouchChannel.installed.listen((session) {
       seen.add(session.hostPeerId);
     });
     addTearDown(sub.cancel);
     PouchChannel.install(live(expiresAtMs: 1));
-    PouchChannel.install(live(
+    final valid = live(
       expiresAtMs: DateTime.now().millisecondsSinceEpoch + 60000,
-    ));
+    );
+    PouchChannel.install(valid);
+    PouchChannel.install(valid);
     await Future<void>.delayed(Duration.zero);
     expect(seen, ['peer-1']);
   });
