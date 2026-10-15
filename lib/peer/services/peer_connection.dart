@@ -615,6 +615,11 @@ class PeerConnection {
           break;
 
         case 'ping':
+          // 主机把事件日志的 head_seq 搭在 ping 上，转给控制流让 HubEventClient
+          // 跟本地游标对账。丢帧若发生在最后一帧，seq 连续性自检察觉不到。
+          if (json['head_seq'] is int && !_controlController.isClosed) {
+            _controlController.add(json);
+          }
           // fire-and-forget；发送失败不应中断接收流程
           unawaited(_sendPong());
           break;

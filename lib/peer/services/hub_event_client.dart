@@ -27,6 +27,10 @@ import 'peer_storage_service.dart';
 /// 登录之后循环 `events_sync_req` 直到追上 `head_seq`，再吃实时 `hub_event`。
 /// 序号对不上就先补洞。消息按 id 去重；没在看的回合用 `turn_attach_req` 接流。
 class HubEventClient {
+  /// 一页没拿到时的重试次数。每次之间退避，见 [_pageRetryDelay]。
+  static const _maxPageAttempts = 3;
+  static const _pageRetryDelay = Duration(seconds: 1);
+
   HubEventClient({
     Stream<PeerControlEvent>? events,
     this.send,
@@ -110,6 +114,8 @@ class HubEventClient {
         final parsed = HubEvent.parse(event.data['event']);
         if (parsed == null) return;
         await _onLive(event.peerId, parsed);
+      case 'ping':
+        await _onPingHeadSeq(event.peerId, event.data['head_seq']);
       case 'pouch_turn_event':
         await _onAttachedChunk(event.peerId, event.data);
       case 'events_sync_resp':
@@ -130,9 +136,18 @@ class HubEventClient {
     try {
       final key = await _key(peerId);
       var cursor = await seqStore.read(key);
+      var attempts = 0;
       while (true) {
         final page = await _requestPage(peerId, cursor);
-        if (page == null) return;
+        if (page == null) {
+          // 没拿到页（超时或发送失败）：游标不动，退避重试几次。放弃也不是
+          // 终局 —— 每 30 秒一次的 ping 对账还会再给机会。
+          attempts += 1;
+          if (attempts >= _maxPageAttempts) return;
+          await Future<void>.delayed(_pageRetryDelay * attempts);
+          continue;
+        }
+        attempts = 0;
         final base = page.reset ? 0 : cursor;
         if (page.reset && !_notices.isClosed) {
           _notices.add(HubNotice.reset(peerId));
@@ -171,6 +186,19 @@ class HubEventClient {
         await _dispatch(peerId, event);
         await seqStore.write(key, event.seq);
     }
+  }
+
+  /// 心跳带来的对账机会：主机说到的序号比本地游标新，就去补。
+  ///
+  /// `cursorStep` 的缺口判定要靠收到「下一帧」才成立 —— 丢的若是最后一帧，
+  /// 后面再没有帧来，本地就永远察觉不到自己落后。ping 每 30 秒来一次，是唯一
+  /// 能兜住这种情况的信号（实时帧在主机侧可能因为发送队列满被丢掉）。
+  Future<void> _onPingHeadSeq(String peerId, Object? rawHead) async {
+    if (rawHead is! int) return;
+    final key = await _key(peerId);
+    final cursor = await seqStore.read(key);
+    if (rawHead <= cursor) return;
+    await catchUp(peerId);
   }
 
   Future<HubSyncPage?> _requestPage(String peerId, int since) async {
