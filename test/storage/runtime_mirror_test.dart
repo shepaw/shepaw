@@ -101,30 +101,13 @@ void main() {
     const first = 'dm_a';
     const second = 'dm_b';
 
+    // 两次镜像必须串行：并发写同一个 manifest 会互相覆盖（后写的读到的
+    // 是旧内容）。固定 sleep 在全量并行跑时不够，改成等第一次真的落盘。
     mirror.scheduleSessionMirror(ownerId: owner, channelId: first);
-    await Future<void>.delayed(const Duration(milliseconds: 100));
+    await _waitForManifestChannels(owner, [first]);
     mirror.scheduleSessionMirror(ownerId: owner, channelId: second);
+    final channels = await _waitForManifestChannels(owner, [first, second]);
 
-    // 轮询等两次镜像都落盘：固定 sleep 在全量并行跑（多文件争 CPU）时不够，
-    // 会偶发地只读到第一个会话。
-    final deviceId = await DeviceIdentity.deviceId();
-    final store = await StoreService.instance.localStore();
-    Map<String, dynamic> channels = {};
-    for (var i = 0; i < 60; i++) {
-      try {
-        final (bytes, _, _) = await store.read(
-          deviceId,
-          StoreSpace.runtime,
-          RuntimePaths.contextManifest(owner),
-          0,
-          1 << 16,
-        );
-        final json = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
-        channels = (json['channels'] as Map?)?.cast<String, dynamic>() ?? {};
-        if (channels.containsKey(first) && channels.containsKey(second)) break;
-      } catch (_) {}
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-    }
     // 第二次镜像曾经会先清空 manifest，导致只剩最后这一个会话。
     expect(channels.keys, containsAll([first, second]));
   });
@@ -214,8 +197,18 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 60));
     }
 
-    final meta = await store.meta(deviceId, StoreSpace.runtime, rel);
-    expect(meta['size'] as int, greaterThan(0));
+    // 镜像写是异步的，轮询等它落盘（固定 sleep 在全量并行跑时不够）。
+    var size = 0;
+    for (var i = 0; i < 60; i++) {
+      try {
+        size = (await store.meta(deviceId, StoreSpace.runtime, rel))['size']
+                as int? ??
+            0;
+        if (size > 0) break;
+      } catch (_) {}
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    expect(size, greaterThan(0));
   });
 
   test('session.json 不带缩进', () async {

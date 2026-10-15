@@ -38,6 +38,8 @@ class RuntimeMirrorService {
   final _scaffolded = <String>{};
   /// channel → 镜像落盘路由（见 [_resolveAndScheduleSession]）。
   final _routeCache = <String, _MirrorRoute>{};
+  /// owner → 最近一次镜像（见 [_enqueueMirror]）。
+  final _mirrorTails = <String, Future<void>>{};
 
   /// session.json 最近窗口条数；超出则滚动到 archive。
   static const sessionWindowSize = 100;
@@ -144,12 +146,12 @@ class RuntimeMirrorService {
         DateTime.now().millisecondsSinceEpoch - existing.firstScheduledAtMs >=
             maxStaleness.inMilliseconds) {
       _pendingSession.remove(key);
-      unawaited(_mirrorSession(
-        ownerId: ownerId,
-        channelId: channelId,
-        deviceId: deviceId,
-        messagesChannelId: messagesChannelId,
-      ));
+      unawaited(_enqueueMirror(ownerId, () => _mirrorSession(
+            ownerId: ownerId,
+            channelId: channelId,
+            deviceId: deviceId,
+            messagesChannelId: messagesChannelId,
+          )));
       return;
     }
     final pending = _PendingSessionMirror(
@@ -162,14 +164,28 @@ class RuntimeMirrorService {
     );
     pending.timer = Timer(debounce, () {
       _pendingSession.remove(key);
-      unawaited(_mirrorSession(
-        ownerId: ownerId,
-        channelId: channelId,
-        deviceId: deviceId,
-        messagesChannelId: messagesChannelId,
-      ));
+      unawaited(_enqueueMirror(ownerId, () => _mirrorSession(
+            ownerId: ownerId,
+            channelId: channelId,
+            deviceId: deviceId,
+            messagesChannelId: messagesChannelId,
+          )));
     });
     _pendingSession[key] = pending;
+  }
+
+  /// 同一 owner 的镜像串行：manifest 是「读回来 → 加一个 channel → 整体
+  /// 重写」，两个子会话并发镜像时后写的会覆盖掉前一个刚加的条目。
+  ///
+  /// _mirrorSession 自己有 try/catch，这里只负责排队。
+  Future<void> _enqueueMirror(
+    String ownerId,
+    Future<void> Function() action,
+  ) {
+    final prev = _mirrorTails[ownerId] ?? Future<void>.value();
+    final done = prev.catchError((Object _) {}).then((_) => action());
+    _mirrorTails[ownerId] = done;
+    return done;
   }
 
   /// 立即落盘所有待写的会话镜像。
@@ -182,12 +198,12 @@ class RuntimeMirrorService {
     _pendingSession.clear();
     for (final entry in pending) {
       entry.timer?.cancel();
-      await _mirrorSession(
-        ownerId: entry.ownerId,
-        channelId: entry.channelId,
-        deviceId: entry.deviceId,
-        messagesChannelId: entry.messagesChannelId,
-      );
+      await _enqueueMirror(entry.ownerId, () => _mirrorSession(
+            ownerId: entry.ownerId,
+            channelId: entry.channelId,
+            deviceId: entry.deviceId,
+            messagesChannelId: entry.messagesChannelId,
+          ));
     }
   }
 
