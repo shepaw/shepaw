@@ -509,6 +509,45 @@ extension MessageDao on LocalDatabaseService {
     _notePouchFromSqlite(messageId);
   }
 
+  /// 批量改写正文（只改 content，metadata 不动）。
+  ///
+  /// 进会话 / 翻页时可能一整页都要把「展示口径」的正文回写进库（例如把
+  /// thinking 折叠掉），逐条 [updateMessage] 是 N 次往返加 N 次回查。
+  Future<void> updateMessageContents(Map<String, String> contentById) async {
+    if (contentById.isEmpty) return;
+    final db = await database;
+    final batch = db.batch();
+    for (final entry in contentById.entries) {
+      batch.update(
+        'messages',
+        {'content': entry.value},
+        where: 'id = ?',
+        whereArgs: [entry.key],
+      );
+    }
+    await batch.commit(noResult: true);
+    final ids = contentById.keys.toList(growable: false);
+    try {
+      for (var start = 0; start < ids.length; start += 400) {
+        final end = start + 400 > ids.length ? ids.length : start + 400;
+        final chunk = ids.sublist(start, end);
+        final rows = await db.query(
+          'messages',
+          where: 'id IN (${List.filled(chunk.length, '?').join(',')})',
+          whereArgs: chunk,
+        );
+        for (final row in rows) {
+          await PouchChatLog.bound?.upsert(PouchChatRecord.fromSqliteRow(row));
+        }
+      }
+    } catch (e) {
+      LoggerService().warning(
+        'pouch chat mirror failed: $e',
+        tag: 'PouchChat',
+      );
+    }
+  }
+
   Future<void> updateMessageMetadata(
       String messageId, Map<String, dynamic> metadata) async {
     final db = await database;

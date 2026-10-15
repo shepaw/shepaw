@@ -163,14 +163,15 @@ class HistoryService {
 
   /// [messageMaps] 是 `created_at DESC, rowid DESC`。先翻成升序，同戳的行才保持写入顺序。
   List<Message> _mapsToMessages(List<Map<String, dynamic>> messageMaps, String channelId) {
+    // 展示口径与库里存的不一致时（例如折叠掉 thinking）要把正文回写。一整页
+    // 逐条 update 是 N 次往返，攒起来一次批量写完。
+    final rewrites = <String, String>{};
     final messages = messageMaps.reversed.map((map) {
       final metadata = _decodeMetadata(map['metadata'] as String?, map['id'] as String);
       final stored = map['content'] as String;
       final visible = SessionUtils.visibleMessageContent(stored, metadata);
       if (visible != stored) {
-        unawaited(
-          _db.updateMessage(messageId: map['id'] as String, content: visible),
-        );
+        rewrites[map['id'] as String] = visible;
       }
 
       return Message(
@@ -188,6 +189,9 @@ class HistoryService {
         metadata: metadata,
       );
     }).toList();
+    if (rewrites.isNotEmpty) {
+      unawaited(_db.updateMessageContents(rewrites));
+    }
     sortMessagesByTime(messages);
     return messages;
   }

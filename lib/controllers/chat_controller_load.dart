@@ -56,11 +56,13 @@ mixin _LoadOps on _ChatControllerBase {
       _subscribeChannelUpdates();
 
       // 始终从数据库读取最新 name/avatar，避免会话列表等入口传入过期的缓存值。
+      // 后面装收件箱还要用同一个 agent，这里读一次就行。
+      RemoteAgent? resolvedAgent;
       if (agentId != null) {
-        final agent = await localDatabaseService.getRemoteAgentById(agentId!);
-        if (agent != null) {
-          agentName = agent.name;
-          agentAvatar = agent.avatar;
+        resolvedAgent = await localDatabaseService.getRemoteAgentById(agentId!);
+        if (resolvedAgent != null) {
+          agentName = resolvedAgent.name;
+          agentAvatar = resolvedAgent.avatar;
         }
       }
 
@@ -171,9 +173,8 @@ mixin _LoadOps on _ChatControllerBase {
       final inboxAgents = <RemoteAgent>[];
       if (isGroupMode) {
         inboxAgents.addAll(groupAgents);
-      } else if (agentId != null) {
-        final agent = await localDatabaseService.getRemoteAgentById(agentId!);
-        if (agent != null) inboxAgents.add(agent);
+      } else if (resolvedAgent != null) {
+        inboxAgents.add(resolvedAgent);
       }
 
       _installLoadedMessages(loadedMessages);
@@ -404,7 +405,10 @@ mixin _LoadOps on _ChatControllerBase {
     if (isGroupMode) {
       messages = loadedMessages;
     } else {
-      _mergeDmStreamingPlaceholders(loadedMessages);
+      _mergeDmStreamingPlaceholders(
+        loadedMessages,
+        preserveInMemoryHistory: true,
+      );
     }
     rebuildMessageIdMap();
     // 占位若被 merge 折叠进 DB 行（id 改名），立即回指锚点，恢复
@@ -418,7 +422,7 @@ mixin _LoadOps on _ChatControllerBase {
     if (channelId != null &&
         streaming.isOrphan(
           messages: messages,
-          hasLiveTask: chatService.getActiveTask(channelId) != null,
+          hasLiveTask: _hasLiveDmTurn(channelId),
         )) {
       streaming.clear();
     }
@@ -502,7 +506,7 @@ mixin _LoadOps on _ChatControllerBase {
     if (channelId != null &&
         streaming.isOrphan(
           messages: messages,
-          hasLiveTask: chatService.getActiveTask(channelId) != null,
+          hasLiveTask: _hasLiveDmTurn(channelId),
         )) {
       streaming.clear();
     }
