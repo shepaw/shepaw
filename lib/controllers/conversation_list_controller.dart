@@ -7,7 +7,6 @@ import '../models/channel.dart';
 import '../models/conversation_list_entry.dart';
 import '../models/conversation_selection.dart';
 import '../peer/models/paired_peer.dart';
-import '../peer/models/peer_message.dart';
 import '../peer/services/hub_event_client.dart';
 import '../peer/services/peer_agent_client_service.dart';
 import '../peer/services/peer_connection.dart';
@@ -676,16 +675,16 @@ class ConversationListController extends ChangeNotifier {
     // 单次查询同时给出最新预览与未读数：getMessages 按 timestamp DESC 排序，
     // 首条即最新消息，无需再单独查一次 limit:1。
     await Future.wait(peers.map((peer) async {
-      final recent = await storage.getMessages(peer.id, limit: 100);
-      if (recent.isNotEmpty) {
-        _peerLatestContent[peer.id] = recent.first.content;
-        _peerLatestTime[peer.id] = recent.first.timestamp;
+      final stats = await storage.getPreviewStats(
+        peer.id,
+        myDeviceId: myDeviceId,
+      );
+      final latest = stats.latest;
+      if (latest != null) {
+        _peerLatestContent[peer.id] = latest.content;
+        _peerLatestTime[peer.id] = latest.timestamp;
       }
-      _peerUnreadCounts[peer.id] = recent
-          .where((m) =>
-              m.senderId != myDeviceId &&
-              m.delivery != PeerMessageDelivery.read)
-          .length;
+      _peerUnreadCounts[peer.id] = stats.unread;
     }));
   }
 

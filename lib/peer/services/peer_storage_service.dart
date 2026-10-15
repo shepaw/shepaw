@@ -667,6 +667,34 @@ class PeerStorageService {
     return rows.map((row) => PeerMessage.fromJson(row)).toList();
   }
 
+  /// 会话列表预览要的两样东西：最新一条 + 未读数。
+  ///
+  /// 以前是 `getMessages(limit: 100)` 把 100 条正文全取回来，只为了取首条
+  /// 和在 Dart 里数未读；列表刷新被每条消息触发，代价被放大。这里改成
+  /// 一次 LIMIT 1 + 一次 COUNT。
+  Future<({PeerMessage? latest, int unread})> getPreviewStats(
+    String peerId, {
+    required String myDeviceId,
+  }) async {
+    final db = await _db;
+    final latestRows = await db.query(
+      'peer_messages',
+      where: 'peer_id = ?',
+      whereArgs: [peerId],
+      orderBy: 'timestamp DESC',
+      limit: 1,
+    );
+    final countRows = await db.rawQuery(
+      'SELECT COUNT(*) AS count FROM peer_messages '
+      'WHERE peer_id = ? AND sender_id <> ? AND delivery <> ?',
+      [peerId, myDeviceId, PeerMessageDelivery.read.toJson()],
+    );
+    return (
+      latest: latestRows.isEmpty ? null : PeerMessage.fromJson(latestRows.first),
+      unread: (countRows.first['count'] as int?) ?? 0,
+    );
+  }
+
   /// 按 ID 获取单条配对设备消息。
   Future<PeerMessage?> getMessageById(String messageId) async {
     final db = await _db;
