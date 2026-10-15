@@ -104,19 +104,27 @@ void main() {
     mirror.scheduleSessionMirror(ownerId: owner, channelId: first);
     await Future<void>.delayed(const Duration(milliseconds: 100));
     mirror.scheduleSessionMirror(ownerId: owner, channelId: second);
-    await Future<void>.delayed(const Duration(milliseconds: 100));
 
+    // 轮询等两次镜像都落盘：固定 sleep 在全量并行跑（多文件争 CPU）时不够，
+    // 会偶发地只读到第一个会话。
     final deviceId = await DeviceIdentity.deviceId();
     final store = await StoreService.instance.localStore();
-    final (bytes, _, _) = await store.read(
-      deviceId,
-      StoreSpace.runtime,
-      RuntimePaths.contextManifest(owner),
-      0,
-      1 << 16,
-    );
-    final json = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
-    final channels = (json['channels'] as Map?)?.cast<String, dynamic>() ?? {};
+    Map<String, dynamic> channels = {};
+    for (var i = 0; i < 60; i++) {
+      try {
+        final (bytes, _, _) = await store.read(
+          deviceId,
+          StoreSpace.runtime,
+          RuntimePaths.contextManifest(owner),
+          0,
+          1 << 16,
+        );
+        final json = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+        channels = (json['channels'] as Map?)?.cast<String, dynamic>() ?? {};
+        if (channels.containsKey(first) && channels.containsKey(second)) break;
+      } catch (_) {}
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
     // 第二次镜像曾经会先清空 manifest，导致只剩最后这一个会话。
     expect(channels.keys, containsAll([first, second]));
   });
