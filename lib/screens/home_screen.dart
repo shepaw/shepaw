@@ -1288,20 +1288,25 @@ class HomeScreenState extends State<HomeScreen> {
           SheService.isSheIdentity(agent.id, agent.metadata);
     });
     final showCard = _showOnboardingCard;
-    final rows = <Widget>[
-      if (_hostPeerId != null && !_hostOnline) _buildHostOfflineBanner(l10n),
-      if (showCard && sheIndex < 0) _buildOnboardingCard(),
+    // 只排布「这一格是什么」，不在这里建 widget：N 个会话一次性 element 化
+    // 并排版，会让 typing / 未读 / 草稿的每次 notify 都重付整表成本。
+    final slots = <Widget Function()>[
+      if (_hostPeerId != null && !_hostOnline)
+        () => _buildHostOfflineBanner(l10n),
+      if (showCard && sheIndex < 0) _buildOnboardingCard,
       for (var i = 0; i < items.length; i++) ...[
-        _buildConversationRow(items[i]),
-        if (showCard && i == sheIndex) _buildOnboardingCard(),
+        () => _buildConversationRow(items[i]),
+        if (showCard && i == sheIndex) _buildOnboardingCard,
       ],
     ];
 
     return RefreshIndicator(
       onRefresh: () => _loadAgents(silent: true),
-      child: ListView(
+      child: ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
-        children: rows,
+        itemCount: slots.length,
+        itemBuilder: (context, index) =>
+            RepaintBoundary(child: slots[index]()),
       ),
     );
   }
