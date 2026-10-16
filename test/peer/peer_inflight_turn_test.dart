@@ -368,6 +368,70 @@ void main() {
     });
   });
 
+  group('peerhist agent id collapse', () {
+    test('agent reply id is peerhist plus the request id', () {
+      expect(
+        peerhistAgentMessageId('a52bd67f-ccff-4dad-911d-a0a94951eb70'),
+        'peerhist_a52bd67f-ccff-4dad-911d-a0a94951eb70',
+      );
+      expect(peerhistAgentMessageId(''), '');
+      expect(peerhistAgentMessageId(null), '');
+    });
+
+    test('progress merges onto a hub row that has none', () {
+      final merged = peerProgressMetadataToMerge(
+        existing: const {'trace_id': 't1'},
+        incoming: const {
+          'progress_content': 'thinking',
+          'collapsible_title': 'Thinking',
+        },
+      );
+      expect(merged?['progress_content'], 'thinking');
+      expect(merged?['collapsible_title'], 'Thinking');
+      expect(merged?['trace_id'], 't1');
+    });
+
+    test('existing progress is left in place', () {
+      expect(
+        peerProgressMetadataToMerge(
+          existing: const {'progress_content': 'already'},
+          incoming: const {'progress_content': 'new'},
+        ),
+        isNull,
+      );
+    });
+
+    test('hub insert drops the local uuid twin and keeps its thinking', () {
+      const requestId = 'a52bd67f-ccff-4dad-911d-a0a94951eb70';
+      final collapse = collapseLocalPeerTurnOnPeerhistInsert(
+        peerhistId: 'peerhist_$requestId',
+        eventMetadata: null,
+        localRows: [
+          (
+            id: 'local-uuid',
+            metadataJson:
+                '{"request_id":"$requestId","progress_content":"thinking",'
+                '"collapsible_title":"Thinking"}',
+          ),
+          (
+            id: 'partial',
+            metadataJson:
+                '{"request_id":"$requestId","status":"streaming"}',
+          ),
+          (
+            id: 'other',
+            metadataJson: '{"request_id":"someone-else"}',
+          ),
+        ],
+      );
+      expect(collapse.deleteIds, containsAll([requestId, 'local-uuid']));
+      expect(collapse.deleteIds, isNot(contains('partial')));
+      expect(collapse.deleteIds, isNot(contains('other')));
+      expect(collapse.metadata?['progress_content'], 'thinking');
+      expect(collapse.metadata?['collapsible_title'], 'Thinking');
+    });
+  });
+
   group('peerSyncedRowCoversFinalContent', () {
     test('equal after trim', () {
       expect(peerSyncedRowCoversFinalContent('Hello\n', 'Hello'), isTrue);

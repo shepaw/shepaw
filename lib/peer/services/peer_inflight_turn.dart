@@ -2,6 +2,8 @@
 /// so a process kill can resume instead of starting a second turn.
 library;
 
+import 'dart:convert';
+
 /// Thrown when [PeerAgentClientService.sendChat] is asked to start a new
 /// turn on a session that already has one running (including a restored
 /// turn from a previous process).
@@ -177,6 +179,114 @@ bool peerSyncedRowCoversFinalContent(String rowContent, String finalContent) {
   final local = finalContent.trim();
   if (local.isEmpty || remote.isEmpty) return false;
   return remote == local || remote.startsWith(local) || local.startsWith(remote);
+}
+
+/// 助手回复对外的稳定主键：`peerhist_{requestId}`。
+///
+/// 主机 `message.created` 和历史同步都用 request id 当助手消息 id。本机终态
+/// 若再另造一个 uuid，两条通道就会各留一行。
+String peerhistAgentMessageId(String? requestId) {
+  final id = requestId?.trim() ?? '';
+  if (id.isEmpty) return '';
+  return id.startsWith('peerhist_') ? id : 'peerhist_$id';
+}
+
+/// 把本机流式阶段记下的 thinking 补到一条还没有进度块的行上。
+///
+/// 已有非空 `progress_content` 时不覆盖。没有可补的进度时返回 null。
+Map<String, dynamic>? peerProgressMetadataToMerge({
+  required Map<String, dynamic>? existing,
+  required Map<String, dynamic>? incoming,
+}) {
+  final incomingProgress = incoming?['progress_content'];
+  if (incomingProgress is! String || incomingProgress.trim().isEmpty) {
+    return null;
+  }
+  final existingProgress = existing?['progress_content'];
+  if (existingProgress is String && existingProgress.trim().isNotEmpty) {
+    return null;
+  }
+  final merged = Map<String, dynamic>.from(existing ?? {});
+  merged['progress_content'] = incomingProgress;
+  merged['collapsible'] = incoming?['collapsible'] ?? true;
+  final title = incoming?['collapsible_title'];
+  if (title is String && title.isNotEmpty) {
+    merged['collapsible_title'] = title;
+  } else {
+    merged.putIfAbsent('collapsible_title', () => 'Details');
+  }
+  final autoCollapse = incoming?['auto_collapse'];
+  merged['auto_collapse'] = autoCollapse ?? merged['auto_collapse'] ?? true;
+  return merged;
+}
+
+/// Hub 写入 `peerhist_{requestId}` 时要删掉的本机行，以及要带走的进度 metadata。
+///
+/// 裸 id（用户消息透传的那个）一定删。助手回复的本机副本 id 是另一个 uuid，
+/// 只能靠 metadata.request_id 认。正在流式、或用户已停止的行留下。
+class PeerhistInsertCollapse {
+  final List<String> deleteIds;
+  final Map<String, dynamic>? metadata;
+
+  const PeerhistInsertCollapse({
+    required this.deleteIds,
+    required this.metadata,
+  });
+}
+
+PeerhistInsertCollapse collapseLocalPeerTurnOnPeerhistInsert({
+  required String peerhistId,
+  required Map<String, dynamic>? eventMetadata,
+  required Iterable<({String id, String? metadataJson})> localRows,
+}) {
+  final requestId = peerhistId.startsWith('peerhist_')
+      ? peerhistId.substring('peerhist_'.length)
+      : '';
+  final deleteIds = <String>[];
+  if (requestId.isNotEmpty && requestId != peerhistId) {
+    deleteIds.add(requestId);
+  }
+  var meta = eventMetadata == null
+      ? <String, dynamic>{}
+      : Map<String, dynamic>.from(eventMetadata);
+  var hasMeta = eventMetadata != null && eventMetadata.isNotEmpty;
+  if (requestId.isEmpty) {
+    return PeerhistInsertCollapse(
+      deleteIds: deleteIds,
+      metadata: hasMeta ? meta : null,
+    );
+  }
+  for (final row in localRows) {
+    if (row.id.isEmpty || row.id.startsWith('peerhist_')) continue;
+    Map<String, dynamic>? decoded;
+    final raw = row.metadataJson;
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final value = jsonDecode(raw);
+        if (value is Map) decoded = Map<String, dynamic>.from(value);
+      } catch (_) {}
+    }
+    if (row.id == requestId) {
+      if (!deleteIds.contains(row.id)) deleteIds.add(row.id);
+      continue;
+    }
+    if (decoded == null || decoded['request_id'] != requestId) continue;
+    final status = decoded['status'];
+    if (status == 'streaming' || status == 'stopped') continue;
+    deleteIds.add(row.id);
+    final merged = peerProgressMetadataToMerge(
+      existing: hasMeta ? meta : null,
+      incoming: decoded,
+    );
+    if (merged != null) {
+      meta = merged;
+      hasMeta = true;
+    }
+  }
+  return PeerhistInsertCollapse(
+    deleteIds: deleteIds,
+    metadata: hasMeta ? meta : null,
+  );
 }
 
 bool peerHistorySyncRowIsStreaming(String? metadataJson) {

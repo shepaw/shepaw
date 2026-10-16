@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -560,6 +561,83 @@ void main() {
 
     expect(await db.getMessageById(localId), isNull);
     expect(await db.getMessageById('peerhist_$localId'), isNotNull);
+    await incoming.close();
+  });
+
+  test('主机回传的助手 peerhist_ 行收掉本机 uuid 副本，并留下 thinking', () async {
+    final db = LocalDatabaseService();
+    final suffix = DateTime.now().microsecondsSinceEpoch + 5;
+    final channelId = 'dm_reply_twin_$suffix';
+    final agentId = 'agent-reply-$suffix';
+    final requestId = 'req-$suffix';
+    final localId = 'local-reply-$suffix';
+
+    await db.createChannel(
+      Channel.withMemberIds(
+        id: channelId,
+        name: 'Reply Twin',
+        type: 'dm',
+        memberIds: ['user', agentId],
+      ),
+      'user',
+    );
+    await db.createMessage(
+      id: localId,
+      channelId: channelId,
+      senderId: agentId,
+      senderType: 'agent',
+      senderName: 'A',
+      content: '同一段回复',
+      metadata: {
+        'request_id': requestId,
+        'progress_content': '先想了一下',
+        'collapsible_title': 'Thinking',
+      },
+    );
+
+    final incoming = StreamController<PeerControlEvent>.broadcast();
+    final client = HubEventClient(
+      events: incoming.stream,
+      send: (_, __) async => true,
+      seqStore: MemoryHubSeqStore(),
+      fingerprintOf: (_) async => 'fp-reply-$suffix',
+    );
+    client.start();
+    addTearDown(client.dispose);
+
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: {
+        'type': 'hub_event',
+        'event': {
+          'seq': 1,
+          'kind': 'message.created',
+          'channel_id': channelId,
+          'agent_id': agentId,
+          'data': {
+            'id': 'peerhist_$requestId',
+            'channel_id': channelId,
+            'agent_id': agentId,
+            'content': '同一段回复',
+            'type': 'text',
+            'from': {'id': agentId, 'type': 'agent', 'name': 'A'},
+          },
+        },
+      },
+    ));
+    for (var i = 0; i < 20; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      if (await db.getMessageById('peerhist_$requestId') != null) break;
+    }
+
+    expect(await db.getMessageById(localId), isNull);
+    final mirrored = await db.getMessageById('peerhist_$requestId');
+    expect(mirrored, isNotNull);
+    final rawMeta = mirrored!['metadata'] as String?;
+    expect(rawMeta, isNotNull);
+    final meta = jsonDecode(rawMeta!) as Map<String, dynamic>;
+    expect(meta['progress_content'], '先想了一下');
+    expect(meta['collapsible_title'], 'Thinking');
     await incoming.close();
   });
 }

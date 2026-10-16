@@ -20,6 +20,7 @@ import '../pouch_turn_relay.dart';
 import 'peer_agent_client_service.dart';
 import 'peer_connection.dart';
 import 'peer_connection_manager.dart';
+import 'peer_inflight_turn.dart';
 import 'peer_storage_service.dart';
 
 /// 跟着储物袋把主机事件补到这台客户端。
@@ -507,42 +508,65 @@ class HubEventClient {
       sessionTitle: data['session_title'] as String?,
     );
     final channelId = target.channelId;
-    // 主机回传的 `peerhist_<id>` 与本机那条 `<id>` 是同一条消息（客户端把
-    // 自己的用户消息 id 透传给了主机）。不删掉本机的就会显示两条。
-    final bareId =
-        id.startsWith('peerhist_') ? id.substring('peerhist_'.length) : '';
-    if (bareId.isNotEmpty && bareId != id) {
-      await db.deleteMessage(bareId);
-    }
-    final isRead = (data['is_read'] == true ||
-            data['is_read'] == 1 ||
-            senderType != 'agent' ||
-            AppLifecycleService().shouldSuppressNotification(channelId))
-        ? 1
-        : 0;
-    try {
-      await db.createMessage(
-        id: id,
-        channelId: channelId,
-        senderId: target.senderId,
-        senderType: senderType,
-        senderName: target.senderName,
-        content: data['content'] as String? ?? '',
-        messageType: data['type'] as String? ?? 'text',
-        metadata: metadata is Map ? Map<String, dynamic>.from(metadata) : null,
-        replyToId: data['reply_to'] as String?,
-        createdAt: data['timestamp'] is int && data['timestamp'] != 0
-            ? DateTime.fromMillisecondsSinceEpoch(
-                data['timestamp'] as int,
-                isUtc: true,
-              )
-            : null,
-        isRead: isRead,
-        conflictAlgorithm: ConflictAlgorithm.ignore,
+    // 用户消息的本机 id 就是 peerhist_ 后面那段。助手回复的本机副本是另一个
+    // uuid，只在 metadata.request_id 上和这次回放是同一轮，也要一起收掉，
+    // 否则终态落库和 message.created 会各留一条气泡。
+    final eventMetadata =
+        metadata is Map ? Map<String, dynamic>.from(metadata) : null;
+    final localRows = id.startsWith('peerhist_')
+        ? await db.listNonPeerhistMessages(channelId)
+        : const <Map<String, dynamic>>[];
+    final collapse = collapseLocalPeerTurnOnPeerhistInsert(
+      peerhistId: id,
+      eventMetadata: eventMetadata,
+      localRows: [
+        for (final row in localRows)
+          (
+            id: row['id'] as String? ?? '',
+            metadataJson: row['metadata'] as String?,
+          ),
+      ],
+    );
+    final existing = await db.getMessageById(id);
+    if (existing != null) {
+      await _keepProgressOnExistingPeerhist(
+        db,
+        existing,
+        collapse.metadata,
       );
-    } catch (error) {
-      _log.warning('message.created skipped: $error', tag: 'HubEvent');
-      return;
+    }
+    await db.deleteMessagesByIds(collapse.deleteIds);
+    if (existing == null) {
+      final isRead = (data['is_read'] == true ||
+              data['is_read'] == 1 ||
+              senderType != 'agent' ||
+              AppLifecycleService().shouldSuppressNotification(channelId))
+          ? 1
+          : 0;
+      try {
+        await db.createMessage(
+          id: id,
+          channelId: channelId,
+          senderId: target.senderId,
+          senderType: senderType,
+          senderName: target.senderName,
+          content: data['content'] as String? ?? '',
+          messageType: data['type'] as String? ?? 'text',
+          metadata: collapse.metadata,
+          replyToId: data['reply_to'] as String?,
+          createdAt: data['timestamp'] is int && data['timestamp'] != 0
+              ? DateTime.fromMillisecondsSinceEpoch(
+                  data['timestamp'] as int,
+                  isUtc: true,
+                )
+              : null,
+          isRead: isRead,
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+      } catch (error) {
+        _log.warning('message.created skipped: $error', tag: 'HubEvent');
+        return;
+      }
     }
     if (senderType != 'user') {
       final turnId = _liveChannels.entries
@@ -556,6 +580,30 @@ class HubEventClient {
       }
     }
     _notify(channelId);
+  }
+
+  Future<void> _keepProgressOnExistingPeerhist(
+    LocalDatabaseService db,
+    Map<String, dynamic> existing,
+    Map<String, dynamic>? incoming,
+  ) async {
+    Map<String, dynamic>? existingMeta;
+    final raw = existing['metadata'];
+    if (raw is String && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          existingMeta = Map<String, dynamic>.from(decoded);
+        }
+      } catch (_) {}
+    }
+    final merged = peerProgressMetadataToMerge(
+      existing: existingMeta,
+      incoming: incoming,
+    );
+    final messageId = existing['id'] as String?;
+    if (merged == null || messageId == null || messageId.isEmpty) return;
+    await db.updateMessageMetadata(messageId, merged);
   }
 
   Future<void> _updateMessage(HubEvent event) async {

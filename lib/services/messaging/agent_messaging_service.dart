@@ -367,7 +367,7 @@ class AgentMessagingService {
 
       await flushHelper.deletePartial();
       final msg = Message(
-        id: _uuid.v4(),
+        id: _peerFinalMessageId(rec.requestId),
         content: content,
         timestampMs: DateTime.now().millisecondsSinceEpoch,
         from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
@@ -378,7 +378,7 @@ class AgentMessagingService {
       );
       final toSave = await _dedupeAgainstSyncedTranscript(msg, rec.channelId);
       if (toSave != null) {
-        await saveMessageToChannel(toSave, agent.id, channelId: rec.channelId);
+        await _saveAgentResponse(toSave, agent.id, rec.channelId);
       }
       _emitCompletion(
         channelId: rec.channelId,
@@ -895,7 +895,7 @@ class AgentMessagingService {
       if (agentResponse != null) {
         LoggerService().info('Received agent response: ${agentResponse.id}', tag: 'AgentMessagingService');
         LoggerService().debug('Response content: ${agentResponse.content}', tag: 'AgentMessagingService');
-        await saveMessageToChannel(agentResponse, agent.id, channelId: channelId);
+        await _saveAgentResponse(agentResponse, agent.id, channelId);
         LoggerService().debug('Agent response saved to database', tag: 'AgentMessagingService');
       } else {
         LoggerService().warning('No agent response received', tag: 'AgentMessagingService');
@@ -983,10 +983,26 @@ class AgentMessagingService {
   /// superseded by a sync. If an equivalent remote-owned agent row already
   /// exists in the channel, suppress the save (return null). Otherwise keep
   /// the local message but strip the dangling replyTo.
+  ///
+  /// 助手回复的 id 固定为 `peerhist_{requestId}`。本机库里已经有这一行时
+  /// （Hub 的 message.created 先到）不再插第二条，只把本机记下的 thinking
+  /// 补上去。查的是本机库，不走主机读，避免远端已有、本地还没落时把回复吞掉。
   Future<Message?> _dedupeAgainstSyncedTranscript(
     Message msg,
     String channelId,
   ) async {
+    if (msg.id.startsWith('peerhist_')) {
+      final existing = await _db.getMessageById(msg.id);
+      if (existing != null) {
+        await _keepLiveProgressOnRow(existing, msg);
+        LoggerService().info(
+          'Suppressed local final save in $channelId — row ${msg.id} '
+          'already stored',
+          tag: 'AgentMessagingService',
+        );
+        return null;
+      }
+    }
     final anchorId = msg.replyTo;
     if (channelId.isEmpty || anchorId == null || anchorId.isEmpty) return msg;
     try {
@@ -1026,7 +1042,61 @@ class AgentMessagingService {
     }
   }
 
+  /// 本机终态和主机回放抢同一主键时，后写的一方会撞上 UNIQUE。行已经在，
+  /// 把 thinking 补上即可，不要再当成发送失败。
+  Future<void> _saveAgentResponse(
+    Message message,
+    String agentId,
+    String? channelId,
+  ) async {
+    try {
+      await saveMessageToChannel(message, agentId, channelId: channelId);
+    } catch (e) {
+      if (!message.id.startsWith('peerhist_') || !_isDuplicateMessageId(e)) {
+        rethrow;
+      }
+      final existing = await _db.getMessageById(message.id);
+      if (existing != null) {
+        await _keepLiveProgressOnRow(existing, message);
+      }
+      LoggerService().info(
+        'Peer final ${message.id} already stored by history mirror',
+        tag: 'AgentMessagingService',
+      );
+    }
+  }
 
+  Future<void> _keepLiveProgressOnRow(
+    Map<String, dynamic> row,
+    Message incoming,
+  ) async {
+    Map<String, dynamic>? existing;
+    final raw = row['metadata'];
+    if (raw is String && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) existing = Map<String, dynamic>.from(decoded);
+      } catch (_) {}
+    }
+    final merged = peerProgressMetadataToMerge(
+      existing: existing,
+      incoming: incoming.metadata,
+    );
+    final messageId = row['id'] as String?;
+    if (merged == null || messageId == null || messageId.isEmpty) return;
+    await _db.updateMessageMetadata(messageId, merged);
+  }
+
+  bool _isDuplicateMessageId(Object error) {
+    final text = error.toString();
+    return text.contains('UNIQUE constraint failed') ||
+        text.contains('code 1555');
+  }
+
+  String _peerFinalMessageId(String? requestId) {
+    final stable = peerhistAgentMessageId(requestId);
+    return stable.isEmpty ? _uuid.v4() : stable;
+  }
 
   /// Send message via the P2P peer channel to a paired device's local agent.
   ///
@@ -1334,7 +1404,7 @@ class AgentMessagingService {
       await flushHelper.deletePartial();
 
       final finalMsg = Message(
-        id: _uuid.v4(),
+        id: _peerFinalMessageId(peerRequestId ?? result.requestId),
         content: content,
         timestampMs: DateTime.now().millisecondsSinceEpoch,
         from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
