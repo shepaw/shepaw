@@ -891,6 +891,44 @@ Map<String, dynamic>? peerHistoryMessageMetadata(PeerHistoryMessage m) {
   return meta.isEmpty ? null : meta;
 }
 
+/// 回放或更新没有进度时，留下本机已经记下的折叠区。
+///
+/// 有新的非空进度则以新的为准。传入的 metadata 没有进度、库里有，就把库里的
+/// `progress_content`（以及折叠标题）抄回来，避免后一次写入把工具步骤盖掉。
+Map<String, dynamic>? metadataPreservingProgress({
+  required Map<String, dynamic>? incoming,
+  required String? existingMetadataJson,
+}) {
+  Map<String, dynamic>? existing;
+  final raw = existingMetadataJson;
+  if (raw != null && raw.isNotEmpty) {
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) existing = Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+  }
+  final existingProgress = existing?['progress_content'];
+  final hasExisting =
+      existingProgress is String && existingProgress.trim().isNotEmpty;
+  if (!hasExisting) return incoming;
+  final incomingProgress = incoming?['progress_content'];
+  if (incomingProgress is String && incomingProgress.trim().isNotEmpty) {
+    return incoming;
+  }
+  final merged = Map<String, dynamic>.from(incoming ?? {});
+  merged['progress_content'] = existingProgress;
+  for (final key in const [
+    'collapsible',
+    'collapsible_title',
+    'auto_collapse',
+  ]) {
+    if (!merged.containsKey(key) && existing!.containsKey(key)) {
+      merged[key] = existing[key];
+    }
+  }
+  return merged;
+}
+
 /// Hub transcript 落库：隐藏纯 Scope Card 行；可剥离前缀时写入展示正文。
 ({String content, Map<String, dynamic>? metadata}) peerHistoryDisplayFields(
   PeerHistoryMessage m, {
@@ -6248,6 +6286,10 @@ class PeerAgentClientService {
         baseMetadata: peerHistoryMessageMetadata(m),
       );
       final existingRow = existingRowsById[msgId];
+      final metadata = metadataPreservingProgress(
+        incoming: display.metadata,
+        existingMetadataJson: existingRow?['metadata'] as String?,
+      );
       final createdAt = createdAts[i];
       final forceRead = pageReadOnly ||
           isUser ||
@@ -6274,7 +6316,7 @@ class PeerAgentClientService {
           senderType: isUser ? 'user' : 'agent',
           senderName: isUser ? userName : agentName,
           content: display.content,
-          metadata: display.metadata,
+          metadata: metadata,
           // ConflictAlgorithm.replace rewrites the whole row, so the reply link
           // has to be carried over explicitly — it is the only causal edge
           // MessageUtils.orderForDisplay can fall back on when stamps are coarse.

@@ -623,10 +623,19 @@ class HubEventClient {
     final content = event.data['content'];
     final metadata = event.data['metadata'];
     if (content is! String) return;
-    await getIt<LocalDatabaseService>().updateMessage(
+    final db = getIt<LocalDatabaseService>();
+    var next = metadata is Map ? Map<String, dynamic>.from(metadata) : null;
+    if (next != null) {
+      final existing = await db.getMessageById(id);
+      next = metadataPreservingProgress(
+        incoming: next,
+        existingMetadataJson: existing?['metadata'] as String?,
+      );
+    }
+    await db.updateMessage(
       messageId: id,
       content: content,
-      metadata: metadata is Map ? Map<String, dynamic>.from(metadata) : null,
+      metadata: next,
     );
     if (event.channelId.isNotEmpty) _notify(event.channelId);
   }

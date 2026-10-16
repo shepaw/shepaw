@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/peer/services/peer_agent_client_service.dart';
 import 'package:shepaw/peer/services/peer_inflight_turn.dart';
@@ -305,6 +307,31 @@ void main() {
       expect(out.metadata?['ui_hidden'], isTrue);
       expect(out.metadata?['history_exclude'], isTrue);
       expect(out.metadata?['kind'], 'scope_card_stable');
+    });
+  });
+
+  group('metadataPreservingProgress', () {
+    test('keeps stored tool progress when the new row has none', () {
+      final kept = metadataPreservingProgress(
+        incoming: const {'client_device_id': 'phone'},
+        existingMetadataJson: jsonEncode({
+          'progress_content': 'Thinking\n先看调用点',
+          'collapsible_title': 'Bash',
+          'auto_collapse': true,
+        }),
+      );
+      expect(kept?['progress_content'], 'Thinking\n先看调用点');
+      expect(kept?['collapsible_title'], 'Bash');
+      expect(kept?['client_device_id'], 'phone');
+    });
+
+    test('a newer progress block replaces the stored one', () {
+      final kept = metadataPreservingProgress(
+        incoming: const {'progress_content': 'Thinking\n新的'},
+        existingMetadataJson:
+            jsonEncode({'progress_content': 'Thinking\n旧的'}),
+      );
+      expect(kept?['progress_content'], 'Thinking\n新的');
     });
   });
 
