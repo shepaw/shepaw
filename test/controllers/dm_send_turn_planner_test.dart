@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/controllers/dm_send_turn_planner.dart';
+import 'package:shepaw/models/client_device_info.dart';
 
 void main() {
   group('HistoryRequestInfo', () {
@@ -77,6 +78,14 @@ void main() {
         nowMs: 3000,
       );
       expect(plain.user.metadata?['instruction'], isNull);
+      expect(
+        plain.user.metadata?[ClientDeviceInfo.deviceFormMetaKey],
+        isNotEmpty,
+      );
+      expect(
+        plain.user.metadata?[ClientDeviceInfo.deviceNameMetaKey],
+        isNotEmpty,
+      );
     });
   });
 

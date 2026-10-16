@@ -819,6 +819,12 @@ class PeerPairingService {
   String? _cachedDeviceId;
   String? _cachedDeviceName;
 
+  /// 已缓存的设备 ID（未初始化时为 null）。
+  String? get cachedDeviceId => _cachedDeviceId;
+
+  /// 已缓存的设备名称（未初始化时为 null）。
+  String? get cachedDeviceName => _cachedDeviceName;
+
   /// 初始化设备信息（应在使用前调用一次）
   Future<void> ensureDeviceInfo() async {
     if (_cachedDeviceId != null) return;

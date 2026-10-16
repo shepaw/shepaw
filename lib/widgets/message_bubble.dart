@@ -6,6 +6,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'package:url_launcher/url_launcher.dart';
 import '../l10n/app_localizations.dart';
+import '../models/client_device_info.dart';
 import '../models/llm_token_usage.dart';
 import '../models/message.dart';
 import '../controllers/chat_message_window.dart';
@@ -755,27 +756,55 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
-  /// Time label, optionally followed by compact token usage for agent messages.
+  /// Time label, optionally followed by compact token usage for agent messages
+  /// or client device info for user messages.
   Widget _buildTimestampLabel({required double fontSize, Color? color}) {
     final style = TextStyle(fontSize: fontSize, color: color);
     final usageLabel = message.from.isAgent
         ? LlmTokenUsage.fromMetadata(message.metadata)?.compactLabel
         : null;
-    if (usageLabel == null) {
+    final clientDevice = isMyMessage
+        ? (ClientDeviceInfo.fromMetadata(message.metadata) ??
+            ClientDeviceInfo.currentSync())
+        : null;
+    if (usageLabel == null && clientDevice == null) {
       return Text(message.timeString, style: style);
     }
+    final secondaryColor = color?.withValues(alpha: 0.85) ?? Colors.grey;
     return Text.rich(
       TextSpan(
         style: style,
         children: [
           TextSpan(text: message.timeString),
-          TextSpan(
-            text: '  $usageLabel',
-            style: TextStyle(
-              fontSize: fontSize,
-              color: color?.withValues(alpha: 0.85) ?? Colors.grey,
+          if (usageLabel != null)
+            TextSpan(
+              text: '  $usageLabel',
+              style: TextStyle(
+                fontSize: fontSize,
+                color: secondaryColor,
+              ),
             ),
-          ),
+          if (clientDevice != null) ...[
+            const TextSpan(text: '  '),
+            WidgetSpan(
+              alignment: PlaceholderAlignment.middle,
+              child: Icon(
+                clientDevice.isMobile
+                    ? Icons.smartphone
+                    : Icons.computer,
+                size: fontSize + 2,
+                color: secondaryColor,
+              ),
+            ),
+            if (clientDevice.deviceName.isNotEmpty)
+              TextSpan(
+                text: ' ${clientDevice.deviceName}',
+                style: TextStyle(
+                  fontSize: fontSize,
+                  color: secondaryColor,
+                ),
+              ),
+          ],
         ],
       ),
     );

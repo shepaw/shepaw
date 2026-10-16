@@ -1,3 +1,4 @@
+import '../models/client_device_info.dart';
 import '../models/mention_entry.dart';
 import '../models/message.dart';
 import 'chat_streaming_text.dart';
@@ -129,6 +130,7 @@ class GroupInteractionPlanner {
       metadata ??= <String, dynamic>{};
       metadata['reply_quote'] = replyQuoteText;
     }
+    metadata = ClientDeviceInfo.stampMetadata(metadata);
     return Message(
       id: (userMessageId != null && userMessageId.isNotEmpty)
           ? userMessageId

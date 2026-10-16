@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../models/attachment_data.dart';
+import '../../models/client_device_info.dart';
 import '../../models/message.dart';
 import '../../services/local_database_service.dart';
 import '../../storage/pouch_login.dart';
@@ -102,6 +103,7 @@ class PouchTurnRelay {
       channelId: channelId,
       placement: 'group',
     );
+    final deviceInfo = await ClientDeviceInfo.current();
     await _forward(
       hostPeerId: hostPeerId,
       channelId: channelId,
@@ -116,6 +118,7 @@ class PouchTurnRelay {
         if (replyToId != null) 'reply_to_id': replyToId,
         if (replyQuoteText != null) 'reply_quote_text': replyQuoteText,
         if (refs != null) 'attachments': refs,
+        ...deviceInfo.toWireFields(),
       },
       onEvent: (event) {
         if (event['kind'] == 'interaction') {
@@ -181,6 +184,7 @@ class PouchTurnRelay {
       channelId: channelId ?? '',
       placement: 'dm',
     );
+    final deviceInfo = await ClientDeviceInfo.current();
     final done = await _forward(
       hostPeerId: hostPeerId,
       channelId: channelId,
@@ -193,6 +197,7 @@ class PouchTurnRelay {
         if (userMessageId != null) 'user_message_id': userMessageId,
         if (channelId != null) 'channel_id': channelId,
         if (refs != null) 'attachments': refs,
+        ...deviceInfo.toWireFields(),
       },
       onEvent: (event) {
         if (event['kind'] == 'interaction') {
@@ -581,6 +586,7 @@ class PouchTurnRelay {
         placement: 'dm',
       );
       if (!stillQueued()) return true;
+      final deviceInfo = await ClientDeviceInfo.current();
       final done = await _forward(
         hostPeerId: hostPeerId,
         requestId: requestId,
@@ -596,6 +602,7 @@ class PouchTurnRelay {
           if (replyToId != null) 'reply_to_id': replyToId,
           if (replyQuoteText != null) 'reply_quote_text': replyQuoteText,
           if (refs != null) 'attachments': refs,
+          ...deviceInfo.toWireFields(),
         },
         onEvent: (_) {},
         completeOn: const {'done', 'queued', 'queue_ok', 'start'},
@@ -630,6 +637,7 @@ class PouchTurnRelay {
         placement: 'group',
       );
       if (!stillQueued()) return true;
+      final deviceInfo = await ClientDeviceInfo.current();
       final done = await _forward(
         hostPeerId: hostPeerId,
         requestId: requestId,
@@ -645,6 +653,7 @@ class PouchTurnRelay {
           if (replyToId != null) 'reply_to_id': replyToId,
           if (replyQuoteText != null) 'reply_quote_text': replyQuoteText,
           if (refs != null) 'attachments': refs,
+          ...deviceInfo.toWireFields(),
         },
         onEvent: (_) {},
         completeOn: const {'done', 'queued', 'queue_ok', 'start'},

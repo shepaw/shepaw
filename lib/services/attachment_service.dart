@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as path;
 import 'local_database_service.dart';
 import 'logger_service.dart';
+import '../models/client_device_info.dart';
 import '../models/message.dart';
 import '../models/attachment_data.dart';
 import '../models/store_attachment_ref.dart';
@@ -231,12 +232,12 @@ class AttachmentService {
               deviceId: target.deviceId,
             );
 
-      final attachmentData = {
+      final attachmentData = ClientDeviceInfo.stampMetadata({
         'pouch_uri': resolvedUri,
         'name': name,
         'type': fileType,
         'size': fileSize,
-      };
+      });
       _putStoreUriMetadata(attachmentData, resolvedUri);
 
       MessageType messageType;
@@ -321,14 +322,14 @@ class AttachmentService {
         deviceId: target.deviceId,
       );
 
-      final metadata = {
+      final metadata = ClientDeviceInfo.stampMetadata({
         'pouch_uri': storeUri,
         'name': path.basename(filePath),
         'type': 'audio',
         'size': bytes.length,
         'duration_ms': durationMs,
         'waveform': waveform,
-      };
+      });
       _putStoreUriMetadata(metadata, storeUri);
 
       final durationSec = (durationMs / 1000).round();

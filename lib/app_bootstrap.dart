@@ -19,6 +19,7 @@ import 'services/model_registry.dart';
 import 'services/frame_timing_monitor.dart';
 import 'services/foreground_task_service.dart';
 import 'peer/services/peer_connection_manager.dart';
+import 'peer/services/peer_pairing_service.dart';
 import 'peer/services/hub_event_client.dart';
 import 'peer/services/hub_group_registry.dart';
 import 'peer/services/peer_agent_client_service.dart';
@@ -201,6 +202,7 @@ class AppBootstrap {
   /// 只作为主机的客户端：连上去、收名单、应答存储帧。
   static Future<void> _initializePeerConnection() async {
     try {
+      await PeerPairingService.instance.ensureDeviceInfo();
       CliHost.installLookup();
       await PeerConnectionManager.instance.start();
       PouchLoginKeeper.instance.start();

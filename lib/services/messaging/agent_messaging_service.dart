@@ -2,6 +2,7 @@ import '../task/acp_task_contract.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:uuid/uuid.dart';
+import '../../models/client_device_info.dart';
 import '../../models/message.dart';
 import '../../models/remote_agent.dart';
 import '../../models/attachment_data.dart';
@@ -489,7 +490,7 @@ class AgentMessagingService {
       meta ??= <String, dynamic>{};
       meta['reply_quote'] = replyQuoteText;
     }
-    return meta;
+    return ClientDeviceInfo.stampMetadata(meta);
   }
 
   Future<Message?> sendMessageToAgent({

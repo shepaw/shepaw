@@ -1,3 +1,4 @@
+import '../models/client_device_info.dart';
 import '../models/message.dart';
 import 'chat_streaming_text.dart';
 
@@ -104,6 +105,7 @@ class DmSendTurnPlanner {
       metadata ??= <String, dynamic>{};
       metadata['reply_quote'] = replyQuoteText;
     }
+    metadata = ClientDeviceInfo.stampMetadata(metadata);
     final user = Message(
       id: (userMessageId != null && userMessageId.isNotEmpty)
           ? userMessageId

@@ -18,6 +18,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../models/attachment_data.dart';
+import '../../models/client_device_info.dart';
 import '../../models/channel.dart';
 import '../../models/agent_node.dart';
 import '../../models/remote_agent.dart';
@@ -520,6 +521,9 @@ bool peerHistoryRowNeedsWrite({
   if (_rowProgressContent(existingRow) != (message.progressContent ?? '')) {
     return true;
   }
+  if (_rowClientDeviceKey(existingRow) != _messageClientDeviceKey(message)) {
+    return true;
+  }
   if (message.isRead == true && (existingRow['is_read'] as int? ?? 0) == 0) {
     return true;
   }
@@ -804,6 +808,31 @@ String _rowProgressContent(Map<String, dynamic> row) {
     // Treat undecodable metadata as "no progress".
   }
   return '';
+}
+
+String _rowClientDeviceKey(Map<String, dynamic> row) {
+  final raw = row['metadata'];
+  Map? decoded;
+  if (raw is Map) {
+    decoded = raw;
+  } else if (raw is String && raw.isNotEmpty) {
+    try {
+      final parsed = jsonDecode(raw);
+      if (parsed is Map) decoded = parsed;
+    } catch (_) {}
+  }
+  if (decoded == null) return '';
+  final name = (decoded[ClientDeviceInfo.deviceNameMetaKey] as String?)?.trim() ?? '';
+  final form = (decoded[ClientDeviceInfo.deviceFormMetaKey] as String?)?.trim() ?? '';
+  return '$form|$name';
+}
+
+String _messageClientDeviceKey(PeerHistoryMessage m) {
+  final meta = m.metadata;
+  if (meta == null) return '';
+  final name = (meta[ClientDeviceInfo.deviceNameMetaKey] as String?)?.trim() ?? '';
+  final form = (meta[ClientDeviceInfo.deviceFormMetaKey] as String?)?.trim() ?? '';
+  return '$form|$name';
 }
 
 /// Metadata to persist for a synced history message: the reconstructed
@@ -2539,6 +2568,7 @@ class PeerAgentClientService {
 
     cancelToken?.addOnCancelled(() => _abortPendingTurn(requestId));
 
+    final deviceInfo = await ClientDeviceInfo.current();
     final sent = await PeerConnectionManager.instance.sendControl(peerId, {
       'type': 'agent_chat',
       'request_id': requestId,
@@ -2555,6 +2585,7 @@ class PeerAgentClientService {
       if (attachmentRefs != null) 'attachments': attachmentRefs,
       if (extraTools != null && extraTools.isNotEmpty)
         'extra_tools': extraTools,
+      ...deviceInfo.toWireFields(),
     });
 
     if (!sent) {
@@ -2636,6 +2667,7 @@ class PeerAgentClientService {
     }).catchError((Object _) {
       ChatService().dropQueuedMessage(requestId);
     }));
+    final deviceInfo = await ClientDeviceInfo.current();
     final sent = await PeerConnectionManager.instance.sendControl(peerId, {
       'type': 'agent_chat',
       'request_id': requestId,
@@ -2646,6 +2678,7 @@ class PeerAgentClientService {
       if (sessionId != null && sessionId.isNotEmpty) 'session_id': sessionId,
       if (channelId != null && channelId.isNotEmpty) 'channel_id': channelId,
       if (attachmentRefs != null) 'attachments': attachmentRefs,
+      ...deviceInfo.toWireFields(),
     });
     if (!sent) {
       _pending.remove(requestId);
