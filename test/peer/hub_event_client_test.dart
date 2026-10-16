@@ -564,6 +564,235 @@ void main() {
     await incoming.close();
   });
 
+  test('本机行已经是主机形态时不会重键，引用也不会悬空', () async {
+    final db = LocalDatabaseService();
+    final suffix = DateTime.now().microsecondsSinceEpoch + 7;
+    final channelId = 'dm_sameform_$suffix';
+    final agentId = 'agent-sameform-$suffix';
+    final localId = 'peerhist_u-sameform-$suffix';
+    final replyRowId = 'a-sameform-$suffix';
+
+    await db.createChannel(
+      Channel.withMemberIds(
+        id: channelId,
+        name: 'SameForm',
+        type: 'dm',
+        memberIds: ['user', agentId],
+      ),
+      'user',
+    );
+    // 第三方 agent 的 DM：本机落库时就用主机回包的形态，主机回包里 id 逐字相同。
+    await db.createMessage(
+      id: localId,
+      channelId: channelId,
+      senderId: 'user',
+      senderType: 'user',
+      senderName: 'Me',
+      content: '同一条提问',
+    );
+    await db.createMessage(
+      id: replyRowId,
+      channelId: channelId,
+      senderId: agentId,
+      senderType: 'agent',
+      senderName: 'Agent',
+      content: '正在流式回复',
+      metadata: const {'status': 'streaming'},
+      replyToId: localId,
+    );
+
+    final incoming = StreamController<PeerControlEvent>.broadcast();
+    final client = HubEventClient(
+      events: incoming.stream,
+      send: (_, __) async => true,
+      seqStore: MemoryHubSeqStore(),
+      fingerprintOf: (_) async => 'fp-sameform-$suffix',
+    );
+    client.start();
+    addTearDown(client.dispose);
+
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: {
+        'type': 'hub_event',
+        'event': {
+          'seq': 1,
+          'kind': 'message.created',
+          'channel_id': channelId,
+          'agent_id': agentId,
+          'data': {
+            'id': localId,
+            'channel_id': channelId,
+            'agent_id': agentId,
+            'content': '同一条提问',
+            'type': 'text',
+            'from': {'id': 'user', 'type': 'user', 'name': 'Me'},
+          },
+        },
+      },
+    ));
+    for (var i = 0; i < 20; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+
+    final rows = await db.getChannelMessages(channelId);
+    expect(rows.where((r) => r['id'] == localId).length, 1);
+    expect(await db.getMessageById('u-sameform-$suffix'), isNull);
+    final replyRow = await db.getMessageById(replyRowId);
+    expect(replyRow!['reply_to_id'], localId);
+    await incoming.close();
+  });
+
+  test('用户行被 peerhist_ 重键时，指向它的引用一起搬过去', () async {
+    final db = LocalDatabaseService();
+    final suffix = DateTime.now().microsecondsSinceEpoch + 6;
+    final channelId = 'dm_requote_$suffix';
+    final agentId = 'agent-requote-$suffix';
+    final localId = 'u-requote-$suffix';
+    final replyRowId = 'a-requote-$suffix';
+
+    await db.createChannel(
+      Channel.withMemberIds(
+        id: channelId,
+        name: 'ReQuote',
+        type: 'dm',
+        memberIds: ['user', agentId],
+      ),
+      'user',
+    );
+    // 发送时本机先落这条裸 id 的提问，助手那条回复行引用的就是它。
+    await db.createMessage(
+      id: localId,
+      channelId: channelId,
+      senderId: 'user',
+      senderType: 'user',
+      senderName: 'Me',
+      content: '引用了上一条的提问',
+    );
+    await db.createMessage(
+      id: replyRowId,
+      channelId: channelId,
+      senderId: agentId,
+      senderType: 'agent',
+      senderName: 'Agent',
+      content: '正在流式回复',
+      metadata: const {'status': 'streaming'},
+      replyToId: localId,
+    );
+
+    final incoming = StreamController<PeerControlEvent>.broadcast();
+    final client = HubEventClient(
+      events: incoming.stream,
+      send: (_, __) async => true,
+      seqStore: MemoryHubSeqStore(),
+      fingerprintOf: (_) async => 'fp-requote-$suffix',
+    );
+    client.start();
+    addTearDown(client.dispose);
+
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: {
+        'type': 'hub_event',
+        'event': {
+          'seq': 1,
+          'kind': 'message.created',
+          'channel_id': channelId,
+          'agent_id': agentId,
+          'data': {
+            'id': 'peerhist_$localId',
+            'channel_id': channelId,
+            'agent_id': agentId,
+            'content': '引用了上一条的提问',
+            'type': 'text',
+            'from': {'id': 'user', 'type': 'user', 'name': 'Me'},
+          },
+        },
+      },
+    ));
+    for (var i = 0; i < 20; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+
+    // 提问行换了 id，但流式那条留下来的回复行指着新 id —— 不再是悬空引用
+    // （否则整列重建时气泡上会渲染出「原消息不可用」）。
+    expect(await db.getMessageById(localId), isNull);
+    expect(await db.getMessageById('peerhist_$localId'), isNotNull);
+    final replyRow = await db.getMessageById(replyRowId);
+    expect(replyRow, isNotNull);
+    expect(replyRow!['reply_to_id'], 'peerhist_$localId');
+    await incoming.close();
+  });
+
+  test('惜宝形态的引用按裸 id 落库，不套 peerhist_ 前缀', () async {
+    final db = LocalDatabaseService();
+    final suffix = DateTime.now().microsecondsSinceEpoch + 4;
+    final channelId = 'dm_she_quote_$suffix';
+    final agentId = 'she-builtin-agent-001';
+    final targetId = 'she-msg-$suffix';
+    final quoteId = 'she-quote-$suffix';
+
+    await db.createChannel(
+      Channel.withMemberIds(
+        id: channelId,
+        name: 'SheQuote',
+        type: 'dm',
+        memberIds: ['user', agentId],
+      ),
+      'user',
+    );
+    // 惜宝通道的行是裸 id（主机那条 emit 路径不带前缀）。
+    await db.createMessage(
+      id: targetId,
+      channelId: channelId,
+      senderId: agentId,
+      senderType: 'agent',
+      senderName: 'She',
+      content: '被引用的那条',
+    );
+
+    final incoming = StreamController<PeerControlEvent>.broadcast();
+    final client = HubEventClient(
+      events: incoming.stream,
+      send: (_, __) async => true,
+      seqStore: MemoryHubSeqStore(),
+      fingerprintOf: (_) async => 'fp-shequote-$suffix',
+    );
+    client.start();
+    addTearDown(client.dispose);
+
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: {
+        'type': 'hub_event',
+        'event': {
+          'seq': 1,
+          'kind': 'message.created',
+          'channel_id': channelId,
+          'agent_id': agentId,
+          'data': {
+            'id': quoteId,
+            'channel_id': channelId,
+            'agent_id': agentId,
+            'content': '引用上一句',
+            'type': 'text',
+            'reply_to': targetId,
+            'from': {'id': 'user', 'type': 'user', 'name': 'Me'},
+          },
+        },
+      },
+    ));
+    for (var i = 0; i < 20; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+
+    final row = await db.getMessageById(quoteId);
+    expect(row, isNotNull);
+    // 一律套 `peerhist_` 会指向一条本机不存在的行。
+    expect(row!['reply_to_id'], targetId);
+    await incoming.close();
+  });
+
   test('主机回传的助手 peerhist_ 行收掉本机 uuid 副本，并留下 thinking', () async {
     final db = LocalDatabaseService();
     final suffix = DateTime.now().microsecondsSinceEpoch + 5;

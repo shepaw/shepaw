@@ -747,4 +747,25 @@ void main() {
       );
     });
   });
+
+  group('replyToIdInLocalForm', () {
+    test('agent 会话的引用落成本机的 peerhist_ 形态', () {
+      expect(replyToIdInLocalForm('u1', hostWrapsIds: true), 'peerhist_u1');
+      // 主机剥过前缀，本机形态就是加回来；重复调用不该再叠一层。
+      expect(
+        replyToIdInLocalForm('peerhist_u1', hostWrapsIds: true),
+        'peerhist_u1',
+      );
+    });
+
+    test('惜宝与群聊的引用保持裸 id', () {
+      expect(replyToIdInLocalForm('u1', hostWrapsIds: false), 'u1');
+      expect(replyToIdInLocalForm('peerhist_u1', hostWrapsIds: false), 'u1');
+    });
+
+    test('没有引用时是 null', () {
+      expect(replyToIdInLocalForm(null, hostWrapsIds: true), isNull);
+      expect(replyToIdInLocalForm('  ', hostWrapsIds: false), isNull);
+    });
+  });
 }

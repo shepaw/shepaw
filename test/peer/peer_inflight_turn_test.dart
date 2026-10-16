@@ -378,6 +378,13 @@ void main() {
       expect(peerhistAgentMessageId(null), '');
     });
 
+    test('上行帧的 id 是主机形态的逆运算', () {
+      // 本机行是 `peerhist_u1`，发给主机要还原成 `u1`（前缀归主机加）。
+      expect(bareMessageId(peerhistMessageId('u1')), 'u1');
+      expect(bareMessageId('u1'), 'u1');
+      expect(bareMessageId('peerhist_peerhist_u1'), 'peerhist_u1');
+    });
+
     test('progress merges onto a hub row that has none', () {
       final merged = peerProgressMetadataToMerge(
         existing: const {'trace_id': 't1'},
@@ -429,6 +436,26 @@ void main() {
       expect(collapse.deleteIds, isNot(contains('other')));
       expect(collapse.metadata?['progress_content'], 'thinking');
       expect(collapse.metadata?['collapsible_title'], 'Thinking');
+    });
+
+    test('collapse 要把引用从裸 id 搬到 peerhist_ id', () {
+      // 发消息当下本机用户行是裸 id，助手回复行记的就是它；主机回放行改叫
+      // `peerhist_<同一个 id>`，引用不跟着搬就成了悬空引用。
+      final collapse = collapseLocalPeerTurnOnPeerhistInsert(
+        peerhistId: 'peerhist_u1',
+        eventMetadata: null,
+        localRows: const [],
+      );
+      expect(collapse.replyToRewrites, [(from: 'u1', to: 'peerhist_u1')]);
+    });
+
+    test('没有 peerhist_ 前缀时不搬引用', () {
+      final collapse = collapseLocalPeerTurnOnPeerhistInsert(
+        peerhistId: 'u1',
+        eventMetadata: null,
+        localRows: const [],
+      );
+      expect(collapse.replyToRewrites, isEmpty);
     });
   });
 

@@ -513,7 +513,10 @@ class HubEventClient {
     // 否则终态落库和 message.created 会各留一条气泡。
     final eventMetadata =
         metadata is Map ? Map<String, dynamic>.from(metadata) : null;
-    final localRows = id.startsWith('peerhist_')
+    // 这条事件自己的 id 形态就是本通道的落库形态：agent 会话是 `peerhist_*`，
+    // 惜宝单聊与群聊是裸 id。引用要按同一形态存，否则指向一条不存在的行。
+    final hostWrapsIds = id.startsWith('peerhist_');
+    final localRows = hostWrapsIds
         ? await db.listNonPeerhistMessages(channelId)
         : const <Map<String, dynamic>>[];
     final collapse = collapseLocalPeerTurnOnPeerhistInsert(
@@ -536,6 +539,11 @@ class HubEventClient {
       );
     }
     await db.deleteMessagesByIds(collapse.deleteIds);
+    // 删掉的那条裸 id 行就是 `peerhist_<id>` 的本机形态，指向它的引用要跟着
+    // 搬过去，否则助手气泡上的引用头会变成「原消息不可用」。
+    for (final rewrite in collapse.replyToRewrites) {
+      await db.rewriteReplyToIds(channelId, rewrite.from, rewrite.to);
+    }
     if (existing == null) {
       final isRead = (data['is_read'] == true ||
               data['is_read'] == 1 ||
@@ -553,7 +561,10 @@ class HubEventClient {
           content: data['content'] as String? ?? '',
           messageType: data['type'] as String? ?? 'text',
           metadata: collapse.metadata,
-          replyToId: data['reply_to'] as String?,
+          replyToId: replyToIdInLocalForm(
+            data['reply_to'] as String?,
+            hostWrapsIds: hostWrapsIds,
+          ),
           createdAt: data['timestamp'] is int && data['timestamp'] != 0
               ? DateTime.fromMillisecondsSinceEpoch(
                   data['timestamp'] as int,

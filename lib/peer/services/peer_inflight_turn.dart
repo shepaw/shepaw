@@ -181,15 +181,30 @@ bool peerSyncedRowCoversFinalContent(String rowContent, String finalContent) {
   return remote == local || remote.startsWith(local) || local.startsWith(remote);
 }
 
+/// 主机形态的消息 id：`peerhist_{message_id}`。
+///
+/// 主机 agent 会话的 `message.created` 与历史同步都用这个形态。本机落库时就得
+/// 按它铸 id，主机回包才是同一条 —— 否则 `collapse` 要把本机那条行删了重建，
+/// 指向它的引用跟着悬空（气泡上渲染成「原消息不可用」）。
+String peerhistMessageId(String? rawId) {
+  final id = rawId?.trim() ?? '';
+  if (id.isEmpty) return '';
+  return id.startsWith('peerhist_') ? id : 'peerhist_$id';
+}
+
+/// [peerhistMessageId] 的逆：上行帧里要发裸 id —— 前缀归主机自己加，
+/// 原样发过去会变成 `peerhist_peerhist_*`。
+String bareMessageId(String id) {
+  const prefix = 'peerhist_';
+  return id.startsWith(prefix) ? id.substring(prefix.length) : id;
+}
+
 /// 助手回复对外的稳定主键：`peerhist_{requestId}`。
 ///
 /// 主机 `message.created` 和历史同步都用 request id 当助手消息 id。本机终态
 /// 若再另造一个 uuid，两条通道就会各留一行。
-String peerhistAgentMessageId(String? requestId) {
-  final id = requestId?.trim() ?? '';
-  if (id.isEmpty) return '';
-  return id.startsWith('peerhist_') ? id : 'peerhist_$id';
-}
+String peerhistAgentMessageId(String? requestId) =>
+    peerhistMessageId(requestId);
 
 /// 把本机流式阶段记下的 thinking 补到一条还没有进度块的行上。
 ///
@@ -228,9 +243,17 @@ class PeerhistInsertCollapse {
   final List<String> deleteIds;
   final Map<String, dynamic>? metadata;
 
+  /// 这次重键要跟着搬的引用：本机裸 id → 主机 `peerhist_*` id。
+  ///
+  /// 发消息那一刻用户行是裸 id，助手回复行记的 `reply_to_id` 就是那个裸 id；
+  /// collapse 之后用户行改叫 `peerhist_<同一个 id>`。引用不跟着搬就悬空，
+  /// 整列重建时气泡上会渲染出「原消息不可用」。
+  final List<({String from, String to})> replyToRewrites;
+
   const PeerhistInsertCollapse({
     required this.deleteIds,
     required this.metadata,
+    this.replyToRewrites = const [],
   });
 }
 
@@ -246,6 +269,11 @@ PeerhistInsertCollapse collapseLocalPeerTurnOnPeerhistInsert({
   if (requestId.isNotEmpty && requestId != peerhistId) {
     deleteIds.add(requestId);
   }
+  // 本机那条裸 id 行换成了 `peerhist_<同一个 id>`，只是在库里换了名字，
+  // 指向它的引用要跟着搬（否则就是「原消息不可用」）。
+  final rewrites = deleteIds.isEmpty
+      ? const <({String from, String to})>[]
+      : [(from: requestId, to: peerhistId)];
   var meta = eventMetadata == null
       ? <String, dynamic>{}
       : Map<String, dynamic>.from(eventMetadata);
@@ -254,6 +282,7 @@ PeerhistInsertCollapse collapseLocalPeerTurnOnPeerhistInsert({
     return PeerhistInsertCollapse(
       deleteIds: deleteIds,
       metadata: hasMeta ? meta : null,
+      replyToRewrites: rewrites,
     );
   }
   for (final row in localRows) {
@@ -286,6 +315,7 @@ PeerhistInsertCollapse collapseLocalPeerTurnOnPeerhistInsert({
   return PeerhistInsertCollapse(
     deleteIds: deleteIds,
     metadata: hasMeta ? meta : null,
+    replyToRewrites: rewrites,
   );
 }
 

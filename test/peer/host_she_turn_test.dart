@@ -354,4 +354,38 @@ void main() {
       expect(source, contains("'$type'"), reason: type);
     }
   });
+
+  group('本机用户消息 id 按主机形态铸', () {
+    final she = agent(
+      id: SheService.sheId,
+      protocol: ProtocolType.peer,
+      metadata: const {'is_she': true},
+    );
+    final cursor = agent(
+      id: 'cursor-1',
+      protocol: ProtocolType.peer,
+      metadata: const {'remote_agent_id': 'cursor-1'},
+    );
+    final localLlm = agent(
+      id: 'local-1',
+      protocol: ProtocolType.acp,
+      metadata: const {'llm_provider': 'ollama'},
+    );
+
+    test('第三方 agent 的 DM 用主机回包的 peerhist_ 形态', () {
+      expect(hostWrapsMessageId(cursor), isTrue);
+      expect(localUserMessageIdFor(cursor, 'u1'), 'peerhist_u1');
+    });
+
+    test('惜宝和群走裸 id（主机那条 emit 路径不带前缀）', () {
+      expect(hostWrapsMessageId(she), isFalse);
+      expect(localUserMessageIdFor(she, 'u1'), 'u1');
+      expect(localUserMessageIdFor(null, 'u1'), 'u1');
+    });
+
+    test('本机 LLM 没有主机，保持裸 id', () {
+      expect(hostWrapsMessageId(localLlm), isFalse);
+      expect(localUserMessageIdFor(localLlm, 'u1'), 'u1');
+    });
+  });
 }

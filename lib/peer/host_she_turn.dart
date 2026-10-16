@@ -1,5 +1,6 @@
 import '../models/remote_agent.dart';
 import '../services/she_service.dart';
+import 'services/peer_inflight_turn.dart';
 
 /// 主机上的惜宝不在 `agents.json` 里。`agent_chat` 只认引擎实例，
 /// 会回「主机上没有这个 Agent」。她的对话走储物袋回合。
@@ -8,6 +9,25 @@ bool relaysHostSheTurn(RemoteAgent agent) {
   return SheService.isSheIdentity(agent.id, agent.metadata) ||
       SheService.isSheIdentity(agent.remoteAgentId, null);
 }
+
+/// 主机回放这条消息时会不会给它套 `peerhist_` 前缀。
+///
+/// 主机现在有两条 emit 路径，命名还不是一套：agent 会话（`AgentSessionStore`）
+/// 发 `peerhist_{message_id}`，惜宝/群那条（She 会话日志）发裸 id。所以只有
+/// 「非惜宝的 peer agent」的 DM 才按主机形态铸本机 id。主机侧收敛成一套之后，
+/// 这个函数退化成 `agent.isPeerAgent`。
+bool hostWrapsMessageId(RemoteAgent? agent) {
+  if (agent == null || !agent.isPeerAgent) return false;
+  return !relaysHostSheTurn(agent);
+}
+
+/// 本机给这条用户消息落库时该用的 id。
+///
+/// 主机回包叫 `peerhist_<id>` 的那种 agent，本机得先按同一个形态落库，主机回包
+/// 才是同一条（否则本机行要被删了重建，引用悬空）。其余（惜宝、群、本机 LLM）
+/// 主机就是裸 id，本机也保持裸 id。
+String localUserMessageIdFor(RemoteAgent? agent, String rawId) =>
+    hostWrapsMessageId(agent) ? peerhistMessageId(rawId) : rawId;
 
 /// 聊天框主模型用本机已添加的列表。主机惜宝不跟 Hub 的默认模型目录。
 bool chatUsesRegistryMainModel(RemoteAgent agent) =>

@@ -173,6 +173,20 @@ class MessageUtils {
     return [for (final i in order) messages[i]];
   }
 
+  /// 引用目标查找：同一个引用在不同通道下落库形态可能不同 —— 本机乐观行是裸
+  /// id，主机回放行是 `peerhist_<id>`。精确查不到时按另一种形态再查一次，
+  /// 免得已经在库里的老引用一直渲染成「原消息不可用」。
+  static Message? quotedMessageFor(Map<String, Message> byId, String? replyTo) {
+    final id = replyTo?.trim() ?? '';
+    if (id.isEmpty) return null;
+    final direct = byId[id];
+    if (direct != null) return direct;
+    const prefix = 'peerhist_';
+    return id.startsWith(prefix)
+        ? byId[id.substring(prefix.length)]
+        : byId['$prefix$id'];
+  }
+
   /// 反向列表中 [displayIndex] 对应的消息 id。0 是最新一条。
   static String? messageIdAtDisplayIndex(
     List<Message> messages,

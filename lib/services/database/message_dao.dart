@@ -459,6 +459,29 @@ extension MessageDao on LocalDatabaseService {
     );
   }
 
+  /// 把 [channelId] 里指向 [fromId] 的引用改指到 [toId]（消息重键时用）。
+  ///
+  /// 发消息当下用户行还是裸 id，助手回复行记的 `reply_to_id` 也是那个裸 id；
+  /// 主机的 `message.created` 到了之后用户行改叫 `peerhist_<id>`。引用不跟着
+  /// 搬就悬空，气泡上会渲染出「原消息不可用」。返回改了几行。
+  ///
+  /// 只看 `channel_id`（有索引）—— 引用不会跨频道。
+  Future<int> rewriteReplyToIds(
+    String channelId,
+    String fromId,
+    String toId,
+  ) async {
+    if (channelId.isEmpty || fromId.isEmpty || toId.isEmpty) return 0;
+    if (fromId == toId) return 0;
+    final db = await database;
+    return db.update(
+      'messages',
+      {'reply_to_id': toId},
+      where: 'channel_id = ? AND reply_to_id = ?',
+      whereArgs: [channelId, fromId],
+    );
+  }
+
   /// 删除 Channel 的所有消息
   Future<void> deleteChannelMessages(String channelId) async {
     final db = await database;

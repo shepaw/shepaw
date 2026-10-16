@@ -13,6 +13,7 @@ import '../../storage/pouch_role.dart';
 import '../../storage/pouch_session.dart';
 import 'pouch_attachment.dart';
 import 'services/peer_connection_manager.dart';
+import 'services/peer_inflight_turn.dart';
 
 /// 客户端把群编排 / 本机回合交给持有储物袋的主机。
 ///
@@ -113,9 +114,10 @@ class PouchTurnRelay {
         'content': content,
         'user_id': userId,
         'user_name': userName,
-        if (userMessageId != null) 'user_message_id': userMessageId,
+        if (userMessageId != null)
+          'user_message_id': bareMessageId(userMessageId),
         'mentioned_agent_ids': mentionedAgentIds,
-        if (replyToId != null) 'reply_to_id': replyToId,
+        if (replyToId != null) 'reply_to_id': bareMessageId(replyToId),
         if (replyQuoteText != null) 'reply_quote_text': replyQuoteText,
         if (refs != null) 'attachments': refs,
         ...deviceInfo.toWireFields(),
@@ -167,6 +169,8 @@ class PouchTurnRelay {
     required String userName,
     String? channelId,
     String? userMessageId,
+    String? replyToId,
+    String? replyQuoteText,
     List<AttachmentData>? attachments,
     void Function(String chunk)? onStreamChunk,
     Future<Map<String, dynamic>?> Function(
@@ -194,7 +198,10 @@ class PouchTurnRelay {
         'content': content,
         'user_id': userId,
         'user_name': userName,
-        if (userMessageId != null) 'user_message_id': userMessageId,
+        if (userMessageId != null)
+          'user_message_id': bareMessageId(userMessageId),
+        if (replyToId != null) 'reply_to_id': bareMessageId(replyToId),
+        if (replyQuoteText != null) 'reply_quote_text': replyQuoteText,
         if (channelId != null) 'channel_id': channelId,
         if (refs != null) 'attachments': refs,
         ...deviceInfo.toWireFields(),
@@ -597,9 +604,9 @@ class PouchTurnRelay {
           'content': text,
           'user_id': userId,
           'user_name': userName,
-          'user_message_id': requestId,
+          'user_message_id': bareMessageId(requestId),
           'channel_id': channelId,
-          if (replyToId != null) 'reply_to_id': replyToId,
+          if (replyToId != null) 'reply_to_id': bareMessageId(replyToId),
           if (replyQuoteText != null) 'reply_quote_text': replyQuoteText,
           if (refs != null) 'attachments': refs,
           ...deviceInfo.toWireFields(),
@@ -648,9 +655,9 @@ class PouchTurnRelay {
           'content': text,
           'user_id': userId,
           'user_name': userName,
-          'user_message_id': requestId,
+          'user_message_id': bareMessageId(requestId),
           'mentioned_agent_ids': mentionedAgentIds,
-          if (replyToId != null) 'reply_to_id': replyToId,
+          if (replyToId != null) 'reply_to_id': bareMessageId(replyToId),
           if (replyQuoteText != null) 'reply_quote_text': replyQuoteText,
           if (refs != null) 'attachments': refs,
           ...deviceInfo.toWireFields(),

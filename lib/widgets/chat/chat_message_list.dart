@@ -292,7 +292,8 @@ class _ChatMessageListState extends State<ChatMessageList> {
               previousMessage != null &&
               previousMessage.id == message.replyTo;
           if (message.replyTo != null && !isReplyToPrevious) {
-            quotedMessage = messageIdMap[message.replyTo];
+            quotedMessage =
+                MessageUtils.quotedMessageFor(messageIdMap, message.replyTo);
           }
 
           final isHighlighted = highlightedMessageId == message.id;

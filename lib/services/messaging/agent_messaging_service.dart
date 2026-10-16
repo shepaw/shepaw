@@ -1249,6 +1249,8 @@ class AgentMessagingService {
         userId: userMessage.from.id,
         userName: userMessage.from.name,
         agentName: agent.name,
+        replyToId: userMessage.replyTo,
+        replyQuoteText: userMessage.replyQuoteText,
         onRequestStarted: (requestId) {
           peerRequestId = requestId;
           final spanId = TraceService.instance.addSpan(
@@ -1561,6 +1563,8 @@ class AgentMessagingService {
           userName: userName,
           channelId: channelId,
           userMessageId: userMessage.id,
+          replyToId: userMessage.replyTo,
+          replyQuoteText: userMessage.replyQuoteText,
           attachments: attachments,
           onStreamChunk: (chunk) {
             if (task == null) {

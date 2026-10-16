@@ -428,7 +428,15 @@ mixin _MessagingOps on _ChatControllerBase {
         }
         _offerQueuedMessage(
           QueuedMessage(
-            id: const Uuid().v4(),
+            // 排队项的 id 既当本机气泡落库，又当上行的 user_message_id，
+            // 得跟主机回包的形态一致（第三方 agent 的 DM 是 `peerhist_*`，
+            // 惜宝/群是裸 id）。
+            id: localUserMessageIdFor(
+              isGroupMode || agentId == null
+                  ? null
+                  : await localDatabaseService.getRemoteAgentById(agentId!),
+              const Uuid().v4(),
+            ),
             content: content,
             replyToId: capturedReplyToId,
             replyQuoteText: capturedReplyQuoteText,
@@ -757,6 +765,8 @@ mixin _MessagingOps on _ChatControllerBase {
             agentName: agent.name,
             // 排队消息落库用的就是队列 id，交给主机后两边同一条。
             userMessageId: item.id,
+            replyToId: item.replyToId,
+            replyQuoteText: item.replyQuoteText,
             attachments: item.attachments,
           );
         } else {
@@ -901,7 +911,7 @@ mixin _MessagingOps on _ChatControllerBase {
         userName: userName,
         agentId: remoteAgent.id,
         agentName: remoteAgent.name,
-        userMessageId: const Uuid().v4(),
+        userMessageId: localUserMessageIdFor(remoteAgent, const Uuid().v4()),
         replyToId: replyToId,
         replyQuoteText: replyQuoteText,
         instructionName: instructionName,
