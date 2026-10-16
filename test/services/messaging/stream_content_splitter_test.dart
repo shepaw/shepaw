@@ -118,5 +118,41 @@ void main() {
       final out = s.onMetadata({'collapsible': false});
       expect(out['collapsible'], isFalse);
     });
+
+    test('updates tool step line with terminal tool_status and renders plan entries',
+        () {
+      final s = StreamContentSplitter();
+      s.onMetadata({
+        'collapsible': true,
+        'collapsible_title': 'Read file',
+        'tool_status': 'in_progress',
+      });
+      expect(s.progressContent, '- Read file\n');
+
+      s.onMetadata({
+        'collapsible': true,
+        'collapsible_title': 'Read file',
+        'tool_status': 'completed',
+      });
+      expect(s.progressContent, '- Read file ✓\n');
+
+      s.onMetadata({
+        'collapsible': true,
+        'collapsible_title': 'Plan',
+        'plan': [
+          {'content': 'Inspect schema', 'status': 'completed'},
+          {'content': 'Patch handler', 'status': 'in_progress'},
+          {'content': 'Run unit tests', 'status': 'pending'},
+        ],
+      });
+      expect(
+        s.progressContent,
+        '- Read file ✓\n'
+        '- [x] Inspect schema\n'
+        '- [>] Patch handler\n'
+        '- [ ] Run unit tests\n',
+      );
+      expect(s.progressTitle, 'Plan');
+    });
   });
 }

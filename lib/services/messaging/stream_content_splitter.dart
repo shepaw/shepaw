@@ -30,19 +30,41 @@ class StreamContentSplitter {
       if (data['collapsible'] == true) {
         divertToProgress = true;
         final title = data['collapsible_title'] as String?;
-        if (title != null && title.isNotEmpty) {
+        final toolStatus = data['tool_status'] as String?;
+        final plan = data['plan'];
+        if (plan is List && plan.isNotEmpty) {
+          progressTitle = (title != null && title.isNotEmpty) ? title : 'Plan';
+          final planLines = _formatPlanEntries(plan);
+          if (planLines.isNotEmpty) {
+            if (progressContent.isNotEmpty &&
+                !progressContent.endsWith('\n')) {
+              progressContent += '\n';
+            }
+            progressContent += planLines;
+          }
+        } else if (title != null && title.isNotEmpty) {
           progressTitle = title;
           // Record non-thinking tool step titles into progressContent so that
           // silent tool-heavy phases still show a live step log in the
           // collapsible block instead of appearing frozen.
           if (title != 'Thinking' && title != 'Details') {
-            final stepLine = '- $title\n';
-            if (!progressContent.endsWith(stepLine)) {
+            final suffix = _toolStatusSuffix(toolStatus);
+            final baseStep = '- $title\n';
+            final finalStep =
+                suffix != null ? '- $title $suffix\n' : baseStep;
+            if (suffix != null && progressContent.endsWith(baseStep)) {
+              progressContent = progressContent.substring(
+                    0,
+                    progressContent.length - baseStep.length,
+                  ) +
+                  finalStep;
+            } else if (!progressContent.endsWith(finalStep) &&
+                !progressContent.endsWith(baseStep)) {
               if (progressContent.isNotEmpty &&
                   !progressContent.endsWith('\n')) {
                 progressContent += '\n';
               }
-              progressContent += stepLine;
+              progressContent += finalStep;
             }
           }
         }
@@ -108,5 +130,35 @@ class StreamContentSplitter {
       'collapsible_title': progressTitle ?? 'Details',
       'auto_collapse': autoCollapse,
     };
+  }
+
+  static String? _toolStatusSuffix(String? status) {
+    switch (status) {
+      case 'completed':
+        return '✓';
+      case 'failed':
+      case 'cancelled':
+      case 'rejected':
+        return '✗';
+      default:
+        return null;
+    }
+  }
+
+  static String _formatPlanEntries(List<dynamic> entries) {
+    final buf = StringBuffer();
+    for (final raw in entries) {
+      if (raw is! Map) continue;
+      final content = (raw['content'] as String?)?.trim() ?? '';
+      if (content.isEmpty) continue;
+      final status = raw['status'] as String?;
+      final marker = status == 'completed'
+          ? '[x]'
+          : status == 'in_progress'
+              ? '[>]'
+              : '[ ]';
+      buf.writeln('- $marker $content');
+    }
+    return buf.toString();
   }
 }

@@ -44,8 +44,10 @@ class CliExecutionGate {
     Future<bool> Function(
       String toolName,
       Map<String, dynamic> flags,
-      os_exec.RiskLevel risk,
-    )? onOsConfirmation,
+      os_exec.RiskLevel risk, {
+      required String? channelId,
+      required String? agentId,
+    })? onOsConfirmation,
   }) async {
     final namespace = (args['namespace'] as String?)?.trim() ?? '';
     final subcommand = (args['subcommand'] as String?)?.trim() ?? '';
@@ -117,6 +119,7 @@ class CliExecutionGate {
         namespace: namespace,
         commandId: id,
         requireApproval: requireApproval,
+        channelId: channelId,
         onOsConfirmation: onOsConfirmation,
       );
       if (denied != null) return denied;
@@ -149,11 +152,14 @@ class CliExecutionGate {
     required String namespace,
     required String commandId,
     required bool requireApproval,
+    required String? channelId,
     Future<bool> Function(
       String toolName,
       Map<String, dynamic> flags,
-      os_exec.RiskLevel risk,
-    )? onOsConfirmation,
+      os_exec.RiskLevel risk, {
+      required String? channelId,
+      required String? agentId,
+    })? onOsConfirmation,
   }) async {
     final flagsRaw = args['flags'];
     final flags = <String, dynamic>{};
@@ -186,8 +192,20 @@ class CliExecutionGate {
     }
 
     final approved = onOsConfirmation != null
-        ? await onOsConfirmation(toolName, flags, risk)
-        : await CliApprovalCoordinator.instance.request(toolName, flags, risk);
+        ? await onOsConfirmation(
+            toolName,
+            flags,
+            risk,
+            channelId: channelId,
+            agentId: agentId,
+          )
+        : await CliApprovalCoordinator.instance.request(
+            toolName,
+            flags,
+            risk,
+            channelId: channelId,
+            agentId: agentId,
+          );
     if (approved) return null;
 
     if (osUnsafe) {

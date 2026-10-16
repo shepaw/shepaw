@@ -366,9 +366,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
         }
       });
     }
-    if (oldWidget.agentId != widget.agentId ||
-        oldWidget.channelId != widget.channelId) {
-      // 会话级状态：换会话（或换 agent）后旧档位不再适用，清空后重拉。
+    if (oldWidget.agentId != widget.agentId) {
+      // 换了 agent：旧 agent 的模式与模型不再适用，清空后重拉。
       _sessionModes = const [];
       _currentSessionMode = null;
       _modeBeforePlan = null;
@@ -384,6 +383,12 @@ class ChatInputAreaState extends State<ChatInputArea> {
       _fastSetting = false;
       _modelPanel?.close();
       _peerControlsOffline = false;
+      unawaited(_loadAgentControls());
+    } else if (oldWidget.channelId != widget.channelId) {
+      // 同一 agent 内新建或切换会话：模型与模式目录均为 agent 级（scope: agent），
+      // 保留内存里已就绪的列表和选中项以实现 0ms 瞬时可用，后台静默校验更新。
+      _modeBeforePlan = null;
+      _modelPanel?.close();
       unawaited(_loadAgentControls());
     }
   }
@@ -506,6 +511,22 @@ class ChatInputAreaState extends State<ChatInputArea> {
     }
     if (!mounted || token != _controlsToken || agent == null) return;
     if (relaysHostSheTurn(agent)) {
+      try {
+        final cached =
+            await PeerAgentClientService.instance.cachedModels(agent.id);
+        if (!mounted || token != _controlsToken) return;
+        if (cached != null && cached.models.isNotEmpty) {
+          setState(() {
+            _hostSheModel = true;
+            _mainModelAvailable = true;
+            _peerModels = cached.models;
+            _currentPeerModel = cached.current;
+            _peerModelsSwitchable = cached.switchable;
+            _peerModelOptionValues = cached.optionValues;
+          });
+        }
+      } catch (_) {}
+      if (!mounted || token != _controlsToken) return;
       await _refreshPeerModels(agent, token);
       return;
     }
@@ -548,7 +569,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
         _currentPeerModel = cachedModels.current;
         _peerModelsSwitchable = cachedModels.switchable;
         _peerModelOptionValues = cachedModels.optionValues;
-      } else {
+      } else if (_peerModels.isEmpty) {
         _peerModels = const [];
         _currentPeerModel = null;
         _peerModelsSwitchable = true;
@@ -560,8 +581,12 @@ class ChatInputAreaState extends State<ChatInputArea> {
   /// 拉到了返回 true。超时或没发出时不改当前显示。
   Future<bool> _refreshPeerModels(RemoteAgent agent, int token) async {
     final peerId = agent.sourcePeerId;
-    final remoteAgentId = agent.remoteAgentId;
-    if (peerId == null || remoteAgentId == null) return false;
+    final remoteAgentId = relaysHostSheTurn(agent)
+        ? hostSheTurnAgentId(agent)
+        : agent.remoteAgentId;
+    if (peerId == null || remoteAgentId == null || remoteAgentId.isEmpty) {
+      return false;
+    }
     final outcome = await PeerAgentClientService.instance.fetchModelsResult(
       peerId: peerId,
       remoteAgentId: remoteAgentId,
@@ -898,7 +923,14 @@ class ChatInputAreaState extends State<ChatInputArea> {
   /// 电脑上如果给同一条模型起过名字，补进储物袋，手机就能看到这个名字。
   Future<void> _loadHostSheModels(RemoteAgent agent, int token) async {
     final peerId = agent.sourcePeerId;
-    final remoteAgentId = agent.remoteAgentId;
+    final remoteAgentId = hostSheTurnAgentId(agent);
+    PeerModelsList? cachedModels;
+    if (_peerModels.isEmpty) {
+      try {
+        cachedModels =
+            await PeerAgentClientService.instance.cachedModels(agent.id);
+      } catch (_) {}
+    }
     if (!mounted || token != _controlsToken) return;
     setState(() {
       _hostSheModel = true;
@@ -906,8 +938,32 @@ class ChatInputAreaState extends State<ChatInputArea> {
       _mainModelDef = null;
       _peerId = peerId;
       _remoteAgentId = remoteAgentId;
+      if (cachedModels != null && cachedModels.models.isNotEmpty) {
+        _peerModels = cachedModels.models;
+        _currentPeerModel = cachedModels.current;
+        _peerModelsSwitchable = cachedModels.switchable;
+        _peerModelOptionValues = cachedModels.optionValues;
+      } else if (_peerModels.isEmpty) {
+        final fallbackModel =
+            (agent.metadata['she_model'] as String?)?.trim() ?? '';
+        final fallbackBase =
+            (agent.metadata['she_base_url'] as String?)?.trim() ?? '';
+        if (fallbackModel.isNotEmpty) {
+          _peerModels = [
+            PeerAgentModel(
+              value: fallbackModel,
+              displayName: fallbackModel,
+              description: fallbackModel,
+              baseUrl: fallbackBase,
+              hasApiKey: true,
+            ),
+          ];
+          _currentPeerModel = fallbackModel;
+          _peerModelsSwitchable = true;
+        }
+      }
     });
-    if (peerId == null || remoteAgentId == null || peerId.isEmpty) return;
+    if (peerId == null || remoteAgentId.isEmpty || peerId.isEmpty) return;
     final fetched = await _refreshPeerModels(agent, token);
     if (!mounted || token != _controlsToken) return;
     if (!fetched) {

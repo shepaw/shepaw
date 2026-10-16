@@ -1,6 +1,6 @@
 import 'dart:async';
-import '../../clis/shepaw/os/os_executor.dart' as os_exec;
 import '../../models/workflow_models.dart';
+import '../cli_approval_coordinator.dart';
 
 /// 等待 [ActiveTask.dbSaveCompleter] 的上限。
 ///
@@ -112,7 +112,10 @@ class ActiveTask {
   void Function(Map<String, dynamic>)? onRequestHistory;
 
   /// OS tool confirmation callback — returns true if user approves.
-  Future<bool> Function(String toolName, Map<String, dynamic> args, os_exec.RiskLevel risk)? onOsToolConfirmation;
+  ///
+  /// 归属（[CliApprovalHandler] 的 channelId / agentId）必填：审批卡属于发起
+  /// 回合的会话，不能落到用户当前正在看的会话里。
+  CliApprovalHandler? onOsToolConfirmation;
 
   /// Called when the task finishes (complete or error) so the UI can refresh.
   void Function()? onTaskFinished;

@@ -33,6 +33,7 @@ import '../models/workflow_models.dart';
 import 'messaging/agent_messaging_service.dart';
 import 'messaging/chat_history_content.dart';
 import '../peer/services/peer_agent_client_service.dart';
+import '../peer/services/peer_inflight_turn.dart';
 import '../peer/pouch_turn_relay.dart';
 import 'group/group_session_service.dart';
 import 'group/group_member_session_service.dart';
@@ -58,7 +59,7 @@ import 'local_user_identity.dart';
 import 'she_service.dart';
 import 'noise_identity.dart';
 import 'dispatch/she_relay_session_service.dart';
-import '../clis/shepaw/os/os_executor.dart' as os_exec;
+import 'cli_approval_coordinator.dart';
 import '../models/llm_token_usage.dart';
 import '../storage/store_protocol.dart';
 
@@ -840,6 +841,14 @@ class ChatService {
     }
   }
 
+  /// 排队回合在主机上开始出字。之后和普通发送一样可以切回来接着看流式回复。
+  void attachQueuedPeerTurn(PeerInflightTurnRecord rec) =>
+      _agentMessagingService.attachQueuedPeerTurn(rec);
+
+  /// 排队回合的最终回复已经落库，卸下这次流式挂接。
+  Future<void> completeQueuedPeerTurn(String channelId) =>
+      _agentMessagingService.completeQueuedPeerTurn(channelId);
+
   /// Query whether there is an in-progress task for [channelId].
   ActiveTask? getActiveTask(String channelId) {
     final task = _activeTasks[channelId];
@@ -996,6 +1005,53 @@ class ChatService {
     }
   }
 
+  /// 把单聊里还在输出的正文写入本机库。桌面一切会话就会拆掉聊天页，
+  /// 内存里的流式气泡跟着走；先落库，切回来才能从本机缓存接着看。
+  Future<void> flushInFlightDmPartial({String? channelId}) async {
+    final tasks = channelId == null
+        ? _activeTasks.values.toList()
+        : [
+            if (_activeTasks[channelId] != null) _activeTasks[channelId]!,
+          ];
+    for (final task in tasks) {
+      if (task.isComplete) continue;
+      if (task.channelId.isEmpty) continue;
+      if (task.accumulatedContent.trim().isEmpty &&
+          task.progressContent.trim().isEmpty) {
+        continue;
+      }
+      try {
+        final id = await _databaseService.upsertPartialStreamingMessage(
+          existingMessageId: task.partialMessageId,
+          channelId: task.channelId,
+          senderId: task.agentId,
+          senderName: task.agentName,
+          content: task.accumulatedContent,
+          replyToId: task.userMessageId.isEmpty ? null : task.userMessageId,
+          metadata: {
+            'agent_id': task.agentId,
+            'agent_name': task.agentName,
+            'is_partial': true,
+            if (task.progressContent.isNotEmpty)
+              'progress_content': task.progressContent,
+          },
+        );
+        task.partialMessageId = id;
+        final requestId = task.metadata?['request_id'];
+        if (requestId is String && requestId.isNotEmpty) {
+          PeerAgentClientService.instance
+              .noteInflightPartialMessageId(requestId, id);
+        }
+        _notifyChannelUpdate(task.channelId);
+      } catch (e) {
+        LoggerService().warning(
+          'Failed to flush DM partial for ${task.agentName}: $e',
+          tag: 'ChatService',
+        );
+      }
+    }
+  }
+
   /// Detach UI callbacks from all group tasks for [channelId].
   void detachGroupTaskUI(String channelId) {
     final agentMap = _activeGroupTasks[channelId];
@@ -1121,9 +1177,7 @@ class ChatService {
     Future<void> Function(Map<String, dynamic> fileData)? onFileMessage,
     void Function(Map<String, dynamic> metadata)? onMessageMetadata,
     void Function(Map<String, dynamic> historyRequestData)? onRequestHistory,
-    Future<bool> Function(
-            String toolName, Map<String, dynamic> args, os_exec.RiskLevel risk)?
-        onOsToolConfirmation,
+    CliApprovalHandler? onOsToolConfirmation,
 
     /// 工作流计划创建回调（She 在 DM 中调用 `shepaw workflow create` 成功后触发）。
     void Function(String workflowId, Map<String, dynamic> planData)?
@@ -2456,9 +2510,7 @@ class ChatService {
 
     /// OS 工具风险确认（DM 工作流步骤执行 She 的本地工具循环时可能需要）。
     /// 由控制器接线到与 processMessage 相同的确认对话框。
-    Future<bool> Function(
-            String toolName, Map<String, dynamic> args, os_exec.RiskLevel risk)?
-        onOsToolConfirmation,
+    CliApprovalHandler? onOsToolConfirmation,
   }) async {
     // H1: Concurrency guard — prevent multiple executions of same workflow
     if (_activeWorkflowExecutions.containsKey(workflowId)) {

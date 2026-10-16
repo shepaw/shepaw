@@ -297,7 +297,15 @@ class ChatMessageReconciler {
           }
         }
       }
-      if (adoptTarget == null) continue;
+      if (adoptTarget == null) {
+        // 同发送者已经有更早的完整回复时，不能把这一轮的流式占位丢掉。
+        // 只有正文已经和某条落库回复一致时，才说明这一轮已经在库里。
+        final saved = sameSenderDb.any((m) =>
+            m.content.trim().isNotEmpty &&
+            m.content.trim() == temp.content.trim());
+        if (!saved) messages.add(temp);
+        continue;
+      }
 
       final idx = messages.indexWhere((m) => m.id == adoptTarget!.id);
       if (idx == -1) continue;

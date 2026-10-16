@@ -147,7 +147,8 @@ void main() {
           'flags': {},
         },
         agentId: SheService.sheId,
-        onOsConfirmation: (tool, flags, risk) async {
+        onOsConfirmation: (tool, flags, risk,
+            {required String? channelId, required String? agentId}) async {
           asked = true;
           expect(risk, isNot(os_exec.RiskLevel.safe));
           return true;
@@ -183,7 +184,8 @@ void main() {
         },
         agentId: 'agent-other',
         requireApproval: true,
-        onOsConfirmation: (tool, flags, risk) async {
+        onOsConfirmation: (tool, flags, risk,
+            {required String? channelId, required String? agentId}) async {
           asked = true;
           return true;
         },
@@ -204,7 +206,8 @@ void main() {
         },
         agentId: 'agent-other',
         requireApproval: true,
-        onOsConfirmation: (tool, flags, risk) async {
+        onOsConfirmation: (tool, flags, risk,
+            {required String? channelId, required String? agentId}) async {
           asked = true;
           return false;
         },
@@ -225,7 +228,8 @@ void main() {
         },
         agentId: 'agent-other',
         requireApproval: true,
-        onOsConfirmation: (tool, flags, risk) async {
+        onOsConfirmation: (tool, flags, risk,
+            {required String? channelId, required String? agentId}) async {
           asked += 1;
           return true;
         },
@@ -245,7 +249,8 @@ void main() {
         },
         agentId: SheService.sheId,
         requireApproval: true,
-        onOsConfirmation: (tool, flags, risk) async {
+        onOsConfirmation: (tool, flags, risk,
+            {required String? channelId, required String? agentId}) async {
           asked = true;
           expect(tool, 'peer.list');
           return true;
@@ -259,10 +264,14 @@ void main() {
 
     test('coordinator handler is used when callback is omitted', () async {
       var asked = false;
-      CliApprovalCoordinator.instance.register((tool, flags, risk) async {
-        asked = true;
-        return true;
-      });
+      CliApprovalCoordinator.instance.register(
+        (tool, flags, risk,
+            {required String? channelId, required String? agentId}) async {
+          asked = true;
+          return true;
+        },
+        channelId: 'ch-1',
+      );
       final raw = await CliExecutionGate.instance.execute(
         args: {
           'namespace': 'peer',
@@ -270,6 +279,7 @@ void main() {
           'flags': {},
         },
         agentId: 'agent-other',
+        channelId: 'ch-1',
         requireApproval: true,
       );
       final result = jsonDecode(raw) as Map<String, dynamic>;

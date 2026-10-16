@@ -918,7 +918,9 @@ mixin _MessagingOps on _ChatControllerBase {
       _notify();
       _emit(RequestScrollToBottomEvent(force: true));
 
-      if (currentChannelId != null) {
+      if (currentChannelId != null &&
+          !remoteAgent.isPeerAgent &&
+          !relaysHostSheTurn(remoteAgent)) {
         final currentMessages = await chatService.loadChannelMessages(
           currentChannelId!,
           limit: 40,

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/peer/services/peer_agent_client_service.dart';
+import 'package:shepaw/peer/services/peer_inflight_turn.dart';
 
 void main() {
   group('selectDirtySessions', () {
@@ -668,6 +669,49 @@ void main() {
         existing = {'peerhist_0': times[0], 'peerhist_1': times[1]};
         mirroredLatest = times.last;
       }
+    });
+  });
+
+  group('localMessageIdsToDeleteOnPeerHistorySync', () {
+    PeerHistorySyncLocalRow row(
+      String id,
+      String type,
+      String content, {
+      String? replyToId,
+    }) {
+      return PeerHistorySyncLocalRow(
+        id: id,
+        senderType: type,
+        content: content,
+        replyToId: replyToId,
+      );
+    }
+
+    test('same text in two turns does not drop the second reply', () {
+      const question = '储物袋有哪些文件呢？';
+      const answer = '主要文件都在这里';
+      final deleted = localMessageIdsToDeleteOnPeerHistorySync(
+        localRows: [
+          row('u1', 'user', question),
+          row('a1', 'agent', answer, replyToId: 'u1'),
+          row('u2', 'user', question),
+          row('a2', 'agent', answer, replyToId: 'u2'),
+        ],
+        remoteIds: {'peerhist_u', 'peerhist_a'},
+        remoteRoleContentKeys: {
+          peerHistoryRoleContentKey('user', question),
+          peerHistoryRoleContentKey('agent', answer),
+        },
+        preserveIds: const {},
+        remoteAgentContents: const [answer],
+        remoteTranscript: const [
+          PeerHistoryRemoteEntry(role: 'user', content: question),
+          PeerHistoryRemoteEntry(role: 'agent', content: answer),
+        ],
+      );
+      expect(deleted, {'u1', 'a1'});
+      expect(deleted.contains('u2'), isFalse);
+      expect(deleted.contains('a2'), isFalse);
     });
   });
 

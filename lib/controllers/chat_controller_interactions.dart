@@ -15,30 +15,59 @@ mixin _InteractionOps on _ChatControllerBase {
   Future<bool> requestCliApproval(
     String toolName,
     Map<String, dynamic> flags,
-    os_exec.RiskLevel risk,
-  ) async {
+    os_exec.RiskLevel risk, {
+    required String? channelId,
+    required String? agentId,
+  }) async {
     if (CliApprovalCoordinator.instance.isGrantedForSession(toolName)) {
       return true;
     }
-    final confirmationId =
-        'cli_${DateTime.now().millisecondsSinceEpoch}_$toolName';
-    final actionData = <String, dynamic>{
-      'confirmation_id': confirmationId,
-      'confirmation_context': 'cli',
-      'prompt': os_exec.getRiskDescription(risk, toolName, flags),
-      'tool_name': toolName,
-      'flags': Map<String, dynamic>.from(flags),
-      'risk': risk.name,
-      'actions': [
-        {'id': 'deny', 'label': 'Deny', 'style': 'secondary'},
-        {'id': 'allow', 'label': 'Allow', 'style': 'primary'},
-      ],
-    };
-    _insertCliApprovalCard(actionData);
+    final owner = channelId?.trim() ?? '';
+    if (owner.isEmpty) {
+      // 调用链漏了归属会话 —— 属于 bug。宁可拒绝也不把卡扔进当前页面。
+      LoggerService().warning(
+        'CLI approval for $toolName arrived without an owning channel — '
+        'denied',
+        tag: 'CliApproval',
+      );
+      return false;
+    }
+
+    final aid = (agentId != null && agentId.trim().isNotEmpty)
+        ? agentId.trim()
+        : _cliApprovalAgentId;
+    final confirmationId = CliApprovalCard.confirmationIdFor(toolName);
+
+    // 归属不是当前会话：卡不进当前列表，落进归属频道 + 顶部提醒。
+    if (owner != currentChannelId) {
+      final approved = await CliApprovalCard.awaitOffscreen(
+        confirmationId: confirmationId,
+        toolName: toolName,
+        flags: flags,
+        risk: risk,
+        channelId: owner,
+        agentId: aid,
+        agentName: agentName,
+        db: localDatabaseService,
+      );
+      // 超时 / 回合取消：卡片不在本页，直接撤掉全局提醒。
+      if (!approved) {
+        PendingApprovalHub.instance.resolveByConfirmationId(confirmationId);
+      }
+      return approved;
+    }
+
+    final actionData = CliApprovalCard.buildActionData(
+      confirmationId: confirmationId,
+      toolName: toolName,
+      flags: flags,
+      risk: risk,
+    );
+    _insertCliApprovalCard(actionData, agentId: aid);
     final approved = await CliApprovalService.instance.awaitApproval(
       confirmationId: confirmationId,
       toolName: toolName,
-      channelId: currentChannelId,
+      channelId: owner,
     );
     // Timeout / channel cancel complete the waiter as denied without a tap.
     // Expire the card immediately so Allow/Deny cannot look still live.
@@ -147,10 +176,16 @@ mixin _InteractionOps on _ChatControllerBase {
     PendingApprovalHub.instance.resolveByConfirmationId(confirmationId);
   }
 
-  void _insertCliApprovalCard(Map<String, dynamic> actionData) {
+  void _insertCliApprovalCard(
+    Map<String, dynamic> actionData, {
+    String? agentId,
+  }) {
+    final aid = agentId?.trim().isNotEmpty == true
+        ? agentId!.trim()
+        : _cliApprovalAgentId;
     final hostId = StreamingActionConfirmation.resolveHostMessageId(
       preferredId: isGroupMode
-          ? _groupStreamingHostIdFor(_cliApprovalAgentId)
+          ? _groupStreamingHostIdFor(aid)
           : streamingMessageId,
       messageIdMap: messageIdMap,
       messages: messages,
@@ -161,19 +196,17 @@ mixin _InteractionOps on _ChatControllerBase {
     if (host != null && !hostBusy) {
       _handleStreamingActionConfirmation(actionData);
     } else {
-      _insertCliApprovalFallback(actionData);
+      _insertCliApprovalFallback(actionData, agentId: aid);
     }
     final attachedId = StreamingActionConfirmation.resolveHostMessageId(
-      preferredId: isGroupMode
-          ? _groupStreamingHostIdFor(_cliApprovalAgentId)
-          : streamingMessageId,
+      preferredId: isGroupMode ? _groupStreamingHostIdFor(aid) : streamingMessageId,
       messageIdMap: messageIdMap,
       messages: messages,
     );
     if (currentChannelId == null) return;
     final hubItem = PendingApprovalItem.fromInteraction(
       channelId: currentChannelId!,
-      agentId: _cliApprovalAgentId,
+      agentId: aid,
       agentName: agentName ?? 'Agent',
       interactionType: 'action_confirmation',
       data: actionData,
@@ -219,8 +252,13 @@ mixin _InteractionOps on _ChatControllerBase {
     return 'shepaw-cli';
   }
 
-  void _insertCliApprovalFallback(Map<String, dynamic> actionData) {
-    final aid = _cliApprovalAgentId;
+  void _insertCliApprovalFallback(
+    Map<String, dynamic> actionData, {
+    String? agentId,
+  }) {
+    final aid = agentId?.trim().isNotEmpty == true
+        ? agentId!.trim()
+        : _cliApprovalAgentId;
     final displayName = agentName ?? 'Agent';
     final userId = getUserId();
     final userName = getUserName();

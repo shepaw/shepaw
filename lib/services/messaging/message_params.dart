@@ -1,8 +1,8 @@
 import '../task/acp_task_contract.dart';
+import '../cli_approval_coordinator.dart';
 import 'dart:async';
 import '../../models/message.dart';
 import '../../models/attachment_data.dart';
-import '../../clis/shepaw/os/os_executor.dart' as os_exec;
 
 /// Parameter object replacing the 18-argument [sendMessageToAgent] signature.
 class AgentMessageParams {
@@ -20,7 +20,8 @@ class AgentMessageParams {
   final Future<void> Function(Map<String, dynamic> fileData)? onFileMessage;
   final void Function(Map<String, dynamic> metadata)? onMessageMetadata;
   final void Function(Map<String, dynamic> historyRequestData)? onRequestHistory;
-  final Future<bool> Function(String toolName, Map<String, dynamic> args, os_exec.RiskLevel risk)? onOsToolConfirmation;
+  /// 归属（channelId / agentId）必填 —— 审批卡要落在发起回合的会话里。
+  final CliApprovalHandler? onOsToolConfirmation;
   final ACPCancellationToken? acpCancellationToken;
   final List<AttachmentData>? attachments;
   final Message? existingUserMessage;

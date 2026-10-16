@@ -89,6 +89,19 @@ mixin _SessionOps on _ChatControllerBase {
       // 离开当前会话：若它是「新建会话」留下的空会话，自动删除。
       await pruneEmptySessionBeforeSwitch(nextChannelId: newChannelId);
 
+      unawaited(() async {
+        try {
+          final agent =
+              await localDatabaseService.getRemoteAgentById(agentId!);
+          if (agent != null) {
+            await PeerAgentClientService.instance.warmSession(
+              agent: agent,
+              channelId: newChannelId,
+            );
+          }
+        } catch (_) {}
+      }());
+
       _emit(NavigateToSessionEvent(
         channelId: newChannelId,
         agentId: agentId,

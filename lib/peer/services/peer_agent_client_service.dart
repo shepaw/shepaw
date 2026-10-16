@@ -857,6 +857,16 @@ Map<String, dynamic>? peerHistoryMessageMetadata(PeerHistoryMessage m) {
     if (quote is String && quote.isNotEmpty) {
       meta['reply_quote'] = quote;
     }
+    for (final key in const [
+      ClientDeviceInfo.deviceIdMetaKey,
+      ClientDeviceInfo.deviceNameMetaKey,
+      ClientDeviceInfo.deviceFormMetaKey,
+    ]) {
+      final val = protocol[key];
+      if (val is String && val.trim().isNotEmpty) {
+        meta[key] = val.trim();
+      }
+    }
   }
   final progress = m.progressContent;
   if (progress != null && progress.isNotEmpty) {
@@ -2710,11 +2720,20 @@ class PeerAgentClientService {
     ChatService().releaseQueuedMessage(requestId);
     final channelId = pending.channelId;
     final text = pending.parkedText;
-    if (channelId.isEmpty || text == null || text.trim().isEmpty) return;
-    if (!getIt.isRegistered<LocalDatabaseService>()) return;
+    if (channelId.isEmpty || text == null || text.trim().isEmpty) {
+      if (channelId.isNotEmpty) {
+        await ChatService().completeQueuedPeerTurn(channelId);
+      }
+      return;
+    }
+    if (!getIt.isRegistered<LocalDatabaseService>()) {
+      await ChatService().completeQueuedPeerTurn(channelId);
+      return;
+    }
     final db = getIt<LocalDatabaseService>();
     final userMessageId =
         pending.userMessageId.isEmpty ? requestId : pending.userMessageId;
+    final replyId = 'peerhist_$requestId';
     try {
       await db.createMessage(
         id: userMessageId,
@@ -2723,10 +2742,11 @@ class PeerAgentClientService {
         senderType: 'user',
         senderName: pending.userName,
         content: text,
+        metadata: ClientDeviceInfo.stampMetadata(),
         conflictAlgorithm: ConflictAlgorithm.ignore,
       );
       await db.createMessage(
-        id: '$requestId-reply',
+        id: replyId,
         channelId: channelId,
         senderId: pending.localAgentId.isEmpty
             ? pending.remoteAgentId
@@ -2737,9 +2757,13 @@ class PeerAgentClientService {
         replyToId: userMessageId,
         conflictAlgorithm: ConflictAlgorithm.ignore,
       );
+      if ('$requestId-reply' != replyId) {
+        await db.deleteMessage('$requestId-reply');
+      }
     } catch (error) {
       _log.warning('save parked reply failed: $error', tag: _tag);
     }
+    await ChatService().completeQueuedPeerTurn(channelId);
     ChatService().notifyChannelUpdate(channelId);
   }
 
@@ -3122,6 +3146,33 @@ class PeerAgentClientService {
 
   Future<PeerSoulInfo?> cachedSoul(String localAgentId) =>
       _readCachedSoul(localAgentId);
+
+  /// 新建或打开空会话时提前通知主机后台拉起 ACP 引擎子进程并预热 `session/new`，
+  /// 用户输入完首条消息点击发送时即可直接命中热会话。
+  Future<void> warmSession({
+    required RemoteAgent agent,
+    required String channelId,
+  }) async {
+    if (!agent.isPeerAgent || relaysHostSheTurn(agent)) return;
+    final peerId = agent.sourcePeerId;
+    final remoteAgentId = agent.remoteAgentId;
+    if (peerId == null ||
+        peerId.isEmpty ||
+        remoteAgentId == null ||
+        remoteAgentId.isEmpty) {
+      return;
+    }
+    if (!_peerIsConnected(peerId)) return;
+    final sessionId = remoteSessionIdFromChannelId(channelId) ?? channelId;
+    if (sessionId.isEmpty) return;
+    try {
+      await _sendMetaControl(peerId, {
+        'type': 'agent_session_warm',
+        'agent_id': remoteAgentId,
+        'session_id': sessionId,
+      });
+    } catch (_) {}
+  }
 
   /// Fetch upstream model options (`agent.models.list` relay). Returns empty
   /// list on failure/timeout. [sessionId] is the bare remote session id when
@@ -4053,9 +4104,27 @@ class PeerAgentClientService {
     }());
   }
 
+  Future<PeerAgentMetaCacheEntry?> _getPeerAgentMetaRow(
+    String agentId,
+    String kind,
+  ) async {
+    final direct = await _db.getPeerAgentMeta(agentId, kind);
+    if (direct != null) return direct;
+    final agent = await _db.getRemoteAgentById(agentId);
+    final remoteId = agent == null
+        ? null
+        : (relaysHostSheTurn(agent)
+            ? hostSheTurnAgentId(agent)
+            : agent.remoteAgentId);
+    if (remoteId != null && remoteId.isNotEmpty && remoteId != agentId) {
+      return _db.getPeerAgentMeta(remoteId, kind);
+    }
+    return null;
+  }
+
   Future<PeerModelsList?> _readCachedModels(String agentId) async {
     try {
-      final row = await _db.getPeerAgentMeta(agentId, PeerAgentMetaKind.models);
+      final row = await _getPeerAgentMetaRow(agentId, PeerAgentMetaKind.models);
       if (row == null) return null;
       if (row.payload['models'] is! List) return null;
       return PeerModelsList.fromJson(row.payload);
@@ -4067,7 +4136,7 @@ class PeerAgentClientService {
 
   Future<PeerModesList?> _readCachedModes(String agentId) async {
     try {
-      final row = await _db.getPeerAgentMeta(agentId, PeerAgentMetaKind.modes);
+      final row = await _getPeerAgentMetaRow(agentId, PeerAgentMetaKind.modes);
       if (row == null) return null;
       final raw = row.payload['modes'];
       if (raw is! List) return null;
@@ -4090,7 +4159,7 @@ class PeerAgentClientService {
 
   Future<PeerSoulInfo?> _readCachedSoul(String agentId) async {
     try {
-      final row = await _db.getPeerAgentMeta(agentId, PeerAgentMetaKind.soul);
+      final row = await _getPeerAgentMetaRow(agentId, PeerAgentMetaKind.soul);
       if (row == null) return null;
       final soul = row.payload['soul'];
       if (soul is! String) return null;
@@ -6759,6 +6828,7 @@ class PeerAgentClientService {
       final ack = p.queueAck;
       if (ack != null && !ack.isCompleted) ack.complete(false);
       ChatService().releaseQueuedMessage(requestId);
+      ChatService().attachQueuedPeerTurn(p.toRecord(requestId));
     }
     // 先计数再分发：与 hub 的 accumulated 同序列（同为 UTF-16 码元长度），
     // resume 的断点偏移才精确。
@@ -6780,6 +6850,22 @@ class PeerAgentClientService {
     if (metadata.isEmpty) return;
     final p = _pending[requestId];
     if (p == null) return;
+    if (p.heldOnHost) {
+      p.heldOnHost = false;
+      p.idleSince = DateTime.now();
+      final ack = p.queueAck;
+      if (ack != null && !ack.isCompleted) ack.complete(false);
+      ChatService().releaseQueuedMessage(requestId);
+      ChatService().attachQueuedPeerTurn(p.toRecord(requestId));
+    }
+    final currentMode = (metadata['current_mode'] as String?)?.trim();
+    if (currentMode != null && currentMode.isNotEmpty) {
+      _patchCachedCurrent(
+        p.remoteAgentId,
+        PeerAgentMetaKind.modes,
+        currentMode,
+      );
+    }
     if (isHubKeepalive(metadata)) p.lastKeepaliveAt = DateTime.now();
     if (metadataResetsIdleClock(metadata)) {
       p.idleSince = DateTime.now();

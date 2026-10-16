@@ -224,63 +224,83 @@ Set<String> localMessageIdsToDeleteOnPeerHistorySync({
 }) {
   final rows = localRows.toList();
   final transcript = remoteTranscript.toList();
+  final pool = <PeerHistorySyncLocalRow>[
+    for (final row in rows)
+      if (row.id.isNotEmpty &&
+          !row.id.startsWith('peerhist_') &&
+          !remoteIds.contains(row.id) &&
+          !preserveIds.contains(row.id) &&
+          !peerHistorySyncRowIsStreaming(row.metadataJson))
+        row,
+  ];
 
-  // Remote user prompts the transcript has answered: an agent message exists
-  // after the prompt's last occurrence.
-  final lastUserIndexByContent = <String, int>{};
-  var lastAgentIndex = -1;
-  for (var i = 0; i < transcript.length; i++) {
-    final e = transcript[i];
-    if (e.role == 'user') {
-      lastUserIndexByContent[e.content.trim()] = i;
-    } else {
-      lastAgentIndex = i;
+  bool answeredUser(int index) {
+    if (index + 1 >= transcript.length) return false;
+    return transcript[index + 1].role != 'user';
+  }
+
+  PeerHistorySyncLocalRow? takeMatch(String role, String content) {
+    for (var i = 0; i < pool.length; i++) {
+      final row = pool[i];
+      final rowRole = row.senderType == 'user' ? 'user' : 'agent';
+      if (rowRole != role) continue;
+      if (peerHistoryRoleContentKey(rowRole, row.content) !=
+          peerHistoryRoleContentKey(role, content)) {
+        continue;
+      }
+      return pool.removeAt(i);
+    }
+    return null;
+  }
+
+  final supersedingUserIds = <String>{};
+  if (transcript.isEmpty) {
+    for (final key in remoteRoleContentKeys) {
+      final split = key.split('\n');
+      if (split.isEmpty) continue;
+      final role = split.first;
+      final content = split.length == 1 ? '' : split.sublist(1).join('\n');
+      final match = takeMatch(role, content);
+      if (match != null && role == 'user') supersedingUserIds.add(match.id);
+    }
+  } else {
+    for (var i = 0; i < transcript.length; i++) {
+      final entry = transcript[i];
+      final match = takeMatch(entry.role, entry.content);
+      if (match == null) continue;
+      if (entry.role == 'user' && answeredUser(i)) {
+        supersedingUserIds.add(match.id);
+      }
     }
   }
-  final answeredUserContents = <String>{
-    for (final entry in lastUserIndexByContent.entries)
-      if (entry.value < lastAgentIndex) entry.key,
-  };
 
-  // Local user rows being superseded by the remote transcript: content matches
-  // a remote prompt that the remote has answered. Their ids anchor the local
-  // agent replies of the same turn.
-  final supersedingUserIds = <String>{};
-  for (final row in rows) {
-    if (row.id.isEmpty || row.id.startsWith('peerhist_')) continue;
-    if (row.senderType != 'user') continue;
-    if (remoteIds.contains(row.id) || preserveIds.contains(row.id)) continue;
-    if (!answeredUserContents.contains(row.content.trim())) continue;
-    final key = peerHistoryRoleContentKey('user', row.content);
-    if (remoteRoleContentKeys.contains(key)) supersedingUserIds.add(row.id);
-  }
-
-  bool turnLinkedToSupersededPrompt(PeerHistorySyncLocalRow row) {
+  bool turnLinked(PeerHistorySyncLocalRow row) {
     final anchor = row.replyToId;
     return anchor != null && supersedingUserIds.contains(anchor);
   }
 
-  final toDelete = <String>{};
+  final toDelete = <String>{
+    for (final row in rows)
+      if (row.id.isNotEmpty &&
+          !remoteIds.contains(row.id) &&
+          !preserveIds.contains(row.id) &&
+          !pool.contains(row) &&
+          !peerHistorySyncRowIsStreaming(row.metadataJson))
+        row.id,
+  };
+  for (final row in pool) {
+    if (row.senderType != 'user' && turnLinked(row)) toDelete.add(row.id);
+  }
   for (final row in rows) {
-    if (row.id.isEmpty) continue;
-    if (remoteIds.contains(row.id)) continue;
-    if (preserveIds.contains(row.id)) continue;
-    if (peerHistorySyncRowIsStreaming(row.metadataJson)) {
-      final covered = row.content.isNotEmpty &&
-          remoteAgentContents.any((c) => c.startsWith(row.content));
-      if (!covered && !turnLinkedToSupersededPrompt(row)) continue;
-      toDelete.add(row.id);
+    if (row.id.isEmpty || toDelete.contains(row.id)) continue;
+    if (remoteIds.contains(row.id) || preserveIds.contains(row.id)) continue;
+    if (!peerHistorySyncRowIsStreaming(row.metadataJson)) {
+      if (row.id.startsWith('peerhist_')) toDelete.add(row.id);
       continue;
     }
-    if (!row.id.startsWith('peerhist_')) {
-      final role = row.senderType == 'user' ? 'user' : 'agent';
-      final key = peerHistoryRoleContentKey(role, row.content);
-      if (!remoteRoleContentKeys.contains(key) &&
-          !(role == 'agent' && turnLinkedToSupersededPrompt(row))) {
-        continue;
-      }
-    }
-    toDelete.add(row.id);
+    final covered = row.content.isNotEmpty &&
+        remoteAgentContents.any((c) => c.startsWith(row.content));
+    if (covered || turnLinked(row)) toDelete.add(row.id);
   }
   return toDelete;
 }

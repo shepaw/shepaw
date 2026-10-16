@@ -258,6 +258,26 @@ void main() {
       expect(merged.map((m) => m.id), ['u1', 'streaming_1000']);
     });
 
+    test('keeps a new streaming turn beside an older completed reply', () {
+      final temp = _agent(
+        'streaming_reattach_2',
+        agentId: 'agent',
+        content: '还在写第二轮',
+        ts: 40,
+      );
+      final previous = _agent(
+        'done_1',
+        agentId: 'agent',
+        content: '第一轮已经答完',
+        ts: 20,
+      );
+      final merged = ChatMessageReconciler.mergeDmStreamingPlaceholders(
+        current: [_user('u1', ts: 10), previous, _user('u2', content: '再问', ts: 30), temp],
+        dbMessages: [_user('u1', ts: 10), previous, _user('u2', content: '再问', ts: 30)],
+      );
+      expect(merged.map((m) => m.id), ['u1', 'done_1', 'u2', 'streaming_reattach_2']);
+    });
+
     test('ignores empty streaming temps', () {
       final temp = _agent('streaming_1', agentId: 'agent', content: '');
       final db = [_user('u1'), _agent('a1', agentId: 'agent', content: 'done')];

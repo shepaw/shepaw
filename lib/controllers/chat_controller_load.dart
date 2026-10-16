@@ -52,6 +52,14 @@ mixin _LoadOps on _ChatControllerBase {
       AppLifecycleService().setActiveChannel(currentChannelId);
       NotificationService().cancelNotification(currentChannelId.hashCode);
 
+      // 审批路由按频道登记：原位换频道后，归属本频道的审批才打到这个
+      // controller。旧频道的回合仍在跑，它们的审批按各自的 channelId 走别的
+      // 路由（或落库 + 顶部提醒），不会再串到当前页面。
+      CliApprovalCoordinator.instance.register(
+        _cliApprovalHandler,
+        channelId: currentChannelId,
+      );
+
       // Surface service-side DB writes (member failure notices, orchestration
       // system messages) in the chat immediately.
       _subscribeChannelUpdates();
@@ -209,6 +217,17 @@ mixin _LoadOps on _ChatControllerBase {
           ));
       }
 
+      if (!isGroupMode &&
+          messages.isEmpty &&
+          resolvedAgent != null &&
+          resolvedAgent.isPeerAgent &&
+          !relaysHostSheTurn(resolvedAgent)) {
+        unawaited(PeerAgentClientService.instance.warmSession(
+          agent: resolvedAgent,
+          channelId: channelId,
+        ));
+      }
+
       await PendingApprovalHub.instance.reconcileForChannel(
         currentChannelId!,
         messages,
@@ -281,7 +300,9 @@ mixin _LoadOps on _ChatControllerBase {
     final oldChannelId = currentChannelId;
     if (oldChannelId == null || oldChannelId == channelId) return;
 
-    // 1. 先把旧群在途成员正文落库，再拆 UI：切走 / 杀进程后仍能看到气泡。
+    // 1. 先把旧会话在途正文落进本机库，再拆 UI。桌面切换会拆掉当前页，
+    //    没落库的流式气泡不会出现在下一页读到的缓存里。
+    await chatService.flushInFlightDmPartial(channelId: oldChannelId);
     await chatService.flushInFlightGroupPartials(channelId: oldChannelId);
     chatService.detachTaskUI(oldChannelId);
     chatService.detachGroupTaskUI(oldChannelId);

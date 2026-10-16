@@ -25,6 +25,7 @@ import '../services/interactive_response_handler.dart';
 import '../services/logger_service.dart';
 import '../services/she_service.dart';
 import '../services/workflow/workflow_service.dart';
+import '../services/approval/cli_approval_card.dart';
 import '../services/approval/pending_approval_hub.dart';
 import '../services/approval/pending_approval_item.dart';
 import '../services/cli_approval_coordinator.dart';
@@ -427,7 +428,11 @@ abstract class _ChatControllerBase extends ChangeNotifier
     interactiveResponseHandler = InteractiveResponseHandler(this);
     streaming.onClear = _onStreamingSessionCleared;
     _cliApprovalHandler = requestCliApproval;
-    CliApprovalCoordinator.instance.register(_cliApprovalHandler);
+    // 归属频道此时还没解析出来（loadMessages 才定），那里会重新登记。
+    CliApprovalCoordinator.instance.register(
+      _cliApprovalHandler,
+      channelId: currentChannelId,
+    );
     // 先把气泡放进列表并刷新，drop 再收起队列面板。
     _queueReleaseSub = chatService.queuedMessageReleased.listen((released) {
       if (_eventController.isClosed) return;
@@ -658,8 +663,11 @@ abstract class _ChatControllerBase extends ChangeNotifier
   void dispose() {
     AppLifecycleService().setActiveChannel(null);
     if (currentChannelId != null) {
-      chatService.detachTaskUI(currentChannelId!);
-      chatService.detachGroupTaskUI(currentChannelId!);
+      final leaving = currentChannelId!;
+      unawaited(chatService.flushInFlightDmPartial(channelId: leaving));
+      unawaited(chatService.flushInFlightGroupPartials(channelId: leaving));
+      chatService.detachTaskUI(leaving);
+      chatService.detachGroupTaskUI(leaving);
     }
     // Detach workflow UI only — do NOT cancel. ChatService keeps the
     // execution loop alive so switching back reattaches instead of restarting.
@@ -704,11 +712,16 @@ abstract class _ChatControllerBase extends ChangeNotifier
   }
 
   /// Insert a CLI approval card and wait until the user taps it.
+  ///
+  /// [channelId] 是发起回合的会话。不是本频道时**不**插进当前列表 —— 卡片
+  /// 落进归属频道 + 顶部提醒，用户跳回去再审。
   Future<bool> requestCliApproval(
     String toolName,
     Map<String, dynamic> flags,
-    os_exec.RiskLevel risk,
-  );
+    os_exec.RiskLevel risk, {
+    required String? channelId,
+    required String? agentId,
+  });
 
   void _cancelCliApprovalsForCurrentChannel();
 

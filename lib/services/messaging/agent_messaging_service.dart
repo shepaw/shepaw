@@ -9,6 +9,7 @@ import '../../models/attachment_data.dart';
 import '../../models/inference_log_entry.dart';
 import '../local_database_service.dart';
 import '../task/task_models.dart';
+import '../cli_approval_coordinator.dart';
 import '../../clis/shepaw/os/os_executor.dart' as os_exec;
 import '../inference_log_service.dart';
 import '../trace_service.dart';
@@ -422,6 +423,135 @@ class AgentMessagingService {
     updateTypingAgentIds();
   }
 
+  final Map<String, StreamingFlushHelper> _queuedFlush = {};
+  final Map<String, StreamContentSplitter> _queuedSplitters = {};
+
+  /// 主机上的排队回合开始出字了。挂上和普通发送一样的 ActiveTask，
+  /// 这样切走再回来还能接上流式气泡，而不是等整段写完才突然出现。
+  void attachQueuedPeerTurn(PeerInflightTurnRecord rec) {
+    if (rec.channelId.isEmpty || rec.requestId.isEmpty) return;
+    final existing = _activeTasks[rec.channelId];
+    if (existing != null && !existing.isComplete) {
+      _bindQueuedPeerTurn(rec, existing);
+      return;
+    }
+    final task = ActiveTask(
+      taskId: rec.requestId,
+      agentId: rec.localAgentId,
+      agentName: rec.agentName.isNotEmpty ? rec.agentName : rec.localAgentId,
+      channelId: rec.channelId,
+      userMessageId:
+          rec.userMessageId.isNotEmpty ? rec.userMessageId : rec.requestId,
+      userId: rec.userId,
+      userName: rec.userName,
+    );
+    task.accumulatedContent = rec.accumulatedContent;
+    _registerActiveTask(rec.channelId, task);
+    ForegroundTaskService().acquireTask(task.agentName);
+    _bindQueuedPeerTurn(rec, task);
+    unawaited(_armQueuedFlush(rec, task));
+  }
+
+  void _bindQueuedPeerTurn(PeerInflightTurnRecord rec, ActiveTask task) {
+    final splitter = _queuedSplitters.putIfAbsent(
+      rec.channelId,
+      StreamContentSplitter.new,
+    );
+    if (rec.accumulatedContent.isNotEmpty && splitter.answerContent.isEmpty) {
+      splitter.answerContent = rec.accumulatedContent;
+    }
+    PeerAgentClientService.instance.attachPendingHandlers(
+      rec.requestId,
+      onChunk: (chunk) {
+        final answerDelta = splitter.onChunk(chunk);
+        if (answerDelta.isNotEmpty) {
+          task.accumulatedContent += answerDelta;
+          task.markActivity();
+          PeerAgentClientService.instance.noteInflightAnswer(
+            rec.requestId,
+            task.accumulatedContent,
+          );
+          task.onStreamChunk?.call(answerDelta);
+          _queuedFlush[rec.channelId]?.schedule();
+        } else {
+          final progressMeta = splitter.progressMetadataDelta();
+          if (progressMeta != null) {
+            final merged = Map<String, dynamic>.from(task.metadata ?? {});
+            merged.addAll(progressMeta);
+            task.metadata = merged;
+            final progress = progressMeta['progress_content'];
+            if (progress is String) task.progressContent = progress;
+            task.onMessageMetadata?.call(progressMeta);
+            _queuedFlush[rec.channelId]?.schedule();
+          }
+        }
+      },
+      onMetadata: (data) {
+        final processed = splitter.onMetadata(data);
+        final merged = Map<String, dynamic>.from(task.metadata ?? {});
+        merged.addAll(processed);
+        task.metadata = merged;
+        final progress = processed['progress_content'];
+        if (progress is String && progress.isNotEmpty) {
+          task.progressContent = progress;
+          _queuedFlush[rec.channelId]?.schedule();
+        }
+        task.onMessageMetadata?.call(processed);
+      },
+      onActionConfirmation: (data) {
+        final meta = Map<String, dynamic>.from(task.metadata ?? {});
+        meta['action_confirmation'] = Map<String, dynamic>.from(data);
+        task.metadata = meta;
+        task.onActionConfirmation?.call(data);
+      },
+      onForm: (data) {
+        final form = Map<String, dynamic>.from(data);
+        final meta = Map<String, dynamic>.from(task.metadata ?? {});
+        meta['form'] = form;
+        task.metadata = meta;
+        task.onMessageMetadata?.call({'form': form});
+      },
+    );
+  }
+
+  Future<void> _armQueuedFlush(PeerInflightTurnRecord rec, ActiveTask task) async {
+    if (task.isComplete || _activeTasks[rec.channelId] != task) return;
+    final agent = await _db.getRemoteAgentById(rec.localAgentId);
+    if (agent == null || task.isComplete) return;
+    final flush = StreamingFlushHelper.fromAgent(
+      db: _db,
+      activeTask: task,
+      agent: agent,
+      channelId: rec.channelId,
+      replyToId: task.userMessageId,
+      traceId: rec.requestId,
+      onFlushed: (messageId) {
+        PeerAgentClientService.instance
+            .noteInflightPartialMessageId(rec.requestId, messageId);
+      },
+    );
+    _queuedFlush[rec.channelId] = flush;
+    if (task.accumulatedContent.isNotEmpty || task.progressContent.isNotEmpty) {
+      await flush.flush();
+    }
+  }
+
+  /// 排队回合结束：去掉半成品行，并让打开的聊天页卸下这次流式挂接。
+  Future<void> completeQueuedPeerTurn(String channelId) async {
+    final flush = _queuedFlush.remove(channelId);
+    _queuedSplitters.remove(channelId);
+    if (flush != null) await flush.deletePartial();
+    final task = _activeTasks.remove(channelId);
+    if (task == null) return;
+    task.isComplete = true;
+    updateTypingAgentIds();
+    releaseForegroundTask(task.agentName);
+    if (!task.dbSaveCompleter.isCompleted) task.dbSaveCompleter.complete();
+    final finished = task.onTaskFinished;
+    task.onTaskFinished = null;
+    finished?.call();
+  }
+
   /// Force-stop the in-flight 1:1 task for [channelId]: mark complete
   /// synchronously (prevents reattach), persist `[Stopped]` to DB, and
   /// release foreground/typing state.
@@ -561,7 +691,7 @@ class AgentMessagingService {
     Future<void> Function(Map<String, dynamic> fileData)? onFileMessage,
     void Function(Map<String, dynamic> metadata)? onMessageMetadata,
     void Function(Map<String, dynamic> historyRequestData)? onRequestHistory,
-    Future<bool> Function(String toolName, Map<String, dynamic> args, os_exec.RiskLevel risk)? onOsToolConfirmation,
+    CliApprovalHandler? onOsToolConfirmation,
     /// 工作流计划创建回调（She 在 DM 中调用 `shepaw workflow create` 成功后触发）。
     void Function(String workflowId, Map<String, dynamic> planData)? onWorkflowPlanCreated,
     ACPCancellationToken? acpCancellationToken,
@@ -1280,7 +1410,7 @@ class AgentMessagingService {
     Future<void> Function(Map<String, dynamic>)? onFileMessage,
     void Function(Map<String, dynamic>)? onMessageMetadata,
     void Function(Map<String, dynamic>)? onRequestHistory,
-    Future<bool> Function(String, Map<String, dynamic>, os_exec.RiskLevel)? onOsToolConfirmation,
+    CliApprovalHandler? onOsToolConfirmation,
     /// 工作流计划创建回调（She 在 DM 中调用 `shepaw workflow create` 成功后触发）。
     /// 参数：workflowId、可直接挂到消息 metadata 的 plan_approval 数据。
     void Function(String workflowId, Map<String, dynamic> planData)? onWorkflowPlanCreated,
@@ -1384,6 +1514,8 @@ class AgentMessagingService {
             data['tool_name'] as String? ?? '',
             args is Map ? args.cast<String, dynamic>() : <String, dynamic>{},
             risk,
+            channelId: channelId,
+            agentId: agent.id,
           );
           return {'approved': approved};
         },
