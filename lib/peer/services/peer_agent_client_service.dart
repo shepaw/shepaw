@@ -63,6 +63,7 @@ import '../../storage/store_protocol.dart';
 
 export 'peer_agent_ids.dart';
 export 'peer_inflight_turn.dart' show PeerTurnInFlightException;
+export 'peer_turn_resume.dart' show kFollowUpSettle, settledReplyLetsFollowUp;
 
 /// 「已同步的远端 peer 会话」在本地 channel id 上的前缀。
 ///
@@ -2034,6 +2035,63 @@ class PeerAgentClientService {
       if (!p.completer.isCompleted && p.channelId == channelId) return true;
     }
     return false;
+  }
+
+  /// 这路会话上还有没写完的回复，下一条应该排队。
+  ///
+  /// 已经交到主机队列里的消息（heldOnHost）也算挡住：要保持先后顺序。
+  /// 正文已经停住、没有审批也没有工具时返回 false，调用方应直接发送。
+  bool followUpBlockedByChannel(String channelId) {
+    if (channelId.isEmpty) return false;
+    final now = DateTime.now();
+    for (final p in _pending.values) {
+      if (p.completer.isCompleted || p.channelId != channelId) continue;
+      if (p.heldOnHost) return true;
+      if (!settledReplyLetsFollowUp(
+        hasAnswer: p.answerContent.trim().isNotEmpty,
+        openApprovals: p.openApprovals,
+        idle: now.difference(p.idleSince),
+      )) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// 把已经写完的在途回合按现有正文收掉，好让下一条马上发出去。
+  ///
+  /// 不走用户停止：停止会把气泡改成「已停止」。这里只是引擎还没交正式收尾。
+  void completeSettledTurns(String channelId, {String fallbackAnswer = ''}) {
+    if (channelId.isEmpty) return;
+    final now = DateTime.now();
+    final ready = <String>[];
+    for (final entry in _pending.entries) {
+      final pending = entry.value;
+      if (pending.completer.isCompleted ||
+          pending.channelId != channelId ||
+          pending.heldOnHost) {
+        continue;
+      }
+      final answer = pending.answerContent.trim().isNotEmpty
+          ? pending.answerContent
+          : fallbackAnswer;
+      if (!settledReplyLetsFollowUp(
+        hasAnswer: answer.trim().isNotEmpty,
+        openApprovals: pending.openApprovals,
+        idle: now.difference(pending.idleSince),
+      )) {
+        continue;
+      }
+      ready.add(entry.key);
+    }
+    for (final id in ready) {
+      final pending = _pending[id];
+      if (pending == null) continue;
+      final answer = pending.answerContent.trim().isNotEmpty
+          ? pending.answerContent
+          : fallbackAnswer;
+      _finishPending(id, {'content': answer});
+    }
   }
 
   /// Cancel every in-flight turn bound to [channelId], regardless of which

@@ -145,6 +145,26 @@ bool metadataResetsIdleClock(Map<String, dynamic> metadata) {
   return false;
 }
 
+/// 正文已经落地、停了一小会儿、没有待答卡片、也没有工具还在跑。
+///
+/// 这种回合在用户眼里已经结束。Claude Code 多轮之后经常还占着引擎，
+/// 下一条不该因此先进入发送队列。
+const Duration kFollowUpSettle = Duration(seconds: 1);
+
+bool settledReplyLetsFollowUp({
+  required bool hasAnswer,
+  required int openApprovals,
+  required Duration idle,
+  String? toolStatus,
+  Duration settle = kFollowUpSettle,
+}) {
+  if (openApprovals > 0) return false;
+  final tool = (toolStatus ?? '').trim();
+  if (tool == 'pending' || tool == 'in_progress') return false;
+  if (!hasAnswer) return false;
+  return idle >= settle;
+}
+
 /// 系统观察到回复已经结束：有助手正文、没有未决审批、流已静止。
 ///
 /// 断连 / 上游重连期间不算结束（对端本来就不会再吐帧）。

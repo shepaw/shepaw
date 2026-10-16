@@ -390,6 +390,22 @@ mixin _MessagingOps on _ChatControllerBase {
       isProcessing: isProcessing,
     );
 
+    // 回复正文已经停了（没有工具、没有待答卡片）。Claude Code 多轮之后
+    // 经常还占着引擎，不交正式收尾。这种时候下一条不该进队列。
+    final channelForFollowUp = currentChannelId;
+    if (!isGroupMode &&
+        channelForFollowUp != null &&
+        _settledPeerReplyLetsFollowUp(channelForFollowUp) &&
+        messageQueue.isEmpty) {
+      await _releaseSettledPeerTurn(channelForFollowUp);
+      if (!isProcessing &&
+          !PeerAgentClientService.instance
+              .followUpBlockedByChannel(channelForFollowUp) &&
+          disposition == ChatSendDisposition.queueText) {
+        disposition = ChatSendDisposition.sendDm;
+      }
+    }
+
     // 兜底：失败后队列本应被 _restoreQueueToComposer 倒回清空；若因异常路径
     // 残留了未处理的队列（isProcessing=false 但队列非空），手动再发一条时
     // 不直接发送，而是排到队尾并恢复排空，保持 FIFO（队首旧消息先出，新
@@ -401,11 +417,12 @@ mixin _MessagingOps on _ChatControllerBase {
         disposition = ChatSendDisposition.queueText;
       }
     }
-    // 主机上这路会话还有回合或排队时，新消息继续交给主机，不在手机另开一条。
+    // 主机上这路会话还有没写完的回复时，新消息继续交给主机，不在手机另开一条。
+    // 正文已经落地的回合不算「还在回复」，上面已经放行。
     if (disposition == ChatSendDisposition.sendDm &&
-        currentChannelId != null &&
+        channelForFollowUp != null &&
         PeerAgentClientService.instance
-            .hasInflightForChannel(currentChannelId!)) {
+            .followUpBlockedByChannel(channelForFollowUp)) {
       disposition = ChatSendDisposition.queueText;
     }
 
@@ -673,6 +690,39 @@ mixin _MessagingOps on _ChatControllerBase {
     _restoreQueueToComposer();
     isProcessing = false;
     _notify();
+  }
+
+  /// 当前这条 peer 回复在屏幕上已经结束：有正文、停了一会儿、没有工具也没有审批。
+  bool _settledPeerReplyLetsFollowUp(String channelId) {
+    final busy = isProcessing ||
+        PeerAgentClientService.instance.hasInflightForChannel(channelId);
+    if (!busy) return false;
+    if (_streamingToolStillRunning()) return false;
+    if (streaming.isActive) {
+      if (streaming.content.trim().isEmpty) return false;
+      if (streaming.activeWithin(kFollowUpSettle)) return false;
+    }
+    return !PeerAgentClientService.instance
+        .followUpBlockedByChannel(channelId);
+  }
+
+  bool _streamingToolStillRunning() {
+    final id = streaming.messageId;
+    if (id == null) return false;
+    final status = messageIdMap[id]?.metadata?['tool_status'];
+    return status == 'pending' || status == 'in_progress';
+  }
+
+  /// 用已经收到的正文结束占着发送闸门的回合，再让本条直接发出去。
+  Future<void> _releaseSettledPeerTurn(String channelId) async {
+    PeerAgentClientService.instance.completeSettledTurns(
+      channelId,
+      fallbackAnswer: streaming.content,
+    );
+    final deadline = DateTime.now().add(const Duration(seconds: 3));
+    while (isProcessing && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
   }
 
   /// 面板仍显示这条，发送交给主机上的会话队列，不在手机本地出队。

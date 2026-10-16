@@ -368,6 +368,55 @@ void main() {
     });
   });
 
+  group('settledReplyLetsFollowUp', () {
+    test('正文已停、没有审批和工具 → 下一条不用排队', () {
+      expect(
+        settledReplyLetsFollowUp(
+          hasAnswer: true,
+          openApprovals: 0,
+          idle: const Duration(seconds: 1),
+        ),
+        isTrue,
+      );
+    });
+
+    test('还在出字、没有正文、挂着审批或工具 → 继续排队', () {
+      expect(
+        settledReplyLetsFollowUp(
+          hasAnswer: true,
+          openApprovals: 0,
+          idle: const Duration(milliseconds: 200),
+        ),
+        isFalse,
+      );
+      expect(
+        settledReplyLetsFollowUp(
+          hasAnswer: false,
+          openApprovals: 0,
+          idle: const Duration(seconds: 5),
+        ),
+        isFalse,
+      );
+      expect(
+        settledReplyLetsFollowUp(
+          hasAnswer: true,
+          openApprovals: 1,
+          idle: const Duration(seconds: 5),
+        ),
+        isFalse,
+      );
+      expect(
+        settledReplyLetsFollowUp(
+          hasAnswer: true,
+          openApprovals: 0,
+          idle: const Duration(seconds: 5),
+          toolStatus: 'in_progress',
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('shouldCompleteSettledReply', () {
     final startedAt = DateTime(2026, 7, 20, 12, 0, 0);
     const settle = Duration(seconds: 180);
