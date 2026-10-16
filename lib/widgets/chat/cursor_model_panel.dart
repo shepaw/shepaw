@@ -10,7 +10,7 @@ const cursorModelOptionOrder = ['fast', 'context', 'reasoning_effort'];
 const _modelMenuId = '__model__';
 const _menuGap = 4.0;
 
-/// 一级参数面板的宽度上下限（宽屏沿用原来的观感）。
+/// 一级参数面板的宽度上下限（宽屏、以及手机上还没展开二级时沿用）。
 const _panelMinWidth = 176.0;
 const _panelMaxWidth = 216.0;
 
@@ -19,73 +19,153 @@ const _panelMaxWidth = 216.0;
 const _sideMenuMinWidth = 160.0;
 const _sideMenuMaxWidth = 240.0;
 
-/// 一级参数面板的宽度。
+/// 小于这个宽度视为手机：展开二级时两级改成贴边铺满，不再浮在芯片旁边。
+const _fillScreenBreakpoint = 480.0;
+
+const _screenEdge = 8.0;
+
+/// 一级参数面板在未展开二级时的宽度。
 ///
-/// 手机屏上收到半屏以内，把剩下的宽度留给二级的模型名列表；宽屏固定宽度。
-/// 二级菜单只能开在一级面板旁边，面板多吃一分，二级就少一分。
+/// 手机屏上收到半屏以内；宽屏固定宽度。展开二级之后改走
+/// [cursorModelFilledLayout]，这里的宽度只决定收起时的样子。
 double cursorModelPanelWidth(double screenWidth) {
-  if (screenWidth >= 480) return _panelMaxWidth;
+  if (screenWidth >= _fillScreenBreakpoint) return _panelMaxWidth;
   return (screenWidth * 0.46).clamp(_panelMinWidth, _panelMaxWidth);
+}
+
+/// 手机上两级同时展开时的横向排布：一级贴左，二级贴右，中间留 [_menuGap]。
+class CursorModelFilledLayout {
+  final double panelLeft;
+  final double panelWidth;
+  final double sideWidth;
+
+  const CursorModelFilledLayout({
+    required this.panelLeft,
+    required this.panelWidth,
+    required this.sideWidth,
+  });
+
+  double sideLeft(double screenWidth, double rightInset) {
+    final right = math.max(_screenEdge, rightInset);
+    return screenWidth - right - sideWidth;
+  }
+}
+
+/// 窄屏展开二级时，按屏幕宽度把两级铺满内容区。
+///
+/// 宽屏返回 null，面板继续锚在模型芯片上。一级约占内容区的 44%，
+/// 至少留出开关和当前值的位置，其余宽度给模型名。
+CursorModelFilledLayout? cursorModelFilledLayout({
+  required double screenWidth,
+  double leftInset = 0,
+  double rightInset = 0,
+}) {
+  if (screenWidth >= _fillScreenBreakpoint) return null;
+  final left = math.max(_screenEdge, leftInset);
+  final right = math.max(_screenEdge, rightInset);
+  final available = screenWidth - left - right - _menuGap;
+  if (available <= 0) return null;
+  final minPanel = math.min(150.0, available * 0.46);
+  final panelWidth =
+      (available * 0.44).clamp(minPanel, available * 0.5);
+  return CursorModelFilledLayout(
+    panelLeft: left,
+    panelWidth: panelWidth,
+    sideWidth: available - panelWidth,
+  );
 }
 
 /// 锚定在模型 chip 上的 Cursor 风格参数面板。点外面关闭。
 class CursorModelPanelHandle {
   OverlayEntry? _entry;
+  final submenuOpen = ValueNotifier<bool>(false);
+  bool _closed = false;
 
   void refresh() => _entry?.markNeedsBuild();
 
   void close() {
+    if (_closed) return;
+    _closed = true;
     _entry?.remove();
     _entry = null;
+    submenuOpen.dispose();
   }
 }
+
+typedef CursorModelPanelBuilder = Widget Function(
+  BuildContext context,
+  ValueNotifier<bool> submenuOpen,
+);
 
 CursorModelPanelHandle showCursorModelPanel({
   required BuildContext context,
   required GlobalKey anchorKey,
-  required WidgetBuilder panel,
+  required CursorModelPanelBuilder panel,
 }) {
   final overlay = Overlay.of(context);
   final handle = CursorModelPanelHandle();
   late OverlayEntry entry;
   entry = OverlayEntry(
     builder: (overlayContext) {
-      final box = anchorKey.currentContext?.findRenderObject() as RenderBox?;
-      final overlayBox = overlay.context.findRenderObject() as RenderBox?;
-      if (box == null || !box.attached || !box.hasSize || overlayBox == null) {
-        return const SizedBox.shrink();
-      }
-      final origin = box.localToGlobal(Offset.zero, ancestor: overlayBox);
-      final anchor = box.size;
-      final screen = overlayBox.size;
-      final width = cursorModelPanelWidth(screen.width);
-      var left = origin.dx + anchor.width - width;
-      if (left < 8) left = 8;
-      if (left + width > screen.width - 8) left = screen.width - 8 - width;
-      final placeAbove = origin.dy > 220;
-      return Stack(
-        children: [
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: handle.close,
-            ),
-          ),
-          Positioned(
-            left: left,
-            width: width,
-            top: placeAbove ? null : origin.dy + anchor.height + 6,
-            bottom: placeAbove ? screen.height - origin.dy + 6 : null,
-            child: Material(
-              elevation: 8,
-              shadowColor: Colors.black26,
-              color: Theme.of(overlayContext).colorScheme.surface,
-              borderRadius: BorderRadius.circular(12),
-              clipBehavior: Clip.antiAlias,
-              child: panel(overlayContext),
-            ),
-          ),
-        ],
+      return ValueListenableBuilder<bool>(
+        valueListenable: handle.submenuOpen,
+        builder: (context, submenuOpen, _) {
+          final box =
+              anchorKey.currentContext?.findRenderObject() as RenderBox?;
+          final overlayBox =
+              overlay.context.findRenderObject() as RenderBox?;
+          if (box == null ||
+              !box.attached ||
+              !box.hasSize ||
+              overlayBox == null) {
+            return const SizedBox.shrink();
+          }
+          final origin =
+              box.localToGlobal(Offset.zero, ancestor: overlayBox);
+          final anchor = box.size;
+          final screen = overlayBox.size;
+          final padding = MediaQuery.paddingOf(overlayContext);
+          final filled = submenuOpen
+              ? cursorModelFilledLayout(
+                  screenWidth: screen.width,
+                  leftInset: padding.left,
+                  rightInset: padding.right,
+                )
+              : null;
+          final width = filled?.panelWidth ?? cursorModelPanelWidth(screen.width);
+          var left = filled?.panelLeft ?? (origin.dx + anchor.width - width);
+          if (filled == null) {
+            if (left < _screenEdge) left = _screenEdge;
+            if (left + width > screen.width - _screenEdge) {
+              left = screen.width - _screenEdge - width;
+            }
+          }
+          final placeAbove = origin.dy > 220;
+          return Stack(
+            children: [
+              Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: handle.close,
+                ),
+              ),
+              Positioned(
+                left: left,
+                width: width,
+                top: placeAbove ? null : origin.dy + anchor.height + 6,
+                bottom: placeAbove ? screen.height - origin.dy + 6 : null,
+                child: Material(
+                  elevation: 8,
+                  shadowColor: Colors.black26,
+                  color: Theme.of(overlayContext).colorScheme.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  clipBehavior: Clip.antiAlias,
+                  child: panel(overlayContext, handle.submenuOpen),
+                ),
+              ),
+            ],
+          );
+        },
       );
     },
   );
@@ -107,6 +187,9 @@ class CursorModelSettings extends StatefulWidget {
   final void Function(String optionId, String value)? onOptionChanged;
   final ValueChanged<String>? onModelChanged;
 
+  /// 由 [showCursorModelPanel] 传入。展开二级时置 true，面板据此改到贴边铺满。
+  final ValueNotifier<bool>? submenuOpen;
+
   const CursorModelSettings({
     super.key,
     required this.models,
@@ -117,6 +200,7 @@ class CursorModelSettings extends StatefulWidget {
     this.onFastChanged,
     this.onOptionChanged,
     this.onModelChanged,
+    this.submenuOpen,
   });
 
   @override
@@ -126,6 +210,7 @@ class CursorModelSettings extends StatefulWidget {
 class _CursorModelSettingsState extends State<CursorModelSettings> {
   final _portal = OverlayPortalController();
   final _links = <String, LayerLink>{};
+  bool _portalShown = false;
   String? _openId;
   bool _openToRight = true;
   double _dy = 0;
@@ -146,9 +231,17 @@ class _CursorModelSettingsState extends State<CursorModelSettings> {
 
   LayerLink _link(String id) => _links.putIfAbsent(id, LayerLink.new);
 
+  void _setSubmenuOpen(bool open) {
+    final notifier = widget.submenuOpen;
+    if (notifier == null || notifier.value == open) return;
+    notifier.value = open;
+  }
+
   void _closeMenu() {
     if (_openId == null) return;
     setState(() => _openId = null);
+    _portalShown = false;
+    _setSubmenuOpen(false);
     _portal.hide();
   }
 
@@ -161,21 +254,33 @@ class _CursorModelSettingsState extends State<CursorModelSettings> {
     final box = rowContext.findRenderObject() as RenderBox?;
     final screen = MediaQuery.sizeOf(rowContext);
     final padding = MediaQuery.paddingOf(rowContext);
+    final filled = cursorModelFilledLayout(
+      screenWidth: screen.width,
+      leftInset: padding.left,
+      rightInset: padding.right,
+    );
     var toRight = true;
     var dy = 0.0;
+    if (filled != null) {
+      // 一级会被挪到左边，二级固定向右展开并吃掉剩余宽度。
+      toRight = true;
+      _menuWidth = filled.sideWidth;
+    }
     if (box != null && box.hasSize && box.attached) {
       final origin = box.localToGlobal(Offset.zero);
       final choices = _choicesFor(id).length;
       final menuHeight = math.min(choices * 44.0 + 8, math.min(360.0, screen.height - 16));
-      final spaceRight = screen.width - (origin.dx + box.size.width) - 8;
-      final spaceLeft = origin.dx - 8;
-      toRight = spaceRight >= spaceLeft;
-      final space = math.max(0.0, toRight ? spaceRight : spaceLeft);
-      // 空间够就至少给到 [_sideMenuMinWidth]（模型名比参数值长得多）；
-      // 不够才退回剩余空间，免得菜单被顶出屏幕。
-      final want =
-          math.max(_sideMenuMinWidth, math.min(space, _sideMenuMaxWidth));
-      _menuWidth = math.min(want, space);
+      if (filled == null) {
+        final spaceRight = screen.width - (origin.dx + box.size.width) - 8;
+        final spaceLeft = origin.dx - 8;
+        toRight = spaceRight >= spaceLeft;
+        final space = math.max(0.0, toRight ? spaceRight : spaceLeft);
+        // 空间够就至少给到 [_sideMenuMinWidth]（模型名比参数值长得多）；
+        // 不够才退回剩余空间，免得菜单被顶出屏幕。
+        final want =
+            math.max(_sideMenuMinWidth, math.min(space, _sideMenuMaxWidth));
+        _menuWidth = math.min(want, space);
+      }
       final minTop = padding.top + 8;
       final maxBottom = screen.height - padding.bottom - 8;
       final spaceBelow = maxBottom - origin.dy;
@@ -184,11 +289,24 @@ class _CursorModelSettingsState extends State<CursorModelSettings> {
         if (origin.dy + dy < minTop) dy = minTop - origin.dy;
       }
     }
+    final alreadyShowing = _portalShown;
     setState(() {
       _openId = id;
       _openToRight = toRight;
       _dy = dy;
     });
+    _setSubmenuOpen(true);
+    if (filled != null && !alreadyShowing) {
+      // 一级要先挪到左边并改宽度，下一帧再把二级贴到它右边。
+      // 同一帧展开的话，跟随层还会按挪动前的行位置摆，菜单会偏出屏幕。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _openId != id) return;
+        _portalShown = true;
+        _portal.show();
+      });
+      return;
+    }
+    _portalShown = true;
     _portal.show();
   }
 
@@ -251,6 +369,7 @@ class _CursorModelSettingsState extends State<CursorModelSettings> {
       },
       child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (fast != null)
             _FastRow(

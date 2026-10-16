@@ -105,6 +105,29 @@ void main() {
     });
   });
 
+  group('cursorModelFilledLayout', () {
+    test('宽屏不改成贴边铺满', () {
+      expect(cursorModelFilledLayout(screenWidth: 1200), isNull);
+      expect(cursorModelFilledLayout(screenWidth: 480), isNull);
+    });
+
+    test('手机上一级贴左、二级贴右，两级铺满内容区', () {
+      final layout = cursorModelFilledLayout(screenWidth: 390)!;
+      expect(layout.panelLeft, 8);
+      expect(layout.panelWidth, closeTo(162.8, 0.1));
+      expect(layout.sideWidth, closeTo(207.2, 0.1));
+      expect(layout.panelLeft + layout.panelWidth + 4 + layout.sideWidth, 382);
+      expect(layout.sideLeft(390, 0), closeTo(174.8, 0.1));
+
+      final narrow = cursorModelFilledLayout(screenWidth: 320)!;
+      expect(narrow.panelLeft, 8);
+      expect(
+        narrow.panelLeft + narrow.panelWidth + 4 + narrow.sideWidth,
+        312,
+      );
+    });
+  });
+
   testWidgets('submenu sits against the row and replaces the previous one', (tester) async {
     await _pump(tester, surface: const Size(1200, 800));
 
@@ -140,29 +163,64 @@ void main() {
     expect(find.text('500K'), findsOneWidget);
   });
 
-  testWidgets('手机上两级菜单宽度均衡且都不出屏', (tester) async {
-    await _pump(tester, surface: const Size(390, 800));
+  testWidgets('手机上展开二级时两级贴边铺满屏幕', (tester) async {
+    const surface = Size(390, 800);
+    tester.view.physicalSize = surface;
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
 
-    final panel = tester.getRect(find.byType(CursorModelSettings));
-    expect(panel.width, closeTo(cursorModelPanelWidth(390), 0.5));
+    final anchorKey = GlobalKey();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.bottomCenter,
+            child: SizedBox(key: anchorKey, width: 120, height: 32),
+          ),
+        ),
+      ),
+    );
+
+    final handle = showCursorModelPanel(
+      context: tester.element(find.byType(Scaffold)),
+      anchorKey: anchorKey,
+      panel: (_, submenuOpen) => CursorModelSettings(
+        submenuOpen: submenuOpen,
+        models: [
+          _grok(),
+          PeerAgentModel(value: 'sonnet', displayName: 'Sonnet'),
+        ],
+        currentModel: 'grok-4.7',
+        optionValues: const {},
+        modelLabel: '模型',
+        onFastChanged: (_) {},
+        onOptionChanged: (_, __) {},
+        onModelChanged: (_) {},
+      ),
+    );
+    addTearDown(handle.close);
+    await tester.pump();
+
+    final closed = tester.getRect(find.byType(CursorModelSettings));
+    expect(closed.width, closeTo(cursorModelPanelWidth(390), 0.5));
+    expect(closed.left, greaterThan(8));
 
     await tester.tap(find.text('模型'));
     await tester.pumpAndSettle();
     expect(find.text('Sonnet'), findsOneWidget);
 
-    final menuWidth = _sideMenuWidth(tester, 'Sonnet');
-    // 二级菜单不再被挤成 120 上下，长模型名放得下。
-    expect(menuWidth, greaterThanOrEqualTo(160));
-    expect(menuWidth, lessThanOrEqualTo(240));
-    // 一级 179 / 二级 ~203：都在屏内，且没有一边倒。
-    expect((menuWidth - panel.width).abs(), lessThan(60));
+    final layout = cursorModelFilledLayout(screenWidth: 390)!;
+    final panel = tester.getRect(find.byType(CursorModelSettings));
+    expect(panel.left, closeTo(layout.panelLeft, 0.5));
+    expect(panel.width, closeTo(layout.panelWidth, 0.5));
 
     final menu = tester.getRect(
       find
           .ancestor(of: find.text('Sonnet'), matching: find.byType(InkWell))
           .first,
     );
-    expect(menu.left, greaterThanOrEqualTo(0));
-    expect(menu.right, lessThanOrEqualTo(390));
+    expect(menu.left, closeTo(panel.right + 4, 1));
+    expect(menu.right, closeTo(390 - 8, 1));
+    expect(_sideMenuWidth(tester, 'Sonnet'), closeTo(layout.sideWidth, 1));
   });
 }

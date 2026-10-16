@@ -756,8 +756,11 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
-  /// Time label, optionally followed by compact token usage for agent messages
-  /// or client device info for user messages.
+  /// Time label under a bubble.
+  ///
+  /// Agent messages append compact token usage after the time. User messages
+  /// put the sending device before the time, so the clock stays at the right
+  /// edge of the right-aligned bubble.
   Widget _buildTimestampLabel({required double fontSize, Color? color}) {
     final style = TextStyle(fontSize: fontSize, color: color);
     final usageLabel = message.from.isAgent
@@ -775,23 +778,11 @@ class MessageBubble extends StatelessWidget {
       TextSpan(
         style: style,
         children: [
-          TextSpan(text: message.timeString),
-          if (usageLabel != null)
-            TextSpan(
-              text: '  $usageLabel',
-              style: TextStyle(
-                fontSize: fontSize,
-                color: secondaryColor,
-              ),
-            ),
           if (clientDevice != null) ...[
-            const TextSpan(text: '  '),
             WidgetSpan(
               alignment: PlaceholderAlignment.middle,
               child: Icon(
-                clientDevice.isMobile
-                    ? Icons.smartphone
-                    : Icons.computer,
+                clientDevice.isMobile ? Icons.smartphone : Icons.computer,
                 size: fontSize + 2,
                 color: secondaryColor,
               ),
@@ -804,7 +795,17 @@ class MessageBubble extends StatelessWidget {
                   color: secondaryColor,
                 ),
               ),
+            const TextSpan(text: '  '),
           ],
+          TextSpan(text: message.timeString),
+          if (usageLabel != null)
+            TextSpan(
+              text: '  $usageLabel',
+              style: TextStyle(
+                fontSize: fontSize,
+                color: secondaryColor,
+              ),
+            ),
         ],
       ),
     );

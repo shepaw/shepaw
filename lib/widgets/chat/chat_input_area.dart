@@ -1150,7 +1150,8 @@ class ChatInputAreaState extends State<ChatInputArea> {
     _modelPanel = showCursorModelPanel(
       context: context,
       anchorKey: _mainModelChipKey,
-      panel: (_) => CursorModelSettings(
+      panel: (_, submenuOpen) => CursorModelSettings(
+        submenuOpen: submenuOpen,
         models: _peerModels,
         currentModel: _currentPeerModel,
         optionValues: _peerModelOptionValues,

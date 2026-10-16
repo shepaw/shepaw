@@ -152,6 +152,17 @@ void main() {
 
     expect(find.byIcon(Icons.smartphone), findsOneWidget);
     expect(find.textContaining('iPhone 16 Pro'), findsOneWidget);
+    final mobileLabel = tester.widget<RichText>(
+      find.byWidgetPredicate((widget) {
+        return widget is RichText &&
+            widget.text.toPlainText().contains('iPhone 16 Pro');
+      }),
+    );
+    final mobilePlain = mobileLabel.text.toPlainText();
+    expect(
+      mobilePlain.indexOf('iPhone 16 Pro'),
+      lessThan(mobilePlain.indexOf(mobileMsg.timeString)),
+    );
 
     final desktopMsg = Message(
       id: 'u2',
