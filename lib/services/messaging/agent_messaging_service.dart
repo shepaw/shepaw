@@ -42,6 +42,49 @@ const _asyncPendingSentinelMetadataKey = '__shepaw_async_pending__';
 bool _isAsyncPendingSentinel(Message? m) =>
     m != null && m.metadata?[_asyncPendingSentinelMetadataKey] == true;
 
+final Expando<bool> _dmForegroundReleased = Expando<bool>();
+
+/// 同一条任务只释放一次前台占用。停止和正常收尾可能叠在一起。
+void releaseDmForegroundOnce(
+  ActiveTask task,
+  void Function(String agentName) releaseForegroundTask,
+) {
+  if (_dmForegroundReleased[task] == true) return;
+  _dmForegroundReleased[task] = true;
+  releaseForegroundTask(task.agentName);
+}
+
+/// 卸下一条已经结束的 1:1 回合，并通知列表刷新「输入中 / 思考中」。
+///
+/// 储物袋把惜宝回合转发到主机时，任务会登记进 [activeTasks]，列表据此显示
+/// 输入中。回合返回后如果只把 [ActiveTask.isComplete] 标上、不从这张表拿掉、
+/// 也不调用 [updateTypingAgentIds]，列表会一直停在输入中。
+///
+/// 频道上如果已经换了更新的任务，只收掉 [task] 自己，不动后来的那条。
+/// 任务若已被标成结束（例如用户停止），不再重复触发 [ActiveTask.onTaskFinished]。
+void releaseTrackedDmTask({
+  required Map<String, ActiveTask> activeTasks,
+  required String channelId,
+  required ActiveTask task,
+  required void Function() updateTypingAgentIds,
+  required void Function(String agentName) releaseForegroundTask,
+}) {
+  final alreadyComplete = task.isComplete;
+  task.isComplete = true;
+  if (identical(activeTasks[channelId], task)) {
+    activeTasks.remove(channelId);
+  }
+  updateTypingAgentIds();
+  releaseDmForegroundOnce(task, releaseForegroundTask);
+  if (!task.dbSaveCompleter.isCompleted) {
+    task.dbSaveCompleter.complete();
+  }
+  if (alreadyComplete) return;
+  final finished = task.onTaskFinished;
+  task.onTaskFinished = null;
+  finished?.call();
+}
+
 /// 单个 1:1 agent 回合的终态。
 enum AgentTaskOutcome { completed, error, stopped }
 
@@ -463,8 +506,11 @@ class AgentMessagingService {
         stackTrace: st,
       );
     } finally {
-      _activeTasks.remove(channelId);
-      releaseForegroundTask(task.agentName);
+      if (identical(_activeTasks[channelId], task)) {
+        _activeTasks.remove(channelId);
+      }
+      releaseDmForegroundOnce(task, releaseForegroundTask);
+      updateTypingAgentIds();
       if (!task.dbSaveCompleter.isCompleted) {
         task.dbSaveCompleter.complete();
       }
@@ -1276,18 +1322,56 @@ class AgentMessagingService {
 
     final route = await PouchTurnRelay.currentRoute();
     if (!route.runLocal) {
-      final result = await PouchTurnRelay.instance.forwardDm(
-        hostPeerId: route.hostPeerId!,
-        agentId: relaysHostSheTurn(agent)
-            ? hostSheTurnAgentId(agent)
-            : agent.id,
-        content: content,
-        userId: userId,
-        userName: userName,
-        channelId: channelId,
-        userMessageId: userMessage.id,
-        attachments: attachments,
-        onStreamChunk: onStreamChunk,
+      // 惜宝的字原来只进当前页面。离开页面后回调没了，本机库要等她说完
+      // 才有回复。登记成进行中的任务后，离开时能写入缓存，回来能接上。
+      final turnChannelId = channelId ?? '';
+      ActiveTask? task;
+      StreamingFlushHelper? flush;
+      if (turnChannelId.isNotEmpty) {
+        task = ActiveTask(
+          taskId: _uuid.v4(),
+          agentId: agent.id,
+          agentName: agent.name,
+          channelId: turnChannelId,
+          userMessageId: userMessage.id,
+          userId: userId,
+          userName: userName,
+        );
+        task.onStreamChunk = onStreamChunk;
+        _registerActiveTask(turnChannelId, task);
+        ForegroundTaskService().acquireTask(agent.name);
+        flush = StreamingFlushHelper.fromAgent(
+          db: _db,
+          activeTask: task,
+          agent: agent,
+          channelId: turnChannelId,
+          replyToId: userMessage.id,
+          traceId: task.taskId,
+        );
+      }
+      final ({String text, String? agentMessageId}) result;
+      try {
+        result = await PouchTurnRelay.instance.forwardDm(
+          hostPeerId: route.hostPeerId!,
+          agentId: relaysHostSheTurn(agent)
+              ? hostSheTurnAgentId(agent)
+              : agent.id,
+          content: content,
+          userId: userId,
+          userName: userName,
+          channelId: channelId,
+          userMessageId: userMessage.id,
+          attachments: attachments,
+          onStreamChunk: (chunk) {
+            if (task == null) {
+              onStreamChunk?.call(chunk);
+              return;
+            }
+            task.accumulatedContent += chunk;
+            task.markActivity();
+            task.onStreamChunk?.call(chunk);
+            flush?.schedule();
+          },
         onInteractionRequest: (agentId, agentName, interactionType, data) async {
           if (interactionType != 'os_tool' || onOsToolConfirmation == null) {
             return null;
@@ -1304,6 +1388,7 @@ class AgentMessagingService {
           return {'approved': approved};
         },
       );
+      await flush?.deletePartial();
       final agentResponse = Message(
         id: result.agentMessageId ?? _uuid.v4(),
         content: result.text,
@@ -1324,6 +1409,21 @@ class AgentMessagingService {
         if (!duplicate) rethrow;
       }
       return agentResponse;
+      } catch (e) {
+        await flush?.deletePartial();
+        rethrow;
+      } finally {
+        flush?.cancel();
+        if (task != null) {
+          releaseTrackedDmTask(
+            activeTasks: _activeTasks,
+            channelId: turnChannelId,
+            task: task,
+            updateTypingAgentIds: updateTypingAgentIds,
+            releaseForegroundTask: releaseForegroundTask,
+          );
+        }
+      }
     }
 
     final notice = Message(
