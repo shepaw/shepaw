@@ -16,6 +16,7 @@ import '../storage/runtime_paths.dart';
 import 'messaging/message_implicit_prompt.dart';
 import 'package:uuid/uuid.dart';
 import '../storage/store_protocol.dart';
+import '../storage/store_uri_reader.dart';
 
 /// 附件服务：聊天附件经 store 写入
 /// `runtime/<owner>/<channel>/attachments/<hash>`，消息 metadata 存 `pouch_uri`。
@@ -396,13 +397,22 @@ class AttachmentService {
       if (storeUri == null || storeUri.isEmpty) return null;
 
       final file = await StoreAttachmentRef.fileFromStoreUri(storeUri);
-      if (file == null) {
-        LoggerService().error('Store attachment not found: $storeUri',
-            tag: 'Attachment');
-        return null;
+      final Uint8List bytes;
+      final String fallbackName;
+      if (file != null) {
+        bytes = await file.readAsBytes();
+        fallbackName = path.basename(file.path);
+      } else {
+        // 文件在主机袋子上，本机目录没有这份副本。
+        try {
+          bytes = await StoreUriReader.instance.read(storeUri);
+        } catch (e) {
+          LoggerService().error('Store attachment not found: $storeUri',
+              tag: 'Attachment', error: e);
+          return null;
+        }
+        fallbackName = metadata['name'] as String? ?? 'file';
       }
-      final bytes = await file.readAsBytes();
-      final fallbackName = path.basename(file.path);
 
       final fileName =
           metadata['name'] as String? ?? fallbackName;

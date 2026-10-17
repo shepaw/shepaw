@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:uuid/uuid.dart';
 import 'package:path/path.dart' as path;
 
+import '../storage/store_uri_reader.dart';
 import 'store_attachment_ref.dart';
 
 enum PendingAttachmentType { image, file }
@@ -69,7 +70,7 @@ class PendingAttachment {
   }
 
   static Future<PendingAttachment?> fromStoreRef(StoreAttachmentRef ref) async {
-    final file = await ref.resolveLocalFile();
+    final file = await ref.resolveLocalFile() ?? await _materialize(ref);
     if (file == null) return null;
 
     final type = inferType(ref.displayName);
@@ -89,6 +90,20 @@ class PendingAttachment {
       thumbnailBytes: thumbnail,
       storeRef: ref,
     );
+  }
+
+  /// 主机袋子里的文件不在本机目录。落到临时文件，输入框和发送才能读到字节。
+  static Future<File?> _materialize(StoreAttachmentRef ref) async {
+    try {
+      final dir = await Directory.systemTemp.createTemp('shepaw_pouch_att');
+      final base = path.basename(ref.displayName.trim());
+      final cleaned = base.replaceAll(RegExp(r'[\\/:\0]+'), '_');
+      final dest = File(path.join(dir.path, cleaned.isEmpty ? 'file' : cleaned));
+      await StoreUriReader.instance.copyTo(ref.storeUri, dest);
+      return dest;
+    } catch (_) {
+      return null;
+    }
   }
 
   static String formatFileSize(int bytes) {

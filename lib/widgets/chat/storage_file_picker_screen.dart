@@ -1,12 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../screens/storage_browser_screen.dart';
+import '../../storage/host_pouch_target.dart';
 
-/// 从本机储物袋 store 浏览并选择文件，供聊天附件等场景使用。
+/// 从当前登录的储物袋里选文件，供聊天附件、玉简附件使用。
 ///
-/// 排版与 [StorageBrowserScreen]（本机空间文件浏览）一致。
-class StorageFilePickerScreen extends StatelessWidget {
+/// 和储物袋页一样走 [HostPouchTarget]：袋子在主机上时列主机那一份，
+/// 不列这台 App 自己的本地目录。
+class StorageFilePickerScreen extends StatefulWidget {
   const StorageFilePickerScreen({
     super.key,
     this.maxSelection = 9,
@@ -16,13 +20,42 @@ class StorageFilePickerScreen extends StatelessWidget {
   final int maxSelection;
 
   @override
+  State<StorageFilePickerScreen> createState() =>
+      _StorageFilePickerScreenState();
+}
+
+class _StorageFilePickerScreenState extends State<StorageFilePickerScreen> {
+  HostPouchTarget? _pouch;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_resolvePouch());
+  }
+
+  Future<void> _resolvePouch() async {
+    final target = await HostPouchTarget.resolve();
+    if (!mounted) return;
+    setState(() => _pouch = target);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final pouch = _pouch;
+    if (pouch == null) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
     final l10n = AppLocalizations.of(context);
     return StorageBrowserScreen(
       pickForAttachment: true,
-      maxPickCount: maxSelection,
+      maxPickCount: widget.maxSelection,
       title: l10n.chat_storageFilePickerTitle,
       readOnly: true,
+      deviceId: pouch.isRemote ? pouch.deviceId : null,
+      peerId: pouch.peerId,
+      ownHostPouch: pouch.isRemote,
     );
   }
 }

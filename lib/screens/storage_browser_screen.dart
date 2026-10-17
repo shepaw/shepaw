@@ -336,13 +336,13 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     try {
       final refs = <StoreAttachmentRef>[];
       for (final file in _selectedFiles.values) {
-        final ref = StoreAttachmentRef.fromEntry(
+        // 主机袋子上的文件不在本机目录里。这里只交引用，
+        // 调用方按 pouch:// 去读。
+        refs.add(StoreAttachmentRef.fromEntry(
           deviceId: _targetId,
           space: file.space,
           entry: file.entry,
-        );
-        if (await ref.resolveLocalFile() == null) continue;
-        refs.add(ref);
+        ));
       }
       if (!mounted) return;
       Navigator.of(context).pop(refs);
