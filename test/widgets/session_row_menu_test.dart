@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -158,6 +159,48 @@ void main() {
     expect(find.text('删除会话'), findsNothing);
   });
 
+  Future<void> hoverRow(WidgetTester tester) async {
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await gesture.addPointer(location: Offset.zero);
+    addTearDown(gesture.removePointer);
+    await tester.pump();
+    await gesture.moveTo(tester.getCenter(find.byType(ListTile)));
+    await tester.pump();
+  }
+
+  Widget hoverRowHost({
+    required bool isCurrentSession,
+    String? sessionTitle,
+    VoidCallback? onDelete,
+  }) {
+    return SessionRowHoverHost(
+      enabled: true,
+      builder: (context, hover) {
+        return ListTile(
+          title: const Text('Session row'),
+          subtitle: sessionPreviewLine(
+            context: context,
+            preview: const Text('preview'),
+            timeText: '9/12',
+            showMore: hover.showMore,
+            onMorePressed: hover.showMore
+                ? (buttonContext) => hover.holdWhileOpen(
+                      () => showSessionRowPopupMenu(
+                        context,
+                        buttonContext: buttonContext,
+                        session: session(),
+                        sessionTitle: sessionTitle,
+                        isCurrentSession: isCurrentSession,
+                        onDeleteSession: onDelete,
+                      ),
+                    )
+                : null,
+          ),
+        );
+      },
+    );
+  }
+
   testWidgets('桌面的更多下拉菜单同样给出删除', (tester) async {
     var deleted = false;
     await tester.pumpWidget(
@@ -166,34 +209,16 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         home: Scaffold(
-          body: SessionRowHoverHost(
-            enabled: true,
-            builder: (context, hover) {
-              return ListTile(
-                title: const Text('Session row'),
-                trailing: sessionRowTrailing(
-                  context: context,
-                  showMore: hover.showMore,
-                  timeText: '9/12',
-                  onMorePressed: hover.showMore
-                      ? (buttonContext) => hover.holdWhileOpen(
-                            () => showSessionRowPopupMenu(
-                              context,
-                              buttonContext: buttonContext,
-                              session: session(),
-                              isCurrentSession: false,
-                              onDeleteSession: () => deleted = true,
-                            ),
-                          )
-                      : null,
-                ),
-              );
-            },
+          body: hoverRowHost(
+            isCurrentSession: false,
+            onDelete: () => deleted = true,
           ),
         ),
       ),
     );
 
+    expect(find.byKey(const Key('session_row_more')), findsNothing);
+    await hoverRow(tester);
     await tester.tap(find.byKey(const Key('session_row_more')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('删除会话'));
@@ -201,42 +226,26 @@ void main() {
     expect(deleted, isTrue);
   });
 
-  testWidgets('桌面会话行同时显示时间和更多，点击出下拉而不是底部菜单', (tester) async {
+  testWidgets('桌面悬停才显示更多，点击出下拉而不是底部菜单', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         locale: const Locale('zh'),
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         home: Scaffold(
-          body: SessionRowHoverHost(
-            enabled: true,
-            builder: (context, hover) {
-              return ListTile(
-                title: const Text('Session row'),
-                trailing: sessionRowTrailing(
-                  context: context,
-                  showMore: hover.showMore,
-                  timeText: '9/12',
-                  onMorePressed: hover.showMore
-                      ? (buttonContext) => hover.holdWhileOpen(
-                            () => showSessionRowPopupMenu(
-                              context,
-                              buttonContext: buttonContext,
-                              session: session(),
-                              sessionTitle: 'First sentence title',
-                              isCurrentSession: true,
-                            ),
-                          )
-                      : null,
-                ),
-              );
-            },
+          body: hoverRowHost(
+            isCurrentSession: true,
+            sessionTitle: 'First sentence title',
           ),
         ),
       ),
     );
 
     expect(find.text('9/12'), findsOneWidget);
+    expect(find.byKey(const Key('session_row_more')), findsNothing);
+
+    await hoverRow(tester);
+    expect(find.text('9/12'), findsNothing);
     expect(find.byKey(const Key('session_row_more')), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('session_row_more')));

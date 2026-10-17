@@ -294,7 +294,7 @@ Future<void> _copyText(BuildContext context, String text) async {
   );
 }
 
-/// 桌面端会话行：时间和「更多」一起显示，不必悬停才找得到。
+/// 桌面端会话行：平时不放「更多」；鼠标悬停或菜单打开期间才显示。
 class SessionRowHoverHost extends StatefulWidget {
   final bool enabled;
   final Widget Function(BuildContext context, SessionRowHoverState hover)
@@ -321,70 +321,92 @@ class SessionRowHoverState {
 }
 
 class _SessionRowHoverHostState extends State<SessionRowHoverHost> {
+  bool _hovering = false;
+  int _holds = 0;
+
+  bool get _showMore => widget.enabled && (_hovering || _holds > 0);
+
+  @override
+  void didUpdateWidget(SessionRowHoverHost oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.enabled && oldWidget.enabled) {
+      _hovering = false;
+    }
+  }
+
   Future<void> _holdWhileOpen(Future<void> Function() action) async {
-    await action();
+    setState(() => _holds++);
+    try {
+      await action();
+    } finally {
+      if (mounted) setState(() => _holds--);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return widget.builder(
+    final child = widget.builder(
       context,
       SessionRowHoverState(
-        showMore: widget.enabled,
+        showMore: _showMore,
         holdWhileOpen: _holdWhileOpen,
       ),
+    );
+    if (!widget.enabled) return child;
+    return MouseRegion(
+      onEnter: (_) {
+        if (!_hovering) setState(() => _hovering = true);
+      },
+      onExit: (_) {
+        if (_hovering) setState(() => _hovering = false);
+      },
+      child: child,
     );
   }
 }
 
-/// 会话行右侧：手机只显示时间；桌面同时显示时间和「更多」。
-Widget? sessionRowTrailing({
+/// 预览行：正文在左。右端平时是时间，桌面悬停时换成「更多」，不占标题行宽度。
+Widget sessionPreviewLine({
   required BuildContext context,
-  required bool showMore,
+  required Widget preview,
   required String timeText,
-  Widget? above,
+  required bool showMore,
   Future<void> Function(BuildContext buttonContext)? onMorePressed,
 }) {
-  final more = onMorePressed == null
-      ? null
-      : Builder(
-          builder: (buttonContext) {
-            return IconButton(
-              key: const Key('session_row_more'),
-              tooltip: AppLocalizations.of(context).chat_moreActions,
-              icon: const Icon(Icons.more_vert, size: 20),
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-              onPressed: () => onMorePressed(buttonContext),
-            );
-          },
-        );
-  final time = timeText.isEmpty
-      ? null
-      : Text(
-          timeText,
-          style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-        );
-  final Widget? end;
-  if (showMore && more != null && time != null) {
-    end = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [time, more],
-    );
-  } else if (showMore && more != null) {
-    end = more;
-  } else {
-    end = time;
-  }
-  if (above == null && end == null) return null;
-  if (above == null) return end;
-  return Column(
-    mainAxisAlignment: MainAxisAlignment.center,
-    crossAxisAlignment: CrossAxisAlignment.end,
+  final Widget? end = showMore && onMorePressed != null
+      ? _sessionRowMoreButton(context, onMorePressed)
+      : (timeText.isEmpty
+          ? null
+          : Text(
+              timeText,
+              style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+            ));
+  if (end == null) return preview;
+  return Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      above,
-      if (end != null) end,
+      Expanded(child: preview),
+      const SizedBox(width: 8),
+      end,
     ],
+  );
+}
+
+Widget _sessionRowMoreButton(
+  BuildContext context,
+  Future<void> Function(BuildContext buttonContext) onPressed,
+) {
+  return Builder(
+    builder: (buttonContext) {
+      return IconButton(
+        key: const Key('session_row_more'),
+        tooltip: AppLocalizations.of(context).chat_moreActions,
+        icon: const Icon(Icons.more_vert, size: 20),
+        visualDensity: VisualDensity.compact,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+        onPressed: () => onPressed(buttonContext),
+      );
+    },
   );
 }

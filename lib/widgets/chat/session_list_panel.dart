@@ -224,7 +224,8 @@ class _SessionListContentState extends State<_SessionListContent> {
       final cached = cachedAt != null ? DateTime.tryParse(cachedAt) : null;
       final live = times[id];
       if ((cached == null && live != null) ||
-          (cached != null && (live == null || !live.isAtSameMomentAs(cached)))) {
+          (cached != null &&
+              (live == null || !live.isAtSameMomentAs(cached)))) {
         entry.stale = true;
         continue;
       }
@@ -243,13 +244,10 @@ class _SessionListContentState extends State<_SessionListContent> {
   /// 批量补齐所有过期行的预览：3 次查询替代每会话 3 次的 N×3 串行往返
   /// （50 个会话原本是 150 次 sqflite 往返）。
   Future<void> _refreshStalePreviews() async {
-    final ids = widget.sessions
-        .map((s) => s.id)
-        .where((id) {
-          final e = _previews[id];
-          return e == null || (e.stale && !e.refreshing);
-        })
-        .toList();
+    final ids = widget.sessions.map((s) => s.id).where((id) {
+      final e = _previews[id];
+      return e == null || (e.stale && !e.refreshing);
+    }).toList();
     if (ids.isEmpty) return;
 
     // 先标记为刷新中，避免逐行再各发起一次查询。
@@ -294,8 +292,7 @@ class _SessionListContentState extends State<_SessionListContent> {
       );
     }
     // 会话被删后缓存条目随手清理
-    _previews
-        .removeWhere((k, _) => !widget.sessions.any((s) => s.id == k));
+    _previews.removeWhere((k, _) => !widget.sessions.any((s) => s.id == k));
     // 新增/过期的会话用批量查询补齐（无待补项时直接返回）。
     _refreshStalePreviews();
   }
@@ -570,40 +567,8 @@ class _SessionListContentState extends State<_SessionListContent> {
       } catch (_) {}
     }
 
-    // 当前会话：图标变橘、头像底色淡橘（与 She 样式同款），整行淡橘背景，
-    // 不再需要 Current 文字徽标。
-    final avatar = Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: isCurrentSession || isSheBound
-                ? Colors.orange.withOpacity(0.15)
-                : isGroupBound
-                    ? Colors.teal.withOpacity(0.15)
-                    : Colors.grey[300],
-            borderRadius: BorderRadius.circular(10),
-          ),
-          alignment: Alignment.center,
-          child: Icon(
-            isSheBound
-                ? Icons.pets_outlined
-                : isGroupBound
-                    ? Icons.groups_outlined
-                    : Icons.chat_bubble_outline,
-            color: isCurrentSession || isSheBound
-                ? Colors.orange[700]
-                : isGroupBound
-                    ? Colors.teal[700]
-                    : Colors.grey[600],
-            size: 20,
-          ),
-        ),
-        if (unreadCount > 0) AvatarUnreadBadgeOverlay(count: unreadCount),
-      ],
-    );
+    // 当前会话整行淡橘。类型靠标题旁的 She / Group / 来源角标，未读是
+    // 标题行右侧的数字，不再放 40×40 图标。
 
     // 每会话底部菜单回调（查看会话仅非当前会话；重置仅当前会话）。
     final viewSession =
@@ -626,123 +591,151 @@ class _SessionListContentState extends State<_SessionListContent> {
       enabled: isDesktop && !selectionMode,
       builder: (context, hover) {
         return ListTile(
-      tileColor: isCurrentSession ? Colors.orange.withOpacity(0.08) : null,
-      contentPadding: selectionMode
-          ? const EdgeInsets.fromLTRB(8, 0, 16, 0)
-          : const EdgeInsets.symmetric(horizontal: 16),
-      horizontalTitleGap: selectionMode ? 8 : 16,
-      leading: selectionMode
-          ? Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _selectionCheckbox(
+          tileColor: isCurrentSession ? Colors.orange.withOpacity(0.08) : null,
+          contentPadding: selectionMode
+              ? const EdgeInsets.fromLTRB(8, 0, 16, 0)
+              : const EdgeInsets.symmetric(horizontal: 16),
+          horizontalTitleGap: selectionMode ? 8 : 0,
+          leading: selectionMode
+              ? _selectionCheckbox(
                   context,
                   selected: selected,
                   enabled: selectionEnabled,
                   onToggle: onSelectionToggle,
+                )
+              : null,
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  titleText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  // 标题就是会话的第一句话，与第二行同字号，不再按「标题」加重。
+                  style: const TextStyle(fontSize: 14),
                 ),
-                const SizedBox(width: 4),
-                avatar,
-              ],
-            )
-          : avatar,
-      title: Row(
-        children: [
-          Expanded(
-            child: Text(
-              titleText,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              // 标题就是会话的第一句话，与第二行同字号，不再按「标题」加重。
-              style: const TextStyle(fontSize: 14),
-            ),
+              ),
+              if (isAgentClientSessionSource(session.sessionOrigin))
+                _SessionOriginTag(origin: session.sessionOrigin!),
+              if (isGroupBound)
+                Container(
+                  margin: const EdgeInsets.only(left: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.teal.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    'Group',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.teal[700],
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              if (isSheBound)
+                Container(
+                  margin: const EdgeInsets.only(left: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    'She',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.orange[700],
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              if (unreadCount > 0)
+                Padding(
+                  padding: const EdgeInsets.only(left: 6),
+                  child: SessionUnreadBadge(count: unreadCount),
+                ),
+            ],
           ),
-          if (isAgentClientSessionSource(session.sessionOrigin))
-            _SessionOriginTag(origin: session.sessionOrigin!),
-          if (isGroupBound)
-            Container(
-              margin: const EdgeInsets.only(left: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.teal.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                'Group',
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Colors.teal[700],
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          if (isSheBound)
-            Container(
-              margin: const EdgeInsets.only(left: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.orange.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                'She',
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Colors.orange[700],
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-        ],
-      ),
-      // 活跃会话（agent 正在该会话处理任务）显示「输入中」，样式与主页
-      // 对话列表一致；监听 typingChannelIds 实时更新，不触发整条重查库。
-      subtitle: selectionMode && !selectionEnabled
-          ? Text(
-              AppLocalizations.of(context).chat_currentSessionCannotDelete,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-            )
-          : ValueListenableBuilder<Set<String>>(
-        valueListenable: widget.controller.chatService.typingChannelIds,
-        // 常态（非「输入中」）副标题提到 child：监听翻转时复用同一个 Text
-        // 实例，不必重建带两行省略号排版的段落。
-        child: Text(
-          preview.isNotEmpty ? preview : fallbackPreview,
-          // 两行同尺寸：第二行给到两行高度，多显示一些内容。
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 14,
-            color: Colors.grey[600],
+          // 活跃会话（agent 正在该会话处理任务）显示「输入中」，样式与主页
+          // 对话列表一致；监听 typingChannelIds 实时更新，不触发整条重查库。
+          // 时间在预览行右端；桌面悬停时该位置换成「更多」，不挤占标题。
+          subtitle: sessionPreviewLine(
+            context: context,
+            timeText: timeText,
+            showMore: hover.showMore,
+            onMorePressed: hover.showMore
+                ? (buttonContext) => hover.holdWhileOpen(
+                      () => showSessionRowPopupMenu(
+                        context,
+                        buttonContext: buttonContext,
+                        session: session,
+                        sessionTitle: titleText,
+                        isCurrentSession: isCurrentSession,
+                        onViewSession: viewSession,
+                        onViewTrace: viewTrace,
+                        onForkSession: forkSession,
+                        onCopyToAgent: copyToAgent,
+                        onResetSession: resetSession,
+                        onDeleteSession: deleteSession,
+                      ),
+                    )
+                : null,
+            preview: selectionMode && !selectionEnabled
+                ? Text(
+                    AppLocalizations.of(context)
+                        .chat_currentSessionCannotDelete,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                  )
+                : ValueListenableBuilder<Set<String>>(
+                    valueListenable:
+                        widget.controller.chatService.typingChannelIds,
+                    // 常态（非「输入中」）副标题提到 child：监听翻转时复用同一个 Text
+                    // 实例，不必重建带两行省略号排版的段落。
+                    child: Text(
+                      preview.isNotEmpty ? preview : fallbackPreview,
+                      // 两行同尺寸：第二行给到两行高度，多显示一些内容。
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                    builder: (context, typingChannelIds, child) {
+                      if (typingChannelIds.contains(session.id)) {
+                        return Text(
+                          AppLocalizations.of(context).home_typing,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.green[600],
+                            fontStyle: FontStyle.italic,
+                          ),
+                        );
+                      }
+                      return child!;
+                    },
+                  ),
           ),
-        ),
-        builder: (context, typingChannelIds, child) {
-          if (typingChannelIds.contains(session.id)) {
-            return Text(
-              AppLocalizations.of(context).home_typing,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.green[600],
-                fontStyle: FontStyle.italic,
-              ),
-            );
-          }
-          return child!;
-        },
-      ),
-      trailing: sessionRowTrailing(
-        context: context,
-        showMore: hover.showMore,
-        timeText: timeText,
-        onMorePressed: hover.showMore
-            ? (buttonContext) => hover.holdWhileOpen(
-                  () => showSessionRowPopupMenu(
+          onTap: selectionMode
+              ? (selectionEnabled ? onSelectionToggle : null)
+              : isCurrentSession
+                  ? () => closePanelRoute(context)
+                  : () {
+                      closePanelRoute(context);
+                      widget.onSwitchSession(session.id);
+                    },
+          onLongPress: selectionMode || isDesktop
+              ? null
+              : () => showSessionRowMenu(
                     context,
-                    buttonContext: buttonContext,
                     session: session,
                     sessionTitle: titleText,
                     isCurrentSession: isCurrentSession,
@@ -753,31 +746,6 @@ class _SessionListContentState extends State<_SessionListContent> {
                     onResetSession: resetSession,
                     onDeleteSession: deleteSession,
                   ),
-                )
-            : null,
-      ),
-      onTap: selectionMode
-          ? (selectionEnabled ? onSelectionToggle : null)
-          : isCurrentSession
-              ? () => closePanelRoute(context)
-              : () {
-                  closePanelRoute(context);
-                  widget.onSwitchSession(session.id);
-                },
-      onLongPress: selectionMode || isDesktop
-          ? null
-          : () => showSessionRowMenu(
-                context,
-                session: session,
-                sessionTitle: titleText,
-                isCurrentSession: isCurrentSession,
-                onViewSession: viewSession,
-                onViewTrace: viewTrace,
-                onForkSession: forkSession,
-                onCopyToAgent: copyToAgent,
-                onResetSession: resetSession,
-                onDeleteSession: deleteSession,
-              ),
         );
       },
     );
@@ -876,9 +844,9 @@ class _SessionOriginTag extends StatelessWidget {
 /// 会话行的行高原型，只给 [ListView.builder] 的 `prototypeItem` 量高度用
 /// （等价于 Offstage：不绘制、不参与命中测试）。
 ///
-/// 结构与 [_SessionListContentState._buildSessionTile] 保持一致（40×40
-/// leading + 单行标题 + 最多两行副标题），这样量出来的高度随字号/主题走，
-/// 不写死像素值。
+/// 结构与 [_SessionListContentState._buildSessionTile] 保持一致（无 leading、
+/// 单行标题 + 最多两行副标题），这样量出来的高度随字号/主题走，不写死像素值。
+/// 预览行右端的时间字号更小，不额外增加行高。
 class _SessionTilePrototype extends StatelessWidget {
   const _SessionTilePrototype();
 
@@ -886,12 +854,9 @@ class _SessionTilePrototype extends StatelessWidget {
   Widget build(BuildContext context) {
     return const ListTile(
       contentPadding: EdgeInsets.symmetric(horizontal: 16),
-      horizontalTitleGap: 16,
-      leading: SizedBox(width: 40, height: 40),
       title: Text(' ', maxLines: 1, style: TextStyle(fontSize: 14)),
       // 两个换行 = 两行副标题的高度（会话行副标题 maxLines: 2）。
       subtitle: Text('\n', maxLines: 2, style: TextStyle(fontSize: 14)),
     );
   }
 }
-

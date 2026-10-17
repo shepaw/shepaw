@@ -216,7 +216,8 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
       final live = times[id];
       final orchestrationStatus = data.$4?['status'] as String? ?? '';
       if ((cached == null && live != null) ||
-          (cached != null && (live == null || !live.isAtSameMomentAs(cached))) ||
+          (cached != null &&
+              (live == null || !live.isAtSameMomentAs(cached))) ||
           (orchestrationStatus.isNotEmpty &&
               orchestrationStatus != 'finished')) {
         entry.stale = true;
@@ -256,8 +257,7 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
       final latests = await _databaseService.getLatestMessagesByChannels(ids);
       final unreads = await _databaseService.getUnreadCountsByChannels(ids);
       // 编排快照是独立文件读，并发跑（sqflite 才需要串行）。
-      final orchestrations =
-          await Future.wait(stale.map(_readOrchestration));
+      final orchestrations = await Future.wait(stale.map(_readOrchestration));
       if (!mounted) return;
       for (var i = 0; i < stale.length; i++) {
         final id = stale[i].id;
@@ -308,8 +308,7 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
       );
     }
     // 会话被删后缓存条目随手清理
-    _previews
-        .removeWhere((k, _) => !widget.sessions.any((s) => s.id == k));
+    _previews.removeWhere((k, _) => !widget.sessions.any((s) => s.id == k));
     // 新增/过期的会话用批量查询补齐（无待补项时直接返回）。
     _refreshStalePreviews();
   }
@@ -580,73 +579,72 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-            Text('任务编排状态 · 第 $round 轮',
-                style: const TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 4),
-            Text(statusLabel,
-                style: TextStyle(
-                    fontSize: 13, color: Colors.orange[800])),
-            if (steps.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Text('本轮派发',
-                  style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              Text('任务编排状态 · 第 $round 轮',
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),
-              for (final s in steps.cast<Map<String, dynamic>>())
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(
-                    '步骤${s['step']} → ${(s['agents'] as List).join('、')}'
-                    '${(s['task'] as String? ?? '').isNotEmpty ? '：${s['task']}' : ''}',
-                    style: const TextStyle(fontSize: 13),
-                    maxLines: 6,
-                    overflow: TextOverflow.ellipsis,
+              Text(statusLabel,
+                  style: TextStyle(fontSize: 13, color: Colors.orange[800])),
+              if (steps.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text('本轮派发',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                const SizedBox(height: 4),
+                for (final s in steps.cast<Map<String, dynamic>>())
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      '步骤${s['step']} → ${(s['agents'] as List).join('、')}'
+                      '${(s['task'] as String? ?? '').isNotEmpty ? '：${s['task']}' : ''}',
+                      style: const TextStyle(fontSize: 13),
+                      maxLines: 6,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                ),
-            ],
-            if (memberResults.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Text('成员结果',
-                  style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant)),
-              const SizedBox(height: 4),
-              for (final e in memberResults.entries)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 3),
-                  child: Text(
-                    '${e.key}：${_truncate(e.value?['content'] as String? ?? '')}',
-                    style: const TextStyle(fontSize: 13),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+              ],
+              if (memberResults.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text('成员结果',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                const SizedBox(height: 4),
+                for (final e in memberResults.entries)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 3),
+                    child: Text(
+                      '${e.key}：${_truncate(e.value?['content'] as String? ?? '')}',
+                      style: const TextStyle(fontSize: 13),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
+              ],
+              if (adminSummary.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text('管理员总结',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                const SizedBox(height: 4),
+                Text(adminSummary,
+                    style: const TextStyle(fontSize: 13),
+                    maxLines: 4,
+                    overflow: TextOverflow.ellipsis),
+              ],
+              if (steps.isEmpty &&
+                  memberResults.isEmpty &&
+                  adminSummary.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text('暂无该轮编排快照',
+                      style: TextStyle(fontSize: 13, color: Colors.grey[500])),
                 ),
-            ],
-            if (adminSummary.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Text('管理员总结',
-                  style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant)),
-              const SizedBox(height: 4),
-              Text(adminSummary,
-                  style: const TextStyle(fontSize: 13),
-                  maxLines: 4,
-                  overflow: TextOverflow.ellipsis),
-            ],
-            if (steps.isEmpty &&
-                memberResults.isEmpty &&
-                adminSummary.isEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: Text('暂无该轮编排快照',
-                    style: TextStyle(fontSize: 13, color: Colors.grey[500])),
-              ),
             ],
           ),
         ),
@@ -657,9 +655,13 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
   static String _truncate(String s, [int max = 60]) =>
       s.length <= max ? s : '${s.substring(0, max)}…';
 
-  Future<(Map<String, dynamic>?, Map<String, dynamic>?, int,
-          Map<String, dynamic>?)>
-      _querySessionPreview(String channelId, Channel session) async {
+  Future<
+      (
+        Map<String, dynamic>?,
+        Map<String, dynamic>?,
+        int,
+        Map<String, dynamic>?
+      )> _querySessionPreview(String channelId, Channel session) async {
     final firstMessage =
         await _databaseService.getFirstChannelMessage(channelId);
     final latestMessage =
@@ -734,29 +736,7 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
       } catch (_) {}
     }
 
-    // 当前会话：图标变橘、头像底色淡橘，整行淡橘背景，不再需要 Current 徽标。
-    final avatar = Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: isCurrentSession
-                ? Colors.orange.withOpacity(0.15)
-                : Colors.grey[300],
-            borderRadius: BorderRadius.circular(10),
-          ),
-          alignment: Alignment.center,
-          child: Icon(
-            Icons.group,
-            color: isCurrentSession ? Colors.orange[700] : Colors.grey[600],
-            size: 20,
-          ),
-        ),
-        if (unreadCount > 0) AvatarUnreadBadgeOverlay(count: unreadCount),
-      ],
-    );
+    // 当前会话整行淡橘。未读是标题行右侧的数字，不再放 40×40 图标。
 
     // 每会话底部菜单回调（查看会话仅非当前会话；重置仅当前会话）。
     final viewSession =
@@ -770,9 +750,8 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
     final resetSession = isCurrentSession ? widget.onResetSession : null;
     // 群根会话不给删 —— 批量删除路径本来就会跳过它，菜单里不该摆一个删不掉的项。
     // 正在查看的子会话可以删，删完由调用方切到其余会话或群本身。
-    final deleteSession = session.parentGroupId == null
-        ? null
-        : () => _deleteSession(session);
+    final deleteSession =
+        session.parentGroupId == null ? null : () => _deleteSession(session);
     final isDesktop = LayoutUtils.isDesktopLayout(context);
     final orchestrationChip = isOrchestrating
         ? InkWell(
@@ -816,84 +795,115 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
       enabled: isDesktop && !selectionMode,
       builder: (context, hover) {
         return ListTile(
-      tileColor: isCurrentSession ? Colors.orange.withOpacity(0.08) : null,
-      contentPadding: selectionMode
-          ? const EdgeInsets.fromLTRB(8, 0, 16, 0)
-          : const EdgeInsets.symmetric(horizontal: 16),
-      horizontalTitleGap: selectionMode ? 8 : 16,
-      leading: selectionMode
-          ? Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _selectionCheckbox(
+          tileColor: isCurrentSession ? Colors.orange.withOpacity(0.08) : null,
+          contentPadding: selectionMode
+              ? const EdgeInsets.fromLTRB(8, 0, 16, 0)
+              : const EdgeInsets.symmetric(horizontal: 16),
+          horizontalTitleGap: selectionMode ? 8 : 0,
+          leading: selectionMode
+              ? _selectionCheckbox(
                   context,
                   selected: selected,
                   enabled: selectionEnabled,
                   onToggle: onSelectionToggle,
+                )
+              : null,
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  titleText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  // 标题就是会话的第一句话，与第二行同字号，不再按「标题」加重。
+                  style: const TextStyle(fontSize: 14),
                 ),
-                const SizedBox(width: 4),
-                avatar,
-              ],
-            )
-          : avatar,
-      title: Text(
-        titleText,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        // 标题就是会话的第一句话，与第二行同字号，不再按「标题」加重。
-        style: const TextStyle(fontSize: 14),
-      ),
-      // 活跃会话（群内 agent 正在该会话处理任务）显示「输入中」，样式与
-      // 主页对话列表一致；监听 typingChannelIds 实时更新。
-      subtitle: selectionMode && !selectionEnabled
-          ? Text(
-              AppLocalizations.of(context).chat_currentSessionCannotDelete,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-            )
-          : ValueListenableBuilder<Set<String>>(
-        valueListenable: widget.controller.chatService.typingChannelIds,
-        // 常态（非「输入中」）副标题提到 child：监听翻转时复用同一个 Text
-        // 实例，不必重建带两行省略号排版的段落。
-        child: Text(
-          preview.isNotEmpty
-              ? preview
-              : AppLocalizations.of(context).home_noMessages,
-          // 两行同尺寸：第二行给到两行高度，多显示一些内容。
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 14,
-            color: Colors.grey[600],
-          ),
-        ),
-        builder: (context, typingChannelIds, child) {
-          if (typingChannelIds.contains(session.id)) {
-            return Text(
-              AppLocalizations.of(context).home_typing,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.green[600],
-                fontStyle: FontStyle.italic,
               ),
-            );
-          }
-          return child!;
-        },
-      ),
-      trailing: sessionRowTrailing(
-        context: context,
-        showMore: hover.showMore,
-        timeText: timeText,
-        above: orchestrationChip,
-        onMorePressed: hover.showMore
-            ? (buttonContext) => hover.holdWhileOpen(
-                  () => showSessionRowPopupMenu(
+              if (orchestrationChip != null) orchestrationChip,
+              if (unreadCount > 0)
+                Padding(
+                  padding: const EdgeInsets.only(left: 6),
+                  child: SessionUnreadBadge(count: unreadCount),
+                ),
+            ],
+          ),
+          // 活跃会话（群内 agent 正在该会话处理任务）显示「输入中」，样式与
+          // 主页对话列表一致；监听 typingChannelIds 实时更新。
+          // 时间在预览行右端；桌面悬停时该位置换成「更多」，不挤占标题。
+          subtitle: sessionPreviewLine(
+            context: context,
+            timeText: timeText,
+            showMore: hover.showMore,
+            onMorePressed: hover.showMore
+                ? (buttonContext) => hover.holdWhileOpen(
+                      () => showSessionRowPopupMenu(
+                        context,
+                        buttonContext: buttonContext,
+                        session: session,
+                        sessionTitle: titleText,
+                        isCurrentSession: isCurrentSession,
+                        onViewSession: viewSession,
+                        onViewTrace: viewTrace,
+                        onForkSession: forkSession,
+                        onResetSession: resetSession,
+                        onDeleteSession: deleteSession,
+                      ),
+                    )
+                : null,
+            preview: selectionMode && !selectionEnabled
+                ? Text(
+                    AppLocalizations.of(context)
+                        .chat_currentSessionCannotDelete,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                  )
+                : ValueListenableBuilder<Set<String>>(
+                    valueListenable:
+                        widget.controller.chatService.typingChannelIds,
+                    // 常态（非「输入中」）副标题提到 child：监听翻转时复用同一个 Text
+                    // 实例，不必重建带两行省略号排版的段落。
+                    child: Text(
+                      preview.isNotEmpty
+                          ? preview
+                          : AppLocalizations.of(context).home_noMessages,
+                      // 两行同尺寸：第二行给到两行高度，多显示一些内容。
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                    builder: (context, typingChannelIds, child) {
+                      if (typingChannelIds.contains(session.id)) {
+                        return Text(
+                          AppLocalizations.of(context).home_typing,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.green[600],
+                            fontStyle: FontStyle.italic,
+                          ),
+                        );
+                      }
+                      return child!;
+                    },
+                  ),
+          ),
+          onTap: selectionMode
+              ? (selectionEnabled ? onSelectionToggle : null)
+              : isCurrentSession
+                  ? () => closePanelRoute(context)
+                  : () {
+                      closePanelRoute(context);
+                      widget.onSwitchSession(session.id);
+                    },
+          onLongPress: selectionMode || isDesktop
+              ? null
+              : () => showSessionRowMenu(
                     context,
-                    buttonContext: buttonContext,
                     session: session,
                     sessionTitle: titleText,
                     isCurrentSession: isCurrentSession,
@@ -903,30 +913,6 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
                     onResetSession: resetSession,
                     onDeleteSession: deleteSession,
                   ),
-                )
-            : null,
-      ),
-      onTap: selectionMode
-          ? (selectionEnabled ? onSelectionToggle : null)
-          : isCurrentSession
-              ? () => closePanelRoute(context)
-              : () {
-                  closePanelRoute(context);
-                  widget.onSwitchSession(session.id);
-                },
-      onLongPress: selectionMode || isDesktop
-          ? null
-          : () => showSessionRowMenu(
-                context,
-                session: session,
-                sessionTitle: titleText,
-                isCurrentSession: isCurrentSession,
-                onViewSession: viewSession,
-                onViewTrace: viewTrace,
-                onForkSession: forkSession,
-                onResetSession: resetSession,
-                onDeleteSession: deleteSession,
-              ),
         );
       },
     );
@@ -987,7 +973,8 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
 /// （等价于 Offstage：不绘制、不参与命中测试）。
 ///
 /// 结构与 [_GroupSessionListContentState._buildGroupSessionTile] 保持一致
-/// （40×40 leading + 单行标题 + 最多两行副标题），高度随字号/主题走。
+/// （无 leading、单行标题 + 最多两行副标题），高度随字号/主题走。
+/// 预览行右端的时间字号更小，不额外增加行高。
 class _GroupSessionTilePrototype extends StatelessWidget {
   const _GroupSessionTilePrototype();
 
@@ -995,12 +982,9 @@ class _GroupSessionTilePrototype extends StatelessWidget {
   Widget build(BuildContext context) {
     return const ListTile(
       contentPadding: EdgeInsets.symmetric(horizontal: 16),
-      horizontalTitleGap: 16,
-      leading: SizedBox(width: 40, height: 40),
       title: Text(' ', maxLines: 1, style: TextStyle(fontSize: 14)),
       // 两个换行 = 两行副标题的高度（会话行副标题 maxLines: 2）。
       subtitle: Text('\n', maxLines: 2, style: TextStyle(fontSize: 14)),
     );
   }
 }
-

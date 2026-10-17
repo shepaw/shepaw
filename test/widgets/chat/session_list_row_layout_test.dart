@@ -107,9 +107,9 @@ void main() {
     expect(list.itemExtent, isNull);
   }
 
-  /// 在桌面宽度下挂载面板：`LayoutUtils.isDesktopLayout` 为真，每行 trailing
-  /// 还带「更多」按钮，是行内容最宽 / 最高的一档（手机宽度下 trailing 更小，
-  /// 不会更差）。[textScale] 用来覆盖系统字号放大。
+  /// 在桌面宽度下挂载面板：`LayoutUtils.isDesktopLayout` 为真。「更多」平时
+  /// 不占位，悬停才出现，所以未悬停的行就是布局测量的常态。[textScale]
+  /// 用来覆盖系统字号放大。
   Future<void> pumpPanel(
     WidgetTester tester,
     Widget panel, {
@@ -166,6 +166,9 @@ void main() {
 
     expectPrototypeExtentList(tester);
     expect(rowsInList(), findsNWidgets(sessions.length));
+    expect(find.byIcon(Icons.chat_bubble_outline), findsNothing);
+    expect(find.byIcon(Icons.pets_outlined), findsNothing);
+    expect(find.byKey(const Key('session_row_more')), findsNothing);
     final (rowHeight, rows) = expectUniformRows(tester);
     expect(rowHeight, greaterThan(0));
 
@@ -254,7 +257,7 @@ void main() {
       ),
     );
 
-    // 进选择模式：行首多一个复选框（leading 变宽），副标题可能变单行。
+    // 进选择模式：行首多一个复选框，副标题可能变单行。
     selectionRequest.value++;
     await tester.pump();
 
@@ -311,7 +314,8 @@ void main() {
     expect(scrolled, greaterThan(0));
 
     // 收起抽屉 = 整棵路由销毁（App 侧是 Navigator.pop），再重新划开。
-    await tester.pumpWidget(const MaterialApp(home: Scaffold(body: SizedBox())));
+    await tester
+        .pumpWidget(const MaterialApp(home: Scaffold(body: SizedBox())));
     await tester.pump();
     await tester.pumpWidget(build());
     await tester.pump();
