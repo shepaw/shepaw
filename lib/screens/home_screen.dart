@@ -90,8 +90,13 @@ class HomeScreenState extends State<HomeScreen> {
   String? _hostPeerId;
   String? _pouchId;
   bool _hostOnline = true;
+  bool _showHostOfflineBanner = false;
   bool _agentCardDismissed = false;
   StreamSubscription<PeerConnectionEvent>? _hostConnectionSub;
+  Timer? _hostOfflineBannerTimer;
+
+  /// 断网后先给重连留窗口，超时仍离线才在会话列表顶部露出提示。
+  static const _hostOfflineBannerDelay = Duration(seconds: 3);
 
   // Convenience accessors for tiles (backed by ConversationListController).
   List<Agent> get _agents => _list.agents;
@@ -131,8 +136,32 @@ class HomeScreenState extends State<HomeScreen> {
     setState(() {
       _hostPeerId = id;
       _pouchId = pouchId;
-      _hostOnline = id == null || online;
       _agentCardDismissed = dismissed;
+    });
+    _setHostOnline(id == null || online);
+  }
+
+  /// 在线立即收起提示；离线则等 [_hostOfflineBannerDelay]，期间重连成功则不展示。
+  void _setHostOnline(bool online) {
+    if (online) {
+      _hostOfflineBannerTimer?.cancel();
+      _hostOfflineBannerTimer = null;
+      if (_hostOnline && !_showHostOfflineBanner) return;
+      setState(() {
+        _hostOnline = true;
+        _showHostOfflineBanner = false;
+      });
+      return;
+    }
+
+    if (_hostOnline) {
+      setState(() => _hostOnline = false);
+    }
+    if (_showHostOfflineBanner || _hostOfflineBannerTimer != null) return;
+    _hostOfflineBannerTimer = Timer(_hostOfflineBannerDelay, () {
+      _hostOfflineBannerTimer = null;
+      if (!mounted || _hostOnline) return;
+      setState(() => _showHostOfflineBanner = true);
     });
   }
 
@@ -169,9 +198,8 @@ class HomeScreenState extends State<HomeScreen> {
           event.type != PeerConnectionEventType.disconnected) {
         return;
       }
-      final online = event.type == PeerConnectionEventType.connected;
-      if (!mounted || online == _hostOnline) return;
-      setState(() => _hostOnline = online);
+      if (!mounted) return;
+      _setHostOnline(event.type == PeerConnectionEventType.connected);
     });
     _searchController.addListener(_onSearchChanged);
     // 首次设密登录后：首帧自动打开惜宝聊天页引导配置 AI 模型（一次性标记）。
@@ -241,6 +269,7 @@ class HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _searchDebounce?.cancel();
+    _hostOfflineBannerTimer?.cancel();
     _hostConnectionSub?.cancel();
     _searchController.dispose();
     _list.dispose();
@@ -1291,7 +1320,7 @@ class HomeScreenState extends State<HomeScreen> {
     // 只排布「这一格是什么」，不在这里建 widget：N 个会话一次性 element 化
     // 并排版，会让 typing / 未读 / 草稿的每次 notify 都重付整表成本。
     final slots = <Widget Function()>[
-      if (_hostPeerId != null && !_hostOnline)
+      if (_showHostOfflineBanner)
         () => _buildHostOfflineBanner(l10n),
       if (showCard && sheIndex < 0) _buildOnboardingCard,
       for (var i = 0; i < items.length; i++) ...[
@@ -1342,15 +1371,25 @@ class HomeScreenState extends State<HomeScreen> {
 
   Widget _buildHostOfflineBanner(AppLocalizations l10n) {
     final scheme = Theme.of(context).colorScheme;
+    final background = Color.lerp(
+      scheme.surface,
+      scheme.errorContainer,
+      0.42,
+    )!;
     return Material(
-      color: scheme.errorContainer,
-      child: ListTile(
-        dense: true,
-        title: Text(
-          l10n.hostOffline_banner,
-          style: TextStyle(color: scheme.onErrorContainer),
-        ),
+      color: background,
+      child: InkWell(
         onTap: _reconnectHomeHost,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Center(
+            child: Text(
+              l10n.hostOffline_banner,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: scheme.onErrorContainer, fontSize: 14),
+            ),
+          ),
+        ),
       ),
     );
   }
