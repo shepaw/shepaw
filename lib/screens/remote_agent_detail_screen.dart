@@ -3243,6 +3243,38 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     );
   }
 
+  Widget _buildEditResumeEntry(ColorScheme colorScheme) {
+    final l10n = AppLocalizations.of(context);
+    final preview = _bioController.text.trim();
+    final subtitle = preview.isEmpty
+        ? l10n.resumeEdit_emptyHint
+        : (preview.length > 80 ? '${preview.substring(0, 80)}…' : preview);
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: colorScheme.outlineVariant),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        leading: Icon(Icons.badge_outlined, color: colorScheme.primary),
+        title: Text(
+          l10n.agentDetail_regenerateResume,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        subtitle: Text(
+          subtitle,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: _openResumeEditor,
+      ),
+    );
+  }
+
   // ==================== 编辑模式 ====================
 
   Widget _buildEditBody() {
@@ -3311,6 +3343,8 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           const SizedBox(height: 16),
           _buildEditSoulEntry(colorScheme),
         ],
+        const SizedBox(height: 16),
+        _buildEditResumeEntry(colorScheme),
         const SizedBox(height: 16),
 
         // 卡片 2: 连接配置（仅自管远端 agent，不含 peer agent）
