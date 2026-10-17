@@ -15,14 +15,17 @@ class SessionUnreadBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     if (count <= 0) return const SizedBox.shrink();
 
+    // 高度写死。Container 带 alignment 时会撑满父级给的最大高度，
+    // 放进标题行后圆点会被拉成竖胶囊。
     return Container(
+      height: 18,
       padding: count > 9
-          ? const EdgeInsets.symmetric(horizontal: 4, vertical: 1)
+          ? const EdgeInsets.symmetric(horizontal: 4)
           : EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+      constraints: const BoxConstraints(minWidth: 18),
       decoration: BoxDecoration(
         color: Colors.red,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(9),
         border: overlayOnAvatar
             ? Border.all(
                 color: Theme.of(context).scaffoldBackgroundColor,
