@@ -37,7 +37,8 @@ void main() {
     await store.writeChunk(deviceId, StoreSpace.files, uploadId, 0, content);
     await store.commit(deviceId, StoreSpace.files, [uploadId]);
 
-    final uri = storeUriWithRef(StoreSpace.files, deviceId, relPath);
+    final uri = storeUriWithRef(
+        StoreSpace.files, relPath);
     final back = await StoreUriReader.instance.read(uri);
     expect(utf8.decode(back), 'pouch note');
   });
@@ -54,9 +55,7 @@ void main() {
       bytes: content,
     );
     final uri = storeUriWithRef(
-      StoreSpace.files,
-      deviceId,
-      relPath,
+        StoreSpace.files, relPath,
       const StoreUriRef.seq(1),
     );
     expect(uri, contains('@v1'));
@@ -81,9 +80,11 @@ void main() {
     await store.writeChunk(deviceId, StoreSpace.files, uploadId, 0, content);
     await store.commit(deviceId, StoreSpace.files, [uploadId]);
 
-    final fileUri = storeUriWithRef(StoreSpace.files, deviceId, relPath);
-    final dirUri = storeUriWithRef(StoreSpace.files, deviceId, 'docs');
-    final spaceUri = 'pouch://${StoreSpace.files}/$deviceId';
+    final fileUri = storeUriWithRef(
+        StoreSpace.files, relPath);
+    final dirUri = storeUriWithRef(
+        StoreSpace.files, 'docs');
+    final spaceUri = 'pouch://${StoreSpace.files}';
     expect(await StoreUriReader.instance.kindOf(fileUri), StoreUriKind.file);
     expect(
         await StoreUriReader.instance.kindOf(dirUri), StoreUriKind.directory);
@@ -101,9 +102,7 @@ void main() {
     await store.writeChunk(deviceId, StoreSpace.workspaces, wsId, 0, content);
     await store.commit(deviceId, StoreSpace.workspaces, [wsId]);
     final folderUri = storeUriWithRef(
-      StoreSpace.workspaces,
-      deviceId,
-      'Users/edenzou/workspace/shepaw/channel/cmd',
+        StoreSpace.workspaces, 'Users/edenzou/workspace/shepaw/channel/cmd',
     );
     expect(
       await StoreUriReader.instance.kindOf(folderUri),
@@ -114,9 +113,7 @@ void main() {
       'Users/edenzou/workspace/shepaw/channel/cmd',
     );
     final missingLeaf = storeUriWithRef(
-      StoreSpace.workspaces,
-      deviceId,
-      'Users/edenzou/workspace/shepaw/channel/cmd/no-such-child',
+        StoreSpace.workspaces, 'Users/edenzou/workspace/shepaw/channel/cmd/no-such-child',
     );
     expect(
       await StoreUriReader.instance.existingDirectoryPrefix(missingLeaf),
@@ -127,9 +124,7 @@ void main() {
       'docs',
     );
     final ghost = storeUriWithRef(
-      StoreSpace.workspaces,
-      deviceId,
-      'no/such/remote-folder',
+        StoreSpace.workspaces, 'no/such/remote-folder',
     );
     expect(
       await StoreUriReader.instance.existingDirectoryPrefix(ghost),
@@ -137,18 +132,9 @@ void main() {
     );
   });
 
-  test('StoreUriReader 拒绝他端私有分区', () async {
-    const other = 'bbbbbbbbbbbbbbbb';
-    final uri = storeUriWithRef(StoreSpace.attachments, other, 'deadbeef');
-    expect(
-      () => StoreUriReader.instance.read(uri),
-      throwsA(isA<ArgumentError>()),
-    );
-  });
-
-  test('他端私有分区本机缓存命中（peer 隧道附件共用 URI）', () async {
+  test('私有分区 runtime 附件按地址读回（一袋一树，地址不带设备段）', () async {
     final store = await StoreService.instance.localStore();
-    const other = 'dddddddddddddddd';
+    final other = await DeviceIdentity.deviceId();
     final bytes =
         Uint8List.fromList(utf8.encode('peer cached attachment bytes'));
     final hash = crypto.sha256.convert(bytes).toString();
@@ -164,7 +150,7 @@ void main() {
     await store.writeChunk(other, StoreSpace.runtime, uploadId, 0, bytes);
     await store.commit(other, StoreSpace.runtime, [uploadId]);
 
-    final uri = storeUriWithRef(StoreSpace.runtime, other, relPath);
+    final uri = storeUriWithRef(StoreSpace.runtime, relPath);
     expect(await StoreUriReader.instance.kindOf(uri), StoreUriKind.file);
     expect(await StoreUriReader.instance.sizeOf(uri), bytes.length);
     expect(
@@ -180,19 +166,6 @@ void main() {
     );
   });
 
-  test('他端私有分区无本机缓存仍拒绝（不误放行）', () async {
-    const other = 'eeeeeeeeeeeeeeee';
-    final uri = storeUriWithRef(
-      StoreSpace.runtime,
-      other,
-      'agent_1/channel_1/attachments/'
-      '1111111111111111111111111111111111111111111111111111111111111111',
-    );
-    expect(
-      () => StoreUriReader.instance.read(uri),
-      throwsA(isA<ArgumentError>()),
-    );
-  });
 
   test('入站分享放行判定：runtime 附件/产物放行，soul/会话拒绝', () async {
     const other = 'ffffffffffffffff';

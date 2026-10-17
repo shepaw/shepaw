@@ -43,7 +43,6 @@ void main() {
         'a1/ch-att/attachments/$hash';
     final expectedUri = storeUriWithRef(
       StoreSpace.runtime,
-      deviceId,
       rel,
     );
 
@@ -98,7 +97,6 @@ void main() {
       uri,
       storeUriWithRef(
         StoreSpace.runtime,
-        deviceId,
         '$groupId/$sessionId/attachments/$hash',
       ),
     );
@@ -273,7 +271,7 @@ void main() {
       channelId: channelId,
     );
     final rel = '$agentId/$channelId/attachments/$hash';
-    expect(uri, storeUriWithRef(StoreSpace.runtime, deviceId, rel));
+    expect(uri, storeUriWithRef(StoreSpace.runtime, rel));
     final root = await StoreService.instance.storeRoot();
     final blob = File(p.join(
       root.path,

@@ -3,26 +3,11 @@ import 'device_identity.dart';
 import 'store_protocol.dart';
 import 'workspace_binding_service.dart';
 
-final _deviceFirstWorkspace = RegExp(
-  r'^pouch://([a-f0-9]{16})/workspaces(?:/(.*))?$',
-  caseSensitive: false,
-);
-
-/// Normalize a Hub/App workspace URI to space-first `pouch://workspaces/<device>/…`.
-///
-/// Also accepts the on-disk device-first form `pouch://<device>/workspaces/…`
-/// that some UIs copy from the store tree.
+/// Normalize a workspace URI to `pouch://workspaces/…`（地址不带设备段，
+/// docs/pouch_uri_no_device_decision.md）。
 String? canonicalizeStoreWorkspaceUri(String raw) {
   final uri = raw.trim();
   if (!isPouchUri(uri)) return null;
-  final deviceFirst = _deviceFirstWorkspace.firstMatch(uri);
-  if (deviceFirst != null) {
-    final device = deviceFirst.group(1)!.toLowerCase();
-    final rest = (deviceFirst.group(2) ?? '').replaceAll(RegExp(r'/+$'), '');
-    return rest.isEmpty
-        ? 'pouch://workspaces/'
-        : 'pouch://workspaces/$rest/';
-  }
   return uri.endsWith('/') ? uri : '$uri/';
 }
 
@@ -82,7 +67,7 @@ String? primaryWorkspaceUri(Iterable<String> uris) {
   return null;
 }
 
-/// Decode a `pouch://workspaces/<device>/…` URI back to a host absolute path.
+/// Decode a `pouch://workspaces/…` URI back to a host absolute path.
 ///
 /// Hub encodes `/Users/foo` → `Users/foo` and `C:/Users/foo` → `C/Users/foo`.
 String? absolutePathFromWorkspaceUri(String rawUri) {

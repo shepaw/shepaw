@@ -3,7 +3,7 @@ import 'package:shepaw/controllers/inbound_file_message_parser.dart';
 import 'package:shepaw/services/attachment_service.dart';
 
 const _storeUri =
-    'pouch://runtime/680a477ce6563798/she-builtin-agent-001/'
+    'pouch://runtime/she-builtin-agent-001/'
     'dm_she-builtin-agent-001_user_1787875105064/artifacts/general/tetris.html';
 
 void main() {

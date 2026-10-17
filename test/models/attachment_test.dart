@@ -143,7 +143,7 @@ void main() {
           semanticType: 'document',
           extraMetadata: {
             'pouch_uri':
-                'pouch://files/0123456789abcdef/docs/note.txt',
+                'pouch://files/docs/note.txt',
           },
         );
         final desc = storeFile.textDescription;
@@ -151,7 +151,7 @@ void main() {
         expect(
             desc,
             contains(
-                '[note.txt](pouch://files/0123456789abcdef/docs/note.txt)'));
+                '[note.txt](pouch://files/docs/note.txt)'));
         expect(desc, isNot(contains('shepaw pouch read')));
         expect(desc, isNot(contains('[implicit]')));
       });

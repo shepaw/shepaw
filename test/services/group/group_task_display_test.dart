@@ -52,15 +52,15 @@ void main() {
             agentName: 'Writer',
             taskStatus: GroupTaskMemberResult.statusDone,
             artifactUris: [
-              'pouch://runtime/0123456789abcdef/owner/ch/artifacts/t/game.py',
+              'pouch://runtime/owner/ch/artifacts/t/game.py',
             ],
           ),
         ],
       );
       final archive = '''
 # 任务卷宗 orch-1
-- pouch://workspaces/0123456789abcdef/group_x/shared/tasks/orch-1/archive.md
-- pouch://runtime/0123456789abcdef/owner/ch/artifacts/t/readme.md
+- pouch://workspaces/group_x/shared/tasks/orch-1/archive.md
+- pouch://runtime/owner/ch/artifacts/t/readme.md
 ''';
       final uris = GroupTaskDisplay.artifactUris(
         results: results,
@@ -69,8 +69,8 @@ void main() {
       expect(
         uris,
         [
-          'pouch://runtime/0123456789abcdef/owner/ch/artifacts/t/game.py',
-          'pouch://runtime/0123456789abcdef/owner/ch/artifacts/t/readme.md',
+          'pouch://runtime/owner/ch/artifacts/t/game.py',
+          'pouch://runtime/owner/ch/artifacts/t/readme.md',
         ],
       );
     });
@@ -93,7 +93,7 @@ void main() {
 
     test('dedupes the same uri from results and archive', () {
       const uri =
-          'pouch://runtime/0123456789abcdef/owner/ch/artifacts/t/out.md';
+          'pouch://runtime/owner/ch/artifacts/t/out.md';
       final results = GroupTaskResults(
         orchestrationId: 'orch-1',
         members: [
@@ -116,7 +116,7 @@ void main() {
     test('uses the filename segment', () {
       expect(
         GroupTaskDisplay.artifactLabel(
-          'pouch://runtime/0123456789abcdef/owner/ch/artifacts/t/game.py',
+          'pouch://runtime/owner/ch/artifacts/t/game.py',
         ),
         'game.py',
       );

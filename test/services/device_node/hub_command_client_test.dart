@@ -4,7 +4,7 @@ import 'package:shepaw/services/device_node/hub_command_client.dart';
 void main() {
   test('unreachable hub stays read only after arguments validate', () {
     final result = HubCommandClient().call('pouch.read', {
-      'uri': 'pouch://files/0123456789abcdef/a.md',
+      'uri': 'pouch://files/a.md',
     });
     expect(result.ok, isFalse);
     expect(result.readOnly, isTrue);

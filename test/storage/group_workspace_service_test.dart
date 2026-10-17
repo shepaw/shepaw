@@ -205,7 +205,7 @@ void main() {
       );
       // dispatch 文件可经 URI 读回（成员可见性路径）。
       final bytes = await StoreUriReader.instance.read(
-        'pouch://workspaces/${(await ws.loadMeta('group_test3'))!.homeDevice}/'
+        'pouch://workspaces/'
         'group_test3/shared/orchestration/group_session1/'
         'round-0000/dispatch.json',
       );
@@ -242,7 +242,7 @@ void main() {
       // 可经 URI 读回（补零 6 位序号）
       final home = (await ws.loadMeta('group_test4'))!.homeDevice;
       final bytes = await StoreUriReader.instance.read(
-        'pouch://workspaces/$home/group_test4/shared/orchestration/'
+        'pouch://workspaces/group_test4/shared/orchestration/'
         'session_event/events/000002.json',
       );
       final json = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
@@ -271,7 +271,7 @@ void main() {
         ],
       );
       final meta = await ws.loadMeta('group_perm');
-      final root = 'pouch://workspaces/${meta!.homeDevice}/group_perm';
+      final root = 'pouch://workspaces/group_perm';
       const member = 'agent-member';
       const stranger = 'agent-stranger';
 
@@ -334,7 +334,7 @@ void main() {
       expect(utf8.decode(latestBytes), '任务 B 结论：修复了调度 bug。');
 
       final sessionABytes = await StoreUriReader.instance.read(
-        'pouch://workspaces/${(await ws.loadMeta('group_mem'))!.homeDevice}/'
+        'pouch://workspaces/'
         'group_mem/shared/memory/group_session_a.md',
       );
       expect(utf8.decode(sessionABytes), '任务 A 结论：完成基础架构。');

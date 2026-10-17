@@ -9,7 +9,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   const surface = Size(400, 800);
-  const uri = 'pouch://workspaces/aaaaaaaaaaaaaaaa/group_x/snake-game.html';
+  const uri = 'pouch://workspaces/group_x/snake-game.html';
 
   Message textMessage(String content) {
     return Message(

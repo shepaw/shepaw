@@ -17,7 +17,7 @@ void main() {
         bytes: Uint8List.fromList([1, 2, 3, 4]),
         semanticType: 'document',
         extraMetadata: {
-          'pouch_uri': 'pouch://files/0123456789abcdef/docs/note.txt',
+          'pouch_uri': 'pouch://files/docs/note.txt',
         },
       );
       final msg = LocalLLMHelpers.buildUserMessageContent(
@@ -30,7 +30,7 @@ void main() {
       // per-message [implicit] block anymore.
       expect(text, contains('当前储物袋作用域'));
       expect(text, contains('shepaw pouch read'));
-      expect(text, contains('pouch://files/0123456789abcdef/docs/note.txt'));
+      expect(text, contains('pouch://files/docs/note.txt'));
       expect(text, contains('summarize this'));
       expect(text, isNot(contains('[implicit]')));
     });
@@ -43,7 +43,7 @@ void main() {
         content: '📎 File: note.txt',
         timestampMs: 0,
         metadata: {
-          'pouch_uri': 'pouch://files/aaaaaaaaaaaaaaaa/note.txt',
+          'pouch_uri': 'pouch://files/note.txt',
           'name': 'note.txt',
         },
       );
@@ -60,11 +60,11 @@ void main() {
         id: 'msg-2',
         from: MessageFrom(id: 'u', type: 'user', name: 'U'),
         type: MessageType.text,
-        content: 'read pouch://files/aaaaaaaaaaaaaaaa/a.txt please',
+        content: 'read pouch://files/a.txt please',
         timestampMs: 0,
       );
       final enriched = LocalLLMHelpers.enrichHistoryContent(m, m.content);
-      expect(enriched, contains('pouch://files/aaaaaaaaaaaaaaaa/a.txt'));
+      expect(enriched, contains('pouch://files/a.txt'));
       expect(enriched, isNot(contains('[implicit]')));
       expect(enriched, isNot(contains('chat message get')));
     });

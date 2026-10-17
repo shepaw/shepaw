@@ -10,7 +10,7 @@ void main() {
     );
     final md = card.toStableMarkdown();
     expect(md, contains('## 当前储物袋作用域'));
-    expect(md, contains('pouch://cognition/aaaaaaaaaaaaaaaa/'));
+    expect(md, contains('pouch://cognition/'));
     expect(md, contains('已内嵌全文'));
     expect(md, contains('不要'));
     expect(md, contains('agents.memory-write --id agent_xxx'));
@@ -26,8 +26,8 @@ void main() {
     expect(md, contains('记忆补充'));
     expect(md, contains('改磁盘即改袋'));
     expect(md, contains('旧分区 `artifacts` 不要再写'));
-    expect(md, contains('pouch://tools/aaaaaaaaaaaaaaaa/'));
-    expect(md, contains('pouch://tools/aaaaaaaaaaaaaaaa/agents/agent_xxx/'));
+    expect(md, contains('pouch://tools/'));
+    expect(md, contains('pouch://tools/agents/agent_xxx/'));
     expect(md, isNot(contains('产物/runtime')));
   });
 
@@ -86,22 +86,22 @@ void main() {
 
   test('dedupeUris folds ancestor roots under file URIs', () {
     final out = ScopeCard.dedupeUris([
-      'pouch://runtime/aaaaaaaaaaaaaaaa/agent1/',
-      'pouch://runtime/aaaaaaaaaaaaaaaa/agent1/ch/artifacts/t/a.md',
-      'pouch://cognition/aaaaaaaaaaaaaaaa/agent1/soul.md',
+      'pouch://runtime/agent1/',
+      'pouch://runtime/agent1/ch/artifacts/t/a.md',
+      'pouch://cognition/agent1/soul.md',
     ]);
     expect(
       out,
-      contains('pouch://runtime/aaaaaaaaaaaaaaaa/agent1/ch/artifacts/t/a.md'),
+      contains('pouch://runtime/agent1/ch/artifacts/t/a.md'),
     );
     expect(
       out,
-      contains('pouch://cognition/aaaaaaaaaaaaaaaa/agent1/soul.md'),
+      contains('pouch://cognition/agent1/soul.md'),
     );
     expect(
       out.any((u) =>
           ScopeCard.normalizeUriKey(u) ==
-          'pouch://runtime/aaaaaaaaaaaaaaaa/agent1/'),
+          'pouch://runtime/agent1/'),
       isFalse,
     );
   });
@@ -123,7 +123,7 @@ void main() {
 
   test('volatileUrisMarkdown hub surface uses hub.cli.execute', () {
     final md = ScopeCard.volatileUrisMarkdown(
-      ['pouch://files/0123456789abcdef/a.txt'],
+      ['pouch://files/a.txt'],
       cliSurface: ScopeCardCliSurface.hubExecuteCli,
     );
     expect(md, contains('hub.cli.execute'));
@@ -164,7 +164,7 @@ void main() {
     expect(md, contains('玉简'));
     expect(md, contains('转到配对 App'));
     expect(md, contains('不要 `hub.cli.execute`'));
-    expect(md, contains('pouch://tools/cccccccccccccccc/skills/shepaw-system/SKILL.md'));
+    expect(md, contains('pouch://tools/skills/shepaw-system/SKILL.md'));
     expect(md, contains('shepaw pouch read'));
     expect(md, contains('勾选是提交'));
   });
@@ -175,7 +175,7 @@ void main() {
       deviceId: 'dddddddddddddddd',
       cliSurface: ScopeCardCliSurface.hubStoreCli,
       workspaceUris: const [
-        'pouch://workspaces/dddddddddddddddd/Users/me/proj/',
+        'pouch://workspaces/Users/me/proj/',
       ],
     ).toStableMarkdown();
     expect(md, contains('shepaw pouch write'));
@@ -188,23 +188,13 @@ void main() {
     expect(md, isNot(contains('session create')));
   });
 
-  test('deviceIdFromStoreUri reads the device segment', () {
-    expect(
-      ScopeCard.deviceIdFromStoreUri(
-        'pouch://workspaces/0123456789abcdef/Users/me/proj/',
-      ),
-      '0123456789abcdef',
-    );
-    expect(ScopeCard.deviceIdFromStoreUri('not-a-uri'), isNull);
-  });
-
   test('volatileUrisMarkdown lists folded URIs once', () {
     final md = ScopeCard.volatileUrisMarkdown([
-      'pouch://files/0123456789abcdef/a.txt',
-      'pouch://files/0123456789abcdef/a.txt@deadbeef',
+      'pouch://files/a.txt',
+      'pouch://files/a.txt@deadbeef',
     ]);
     expect(md, contains('当前储物袋作用域 · 本轮'));
-    expect(md, contains('pouch://files/0123456789abcdef/a.txt'));
+    expect(md, contains('pouch://files/a.txt'));
     expect('[implicit]'.allMatches(md).length, 0);
   });
 }

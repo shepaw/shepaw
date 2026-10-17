@@ -33,7 +33,7 @@ void main() {
     );
     expect(
       PouchSqlite.dbUri(PouchSqlite.mainDb),
-      'pouch://app/shepaw/sqlite/shepaw.db',
+      'pouch://app/sqlite/shepaw.db',
     );
 
     await File(path).writeAsString('fresh');
@@ -42,14 +42,9 @@ void main() {
     expect(leftover.existsSync(), isTrue);
   });
 
-  test('app 分区接受 shepaw，其它分区不接受', () {
-    final parsed = parseStoreUri('pouch://app/shepaw/sqlite/shepaw.db');
+  test('app 分区地址不带设备段', () {
+    final parsed = parseStoreUri('pouch://app/sqlite/shepaw.db');
     expect(parsed.space, StoreSpace.app);
-    expect(parsed.device, StoreSpace.appDevice);
     expect(parsed.path, 'sqlite/shepaw.db');
-    expect(
-      () => parseStoreUri('pouch://files/shepaw/a.txt'),
-      throwsFormatException,
-    );
   });
 }

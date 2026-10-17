@@ -399,51 +399,42 @@ void main() {
   });
 
   group('store URI 与版本引用（spec §1.5，v4.2）', () {
-    test('parseStoreUri 基本形态', () {
-      final u = parseStoreUri(
-          'pouch://artifacts/aaaaaaaaaaaaaaaa/task-1/out.txt@v3');
+    test('parseStoreUri 基本形态（地址不带设备段）', () {
+      final u = parseStoreUri('pouch://artifacts/task-1/out.txt@v3');
       expect(u.space, 'artifacts');
-      expect(u.device, 'aaaaaaaaaaaaaaaa');
       expect(u.path, 'task-1/out.txt');
       expect(u.ref.kind, StoreUriRefKind.seq);
       expect(u.ref.value, 3);
       expect(
-          storeUriWithRef('artifacts', 'aaaaaaaaaaaaaaaa', 'a.txt',
-              const StoreUriRef.seq(2)),
-          'pouch://artifacts/aaaaaaaaaaaaaaaa/a.txt@v2');
+          storeUriWithRef('artifacts', 'a.txt', const StoreUriRef.seq(2)),
+          'pouch://artifacts/a.txt@v2');
       expect(
         formatStoreMarkdownLink(
           'report.md',
-          'pouch://runtime/aaaaaaaaaaaaaaaa/a/b/artifacts/t/report.md',
+          'pouch://runtime/a/b/artifacts/t/report.md',
         ),
-        '[report.md](pouch://runtime/aaaaaaaaaaaaaaaa/a/b/artifacts/t/report.md)',
+        '[report.md](pouch://runtime/a/b/artifacts/t/report.md)',
       );
       // 文件名里的 @ 不误伤（后缀非引用形态）。
-      expect(
-          parseStoreUri('pouch://files/aaaaaaaaaaaaaaaa/contact@home.txt').path,
+      expect(parseStoreUri('pouch://files/contact@home.txt').path,
           'contact@home.txt');
-      final root = parseStoreUri(
-          'pouch://workspaces/aaaaaaaaaaaaaaaa',
-          allowEmptyPath: true);
+      final root = parseStoreUri('pouch://workspaces', allowEmptyPath: true);
       expect(root.space, 'workspaces');
-      expect(root.device, 'aaaaaaaaaaaaaaaa');
       expect(root.path, isEmpty);
       expect(
-        () => parseStoreUri('pouch://workspaces/aaaaaaaaaaaaaaaa'),
+        () => parseStoreUri('pouch://workspaces'),
         throwsFormatException,
       );
     });
 
     test('parseStoreUri 解码 Markdown 百分号编码的中文路径', () {
       const encoded =
-          'pouch://artifacts/352821253aefdfba/general/%E6%95%B0%E7%8B%AC%E5%B0%8F%E6%B8%B8%E6%88%8F%E8%AE%BE%E8%AE%A1%E6%96%87%E6%A1%A3.md';
-      const raw =
-          'pouch://artifacts/352821253aefdfba/general/数独小游戏设计文档.md';
+          'pouch://artifacts/general/%E6%95%B0%E7%8B%AC%E5%B0%8F%E6%B8%B8%E6%88%8F%E8%AE%BE%E8%AE%A1%E6%96%87%E6%A1%A3.md';
+      const raw = 'pouch://artifacts/general/数独小游戏设计文档.md';
       final fromEncoded = parseStoreUri(encoded);
       final fromRaw = parseStoreUri(raw);
       expect(fromEncoded.path, 'general/数独小游戏设计文档.md');
       expect(fromRaw.path, 'general/数独小游戏设计文档.md');
-      expect(fromEncoded.device, '352821253aefdfba');
     });
 
     test('version_cases fixture（共享契约，parse 层）', () {
@@ -459,7 +450,6 @@ void main() {
               reason: '$name should not parse');
           if (expected == 'ok') {
             expect(u.space, c['space'], reason: name);
-            expect(u.device, c['device'], reason: name);
             expect(u.path, c['path'], reason: name);
             final kind = c['ref_kind'] as String;
             if (kind == 'latest') {

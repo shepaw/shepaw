@@ -12,11 +12,10 @@ import 'store_service.dart';
 import 'store_uri_reader.dart';
 
 /// 产物 URI：
-/// - 新：`pouch://runtime/<device>/<owner>/<channel>/artifacts/<task>/<file>`
-/// - legacy：`pouch://artifacts/<device>/<task>/<file>`
+/// - 新：`pouch://runtime/<owner>/<channel>/artifacts/<task>/<file>`
+/// - legacy：`pouch://artifacts/<task>/<file>`
 class ArtifactUri {
   ArtifactUri({
-    required this.deviceId,
     required this.taskId,
     required this.filename,
     this.ownerId,
@@ -24,7 +23,6 @@ class ArtifactUri {
     this.space = StoreSpace.runtime,
   });
 
-  final String deviceId;
   final String taskId;
   final String filename;
   final String? ownerId;
@@ -40,9 +38,8 @@ class ArtifactUri {
     if (!uri.startsWith('$scheme://')) return null;
     final rest = uri.substring(scheme.length + 3);
     final segments = rest.split('/');
-    if (segments.length < 3) return null;
+    if (segments.length < 2) return null;
     final space = segments[0];
-    if (!isValidDeviceId(segments[1])) return null;
 
     String decode(String s) {
       try {
@@ -54,22 +51,21 @@ class ArtifactUri {
 
     if (space == StoreSpace.artifacts) {
       if (segments.length < 3) return null;
-      final filename = segments.sublist(3).map(decode).join('/');
+      final filename = segments.sublist(2).map(decode).join('/');
       if (filename.isEmpty || filename.contains('..')) return null;
       return ArtifactUri(
-        deviceId: segments[1],
-        taskId: decode(segments[2]),
+        taskId: decode(segments[1]),
         filename: filename,
         space: StoreSpace.artifacts,
       );
     }
 
     if (space == StoreSpace.runtime) {
-      // runtime/<device>/<owner>/<channel>/[wf_scope/]artifacts/<task>/<file...>
+      // runtime/<owner>/<channel>/[wf_scope/]artifacts/<task>/<file...>
       final artIdx = segments.indexOf('artifacts');
-      if (artIdx < 4 || artIdx + 2 >= segments.length) return null;
+      if (artIdx < 3 || artIdx + 2 >= segments.length) return null;
       final channelParts =
-          segments.sublist(3, artIdx).map(decode).toList(growable: false);
+          segments.sublist(2, artIdx).map(decode).toList(growable: false);
       if (channelParts.isEmpty) return null;
       // 多段时还原为可再拆的 scoped id：channel__wf_…__step_…
       final channelId = channelParts.length == 1
@@ -78,8 +74,7 @@ class ArtifactUri {
       final filename = segments.sublist(artIdx + 2).map(decode).join('/');
       if (filename.isEmpty || filename.contains('..')) return null;
       return ArtifactUri(
-        deviceId: segments[1],
-        ownerId: decode(segments[2]),
+        ownerId: decode(segments[1]),
         channelId: channelId,
         taskId: decode(segments[artIdx + 1]),
         filename: filename,
@@ -102,9 +97,9 @@ class ArtifactUri {
   @override
   String toString() {
     if (isLegacy) {
-      return '$scheme://artifacts/$deviceId/$taskId/$filename';
+      return '$scheme://artifacts/$taskId/$filename';
     }
-    return '$scheme://runtime/$deviceId/$storePath';
+    return '$scheme://runtime/$storePath';
   }
 }
 
@@ -135,7 +130,7 @@ class ArtifactService {
   final _log = LoggerService();
 
   static final _referencePattern = RegExp(
-      r'\[([^\]]+)\]\((pouch://(?:artifacts|runtime)/[0-9a-f]{16}/[^)]+)\)(?:\s*—\s*([^\n]+))?');
+      r'\[([^\]]+)\]\((pouch://(?:artifacts|runtime)/[^)]+)\)(?:\s*—\s*([^\n]+))?');
 
   /// 产物元数据 sidecar 后缀：`artifacts/<task>/<file>.meta.json`。
   static const metaSuffix = '.meta.json';
@@ -171,7 +166,6 @@ class ArtifactService {
               : taskId),
     );
     final uri = ArtifactUri(
-      deviceId: deviceId,
       taskId: RuntimePaths.sanitizeSegment(taskId),
       filename: safeName,
       ownerId: owner,

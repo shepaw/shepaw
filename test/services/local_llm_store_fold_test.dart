@@ -5,7 +5,7 @@ import 'package:shepaw/services/messaging/message_implicit_prompt.dart';
 
 void main() {
   test('enrichHistoryContent strips [implicit] store tutorials', () {
-    const uri = 'pouch://files/0123456789abcdef/docs/a.txt';
+    const uri = 'pouch://files/docs/a.txt';
     final hint = MessageImplicitPrompt.renderStoreReadHint({uri})!;
     final m = Message(
       id: 'm1',
@@ -22,7 +22,7 @@ void main() {
 
   test('buildUserMessageContent folds this-turn URIs into Scope Card volatile',
       () {
-    const uri = 'pouch://files/0123456789abcdef/docs/note.txt';
+    const uri = 'pouch://files/docs/note.txt';
     final msg = LocalLLMHelpers.buildUserMessageContent(
       'please read $uri',
       null,
@@ -37,7 +37,7 @@ void main() {
 
   test('follow-up without this-turn pouch:// does not re-append the URI card',
       () {
-    const uri = 'pouch://files/0123456789abcdef/docs/note.txt';
+    const uri = 'pouch://files/docs/note.txt';
     final history = [
       Message(
         id: 'h1',

@@ -1511,7 +1511,7 @@ class LocalStore {
           }
           scored.add((
             hit: <String, dynamic>{
-              'uri': 'pouch://$sp/$dev/${e.path}',
+              'uri': 'pouch://$sp/${e.path}',
               'space': sp,
               'device': dev,
               'path': e.path,

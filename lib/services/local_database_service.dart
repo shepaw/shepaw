@@ -1159,7 +1159,7 @@ class LocalDatabaseService {
     await AgentMemoryStoreService.closeAll();
     await AgentMemoryStoreService.deleteAllAgentMemories();
 
-    // 2. 删除核心库。这些文件都在 pouch://app/shepaw/sqlite/。
+    // 2. 删除核心库。这些文件都在 pouch://app/sqlite/。
     await PouchSqlite.delete(PouchSqlite.mainDb);
     await PouchSqlite.delete(PouchSqlite.toolResultsDb);
     for (final name in const [

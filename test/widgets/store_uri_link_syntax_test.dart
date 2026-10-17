@@ -6,7 +6,7 @@ import 'package:shepaw/widgets/store_uri_link_syntax.dart';
 
 /// 聊天正文里裸 `pouch://` URI 的自动链接化。
 void main() {
-  const uri = 'pouch://workspaces/aaaaaaaaaaaaaaaa/group_x/snake-game.html';
+  const uri = 'pouch://workspaces/group_x/snake-game.html';
 
   List<({String href, String text})> parseLinks(String source) {
     final doc = md.Document(
@@ -73,7 +73,7 @@ void main() {
     });
 
     test('目录 URI（无文件末段）仍可链接', () {
-      const dirUri = 'pouch://workspaces/aaaaaaaaaaaaaaaa/group_x/notes';
+      const dirUri = 'pouch://workspaces/group_x/notes';
       final links = parseLinks(dirUri);
       expect(links, hasLength(1));
       expect(links.single.href, dirUri);
@@ -110,12 +110,12 @@ void main() {
       expect(parseLinks('pouch://<space>/<device>/<path>'), isEmpty);
     });
 
-    test('device 非 16 位 hex 不链接', () {
-      expect(parseLinks('pouch://files/abc/readme.md'), isEmpty);
+    test('缺路径不链接（地址不带设备段后没有 device 可校验）', () {
+      expect(parseLinks('pouch://files'), isEmpty);
     });
 
     test('路径为空不链接', () {
-      expect(parseLinks('pouch://workspaces/aaaaaaaaaaaaaaaa/'), isEmpty);
+      expect(parseLinks('pouch://workspaces/'), isEmpty);
     });
   });
 }

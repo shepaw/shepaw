@@ -70,7 +70,7 @@ void main() {
         stored = Uint8List.fromList(bytes);
         expect(ownerId, 'agent-a');
         expect(channelId, 'dm-1');
-        return 'pouch://runtime/0123456789abcdef/agent-a/dm-1/attachments/abc';
+        return 'pouch://runtime/agent-a/dm-1/attachments/abc';
       },
     );
     expect(done.error, isNull);
@@ -86,7 +86,7 @@ void main() {
           'size': 5,
           'type': 'image',
           'extra': {
-            'pouch_uri': 'pouch://runtime/ffffffffffffffff/other/nope',
+            'pouch_uri': 'pouch://runtime/other/nope',
             'duration_ms': 12,
           },
         },
@@ -94,7 +94,7 @@ void main() {
       read: (uri) async {
         expect(
           uri,
-          'pouch://runtime/0123456789abcdef/agent-a/dm-1/attachments/abc',
+          'pouch://runtime/agent-a/dm-1/attachments/abc',
         );
         return stored;
       },
@@ -103,7 +103,7 @@ void main() {
     expect(taken!.single.bytes, [1, 2, 3, 4, 5]);
     expect(
       taken.single.extraMetadata!['pouch_uri'],
-      'pouch://runtime/0123456789abcdef/agent-a/dm-1/attachments/abc',
+      'pouch://runtime/agent-a/dm-1/attachments/abc',
     );
     expect(taken.single.extraMetadata!['duration_ms'], 12);
 
@@ -185,7 +185,7 @@ void main() {
             'ok': true,
             'stage': 'end',
             'pouch_uri':
-                'pouch://runtime/0123456789abcdef/agent-a/dm-1/attachments/abc',
+                'pouch://runtime/agent-a/dm-1/attachments/abc',
           });
         }
         return true;
@@ -199,7 +199,7 @@ void main() {
       bytes: payload,
       semanticType: 'document',
       extraMetadata: {
-        'pouch_uri': 'pouch://runtime/ffffffffffffffff/client/local',
+        'pouch_uri': 'pouch://runtime/client/local',
       },
     );
     final fileId = await client.push(

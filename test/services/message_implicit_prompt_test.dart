@@ -9,14 +9,14 @@ void main() {
   group('MessageImplicitPrompt', () {
     test('extractStoreUris from markdown and plain text', () {
       const text =
-          'See [a.txt](pouch://files/0123456789abcdef/docs/a.txt) and '
-          'pouch://artifacts/fedcba9876543210/t/b.md.';
+          'See [a.txt](pouch://files/docs/a.txt) and '
+          'pouch://artifacts/t/b.md.';
       final uris = MessageImplicitPrompt.extractStoreUris(text);
       expect(
         uris,
         {
-          'pouch://files/0123456789abcdef/docs/a.txt',
-          'pouch://artifacts/fedcba9876543210/t/b.md',
+          'pouch://files/docs/a.txt',
+          'pouch://artifacts/t/b.md',
         },
       );
     });
@@ -24,12 +24,10 @@ void main() {
     test('extractStoreUris ignores placeholders and doc templates', () {
       const text =
           'Talking about the pouch://xxx protocol, the '
-          'pouch://<space>/<device>/<path> shape, a malformed '
-          'pouch://files/notahexdevice/x.txt and a pathless '
-          'pouch://files/0123456789abcdef — but do read '
-          'pouch://files/0123456789abcdef/docs/a.txt please';
+          'pouch://<space>/<path> shape, a pathless pouch://files/ and '
+          'pouch://files — but do read pouch://files/docs/a.txt please';
       final uris = MessageImplicitPrompt.extractStoreUris(text);
-      expect(uris, {'pouch://files/0123456789abcdef/docs/a.txt'});
+      expect(uris, {'pouch://files/docs/a.txt'});
     });
 
     test('forUserText null when message only discusses the protocol', () {
@@ -53,7 +51,7 @@ void main() {
         bytes: Uint8List.fromList([1, 2, 3, 4]),
         semanticType: 'document',
         extraMetadata: {
-          'pouch_uri': 'pouch://files/0123456789abcdef/docs/note.txt',
+          'pouch_uri': 'pouch://files/docs/note.txt',
         },
       );
       final hint = MessageImplicitPrompt.forAttachments([att]);
@@ -61,12 +59,12 @@ void main() {
       expect(hint!, contains('[implicit]'));
       expect(hint, contains('[/implicit]'));
       expect(hint, contains('shepaw pouch read'));
-      expect(hint, contains('pouch://files/0123456789abcdef/docs/note.txt'));
+      expect(hint, contains('pouch://files/docs/note.txt'));
       expect(hint, contains('not OS paths'));
     });
 
     test('forCurrentTurn dedupes uri from text and attachment', () {
-      const uri = 'pouch://files/0123456789abcdef/docs/note.txt';
+      const uri = 'pouch://files/docs/note.txt';
       final att = AttachmentData(
         fileName: 'note.txt',
         mimeType: 'text/plain',
@@ -90,21 +88,21 @@ void main() {
         id: 'm1',
         from: MessageFrom(id: 'u', type: 'user', name: 'U'),
         type: MessageType.file,
-        content: '📎 File: x\n[x](pouch://files/aaaaaaaaaaaaaaaa/x.txt)',
+        content: '📎 File: x\n[x](pouch://files/x.txt)',
         timestampMs: 0,
         metadata: {
-          'pouch_uri': 'pouch://files/aaaaaaaaaaaaaaaa/x.txt',
+          'pouch_uri': 'pouch://files/x.txt',
           'name': 'x.txt',
         },
       );
       final hint = MessageImplicitPrompt.forHistoryMessage(m);
-      expect(hint, contains('pouch://files/aaaaaaaaaaaaaaaa/x.txt'));
+      expect(hint, contains('pouch://files/x.txt'));
       expect(hint, contains('[implicit]'));
     });
 
     test('metadataForTurn / fromMetadata / forHistoryMessage prefer DB field',
         () {
-      const uri = 'pouch://files/0123456789abcdef/docs/note.txt';
+      const uri = 'pouch://files/docs/note.txt';
       final meta = MessageImplicitPrompt.metadataForTurn(
         text: 'see $uri',
       );
@@ -147,7 +145,7 @@ void main() {
         bytes: Uint8List(0),
         semanticType: 'document',
         extraMetadata: {
-          'pouch_uri': 'pouch://files/0123456789abcdef/docs/note.txt',
+          'pouch_uri': 'pouch://files/docs/note.txt',
         },
       );
       final wire = MessageImplicitPrompt.forPeerWireMessage(
@@ -157,12 +155,12 @@ void main() {
       expect(wire, startsWith('please summarize'));
       expect(wire, contains('[implicit]'));
       expect(wire, contains('Nexus Pouch'));
-      expect(wire, contains('pouch://files/0123456789abcdef/docs/note.txt'));
+      expect(wire, contains('pouch://files/docs/note.txt'));
     });
 
     test('forCurrentTurn skips when wire already has implicit (no double inject)',
         () {
-      const uri = 'pouch://files/0123456789abcdef/docs/note.txt';
+      const uri = 'pouch://files/docs/note.txt';
       final att = AttachmentData(
         fileName: 'note.txt',
         mimeType: 'text/plain',
@@ -191,17 +189,17 @@ void main() {
     test('urisFromMessage reads metadata and content', () {
       final m = Message(
         id: 'm1',
-        content: 'see pouch://files/0123456789abcdef/docs/b.txt',
+        content: 'see pouch://files/docs/b.txt',
         type: MessageType.text,
         from: MessageFrom(id: 'u', type: 'user', name: 'U'),
         timestampMs: 1,
         metadata: {
-          'pouch_uri': 'pouch://files/0123456789abcdef/docs/a.txt',
+          'pouch_uri': 'pouch://files/docs/a.txt',
         },
       );
       final uris = MessageImplicitPrompt.urisFromMessage(m);
-      expect(uris, contains('pouch://files/0123456789abcdef/docs/a.txt'));
-      expect(uris, contains('pouch://files/0123456789abcdef/docs/b.txt'));
+      expect(uris, contains('pouch://files/docs/a.txt'));
+      expect(uris, contains('pouch://files/docs/b.txt'));
     });
 
     test('stripImplicitBlocks removes hint for UI persistence', () {
@@ -212,7 +210,7 @@ void main() {
         bytes: Uint8List(0),
         semanticType: 'document',
         extraMetadata: {
-          'pouch_uri': 'pouch://files/0123456789abcdef/docs/note.txt',
+          'pouch_uri': 'pouch://files/docs/note.txt',
         },
       );
       final wire = MessageImplicitPrompt.forPeerWireMessage(

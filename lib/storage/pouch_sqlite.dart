@@ -5,7 +5,7 @@ import 'package:path/path.dart' as p;
 import '../services/app_paths.dart';
 import 'store_protocol.dart';
 
-/// 应用数据在储物袋里的位置：`pouch://app/shepaw/...`。
+/// 应用数据在储物袋里的位置：`pouch://app/...`。
 ///
 /// 磁盘是 `<store>/shepaw/app/<path>`。SQLite 可以直接打开这个文件。
 /// 不引用 [StoreService]，避免和主库服务绕成循环依赖。
@@ -17,7 +17,7 @@ class PouchSqlite {
   static const sqliteDir = 'sqlite';
 
   static String uri(String rel) =>
-      'pouch://${StoreSpace.app}/${StoreSpace.appDevice}/$rel';
+      'pouch://${StoreSpace.app}/$rel';
 
   static String dbUri(String name) => uri('$sqliteDir/$name');
 

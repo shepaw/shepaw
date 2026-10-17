@@ -109,12 +109,8 @@ void main() {
     });
 
     test('uri 组装', () {
-      final uri = RuntimePaths.uri(
-        deviceId: '0123456789abcdef',
-        relPath: 'a1/soul.md',
-      );
-      expect(
-          uri, startsWith('pouch://${StoreSpace.runtime}/0123456789abcdef/'));
+      final uri = RuntimePaths.uri(relPath: 'a1/soul.md');
+      expect(uri, startsWith('pouch://${StoreSpace.runtime}/'));
       expect(uri, contains('a1/soul.md'));
     });
   });

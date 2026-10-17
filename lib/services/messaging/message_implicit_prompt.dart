@@ -28,7 +28,7 @@ class MessageImplicitPrompt {
   /// always mints this shape (see ArtifactService / DeviceIdentity).
   /// Spaces are intentionally not enumerated so new spaces need no change.
   static final RegExp storeUriPattern = RegExp(
-    r'pouch://[a-z]+/[0-9a-f]{16}/[^\s\]\)<>]+',
+    r'pouch://[a-z]+/[^\s\]\)<>]+',
   );
 
   static final RegExp _blockPattern = RegExp(

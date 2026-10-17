@@ -548,7 +548,7 @@ Future<List<Map<String, dynamic>>> mapArtifactMetaHits(
     out.add(<String, dynamic>{
       ...hit,
       'path': artifactPath,
-      'uri': 'pouch://$space/$device/$artifactPath',
+      'uri': 'pouch://$space/$artifactPath',
       'via': 'meta',
     });
   }
@@ -590,7 +590,7 @@ class StoreSearchCommand extends CliCommand {
   String get usage => 'shepaw pouch search --query report --space files\n'
       'shepaw pouch search --task task-41\n'
       'shepaw pouch search --desc "Q2 销售报告"\n'
-      'shepaw pouch search --query unique-token --uri pouch://runtime/<device>/<agent-id>/';
+      'shepaw pouch search --query unique-token --uri pouch://runtime/<agent-id>/';
 
   @override
   Future<Map<String, dynamic>> execute(Map<String, String> flags) async {

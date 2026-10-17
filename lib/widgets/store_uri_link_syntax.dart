@@ -17,7 +17,7 @@ import '../storage/store_protocol.dart';
 class StoreUriLinkSyntax extends md.InlineSyntax {
   StoreUriLinkSyntax() : super(_pattern);
 
-  static const _pattern = r'pouch://[a-z][a-z0-9-]*/[0-9a-f]{16}/'
+  static const _pattern = r'pouch://[a-z][a-z0-9-]*/'
       r'[^\s<>\[\](){}"`，。、；：！？…]+';
 
   /// 句末标点（英文句点也在内：保护 `snake-game.html。` 这类正文场景）。

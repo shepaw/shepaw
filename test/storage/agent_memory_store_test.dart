@@ -51,8 +51,8 @@ void main() {
     expect(MemoryPaths.agentRoot('a/b'), 'a_b');
     expect(MemoryPaths.entryJson('agent1', 3), 'agent1/entries/3.json');
     expect(
-      MemoryPaths.uri(deviceId: 'aaaaaaaaaaaaaaaa', relPath: 'agent1/meta.json'),
-      'pouch://cognition/aaaaaaaaaaaaaaaa/agent1/meta.json',
+      MemoryPaths.uri(relPath: 'agent1/meta.json'),
+      'pouch://cognition/agent1/meta.json',
     );
   });
 }

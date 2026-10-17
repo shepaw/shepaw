@@ -122,13 +122,13 @@ void main() {
         await File(p.join(tmp.path, dev, 'runtime', fresh)).exists(), isTrue);
   });
 
-  test('attachment refs only keep this device runtime paths', () {
-    final refs = referencedRuntimeAttachmentPaths('aaaaaaaaaaaaaaaa', [
-      'see pouch://runtime/aaaaaaaaaaaaaaaa/agent/ch/attachments/abc',
-      'pouch://runtime/bbbbbbbbbbbbbbbb/agent/ch/attachments/other',
-      'pouch://files/aaaaaaaaaaaaaaaa/resume.md',
+  test('attachment refs only keep runtime attachment paths', () {
+    final refs = referencedRuntimeAttachmentPaths([
+      'see pouch://runtime/agent/ch/attachments/abc',
+      'pouch://runtime/agent/ch/attachments/other',
+      'pouch://files/resume.md',
     ]);
-    expect(refs, {'agent/ch/attachments/abc'});
+    expect(refs, {'agent/ch/attachments/abc', 'agent/ch/attachments/other'});
   });
 
   test('agent quota attention starts at 80 percent', () {
