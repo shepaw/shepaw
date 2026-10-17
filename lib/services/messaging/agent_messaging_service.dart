@@ -892,11 +892,17 @@ class AgentMessagingService {
         return agentResponse;
       }
 
-      if (agentResponse != null) {
+      final alreadyMirrored = _isAlreadyMirroredReply(agentResponse);
+      if (agentResponse != null && !alreadyMirrored) {
         LoggerService().info('Received agent response: ${agentResponse.id}', tag: 'AgentMessagingService');
         LoggerService().debug('Response content: ${agentResponse.content}', tag: 'AgentMessagingService');
         await _saveAgentResponse(agentResponse, agent.id, channelId);
         LoggerService().debug('Agent response saved to database', tag: 'AgentMessagingService');
+      } else if (alreadyMirrored) {
+        LoggerService().info(
+          'Peer reply already stored by host mirror — skipping a second insert',
+          tag: 'AgentMessagingService',
+        );
       } else {
         LoggerService().warning('No agent response received', tag: 'AgentMessagingService');
       }
@@ -969,6 +975,28 @@ class AgentMessagingService {
   // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
+
+  static const _alreadyMirroredKey = 'already_mirrored';
+
+  /// 回复已在库里。返回给调用方，避免再插一条，也不要让界面当成发送失败。
+  Message _alreadyMirroredReply(Message msg) {
+    final meta = Map<String, dynamic>.from(msg.metadata ?? {});
+    meta[_alreadyMirroredKey] = true;
+    return Message(
+      id: msg.id,
+      content: msg.content,
+      timestampMs: msg.timestampMs,
+      from: msg.from,
+      to: msg.to,
+      type: msg.type,
+      channelId: msg.channelId,
+      replyTo: msg.replyTo,
+      metadata: meta,
+    );
+  }
+
+  bool _isAlreadyMirroredReply(Message? msg) =>
+      msg?.metadata?[_alreadyMirroredKey] == true;
 
   /// Race guard for peer DM turns finalizing concurrently with a history sync.
   ///
@@ -1419,9 +1447,12 @@ class AgentMessagingService {
         replyTo: userMessage.id,
         metadata: meta.isEmpty ? null : meta,
       );
-      // A history sync may have mirrored this turn while it finalized —
-      // suppress (or de-quote) the local copy instead of duplicating it.
-      return _dedupeAgainstSyncedTranscript(finalMsg, effectiveChannelId);
+      // 主机 message.created / 历史同步可能已经把这一行写进库。
+      // 去重返回 null 表示不用再插，但回合是成功的，调用方不能把它当成没收到回复。
+      final toSave =
+          await _dedupeAgainstSyncedTranscript(finalMsg, effectiveChannelId);
+      if (toSave != null) return toSave;
+      return _alreadyMirroredReply(finalMsg);
     } catch (e) {
       await flushHelper.deletePartial();
       infLogPeer.endRound(traceId, stopReason: 'error');
