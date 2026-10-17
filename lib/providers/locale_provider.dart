@@ -6,21 +6,29 @@ class LocaleProvider extends ChangeNotifier {
   static const _prefKey = 'app_locale';
 
   Locale? _locale;
+  bool _ready = false;
 
   /// Current locale. null means follow system.
   Locale? get locale => _locale;
+
+  /// Saved preference has been read. Before this, the UI may still be on
+  /// the system language for one frame.
+  bool get ready => _ready;
 
   LocaleProvider() {
     _load();
   }
 
   Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final code = prefs.getString(_prefKey);
-    if (code != null) {
-      _locale = Locale(code);
-      notifyListeners();
-    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final code = prefs.getString(_prefKey);
+      if (code != null) {
+        _locale = Locale(code);
+      }
+    } catch (_) {}
+    _ready = true;
+    notifyListeners();
   }
 
   /// Set locale. Pass null to follow system.

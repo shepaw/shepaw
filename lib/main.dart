@@ -9,6 +9,7 @@ import 'l10n/app_localizations.dart';
 import 'services/app_paths.dart';
 import 'services/cli_bundle.dart';
 import 'services/cli_host.dart';
+import 'services/cli_language.dart';
 import 'services/desktop_window_auto_size.dart';
 import 'services/permission_service.dart';
 import 'services/logger_service.dart';
@@ -332,11 +333,20 @@ class _MyAppState extends State<MyApp> {
               theme: AppTheme.light,
               darkTheme: AppTheme.dark,
               themeMode: themeProvider.themeMode,
-              builder: (context, child) => WindowTitleSync(
-                child: PendingApprovalBanner(
-                  child: child ?? const SizedBox.shrink(),
-                ),
-              ),
+              builder: (context, child) {
+                if (localeProvider.ready) {
+                  final code =
+                      Localizations.maybeLocaleOf(context)?.languageCode;
+                  if (code != null) {
+                    unawaited(CliLanguage.sync(code));
+                  }
+                }
+                return WindowTitleSync(
+                  child: PendingApprovalBanner(
+                    child: child ?? const SizedBox.shrink(),
+                  ),
+                );
+              },
               home: const SplashScreen(),
               routes: {
                 '/setup': (context) => const PasswordSetupScreen(),

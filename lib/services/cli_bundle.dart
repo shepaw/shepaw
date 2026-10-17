@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 import 'cli_host.dart';
+import 'cli_language.dart';
 import 'logger_service.dart';
 
 /// 包里的 CLI 相对已安装的那份，该怎么处理。
@@ -243,7 +244,7 @@ class CliBundle {
   }
 
   static Future<void> _stop(String binary) async {
-    final result = await Process.run(binary, const ['stop']);
+    final result = await Process.run(binary, shepawArgs(const ['stop']));
     if (result.exitCode != 0) {
       final detail = result.stderr.toString().trim();
       throw StateError(detail.isEmpty ? 'shepaw stop 失败' : detail);
@@ -365,7 +366,8 @@ class CliBundle {
 
   static Future<String?> _readVersion(String binary) async {
     try {
-      final process = await Process.start(binary, const ['version']);
+      final process =
+          await Process.start(binary, shepawArgs(const ['version']));
       unawaited(process.stderr.drain<void>());
       final stdout = process.stdout.transform(utf8.decoder).join();
       final code = await process.exitCode.timeout(

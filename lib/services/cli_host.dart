@@ -14,6 +14,7 @@ import '../peer/services/peer_pairing_service.dart';
 import '../peer/services/peer_storage_service.dart';
 import '../storage/pouch_login.dart';
 import '../storage/pouch_session.dart';
+import 'cli_language.dart';
 
 /// 本机主机在时限内没有连上。
 class HostUnresponsiveException implements Exception {
@@ -109,7 +110,8 @@ class CliHost {
     final binary = await resolveBinary();
     if (binary == null) return LocalCliStatus.notInstalled;
     try {
-      final result = await Process.run(binary, const ['status', '--json']);
+      final result =
+          await Process.run(binary, shepawArgs(const ['status', '--json']));
       if (result.exitCode == 0) {
         final decoded = jsonDecode(result.stdout.toString());
         if (decoded is Map && decoded['running'] == true) {
@@ -151,7 +153,7 @@ class CliHost {
   static Future<void> start(String binary) async {
     await Process.start(
       binary,
-      const ['start'],
+      shepawArgs(const ['start']),
       mode: ProcessStartMode.detached,
     );
     final deadline = DateTime.now().add(const Duration(seconds: 10));
@@ -234,7 +236,8 @@ class CliHost {
     if (binary == null) {
       throw StateError('这台电脑还没有 shepaw。请在终端执行 shepaw password set');
     }
-    final process = await Process.start(binary, const ['password', 'set']);
+    final process =
+        await Process.start(binary, shepawArgs(const ['password', 'set']));
     final stderr = process.stderr.transform(utf8.decoder).join();
     final stdout = process.stdout.transform(utf8.decoder).join();
     process.stdin.writeln(password);
@@ -249,7 +252,7 @@ class CliHost {
 
   /// 执行 `shepaw restart`，然后等到 [detect] 再次看到进程。
   static Future<void> restart(String binary) async {
-    final result = await Process.run(binary, const ['restart']);
+    final result = await Process.run(binary, shepawArgs(const ['restart']));
     if (result.exitCode != 0) {
       final detail = [
         result.stderr.toString().trim(),
@@ -349,9 +352,10 @@ class CliHost {
       '--local',
       host.localEndpoint,
     ];
-    var result = await Process.run(host.binary, [...base, '--json']);
+    var result =
+        await Process.run(host.binary, shepawArgs([...base, '--json']));
     if (result.exitCode != 0) {
-      result = await Process.run(host.binary, base);
+      result = await Process.run(host.binary, shepawArgs(base));
     }
     if (result.exitCode != 0) {
       final detail = [
@@ -372,7 +376,8 @@ class CliHost {
   /// 桌面 App 自己的 18792 不是主机。把那个码贴到手机上，主机会来拨本进程，
   /// 握手对不上，手机只看到配对失败，而且原来的主机连接会被挤掉。
   static Future<String> mintShareLink(CliHostEndpoint host) async {
-    final result = await Process.run(host.binary, const ['pair', '--json']);
+    final result =
+        await Process.run(host.binary, shepawArgs(const ['pair', '--json']));
     if (result.exitCode != 0) {
       final detail = [
         result.stderr.toString().trim(),

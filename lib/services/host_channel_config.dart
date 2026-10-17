@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'cli_host.dart';
+import 'cli_language.dart';
 
 final _channelUuid = RegExp(
   r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
@@ -115,7 +116,7 @@ class HostChannelStore {
   static Future<HostChannelConfig?> load() async {
     final binary = await CliHost.resolveBinary();
     if (binary == null) return null;
-    final result = await Process.run(binary, const ['channel']);
+    final result = await Process.run(binary, shepawArgs(const ['channel']));
     if (result.exitCode != 0) {
       throw StateError(_stderr(result));
     }
@@ -147,7 +148,8 @@ class HostChannelStore {
     ];
     final env = Map<String, String>.from(Platform.environment);
     env['SHEPAW_CHANNEL_SECRET'] = secret;
-    final result = await Process.run(binary, args, environment: env);
+    final result =
+        await Process.run(binary, shepawArgs(args), environment: env);
     if (result.exitCode != 0) {
       throw StateError(_stderr(result));
     }

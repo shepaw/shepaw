@@ -8,6 +8,7 @@ import '../peer/services/peer_connection_manager.dart';
 import '../storage/pouch_login.dart';
 import '../storage/pouch_session.dart';
 import 'cli_host.dart';
+import 'cli_language.dart';
 
 /// 储物袋账号。`name` 只给人看，`id` 才是身份。
 class CliPouchAccount {
@@ -293,7 +294,7 @@ class CliPouch {
     List<String> args, {
     String? stdin,
   }) async {
-    final process = await Process.start(binary, args);
+    final process = await Process.start(binary, shepawArgs(args));
     if (stdin != null) {
       process.stdin.write('$stdin\n');
     }
