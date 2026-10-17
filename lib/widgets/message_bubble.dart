@@ -28,6 +28,7 @@ import 'form_bubble.dart';
 import 'collapsible_message_bubble.dart';
 import 'permission_audit_bubble.dart';
 import 'chat/plan_approval_card.dart';
+import '../services/approval/cli_audit_fold.dart';
 import 'chat/cli_approval_card.dart';
 import 'chat/dispatch_card.dart';
 import 'chat/relay_approval_card.dart';
@@ -1151,19 +1152,26 @@ class MessageBubble extends StatelessWidget {
 
     final actionConfirmation =
         message.metadata?['action_confirmation'] as Map<String, dynamic>?;
+    if (actionConfirmation != null &&
+        actionConfirmation['_workflowPeerApproval'] == true &&
+        actionConfirmation['selected_action_id'] == null) {
+      return _workflowPeerApprovalHint(context);
+    }
+
+    final auditEntries = CliAuditFold.read(message.metadata);
+    final acIsCli = actionConfirmation != null &&
+        actionConfirmation['confirmation_context'] == 'cli';
+    if (acIsCli || auditEntries.isNotEmpty) {
+      return CliToolAuditView(
+        entries: _cliAuditEntries(actionConfirmation, auditEntries),
+        pending: acIsCli && actionConfirmation['selected_action_id'] == null
+            ? actionConfirmation
+            : null,
+        onActionSelected: onActionSelected,
+      );
+    }
+
     if (actionConfirmation != null) {
-      final isWorkflowPeerApproval =
-          actionConfirmation['_workflowPeerApproval'] == true &&
-          actionConfirmation['selected_action_id'] == null;
-      if (isWorkflowPeerApproval) {
-        return _workflowPeerApprovalHint(context);
-      }
-      if (actionConfirmation['confirmation_context'] == 'cli') {
-        return CliApprovalCard(
-          actionData: actionConfirmation,
-          onActionSelected: onActionSelected,
-        );
-      }
       return ActionConfirmationButtons(
         actionData: actionConfirmation,
         onActionSelected: onActionSelected,
@@ -1207,6 +1215,28 @@ class MessageBubble extends StatelessWidget {
     }
 
     return null;
+  }
+
+  List<Map<String, dynamic>> _cliAuditEntries(
+    Map<String, dynamic>? actionConfirmation,
+    List<Map<String, dynamic>> audit,
+  ) {
+    final entries = List<Map<String, dynamic>>.from(audit);
+    if (actionConfirmation == null ||
+        actionConfirmation['confirmation_context'] != 'cli' ||
+        actionConfirmation['selected_action_id'] == null) {
+      return entries;
+    }
+    final entry = CliAuditFold.entryFrom(
+      actionConfirmation,
+      CliAuditFold.decisionOf(actionConfirmation),
+    );
+    final id = entry['confirmation_id'];
+    final already = id is String &&
+        id.isNotEmpty &&
+        entries.any((e) => e['confirmation_id'] == id);
+    if (!already) entries.add(entry);
+    return entries;
   }
 
   Widget _buildQuoteBlock(BuildContext context) {

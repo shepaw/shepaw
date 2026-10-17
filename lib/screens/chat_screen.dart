@@ -79,10 +79,6 @@ import '../peer/host_she_turn.dart' show sheHasMainModel;
 import '../peer/services/hub_group_registry.dart';
 import '../service_locator.dart' show getIt;
 
-/// User's response to the "sync remote sessions" prompt.
-/// Both choices are persisted; the dialog is only shown while undecided.
-enum _PeerSyncChoice { sync, disable }
-
 /// 聊天页抽屉打开手势的触发阈值（px）：左滑位移达到该距离才判定为打开
 /// 手势，抽屉开始跟随手指。必须明显大于 SelectionArea 的 18px touchSlop，
 /// 否则上下滚动时手指带出的轻微横向漂移（旧配置 8px 在 dy/dx<1 的起手
@@ -4403,8 +4399,7 @@ class _ChatScreenState extends State<ChatScreen>
 
   /// 断连期间被判死的 turn 可能已在远端跑完 —— service 重连后发来的
   /// reconcile 通知（'peerId::remoteAgentId'）。匹配当前 agent 时把结果补回
-  /// 对话：已开启同步走完整增量同步；未表态 / 已关闭则只补当前会话
-  /// （见 [_recoverStrandedPeerTurn]），不能整段跳过。
+  /// 对话。ShePaw 会话始终增量同步；客户端会话是否一并拉取由编辑页开关决定。
   Future<void> _onPeerReconcileRequest(String key) async {
     final agentId = widget.agentId;
     if (agentId == null) return;
@@ -4419,15 +4414,7 @@ class _ChatScreenState extends State<ChatScreen>
       return;
     }
     if (!mounted) return;
-    final prefs = await SharedPreferences.getInstance();
-    if (prefs.getBool('peer_sync_disabled_$agentId') == false) {
-      await _maybeSyncPeerAgent(promptIfUndecided: false);
-      return;
-    }
-    // 未表态 / 已关闭同步：不能整段跳过 —— 结果会永远留在远端 transcript，
-    // 页面卡在「回复中」，只有退出重进才恢复。改走只补当前会话的窄路径
-    // （不链接远端 session、不弹窗、不新建会话）。
-    await _recoverStrandedPeerTurn();
+    await _maybeSyncPeerAgent();
   }
 
   /// 息屏 / 断连期间被判死的 peer turn，结果可能只留在远端 transcript：
@@ -4492,18 +4479,9 @@ class _ChatScreenState extends State<ChatScreen>
     await _maybeSyncPeerAgent();
   }
 
-  /// On entry to a peer agent chat, incrementally sync remote sessions + dirty
-  /// history — but only after the user has decided whether to sync.
-  ///
-  /// Preference key `peer_sync_disabled_$agentId`:
-  /// - `null` (undecided): prompt once when there are unsynced remote sessions
-  /// - `false` (enabled): auto-sync silently; changeable in agent settings
-  /// - `true` (disabled): skip; changeable in agent settings
-  ///
-  /// [promptIfUndecided] controls the undecided case: chat entry passes true
-  /// (the dialog is expected there); background paths (reconnect reconcile)
-  /// pass false and simply skip until the user decides on next entry.
-  Future<void> _maybeSyncPeerAgent({bool promptIfUndecided = true}) async {
+  /// 进页后增量同步。ShePaw 会话始终同步；Cursor IDE / CLI 等客户端会话
+  /// 是否同步由 agent 编辑页的开关决定。
+  Future<void> _maybeSyncPeerAgent() async {
     final agentId = widget.agentId;
     if (agentId == null) return;
     final agent =
@@ -4513,57 +4491,16 @@ class _ChatScreenState extends State<ChatScreen>
     final remoteAgentId = agent.remoteAgentId;
     if (peerId == null || remoteAgentId == null) return;
 
-    final prefs = await SharedPreferences.getInstance();
-    final syncDisabled = prefs.getBool('peer_sync_disabled_$agentId');
-    if (syncDisabled == true) return;
-
     // Opening right after resume races the reconnect; returning here left the
     // session empty until the user reopened it.
     if (!await _waitForPeerConnected(peerId)) return;
     if (!mounted) return;
 
-    // Undecided — prompt only when there are remote sessions not yet mirrored.
-    var showToastOnFirstLink = false;
-    if (syncDisabled == null && !promptIfUndecided) return;
-    if (syncDisabled == null) {
-      final sessions = await PeerAgentClientService.instance.fetchSessions(
-        peerId: peerId,
-        remoteAgentId: remoteAgentId,
-      );
-      if (!mounted || sessions.isEmpty) return;
-
-      final localChannels =
-          await _controller.localDatabaseService.getChannelsForAgent(agentId);
-      final remoteSessionIds = sessions.map((s) => s.sessionId).toSet();
-      final localRemoteIds = collectLocalBoundRemoteSessionIds(
-        localChannels.map((c) => c.id),
-        remoteSessionIds,
-      );
-      final missing =
-          sessions.where((s) => !localRemoteIds.contains(s.sessionId)).toList();
-
-      if (missing.isNotEmpty) {
-        final choice =
-            await _showPeerSessionSyncDialog(agent.name, missing.length);
-        if (!mounted || choice == null)
-          return; // dismissed → ask again next time
-        if (choice == _PeerSyncChoice.disable) {
-          await prefs.setBool('peer_sync_disabled_$agentId', true);
-          return;
-        }
-        await prefs.setBool('peer_sync_disabled_$agentId', false);
-        showToastOnFirstLink = true;
-      }
-      // Missing empty or user opted in → fall through to incremental sync.
-    }
-
-    if (!mounted) return;
     await _runPeerAgentIncrementalSync(
       peerId: peerId,
       remoteAgentId: remoteAgentId,
       localAgentId: agentId,
       agentName: agent.name,
-      showToastOnFirstLink: showToastOnFirstLink,
     );
   }
 
@@ -4588,7 +4525,6 @@ class _ChatScreenState extends State<ChatScreen>
     required String remoteAgentId,
     required String localAgentId,
     required String agentName,
-    bool showToastOnFirstLink = false,
   }) async {
     // init 之后 currentChannelId 才是真正打开的会话（列表没带 channelId 时
     // 也会解析到最近一条）。用它优先同步，而不是只看构造参数。
@@ -4600,9 +4536,8 @@ class _ChatScreenState extends State<ChatScreen>
       setState(() => _syncingPeerHistory = true);
     }
 
-    late final PeerAgentIncrementalSyncResult result;
     try {
-      result = await PeerAgentClientService.instance.syncAgentIncremental(
+      await PeerAgentClientService.instance.syncAgentIncremental(
         peerId: peerId,
         remoteAgentId: remoteAgentId,
         localAgentId: localAgentId,
@@ -4626,16 +4561,6 @@ class _ChatScreenState extends State<ChatScreen>
       }
     }
 
-    if (!mounted || !showToastOnFirstLink) return;
-    if (result.sessionsLinked > 0) {
-      final l10n = AppLocalizations.of(context);
-      showTopToast(
-        context,
-        l10n.chat_syncedRemoteSessions(result.sessionsLinked),
-        icon: Icons.sync,
-        color: Colors.green,
-      );
-    }
   }
 
   /// Prefetch slash commands when opening a peer agent chat. The connect-time
@@ -4648,30 +4573,6 @@ class _ChatScreenState extends State<ChatScreen>
         await _controller.localDatabaseService.getRemoteAgentById(agentId);
     if (agent == null || !agent.isPeerAgent) return;
     await PeerAgentClientService.instance.ensureCommandsForLocalAgent(agentId);
-  }
-
-  Future<_PeerSyncChoice?> _showPeerSessionSyncDialog(
-      String agentName, int count) async {
-    return showDialog<_PeerSyncChoice>(
-      context: context,
-      builder: (ctx) {
-        final l10n = AppLocalizations.of(ctx);
-        return AlertDialog(
-          title: Text(l10n.chat_syncRemoteSessionsTitle),
-          content: Text(l10n.chat_syncRemoteSessionsBody(agentName, count)),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(_PeerSyncChoice.disable),
-              child: Text(l10n.chat_doNotSync),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(_PeerSyncChoice.sync),
-              child: Text(l10n.common_sync),
-            ),
-          ],
-        );
-      },
-    );
   }
 
   /// Navigate to She's edit screen (directly in edit mode) so the user can

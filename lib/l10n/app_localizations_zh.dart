@@ -2471,6 +2471,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get osTool_approvalExpired => '该审核已过期，命令未执行';
 
   @override
+  String osTool_auditFolded(int count) {
+    return '已审核 $count 个工具';
+  }
+
+  @override
   String get skill_configTitle => '技能';
 
   @override
@@ -5499,11 +5504,20 @@ class AppLocalizationsZh extends AppLocalizations {
   String get agentDetail_modelSwitchFailed => '切换模型失败';
 
   @override
-  String get agentDetail_sessionSync => '会话同步';
+  String get agentDetail_sessionSync => '同步客户端会话';
 
   @override
   String get agentDetail_sessionSyncHint =>
-      '开启后进入时自动同步远端会话列表与聊天记录；关闭后不再同步。可随时在此修改';
+      '开启后，把这个 Agent 在 Cursor CLI 终端和 IDE 里的会话同步到会话列表，并标上来源。ShePaw 自己的会话始终同步';
+
+  @override
+  String get session_originIde => 'IDE';
+
+  @override
+  String get session_originCli => 'CLI';
+
+  @override
+  String get session_originExternal => '外部';
 
   @override
   String get agentDetail_refreshModels => '刷新模型列表';

@@ -6,6 +6,7 @@ import '../../services/local_database_service.dart';
 import '../../utils/layout_utils.dart';
 import '../../utils/session_utils.dart';
 import '../../l10n/app_localizations.dart';
+import '../../services/session/client_session_sync.dart';
 import 'session_unread_badge.dart';
 import 'session_list_header_menu.dart';
 import 'session_preview_entry.dart';
@@ -656,6 +657,8 @@ class _SessionListContentState extends State<_SessionListContent> {
               style: const TextStyle(fontSize: 14),
             ),
           ),
+          if (isAgentClientSessionSource(session.sessionOrigin))
+            _SessionOriginTag(origin: session.sessionOrigin!),
           if (isGroupBound)
             Container(
               margin: const EdgeInsets.only(left: 8),
@@ -825,6 +828,45 @@ class _SessionListContentState extends State<_SessionListContent> {
                     widget.onBatchDelete(ids);
                   },
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 客户端会话来源标签：IDE / CLI / 外部。
+class _SessionOriginTag extends StatelessWidget {
+  final String origin;
+
+  const _SessionOriginTag({required this.origin});
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final label = switch (origin) {
+      kSessionOriginIde => l10n.session_originIde,
+      kSessionOriginTerminal => l10n.session_originCli,
+      kSessionOriginExternal => l10n.session_originExternal,
+      _ => origin,
+    };
+    final color = switch (origin) {
+      kSessionOriginIde => Colors.blue.shade700,
+      kSessionOriginTerminal => Colors.indigo.shade700,
+      _ => Colors.blueGrey.shade700,
+    };
+    return Container(
+      margin: const EdgeInsets.only(left: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          color: color,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );

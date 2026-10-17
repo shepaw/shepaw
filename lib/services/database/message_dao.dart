@@ -583,6 +583,18 @@ extension MessageDao on LocalDatabaseService {
     _notePouchFromSqlite(messageId);
   }
 
+  /// 把已有行的 `created_at` 拨到现在，让复用的审计气泡排到本回合末尾。
+  Future<void> touchMessageCreatedAt(String messageId) async {
+    final db = await database;
+    await db.update(
+      'messages',
+      {'created_at': messageCreatedAt(DateTime.now())},
+      where: 'id = ?',
+      whereArgs: [messageId],
+    );
+    _notePouchFromSqlite(messageId);
+  }
+
   /// Create or update a partial streaming message.
   ///
   /// If [existingMessageId] is provided, updates that message with new content.

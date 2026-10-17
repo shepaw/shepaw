@@ -26,6 +26,7 @@ import '../services/logger_service.dart';
 import '../services/she_service.dart';
 import '../services/workflow/workflow_service.dart';
 import '../services/approval/cli_approval_card.dart';
+import '../services/approval/cli_audit_fold.dart';
 import '../services/approval/pending_approval_hub.dart';
 import '../services/approval/pending_approval_item.dart';
 import '../services/cli_approval_coordinator.dart';

@@ -33,6 +33,7 @@ import '../../services/logger_service.dart';
 import '../../services/device_node/command_approval_inbox.dart';
 import '../../services/device_node/device_command_runner.dart';
 import '../../services/device_node/device_hello.dart';
+import '../../services/session/client_session_sync.dart';
 import '../../services/session/cli_execute_peer_handler.dart';
 import '../../services/session/session_create_peer_handler.dart';
 import '../../services/she_agent_impression_service.dart';
@@ -204,6 +205,18 @@ List<PeerRemoteSession> selectDirtySessions(
   return dirty;
 }
 
+/// 历史正文要拉哪些会话。关掉客户端会话同步时，IDE / CLI 等不进这一轮。
+List<PeerRemoteSession> sessionsMirroredForHistory(
+  List<PeerRemoteSession> sessions, {
+  required bool includeClientSessions,
+}) {
+  if (includeClientSessions) return sessions;
+  return [
+    for (final session in sessions)
+      if (!session.isClientSession) session,
+  ];
+}
+
 /// 本地还没有正文的会话。水位只看远端 `updatedAt`，刚建出来的空壳
 /// 往往比水位旧，会被整段跳过，标题在、内容永远空着。
 List<PeerRemoteSession> sessionsMissingLocalTranscript(
@@ -254,6 +267,10 @@ class PeerRemoteSession {
   final int? readCount;
   final DateTime? readAt;
 
+  /// 主机给的来源。`shepaw` 是权威会话；`ide` / `terminal` / `external` 是
+  /// agent 自己的客户端会话。
+  final String? source;
+
   PeerRemoteSession({
     required this.sessionId,
     this.title,
@@ -263,7 +280,14 @@ class PeerRemoteSession {
     this.readOnly = false,
     this.readCount,
     this.readAt,
+    this.source,
   });
+
+  /// Cursor IDE / CLI 终端，以及其他引擎目录里的会话。
+  bool get isClientSession => isAgentClientSessionSource(source);
+
+  /// 要写进本地频道的来源标签。ShePaw 会话不打标签。
+  String? get clientSessionOrigin => isClientSession ? source!.trim() : null;
 
   static PeerRemoteSession? fromJson(Map<String, dynamic> json) {
     final rawId = json['session_id'];
@@ -309,6 +333,7 @@ class PeerRemoteSession {
     final readOnly = json['read_only'] == true || json['archived'] == true;
     final isRead =
         json['is_read'] == true || json['is_read'] == 1 || readOnly;
+    final rawSource = (json['source'] as String?)?.trim();
     return PeerRemoteSession(
       sessionId: id,
       title: (title != null && title.isNotEmpty) ? title : null,
@@ -318,6 +343,7 @@ class PeerRemoteSession {
       readOnly: readOnly,
       readCount: readCount,
       readAt: readAt,
+      source: (rawSource != null && rawSource.isNotEmpty) ? rawSource : null,
     );
   }
 }
@@ -5118,16 +5144,24 @@ class PeerAgentClientService {
   /// agent-bridge side, so context stays intact without duplicating storage.
   ///
   /// Returns the number of remote sessions synced (0 if none / not enumerable).
+  ///
+  /// [includeClientSessions] 为 false 时不新建 IDE / CLI 等客户端会话。
+  /// 已经在本地的那些只补上来源标签，不再当成本轮新链入。
   Future<int> syncSessions({
     required String peerId,
     required String remoteAgentId,
     required String localAgentId,
     required String userId,
     required List<PeerRemoteSession> sessions,
+    bool includeClientSessions = true,
   }) async {
     if (sessions.isEmpty) return 0;
     var linked = 0;
     for (final s in sessions) {
+      if (s.isClientSession && !includeClientSessions) {
+        await _stampClientOriginIfPresent(s);
+        continue;
+      }
       final psessId = syncedPeerChannelId(s.sessionId);
       final legacyId = s.sessionId;
       final psessExisting = await _db.getChannelById(psessId);
@@ -5152,6 +5186,7 @@ class PeerAgentClientService {
           type: 'dm',
           memberIds: [userId, localAgentId],
           isPrivate: true,
+          sessionOrigin: s.clientSessionOrigin,
         );
         await _db.createChannel(channel, userId);
         linked++;
@@ -5176,6 +5211,10 @@ class PeerAgentClientService {
           // Title only. [updateChannel] also stamps updated_at = now, which
           // would make this historical session the one re-entry opens.
           await _db.updateChannelName(channelId, name);
+        }
+        final origin = s.clientSessionOrigin;
+        if (origin != null && existing.sessionOrigin != origin) {
+          await _db.setChannelSessionOrigin(channelId, origin);
         }
       }
       // Seed recency from the remote only when the channel is first created.
@@ -5207,7 +5246,12 @@ class PeerAgentClientService {
         );
       }
     }
-    if (sessions.every((s) => s.isRead || s.readOnly)) {
+    final considered = sessionsMirroredForHistory(
+      sessions,
+      includeClientSessions: includeClientSessions,
+    );
+    if (considered.isNotEmpty &&
+        considered.every((s) => s.isRead || s.readOnly)) {
       DateTime? maxReadAt;
       for (final s in sessions) {
         final at = s.readAt ?? s.updatedAt;
@@ -5226,6 +5270,16 @@ class PeerAgentClientService {
       tag: _tag,
     );
     return linked;
+  }
+
+  /// 本地已有的客户端会话补上来源，不新建频道。
+  Future<void> _stampClientOriginIfPresent(PeerRemoteSession session) async {
+    final origin = session.clientSessionOrigin;
+    if (origin == null) return;
+    final channelId = await _localChannelIdForRemoteSession(session.sessionId);
+    final existing = await _db.getChannelById(channelId);
+    if (existing == null || existing.sessionOrigin == origin) return;
+    await _db.setChannelSessionOrigin(channelId, origin);
   }
 
   final _syncingReadStatePeers = <String>{};
@@ -5258,6 +5312,8 @@ class PeerAgentClientService {
               localAgentId: agent.id,
               userId: 'user',
               sessions: sessions,
+              includeClientSessions:
+                  await isClientSessionSyncEnabled(agent.id),
             );
           }
         }
@@ -5279,6 +5335,7 @@ class PeerAgentClientService {
             localAgentId: agent.id,
             userId: 'user',
             sessions: sessions,
+            includeClientSessions: await isClientSessionSyncEnabled(agent.id),
           );
         }
       }
@@ -5527,11 +5584,11 @@ class PeerAgentClientService {
         await Future<void>.delayed(Duration.zero);
       }
     }
-    final sessions = await fetchSessions(
+    final remoteSessions = await fetchSessions(
       peerId: peerId,
       remoteAgentId: remoteAgentId,
     );
-    if (sessions.isEmpty) {
+    if (remoteSessions.isEmpty) {
       final prefetched = prefetchedWritten ?? 0;
       if (prefetched > 0) {
         return PeerAgentIncrementalSyncResult(
@@ -5541,13 +5598,29 @@ class PeerAgentClientService {
       return const PeerAgentIncrementalSyncResult();
     }
 
+    final includeClientSessions =
+        await isClientSessionSyncEnabled(localAgentId);
     final linked = await syncSessions(
       peerId: peerId,
       remoteAgentId: remoteAgentId,
       localAgentId: localAgentId,
       userId: userId,
-      sessions: sessions,
+      sessions: remoteSessions,
+      includeClientSessions: includeClientSessions,
     );
+    // 关掉客户端同步后，历史只跟 ShePaw 会话走。已经链入的 IDE / CLI
+    // 会话留在列表里，来源标签在 syncSessions 里补。
+    final sessions = sessionsMirroredForHistory(
+      remoteSessions,
+      includeClientSessions: includeClientSessions,
+    );
+    if (sessions.isEmpty) {
+      final prefetched = prefetchedWritten ?? 0;
+      return PeerAgentIncrementalSyncResult(
+        sessionsLinked: linked,
+        currentChannelMessagesWritten: prefetched > 0 ? prefetched : 0,
+      );
+    }
 
     final lastSyncAt = await getLastHistorySyncAt(localAgentId);
     final syncedUnstamped = await getSyncedUnstampedSessionIds(localAgentId);

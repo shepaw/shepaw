@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../services/session/client_session_sync.dart';
 import '../widgets/avatar_image.dart';
 import '../l10n/l10n_helpers.dart';
 import '../l10n/app_localizations.dart';
@@ -77,7 +77,8 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   String? _autosaveError;
   Timer? _autoSaveDebounce;
 
-  /// Whether remote-session sync is enabled for this peer agent (default on).
+  /// 是否同步这个 agent 自己的客户端会话（Cursor IDE / CLI）。默认开。
+  /// ShePaw 会话始终同步，不受这个开关影响。
   bool _peerSyncEnabled = true;
 
   /// Cached soul text for view mode (loaded from file / peer / metadata).
@@ -664,15 +665,13 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   }
 
   Future<void> _loadPeerSyncPref() async {
-    final prefs = await SharedPreferences.getInstance();
-    final disabled = prefs.getBool('peer_sync_disabled_${_agent.id}') == true;
-    if (mounted) setState(() => _peerSyncEnabled = !disabled);
+    final enabled = await isClientSessionSyncEnabled(_agent.id);
+    if (mounted) setState(() => _peerSyncEnabled = enabled);
   }
 
   Future<void> _setPeerSyncEnabled(bool enabled) async {
     setState(() => _peerSyncEnabled = enabled);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('peer_sync_disabled_${_agent.id}', !enabled);
+    await setClientSessionSyncEnabled(_agent.id, enabled);
   }
 
   /// 页面展示用的在线状态。peer agent 跟随来源设备的 P2P 连接状态，其余 agent
@@ -1767,10 +1766,8 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     );
   }
 
-  /// Toggle whether we auto-detect and sync this peer agent's remote sessions
-  /// (list + history) on entry. Turning it off stops sync and prompts; turning
-  /// it on enables silent auto-sync. The first chat entry asks once until a
-  /// choice is saved here or via the sync dialog.
+  /// 是否把这个 agent 在 Cursor CLI / IDE 里的会话同步进会话列表。
+  /// ShePaw 自己的会话始终同步，不由这个开关控制。
   Widget _buildPeerSyncToggle() {
     final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;

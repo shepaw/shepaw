@@ -73,7 +73,7 @@ class LocalDatabaseService {
     final path = await PouchSqlite.openPath(PouchSqlite.mainDb);
     return await openDatabase(
       path,
-      version: 38,
+      version: 39,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -165,6 +165,7 @@ class LocalDatabaseService {
         planning_mode INTEGER DEFAULT 0,
         flow_mode INTEGER DEFAULT 0,
         enable_stage_gate INTEGER DEFAULT 0,
+        session_origin TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         created_by TEXT NOT NULL
@@ -1093,6 +1094,19 @@ class LocalDatabaseService {
       } catch (e) {
         LoggerService().error(
           'Failed to create channel_digests / pending_ops (v38)',
+          tag: 'Migration',
+          error: e,
+        );
+      }
+    }
+
+    if (oldVersion < 39) {
+      // 版本 38 -> 39: 客户端会话来源（IDE / CLI / 外部），会话列表打标签用
+      try {
+        await db.execute('ALTER TABLE channels ADD COLUMN session_origin TEXT');
+      } catch (e) {
+        LoggerService().error(
+          'Failed to add channels.session_origin (v39)',
           tag: 'Migration',
           error: e,
         );

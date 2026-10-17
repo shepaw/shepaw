@@ -1300,7 +1300,10 @@ class ChatService {
 
     final additionalMessages = allMessages.sublist(newStart, newEnd);
     final chatHistory =
-        additionalMessages.where((m) => m.type == MessageType.text).map((m) {
+        additionalMessages
+            .where((m) =>
+                m.type == MessageType.text && ChatHistoryContent.shouldReplay(m))
+            .map((m) {
       return {
         'role': m.from.isAgent ? 'assistant' : 'user',
         'content': ChatHistoryContent.replayContent(m),

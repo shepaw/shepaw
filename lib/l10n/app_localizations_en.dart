@@ -2568,6 +2568,11 @@ class AppLocalizationsEn extends AppLocalizations {
       'This approval expired; the command was not executed';
 
   @override
+  String osTool_auditFolded(int count) {
+    return 'Reviewed $count tools';
+  }
+
+  @override
   String get skill_configTitle => 'Skills';
 
   @override
@@ -5709,11 +5714,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get agentDetail_modelSwitchFailed => 'Failed to switch model';
 
   @override
-  String get agentDetail_sessionSync => 'Session Sync';
+  String get agentDetail_sessionSync => 'Sync Client Sessions';
 
   @override
   String get agentDetail_sessionSyncHint =>
-      'When enabled, remote sessions and chat history sync automatically on enter; disable to stop. You can change this anytime';
+      'When on, sync this agent\'s Cursor CLI and IDE sessions into the session list and tag where they came from. ShePaw sessions always sync';
+
+  @override
+  String get session_originIde => 'IDE';
+
+  @override
+  String get session_originCli => 'CLI';
+
+  @override
+  String get session_originExternal => 'External';
 
   @override
   String get agentDetail_refreshModels => 'Refresh model list';

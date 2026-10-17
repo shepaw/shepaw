@@ -143,6 +143,14 @@ mixin _InteractionOps on _ChatControllerBase {
       'selected_action_label': _cliExpiredActionId,
     });
     merged['closed'] = reason;
+    if (merged['confirmation_context'] == 'cli') {
+      final base = Map<String, dynamic>.from(
+        messageIdMap[messageId]?.metadata ?? {},
+      );
+      base['action_confirmation'] = merged;
+      _setMessageMetadata(messageId, CliAuditFold.foldDecided(base));
+      return;
+    }
     _updateGroupStreamingMetadata(messageId, 'action_confirmation', merged);
     // 落库：否则下一次 loadMessages 会把卡片又画成「等你点」。
     final meta =
@@ -183,34 +191,46 @@ mixin _InteractionOps on _ChatControllerBase {
     final aid = agentId?.trim().isNotEmpty == true
         ? agentId!.trim()
         : _cliApprovalAgentId;
-    final hostId = StreamingActionConfirmation.resolveHostMessageId(
-      preferredId: isGroupMode
-          ? _groupStreamingHostIdFor(aid)
-          : streamingMessageId,
-      messageIdMap: messageIdMap,
-      messages: messages,
-    );
-    final host = hostId == null ? null : messageIdMap[hostId];
-    final existing = host?.metadata?['action_confirmation'];
-    final hostBusy = existing is Map && existing['selected_action_id'] == null;
-    if (host != null && !hostBusy) {
-      _handleStreamingActionConfirmation(actionData);
-    } else {
-      _insertCliApprovalFallback(actionData, agentId: aid);
+    // 同一回合的确认收进一条审计气泡。上一张还没答时不能盖掉，另起一条。
+    final host = CliAuditFold.findHost(messages, aid);
+    if (host != null) {
+      final next = CliAuditFold.attachPending(
+        metadata: host.metadata,
+        actionData: actionData,
+      );
+      if (next != null) {
+        _setMessageMetadata(host.id, next);
+        _surfaceCliAuditHost(host.id);
+        _publishCliApprovalHub(
+          messageId: host.id,
+          agentId: aid,
+          actionData: actionData,
+        );
+        return;
+      }
     }
-    final attachedId = StreamingActionConfirmation.resolveHostMessageId(
-      preferredId: isGroupMode ? _groupStreamingHostIdFor(aid) : streamingMessageId,
-      messageIdMap: messageIdMap,
-      messages: messages,
+    final messageId = _insertCliAuditBubble(actionData, agentId: aid);
+    if (messageId == null) return;
+    _publishCliApprovalHub(
+      messageId: messageId,
+      agentId: aid,
+      actionData: actionData,
     );
+  }
+
+  void _publishCliApprovalHub({
+    required String messageId,
+    required String agentId,
+    required Map<String, dynamic> actionData,
+  }) {
     if (currentChannelId == null) return;
     final hubItem = PendingApprovalItem.fromInteraction(
       channelId: currentChannelId!,
-      agentId: aid,
+      agentId: agentId,
       agentName: agentName ?? 'Agent',
       interactionType: 'action_confirmation',
       data: actionData,
-      messageId: attachedId,
+      messageId: messageId,
     );
     if (hubItem != null) {
       PendingApprovalHub.instance.upsert(hubItem);
@@ -218,14 +238,49 @@ mixin _InteractionOps on _ChatControllerBase {
     _emit(RequestScrollToBottomEvent(force: true));
   }
 
-  String? _groupStreamingHostIdFor(String agentId) {
-    final tracked = groupTurn.idFor(agentId);
-    if (tracked != null && messageIdMap.containsKey(tracked)) return tracked;
-    return ChatStreamingText.findStreamingHost(
-      messages,
-      fromId: agentId,
-      group: true,
-    )?.id;
+  /// 复用审计气泡时把它挪到列表末尾，待审按钮跟着当前回合走。
+  void _surfaceCliAuditHost(String messageId) {
+    final existing = messageIdMap[messageId];
+    if (existing == null) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final updated = Message(
+      id: existing.id,
+      content: existing.content,
+      timestampMs: now,
+      from: existing.from,
+      to: existing.to,
+      channelId: existing.channelId,
+      type: existing.type,
+      replyTo: existing.replyTo,
+      metadata: existing.metadata,
+    );
+    messages.removeWhere((m) => m.id == messageId);
+    messages.add(updated);
+    messageIdMap[messageId] = updated;
+    sortMessagesByTime(messages);
+    _notify();
+    localDatabaseService.touchMessageCreatedAt(messageId).ignore();
+  }
+
+  void _setMessageMetadata(String messageId, Map<String, dynamic> metadata) {
+    final existing = messageIdMap[messageId];
+    if (existing == null) return;
+    final updated = Message(
+      id: existing.id,
+      content: existing.content,
+      timestampMs: existing.timestampMs,
+      from: existing.from,
+      to: existing.to,
+      channelId: existing.channelId,
+      type: existing.type,
+      replyTo: existing.replyTo,
+      metadata: metadata,
+    );
+    final idx = messages.indexWhere((m) => m.id == messageId);
+    if (idx != -1) messages[idx] = updated;
+    messageIdMap[messageId] = updated;
+    _notify();
+    localDatabaseService.updateMessageMetadata(messageId, metadata).ignore();
   }
 
   void _catchUpGroupUiAfterCliApproval(String messageId) {
@@ -252,7 +307,8 @@ mixin _InteractionOps on _ChatControllerBase {
     return 'shepaw-cli';
   }
 
-  void _insertCliApprovalFallback(
+  /// 本回合第一条 CLI 确认：单独一条审计气泡，不挂进正在流式的正文。
+  String? _insertCliAuditBubble(
     Map<String, dynamic> actionData, {
     String? agentId,
   }) {
@@ -262,27 +318,26 @@ mixin _InteractionOps on _ChatControllerBase {
     final displayName = agentName ?? 'Agent';
     final userId = getUserId();
     final userName = getUserName();
-    final sid = isGroupMode
-        ? StreamingActionConfirmation.groupFallbackId(aid)
-        : StreamingActionConfirmation.dmFallbackId(aid);
-    final sm = StreamingActionConfirmation.buildFallbackBubble(
-      id: sid,
-      agentId: aid,
-      agentName: displayName,
-      userId: userId,
-      userName: userName,
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final sid = CliAuditFold.messageIdFor(aid, nowMs);
+    final metadata = CliAuditFold.attachPending(
+      metadata: const {},
       actionData: actionData,
+    );
+    if (metadata == null) return null;
+    final sm = Message(
+      id: sid,
+      content: '',
+      timestampMs: nowMs + 1,
+      from: MessageFrom(id: aid, type: 'agent', name: displayName),
+      to: MessageFrom(id: userId, type: 'user', name: userName),
+      type: MessageType.text,
+      metadata: metadata,
     );
     messages.add(sm);
     messageIdMap[sid] = sm;
-    if (isGroupMode) {
-      groupStreamingMessageIds.add(sid);
-    } else if (streamingMessageId == null) {
-      streamingMessageId = sid;
-      streamingContent = sm.content;
-    }
     _notify();
-    if (currentChannelId == null) return;
+    if (currentChannelId == null) return sid;
     localDatabaseService
         .createMessage(
           id: sid,
@@ -290,11 +345,12 @@ mixin _InteractionOps on _ChatControllerBase {
           senderId: aid,
           senderType: 'agent',
           senderName: displayName,
-          content: sm.content,
+          content: '',
           messageType: 'text',
-          metadata: sm.metadata,
+          metadata: metadata,
         )
         .ignore();
+    return sid;
   }
 
   @override
@@ -437,6 +493,12 @@ mixin _InteractionOps on _ChatControllerBase {
       'selected_action_id': actionId,
       if (actionLabel.isNotEmpty) 'selected_action_label': actionLabel,
     });
+    if (merged['confirmation_context'] == 'cli') {
+      final base = Map<String, dynamic>.from(existing?.metadata ?? {});
+      base['action_confirmation'] = merged;
+      _setMessageMetadata(messageId, CliAuditFold.foldDecided(base));
+      return;
+    }
     _updateGroupStreamingMetadata(messageId, 'action_confirmation', merged);
     _updateGroupStreamingMetadata(
       messageId,

@@ -4616,6 +4616,12 @@ abstract class AppLocalizations {
   /// **'该审核已过期，命令未执行'**
   String get osTool_approvalExpired;
 
+  /// No description provided for @osTool_auditFolded.
+  ///
+  /// In zh, this message translates to:
+  /// **'已审核 {count} 个工具'**
+  String osTool_auditFolded(int count);
+
   /// No description provided for @skill_configTitle.
   ///
   /// In zh, this message translates to:
@@ -10086,14 +10092,32 @@ abstract class AppLocalizations {
   /// No description provided for @agentDetail_sessionSync.
   ///
   /// In zh, this message translates to:
-  /// **'会话同步'**
+  /// **'同步客户端会话'**
   String get agentDetail_sessionSync;
 
   /// No description provided for @agentDetail_sessionSyncHint.
   ///
   /// In zh, this message translates to:
-  /// **'开启后进入时自动同步远端会话列表与聊天记录；关闭后不再同步。可随时在此修改'**
+  /// **'开启后，把这个 Agent 在 Cursor CLI 终端和 IDE 里的会话同步到会话列表，并标上来源。ShePaw 自己的会话始终同步'**
   String get agentDetail_sessionSyncHint;
+
+  /// No description provided for @session_originIde.
+  ///
+  /// In zh, this message translates to:
+  /// **'IDE'**
+  String get session_originIde;
+
+  /// No description provided for @session_originCli.
+  ///
+  /// In zh, this message translates to:
+  /// **'CLI'**
+  String get session_originCli;
+
+  /// No description provided for @session_originExternal.
+  ///
+  /// In zh, this message translates to:
+  /// **'外部'**
+  String get session_originExternal;
 
   /// No description provided for @agentDetail_refreshModels.
   ///

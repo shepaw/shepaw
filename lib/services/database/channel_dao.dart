@@ -72,6 +72,7 @@ extension ChannelDao on LocalDatabaseService {
         'planning_mode': 0, // deprecated, kept for migration compatibility
         'flow_mode': channel.flowMode ? 1 : 0,
         'enable_stage_gate': channel.enableStageGate ? 1 : 0,
+        'session_origin': channel.sessionOrigin,
         'created_at': now,
         'updated_at': now,
         'created_by': createdBy,
@@ -185,10 +186,24 @@ extension ChannelDao on LocalDatabaseService {
         'planning_mode': 0, // deprecated, kept for migration compatibility
         'flow_mode': channel.flowMode ? 1 : 0,
         'enable_stage_gate': channel.enableStageGate ? 1 : 0,
+        'session_origin': channel.sessionOrigin,
         'updated_at': DateTime.now().toIso8601String(),
       },
       where: 'id = ?',
       whereArgs: [channel.id],
+    );
+  }
+
+  /// 只记客户端会话来源，不动 [updated_at]。
+  ///
+  /// 来源标签不代表「刚打开过」。走 [updateChannel] 会把历史会话顶到列表最前。
+  Future<void> setChannelSessionOrigin(String channelId, String origin) async {
+    final db = await database;
+    await db.update(
+      'channels',
+      {'session_origin': origin},
+      where: 'id = ?',
+      whereArgs: [channelId],
     );
   }
 
@@ -1359,5 +1374,6 @@ Channel _channelFromMap(Map<String, dynamic> map, List<ChannelMember> members) {
     // planning_mode column kept for migration compatibility but no longer used
     flowMode: (map['flow_mode'] as int?) == 1,
     enableStageGate: (map['enable_stage_gate'] as int?) == 1,
+    sessionOrigin: map['session_origin'] as String?,
   );
 }

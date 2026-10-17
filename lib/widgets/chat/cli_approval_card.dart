@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../clis/shepaw/os/os_executor.dart';
 import '../../l10n/app_localizations.dart';
+import '../../services/approval/cli_audit_fold.dart';
 
 /// In-chat card for CLI / OS tool confirmation.
 class CliApprovalCard extends StatefulWidget {
@@ -27,7 +28,11 @@ class _CliApprovalCardState extends State<CliApprovalCard> {
 
   String get _toolName => widget.actionData['tool_name'] as String? ?? '';
 
-  String get _prompt => widget.actionData['prompt'] as String? ?? '';
+  Map<String, dynamic> get _params {
+    final flags = widget.actionData['flags'];
+    if (flags is Map) return Map<String, dynamic>.from(flags);
+    return const {};
+  }
 
   String? get _selectedId =>
       widget.actionData['selected_action_id'] as String?;
@@ -148,30 +153,10 @@ class _CliApprovalCardState extends State<CliApprovalCard> {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                if (_prompt.isNotEmpty) ...[
+                if (CliAuditFold.formatParams(_params).isNotEmpty) ...[
                   const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: SelectableText(
-                      _prompt,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        fontFamily: 'monospace',
-                      ),
-                    ),
-                  ),
+                  _CliParamBlock(text: CliAuditFold.formatParams(_params)),
                 ],
-                const SizedBox(height: 8),
-                Text(
-                  l10n.osTool_confirmDescription,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
                 if (_canRememberSession) ...[
                   const SizedBox(height: 4),
                   CheckboxListTile(
@@ -284,5 +269,211 @@ class _CliApprovalCardState extends State<CliApprovalCard> {
       default:
         return Icons.build;
     }
+  }
+}
+
+/// 同一条气泡里的 CLI 审计：已审工具默认折叠，待审的那一张展开在下面。
+class CliToolAuditView extends StatelessWidget {
+  final List<Map<String, dynamic>> entries;
+  final Map<String, dynamic>? pending;
+  final void Function(String confirmationId, String actionId, String actionLabel)?
+      onActionSelected;
+
+  const CliToolAuditView({
+    super.key,
+    required this.entries,
+    this.pending,
+    this.onActionSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (entries.isNotEmpty) CliReviewedToolsFold(entries: entries),
+        if (entries.isNotEmpty && pending != null) const SizedBox(height: 8),
+        if (pending != null)
+          CliApprovalCard(
+            actionData: pending!,
+            onActionSelected: onActionSelected,
+          ),
+      ],
+    );
+  }
+}
+
+/// 已审核工具列表。收起时只留一行计数，展开后每条是工具名加参数。
+class CliReviewedToolsFold extends StatefulWidget {
+  final List<Map<String, dynamic>> entries;
+
+  const CliReviewedToolsFold({super.key, required this.entries});
+
+  @override
+  State<CliReviewedToolsFold> createState() => _CliReviewedToolsFoldState();
+}
+
+class _CliReviewedToolsFoldState extends State<CliReviewedToolsFold> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final l10n = AppLocalizations.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: () => setState(() => _expanded = !_expanded),
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.fact_check_outlined,
+                  size: 16,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    l10n.osTool_auditFolded(widget.entries.length),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                Icon(
+                  _expanded ? Icons.expand_less : Icons.expand_more,
+                  size: 18,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_expanded)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var i = 0; i < widget.entries.length; i++) ...[
+                  if (i > 0) const SizedBox(height: 8),
+                  _ReviewedToolTile(entry: widget.entries[i]),
+                ],
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _ReviewedToolTile extends StatelessWidget {
+  final Map<String, dynamic> entry;
+
+  const _ReviewedToolTile({required this.entry});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final l10n = AppLocalizations.of(context);
+    final tool = (entry['tool_name'] as String?)?.trim() ?? '';
+    final decision = (entry['decision'] as String?) ?? '';
+    final rawParams = entry['params'];
+    final params = rawParams is Map
+        ? Map<String, dynamic>.from(rawParams)
+        : <String, dynamic>{};
+    final paramText = CliAuditFold.formatParams(params);
+    final (label, bg, fg) = switch (decision) {
+      'allow' => (
+          l10n.osTool_approve,
+          Colors.green.shade100,
+          Colors.green.shade800,
+        ),
+      'deny' => (
+          l10n.osTool_deny,
+          Colors.orange.shade100,
+          Colors.orange.shade800,
+        ),
+      'expired' => (
+          l10n.osTool_expired,
+          colorScheme.surfaceContainerHighest,
+          colorScheme.onSurfaceVariant,
+        ),
+      _ => (
+          decision,
+          colorScheme.surfaceContainerHighest,
+          colorScheme.onSurfaceVariant,
+        ),
+    };
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: bg,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: fg,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                tool,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (paramText.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          _CliParamBlock(text: paramText),
+        ],
+      ],
+    );
+  }
+}
+
+class _CliParamBlock extends StatelessWidget {
+  final String text;
+
+  const _CliParamBlock({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: SelectableText(
+        text,
+        style: theme.textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
+      ),
+    );
   }
 }

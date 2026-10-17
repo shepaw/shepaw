@@ -1,4 +1,5 @@
 import '../models/message.dart';
+import '../services/approval/cli_audit_fold.dart';
 import 'streaming_action_confirmation.dart';
 
 /// Result of reconciling in-memory group placeholders with DB rows.
@@ -31,6 +32,7 @@ class ChatMessageReconciler {
   static bool hasVisibleAgentContent(Message m) {
     if (!m.from.isAgent) return false;
     if (StreamingActionConfirmation.hasPendingCard(m.metadata)) return true;
+    if (CliAuditFold.read(m.metadata).isNotEmpty) return true;
     if (m.content.trim().isNotEmpty) return true;
     final progress = m.metadata?['progress_content'];
     return progress is String && progress.trim().isNotEmpty;
@@ -38,6 +40,7 @@ class ChatMessageReconciler {
 
   static bool hasVisibleTempContent(Message m) {
     if (StreamingActionConfirmation.hasPendingCard(m.metadata)) return true;
+    if (CliAuditFold.read(m.metadata).isNotEmpty) return true;
     if (m.content.trim().isNotEmpty) return true;
     final progress = m.metadata?['progress_content'];
     return progress is String && progress.trim().isNotEmpty;
@@ -97,6 +100,21 @@ class ChatMessageReconciler {
       if (alreadyResolved) continue;
       if (dbSection == null) {
         merged[key] = Map<String, dynamic>.from(tempSection);
+        changed = true;
+      }
+    }
+    final tempAudit = tempMeta[CliAuditFold.metadataKey];
+    if (tempAudit is List && tempAudit.isNotEmpty) {
+      final dbAudit = merged[CliAuditFold.metadataKey];
+      final dbLen = dbAudit is List ? dbAudit.length : 0;
+      if (tempAudit.length >= dbLen) {
+        merged[CliAuditFold.metadataKey] = [
+          for (final item in tempAudit)
+            if (item is Map) Map<String, dynamic>.from(item),
+        ];
+        if (tempMeta[CliAuditFold.hostFlag] == true) {
+          merged[CliAuditFold.hostFlag] = true;
+        }
         changed = true;
       }
     }

@@ -73,6 +73,10 @@ class Channel {
   /// 历史字段：群聊工作流阶段门闸始终交给管理员，运行时不再读取此开关。
   final bool enableStageGate;
 
+  /// 同步进来的客户端会话来源，例如 `ide`、`terminal`、`external`。
+  /// ShePaw 自己的会话为空。
+  final String? sessionOrigin;
+
   /// 获取有效的最大循环轮次，默认 50
   int get effectiveMaxLoopRounds => maxLoopRounds ?? 50;
 
@@ -103,6 +107,7 @@ class Channel {
     this.mentionMode,
     this.flowMode = false,
     this.enableStageGate = false,
+    this.sessionOrigin,
   });
 
   /// Returns the ID that links all sessions of the same group together.
@@ -141,6 +146,7 @@ class Channel {
     String? mentionMode,
     bool flowMode = false,
     bool enableStageGate = false,
+    String? sessionOrigin,
   }) {
     return Channel(
       id: id,
@@ -168,6 +174,7 @@ class Channel {
       mentionMode: mentionMode,
       flowMode: flowMode,
       enableStageGate: enableStageGate,
+      sessionOrigin: sessionOrigin,
     );
   }
 
@@ -221,6 +228,7 @@ class Channel {
       mentionMode: json['metadata']?['mention_mode'],
       flowMode: json['flow_mode'] as bool? ?? false,
       enableStageGate: json['enable_stage_gate'] as bool? ?? false,
+      sessionOrigin: json['session_origin'] as String?,
     );
   }
 
@@ -245,6 +253,7 @@ class Channel {
     String? mentionMode,
     bool? flowMode,
     bool? enableStageGate,
+    String? sessionOrigin,
   }) {
     return Channel(
       id: id ?? this.id,
@@ -267,6 +276,7 @@ class Channel {
       mentionMode: mentionMode ?? this.mentionMode,
       flowMode: flowMode ?? this.flowMode,
       enableStageGate: enableStageGate ?? this.enableStageGate,
+      sessionOrigin: sessionOrigin ?? this.sessionOrigin,
     );
   }
 
@@ -316,6 +326,7 @@ class Channel {
       mentionMode: mentionMode ?? this.mentionMode,
       flowMode: flowMode ?? this.flowMode,
       enableStageGate: enableStageGate ?? this.enableStageGate,
+      sessionOrigin: sessionOrigin,
     );
   }
 
@@ -343,6 +354,7 @@ class Channel {
         'source_group_channel_id': sourceGroupChannelId,
       if (sourceSheChannelId != null)
         'source_she_channel_id': sourceSheChannelId,
+      if (sessionOrigin != null) 'session_origin': sessionOrigin,
     };
   }
 }
