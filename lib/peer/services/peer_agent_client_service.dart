@@ -5253,7 +5253,7 @@ class PeerAgentClientService {
     if (considered.isNotEmpty &&
         considered.every((s) => s.isRead || s.readOnly)) {
       DateTime? maxReadAt;
-      for (final s in sessions) {
+      for (final s in considered) {
         final at = s.readAt ?? s.updatedAt;
         if (at != null && (maxReadAt == null || at.isAfter(maxReadAt))) {
           maxReadAt = at;

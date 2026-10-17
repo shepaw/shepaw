@@ -378,6 +378,41 @@ void main() {
       );
     });
 
+    test('client sessions are tagged and can be left out of history sync', () {
+      final ide = PeerRemoteSession.fromJson({
+        'session_id': 'ide-1',
+        'source': 'ide',
+        'read_only': true,
+      });
+      final cli = PeerRemoteSession.fromJson({
+        'session_id': 'cli-1',
+        'source': 'terminal',
+      });
+      final shepaw = PeerRemoteSession.fromJson({
+        'session_id': 'sp-1',
+        'source': 'shepaw',
+      });
+      final untagged = PeerRemoteSession.fromJson({'session_id': 'old'});
+
+      expect(ide?.isClientSession, isTrue);
+      expect(ide?.clientSessionOrigin, 'ide');
+      expect(cli?.clientSessionOrigin, 'terminal');
+      expect(shepaw?.isClientSession, isFalse);
+      expect(shepaw?.clientSessionOrigin, isNull);
+      expect(untagged?.isClientSession, isFalse);
+
+      final listed = [ide!, cli!, shepaw!, untagged!];
+      expect(
+        sessionsMirroredForHistory(listed, includeClientSessions: false)
+            .map((session) => session.sessionId),
+        ['sp-1', 'old'],
+      );
+      expect(
+        sessionsMirroredForHistory(listed, includeClientSessions: true),
+        listed,
+      );
+    });
+
     test('session list message_count is optional', () {
       expect(
         PeerRemoteSession.fromJson({
