@@ -10098,7 +10098,7 @@ abstract class AppLocalizations {
   /// No description provided for @agentDetail_sessionSyncHint.
   ///
   /// In zh, this message translates to:
-  /// **'开启后，把这个 Agent 在 Cursor CLI 终端和 IDE 里的会话同步到会话列表，并标上来源。ShePaw 自己的会话始终同步'**
+  /// **'开启后，把这个 Agent 自己的官方终端和 IDE 会话同步到会话列表，并标上来源。ShePaw 自己的会话始终同步'**
   String get agentDetail_sessionSyncHint;
 
   /// No description provided for @session_originIde.

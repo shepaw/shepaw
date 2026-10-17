@@ -205,7 +205,7 @@ List<PeerRemoteSession> selectDirtySessions(
   return dirty;
 }
 
-/// 历史正文要拉哪些会话。关掉客户端会话同步时，IDE / CLI 等不进这一轮。
+/// 历史正文要拉哪些会话。关掉开关时，这个 agent 自己的官方终端 / IDE 会话不进这一轮。
 List<PeerRemoteSession> sessionsMirroredForHistory(
   List<PeerRemoteSession> sessions, {
   required bool includeClientSessions,
@@ -283,7 +283,7 @@ class PeerRemoteSession {
     this.source,
   });
 
-  /// Cursor IDE / CLI 终端，以及其他引擎目录里的会话。
+  /// 这个 agent 自己的官方终端或 IDE 会话，不是 ShePaw 会话。
   bool get isClientSession => isAgentClientSessionSource(source);
 
   /// 要写进本地频道的来源标签。ShePaw 会话不打标签。
@@ -5145,7 +5145,7 @@ class PeerAgentClientService {
   ///
   /// Returns the number of remote sessions synced (0 if none / not enumerable).
   ///
-  /// [includeClientSessions] 为 false 时不新建 IDE / CLI 等客户端会话。
+  /// [includeClientSessions] 为 false 时不新建这个 agent 自己的官方终端 / IDE 会话。
   /// 已经在本地的那些只补上来源标签，不再当成本轮新链入。
   Future<int> syncSessions({
     required String peerId,
@@ -5156,10 +5156,15 @@ class PeerAgentClientService {
     bool includeClientSessions = true,
   }) async {
     if (sessions.isEmpty) return 0;
+    final engine = await _localAgentEngine(localAgentId);
+    String? storedOrigin(PeerRemoteSession session) => clientSessionStoreOrigin(
+          engine: engine,
+          source: session.source,
+        );
     var linked = 0;
     for (final s in sessions) {
       if (s.isClientSession && !includeClientSessions) {
-        await _stampClientOriginIfPresent(s);
+        await _stampClientOriginIfPresent(s, storedOrigin(s));
         continue;
       }
       final psessId = syncedPeerChannelId(s.sessionId);
@@ -5186,7 +5191,7 @@ class PeerAgentClientService {
           type: 'dm',
           memberIds: [userId, localAgentId],
           isPrivate: true,
-          sessionOrigin: s.clientSessionOrigin,
+          sessionOrigin: storedOrigin(s),
         );
         await _db.createChannel(channel, userId);
         linked++;
@@ -5212,7 +5217,7 @@ class PeerAgentClientService {
           // would make this historical session the one re-entry opens.
           await _db.updateChannelName(channelId, name);
         }
-        final origin = s.clientSessionOrigin;
+        final origin = storedOrigin(s);
         if (origin != null && existing.sessionOrigin != origin) {
           await _db.setChannelSessionOrigin(channelId, origin);
         }
@@ -5272,9 +5277,20 @@ class PeerAgentClientService {
     return linked;
   }
 
-  /// 本地已有的客户端会话补上来源，不新建频道。
-  Future<void> _stampClientOriginIfPresent(PeerRemoteSession session) async {
-    final origin = session.clientSessionOrigin;
+  /// 这个 agent 的引擎 id。官方终端 / IDE 会话的标签用它，不拿别家的名字。
+  Future<String?> _localAgentEngine(String localAgentId) async {
+    final agent = await _db.getRemoteAgentById(localAgentId);
+    final engine = agent?.metadata['engine'];
+    if (engine is! String) return null;
+    final id = engine.trim();
+    return id.isEmpty ? null : id;
+  }
+
+  /// 本地已有的官方终端 / IDE 会话补上来源，不新建频道。
+  Future<void> _stampClientOriginIfPresent(
+    PeerRemoteSession session,
+    String? origin,
+  ) async {
     if (origin == null) return;
     final channelId = await _localChannelIdForRemoteSession(session.sessionId);
     final existing = await _db.getChannelById(channelId);
@@ -5608,7 +5624,7 @@ class PeerAgentClientService {
       sessions: remoteSessions,
       includeClientSessions: includeClientSessions,
     );
-    // 关掉客户端同步后，历史只跟 ShePaw 会话走。已经链入的 IDE / CLI
+    // 关掉开关后，历史只跟 ShePaw 会话走。已经链入的官方终端 / IDE
     // 会话留在列表里，来源标签在 syncSessions 里补。
     final sessions = sessionsMirroredForHistory(
       remoteSessions,

@@ -5718,7 +5718,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get agentDetail_sessionSyncHint =>
-      'When on, sync this agent\'s Cursor CLI and IDE sessions into the session list and tag where they came from. ShePaw sessions always sync';
+      'When on, sync this agent\'s own official terminal and IDE sessions into the session list and tag where they came from. ShePaw sessions always sync';
 
   @override
   String get session_originIde => 'IDE';

@@ -2799,7 +2799,7 @@
   "agentDetail_modelSwitched": "Model switched",
   "agentDetail_modelSwitchFailed": "Failed to switch model",
   "agentDetail_sessionSync": "Sync Client Sessions",
-  "agentDetail_sessionSyncHint": "When on, sync this agent's Cursor CLI and IDE sessions into the session list and tag where they came from. ShePaw sessions always sync",
+  "agentDetail_sessionSyncHint": "When on, sync this agent's own official terminal and IDE sessions into the session list and tag where they came from. ShePaw sessions always sync",
   "session_originIde": "IDE",
   "session_originCli": "CLI",
   "session_originExternal": "External",

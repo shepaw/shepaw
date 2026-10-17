@@ -834,7 +834,7 @@ class _SessionListContentState extends State<_SessionListContent> {
   }
 }
 
-/// 客户端会话来源标签：IDE / CLI / 外部。
+/// 这个 agent 自己的官方终端或 IDE 会话标签，例如 Cursor IDE、Claude Code。
 class _SessionOriginTag extends StatelessWidget {
   final String origin;
 
@@ -843,13 +843,13 @@ class _SessionOriginTag extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final label = switch (origin) {
-      kSessionOriginIde => l10n.session_originIde,
-      kSessionOriginTerminal => l10n.session_originCli,
-      kSessionOriginExternal => l10n.session_originExternal,
-      _ => origin,
-    };
-    final color = switch (origin) {
+    final surface = parseClientSessionOrigin(origin).surface;
+    final label = clientSessionOriginLabel(
+      origin,
+      ide: l10n.session_originIde,
+      cli: l10n.session_originCli,
+    );
+    final color = switch (surface) {
       kSessionOriginIde => Colors.blue.shade700,
       kSessionOriginTerminal => Colors.indigo.shade700,
       _ => Colors.blueGrey.shade700,

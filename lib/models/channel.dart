@@ -73,7 +73,7 @@ class Channel {
   /// 历史字段：群聊工作流阶段门闸始终交给管理员，运行时不再读取此开关。
   final bool enableStageGate;
 
-  /// 同步进来的客户端会话来源，例如 `ide`、`terminal`、`external`。
+  /// 同步进来的官方终端 / IDE 会话来源，例如 `cursor:ide`、`claude-code:external`。
   /// ShePaw 自己的会话为空。
   final String? sessionOrigin;
 

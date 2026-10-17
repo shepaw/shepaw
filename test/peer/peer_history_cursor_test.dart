@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/peer/services/peer_agent_client_service.dart';
 import 'package:shepaw/peer/services/peer_inflight_turn.dart';
+import 'package:shepaw/services/session/client_session_sync.dart';
 
 void main() {
   const channelId = 'psess_s';
@@ -410,6 +411,38 @@ void main() {
       expect(
         sessionsMirroredForHistory(listed, includeClientSessions: true),
         listed,
+      );
+      expect(
+        clientSessionStoreOrigin(engine: 'cursor', source: 'ide'),
+        'cursor:ide',
+      );
+      expect(
+        clientSessionStoreOrigin(engine: 'claude-code', source: 'external'),
+        'claude-code:external',
+      );
+      expect(
+        clientSessionStoreOrigin(engine: 'cursor', source: 'shepaw'),
+        isNull,
+      );
+      expect(
+        clientSessionOriginLabel('cursor:ide', ide: 'IDE', cli: 'CLI'),
+        'Cursor IDE',
+      );
+      expect(
+        clientSessionOriginLabel('cursor:terminal', ide: 'IDE', cli: 'CLI'),
+        'Cursor CLI',
+      );
+      expect(
+        clientSessionOriginLabel(
+          'claude-code:external',
+          ide: 'IDE',
+          cli: 'CLI',
+        ),
+        'Claude Code',
+      );
+      expect(
+        clientSessionOriginLabel('codex:external', ide: 'IDE', cli: 'CLI'),
+        'Codex',
       );
     });
 

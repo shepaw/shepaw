@@ -4479,8 +4479,8 @@ class _ChatScreenState extends State<ChatScreen>
     await _maybeSyncPeerAgent();
   }
 
-  /// 进页后增量同步。ShePaw 会话始终同步；Cursor IDE / CLI 等客户端会话
-  /// 是否同步由 agent 编辑页的开关决定。
+  /// 进页后增量同步。ShePaw 会话始终同步；这个 agent 自己的官方终端或 IDE
+  /// 会话是否同步由编辑页开关决定。
   Future<void> _maybeSyncPeerAgent() async {
     final agentId = widget.agentId;
     if (agentId == null) return;

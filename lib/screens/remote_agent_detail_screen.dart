@@ -77,7 +77,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   String? _autosaveError;
   Timer? _autoSaveDebounce;
 
-  /// 是否同步这个 agent 自己的客户端会话（Cursor IDE / CLI）。默认开。
+  /// 是否同步这个 agent 自己的官方终端或 IDE 会话。默认开。
   /// ShePaw 会话始终同步，不受这个开关影响。
   bool _peerSyncEnabled = true;
 
@@ -1766,7 +1766,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     );
   }
 
-  /// 是否把这个 agent 在 Cursor CLI / IDE 里的会话同步进会话列表。
+  /// 是否把这个 agent 自己的官方终端或 IDE 会话同步进会话列表。
   /// ShePaw 自己的会话始终同步，不由这个开关控制。
   Widget _buildPeerSyncToggle() {
     final l10n = AppLocalizations.of(context);
