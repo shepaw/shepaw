@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/channel.dart';
@@ -17,8 +15,9 @@ import 'chat_panel_scope.dart';
 /// 所有点击先经 [closePanelRoute] 关闭面板（抽屉 pop 路由；停靠面板
 /// 保留）再回调，与 [SessionListPanel] 的行为一致。
 ///
-/// 用 StatefulWidget 是为了持有防抖状态：消息搜索是 `content LIKE '%q%'`
-/// 全表扫（命中不了索引）且带几百个 channelId，每敲一个字符查一次很贵。
+/// 用 StatefulWidget 是为了按查询发起一次消息搜索，而不是在 build 里
+/// 重建 Future：消息搜索是 `content LIKE '%q%'` 全表扫（命中不了索引）
+/// 且带几百个 channelId。查询节流在抽屉搜索框，这里只消费已提交的词。
 class SessionSearchResults extends StatefulWidget {
   const SessionSearchResults({
     super.key,
@@ -52,23 +51,69 @@ class SessionSearchResults extends StatefulWidget {
 }
 
 class _SessionSearchResultsState extends State<SessionSearchResults> {
-  /// 输入防抖窗口。
-  static const _searchDebounce = Duration(milliseconds: 250);
-
-  /// 本次实际要查的关键词；被更新的击键覆盖后，旧的等待直接作废。
-  String _latestQuery = '';
+  List<MessageSearchResult> _results = const [];
+  bool _loading = false;
+  int _generation = 0;
 
   bool get _isGroupMode => widget.groupChannel != null;
 
-  Future<List<MessageSearchResult>> _debouncedSearch(String q) async {
-    _latestQuery = q;
-    await Future<void>.delayed(_searchDebounce);
-    if (_latestQuery != q) return const <MessageSearchResult>[];
-    return widget.searchService.searchMessages(
-      query: q,
-      channelIds: [for (final s in widget.sessions) s.id],
-      limit: 100,
-    );
+  @override
+  void initState() {
+    super.initState();
+    final q = widget.query.trim();
+    if (q.isEmpty) return;
+    _loading = true;
+    _runSearch(q);
+  }
+
+  @override
+  void didUpdateWidget(SessionSearchResults oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final q = widget.query.trim();
+    if (q == oldWidget.query.trim() && !_sessionIdsChanged(oldWidget)) {
+      return;
+    }
+    // 字段直接改：didUpdateWidget 发生在本帧 build 之前，下一行 build
+    // 就能看到加载态。不能在这里 setState。
+    if (q.isEmpty) {
+      _generation++;
+      _results = const [];
+      _loading = false;
+      return;
+    }
+    _results = const [];
+    _loading = true;
+    _runSearch(q);
+  }
+
+  bool _sessionIdsChanged(SessionSearchResults oldWidget) {
+    final previous = oldWidget.sessions;
+    final next = widget.sessions;
+    if (identical(previous, next)) return false;
+    if (previous.length != next.length) return true;
+    for (var i = 0; i < previous.length; i++) {
+      if (previous[i].id != next[i].id) return true;
+    }
+    return false;
+  }
+
+  Future<void> _runSearch(String q) async {
+    final generation = ++_generation;
+    List<MessageSearchResult> results;
+    try {
+      results = await widget.searchService.searchMessages(
+        query: q,
+        channelIds: [for (final s in widget.sessions) s.id],
+        limit: 100,
+      );
+    } catch (_) {
+      results = const [];
+    }
+    if (!mounted || generation != _generation) return;
+    setState(() {
+      _results = results;
+      _loading = false;
+    });
   }
 
   String _sessionLabel(Channel session) {
@@ -120,58 +165,53 @@ class _SessionSearchResultsState extends State<SessionSearchResults> {
         .where((s) => s.name.toLowerCase().contains(qLower))
         .toList();
 
-    return FutureBuilder<List<MessageSearchResult>>(
-      // 查询变化时重建 Future，旧查询的迟到结果直接丢弃。
-      key: ValueKey(q),
-      future: _debouncedSearch(q),
-      builder: (context, snapshot) {
-        final results = snapshot.data ?? const <MessageSearchResult>[];
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: CircularProgressIndicator(strokeWidth: 2.5),
-            ),
-          );
-        }
+    if (_loading && nameMatches.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: CircularProgressIndicator(strokeWidth: 2.5),
+        ),
+      );
+    }
 
-        final byChannel = <String, List<MessageSearchResult>>{};
-        for (final r in results) {
-          byChannel
-              .putIfAbsent(r.message.channelId ?? '', () => [])
-              .add(r);
-        }
+    final byChannel = <String, List<MessageSearchResult>>{};
+    for (final r in _results) {
+      byChannel.putIfAbsent(r.message.channelId ?? '', () => []).add(r);
+    }
 
-        if (nameMatches.isEmpty && byChannel.isEmpty) {
-          return Center(
-            child: Text(
-              l10n.home_searchNoResults,
-              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-            ),
-          );
-        }
+    if (!_loading && nameMatches.isEmpty && byChannel.isEmpty) {
+      return Center(
+        child: Text(
+          l10n.home_searchNoResults,
+          style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+        ),
+      );
+    }
 
-        final children = <Widget>[];
+    final children = <Widget>[];
 
-        if (nameMatches.isNotEmpty) {
-          children.add(_sectionHeader(l10n.chat_sessions));
-          for (final s in nameMatches) {
-            children.add(_nameMatchTile(context, s));
-          }
-        }
+    if (nameMatches.isNotEmpty) {
+      children.add(_sectionHeader(l10n.chat_sessions));
+      for (final s in nameMatches) {
+        children.add(_nameMatchTile(context, s));
+      }
+    }
 
-        if (byChannel.isNotEmpty) {
-          children.add(_sectionHeader(l10n.chat_messageResults));
-          for (final entry in byChannel.entries) {
-            children.addAll(_messageGroupTiles(context, l10n, entry.value));
-          }
-        }
+    if (_loading) {
+      children.add(const Padding(
+        padding: EdgeInsets.all(24),
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2.5)),
+      ));
+    } else if (byChannel.isNotEmpty) {
+      children.add(_sectionHeader(l10n.chat_messageResults));
+      for (final entry in byChannel.entries) {
+        children.addAll(_messageGroupTiles(context, l10n, entry.value));
+      }
+    }
 
-        return ListView(
-          padding: const EdgeInsets.only(bottom: 12),
-          children: children,
-        );
-      },
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 12),
+      children: children,
     );
   }
 

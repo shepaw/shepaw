@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 import 'chat_panel_scope.dart';
@@ -20,9 +22,9 @@ class ChatDrawerAction {
 /// 群聊 / 单聊「更多」右侧抽屉（豆包风格）。
 ///
 /// 纯布局组件，不感知群聊/单聊模式：调用方（ChatScreen）构造 header 和
-/// 底部操作；搜索框为真实输入框，输入实时回调 [bodyBuilder]，由调用方
-/// 按 query 过滤会话列表并返回面板
-/// （[SessionListPanel] / [GroupSessionListPanel]），搜索不出抽屉。
+/// 底部操作；搜索框为真实输入框。提交给 [bodyBuilder] 的查询与对话列表
+/// 搜索一样是惰性的：连续输入只在停手 300ms 后提交一次，清空立刻回到
+/// 完整列表。调用方按 query 过滤并返回面板，搜索不出抽屉。
 ///
 /// 除搜索输入外，所有点击（关闭、header、底部操作）统一先经
 /// [closePanelRoute] 关闭面板再执行回调：抽屉形态 pop 抽屉路由，避免
@@ -44,8 +46,8 @@ class ChatMoreDrawer extends StatefulWidget {
   /// 搜索框提示文案。
   final String searchHint;
 
-  /// 搜索输入变化时重建 body：调用方按 query 过滤会话列表。
-  /// 空查询也会调用一次，此时应返回完整列表。
+  /// 已提交的搜索词变化时重建 body：调用方按 query 过滤会话列表。
+  /// 空查询表示完整列表。输入过程中不会逐字调用。
   final Widget Function(BuildContext context, String query) bodyBuilder;
 
   final List<ChatDrawerAction> footerActions;
@@ -79,13 +81,59 @@ class ChatMoreDrawer extends StatefulWidget {
 }
 
 class _ChatMoreDrawerState extends State<ChatMoreDrawer> {
+  /// 与对话列表搜索同一窗口：停手后才把查询交给 body，
+  /// 避免每敲一个字符就扫一遍消息。
+  static const _searchDebounce = Duration(milliseconds: 300);
+
   final _searchController = TextEditingController();
-  String _query = '';
+
+  /// 输入框非空（只驱动清除按钮，不触发搜索）。
+  bool _hasInput = false;
+
+  /// 已经提交给 [ChatMoreDrawer.bodyBuilder] 的查询。
+  String _committedQuery = '';
+
+  Timer? _searchDebounceTimer;
 
   @override
   void dispose() {
+    _searchDebounceTimer?.cancel();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _onSearchChanged(String value) {
+    final active = value.trim().isNotEmpty;
+    _searchDebounceTimer?.cancel();
+    if (!active) {
+      if (_hasInput || _committedQuery.isNotEmpty) {
+        setState(() {
+          _hasInput = false;
+          _committedQuery = '';
+        });
+      }
+      return;
+    }
+    if (!_hasInput) {
+      setState(() => _hasInput = true);
+    }
+    _searchDebounceTimer = Timer(_searchDebounce, () {
+      if (!mounted) return;
+      final q = _searchController.text.trim();
+      if (q.isEmpty || q == _committedQuery) return;
+      setState(() => _committedQuery = q);
+    });
+  }
+
+  /// 清除按钮改的是 controller，不会走 [TextField.onChanged]，要自己提交空查询。
+  void _clearSearch() {
+    _searchDebounceTimer?.cancel();
+    _searchController.clear();
+    if (!_hasInput && _committedQuery.isEmpty) return;
+    setState(() {
+      _hasInput = false;
+      _committedQuery = '';
+    });
   }
 
   void _popThen(BuildContext context, VoidCallback? action) {
@@ -159,7 +207,7 @@ class _ChatMoreDrawerState extends State<ChatMoreDrawer> {
             ],
           ),
         ),
-        // ── 搜索栏：输入即过滤 body ──
+        // ── 搜索栏：停手后才把查询提交给 body ──
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
           child: Container(
@@ -180,7 +228,7 @@ class _ChatMoreDrawerState extends State<ChatMoreDrawer> {
                 Expanded(
                   child: TextField(
                     controller: _searchController,
-                    onChanged: (value) => setState(() => _query = value),
+                    onChanged: _onSearchChanged,
                     textInputAction: TextInputAction.search,
                     style: const TextStyle(fontSize: 14),
                     decoration: InputDecoration(
@@ -194,7 +242,7 @@ class _ChatMoreDrawerState extends State<ChatMoreDrawer> {
                     ),
                   ),
                 ),
-                if (_query.isNotEmpty)
+                if (_hasInput)
                   IconButton(
                     icon: const Icon(Icons.clear, size: 18),
                     padding: EdgeInsets.zero,
@@ -202,19 +250,16 @@ class _ChatMoreDrawerState extends State<ChatMoreDrawer> {
                         const BoxConstraints.tightFor(width: 28, height: 28),
                     visualDensity: VisualDensity.compact,
                     tooltip: l10n.common_clear,
-                    onPressed: () {
-                      _searchController.clear();
-                      setState(() => _query = '');
-                    },
+                    onPressed: _clearSearch,
                   ),
               ],
             ),
           ),
         ),
         const Divider(height: 1),
-        // ── 会话列表（按搜索词实时过滤）──
+        // ── 会话列表（按已提交的搜索词过滤）──
         Expanded(
-          child: widget.bodyBuilder(context, _query),
+          child: widget.bodyBuilder(context, _committedQuery),
         ),
         // ── 底部操作 ──
         if (widget.footerActions.isNotEmpty) ...[
