@@ -378,7 +378,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                   ),
                   const SizedBox(height: 4),
                   SelectableText(
-                    'pouch://workspaces/${meta.homeDevice}/'
+                    'pouch://workspaces/'
                     '${GroupWorkspaceService.instance.workspaceRoot(meta.groupId)}/shared',
                     style: const TextStyle(fontSize: 12),
                   ),

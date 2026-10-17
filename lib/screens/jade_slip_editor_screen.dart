@@ -890,7 +890,7 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
                   onOpen: () => unawaited(
                     StoreOpenService.instance.openStoreUri(
                       context,
-                      att.uriFor(slip.deviceId),
+                      att.uri,
                     ),
                   ),
                   onDelete: () => unawaited(_removeAttachment(att.id)),

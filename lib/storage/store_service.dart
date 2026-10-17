@@ -247,7 +247,7 @@ class StoreService {
         await putVia((f) => callPeer(server, f));
       }
     }
-    return storeUriWithRef(StoreSpace.workspaces, homeDeviceId, path);
+    return storeUriWithRef(StoreSpace.workspaces, path);
   }
 
   /// 写入任意分区。本机直接落盘；主机目录经已登录的主机连接，手机和电脑同一条协议。

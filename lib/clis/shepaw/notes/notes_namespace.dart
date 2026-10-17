@@ -85,7 +85,7 @@ Map<String, dynamic> _slipJson(JadeSlip slip, {bool full = false}) {
             {
               'id': a.id,
               'name': a.name,
-              'uri': a.uriFor(slip.deviceId),
+              'uri': a.uri,
               'size': a.sizeBytes,
             },
         ],

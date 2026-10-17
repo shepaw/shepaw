@@ -59,7 +59,7 @@ class _StoreTextEditorScreenState extends State<StoreTextEditorScreen> {
   }
 
   String get _uri =>
-      storeUriWithRef(widget.space, widget.deviceId, widget.relPath);
+      storeUriWithRef(widget.space, widget.relPath);
 
   Future<void> _load() async {
     try {

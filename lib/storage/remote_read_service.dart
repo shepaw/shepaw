@@ -426,7 +426,7 @@ class RemoteReadService {
   }) async {
     try {
       final self = await DeviceIdentity.deviceId();
-      final uri = storeUriWithRef(space, deviceId, path);
+      final uri = storeUriWithRef(space, path);
       await _callServer(
           serverDeviceId,
           StoreFrame(

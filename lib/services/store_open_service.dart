@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import '../l10n/app_localizations.dart';
 import '../models/attachment_data.dart';
 import '../models/store_attachment_ref.dart';
+import '../storage/host_pouch_target.dart';
 import '../storage/local_store.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_uri_reader.dart';
@@ -54,6 +55,7 @@ class StoreOpenService {
   Future<void> openStoreUri(BuildContext context, String uriString) async {
     try {
       final parsed = parseStoreUri(uriString, allowEmptyPath: true);
+      final deviceId = await resolveStoreDevice(parsed.space);
       StoreUriKind? uriKind;
       try {
         uriKind = await StoreUriReader.instance.kindOf(uriString);
@@ -68,7 +70,7 @@ class StoreOpenService {
           context,
           uriString: uriString,
           space: parsed.space,
-          deviceId: parsed.device,
+          deviceId: deviceId,
           path: parsed.path,
           // Keep the URI path so workspaces can list from master/owner.
           resolvePrefix: false,
@@ -87,7 +89,7 @@ class StoreOpenService {
           context,
           uriString: uriString,
           space: parsed.space,
-          deviceId: parsed.device,
+          deviceId: deviceId,
           path: parsed.path,
           resolvePrefix: true,
         );
@@ -196,7 +198,7 @@ class StoreOpenService {
   }) async {
     await _openDirectoryOrThrow(
       context,
-      uriString: storeUriWithRef(space, deviceId, path),
+      uriString: storeUriWithRef(space, path),
       space: space,
       deviceId: deviceId,
       path: path,

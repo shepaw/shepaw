@@ -2,6 +2,16 @@ import '../peer/pairing_endpoints.dart';
 import '../peer/services/peer_storage_service.dart';
 import 'device_identity.dart';
 import 'pouch_session.dart';
+import 'store_protocol.dart';
+
+/// `pouch://<space>/<path>` 里没写设备，读写时按分区取设备（帧层仍要 device）。
+///
+/// `app` 是袋子自己的应用区，其余落在宿主 device 名下
+/// （docs/pouch_uri_no_device_decision.md）。
+Future<String> resolveStoreDevice(String space) async {
+  if (space == StoreSpace.app) return StoreSpace.appDevice;
+  return (await HostPouchTarget.resolve()).deviceId;
+}
 
 /// 储物袋页要打开的那一只袋子。
 ///

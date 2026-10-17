@@ -473,7 +473,7 @@ class JadeSlip {
     if (attachments.isNotEmpty) {
       buf.writeln('attachments:');
       for (final a in attachments) {
-        buf.writeln('- ${a.name} (attachment=${a.id} uri=${a.uriFor(deviceId)})');
+        buf.writeln('- ${a.name} (attachment=${a.id} uri=${a.uri})');
       }
     }
     final notes = body.trim();
@@ -779,8 +779,8 @@ class JadeSlipAttachment {
   final String path;
   final int sizeBytes;
 
-  String uriFor(String deviceId) =>
-      storeUriWithRef(StoreSpace.slips, deviceId, path);
+  /// 地址不带设备段（docs/pouch_uri_no_device_decision.md）。
+  String get uri => storeUriWithRef(StoreSpace.slips, path);
 
   Map<String, dynamic> toJson() => {
         'id': id,

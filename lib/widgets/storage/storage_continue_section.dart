@@ -264,6 +264,6 @@ Future<void> openStorageContinueItem(
   if (!context.mounted) return;
   await StoreOpenService.instance.openStoreUri(
     context,
-    storeUriWithRef(item.space, deviceId, item.path),
+    storeUriWithRef(item.space, item.path),
   );
 }

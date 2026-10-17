@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import '../storage/host_pouch_target.dart';
 import '../storage/local_store.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
@@ -23,7 +24,9 @@ class StoreAttachmentRef {
   final String displayName;
   final int sizeBytes;
 
-  String get storeUri => storeUriWithRef(space, deviceId, path);
+  /// 地址不带设备段（docs/pouch_uri_no_device_decision.md）；[deviceId] 只
+  /// 用于本机物理路径。
+  String get storeUri => storeUriWithRef(space, path);
 
   factory StoreAttachmentRef.fromEntry({
     required String deviceId,
@@ -64,7 +67,7 @@ class StoreAttachmentRef {
       final store = await StoreService.instance.localStore();
       final abs = p.joinAll([
         store.root.path,
-        parsed.device,
+        await resolveStoreDevice(parsed.space),
         parsed.space,
         ...parsed.path.split('/'),
       ]);

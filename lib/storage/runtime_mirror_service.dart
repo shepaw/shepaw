@@ -281,11 +281,9 @@ class RuntimeMirrorService {
         'source_device': device,
         'updated_at': now,
         if (persona)
-          'soul_uri': MemoryPaths.uri(
-              deviceId: device, relPath: MemoryPaths.soulMd(ownerId)),
+          'soul_uri': MemoryPaths.uri(relPath: MemoryPaths.soulMd(ownerId)),
         if (persona)
-          'memory_uri': MemoryPaths.uri(
-              deviceId: device, relPath: MemoryPaths.entriesDir(ownerId)),
+          'memory_uri': MemoryPaths.uri(relPath: MemoryPaths.entriesDir(ownerId)),
         'workspace_refs': <String>[],
         'channels': <String, dynamic>{},
       }),
@@ -371,7 +369,6 @@ class RuntimeMirrorService {
         final meta = payload['meta'] as Map<String, dynamic>;
         meta['archived_at'] = DateTime.now().toUtc().toIso8601String();
         meta['archive_uri'] = RuntimePaths.uri(
-          deviceId: device,
           relPath: RuntimePaths.sessionArchive(ownerId, channelId, ts),
         );
         body = jsonEncode(payload);
@@ -511,7 +508,6 @@ class RuntimeMirrorService {
         (manifest['channels'] as Map?)?.cast<String, dynamic>() ?? {});
     channels[channelId] = {
       'session_uri': RuntimePaths.uri(
-        deviceId: deviceId,
         relPath: RuntimePaths.sessionJson(ownerId, channelId),
       ),
     };
@@ -519,10 +515,8 @@ class RuntimeMirrorService {
     manifest['updated_at'] = DateTime.now().toUtc().toIso8601String();
     final persona = !await _ownerIsGroupChannel(ownerId);
     if (persona) {
-      manifest['soul_uri'] = MemoryPaths.uri(
-          deviceId: deviceId, relPath: MemoryPaths.soulMd(ownerId));
-      manifest['memory_uri'] = MemoryPaths.uri(
-          deviceId: deviceId, relPath: MemoryPaths.entriesDir(ownerId));
+      manifest['soul_uri'] = MemoryPaths.uri(relPath: MemoryPaths.soulMd(ownerId));
+      manifest['memory_uri'] = MemoryPaths.uri(relPath: MemoryPaths.entriesDir(ownerId));
     } else {
       manifest.remove('soul_uri');
       manifest.remove('memory_uri');

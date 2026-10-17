@@ -235,11 +235,11 @@ class RuntimePaths {
   }
 
   /// 组装 runtime 区 URI。
+  /// 地址不带设备段（docs/pouch_uri_no_device_decision.md）。
   static String uri({
-    required String deviceId,
     required String relPath,
   }) =>
-      storeUriWithRef(StoreSpace.runtime, deviceId, relPath);
+      storeUriWithRef(StoreSpace.runtime, relPath);
 }
 
 /// runtime 分享给配对设备时，文件级放行策略。

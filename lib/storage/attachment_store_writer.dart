@@ -15,7 +15,7 @@ import 'store_service.dart';
 class AttachmentStoreWriter {
   AttachmentStoreWriter._();
 
-  /// 写入本机 store，返回 `pouch://runtime/…` URI。
+  /// 写入本机 store，返回 `pouch://runtime/…` URI（地址不带设备段）。
   static Future<String> storeBytes(
     Uint8List bytes, {
     required String ownerId,
@@ -29,7 +29,7 @@ class AttachmentStoreWriter {
     final device = deviceId ?? await DeviceIdentity.deviceId();
     try {
       await local.meta(device, StoreSpace.runtime, relPath);
-      return storeUriWithRef(StoreSpace.runtime, device, relPath);
+      return storeUriWithRef(StoreSpace.runtime, relPath);
     } on StoreException {
       // not_found → 写入
     }
@@ -40,6 +40,6 @@ class AttachmentStoreWriter {
       bytes: bytes,
       sha256Hex: hash,
     );
-    return storeUriWithRef(StoreSpace.runtime, device, relPath);
+    return storeUriWithRef(StoreSpace.runtime, relPath);
   }
 }

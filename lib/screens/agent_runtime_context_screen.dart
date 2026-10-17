@@ -113,7 +113,7 @@ class _AgentRuntimeContextScreenState extends State<AgentRuntimeContextScreen>
       for (final e in entries) {
         if (e.isDir) continue;
         final path = e.path.replaceAll('\\', '/');
-        final uri = storeUriWithRef(StoreSpace.runtime, deviceId, path);
+        final uri = storeUriWithRef(StoreSpace.runtime, path);
         final file = _RuntimeFile(
           path: path,
           size: e.size,

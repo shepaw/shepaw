@@ -398,11 +398,11 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
   }
 
   String _uriFor(_BrowsedFile file) =>
-      storeUriWithRef(file.space, _targetId, file.path);
+      storeUriWithRef(file.space, file.path);
 
   /// 分区 / 文件夹 URI（空 path 时为分区根）。
   String _uriForFolderPath(String space, String relPath) =>
-      storeUriWithRef(space, _targetId, relPath);
+      storeUriWithRef(space, relPath);
 
   String _folderRelPath(String folderName) =>
       _navPath.isEmpty ? folderName : '$_navPath/$folderName';

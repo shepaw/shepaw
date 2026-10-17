@@ -12,21 +12,19 @@ import 'store_service.dart';
 
 /// 从文本里抽出「本机 runtime 附件」的相对路径。
 ///
-/// 消息 metadata / 正文里的 `pouch://runtime/<device>/…/attachments/…`。
-/// 其他分区、其他 device 忽略。
+/// 消息 metadata / 正文里的 `pouch://runtime/…/attachments/…`（地址不带设备段，
+/// docs/pouch_uri_no_device_decision.md）。其他分区忽略。
 Set<String> referencedRuntimeAttachmentPaths(
-  String deviceId,
   Iterable<String> texts,
 ) {
   final out = <String>{};
   final re = RegExp(
-    r'''pouch://runtime/[0-9a-f]{16}/[^\s"'`<>)\]]+''',
+    r'''pouch://runtime/[^\s"'`<>)\]]+''',
   );
   for (final text in texts) {
     for (final match in re.allMatches(text)) {
       try {
         final parsed = parseStoreUri(match.group(0)!);
-        if (parsed.device != deviceId) continue;
         if (!parsed.path.contains('/attachments/')) continue;
         out.add(normalizeStorePath(parsed.path));
       } catch (_) {}
@@ -140,7 +138,7 @@ class RuntimeRetentionService {
         if (metadata is String && metadata.isNotEmpty) texts.add(metadata);
         if (content is String && content.isNotEmpty) texts.add(content);
       }
-      return referencedRuntimeAttachmentPaths(deviceId, texts);
+      return referencedRuntimeAttachmentPaths(texts);
     } catch (e) {
       _log.warning('attachment refs unavailable, skip orphan prune: $e', tag: _tag);
       return null;

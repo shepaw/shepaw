@@ -109,7 +109,6 @@ class ContextBundleService {
     try {
       final deviceId = await DeviceIdentity.deviceId();
       final uri = RuntimePaths.uri(
-        deviceId: deviceId,
         relPath: RuntimePaths.contextManifest(ownerId),
       );
       final bytes = await StoreUriReader.instance.read(uri);
@@ -160,7 +159,7 @@ class ContextBundleService {
       // 作为成员可见 URI 注入——agent 经 store 工具按需读。
       final meta = await GroupWorkspaceService.instance.loadMeta(ownerId);
       final home = meta?.homeDevice ?? deviceId;
-      extras.add('pouch://workspaces/$home/'
+      extras.add('pouch://workspaces/'
           '${GroupWorkspaceService.instance.workspaceRoot(ownerId)}/shared');
       return ScopeCard.forGroup(
         groupId: ownerId,

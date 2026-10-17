@@ -439,7 +439,6 @@ class RemoteAgentService {
   Future<String> resumeStoreUriFor(String agentId) async {
     final device = await DeviceIdentity.deviceId();
     return MemoryPaths.uri(
-      deviceId: device,
       relPath: MemoryPaths.resumeMd(agentId),
     );
   }
@@ -449,7 +448,6 @@ class RemoteAgentService {
     final device = await DeviceIdentity.deviceId();
     final legacy = storeUriWithRef(
       StoreSpace.files,
-      device,
       MemoryPaths.resumeMd(agentId),
     );
     for (final uri in [await resumeStoreUriFor(agentId), legacy]) {

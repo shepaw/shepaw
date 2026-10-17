@@ -12,6 +12,7 @@ import '../l10n/app_localizations.dart';
 import '../models/attachment_data.dart';
 import '../screens/storage_directory_opener.dart';
 import '../services/store_open_service.dart';
+import '../storage/host_pouch_target.dart';
 import '../storage/store_protocol.dart';
 import '../utils/layout_utils.dart';
 
@@ -189,7 +190,7 @@ class StoreFilePreviewPage extends StatelessWidget {
       await StoreOpenService.instance.openDirectoryInBrowser(
         context,
         space: parsed.space,
-        deviceId: parsed.device,
+        deviceId: await resolveStoreDevice(parsed.space),
         path: parent,
         resolvePrefix: false,
       );

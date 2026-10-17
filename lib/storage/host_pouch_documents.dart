@@ -84,7 +84,7 @@ class LocalHostPouchDocuments implements HostPouchDocuments {
 
   @override
   String uri(String space, String path) =>
-      storeUriWithRef(space, deviceId, path);
+      storeUriWithRef(space, path);
 
   @override
   Future<List<StoreEntry>> list(String space, {String? prefix}) => _store.list(
@@ -175,7 +175,7 @@ class RemoteHostPouchDocuments implements HostPouchDocuments {
 
   @override
   String uri(String space, String path) =>
-      storeUriWithRef(space, deviceId, path);
+      storeUriWithRef(space, path);
 
   @override
   Future<List<StoreEntry>> list(String space, {String? prefix}) async {

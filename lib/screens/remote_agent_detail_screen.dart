@@ -42,6 +42,7 @@ import 'agent_soul_edit_screen.dart';
 import 'agent_resume_edit_screen.dart';
 import 'storage_directory_opener.dart';
 import '../storage/agent_workspace_uris.dart';
+import '../storage/host_pouch_target.dart';
 import '../storage/store_protocol.dart';
 import '../widgets/host_directory_picker.dart';
 
@@ -2544,7 +2545,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       await openStorageDirectoryInBrowser(
         context,
         space: parsed.space,
-        deviceId: parsed.device,
+        deviceId: await resolveStoreDevice(parsed.space),
         path: parsed.path,
         peerIdHint: agent.sourcePeerId,
       );

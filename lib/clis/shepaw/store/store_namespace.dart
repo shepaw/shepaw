@@ -10,6 +10,7 @@ import '../../../services/she_service.dart';
 import '../../../storage/artifact_service.dart';
 import '../../../storage/device_identity.dart';
 import '../../../storage/group_workspace_service.dart';
+import '../../../storage/host_pouch_target.dart';
 import '../../../storage/public_store_service.dart';
 import '../../../storage/runtime_paths.dart';
 import '../../../storage/local_store.dart';
@@ -17,7 +18,7 @@ import '../../../storage/store_protocol.dart';
 import '../../../storage/store_service.dart';
 import '../../../storage/store_uri_reader.dart';
 
-/// 校验对群工作空间（`pouch://workspaces/<device>/<group id>/…`）的访问：
+/// 校验对群工作空间（`pouch://workspaces/<group id>/…`）的访问：
 /// 目录名就是群 id。执行者（[ChatAgentScope.agentId]）必须是群成员。
 /// 非群工作空间 URI 返回 null（放行）。返回错误文案时调用方应拒绝。
 Future<String?> groupWorkspaceAccessError(String uri) async {
@@ -47,7 +48,7 @@ Future<String?> storeAgentAccessError(String uri) async {
   if (agentId.isEmpty) return 'unknown executor agent id';
   if (agentId == SheService.sheId) return null;
 
-  late final ({String space, String device, String path}) parsed;
+  late final ({String space, String path}) parsed;
   try {
     parsed = parseStoreUriLoose(uri);
   } catch (e) {
@@ -467,7 +468,7 @@ class StoreListCommand extends CliCommand {
     try {
       final parsed = parseStoreUriLoose(uri);
       final entries = await StoreService.instance.listDevice(
-        deviceId: parsed.device,
+        deviceId: await resolveStoreDevice(parsed.space),
         space: parsed.space,
         prefix: parsed.path.isEmpty ? null : parsed.path,
         limit: 1000,
@@ -486,20 +487,20 @@ class StoreListCommand extends CliCommand {
   }
 }
 
-/// Allow `pouch://space/device` (space root) for list; stricter [parseStoreUri]
-/// still requires a path segment for read.
-({String space, String device, String path}) parseStoreUriLoose(String raw) {
+/// Allow `pouch://space` (space root) for list; stricter [parseStoreUri]
+/// still requires a path segment for read. 地址不带设备段
+/// （docs/pouch_uri_no_device_decision.md）。
+({String space, String path}) parseStoreUriLoose(String raw) {
   final withoutQuery = raw.split('?').first;
   final rest = stripPouchUriPrefix(withoutQuery) ?? raw;
   final segments = rest.split('/').where((s) => s.isNotEmpty).toList();
-  if (segments.length < 2) {
-    throw const FormatException('bad_uri: missing space/device');
+  if (segments.isEmpty) {
+    throw const FormatException('bad_uri: missing space');
   }
   final space = segments[0];
-  final device = segments[1];
-  final path = segments.length <= 2
+  final path = segments.length <= 1
       ? ''
-      : segments.sublist(2).join('/').replaceAll(RegExp(r'/+$'), '');
+      : segments.sublist(1).join('/').replaceAll(RegExp(r'/+$'), '');
   for (final seg in path.split('/')) {
     if (seg.isEmpty) continue;
     if (seg.startsWith('.')) {
@@ -509,7 +510,7 @@ class StoreListCommand extends CliCommand {
       throw const FormatException('bad_path: path traversal');
     }
   }
-  return (space: space, device: device, path: path);
+  return (space: space, path: path);
 }
 
 /// 把 `.meta.json` 命中映射回产物本体：丢弃孤儿 sidecar（产物已不在），
@@ -615,7 +616,7 @@ class StoreSearchCommand extends CliCommand {
       try {
         final parsed = parseStoreUriLoose(uri);
         space = parsed.space;
-        device = parsed.device;
+        device = await resolveStoreDevice(parsed.space);
         pathPrefix = parsed.path.isEmpty ? '' : '${parsed.path}/';
       } catch (e) {
         return {'success': false, 'error': '$e'};

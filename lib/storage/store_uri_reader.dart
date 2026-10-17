@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import '../models/store_attachment_ref.dart';
 import '../peer/services/peer_storage_service.dart';
 import 'device_identity.dart';
+import 'host_pouch_target.dart';
 import 'local_store.dart';
 import 'remote_read_service.dart';
 import 'runtime_paths.dart';
@@ -27,6 +28,16 @@ class StoreUriReader {
   StoreUriReader._();
   static final instance = StoreUriReader._();
 
+  /// 地址不带设备段（docs/pouch_uri_no_device_decision.md）：按分区解析出
+  /// 帧层要用的 device，以及它是不是本机可读。
+  Future<({String device, bool isLocal})> _target(String space) async {
+    if (space == StoreSpace.app) {
+      return (device: StoreSpace.appDevice, isLocal: true);
+    }
+    final host = await HostPouchTarget.resolve();
+    return (device: host.deviceId, isLocal: !host.isRemote);
+  }
+
   Future<Uint8List> read(String uriString) async {
     final parsed = parseStoreUri(uriString);
     if (!parsed.ref.isLatest) {
@@ -34,9 +45,10 @@ class StoreUriReader {
     }
     final self = await DeviceIdentity.deviceId();
     final space = parsed.space;
-    final device = parsed.device;
+    final target = await _target(space);
+    final device = target.device;
     final path = parsed.path;
-    final isOwn = device == self;
+    final isOwn = target.isLocal;
     final isShared = StoreSpace.sharedReadable.contains(space);
 
     if (!isOwn && !isShared) {
@@ -91,26 +103,27 @@ class StoreUriReader {
     }
     if (parsed.path.isEmpty) return StoreUriKind.directory;
 
+    final target = await _target(parsed.space);
     final localHit = await _localCacheHit(
-        space: parsed.space, device: parsed.device, path: parsed.path);
+        space: parsed.space, device: target.device, path: parsed.path);
     if (localHit != null) return StoreUriKind.file;
     final self = await DeviceIdentity.deviceId();
-    await _assertReadable(parsed.space, parsed.device, parsed.path, self);
+    await _assertReadable(parsed.space, target.device, parsed.path, self);
 
-    if (parsed.device == self) {
+    if (target.isLocal) {
       final store = await StoreService.instance.localStore();
       final kind =
-          await store.entityKind(parsed.device, parsed.space, parsed.path);
+          await store.entityKind(target.device, parsed.space, parsed.path);
       return kind == 'dir' ? StoreUriKind.directory : StoreUriKind.file;
     }
 
     final server =
-        await StoreService.instance.preferredReadServer(parsed.device);
+        await StoreService.instance.preferredReadServer(target.device);
     final metaRes = await StoreService.instance.callPeer(
       server,
       StoreFrame(op: StoreOp.meta, payload: {
         'space': parsed.space,
-        'device': parsed.device,
+        'device': target.device,
         'path': parsed.path,
       }),
     );
@@ -139,10 +152,10 @@ class StoreUriReader {
     final parsed = parseStoreUri(uriString, allowEmptyPath: true);
     final original = parsed.path;
     if (original.isEmpty) return '';
+    final device = (await _target(parsed.space)).device;
     final store = await StoreService.instance.localStore();
     try {
-      final kind =
-          await store.entityKind(parsed.device, parsed.space, original);
+      final kind = await store.entityKind(device, parsed.space, original);
       if (kind == 'dir') return original;
       return _parentStorePath(original);
     } on StoreException catch (e) {
@@ -156,8 +169,7 @@ class StoreUriReader {
     var current = _parentStorePath(original);
     while (true) {
       try {
-        final kind =
-            await store.entityKind(parsed.device, parsed.space, current);
+        final kind = await store.entityKind(device, parsed.space, current);
         if (kind == 'dir') return current;
       } on StoreException catch (e) {
         if (e.code != StoreError.notFound && e.code != StoreError.badPath) {
@@ -181,17 +193,18 @@ class StoreUriReader {
     if (!parsed.ref.isLatest) {
       return _sizeVersioned(parsed, uriString);
     }
+    final target = await _target(parsed.space);
     final localHit = await _localCacheHit(
-        space: parsed.space, device: parsed.device, path: parsed.path);
+        space: parsed.space, device: target.device, path: parsed.path);
     if (localHit != null) return localHit.length();
     final self = await DeviceIdentity.deviceId();
-    await _assertReadable(parsed.space, parsed.device, parsed.path, self);
+    await _assertReadable(parsed.space, target.device, parsed.path, self);
 
-    if (parsed.device == self) {
+    if (target.isLocal) {
       final local = await StoreAttachmentRef.fileFromStoreUri(uriString);
       if (local != null) return local.length();
       final store = await StoreService.instance.localStore();
-      final meta = await store.meta(parsed.device, parsed.space, parsed.path);
+      final meta = await store.meta(target.device, parsed.space, parsed.path);
       final size = meta['size'] as int?;
       if (size == null) {
         throw StateError('not a file: $uriString');
@@ -200,10 +213,10 @@ class StoreUriReader {
     }
 
     final server =
-        await StoreService.instance.preferredReadServer(parsed.device);
+        await StoreService.instance.preferredReadServer(target.device);
     return RemoteReadService.instance.probeSize(
       serverDeviceId: server,
-      deviceId: parsed.device,
+      deviceId: target.device,
       space: parsed.space,
       path: parsed.path,
     );
@@ -242,11 +255,12 @@ class StoreUriReader {
       return;
     }
 
-    await _assertReadable(parsed.space, parsed.device, parsed.path, self);
+    final target = await _target(parsed.space);
+    await _assertReadable(parsed.space, target.device, parsed.path, self);
 
-    if (parsed.device == self) {
+    if (target.isLocal) {
       final store = await StoreService.instance.localStore();
-      final meta = await store.meta(parsed.device, parsed.space, parsed.path);
+      final meta = await store.meta(target.device, parsed.space, parsed.path);
       final size = meta['size'] as int? ?? 0;
       if (maxBytes != null && size > maxBytes) {
         throw StoreException(
@@ -258,7 +272,7 @@ class StoreUriReader {
       try {
         while (true) {
           final (chunk, _, eof) = await store.read(
-            parsed.device,
+            target.device,
             parsed.space,
             parsed.path,
             offset,
@@ -276,16 +290,16 @@ class StoreUriReader {
     }
 
     final server =
-        await StoreService.instance.preferredReadServer(parsed.device);
+        await StoreService.instance.preferredReadServer(target.device);
     await RemoteReadService.instance.materializeToFile(
       serverDeviceId: server,
-      deviceId: parsed.device,
+      deviceId: target.device,
       space: parsed.space,
       path: parsed.path,
       dest: dest,
       maxBytes: maxBytes,
       onProgress: onProgress,
-      allowOwnerFallback: server != parsed.device,
+      allowOwnerFallback: server != target.device,
     );
   }
 
@@ -316,26 +330,28 @@ class StoreUriReader {
       };
 
   Future<void> _assertVersionReadable(
-    ({String space, String device, String path, StoreUriRef ref}) parsed,
+    ({String space, String path, StoreUriRef ref}) parsed,
     String uriString,
   ) async {
     final self = await DeviceIdentity.deviceId();
-    await _assertReadable(parsed.space, parsed.device, parsed.path, self);
+    final device = (await _target(parsed.space)).device;
+    await _assertReadable(parsed.space, device, parsed.path, self);
     // 探活：确认该 ref 存在。
     await _sizeVersioned(parsed, uriString);
   }
 
   Future<int> _sizeVersioned(
-    ({String space, String device, String path, StoreUriRef ref}) parsed,
+    ({String space, String path, StoreUriRef ref}) parsed,
     String uriString,
   ) async {
     final self = await DeviceIdentity.deviceId();
-    await _assertReadable(parsed.space, parsed.device, parsed.path, self);
+    final target = await _target(parsed.space);
+    await _assertReadable(parsed.space, target.device, parsed.path, self);
     final token = _refToken(parsed.ref);
-    if (parsed.device == self) {
+    if (target.isLocal) {
       final store = await StoreService.instance.localStore();
       final (_, size, _) = await store.versionsRead(
-        parsed.device,
+        target.device,
         parsed.space,
         parsed.path,
         token,
@@ -345,12 +361,12 @@ class StoreUriReader {
       return size;
     }
     final server =
-        await StoreService.instance.preferredReadServer(parsed.device);
+        await StoreService.instance.preferredReadServer(target.device);
     final res = await StoreService.instance.callPeer(
       server,
       StoreFrame(op: StoreOp.versionsRead, payload: {
         'space': parsed.space,
-        'device': parsed.device,
+        'device': target.device,
         'path': parsed.path,
         'ref': token,
         'offset': 0,
@@ -365,13 +381,14 @@ class StoreUriReader {
   }
 
   Future<Uint8List> _readVersioned(
-    ({String space, String device, String path, StoreUriRef ref}) parsed,
+    ({String space, String path, StoreUriRef ref}) parsed,
     String uriString,
   ) async {
     final self = await DeviceIdentity.deviceId();
-    await _assertReadable(parsed.space, parsed.device, parsed.path, self);
+    final target = await _target(parsed.space);
+    await _assertReadable(parsed.space, target.device, parsed.path, self);
     final token = _refToken(parsed.ref);
-    if (parsed.device == self) {
+    if (target.isLocal) {
       final builder = BytesBuilder(copy: false);
       var offset = 0;
       while (true) {
@@ -385,14 +402,14 @@ class StoreUriReader {
     }
     final size = await _sizeVersioned(parsed, uriString);
     final server =
-        await StoreService.instance.preferredReadServer(parsed.device);
+        await StoreService.instance.preferredReadServer(target.device);
     final builder = BytesBuilder(copy: false);
     await StoreRemoteFetcher.pump(
       fileSize: size,
       fetch: ({required offset, required length, required binary}) =>
           StoreService.instance.readRemoteChunk(
         serverDeviceId: server,
-        deviceId: parsed.device,
+        deviceId: target.device,
         space: parsed.space,
         path: parsed.path,
         offset: offset,
@@ -406,16 +423,16 @@ class StoreUriReader {
   }
 
   Future<(Uint8List, int, bool)> _readVersionedChunk(
-    ({String space, String device, String path, StoreUriRef ref}) parsed,
+    ({String space, String path, StoreUriRef ref}) parsed,
     String token,
     int offset,
     String uriString,
   ) async {
-    final self = await DeviceIdentity.deviceId();
-    if (parsed.device == self) {
+    final target = await _target(parsed.space);
+    if (target.isLocal) {
       final store = await StoreService.instance.localStore();
       return store.versionsRead(
-        parsed.device,
+        target.device,
         parsed.space,
         parsed.path,
         token,
@@ -424,12 +441,12 @@ class StoreUriReader {
       );
     }
     final server =
-        await StoreService.instance.preferredReadServer(parsed.device);
+        await StoreService.instance.preferredReadServer(target.device);
     final res = await StoreService.instance.callPeer(
       server,
       StoreFrame(op: StoreOp.versionsRead, payload: {
         'space': parsed.space,
-        'device': parsed.device,
+        'device': target.device,
         'path': parsed.path,
         'ref': token,
         'offset': offset,
@@ -447,7 +464,7 @@ class StoreUriReader {
   }
 
   Future<void> _copyVersionedTo(
-    ({String space, String device, String path, StoreUriRef ref}) parsed,
+    ({String space, String path, StoreUriRef ref}) parsed,
     String uriString,
     File dest, {
     int? maxBytes,
@@ -461,9 +478,9 @@ class StoreUriReader {
     await dest.parent.create(recursive: true);
     final sink = dest.openWrite();
     final token = _refToken(parsed.ref);
-    final self = await DeviceIdentity.deviceId();
+    final target = await _target(parsed.space);
     try {
-      if (parsed.device == self) {
+      if (target.isLocal) {
         var offset = 0;
         while (true) {
           final (chunk, _, eof) =
@@ -475,13 +492,13 @@ class StoreUriReader {
         }
       } else {
         final server =
-            await StoreService.instance.preferredReadServer(parsed.device);
+            await StoreService.instance.preferredReadServer(target.device);
         await StoreRemoteFetcher.pump(
           fileSize: size,
           fetch: ({required offset, required length, required binary}) =>
               StoreService.instance.readRemoteChunk(
             serverDeviceId: server,
-            deviceId: parsed.device,
+            deviceId: target.device,
             space: parsed.space,
             path: parsed.path,
             offset: offset,
@@ -516,12 +533,9 @@ class StoreUriReader {
     final self = await DeviceIdentity.deviceId();
     if (device == self) return null;
     if (StoreSpace.sharedReadable.contains(space)) return null;
-    final local =
-        await StoreAttachmentRef.fileFromStoreUri(storeUriWithRef(
-      space,
-      device,
-      path,
-    ));
+    final local = await StoreAttachmentRef.fileFromStoreUri(
+      storeUriWithRef(space, path),
+    );
     if (local == null) return null;
     if (await local.stat().then((s) => s.type == FileSystemEntityType.directory)) {
       return null;

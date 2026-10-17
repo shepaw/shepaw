@@ -124,16 +124,6 @@ class ScopeCard {
     return ScopeCardCliSurface.shepawTool;
   }
 
-  /// Pull `device_id` out of a `pouch://<space>/<device>/…` URI.
-  static String? deviceIdFromStoreUri(String? uri) {
-    if (uri == null || !isPouchUri(uri)) return null;
-    try {
-      return parseStoreUri(uri, allowEmptyPath: true).device;
-    } catch (_) {
-      return null;
-    }
-  }
-
   // ── Factories ──────────────────────────────────────────────────────────
 
   /// 本机 / 外接 ACP 私聊（owner = agent）。
@@ -148,8 +138,7 @@ class ScopeCard {
     ScopeCardCliSurface cliSurface = ScopeCardCliSurface.shepawTool,
   }) {
     final cogRoot = MemoryPaths.uri(
-      deviceId: deviceId,
-      relPath: '${MemoryPaths.agentRoot(agentId)}/',
+            relPath: '${MemoryPaths.agentRoot(agentId)}/',
     );
     return ScopeCard(
       mode: ScopeCardMode.dm,
@@ -159,20 +148,16 @@ class ScopeCard {
       channelId: channelId,
       cognitionRootUri: cogRoot,
       soulUri: MemoryPaths.uri(
-        deviceId: deviceId,
-        relPath: MemoryPaths.soulMd(agentId),
+                relPath: MemoryPaths.soulMd(agentId),
       ),
       memoryEntriesUri: MemoryPaths.uri(
-        deviceId: deviceId,
-        relPath: '${MemoryPaths.entriesDir(agentId)}/',
+                relPath: '${MemoryPaths.entriesDir(agentId)}/',
       ),
       runtimeRootUri: RuntimePaths.uri(
-        deviceId: deviceId,
-        relPath: RuntimePaths.runtimeRoot(agentId),
+                relPath: RuntimePaths.runtimeRoot(agentId),
       ),
       manifestUri: RuntimePaths.uri(
-        deviceId: deviceId,
-        relPath: RuntimePaths.contextManifest(agentId),
+                relPath: RuntimePaths.contextManifest(agentId),
       ),
       injected: injected,
       capabilities: ScopeCardCapabilities(writeMemory: writeMemory),
@@ -201,24 +186,19 @@ class ScopeCard {
       channelId: channelId,
       peerClientId: peerClientId,
       cognitionRootUri: MemoryPaths.uri(
-        deviceId: deviceId,
-        relPath: '${MemoryPaths.agentRoot(agentId)}/',
+                relPath: '${MemoryPaths.agentRoot(agentId)}/',
       ),
       soulUri: MemoryPaths.uri(
-        deviceId: deviceId,
-        relPath: MemoryPaths.soulMd(agentId),
+                relPath: MemoryPaths.soulMd(agentId),
       ),
       memoryEntriesUri: MemoryPaths.uri(
-        deviceId: deviceId,
-        relPath: entriesRel,
+                relPath: entriesRel,
       ),
       runtimeRootUri: RuntimePaths.uri(
-        deviceId: deviceId,
-        relPath: RuntimePaths.runtimeRoot(agentId),
+                relPath: RuntimePaths.runtimeRoot(agentId),
       ),
       manifestUri: RuntimePaths.uri(
-        deviceId: deviceId,
-        relPath: RuntimePaths.contextManifest(agentId),
+                relPath: RuntimePaths.contextManifest(agentId),
       ),
       injected: injected,
       capabilities: ScopeCardCapabilities.peerDefault,
@@ -242,12 +222,10 @@ class ScopeCard {
       deviceId: deviceId,
       channelId: channelId,
       runtimeRootUri: RuntimePaths.uri(
-        deviceId: deviceId,
-        relPath: RuntimePaths.runtimeRoot(groupId),
+                relPath: RuntimePaths.runtimeRoot(groupId),
       ),
       manifestUri: RuntimePaths.uri(
-        deviceId: deviceId,
-        relPath: RuntimePaths.contextManifest(groupId),
+                relPath: RuntimePaths.contextManifest(groupId),
       ),
       injected: const ScopeCardInjected(),
       capabilities: ScopeCardCapabilities.groupMember,
@@ -358,15 +336,14 @@ class ScopeCard {
 
   /// 系统技能全文在储物袋。每轮只给地址。
   String get systemSkillUri =>
-      storeUriWithRef(StoreSpace.tools, deviceId, StoreSpace.systemSkillRelPath);
+      storeUriWithRef(StoreSpace.tools, StoreSpace.systemSkillRelPath);
 
-  /// `pouch://tools/<device>/`，里面是 App 的 mcp / rules / skills。
-  String get toolsRootUri => storeUriWithRef(StoreSpace.tools, deviceId, '');
+  /// `pouch://tools/`，里面是 App 的 mcp / rules / skills。
+  String get toolsRootUri => storeUriWithRef(StoreSpace.tools, '');
 
-  /// `pouch://tools/<device>/agents/<owner>/`。
+  /// `pouch://tools/agents/<owner>/`。
   String get agentToolsUri => storeUriWithRef(
         StoreSpace.tools,
-        deviceId,
         '${StoreSpace.toolsAgentsDir}/${RuntimePaths.sanitizeSegment(ownerId)}/',
       );
 

@@ -20,8 +20,8 @@ String? canonicalizeStoreWorkspaceUri(String raw) {
     final device = deviceFirst.group(1)!.toLowerCase();
     final rest = (deviceFirst.group(2) ?? '').replaceAll(RegExp(r'/+$'), '');
     return rest.isEmpty
-        ? 'pouch://workspaces/$device/'
-        : 'pouch://workspaces/$device/$rest/';
+        ? 'pouch://workspaces/'
+        : 'pouch://workspaces/$rest/';
   }
   return uri.endsWith('/') ? uri : '$uri/';
 }
@@ -62,9 +62,8 @@ Future<List<String>> collectAgentWorkspaceUris(RemoteAgent agent) async {
   try {
     final ids = await WorkspaceBindingService.instance.loadBoundIds(agent.id);
     if (ids.isEmpty) return out;
-    final deviceId = await DeviceIdentity.deviceId();
     for (final id in ids) {
-      final uri = storeUriWithRef(StoreSpace.workspaces, deviceId, id);
+      final uri = storeUriWithRef(StoreSpace.workspaces, id);
       final key = uri.replaceAll(RegExp(r'/+$'), '');
       if (seen.add(key)) out.add('$uri/');
     }

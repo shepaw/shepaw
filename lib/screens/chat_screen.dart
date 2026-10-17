@@ -35,6 +35,7 @@ import '../controllers/chat_attachment_coordinator.dart';
 import '../theme/app_theme.dart';
 import '../widgets/chat/chat_app_bar.dart';
 import '../models/store_attachment_ref.dart';
+import '../storage/host_pouch_target.dart';
 import '../storage/store_protocol.dart';
 import '../widgets/chat/storage_file_picker_screen.dart';
 import '../widgets/chat/chat_more_drawer.dart';
@@ -672,7 +673,7 @@ class _ChatScreenState extends State<ChatScreen>
       final parsed = parseStoreUri(storeUri);
       if (!parsed.ref.isLatest) return false;
       final ref = StoreAttachmentRef(
-        deviceId: parsed.device,
+        deviceId: await resolveStoreDevice(parsed.space),
         space: parsed.space,
         path: parsed.path,
         displayName: att.fileName,

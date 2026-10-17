@@ -39,7 +39,7 @@ class PublicStoreService {
       path: path,
       bytes: content,
     );
-    final uri = storeUriWithRef(StoreSpace.public_, deviceId, path);
+    final uri = storeUriWithRef(StoreSpace.public_, path);
     _log.info('public written: $uri', tag: _tag);
     return uri;
   }

@@ -51,9 +51,9 @@ class MemoryPaths {
   /// 简历。和 soul 一样属于这个 Agent，不进用户的文件分区。
   static String resumeMd(String agentId) => '${agentRoot(agentId)}/resume.md';
 
+  /// 地址不带设备段（docs/pouch_uri_no_device_decision.md）。
   static String uri({
-    required String deviceId,
     required String relPath,
   }) =>
-      storeUriWithRef(StoreSpace.cognition, deviceId, relPath);
+      storeUriWithRef(StoreSpace.cognition, relPath);
 }

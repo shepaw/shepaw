@@ -141,7 +141,7 @@ class WorkspaceBindingService {
     } catch (_) {}
     manifest['workspace_refs'] = [
       for (final id in workspaceIds)
-        storeUriWithRef(StoreSpace.workspaces, deviceId, id),
+        storeUriWithRef(StoreSpace.workspaces, id),
     ];
     final keepSoul = manifest['soul_uri'];
     final keepMemory = manifest['memory_uri'];

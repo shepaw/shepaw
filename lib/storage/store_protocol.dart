@@ -155,7 +155,7 @@ class StoreSpace {
   /// Legacy：旧认知空间名（只读兼容；新写入走 [cognition]）。
   static const memory = 'memory';
 
-  /// 应用自己的库。不挂在宿主指纹下，URI 固定为 `pouch://app/shepaw/...`。
+  /// 应用自己的库。不挂在宿主指纹下，URI 固定为 `pouch://app/...`。
   static const app = 'app';
 
   /// [app] 分区的设备段。不是 Noise 指纹，换宿主后地址不变。
@@ -587,7 +587,8 @@ StoreCaller callerForStoreFrame({
   return StoreCaller(deviceId: device, trustLevel: TrustLevel.friend);
 }
 
-/// `pouch://app/shepaw/...` 的设备段。只和 [StoreSpace.app] 一起用。
+/// [app] 分区在帧里用的 device：不是 Noise 指纹，换宿主后不变。只和
+/// [StoreSpace.app] 一起用；地址里不带设备段，所以只出现在 `store.*` 帧。
 bool isPouchAppDevice(String? device) => device == StoreSpace.appDevice;
 
 bool isAddressableStoreDevice(String? device, String? space) =>
@@ -604,7 +605,7 @@ bool isValidContentSha256(String? sha) =>
 
 enum StoreUriRefKind { latest, hash, seq }
 
-/// `pouch://<space>/<device>/<path>@<ref>` 的版本引用段。
+/// `pouch://<space>/<path>@<ref>` 的版本引用段。
 class StoreUriRef {
   const StoreUriRef.latest()
       : kind = StoreUriRefKind.latest,
@@ -627,35 +628,34 @@ class StoreUriRef {
       };
 }
 
-/// 解析 pouch:// URI（含可选 `@ref` / `?ref=`），返回 space/device/path/ref。
-/// 与 Rust `src/uri.rs` 对齐：畸形引用 → [FormatException](bad_uri)；
-/// 点段/穿越 → [BadPathException]。
+/// 解析 pouch:// URI（含可选 `@ref` / `?ref=`），返回 space/path/ref。
 ///
-/// [allowEmptyPath] 为 true 时允许分区根 `pouch://<space>/<device>`（浏览/list）；
+/// 地址不带设备段（docs/pouch_uri_no_device_decision.md）：
+/// `pouch://<space>/<path>`。设备只在 `store.*` 帧里传，不进地址，
+/// 读写时按「当前这只袋子」的宿主 device 解析（[HostPouchTarget] 语义）。
+/// 畸形引用 → [FormatException](bad_uri)；点段/穿越 → [BadPathException]。
+///
+/// [allowEmptyPath] 为 true 时允许分区根 `pouch://<space>`（浏览/list）；
 /// 读文件仍应保持默认（必须带 path）。
-({String space, String device, String path, StoreUriRef ref}) parseStoreUri(
+({String space, String path, StoreUriRef ref}) parseStoreUri(
     String raw,
     {bool allowEmptyPath = false}) {
   final withoutQuery = raw.split('?').first;
   final stripped = stripPouchUriPrefix(withoutQuery);
   final rest = stripped ?? raw;
   final segments = rest.split('/').where((s) => s.isNotEmpty).toList();
-  if (segments.length < 2 || (!allowEmptyPath && segments.length < 3)) {
+  if (segments.isEmpty || (!allowEmptyPath && segments.length < 2)) {
     throw FormatException(allowEmptyPath
-        ? 'bad_uri: missing space/device'
-        : 'bad_uri: missing space/device/path');
+        ? 'bad_uri: missing space'
+        : 'bad_uri: missing space/path');
   }
   final space = segments[0];
   // 自定义空间：语法合法即可（属性/ACL 由服务端 space registry 裁定）。
   if (!StoreSpace.isValidSyntax(space)) {
     throw FormatException('bad_uri: unknown space $space');
   }
-  final device = segments[1];
-  if (!isAddressableStoreDevice(device, space)) {
-    throw FormatException('bad_uri: invalid device id');
-  }
   // Markdown / Uri.tryParse 常把非 ASCII 路径编成 %XX；磁盘上是 UTF-8 文件名。
-  var rel = segments.sublist(2).map(_decodeStoreUriSegment).join('/');
+  var rel = segments.sublist(1).map(_decodeStoreUriSegment).join('/');
 
   // 点前缀段保留（.staging/.recycle/.versions/.nexuspouch 系统目录）。
   for (final seg in rel.split('/')) {
@@ -687,7 +687,7 @@ class StoreUriRef {
           (throw FormatException('bad_uri: invalid ref $v'));
     }
   }
-  return (space: space, device: device, path: rel, ref: ref);
+  return (space: space, path: rel, ref: ref);
 }
 
 /// Decode one path segment; leave alone if not valid percent-encoding.
@@ -721,10 +721,11 @@ bool _looksLikeRefAttempt(String s) =>
     (s.isNotEmpty && RegExp(r'^[0-9a-fA-F]+$').hasMatch(s)) ||
     (s.length >= 16 && RegExp(r'^[0-9a-zA-Z]+$').hasMatch(s));
 
-/// 格式化带版本引用的 store URI。
-String storeUriWithRef(String space, String device, String path,
-        [StoreUriRef? ref]) =>
-    'pouch://$space/$device/$path${ref?.toString() ?? ''}';
+/// 格式化带版本引用的 store URI：`pouch://<space>/<path>`。
+///
+/// 不带设备段（docs/pouch_uri_no_device_decision.md）。
+String storeUriWithRef(String space, String path, [StoreUriRef? ref]) =>
+    'pouch://$space/$path${ref?.toString() ?? ''}';
 
 /// 文件分享链接：Markdown `[displayName](storeUri)`。
 String formatStoreMarkdownLink(String displayName, String storeUri) =>
