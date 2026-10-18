@@ -35,6 +35,13 @@ class PeerApprovalPayload {
     return approvalId;
   }
 
+  /// 表单卡在消息表里的确定性 id。
+  ///
+  /// 卡片以前只挂在流式气泡的内存 metadata 上，聊天页重开/控制器重建就没了。
+  /// 用 `approval_id` 派生 id，重连补发、跨设备广播重投同一张卡时落到同一行，
+  /// 提交态/作废态也就有地方可写。
+  static String formCardMessageId(String approvalId) => 'peer_form_$approvalId';
+
   /// Default Allow/Deny pair when the hub/agent omits actions.
   static List<dynamic> effectiveActions(List<dynamic>? raw) {
     if (raw != null && raw.isNotEmpty) {

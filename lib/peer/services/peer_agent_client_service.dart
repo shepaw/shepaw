@@ -2239,9 +2239,10 @@ class PeerAgentClientService {
 
   // ── Test seams ─────────────────────────────────────────────────────────
 
-  /// Test seam: when set, [_abortPendingTurn] routes its `agent_cancel`
-  /// control frame here instead of [PeerConnectionManager], letting unit
-  /// tests capture frames without a live peer connection.
+  /// Test seam: when set, control frames that tests need to capture or ack
+  /// ([_abortPendingTurn]'s `agent_cancel`, [submitForm]'s `agent_form_resp`)
+  /// route here instead of [PeerConnectionManager], letting unit tests run
+  /// without a live peer connection.
   @visibleForTesting
   Future<bool> Function(String peerId, Map<String, dynamic> json)?
       debugSendControlOverride;
@@ -6682,6 +6683,23 @@ class PeerAgentClientService {
     pending.openApprovals++;
     pending.lastApprovalOpenedAt = DateTime.now();
     _approvalToRequest[approvalId] = requestId;
+    // 先落库再交给 UI：卡片只活在流式气泡的内存 metadata 里的话，
+    // 聊天页重开/控制器重建/DB reconcile 都会让它消失，而主机还在等。
+    if (pending.channelId.isNotEmpty) {
+      unawaited(persistFormCard(
+        channelId: pending.channelId,
+        senderId: pending.localAgentId,
+        senderName: pending.agentName,
+        formData: {
+          'form_id': approvalId,
+          'request_id': requestId,
+          'title': data['title'] ?? '',
+          if (data['description'] != null) 'description': data['description'],
+          'fields': data['fields'] is List ? data['fields'] : const <dynamic>[],
+          'peer_form': {'peer_id': peerId, 'approval_id': approvalId},
+        },
+      ));
+    }
     final fields = data['fields'];
     pending.onForm?.call({
       'form_id': approvalId,
@@ -6799,15 +6817,64 @@ class PeerAgentClientService {
     };
   }
 
+  /// 把一张表单卡落成一条确定性 id 的消息行。
+  ///
+  /// id 由 `approval_id` 派生（[PeerApprovalPayload.formCardMessageId]）：
+  /// 重连补发、跨设备广播重投同一张卡时落到同一行，不会在聊天记录里堆出
+  /// 好几张一样的表；`ignore` 也保证已经提交/作废的状态不被旧卡盖掉。
+  Future<void> persistFormCard({
+    required Map<String, dynamic> formData,
+    required String channelId,
+    required String senderId,
+    String senderName = '',
+  }) async {
+    final approvalId = formData['form_id']?.toString() ?? '';
+    if (approvalId.isEmpty || channelId.isEmpty || senderId.isEmpty) return;
+    if (!getIt.isRegistered<LocalDatabaseService>()) return;
+    final peerForm = formData['peer_form'];
+    final peerId = peerForm is Map ? peerForm['peer_id']?.toString() ?? '' : '';
+    // 路由字段只用来定位会话，别混进卡片数据里（孤儿卡事件会带上）。
+    final form = Map<String, dynamic>.from(formData)
+      ..remove('peer_id')
+      ..remove('remote_agent_id')
+      ..remove('orphan');
+    form['form_id'] = approvalId;
+    if (peerId.isNotEmpty) {
+      form['peer_form'] = {'peer_id': peerId, 'approval_id': approvalId};
+    }
+    try {
+      await _db.createMessage(
+        id: PeerApprovalPayload.formCardMessageId(approvalId),
+        channelId: channelId,
+        senderId: senderId,
+        senderType: 'agent',
+        senderName: senderName.isEmpty ? 'Agent' : senderName,
+        content: (form['title'] as String?) ?? '',
+        metadata: {
+          'form': form,
+          'agent_id': senderId,
+          if (senderName.isNotEmpty) 'agent_name': senderName,
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+    } catch (e) {
+      _log.warning('persist form card failed: $e',
+          tag: 'PeerApproval', error: e);
+    }
+  }
+
   /// 把表单答案送回 hub，解开正在等的 `elicitation/create`。
   Future<void> submitForm({
     required String peerId,
     required String approvalId,
     required Map<String, dynamic> values,
   }) async {
-    final tracked = _approvalToRequest.containsKey(approvalId) ||
+    var tracked = _approvalToRequest.containsKey(approvalId) ||
         _orphanedApprovals.containsKey(approvalId) ||
         _orphanedForms.containsKey(approvalId);
+    // 进程重启后卡片是从 SQLite 的确定性行渲染出来的，内存账簿是空的。
+    // 主机重连补发这张卡之前用户就点了提交，不该被判成「不认识这张卡」。
+    tracked = tracked || await _isPersistedOpenForm(approvalId);
     if (!tracked) {
       throw const PeerApprovalExpiredException();
     }
@@ -6819,10 +6886,11 @@ class PeerAgentClientService {
     };
     var sent = false;
     Object? lastErr;
+    final sendControl =
+        debugSendControlOverride ?? PeerConnectionManager.instance.sendControl;
     for (var attempt = 0; attempt < 3; attempt++) {
       try {
-        sent = await PeerConnectionManager.instance
-            .sendControl(peerId, payload)
+        sent = await sendControl(peerId, payload)
             .timeout(const Duration(seconds: 8), onTimeout: () => false);
         if (sent) break;
         lastErr = 'peer not connected';
@@ -6847,6 +6915,7 @@ class PeerAgentClientService {
       'action': 'accept',
       'content': values,
     };
+    unawaited(_persistFormSubmitted(approvalId, values));
     if (_submittedForms.length > 50) {
       _submittedForms.remove(_submittedForms.keys.first);
     }
@@ -7375,6 +7444,62 @@ class PeerAgentClientService {
       }
     } catch (e) {
       _log.warning('persist turn cards closed failed: $e',
+          tag: 'PeerApproval', error: e);
+    }
+  }
+
+  /// 库里是否还有一张没提交、没作废的表单卡。
+  ///
+  /// 这是 [submitForm] 的 known-guard 在进程重启后的凭据：卡是从
+  /// [persistFormCard] 写的确定性行渲染出来的，内存账簿里当然找不到。
+  Future<bool> _isPersistedOpenForm(String approvalId) async {
+    if (!getIt.isRegistered<LocalDatabaseService>()) return false;
+    try {
+      final row = await _db.getMessageById(
+        PeerApprovalPayload.formCardMessageId(approvalId),
+      );
+      if (row == null) return false;
+      final raw = row['metadata'];
+      if (raw is! String || raw.isEmpty) return false;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return false;
+      final form = decoded['form'];
+      if (form is! Map) return false;
+      if (form['submitted_values'] != null || form['closed'] != null) {
+        return false;
+      }
+      return form['peer_form'] is Map;
+    } catch (e) {
+      _log.warning('read persisted form failed: $e',
+          tag: 'PeerApproval', error: e);
+      return false;
+    }
+  }
+
+  /// 提交成功后把答案写回卡片行。
+  ///
+  /// 不写的话重启后又变回一张可以再答一次的表单，而主机早已收下这一份。
+  Future<void> _persistFormSubmitted(
+    String approvalId,
+    Map<String, dynamic> values,
+  ) async {
+    if (!getIt.isRegistered<LocalDatabaseService>()) return;
+    try {
+      final row = await _db.getMessageById(
+        PeerApprovalPayload.formCardMessageId(approvalId),
+      );
+      if (row == null) return;
+      await _writeClosedMetadata(row, (metadata) {
+        final raw = metadata['form'];
+        if (raw is! Map) return null;
+        final form = Map<String, dynamic>.from(raw);
+        if (form['submitted_values'] != null) return null;
+        form['submitted_values'] = values;
+        metadata['form'] = form;
+        return metadata;
+      });
+    } catch (e) {
+      _log.warning('persist form submitted failed: $e',
           tag: 'PeerApproval', error: e);
     }
   }
