@@ -437,6 +437,63 @@ void main() {
     await incoming.close();
   });
 
+  test('别的端发起的回合占位写到本机正在看的 psess_ 会话', () async {
+    final db = LocalDatabaseService();
+    final suffix = DateTime.now().microsecondsSinceEpoch + 11;
+    final bareId = 'dm_she_user_$suffix';
+    final psessId = 'psess_$bareId';
+    const agentId = 'she-builtin-agent-001';
+    await db.createChannel(
+      Channel.withMemberIds(
+        id: psessId,
+        name: 'She',
+        type: 'dm',
+        memberIds: ['user', agentId],
+      ),
+      'user',
+    );
+
+    final incoming = StreamController<PeerControlEvent>.broadcast();
+    final client = HubEventClient(
+      events: incoming.stream,
+      send: (_, __) async => true,
+      seqStore: MemoryHubSeqStore(),
+      fingerprintOf: (_) async => 'fp-psess-$suffix',
+      watchingTurn: (_) => false,
+    );
+    client.start();
+    addTearDown(client.dispose);
+
+    const turnId = 'turn-psess';
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: {
+        'type': 'hub_event',
+        'event': {
+          'seq': 1,
+          'kind': 'turn.started',
+          'channel_id': bareId,
+          'agent_id': agentId,
+          'data': {
+            'turn_id': turnId,
+            'channel_id': bareId,
+            'agent_id': agentId,
+          },
+        },
+      },
+    ));
+    for (var i = 0; i < 20; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+
+    final row = await db.getMessageById(liveTurnPlaceholderId(turnId));
+    expect(row?['channel_id'], psessId);
+    expect(client.channelHasLiveTurn(psessId), isTrue);
+    expect(client.channelHasLiveTurn(bareId), isFalse);
+    await db.deleteMessage(liveTurnPlaceholderId(turnId));
+    await incoming.close();
+  });
+
   test('reset 之后作废历史同步进度', () async {
     final db = LocalDatabaseService();
     final suffix = DateTime.now().microsecondsSinceEpoch;

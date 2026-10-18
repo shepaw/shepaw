@@ -36,6 +36,7 @@ import '../models/workflow_models.dart';
 import '../peer/pouch_roster.dart';
 import '../peer/host_she_turn.dart';
 import '../peer/pouch_turn_relay.dart';
+import '../peer/services/hub_event_client.dart';
 import '../peer/services/peer_agent_client_service.dart';
 import '../peer/services/peer_agent_host_service.dart' show isPeerAgentChannel;
 import '../peer/services/peer_storage_service.dart';
@@ -195,6 +196,10 @@ abstract class _ChatControllerBase extends ChangeNotifier
 
   // ---- Processing / queue ----
   bool isProcessing = false;
+
+  /// 正在看别的设备发起的主机回合。气泡跟着流式占位长，标题显示正在输入，
+  /// 但停止按钮不能停掉那一轮（停的是本机任务）。
+  bool mirrorsRemoteTurn = false;
   ACPCancellationToken? acpCancellationToken;
 
   /// 待发送队列：按频道存放在 ChatService 侧（跨 Controller 生命周期存活）。
@@ -940,10 +945,26 @@ abstract class _ChatControllerBase extends ChangeNotifier
             ChatMessageWindow.initialLimit,
             ChatMessageWindow.maxCached,
           );
-    final dbMessages = await chatService.loadChannelMessages(
-      currentChannelId!,
-      limit: windowLimit,
-    );
+    // 别的端发起的回合结束了：先摘掉镜像，否则下面的 defer 会把
+    // 已经落盘的正式回复一直压住。
+    if (mirrorsRemoteTurn && !_hubChannelStillLive(channelIdAtStart!)) {
+      mirrorsRemoteTurn = false;
+      isProcessing = false;
+      if (streaming.messageId?.startsWith('hub-live-') == true) {
+        streaming.clear();
+      }
+    }
+    final mirrorLive = _hubChannelStillLive(channelIdAtStart!);
+    // 流式占位只在本机库里。每次刷新都向主机要一页会把打字效果拖到回合结束。
+    final dbMessages = mirrorLive
+        ? await chatService.loadLocalChannelMessages(
+            channelIdAtStart!,
+            limit: windowLimit,
+          )
+        : await chatService.loadChannelMessages(
+            channelIdAtStart!,
+            limit: windowLimit,
+          );
     // 频道代际守卫：本调用可能在原位切换频道（switchChannel）后才完成，
     // 旧频道查回的行不能再覆盖新频道的 messages。
     if (currentChannelId != channelIdAtStart) return;
@@ -972,10 +993,12 @@ abstract class _ChatControllerBase extends ChangeNotifier
       // reload）被误判僵尸并清掉流式会话。
       final turnFresh = streaming.activeWithin(const Duration(seconds: 10));
       final wasStreaming = streaming.isActive;
-      final deferReload = ChatStreamingSession.shouldDeferReload(
-        streamingActive: streaming.isActive,
-        hasLiveTask: hasLiveTask || turnFresh,
-      );
+      // 镜像回合的正文就在本机 hub-live 行上，推迟整表替换会把打字卡住。
+      final deferReload = !mirrorLive &&
+          ChatStreamingSession.shouldDeferReload(
+            streamingActive: streaming.isActive,
+            hasLiveTask: hasLiveTask || turnFresh,
+          );
       if (deferReload &&
           !ChatMessageReconciler.dbHasTurnReply(
             dbMessages: dbMessages,
@@ -1022,7 +1045,8 @@ abstract class _ChatControllerBase extends ChangeNotifier
       if (streaming.isActive) {
         streaming.repointAnchor(messages);
       }
-      if (!_hasLiveDmTurn(currentChannelId!)) {
+      _adoptHubLiveMirror();
+      if (!_hasLiveDmTurn(currentChannelId!) && !mirrorsRemoteTurn) {
         isProcessing = false;
         acpCancellationToken = null;
       }
@@ -1035,6 +1059,34 @@ abstract class _ChatControllerBase extends ChangeNotifier
     // 服务侧回合的最终回复）→ 同步标记已读，避免对话列表出现"看得见
     // 却消不掉"的未读角标。
     unawaited(markMessagesAsReadIfAtBottom());
+  }
+
+  bool _hubChannelStillLive(String channelId) {
+    if (!getIt.isRegistered<HubEventClient>()) return false;
+    return getIt<HubEventClient>().channelHasLiveTurn(channelId);
+  }
+
+  /// 把别的设备发起的回合挂到本机流式气泡上：标题显示正在输入，正文随
+  /// 占位行增长。本机自己发起的回合已经占着 streaming，这里不抢。
+  void _adoptHubLiveMirror() {
+    if (isGroupMode) return;
+    final channelId = currentChannelId;
+    if (channelId == null || !_hubChannelStillLive(channelId)) return;
+    Message? live;
+    for (final message in messages) {
+      if (message.id.startsWith('hub-live-')) live = message;
+    }
+    if (live == null) return;
+    if (streaming.isActive &&
+        !(streaming.messageId?.startsWith('hub-live-') ?? false)) {
+      return;
+    }
+    if (streaming.messageId != live.id) {
+      streaming.begin(live.id, fromId: live.from.id);
+    }
+    streaming.content = live.content;
+    mirrorsRemoteTurn = true;
+    isProcessing = true;
   }
 
   void rebuildMessageIdMap() {

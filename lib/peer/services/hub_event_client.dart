@@ -71,6 +71,15 @@ class HubEventClient {
 
   Stream<HubNotice> get notices => _notices.stream;
 
+  /// 这台设备正在看的本地频道上，是否还有别的端发起、尚未结束的回合。
+  bool channelHasLiveTurn(String channelId) {
+    if (channelId.isEmpty) return false;
+    for (final id in _liveChannels.values) {
+      if (id == channelId) return true;
+    }
+    return false;
+  }
+
   void start() {
     _sub ??= events.listen(_onControl);
     _reloginSub ??= PouchLoginKeeper.instance.relogged.listen((_) {
@@ -483,29 +492,12 @@ class HubEventClient {
     final sender = from is Map ? Map<String, dynamic>.from(from) : const {};
     final senderType = sender['type'] as String? ?? 'agent';
     final metadata = data['metadata'];
-    final rawSessionId = (data['session_id'] as String?)?.trim() ?? '';
-    final isGroup = rawChannelId.startsWith('group_');
-    final sessionId = rawSessionId.isNotEmpty
-        ? rawSessionId
-        : (!isGroup
-            ? (remoteSessionIdFromChannelId(rawChannelId) ?? rawChannelId)
-            : '');
-    final rawAgentId = (data['agent_id'] as String?)?.trim() ?? '';
-    final effectiveRemoteAgentId = rawAgentId.isNotEmpty
-        ? rawAgentId
-        : (event.agentId.isNotEmpty && event.agentId != 'user'
-            ? event.agentId
-            : (!isGroup ? 'she-builtin-agent-001' : ''));
-    final target = await PeerAgentClientService.instance
-        .prepareLocalTargetForHubMessage(
-      peerId: peerId,
-      remoteAgentId: effectiveRemoteAgentId,
-      sessionId: sessionId,
-      rawChannelId: rawChannelId,
+    final target = await _resolveHubTarget(
+      peerId,
+      event,
       senderType: senderType,
-      fallbackSenderId: sender['id'] as String? ?? effectiveRemoteAgentId,
+      fallbackSenderId: sender['id'] as String?,
       fallbackSenderName: sender['name'] as String? ?? '',
-      sessionTitle: data['session_title'] as String?,
     );
     final channelId = target.channelId;
     // 用户消息的本机 id 就是 peerhist_ 后面那段。助手回复的本机副本是另一个
@@ -642,14 +634,23 @@ class HubEventClient {
 
   Future<void> _onTurnStarted(String peerId, HubEvent event) async {
     final turnId = event.data['turn_id'] as String? ?? '';
-    final channelId = event.data['channel_id'] as String? ?? event.channelId;
-    if (turnId.isEmpty || channelId.isEmpty) return;
+    final rawChannelId = (event.data['channel_id'] as String?)?.trim().isNotEmpty ==
+            true
+        ? event.data['channel_id'] as String
+        : event.channelId;
+    if (turnId.isEmpty || rawChannelId.isEmpty) return;
     if (getIt.isRegistered<ChatService>()) {
       getIt<ChatService>().releaseQueuedMessage(turnId);
     }
     final watching = watchingTurn?.call(turnId) ??
         PouchTurnRelay.instance.isWatching(turnId);
     if (watching) return;
+    // 落库消息走 prepareLocalTarget，会把主机频道折到本机正在看的
+    // psess_ 壳上。占位若仍写主机原频道，打开的聊天页只有用户消息，
+    // 回复要等整段落盘才出现。
+    final target = await _resolveHubTarget(peerId, event);
+    final channelId =
+        target.channelId.isEmpty ? rawChannelId : target.channelId;
     _attached.add(turnId);
     _liveChannels[turnId] = channelId;
     _liveBuffers[turnId] = '';
@@ -657,9 +658,11 @@ class HubEventClient {
       await getIt<LocalDatabaseService>().createMessage(
         id: liveTurnPlaceholderId(turnId),
         channelId: channelId,
-        senderId: event.agentId.isEmpty ? 'she' : event.agentId,
+        senderId: target.senderId.isEmpty
+            ? (event.agentId.isEmpty ? 'she' : event.agentId)
+            : target.senderId,
         senderType: 'agent',
-        senderName: '',
+        senderName: target.senderName,
         content: '',
         metadata: const {'status': 'streaming'},
         conflictAlgorithm: ConflictAlgorithm.ignore,
@@ -793,6 +796,51 @@ class HubEventClient {
   void _notify(String channelId) {
     if (!getIt.isRegistered<ChatService>()) return;
     getIt<ChatService>().notifyChannelUpdate(channelId);
+  }
+
+  /// 主机频道折到本机正在看的会话。和 [message.created] 用同一套映射，
+  /// 否则流式占位和最终消息会落在两个频道上。
+  Future<({String channelId, String senderId, String senderName})>
+      _resolveHubTarget(
+    String peerId,
+    HubEvent event, {
+    String senderType = 'agent',
+    String? fallbackSenderId,
+    String fallbackSenderName = '',
+  }) async {
+    final rawChannelId =
+        (event.data['channel_id'] as String?)?.trim().isNotEmpty == true
+            ? event.data['channel_id'] as String
+            : event.channelId;
+    if (rawChannelId.isEmpty) {
+      return (channelId: '', senderId: '', senderName: '');
+    }
+    final isGroup = rawChannelId.startsWith('group_');
+    final rawSessionId = (event.data['session_id'] as String?)?.trim() ?? '';
+    final sessionId = rawSessionId.isNotEmpty
+        ? rawSessionId
+        : (!isGroup
+            ? (remoteSessionIdFromChannelId(rawChannelId) ?? rawChannelId)
+            : '');
+    final rawAgentId = (event.data['agent_id'] as String?)?.trim() ?? '';
+    final effectiveRemoteAgentId = rawAgentId.isNotEmpty
+        ? rawAgentId
+        : (event.agentId.isNotEmpty && event.agentId != 'user'
+            ? event.agentId
+            : (!isGroup ? 'she-builtin-agent-001' : ''));
+    final fallback = (fallbackSenderId == null || fallbackSenderId.isEmpty)
+        ? effectiveRemoteAgentId
+        : fallbackSenderId;
+    return PeerAgentClientService.instance.prepareLocalTargetForHubMessage(
+      peerId: peerId,
+      remoteAgentId: effectiveRemoteAgentId,
+      sessionId: sessionId,
+      rawChannelId: rawChannelId,
+      senderType: senderType,
+      fallbackSenderId: fallback,
+      fallbackSenderName: fallbackSenderName,
+      sessionTitle: event.data['session_title'] as String?,
+    );
   }
 
   Future<void> _syncActiveHost() async {

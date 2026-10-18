@@ -3764,8 +3764,9 @@ class _ChatScreenState extends State<ChatScreen>
                     sourceDeviceLabel: c.sourceDeviceLabel,
                     syncingRemote: _syncingPeerHistory,
                     onAvatarTap: _navigateToAgentDetail,
-                    onStopGenerating:
-                        c.isProcessing ? () => c.stopStreaming() : null,
+                    onStopGenerating: c.isProcessing && !c.mirrorsRemoteTurn
+                        ? () => c.stopStreaming()
+                        : null,
                   ),
           ),
           actionsPadding: const EdgeInsets.only(right: 8),

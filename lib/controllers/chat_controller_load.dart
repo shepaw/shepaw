@@ -466,6 +466,7 @@ mixin _LoadOps on _ChatControllerBase {
     }
     _reapplyStashedPlanApprovalResponses();
     _expireStaleCliApprovalCards();
+    _adoptHubLiveMirror();
   }
 
   /// 本机页先上屏。主机最近一页回来再合并。本机为空时先要一小段预览再补全页。
@@ -554,6 +555,7 @@ mixin _LoadOps on _ChatControllerBase {
     }
     _reapplyStashedPlanApprovalResponses();
     _expireStaleCliApprovalCards();
+    _adoptHubLiveMirror();
   }
 
   Future<void> _refreshLocalHasMoreOlderMessages() async {
