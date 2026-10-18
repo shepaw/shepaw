@@ -48,10 +48,33 @@ class LocalDatabaseService {
 
   Stream<String> get channelActivityStream => _channelActivityController.stream;
 
-  void notifyChannelActivity([String channelId = '']) {
+  /// 批量写入期间合并通知：一次增量同步会往几十个会话各写消息，
+  /// 逐条通知会让会话列表和聊天页在十几秒里反复刷新。
+  /// 嵌套调用按深度计数，全部结束后只发一次空 channelId 的通知。
+  int _activityBatchDepth = 0;
+  bool _activityBatchDirty = false;
+
+  void beginActivityBatch() {
+    _activityBatchDepth++;
+  }
+
+  void endActivityBatch() {
+    if (_activityBatchDepth == 0) return;
+    _activityBatchDepth--;
+    if (_activityBatchDepth > 0 || !_activityBatchDirty) return;
+    _activityBatchDirty = false;
     if (!_channelActivityController.isClosed) {
-      _channelActivityController.add(channelId);
+      _channelActivityController.add('');
     }
+  }
+
+  void notifyChannelActivity([String channelId = '']) {
+    if (_channelActivityController.isClosed) return;
+    if (_activityBatchDepth > 0) {
+      _activityBatchDirty = true;
+      return;
+    }
+    _channelActivityController.add(channelId);
   }
 
   /// 获取数据库实例

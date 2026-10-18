@@ -5686,6 +5686,10 @@ class PeerAgentClientService {
     var currentChannelMessagesWritten = 0;
     final mirroredUnstamped = <String>{};
 
+    // 一次增量会往几十个会话各写一条消息。通知攒到循环结束再发，
+    // 会话列表和聊天页只刷新一次；打开中的会话仍由
+    // onPrioritizedChannelDone 在第一页到达时直接刷新。
+    _db.beginActivityBatch();
     try {
       for (final session in dirty) {
         final psessId = syncedPeerChannelId(session.sessionId);
@@ -5800,6 +5804,8 @@ class PeerAgentClientService {
         currentChannelMessagesWritten: currentChannelMessagesWritten,
         watermarkAdvanced: false,
       );
+    } finally {
+      _db.endActivityBatch();
     }
 
     // Prioritized session was not dirty — still notify so UI can clear spinner.
