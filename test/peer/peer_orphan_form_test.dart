@@ -174,6 +174,23 @@ void main() {
       );
     });
 
+    test('广播到本机的卡按帧里的 agent_id 路由', () {
+      const approvalId = 'appr-broadcast';
+      // 另一台设备发起的回合：本机既没有 `_pending`，也没有 `_requestAgents`。
+      // 主机把卡片广播过来时，路由只能靠帧里的 `agent_id`。
+      svc.debugInjectControlForTest(
+        'agent_form_req',
+        formFrame(requestId: 'req-broadcast', approvalId: approvalId),
+        peerId: 'peer-1',
+      );
+
+      final events = svc.pendingOrphanFormsFor(
+        peerId: 'peer-1',
+        remoteAgentId: 'remote-agent',
+      );
+      expect(events.map((e) => e['form_id']), contains(approvalId));
+    });
+
     test('resume 应答带回的 pending_interaction 走同一条分发', () async {
       const approvalId = 'appr-resume';
       const requestId = 'req-resume';

@@ -6669,8 +6669,11 @@ class PeerAgentClientService {
         approvalId: approvalId,
         data: data,
         hasPendingTurn: pending != null,
+        // 卡片是广播过来的、本机没发起过这一轮时，`_requestAgents` 和 `_pending`
+        // 都没有记录；帧里的 `agent_id` 就是远端 agent id，靠它把卡路由到会话。
         remoteAgentId: _requestAgents[requestId]?.remoteAgentId ??
-            pending?.remoteAgentId,
+            pending?.remoteAgentId ??
+            data['agent_id'] as String?,
       );
     }
     if (pending == null) {
