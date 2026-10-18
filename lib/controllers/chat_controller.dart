@@ -663,6 +663,44 @@ abstract class _ChatControllerBase extends ChangeNotifier
     _interactionClosedSub = PeerAgentClientService
         .instance.interactionClosedEvents
         .listen(_handleInteractionClosed);
+    // 广播流只发一次：卡片在聊天页没打开时到达就丢了。这里把缓存里的补上。
+    unawaited(_drainPendingOrphanForms());
+  }
+
+  /// 补投聊天页打开前就到达的孤儿表单。
+  Future<void> _drainPendingOrphanForms() async {
+    final service = PeerAgentClientService.instance;
+    if (isGroupMode) {
+      for (final member in groupAgents) {
+        final peerId = member.sourcePeerId;
+        final remoteId = member.remoteAgentId;
+        if (peerId == null || remoteId == null) continue;
+        for (final event in service.pendingOrphanFormsFor(
+          peerId: peerId,
+          remoteAgentId: remoteId,
+        )) {
+          _handleGroupOrphanPeerForm(
+            agentId: member.id,
+            agentName: member.name,
+            formData: event,
+          );
+        }
+      }
+      return;
+    }
+
+    final id = agentId;
+    if (id == null) return;
+    final agent = await localDatabaseService.getRemoteAgentById(id);
+    final peerId = agent?.sourcePeerId;
+    final remoteId = agent?.remoteAgentId;
+    if (peerId == null || remoteId == null) return;
+    for (final event in service.pendingOrphanFormsFor(
+      peerId: peerId,
+      remoteAgentId: remoteId,
+    )) {
+      _handleStreamingForm(event);
+    }
   }
 
   @override

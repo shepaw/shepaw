@@ -6669,6 +6669,8 @@ class PeerAgentClientService {
         approvalId: approvalId,
         data: data,
         hasPendingTurn: pending != null,
+        remoteAgentId: _requestAgents[requestId]?.remoteAgentId ??
+            pending?.remoteAgentId,
       );
     }
     if (pending == null) {
@@ -6700,6 +6702,7 @@ class PeerAgentClientService {
     required String approvalId,
     required Map<String, dynamic> data,
     required bool hasPendingTurn,
+    required String? remoteAgentId,
   }) {
     if (_orphanedForms.containsKey(approvalId)) {
       _log.info(
@@ -6715,12 +6718,14 @@ class PeerAgentClientService {
       'approvalId=$approvalId',
       tag: 'PeerApproval',
     );
-    _orphanedForms[approvalId] = Map<String, dynamic>.from(data);
+    // 路由字段一起留底：聊天页后开时靠它把卡补投给正确的会话。
+    _orphanedForms[approvalId] = Map<String, dynamic>.from(data)
+      ..['_peer_id'] = peerId
+      ..['_remote_agent_id'] = remoteAgentId;
     if (_orphanedForms.length > 50) {
       _orphanedForms.remove(_orphanedForms.keys.first);
     }
-    final owner = _requestAgents[requestId];
-    if (owner == null) {
+    if (remoteAgentId == null) {
       _log.warning(
         'agent_form_req: no owning agent for requestId=$requestId — orphan '
         'form approvalId=$approvalId has nowhere to render',
@@ -6729,8 +6734,52 @@ class PeerAgentClientService {
       return;
     }
     if (_orphanFormController.isClosed) return;
+    _orphanFormController.add(
+      _orphanFormEvent(
+        peerId: peerId,
+        requestId: requestId,
+        approvalId: approvalId,
+        data: data,
+        remoteAgentId: remoteAgentId,
+      ),
+    );
+  }
+
+  /// 缓存里属于某个 peer agent 的孤儿表单。
+  ///
+  /// [orphanFormEvents] 是广播流：卡片到达时聊天页没开着，事件就丢了。
+  /// 聊天页打开后调用这里把当时没投出去的卡补上。
+  List<Map<String, dynamic>> pendingOrphanFormsFor({
+    required String peerId,
+    required String remoteAgentId,
+  }) {
+    final events = <Map<String, dynamic>>[];
+    for (final entry in _orphanedForms.entries) {
+      final data = entry.value;
+      if (data['_peer_id'] != peerId) continue;
+      if (data['_remote_agent_id'] != remoteAgentId) continue;
+      events.add(
+        _orphanFormEvent(
+          peerId: peerId,
+          requestId: data['request_id'] as String? ?? '',
+          approvalId: entry.key,
+          data: data,
+          remoteAgentId: remoteAgentId,
+        ),
+      );
+    }
+    return events;
+  }
+
+  Map<String, dynamic> _orphanFormEvent({
+    required String peerId,
+    required String requestId,
+    required String approvalId,
+    required Map<String, dynamic> data,
+    required String remoteAgentId,
+  }) {
     final fields = data['fields'];
-    _orphanFormController.add({
+    return {
       'form_id': approvalId,
       'request_id': requestId,
       'title': data['title'] ?? '',
@@ -6741,10 +6790,10 @@ class PeerAgentClientService {
         'approval_id': approvalId,
       },
       'peer_id': peerId,
-      'remote_agent_id': owner.remoteAgentId,
+      'remote_agent_id': remoteAgentId,
       // 没有活动 turn 撑着这张卡，UI 不该显示提交中的转圈。
       'orphan': true,
-    });
+    };
   }
 
   /// 把表单答案送回 hub，解开正在等的 `elicitation/create`。

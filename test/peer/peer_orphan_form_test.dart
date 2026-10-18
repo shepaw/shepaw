@@ -129,6 +129,51 @@ void main() {
       expect(svc.debugIsOrphanFormBuffered(approvalId), isTrue);
     });
 
+    test('聊天页后开时能补拿缓存里的孤儿卡', () {
+      const approvalId = 'appr-drain';
+      const requestId = 'req-drain';
+      svc
+          .debugSeedPendingTurn(
+            requestId: requestId,
+            peerId: 'peer-1',
+            channelId: 'ch-orphan-form',
+          )
+          .then((_) {}, onError: (_) {});
+
+      svc.debugInjectControlForTest(
+        'agent_form_req',
+        formFrame(requestId: requestId, approvalId: approvalId),
+        peerId: 'peer-1',
+      );
+
+      // 广播流当时没有监听者，但缓存还在，聊天页打开后要能补投。
+      final events = svc.pendingOrphanFormsFor(
+        peerId: 'peer-1',
+        remoteAgentId: 'remote-agent',
+      );
+      expect(events.map((e) => e['form_id']), contains(approvalId));
+      final event = events.firstWhere((e) => e['form_id'] == approvalId);
+      expect(event['orphan'], isTrue);
+      expect(event['peer_id'], 'peer-1');
+      expect(event['peer_form']['approval_id'], approvalId);
+
+      // 别的 agent / 别的设备不该拿到这张卡。
+      expect(
+        svc.pendingOrphanFormsFor(
+          peerId: 'peer-1',
+          remoteAgentId: 'another-agent',
+        ),
+        isEmpty,
+      );
+      expect(
+        svc.pendingOrphanFormsFor(
+          peerId: 'peer-2',
+          remoteAgentId: 'remote-agent',
+        ),
+        isEmpty,
+      );
+    });
+
     test('resume 应答带回的 pending_interaction 走同一条分发', () async {
       const approvalId = 'appr-resume';
       const requestId = 'req-resume';
