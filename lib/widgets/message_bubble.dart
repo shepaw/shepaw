@@ -14,6 +14,7 @@ import '../services/store_open_service.dart';
 import '../screens/storage_directory_opener.dart';
 import '../storage/workspace_link_resolver.dart';
 import '../theme/app_theme.dart';
+import '../utils/progress_content_utils.dart';
 import 'copyable_code_block.dart';
 import 'store_uri_link_syntax.dart';
 import 'voice_message_bubble.dart';
@@ -1099,8 +1100,12 @@ class MessageBubble extends StatelessWidget {
     required MarkdownStyleSheet styleSheet,
     required bool hasAnswer,
   }) {
-    final progressContent =
+    // 旧数据里可能有几百 KB 的 thinking；展开时才解析，先裁到可承受的长度。
+    final rawProgressContent =
         message.metadata?['progress_content'] as String?;
+    final progressContent = rawProgressContent == null
+        ? null
+        : capProgressContent(rawProgressContent);
     final progressTitle = message.metadata?['collapsible_title'] as String?;
     final hasProgressText =
         progressContent != null && progressContent.isNotEmpty;

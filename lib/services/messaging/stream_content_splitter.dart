@@ -1,3 +1,5 @@
+import '../../utils/progress_content_utils.dart';
+
 /// Splits agent stream text into progress (thinking/tools) vs answer.
 ///
 /// Driven by `ui.messageMetadata` / `agent_metadata`:
@@ -22,7 +24,7 @@ class StreamContentSplitter {
       divertToProgress = false;
       final existing = data['progress_content'];
       if (existing is String && existing.isNotEmpty) {
-        progressContent = existing;
+        progressContent = capProgressContent(existing);
       }
     }
 
@@ -103,7 +105,7 @@ class StreamContentSplitter {
   /// progress). Progress updates are exposed via [progressMetadataDelta].
   String onChunk(String chunk) {
     if (!alreadySplitUpstream && divertToProgress) {
-      progressContent += chunk;
+      progressContent = appendProgressContent(progressContent, chunk);
       return '';
     }
     answerContent += chunk;

@@ -25,6 +25,7 @@ import '../../models/remote_agent.dart';
 import '../../models/agent_memory_entry.dart';
 import '../../models/acp_protocol.dart';
 import '../../services/task/acp_task_contract.dart';
+import '../../utils/progress_content_utils.dart';
 import '../../services/chat_service.dart';
 import '../../services/app_lifecycle_service.dart';
 import '../../services/local_database_service.dart';
@@ -909,7 +910,7 @@ Map<String, dynamic>? peerHistoryMessageMetadata(PeerHistoryMessage m) {
   }
   final progress = m.progressContent;
   if (progress != null && progress.isNotEmpty) {
-    meta['progress_content'] = progress;
+    meta['progress_content'] = capProgressContent(progress);
     meta['collapsible'] = true;
     meta['collapsible_title'] = m.progressTitle ?? 'Details';
     meta['auto_collapse'] = m.progressAutoCollapse ?? true;
@@ -942,7 +943,8 @@ Map<String, dynamic>? metadataPreservingProgress({
     return incoming;
   }
   final merged = Map<String, dynamic>.from(incoming ?? {});
-  merged['progress_content'] = existingProgress;
+  // 老数据可能存了几百 KB，重写时顺手裁掉。
+  merged['progress_content'] = capProgressContent(existingProgress);
   for (final key in const [
     'collapsible',
     'collapsible_title',

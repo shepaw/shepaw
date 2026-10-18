@@ -55,6 +55,30 @@ void main() {
       expect(s.answerContent, 'partial answer final');
     });
 
+    test('上游超长 progress 会被裁剪', () {
+      final s = StreamContentSplitter();
+      s.onMetadata({
+        'progress_content': 'x' * 200000,
+        'collapsible': true,
+      });
+
+      expect(s.progressContent.length, lessThan(40000));
+      expect(s.progressContent, contains('中间省略'));
+    });
+
+    test('本地累积的 thinking 超过上限后裁剪', () {
+      final s = StreamContentSplitter();
+      s.onMetadata({'collapsible': true, 'collapsible_title': 'Thinking'});
+      final chunk = 'y' * 1000;
+      for (var i = 0; i < 100; i++) {
+        s.onChunk(chunk);
+      }
+
+      // 追加了 100 KB，裁剪后应远小于它（两次裁剪之间允许回涨到高水位）。
+      expect(s.progressContent.length, lessThan(80000));
+      expect(s.progressContent, contains('中间省略'));
+    });
+
     test('progressMetadataDelta is null until progress exists', () {
       final s = StreamContentSplitter();
       expect(s.progressMetadataDelta(), isNull);
