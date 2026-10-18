@@ -978,15 +978,30 @@ class MessageBubble extends StatelessWidget {
         final interactiveFooter = _buildInteractiveFooter(context);
 
         if (progressSection != null || interactiveFooter != null) {
+          // Long finished replies collapse too, even when a progress section
+          // or interactive footer is present: otherwise multi-KB markdown is
+          // laid out on every rebuild and scrolling janks.
+          final shouldCollapseBody = !isStreaming &&
+              message.content.length >= ChatMessageWindow.longContentChars;
+          final answerWidget = shouldCollapseBody
+              ? CollapsibleMessageBubble(
+                  title: AppLocalizations.of(context).widget_details,
+                  initiallyCollapsed: true,
+                  autoCollapseOnComplete: false,
+                  isStreaming: false,
+                  isMyMessage: isMyMessage,
+                  child: bodyWidget,
+                )
+              : bodyWidget;
           final children = <Widget>[];
           if (progressSection != null) {
             children.add(progressSection);
             if (hasAnswer) {
               children.add(const SizedBox(height: 8));
-              children.add(bodyWidget);
+              children.add(answerWidget);
             }
           } else if (hasAnswer) {
-            children.add(bodyWidget);
+            children.add(answerWidget);
           }
           if (interactiveFooter != null) {
             if (children.isNotEmpty) {

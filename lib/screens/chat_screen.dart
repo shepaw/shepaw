@@ -199,8 +199,12 @@ class _ChatScreenState extends State<ChatScreen>
   bool _liveFollowStreaming = false;
   int _unreadMessageCount = 0;
 
-  /// Unread agent/group messages in sessions other than the one being viewed.
-  int _otherSessionsUnreadCount = 0;
+  /// Whether sessions other than the one being viewed have unread messages.
+  /// Only the "more" button badge listens to this; using a notifier keeps
+  /// background channel activity from rebuilding the whole screen.
+  final ValueNotifier<bool> _hasOtherSessionsUnread = ValueNotifier(false);
+  bool _otherSessionsUnreadQueryInFlight = false;
+  bool _otherSessionsUnreadQueryPending = false;
   int _trackedMessageCount = 0;
   StreamSubscription<String>? _channelActivitySubscription;
   Timer? _otherSessionsUnreadDebounce;
@@ -437,6 +441,7 @@ class _ChatScreenState extends State<ChatScreen>
     _reconcileSubscription?.cancel();
     _channelActivitySubscription?.cancel();
     _otherSessionsUnreadDebounce?.cancel();
+    _hasOtherSessionsUnread.dispose();
     _controller.removeListener(_onControllerChanged);
     _controller.dispose();
     _recordingSubscription?.cancel();
@@ -1201,46 +1206,59 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _refreshOtherSessionsUnread() async {
-    final channelId = _controller.currentChannelId;
-    if (channelId == null) {
-      if (_otherSessionsUnreadCount != 0 && mounted) {
-        setState(() => _otherSessionsUnreadCount = 0);
-      }
+    // Bulk history sync notifies per channel, so these queries can pile up.
+    // Collapse overlapping requests into one trailing refresh.
+    if (_otherSessionsUnreadQueryInFlight) {
+      _otherSessionsUnreadQueryPending = true;
       return;
     }
-
-    var count = 0;
+    _otherSessionsUnreadQueryInFlight = true;
     try {
-      if (_controller.isGroupMode) {
-        final group = _controller.groupChannel;
-        if (group != null) {
-          count = await _controller.localDatabaseService
-              .getUnreadCountForGroupFamilyExcludingChannel(
-            group.groupFamilyId,
-            channelId,
-          );
-        }
-      } else {
-        var agentId = widget.agentId ?? _controller.agentId;
-        if (agentId == null || agentId.isEmpty) {
-          final ch = await _controller.localDatabaseService
-              .getChannelById(channelId);
-          agentId = ch == null
-              ? null
-              : ChatLoadChannelPlanner.firstAgentMemberId(ch);
-        }
-        if (agentId != null && agentId.isNotEmpty) {
-          count = await _controller.localDatabaseService
-              .getUnreadCountForAgentExcludingChannel(
-            agentId,
-            channelId,
-          );
-        }
+      final channelId = _controller.currentChannelId;
+      if (channelId == null) {
+        _hasOtherSessionsUnread.value = false;
+        return;
       }
-    } catch (_) {}
 
-    if (!mounted || count == _otherSessionsUnreadCount) return;
-    setState(() => _otherSessionsUnreadCount = count);
+      var count = 0;
+      try {
+        if (_controller.isGroupMode) {
+          final group = _controller.groupChannel;
+          if (group != null) {
+            count = await _controller.localDatabaseService
+                .getUnreadCountForGroupFamilyExcludingChannel(
+              group.groupFamilyId,
+              channelId,
+            );
+          }
+        } else {
+          var agentId = widget.agentId ?? _controller.agentId;
+          if (agentId == null || agentId.isEmpty) {
+            final ch = await _controller.localDatabaseService
+                .getChannelById(channelId);
+            agentId = ch == null
+                ? null
+                : ChatLoadChannelPlanner.firstAgentMemberId(ch);
+          }
+          if (agentId != null && agentId.isNotEmpty) {
+            count = await _controller.localDatabaseService
+                .getUnreadCountForAgentExcludingChannel(
+              agentId,
+              channelId,
+            );
+          }
+        }
+      } catch (_) {}
+
+      if (!mounted) return;
+      _hasOtherSessionsUnread.value = count > 0;
+    } finally {
+      _otherSessionsUnreadQueryInFlight = false;
+      if (_otherSessionsUnreadQueryPending && mounted) {
+        _otherSessionsUnreadQueryPending = false;
+        unawaited(_refreshOtherSessionsUnread());
+      }
+    }
   }
 
   void _jumpToBottom() {
@@ -3666,12 +3684,17 @@ class _ChatScreenState extends State<ChatScreen>
           clipBehavior: Clip.none,
           children: [
             const Center(child: Icon(Icons.more_vert)),
-            if (_otherSessionsUnreadCount > 0)
-              const Positioned(
-                right: -3,
-                top: -3,
-                child: SessionUnreadDot(),
-              ),
+            ValueListenableBuilder<bool>(
+              valueListenable: _hasOtherSessionsUnread,
+              builder: (context, hasUnread, _) {
+                if (!hasUnread) return const SizedBox.shrink();
+                return const Positioned(
+                  right: -3,
+                  top: -3,
+                  child: SessionUnreadDot(),
+                );
+              },
+            ),
           ],
         ),
       ),
