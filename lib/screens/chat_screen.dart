@@ -181,6 +181,11 @@ class _ChatScreenState extends State<ChatScreen>
   bool _isPointerDown = false;
   ScrollDirection _lastUserScrollDirection = ScrollDirection.idle;
 
+  /// 列表正在滚动（含惯性）。同步落库后的 reload 遇到它会挂起到滚动结束，
+  /// 否则新内容的首帧光栅化会砸在滑动过程中。
+  bool _isScrollActive = false;
+  bool _pendingHistoryReload = false;
+
   /// Last item index passed to [_itemScrollController] `jumpTo`/`scrollTo`.
   /// When `0`, the reverse viewport's center sliver is `index 0`, which stays
   /// pinned to `0.0` at the bottom without needing per-chunk `jumpTo` calls.
@@ -3882,6 +3887,7 @@ class _ChatScreenState extends State<ChatScreen>
                               _streamingScrollAnchor.lastMetrics =
                                   notification.metrics;
                               if (notification is ScrollStartNotification) {
+                                _isScrollActive = true;
                                 if (notification.dragDetails != null &&
                                     _isProgrammaticScrolling) {
                                   _isProgrammaticScrolling = false;
@@ -3895,6 +3901,13 @@ class _ChatScreenState extends State<ChatScreen>
                                 _onScrollUpdate(notification);
                               } else if (notification is ScrollEndNotification) {
                                 _onScrollEnd(notification.metrics);
+                                _isScrollActive = false;
+                                if (_pendingHistoryReload) {
+                                  _pendingHistoryReload = false;
+                                  unawaited(
+                                    _controller.reloadMessagesFromDB(),
+                                  );
+                                }
                               }
                               return false;
                             },
@@ -4547,7 +4560,7 @@ class _ChatScreenState extends State<ChatScreen>
               mounted &&
               channelId != null &&
               _controller.currentChannelId == channelId) {
-            await _controller.reloadMessagesFromDB();
+            await _reloadMessagesAfterSync();
           }
         },
       );
@@ -4557,6 +4570,16 @@ class _ChatScreenState extends State<ChatScreen>
       }
     }
 
+  }
+
+  /// 同步落库后的列表刷新。用户正在滑动时先挂起，等
+  /// [ScrollEndNotification] 再刷——避免新内容的一次性光栅化卡在滑动中。
+  Future<void> _reloadMessagesAfterSync() async {
+    if (_isScrollActive) {
+      _pendingHistoryReload = true;
+      return;
+    }
+    await _controller.reloadMessagesFromDB();
   }
 
   /// Prefetch slash commands when opening a peer agent chat. The connect-time
