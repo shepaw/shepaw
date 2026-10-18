@@ -7982,12 +7982,17 @@ class PeerAgentClientService {
     return session.isLoggedIn(DateTime.now().millisecondsSinceEpoch);
   }
 
-  /// 登录好主机后报上本机能力，再要 Agent 名单。
+  /// 登录好主机后报上本机能力，要 Agent 名单，再补问一次没答的卡片。
+  ///
+  /// 主机建连时会自己补发一次，但那一刻 App 可能还没登录、没订阅控制流，
+  /// 帧会被 `pouch_login_required` 挡掉或落到没人听的地方；登录完成后主动
+  /// 问一次，时机才在 App 这边。
   void _greetHost(String peerId) {
     unawaited(DeviceHello.send(peerId).catchError((Object e) {
       _log.warning('device.hello failed: $e', tag: _tag);
     }));
     _requestAgentList(peerId);
+    _requestPendingInteractions(peerId);
   }
 
   /// 通道刚装上时，只有已经连着的主机才拉名单。还没连上的等下一次 connected。
@@ -8008,6 +8013,16 @@ class PeerAgentClientService {
         debugSendControlOverride ?? PeerConnectionManager.instance.sendControl;
     unawaited(send(peerId, {
       'type': 'agent_list_req',
+    }));
+  }
+
+  /// 问主机还有哪些卡片没人答。主机把还悬空的帧原样回来，App 走
+  /// `_onFormReq` 的同一条路渲染并落库；重复投递由确定性卡片行去重。
+  void _requestPendingInteractions(String peerId) {
+    final send =
+        debugSendControlOverride ?? PeerConnectionManager.instance.sendControl;
+    unawaited(send(peerId, {
+      'type': 'agent_pending_interactions_req',
     }));
   }
 
