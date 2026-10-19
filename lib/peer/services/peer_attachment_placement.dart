@@ -3,7 +3,7 @@ library;
 
 import '../../models/remote_agent.dart';
 import 'peer_agent_client_service.dart' show remoteSessionIdFromChannelId;
-import 'peer_agent_host_service.dart' show peerAgentChannelId;
+import '../peer_agent_channel.dart' show peerAgentChannelId;
 import 'peer_storage_service.dart';
 
 /// 解析后的 peer 附件写入目标（device = 对端 fingerprint）。

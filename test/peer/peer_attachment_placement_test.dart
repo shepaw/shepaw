@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/remote_agent.dart';
 import 'package:shepaw/peer/models/paired_peer.dart';
-import 'package:shepaw/peer/services/peer_agent_host_service.dart';
+import 'package:shepaw/peer/peer_agent_channel.dart';
 import 'package:shepaw/peer/services/peer_attachment_placement.dart';
 import 'package:shepaw/peer/services/peer_storage_service.dart';
 

@@ -401,6 +401,23 @@ void main() {
         );
       });
 
+      test('visibleMessageContent 隐藏旧的隐式读法提示', () {
+        expect(
+          SessionUtils.visibleMessageContent(
+            '看看\n\n[implicit]\nread with pouch_read\n[/implicit]',
+            null,
+          ),
+          '看看',
+        );
+        expect(
+          SessionUtils.visibleMessageContent(
+            '看看',
+            {'wire_content': '看看\n\n[implicit]\nread with pouch_read\n[/implicit]'},
+          ),
+          '看看',
+        );
+      });
+
       test('sessionTitleFromMessageContent 跳过 Scope Card', () {
         expect(
           SessionUtils.sessionTitleFromMessageContent(scopeCard),

@@ -37,6 +37,7 @@ import 'avatar_image.dart';
 import 'chat/sticky_in_view_header.dart';
 import '../services/she_service.dart';
 import '../services/error_handler_service.dart';
+import '../services/messaging/message_implicit_prompt.dart';
 import '../services/group/group_task_status.dart';
 import '../storage/store_protocol.dart';
 
@@ -243,6 +244,11 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
+  /// Old host rows may still carry a sender-side `[implicit]` hint in
+  /// `content`; hide it at render time without rewriting storage.
+  String get _displayContent =>
+      MessageImplicitPrompt.stripImplicitBlocks(message.content);
+
   @override
   Widget build(BuildContext context) {
     // 审核消息卡片 - 全宽居中显示
@@ -283,7 +289,7 @@ class MessageBubble extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
-              message.content,
+              _displayContent,
               style: TextStyle(
                 fontSize: 12,
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -360,7 +366,7 @@ class MessageBubble extends StatelessWidget {
   Widget? _buildTaskStatusChip(BuildContext context) {
     if (isMyMessage || !message.from.isAgent) return null;
     final info = GroupTaskStatusParser.displayInfo(
-      content: message.content,
+      content: _displayContent,
       metadata: message.metadata,
     );
     if (info == null) return null;
@@ -491,7 +497,7 @@ class MessageBubble extends StatelessWidget {
       case MessageType.audio:
         return '🎤';
       default:
-        final text = GroupTaskStatusParser.strip(message.content)
+        final text = GroupTaskStatusParser.strip(_displayContent)
             .replaceAll(RegExp(r'\s+'), ' ')
             .trim();
         return text.isEmpty ? '…' : text;
@@ -946,8 +952,8 @@ class MessageBubble extends StatelessWidget {
         if (instructionTitle != null && instructionTitle.isNotEmpty) {
           return _buildInstructionBubble(context, instructionTitle);
         }
-        final displayText = GroupTaskStatusParser.strip(message.content);
-        final rawContent = displayText.isEmpty && message.content.isEmpty
+        final displayText = GroupTaskStatusParser.strip(_displayContent);
+        final rawContent = displayText.isEmpty && _displayContent.isEmpty
             ? '...'
             : displayText;
         final hasAnswer = displayText.trim().isNotEmpty;
@@ -983,7 +989,7 @@ class MessageBubble extends StatelessWidget {
           // or interactive footer is present: otherwise multi-KB markdown is
           // laid out on every rebuild and scrolling janks.
           final shouldCollapseBody = !isStreaming &&
-              message.content.length >= ChatMessageWindow.longContentChars;
+              _displayContent.length >= ChatMessageWindow.longContentChars;
           final answerWidget = shouldCollapseBody
               ? CollapsibleMessageBubble(
                   title: AppLocalizations.of(context).widget_details,
@@ -1034,7 +1040,7 @@ class MessageBubble extends StatelessWidget {
 
         // Long finished replies: collapse by default to bound layout cost.
         if (!isStreaming &&
-            message.content.length >= ChatMessageWindow.longContentChars) {
+            _displayContent.length >= ChatMessageWindow.longContentChars) {
           return CollapsibleMessageBubble(
             title: AppLocalizations.of(context).widget_details,
             initiallyCollapsed: true,

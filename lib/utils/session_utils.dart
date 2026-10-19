@@ -1,4 +1,5 @@
 import '../models/channel.dart';
+import '../services/messaging/message_implicit_prompt.dart';
 
 /// Utility functions for session/channel ID display.
 class SessionUtils {
@@ -171,10 +172,14 @@ class SessionUtils {
     Map<String, dynamic>? metadata,
   ) {
     final wire = metadata?['wire_content'];
-    if (wire is! String || wire.isEmpty) return content;
-    final restored = stripHubInternalPromptForDisplay(wire);
-    if (restored == null || restored.isEmpty) return content;
-    return restored;
+    var visible = content;
+    if (wire is String && wire.isNotEmpty) {
+      final restored = stripHubInternalPromptForDisplay(wire);
+      if (restored != null && restored.isNotEmpty) visible = restored;
+    }
+    // Old rows may still carry the sender-side hint in `content`; hide it
+    // without rewriting the DB here (callers own any rewrite).
+    return MessageImplicitPrompt.stripImplicitBlocks(visible);
   }
 
   static String _stripClaudeCommandTags(String s) {

@@ -2,7 +2,6 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/attachment_data.dart';
-import 'package:shepaw/models/message.dart';
 import 'package:shepaw/services/messaging/message_implicit_prompt.dart';
 
 void main() {
@@ -30,97 +29,51 @@ void main() {
       expect(uris, {'pouch://files/docs/a.txt'});
     });
 
-    test('forUserText null when message only discusses the protocol', () {
-      expect(
-        MessageImplicitPrompt.forUserText(
-          '现在外接 agent 是如何认识 pouch://xxx 协议的 uri 呢',
-        ),
-        isNull,
-      );
-    });
-
-    test('forUserText null when no store uri', () {
-      expect(MessageImplicitPrompt.forUserText('hello'), isNull);
-    });
-
-    test('forAttachments from extraMetadata pouch_uri', () {
-      final att = AttachmentData(
-        fileName: 'note.txt',
-        mimeType: 'text/plain',
-        sizeBytes: 4,
-        bytes: Uint8List.fromList([1, 2, 3, 4]),
-        semanticType: 'document',
-        extraMetadata: {
-          'pouch_uri': 'pouch://files/docs/note.txt',
-        },
-      );
-      final hint = MessageImplicitPrompt.forAttachments([att]);
+    test('renderStoreReadHint dedupes and sorts URIs', () {
+      final hint = MessageImplicitPrompt.renderStoreReadHint({
+        'pouch://files/docs/b.txt',
+        'pouch://files/docs/a.txt',
+      });
       expect(hint, isNotNull);
       expect(hint!, contains('[implicit]'));
       expect(hint, contains('[/implicit]'));
       expect(hint, contains('shepaw pouch read'));
-      expect(hint, contains('pouch://files/docs/note.txt'));
       expect(hint, contains('not OS paths'));
+      expect(
+        hint.indexOf('pouch://files/docs/a.txt'),
+        lessThan(hint.indexOf('pouch://files/docs/b.txt')),
+      );
     });
 
-    test('forCurrentTurn dedupes uri from text and attachment', () {
+    test('metadataForTurn stores the hint and structured URIs', () {
       const uri = 'pouch://files/docs/note.txt';
+      final meta = MessageImplicitPrompt.metadataForTurn(text: 'see $uri');
+      expect(meta, isNotNull);
+      expect(meta![MessageImplicitPrompt.metaKey], contains('[implicit]'));
+      expect(meta[MessageImplicitPrompt.urisMetaKey], [uri]);
+      expect(
+        MessageImplicitPrompt.fromMetadata(meta),
+        meta[MessageImplicitPrompt.metaKey],
+      );
+    });
+
+    test('metadataForTurn includes attachment URIs', () {
       final att = AttachmentData(
         fileName: 'note.txt',
         mimeType: 'text/plain',
         sizeBytes: 1,
         bytes: Uint8List(0),
         semanticType: 'document',
-        extraMetadata: {'pouch_uri': uri},
-      );
-      final hint = MessageImplicitPrompt.forCurrentTurn(
-        text: 'Please read [$uri]($uri)',
-        attachments: [att],
-      );
-      expect(hint, isNotNull);
-      // URI listed once
-      expect('URIs:'.allMatches(hint!).length, 1);
-      expect(RegExp(RegExp.escape(uri)).allMatches(hint).length, 1);
-    });
-
-    test('forHistoryMessage from metadata and content', () {
-      final m = Message(
-        id: 'm1',
-        from: MessageFrom(id: 'u', type: 'user', name: 'U'),
-        type: MessageType.file,
-        content: '📎 File: x\n[x](pouch://files/x.txt)',
-        timestampMs: 0,
-        metadata: {
-          'pouch_uri': 'pouch://files/x.txt',
-          'name': 'x.txt',
+        extraMetadata: {
+          'pouch_uri': 'pouch://files/docs/note.txt',
         },
       );
-      final hint = MessageImplicitPrompt.forHistoryMessage(m);
-      expect(hint, contains('pouch://files/x.txt'));
-      expect(hint, contains('[implicit]'));
-    });
-
-    test('metadataForTurn / fromMetadata / forHistoryMessage prefer DB field',
-        () {
-      const uri = 'pouch://files/docs/note.txt';
       final meta = MessageImplicitPrompt.metadataForTurn(
-        text: 'see $uri',
+        text: 'please summarize',
+        attachments: [att],
       );
-      expect(meta, isNotNull);
-      expect(meta![MessageImplicitPrompt.metaKey], contains('[implicit]'));
-      expect(meta[MessageImplicitPrompt.urisMetaKey], [uri]);
-
-      final m = Message(
-        id: 'm1',
-        from: MessageFrom(id: 'u', type: 'user', name: 'U'),
-        type: MessageType.text,
-        content: 'see note', // clean bubble — no pouch:// in content
-        timestampMs: 0,
-        metadata: meta,
-      );
-      final hint = MessageImplicitPrompt.forHistoryMessage(m);
-      expect(hint, meta[MessageImplicitPrompt.metaKey]);
-      expect(MessageImplicitPrompt.fromMetadata(meta), hint);
+      expect(meta![MessageImplicitPrompt.urisMetaKey],
+          ['pouch://files/docs/note.txt']);
     });
 
     test('appendHint', () {
@@ -129,93 +82,22 @@ void main() {
       expect(MessageImplicitPrompt.appendHint('a', 'hint'), 'a\nhint');
     });
 
-    test('forPeerWireMessage appends hint without mutating plain message when no store',
-        () {
-      expect(
-        MessageImplicitPrompt.forPeerWireMessage(message: 'hello'),
-        'hello',
+    test('appendHint does not stack a second implicit block', () {
+      final hint = MessageImplicitPrompt.renderStoreReadHint(
+        {'pouch://files/docs/note.txt'},
       );
-    });
-
-    test('forPeerWireMessage appends implicit for store attachment', () {
-      final att = AttachmentData(
-        fileName: 'note.txt',
-        mimeType: 'text/plain',
-        sizeBytes: 1,
-        bytes: Uint8List(0),
-        semanticType: 'document',
-        extraMetadata: {
-          'pouch_uri': 'pouch://files/docs/note.txt',
-        },
-      );
-      final wire = MessageImplicitPrompt.forPeerWireMessage(
-        message: 'please summarize',
-        attachments: [att],
-      );
-      expect(wire, startsWith('please summarize'));
+      final wire = MessageImplicitPrompt.appendHint('hi', hint);
+      expect(MessageImplicitPrompt.appendHint(wire, hint), wire);
       expect(wire, contains('[implicit]'));
-      expect(wire, contains('Nexus Pouch'));
       expect(wire, contains('pouch://files/docs/note.txt'));
     });
 
-    test('forCurrentTurn skips when wire already has implicit (no double inject)',
-        () {
-      const uri = 'pouch://files/docs/note.txt';
-      final att = AttachmentData(
-        fileName: 'note.txt',
-        mimeType: 'text/plain',
-        sizeBytes: 1,
-        bytes: Uint8List(0),
-        semanticType: 'document',
-        extraMetadata: {'pouch_uri': uri},
-      );
-      final wire = MessageImplicitPrompt.forPeerWireMessage(
-        message: 'hi',
-        attachments: [att],
-      );
-      expect(
-        MessageImplicitPrompt.forCurrentTurn(text: wire, attachments: [att]),
-        isNull,
-      );
-      // Non-implicit hints still append; re-appending an implicit block is skipped.
-      expect(
-        MessageImplicitPrompt.appendHint(wire, 'another'),
-        '$wire\nanother',
-      );
-      final again = MessageImplicitPrompt.renderStoreReadHint({uri});
-      expect(MessageImplicitPrompt.appendHint(wire, again), wire);
-    });
-
-    test('urisFromMessage reads metadata and content', () {
-      final m = Message(
-        id: 'm1',
-        content: 'see pouch://files/docs/b.txt',
-        type: MessageType.text,
-        from: MessageFrom(id: 'u', type: 'user', name: 'U'),
-        timestampMs: 1,
-        metadata: {
-          'pouch_uri': 'pouch://files/docs/a.txt',
-        },
-      );
-      final uris = MessageImplicitPrompt.urisFromMessage(m);
-      expect(uris, contains('pouch://files/docs/a.txt'));
-      expect(uris, contains('pouch://files/docs/b.txt'));
-    });
-
-    test('stripImplicitBlocks removes hint for UI persistence', () {
-      final att = AttachmentData(
-        fileName: 'note.txt',
-        mimeType: 'text/plain',
-        sizeBytes: 1,
-        bytes: Uint8List(0),
-        semanticType: 'document',
-        extraMetadata: {
-          'pouch_uri': 'pouch://files/docs/note.txt',
-        },
-      );
-      final wire = MessageImplicitPrompt.forPeerWireMessage(
-        message: 'please summarize',
-        attachments: [att],
+    test('stripImplicitBlocks removes hint for display', () {
+      final wire = MessageImplicitPrompt.appendHint(
+        'please summarize',
+        MessageImplicitPrompt.renderStoreReadHint(
+          {'pouch://files/docs/note.txt'},
+        ),
       );
       final display = MessageImplicitPrompt.stripImplicitBlocks(wire);
       expect(display, 'please summarize');

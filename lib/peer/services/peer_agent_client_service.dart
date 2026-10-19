@@ -31,6 +31,7 @@ import '../../services/app_lifecycle_service.dart';
 import '../../services/local_database_service.dart';
 import '../../services/local_file_storage_service.dart';
 import '../../services/logger_service.dart';
+import '../../services/messaging/message_implicit_prompt.dart';
 import '../../services/device_node/command_approval_inbox.dart';
 import '../../services/device_node/device_command_runner.dart';
 import '../../services/device_node/device_hello.dart';
@@ -450,7 +451,9 @@ class PeerHistoryMessage {
             : null;
     return PeerHistoryMessage(
       role: role,
-      content: content,
+      // Older hub builds replayed the raw hint; ingest clean so it cannot
+      // reach a bubble or the local database.
+      content: MessageImplicitPrompt.stripImplicitBlocks(content),
       messageId: json['message_id'] as String?,
       createdAt: createdAt,
       progressContent: (rawProgress?.isNotEmpty ?? false) ? rawProgress : null,

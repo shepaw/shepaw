@@ -1259,15 +1259,10 @@ class AgentMessagingService {
       final result = await PeerAgentClientService.instance.sendChat(
         peerId: peerId,
         remoteAgentId: remoteAgentId,
-        // Wire-only enrichment: local DB/bubble keeps userMessage.content;
-        // prefer persisted metadata.implicit_prompt when present.
-        message: ShepawSessionSlashCommands.expandForModel(
-          MessageImplicitPrompt.forPeerWireMessage(
-            message: userMessage.content,
-            attachments: attachments,
-            messageMetadata: userMessage.metadata,
-          ),
-        ),
+        // Host owns the pouch read hint now: send clean text so it can strip
+        // stale hints, resolve the uploaded file ids itself, and persist a
+        // clean bubble.
+        message: ShepawSessionSlashCommands.expandForModel(userMessage.content),
         sessionId: peerSessionId,
         attachments: attachments,
         cancelToken: acpCancellationToken,
