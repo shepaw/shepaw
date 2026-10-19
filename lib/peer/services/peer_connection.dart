@@ -141,6 +141,8 @@ class PeerConnection {
     'agent_modes_resp',
     'agent_modes_set_req',
     'agent_modes_set_resp',
+    'agent_client_sessions_sync_set_req',
+    'agent_client_sessions_sync_set_resp',
     'agent_session_warm',
     'agent_soul_req',
     'agent_soul_resp',

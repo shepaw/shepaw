@@ -397,6 +397,13 @@ class _ChatScreenState extends State<ChatScreen>
         _otherSessionsUnreadDebounce = null;
         if (!mounted) return;
         unawaited(_refreshOtherSessionsUnread());
+        // 别的会话被主机补进来或清掉时，停靠的列表要跟着变。
+        // 当前会话自己的消息仍走消息数那条刷新，避免流式输出整表重查。
+        final current = _controller.currentChannelId;
+        if (_panelPinned &&
+            (changedChannelId.isEmpty || changedChannelId != current)) {
+          unawaited(_refreshPinnedPanelSessions(force: true));
+        }
       });
     });
   }
@@ -2073,7 +2080,10 @@ class _ChatScreenState extends State<ChatScreen>
               .getGroupSessions(parentGroupId: parentGroupId!)
           : await c.chatService.getAgentSessions(agentId: widget.agentId!);
       if (!mounted) return;
-      final sorted = await _sortSessionsByLatestMessage(sessions);
+      final sorted = await _sortSessionsByLatestMessage(
+        sessions,
+        hostOrder: !c.isGroupMode && await _peerAgentHostOrdersSessions(),
+      );
       if (!mounted) return;
       final sameIds = _sameSessionIds(_pinnedPanelSessions, sorted);
       // 同频道新消息只让当前行预览过期。换频道时离开/进入的两行由列表
@@ -2599,6 +2609,7 @@ class _ChatScreenState extends State<ChatScreen>
       cacheKey: _pinnedPanelKey,
       loadSessions: () async => _sortSessionsByLatestMessage(
         await _controller.chatService.getAgentSessions(agentId: agentId),
+        hostOrder: await _peerAgentHostOrdersSessions(),
       ),
       loadFailedMessage: (e) {
         LoggerService().error(
@@ -2685,21 +2696,47 @@ class _ChatScreenState extends State<ChatScreen>
   ///
   /// 点击进入会刷新 updated_at（供主页「最近打开」恢复会话用），但列表排序
   /// 不依赖它，因此进入会话不会改变列表位置——顺序只随消息活跃变化。
+  /// 连着同一台主机的客户端，私聊列表按主机写下的活跃时间排，不按本机浏览记录。
+  Future<bool> _peerAgentHostOrdersSessions() async {
+    final agentId = widget.agentId;
+    if (agentId == null) return false;
+    final agent =
+        await _controller.localDatabaseService.getRemoteAgentById(agentId);
+    return agent?.isPeerAgent == true;
+  }
+
   Future<List<Channel>> _sortSessionsByLatestMessage(
-    List<Channel> sessions,
-  ) async {
+    List<Channel> sessions, {
+    bool hostOrder = false,
+  }) async {
+    final ids = sessions.map((s) => s.id).toList();
     // 单次查询取全部会话的最新消息时间，替代逐条查询的 N 次往返。
     final times = await _controller.localDatabaseService
-        .getLatestMessageTimesByChannels(sessions.map((s) => s.id).toList());
+        .getLatestMessageTimesByChannels(ids);
+    final updated = hostOrder
+        ? await _controller.localDatabaseService.getChannelUpdatedAts(ids)
+        : const <String, DateTime>{};
     final sorted = [...sessions];
     sorted.sort((a, b) {
-      final ta =
-          times[a.id] ?? DateTime.fromMillisecondsSinceEpoch(a.createdAt);
-      final tb =
-          times[b.id] ?? DateTime.fromMillisecondsSinceEpoch(b.createdAt);
+      final ta = _sessionSortTime(a, times, updated, hostOrder: hostOrder);
+      final tb = _sessionSortTime(b, times, updated, hostOrder: hostOrder);
       return tb.compareTo(ta);
     });
     return sorted;
+  }
+
+  DateTime _sessionSortTime(
+    Channel session,
+    Map<String, DateTime> messageTimes,
+    Map<String, DateTime> updatedAts, {
+    required bool hostOrder,
+  }) {
+    if (hostOrder) {
+      final hostAt = updatedAts[session.id];
+      if (hostAt != null) return hostAt;
+    }
+    return messageTimes[session.id] ??
+        DateTime.fromMillisecondsSinceEpoch(session.createdAt);
   }
 
   /// 会话列表结构是否相同（id + 顺序）。用于避免抽屉二次装载整棵重建。
@@ -2897,7 +2934,11 @@ class _ChatScreenState extends State<ChatScreen>
     // 离开当前会话：若它是「新建会话」留下的空会话，自动删除，避免误点击
     // 「新建会话」产生空会话。
     await _controller.pruneEmptySessionBeforeSwitch(nextChannelId: channelId);
-    await _controller.localDatabaseService.touchChannelUpdatedAt(channelId);
+    // 主机上的会话按主机活跃时间排。本机点开一条不再把它抬到列表最前，
+    // 否则另一台客户端的顺序对不上。
+    if (!await _peerAgentHostOrdersSessions()) {
+      await _controller.localDatabaseService.touchChannelUpdatedAt(channelId);
+    }
     if (!mounted) return;
     await _closeDrawerAndWait();
     if (!mounted) return;

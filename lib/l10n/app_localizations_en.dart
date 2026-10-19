@@ -5718,7 +5718,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get agentDetail_sessionSyncHint =>
-      'When on, sync this agent\'s own official terminal and IDE sessions into the session list and tag where they came from. ShePaw sessions always sync';
+      'Stored on the host, so every signed-in client shows the same switch. When on, this agent\'s own official terminal and IDE sessions appear in the session list. ShePaw sessions always sync';
+
+  @override
+  String get agentDetail_sessionSyncFailed =>
+      'Couldn\'t update the sync setting on the host';
 
   @override
   String get session_originIde => 'IDE';

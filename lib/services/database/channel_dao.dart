@@ -232,6 +232,26 @@ extension ChannelDao on LocalDatabaseService {
     );
   }
 
+  /// 批量取 channel 的 updated_at。会话列表跟主机排序时用它，不必逐条查。
+  Future<Map<String, DateTime>> getChannelUpdatedAts(
+    List<String> channelIds,
+  ) async {
+    if (channelIds.isEmpty) return const {};
+    final db = await database;
+    final rows = await db.rawQuery(
+      'SELECT id, updated_at FROM channels '
+      'WHERE id IN (${List.filled(channelIds.length, '?').join(',')})',
+      channelIds,
+    );
+    final times = <String, DateTime>{};
+    for (final row in rows) {
+      final at = DateTime.tryParse(row['updated_at'] as String? ?? '');
+      final id = row['id'] as String?;
+      if (id != null && at != null) times[id] = at;
+    }
+    return times;
+  }
+
   /// 将 Channel 的 updated_at 显式设为指定时间（用于同步远端会话的真实活跃时间）。
   Future<void> setChannelUpdatedAt(String channelId, DateTime at) async {
     final db = await database;

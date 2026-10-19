@@ -80,6 +80,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   /// 是否同步这个 agent 自己的官方终端或 IDE 会话。默认开。
   /// ShePaw 会话始终同步，不受这个开关影响。
   bool _peerSyncEnabled = true;
+  bool _peerSyncSetting = false;
 
   /// Cached soul text for view mode (loaded from file / peer / metadata).
   String _displaySoul = '';
@@ -222,6 +223,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           unawaited(_loadPeerModels());
           unawaited(_loadPeerModes());
           unawaited(_loadSoul());
+          unawaited(_loadPeerSyncPref());
         }
         setState(() {});
       });
@@ -239,6 +241,9 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
             unawaited(_showCachedPeerModes());
           case PeerAgentMetaKind.soul:
             unawaited(_applyPushedSoul());
+          case PeerAgentMetaKind.clientSessions:
+            if (_peerSyncSetting) return;
+            unawaited(_loadPeerSyncPref());
         }
       });
       _loadPeerSyncPref();
@@ -665,13 +670,45 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   }
 
   Future<void> _loadPeerSyncPref() async {
-    final enabled = await isClientSessionSyncEnabled(_agent.id);
+    final enabled = await isClientSessionSyncEnabled(
+      _agent.id,
+      remoteAgentId: _agent.remoteAgentId,
+    );
     if (mounted) setState(() => _peerSyncEnabled = enabled);
   }
 
   Future<void> _setPeerSyncEnabled(bool enabled) async {
-    setState(() => _peerSyncEnabled = enabled);
-    await setClientSessionSyncEnabled(_agent.id, enabled);
+    final previous = _peerSyncEnabled;
+    final peerId = _agent.sourcePeerId;
+    final remoteId = _agent.remoteAgentId;
+    setState(() {
+      _peerSyncEnabled = enabled;
+      _peerSyncSetting = true;
+    });
+    if (peerId == null || remoteId == null) {
+      if (!mounted) return;
+      setState(() {
+        _peerSyncEnabled = previous;
+        _peerSyncSetting = false;
+      });
+      return;
+    }
+    final ok = await PeerAgentClientService.instance.setClientSessionsSync(
+      peerId: peerId,
+      remoteAgentId: remoteId,
+      localAgentId: _agent.id,
+      enabled: enabled,
+    );
+    if (!mounted) return;
+    setState(() => _peerSyncSetting = false);
+    if (ok) return;
+    setState(() => _peerSyncEnabled = previous);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(AppLocalizations.of(context).agentDetail_sessionSyncFailed),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   /// 页面展示用的在线状态。peer agent 跟随来源设备的 P2P 连接状态，其余 agent
@@ -1784,7 +1821,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
           style: const TextStyle(fontSize: 12),
         ),
         value: _peerSyncEnabled,
-        onChanged: _setPeerSyncEnabled,
+        onChanged: _peerSyncSetting ? null : _setPeerSyncEnabled,
       ),
     );
   }

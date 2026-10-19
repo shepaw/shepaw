@@ -12,11 +12,11 @@ const String kSessionOriginTerminal = 'terminal';
 /// 引擎自己的会话，但主机没有再分成 IDE / 终端。
 const String kSessionOriginExternal = 'external';
 
-/// 编辑页「同步客户端会话」开关。
+/// 编辑页「同步客户端会话」开关在本机的缓存。
 ///
-/// 键名沿用旧的 `peer_sync_disabled_<agentId>`。以前它关掉整段远端同步；
-/// 现在 ShePaw 会话始终同步，这个键只决定要不要把这个 agent 自己的官方终端
-/// 或 IDE 会话拉进会话列表。未设置视为开启，和开关默认一致。
+/// 权威在主机：`files/<agent>/client_sessions_sync.txt`。这里只记住主机
+/// 最近一次告诉这台客户端的值，好让详情页在下一帧到来之前就能画出来。
+/// 未设置视为开启，和主机缺省一致。ShePaw 自己的会话始终同步。
 const String kClientSessionSyncDisabledPrefsPrefix = 'peer_sync_disabled_';
 
 /// 主机 `source` 不是 ShePaw、也不是空，就当作 agent 自己的客户端会话。
@@ -111,16 +111,29 @@ String officialClientName(String engine) {
   }
 }
 
-Future<bool> isClientSessionSyncEnabled(String agentId) async {
+Future<bool> isClientSessionSyncEnabled(
+  String agentId, {
+  String? remoteAgentId,
+}) async {
   final prefs = await SharedPreferences.getInstance();
-  return prefs.getBool('$kClientSessionSyncDisabledPrefsPrefix$agentId') !=
-      true;
+  for (final id in [agentId, if (remoteAgentId != null) remoteAgentId]) {
+    if (id.isEmpty) continue;
+    final key = '$kClientSessionSyncDisabledPrefsPrefix$id';
+    if (prefs.containsKey(key)) return prefs.getBool(key) != true;
+  }
+  return true;
 }
 
-Future<void> setClientSessionSyncEnabled(String agentId, bool enabled) async {
+/// 记下主机上的开关。本机 id 和远端 id 各写一份，详情页用哪个都能读到。
+Future<void> rememberClientSessionSync({
+  required String localAgentId,
+  required String remoteAgentId,
+  required bool enabled,
+}) async {
   final prefs = await SharedPreferences.getInstance();
-  await prefs.setBool(
-    '$kClientSessionSyncDisabledPrefsPrefix$agentId',
-    !enabled,
-  );
+  for (final id in {localAgentId, remoteAgentId}) {
+    if (id.isEmpty) continue;
+    await prefs.setBool('$kClientSessionSyncDisabledPrefsPrefix$id', !enabled);
+  }
 }
+

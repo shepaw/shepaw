@@ -5508,7 +5508,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get agentDetail_sessionSyncHint =>
-      '开启后，把这个 Agent 自己的官方终端和 IDE 会话同步到会话列表，并标上来源。ShePaw 自己的会话始终同步';
+      '开或关都记在主机上，已登录的客户端看到的是同一个状态。开启后，这个 Agent 自己的官方终端和 IDE 会话会出现在会话列表里。ShePaw 自己的会话始终同步';
+
+  @override
+  String get agentDetail_sessionSyncFailed => '没能改主机上的同步开关';
 
   @override
   String get session_originIde => 'IDE';

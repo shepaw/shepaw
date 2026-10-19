@@ -571,6 +571,13 @@ class HubEventClient {
         return;
       }
     }
+    final rawTs = data['timestamp'];
+    if (rawTs is int && rawTs > 0) {
+      await db.setChannelUpdatedAt(
+        channelId,
+        DateTime.fromMillisecondsSinceEpoch(rawTs, isUtc: true),
+      );
+    }
     if (senderType != 'user') {
       final turnId = _liveChannels.entries
           .where((entry) => entry.value == channelId)

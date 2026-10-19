@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shepaw/models/channel.dart';
 import 'package:shepaw/peer/services/peer_agent_client_service.dart';
 import 'package:shepaw/peer/services/peer_inflight_turn.dart';
 import 'package:shepaw/services/session/client_session_sync.dart';
@@ -459,5 +460,36 @@ void main() {
         isNull,
       );
     });
+  });
+
+  test('local sessions absent from the host catalog are the ones to drop', () {
+    Channel row(
+      String id, {
+      String? group,
+      String? she,
+    }) =>
+        Channel(
+          id: id,
+          name: id,
+          type: 'dm',
+          members: const <ChannelMember>[],
+          sourceGroupChannelId: group,
+          sourceSheChannelId: she,
+        );
+
+    final drop = peerChannelIdsAbsentFromHost(
+      local: [
+        row('dm_on_host'),
+        row('psess_also_on_host'),
+        row('dm_only_here'),
+        row('psess_gone'),
+        row('dm_fresh'),
+        row('dm_group', group: 'group_1'),
+        row('dm_she', she: 'she_dm'),
+      ],
+      hostSessionIds: {'dm_on_host', 'also_on_host'},
+      freshChannelIds: {'dm_fresh'},
+    );
+    expect(drop, {'dm_only_here', 'psess_gone'});
   });
 }

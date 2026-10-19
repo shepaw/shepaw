@@ -45,9 +45,15 @@ mixin _LoadOps on _ChatControllerBase {
           return;
       }
 
-      // Mark this channel as the most recently opened for this agent so
-      // re-entry from the conversation list restores the same session.
-      await localDatabaseService.touchChannelUpdatedAt(currentChannelId!);
+      // 本机 agent 仍记住「上次打开的是哪条」，好让再进这个对话回到原处。
+      // 主机上的 agent 不改活跃时间：列表顺序以主机为准，两台客户端才一致。
+      final openedAgentId = agentId;
+      final openedAgent = openedAgentId == null
+          ? null
+          : await localDatabaseService.getRemoteAgentById(openedAgentId);
+      if (openedAgent?.isPeerAgent != true) {
+        await localDatabaseService.touchChannelUpdatedAt(currentChannelId!);
+      }
 
       AppLifecycleService().setActiveChannel(currentChannelId);
       NotificationService().cancelNotification(currentChannelId.hashCode);

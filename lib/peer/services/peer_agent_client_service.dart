@@ -105,6 +105,30 @@ String? remoteSessionIdFromChannelId(String channelId) =>
         ? channelId.substring(kSyncedPeerSessionPrefix.length)
         : null;
 
+/// 本机频道里，主机这次名单没有的那些。
+///
+/// 群绑定和 She 中转留下；刚在本机建、还没发出去的空会话留下。其余以主机
+/// 名单为准删掉，两台客户端的会话列表才对得上。
+Set<String> peerChannelIdsAbsentFromHost({
+  required Iterable<Channel> local,
+  required Set<String> hostSessionIds,
+  Set<String> freshChannelIds = const {},
+}) {
+  final drop = <String>{};
+  for (final channel in local) {
+    if (channel.type != 'dm') continue;
+    final group = channel.sourceGroupChannelId?.trim() ?? '';
+    final she = channel.sourceSheChannelId?.trim() ?? '';
+    if (group.isNotEmpty || she.isNotEmpty) continue;
+    if (freshChannelIds.contains(channel.id)) continue;
+    final bare = remoteSessionIdFromChannelId(channel.id);
+    if (hostSessionIds.contains(channel.id)) continue;
+    if (bare != null && hostSessionIds.contains(bare)) continue;
+    drop.add(channel.id);
+  }
+  return drop;
+}
+
 /// Remote session ids already represented by local peer-agent channels.
 ///
 /// Includes both `psess_<remoteSessionId>` shells and legacy live channels whose
@@ -1813,6 +1837,9 @@ class PeerAgentClientService {
   /// Outstanding agent_sessions_req per remote agent id.
   final Map<String, Completer<List<PeerRemoteSession>>> _pendingSessions = {};
 
+  /// Outstanding agent_client_sessions_sync_set_req per request id.
+  final Map<String, Completer<bool>> _pendingClientSyncSet = {};
+
   /// 主机在 agent_sessions_resp 里带回的它自己的时刻（peer id → epoch ms）。
   ///
   /// 历史同步的水位要记在主机的时间轴上：会话要不要重拉是拿主机的
@@ -3193,6 +3220,9 @@ class PeerAgentClientService {
       case 'agent_modes_set_resp':
         _onModesSetResp(event.data);
         break;
+      case 'agent_client_sessions_sync_set_resp':
+        _onClientSessionsSyncSetResp(event.data);
+        break;
       case 'agent_soul_resp':
         _onSoulResp(event.data);
         break;
@@ -3765,6 +3795,108 @@ class PeerAgentClientService {
     if (ok) _patchCachedCurrent(remoteId, PeerAgentMetaKind.modes, mode);
   }
 
+  /// 把「同步官方终端 / IDE 会话」写到主机。成功后主机广播给其他已登录客户端。
+  Future<bool> setClientSessionsSync({
+    required String peerId,
+    required String remoteAgentId,
+    required String localAgentId,
+    required bool enabled,
+  }) async {
+    final requestId = _uuid.v4();
+    final completer = Completer<bool>();
+    _pendingClientSyncSet[requestId] = completer;
+    final sent = await _sendMetaControl(peerId, {
+      'type': 'agent_client_sessions_sync_set_req',
+      'request_id': requestId,
+      'agent_id': remoteAgentId,
+      'enabled': enabled,
+    });
+    if (!sent) {
+      _pendingClientSyncSet.remove(requestId);
+      return false;
+    }
+    final ok = await completer.future.timeout(
+      const Duration(seconds: 15),
+      onTimeout: () {
+        _pendingClientSyncSet.remove(requestId);
+        return false;
+      },
+    );
+    if (!ok) return false;
+    await _applyClientSessionsSync(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      localAgentId: localAgentId,
+      enabled: enabled,
+    );
+    return true;
+  }
+
+  void _onClientSessionsSyncSetResp(Map<String, dynamic> data) {
+    final requestId = data['request_id']?.toString();
+    if (requestId == null || requestId.isEmpty) return;
+    final completer = _pendingClientSyncSet.remove(requestId);
+    if (completer != null && !completer.isCompleted) {
+      completer.complete(data['ok'] == true);
+    }
+  }
+
+  Future<void> _applyClientSessionsSync({
+    required String peerId,
+    required String remoteAgentId,
+    required String? localAgentId,
+    required bool enabled,
+  }) async {
+    final local = localAgentId ??
+        await _localAgentIdForRemote(peerId, remoteAgentId) ??
+        remoteAgentId;
+    await rememberClientSessionSync(
+      localAgentId: local,
+      remoteAgentId: remoteAgentId,
+      enabled: enabled,
+    );
+    _writeMeta(
+      agentId: remoteAgentId,
+      kind: PeerAgentMetaKind.clientSessions,
+      payload: {'enabled': enabled},
+    );
+    if (local != remoteAgentId) {
+      _writeMeta(
+        agentId: local,
+        kind: PeerAgentMetaKind.clientSessions,
+        payload: {'enabled': enabled},
+      );
+    }
+    if (!_peerIsConnected(peerId)) return;
+    final sessions = await fetchSessions(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+    );
+    if (sessions == null) return;
+    await syncSessions(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      localAgentId: local,
+      userId: 'user',
+      sessions: sessions,
+      pruneToHost: true,
+    );
+  }
+
+  Future<String?> _localAgentIdForRemote(
+    String peerId,
+    String remoteAgentId,
+  ) async {
+    final agents = await _db.getAllRemoteAgents();
+    for (final agent in agents) {
+      if (agent.metadata['remote_agent_id'] == remoteAgentId &&
+          agent.metadata['source_peer_id'] == peerId) {
+        return agent.id;
+      }
+    }
+    return null;
+  }
+
   static const _soulRelayTimeout = Duration(seconds: 12);
 
   void _completeSoulGet(String requestId, PeerSoulInfo? info) {
@@ -4099,6 +4231,14 @@ class PeerAgentClientService {
           completePending: false,
           rev: rev,
         );
+      case PeerAgentMetaKind.clientSessions:
+        final enabled = data['enabled'] == true;
+        unawaited(_applyClientSessionsSync(
+          peerId: event.peerId,
+          remoteAgentId: agentId,
+          localAgentId: null,
+          enabled: enabled,
+        ));
       default:
         _log.debug('ignore agent_meta_changed kind=$kind', tag: _tag);
     }
@@ -5028,9 +5168,9 @@ class PeerAgentClientService {
 
   /// Fetch an agent's known sessions from the hub (agent.sessions.list relay).
   ///
-  /// Returns `[]` on failure/timeout or when the underlying agent can't
-  /// enumerate sessions (graceful degrade — the UI just shows no remote list).
-  Future<List<PeerRemoteSession>> fetchSessions({
+  /// `null` 是没问到（发送失败或超时）。空列表是主机确认这名下没有会话，
+  /// 可以拿来把本机多出来的行清掉。两者不能混，否则一次超时会把列表删光。
+  Future<List<PeerRemoteSession>?> fetchSessions({
     required String peerId,
     required String remoteAgentId,
   }) async {
@@ -5045,12 +5185,16 @@ class PeerAgentClientService {
     });
     if (!sent) {
       _pendingSessions.remove(remoteAgentId);
-      return const [];
+      return null;
     }
-    return completer.future.timeout(const Duration(seconds: 10), onTimeout: () {
-      _pendingSessions.remove(remoteAgentId);
-      return const [];
-    });
+    try {
+      return await completer.future.timeout(const Duration(seconds: 10));
+    } on TimeoutException {
+      if (identical(_pendingSessions[remoteAgentId], completer)) {
+        _pendingSessions.remove(remoteAgentId);
+      }
+      return null;
+    }
   }
 
   void _onSessionsResp(String peerId, Map<String, dynamic> data) {
@@ -5153,6 +5297,9 @@ class PeerAgentClientService {
   ///
   /// [includeClientSessions] 为 false 时不新建这个 agent 自己的官方终端 / IDE 会话。
   /// 已经在本地的那些只补上来源标签，不再当成本轮新链入。
+  ///
+  /// [pruneToHost] 为 true 时，本机多出来的私聊（主机名单里没有的）删掉。
+  /// 只在主机确认过这份名单之后打开，超时得到的空列表不能用来删。
   Future<int> syncSessions({
     required String peerId,
     required String remoteAgentId,
@@ -5160,8 +5307,17 @@ class PeerAgentClientService {
     required String userId,
     required List<PeerRemoteSession> sessions,
     bool includeClientSessions = true,
+    bool pruneToHost = false,
   }) async {
-    if (sessions.isEmpty) return 0;
+    if (sessions.isEmpty) {
+      if (pruneToHost) {
+        await _dropPeerChannelsMissingFromHost(
+          localAgentId: localAgentId,
+          hostSessionIds: const {},
+        );
+      }
+      return 0;
+    }
     final engine = await _localAgentEngine(localAgentId);
     String? storedOrigin(PeerRemoteSession session) => clientSessionStoreOrigin(
           engine: engine,
@@ -5228,11 +5384,9 @@ class PeerAgentClientService {
           await _db.setChannelSessionOrigin(channelId, origin);
         }
       }
-      // Seed recency from the remote only when the channel is first created.
-      // Overwriting updated_at on existing channels would clobber the local
-      // "last opened session" marker (touchChannelUpdatedAt) and make re-entry
-      // from the conversation list jump back to a different session.
-      if (existing == null && s.updatedAt != null) {
+      // 列表顺序跟主机的活跃时间走。本机「刚打开过」不再改这个时间，
+      // 否则两台客户端会按各自的浏览记录排成两份列表。
+      if (s.updatedAt != null) {
         await _db.setChannelUpdatedAt(channelId, s.updatedAt!);
       }
       if (s.readAt != null) {
@@ -5276,11 +5430,45 @@ class PeerAgentClientService {
         syncToHost: false,
       );
     }
+    if (pruneToHost) {
+      await _dropPeerChannelsMissingFromHost(
+        localAgentId: localAgentId,
+        hostSessionIds: sessions.map((s) => s.sessionId).toSet(),
+      );
+    }
     _log.info(
       'Synced $linked/${sessions.length} remote session(s) for peer agent $localAgentId',
       tag: _tag,
     );
+    _db.notifyChannelActivity();
     return linked;
+  }
+
+  /// 删掉这个 agent 下主机名单里没有的私聊，留下群绑定、She 中转和未发送的新会话。
+  Future<void> _dropPeerChannelsMissingFromHost({
+    required String localAgentId,
+    required Set<String> hostSessionIds,
+  }) async {
+    final local = await _db.getChannelsForAgent(localAgentId);
+    final fresh = <String>{
+      for (final channel in local)
+        if (ChatService().isFreshLocalChannel(channel.id)) channel.id,
+    };
+    final drop = peerChannelIdsAbsentFromHost(
+      local: local,
+      hostSessionIds: hostSessionIds,
+      freshChannelIds: fresh,
+    );
+    if (drop.isEmpty) return;
+    for (final id in drop) {
+      await _db.deleteChannelMessages(id);
+      await _db.deleteChannel(id);
+    }
+    _log.info(
+      'Dropped ${drop.length} local session(s) not on the host for $localAgentId',
+      tag: _tag,
+    );
+    _db.notifyChannelActivity();
   }
 
   /// 这个 agent 的引擎 id。官方终端 / IDE 会话的标签用它，不拿别家的名字。
@@ -5327,15 +5515,15 @@ class PeerAgentClientService {
               (agent.metadata['remote_agent_id'] as String?)?.trim() ?? '';
           if (remoteId.isEmpty) continue;
           final sessions = digestMap[remoteId];
-          if (sessions != null && sessions.isNotEmpty) {
+          // 键不在快照里就别清：那是「没问到」，不是「主机确认没有」。
+          if (sessions != null) {
             await syncSessions(
               peerId: id,
               remoteAgentId: remoteId,
               localAgentId: agent.id,
               userId: 'user',
               sessions: sessions,
-              includeClientSessions:
-                  await isClientSessionSyncEnabled(agent.id),
+              pruneToHost: true,
             );
           }
         }
@@ -5350,14 +5538,14 @@ class PeerAgentClientService {
           peerId: id,
           remoteAgentId: remoteId,
         );
-        if (sessions.isNotEmpty) {
+        if (sessions != null) {
           await syncSessions(
             peerId: id,
             remoteAgentId: remoteId,
             localAgentId: agent.id,
             userId: 'user',
             sessions: sessions,
-            includeClientSessions: await isClientSessionSyncEnabled(agent.id),
+            pruneToHost: true,
           );
         }
       }
@@ -5610,7 +5798,24 @@ class PeerAgentClientService {
       peerId: peerId,
       remoteAgentId: remoteAgentId,
     );
+    if (remoteSessions == null) {
+      final prefetched = prefetchedWritten ?? 0;
+      if (prefetched > 0) {
+        return PeerAgentIncrementalSyncResult(
+          currentChannelMessagesWritten: prefetched,
+        );
+      }
+      return const PeerAgentIncrementalSyncResult();
+    }
     if (remoteSessions.isEmpty) {
+      await syncSessions(
+        peerId: peerId,
+        remoteAgentId: remoteAgentId,
+        localAgentId: localAgentId,
+        userId: userId,
+        sessions: remoteSessions,
+        pruneToHost: true,
+      );
       final prefetched = prefetchedWritten ?? 0;
       if (prefetched > 0) {
         return PeerAgentIncrementalSyncResult(
@@ -5620,8 +5825,7 @@ class PeerAgentClientService {
       return const PeerAgentIncrementalSyncResult();
     }
 
-    final includeClientSessions =
-        await isClientSessionSyncEnabled(localAgentId);
+    const includeClientSessions = true;
     final linked = await syncSessions(
       peerId: peerId,
       remoteAgentId: remoteAgentId,
@@ -5629,6 +5833,7 @@ class PeerAgentClientService {
       userId: userId,
       sessions: remoteSessions,
       includeClientSessions: includeClientSessions,
+      pruneToHost: true,
     );
     // 关掉开关后，历史只跟 ShePaw 会话走。已经链入的官方终端 / IDE
     // 会话留在列表里，来源标签在 syncSessions 里补。
@@ -8186,6 +8391,14 @@ class PeerAgentClientService {
           await _db.createRemoteAgent(agent);
         } else {
           await _db.updateRemoteAgent(agent);
+        }
+        final syncClients = raw['sync_client_sessions'];
+        if (syncClients is bool) {
+          await rememberClientSessionSync(
+            localAgentId: localId,
+            remoteAgentId: remoteId,
+            enabled: syncClients,
+          );
         }
         syncedLocalIds.add(localId);
       }
