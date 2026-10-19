@@ -208,4 +208,21 @@ void main() {
     );
     expect(hub.latest?.agentName, 'New');
   });
+
+  test('form cards are reminder items too, resolved by form id', () {
+    final item = PendingApprovalItem.fromInteraction(
+      channelId: 'dm_a',
+      agentId: 'a1',
+      agentName: 'Agent',
+      interactionType: 'form',
+      data: {'form_id': 'form-1'},
+    );
+    expect(item, isNotNull);
+    expect(item!.id, PendingApprovalItem.actionId('form-1'));
+    expect(item.kind, PendingApprovalKind.action);
+
+    hub.upsert(item);
+    hub.resolveByConfirmationId('form-1');
+    expect(hub.all, isEmpty);
+  });
 }

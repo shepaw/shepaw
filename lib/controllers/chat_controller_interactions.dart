@@ -108,6 +108,9 @@ mixin _InteractionOps on _ChatControllerBase {
   /// 的话，用户点下去只会撞上 PeerApprovalExpiredException 弹一句「已失效」，
   /// 而这本来是可以预知的。
   void _handleInteractionClosed(({String approvalId, String reason}) event) {
+    // 横幅提醒可能指向别的会话（本页根本没有这张卡的消息行）：先按 id
+    // 清掉全局提醒，再处理本页的可点态。
+    PendingApprovalHub.instance.resolveByConfirmationId(event.approvalId);
     final messageId = _messageIdForInteraction(event.approvalId);
     if (messageId == null) return;
     final meta = messageIdMap[messageId]?.metadata;
@@ -1022,6 +1025,7 @@ mixin _InteractionOps on _ChatControllerBase {
           approvalId: approvalId,
           values: values,
         );
+        PendingApprovalHub.instance.resolveByConfirmationId(approvalId);
         _markPeerFormSubmitted(originalMessage, values);
         if (wasDeferred) {
           // 旧回合已经收束，答案回不到那次工具调用：用卡片内容正常发一条

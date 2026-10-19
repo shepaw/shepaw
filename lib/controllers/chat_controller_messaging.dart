@@ -1307,7 +1307,14 @@ mixin _MessagingOps on _ChatControllerBase {
       final userId = getUserId();
       final userName = getUserName();
       final displayName = agentName ?? 'Agent';
-      final sid = StreamingActionConfirmation.dmFallbackId(agentId!);
+      // 孤儿卡用 `approval_id` 派生确定性 id：补投 / 重开页面落到同一行，
+      // 不会每打开一次就多一张一样的卡。
+      final sid = actionData['orphan'] == true && confirmationId.isNotEmpty
+          ? PeerApprovalPayload.approvalCardMessageId(confirmationId)
+          : StreamingActionConfirmation.dmFallbackId(agentId!);
+      if (messages.any((m) => m.id == sid)) {
+        return;
+      }
       final sm = StreamingActionConfirmation.buildFallbackBubble(
         id: sid,
         agentId: agentId!,
@@ -1437,6 +1444,7 @@ mixin _MessagingOps on _ChatControllerBase {
     final data = Map<String, dynamic>.from(formData)
       ..remove('peer_id')
       ..remove('remote_agent_id')
+      ..remove('channel_id')
       ..remove('orphan');
 
     // 先落库：卡片的重开可见性靠这条确定性行，而不是随时会被 reconcile
@@ -1581,6 +1589,7 @@ mixin _MessagingOps on _ChatControllerBase {
     // Strip routing-only fields so message metadata stays card-shaped.
     data.remove('peer_id');
     data.remove('remote_agent_id');
+    data.remove('channel_id');
 
     final confirmationId = data['confirmation_id'] as String? ?? '';
     LoggerService().info(
@@ -1648,6 +1657,7 @@ mixin _MessagingOps on _ChatControllerBase {
     final data = Map<String, dynamic>.from(formData)
       ..remove('peer_id')
       ..remove('remote_agent_id')
+      ..remove('channel_id')
       ..remove('orphan');
     final formId = data['form_id'] as String? ?? '';
     LoggerService().info(

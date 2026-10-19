@@ -7269,6 +7269,14 @@ class PeerAgentClientService {
       );
       return;
     }
+    unawaited(_publishOrphanCardToHub(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      cardId: approvalId,
+      hostChannelId: _frameChannelId(data),
+      interactionType: 'form',
+      data: data,
+    ));
     if (_orphanFormController.isClosed) return;
     _orphanFormController.add(
       _orphanFormEvent(
@@ -7284,16 +7292,23 @@ class PeerAgentClientService {
   /// 缓存里属于某个 peer agent 的孤儿表单。
   ///
   /// [orphanFormEvents] 是广播流：卡片到达时聊天页没开着，事件就丢了。
-  /// 聊天页打开后调用这里把当时没投出去的卡补上。
+  /// 聊天页打开后调用这里把当时没投出去的卡补上。给了 [hostChannelId] 时
+  /// 只补这个会话的卡 —— 同一 agent 可能有多个会话，不能把别的会话的卡
+  /// 贴进当前页面。
   List<Map<String, dynamic>> pendingOrphanFormsFor({
     required String peerId,
     required String remoteAgentId,
+    String? hostChannelId,
   }) {
     final events = <Map<String, dynamic>>[];
     for (final entry in _orphanedForms.entries) {
       final data = entry.value;
       if (data['_peer_id'] != peerId) continue;
       if (data['_remote_agent_id'] != remoteAgentId) continue;
+      if (hostChannelId != null &&
+          _frameChannelId(data) != hostChannelId) {
+        continue;
+      }
       events.add(
         _orphanFormEvent(
           peerId: peerId,
@@ -7305,6 +7320,135 @@ class PeerAgentClientService {
       );
     }
     return events;
+  }
+
+  /// 缓存里属于某个 peer agent 的孤儿审批。
+  ///
+  /// 与 [pendingOrphanFormsFor] 同一个成因：卡片到达时聊天页没开着，
+  /// [orphanApprovalEvents] 的广播就丢了。聊天页打开后按会话补投。
+  List<Map<String, dynamic>> pendingOrphanApprovalsFor({
+    required String peerId,
+    required String remoteAgentId,
+    String? hostChannelId,
+  }) {
+    final events = <Map<String, dynamic>>[];
+    for (final entry in _orphanedApprovals.entries) {
+      final data = entry.value;
+      final frameAgent = data['agent_id'] as String?;
+      if (frameAgent != null &&
+          frameAgent.isNotEmpty &&
+          frameAgent != remoteAgentId) {
+        continue;
+      }
+      if (hostChannelId != null && _frameChannelId(data) != hostChannelId) {
+        continue;
+      }
+      final rawActions = data['actions'];
+      final actionData = PeerApprovalPayload.buildActionConfirmationData(
+        data: data,
+        approvalId: entry.key,
+        actions: PeerApprovalPayload.effectiveActions(
+          rawActions is List ? rawActions : null,
+        ),
+      );
+      actionData['request_id'] = data['request_id'] as String? ?? '';
+      events.add({
+        ...actionData,
+        'peer_id': peerId,
+        'remote_agent_id': remoteAgentId,
+        'channel_id': _frameChannelId(data),
+        'orphan': true,
+      });
+    }
+    return events;
+  }
+
+  String _frameChannelId(Map<String, dynamic> data) =>
+      (data['channel_id'] as String?)?.trim() ?? '';
+
+  /// 把一张暂时投不进打开会话的卡登记到全局提醒（顶部横幅 / 列表角标）。
+  ///
+  /// 卡片归属由帧里的 `channel_id` 决定；这里只负责「横幅能点回那张卡」。
+  /// 会话页随后渲染时用同一个 id upsert，会把 `messageId` 合并进去。
+  Future<void> _publishOrphanCardToHub({
+    required String peerId,
+    required String remoteAgentId,
+    required String cardId,
+    required String hostChannelId,
+    required String interactionType,
+    required Map<String, dynamic> data,
+  }) async {
+    if (cardId.isEmpty || remoteAgentId.isEmpty) return;
+    // 纯逻辑单测没有注册本地库；提醒只是 UI 兜底，缺了不影响收卡。
+    if (!getIt.isRegistered<LocalDatabaseService>()) return;
+    final channelId = await _localChannelIdForCard(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      hostChannelId: hostChannelId,
+    );
+    if (channelId == null || channelId.isEmpty) {
+      _log.warning(
+        'peer card $cardId ($interactionType) has no local channel — '
+        'no reminder registered',
+        tag: 'PeerApproval',
+      );
+      return;
+    }
+    final localAgentId =
+        await _localAgentIdForRemote(peerId, remoteAgentId) ?? remoteAgentId;
+    final agentName =
+        (await _db.getRemoteAgentById(localAgentId))?.name ?? remoteAgentId;
+    final item = PendingApprovalItem.fromInteraction(
+      channelId: channelId,
+      agentId: localAgentId,
+      agentName: agentName,
+      interactionType: interactionType,
+      data: {
+        ...data,
+        if (interactionType == 'form')
+          'form_id': data['form_id'] ?? cardId,
+        if (interactionType == 'action_confirmation')
+          'confirmation_id': data['confirmation_id'] ?? cardId,
+      },
+    );
+    if (item != null) PendingApprovalHub.instance.upsert(item);
+  }
+
+  /// 主机会话 id → 本机频道 id。
+  ///
+  /// 帧里的 `channel_id` 是当初发给主机的 `session_id`：普通单聊就是频道
+  /// id，主机自建会话则是去掉 `psess_` 的原值。两个都查一遍；都没镜像时
+  /// 先用主机 id 占位（横幅提示还在），打开会话时会再同步。
+  /// 帧里没有归属时退回该 agent 的普通单聊，绝不落到「当前打开的会话」。
+  Future<String?> _localChannelIdForCard({
+    required String peerId,
+    required String remoteAgentId,
+    required String hostChannelId,
+  }) async {
+    if (hostChannelId.isNotEmpty) {
+      if (await _db.getChannelById(hostChannelId) != null) {
+        return hostChannelId;
+      }
+      final synced = '$kSyncedPeerSessionPrefix$hostChannelId';
+      if (await _db.getChannelById(synced) != null) return synced;
+      return hostChannelId;
+    }
+    _log.warning(
+      'peer card without channel_id (peer=$peerId agent=$remoteAgentId) — '
+      'falling back to the agent DM',
+      tag: 'PeerApproval',
+    );
+    final local =
+        await _localAgentIdForRemote(peerId, remoteAgentId) ?? remoteAgentId;
+    final channels = await _db.getChannelsForAgent(local);
+    if (channels.isEmpty) return null;
+    for (final channel in channels) {
+      if (channel.sourceGroupChannelId == null &&
+          channel.sourceSheChannelId == null) {
+        return channel.id;
+      }
+    }
+    return channels.first.id;
   }
 
   Map<String, dynamic> _orphanFormEvent({
@@ -7327,6 +7471,8 @@ class PeerAgentClientService {
       },
       'peer_id': peerId,
       'remote_agent_id': remoteAgentId,
+      // 发起回合的会话；聊天页只认领属于自己频道的卡。
+      'channel_id': _frameChannelId(data),
       // 没有活动 turn 撑着这张卡，UI 不该显示提交中的转圈。
       'orphan': true,
       // 回合外等待的卡：留在屏幕上，可作答或明确拒绝。
@@ -7596,12 +7742,34 @@ class PeerAgentClientService {
       // mid-approval and re-sent after reconnect, or agent_done raced ahead).
       // Republish so an open chat screen can still render the card — the tap
       // reaches submitApproval, which only needs the approval_id.
+      // 本机没发起过这一轮时 `_requestAgents` 是空的（重启 / 别的设备发起的
+      // 回合），帧里的 `agent_id` 就是远端 agent id，靠它仍能找到归属。
       final owner = _requestAgents[requestId];
-      if (owner != null && !_orphanApprovalController.isClosed) {
+      final remoteAgentId =
+          owner?.remoteAgentId ?? data['agent_id'] as String?;
+      final hostChannelId = _frameChannelId(data);
+      if (remoteAgentId == null || remoteAgentId.isEmpty) {
+        _log.warning(
+          'agent_approval_req: no owning agent for requestId=$requestId — '
+          'orphan approvalId=$approvalId has nowhere to render',
+          tag: 'PeerApproval',
+        );
+        return;
+      }
+      unawaited(_publishOrphanCardToHub(
+        peerId: peerId,
+        remoteAgentId: remoteAgentId,
+        cardId: approvalId,
+        hostChannelId: hostChannelId,
+        interactionType: 'action_confirmation',
+        data: actionData,
+      ));
+      if (!_orphanApprovalController.isClosed) {
         _orphanApprovalController.add({
           ...actionData,
           'peer_id': peerId,
-          'remote_agent_id': owner.remoteAgentId,
+          'remote_agent_id': remoteAgentId,
+          'channel_id': hostChannelId,
           // No live turn owns this approval — the UI must not show a spinner.
           'orphan': true,
         });

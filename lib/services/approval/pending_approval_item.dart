@@ -83,6 +83,22 @@ class PendingApprovalItem {
         createdAt: now,
       );
     }
+    // 表单卡与审批卡同属「等用户点一下」的提醒，用同一套 id 前缀，
+    // `resolveByConfirmationId(formId)` 提交后就能清掉。没有 form_id 的表单
+    // 事后无从消解，宁可不提醒，免得横幅永远挂着。
+    if (interactionType == 'form') {
+      final formId = data['form_id'] as String?;
+      if (formId == null || formId.isEmpty) return null;
+      return PendingApprovalItem(
+        id: actionId(formId),
+        channelId: channelId,
+        messageId: messageId,
+        agentId: agentId,
+        agentName: agentName,
+        kind: PendingApprovalKind.action,
+        createdAt: now,
+      );
+    }
     if (interactionType == 'action_confirmation') {
       final confirmationId = data['confirmation_id'] as String?;
       return PendingApprovalItem(

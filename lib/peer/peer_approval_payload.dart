@@ -42,6 +42,13 @@ class PeerApprovalPayload {
   /// 提交态/作废态也就有地方可写。
   static String formCardMessageId(String approvalId) => 'peer_form_$approvalId';
 
+  /// 孤儿审批卡在消息表里的确定性 id。
+  ///
+  /// 和表单卡同理：没有活动 turn 时卡片由孤儿路径补渲染，用 `approval_id`
+  /// 派生 id，重连补发 / 重开页面都落到同一行，不会堆出好几张。
+  static String approvalCardMessageId(String approvalId) =>
+      'peer_approval_$approvalId';
+
   /// Default Allow/Deny pair when the hub/agent omits actions.
   static List<dynamic> effectiveActions(List<dynamic>? raw) {
     if (raw != null && raw.isNotEmpty) {

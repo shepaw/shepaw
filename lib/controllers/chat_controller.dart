@@ -615,6 +615,10 @@ abstract class _ChatControllerBase extends ChangeNotifier
       final remoteId = event['remote_agent_id'] as String?;
       if (peerId == null || remoteId == null) return;
 
+      // 卡的归属由发起回合的会话决定：不是本频道的卡不碰 messages
+      // （全局提醒已由 PeerAgentClientService 登记）。
+      if (!_claimsOrphanCard(event)) return;
+
       if (isGroupMode) {
         final member = matchGroupPeerAgent(
           groupAgents: groupAgents,
@@ -630,18 +634,26 @@ abstract class _ChatControllerBase extends ChangeNotifier
         return;
       }
 
-      if (peerAgentLocalId(peerId, remoteId) != agentId) return;
-      _handleStreamingActionConfirmation(event);
+      if (!isPeerAgentRowId(agentId, peerId, remoteId)) return;
+      _handleStreamingActionConfirmation(
+        Map<String, dynamic>.from(event)
+          ..remove('peer_id')
+          ..remove('remote_agent_id')
+          ..remove('channel_id'),
+      );
     });
     // 孤儿表单：hub 在手机重连后补发的 AskUserQuestion，但本地已经没有活动
     // turn 能挂 onForm 了。和上面的孤儿审批同一条路由（群聊按 groupAgents
-    // 匹配成员，DM 按 peerAgentLocalId 过滤），否则卡片会静默丢失，主机的
+    // 匹配成员，DM 按行 id 过滤——两种行 id 形态都要认，否则存量
+    // `peeragent_<peer>_<remote>` 行上的卡片会静默丢失，主机的
     // elicitation 一直等下去。
     _orphanFormSub =
         PeerAgentClientService.instance.orphanFormEvents.listen((event) {
       final peerId = event['peer_id'] as String?;
       final remoteId = event['remote_agent_id'] as String?;
       if (peerId == null || remoteId == null) return;
+
+      if (!_claimsOrphanCard(event)) return;
 
       if (isGroupMode) {
         final member = matchGroupPeerAgent(
@@ -658,7 +670,7 @@ abstract class _ChatControllerBase extends ChangeNotifier
         return;
       }
 
-      if (peerAgentLocalId(peerId, remoteId) != agentId) return;
+      if (!isPeerAgentRowId(agentId, peerId, remoteId)) return;
       _handleStreamingForm(event);
     });
     // 卡片的等待有上限（主机侧 SHEPAW_ACP_APPROVAL_SECS，默认 30 分钟）。到点
@@ -674,20 +686,51 @@ abstract class _ChatControllerBase extends ChangeNotifier
       _handleFormDeferred,
     );
     // 广播流只发一次：卡片在聊天页没打开时到达就丢了。这里把缓存里的补上。
-    unawaited(_drainPendingOrphanForms());
+    unawaited(_drainPendingOrphanCards());
   }
 
-  /// 补投聊天页打开前就到达的孤儿表单。
-  Future<void> _drainPendingOrphanForms() async {
+  /// 这张孤儿卡是否属于当前打开的会话。
+  ///
+  /// 帧里的 `channel_id` 是主机收到的 `session_id`，与
+  /// [hostSessionIdForChannel] 是同一口径。没有归属或归属别的会话的卡
+  /// 一律不认领 —— 它已经由 `PeerAgentClientService` 登记到全局提醒，
+  /// 不能塞进当前会话。
+  bool _claimsOrphanCard(Map<String, dynamic> event) {
+    final channel = currentChannelId;
+    if (channel == null || channel.isEmpty) return false;
+    return orphanCardBelongsToHostSession(
+      event['channel_id'] as String?,
+      hostSessionIdForChannel(channel),
+    );
+  }
+
+  /// 补投聊天页打开前就到达的孤儿审批 / 表单。
+  Future<void> _drainPendingOrphanCards() async {
     final service = PeerAgentClientService.instance;
+    final channel = currentChannelId;
+    if (channel == null || channel.isEmpty) return;
+    final hostChannelId = hostSessionIdForChannel(channel);
+
     if (isGroupMode) {
       for (final member in groupAgents) {
         final peerId = member.sourcePeerId;
         final remoteId = member.remoteAgentId;
         if (peerId == null || remoteId == null) continue;
+        for (final event in service.pendingOrphanApprovalsFor(
+          peerId: peerId,
+          remoteAgentId: remoteId,
+          hostChannelId: hostChannelId,
+        )) {
+          _handleGroupOrphanPeerApproval(
+            agentId: member.id,
+            agentName: member.name,
+            actionData: event,
+          );
+        }
         for (final event in service.pendingOrphanFormsFor(
           peerId: peerId,
           remoteAgentId: remoteId,
+          hostChannelId: hostChannelId,
         )) {
           _handleGroupOrphanPeerForm(
             agentId: member.id,
@@ -705,9 +748,22 @@ abstract class _ChatControllerBase extends ChangeNotifier
     final peerId = agent?.sourcePeerId;
     final remoteId = agent?.remoteAgentId;
     if (peerId == null || remoteId == null) return;
+    for (final event in service.pendingOrphanApprovalsFor(
+      peerId: peerId,
+      remoteAgentId: remoteId,
+      hostChannelId: hostChannelId,
+    )) {
+      _handleStreamingActionConfirmation(
+        Map<String, dynamic>.from(event)
+          ..remove('peer_id')
+          ..remove('remote_agent_id')
+          ..remove('channel_id'),
+      );
+    }
     for (final event in service.pendingOrphanFormsFor(
       peerId: peerId,
       remoteAgentId: remoteId,
+      hostChannelId: hostChannelId,
     )) {
       _handleStreamingForm(event);
     }

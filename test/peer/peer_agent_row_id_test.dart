@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/remote_agent.dart';
-import 'package:shepaw/peer/services/peer_agent_client_service.dart';
+import 'package:shepaw/peer/services/peer_agent_ids.dart';
 
 RemoteAgent _agent({
   required String id,
@@ -85,5 +85,53 @@ void main() {
 
   test('row id is the hub id', () {
     expect(peerAgentLocalId(peerId, uuid), uuid);
+  });
+
+  group('isPeerAgentRowId', () {
+    test('accepts the hub id itself', () {
+      expect(isPeerAgentRowId(uuid, peerId, uuid), isTrue);
+    });
+
+    test('accepts the legacy namespaced row id', () {
+      // commit 392148e1 之前落库的行仍是 peeragent_<peer>_<remote>，没有迁移。
+      expect(
+        isPeerAgentRowId('peeragent_${peerId}_$uuid', peerId, uuid),
+        isTrue,
+      );
+    });
+
+    test('rejects another peer or another remote agent', () {
+      expect(isPeerAgentRowId('peeragent_other_$uuid', peerId, uuid), isFalse);
+      expect(isPeerAgentRowId('peeragent_${peerId}_other', peerId, uuid),
+          isFalse);
+      expect(isPeerAgentRowId('local-admin', peerId, uuid), isFalse);
+    });
+
+    test('rejects null', () {
+      expect(isPeerAgentRowId(null, peerId, uuid), isFalse);
+    });
+  });
+
+  group('orphanCardBelongsToHostSession', () {
+    test('claims only the same session', () {
+      expect(orphanCardBelongsToHostSession('dm_a_user_1', 'dm_a_user_1'),
+          isTrue);
+      expect(
+        orphanCardBelongsToHostSession('group-1', 'group-1'),
+        isTrue,
+      );
+      expect(
+        orphanCardBelongsToHostSession('dm_other_user_1', 'dm_a_user_1'),
+        isFalse,
+      );
+    });
+
+    test('never claims an unattributed card', () {
+      expect(orphanCardBelongsToHostSession(null, 'dm_a_user_1'), isFalse);
+      expect(orphanCardBelongsToHostSession('', 'dm_a_user_1'), isFalse);
+      expect(orphanCardBelongsToHostSession('   ', 'dm_a_user_1'), isFalse);
+      expect(orphanCardBelongsToHostSession('dm_a_user_1', null), isFalse);
+      expect(orphanCardBelongsToHostSession('dm_a_user_1', ''), isFalse);
+    });
   });
 }

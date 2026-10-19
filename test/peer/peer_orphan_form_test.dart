@@ -18,10 +18,12 @@ void main() {
     Map<String, dynamic> formFrame({
       required String requestId,
       required String approvalId,
+      String channelId = 'dm_remote-agent_user_1',
     }) => {
       'request_id': requestId,
       'approval_id': approvalId,
       'agent_id': 'remote-agent',
+      'channel_id': channelId,
       'title': '选哪个端口',
       'fields': [
         {'id': 'port', 'type': 'string', 'label': '端口'},
@@ -155,7 +157,28 @@ void main() {
       final event = events.firstWhere((e) => e['form_id'] == approvalId);
       expect(event['orphan'], isTrue);
       expect(event['peer_id'], 'peer-1');
+      expect(event['channel_id'], 'dm_remote-agent_user_1');
       expect(event['peer_form']['approval_id'], approvalId);
+
+      // 补投按会话过滤：别的会话的卡不能贴进当前聊天页。
+      expect(
+        svc.pendingOrphanFormsFor(
+          peerId: 'peer-1',
+          remoteAgentId: 'remote-agent',
+          hostChannelId: 'dm_other_user_1',
+        ),
+        isEmpty,
+      );
+      expect(
+        svc
+            .pendingOrphanFormsFor(
+              peerId: 'peer-1',
+              remoteAgentId: 'remote-agent',
+              hostChannelId: 'dm_remote-agent_user_1',
+            )
+            .map((e) => e['form_id']),
+        contains(approvalId),
+      );
 
       // 别的 agent / 别的设备不该拿到这张卡。
       expect(
