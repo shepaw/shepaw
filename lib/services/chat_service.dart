@@ -60,7 +60,6 @@ import 'she_service.dart';
 import 'noise_identity.dart';
 import 'dispatch/she_relay_session_service.dart';
 import 'cli_approval_coordinator.dart';
-import '../models/llm_token_usage.dart';
 import '../storage/store_protocol.dart';
 
 /// Result of a history supplement request, carrying both the agent's
@@ -223,14 +222,11 @@ class ChatService {
         loadChannelMessages(channelId, limit: limit),
   );
 
-  /// Sub-service: per-agent group chat execution (local LLM + remote ACP)
+  /// Sub-service: 群文件消息落库与「编排已搬到 Hub」回执。
   late final GroupAgentExecutor _groupAgentExecutor = GroupAgentExecutor(
     db: _databaseService,
     uuid: _uuid,
-    activeGroupTasks: _activeGroupTasks,
-    interactionHandler: _groupInteractionHandler,
     notifyChannelUpdate: _notifyChannelUpdate,
-    updateTypingAgentIds: _updateTypingAgentIds,
   );
 
   /// Sub-service: 1:1 agent messaging (sendMessageToAgent + ACP + local LLM)

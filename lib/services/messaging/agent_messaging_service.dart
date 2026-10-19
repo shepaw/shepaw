@@ -717,10 +717,15 @@ class AgentMessagingService {
     LoggerService().debug('sendMessageToAgent: agentId=${agent.id}, name=${agent.name}, protocol=${agent.protocol}, status=${agent.status}, endpoint=${agent.endpoint}', tag: 'AgentMessagingService');
 
     try {
-      // 本机 LLM，或主机上的惜宝。后者不走 agent_chat：CLI 只在储物袋回合里认她。
+      // 主机上的惜宝不走 agent_chat：CLI 只在储物袋回合里认她。
+      // 本机 LLM 已下线；旧数据里还带 llm_provider 的 agent 也走储物袋回合，
+      // 由主机给出明确回应，而不是在本机空转。
       if (agent.isLocal || relaysHostSheTurn(agent)) {
-        LoggerService().debug('Detected local LLM agent, using local LLM path', tag: 'AgentMessagingService');
-        return await _sendViaLocalLLM(
+        LoggerService().debug(
+          'Relaying host turn for agent=${agent.id}',
+          tag: 'AgentMessagingService',
+        );
+        return await _relayHostTurn(
           content: content,
           agent: agent,
           userId: userId,
@@ -728,25 +733,12 @@ class AgentMessagingService {
           channelId: channelId,
           replyToId: replyToId,
           replyQuoteText: replyQuoteText,
-          dmSystemPrompt: dmSystemPrompt,
-          executionMode: executionMode,
           onStreamChunk: onStreamChunk,
-          onActionConfirmation: onActionConfirmation,
-          onSingleSelect: onSingleSelect,
-          onMultiSelect: onMultiSelect,
-          onFileUpload: onFileUpload,
-          onForm: onForm,
-          onFileMessage: onFileMessage,
-          onMessageMetadata: onMessageMetadata,
-          onRequestHistory: onRequestHistory,
           onOsToolConfirmation: onOsToolConfirmation,
-          onWorkflowPlanCreated: onWorkflowPlanCreated,
-          acpCancellationToken: acpCancellationToken,
           attachments: attachments,
           existingUserMessage: existingUserMessage,
           userMessageId: userMessageId,
           instructionName: instructionName,
-          extraTools: extraTools,
         );
       }
 
@@ -1483,13 +1475,10 @@ class AgentMessagingService {
     }
   }
 
-  /// Send message via local LLM API (no WebSocket, no endpoint required).
+  /// 把一回合交给主机（储物袋 relay），并等待主机回包。
   ///
-  /// Supports multi-round tool calling: when the LLM invokes OS tools, we
-  /// execute them (with confirmation for high-risk ops), feed results back,
-  /// and let the LLM continue reasoning until it produces a final text reply
-  /// or invokes a UI tool (which is fire-and-forget, ending the loop).
-  Future<Message?> _sendViaLocalLLM({
+  /// 本机不再跑模型：主机惜宝和遗留的 `llm_provider` agent 都走这里。
+  Future<Message?> _relayHostTurn({
     required String content,
     required RemoteAgent agent,
     required String userId,
@@ -1497,29 +1486,14 @@ class AgentMessagingService {
     String? channelId,
     String? replyToId,
     String? replyQuoteText,
-    String? dmSystemPrompt,
-    String? executionMode,
     void Function(String chunk)? onStreamChunk,
-    void Function(Map<String, dynamic>)? onActionConfirmation,
-    void Function(Map<String, dynamic>)? onSingleSelect,
-    void Function(Map<String, dynamic>)? onMultiSelect,
-    void Function(Map<String, dynamic>)? onFileUpload,
-    void Function(Map<String, dynamic>)? onForm,
-    Future<void> Function(Map<String, dynamic>)? onFileMessage,
-    void Function(Map<String, dynamic>)? onMessageMetadata,
-    void Function(Map<String, dynamic>)? onRequestHistory,
     CliApprovalHandler? onOsToolConfirmation,
-    /// 工作流计划创建回调（She 在 DM 中调用 `shepaw workflow create` 成功后触发）。
-    /// 参数：workflowId、可直接挂到消息 metadata 的 plan_approval 数据。
-    void Function(String workflowId, Map<String, dynamic> planData)? onWorkflowPlanCreated,
-    ACPCancellationToken? acpCancellationToken,
     List<AttachmentData>? attachments,
     Message? existingUserMessage,
     String? userMessageId,
     String? instructionName,
-    List<Map<String, dynamic>>? extraTools,
   }) async {
-    LoggerService().info('Starting local LLM chat', tag: 'AgentMessagingService');
+    LoggerService().info('Relaying turn to host', tag: 'AgentMessagingService');
 
     // Create and save user message (skip if pre-existing attachment message provided)
     Message userMessage;

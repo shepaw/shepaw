@@ -5,7 +5,8 @@ import 'package:path/path.dart' as p;
 
 /// 这份安装是储物袋的主机，还是连到主机上的客户端。
 ///
-/// App 不是主机。没有角色文件时不做任何回合。主机是 agent-hub。
+/// App 不是主机：启动时固定绑定 [PouchRole.absent]，登录后是 client。
+/// `host` 分支只保留给旧角色文件与主机侧测试，正常运行不会走到。
 enum PouchRuntimeKind { host, client, absent }
 
 class PouchRole {

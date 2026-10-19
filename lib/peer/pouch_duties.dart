@@ -2,6 +2,9 @@ import '../services/she_service.dart';
 import '../storage/pouch_role.dart';
 
 /// 这一进程是不是储物袋主机。App 默认不是，主机在 agent-hub 上。
+///
+/// 启动时固定绑定 absent，因此 [isHost] 在 App 运行期始终为 false；
+/// 保留 host 分支只为兼容旧角色文件和测试。
 class PouchDutyState {
   PouchDutyState._();
 

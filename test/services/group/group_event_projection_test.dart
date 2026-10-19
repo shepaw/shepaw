@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/message.dart';
-import 'package:shepaw/services/task/acp_task_contract.dart';
 import 'package:shepaw/services/event/event_bus.dart';
 import 'package:shepaw/services/event/event_pattern.dart';
 import 'package:shepaw/services/event/group_event_types.dart';
@@ -8,9 +7,7 @@ import 'package:shepaw/services/group/group_agent_executor.dart';
 import 'package:shepaw/services/group/group_event.dart';
 import 'package:shepaw/services/group/group_event_perception.dart';
 import 'package:shepaw/services/group/group_event_store.dart';
-import 'package:shepaw/services/group/group_interaction_handler.dart';
 import 'package:shepaw/services/local_database_service.dart';
-import 'package:shepaw/services/task/task_models.dart';
 import 'package:uuid/uuid.dart';
 
 GroupEventPerceptionScheduler _buildScheduler({
@@ -24,15 +21,7 @@ GroupEventPerceptionScheduler _buildScheduler({
   final executor = GroupAgentExecutor(
     db: db,
     uuid: uuid,
-    activeGroupTasks: <String, Map<String, GroupActiveTask>>{},
-    interactionHandler: GroupInteractionHandler(
-      db: db,
-      uuid: uuid,
-      notifyChannelUpdate: (_) {},
-      loadChannelMessages: loadMessages,
-    ),
     notifyChannelUpdate: (_) {},
-    updateTypingAgentIds: () {},
   );
 
   return GroupEventPerceptionScheduler(

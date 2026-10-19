@@ -10,7 +10,6 @@ import 'package:shepaw/peer/services/hub_group_registry.dart';
 import 'package:shepaw/services/group/group_management_service.dart';
 import 'package:shepaw/services/group/group_event.dart';
 import 'package:shepaw/services/group/group_event_store.dart';
-import 'package:shepaw/services/group/group_interaction_handler.dart';
 import 'package:shepaw/services/group/group_member_capability_probe.dart';
 import 'package:shepaw/services/group/group_member_session_service.dart';
 import 'package:shepaw/services/group/group_membership_perception.dart';
@@ -479,16 +478,7 @@ class _NoopExecutor extends GroupAgentExecutor {
       : super(
           db: db,
           uuid: const Uuid(),
-          activeGroupTasks: {},
-          interactionHandler: GroupInteractionHandler(
-            db: db,
-            uuid: const Uuid(),
-            notifyChannelUpdate: (_) {},
-            loadChannelMessages: (channelId, {int limit = 100}) async =>
-                const <Message>[],
-          ),
           notifyChannelUpdate: (_) {},
-          updateTypingAgentIds: () {},
         );
 
   @override
