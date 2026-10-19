@@ -35,6 +35,8 @@ import '../../services/messaging/message_implicit_prompt.dart';
 import '../../services/device_node/command_approval_inbox.dart';
 import '../../services/device_node/device_command_runner.dart';
 import '../../services/device_node/device_hello.dart';
+import '../../services/approval/pending_approval_hub.dart';
+import '../../services/approval/pending_approval_item.dart';
 import '../../services/session/client_session_sync.dart';
 import '../../services/session/cli_execute_peer_handler.dart';
 import '../../services/session/session_create_peer_handler.dart';
@@ -104,6 +106,13 @@ String? remoteSessionIdFromChannelId(String channelId) =>
     channelId.startsWith(kSyncedPeerSessionPrefix)
         ? channelId.substring(kSyncedPeerSessionPrefix.length)
         : null;
+
+/// 空会话在主机上的登记结果。
+enum HostEmptySessionResult { absent, removed, notEmpty, failed }
+
+/// 发给主机的会话 id。`psess_` 壳剥掉，本机新建的 `dm_` 原样带上。
+String hostSessionIdForChannel(String channelId) =>
+    remoteSessionIdFromChannelId(channelId) ?? channelId;
 
 /// 本机频道里，主机这次名单没有的那些。
 ///
@@ -1840,6 +1849,15 @@ class PeerAgentClientService {
   /// Outstanding agent_client_sessions_sync_set_req per request id.
   final Map<String, Completer<bool>> _pendingClientSyncSet = {};
 
+  /// 空会话登记 / 删除，按 request id 等回包。
+  final Map<String, Completer<Map<String, dynamic>>> _pendingHostSessionOpen =
+      {};
+  final Map<String, Completer<Map<String, dynamic>>> _pendingHostSessionDrop =
+      {};
+
+  /// 正在登记的空会话。离开这条会话时要等它结束，避免主机上留下没人删的空记录。
+  final Map<String, Future<bool>> _hostEmptyOpens = {};
+
   /// 主机在 agent_sessions_resp 里带回的它自己的时刻（peer id → epoch ms）。
   ///
   /// 历史同步的水位要记在主机的时间轴上：会话要不要重拉是拿主机的
@@ -3243,6 +3261,12 @@ class PeerAgentClientService {
       case 'agent_client_sessions_sync_set_resp':
         _onClientSessionsSyncSetResp(event.data);
         break;
+      case 'agent_session_open_resp':
+        _completeHostEmpty(_pendingHostSessionOpen, event.data);
+        break;
+      case 'agent_session_drop_resp':
+        _completeHostEmpty(_pendingHostSessionDrop, event.data);
+        break;
       case 'agent_soul_resp':
         _onSoulResp(event.data);
         break;
@@ -3372,7 +3396,7 @@ class PeerAgentClientService {
       return;
     }
     if (!_peerIsConnected(peerId)) return;
-    final sessionId = remoteSessionIdFromChannelId(channelId) ?? channelId;
+    final sessionId = hostSessionIdForChannel(channelId);
     if (sessionId.isEmpty) return;
     try {
       await _sendMetaControl(peerId, {
@@ -3381,6 +3405,139 @@ class PeerAgentClientService {
         'session_id': sessionId,
       });
     } catch (_) {}
+  }
+
+  /// 把刚建的空会话登记到主机。成功后其他已登录客户端会收到名单变化。
+  Future<bool> openHostSession({
+    required RemoteAgent agent,
+    required String channelId,
+  }) {
+    final peerId = agent.sourcePeerId;
+    final remoteAgentId = agent.remoteAgentId;
+    if (!agent.isPeerAgent ||
+        peerId == null ||
+        peerId.isEmpty ||
+        remoteAgentId == null ||
+        remoteAgentId.isEmpty) {
+      return Future<bool>.value(false);
+    }
+    final sessionId = hostSessionIdForChannel(channelId);
+    if (!_plainHostSessionId(sessionId)) return Future<bool>.value(false);
+    final key = '$peerId::$remoteAgentId::$sessionId';
+    final existing = _hostEmptyOpens[key];
+    if (existing != null) return existing;
+    final future = _openHostSession(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      channelId: channelId,
+      sessionId: sessionId,
+    );
+    _hostEmptyOpens[key] = future;
+    return future.whenComplete(() => _hostEmptyOpens.remove(key));
+  }
+
+  Future<bool> _openHostSession({
+    required String peerId,
+    required String remoteAgentId,
+    required String channelId,
+    required String sessionId,
+  }) async {
+    if (!_peerIsConnected(peerId)) return false;
+    final requestId = _uuid.v4();
+    final completer = Completer<Map<String, dynamic>>();
+    _pendingHostSessionOpen[requestId] = completer;
+    final sent = await _sendMetaControl(peerId, {
+      'type': 'agent_session_open_req',
+      'request_id': requestId,
+      'agent_id': remoteAgentId,
+      'session_id': sessionId,
+    });
+    if (!sent) {
+      _pendingHostSessionOpen.remove(requestId);
+      return false;
+    }
+    final data = await _hostEmptyAck(_pendingHostSessionOpen, requestId, completer);
+    if (data['ok'] != true) return false;
+    ChatService().forgetFreshLocalChannel(channelId);
+    return true;
+  }
+
+  /// 本机要丢掉一条空会话时，先请主机删。主机上已经有消息就留下。
+  Future<HostEmptySessionResult> dropHostSession({
+    required RemoteAgent agent,
+    required String channelId,
+  }) async {
+    final peerId = agent.sourcePeerId;
+    final remoteAgentId = agent.remoteAgentId;
+    if (!agent.isPeerAgent ||
+        peerId == null ||
+        peerId.isEmpty ||
+        remoteAgentId == null ||
+        remoteAgentId.isEmpty) {
+      return HostEmptySessionResult.absent;
+    }
+    final sessionId = hostSessionIdForChannel(channelId);
+    if (!_plainHostSessionId(sessionId)) return HostEmptySessionResult.absent;
+    final key = '$peerId::$remoteAgentId::$sessionId';
+    final opening = _hostEmptyOpens[key];
+    if (opening != null) {
+      final opened = await opening;
+      if (!opened) return HostEmptySessionResult.absent;
+    } else if (ChatService().isFreshLocalChannel(channelId)) {
+      return HostEmptySessionResult.absent;
+    }
+    if (!_peerIsConnected(peerId)) return HostEmptySessionResult.failed;
+    final requestId = _uuid.v4();
+    final completer = Completer<Map<String, dynamic>>();
+    _pendingHostSessionDrop[requestId] = completer;
+    final sent = await _sendMetaControl(peerId, {
+      'type': 'agent_session_drop_req',
+      'request_id': requestId,
+      'agent_id': remoteAgentId,
+      'session_id': sessionId,
+    });
+    if (!sent) {
+      _pendingHostSessionDrop.remove(requestId);
+      return HostEmptySessionResult.failed;
+    }
+    final data = await _hostEmptyAck(_pendingHostSessionDrop, requestId, completer);
+    if (data['ok'] == true) {
+      return data['removed'] == true
+          ? HostEmptySessionResult.removed
+          : HostEmptySessionResult.absent;
+    }
+    if (data['error'] == 'not_empty') return HostEmptySessionResult.notEmpty;
+    return HostEmptySessionResult.failed;
+  }
+
+  bool _plainHostSessionId(String id) {
+    if (id.isEmpty || id.length > 120) return false;
+    return RegExp(r'^[A-Za-z0-9._-]+$').hasMatch(id);
+  }
+
+  void _completeHostEmpty(
+    Map<String, Completer<Map<String, dynamic>>> pending,
+    Map<String, dynamic> data,
+  ) {
+    final requestId = data['request_id']?.toString();
+    if (requestId == null || requestId.isEmpty) return;
+    final completer = pending.remove(requestId);
+    if (completer != null && !completer.isCompleted) {
+      completer.complete(data);
+    }
+  }
+
+  Future<Map<String, dynamic>> _hostEmptyAck(
+    Map<String, Completer<Map<String, dynamic>>> pending,
+    String requestId,
+    Completer<Map<String, dynamic>> completer,
+  ) async {
+    try {
+      return await completer.future.timeout(const Duration(seconds: 5));
+    } catch (_) {
+      pending.remove(requestId);
+      return const {};
+    }
   }
 
   /// Fetch upstream model options (`agent.models.list` relay). Returns empty
@@ -3903,6 +4060,33 @@ class PeerAgentClientService {
     );
   }
 
+  /// 主机会话名单变化（`agent_meta_changed kind=sessions`）。
+  ///
+  /// 帧里只有 `changed_session_id`，名单本身要从主机拉；拉回来按主机视角
+  /// 对齐本地频道，主机上没有的本地壳会被清掉（新会话由 [ChatService] 的
+  /// fresh 标记保护）。
+  Future<void> _mirrorHostSessionList({
+    required String peerId,
+    required String remoteAgentId,
+  }) async {
+    if (!_peerIsConnected(peerId)) return;
+    final local =
+        await _localAgentIdForRemote(peerId, remoteAgentId) ?? remoteAgentId;
+    final sessions = await fetchSessions(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+    );
+    if (sessions == null) return;
+    await syncSessions(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      localAgentId: local,
+      userId: 'user',
+      sessions: sessions,
+      pruneToHost: true,
+    );
+  }
+
   Future<String?> _localAgentIdForRemote(
     String peerId,
     String remoteAgentId,
@@ -4258,6 +4442,11 @@ class PeerAgentClientService {
           remoteAgentId: agentId,
           localAgentId: null,
           enabled: enabled,
+        ));
+      case PeerAgentMetaKind.sessions:
+        unawaited(_mirrorHostSessionList(
+          peerId: event.peerId,
+          remoteAgentId: agentId,
         ));
       default:
         _log.debug('ignore agent_meta_changed kind=$kind', tag: _tag);

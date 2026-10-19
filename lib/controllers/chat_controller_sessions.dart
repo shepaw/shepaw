@@ -39,6 +39,20 @@ mixin _SessionOps on _ChatControllerBase {
     final count = await localDatabaseService.countChannelMessages(currentId);
     if (count > 0) return;
 
+    if (!isGroupMode && agentId != null) {
+      final agent = await localDatabaseService.getRemoteAgentById(agentId!);
+      if (agent != null && agent.isPeerAgent) {
+        final dropped = await PeerAgentClientService.instance.dropHostSession(
+          agent: agent,
+          channelId: currentId,
+        );
+        if (dropped == HostEmptySessionResult.notEmpty ||
+            dropped == HostEmptySessionResult.failed) {
+          return;
+        }
+      }
+    }
+
     if (isGroupMode) {
       await GroupMemberSessionService(localDatabaseService)
           .deleteMemberSessionsForGroupChannel(currentId);
@@ -93,12 +107,15 @@ mixin _SessionOps on _ChatControllerBase {
         try {
           final agent =
               await localDatabaseService.getRemoteAgentById(agentId!);
-          if (agent != null) {
-            await PeerAgentClientService.instance.warmSession(
-              agent: agent,
-              channelId: newChannelId,
-            );
-          }
+          if (agent == null) return;
+          await PeerAgentClientService.instance.openHostSession(
+            agent: agent,
+            channelId: newChannelId,
+          );
+          await PeerAgentClientService.instance.warmSession(
+            agent: agent,
+            channelId: newChannelId,
+          );
         } catch (_) {}
       }());
 

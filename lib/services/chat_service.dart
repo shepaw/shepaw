@@ -1963,9 +1963,14 @@ class ChatService {
       agentId: agentId,
       agentName: agentName,
     );
-    // 纯本机新建：主机那边还没有这条会话，进页时不必白跑一趟历史回读。
+    // 先标成本机新会话。主机登记成功后会清掉，登记上之前进页不必白跑历史回读。
     _freshLocalChannels.mark(channelId);
     return channelId;
+  }
+
+  /// 这条空会话已经在主机上了，之后按普通会话回读。
+  void forgetFreshLocalChannel(String channelId) {
+    _freshLocalChannels.clear(channelId);
   }
 
   /// 这条会话是不是「本机刚建、还没往主机发过东西」。

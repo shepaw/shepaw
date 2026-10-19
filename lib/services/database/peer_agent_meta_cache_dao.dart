@@ -11,6 +11,7 @@ class PeerAgentMetaKind {
   static const commands = 'commands';
   static const soul = 'soul';
   static const clientSessions = 'client_sessions';
+  static const sessions = 'sessions';
 }
 
 /// 一条 peer agent 元数据缓存。这一期只用 `scope == ''`（agent 级）。
