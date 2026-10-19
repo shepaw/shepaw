@@ -603,6 +603,17 @@ abstract class _ChatControllerBase extends ChangeNotifier
         refreshAgentStatus();
       }
     });
+    _installOrphanCardListeners();
+  }
+
+  /// 只装孤儿卡监听，不跑 [init] 的加载链路。
+  ///
+  /// 纯逻辑测试（没有本地库）要验证「卡属于哪个会话」的路由时用这个；
+  /// 生产路径始终经 [init] 调用同一个 [_installOrphanCardListeners]。
+  @visibleForTesting
+  void installOrphanCardListenersForTest() => _installOrphanCardListeners();
+
+  void _installOrphanCardListeners() {
     // 孤儿审批（hub 重启后重放、或 agent_done 抢先完成 turn 的审批）没有
     // 活动 turn 的回调可挂，经这里渲染成普通卡片；点击走 submitApproval
     // 只需 approval_id，bridge 侧有 deferred relay 兜底。

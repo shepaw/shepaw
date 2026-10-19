@@ -267,9 +267,16 @@ session id），群聊是 `group:<group_id>:<session_id>[:…]`。在 `stdio.rs`
 - 测试：`test/peer/peer_orphan_approval_test.dart`（新）、
   `test/peer/peer_orphan_form_test.dart`（按会话过滤）、
   `test/peer/peer_agent_row_id_test.dart`（`orphanCardBelongsToHostSession`）、
-  `test/services/approval/pending_approval_hub_test.dart`（表单提醒可按 id 消解）。
+  `test/services/approval/pending_approval_hub_test.dart`（表单提醒可按 id 消解）、
+  `test/controllers/chat_orphan_card_routing_test.dart`（新，控制器入口）：
+  - 群 Controller 收到单聊卡 / 无归属卡时不写 `messages`、不登记本群提醒；
+  - 归属本群的卡照常渲染（证明监听确实装上，不是空跑）；
+  - DM Controller 只认领本频道，别的会话的卡不落进来。
+  为让纯逻辑测试能装监听而不跑 `init()` / 本地库加载，把订阅块抽成
+  `_installOrphanCardListeners()`，并加 `@visibleForTesting`
+  `installOrphanCardListenersForTest()`；生产路径仍由 `init()` 调用同一个方法。
 - `flutter analyze --no-pub` 0 error；`flutter test test/peer test/controllers
-  test/services/approval` 610 例全绿。
+  test/services/approval` 615 例全绿。
 
 ## 验证方法
 
