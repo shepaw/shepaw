@@ -45,6 +45,8 @@ Map<String, dynamic>? metadataClosingInteraction(
 
 /// 回合已经结束，但这边已经没有卡片 id（进程被杀掉后内存账簿是空的）。
 ///
+/// deferred 的卡不在此列：它的回合结束了，卡片本身没作废。
+///
 /// 只动还开着的审批卡和表单卡。答过的、已经写过 `closed` 的不动。
 Map<String, dynamic>? metadataClosingOpenCards(
   Map<String, dynamic> metadata, {
@@ -55,12 +57,38 @@ Map<String, dynamic>? metadataClosingOpenCards(
   for (final key in const ['action_confirmation', 'form']) {
     final raw = next[key];
     if (raw is! Map) continue;
-    final closed = _closeCard(raw, reason, approval: key == 'action_confirmation');
+    final closed = _closeCard(
+      raw,
+      reason,
+      approval: key == 'action_confirmation',
+      skipDeferred: key == 'form',
+    );
     if (closed == null) continue;
     next[key] = closed;
     changed = true;
   }
   return changed ? next : null;
+}
+
+/// 这张表单已经交给卡片、等用户以后回答。
+///
+/// 回合已经收束，但卡没作废：清掉可能先到的 `closed`（乱序的 `turn_ended`），
+/// 写上 `deferred`。已经提交过的不动。返回 null 表示不需要写库。
+Map<String, dynamic>? metadataMarkingFormDeferred(
+  Map<String, dynamic> metadata, {
+  required String interactionId,
+}) {
+  if (interactionId.isEmpty) return null;
+  final raw = metadata['form'];
+  if (raw is! Map || !_holdsInteraction(raw, interactionId)) return null;
+  final data = Map<String, dynamic>.from(raw);
+  if (data['submitted_values'] != null) return null;
+  if (data['deferred'] == true && data['closed'] == null) return null;
+  data['deferred'] = true;
+  data.remove('closed');
+  final next = Map<String, dynamic>.from(metadata);
+  next['form'] = data;
+  return next;
 }
 
 bool _holdsInteraction(Map<dynamic, dynamic> data, String interactionId) {
@@ -75,9 +103,13 @@ Map<String, dynamic>? _closeCard(
   Map<dynamic, dynamic> raw,
   String reason, {
   required bool approval,
+  bool skipDeferred = false,
 }) {
   final data = Map<String, dynamic>.from(raw);
   if (interactionHasVerdict(data)) return null;
+  // deferred 表单的回合结束不是它作废：这张卡还要留给用户回答。
+  // 真正的收场（拒绝 / 已在别处作答）会走 `agent_interaction_closed`。
+  if (skipDeferred && data['deferred'] == true) return null;
   if (data['closed'] != null) return null;
   data['closed'] = reason;
   if (approval && data['selected_action_id'] == null) {

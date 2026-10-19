@@ -245,6 +245,10 @@ abstract class _ChatControllerBase extends ChangeNotifier
   StreamSubscription<({String approvalId, String reason})>?
       _interactionClosedSub;
 
+  /// 提问转入回合外等待（`agent_form_deferred`）订阅：卡片留着，仍可作答。
+  StreamSubscription<({String approvalId, String requestId})>?
+      _formDeferredSub;
+
   // ---- Reply state ----
   Message? replyingToMessage;
 
@@ -663,6 +667,12 @@ abstract class _ChatControllerBase extends ChangeNotifier
     _interactionClosedSub = PeerAgentClientService
         .instance.interactionClosedEvents
         .listen(_handleInteractionClosed);
+    // 提问在回合内等超时：这一轮结束，卡片留着等用户以后回答。
+    // 把内存里的卡标成 deferred，别让随后的 turn_ended 收掉它。
+    _formDeferredSub =
+        PeerAgentClientService.instance.formDeferredEvents.listen(
+      _handleFormDeferred,
+    );
     // 广播流只发一次：卡片在聊天页没打开时到达就丢了。这里把缓存里的补上。
     unawaited(_drainPendingOrphanForms());
   }
@@ -728,6 +738,7 @@ abstract class _ChatControllerBase extends ChangeNotifier
     _orphanApprovalSub?.cancel();
     _orphanFormSub?.cancel();
     _interactionClosedSub?.cancel();
+    _formDeferredSub?.cancel();
     _queueReleaseSub?.cancel();
     _queueDropSub?.cancel();
     _channelUpdateSub?.cancel();
@@ -783,6 +794,9 @@ abstract class _ChatControllerBase extends ChangeNotifier
   /// Implemented by [_InteractionOps]: 主机不再等这张卡了（超时按默认继续 /
   /// 回合被停止 / app 自己的回合结束兜底）—— 按 id 找到那张卡，收起可点态。
   void _handleInteractionClosed(({String approvalId, String reason}) event);
+
+  /// Implemented by [_InteractionOps]: 回合内没等到回答，卡片转入 deferred。
+  void _handleFormDeferred(({String approvalId, String requestId}) event);
 
   /// Implemented by [_MessagingOps]: group-chat variant of
   /// [_handleStreamingForm] — the card belongs to a peer member of the group,
@@ -965,6 +979,9 @@ abstract class _ChatControllerBase extends ChangeNotifier
   });
   void _updateGroupStreamingMetadata(
       String streamingId, String key, Map<String, dynamic> data);
+
+  /// 回合外回答了一张 deferred 提问：按普通发消息开新回合。
+  Future<void> sendDeferredFormFollowUp(String content);
 
   // ---- Workflow hooks (implemented by [_WorkflowOps]) ----
   void _handleDmWorkflowPlanCreated(

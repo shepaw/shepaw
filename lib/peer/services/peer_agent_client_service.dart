@@ -1938,6 +1938,14 @@ class PeerAgentClientService {
   /// 已提交的 AskUserQuestion 表单。重连重发 `agent_form_req` 时用它自动回填。
   final Map<String, Map<String, dynamic>> _submittedForms = {};
 
+  /// 已经交到卡片上的提问（approvalId → 原来那一轮的 requestId）。
+  ///
+  /// 这一轮已经收束，卡片却还该留着等用户以后点。它不能继续占用
+  /// [_approvalToRequest] / [_orphanedApprovals] / [_orphanedForms] 的额度：
+  /// 那三张表会被 `agent_done` / `turn_ended` 收掉。作答后由 App 另开一轮，
+  /// 不再往旧通道回。有界：超过 50 条时淘汰最旧。
+  final Map<String, String> _deferredForms = {};
+
   /// 断连挂起期间用户本地取消的 turn（requestId → peerId）。
   /// 重连后对这些 requestId 补发 agent_cancel 而非 resume_req。
   /// 有界：超过 100 条时淘汰最旧。
@@ -1995,6 +2003,14 @@ class PeerAgentClientService {
       StreamController<({String approvalId, String reason})>.broadcast();
   Stream<({String approvalId, String reason})> get interactionClosedEvents =>
       _interactionClosedController.stream;
+
+  /// 一张已经在回合内等超时的卡片：回合结束，卡片留着。
+  /// 聊天页据此把内存里的卡标成 deferred（仍可点），不要收成作废态。
+  /// 单例上的长期流，[stop] 不关闭它。
+  final _formDeferredController =
+      StreamController<({String approvalId, String requestId})>.broadcast();
+  Stream<({String approvalId, String requestId})> get formDeferredEvents =>
+      _formDeferredController.stream;
 
   LocalDatabaseService get _db => getIt<LocalDatabaseService>();
   final _fileStorage = LocalFileStorageService();
@@ -2073,6 +2089,7 @@ class PeerAgentClientService {
     _orphanedForms.clear();
     _submittedApprovals.clear();
     _submittedForms.clear();
+    _deferredForms.clear();
     _cancelledWhileSuspended.clear();
     _reconcileNeeded.clear();
     _requestAgents.clear();
@@ -3166,6 +3183,9 @@ class PeerAgentClientService {
         break;
       case 'agent_form_req':
         _onFormReq(event.peerId, event.data);
+        break;
+      case 'agent_form_deferred':
+        _onFormDeferred(event.peerId, event.data);
         break;
       case 'agent_interaction_closed':
         _onInteractionClosed(event.data);
@@ -6922,6 +6942,104 @@ class PeerAgentClientService {
     });
   }
 
+  /// 回合内没等到回答：主机把卡片交到 deferred 表，这一轮随后收束。
+  ///
+  /// 只做记账：卡片不能继续占着旧回合的审批额度（否则随后的 `agent_done`
+  /// 会被 [_onDone] 无限缓冲），也不能被旧回合的收尾路径收掉。作答时由
+  /// [submitForm] 走 App 自己的新回合。
+  void _onFormDeferred(String peerId, Map<String, dynamic> data) {
+    final requestId = data['request_id'] as String? ?? '';
+    final approvalId = data['approval_id'] as String? ?? '';
+    if (approvalId.isEmpty) {
+      _log.warning('agent_form_deferred: missing approval_id',
+          tag: 'PeerApproval');
+      return;
+    }
+    // 补发的帧可能晚于本机已经提交的答案：别再把它放回可答状态，
+    // 否则会重复开一轮。
+    if (_submittedForms.containsKey(approvalId)) {
+      _log.info(
+        'agent_form_deferred: approvalId=$approvalId already submitted — ignore',
+        tag: 'PeerApproval',
+      );
+      return;
+    }
+    final pending = _pending[requestId];
+    if (pending != null && pending.openApprovals > 0) {
+      pending.openApprovals--;
+      if (pending.openApprovals == 0) pending.idleSince = DateTime.now();
+    }
+    final knownInline = _approvalToRequest.remove(approvalId) != null;
+    _orphanedApprovals.remove(approvalId);
+    final orphan = _orphanedForms.remove(approvalId);
+    _deferredForms[approvalId] = requestId;
+    if (_deferredForms.length > 50) {
+      _deferredForms.remove(_deferredForms.keys.first);
+    }
+    _log.info(
+      'agent_form_deferred: approvalId=$approvalId requestId=$requestId',
+      tag: 'PeerApproval',
+    );
+    if (orphan != null) {
+      // 卡片本地有留底但还没投出去：把 deferred 一起记下，聊天页后开时
+      // 仍按「回合外等待」渲染。
+      _orphanedForms[approvalId] = Map<String, dynamic>.from(orphan)
+        ..['deferred'] = true;
+    } else if (!knownInline) {
+      // 重连补发 / 另一台设备第一次看到这张卡：本地没有卡，走孤儿表单
+      // 投出去。只记账不渲染的话，这张卡在这些设备上等于不存在。
+      _republishOrphanForm(
+        peerId: peerId,
+        requestId: requestId,
+        approvalId: approvalId,
+        data: {...data, 'deferred': true},
+        hasPendingTurn: pending != null,
+        remoteAgentId: _requestAgents[requestId]?.remoteAgentId ??
+            pending?.remoteAgentId ??
+            data['agent_id'] as String?,
+      );
+    }
+    unawaited(_persistFormDeferred(approvalId, requestId, peerId));
+    _tryCompleteBufferedDone(requestId);
+    if (!_formDeferredController.isClosed) {
+      _formDeferredController.add((approvalId: approvalId, requestId: requestId));
+    }
+  }
+
+  /// 把 `deferred: true` 写进卡片行。乱序时旧回合的 `turn_ended` 可能已经
+  /// 写了 `closed`，这里把它清掉 —— 这张卡并没有作废，它在等用户以后点。
+  Future<void> _persistFormDeferred(
+    String approvalId,
+    String requestId,
+    String peerId,
+  ) async {
+    if (!getIt.isRegistered<LocalDatabaseService>()) return;
+    try {
+      final row = await _db.getMessageById(
+        PeerApprovalPayload.formCardMessageId(approvalId),
+      );
+      if (row == null) {
+        // 这张卡不在本机发起过的那条流里（别的设备问的、或本地还没落行）：
+        // 没有可更新的行，等下次补发时按 deferred 帧正常渲染。
+        return;
+      }
+      await _writeClosedMetadata(
+        row,
+        (metadata) => metadataMarkingFormDeferred(
+          metadata,
+          interactionId: approvalId,
+        ),
+      );
+    } catch (e) {
+      _log.warning(
+        'persist form deferred failed: approvalId=$approvalId '
+        'requestId=$requestId peerId=$peerId $e',
+        tag: 'PeerApproval',
+        error: e,
+      );
+    }
+  }
+
   /// 把一张投递不出去的表单存下来，并交给打开的聊天页渲染。
   /// 幂等：hub 重复补发同一张卡时不再灌一次流，免得清掉用户已填的内容。
   /// 提交走 [submitForm]，它只需要 peer_id + approval_id。
@@ -7022,6 +7140,8 @@ class PeerAgentClientService {
       'remote_agent_id': remoteAgentId,
       // 没有活动 turn 撑着这张卡，UI 不该显示提交中的转圈。
       'orphan': true,
+      // 回合外等待的卡：留在屏幕上，可作答或明确拒绝。
+      if (data['deferred'] == true) 'deferred': true,
     };
   }
 
@@ -7072,14 +7192,18 @@ class PeerAgentClientService {
   }
 
   /// 把表单答案送回 hub，解开正在等的 `elicitation/create`。
-  Future<void> submitForm({
+  ///
+  /// 返回 `true` 表示这张卡已经是 deferred：主机不会把答案送回旧回合，
+  /// 调用方要用卡片内容另发一条消息开新回合。
+  Future<bool> submitForm({
     required String peerId,
     required String approvalId,
     required Map<String, dynamic> values,
   }) async {
     var tracked = _approvalToRequest.containsKey(approvalId) ||
         _orphanedApprovals.containsKey(approvalId) ||
-        _orphanedForms.containsKey(approvalId);
+        _orphanedForms.containsKey(approvalId) ||
+        _deferredForms.containsKey(approvalId);
     // 进程重启后卡片是从 SQLite 的确定性行渲染出来的，内存账簿是空的。
     // 主机重连补发这张卡之前用户就点了提交，不该被判成「不认识这张卡」。
     tracked = tracked || await _isPersistedOpenForm(approvalId);
@@ -7117,6 +7241,8 @@ class PeerAgentClientService {
       throw Exception('表单发送失败，请确认配对设备在线后重试');
     }
     final requestId = _approvalToRequest.remove(approvalId);
+    // 这张卡是回合外作答：主机已经不在旧通道等它了。
+    final wasDeferred = _deferredForms.remove(approvalId) != null;
     // 孤儿表单提交成功后清掉占位，避免重复点击落到 NO MATCH。
     _orphanedForms.remove(approvalId);
     _submittedForms[approvalId] = {
@@ -7137,6 +7263,37 @@ class PeerAgentClientService {
       }
       _tryCompleteBufferedDone(requestId);
     }
+    return wasDeferred;
+  }
+
+  /// 用户明确不回答这张 deferred 卡。只关卡，不开新回合。
+  Future<void> declineForm({
+    required String peerId,
+    required String approvalId,
+  }) async {
+    var tracked = _deferredForms.containsKey(approvalId) ||
+        _approvalToRequest.containsKey(approvalId) ||
+        _orphanedForms.containsKey(approvalId);
+    tracked = tracked || await _isPersistedOpenForm(approvalId);
+    if (!tracked) {
+      throw const PeerApprovalExpiredException();
+    }
+    final sendControl =
+        debugSendControlOverride ?? PeerConnectionManager.instance.sendControl;
+    final sent = await sendControl(peerId, {
+      'type': 'agent_form_resp',
+      'approval_id': approvalId,
+      'action': 'decline',
+    });
+    if (!sent) {
+      throw Exception('表单发送失败，请确认配对设备在线后重试');
+    }
+    _deferredForms.remove(approvalId);
+    _approvalToRequest.remove(approvalId);
+    _orphanedForms.remove(approvalId);
+    // 主机也会广播 `agent_interaction_closed(declined)`；这里先收一次，
+    // 界面不用等回包。重复到达时卡片已有 `closed`，是幂等的。
+    _applyInteractionClosed(approvalId, 'declined');
   }
 
   /// Tool-call approval request forwarded by the hub. Surface it to the chat
@@ -7556,6 +7713,9 @@ class PeerAgentClientService {
   void _applyInteractionClosed(String approvalId, String reason) {
     final answered = _submittedApprovals.containsKey(approvalId) ||
         _submittedForms.containsKey(approvalId);
+    // deferred 卡收到关闭帧（拒绝、或已在别处作答）时正常收掉：等待位在主机
+    // 那边已经摘了，再留着只会让用户点出「已失效」。
+    _deferredForms.remove(approvalId);
     final requestId = _approvalToRequest.remove(approvalId);
     _orphanedApprovals.remove(approvalId);
     _orphanedForms.remove(approvalId);
@@ -7581,13 +7741,18 @@ class PeerAgentClientService {
   /// 在线就收不到。回合结束是同一件事的第二个信号，用它兜底，免得屏幕上永远
   /// 留一张点不动的卡。只扫「没答过」的：答过的在 submit 时就已从这些表里摘掉。
   void _closeCardsOfRequest(String requestId, String reason) {
+    // 已经 deferred 的卡还等着用户以后作答，不能被这一轮的结束收掉。
     final ids = <String>{
       for (final e in _approvalToRequest.entries)
-        if (e.value == requestId) e.key,
+        if (e.value == requestId && !_deferredForms.containsKey(e.key)) e.key,
       for (final e in _orphanedApprovals.entries)
-        if (e.value['request_id'] == requestId) e.key,
+        if (e.value['request_id'] == requestId &&
+            !_deferredForms.containsKey(e.key))
+          e.key,
       for (final e in _orphanedForms.entries)
-        if (e.value['request_id'] == requestId) e.key,
+        if (e.value['request_id'] == requestId &&
+            !_deferredForms.containsKey(e.key))
+          e.key,
     };
     for (final id in ids) {
       _applyInteractionClosed(id, reason);
@@ -7733,9 +7898,12 @@ class PeerAgentClientService {
     _clearPersistedTurn(requestId);
     _closeCardsOfRequest(requestId, 'turn_ended');
     unawaited(_persistTurnCardsClosed(p, requestId, 'turn_ended'));
+    final metadata = (data['metadata'] as Map?)?.cast<String, dynamic>();
     p.completer.complete(PeerChatResult(
       content: data['content'] as String? ?? '',
-      metadata: (data['metadata'] as Map?)?.cast<String, dynamic>(),
+      metadata: data['deferred'] == true
+          ? {...?metadata, 'deferred': true}
+          : metadata,
       requestId: requestId,
     ));
   }

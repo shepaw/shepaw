@@ -54,6 +54,8 @@ class MessageBubble extends StatelessWidget {
   final void Function(String selectId, List<String> optionIds, String summary)? onMultiSelectSubmitted;
   final void Function(String uploadId, List<Map<String, dynamic>> files, String summary)? onFileUploadSubmitted;
   final void Function(String formId, Map<String, dynamic> values, String summary)? onFormSubmitted;
+  /// deferred 表单的「不回答」：只关卡，不开新回合。
+  final void Function(String formId)? onFormDeclined;
   final void Function(bool approved, {String? feedback, List<String>? skippedTaskIds})? onPlanApprovalResponded;
   final Message? quotedMessage;
   final VoidCallback? onQuoteTap;
@@ -132,6 +134,7 @@ class MessageBubble extends StatelessWidget {
     this.onMultiSelectSubmitted,
     this.onFileUploadSubmitted,
     this.onFormSubmitted,
+    this.onFormDeclined,
     this.onPlanApprovalResponded,
     this.quotedMessage,
     this.onQuoteTap,
@@ -1237,6 +1240,7 @@ class MessageBubble extends StatelessWidget {
       return FormBubble(
         formData: formData,
         onFormSubmitted: onFormSubmitted,
+        onFormDeclined: onFormDeclined,
       );
     }
 

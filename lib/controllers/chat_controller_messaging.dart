@@ -295,6 +295,17 @@ mixin _MessagingOps on _ChatControllerBase {
   // Sending messages
   // ---------------------------------------------------------------------------
 
+  /// 用户回答了一张已经转入回合外等待的提问。
+  ///
+  /// 旧回合已经结束，主机不会把答案送回那个工具调用；用正常的发送路径开
+  /// 新的一轮，流式、排队、落库和停止按钮全部复用。
+  @override
+  Future<void> sendDeferredFormFollowUp(String content) => sendMessage(
+        content: content,
+        pendingAttachments: <PendingAttachment>[],
+        clearMessageController: () {},
+      );
+
   Future<void> sendMessage({
     required String content,
     required List<PendingAttachment> pendingAttachments,

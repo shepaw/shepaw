@@ -1378,6 +1378,14 @@ class AgentMessagingService {
         wasCancelled: wasCancelled,
       );
 
+      // 提问转入回合外等待：这一轮没有任何正文，不能把「用户还没回答」
+      // 写成一条 "Task completed"。已经流出去的正文照旧保留。
+      if (result.metadata?['deferred'] == true &&
+          content.isEmpty &&
+          activeTask.accumulatedContent.isEmpty) {
+        return null;
+      }
+
       final meta = <String, dynamic>{
         'trace_id': traceId,
         'peer_id': peerId,

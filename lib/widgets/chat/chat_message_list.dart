@@ -38,6 +38,7 @@ class ChatMessageList extends StatefulWidget {
   final void Function(Message message, String selectId, List<String> optionIds, String summary) onMultiSelectSubmitted;
   final void Function(Message message, String uploadId, List<Map<String, dynamic>> files, String summary) onFileUploadSubmitted;
   final void Function(Message message, String formId, Map<String, dynamic> values, String summary) onFormSubmitted;
+  final void Function(Message message, String formId)? onFormDeclined;
   final void Function(Message message, bool approved, {String? feedback, List<String>? skippedTaskIds})? onPlanApprovalResponded;
   final void Function(Message message, String? selectedText) onReply;
   final void Function(String agentId) onAgentAvatarTap;
@@ -84,6 +85,7 @@ class ChatMessageList extends StatefulWidget {
     required this.onMultiSelectSubmitted,
     required this.onFileUploadSubmitted,
     required this.onFormSubmitted,
+    this.onFormDeclined,
     this.onPlanApprovalResponded,
     required this.onReply,
     required this.onAgentAvatarTap,
@@ -441,6 +443,10 @@ class _ChatMessageListState extends State<ChatMessageList> {
                         widget.onFormSubmitted(
                             live, formId, values, summary);
                       },
+                      onFormDeclined: widget.onFormDeclined == null
+                          ? null
+                          : (formId) =>
+                              widget.onFormDeclined!(live, formId),
                       onPlanApprovalResponded:
                           widget.onPlanApprovalResponded != null
                               ? (approved, {feedback, skippedTaskIds}) =>

@@ -4346,6 +4346,12 @@ abstract class AppLocalizations {
   /// **'表单已提交'**
   String get widget_formSubmitted;
 
+  /// No description provided for @widget_formDecline.
+  ///
+  /// In zh, this message translates to:
+  /// **'不回答'**
+  String get widget_formDecline;
+
   /// No description provided for @widget_interactionExpired.
   ///
   /// In zh, this message translates to:

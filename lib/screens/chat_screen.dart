@@ -3992,6 +3992,9 @@ class _ChatScreenState extends State<ChatScreen>
                               onFormSubmitted: (msg, fid, values, summary) {
                                 c.handleFormSubmitted(msg, fid, values, summary);
                               },
+                              onFormDeclined: (msg, fid) {
+                                c.handleFormDeclined(msg, fid);
+                              },
                               onPlanApprovalResponded: (msg, approved,
                                       {feedback, skippedTaskIds}) =>
                                   c.handlePlanApprovalResponded(msg, approved,

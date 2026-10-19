@@ -125,6 +125,24 @@ mixin _InteractionOps on _ChatControllerBase {
     }
   }
 
+  /// 提问在回合内等超时：这一轮结束了，卡片留着等用户以后回答。
+  ///
+  /// 不能标成 `closed` —— 那会让「不回答」和「还能答」看起来一样。
+  void _handleFormDeferred(({String approvalId, String requestId}) event) {
+    final messageId = _messageIdForInteraction(event.approvalId);
+    if (messageId == null) return;
+    final existing = messageIdMap[messageId]?.metadata?['form'];
+    if (existing is! Map || existing['submitted_values'] != null) return;
+    final merged = Map<String, dynamic>.from(existing)
+      ..['deferred'] = true
+      // 旧回合的 turn_ended 可能先到并写了 closed；deferred 它不是作废。
+      ..remove('closed');
+    _updateGroupStreamingMetadata(messageId, 'form', merged);
+    final meta =
+        Map<String, dynamic>.from(messageIdMap[messageId]?.metadata ?? {});
+    localDatabaseService.updateMessageMetadata(messageId, meta).ignore();
+  }
+
   /// 审批卡作废：复用 cli 审批卡的 `expired` 约定收起可点态（那套渲染与对账
   /// 已经按「不是用户选的」处理），再记下原因给 UI 显示。
   ///
@@ -999,12 +1017,19 @@ mixin _InteractionOps on _ChatControllerBase {
         return;
       }
       try {
-        await PeerAgentClientService.instance.submitForm(
+        final wasDeferred = await PeerAgentClientService.instance.submitForm(
           peerId: peerId,
           approvalId: approvalId,
           values: values,
         );
         _markPeerFormSubmitted(originalMessage, values);
+        if (wasDeferred) {
+          // 旧回合已经收束，答案回不到那次工具调用：用卡片内容正常发一条
+          // 消息，开新的一轮接着做。
+          await sendDeferredFormFollowUp(
+            _deferredFormFollowUpText(approvalId, values),
+          );
+        }
       } catch (e) {
         _emit(ShowErrorSnackBarEvent('$e'));
       }
@@ -1038,6 +1063,51 @@ mixin _InteractionOps on _ChatControllerBase {
     } catch (e) {
       _emit(ShowErrorSnackBarEvent('$e'));
     }
+  }
+
+  /// 用户明确不回答一张 deferred 卡。只关卡，不开新回合。
+  Future<void> handleFormDeclined(
+    Message originalMessage,
+    String formId,
+  ) async {
+    final formMeta = originalMessage.metadata?['form'];
+    final peerForm = formMeta is Map ? formMeta['peer_form'] : null;
+    if (peerForm is! Map) return;
+    final peerId = peerForm['peer_id']?.toString() ?? '';
+    final approvalId = peerForm['approval_id']?.toString() ?? formId;
+    if (peerId.isEmpty || approvalId.isEmpty) return;
+    try {
+      await PeerAgentClientService.instance.declineForm(
+        peerId: peerId,
+        approvalId: approvalId,
+      );
+    } catch (e) {
+      _emit(ShowErrorSnackBarEvent('$e'));
+    }
+  }
+
+  /// 回合外作答时发给模型的新一轮正文。
+  ///
+  /// 带上 `approval_id` 和原问题的键值，模型才知道这是对哪一张卡的答复；
+  /// 明确要求它不要再用 `ask_user` 问同一件事。
+  String _deferredFormFollowUpText(
+    String approvalId,
+    Map<String, dynamic> values,
+  ) {
+    final lines = <String>[
+      '用户回答了上一轮挂起的提问（approval_id: $approvalId）。'
+          '沿那一轮没做完的任务继续。不要再次调用 ask_user 来问同一件事。',
+    ];
+    for (final entry in values.entries) {
+      final value = entry.value;
+      final text = value is List
+          ? value.join(', ')
+          : value is bool
+              ? (value ? 'true' : 'false')
+              : '$value';
+      lines.add('${entry.key}: $text');
+    }
+    return lines.join('\n');
   }
 
   void _markPeerFormSubmitted(

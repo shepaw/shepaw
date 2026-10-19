@@ -925,6 +925,7 @@
   "widget_originalMessageUnavailable": "Original message unavailable",
   "widget_retry": "Retry",
   "widget_formSubmitted": "Form submitted",
+  "widget_formDecline": "Don't answer",
   "widget_interactionExpired": "Closed — no answer in time, the host carried on with a default",
   "widget_interactionCancelled": "Closed — the turn was stopped",
   "widget_interactionClosed": "Closed — the turn ended, this card is no longer valid",

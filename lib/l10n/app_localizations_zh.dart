@@ -2329,6 +2329,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get widget_formSubmitted => '表单已提交';
 
   @override
+  String get widget_formDecline => '不回答';
+
+  @override
   String get widget_interactionExpired => '已作废：没等到回答，主机已按默认继续';
 
   @override

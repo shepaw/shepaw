@@ -23,10 +23,14 @@ class FormBubble extends StatefulWidget {
   final Map<String, dynamic> formData;
   final void Function(String formId, Map<String, dynamic> values, String summary)? onFormSubmitted;
 
+  /// 只对 deferred 的卡显示：用户明确不回答，收起卡片，不另开回合。
+  final void Function(String formId)? onFormDeclined;
+
   const FormBubble({
     Key? key,
     required this.formData,
     this.onFormSubmitted,
+    this.onFormDeclined,
   }) : super(key: key);
 
   @override
@@ -371,6 +375,25 @@ class _FormBubbleState extends State<FormBubble> {
               ] else if (!isSubmitted) ...[
                 const SizedBox(height: 12),
                 _buildFormSubmitButton(context, formId, fields),
+                if (widget.formData['deferred'] == true &&
+                    widget.onFormDeclined != null) ...[
+                  const SizedBox(height: 4),
+                  Center(
+                    child: TextButton(
+                      onPressed: () => widget.onFormDeclined!(formId),
+                      child: Text(
+                        AppLocalizations.of(context).widget_formDecline,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withValues(alpha: 0.6),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ] else ...[
                 const SizedBox(height: 8),
                 Row(

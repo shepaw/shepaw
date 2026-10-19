@@ -77,6 +77,57 @@ void main() {
     );
   });
 
+  test('deferred 表单在回合结束时不作废', () {
+    final next = metadataClosingOpenCards(
+      {
+        'form': {'form_id': 'form-1', 'deferred': true},
+      },
+      reason: 'turn_ended',
+    );
+
+    expect(next, isNull);
+  });
+
+  test('按 id 明确收场时 deferred 表单照常关闭', () {
+    final next = metadataClosingInteraction(
+      {
+        'form': {'form_id': 'form-1', 'deferred': true},
+      },
+      interactionId: 'form-1',
+      reason: 'declined',
+    );
+
+    expect(next?['form']['closed'], 'declined');
+    expect(next?['form']['deferred'], isTrue);
+  });
+
+  test('标 deferred 时清掉先到的 closed', () {
+    final next = metadataMarkingFormDeferred(
+      {
+        'form': {'form_id': 'form-1', 'closed': 'turn_ended'},
+      },
+      interactionId: 'form-1',
+    );
+
+    expect(next?['form']['deferred'], isTrue);
+    expect(next?['form']['closed'], isNull);
+  });
+
+  test('已经答过的表单不会被标成 deferred', () {
+    expect(
+      metadataMarkingFormDeferred(
+        {
+          'form': {
+            'form_id': 'form-1',
+            'submitted_values': {'port': '3000'},
+          },
+        },
+        interactionId: 'form-1',
+      ),
+      isNull,
+    );
+  });
+
   test('没有卡片 id 时，回合结束仍收起还开着的卡', () {
     final next = metadataClosingOpenCards(
       {

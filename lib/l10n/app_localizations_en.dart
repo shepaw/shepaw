@@ -2419,6 +2419,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get widget_formSubmitted => 'Form submitted';
 
   @override
+  String get widget_formDecline => 'Don\'t answer';
+
+  @override
   String get widget_interactionExpired =>
       'Closed — no answer in time, the host carried on with a default';
 
