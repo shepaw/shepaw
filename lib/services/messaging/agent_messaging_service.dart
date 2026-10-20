@@ -1383,6 +1383,9 @@ class AgentMessagingService {
       if (result.metadata?['deferred'] == true &&
           content.isEmpty &&
           activeTask.accumulatedContent.isEmpty) {
+        // 正常路径在下面删流式占位行；这里提前返回也得删，否则库里留下一条
+        // status=streaming 的空回复，气泡一直转圈。
+        await flushHelper.deletePartial();
         return null;
       }
 

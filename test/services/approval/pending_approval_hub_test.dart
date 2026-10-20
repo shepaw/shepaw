@@ -63,6 +63,33 @@ void main() {
     await sub.cancel();
   });
 
+  test('upsert upgrades a placeholder channel once the shell is mirrored', () {
+    hub.upsert(
+      const PendingApprovalItem(
+        id: 'action:c1',
+        channelId: 'host_session',
+        agentId: 'a1',
+        agentName: 'Agent',
+        kind: PendingApprovalKind.action,
+        createdAt: 1,
+      ),
+    );
+    hub.upsert(
+      const PendingApprovalItem(
+        id: 'action:c1',
+        channelId: 'psess_host_session',
+        agentId: 'a1',
+        agentName: 'Agent',
+        kind: PendingApprovalKind.action,
+        createdAt: 2,
+      ),
+    );
+
+    expect(hub.all.single.channelId, 'psess_host_session');
+    expect(hub.countForChannel('psess_host_session'), 1);
+    expect(hub.countForChannel('host_session'), 0);
+  });
+
   test('resolve removes item', () {
     hub.upsert(
       PendingApprovalItem(

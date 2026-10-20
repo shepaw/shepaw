@@ -118,10 +118,17 @@ String hostSessionIdForChannel(String channelId) =>
 ///
 /// 群绑定和 She 中转留下；刚在本机建、还没发出去的空会话留下。其余以主机
 /// 名单为准删掉，两台客户端的会话列表才对得上。
+///
+/// [protectedChannelIds] 是当前绝不能删的会话（正在看、有回合在跑、刚登记
+/// 到主机）：名单快照可能在操作之前就取好了，不能拿旧快照判它们「主机没有」。
+/// [preserveClientSessions] 打开时跳过官方终端 / IDE 会话：主机关掉同步开关
+/// 后名单里本来就不含它们，这不代表被删了。
 Set<String> peerChannelIdsAbsentFromHost({
   required Iterable<Channel> local,
   required Set<String> hostSessionIds,
   Set<String> freshChannelIds = const {},
+  Set<String> protectedChannelIds = const {},
+  bool preserveClientSessions = false,
 }) {
   final drop = <String>{};
   for (final channel in local) {
@@ -130,6 +137,8 @@ Set<String> peerChannelIdsAbsentFromHost({
     final she = channel.sourceSheChannelId?.trim() ?? '';
     if (group.isNotEmpty || she.isNotEmpty) continue;
     if (freshChannelIds.contains(channel.id)) continue;
+    if (protectedChannelIds.contains(channel.id)) continue;
+    if (preserveClientSessions && channel.sessionOrigin != null) continue;
     final bare = remoteSessionIdFromChannelId(channel.id);
     if (hostSessionIds.contains(channel.id)) continue;
     if (bare != null && hostSessionIds.contains(bare)) continue;
@@ -381,6 +390,23 @@ class PeerRemoteSession {
       source: (rawSource != null && rawSource.isNotEmpty) ? rawSource : null,
     );
   }
+}
+
+/// 解析 `agent_sessions_resp` / digest 里的会话数组。
+///
+/// 返回 `null` 表示这份名单不可信（缺字段、有条目解析不了）：调用方必须
+/// 当成「没问到」，绝不能当成「主机确认没有会话」去剪枝。只有每个条目都
+/// 读懂了才返回列表（可以是空列表）。
+List<PeerRemoteSession>? parsePeerSessionList(Object? raw) {
+  if (raw is! List) return null;
+  final out = <PeerRemoteSession>[];
+  for (final item in raw) {
+    if (item is! Map) return null;
+    final parsed = PeerRemoteSession.fromJson(Map<String, dynamic>.from(item));
+    if (parsed == null) return null;
+    out.add(parsed);
+  }
+  return out;
 }
 
 /// 一页 `agent_session_history_resp`。
@@ -1844,7 +1870,10 @@ class PeerAgentClientService {
       _slashCommandsStreams = {};
 
   /// Outstanding agent_sessions_req per remote agent id.
-  final Map<String, Completer<List<PeerRemoteSession>>> _pendingSessions = {};
+  ///
+  /// `null` 表示这次没问到（解析失败 / 帧不完整 / 超时），和「主机确认没有
+  /// 会话」的空列表必须分开，否则一次坏帧就会把本地会话删光。
+  final Map<String, Completer<List<PeerRemoteSession>?>> _pendingSessions = {};
 
   /// Outstanding agent_client_sessions_sync_set_req per request id.
   final Map<String, Completer<bool>> _pendingClientSyncSet = {};
@@ -1857,6 +1886,21 @@ class PeerAgentClientService {
 
   /// 正在登记的空会话。离开这条会话时要等它结束，避免主机上留下没人删的空记录。
   final Map<String, Future<bool>> _hostEmptyOpens = {};
+
+  /// 刚成功登记到主机的会话（channelId → 登记时刻）。
+  ///
+  /// 登记成功会清掉 fresh 标记，但别的会话名单快照可能是在登记之前取的；
+  /// 用旧快照剪枝会把它当「主机没有」删掉。短时间保护一下。
+  final Map<String, DateTime> _recentlyOpenedHostSessions = {};
+  static const _recentOpenProtection = Duration(minutes: 2);
+
+  Set<String> _recentlyOpenedChannelIds() {
+    final now = DateTime.now();
+    _recentlyOpenedHostSessions.removeWhere(
+      (_, at) => now.difference(at) >= _recentOpenProtection,
+    );
+    return _recentlyOpenedHostSessions.keys.toSet();
+  }
 
   /// 主机在 agent_sessions_resp 里带回的它自己的时刻（peer id → epoch ms）。
   ///
@@ -3459,6 +3503,7 @@ class PeerAgentClientService {
     final data = await _hostEmptyAck(_pendingHostSessionOpen, requestId, completer);
     if (data['ok'] != true) return false;
     ChatService().forgetFreshLocalChannel(channelId);
+    _recentlyOpenedHostSessions[channelId] = DateTime.now();
     return true;
   }
 
@@ -4057,6 +4102,7 @@ class PeerAgentClientService {
       userId: 'user',
       sessions: sessions,
       pruneToHost: true,
+      preserveClientSessions: !enabled,
     );
   }
 
@@ -4077,6 +4123,10 @@ class PeerAgentClientService {
       remoteAgentId: remoteAgentId,
     );
     if (sessions == null) return;
+    final clientSyncEnabled = await isClientSessionSyncEnabled(
+      local,
+      remoteAgentId: remoteAgentId,
+    );
     await syncSessions(
       peerId: peerId,
       remoteAgentId: remoteAgentId,
@@ -4084,6 +4134,7 @@ class PeerAgentClientService {
       userId: 'user',
       sessions: sessions,
       pruneToHost: true,
+      preserveClientSessions: !clientSyncEnabled,
     );
   }
 
@@ -5377,33 +5428,50 @@ class PeerAgentClientService {
 
   /// Fetch an agent's known sessions from the hub (agent.sessions.list relay).
   ///
-  /// `null` 是没问到（发送失败或超时）。空列表是主机确认这名下没有会话，
-  /// 可以拿来把本机多出来的行清掉。两者不能混，否则一次超时会把列表删光。
+  /// `null` 是没问到（发送失败、超时、帧里缺 `sessions` 或有条目解析不了）。
+  /// 空列表是主机确认这名下没有会话，可以拿来把本机多出来的行清掉。两者不能
+  /// 混，否则一次坏帧会把列表删光。
   Future<List<PeerRemoteSession>?> fetchSessions({
     required String peerId,
     required String remoteAgentId,
-  }) async {
-    if (_pendingSessions.containsKey(remoteAgentId)) {
-      return _pendingSessions[remoteAgentId]!.future;
+  }) {
+    // 并发调用共用同一次请求；每个调用方各自守着超时，谁先放弃都不会让
+    // 后来的人无限等待一个已经被移除的 completer。
+    final pending = _pendingSessions[remoteAgentId];
+    if (pending != null) {
+      return pending.future.timeout(
+        _sessionFetchTimeout,
+        onTimeout: () => null,
+      );
     }
-    final completer = Completer<List<PeerRemoteSession>>();
+    final completer = Completer<List<PeerRemoteSession>?>();
     _pendingSessions[remoteAgentId] = completer;
+    return _requestSessions(peerId, remoteAgentId, completer);
+  }
+
+  static const _sessionFetchTimeout = Duration(seconds: 10);
+
+  Future<List<PeerRemoteSession>?> _requestSessions(
+    String peerId,
+    String remoteAgentId,
+    Completer<List<PeerRemoteSession>?> completer,
+  ) async {
     final sent = await PeerConnectionManager.instance.sendControl(peerId, {
       'type': 'agent_sessions_req',
       'agent_id': remoteAgentId,
     });
     if (!sent) {
-      _pendingSessions.remove(remoteAgentId);
-      return null;
-    }
-    try {
-      return await completer.future.timeout(const Duration(seconds: 10));
-    } on TimeoutException {
       if (identical(_pendingSessions[remoteAgentId], completer)) {
         _pendingSessions.remove(remoteAgentId);
       }
       return null;
     }
+    return completer.future.timeout(_sessionFetchTimeout, onTimeout: () {
+      if (identical(_pendingSessions[remoteAgentId], completer)) {
+        _pendingSessions.remove(remoteAgentId);
+      }
+      return null;
+    });
   }
 
   void _onSessionsResp(String peerId, Map<String, dynamic> data) {
@@ -5413,24 +5481,22 @@ class PeerAgentClientService {
     if (hostNow is int && hostNow > 0) {
       _hostNowMs[peerId] = hostNow;
     }
-    final raw = (data['sessions'] as List?) ?? const [];
-    final sessions = raw
-        .whereType<Map<String, dynamic>>()
-        .map(PeerRemoteSession.fromJson)
-        .whereType<PeerRemoteSession>()
-        .toList();
     final completer = _pendingSessions.remove(remoteId);
-    if (completer != null && !completer.isCompleted) {
-      completer.complete(sessions);
-    }
+    if (completer == null || completer.isCompleted) return;
+    // 缺字段 / 协议漂移：没问到，不是「主机确认没有」。
+    completer.complete(parsePeerSessionList(data['sessions']));
   }
 
   /// 单帧向主机拉取所有 Agent 的会话摘要与已读水位快照。
   Future<Map<String, List<PeerRemoteSession>>?> fetchSessionsDigest({
     required String peerId,
   }) async {
-    if (_pendingSessionsDigest.containsKey(peerId)) {
-      return _pendingSessionsDigest[peerId]!.future;
+    final pending = _pendingSessionsDigest[peerId];
+    if (pending != null) {
+      return pending.future.timeout(
+        _sessionsDigestTimeout,
+        onTimeout: () => null,
+      );
     }
     final completer = Completer<Map<String, List<PeerRemoteSession>>?>();
     _pendingSessionsDigest[peerId] = completer;
@@ -5442,11 +5508,13 @@ class PeerAgentClientService {
       _pendingSessionsDigest.remove(peerId);
       return null;
     }
-    return completer.future.timeout(const Duration(seconds: 6), onTimeout: () {
+    return completer.future.timeout(_sessionsDigestTimeout, onTimeout: () {
       _pendingSessionsDigest.remove(peerId);
       return null;
     });
   }
+
+  static const _sessionsDigestTimeout = Duration(seconds: 6);
 
   void _onSessionsDigestResp(String peerId, Map<String, dynamic> data) {
     final completer = _pendingSessionsDigest.remove(peerId);
@@ -5457,17 +5525,17 @@ class PeerAgentClientService {
       return;
     }
     final out = <String, List<PeerRemoteSession>>{};
-    rawDigests.forEach((key, value) {
-      if (key is! String || value is! List) return;
-      final parsed = <PeerRemoteSession>[];
-      for (final item in value) {
-        if (item is Map) {
-          final s = PeerRemoteSession.fromJson(Map<String, dynamic>.from(item));
-          if (s != null) parsed.add(s);
-        }
+    for (final entry in rawDigests.entries) {
+      // 任一条目读不懂就整份快照判为「没问到」，交给逐 Agent 的 fetchSessions
+      // 兜底。半份名单拿去剪枝会误删本地会话。
+      final key = entry.key;
+      final parsed = key is String ? parsePeerSessionList(entry.value) : null;
+      if (key is! String || parsed == null) {
+        completer.complete(null);
+        return;
       }
       out[key] = parsed;
-    });
+    }
     completer.complete(out);
   }
 
@@ -5509,6 +5577,9 @@ class PeerAgentClientService {
   ///
   /// [pruneToHost] 为 true 时，本机多出来的私聊（主机名单里没有的）删掉。
   /// 只在主机确认过这份名单之后打开，超时得到的空列表不能用来删。
+  ///
+  /// [preserveClientSessions] 为 true 时不剪官方终端 / IDE 会话：主机关掉
+  /// 「同步客户端会话」后名单本来就不含它们，不代表主机上删了。
   Future<int> syncSessions({
     required String peerId,
     required String remoteAgentId,
@@ -5517,12 +5588,14 @@ class PeerAgentClientService {
     required List<PeerRemoteSession> sessions,
     bool includeClientSessions = true,
     bool pruneToHost = false,
+    bool preserveClientSessions = false,
   }) async {
     if (sessions.isEmpty) {
       if (pruneToHost) {
         await _dropPeerChannelsMissingFromHost(
           localAgentId: localAgentId,
           hostSessionIds: const {},
+          preserveClientSessions: preserveClientSessions,
         );
       }
       return 0;
@@ -5643,6 +5716,7 @@ class PeerAgentClientService {
       await _dropPeerChannelsMissingFromHost(
         localAgentId: localAgentId,
         hostSessionIds: sessions.map((s) => s.sessionId).toSet(),
+        preserveClientSessions: preserveClientSessions,
       );
     }
     _log.info(
@@ -5653,20 +5727,34 @@ class PeerAgentClientService {
     return linked;
   }
 
-  /// 删掉这个 agent 下主机名单里没有的私聊，留下群绑定、She 中转和未发送的新会话。
+  /// 删掉这个 agent 下主机名单里没有的私聊，留下群绑定、She 中转、未发送的
+  /// 新会话，以及正在使用 / 有回合在跑 / 刚登记到主机的会话。
+  ///
+  /// 名单快照可能在用户新建、打开会话之前就取好了，旧快照不能判这些会话
+  /// 「主机没有」。
   Future<void> _dropPeerChannelsMissingFromHost({
     required String localAgentId,
     required Set<String> hostSessionIds,
+    bool preserveClientSessions = false,
   }) async {
     final local = await _db.getChannelsForAgent(localAgentId);
-    final fresh = <String>{
-      for (final channel in local)
-        if (ChatService().isFreshLocalChannel(channel.id)) channel.id,
-    };
+    final chat = ChatService();
+    final fresh = <String>{};
+    final protected = <String>{..._recentlyOpenedChannelIds()};
+    final activeChannelId = AppLifecycleService().activeChannelId;
+    if (activeChannelId != null && activeChannelId.isNotEmpty) {
+      protected.add(activeChannelId);
+    }
+    for (final channel in local) {
+      if (chat.isFreshLocalChannel(channel.id)) fresh.add(channel.id);
+      if (chat.getActiveTask(channel.id) != null) protected.add(channel.id);
+    }
     final drop = peerChannelIdsAbsentFromHost(
       local: local,
       hostSessionIds: hostSessionIds,
       freshChannelIds: fresh,
+      protectedChannelIds: protected,
+      preserveClientSessions: preserveClientSessions,
     );
     if (drop.isEmpty) return;
     for (final id in drop) {
@@ -5726,6 +5814,10 @@ class PeerAgentClientService {
           final sessions = digestMap[remoteId];
           // 键不在快照里就别清：那是「没问到」，不是「主机确认没有」。
           if (sessions != null) {
+            final clientSyncEnabled = await isClientSessionSyncEnabled(
+              agent.id,
+              remoteAgentId: remoteId,
+            );
             await syncSessions(
               peerId: id,
               remoteAgentId: remoteId,
@@ -5733,6 +5825,7 @@ class PeerAgentClientService {
               userId: 'user',
               sessions: sessions,
               pruneToHost: true,
+              preserveClientSessions: !clientSyncEnabled,
             );
           }
         }
@@ -5748,6 +5841,10 @@ class PeerAgentClientService {
           remoteAgentId: remoteId,
         );
         if (sessions != null) {
+          final clientSyncEnabled = await isClientSessionSyncEnabled(
+            agent.id,
+            remoteAgentId: remoteId,
+          );
           await syncSessions(
             peerId: id,
             remoteAgentId: remoteId,
@@ -5755,6 +5852,7 @@ class PeerAgentClientService {
             userId: 'user',
             sessions: sessions,
             pruneToHost: true,
+            preserveClientSessions: !clientSyncEnabled,
           );
         }
       }
@@ -6016,6 +6114,10 @@ class PeerAgentClientService {
       }
       return const PeerAgentIncrementalSyncResult();
     }
+    final clientSyncEnabled = await isClientSessionSyncEnabled(
+      localAgentId,
+      remoteAgentId: remoteAgentId,
+    );
     if (remoteSessions.isEmpty) {
       await syncSessions(
         peerId: peerId,
@@ -6024,6 +6126,7 @@ class PeerAgentClientService {
         userId: userId,
         sessions: remoteSessions,
         pruneToHost: true,
+        preserveClientSessions: !clientSyncEnabled,
       );
       final prefetched = prefetchedWritten ?? 0;
       if (prefetched > 0) {
@@ -6043,6 +6146,7 @@ class PeerAgentClientService {
       sessions: remoteSessions,
       includeClientSessions: includeClientSessions,
       pruneToHost: true,
+      preserveClientSessions: !clientSyncEnabled,
     );
     // 关掉开关后，历史只跟 ShePaw 会话走。已经链入的官方终端 / IDE
     // 会话留在列表里，来源标签在 syncSessions 里补。
@@ -7295,18 +7399,24 @@ class PeerAgentClientService {
   /// 聊天页打开后调用这里把当时没投出去的卡补上。给了 [hostChannelId] 时
   /// 只补这个会话的卡 —— 同一 agent 可能有多个会话，不能把别的会话的卡
   /// 贴进当前页面。
+  ///
+  /// [includeUnattributed] 为 true 时也补旧帧里没有 `channel_id` 的卡：
+  /// 它们的提醒只能落到这名 agent 的普通单聊，单聊页面才会认领。
   List<Map<String, dynamic>> pendingOrphanFormsFor({
     required String peerId,
     required String remoteAgentId,
     String? hostChannelId,
+    bool includeUnattributed = false,
   }) {
     final events = <Map<String, dynamic>>[];
     for (final entry in _orphanedForms.entries) {
       final data = entry.value;
       if (data['_peer_id'] != peerId) continue;
       if (data['_remote_agent_id'] != remoteAgentId) continue;
+      final frameChannel = _frameChannelId(data);
       if (hostChannelId != null &&
-          _frameChannelId(data) != hostChannelId) {
+          !(includeUnattributed && frameChannel.isEmpty) &&
+          frameChannel != hostChannelId) {
         continue;
       }
       events.add(
@@ -7326,10 +7436,12 @@ class PeerAgentClientService {
   ///
   /// 与 [pendingOrphanFormsFor] 同一个成因：卡片到达时聊天页没开着，
   /// [orphanApprovalEvents] 的广播就丢了。聊天页打开后按会话补投。
+  /// [includeUnattributed] 的含义同 [pendingOrphanFormsFor]。
   List<Map<String, dynamic>> pendingOrphanApprovalsFor({
     required String peerId,
     required String remoteAgentId,
     String? hostChannelId,
+    bool includeUnattributed = false,
   }) {
     final events = <Map<String, dynamic>>[];
     for (final entry in _orphanedApprovals.entries) {
@@ -7340,7 +7452,10 @@ class PeerAgentClientService {
           frameAgent != remoteAgentId) {
         continue;
       }
-      if (hostChannelId != null && _frameChannelId(data) != hostChannelId) {
+      final frameChannel = _frameChannelId(data);
+      if (hostChannelId != null &&
+          !(includeUnattributed && frameChannel.isEmpty) &&
+          frameChannel != hostChannelId) {
         continue;
       }
       final rawActions = data['actions'];
@@ -7418,7 +7533,7 @@ class PeerAgentClientService {
   ///
   /// 帧里的 `channel_id` 是当初发给主机的 `session_id`：普通单聊就是频道
   /// id，主机自建会话则是去掉 `psess_` 的原值。两个都查一遍；都没镜像时
-  /// 先用主机 id 占位（横幅提示还在），打开会话时会再同步。
+  /// 指向 `psess_` 壳（同步后就会出现），横幅点开才不会是一条空会话。
   /// 帧里没有归属时退回该 agent 的普通单聊，绝不落到「当前打开的会话」。
   Future<String?> _localChannelIdForCard({
     required String peerId,
@@ -7429,9 +7544,11 @@ class PeerAgentClientService {
       if (await _db.getChannelById(hostChannelId) != null) {
         return hostChannelId;
       }
-      final synced = '$kSyncedPeerSessionPrefix$hostChannelId';
+      final synced = syncedPeerChannelId(hostChannelId);
       if (await _db.getChannelById(synced) != null) return synced;
-      return hostChannelId;
+      // 还没镜像：同步会为这个会话建 `psess_` 壳，指向那个 id，别用主机
+      // 原始 id 占位——那个 id 在本机永远不会有对应的会话行。
+      return synced;
     }
     _log.warning(
       'peer card without channel_id (peer=$peerId agent=$remoteAgentId) — '
@@ -8234,19 +8351,37 @@ class PeerAgentClientService {
     }
   }
 
+  /// 同一行 metadata 的读改写串行链，避免 deferred / turn_ended 互相覆盖。
+  ///
+  /// 两张写都可能先读到同一份旧快照、再各写各的：`turn_ended` 会盖上
+  /// `closed`，把刚写进去的 `deferred` 冲掉，卡片重启后变成不可答。
+  /// 这里按消息 id 排队，并且每次都在锁内重读最新行再改。
+  final Map<String, Future<void>> _metadataWriteChains = {};
+
   Future<void> _writeClosedMetadata(
     Map<String, dynamic> row,
     Map<String, dynamic>? Function(Map<String, dynamic> metadata) close,
-  ) async {
+  ) {
     final id = row['id'] as String? ?? '';
-    if (id.isEmpty) return;
-    final raw = row['metadata'];
-    if (raw is! String || raw.isEmpty) return;
-    final decoded = jsonDecode(raw);
-    if (decoded is! Map) return;
-    final next = close(Map<String, dynamic>.from(decoded));
-    if (next == null) return;
-    await _db.updateMessageMetadata(id, next);
+    if (id.isEmpty) return Future<void>.value();
+    final previous = _metadataWriteChains[id] ?? Future<void>.value();
+    final next = previous.catchError((Object _) {}).then((_) async {
+      final fresh = await _db.getMessageById(id);
+      if (fresh == null) return;
+      final raw = fresh['metadata'];
+      if (raw is! String || raw.isEmpty) return;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return;
+      final value = close(Map<String, dynamic>.from(decoded));
+      if (value == null) return;
+      await _db.updateMessageMetadata(id, value);
+    });
+    _metadataWriteChains[id] = next;
+    return next.whenComplete(() {
+      if (identical(_metadataWriteChains[id], next)) {
+        _metadataWriteChains.remove(id);
+      }
+    });
   }
 
   void _finishPending(String requestId, Map<String, dynamic> data) {

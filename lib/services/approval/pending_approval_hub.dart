@@ -57,6 +57,7 @@ class PendingApprovalHub {
     final existing = _items[item.id];
     if (existing != null) {
       final merged = existing.copyWith(
+        channelId: item.channelId.isNotEmpty ? item.channelId : null,
         messageId: item.messageId ?? existing.messageId,
         agentName:
             item.agentName.isNotEmpty ? item.agentName : existing.agentName,
@@ -82,6 +83,7 @@ class PendingApprovalHub {
     final existing = _items[item.id];
     if (existing != null) {
       _items[item.id] = existing.copyWith(
+        channelId: item.channelId.isNotEmpty ? item.channelId : null,
         messageId: item.messageId ?? existing.messageId,
         agentName:
             item.agentName.isNotEmpty ? item.agentName : existing.agentName,

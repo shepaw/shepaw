@@ -26,8 +26,9 @@ bool isOwnedPeerAgentRow(
 /// 孤儿卡帧里的会话归属是否就是 [hostSessionId]。
 ///
 /// 帧里的 `channel_id` 与 `hostSessionIdForChannel(currentChannelId)` 是同一
-/// 口径（App 频道 id 去掉 `psess_`）。没有归属的旧帧一律不认领 —— 卡已经
-/// 由服务层登记到全局提醒，不能再落进恰好打开着的会话。
+/// 口径（App 频道 id 去掉 `psess_`）。没有归属的旧帧这里一律不匹配 ——
+/// 它们由服务层落到 agent 普通单聊，聊天页按「单聊 + 同一 agent」单独认领，
+/// 不能靠这个函数匹配任意打开的会话。
 bool orphanCardBelongsToHostSession(
   String? frameChannelId,
   String? hostSessionId,

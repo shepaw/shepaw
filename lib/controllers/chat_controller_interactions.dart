@@ -1009,8 +1009,9 @@ mixin _InteractionOps on _ChatControllerBase {
     Message originalMessage,
     String formId,
     Map<String, dynamic> values,
-    String summary,
-  ) async {
+    String summary, {
+    String? instructionName,
+  }) async {
     final formMeta = originalMessage.metadata?['form'];
     final peerForm = formMeta is Map ? formMeta['peer_form'] : null;
     if (peerForm is Map) {
@@ -1029,9 +1030,11 @@ mixin _InteractionOps on _ChatControllerBase {
         _markPeerFormSubmitted(originalMessage, values);
         if (wasDeferred) {
           // 旧回合已经收束，答案回不到那次工具调用：用卡片内容正常发一条
-          // 消息，开新的一轮接着做。
+          // 消息，开新的一轮接着做。正文是给模型看的内部指令，气泡改用
+          // 卡片提交标题展示，别把指令原文当成用户说的话。
           await sendDeferredFormFollowUp(
             _deferredFormFollowUpText(approvalId, values),
+            instructionName: instructionName,
           );
         }
       } catch (e) {

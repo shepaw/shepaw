@@ -3990,7 +3990,14 @@ class _ChatScreenState extends State<ChatScreen>
                                     msg, uid, files, summary);
                               },
                               onFormSubmitted: (msg, fid, values, summary) {
-                                c.handleFormSubmitted(msg, fid, values, summary);
+                                c.handleFormSubmitted(
+                                  msg,
+                                  fid,
+                                  values,
+                                  summary,
+                                  instructionName: AppLocalizations.of(context)
+                                      .widget_formSubmitted,
+                                );
                               },
                               onFormDeclined: (msg, fid) {
                                 c.handleFormDeclined(msg, fid);

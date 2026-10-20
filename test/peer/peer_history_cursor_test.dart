@@ -492,4 +492,64 @@ void main() {
     );
     expect(drop, {'dm_only_here', 'psess_gone'});
   });
+
+  test('prune keeps active sessions and client sessions when sync is off', () {
+    Channel dm(String id, {String? origin}) => Channel(
+          id: id,
+          name: id,
+          type: 'dm',
+          members: const <ChannelMember>[],
+          sessionOrigin: origin,
+        );
+
+    final drop = peerChannelIdsAbsentFromHost(
+      local: [
+        dm('dm_only_here'),
+        dm('dm_open'),
+        dm('dm_busy'),
+        dm('psess_client', origin: 'cursor:ide'),
+      ],
+      hostSessionIds: const {},
+      protectedChannelIds: {'dm_open', 'dm_busy'},
+      preserveClientSessions: true,
+    );
+    expect(drop, {'dm_only_here'});
+
+    // 开关打开时，主机名单里没有的客户端会话照常清。
+    expect(
+      peerChannelIdsAbsentFromHost(
+        local: [dm('psess_client', origin: 'cursor:ide')],
+        hostSessionIds: const {},
+      ),
+      {'psess_client'},
+    );
+  });
+
+  group('parsePeerSessionList', () {
+    test('confirmed empty catalog is an empty list', () {
+      expect(parsePeerSessionList(const <dynamic>[]), isEmpty);
+    });
+
+    test('missing or malformed payload is not a confirmed empty catalog', () {
+      expect(parsePeerSessionList(null), isNull);
+      expect(parsePeerSessionList('not-a-list'), isNull);
+      expect(parsePeerSessionList(const [42]), isNull);
+      expect(
+        parsePeerSessionList(const [
+          {'session_id': 'ok'},
+          {'title': 'no session id'},
+        ]),
+        isNull,
+      );
+    });
+
+    test('parses every well-formed entry', () {
+      final parsed = parsePeerSessionList(const [
+        {'session_id': 's1', 'source': 'ide'},
+        {'session_id': 's2'},
+      ]);
+      expect(parsed?.map((s) => s.sessionId), ['s1', 's2']);
+      expect(parsed?.first.isClientSession, isTrue);
+    });
+  });
 }

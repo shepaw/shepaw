@@ -703,14 +703,21 @@ abstract class _ChatControllerBase extends ChangeNotifier
   /// 这张孤儿卡是否属于当前打开的会话。
   ///
   /// 帧里的 `channel_id` 是主机收到的 `session_id`，与
-  /// [hostSessionIdForChannel] 是同一口径。没有归属或归属别的会话的卡
-  /// 一律不认领 —— 它已经由 `PeerAgentClientService` 登记到全局提醒，
-  /// 不能塞进当前会话。
+  /// [hostSessionIdForChannel] 是同一口径。归属别的会话的卡一律不认领 ——
+  /// 它已经由 `PeerAgentClientService` 登记到全局提醒，不能塞进当前会话。
+  /// 旧帧没有归属时只在单聊里认领，和提醒落到的普通单聊保持一致。
   bool _claimsOrphanCard(Map<String, dynamic> event) {
     final channel = currentChannelId;
     if (channel == null || channel.isEmpty) return false;
+    final frameChannel = (event['channel_id'] as String?)?.trim() ?? '';
+    if (frameChannel.isEmpty) {
+      // 旧帧没带会话归属。服务层只能把提醒落到这名 agent 的普通单聊，
+      // 所以单聊里认领（谁打开就落在谁的会话），群聊里不认领——否则同一个
+      // agent 会把卡塞进不相关的群会话。
+      return !isGroupMode && (agentId?.isNotEmpty ?? false);
+    }
     return orphanCardBelongsToHostSession(
-      event['channel_id'] as String?,
+      frameChannel,
       hostSessionIdForChannel(channel),
     );
   }
@@ -763,6 +770,7 @@ abstract class _ChatControllerBase extends ChangeNotifier
       peerId: peerId,
       remoteAgentId: remoteId,
       hostChannelId: hostChannelId,
+      includeUnattributed: true,
     )) {
       _handleStreamingActionConfirmation(
         Map<String, dynamic>.from(event)
@@ -775,6 +783,7 @@ abstract class _ChatControllerBase extends ChangeNotifier
       peerId: peerId,
       remoteAgentId: remoteId,
       hostChannelId: hostChannelId,
+      includeUnattributed: true,
     )) {
       _handleStreamingForm(event);
     }
@@ -1048,7 +1057,12 @@ abstract class _ChatControllerBase extends ChangeNotifier
       String streamingId, String key, Map<String, dynamic> data);
 
   /// 回合外回答了一张 deferred 提问：按普通发消息开新回合。
-  Future<void> sendDeferredFormFollowUp(String content);
+  ///
+  /// [instructionName] 是气泡上展示的标题（正文是内部指令，不直接给用户看）。
+  Future<void> sendDeferredFormFollowUp(
+    String content, {
+    String? instructionName,
+  });
 
   // ---- Workflow hooks (implemented by [_WorkflowOps]) ----
   void _handleDmWorkflowPlanCreated(

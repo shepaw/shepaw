@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../models/conversation_selection.dart';
+import '../peer/services/peer_agent_client_service.dart'
+    show syncedPeerChannelId;
 import '../screens/chat_screen.dart';
 import '../service_locator.dart';
 import 'local_database_service.dart';
@@ -84,17 +86,24 @@ class ChatNavigationService {
     String? resolvedAgentName = agentName;
     String? resolvedAvatar = agentAvatar;
     String? groupFamilyId;
+    var resolvedChannelId = channelId;
 
     try {
       final db = getIt.isRegistered<LocalDatabaseService>()
           ? getIt<LocalDatabaseService>()
           : LocalDatabaseService();
-      final channel = await db.getChannelById(channelId);
+      var channel = await db.getChannelById(channelId);
+      if (channel == null) {
+        // 提醒可能记的是主机会话 id（本地镜像叫 psess_<id>），也可能反过来。
+        final synced = syncedPeerChannelId(channelId);
+        channel = await db.getChannelById(synced);
+        if (channel != null) resolvedChannelId = synced;
+      }
       if (channel != null) {
         if (channel.isGroup) {
           groupFamilyId = channel.groupFamilyId;
         } else if (resolvedAgentId == null || resolvedAgentId.isEmpty) {
-          final members = await db.getChannelMembers(channelId);
+          final members = await db.getChannelMembers(resolvedChannelId);
           final agentMember = members.where((m) => m.isAgent).toList();
           if (agentMember.isNotEmpty) {
             resolvedAgentId = agentMember.first.id;
@@ -118,7 +127,7 @@ class ChatNavigationService {
       agentId: resolvedAgentId,
       agentName: resolvedAgentName,
       agentAvatar: resolvedAvatar,
-      channelId: channelId,
+      channelId: resolvedChannelId,
       groupFamilyId: groupFamilyId,
       highlightMessageId: messageId,
     );

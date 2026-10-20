@@ -25,13 +25,14 @@ class PendingApprovalItem {
   });
 
   PendingApprovalItem copyWith({
+    String? channelId,
     String? messageId,
     String? agentName,
     int? createdAt,
   }) =>
       PendingApprovalItem(
         id: id,
-        channelId: channelId,
+        channelId: channelId ?? this.channelId,
         messageId: messageId ?? this.messageId,
         agentId: agentId,
         agentName: agentName ?? this.agentName,
