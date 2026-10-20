@@ -32,6 +32,7 @@ import '../../services/local_database_service.dart';
 import '../../services/local_file_storage_service.dart';
 import '../../services/logger_service.dart';
 import '../../services/messaging/message_implicit_prompt.dart';
+import '../../services/serial_task_queue.dart';
 import '../../services/device_node/command_approval_inbox.dart';
 import '../../services/device_node/device_command_runner.dart';
 import '../../services/device_node/device_hello.dart';
@@ -6148,8 +6149,9 @@ class PeerAgentClientService {
       pruneToHost: true,
       preserveClientSessions: !clientSyncEnabled,
     );
-    // 关掉开关后，历史只跟 ShePaw 会话走。已经链入的官方终端 / IDE
-    // 会话留在列表里，来源标签在 syncSessions 里补。
+    // 开关本身不在这一层判断：主机关掉时名单里根本不会带官方终端 / IDE
+    // 会话。名单里带上来就是本轮该补历史的；开关重新打开后名单恢复，
+    // 这些会话照常进入脏会话选择（本地还是空壳的会被优先选中）。
     final sessions = sessionsMirroredForHistory(
       remoteSessions,
       includeClientSessions: includeClientSessions,
@@ -8356,7 +8358,7 @@ class PeerAgentClientService {
   /// 两张写都可能先读到同一份旧快照、再各写各的：`turn_ended` 会盖上
   /// `closed`，把刚写进去的 `deferred` 冲掉，卡片重启后变成不可答。
   /// 这里按消息 id 排队，并且每次都在锁内重读最新行再改。
-  final Map<String, Future<void>> _metadataWriteChains = {};
+  final SerialTaskQueue<String> _metadataWrites = SerialTaskQueue<String>();
 
   Future<void> _writeClosedMetadata(
     Map<String, dynamic> row,
@@ -8364,8 +8366,7 @@ class PeerAgentClientService {
   ) {
     final id = row['id'] as String? ?? '';
     if (id.isEmpty) return Future<void>.value();
-    final previous = _metadataWriteChains[id] ?? Future<void>.value();
-    final next = previous.catchError((Object _) {}).then((_) async {
+    return _metadataWrites.run(id, () async {
       final fresh = await _db.getMessageById(id);
       if (fresh == null) return;
       final raw = fresh['metadata'];
@@ -8375,12 +8376,6 @@ class PeerAgentClientService {
       final value = close(Map<String, dynamic>.from(decoded));
       if (value == null) return;
       await _db.updateMessageMetadata(id, value);
-    });
-    _metadataWriteChains[id] = next;
-    return next.whenComplete(() {
-      if (identical(_metadataWriteChains[id], next)) {
-        _metadataWriteChains.remove(id);
-      }
     });
   }
 

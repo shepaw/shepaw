@@ -462,6 +462,48 @@ void main() {
     });
   });
 
+  group('客户端会话开关重新打开后的历史补拉', () {
+    final ide = PeerRemoteSession(
+      sessionId: 'ide-old',
+      source: 'ide',
+      updatedAt: DateTime.utc(2026, 1, 1),
+    );
+
+    test('比水位旧、但本地还是空壳的客户端会话会被增量同步选中', () {
+      final dirty = assembleSessionsToSync(
+        sessions: [ide],
+        lastSyncAt: DateTime.utc(2026, 8, 1),
+        syncedUnstampedIds: const {},
+        emptyLocalSessionIds: const {'ide-old'},
+        cursorTotals: const {},
+      );
+      expect(dirty.map((s) => s.sessionId), ['ide-old']);
+    });
+
+    test('本地已经有正文的旧客户端会话不重拉', () {
+      final dirty = assembleSessionsToSync(
+        sessions: [ide],
+        lastSyncAt: DateTime.utc(2026, 8, 1),
+        syncedUnstampedIds: const {},
+        emptyLocalSessionIds: const {},
+        cursorTotals: const {},
+      );
+      expect(dirty, isEmpty);
+    });
+
+    test('开关重开后主机名单带回的客户端会话照常进入历史候选', () {
+      final listed = [
+        PeerRemoteSession(sessionId: 'sp-1', source: 'shepaw'),
+        ide,
+      ];
+      expect(
+        sessionsMirroredForHistory(listed, includeClientSessions: true)
+            .map((s) => s.sessionId),
+        ['sp-1', 'ide-old'],
+      );
+    });
+  });
+
   test('local sessions absent from the host catalog are the ones to drop', () {
     Channel row(
       String id, {
