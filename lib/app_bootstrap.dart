@@ -13,6 +13,7 @@ import 'services/network_monitor_service.dart';
 import 'services/channel_tunnel_service.dart';
 import 'services/cli_host.dart';
 import 'services/cli_tool_registry.dart';
+import 'services/contacts_directory.dart';
 import 'clis/shepaw/shepaw_cli.dart';
 import 'services/logger_service.dart';
 import 'services/model_registry.dart';
@@ -76,6 +77,10 @@ class AppBootstrap {
     await _restorePouchLogin();
     await _initializeLocalStorage();
     await _initializePeerConnection();
+
+    // 通讯录首次打开要冷刷一遍会话 / 配对库 / agent 列表 / 主机名单。
+    // 启动时先热起来，用户点开通讯录时直接用已有快照，不必等这一轮。
+    _warmContactsDirectory();
 
     // 自动建立 Channel 隧道（若已配置 autoConnect）。
     // 隧道是 P2P 跨网中转的前提：PC 需主动维护到 channel server 的隧道，
@@ -217,6 +222,21 @@ class AppBootstrap {
       _log.info('P2P client started', tag: 'App');
     } catch (e) {
       _log.error('P2P connection manager start failed', tag: 'App', error: e);
+    }
+  }
+
+  /// 通讯录目录预热。
+  ///
+  /// 移动端的通讯录 tab 是首次点击才创建的，桌面端也只在首页挂载后才有数据。
+  /// 这里先把订阅挂上并刷一轮，让首次打开时 [ContactsDirectory.latest] 已有值。
+  /// 刷新失败由目录自己兜底，不影响启动。
+  static void _warmContactsDirectory() {
+    if (!getIt.isRegistered<ContactsDirectory>()) return;
+    try {
+      final directory = getIt<ContactsDirectory>()..start();
+      unawaited(directory.refresh());
+    } catch (e) {
+      _log.warning('Contacts directory warm-up failed: $e', tag: 'App');
     }
   }
 

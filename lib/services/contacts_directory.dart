@@ -356,34 +356,47 @@ class ContactsDirectory {
 
     final hostOnline =
         PeerConnectionManager.instance.connectedPeerIds.contains(hostId);
-    final hostPeer = await PeerStorageService().getPeerById(hostId);
-    final agents = await _readAgents();
-    final cli = await CliHost.detect();
-    final appFingerprint = await _readAppFingerprint();
 
-    var roster = _rosterCache ?? const <PairedPeer>[];
-    var rosterFailed = false;
-    if (hostOnline) {
-      try {
-        roster = await PouchPairing.visiblePeers();
-        _rosterCache = roster;
-      } catch (_) {
-        rosterFailed = true;
-        roster = const <PairedPeer>[];
-      }
+    // 主机行、agent 列表、本机 CLI、本机指纹互不依赖，先一起发起。
+    // 首次打开通讯录时这几项串行排队会直接变成肉眼可见的等待。
+    final hostPeerFuture = _readHostPeer(hostId);
+    final agentsFuture = _readAgents();
+    final cliFuture = _readCli();
+    final fingerprintFuture = _readAppFingerprint();
+    final rosterFuture = hostOnline ? _readRoster() : null;
+
+    final hostPeer = await hostPeerFuture;
+    final agents = await agentsFuture;
+    final cli = await cliFuture;
+    final appFingerprint = await fingerprintFuture;
+
+    ContactsView compose({
+      required List<PairedPeer> roster,
+      required bool rosterFailed,
+    }) {
+      return buildContacts(
+        hostPeerId: hostId,
+        hostPeer: hostPeer,
+        roster: roster,
+        agents: agents,
+        appFingerprint: appFingerprint,
+        localCliFingerprint: cli?.fingerprint,
+        connectedPeerIds:
+            PeerConnectionManager.instance.connectedPeerIds.toSet(),
+        rosterFailed: rosterFailed,
+      );
     }
 
-    _emit(buildContacts(
-      hostPeerId: hostId,
-      hostPeer: hostPeer,
-      roster: roster,
-      agents: agents,
-      appFingerprint: appFingerprint,
-      localCliFingerprint: cli?.fingerprint,
-      connectedPeerIds:
-          PeerConnectionManager.instance.connectedPeerIds.toSet(),
-      rosterFailed: rosterFailed,
+    // 设备名单要经主机往返（最坏 10 秒超时）。先用手上的名单出一版快照，
+    // 页面第一帧就不用等网络；名单回来后再补一版。
+    _emit(compose(
+      roster: _rosterCache ?? const <PairedPeer>[],
+      rosterFailed: false,
     ));
+
+    if (rosterFuture == null) return;
+    final roster = await rosterFuture;
+    _emit(compose(roster: roster.roster, rosterFailed: roster.failed));
   }
 
   Future<List<Agent>> _readAgents() async {
@@ -393,6 +406,34 @@ class ContactsDirectory {
       return agents;
     } catch (_) {
       return _agentCache;
+    }
+  }
+
+  /// 配对库里没有这台主机不算错误，交给页面显示「未连接主机」。
+  Future<PairedPeer?> _readHostPeer(String hostId) async {
+    try {
+      return await PeerStorageService().getPeerById(hostId);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 手机上没有本机 CLI；桌面端读文件 / 探活失败时按「没有本机主机」处理。
+  Future<CliHostEndpoint?> _readCli() async {
+    try {
+      return await CliHost.detect();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<_RosterResult> _readRoster() async {
+    try {
+      final roster = await PouchPairing.visiblePeers();
+      _rosterCache = roster;
+      return _RosterResult(roster: roster, failed: false);
+    } catch (_) {
+      return const _RosterResult(roster: <PairedPeer>[], failed: true);
     }
   }
 
@@ -408,4 +449,12 @@ class ContactsDirectory {
     _latest = view;
     if (!_snapshots.isClosed) _snapshots.add(view);
   }
+}
+
+/// 名单请求的结果。失败时保留 [failed] 标记，页面据此显示重试入口。
+class _RosterResult {
+  const _RosterResult({required this.roster, required this.failed});
+
+  final List<PairedPeer> roster;
+  final bool failed;
 }

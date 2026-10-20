@@ -151,14 +151,23 @@ class ContactsScreenState extends State<ContactsScreen> {
 
   Future<void> _reload({bool quiet = false}) async {
     if (!quiet && mounted) setState(() => _isLoading = true);
+    // 群聊和通讯录互不依赖，一起发起，别让页面顺序等两轮。
+    // 目录的失败处理先挂上，避免它比群聊查询更早失败时成为未处理异步错误。
+    final directoryFuture = _directory.refresh().catchError((Object e) {
+      LoggerService()
+          .error('Failed to refresh contacts', tag: 'Contacts', error: e);
+    });
     try {
       final groups = await _databaseService.getTopLevelGroups();
       if (mounted) setState(() => _groups = groups);
     } catch (e) {
       LoggerService().error('Failed to load groups', tag: 'Contacts', error: e);
     }
-    await _directory.refresh();
-    if (mounted) setState(() => _isLoading = false);
+    try {
+      await directoryFuture;
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   List<Agent> _matchingAgents(List<Agent> agents) {
