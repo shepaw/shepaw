@@ -1758,6 +1758,13 @@ class _PendingRequest {
   /// 发出 `agent_chat` 后等待首个主机帧的确认定时器。
   Timer? deliveryProbeTimer;
 
+  /// 首次发出 `agent_chat` 的原始帧。投递确认失败时原样补发（同一个
+  /// request_id，主机侧 `accept_once` 保证不会执行两遍）。
+  Map<String, dynamic>? agentChatFrame;
+
+  /// 已经自动补发过几次。只补一次，避免在坏链路上无限重发。
+  int agentChatResendCount = 0;
+
   _PendingRequest({
     required this.peerId,
     required this.remoteAgentId,
@@ -2502,6 +2509,7 @@ class PeerAgentClientService {
     String sessionId = '',
     String localAgentId = '',
     bool suspended = false,
+    Map<String, dynamic>? agentChatFrame,
   }) {
     final p = _PendingRequest(
       peerId: peerId,
@@ -2510,6 +2518,7 @@ class PeerAgentClientService {
       sessionId: sessionId,
       localAgentId: localAgentId,
     );
+    p.agentChatFrame = agentChatFrame;
     if (suspended) {
       p.suspendedSince = DateTime.now();
     }
@@ -2885,33 +2894,35 @@ class PeerAgentClientService {
     cancelToken?.addOnCancelled(() => _abortPendingTurn(requestId));
 
     final deviceInfo = await ClientDeviceInfo.current();
+    // 留一份原始帧：投递确认失败时原样补发，request_id 不变。
+    pending.agentChatFrame = {
+      'type': 'agent_chat',
+      'request_id': requestId,
+      'agent_id': remoteAgentId,
+      'message': message,
+      // 本端落库用户消息用的 id。主机拿它当这条记录的 id，回传事件与
+      // 本机 SQLite 行就是同一条，不会在屏幕上叠成两条一样的用户消息。
+      // 本机行是主机形态（`peerhist_*`），上行要还原成裸 id —— 前缀归主机加。
+      if (userMessageId != null && userMessageId.isNotEmpty)
+        'user_message_id': bareMessageId(userMessageId),
+      // 引用回复：同样只发裸 id，前缀归本机自己加回来。
+      if (replyToId != null && replyToId.isNotEmpty)
+        'reply_to_id': bareMessageId(replyToId),
+      if (replyQuoteText != null && replyQuoteText.isNotEmpty)
+        'reply_quote_text': replyQuoteText,
+      // 把本端会话 id 透传给对端，使对端按会话隔离历史：本端「新开会话」
+      // 在对端也得到一条干净、无历史的新会话。
+      if (sessionId != null && sessionId.isNotEmpty) 'session_id': sessionId,
+      if (history != null && history.isNotEmpty) 'history': history,
+      if (attachmentRefs != null) 'attachments': attachmentRefs,
+      if (extraTools != null && extraTools.isNotEmpty)
+        'extra_tools': extraTools,
+      ...deviceInfo.toWireFields(),
+    };
     var waitingForReconnect = false;
     final sent = await PeerConnectionManager.instance.sendControl(
       peerId,
-      {
-        'type': 'agent_chat',
-        'request_id': requestId,
-        'agent_id': remoteAgentId,
-        'message': message,
-        // 本端落库用户消息用的 id。主机拿它当这条记录的 id，回传事件与
-        // 本机 SQLite 行就是同一条，不会在屏幕上叠成两条一样的用户消息。
-        // 本机行是主机形态（`peerhist_*`），上行要还原成裸 id —— 前缀归主机加。
-        if (userMessageId != null && userMessageId.isNotEmpty)
-          'user_message_id': bareMessageId(userMessageId),
-        // 引用回复：同样只发裸 id，前缀归本机自己加回来。
-        if (replyToId != null && replyToId.isNotEmpty)
-          'reply_to_id': bareMessageId(replyToId),
-        if (replyQuoteText != null && replyQuoteText.isNotEmpty)
-          'reply_quote_text': replyQuoteText,
-        // 把本端会话 id 透传给对端，使对端按会话隔离历史：本端「新开会话」
-        // 在对端也得到一条干净、无历史的新会话。
-        if (sessionId != null && sessionId.isNotEmpty) 'session_id': sessionId,
-        if (history != null && history.isNotEmpty) 'history': history,
-        if (attachmentRefs != null) 'attachments': attachmentRefs,
-        if (extraTools != null && extraTools.isNotEmpty)
-          'extra_tools': extraTools,
-        ...deviceInfo.toWireFields(),
-      },
+      pending.agentChatFrame!,
       // 切网后 connectivity 监听的重连有 800ms 去抖 + 探活，用户往往等不到。
       // 这里主动拉起重连并最多等 [_controlReconnectWait]，连上就补发。
       waitForReconnect: _controlReconnectWait,
@@ -8814,6 +8825,50 @@ class PeerAgentClientService {
     _watchResumeResponse(peerId, requestId, 0, failOnExhausted: false);
   }
 
+  /// 投递确认判定「主机没收到」后，用同一个 request_id 原样补发一次。
+  ///
+  /// 主机在入口按 request_id 去重（`TurnLog::accept_once`），所以即便第一帧
+  /// 其实到了、只是确认帧丢了，补发也不会让同一回合跑两遍。补发成功后重新
+  /// 挂投递确认：第二次仍 `lost` 才真正判失败。
+  Future<void> _resendAgentChat(
+    String peerId,
+    String requestId,
+    _PendingRequest p,
+  ) async {
+    final frame = p.agentChatFrame;
+    if (frame == null || p.completer.isCompleted) return;
+    final override = debugSendControlOverride;
+    final bool sent;
+    if (override != null) {
+      sent = await override(peerId, frame);
+    } else {
+      sent = await PeerConnectionManager.instance.sendControl(
+        peerId,
+        frame,
+        // 连接不可用时也等待重连补发；用户已经等了一会儿，不要立刻报错。
+        waitForReconnect: _controlReconnectWait,
+        abortWhen: () =>
+            p.completer.isCompleted || !identical(_pending[requestId], p),
+      );
+    }
+    if (p.completer.isCompleted || !identical(_pending[requestId], p)) return;
+    if (!sent) {
+      _log.warning('agent_chat resend failed requestId=$requestId');
+      _markReconcileNeeded(requestId);
+      _onError({
+        'request_id': requestId,
+        'message': '消息未能送达主机，请重新发送',
+      });
+      return;
+    }
+    if (p.heardFromHost) return;
+    _log.info(
+      'agent_chat resent requestId=$requestId — re-arming delivery probe',
+      tag: 'PeerApproval',
+    );
+    _scheduleDeliveryProbe(requestId, p, peerId);
+  }
+
   Duration get _effectiveDeliveryProbeDelay =>
       debugDeliveryProbeDelayOverride ?? deliveryProbeDelay;
 
@@ -9070,6 +9125,16 @@ class PeerAgentClientService {
         // 说明 agent_chat 这一帧压根没到主机（半开连接 / relay 丢帧）。
         // 快速失败，把消息交回输入框重试；等 120s 活性超时只会更糟。
         if (purpose == _ResumePurpose.deliveryProbe && !p.heardFromHost) {
+          // 先原样补发一次：主机按 request_id 去重，重复执行是安全的。
+          if (p.agentChatFrame != null && p.agentChatResendCount == 0) {
+            p.agentChatResendCount++;
+            _log.warning(
+              'agent_chat missing at hub requestId=$requestId — resending once',
+              tag: 'PeerApproval',
+            );
+            unawaited(_resendAgentChat(p.peerId, requestId, p));
+            break;
+          }
           _log.warning(
             'agent_chat never reached hub requestId=$requestId '
             '— fail fast for resend',

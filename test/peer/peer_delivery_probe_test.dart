@@ -16,6 +16,11 @@ void main() {
         .where((j) => j['type'] == 'agent_turn_resume_req')
         .toList();
 
+    List<Map<String, dynamic>> chatResends() => sentFrames
+        .map((f) => f.json)
+        .where((j) => j['type'] == 'agent_chat')
+        .toList();
+
     setUp(() {
       sentFrames.clear();
       svc.debugDeliveryProbeDelayOverride = const Duration(milliseconds: 30);
@@ -34,6 +39,8 @@ void main() {
       await svc.cancelInflightTurnsForChannel('ch-dp-lost');
       await svc.cancelInflightTurnsForChannel('ch-dp-signal');
       await svc.cancelInflightTurnsForChannel('ch-dp-streaming');
+      await svc.cancelInflightTurnsForChannel('ch-dp-resend-ok');
+      await svc.cancelInflightTurnsForChannel('ch-dp-resend-fail');
     });
 
     test('主机不认识该 turn（lost）→ 快速失败并提示重新发送', () async {
@@ -128,6 +135,98 @@ void main() {
       expect(errors, isEmpty);
       expect(completed, isFalse);
       expect(svc.hasInflightForChannel('ch-dp-streaming'), isTrue);
+    });
+
+    test('第一次 lost → 同一个 request_id 补发一次，第二次确认成功则继续', () async {
+      var probeCount = 0;
+      svc.debugSendControlOverride = (peerId, json) async {
+        sentFrames.add((peerId: peerId, json: json));
+        if (json['type'] == 'agent_turn_resume_req') {
+          probeCount++;
+          svc.debugInjectControlForTest(
+            'agent_turn_resume_resp',
+            {
+              'request_id': json['request_id'],
+              'status': probeCount == 1 ? 'lost' : 'streaming',
+            },
+            peerId: peerId,
+          );
+        }
+        return true;
+      };
+
+      var completed = false;
+      final errors = <Object>[];
+      final frame = <String, dynamic>{
+        'type': 'agent_chat',
+        'request_id': 'dp-resend-ok',
+        'agent_id': 'agent-1',
+        'message': '你好',
+      };
+      svc
+          .debugSeedPendingTurn(
+            requestId: 'dp-resend-ok',
+            peerId: 'peer-1',
+            channelId: 'ch-dp-resend-ok',
+            agentChatFrame: frame,
+          )
+          .then(
+            (_) => completed = true,
+            onError: (Object e) {
+              completed = true;
+              errors.add(e);
+            },
+          );
+
+      svc.debugScheduleDeliveryProbe('dp-resend-ok', peerId: 'peer-1');
+      await _waitUntil(() => probes().length >= 2);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      final resends = chatResends();
+      expect(resends, hasLength(1));
+      expect(resends.single['request_id'], 'dp-resend-ok');
+      expect(resends.single['message'], '你好');
+      expect(errors, isEmpty);
+      expect(completed, isFalse);
+      expect(svc.hasInflightForChannel('ch-dp-resend-ok'), isTrue);
+    });
+
+    test('补发后仍然 lost → 判失败，且只补发一次', () async {
+      svc.debugSendControlOverride = (peerId, json) async {
+        sentFrames.add((peerId: peerId, json: json));
+        if (json['type'] == 'agent_turn_resume_req') {
+          svc.debugInjectControlForTest(
+            'agent_turn_resume_resp',
+            {'request_id': json['request_id'], 'status': 'lost'},
+            peerId: peerId,
+          );
+        }
+        return true;
+      };
+
+      final errors = <Object>[];
+      svc
+          .debugSeedPendingTurn(
+            requestId: 'dp-resend-fail',
+            peerId: 'peer-1',
+            channelId: 'ch-dp-resend-fail',
+            agentChatFrame: <String, dynamic>{
+              'type': 'agent_chat',
+              'request_id': 'dp-resend-fail',
+              'agent_id': 'agent-1',
+              'message': '你好',
+            },
+          )
+          .then((_) {}, onError: errors.add);
+
+      svc.debugScheduleDeliveryProbe('dp-resend-fail', peerId: 'peer-1');
+      await _waitUntil(() => errors.isNotEmpty);
+
+      expect(errors, hasLength(1));
+      expect(errors.single.toString(), contains('消息未能送达主机，请重新发送'));
+      expect(chatResends(), hasLength(1), reason: '只自动补发一次');
+      expect(probes().length, lessThanOrEqualTo(2));
+      expect(svc.hasInflightForChannel('ch-dp-resend-fail'), isFalse);
     });
   });
 }
