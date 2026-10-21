@@ -19,6 +19,7 @@ void main() {
     Map<String, dynamic>? submittedValues,
     bool required = true,
     String? closed,
+    bool deferred = false,
   }) =>
       {
         'form_id': 'form-1',
@@ -48,6 +49,7 @@ void main() {
         ],
         if (submittedValues != null) 'submitted_values': submittedValues,
         if (closed != null) 'closed': closed,
+        if (deferred) 'deferred': true,
       };
 
   Future<void> pumpForm(
@@ -109,6 +111,14 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.textContaining('清單'), findsOneWidget);
+  });
+
+  testWidgets('deferred 表单说明本轮已结束，提交会开新一轮', (tester) async {
+    await pumpForm(tester, data: formData(deferred: true));
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('本轮对话已结束，提交后将开启新一轮'), findsOneWidget);
+    expect(find.byType(ElevatedButton), findsOneWidget);
   });
 
   testWidgets('作废的表单不再给提交入口，只说明原因', (tester) async {

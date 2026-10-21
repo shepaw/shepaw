@@ -373,6 +373,19 @@ class _FormBubbleState extends State<FormBubble> {
                 const SizedBox(height: 8),
                 InteractionClosedHint(reason: closedReason),
               ] else if (!isSubmitted) ...[
+                if (widget.formData['deferred'] == true) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    AppLocalizations.of(context).widget_formDeferredHint,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withValues(alpha: 0.6),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 _buildFormSubmitButton(context, formId, fields),
                 if (widget.formData['deferred'] == true &&

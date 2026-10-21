@@ -1341,6 +1341,7 @@
   "widget_retry": "重试",
   "widget_formSubmitted": "表单已提交",
   "widget_formDecline": "不回答",
+  "widget_formDeferredHint": "本轮对话已结束，提交后将开启新一轮",
   "widget_interactionExpired": "已作废：没等到回答，主机已按默认继续",
   "widget_interactionCancelled": "已作废：回合已停止",
   "widget_interactionClosed": "已作废：回合已结束，这张卡片不再有效",

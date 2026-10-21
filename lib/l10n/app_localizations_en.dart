@@ -2422,6 +2422,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get widget_formDecline => 'Don\'t answer';
 
   @override
+  String get widget_formDeferredHint =>
+      'This turn has ended. Submitting starts a new turn.';
+
+  @override
   String get widget_interactionExpired =>
       'Closed — no answer in time, the host carried on with a default';
 

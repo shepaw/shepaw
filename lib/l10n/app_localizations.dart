@@ -4352,6 +4352,12 @@ abstract class AppLocalizations {
   /// **'不回答'**
   String get widget_formDecline;
 
+  /// No description provided for @widget_formDeferredHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'本轮对话已结束，提交后将开启新一轮'**
+  String get widget_formDeferredHint;
+
   /// No description provided for @widget_interactionExpired.
   ///
   /// In zh, this message translates to:

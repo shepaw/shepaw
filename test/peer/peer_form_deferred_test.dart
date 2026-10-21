@@ -36,6 +36,33 @@ void main() {
       await svc.cancelInflightTurnsForChannel('ch-deferred');
     });
 
+    test('deferred 帧直接结束本轮，不必等迟到的 agent_done', () async {
+      const requestId = 'req-deferred-end';
+      const approvalId = 'appr-deferred-end';
+      final turn = svc.debugSeedPendingTurn(
+        requestId: requestId,
+        peerId: 'peer-1',
+        channelId: 'ch-deferred',
+      );
+      turn.then((_) {}, onError: (_) {});
+
+      svc.debugInjectControlForTest(
+        'agent_form_req',
+        formFrame(requestId: requestId, approvalId: approvalId),
+        peerId: 'peer-1',
+      );
+      svc.debugInjectControlForTest(
+        'agent_form_deferred',
+        deferredFrame(requestId: requestId, approvalId: approvalId),
+        peerId: 'peer-1',
+      );
+
+      // 主机还在等引擎吃完 session/cancel，真正的 agent_done 会晚几秒才到；
+      // 独立卡片一出现就该收掉本轮。
+      final result = await turn.timeout(const Duration(seconds: 2));
+      expect(result.metadata?['deferred'], isTrue);
+    });
+
     test('deferred 帧放掉等待闸门，空收束的 done 不再被缓冲', () async {
       const requestId = 'req-deferred-gate';
       const approvalId = 'appr-deferred-gate';

@@ -327,11 +327,9 @@ class AgentMessagingService {
         activeTask.onActionConfirmation?.call(data);
       },
       onForm: (data) {
-        final form = Map<String, dynamic>.from(data);
-        final meta = Map<String, dynamic>.from(activeTask.metadata ?? {});
-        meta['form'] = form;
-        activeTask.metadata = meta;
-        activeTask.onMessageMetadata?.call({'form': form});
+        // 表单卡有自己的确定性消息行，恢复回合时按孤儿卡补投给聊天页，
+        // 不再写进流式气泡 metadata（那会在重开后多出第二张卡）。
+        PeerAgentClientService.instance.surfaceRestoredForm(data);
       },
     );
   }
@@ -505,11 +503,8 @@ class AgentMessagingService {
         task.onActionConfirmation?.call(data);
       },
       onForm: (data) {
-        final form = Map<String, dynamic>.from(data);
-        final meta = Map<String, dynamic>.from(task.metadata ?? {});
-        meta['form'] = form;
-        task.metadata = meta;
-        task.onMessageMetadata?.call({'form': form});
+        // 同上：卡片只走确定性消息行，流式气泡不再背一份。
+        PeerAgentClientService.instance.surfaceRestoredForm(data);
       },
     );
   }
@@ -1341,14 +1336,17 @@ class AgentMessagingService {
         },
         onForm: (data) {
           final form = Map<String, dynamic>.from(data);
-          final meta = Map<String, dynamic>.from(activeTask.metadata ?? {});
-          meta['form'] = form;
-          activeTask.metadata = meta;
-          final cb = onForm ?? activeTask.onMessageMetadata;
+          // 卡片由 PeerAgentClientService 在收到 agent_form_req 时就落成独立
+          // 消息行；这里只负责通知当前 UI 把它画出来。写进流式气泡 metadata
+          // 会让同一轮出现第二张卡，重开页面还会再对账出一张。
           if (onForm != null) {
             onForm(form);
           } else {
-            cb?.call({'form': form});
+            LoggerService().warning(
+              'Peer form arrived but UI callback was detached '
+              '(approvalId=${form['form_id']}) — card persisted as its own row',
+              tag: 'PeerApproval',
+            );
           }
         },
       );
@@ -1423,10 +1421,7 @@ class AgentMessagingService {
         relayedAc['confirmation_context'] ??= 'peer';
         meta['action_confirmation'] = relayedAc;
       }
-      final liveForm = activeTask.metadata?['form'];
-      if (liveForm is Map) {
-        meta['form'] = Map<String, dynamic>.from(liveForm);
-      }
+      // 表单卡不随回复正文落库：它有自己的确定性消息行。
       activeTask.metadata = meta;
 
       await flushHelper.deletePartial();

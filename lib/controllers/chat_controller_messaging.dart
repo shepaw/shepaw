@@ -1044,14 +1044,7 @@ mixin _MessagingOps on _ChatControllerBase {
           _updateStreamingMetadata(
               {'file_upload': Map<String, dynamic>.from(uploadData)});
         },
-        onForm: (formData) {
-          // 卡片已经作为独立消息行在聊天记录里（进程重启后从 SQLite 载入），
-          // 不要再往宿主气泡上贴一张，否则屏幕上会出现两张一样的表单。
-          if (_peerFormCardAlreadyShown(formData)) return;
-          _updateStreamingMetadata(
-              {'form': Map<String, dynamic>.from(formData)});
-          _persistPeerFormCard(formData);
-        },
+        onForm: _showPeerFormCard,
         onFileMessage: (fileData) async {
           await _handleFileMessage(fileData);
         },
@@ -1404,16 +1397,79 @@ mixin _MessagingOps on _ChatControllerBase {
         .ignore();
   }
 
-  /// 这张表单卡是否已经作为独立消息行在聊天记录里。
+  /// 把表单卡显示成一条独立消息行，**不贴到正在流式的宿主气泡上**。
   ///
-  /// 进程重启后卡片从 SQLite 的确定性行载入，主机补发同一张卡时不能再往
-  /// 宿主气泡上贴一张，否则屏幕上会同时出现两张一样的表单。
-  bool _peerFormCardAlreadyShown(Map<String, dynamic> formData) {
+  /// 宿主气泡会在回合结束时删除/重建；卡片贴在上面时，重开页面或 reconcile
+  /// 又会从 SQLite 载入确定性卡片行，屏幕上就同时出现两张都能提交的表单。
+  /// 卡片本身是一条普通消息，回合结束时随流式气泡一起消失的只有回复正文。
+  ///
+  /// 同一个 `approval_id` 只对应一条行：重复投递（重连补发、跨设备广播）
+  /// 更新原行的 metadata，不新增消息。
+  void _showPeerFormCard(Map<String, dynamic> formData) {
     final formId = formData['form_id']?.toString() ?? '';
-    if (formId.isEmpty) return false;
-    return messageIdMap.containsKey(
-      PeerApprovalPayload.formCardMessageId(formId),
+    if (formId.isEmpty) return;
+    // 卡片属于别的会话时不进当前列表；服务层已按发起回合的频道落库，
+    // 切回那个会话会从 DB 载入。
+    final frameChannel = formData['channel_id']?.toString() ?? '';
+    if (frameChannel.isNotEmpty && frameChannel != currentChannelId) {
+      return;
+    }
+    // 先落库：卡片的重开可见性靠这条确定性行，而不是随时会被 reconcile
+    // 掉的流式气泡。重复投递由 id 冲突忽略。
+    _persistPeerFormCard(formData);
+    final messageId = PeerApprovalPayload.formCardMessageId(formId);
+    // 路由字段只用来定位会话；写进消息 metadata 会混进卡片数据里。
+    final data = Map<String, dynamic>.from(formData)
+      ..remove('peer_id')
+      ..remove('remote_agent_id')
+      ..remove('channel_id')
+      ..remove('orphan');
+    final existing = messageIdMap[messageId];
+    if (existing != null) {
+      // 保留本地已经填好/提交的状态，只合并主机这次带来的字段。
+      final existingForm = existing.metadata?['form'];
+      final form = existingForm is Map
+          ? {...existingForm, ...data}
+          : <String, dynamic>{...data};
+      final updated = ChatStreamingText.withMergedMetadata(
+        existing,
+        {'form': form},
+      );
+      final idx = messages.indexWhere((m) => m.id == messageId);
+      if (idx != -1) messages[idx] = updated;
+      messageIdMap[messageId] = updated;
+      _notify();
+      localDatabaseService
+          .updateMessageMetadata(messageId, updated.metadata ?? {})
+          .ignore();
+      return;
+    }
+    final aid = agentId;
+    final channel = currentChannelId;
+    if (aid == null || channel == null) {
+      LoggerService().warning(
+        'onForm: no agent/channel for formId=$formId — UI not attached',
+        tag: 'PeerApproval',
+      );
+      return;
+    }
+    final sm = StreamingActionConfirmation.buildFallbackBubble(
+      id: messageId,
+      agentId: aid,
+      agentName: agentName ?? 'Agent',
+      userId: getUserId(),
+      userName: getUserName(),
+      actionData: {...data, 'prompt': data['title'] ?? ''},
+      metadataKey: 'form',
     );
+    messages.add(sm);
+    messageIdMap[messageId] = sm;
+    LoggerService().info(
+      'onForm: formId=$formId rendered as messageId=$messageId',
+      tag: 'PeerApproval',
+    );
+    _notify();
+    _emit(RequestScrollToBottomEvent(force: true));
   }
 
   /// 把表单卡落成一条确定性 id 的消息行。
@@ -1422,7 +1478,8 @@ mixin _MessagingOps on _ChatControllerBase {
   /// DB reconcile 都会让它消失，而主机还在等回答。落库之后重开页面，
   /// FormBubble 仍能从消息 metadata 里渲染出来并继续提交。
   void _persistPeerFormCard(Map<String, dynamic> formData) {
-    final channelId = currentChannelId;
+    final frameChannel = formData['channel_id']?.toString() ?? '';
+    final channelId = frameChannel.isNotEmpty ? frameChannel : currentChannelId;
     final senderId = agentId;
     if (channelId == null || senderId == null) return;
     unawaited(PeerAgentClientService.instance.persistFormCard(
@@ -1434,90 +1491,17 @@ mixin _MessagingOps on _ChatControllerBase {
   }
 
   /// 渲染一张孤儿 AskUserQuestion 表单：hub 在手机重连后补发，但本地已经没有
-  /// 活动 turn 能挂 `onForm` 了。载荷与 sendChat 的 `onForm` 同形，所以
-  /// FormBubble 和 `handleFormSubmitted` 都不用改 —— 提交只需要 metadata 里的
-  /// `form.peer_form`。
+  /// 活动 turn 能挂 `onForm` 了。和回合内收到的卡走同一条路：落到确定性
+  /// 消息行上，FormBubble 和 `handleFormSubmitted` 都不用改 —— 提交只需要
+  /// metadata 里的 `form.peer_form`。
   @override
   void _handleStreamingForm(Map<String, dynamic> formData) {
     final formId = formData['form_id'] as String? ?? '';
     LoggerService().info(
-      'onForm(orphan): formId=$formId streamingMessageId=$streamingMessageId '
-      'channelId=$currentChannelId',
+      'onForm(orphan): formId=$formId channelId=$currentChannelId',
       tag: 'PeerApproval',
     );
-    // 路由字段只用来定位会话；写进消息 metadata 会混进卡片数据里。
-    final data = Map<String, dynamic>.from(formData)
-      ..remove('peer_id')
-      ..remove('remote_agent_id')
-      ..remove('channel_id')
-      ..remove('orphan');
-
-    // 先落库：卡片的重开可见性靠这条确定性行，而不是随时会被 reconcile
-    // 掉的流式气泡。重复投递由 id 冲突忽略。
-    _persistPeerFormCard(formData);
-    if (_peerFormCardAlreadyShown(formData)) {
-      // 卡片已经从 SQLite 载入到当前消息窗口里了，别再贴第二张。
-      return;
-    }
-
-    final streamingId = StreamingActionConfirmation.resolveHostMessageId(
-      preferredId: streamingMessageId,
-      messageIdMap: messageIdMap,
-      messages: messages,
-    );
-
-    if (streamingId == null) {
-      // 宿主气泡早被 reconcile 掉了 —— 自己造一个，别让卡片静默消失。
-      if (agentId == null || currentChannelId == null) {
-        LoggerService().warning(
-          'onForm(orphan): no host bubble and no agentId — UI not attached',
-          tag: 'PeerApproval',
-        );
-        return;
-      }
-      final displayName = agentName ?? 'Agent';
-      // 用确定性 id：和库里的卡片行重合，后续补发/重开页面不会多出一张。
-      final sid = formId.isEmpty
-          ? StreamingActionConfirmation.dmFallbackId(agentId!)
-          : PeerApprovalPayload.formCardMessageId(formId);
-      final sm = StreamingActionConfirmation.buildFallbackBubble(
-        id: sid,
-        agentId: agentId!,
-        agentName: displayName,
-        userId: getUserId(),
-        userName: getUserName(),
-        actionData: {...data, 'prompt': data['title'] ?? ''},
-        metadataKey: 'form',
-      );
-      messages.add(sm);
-      messageIdMap[sid] = sm;
-      streamingMessageId = sid;
-      streamingContent = sm.content;
-      // 孤儿卡背后没有活动 turn，不能给转圈信号（永远清不掉）。
-      _notify();
-      _emit(RequestScrollToBottomEvent(force: true));
-      // 消息行已由 _persistPeerFormCard 落库，这里不再重复插入。
-      return;
-    }
-
-    final idx = messages.indexWhere((m) => m.id == streamingId);
-    if (idx == -1) {
-      LoggerService().warning(
-        'onForm(orphan): message not found for id=$streamingId',
-        tag: 'PeerApproval',
-      );
-      return;
-    }
-    final updated = ChatStreamingText.withMergedMetadata(
-      messages[idx],
-      {'form': data},
-    );
-    messages[idx] = updated;
-    messageIdMap[updated.id] = updated;
-    streamingMessageId ??= streamingId;
-    _notify();
-    // 不再把表单写进宿主气泡的 metadata：卡片行才是重开后渲染的来源，
-    // 两边都写会让 loadMessages 载出两张一样的卡。
+    _showPeerFormCard(formData);
   }
 
   /// Resolve (or create) the group message bubble that should host an interactive

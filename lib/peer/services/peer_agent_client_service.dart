@@ -3248,7 +3248,7 @@ class PeerAgentClientService {
         _onFormReq(event.peerId, event.data);
         break;
       case 'agent_form_deferred':
-        _onFormDeferred(event.peerId, event.data);
+        unawaited(_onFormDeferred(event.peerId, event.data));
         break;
       case 'agent_interaction_closed':
         _onInteractionClosed(event.data);
@@ -7234,6 +7234,8 @@ class PeerAgentClientService {
         'peer_id': peerId,
         'approval_id': approvalId,
       },
+      // 卡片归属的会话；聊天页据此决定要不要画在当前列表里。
+      'channel_id': pending.channelId,
     });
   }
 
@@ -7242,7 +7244,7 @@ class PeerAgentClientService {
   /// 只做记账：卡片不能继续占着旧回合的审批额度（否则随后的 `agent_done`
   /// 会被 [_onDone] 无限缓冲），也不能被旧回合的收尾路径收掉。作答时由
   /// [submitForm] 走 App 自己的新回合。
-  void _onFormDeferred(String peerId, Map<String, dynamic> data) {
+  Future<void> _onFormDeferred(String peerId, Map<String, dynamic> data) async {
     final requestId = data['request_id'] as String? ?? '';
     final approvalId = data['approval_id'] as String? ?? '';
     if (approvalId.isEmpty) {
@@ -7294,11 +7296,23 @@ class PeerAgentClientService {
             data['agent_id'] as String?,
       );
     }
-    unawaited(_persistFormDeferred(approvalId, requestId, peerId));
+    // 先把 deferred 写进卡片行，再结束回合并通知 UI：回合结束可能触发
+    // loadMessages，晚到的写入会被数据库里的旧快照盖掉。
+    await _persistFormDeferred(approvalId, requestId, peerId);
     _tryCompleteBufferedDone(requestId);
     if (!_formDeferredController.isClosed) {
       _formDeferredController.add((approvalId: approvalId, requestId: requestId));
     }
+    // 独立卡片一出现就表示旧回合已经结束：不能继续挂着等用户回答。主机还要
+    // 等引擎吃完 session/cancel（最多 cancel_grace），真正的 agent_done 会晚
+    // 几秒才到；这里立刻按 deferred 收掉本轮。那一帧随后到达时 `_pending`
+    // 已经摘掉，会被 [_onDone] 忽略。
+    _onDone({
+      'request_id': requestId,
+      'content': '',
+      'deferred': true,
+      'end_reason': 'deferred',
+    });
   }
 
   /// 把 `deferred: true` 写进卡片行。乱序时旧回合的 `turn_ended` 可能已经
@@ -7333,6 +7347,49 @@ class PeerAgentClientService {
         error: e,
       );
     }
+  }
+
+  /// 恢复在途回合时收到的表单。
+  ///
+  /// 恢复路径没有 `sendChat` 的 `onForm` 回调，卡片也不能再贴回流式气泡
+  /// （重开页面会从 SQLite 再载出一条确定性卡片行）。按孤儿卡投给聊天页，
+  /// 最终落到同一条 `peer_form_<approval_id>` 消息上。
+  void surfaceRestoredForm(Map<String, dynamic> data) {
+    final form = Map<String, dynamic>.from(data);
+    final peerForm = form['peer_form'];
+    final rawFormId = form['form_id']?.toString() ?? '';
+    final approvalId = rawFormId.isNotEmpty
+        ? rawFormId
+        : (peerForm is Map ? peerForm['approval_id']?.toString() ?? '' : '');
+    final requestId = form['request_id']?.toString() ?? '';
+    final peerId =
+        peerForm is Map ? peerForm['peer_id']?.toString() ?? '' : '';
+    final remoteAgentId =
+        _pending[requestId]?.remoteAgentId ?? form['agent_id']?.toString();
+    if (approvalId.isEmpty || requestId.isEmpty || peerId.isEmpty) {
+      _log.warning(
+        'restored form cannot be surfaced: approvalId=$approvalId '
+        'requestId=$requestId peerId=$peerId',
+        tag: 'PeerApproval',
+      );
+      return;
+    }
+    if (remoteAgentId == null) {
+      _log.warning(
+        'restored form has no owning agent: approvalId=$approvalId '
+        'requestId=$requestId',
+        tag: 'PeerApproval',
+      );
+      return;
+    }
+    _republishOrphanForm(
+      peerId: peerId,
+      requestId: requestId,
+      approvalId: approvalId,
+      data: form,
+      hasPendingTurn: _pending.containsKey(requestId),
+      remoteAgentId: remoteAgentId,
+    );
   }
 
   /// 把一张投递不出去的表单存下来，并交给打开的聊天页渲染。
@@ -7619,6 +7676,7 @@ class PeerAgentClientService {
     final form = Map<String, dynamic>.from(formData)
       ..remove('peer_id')
       ..remove('remote_agent_id')
+      ..remove('channel_id')
       ..remove('orphan');
     form['form_id'] = approvalId;
     if (peerId.isNotEmpty) {

@@ -2332,6 +2332,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get widget_formDecline => '不回答';
 
   @override
+  String get widget_formDeferredHint => '本轮对话已结束，提交后将开启新一轮';
+
+  @override
   String get widget_interactionExpired => '已作废：没等到回答，主机已按默认继续';
 
   @override
