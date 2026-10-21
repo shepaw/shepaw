@@ -1973,6 +1973,11 @@ class ChatService {
     _freshLocalChannels.clear(channelId);
   }
 
+  /// 刚在主机上创建出新 Agent 实例时，它的默认确定性单聊会话在主机上一定还没有记录。
+  void markFreshLocalChannel(String channelId) {
+    _freshLocalChannels.mark(channelId);
+  }
+
   /// 这条会话是不是「本机刚建、还没往主机发过东西」。
   ///
   /// 只认 [createNewSession] 显式标过的 id：本机没有 channel 行**不**等于主机

@@ -43,6 +43,7 @@ import '../../services/session/cli_execute_peer_handler.dart';
 import '../../services/session/session_create_peer_handler.dart';
 import '../../services/she_agent_impression_service.dart';
 import '../../services/she_service.dart';
+import '../../services/local_user_identity.dart';
 import '../../service_locator.dart' show getIt;
 import '../interaction_card_close.dart';
 import '../../utils/engine_avatars.dart';
@@ -50,6 +51,7 @@ import '../../utils/session_utils.dart';
 import '../../services/messaging/chat_history_content.dart';
 import '../../storage/agent_roster.dart';
 import '../../storage/pouch_login.dart';
+import '../../storage/pouch_login_keeper.dart';
 import '../../storage/pouch_role.dart';
 import '../../storage/store_service.dart';
 import '../pouch_duties.dart';
@@ -2016,6 +2018,15 @@ class PeerAgentClientService {
   /// Outstanding fs_browse_req keyed by request_id.
   final Map<String, Completer<PeerFsBrowseResult>> _pendingFsBrowse = {};
 
+  /// 刚在主机或工作节点创建出的远端实例（`$peerId::$remoteId` → 创建时间）。
+  ///
+  /// 工作节点创建实例时，`agent_manage_resp` 经主机流通道先回到本机，而工作节点
+  /// 随后发出的 `worker.agents` 名册帧还在主机队列里处理；中间若夹着一轮旧的
+  /// `agent_list_resp`，[_removeStalePeerAgents] 不能把刚先行落库的新实例当成
+  /// 「已被删除」清掉。
+  final Map<String, DateTime> _recentlyCreatedAgents = {};
+  static const Duration _recentlyCreatedAgentTtl = Duration(seconds: 15);
+
   /// Maps hub approval_id → agent_chat request_id for deferred completion.
   final Map<String, String> _approvalToRequest = {};
 
@@ -2234,6 +2245,13 @@ class PeerAgentClientService {
       }
     }
     _pendingManage.clear();
+    for (final c in _pendingFsBrowse.values) {
+      if (!c.isCompleted) {
+        c.complete(const PeerFsBrowseResult(ok: false, error: 'stopped'));
+      }
+    }
+    _pendingFsBrowse.clear();
+    _recentlyCreatedAgents.clear();
     _approvalToRequest.clear();
   }
 
@@ -2503,6 +2521,25 @@ class PeerAgentClientService {
       if (!c.isCompleted) c.complete((ok: false, error: null));
     }
     _pendingModeSet.clear();
+    for (final c in _pendingManage.values) {
+      if (!c.isCompleted) {
+        c.complete(const PeerAgentManageResult(ok: false, error: 'stopped'));
+      }
+    }
+    _pendingManage.clear();
+    for (final c in _pendingFsBrowse.values) {
+      if (!c.isCompleted) {
+        c.complete(const PeerFsBrowseResult(ok: false, error: 'stopped'));
+      }
+    }
+    _pendingFsBrowse.clear();
+    for (final waiters in _agentListWaiters.values) {
+      for (final c in waiters) {
+        if (!c.isCompleted) c.complete();
+      }
+    }
+    _agentListWaiters.clear();
+    _recentlyCreatedAgents.clear();
   }
 
   /// Test seam: register a synthetic in-flight turn (as [sendChat] would)
@@ -3352,9 +3389,10 @@ class PeerAgentClientService {
         unawaited(_onAgentList(event.peerId, event.data));
         break;
       case 'pouch_login_required':
-        // 主机重启后不认旧登录。挂着的模型请求不会再有回包，立刻放开，
-        // 等重新登录后由聊天框再要一次。
+        // 主机重启后不认旧登录。挂着的模型、实例管理、目录浏览请求不会再有回包，
+        // 立刻放开，等重新登录后重发。
         _abandonModelFetches();
+        _abandonManageAndBrowseOnLoginRequired();
         break;
       case 'agent_chunk':
         _onChunk(event.data);
@@ -3871,6 +3909,33 @@ class PeerAgentClientService {
     for (final completer in pending) {
       if (!completer.isCompleted) {
         completer.completeError(StateError('pouch_login_required'));
+      }
+    }
+  }
+
+  /// 登录失效时，进行中的实例管理与目录浏览请求已被主机拦下，立刻以
+  /// `login_required` 结束单次等待，交由外层等待重登后自动补发一次。
+  void _abandonManageAndBrowseOnLoginRequired() {
+    final manage = _pendingManage.values.toList();
+    _pendingManage.clear();
+    for (final completer in manage) {
+      if (!completer.isCompleted) {
+        completer.complete(const PeerAgentManageResult(
+          ok: false,
+          error: 'login_required',
+          code: 'login_required',
+        ));
+      }
+    }
+    final browse = _pendingFsBrowse.values.toList();
+    _pendingFsBrowse.clear();
+    for (final completer in browse) {
+      if (!completer.isCompleted) {
+        completer.complete(const PeerFsBrowseResult(
+          ok: false,
+          error: 'login_required',
+          code: 'login_required',
+        ));
       }
     }
   }
@@ -5276,6 +5341,20 @@ class PeerAgentClientService {
   /// Start / stop / set_enabled stay hub-owned; this client refuses them.
   ///
   /// [nodeId] 是工作节点指纹：请求仍发给主机连接，由主机转给这个节点。
+  Future<bool> _sendInteractiveControl(
+    String peerId,
+    Map<String, dynamic> json, {
+    required bool waitForReconnect,
+  }) {
+    final override = debugSendControlOverride;
+    if (override != null) return override(peerId, json);
+    return PeerConnectionManager.instance.sendControl(
+      peerId,
+      json,
+      waitForReconnect: waitForReconnect ? _controlReconnectWait : null,
+    );
+  }
+
   Future<PeerAgentManageResult> manageAgents({
     required String peerId,
     required String op,
@@ -5287,7 +5366,8 @@ class PeerAgentClientService {
     String? engine,
     String? name,
     String? sessionMode,
-    Duration timeout = const Duration(seconds: 30),
+    Duration timeout = const Duration(seconds: 15),
+    bool waitForReconnect = true,
   }) async {
     const allowed = {
       'list',
@@ -5304,6 +5384,56 @@ class PeerAgentClientService {
       );
       return const PeerAgentManageResult(ok: false, error: 'unsupported');
     }
+    try {
+      return await sendWithReloginRetry(
+        retryOnRelogin: true,
+        reloginGeneration: () => PouchLoginKeeper.instance.reloginGeneration,
+        waitForRelogin: (seen) =>
+            PouchLoginKeeper.instance.waitForRelogin(seenGeneration: seen),
+        send: () => _manageAgentsOnce(
+          peerId: peerId,
+          op: op,
+          nodeId: nodeId,
+          agentId: agentId,
+          enabled: enabled,
+          cwd: cwd,
+          additionalDirectories: additionalDirectories,
+          engine: engine,
+          name: name,
+          sessionMode: sessionMode,
+          timeout: timeout,
+          waitForReconnect: waitForReconnect,
+        ),
+      );
+    } on PouchLoginRequired {
+      return const PeerAgentManageResult(
+        ok: false,
+        error: 'login_required',
+        code: 'login_required',
+      );
+    } on Exception {
+      return const PeerAgentManageResult(
+        ok: false,
+        unsupported: true,
+        error: 'timeout',
+      );
+    }
+  }
+
+  Future<PeerAgentManageResult> _manageAgentsOnce({
+    required String peerId,
+    required String op,
+    String? nodeId,
+    String? agentId,
+    bool? enabled,
+    String? cwd,
+    List<String>? additionalDirectories,
+    String? engine,
+    String? name,
+    String? sessionMode,
+    required Duration timeout,
+    required bool waitForReconnect,
+  }) async {
     final requestId = _uuid.v4();
     final completer = Completer<PeerAgentManageResult>();
     _pendingManage[requestId] = completer;
@@ -5322,13 +5452,16 @@ class PeerAgentClientService {
       if (sessionMode != null && sessionMode.isNotEmpty)
         'session_mode': sessionMode,
     };
-    final sent =
-        await PeerConnectionManager.instance.sendControl(peerId, payload);
+    final sent = await _sendInteractiveControl(
+      peerId,
+      payload,
+      waitForReconnect: waitForReconnect,
+    );
     if (!sent) {
       _pendingManage.remove(requestId);
       return const PeerAgentManageResult(ok: false, error: 'offline');
     }
-    return completer.future.timeout(timeout, onTimeout: () {
+    final result = await completer.future.timeout(timeout, onTimeout: () {
       _pendingManage.remove(requestId);
       return const PeerAgentManageResult(
         ok: false,
@@ -5336,6 +5469,10 @@ class PeerAgentClientService {
         error: 'timeout',
       );
     });
+    if (result.code == 'login_required') {
+      throw const PouchLoginRequired();
+    }
+    return result;
   }
 
   /// Register a new agent on the host. Refresh the agent list afterwards so
@@ -5348,6 +5485,7 @@ class PeerAgentClientService {
     String? name,
     String? sessionMode,
     List<String>? additionalDirectories,
+    Duration timeout = const Duration(seconds: 20),
   }) {
     return manageAgents(
       peerId: peerId,
@@ -5358,7 +5496,136 @@ class PeerAgentClientService {
       name: name,
       sessionMode: sessionMode,
       additionalDirectories: additionalDirectories,
+      timeout: timeout,
     );
+  }
+
+  void _rememberRecentlyCreatedAgent(String peerId, String remoteAgentId) {
+    final key = '${peerId.trim()}::${remoteAgentId.trim()}';
+    _recentlyCreatedAgents[key] = DateTime.now();
+  }
+
+  void _forgetRecentlyCreatedAgent(String peerId, String? remoteAgentId) {
+    final remote = remoteAgentId?.trim() ?? '';
+    if (remote.isEmpty) return;
+    _recentlyCreatedAgents.remove('${peerId.trim()}::$remote');
+  }
+
+  bool _isRecentlyCreatedAgent(String peerId, String? remoteAgentId) {
+    final remote = remoteAgentId?.trim() ?? '';
+    if (remote.isEmpty) return false;
+    final key = '${peerId.trim()}::$remote';
+    final createdAt = _recentlyCreatedAgents[key];
+    if (createdAt == null) return false;
+    if (DateTime.now().difference(createdAt) <= _recentlyCreatedAgentTtl) {
+      return true;
+    }
+    _recentlyCreatedAgents.remove(key);
+    return false;
+  }
+
+  /// 在主机或工作节点创建实例成功后，先把本机 [RemoteAgent] 行落库，
+  /// 让调用方不必阻塞等待下一轮 `agent_list_resp` 才能打开聊天页。
+  ///
+  /// 同时把 `(peerId, remoteAgentId)` 记入短期保护表：工作节点创建实例时，
+  /// `agent_manage_resp` 比 `worker.agents` 名册帧更快回到本机，中间若夹着
+  /// 一轮旧的 `agent_list_resp`，[_removeStalePeerAgents] 不会把刚建好的行删掉。
+  Future<RemoteAgent> seedCreatedLocalAgent({
+    required String peerId,
+    required String remoteAgentId,
+    required String engine,
+    required String cwd,
+    String? peerName,
+    String? engineDisplayName,
+    String? name,
+    String? nodeId,
+    String? nodeName,
+    List<String> additionalDirectories = const [],
+    List<PeerAgentManageEntry> manageEntries = const [],
+  }) async {
+    final remoteId = remoteAgentId.trim();
+    _rememberRecentlyCreatedAgent(peerId, remoteId);
+    final localId = peerAgentLocalId(peerId, remoteId);
+    final hasDb = getIt.isRegistered<LocalDatabaseService>();
+    if (hasDb) {
+      final existing = await _db.getRemoteAgentById(localId);
+      if (existing != null) {
+        ChatService().markFreshLocalChannel(
+          ChatService().generateChannelId(LocalUserIdentity.id, localId),
+        );
+        return existing;
+      }
+    }
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final resolvedPeerName = (peerName != null && peerName.trim().isNotEmpty)
+        ? peerName.trim()
+        : (hasDb ? await _peerDisplayName(peerId) : '配对设备');
+    final entry = manageEntries.where((e) => e.id == remoteId).firstOrNull;
+    final trimmedName = name?.trim() ?? '';
+    final entryName = entry?.name.trim() ?? '';
+    final resolvedName = trimmedName.isNotEmpty
+        ? trimmedName
+        : (entryName.isNotEmpty
+            ? entryName
+            : (engineDisplayName?.trim().isNotEmpty == true
+                ? engineDisplayName!.trim()
+                : engine));
+    final trimmedEngine =
+        engine.trim().isNotEmpty ? engine.trim() : (entry?.engine.trim() ?? '');
+    final trimmedCwd =
+        cwd.trim().isNotEmpty ? cwd.trim() : (entry?.cwd.trim() ?? '');
+    final trimmedNodeId = nodeId?.trim().toLowerCase();
+
+    final metadata = <String, dynamic>{
+      'source_peer_id': peerId,
+      'source_peer_name': resolvedPeerName,
+      'remote_agent_id': remoteId,
+      if (trimmedNodeId != null && trimmedNodeId.isNotEmpty) ...{
+        'node_id': trimmedNodeId,
+        'node_role': 'worker',
+        if (nodeName != null && nodeName.trim().isNotEmpty)
+          'node_name': nodeName.trim(),
+        'node_online': true,
+      } else ...{
+        'node_role': 'host',
+        'node_online': true,
+      },
+      if (trimmedEngine.isNotEmpty) 'engine': trimmedEngine,
+      'manageable': true,
+      'enabled': true,
+      'running': true,
+      if (trimmedCwd.isNotEmpty) 'cwd': trimmedCwd,
+      'additional_directories': additionalDirectories,
+    };
+
+    final agent = RemoteAgent(
+      id: localId,
+      name: resolvedName,
+      avatar: defaultAvatarForEngine(trimmedEngine),
+      bio: (engineDisplayName != null && engineDisplayName.trim().isNotEmpty)
+          ? engineDisplayName.trim()
+          : (trimmedEngine.isNotEmpty ? trimmedEngine : null),
+      token: '',
+      endpoint: 'peer://$peerId/$remoteId',
+      protocol: ProtocolType.peer,
+      connectionType: ConnectionType.websocket,
+      status: AgentStatus.online,
+      connectedAt: now,
+      capabilities: const ['chat'],
+      metadata: metadata,
+      createdAt: now,
+      updatedAt: now,
+    );
+
+    if (hasDb) {
+      await _db.createRemoteAgent(agent);
+      ChatService().markFreshLocalChannel(
+        ChatService().generateChannelId(LocalUserIdentity.id, localId),
+      );
+      PeerConnectionManager.instance.notifyPeerListChanged();
+    }
+    return agent;
   }
 
   Future<PeerAgentManageResult> removeAgent({
@@ -5427,8 +5694,46 @@ class PeerAgentClientService {
     required String peerId,
     String? path,
     String? nodeId,
+    Duration timeout = const Duration(seconds: 8),
+    bool waitForReconnect = true,
   }) async {
-    if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
+    try {
+      return await sendWithReloginRetry(
+        retryOnRelogin: true,
+        reloginGeneration: () => PouchLoginKeeper.instance.reloginGeneration,
+        waitForRelogin: (seen) =>
+            PouchLoginKeeper.instance.waitForRelogin(seenGeneration: seen),
+        send: () => _browseRemoteFsOnce(
+          peerId: peerId,
+          path: path,
+          nodeId: nodeId,
+          timeout: timeout,
+          waitForReconnect: waitForReconnect,
+        ),
+      );
+    } on PouchLoginRequired {
+      return const PeerFsBrowseResult(
+        ok: false,
+        error: 'login_required',
+        code: 'login_required',
+      );
+    } on Exception {
+      return const PeerFsBrowseResult(
+        ok: false,
+        error: 'timeout',
+        unsupported: true,
+      );
+    }
+  }
+
+  Future<PeerFsBrowseResult> _browseRemoteFsOnce({
+    required String peerId,
+    String? path,
+    String? nodeId,
+    required Duration timeout,
+    required bool waitForReconnect,
+  }) async {
+    if (!waitForReconnect && !_peerIsConnected(peerId)) {
       return const PeerFsBrowseResult(ok: false, error: 'offline');
     }
     final requestId = _uuid.v4();
@@ -5440,13 +5745,16 @@ class PeerAgentClientService {
       if (path != null) 'path': path,
       if (nodeId != null) 'node_id': nodeId,
     };
-    final sent =
-        await PeerConnectionManager.instance.sendControl(peerId, payload);
+    final sent = await _sendInteractiveControl(
+      peerId,
+      payload,
+      waitForReconnect: waitForReconnect,
+    );
     if (!sent) {
       _pendingFsBrowse.remove(requestId);
       return const PeerFsBrowseResult(ok: false, error: 'offline');
     }
-    return completer.future.timeout(const Duration(seconds: 8), onTimeout: () {
+    final result = await completer.future.timeout(timeout, onTimeout: () {
       _pendingFsBrowse.remove(requestId);
       return const PeerFsBrowseResult(
         ok: false,
@@ -5454,6 +5762,10 @@ class PeerAgentClientService {
         unsupported: true,
       );
     });
+    if (result.code == 'login_required') {
+      throw const PouchLoginRequired();
+    }
+    return result;
   }
 
   void _onFsBrowseResp(Map<String, dynamic> data) {
@@ -6266,8 +6578,10 @@ class PeerAgentClientService {
       );
       final stored = await _db.getPeerHistoryCursor(openChannelId);
       final count = await _db.countChannelMessages(openChannelId);
-      if (count > 0 && onPrioritizedChannelDone != null) {
-        // 本地已有这份聊天记录。先撤掉进页等待，再去同步其他会话。
+      if ((count > 0 || ChatService().isFreshLocalChannel(openChannelId)) &&
+          onPrioritizedChannelDone != null) {
+        // 本地已有这份聊天记录，或这是本机刚建、主机一定还没有正文的空会话。
+        // 先撤掉进页等待，再去同步其他会话。
         prioritizedDone = true;
         await onPrioritizedChannelDone(0);
         await Future<void>.delayed(Duration.zero);
@@ -6382,6 +6696,15 @@ class PeerAgentClientService {
       prioritizeChannelId,
       knownRemoteSessionIds: remoteSessionIds,
     );
+    if (!prioritizedDone &&
+        prioritizeSessionId == null &&
+        onPrioritizedChannelDone != null) {
+      // 当前打开的会话不在远端会话名单里（例如本机新建的空单聊），
+      // 先释放当前会话的进页同步等待，其余历史会话在后台继续拉取。
+      prioritizedDone = true;
+      await onPrioritizedChannelDone(0);
+      await Future<void>.delayed(Duration.zero);
+    }
     final cursorTotals = await _db.peerHistoryCursorTotalsByRemoteSession();
     final preliminary = selectDirtySessions(
       sessions,
@@ -9273,6 +9596,15 @@ class PeerAgentClientService {
     return PeerConnectionManager.instance.connectedPeerIds.contains(peerId);
   }
 
+  /// [peerId] 当前是否已连接（单测中会走 [debugConnectedPeerIdsOverride]）。
+  bool isPeerConnected(String peerId) => _peerIsConnected(peerId);
+
+  /// 通知对端下发最新 `agent_list_resp`（后台异步落库，不挂等待定时器）。
+  void requestAgentListRefresh(String peerId) {
+    if (!_peerIsConnected(peerId)) return;
+    _requestAgentList(peerId);
+  }
+
   void _requestAgentList(String peerId) {
     final send =
         debugSendControlOverride ?? PeerConnectionManager.instance.sendControl;
@@ -9300,7 +9632,7 @@ class PeerAgentClientService {
     String peerId, {
     Duration timeout = const Duration(seconds: 8),
   }) async {
-    if (!PeerConnectionManager.instance.connectedPeerIds.contains(peerId)) {
+    if (!_peerIsConnected(peerId)) {
       return;
     }
     final completer = Completer<void>();
@@ -9343,6 +9675,7 @@ class PeerAgentClientService {
         final remoteId = raw['id'] as String?;
         if (remoteId == null) continue;
         seenRemoteIds.add(remoteId);
+        _forgetRecentlyCreatedAgent(peerId, remoteId);
 
         final localId = _localIdForPeerAgent(
           peerId: peerId,
@@ -9612,6 +9945,7 @@ class PeerAgentClientService {
     for (final a in agents) {
       if (a.protocol != ProtocolType.peer || a.sourcePeerId != peerId) continue;
       if (keep.contains(a.remoteAgentId)) continue;
+      if (_isRecentlyCreatedAgent(peerId, a.remoteAgentId)) continue;
       if (retain.contains(a.id)) {
         await _db.updateRemoteAgentStatus(a.id, 'offline');
         continue;
