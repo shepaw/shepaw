@@ -223,4 +223,101 @@ void main() {
     expect(menu.right, closeTo(390 - 8, 1));
     expect(_sideMenuWidth(tester, 'Sonnet'), closeTo(layout.sideWidth, 1));
   });
+
+  testWidgets('submenu stays above conversation list and session list', (tester) async {
+    // 桌面：左侧对话列表，右栏是带 ClipRect 的嵌套 Navigator。会话列表先插在
+    // 根 Overlay 上，盖住二级菜单要伸进去的那一块。菜单后弹出，应该盖住两者。
+    const surface = Size(1200, 800);
+    tester.view.physicalSize = surface;
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final anchorKey = GlobalKey();
+    await tester.pumpWidget(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(
+              width: 700,
+              child: ColoredBox(
+                color: Color(0xFF101010),
+                child: Center(child: Text('对话列表')),
+              ),
+            ),
+            Expanded(
+              child: ClipRect(
+                child: Navigator(
+                  onGenerateRoute: (_) => MaterialPageRoute<void>(
+                    builder: (_) => Align(
+                      alignment: Alignment.bottomLeft,
+                      child: SizedBox(key: anchorKey, width: 80, height: 32),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final sessionEntry = OverlayEntry(
+      builder: (_) => Positioned(
+        left: 0,
+        top: 0,
+        width: 540,
+        bottom: 0,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _noop,
+          child: const ColoredBox(
+            color: Color(0xFF202020),
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: Text('会话列表'),
+            ),
+          ),
+        ),
+      ),
+    );
+    Overlay.of(
+      tester.element(find.byKey(anchorKey)),
+      rootOverlay: true,
+    ).insert(sessionEntry);
+    addTearDown(sessionEntry.remove);
+    await tester.pump();
+
+    final handle = showCursorModelPanel(
+      context: tester.element(find.byKey(anchorKey)),
+      anchorKey: anchorKey,
+      panel: (_, submenuOpen) => CursorModelSettings(
+        submenuOpen: submenuOpen,
+        models: [
+          _grok(),
+          PeerAgentModel(value: 'sonnet', displayName: 'Sonnet'),
+        ],
+        currentModel: 'grok-4.7',
+        optionValues: const {},
+        modelLabel: '模型',
+        onFastChanged: (_) {},
+        onOptionChanged: (_, __) {},
+        onModelChanged: (_) {},
+      ),
+    );
+    addTearDown(handle.close);
+    await tester.pump();
+
+    await tester.tap(find.text('模型'));
+    await tester.pumpAndSettle();
+
+    final menu = tester.getRect(find.text('Sonnet'));
+    expect(menu.center.dx, lessThan(540));
+    expect(find.text('Sonnet').hitTestable(), findsOneWidget);
+    expect(find.text('会话列表'), findsOneWidget);
+    expect(find.text('对话列表'), findsOneWidget);
+  });
 }
+
+void _noop() {}

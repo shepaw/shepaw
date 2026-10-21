@@ -76,6 +76,11 @@ CursorModelFilledLayout? cursorModelFilledLayout({
 }
 
 /// 锚定在模型 chip 上的 Cursor 风格参数面板。点外面关闭。
+///
+/// 面板插在根 Overlay 上。桌面聊天区在右栏 Navigator 里，外层还有
+/// ClipRect，最近一层 Overlay 出不了右栏，二级菜单伸到左侧对话列表上
+/// 会被裁掉。会话列表抽屉在根 Navigator 上，也会压住右栏里弹出的菜单。
+/// 根 Overlay 盖住这两块面板，后弹出的菜单才在最上面。
 class CursorModelPanelHandle {
   OverlayEntry? _entry;
   final submenuOpen = ValueNotifier<bool>(false);
@@ -102,7 +107,7 @@ CursorModelPanelHandle showCursorModelPanel({
   required GlobalKey anchorKey,
   required CursorModelPanelBuilder panel,
 }) {
-  final overlay = Overlay.of(context);
+  final overlay = Overlay.of(context, rootOverlay: true);
   final handle = CursorModelPanelHandle();
   late OverlayEntry entry;
   entry = OverlayEntry(
@@ -346,6 +351,8 @@ class _CursorModelSettingsState extends State<CursorModelSettings> {
     final fast = model?.optionById('fast');
     final colorScheme = Theme.of(context).colorScheme;
     final openId = _openId;
+    // 二级菜单画在本面板这条 OverlayEntry 后面。面板插在根 Overlay 最上层，
+    // 菜单才会跟着盖住对话列表和会话列表。
     return OverlayPortal(
       controller: _portal,
       overlayChildBuilder: (context) {
