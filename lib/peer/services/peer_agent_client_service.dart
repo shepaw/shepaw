@@ -1670,7 +1670,7 @@ class PeerAgentIncrementalSyncResult {
 
 /// Why a turn resume request is in flight — stall probes must not fail the
 /// turn when the hub is slow to answer.
-enum _ResumePurpose { none, suspend, stallProbe }
+enum _ResumePurpose { none, suspend, stallProbe, deliveryProbe }
 
 class _PendingRequest {
   final String peerId;
@@ -1749,6 +1749,15 @@ class _PendingRequest {
 
   /// 发出 resume_req 时的 receivedLength 基准，用于 delta 去重（drop-prefix）。
   int? resumeBaseLength;
+
+  /// 是否已收到主机针对该 turn 的任何业务帧（chunk / metadata / queued /
+  /// 审批卡 / done / error …）。`agent_chat` 可能被半开连接静默吞掉；
+  /// 发出后一段时间仍为 false 时要主动向主机确认。
+  bool heardFromHost = false;
+
+  /// 发出 `agent_chat` 后等待首个主机帧的确认定时器。
+  Timer? deliveryProbeTimer;
+
   _PendingRequest({
     required this.peerId,
     required this.remoteAgentId,
@@ -1834,6 +1843,14 @@ class PeerAgentClientService {
   /// 用户发消息时连接不可用（典型：刚切网）主动重连并等待的上限。
   /// connectivity 监听侧有 800ms 去抖 + 最多 3s 探活，再留出握手时间。
   static const Duration _controlReconnectWait = Duration(seconds: 6);
+
+  /// `agent_chat` 发出后，若这段时间内没有收到主机任何帧，就主动发一次
+  /// `agent_turn_resume_req` 确认投递。
+  ///
+  /// 主机收到 `agent_chat` 时同步 claim turn；对刚发出的 turn，resume 返回
+  /// `lost` 基本等价于「这一帧没到主机」。比等 120s 连接活性超时后才报
+  /// 「任务已丢失」快得多，也能把消息及时交回输入框重试。
+  static const Duration deliveryProbeDelay = Duration(milliseconds: 2500);
 
   /// 单帧丢失/握手竞态导致 resume_req 石沉大海时，在判死前重发 resume_req
   /// 的次数。hub 侧应答是幂等的（drop-prefix 去重 + known 超界收敛），重发
@@ -2374,6 +2391,21 @@ class PeerAgentClientService {
   @visibleForTesting
   Duration? debugResumeResponseTimeoutOverride;
 
+  /// Test seam: shrink the post-send delivery probe delay.
+  @visibleForTesting
+  Duration? debugDeliveryProbeDelayOverride;
+
+  /// Test seam: schedule the post-send delivery probe for a seeded turn.
+  @visibleForTesting
+  void debugScheduleDeliveryProbe(
+    String requestId, {
+    required String peerId,
+  }) {
+    final p = _pending[requestId];
+    if (p == null) return;
+    _scheduleDeliveryProbe(requestId, p, peerId);
+  }
+
   /// Test seam: run the reconnect-resume sequence for [peerId] directly,
   /// without a live connection event.
   @visibleForTesting
@@ -2913,6 +2945,7 @@ class PeerAgentClientService {
       'attachments=${attachmentRefs?.length ?? 0}',
       tag: 'PeerAgentClient',
     );
+    _scheduleDeliveryProbe(requestId, pending, peerId);
 
     final result = await _awaitTurnCompletion(requestId, pending, peerId);
     return PeerChatResult(
@@ -3245,7 +3278,23 @@ class PeerAgentClientService {
 
   // ── 控制消息处理 ───────────────────────────────────────────────────────
 
+  /// 收到主机帧 → 标记该 turn 已被主机接收，并取消待发的投递探活。
+  void _noteHostTurnSignal(Map<String, dynamic> data) {
+    final requestId = data['request_id'];
+    if (requestId is! String) return;
+    final p = _pending[requestId];
+    if (p == null || p.heardFromHost) return;
+    p.heardFromHost = true;
+    p.deliveryProbeTimer?.cancel();
+    p.deliveryProbeTimer = null;
+  }
+
   void _onControl(PeerControlEvent event) {
+    // 主机对某个在途 turn 发出的任何业务帧，都说明它收到了 agent_chat。
+    // resume 应答本身就是投递确认的答案，交给 _onTurnResumeResp 处理。
+    if (event.type != 'agent_turn_resume_resp') {
+      _noteHostTurnSignal(event.data);
+    }
     switch (event.type) {
       case 'agent_list_resp':
         unawaited(_onAgentList(event.peerId, event.data));
@@ -8715,6 +8764,59 @@ class PeerAgentClientService {
     }
   }
 
+  /// 发送成功后确认 `agent_chat` 真的到了主机。
+  ///
+  /// WebSocket / tunnel 的 send 只保证写进本地 socket，半开连接上会静默
+  /// 成功。主机在收到 `agent_chat` 时同步 claim turn，因此发出后一直没收到
+  /// 任何主机帧时，发一次 resume_req：streaming / done / error 说明主机有这
+  /// 轮对话，`lost` 说明这一帧没到。命中 `lost` 立刻失败，让控制器把消息交
+  /// 回输入框，而不是等连接活性超时（120s）后报一个含糊的「任务已丢失」。
+  void _scheduleDeliveryProbe(
+    String requestId,
+    _PendingRequest p,
+    String peerId,
+  ) {
+    p.deliveryProbeTimer?.cancel();
+    p.deliveryProbeTimer = Timer(_effectiveDeliveryProbeDelay, () {
+      p.deliveryProbeTimer = null;
+      if (p.completer.isCompleted || p.heardFromHost) return;
+      // 连接已断 / 已有续传探测在跑 → 交给断连恢复路径。
+      if (p.suspendedSince != null || p.resumeInFlight) return;
+      // 排队路径有 agent_queued + 20s ack 兜底；未 claim 前 resume 会误报 lost。
+      if (p.heldOnHost) return;
+
+      p.resumeInFlight = true;
+      p.resumePurpose = _ResumePurpose.deliveryProbe;
+      p.resumeBaseLength = p.receivedLength;
+      _log.info(
+        'delivery probe requestId=$requestId '
+        '(no host frame in ${_effectiveDeliveryProbeDelay.inMilliseconds}ms)',
+        tag: 'PeerApproval',
+      );
+      unawaited(_sendDeliveryProbe(peerId, requestId, p));
+    });
+  }
+
+  Future<void> _sendDeliveryProbe(
+    String peerId,
+    String requestId,
+    _PendingRequest p,
+  ) async {
+    final sent = await _sendResumeReq(peerId, requestId, p);
+    if (!sent) {
+      p.resumeInFlight = false;
+      p.resumePurpose = _ResumePurpose.none;
+      p.resumeBaseLength = null;
+      return;
+    }
+    // 只探测一次：旧 hub 不认识 resume_req，反复发只会制造噪声。
+    // 应答丢失时退回到原有的慢路径（活性超时 / 断连续传）。
+    _watchResumeResponse(peerId, requestId, 0, failOnExhausted: false);
+  }
+
+  Duration get _effectiveDeliveryProbeDelay =>
+      debugDeliveryProbeDelayOverride ?? deliveryProbeDelay;
+
   /// 连接仍存活但长时间无输出 —— 向 Hub 拉取 replay buffer 中可能遗漏的
   /// chunk/done（Hub↔ACP 瞬断、隧道丢帧等）。失败只记日志，下轮看门狗重试。
   Future<void> _probeStalledTurn(
@@ -8831,9 +8933,11 @@ class PeerAgentClientService {
         );
         return;
       }
-      if (!failOnExhausted && cur.resumePurpose == _ResumePurpose.stallProbe) {
+      if (!failOnExhausted) {
+        // 探测类请求（停滞补拉 / 投递确认）失败只复位，不判死 turn。
         _log.warning(
-          'stall probe requestId=$requestId timed out — will retry on next idle tick',
+          '${cur.resumePurpose.name} requestId=$requestId timed out — '
+          'not failing the turn',
           tag: 'PeerApproval',
         );
         cur.resumeInFlight = false;
@@ -8907,6 +9011,7 @@ class PeerAgentClientService {
     }
     final p = _pending[requestId];
     if (p == null) return;
+    final purpose = p.resumePurpose;
     p.resumeInFlight = false;
     p.resumePurpose = _ResumePurpose.none;
 
@@ -8961,6 +9066,24 @@ class PeerAgentClientService {
         break;
       case 'lost':
       default:
+        // 投递探活：主机不认识这轮 —— 且我们没收到过任何业务帧 ——
+        // 说明 agent_chat 这一帧压根没到主机（半开连接 / relay 丢帧）。
+        // 快速失败，把消息交回输入框重试；等 120s 活性超时只会更糟。
+        if (purpose == _ResumePurpose.deliveryProbe && !p.heardFromHost) {
+          _log.warning(
+            'agent_chat never reached hub requestId=$requestId '
+            '— fail fast for resend',
+            tag: 'PeerApproval',
+          );
+          // 极少数情况下主机已把消息排进内存队列、只是 agent_queued 丢了；
+          // 若它之后真的跑了，历史同步还能把回复补回对话。
+          _markReconcileNeeded(requestId);
+          _onError({
+            'request_id': requestId,
+            'message': '消息未能送达主机，请重新发送',
+          });
+          break;
+        }
         // hub 已不认识这个 turn（重启或 TTL 过期）——但结果可能已落进
         // 远端 transcript，登记 reconcile，由历史同步补回。
         _markReconcileNeeded(requestId);

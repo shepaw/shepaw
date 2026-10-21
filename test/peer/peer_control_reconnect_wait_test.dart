@@ -10,10 +10,81 @@ void main() {
 
   setUp(() {
     mgr.debugTrySendControlOverride = null;
+    mgr.debugCanSendNowOverride = null;
   });
 
   tearDown(() {
     mgr.debugTrySendControlOverride = null;
+    mgr.debugCanSendNowOverride = null;
+  });
+
+  test('发送前探活失败 → 进入等待重连并补发', () async {
+    var probeCalls = 0;
+    var sendCalls = 0;
+    var waiting = false;
+    mgr.debugCanSendNowOverride = (peerId) async {
+      probeCalls++;
+      return false; // 半开连接：探活失败
+    };
+    mgr.debugTrySendControlOverride = (peerId, json) async {
+      sendCalls++;
+      return sendCalls >= 2; // 重连后第二次发送成功
+    };
+
+    final sent = await mgr.sendControl(
+      'peer-1',
+      {'type': 'agent_chat'},
+      waitForReconnect: const Duration(seconds: 2),
+      onWaitingForReconnect: () => waiting = true,
+    );
+
+    expect(sent, isTrue);
+    expect(waiting, isTrue);
+    expect(probeCalls, 1, reason: '探活只做一次，不在重试循环里反复 ping');
+    expect(sendCalls, 2);
+  });
+
+  test('发送前探活通过 → 直接发送，不进入重连等待', () async {
+    var probeCalls = 0;
+    var sendCalls = 0;
+    var waiting = false;
+    mgr.debugCanSendNowOverride = (peerId) async {
+      probeCalls++;
+      return true;
+    };
+    mgr.debugTrySendControlOverride = (peerId, json) async {
+      sendCalls++;
+      return true;
+    };
+
+    final stopwatch = Stopwatch()..start();
+    final sent = await mgr.sendControl(
+      'peer-1',
+      {'type': 'agent_chat'},
+      waitForReconnect: const Duration(seconds: 2),
+      onWaitingForReconnect: () => waiting = true,
+    );
+    stopwatch.stop();
+
+    expect(sent, isTrue);
+    expect(waiting, isFalse);
+    expect(probeCalls, 1);
+    expect(sendCalls, 1);
+    expect(stopwatch.elapsed, lessThan(const Duration(milliseconds: 100)));
+  });
+
+  test('普通控制帧不探活，保持原有低延迟语义', () async {
+    var probeCalls = 0;
+    mgr.debugCanSendNowOverride = (peerId) async {
+      probeCalls++;
+      return false;
+    };
+    mgr.debugTrySendControlOverride = (peerId, json) async => false;
+
+    final sent = await mgr.sendControl('peer-1', {'type': 'agent_list_req'});
+
+    expect(sent, isFalse);
+    expect(probeCalls, 0);
   });
 
   test('连接恢复后补发成功，并回报等待状态', () async {

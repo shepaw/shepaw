@@ -99,6 +99,17 @@ class PeerConnectionManager {
   Future<bool> Function(String peerId, Map<String, dynamic> json)?
       debugTrySendControlOverride;
 
+  /// Test seam: 替代发送前的连接可用性检查（探活）。
+  @visibleForTesting
+  Future<bool> Function(String peerId)? debugCanSendNowOverride;
+
+  /// 发送前探活的超时。与 [resumeAll] 的探活保持一致。
+  static const Duration _preSendProbeTimeout = Duration(seconds: 3);
+
+  /// 最近这段时间收到过对端帧 → 连接已被证明是活的，不再额外探活。
+  /// 流式输出 / 审批往来期间每次发送都能命中，正常对话几乎零开销。
+  static const Duration _preSendFreshWindow = Duration(seconds: 3);
+
   // ── 事件流 ──────────────────────────────────────────────────────────
 
   /// 所有 peer 的消息流
@@ -437,10 +448,11 @@ class PeerConnectionManager {
   ///
   /// 返回是否成功发出。控制消息是请求/响应式的，默认离线不入队。
   ///
-  /// [waitForReconnect] 非空时（用户主动发消息的场景），失败会主动触发一次
-  /// 立即重连，并在这段时间内等待连接恢复后重发。切网后旧连接常先变成半开或
-  /// 直接断开，而 connectivity 监听的重连还没跑完；不等待的话用户刚发的一条
-  /// 消息会立刻看到「配对设备未连接」。
+  /// [waitForReconnect] 非空时（用户主动发消息的场景），发送前会先做一次
+  /// 连接可用性检查（最近没有入站帧时 ping 一次），失败会主动触发一次立即
+  /// 重连，并在这段时间内等待连接恢复后重发。切网后旧连接常先变成半开或直接
+  /// 断开，而 connectivity 监听的重连还没跑完；不等待的话用户刚发的一条消息
+  /// 会立刻看到「配对设备未连接」，而半开连接上则会静默丢帧。
   ///
   /// [abortWhen] 在等待期间轮询，返回 true 时放弃发送（用户已取消）。
   Future<bool> sendControl(
@@ -452,11 +464,21 @@ class PeerConnectionManager {
   }) async {
     if (abortWhen?.call() ?? false) return false;
     final canWait = waitForReconnect != null;
-    if (await _trySendControl(
-      peerId,
-      json,
-      dropStaleOnError: canWait,
-    )) {
+    // 用户主动发消息时先确认连接真的通：半开连接上 sink.add 会静默成功，
+    // 帧其实到不了对端（切网 / NAT 超时后最常见）。不探活的话消息看起来
+    // 发出去了，实际要等 120s 活性超时才会发现。
+    var canSendNow = true;
+    if (canWait) {
+      canSendNow = await _canSendNow(peerId);
+      // 探活最长 3s，期间用户可能已经点了停止。
+      if (abortWhen?.call() ?? false) return false;
+    }
+    if (canSendNow &&
+        await _trySendControl(
+          peerId,
+          json,
+          dropStaleOnError: canWait,
+        )) {
       return true;
     }
     if (!canWait) return false;
@@ -476,6 +498,39 @@ class PeerConnectionManager {
       }
       _ensureReconnectScheduled(peerId);
     }
+    return false;
+  }
+
+  /// 发送前的连接可用性检查。
+  ///
+  /// 半开连接（切网 / NAT 超时 / 对端被冻结）不会触发 onDone，`state` 仍是
+  /// connected，`sink.add` 也照样成功 —— 但帧到不了对端。最近 3s 内收到过
+  /// 对端帧时直接放行；否则 ping 一次，等对端任意入站帧。探活失败就丢掉这条
+  /// 连接，让 [sendControl] 走既有的「立即重连 + 等待补发」路径。
+  Future<bool> _canSendNow(String peerId) async {
+    final override = debugCanSendNowOverride;
+    if (override != null) return override(peerId);
+    // 单测用 debugTrySendControlOverride 直接模拟发送，不触发真实探活。
+    if (debugTrySendControlOverride != null) return true;
+
+    final conn = _connections[peerId];
+    if (conn == null || conn.state != PeerConnectionState.connected) {
+      return false;
+    }
+    final received = conn.lastReceivedAt;
+    if (received != null &&
+        DateTime.now().difference(received) < _preSendFreshWindow) {
+      return true;
+    }
+
+    final alive = await conn.probeLiveness(timeout: _preSendProbeTimeout);
+    if (alive) return true;
+
+    _log.warning(
+      'pre-send liveness probe failed for $peerId — dropping stale connection',
+      tag: _tag,
+    );
+    await _dropStaleConnection(peerId, conn);
     return false;
   }
 

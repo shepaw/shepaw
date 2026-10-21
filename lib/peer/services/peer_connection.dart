@@ -68,6 +68,10 @@ class PeerConnection {
   /// 连接是否已被关闭（被新的入站连接替换或主动断开）
   bool get isClosed => _closed;
 
+  /// 最近一次收到对端任意帧（含 pong）的时间；新建连接为 null。
+  /// 用于发送前判断「连接是否刚被证明是活的」。
+  DateTime? get lastReceivedAt => _lastReceivedAt;
+
   /// 发送队列锁 — 保证 encrypt + send 的原子性（防止 nonce 乱序）
   Future<void> _sendLock = Future.value();
 
