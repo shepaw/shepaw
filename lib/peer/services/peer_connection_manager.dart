@@ -80,6 +80,13 @@ class PeerConnectionManager {
   /// 重连尝试次数（peerId → count）
   final Map<String, int> _reconnectAttempts = {};
 
+  /// 被主机以 4403 明确拒绝过的设备。
+  ///
+  /// 两边存的静态公钥对不上，重连多少次都不会成功；继续每 8 秒重试一次
+  /// 只会刷日志、耗电，还会让用户以为「网络不好」。记下来后只接受用户
+  /// 主动重试（可能刚重新配对过），不做后台自动重连。
+  final Set<String> _keyMismatchPeers = {};
+
   /// 入站连接监听（Channel 隧道）
   StreamSubscription? _bridgeSub;
 
@@ -178,7 +185,8 @@ class PeerConnectionManager {
       }
     }
 
-    _log.info('PeerConnectionManager started, ${peers.length} peers loaded', tag: _tag);
+    _log.info('PeerConnectionManager started, ${peers.length} peers loaded',
+        tag: _tag);
   }
 
   /// 停止管理器：断开所有连接
@@ -343,7 +351,9 @@ class PeerConnectionManager {
 
     final conn = _connections[peer.id];
     if (conn == null || conn.state != PeerConnectionState.connected) {
-      final message = '无法连接到 ${peer.deviceName}，请确认对方在线后重试';
+      final message = _keyMismatchPeers.contains(peer.id)
+          ? _keyMismatchMessage(peer)
+          : '无法连接到 ${peer.deviceName}，请确认对方在线后重试';
       _eventController.add(PeerConnectionEvent(
         peerId: peer.id,
         type: PeerConnectionEventType.error,
@@ -396,12 +406,14 @@ class PeerConnectionManager {
     if (conn != null && conn.state == PeerConnectionState.connected) {
       try {
         await conn.sendMessage(message);
-        await _storage.updateMessageDelivery(message.id, PeerMessageDelivery.sent);
+        await _storage.updateMessageDelivery(
+            message.id, PeerMessageDelivery.sent);
         _emitLocalDelivery(message.id, 'sent');
       } catch (e) {
         // 发送失败（如 WiFi 刚断、连接半开）：保留为待发队列，主动重连后补发
         _log.warning('sendMessage failed, queuing: $e', tag: _tag);
-        await _storage.updateMessageDelivery(message.id, PeerMessageDelivery.pending);
+        await _storage.updateMessageDelivery(
+            message.id, PeerMessageDelivery.pending);
         PeerDeliveryTraceService.instance.recordOutboundSend(
           message.id,
           status: 'queued_offline',
@@ -541,6 +553,7 @@ class PeerConnectionManager {
   /// 需要在这里补一次；但已有退避中的重试时不要重置退避。
   void _ensureReconnectScheduled(String peerId) {
     if (!_running) return;
+    if (_keyMismatchPeers.contains(peerId)) return;
     if (_connecting.contains(peerId)) return;
     final attempts = _reconnectAttempts[peerId] ?? 0;
     if (attempts > 0 && _reconnectTimers.containsKey(peerId)) return;
@@ -609,7 +622,8 @@ class PeerConnectionManager {
       .toList();
 
   /// 标记消息已读并发送已读回执给对方
-  Future<void> markMessagesAsRead(String peerId, List<String> messageIds) async {
+  Future<void> markMessagesAsRead(
+      String peerId, List<String> messageIds) async {
     if (messageIds.isEmpty) return;
     final conn = _connections[peerId];
     if (conn != null && conn.state == PeerConnectionState.connected) {
@@ -635,6 +649,7 @@ class PeerConnectionManager {
     _reconnectTimers.remove(peerId)?.cancel();
     _fallbackTimers.remove(peerId)?.cancel();
     _reconnectAttempts.remove(peerId);
+    _keyMismatchPeers.remove(peerId);
     _connecting.remove(peerId);
     _log.info('Peer removed: $peerId', tag: _tag);
     notifyPeerListChanged();
@@ -662,8 +677,10 @@ class PeerConnectionManager {
     _log.info('Incoming peer connection, stream=${stream.streamId}', tag: _tag);
 
     // 如果 PeerPairingService 正在配对中，由它处理
-    if (PeerPairingService.instance.state == PairingSessionState.waitingForScanner) {
-      _log.debug('Pairing in progress, delegating to PairingService', tag: _tag);
+    if (PeerPairingService.instance.state ==
+        PairingSessionState.waitingForScanner) {
+      _log.debug('Pairing in progress, delegating to PairingService',
+          tag: _tag);
       return;
     }
 
@@ -729,7 +746,8 @@ class PeerConnectionManager {
       },
       onDone: () {
         if (!firstMsgCompleter.isCompleted) {
-          firstMsgCompleter.completeError(StateError('Stream closed before msg1'));
+          firstMsgCompleter
+              .completeError(StateError('Stream closed before msg1'));
         }
         relayCtrl.close();
       },
@@ -738,7 +756,8 @@ class PeerConnectionManager {
     // 等待 msg1
     Uint8List msg1Raw;
     try {
-      msg1Raw = await firstMsgCompleter.future.timeout(const Duration(seconds: 15));
+      msg1Raw =
+          await firstMsgCompleter.future.timeout(const Duration(seconds: 15));
     } catch (e) {
       noiseSession.close();
       await sub.cancel();
@@ -767,7 +786,8 @@ class PeerConnectionManager {
     }
 
     if (matchedPeer == null || matchedPeer.isBlocked) {
-      _log.warning('Incoming connection from unknown/blocked peer, rejecting', tag: _tag);
+      _log.warning('Incoming connection from unknown/blocked peer, rejecting',
+          tag: _tag);
       noiseSession.close();
       await sub.cancel();
       stream.close();
@@ -810,9 +830,7 @@ class PeerConnectionManager {
     // 只刷新 host，保留已有 port/path——本机 Nexuspouch 等节点端口 ≠ 18792，
     // 若强行写成 defaultPort 会把端点学成 App 自己的 PeerLocalServer。
     final learnedAddr = stream.remoteAddress;
-    if (cliLoopback == null &&
-        learnedAddr != null &&
-        learnedAddr.isNotEmpty) {
+    if (cliLoopback == null && learnedAddr != null && learnedAddr.isNotEmpty) {
       final localServer = PeerLocalServer.instance;
       final learnedEndpoint = learnLocalEndpointFromRemoteAddress(
         remoteAddress: learnedAddr,
@@ -992,8 +1010,8 @@ class PeerConnectionManager {
       }),
       conn.binary.listen((bytes) {
         if (!_binaryController.isClosed) {
-          _binaryController.add(
-              PeerBinaryEvent(peerId: peer.id, plaintext: bytes));
+          _binaryController
+              .add(PeerBinaryEvent(peerId: peer.id, plaintext: bytes));
         }
       }),
       conn.stateChanges.listen((state) {
@@ -1011,6 +1029,7 @@ class PeerConnectionManager {
   /// 连接建立后的副作用：重置重连状态、广播 connected 事件、更新 lastSeen、补发离线消息。
   void _onConnected(PairedPeer peer) {
     final retries = _reconnectAttempts.remove(peer.id) ?? 0;
+    _keyMismatchPeers.remove(peer.id);
     // 连接已建立，取消遗留的重连/回退定时器，避免再触发多余的 _doConnect
     // 而产生重复连接（glare）。
     _reconnectTimers[peer.id]?.cancel();
@@ -1039,10 +1058,39 @@ class PeerConnectionManager {
       peerId: peer.id,
       type: PeerConnectionEventType.disconnected,
     ));
+    if (_connections[peer.id]?.lastCloseCode == WsClose.fingerprintMismatch) {
+      _onKeyMismatch(peer);
+      return;
+    }
     if (_running) {
       _scheduleReconnect(peer);
     }
   }
+
+  /// 主机回 4403：两边存的密钥对不上，自动重连没有意义。
+  ///
+  /// 之前这种情况会无限重连（每 8 秒一次，能刷几千条 decrypt error 日志），
+  /// 用户只看到「一直连不上」。现在停下来，并把「重新配对」这个真正的
+  /// 解决办法明确告诉用户。
+  void _onKeyMismatch(PairedPeer peer) {
+    _reconnectAttempts.remove(peer.id);
+    _reconnectTimers.remove(peer.id)?.cancel();
+    _fallbackTimers.remove(peer.id)?.cancel();
+    if (!_keyMismatchPeers.add(peer.id)) return;
+    _log.warning(
+      'Peer ${peer.deviceName} rejected the handshake (key mismatch); '
+      'stopping auto reconnect until re-paired or retried manually',
+      tag: _tag,
+    );
+    _eventController.add(PeerConnectionEvent(
+      peerId: peer.id,
+      type: PeerConnectionEventType.error,
+      data: _keyMismatchMessage(peer),
+    ));
+  }
+
+  String _keyMismatchMessage(PairedPeer peer) =>
+      '无法连接 ${peer.deviceName}：设备密钥已失效，请重新配对';
 
   /// 取消并移除指定 peer 的连接订阅
   void _cancelConnectionSubs(String peerId) {
@@ -1154,7 +1202,8 @@ class PeerConnectionManager {
     try {
       final cfg = await ChannelTunnelService.instance.loadConfig();
       if (cfg == null) return false;
-      if (ChannelTunnelService.instance.currentStatus != TunnelStatus.connected) {
+      if (ChannelTunnelService.instance.currentStatus !=
+          TunnelStatus.connected) {
         return false;
       }
       return ChannelTunnelService.instance.getPublicEndpoint(cfg) != null;
@@ -1211,8 +1260,22 @@ class PeerConnectionManager {
     // 防重入：已有正在进行的连接尝试时直接返回，避免把在连的连接掐掉重来。
     // 该尝试结束后若失败会自行调度重连，无需在此处重复发起。
     if (_connecting.contains(peer.id)) {
-      _log.debug('Connect already in progress for ${peer.deviceName}, skip', tag: _tag);
+      _log.debug('Connect already in progress for ${peer.deviceName}, skip',
+          tag: _tag);
       return;
+    }
+
+    // 已被 4403 拒过的设备不再后台自动重连（见 [_onKeyMismatch]）；
+    // 用户主动点重试时给一次机会——可能刚在主机上重新配过对。
+    if (_keyMismatchPeers.contains(peer.id)) {
+      if (connectionTraceTrigger != 'user') {
+        _log.debug(
+          'Skip auto reconnect to ${peer.deviceName}: last attempt was rejected (key mismatch)',
+          tag: _tag,
+        );
+        return;
+      }
+      _keyMismatchPeers.remove(peer.id);
     }
 
     // 可达性感知的 tie-break：
@@ -1229,7 +1292,8 @@ class PeerConnectionManager {
         shouldInitiate = !iAmReachable; // 我不可达 → 我发起
       } else {
         // 可达性相同 → 用指纹收敛规则（与 glare 去重同一把尺）
-        shouldInitiate = _isDesignatedInitiator(myFingerprint, peer.fingerprint);
+        shouldInitiate =
+            _isDesignatedInitiator(myFingerprint, peer.fingerprint);
       }
 
       if (!shouldInitiate) {
@@ -1372,7 +1436,8 @@ class PeerConnectionManager {
             success: true,
             endpoint: peer.channelEndpoint,
           );
-          _log.debug('Connected to ${peer.deviceName} via channel relay', tag: _tag);
+          _log.debug('Connected to ${peer.deviceName} via channel relay',
+              tag: _tag);
         } catch (e) {
           PeerDeliveryTraceService.instance.recordTransportAttempt(
             peerId: peer.id,
@@ -1381,7 +1446,8 @@ class PeerConnectionManager {
             endpoint: peer.channelEndpoint,
             error: e.toString(),
           );
-          _log.debug('Channel connection to ${peer.deviceName} failed: $e', tag: _tag);
+          _log.debug('Channel connection to ${peer.deviceName} failed: $e',
+              tag: _tag);
         }
       }
 
@@ -1399,7 +1465,6 @@ class PeerConnectionManager {
           if (peer.localEndpoint != null) 'local_endpoint': peer.localEndpoint!,
         },
       );
-
     } catch (e) {
       _logConnectFailure(peer, e);
       PeerDeliveryTraceService.instance.recordConnectionFailure(
@@ -1414,7 +1479,11 @@ class PeerConnectionManager {
       }
       // 重连（但如果已有活跃连接则不重连）
       final current = _connections[peer.id];
-      if (_running && (current == null || current.state != PeerConnectionState.connected)) {
+      if (conn?.lastCloseCode == WsClose.fingerprintMismatch) {
+        // 密钥对不上：重试不可能成功，停下来等用户重新配对。
+        _onKeyMismatch(peer);
+      } else if (_running &&
+          (current == null || current.state != PeerConnectionState.connected)) {
         _scheduleReconnect(peer);
       }
     } finally {
@@ -1442,11 +1511,14 @@ class PeerConnectionManager {
       // 已连接 / 正在握手（含正在接受入站）则无需回退，避免与对端发起方
       // 同时建连产生重复连接（glare）。
       final current = _connections[peer.id];
-      if (current != null && current.state != PeerConnectionState.disconnected) {
+      if (current != null &&
+          current.state != PeerConnectionState.disconnected) {
         return;
       }
       if (_connecting.contains(peer.id)) return;
-      _log.debug('Fallback connect: initiating connection to ${peer.deviceName}', tag: _tag);
+      _log.debug(
+          'Fallback connect: initiating connection to ${peer.deviceName}',
+          tag: _tag);
       await _doConnect(peer, ignoreTieBreak: true);
     });
   }
@@ -1454,11 +1526,14 @@ class PeerConnectionManager {
   /// 调度重连
   void _scheduleReconnect(PairedPeer peer, {Duration? delay}) {
     _reconnectTimers[peer.id]?.cancel();
+    // 4403 之后自动重连不会有结果，只等用户重新配对或手动重试。
+    if (_keyMismatchPeers.contains(peer.id)) return;
 
     final attempts = _reconnectAttempts[peer.id] ?? 0;
 
     // 指数退避: 2s, 4s, 8s, 16s, 30s max（不设上限次数，持续重试）
-    final backoffSeconds = delay?.inSeconds ?? (2 * (1 << attempts)).clamp(2, 30);
+    final backoffSeconds =
+        delay?.inSeconds ?? (2 * (1 << attempts)).clamp(2, 30);
     final actualDelay = delay ?? Duration(seconds: backoffSeconds);
 
     _reconnectTimers[peer.id] = Timer(actualDelay, () async {
@@ -1487,7 +1562,8 @@ class PeerConnectionManager {
     final pending = await _storage.getPendingMessages(peerId);
     if (pending.isEmpty) return;
 
-    _log.info('Flushing ${pending.length} pending messages to $peerId', tag: _tag);
+    _log.info('Flushing ${pending.length} pending messages to $peerId',
+        tag: _tag);
     final conn = _connections[peerId];
     if (conn == null || conn.state != PeerConnectionState.connected) return;
 

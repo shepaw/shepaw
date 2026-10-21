@@ -64,9 +64,16 @@ class PeerConnection {
   DateTime? _lastActivity;
   DateTime? _lastReceivedAt;
   bool _closed = false;
+  int? _lastCloseCode;
 
   /// 连接是否已被关闭（被新的入站连接替换或主动断开）
   bool get isClosed => _closed;
+
+  /// 最近一次被对端关闭时的 WebSocket 关闭码。
+  ///
+  /// 主机明确判定「密钥对不上」时会回 4403；这类失败重试多少次都不会成功，
+  /// 上层据此停止自动重连并提示重新配对。
+  int? get lastCloseCode => _lastCloseCode;
 
   /// 最近一次收到对端任意帧（含 pong）的时间；新建连接为 null。
   /// 用于发送前判断「连接是否刚被证明是活的」。
@@ -291,6 +298,7 @@ class PeerConnection {
     Duration handshakeTimeout = const Duration(seconds: 15),
   }) async {
     if (_closed) return;
+    _lastCloseCode = null;
     _setState(PeerConnectionState.connecting);
 
     // 清理上一次尝试遗留的订阅 / socket / 会话。connectViaWebSocket 会在同一个
@@ -340,6 +348,7 @@ class PeerConnection {
           _setState(PeerConnectionState.disconnected);
         },
         onDone: () {
+          _lastCloseCode = ioSocket.closeCode;
           if (!handshakeCompleter.isCompleted) {
             handshakeCompleter
                 .completeError(StateError('WebSocket closed during handshake'));
