@@ -2,10 +2,14 @@ import 'package:flutter/material.dart';
 import 'logger_service.dart';
 
 /// 顶部 Toast 通知 Widget
+///
+/// 视觉上是一张中性的悬浮卡片：语义色只用在图标底片、细描边和
+/// 底部倒计时线上，不再整条铺满高饱和色块，深浅色模式都不用改调用方。
 class _TopToastWidget extends StatefulWidget {
   final IconData icon;
   final Color color;
   final String message;
+  final Duration duration;
   final VoidCallback onDismiss;
   final String? actionLabel;
   final VoidCallback? onAction;
@@ -15,6 +19,7 @@ class _TopToastWidget extends StatefulWidget {
     required this.icon,
     required this.color,
     required this.message,
+    required this.duration,
     required this.onDismiss,
     this.actionLabel,
     this.onAction,
@@ -25,100 +30,178 @@ class _TopToastWidget extends StatefulWidget {
 }
 
 class _TopToastWidgetState extends State<_TopToastWidget>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final AnimationController _controller;
+  late final AnimationController _progress;
   late final Animation<Offset> _slideAnim;
   late final Animation<double> _fadeAnim;
+  late final Animation<double> _scaleAnim;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 260),
     );
     _slideAnim = Tween<Offset>(
-      begin: const Offset(0, -1),
+      begin: const Offset(0, -0.35),
       end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
     _fadeAnim = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+    _scaleAnim = Tween<double>(begin: 0.97, end: 1).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+    );
     _controller.forward();
+
+    // 底部细线吃掉 duration 走完，暗示「它会自己消失」。
+    _progress = AnimationController(vsync: this, duration: widget.duration)
+      ..forward();
   }
 
   @override
   void dispose() {
     _controller.dispose();
+    _progress.dispose();
     super.dispose();
   }
 
+  bool _dismissing = false;
+
   Future<void> dismiss() async {
+    // 自动收起与用户点关闭可能同时触发，避免 remove 被执行两次。
+    if (_dismissing) return;
+    _dismissing = true;
+    _progress.stop();
     await _controller.reverse();
     widget.onDismiss();
   }
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = scheme.brightness == Brightness.dark;
+    // 深色底上把语义色提亮一档，避免深蓝/墨绿贴在深色卡片上看不清。
+    final accent =
+        isDark ? Color.lerp(widget.color, Colors.white, 0.3)! : widget.color;
+    final surface = isDark ? scheme.surfaceContainerHigh : scheme.surface;
+    final textColor = scheme.onSurface;
+    final secondaryColor = scheme.onSurfaceVariant;
+
     return SlideTransition(
       position: _slideAnim,
       child: FadeTransition(
         opacity: _fadeAnim,
-        child: Material(
-          color: Colors.transparent,
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: widget.color,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.2),
-                  blurRadius: 8,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Icon(widget.icon, color: Colors.white, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    widget.message,
-                    style: const TextStyle(color: Colors.white, fontSize: 14),
+        child: ScaleTransition(
+          scale: _scaleAnim,
+          alignment: Alignment.topCenter,
+          child: Semantics(
+            container: true,
+            liveRegion: true,
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                constraints: const BoxConstraints(maxWidth: 480),
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  color: surface,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: accent.withValues(alpha: isDark ? 0.32 : 0.22),
                   ),
+                  boxShadow: [
+                    BoxShadow(
+                      color:
+                          Colors.black.withValues(alpha: isDark ? 0.45 : 0.12),
+                      blurRadius: 20,
+                      spreadRadius: -4,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
                 ),
-                if (widget.actionLabel != null)
-                  GestureDetector(
-                    onTap: () {
-                      widget.onAction?.call();
-                      dismiss();
-                    },
-                    child: Container(
-                      margin: const EdgeInsets.only(left: 8),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.25),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        widget.actionLabel!,
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 30,
+                            height: 30,
+                            decoration: BoxDecoration(
+                              color: accent.withValues(
+                                  alpha: isDark ? 0.22 : 0.12),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(widget.icon, color: accent, size: 18),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              widget.message,
+                              style: TextStyle(
+                                color: textColor,
+                                fontSize: 14,
+                                height: 1.35,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                          if (widget.actionLabel != null) ...[
+                            const SizedBox(width: 4),
+                            InkWell(
+                              borderRadius: BorderRadius.circular(8),
+                              onTap: () {
+                                widget.onAction?.call();
+                                dismiss();
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 6),
+                                child: Text(
+                                  widget.actionLabel!,
+                                  style: TextStyle(
+                                    color: accent,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                          IconButton(
+                            onPressed: dismiss,
+                            icon: const Icon(Icons.close_rounded, size: 18),
+                            color: secondaryColor,
+                            tooltip: MaterialLocalizations.of(context)
+                                .closeButtonTooltip,
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                                minWidth: 32, minHeight: 32),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                GestureDetector(
-                  onTap: dismiss,
-                  child: const Padding(
-                    padding: EdgeInsets.only(left: 8),
-                    child: Icon(Icons.close, color: Colors.white, size: 18),
-                  ),
+                    // 倒计时线：走完即自动收起，比纯色条更耐看也更有信息量。
+                    AnimatedBuilder(
+                      animation: _progress,
+                      builder: (_, __) => Align(
+                        alignment: Alignment.centerLeft,
+                        child: FractionallySizedBox(
+                          widthFactor: 1 - _progress.value,
+                          child: Container(
+                            height: 2,
+                            color: accent.withValues(alpha: 0.6),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ),
@@ -153,6 +236,9 @@ class _TopToastManager {
     // 用它会把 toast 定在屏幕最上沿，状态栏挡住上半截。这里取视图真实顶距。
     final view = View.of(context);
     final topPadding = view.viewPadding.top / view.devicePixelRatio;
+    // 再让出 AppBar 的高度：toast 原先贴在状态栏下沿，正好盖住标题栏和
+    // 左上角返回键，用户想退出时点不到。放到标题栏下方、内容区顶部。
+    final top = topPadding + kToolbarHeight + 8;
 
     // Fresh key every time — guarantees uniqueness in the tree.
     final key = GlobalKey<_TopToastWidgetState>();
@@ -160,20 +246,24 @@ class _TopToastManager {
     late OverlayEntry entry;
     entry = OverlayEntry(
       builder: (ctx) => Positioned(
-        top: topPadding + 12,
+        top: top,
         left: 0,
         right: 0,
-        child: _TopToastWidget(
-          key: key,
-          icon: icon,
-          color: color,
-          message: message,
-          actionLabel: actionLabel,
-          onAction: onAction,
-          onDismiss: () {
-            entry.remove();
-            if (_current == entry) _current = null;
-          },
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: _TopToastWidget(
+            key: key,
+            icon: icon,
+            color: color,
+            message: message,
+            duration: duration,
+            actionLabel: actionLabel,
+            onAction: onAction,
+            onDismiss: () {
+              entry.remove();
+              if (_current == entry) _current = null;
+            },
+          ),
         ),
       ),
     );
