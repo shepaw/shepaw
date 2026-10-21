@@ -382,8 +382,7 @@ class PeerRemoteSession {
       }
     }
     final readOnly = json['read_only'] == true || json['archived'] == true;
-    final isRead =
-        json['is_read'] == true || json['is_read'] == 1 || readOnly;
+    final isRead = json['is_read'] == true || json['is_read'] == 1 || readOnly;
     final rawSource = (json['source'] as String?)?.trim();
     return PeerRemoteSession(
       sessionId: id,
@@ -605,6 +604,7 @@ bool peerHistoryRowNeedsWrite({
   required PeerHistoryMessage message,
   required Map<String, dynamic>? existingRow,
   required DateTime createdAt,
+
   /// 本地还有 mark_read 没补发出去时为 true，见下面已读那条的说明。
   bool keepLocalRead = false,
 }) {
@@ -931,16 +931,20 @@ String _rowClientDeviceKey(Map<String, dynamic> row) {
     } catch (_) {}
   }
   if (decoded == null) return '';
-  final name = (decoded[ClientDeviceInfo.deviceNameMetaKey] as String?)?.trim() ?? '';
-  final form = (decoded[ClientDeviceInfo.deviceFormMetaKey] as String?)?.trim() ?? '';
+  final name =
+      (decoded[ClientDeviceInfo.deviceNameMetaKey] as String?)?.trim() ?? '';
+  final form =
+      (decoded[ClientDeviceInfo.deviceFormMetaKey] as String?)?.trim() ?? '';
   return '$form|$name';
 }
 
 String _messageClientDeviceKey(PeerHistoryMessage m) {
   final meta = m.metadata;
   if (meta == null) return '';
-  final name = (meta[ClientDeviceInfo.deviceNameMetaKey] as String?)?.trim() ?? '';
-  final form = (meta[ClientDeviceInfo.deviceFormMetaKey] as String?)?.trim() ?? '';
+  final name =
+      (meta[ClientDeviceInfo.deviceNameMetaKey] as String?)?.trim() ?? '';
+  final form =
+      (meta[ClientDeviceInfo.deviceFormMetaKey] as String?)?.trim() ?? '';
   return '$form|$name';
 }
 
@@ -2056,6 +2060,10 @@ class PeerAgentClientService {
   /// 有界：超过 50 条时淘汰最旧。
   final Set<String> _reconcileNeeded = <String>{};
 
+  /// 主机补发的终态帧只处理一次：每次重连都会重发同一批，
+  /// 不去重会让聊天页反复拉历史。
+  final Set<String> _orphanTerminalSeen = <String>{};
+
   /// 重连后需要做一次历史 reconcile 的「peerId::remoteAgentId」事件。
   /// 聊天页订阅后在 consent 允许时触发增量同步。
   final _reconcileController = StreamController<String>.broadcast();
@@ -2820,6 +2828,7 @@ class PeerAgentClientService {
 
     /// Fired once [requestId] is allocated, before the control frame is sent.
     void Function(String requestId)? onRequestStarted,
+
     /// 发送时连接不可用 → 等待重连的进度回调：`(1, 1)` 进入等待，
     /// `(0, 0)` 等待结束（连上并发出，或最终失败）。复用 ACP 的重连提示。
     void Function(int attempt, int total)? onReconnecting,
@@ -2830,9 +2839,11 @@ class PeerAgentClientService {
     String? userId,
     String? userName,
     String? agentName,
+
     /// 这条引用回复的是哪一条（本机落库 id）。主机存裸 id 并在事件与历史里
     /// 回放，换台设备也能指回同一条。
     String? replyToId,
+
     /// 引用时选中的那段文字，被引用的那条不在本地时靠它兜底。
     String? replyQuoteText,
   }) async {
@@ -2980,8 +2991,10 @@ class PeerAgentClientService {
     String? agentName,
     String? userMessageId,
     List<AttachmentData>? attachments,
+
     /// 这条引用回复的是哪一条（本机落库 id）；上行只发裸 id。
     String? replyToId,
+
     /// 引用时选中的那段文字。
     String? replyQuoteText,
   }) async {
@@ -3233,6 +3246,34 @@ class PeerAgentClientService {
     }
   }
 
+  /// 主机的补发帧到达时，本机已经找不到这条 turn 的在途记录。
+  ///
+  /// 不能把 `content` 直接当新消息插入：同一条回复在远端历史里已经有了，
+  /// 直接插会重复；而且没有 channelId 也落不到正确的会话。这里只发一次
+  /// 历史对账信号，由聊天页从远端 transcript 补齐。
+  void _reconcileOrphanTerminal(
+    String requestId,
+    Map<String, dynamic> data,
+    String? fromPeerId,
+  ) {
+    final status = data['status'] as String? ?? '';
+    if (status != 'done' && status != 'error') return;
+    final remoteAgentId = (data['agent_id'] as String? ?? '').trim();
+    final peerId = fromPeerId ?? _requestAgents[requestId]?.peerId;
+    if (peerId == null || remoteAgentId.isEmpty) return;
+    if (!_orphanTerminalSeen.add(requestId)) return;
+    if (_orphanTerminalSeen.length > 200) {
+      _orphanTerminalSeen.remove(_orphanTerminalSeen.first);
+    }
+    final key = '$peerId::$remoteAgentId';
+    _log.info(
+      'orphan terminal frame requestId=$requestId status=$status '
+      '→ request history reconcile for $key',
+      tag: _tag,
+    );
+    _reconcileController.add(key);
+  }
+
   /// 重连成功后把该 peer 的 reconcile 提示发出去（聊天页据此触发增量同步）。
   void _flushReconcileHints(String peerId) {
     if (_reconcileNeeded.isEmpty) return;
@@ -3333,7 +3374,7 @@ class PeerAgentClientService {
         PouchPairRelay.instance.onResponse(event.data);
         break;
       case 'agent_turn_resume_resp':
-        _onTurnResumeResp(event.data);
+        _onTurnResumeResp(event.data, fromPeerId: event.peerId);
         break;
       case 'agent_turn_upstream_reconnecting':
         _onUpstreamReconnecting(event.data);
@@ -3613,7 +3654,8 @@ class PeerAgentClientService {
       _pendingHostSessionOpen.remove(requestId);
       return false;
     }
-    final data = await _hostEmptyAck(_pendingHostSessionOpen, requestId, completer);
+    final data =
+        await _hostEmptyAck(_pendingHostSessionOpen, requestId, completer);
     if (data['ok'] != true) return false;
     ChatService().forgetFreshLocalChannel(channelId);
     _recentlyOpenedHostSessions[channelId] = DateTime.now();
@@ -3658,7 +3700,8 @@ class PeerAgentClientService {
       _pendingHostSessionDrop.remove(requestId);
       return HostEmptySessionResult.failed;
     }
-    final data = await _hostEmptyAck(_pendingHostSessionDrop, requestId, completer);
+    final data =
+        await _hostEmptyAck(_pendingHostSessionDrop, requestId, completer);
     if (data['ok'] == true) {
       return data['removed'] == true
           ? HostEmptySessionResult.removed
@@ -7469,7 +7512,8 @@ class PeerAgentClientService {
     await _persistFormDeferred(approvalId, requestId, peerId);
     _tryCompleteBufferedDone(requestId);
     if (!_formDeferredController.isClosed) {
-      _formDeferredController.add((approvalId: approvalId, requestId: requestId));
+      _formDeferredController
+          .add((approvalId: approvalId, requestId: requestId));
     }
     // 独立卡片一出现就表示旧回合已经结束：不能继续挂着等用户回答。主机还要
     // 等引擎吃完 session/cancel（最多 cancel_grace），真正的 agent_done 会晚
@@ -7530,8 +7574,7 @@ class PeerAgentClientService {
         ? rawFormId
         : (peerForm is Map ? peerForm['approval_id']?.toString() ?? '' : '');
     final requestId = form['request_id']?.toString() ?? '';
-    final peerId =
-        peerForm is Map ? peerForm['peer_id']?.toString() ?? '' : '';
+    final peerId = peerForm is Map ? peerForm['peer_id']?.toString() ?? '' : '';
     final remoteAgentId =
         _pending[requestId]?.remoteAgentId ?? form['agent_id']?.toString();
     if (approvalId.isEmpty || requestId.isEmpty || peerId.isEmpty) {
@@ -7747,8 +7790,7 @@ class PeerAgentClientService {
       interactionType: interactionType,
       data: {
         ...data,
-        if (interactionType == 'form')
-          'form_id': data['form_id'] ?? cardId,
+        if (interactionType == 'form') 'form_id': data['form_id'] ?? cardId,
         if (interactionType == 'action_confirmation')
           'confirmation_id': data['confirmation_id'] ?? cardId,
       },
@@ -8090,8 +8132,7 @@ class PeerAgentClientService {
       // 本机没发起过这一轮时 `_requestAgents` 是空的（重启 / 别的设备发起的
       // 回合），帧里的 `agent_id` 就是远端 agent id，靠它仍能找到归属。
       final owner = _requestAgents[requestId];
-      final remoteAgentId =
-          owner?.remoteAgentId ?? data['agent_id'] as String?;
+      final remoteAgentId = owner?.remoteAgentId ?? data['agent_id'] as String?;
       final hostChannelId = _frameChannelId(data);
       if (remoteAgentId == null || remoteAgentId.isEmpty) {
         _log.warning(
@@ -9050,7 +9091,7 @@ class PeerAgentClientService {
 
   /// 处理 agent_turn_resume_resp：先经 drop-prefix 去重（重连后 live chunk
   /// 可能先于 resp 到达，与 delta 前缀重叠），再按 status 走既有完成路径。
-  void _onTurnResumeResp(Map<String, dynamic> data) {
+  void _onTurnResumeResp(Map<String, dynamic> data, {String? fromPeerId}) {
     final requestId = data['request_id'] as String?;
     if (requestId == null) return;
     // 先补交互卡。帧在生成时只发过一次，断线那一下就丢了，续传带回的这张
@@ -9065,7 +9106,14 @@ class PeerAgentClientService {
       );
     }
     final p = _pending[requestId];
-    if (p == null) return;
+    if (p == null) {
+      // 主机重连后主动补发的终态帧。App 这边的在途记录可能已经清掉
+      // （进程重启 / 超时清理 / 聊天页关掉），不能再走 _finishPending，
+      // 否则没有会话可落。只标记一次历史对账，让聊天页从远端把这条
+      // 回复拉回来，避免把同一段内容重复插进本地库。
+      _reconcileOrphanTerminal(requestId, data, fromPeerId);
+      return;
+    }
     final purpose = p.resumePurpose;
     p.resumeInFlight = false;
     p.resumePurpose = _ResumePurpose.none;
