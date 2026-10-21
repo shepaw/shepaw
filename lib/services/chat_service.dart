@@ -3599,12 +3599,17 @@ class ChatService {
     required String channelId,
     required String userId,
     String? sourceSheChannelId,
-  }) =>
-      _groupSessionService.createNewGroupSession(
-        channelId: channelId,
-        userId: userId,
-        sourceSheChannelId: sourceSheChannelId,
-      );
+  }) async {
+    final newChannelId = await _groupSessionService.createNewGroupSession(
+      channelId: channelId,
+      userId: userId,
+      sourceSheChannelId: sourceSheChannelId,
+    );
+    // 刚建的群会话主机上一定还没有消息，进页时不必白跑一趟历史回读。
+    // 第一条消息落库会用 clear 收口（见 _persistMessage 与 registry TTL）。
+    _freshLocalChannels.mark(newChannelId);
+    return newChannelId;
+  }
 
   /// Ensure a She-bound group session for external She triggers.
   Future<String> ensureSheBoundGroupSession({

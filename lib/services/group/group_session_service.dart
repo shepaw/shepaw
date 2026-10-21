@@ -7,6 +7,21 @@ import '../local_database_service.dart';
 import '../inference_log_service.dart';
 import 'group_member_session_service.dart';
 
+/// 主机 create 的返回群是否已经带上了要求的两个开关。
+///
+/// 旧主机不认识 create 里的 `flow_mode` / `enable_stage_gate`，回包仍是默认
+/// false；这时才需要再补一次 update。返回群缺失时按「没带上」处理，保持旧
+/// 行为（宁多多一次往返，也不能丢开关）。
+bool groupCreateAppliedSwitches(
+  Map<String, dynamic>? group, {
+  required bool flowMode,
+  required bool enableStageGate,
+}) {
+  if (group == null) return false;
+  return (group['flow_mode'] as bool? ?? false) == flowMode &&
+      (group['enable_stage_gate'] as bool? ?? false) == enableStageGate;
+}
+
 /// Manages group chat sessions (create, list, clear, reset).
 class GroupSessionService {
   final LocalDatabaseService _db;
@@ -56,11 +71,19 @@ class GroupSessionService {
       throw Exception(created.error ?? '创建群会话失败');
     }
     final newChannelId = created.groupId!;
-    await getIt<HubGroupRegistry>().commit('update', {
-      'group_id': newChannelId,
-      'flow_mode': currentChannel.flowMode,
-      'enable_stage_gate': currentChannel.enableStageGate,
-    });
+    // 新主机在 create 里就把开关写好了；旧主机忽略这两个字段，回包里仍是
+    // 默认 false。只有值对不上时才补一次 update，正常路径少一趟往返。
+    if (!groupCreateAppliedSwitches(
+      created.group,
+      flowMode: currentChannel.flowMode,
+      enableStageGate: currentChannel.enableStageGate,
+    )) {
+      await getIt<HubGroupRegistry>().commit('update', {
+        'group_id': newChannelId,
+        'flow_mode': currentChannel.flowMode,
+        'enable_stage_gate': currentChannel.enableStageGate,
+      });
+    }
     final channel = await _db.getChannelById(newChannelId);
     if (channel == null) throw Exception('创建群会话失败');
     if (sourceSheChannelId != null && sourceSheChannelId.isNotEmpty) {
