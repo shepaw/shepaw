@@ -2312,7 +2312,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get chat_deleteSessionContent =>
-      'This will delete this session and all its messages. This action cannot be undone.';
+      'This session will be removed from all devices. If the conversation continues in this same session later, it will reappear.';
+
+  @override
+  String get chat_deleteGroupSessionContent =>
+      'This will delete this group session and all its messages. This action cannot be undone.';
+
+  @override
+  String get chat_sessionDeleteFailed =>
+      'Delete failed: the host did not confirm, so the session was not deleted.';
 
   @override
   String get chat_deleteAllSessions => 'Delete All Sessions';

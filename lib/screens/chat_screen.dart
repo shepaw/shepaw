@@ -747,6 +747,8 @@ class _ChatScreenState extends State<ChatScreen>
         return l10n.chat_forkingSession;
       case 'chat_copyingSession':
         return l10n.chat_copyingSession;
+      case 'chat_sessionDeleteFailed':
+        return l10n.chat_sessionDeleteFailed;
       case 'chat_clearSessionFailed':
         return l10n.chat_clearSessionFailed(param);
       case 'chat_copySessionFailed':

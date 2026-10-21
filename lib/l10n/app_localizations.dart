@@ -4175,8 +4175,20 @@ abstract class AppLocalizations {
   /// No description provided for @chat_deleteSessionContent.
   ///
   /// In zh, this message translates to:
-  /// **'这将删除此会话及其所有消息，此操作不可撤销。'**
+  /// **'会话会从所有设备移除。若之后在同一会话里继续对话，它会重新出现。'**
   String get chat_deleteSessionContent;
+
+  /// No description provided for @chat_deleteGroupSessionContent.
+  ///
+  /// In zh, this message translates to:
+  /// **'这将删除此群子会话及其所有消息，此操作不可撤销。'**
+  String get chat_deleteGroupSessionContent;
+
+  /// No description provided for @chat_sessionDeleteFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除失败：主机没有确认，会话未删除。'**
+  String get chat_sessionDeleteFailed;
 
   /// No description provided for @chat_deleteAllSessions.
   ///

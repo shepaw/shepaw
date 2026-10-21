@@ -92,8 +92,11 @@ void main() {
     await tester.tap(find.text('删除会话'));
     await tester.pumpAndSettle();
 
-    // 确认弹窗（标题同样是「删除会话」，正文说明不可撤销）。
-    expect(find.text('这将删除此会话及其所有消息，此操作不可撤销。'), findsOneWidget);
+    // 确认弹窗（标题同样是「删除会话」，正文说明会从所有端移除、可能重新出现）。
+    expect(
+      find.text('会话会从所有设备移除。若之后在同一会话里继续对话，它会重新出现。'),
+      findsOneWidget,
+    );
     expect(deletedIds, isNull);
 
     await tester.tap(find.text('删除'));

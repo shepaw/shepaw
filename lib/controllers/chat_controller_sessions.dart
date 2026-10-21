@@ -442,6 +442,24 @@ mixin _SessionOps on _ChatControllerBase {
         return;
       }
 
+      // 先让主机按权威数据删／归档，再动本地镜像。主机连不上就整批失败，
+      // 否则本地删掉后下一轮名单同步又会被主机建回来。
+      if (!isGroup && agentId != null) {
+        final hostAgent =
+            await localDatabaseService.getRemoteAgentById(agentId!);
+        if (hostAgent != null && hostAgent.isPeerAgent) {
+          for (final id in idsToDelete) {
+            final result = await PeerAgentClientService.instance
+                .deleteHostSession(agent: hostAgent, channelId: id);
+            if (result == HostSessionDeleteResult.failed) {
+              _emit(DismissOverlayEvent());
+              _emit(ShowErrorSnackBarEvent('chat_sessionDeleteFailed'));
+              return;
+            }
+          }
+        }
+      }
+
       final deletingCurrent =
           currentChannelId != null && idsToDelete.contains(currentChannelId);
       // 先停掉这条会话上还在跑的回复，再删库，避免停止标记写进即将消失的会话。

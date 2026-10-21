@@ -111,6 +111,12 @@ String? remoteSessionIdFromChannelId(String channelId) =>
 /// 空会话在主机上的登记结果。
 enum HostEmptySessionResult { absent, removed, notEmpty, failed }
 
+/// 用户删除会话时主机的处理结果。
+///
+/// [archived] 表示主机上已有消息，只做了归档；数据仍保留，同一会话再有新消息
+/// 会重新出现在名单里。
+enum HostSessionDeleteResult { absent, removed, archived, failed }
+
 /// 发给主机的会话 id。`psess_` 壳剥掉，本机新建的 `dm_` 原样带上。
 String hostSessionIdForChannel(String channelId) =>
     remoteSessionIdFromChannelId(channelId) ?? channelId;
@@ -1884,6 +1890,8 @@ class PeerAgentClientService {
       {};
   final Map<String, Completer<Map<String, dynamic>>> _pendingHostSessionDrop =
       {};
+  final Map<String, Completer<Map<String, dynamic>>> _pendingHostSessionDelete =
+      {};
 
   /// 正在登记的空会话。离开这条会话时要等它结束，避免主机上留下没人删的空记录。
   final Map<String, Future<bool>> _hostEmptyOpens = {};
@@ -3312,6 +3320,9 @@ class PeerAgentClientService {
       case 'agent_session_drop_resp':
         _completeHostEmpty(_pendingHostSessionDrop, event.data);
         break;
+      case 'agent_session_delete_resp':
+        _completeHostEmpty(_pendingHostSessionDelete, event.data);
+        break;
       case 'agent_soul_resp':
         _onSoulResp(event.data);
         break;
@@ -3554,6 +3565,62 @@ class PeerAgentClientService {
     }
     if (data['error'] == 'not_empty') return HostEmptySessionResult.notEmpty;
     return HostEmptySessionResult.failed;
+  }
+
+  /// 用户删除会话：请主机按权威数据删／归档。
+  ///
+  /// 主机连不上时返回 [HostSessionDeleteResult.failed]，调用方不要动本地数据，
+  /// 否则下一轮名单同步又会把它建回来。
+  Future<HostSessionDeleteResult> deleteHostSession({
+    required RemoteAgent agent,
+    required String channelId,
+  }) async {
+    final peerId = agent.sourcePeerId;
+    final remoteAgentId = agent.remoteAgentId;
+    if (!agent.isPeerAgent ||
+        peerId == null ||
+        peerId.isEmpty ||
+        remoteAgentId == null ||
+        remoteAgentId.isEmpty) {
+      return HostSessionDeleteResult.absent;
+    }
+    final sessionId = hostSessionIdForChannel(channelId);
+    if (!_plainHostSessionId(sessionId)) {
+      return HostSessionDeleteResult.absent;
+    }
+    final key = '$peerId::$remoteAgentId::$sessionId';
+    final opening = _hostEmptyOpens[key];
+    if (opening != null) {
+      final opened = await opening;
+      if (!opened) return HostSessionDeleteResult.absent;
+    } else if (ChatService().isFreshLocalChannel(channelId)) {
+      // 本机刚建、还没登记到主机，离线也能删。
+      return HostSessionDeleteResult.absent;
+    }
+    if (!_peerIsConnected(peerId)) return HostSessionDeleteResult.failed;
+    final requestId = _uuid.v4();
+    final completer = Completer<Map<String, dynamic>>();
+    _pendingHostSessionDelete[requestId] = completer;
+    final sent = await _sendMetaControl(peerId, {
+      'type': 'agent_session_delete_req',
+      'request_id': requestId,
+      'agent_id': remoteAgentId,
+      'session_id': sessionId,
+    });
+    if (!sent) {
+      _pendingHostSessionDelete.remove(requestId);
+      return HostSessionDeleteResult.failed;
+    }
+    final data = await _hostEmptyAck(
+      _pendingHostSessionDelete,
+      requestId,
+      completer,
+    );
+    if (data['ok'] != true) return HostSessionDeleteResult.failed;
+    _recentlyOpenedHostSessions.remove(channelId);
+    if (data['removed'] == true) return HostSessionDeleteResult.removed;
+    if (data['archived'] == true) return HostSessionDeleteResult.archived;
+    return HostSessionDeleteResult.absent;
   }
 
   bool _plainHostSessionId(String id) {

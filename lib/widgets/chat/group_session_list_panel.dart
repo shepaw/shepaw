@@ -924,7 +924,7 @@ class _GroupSessionListContentState extends State<_GroupSessionListContent> {
     final confirmed = await showConfirmDialog(
       context,
       title: l10n.chat_deleteSession,
-      message: l10n.chat_deleteSessionContent,
+      message: l10n.chat_deleteGroupSessionContent,
       confirmLabel: l10n.common_delete,
     );
     if (!confirmed || !mounted) return;

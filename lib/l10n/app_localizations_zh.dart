@@ -2225,7 +2225,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_deleteSession => '删除会话';
 
   @override
-  String get chat_deleteSessionContent => '这将删除此会话及其所有消息，此操作不可撤销。';
+  String get chat_deleteSessionContent => '会话会从所有设备移除。若之后在同一会话里继续对话，它会重新出现。';
+
+  @override
+  String get chat_deleteGroupSessionContent => '这将删除此群子会话及其所有消息，此操作不可撤销。';
+
+  @override
+  String get chat_sessionDeleteFailed => '删除失败：主机没有确认，会话未删除。';
 
   @override
   String get chat_deleteAllSessions => '删除所有会话';
