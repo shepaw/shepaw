@@ -150,6 +150,22 @@ class _AddAgentInstanceScreenState extends State<AddAgentInstanceScreen> {
   }
 
   Future<void> _loadDevices() async {
+    try {
+      await _loadDevicesInner();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error =
+            AppLocalizations.of(context).addAgent_operationFailed('$error');
+      });
+    } finally {
+      // 任何异常路径都要把转圈停掉；之前只有正常路径会清 _loading，
+      // 连接一抖页面就永远卡在加载态。
+      if (mounted && _loading) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadDevicesInner() async {
     final session = await PouchSessionStore.readActive();
     final peers = await PeerStorageService().loadAllPeers();
     final byId = {for (final peer in peers) peer.id: peer};
@@ -264,6 +280,23 @@ class _AddAgentInstanceScreenState extends State<AddAgentInstanceScreen> {
   }
 
   Future<void> _selectTarget(String key, {bool restoreDraft = false}) async {
+    try {
+      await _selectTargetInner(key, restoreDraft: restoreDraft);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error =
+            AppLocalizations.of(context).addAgent_operationFailed('$error');
+      });
+    } finally {
+      // connectToPeer 连不上会抛 StateError；以前这个异常直接冒出去，
+      // _loading 永远停在 true，页面就是无限转圈。
+      if (mounted && _loading) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _selectTargetInner(String key,
+      {bool restoreDraft = false}) async {
     final target = _targets.where((item) => item.key == key).firstOrNull;
     if (target == null) return;
     if (_target != null && _target!.key != key) {
