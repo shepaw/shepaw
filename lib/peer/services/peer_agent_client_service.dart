@@ -1831,6 +1831,10 @@ class PeerAgentClientService {
   /// 不会回复），超时按「对端不支持续传」失败，避免无限悬挂。
   static const Duration resumeResponseTimeout = Duration(seconds: 10);
 
+  /// 用户发消息时连接不可用（典型：刚切网）主动重连并等待的上限。
+  /// connectivity 监听侧有 800ms 去抖 + 最多 3s 探活，再留出握手时间。
+  static const Duration _controlReconnectWait = Duration(seconds: 6);
+
   /// 单帧丢失/握手竞态导致 resume_req 石沉大海时，在判死前重发 resume_req
   /// 的次数。hub 侧应答是幂等的（drop-prefix 去重 + known 超界收敛），重发
   /// 只会补回丢失的后缀，不会重复投递。旧 hub（不支持续传）会在重试耗尽后
@@ -2673,16 +2677,22 @@ class PeerAgentClientService {
 
     void clearPending() => _pendingFilePushes.remove(fileId);
 
-    final beginSent = await PeerConnectionManager.instance.sendControl(peerId, {
-      'type': 'agent_file_begin',
-      'agent_id': remoteAgentId,
-      'file_id': fileId,
-      'file_name': attachment.fileName,
-      'mime_type': attachment.mimeType,
-      'file_type': attachment.semanticType,
-      'size': attachment.sizeBytes,
-      if (sessionId != null && sessionId.isNotEmpty) 'session_id': sessionId,
-    });
+    final beginSent = await PeerConnectionManager.instance.sendControl(
+      peerId,
+      {
+        'type': 'agent_file_begin',
+        'agent_id': remoteAgentId,
+        'file_id': fileId,
+        'file_name': attachment.fileName,
+        'mime_type': attachment.mimeType,
+        'file_type': attachment.semanticType,
+        'size': attachment.sizeBytes,
+        if (sessionId != null && sessionId.isNotEmpty) 'session_id': sessionId,
+      },
+      // 切网后第一条帧最容易撞上半开的旧连接：等重连再发，避免整个附件
+      // 推送直接失败。后续分片已在同一条新连接上，保持 fail-fast。
+      waitForReconnect: _controlReconnectWait,
+    );
     if (!beginSent) {
       clearPending();
       throw Exception('配对设备未连接，无法推送附件');
@@ -2750,7 +2760,8 @@ class PeerAgentClientService {
 
   /// 通过 P2P 通道把消息发给对端的本地 agent，流式接收回复。
   ///
-  /// 对端未连接时立即抛错。[cancelToken] 触发时会向对端发送 `agent_cancel`。
+  /// 连接不可用时（典型：刚切网）会主动触发重连并等待 [_controlReconnectWait]，
+  /// 连上后补发；超时才抛错。等待期间通过 [onReconnecting] 通知 UI。
   /// Attachments are pushed via [pushFile] first; `agent_chat` only carries
   /// `file_id` refs (no base64 payload).
   Future<PeerChatResult> sendChat({
@@ -2768,6 +2779,9 @@ class PeerAgentClientService {
 
     /// Fired once [requestId] is allocated, before the control frame is sent.
     void Function(String requestId)? onRequestStarted,
+    /// 发送时连接不可用 → 等待重连的进度回调：`(1, 1)` 进入等待，
+    /// `(0, 0)` 等待结束（连上并发出，或最终失败）。复用 ACP 的重连提示。
+    void Function(int attempt, int total)? onReconnecting,
     ACPCancellationToken? cancelToken,
     String? localAgentId,
     String? channelId,
@@ -2839,34 +2853,57 @@ class PeerAgentClientService {
     cancelToken?.addOnCancelled(() => _abortPendingTurn(requestId));
 
     final deviceInfo = await ClientDeviceInfo.current();
-    final sent = await PeerConnectionManager.instance.sendControl(peerId, {
-      'type': 'agent_chat',
-      'request_id': requestId,
-      'agent_id': remoteAgentId,
-      'message': message,
-      // 本端落库用户消息用的 id。主机拿它当这条记录的 id，回传事件与
-      // 本机 SQLite 行就是同一条，不会在屏幕上叠成两条一样的用户消息。
-      // 本机行是主机形态（`peerhist_*`），上行要还原成裸 id —— 前缀归主机加。
-      if (userMessageId != null && userMessageId.isNotEmpty)
-        'user_message_id': bareMessageId(userMessageId),
-      // 引用回复：同样只发裸 id，前缀归本机自己加回来。
-      if (replyToId != null && replyToId.isNotEmpty)
-        'reply_to_id': bareMessageId(replyToId),
-      if (replyQuoteText != null && replyQuoteText.isNotEmpty)
-        'reply_quote_text': replyQuoteText,
-      // 把本端会话 id 透传给对端，使对端按会话隔离历史：本端「新开会话」
-      // 在对端也得到一条干净、无历史的新会话。
-      if (sessionId != null && sessionId.isNotEmpty) 'session_id': sessionId,
-      if (history != null && history.isNotEmpty) 'history': history,
-      if (attachmentRefs != null) 'attachments': attachmentRefs,
-      if (extraTools != null && extraTools.isNotEmpty)
-        'extra_tools': extraTools,
-      ...deviceInfo.toWireFields(),
-    });
+    var waitingForReconnect = false;
+    final sent = await PeerConnectionManager.instance.sendControl(
+      peerId,
+      {
+        'type': 'agent_chat',
+        'request_id': requestId,
+        'agent_id': remoteAgentId,
+        'message': message,
+        // 本端落库用户消息用的 id。主机拿它当这条记录的 id，回传事件与
+        // 本机 SQLite 行就是同一条，不会在屏幕上叠成两条一样的用户消息。
+        // 本机行是主机形态（`peerhist_*`），上行要还原成裸 id —— 前缀归主机加。
+        if (userMessageId != null && userMessageId.isNotEmpty)
+          'user_message_id': bareMessageId(userMessageId),
+        // 引用回复：同样只发裸 id，前缀归本机自己加回来。
+        if (replyToId != null && replyToId.isNotEmpty)
+          'reply_to_id': bareMessageId(replyToId),
+        if (replyQuoteText != null && replyQuoteText.isNotEmpty)
+          'reply_quote_text': replyQuoteText,
+        // 把本端会话 id 透传给对端，使对端按会话隔离历史：本端「新开会话」
+        // 在对端也得到一条干净、无历史的新会话。
+        if (sessionId != null && sessionId.isNotEmpty) 'session_id': sessionId,
+        if (history != null && history.isNotEmpty) 'history': history,
+        if (attachmentRefs != null) 'attachments': attachmentRefs,
+        if (extraTools != null && extraTools.isNotEmpty)
+          'extra_tools': extraTools,
+        ...deviceInfo.toWireFields(),
+      },
+      // 切网后 connectivity 监听的重连有 800ms 去抖 + 探活，用户往往等不到。
+      // 这里主动拉起重连并最多等 [_controlReconnectWait]，连上就补发。
+      waitForReconnect: _controlReconnectWait,
+      onWaitingForReconnect: () {
+        waitingForReconnect = true;
+        onReconnecting?.call(1, 1);
+      },
+      abortWhen: () => cancelToken?.isCancelled == true,
+    );
+    if (waitingForReconnect) onReconnecting?.call(0, 0);
 
     if (!sent) {
+      final cancelled = cancelToken?.isCancelled == true;
       _pending.remove(requestId);
       _clearPersistedTurn(requestId);
+      if (cancelled) {
+        // 用户在等待重连期间点了停止：不是发送失败，按已取消收尾，别弹错误。
+        if (!pending.completer.isCompleted) {
+          pending.completer.complete(
+            PeerChatResult(content: '[Stopped]', requestId: requestId),
+          );
+        }
+        return PeerChatResult(content: '[Stopped]', requestId: requestId);
+      }
       throw Exception('配对设备未连接，无法发送');
     }
 
@@ -2948,22 +2985,26 @@ class PeerAgentClientService {
       ChatService().dropQueuedMessage(requestId);
     }));
     final deviceInfo = await ClientDeviceInfo.current();
-    final sent = await PeerConnectionManager.instance.sendControl(peerId, {
-      'type': 'agent_chat',
-      'request_id': requestId,
-      'agent_id': remoteAgentId,
-      'message': message,
-      if (userMessageId != null && userMessageId.isNotEmpty)
-        'user_message_id': bareMessageId(userMessageId),
-      if (replyToId != null && replyToId.isNotEmpty)
-        'reply_to_id': bareMessageId(replyToId),
-      if (replyQuoteText != null && replyQuoteText.isNotEmpty)
-        'reply_quote_text': replyQuoteText,
-      if (sessionId != null && sessionId.isNotEmpty) 'session_id': sessionId,
-      if (channelId != null && channelId.isNotEmpty) 'channel_id': channelId,
-      if (attachmentRefs != null) 'attachments': attachmentRefs,
-      ...deviceInfo.toWireFields(),
-    });
+    final sent = await PeerConnectionManager.instance.sendControl(
+      peerId,
+      {
+        'type': 'agent_chat',
+        'request_id': requestId,
+        'agent_id': remoteAgentId,
+        'message': message,
+        if (userMessageId != null && userMessageId.isNotEmpty)
+          'user_message_id': bareMessageId(userMessageId),
+        if (replyToId != null && replyToId.isNotEmpty)
+          'reply_to_id': bareMessageId(replyToId),
+        if (replyQuoteText != null && replyQuoteText.isNotEmpty)
+          'reply_quote_text': replyQuoteText,
+        if (sessionId != null && sessionId.isNotEmpty) 'session_id': sessionId,
+        if (channelId != null && channelId.isNotEmpty) 'channel_id': channelId,
+        if (attachmentRefs != null) 'attachments': attachmentRefs,
+        ...deviceInfo.toWireFields(),
+      },
+      waitForReconnect: _controlReconnectWait,
+    );
     if (!sent) {
       _pending.remove(requestId);
       if (!pending.completer.isCompleted) {

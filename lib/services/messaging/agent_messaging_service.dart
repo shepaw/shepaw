@@ -831,6 +831,7 @@ class AgentMessagingService {
           sessionId: channelId,
           acpCancellationToken: acpCancellationToken,
           attachments: attachments,
+          onReconnecting: onReconnecting,
         );
       } else if (agent.protocol == ProtocolType.acp) {
         // ACP 是已废弃的直连协议：它唯一的服务方（agent-bridge）已下线，主机
@@ -1129,6 +1130,7 @@ class AgentMessagingService {
     String? sessionId,
     ACPCancellationToken? acpCancellationToken,
     List<AttachmentData>? attachments,
+    void Function(int attempt, int total)? onReconnecting,
   }) async {
     final sourcePeerId = agent.sourcePeerId;
     final sourceRemoteAgentId = agent.remoteAgentId;
@@ -1261,6 +1263,7 @@ class AgentMessagingService {
         agentName: agent.name,
         replyToId: userMessage.replyTo,
         replyQuoteText: userMessage.replyQuoteText,
+        onReconnecting: onReconnecting,
         onRequestStarted: (requestId) {
           peerRequestId = requestId;
           final spanId = TraceService.instance.addSpan(

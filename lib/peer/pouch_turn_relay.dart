@@ -753,6 +753,9 @@ class PouchTurnRelay {
     final sent = await PeerConnectionManager.instance.sendControl(
       hostPeerId,
       frame,
+      // 切网后旧连接常先断开，connectivity 监听到稳定要 ~800ms 去抖 + 探活。
+      // 用户手速快时等不到，主动重连并等一小会儿再交回合。
+      waitForReconnect: const Duration(seconds: 6),
     );
     if (!sent) {
       _pending.remove(id);

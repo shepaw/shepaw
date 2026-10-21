@@ -11,6 +11,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import '../../storage/store_service.dart';
 import '../../services/noise_identity.dart';
 import '../../services/noise/noise_session.dart';
@@ -91,6 +93,11 @@ class PeerConnectionManager {
   /// 交互（审批待决 / 流式输出中），连接绝不能被掐断重建。
   /// 由 PeerAgentClientService 启动时注册，避免 manager 反向依赖上层服务。
   bool Function(String peerId)? hasInFlightTurnForPeer;
+
+  /// Test seam: 替代真实连接上的发送尝试（不依赖握手 / socket）。
+  @visibleForTesting
+  Future<bool> Function(String peerId, Map<String, dynamic> json)?
+      debugTrySendControlOverride;
 
   // ── 事件流 ──────────────────────────────────────────────────────────
 
@@ -428,20 +435,101 @@ class PeerConnectionManager {
 
   /// 发送控制消息给指定 peer（agent-over-peer）。
   ///
-  /// 返回是否成功发出（peer 未连接时返回 false，不入队）。控制消息是
-  /// 请求/响应式的，离线排队没有意义。
-  Future<bool> sendControl(String peerId, Map<String, dynamic> json) async {
-    final conn = _connections[peerId];
-    if (conn != null && conn.state == PeerConnectionState.connected) {
-      try {
-        await conn.sendControl(json);
+  /// 返回是否成功发出。控制消息是请求/响应式的，默认离线不入队。
+  ///
+  /// [waitForReconnect] 非空时（用户主动发消息的场景），失败会主动触发一次
+  /// 立即重连，并在这段时间内等待连接恢复后重发。切网后旧连接常先变成半开或
+  /// 直接断开，而 connectivity 监听的重连还没跑完；不等待的话用户刚发的一条
+  /// 消息会立刻看到「配对设备未连接」。
+  ///
+  /// [abortWhen] 在等待期间轮询，返回 true 时放弃发送（用户已取消）。
+  Future<bool> sendControl(
+    String peerId,
+    Map<String, dynamic> json, {
+    Duration? waitForReconnect,
+    void Function()? onWaitingForReconnect,
+    bool Function()? abortWhen,
+  }) async {
+    if (abortWhen?.call() ?? false) return false;
+    final canWait = waitForReconnect != null;
+    if (await _trySendControl(
+      peerId,
+      json,
+      dropStaleOnError: canWait,
+    )) {
+      return true;
+    }
+    if (!canWait) return false;
+
+    onWaitingForReconnect?.call();
+    final deadline = DateTime.now().add(waitForReconnect);
+    _ensureReconnectScheduled(peerId);
+    while (DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      if (abortWhen?.call() ?? false) return false;
+      if (await _trySendControl(
+        peerId,
+        json,
+        dropStaleOnError: true,
+      )) {
         return true;
-      } catch (e) {
-        _log.warning('sendControl failed: $e', tag: _tag);
-        return false;
       }
+      _ensureReconnectScheduled(peerId);
     }
     return false;
+  }
+
+  /// 等待重连期间保证有一条重连链在跑。
+  ///
+  /// 连接刚建立又立刻在发送时失败（半开 / Noise 未就绪）会被
+  /// [_dropStaleConnection] 丢掉，此时没有 _onDisconnected 来调度重连，
+  /// 需要在这里补一次；但已有退避中的重试时不要重置退避。
+  void _ensureReconnectScheduled(String peerId) {
+    if (!_running) return;
+    if (_connecting.contains(peerId)) return;
+    final attempts = _reconnectAttempts[peerId] ?? 0;
+    if (attempts > 0 && _reconnectTimers.containsKey(peerId)) return;
+    unawaited(_triggerImmediateReconnect(peerId));
+  }
+
+  /// 单次发送尝试：未连接返回 false；连接上发送抛错则顺手丢掉这条半开连接，
+  /// 让后续 [_triggerImmediateReconnect] 能真正重建（否则 state 仍是 connected
+  /// 会被 _triggerImmediateReconnect 直接跳过）。
+  ///
+  /// [dropStaleOnError] 只对「会等待重连」的调用方开启：普通控制帧调用保持
+  /// 原有语义，避免离线广播时反复重置重连退避。
+  Future<bool> _trySendControl(
+    String peerId,
+    Map<String, dynamic> json, {
+    bool dropStaleOnError = false,
+  }) async {
+    final override = debugTrySendControlOverride;
+    if (override != null) return override(peerId, json);
+
+    final conn = _connections[peerId];
+    if (conn == null || conn.state != PeerConnectionState.connected) {
+      return false;
+    }
+    try {
+      await conn.sendControl(json);
+      return true;
+    } catch (e) {
+      _log.warning('sendControl failed: $e', tag: _tag);
+      if (dropStaleOnError) await _dropStaleConnection(peerId, conn);
+      return false;
+    }
+  }
+
+  Future<void> _dropStaleConnection(
+    String peerId,
+    PeerConnection conn,
+  ) async {
+    if (!identical(_connections[peerId], conn)) return;
+    _connections.remove(peerId);
+    // 取消订阅避免 close() 再触发一次 _onDisconnected 的 2s 退避重连；
+    // 调用方紧接着会用零延迟的 _triggerImmediateReconnect 重建。
+    _cancelConnectionSubs(peerId);
+    await conn.close();
   }
 
   /// 发送 Noise 明文二进制（store 读块）。未连接时返回 false。
