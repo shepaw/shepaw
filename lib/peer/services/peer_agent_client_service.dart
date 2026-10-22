@@ -1522,6 +1522,82 @@ class PeerSessionMode {
   }
 }
 
+/// 某个实例上的一段会话。运行中、空闲、排队可以同时存在。
+class PeerEngineSession {
+  final String sessionKey;
+
+  /// 有回合正在引擎里跑。
+  final bool running;
+
+  /// 子进程还留着，下一轮可以直接复用。
+  final bool idle;
+
+  /// 这段会话排了多少条还没开始的消息。
+  final int queued;
+
+  const PeerEngineSession({
+    required this.sessionKey,
+    this.running = false,
+    this.idle = false,
+    this.queued = 0,
+  });
+
+  factory PeerEngineSession.fromJson(Map<String, dynamic> json) {
+    return PeerEngineSession(
+      sessionKey: (json['session_key'] as String?)?.trim() ?? '',
+      running: json['running'] == true,
+      idle: json['idle'] == true,
+      queued: (json['queued'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+/// 一个 Agent 实例的运行时占用，来自 `engine_status_resp.engines[].instances`。
+class PeerEngineInstance {
+  final String id;
+  final String name;
+  final String cwd;
+  final bool enabled;
+  final int connections;
+  final int activeConversations;
+  final int queued;
+  final int queuedSessions;
+  final List<PeerEngineSession> sessions;
+
+  const PeerEngineInstance({
+    required this.id,
+    required this.name,
+    this.cwd = '',
+    this.enabled = true,
+    this.connections = 0,
+    this.activeConversations = 0,
+    this.queued = 0,
+    this.queuedSessions = 0,
+    this.sessions = const [],
+  });
+
+  factory PeerEngineInstance.fromJson(Map<String, dynamic> json) {
+    final id = (json['id'] as String?)?.trim() ?? '';
+    final name = (json['name'] as String?)?.trim() ?? '';
+    return PeerEngineInstance(
+      id: id,
+      name: name.isEmpty ? id : name,
+      cwd: (json['cwd'] as String?)?.trim() ?? '',
+      enabled: json['enabled'] != false,
+      connections: (json['connections'] as num?)?.toInt() ?? 0,
+      activeConversations:
+          (json['active_conversations'] as num?)?.toInt() ?? 0,
+      queued: (json['queued'] as num?)?.toInt() ?? 0,
+      queuedSessions: (json['queued_sessions'] as num?)?.toInt() ?? 0,
+      sessions: [
+        for (final item in (json['sessions'] as List?) ?? const [])
+          if (item is Map)
+            PeerEngineSession.fromJson(Map<String, dynamic>.from(item)),
+      ].where((session) => session.sessionKey.isNotEmpty).toList(),
+    );
+  }
+}
+
 /// An engine the host could launch, from `agent_manage_resp.engines`.
 class PeerEngineEntry {
   final String id;
@@ -1547,6 +1623,24 @@ class PeerEngineEntry {
   /// 主机上实际拉起的命令。
   final String acpCommand;
 
+  /// 这台主机上登记了多少个使用该引擎的实例。
+  final int instanceCount;
+
+  /// 活跃的引擎子进程连接数。
+  final int connections;
+
+  /// 正在引擎里跑的对话数。
+  final int activeConversations;
+
+  /// 这个引擎所有实例上排队等待的消息条数。
+  final int queued;
+
+  /// 有排队的会话数。
+  final int queuedSessions;
+
+  /// 使用该引擎的实例，带每段会话的运行与排队情况。
+  final List<PeerEngineInstance> instances;
+
   const PeerEngineEntry({
     required this.id,
     required this.name,
@@ -1559,6 +1653,12 @@ class PeerEngineEntry {
     this.avatarExt = '',
     this.docsUrl = '',
     this.acpCommand = '',
+    this.instanceCount = 0,
+    this.connections = 0,
+    this.activeConversations = 0,
+    this.queued = 0,
+    this.queuedSessions = 0,
+    this.instances = const [],
   });
 
   factory PeerEngineEntry.fromJson(Map<String, dynamic> json) {
@@ -1583,6 +1683,17 @@ class PeerEngineEntry {
       avatarExt: (json['avatar_ext'] as String?)?.trim() ?? '',
       docsUrl: (json['docs_url'] as String?)?.trim() ?? '',
       acpCommand: (json['acp_command'] as String?)?.trim() ?? '',
+      instanceCount: (json['instance_count'] as num?)?.toInt() ?? 0,
+      connections: (json['connections'] as num?)?.toInt() ?? 0,
+      activeConversations:
+          (json['active_conversations'] as num?)?.toInt() ?? 0,
+      queued: (json['queued'] as num?)?.toInt() ?? 0,
+      queuedSessions: (json['queued_sessions'] as num?)?.toInt() ?? 0,
+      instances: [
+        for (final item in (json['instances'] as List?) ?? const [])
+          if (item is Map)
+            PeerEngineInstance.fromJson(Map<String, dynamic>.from(item)),
+      ].where((instance) => instance.id.isNotEmpty).toList(),
     );
   }
 }
@@ -1642,6 +1753,116 @@ class PeerFsBrowseResult {
   });
 
   bool get nodeOffline => code == 'node_offline';
+}
+
+/// `engine_status_resp.summary` 的汇总额。旧主机不带这个字段时由引擎列表兜底。
+class PeerEngineStatusSummary {
+  final int engines;
+  final int availableEngines;
+  final int instances;
+  final int enabledInstances;
+  final int connections;
+  final int activeConversations;
+  final int queued;
+  final int queuedSessions;
+
+  const PeerEngineStatusSummary({
+    this.engines = 0,
+    this.availableEngines = 0,
+    this.instances = 0,
+    this.enabledInstances = 0,
+    this.connections = 0,
+    this.activeConversations = 0,
+    this.queued = 0,
+    this.queuedSessions = 0,
+  });
+
+  factory PeerEngineStatusSummary.fromJson(
+    Map<String, dynamic> data,
+    List<PeerEngineEntry> engines,
+  ) {
+    final raw = data['summary'];
+    final map = raw is Map ? Map<String, dynamic>.from(raw) : const <String, dynamic>{};
+    int fallback(String key, int value) => (map[key] as num?)?.toInt() ?? value;
+    final instanceCount =
+        engines.fold<int>(0, (total, engine) => total + engine.instanceCount);
+    return PeerEngineStatusSummary(
+      engines: fallback('engines', engines.length),
+      availableEngines: fallback(
+        'available_engines',
+        engines.where((engine) => engine.available).length,
+      ),
+      instances: fallback('instances', instanceCount),
+      enabledInstances: fallback('enabled_instances', instanceCount),
+      connections: fallback(
+        'connections',
+        engines.fold<int>(0, (total, engine) => total + engine.connections),
+      ),
+      activeConversations: fallback(
+        'active_conversations',
+        engines.fold<int>(
+          0,
+          (total, engine) => total + engine.activeConversations,
+        ),
+      ),
+      queued: fallback(
+        'queued',
+        engines.fold<int>(0, (total, engine) => total + engine.queued),
+      ),
+      queuedSessions: fallback(
+        'queued_sessions',
+        engines.fold<int>(0, (total, engine) => total + engine.queuedSessions),
+      ),
+    );
+  }
+}
+
+/// `engine_status_resp` 的解析结果。
+class PeerEngineStatusResult {
+  final bool ok;
+  final String? error;
+  final bool unsupported;
+  final String? code;
+  final List<PeerEngineEntry> engines;
+  final PeerEngineStatusSummary summary;
+
+  /// 主机扫描 PATH 的时间（毫秒），0 表示没有。
+  final int scannedAt;
+
+  const PeerEngineStatusResult({
+    required this.ok,
+    this.error,
+    this.unsupported = false,
+    this.code,
+    this.engines = const [],
+    this.summary = const PeerEngineStatusSummary(),
+    this.scannedAt = 0,
+  });
+
+  bool get nodeOffline => code == 'node_offline';
+}
+
+/// `engine_control_resp` 的解析结果。
+class PeerEngineControlResult {
+  final bool ok;
+  final String? error;
+  final String? code;
+  final bool unsupported;
+
+  /// 杀掉的引擎子进程数。
+  final int killed;
+
+  /// 一并清掉的排队消息条数。
+  final int dropped;
+
+  const PeerEngineControlResult({
+    required this.ok,
+    this.error,
+    this.code,
+    this.unsupported = false,
+    this.killed = 0,
+    this.dropped = 0,
+  });
 }
 
 /// Result of [PeerAgentClientService.syncAgentIncremental].
@@ -2018,6 +2239,14 @@ class PeerAgentClientService {
   /// Outstanding fs_browse_req keyed by request_id.
   final Map<String, Completer<PeerFsBrowseResult>> _pendingFsBrowse = {};
 
+  /// Outstanding engine_status_req keyed by request_id.
+  final Map<String, Completer<PeerEngineStatusResult>> _pendingEngineStatus =
+      {};
+
+  /// Outstanding engine_control_req keyed by request_id.
+  final Map<String, Completer<PeerEngineControlResult>> _pendingEngineControl =
+      {};
+
   /// 刚在主机或工作节点创建出的远端实例（`$peerId::$remoteId` → 创建时间）。
   ///
   /// 工作节点创建实例时，`agent_manage_resp` 经主机流通道先回到本机，而工作节点
@@ -2251,6 +2480,18 @@ class PeerAgentClientService {
       }
     }
     _pendingFsBrowse.clear();
+    for (final c in _pendingEngineStatus.values) {
+      if (!c.isCompleted) {
+        c.complete(const PeerEngineStatusResult(ok: false, error: 'stopped'));
+      }
+    }
+    _pendingEngineStatus.clear();
+    for (final c in _pendingEngineControl.values) {
+      if (!c.isCompleted) {
+        c.complete(const PeerEngineControlResult(ok: false, error: 'stopped'));
+      }
+    }
+    _pendingEngineControl.clear();
     _recentlyCreatedAgents.clear();
     _approvalToRequest.clear();
   }
@@ -2533,6 +2774,18 @@ class PeerAgentClientService {
       }
     }
     _pendingFsBrowse.clear();
+    for (final c in _pendingEngineStatus.values) {
+      if (!c.isCompleted) {
+        c.complete(const PeerEngineStatusResult(ok: false, error: 'stopped'));
+      }
+    }
+    _pendingEngineStatus.clear();
+    for (final c in _pendingEngineControl.values) {
+      if (!c.isCompleted) {
+        c.complete(const PeerEngineControlResult(ok: false, error: 'stopped'));
+      }
+    }
+    _pendingEngineControl.clear();
     for (final waiters in _agentListWaiters.values) {
       for (final c in waiters) {
         if (!c.isCompleted) c.complete();
@@ -3525,6 +3778,12 @@ class PeerAgentClientService {
       case 'fs_browse_resp':
         _onFsBrowseResp(event.data);
         break;
+      case 'engine_status_resp':
+        _onEngineStatusResp(event.data);
+        break;
+      case 'engine_control_resp':
+        _onEngineControlResp(event.data);
+        break;
       case 'agent_file_ack':
         _onFileAck(event.data);
         break;
@@ -3932,6 +4191,28 @@ class PeerAgentClientService {
     for (final completer in browse) {
       if (!completer.isCompleted) {
         completer.complete(const PeerFsBrowseResult(
+          ok: false,
+          error: 'login_required',
+          code: 'login_required',
+        ));
+      }
+    }
+    final statuses = _pendingEngineStatus.values.toList();
+    _pendingEngineStatus.clear();
+    for (final completer in statuses) {
+      if (!completer.isCompleted) {
+        completer.complete(const PeerEngineStatusResult(
+          ok: false,
+          error: 'login_required',
+          code: 'login_required',
+        ));
+      }
+    }
+    final controls = _pendingEngineControl.values.toList();
+    _pendingEngineControl.clear();
+    for (final completer in controls) {
+      if (!completer.isCompleted) {
+        completer.complete(const PeerEngineControlResult(
           ok: false,
           error: 'login_required',
           code: 'login_required',
@@ -5475,6 +5756,170 @@ class PeerAgentClientService {
     return result;
   }
 
+  /// 读主机缓存的引擎目录和运行时占用。
+  ///
+  /// [nodeId] 不为空时由主机转给工作节点；回包里的实例 id 已经带上节点后缀。
+  /// [refresh] 要求主机重扫 PATH，页面手动刷新时才用。
+  Future<PeerEngineStatusResult> engineStatus({
+    required String peerId,
+    String? nodeId,
+    bool refresh = false,
+    Duration timeout = const Duration(seconds: 8),
+    bool waitForReconnect = false,
+  }) async {
+    try {
+      return await sendWithReloginRetry(
+        retryOnRelogin: true,
+        reloginGeneration: () => PouchLoginKeeper.instance.reloginGeneration,
+        waitForRelogin: (seen) =>
+            PouchLoginKeeper.instance.waitForRelogin(seenGeneration: seen),
+        send: () => _engineStatusOnce(
+          peerId: peerId,
+          nodeId: nodeId,
+          refresh: refresh,
+          timeout: timeout,
+          waitForReconnect: waitForReconnect,
+        ),
+      );
+    } on PouchLoginRequired {
+      return const PeerEngineStatusResult(
+        ok: false,
+        error: 'login_required',
+        code: 'login_required',
+      );
+    } on Exception {
+      return const PeerEngineStatusResult(
+        ok: false,
+        unsupported: true,
+        error: 'timeout',
+      );
+    }
+  }
+
+  Future<PeerEngineStatusResult> _engineStatusOnce({
+    required String peerId,
+    String? nodeId,
+    required bool refresh,
+    required Duration timeout,
+    required bool waitForReconnect,
+  }) async {
+    final requestId = _uuid.v4();
+    final completer = Completer<PeerEngineStatusResult>();
+    _pendingEngineStatus[requestId] = completer;
+    final payload = <String, dynamic>{
+      'type': 'engine_status_req',
+      'request_id': requestId,
+      if (nodeId != null) 'node_id': nodeId,
+      if (refresh) 'refresh': true,
+    };
+    final sent = await _sendInteractiveControl(
+      peerId,
+      payload,
+      waitForReconnect: waitForReconnect,
+    );
+    if (!sent) {
+      _pendingEngineStatus.remove(requestId);
+      return const PeerEngineStatusResult(ok: false, error: 'offline');
+    }
+    final result = await completer.future.timeout(timeout, onTimeout: () {
+      _pendingEngineStatus.remove(requestId);
+      return const PeerEngineStatusResult(
+        ok: false,
+        unsupported: true,
+        error: 'timeout',
+      );
+    });
+    if (result.code == 'login_required') {
+      throw const PouchLoginRequired();
+    }
+    return result;
+  }
+
+  /// 管理页的手动操作：`kill_instance` 杀掉实例全部子进程，
+  /// `kill_session` 只结束一段会话（运行中的回合和排队的消息）。
+  Future<PeerEngineControlResult> engineControl({
+    required String peerId,
+    required String op,
+    required String instanceId,
+    String? nodeId,
+    String? sessionKey,
+    Duration timeout = const Duration(seconds: 10),
+    bool waitForReconnect = false,
+  }) async {
+    try {
+      return await sendWithReloginRetry(
+        retryOnRelogin: true,
+        reloginGeneration: () => PouchLoginKeeper.instance.reloginGeneration,
+        waitForRelogin: (seen) =>
+            PouchLoginKeeper.instance.waitForRelogin(seenGeneration: seen),
+        send: () => _engineControlOnce(
+          peerId: peerId,
+          op: op,
+          instanceId: instanceId,
+          nodeId: nodeId,
+          sessionKey: sessionKey,
+          timeout: timeout,
+          waitForReconnect: waitForReconnect,
+        ),
+      );
+    } on PouchLoginRequired {
+      return const PeerEngineControlResult(
+        ok: false,
+        error: 'login_required',
+        code: 'login_required',
+      );
+    } on Exception {
+      return const PeerEngineControlResult(
+        ok: false,
+        unsupported: true,
+        error: 'timeout',
+      );
+    }
+  }
+
+  Future<PeerEngineControlResult> _engineControlOnce({
+    required String peerId,
+    required String op,
+    required String instanceId,
+    String? nodeId,
+    String? sessionKey,
+    required Duration timeout,
+    required bool waitForReconnect,
+  }) async {
+    final requestId = _uuid.v4();
+    final completer = Completer<PeerEngineControlResult>();
+    _pendingEngineControl[requestId] = completer;
+    final payload = <String, dynamic>{
+      'type': 'engine_control_req',
+      'request_id': requestId,
+      'op': op,
+      'instance_id': instanceId,
+      if (nodeId != null) 'node_id': nodeId,
+      if (sessionKey != null) 'session_key': sessionKey,
+    };
+    final sent = await _sendInteractiveControl(
+      peerId,
+      payload,
+      waitForReconnect: waitForReconnect,
+    );
+    if (!sent) {
+      _pendingEngineControl.remove(requestId);
+      return const PeerEngineControlResult(ok: false, error: 'offline');
+    }
+    final result = await completer.future.timeout(timeout, onTimeout: () {
+      _pendingEngineControl.remove(requestId);
+      return const PeerEngineControlResult(
+        ok: false,
+        unsupported: true,
+        error: 'timeout',
+      );
+    });
+    if (result.code == 'login_required') {
+      throw const PouchLoginRequired();
+    }
+    return result;
+  }
+
   /// Register a new agent on the host. Refresh the agent list afterwards so
   /// the new agent shows up in this app.
   Future<PeerAgentManageResult> createAgent({
@@ -5836,6 +6281,44 @@ class PeerAgentClientService {
       hubStoreOk: hubStoreOk,
       hubStoreDevice: hubStoreDevice,
       code: data['code'] as String?,
+    ));
+  }
+
+  void _onEngineStatusResp(Map<String, dynamic> data) {
+    final requestId = data['request_id'] as String?;
+    if (requestId == null) return;
+    final completer = _pendingEngineStatus.remove(requestId);
+    if (completer == null || completer.isCompleted) return;
+    final engines = <PeerEngineEntry>[
+      for (final item in (data['engines'] as List?) ?? const [])
+        if (item is Map)
+          PeerEngineEntry.fromJson(Map<String, dynamic>.from(item)),
+    ];
+    final error = data['error'] as String?;
+    completer.complete(PeerEngineStatusResult(
+      ok: data['ok'] == true,
+      error: error,
+      unsupported: error == 'unsupported',
+      code: data['code'] as String?,
+      engines: engines,
+      summary: PeerEngineStatusSummary.fromJson(data, engines),
+      scannedAt: (data['scanned_at'] as num?)?.toInt() ?? 0,
+    ));
+  }
+
+  void _onEngineControlResp(Map<String, dynamic> data) {
+    final requestId = data['request_id'] as String?;
+    if (requestId == null) return;
+    final completer = _pendingEngineControl.remove(requestId);
+    if (completer == null || completer.isCompleted) return;
+    final error = data['error'] as String?;
+    completer.complete(PeerEngineControlResult(
+      ok: data['ok'] == true,
+      error: error,
+      code: data['code'] as String?,
+      unsupported: data['code'] == 'unsupported' || error == 'unsupported',
+      killed: (data['killed'] as num?)?.toInt() ?? 0,
+      dropped: (data['dropped'] as num?)?.toInt() ?? 0,
     ));
   }
 

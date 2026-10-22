@@ -16,6 +16,7 @@ import '../services/peer_storage_service.dart';
 import '../widgets/peer_agent_manage_panel.dart';
 import '../widgets/peer_store_share_panel.dart';
 import 'peer_chat_screen.dart';
+import 'engine_management_screen.dart';
 import '../widgets/peer_device_icon.dart';
 
 /// P2P 设备设置页面
@@ -138,6 +139,10 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _openEngineManagement() {
+    return EngineManagementScreen.show(context, peerId: widget.peer.id);
   }
 
   Future<void> _changeTrustLevel() async {
@@ -413,6 +418,19 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
             peerId: widget.peer.id,
             isPeerConnected: _isConnected,
           ),
+
+          const SizedBox(height: 16),
+
+          _buildSection(context, l10n.peerSettings_engineLabel, [
+            ListTile(
+              leading: const Icon(Icons.memory),
+              title: Text(l10n.engineManagement_title),
+              subtitle: Text(l10n.engineManagement_entryHint),
+              trailing: const Icon(Icons.chevron_right),
+              enabled: _isConnected,
+              onTap: _isConnected ? () => unawaited(_openEngineManagement()) : null,
+            ),
+          ]),
 
           const SizedBox(height: 16),
 

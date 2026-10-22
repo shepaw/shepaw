@@ -2232,6 +2232,83 @@
       }
     }
   },
+  "engineManagement_title": "Engine management",
+  "engineManagement_entryHint": "See engine installation and usage",
+  "engineManagement_offline": "Device is offline; engine status is unavailable",
+  "engineManagement_nodeOffline": "The worker node is offline",
+  "engineManagement_unsupported": "This host version does not support engine management",
+  "engineManagement_empty": "No engines on this device yet",
+  "engineManagement_availableEngines": "Available engines",
+  "engineManagement_connections": "Connections",
+  "engineManagement_activeConversations": "Active conversations",
+  "engineManagement_queued": "Queued",
+  "engineManagement_queuedConversations": "Queued conversations",
+  "engineManagement_perEngine": "{instances} instances · {connections} connections · {active} active conversations · {queued} queued",
+  "@engineManagement_perEngine": {
+    "placeholders": {
+      "instances": {
+        "type": "int"
+      },
+      "connections": {
+        "type": "int"
+      },
+      "active": {
+        "type": "int"
+      },
+      "queued": {
+        "type": "int"
+      }
+    }
+  },
+  "engineManagement_instances": "Instances",
+  "engineManagement_instanceUsage": "{connections} connections · {active} active conversations · {queued} queued",
+  "@engineManagement_instanceUsage": {
+    "placeholders": {
+      "connections": {
+        "type": "int"
+      },
+      "active": {
+        "type": "int"
+      },
+      "queued": {
+        "type": "int"
+      }
+    }
+  },
+  "engineManagement_sessions": "Sessions",
+  "engineManagement_noSessions": "No sessions yet",
+  "engineManagement_running": "Running",
+  "engineManagement_idle": "Idle",
+  "engineManagement_killInstance": "Kill process",
+  "engineManagement_killInstanceConfirm": "Kill every engine process for \"{name}\"? Running conversations will end immediately.",
+  "@engineManagement_killInstanceConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "engineManagement_killSession": "End conversation",
+  "engineManagement_killSessionConfirm": "End this conversation? The running turn stops immediately and queued messages are dropped.",
+  "engineManagement_killFailed": "Operation failed: {error}",
+  "@engineManagement_killFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "engineManagement_configure": "Configure engine",
+  "engineManagement_updatedAt": "Scanned at {time}",
+  "@engineManagement_updatedAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "engineManagement_loadFailed": "Could not load engine status",
+  "engineManagement_refresh": "Refresh",
   "peerList_connected": "Connected",
   "peerList_connectedE2e": "Connected (End-to-end encrypted)",
   "peerList_disconnected": "Not connected",

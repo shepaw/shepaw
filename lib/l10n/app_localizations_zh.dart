@@ -4798,6 +4798,100 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get engineManagement_title => '引擎管理';
+
+  @override
+  String get engineManagement_entryHint => '查看引擎安装状态与占用';
+
+  @override
+  String get engineManagement_offline => '设备离线，暂时读不到引擎状态';
+
+  @override
+  String get engineManagement_nodeOffline => '工作节点离线';
+
+  @override
+  String get engineManagement_unsupported => '主机版本不支持引擎管理';
+
+  @override
+  String get engineManagement_empty => '这台设备上还没有引擎';
+
+  @override
+  String get engineManagement_availableEngines => '可用引擎';
+
+  @override
+  String get engineManagement_connections => '连接';
+
+  @override
+  String get engineManagement_activeConversations => '对话中';
+
+  @override
+  String get engineManagement_queued => '排队';
+
+  @override
+  String get engineManagement_queuedConversations => '排队对话';
+
+  @override
+  String engineManagement_perEngine(
+      int instances, int connections, int active, int queued) {
+    return '$instances 个实例 · $connections 个连接 · $active 个对话 · $queued 排队';
+  }
+
+  @override
+  String get engineManagement_instances => '实例';
+
+  @override
+  String engineManagement_instanceUsage(
+      int connections, int active, int queued) {
+    return '$connections 个连接 · $active 个对话中 · $queued 排队';
+  }
+
+  @override
+  String get engineManagement_sessions => '会话';
+
+  @override
+  String get engineManagement_noSessions => '暂无会话';
+
+  @override
+  String get engineManagement_running => '运行中';
+
+  @override
+  String get engineManagement_idle => '空闲';
+
+  @override
+  String get engineManagement_killInstance => '杀掉进程';
+
+  @override
+  String engineManagement_killInstanceConfirm(String name) {
+    return '杀掉「$name」的全部引擎进程？正在跑的对话会立刻结束。';
+  }
+
+  @override
+  String get engineManagement_killSession => '结束对话';
+
+  @override
+  String get engineManagement_killSessionConfirm =>
+      '结束这段对话？正在跑的回合会立刻结束，排队中的消息会被清掉。';
+
+  @override
+  String engineManagement_killFailed(String error) {
+    return '操作失败：$error';
+  }
+
+  @override
+  String get engineManagement_configure => '配置引擎';
+
+  @override
+  String engineManagement_updatedAt(String time) {
+    return '扫描于 $time';
+  }
+
+  @override
+  String get engineManagement_loadFailed => '引擎状态读取失败';
+
+  @override
+  String get engineManagement_refresh => '刷新';
+
+  @override
   String get peerList_connected => '已连接';
 
   @override

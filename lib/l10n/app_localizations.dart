@@ -8871,6 +8871,170 @@ abstract class AppLocalizations {
   /// **'操作失败：{error}'**
   String peerSettings_agentOpFailed(String error);
 
+  /// No description provided for @engineManagement_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'引擎管理'**
+  String get engineManagement_title;
+
+  /// No description provided for @engineManagement_entryHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看引擎安装状态与占用'**
+  String get engineManagement_entryHint;
+
+  /// No description provided for @engineManagement_offline.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备离线，暂时读不到引擎状态'**
+  String get engineManagement_offline;
+
+  /// No description provided for @engineManagement_nodeOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作节点离线'**
+  String get engineManagement_nodeOffline;
+
+  /// No description provided for @engineManagement_unsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机版本不支持引擎管理'**
+  String get engineManagement_unsupported;
+
+  /// No description provided for @engineManagement_empty.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台设备上还没有引擎'**
+  String get engineManagement_empty;
+
+  /// No description provided for @engineManagement_availableEngines.
+  ///
+  /// In zh, this message translates to:
+  /// **'可用引擎'**
+  String get engineManagement_availableEngines;
+
+  /// No description provided for @engineManagement_connections.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接'**
+  String get engineManagement_connections;
+
+  /// No description provided for @engineManagement_activeConversations.
+  ///
+  /// In zh, this message translates to:
+  /// **'对话中'**
+  String get engineManagement_activeConversations;
+
+  /// No description provided for @engineManagement_queued.
+  ///
+  /// In zh, this message translates to:
+  /// **'排队'**
+  String get engineManagement_queued;
+
+  /// No description provided for @engineManagement_queuedConversations.
+  ///
+  /// In zh, this message translates to:
+  /// **'排队对话'**
+  String get engineManagement_queuedConversations;
+
+  /// No description provided for @engineManagement_perEngine.
+  ///
+  /// In zh, this message translates to:
+  /// **'{instances} 个实例 · {connections} 个连接 · {active} 个对话 · {queued} 排队'**
+  String engineManagement_perEngine(
+      int instances, int connections, int active, int queued);
+
+  /// No description provided for @engineManagement_instances.
+  ///
+  /// In zh, this message translates to:
+  /// **'实例'**
+  String get engineManagement_instances;
+
+  /// No description provided for @engineManagement_instanceUsage.
+  ///
+  /// In zh, this message translates to:
+  /// **'{connections} 个连接 · {active} 个对话中 · {queued} 排队'**
+  String engineManagement_instanceUsage(
+      int connections, int active, int queued);
+
+  /// No description provided for @engineManagement_sessions.
+  ///
+  /// In zh, this message translates to:
+  /// **'会话'**
+  String get engineManagement_sessions;
+
+  /// No description provided for @engineManagement_noSessions.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无会话'**
+  String get engineManagement_noSessions;
+
+  /// No description provided for @engineManagement_running.
+  ///
+  /// In zh, this message translates to:
+  /// **'运行中'**
+  String get engineManagement_running;
+
+  /// No description provided for @engineManagement_idle.
+  ///
+  /// In zh, this message translates to:
+  /// **'空闲'**
+  String get engineManagement_idle;
+
+  /// No description provided for @engineManagement_killInstance.
+  ///
+  /// In zh, this message translates to:
+  /// **'杀掉进程'**
+  String get engineManagement_killInstance;
+
+  /// No description provided for @engineManagement_killInstanceConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'杀掉「{name}」的全部引擎进程？正在跑的对话会立刻结束。'**
+  String engineManagement_killInstanceConfirm(String name);
+
+  /// No description provided for @engineManagement_killSession.
+  ///
+  /// In zh, this message translates to:
+  /// **'结束对话'**
+  String get engineManagement_killSession;
+
+  /// No description provided for @engineManagement_killSessionConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'结束这段对话？正在跑的回合会立刻结束，排队中的消息会被清掉。'**
+  String get engineManagement_killSessionConfirm;
+
+  /// No description provided for @engineManagement_killFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'操作失败：{error}'**
+  String engineManagement_killFailed(String error);
+
+  /// No description provided for @engineManagement_configure.
+  ///
+  /// In zh, this message translates to:
+  /// **'配置引擎'**
+  String get engineManagement_configure;
+
+  /// No description provided for @engineManagement_updatedAt.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫描于 {time}'**
+  String engineManagement_updatedAt(String time);
+
+  /// No description provided for @engineManagement_loadFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'引擎状态读取失败'**
+  String get engineManagement_loadFailed;
+
+  /// No description provided for @engineManagement_refresh.
+  ///
+  /// In zh, this message translates to:
+  /// **'刷新'**
+  String get engineManagement_refresh;
+
   /// No description provided for @peerList_connected.
   ///
   /// In zh, this message translates to:

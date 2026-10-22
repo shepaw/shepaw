@@ -2686,6 +2686,83 @@
       }
     }
   },
+  "engineManagement_title": "引擎管理",
+  "engineManagement_entryHint": "查看引擎安装状态与占用",
+  "engineManagement_offline": "设备离线，暂时读不到引擎状态",
+  "engineManagement_nodeOffline": "工作节点离线",
+  "engineManagement_unsupported": "主机版本不支持引擎管理",
+  "engineManagement_empty": "这台设备上还没有引擎",
+  "engineManagement_availableEngines": "可用引擎",
+  "engineManagement_connections": "连接",
+  "engineManagement_activeConversations": "对话中",
+  "engineManagement_queued": "排队",
+  "engineManagement_queuedConversations": "排队对话",
+  "engineManagement_perEngine": "{instances} 个实例 · {connections} 个连接 · {active} 个对话 · {queued} 排队",
+  "@engineManagement_perEngine": {
+    "placeholders": {
+      "instances": {
+        "type": "int"
+      },
+      "connections": {
+        "type": "int"
+      },
+      "active": {
+        "type": "int"
+      },
+      "queued": {
+        "type": "int"
+      }
+    }
+  },
+  "engineManagement_instances": "实例",
+  "engineManagement_instanceUsage": "{connections} 个连接 · {active} 个对话中 · {queued} 排队",
+  "@engineManagement_instanceUsage": {
+    "placeholders": {
+      "connections": {
+        "type": "int"
+      },
+      "active": {
+        "type": "int"
+      },
+      "queued": {
+        "type": "int"
+      }
+    }
+  },
+  "engineManagement_sessions": "会话",
+  "engineManagement_noSessions": "暂无会话",
+  "engineManagement_running": "运行中",
+  "engineManagement_idle": "空闲",
+  "engineManagement_killInstance": "杀掉进程",
+  "engineManagement_killInstanceConfirm": "杀掉「{name}」的全部引擎进程？正在跑的对话会立刻结束。",
+  "@engineManagement_killInstanceConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "engineManagement_killSession": "结束对话",
+  "engineManagement_killSessionConfirm": "结束这段对话？正在跑的回合会立刻结束，排队中的消息会被清掉。",
+  "engineManagement_killFailed": "操作失败：{error}",
+  "@engineManagement_killFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "engineManagement_configure": "配置引擎",
+  "engineManagement_updatedAt": "扫描于 {time}",
+  "@engineManagement_updatedAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "engineManagement_loadFailed": "引擎状态读取失败",
+  "engineManagement_refresh": "刷新",
   "peerList_connected": "已连接",
   "peerList_connectedE2e": "已连接 (端到端加密)",
   "peerList_disconnected": "未连接",

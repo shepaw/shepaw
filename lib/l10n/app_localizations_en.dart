@@ -4989,6 +4989,102 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get engineManagement_title => 'Engine management';
+
+  @override
+  String get engineManagement_entryHint => 'See engine installation and usage';
+
+  @override
+  String get engineManagement_offline =>
+      'Device is offline; engine status is unavailable';
+
+  @override
+  String get engineManagement_nodeOffline => 'The worker node is offline';
+
+  @override
+  String get engineManagement_unsupported =>
+      'This host version does not support engine management';
+
+  @override
+  String get engineManagement_empty => 'No engines on this device yet';
+
+  @override
+  String get engineManagement_availableEngines => 'Available engines';
+
+  @override
+  String get engineManagement_connections => 'Connections';
+
+  @override
+  String get engineManagement_activeConversations => 'Active conversations';
+
+  @override
+  String get engineManagement_queued => 'Queued';
+
+  @override
+  String get engineManagement_queuedConversations => 'Queued conversations';
+
+  @override
+  String engineManagement_perEngine(
+      int instances, int connections, int active, int queued) {
+    return '$instances instances · $connections connections · $active active conversations · $queued queued';
+  }
+
+  @override
+  String get engineManagement_instances => 'Instances';
+
+  @override
+  String engineManagement_instanceUsage(
+      int connections, int active, int queued) {
+    return '$connections connections · $active active conversations · $queued queued';
+  }
+
+  @override
+  String get engineManagement_sessions => 'Sessions';
+
+  @override
+  String get engineManagement_noSessions => 'No sessions yet';
+
+  @override
+  String get engineManagement_running => 'Running';
+
+  @override
+  String get engineManagement_idle => 'Idle';
+
+  @override
+  String get engineManagement_killInstance => 'Kill process';
+
+  @override
+  String engineManagement_killInstanceConfirm(String name) {
+    return 'Kill every engine process for \"$name\"? Running conversations will end immediately.';
+  }
+
+  @override
+  String get engineManagement_killSession => 'End conversation';
+
+  @override
+  String get engineManagement_killSessionConfirm =>
+      'End this conversation? The running turn stops immediately and queued messages are dropped.';
+
+  @override
+  String engineManagement_killFailed(String error) {
+    return 'Operation failed: $error';
+  }
+
+  @override
+  String get engineManagement_configure => 'Configure engine';
+
+  @override
+  String engineManagement_updatedAt(String time) {
+    return 'Scanned at $time';
+  }
+
+  @override
+  String get engineManagement_loadFailed => 'Could not load engine status';
+
+  @override
+  String get engineManagement_refresh => 'Refresh';
+
+  @override
   String get peerList_connected => 'Connected';
 
   @override
