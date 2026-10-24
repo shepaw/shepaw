@@ -55,6 +55,8 @@ class JadeSlipRehome {
   ///
   /// 唯一不落定的情形是「主机不在线」：客户端读到离线是常态，要等连上再试。
   static Future<void> ensure({required HostPouchDocuments docs}) {
+    // v3 的 scope 里没有 device 目录，没有要搬的东西（[G4]）。
+    if (!docs.supportsRehome) return Future<void>.value();
     final hostId = docs.deviceId;
     if (!isValidDeviceId(hostId) || _settled == hostId) {
       return Future<void>.value();

@@ -6,6 +6,7 @@ import 'host_pouch_target.dart';
 import 'local_store.dart';
 import 'remote_read_service.dart';
 import 'store_protocol.dart';
+import 'slip_scope_documents.dart';
 import 'store_service.dart';
 
 /// 主机连不上：权威副本读写不了，也不该在本机留一份。
@@ -35,6 +36,12 @@ abstract class HostPouchDocuments {
 
   /// 主机不在本机。
   bool get isRemote;
+
+  /// 需不需要跑「各 device 目录各存一份」时代的存量回迁（JadeSlipRehome）。
+  ///
+  /// v3 的 scope 没有 device 目录，回迁无从谈起（SlipScopeDocuments 返回
+  /// false）。
+  bool get supportsRehome => true;
 
   /// 本机就是主机时的底层 store；远端形态为 null。
   ///
@@ -78,6 +85,9 @@ class LocalHostPouchDocuments implements HostPouchDocuments {
 
   @override
   bool get isRemote => false;
+
+  @override
+  bool get supportsRehome => true;
 
   @override
   LocalStore? get localStore => _store;
@@ -169,6 +179,9 @@ class RemoteHostPouchDocuments implements HostPouchDocuments {
 
   @override
   bool get isRemote => true;
+
+  @override
+  bool get supportsRehome => true;
 
   @override
   LocalStore? get localStore => null;
@@ -308,8 +321,21 @@ class RemoteHostPouchDocuments implements HostPouchDocuments {
 class HostPouchDocumentsFactory {
   HostPouchDocumentsFactory._();
 
-  /// 本机没登录（或登录的就是本机）→ 本机就是主机。
+  /// 有 v3 袋子（登录过 / 本机 hub 有活跃袋子）就走 scope；否则退回 v2。
+  ///
+  /// 过渡分支（[G4]）：G2 还没把真实数据切到 v3 的机器上
+  /// [StoreService.scopeStoreOrNull] 返回 null，这里仍按 device 目录读写
+  /// `slips/<device>/…`。等所有机器都有 active_pouch 之后可以删掉 else 那半。
   static Future<HostPouchDocuments> resolve() async {
+    final scoped = await StoreService.instance.scopeStoreOrNull();
+    if (scoped != null) {
+      final target = await HostPouchTarget.resolve();
+      return SlipScopeDocuments(
+        store: scoped,
+        deviceId: target.deviceId,
+        isRemote: target.isRemote,
+      );
+    }
     final target = await HostPouchTarget.resolve();
     if (!target.isRemote) {
       return LocalHostPouchDocuments(

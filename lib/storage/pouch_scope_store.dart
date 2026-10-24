@@ -29,6 +29,36 @@ class PouchListPage {
   bool get hasMore => (nextCursor ?? '').isNotEmpty;
 }
 
+/// scope 里一份文件的元数据（hub 的 `meta`）。
+///
+/// [version] 是读–改–写要回填给 `commit.expected_version` 的那个数字；
+/// v3 的 `put` 必须声明期望版本（A 第 8 节），帧层不透传就没法做 CAS。
+class PouchFileMeta {
+  const PouchFileMeta({
+    required this.path,
+    required this.size,
+    required this.version,
+    required this.mtimeMs,
+    this.sha256 = '',
+  });
+
+  final String path;
+  final int size;
+  final int version;
+  final int mtimeMs;
+  final String sha256;
+
+  factory PouchFileMeta.fromJson(Map<String, dynamic> json) => PouchFileMeta(
+        path: json['path'] as String? ?? '',
+        size: (json['size'] as num?)?.toInt() ?? 0,
+        version: (json['version'] as num?)?.toInt() ?? 0,
+        mtimeMs: (json['mtime'] as num?)?.toInt() ??
+            (json['mtime_ms'] as num?)?.toInt() ??
+            0,
+        sha256: json['sha256'] as String? ?? '',
+      );
+}
+
 /// 与 hub 交换 v3 帧的传输层。测试里换成假实现，不碰网络。
 abstract class PouchScopeTransport {
   /// 列 scope 下 `prefix` 开头的条目（hub 返回的是扁平的完整路径）。
@@ -48,11 +78,32 @@ abstract class PouchScopeTransport {
     required String path,
   });
 
+  /// 列 [prefix] 开头的 scope（字面前缀，例：slip:、group:）。
+  ///
+  /// hub 只回调用方能读的那些；读不到时抛 [StoreException]，空列表表示
+  /// 「确实一个都没有」。
+  Future<List<String>> scopes({
+    required String pouchId,
+    required String prefix,
+  });
+
+  /// 一份文件的元数据（含读–改–写要用的版本号）；不存在返回 null。
+  Future<PouchFileMeta?> meta({
+    required String pouchId,
+    required PouchScope scope,
+    required String path,
+  });
+
+  /// 写整份文件。
+  ///
+  /// [expectedVersion] 是读–改–写用的版本号（hub 的 commit.expected_version）：
+  /// 带上它、而文件已经被别人改过时，hub 回 version_conflict，不会静默覆盖。
   Future<void> write({
     required String pouchId,
     required PouchScope scope,
     required String path,
     required Uint8List bytes,
+    int? expectedVersion,
   });
 
   Future<void> delete({
@@ -148,6 +199,7 @@ class HubPouchScopeTransport implements PouchScopeTransport {
     required PouchScope scope,
     required String path,
     required Uint8List bytes,
+    int? expectedVersion,
   }) async {
     final normalized = normalizeStorePath(path);
     final begin = await _call(
@@ -186,6 +238,7 @@ class HubPouchScopeTransport implements PouchScopeTransport {
       scope: scope,
       fields: <String, dynamic>{
         'upload_ids': [uploadId],
+        if (expectedVersion != null) 'expected_version': expectedVersion,
       },
     );
   }
@@ -204,10 +257,44 @@ class HubPouchScopeTransport implements PouchScopeTransport {
     );
   }
 
+  @override
+  Future<List<String>> scopes({
+    required String pouchId,
+    required String prefix,
+  }) async {
+    final data = await _call(
+      op: StoreOp.scopes,
+      pouchId: pouchId,
+      fields: <String, dynamic>{'prefix': prefix},
+    );
+    return _scopesOf(data);
+  }
+
+  @override
+  Future<PouchFileMeta?> meta({
+    required String pouchId,
+    required PouchScope scope,
+    required String path,
+  }) async {
+    try {
+      final data = await _call(
+        op: StoreOp.meta,
+        pouchId: pouchId,
+        scope: scope,
+        fields: <String, dynamic>{'path': path},
+      );
+      return PouchFileMeta.fromJson(data);
+    } on StoreException catch (e) {
+      if (e.code == StoreError.notFound) return null;
+      rethrow;
+    }
+  }
+
+  /// [scope] 为 null 时不带 scope 字段（只有 scopes 这种按前缀列用的到）。
   Future<Map<String, dynamic>> _call({
     required String op,
     required String pouchId,
-    required PouchScope scope,
+    PouchScope? scope,
     Map<String, dynamic> fields = const {},
   }) async {
     final reqId = 'p-${_uuid.v4()}';
@@ -262,11 +349,13 @@ class HubPouchScopeTransport implements PouchScopeTransport {
 }
 
 /// 一条 pouch v2 帧（配对通道和本机 socket 共用同一份字段）。
+///
+/// [scope] 为 null 时不带 scope 字段：只有 scopes（按前缀列）用得到。
 Map<String, dynamic> pouchRequestFrame({
   required String op,
   required String reqId,
   required String pouchId,
-  required PouchScope scope,
+  PouchScope? scope,
   Map<String, dynamic> fields = const <String, dynamic>{},
 }) =>
     <String, dynamic>{
@@ -276,9 +365,18 @@ Map<String, dynamic> pouchRequestFrame({
       'v': 2,
       'req_id': reqId,
       'pouch_id': pouchId,
-      'scope': scope.id,
+      if (scope != null) 'scope': scope.id,
       ...fields,
     };
+
+/// `scopes` 的 "data" → scope id 列表。
+List<String> _scopesOf(Map<String, dynamic> data) {
+  final raw = data['scopes'] as List? ?? const [];
+  return <String>[
+    for (final item in raw)
+      if (item is String && item.trim().isNotEmpty) item.trim(),
+  ];
+}
 
 /// `list` 的 "data" → 一页。
 PouchListPage _pageOf(Map<String, dynamic> data) {
@@ -374,6 +472,7 @@ class LocalPouchSocketTransport implements PouchScopeTransport {
     required PouchScope scope,
     required String path,
     required Uint8List bytes,
+    int? expectedVersion,
   }) async {
     final normalized = normalizeStorePath(path);
     final begin = await _call(
@@ -406,6 +505,7 @@ class LocalPouchSocketTransport implements PouchScopeTransport {
       scope,
       fields: <String, dynamic>{
         'upload_ids': [uploadId],
+        if (expectedVersion != null) 'expected_version': expectedVersion,
       },
     );
   }
@@ -423,9 +523,42 @@ class LocalPouchSocketTransport implements PouchScopeTransport {
     );
   }
 
+  @override
+  Future<List<String>> scopes({
+    required String pouchId,
+    required String prefix,
+  }) async {
+    final data = await _call(
+      StoreOp.scopes,
+      null,
+      fields: <String, dynamic>{'prefix': prefix},
+    );
+    return _scopesOf(data);
+  }
+
+  @override
+  Future<PouchFileMeta?> meta({
+    required String pouchId,
+    required PouchScope scope,
+    required String path,
+  }) async {
+    try {
+      final data = await _call(
+        StoreOp.meta,
+        scope,
+        fields: <String, dynamic>{'path': path},
+      );
+      return PouchFileMeta.fromJson(data);
+    } on StoreException catch (e) {
+      if (e.code == StoreError.notFound) return null;
+      rethrow;
+    }
+  }
+
+  /// [scope] 为 null 时不带 scope 字段（scopes 按前缀列，没有单个 scope）。
   Future<Map<String, dynamic>> _call(
     String op,
-    PouchScope scope, {
+    PouchScope? scope, {
     Map<String, dynamic> fields = const <String, dynamic>{},
   }) async {
     final reqId = 'l-${_uuid.v4()}';
@@ -563,18 +696,38 @@ class PouchScopeStore {
     return foldScopeListing(flat, path: prefix);
   }
 
+  /// 列 [prefix] 开头的 scope（玉简、群共享目录这类入口）。
+  ///
+  /// 空列表 = 确实一个都没有；读不到会抛 [StoreException]（带错误码），
+  /// 调用方不要把它当空态。
+  Future<List<String>> scopes(String prefix) =>
+      transport.scopes(pouchId: pouchId, prefix: prefix);
+
   /// 读一份文件；不存在返回 null。
   Future<Uint8List?> read(PouchScope scope, String path) =>
       transport.read(pouchId: pouchId, scope: scope, path: path);
 
+  /// 一份文件的元数据（含版本号）；不存在返回 null。
+  Future<PouchFileMeta?> meta(PouchScope scope, String path) =>
+      transport.meta(pouchId: pouchId, scope: scope, path: path);
+
   /// 写一份文件，返回它的 v3 地址。
-  Future<String> write(PouchScope scope, String path, Uint8List bytes) async {
+  ///
+  /// [expectedVersion] 是读–改–写带上的版本号；文件被别人改过时抛
+  /// `version_conflict`，不会静默覆盖。
+  Future<String> write(
+    PouchScope scope,
+    String path,
+    Uint8List bytes, {
+    int? expectedVersion,
+  }) async {
     final normalized = scopeStorePath(path);
     await transport.write(
       pouchId: pouchId,
       scope: scope,
       path: normalized,
       bytes: bytes,
+      expectedVersion: expectedVersion,
     );
     return uriFor(scope, normalized).format();
   }

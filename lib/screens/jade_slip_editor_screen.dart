@@ -500,6 +500,19 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
     widget.onChanged?.call();
   }
 
+  /// 打开附件：地址由服务按当前权威（v3 scope / 过渡期 v2）算，
+  /// 不在模型上拼（模型不知道袋子 id，拼不出三段式地址）。
+  Future<void> _openAttachment(
+    JadeSlip slip,
+    JadeSlipAttachment attachment,
+  ) async {
+    final uri = await _guardValue(
+      () => _service.attachmentUri(slip, attachment),
+    );
+    if (uri == null || !mounted) return;
+    await StoreOpenService.instance.openStoreUri(context, uri);
+  }
+
   Future<void> _removeAttachment(String attachmentId) async {
     if (_slip == null) return;
     _localEditSeq++;
@@ -887,12 +900,7 @@ class _JadeSlipEditorScreenState extends State<JadeSlipEditorScreen> {
               for (final att in slip.attachments)
                 _AttachmentRow(
                   attachment: att,
-                  onOpen: () => unawaited(
-                    StoreOpenService.instance.openStoreUri(
-                      context,
-                      att.uri,
-                    ),
-                  ),
+                  onOpen: () => unawaited(_openAttachment(slip, att)),
                   onDelete: () => unawaited(_removeAttachment(att.id)),
                 ),
               _AddAttachmentRow(

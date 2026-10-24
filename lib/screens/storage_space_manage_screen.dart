@@ -6,6 +6,7 @@ import '../l10n/app_localizations.dart';
 import '../storage/device_identity.dart';
 import '../storage/host_pouch_target.dart';
 import '../storage/store_service.dart';
+import 'pouch_scope_browser_screen.dart';
 import 'storage_browser_screen.dart';
 import 'storage_shared.dart';
 
@@ -65,6 +66,14 @@ class _StorageSpaceManageScreenState extends State<StorageSpaceManageScreen> {
   /// 空间内是否隐藏内部记账文件；由本页「更多」菜单持有并下发给浏览页。
   bool _hideInternalFiles = true;
 
+  /// 这只机器上有可用的 v3 袋子（登录过 / 本机 hub 有 active_pouch）。
+  ///
+  /// [G4]：有它就默认按 scope 浏览器，space/device 那套退到「旧数据」入口。
+  bool _hasScopeStore = false;
+
+  /// 用户主动点了「旧数据」：本次停在 space 浏览页。
+  bool _forceLegacy = false;
+
   void _handleMoreAction(StorageMoreAction action) {
     switch (action) {
       case StorageMoreAction.hideInternal:
@@ -80,8 +89,12 @@ class _StorageSpaceManageScreenState extends State<StorageSpaceManageScreen> {
 
   Future<void> _resolvePouch() async {
     final target = await HostPouchTarget.resolve();
+    final scoped = await StoreService.instance.scopeStoreOrNull();
     if (!mounted) return;
-    setState(() => _pouch = target);
+    setState(() {
+      _pouch = target;
+      _hasScopeStore = scoped != null;
+    });
     if (!target.isRemote) unawaited(_loadUsedBytes());
   }
 
@@ -116,6 +129,13 @@ class _StorageSpaceManageScreenState extends State<StorageSpaceManageScreen> {
       );
     }
     final l10n = AppLocalizations.of(context);
+    // 默认按袋子里的 scope 浏览（[G4]）；space/device 视图留给「旧数据」入口。
+    if (_hasScopeStore && !_forceLegacy && widget.initialSpace == null) {
+      return PouchScopeBrowserScreen(
+        title: l10n.storage_title,
+        onOpenLegacy: () => setState(() => _forceLegacy = true),
+      );
+    }
     return StorageBrowserScreen(
       deviceId: pouch.isRemote ? pouch.deviceId : null,
       peerId: pouch.peerId,
@@ -125,6 +145,12 @@ class _StorageSpaceManageScreenState extends State<StorageSpaceManageScreen> {
       hideInternalFiles: _hideInternalFiles,
       onHideInternalFilesChanged: (v) => setState(() => _hideInternalFiles = v),
       extraActions: [
+        if (_hasScopeStore)
+          IconButton(
+            icon: const Icon(Icons.account_tree_outlined),
+            tooltip: '按 scope 浏览',
+            onPressed: () => setState(() => _forceLegacy = false),
+          ),
         PopupMenuButton<StorageMoreAction>(
           tooltip: l10n.storage_moreSettings,
           icon: const Icon(Icons.more_horiz),

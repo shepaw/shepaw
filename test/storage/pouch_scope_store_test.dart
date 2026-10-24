@@ -58,12 +58,44 @@ class _FakeTransport implements PouchScopeTransport {
     return bytes;
   }
 
+  List<String> scopeIds = const <String>[];
+  PouchFileMeta? metaEntry;
+
+  @override
+  Future<List<String>> scopes({
+    required String pouchId,
+    required String prefix,
+  }) async {
+    calls.add(<String, dynamic>{
+      'op': 'scopes',
+      'pouch_id': pouchId,
+      'prefix': prefix,
+    });
+    return scopeIds;
+  }
+
+  @override
+  Future<PouchFileMeta?> meta({
+    required String pouchId,
+    required PouchScope scope,
+    required String path,
+  }) async {
+    calls.add(<String, dynamic>{
+      'op': 'meta',
+      'pouch_id': pouchId,
+      'scope': scope.id,
+      'path': path,
+    });
+    return metaEntry;
+  }
+
   @override
   Future<void> write({
     required String pouchId,
     required PouchScope scope,
     required String path,
     required Uint8List bytes,
+    int? expectedVersion,
   }) async {
     calls.add(<String, dynamic>{
       'op': 'write',
@@ -71,6 +103,7 @@ class _FakeTransport implements PouchScopeTransport {
       'scope': scope.id,
       'path': path,
       'size': bytes.length,
+      'expected_version': expectedVersion,
     });
   }
 
@@ -167,6 +200,64 @@ void main() {
       'attachments/%E4%B8%AD%E6%96%87%20%E5%90%8D.png',
     );
     expect(PouchV2Uri.tryParse(uri)?.path, 'attachments/中文 名.png');
+  });
+
+  test('scopes 走 op=scopes：不带 scope 字段，前缀原样发出去', () async {
+    final frame = pouchRequestFrame(
+      op: StoreOp.scopes,
+      reqId: 'r1',
+      pouchId: 'p1',
+      fields: <String, dynamic>{'prefix': 'slip:'},
+    );
+    expect(frame.containsKey('scope'), isFalse);
+    expect(frame['op'], 'scopes');
+    expect(frame['pouch_id'], 'p1');
+    expect(frame['prefix'], 'slip:');
+    expect(frame['v'], 2);
+
+    final transport = _FakeTransport()..scopeIds = ['slip:sl_1', 'slip:sl_2'];
+    final store = PouchScopeStore(transport: transport, pouchId: 'p1');
+    expect(await store.scopes('slip:'), ['slip:sl_1', 'slip:sl_2']);
+    expect(transport.calls.single['op'], 'scopes');
+    expect(transport.calls.single['prefix'], 'slip:');
+    expect(transport.calls.single.containsKey('scope'), isFalse);
+  });
+
+  test('空 scope 名单不是错误：返回空列表', () async {
+    final transport = _FakeTransport()..scopeIds = const <String>[];
+    final store = PouchScopeStore(transport: transport, pouchId: 'p1');
+    expect(await store.scopes('skill:'), isEmpty);
+  });
+
+  test('写入带上读到的版本号（读–改–写）', () async {
+    final transport = _FakeTransport();
+    final store = PouchScopeStore(transport: transport, pouchId: 'p1');
+    await store.write(
+      PouchScope.slip('sl_1'),
+      'slip.json',
+      Uint8List.fromList([1]),
+      expectedVersion: 7,
+    );
+    expect(transport.calls.single['expected_version'], 7);
+  });
+
+  test('meta 把版本号带出来；不存在返回 null', () async {
+    final transport = _FakeTransport()
+      ..metaEntry = const PouchFileMeta(
+        path: 'slip.json',
+        size: 3,
+        version: 4,
+        mtimeMs: 99,
+      );
+    final store = PouchScopeStore(transport: transport, pouchId: 'p1');
+    final meta = await store.meta(PouchScope.slip('sl_1'), 'slip.json');
+    expect(meta?.version, 4);
+    expect(meta?.size, 3);
+    expect(transport.calls.single['op'], 'meta');
+
+    final missing = _FakeTransport();
+    final emptyStore = PouchScopeStore(transport: missing, pouchId: 'p1');
+    expect(await emptyStore.meta(PouchScope.slip('sl_1'), 'slip.json'), isNull);
   });
 
   test('读不到返回 null；删除也走同一个 pouch 与 scope', () async {

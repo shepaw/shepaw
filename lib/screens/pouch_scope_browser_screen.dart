@@ -20,6 +20,7 @@ class PouchScopeBrowserScreen extends StatefulWidget {
     this.title,
     this.initialScope,
     this.initialPath = '',
+    this.onOpenLegacy,
   });
 
   /// 固定四个之外的 scope（群、助手、技能、玉简…）。
@@ -39,6 +40,11 @@ class PouchScopeBrowserScreen extends StatefulWidget {
   /// 配合 [initialScope] 的起始路径。
   final String initialPath;
 
+  /// 「旧数据（space 目录）」入口：给调用方决定怎么退回 v2 的浏览页。
+  ///
+  /// 为 null 时不显示这一项（例如群会话里没有可退的地方）。
+  final VoidCallback? onOpenLegacy;
+
   @override
   State<PouchScopeBrowserScreen> createState() =>
       _PouchScopeBrowserScreenState();
@@ -47,6 +53,9 @@ class PouchScopeBrowserScreen extends StatefulWidget {
 class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
   final _scopes = <PouchScope>[];
   bool _loadingScopes = true;
+
+  /// 顶层列 scope 失败的原因（带错误码）；固定四个分区照常显示。
+  String? _scopesError;
 
   PouchScope? _scope;
   String _path = '';
@@ -62,17 +71,33 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
 
   Future<void> _loadScopes() async {
     final found = <PouchScope>[...PouchScope.fixed, ...widget.extraScopes];
+    String? failure;
+    try {
+      // hub 按前缀列 scope（op=scopes）：固定四个之外，agent/group/skill/
+      // instruction/slip 的 id 都从袋子里来，不再靠本地库猜。
+      final store = await _store();
+      final ids = await store.scopes('');
+      for (final id in ids) {
+        final parsed = PouchScope.tryParse(id);
+        if (parsed == null || !_listedAtTop(parsed)) continue;
+        found.add(parsed);
+      }
+    } catch (e) {
+      // 读不到（未配对 / 连不上 / 没权限）不是「空」：把错误码显示出来。
+      failure = _messageFor(e);
+    }
     try {
       final extra = await widget.scopeLoader?.call();
       if (extra != null) found.addAll(extra);
     } catch (_) {
-      // 名单拿不到就只显示固定分区。
+      // 名单拿不到就只显示上面那批。
     }
     if (!mounted) return;
     setState(() {
       _scopes
         ..clear()
         ..addAll({for (final scope in found) scope.id: scope}.values);
+      _scopesError = failure;
       _loadingScopes = false;
     });
     final initial = widget.initialScope;
@@ -80,6 +105,18 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
       await _openScope(initial, path: widget.initialPath);
     }
   }
+
+  /// 顶层只列「可以直接点进去看文件」的 scope：
+  /// 固定四个 + agent 根 + 群根 + 群共享 + 技能/指令/玉简。
+  /// 会话、任务、成员这些由各自的功能入口进（群会话面板、任务页），
+  /// 否则群一多顶层就被会话淹没。
+  bool _listedAtTop(PouchScope scope) => switch (scope.kind) {
+        PouchScopeKind.session ||
+        PouchScopeKind.task ||
+        PouchScopeKind.member =>
+          false,
+        _ => true,
+      };
 
   Future<PouchScopeStore> _store() async =>
       widget.store ?? await StoreService.instance.scopeStore();
@@ -109,16 +146,22 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
     }
   }
 
+  /// 读失败时给人的话 + 错误码。空列表和读不到必须能分开：前者是数据状态，
+  /// 后者要让用户看见是哪一类失败（未配对 / 离线 / 无权限…）。
   String _messageFor(Object error) {
     if (error is StoreException) {
-      return switch (error.code) {
+      final hint = switch (error.code) {
         StoreError.notPaired => '还没有登录袋子',
         StoreError.masterOffline => '连不上这台主机',
-        StoreError.notFound => '这里还没有文件',
+        StoreError.notFound => '这个位置不存在',
         StoreError.crossPouchDenied => '这个地址属于另一只袋子',
         StoreError.aclDenied => '没有权限看这里',
-        _ => '读取失败：${error.code}',
+        StoreError.versionConflict => '内容已经被别人改过',
+        StoreError.badScope => 'scope 不合法',
+        _ => '读取失败',
       };
+      final code = error.code.trim();
+      return code.isEmpty ? hint : '$hint（$code）';
     }
     return '读取失败：$error';
   }
@@ -180,8 +223,43 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
       return const Center(child: CircularProgressIndicator());
     }
     final groups = groupPouchScopes(_scopes);
+    final scopesError = _scopesError;
     return ListView(
       children: [
+        if (scopesError != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.errorContainer,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.error_outline,
+                    size: 18,
+                    color: Theme.of(context).colorScheme.onErrorContainer,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      scopesError,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onErrorContainer,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _loadingScopes ? null : _reloadScopes,
+                    child: const Text('重试'),
+                  ),
+                ],
+              ),
+            ),
+          ),
         for (final group in groups) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
@@ -210,8 +288,26 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
               onTap: () => _openScope(scope),
             ),
         ],
+        if (widget.onOpenLegacy != null) ...[
+          const Divider(height: 24),
+          ListTile(
+            leading: const Icon(Icons.inventory_2_outlined),
+            title: const Text('旧数据（space 目录）'),
+            subtitle: const Text('v2 的 space/device 视图，只用来翻迁移前的东西'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: widget.onOpenLegacy,
+          ),
+        ],
       ],
     );
+  }
+
+  void _reloadScopes() {
+    setState(() {
+      _loadingScopes = true;
+      _scopesError = null;
+    });
+    _loadScopes();
   }
 
   Widget _buildScope(PouchScope scope) {
@@ -228,7 +324,27 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
       );
     }
     if (_entries.isEmpty) {
-      return const Center(child: Text('这里还没有文件'));
+      // 空态：这一层确实没有条目（读失败走上面的 error 分支，带错误码）。
+      return Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.folder_open_outlined,
+              size: 40,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '这个位置还没有文件',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      );
     }
     return ListView.builder(
       itemCount: _entries.length,

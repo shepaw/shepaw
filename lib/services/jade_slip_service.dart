@@ -13,11 +13,14 @@ import '../storage/store_protocol.dart';
 import 'jade_slip_rehome.dart';
 import 'logger_service.dart';
 
-/// 玉简业务服务：读写储物袋 `slips` 分区里的待办。
+/// 玉简业务服务：读写储物袋里的待办。
 ///
-/// 权威只有一份：主机的 `slips/<主机指纹>/<id>.json`。本机就是主机时直接读写
-/// 本机磁盘；登录了别的主机时直接读写那一台，本地只留读缓存
-/// （见 docs/jade_slip_host_authority_decision.md）。
+/// 权威只有一份。落点由 [HostPouchDocuments] 决定（[G4]）：
+/// - 有 v3 袋子：`slip:<id>` / `slip.json`，附件 `slip:<id>` / `files/<file>`；
+/// - 过渡期（本机还没有 active_pouch）：仍是 `slips/<主机指纹>/<id>.json`。
+///
+/// 这里的路径一律用 v2 的相对路径（`<id>.json`、`<id>/files/<file>`），
+/// 映射在 SlipScopeDocuments 里做；地址一律经 docs.uri() 出。
 class JadeSlipService {
   JadeSlipService._();
   static final JadeSlipService instance = JadeSlipService._();
@@ -986,9 +989,20 @@ class JadeSlipService {
     );
   }
 
-  /// 本机 pouch:// URI，Agent 也可用 `shepaw pouch read`。
+  /// 这条玉简记录的地址：v3 是 `pouch://<pouch_id>/slip:<id>/slip.json`，
+  /// 过渡期（没有 active_pouch）仍是 v2 的 `pouch://slips/<id>.json`。
   Future<String> uriOf(JadeSlip slip) async {
-    return storeUriWithRef(StoreSpace.slips, slip.relPath);
+    final docs = await _docs();
+    return docs.uri(StoreSpace.slips, slip.relPath);
+  }
+
+  /// 附件地址。v3 是 `pouch://<pouch_id>/slip:<id>/files/<file>`。
+  ///
+  /// 模型上的 [JadeSlipAttachment.uri] 不认识袋子 id，只能给 v2 形式；
+  /// 打开附件一律走这里。
+  Future<String> attachmentUri(JadeSlip slip, JadeSlipAttachment attachment) async {
+    final docs = await _docs();
+    return docs.uri(StoreSpace.slips, attachment.path);
   }
 }
 

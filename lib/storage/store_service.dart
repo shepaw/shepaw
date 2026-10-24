@@ -195,6 +195,20 @@ class StoreService {
     throw StoreException(StoreError.notPaired, '还没有登录袋子');
   }
 
+  /// 同 [scopeStore]，但没有可用的 v3 袋子时返回 null（不抛）。
+  ///
+  /// 给「v3 优先、没有就退回 v2」的调用方判断用（[G4] 过渡期）。
+  Future<PouchScopeStore?> scopeStoreOrNull() async {
+    final override = scopeStoreOverride;
+    if (override != null) return override;
+    try {
+      return await scopeStore();
+    } on StoreException catch (e) {
+      if (e.code == StoreError.notPaired) return null;
+      rethrow;
+    }
+  }
+
   /// 列 scope 下 [path] 这一层的子项。
   Future<List<StoreEntry>> listScope(
     PouchScope scope, {

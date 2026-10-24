@@ -16,13 +16,16 @@ import '../service_locator.dart';
 import '../services/group/group_management_service.dart';
 import '../services/logger_service.dart';
 import '../services/she_service.dart';
+import '../storage/group_shared_files.dart';
 import '../storage/group_workspace_service.dart';
+import '../storage/pouch_scope.dart';
 import '../storage/runtime_share_service.dart';
 import '../widgets/chat/hub_group_sessions_sheet.dart';
 import '../widgets/discard_changes_scope.dart';
 import '../widgets/form_bottom_bar.dart';
 import '../widgets/avatar_image.dart';
 import 'storage_directory_opener.dart';
+import 'pouch_scope_browser_screen.dart';
 import 'workspace_binding_screen.dart';
 import 'chat_screen.dart';
 import 'group_member_detail_screen.dart';
@@ -378,10 +381,31 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                     ),
                   ),
                   const SizedBox(height: 4),
+                  // [G4] 共享文件在 v3 袋子里是 group:<gid>:shared/files；旧的
+                  // workspaces/<gid>/shared 只作迁移前的兼容（见 GroupSharedFiles）。
                   SelectableText(
-                    'pouch://workspaces/'
-                    '${GroupWorkspaceService.instance.workspaceRoot(meta.groupId)}/shared',
+                    'group:${meta.groupId}:shared/files',
                     style: const TextStyle(fontSize: 12),
+                  ),
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () {
+                        Navigator.of(sheetContext).pop();
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => PouchScopeBrowserScreen(
+                              initialScope: PouchScope.groupShared(meta.groupId),
+                              initialPath: GroupSharedFiles.filesDir,
+                              title: zh ? '群共享文件' : 'Shared files',
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.folder_shared_outlined, size: 18),
+                      label: Text(zh ? '打开共享文件' : 'Open shared files'),
+                    ),
                   ),
                 ],
               ],

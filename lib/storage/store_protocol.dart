@@ -53,6 +53,9 @@ class StoreOp {
   static const list = 'list';
   static const meta = 'meta';
   static const read = 'read';
+
+  /// 按 id 前缀列 scope（v3 袋子；没有单个 scope 可指）。
+  static const scopes = 'scopes';
   static const writeBegin = 'write.begin';
   static const writeChunk = 'write.chunk';
   static const commit = 'commit';
@@ -130,6 +133,9 @@ class StoreError {
 
   /// 帧里的 pouch_id 和主机的袋子不一致。
   static const pouchMismatch = 'pouch_mismatch';
+
+  /// 读–改–写带的版本号已经过期（`expected_version` 不是当前版本）。
+  static const versionConflict = 'version_conflict';
 }
 
 /// 目录分区（spec §0 / docs/CLIENT_PROFILES.md）。
