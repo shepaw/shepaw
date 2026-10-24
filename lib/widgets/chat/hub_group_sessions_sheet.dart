@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../peer/services/hub_group_sessions.dart';
+import '../../screens/pouch_scope_browser_screen.dart';
+import '../../storage/pouch_scope.dart';
 
 /// 群会话列表（主机权威）：列出、切换、新建、改名、归档。
 ///
@@ -215,14 +217,27 @@ class _HubGroupSessionsSheetState extends State<HubGroupSessionsSheet> {
             onSelected: (value) {
               if (value == 'rename') _rename(session);
               if (value == 'archive') _archive(session);
+              if (value == 'files') _openSessionFiles(session);
             },
-            itemBuilder: (context) => const [
-              PopupMenuItem(value: 'rename', child: Text('改名')),
-              PopupMenuItem(value: 'archive', child: Text('归档')),
+            itemBuilder: (context) => [
+              const PopupMenuItem(value: 'rename', child: Text('改名')),
+              const PopupMenuItem(value: 'archive', child: Text('归档')),
+              if (!session.isArchived)
+                const PopupMenuItem(value: 'files', child: Text('会话文件')),
             ],
           ),
         );
       },
+    );
+  }
+
+  /// 这条会话的附件/文件落在 group:<gid>:session:<sid> 下（G4）。
+  void _openSessionFiles(GroupSessionInfo session) {
+    final scope = PouchScope.groupSession(widget.groupId, session.id);
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PouchScopeBrowserScreen(initialScope: scope),
+      ),
     );
   }
 

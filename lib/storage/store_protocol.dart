@@ -3,6 +3,10 @@
 /// 本文件为纯逻辑：不含文件系统与网络，所有判定可单测（含攻击 fixture）。
 library;
 
+import 'dart:convert';
+
+import 'pouch_scope.dart';
+
 /// 协议版本。v2 新增 import.*；v3 新增 sync.hello；v4 新增 master 迁移/指针；
 /// v4.2 新增版本化 URI（versions.*/manifest）与交接（handoff.*/artifact.state）。
 const int kStoreProtocolVersion = 4;
@@ -117,6 +121,15 @@ class StoreError {
   static const masterOffline = 'master_offline';
   static const notMaster = 'not_master';
   static const internal = 'internal';
+
+  // ── v3 袋子协议（G4）──
+  static const badScope = 'bad_scope';
+
+  /// 地址里的袋子 id 不是当前这只袋子。
+  static const crossPouchDenied = 'cross_pouch_denied';
+
+  /// 帧里的 pouch_id 和主机的袋子不一致。
+  static const pouchMismatch = 'pouch_mismatch';
 }
 
 /// 目录分区（spec §0 / docs/CLIENT_PROFILES.md）。
@@ -749,7 +762,10 @@ String formatStoreMarkdownLink(String displayName, String storeUri) =>
 ///
 /// 第一段是袋子 id，第二段是 scope（可带 `:`，如 `agent:<aid>:session:<sid>`、
 /// `group:<gid>:shared`），其余是路径。**不再**把第一段当 space 解释：
-/// 旧的两段式地址是 App 本机 store 的形态，两者不要混用。
+/// 旧的两段式地址是 App 本机 store 的形态，两者不要混用（[parseStoreUri] 负责它）。
+///
+/// 路径按 `/` 分段、逐段 percent-encoding；`%XX` 一律大写、编解码可逆
+/// （hub 的 `v3/uri.rs`）。scope 与 id 不编码，直接出现在地址里。
 class PouchV2Uri {
   const PouchV2Uri({
     required this.pouchId,
@@ -758,35 +774,90 @@ class PouchV2Uri {
   });
 
   final String pouchId;
+
+  /// scope 的规范形式（未经编码）。
   final String scope;
+
+  /// 解码后的路径（不含首尾 `/`）。
   final String path;
 
   bool get hasPath => path.isNotEmpty;
 
-  static final RegExp _id = RegExp(r'^[A-Za-z0-9_-]+$');
-  static final RegExp _scope = RegExp(r'^[A-Za-z0-9_.:@-]+$');
+  /// 解析后的 scope；构造时已校验，这里不会抛。
+  PouchScope get parsedScope => PouchScope.parse(scope);
 
-  /// 不是 `pouch://` 或形状不对时返回 null；调用方按「不是袋子地址」处理。
+  /// 不是 `pouch://` 或形状/编码不对时返回 null；调用方按「不是袋子地址」处理。
+  ///
+  /// 两段式（`pouch://files/a`）不是 v3 地址：第一段成了袋子 id、第二段不是
+  /// 合法 scope，因此返回 null，不会静默当成旧地址。
   static PouchV2Uri? tryParse(String raw) {
     final withoutQuery = raw.trim().split('?').first;
     final stripped = stripPouchUriPrefix(withoutQuery);
     if (stripped == null) return null;
-    final segments =
-        stripped.split('/').where((segment) => segment.isNotEmpty).toList();
-    if (segments.length < 2) return null;
-    final pouchId = segments[0];
-    final scope = segments[1];
-    if (!_id.hasMatch(pouchId) || !_scope.hasMatch(scope)) return null;
-    return PouchV2Uri(
-      pouchId: pouchId,
-      scope: scope,
-      path: segments.sublist(2).join('/'),
-    );
+    final parts = stripped.split('/');
+    if (parts.length < 2) return null;
+    final pouchId = parts[0];
+    final scope = parts[1];
+    if (!isValidPouchScopeId(pouchId)) return null;
+    if (PouchScope.tryParse(scope) == null) return null;
+    var rawPath = parts.sublist(2).join('/');
+    while (rawPath.startsWith('/')) {
+      rawPath = rawPath.substring(1);
+    }
+    while (rawPath.endsWith('/')) {
+      rawPath = rawPath.substring(0, rawPath.length - 1);
+    }
+    final path = rawPath.isEmpty ? '' : decodePouchPath(rawPath);
+    if (path == null) return null;
+    return PouchV2Uri(pouchId: pouchId, scope: scope, path: path);
   }
 
-  String format() => path.isEmpty
-      ? 'pouch://$pouchId/$scope'
-      : 'pouch://$pouchId/$scope/$path';
+  /// 严格解析：非法地址抛 `bad_uri`，scope 语法不对抛 `bad_scope`。
+  static PouchV2Uri parse(String raw) {
+    final withoutQuery = raw.trim().split('?').first;
+    final stripped = stripPouchUriPrefix(withoutQuery);
+    if (stripped == null) {
+      throw const FormatException('bad_uri: not a pouch uri');
+    }
+    final parts = stripped.split('/');
+    if (parts.length < 2) {
+      throw const FormatException('bad_uri: missing pouch_id/scope');
+    }
+    final pouchId = parts[0];
+    final scope = parts[1];
+    if (!isValidPouchScopeId(pouchId)) {
+      throw FormatException('bad_uri: invalid pouch_id $pouchId');
+    }
+    if (PouchScope.tryParse(scope) == null) {
+      throw FormatException('bad_scope: $scope');
+    }
+    var rawPath = parts.sublist(2).join('/');
+    while (rawPath.startsWith('/')) {
+      rawPath = rawPath.substring(1);
+    }
+    while (rawPath.endsWith('/')) {
+      rawPath = rawPath.substring(0, rawPath.length - 1);
+    }
+    final path = rawPath.isEmpty ? '' : decodePouchPath(rawPath);
+    if (path == null) {
+      throw FormatException('bad_uri: invalid percent-encoding $rawPath');
+    }
+    return PouchV2Uri(pouchId: pouchId, scope: scope, path: path);
+  }
+
+  /// 重新编码成可复制的地址（路径逐段 `%XX` 大写）。
+  String format() {
+    if (path.isEmpty) return 'pouch://$pouchId/$scope';
+    final encoded = path.split('/').map(encodePouchPathSegment).join('/');
+    return 'pouch://$pouchId/$scope/$encoded';
+  }
+
+  PouchV2Uri copyWith({String? pouchId, String? scope, String? path}) =>
+      PouchV2Uri(
+        pouchId: pouchId ?? this.pouchId,
+        scope: scope ?? this.scope,
+        path: path ?? this.path,
+      );
 
   @override
   String toString() => format();
@@ -800,6 +871,58 @@ class PouchV2Uri {
 
   @override
   int get hashCode => Object.hash(pouchId, scope, path);
+}
+
+/// 未保留字符照抄，其余按 `%XX` 大写编码（hub `encode_segment`）。
+String encodePouchPathSegment(String segment) {
+  final out = StringBuffer();
+  for (final byte in utf8.encode(segment)) {
+    final unreserved = (byte >= 0x30 && byte <= 0x39) ||
+        (byte >= 0x41 && byte <= 0x5a) ||
+        (byte >= 0x61 && byte <= 0x7a) ||
+        byte == 0x2d ||
+        byte == 0x5f ||
+        byte == 0x2e ||
+        byte == 0x7e;
+    if (unreserved) {
+      out.writeCharCode(byte);
+    } else {
+      out.write('%${byte.toRadixString(16).toUpperCase().padLeft(2, '0')}');
+    }
+  }
+  return out.toString();
+}
+
+/// 解码整段路径（`/` 保留为分隔符）。编码不完整时返回 null。
+String? decodePouchPath(String raw) {
+  final bytes = <int>[];
+  var index = 0;
+  while (index < raw.length) {
+    final char = raw.codeUnitAt(index);
+    if (char == 0x25) {
+      if (index + 2 >= raw.length) return null;
+      final hi = _hexValue(raw.codeUnitAt(index + 1));
+      final lo = _hexValue(raw.codeUnitAt(index + 2));
+      if (hi == null || lo == null) return null;
+      bytes.add(hi * 16 + lo);
+      index += 3;
+      continue;
+    }
+    bytes.addAll(utf8.encode(raw.substring(index, index + 1)));
+    index += 1;
+  }
+  try {
+    return utf8.decode(bytes);
+  } on FormatException {
+    return null;
+  }
+}
+
+int? _hexValue(int code) {
+  if (code >= 0x30 && code <= 0x39) return code - 0x30;
+  if (code >= 0x41 && code <= 0x46) return code - 0x41 + 10;
+  if (code >= 0x61 && code <= 0x66) return code - 0x61 + 10;
+  return null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

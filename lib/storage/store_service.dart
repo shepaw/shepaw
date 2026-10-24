@@ -22,6 +22,9 @@ import 'device_identity.dart';
 import 'import_auth_service.dart';
 import 'local_store.dart';
 import 'master_migration_service.dart';
+import 'pouch_scope.dart';
+import 'pouch_scope_store.dart';
+import 'pouch_session.dart';
 import 'store_binary_frame.dart';
 import 'store_remote_fetcher.dart';
 import 'mirror_hash_gate.dart';
@@ -121,6 +124,68 @@ class StoreService {
 
   /// 本机 LocalStore（同步引擎读取本机正式区用）。
   Future<LocalStore> localStore() => _localStore();
+
+  // ─────────────────────────── scope 读写（G4）──
+
+  /// 测试替换：不碰网络。
+  @visibleForTesting
+  PouchScopeStore? scopeStoreOverride;
+
+  PouchScopeStore? _cachedScopeStore;
+  String? _cachedScopeKey;
+
+  /// 当前登录袋子的 id；没登录返回 null。
+  Future<String?> currentPouchId() async =>
+      (await PouchSessionStore.readActive())?.pouchId;
+
+  /// 当前袋子的 scope 读写面。
+  ///
+  /// 用 hub 的 v3 帧（`scope` + `pouch_id`）：App 不再自己拼 space/device。
+  /// 没登录时抛 [StoreError.notPaired]。
+  Future<PouchScopeStore> scopeStore() async {
+    final override = scopeStoreOverride;
+    if (override != null) return override;
+    final session = await PouchSessionStore.readActive();
+    if (session == null || session.hostPeerId.isEmpty) {
+      throw StoreException(StoreError.notPaired, '还没有登录袋子');
+    }
+    final key = '${session.pouchId}|${session.hostPeerId}';
+    final cached = _cachedScopeStore;
+    if (cached != null && _cachedScopeKey == key) return cached;
+    final store = PouchScopeStore(
+      transport: HubPouchScopeTransport(
+        peerId: session.hostPeerId,
+        send: (peerId, frame) => _manager.sendControl(peerId, frame),
+      ),
+      pouchId: session.pouchId,
+    );
+    _cachedScopeStore = store;
+    _cachedScopeKey = key;
+    return store;
+  }
+
+  /// 列 scope 下 [path] 这一层的子项。
+  Future<List<StoreEntry>> listScope(
+    PouchScope scope, {
+    String path = '',
+    int limit = 1000,
+  }) async =>
+      (await scopeStore()).listChildren(scope, path: path, limit: limit);
+
+  /// 读 scope 里的文件；不存在返回 null。
+  Future<Uint8List?> readScope(PouchScope scope, String path) async =>
+      (await scopeStore()).read(scope, path);
+
+  /// 写 scope 里的文件，返它的 v3 地址。
+  Future<String> writeScopeBytes(
+    PouchScope scope,
+    String path,
+    Uint8List bytes,
+  ) async =>
+      (await scopeStore()).write(scope, path, bytes);
+
+  Future<void> deleteScopePath(PouchScope scope, String path) async =>
+      (await scopeStore()).delete(scope, path);
 
   /// runtime 用量按子类拆分（sessions / attachments / artifacts / mirrors /
   /// other / versions）。遍历一次目录，供用量页按需调用（不进 stats 帧，

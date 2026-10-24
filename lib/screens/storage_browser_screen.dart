@@ -21,6 +21,7 @@ import '../services/store_open_service.dart';
 import '../services/workflow/workflow_service.dart';
 import '../storage/device_identity.dart';
 import '../storage/local_store.dart';
+import '../storage/pouch_scope.dart';
 import '../storage/runtime_browse.dart';
 import '../storage/runtime_paths.dart';
 import '../storage/store_file_visual.dart';
@@ -34,6 +35,7 @@ import '../widgets/avatar_image.dart';
 import '../widgets/mobile_shell_scope.dart';
 import '../widgets/storage/storage_continue_section.dart';
 import '../widgets/storage/store_file_list_avatar.dart';
+import 'pouch_scope_browser_screen.dart';
 import 'storage_shared.dart';
 import 'storage_snapshots_screen.dart';
 import 'storage_space_settings_screen.dart';
@@ -2169,9 +2171,33 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
           icon: const Icon(Icons.search),
           tooltip: l10n.storage_browserSearchTitle,
         ),
+        IconButton(
+          onPressed: _openScopeBrowser,
+          icon: const Icon(Icons.account_tree_outlined),
+          tooltip: '袋子 scope',
+        ),
         if (!_pickMode) ...?widget.extraActions,
       ],
     );
+  }
+
+  /// 进 scope 浏览器（G4）：按「袋子里的 scope」看，不再按 space + device。
+  void _openScopeBrowser() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PouchScopeBrowserScreen(scopeLoader: _scopeCandidates),
+      ),
+    );
+  }
+
+  /// 能列出 id 的 scope：群。agent/skill/slip 的 id 现在没有统一的本地来源，
+  /// 留给调用方通过 [PouchScopeBrowserScreen.extraScopes] 补。
+  Future<List<PouchScope>> _scopeCandidates() async {
+    final channels = await LocalDatabaseService().getAllChannels();
+    return <PouchScope>[
+      for (final channel in channels)
+        if (channel.isGroup) PouchScope.group(channel.id),
+    ];
   }
 
   /// 标题：空间根用储物袋名，进入分区后回显当前位置。
@@ -2190,6 +2216,11 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
         onPressed: _busy ? null : _openSearch,
         icon: const Icon(Icons.search),
         tooltip: l10n.storage_browserSearchTitle,
+      ),
+      IconButton(
+        onPressed: _openScopeBrowser,
+        icon: const Icon(Icons.account_tree_outlined),
+        tooltip: '袋子 scope',
       ),
       if (includeCreate || widget.extraMenuItems != null)
         PopupMenuButton<dynamic>(

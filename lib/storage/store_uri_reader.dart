@@ -9,6 +9,7 @@ import '../peer/services/peer_storage_service.dart';
 import 'device_identity.dart';
 import 'host_pouch_target.dart';
 import 'local_store.dart';
+import 'pouch_scope_store.dart';
 import 'remote_read_service.dart';
 import 'runtime_paths.dart';
 import 'store_protocol.dart';
@@ -38,7 +39,50 @@ class StoreUriReader {
     return (device: host.deviceId, isLocal: !host.isRemote);
   }
 
+  /// v3 袋子地址（`pouch://<pouch_id>/<scope>/<path>`）。
+  ///
+  /// 不是袋子地址返回 null，交回旧的两段式解析（本机 store 还在用它）。
+  /// 第一段是袋子 id 但 scope/编码不合法时抛 `bad_uri`：宁可报错，也不把
+  /// 袋子 id 当 space 去读错路径。
+  PouchV2Uri? _scopeUri(String uriString) {
+    if (!isPouchUri(uriString)) return null;
+    final scoped = PouchV2Uri.tryParse(uriString);
+    if (scoped != null) return scoped;
+    final rest = stripPouchUriPrefix(uriString.trim().split('?').first) ?? '';
+    final first = rest.split('/').first;
+    if (looksLikePouchId(first)) {
+      throw const FormatException('bad_uri: invalid pouch v3 uri');
+    }
+    return null;
+  }
+
+  /// 地址里的袋子必须是当前登录的这一只。
+  Future<PouchScopeStore> _scopedStore(PouchV2Uri uri) async {
+    final active = await StoreService.instance.currentPouchId();
+    if (active == null || active.isEmpty) {
+      throw StoreException(StoreError.notPaired, '还没有登录袋子');
+    }
+    if (active != uri.pouchId) {
+      throw StoreException(StoreError.crossPouchDenied, uri.pouchId);
+    }
+    return StoreService.instance.scopeStore();
+  }
+
+  Future<Uint8List> _readScoped(PouchV2Uri uri) async {
+    if (uri.path.isEmpty) {
+      throw StoreException(StoreError.badPath, '目录不能读');
+    }
+    final store = await _scopedStore(uri);
+    final bytes = await store.read(uri.parsedScope, uri.path);
+    if (bytes == null) {
+      throw StoreException(StoreError.notFound, uri.path);
+    }
+    return bytes;
+  }
+
   Future<Uint8List> read(String uriString) async {
+    final scoped = _scopeUri(uriString);
+    if (scoped != null) return _readScoped(scoped);
     final parsed = parseStoreUri(uriString);
     if (!parsed.ref.isLatest) {
       return _readVersioned(parsed, uriString);
@@ -95,6 +139,21 @@ class StoreUriReader {
   /// 本机 device → 本地树；他端 device → [preferredReadServer]（属主/master），
   /// 不把对端在本机的空 cache 当成权威。
   Future<StoreUriKind> kindOf(String uriString) async {
+    final scoped = _scopeUri(uriString);
+    if (scoped != null) {
+      if (!scoped.hasPath) return StoreUriKind.directory;
+      final store = await _scopedStore(scoped);
+      final slash = scoped.path.lastIndexOf('/');
+      final parent = slash < 0 ? '' : scoped.path.substring(0, slash);
+      final children =
+          await store.listChildren(scoped.parsedScope, path: parent);
+      for (final child in children) {
+        if (child.path == scoped.path) {
+          return child.isDir ? StoreUriKind.directory : StoreUriKind.file;
+        }
+      }
+      return StoreUriKind.file;
+    }
     final parsed = parseStoreUri(uriString, allowEmptyPath: true);
     if (!parsed.ref.isLatest) {
       // 版本引用指向历史文件内容，不是目录。
