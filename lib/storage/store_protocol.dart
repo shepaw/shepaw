@@ -650,6 +650,11 @@ class StoreUriRef {
         : 'bad_uri: missing space/path');
   }
   final space = segments[0];
+  // 主机 v2 的地址第一段是袋子 id（`pouch://<pouch_id>/<scope>/<path>`），
+  // 不是 space。别把它当分区名去拼本地路径，交给 [PouchV2Uri]。
+  if (looksLikePouchId(space) && segments.length >= 2) {
+    throw const FormatException('bad_uri: pouch v2 uri, use PouchV2Uri');
+  }
   // 自定义空间：语法合法即可（属性/ACL 由服务端 space registry 裁定）。
   if (!StoreSpace.isValidSyntax(space)) {
     throw FormatException('bad_uri: unknown space $space');
@@ -688,6 +693,15 @@ class StoreUriRef {
     }
   }
   return (space: space, path: rel, ref: ref);
+}
+
+/// 袋子 id 的字面形状（UUID，或 16 位以上的 hex）。
+bool looksLikePouchId(String value) {
+  final uuid = RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+  );
+  return uuid.hasMatch(value) ||
+      RegExp(r'^[0-9a-fA-F]{16,}$').hasMatch(value);
 }
 
 /// Decode one path segment; leave alone if not valid percent-encoding.
@@ -730,6 +744,63 @@ String storeUriWithRef(String space, String path, [StoreUriRef? ref]) =>
 /// 文件分享链接：Markdown `[displayName](storeUri)`。
 String formatStoreMarkdownLink(String displayName, String storeUri) =>
     '[$displayName]($storeUri)';
+
+/// 手机帧协议 v2 的袋子地址：`pouch://<pouch_id>/<scope>/<path>`（G4 / B 4.5）。
+///
+/// 第一段是袋子 id，第二段是 scope（可带 `:`，如 `agent:<aid>:session:<sid>`、
+/// `group:<gid>:shared`），其余是路径。**不再**把第一段当 space 解释：
+/// 旧的两段式地址是 App 本机 store 的形态，两者不要混用。
+class PouchV2Uri {
+  const PouchV2Uri({
+    required this.pouchId,
+    required this.scope,
+    required this.path,
+  });
+
+  final String pouchId;
+  final String scope;
+  final String path;
+
+  bool get hasPath => path.isNotEmpty;
+
+  static final RegExp _id = RegExp(r'^[A-Za-z0-9_-]+$');
+  static final RegExp _scope = RegExp(r'^[A-Za-z0-9_.:@-]+$');
+
+  /// 不是 `pouch://` 或形状不对时返回 null；调用方按「不是袋子地址」处理。
+  static PouchV2Uri? tryParse(String raw) {
+    final withoutQuery = raw.trim().split('?').first;
+    final stripped = stripPouchUriPrefix(withoutQuery);
+    if (stripped == null) return null;
+    final segments =
+        stripped.split('/').where((segment) => segment.isNotEmpty).toList();
+    if (segments.length < 2) return null;
+    final pouchId = segments[0];
+    final scope = segments[1];
+    if (!_id.hasMatch(pouchId) || !_scope.hasMatch(scope)) return null;
+    return PouchV2Uri(
+      pouchId: pouchId,
+      scope: scope,
+      path: segments.sublist(2).join('/'),
+    );
+  }
+
+  String format() => path.isEmpty
+      ? 'pouch://$pouchId/$scope'
+      : 'pouch://$pouchId/$scope/$path';
+
+  @override
+  String toString() => format();
+
+  @override
+  bool operator ==(Object other) =>
+      other is PouchV2Uri &&
+      other.pouchId == pouchId &&
+      other.scope == scope &&
+      other.path == path;
+
+  @override
+  int get hashCode => Object.hash(pouchId, scope, path);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ACL 判定（spec §3）

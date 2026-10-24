@@ -66,7 +66,11 @@ class HubGroupRegistry implements GroupMutations {
   void start() {
     if (!getIt.isRegistered<HubEventClient>()) return;
     _noticeSub ??= getIt<HubEventClient>().notices.listen((notice) {
-      if (notice.event.kind != 'groups.changed') return;
+      // `group.session.changed` 也带完整 group（含 current_session），照同一份缓存更新。
+      if (notice.event.kind != 'groups.changed' &&
+          notice.event.kind != 'group.session.changed') {
+        return;
+      }
       unawaited(applyEvent(notice.event.data));
     });
   }

@@ -12,6 +12,7 @@ import '../../storage/pouch_login.dart';
 import '../../storage/pouch_role.dart';
 import '../../storage/pouch_session.dart';
 import 'pouch_attachment.dart';
+import 'services/hub_group_sessions.dart';
 import 'services/peer_connection_manager.dart';
 import 'services/peer_inflight_turn.dart';
 
@@ -71,6 +72,42 @@ class PouchTurnRelay {
     return PouchTurnRoute.decide(PouchRole.client(session.hostPeerId));
   }
 
+  /// 群回合帧（协议 v2）：带 `pouch_id`、`group_id`，以及这一端选过的
+  /// `session_id`。没选过就不带，主机取群 meta 的 current_session。
+  static Map<String, dynamic> groupTurnFrame({
+    required String channelId,
+    required String content,
+    required String userId,
+    required String userName,
+    required Map<String, dynamic> deviceInfo,
+    String pouchId = '',
+    String groupId = '',
+    String? sessionId,
+    String? userMessageId,
+    List<String> mentionedAgentIds = const [],
+    String? replyToId,
+    String? replyQuoteText,
+    List<Map<String, dynamic>>? attachmentRefs,
+  }) {
+    return <String, dynamic>{
+      'type': groupRequestType,
+      if (pouchId.isNotEmpty) 'pouch_id': pouchId,
+      'channel_id': channelId,
+      if (groupId.isNotEmpty) 'group_id': groupId,
+      if (sessionId != null && sessionId.isNotEmpty) 'session_id': sessionId,
+      'content': content,
+      'user_id': userId,
+      'user_name': userName,
+      if (userMessageId != null)
+        'user_message_id': bareMessageId(userMessageId),
+      'mentioned_agent_ids': mentionedAgentIds,
+      if (replyToId != null) 'reply_to_id': bareMessageId(replyToId),
+      if (replyQuoteText != null) 'reply_quote_text': replyQuoteText,
+      if (attachmentRefs != null) 'attachments': attachmentRefs,
+      ...deviceInfo,
+    };
+  }
+
   Future<void> forwardGroup({
     required String hostPeerId,
     required String channelId,
@@ -96,6 +133,9 @@ class PouchTurnRelay {
       String interactionType,
       Map<String, dynamic> data,
     )? onInteractionRequest,
+
+    /// 主机回显本轮实际用的会话和任务（B 4.5）。
+    void Function(String sessionId, String? taskId)? onSessionResolved,
   }) async {
     final refs = await _attachmentRefs(
       hostPeerId: hostPeerId,
@@ -105,23 +145,28 @@ class PouchTurnRelay {
       placement: 'group',
     );
     final deviceInfo = await ClientDeviceInfo.current();
+    final pouchId = (await PouchSessionStore.readActive())?.pouchId ?? '';
+    final groupId = channelId.startsWith('group_') ? channelId : '';
+    final sessionId =
+        groupId.isEmpty ? null : GroupSessionSelection.of(groupId);
     await _forward(
       hostPeerId: hostPeerId,
       channelId: channelId,
-      frame: <String, dynamic>{
-        'type': groupRequestType,
-        'channel_id': channelId,
-        'content': content,
-        'user_id': userId,
-        'user_name': userName,
-        if (userMessageId != null)
-          'user_message_id': bareMessageId(userMessageId),
-        'mentioned_agent_ids': mentionedAgentIds,
-        if (replyToId != null) 'reply_to_id': bareMessageId(replyToId),
-        if (replyQuoteText != null) 'reply_quote_text': replyQuoteText,
-        if (refs != null) 'attachments': refs,
-        ...deviceInfo.toWireFields(),
-      },
+      frame: groupTurnFrame(
+        channelId: channelId,
+        content: content,
+        userId: userId,
+        userName: userName,
+        deviceInfo: deviceInfo.toWireFields(),
+        pouchId: pouchId,
+        groupId: groupId,
+        sessionId: sessionId,
+        userMessageId: userMessageId,
+        mentionedAgentIds: mentionedAgentIds,
+        replyToId: replyToId,
+        replyQuoteText: replyQuoteText,
+        attachmentRefs: refs,
+      ),
       onEvent: (event) {
         if (event['kind'] == 'interaction') {
           unawaited(_answerInteraction(
@@ -154,6 +199,12 @@ class PouchTurnRelay {
           case 'agent_done':
             onAgentDone?.call(agentId, agentName, event['skipped'] == true);
           case 'done':
+            final resolved = event['session_id'] as String? ?? '';
+            final taskId = event['task_id'] as String?;
+            if (resolved.isNotEmpty && groupId.isNotEmpty) {
+              GroupSessionSelection.select(groupId, resolved);
+            }
+            onSessionResolved?.call(resolved, taskId);
             onAllDone?.call();
         }
       },
@@ -189,11 +240,13 @@ class PouchTurnRelay {
       placement: 'dm',
     );
     final deviceInfo = await ClientDeviceInfo.current();
+    final pouchId = (await PouchSessionStore.readActive())?.pouchId ?? '';
     final done = await _forward(
       hostPeerId: hostPeerId,
       channelId: channelId,
       frame: <String, dynamic>{
         'type': dmRequestType,
+        if (pouchId.isNotEmpty) 'pouch_id': pouchId,
         'agent_id': agentId,
         'content': content,
         'user_id': userId,
@@ -241,10 +294,12 @@ class PouchTurnRelay {
     String? messageId,
     bool compact = false,
   }) async {
+    final pouchId = (await PouchSessionStore.readActive())?.pouchId ?? '';
     final done = await _forward(
       hostPeerId: hostPeerId,
       frame: <String, dynamic>{
         'type': readRequestType,
+        if (pouchId.isNotEmpty) 'pouch_id': pouchId,
         'op': op,
         'channel_id': channelId,
         if (limit != null) 'limit': limit,
@@ -594,12 +649,14 @@ class PouchTurnRelay {
       );
       if (!stillQueued()) return true;
       final deviceInfo = await ClientDeviceInfo.current();
+      final pouchId = (await PouchSessionStore.readActive())?.pouchId ?? '';
       final done = await _forward(
         hostPeerId: hostPeerId,
         requestId: requestId,
         channelId: channelId,
         frame: <String, dynamic>{
           'type': dmRequestType,
+          if (pouchId.isNotEmpty) 'pouch_id': pouchId,
           'agent_id': agentId,
           'content': text,
           'user_id': userId,
@@ -645,23 +702,29 @@ class PouchTurnRelay {
       );
       if (!stillQueued()) return true;
       final deviceInfo = await ClientDeviceInfo.current();
+      final pouchId = (await PouchSessionStore.readActive())?.pouchId ?? '';
+      final groupId = channelId.startsWith('group_') ? channelId : '';
+      final sessionId =
+          groupId.isEmpty ? null : GroupSessionSelection.of(groupId);
       final done = await _forward(
         hostPeerId: hostPeerId,
         requestId: requestId,
         channelId: channelId,
-        frame: <String, dynamic>{
-          'type': groupRequestType,
-          'channel_id': channelId,
-          'content': text,
-          'user_id': userId,
-          'user_name': userName,
-          'user_message_id': bareMessageId(requestId),
-          'mentioned_agent_ids': mentionedAgentIds,
-          if (replyToId != null) 'reply_to_id': bareMessageId(replyToId),
-          if (replyQuoteText != null) 'reply_quote_text': replyQuoteText,
-          if (refs != null) 'attachments': refs,
-          ...deviceInfo.toWireFields(),
-        },
+        frame: groupTurnFrame(
+          channelId: channelId,
+          content: text,
+          userId: userId,
+          userName: userName,
+          deviceInfo: deviceInfo.toWireFields(),
+          pouchId: pouchId,
+          groupId: groupId,
+          sessionId: sessionId,
+          userMessageId: requestId,
+          mentionedAgentIds: mentionedAgentIds,
+          replyToId: replyToId,
+          replyQuoteText: replyQuoteText,
+          attachmentRefs: refs,
+        ),
         onEvent: (_) {},
         completeOn: const {'done', 'queued', 'queue_ok', 'start'},
       );

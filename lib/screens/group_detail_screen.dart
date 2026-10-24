@@ -18,6 +18,7 @@ import '../services/logger_service.dart';
 import '../services/she_service.dart';
 import '../storage/group_workspace_service.dart';
 import '../storage/runtime_share_service.dart';
+import '../widgets/chat/hub_group_sessions_sheet.dart';
 import '../widgets/discard_changes_scope.dart';
 import '../widgets/form_bottom_bar.dart';
 import '../widgets/avatar_image.dart';
@@ -598,6 +599,25 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
               onTap: () => _showGroupWorkspaceSheet(context, meta),
             );
           },
+        ),
+        const Divider(height: 1),
+
+        // 群会话（主机权威）：列出、切换、改名、归档。
+        ListTile(
+          leading: Icon(Icons.forum_outlined, color: colorScheme.primary),
+          title: Text(
+            Localizations.localeOf(context).languageCode.startsWith('zh')
+                ? '群会话'
+                : 'Group sessions',
+          ),
+          subtitle: Text(
+            Localizations.localeOf(context).languageCode.startsWith('zh')
+                ? '新建、切换、改名或归档这一轮的会话'
+                : 'Create, switch, rename or archive this group conversation',
+            style: TextStyle(color: colorScheme.onSurfaceVariant),
+          ),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => showHubGroupSessionsSheet(context, groupId: ownerId),
         ),
         const Divider(height: 1),
 
