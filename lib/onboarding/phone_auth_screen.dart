@@ -172,7 +172,7 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
           _ready = true;
           _passwordSet = true;
           _error = error is TimeoutException
-              ? '主机没有回应。请确认电脑上的 shepaw 已重启，然后再登录。'
+              ? '主机没有回应。请确认电脑上的 shepaw 正在运行，然后再试。'
               : error is StateError
                   ? error.message
                   : '$error';

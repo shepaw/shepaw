@@ -119,7 +119,7 @@ Future<PouchLoginGrant> requestPouchLogin({
 /// 问指定主机上有哪些袋子。手机读不到主机磁盘时靠它。
 Future<List<PouchDescriptor>> requestPouchList({
   required String hostPeerId,
-  Duration timeout = const Duration(seconds: 4),
+  Duration timeout = const Duration(seconds: 8),
 }) async {
   final listed = await _request<List<dynamic>>(
     hostPeerId: hostPeerId,
@@ -221,6 +221,8 @@ Future<T> _request<T>({
     }
   });
   try {
+    // 主机重启或手机切网后，旧连接常是半开的：发送照样成功，帧却到不了，
+    // 只能干等到超时。先探活，不通就重连后再发。
     final sent = await PeerConnectionManager.instance.sendControl(
       hostPeerId,
       <String, dynamic>{
@@ -228,6 +230,7 @@ Future<T> _request<T>({
         'request_id': requestId,
         ...extra,
       },
+      waitForReconnect: timeout,
     );
     if (!sent) throw StateError('还没连上 shepaw');
     return await done.future.timeout(timeout);
