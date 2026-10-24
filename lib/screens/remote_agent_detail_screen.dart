@@ -9,6 +9,7 @@ import '../services/session/client_session_sync.dart';
 import '../widgets/avatar_image.dart';
 import '../l10n/l10n_helpers.dart';
 import '../l10n/app_localizations.dart';
+import '../models/agent_node.dart';
 import '../models/remote_agent.dart';
 import '../peer/host_she_turn.dart';
 import '../peer/services/peer_connection_manager.dart';
@@ -2292,6 +2293,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     final zh = Localizations.localeOf(context).languageCode.startsWith('zh');
     final peerId = _agent.sourcePeerId;
     final useRemoteBrowse = _agent.isPeerAgent;
+    final nodeId = AgentNodeInfo.of(_agent).nodeId;
 
     Future<HostFsBrowseResult> browse(String? path) async {
       if (useRemoteBrowse) {
@@ -2302,6 +2304,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         final result = await PeerAgentClientService.instance.browseRemoteFs(
           peerId: peerId,
           path: path,
+          nodeId: nodeId,
         );
         if (!result.ok) {
           final err = result.error ?? 'browse failed';
