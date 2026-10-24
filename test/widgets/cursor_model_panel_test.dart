@@ -263,11 +263,13 @@ void main() {
       ),
     );
 
+    // 一级菜单在 x=564..780。左边空档（556）比右边（412）宽，旧规则会向左
+    // 展开；右边仍放得下菜单，应贴在一级菜单右边。会话列表盖住这块右侧区域。
     final sessionEntry = OverlayEntry(
       builder: (_) => Positioned(
-        left: 0,
+        left: 800,
         top: 0,
-        width: 540,
+        right: 0,
         bottom: 0,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
@@ -313,7 +315,9 @@ void main() {
     await tester.pumpAndSettle();
 
     final menu = tester.getRect(find.text('Sonnet'));
-    expect(menu.center.dx, lessThan(540));
+    final row = _row(tester, '模型');
+    expect(menu.left, greaterThan(row.right - 1));
+    expect(menu.center.dx, greaterThan(800));
     expect(find.text('Sonnet').hitTestable(), findsOneWidget);
     expect(find.text('会话列表'), findsOneWidget);
     expect(find.text('对话列表'), findsOneWidget);

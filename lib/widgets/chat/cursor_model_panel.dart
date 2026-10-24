@@ -278,7 +278,10 @@ class _CursorModelSettingsState extends State<CursorModelSettings> {
       if (filled == null) {
         final spaceRight = screen.width - (origin.dx + box.size.width) - 8;
         final spaceLeft = origin.dx - 8;
-        toRight = spaceRight >= spaceLeft;
+        // 宽屏菜单挂在整窗上，左边的空档包含对话列表。按哪边更宽来选
+        // 方向，会把二级菜单翻到一级菜单左边。右边放得下最小宽度就向右，
+        // 贴着屏幕右缘放不下时才向左。
+        toRight = spaceRight >= _sideMenuMinWidth || spaceRight >= spaceLeft;
         final space = math.max(0.0, toRight ? spaceRight : spaceLeft);
         // 空间够就至少给到 [_sideMenuMinWidth]（模型名比参数值长得多）；
         // 不够才退回剩余空间，免得菜单被顶出屏幕。
