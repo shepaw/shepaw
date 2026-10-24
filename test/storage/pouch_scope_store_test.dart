@@ -9,23 +9,38 @@ import 'package:shepaw/storage/store_protocol.dart';
 class _FakeTransport implements PouchScopeTransport {
   final List<Map<String, dynamic>> calls = <Map<String, dynamic>>[];
   List<StoreEntry> entries = const <StoreEntry>[];
+  /// 第一页之后还有没有下一页。
+  String? firstNext;
+  /// 按 cursor 预置的后续页；没有就是空页（到底）。
+  Map<String, ({List<StoreEntry> entries, String? next})> pages =
+      <String, ({List<StoreEntry> entries, String? next})>{};
   Uint8List? bytes;
   Map<String, dynamic>? failure;
 
   @override
-  Future<List<StoreEntry>> list({
+  Future<PouchListPage> list({
     required String pouchId,
     required PouchScope scope,
     String? prefix,
     int limit = 1000,
+    String? cursor,
   }) async {
     calls.add(<String, dynamic>{
       'op': 'list',
       'pouch_id': pouchId,
       'scope': scope.id,
       'prefix': prefix,
+      'limit': limit,
+      'cursor': cursor,
     });
-    return entries;
+    if (cursor == null) {
+      return PouchListPage(entries: entries, nextCursor: firstNext);
+    }
+    final page = pages[cursor];
+    return PouchListPage(
+      entries: page?.entries ?? const <StoreEntry>[],
+      nextCursor: page?.next,
+    );
   }
 
   @override
@@ -118,6 +133,23 @@ void main() {
     expect(transport.calls.single['scope'], 'group:g1:session:s1');
     expect(transport.calls.single['prefix'], 'docs');
     expect(entries.map((e) => e.path).toList(), ['docs/sub', 'docs/a.md']);
+  });
+
+  test('listChildren 跟着 next_cursor 翻完所有页', () async {
+    final transport = _FakeTransport()
+      ..entries = [_entry('a/1.md')]
+      ..firstNext = 'a/1.md'
+      ..pages = {
+        'a/1.md': (entries: [_entry('b/2.md')], next: null),
+      };
+    final store = PouchScopeStore(transport: transport, pouchId: 'p1');
+    final entries = await store.listChildren(PouchScope.files);
+    expect(entries.map((e) => e.path).toList(), ['a', 'b']);
+    expect(
+      transport.calls.map((call) => call['cursor']).toList(),
+      [null, 'a/1.md'],
+    );
+    expect(transport.calls.first['limit'], 1000);
   });
 
   test('写文件返回编码过的 v3 地址，路径先规范化', () async {

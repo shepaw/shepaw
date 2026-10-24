@@ -22,6 +22,7 @@ import 'device_identity.dart';
 import 'import_auth_service.dart';
 import 'local_store.dart';
 import 'master_migration_service.dart';
+import 'pouch_local_socket.dart';
 import 'pouch_scope.dart';
 import 'pouch_scope_store.dart';
 import 'pouch_session.dart';
@@ -131,37 +132,67 @@ class StoreService {
   @visibleForTesting
   PouchScopeStore? scopeStoreOverride;
 
+  /// 测试替换：本机 hub 目录（默认 `~/.config/shepaw-hub`）。
+  @visibleForTesting
+  String? localHubRootOverride;
+
   PouchScopeStore? _cachedScopeStore;
   String? _cachedScopeKey;
 
-  /// 当前登录袋子的 id；没登录返回 null。
-  Future<String?> currentPouchId() async =>
-      (await PouchSessionStore.readActive())?.pouchId;
+  /// 当前袋子的 id：登录过就是登录的那只；本机 hub 有 `pouch.sock` 时是
+  /// `hub.json` 的活跃袋子；都没有返回 null。
+  Future<String?> currentPouchId() async {
+    final session = await PouchSessionStore.readActive();
+    if (session != null && session.pouchId.isNotEmpty) return session.pouchId;
+    return (await _localPouchEndpoint())?.pouchId;
+  }
+
+  /// 本机 hub 的通道；没有 `pouch.sock` 或没有活跃袋子时返回 null。
+  Future<LocalPouchEndpoint?> _localPouchEndpoint() => findLocalPouchEndpoint(
+        hubRoot: localHubRootOverride,
+      );
 
   /// 当前袋子的 scope 读写面。
   ///
   /// 用 hub 的 v3 帧（`scope` + `pouch_id`）：App 不再自己拼 space/device。
-  /// 没登录时抛 [StoreError.notPaired]。
+  /// 登录过袋子就走配对通道；没登录但本机有 hub（`pouch.sock`）就走本机
+  /// 通道；两者都没有才抛 [StoreError.notPaired]。
   Future<PouchScopeStore> scopeStore() async {
     final override = scopeStoreOverride;
     if (override != null) return override;
     final session = await PouchSessionStore.readActive();
-    if (session == null || session.hostPeerId.isEmpty) {
-      throw StoreException(StoreError.notPaired, '还没有登录袋子');
+    if (session != null && session.hostPeerId.isNotEmpty) {
+      final key = '${session.pouchId}|${session.hostPeerId}';
+      final cached = _cachedScopeStore;
+      if (cached != null && _cachedScopeKey == key) return cached;
+      final store = PouchScopeStore(
+        transport: HubPouchScopeTransport(
+          peerId: session.hostPeerId,
+          send: (peerId, frame) => _manager.sendControl(peerId, frame),
+        ),
+        pouchId: session.pouchId,
+      );
+      _cachedScopeStore = store;
+      _cachedScopeKey = key;
+      return store;
     }
-    final key = '${session.pouchId}|${session.hostPeerId}';
-    final cached = _cachedScopeStore;
-    if (cached != null && _cachedScopeKey == key) return cached;
-    final store = PouchScopeStore(
-      transport: HubPouchScopeTransport(
-        peerId: session.hostPeerId,
-        send: (peerId, frame) => _manager.sendControl(peerId, frame),
-      ),
-      pouchId: session.pouchId,
-    );
-    _cachedScopeStore = store;
-    _cachedScopeKey = key;
-    return store;
+    final local = await _localPouchEndpoint();
+    if (local != null) {
+      final key = 'local|${local.pouchId}|${local.socketPath}';
+      final cached = _cachedScopeStore;
+      if (cached != null && _cachedScopeKey == key) return cached;
+      final store = PouchScopeStore(
+        transport: LocalPouchSocketTransport(
+          socketPath: local.socketPath,
+          pouchId: local.pouchId,
+        ),
+        pouchId: local.pouchId,
+      );
+      _cachedScopeStore = store;
+      _cachedScopeKey = key;
+      return store;
+    }
+    throw StoreException(StoreError.notPaired, '还没有登录袋子');
   }
 
   /// 列 scope 下 [path] 这一层的子项。
