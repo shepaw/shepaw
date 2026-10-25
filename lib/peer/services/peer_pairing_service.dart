@@ -188,7 +188,6 @@ class PeerPairingService {
 
     // 生成配对码
     _currentPairingCode = _generatePairingCode();
-    _state = PairingSessionState.waitingForScanner;
 
     // 1. 启动本地 WS Server（内网直连）
     String? localEndpoint;
@@ -225,6 +224,10 @@ class PeerPairingService {
     } catch (e) {
       _log.warning('Channel tunnel not available: $e', tag: _tag);
     }
+
+    // 等两条入站流都装好再进入 waitingForScanner：PeerConnectionManager 看到这个
+    // 状态就不再接管入站连接，提前置位会留下「没人接管也没人 close」的窗口。
+    _state = PairingSessionState.waitingForScanner;
 
     // 至少要有一种连接方式
     if (localEndpoint == null && channelEndpoint == null) {

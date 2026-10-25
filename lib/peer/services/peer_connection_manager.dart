@@ -676,7 +676,10 @@ class PeerConnectionManager {
   void _handleIncomingConnection(PeerTunnelStream stream) async {
     _log.info('Incoming peer connection, stream=${stream.streamId}', tag: _tag);
 
-    // 如果 PeerPairingService 正在配对中，由它处理
+    // 如果 PeerPairingService 正在配对中，由它处理。
+    // 这个分支直接 return（不 close）依赖一个不变量：waitingForScanner 只会在
+    // PairingService 的本地/隧道两条入站监听都装好之后才置位（见 startPairing），
+    // 所以这里放弃的流一定已经有接收方。
     if (PeerPairingService.instance.state ==
         PairingSessionState.waitingForScanner) {
       _log.debug('Pairing in progress, delegating to PairingService',
