@@ -4,7 +4,8 @@ import '../storage/store_protocol.dart';
 
 /// 玉简条目：储物袋里的待办/笔记，供用户记录、Agent 勾选执行。
 ///
-/// 落盘为 `pouch://slips/<device>/<id>.json`，跨设备随储物袋镜像。
+/// 落盘：切到 v3 后是 `pouch://<pouch_id>/slip:<id>/slip.json`（一条玉简一个
+/// scope，附件在 `slip:<id>/files/`）；过渡期仍是 `pouch://slips/<id>.json`。
 /// 附件落在同分区 `<id>/files/`。
 class JadeSlip {
   const JadeSlip({

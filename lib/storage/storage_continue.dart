@@ -107,6 +107,7 @@ Future<List<StorageContinueItem>> loadStorageContinueItems({
   }
   if (includeDedicatedRecords) {
     await _overlayInstructions(all);
+    await _overlaySlips(all);
   }
   await _applySlipTitles(all);
   await _applyInstructionTitles(all);
@@ -118,6 +119,41 @@ Future<List<StorageContinueItem>> loadStorageContinueItems({
   all.sort((a, b) => b.mtimeMs.compareTo(a.mtimeMs));
   if (all.length > limit) return all.sublist(0, limit);
   return all;
+}
+
+Future<void> _overlaySlips(List<StorageContinueItem> all) async {
+  try {
+    final slips = await JadeSlipService.instance.list();
+    all.addAll(slipContinueItems(all, slips));
+  } catch (_) {}
+}
+
+/// 切换后玉简只写 `slip:<id>`，不再进本地同步日志；把清单里还没有的玉简
+/// 按 `updatedAt` 补进来，否则顶部「接着打开」只剩切换前的旧条目。
+///
+/// 已有条目（切换前写完、日志里还留着的）不动，标题仍由 [_applySlipTitles]
+/// 从同一个列表补。
+List<StorageContinueItem> slipContinueItems(
+  List<StorageContinueItem> existing,
+  List<JadeSlip> slips,
+) {
+  final seen = {
+    for (final item in existing)
+      if (item.space == StoreSpace.slips) item.path,
+  };
+  final out = <StorageContinueItem>[];
+  for (final slip in slips) {
+    if (seen.contains(slip.relPath)) continue;
+    out.add(StorageContinueItem(
+      space: StoreSpace.slips,
+      path: slip.relPath,
+      size: 0,
+      mtimeMs: slip.updatedAt,
+      displayTitle: slip.title,
+      virtual: true,
+    ));
+  }
+  return out;
 }
 
 Future<void> _overlayInstructions(List<StorageContinueItem> all) async {
