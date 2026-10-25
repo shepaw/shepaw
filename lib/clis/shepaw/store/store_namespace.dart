@@ -592,12 +592,14 @@ Future<Map<String, dynamic>> _searchScope(
   required int limit,
 }) async {
   const maxWalk = 2000;
+  const maxBodyReads = 200;
   const maxBodyBytes = 64 * 1024;
   final store = await StoreService.instance.scopeStore();
   final scope = uri.parsedScope;
   final needle = query.toLowerCase();
   final results = <Map<String, dynamic>>[];
   var walked = 0;
+  var bodyReads = 0;
   var truncated = false;
 
   Future<void> walk(String dir) async {
@@ -618,16 +620,22 @@ Future<Map<String, dynamic>> _searchScope(
       if (taskSeg.isNotEmpty && !path.contains(taskSeg)) continue;
       var hit = path.toLowerCase().contains(needle);
       if (!hit && entry.size > 0 && entry.size <= maxBodyBytes) {
-        try {
-          final bytes = await store.read(scope, path);
-          if (bytes != null) {
-            hit = utf8
-                .decode(bytes, allowMalformed: false)
-                .toLowerCase()
-                .contains(needle);
+        if (bodyReads >= maxBodyReads) {
+          // 正文扫描的往返次数有上限；再往下找可能还有命中。
+          truncated = true;
+        } else {
+          bodyReads++;
+          try {
+            final bytes = await store.read(scope, path);
+            if (bytes != null) {
+              hit = utf8
+                  .decode(bytes, allowMalformed: false)
+                  .toLowerCase()
+                  .contains(needle);
+            }
+          } catch (_) {
+            // 二进制文件 / 读失败：只按路径算。
           }
-        } catch (_) {
-          // 二进制文件 / 读失败：只按路径算。
         }
       }
       if (!hit) continue;
