@@ -130,6 +130,7 @@ class ScopeCard {
   factory ScopeCard.forAgentDm({
     required String agentId,
     required String deviceId,
+    String? pouchId,
     String? channelId,
     ScopeCardInjected injected = const ScopeCardInjected(
       soul: ScopeInjectLevel.full,
@@ -137,22 +138,21 @@ class ScopeCard {
     bool writeMemory = true,
     ScopeCardCliSurface cliSurface = ScopeCardCliSurface.shepawTool,
   }) {
-    final cogRoot = MemoryPaths.uri(
-            relPath: '${MemoryPaths.agentRoot(agentId)}/',
-    );
+    String uri(String path) => MemoryPaths.uriFor(
+          pouchId: pouchId!,
+          agentId: agentId,
+          path: path,
+        );
     return ScopeCard(
       mode: ScopeCardMode.dm,
       ownerId: agentId,
       ownerKind: 'agent',
       deviceId: deviceId,
       channelId: channelId,
-      cognitionRootUri: cogRoot,
-      soulUri: MemoryPaths.uri(
-                relPath: MemoryPaths.soulMd(agentId),
-      ),
-      memoryEntriesUri: MemoryPaths.uri(
-                relPath: '${MemoryPaths.entriesDir(agentId)}/',
-      ),
+      cognitionRootUri: pouchId == null ? null : uri(''),
+      soulUri: pouchId == null ? null : uri(MemoryPaths.soulPath()),
+      memoryEntriesUri:
+          pouchId == null ? null : uri('${MemoryPaths.entriesDir()}/'),
       runtimeRootUri: RuntimePaths.uri(
                 relPath: RuntimePaths.runtimeRoot(agentId),
       ),
@@ -170,14 +170,20 @@ class ScopeCard {
     required String agentId,
     required String deviceId,
     required String peerClientId,
+    String? pouchId,
     String? channelId,
     ScopeCardInjected injected = const ScopeCardInjected(
       soul: ScopeInjectLevel.full,
     ),
     ScopeCardCliSurface cliSurface = ScopeCardCliSurface.shepawTool,
   }) {
+    String uri(String path) => MemoryPaths.uriFor(
+          pouchId: pouchId!,
+          agentId: agentId,
+          path: path,
+        );
     final entriesRel =
-        '${MemoryPaths.entriesDir(agentId, peerClientId: peerClientId)}/';
+        '${MemoryPaths.entriesDir(peerClientId: peerClientId)}/';
     return ScopeCard(
       mode: ScopeCardMode.peer,
       ownerId: agentId,
@@ -185,15 +191,9 @@ class ScopeCard {
       deviceId: deviceId,
       channelId: channelId,
       peerClientId: peerClientId,
-      cognitionRootUri: MemoryPaths.uri(
-                relPath: '${MemoryPaths.agentRoot(agentId)}/',
-      ),
-      soulUri: MemoryPaths.uri(
-                relPath: MemoryPaths.soulMd(agentId),
-      ),
-      memoryEntriesUri: MemoryPaths.uri(
-                relPath: entriesRel,
-      ),
+      cognitionRootUri: pouchId == null ? null : uri(''),
+      soulUri: pouchId == null ? null : uri(MemoryPaths.soulPath()),
+      memoryEntriesUri: pouchId == null ? null : uri(entriesRel),
       runtimeRootUri: RuntimePaths.uri(
                 relPath: RuntimePaths.runtimeRoot(agentId),
       ),
@@ -321,7 +321,7 @@ class ScopeCard {
       : _hubStore
           ? '- 写产物: `shepaw pouch write --filename <名> --content "..."`'
               '（可选 `--task` / `--desc`）；'
-              '写落 **本机 device** 目录，返回的 `pouch://` 原样引用；**不要**传 `agent_id` / `owner`'
+              '写落 **当前作用域**，返回的 `pouch://` 原样引用；**不要**传 `agent_id` / `owner`'
           : '- 写产物: `shepaw pouch write --filename <名> --content "..."`'
               ' 或 `--file <path>` / `--content-base64`（可选 `--task` / `--desc`）；'
               '**不要**传 `agent_id` / `owner` / 个人 channel，由系统落到本作用域袋';
@@ -371,8 +371,8 @@ class ScopeCard {
         '或本机挂载视图（与磁盘同一份，改磁盘即改袋；不版本、不镜像、不跨设备）。',
       )
       ..writeln(
-        '- `cognition` 认知：soul 与记忆补充（不同步，靠 agent 主动写；'
-        '记忆权威在文件系统记忆）。用 context/soul CLI 写，不要 pouch write。',
+        '- `agent:<id>` 认知：`identity/`（soul、profile、人脸向量）与 '
+        '`memory/`（结构化记忆补充）。用 context/soul CLI 写，不要 pouch write。',
       )
       ..writeln(
         '- `tools` 工具：`mcp/`、`rules/`、`skills/`；'
@@ -409,15 +409,15 @@ class ScopeCard {
       )
       ..writeln('- device: `$deviceId`')
       ..writeln(
-        '- URI 形如 `pouch://<space>/<device_id>/<path>`'
+        '- URI 形如 `pouch://<pouch_id>/<scope>/<path>`'
         '（可加 `@v<n>` / `@<hash>` 固定到某一版本）',
       );
     _writeSpaceMap(buf);
 
     if (mode == ScopeCardMode.group) {
       buf.writeln(
-        '- 本群**无**个人 `cognition/`（soul/记忆）；岗位与人格摘要见群身份段，'
-        '禁止在本任务读写个人认知袋',
+        '- 本群**无**个人认知 scope（`agent:<你的agentId>/identity`、'
+        '`memory`）；岗位与人格摘要见群身份段，禁止在本任务读写个人认知袋',
       );
     } else if (mode != ScopeCardMode.acp) {
       if (cognitionRootUri != null) {
@@ -486,7 +486,7 @@ class ScopeCard {
         '用 `os.file.*` 读 pouch URI');
     if (mode == ScopeCardMode.group) {
       buf.writeln(
-        '- 禁止: 把群产出写到 `runtime/<你的agentId>/` 或 `cognition/<你的agentId>/`',
+        '- 禁止: 把群产出写到 `runtime/<你的agentId>/` 或 `agent:<你的agentId>/`',
       );
     }
     return buf.toString().trimRight();

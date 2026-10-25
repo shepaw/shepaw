@@ -254,12 +254,12 @@ class RuntimeMirrorService {
       await _writeTextIfAbsent(
         device,
         RuntimePaths.soulMd(ownerId),
-        '<!-- mirrored soul; authoritative store is cognition/<agent>/soul.md -->\n',
+        '<!-- mirrored soul; authoritative store is agent:<id>/identity/soul.md -->\n',
       );
       await _writeTextIfAbsent(
         device,
         RuntimePaths.memoryMd(ownerId),
-        '<!-- mirrored memory summary; authoritative store is cognition/<agent>/entries -->\n',
+        '<!-- mirrored memory summary; authoritative store is agent:<id>/memory/entries -->\n',
       );
     }
     await _writeTextIfAbsent(
@@ -272,6 +272,7 @@ class RuntimeMirrorService {
     // 写死 []），再由 _touchManifestChannel 加回当前这一个 channel——
     // 群 owner 下多个子会话共享一份 manifest，除当前会话外的 session_uri
     // 会永久丢失，workspace_refs 也被抹掉。
+    final pouchId = await StoreService.instance.currentPouchId();
     await _writeTextIfAbsent(
       device,
       RuntimePaths.contextManifest(ownerId),
@@ -280,10 +281,14 @@ class RuntimeMirrorService {
         'owner_id': ownerId,
         'source_device': device,
         'updated_at': now,
-        if (persona)
-          'soul_uri': MemoryPaths.uri(relPath: MemoryPaths.soulMd(ownerId)),
-        if (persona)
-          'memory_uri': MemoryPaths.uri(relPath: MemoryPaths.entriesDir(ownerId)),
+        if (persona && pouchId != null)
+          'soul_uri': MemoryPaths.soulUri(pouchId, ownerId),
+        if (persona && pouchId != null)
+          'memory_uri': MemoryPaths.uriFor(
+            pouchId: pouchId,
+            agentId: ownerId,
+            path: '${MemoryPaths.entriesDir()}/',
+          ),
         'workspace_refs': <String>[],
         'channels': <String, dynamic>{},
       }),
@@ -514,9 +519,14 @@ class RuntimeMirrorService {
     manifest['channels'] = channels;
     manifest['updated_at'] = DateTime.now().toUtc().toIso8601String();
     final persona = !await _ownerIsGroupChannel(ownerId);
-    if (persona) {
-      manifest['soul_uri'] = MemoryPaths.uri(relPath: MemoryPaths.soulMd(ownerId));
-      manifest['memory_uri'] = MemoryPaths.uri(relPath: MemoryPaths.entriesDir(ownerId));
+    final pouchId = await StoreService.instance.currentPouchId();
+    if (persona && pouchId != null) {
+      manifest['soul_uri'] = MemoryPaths.soulUri(pouchId, ownerId);
+      manifest['memory_uri'] = MemoryPaths.uriFor(
+        pouchId: pouchId,
+        agentId: ownerId,
+        path: '${MemoryPaths.entriesDir()}/',
+      );
     } else {
       manifest.remove('soul_uri');
       manifest.remove('memory_uri');

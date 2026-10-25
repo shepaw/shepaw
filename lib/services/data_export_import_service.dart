@@ -14,8 +14,8 @@ import '../services/agent_memory_db_service.dart';
 import '../services/agent_memory_store_service.dart';
 import '../models/cognition.dart';
 import '../models/agent_memory_entry.dart';
-import '../storage/device_identity.dart';
-import '../storage/store_protocol.dart';
+import '../storage/memory_paths.dart';
+import '../storage/pouch_scope.dart';
 import '../storage/store_service.dart';
 
 /// 数据导入导出服务（遗留 ZIP 路径；产品入口已改为储物袋加密快照）。
@@ -273,30 +273,30 @@ class DataExportImportService {
       final exported = <String>{};
 
       try {
-        final deviceId = await DeviceIdentity.deviceId();
-        final store = await StoreService.instance.localStore();
-        final roots = <String>{};
-        for (final space in StoreSpace.cognitionAliases) {
-          final listed = await store.list(
-            deviceId,
-            space,
-            depth: 1,
-            limit: 5000,
-          );
-          for (final e in listed) {
-            if (e.isDir) roots.add(e.path);
+        final scoped = await StoreService.instance.scopeStoreOrNull();
+        if (scoped != null) {
+          final roots = <String>{};
+          for (final id in await scoped.scopes('agent:')) {
+            final scope = PouchScope.tryParse(id);
+            if (scope == null || scope.kind != PouchScopeKind.agent) continue;
+            final entries = await scoped.listChildren(
+              scope,
+              path: MemoryPaths.entriesDir(),
+              limit: 1,
+            );
+            if (entries.any((e) => !e.isDir)) roots.add(scope.ownerId);
+          }
+          for (final agentId in roots) {
+            final memories = await AgentMemoryStoreService.forAgent(agentId)
+                .getAllMemories(limit: 100000);
+            if (memories.isEmpty) continue;
+            await File('${memDir.path}/$agentId.json').writeAsString(
+                json.encode(memories.map((m) => m.toMap()).toList()));
+            exported.add(agentId);
           }
         }
-        for (final agentId in roots) {
-          final memories = await AgentMemoryStoreService.forAgent(agentId)
-              .getAllMemories(limit: 100000);
-          if (memories.isEmpty) continue;
-          await File('${memDir.path}/$agentId.json').writeAsString(
-              json.encode(memories.map((m) => m.toMap()).toList()));
-          exported.add(agentId);
-        }
       } catch (e) {
-        _logger.warning('store memory export partial fail: $e');
+        _logger.warning('scoped memory export partial fail: $e');
       }
 
       final docsDir = await AppPaths.documents();

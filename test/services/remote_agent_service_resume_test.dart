@@ -1,17 +1,12 @@
-import 'package:shepaw/services/task/acp_task_contract.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shepaw/models/acp_protocol.dart';
-import 'package:shepaw/services/chat_service.dart';
 import 'package:shepaw/services/local_database_service.dart';
 import 'package:shepaw/models/remote_agent.dart';
 import 'package:shepaw/services/remote_agent_service.dart';
 import 'package:shepaw/services/token_service.dart';
-import 'package:shepaw/storage/device_identity.dart';
-import 'package:shepaw/storage/store_protocol.dart';
+import 'package:shepaw/storage/memory_paths.dart';
 import 'package:shepaw/storage/store_service.dart';
 
 import '../storage/test_harness.dart';
@@ -63,57 +58,34 @@ Manual notes
     setUpAll(() async {
       await StorageTestHarness.init();
       await StoreService.instance.start();
+      StorageTestHarness.installMemoryPouchScope(pouchId: 'test-pouch');
       service = RemoteAgentService(
         LocalDatabaseService(),
         TokenService(LocalDatabaseService()),
       );
     });
 
-    test('resumeStoreUriFor builds the fixed pouch location', () async {
-      final device = await DeviceIdentity.deviceId();
+    test('resumeStoreUriFor builds the v3 agent location', () async {
       final uri = await service.resumeStoreUriFor('acp_agent_abcd');
-      expect(uri, 'pouch://cognition/acp_agent_abcd/resume.md');
+      expect(
+        uri,
+        'pouch://test-pouch/agent:acp_agent_abcd/derived/resume.md',
+      );
     });
 
     test('readResumeMarkdownFromStore reads back what was written', () async {
       const agentId = 'acp_agent_abcd';
-      final device = await DeviceIdentity.deviceId();
       final content =
           Uint8List.fromList(utf8.encode('# resume\n\nbody\n'));
-      final store = await StoreService.instance.localStore();
-      final (uploadId, _) = await store.writeBegin(
-        deviceId: device,
-        space: StoreSpace.cognition,
-        path: '$agentId/resume.md',
-        size: content.length,
-        sha256: crypto.sha256.convert(content).toString(),
+      final scoped = await StoreService.instance.scopeStore();
+      await scoped.write(
+        MemoryPaths.scopeFor(agentId),
+        MemoryPaths.resumePath(),
+        content,
       );
-      await store.writeChunk(device, StoreSpace.cognition, uploadId, 0, content);
-      await store.commit(device, StoreSpace.cognition, [uploadId]);
 
       final md = await service.readResumeMarkdownFromStore(agentId);
       expect(md, '# resume\n\nbody\n');
-    });
-
-    test('readResumeMarkdownFromStore still finds a legacy files resume',
-        () async {
-      const agentId = 'acp_agent_legacy';
-      final device = await DeviceIdentity.deviceId();
-      final content =
-          Uint8List.fromList(utf8.encode('# legacy\n\n## Summary\nold\n'));
-      final store = await StoreService.instance.localStore();
-      final (uploadId, _) = await store.writeBegin(
-        deviceId: device,
-        space: StoreSpace.files,
-        path: '$agentId/resume.md',
-        size: content.length,
-        sha256: crypto.sha256.convert(content).toString(),
-      );
-      await store.writeChunk(device, StoreSpace.files, uploadId, 0, content);
-      await store.commit(device, StoreSpace.files, [uploadId]);
-
-      final md = await service.readResumeMarkdownFromStore(agentId);
-      expect(md, contains('## Summary'));
     });
 
     test('readResumeMarkdownFromStore returns null for a missing file',

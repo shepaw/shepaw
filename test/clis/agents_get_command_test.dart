@@ -36,6 +36,7 @@ void main() {
       },
     );
     await LocalDatabaseService().database;
+    StorageTestHarness.installMemoryPouchScope(pouchId: 'test-pouch');
   });
 
   group('agents.get command', () {

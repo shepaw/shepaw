@@ -5,15 +5,14 @@ import 'package:uuid/uuid.dart';
 import '../models/remote_agent.dart';
 import '../peer/models/paired_peer.dart' show PeerConnectionState;
 import '../peer/services/peer_connection_manager.dart';
-import '../storage/device_identity.dart';
+import '../storage/local_store.dart' show StoreException;
 import '../storage/memory_paths.dart';
 import '../storage/store_protocol.dart';
-import '../storage/store_uri_reader.dart';
+import '../storage/store_service.dart';
 import 'local_database_service.dart';
 import 'logger_service.dart';
 import 'token_service.dart';
 import '../peer/services/peer_agent_client_service.dart';
-import 'chat_service.dart';
 import 'she_agent_impression_service.dart';
 import 'she_service.dart';
 
@@ -431,35 +430,29 @@ class RemoteAgentService {
 
   // ==================== 储物袋简历（resume.md） ====================
 
-  /// Agent 简历在储物袋的固定位置：
-  /// `pouch://cognition/<device_id>/<agent_id>/resume.md`。
-  ///
-  /// 和 soul 放在一起。文件分区只给用户自己的文件，新简历不要再写到那里。
-  /// 早先写在 `files/<agent_id>/resume.md` 的旧件，读取时仍会兜底。
+  /// Agent 简历在 v3 的固定位置：`agent:<aid>/derived/resume.md`。
   Future<String> resumeStoreUriFor(String agentId) async {
-    final device = await DeviceIdentity.deviceId();
-    return MemoryPaths.uri(
-      relPath: MemoryPaths.resumeMd(agentId),
-    );
+    final pouchId = await StoreService.instance.currentPouchId();
+    if (pouchId == null || pouchId.isEmpty) {
+      throw StoreException(StoreError.notPaired, '还没有登录袋子');
+    }
+    return MemoryPaths.resumeUri(pouchId, agentId);
   }
 
-  /// 读取储物袋里的简历全文（resume.md）。文件不存在 / 读失败返回 null。
+  /// 读取 v3 里的简历全文。文件不存在 / 读失败返回 null。
   Future<String?> readResumeMarkdownFromStore(String agentId) async {
-    final device = await DeviceIdentity.deviceId();
-    final legacy = storeUriWithRef(
-      StoreSpace.files,
-      MemoryPaths.resumeMd(agentId),
-    );
-    for (final uri in [await resumeStoreUriFor(agentId), legacy]) {
-      try {
-        final bytes = await StoreUriReader.instance.read(uri);
-        if (bytes.isEmpty) continue;
-        final text = utf8.decode(bytes);
-        if (text.trim().isEmpty) continue;
-        return text;
-      } catch (_) {}
+    try {
+      final scoped = await StoreService.instance.scopeStore();
+      final bytes = await scoped.read(
+        MemoryPaths.scopeFor(agentId),
+        MemoryPaths.resumePath(),
+      );
+      if (bytes == null || bytes.isEmpty) return null;
+      final text = utf8.decode(bytes);
+      return text.trim().isEmpty ? null : text;
+    } catch (_) {
+      return null;
     }
-    return null;
   }
 
   /// 详情页打开时刷新：读储物袋 resume.md 全文供预览；若本地 `bio` 为空，

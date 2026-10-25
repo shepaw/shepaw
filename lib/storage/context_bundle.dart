@@ -168,9 +168,11 @@ class ContextBundleService {
         cliSurface: cliSurface,
       );
     }
+    final pouchId = await StoreService.instance.currentPouchId();
     return ScopeCard.forAgentDm(
       agentId: ownerId,
       deviceId: deviceId,
+      pouchId: pouchId,
       channelId: channelId,
       cliSurface: cliSurface,
     ).copyWith(extraUris: ScopeCard.dedupeUris(extras));

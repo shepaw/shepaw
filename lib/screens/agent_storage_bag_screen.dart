@@ -11,6 +11,7 @@ import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
 import '../storage/workspace_binding_service.dart';
 import '../theme/app_theme.dart';
+import 'pouch_scope_browser_screen.dart';
 import 'storage_browser_screen.dart';
 
 /// 会话面板里的 agent 专属储物袋。
@@ -139,6 +140,18 @@ class _AgentStorageBagScreenState extends State<AgentStorageBagScreen> {
     }
   }
 
+  /// 本机 Agent 的认知在 v3 的 `agent:<owner>` scope 里。
+  void _openAgentScope(String owner, {required String title}) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PouchScopeBrowserScreen(
+          initialScope: MemoryPaths.scopeFor(owner),
+          title: '${widget.displayName} · $title',
+        ),
+      ),
+    );
+  }
+
   void _openSpace({
     required String space,
     required String path,
@@ -223,11 +236,17 @@ class _AgentStorageBagScreenState extends State<AgentStorageBagScreen> {
             icon: Icons.psychology_outlined,
             title: l10n.storage_spaceCognition,
             subtitle: l10n.agentBag_cognitionHint,
-            onTap: () => _openSpace(
-              space: StoreSpace.cognition,
-              path: MemoryPaths.agentRoot(owner),
-              title: l10n.storage_spaceCognition,
-            ),
+            onTap: _preferLocalCache
+                // Peer agent 的数据在对方设备的袋子里，这里仍看本机缓存。
+                ? () => _openSpace(
+                      space: StoreSpace.cognition,
+                      path: MemoryPaths.agentRoot(owner),
+                      title: l10n.storage_spaceCognition,
+                    )
+                : () => _openAgentScope(
+                      owner,
+                      title: l10n.storage_spaceCognition,
+                    ),
           ),
           _spaceRow(
             icon: Icons.build_outlined,

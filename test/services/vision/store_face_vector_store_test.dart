@@ -6,6 +6,7 @@ import 'package:shepaw/services/local_database_service.dart';
 import 'package:shepaw/services/vision/debug_face_embedding_engine.dart';
 import 'package:shepaw/services/vision/reference_album_service.dart';
 import 'package:shepaw/services/vision/store_face_vector_store.dart';
+import 'package:shepaw/storage/memory_paths.dart';
 import 'package:shepaw/storage/store_service.dart';
 
 import '../../storage/test_harness.dart';
@@ -23,6 +24,7 @@ void main() {
   setUpAll(() async {
     await StorageTestHarness.init();
     await StoreService.instance.start();
+    StorageTestHarness.installMemoryPouchScope(pouchId: 'test-pouch');
     await LocalDatabaseService().database;
   });
 
@@ -35,13 +37,22 @@ void main() {
   Future<StoreFaceVectorStore> open() =>
       StoreFaceVectorStore.open(agentId: agentId);
 
-  group('StoreFaceVectorStore (cognition 逐向量 JSON)', () {
+  group('StoreFaceVectorStore (agent scope 逐向量 JSON)', () {
     test('upsert then search returns top hit, cosine ordering', () async {
       final store = await open();
       await store.upsert(
           photoId: 'ph1', personId: 'p1', embedding: unit(4, 0));
       await store.upsert(
           photoId: 'ph2', personId: 'p2', embedding: unit(4, 1));
+
+      final scoped = await StoreService.instance.scopeStore();
+      expect(
+        await scoped.read(
+          MemoryPaths.scopeFor(agentId),
+          MemoryPaths.faceVectorPath('ph1'),
+        ),
+        isNotNull,
+      );
 
       final hits = await store.search(unit(4, 0), topK: 3);
       expect(hits, hasLength(2));

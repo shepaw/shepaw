@@ -5,7 +5,6 @@ import 'package:shepaw/services/agent_memory_store_service.dart';
 import 'package:shepaw/services/cognition_service.dart';
 import 'package:shepaw/storage/device_identity.dart';
 import 'package:shepaw/storage/memory_paths.dart';
-import 'package:shepaw/storage/store_protocol.dart';
 import 'package:shepaw/storage/store_service.dart';
 import 'package:shepaw/storage/workspace_binding_service.dart';
 
@@ -15,26 +14,26 @@ void main() {
   setUpAll(() async {
     await StorageTestHarness.init();
     await StoreService.instance.start();
+    StorageTestHarness.installMemoryPouchScope(pouchId: 'test-pouch');
   });
 
   tearDown(() async {
     await AgentMemoryStoreService.forAgent('agent-soul-ws').deleteAll();
   });
 
-  test('soul 权威写入 cognition/<agent>/soul.md', () async {
+  test('soul 权威写入 agent:<aid>/identity/soul.md', () async {
     await CognitionService.instance
         .updateAgentSoul('agent-soul-ws', 'I am a pouch soul.');
     final got = await CognitionService.instance.getAgentSoul('agent-soul-ws');
     expect(got, contains('pouch soul'));
 
-    final deviceId = await DeviceIdentity.deviceId();
-    final store = await StoreService.instance.localStore();
-    final meta = await store.meta(
-      deviceId,
-      StoreSpace.cognition,
-      MemoryPaths.soulMd('agent-soul-ws'),
+    final scoped = await StoreService.instance.scopeStore();
+    final meta = await scoped.meta(
+      MemoryPaths.scopeFor('agent-soul-ws'),
+      MemoryPaths.soulPath(),
     );
-    expect(meta['size'] as int, greaterThan(0));
+    expect(meta, isNotNull);
+    expect(meta!.size, greaterThan(0));
   });
 
   test('WorkspaceBindingService parse + save', () async {

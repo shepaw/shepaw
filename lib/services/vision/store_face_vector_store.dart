@@ -1,14 +1,13 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart' as crypto;
-
-import '../../storage/device_identity.dart';
 import '../../storage/local_store.dart';
 import '../../storage/memory_paths.dart';
-import '../../storage/runtime_paths.dart';
+import '../../storage/pouch_scope.dart';
+import '../../storage/pouch_scope_store.dart';
 import '../../storage/store_protocol.dart';
 import '../../storage/store_service.dart';
+import '../agent_memory_store_service.dart';
 import '../she_service.dart';
 import 'face_matcher.dart';
 import 'face_vector_store.dart';
@@ -22,9 +21,9 @@ class _StoredVector {
 
 /// 储物袋形态的人脸向量存储：逐向量一个 JSON 文件。
 ///
-/// 落点：`pouch://cognition/<device>/<agent>/face_vectors/<photo_id>.json`
-/// 与 Agent 记忆（soul / entries）同一分区，天然获得备份 / 恢复 / `store wipe` /
-/// 跨设备镜像的生命周期统一，且默认私有（跨端只读不放行文件）。
+/// 落点：`pouch://<pouch>/agent:<agent>/identity/face_vectors/<photo_id>.json`
+/// 与 Agent 的 soul / memory 同一个 scope，天然获得备份 / 恢复 / `store wipe`
+/// 的生命周期统一，且默认私有（跨端只读不放行文件）。
 ///
 /// 检索模型：启动/首访时读全量向量进内存索引，之后内存余弦检索
 /// （量级：几十人 × 192-d，开销可忽略）；写入/删除即增删对应 JSON 文件。
@@ -32,37 +31,32 @@ class _StoredVector {
 /// 每写一次整文件重写，会抖同步游标）。
 class StoreFaceVectorStore implements FaceVectorStore {
   StoreFaceVectorStore._({
-    required LocalStore store,
-    required String deviceId,
-    required String agentId,
+    required PouchScopeStore store,
+    required PouchScope scope,
   })  : _store = store,
-        _deviceId = deviceId,
-        _agentRoot = MemoryPaths.agentRoot(agentId);
+        _scope = scope;
 
-  /// 打开（默认归属 She 的储物袋 `cognition/<she>/face_vectors/`）。
+  /// 打开（默认归属 She 的 `agent:<she>/identity/face_vectors/`）。
   static Future<StoreFaceVectorStore> open({String? agentId}) async {
-    final store = await StoreService.instance.localStore();
-    final deviceId = await DeviceIdentity.deviceId();
+    final id = agentId ?? SheService.sheId;
+    // 先把 v2 `cognition/<agent>/face_vectors/` 搬进 v3。
+    await AgentMemoryStoreService.forAgent(id).ensureV2Migration();
+    final store = await StoreService.instance.scopeStore();
     return StoreFaceVectorStore._(
       store: store,
-      deviceId: deviceId,
-      agentId: agentId ?? SheService.sheId,
+      scope: MemoryPaths.scopeFor(id),
     );
   }
 
-  final LocalStore _store;
-  final String _deviceId;
-  final String _agentRoot;
+  final PouchScopeStore _store;
+  final PouchScope _scope;
 
   final Map<String, _StoredVector> _byPhotoId = {};
   Future<void>? _loadFuture;
 
   // ── 路径 ───────────────────────────────────────────────────────────────────
 
-  String get _vectorsDir => '$_agentRoot/face_vectors/';
-
-  String _vectorRelPath(String photoId) =>
-      '$_vectorsDir${RuntimePaths.sanitizeSegment(photoId)}.json';
+  String _vectorRelPath(String photoId) => MemoryPaths.faceVectorPath(photoId);
 
   // ── FaceVectorStore ────────────────────────────────────────────────────────
 
@@ -161,12 +155,10 @@ class StoreFaceVectorStore implements FaceVectorStore {
   }
 
   Future<List<StoreEntry>> _listVectorFiles() async {
-    final entries = await _store.list(
-      _deviceId,
-      StoreSpace.cognition,
-      prefix: _vectorsDir,
+    final entries = await _store.listChildren(
+      _scope,
+      path: MemoryPaths.faceVectorsDir(),
       limit: 10000,
-      computeHash: false,
     );
     return [for (final e in entries) if (!e.isDir) e];
   }
@@ -174,69 +166,19 @@ class StoreFaceVectorStore implements FaceVectorStore {
   Future<void> _writeJson(String relPath, Map<String, dynamic> json) async {
     final bytes =
         Uint8List.fromList(utf8.encode(const JsonEncoder().convert(json)));
-    final hash = crypto.sha256.convert(bytes).toString();
-    final (uploadId, _) = await _store.writeBegin(
-      deviceId: _deviceId,
-      space: StoreSpace.cognition,
-      path: relPath,
-      size: bytes.length,
-      sha256: hash,
-    );
-    var offset = 0;
-    while (offset < bytes.length) {
-      final end = (offset + LocalStore.maxReadChunk) > bytes.length
-          ? bytes.length
-          : offset + LocalStore.maxReadChunk;
-      await _store.writeChunk(
-        _deviceId,
-        StoreSpace.cognition,
-        uploadId,
-        offset,
-        bytes.sublist(offset, end),
-      );
-      offset = end;
-    }
-    final (ok, failed) = await _store.commit(
-      _deviceId,
-      StoreSpace.cognition,
-      [uploadId],
-    );
-    if (failed.isNotEmpty || ok.isEmpty) {
-      throw StateError('face vector write failed: $failed');
-    }
+    await _store.write(_scope, relPath, bytes);
   }
 
   Future<Map<String, dynamic>?> _readJson(String relPath) async {
-    try {
-      final buf = BytesBuilder(copy: false);
-      var offset = 0;
-      while (true) {
-        final (chunk, size, eof) = await _store.read(
-          _deviceId,
-          StoreSpace.cognition,
-          relPath,
-          offset,
-          LocalStore.maxReadChunk,
-        );
-        if (chunk.isNotEmpty) buf.add(chunk);
-        offset += chunk.length;
-        if (eof || offset >= size) break;
-      }
-      final bytes = buf.takeBytes();
-      if (bytes.isEmpty) return null;
-      final decoded = jsonDecode(utf8.decode(bytes));
-      return decoded is Map
-          ? Map<String, dynamic>.from(decoded)
-          : null;
-    } on StoreException catch (e) {
-      if (e.code == StoreError.notFound) return null;
-      rethrow;
-    }
+    final bytes = await _store.read(_scope, relPath);
+    if (bytes == null || bytes.isEmpty) return null;
+    final decoded = jsonDecode(utf8.decode(bytes));
+    return decoded is Map ? Map<String, dynamic>.from(decoded) : null;
   }
 
   Future<void> _deleteQuietly(String relPath) async {
     try {
-      await _store.delete(_deviceId, StoreSpace.cognition, relPath);
+      await _store.delete(_scope, relPath);
     } on StoreException catch (e) {
       if (e.code != StoreError.notFound) rethrow;
     }

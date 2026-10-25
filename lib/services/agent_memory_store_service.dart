@@ -1,12 +1,12 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart' as crypto;
-
 import '../models/agent_memory_entry.dart';
 import '../storage/device_identity.dart';
 import '../storage/local_store.dart';
 import '../storage/memory_paths.dart';
+import '../storage/pouch_scope.dart';
+import '../storage/pouch_scope_store.dart';
 import '../storage/runtime_mirror_service.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
@@ -15,21 +15,20 @@ import 'logger_service.dart';
 import 'minds_database_service.dart';
 import 'she_memory_db_service.dart';
 
-/// Agent 结构化记忆：权威落在储物袋 `cognition/<agentId>/…`。
+/// Agent 结构化记忆：权威落在 v3 的 `agent:<agentId>` scope。
 ///
-/// - 本机会话：`cognition/<agentId>/entries/*.json`
-/// - Peer 中继（按配对设备隔离）：`cognition/<agentId>/peers/<peerId>/entries/*.json`
-/// - Legacy：旧 `memory/` 空间只读兼容；写入一律 [StoreSpace.cognition]
+/// - Soul / profile / 人脸向量：`identity/…`
+/// - 本机结构化记忆：`memory/entries/*.json`、`memory/meta.json`
+/// - Peer 中继（按配对设备隔离）：`memory/peers/<peerId>/…`
 ///
-/// 首次访问若发现旧 `agent_memory_*.db` 且 store 为空，会一次性迁移后标记
-///（仅本机根目录；peer 子树不做 SQLite 迁移）。
+/// 首次访问会把旧 v2 `cognition/`（及 legacy `memory/` 空间）里的文件一次性
+/// 映射进 v3，并标记在 `memory/meta.json`。旧 `agent_memory_*.db` 也在首次
+/// 访问时导入（仅本机根目录；peer 子树不做 SQLite 迁移）。
 class AgentMemoryStoreService {
   AgentMemoryStoreService._(this._agentId, {String? peerClientId})
       : _peerClientId = _normalizePeer(peerClientId);
 
   static final Map<String, AgentMemoryStoreService> _instances = {};
-  /// 已从 legacy `memory/` 拷到 `cognition/` 的 agent（进程内去重）。
-  static final Set<String> _legacySpaceMigrated = {};
 
   static String? _normalizePeer(String? peerClientId) {
     final p = peerClientId?.trim();
@@ -59,9 +58,29 @@ class AgentMemoryStoreService {
     _instances.clear();
   }
 
-  /// 清除全部 Agent 的 cognition（及 legacy memory）目录。
+  /// 清除全部 Agent 的认知（v3 `identity` / `memory` / App 派生记忆）与
+  /// 旧 v2 `cognition`、`memory` 空间。
   static Future<void> deleteAllAgentMemories() async {
     await closeAll();
+    try {
+      final scoped = await StoreService.instance.scopeStoreOrNull();
+      if (scoped != null) {
+        final ids = await scoped.scopes('agent:');
+        for (final id in ids) {
+          final scope = PouchScope.tryParse(id);
+          if (scope == null || scope.kind != PouchScopeKind.agent) continue;
+          await _deleteScopePrefix(scoped, scope, 'identity');
+          await _deleteScopePrefix(scoped, scope, 'memory');
+          await _deleteScopePrefix(scoped, scope, 'derived/app-memory');
+        }
+      }
+    } catch (e) {
+      LoggerService().error(
+        'Failed to delete agent cognition from scoped pouch',
+        tag: 'AgentMemoryStore',
+        error: e,
+      );
+    }
     try {
       final deviceId = await DeviceIdentity.deviceId();
       final store = await StoreService.instance.localStore();
@@ -79,14 +98,45 @@ class AgentMemoryStoreService {
           } catch (_) {}
         }
       }
-      // 顺带清遗留 SQLite
-      await AgentMemoryDbService.deleteAllDatabases();
     } catch (e) {
       LoggerService().error(
-        'Failed to delete all agent memories from store',
+        'Failed to delete legacy cognition spaces',
         tag: 'AgentMemoryStore',
         error: e,
       );
+    }
+    // 顺带清遗留 SQLite
+    await AgentMemoryDbService.deleteAllDatabases();
+  }
+
+  /// 删除 scope 下某个前缀的所有文件（hub 的 delete 只认单路径）。
+  static Future<void> _deleteScopePrefix(
+    PouchScopeStore scoped,
+    PouchScope scope,
+    String prefix,
+  ) async {
+    String? cursor;
+    final paths = <String>[];
+    do {
+      final page = await scoped.transport.list(
+        pouchId: scoped.pouchId,
+        scope: scope,
+        prefix: prefix,
+        limit: 1000,
+        cursor: cursor,
+      );
+      for (final e in page.entries) {
+        if (!e.isDir) paths.add(e.path);
+      }
+      if (page.entries.isEmpty) break;
+      cursor = page.nextCursor;
+    } while (cursor != null && cursor.isNotEmpty);
+    for (final path in paths) {
+      try {
+        await scoped.delete(scope, path);
+      } on StoreException catch (e) {
+        if (e.code != StoreError.notFound) rethrow;
+      }
     }
   }
 
@@ -107,7 +157,7 @@ class AgentMemoryStoreService {
 
   Future<void> _ensure() async {
     if (_ensured) return;
-    await _migrateLegacyMemorySpaceIfNeeded();
+    await _migrateV2ToScopedIfNeeded();
     if (!_isPeerScoped) {
       await _migrateFromSqliteIfNeeded();
       await _migrateSoulFromSqliteIfNeeded();
@@ -115,105 +165,82 @@ class AgentMemoryStoreService {
     _ensured = true;
   }
 
+  /// 人脸向量等其他入口在访问 v3 前先触发同一份 v2 迁移。
+  Future<void> ensureV2Migration() => _ensure();
+
   Future<LocalStore> _store() => StoreService.instance.localStore();
+
+  Future<PouchScopeStore> _scopes() => StoreService.instance.scopeStore();
 
   Future<String> _deviceId() => DeviceIdentity.deviceId();
 
-  /// 将 legacy `memory/<agent>/…` 拷入 `cognition/`（已存在的路径不覆盖）。
-  Future<void> _migrateLegacyMemorySpaceIfNeeded() async {
-    if (_legacySpaceMigrated.contains(_agentId)) return;
-    _legacySpaceMigrated.add(_agentId);
+  PouchScope get _scope => MemoryPaths.scopeFor(_agentId);
+
+  /// 把 v2 `cognition/`（以及更早的 `memory/`）一次性映射进 v3 agent scope。
+  ///
+  /// 只处理当前实例的范围：本机根跳过 `peers/`，peer 实例只看自己的子树。
+  /// 目标已存在就不覆盖；迁移完成写 `v3_migrated`，之后不再扫 v2。
+  Future<void> _migrateV2ToScopedIfNeeded() async {
+    final meta = await _loadMeta();
+    if (meta.v3Migrated) return;
     try {
       final deviceId = await _deviceId();
       final store = await _store();
-      final root = MemoryPaths.agentRoot(_agentId);
-      final legacy = await store.list(
-        deviceId,
-        StoreSpace.memory,
-        prefix: '$root/',
-        limit: 10000,
-        computeHash: false,
-      );
-      if (legacy.isEmpty) return;
+      final scoped = await _scopes();
+      final prefix =
+          '${MemoryPaths.legacyScopedRoot(_agentId, peerClientId: _peerClientId)}/';
       var copied = 0;
-      for (final e in legacy) {
-        if (e.isDir) continue;
-        try {
-          await store.meta(deviceId, StoreSpace.cognition, e.path);
-          continue; // cognition 已有
-        } on StoreException catch (err) {
-          if (err.code != StoreError.notFound) rethrow;
+      // legacy memory 先扫，cognition 后扫；同名目标已存在就跳过，所以
+      // cognition 里的权威副本会赢。
+      for (final space in StoreSpace.cognitionAliases.reversed) {
+        final files = await store.list(
+          deviceId,
+          space,
+          prefix: prefix,
+          limit: 10000,
+          computeHash: false,
+        );
+        for (final e in files) {
+          if (e.isDir) continue;
+          final target = MemoryPaths.v3PathForLegacy(
+            _agentId,
+            e.path,
+            peerClientId: _peerClientId,
+          );
+          if (target == null || target.isEmpty) continue;
+          if (await scoped.meta(_scope, target) != null) continue;
+          final bytes = await _readLegacyBytes(space, e.path);
+          if (bytes == null) continue;
+          await scoped.write(_scope, target, bytes);
+          copied++;
         }
-        final bytes = await _readAllBytes(StoreSpace.memory, e.path);
-        if (bytes == null) continue;
-        await _writeBytesTo(StoreSpace.cognition, e.path, bytes);
-        copied++;
       }
+      // v2 的 meta.json 也可能刚被搬过来，重新读一次再标记，避免把
+      // 迁移进来的 next_id 用旧默认值覆盖掉。
+      final current = await _loadMeta();
+      await _saveMeta(current.copyWith(v3Migrated: true));
       if (copied > 0) {
         _log.info(
-          'migrated $copied files memory → cognition for $_agentId',
+          'migrated $copied files v2 → ${_scope.id} for $_scopeTag',
           tag: _tag,
         );
       }
-      // 整棵 agent 树已在 cognition 后，回收 legacy 根（失败可忽略，读路径仍会 fallback）
-      try {
-        await store.delete(deviceId, StoreSpace.memory, root);
-      } catch (_) {}
     } catch (e) {
       _log.warning(
-        'legacy memory→cognition migrate skipped: $e',
-        tag: '$_tag[$_agentId]',
+        'v2 → scoped cognition migrate skipped: $e',
+        tag: '$_tag[$_scopeTag]',
       );
+      rethrow;
     }
   }
 
-  Future<void> _writeBytes(String relPath, Uint8List content) =>
-      _writeBytesTo(StoreSpace.cognition, relPath, content);
-
-  Future<void> _writeBytesTo(
-    String space,
-    String relPath,
-    Uint8List content,
-  ) async {
-    final deviceId = await _deviceId();
-    final store = await _store();
-    final path = normalizeStorePath(relPath);
-    final hash = crypto.sha256.convert(content).toString();
-    final (uploadId, _) = await store.writeBegin(
-      deviceId: deviceId,
-      space: space,
-      path: path,
-      size: content.length,
-      sha256: hash,
-    );
-    var offset = 0;
-    while (offset < content.length) {
-      final end = (offset + LocalStore.maxReadChunk) > content.length
-          ? content.length
-          : offset + LocalStore.maxReadChunk;
-      await store.writeChunk(
-        deviceId,
-        space,
-        uploadId,
-        offset,
-        content.sublist(offset, end),
-      );
-      offset = end;
-    }
-    final (ok, failed) = await store.commit(deviceId, space, [uploadId]);
-    if (failed.isNotEmpty || ok.isEmpty) {
-      throw StateError('cognition write failed: $failed');
-    }
+  Future<void> _writeBytes(String relPath, Uint8List content) async {
+    final scoped = await _scopes();
+    await scoped.write(_scope, normalizeStorePath(relPath), content);
   }
 
-  Future<void> _writeJson(String relPath, Map<String, dynamic> json) async {
-    final bytes = Uint8List.fromList(
-      utf8.encode(const JsonEncoder.withIndent('  ').convert(json)),
-    );
-    await _writeBytes(relPath, bytes);
-  }
-
-  Future<Uint8List?> _readAllBytes(String space, String relPath) async {
+  /// 只给迁移读 v2 文件用（v3 读取走 [PouchScopeStore.read]）。
+  Future<Uint8List?> _readLegacyBytes(String space, String relPath) async {
     try {
       final deviceId = await _deviceId();
       final store = await _store();
@@ -239,10 +266,16 @@ class AgentMemoryStoreService {
     }
   }
 
-  /// cognition 优先，legacy memory fallback。
+  Future<void> _writeJson(String relPath, Map<String, dynamic> json) async {
+    final bytes = Uint8List.fromList(
+      utf8.encode(const JsonEncoder.withIndent('  ').convert(json)),
+    );
+    await _writeBytes(relPath, bytes);
+  }
+
   Future<Uint8List?> _readBytes(String relPath) async {
-    return await _readAllBytes(StoreSpace.cognition, relPath) ??
-        await _readAllBytes(StoreSpace.memory, relPath);
+    final scoped = await _scopes();
+    return scoped.read(_scope, normalizeStorePath(relPath));
   }
 
   Future<Map<String, dynamic>?> _readJson(String relPath) async {
@@ -263,7 +296,7 @@ class AgentMemoryStoreService {
 
   Future<_MemoryMeta> _loadMeta() async {
     final raw = await _readJson(
-      MemoryPaths.metaJson(_agentId, peerClientId: _peerClientId),
+      MemoryPaths.metaPath(peerClientId: _peerClientId),
     );
     if (raw == null) {
       return const _MemoryMeta(
@@ -276,13 +309,14 @@ class AgentMemoryStoreService {
       nextId: (raw['next_id'] as num?)?.toInt() ?? 1,
       migratedFromSqlite: raw['migrated_from_sqlite'] == true,
       soulMigratedFromSqlite: raw['soul_migrated_from_sqlite'] == true,
-      schemaVersion: (raw['schema_version'] as num?)?.toInt() ?? 1,
+      v3Migrated: raw['v3_migrated'] == true,
+      schemaVersion: (raw['schema_version'] as num?)?.toInt() ?? 2,
     );
   }
 
   Future<void> _saveMeta(_MemoryMeta meta) async {
     await _writeJson(
-      MemoryPaths.metaJson(_agentId, peerClientId: _peerClientId),
+      MemoryPaths.metaPath(peerClientId: _peerClientId),
       meta.toJson(),
     );
   }
@@ -320,11 +354,11 @@ class AgentMemoryStoreService {
         if (id == null) continue;
         if (id > maxId) maxId = id;
         await _writeJson(
-          MemoryPaths.entryJson(_agentId, id, peerClientId: _peerClientId),
+          MemoryPaths.entryPath(id, peerClientId: _peerClientId),
           e.toJson(),
         );
       }
-      await _saveMeta(_MemoryMeta(
+      await _saveMeta(meta.copyWith(
         nextId: maxId + 1,
         migratedFromSqlite: true,
       ));
@@ -345,33 +379,22 @@ class AgentMemoryStoreService {
   }
 
   Future<List<StoreEntry>> _listEntryFiles({int limit = 5000}) async {
-    final deviceId = await _deviceId();
-    final store = await _store();
-    final prefix =
-        '${MemoryPaths.entriesDir(_agentId, peerClientId: _peerClientId)}/';
-    // legacy 先扫，cognition 后写覆盖同名 path
-    final byPath = <String, StoreEntry>{};
-    for (final space in StoreSpace.cognitionAliases.reversed) {
-      final entries = await store.list(
-        deviceId,
-        space,
-        prefix: prefix,
-        limit: limit,
-      );
-      for (final e in entries) {
-        if (!e.isDir && e.path.endsWith('.json')) {
-          byPath[e.path] = e;
-        }
-      }
-    }
-    return byPath.values.toList();
+    final scoped = await _scopes();
+    final entries = await scoped.listChildren(
+      _scope,
+      path: MemoryPaths.entriesDir(peerClientId: _peerClientId),
+      limit: limit,
+    );
+    return [
+      for (final e in entries)
+        if (!e.isDir && e.path.endsWith('.json')) e,
+    ];
   }
 
   Future<AgentMemoryEntry?> _readEntry(int memoryId) async {
-    final json =
-        await _readJson(
-          MemoryPaths.entryJson(_agentId, memoryId, peerClientId: _peerClientId),
-        );
+    final json = await _readJson(
+      MemoryPaths.entryPath(memoryId, peerClientId: _peerClientId),
+    );
     if (json == null) return null;
     return AgentMemoryEntry.fromJson(json);
   }
@@ -411,7 +434,7 @@ class AgentMemoryStoreService {
       updatedAt: now,
     );
     await _writeJson(
-      MemoryPaths.entryJson(_agentId, id, peerClientId: _peerClientId),
+      MemoryPaths.entryPath(id, peerClientId: _peerClientId),
       effective.toJson(),
     );
     _log.info('Memory added: #$id', tag: '$_tag[$_scopeTag]');
@@ -434,7 +457,7 @@ class AgentMemoryStoreService {
       updatedAt: now,
     );
     await _writeJson(
-      MemoryPaths.entryJson(_agentId, id, peerClientId: _peerClientId),
+      MemoryPaths.entryPath(id, peerClientId: _peerClientId),
       effective.toJson(),
     );
     final meta = await _loadMeta();
@@ -480,28 +503,25 @@ class AgentMemoryStoreService {
     final now = DateTime.now().millisecondsSinceEpoch;
     final effective = entry.copyWith(updatedAt: now);
     await _writeJson(
-      MemoryPaths.entryJson(_agentId, id, peerClientId: _peerClientId),
+      MemoryPaths.entryPath(id, peerClientId: _peerClientId),
       effective.toJson(),
     );
     _afterMutation();
   }
 
-  Future<void> _deletePathBothSpaces(String relPath) async {
-    final deviceId = await _deviceId();
-    final store = await _store();
-    for (final space in StoreSpace.cognitionAliases) {
-      try {
-        await store.delete(deviceId, space, relPath);
-      } on StoreException catch (e) {
-        if (e.code != StoreError.notFound) rethrow;
-      }
+  Future<void> _deletePath(String relPath) async {
+    final scoped = await _scopes();
+    try {
+      await scoped.delete(_scope, relPath);
+    } on StoreException catch (e) {
+      if (e.code != StoreError.notFound) rethrow;
     }
   }
 
   Future<void> deleteMemory(int memoryId) async {
     await _ensure();
-    await _deletePathBothSpaces(
-      MemoryPaths.entryJson(_agentId, memoryId, peerClientId: _peerClientId),
+    await _deletePath(
+      MemoryPaths.entryPath(memoryId, peerClientId: _peerClientId),
     );
     _afterMutation();
   }
@@ -510,7 +530,7 @@ class AgentMemoryStoreService {
     await _ensure();
     final files = await _listEntryFiles();
     for (final f in files) {
-      await _deletePathBothSpaces(f.path);
+      await _deletePath(f.path);
     }
     final meta = await _loadMeta();
     await _saveMeta(meta.copyWith(nextId: 1));
@@ -577,7 +597,7 @@ class AgentMemoryStoreService {
 
   /// 只读 `soul.md`，不做 legacy 迁移。Peer 中继用，避免 `_ensure` 卡死不回包。
   Future<String?> peekSoul() async {
-    final text = await _readText(MemoryPaths.soulMd(_agentId));
+    final text = await _readText(MemoryPaths.soulPath());
     if (text == null) return null;
     // Strip optional HTML comment header from mirrored exports.
     return text
@@ -590,7 +610,7 @@ class AgentMemoryStoreService {
     await _ensure();
     final header =
         '<!-- updated_at: ${DateTime.now().toUtc().toIso8601String()} -->\n';
-    await _writeText(MemoryPaths.soulMd(_agentId), '$header$soul\n');
+    await _writeText(MemoryPaths.soulPath(), '$header$soul\n');
     final meta = await _loadMeta();
     if (!meta.soulMigratedFromSqlite) {
       await _saveMeta(meta.copyWith(soulMigratedFromSqlite: true));
@@ -603,7 +623,7 @@ class AgentMemoryStoreService {
   Future<void> _migrateSoulFromSqliteIfNeeded() async {
     final meta = await _loadMeta();
     if (meta.soulMigratedFromSqlite) return;
-    final existing = await _readText(MemoryPaths.soulMd(_agentId));
+    final existing = await _readText(MemoryPaths.soulPath());
     if (existing != null && existing.trim().isNotEmpty) {
       await _saveMeta(meta.copyWith(soulMigratedFromSqlite: true));
       return;
@@ -615,7 +635,7 @@ class AgentMemoryStoreService {
         final header =
             '<!-- migrated_from_minds: ${DateTime.now().toUtc().toIso8601String()} -->\n';
         await _writeText(
-            MemoryPaths.soulMd(_agentId), '$header${fromMinds.trim()}\n');
+            MemoryPaths.soulPath(), '$header${fromMinds.trim()}\n');
         await RuntimeMirrorService.instance.mirrorSoul(_agentId, fromMinds);
         _log.info('migrated soul from minds → store', tag: '$_tag[$_agentId]');
       }
@@ -641,18 +661,38 @@ class AgentMemoryStoreService {
     return null;
   }
 
-  /// 删除该作用域在 cognition（及 legacy memory）下的目录。
-  /// 本机根：整棵 `<agentId>/`（含 soul）；peer 子树：仅 `…/peers/<peerId>/`。
+  /// 删除该作用域在 v3 里的认知数据，并清掉同名 v2 旧目录（避免下次迁移
+  /// 把删掉的数据又搬回来）。
+  ///
+  /// 本机根：`identity`、`memory`、`derived/app-memory`；peer 子树：仅
+  /// `memory/peers/<peerId>` 下的内容。简历 `derived/resume.md` 不在清理范围。
   Future<void> deleteAll() async {
     await close();
     try {
-      final root = MemoryPaths.scopedRoot(
+      final scoped = await _scopes();
+      if (_isPeerScoped) {
+        await _deleteScopePrefix(
+          scoped,
+          _scope,
+          MemoryPaths.memoryRoot(peerClientId: _peerClientId),
+        );
+      } else {
+        await _deleteScopePrefix(scoped, _scope, 'identity');
+        await _deleteScopePrefix(scoped, _scope, 'memory');
+        await _deleteScopePrefix(scoped, _scope, 'derived/app-memory');
+      }
+      final deviceId = await _deviceId();
+      final store = await _store();
+      final root = MemoryPaths.legacyScopedRoot(
         _agentId,
         peerClientId: _peerClientId,
       );
-      await _deletePathBothSpaces(root);
+      for (final space in StoreSpace.cognitionAliases) {
+        try {
+          await store.delete(deviceId, space, root);
+        } catch (_) {}
+      }
       if (!_isPeerScoped) {
-        _legacySpaceMigrated.remove(_agentId);
         try {
           await AgentMemoryDbService.forAgent(_agentId).deleteDatabase();
         } catch (_) {}
@@ -669,18 +709,21 @@ class _MemoryMeta {
     required this.nextId,
     required this.migratedFromSqlite,
     this.soulMigratedFromSqlite = false,
-    this.schemaVersion = 1,
+    this.v3Migrated = false,
+    this.schemaVersion = 2,
   });
 
   final int nextId;
   final bool migratedFromSqlite;
   final bool soulMigratedFromSqlite;
+  final bool v3Migrated;
   final int schemaVersion;
 
   _MemoryMeta copyWith({
     int? nextId,
     bool? migratedFromSqlite,
     bool? soulMigratedFromSqlite,
+    bool? v3Migrated,
     int? schemaVersion,
   }) =>
       _MemoryMeta(
@@ -688,6 +731,7 @@ class _MemoryMeta {
         migratedFromSqlite: migratedFromSqlite ?? this.migratedFromSqlite,
         soulMigratedFromSqlite:
             soulMigratedFromSqlite ?? this.soulMigratedFromSqlite,
+        v3Migrated: v3Migrated ?? this.v3Migrated,
         schemaVersion: schemaVersion ?? this.schemaVersion,
       );
 
@@ -696,6 +740,7 @@ class _MemoryMeta {
         'next_id': nextId,
         'migrated_from_sqlite': migratedFromSqlite,
         'soul_migrated_from_sqlite': soulMigratedFromSqlite,
+        'v3_migrated': v3Migrated,
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       };
 }

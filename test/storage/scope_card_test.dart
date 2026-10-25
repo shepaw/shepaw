@@ -6,16 +6,19 @@ void main() {
     final card = ScopeCard.forAgentDm(
       agentId: 'agent_xxx',
       deviceId: 'aaaaaaaaaaaaaaaa',
+      pouchId: 'pouch-test',
       injected: const ScopeCardInjected(soul: ScopeInjectLevel.full),
     );
     final md = card.toStableMarkdown();
     expect(md, contains('## 当前储物袋作用域'));
-    expect(md, contains('pouch://cognition/'));
+    expect(md, contains('pouch://pouch-test/agent:agent_xxx'));
+    expect(md, contains('pouch://pouch-test/agent:agent_xxx/identity/soul.md'));
+    expect(md, contains('pouch://pouch-test/agent:agent_xxx/memory/entries/'));
     expect(md, contains('已内嵌全文'));
     expect(md, contains('不要'));
     expect(md, contains('agents.memory-write --id agent_xxx'));
     expect(md, isNot(contains('--owner')));
-    expect(md, contains('`cognition` 认知'));
+    expect(md, contains('`agent:<id>` 认知'));
     expect(md, contains('`runtime` 运行时'));
     expect(md, contains('`workspaces` 工作区'));
     expect(md, contains('`tools` 工具'));
@@ -35,6 +38,7 @@ void main() {
     final md = ScopeCard.forAgentDm(
       agentId: 'agent_uri',
       deviceId: 'aaaaaaaaaaaaaaaa',
+      pouchId: 'pouch-test',
       injected: const ScopeCardInjected(),
     ).toStableMarkdown();
     expect(md, contains('未内嵌'));
@@ -50,13 +54,14 @@ void main() {
     expect(md, contains('mode: `group`'));
     expect(md, contains('无**个人'));
     expect(md, isNot(contains('memory-write --id')));
-    expect(md, contains('cognition/<你的agentId>'));
+    expect(md, contains('agent:<你的agentId>'));
   });
 
   test('Peer card: write_memory off', () {
     final md = ScopeCard.forPeerAgent(
       agentId: 'agent_p',
       deviceId: 'cccccccccccccccc',
+      pouchId: 'pouch-test',
       peerClientId: 'peer_device',
     ).toStableMarkdown();
     expect(md, contains('mode: `peer`'));
@@ -69,6 +74,7 @@ void main() {
     final card = ScopeCard.forAgentDm(
       agentId: 'a1',
       deviceId: 'dddddddddddddddd',
+      pouchId: 'pouch-test',
     );
     expect(card.toStableMarkdown(), isNot(contains('本轮 URI')));
     expect(card.toVolatileMarkdown(), contains('本轮 URI'));
@@ -110,6 +116,7 @@ void main() {
     final md = ScopeCard.forAgentDm(
       agentId: 'agent_hub',
       deviceId: 'aaaaaaaaaaaaaaaa',
+      pouchId: 'pouch-test',
       cliSurface: ScopeCardCliSurface.hubExecuteCli,
     ).toStableMarkdown();
     expect(md, contains('hub.cli.execute'));
@@ -158,6 +165,7 @@ void main() {
     final md = ScopeCard.forPeerAgent(
       agentId: 'agent_p',
       deviceId: 'cccccccccccccccc',
+      pouchId: 'pouch-test',
       peerClientId: 'peer_device',
       cliSurface: ScopeCardCliSurface.hubStoreCli,
     ).toStableMarkdown();
@@ -179,7 +187,7 @@ void main() {
       ],
     ).toStableMarkdown();
     expect(md, contains('shepaw pouch write'));
-    expect(md, contains('本机 device'));
+    expect(md, contains('当前作用域'));
     expect(md, contains('转到配对 App'));
     expect(md, contains('工作区已挂载'));
     expect(md, contains('不要 `hub.cli.execute`'));
