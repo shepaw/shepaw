@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/clis/shepaw/chat/chat_agent_scope.dart';
@@ -7,6 +9,9 @@ import 'package:shepaw/models/jade_slip.dart';
 import 'package:shepaw/services/jade_slip_service.dart';
 import 'package:shepaw/services/she_service.dart';
 import 'package:shepaw/storage/local_store.dart';
+import 'package:shepaw/storage/pouch_scope.dart';
+import 'package:shepaw/storage/pouch_scope_store.dart';
+import 'package:shepaw/storage/store_service.dart';
 
 void main() {
   late Directory tmp;
@@ -254,4 +259,93 @@ void main() {
     expect(parentAfter!.items.single.state, JadeSlipItemState.submitted);
     expect(parentAfter.status, JadeSlipStatus.needsReview);
   });
+
+  test('attach --uri 认 v3 地址：先物化再当普通附件收进来', () async {
+    const pouchId = 'a95b5782-4d50-45d2-83e1-8e40954d1239';
+    final transport = _ScopeTransport();
+    transport.files['agent:agent-a/files/report.txt'] =
+        Uint8List.fromList(utf8.encode('v3 body'));
+    StoreService.instance.scopeStoreOverride =
+        PouchScopeStore(transport: transport, pouchId: pouchId);
+    StoreService.instance.currentPouchIdOverride = pouchId;
+    addTearDown(() {
+      StoreService.instance.scopeStoreOverride = null;
+      StoreService.instance.currentPouchIdOverride = null;
+    });
+
+    final slip = await JadeSlipService.instance.create(title: 'v3 attach');
+    final attached = await NotesAttachCommand().execute({
+      'id': slip.id,
+      'uri': 'pouch://$pouchId/agent:agent-a/files/report.txt',
+    });
+    expect(attached['success'], isTrue, reason: '$attached');
+    final atts =
+        ((attached['slip'] as Map)['attachments'] as List).cast<Map>();
+    expect(atts.single['name'], 'report.txt');
+    expect(atts.single['size'], 7);
+  });
+}
+
+/// 只够 `copyTo` 用的内存 scope transport（meta + read）。
+class _ScopeTransport implements PouchScopeTransport {
+  final files = <String, Uint8List>{};
+
+  String _key(PouchScope scope, String path) => '${scope.id}/$path';
+
+  @override
+  Future<PouchFileMeta?> meta({
+    required String pouchId,
+    required PouchScope scope,
+    required String path,
+  }) async {
+    final bytes = files[_key(scope, path)];
+    return bytes == null
+        ? null
+        : PouchFileMeta(path: path, size: bytes.length, version: 1, mtimeMs: 0);
+  }
+
+  @override
+  Future<Uint8List?> read({
+    required String pouchId,
+    required PouchScope scope,
+    required String path,
+  }) async =>
+      files[_key(scope, path)];
+
+  @override
+  Future<PouchListPage> list({
+    required String pouchId,
+    required PouchScope scope,
+    String? prefix,
+    int limit = 1000,
+    String? cursor,
+  }) async =>
+      const PouchListPage(entries: <StoreEntry>[]);
+
+  @override
+  Future<List<String>> scopes({
+    required String pouchId,
+    required String prefix,
+  }) async =>
+      const <String>[];
+
+  @override
+  Future<void> write({
+    required String pouchId,
+    required PouchScope scope,
+    required String path,
+    required Uint8List bytes,
+    int? expectedVersion,
+  }) async {
+    files[_key(scope, path)] = bytes;
+  }
+
+  @override
+  Future<void> delete({
+    required String pouchId,
+    required PouchScope scope,
+    required String path,
+  }) async {
+    files.remove(_key(scope, path));
+  }
 }

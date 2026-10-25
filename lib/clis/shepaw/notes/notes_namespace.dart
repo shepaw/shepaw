@@ -8,6 +8,8 @@ import '../../../services/jade_slip_wake.dart';
 import '../../../services/local_database_service.dart';
 import '../../../services/local_user_identity.dart';
 import '../../../services/she_service.dart';
+import '../../../storage/store_protocol.dart';
+import '../../../storage/store_uri_reader.dart';
 import '../chat/chat_agent_scope.dart';
 
 /// 玉简：人把目标交给 Agent，Agent 再把清单项交给其他 Agent。
@@ -670,7 +672,17 @@ class NotesAttachCommand extends CliCommand {
             ? file.uri.pathSegments.last
             : file.path;
       } else if (uri.isNotEmpty) {
-        file = await StoreAttachmentRef.fileFromStoreUri(uri);
+        // v3 地址在本机没有对应的树路径，先物化一份再当普通附件收进来。
+        if (PouchV2Uri.tryParse(uri) != null) {
+          final dest = File(
+            '${Directory.systemTemp.path}/shepaw_slip_attach_'
+            '${DateTime.now().microsecondsSinceEpoch}',
+          );
+          await StoreUriReader.instance.copyTo(uri, dest);
+          file = dest;
+        } else {
+          file = await StoreAttachmentRef.fileFromStoreUri(uri);
+        }
         name = uri.split('/').last;
       } else {
         return {'error': 'Missing --file or --uri. Usage: $usage'};
