@@ -4,8 +4,11 @@ import '../peer/services/peer_storage_service.dart';
 import '../services/store_open_service.dart';
 import '../storage/device_identity.dart';
 import '../storage/group_workspace_service.dart';
+import '../storage/pouch_scope.dart';
+import '../storage/pouch_scope_store.dart';
 import '../storage/store_device_target.dart';
 import '../storage/store_protocol.dart';
+import '../storage/store_service.dart';
 import 'pouch_scope_browser_screen.dart';
 import 'storage_browser_screen.dart';
 
@@ -34,15 +37,51 @@ void registerStorageDirectoryOpener() {
   };
 }
 
-/// Open the group workspace bag (`workspaces/group_<gid>/`).
+/// Open the group workspace bag.
 ///
-/// Group artifacts land in `members/<agentId>/`, not `runtime/<groupId>/`.
+/// 有 v3 袋子时直接进 `group:<gid>:shared`（共享记忆、交接、任务卷宗、共享
+/// 文件都在这里）；`members/<agentId>/` 仍是 v2，从「旧数据（space 目录）」
+/// 入口进。没有袋子（过渡期）时保持原来的 `workspaces/group_<gid>/` 视图。
 Future<void> openGroupWorkspaceBag(
   BuildContext context, {
   required String groupId,
   String? title,
 }) async {
   registerStorageDirectoryOpener();
+  PouchScopeStore? scoped;
+  try {
+    scoped = await StoreService.instance.scopeStoreOrNull();
+  } catch (_) {
+    // 未配对之外的失败也退回 v2：至少要能看旧目录。
+    scoped = null;
+  }
+  if (!context.mounted) return;
+  if (scoped != null) {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => PouchScopeBrowserScreen(
+          store: scoped,
+          initialScope: PouchScope.groupShared(groupId),
+          title: title,
+          onOpenLegacy: () => openGroupWorkspaceLegacyBag(
+            context,
+            groupId: groupId,
+            title: title,
+          ),
+        ),
+      ),
+    );
+    return;
+  }
+  await openGroupWorkspaceLegacyBag(context, groupId: groupId, title: title);
+}
+
+/// 群的 v2 目录视图（`workspaces/group_<gid>/`）：元数据与 `members/`。
+Future<void> openGroupWorkspaceLegacyBag(
+  BuildContext context, {
+  required String groupId,
+  String? title,
+}) async {
   final ws = GroupWorkspaceService.instance;
   final meta = await ws.loadMeta(groupId);
   final deviceId = meta?.homeDevice ?? await DeviceIdentity.deviceId();

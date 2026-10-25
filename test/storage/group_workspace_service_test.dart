@@ -306,6 +306,49 @@ void main() {
         isNull,
       );
     });
+
+    test('groupWorkspaceAccessError：v3 群 scope 也按成员校验', () async {
+      await ws.ensureGroupWorkspace(
+        groupId: 'group_perm3',
+        members: [(agentId: 'agent-member', role: 'member')],
+      );
+      const pouch = 'pouch://a95b5782-4d50-45d2-83e1-8e40954d1239';
+      const shared = '$pouch/group:group_perm3:shared/tasks/x/task.json';
+      const memberScope = '$pouch/group:group_perm3:member:agent-member/f.md';
+      const sessionScope = '$pouch/group:group_perm3:session:s1/attachments/a';
+
+      await ChatAgentScope.runScoped(
+        agentId: 'agent-member',
+        body: () async {
+          expect(await groupWorkspaceAccessError(shared), isNull);
+          expect(await groupWorkspaceAccessError(memberScope), isNull);
+          expect(await groupWorkspaceAccessError(sessionScope), isNull);
+          // 助手私有区仍归本人/群 owner，不能借 v3 地址越界。
+          expect(
+            await storeAgentAccessError('$pouch/agent:agent-other/files/a'),
+            contains('acl_denied'),
+          );
+          expect(
+            await storeAgentAccessError('$pouch/agent:agent-member/files/a'),
+            isNull,
+          );
+        },
+      );
+
+      await ChatAgentScope.runScoped(
+        agentId: 'agent-stranger',
+        body: () async {
+          expect(
+            await groupWorkspaceAccessError(shared),
+            contains('not a member'),
+          );
+          expect(
+            await groupWorkspaceAccessError(memberScope),
+            contains('not a member'),
+          );
+        },
+      );
+    });
   });
 
   group('群记忆蒸馏 (writeSharedMemory)', () {

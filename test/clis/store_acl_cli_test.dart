@@ -1,8 +1,14 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/clis/shepaw/chat/chat_agent_scope.dart';
 import 'package:shepaw/clis/shepaw/store/store_namespace.dart';
 import 'package:shepaw/services/she_service.dart';
 import 'package:shepaw/storage/artifact_service.dart';
+import 'package:shepaw/storage/local_store.dart';
+import 'package:shepaw/storage/pouch_scope.dart';
+import 'package:shepaw/storage/pouch_scope_store.dart';
 import 'package:shepaw/storage/store_service.dart';
 
 import '../storage/test_harness.dart';
@@ -185,4 +191,132 @@ void main() {
     expect(read['success'], isTrue, reason: '$read');
     expect(read['content'], 'public-ok');
   });
+
+  group('v3 scope 地址', () {
+    const pouchId = 'a95b5782-4d50-45d2-83e1-8e40954d1239';
+    late _ScopeTransport transport;
+    final listCmd = StoreNamespace.instance.commands['list']!;
+
+    setUp(() {
+      transport = _ScopeTransport();
+      transport.files['agent:agent-a/files/note.md'] = Uint8List.fromList(
+        utf8.encode('a-private'),
+      );
+      StoreService.instance.scopeStoreOverride =
+          PouchScopeStore(transport: transport, pouchId: pouchId);
+      StoreService.instance.currentPouchIdOverride = pouchId;
+    });
+
+    tearDown(() {
+      StoreService.instance.scopeStoreOverride = null;
+      StoreService.instance.currentPouchIdOverride = null;
+    });
+
+    test('助手私有区：本人能读，别人 acl_denied', () async {
+      const uri = 'pouch://$pouchId/agent:agent-a/files/note.md';
+
+      final denied = await asAgent('agent-b', () {
+        return readCmd.execute({'uri': uri});
+      });
+      expect(denied['success'], isFalse);
+      expect(denied['error'], contains('acl_denied'));
+
+      final own = await asAgent('agent-a', () {
+        return readCmd.execute({'uri': uri});
+      });
+      expect(own['success'], isTrue, reason: '$own');
+      expect(own['content'], 'a-private');
+    });
+
+    test('list 认 v3 地址，返回 scope 内相对路径', () async {
+      final listed = await asAgent('agent-a', () {
+        return listCmd.execute({
+          'uri': 'pouch://$pouchId/agent:agent-a/files',
+        });
+      });
+      expect(listed['success'], isTrue, reason: '$listed');
+      final entries = listed['entries'] as List<dynamic>;
+      expect(
+        entries.map((e) => (e as Map<String, dynamic>)['path']),
+        ['files/note.md'],
+      );
+    });
+  });
+}
+
+/// 最小内存 scope transport：只够 read/list 用。
+class _ScopeTransport implements PouchScopeTransport {
+  final files = <String, Uint8List>{};
+
+  String _key(PouchScope scope, String path) => '${scope.id}/$path';
+
+  @override
+  Future<List<String>> scopes({
+    required String pouchId,
+    required String prefix,
+  }) async =>
+      const <String>[];
+
+  @override
+  Future<PouchFileMeta?> meta({
+    required String pouchId,
+    required PouchScope scope,
+    required String path,
+  }) async =>
+      files.containsKey(_key(scope, path))
+          ? PouchFileMeta(path: path, size: 1, version: 1, mtimeMs: 0)
+          : null;
+
+  @override
+  Future<PouchListPage> list({
+    required String pouchId,
+    required PouchScope scope,
+    String? prefix,
+    int limit = 1000,
+    String? cursor,
+  }) async {
+    final head = '${scope.id}/';
+    final dir = prefix?.trim() ?? '';
+    final entries = <StoreEntry>[];
+    for (final entry in files.entries) {
+      if (!entry.key.startsWith(head)) continue;
+      final path = entry.key.substring(head.length);
+      if (dir.isNotEmpty && path != dir && !path.startsWith('$dir/')) continue;
+      entries.add(StoreEntry(
+        path: path,
+        size: entry.value.length,
+        sha256: '',
+        mtimeMs: 0,
+      ));
+    }
+    return PouchListPage(entries: entries);
+  }
+
+  @override
+  Future<Uint8List?> read({
+    required String pouchId,
+    required PouchScope scope,
+    required String path,
+  }) async =>
+      files[_key(scope, path)];
+
+  @override
+  Future<void> write({
+    required String pouchId,
+    required PouchScope scope,
+    required String path,
+    required Uint8List bytes,
+    int? expectedVersion,
+  }) async {
+    files[_key(scope, path)] = bytes;
+  }
+
+  @override
+  Future<void> delete({
+    required String pouchId,
+    required PouchScope scope,
+    required String path,
+  }) async {
+    files.remove(_key(scope, path));
+  }
 }

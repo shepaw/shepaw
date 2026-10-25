@@ -14,19 +14,40 @@ import '../../../storage/host_pouch_target.dart';
 import '../../../storage/public_store_service.dart';
 import '../../../storage/runtime_paths.dart';
 import '../../../storage/local_store.dart';
+import '../../../storage/pouch_scope.dart';
 import '../../../storage/store_protocol.dart';
 import '../../../storage/store_service.dart';
 import '../../../storage/store_uri_reader.dart';
 
-/// 校验对群工作空间（`pouch://workspaces/<group id>/…`）的访问：
-/// 目录名就是群 id。执行者（[ChatAgentScope.agentId]）必须是群成员。
-/// 非群工作空间 URI 返回 null（放行）。返回错误文案时调用方应拒绝。
+/// 校验对群工作空间（`pouch://workspaces/<group id>/…`，或 v3 的
+/// `pouch://<pouch>/group:<gid>:…`）的访问：执行者（[ChatAgentScope.agentId]）
+/// 必须是群成员。非群工作空间 URI 返回 null（放行）。返回错误文案时调用方应拒绝。
 Future<String?> groupWorkspaceAccessError(String uri) async {
+  // v3 地址：按 scope 判群归属（共享、成员、群会话/任务都算这个群）。
+  final scoped = PouchV2Uri.tryParse(uri);
+  if (scoped != null) {
+    final gid = _groupOfScope(scoped.parsedScope);
+    return gid == null ? null : _groupMembershipError(gid);
+  }
   final parsed = parseStoreUriLoose(uri);
   if (parsed.space != StoreSpace.workspaces) return null;
   final segs = parsed.path.split('/').where((s) => s.isNotEmpty).toList();
   if (segs.isEmpty || !segs.first.startsWith('group_')) return null;
-  final gid = segs.first;
+  return _groupMembershipError(segs.first);
+}
+
+/// 群家族 scope 归属的群 id；不属于群家族返回 null。
+String? _groupOfScope(PouchScope scope) {
+  if (scope.family != PouchScopeFamily.group) return null;
+  if (scope.kind == PouchScopeKind.group ||
+      scope.kind == PouchScopeKind.shared) {
+    return scope.ownerId;
+  }
+  // 成员 scope 的 owner 是 agent，群在父 scope 上；会话/任务同理。
+  return scope.parent?.ownerId ?? scope.ownerId;
+}
+
+Future<String?> _groupMembershipError(String gid) async {
   final agentId = ChatAgentScope.agentId.trim();
   if (agentId.isEmpty) return 'unknown executor agent id';
   final isMember = await GroupWorkspaceService.instance.isMember(gid, agentId);
@@ -34,7 +55,30 @@ Future<String?> groupWorkspaceAccessError(String uri) async {
   return null;
 }
 
-/// Agent-scoped ACL for private spaces (`runtime` / `cognition`).
+/// v3 助手私有区（`agent:<aid>…`）的归属校验；与 v2 `runtime` 同一套规则。
+String? _agentScopeOwnerError(PouchScope scope) {
+  final owner = scope.kind == PouchScopeKind.agent
+      ? scope.ownerId
+      : scope.parent?.ownerId ?? scope.ownerId;
+  return storeOwnerError(owner, label: 'pouch scope');
+}
+
+/// 私有空间归属校验：本人、She、或当前群运行时 owner 可访问。
+String? storeOwnerError(String ownerSeg, {required String label}) {
+  final agentId = ChatAgentScope.agentId.trim();
+  if (agentId.isEmpty) return 'unknown executor agent id';
+  if (agentId == SheService.sheId) return null;
+  final selfSeg = RuntimePaths.sanitizeSegment(agentId);
+  if (ownerSeg == selfSeg) return null;
+  final groupOwner = ChatAgentScope.runtimeOwnerId.trim();
+  if (groupOwner.isNotEmpty &&
+      ownerSeg == RuntimePaths.sanitizeSegment(groupOwner)) {
+    return null;
+  }
+  return 'acl_denied: cannot access another agent\'s $label';
+}
+
+/// Agent-scoped ACL for private spaces (`runtime` / `cognition`, v3 `agent:<aid>`).
 ///
 /// She keeps the device-level model (any own-device URI). Non-She may only
 /// touch their own prefix, or the current group runtime owner when scoped.
@@ -47,6 +91,14 @@ Future<String?> storeAgentAccessError(String uri) async {
   final agentId = ChatAgentScope.agentId.trim();
   if (agentId.isEmpty) return 'unknown executor agent id';
   if (agentId == SheService.sheId) return null;
+
+  final scoped = PouchV2Uri.tryParse(uri);
+  if (scoped != null) {
+    if (scoped.parsedScope.family == PouchScopeFamily.agent) {
+      return _agentScopeOwnerError(scoped.parsedScope);
+    }
+    return null;
+  }
 
   late final ({String space, String path}) parsed;
   try {
@@ -64,15 +116,7 @@ Future<String?> storeAgentAccessError(String uri) async {
   if (segs.isEmpty) {
     return 'acl_denied: ${parsed.space} is scoped to this agent';
   }
-  final ownerSeg = segs.first;
-  final selfSeg = RuntimePaths.sanitizeSegment(agentId);
-  if (ownerSeg == selfSeg) return null;
-  final groupOwner = ChatAgentScope.runtimeOwnerId.trim();
-  if (groupOwner.isNotEmpty &&
-      ownerSeg == RuntimePaths.sanitizeSegment(groupOwner)) {
-    return null;
-  }
-  return 'acl_denied: cannot access another agent\'s ${parsed.space}';
+  return storeOwnerError(segs.first, label: parsed.space);
 }
 
 /// 允许相对子路径，拒绝 `..` 与点段（防路径穿越；群工作空间成员落点）。
@@ -466,6 +510,21 @@ class StoreListCommand extends CliCommand {
     final accessErr = await storeAgentAccessError(uri);
     if (accessErr != null) return {'success': false, 'error': accessErr};
     try {
+      // v3 地址：列 scope 里的目录（路径都是 scope 内相对路径，拼回原地址即可读）。
+      final scoped = PouchV2Uri.tryParse(uri);
+      if (scoped != null) {
+        final store = await StoreService.instance.scopeStore();
+        final entries = await store.listChildren(
+          scoped.parsedScope,
+          path: scoped.path,
+        );
+        return <String, dynamic>{
+          'success': true,
+          'uri': uri,
+          'depth': depth,
+          'entries': [for (final e in entries) e.toJson()],
+        };
+      }
       final parsed = parseStoreUriLoose(uri);
       final entries = await StoreService.instance.listDevice(
         deviceId: await resolveStoreDevice(parsed.space),
@@ -523,7 +582,7 @@ Future<List<Map<String, dynamic>>> mapArtifactMetaHits(
       exists,
   bool metaOnly = false,
 }) async {
-  final suffix = ArtifactService.metaSuffix;
+  const suffix = ArtifactService.metaSuffix;
   bool isMeta(Map<String, dynamic> h) =>
       '${h['path'] ?? ''}'.endsWith(suffix);
 
