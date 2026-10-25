@@ -50,8 +50,17 @@ class MemoryScopeTransport implements PouchScopeTransport {
   Future<List<String>> scopes({
     required String pouchId,
     required String prefix,
-  }) async =>
-      const <String>[];
+  }) async {
+    final ids = <String>{};
+    for (final key in files.keys) {
+      final slash = key.indexOf('/');
+      if (slash <= 0) continue;
+      final id = key.substring(0, slash);
+      if (prefix.isEmpty || id.startsWith(prefix)) ids.add(id);
+    }
+    final list = ids.toList()..sort();
+    return list;
+  }
 
   @override
   Future<PouchFileMeta?> meta({

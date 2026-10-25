@@ -21,7 +21,6 @@ class SlipScopeDocuments implements HostPouchDocuments {
   SlipScopeDocuments({
     required PouchScopeStore store,
     required this.deviceId,
-    this.isRemote = false,
     int cacheEntries = 128,
   })  : _store = store,
         _cacheLimit = cacheEntries;
@@ -38,16 +37,6 @@ class SlipScopeDocuments implements HostPouchDocuments {
   /// 权威副本所在设备（v3 里只作为玉简记录里的 device_id 元数据）。
   @override
   final String deviceId;
-
-  @override
-  final bool isRemote;
-
-  /// v3 没有 device 目录，存量回迁（JadeSlipRehome）不适用。
-  @override
-  bool get supportsRehome => false;
-
-  @override
-  LocalStore? get localStore => null;
 
   @override
   String uri(String space, String path) {

@@ -129,8 +129,8 @@ void main() {
     expect(out, contains('group-bundle'));
     expect(out, contains('非个人 cognition'));
     expect(out, isNot(contains('soul/memory/session/workspace')));
-    // 没有 v3 袋子时退回 v2 的 shared/ 引用。
-    expect(out, contains('pouch://workspaces/group-bundle/shared'));
+    // 没配对上袋子时不注入任何旧目录地址。
+    expect(out, isNot(contains('pouch://workspaces/')));
   });
 
   test('群上下文：有袋子时注入 group:<gid>:shared', () async {

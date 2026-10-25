@@ -8,19 +8,19 @@ import 'package:shepaw/models/jade_slip.dart';
 import 'package:shepaw/screens/jade_slip_editor_screen.dart';
 import 'package:shepaw/screens/jade_slip_screen.dart';
 import 'package:shepaw/services/jade_slip_service.dart';
-import 'package:shepaw/storage/local_store.dart';
+import 'package:shepaw/storage/pouch_scope_store.dart';
+import 'package:shepaw/storage/slip_scope_documents.dart';
 
+import '../storage/memory_scope_transport.dart';
 import '../storage/test_harness.dart';
 
-/// 真实玉简 UI + 真实 LocalStore（临时目录）的焦点回归。
+/// 真实玉简 UI + 内存袋子（scope 传输）的焦点回归。
 ///
 /// 清单要能连续录入：回车保存上一条后，光标必须留在「添加一项」输入框。
 ///
-/// LocalStore 走真实文件 IO，`testWidgets` 默认的 FakeAsync 等不到它，
+/// 袋子读写走真实异步，`testWidgets` 默认的 FakeAsync 等不到它，
 /// 因此整段交互都包在 [WidgetTester.runAsync] 里。
 void main() {
-  late Directory tmp;
-  late LocalStore store;
   const self = 'aaaaaaaaaaaaaaaa';
 
   setUpAll(() async {
@@ -28,16 +28,18 @@ void main() {
   });
 
   setUp(() async {
-    tmp = await Directory.systemTemp.createTemp('jade_slip_editor_test');
-    store = LocalStore(root: tmp)..debugSkipVolumeQuota = true;
-    JadeSlipService.instance.debugStore = store;
-    JadeSlipService.instance.debugDeviceId = self;
+    final docs = SlipScopeDocuments(
+      store: PouchScopeStore(
+        transport: MemoryScopeTransport(),
+        pouchId: 'test-pouch',
+      ),
+      deviceId: self,
+    );
+    JadeSlipService.instance.debugDocuments = () => docs;
   });
 
   tearDown(() async {
-    JadeSlipService.instance.debugStore = null;
-    JadeSlipService.instance.debugDeviceId = null;
-    if (await tmp.exists()) await tmp.delete(recursive: true);
+    JadeSlipService.instance.debugDocuments = null;
   });
 
   /// 「添加一项」行的输入框（同一页还有评论输入框，用稳定的 key 区分）。

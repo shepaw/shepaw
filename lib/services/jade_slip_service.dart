@@ -8,18 +8,15 @@ import 'package:uuid/uuid.dart';
 
 import '../models/jade_slip.dart';
 import '../storage/host_pouch_documents.dart';
-import '../storage/local_store.dart';
 import '../storage/slip_scope_documents.dart';
 import '../storage/store_protocol.dart';
-import 'jade_slip_rehome.dart';
 import 'logger_service.dart';
 import 'slip_scope_migration.dart';
 
 /// 玉简业务服务：读写储物袋里的待办。
 ///
-/// 权威只有一份。落点由 [HostPouchDocuments] 决定（[G4]）：
-/// - 有 v3 袋子：`slip:<id>` / `slip.json`，附件 `slip:<id>` / `files/<file>`；
-/// - 过渡期（本机还没有 active_pouch）：仍是 `slips/<主机指纹>/<id>.json`。
+/// 权威只有一份：v3 袋子的 `slip:<id>` / `slip.json`，附件
+/// `slip:<id>` / `files/<file>`。
 ///
 /// 这里的路径一律用 v2 的相对路径（`<id>.json`、`<id>/files/<file>`），
 /// 映射在 SlipScopeDocuments 里做；地址一律经 docs.uri() 出。
@@ -41,14 +38,7 @@ class JadeSlipService {
   int _mutationEpoch = 0;
   final Map<String, Future<void>> _writeChains = <String, Future<void>>{};
 
-  /// 测试注入，避免走 StoreService / DeviceIdentity。
-  @visibleForTesting
-  LocalStore? debugStore;
-
-  @visibleForTesting
-  String? debugDeviceId;
-
-  /// 测试注入：整个读写面换掉（含远端形态的假实现）。
+  /// 测试注入：整个读写面换掉（用内存 scope 传输）。
   @visibleForTesting
   HostPouchDocuments Function()? debugDocuments;
 
@@ -181,11 +171,6 @@ class JadeSlipService {
   Future<HostPouchDocuments> _docs() async {
     final injected = debugDocuments;
     if (injected != null) return injected();
-    final store = debugStore;
-    final deviceId = debugDeviceId;
-    if (store != null && deviceId != null && deviceId.isNotEmpty) {
-      return LocalHostPouchDocuments(store: store, deviceId: deviceId);
-    }
     return HostPouchDocumentsFactory.resolve();
   }
 
@@ -194,6 +179,8 @@ class JadeSlipService {
   /// 只在这个读写面确实是 v3 scope（[SlipScopeDocuments]）时跑：测试注入的
   /// 本机 store、以及还没切 v3 的机器都不该去碰袋子。
   Future<void> _ensureSlipScopeMigration(HostPouchDocuments docs) async {
+    // 测试注入的读写面不代表真实袋子，不去扫本机存量。
+    if (debugDocuments != null) return;
     if (docs is! SlipScopeDocuments) return;
     await SlipScopeMigration.ensure();
   }
@@ -237,7 +224,6 @@ class JadeSlipService {
     final trimmed = id.trim();
     if (trimmed.isEmpty) return null;
     final docs = await _docs();
-    await JadeSlipRehome.ensure(docs: docs);
     await _ensureSlipScopeMigration(docs);
     if (_snapshotDeviceId == docs.deviceId) {
       final cached = _snapshotById[trimmed];
@@ -290,7 +276,6 @@ class JadeSlipService {
     bool includeArchived = false,
   }) async {
     final docs = await _docs();
-    await JadeSlipRehome.ensure(docs: docs);
     await _ensureSlipScopeMigration(docs);
     final epochBefore = _mutationEpoch;
     final entries = await docs.list(StoreSpace.slips);
@@ -343,7 +328,6 @@ class JadeSlipService {
     final trimmed = id.trim();
     if (trimmed.isEmpty) return null;
     final docs = await _docs();
-    await JadeSlipRehome.ensure(docs: docs);
     await _ensureSlipScopeMigration(docs);
     return _readSlip(docs, '$trimmed.json');
   }

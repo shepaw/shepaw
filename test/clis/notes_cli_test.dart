@@ -11,23 +11,29 @@ import 'package:shepaw/services/she_service.dart';
 import 'package:shepaw/storage/local_store.dart';
 import 'package:shepaw/storage/pouch_scope.dart';
 import 'package:shepaw/storage/pouch_scope_store.dart';
+import 'package:shepaw/storage/slip_scope_documents.dart';
 import 'package:shepaw/storage/store_service.dart';
+
+import '../storage/memory_scope_transport.dart';
 
 void main() {
   late Directory tmp;
-  late LocalStore store;
   const self = 'aaaaaaaaaaaaaaaa';
 
   setUp(() async {
     tmp = await Directory.systemTemp.createTemp('jade_slip_test');
-    store = LocalStore(root: tmp)..debugSkipVolumeQuota = true;
-    JadeSlipService.instance.debugStore = store;
-    JadeSlipService.instance.debugDeviceId = self;
+    final docs = SlipScopeDocuments(
+      store: PouchScopeStore(
+        transport: MemoryScopeTransport(),
+        pouchId: 'test-pouch',
+      ),
+      deviceId: self,
+    );
+    JadeSlipService.instance.debugDocuments = () => docs;
   });
 
   tearDown(() async {
-    JadeSlipService.instance.debugStore = null;
-    JadeSlipService.instance.debugDeviceId = null;
+    JadeSlipService.instance.debugDocuments = null;
     if (await tmp.exists()) await tmp.delete(recursive: true);
   });
 

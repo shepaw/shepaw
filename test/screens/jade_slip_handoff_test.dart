@@ -1,13 +1,13 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/l10n/app_localizations.dart';
 import 'package:shepaw/models/jade_slip.dart';
 import 'package:shepaw/screens/jade_slip_editor_screen.dart';
 import 'package:shepaw/services/jade_slip_service.dart';
-import 'package:shepaw/storage/local_store.dart';
+import 'package:shepaw/storage/pouch_scope_store.dart';
+import 'package:shepaw/storage/slip_scope_documents.dart';
 
+import '../storage/memory_scope_transport.dart';
 import '../storage/test_harness.dart';
 
 /// 玉简「交给 Agent」入口的回归：
@@ -15,10 +15,8 @@ import '../storage/test_harness.dart';
 /// - 清单项右侧菜单：可以只派发**这一项**
 /// - 两个入口都先弹确认弹层，弹层里能改 Agent、选会话
 ///
-/// LocalStore 走真实文件 IO，因此整段交互包在 [WidgetTester.runAsync] 里。
+/// 袋子用内存 scope 传输，因此整段交互包在 [WidgetTester.runAsync] 里。
 void main() {
-  late Directory tmp;
-  late LocalStore store;
   const self = 'aaaaaaaaaaaaaaaa';
 
   setUpAll(() async {
@@ -26,16 +24,18 @@ void main() {
   });
 
   setUp(() async {
-    tmp = await Directory.systemTemp.createTemp('jade_slip_handoff_test');
-    store = LocalStore(root: tmp)..debugSkipVolumeQuota = true;
-    JadeSlipService.instance.debugStore = store;
-    JadeSlipService.instance.debugDeviceId = self;
+    final docs = SlipScopeDocuments(
+      store: PouchScopeStore(
+        transport: MemoryScopeTransport(),
+        pouchId: 'test-pouch',
+      ),
+      deviceId: self,
+    );
+    JadeSlipService.instance.debugDocuments = () => docs;
   });
 
   tearDown(() async {
-    JadeSlipService.instance.debugStore = null;
-    JadeSlipService.instance.debugDeviceId = null;
-    if (await tmp.exists()) await tmp.delete(recursive: true);
+    JadeSlipService.instance.debugDocuments = null;
   });
 
   Future<void> settle(WidgetTester tester, [int ms = 300]) async {

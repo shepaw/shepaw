@@ -103,46 +103,6 @@ class _MemoryTransport implements PouchScopeTransport {
   }
 }
 
-class _FakeLegacy implements GroupSharedLegacy {
-  final List<String> calls = <String>[];
-  final Map<String, Uint8List> files = <String, Uint8List>{};
-
-  @override
-  Future<List<StoreEntry>> list(String groupId, String relPath) async {
-    calls.add('list $groupId/$relPath');
-    return const <StoreEntry>[];
-  }
-
-  @override
-  Future<Uint8List?> read(String groupId, String relPath) async {
-    calls.add('read $groupId/$relPath');
-    return files['$groupId/$relPath'];
-  }
-
-  @override
-  Future<String> write(
-    String groupId,
-    String relPath,
-    Uint8List bytes,
-  ) async {
-    calls.add('write $groupId/$relPath');
-    files['$groupId/$relPath'] = bytes;
-    return 'pouch://workspaces/$groupId/shared/files/$relPath';
-  }
-
-  @override
-  Future<void> delete(String groupId, String relPath) async {
-    calls.add('delete $groupId/$relPath');
-    files.remove('$groupId/$relPath');
-  }
-
-  @override
-  Future<String> uri(String groupId, String relPath) async {
-    calls.add('uri $groupId/$relPath');
-    return 'pouch://workspaces/$groupId/shared/files/$relPath';
-  }
-}
-
 Uint8List _bytes(String text) => Uint8List.fromList(utf8.encode(text));
 
 void main() {
@@ -195,22 +155,6 @@ void main() {
         .toSet();
     expect(scopes, {'group:group_a:shared'});
     expect(scopes.any((id) => id.contains(':session:')), isFalse);
-  });
-
-  test('没有 v3 袋子时退回 workspaces 旧路径', () async {
-    final legacy = _FakeLegacy();
-    final shared = GroupSharedFiles(scopes: null, legacy: legacy);
-    expect(shared.usesScope, isFalse);
-
-    final uri = await shared.write('group_a', 'a.md', _bytes('old'));
-    expect(uri, 'pouch://workspaces/group_a/shared/files/a.md');
-    expect(legacy.calls.last, 'write group_a/a.md');
-    expect(utf8.decode((await shared.read('group_a', 'a.md'))!), 'old');
-    expect(legacy.calls.last, 'read group_a/a.md');
-    await shared.list('group_a');
-    expect(legacy.calls.last, 'list group_a/');
-    await shared.uri('group_a', 'a.md');
-    expect(legacy.calls.last, 'uri group_a/a.md');
   });
 
   test('已经带了 files/ 的路径不会叠成 files/files', () async {

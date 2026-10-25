@@ -4,6 +4,7 @@ import '../peer/services/peer_storage_service.dart';
 import '../services/store_open_service.dart';
 import '../storage/device_identity.dart';
 import '../storage/group_workspace_service.dart';
+import '../storage/local_store.dart';
 import '../storage/pouch_scope.dart';
 import '../storage/pouch_scope_store.dart';
 import '../storage/store_device_target.dart';
@@ -39,43 +40,41 @@ void registerStorageDirectoryOpener() {
 
 /// Open the group workspace bag.
 ///
-/// 有 v3 袋子时直接进 `group:<gid>:shared`（共享记忆、交接、任务卷宗、共享
-/// 文件都在这里）。`members/<agentId>/` 的新写入也走 v3
-/// （`group:<gid>:member:<aid>`），但它不出现在顶层 scope 列表里——成员私有区
-/// 由 Agent 的 `pouch write` 落点与地址引用；旧目录仍可从「旧数据（space 目录）」
-/// 入口看。没有袋子（过渡期）时保持原来的 `workspaces/group_<gid>/` 视图。
+/// 直接进 `group:<gid>:shared`（共享记忆、交接、任务卷宗、共享文件都在这里）。
+/// `members/<agentId>/` 的新写入也走 v3（`group:<gid>:member:<aid>`），但它不
+/// 出现在顶层 scope 列表里——成员私有区由 Agent 的 `pouch write` 落点与地址
+/// 引用；旧目录仍可从「旧数据（space 目录）」入口看。
 Future<void> openGroupWorkspaceBag(
   BuildContext context, {
   required String groupId,
   String? title,
 }) async {
   registerStorageDirectoryOpener();
-  PouchScopeStore? scoped;
+  final PouchScopeStore scoped;
   try {
-    scoped = await StoreService.instance.scopeStoreOrNull();
-  } catch (_) {
-    // 未配对之外的失败也退回 v2：至少要能看旧目录。
-    scoped = null;
-  }
-  if (!context.mounted) return;
-  if (scoped != null) {
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => PouchScopeBrowserScreen(
-          store: scoped,
-          initialScope: PouchScope.groupShared(groupId),
-          title: title,
-          onOpenLegacy: () => openGroupWorkspaceLegacyBag(
-            context,
-            groupId: groupId,
-            title: title,
-          ),
-        ),
-      ),
+    scoped = await StoreService.instance.scopeStore();
+  } on StoreException catch (e) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(content: Text(e.code == StoreError.notPaired ? '还没有登录袋子' : '$e')),
     );
     return;
   }
-  await openGroupWorkspaceLegacyBag(context, groupId: groupId, title: title);
+  if (!context.mounted) return;
+  await Navigator.of(context).push<void>(
+    MaterialPageRoute<void>(
+      builder: (_) => PouchScopeBrowserScreen(
+        store: scoped,
+        initialScope: PouchScope.groupShared(groupId),
+        title: title,
+        onOpenLegacy: () => openGroupWorkspaceLegacyBag(
+          context,
+          groupId: groupId,
+          title: title,
+        ),
+      ),
+    ),
+  );
 }
 
 /// 群的 v2 目录视图（`workspaces/group_<gid>/`）：元数据与 `members/`。

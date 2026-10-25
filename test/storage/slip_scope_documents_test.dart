@@ -192,10 +192,8 @@ void main() {
     expect(transport.files['slip:sl_1'], isEmpty);
   });
 
-  test('只处理 slips 分区，也不做 device 目录回迁', () {
+  test('只处理 slips 分区', () {
     final docs = _docs(_MemoryTransport());
     expect(() => docs.uri(StoreSpace.workspaces, 'g1/a.md'), throwsArgumentError);
-    expect(docs.supportsRehome, isFalse);
-    expect(docs.localStore, isNull);
   });
 }

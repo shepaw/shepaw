@@ -3,7 +3,7 @@ import 'dart:convert';
 import '../services/logger_service.dart';
 import 'artifact_service.dart';
 import 'device_identity.dart';
-import 'group_workspace_service.dart';
+import 'local_store.dart';
 import 'pouch_scope.dart';
 import 'runtime_paths.dart';
 import 'scope_card.dart';
@@ -156,9 +156,10 @@ class ContextBundleService {
       }
     }
     if (isGroup) {
-      // 群工作空间共享面（共享文件、群记忆、编排状态、共享产物）已迁到 v3 的
-      // `group:<gid>:shared`；没有袋子时退回 v2 的 workspaces 路径。
-      extras.add(await _groupSharedUri(ownerId));
+      // 群工作空间共享面（共享文件、群记忆、编排状态、共享产物）在 v3 的
+      // `group:<gid>:shared`；没配对时不注入旧目录地址。
+      final shared = await _groupSharedUri(ownerId);
+      if (shared != null) extras.add(shared);
       return ScopeCard.forGroup(
         groupId: ownerId,
         deviceId: deviceId,
@@ -175,16 +176,14 @@ class ContextBundleService {
     ).copyWith(extraUris: ScopeCard.dedupeUris(extras));
   }
 
-  /// 群共享面的引用：有袋子给 v3 地址，否则给 v2 的 `shared/`。
-  Future<String> _groupSharedUri(String groupId) async {
-    final legacy = 'pouch://workspaces/'
-        '${GroupWorkspaceService.instance.workspaceRoot(groupId)}/shared';
+  /// 群共享面的袋子地址；没配对上袋子时返回 null。
+  Future<String?> _groupSharedUri(String groupId) async {
     try {
-      final scoped = await StoreService.instance.scopeStoreOrNull();
-      if (scoped == null) return legacy;
+      final scoped = await StoreService.instance.scopeStore();
       return scoped.uriFor(PouchScope.groupShared(groupId)).format();
-    } on FormatException {
-      return legacy;
+    } on StoreException catch (e) {
+      if (e.code == StoreError.notPaired) return null;
+      rethrow;
     }
   }
 
