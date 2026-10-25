@@ -174,6 +174,33 @@ void main() {
     expect(opened, 1);
   });
 
+  test('上传落点：子目录保持不动，scope 根按布局选约定目录', () {
+    expect(
+      PouchScopeBrowserScreen.uploadDirFor(PouchScope.slip('sl1'), ''),
+      'files',
+    );
+    expect(
+      PouchScopeBrowserScreen.uploadDirFor(
+        PouchScope.agentSession('a1', 's1'),
+        '',
+      ),
+      'attachments',
+    );
+    expect(
+      PouchScopeBrowserScreen.uploadDirFor(PouchScope.agent('a1'), ''),
+      'files/attachments',
+    );
+    expect(
+      PouchScopeBrowserScreen.uploadDirFor(PouchScope.groupShared('g1'), '/'),
+      '',
+      reason: '群共享的 files/ 前缀由 GroupSharedFiles 加',
+    );
+    expect(
+      PouchScopeBrowserScreen.uploadDirFor(PouchScope.slip('sl1'), 'files/docs'),
+      'files/docs',
+    );
+  });
+
   testWidgets('群共享删文件走 GroupSharedFiles：带 files/ 前缀', (tester) async {
     final transport = _Transport(entries: <StoreEntry>[
       StoreEntry(path: 'files/a.md', size: 3, sha256: '', mtimeMs: 0),

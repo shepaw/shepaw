@@ -60,6 +60,21 @@ class PouchScopeBrowserScreen extends StatefulWidget {
   /// 浏览器不另开一条直接写 scope 的通路。
   final GroupSharedFiles? sharedFiles;
 
+  /// 上传落点：进了子目录就传当前目录；在 scope 根按 v3 布局选约定目录
+  /// （玉简 `files/`、会话 `attachments/`、助手 `files/attachments/`），
+  /// 免得往 scope 根丢散文件。群共享的 `files/` 前缀由 [GroupSharedFiles]
+  /// 自己加，这里保持根路径。
+  static String uploadDirFor(PouchScope scope, String currentPath) {
+    final path = currentPath.trim().replaceAll(RegExp(r'^/+|/+$'), '');
+    if (path.isNotEmpty) return path;
+    return switch (scope.kind) {
+      PouchScopeKind.slip => 'files',
+      PouchScopeKind.session => 'attachments',
+      PouchScopeKind.agent => 'files/attachments',
+      _ => '',
+    };
+  }
+
   @override
   State<PouchScopeBrowserScreen> createState() =>
       _PouchScopeBrowserScreenState();
@@ -230,6 +245,7 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
     if (!mounted) return;
     setState(() => _busy = true);
     final failures = <String>[];
+    final dir = PouchScopeBrowserScreen.uploadDirFor(scope, _path);
     var uploaded = 0;
     try {
       final taken = {for (final entry in _entries) entry.path.split('/').last};
@@ -240,7 +256,7 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
         if (!await file.exists()) continue;
         final name = _uniqueName(p.basename(localPath), taken);
         taken.add(name);
-        final path = _path.isEmpty ? name : '$_path/$name';
+        final path = dir.isEmpty ? name : '$dir/$name';
         try {
           await _writeBytes(scope, path, await file.readAsBytes());
           uploaded++;
