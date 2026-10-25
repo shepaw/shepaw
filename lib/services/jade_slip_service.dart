@@ -9,9 +9,11 @@ import 'package:uuid/uuid.dart';
 import '../models/jade_slip.dart';
 import '../storage/host_pouch_documents.dart';
 import '../storage/local_store.dart';
+import '../storage/slip_scope_documents.dart';
 import '../storage/store_protocol.dart';
 import 'jade_slip_rehome.dart';
 import 'logger_service.dart';
+import 'slip_scope_migration.dart';
 
 /// 玉简业务服务：读写储物袋里的待办。
 ///
@@ -187,6 +189,15 @@ class JadeSlipService {
     return HostPouchDocumentsFactory.resolve();
   }
 
+  /// v2 本机 `slips/<device>/…` → v3 `slip:<id>` 的一次性导入。
+  ///
+  /// 只在这个读写面确实是 v3 scope（[SlipScopeDocuments]）时跑：测试注入的
+  /// 本机 store、以及还没切 v3 的机器都不该去碰袋子。
+  Future<void> _ensureSlipScopeMigration(HostPouchDocuments docs) async {
+    if (docs is! SlipScopeDocuments) return;
+    await SlipScopeMigration.ensure();
+  }
+
   Future<JadeSlip?> _readSlip(
     HostPouchDocuments docs,
     String path, {
@@ -227,6 +238,7 @@ class JadeSlipService {
     if (trimmed.isEmpty) return null;
     final docs = await _docs();
     await JadeSlipRehome.ensure(docs: docs);
+    await _ensureSlipScopeMigration(docs);
     if (_snapshotDeviceId == docs.deviceId) {
       final cached = _snapshotById[trimmed];
       if (cached != null) return cached;
@@ -279,6 +291,7 @@ class JadeSlipService {
   }) async {
     final docs = await _docs();
     await JadeSlipRehome.ensure(docs: docs);
+    await _ensureSlipScopeMigration(docs);
     final epochBefore = _mutationEpoch;
     final entries = await docs.list(StoreSpace.slips);
     final recordEntries = [
@@ -331,6 +344,7 @@ class JadeSlipService {
     if (trimmed.isEmpty) return null;
     final docs = await _docs();
     await JadeSlipRehome.ensure(docs: docs);
+    await _ensureSlipScopeMigration(docs);
     return _readSlip(docs, '$trimmed.json');
   }
 
