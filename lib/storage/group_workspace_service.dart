@@ -451,17 +451,10 @@ class GroupWorkspaceService {
   }) async {
     final meta = await loadMeta(groupId);
     if (meta == null) return const [];
-    final home = meta.homeDevice;
     final dir = eventsDir(groupId, sessionId);
     final List<StoreEntry> entries;
     try {
-      entries = await StoreService.instance.listDevice(
-        deviceId: home,
-        space: StoreSpace.workspaces,
-        prefix: dir,
-        depth: 1,
-        computeHash: false,
-      );
+      entries = await _listWorkspace(dir, homeDeviceId: meta.homeDevice);
     } catch (e) {
       LoggerService().debug(
         'group event log list failed: $dir — $e',
@@ -1368,6 +1361,67 @@ class GroupWorkspaceService {
     final path = _workspacePathOf(uri);
     if (path == null) return StoreUriReader.instance.read(uri);
     return _readWorkspace(path);
+  }
+
+  /// 列工作区目录，返回的 [StoreEntry.path] 都是工作区相对路径。
+  ///
+  /// 切换期间同一目录可能两边都有（旧文件在 v2，新文件在袋子里），
+  /// 所以两边都列、按路径并起来；同一路径以 v3 的元数据为准。
+  Future<List<StoreEntry>> _listWorkspace(
+    String workspacePath, {
+    required String homeDeviceId,
+  }) async {
+    final found = <String, StoreEntry>{};
+    final target = GroupWorkspaceScopes.map(workspacePath);
+    if (target != null) {
+      try {
+        final scoped = await StoreService.instance.scopeStoreOrNull();
+        if (scoped != null) {
+          final entries = await scoped.listChildren(
+            target.scope,
+            path: target.path,
+          );
+          for (final entry in entries) {
+            // listChildren 给的是 scope 内相对路径（含 target.path 前缀），
+            // 这里换回工作区相对路径，和 v2 那边保持一致。
+            final rel = entry.path.startsWith('${target.path}/')
+                ? entry.path.substring(target.path.length + 1)
+                : entry.path;
+            if (rel.isEmpty || rel == target.path) continue;
+            final path = '$workspacePath/$rel';
+            found[path] = StoreEntry(
+              path: path,
+              size: entry.size,
+              sha256: entry.sha256,
+              mtimeMs: entry.mtimeMs,
+              kind: entry.kind,
+            );
+          }
+        }
+      } on StoreException catch (e) {
+        if (!_temporaryScopeFailure(e.code)) rethrow;
+      }
+    }
+    try {
+      final legacy = await StoreService.instance.listDevice(
+        deviceId: homeDeviceId,
+        space: StoreSpace.workspaces,
+        prefix: workspacePath,
+        depth: 1,
+        computeHash: false,
+      );
+      for (final entry in legacy) {
+        found.putIfAbsent(entry.path, () => entry);
+      }
+    } catch (e) {
+      // 一边读不到就用另一边；两边都读不到才算失败（交给调用方处理）。
+      if (found.isEmpty) rethrow;
+      LoggerService().debug(
+        'workspace v2 listing failed: $workspacePath — $e',
+        tag: 'GroupWorkspaceService',
+      );
+    }
+    return found.values.toList(growable: false);
   }
 
   /// 写工作区内容，返回实际落点（v3 地址或 v2 地址）。

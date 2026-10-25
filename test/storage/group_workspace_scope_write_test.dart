@@ -25,8 +25,25 @@ class _MemoryScopeTransport implements PouchScopeTransport {
     String? prefix,
     int limit = 1000,
     String? cursor,
-  }) async =>
-      const PouchListPage(entries: <StoreEntry>[]);
+  }) async {
+    final head = '${scope.id}/';
+    final entries = <StoreEntry>[];
+    for (final entry in files.entries) {
+      if (!entry.key.startsWith(head)) continue;
+      final path = entry.key.substring(head.length);
+      final dir = prefix?.trim() ?? '';
+      if (dir.isNotEmpty && path != dir && !path.startsWith('$dir/')) {
+        continue;
+      }
+      entries.add(StoreEntry(
+        path: path,
+        size: entry.value.length,
+        sha256: '',
+        mtimeMs: 0,
+      ));
+    }
+    return PouchListPage(entries: entries);
+  }
 
   @override
   Future<Uint8List?> read({
@@ -198,8 +215,56 @@ void main() {
       );
     });
 
-    test('读共享文件：袋子里没有时回退 v2', () async {
-      // 先按 v2 写一份（模拟切换前的存量）。
+    test('事件日志写进袋子后，读回也能从袋子里列出来', () async {
+      await GroupWorkspaceService.instance.writeEventLog(
+        groupId: groupId,
+        sessionId: 's1',
+        seq: 2,
+        payload: {'id': 'b'},
+      );
+      await GroupWorkspaceService.instance.writeEventLog(
+        groupId: groupId,
+        sessionId: 's1',
+        seq: 1,
+        payload: {'id': 'a'},
+      );
+
+      expect(transport.writes.map((w) => '${w.scope}/${w.path}'), [
+        'group:$groupId:shared/orchestration/s1/events/000002.json',
+        'group:$groupId:shared/orchestration/s1/events/000001.json',
+      ]);
+      final logs = await GroupWorkspaceService.instance.readEventLogs(
+        groupId: groupId,
+        sessionId: 's1',
+      );
+      expect(logs.map((l) => l.seq), [1, 2]);
+      expect(logs.map((l) => l.payload['id']), ['a', 'b']);
+    });
+
+    test('切换前写在 v2 的旧事件和袋子里的一起读，按 seq 排序', () async {
+      // 旧事件（切换前沿用 v2 路径）。
+      final legacyDir = GroupWorkspaceService.instance.eventsDir(groupId, 's1');
+      await StoreService.instance.writeWorkspaceFile(
+        homeDeviceId: await DeviceIdentity.deviceId(),
+        relPath: '$legacyDir/000001.json',
+        content: Uint8List.fromList(utf8.encode('{"id":"old"}')),
+      );
+      await GroupWorkspaceService.instance.writeEventLog(
+        groupId: groupId,
+        sessionId: 's1',
+        seq: 2,
+        payload: {'id': 'new'},
+      );
+
+      final logs = await GroupWorkspaceService.instance.readEventLogs(
+        groupId: groupId,
+        sessionId: 's1',
+      );
+      expect(logs.map((l) => l.seq), [1, 2]);
+      expect(logs.map((l) => l.payload['id']), ['old', 'new']);
+    });
+
+    test('读共享文件：袋子里没有时回退 v2', () async {      // 先按 v2 写一份（模拟切换前的存量）。
       StoreService.instance.scopeStoreOverride = null;
       final rel = '${GroupWorkspaceService.instance.workspaceRoot(groupId)}'
           '/shared/memory/latest.md';
