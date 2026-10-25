@@ -3,6 +3,9 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/models/attachment_data.dart';
 import 'package:shepaw/models/pending_attachment.dart';
+import 'package:shepaw/models/store_attachment_ref.dart';
+import 'package:shepaw/storage/pouch_scope.dart';
+import 'package:shepaw/storage/store_protocol.dart';
 
 void main() {
   group('AttachmentData Tests', () {
@@ -375,6 +378,42 @@ void main() {
         expect(PendingAttachmentType.values, contains(PendingAttachmentType.image));
         expect(PendingAttachmentType.values, contains(PendingAttachmentType.file));
       });
+    });
+  });
+
+  group('StoreAttachmentRef 地址', () {
+    const pouchId = 'a95b5782-4d50-45d2-83e1-8e40954d1239';
+    const groupId = '0d576a96-ac07-4c9f-a2c5-7c37f8db4987';
+
+    test('v2 引用仍生成两段式地址', () {
+      const ref = StoreAttachmentRef(
+        deviceId: 'dev',
+        space: StoreSpace.files,
+        path: 'docs/a.md',
+        displayName: 'a.md',
+        sizeBytes: 3,
+      );
+
+      expect(ref.isScoped, isFalse);
+      expect(ref.storeUri, 'pouch://files/docs/a.md');
+    });
+
+    test('scoped 引用生成 v3 三段式地址，且不走本机解析', () async {
+      final ref = StoreAttachmentRef.scoped(
+        pouchId: pouchId,
+        scope: PouchScope.groupShared(groupId).id,
+        path: 'files/新建 文档.md',
+        displayName: '新建 文档.md',
+        sizeBytes: 22,
+      );
+
+      expect(ref.isScoped, isTrue);
+      expect(
+        ref.storeUri,
+        startsWith('pouch://$pouchId/group:$groupId:shared/files/'),
+      );
+      expect(PouchV2Uri.tryParse(ref.storeUri)?.path, 'files/新建 文档.md');
+      expect(await ref.resolveLocalFile(), isNull);
     });
   });
 }

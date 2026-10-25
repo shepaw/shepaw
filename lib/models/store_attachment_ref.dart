@@ -15,7 +15,18 @@ class StoreAttachmentRef {
     required this.path,
     required this.displayName,
     required this.sizeBytes,
-  });
+  })  : pouchId = null,
+        scope = null;
+
+  /// v3 袋子里的文件：地址是 `pouch://<pouch_id>/<scope>/<path>`。
+  const StoreAttachmentRef.scoped({
+    required String this.pouchId,
+    required String this.scope,
+    required this.path,
+    required this.displayName,
+    required this.sizeBytes,
+  })  : deviceId = '',
+        space = '';
 
   final String deviceId;
   final String space;
@@ -24,9 +35,17 @@ class StoreAttachmentRef {
   final String displayName;
   final int sizeBytes;
 
+  /// v3 袋子 id / scope；非空时 [storeUri] 生成三段式地址。
+  final String? pouchId;
+  final String? scope;
+
+  bool get isScoped => pouchId != null && scope != null;
+
   /// 地址不带设备段（docs/pouch_uri_no_device_decision.md）；[deviceId] 只
   /// 用于本机物理路径。
-  String get storeUri => storeUriWithRef(space, path);
+  String get storeUri => isScoped
+      ? PouchV2Uri(pouchId: pouchId!, scope: scope!, path: path).format()
+      : storeUriWithRef(space, path);
 
   factory StoreAttachmentRef.fromEntry({
     required String deviceId,
@@ -45,7 +64,10 @@ class StoreAttachmentRef {
   }
 
   /// 解析为本机绝对路径 [File]（仅 latest 版本；不存在则 null）。
+  ///
+  /// v3 袋子里的文件不在 v2 本机树里，统一交给 [StoreUriReader.copyTo] 物化。
   Future<File?> resolveLocalFile() async {
+    if (isScoped) return null;
     try {
       final store = await StoreService.instance.localStore();
       final abs = p.joinAll([

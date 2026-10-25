@@ -682,6 +682,16 @@ class _ChatScreenState extends State<ChatScreen>
     final storeUri = att.extraMetadata?['pouch_uri'] as String?;
     if (storeUri == null || storeUri.isEmpty) return false;
     try {
+      final scoped = PouchV2Uri.tryParse(storeUri);
+      if (scoped != null) {
+        return await _pendingQueue.addFromStoreRef(StoreAttachmentRef.scoped(
+          pouchId: scoped.pouchId,
+          scope: scoped.scope,
+          path: scoped.path,
+          displayName: att.fileName,
+          sizeBytes: att.sizeBytes,
+        ));
+      }
       final parsed = parseStoreUri(storeUri);
       if (!parsed.ref.isLatest) return false;
       final ref = StoreAttachmentRef(
