@@ -11,6 +11,7 @@ import '../../services/chat_service.dart';
 import '../../services/cli_execution_gate.dart';
 import '../../services/local_database_service.dart';
 import '../../services/noise_identity.dart';
+import '../../services/serial_task_queue.dart';
 import '../../services/logger_service.dart';
 import '../../storage/pouch_login.dart';
 import '../../storage/pouch_login_keeper.dart';
@@ -34,6 +35,9 @@ class HubEventClient {
   /// 续传回合的落库合并窗口。主机补发 chunk 可以很密，落库与整列刷新
   /// 没必要跟着每帧走。
   static const _liveFlushInterval = Duration(milliseconds: 100);
+  /// 游标读改写必须串行：live 事件是并发回调，读-派发-写不在一个临界区
+  /// 会让相邻两帧读到同一个游标，游标按完成顺序回退。
+  static const _controlKey = 'hub-control';
 
   HubEventClient({
     Stream<PeerControlEvent>? events,
@@ -55,6 +59,9 @@ class HubEventClient {
   final _uuid = const Uuid();
   final _log = LoggerService();
   final _notices = StreamController<HubNotice>.broadcast();
+  final _controlQueue = SerialTaskQueue<String>();
+  /// attach 请求 id → turn id。主机回 attach-lost 时用它认领占位。
+  final _attachRequests = <String, String>{};
   final _attached = <String>{};
   final _liveBuffers = <String, String>{};
   final _liveChannels = <String, String>{};
@@ -116,6 +123,7 @@ class HubEventClient {
     _liveFlushTimer?.cancel();
     _liveFlushTimer = null;
     _liveDirty.clear();
+    _attachRequests.clear();
   }
 
   Future<void> _onControl(PeerControlEvent event) async {
@@ -129,9 +137,21 @@ class HubEventClient {
       case 'hub_event':
         final parsed = HubEvent.parse(event.data['event']);
         if (parsed == null) return;
-        await _onLive(event.peerId, parsed);
+        if (_livePaused) return;
+        await _controlQueue.run(
+          _controlKey,
+          () => _onLive(event.peerId, parsed),
+        );
       case 'ping':
-        await _onPingHeadSeq(event.peerId, event.data['head_seq']);
+        await _controlQueue.run(
+          _controlKey,
+          () => _onPingHeadSeq(event.peerId, event.data['head_seq']),
+        );
+      case 'agent_error':
+        await _controlQueue.run(
+          _controlKey,
+          () => _onAttachLost(event.data),
+        );
       case 'pouch_turn_event':
         await _onAttachedChunk(event.peerId, event.data);
       case 'events_sync_resp':
@@ -142,12 +162,16 @@ class HubEventClient {
   Future<void> catchUp(String peerId) {
     final running = _syncing;
     if (running != null) return running;
-    final job = _catchUp(peerId);
+    final job = _controlQueue.run(_controlKey, () => _catchUpNow(peerId));
     _syncing = job;
-    return job.whenComplete(() => _syncing = null);
+    return job.whenComplete(() {
+      if (identical(_syncing, job)) _syncing = null;
+    });
   }
 
-  Future<void> _catchUp(String peerId) async {
+  /// 已经在 [_controlQueue] 里的调用方（live 事件、ping 对账）必须直接调它，
+  /// 再调 [catchUp] 会在同一个键上重入，永远等不到。
+  Future<void> _catchUpNow(String peerId) async {
     _livePaused = true;
     try {
       final key = await _key(peerId);
@@ -198,7 +222,7 @@ class HubEventClient {
       case HubCursorStep.duplicate:
         return;
       case HubCursorStep.gap:
-        await catchUp(peerId);
+        await _catchUpNow(peerId);
         return;
       case HubCursorStep.apply:
         await _dispatch(peerId, event);
@@ -227,7 +251,7 @@ class HubEventClient {
     final key = await _key(peerId);
     final cursor = await seqStore.read(key);
     if (rawHead <= cursor) return;
-    await catchUp(peerId);
+    await _catchUpNow(peerId);
   }
 
   Future<HubSyncPage?> _requestPage(String peerId, int since) async {
@@ -676,24 +700,47 @@ class HubEventClient {
       );
       _notify(channelId);
     }
-    await _send(peerId, {
+    final attachRequestId = _uuid.v4();
+    _attachRequests.removeWhere((_, id) => id == turnId);
+    _attachRequests[attachRequestId] = turnId;
+    final sent = await _send(peerId, {
       'type': 'turn_attach_req',
-      'request_id': _uuid.v4(),
+      'request_id': attachRequestId,
       'turn_id': turnId,
       'known_content_length': 0,
     });
+    if (!sent) _attachRequests.remove(attachRequestId);
   }
 
-  Future<void> _onTurnFinished(HubEvent event) async {
-    final turnId = event.data['turn_id'] as String? ?? '';
+  /// 清掉一个回合在本机留下的所有临时状态。占位行和卡片都要收掉，
+  /// 否则回合早没了却还挂着一个 streaming 气泡。
+  Future<String?> _clearLiveTurn(String turnId) async {
     _attached.remove(turnId);
+    _attachRequests.removeWhere((_, id) => id == turnId);
     _liveBuffers.remove(turnId);
+    _liveDirty.remove(turnId);
     final channelId = _liveChannels.remove(turnId);
     if (turnId.isNotEmpty && getIt.isRegistered<LocalDatabaseService>()) {
       await getIt<LocalDatabaseService>()
           .deleteMessage(liveTurnPlaceholderId(turnId));
     }
     await _closeTurnCards(turnId);
+    return channelId;
+  }
+
+  Future<void> _onTurnFinished(HubEvent event) async {
+    final turnId = event.data['turn_id'] as String? ?? '';
+    final channelId = await _clearLiveTurn(turnId);
+    if (channelId != null) _notify(channelId);
+  }
+
+  /// 主机回过 `agent_error`（`end_reason: "lost"`）：回合已经不在，attach 白等了。
+  /// `request_id` 是当初 `turn_attach_req` 的 id，用 [_attachRequests] 认领。
+  Future<void> _onAttachLost(Map<String, dynamic> data) async {
+    final requestId = data['request_id'] as String? ?? '';
+    final turnId = _attachRequests[requestId];
+    if (turnId == null) return;
+    final channelId = await _clearLiveTurn(turnId);
     if (channelId != null) _notify(channelId);
   }
 
@@ -748,6 +795,13 @@ class HubEventClient {
       await _flushLiveTurn(turnId);
       // 续传的回合就这样结束了 —— 补发回来的卡片同样不能留着可点。
       await _closeTurnCards(turnId);
+      if (data['kind'] == 'error') {
+        // 错误没有后续 turn.finished 兜底时，占位会永远停在 streaming。
+        final channelId = await _clearLiveTurn(turnId);
+        if (channelId != null) _notify(channelId);
+      } else {
+        _attachRequests.removeWhere((_, id) => id == turnId);
+      }
     }
   }
 

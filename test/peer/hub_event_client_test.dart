@@ -13,6 +13,26 @@ import 'package:shepaw/services/local_database_service.dart';
 
 import '../storage/test_harness.dart';
 
+/// 读游标按「越早发起的读越慢」返回：不串行时先到的帧反而最后写，
+/// 游标会倒退到 1，串行时每帧都在上一帧落盘后才读。
+class _ReversedReadHubSeqStore implements HubSeqStore {
+  final values = <String, int>{};
+  var _reads = 0;
+
+  @override
+  Future<int> read(String fingerprint) async {
+    final elapsed = _reads.clamp(0, 19);
+    _reads += 1;
+    await Future<void>.delayed(Duration(milliseconds: 20 - elapsed));
+    return values[fingerprint] ?? 0;
+  }
+
+  @override
+  Future<void> write(String fingerprint, int seq) async {
+    values[fingerprint] = seq;
+  }
+}
+
 void main() {
   setUpAll(() async {
     await StorageTestHarness.init();
@@ -491,6 +511,214 @@ void main() {
     expect(client.channelHasLiveTurn(psessId), isTrue);
     expect(client.channelHasLiveTurn(bareId), isFalse);
     await db.deleteMessage(liveTurnPlaceholderId(turnId));
+    await incoming.close();
+  });
+
+  test('live 事件突发时按顺序串行，游标落在最后一帧', () async {
+    final incoming = StreamController<PeerControlEvent>.broadcast();
+    // 读得越晚的帧回得越快：不串行时后到的帧先写游标，先到的后写，游标会倒退。
+    final store = _ReversedReadHubSeqStore();
+    final client = HubEventClient(
+      events: incoming.stream,
+      send: (peerId, frame) async {
+        if (frame['type'] == 'events_sync_req') {
+          incoming.add(PeerControlEvent(
+            peerId: peerId,
+            data: {
+              'type': 'events_sync_resp',
+              'request_id': frame['request_id'],
+              'events': const <Map<String, dynamic>>[],
+              'head_seq': store.values['fp'] ?? 0,
+              'reset': false,
+            },
+          ));
+        }
+        return true;
+      },
+      seqStore: store,
+      fingerprintOf: (_) async => 'fp',
+    );
+    client.start();
+    addTearDown(client.dispose);
+
+    for (var seq = 1; seq <= 30; seq++) {
+      incoming.add(PeerControlEvent(
+        peerId: 'peer-1',
+        data: {
+          'type': 'hub_event',
+          'event': {
+            'seq': seq,
+            'kind': 'agents.changed',
+            'data': <String, dynamic>{},
+          },
+        },
+      ));
+    }
+    for (var i = 0; i < 100; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      if (store.values['fp'] == 30) break;
+    }
+
+    expect(store.values['fp'], 30);
+    await incoming.close();
+  });
+
+  test('attach 丢失后清理流式占位', () async {
+    final db = LocalDatabaseService();
+    final suffix = DateTime.now().microsecondsSinceEpoch + 8;
+    final channelId = 'dm_attach_lost_$suffix';
+    final agentId = 'agent-attach-lost-$suffix';
+    await db.createChannel(
+      Channel.withMemberIds(
+        id: channelId,
+        name: 'Attach Lost',
+        type: 'dm',
+        memberIds: ['user', agentId],
+      ),
+      'user',
+    );
+
+    final incoming = StreamController<PeerControlEvent>.broadcast();
+    final attachRequestIds = <String>[];
+    final client = HubEventClient(
+      events: incoming.stream,
+      send: (_, frame) async {
+        if (frame['type'] == 'turn_attach_req') {
+          attachRequestIds.add(frame['request_id'] as String);
+        }
+        return true;
+      },
+      seqStore: MemoryHubSeqStore(),
+      fingerprintOf: (_) async => 'fp-attach-lost-$suffix',
+      watchingTurn: (_) => false,
+    );
+    client.start();
+    addTearDown(client.dispose);
+
+    const turnId = 'turn-attach-lost';
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: {
+        'type': 'hub_event',
+        'event': {
+          'seq': 1,
+          'kind': 'turn.started',
+          'channel_id': channelId,
+          'agent_id': agentId,
+          'data': {'turn_id': turnId, 'channel_id': channelId},
+        },
+      },
+    ));
+    for (var i = 0; i < 20; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      if (attachRequestIds.isNotEmpty) break;
+    }
+    expect(attachRequestIds, isNotEmpty);
+
+    final placeholder =
+        await db.getMessageById(liveTurnPlaceholderId(turnId));
+    expect(placeholder, isNotNull);
+    final liveChannelId = placeholder!['channel_id'] as String;
+    expect(client.channelHasLiveTurn(liveChannelId), isTrue);
+
+    // 主机找不到这个回合：用 attach 请求的 id 回 agent_error（end_reason=lost）。
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: {
+        'type': 'agent_error',
+        'request_id': attachRequestIds.single,
+        'code': 'attach_lost',
+        'message': 'turn is gone',
+        'end_reason': 'lost',
+      },
+    ));
+    for (var i = 0; i < 20; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      if (await db.getMessageById(liveTurnPlaceholderId(turnId)) == null) {
+        break;
+      }
+    }
+
+    expect(await db.getMessageById(liveTurnPlaceholderId(turnId)), isNull);
+    expect(client.channelHasLiveTurn(liveChannelId), isFalse);
+    await incoming.close();
+  });
+
+  test('pouch_turn_event error 清理流式占位', () async {
+    final db = LocalDatabaseService();
+    final suffix = DateTime.now().microsecondsSinceEpoch + 9;
+    final channelId = 'dm_turn_error_$suffix';
+    final agentId = 'agent-turn-error-$suffix';
+    await db.createChannel(
+      Channel.withMemberIds(
+        id: channelId,
+        name: 'Turn Error',
+        type: 'dm',
+        memberIds: ['user', agentId],
+      ),
+      'user',
+    );
+
+    final incoming = StreamController<PeerControlEvent>.broadcast();
+    final client = HubEventClient(
+      events: incoming.stream,
+      send: (_, __) async => true,
+      seqStore: MemoryHubSeqStore(),
+      fingerprintOf: (_) async => 'fp-turn-error-$suffix',
+      watchingTurn: (_) => false,
+    );
+    client.start();
+    addTearDown(client.dispose);
+
+    const turnId = 'turn-error';
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: {
+        'type': 'hub_event',
+        'event': {
+          'seq': 1,
+          'kind': 'turn.started',
+          'channel_id': channelId,
+          'agent_id': agentId,
+          'data': {'turn_id': turnId, 'channel_id': channelId},
+        },
+      },
+    ));
+    for (var i = 0; i < 20; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      if (await db.getMessageById(liveTurnPlaceholderId(turnId)) != null) {
+        break;
+      }
+    }
+    expect(await db.getMessageById(liveTurnPlaceholderId(turnId)), isNotNull);
+
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: {
+        'type': 'pouch_turn_event',
+        'request_id': turnId,
+        'kind': 'chunk',
+        'chunk': '半句话',
+      },
+    ));
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: {
+        'type': 'pouch_turn_event',
+        'request_id': turnId,
+        'kind': 'error',
+        'message': 'boom',
+      },
+    ));
+    for (var i = 0; i < 20; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      if (await db.getMessageById(liveTurnPlaceholderId(turnId)) == null) {
+        break;
+      }
+    }
+
+    // 错误之后没有 turn.finished 兜底，占位不删就永远停在 streaming。
+    expect(await db.getMessageById(liveTurnPlaceholderId(turnId)), isNull);
     await incoming.close();
   });
 
