@@ -15,6 +15,7 @@ import '../../../storage/public_store_service.dart';
 import '../../../storage/runtime_paths.dart';
 import '../../../storage/local_store.dart';
 import '../../../storage/pouch_scope.dart';
+import '../../../storage/pouch_scope_store.dart';
 import '../../../storage/store_protocol.dart';
 import '../../../storage/store_service.dart';
 import '../../../storage/store_uri_reader.dart';
@@ -514,9 +515,11 @@ class StoreListCommand extends CliCommand {
       final scoped = PouchV2Uri.tryParse(uri);
       if (scoped != null) {
         final store = await StoreService.instance.scopeStore();
-        final entries = await store.listChildren(
+        final entries = await _listScopeTree(
+          store,
           scoped.parsedScope,
-          path: scoped.path,
+          scoped.path,
+          depth: depth,
         );
         return <String, dynamic>{
           'success': true,
@@ -544,6 +547,117 @@ class StoreListCommand extends CliCommand {
       return {'success': false, 'error': '$e'};
     }
   }
+}
+
+/// v3 的 `pouch list --depth`：语义跟 v2 的 `listDevice` 一样——
+/// 1 是直接子项，N 是最多 N 层，0 是不限层数。
+///
+/// 返回的路径都是 scope 内相对路径（含 [base] 前缀），与 v2 返回的
+/// 「space 内相对路径」对齐，调用方可以直接拼回地址。
+Future<List<StoreEntry>> _listScopeTree(
+  PouchScopeStore store,
+  PouchScope scope,
+  String base, {
+  required int depth,
+  int maxEntries = 5000,
+}) async {
+  if (depth == 1) return store.listChildren(scope, path: base);
+  final out = <StoreEntry>[];
+  Future<void> walk(String dir, int level) async {
+    final entries = await store.listChildren(scope, path: dir);
+    for (final entry in entries) {
+      out.add(entry);
+      if (out.length >= maxEntries) return;
+      if (entry.isDir && (depth == 0 || level < depth)) {
+        await walk(entry.path, level + 1);
+        if (out.length >= maxEntries) return;
+      }
+    }
+  }
+
+  await walk(base, 1);
+  return out;
+}
+
+/// v3 地址上的 `pouch search`：帧协议只有 list/read，没有 search op。
+///
+/// 从 [uri] 指的目录起逐层列，按路径子串匹配；路径不中再读小文本文件看正文。
+/// 与 v2 搜索的两处不同：不认 `--desc`（`.meta.json` 说明只在 v2 产物有），
+/// 且扫完 [maxWalk] 条就停（回答里带 `truncated`）。
+Future<Map<String, dynamic>> _searchScope(
+  PouchV2Uri uri,
+  String query, {
+  required String desc,
+  required String taskSeg,
+  required int limit,
+}) async {
+  const maxWalk = 2000;
+  const maxBodyBytes = 64 * 1024;
+  final store = await StoreService.instance.scopeStore();
+  final scope = uri.parsedScope;
+  final needle = query.toLowerCase();
+  final results = <Map<String, dynamic>>[];
+  var walked = 0;
+  var truncated = false;
+
+  Future<void> walk(String dir) async {
+    if (truncated) return;
+    final entries = await store.listChildren(scope, path: dir);
+    for (final entry in entries) {
+      if (walked >= maxWalk || results.length >= limit) {
+        truncated = true;
+        return;
+      }
+      walked++;
+      if (entry.isDir) {
+        await walk(entry.path);
+        if (truncated) return;
+        continue;
+      }
+      final path = entry.path;
+      if (taskSeg.isNotEmpty && !path.contains(taskSeg)) continue;
+      var hit = path.toLowerCase().contains(needle);
+      if (!hit && entry.size > 0 && entry.size <= maxBodyBytes) {
+        try {
+          final bytes = await store.read(scope, path);
+          if (bytes != null) {
+            hit = utf8
+                .decode(bytes, allowMalformed: false)
+                .toLowerCase()
+                .contains(needle);
+          }
+        } catch (_) {
+          // 二进制文件 / 读失败：只按路径算。
+        }
+      }
+      if (!hit) continue;
+      results.add(<String, dynamic>{
+        'uri': store.uriFor(scope, path).format(),
+        'scope': scope.id,
+        'path': path,
+        'size': entry.size,
+      });
+      if (results.length >= limit) {
+        truncated = true;
+        return;
+      }
+    }
+  }
+
+  await walk(uri.path);
+  return <String, dynamic>{
+    'success': true,
+    'query': query,
+    'uri': uri.format(),
+    'scope': scope.id,
+    if (taskSeg.isNotEmpty) 'task': taskSeg,
+    'total': results.length,
+    'results': results,
+    'scanned': walked,
+    if (truncated) 'truncated': true,
+    if (desc.isNotEmpty)
+      'note': '--desc 暂不支持 v3 地址（v2 产物的 .meta.json 说明），按路径与正文匹配。',
+  };
 }
 
 /// Allow `pouch://space` (space root) for list; stricter [parseStoreUri]
@@ -672,6 +786,27 @@ class StoreSearchCommand extends CliCommand {
     if (uri != null && uri.isNotEmpty) {
       final accessErr = await storeAgentAccessError(uri);
       if (accessErr != null) return {'success': false, 'error': accessErr};
+      // v3 地址：帧协议没有 search op，只能逐层列 scope 再筛（见 [_searchScope]）。
+      final scoped = PouchV2Uri.tryParse(uri);
+      if (scoped != null) {
+        try {
+          return await _searchScope(
+            scoped,
+            q,
+            desc: desc,
+            taskSeg: taskSeg,
+            limit: _cliInt(flags, 'limit', 50),
+          );
+        } on StoreException catch (e) {
+          return {
+            'success': false,
+            'error': e.message.isEmpty ? e.code : e.message,
+            'code': e.code,
+          };
+        } catch (e) {
+          return {'success': false, 'error': '$e'};
+        }
+      }
       try {
         final parsed = parseStoreUriLoose(uri);
         space = parsed.space;

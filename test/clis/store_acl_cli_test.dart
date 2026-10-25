@@ -241,6 +241,92 @@ void main() {
         ['files/note.md'],
       );
     });
+
+    test('search 认 v3 地址：路径与正文都匹配，子目录会走进去', () async {
+      transport.files['agent:agent-a/files/report.md'] =
+          Uint8List.fromList(utf8.encode('quarterly numbers'));
+      transport.files['agent:agent-a/files/sub/deep.md'] =
+          Uint8List.fromList(utf8.encode('buried unique-token here'));
+      transport.files['agent:agent-a/files/skip.bin'] =
+          Uint8List.fromList([0xff, 0xfe, 0x00, 0x01]);
+
+      final byBody = await asAgent('agent-a', () {
+        return searchCmd.execute({
+          'uri': 'pouch://$pouchId/agent:agent-a/files',
+          'query': 'unique-token',
+        });
+      });
+      expect(byBody['success'], isTrue, reason: '$byBody');
+      final bodyHits = (byBody['results'] as List<dynamic>)
+          .cast<Map<String, dynamic>>();
+      expect(bodyHits.map((e) => e['path']), ['files/sub/deep.md']);
+      expect(
+        bodyHits.single['uri'],
+        'pouch://$pouchId/agent:agent-a/files/sub/deep.md',
+      );
+
+      final byPath = await asAgent('agent-a', () {
+        return searchCmd.execute({
+          'uri': 'pouch://$pouchId/agent:agent-a/files',
+          'query': 'REPORT',
+        });
+      });
+      expect(byPath['success'], isTrue, reason: '$byPath');
+      expect(
+        (byPath['results'] as List<dynamic>)
+            .cast<Map<String, dynamic>>()
+            .map((e) => e['path']),
+        ['files/report.md'],
+      );
+    });
+
+    test('list 认 --depth：1 只列一层，0 递归到底', () async {
+      transport.files['agent:agent-a/files/top.md'] =
+          Uint8List.fromList(utf8.encode('top'));
+      transport.files['agent:agent-a/files/sub/mid.md'] =
+          Uint8List.fromList(utf8.encode('mid'));
+      transport.files['agent:agent-a/files/sub/deep/low.md'] =
+          Uint8List.fromList(utf8.encode('low'));
+      const base = 'pouch://$pouchId/agent:agent-a/files';
+
+      Future<Set<String>> pathsAt(String depth) async {
+        final listed = await asAgent('agent-a', () {
+          return listCmd.execute({'uri': base, 'depth': depth});
+        });
+        expect(listed['success'], isTrue, reason: '$listed');
+        return (listed['entries'] as List<dynamic>)
+            .cast<Map<String, dynamic>>()
+            .map((e) => e['path'] as String)
+            .toSet();
+      }
+
+      expect(
+        await pathsAt('1'),
+        {'files/note.md', 'files/top.md', 'files/sub'},
+      );
+      final two = await pathsAt('2');
+      expect(two, containsAll(<String>['files/sub/mid.md', 'files/sub/deep']));
+      expect(two, isNot(contains('files/sub/deep/low.md')));
+      expect(
+        await pathsAt('0'),
+        containsAll(<String>[
+          'files/top.md',
+          'files/sub/mid.md',
+          'files/sub/deep/low.md',
+        ]),
+      );
+    });
+
+    test('search 对别人的助手私有区仍 acl_denied', () async {
+      final denied = await asAgent('agent-b', () {
+        return searchCmd.execute({
+          'uri': 'pouch://$pouchId/agent:agent-a/files',
+          'query': 'note',
+        });
+      });
+      expect(denied['success'], isFalse);
+      expect(denied['error'], contains('acl_denied'));
+    });
   });
 }
 
