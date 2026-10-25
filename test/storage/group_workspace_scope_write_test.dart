@@ -306,19 +306,18 @@ void main() {
       expect(logs.map((l) => l.payload['id']), ['a', 'b']);
     });
 
-    test('切换前写在 v2 的旧事件和袋子里的一起读，按 seq 排序', () async {
-      // 旧事件（切换前沿用 v2 路径）。
-      final legacyDir = GroupWorkspaceService.instance.eventsDir(groupId, 's1');
-      await StoreService.instance.writeWorkspaceFile(
-        homeDeviceId: await DeviceIdentity.deviceId(),
-        relPath: '$legacyDir/000001.json',
-        content: Uint8List.fromList(utf8.encode('{"id":"old"}')),
-      );
+    test('事件都写在袋子里，按 seq 排序', () async {
       await GroupWorkspaceService.instance.writeEventLog(
         groupId: groupId,
         sessionId: 's1',
         seq: 2,
         payload: {'id': 'new'},
+      );
+      await GroupWorkspaceService.instance.writeEventLog(
+        groupId: groupId,
+        sessionId: 's1',
+        seq: 1,
+        payload: {'id': 'old'},
       );
 
       final logs = await GroupWorkspaceService.instance.readEventLogs(
@@ -329,8 +328,8 @@ void main() {
       expect(logs.map((l) => l.payload['id']), ['old', 'new']);
     });
 
-    test('读共享文件：袋子里没有时回退 v2', () async {      // 先按 v2 写一份（模拟切换前的存量）。
-      StoreService.instance.scopeStoreOverride = null;
+    test('袋子里没有时返回 null，不再回退 v2', () async {
+      // v2 存量文件（切换前写入）；v3 迁移后不再读它。
       final rel = '${GroupWorkspaceService.instance.workspaceRoot(groupId)}'
           '/shared/memory/latest.md';
       await StoreService.instance.writeWorkspaceFile(
@@ -339,8 +338,6 @@ void main() {
         content: Uint8List.fromList(utf8.encode('from v2')),
       );
 
-      StoreService.instance.scopeStoreOverride =
-          PouchScopeStore(transport: transport, pouchId: pouchId);
       expect(
         await StoreService.instance.readScope(
           PouchScope.groupShared(groupId),
@@ -351,7 +348,7 @@ void main() {
       );
       expect(
         await GroupWorkspaceService.instance.readSharedMemoryLatest(groupId),
-        'from v2',
+        isNull,
       );
     });
   });

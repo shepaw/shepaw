@@ -9,6 +9,8 @@ import '../services/logger_service.dart';
 import 'device_identity.dart';
 import 'group_workspace_scopes.dart';
 import 'local_store.dart';
+import 'pouch_scope.dart';
+import 'pouch_scope_store.dart';
 import 'runtime_paths.dart';
 import 'store_protocol.dart';
 import 'store_service.dart';
@@ -260,24 +262,18 @@ class GroupWorkspaceService {
   String taskArtifactsRelPath(String groupId, String orchestrationId) =>
       '${taskDir(groupId, orchestrationId)}/artifacts.json';
 
-  /// 构建群任务相关文件的 store URI。
+  /// 构建群任务相关文件的袋子地址（`group:<gid>:shared/...`）。
   ///
-  /// 有 v3 袋子时给 `group:<gid>:shared/...`，否则给 v2 的 workspaces 地址；
-  /// 两者 [StoreUriReader] 都能读。
+  /// 群空间不存在返回 null；路径不在群共享区或未配对时抛错。
   Future<String?> taskFileUri({
     required String groupId,
     required String relPath,
   }) async {
     final meta = await loadMeta(groupId);
     if (meta == null) return null;
-    final target = GroupWorkspaceScopes.map(relPath);
-    if (target != null) {
-      final scoped = await StoreService.instance.scopeStoreOrNull();
-      if (scoped != null) {
-        return scoped.uriFor(target.scope, target.path).format();
-      }
-    }
-    return 'pouch://workspaces/$relPath';
+    final target = _scopeTarget(relPath);
+    final scoped = await _scopes();
+    return scoped.uriFor(target.scope, target.path).format();
   }
 
   /// 幂等创建群工作空间骨架 + 元数据。已存在时补缺成员，返回空间根。
@@ -403,17 +399,13 @@ class GroupWorkspaceService {
     required int round,
     required Map<String, dynamic> payload,
   }) async {
-    final meta = await loadMeta(groupId);
-    final home = meta?.homeDevice ?? await DeviceIdentity.deviceId();
     await _writeJson(
       groupId: groupId,
-      homeDeviceId: home,
       relPath: '${roundDir(groupId, sessionId, round)}/state.json',
       payload: payload,
     );
     await _writeJson(
       groupId: groupId,
-      homeDeviceId: home,
       relPath: '${orchestrationRoot(groupId, sessionId)}/latest.json',
       payload: {
         'round': round,
@@ -431,11 +423,8 @@ class GroupWorkspaceService {
     required int seq,
     required Map<String, dynamic> payload,
   }) async {
-    final meta = await loadMeta(groupId);
-    final home = meta?.homeDevice ?? await DeviceIdentity.deviceId();
     await _writeJson(
       groupId: groupId,
-      homeDeviceId: home,
       relPath:
           '${eventsDir(groupId, sessionId)}/${seq.toString().padLeft(6, '0')}.json',
       payload: payload,
@@ -454,7 +443,7 @@ class GroupWorkspaceService {
     final dir = eventsDir(groupId, sessionId);
     final List<StoreEntry> entries;
     try {
-      entries = await _listWorkspace(dir, homeDeviceId: meta.homeDevice);
+      entries = await _listWorkspace(dir);
     } catch (e) {
       LoggerService().debug(
         'group event log list failed: $dir — $e',
@@ -485,11 +474,8 @@ class GroupWorkspaceService {
     required int round,
     required Map<String, dynamic> payload,
   }) async {
-    final meta = await loadMeta(groupId);
-    final home = meta?.homeDevice ?? await DeviceIdentity.deviceId();
     await _writeJson(
       groupId: groupId,
-      homeDeviceId: home,
       relPath: '${roundDir(groupId, sessionId, round)}/dispatch.json',
       payload: payload,
     );
@@ -637,19 +623,16 @@ class GroupWorkspaceService {
   }) async {
     final meta = await loadMeta(groupId);
     if (meta == null) return null;
-    final home = meta.homeDevice;
     final root = workspaceRoot(groupId);
     final safeId = RuntimePaths.sanitizeSegment(handoffId);
     final jsonRel = '$root/shared/handoffs/$safeId.json';
     final mdRel = '$root/shared/handoffs/$safeId.md';
     try {
       final jsonUri = await _writeWorkspace(
-        homeDeviceId: home,
         relPath: jsonRel,
         bytes: Uint8List.fromList(utf8.encode(jsonContent)),
       );
       final mdUri = await _writeWorkspace(
-        homeDeviceId: home,
         relPath: mdRel,
         bytes: Uint8List.fromList(utf8.encode(markdownContent)),
       );
@@ -676,7 +659,6 @@ class GroupWorkspaceService {
   }) async {
     final meta = await loadMeta(groupId);
     if (meta == null) return null;
-    final home = meta.homeDevice;
     final root = workspaceRoot(groupId);
     final bytes = Uint8List.fromList(utf8.encode(content));
     final sessionRel =
@@ -684,12 +666,10 @@ class GroupWorkspaceService {
     final latestRel = '$root/shared/memory/latest.md';
     try {
       await _writeWorkspace(
-        homeDeviceId: home,
         relPath: sessionRel,
         bytes: bytes,
       );
       return await _writeWorkspace(
-        homeDeviceId: home,
         relPath: latestRel,
         bytes: bytes,
       );
@@ -703,9 +683,9 @@ class GroupWorkspaceService {
     }
   }
 
-  /// 写成员私有区的一份文件（`members/<agentId>/<relPath>`），返回实际落点。
+  /// 写成员私有区的一份文件（`members/<agentId>/<relPath>`），返回袋子地址。
   ///
-  /// 有袋子时落 `group:<gid>:member:<aid>`，没有袋子/主机离线时退回 v2。
+  /// 落 `group:<gid>:member:<aid>`；没有袋子时由 [_scopes] 抛出未配对错误。
   /// 调用方负责先校验群成员身份与相对路径。
   Future<String> writeMemberFile({
     required String groupId,
@@ -713,10 +693,7 @@ class GroupWorkspaceService {
     required String relPath,
     required Uint8List bytes,
   }) async {
-    final meta = await loadMeta(groupId);
-    final home = meta?.homeDevice ?? await DeviceIdentity.deviceId();
     return _writeWorkspace(
-      homeDeviceId: home,
       relPath: '${membersDir(groupId, agentId)}/$relPath',
       bytes: bytes,
     );
@@ -742,7 +719,6 @@ class GroupWorkspaceService {
     if (meta == null) return;
     await _writeJson(
       groupId: groupId,
-      homeDeviceId: meta.homeDevice,
       relPath: taskIndexRelPath(groupId),
       payload: index.toJson(),
     );
@@ -769,7 +745,6 @@ class GroupWorkspaceService {
     );
     await _writeJson(
       groupId: groupId,
-      homeDeviceId: meta.homeDevice,
       relPath: taskJsonRelPath(groupId, orchestrationId),
       payload: task.toJson(),
     );
@@ -825,7 +800,6 @@ class GroupWorkspaceService {
     final updated = task.copyWith(updatedAt: DateTime.now());
     await _writeJson(
       groupId: groupId,
-      homeDeviceId: meta.homeDevice,
       relPath: taskJsonRelPath(groupId, task.orchestrationId),
       payload: updated.toJson(),
     );
@@ -873,7 +847,6 @@ class GroupWorkspaceService {
 
     final rel = taskRequirementRelPath(groupId, orchestrationId);
     final uri = await _writeTextFile(
-      homeDeviceId: meta.homeDevice,
       relPath: rel,
       content: content,
     );
@@ -915,13 +888,11 @@ class GroupWorkspaceService {
     final mdRel = taskPlanMdRelPath(groupId, plan.orchestrationId);
     final jsonRel = taskPlanJsonRelPath(groupId, plan.orchestrationId);
     final planUri = await _writeTextFile(
-      homeDeviceId: meta.homeDevice,
       relPath: mdRel,
       content: plan.toMarkdown(requirementNotes: requirementNotes),
     );
     final planJsonUri = await _writeJson(
       groupId: groupId,
-      homeDeviceId: meta.homeDevice,
       relPath: jsonRel,
       payload: plan.toJson(),
     );
@@ -981,7 +952,6 @@ class GroupWorkspaceService {
     final rel = taskResultsRelPath(groupId, results.orchestrationId);
     final uri = await _writeJson(
       groupId: groupId,
-      homeDeviceId: meta.homeDevice,
       relPath: rel,
       payload: results.toJson(),
     );
@@ -1064,7 +1034,6 @@ class GroupWorkspaceService {
 
     final rel = taskArchiveRelPath(groupId, orchestrationId);
     final uri = await _writeTextFile(
-      homeDeviceId: meta.homeDevice,
       relPath: rel,
       content: content,
     );
@@ -1108,7 +1077,6 @@ class GroupWorkspaceService {
     final rel = taskArtifactPlanRelPath(groupId, plan.orchestrationId);
     final uri = await _writeJson(
       groupId: groupId,
-      homeDeviceId: meta.homeDevice,
       relPath: rel,
       payload: plan.toJson(),
     );
@@ -1160,7 +1128,6 @@ class GroupWorkspaceService {
     final rel = taskArtifactsRelPath(groupId, orchestrationId);
     final uri = await _writeJson(
       groupId: groupId,
-      homeDeviceId: meta.homeDevice,
       relPath: rel,
       payload: merged.toJson(),
     );
@@ -1273,17 +1240,23 @@ class GroupWorkspaceService {
     }
   }
 
-  Future<void> _writeMeta(GroupWorkspaceMeta meta) => _writeJson(
-        groupId: meta.groupId,
-        homeDeviceId: meta.homeDevice,
-        relPath: metaRelPath(meta.groupId),
-        payload: meta.toJson(),
-      );
+  /// 写群元数据（`<gid>/group-workspace.json`）。
+  ///
+  /// 这是 App 侧仅剩的 v2 写入：成员/角色/homDevice 还没搬进 hub 的
+  /// `system/groups.json` + `group:<gid>/meta.json`，等 hub 的群 API 接管后
+  /// 这里一起删。群内容（shared/members/任务/事件）已经全部走 v3。
+  Future<void> _writeMeta(GroupWorkspaceMeta meta) async {
+    final bytes = Uint8List.fromList(utf8.encode(jsonEncode(meta.toJson())));
+    await StoreService.instance.writeWorkspaceFile(
+      homeDeviceId: meta.homeDevice,
+      relPath: metaRelPath(meta.groupId),
+      content: bytes,
+    );
+  }
 
-  /// 写 JSON，返回实际落点地址（有袋子是 v3，否则 v2）。
+  /// 写 JSON，返回袋子地址。
   Future<String> _writeJson({
     required String groupId,
-    required String homeDeviceId,
     required String relPath,
     required Map<String, dynamic> payload,
     Uint8List? bytes,
@@ -1291,11 +1264,7 @@ class GroupWorkspaceService {
     final content = bytes ??
         Uint8List.fromList(utf8.encode(jsonEncode(payload)));
     try {
-      return await _writeWorkspace(
-        homeDeviceId: homeDeviceId,
-        relPath: relPath,
-        bytes: content,
-      );
+      return await _writeWorkspace(relPath: relPath, bytes: content);
     } catch (e) {
       LoggerService().error(
         'group workspace write failed: $relPath',
@@ -1320,14 +1289,12 @@ class GroupWorkspaceService {
     return null;
   }
 
-  /// 写文本，返回实际落点地址（有袋子是 v3，否则 v2）。
+  /// 写文本，返回袋子地址。
   Future<String> _writeTextFile({
-    required String homeDeviceId,
     required String relPath,
     required String content,
   }) =>
       _writeWorkspace(
-        homeDeviceId: homeDeviceId,
         relPath: relPath,
         bytes: Uint8List.fromList(utf8.encode(content)),
       );
@@ -1346,7 +1313,7 @@ class GroupWorkspaceService {
     }
   }
 
-  // ── v3 / v2 双读双写 ──────────────────────────────────────────────────────
+  // ── 袋子里的群工作区（v2 目录已停用） ─────────────────────────────────────
 
   /// `workspaces` 的 URI → 相对路径；不是这个 space 返回 null。
   static String? _workspacePathOf(String uri) {
@@ -1359,121 +1326,79 @@ class GroupWorkspaceService {
     }
   }
 
-  /// 读工作区内容：有 v3 袋子先读 `group:<gid>:shared`，读不到再回 v2。
-  ///
-  /// 回退顺序照顾两种过渡：切换前写的文件还在 v2；切换后新写的只在袋子里。
-  Future<Uint8List> _readWorkspace(String workspacePath) async {
+  static ({PouchScope scope, String path}) _scopeTarget(String workspacePath) {
     final target = GroupWorkspaceScopes.map(workspacePath);
-    if (target != null) {
-      try {
-        final scoped = await StoreService.instance.scopeStoreOrNull();
-        if (scoped != null) {
-          final bytes = await scoped.read(target.scope, target.path);
-          if (bytes != null) return bytes;
-        }
-      } on StoreException catch (e) {
-        if (!_temporaryScopeFailure(e.code)) rethrow;
-      }
+    if (target == null) {
+      throw StateError('group workspace path is not scoped: $workspacePath');
     }
-    return StoreUriReader.instance.read(
-      storeUriWithRef(StoreSpace.workspaces, workspacePath),
-    );
+    return target;
+  }
+
+  Future<PouchScopeStore> _scopes() => StoreService.instance.scopeStore();
+
+  /// 读工作区内容：只认 `group:<gid>:shared` / `group:<gid>:member:<aid>`。
+  ///
+  /// 切换前记在任务/交接里的 v2 地址由 [_readUri] 翻译成同一位置再读，
+  /// 不再回本地 `workspaces/` 目录（内容已由 hub 回迁进袋子）。
+  Future<Uint8List> _readWorkspace(String workspacePath) async {
+    final target = _scopeTarget(workspacePath);
+    final scoped = await _scopes();
+    final bytes = await scoped.read(target.scope, target.path);
+    if (bytes == null) {
+      throw StoreException(StoreError.notFound, workspacePath);
+    }
+    return bytes;
   }
 
   Future<Uint8List> _readUri(String uri) async {
     final path = _workspacePathOf(uri);
     if (path == null) return StoreUriReader.instance.read(uri);
-    return _readWorkspace(path);
+    final target = _scopeTarget(path);
+    final scoped = await _scopes();
+    final bytes = await scoped.read(target.scope, target.path);
+    if (bytes == null) {
+      throw StoreException(StoreError.notFound, path);
+    }
+    return bytes;
   }
 
   /// 列工作区目录，返回的 [StoreEntry.path] 都是工作区相对路径。
-  ///
-  /// 切换期间同一目录可能两边都有（旧文件在 v2，新文件在袋子里），
-  /// 所以两边都列、按路径并起来；同一路径以 v3 的元数据为准。
-  Future<List<StoreEntry>> _listWorkspace(
-    String workspacePath, {
-    required String homeDeviceId,
-  }) async {
-    final found = <String, StoreEntry>{};
-    final target = GroupWorkspaceScopes.map(workspacePath);
-    if (target != null) {
-      try {
-        final scoped = await StoreService.instance.scopeStoreOrNull();
-        if (scoped != null) {
-          final entries = await scoped.listChildren(
-            target.scope,
-            path: target.path,
-          );
-          for (final entry in entries) {
-            // listChildren 给的是 scope 内相对路径（含 target.path 前缀），
-            // 这里换回工作区相对路径，和 v2 那边保持一致。
-            final rel = entry.path.startsWith('${target.path}/')
-                ? entry.path.substring(target.path.length + 1)
-                : entry.path;
-            if (rel.isEmpty || rel == target.path) continue;
-            final path = '$workspacePath/$rel';
-            found[path] = StoreEntry(
-              path: path,
-              size: entry.size,
-              sha256: entry.sha256,
-              mtimeMs: entry.mtimeMs,
-              kind: entry.kind,
-            );
-          }
-        }
-      } on StoreException catch (e) {
-        if (!_temporaryScopeFailure(e.code)) rethrow;
-      }
-    }
-    try {
-      final legacy = await StoreService.instance.listDevice(
-        deviceId: homeDeviceId,
-        space: StoreSpace.workspaces,
-        prefix: workspacePath,
-        depth: 1,
-        computeHash: false,
-      );
-      for (final entry in legacy) {
-        found.putIfAbsent(entry.path, () => entry);
-      }
-    } catch (e) {
-      // 一边读不到就用另一边；两边都读不到才算失败（交给调用方处理）。
-      if (found.isEmpty) rethrow;
-      LoggerService().debug(
-        'workspace v2 listing failed: $workspacePath — $e',
-        tag: 'GroupWorkspaceService',
-      );
-    }
-    return found.values.toList(growable: false);
+  Future<List<StoreEntry>> _listWorkspace(String workspacePath) async {
+    final target = _scopeTarget(workspacePath);
+    final scoped = await _scopes();
+    final entries = await scoped.listChildren(
+      target.scope,
+      path: target.path,
+    );
+    return <StoreEntry>[
+      for (final entry in entries)
+        if (_workspaceRel(entry.path, target.path) case final rel?)
+          StoreEntry(
+            path: '$workspacePath/$rel',
+            size: entry.size,
+            sha256: entry.sha256,
+            mtimeMs: entry.mtimeMs,
+            kind: entry.kind,
+          ),
+    ];
   }
 
-  /// 写工作区内容，返回实际落点（v3 地址或 v2 地址）。
-  ///
-  /// 主机不在线时退回 v2：手机侧的编排/交接至少能在本机跑完，连上后新写入
-  /// 会重新落到袋子里。
+  /// `listChildren` 给的是 scope 内相对路径（含 [base] 前缀），换回目录内相对路径。
+  static String? _workspaceRel(String path, String base) {
+    final rel = path.startsWith('$base/')
+        ? path.substring(base.length + 1)
+        : path;
+    if (rel.isEmpty || rel == base) return null;
+    return rel;
+  }
+
+  /// 写工作区内容，返回袋子地址。
   Future<String> _writeWorkspace({
-    required String homeDeviceId,
     required String relPath,
     required Uint8List bytes,
   }) async {
-    final target = GroupWorkspaceScopes.map(relPath);
-    if (target != null) {
-      try {
-        final scoped = await StoreService.instance.scopeStoreOrNull();
-        if (scoped != null) {
-          return await scoped.write(target.scope, target.path, bytes);
-        }
-      } on StoreException catch (e) {
-        if (!_temporaryScopeFailure(e.code)) rethrow;
-      }
-    }
-    return StoreService.instance.writeWorkspaceFile(
-      homeDeviceId: homeDeviceId,
-      relPath: relPath,
-      content: bytes,
-    );
+    final target = _scopeTarget(relPath);
+    final scoped = await _scopes();
+    return scoped.write(target.scope, target.path, bytes);
   }
-
-  static bool _temporaryScopeFailure(String code) =>
-      code == StoreError.notPaired || code == StoreError.masterOffline;
 }

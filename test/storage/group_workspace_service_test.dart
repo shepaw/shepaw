@@ -6,21 +6,36 @@ import 'package:shepaw/clis/shepaw/chat/chat_agent_scope.dart';
 import 'package:shepaw/clis/shepaw/store/store_namespace.dart';
 import 'package:shepaw/peer/models/paired_peer.dart';
 import 'package:shepaw/peer/services/peer_storage_service.dart';
+import 'package:shepaw/storage/group_workspace_scopes.dart';
 import 'package:shepaw/storage/group_workspace_service.dart';
 import 'package:shepaw/models/group_task.dart';
+import 'package:shepaw/storage/pouch_scope_store.dart';
 import 'package:shepaw/storage/store_protocol.dart';
 import 'package:shepaw/storage/store_service.dart';
 import 'package:shepaw/storage/store_uri_reader.dart';
 
+import 'memory_scope_transport.dart';
 import 'test_harness.dart';
 
-/// GroupWorkspaceService 端到端（StoreService loopback + 临时目录）。
-/// 覆盖：元数据创建/幂等/成员变更、round 状态写入与读取、store CLI 群空间
-/// 权限校验（只有成员可读写、只能写自己的子目录）。
+/// GroupWorkspaceService 端到端（StoreService loopback + 临时目录 + 内存
+/// scope 传输）。覆盖：元数据创建/幂等/成员变更、round 状态写入与读取、
+/// store CLI 群空间权限校验（只有成员可读写、只能写自己的子目录）。
 void main() {
+  const pouchId = 'test-pouch';
+
   setUpAll(() async {
     await StorageTestHarness.init();
     await StoreService.instance.start();
+    StoreService.instance.scopeStoreOverride = PouchScopeStore(
+      transport: MemoryScopeTransport(),
+      pouchId: pouchId,
+    );
+    StoreService.instance.currentPouchIdOverride = pouchId;
+  });
+
+  tearDownAll(() {
+    StoreService.instance.scopeStoreOverride = null;
+    StoreService.instance.currentPouchIdOverride = null;
   });
 
   final ws = GroupWorkspaceService.instance;
@@ -205,9 +220,8 @@ void main() {
       );
       // dispatch 文件可经 URI 读回（成员可见性路径）。
       final bytes = await StoreUriReader.instance.read(
-        'pouch://workspaces/'
-        'group_test3/shared/orchestration/group_session1/'
-        'round-0000/dispatch.json',
+        'pouch://$pouchId/group:group_test3:shared/orchestration/'
+        'group_session1/round-0000/dispatch.json',
       );
       final json = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
       expect(json['status'], 'dispatched');
@@ -241,7 +255,7 @@ void main() {
 
       // 可经 URI 读回（补零 6 位序号）
       final bytes = await StoreUriReader.instance.read(
-        'pouch://workspaces/group_test4/shared/orchestration/'
+        'pouch://$pouchId/group:group_test4:shared/orchestration/'
         'session_event/events/000002.json',
       );
       final json = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
@@ -362,7 +376,10 @@ void main() {
         content: '任务 A 结论：完成基础架构。',
       );
       expect(uri1, isNotNull);
-      expect(uri1, contains('group_mem/shared/memory/latest.md'));
+      expect(
+        uri1,
+        'pouch://$pouchId/group:group_mem:shared/memory/latest.md',
+      );
 
       // 第二个任务覆盖 latest，session 文件保留
       await ws.writeSharedMemory(
@@ -375,8 +392,7 @@ void main() {
       expect(utf8.decode(latestBytes), '任务 B 结论：修复了调度 bug。');
 
       final sessionABytes = await StoreUriReader.instance.read(
-        'pouch://workspaces/'
-        'group_mem/shared/memory/group_session_a.md',
+        'pouch://$pouchId/group:group_mem:shared/memory/group_session_a.md',
       );
       expect(utf8.decode(sessionABytes), '任务 A 结论：完成基础架构。');
     });
@@ -388,17 +404,17 @@ void main() {
         groupId: 'group_events',
         members: [(agentId: 'she', role: 'admin')],
       );
-      final home = (await ws.loadMeta('group_events'))!.homeDevice;
-      final eventsDir = ws.eventsDir('group_events', 'group_session_ev');
-      final writeLog = (String file, Map<String, dynamic> payload) =>
-          StoreService.instance.writeWorkspaceFile(
-        homeDeviceId: home,
-        relPath: '$eventsDir/$file',
-        content: Uint8List.fromList(utf8.encode(jsonEncode(payload))),
-      );
+      const eventsDir = 'group_events/shared/orchestration/group_session_ev/events';
+      final writeLog = (int seq, Map<String, dynamic> payload) =>
+          ws.writeEventLog(
+            groupId: 'group_events',
+            sessionId: 'group_session_ev',
+            seq: seq,
+            payload: payload,
+          );
 
       // 乱序写入（seq 编号决定顺序），并混入一条不可解析的 JSON。
-      await writeLog('000003.json', {
+      await writeLog(3, {
         'kind': 'group_event',
         'id': 'c',
         'type': 'stepCompleted',
@@ -409,7 +425,7 @@ void main() {
         'summary': '产出',
         'ts': '2026-08-01T00:00:00.000Z',
       });
-      await writeLog('000001.json', {
+      await writeLog(1, {
         'kind': 'group_event',
         'id': 'a',
         'type': 'stepCompleted',
@@ -420,7 +436,7 @@ void main() {
         'summary': '产出',
         'ts': '2026-08-01T00:00:00.000Z',
       });
-      await writeLog('000002.json', {
+      await writeLog(2, {
         'kind': 'group_event',
         'id': 'b',
         'type': 'stepFailed',
@@ -432,10 +448,12 @@ void main() {
         'ts': '2026-08-01T00:00:00.000Z',
       });
       // 非 JSON 文件（模拟损坏/残留）→ 应被忽略。
-      await StoreService.instance.writeWorkspaceFile(
-        homeDeviceId: home,
-        relPath: '$eventsDir/not-json.json',
-        content: Uint8List.fromList(utf8.encode('broken')), // 不是 JSON 对象
+      final broken = GroupWorkspaceScopes.map('$eventsDir/not-json.json')!;
+      final scoped = await StoreService.instance.scopeStore();
+      await scoped.write(
+        broken.scope,
+        broken.path,
+        Uint8List.fromList(utf8.encode('broken')), // 不是 JSON 对象
       );
 
       final logs = await ws.readEventLogs(
@@ -462,14 +480,15 @@ void main() {
       );
       final home = (await ws.loadMeta('group_inbox'))!.homeDevice;
       final inboxDir = ws.inboxDir('group_inbox', 'group_session_x');
-      final writeInbox = (String file, Map<String, dynamic> payload) =>
-          StoreService.instance.writeWorkspaceFile(
-        homeDeviceId: home,
-        relPath: '$inboxDir/$file',
-        content: Uint8List.fromList(
-          utf8.encode(jsonEncode(payload)),
-        ),
-      );
+      final writeInbox = (String file, Map<String, dynamic> payload) async {
+        final target = GroupWorkspaceScopes.map('$inboxDir/$file')!;
+        final scoped = await StoreService.instance.scopeStore();
+        await scoped.write(
+          target.scope,
+          target.path,
+          Uint8List.fromList(utf8.encode(jsonEncode(payload))),
+        );
+      };
 
       // 旧决定（本轮开始前写入）→ 不消费
       await writeInbox('dispatch.json', {
@@ -808,7 +827,7 @@ void main() {
       expect(result!['group'], 'group_m9');
       expect(
         result!['uri'],
-        contains('group_m9/members/agent-member/report.md'),
+        'pouch://$pouchId/group:group_m9:member:agent-member/report.md',
       );
 
       final bytes =
