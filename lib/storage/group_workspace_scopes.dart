@@ -11,9 +11,9 @@ import 'pouch_scope.dart';
 /// 群共享文件（`shared/files/<rel>`）本来就是同一条映射，所以共享文件、群记忆、
 /// 交接包、任务状态在袋子里落在同一个 scope 下。
 ///
-/// **暂不映射**（App 侧继续写 v2）：`group-workspace.json`——成员/角色/归属
-/// 设备，v3 由 hub 的 `system/groups.json` + `group:<gid>/meta.json` 承担，
-/// App 何时停写要等 hub 先切完。
+/// 群元数据不在这里映射：成员/角色以 hub 的 `system/groups.json` 为准；
+/// 注册表缺失时 App 把兜底成员表写到群根 `group:<gid>/workspace.json`
+/// （由 [GroupWorkspaceService] 直接读写，不经过本映射）。
 class GroupWorkspaceScopes {
   GroupWorkspaceScopes._();
 

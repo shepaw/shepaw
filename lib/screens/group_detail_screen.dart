@@ -348,11 +348,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                     zh ? '状态：已就绪' : 'Status: ready',
                     style: TextStyle(fontSize: 13, color: Colors.green[700]),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    zh ? 'home device：${meta.homeDevice}' : 'home device: ${meta.homeDevice}',
-                    style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-                  ),
                   const SizedBox(height: 12),
                   Text(
                     zh ? '成员（${meta.members.length}）' : 'Members (${meta.members.length})',

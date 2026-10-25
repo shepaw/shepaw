@@ -6,7 +6,6 @@ import '../models/group_task_artifact.dart';
 import '../peer/models/peer_store_share.dart';
 import '../peer/services/peer_storage_service.dart';
 import '../services/logger_service.dart';
-import 'device_identity.dart';
 import 'group_workspace_scopes.dart';
 import 'local_store.dart';
 import 'pouch_scope.dart';
@@ -14,17 +13,16 @@ import 'pouch_scope_store.dart';
 import 'runtime_paths.dart';
 import 'store_protocol.dart';
 import 'store_service.dart';
-import 'store_uri_reader.dart';
 
 /// 群工作空间元数据。
 ///
-/// 物理文件：`workspaces/<homeDevice>/group_<gid>/group-workspace.json`。
-/// 成员表是「群工作空间只有 members 可读写」这一权限模型的唯一依据。
+/// 成员表以 hub 的 `system/groups.json` 为准（v3）；hub 里没有这个群时
+/// （本机离线群 / 测试），退回 `group:<gid>/workspace.json`。两者都不再
+/// 依赖 `workspaces/<device>/` 的 v2 目录。
 class GroupWorkspaceMeta {
   GroupWorkspaceMeta({
     required this.schemaVersion,
     required this.groupId,
-    required this.homeDevice,
     required this.members,
     this.commitSeq = 0,
     this.archive = false,
@@ -32,10 +30,6 @@ class GroupWorkspaceMeta {
 
   final int schemaVersion;
   final String groupId;
-
-  /// 空间归属设备（workspaces 目录第一段）。M1 为创建设备；跨设备写经
-  /// [StoreService.writeWorkspaceFile] 以该设备为 home device。
-  final String homeDevice;
 
   /// agentId → 成员信息（含 role / deviceId / joinedAt）。
   final Map<String, GroupWorkspaceMember> members;
@@ -54,7 +48,6 @@ class GroupWorkspaceMeta {
     return GroupWorkspaceMeta(
       schemaVersion: schemaVersion,
       groupId: groupId,
-      homeDevice: homeDevice,
       members: members ?? this.members,
       commitSeq: commitSeq ?? this.commitSeq,
       archive: archive ?? this.archive,
@@ -64,7 +57,6 @@ class GroupWorkspaceMeta {
   Map<String, dynamic> toJson() => {
         'schema_version': schemaVersion,
         'group_id': groupId,
-        'home_device': homeDevice,
         'members': {
           for (final e in members.entries) e.key: e.value.toJson(),
         },
@@ -73,10 +65,7 @@ class GroupWorkspaceMeta {
 
   static GroupWorkspaceMeta? fromJson(Map<String, dynamic> json) {
     final gid = json['group_id'] as String?;
-    final home = json['home_device'] as String?;
-    if (gid == null || gid.isEmpty || home == null || home.isEmpty) {
-      return null;
-    }
+    if (gid == null || gid.isEmpty) return null;
     final members = <String, GroupWorkspaceMember>{};
     final rawMembers = json['members'];
     if (rawMembers is Map) {
@@ -101,7 +90,6 @@ class GroupWorkspaceMeta {
     return GroupWorkspaceMeta(
       schemaVersion: (json['schema_version'] as num?)?.toInt() ?? 1,
       groupId: gid,
-      homeDevice: home,
       members: members,
       commitSeq: commitSeq,
       archive: archive,
@@ -167,40 +155,36 @@ class OrchestrationInbox {
 
 /// 群工作空间服务。
 ///
-/// 空间布局：
+/// 空间布局（v3 scope）：
 /// ```
-/// workspaces/<homeDevice>/<group id>/
-/// ├── group-workspace.json         # 成员表（读写权限唯一依据）
-/// ├── members/<agentId>/...        # 成员私有区（pouch write 落点，只写自己的）
-/// └── shared/
-///     ├── tasks/
-///     │   ├── index.json
-///     │   └── <orchestrationId>/
-///     │       ├── task.json
-///     │       ├── requirement.md
-///     │       ├── plan.md / plan.json
-///     │       ├── results.json
-///     │       └── archive.md
-///     └── orchestration/<sessionId>/round-N/{state.json, dispatch.json}
+/// group:<gid>/workspace.json             # 成员表兜底（hub 注册表缺失时）
+/// group:<gid>:member:<agentId>/...       # 成员私有区（只写自己的）
+/// group:<gid>:shared/
+/// ├── tasks/
+/// │   ├── index.json
+/// │   └── <orchestrationId>/
+/// │       ├── task.json
+/// │       ├── requirement.md
+/// │       ├── plan.md / plan.json
+/// │       ├── results.json
+/// │       └── archive.md
+/// └── orchestration/<sessionId>/round-N/{state.json, dispatch.json}
 /// ```
 ///
-/// 所有写入经 [StoreService.writeWorkspaceFile]（workspaces 跨 device 写通道，
-/// commit 内联进 SyncJournal 自动镜像到 master）；读取经 [StoreUriReader]。
+/// 内容读写只经 [StoreService.scopeStore]；成员表优先读 hub 的
+/// `system/groups.json`（唯一权威），没有时才读群根 `workspace.json`。
 class GroupWorkspaceService {
   GroupWorkspaceService._();
   static final instance = GroupWorkspaceService._();
 
   static const schemaVersion = 1;
 
-  /// 元数据文件名（无前导点：协议层 normalizeStorePath 拒绝 dot segment）。
-  static const metaFileName = 'group-workspace.json';
+  /// 群根元数据文件名（无前导点：协议层 normalizeStorePath 拒绝 dot segment）。
+  static const metaFileName = 'workspace.json';
 
   /// 目录根。群 id 就是 `group_<uuid>`，不再另加前缀。
   String workspaceRoot(String groupId) =>
       RuntimePaths.sanitizeSegment(groupId);
-
-  String metaRelPath(String groupId) =>
-      '${workspaceRoot(groupId)}/$metaFileName';
 
   /// 成员私有区：`<group id>/members/<agentId>`。
   String membersDir(String groupId, String agentId) =>
@@ -278,15 +262,13 @@ class GroupWorkspaceService {
 
   /// 幂等创建群工作空间骨架 + 元数据。已存在时补缺成员，返回空间根。
   ///
-  /// [homeDeviceId] 缺省为本机 device id。骨架目录写 `.keep` 占位文件
-  /// 确保目录存在（workspaces 目录随写入隐式创建）。
+  /// hub 注册表已有该群时以注册表为准，不另写元数据文件；只有在注册表
+  /// 里查不到（离线群 / 测试）时才落 `group:<gid>/workspace.json`。
   Future<String> ensureGroupWorkspace({
     required String groupId,
-    String? homeDeviceId,
     List<({String agentId, String role})>? members,
   }) async {
     final root = workspaceRoot(groupId);
-    final home = homeDeviceId ?? await DeviceIdentity.deviceId();
     final existing = await loadMeta(groupId);
     if (existing != null) {
       // 已有元数据：合并补缺成员（新成员 upsert，已存在不覆盖 role/joinedAt）。
@@ -315,7 +297,6 @@ class GroupWorkspaceService {
     final meta = GroupWorkspaceMeta(
       schemaVersion: schemaVersion,
       groupId: groupId,
-      homeDevice: home,
       members: {
         if (members != null)
           for (final m in members)
@@ -333,11 +314,17 @@ class GroupWorkspaceService {
   }
 
   /// 读取空间元数据；不存在返回 null。
+  ///
+  /// 先读 hub 的 `system/groups.json`（群成员/角色的唯一权威，跨设备一致）；
+  /// 注册表里没有这个群时，再读群根 `workspace.json`（离线群/测试兜底）。
   Future<GroupWorkspaceMeta?> loadMeta(String groupId) async {
+    final fromRegistry = await _loadRegistryMeta(groupId);
+    if (fromRegistry != null) return fromRegistry;
     try {
-      final uri = await metaUri(groupId);
-      if (uri == null) return null;
-      final bytes = await StoreUriReader.instance.read(uri);
+      final scoped = await _scopes();
+      final bytes =
+          await scoped.read(PouchScope.group(groupId), metaFileName);
+      if (bytes == null) return null;
       final json = jsonDecode(utf8.decode(bytes));
       if (json is! Map<String, dynamic>) return null;
       return GroupWorkspaceMeta.fromJson(json);
@@ -350,11 +337,58 @@ class GroupWorkspaceService {
     }
   }
 
-  /// 解析元数据 URI；不确定 home device 时先读本机（M1 单机场景）。
-  Future<String?> metaUri(String groupId) async {
-    // 群元数据仍走 v2：它由 hub 的 `system/groups.json` +
-    // `group:<gid>/meta.json` 接管之前，这里保持原来的按路径读取。
-    return 'pouch://workspaces/${metaRelPath(groupId)}';
+  /// 从 hub 群注册表合成元数据；没有袋子 / 群不存在返回 null。
+  Future<GroupWorkspaceMeta?> _loadRegistryMeta(String groupId) async {
+    try {
+      final scoped = await _scopes();
+      final bytes = await scoped.read(PouchScope.system, 'groups.json');
+      if (bytes == null) return null;
+      final json = jsonDecode(utf8.decode(bytes));
+      if (json is! Map<String, dynamic>) return null;
+      final groups = json['groups'];
+      if (groups is! List) return null;
+      Map<String, dynamic>? entry;
+      for (final raw in groups.whereType<Map>()) {
+        if (raw['id'] == groupId) {
+          entry = Map<String, dynamic>.from(raw);
+          break;
+        }
+      }
+      if (entry == null) return null;
+      final members = <String, GroupWorkspaceMember>{};
+      final rawMembers = entry['members'];
+      if (rawMembers is List) {
+        for (final raw in rawMembers.whereType<Map>()) {
+          final agentId = raw['id'] as String?;
+          if (agentId == null || agentId.isEmpty) continue;
+          members[agentId] = GroupWorkspaceMember(
+            agentId: agentId,
+            role: raw['role'] as String? ?? 'member',
+            joinedAt: _registryTime(raw['joined_at']),
+          );
+        }
+      }
+      return GroupWorkspaceMeta(
+        schemaVersion: schemaVersion,
+        groupId: groupId,
+        members: members,
+      );
+    } catch (e) {
+      LoggerService().debug(
+        'group registry meta unavailable for $groupId: $e',
+        tag: 'GroupWorkspaceService',
+      );
+      return null;
+    }
+  }
+
+  /// 注册表时间戳是毫秒数；兼容已写成 ISO 字符串的旧数据。
+  static String _registryTime(Object? value) {
+    if (value is num) {
+      return DateTime.fromMillisecondsSinceEpoch(value.toInt())
+          .toIso8601String();
+    }
+    return value is String ? value : '';
   }
 
   /// 新增/更新成员（role 为空时保持原值）。
@@ -505,19 +539,14 @@ class GroupWorkspaceService {
 
   /// 外接 agent MCP 群工具写入的编排决定（inbox 文件）。
   ///
-  /// [homeDevice] 为外接 agent 的 hub 设备（从其 metadata workspace_uri
-  /// 解析）；经 [StoreUriReader] 跨设备读（workspaces 是 shared 分区）。
-  /// 只返回 `issued_at` 晚于 [since] 的文件——宿主编排循环每轮记录
-  /// 本轮开始时间，只消费本轮内新写入的决定（不删除、无并发问题）。
+  /// 经 `group:<gid>:shared` 的 v3 地址读取。只返回 `issued_at` 晚于 [since]
+  /// 的文件——宿主编排循环每轮记录本轮开始时间，只消费本轮内新写入的决定
+  ///（不删除、无并发问题）。
   Future<OrchestrationInbox> readOrchestrationInbox({
     required String groupId,
     required String sessionId,
     required DateTime since,
-    String? homeDevice,
   }) async {
-    if (homeDevice == null || homeDevice.isEmpty) {
-      return const OrchestrationInbox();
-    }
     final dir = inboxDir(groupId, sessionId);
     final sinceIso = since.toUtc().toIso8601String();
 
@@ -1203,18 +1232,13 @@ class GroupWorkspaceService {
     }
   }
 
-  /// 写群元数据（`<gid>/group-workspace.json`）。
+  /// 写群根兜底元数据 `group:<gid>/workspace.json`。
   ///
-  /// 这是 App 侧仅剩的 v2 写入：成员/角色/homDevice 还没搬进 hub 的
-  /// `system/groups.json` + `group:<gid>/meta.json`，等 hub 的群 API 接管后
-  /// 这里一起删。群内容（shared/members/任务/事件）已经全部走 v3。
+  /// hub 注册表存在时 [loadMeta] 优先读注册表，这份文件只覆盖离线群/测试。
   Future<void> _writeMeta(GroupWorkspaceMeta meta) async {
     final bytes = Uint8List.fromList(utf8.encode(jsonEncode(meta.toJson())));
-    await StoreService.instance.writeWorkspaceFile(
-      homeDeviceId: meta.homeDevice,
-      relPath: metaRelPath(meta.groupId),
-      content: bytes,
-    );
+    final scoped = await _scopes();
+    await scoped.write(PouchScope.group(meta.groupId), metaFileName, bytes);
   }
 
   /// 写 JSON，返回袋子地址。

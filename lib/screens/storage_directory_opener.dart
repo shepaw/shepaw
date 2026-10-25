@@ -84,8 +84,8 @@ Future<void> openGroupWorkspaceLegacyBag(
   String? title,
 }) async {
   final ws = GroupWorkspaceService.instance;
-  final meta = await ws.loadMeta(groupId);
-  final deviceId = meta?.homeDevice ?? await DeviceIdentity.deviceId();
+  // 旧 workspaces/ 目录视图仍按本机设备展示；群元数据已不再决定 home device。
+  final deviceId = await DeviceIdentity.deviceId();
   if (!context.mounted) return;
   await openStorageDirectoryInBrowser(
     context,
