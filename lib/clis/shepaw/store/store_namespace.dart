@@ -344,8 +344,6 @@ class StoreWriteCommand extends CliCommand {
     required Uint8List content,
   }) async {
     final ws = GroupWorkspaceService.instance;
-    final meta = await ws.loadMeta(group);
-    final home = meta?.homeDevice ?? await DeviceIdentity.deviceId();
     final safeRel = sanitizeMemberRelPath(filename);
     if (safeRel == null) {
       return {
@@ -354,11 +352,12 @@ class StoreWriteCommand extends CliCommand {
       };
     }
     try {
-      final rel = '${ws.membersDir(group, executorId)}/$safeRel';
-      final uri = await StoreService.instance.writeWorkspaceFile(
-        homeDeviceId: home,
-        relPath: rel,
-        content: content,
+      // 有袋子时落 `group:<gid>:member:<aid>`，没有袋子才写 v2 的 members/。
+      final uri = await ws.writeMemberFile(
+        groupId: group,
+        agentId: executorId,
+        relPath: safeRel,
+        bytes: content,
       );
       return {
         'success': true,

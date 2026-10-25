@@ -2,12 +2,15 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shepaw/clis/shepaw/chat/chat_agent_scope.dart';
+import 'package:shepaw/clis/shepaw/store/store_namespace.dart';
 import 'package:shepaw/storage/device_identity.dart';
 import 'package:shepaw/storage/group_workspace_scopes.dart';
 import 'package:shepaw/storage/group_workspace_service.dart';
 import 'package:shepaw/storage/local_store.dart';
 import 'package:shepaw/storage/pouch_scope.dart';
 import 'package:shepaw/storage/pouch_scope_store.dart';
+import 'package:shepaw/storage/store_protocol.dart';
 import 'package:shepaw/storage/store_service.dart';
 
 import 'test_harness.dart';
@@ -109,9 +112,17 @@ void main() {
       expect(target.path, 'memory/latest.md');
     });
 
-    test('group-workspace.json 与 members/ 暂不映射（仍是 v2）', () {
+    test('members/<aid>/<rel> 挂到 group:<gid>:member:<aid>', () {
+      final target = GroupWorkspaceScopes.map('$groupId/members/a1/x.md');
+      expect(target, isNotNull);
+      expect(target!.scope, PouchScope.groupMember(groupId, 'a1'));
+      expect(target.path, 'x.md');
+    });
+
+    test('group-workspace.json 暂不映射（仍是 v2）', () {
       expect(GroupWorkspaceScopes.map('$groupId/group-workspace.json'), isNull);
-      expect(GroupWorkspaceScopes.map('$groupId/members/a1/x.md'), isNull);
+      expect(GroupWorkspaceScopes.map('$groupId/members/a1'), isNull);
+      expect(GroupWorkspaceScopes.map('$groupId/members'), isNull);
       expect(GroupWorkspaceScopes.map('$groupId/shared'), isNull);
     });
 
@@ -154,6 +165,60 @@ void main() {
       expect(
         GroupWorkspaceService.instance.readSharedMemoryLatest(groupId),
         completion('round done'),
+      );
+    });
+
+    test('writeMemberFile 落到 group:<gid>:member:<aid>', () async {
+      final uri = await GroupWorkspaceService.instance.writeMemberFile(
+        groupId: groupId,
+        agentId: 'agent-a',
+        relPath: 'notes/report.md',
+        bytes: Uint8List.fromList(utf8.encode('mine')),
+      );
+
+      expect(transport.writes.map((w) => '${w.scope}/${w.path}'), [
+        'group:$groupId:member:agent-a/notes/report.md',
+      ]);
+      expect(
+        uri,
+        'pouch://$pouchId/group:$groupId:member:agent-a/notes/report.md',
+      );
+      expect(
+        utf8.decode(
+          transport.files['group:$groupId:member:agent-a/notes/report.md']!,
+        ),
+        'mine',
+      );
+    });
+
+    test('pouch write --space workspaces 群成员路径返回袋子地址', () async {
+      final writeCmd = StoreNamespace.instance.commands['write']!;
+      Map<String, dynamic>? result;
+      await ChatAgentScope.runScoped(
+        agentId: 'agent-a',
+        body: () async {
+          result = await writeCmd.execute({
+            'space': StoreSpace.workspaces,
+            'group': groupId,
+            'filename': 'report.md',
+            'content': '成员产物',
+          });
+        },
+      );
+
+      expect(result, isNotNull);
+      expect(result!['success'], isTrue, reason: '$result');
+      expect(result!['space'], StoreSpace.workspaces);
+      expect(result!['group'], groupId);
+      expect(
+        result!['uri'],
+        'pouch://$pouchId/group:$groupId:member:agent-a/report.md',
+      );
+      expect(
+        utf8.decode(
+          transport.files['group:$groupId:member:agent-a/report.md']!,
+        ),
+        '成员产物',
       );
     });
 

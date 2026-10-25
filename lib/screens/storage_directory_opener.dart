@@ -40,8 +40,10 @@ void registerStorageDirectoryOpener() {
 /// Open the group workspace bag.
 ///
 /// 有 v3 袋子时直接进 `group:<gid>:shared`（共享记忆、交接、任务卷宗、共享
-/// 文件都在这里）；`members/<agentId>/` 仍是 v2，从「旧数据（space 目录）」
-/// 入口进。没有袋子（过渡期）时保持原来的 `workspaces/group_<gid>/` 视图。
+/// 文件都在这里）。`members/<agentId>/` 的新写入也走 v3
+/// （`group:<gid>:member:<aid>`），但它不出现在顶层 scope 列表里——成员私有区
+/// 由 Agent 的 `pouch write` 落点与地址引用；旧目录仍可从「旧数据（space 目录）」
+/// 入口看。没有袋子（过渡期）时保持原来的 `workspaces/group_<gid>/` 视图。
 Future<void> openGroupWorkspaceBag(
   BuildContext context, {
   required String groupId,

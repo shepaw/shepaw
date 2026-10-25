@@ -703,6 +703,25 @@ class GroupWorkspaceService {
     }
   }
 
+  /// 写成员私有区的一份文件（`members/<agentId>/<relPath>`），返回实际落点。
+  ///
+  /// 有袋子时落 `group:<gid>:member:<aid>`，没有袋子/主机离线时退回 v2。
+  /// 调用方负责先校验群成员身份与相对路径。
+  Future<String> writeMemberFile({
+    required String groupId,
+    required String agentId,
+    required String relPath,
+    required Uint8List bytes,
+  }) async {
+    final meta = await loadMeta(groupId);
+    final home = meta?.homeDevice ?? await DeviceIdentity.deviceId();
+    return _writeWorkspace(
+      homeDeviceId: home,
+      relPath: '${membersDir(groupId, agentId)}/$relPath',
+      bytes: bytes,
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // 群任务（shared/tasks/<orchestrationId>/）
   // ---------------------------------------------------------------------------
@@ -1178,6 +1197,8 @@ class GroupWorkspaceService {
   /// 移除 `members/<agentId>/` 白名单条目；`shared` 前缀保留（其他成员
   /// 仍需要读共享面）。失败仅记录（成员表已移除，CLI 层 isMember 校验
   /// 仍会拒绝）。
+  /// 注：v3 袋子里的 `group:<gid>:member:<aid>` 由 hub 的 scope ACL 按 agent
+  /// 身份管；这条 v2 白名单只影响旧 `workspaces/` 目录的跨设备访问。
   Future<void> revokePeerAccess({
     required String groupId,
     required String agentId,
@@ -1212,6 +1233,8 @@ class GroupWorkspaceService {
   /// 幂等：同 space/path 条目已存在则跳过；失败仅记录（不阻断建群/加成员）。
   /// 注：细粒度成员校验仍在 store CLI 层（[GroupWorkspaceService.isMember]），
   /// 设备白名单只是粗粒度闸门。
+  /// 注：成员私有区的新写入落 `group:<gid>:member:<aid>`，由 hub 的 scope ACL
+  /// 按 agent 身份鉴权；下面的 v2 白名单只为旧 `workspaces/` 目录保留。
   Future<void> grantPeerAccess({
     required String groupId,
     required String agentId,
