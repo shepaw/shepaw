@@ -142,6 +142,17 @@ class _TunnelMessage {
 
 // ── Channel Tunnel Service ────────────────────────────────────────────────────
 
+/// 隧道入站静默是否已经超时。
+///
+/// 抽成顶层函数，单测不用起真实 socket；[lastInboundAt] 为 null 表示刚连上
+/// 还没收到任何帧，给一个完整的超时窗口。
+bool tunnelInboundExpired(
+  DateTime? lastInboundAt,
+  DateTime now,
+  Duration timeout,
+) =>
+    lastInboundAt != null && now.difference(lastInboundAt) >= timeout;
+
 /// Channel Tunnel 服务（单例）
 /// 负责建立和维护到 Channel 服务的 WebSocket 隧道连接
 class ChannelTunnelService {
@@ -150,6 +161,9 @@ class ChannelTunnelService {
 
   static const _tag = 'ChannelTunnel';
   static const _prefKey = 'channel_tunnel_config';
+  /// relay 每 20s 发一次 ping，120s 静默 = 连续 6 次没收到。
+  static const _livenessTick = Duration(seconds: 30);
+  static const _inboundTimeout = Duration(seconds: 120);
 
   final _log = LoggerService();
   final _statusController = StreamController<TunnelStatus>.broadcast();
@@ -160,6 +174,9 @@ class ChannelTunnelService {
 
   WebSocketChannel? _channel;
   ChannelTunnelConfig? _config;
+  DateTime? _lastInboundAt;
+  Timer? _livenessTimer;
+  Completer<void>? _listenDone;
 
   /// Per-stream channels for WebSocket proxy (stream_id -> sink of incoming ws_data/ws_close msgs)
   final Map<int, StreamController<_TunnelMessage>> _wsStreams = {};
@@ -359,6 +376,10 @@ class ChannelTunnelService {
     if (channel == null) return;
 
     final completer = Completer<void>();
+    _listenDone = completer;
+    _lastInboundAt = DateTime.now();
+    _livenessTimer?.cancel();
+    _livenessTimer = Timer.periodic(_livenessTick, (_) => _checkLiveness());
 
     final sub = channel.stream.listen(
       (data) {
@@ -379,13 +400,33 @@ class ChannelTunnelService {
     try {
       await completer.future;
     } finally {
+      _livenessTimer?.cancel();
+      _livenessTimer = null;
+      _listenDone = null;
       await sub.cancel();
       // 清空引用，避免重连时误用旧 channel
       _channel = null;
     }
   }
 
+  /// 隧道的半开连接不会触发 onError/onDone，只能靠入站静默判断。
+  void _checkLiveness() {
+    if (_stopRequested || !_running) return;
+    if (!tunnelInboundExpired(_lastInboundAt, DateTime.now(), _inboundTimeout)) {
+      return;
+    }
+    _log.warning(
+      'Tunnel silent for ${_inboundTimeout.inSeconds}s, reconnecting',
+      tag: _tag,
+    );
+    // [_disconnect] 会清掉定时器并叫醒 [_listen]；半开 socket 上
+    // `sink.close()` 可能永远不完成，只靠 onDone 会让 `_runLoop` 卡死。
+    unawaited(_disconnect());
+  }
+
   Future<void> _disconnect() async {
+    _livenessTimer?.cancel();
+    _livenessTimer = null;
     // 向所有活跃的 WS proxy streams 发送关闭信号，让代理协程优雅退出
     // 注意：不直接 close() controller，而是先加入 ws_close 消息再 close，
     // 这样即使 _forwardWsConnect 的 tunnelSub.onDone 触发，
@@ -401,20 +442,33 @@ class ChannelTunnelService {
     }
     _wsStreams.clear();
 
-    try {
-      await _channel?.sink.close();
-    } catch (_) {}
+    final channel = _channel;
     _channel = null;
+    if (channel != null) {
+      try {
+        // 不等待关闭握手：半开 socket 上它可能永远不完成。
+        unawaited(channel.sink.close().catchError((Object _) {}));
+      } catch (_) {}
+    }
+    // 不等 onDone：直接把 _listen 叫醒。stop() 时 _runLoop 看 _stopRequested
+    // 就退出，reconnect()/活性超时时则立刻走重连。
+    final done = _listenDone;
+    if (done != null && !done.isCompleted) done.complete();
   }
 
   void _handleMessage(String rawData) {
     try {
       final json = jsonDecode(rawData) as Map<String, dynamic>;
       final msg = _TunnelMessage.fromJson(json);
+      // 任何完整入站帧都算活着（relay 每 20s 一个 ping）。
+      _lastInboundAt = DateTime.now();
 
       switch (msg.type) {
         case 'ping':
-          _sendMessage(const _TunnelMessage(type: 'pong'));
+          if (!_sendMessage(const _TunnelMessage(type: 'pong'))) {
+            // 回不出 pong，relay 侧 60s 后也会踢；这边自己先断，省一轮超时。
+            unawaited(_disconnect());
+          }
 
         case 'request':
           // 并发处理每个请求
@@ -656,11 +710,16 @@ class ChannelTunnelService {
     return bytes;
   }
 
-  void _sendMessage(_TunnelMessage msg) {
+  /// 返回是否真的写进了 sink。没有通道（已断开）也算失败。
+  bool _sendMessage(_TunnelMessage msg) {
+    final channel = _channel;
+    if (channel == null) return false;
     try {
-      _channel?.sink.add(jsonEncode(msg.toJson()));
+      channel.sink.add(jsonEncode(msg.toJson()));
+      return true;
     } catch (e) {
       _log.error('Failed to send tunnel message', tag: _tag, error: e);
+      return false;
     }
   }
 
