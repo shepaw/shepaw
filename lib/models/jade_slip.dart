@@ -419,7 +419,14 @@ class JadeSlip {
   /// 两种收窄方式都会保留「待办 N/M 项」的进度摘要，Agent 仍看得到整体上下文：
   /// - [focusItem] 非空：只派发这一项（清单项右侧菜单的「交给 Agent」）。
   /// - [onlyOpenItems] 为 true：清单只列未完成项（顶栏「交给 Agent」只交待办）。
-  String toAgentPrompt({JadeSlipItem? focusItem, bool onlyOpenItems = false}) {
+  ///
+  /// [attachmentUriOf] 按附件 id 给地址（v3 的 `pouch://<pouch>/slip:<id>/…`）；
+  /// 模型本身不知道袋子 id，缺省时退回 v2 形式的 [JadeSlipAttachment.uri]。
+  String toAgentPrompt({
+    JadeSlipItem? focusItem,
+    bool onlyOpenItems = false,
+    Map<String, String>? attachmentUriOf,
+  }) {
     final scoped = focusItem != null
         ? <JadeSlipItem>[focusItem]
         : onlyOpenItems
@@ -473,7 +480,9 @@ class JadeSlip {
     if (attachments.isNotEmpty) {
       buf.writeln('attachments:');
       for (final a in attachments) {
-        buf.writeln('- ${a.name} (attachment=${a.id} uri=${a.uri})');
+        final uri = attachmentUriOf?[a.id];
+        buf.writeln(
+            '- ${a.name} (attachment=${a.id} uri=${uri ?? a.uri})');
       }
     }
     final notes = body.trim();

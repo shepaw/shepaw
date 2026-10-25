@@ -124,6 +124,34 @@ Buy tickets
     expect(prompt, contains('assignee=Beta'));
   });
 
+  test('agent prompt 用给定的袋子地址替换附件 v2 地址', () {
+    const slip = JadeSlip(
+      id: 'slip-1',
+      title: 'Book flights',
+      attachments: [
+        JadeSlipAttachment(
+          id: 'att1',
+          name: 'itinerary.pdf',
+          path: 'slip-1/files/att1-itinerary.pdf',
+        ),
+      ],
+      deviceId: 'aaaaaaaaaaaaaaaa',
+      createdAt: 0,
+      updatedAt: 0,
+    );
+    final v2Uri = slip.attachments.single.uri;
+    expect(slip.toAgentPrompt(), contains('uri=$v2Uri'));
+
+    final prompt = slip.toAgentPrompt(attachmentUriOf: {
+      'att1': 'pouch://p1/slip:slip-1/files/att1-itinerary.pdf',
+    });
+    expect(
+      prompt,
+      contains('uri=pouch://p1/slip:slip-1/files/att1-itinerary.pdf'),
+    );
+    expect(prompt, isNot(contains('uri=$v2Uri')));
+  });
+
   test('old slips without a goal still parse', () {
     final slip = JadeSlip.fromJson({
       'id': 'old',

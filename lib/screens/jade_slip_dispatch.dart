@@ -104,8 +104,21 @@ Future<bool> dispatchJadeSlip(
     );
   }
 
-  final prompt =
-      slip.toAgentPrompt(focusItem: focusItem, onlyOpenItems: onlyOpenItems);
+  // 附件地址优先给袋子里的（v3）；取不到就让模型退回 v2 形式。
+  final attachmentUris = <String, String>{};
+  for (final attachment in slip.attachments) {
+    try {
+      attachmentUris[attachment.id] =
+          await JadeSlipService.instance.attachmentUri(slip, attachment);
+    } catch (_) {
+      // 地址拼不出来不影响派发。
+    }
+  }
+  final prompt = slip.toAgentPrompt(
+    focusItem: focusItem,
+    onlyOpenItems: onlyOpenItems,
+    attachmentUriOf: attachmentUris,
+  );
   final target = await getIt<RemoteAgentService>().getAgentById(agentId);
 
   if (target == null) {
