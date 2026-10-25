@@ -240,7 +240,6 @@ void main() {
       );
 
       // 可经 URI 读回（补零 6 位序号）
-      final home = (await ws.loadMeta('group_test4'))!.homeDevice;
       final bytes = await StoreUriReader.instance.read(
         'pouch://workspaces/group_test4/shared/orchestration/'
         'session_event/events/000002.json',
@@ -270,7 +269,6 @@ void main() {
           (agentId: 'agent-admin', role: 'admin'),
         ],
       );
-      final meta = await ws.loadMeta('group_perm');
       final root = 'pouch://workspaces/group_perm';
       const member = 'agent-member';
       const stranger = 'agent-stranger';

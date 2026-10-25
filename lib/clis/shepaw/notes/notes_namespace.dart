@@ -46,7 +46,13 @@ class NotesNamespace extends CliNamespace {
       };
 }
 
-Map<String, dynamic> _slipJson(JadeSlip slip, {bool full = false}) {
+/// [attachmentUriOf] 优先于模型上的 v2 地址：v3 下附件在
+/// `pouch://<pouch_id>/slip:<id>/files/<file>`，得走 [JadeSlipService] 才算得出来。
+Map<String, dynamic> _slipJson(
+  JadeSlip slip, {
+  bool full = false,
+  Map<String, String>? attachmentUriOf,
+}) {
   return {
     'id': slip.id,
     'title': slip.title,
@@ -85,7 +91,7 @@ Map<String, dynamic> _slipJson(JadeSlip slip, {bool full = false}) {
             {
               'id': a.id,
               'name': a.name,
-              'uri': a.uri,
+              'uri': attachmentUriOf?[a.id] ?? a.uri,
               'size': a.sizeBytes,
             },
         ],
@@ -111,6 +117,22 @@ Map<String, dynamic> _slipJson(JadeSlip slip, {bool full = false}) {
           if (!item.done) {'id': item.id, 'text': item.text, ..._itemAssignee(item)},
       ],
   };
+}
+
+/// 完整输出：附件地址先问 [JadeSlipService.attachmentUri]（v3 优先）。
+///
+/// 拼不出地址就退回模型上的 v2 形式，不影响这条命令本身。
+Future<Map<String, dynamic>> _slipJsonFull(JadeSlip slip) async {
+  final uris = <String, String>{};
+  for (final attachment in slip.attachments) {
+    try {
+      uris[attachment.id] =
+          await JadeSlipService.instance.attachmentUri(slip, attachment);
+    } catch (_) {
+      // ignore: 地址拼不出来不影响 slip 输出
+    }
+  }
+  return _slipJson(slip, full: true, attachmentUriOf: uris);
 }
 
 Map<String, dynamic> _itemAssignee(JadeSlipItem item) => {
@@ -178,7 +200,7 @@ class NotesGetCommand extends CliCommand {
     if (id.isEmpty) return {'error': 'Missing --id. Usage: $usage'};
     final slip = await JadeSlipService.instance.getById(id);
     if (slip == null) return {'error': 'Jade slip not found: $id'};
-    final json = _slipJson(slip, full: true);
+    final json = await _slipJsonFull(slip);
     if (slip.parentId.isNotEmpty) json['parent_id'] = slip.parentId;
     if (slip.sourceItemId.isNotEmpty) {
       json['source_item_id'] = slip.sourceItemId;
@@ -237,7 +259,7 @@ class NotesAddCommand extends CliCommand {
       return {
         'success': true,
         'action': 'created',
-        'slip': _slipJson(slip, full: true),
+        'slip': await _slipJsonFull(slip),
       };
     } catch (e) {
       return {'error': '$e'};
@@ -309,7 +331,7 @@ class NotesUpdateCommand extends CliCommand {
     }
     try {
       final slip = await JadeSlipService.instance.update(next);
-      return {'success': true, 'slip': _slipJson(slip, full: true)};
+      return {'success': true, 'slip': await _slipJsonFull(slip)};
     } catch (e) {
       return {'error': '$e'};
     }
@@ -347,7 +369,7 @@ class NotesSplitCommand extends CliCommand {
         'child_id': child.id,
         'parent_id': child.parentId,
         'source_item_id': child.sourceItemId,
-        'slip': _slipJson(child, full: true),
+        'slip': await _slipJsonFull(child),
       };
     } catch (e) {
       return {'error': '$e'};
@@ -401,7 +423,7 @@ class NotesItemCommand extends CliCommand {
         return {
           'success': true,
           'action': agentId.isEmpty ? 'unassigned' : 'assigned',
-          'slip': _slipJson(slip, full: true),
+          'slip': await _slipJsonFull(slip),
         };
       }
       if (flags.containsKey('evidence')) {
@@ -411,7 +433,7 @@ class NotesItemCommand extends CliCommand {
           itemId: itemId,
           uri: flags['evidence'] ?? '',
         );
-        return {'success': true, 'action': 'evidence', 'slip': _slipJson(slip, full: true)};
+        return {'success': true, 'action': 'evidence', 'slip': await _slipJsonFull(slip)};
       }
       if (flags.containsKey('block')) {
         if (itemId.isEmpty) return {'error': 'Missing --item. Usage: $usage'};
@@ -420,7 +442,7 @@ class NotesItemCommand extends CliCommand {
           itemId: itemId,
           reason: flags['reason'] ?? '',
         );
-        return {'success': true, 'action': 'blocked', 'slip': _slipJson(slip, full: true)};
+        return {'success': true, 'action': 'blocked', 'slip': await _slipJsonFull(slip)};
       }
       if (itemId.isNotEmpty && text.isNotEmpty) {
         final slip = await JadeSlipService.instance.updateItemText(
@@ -431,12 +453,12 @@ class NotesItemCommand extends CliCommand {
         return {
           'success': true,
           'action': 'renamed',
-          'slip': _slipJson(slip, full: true),
+          'slip': await _slipJsonFull(slip),
         };
       }
       if (text.isNotEmpty) {
         final slip = await JadeSlipService.instance.addItem(id: id, text: text);
-        return {'success': true, 'action': 'added', 'slip': _slipJson(slip, full: true)};
+        return {'success': true, 'action': 'added', 'slip': await _slipJsonFull(slip)};
       }
       if (itemId.isEmpty) {
         return {'error': 'Missing --item or --text. Usage: $usage'};
@@ -449,7 +471,7 @@ class NotesItemCommand extends CliCommand {
         return {
           'success': true,
           'action': 'removed',
-          'slip': _slipJson(slip, full: true),
+          'slip': await _slipJsonFull(slip),
         };
       }
       final doneRaw = (flags['done'] ?? 'true').trim().toLowerCase();
@@ -474,7 +496,7 @@ class NotesItemCommand extends CliCommand {
       return {
         'success': true,
         'action': done ? 'checked' : 'unchecked',
-        'slip': _slipJson(slip, full: true),
+        'slip': await _slipJsonFull(slip),
       };
     } catch (e) {
       return {'error': '$e'};
@@ -514,7 +536,7 @@ class NotesAcceptCommand extends CliCommand {
         return {
           'success': true,
           'action': 'accepted',
-          'slip': _slipJson(slip, full: true),
+          'slip': await _slipJsonFull(slip),
         };
       }
       final slip = await JadeSlipService.instance.acceptItem(
@@ -527,7 +549,7 @@ class NotesAcceptCommand extends CliCommand {
       return {
         'success': true,
         'action': 'accepted',
-        'slip': _slipJson(slip, full: true),
+        'slip': await _slipJsonFull(slip),
       };
     } catch (e) {
       return {'error': '$e'};
@@ -574,7 +596,7 @@ class NotesCommentCommand extends CliCommand {
         return {
           'success': true,
           'action': 'removed',
-          'slip': _slipJson(next, full: true),
+          'slip': await _slipJsonFull(next),
         };
       }
       final text = flags['text']?.trim() ?? '';
@@ -612,7 +634,7 @@ class NotesCommentCommand extends CliCommand {
       return {
         'success': true,
         'action': 'added',
-        'slip': _slipJson(next, full: true),
+        'slip': await _slipJsonFull(next),
       };
     } catch (e) {
       return {'error': '$e'};
@@ -664,7 +686,7 @@ class NotesAttachCommand extends CliCommand {
       return {
         'success': true,
         'action': 'attached',
-        'slip': _slipJson(slip, full: true),
+        'slip': await _slipJsonFull(slip),
       };
     } catch (e) {
       return {'error': '$e'};
@@ -701,7 +723,7 @@ class NotesDetachCommand extends CliCommand {
       return {
         'success': true,
         'action': 'detached',
-        'slip': _slipJson(slip, full: true),
+        'slip': await _slipJsonFull(slip),
       };
     } catch (e) {
       return {'error': '$e'};
@@ -726,7 +748,7 @@ class NotesCompleteCommand extends CliCommand {
     if (id.isEmpty) return {'error': 'Missing --id. Usage: $usage'};
     try {
       final slip = await JadeSlipService.instance.complete(id);
-      return {'success': true, 'action': 'completed', 'slip': _slipJson(slip, full: true)};
+      return {'success': true, 'action': 'completed', 'slip': await _slipJsonFull(slip)};
     } catch (e) {
       return {'error': '$e'};
     }
