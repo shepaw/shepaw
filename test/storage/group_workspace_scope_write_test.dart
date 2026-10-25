@@ -169,6 +169,35 @@ void main() {
       expect(uri, startsWith('pouch://$pouchId/'));
     });
 
+    test('写任务需求：task.json 里记的是袋子地址，能按它读回', () async {
+      await GroupWorkspaceService.instance.createTask(
+        groupId: groupId,
+        orchestrationId: 'orch2',
+        sessionId: 's1',
+        userGoal: '做点事',
+      );
+      final written = await GroupWorkspaceService.instance
+          .writeTaskRequirement(
+        groupId: groupId,
+        orchestrationId: 'orch2',
+        content: '# 需求',
+      );
+
+      expect(written, isNotNull);
+      expect(
+        written!.uri,
+        'pouch://$pouchId/group:$groupId:shared/tasks/orch2/requirement.md',
+      );
+      expect(written.task.requirementUri, written.uri);
+      expect(
+        await GroupWorkspaceService.instance.readTaskRequirement(
+          groupId: groupId,
+          orchestrationId: 'orch2',
+        ),
+        '# 需求',
+      );
+    });
+
     test('读共享文件：袋子里没有时回退 v2', () async {
       // 先按 v2 写一份（模拟切换前的存量）。
       StoreService.instance.scopeStoreOverride = null;

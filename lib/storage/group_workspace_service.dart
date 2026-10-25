@@ -356,8 +356,8 @@ class GroupWorkspaceService {
 
   /// 解析元数据 URI；不确定 home device 时先读本机（M1 单机场景）。
   Future<String?> metaUri(String groupId) async {
-    final self = await DeviceIdentity.deviceId();
-    // 优先本机（M1 空间归属创建设备）；跨设备读取后续接 ACL 后补齐。
+    // 群元数据仍走 v2：它由 hub 的 `system/groups.json` +
+    // `group:<gid>/meta.json` 接管之前，这里保持原来的按路径读取。
     return 'pouch://workspaces/${metaRelPath(groupId)}';
   }
 
@@ -860,12 +860,11 @@ class GroupWorkspaceService {
     if (existing == null) return null;
 
     final rel = taskRequirementRelPath(groupId, orchestrationId);
-    await _writeTextFile(
+    final uri = await _writeTextFile(
       homeDeviceId: meta.homeDevice,
       relPath: rel,
       content: content,
     );
-    final uri = 'pouch://workspaces/$rel';
     final task = await writeTask(
       groupId: groupId,
       task: existing.copyWith(requirementUri: uri),
@@ -903,20 +902,17 @@ class GroupWorkspaceService {
 
     final mdRel = taskPlanMdRelPath(groupId, plan.orchestrationId);
     final jsonRel = taskPlanJsonRelPath(groupId, plan.orchestrationId);
-    await _writeTextFile(
+    final planUri = await _writeTextFile(
       homeDeviceId: meta.homeDevice,
       relPath: mdRel,
       content: plan.toMarkdown(requirementNotes: requirementNotes),
     );
-    await _writeJson(
+    final planJsonUri = await _writeJson(
       groupId: groupId,
       homeDeviceId: meta.homeDevice,
       relPath: jsonRel,
       payload: plan.toJson(),
     );
-
-    final planUri = 'pouch://workspaces/$mdRel';
-    final planJsonUri = 'pouch://workspaces/$jsonRel';
     final task = await writeTask(
       groupId: groupId,
       task: existing.copyWith(
@@ -971,13 +967,12 @@ class GroupWorkspaceService {
     if (existing == null) return null;
 
     final rel = taskResultsRelPath(groupId, results.orchestrationId);
-    await _writeJson(
+    final uri = await _writeJson(
       groupId: groupId,
       homeDeviceId: meta.homeDevice,
       relPath: rel,
       payload: results.toJson(),
     );
-    final uri = 'pouch://workspaces/$rel';
     await writeTask(
       groupId: groupId,
       task: existing.copyWith(resultsUri: uri),
@@ -1056,12 +1051,11 @@ class GroupWorkspaceService {
     if (existing == null) return null;
 
     final rel = taskArchiveRelPath(groupId, orchestrationId);
-    await _writeTextFile(
+    final uri = await _writeTextFile(
       homeDeviceId: meta.homeDevice,
       relPath: rel,
       content: content,
     );
-    final uri = 'pouch://workspaces/$rel';
     final task = await writeTask(
       groupId: groupId,
       task: existing.copyWith(
@@ -1100,13 +1094,12 @@ class GroupWorkspaceService {
     if (existing == null) return null;
 
     final rel = taskArtifactPlanRelPath(groupId, plan.orchestrationId);
-    await _writeJson(
+    final uri = await _writeJson(
       groupId: groupId,
       homeDeviceId: meta.homeDevice,
       relPath: rel,
       payload: plan.toJson(),
     );
-    final uri = 'pouch://workspaces/$rel';
     await writeTask(
       groupId: groupId,
       task: existing.copyWith(artifactPlanUri: uri),
@@ -1153,13 +1146,12 @@ class GroupWorkspaceService {
         .registerAll(entries);
 
     final rel = taskArtifactsRelPath(groupId, orchestrationId);
-    await _writeJson(
+    final uri = await _writeJson(
       groupId: groupId,
       homeDeviceId: meta.homeDevice,
       relPath: rel,
       payload: merged.toJson(),
     );
-    final uri = 'pouch://workspaces/$rel';
     await writeTask(
       groupId: groupId,
       task: existing.copyWith(artifactsUri: uri),
@@ -1272,7 +1264,8 @@ class GroupWorkspaceService {
         payload: meta.toJson(),
       );
 
-  Future<void> _writeJson({
+  /// 写 JSON，返回实际落点地址（有袋子是 v3，否则 v2）。
+  Future<String> _writeJson({
     required String groupId,
     required String homeDeviceId,
     required String relPath,
@@ -1282,7 +1275,7 @@ class GroupWorkspaceService {
     final content = bytes ??
         Uint8List.fromList(utf8.encode(jsonEncode(payload)));
     try {
-      await _writeWorkspace(
+      return await _writeWorkspace(
         homeDeviceId: homeDeviceId,
         relPath: relPath,
         bytes: content,
@@ -1311,17 +1304,17 @@ class GroupWorkspaceService {
     return null;
   }
 
-  Future<void> _writeTextFile({
+  /// 写文本，返回实际落点地址（有袋子是 v3，否则 v2）。
+  Future<String> _writeTextFile({
     required String homeDeviceId,
     required String relPath,
     required String content,
-  }) async {
-    await _writeWorkspace(
-      homeDeviceId: homeDeviceId,
-      relPath: relPath,
-      bytes: Uint8List.fromList(utf8.encode(content)),
-    );
-  }
+  }) =>
+      _writeWorkspace(
+        homeDeviceId: homeDeviceId,
+        relPath: relPath,
+        bytes: Uint8List.fromList(utf8.encode(content)),
+      );
 
   Future<String?> _readText(String uri) async {
     try {

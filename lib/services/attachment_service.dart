@@ -171,7 +171,6 @@ class AttachmentService {
   void _mirrorScoped({
     required Uint8List bytes,
     required String messageId,
-    required Map<String, dynamic> metadata,
     required String agentId,
     required String channelId,
     String? channelType,
@@ -192,9 +191,11 @@ class AttachmentService {
           scope: target.scope,
           directory: target.directory,
         );
-        final updated = Map<String, dynamic>.from(metadata)
-          ..[scopedUriMetaKey] = uri;
-        await _database.updateMessageMetadata(messageId, updated);
+        // 只补这一个 key：双写是后台任务，整份回写会盖掉别处刚更新的字段。
+        await _database.mergeMessageMetadata(
+          messageId,
+          {scopedUriMetaKey: uri},
+        );
       } on StoreException catch (e) {
         if (e.code == StoreError.notPaired) {
           LoggerService().debug(
@@ -246,7 +247,20 @@ class AttachmentService {
       final digest = crypto.sha256.convert(utf8.encode(storeUri)).toString();
       final dest = File(path.join(dir.path, digest));
       if (await dest.exists() && await dest.length() > 0) return dest;
-      await StoreUriReader.instance.copyTo(storeUri, dest);
+      // 先写临时文件再改名：写到一半被中断/两个气泡同时物化时，缓存里
+      // 不会留下半份文件被下次直接复用。
+      final tmp = File('${dest.path}.part');
+      try {
+        await StoreUriReader.instance.copyTo(storeUri, tmp);
+        if (await tmp.length() == 0) {
+          await tmp.delete();
+          return null;
+        }
+        await tmp.rename(dest.path);
+      } catch (_) {
+        if (await tmp.exists()) await tmp.delete();
+        rethrow;
+      }
       return dest;
     } catch (e) {
       LoggerService().error(
@@ -391,7 +405,6 @@ class AttachmentService {
         _mirrorScoped(
           bytes: newBytes,
           messageId: messageId,
-          metadata: attachmentData,
           agentId: agentId,
           channelId: channelId,
           channelType: channelType,
@@ -487,7 +500,6 @@ class AttachmentService {
       _mirrorScoped(
         bytes: bytes,
         messageId: messageId,
-        metadata: metadata,
         agentId: agentId,
         channelId: channelId,
         channelType: channelType,

@@ -583,6 +583,43 @@ extension MessageDao on LocalDatabaseService {
     _notePouchFromSqlite(messageId);
   }
 
+  /// 只改 [patch] 里的 key：读–改–写在同一次调用里完成。
+  ///
+  /// 后台任务（附件双写、事件合并）手里往往是一份旧的 metadata 快照；
+  /// 整份回写会把别处刚写进去的字段（撤回、回应、`pouch_uri` 更新…）覆盖掉。
+  Future<void> mergeMessageMetadata(
+    String messageId,
+    Map<String, dynamic> patch,
+  ) async {
+    final db = await database;
+    final rows = await db.query(
+      'messages',
+      columns: ['metadata'],
+      where: 'id = ?',
+      whereArgs: [messageId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return;
+    final raw = rows.first['metadata'] as String?;
+    final current = <String, dynamic>{};
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map<String, dynamic>) current.addAll(decoded);
+      } catch (_) {
+        // 坏 JSON：原内容反正读不出来，至少把 patch 写进去。
+      }
+    }
+    current.addAll(patch);
+    await db.update(
+      'messages',
+      {'metadata': jsonEncode(current)},
+      where: 'id = ?',
+      whereArgs: [messageId],
+    );
+    _notePouchFromSqlite(messageId);
+  }
+
   /// 把已有行的 `created_at` 拨到现在，让复用的审计气泡排到本回合末尾。
   Future<void> touchMessageCreatedAt(String messageId) async {
     final db = await database;

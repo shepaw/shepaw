@@ -4,8 +4,10 @@ import '../services/logger_service.dart';
 import 'artifact_service.dart';
 import 'device_identity.dart';
 import 'group_workspace_service.dart';
+import 'pouch_scope.dart';
 import 'runtime_paths.dart';
 import 'scope_card.dart';
+import 'store_service.dart';
 import 'store_uri_reader.dart';
 import 'store_protocol.dart';
 
@@ -107,7 +109,6 @@ class ContextBundleService {
   /// 读取本机 owner 的 manifest；不存在返回 null。
   Future<ContextBundle?> loadLocal(String ownerId) async {
     try {
-      final deviceId = await DeviceIdentity.deviceId();
       final uri = RuntimePaths.uri(
         relPath: RuntimePaths.contextManifest(ownerId),
       );
@@ -155,12 +156,9 @@ class ContextBundleService {
       }
     }
     if (isGroup) {
-      // 群工作空间共享面（shared/：群记忆 latest.md、编排状态、共享产物）
-      // 作为成员可见 URI 注入——agent 经 store 工具按需读。
-      final meta = await GroupWorkspaceService.instance.loadMeta(ownerId);
-      final home = meta?.homeDevice ?? deviceId;
-      extras.add('pouch://workspaces/'
-          '${GroupWorkspaceService.instance.workspaceRoot(ownerId)}/shared');
+      // 群工作空间共享面（共享文件、群记忆、编排状态、共享产物）已迁到 v3 的
+      // `group:<gid>:shared`；没有袋子时退回 v2 的 workspaces 路径。
+      extras.add(await _groupSharedUri(ownerId));
       return ScopeCard.forGroup(
         groupId: ownerId,
         deviceId: deviceId,
@@ -175,6 +173,19 @@ class ContextBundleService {
       channelId: channelId,
       cliSurface: cliSurface,
     ).copyWith(extraUris: ScopeCard.dedupeUris(extras));
+  }
+
+  /// 群共享面的引用：有袋子给 v3 地址，否则给 v2 的 `shared/`。
+  Future<String> _groupSharedUri(String groupId) async {
+    final legacy = 'pouch://workspaces/'
+        '${GroupWorkspaceService.instance.workspaceRoot(groupId)}/shared';
+    try {
+      final scoped = await StoreService.instance.scopeStoreOrNull();
+      if (scoped == null) return legacy;
+      return scoped.uriFor(PouchScope.groupShared(groupId)).format();
+    } on FormatException {
+      return legacy;
+    }
   }
 
   /// @Deprecated 兼容旧测试名；返回 volatile（或完整）Markdown。
