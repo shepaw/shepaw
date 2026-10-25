@@ -80,6 +80,47 @@ class StoreUriReader {
     return bytes;
   }
 
+  /// v3 地址的元数据大小；目录没有可读的大小。
+  Future<int> _sizeScoped(PouchV2Uri uri) async {
+    if (uri.path.isEmpty) {
+      throw StoreException(StoreError.badPath, '目录没有大小');
+    }
+    final store = await _scopedStore(uri);
+    final meta = await store.meta(uri.parsedScope, uri.path);
+    if (meta == null) {
+      throw StoreException(StoreError.notFound, uri.path);
+    }
+    return meta.size;
+  }
+
+  /// v3 地址整份拷到 [dest]。hub 的 `read` 自己按 64 KiB 分块，这里不再拆。
+  Future<void> _copyScopedTo(
+    PouchV2Uri uri,
+    File dest, {
+    int? maxBytes,
+    void Function(int done, int total)? onProgress,
+  }) async {
+    if (uri.path.isEmpty) {
+      throw StoreException(StoreError.badPath, '目录不能拷');
+    }
+    final store = await _scopedStore(uri);
+    final meta = await store.meta(uri.parsedScope, uri.path);
+    if (meta == null) {
+      throw StoreException(StoreError.notFound, uri.path);
+    }
+    if (maxBytes != null && meta.size > maxBytes) {
+      throw StoreException(
+          StoreError.badOp, 'file too large: ${meta.size} > $maxBytes');
+    }
+    final bytes = await store.read(uri.parsedScope, uri.path);
+    if (bytes == null) {
+      throw StoreException(StoreError.notFound, uri.path);
+    }
+    await dest.parent.create(recursive: true);
+    await dest.writeAsBytes(bytes, flush: true);
+    onProgress?.call(bytes.length, meta.size > 0 ? meta.size : bytes.length);
+  }
+
   Future<Uint8List> read(String uriString) async {
     final scoped = _scopeUri(uriString);
     if (scoped != null) return _readScoped(scoped);
@@ -208,6 +249,8 @@ class StoreUriReader {
   /// 共享分区本机 miss 时保留原始 path，由浏览器向 master/属主 list，
   /// 不要把远端工作空间裁成空的本机分区根。
   Future<String> existingDirectoryPrefix(String uriString) async {
+    final scoped = _scopeUri(uriString);
+    if (scoped != null) return _existingScopedDirectoryPrefix(scoped);
     final parsed = parseStoreUri(uriString, allowEmptyPath: true);
     final original = parsed.path;
     if (original.isEmpty) return '';
@@ -240,6 +283,22 @@ class StoreUriReader {
     }
   }
 
+  /// v3 没有目录对象：能列出子项就算目录，列不出就往上找。
+  ///
+  /// 空目录和「不存在」在这里不可区分，和 [kindOf] 的口径一致。
+  Future<String> _existingScopedDirectoryPrefix(PouchV2Uri uri) async {
+    final original = uri.path;
+    if (original.isEmpty) return '';
+    final store = await _scopedStore(uri);
+    var current = original;
+    while (true) {
+      final children = await store.listChildren(uri.parsedScope, path: current);
+      if (children.isNotEmpty) return current;
+      if (current.isEmpty) return '';
+      current = _parentStorePath(current);
+    }
+  }
+
   static String _parentStorePath(String path) {
     if (path.isEmpty) return '';
     final i = path.lastIndexOf('/');
@@ -248,6 +307,8 @@ class StoreUriReader {
 
   /// 仅查文件大小（本机 `stat` / 远端 meta，不拉内容）。
   Future<int> sizeOf(String uriString) async {
+    final scoped = _scopeUri(uriString);
+    if (scoped != null) return _sizeScoped(scoped);
     final parsed = parseStoreUri(uriString);
     if (!parsed.ref.isLatest) {
       return _sizeVersioned(parsed, uriString);
@@ -288,6 +349,12 @@ class StoreUriReader {
     int? maxBytes,
     void Function(int done, int total)? onProgress,
   }) async {
+    final scoped = _scopeUri(uriString);
+    if (scoped != null) {
+      await _copyScopedTo(scoped, dest,
+          maxBytes: maxBytes, onProgress: onProgress);
+      return;
+    }
     final parsed = parseStoreUri(uriString);
     if (!parsed.ref.isLatest) {
       await _copyVersionedTo(parsed, uriString, dest,

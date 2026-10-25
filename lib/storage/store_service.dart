@@ -132,6 +132,10 @@ class StoreService {
   @visibleForTesting
   PouchScopeStore? scopeStoreOverride;
 
+  /// 测试替换：当前袋子 id（默认从登录会话 / 本机 hub 读）。
+  @visibleForTesting
+  String? currentPouchIdOverride;
+
   /// 测试替换：本机 hub 目录（默认 `~/.config/shepaw-hub`）。
   @visibleForTesting
   String? localHubRootOverride;
@@ -142,6 +146,8 @@ class StoreService {
   /// 当前袋子的 id：登录过就是登录的那只；本机 hub 有 `pouch.sock` 时是
   /// `hub.json` 的活跃袋子；都没有返回 null。
   Future<String?> currentPouchId() async {
+    final override = currentPouchIdOverride;
+    if (override != null) return override;
     final session = await PouchSessionStore.readActive();
     if (session != null && session.pouchId.isNotEmpty) return session.pouchId;
     return (await _localPouchEndpoint())?.pouchId;

@@ -8,11 +8,69 @@ import 'package:shepaw/peer/models/paired_peer.dart';
 import 'package:shepaw/peer/models/peer_store_share.dart';
 import 'package:shepaw/peer/services/peer_storage_service.dart';
 import 'package:shepaw/storage/device_identity.dart';
+import 'package:shepaw/storage/local_store.dart';
+import 'package:shepaw/storage/pouch_scope.dart';
+import 'package:shepaw/storage/pouch_scope_store.dart';
 import 'package:shepaw/storage/store_protocol.dart';
 import 'package:shepaw/storage/store_service.dart';
 import 'package:shepaw/storage/store_uri_reader.dart';
 
 import 'test_harness.dart';
+
+class _FakeScopeTransport implements PouchScopeTransport {
+  Uint8List? bytes;
+  PouchFileMeta? metaEntry;
+  List<StoreEntry> entries = const <StoreEntry>[];
+
+  @override
+  Future<PouchListPage> list({
+    required String pouchId,
+    required PouchScope scope,
+    String? prefix,
+    int limit = 1000,
+    String? cursor,
+  }) async =>
+      PouchListPage(entries: entries);
+
+  @override
+  Future<Uint8List?> read({
+    required String pouchId,
+    required PouchScope scope,
+    required String path,
+  }) async =>
+      bytes;
+
+  @override
+  Future<List<String>> scopes({
+    required String pouchId,
+    required String prefix,
+  }) async =>
+      const <String>[];
+
+  @override
+  Future<PouchFileMeta?> meta({
+    required String pouchId,
+    required PouchScope scope,
+    required String path,
+  }) async =>
+      metaEntry;
+
+  @override
+  Future<void> write({
+    required String pouchId,
+    required PouchScope scope,
+    required String path,
+    required Uint8List bytes,
+    int? expectedVersion,
+  }) async {}
+
+  @override
+  Future<void> delete({
+    required String pouchId,
+    required PouchScope scope,
+    required String path,
+  }) async {}
+}
 
 void main() {
   late Directory tmp;
@@ -230,5 +288,120 @@ void main() {
       ),
       isFalse,
     );
+  });
+
+  group('v3 袋子地址', () {
+    const pouchId = 'a95b5782-4d50-45d2-83e1-8e40954d1239';
+    late _FakeScopeTransport transport;
+
+    String uriOf(String path, {String pouch = pouchId}) => PouchV2Uri(
+          pouchId: pouch,
+          scope: PouchScope.files.id,
+          path: path,
+        ).format();
+
+    setUp(() {
+      transport = _FakeScopeTransport();
+      StoreService.instance.scopeStoreOverride =
+          PouchScopeStore(transport: transport, pouchId: pouchId);
+      StoreService.instance.currentPouchIdOverride = pouchId;
+    });
+
+    tearDown(() {
+      StoreService.instance.scopeStoreOverride = null;
+      StoreService.instance.currentPouchIdOverride = null;
+    });
+
+    test('sizeOf 走 hub 的 meta', () async {
+      transport.metaEntry = const PouchFileMeta(
+        path: 'docs/a.md',
+        size: 7,
+        version: 1,
+        mtimeMs: 0,
+      );
+
+      expect(await StoreUriReader.instance.sizeOf(uriOf('docs/a.md')), 7);
+    });
+
+    test('sizeOf 的文件不存在时报 notFound', () async {
+      expect(
+        () => StoreUriReader.instance.sizeOf(uriOf('docs/missing.md')),
+        throwsA(isA<StoreException>()
+            .having((e) => e.code, 'code', StoreError.notFound)),
+      );
+    });
+
+    test('copyTo 把 v3 文件落到目标路径', () async {
+      final payload = Uint8List.fromList(utf8.encode('scope copy'));
+      transport.bytes = payload;
+      transport.metaEntry = PouchFileMeta(
+        path: 'docs/a.md',
+        size: payload.length,
+        version: 1,
+        mtimeMs: 0,
+      );
+      final dir = await Directory.systemTemp.createTemp('store_uri_v3_');
+      addTearDown(() => dir.delete(recursive: true));
+      final dest = File('${dir.path}/out.md');
+      final progress = <(int, int)>[];
+
+      await StoreUriReader.instance.copyTo(
+        uriOf('docs/a.md'),
+        dest,
+        onProgress: (done, total) => progress.add((done, total)),
+      );
+
+      expect(await dest.readAsString(), 'scope copy');
+      expect(progress, [(payload.length, payload.length)]);
+    });
+
+    test('copyTo 超过 maxBytes 时拒绝', () async {
+      transport.bytes = Uint8List.fromList(utf8.encode('too big'));
+      transport.metaEntry = const PouchFileMeta(
+        path: 'docs/a.md',
+        size: 7,
+        version: 1,
+        mtimeMs: 0,
+      );
+      final dir = await Directory.systemTemp.createTemp('store_uri_v3_');
+      addTearDown(() => dir.delete(recursive: true));
+
+      expect(
+        () => StoreUriReader.instance
+            .copyTo(uriOf('docs/a.md'), File('${dir.path}/out'), maxBytes: 3),
+        throwsA(isA<StoreException>()
+            .having((e) => e.code, 'code', StoreError.badOp)),
+      );
+    });
+
+    test('existingDirectoryPrefix 从文件回退到目录', () async {
+      transport.entries = [
+        StoreEntry(path: 'docs/a.md', size: 1, sha256: '', mtimeMs: 0),
+      ];
+
+      expect(
+        await StoreUriReader.instance
+            .existingDirectoryPrefix(uriOf('docs/a.md')),
+        'docs',
+      );
+      expect(
+        await StoreUriReader.instance.existingDirectoryPrefix(uriOf('docs')),
+        'docs',
+      );
+      expect(
+        await StoreUriReader.instance
+            .existingDirectoryPrefix(uriOf('missing/deep')),
+        '',
+      );
+    });
+
+    test('跨袋子地址拒绝', () async {
+      expect(
+        () => StoreUriReader.instance.sizeOf(
+            uriOf('docs/a.md', pouch: 'b95b5782-4d50-45d2-83e1-8e40954d1239')),
+        throwsA(isA<StoreException>()
+            .having((e) => e.code, 'code', StoreError.crossPouchDenied)),
+      );
+    });
   });
 }

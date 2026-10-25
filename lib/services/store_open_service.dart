@@ -12,6 +12,7 @@ import '../models/attachment_data.dart';
 import '../models/store_attachment_ref.dart';
 import '../storage/host_pouch_target.dart';
 import '../storage/local_store.dart';
+import '../storage/pouch_scope.dart';
 import '../storage/store_protocol.dart';
 import '../storage/store_uri_reader.dart';
 import '../storage/store_file_visual.dart';
@@ -48,11 +49,24 @@ class StoreOpenService {
     required String path,
   })? openDirectory;
 
+  /// Open a v3 folder (`pouch://<pouch_id>/<scope>/<path>`) in the scope
+  /// browser. Set at app start next to [openDirectory].
+  Future<void> Function(
+    BuildContext context, {
+    required PouchScope scope,
+    required String path,
+  })? openScopeDirectory;
+
   /// Open a `pouch://…` URI from a markdown link or attachment metadata.
   ///
   /// Directories open the storage browser at that folder; files preview / open.
   /// If kind probe fails, still jump to the nearest existing pouch folder.
   Future<void> openStoreUri(BuildContext context, String uriString) async {
+    final scoped = PouchV2Uri.tryParse(uriString);
+    if (scoped != null) {
+      await _openScopedUri(context, uriString, scoped);
+      return;
+    }
     try {
       final parsed = parseStoreUri(uriString, allowEmptyPath: true);
       final deviceId = await resolveStoreDevice(parsed.space);
@@ -110,6 +124,76 @@ class StoreOpenService {
         );
       }
     }
+  }
+
+  /// v3 地址：文件走预览/物化，目录进 scope 浏览器。
+  Future<void> _openScopedUri(
+    BuildContext context,
+    String uriString,
+    PouchV2Uri scoped,
+  ) async {
+    try {
+      StoreUriKind? uriKind;
+      try {
+        uriKind = await StoreUriReader.instance.kindOf(uriString);
+      } catch (e) {
+        _log.warning('kindOf failed, falling back to scope browser: $e',
+            tag: _tag, error: e);
+      }
+
+      if (uriKind != StoreUriKind.file) {
+        if (!context.mounted) return;
+        await _openScopeDirectoryOrThrow(
+            context, scoped.parsedScope, scoped.path);
+        return;
+      }
+
+      if (!context.mounted) return;
+      try {
+        await _openAsFile(context, uriString, scoped.path);
+      } catch (e) {
+        _log.warning('file open failed, falling back to scope browser: $e',
+            tag: _tag, error: e);
+        var target = scoped.path;
+        try {
+          target =
+              await StoreUriReader.instance.existingDirectoryPrefix(uriString);
+        } catch (e) {
+          _log.warning('existingDirectoryPrefix failed: $e',
+              tag: _tag, error: e);
+        }
+        if (!context.mounted) return;
+        await _openScopeDirectoryOrThrow(context, scoped.parsedScope, target);
+      }
+    } on StoreException catch (e) {
+      _log.warning('openStoreUri failed: $e', tag: _tag, error: e);
+      if (context.mounted) {
+        final msg = e.code == StoreError.badOp && e.message.contains('too large')
+            ? AppLocalizations.of(context).chat_fileTooLargeToOpen
+            : AppLocalizations.of(context).chat_openFileFailed;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      }
+    } catch (e) {
+      _log.warning('openStoreUri failed: $e', tag: _tag, error: e);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context).chat_openFileFailed)),
+        );
+      }
+    }
+  }
+
+  Future<void> _openScopeDirectoryOrThrow(
+    BuildContext context,
+    PouchScope scope,
+    String path,
+  ) async {
+    final opener = openScopeDirectory;
+    if (opener == null) {
+      throw StateError('scope directory opener not registered');
+    }
+    if (!context.mounted) return;
+    await opener(context, scope: scope, path: path);
   }
 
   Future<void> _openAsFile(

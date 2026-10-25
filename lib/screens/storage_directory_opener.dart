@@ -6,6 +6,7 @@ import '../storage/device_identity.dart';
 import '../storage/group_workspace_service.dart';
 import '../storage/store_device_target.dart';
 import '../storage/store_protocol.dart';
+import 'pouch_scope_browser_screen.dart';
 import 'storage_browser_screen.dart';
 
 /// Register the pouch-browser jump used by chat `pouch://` folder links.
@@ -18,6 +19,17 @@ void registerStorageDirectoryOpener() {
       space: space,
       deviceId: deviceId,
       path: path,
+    );
+  };
+  StoreOpenService.instance.openScopeDirectory ??=
+      (context, {required scope, required path}) {
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => PouchScopeBrowserScreen(
+          initialScope: scope,
+          initialPath: path,
+        ),
+      ),
     );
   };
 }
