@@ -459,7 +459,7 @@ class GroupWorkspaceService {
       if (!name.endsWith('.json')) continue;
       final seq = int.tryParse(name.substring(0, name.length - 5));
       if (seq == null) continue;
-      final payload = await _readJson('pouch://workspaces/${e.path}');
+      final payload = await _readJson(e.path);
       if (payload == null) continue;
       results.add((seq: seq, payload: payload));
     }
@@ -489,10 +489,7 @@ class GroupWorkspaceService {
   }) async {
     final meta = await loadMeta(groupId);
     if (meta == null) return null;
-    return _readJson(
-      'pouch://workspaces/'
-      '${roundDir(groupId, sessionId, round)}/state.json',
-    );
+    return _readJson('${roundDir(groupId, sessionId, round)}/state.json');
   }
 
   /// 读取指定轮次的 dispatch 决定（解析后结构）；不存在返回 null。
@@ -503,10 +500,7 @@ class GroupWorkspaceService {
   }) async {
     final meta = await loadMeta(groupId);
     if (meta == null) return null;
-    return _readJson(
-      'pouch://workspaces/'
-      '${roundDir(groupId, sessionId, round)}/dispatch.json',
-    );
+    return _readJson('${roundDir(groupId, sessionId, round)}/dispatch.json');
   }
 
   /// 外接 agent MCP 群工具写入的编排决定（inbox 文件）。
@@ -528,9 +522,7 @@ class GroupWorkspaceService {
     final sinceIso = since.toUtc().toIso8601String();
 
     Future<Map<String, dynamic>?> readIfFresh(String file) async {
-      final data = await _readJson(
-        'pouch://workspaces/$dir/$file',
-      );
+      final data = await _readJson('$dir/$file');
       if (data == null) return null;
       final issued = data['issued_at'] as String?;
       if (issued == null || issued.compareTo(sinceIso) <= 0) return null;
@@ -571,10 +563,7 @@ class GroupWorkspaceService {
   }) async {
     final meta = await loadMeta(groupId);
     if (meta == null) return null;
-    return _readJson(
-      'pouch://workspaces/'
-      '${orchestrationRoot(groupId, sessionId)}/latest.json',
-    );
+    return _readJson('${orchestrationRoot(groupId, sessionId)}/latest.json');
   }
 
   /// 最新编排轮次号（来自 `latest.json`）；不存在返回 null。
@@ -707,9 +696,7 @@ class GroupWorkspaceService {
   Future<GroupTaskIndex> readTaskIndex(String groupId) async {
     final meta = await loadMeta(groupId);
     if (meta == null) return GroupTaskIndex();
-    final json = await _readJson(
-      'pouch://workspaces/${taskIndexRelPath(groupId)}',
-    );
+    final json = await _readJson(taskIndexRelPath(groupId));
     if (json == null) return GroupTaskIndex();
     return GroupTaskIndex.fromJson(json);
   }
@@ -782,10 +769,7 @@ class GroupWorkspaceService {
   }) async {
     final meta = await loadMeta(groupId);
     if (meta == null) return null;
-    final json = await _readJson(
-      'pouch://workspaces/'
-      '${taskJsonRelPath(groupId, orchestrationId)}',
-    );
+    final json = await _readJson(taskJsonRelPath(groupId, orchestrationId));
     if (json == null) return null;
     return GroupTask.fromJson(json);
   }
@@ -865,10 +849,7 @@ class GroupWorkspaceService {
   }) async {
     final meta = await loadMeta(groupId);
     if (meta == null) return null;
-    return _readText(
-      'pouch://workspaces/'
-      '${taskRequirementRelPath(groupId, orchestrationId)}',
-    );
+    return _readText(taskRequirementRelPath(groupId, orchestrationId));
   }
 
   /// 发布任务计划：写 plan.json + plan.md，更新 task 状态为 planned。
@@ -915,10 +896,7 @@ class GroupWorkspaceService {
   }) async {
     final meta = await loadMeta(groupId);
     if (meta == null) return null;
-    final json = await _readJson(
-      'pouch://workspaces/'
-      '${taskPlanJsonRelPath(groupId, orchestrationId)}',
-    );
+    final json = await _readJson(taskPlanJsonRelPath(groupId, orchestrationId));
     if (json == null) return null;
     return GroupTaskPlan.fromJson(json);
   }
@@ -930,10 +908,7 @@ class GroupWorkspaceService {
   }) async {
     final meta = await loadMeta(groupId);
     if (meta == null) return null;
-    return _readText(
-      'pouch://workspaces/'
-      '${taskPlanMdRelPath(groupId, orchestrationId)}',
-    );
+    return _readText(taskPlanMdRelPath(groupId, orchestrationId));
   }
 
   /// 写入/覆盖成员结果汇总（`results.json`）。
@@ -1009,10 +984,7 @@ class GroupWorkspaceService {
   }) async {
     final meta = await loadMeta(groupId);
     if (meta == null) return null;
-    final json = await _readJson(
-      'pouch://workspaces/'
-      '${taskResultsRelPath(groupId, orchestrationId)}',
-    );
+    final json = await _readJson(taskResultsRelPath(groupId, orchestrationId));
     if (json == null) return null;
     return GroupTaskResults.fromJson(json);
   }
@@ -1055,10 +1027,7 @@ class GroupWorkspaceService {
   }) async {
     final meta = await loadMeta(groupId);
     if (meta == null) return null;
-    return _readText(
-      'pouch://workspaces/'
-      '${taskArchiveRelPath(groupId, orchestrationId)}',
-    );
+    return _readText(taskArchiveRelPath(groupId, orchestrationId));
   }
 
   /// 写入/覆盖产物落点规划（`artifact_plan.json`）。
@@ -1094,10 +1063,7 @@ class GroupWorkspaceService {
   }) async {
     final meta = await loadMeta(groupId);
     if (meta == null) return null;
-    final json = await _readJson(
-      'pouch://workspaces/'
-      '${taskArtifactPlanRelPath(groupId, orchestrationId)}',
-    );
+    final json = await _readJson(taskArtifactPlanRelPath(groupId, orchestrationId));
     if (json == null) return null;
     return GroupTaskArtifactPlan.fromJson(json);
   }
@@ -1145,10 +1111,7 @@ class GroupWorkspaceService {
   }) async {
     final meta = await loadMeta(groupId);
     if (meta == null) return null;
-    final json = await _readJson(
-      'pouch://workspaces/'
-      '${taskArtifactsRelPath(groupId, orchestrationId)}',
-    );
+    final json = await _readJson(taskArtifactsRelPath(groupId, orchestrationId));
     if (json == null) return null;
     return GroupTaskArtifactManifest.fromJson(json);
   }
@@ -1275,14 +1238,14 @@ class GroupWorkspaceService {
     }
   }
 
-  Future<Map<String, dynamic>?> _readJson(String uri) async {
+  Future<Map<String, dynamic>?> _readJson(String relPath) async {
     try {
-      final bytes = await _readUri(uri);
+      final bytes = await _readWorkspace(relPath);
       final json = jsonDecode(utf8.decode(bytes));
       if (json is Map<String, dynamic>) return json;
     } catch (e) {
       LoggerService().debug(
-        'group workspace read failed: $uri — $e',
+        'group workspace read failed: $relPath — $e',
         tag: 'GroupWorkspaceService',
       );
     }
@@ -1299,14 +1262,14 @@ class GroupWorkspaceService {
         bytes: Uint8List.fromList(utf8.encode(content)),
       );
 
-  Future<String?> _readText(String uri) async {
+  Future<String?> _readText(String relPath) async {
     try {
-      final bytes = await _readUri(uri);
+      final bytes = await _readWorkspace(relPath);
       final text = utf8.decode(bytes).trim();
       return text.isEmpty ? null : text;
     } catch (e) {
       LoggerService().debug(
-        'group workspace text read failed: $uri — $e',
+        'group workspace text read failed: $relPath — $e',
         tag: 'GroupWorkspaceService',
       );
       return null;
@@ -1314,17 +1277,6 @@ class GroupWorkspaceService {
   }
 
   // ── 袋子里的群工作区（v2 目录已停用） ─────────────────────────────────────
-
-  /// `workspaces` 的 URI → 相对路径；不是这个 space 返回 null。
-  static String? _workspacePathOf(String uri) {
-    if (!uri.startsWith('pouch://workspaces/')) return null;
-    try {
-      final parsed = parseStoreUri(uri);
-      return parsed.space == StoreSpace.workspaces ? parsed.path : null;
-    } catch (_) {
-      return null;
-    }
-  }
 
   static ({PouchScope scope, String path}) _scopeTarget(String workspacePath) {
     final target = GroupWorkspaceScopes.map(workspacePath);
@@ -1337,27 +1289,12 @@ class GroupWorkspaceService {
   Future<PouchScopeStore> _scopes() => StoreService.instance.scopeStore();
 
   /// 读工作区内容：只认 `group:<gid>:shared` / `group:<gid>:member:<aid>`。
-  ///
-  /// 切换前记在任务/交接里的 v2 地址由 [_readUri] 翻译成同一位置再读，
-  /// 不再回本地 `workspaces/` 目录（内容已由 hub 回迁进袋子）。
   Future<Uint8List> _readWorkspace(String workspacePath) async {
     final target = _scopeTarget(workspacePath);
     final scoped = await _scopes();
     final bytes = await scoped.read(target.scope, target.path);
     if (bytes == null) {
       throw StoreException(StoreError.notFound, workspacePath);
-    }
-    return bytes;
-  }
-
-  Future<Uint8List> _readUri(String uri) async {
-    final path = _workspacePathOf(uri);
-    if (path == null) return StoreUriReader.instance.read(uri);
-    final target = _scopeTarget(path);
-    final scoped = await _scopes();
-    final bytes = await scoped.read(target.scope, target.path);
-    if (bytes == null) {
-      throw StoreException(StoreError.notFound, path);
     }
     return bytes;
   }
