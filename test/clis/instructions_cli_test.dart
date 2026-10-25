@@ -9,7 +9,10 @@ import 'package:shepaw/services/instruction_set_service.dart';
 import 'package:shepaw/services/jade_slip_service.dart';
 import 'package:shepaw/services/local_database_service.dart';
 import 'package:shepaw/services/she_service.dart';
+import 'package:shepaw/storage/pouch_scope_store.dart';
+import 'package:shepaw/storage/slip_scope_documents.dart';
 
+import '../storage/memory_scope_transport.dart';
 import '../storage/test_harness.dart';
 
 void main() {
@@ -22,6 +25,19 @@ void main() {
     final db = LocalDatabaseService();
     final handle = await db.database;
     await handle.delete('instruction_sets');
+
+    final docs = SlipScopeDocuments(
+      store: PouchScopeStore(
+        transport: MemoryScopeTransport(),
+        pouchId: 'test-pouch',
+      ),
+      deviceId: 'aaaaaaaaaaaaaaaa',
+    );
+    JadeSlipService.instance.debugDocuments = () => docs;
+  });
+
+  tearDown(() {
+    JadeSlipService.instance.debugDocuments = null;
   });
 
   /// 在指定执行者 Zone 中运行 [body]。

@@ -10,6 +10,7 @@ import '../../storage/test_harness.dart';
 void main() {
   setUpAll(() async {
     await StorageTestHarness.init();
+    StorageTestHarness.installMemoryPouchScope();
     await StoreService.instance.start();
   });
 

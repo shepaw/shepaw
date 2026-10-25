@@ -24,6 +24,7 @@ RemoteAgent _agent(String id, String name) => RemoteAgent(
 void main() {
   setUpAll(() async {
     await StorageTestHarness.init();
+    StorageTestHarness.installMemoryPouchScope();
     await StoreService.instance.start();
   });
 

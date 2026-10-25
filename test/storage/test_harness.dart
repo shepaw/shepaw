@@ -3,8 +3,11 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/services/app_paths.dart';
+import 'package:shepaw/storage/pouch_scope_store.dart';
 import 'package:shepaw/storage/store_service.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+import 'memory_scope_transport.dart';
 
 /// 存储层测试 harness：method channel 全 mock（path_provider → 临时目录、
 /// flutter_secure_storage → 内存 Map），因此真实服务链（SecureKeyManager、
@@ -67,5 +70,22 @@ class StorageTestHarness {
       },
     );
     return tmp;
+  }
+
+  /// 让当前测试进程「已配对袋子」：v3 scope 读写落到内存传输。
+  ///
+  /// 群工作区 / 玉简内容现在只走 `pouch://<id>/<scope>/…`，未配对的
+  /// [StoreService.scopeStore] 会抛 `not_paired`。只给需要 v3 内容面的测试
+  /// 装，不要放进 [init]，否则「未配对」分支就测不到了。
+  static MemoryScopeTransport installMemoryPouchScope({
+    String pouchId = 'test-pouch',
+  }) {
+    final transport = MemoryScopeTransport();
+    StoreService.instance.scopeStoreOverride = PouchScopeStore(
+      transport: transport,
+      pouchId: pouchId,
+    );
+    StoreService.instance.currentPouchIdOverride = pouchId;
+    return transport;
   }
 }

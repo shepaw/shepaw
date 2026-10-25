@@ -7,9 +7,13 @@ import 'package:shepaw/screens/jade_slip_dispatch.dart';
 import 'package:shepaw/service_locator.dart';
 import 'package:shepaw/services/chat_service.dart';
 import 'package:shepaw/services/composer_draft_service.dart';
+import 'package:shepaw/services/jade_slip_service.dart';
 import 'package:shepaw/services/local_database_service.dart';
 import 'package:shepaw/services/local_user_identity.dart';
+import 'package:shepaw/storage/pouch_scope_store.dart';
+import 'package:shepaw/storage/slip_scope_documents.dart';
 
+import '../storage/memory_scope_transport.dart';
 import '../storage/test_harness.dart';
 
 /// `dispatchJadeSlip` 的会话落点：三种 [JadeSlipSessionTarget] 各把任务发到
@@ -29,9 +33,19 @@ void main() {
 
   setUp(() {
     setupServiceLocator();
+    // 玉简内容只认 v3 袋子；注入内存读写面，更新派发状态时不碰本机 hub。
+    final docs = SlipScopeDocuments(
+      store: PouchScopeStore(
+        transport: MemoryScopeTransport(),
+        pouchId: 'test-pouch',
+      ),
+      deviceId: 'aaaaaaaaaaaaaaaa',
+    );
+    JadeSlipService.instance.debugDocuments = () => docs;
   });
 
   tearDown(() async {
+    JadeSlipService.instance.debugDocuments = null;
     await getIt.reset();
   });
 
