@@ -45,6 +45,67 @@ void main() {
     );
   });
 
+  test('一条消息的附件落点：群认会话，单聊认 agent', () {
+    expect(
+      PouchAttachmentScopes.messageAttachmentTarget(
+        agentId: 'a1',
+        channelId: 'g1',
+        messageId: 'm1',
+        channelType: 'group',
+      ),
+      isNull,
+      reason: '群还没选过会话时不猜主机的 current_session',
+    );
+
+    GroupSessionSelection.select('g1', 's1');
+    final group = PouchAttachmentScopes.messageAttachmentTarget(
+      agentId: 'a1',
+      channelId: 'ch1',
+      messageId: 'm1',
+      channelType: 'group',
+      parentGroupId: 'g1',
+    );
+    expect(group?.scope.id, 'group:g1:session:s1');
+    expect(group?.directory, 'attachments/m1');
+
+    final dm = PouchAttachmentScopes.messageAttachmentTarget(
+      agentId: 'a1',
+      channelId: 'dm1',
+      messageId: 'm2',
+    );
+    expect(dm?.scope.id, 'agent:a1');
+    expect(dm?.directory, 'files/attachments');
+  });
+
+  test('落点算不出来时返回 null，不抛', () {
+    expect(
+      PouchAttachmentScopes.messageAttachmentTarget(
+        agentId: '',
+        channelId: 'dm1',
+        messageId: 'm2',
+      ),
+      isNull,
+    );
+    expect(
+      PouchAttachmentScopes.messageAttachmentTarget(
+        agentId: 'a@b',
+        channelId: 'dm1',
+        messageId: 'm2',
+      ),
+      isNull,
+    );
+    GroupSessionSelection.select('g1', 's1');
+    expect(
+      PouchAttachmentScopes.messageAttachmentTarget(
+        agentId: 'a1',
+        channelId: 'g1',
+        messageId: '',
+        channelType: 'group',
+      ),
+      isNull,
+    );
+  });
+
   test('别的群选会话不影响这个群', () {
     GroupSessionSelection.select('g2', 's9');
     expect(PouchAttachmentScopes.groupSession('g1'), isNull);

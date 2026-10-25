@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -11,11 +12,68 @@ import 'package:shepaw/models/store_attachment_ref.dart';
 import 'package:shepaw/storage/attachment_store_writer.dart';
 import 'package:shepaw/storage/device_identity.dart';
 import 'package:shepaw/storage/local_store.dart';
+import 'package:shepaw/storage/pouch_scope.dart';
+import 'package:shepaw/storage/pouch_scope_store.dart';
 import 'package:shepaw/storage/store_protocol.dart';
 import 'package:shepaw/storage/snapshot_service.dart';
 import 'package:shepaw/storage/store_service.dart';
 
 import 'test_harness.dart';
+
+class _RecordingScopeTransport implements PouchScopeTransport {
+  final writes = <({String scope, String path, Uint8List bytes})>[];
+
+  @override
+  Future<PouchListPage> list({
+    required String pouchId,
+    required PouchScope scope,
+    String? prefix,
+    int limit = 1000,
+    String? cursor,
+  }) async =>
+      const PouchListPage(entries: <StoreEntry>[]);
+
+  @override
+  Future<Uint8List?> read({
+    required String pouchId,
+    required PouchScope scope,
+    required String path,
+  }) async =>
+      null;
+
+  @override
+  Future<List<String>> scopes({
+    required String pouchId,
+    required String prefix,
+  }) async =>
+      const <String>[];
+
+  @override
+  Future<PouchFileMeta?> meta({
+    required String pouchId,
+    required PouchScope scope,
+    required String path,
+  }) async =>
+      null;
+
+  @override
+  Future<void> write({
+    required String pouchId,
+    required PouchScope scope,
+    required String path,
+    required Uint8List bytes,
+    int? expectedVersion,
+  }) async {
+    writes.add((scope: scope.id, path: path, bytes: bytes));
+  }
+
+  @override
+  Future<void> delete({
+    required String pouchId,
+    required PouchScope scope,
+    required String path,
+  }) async {}
+}
 
 void main() {
   setUpAll(() async {
@@ -72,6 +130,47 @@ void main() {
     ));
     expect(await blob.exists(), isTrue);
     expect(await blob.readAsBytes(), content);
+  });
+
+  test('saveAttachment 双写：v3 地址记进 pouch_uri_scoped', () async {
+    const pouchId = 'a95b5782-4d50-45d2-83e1-8e40954d1239';
+    final transport = _RecordingScopeTransport();
+    StoreService.instance.scopeStoreOverride =
+        PouchScopeStore(transport: transport, pouchId: pouchId);
+    StoreService.instance.currentPouchIdOverride = pouchId;
+    addTearDown(() {
+      StoreService.instance.scopeStoreOverride = null;
+      StoreService.instance.currentPouchIdOverride = null;
+    });
+
+    final content = Uint8List.fromList('scoped mirror'.codeUnits);
+    final f = await tempFile('sm.txt', content);
+    final hash = crypto.sha256.convert(content).toString();
+    final svc = newService();
+    final msg = await svc.saveAttachment(
+      file: f,
+      channelId: 'ch-scope',
+      userId: 'u1',
+      userName: 'U',
+      agentId: 'a1',
+    );
+
+    expect(msg, isNotNull);
+    await svc.lastScopedMirror;
+    expect(transport.writes, hasLength(1));
+    expect(transport.writes.single.scope, 'agent:a1');
+    expect(transport.writes.single.path, 'files/attachments/$hash');
+    expect(transport.writes.single.bytes, content);
+
+    final row = await LocalDatabaseService().getMessageById(msg!.id);
+    final metadata =
+        jsonDecode(row!['metadata'] as String) as Map<String, dynamic>;
+    expect(
+      metadata[AttachmentService.scopedUriMetaKey],
+      'pouch://$pouchId/agent:a1/files/attachments/$hash',
+    );
+    // 这一版仍以 v2 地址为主，旧读路径不受影响。
+    expect(metadata['pouch_uri'] as String, startsWith('pouch://runtime/'));
   });
 
   test('saveAttachment：群聊落到 group owner 而非 agent', () async {
@@ -172,7 +271,7 @@ void main() {
     final store = await StoreService.instance.localStore();
     final deviceId = await DeviceIdentity.deviceId();
     final content = Uint8List.fromList('store ref bytes'.codeUnits);
-    final relPath = 'docs/ref-report.txt';
+    const relPath = 'docs/ref-report.txt';
 
     final (uploadId, _) = await store.writeBegin(
       deviceId: deviceId,

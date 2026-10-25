@@ -218,6 +218,7 @@ class PouchAttachmentDesk {
         for (final entry in clientExtra.entries) {
           final key = entry.key.toString();
           if (key == 'pouch_uri' ||
+              key == 'pouch_uri_scoped' ||
               key == MessageImplicitPrompt.metaKey ||
               key == MessageImplicitPrompt.urisMetaKey) {
             continue;

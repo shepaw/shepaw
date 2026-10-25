@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/services/app_paths.dart';
+import 'package:shepaw/storage/store_service.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 /// 存储层测试 harness：method channel 全 mock（path_provider → 临时目录、
@@ -37,6 +38,10 @@ class StorageTestHarness {
     AppPaths.setRootForTesting(
       Directory('${tmp.path}/getApplicationDocumentsDirectory'),
     );
+
+    // 测试不碰本机真实 hub（`~/.config/shepaw-hub/pouch.sock`）：否则附件
+    // 双写会直接写进开发者的袋子。
+    StoreService.instance.localHubRootOverride = '${tmp.path}/no-hub';
 
     messenger.setMockMethodCallHandler(
       const MethodChannel('plugins.it_nomads.com/flutter_secure_storage'),

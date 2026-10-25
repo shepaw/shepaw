@@ -34,12 +34,55 @@ class PouchAttachmentScopes {
   /// 会话里的附件路径。
   static String sessionAttachmentPath(String file) => 'attachments/$file';
 
+  /// 群消息附件的目录（文件名由写入方定，app 用内容 hash）。
+  static String groupMessageAttachmentDir(String messageId) =>
+      'attachments/${messageId.trim()}';
+
   /// 群消息附件路径（按消息再分一层）。
   static String groupMessageAttachmentPath(String messageId, String file) =>
-      'attachments/$messageId/$file';
+      '${groupMessageAttachmentDir(messageId)}/$file';
+
+  /// 没有会话时的 agent 附件目录。
+  static String agentAttachmentDir() => 'files/attachments';
 
   /// 没有会话时的 agent 附件路径。
-  static String agentAttachmentPath(String file) => 'files/attachments/$file';
+  static String agentAttachmentPath(String file) =>
+      '${agentAttachmentDir()}/$file';
+
+  /// 一条消息的附件落点：群走会话 scope（没选过会话返回 null）；单聊走
+  /// `agent:<aid>/files/attachments`。
+  ///
+  /// 群这一端没选过会话时不猜主机的 `current_session`：返回 null，调用方
+  /// 只写本机 v2 副本。
+  static ({PouchScope scope, String directory})? messageAttachmentTarget({
+    required String agentId,
+    required String channelId,
+    required String messageId,
+    String? channelType,
+    String? parentGroupId,
+  }) {
+    final parent = parentGroupId?.trim() ?? '';
+    final groupId = parent.isNotEmpty
+        ? parent
+        : (channelType?.trim() == 'group' ? channelId.trim() : '');
+    try {
+      if (groupId.isNotEmpty) {
+        final scope = groupSession(groupId);
+        final mid = messageId.trim();
+        if (scope == null || !isValidPouchScopeId(mid)) return null;
+        return (
+          scope: scope,
+          directory: groupMessageAttachmentDir(mid),
+        );
+      }
+      final aid = agentId.trim();
+      if (!isValidPouchScopeId(aid)) return null;
+      return (scope: PouchScope.agent(aid), directory: agentAttachmentDir());
+    } on FormatException {
+      // id 里有 scope 不接受的字符：这条只走本机 v2 副本。
+      return null;
+    }
+  }
 
   /// 附件地址；[scope] 已经由上面几个方法算好。
   static String uri({

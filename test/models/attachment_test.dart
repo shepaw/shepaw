@@ -267,6 +267,7 @@ void main() {
           semanticType: 'file',
           extraMetadata: {
             'pouch_uri': 'pouch://runtime/dev1/a/ch/attachments/x',
+            'pouch_uri_scoped': 'pouch://p1/agent:a1/files/attachments/x',
             'implicit_prompt': 'hint',
             'pouch_uris': ['pouch://runtime/dev1/a/ch/attachments/x'],
             'duration_ms': 12,
@@ -275,6 +276,7 @@ void main() {
         final ref = att.toPeerRefJson('fid', stripClientStoreUri: true);
         final extra = ref['extra'] as Map<String, dynamic>;
         expect(extra.containsKey('pouch_uri'), isFalse);
+        expect(extra.containsKey('pouch_uri_scoped'), isFalse);
         expect(extra.containsKey('implicit_prompt'), isFalse);
         expect(extra.containsKey('pouch_uris'), isFalse);
         expect(extra['duration_ms'], 12);

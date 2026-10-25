@@ -1,5 +1,8 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
+import 'package:crypto/crypto.dart' as crypto;
+import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as path;
@@ -11,6 +14,8 @@ import '../models/attachment_data.dart';
 import '../models/store_attachment_ref.dart';
 import '../peer/services/peer_attachment_placement.dart';
 import '../storage/attachment_store_writer.dart';
+import '../storage/local_store.dart';
+import '../storage/pouch_attachment_scope.dart';
 import '../storage/runtime_mirror_service.dart';
 import '../storage/runtime_paths.dart';
 import 'messaging/message_implicit_prompt.dart';
@@ -27,6 +32,16 @@ class AttachmentService {
   final _uuid = const Uuid();
 
   AttachmentService(this._database);
+
+  /// 消息 metadata 里的 v3 袋子地址（过渡期与 `pouch_uri` 双写）。
+  ///
+  /// 只给本地读路径与后续切换用：不上 wire（`toPeerRefJson` 会剥掉），
+  /// 也不进隐式提示——主机自己会把附件收进自己的袋子。
+  static const scopedUriMetaKey = 'pouch_uri_scoped';
+
+  /// 测试用：最近一次后台 scoped 双写的完成信号。
+  @visibleForTesting
+  Future<void>? lastScopedMirror;
 
   /// 便捷静态入口（widget 层无注入场景）。
   static AttachmentService get shared =>
@@ -148,11 +163,99 @@ class AttachmentService {
     );
   }
 
+  /// 过渡期双写：同一份 bytes 再进 v3 袋子，地址记进消息 metadata
+  /// （[scopedUriMetaKey]）。
+  ///
+  /// 在后台做，失败只记日志——本机 v2 副本已经写好，消息照常可用；
+  /// 没有可用袋子（未登录/本机没 hub）或落点不明确（群还没选会话）就跳过。
+  void _mirrorScoped({
+    required Uint8List bytes,
+    required String messageId,
+    required Map<String, dynamic> metadata,
+    required String agentId,
+    required String channelId,
+    String? channelType,
+    String? parentGroupId,
+  }) {
+    final target = PouchAttachmentScopes.messageAttachmentTarget(
+      agentId: agentId,
+      channelId: channelId,
+      messageId: messageId,
+      channelType: channelType,
+      parentGroupId: parentGroupId,
+    );
+    if (target == null) return;
+    final mirror = () async {
+      try {
+        final uri = await AttachmentStoreWriter.storeScopedBytes(
+          bytes,
+          scope: target.scope,
+          directory: target.directory,
+        );
+        final updated = Map<String, dynamic>.from(metadata)
+          ..[scopedUriMetaKey] = uri;
+        await _database.updateMessageMetadata(messageId, updated);
+      } on StoreException catch (e) {
+        if (e.code == StoreError.notPaired) {
+          LoggerService().debug(
+            'Scoped mirror skipped (no pouch): $messageId',
+            tag: 'Attachment',
+          );
+        } else {
+          LoggerService().warning(
+            'Scoped attachment mirror failed: $messageId',
+            tag: 'Attachment',
+            error: e,
+          );
+        }
+      } catch (e) {
+        LoggerService().error(
+          'Scoped attachment mirror failed: $messageId',
+          tag: 'Attachment',
+          error: e,
+        );
+      }
+    }();
+    lastScopedMirror = mirror;
+    unawaited(mirror);
+  }
+
   /// 解析附件文件（消息气泡展示用）。
+  ///
+  /// v3 地址（三段式）直接物化到本机缓存；v2 地址先找本机树，找不到再退回
+  /// metadata 里双写的 `pouch_uri_scoped`。
   Future<File?> resolveAttachmentFile(Map<String, dynamic> metadata) async {
     final storeUri = storeUriOf(metadata);
     if (storeUri == null || storeUri.isEmpty) return null;
-    return StoreAttachmentRef.fileFromStoreUri(storeUri);
+    if (PouchV2Uri.tryParse(storeUri) != null) {
+      return _materializeScoped(storeUri);
+    }
+    final file = await StoreAttachmentRef.fileFromStoreUri(storeUri);
+    if (file != null) return file;
+    final scoped = (metadata[scopedUriMetaKey] as String?)?.trim() ?? '';
+    return scoped.isEmpty ? null : _materializeScoped(scoped);
+  }
+
+  /// 把袋子里的文件落到本机 temp 缓存（同一地址复用同一份）。
+  Future<File?> _materializeScoped(String storeUri) async {
+    try {
+      final dir = Directory(
+        path.join(Directory.systemTemp.path, 'shepaw_scoped_att'),
+      );
+      await dir.create(recursive: true);
+      final digest = crypto.sha256.convert(utf8.encode(storeUri)).toString();
+      final dest = File(path.join(dir.path, digest));
+      if (await dest.exists() && await dest.length() > 0) return dest;
+      await StoreUriReader.instance.copyTo(storeUri, dest);
+      return dest;
+    } catch (e) {
+      LoggerService().error(
+        'Scoped attachment materialize failed: $storeUri',
+        tag: 'Attachment',
+        error: e,
+      );
+      return null;
+    }
   }
 
   /// 选择图片
@@ -224,14 +327,19 @@ class AttachmentService {
         parentGroupId: parentGroupId,
       );
 
-      final resolvedUri = (storeUri != null && storeUri.isNotEmpty)
-          ? storeUri
-          : await _storeAttachmentBytes(
-              await file.readAsBytes(),
-              ownerId: target.ownerId,
-              channelId: target.channelId,
-              deviceId: target.deviceId,
-            );
+      Uint8List? newBytes;
+      final String resolvedUri;
+      if (storeUri != null && storeUri.isNotEmpty) {
+        resolvedUri = storeUri;
+      } else {
+        newBytes = await file.readAsBytes();
+        resolvedUri = await _storeAttachmentBytes(
+          newBytes,
+          ownerId: target.ownerId,
+          channelId: target.channelId,
+          deviceId: target.deviceId,
+        );
+      }
 
       final attachmentData = ClientDeviceInfo.stampMetadata({
         'pouch_uri': resolvedUri,
@@ -278,6 +386,18 @@ class AttachmentService {
         messageType: message.type.toString().split('.').last,
         metadata: attachmentData,
       );
+
+      if (newBytes != null) {
+        _mirrorScoped(
+          bytes: newBytes,
+          messageId: messageId,
+          metadata: attachmentData,
+          agentId: agentId,
+          channelId: channelId,
+          channelType: channelType,
+          parentGroupId: parentGroupId,
+        );
+      }
 
       RuntimeMirrorService.instance.scheduleSessionMirror(
         ownerId: target.ownerId,
@@ -364,6 +484,16 @@ class AttachmentService {
         metadata: metadata,
       );
 
+      _mirrorScoped(
+        bytes: bytes,
+        messageId: messageId,
+        metadata: metadata,
+        agentId: agentId,
+        channelId: channelId,
+        channelType: channelType,
+        parentGroupId: parentGroupId,
+      );
+
       RuntimeMirrorService.instance.scheduleSessionMirror(
         ownerId: target.ownerId,
         channelId: target.channelId,
@@ -397,18 +527,17 @@ class AttachmentService {
       if (storeUri == null || storeUri.isEmpty) return null;
 
       final file = await StoreAttachmentRef.fileFromStoreUri(storeUri);
-      final Uint8List bytes;
+      final Uint8List? bytes;
       final String fallbackName;
       if (file != null) {
         bytes = await file.readAsBytes();
         fallbackName = path.basename(file.path);
       } else {
         // 文件在主机袋子上，本机目录没有这份副本。
-        try {
-          bytes = await StoreUriReader.instance.read(storeUri);
-        } catch (e) {
+        bytes = await _readAttachmentBytes(storeUri, metadata);
+        if (bytes == null) {
           LoggerService().error('Store attachment not found: $storeUri',
-              tag: 'Attachment', error: e);
+              tag: 'Attachment');
           return null;
         }
         fallbackName = metadata['name'] as String? ?? 'file';
@@ -430,6 +559,10 @@ class AttachmentService {
         putExtra('duration_ms', metadata['duration_ms']);
       }
       putExtra('pouch_uri', storeUri);
+      final scopedUri = metadata[scopedUriMetaKey];
+      if (scopedUri is String && scopedUri.isNotEmpty) {
+        putExtra(scopedUriMetaKey, scopedUri);
+      }
       final implicit = MessageImplicitPrompt.fromMetadata(metadata);
       if (implicit != null) {
         putExtra(MessageImplicitPrompt.metaKey, implicit);
@@ -450,6 +583,24 @@ class AttachmentService {
     } catch (e) {
       LoggerService().error('Error building attachment data', tag: 'Attachment', error: e);
       return null;
+    }
+  }
+
+  /// 按地址读字节：先读 `pouch_uri`，读不到再退回双写的 `pouch_uri_scoped`。
+  Future<Uint8List?> _readAttachmentBytes(
+    String storeUri,
+    Map<String, dynamic> metadata,
+  ) async {
+    try {
+      return await StoreUriReader.instance.read(storeUri);
+    } catch (_) {
+      final scoped = (metadata[scopedUriMetaKey] as String?)?.trim() ?? '';
+      if (scoped.isEmpty || scoped == storeUri) return null;
+      try {
+        return await StoreUriReader.instance.read(scoped);
+      } catch (_) {
+        return null;
+      }
     }
   }
 

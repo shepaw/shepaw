@@ -172,6 +172,7 @@ class AttachmentData {
     if (stripClientStoreUri && extra != null) {
       final filtered = Map<String, dynamic>.from(extra)
         ..remove('pouch_uri')
+        ..remove('pouch_uri_scoped')
         ..remove('implicit_prompt')
         ..remove('pouch_uris');
       extra = filtered.isEmpty ? null : filtered;
