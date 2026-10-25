@@ -7,6 +7,7 @@ import '../peer/models/peer_store_share.dart';
 import '../peer/services/peer_storage_service.dart';
 import '../services/logger_service.dart';
 import 'device_identity.dart';
+import 'group_workspace_scopes.dart';
 import 'local_store.dart';
 import 'runtime_paths.dart';
 import 'store_protocol.dart';
@@ -259,13 +260,23 @@ class GroupWorkspaceService {
   String taskArtifactsRelPath(String groupId, String orchestrationId) =>
       '${taskDir(groupId, orchestrationId)}/artifacts.json';
 
-  /// 构建群任务相关文件的 store URI（home device 来自元数据）。
+  /// 构建群任务相关文件的 store URI。
+  ///
+  /// 有 v3 袋子时给 `group:<gid>:shared/...`，否则给 v2 的 workspaces 地址；
+  /// 两者 [StoreUriReader] 都能读。
   Future<String?> taskFileUri({
     required String groupId,
     required String relPath,
   }) async {
     final meta = await loadMeta(groupId);
     if (meta == null) return null;
+    final target = GroupWorkspaceScopes.map(relPath);
+    if (target != null) {
+      final scoped = await StoreService.instance.scopeStoreOrNull();
+      if (scoped != null) {
+        return scoped.uriFor(target.scope, target.path).format();
+      }
+    }
     return 'pouch://workspaces/$relPath';
   }
 
@@ -608,10 +619,8 @@ class GroupWorkspaceService {
     if (meta == null) return null;
     final root = workspaceRoot(groupId);
     try {
-      final bytes = await StoreUriReader.instance.read(
-        'pouch://workspaces/'
-        '$root/shared/memory/latest.md',
-      );
+      final bytes =
+          await _readWorkspace('$root/shared/memory/latest.md');
       final text = utf8.decode(bytes).trim();
       return text.isEmpty ? null : text;
     } catch (e) {
@@ -641,20 +650,17 @@ class GroupWorkspaceService {
     final jsonRel = '$root/shared/handoffs/$safeId.json';
     final mdRel = '$root/shared/handoffs/$safeId.md';
     try {
-      await StoreService.instance.writeWorkspaceFile(
+      final jsonUri = await _writeWorkspace(
         homeDeviceId: home,
         relPath: jsonRel,
-        content: Uint8List.fromList(utf8.encode(jsonContent)),
+        bytes: Uint8List.fromList(utf8.encode(jsonContent)),
       );
-      await StoreService.instance.writeWorkspaceFile(
+      final mdUri = await _writeWorkspace(
         homeDeviceId: home,
         relPath: mdRel,
-        content: Uint8List.fromList(utf8.encode(markdownContent)),
+        bytes: Uint8List.fromList(utf8.encode(markdownContent)),
       );
-      return (
-        jsonUri: 'pouch://workspaces/$jsonRel',
-        mdUri: 'pouch://workspaces/$mdRel',
-      );
+      return (jsonUri: jsonUri, mdUri: mdUri);
     } catch (e) {
       LoggerService().error(
         'group workspace handoff write failed: $groupId/$handoffId',
@@ -684,17 +690,16 @@ class GroupWorkspaceService {
         '$root/shared/memory/${RuntimePaths.sanitizeSegment(sessionId)}.md';
     final latestRel = '$root/shared/memory/latest.md';
     try {
-      await StoreService.instance.writeWorkspaceFile(
+      await _writeWorkspace(
         homeDeviceId: home,
         relPath: sessionRel,
-        content: bytes,
+        bytes: bytes,
       );
-      await StoreService.instance.writeWorkspaceFile(
+      return await _writeWorkspace(
         homeDeviceId: home,
         relPath: latestRel,
-        content: bytes,
+        bytes: bytes,
       );
-      return 'pouch://workspaces/$latestRel';
     } catch (e) {
       LoggerService().error(
         'group workspace memory write failed: $groupId',
@@ -1277,10 +1282,10 @@ class GroupWorkspaceService {
     final content = bytes ??
         Uint8List.fromList(utf8.encode(jsonEncode(payload)));
     try {
-      await StoreService.instance.writeWorkspaceFile(
+      await _writeWorkspace(
         homeDeviceId: homeDeviceId,
         relPath: relPath,
-        content: content,
+        bytes: content,
       );
     } catch (e) {
       LoggerService().error(
@@ -1294,7 +1299,7 @@ class GroupWorkspaceService {
 
   Future<Map<String, dynamic>?> _readJson(String uri) async {
     try {
-      final bytes = await StoreUriReader.instance.read(uri);
+      final bytes = await _readUri(uri);
       final json = jsonDecode(utf8.decode(bytes));
       if (json is Map<String, dynamic>) return json;
     } catch (e) {
@@ -1311,16 +1316,16 @@ class GroupWorkspaceService {
     required String relPath,
     required String content,
   }) async {
-    await StoreService.instance.writeWorkspaceFile(
+    await _writeWorkspace(
       homeDeviceId: homeDeviceId,
       relPath: relPath,
-      content: Uint8List.fromList(utf8.encode(content)),
+      bytes: Uint8List.fromList(utf8.encode(content)),
     );
   }
 
   Future<String?> _readText(String uri) async {
     try {
-      final bytes = await StoreUriReader.instance.read(uri);
+      final bytes = await _readUri(uri);
       final text = utf8.decode(bytes).trim();
       return text.isEmpty ? null : text;
     } catch (e) {
@@ -1331,4 +1336,74 @@ class GroupWorkspaceService {
       return null;
     }
   }
+
+  // ── v3 / v2 双读双写 ──────────────────────────────────────────────────────
+
+  /// `workspaces` 的 URI → 相对路径；不是这个 space 返回 null。
+  static String? _workspacePathOf(String uri) {
+    if (!uri.startsWith('pouch://workspaces/')) return null;
+    try {
+      final parsed = parseStoreUri(uri);
+      return parsed.space == StoreSpace.workspaces ? parsed.path : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 读工作区内容：有 v3 袋子先读 `group:<gid>:shared`，读不到再回 v2。
+  ///
+  /// 回退顺序照顾两种过渡：切换前写的文件还在 v2；切换后新写的只在袋子里。
+  Future<Uint8List> _readWorkspace(String workspacePath) async {
+    final target = GroupWorkspaceScopes.map(workspacePath);
+    if (target != null) {
+      try {
+        final scoped = await StoreService.instance.scopeStoreOrNull();
+        if (scoped != null) {
+          final bytes = await scoped.read(target.scope, target.path);
+          if (bytes != null) return bytes;
+        }
+      } on StoreException catch (e) {
+        if (!_temporaryScopeFailure(e.code)) rethrow;
+      }
+    }
+    return StoreUriReader.instance.read(
+      storeUriWithRef(StoreSpace.workspaces, workspacePath),
+    );
+  }
+
+  Future<Uint8List> _readUri(String uri) async {
+    final path = _workspacePathOf(uri);
+    if (path == null) return StoreUriReader.instance.read(uri);
+    return _readWorkspace(path);
+  }
+
+  /// 写工作区内容，返回实际落点（v3 地址或 v2 地址）。
+  ///
+  /// 主机不在线时退回 v2：手机侧的编排/交接至少能在本机跑完，连上后新写入
+  /// 会重新落到袋子里。
+  Future<String> _writeWorkspace({
+    required String homeDeviceId,
+    required String relPath,
+    required Uint8List bytes,
+  }) async {
+    final target = GroupWorkspaceScopes.map(relPath);
+    if (target != null) {
+      try {
+        final scoped = await StoreService.instance.scopeStoreOrNull();
+        if (scoped != null) {
+          return await scoped.write(target.scope, target.path, bytes);
+        }
+      } on StoreException catch (e) {
+        if (!_temporaryScopeFailure(e.code)) rethrow;
+      }
+    }
+    return StoreService.instance.writeWorkspaceFile(
+      homeDeviceId: homeDeviceId,
+      relPath: relPath,
+      content: bytes,
+    );
+  }
+
+  static bool _temporaryScopeFailure(String code) =>
+      code == StoreError.notPaired || code == StoreError.masterOffline;
 }
