@@ -381,8 +381,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  // [G4] 共享文件在 v3 袋子里是 group:<gid>:shared/files；旧的
-                  // workspaces/<gid>/shared 只作迁移前的兼容（见 GroupSharedFiles）。
+                  // [G4] 共享文件在 v3 袋子里是 group:<gid>:shared/files；浏览、
+                  // 上传、删除走 PouchScopeBrowserScreen，共享面只有一个写入口
+                  // GroupSharedFiles。
                   SelectableText(
                     'group:${meta.groupId}:shared/files',
                     style: const TextStyle(fontSize: 12),

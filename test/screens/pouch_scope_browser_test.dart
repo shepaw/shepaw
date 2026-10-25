@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/screens/pouch_scope_browser_screen.dart';
+import 'package:shepaw/storage/group_shared_files.dart';
 import 'package:shepaw/storage/local_store.dart';
 import 'package:shepaw/storage/pouch_scope.dart';
 import 'package:shepaw/storage/pouch_scope_store.dart';
@@ -14,6 +15,7 @@ class _Transport implements PouchScopeTransport {
   final List<String> scopeIds;
   final List<StoreEntry>? entries;
   final StoreException? error;
+  final deletes = <({String scope, String path})>[];
 
   @override
   Future<List<String>> scopes({
@@ -66,7 +68,9 @@ class _Transport implements PouchScopeTransport {
     required String pouchId,
     required PouchScope scope,
     required String path,
-  }) async {}
+  }) async {
+    deletes.add((scope: scope.id, path: path));
+  }
 }
 
 Widget _screen(PouchScopeStore store, {PouchScope? initialScope}) => MaterialApp(
@@ -168,5 +172,55 @@ void main() {
     expect(legacy, findsOneWidget);
     await tester.tap(legacy);
     expect(opened, 1);
+  });
+
+  testWidgets('群共享删文件走 GroupSharedFiles：带 files/ 前缀', (tester) async {
+    final transport = _Transport(entries: <StoreEntry>[
+      StoreEntry(path: 'files/a.md', size: 3, sha256: '', mtimeMs: 0),
+    ]);
+    final store = PouchScopeStore(transport: transport, pouchId: 'p1');
+    await tester.pumpWidget(MaterialApp(
+      home: PouchScopeBrowserScreen(
+        store: store,
+        initialScope: PouchScope.groupShared('g1'),
+        initialPath: GroupSharedFiles.filesDir,
+        sharedFiles: GroupSharedFiles(scopes: store),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('a.md'), findsOneWidget);
+    await tester.tap(find.byTooltip('删除'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '删除'));
+    await tester.pumpAndSettle();
+
+    expect(transport.deletes, [
+      (scope: 'group:g1:shared', path: 'files/a.md'),
+    ]);
+  });
+
+  testWidgets('普通 scope 删文件：按当前目录的相对路径删', (tester) async {
+    final transport = _Transport(entries: <StoreEntry>[
+      StoreEntry(path: 'notes/a.md', size: 3, sha256: '', mtimeMs: 0),
+    ]);
+    final store = PouchScopeStore(transport: transport, pouchId: 'p1');
+    await tester.pumpWidget(MaterialApp(
+      home: PouchScopeBrowserScreen(
+        store: store,
+        initialScope: PouchScope.agent('a1'),
+        initialPath: 'notes',
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('删除'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '删除'));
+    await tester.pumpAndSettle();
+
+    expect(transport.deletes, [
+      (scope: 'agent:a1', path: 'notes/a.md'),
+    ]);
   });
 }

@@ -1,5 +1,12 @@
-import 'package:flutter/material.dart';
+import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
+
+import '../services/store_open_service.dart';
+import '../storage/group_shared_files.dart';
 import '../storage/local_store.dart';
 import '../storage/pouch_scope.dart';
 import '../storage/pouch_scope_store.dart';
@@ -10,7 +17,8 @@ import '../storage/store_service.dart';
 ///
 /// 第一层列 [PouchScope.fixed]（pouch/system/public/files）+ 调用方给的
 /// agent/group/skill/slip scope；进到某个 scope 后按文件夹逐层列下一级。
-/// 不做拖拽/搜索等交互：只回答「这只袋子里有哪些 scope、某个 scope 下有什么」。
+/// 文件可以点开（预览/系统打开）、上传到当前目录、删除；不做拖拽/搜索。
+/// 群共享面的写操作统一走 [GroupSharedFiles]。
 class PouchScopeBrowserScreen extends StatefulWidget {
   const PouchScopeBrowserScreen({
     super.key,
@@ -21,6 +29,7 @@ class PouchScopeBrowserScreen extends StatefulWidget {
     this.initialScope,
     this.initialPath = '',
     this.onOpenLegacy,
+    this.sharedFiles,
   });
 
   /// 固定四个之外的 scope（群、助手、技能、玉简…）。
@@ -45,6 +54,12 @@ class PouchScopeBrowserScreen extends StatefulWidget {
   /// 为 null 时不显示这一项（例如群会话里没有可退的地方）。
   final VoidCallback? onOpenLegacy;
 
+  /// 群共享面的写入口；null 时用 [GroupSharedFiles.resolve]。
+  ///
+  /// 共享文件的读写都走它（`files/` 前缀、版本号在那里统一处理），
+  /// 浏览器不另开一条直接写 scope 的通路。
+  final GroupSharedFiles? sharedFiles;
+
   @override
   State<PouchScopeBrowserScreen> createState() =>
       _PouchScopeBrowserScreenState();
@@ -61,6 +76,9 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
   String _path = '';
   List<StoreEntry> _entries = const <StoreEntry>[];
   bool _loadingEntries = false;
+
+  /// 上传/删除进行中：挡住重复操作。
+  bool _busy = false;
   String? _error;
 
   @override
@@ -192,6 +210,124 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
     _openScope(scope, path: slash < 0 ? '' : _path.substring(0, slash));
   }
 
+  Future<GroupSharedFiles> _shared() async =>
+      widget.sharedFiles ?? await GroupSharedFiles.resolve();
+
+  /// 点文件：交给 [StoreOpenService]（图片/文本直接预览，其余物化后系统打开）。
+  Future<void> _openFile(PouchScope scope, StoreEntry entry) async {
+    final store = await _store();
+    final uri = store.uriFor(scope, entry.path).format();
+    if (!mounted) return;
+    await StoreOpenService.instance.openStoreUri(context, uri);
+  }
+
+  /// 往当前目录传文件；重名自动加 ` (1)`，不覆盖已有文件。
+  Future<void> _uploadFiles() async {
+    final scope = _scope;
+    if (scope == null || _busy) return;
+    final picked = await FilePicker.platform.pickFiles(allowMultiple: true);
+    if (picked == null || picked.files.isEmpty) return;
+    if (!mounted) return;
+    setState(() => _busy = true);
+    final failures = <String>[];
+    var uploaded = 0;
+    try {
+      final taken = {for (final entry in _entries) entry.path.split('/').last};
+      for (final item in picked.files) {
+        final localPath = item.path;
+        if (localPath == null) continue;
+        final file = File(localPath);
+        if (!await file.exists()) continue;
+        final name = _uniqueName(p.basename(localPath), taken);
+        taken.add(name);
+        final path = _path.isEmpty ? name : '$_path/$name';
+        try {
+          await _writeBytes(scope, path, await file.readAsBytes());
+          uploaded++;
+        } catch (e) {
+          failures.add('$name：${_messageFor(e)}');
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+    if (!mounted) return;
+    if (failures.isEmpty) {
+      _toast('已上传 $uploaded 个文件');
+    } else {
+      _toast('上传失败——${failures.join('；')}');
+    }
+    await _openScope(scope, path: _path);
+  }
+
+  /// 写一份文件：群共享面只有 [GroupSharedFiles] 一个入口，其余直接写 scope。
+  Future<void> _writeBytes(
+    PouchScope scope,
+    String path,
+    Uint8List bytes,
+  ) async {
+    if (scope.kind == PouchScopeKind.shared) {
+      await (await _shared()).write(scope.ownerId, path, bytes);
+      return;
+    }
+    await (await _store()).write(scope, path, bytes);
+  }
+
+  Future<void> _deleteEntry(PouchScope scope, StoreEntry entry) async {
+    if (_busy) return;
+    final name = entry.path.split('/').last;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除文件'),
+        content: Text('确定删除「$name」？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      if (scope.kind == PouchScopeKind.shared) {
+        await (await _shared()).delete(scope.ownerId, entry.path);
+      } else {
+        await (await _store()).delete(scope, entry.path);
+      }
+      if (mounted) _toast('已删除 $name');
+    } catch (e) {
+      if (mounted) _toast('删除失败——${_messageFor(e)}');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+    await _openScope(scope, path: _path);
+  }
+
+  /// 同目录重名时依次试 `name (1).ext`、`name (2).ext`…
+  static String _uniqueName(String name, Set<String> taken) {
+    if (!taken.contains(name)) return name;
+    final ext = p.extension(name);
+    final base = ext.isEmpty ? name : name.substring(0, name.length - ext.length);
+    for (var i = 1;; i++) {
+      final candidate = '$base ($i)$ext';
+      if (!taken.contains(candidate)) return candidate;
+    }
+  }
+
+  void _toast(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   @override
   Widget build(BuildContext context) {
     final scope = _scope;
@@ -210,6 +346,13 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
               ),
       ),
       body: scope == null ? _buildTopLevel() : _buildScope(scope),
+      floatingActionButton: scope == null
+          ? null
+          : FloatingActionButton.small(
+              tooltip: '上传文件',
+              onPressed: _busy ? null : _uploadFiles,
+              child: const Icon(Icons.file_upload_outlined),
+            ),
     );
   }
 
@@ -357,7 +500,16 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
           ),
           title: Text(name),
           subtitle: entry.isDir ? null : Text(_formatSize(entry.size)),
-          onTap: entry.isDir ? () => _enterDirectory(entry) : null,
+          onTap: entry.isDir
+              ? () => _enterDirectory(entry)
+              : () => _openFile(scope, entry),
+          trailing: entry.isDir
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  tooltip: '删除',
+                  onPressed: _busy ? null : () => _deleteEntry(scope, entry),
+                ),
         );
       },
     );
