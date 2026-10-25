@@ -9,6 +9,7 @@ import 'package:shepaw/peer/services/peer_storage_service.dart';
 import 'package:shepaw/storage/group_workspace_scopes.dart';
 import 'package:shepaw/storage/group_workspace_service.dart';
 import 'package:shepaw/models/group_task.dart';
+import 'package:shepaw/storage/pouch_scope.dart';
 import 'package:shepaw/storage/pouch_scope_store.dart';
 import 'package:shepaw/storage/store_protocol.dart';
 import 'package:shepaw/storage/store_service.dart';
@@ -51,8 +52,15 @@ void main() {
       );
 
       expect(ws.workspaceRoot('group_test1'), 'group_test1');
-      expect(ws.metaRelPath('group_test1'),
-          'group_test1/group-workspace.json');
+      // 没有 hub 注册表时，兜底元数据落在群根 scope 的 workspace.json。
+      final scoped = await StoreService.instance.scopeStore();
+      expect(
+        await scoped.read(
+          PouchScope.group('group_test1'),
+          GroupWorkspaceService.metaFileName,
+        ),
+        isNotNull,
+      );
       expect(
         ws.membersDir(
           'group_13df0417-800c-4af5-b9d6-83eb202709b3',
@@ -66,7 +74,6 @@ void main() {
       expect(meta, isNotNull);
       expect(meta!.groupId, 'group_test1');
       expect(meta.schemaVersion, 1);
-      expect(meta.homeDevice, isNotEmpty);
       expect(meta.members.length, 2);
       expect(meta.members['she-builtin-agent-001']!.role, 'admin');
       expect(meta.members['agent-b']!.role, 'member');
@@ -83,6 +90,55 @@ void main() {
       expect(meta!.members.length, 3);
       expect(meta.members['agent-b']!.role, 'member');
       expect(meta.members['agent-c']!.role, 'member');
+    });
+  });
+
+  group('hub 群注册表', () {
+    test('成员/角色优先来自 system/groups.json，且不再写兜底文件', () async {
+      final scoped = await StoreService.instance.scopeStore();
+      await scoped.write(
+        PouchScope.system,
+        'groups.json',
+        Uint8List.fromList(utf8.encode(jsonEncode({
+          'groups': [
+            {
+              'id': 'group_registry',
+              'members': [
+                {
+                  'id': 'she-builtin-agent-001',
+                  'type': 'agent',
+                  'role': 'admin',
+                  'joined_at': 1700000000000,
+                },
+                {
+                  'id': 'agent-x',
+                  'type': 'agent',
+                  'role': 'member',
+                  'joined_at': 1700000001000,
+                },
+              ],
+            },
+          ],
+        }))),
+      );
+
+      await ws.ensureGroupWorkspace(groupId: 'group_registry');
+      final meta = await ws.loadMeta('group_registry');
+
+      expect(meta, isNotNull);
+      expect(meta!.members.keys,
+          containsAll(['she-builtin-agent-001', 'agent-x']));
+      expect(meta.members['she-builtin-agent-001']!.role, 'admin');
+      expect(meta.members['agent-x']!.role, 'member');
+      expect(meta.members['agent-x']!.joinedAt, isNotEmpty);
+      // 注册表已接管时，不把成员表再复制一份到群根。
+      expect(
+        await scoped.read(
+          PouchScope.group('group_registry'),
+          GroupWorkspaceService.metaFileName,
+        ),
+        isNull,
+      );
     });
   });
 
@@ -478,7 +534,6 @@ void main() {
         groupId: 'group_inbox',
         members: [(agentId: 'she', role: 'admin')],
       );
-      final home = (await ws.loadMeta('group_inbox'))!.homeDevice;
       final inboxDir = ws.inboxDir('group_inbox', 'group_session_x');
       final writeInbox = (String file, Map<String, dynamic> payload) async {
         final target = GroupWorkspaceScopes.map('$inboxDir/$file')!;
@@ -513,7 +568,6 @@ void main() {
         groupId: 'group_inbox',
         sessionId: 'group_session_x',
         since: DateTime.now(),
-        homeDevice: home,
       );
       expect(inbox.dispatch, isNull); // 旧文件被过滤
       expect(inbox.finish!['action'], 'done');
@@ -522,16 +576,11 @@ void main() {
       expect(inbox.isEmpty, isFalse);
     });
 
-    test('homeDevice 为空或不存在的空间 → 空 inbox', () async {
-      await ws.ensureGroupWorkspace(
-        groupId: 'group_inbox2',
-        members: [(agentId: 'she', role: 'admin')],
-      );
+    test('空间里没有 inbox 文件 → 空 inbox', () async {
       final inbox = await ws.readOrchestrationInbox(
         groupId: 'group_inbox2',
         sessionId: 's',
         since: DateTime.now(),
-        homeDevice: '',
       );
       expect(inbox.isEmpty, isTrue);
     });

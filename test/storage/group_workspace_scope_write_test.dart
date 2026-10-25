@@ -143,6 +143,8 @@ void main() {
         groupId: groupId,
         members: [(agentId: 'agent-a', role: 'admin')],
       );
+      // 只看本用例的写入：ensure 自己会落群根 workspace.json。
+      transport.writes.clear();
     });
 
     tearDown(() {
