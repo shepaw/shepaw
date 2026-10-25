@@ -17,7 +17,7 @@ import '../storage/store_protocol.dart';
 class StoreUriLinkSyntax extends md.InlineSyntax {
   StoreUriLinkSyntax() : super(_pattern);
 
-  static const _pattern = r'pouch://[a-z][a-z0-9-]*/'
+  static const _pattern = r'pouch://[a-z0-9][a-z0-9-]*/'
       r'[^\s<>\[\](){}"`，。、；：！？…]+';
 
   /// 句末标点（英文句点也在内：保护 `snake-game.html。` 这类正文场景）。
@@ -41,13 +41,20 @@ class StoreUriLinkSyntax extends md.InlineSyntax {
     final uri = match.group(0)!.substring(0, consume);
 
     final String display;
-    try {
-      final parsed = parseStoreUri(uri);
-      final base = p.basename(parsed.path);
+    final scoped = PouchV2Uri.tryParse(uri);
+    if (scoped != null) {
+      // v3 地址：链接文字取文件/目录名，scope 根就显示整条地址。
+      final base = p.basename(scoped.path);
       display = base.isEmpty ? uri : base;
-    } catch (_) {
-      // 非法 URI（如 `pouch://xxx`）：不消费，让文本原样走其它语法。
-      return false;
+    } else {
+      try {
+        final parsed = parseStoreUri(uri);
+        final base = p.basename(parsed.path);
+        display = base.isEmpty ? uri : base;
+      } catch (_) {
+        // 非法 URI（如 `pouch://xxx`）：不消费，让文本原样走其它语法。
+        return false;
+      }
     }
 
     parser.writeText();

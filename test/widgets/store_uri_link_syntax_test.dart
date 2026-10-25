@@ -79,6 +79,23 @@ void main() {
       expect(links.single.href, dirUri);
       expect(links.single.text, 'notes');
     });
+
+    test('v3 地址（袋子 id 开头是数字）也能链接化', () {
+      const v3 = 'pouch://1fc2a95b-4d50-45d2-83e1-8e40954d1239'
+          '/group:g1:shared/tasks/t1/requirement.md';
+      final links = parseLinks('见 $v3');
+      expect(links, hasLength(1));
+      expect(links.single.href, v3);
+      expect(links.single.text, 'requirement.md');
+    });
+
+    test('v3 scope 根（没有文件段）显示整条地址', () {
+      const v3 = 'pouch://a95b5782-4d50-45d2-83e1-8e40954d1239/group:g1:shared';
+      final links = parseLinks(v3);
+      expect(links, hasLength(1));
+      expect(links.single.href, v3);
+      expect(links.single.text, v3);
+    });
   });
 
   group('不误伤既有结构', () {

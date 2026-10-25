@@ -183,14 +183,26 @@ class StoreFilePreviewPage extends StatelessWidget {
     final uri = storeUri;
     if (uri == null || uri.isEmpty) return;
     try {
+      final scoped = PouchV2Uri.tryParse(uri);
+      if (scoped != null) {
+        final slash = scoped.path.lastIndexOf('/');
+        final parent = slash < 0 ? '' : scoped.path.substring(0, slash);
+        registerStorageDirectoryOpener();
+        final openScope = StoreOpenService.instance.openScopeDirectory;
+        if (openScope == null) throw StateError('scope browser not registered');
+        await openScope(context, scope: scoped.parsedScope, path: parent);
+        return;
+      }
       final parsed = parseStoreUri(uri);
       registerStorageDirectoryOpener();
       final slash = parsed.path.lastIndexOf('/');
       final parent = slash < 0 ? '' : parsed.path.substring(0, slash);
+      final deviceId = await resolveStoreDevice(parsed.space);
+      if (!context.mounted) return;
       await StoreOpenService.instance.openDirectoryInBrowser(
         context,
         space: parsed.space,
-        deviceId: await resolveStoreDevice(parsed.space),
+        deviceId: deviceId,
         path: parent,
         resolvePrefix: false,
       );
