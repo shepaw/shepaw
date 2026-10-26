@@ -8,6 +8,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -487,11 +488,44 @@ class PeerConnection {
 
   // ── 内部方法 ────────────────────────────────────────────────────────────
 
+  /// 握手前把实际用来加密 msg1 的那把公钥指纹打出来。
+  ///
+  /// 主机侧只会看到「decrypt error → 4403」，看不出 App 到底拿了哪把 key。
+  /// 指纹和配对记录对不上（或 key 为空）就说明拿错了 peer 对象，不是网络问题。
+  void _logPinnedKey() {
+    if (peer.publicKey.isEmpty) {
+      _log.warning(
+        'Handshake to ${peer.deviceName} has no pinned key '
+        '(peer id=${peer.id}, paired fp=${peer.fingerprint})',
+        tag: _tag,
+      );
+      return;
+    }
+    final pinned = _shortFingerprint(peer.publicKey);
+    if (peer.fingerprint.isNotEmpty && pinned != peer.fingerprint) {
+      _log.warning(
+        'Pinned key mismatch for ${peer.deviceName}: '
+        'key fp=$pinned, paired fp=${peer.fingerprint} (peer id=${peer.id})',
+        tag: _tag,
+      );
+      return;
+    }
+    _log.debug(
+      'Handshake to ${peer.deviceName} pinning fp=$pinned '
+      '(peer id=${peer.id})',
+      tag: _tag,
+    );
+  }
+
   Future<void> _performInitiatorHandshake(
     Completer<String> msg2Completer, {
     Duration handshakeTimeout = const Duration(seconds: 15),
   }) async {
     final identity = await NoiseIdentity.loadOrCreate();
+    // msg1 用 peer.publicKey 加密。它和配对记录里的指纹对不上时，主机解不开
+    // msg1，只会回 4403 / 「handshake key mismatch」，看着像网络问题；把实际
+    // 用的 key 指纹打出来，才分得清是密钥漂了还是端点在乱试。
+    _logPinnedKey();
     _noiseSession = await NoiseSession.initiator(
       staticPublicKey: identity.publicKey,
       staticPrivateKey: identity.privateKey,
@@ -818,3 +852,18 @@ class PeerAckEvent {
   final String status; // 'delivered' or 'read'
   PeerAckEvent({required this.messageId, required this.status});
 }
+
+/// 公钥的 16 位十六进制指纹：`sha256(publicKey)` 前 8 字节。
+/// 与配对记录、主机侧的 `fingerprint` 是同一套算法。
+String _shortFingerprint(Uint8List publicKey) {
+  final digest = crypto.sha256.convert(publicKey).bytes;
+  final sb = StringBuffer();
+  for (var i = 0; i < 8; i++) {
+    sb.write(digest[i].toRadixString(16).padLeft(2, '0'));
+  }
+  return sb.toString();
+}
+
+/// 诊断用：暴露给测试，确认算法和主机侧一致。
+@visibleForTesting
+String peerKeyFingerprint(Uint8List publicKey) => _shortFingerprint(publicKey);
