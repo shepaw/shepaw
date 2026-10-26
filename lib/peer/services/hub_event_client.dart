@@ -78,6 +78,20 @@ class HubEventClient {
 
   /// 补拉进行中又收到的请求（多半来自重连）。当前 job 收尾后按 peer 重跑。
   final _catchUpQueued = <String>{};
+
+  /// 补拉期间暂存的 live 事件。
+  ///
+  /// 补拉正在读改写游标，live 事件不能并发应用；先按 peer 暂存，收尾后
+  /// 按序回放。页里已经覆盖的事件会被游标判成 duplicate 跳过，只有落在
+  /// 页尾之后的才真正应用 —— 不能像以前那样直接丢弃等 30s 的 ping。
+  final _liveDeferred = <String, List<HubEvent>>{};
+
+  /// 暂存溢出的 peer（补拉拖得太久 / 事件太多）。不再逐条囤，收尾后整轮补拉。
+  final _deferredOverflow = <String>{};
+
+  /// 单个 peer 最多暂存多少条 live 事件。
+  static const _maxDeferredLivePerPeer = 512;
+
   var _livePaused = false;
 
   Stream<HubNotice> get notices => _notices.stream;
@@ -129,6 +143,8 @@ class HubEventClient {
     _liveDirty.clear();
     _attachRequests.clear();
     _catchUpQueued.clear();
+    _liveDeferred.clear();
+    _deferredOverflow.clear();
   }
 
   Future<void> _onControl(PeerControlEvent event) async {
@@ -142,7 +158,19 @@ class HubEventClient {
       case 'hub_event':
         final parsed = HubEvent.parse(event.data['event']);
         if (parsed == null) return;
-        if (_livePaused) return;
+        if (_livePaused) {
+          if (_deferredOverflow.contains(event.peerId)) return;
+          final deferred =
+              _liveDeferred.putIfAbsent(event.peerId, () => <HubEvent>[]);
+          if (deferred.length >= _maxDeferredLivePerPeer) {
+            // 补拉拖得太久、事件太多：丢掉已攒的，收尾后整轮补拉兜底。
+            _liveDeferred.remove(event.peerId);
+            _deferredOverflow.add(event.peerId);
+            return;
+          }
+          deferred.add(parsed);
+          return;
+        }
         await _controlQueue.run(
           _controlKey,
           () => _onLive(event.peerId, parsed),
@@ -227,6 +255,65 @@ class HubEventClient {
       }
     } finally {
       _livePaused = false;
+      _drainDeferredLive();
+    }
+  }
+
+  /// 补拉结束，回放期间暂存的 live 事件。
+  ///
+  /// 当前仍在 [_controlQueue] 的任务里，所以不直接应用，而是入队一批任务
+  /// 排到补拉之后，保证游标按顺序推进。
+  void _drainDeferredLive() {
+    if (_liveDeferred.isEmpty && _deferredOverflow.isEmpty) return;
+    final deferred = <String, List<HubEvent>>{
+      for (final entry in _liveDeferred.entries)
+        entry.key: List<HubEvent>.of(entry.value),
+    };
+    _liveDeferred.clear();
+    final overflowed = _deferredOverflow.toList();
+    _deferredOverflow.clear();
+    scheduleMicrotask(() {
+      for (final entry in deferred.entries) {
+        if (overflowed.contains(entry.key)) continue;
+        unawaited(_controlQueue.run(
+          _controlKey,
+          () => _applyDeferredLive(entry.key, entry.value),
+        ));
+      }
+      for (final peerId in overflowed) {
+        unawaited(catchUp(peerId));
+      }
+    });
+  }
+
+  /// 按游标回放一批暂存的 live 事件。
+  ///
+  /// 补拉已经追到当时的 head，大部分事件会被判成 duplicate；只有页尾之后
+  /// 的新事件会应用。遇到缺口说明 live 投递中间丢过帧，排一轮补拉把缺口
+  /// 填上即可，不要为后面每条事件各跑一轮。
+  Future<void> _applyDeferredLive(String peerId, List<HubEvent> events) async {
+    final key = await _key(peerId);
+    var cursor = await seqStore.read(key);
+    try {
+      for (final event in events) {
+        switch (cursorStep(cursor, event.seq)) {
+          case HubCursorStep.duplicate:
+            continue;
+          case HubCursorStep.gap:
+            unawaited(catchUp(peerId));
+            return;
+          case HubCursorStep.apply:
+            await _dispatch(peerId, event);
+            await seqStore.write(key, event.seq);
+            cursor = event.seq;
+        }
+      }
+    } catch (error) {
+      _log.warning(
+        'apply deferred live events failed: $error',
+        tag: 'HubEvent',
+      );
+      unawaited(catchUp(peerId));
     }
   }
 

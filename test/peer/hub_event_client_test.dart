@@ -152,6 +152,73 @@ void main() {
     await incoming.close();
   });
 
+  test('补拉期间的 live 事件暂存，收尾后按游标补应用', () async {
+    final incoming = StreamController<PeerControlEvent>.broadcast();
+    final sent = <int>[];
+    final store = MemoryHubSeqStore();
+    final firstPageReleased = Completer<void>();
+    var calls = 0;
+    final client = HubEventClient(
+      events: incoming.stream,
+      send: (peerId, frame) async {
+        sent.add(frame['since_seq'] as int);
+        calls += 1;
+        if (calls == 1) await firstPageReleased.future;
+        incoming.add(PeerControlEvent(
+          peerId: peerId,
+          data: {
+            'type': 'events_sync_resp',
+            'request_id': frame['request_id'],
+            'events': [
+              {'seq': 1, 'kind': 'agents.changed', 'data': <String, dynamic>{}},
+            ],
+            'head_seq': 1,
+            'reset': false,
+          },
+        ));
+        return true;
+      },
+      seqStore: store,
+      fingerprintOf: (_) async => 'fp',
+    );
+    client.start();
+    addTearDown(client.dispose);
+
+    final syncing = client.catchUp('peer-1');
+    for (var i = 0; i < 50 && sent.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    expect(sent, [0]);
+
+    // 第一页还没回来时又产生一条 live 事件。以前这里会被直接丢掉，
+    // 只能等下一轮 ping 才能补上。
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: {
+        'type': 'hub_event',
+        'event': {
+          'seq': 2,
+          'kind': 'agents.changed',
+          'channel_id': '',
+          'agent_id': '',
+          'data': <String, dynamic>{},
+        },
+      },
+    ));
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    firstPageReleased.complete();
+    await syncing;
+
+    // 回放只走暂存队列，游标推进到 2，不需要再发一次补拉请求。
+    for (var i = 0; i < 50 && store.values['fp'] != 2; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    expect(store.values['fp'], 2);
+    expect(sent, [0]);
+    await incoming.close();
+  });
+
   test('channel.read 事件同步清除本机与 psess_ 会话的未读角标', () async {
     final db = LocalDatabaseService();
     final suffix = DateTime.now().microsecondsSinceEpoch;
