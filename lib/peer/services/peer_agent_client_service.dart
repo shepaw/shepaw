@@ -9138,7 +9138,7 @@ class PeerAgentClientService {
 
   void _onChunk(Map<String, dynamic> data) {
     final requestId = data['request_id'] as String?;
-    final content = data['content'] as String? ?? '';
+    var content = data['content'] as String? ?? '';
     if (requestId == null) return;
     final p = _pending[requestId];
     if (p == null) return;
@@ -9149,6 +9149,24 @@ class PeerAgentClientService {
       if (ack != null && !ack.isCompleted) ack.complete(false);
       ChatService().releaseQueuedMessage(requestId);
       ChatService().attachQueuedPeerTurn(p.toRecord(requestId));
+    }
+    // 新主机的 live 分片带 UTF-16 起始偏移。断线重连后主机把流改推到
+    // 当前连接，live 分片可能和 resume 增量交错：重叠的裁掉，跳在前面的
+    // 说明还有缺口，先交给 resume 补齐。
+    final offset = data['offset'];
+    if (offset is int) {
+      final aligned = alignLiveChunk(
+        content: content,
+        offset: offset,
+        receivedLength: p.receivedLength,
+      );
+      if (aligned.gap) {
+        _scheduleReconnectCatchUp(p.peerId, requestId, p);
+        return;
+      }
+      final rest = aligned.content;
+      if (rest == null || rest.isEmpty) return;
+      content = rest;
     }
     // 先计数再分发：与 hub 的 accumulated 同序列（同为 UTF-16 码元长度），
     // resume 的断点偏移才精确。

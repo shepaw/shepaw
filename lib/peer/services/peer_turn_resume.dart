@@ -2,8 +2,32 @@
 ///
 /// 与 PeerAgentClientService 解耦，便于单元测试：
 /// - [applyResumeDelta]：resume_resp 的增量去重（drop-prefix）；
+/// - [alignLiveChunk]：live 分片按 UTF-16 偏移与已收长度对齐；
 /// - [evaluateTurnWatchdog]：turn 看门狗判定（suspended 冻结 / suspendCap / idle）。
 library;
+
+/// 按 UTF-16 起始偏移对齐一条 live 分片。
+///
+/// 主机现在把流推到「设备当前连接」，重连后的 live 分片可能和 resume 的
+/// 增量交错：已经由 resume 补过的前缀要丢掉；如果分片整个跳在已收长度
+/// 前面，说明断线期间有帧没收到，必须让 resume 先补缺口，不能跳过它拼下去。
+///
+/// `content == null` 表示这一帧不用应用；`gap == true` 时调用方应发起一次
+/// resume，把缺的那段补回来。
+({String? content, bool gap}) alignLiveChunk({
+  required String content,
+  required int offset,
+  required int receivedLength,
+}) {
+  final end = offset + content.length;
+  if (end <= receivedLength) {
+    return (content: null, gap: false);
+  }
+  if (offset > receivedLength) {
+    return (content: null, gap: true);
+  }
+  return (content: content.substring(receivedLength - offset), gap: false);
+}
 
 /// resume_resp 携带的 delta 是基于「发送 resume_req 时的基准长度 K」切出的。
 /// 在 resp 到达前，新连接上可能已经有 live chunk 到达（重连即路由），这些

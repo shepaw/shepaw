@@ -45,6 +45,53 @@ void main() {
     });
   });
 
+  group('alignLiveChunk', () {
+    test('没有重叠 → 全量应用', () {
+      final aligned =
+          alignLiveChunk(content: 'world', offset: 6, receivedLength: 6);
+      expect(aligned.gap, isFalse);
+      expect(aligned.content, 'world');
+    });
+
+    test('前缀已被 resume 补过 → 只应用缺的后半段', () {
+      final aligned =
+          alignLiveChunk(content: 'world', offset: 3, receivedLength: 6);
+      expect(aligned.content, 'ld');
+    });
+
+    test('整段都收过 → 丢弃', () {
+      final aligned =
+          alignLiveChunk(content: 'world', offset: 3, receivedLength: 8);
+      expect(aligned.content, isNull);
+      expect(aligned.gap, isFalse);
+    });
+
+    test('跳在已收长度前面 → 标记缺口，不能直接拼', () {
+      final aligned =
+          alignLiveChunk(content: 'world', offset: 8, receivedLength: 3);
+      expect(aligned.content, isNull);
+      expect(aligned.gap, isTrue);
+    });
+
+    test('按 UTF-16 码元对齐（emoji 占两个码元）', () {
+      // 已收 2 个码元 = 一个整 emoji；分片从 offset 2 起，整段都要应用。
+      expect(
+        alignLiveChunk(content: '🙂a', offset: 2, receivedLength: 2).content,
+        '🙂a',
+      );
+      // 已收 4 个码元 = emoji + 分片里的 emoji，只剩末尾的 'a'。
+      expect(
+        alignLiveChunk(content: '🙂a', offset: 2, receivedLength: 4).content,
+        'a',
+      );
+      // 已收 5 个码元 = 整条分片都收过。
+      expect(
+        alignLiveChunk(content: '🙂a', offset: 2, receivedLength: 5).content,
+        isNull,
+      );
+    });
+  });
+
   group('evaluateTurnWatchdog', () {
     final startedAt = DateTime(2026, 7, 20, 12, 0, 0);
     const chatTimeout = Duration(seconds: 300);
