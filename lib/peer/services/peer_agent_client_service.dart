@@ -2669,6 +2669,10 @@ class PeerAgentClientService {
   @visibleForTesting
   Duration? debugDeliveryProbeDelayOverride;
 
+  /// Test seam: shrink the `agent_queued` ack wait.
+  @visibleForTesting
+  Duration? debugQueueAckTimeoutOverride;
+
   /// Test seam: schedule the post-send delivery probe for a seeded turn.
   @visibleForTesting
   void debugScheduleDeliveryProbe(
@@ -3332,26 +3336,30 @@ class PeerAgentClientService {
       ChatService().dropQueuedMessage(requestId);
     }));
     final deviceInfo = await ClientDeviceInfo.current();
-    final sent = await PeerConnectionManager.instance.sendControl(
-      peerId,
-      {
-        'type': 'agent_chat',
-        'request_id': requestId,
-        'agent_id': remoteAgentId,
-        'message': message,
-        if (userMessageId != null && userMessageId.isNotEmpty)
-          'user_message_id': bareMessageId(userMessageId),
-        if (replyToId != null && replyToId.isNotEmpty)
-          'reply_to_id': bareMessageId(replyToId),
-        if (replyQuoteText != null && replyQuoteText.isNotEmpty)
-          'reply_quote_text': replyQuoteText,
-        if (sessionId != null && sessionId.isNotEmpty) 'session_id': sessionId,
-        if (channelId != null && channelId.isNotEmpty) 'channel_id': channelId,
-        if (attachmentRefs != null) 'attachments': attachmentRefs,
-        ...deviceInfo.toWireFields(),
-      },
-      waitForReconnect: _controlReconnectWait,
-    );
+    final frame = <String, dynamic>{
+      'type': 'agent_chat',
+      'request_id': requestId,
+      'agent_id': remoteAgentId,
+      'message': message,
+      if (userMessageId != null && userMessageId.isNotEmpty)
+        'user_message_id': bareMessageId(userMessageId),
+      if (replyToId != null && replyToId.isNotEmpty)
+        'reply_to_id': bareMessageId(replyToId),
+      if (replyQuoteText != null && replyQuoteText.isNotEmpty)
+        'reply_quote_text': replyQuoteText,
+      if (sessionId != null && sessionId.isNotEmpty) 'session_id': sessionId,
+      if (channelId != null && channelId.isNotEmpty) 'channel_id': channelId,
+      if (attachmentRefs != null) 'attachments': attachmentRefs,
+      ...deviceInfo.toWireFields(),
+    };
+    final override = debugSendControlOverride;
+    final sent = override != null
+        ? await override(peerId, frame)
+        : await PeerConnectionManager.instance.sendControl(
+            peerId,
+            frame,
+            waitForReconnect: _controlReconnectWait,
+          );
     if (!sent) {
       _pending.remove(requestId);
       if (!pending.completer.isCompleted) {
@@ -3361,8 +3369,40 @@ class PeerAgentClientService {
     }
     unawaited(_awaitTurnCompletion(requestId, pending, peerId));
     try {
-      return await ack.future.timeout(const Duration(seconds: 20));
+      return await ack.future.timeout(_effectiveQueueAckTimeout);
     } on TimeoutException {
+      // 确认帧可能正好丢在断线上。主机会把已经受理、但还没开跑的
+      // request 也映射成 streaming，所以先 resume 对账一次再判死：
+      // 直接报失败会让主机照跑的那条消息被用户重发一遍。
+      if (!pending.completer.isCompleted && !ack.isCompleted) {
+        if (!pending.resumeInFlight) {
+          pending.resumeInFlight = true;
+          pending.resumePurpose = _ResumePurpose.deliveryProbe;
+          pending.resumeBaseLength = pending.receivedLength;
+          final probed = await _sendResumeReq(peerId, requestId, pending);
+          if (!probed) {
+            // 连接此刻不可用，帧可能只是没送出去 —— 保留排队态，等重连。
+            pending.resumeInFlight = false;
+            pending.resumePurpose = _ResumePurpose.none;
+            pending.resumeBaseLength = null;
+            return true;
+          }
+          // 应答由 _onTurnResumeResp 收口：非 lost → ack(true)，
+          // lost → ack(false)。看门狗只负责没应答时复位标志。
+          _watchResumeResponse(
+            peerId,
+            requestId,
+            0,
+            failOnExhausted: false,
+          );
+        }
+        try {
+          return await ack.future.timeout(_effectiveResumeResponseTimeout);
+        } on TimeoutException {
+          // 连得上却没回音：先保留排队态，交给重连后的 resume 对账。
+          return true;
+        }
+      }
       _pending.remove(requestId);
       if (!ack.isCompleted) {
         ack.completeError(TimeoutException('主机没有收下排队消息'));
@@ -9455,6 +9495,9 @@ class PeerAgentClientService {
   void _finishPending(String requestId, Map<String, dynamic> data) {
     final p = _pending.remove(requestId);
     if (p == null || p.completer.isCompleted) return;
+    // 回合跑完了 → 主机当然收下了；排队回执可能在断线上丢了。
+    final ack = p.queueAck;
+    if (ack != null && !ack.isCompleted) ack.complete(true);
     _clearPersistedTurn(requestId);
     _closeCardsOfRequest(requestId, 'turn_ended');
     unawaited(_persistTurnCardsClosed(p, requestId, 'turn_ended'));
@@ -9682,8 +9725,14 @@ class PeerAgentClientService {
     String requestId,
     _PendingRequest p,
   ) async {
-    final frame = p.agentChatFrame;
-    if (frame == null || p.completer.isCompleted) return;
+    final original = p.agentChatFrame;
+    if (original == null || p.completer.isCompleted) return;
+    // 带上已收到的长度：主机若其实已经受理，就只回缺的那一段，
+    // 不会把客户端已经显示的正文再回放一遍。
+    final frame = <String, dynamic>{
+      ...original,
+      'known_content_length': p.receivedLength,
+    };
     final override = debugSendControlOverride;
     final bool sent;
     if (override != null) {
@@ -9868,6 +9917,9 @@ class PeerAgentClientService {
   Duration get _effectiveResumeResponseTimeout =>
       debugResumeResponseTimeoutOverride ?? resumeResponseTimeout;
 
+  Duration get _effectiveQueueAckTimeout =>
+      debugQueueAckTimeoutOverride ?? const Duration(seconds: 20);
+
   /// Hub 侧 Hub↔ACP 传输断开：P2P 仍连着，冻结 idle 计时并等待恢复。
   void _onUpstreamReconnecting(Map<String, dynamic> data) {
     final requestId = data['request_id'] as String?;
@@ -9953,6 +10005,12 @@ class PeerAgentClientService {
       'delta=${delta.length} (raw=${rawDelta.length})',
       tag: 'PeerApproval',
     );
+    // 主机认得这一轮：排队确认帧（agent_queued）可能正好丢在断线上，
+    // resume 的应答同样能证明它收下了。lost 交给下面的失败路径。
+    final queueAck = p.queueAck;
+    if (queueAck != null && !queueAck.isCompleted) {
+      queueAck.complete(status != 'lost');
+    }
     switch (status) {
       case 'streaming':
         // 续传成功 —— idle 看门狗从此刻重新计时。
