@@ -29,9 +29,11 @@ void main() {
     tearDown(() async {
       svc.debugSendControlOverride = null;
       svc.debugResumeResponseTimeoutOverride = null;
+      svc.debugReconnectCatchUpIntervalOverride = null;
       // 兜底清理种子 turn，避免跨用例污染单例状态。
       await svc.cancelInflightTurnsForChannel('ch-retry');
       await svc.cancelInflightTurnsForChannel('ch-retry-2');
+      await svc.cancelInflightTurnsForChannel('ch-retry-3');
     });
 
     test('resume_req 单帧无应答 → 自动重发，重试耗尽才按原文案判失败', () async {
@@ -101,5 +103,61 @@ void main() {
       expect(outcomes, isEmpty, reason: '续传中的 turn 不应被误杀');
       expect(svc.hasInflightForChannel('ch-retry-2'), isTrue);
     });
+
+    test('重连续传成功后按短周期补拉，直到收到终态', () async {
+      final outcomes = <Object>[];
+      svc.debugReconnectCatchUpIntervalOverride =
+          const Duration(milliseconds: 40);
+      svc
+          .debugSeedPendingTurn(
+            requestId: 'req-3',
+            peerId: 'peer-1',
+            channelId: 'ch-retry-3',
+            suspended: true,
+          )
+          .then(outcomes.add, onError: outcomes.add);
+
+      await svc.debugResumeSuspendedTurns('peer-1');
+      expect(resumeReqs(), hasLength(1));
+
+      // 主机还活着、回 streaming：旧连接已经不在转发流里，后续正文只能补拉。
+      svc.debugInjectControlForTest(
+        'agent_turn_resume_resp',
+        {'request_id': 'req-3', 'status': 'streaming', 'delta': '第一段'},
+        peerId: 'peer-1',
+      );
+
+      await _waitUntil(() => resumeReqs().length >= 2);
+      expect(
+        resumeReqs()[1]['known_content_length'],
+        3,
+        reason: '补拉应从已收到的长度继续，不重复回放',
+      );
+
+      svc.debugInjectControlForTest(
+        'agent_turn_resume_resp',
+        {
+          'request_id': 'req-3',
+          'status': 'done',
+          'delta': '第二段',
+          'content': '第一段第二段',
+        },
+        peerId: 'peer-1',
+      );
+
+      await _waitUntil(() => outcomes.isNotEmpty);
+      expect(outcomes.single, isA<PeerChatResult>());
+      expect(svc.hasInflightForChannel('ch-retry-3'), isFalse);
+    });
   });
+}
+
+Future<void> _waitUntil(
+  bool Function() condition, {
+  Duration timeout = const Duration(seconds: 2),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (!condition() && DateTime.now().isBefore(deadline)) {
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
 }

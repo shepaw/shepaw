@@ -1954,6 +1954,10 @@ class _PendingRequest {
   /// 上次向 Hub 发 stall-probe resume_req 的时刻（节流重复探测）。
   DateTime? lastStallProbeAt;
 
+  /// 重连续传成功后的短周期补拉定时器：主机不会往重连后的新连接续推，
+  /// 靠它把后续分片和终态拉回来。
+  Timer? catchUpTimer;
+
   /// 最近一张审批卡到达的时刻。闸门过期后允许 stall probe。
   DateTime? lastApprovalOpenedAt;
 
@@ -2063,6 +2067,13 @@ class PeerAgentClientService {
   /// 连接仍存活但距上次 agent 输出超过该时长 → 向 Hub 发
   /// `agent_turn_resume_req` 补拉（对齐直连 ACP 的 180s stall watchdog）。
   static const Duration stallProbeInterval = Duration(seconds: 180);
+
+  /// 重连续传成功后的补拉周期。
+  ///
+  /// 主机那条回合的转发通道还挂在断开前的连接上，重连不会自动续推；
+  /// 只靠 180s 停滞探测的话，用户要等到下一轮探测才看见后续正文和终态。
+  /// 这里按短周期主动 resume，直到 done / error 或再次断线。
+  static const Duration reconnectCatchUpInterval = Duration(seconds: 3);
 
   /// 断连挂起（等待重连续传）的最长时长。挂起期间 idle 计时冻结（对端本来
   /// 就不可能有帧到达），超过该时长说明重连无望，判 turn 失败。
@@ -2625,6 +2636,7 @@ class PeerAgentClientService {
   void _abortPendingTurn(String requestId) {
     final p = _pending.remove(requestId);
     if (p == null || p.completer.isCompleted) return;
+    _stopCatchUp(p);
     // 断连挂起期间的取消：下面的 sendControl 大概率发不出去（连接已断），
     // 登记下来，重连后补发 cancel 而不是 resume（见 _resumeSuspendedTurns）。
     if (p.suspendedSince != null) {
@@ -2672,6 +2684,10 @@ class PeerAgentClientService {
   /// Test seam: shrink the `agent_queued` ack wait.
   @visibleForTesting
   Duration? debugQueueAckTimeoutOverride;
+
+  /// Test seam: shrink the post-reconnect catch-up probe interval.
+  @visibleForTesting
+  Duration? debugReconnectCatchUpIntervalOverride;
 
   /// Test seam: schedule the post-send delivery probe for a seeded turn.
   @visibleForTesting
@@ -3626,6 +3642,7 @@ class PeerAgentClientService {
   }) {
     final p = _pending.remove(requestId);
     if (p == null || p.completer.isCompleted) return;
+    _stopCatchUp(p);
     _clearPersistedTurn(requestId);
     unawaited(PeerConnectionManager.instance.sendControl(peerId, {
       'type': 'agent_cancel',
@@ -9495,6 +9512,7 @@ class PeerAgentClientService {
   void _finishPending(String requestId, Map<String, dynamic> data) {
     final p = _pending.remove(requestId);
     if (p == null || p.completer.isCompleted) return;
+    _stopCatchUp(p);
     // 回合跑完了 → 主机当然收下了；排队回执可能在断线上丢了。
     final ack = p.queueAck;
     if (ack != null && !ack.isCompleted) ack.complete(true);
@@ -9549,6 +9567,7 @@ class PeerAgentClientService {
     if (requestId == null) return;
     final p = _pending.remove(requestId);
     if (p == null || p.completer.isCompleted) return;
+    _stopCatchUp(p);
     final ack = p.queueAck;
     if (ack != null && !ack.isCompleted) {
       ack.completeError(
@@ -9802,6 +9821,49 @@ class PeerAgentClientService {
     unawaited(_reconcileInflightFromRemoteHistory(p, requestId));
   }
 
+  /// 重连续传成功后，主机这条回合的转发通道仍挂在旧连接上，不会自动
+  /// 往新连接续推。按 [reconnectCatchUpInterval] 短周期补拉，直到 done /
+  /// error；再次断线时暂停，重连后由 [_resumeSuspendedTurns] 重新接上。
+  void _scheduleReconnectCatchUp(
+    String peerId,
+    String requestId,
+    _PendingRequest p,
+  ) {
+    p.catchUpTimer?.cancel();
+    p.catchUpTimer = Timer.periodic(_effectiveCatchUpInterval, (timer) {
+      if (p.completer.isCompleted || !identical(_pending[requestId], p)) {
+        timer.cancel();
+        p.catchUpTimer = null;
+        return;
+      }
+      if (p.suspendedSince != null ||
+          p.upstreamReconnectingSince != null ||
+          p.resumeInFlight ||
+          p.openApprovals > 0) {
+        return;
+      }
+      p.lastStallProbeAt = DateTime.now();
+      p.resumeInFlight = true;
+      p.resumePurpose = _ResumePurpose.stallProbe;
+      p.resumeBaseLength = p.receivedLength;
+      unawaited(() async {
+        final sent = await _sendResumeReq(peerId, requestId, p);
+        if (!sent) {
+          p.resumeInFlight = false;
+          p.resumePurpose = _ResumePurpose.none;
+          p.resumeBaseLength = null;
+          return;
+        }
+        _watchResumeResponse(peerId, requestId, 0, failOnExhausted: false);
+      }());
+    });
+  }
+
+  void _stopCatchUp(_PendingRequest p) {
+    p.catchUpTimer?.cancel();
+    p.catchUpTimer = null;
+  }
+
   Future<void> _reconcileInflightFromRemoteHistory(
     _PendingRequest p,
     String requestId,
@@ -9920,6 +9982,9 @@ class PeerAgentClientService {
   Duration get _effectiveQueueAckTimeout =>
       debugQueueAckTimeoutOverride ?? const Duration(seconds: 20);
 
+  Duration get _effectiveCatchUpInterval =>
+      debugReconnectCatchUpIntervalOverride ?? reconnectCatchUpInterval;
+
   /// Hub 侧 Hub↔ACP 传输断开：P2P 仍连着，冻结 idle 计时并等待恢复。
   void _onUpstreamReconnecting(Map<String, dynamic> data) {
     final requestId = data['request_id'] as String?;
@@ -10015,6 +10080,11 @@ class PeerAgentClientService {
       case 'streaming':
         // 续传成功 —— idle 看门狗从此刻重新计时。
         p.idleSince = DateTime.now();
+        // 断连续传成功：旧连接已经不在转发流里，主机不会主动续推。
+        // 按短周期补拉后续分片和终态，别让用户干等 180s 的停滞探测。
+        if (purpose == _ResumePurpose.suspend) {
+          _scheduleReconnectCatchUp(p.peerId, requestId, p);
+        }
         break;
       case 'done':
         // Remote turn is finished. Bypass the openApprovals gate — a stale
