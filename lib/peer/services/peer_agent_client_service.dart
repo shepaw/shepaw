@@ -3739,6 +3739,14 @@ class PeerAgentClientService {
       case 'agent_error':
         _onError(event.data);
         break;
+      case 'peer_busy':
+        // 主机上行队列满，这一帧没有收下（agent_chat 会走 agent_error）。
+        // 请求方各自按超时失败；留一条日志便于区分主机过载和网络问题。
+        _log.warning(
+          '主机正忙，已拒收一帧：${event.data['message'] ?? ''}',
+          tag: _tag,
+        );
+        break;
       case 'agent_approval_req':
         _onApprovalReq(event.peerId, event.data);
         break;
