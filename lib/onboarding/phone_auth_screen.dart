@@ -63,6 +63,16 @@ PouchPickResult pickPhonePouch({
   );
 }
 
+/// 这次探测失败值不值得丢掉旧连接再问一次。
+///
+/// 超时（以及底层还没连上）多半是息屏 / 切网后留下的半开连接；主机明确回
+/// 「版本太旧」时重试没有意义。
+bool probeRetryable(Object error) {
+  if (error is TimeoutException) return true;
+  if (error is StateError) return !error.message.contains('旧版本');
+  return false;
+}
+
 /// 手机登录：主机已经在电脑上初始化。这里只输入名称和密码。
 class PhoneAuthScreen extends StatefulWidget {
   const PhoneAuthScreen({super.key});
@@ -72,6 +82,10 @@ class PhoneAuthScreen extends StatefulWidget {
 }
 
 class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
+  /// 息屏回来第一次问主机常常赶不上重连，给足时间再判失败。
+  static const _probeTimeout = Duration(seconds: 15);
+  static const _probeAttempts = 2;
+
   final _name = TextEditingController();
   final _password = TextEditingController();
 
@@ -80,6 +94,7 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
   bool _probing = false;
   bool _ready = false;
   bool _passwordSet = false;
+  bool _probeFailed = false;
   String _hostId = '';
   String? _savedId;
   List<PouchDescriptor> _pouches = const [];
@@ -117,6 +132,7 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
       _probing = true;
       _error = '';
       _ready = false;
+      _probeFailed = false;
     });
     try {
       var hostId = _hostId;
@@ -148,9 +164,22 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
       }
       await _connect(peer);
       if (!mounted) return;
-      final set = await requestPouchPasswordStatus(hostPeerId: hostId);
+      final set = await _probe(
+        peer,
+        () => requestPouchPasswordStatus(
+          hostPeerId: hostId,
+          timeout: _probeTimeout,
+        ),
+      );
+      if (!mounted) return;
       final List<PouchDescriptor> live = set
-          ? await requestPouchList(hostPeerId: hostId)
+          ? await _probe(
+              peer,
+              () => requestPouchList(
+                hostPeerId: hostId,
+                timeout: _probeTimeout,
+              ),
+            )
           : const <PouchDescriptor>[];
       if (set && live.isNotEmpty) {
         await PhonePouchMemory.write(hostId, live);
@@ -171,6 +200,7 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
           // 问失败也要能输入。返回用户按已有密码登录，刚配对的按首次设置。
           _ready = true;
           _passwordSet = true;
+          _probeFailed = true;
           _error = error is TimeoutException
               ? '主机没有回应。请确认电脑上的 shepaw 正在运行，然后再试。'
               : error is StateError
@@ -213,6 +243,34 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
     return pouches;
   }
 
+  /// 问主机；失败且值得重试时丢掉半开连接重连一次再问。
+  ///
+  /// [PeerConnectionManager.sendControl] 自己会先探活，但息屏 / 切网后第一次
+  /// 探测也可能赶不上重连，用户就只看到一句「主机没有回应」。
+  Future<T> _probe<T>(PairedPeer peer, Future<T> Function() ask) async {
+    Object? last;
+    for (var attempt = 0; attempt < _probeAttempts; attempt++) {
+      try {
+        return await ask();
+      } catch (error) {
+        last = error;
+        if (!probeRetryable(error) || attempt + 1 >= _probeAttempts) break;
+        if (!mounted) break;
+        await PeerConnectionManager.instance.disconnectPeer(peer.id);
+        if (!mounted) break;
+        try {
+          await PeerConnectionManager.instance.connectToPeer(
+            peer,
+            ignoreTieBreak: true,
+          );
+        } catch (_) {
+          // 连不上就交给下一次请求自己等重连，最终报统一的超时。
+        }
+      }
+    }
+    throw last!;
+  }
+
   Future<void> _connect(PairedPeer peer) async {
     if (!PeerConnectionManager.instance.connectedPeerIds.contains(peer.id)) {
       await PeerConnectionManager.instance.connectToPeer(
@@ -253,6 +311,7 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
     setState(() {
       _busy = true;
       _error = '';
+      _probeFailed = false;
     });
     try {
       final CliPouchAccount account;
@@ -363,8 +422,7 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
         : choosing
             ? l10n.pouchGate_unlockBody
             : l10n.phoneAuth_confirmBody;
-    final selected =
-        _selected ?? choosePhonePouch(_pouches, savedId: _savedId);
+    final selected = _selected ?? choosePhonePouch(_pouches, savedId: _savedId);
     return Scaffold(
       body: SafeArea(
         child: ListView(
@@ -444,6 +502,12 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
                 _error,
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
+              // 问主机失败时给一个明确的重试入口；连接恢复后不必重进页面。
+              if (_probeFailed && !_probing)
+                TextButton(
+                  onPressed: _busy ? null : _prepare,
+                  child: Text(l10n.common_retry),
+                ),
             ],
             TextButton(
               onPressed: _busy ? null : _forgot,

@@ -27,6 +27,7 @@ import 'screens/password_setup_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/pouch_login_screen.dart';
 import 'onboarding/host_setup_screen.dart';
+import 'onboarding/host_entry.dart';
 import 'onboarding/host_entry_flow.dart';
 import 'onboarding/pouch_gate_screen.dart';
 import 'services/cli_pouch.dart';
@@ -392,18 +393,24 @@ class _SplashScreenState extends State<SplashScreen> {
 
     if (!mounted) return;
 
-    // 手机没有本机密码。没配过主机就去扫码或输入配对码，配过了就用主机密码登录。
+    // 手机没有本机密码。没配过主机就去扫码或输入配对码；配过了先看登录态
+    // 还在不在，在就进主页，不在才用主机密码登录。
     if (!isDesktopPlatform) {
       final hostId = await PhoneHostStore.read();
       if (!mounted) return;
-      if (hostId == null) {
-        Navigator.of(context).pushReplacementNamed('/remote-connect');
-      } else {
-        Navigator.of(context).pushReplacementNamed(
-          '/phone-login',
-          arguments: PhoneAuthArgs(hostPeerId: hostId),
-        );
-      }
+      final session = await PouchSessionStore.readActive();
+      if (!mounted) return;
+      final route = phoneStartRoute(
+        rememberedHostId: hostId,
+        session: session,
+        nowMs: DateTime.now().millisecondsSinceEpoch,
+      );
+      Navigator.of(context).pushReplacementNamed(
+        route,
+        arguments: route == '/phone-login' && hostId != null
+            ? PhoneAuthArgs(hostPeerId: hostId)
+            : null,
+      );
       return;
     }
 

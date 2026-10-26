@@ -1,6 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../peer/pairing_endpoints.dart';
+import '../storage/pouch_login.dart';
 import '../storage/pouch_session.dart';
 
 /// 本机 `shepaw` 现在处于哪种状态。
@@ -130,6 +131,24 @@ HostEntry resolveHostEntry({
       }
       return AutoLocal(needsStart: false, recordMode: record);
   }
+}
+
+/// 手机冷启动落点。和电脑同一条规则：登录态还在就直接进主页。
+///
+/// 把有效 token 的用户赶回登录页，既打断了还在等的回复，也会让审核条看起来
+/// 像是发生在「没登录」的时候。记住的主机换了则旧 token 不算数，仍去登录。
+String phoneStartRoute({
+  required String? rememberedHostId,
+  required PouchSession? session,
+  required int nowMs,
+}) {
+  final host = rememberedHostId?.trim() ?? '';
+  if (host.isEmpty) return '/remote-connect';
+  if (afterDeviceUnlock(session, nowMs: nowMs) != AppStart.home) {
+    return '/phone-login';
+  }
+  if (session!.hostPeerId != host) return '/phone-login';
+  return '/home';
 }
 
 /// 连接页已经是栈底、并且还记着一台已配对主机时，返回应打开登录页。

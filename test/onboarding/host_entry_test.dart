@@ -220,4 +220,47 @@ void main() {
       isA<ShowHostSetup>(),
     );
   });
+
+  test('手机冷启动：登录态还在就进主页，换过主机才回登录', () {
+    expect(
+      phoneStartRoute(rememberedHostId: null, session: live(), nowMs: 10),
+      '/remote-connect',
+    );
+    expect(
+      phoneStartRoute(rememberedHostId: '  ', session: live(), nowMs: 10),
+      '/remote-connect',
+    );
+    expect(
+      phoneStartRoute(
+        rememberedHostId: 'peer-1',
+        session: live(),
+        nowMs: 10,
+      ),
+      '/home',
+    );
+    expect(
+      phoneStartRoute(
+        rememberedHostId: 'peer-1',
+        session: live(expiresAtMs: 10),
+        nowMs: 10,
+      ),
+      '/phone-login',
+    );
+    expect(
+      phoneStartRoute(
+        rememberedHostId: 'peer-1',
+        session: null,
+        nowMs: 10,
+      ),
+      '/phone-login',
+    );
+    expect(
+      phoneStartRoute(
+        rememberedHostId: 'peer-2',
+        session: live(),
+        nowMs: 10,
+      ),
+      '/phone-login',
+    );
+  });
 }

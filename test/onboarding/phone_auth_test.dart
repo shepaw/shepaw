@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/onboarding/phone_auth_screen.dart';
 import 'package:shepaw/onboarding/phone_pouch_memory.dart';
@@ -8,6 +10,18 @@ void main() {
   const study = PouchDescriptor(id: 'a', name: '书房', rootPath: '');
   const studyAgain = PouchDescriptor(id: 'b', name: '书房', rootPath: '');
   const work = PouchDescriptor(id: 'c', name: '公司', rootPath: '');
+
+  test('探测失败只在像半开连接时重试，旧版本不重试', () {
+    expect(probeRetryable(TimeoutException('主机没有回应')), isTrue);
+    expect(probeRetryable(StateError('还没连上 shepaw')), isTrue);
+    expect(
+      probeRetryable(
+        StateError('主机还是旧版本，请在电脑上重启 shepaw'),
+      ),
+      isFalse,
+    );
+    expect(probeRetryable(const FormatException('坏帧')), isFalse);
+  });
 
   test('刚配上的主机有一只袋子就用它，多只时认上次的', () {
     expect(choosePhonePouch(const [study])?.id, 'a');
@@ -44,11 +58,14 @@ void main() {
 
   test('连不上主机时用记住的袋子，主机回答了就用它的名单', () {
     expect(
-      phonePouchesToShow(live: null, remembered: const [study, work]).map((p) => p.id),
+      phonePouchesToShow(live: null, remembered: const [study, work])
+          .map((p) => p.id),
       ['a', 'c'],
     );
     expect(
-      phonePouchesToShow(live: const [work], remembered: const [study]).single.id,
+      phonePouchesToShow(live: const [work], remembered: const [study])
+          .single
+          .id,
       'c',
     );
     expect(
