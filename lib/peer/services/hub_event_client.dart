@@ -60,6 +60,7 @@ class HubEventClient {
   final _log = LoggerService();
   final _notices = StreamController<HubNotice>.broadcast();
   final _controlQueue = SerialTaskQueue<String>();
+
   /// attach 请求 id → turn id。主机回 attach-lost 时用它认领占位。
   final _attachRequests = <String, String>{};
   final _attached = <String>{};
@@ -74,6 +75,9 @@ class HubEventClient {
   StreamSubscription<PeerConnectionEvent>? _connSub;
   StreamSubscription<Duration>? _resumeSub;
   Future<void>? _syncing;
+
+  /// 补拉进行中又收到的请求（多半来自重连）。当前 job 收尾后按 peer 重跑。
+  final _catchUpQueued = <String>{};
   var _livePaused = false;
 
   Stream<HubNotice> get notices => _notices.stream;
@@ -124,6 +128,7 @@ class HubEventClient {
     _liveFlushTimer = null;
     _liveDirty.clear();
     _attachRequests.clear();
+    _catchUpQueued.clear();
   }
 
   Future<void> _onControl(PeerControlEvent event) async {
@@ -161,11 +166,22 @@ class HubEventClient {
 
   Future<void> catchUp(String peerId) {
     final running = _syncing;
-    if (running != null) return running;
+    if (running != null) {
+      // 连接可能已经换了一条，而当前 job 还卡在旧连接的超时里。
+      // 记下来，等它收尾后立刻再补一次。
+      _catchUpQueued.add(peerId);
+      return running;
+    }
     final job = _controlQueue.run(_controlKey, () => _catchUpNow(peerId));
     _syncing = job;
     return job.whenComplete(() {
       if (identical(_syncing, job)) _syncing = null;
+      if (_catchUpQueued.isEmpty) return;
+      final queued = _catchUpQueued.toList();
+      _catchUpQueued.clear();
+      for (final peer in queued) {
+        scheduleMicrotask(() => unawaited(catchUp(peer)));
+      }
     });
   }
 
@@ -943,7 +959,14 @@ class HubEventClient {
   Future<bool> _send(String peerId, Map<String, dynamic> frame) {
     final send = this.send;
     if (send != null) return send(peerId, frame);
-    return PeerConnectionManager.instance.sendControl(peerId, frame);
+    // events_sync / turn_attach / interaction_resp 都是发出去要等回应的帧。
+    // 半开连接上写 socket 会静默成功，但应答永远不来；先探活，失败就丢掉
+    // 旧连接并在 5s 内等重连后重发，别让它白等单页超时再重试三轮。
+    return PeerConnectionManager.instance.sendControl(
+      peerId,
+      frame,
+      waitForReconnect: const Duration(seconds: 5),
+    );
   }
 
   Future<String> _key(String peerId) async {

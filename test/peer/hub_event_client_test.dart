@@ -52,10 +52,18 @@ void main() {
         sent.add(since);
         final events = since == 0
             ? [
-                {'seq': 1, 'kind': 'agents.changed', 'data': <String, dynamic>{}},
+                {
+                  'seq': 1,
+                  'kind': 'agents.changed',
+                  'data': <String, dynamic>{}
+                },
               ]
             : [
-                {'seq': 2, 'kind': 'agents.changed', 'data': <String, dynamic>{}},
+                {
+                  'seq': 2,
+                  'kind': 'agents.changed',
+                  'data': <String, dynamic>{}
+                },
               ];
         incoming.add(PeerControlEvent(
           peerId: peerId,
@@ -77,6 +85,70 @@ void main() {
 
     expect(sent, [0, 1]);
     expect(store.values['fp'], 2);
+    await incoming.close();
+  });
+
+  test('补拉进行中再请求会排队，收尾后按最新游标重跑', () async {
+    final incoming = StreamController<PeerControlEvent>.broadcast();
+    final sent = <int>[];
+    final store = MemoryHubSeqStore();
+    final firstPageReleased = Completer<void>();
+    final secondPageSent = Completer<void>();
+    var calls = 0;
+    final client = HubEventClient(
+      events: incoming.stream,
+      send: (peerId, frame) async {
+        final since = frame['since_seq'] as int;
+        sent.add(since);
+        calls += 1;
+        if (calls == 1) {
+          // 第一次请求挂在旧连接上：连接已换，但应答只能等单页超时。
+          await firstPageReleased.future;
+        }
+        incoming.add(PeerControlEvent(
+          peerId: peerId,
+          data: {
+            'type': 'events_sync_resp',
+            'request_id': frame['request_id'],
+            'events': calls == 1
+                ? [
+                    {
+                      'seq': 1,
+                      'kind': 'agents.changed',
+                      'data': <String, dynamic>{},
+                    },
+                  ]
+                : <Map<String, dynamic>>[],
+            'head_seq': 1,
+            'reset': false,
+          },
+        ));
+        if (calls == 2 && !secondPageSent.isCompleted) {
+          secondPageSent.complete();
+        }
+        return true;
+      },
+      seqStore: store,
+      fingerprintOf: (_) async => 'fp',
+    );
+
+    final first = client.catchUp('peer-1');
+    for (var i = 0; i < 50 && sent.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    expect(sent, [0]);
+
+    // 重连后上层会再发一次补拉；不能因为旧 job 还在跑就把它丢了。
+    unawaited(client.catchUp('peer-1'));
+    expect(sent, [0]);
+
+    firstPageReleased.complete();
+    await first;
+    await secondPageSent.future.timeout(const Duration(seconds: 5));
+
+    // 第二次用的是第一页落盘后的游标，不是旧的 0。
+    expect(sent, [0, 1]);
+    expect(store.values['fp'], 1);
     await incoming.close();
   });
 
@@ -615,8 +687,7 @@ void main() {
     }
     expect(attachRequestIds, isNotEmpty);
 
-    final placeholder =
-        await db.getMessageById(liveTurnPlaceholderId(turnId));
+    final placeholder = await db.getMessageById(liveTurnPlaceholderId(turnId));
     expect(placeholder, isNotNull);
     final liveChannelId = placeholder!['channel_id'] as String;
     expect(client.channelHasLiveTurn(liveChannelId), isTrue);
@@ -760,7 +831,11 @@ void main() {
             'type': 'events_sync_resp',
             'request_id': frame['request_id'],
             'events': [
-              {'seq': 20, 'kind': 'agents.changed', 'data': <String, dynamic>{}},
+              {
+                'seq': 20,
+                'kind': 'agents.changed',
+                'data': <String, dynamic>{}
+              },
             ],
             'head_seq': 20,
             'reset': true,

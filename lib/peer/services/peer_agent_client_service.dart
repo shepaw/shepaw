@@ -9621,7 +9621,13 @@ class PeerAgentClientService {
     } else if (event.type == PeerConnectionEventType.disconnected) {
       _dropFreshCommands(event.peerId);
       _suspendPendingForPeer(event.peerId);
-      unawaited(_markPeerAgentsOffline(event.peerId));
+      // 主动丢弃半开连接后马上就会重连。仍然要 suspend 在途 turn（重连后
+      // 才会发 resume），但不必把 agent 闪成离线再闪回来。
+      final data = event.data;
+      final stale = data is Map && data['stale'] == true;
+      if (!stale) {
+        unawaited(_markPeerAgentsOffline(event.peerId));
+      }
     }
   }
 

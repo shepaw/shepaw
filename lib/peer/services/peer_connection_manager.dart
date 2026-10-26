@@ -261,16 +261,23 @@ class PeerConnectionManager {
       if (isConnected && !forceRefresh) continue;
 
       if (isConnected) {
-        // 在途 agent turn / 待决审批挂在连接上 — 掐断即杀死整轮交互。
-        if (hasInFlightTurnForPeer?.call(peer.id) == true) {
+        // worker 的 CLI 流在断线时会被 hub 的 fail_streams_for 补错误终态，
+        // 保留旧行为；用户对话的 agent turn 不随连接断开取消，重连后由
+        // attach / resume 按「当前连接」续上，所以不能因为有在途 turn
+        // 就跳过探活 —— 手机息屏后最常见的正是这种半开连接。
+        if (peer.effectiveRole == NodeRole.worker &&
+            hasInFlightTurnForPeer?.call(peer.id) == true) {
           _log.info(
-            'Resume: keep ${peer.deviceName} connection (in-flight turn/approval)',
+            'Resume: keep worker ${peer.deviceName} connection '
+            '(in-flight stream)',
             tag: _tag,
           );
           continue;
         }
         // 桌面端后台后连接多半仍存活，探活确认，避免无谓的掐断重建。
-        final alive = await conn.probeLiveness();
+        final alive = await conn.probeLiveness(
+          timeout: const Duration(seconds: 2),
+        );
         if (alive) {
           _log.debug(
             'Resume: ${peer.deviceName} connection alive after probe, keep',
@@ -279,7 +286,9 @@ class PeerConnectionManager {
           continue;
         }
         _log.info(
-          'Resume: ${peer.deviceName} connection failed liveness probe, rebuilding',
+          'Resume: ${peer.deviceName} connection failed liveness probe '
+          '(inFlight=${hasInFlightTurnForPeer?.call(peer.id) == true}), '
+          'rebuilding',
           tag: _tag,
         );
       }
@@ -292,13 +301,9 @@ class PeerConnectionManager {
       _reconnectAttempts.remove(peer.id);
 
       // 关闭可能已半开失效的旧连接，强制重建（否则 _doConnect 会因「已连接」跳过）。
-      // 探活期间连接可能已被入站替换 —— 只关闭仍是自己持有的那一条。
+      // 探活期间连接可能已被入站替换 —— _dropStaleConnection 内部会核对身份。
       if (isConnected) {
-        if (identical(_connections[peer.id], conn)) {
-          _connections.remove(peer.id);
-          _cancelConnectionSubs(peer.id);
-          await conn.close();
-        }
+        await _dropStaleConnection(peer.id, conn);
       }
 
       // 主动发起（忽略 tie-break）。不 await，让各 peer 并发连接。
@@ -598,6 +603,15 @@ class PeerConnectionManager {
     // 调用方紧接着会用零延迟的 _triggerImmediateReconnect 重建。
     _cancelConnectionSubs(peerId);
     await conn.close();
+    // 主动丢弃不会走 _onDisconnected。补一次 disconnected 让上层把在途
+    // turn 标成 suspended，重连后才会发 resume_req 补齐断线期间的正文。
+    // 不调 _onDisconnected：它会再排一次 2s 退避重连，和调用方的立即
+    // 重连打架。stale 标记让上层只 suspend，不把 agent 闪成离线。
+    _eventController.add(PeerConnectionEvent(
+      peerId: peerId,
+      type: PeerConnectionEventType.disconnected,
+      data: const {'stale': true},
+    ));
   }
 
   /// 发送 Noise 明文二进制（store 读块）。未连接时返回 false。

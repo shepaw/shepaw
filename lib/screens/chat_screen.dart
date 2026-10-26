@@ -142,6 +142,10 @@ class _ChatScreenState extends State<ChatScreen>
   /// 断连失败的 peer turn 在重连后的历史 reconcile 通知订阅。
   StreamSubscription<String>? _reconcileSubscription;
 
+  /// 回前台后的恢复任务。合并同一次恢复里的重复事件，避免同时跑两条同步链。
+  Timer? _resumeRecoveryTimer;
+  bool _resumeSyncInFlight = false;
+
   /// True while pulling this synced session's transcript from the remote,
   /// so the app bar can show a "同步远端…" indicator.
   bool _syncingPeerHistory = false;
@@ -460,6 +464,7 @@ class _ChatScreenState extends State<ChatScreen>
     _itemPositionsListener.itemPositions
         .removeListener(_onItemPositionsChanged);
     _programmaticScrollClearTimer?.cancel();
+    _resumeRecoveryTimer?.cancel();
     // 去抖中的已读标记在离开页面前落库，避免丢已读。
     _flushPendingMarkRead();
     _audioRecordingService.dispose();
@@ -484,13 +489,13 @@ class _ChatScreenState extends State<ChatScreen>
     _controller.onAppLifecycleChanged(state == AppLifecycleState.resumed);
 
     if (state == AppLifecycleState.resumed) {
-      // 息屏期间被判死的 peer turn，结果可能只留在远端 transcript。P2P 重连
-      // 是异步的（resumeAll），稍等一下再补拉当前会话，重连完成才有效果。
-      unawaited(Future<void>.delayed(const Duration(seconds: 2), () {
-        if (mounted) {
-          unawaited(_recoverStrandedPeerTurn());
-        }
-      }));
+      // 息屏期间被判死的 peer turn，结果可能只留在远端 transcript。
+      // 重连现在通常 1~3s 内完成，_maybeSyncPeerAgent 内部会等 connected，
+      // 不需要先睡 2s；500ms 只用来合并同一次恢复里的重复事件。
+      _resumeRecoveryTimer?.cancel();
+      _resumeRecoveryTimer = Timer(const Duration(milliseconds: 500), () {
+        if (mounted) unawaited(_recoverPeerTurnOnResume());
+      });
     }
 
     // If the app loses focus while recording (e.g. Samsung edge panel, app
@@ -4487,6 +4492,25 @@ class _ChatScreenState extends State<ChatScreen>
     }
     if (!mounted) return;
     await _maybeSyncPeerAgent();
+  }
+
+  /// 回前台后的统一恢复入口。
+  ///
+  /// 先无条件做一次增量同步：本地 turn 可能已在后台被判死（或 attach 帧
+  /// 没收到），但远端 transcript 已有完整回复。增量同步有游标，没变化时
+  /// 不会 reload；仍在转圈但已不出字的回合再走 stranded 收尾。
+  Future<void> _recoverPeerTurnOnResume() async {
+    if (_resumeSyncInFlight) return;
+    _resumeSyncInFlight = true;
+    try {
+      await _maybeSyncPeerAgent();
+      if (!mounted) return;
+      if (_controller.streaming.isActive || _controller.isProcessing) {
+        await _recoverStrandedPeerTurn();
+      }
+    } finally {
+      _resumeSyncInFlight = false;
+    }
   }
 
   /// 息屏 / 断连期间被判死的 peer turn，结果可能只留在远端 transcript：
