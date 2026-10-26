@@ -48,6 +48,13 @@ void main() {
     );
     expect(grant?.id, 'a');
     expect(grant?.expiresAtMs, 9);
+    expect(grant?.credential, isNull, reason: '老版本 shepaw 不带凭据');
+    final withCredential = parseLoginGrant(
+      '{"id":"a","name":"书房","token":"t","sid":"s","expires_at":9,'
+      '"credential":"cred","credential_expires_at":99}\n',
+    );
+    expect(withCredential?.credential, 'cred');
+    expect(withCredential?.credentialExpiresAtMs, 99);
     expect(parseLoginGrant('{"id":"a","name":"书房"}\n'), isNull);
     expect(
       defaultPouchAccount(

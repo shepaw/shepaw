@@ -39,6 +39,7 @@ import 'utils/platform_utils.dart';
 import 'screens/adaptive_home_screen.dart';
 import 'widgets/window_title_sync.dart';
 import 'widgets/approval/pending_approval_banner.dart';
+import 'widgets/pouch_relogin_banner.dart';
 
 // 重新导出 ACP 常量，保持 settings_screen / remote_agent_detail_screen 等
 // 现有 `import '../main.dart' show kAcpServer...` 的引用不受影响。
@@ -345,8 +346,10 @@ class _MyAppState extends State<MyApp> {
                   }
                 }
                 return WindowTitleSync(
-                  child: PendingApprovalBanner(
-                    child: child ?? const SizedBox.shrink(),
+                  child: PouchReloginBanner(
+                    child: PendingApprovalBanner(
+                      child: child ?? const SizedBox.shrink(),
+                    ),
                   ),
                 );
               },

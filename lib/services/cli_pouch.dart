@@ -5,10 +5,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../onboarding/host_entry.dart';
 import '../peer/services/peer_connection_manager.dart';
+import '../storage/pouch_credential_store.dart';
 import '../storage/pouch_login.dart';
+import '../storage/pouch_login_keeper.dart';
 import '../storage/pouch_session.dart';
 import 'cli_host.dart';
 import 'cli_language.dart';
+import 'logger_service.dart';
 
 /// 储物袋账号。`name` 只给人看，`id` 才是身份。
 class CliPouchAccount {
@@ -124,6 +127,8 @@ class CliLoginGrant {
     required this.token,
     required this.sid,
     required this.expiresAtMs,
+    this.credential,
+    this.credentialExpiresAtMs = 0,
   });
 
   final String id;
@@ -131,6 +136,10 @@ class CliLoginGrant {
   final String token;
   final String sid;
   final int expiresAtMs;
+
+  /// 本机通道登录顺手签发的设备凭据。老版本 `shepaw` 不会带。
+  final String? credential;
+  final int credentialExpiresAtMs;
 }
 
 CliLoginGrant? parseLoginGrant(String stdout) {
@@ -147,12 +156,19 @@ CliLoginGrant? parseLoginGrant(String stdout) {
       final expires = decoded['expires_at'];
       if (id.isEmpty || name.isEmpty || token.isEmpty || sid.isEmpty) continue;
       if (expires is! int || expires <= 0) continue;
+      final credential = (decoded['credential'] as String?)?.trim() ?? '';
+      final credentialExpires = decoded['credential_expires_at'];
       return CliLoginGrant(
         id: id,
         name: name,
         token: token,
         sid: sid,
         expiresAtMs: expires,
+        credential: credential.isEmpty ? null : credential,
+        credentialExpiresAtMs:
+            credentialExpires is int && credentialExpires > 0
+                ? credentialExpires
+                : 0,
       );
     } catch (_) {}
   }
@@ -281,6 +297,20 @@ class CliPouch {
     await PouchSessionStore(await PouchSessionStore.appFile()).save(session);
     await PouchLoginMemory.write(id: grant.id, name: grant.name);
     PouchChannel.install(session);
+    PouchLoginKeeper.instance.clearPasswordRequired();
+    final credential = grant.credential ?? '';
+    if (credential.isNotEmpty) {
+      await PouchCredentialStore.instance.save(
+        hostPeerId: peer.id,
+        pouchId: grant.id,
+        credential: credential,
+        expiresAtMs: grant.credentialExpiresAtMs,
+      );
+      LoggerService().info(
+        '设备凭据已保存：host=${peer.id} pouch=${grant.id}',
+        tag: 'CliPouch',
+      );
+    }
   }
 
   static Future<void> _ensureHub(String binary) async {

@@ -14771,6 +14771,24 @@ abstract class AppLocalizations {
   /// **'添加主机'**
   String get pouch_addHost;
 
+  /// No description provided for @pouch_reloginTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机要求重新登录'**
+  String get pouch_reloginTitle;
+
+  /// No description provided for @pouch_reloginBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入主机密码，恢复后会自动继续'**
+  String get pouch_reloginBody;
+
+  /// No description provided for @pouch_reloginAction.
+  ///
+  /// In zh, this message translates to:
+  /// **'去登录'**
+  String get pouch_reloginAction;
+
   /// No description provided for @settings_switchPouch.
   ///
   /// In zh, this message translates to:

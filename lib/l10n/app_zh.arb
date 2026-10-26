@@ -4977,6 +4977,9 @@
   "pouch_pairFirst": "先和一台装了 shepaw 的电脑配对",
   "pouch_pair": "去配对",
   "pouch_addHost": "添加主机",
+  "pouch_reloginTitle": "主机要求重新登录",
+  "pouch_reloginBody": "输入主机密码，恢复后会自动继续",
+  "pouch_reloginAction": "去登录",
   "settings_switchPouch": "切换储物袋",
   "settings_switchPouchCurrent": "当前：{pouch} · {host}",
   "@settings_switchPouchCurrent": {

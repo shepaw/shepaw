@@ -20,6 +20,7 @@ import '../onboarding/phone_pouch_memory.dart';
 import '../service_locator.dart';
 import '../services/cli_host.dart';
 import '../services/cli_pouch.dart';
+import '../storage/pouch_credential_store.dart';
 import '../storage/pouch_login.dart';
 import '../storage/pouch_login_client.dart';
 import '../storage/pouch_session.dart';
@@ -100,6 +101,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _logoutToGate() async {
     final session = await PouchSessionStore.readActive();
     await PhonePouchMemory.rememberSession(session);
+    // 退出登录要连本机的设备凭据一起清掉：留着它，下次开机还会自动恢复登录。
+    if (session != null) {
+      await PouchCredentialStore.instance.delete(session.hostPeerId);
+    }
     await PouchSessionStore(await PouchSessionStore.appFile()).forget();
     PouchChannel.clear();
     final nav = navigatorKey.currentState;
@@ -190,6 +195,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (confirmed != true || !screenContext.mounted) return;
     final session = await PouchSessionStore.readActive();
     await PhonePouchMemory.rememberSession(session);
+    if (session != null) {
+      await PouchCredentialStore.instance.delete(session.hostPeerId);
+    }
     await PouchSessionStore(await PouchSessionStore.appFile()).forget();
     PouchChannel.clear();
     if (!screenContext.mounted) return;

@@ -8136,6 +8136,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pouch_addHost => '添加主机';
 
   @override
+  String get pouch_reloginTitle => '主机要求重新登录';
+
+  @override
+  String get pouch_reloginBody => '输入主机密码，恢复后会自动继续';
+
+  @override
+  String get pouch_reloginAction => '去登录';
+
+  @override
   String get settings_switchPouch => '切换储物袋';
 
   @override

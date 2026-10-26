@@ -4527,6 +4527,9 @@
   "pouch_pairFirst": "Pair with a computer running shepaw first",
   "pouch_pair": "Pair",
   "pouch_addHost": "Add a host",
+  "pouch_reloginTitle": "Host needs you to sign in again",
+  "pouch_reloginBody": "Enter the host password; everything resumes on its own",
+  "pouch_reloginAction": "Sign in",
   "settings_switchPouch": "Switch pouch",
   "settings_switchPouchCurrent": "Current: {pouch} · {host}",
   "@settings_switchPouchCurrent": {

@@ -8461,6 +8461,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pouch_addHost => 'Add a host';
 
   @override
+  String get pouch_reloginTitle => 'Host needs you to sign in again';
+
+  @override
+  String get pouch_reloginBody =>
+      'Enter the host password; everything resumes on its own';
+
+  @override
+  String get pouch_reloginAction => 'Sign in';
+
+  @override
   String get settings_switchPouch => 'Switch pouch';
 
   @override

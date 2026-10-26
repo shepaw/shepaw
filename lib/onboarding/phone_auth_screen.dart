@@ -352,6 +352,7 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
       );
       await PouchSessionStore(await PouchSessionStore.appFile()).save(session);
       PouchChannel.install(session);
+      PouchLoginKeeper.instance.clearPasswordRequired();
       await PhoneHostStore.write(_hostId);
       await PouchLoginMemory.write(id: account.id, name: account.name);
       await PhonePouchMemory.write(

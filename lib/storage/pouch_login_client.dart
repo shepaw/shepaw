@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:uuid/uuid.dart';
 
 import '../peer/services/peer_connection_manager.dart';
+import '../services/logger_service.dart';
 import 'pouch_catalog.dart';
+import 'pouch_credential_store.dart';
 
 /// 这次进程里用户刚输入的主机密码。重登时带上，不写入磁盘。
 class PouchPasswordMemory {
@@ -20,17 +22,33 @@ class PouchPasswordRequired implements Exception {
   String toString() => reason;
 }
 
+/// 带设备凭据登录，主机不认。
+class PouchCredentialRejected implements Exception {
+  const PouchCredentialRejected(this.reason);
+
+  final String reason;
+
+  @override
+  String toString() => reason;
+}
+
 /// 服务端签发的一次袋子登录。
 class PouchLoginGrant {
   const PouchLoginGrant({
     required this.token,
     required this.sessionId,
     required this.expiresAtMs,
+    this.credential,
+    this.credentialExpiresAtMs = 0,
   });
 
   final String token;
   final String sessionId;
   final int expiresAtMs;
+
+  /// 这次密码登录顺手签发的设备凭据。凭据登录成功时为空（不轮换）。
+  final String? credential;
+  final int credentialExpiresAtMs;
 }
 
 /// 主机上是否已经有登录密码。
@@ -70,21 +88,29 @@ Future<void> requestPouchPasswordSet({
 /// 向已经配对的 shepaw 要一枚登录 token。没连上就失败，不在本地伪造登录态。
 ///
 /// [password] 缺省时用本进程里刚输入过的密码。主机没设密码时可以不带。
+/// [credential] 是主机之前签发的设备凭据：主机重启后用它恢复登录，不用密码。
+/// 凭据登录成功时主机不会换发新凭据。
 Future<PouchLoginGrant> requestPouchLogin({
   required String hostPeerId,
   required String pouchId,
   String? password,
+  String? credential,
+  PouchCredentialStore? credentials,
   Duration timeout = const Duration(seconds: 8),
-}) {
-  final secret = (password != null && password.isNotEmpty)
-      ? password
-      : PouchPasswordMemory.value;
-  return _request(
+}) async {
+  final usingCredential = (credential?.trim() ?? '').isNotEmpty;
+  final secret = usingCredential
+      ? null
+      : ((password != null && password.isNotEmpty)
+          ? password
+          : PouchPasswordMemory.value);
+  final grant = await _request(
     hostPeerId: hostPeerId,
     type: 'pouch_login',
     responseType: 'pouch_login_resp',
     extra: <String, dynamic>{
       'pouch_id': pouchId,
+      if (usingCredential) 'credential': credential!.trim(),
       if (secret != null && secret.isNotEmpty) 'password': secret,
     },
     timeout: timeout,
@@ -93,7 +119,12 @@ Future<PouchLoginGrant> requestPouchLogin({
         final reason = (data['reason'] as String?)?.trim().isNotEmpty == true
             ? data['reason'] as String
             : '登录被拒绝';
+        // 主机在拒绝凭据时同时带 password_required，先认凭据这一层。
+        if (data['credential_rejected'] == true) {
+          throw PouchCredentialRejected(reason);
+        }
         if (data['password_required'] == true) {
+          // 老主机不认识 credential：它只会回「密码不对」，不该因此删掉凭据。
           throw PouchPasswordRequired(reason);
         }
         throw StateError(reason);
@@ -107,13 +138,34 @@ Future<PouchLoginGrant> requestPouchLogin({
       if (token.isEmpty || sid.isEmpty || expires is! int) {
         throw StateError('登录响应不完整');
       }
+      final issued = (data['credential'] as String?)?.trim() ?? '';
+      final issuedExpires = data['credential_expires_at'];
       return PouchLoginGrant(
         token: token,
         sessionId: sid,
         expiresAtMs: expires,
+        credential: issued.isEmpty ? null : issued,
+        credentialExpiresAtMs: issuedExpires is int && issuedExpires > 0
+            ? issuedExpires
+            : 0,
       );
     },
   );
+  // 密码登录会换发一张新凭据。三个登录入口都要存，别各自重复一遍。
+  final issued = grant.credential ?? '';
+  if (issued.isNotEmpty) {
+    await (credentials ?? PouchCredentialStore.instance).save(
+      hostPeerId: hostPeerId,
+      pouchId: pouchId,
+      credential: issued,
+      expiresAtMs: grant.credentialExpiresAtMs,
+    );
+    LoggerService().info(
+      '设备凭据已保存：host=$hostPeerId pouch=$pouchId',
+      tag: 'PouchLogin',
+    );
+  }
+  return grant;
 }
 
 /// 问指定主机上有哪些袋子。手机读不到主机磁盘时靠它。

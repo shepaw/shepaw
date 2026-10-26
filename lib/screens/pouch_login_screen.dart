@@ -412,6 +412,8 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
       );
       await PouchSessionStore(await PouchSessionStore.appFile()).save(session);
       PouchChannel.install(session);
+      // 手动登录不走 keeper 的重登成功分支，提示条要在这里收起来。
+      PouchLoginKeeper.instance.clearPasswordRequired();
       if (!mounted) return;
       Navigator.of(context).pushReplacementNamed('/home');
     } on StateError catch (error) {

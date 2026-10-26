@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/peer/services/peer_connection_manager.dart';
+import 'package:shepaw/storage/pouch_credential_store.dart';
 import 'package:shepaw/storage/pouch_login_client.dart';
 import 'package:shepaw/storage/pouch_login_keeper.dart';
 import 'package:shepaw/storage/pouch_session.dart';
@@ -33,7 +34,11 @@ void main() {
     final keeper = PouchLoginKeeper(
       events: events.stream,
       readSession: () async => session(),
-      login: ({required hostPeerId, required pouchId}) async {
+      login: ({
+        required hostPeerId,
+        required pouchId,
+        String? credential,
+      }) async {
         return const PouchLoginGrant(
           token: 'new-token',
           sessionId: 'sid-new',
@@ -70,7 +75,11 @@ void main() {
     final keeper = PouchLoginKeeper(
       events: events.stream,
       readSession: () async => session(),
-      login: ({required hostPeerId, required pouchId}) async {
+      login: ({
+        required hostPeerId,
+        required pouchId,
+        String? credential,
+      }) async {
         throw StateError('没有这只袋子');
       },
       persist: (_) async => fail('should not save'),
@@ -96,7 +105,11 @@ void main() {
     final keeper = PouchLoginKeeper(
       events: events.stream,
       readSession: () async => session(),
-      login: ({required hostPeerId, required pouchId}) async {
+      login: ({
+        required hostPeerId,
+        required pouchId,
+        String? credential,
+      }) async {
         calls += 1;
         await gate.future;
         return const PouchLoginGrant(
@@ -138,7 +151,11 @@ void main() {
     final keeper = PouchLoginKeeper(
       events: events.stream,
       readSession: () async => live,
-      login: ({required hostPeerId, required pouchId}) async {
+      login: ({
+        required hostPeerId,
+        required pouchId,
+        String? credential,
+      }) async {
         throw const PouchPasswordRequired('密码不对');
       },
       persist: (_) async => fail('should not save'),
@@ -174,7 +191,11 @@ void main() {
     final keeper = PouchLoginKeeper(
       events: events.stream,
       readSession: () async => live,
-      login: ({required hostPeerId, required pouchId}) async {
+      login: ({
+        required hostPeerId,
+        required pouchId,
+        String? credential,
+      }) async {
         throw const PouchPasswordRequired('密码不对');
       },
       persist: (_) async => fail('should not save'),
@@ -192,9 +213,53 @@ void main() {
     await events.close();
   });
 
-  test('还没过期的登录态在重登失败时保留', () async {
+  // 主机侧把袋子弄没了（重建主机、换了活动袋子）。本地那张登录就算没过期
+  // 也换不出 token 了：留着它，之后每一帧仍然被主机丢掉，界面永远是空的，
+  // 也不会有任何提示。必须清掉再回选择页。
+  test('袋子没了时，没过期的旧登录也要清掉并回选择页', () async {
     final events = StreamController<PeerControlEvent>();
     var forgotten = false;
+    var cleared = false;
+    var opened = false;
+    final live = PouchSession(
+      hubUrl: 'ws://127.0.0.1:18792/peer/ws',
+      pouchId: 'pouch-a',
+      pouchName: '书房',
+      hostPeerId: 'host-1',
+      token: 'old-token',
+      sessionId: 'sid-old',
+      expiresAtMs: DateTime.now().millisecondsSinceEpoch + 60000,
+    );
+    final keeper = PouchLoginKeeper(
+      events: events.stream,
+      readSession: () async => live,
+      login: ({
+        required hostPeerId,
+        required pouchId,
+        String? credential,
+      }) async {
+        throw StateError('没有这只袋子');
+      },
+      persist: (_) async => fail('should not save'),
+      install: (_) => fail('should not keep the dead session'),
+      forgetSession: () async => forgotten = true,
+      clearChannel: () => cleared = true,
+      openChooser: () => opened = true,
+    );
+    keeper.start();
+    events.add(required());
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+    expect(forgotten, isTrue);
+    expect(cleared, isTrue);
+    expect(opened, isTrue);
+    await events.close();
+  });
+
+  // 主机只是暂时连不上（抖动、重启中）。袋子还在，登录态也还没过期，
+  // 这时候清掉登录态反而把用户踢回选择页。
+  test('暂时连不上主机时，没过期的登录态保留', () async {
+    final events = StreamController<PeerControlEvent>();
     PouchSession? installed;
     final live = PouchSession(
       hubUrl: 'ws://127.0.0.1:18792/peer/ws',
@@ -208,12 +273,16 @@ void main() {
     final keeper = PouchLoginKeeper(
       events: events.stream,
       readSession: () async => live,
-      login: ({required hostPeerId, required pouchId}) async {
-        throw StateError('没有这只袋子');
+      login: ({
+        required hostPeerId,
+        required pouchId,
+        String? credential,
+      }) async {
+        throw StateError('还没连上 shepaw');
       },
       persist: (_) async => fail('should not save'),
       install: (next) => installed = next,
-      forgetSession: () async => forgotten = true,
+      forgetSession: () async => fail('should keep the session'),
       clearChannel: () => fail('should keep the channel'),
       openChooser: () => fail('should stay'),
     );
@@ -221,8 +290,253 @@ void main() {
     events.add(required());
     await Future<void>.delayed(Duration.zero);
     await Future<void>.delayed(Duration.zero);
-    expect(forgotten, isFalse);
     expect(installed?.token, 'old-token');
+    await events.close();
+  });
+
+  Future<PouchCredentialStore> credentialStore({
+    String credential = 'cred-1',
+    Duration ttl = const Duration(minutes: 30),
+  }) async {
+    final store = PouchCredentialStore(vault: MemoryPouchCredentialVault());
+    await store.save(
+      hostPeerId: 'host-1',
+      pouchId: 'pouch-a',
+      credential: credential,
+      expiresAtMs:
+          DateTime.now().add(ttl).millisecondsSinceEpoch,
+    );
+    return store;
+  }
+
+  Future<void> settle() async {
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+  }
+
+  test('主机重启后先用设备凭据恢复，不碰密码', () async {
+    final events = StreamController<PeerControlEvent>();
+    final store = await credentialStore();
+    String? used;
+    PouchSession? installed;
+    final keeper = PouchLoginKeeper(
+      events: events.stream,
+      readSession: () async => session(),
+      login: ({
+        required hostPeerId,
+        required pouchId,
+        String? credential,
+      }) async {
+        used = credential;
+        return const PouchLoginGrant(
+          token: 'new-token',
+          sessionId: 'sid-new',
+          expiresAtMs: 12000,
+          credential: 'cred-2',
+          credentialExpiresAtMs: 99000,
+        );
+      },
+      persist: (_) async {},
+      install: (next) => installed = next,
+      forgetSession: () async => fail('should keep the session'),
+      clearChannel: () => fail('should keep the channel'),
+      openChooser: () => fail('should not open the gate'),
+      credentials: store,
+    );
+    keeper.start();
+    events.add(required());
+    await settle();
+    expect(used, 'cred-1');
+    expect(installed?.token, 'new-token');
+    expect(keeper.reloginGeneration, 1);
+    expect(keeper.passwordRequired.value, isFalse);
+    // 密码登录换发的新凭据要接着用。
+    final saved = await store.read('host-1');
+    expect(saved?.credential, 'cred-2');
+    expect(saved?.expiresAtMs, 99000);
+    await events.close();
+  });
+
+  test('凭据被主机拒绝：删掉本机这张，改用密码再试一次', () async {
+    final events = StreamController<PeerControlEvent>();
+    final store = await credentialStore();
+    final calls = <String?>[];
+    final keeper = PouchLoginKeeper(
+      events: events.stream,
+      readSession: () async => session(),
+      login: ({
+        required hostPeerId,
+        required pouchId,
+        String? credential,
+      }) async {
+        calls.add(credential);
+        if (credential != null) {
+          throw const PouchCredentialRejected('设备凭据已失效');
+        }
+        return const PouchLoginGrant(
+          token: 'new-token',
+          sessionId: 'sid-new',
+          expiresAtMs: 12000,
+        );
+      },
+      persist: (_) async {},
+      install: (_) {},
+      forgetSession: () async => fail('should keep the session'),
+      clearChannel: () => fail('should keep the channel'),
+      openChooser: () => fail('should not open the gate'),
+      credentials: store,
+    );
+    keeper.start();
+    events.add(required());
+    await settle();
+    expect(calls, ['cred-1', null]);
+    expect(await store.read('host-1'), isNull);
+    expect(keeper.reloginGeneration, 1);
+    expect(keeper.passwordRequired.value, isFalse);
+    await events.close();
+  });
+
+  test('凭据失效又没密码：提示条亮起并回登录页', () async {
+    final events = StreamController<PeerControlEvent>();
+    final store = await credentialStore();
+    var cleared = false;
+    var opened = false;
+    final keeper = PouchLoginKeeper(
+      events: events.stream,
+      readSession: () async => session(),
+      login: ({
+        required hostPeerId,
+        required pouchId,
+        String? credential,
+      }) async {
+        if (credential != null) {
+          throw const PouchCredentialRejected('设备凭据已失效');
+        }
+        throw const PouchPasswordRequired('密码不对');
+      },
+      persist: (_) async => fail('should not save'),
+      install: (_) => fail('should not install'),
+      forgetSession: () async => fail('session file stays until they log in'),
+      clearChannel: () => cleared = true,
+      openChooser: () => opened = true,
+      credentials: store,
+    );
+    keeper.start();
+    events.add(required());
+    await settle();
+    expect(cleared, isTrue);
+    expect(opened, isTrue);
+    expect(keeper.passwordRequired.value, isTrue);
+    expect(await store.read('host-1'), isNull);
+    await events.close();
+  });
+
+  test('恢复成功一次，提示条自动收起', () async {
+    final events = StreamController<PeerControlEvent>();
+    final store = PouchCredentialStore(vault: MemoryPouchCredentialVault());
+    var hasCredential = false;
+    final keeper = PouchLoginKeeper(
+      events: events.stream,
+      readSession: () async => session(),
+      login: ({
+        required hostPeerId,
+        required pouchId,
+        String? credential,
+      }) async {
+        if (!hasCredential) {
+          throw const PouchPasswordRequired('密码不对');
+        }
+        return const PouchLoginGrant(
+          token: 'new-token',
+          sessionId: 'sid-new',
+          expiresAtMs: 12000,
+        );
+      },
+      persist: (_) async {},
+      install: (_) {},
+      forgetSession: () async {},
+      clearChannel: () {},
+      openChooser: () => fail('already on the gate'),
+      credentials: store,
+    );
+    keeper.retainGate();
+    keeper.start();
+    events.add(required());
+    await settle();
+    expect(keeper.passwordRequired.value, isTrue);
+
+    hasCredential = true;
+    await store.save(
+      hostPeerId: 'host-1',
+      pouchId: 'pouch-a',
+      credential: 'cred-new',
+      expiresAtMs: DateTime.now().millisecondsSinceEpoch + 60000,
+    );
+    events.add(required());
+    await settle();
+    expect(keeper.passwordRequired.value, isFalse);
+    keeper.releaseGate();
+    await events.close();
+  });
+
+  test('网络抖动不清凭据，下次还能试', () async {
+    final events = StreamController<PeerControlEvent>();
+    final store = await credentialStore();
+    final keeper = PouchLoginKeeper(
+      events: events.stream,
+      readSession: () async => session(),
+      login: ({
+        required hostPeerId,
+        required pouchId,
+        String? credential,
+      }) async {
+        throw TimeoutException('login');
+      },
+      persist: (_) async => fail('should not save'),
+      install: (_) => fail('should not install'),
+      forgetSession: () async => fail('should keep the session'),
+      clearChannel: () => fail('should not clear'),
+      openChooser: () => fail('should not leave'),
+      credentials: store,
+    );
+    keeper.start();
+    events.add(required());
+    await settle();
+    expect((await store.read('host-1'))?.credential, 'cred-1');
+    expect(keeper.passwordRequired.value, isFalse);
+    await events.close();
+  });
+
+  test('过期的凭据不拿去试，直接走密码', () async {
+    final events = StreamController<PeerControlEvent>();
+    final store = await credentialStore(
+      ttl: const Duration(seconds: -1),
+    );
+    String? used = 'unset';
+    final keeper = PouchLoginKeeper(
+      events: events.stream,
+      readSession: () async => session(),
+      login: ({
+        required hostPeerId,
+        required pouchId,
+        String? credential,
+      }) async {
+        used = credential;
+        throw const PouchPasswordRequired('密码不对');
+      },
+      persist: (_) async => fail('should not save'),
+      install: (_) => fail('should not install'),
+      forgetSession: () async {},
+      clearChannel: () {},
+      openChooser: () {},
+      credentials: store,
+    );
+    keeper.retainGate();
+    keeper.start();
+    events.add(required());
+    await settle();
+    expect(used, isNull);
+    keeper.releaseGate();
     await events.close();
   });
 
@@ -232,7 +546,11 @@ void main() {
     final keeper = PouchLoginKeeper(
       events: events.stream,
       readSession: () async => session(),
-      login: ({required hostPeerId, required pouchId}) async {
+      login: ({
+        required hostPeerId,
+        required pouchId,
+        String? credential,
+      }) async {
         throw TimeoutException('login');
       },
       persist: (_) async => fail('should not save'),
