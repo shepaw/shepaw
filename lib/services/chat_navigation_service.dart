@@ -1,12 +1,35 @@
 import 'package:flutter/material.dart';
 
 import '../models/conversation_selection.dart';
+import '../onboarding/phone_host_store.dart';
 import '../peer/services/peer_agent_client_service.dart'
     show syncedPeerChannelId;
 import '../screens/chat_screen.dart';
 import '../service_locator.dart';
+import '../storage/pouch_session.dart';
+import '../utils/platform_utils.dart';
 import 'local_database_service.dart';
 import 'logger_service.dart';
+import 'route_gate.dart';
+
+/// 深链 / 通知点进来时，没有有效登录态该停在哪一页；`null` 表示可以继续。
+///
+/// 手机没有本机密码，回主机登录页；还没配过主机就先配对。桌面回储物袋
+/// 登录页，它自己会区分本机 / 远端主机。
+///
+/// [onLoginGate] 为真时即便 token 还有效也不放行：用户这次会话还没过登录页，
+/// 不能靠通知 / 审核条把登录页绕过去。
+String? deepLinkLoginRoute({
+  required bool isDesktop,
+  required bool loggedIn,
+  required bool onLoginGate,
+  required String? phoneHostId,
+}) {
+  if (loggedIn && !onLoginGate) return null;
+  if (isDesktop) return '/pouch';
+  final host = phoneHostId?.trim() ?? '';
+  return host.isEmpty ? '/remote-connect' : '/phone-login';
+}
 
 /// Opens a chat session from notifications / global banner (mobile + desktop).
 class ChatNavigationService {
@@ -42,6 +65,31 @@ class ChatNavigationService {
     String? agentName,
     String? agentAvatar,
   }) async {
+    // 深链不经过登录页，必须自己补上登录校验。否则冷启动落在登录页时，
+    // 审核条 / 通知仍能把人直接推进聊天。
+    final session = await PouchSessionStore.readActive();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final loggedIn = session != null && session.isLoggedIn(now);
+    final onDesktop = isDesktopPlatform;
+    final loginRoute = deepLinkLoginRoute(
+      isDesktop: onDesktop,
+      loggedIn: loggedIn,
+      onLoginGate: RouteGateObserver.onGate.value,
+      phoneHostId: onDesktop ? null : await PhoneHostStore.read(),
+    );
+    if (loginRoute != null) {
+      final nav = _navigatorKey?.currentState;
+      if (nav == null) {
+        LoggerService().warning(
+          'Not logged in and no navigator; dropping deep link $channelId',
+          tag: _tag,
+        );
+        return;
+      }
+      nav.pushNamedAndRemoveUntil(loginRoute, (_) => false);
+      return;
+    }
+
     final selection = await _resolveSelection(
       channelId: channelId,
       messageId: messageId,
@@ -58,7 +106,8 @@ class ChatNavigationService {
 
     final nav = _navigatorKey?.currentState;
     if (nav == null) {
-      LoggerService().warning('No navigator to open channel $channelId', tag: _tag);
+      LoggerService()
+          .warning('No navigator to open channel $channelId', tag: _tag);
       return;
     }
     nav.push(

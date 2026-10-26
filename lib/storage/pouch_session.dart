@@ -169,11 +169,30 @@ class PouchSessionStore {
   static bool _hasCache = false;
   static int _cacheGeneration = 0;
 
+  /// 当前是否有一份未过期的登录态。
+  ///
+  /// 审核条这类全局 UI 跟它走，而不是跟「当前显示的是哪一页」走：冷启动时
+  /// 登录页和有效 token 可以同时存在（见 [readActive]）。
+  static final ValueNotifier<bool> _loggedIn = ValueNotifier<bool>(false);
+
+  /// 登录态是否有效。会话保存 / 退出时更新，供 UI 监听。
+  static ValueListenable<bool> get loggedIn => _loggedIn;
+
+  static bool _isLoggedInNow(PouchSession? session) =>
+      session != null &&
+      session.isLoggedIn(DateTime.now().millisecondsSinceEpoch);
+
+  static void _publishLoggedIn(PouchSession? session) {
+    final next = _isLoggedInNow(session);
+    if (_loggedIn.value != next) _loggedIn.value = next;
+  }
+
   /// 登录态进内存。进聊天页会反复问当前会话，不能每次都打钥匙串。
   static void remember(PouchSession? session) {
     _cacheGeneration++;
     _cached = session;
     _hasCache = true;
+    _publishLoggedIn(session);
   }
 
   @visibleForTesting
@@ -181,6 +200,7 @@ class PouchSessionStore {
     _cached = null;
     _hasCache = false;
     _cacheGeneration++;
+    _publishLoggedIn(null);
   }
 
   static Future<File> appFile() async {
@@ -190,13 +210,22 @@ class PouchSessionStore {
 
   static Future<PouchSession?> readActive() async {
     final override = readOverride;
-    if (override != null) return override();
-    if (_hasCache) return _cached;
+    if (override != null) {
+      final session = await override();
+      _publishLoggedIn(session);
+      return session;
+    }
+    if (_hasCache) {
+      // 缓存里的 token 可能已经过期，顺手把监听值刷新到当前时刻。
+      _publishLoggedIn(_cached);
+      return _cached;
+    }
     final generation = _cacheGeneration;
     final loaded = await PouchSessionStore(await appFile()).load();
     if (generation != _cacheGeneration) return _cached;
     _cached = loaded;
     _hasCache = true;
+    _publishLoggedIn(loaded);
     return loaded;
   }
 

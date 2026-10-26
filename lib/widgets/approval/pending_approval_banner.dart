@@ -7,6 +7,8 @@ import '../../services/app_lifecycle_service.dart';
 import '../../services/approval/pending_approval_hub.dart';
 import '../../services/approval/pending_approval_item.dart';
 import '../../services/chat_navigation_service.dart';
+import '../../services/route_gate.dart';
+import '../../storage/pouch_session.dart';
 
 /// Persistent top banner while there are pending approvals outside the
 /// currently viewed channel.
@@ -39,8 +41,7 @@ class _PendingApprovalBannerState extends State<PendingApprovalBanner> {
     _hubSub = PendingApprovalHub.instance.stream.listen((items) {
       _items.value = items;
     });
-    _channelSub =
-        AppLifecycleService().onActiveChannelChanged.listen((_) {
+    _channelSub = AppLifecycleService().onActiveChannelChanged.listen((_) {
       // activeChannel 只影响可见集（不改 _items），用独立 tick 通知。
       _visibleTick.value++;
     });
@@ -72,12 +73,30 @@ class _PendingApprovalBannerState extends State<PendingApprovalBanner> {
 
   @override
   Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: RouteGateObserver.onGate,
+      child: widget.child,
+      builder: (context, onGate, child) {
+        if (onGate) return child!;
+        return ValueListenableBuilder<bool>(
+          valueListenable: PouchSessionStore.loggedIn,
+          child: child,
+          builder: (context, loggedIn, child) {
+            if (!loggedIn) return child!;
+            return _buildForItems(child!);
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildForItems(Widget child) {
     return ValueListenableBuilder<int>(
       valueListenable: _visibleTick,
       builder: (context, _, __) {
         return ValueListenableBuilder<List<PendingApprovalItem>>(
           valueListenable: _items,
-          child: widget.child,
+          child: child,
           builder: (context, items, child) {
             final visible = _visibleOf(items);
             if (visible.isEmpty) return child!;

@@ -13,6 +13,7 @@ import 'services/cli_language.dart';
 import 'services/desktop_window_auto_size.dart';
 import 'services/permission_service.dart';
 import 'services/logger_service.dart';
+import 'services/route_gate.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'sub_window_app.dart';
 import 'app_bootstrap.dart';
@@ -317,6 +318,7 @@ class _MyAppState extends State<MyApp> {
           return WithForegroundTask(
             child: MaterialApp(
               navigatorKey: navigatorKey,
+              navigatorObservers: [RouteGateObserver.instance],
               title: l10n.appTitle,
               debugShowCheckedModeBanner: false,
               localizationsDelegates: AppLocalizations.localizationsDelegates,
