@@ -9632,8 +9632,10 @@ class PeerAgentClientService {
   }
 
   /// PeerConnectionManager.resumeAll 的征询钩子：该 peer 是否存在尚未完成的
-  /// sendChat turn（含审批待决）。有则恢复前台时连接必须保留 —— 掐断会让
-  /// hub 把在途审批按放弃处理，整个 turn 随之死亡。
+  /// sendChat turn（含审批待决）。
+  ///
+  /// 目前只对 worker 生效（CLI 流断连会被 hub 补错误终态）。普通 agent turn
+  /// 可以安全跨连接，重连后由 resume_req 断点续传，因此不阻止探活重建。
   bool _hasInFlightTurnForPeer(String peerId) {
     for (final p in _pending.values) {
       if (p.peerId == peerId && !p.completer.isCompleted) return true;

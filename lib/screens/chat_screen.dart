@@ -145,6 +145,7 @@ class _ChatScreenState extends State<ChatScreen>
   /// 回前台后的恢复任务。合并同一次恢复里的重复事件，避免同时跑两条同步链。
   Timer? _resumeRecoveryTimer;
   bool _resumeSyncInFlight = false;
+  bool _resumeSyncPending = false;
 
   /// True while pulling this synced session's transcript from the remote,
   /// so the app bar can show a "同步远端…" indicator.
@@ -4500,16 +4501,41 @@ class _ChatScreenState extends State<ChatScreen>
   /// 没收到），但远端 transcript 已有完整回复。增量同步有游标，没变化时
   /// 不会 reload；仍在转圈但已不出字的回合再走 stranded 收尾。
   Future<void> _recoverPeerTurnOnResume() async {
-    if (_resumeSyncInFlight) return;
+    if (_resumeSyncInFlight) {
+      // 当前恢复可能还卡在等重连（最长 20s）。后一次回前台不能直接丢掉，
+      // 否则重连发生在两次恢复之间时，结果要等下一次触发才补上。
+      _resumeSyncPending = true;
+      return;
+    }
     _resumeSyncInFlight = true;
     try {
-      await _maybeSyncPeerAgent();
-      if (!mounted) return;
-      if (_controller.streaming.isActive || _controller.isProcessing) {
-        await _recoverStrandedPeerTurn();
-      }
+      do {
+        _resumeSyncPending = false;
+        await _syncAndRecoverPeerTurn();
+        if (!mounted) return;
+      } while (_resumeSyncPending);
     } finally {
       _resumeSyncInFlight = false;
+    }
+  }
+
+  Future<void> _syncAndRecoverPeerTurn() async {
+    try {
+      await _maybeSyncPeerAgent();
+    } catch (e) {
+      // 调用方是 unawaited 的生命周期回调；异常往上抛会变成未捕获异步错误。
+      LoggerService().warning('resume peer sync failed: $e', tag: 'ChatScreen');
+    }
+    if (!mounted) return;
+    if (_controller.streaming.isActive || _controller.isProcessing) {
+      try {
+        await _recoverStrandedPeerTurn();
+      } catch (e) {
+        LoggerService().warning(
+          'resume peer recovery failed: $e',
+          tag: 'ChatScreen',
+        );
+      }
     }
   }
 

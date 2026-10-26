@@ -230,12 +230,15 @@ class PeerConnectionManager {
   /// 因此后台较久时刷新连接。
   ///
   /// 但桌面端（macOS/Windows）切后台 / 锁屏**不会**挂起 socket——连接上的流式
-  /// 数据往往仍在正常流动。此时无脑掐断重建会杀死在途的 agent turn 与待决审批
-  /// （对端 hub 会把断连当作放弃处理）。所以 forceRefresh 不再直接关闭连接，
-  /// 而是逐层确认：
-  /// 1. 有在途 agent 交互（审批中 / 流式输出中）→ 原样保留；
+  /// 数据往往仍在正常流动。此时无脑掐断重建会打断在途流。所以 forceRefresh
+  /// 不再直接关闭连接，而是逐层确认：
+  /// 1. worker 有在途 CLI 流 → 原样保留（断连时 hub 会给流补错误终态）；
   /// 2. 探活（ping→pong）成功 → 连接确实还活着，保留；
   /// 3. 探活失败 → 真正的半开连接，关闭并重建。
+  ///
+  /// 用户对话的 agent turn 不随连接断开取消，重连后由 attach / resume 按
+  /// 「当前连接」续上，所以即使有在途 turn 也要探活——手机息屏后最常见的就是
+  /// 这种状态仍是 connected 的半开连接。
   ///
   /// 刚恢复的一方此前很可能不可达（息屏 / 后台），对端无法连入，所以这里一律由
   /// 本机「主动发起」连接（ignoreTieBreak），重复连接交给 glare 收敛器处理。
@@ -602,16 +605,22 @@ class PeerConnectionManager {
     // 取消订阅避免 close() 再触发一次 _onDisconnected 的 2s 退避重连；
     // 调用方紧接着会用零延迟的 _triggerImmediateReconnect 重建。
     _cancelConnectionSubs(peerId);
-    await conn.close();
     // 主动丢弃不会走 _onDisconnected。补一次 disconnected 让上层把在途
     // turn 标成 suspended，重连后才会发 resume_req 补齐断线期间的正文。
     // 不调 _onDisconnected：它会再排一次 2s 退避重连，和调用方的立即
     // 重连打架。stale 标记让上层只 suspend，不把 agent 闪成离线。
-    _eventController.add(PeerConnectionEvent(
-      peerId: peerId,
-      type: PeerConnectionEventType.disconnected,
-      data: const {'stale': true},
-    ));
+    //
+    // 必须在 close() 之前发：关连接期间可能有新入站连接装上并广播
+    // connected，若 stale 事件晚于它，上层会先 resume 再 suspend，之后没有
+    // 新的 connected 来救，在途 turn 就卡在挂起态了。
+    if (!_eventController.isClosed) {
+      _eventController.add(PeerConnectionEvent(
+        peerId: peerId,
+        type: PeerConnectionEventType.disconnected,
+        data: const {'stale': true},
+      ));
+    }
+    await conn.close();
   }
 
   /// 发送 Noise 明文二进制（store 读块）。未连接时返回 false。
