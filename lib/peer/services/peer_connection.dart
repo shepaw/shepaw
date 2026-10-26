@@ -130,6 +130,9 @@ class PeerConnection {
     'agent_metadata',
     'agent_done',
     'agent_error',
+    // 主机上行队列满时对收下的帧回这一条。不在名单里的话，请求方只会等到
+    // 8 秒超时——「主机忙」和「对端不回」就分不开了。
+    'peer_busy',
     'agent_cancel',
     'agent_turn_resume_req',
     'agent_turn_resume_resp',

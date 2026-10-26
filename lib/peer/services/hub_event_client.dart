@@ -63,6 +63,7 @@ class HubEventClient {
 
   /// attach 请求 id → turn id。主机回 attach-lost 时用它认领占位。
   final _attachRequests = <String, String>{};
+
   final _attached = <String>{};
   final _liveBuffers = <String, String>{};
   final _liveChannels = <String, String>{};
@@ -361,10 +362,21 @@ class HubEventClient {
     final requestId = _uuid.v4();
     final done = Completer<HubSyncPage?>();
     final sub = events.listen((event) {
-      if (done.isCompleted) return;
-      if (event.peerId != peerId || event.type != 'events_sync_resp') return;
+      if (done.isCompleted || event.peerId != peerId) return;
       if (event.data['request_id'] != requestId) return;
-      done.complete(HubSyncPage.parse(event.data));
+      if (event.type == 'events_sync_resp') {
+        done.complete(HubSyncPage.parse(event.data));
+        return;
+      }
+      // 主机上行队列满时回 `peer_busy`，这一页根本没被收下。等满 8 秒再退避
+      // 既慢又只留下「超时」一句，认出来就立刻收尾，把原因写清楚。
+      if (event.type == 'peer_busy') {
+        _log.warning(
+          '主机正忙，补拉被拒：${event.data['message'] ?? ''}',
+          tag: 'HubEvent',
+        );
+        done.complete(null);
+      }
     });
     try {
       final sent = await _send(peerId, {

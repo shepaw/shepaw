@@ -303,6 +303,19 @@ class HubPouchScopeTransport implements PouchScopeTransport {
       if (done.isCompleted) return;
       if (event.peerId != peerId) return;
       final type = event.type;
+      if (type == 'peer_busy') {
+        // 主机队列满，这一帧没被收下。store 帧用的是 req_id，主机回执里没有
+        // 请求 id 可对，只能按「同一条连接上被拒」处理：立刻失败，别让调用方
+        // 白等一次超时，也别把「主机忙」报成「连不上」。
+        final busyId = event.data['request_id'];
+        if (busyId is String && busyId.isNotEmpty && busyId != reqId) return;
+        final message = (event.data['message'] as String?)?.trim();
+        done.completeError(StoreException(
+          StoreError.masterOffline,
+          message != null && message.isNotEmpty ? message : '主机正忙，请稍后重试',
+        ));
+        return;
+      }
       if (type != 'pouch') return;
       final data = event.data;
       if (data['req_id'] != reqId) return;

@@ -88,6 +88,40 @@ void main() {
     await incoming.close();
   });
 
+  // 主机队列满时会回 `peer_busy`。原先这种回执既不在控制帧名单里，也没有
+  // 人认领，补拉只能干等 8 秒超时——日志里只剩「超时」，看不出是主机忙。
+  test('主机回 peer_busy 时补拉立刻收尾，不等满 8 秒', () async {
+    final incoming = StreamController<PeerControlEvent>.broadcast();
+    final store = MemoryHubSeqStore();
+    final client = HubEventClient(
+      events: incoming.stream,
+      send: (peerId, frame) async {
+        incoming.add(PeerControlEvent(
+          peerId: peerId,
+          data: {
+            'type': 'peer_busy',
+            'request_id': frame['request_id'],
+            'code': 'host_busy',
+            'retryable': true,
+            'message': '主机正忙，这条消息没有收下，请稍后重试',
+          },
+        ));
+        return true;
+      },
+      seqStore: store,
+      fingerprintOf: (_) async => 'fp',
+    );
+
+    final started = DateTime.now();
+    await client.catchUp('peer-1');
+    final elapsed = DateTime.now().difference(started);
+
+    // 三次重试各等一次退避（1s + 2s），但一次都不该走到 8 秒单页超时。
+    expect(elapsed, lessThan(const Duration(seconds: 6)));
+    expect(store.values['fp'], isNull);
+    await incoming.close();
+  });
+
   test('补拉进行中再请求会排队，收尾后按最新游标重跑', () async {
     final incoming = StreamController<PeerControlEvent>.broadcast();
     final sent = <int>[];
