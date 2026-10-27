@@ -489,7 +489,12 @@ class ConversationListController extends ChangeNotifier {
   }
 
   /// 已配对设备；P2P 不可用时静默降级为空列表。
+  ///
+  /// 设备对话界面没开时这些行根本不会渲染，而 [PouchPairing.visiblePeers]
+  /// 是一趟主机往返（`PouchPairRelay.list` 最长等 10s）。首刷三路是
+  /// `Future.wait` 的，主机一慢就会让整个会话列表陪着转圈，所以直接跳过。
   Future<List<PairedPeer>> _loadPeers() async {
+    if (!ProductFeatures.deviceChatUiEnabled) return const [];
     try {
       final peers = await PouchPairing.visiblePeers();
       final liveIds = peers.map((p) => p.id).toSet();
