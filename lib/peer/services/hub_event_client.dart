@@ -93,6 +93,12 @@ class HubEventClient {
   /// 单个 peer 最多暂存多少条 live 事件。
   static const _maxDeferredLivePerPeer = 512;
 
+  /// 补拉一页时每应用多少条事件落一次游标。
+  ///
+  /// 游标只在整页走完后才写的旧做法，遇到一条应用失败的事件（或进程在
+  /// 页中途被杀）就永远停在原序号：每次重连都重拉同一页，永远追不上。
+  static const _cursorPersistBatch = 50;
+
   var _livePaused = false;
 
   Stream<HubNotice> get notices => _notices.stream;
@@ -240,14 +246,38 @@ class HubEventClient {
           if (cursor > 0) await _invalidateHistoryAfterReset();
         }
         var walking = base;
+        var persisted = base;
+        var pendingPersist = 0;
         for (final event in page.events) {
           final step = cursorStep(walking, event.seq);
           if (!page.reset && step != HubCursorStep.apply) continue;
-          await _dispatch(peerId, event);
+          try {
+            await _dispatch(peerId, event);
+          } catch (_) {
+            // 偶发的 SQLite 忙 / 锁值得再试一次；仍然失败就跳过，不能让
+            // 一条坏事件把游标永久钉在这一页上。
+            try {
+              await _dispatch(peerId, event);
+            } catch (error) {
+              _log.warning(
+                'skip undispatchable event seq=${event.seq} '
+                'kind=${event.kind}: $error',
+                tag: 'HubEvent',
+              );
+            }
+          }
           walking = event.seq;
+          pendingPersist++;
+          if (pendingPersist >= _cursorPersistBatch) {
+            await seqStore.write(key, walking);
+            persisted = walking;
+            pendingPersist = 0;
+          }
         }
         cursor = cursorAfterPage(base, page);
-        await seqStore.write(key, cursor);
+        if (cursor != persisted) {
+          await seqStore.write(key, cursor);
+        }
         if (syncCaughtUp(cursor, page.headSeq) || page.events.isEmpty) {
           onCaughtUp?.call(peerId);
           unawaited(PouchTurnRelay.instance.flushPendingReads(peerId));
@@ -329,7 +359,18 @@ class HubEventClient {
         await _catchUpNow(peerId);
         return;
       case HubCursorStep.apply:
-        await _dispatch(peerId, event);
+        try {
+          await _dispatch(peerId, event);
+        } catch (error) {
+          // 游标停在上一帧，交给补拉再试；补拉遇到同一条仍然失败时会
+          // 跳过它继续前进，不会永久卡在同一序号。
+          _log.warning(
+            'live dispatch failed seq=${event.seq} kind=${event.kind}: $error',
+            tag: 'HubEvent',
+          );
+          unawaited(catchUp(peerId));
+          return;
+        }
         await seqStore.write(key, event.seq);
     }
   }

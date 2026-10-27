@@ -122,6 +122,57 @@ void main() {
     await incoming.close();
   });
 
+  // 手机端出现过 since_seq 连续几天不动：每次重连都重拉同一页 500 条。
+  // 根因是整页走完才写游标，而页里一条事件应用失败就会让循环中止。
+  test('补拉时某条事件应用失败不会把游标钉死', () async {
+    final incoming = StreamController<PeerControlEvent>.broadcast();
+    final sent = <int>[];
+    final store = MemoryHubSeqStore();
+    final client = HubEventClient(
+      events: incoming.stream,
+      send: (peerId, frame) async {
+        sent.add(frame['since_seq'] as int);
+        incoming.add(PeerControlEvent(
+          peerId: peerId,
+          data: {
+            'type': 'events_sync_resp',
+            'request_id': frame['request_id'],
+            'events': [
+              {
+                'seq': 1,
+                'kind': 'turn.started',
+                'channel_id': 'ch-poison',
+                'agent_id': 'agent-1',
+                'data': {'turn_id': 'poison'},
+              },
+              {
+                'seq': 2,
+                'kind': 'agents.changed',
+                'data': <String, dynamic>{},
+              },
+            ],
+            'head_seq': 2,
+            'reset': false,
+          },
+        ));
+        return true;
+      },
+      seqStore: store,
+      fingerprintOf: (_) async => 'fp-poison',
+      watchingTurn: (turnId) {
+        if (turnId == 'poison') throw StateError('bad turn');
+        return false;
+      },
+    );
+
+    await client.catchUp('peer-1');
+
+    // 坏事件被跳过，后面的照常应用，游标落在页尾。
+    expect(sent, [0]);
+    expect(store.values['fp-poison'], 2);
+    await incoming.close();
+  });
+
   test('补拉进行中再请求会排队，收尾后按最新游标重跑', () async {
     final incoming = StreamController<PeerControlEvent>.broadcast();
     final sent = <int>[];

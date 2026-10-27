@@ -9924,18 +9924,27 @@ class PeerAgentClientService {
   }
 
   /// 发一帧 resume_req（断点取 p.receivedLength 当前值）。
+  ///
+  /// 走 [PeerConnectionManager.sendControl] 的探活 + 等重连路径：半开连接
+  /// 上 `sink.add` 会静默成功，帧到不了主机，而续传看门狗只认应答 —— 于是
+  /// 三帧都「发出去了」却没人回，30 秒后误判成「对端不支持续传」。
   Future<bool> _sendResumeReq(
     String peerId,
     String requestId,
     _PendingRequest p,
   ) {
-    final sendControl =
-        debugSendControlOverride ?? PeerConnectionManager.instance.sendControl;
-    return sendControl(peerId, {
+    final frame = <String, dynamic>{
       'type': 'agent_turn_resume_req',
       'request_id': requestId,
       'known_content_length': p.receivedLength,
-    });
+    };
+    final override = debugSendControlOverride;
+    if (override != null) return override(peerId, frame);
+    return PeerConnectionManager.instance.sendControl(
+      peerId,
+      frame,
+      waitForReconnect: _controlReconnectWait,
+    );
   }
 
   /// 单次 resume 应答看门狗。应答到达（[_onTurnResumeResp] 复位

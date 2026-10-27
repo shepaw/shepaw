@@ -114,6 +114,12 @@ class MessageBubble extends StatelessWidget {
   /// Group-chat: hide the bubble body (user preference).
   final bool bodyCollapsed;
 
+  /// 是否是会话里最新的一条消息。
+  ///
+  /// 长回答只在「已经翻过去的历史」里折叠；刚结束的这条保持展开，否则
+  /// 流式结束的那一刻正文会突然换成一行「详情」，看起来就像输出丢了。
+  final bool isLatestMessage;
+
   /// Group-chat: tap handler for the author-bar collapse control.
   final VoidCallback? onToggleBodyCollapse;
 
@@ -157,6 +163,7 @@ class MessageBubble extends StatelessWidget {
     this.stickySenderName = false,
     this.workspaceUris = const [],
     this.bodyCollapsed = false,
+    this.isLatestMessage = false,
     this.onToggleBodyCollapse,
     this.stickyScrollListenables = const [],
     this.stickyViewportKey,
@@ -960,6 +967,11 @@ class MessageBubble extends StatelessWidget {
             ? '...'
             : displayText;
         final hasAnswer = displayText.trim().isNotEmpty;
+        // 最新一条不折：回合刚结束时把正文换成折叠头，用户会以为回复没出来。
+        // 历史里的长回答仍然折叠，避免每次整列重建都布局几千字 Markdown。
+        final collapseLongBody = !isStreaming &&
+            !isLatestMessage &&
+            _displayContent.length >= ChatMessageWindow.longContentChars;
         final styleSheet =
             _getStyleSheet(isMyMessage, Theme.of(context).colorScheme);
         // 用户发出的原文按纯文本展示，不做 Markdown 预览。
@@ -991,8 +1003,7 @@ class MessageBubble extends StatelessWidget {
           // Long finished replies collapse too, even when a progress section
           // or interactive footer is present: otherwise multi-KB markdown is
           // laid out on every rebuild and scrolling janks.
-          final shouldCollapseBody = !isStreaming &&
-              _displayContent.length >= ChatMessageWindow.longContentChars;
+          final shouldCollapseBody = collapseLongBody;
           final answerWidget = shouldCollapseBody
               ? CollapsibleMessageBubble(
                   title: AppLocalizations.of(context).widget_details,
@@ -1042,8 +1053,7 @@ class MessageBubble extends StatelessWidget {
         }
 
         // Long finished replies: collapse by default to bound layout cost.
-        if (!isStreaming &&
-            _displayContent.length >= ChatMessageWindow.longContentChars) {
+        if (collapseLongBody) {
           return CollapsibleMessageBubble(
             title: AppLocalizations.of(context).widget_details,
             initiallyCollapsed: true,

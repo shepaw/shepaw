@@ -249,6 +249,9 @@ class _ChatMessageListState extends State<ChatMessageList> {
     final defaultExpandedMessageId = isGroupMode
         ? MessageUtils.defaultExpandedGroupMessageId(messages)
         : null;
+    // 最新一条可见消息不参与长内容折叠：它就是用户正要看的那条输出。
+    final latestDisplayableIndex =
+        messages.lastIndexWhere(ChatHistoryContent.shouldDisplayInChat);
 
     return KeyedSubtree(
       key: _viewportKey,
@@ -405,6 +408,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
                       // 中计算；不要再挂全局 itemPositions，避免双信号。
                       stickyViewportKey: _viewportKey,
                       bodyCollapsed: bodyCollapsed,
+                      isLatestMessage: originalIndex == latestDisplayableIndex,
                       onToggleBodyCollapse: isGroupMode && !isMyMessage
                           ? () => _collapsePreference.toggle(
                                 live.id,
