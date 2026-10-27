@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
@@ -29,9 +30,16 @@ import 'peer_storage_service.dart';
 /// 登录之后循环 `events_sync_req` 直到追上 `head_seq`，再吃实时 `hub_event`。
 /// 序号对不上就先补洞。消息按 id 去重；没在看的回合用 `turn_attach_req` 接流。
 class HubEventClient {
-  /// 一页没拿到时的重试次数。每次之间退避，见 [_pageRetryDelay]。
+  /// 一页没拿到时的重试次数。超过就不再原地重试：游标跳到心跳报的 head。
+  ///
+  /// 原地重试正是「主机每 10 秒算一页、App 每 8 秒超时丢掉、`since_seq`
+  /// 一直不变」那个自持循环的燃料，必须有出口。
   static const _maxPageAttempts = 3;
-  static const _pageRetryDelay = Duration(seconds: 1);
+  static const _defaultPageTimeout = Duration(seconds: 8);
+  /// 单页超时后继续等多久认领迟到的回包。主机那一页只是算得慢，不是没收到。
+  static const _latePageWindow = Duration(seconds: 45);
+  /// 迟到页最多存几个。游标一旦跳走，存着的页就没用了，留够重试即可。
+  static const _maxLatePages = 8;
   /// 续传回合的落库合并窗口。主机补发 chunk 可以很密，落库与整列刷新
   /// 没必要跟着每帧走。
   static const _liveFlushInterval = Duration(milliseconds: 100);
@@ -46,6 +54,8 @@ class HubEventClient {
     this.fingerprintOf,
     this.watchingTurn,
     this.onCaughtUp,
+    this.pageTimeout = _defaultPageTimeout,
+    this.pageRetryDelay = const Duration(seconds: 1),
   })  : events = events ?? PeerConnectionManager.instance.controlEvents,
         seqStore = seqStore ?? PrefsHubSeqStore();
 
@@ -55,6 +65,10 @@ class HubEventClient {
   final Future<String> Function(String peerId)? fingerprintOf;
   final bool Function(String turnId)? watchingTurn;
   final void Function(String peerId)? onCaughtUp;
+
+  /// 单页等待上限 / 每次重试的退避基数。测试里调小，线上用默认值。
+  final Duration pageTimeout;
+  final Duration pageRetryDelay;
 
   final _uuid = const Uuid();
   final _log = LoggerService();
@@ -100,6 +114,17 @@ class HubEventClient {
   static const _cursorPersistBatch = 50;
 
   var _livePaused = false;
+
+  /// 超时之后才回来的补拉页，按 `peer/request_id` 存着。
+  ///
+  /// 游标没动时下一轮用的是同一个 request_id，先来这里取，不用让主机把
+  /// 同一段历史再算一遍。
+  final _latePages = <String, HubSyncPage>{};
+
+  /// 心跳报的 head_seq。页面连续失败时用它把游标一把推到主机所在的位置。
+  final _pingHead = <String, int>{};
+
+  final _random = Random();
 
   Stream<HubNotice> get notices => _notices.stream;
 
@@ -152,6 +177,8 @@ class HubEventClient {
     _catchUpQueued.clear();
     _liveDeferred.clear();
     _deferredOverflow.clear();
+    _latePages.clear();
+    _pingHead.clear();
   }
 
   Future<void> _onControl(PeerControlEvent event) async {
@@ -228,17 +255,43 @@ class HubEventClient {
       final key = await _key(peerId);
       var cursor = await seqStore.read(key);
       var attempts = 0;
+      // 同一段游标的重试用同一个 request_id：上一轮超时后主机算完的那页
+      // 还能认领回来，不必重算。
+      var requestId = _uuid.v4();
       while (true) {
-        final page = await _requestPage(peerId, cursor);
+        final page = await _requestPage(peerId, cursor, requestId);
         if (page == null) {
-          // 没拿到页（超时或发送失败）：游标不动，退避重试几次。放弃也不是
-          // 终局 —— 每 30 秒一次的 ping 对账还会再给机会。
+          // 没拿到页（超时或发送失败）：游标不动，退避重试几次。
           attempts += 1;
-          if (attempts >= _maxPageAttempts) return;
-          await Future<void>.delayed(_pageRetryDelay * attempts);
+          if (attempts >= _maxPageAttempts) {
+            // 连着几轮都拿不到页，就别再钉在同一个 seq 上了。心跳报的
+            // head 是主机亲口说的位置：跳过去，中间那段按丢掉处理，历史
+            // 同步进度作废，下次打开会话时从头重建。
+            final head = _pingHead[peerId] ?? 0;
+            if (head > cursor) {
+              _log.warning(
+                '事件补拉连续 $attempts 次失败，游标从 $cursor 跳到 head_seq=$head',
+                tag: 'HubEvent',
+              );
+              final stale = cursor;
+              cursor = head;
+              await seqStore.write(key, cursor);
+              // 中途这段事件确实丢了：本地记的历史同步进度不再可信。
+              // 游标原本就是 0（首次同步）时没有进度可作废。
+              if (stale > 0) await _invalidateHistoryAfterReset();
+              attempts = 0;
+              requestId = _uuid.v4();
+              continue;
+            }
+            // 主机没报过 head（还没收到过 ping），或者本地就是最新的：
+            // 放弃这一轮，等下一次 ping / 重连再给机会。
+            return;
+          }
+          await Future<void>.delayed(_backoff(attempts));
           continue;
         }
         attempts = 0;
+        requestId = _uuid.v4();
         final base = page.reset ? 0 : cursor;
         if (page.reset) {
           if (!_notices.isClosed) _notices.add(HubNotice.reset(peerId));
@@ -393,14 +446,25 @@ class HubEventClient {
   /// 能兜住这种情况的信号（实时帧在主机侧可能因为发送队列满被丢掉）。
   Future<void> _onPingHeadSeq(String peerId, Object? rawHead) async {
     if (rawHead is! int) return;
+    // 这是主机亲口说的位置。补拉连着失败时，游标靠它跳到最新。
+    _pingHead[peerId] = rawHead;
     final key = await _key(peerId);
     final cursor = await seqStore.read(key);
     if (rawHead <= cursor) return;
     await _catchUpNow(peerId);
   }
 
-  Future<HubSyncPage?> _requestPage(String peerId, int since) async {
-    final requestId = _uuid.v4();
+  Future<HubSyncPage?> _requestPage(
+    String peerId,
+    int since,
+    String requestId,
+  ) async {
+    final key = _latePageKey(peerId, requestId);
+    // 上一轮超时之后主机照样把这页算了回来。游标没动、request_id 也没变，
+    // 直接拿走，不用让它再算一遍。
+    final late = _latePages.remove(key);
+    if (late != null) return late;
+
     final done = Completer<HubSyncPage?>();
     final sub = events.listen((event) {
       if (done.isCompleted || event.peerId != peerId) return;
@@ -426,14 +490,63 @@ class HubEventClient {
         'since_seq': since,
         'limit': 500,
       });
-      if (!sent) return null;
-      return await done.future.timeout(const Duration(seconds: 8));
+      if (!sent) {
+        await sub.cancel();
+        return null;
+      }
+      return await done.future.timeout(pageTimeout);
+    } on TimeoutException catch (error) {
+      _log.warning('events sync failed: $error', tag: 'HubEvent');
+      // 超时不等于没收到：主机只是算得慢，回包还会来。别把监听一起取消
+      // 扔掉，留到下一轮按同一个 request_id 认领。
+      _claimLatePage(key, done, sub);
+      return null;
     } catch (error) {
       _log.warning('events sync failed: $error', tag: 'HubEvent');
-      return null;
-    } finally {
       await sub.cancel();
+      return null;
     }
+  }
+
+  static String _latePageKey(String peerId, String requestId) =>
+      '$peerId/$requestId';
+
+  /// 超时之后继续等这条 request_id 的回包。
+  ///
+  /// 等到了就按 key 存进 [_latePages]（重试时取走）；[_latePageWindow] 到期
+  /// 或回包落定后取消监听。以前这里在 `finally` 里直接 `sub.cancel()`，
+  /// 迟到的那页被无声丢掉，下一轮又从同一个游标重算整段历史。
+  void _claimLatePage(
+    String key,
+    Completer<HubSyncPage?> done,
+    StreamSubscription<PeerControlEvent> sub,
+  ) {
+    var closed = false;
+    void close() {
+      if (closed) return;
+      closed = true;
+      unawaited(sub.cancel());
+    }
+
+    final timer = Timer(_latePageWindow, close);
+    unawaited(done.future.then((page) {
+      timer.cancel();
+      if (page != null) {
+        _latePages[key] = page;
+        while (_latePages.length > _maxLatePages) {
+          _latePages.remove(_latePages.keys.first);
+        }
+      }
+      close();
+    }));
+  }
+
+  /// 重试退避带抖动：多台设备常常从同一个游标一起超时，全都在同一毫秒
+  /// 冲上来只会把主机的队列再堆高一次。
+  Duration _backoff(int attempt) {
+    final base = pageRetryDelay.inMilliseconds * attempt;
+    final jitter = base <= 1 ? 0 : _random.nextInt(base ~/ 2 + 1);
+    return Duration(milliseconds: base + jitter);
   }
 
   Future<void> _dispatch(String peerId, HubEvent event) async {
