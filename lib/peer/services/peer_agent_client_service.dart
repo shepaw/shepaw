@@ -9686,7 +9686,11 @@ class PeerAgentClientService {
     }
 
     // 2. 逐 turn 发 resume_req
-    for (final entry in _pending.entries) {
+    //
+    // 先拍快照：`await _sendResumeReq` 会让出事件循环，期间到达的应答可能
+    // 完成并移除 `_pending` 里的条目（lost/error 直接收尾）。直接遍历 map
+    // 会在这里抛 concurrent modification。
+    for (final entry in _pending.entries.toList()) {
       final requestId = entry.key;
       final p = entry.value;
       if (p.peerId != peerId || p.completer.isCompleted) continue;
@@ -10144,42 +10148,61 @@ class PeerAgentClientService {
           'message': data['message'] as String? ?? 'agent error',
         });
         break;
-      case 'lost':
-      default:
-        // 投递探活：主机不认识这轮 —— 且我们没收到过任何业务帧 ——
-        // 说明 agent_chat 这一帧压根没到主机（半开连接 / relay 丢帧）。
-        // 快速失败，把消息交回输入框重试；等 120s 活性超时只会更糟。
-        if (purpose == _ResumePurpose.deliveryProbe && !p.heardFromHost) {
-          // 先原样补发一次：主机按 request_id 去重，重复执行是安全的。
-          if (p.agentChatFrame != null && p.agentChatResendCount == 0) {
-            p.agentChatResendCount++;
-            _log.warning(
-              'agent_chat missing at hub requestId=$requestId — resending once',
-              tag: 'PeerApproval',
-            );
-            unawaited(_resendAgentChat(p.peerId, requestId, p));
-            break;
-          }
-          _log.warning(
-            'agent_chat never reached hub requestId=$requestId '
-            '— fail fast for resend',
-            tag: 'PeerApproval',
-          );
-          // 极少数情况下主机已把消息排进内存队列、只是 agent_queued 丢了；
-          // 若它之后真的跑了，历史同步还能把回复补回对话。
-          _markReconcileNeeded(requestId);
-          _onError({
-            'request_id': requestId,
-            'message': '消息未能送达主机，请重新发送',
-          });
-          break;
-        }
-        // hub 已不认识这个 turn（重启或 TTL 过期）——但结果可能已落进
-        // 远端 transcript，登记 reconcile，由历史同步补回。
+      case 'expired':
+        // 主机确实跑过这条，只是正文按预算清理了。补发会被 request_id
+        // 去重挡回去，没有意义；结果可能已落进远端 transcript，交给
+        // 历史对账补回。
+        _log.info(
+          'turn expired at hub requestId=$requestId '
+          'turnStatus=${data['turn_status']}',
+          tag: 'PeerApproval',
+        );
         _markReconcileNeeded(requestId);
         _onError({
           'request_id': requestId,
-          'message': data['message'] as String? ?? '对端任务已结束或丢失',
+          'message': '任务已结束，结果正在从历史记录补回',
+        });
+        break;
+      case 'lost':
+      default:
+        // `lost` 有两种含义，主机用 `retryable` 区分（旧主机不带这个字段）：
+        // - 从没受理过：agent_chat 大概率丢在半开连接上。用同一个
+        //   request_id 原样补发一次，主机按 `accept_once` 去重，重复执行
+        //   是安全的。
+        // - 受理过但记录没了（by 重启/清理）：补发只会被去重挡回，
+        //   直接失败并交给历史对账。
+        //
+        // 以前只有「投递探活」路径会补发；重连续传（suspend）命中 lost
+        // 直接判死，于是网络一抖 / 一息屏就报「任务已结束或丢失」。
+        final retryable = data['retryable'] is bool
+            ? data['retryable'] as bool
+            : !p.heardFromHost;
+        if (retryable &&
+            !p.heardFromHost &&
+            p.agentChatFrame != null &&
+            p.agentChatResendCount == 0) {
+          p.agentChatResendCount++;
+          _log.warning(
+            'agent_chat missing at hub requestId=$requestId '
+            '(purpose=${purpose.name}) — resending once',
+            tag: 'PeerApproval',
+          );
+          unawaited(_resendAgentChat(p.peerId, requestId, p));
+          break;
+        }
+        _log.warning(
+          'turn gone at hub requestId=$requestId '
+          'purpose=${purpose.name} heardFromHost=${p.heardFromHost} '
+          'retryable=$retryable',
+          tag: 'PeerApproval',
+        );
+        // 结果可能已落进远端 transcript，登记 reconcile 由历史同步补回。
+        _markReconcileNeeded(requestId);
+        _onError({
+          'request_id': requestId,
+          'message': p.heardFromHost
+              ? '与主机断开太久，任务状态已丢失；如无回复请重新发送'
+              : '消息未能送达主机，请重新发送',
         });
         break;
     }
