@@ -475,15 +475,19 @@ class PeerConnectionManager {
   /// 会立刻看到「配对设备未连接」，而半开连接上则会静默丢帧。
   ///
   /// [abortWhen] 在等待期间轮询，返回 true 时放弃发送（用户已取消）。
+  ///
+  /// [deadline] 是调用方给的绝对截止时间。传了它时，发送前的探活也算在
+  /// 等待预算里，而不是探活完再从头等 [waitForReconnect]。
   Future<bool> sendControl(
     String peerId,
     Map<String, dynamic> json, {
     Duration? waitForReconnect,
+    DateTime? deadline,
     void Function()? onWaitingForReconnect,
     bool Function()? abortWhen,
   }) async {
     if (abortWhen?.call() ?? false) return false;
-    final canWait = waitForReconnect != null;
+    final canWait = waitForReconnect != null || deadline != null;
     // 用户主动发消息时先确认连接真的通：半开连接上 sink.add 会静默成功，
     // 帧其实到不了对端（切网 / NAT 超时后最常见）。不探活的话消息看起来
     // 发出去了，实际要等 120s 活性超时才会发现。
@@ -492,6 +496,10 @@ class PeerConnectionManager {
       canSendNow = await _canSendNow(peerId);
       // 探活最长 3s，期间用户可能已经点了停止。
       if (abortWhen?.call() ?? false) return false;
+      // 探活已经吃掉了调用方的等待预算，不能再补发。
+      if (deadline != null && !DateTime.now().isBefore(deadline)) {
+        return false;
+      }
     }
     if (canSendNow &&
         await _trySendControl(
@@ -504,9 +512,10 @@ class PeerConnectionManager {
     if (!canWait) return false;
 
     onWaitingForReconnect?.call();
-    final deadline = DateTime.now().add(waitForReconnect);
+    final waitDeadline =
+        deadline ?? DateTime.now().add(waitForReconnect ?? Duration.zero);
     _ensureReconnectScheduled(peerId);
-    while (DateTime.now().isBefore(deadline)) {
+    while (DateTime.now().isBefore(waitDeadline)) {
       await Future<void>.delayed(const Duration(milliseconds: 100));
       if (abortWhen?.call() ?? false) return false;
       if (await _trySendControl(

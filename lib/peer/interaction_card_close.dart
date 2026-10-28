@@ -74,21 +74,50 @@ Map<String, dynamic>? metadataClosingOpenCards(
 ///
 /// 回合已经收束，但卡没作废：清掉可能先到的 `closed`（乱序的 `turn_ended`），
 /// 写上 `deferred`。已经提交过的不动。返回 null 表示不需要写库。
+///
+/// [reopen] 为 true 时，已提交的卡也要退回可答：本机在回合内提交过，但答案
+/// 没送到主机。提交的值挪进各字段的 `default`，用户再点一次就行。
 Map<String, dynamic>? metadataMarkingFormDeferred(
   Map<String, dynamic> metadata, {
   required String interactionId,
+  bool reopen = false,
 }) {
   if (interactionId.isEmpty) return null;
   final raw = metadata['form'];
   if (raw is! Map || !_holdsInteraction(raw, interactionId)) return null;
   final data = Map<String, dynamic>.from(raw);
-  if (data['submitted_values'] != null) return null;
+  final submitted = data['submitted_values'];
+  if (submitted != null) {
+    if (!reopen) return null;
+    data.remove('submitted_values');
+    if (submitted is Map && data['fields'] is List) {
+      data['fields'] = [
+        for (final field in data['fields'] as List)
+          _prefilledField(field, submitted),
+      ];
+    }
+    data['deferred'] = true;
+    data.remove('closed');
+    return Map<String, dynamic>.from(metadata)..['form'] = data;
+  }
   if (data['deferred'] == true && data['closed'] == null) return null;
   data['deferred'] = true;
   data.remove('closed');
   final next = Map<String, dynamic>.from(metadata);
   next['form'] = data;
   return next;
+}
+
+/// 字段键与 FormBubble 一致：`field_id` 优先，其次 `name` / `id` / `key`。
+dynamic _prefilledField(dynamic field, Map<dynamic, dynamic> values) {
+  if (field is! Map) return field;
+  for (final key in const ['field_id', 'name', 'id', 'key']) {
+    final id = field[key]?.toString() ?? '';
+    if (id.isEmpty) continue;
+    if (!values.containsKey(id)) return field;
+    return Map<String, dynamic>.from(field)..['default'] = values[id];
+  }
+  return field;
 }
 
 bool _holdsInteraction(Map<dynamic, dynamic> data, String interactionId) {

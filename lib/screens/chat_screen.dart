@@ -45,6 +45,7 @@ import '../widgets/chat/chat_message_list.dart';
 import '../widgets/chat/streaming_scroll_anchor.dart';
 import '../widgets/chat/chat_reply_preview.dart';
 import '../widgets/chat/chat_queue_panel.dart';
+import '../widgets/chat/pending_form_dock.dart';
 import '../widgets/chat/session_list_panel.dart';
 import '../widgets/chat/group_session_list_panel.dart';
 import '../widgets/chat/session_list_header_menu.dart';
@@ -3979,6 +3980,8 @@ class _ChatScreenState extends State<ChatScreen>
                             animation: _controller.contentListenable,
                             builder: (context, _) => ChatMessageList(
                               messages: c.messages,
+                              dockedFormMessageId:
+                                  dockedPendingForm(c.messages)?.id,
                               messageIdMap: c.messageIdMap,
                               streamingMessageId: c.streamingMessageId,
                               groupStreamingMessageIds:
@@ -4152,6 +4155,33 @@ class _ChatScreenState extends State<ChatScreen>
                   isCancelZone: _isCancelZone,
                 ),
   
+              // 主机在等用户回答的提问卡：停靠在输入框上方，答完才收起。
+              // 卡片状态在消息 metadata 里，外层结构快照不跟它，跟列表一样
+              // 订阅 contentListenable。
+              AnimatedBuilder(
+                animation: _controller.contentListenable,
+                builder: (context, _) {
+                  final dockedForm = dockedPendingForm(c.messages);
+                  if (dockedForm == null) return const SizedBox.shrink();
+                  return PendingFormDock(
+                    key: ValueKey(dockedForm.id),
+                    message: dockedForm,
+                    onFormSubmitted: (msg, fid, values, summary) {
+                      c.handleFormSubmitted(
+                        msg,
+                        fid,
+                        values,
+                        summary,
+                        instructionName:
+                            AppLocalizations.of(context).widget_formSubmitted,
+                      );
+                    },
+                    onFormDeclined: (msg, fid) =>
+                        c.handleFormDeclined(msg, fid),
+                  );
+                },
+              ),
+
               // Reply preview bar
               if (c.replyingToMessage != null &&
                   !c.isViewingGroupBoundMemberSession &&

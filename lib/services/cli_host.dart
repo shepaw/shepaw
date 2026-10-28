@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -39,6 +40,10 @@ class CliHostEndpoint {
 }
 
 class CliHost {
+  static const _probeTimeout = Duration(seconds: 5);
+  static const _processTimeout = Duration(seconds: 2);
+  static const _commandTimeout = Duration(seconds: 10);
+
   static void installLookup() {
     lookupLocalCli ??= () async {
       final cli = await detect();
@@ -110,8 +115,10 @@ class CliHost {
     final binary = await resolveBinary();
     if (binary == null) return LocalCliStatus.notInstalled;
     try {
-      final result =
-          await Process.run(binary, shepawArgs(const ['status', '--json']));
+      final result = await Process.run(
+        binary,
+        shepawArgs(const ['status', '--json']),
+      ).timeout(_probeTimeout);
       if (result.exitCode == 0) {
         final decoded = jsonDecode(result.stdout.toString());
         if (decoded is Map && decoded['running'] == true) {
@@ -242,7 +249,20 @@ class CliHost {
     final stdout = process.stdout.transform(utf8.decoder).join();
     process.stdin.writeln(password);
     await process.stdin.close();
-    final code = await process.exitCode;
+    var timedOut = false;
+    final code = await process.exitCode.timeout(
+      const Duration(seconds: 15),
+      onTimeout: () {
+        timedOut = true;
+        process.kill();
+        return -1;
+      },
+    );
+    if (timedOut) {
+      unawaited(stderr.catchError((_) => ''));
+      unawaited(stdout.catchError((_) => ''));
+      throw StateError('重设密码超时，请稍后再试');
+    }
     final err = (await stderr).trim();
     await stdout;
     if (code != 0) {
@@ -252,7 +272,10 @@ class CliHost {
 
   /// 执行 `shepaw restart`，然后等到 [detect] 再次看到进程。
   static Future<void> restart(String binary) async {
-    final result = await Process.run(binary, shepawArgs(const ['restart']));
+    final result = await Process.run(
+      binary,
+      shepawArgs(const ['restart']),
+    ).timeout(const Duration(seconds: 15));
     if (result.exitCode != 0) {
       final detail = [
         result.stderr.toString().trim(),
@@ -282,6 +305,16 @@ class CliHost {
   }
 
   static Future<bool> _processAlive(int pid) async {
+    try {
+      final result = await _processProbe(pid).timeout(_processTimeout);
+      return result;
+    } catch (_) {
+      // 进程查询卡住时按「没在跑」处理，别让启动页跟着等。
+      return false;
+    }
+  }
+
+  static Future<bool> _processProbe(int pid) async {
     if (Platform.isWindows) {
       final result = await Process.run('tasklist', [
         '/FI',
@@ -327,11 +360,15 @@ class CliHost {
     final ProcessResult result;
     try {
       if (Platform.isWindows) {
-        result = await Process.run('where.exe', const ['shepaw']);
+        result = await Process.run('where.exe', const ['shepaw'])
+            .timeout(_processTimeout);
       } else {
-        result = await Process.run('/usr/bin/which', const ['shepaw']);
+        result = await Process.run('/usr/bin/which', const ['shepaw'])
+            .timeout(_processTimeout);
       }
     } on ProcessException {
+      return null;
+    } on TimeoutException {
       return null;
     }
     if (result.exitCode != 0) return null;
@@ -352,10 +389,14 @@ class CliHost {
       '--local',
       host.localEndpoint,
     ];
-    var result =
-        await Process.run(host.binary, shepawArgs([...base, '--json']));
+    var result = await Process.run(
+      host.binary,
+      shepawArgs([...base, '--json']),
+    ).timeout(_commandTimeout);
     if (result.exitCode != 0) {
-      result = await Process.run(host.binary, shepawArgs(base));
+      result = await Process.run(host.binary, shepawArgs(base)).timeout(
+        _commandTimeout,
+      );
     }
     if (result.exitCode != 0) {
       final detail = [
@@ -376,8 +417,10 @@ class CliHost {
   /// 桌面 App 自己的 18792 不是主机。把那个码贴到手机上，主机会来拨本进程，
   /// 握手对不上，手机只看到配对失败，而且原来的主机连接会被挤掉。
   static Future<String> mintShareLink(CliHostEndpoint host) async {
-    final result =
-        await Process.run(host.binary, shepawArgs(const ['pair', '--json']));
+    final result = await Process.run(
+      host.binary,
+      shepawArgs(const ['pair', '--json']),
+    ).timeout(_commandTimeout);
     if (result.exitCode != 0) {
       final detail = [
         result.stderr.toString().trim(),

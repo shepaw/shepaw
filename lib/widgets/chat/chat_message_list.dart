@@ -8,6 +8,7 @@ import '../../services/messaging/chat_history_content.dart';
 import '../../services/message_collapse_preference.dart';
 import '../../service_locator.dart';
 import 'message_long_press_handler.dart';
+import 'pending_form_dock.dart';
 import 'streaming_scroll_anchor.dart';
 
 /// The scrollable message list for the chat screen.
@@ -69,6 +70,9 @@ class ChatMessageList extends StatefulWidget {
   /// 在布局阶段原位补偿流式气泡增高，防止历史视口被顶走或滚动手势被抢占。
   final StreamingScrollAnchor? streamingScrollAnchor;
 
+  /// 停靠在输入框上方作答的那张提问卡；列表里只画占位，免得两处各填一份。
+  final String? dockedFormMessageId;
+
   const ChatMessageList({
     super.key,
     required this.messages,
@@ -98,6 +102,7 @@ class ChatMessageList extends StatefulWidget {
     this.workspaceUrisByAgentId = const {},
     required this.streamingListenable,
     this.streamingScrollAnchor,
+    this.dockedFormMessageId,
   });
 
   @override
@@ -290,6 +295,20 @@ class _ChatMessageListState extends State<ChatMessageList> {
               return _buildDateSeparator(context, message.dateTime);
             }
             return const SizedBox.shrink();
+          }
+
+          if (message.id == widget.dockedFormMessageId) {
+            return KeyedSubtree(
+              key: ValueKey(message.id),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (showDateSeparator)
+                    _buildDateSeparator(context, message.dateTime),
+                  PendingFormPlaceholder(message: message),
+                ],
+              ),
+            );
           }
 
           Message? quotedMessage;

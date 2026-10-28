@@ -106,7 +106,8 @@ void main() {
         peerId: 'peer-1',
       );
 
-      final events = <({String approvalId, String requestId})>[];
+      final events =
+          <({String approvalId, String requestId, bool reopened})>[];
       final sub = svc.formDeferredEvents.listen(events.add);
       addTearDown(sub.cancel);
 
@@ -116,7 +117,9 @@ void main() {
         peerId: 'peer-1',
       );
       await pumpEventQueue();
-      expect(events, [(approvalId: approvalId, requestId: requestId)]);
+      expect(events, [
+        (approvalId: approvalId, requestId: requestId, reopened: false),
+      ]);
 
       final sent = <Map<String, dynamic>>[];
       svc.debugSendControlOverride = (peerId, json) async {
@@ -221,6 +224,69 @@ void main() {
         ),
         throwsA(isA<PeerApprovalExpiredException>()),
       );
+    });
+
+    test('回合内提交的答案没送到主机：deferred 帧把卡退回可答，再答另开回合',
+        () async {
+      const requestId = 'req-deferred-lost';
+      const approvalId = 'appr-deferred-lost';
+      svc.debugInjectControlForTest(
+        'agent_form_req',
+        formFrame(requestId: requestId, approvalId: approvalId),
+        peerId: 'peer-1',
+      );
+      // 半开连接：本地「发送成功」，主机其实没收到。
+      svc.debugSendControlOverride = (peerId, json) async => true;
+      expect(
+        await svc.submitForm(
+          peerId: 'peer-1',
+          approvalId: approvalId,
+          values: const {'port': '3000'},
+        ),
+        isFalse,
+      );
+
+      final events =
+          <({String approvalId, String requestId, bool reopened})>[];
+      final sub = svc.formDeferredEvents.listen(events.add);
+      addTearDown(sub.cancel);
+
+      // 主机等到超时转 deferred，说明它没收到那次回答。
+      svc.debugInjectControlForTest(
+        'agent_form_deferred',
+        deferredFrame(requestId: requestId, approvalId: approvalId),
+        peerId: 'peer-1',
+      );
+      await pumpEventQueue();
+      expect(events, [
+        (approvalId: approvalId, requestId: requestId, reopened: true),
+      ]);
+
+      // 再答一次：主机已不在旧回合等，调用方要另开一轮。
+      final sent = <Map<String, dynamic>>[];
+      svc.debugSendControlOverride = (peerId, json) async {
+        sent.add(json);
+        return true;
+      };
+      expect(
+        await svc.submitForm(
+          peerId: 'peer-1',
+          approvalId: approvalId,
+          values: const {'port': '3000'},
+        ),
+        isTrue,
+      );
+      expect(sent.single['type'], 'agent_form_resp');
+
+      // 之后再补发的 deferred 帧不能再把卡放回可答。
+      events.clear();
+      svc.debugInjectControlForTest(
+        'agent_form_deferred',
+        deferredFrame(requestId: requestId, approvalId: approvalId),
+        peerId: 'peer-1',
+      );
+      await pumpEventQueue();
+      expect(events, isEmpty);
     });
 
     test('本地没有这张卡时，补发的 deferred 卡按孤儿表单投出去', () async {

@@ -3644,6 +3644,18 @@ abstract class AppLocalizations {
   /// **'展开'**
   String get chat_queueExpand;
 
+  /// No description provided for @chat_pendingFormDockTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待你的回答'**
+  String get chat_pendingFormDockTitle;
+
+  /// No description provided for @chat_pendingFormInDock.
+  ///
+  /// In zh, this message translates to:
+  /// **'在输入框上方作答'**
+  String get chat_pendingFormInDock;
+
   /// No description provided for @chat_editGroupInfo.
   ///
   /// In zh, this message translates to:

@@ -128,6 +128,34 @@ void main() {
     );
   });
 
+  test('答案没送到主机时，已提交的表单退回可答并预填', () {
+    final next = metadataMarkingFormDeferred(
+      {
+        'form': {
+          'form_id': 'form-1',
+          'closed': 'turn_ended',
+          'submitted_values': {'port': '3000', 'tags': ['a']},
+          'fields': [
+            {'field_id': 'port', 'type': 'text_input'},
+            {'name': 'tags', 'type': 'multi_select'},
+            {'field_id': 'note', 'type': 'text_input'},
+          ],
+        },
+      },
+      interactionId: 'form-1',
+      reopen: true,
+    );
+
+    final form = next?['form'] as Map;
+    expect(form['submitted_values'], isNull);
+    expect(form['closed'], isNull);
+    expect(form['deferred'], isTrue);
+    final fields = form['fields'] as List;
+    expect(fields[0]['default'], '3000');
+    expect(fields[1]['default'], ['a']);
+    expect((fields[2] as Map).containsKey('default'), isFalse);
+  });
+
   test('没有卡片 id 时，回合结束仍收起还开着的卡', () {
     final next = metadataClosingOpenCards(
       {

@@ -256,6 +256,17 @@ Future<T> _request<T>({
   required T Function(Map<String, dynamic> data) parse,
 }) async {
   final requestId = const Uuid().v4();
+  // 重连和等回包共用这一个截止时间。分两次各等 8 秒的话，用户点一次登录
+  // 最坏会盯着转圈十几秒，而这两段本来就是同一件事的两半。
+  final deadline = DateTime.now().add(timeout);
+  Duration remaining() {
+    final left = deadline.difference(DateTime.now());
+    if (left <= Duration.zero) {
+      throw TimeoutException('主机没有回应', timeout);
+    }
+    return left;
+  }
+
   final done = Completer<T>();
   final sub = PeerConnectionManager.instance.controlEvents.listen((event) {
     if (done.isCompleted) return;
@@ -283,9 +294,14 @@ Future<T> _request<T>({
         ...extra,
       },
       waitForReconnect: timeout,
+      deadline: deadline,
     );
-    if (!sent) throw StateError('还没连上 shepaw');
-    return await done.future.timeout(timeout);
+    if (!sent) {
+      // 截止时间内没等到连接恢复；别再让用户以为帧已经发出去了。
+      remaining();
+      throw StateError('还没连上 shepaw');
+    }
+    return await done.future.timeout(remaining());
   } finally {
     await sub.cancel();
   }

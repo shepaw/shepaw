@@ -7,7 +7,6 @@ import '../services/logger_service.dart';
 import '../services/noise_identity.dart';
 import '../storage/pouch_login_keeper.dart';
 import '../storage/pouch_session.dart';
-import 'host_entry_flow.dart';
 
 /// 桌面首次进入：创建储物袋。之后每次用名称和密码进入。
 class PouchGateScreen extends StatefulWidget {
@@ -46,21 +45,49 @@ class _PouchGateScreenState extends State<PouchGateScreen> {
     final remembered = await PouchLoginMemory.read();
     final session = await PouchSessionStore.readActive();
     final recentId = remembered?.id ?? session?.pouchId;
+    // 先用本机记住的账号把页面点亮。`account list` 是一趟 CLI 往返，
+    // 主机忙或不在时不能让它把登录按钮锁住。
+    final cached = <String, CliPouchAccount>{};
+    if (session != null && session.pouchId.isNotEmpty) {
+      cached[session.pouchId] = CliPouchAccount(
+        id: session.pouchId,
+        name: session.pouchName,
+      );
+    }
+    if (remembered != null) {
+      cached[remembered.id] = CliPouchAccount(
+        id: remembered.id,
+        name: remembered.name,
+      );
+    }
+    if (cached.isNotEmpty && mounted) {
+      final accounts = cached.values.toList();
+      setState(() {
+        _accounts = accounts;
+        _selectedId = defaultPouchAccount(accounts, recentId: recentId)?.id;
+        _ready = true;
+      });
+    }
     final binary = await CliHost.resolveBinary();
-    var accounts = const <CliPouchAccount>[];
+    List<CliPouchAccount>? listed;
     if (binary != null) {
       try {
-        accounts = await CliPouch.list(binary);
+        listed = await CliPouch.list(binary);
       } catch (error) {
         LoggerService()
             .error('pouch list failed', tag: 'PouchGate', error: error);
       }
     }
     if (!mounted) return;
-    final selected = defaultPouchAccount(accounts, recentId: recentId);
     setState(() {
-      _accounts = accounts;
-      _selectedId = selected?.id;
+      // 查询成功（哪怕返回空名单）就以主机为准；失败才继续用缓存。
+      if (listed != null) {
+        _accounts = listed;
+        _selectedId = defaultPouchAccount(
+          listed,
+          recentId: _selectedId ?? recentId,
+        )?.id;
+      }
       _ready = true;
     });
   }
@@ -127,7 +154,8 @@ class _PouchGateScreenState extends State<PouchGateScreen> {
       }
       await CliPouch.openLocal(grant);
       if (!mounted) return;
-      await HostEntryNavigator.go(context, isDesktop: true);
+      // openLocal 已经写好登录态并连上本机主机，不必再 probe / attach 一遍。
+      Navigator.of(context).pushReplacementNamed('/home');
     } on StateError catch (error) {
       if (mounted) {
         setState(() => _error = switch (error.message) {

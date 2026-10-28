@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -207,8 +208,16 @@ String cliFailureText(String stderr) {
 
 /// 本机储物袋的初始化都走 `shepaw`。Linux 上单独装的 CLI 用同一组命令。
 class CliPouch {
+  static const _statusTimeout = Duration(seconds: 5);
+  static const _listTimeout = Duration(seconds: 8);
+  static const _commandTimeout = Duration(seconds: 15);
+
   static Future<bool> passwordIsSet(String binary) async {
-    final result = await _run(binary, const ['password', 'status']);
+    final result = await _run(
+      binary,
+      const ['password', 'status'],
+      timeout: _statusTimeout,
+    );
     return parsePasswordStatus(result) ?? false;
   }
 
@@ -255,7 +264,11 @@ class CliPouch {
   }
 
   static Future<List<CliPouchAccount>> list(String binary) async {
-    final result = await _run(binary, const ['account', 'list']);
+    final result = await _run(
+      binary,
+      const ['account', 'list'],
+      timeout: _listTimeout,
+    );
     return parsePouchAccountList(result);
   }
 
@@ -268,14 +281,19 @@ class CliPouch {
     final cli = await CliHost.detect();
     if (cli == null) throw StateError('shepaw 没有在时限内就绪');
     final peer = await CliHost.ensurePaired(cli);
+    final deadline = DateTime.now().add(const Duration(seconds: 8));
     final connected = PeerConnectionManager.instance.connectedPeerIds;
     if (!connected.contains(peer.id)) {
-      await PeerConnectionManager.instance.connectToPeer(
-        peer,
-        ignoreTieBreak: true,
-      );
+      // connectToPeer 内部最多能等 25 秒。登录页不能被它拖住，超过预算就
+      // 交给后面的轮询；连接尝试本身还会在后台继续。
+      try {
+        await PeerConnectionManager.instance
+            .connectToPeer(peer, ignoreTieBreak: true)
+            .timeout(deadline.difference(DateTime.now()));
+      } on TimeoutException {
+        // 后台重连可能马上就好，下面再轮询一次。
+      }
     }
-    final deadline = DateTime.now().add(const Duration(seconds: 8));
     while (DateTime.now().isBefore(deadline)) {
       if (PeerConnectionManager.instance.connectedPeerIds.contains(peer.id)) {
         break;
@@ -323,6 +341,7 @@ class CliPouch {
     String binary,
     List<String> args, {
     String? stdin,
+    Duration timeout = _commandTimeout,
   }) async {
     final process = await Process.start(binary, shepawArgs(args));
     if (stdin != null) {
@@ -331,7 +350,24 @@ class CliPouch {
     await process.stdin.close();
     final outFuture = process.stdout.transform(utf8.decoder).join();
     final errFuture = process.stderr.transform(utf8.decoder).join();
-    final code = await process.exitCode;
+    var timedOut = false;
+    final code = await process.exitCode.timeout(
+      timeout,
+      onTimeout: () {
+        timedOut = true;
+        process.kill();
+        return -1;
+      },
+    );
+    if (timedOut) {
+      // 进程已经被杀掉。输出管道可能被它的子进程占着，不能在这里再等。
+      unawaited(outFuture.catchError((_) => ''));
+      unawaited(errFuture.catchError((_) => ''));
+      throw TimeoutException(
+        'shepaw 没有在 ${timeout.inSeconds} 秒内返回',
+        timeout,
+      );
+    }
     final stderr = await errFuture;
     if (code != 0) throw StateError(cliFailureText(stderr));
     return outFuture;

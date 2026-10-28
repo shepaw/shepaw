@@ -82,8 +82,9 @@ class PhoneAuthScreen extends StatefulWidget {
 }
 
 class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
-  /// 息屏回来第一次问主机常常赶不上重连，给足时间再判失败。
-  static const _probeTimeout = Duration(seconds: 15);
+  /// 息屏回来第一次问主机常常赶不上重连，但也不能让登录页等一分钟。
+  /// 状态和名单共用这 12 秒预算，超时就先用本机记住的袋子。
+  static const _probeBudget = Duration(seconds: 12);
   static const _probeAttempts = 2;
 
   final _name = TextEditingController();
@@ -128,10 +129,10 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
   }
 
   Future<void> _prepare() async {
+    if (_probing) return;
     setState(() {
       _probing = true;
       _error = '';
-      _ready = false;
       _probeFailed = false;
     });
     try {
@@ -155,6 +156,7 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
       if (remembered.isNotEmpty) {
         await PhonePouchMemory.write(hostId, remembered);
         if (!mounted) return;
+        // 先让表单可用。主机探测放后面跑，失败也只提示，不锁住输入。
         setState(() {
           _passwordSet = true;
           _pouches = remembered;
@@ -162,22 +164,23 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
           _ready = true;
         });
       }
-      await _connect(peer);
-      if (!mounted) return;
+      final deadline = DateTime.now().add(_probeBudget);
       final set = await _probe(
         peer,
-        () => requestPouchPasswordStatus(
+        deadline,
+        (timeout) => requestPouchPasswordStatus(
           hostPeerId: hostId,
-          timeout: _probeTimeout,
+          timeout: timeout,
         ),
       );
       if (!mounted) return;
       final List<PouchDescriptor> live = set
           ? await _probe(
               peer,
-              () => requestPouchList(
+              deadline,
+              (timeout) => requestPouchList(
                 hostPeerId: hostId,
-                timeout: _probeTimeout,
+                timeout: timeout,
               ),
             )
           : const <PouchDescriptor>[];
@@ -186,6 +189,8 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
       }
       final shown = phonePouchesToShow(live: live, remembered: remembered);
       if (!mounted) return;
+      // 用户可能已经在用缓存登录了，别把正在输入的页面换成探测结果。
+      if (_busy) return;
       setState(() {
         _passwordSet = set;
         _pouches = shown;
@@ -195,7 +200,7 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
     } catch (error) {
       LoggerService()
           .error('phone auth prepare failed', tag: 'PhoneAuth', error: error);
-      if (mounted) {
+      if (mounted && !_busy) {
         setState(() {
           // 问失败也要能输入。返回用户按已有密码登录，刚配对的按首次设置。
           _ready = true;
@@ -245,48 +250,38 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
 
   /// 问主机；失败且值得重试时丢掉半开连接重连一次再问。
   ///
-  /// [PeerConnectionManager.sendControl] 自己会先探活，但息屏 / 切网后第一次
-  /// 探测也可能赶不上重连，用户就只看到一句「主机没有回应」。
-  Future<T> _probe<T>(PairedPeer peer, Future<T> Function() ask) async {
+  /// 状态和名单共用一个 [deadline]，重连等待也算在里面。以前每次探测都
+  /// 重新等 15 秒、还要再乘重试次数，用户最坏会盯着空白页等一分钟。
+  Future<T> _probe<T>(
+    PairedPeer peer,
+    DateTime deadline,
+    Future<T> Function(Duration timeout) ask,
+  ) async {
     Object? last;
     for (var attempt = 0; attempt < _probeAttempts; attempt++) {
+      final left = deadline.difference(DateTime.now());
+      if (left <= Duration.zero) break;
       try {
-        return await ask();
+        return await ask(left);
       } catch (error) {
         last = error;
         if (!probeRetryable(error) || attempt + 1 >= _probeAttempts) break;
         if (!mounted) break;
+        final reconnectLeft = deadline.difference(DateTime.now());
+        if (reconnectLeft <= Duration.zero) break;
         await PeerConnectionManager.instance.disconnectPeer(peer.id);
         if (!mounted) break;
         try {
-          await PeerConnectionManager.instance.connectToPeer(
-            peer,
-            ignoreTieBreak: true,
-          );
+          await PeerConnectionManager.instance
+              .connectToPeer(peer, ignoreTieBreak: true)
+              .timeout(reconnectLeft);
         } catch (_) {
           // 连不上就交给下一次请求自己等重连，最终报统一的超时。
         }
       }
     }
-    throw last!;
-  }
-
-  Future<void> _connect(PairedPeer peer) async {
-    if (!PeerConnectionManager.instance.connectedPeerIds.contains(peer.id)) {
-      await PeerConnectionManager.instance.connectToPeer(
-        peer,
-        ignoreTieBreak: true,
-      );
-    }
-    final deadline = DateTime.now().add(const Duration(seconds: 8));
-    while (DateTime.now().isBefore(deadline)) {
-      if (PeerConnectionManager.instance.connectedPeerIds.contains(peer.id)) {
-        return;
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-    }
-    if (!mounted) return;
-    throw StateError(AppLocalizations.of(context).pouch_hostOffline);
+    if (last != null) throw last;
+    throw TimeoutException('主机没有回应', _probeBudget);
   }
 
   Future<void> _submit() async {
@@ -484,7 +479,8 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
             ],
             const SizedBox(height: 20),
             FilledButton(
-              onPressed: !_ready || _busy || _probing
+              // 有本机记住的袋子时，后台探测不阻塞登录。
+              onPressed: !_ready || _busy || (waiting && _probing)
                   ? null
                   : waiting
                       ? _prepare

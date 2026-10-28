@@ -132,6 +132,24 @@ void main() {
     ));
   });
 
+  test('绝对截止时间已到就不再等待或补发', () async {
+    var sendCalls = 0;
+    mgr.debugTrySendControlOverride = (peerId, json) async {
+      sendCalls++;
+      return true;
+    };
+
+    final sent = await mgr.sendControl(
+      'peer-1',
+      {'type': 'agent_chat'},
+      waitForReconnect: const Duration(seconds: 2),
+      deadline: DateTime.now().subtract(const Duration(milliseconds: 1)),
+    );
+
+    expect(sent, isFalse);
+    expect(sendCalls, 0);
+  });
+
   test('未指定 waitForReconnect 时保持原语义：立即返回 false、不等待', () async {
     var calls = 0;
     var waiting = false;

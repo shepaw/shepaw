@@ -2374,11 +2374,12 @@ class PeerAgentClientService {
 
   /// 一张已经在回合内等超时的卡片：回合结束，卡片留着。
   /// 聊天页据此把内存里的卡标成 deferred（仍可点），不要收成作废态。
-  /// 单例上的长期流，[stop] 不关闭它。
-  final _formDeferredController =
-      StreamController<({String approvalId, String requestId})>.broadcast();
-  Stream<({String approvalId, String requestId})> get formDeferredEvents =>
-      _formDeferredController.stream;
+  /// `reopened` 表示本机在回合内提交过、但答案没送到主机：卡片要从「已提交」
+  /// 退回可答（预填刚才的答案）。单例上的长期流，[stop] 不关闭它。
+  final _formDeferredController = StreamController<
+      ({String approvalId, String requestId, bool reopened})>.broadcast();
+  Stream<({String approvalId, String requestId, bool reopened})>
+      get formDeferredEvents => _formDeferredController.stream;
 
   LocalDatabaseService get _db => getIt<LocalDatabaseService>();
   final _fileStorage = LocalFileStorageService();
@@ -7021,6 +7022,50 @@ class PeerAgentClientService {
     }
   }
 
+  /// 诊断：这一轮每个脏会话是因为哪一条被选中的。
+  void _logDirtyReasons({
+    required String localAgentId,
+    required List<PeerRemoteSession> sessions,
+    required List<PeerRemoteSession> dirty,
+    required List<PeerRemoteSession> preliminary,
+    required Set<String> emptyLocal,
+    required Map<String, int> cursorTotals,
+    required DateTime? lastSyncAt,
+  }) {
+    final byWatermark = preliminary.map((s) => s.sessionId).toSet();
+    final unstamped = preliminary.where((s) => s.updatedAt == null).length;
+    var noCursor = 0;
+    var countDiffers = 0;
+    var other = 0;
+    final samples = <String>[];
+    for (final session in dirty) {
+      final id = session.sessionId;
+      if (byWatermark.contains(id) || emptyLocal.contains(id)) continue;
+      if (sessionNeedsSyncForMessageCount(session, cursorTotals)) {
+        final known = cursorTotals[id];
+        if (known == null) {
+          noCursor++;
+        } else {
+          countDiffers++;
+        }
+        if (samples.length < 3) {
+          samples.add('$id remote=${session.messageCount} cursor=$known');
+        }
+      } else {
+        other++;
+      }
+    }
+    _log.info(
+      'Dirty reasons for $localAgentId: ${dirty.length}/${sessions.length} '
+      'lastSyncAt=${lastSyncAt?.toIso8601String() ?? 'null'} '
+      'watermark=${byWatermark.length} (unstamped=$unstamped) '
+      'emptyLocal=${emptyLocal.length} countNoCursor=$noCursor '
+      'countDiffers=$countDiffers other=$other'
+      '${samples.isEmpty ? '' : ' samples=[${samples.join('; ')}]'}',
+      tag: _tag,
+    );
+  }
+
   Future<String> _localChannelIdForRemoteSession(String sessionId) async {
     final psessId = syncedPeerChannelId(sessionId);
     return resolveLocalPeerChannelId(
@@ -7297,6 +7342,15 @@ class PeerAgentClientService {
       cursorTotals: cursorTotals,
       prioritizeSessionId: prioritizeSessionId,
       openEmptySessionId: openEmptySessionId,
+    );
+    _logDirtyReasons(
+      localAgentId: localAgentId,
+      sessions: sessions,
+      dirty: dirty,
+      preliminary: preliminary,
+      emptyLocal: emptyLocal,
+      cursorTotals: cursorTotals,
+      lastSyncAt: lastSyncAt,
     );
 
     var historySessionsWritten = 0;
@@ -8344,14 +8398,27 @@ class PeerAgentClientService {
           tag: 'PeerApproval');
       return;
     }
-    // 补发的帧可能晚于本机已经提交的答案：别再把它放回可答状态，
+    final submitted = _submittedForms[approvalId];
+    // 补发的帧可能晚于本机回合外提交的答案：别再把它放回可答状态，
     // 否则会重复开一轮。
-    if (_submittedForms.containsKey(approvalId)) {
+    if (submitted != null && submitted['deferred'] == true) {
       _log.info(
         'agent_form_deferred: approvalId=$approvalId already submitted — ignore',
         tag: 'PeerApproval',
       );
       return;
+    }
+    // 回合内提交过，主机却还是等到超时转了 deferred：答案没送到（半开连接上
+    // 发送也会「成功」）。主机只在没收到回答时才 defer，所以这里不会和一次
+    // 已被采纳的回答重复。把卡退回可答、预填刚才的答案，由用户再点一次另开回合。
+    final reopened = submitted != null;
+    if (reopened) {
+      _submittedForms.remove(approvalId);
+      _log.warning(
+        'agent_form_deferred: approvalId=$approvalId was submitted in-turn '
+        'but never reached the host — reopening card',
+        tag: 'PeerApproval',
+      );
     }
     final pending = _pending[requestId];
     if (pending != null && pending.openApprovals > 0) {
@@ -8390,11 +8457,17 @@ class PeerAgentClientService {
     }
     // 先把 deferred 写进卡片行，再结束回合并通知 UI：回合结束可能触发
     // loadMessages，晚到的写入会被数据库里的旧快照盖掉。
-    await _persistFormDeferred(approvalId, requestId, peerId);
+    await _persistFormDeferred(
+      approvalId,
+      requestId,
+      peerId,
+      reopen: reopened,
+    );
     _tryCompleteBufferedDone(requestId);
     if (!_formDeferredController.isClosed) {
-      _formDeferredController
-          .add((approvalId: approvalId, requestId: requestId));
+      _formDeferredController.add(
+        (approvalId: approvalId, requestId: requestId, reopened: reopened),
+      );
     }
     // 独立卡片一出现就表示旧回合已经结束：不能继续挂着等用户回答。主机还要
     // 等引擎吃完 session/cancel（最多 cancel_grace），真正的 agent_done 会晚
@@ -8413,8 +8486,9 @@ class PeerAgentClientService {
   Future<void> _persistFormDeferred(
     String approvalId,
     String requestId,
-    String peerId,
-  ) async {
+    String peerId, {
+    bool reopen = false,
+  }) async {
     if (!getIt.isRegistered<LocalDatabaseService>()) return;
     try {
       final row = await _db.getMessageById(
@@ -8430,6 +8504,7 @@ class PeerAgentClientService {
         (metadata) => metadataMarkingFormDeferred(
           metadata,
           interactionId: approvalId,
+          reopen: reopen,
         ),
       );
     } catch (e) {
@@ -8821,12 +8896,10 @@ class PeerAgentClientService {
     };
     var sent = false;
     Object? lastErr;
-    final sendControl =
-        debugSendControlOverride ?? PeerConnectionManager.instance.sendControl;
     for (var attempt = 0; attempt < 3; attempt++) {
       try {
-        sent = await sendControl(peerId, payload)
-            .timeout(const Duration(seconds: 8), onTimeout: () => false);
+        sent = await _sendInteractionAnswer(peerId, payload)
+            .timeout(const Duration(seconds: 12), onTimeout: () => false);
         if (sent) break;
         lastErr = 'peer not connected';
       } catch (e) {
@@ -8851,6 +8924,8 @@ class PeerAgentClientService {
     _submittedForms[approvalId] = {
       'action': 'accept',
       'content': values,
+      // 回合外作答已经另开一轮；之后再补发的 deferred 帧要忽略。
+      'deferred': wasDeferred,
     };
     unawaited(_persistFormSubmitted(approvalId, values));
     if (_submittedForms.length > 50) {
@@ -8869,6 +8944,24 @@ class PeerAgentClientService {
     return wasDeferred;
   }
 
+  /// 发送用户对卡片的回答。
+  ///
+  /// 必须先探活：半开连接（切网、App 刚从后台回来）上 `sink.add` 照样成功，
+  /// 帧却到不了主机。卡片已经显示「已提交」，主机还在等，直到回合内等待
+  /// 超时才转 deferred —— 用户看到的就是「提交了却一直卡着」。
+  Future<bool> _sendInteractionAnswer(
+    String peerId,
+    Map<String, dynamic> payload,
+  ) {
+    final override = debugSendControlOverride;
+    if (override != null) return override(peerId, payload);
+    return PeerConnectionManager.instance.sendControl(
+      peerId,
+      payload,
+      waitForReconnect: _controlReconnectWait,
+    );
+  }
+
   /// 用户明确不回答这张 deferred 卡。只关卡，不开新回合。
   Future<void> declineForm({
     required String peerId,
@@ -8881,9 +8974,7 @@ class PeerAgentClientService {
     if (!tracked) {
       throw const PeerApprovalExpiredException();
     }
-    final sendControl =
-        debugSendControlOverride ?? PeerConnectionManager.instance.sendControl;
-    final sent = await sendControl(peerId, {
+    final sent = await _sendInteractionAnswer(peerId, {
       'type': 'agent_form_resp',
       'approval_id': approvalId,
       'action': 'decline',
@@ -9106,9 +9197,8 @@ class PeerAgentClientService {
     Object? lastErr;
     for (var attempt = 0; attempt < 3; attempt++) {
       try {
-        sent = await PeerConnectionManager.instance
-            .sendControl(peerId, payload)
-            .timeout(const Duration(seconds: 8), onTimeout: () => false);
+        sent = await _sendInteractionAnswer(peerId, payload)
+            .timeout(const Duration(seconds: 12), onTimeout: () => false);
         if (sent) break;
         lastErr = 'peer not connected';
       } catch (e) {

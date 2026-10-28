@@ -2009,6 +2009,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_queueExpand => 'Expand';
 
   @override
+  String get chat_pendingFormDockTitle => 'Waiting for your answer';
+
+  @override
+  String get chat_pendingFormInDock => 'Answer above the input box';
+
+  @override
   String get chat_editGroupInfo => 'Edit Group Info';
 
   @override

@@ -131,15 +131,24 @@ mixin _InteractionOps on _ChatControllerBase {
   /// 提问在回合内等超时：这一轮结束了，卡片留着等用户以后回答。
   ///
   /// 不能标成 `closed` —— 那会让「不回答」和「还能答」看起来一样。
-  void _handleFormDeferred(({String approvalId, String requestId}) event) {
+  ///
+  /// `reopened`：本机在回合内提交过，但答案没送到主机。卡片退回可答并预填
+  /// 刚才的答案（见 [metadataMarkingFormDeferred]）。
+  void _handleFormDeferred(
+    ({String approvalId, String requestId, bool reopened}) event,
+  ) {
     final messageId = _messageIdForInteraction(event.approvalId);
     if (messageId == null) return;
-    final existing = messageIdMap[messageId]?.metadata?['form'];
-    if (existing is! Map || existing['submitted_values'] != null) return;
-    final merged = Map<String, dynamic>.from(existing)
-      ..['deferred'] = true
-      // 旧回合的 turn_ended 可能先到并写了 closed；deferred 它不是作废。
-      ..remove('closed');
+    final metadata = messageIdMap[messageId]?.metadata;
+    if (metadata == null) return;
+    // 旧回合的 turn_ended 可能先到并写了 closed；deferred 它不是作废。
+    final next = metadataMarkingFormDeferred(
+      Map<String, dynamic>.from(metadata),
+      interactionId: event.approvalId,
+      reopen: event.reopened,
+    );
+    final merged = next?['form'];
+    if (merged is! Map<String, dynamic>) return;
     _updateGroupStreamingMetadata(messageId, 'form', merged);
     final meta =
         Map<String, dynamic>.from(messageIdMap[messageId]?.metadata ?? {});

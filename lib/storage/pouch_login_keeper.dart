@@ -90,6 +90,23 @@ class PouchLoginKeeper {
   final _relogged = StreamController<void>.broadcast();
   int _reloginGeneration = 0;
 
+  /// 主机已经明确要密码。用户重新登录成功之前不再自动重试，否则每一帧被
+  /// 拒都会再打一次密码接口，很快把主机的试错额度烧光。
+  bool _needsUserPassword = false;
+
+  /// 连续失败次数，用来退避。网络抖动时不要每 10 秒撞一次主机。
+  int _failureCount = 0;
+  DateTime? _retryNotBefore;
+
+  static const _retryDelays = <Duration>[
+    Duration(seconds: 2),
+    Duration(seconds: 4),
+    Duration(seconds: 8),
+    Duration(seconds: 16),
+    Duration(seconds: 30),
+    Duration(seconds: 60),
+  ];
+
   /// 主机要求输密码、自动恢复已经走不通了。登录页之外的地方（聊天页顶部
   /// 提示条）靠它告诉用户「不是没有回复，是要你重新登录」。
   final ValueNotifier<bool> _passwordRequired = ValueNotifier<bool>(false);
@@ -146,6 +163,9 @@ class PouchLoginKeeper {
 
   /// 密码登录成功了（登录页 / 手机认证页），提示条该收起来。
   void clearPasswordRequired() {
+    _needsUserPassword = false;
+    _failureCount = 0;
+    _retryNotBefore = null;
     _passwordRequired.value = false;
   }
 
@@ -155,6 +175,10 @@ class PouchLoginKeeper {
 
   void _onEvent(PeerControlEvent event) {
     if (event.type != 'pouch_login_required') return;
+    // 已经让用户去输密码了。再自动试只会继续失败，还会触发主机限流。
+    if (_needsUserPassword) return;
+    final notBefore = _retryNotBefore;
+    if (notBefore != null && DateTime.now().isBefore(notBefore)) return;
     if (_inflight != null) return;
     _inflight = _relogin(event).whenComplete(() => _inflight = null);
   }
@@ -218,6 +242,9 @@ class PouchLoginKeeper {
       await _saveCredential(session, issued, grant.credentialExpiresAtMs);
     }
     _reloginGeneration += 1;
+    _needsUserPassword = false;
+    _failureCount = 0;
+    _retryNotBefore = null;
     _passwordRequired.value = false;
     log?.call('重新登录成功：pouch=${session.pouchId}');
     if (!_relogged.isClosed) _relogged.add(null);
@@ -232,6 +259,9 @@ class PouchLoginKeeper {
       await forgetSession();
       await _dropCredential(session);
       clearChannel();
+      _needsUserPassword = false;
+      _failureCount = 0;
+      _retryNotBefore = null;
       _passwordRequired.value = false;
       _requestChooser();
       return;
@@ -242,15 +272,28 @@ class PouchLoginKeeper {
     if (error is PouchPasswordRequired) {
       log?.call('需要重新输入主机密码：pouch=${session.pouchId}，转到登录页');
       clearChannel();
+      _needsUserPassword = true;
+      _failureCount = 0;
+      _retryNotBefore = null;
       _passwordRequired.value = true;
       _requestChooser();
       return;
     }
+    _scheduleRetry();
     final existing = await readSession();
     final now = DateTime.now().millisecondsSinceEpoch;
     if (existing != null && existing.isLoggedIn(now)) {
       install(existing);
     }
+  }
+
+  void _scheduleRetry() {
+    _failureCount = _failureCount >= _retryDelays.length
+        ? _retryDelays.length
+        : _failureCount + 1;
+    final delay = _retryDelays[_failureCount - 1];
+    _retryNotBefore = DateTime.now().add(delay);
+    log?.call('重新登录失败，${delay.inSeconds} 秒后再试');
   }
 
   Future<String?> _readCredential(PouchSession session) async {

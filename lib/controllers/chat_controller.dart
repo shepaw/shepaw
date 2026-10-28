@@ -45,6 +45,7 @@ import '../peer/services/peer_connection.dart' show PeerConnectionEvent;
 import '../peer/peer_approval_selection.dart';
 import '../peer/peer_agent_channel.dart' show isPeerAgentChannel;
 import '../peer/peer_approval_payload.dart';
+import '../peer/interaction_card_close.dart' show metadataMarkingFormDeferred;
 import '../peer/models/paired_peer.dart' show PeerConnectionState;
 import '../services/workflow/workflow_restore_planner.dart';
 import '../services/workflow/workflow_pending_approval_picker.dart';
@@ -246,7 +247,7 @@ abstract class _ChatControllerBase extends ChangeNotifier
       _interactionClosedSub;
 
   /// 提问转入回合外等待（`agent_form_deferred`）订阅：卡片留着，仍可作答。
-  StreamSubscription<({String approvalId, String requestId})>?
+  StreamSubscription<({String approvalId, String requestId, bool reopened})>?
       _formDeferredSub;
 
   // ---- Reply state ----
@@ -872,7 +873,8 @@ abstract class _ChatControllerBase extends ChangeNotifier
   void _handleInteractionClosed(({String approvalId, String reason}) event);
 
   /// Implemented by [_InteractionOps]: 回合内没等到回答，卡片转入 deferred。
-  void _handleFormDeferred(({String approvalId, String requestId}) event);
+  void _handleFormDeferred(
+      ({String approvalId, String requestId, bool reopened}) event);
 
   /// Implemented by [_MessagingOps]: group-chat variant of
   /// [_handleStreamingForm] — the card belongs to a peer member of the group,

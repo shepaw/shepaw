@@ -465,6 +465,9 @@ void main() {
     await settle();
     expect(keeper.passwordRequired.value, isTrue);
 
+    // 用户在登录页重新登录成功后，keeper 才重新允许自动恢复。
+    final generation = keeper.reloginGeneration;
+    keeper.clearPasswordRequired();
     hasCredential = true;
     await store.save(
       hostPeerId: 'host-1',
@@ -475,7 +478,75 @@ void main() {
     events.add(required());
     await settle();
     expect(keeper.passwordRequired.value, isFalse);
+    expect(keeper.reloginGeneration, generation + 1);
     keeper.releaseGate();
+    await events.close();
+  });
+
+  test('主机要密码后停止自动重试，避免反复烧主机限流额度', () async {
+    final events = StreamController<PeerControlEvent>();
+    var calls = 0;
+    var opened = 0;
+    final keeper = PouchLoginKeeper(
+      events: events.stream,
+      readSession: () async => session(),
+      login: ({
+        required hostPeerId,
+        required pouchId,
+        String? credential,
+      }) async {
+        calls += 1;
+        throw const PouchPasswordRequired('密码不对');
+      },
+      persist: (_) async => fail('should not save'),
+      install: (_) => fail('should not install'),
+      forgetSession: () async => fail('should keep the session'),
+      clearChannel: () {},
+      openChooser: () => opened += 1,
+    );
+    keeper.start();
+    events.add(required());
+    await settle();
+    expect(calls, 1);
+    expect(opened, 1);
+    expect(keeper.passwordRequired.value, isTrue);
+
+    // 用户还没重新登录，主机继续发 pouch_login_required 也不能自动再试。
+    events.add(required());
+    events.add(required());
+    await settle();
+    expect(calls, 1);
+    expect(opened, 1);
+    await events.close();
+  });
+
+  test('网络失败后退避，不会立刻重复重登', () async {
+    final events = StreamController<PeerControlEvent>();
+    var calls = 0;
+    final keeper = PouchLoginKeeper(
+      events: events.stream,
+      readSession: () async => session(),
+      login: ({
+        required hostPeerId,
+        required pouchId,
+        String? credential,
+      }) async {
+        calls += 1;
+        throw TimeoutException('login');
+      },
+      persist: (_) async => fail('should not save'),
+      install: (_) => fail('should not install'),
+      forgetSession: () async => fail('should keep the session'),
+      clearChannel: () => fail('should not clear'),
+      openChooser: () => fail('should not leave'),
+    );
+    keeper.start();
+    events.add(required());
+    await settle();
+    expect(calls, 1);
+    events.add(required());
+    await settle();
+    expect(calls, 1, reason: '2 秒退避窗口内不再重试');
     await events.close();
   });
 
