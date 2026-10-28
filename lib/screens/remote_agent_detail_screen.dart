@@ -1196,8 +1196,35 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       metadata['task_timeout_seconds'] =
           taskTimeoutText.isEmpty ? 10800 : int.parse(taskTimeoutText);
 
+      // 主机名单里的 `name` 读的是 agents.json 的 instance label，所以改名
+      // 必须写回主机。只落本机会在下一轮 `agent_list_resp` 时被还原。
+      // 主机写失败就保留旧名并报错，避免「先显示成功、隔一会儿又变回去」。
+      var appliedName = name;
+      String? renameError;
+      final peerId = _agent.sourcePeerId;
+      final remoteId = _agent.remoteAgentId;
+      if (_agent.isPeerAgent &&
+          !_agent.isShe &&
+          _agent.metadata['manageable'] == true &&
+          name != _agent.name &&
+          peerId != null &&
+          peerId.isNotEmpty &&
+          remoteId != null &&
+          remoteId.isNotEmpty) {
+        final result = await PeerAgentClientService.instance.renameAgent(
+          peerId: peerId,
+          remoteAgentId: remoteId,
+          name: name,
+          nodeId: AgentNodeInfo.of(_agent).nodeId,
+        );
+        if (!result.ok) {
+          appliedName = _agent.name;
+          renameError = result.error ?? 'unknown';
+        }
+      }
+
       final updatedAgent = _agent.copyWith(
-        name: name,
+        name: appliedName,
         bio: bioText.isEmpty ? null : bioText,
         avatar: avatar,
         endpoint: endpoint,
@@ -1227,15 +1254,22 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         _nameError = null;
         _maxToolRoundsError = null;
         _taskTimeoutError = null;
-        _autosaveError = null;
+        _autosaveError =
+            renameError == null ? null : l10n.agentDetail_saveFailed(renameError);
       });
 
       if (mounted && showFeedback) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.agentDetail_saveSuccess)),
+          SnackBar(
+            content: Text(
+              renameError == null
+                  ? l10n.agentDetail_saveSuccess
+                  : l10n.agentDetail_saveFailed(renameError),
+            ),
+          ),
         );
       }
-      return true;
+      return renameError == null;
     } catch (e) {
       _safeSetState(() {
         _isSaving = false;

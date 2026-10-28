@@ -257,6 +257,36 @@ void main() {
     await tester.pump(const Duration(seconds: 6));
   });
 
+  test('renameAgent 把 set_name 发给主机（工作节点带 node_id）', () async {
+    final sent = <Map<String, dynamic>>[];
+    svc.debugSendControlOverride = (peerId, json) async {
+      sent.add(Map<String, dynamic>.from(json));
+      scheduleMicrotask(() {
+        svc.debugInjectControlForTest(
+          'agent_manage_resp',
+          {'request_id': json['request_id'], 'ok': true, 'agents': const []},
+          peerId: peerId,
+        );
+      });
+      return true;
+    };
+
+    final result = await svc.renameAgent(
+      peerId: 'host-1',
+      remoteAgentId: 'a1@fp1',
+      name: '新名字',
+      nodeId: 'fp1',
+    );
+
+    expect(result.ok, isTrue);
+    expect(sent.single['type'], 'agent_manage_req');
+    expect(sent.single['op'], 'set_name');
+    expect(sent.single['agent_id'], 'a1@fp1');
+    expect(sent.single['name'], '新名字');
+    expect(sent.single['node_id'], 'fp1');
+    svc.debugSendControlOverride = null;
+  });
+
   test('manageAgents 在收到 pouch_login_required 时不苦等 15s 超时，立刻以 login_required 退出单次等待',
       () async {
     svc.debugConnectedPeerIdsOverride = {'host-1'};

@@ -5695,6 +5695,7 @@ class PeerAgentClientService {
   /// - `engines` (engines the host knows, with whether each is installed)
   /// - `create` ([engine] + [cwd] + optional [name], [sessionMode], [additionalDirectories])
   /// - `remove` ([agentId])
+  /// - `set_name` ([agentId] + [name])
   /// - `set_cwd` (primary workspace absolute path on the hub host)
   /// - `set_additional_directories` (full-replace absolute paths on the hub host)
   ///
@@ -5734,6 +5735,7 @@ class PeerAgentClientService {
       'engines',
       'create',
       'remove',
+      'set_name',
       'set_cwd',
       'set_additional_directories',
     };
@@ -6183,6 +6185,23 @@ class PeerAgentClientService {
       await _db.deleteRemoteAgent(agent.id);
       unawaited(SheAgentImpressionService.instance.removeImpression(agent.id));
     }
+  }
+
+  /// Rename the hub instance. `agent_list_resp` 的 `name` 读主机上的 label，
+  /// 所以只改本机库会在下一次名单同步时被还原。
+  Future<PeerAgentManageResult> renameAgent({
+    required String peerId,
+    required String remoteAgentId,
+    required String name,
+    String? nodeId,
+  }) {
+    return manageAgents(
+      peerId: peerId,
+      op: 'set_name',
+      nodeId: nodeId,
+      agentId: remoteAgentId,
+      name: name,
+    );
   }
 
   /// Set the hub instance's primary workspace root (absolute path).
