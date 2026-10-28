@@ -13,7 +13,9 @@ import '../form_field_shape.dart';
 /// 时整张退回 [FormBubble] 的平铺渲染。
 class PagedFormPanel extends StatefulWidget {
   final Map<String, dynamic> formData;
-  final void Function(
+
+  /// 返回的 Future 完成之前，提交按钮保持忙碌态，防止重复提交。
+  final Future<void> Function(
           String formId, Map<String, dynamic> values, String summary)
       onFormSubmitted;
   final void Function(String formId)? onFormDeclined;
@@ -57,6 +59,7 @@ class _PagedFormPanelState extends State<PagedFormPanel> {
   int _index = 0;
   bool _forward = true;
   int _advanceToken = 0;
+  bool _submitting = false;
 
   List<Map<String, dynamic>> get _fields => [
         for (final raw in (widget.formData['fields'] as List? ?? const []))
@@ -66,11 +69,24 @@ class _PagedFormPanelState extends State<PagedFormPanel> {
   @override
   void initState() {
     super.initState();
+    _seed();
+  }
+
+  @override
+  void didUpdateWidget(PagedFormPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 同一张卡的 metadata 被替换（补发、deferred）：新出现的字段要补上初值
+    // 和输入控制器，已经填过的不动。
+    if (!identical(oldWidget.formData, widget.formData)) _seed();
+  }
+
+  void _seed() {
     for (final field in _fields) {
       final id = FormFieldShape.fieldKey(field);
       final kind = FormFieldShape.fieldKind(field);
       final initial = FormFieldShape.rawInitial(field);
-      if (id.isEmpty) continue;
+      if (id.isEmpty || _values.containsKey(id)) continue;
+      if (_textControllers.containsKey(id)) continue;
       if (initial != null) {
         _values[id] = FormFieldShape.coerceInitial(kind, initial);
       } else if (kind == 'checkbox') {
@@ -98,11 +114,22 @@ class _PagedFormPanelState extends State<PagedFormPanel> {
     return controller != null ? controller.text : _values[id];
   }
 
-  /// 没有显式写 `required: false` 的题都要答；勾选题本身就有值。
+  /// 每题都要答，除非字段明确写了可空（`required: false` / `"false"` / `0`）。
+  ///
+  /// 勾选题本身就有值；只有明确 `required: true` 时才必须勾上。
   bool _answered(Map<String, dynamic> field) {
-    if (field['required'] == false) return true;
-    if (FormFieldShape.fieldKind(field) == 'checkbox') return true;
+    if (FormFieldShape.fieldKind(field) == 'checkbox') {
+      return !FormFieldShape.isRequired(field) || _valueOf(field) == true;
+    }
+    if (_explicitlyOptional(field)) return true;
     return !FormFieldShape.isBlank(_valueOf(field));
+  }
+
+  static bool _explicitlyOptional(Map<String, dynamic> field) {
+    if (!field.containsKey('required') || field['required'] == null) {
+      return false;
+    }
+    return !FormFieldShape.isRequired(field);
   }
 
   void _goTo(int index) {
@@ -140,7 +167,8 @@ class _PagedFormPanelState extends State<PagedFormPanel> {
     });
   }
 
-  void _submit() {
+  Future<void> _submit() async {
+    if (_submitting) return;
     final values = <String, dynamic>{};
     final summaryParts = <String>[];
     for (final field in _fields) {
@@ -172,11 +200,16 @@ class _PagedFormPanelState extends State<PagedFormPanel> {
           summaryParts.add('$label: $value');
       }
     }
-    widget.onFormSubmitted(
-      widget.formData['form_id']?.toString() ?? '',
-      values,
-      summaryParts.join('; '),
-    );
+    setState(() => _submitting = true);
+    try {
+      await widget.onFormSubmitted(
+        widget.formData['form_id']?.toString() ?? '',
+        values,
+        summaryParts.join('; '),
+      );
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
   }
 
   @override
@@ -207,11 +240,14 @@ class _PagedFormPanelState extends State<PagedFormPanel> {
         ],
         GestureDetector(
           behavior: HitTestBehavior.translucent,
-          onHorizontalDragEnd: (details) {
-            final velocity = details.primaryVelocity ?? 0;
-            if (velocity < -250) _goTo(index + 1);
-            if (velocity > 250) _goTo(index - 1);
-          },
+          // 文字题里横向拖动是在选字 / 挪光标，不能拿来翻页。
+          onHorizontalDragEnd: _isTextKind(field)
+              ? null
+              : (details) {
+                  final velocity = details.primaryVelocity ?? 0;
+                  if (velocity < -250) _goTo(index + 1);
+                  if (velocity > 250) _goTo(index - 1);
+                },
           child: AnimatedSwitcher(
             duration: const Duration(milliseconds: 200),
             transitionBuilder: (child, animation) {
@@ -275,14 +311,25 @@ class _PagedFormPanelState extends State<PagedFormPanel> {
               ),
             const SizedBox(width: 4),
             ElevatedButton.icon(
-              onPressed: allAnswered ? _submit : null,
-              icon: const Icon(Icons.send, size: 16),
+              onPressed: allAnswered && !_submitting ? _submit : null,
+              icon: _submitting
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.send, size: 16),
               label: Text(l10n.widget_submit),
             ),
           ],
         ),
       ],
     );
+  }
+
+  static bool _isTextKind(Map<String, dynamic> field) {
+    final kind = FormFieldShape.fieldKind(field);
+    return kind == 'text_input' || kind == 'textarea';
   }
 
   Widget _buildQuestion(
@@ -537,7 +584,7 @@ class _OptionTile extends StatelessWidget {
 /// 停靠卡里的表单：能分页就分页，否则退回平铺的 [FormBubble]。
 class DockedFormBody extends StatelessWidget {
   final Map<String, dynamic> formData;
-  final void Function(
+  final Future<void> Function(
           String formId, Map<String, dynamic> values, String summary)
       onFormSubmitted;
   final void Function(String formId)? onFormDeclined;

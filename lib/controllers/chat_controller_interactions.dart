@@ -132,27 +132,117 @@ mixin _InteractionOps on _ChatControllerBase {
   ///
   /// 不能标成 `closed` —— 那会让「不回答」和「还能答」看起来一样。
   ///
-  /// `reopened`：本机在回合内提交过，但答案没送到主机。卡片退回可答并预填
-  /// 刚才的答案（见 [metadataMarkingFormDeferred]）。
+  /// `reopened`：本机在回合内提交过，但引擎没拿到这份答案。卡片还在这一页
+  /// 上时不让用户再点一次，交给界面用同一份答案续上（[ResubmitLostFormAnswerEvent]
+  /// → [resubmitLostFormAnswer]）。
   void _handleFormDeferred(
     ({String approvalId, String requestId, bool reopened}) event,
   ) {
     final messageId = _messageIdForInteraction(event.approvalId);
     if (messageId == null) return;
+    final message = messageIdMap[messageId];
+    final form = message?.metadata?['form'];
+    final values = form is Map ? form['submitted_values'] : null;
+    if (event.reopened && message != null && values is Map) {
+      _emit(ResubmitLostFormAnswerEvent(
+        message: message,
+        approvalId: event.approvalId,
+        values: Map<String, dynamic>.from(values),
+      ));
+      return;
+    }
+    _markFormDeferred(messageId, event.approvalId, reopen: event.reopened);
+  }
+
+  /// 把内存里的卡标成 deferred；[reopen] 时连「已提交」一起退回可答（预填）。
+  void _markFormDeferred(
+    String messageId,
+    String approvalId, {
+    required bool reopen,
+  }) {
     final metadata = messageIdMap[messageId]?.metadata;
     if (metadata == null) return;
     // 旧回合的 turn_ended 可能先到并写了 closed；deferred 它不是作废。
     final next = metadataMarkingFormDeferred(
       Map<String, dynamic>.from(metadata),
-      interactionId: event.approvalId,
-      reopen: event.reopened,
+      interactionId: approvalId,
+      reopen: reopen,
     );
     final merged = next?['form'];
     if (merged is! Map<String, dynamic>) return;
     _updateGroupStreamingMetadata(messageId, 'form', merged);
+    if (reopen) {
+      // `_markPeerFormSubmitted` 也往活动任务上抄了一份；不清掉的话任务
+      // metadata 合并回消息时又把它变回「已提交」。
+      final channelId = currentChannelId;
+      final task =
+          channelId == null ? null : chatService.getActiveTask(channelId);
+      final taskForm = task?.metadata?['form'];
+      if (task != null && taskForm is Map) {
+        task.metadata = Map<String, dynamic>.from(task.metadata!)
+          ..['form'] = (Map<String, dynamic>.from(taskForm)
+            ..remove('submitted_values'));
+      }
+    }
     final meta =
         Map<String, dynamic>.from(messageIdMap[messageId]?.metadata ?? {});
     localDatabaseService.updateMessageMetadata(messageId, meta).ignore();
+  }
+
+  /// 回合内交过、引擎却没拿到的答案：用同一份答案按回合外作答再交一次，
+  /// 并另开一轮。主机只在没收到回答时才 defer，所以引擎那边不会重复。
+  ///
+  /// 卡片已经被主机收掉（答案和超时擦肩而过，主机按回合外作答收了卡但
+  /// 不代开回合）时，答案同样没进引擎，照样另开一轮。再交也送不出去时
+  /// 把卡退回可答、预填答案，交给用户。
+  Future<void> resubmitLostFormAnswer(
+    Message message,
+    String approvalId,
+    Map<String, dynamic> values, {
+    String? instructionName,
+  }) async {
+    final formMeta = message.metadata?['form'];
+    final peerForm = formMeta is Map ? formMeta['peer_form'] : null;
+    final peerId = peerForm is Map ? peerForm['peer_id']?.toString() ?? '' : '';
+    var continueTurn = true;
+    try {
+      if (peerId.isEmpty) throw StateError('form card has no peer');
+      continueTurn = await PeerAgentClientService.instance.submitForm(
+        peerId: peerId,
+        approvalId: approvalId,
+        values: values,
+      );
+    } on PeerApprovalExpiredException {
+      // 卡已在主机那边收场：那份答案没进引擎，照样续上。
+    } catch (e) {
+      _markFormDeferred(message.id, approvalId, reopen: true);
+      _emit(ShowErrorSnackBarEvent('$e'));
+      return;
+    }
+    if (!continueTurn) return;
+    await sendDeferredFormFollowUp(
+      _deferredFormFollowUpText(approvalId, values),
+      instructionName: instructionName,
+    );
+  }
+
+  /// 这张审批卡此刻还有人在等。停靠卡只接这些：历史里没收场的旧卡（进程
+  /// 重启前没等到作废帧、旧协议的卡）点下去只会报「已失效」，停在输入框
+  /// 上方反而挡路。
+  bool isApprovalCardLive(Message message) {
+    if (message.metadata?['hub_interaction'] is Map) return true;
+    final card = message.metadata?['action_confirmation'];
+    if (card is! Map) return false;
+    final id = card['confirmation_id']?.toString() ?? '';
+    if (id.isEmpty) return false;
+    switch (card['confirmation_context']) {
+      case 'cli':
+        return CliApprovalService.instance.hasLive(id);
+      case 'peer':
+        return PeerAgentClientService.instance.isApprovalTracked(id);
+      default:
+        return false;
+    }
   }
 
   /// 审批卡作废：复用 cli 审批卡的 `expired` 约定收起可点态（那套渲染与对账

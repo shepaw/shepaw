@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/l10n/app_localizations.dart';
@@ -48,13 +50,21 @@ Widget _app(Widget child) => MaterialApp(
 void main() {
   group('dockedPendingInteraction', () {
     test('取最新一张待处理卡：提问或审批', () {
-      final docked = dockedPendingInteraction([
+      final messages = [
         _msg('a', metadata: {'form': _form('f1')}),
         _msg('b', metadata: {'action_confirmation': _approval('c1')}),
         _msg('c'),
-      ]);
+      ];
+      final docked =
+          dockedPendingInteraction(messages, approvalIsLive: (_) => true);
       expect(docked?.message.id, 'b');
       expect(docked?.kind, DockedInteractionKind.approval);
+
+      // 没人在等的审批卡（历史里没收场的旧卡）不停靠，退到下一张提问卡。
+      final stale =
+          dockedPendingInteraction(messages, approvalIsLive: (_) => false);
+      expect(stale?.message.id, 'a');
+      expect(dockedPendingInteraction(messages)?.message.id, 'a');
     });
 
     test('答过、作废的不算；deferred 的提问还能答', () {
@@ -73,7 +83,7 @@ void main() {
           _msg('d', metadata: {
             'action_confirmation': _approval('c2', extra: {'closed': 'timeout'})
           }),
-        ]),
+        ], approvalIsLive: (_) => true),
         isNull,
       );
       final deferred = dockedPendingInteraction([
@@ -94,7 +104,7 @@ void main() {
             'action_confirmation':
                 _approval('c1', extra: {'_workflowPeerApproval': true})
           }),
-        ]),
+        ], approvalIsLive: (_) => true),
         isNull,
       );
     });
@@ -130,7 +140,7 @@ void main() {
       String? summary;
       await tester.pumpWidget(_app(PagedFormPanel(
         formData: twoQuestions(),
-        onFormSubmitted: (formId, values, s) {
+        onFormSubmitted: (formId, values, s) async {
           submitted = values;
           summary = s;
         },
@@ -165,11 +175,69 @@ void main() {
     testWidgets('点题号直接跳转', (tester) async {
       await tester.pumpWidget(_app(PagedFormPanel(
         formData: twoQuestions(),
-        onFormSubmitted: (_, __, ___) {},
+        onFormSubmitted: (_, __, ___) async {},
       )));
       await tester.tap(find.text('2'));
       await tester.pumpAndSettle();
       expect(find.text('还有别的要说的吗？'), findsOneWidget);
+    });
+
+    testWidgets('明确可空的题不挡提交；必勾的勾选题要勾上', (tester) async {
+      await tester.pumpWidget(_app(PagedFormPanel(
+        formData: {
+          'form_id': 'f2',
+          'fields': [
+            {
+              'field_id': 'note',
+              'type': 'text_input',
+              'label': '备注',
+              'required': 'false',
+            },
+            {
+              'field_id': 'agree',
+              'type': 'checkbox',
+              'label': '同意',
+              'required': true,
+            },
+          ],
+        },
+        onFormSubmitted: (_, __, ___) async {},
+      )));
+      expect(submitButton(tester).onPressed, isNull);
+      await tester.tap(find.text('2'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(Switch));
+      await tester.pump();
+      expect(submitButton(tester).onPressed, isNotNull);
+    });
+
+    testWidgets('提交还没结束时按钮是忙碌态，不会重复提交', (tester) async {
+      final pending = Completer<void>();
+      var calls = 0;
+      await tester.pumpWidget(_app(PagedFormPanel(
+        formData: {
+          'form_id': 'f3',
+          'fields': [
+            {'field_id': 'port', 'type': 'text_input', 'label': '端口'},
+          ],
+        },
+        onFormSubmitted: (_, __, ___) {
+          calls++;
+          return pending.future;
+        },
+      )));
+      await tester.enterText(find.byType(TextField), '3000');
+      await tester.pump();
+      await tester.tap(find.text('提交'));
+      await tester.pump();
+      expect(submitButton(tester).onPressed, isNull);
+      await tester.tap(find.text('提交'));
+      await tester.pump();
+      expect(calls, 1);
+
+      pending.complete();
+      await tester.pump();
+      expect(submitButton(tester).onPressed, isNotNull);
     });
 
     test('有分页不认识的字段时退回平铺表单', () {
@@ -191,7 +259,7 @@ void main() {
     Map<String, dynamic>? submitted;
     await tester.pumpWidget(_app(PendingInteractionDock(
       interaction: DockedInteraction(message, DockedInteractionKind.form),
-      onFormSubmitted: (msg, formId, values, summary) {
+      onFormSubmitted: (msg, formId, values, summary) async {
         submittedFrom = msg;
         submitted = values;
       },
@@ -217,7 +285,7 @@ void main() {
     String? picked;
     await tester.pumpWidget(_app(PendingInteractionDock(
       interaction: DockedInteraction(message, DockedInteractionKind.approval),
-      onFormSubmitted: (_, __, ___, ____) {},
+      onFormSubmitted: (_, __, ___, ____) async {},
       onActionSelected: (msg, confirmationId, actionId, label) {
         picked = '${msg.id}/$confirmationId/$actionId';
       },

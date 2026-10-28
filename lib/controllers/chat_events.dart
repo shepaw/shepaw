@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../models/attachment_data.dart';
+import '../models/message.dart';
 import 'peer_approval_completer_resolver.dart';
 
 // ---------------------------------------------------------------------------
@@ -67,6 +68,19 @@ class DismissOverlayEvent extends ChatEvent {}
 class RequestScrollToBottomEvent extends ChatEvent {
   final bool force;
   RequestScrollToBottomEvent({this.force = false});
+}
+
+/// 回合内交过的提问答案没进引擎（主机已转 deferred）：界面补上本地化的
+/// 气泡标题，调 [ChatController.resubmitLostFormAnswer] 续上。
+class ResubmitLostFormAnswerEvent extends ChatEvent {
+  final Message message;
+  final String approvalId;
+  final Map<String, dynamic> values;
+  ResubmitLostFormAnswerEvent({
+    required this.message,
+    required this.approvalId,
+    required this.values,
+  });
 }
 
 class ShowHistoryRequestDialogEvent extends ChatEvent {

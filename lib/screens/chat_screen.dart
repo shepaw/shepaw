@@ -607,6 +607,17 @@ class _ChatScreenState extends State<ChatScreen>
         );
       case DismissOverlayEvent():
         _dismissClearingOverlay();
+      case ResubmitLostFormAnswerEvent(
+          :final message,
+          :final approvalId,
+          :final values,
+        ):
+        unawaited(_controller.resubmitLostFormAnswer(
+          message,
+          approvalId,
+          values,
+          instructionName: AppLocalizations.of(context).widget_formSubmitted,
+        ));
       case RequestScrollToBottomEvent(:final force):
         if (_pendingHighlightMessageId != null) {
           final mid = _pendingHighlightMessageId!;
@@ -3980,8 +3991,10 @@ class _ChatScreenState extends State<ChatScreen>
                             animation: _controller.contentListenable,
                             builder: (context, _) => ChatMessageList(
                               messages: c.messages,
-                              dockedInteraction:
-                                  dockedPendingInteraction(c.messages),
+                              dockedInteraction: dockedPendingInteraction(
+                                c.messages,
+                                approvalIsLive: c.isApprovalCardLive,
+                              ),
                               messageIdMap: c.messageIdMap,
                               streamingMessageId: c.streamingMessageId,
                               groupStreamingMessageIds:
@@ -4161,7 +4174,10 @@ class _ChatScreenState extends State<ChatScreen>
               AnimatedBuilder(
                 animation: _controller.contentListenable,
                 builder: (context, _) {
-                  final docked = dockedPendingInteraction(c.messages);
+                  final docked = dockedPendingInteraction(
+                    c.messages,
+                    approvalIsLive: c.isApprovalCardLive,
+                  );
                   if (docked == null) return const SizedBox.shrink();
                   return PendingInteractionDock(
                     key: ValueKey(docked.message.id),
@@ -4179,16 +4195,15 @@ class _ChatScreenState extends State<ChatScreen>
                             : null,
                       );
                     },
-                    onFormSubmitted: (msg, fid, values, summary) {
-                      c.handleFormSubmitted(
-                        msg,
-                        fid,
-                        values,
-                        summary,
-                        instructionName:
-                            AppLocalizations.of(context).widget_formSubmitted,
-                      );
-                    },
+                    onFormSubmitted: (msg, fid, values, summary) =>
+                        c.handleFormSubmitted(
+                      msg,
+                      fid,
+                      values,
+                      summary,
+                      instructionName:
+                          AppLocalizations.of(context).widget_formSubmitted,
+                    ),
                     onFormDeclined: (msg, fid) =>
                         c.handleFormDeclined(msg, fid),
                   );

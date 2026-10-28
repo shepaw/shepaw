@@ -261,6 +261,16 @@ void main() {
       expect(events, [
         (approvalId: approvalId, requestId: requestId, reopened: true),
       ]);
+      // 本机认得这张卡：不能当成没见过的卡再按孤儿表单投一遍。
+      expect(
+        svc
+            .pendingOrphanFormsFor(
+              peerId: 'peer-1',
+              remoteAgentId: 'remote-agent',
+            )
+            .where((e) => e['form_id'] == approvalId),
+        isEmpty,
+      );
 
       // 再答一次：主机已不在旧回合等，调用方要另开一轮。
       final sent = <Map<String, dynamic>>[];

@@ -41,13 +41,20 @@ bool isDockablePendingApproval(Message message) {
 }
 
 /// 取最新的一张待处理卡；其余留在消息流里照常显示。
-DockedInteraction? dockedPendingInteraction(List<Message> messages) {
+///
+/// [approvalIsLive] 判断审批卡此刻还有没有人在等（见
+/// `ChatController.isApprovalCardLive`）；不传时不停靠任何审批卡。
+DockedInteraction? dockedPendingInteraction(
+  List<Message> messages, {
+  bool Function(Message message)? approvalIsLive,
+}) {
   for (var i = messages.length - 1; i >= 0; i--) {
     final message = messages[i];
     if (isDockablePendingForm(message)) {
       return DockedInteraction(message, DockedInteractionKind.form);
     }
-    if (isDockablePendingApproval(message)) {
+    if (isDockablePendingApproval(message) &&
+        (approvalIsLive?.call(message) ?? false)) {
       return DockedInteraction(message, DockedInteractionKind.approval);
     }
   }
@@ -61,7 +68,8 @@ DockedInteraction? dockedPendingInteraction(List<Message> messages) {
 /// 才收起；列表里同一张卡只画占位（见 [DockedInteractionPlaceholder]）。
 class PendingInteractionDock extends StatefulWidget {
   final DockedInteraction interaction;
-  final void Function(Message message, String formId,
+  /// 返回的 Future 完成之前，提交按钮保持忙碌态，防止重复提交。
+  final Future<void> Function(Message message, String formId,
       Map<String, dynamic> values, String summary) onFormSubmitted;
   final void Function(Message message, String formId)? onFormDeclined;
   final void Function(Message message, String confirmationId,

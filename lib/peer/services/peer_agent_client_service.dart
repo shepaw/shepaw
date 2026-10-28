@@ -2302,6 +2302,9 @@ class PeerAgentClientService {
   /// 已提交的 AskUserQuestion 表单。重连重发 `agent_form_req` 时用它自动回填。
   final Map<String, Map<String, dynamic>> _submittedForms = {};
 
+  /// 还没写完的「已提交」落库，按 approvalId。退回可答之前要先等它。
+  final Map<String, Future<void>> _formSubmitWrites = {};
+
   /// 已经交到卡片上的提问（approvalId → 原来那一轮的 requestId）。
   ///
   /// 这一轮已经收束，卡片却还该留着等用户以后点。它不能继续占用
@@ -8408,9 +8411,11 @@ class PeerAgentClientService {
       );
       return;
     }
-    // 回合内提交过，主机却还是等到超时转了 deferred：答案没送到（半开连接上
-    // 发送也会「成功」）。主机只在没收到回答时才 defer，所以这里不会和一次
-    // 已被采纳的回答重复。把卡退回可答、预填刚才的答案，由用户再点一次另开回合。
+    // 回合内提交过，主机却还是等到超时转了 deferred：引擎没拿到这份答案 ——
+    // 要么帧丢了（半开连接上发送也会「成功」），要么它和超时擦肩而过、被主机
+    // 当成回合外作答收掉了卡。两种情况都得另开一轮把答案带过去。卡片在库里
+    // 退回可答（预填刚才的答案）；聊天页开着时由它直接用这份答案续上（见
+    // `ChatController._handleFormDeferred`），没开着就等用户回来再点一次。
     final reopened = submitted != null;
     if (reopened) {
       _submittedForms.remove(approvalId);
@@ -8441,7 +8446,7 @@ class PeerAgentClientService {
       // 仍按「回合外等待」渲染。
       _orphanedForms[approvalId] = Map<String, dynamic>.from(orphan)
         ..['deferred'] = true;
-    } else if (!knownInline) {
+    } else if (!knownInline && !reopened) {
       // 重连补发 / 另一台设备第一次看到这张卡：本地没有卡，走孤儿表单
       // 投出去。只记账不渲染的话，这张卡在这些设备上等于不存在。
       _republishOrphanForm(
@@ -8457,6 +8462,9 @@ class PeerAgentClientService {
     }
     // 先把 deferred 写进卡片行，再结束回合并通知 UI：回合结束可能触发
     // loadMessages，晚到的写入会被数据库里的旧快照盖掉。
+    // 提交时的落库是异步的：先等它写完，否则它晚到一步又把 submitted_values
+    // 写回去，卡片在库里就成了「已提交」、再也答不了。
+    if (reopened) await _formSubmitWrites.remove(approvalId);
     await _persistFormDeferred(
       approvalId,
       requestId,
@@ -8927,7 +8935,13 @@ class PeerAgentClientService {
       // 回合外作答已经另开一轮；之后再补发的 deferred 帧要忽略。
       'deferred': wasDeferred,
     };
-    unawaited(_persistFormSubmitted(approvalId, values));
+    final write = _persistFormSubmitted(approvalId, values);
+    _formSubmitWrites[approvalId] = write;
+    unawaited(write.whenComplete(() {
+      if (identical(_formSubmitWrites[approvalId], write)) {
+        _formSubmitWrites.remove(approvalId);
+      }
+    }));
     if (_submittedForms.length > 50) {
       _submittedForms.remove(_submittedForms.keys.first);
     }
@@ -9557,6 +9571,12 @@ class PeerAgentClientService {
   ///
   /// 这是 [submitForm] 的 known-guard 在进程重启后的凭据：卡是从
   /// [persistFormCard] 写的确定性行渲染出来的，内存账簿里当然找不到。
+  /// 这张工具审批卡此刻还挂在某个回合上（或是主机补发的孤儿审批）。
+  /// 停靠卡只接这些：历史里没收场的旧卡点下去只会报「已失效」。
+  bool isApprovalTracked(String approvalId) =>
+      _approvalToRequest.containsKey(approvalId) ||
+      _orphanedApprovals.containsKey(approvalId);
+
   Future<bool> _isPersistedOpenForm(String approvalId) async {
     if (!getIt.isRegistered<LocalDatabaseService>()) return false;
     try {
