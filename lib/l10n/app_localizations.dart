@@ -4418,6 +4418,48 @@ abstract class AppLocalizations {
   /// **'详情'**
   String get widget_details;
 
+  /// No description provided for @progress_steps_thinking.
+  ///
+  /// In zh, this message translates to:
+  /// **'思考中…'**
+  String get progress_steps_thinking;
+
+  /// No description provided for @progress_steps_working.
+  ///
+  /// In zh, this message translates to:
+  /// **'处理中…'**
+  String get progress_steps_working;
+
+  /// No description provided for @progress_steps_thought.
+  ///
+  /// In zh, this message translates to:
+  /// **'已思考'**
+  String get progress_steps_thought;
+
+  /// No description provided for @progress_steps_thought_for.
+  ///
+  /// In zh, this message translates to:
+  /// **'思考 {seconds} 秒'**
+  String progress_steps_thought_for(int seconds);
+
+  /// No description provided for @progress_steps_tool_calls.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 次工具调用'**
+  String progress_steps_tool_calls(int count);
+
+  /// No description provided for @progress_steps_failed.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 次失败'**
+  String progress_steps_failed(int count);
+
+  /// No description provided for @progress_steps_earlier.
+  ///
+  /// In zh, this message translates to:
+  /// **'更早的 {count} 个步骤'**
+  String progress_steps_earlier(int count);
+
   /// No description provided for @privacy_title.
   ///
   /// In zh, this message translates to:

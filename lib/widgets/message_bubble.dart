@@ -26,7 +26,9 @@ import 'single_select_bubble.dart';
 import 'multi_select_bubble.dart';
 import 'file_upload_bubble.dart';
 import 'form_bubble.dart';
+import '../models/progress_step.dart';
 import 'collapsible_message_bubble.dart';
+import 'progress_steps_view.dart';
 import 'permission_audit_bubble.dart';
 import 'chat/plan_approval_card.dart';
 import '../services/approval/cli_audit_fold.dart';
@@ -1120,8 +1122,31 @@ class MessageBubble extends StatelessWidget {
     required bool hasAnswer,
   }) {
     // 旧数据里可能有几百 KB 的 thinking；展开时才解析，先裁到可承受的长度。
-    final rawProgressContent =
-        message.metadata?['progress_content'] as String?;
+    final steps = ProgressStep.parseList(message.metadata?['progress_steps']);
+    if (steps.isNotEmpty) {
+      final running = isStreaming &&
+          (!hasAnswer || message.metadata?['collapsible'] == true);
+      return ProgressStepsView(
+        steps: steps,
+        isStreaming: running,
+        hasAnswer: hasAnswer,
+        autoCollapse: message.metadata?['auto_collapse'] != false,
+        isMyMessage: isMyMessage,
+        bodyBuilder: (ctx, body, streaming) => _wrapWithTextSelection(
+          StableMarkdownBody(
+            data: capProgressContent(body),
+            styleSheet: styleSheet,
+            isStreaming: streaming,
+            onTapLink: (text, href, title) async {
+              if (href == null) return;
+              await _handleTapLink(ctx, href);
+            },
+          ),
+          useSharedSelectionKey: false,
+        ),
+      );
+    }
+    final rawProgressContent = message.metadata?['progress_content'] as String?;
     final progressContent = rawProgressContent == null
         ? null
         : capProgressContent(rawProgressContent);

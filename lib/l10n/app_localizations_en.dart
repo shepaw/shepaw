@@ -2461,6 +2461,35 @@ class AppLocalizationsEn extends AppLocalizations {
   String get widget_details => 'Details';
 
   @override
+  String get progress_steps_thinking => 'Thinking…';
+
+  @override
+  String get progress_steps_working => 'Working…';
+
+  @override
+  String get progress_steps_thought => 'Thought';
+
+  @override
+  String progress_steps_thought_for(int seconds) {
+    return 'Thought for ${seconds}s';
+  }
+
+  @override
+  String progress_steps_tool_calls(int count) {
+    return '$count tool calls';
+  }
+
+  @override
+  String progress_steps_failed(int count) {
+    return '$count failed';
+  }
+
+  @override
+  String progress_steps_earlier(int count) {
+    return '$count earlier steps';
+  }
+
+  @override
   String get privacy_title => 'Privacy Policy';
 
   @override

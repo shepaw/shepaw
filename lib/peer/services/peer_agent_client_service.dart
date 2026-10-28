@@ -474,6 +474,10 @@ class PeerHistoryMessage {
   final String? progressTitle;
   final bool? progressAutoCollapse;
 
+  /// Structured steps (`progress_steps`) sent alongside [progressContent] by
+  /// newer hubs. Null when the hub predates them.
+  final List<dynamic>? progressSteps;
+
   /// Hub history protocol annotations (`ui_hidden`, `history_exclude`, `kind`).
   final Map<String, dynamic>? metadata;
 
@@ -490,6 +494,7 @@ class PeerHistoryMessage {
     this.progressContent,
     this.progressTitle,
     this.progressAutoCollapse,
+    this.progressSteps,
     this.metadata,
     this.replyTo,
     this.isRead,
@@ -505,6 +510,7 @@ class PeerHistoryMessage {
       createdAt = DateTime.tryParse(rawCreated);
     }
     final rawProgress = json['progress_content'] as String?;
+    final rawSteps = json['progress_steps'];
     Map<String, dynamic>? metadata;
     final rawMeta = json['metadata'];
     if (rawMeta is Map) {
@@ -526,6 +532,8 @@ class PeerHistoryMessage {
       progressContent: (rawProgress?.isNotEmpty ?? false) ? rawProgress : null,
       progressTitle: json['progress_title'] as String?,
       progressAutoCollapse: json['progress_auto_collapse'] as bool?,
+      progressSteps:
+          (rawSteps is List && rawSteps.isNotEmpty) ? rawSteps : null,
       metadata: metadata,
       replyTo: json['reply_to'] as String?,
       isRead: isRead,
@@ -989,6 +997,7 @@ Map<String, dynamic>? peerHistoryMessageMetadata(PeerHistoryMessage m) {
     meta['collapsible'] = true;
     meta['collapsible_title'] = m.progressTitle ?? 'Details';
     meta['auto_collapse'] = m.progressAutoCollapse ?? true;
+    if (m.progressSteps != null) meta['progress_steps'] = m.progressSteps;
   }
   return meta.isEmpty ? null : meta;
 }
@@ -1024,6 +1033,7 @@ Map<String, dynamic>? metadataPreservingProgress({
     'collapsible',
     'collapsible_title',
     'auto_collapse',
+    'progress_steps',
   ]) {
     if (!merged.containsKey(key) && existing!.containsKey(key)) {
       merged[key] = existing[key];

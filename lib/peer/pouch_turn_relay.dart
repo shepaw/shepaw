@@ -874,9 +874,14 @@ class PouchChatReadBody {
     };
     if (!compact) return json;
     final meta = json['metadata'];
-    if (meta is! Map || !meta.containsKey('progress_content')) return json;
+    if (meta is! Map ||
+        !(meta.containsKey('progress_content') ||
+            meta.containsKey('progress_steps'))) {
+      return json;
+    }
     final copy = Map<String, dynamic>.from(meta);
     copy.remove('progress_content');
+    copy.remove('progress_steps');
     json['metadata'] = copy.isEmpty ? null : copy;
     return json;
   }

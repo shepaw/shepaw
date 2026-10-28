@@ -178,5 +178,111 @@ void main() {
       );
       expect(s.progressTitle, 'Plan');
     });
+
+    test('keeps host progress_steps and persists them with the final metadata',
+        () {
+      final s = StreamContentSplitter();
+      final steps = [
+        {'id': 't1', 'type': 'tool', 'title': 'Bash', 'status': 'running'},
+      ];
+      final out = s.onMetadata({
+        'collapsible': true,
+        'collapsible_title': 'Bash',
+        'progress_content': 'Bash',
+        'progress_steps': steps,
+      });
+      expect(out['progress_steps'], steps);
+
+      // 后续帧不带步骤时（比如只有正文开始的信号），终态 metadata 仍留着最后一份。
+      s.onMetadata({'collapsible': false});
+      // 回合结束时仍标着进行中的步骤记为完成。
+      final settled = s.finalProgressMetadata()['progress_steps'] as List;
+      expect(settled.single['id'], 't1');
+      expect(settled.single['status'], 'completed');
+    });
+
+    group('incremental progress_step_updates', () {
+      Map<String, dynamic> think() => {
+            'collapsible': true,
+            'collapsible_title': 'Thinking',
+            'progress_step_updates': [
+              {
+                'id': 'th-1',
+                'type': 'thought',
+                'title': 'Thinking',
+                'status': 'running',
+              },
+            ],
+          };
+
+      test(
+          'builds the list from updates and grows the thought body from chunks',
+          () {
+        final s = StreamContentSplitter();
+        final out = s.onMetadata(think());
+        expect(out.containsKey('progress_step_updates'), isFalse);
+        expect((out['progress_steps'] as List).single['id'], 'th-1');
+
+        s.onChunk('先看');
+        s.onChunk('目录');
+        final delta = s.progressMetadataDelta()!;
+        expect((delta['progress_steps'] as List).single['body'], '先看目录');
+
+        // 工具开始、思考收尾：按 id 合并，正文不丢。
+        final out2 = s.onMetadata({
+          'collapsible': true,
+          'collapsible_title': 'Bash',
+          'progress_step_updates': [
+            {'id': 'th-1', 'status': 'completed', 'title': 'Thinking'},
+            {'id': 't1', 'type': 'tool', 'title': 'Bash', 'status': 'running'},
+          ],
+        });
+        final steps = out2['progress_steps'] as List;
+        expect(steps, hasLength(2));
+        expect(steps[0]['status'], 'completed');
+        expect(steps[0]['body'], '先看目录');
+        expect(steps[1]['id'], 't1');
+      });
+
+      test('published snapshots are never mutated afterwards', () {
+        final s = StreamContentSplitter();
+        s.onMetadata(think());
+        s.onChunk('a');
+        final first = s.progressMetadataDelta()!['progress_steps'] as List;
+        s.onChunk('b');
+        expect(first.single['body'], 'a');
+      });
+
+      test('running steps are settled in the final metadata', () {
+        final s = StreamContentSplitter();
+        s.onMetadata(think());
+        final steps = s.finalProgressMetadata()['progress_steps'] as List;
+        expect(steps.single['status'], 'completed');
+      });
+
+      test('a stream joined mid-turn falls back to the legacy rendering', () {
+        final s = StreamContentSplitter();
+        s.onMetadata({'collapsible': true, 'collapsible_title': 'Thinking'});
+        s.onChunk('已经在想了');
+        final out = s.onMetadata({
+          'collapsible': true,
+          'collapsible_title': 'Bash',
+          'progress_step_updates': [
+            {'id': 't1', 'type': 'tool', 'title': 'Bash', 'status': 'running'},
+          ],
+        });
+        expect(out.containsKey('progress_steps'), isFalse);
+        expect(
+            s.progressMetadataDelta()!.containsKey('progress_steps'), isFalse);
+        expect(
+            s.finalProgressMetadata().containsKey('progress_steps'), isFalse);
+      });
+
+      test('a restored turn never shows a partial step list', () {
+        final s = StreamContentSplitter()..stepsBroken = true;
+        final out = s.onMetadata(think());
+        expect(out.containsKey('progress_steps'), isFalse);
+      });
+    });
   });
 }

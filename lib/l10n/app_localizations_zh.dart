@@ -2365,6 +2365,35 @@ class AppLocalizationsZh extends AppLocalizations {
   String get widget_details => '详情';
 
   @override
+  String get progress_steps_thinking => '思考中…';
+
+  @override
+  String get progress_steps_working => '处理中…';
+
+  @override
+  String get progress_steps_thought => '已思考';
+
+  @override
+  String progress_steps_thought_for(int seconds) {
+    return '思考 $seconds 秒';
+  }
+
+  @override
+  String progress_steps_tool_calls(int count) {
+    return '$count 次工具调用';
+  }
+
+  @override
+  String progress_steps_failed(int count) {
+    return '$count 次失败';
+  }
+
+  @override
+  String progress_steps_earlier(int count) {
+    return '更早的 $count 个步骤';
+  }
+
+  @override
   String get privacy_title => '隐私政策';
 
   @override

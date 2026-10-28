@@ -133,6 +133,10 @@ class ChatMessageReconciler {
         merged['collapsible_title'] = tempMeta['collapsible_title'];
       }
       merged['auto_collapse'] = tempMeta['auto_collapse'] ?? true;
+      final tempSteps = tempMeta['progress_steps'];
+      if (tempSteps is List && merged['progress_steps'] == null) {
+        merged['progress_steps'] = tempSteps;
+      }
       changed = true;
     }
     if (!changed) return dbMsg;

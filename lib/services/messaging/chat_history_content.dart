@@ -13,7 +13,7 @@ class ChatHistoryContent {
   ChatHistoryContent._();
 
   /// Metadata keys holding UI-only progress/thinking — excluded from replay.
-  static const uiOnlyMetadataKeys = ['progress_content'];
+  static const uiOnlyMetadataKeys = ['progress_content', 'progress_steps'];
 
   /// Mark a persisted row as UI-only (switch card fallback).
   static const historyExcludeMetaKey = 'history_exclude';

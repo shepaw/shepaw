@@ -232,6 +232,8 @@ Map<String, dynamic>? peerProgressMetadataToMerge({
   }
   final autoCollapse = incoming?['auto_collapse'];
   merged['auto_collapse'] = autoCollapse ?? merged['auto_collapse'] ?? true;
+  final steps = incoming?['progress_steps'];
+  if (steps is List && steps.isNotEmpty) merged['progress_steps'] = steps;
   return merged;
 }
 

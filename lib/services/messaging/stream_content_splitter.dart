@@ -16,9 +16,41 @@ class StreamContentSplitter {
   String? progressTitle;
   bool autoCollapse = true;
 
+  /// 结构化步骤。来源有两种：整份的 `progress_steps`（直接覆盖），
+  /// 或每帧的 `progress_step_updates`（按 id 合并）。思考正文不走线上，
+  /// 由 [onChunk] 往当前步骤里续写。
+  ///
+  /// 对外发布的永远是新建的列表和新建的 Map，已经发出去的快照不会再被改动。
+  List<Map<String, dynamic>>? progressSteps;
+
+  /// 步骤流不是从回合开头收到的（比如断线后接着收），拼不出完整列表时置位，
+  /// 之后一律回退到 `progress_content` 的老渲染。
+  bool stepsBroken = false;
+
   /// Apply a metadata frame. Returns a map suitable for merging into message
   /// metadata (includes live [progressContent] when non-empty).
   Map<String, dynamic> onMetadata(Map<String, dynamic> data) {
+    final canStartSteps = progressSteps == null &&
+        progressContent.isEmpty &&
+        !alreadySplitUpstream &&
+        !stepsBroken;
+    final fullSteps = data['progress_steps'];
+    if (fullSteps is List && fullSteps.isNotEmpty) {
+      progressSteps = [
+        for (final item in fullSteps)
+          if (item is Map) Map<String, dynamic>.from(item),
+      ];
+    }
+    final stepUpdates = data['progress_step_updates'];
+    if (stepUpdates is List && stepUpdates.isNotEmpty) {
+      if (progressSteps != null || canStartSteps) {
+        for (final item in stepUpdates) {
+          if (item is Map) _upsertStep(Map<String, dynamic>.from(item));
+        }
+      } else {
+        stepsBroken = true;
+      }
+    }
     if (data.containsKey('progress_content')) {
       alreadySplitUpstream = true;
       divertToProgress = false;
@@ -79,6 +111,12 @@ class StreamContentSplitter {
     }
 
     final out = Map<String, dynamic>.from(data);
+    out.remove('progress_step_updates');
+    if (progressSteps != null && !stepsBroken) {
+      out['progress_steps'] = List<Map<String, dynamic>>.of(progressSteps!);
+    } else {
+      out.remove('progress_steps');
+    }
     if (progressContent.isNotEmpty) {
       out['progress_content'] = progressContent;
       out['collapsible'] = true;
@@ -106,6 +144,7 @@ class StreamContentSplitter {
   String onChunk(String chunk) {
     if (!alreadySplitUpstream && divertToProgress) {
       progressContent = appendProgressContent(progressContent, chunk);
+      _appendToCurrentStep(chunk);
       return '';
     }
     answerContent += chunk;
@@ -120,17 +159,58 @@ class StreamContentSplitter {
       'collapsible': true,
       'collapsible_title': progressTitle ?? 'Details',
       'auto_collapse': autoCollapse,
+      if (_publishableSteps() case final steps?) 'progress_steps': steps,
+    };
+  }
+
+  List<Map<String, dynamic>>? _publishableSteps() {
+    final steps = progressSteps;
+    if (steps == null || stepsBroken) return null;
+    return List<Map<String, dynamic>>.of(steps);
+  }
+
+  void _upsertStep(Map<String, dynamic> update) {
+    final id = update['id'];
+    if (id is! String || id.isEmpty) return;
+    final steps = progressSteps ??= <Map<String, dynamic>>[];
+    final index = steps.indexWhere((s) => s['id'] == id);
+    if (index == -1) {
+      steps.add(update);
+    } else {
+      // 更新不带正文；正文是本地续写出来的，合并时不能丢。
+      steps[index] = {...steps[index], ...update};
+    }
+  }
+
+  void _appendToCurrentStep(String chunk) {
+    final steps = progressSteps;
+    if (steps == null || steps.isEmpty || stepsBroken) return;
+    final last = steps.last;
+    // 计划的正文来自步骤更新，不靠 chunk。
+    if (last['type'] == 'plan') return;
+    final body = last['body'];
+    steps[steps.length - 1] = {
+      ...last,
+      'body': appendProgressContent(body is String ? body : '', chunk),
     };
   }
 
   /// Final metadata to persist alongside the answer.
   Map<String, dynamic> finalProgressMetadata() {
-    if (progressContent.isEmpty) return const {};
+    // 回合结束了还标着进行中的步骤（有的引擎不发终态更新）记为完成。
+    final steps = _publishableSteps()
+        ?.map(
+            (s) => s['status'] == 'running' ? {...s, 'status': 'completed'} : s)
+        .toList();
+    if (progressContent.isEmpty) {
+      return steps == null ? const {} : {'progress_steps': steps};
+    }
     return {
       'progress_content': progressContent,
       'collapsible': true,
       'collapsible_title': progressTitle ?? 'Details',
       'auto_collapse': autoCollapse,
+      if (steps != null) 'progress_steps': steps,
     };
   }
 

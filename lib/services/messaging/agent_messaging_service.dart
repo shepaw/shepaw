@@ -260,6 +260,8 @@ class AgentMessagingService {
 
     final splitter = StreamContentSplitter();
     splitter.answerContent = rec.accumulatedContent;
+    // 接着收的回合拼不出完整的步骤列表，进度区回退到老渲染。
+    splitter.stepsBroken = true;
     final flushHelper = StreamingFlushHelper.fromAgent(
       db: _db,
       activeTask: activeTask,
@@ -455,6 +457,7 @@ class AgentMessagingService {
       rec.channelId,
       StreamContentSplitter.new,
     );
+    splitter.stepsBroken = true;
     if (rec.accumulatedContent.isNotEmpty && splitter.answerContent.isEmpty) {
       splitter.answerContent = rec.accumulatedContent;
     }

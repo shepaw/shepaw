@@ -127,6 +127,8 @@ class StreamingFlushHelper {
           'collapsible': true,
           'collapsible_title': 'Details',
           'auto_collapse': true,
+          if (activeTask.metadata?['progress_steps'] is List)
+            'progress_steps': activeTask.metadata!['progress_steps'],
         },
         if (extraMetadata != null) ...extraMetadata,
       };
