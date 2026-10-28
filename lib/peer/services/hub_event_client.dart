@@ -36,6 +36,10 @@ class HubEventClient {
   /// 一直不变」那个自持循环的燃料，必须有出口。
   static const _maxPageAttempts = 3;
   static const _defaultPageTimeout = Duration(seconds: 8);
+  /// 连续超时后单页最多再等多久。主机可能只是这一页翻得慢（大日志 + 冷
+  /// 缓存），多等一轮就能补回来；等到这个上限还拿不到才跳 head，别把
+  /// 能补回来的历史当成丢了。
+  static const _maxPageTimeout = Duration(seconds: 60);
   /// 单页超时后继续等多久认领迟到的回包。主机那一页只是算得慢，不是没收到。
   static const _latePageWindow = Duration(seconds: 45);
   /// 迟到页最多存几个。游标一旦跳走，存着的页就没用了，留够重试即可。
@@ -210,9 +214,14 @@ class HubEventClient {
           () => _onLive(event.peerId, parsed),
         );
       case 'ping':
+        // head 只是个数，先记下来。补拉正卡着时对账任务要排在它后面，
+        // 但「主机说它已经到哪了」不该跟着一起等：连续失败要跳到 head
+        // 时，这一轮就得知道。
+        final head = event.data['head_seq'];
+        if (head is int) _pingHead[event.peerId] = head;
         await _controlQueue.run(
           _controlKey,
-          () => _onPingHeadSeq(event.peerId, event.data['head_seq']),
+          () => _onPingHeadSeq(event.peerId),
         );
       case 'agent_error':
         await _controlQueue.run(
@@ -259,7 +268,14 @@ class HubEventClient {
       // 还能认领回来，不必重算。
       var requestId = _uuid.v4();
       while (true) {
-        final page = await _requestPage(peerId, cursor, requestId);
+        // 越往后等得越久：主机可能只是这一页算得慢。连续超时才逐步加长，
+        // 等到上限还没回包才判死。
+        final page = await _requestPage(
+          peerId,
+          cursor,
+          requestId,
+          timeout: _pageTimeoutFor(attempts),
+        );
         if (page == null) {
           // 没拿到页（超时或发送失败）：游标不动，退避重试几次。
           attempts += 1;
@@ -285,6 +301,11 @@ class HubEventClient {
             }
             // 主机没报过 head（还没收到过 ping），或者本地就是最新的：
             // 放弃这一轮，等下一次 ping / 重连再给机会。
+            _log.warning(
+              '事件补拉连续 $attempts 次失败（since_seq=$cursor），本轮放弃，'
+              '等下次心跳或重连再试',
+              tag: 'HubEvent',
+            );
             return;
           }
           await Future<void>.delayed(_backoff(attempts));
@@ -444,10 +465,9 @@ class HubEventClient {
   /// `cursorStep` 的缺口判定要靠收到「下一帧」才成立 —— 丢的若是最后一帧，
   /// 后面再没有帧来，本地就永远察觉不到自己落后。ping 每 30 秒来一次，是唯一
   /// 能兜住这种情况的信号（实时帧在主机侧可能因为发送队列满被丢掉）。
-  Future<void> _onPingHeadSeq(String peerId, Object? rawHead) async {
-    if (rawHead is! int) return;
-    // 这是主机亲口说的位置。补拉连着失败时，游标靠它跳到最新。
-    _pingHead[peerId] = rawHead;
+  Future<void> _onPingHeadSeq(String peerId) async {
+    final rawHead = _pingHead[peerId];
+    if (rawHead == null) return;
     final key = await _key(peerId);
     final cursor = await seqStore.read(key);
     if (rawHead <= cursor) return;
@@ -457,8 +477,9 @@ class HubEventClient {
   Future<HubSyncPage?> _requestPage(
     String peerId,
     int since,
-    String requestId,
-  ) async {
+    String requestId, {
+    Duration? timeout,
+  }) async {
     final key = _latePageKey(peerId, requestId);
     // 上一轮超时之后主机照样把这页算了回来。游标没动、request_id 也没变，
     // 直接拿走，不用让它再算一遍。
@@ -494,9 +515,10 @@ class HubEventClient {
         await sub.cancel();
         return null;
       }
-      return await done.future.timeout(pageTimeout);
+      return await done.future.timeout(timeout ?? pageTimeout);
     } on TimeoutException catch (error) {
-      _log.warning('events sync failed: $error', tag: 'HubEvent');
+      // 单次超时不值得每 8 秒写一条告警：连着失败会在本轮收尾时汇总一条。
+      _log.debug('events sync failed: $error', tag: 'HubEvent');
       // 超时不等于没收到：主机只是算得慢，回包还会来。别把监听一起取消
       // 扔掉，留到下一轮按同一个 request_id 认领。
       _claimLatePage(key, done, sub);
@@ -547,6 +569,17 @@ class HubEventClient {
     final base = pageRetryDelay.inMilliseconds * attempt;
     final jitter = base <= 1 ? 0 : _random.nextInt(base ~/ 2 + 1);
     return Duration(milliseconds: base + jitter);
+  }
+
+  /// 第 `failed` 次超时之后，这一页再多等多久。
+  ///
+  /// 主机那一页可能只是算得慢（大日志、冷缓存、机器忙），8 秒判死会
+  /// 白白丢掉能补回来的历史。每失败一次翻一倍，封顶 [_maxPageTimeout]。
+  Duration _pageTimeoutFor(int failed) {
+    if (failed <= 0) return pageTimeout;
+    final shift = failed > 3 ? 3 : failed;
+    final grown = pageTimeout * (1 << shift);
+    return grown > _maxPageTimeout ? _maxPageTimeout : grown;
   }
 
   Future<void> _dispatch(String peerId, HubEvent event) async {

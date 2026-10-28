@@ -246,13 +246,68 @@ void main() {
       data: {'type': 'ping', 'timestamp': 1, 'head_seq': 100},
     ));
 
-    for (var i = 0; i < 100 && store.values['fp-jump'] != 100; i++) {
+    for (var i = 0; i < 100 && !sent.contains(100); i++) {
       await Future<void>.delayed(const Duration(milliseconds: 20));
     }
 
     expect(store.values['fp-jump'], 100);
     expect(sent.first, 10, reason: '先从本地游标开始补');
     expect(sent.contains(100), isTrue, reason: '跳过去之后从 head 接着补');
+    await incoming.close();
+  });
+
+  // 主机只是算得慢（大日志 + 冷缓存）时，多等一会儿就能补回来。超时后
+  // 加长等待而不是直接跳到 head：跳过去等于把这段历史当成丢了。
+  test('单页超时后加长等待，慢页仍会补回来而不是跳到 head', () async {
+    final incoming = StreamController<PeerControlEvent>.broadcast();
+    final sent = <int>[];
+    final store = MemoryHubSeqStore()..values['fp-slow'] = 10;
+    final client = HubEventClient(
+      events: incoming.stream,
+      pageTimeout: const Duration(milliseconds: 50),
+      pageRetryDelay: const Duration(milliseconds: 20),
+      send: (peerId, frame) async {
+        sent.add(frame['since_seq'] as int);
+        if (sent.length == 1) {
+          // 这一页算了 300ms：第一次 50ms 超时，加长后的重试里才等到。
+          Timer(const Duration(milliseconds: 300), () {
+            incoming.add(PeerControlEvent(
+              peerId: peerId,
+              data: {
+                'type': 'events_sync_resp',
+                'request_id': frame['request_id'],
+                'events': [
+                  {
+                    'seq': 11,
+                    'kind': 'agents.changed',
+                    'data': <String, dynamic>{},
+                  },
+                ],
+                'head_seq': 11,
+                'reset': false,
+              },
+            ));
+          });
+        }
+        return true;
+      },
+      seqStore: store,
+      fingerprintOf: (_) async => 'fp-slow',
+    );
+    client.start();
+    addTearDown(client.dispose);
+
+    // 心跳报的 head 远在前面：如果按「连续失败就跳 head」处理，游标会变 100。
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: {'type': 'ping', 'timestamp': 1, 'head_seq': 100},
+    ));
+
+    for (var i = 0; i < 100 && store.values['fp-slow'] == 10; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+
+    expect(store.values['fp-slow'], 11, reason: '慢页补回来了，游标没有跳到 head');
     await incoming.close();
   });
 
