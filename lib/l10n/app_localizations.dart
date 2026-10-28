@@ -3656,6 +3656,30 @@ abstract class AppLocalizations {
   /// **'在输入框上方作答'**
   String get chat_pendingFormInDock;
 
+  /// No description provided for @chat_pendingApprovalDockTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待你的确认'**
+  String get chat_pendingApprovalDockTitle;
+
+  /// No description provided for @chat_pendingApprovalInDock.
+  ///
+  /// In zh, this message translates to:
+  /// **'在输入框上方处理'**
+  String get chat_pendingApprovalInDock;
+
+  /// No description provided for @widget_formPrevQuestion.
+  ///
+  /// In zh, this message translates to:
+  /// **'上一题'**
+  String get widget_formPrevQuestion;
+
+  /// No description provided for @widget_formNextQuestion.
+  ///
+  /// In zh, this message translates to:
+  /// **'下一题'**
+  String get widget_formNextQuestion;
+
   /// No description provided for @chat_editGroupInfo.
   ///
   /// In zh, this message translates to:

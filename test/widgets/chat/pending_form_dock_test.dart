@@ -2,15 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/l10n/app_localizations.dart';
 import 'package:shepaw/models/message.dart';
+import 'package:shepaw/widgets/chat/paged_form_panel.dart';
 import 'package:shepaw/widgets/chat/pending_form_dock.dart';
 
-Message _msg(String id, {Map<String, dynamic>? form}) => Message(
+Message _msg(String id, {Map<String, dynamic>? metadata}) => Message(
       id: id,
       from: MessageFrom(id: 'agent-1', type: 'agent', name: 'Claude'),
       type: MessageType.text,
-      content: form?['title']?.toString() ?? 'hi',
+      content: 'hi',
       timestampMs: 0,
-      metadata: form == null ? null : {'form': form},
+      metadata: metadata,
     );
 
 Map<String, dynamic> _form(String id, {Map<String, dynamic> extra = const {}}) => {
@@ -23,65 +24,184 @@ Map<String, dynamic> _form(String id, {Map<String, dynamic> extra = const {}}) =
       ...extra,
     };
 
-void main() {
-  group('dockedPendingForm', () {
-    test('取最新一张还开着的主机提问卡', () {
-      final docked = dockedPendingForm([
-        _msg('a', form: _form('f1')),
-        _msg('b'),
-        _msg('c', form: _form('f2')),
-        _msg('d'),
-      ]);
-      expect(docked?.id, 'c');
-    });
+Map<String, dynamic> _approval(String id,
+        {Map<String, dynamic> extra = const {}}) =>
+    {
+      'confirmation_id': id,
+      'prompt': '允许运行 ls 吗',
+      'actions': [
+        {'id': 'allow', 'label': '允许', 'style': 'primary'},
+        {'id': 'deny', 'label': '拒绝'},
+      ],
+      ...extra,
+    };
 
-    test('答过、作废的不算；deferred 的还能答', () {
-      expect(
-        dockedPendingForm([
-          _msg('a', form: _form('f1', extra: {'submitted_values': {}})),
-          _msg('b', form: _form('f2', extra: {'closed': 'timeout'})),
-        ]),
-        isNull,
-      );
-      expect(
-        dockedPendingForm([
-          _msg('a', form: _form('f1', extra: {'deferred': true})),
-        ])?.id,
-        'a',
-      );
-    });
-
-    test('不是主机提问卡（没有 peer_form）的表单留在消息流里', () {
-      final form = _form('f1')..remove('peer_form');
-      expect(dockedPendingForm([_msg('a', form: form)]), isNull);
-    });
-  });
-
-  testWidgets('停靠卡提交时带回原消息，可收起', (tester) async {
-    final message = _msg('card', form: _form('f1'));
-    Message? submittedFrom;
-    Map<String, dynamic>? submitted;
-    await tester.pumpWidget(MaterialApp(
+Widget _app(Widget child) => MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       locale: const Locale('zh'),
       home: Scaffold(
-        body: Align(
-          alignment: Alignment.bottomCenter,
-          child: PendingFormDock(
-            message: message,
-            onFormSubmitted: (msg, formId, values, summary) {
-              submittedFrom = msg;
-              submitted = values;
-            },
-          ),
-        ),
+        body: Align(alignment: Alignment.bottomCenter, child: child),
       ),
-    ));
+    );
+
+void main() {
+  group('dockedPendingInteraction', () {
+    test('取最新一张待处理卡：提问或审批', () {
+      final docked = dockedPendingInteraction([
+        _msg('a', metadata: {'form': _form('f1')}),
+        _msg('b', metadata: {'action_confirmation': _approval('c1')}),
+        _msg('c'),
+      ]);
+      expect(docked?.message.id, 'b');
+      expect(docked?.kind, DockedInteractionKind.approval);
+    });
+
+    test('答过、作废的不算；deferred 的提问还能答', () {
+      expect(
+        dockedPendingInteraction([
+          _msg('a', metadata: {
+            'form': _form('f1', extra: {'submitted_values': {}})
+          }),
+          _msg('b', metadata: {
+            'form': _form('f2', extra: {'closed': 'timeout'})
+          }),
+          _msg('c', metadata: {
+            'action_confirmation':
+                _approval('c1', extra: {'selected_action_id': 'allow'})
+          }),
+          _msg('d', metadata: {
+            'action_confirmation': _approval('c2', extra: {'closed': 'timeout'})
+          }),
+        ]),
+        isNull,
+      );
+      final deferred = dockedPendingInteraction([
+        _msg('a', metadata: {
+          'form': _form('f1', extra: {'deferred': true})
+        }),
+      ]);
+      expect(deferred?.message.id, 'a');
+      expect(deferred?.isForm, isTrue);
+    });
+
+    test('没有 peer_form 的表单、工作流审批留在原处', () {
+      final form = _form('f1')..remove('peer_form');
+      expect(
+        dockedPendingInteraction([
+          _msg('a', metadata: {'form': form}),
+          _msg('b', metadata: {
+            'action_confirmation':
+                _approval('c1', extra: {'_workflowPeerApproval': true})
+          }),
+        ]),
+        isNull,
+      );
+    });
+  });
+
+  group('PagedFormPanel', () {
+    Map<String, dynamic> twoQuestions() => {
+          'form_id': 'f1',
+          'fields': [
+            {
+              'field_id': 'question_0',
+              'type': 'single_select',
+              'label': '用哪个库？',
+              'options': [
+                {'id': 'Postgres', 'label': 'Postgres'},
+                {'id': 'SQLite', 'label': 'SQLite'},
+              ],
+            },
+            {
+              'field_id': 'question_1',
+              'type': 'text_input',
+              'label': '还有别的要说的吗？',
+            },
+          ],
+        };
+
+    ElevatedButton submitButton(WidgetTester tester) => tester.widget(
+        find.ancestor(
+            of: find.text('提交'), matching: find.byType(ElevatedButton)));
+
+    testWidgets('点选项切到下一题，可退回上一题，答完才能提交', (tester) async {
+      Map<String, dynamic>? submitted;
+      String? summary;
+      await tester.pumpWidget(_app(PagedFormPanel(
+        formData: twoQuestions(),
+        onFormSubmitted: (formId, values, s) {
+          submitted = values;
+          summary = s;
+        },
+      )));
+
+      expect(find.text('用哪个库？'), findsOneWidget);
+      expect(submitButton(tester).onPressed, isNull);
+
+      await tester.tap(find.text('SQLite'));
+      await tester.pumpAndSettle();
+      expect(find.text('还有别的要说的吗？'), findsOneWidget);
+      expect(find.text('用哪个库？'), findsNothing);
+      expect(submitButton(tester).onPressed, isNull);
+
+      await tester.tap(find.text('上一题'));
+      await tester.pumpAndSettle();
+      expect(find.text('用哪个库？'), findsOneWidget);
+
+      // 选中的答案还在；改选最后一题以外的单选也会自动前进。
+      await tester.tap(find.text('Postgres'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '没有了');
+      await tester.pump();
+      expect(submitButton(tester).onPressed, isNotNull);
+
+      await tester.tap(find.text('提交'));
+      await tester.pump();
+      expect(submitted, {'question_0': 'Postgres', 'question_1': '没有了'});
+      expect(summary, '用哪个库？: Postgres; 还有别的要说的吗？: 没有了');
+    });
+
+    testWidgets('点题号直接跳转', (tester) async {
+      await tester.pumpWidget(_app(PagedFormPanel(
+        formData: twoQuestions(),
+        onFormSubmitted: (_, __, ___) {},
+      )));
+      await tester.tap(find.text('2'));
+      await tester.pumpAndSettle();
+      expect(find.text('还有别的要说的吗？'), findsOneWidget);
+    });
+
+    test('有分页不认识的字段时退回平铺表单', () {
+      expect(PagedFormPanel.supports(twoQuestions()), isTrue);
+      expect(
+        PagedFormPanel.supports({
+          'fields': [
+            {'field_id': 'f', 'type': 'file_upload'},
+          ],
+        }),
+        isFalse,
+      );
+    });
+  });
+
+  testWidgets('停靠的提问卡提交时带回原消息，可收起', (tester) async {
+    final message = _msg('card', metadata: {'form': _form('f1')});
+    Message? submittedFrom;
+    Map<String, dynamic>? submitted;
+    await tester.pumpWidget(_app(PendingInteractionDock(
+      interaction: DockedInteraction(message, DockedInteractionKind.form),
+      onFormSubmitted: (msg, formId, values, summary) {
+        submittedFrom = msg;
+        submitted = values;
+      },
+      onActionSelected: (_, __, ___, ____) {},
+    )));
 
     expect(find.text('Claude · 等待你的回答'), findsOneWidget);
     await tester.enterText(find.byType(TextField), '3000');
-    await tester.tap(find.byIcon(Icons.send));
+    await tester.pump();
+    await tester.tap(find.text('提交'));
     await tester.pump();
     expect(submittedFrom?.id, 'card');
     expect(submitted, {'port': '3000'});
@@ -89,5 +209,23 @@ void main() {
     await tester.tap(find.text('Claude · 等待你的回答'));
     await tester.pump();
     expect(find.byType(TextField), findsNothing);
+  });
+
+  testWidgets('停靠的审批卡点按钮带回原消息和选项', (tester) async {
+    final message =
+        _msg('host', metadata: {'action_confirmation': _approval('c1')});
+    String? picked;
+    await tester.pumpWidget(_app(PendingInteractionDock(
+      interaction: DockedInteraction(message, DockedInteractionKind.approval),
+      onFormSubmitted: (_, __, ___, ____) {},
+      onActionSelected: (msg, confirmationId, actionId, label) {
+        picked = '${msg.id}/$confirmationId/$actionId';
+      },
+    )));
+
+    expect(find.text('Claude · 等待你的确认'), findsOneWidget);
+    await tester.tap(find.text('允许'));
+    await tester.pump();
+    expect(picked, 'host/c1/allow');
   });
 }

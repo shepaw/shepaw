@@ -1,55 +1,134 @@
 import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/message.dart';
-import '../form_bubble.dart';
+import '../action_confirmation_buttons.dart';
+import 'cli_approval_card.dart';
+import 'paged_form_panel.dart';
+
+enum DockedInteractionKind { form, approval }
+
+/// 停靠在输入框上方、等用户处理的那一张卡。
+class DockedInteraction {
+  final Message message;
+  final DockedInteractionKind kind;
+
+  const DockedInteraction(this.message, this.kind);
+
+  bool get isForm => kind == DockedInteractionKind.form;
+}
 
 /// 还在等用户回答的主机提问卡（`ask_user` → `agent_form_req`）。
 ///
 /// 只认带 `peer_form` 的独立卡片行：它们整条消息就是这张卡，列表里换成
 /// 占位不会藏掉别的正文。答过（`submitted_values`）或作废（`closed`）的不算；
-/// deferred 的还能答，算。多张同时开着时取最新的一张，其余留在列表里。
-Message? dockedPendingForm(List<Message> messages) {
+/// deferred 的还能答，算。
+bool isDockablePendingForm(Message message) {
+  final form = message.metadata?['form'];
+  if (form is! Map || form['peer_form'] is! Map) return false;
+  return form['submitted_values'] == null && form['closed'] == null;
+}
+
+/// 还没点的工具审批卡。工作流里的审批由工作流面板处理，不在此列。
+bool isDockablePendingApproval(Message message) {
+  final card = message.metadata?['action_confirmation'];
+  if (card is! Map) return false;
+  if (card['_workflowPeerApproval'] == true) return false;
+  if (card['selected_action_id'] != null || card['closed'] != null) {
+    return false;
+  }
+  final actions = card['actions'];
+  return actions is List && actions.isNotEmpty;
+}
+
+/// 取最新的一张待处理卡；其余留在消息流里照常显示。
+DockedInteraction? dockedPendingInteraction(List<Message> messages) {
   for (var i = messages.length - 1; i >= 0; i--) {
-    final form = messages[i].metadata?['form'];
-    if (form is! Map || form['peer_form'] is! Map) continue;
-    if (form['submitted_values'] != null || form['closed'] != null) continue;
-    return messages[i];
+    final message = messages[i];
+    if (isDockablePendingForm(message)) {
+      return DockedInteraction(message, DockedInteractionKind.form);
+    }
+    if (isDockablePendingApproval(message)) {
+      return DockedInteraction(message, DockedInteractionKind.approval);
+    }
   }
   return null;
 }
 
-/// 悬浮在输入框上方的提问卡。
+/// 悬浮在输入框上方的待处理卡（提问表单 / 工具审批）。
 ///
 /// 卡片以前只在消息流里：时间戳排序会把它放到正在输出的回复上面，或者被
-/// 后续输出顶出视口，用户看不到主机在等他。停靠在输入框上方之后，答完
-/// 才收起；列表里同一张卡只画占位（见 [PendingFormPlaceholder]）。
-class PendingFormDock extends StatefulWidget {
-  final Message message;
+/// 后续输出顶出视口，用户看不到主机在等他。停靠在输入框上方之后，处理完
+/// 才收起；列表里同一张卡只画占位（见 [DockedInteractionPlaceholder]）。
+class PendingInteractionDock extends StatefulWidget {
+  final DockedInteraction interaction;
   final void Function(Message message, String formId,
       Map<String, dynamic> values, String summary) onFormSubmitted;
   final void Function(Message message, String formId)? onFormDeclined;
+  final void Function(Message message, String confirmationId,
+      String actionId, String actionLabel) onActionSelected;
+  final bool isAgentOffline;
 
-  const PendingFormDock({
+  const PendingInteractionDock({
     super.key,
-    required this.message,
+    required this.interaction,
     required this.onFormSubmitted,
     this.onFormDeclined,
+    required this.onActionSelected,
+    this.isAgentOffline = false,
   });
 
   @override
-  State<PendingFormDock> createState() => _PendingFormDockState();
+  State<PendingInteractionDock> createState() => _PendingInteractionDockState();
 }
 
-class _PendingFormDockState extends State<PendingFormDock> {
+class _PendingInteractionDockState extends State<PendingInteractionDock> {
   bool _expanded = true;
+
+  Widget? _buildBody() {
+    final message = widget.interaction.message;
+    if (widget.interaction.isForm) {
+      final formData = message.metadata?['form'];
+      if (formData is! Map<String, dynamic>) return null;
+      return DockedFormBody(
+        // 换了一张卡就换一份填写状态。
+        key: ValueKey(message.id),
+        formData: formData,
+        onFormSubmitted: (formId, values, summary) =>
+            widget.onFormSubmitted(message, formId, values, summary),
+        onFormDeclined: widget.onFormDeclined == null
+            ? null
+            : (formId) => widget.onFormDeclined!(message, formId),
+      );
+    }
+    final card = message.metadata?['action_confirmation'];
+    if (card is! Map<String, dynamic>) return null;
+    void onSelected(String confirmationId, String actionId, String label) =>
+        widget.onActionSelected(message, confirmationId, actionId, label);
+    if (card['confirmation_context'] == 'cli') {
+      return CliApprovalCard(
+        key: ValueKey(card['confirmation_id']),
+        actionData: card,
+        onActionSelected: onSelected,
+      );
+    }
+    return ActionConfirmationButtons(
+      key: ValueKey(card['confirmation_id']),
+      actionData: card,
+      onActionSelected: onSelected,
+      isAgentOffline: widget.isAgentOffline,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final formData = widget.message.metadata?['form'];
-    if (formData is! Map<String, dynamic>) return const SizedBox.shrink();
+    final body = _buildBody();
+    if (body == null) return const SizedBox.shrink();
     final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
-    final sender = widget.message.from.name.trim();
+    final sender = widget.interaction.message.from.name.trim();
+    final title = widget.interaction.isForm
+        ? l10n.chat_pendingFormDockTitle
+        : l10n.chat_pendingApprovalDockTitle;
     final maxBodyHeight = MediaQuery.sizeOf(context).height * 0.45;
 
     return Material(
@@ -71,14 +150,17 @@ class _PendingFormDockState extends State<PendingFormDock> {
               padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
               child: Row(
                 children: [
-                  Icon(Icons.help_outline,
-                      size: 18, color: colorScheme.primary),
+                  Icon(
+                    widget.interaction.isForm
+                        ? Icons.help_outline
+                        : Icons.verified_user_outlined,
+                    size: 18,
+                    color: colorScheme.primary,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      sender.isEmpty
-                          ? l10n.chat_pendingFormDockTitle
-                          : '$sender · ${l10n.chat_pendingFormDockTitle}',
+                      sender.isEmpty ? title : '$sender · $title',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -104,17 +186,7 @@ class _PendingFormDockState extends State<PendingFormDock> {
               constraints: BoxConstraints(maxHeight: maxBodyHeight),
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-                child: FormBubble(
-                  // 换了一张卡就换一份填写状态。
-                  key: ValueKey(widget.message.id),
-                  formData: formData,
-                  onFormSubmitted: (formId, values, summary) => widget
-                      .onFormSubmitted(widget.message, formId, values, summary),
-                  onFormDeclined: widget.onFormDeclined == null
-                      ? null
-                      : (formId) =>
-                          widget.onFormDeclined!(widget.message, formId),
-                ),
+                child: body,
               ),
             ),
         ],
@@ -123,18 +195,46 @@ class _PendingFormDockState extends State<PendingFormDock> {
   }
 }
 
-/// 列表里被停靠的那张卡：只留一行，说明去哪儿答。
-class PendingFormPlaceholder extends StatelessWidget {
-  final Message message;
+/// 列表里被停靠的那张卡：只留一行，说明去哪儿处理。
+class DockedInteractionPlaceholder extends StatelessWidget {
+  final String title;
+  final String hint;
+  final IconData icon;
 
-  const PendingFormPlaceholder({super.key, required this.message});
+  const DockedInteractionPlaceholder({
+    super.key,
+    required this.title,
+    required this.hint,
+    this.icon = Icons.help_outline,
+  });
+
+  /// 提问卡的占位：整条消息就是这张卡。
+  factory DockedInteractionPlaceholder.form(
+    BuildContext context,
+    Message message,
+  ) {
+    final form = message.metadata?['form'];
+    return DockedInteractionPlaceholder(
+      title: form is Map ? (form['title']?.toString() ?? '').trim() : '',
+      hint: AppLocalizations.of(context).chat_pendingFormInDock,
+    );
+  }
+
+  /// 审批卡的占位：只替换气泡底部的按钮区，回复正文照常显示。
+  factory DockedInteractionPlaceholder.approval(
+    BuildContext context,
+    Map<String, dynamic> card,
+  ) {
+    return DockedInteractionPlaceholder(
+      title: (card['prompt']?.toString() ?? '').trim(),
+      hint: AppLocalizations.of(context).chat_pendingApprovalInDock,
+      icon: Icons.verified_user_outlined,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
-    final form = message.metadata?['form'];
-    final title = form is Map ? (form['title']?.toString() ?? '').trim() : '';
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Align(
@@ -148,13 +248,11 @@ class PendingFormPlaceholder extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.help_outline, size: 16, color: colorScheme.primary),
+              Icon(icon, size: 16, color: colorScheme.primary),
               const SizedBox(width: 6),
               Flexible(
                 child: Text(
-                  title.isEmpty
-                      ? l10n.chat_pendingFormInDock
-                      : '$title · ${l10n.chat_pendingFormInDock}',
+                  title.isEmpty ? hint : '$title · $hint',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(

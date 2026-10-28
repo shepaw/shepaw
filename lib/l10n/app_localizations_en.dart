@@ -2015,6 +2015,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_pendingFormInDock => 'Answer above the input box';
 
   @override
+  String get chat_pendingApprovalDockTitle => 'Waiting for your approval';
+
+  @override
+  String get chat_pendingApprovalInDock => 'Respond above the input box';
+
+  @override
+  String get widget_formPrevQuestion => 'Previous';
+
+  @override
+  String get widget_formNextQuestion => 'Next';
+
+  @override
   String get chat_editGroupInfo => 'Edit Group Info';
 
   @override

@@ -33,6 +33,7 @@ import 'permission_audit_bubble.dart';
 import 'chat/plan_approval_card.dart';
 import '../services/approval/cli_audit_fold.dart';
 import 'chat/cli_approval_card.dart';
+import 'chat/pending_form_dock.dart' show DockedInteractionPlaceholder;
 import 'chat/dispatch_card.dart';
 import 'chat/relay_approval_card.dart';
 import 'avatar_image.dart';
@@ -77,6 +78,9 @@ class MessageBubble extends StatelessWidget {
   /// `isAgentOnline` signal the screen has. Default `false` keeps the
   /// legacy look when the caller doesn't plumb the value through.
   final bool isAgentOffline;
+
+  /// 这条消息上的待处理审批卡停靠在输入框上方；气泡里只留占位。
+  final bool interactionDocked;
 
   /// When `true`, message text can be selected (long-press flow).
   final bool textSelectionEnabled;
@@ -154,6 +158,7 @@ class MessageBubble extends StatelessWidget {
     this.onAvatarTap,
     this.senderAvatar,
     this.isAgentOffline = false,
+    this.interactionDocked = false,
     this.textSelectionEnabled = false,
     this.selectionAreaKey,
     this.selectionFocusNode,
@@ -1225,6 +1230,20 @@ class MessageBubble extends StatelessWidget {
     final auditEntries = CliAuditFold.read(message.metadata);
     final acIsCli = actionConfirmation != null &&
         actionConfirmation['confirmation_context'] == 'cli';
+    if (interactionDocked &&
+        actionConfirmation != null &&
+        actionConfirmation['selected_action_id'] == null) {
+      final placeholder =
+          DockedInteractionPlaceholder.approval(context, actionConfirmation);
+      if (!acIsCli || auditEntries.isEmpty) return placeholder;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CliToolAuditView(entries: auditEntries),
+          placeholder,
+        ],
+      );
+    }
     if (acIsCli || auditEntries.isNotEmpty) {
       return CliToolAuditView(
         entries: _cliAuditEntries(actionConfirmation, auditEntries),

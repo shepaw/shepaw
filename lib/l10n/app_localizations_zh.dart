@@ -1938,6 +1938,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_pendingFormInDock => '在输入框上方作答';
 
   @override
+  String get chat_pendingApprovalDockTitle => '等待你的确认';
+
+  @override
+  String get chat_pendingApprovalInDock => '在输入框上方处理';
+
+  @override
+  String get widget_formPrevQuestion => '上一题';
+
+  @override
+  String get widget_formNextQuestion => '下一题';
+
+  @override
   String get chat_editGroupInfo => '编辑群组信息';
 
   @override

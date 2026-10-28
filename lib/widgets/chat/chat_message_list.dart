@@ -70,8 +70,8 @@ class ChatMessageList extends StatefulWidget {
   /// 在布局阶段原位补偿流式气泡增高，防止历史视口被顶走或滚动手势被抢占。
   final StreamingScrollAnchor? streamingScrollAnchor;
 
-  /// 停靠在输入框上方作答的那张提问卡；列表里只画占位，免得两处各填一份。
-  final String? dockedFormMessageId;
+  /// 停靠在输入框上方处理的那张卡；列表里只画占位，免得两处各点一份。
+  final DockedInteraction? dockedInteraction;
 
   const ChatMessageList({
     super.key,
@@ -102,7 +102,7 @@ class ChatMessageList extends StatefulWidget {
     this.workspaceUrisByAgentId = const {},
     required this.streamingListenable,
     this.streamingScrollAnchor,
-    this.dockedFormMessageId,
+    this.dockedInteraction,
   });
 
   @override
@@ -297,7 +297,10 @@ class _ChatMessageListState extends State<ChatMessageList> {
             return const SizedBox.shrink();
           }
 
-          if (message.id == widget.dockedFormMessageId) {
+          final docked = widget.dockedInteraction?.message.id == message.id
+              ? widget.dockedInteraction
+              : null;
+          if (docked != null && docked.isForm) {
             return KeyedSubtree(
               key: ValueKey(message.id),
               child: Column(
@@ -305,7 +308,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
                 children: [
                   if (showDateSeparator)
                     _buildDateSeparator(context, message.dateTime),
-                  PendingFormPlaceholder(message: message),
+                  DockedInteractionPlaceholder.form(context, message),
                 ],
               ),
             );
@@ -377,6 +380,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
             groupedImages,
             imageIndexMap,
             workspaceUris,
+            docked,
           );
           Widget buildTile(BuildContext context, Message live) {
             return RepaintBoundary(
@@ -493,6 +497,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
                       senderAvatar: senderAvatar,
                       isAgentOffline: isAgentOffline,
                       workspaceUris: workspaceUris,
+                      interactionDocked: docked != null,
                     ),
                   ),
                 ),
