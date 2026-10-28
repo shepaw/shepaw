@@ -15,6 +15,7 @@ import 'services/cli_host.dart';
 import 'services/cli_tool_registry.dart';
 import 'services/contacts_directory.dart';
 import 'clis/shepaw/shepaw_cli.dart';
+import 'services/chat_service.dart';
 import 'services/logger_service.dart';
 import 'services/model_registry.dart';
 import 'services/frame_timing_monitor.dart';
@@ -76,6 +77,9 @@ class AppBootstrap {
     PouchDutyState.bind(const PouchRole.absent());
     await _restorePouchLogin();
     await _initializeLocalStorage();
+    // 进程被杀后恢复在途回合时，[AgentMessagingService] 会 acquireTask 拉起
+    // 前台保活；插件必须先 init。
+    ForegroundTaskService().init();
     await _initializePeerConnection();
 
     // 通讯录首次打开要冷刷一遍会话 / 配对库 / agent 列表 / 主机名单。
@@ -109,7 +113,6 @@ class AppBootstrap {
     }
     await PendingApprovalHub.instance.hydrate();
     ApprovalReachabilityNotifier.instance.init(navigatorKey: navigatorKey);
-    ForegroundTaskService().init();
 
     // 本机只留 os / help。惜宝、模型和技能在登录的那台主机上。
     await CliToolRegistry.instance.initialize();
@@ -212,6 +215,20 @@ class AppBootstrap {
       await PeerConnectionManager.instance.start();
       PouchLoginKeeper.instance.start();
       await PeerAgentClientService.instance.start();
+      // 进程被杀后把磁盘上的在途 peer 回合接回来：重建 ActiveTask（聊天页
+      // reattach 就能继续显示流式气泡），并触发 `agent_turn_resume_req`
+      // 从 receivedLength 断点续传。不做这一步，回合只存在于 _pending 里：
+      // 界面不再出字，新消息还会被当成「上一轮没结束」压进发送队列。
+      // 必须在 start() 之后 —— 持久化记录在那时才 hydrate 进内存。
+      try {
+        await ChatService().restorePeerInflightTurns();
+      } catch (e) {
+        _log.warning(
+          'restore peer inflight turns failed: $e',
+          tag: 'App',
+          error: e,
+        );
+      }
       if (getIt.isRegistered<HubEventClient>()) {
         getIt<HubEventClient>().start();
       }
