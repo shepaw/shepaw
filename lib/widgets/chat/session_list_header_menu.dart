@@ -78,7 +78,11 @@ class _SessionListHeaderMoreButtonState
 
   void _onRefreshTick() {
     if (!mounted) return;
-    setState(() => _unreadFuture = _loadTotalUnread());
+    // 别写成箭头函数：赋值表达式会把 Future 当返回值交回 setState，
+    // debug 下 assert 直接抛错并跳过 markNeedsBuild。
+    setState(() {
+      _unreadFuture = _loadTotalUnread();
+    });
   }
 
   /// 一次查询汇总全部会话未读（与列表行一致，排除当前正在查看的会话），
