@@ -224,6 +224,10 @@ class PouchTurnRelay {
     String? replyQuoteText,
     List<AttachmentData>? attachments,
     void Function(String chunk)? onStreamChunk,
+    /// 主机下发的折叠区元数据（思考、工具步骤），字段同 `agent_metadata`。
+    void Function(Map<String, dynamic> metadata)? onMetadata,
+    /// 模型的推理文本片段，不属于回复正文。
+    void Function(String chunk)? onThinking,
     Future<Map<String, dynamic>?> Function(
       String agentId,
       String agentName,
@@ -266,6 +270,16 @@ class PouchTurnRelay {
             event: event,
             onInteractionRequest: onInteractionRequest,
           ));
+          return;
+        }
+        if (event['kind'] == 'metadata') {
+          final raw = event['metadata'];
+          if (raw is Map) onMetadata?.call(Map<String, dynamic>.from(raw));
+          return;
+        }
+        if (event['kind'] == 'thinking') {
+          final chunk = event['chunk'] as String? ?? '';
+          if (chunk.isNotEmpty) onThinking?.call(chunk);
           return;
         }
         if (event['kind'] == 'chunk') {

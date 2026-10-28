@@ -732,6 +732,7 @@ class AgentMessagingService {
           replyToId: replyToId,
           replyQuoteText: replyQuoteText,
           onStreamChunk: onStreamChunk,
+          onMessageMetadata: onMessageMetadata,
           onOsToolConfirmation: onOsToolConfirmation,
           attachments: attachments,
           existingUserMessage: existingUserMessage,
@@ -1499,6 +1500,7 @@ class AgentMessagingService {
     String? replyToId,
     String? replyQuoteText,
     void Function(String chunk)? onStreamChunk,
+    void Function(Map<String, dynamic> metadata)? onMessageMetadata,
     CliApprovalHandler? onOsToolConfirmation,
     List<AttachmentData>? attachments,
     Message? existingUserMessage,
@@ -1552,6 +1554,7 @@ class AgentMessagingService {
           userName: userName,
         );
         task.onStreamChunk = onStreamChunk;
+        task.onMessageMetadata = onMessageMetadata;
         _registerActiveTask(turnChannelId, task);
         ForegroundTaskService().acquireTask(agent.name);
         flush = StreamingFlushHelper.fromAgent(
@@ -1563,6 +1566,24 @@ class AgentMessagingService {
           traceId: task.taskId,
         );
       }
+      // 主机下发的思考和工具步骤：结构同单聊外部 Agent 的 agent_metadata，
+      // 用同一个拆分器合并，正文照旧走 onStreamChunk。
+      final splitter = StreamContentSplitter();
+      void publishMetadata(Map<String, dynamic> meta) {
+        if (task == null) {
+          onMessageMetadata?.call(meta);
+          return;
+        }
+        final merged = Map<String, dynamic>.from(task.metadata ?? {});
+        merged.addAll(meta);
+        task.metadata = merged;
+        final progress = meta['progress_content'];
+        if (progress is String) task.progressContent = progress;
+        task.markActivity();
+        task.onMessageMetadata?.call(meta);
+        flush?.schedule();
+      }
+
       final ({String text, String? agentMessageId}) result;
       try {
         result = await PouchTurnRelay.instance.forwardDm(
@@ -1578,6 +1599,12 @@ class AgentMessagingService {
           replyToId: userMessage.replyTo,
           replyQuoteText: userMessage.replyQuoteText,
           attachments: attachments,
+          onMetadata: (data) => publishMetadata(splitter.onMetadata(data)),
+          onThinking: (chunk) {
+            splitter.onChunk(chunk);
+            final delta = splitter.progressMetadataDelta();
+            if (delta != null) publishMetadata(delta);
+          },
           onStreamChunk: (chunk) {
             if (task == null) {
               onStreamChunk?.call(chunk);
@@ -1607,6 +1634,7 @@ class AgentMessagingService {
         },
       );
       await flush?.deletePartial();
+      final progressMeta = splitter.finalProgressMetadata();
       final agentResponse = Message(
         id: result.agentMessageId ?? _uuid.v4(),
         content: result.text,
@@ -1614,6 +1642,7 @@ class AgentMessagingService {
         from: MessageFrom(id: agent.id, type: 'agent', name: agent.name),
         to: MessageFrom(id: userId, type: 'user', name: userName),
         type: MessageType.text,
+        metadata: progressMeta.isEmpty ? null : progressMeta,
       );
       try {
         await saveMessageToChannel(
