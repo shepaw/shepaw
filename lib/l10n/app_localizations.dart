@@ -3596,6 +3596,12 @@ abstract class AppLocalizations {
   /// **'待发送 {count} 条'**
   String chat_sendQueueCount(int count);
 
+  /// No description provided for @chat_hostQueueNotice.
+  ///
+  /// In zh, this message translates to:
+  /// **'已交给主机排队 {count} 条 · 上一轮结束后自动开始'**
+  String chat_hostQueueNotice(int count);
+
   /// No description provided for @chat_queueClearAll.
   ///
   /// In zh, this message translates to:

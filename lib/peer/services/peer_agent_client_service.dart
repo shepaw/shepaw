@@ -2130,6 +2130,19 @@ class PeerAgentClientService {
   final _storage = PeerStorageService();
   final Map<String, Timer> _persistTimers = {};
 
+  final StreamController<({String channelId, String requestId, bool queued})>
+      _hostQueueEvents =
+      StreamController<({String channelId, String requestId, bool queued})>
+          .broadcast();
+
+  /// 直接发出的回合被主机收进会话队列（或终于轮到它开跑）时发出。
+  ///
+  /// 正常路径下 App 会先把消息放进本地待发面板（`_offerQueuedMessage`），
+  /// 面板自己显示排队；这条事件只兜底「本地判断与主机不一致、消息已经
+  /// 发出去才被主机排队」的情况，让聊天页能显示「已交给主机排队」。
+  Stream<({String channelId, String requestId, bool queued})>
+      get hostQueueEvents => _hostQueueEvents.stream;
+
   StreamSubscription<PeerControlEvent>? _controlSub;
   StreamSubscription<PeerConnectionEvent>? _eventSub;
   StreamSubscription<void>? _peerListSub;
@@ -2548,6 +2561,33 @@ class PeerAgentClientService {
     return false;
   }
 
+  /// 已经直接发出、被主机收进会话队列、还没轮到的回合数。
+  ///
+  /// 本地面板自己排队的消息（`parkedText != null`）已经显示在会局面板里，
+  /// 不重复统计。
+  int hostQueuedDirectTurnCount(String channelId) {
+    if (channelId.isEmpty) return 0;
+    var count = 0;
+    for (final p in _pending.values) {
+      if (p.completer.isCompleted || p.channelId != channelId) continue;
+      if (p.heldOnHost && p.parkedText == null) count++;
+    }
+    return count;
+  }
+
+  void _emitHostQueueEvent(
+    _PendingRequest pending,
+    String requestId, {
+    required bool queued,
+  }) {
+    if (pending.channelId.isEmpty || _hostQueueEvents.isClosed) return;
+    _hostQueueEvents.add((
+      channelId: pending.channelId,
+      requestId: requestId,
+      queued: queued,
+    ));
+  }
+
   /// 这路会话上还有没写完的回复，下一条应该排队。
   ///
   /// 已经交到主机队列里的消息（heldOnHost）也算挡住：要保持先后顺序。
@@ -2660,6 +2700,7 @@ class PeerAgentClientService {
     final p = _pending.remove(requestId);
     if (p == null || p.completer.isCompleted) return;
     _stopCatchUp(p);
+    if (p.heldOnHost) _emitHostQueueEvent(p, requestId, queued: false);
     // 断连挂起期间的取消：下面的 sendControl 大概率发不出去（连接已断），
     // 登记下来，重连后补发 cancel 而不是 resume（见 _resumeSuspendedTurns）。
     if (p.suspendedSince != null) {
@@ -3667,6 +3708,7 @@ class PeerAgentClientService {
     final p = _pending.remove(requestId);
     if (p == null || p.completer.isCompleted) return;
     _stopCatchUp(p);
+    if (p.heldOnHost) _emitHostQueueEvent(p, requestId, queued: false);
     _clearPersistedTurn(requestId);
     unawaited(PeerConnectionManager.instance.sendControl(peerId, {
       'type': 'agent_cancel',
@@ -9295,6 +9337,7 @@ class PeerAgentClientService {
     if (p == null) return;
     if (p.heldOnHost) {
       p.heldOnHost = false;
+      _emitHostQueueEvent(p, requestId, queued: false);
       p.idleSince = DateTime.now();
       final ack = p.queueAck;
       if (ack != null && !ack.isCompleted) ack.complete(false);
@@ -9341,6 +9384,7 @@ class PeerAgentClientService {
     if (p == null) return;
     if (p.heldOnHost) {
       p.heldOnHost = false;
+      _emitHostQueueEvent(p, requestId, queued: false);
       p.idleSince = DateTime.now();
       final ack = p.queueAck;
       if (ack != null && !ack.isCompleted) ack.complete(false);
@@ -9696,6 +9740,7 @@ class PeerAgentClientService {
     final p = _pending.remove(requestId);
     if (p == null || p.completer.isCompleted) return;
     _stopCatchUp(p);
+    if (p.heldOnHost) _emitHostQueueEvent(p, requestId, queued: false);
     // 回合跑完了 → 主机当然收下了；排队回执可能在断线上丢了。
     final ack = p.queueAck;
     if (ack != null && !ack.isCompleted) ack.complete(true);
@@ -9740,7 +9785,11 @@ class PeerAgentClientService {
     if (requestId == null) return;
     final pending = _pending[requestId];
     if (pending == null) return;
+    final wasHeld = pending.heldOnHost;
     pending.heldOnHost = true;
+    // 面板自己排队的消息（enqueueChat）收到 ack 时本来就在排队，不用再提示；
+    // 只有「直接发出去、到主机才发现上一轮还没结束」才需要让聊天页显示排队态。
+    if (!wasHeld) _emitHostQueueEvent(pending, requestId, queued: true);
     final ack = pending.queueAck;
     if (ack != null && !ack.isCompleted) ack.complete(true);
   }
@@ -9751,6 +9800,7 @@ class PeerAgentClientService {
     final p = _pending.remove(requestId);
     if (p == null || p.completer.isCompleted) return;
     _stopCatchUp(p);
+    if (p.heldOnHost) _emitHostQueueEvent(p, requestId, queued: false);
     final ack = p.queueAck;
     if (ack != null && !ack.isCompleted) {
       ack.completeError(

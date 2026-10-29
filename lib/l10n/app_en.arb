@@ -786,6 +786,14 @@
       }
     }
   },
+  "chat_hostQueueNotice": "{count} queued on the host · starts after the current turn",
+  "@chat_hostQueueNotice": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "chat_queueClearAll": "Clear all",
   "chat_queueDeleteConfirm": "Delete this queued message?",
   "chat_queueEditHint": "Message content",

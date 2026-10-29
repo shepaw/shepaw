@@ -1985,6 +1985,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String chat_hostQueueNotice(int count) {
+    return '$count queued on the host · starts after the current turn';
+  }
+
+  @override
   String get chat_queueClearAll => 'Clear all';
 
   @override

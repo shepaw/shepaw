@@ -208,6 +208,13 @@ abstract class _ChatControllerBase extends ChangeNotifier
   List<QueuedMessage> get messageQueue =>
       chatService.pendingSendQueue(currentChannelId ?? '');
 
+  /// 已经直接发出、却被主机收进会话队列的回合数。
+  ///
+  /// 这类消息不在本地待发面板里（本地以为已经发出去了），靠一条轻量提示
+  /// 让用户知道它其实在主机上排队，上一轮结束后才开始。
+  int get hostQueuedTurnCount => PeerAgentClientService.instance
+      .hostQueuedDirectTurnCount(currentChannelId ?? '');
+
   /// 群编排代际守卫：stop 后旧编排的 abort-summarize 会跑完（设计上不带
   /// 取消令牌），其 finally/流式回调不得再触碰新轮共享状态。
   final GroupTurnGate groupTurnGate = GroupTurnGate();
@@ -268,6 +275,8 @@ abstract class _ChatControllerBase extends ChangeNotifier
   StreamSubscription<({String channelId, QueuedMessage message})>?
       _queueReleaseSub;
   StreamSubscription<String>? _queueDropSub;
+  StreamSubscription<({String channelId, String requestId, bool queued})>?
+      _hostQueueSub;
   StreamSubscription<AgentTaskCompletion>? _agentTaskCompletionSub;
   VoidCallback? _typingListener;
 
@@ -463,6 +472,12 @@ abstract class _ChatControllerBase extends ChangeNotifier
       if (_eventController.isClosed) return;
       _notify();
       if (!isProcessing) unawaited(processNextInQueue());
+    });
+    // 直接发出的消息被主机排队 / 终于开跑：重算提示条。
+    _hostQueueSub =
+        PeerAgentClientService.instance.hostQueueEvents.listen((event) {
+      if (_eventController.isClosed) return;
+      if (event.channelId == currentChannelId) _notify();
     });
   }
 
@@ -818,6 +833,7 @@ abstract class _ChatControllerBase extends ChangeNotifier
     _formDeferredSub?.cancel();
     _queueReleaseSub?.cancel();
     _queueDropSub?.cancel();
+    _hostQueueSub?.cancel();
     _channelUpdateSub?.cancel();
     _agentTaskCompletionSub?.cancel();
     if (_typingListener != null) {

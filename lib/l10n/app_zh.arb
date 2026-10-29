@@ -1068,6 +1068,14 @@
       }
     }
   },
+  "chat_hostQueueNotice": "已交给主机排队 {count} 条 · 上一轮结束后自动开始",
+  "@chat_hostQueueNotice": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "chat_queueClearAll": "清空队列",
   "chat_queueDeleteConfirm": "删除这条待发送消息？",
   "chat_queueEditHint": "消息内容",

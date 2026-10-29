@@ -1908,6 +1908,11 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String chat_hostQueueNotice(int count) {
+    return '已交给主机排队 $count 条 · 上一轮结束后自动开始';
+  }
+
+  @override
   String get chat_queueClearAll => '清空队列';
 
   @override
