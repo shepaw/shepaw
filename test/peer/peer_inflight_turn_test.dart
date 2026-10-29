@@ -2,6 +2,39 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/peer/services/peer_inflight_turn.dart';
 
 void main() {
+  group('PeerInflightTurnRecord.lastToolStatus', () {
+    PeerInflightTurnRecord rec({String lastToolStatus = ''}) =>
+        PeerInflightTurnRecord(
+          requestId: 'r1',
+          peerId: 'p',
+          remoteAgentId: 'ra',
+          localAgentId: 'la',
+          channelId: 'ch',
+          sessionId: 's',
+          userMessageId: 'u1',
+          userId: 'u',
+          userName: 'U',
+          agentName: 'A',
+          receivedLength: 3,
+          accumulatedContent: 'hi',
+          lastToolStatus: lastToolStatus,
+          startedAtMs: 1,
+          updatedAtMs: 2,
+        );
+
+    test('survives a disk round-trip', () {
+      final back = PeerInflightTurnRecord.fromMap(
+        rec(lastToolStatus: 'in_progress').toMap(),
+      );
+      expect(back.lastToolStatus, 'in_progress');
+    });
+
+    test('old rows without the column decode as empty', () {
+      final row = rec().toMap()..remove('last_tool_status');
+      expect(PeerInflightTurnRecord.fromMap(row).lastToolStatus, '');
+    });
+  });
+
   group('clipAccumulated', () {
     test('returns short text unchanged', () {
       expect(clipAccumulated('hello', maxChars: 10), 'hello');

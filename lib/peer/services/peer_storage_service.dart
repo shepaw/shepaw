@@ -130,10 +130,21 @@ class PeerStorageService {
         received_length INTEGER NOT NULL DEFAULT 0,
         accumulated_content TEXT NOT NULL DEFAULT '',
         partial_message_id TEXT,
+        last_tool_status TEXT NOT NULL DEFAULT '',
         started_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       )
     ''');
+    // 老库迁移：记录最后一帧工具状态，恢复在途回合时仍能判断工具是否在跑。
+    final inflightColumns =
+        await db.rawQuery('PRAGMA table_info(peer_inflight_turns)');
+    final inflightColumnNames =
+        inflightColumns.map((r) => r['name'] as String).toSet();
+    if (!inflightColumnNames.contains('last_tool_status')) {
+      await db.execute(
+        "ALTER TABLE peer_inflight_turns ADD COLUMN last_tool_status TEXT NOT NULL DEFAULT ''",
+      );
+    }
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_peer_inflight_turns_peer ON peer_inflight_turns(peer_id, updated_at DESC)',
     );

@@ -1982,6 +1982,12 @@ class _PendingRequest {
   /// 这条已经交给主机排队，还没轮到它。空闲超时不能把它判死。
   bool heldOnHost = false;
 
+  /// 最近一帧工具调用的状态（`pending` / `in_progress` / `completed` /
+  /// `failed`）。正文停了、工具还在跑时回合不能算结束：主机侧的
+  /// `turn_followup_can_start` 同样要求 `answer_settled`
+  /// （正文之后没有工具/思考），下一条必须继续排队。
+  String lastToolStatus = '';
+
   /// 主机收下排队（true）或已经直接开跑（false）。
   Completer<bool>? queueAck;
 
@@ -2039,6 +2045,7 @@ class _PendingRequest {
       receivedLength: receivedLength,
       accumulatedContent: answerContent,
       partialMessageId: partialMessageId,
+      lastToolStatus: lastToolStatus,
       startedAtMs: startedAtMs,
       updatedAtMs: now,
     );
@@ -2555,6 +2562,7 @@ class PeerAgentClientService {
         hasAnswer: p.answerContent.trim().isNotEmpty,
         openApprovals: p.openApprovals,
         idle: now.difference(p.idleSince),
+        toolStatus: p.lastToolStatus,
       )) {
         return true;
       }
@@ -2583,6 +2591,7 @@ class PeerAgentClientService {
         hasAnswer: answer.trim().isNotEmpty,
         openApprovals: pending.openApprovals,
         idle: now.difference(pending.idleSince),
+        toolStatus: pending.lastToolStatus,
       )) {
         continue;
       }
@@ -2983,6 +2992,7 @@ class PeerAgentClientService {
       pending.receivedLength = rec.receivedLength;
       pending.answerContent = rec.accumulatedContent;
       pending.partialMessageId = rec.partialMessageId;
+      pending.lastToolStatus = rec.lastToolStatus;
       pending.suspendedSince =
           DateTime.fromMillisecondsSinceEpoch(rec.updatedAtMs);
       _pending[rec.requestId] = pending;
@@ -9345,6 +9355,10 @@ class PeerAgentClientService {
         currentMode,
       );
     }
+    final toolStatus = metadata['tool_status'];
+    if (toolStatus is String && toolStatus.isNotEmpty) {
+      p.lastToolStatus = toolStatus;
+    }
     if (isHubKeepalive(metadata)) p.lastKeepaliveAt = DateTime.now();
     if (metadataResetsIdleClock(metadata)) {
       p.idleSince = DateTime.now();
@@ -9361,6 +9375,10 @@ class PeerAgentClientService {
     if (channelId.isEmpty || metadata.isEmpty) return false;
     for (final p in _pending.values) {
       if (p.completer.isCompleted || p.channelId != channelId) continue;
+      final toolStatus = metadata['tool_status'];
+      if (toolStatus is String && toolStatus.isNotEmpty) {
+        p.lastToolStatus = toolStatus;
+      }
       p.idleSince = DateTime.now();
       p.upstreamReconnectingSince = null;
       p.onMetadata?.call(metadata);

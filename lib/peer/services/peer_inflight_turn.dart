@@ -30,6 +30,11 @@ class PeerInflightTurnRecord {
   final int receivedLength;
   final String accumulatedContent;
   final String? partialMessageId;
+
+  /// 最近一帧工具状态（`pending` / `in_progress` / `completed` / `failed`）。
+  /// 进程被杀后恢复在途回合时，仍要用它判断「正文停了、工具还在跑」，
+  /// 与主机 `turn_followup_can_start` 的 `answer_settled` 保持一致。
+  final String lastToolStatus;
   final int startedAtMs;
   final int updatedAtMs;
 
@@ -47,6 +52,7 @@ class PeerInflightTurnRecord {
     required this.receivedLength,
     this.accumulatedContent = '',
     this.partialMessageId,
+    this.lastToolStatus = '',
     required this.startedAtMs,
     required this.updatedAtMs,
   });
@@ -57,6 +63,7 @@ class PeerInflightTurnRecord {
     int? receivedLength,
     String? accumulatedContent,
     String? partialMessageId,
+    String? lastToolStatus,
     int? updatedAtMs,
   }) {
     return PeerInflightTurnRecord(
@@ -73,6 +80,7 @@ class PeerInflightTurnRecord {
       receivedLength: receivedLength ?? this.receivedLength,
       accumulatedContent: accumulatedContent ?? this.accumulatedContent,
       partialMessageId: partialMessageId ?? this.partialMessageId,
+      lastToolStatus: lastToolStatus ?? this.lastToolStatus,
       startedAtMs: startedAtMs,
       updatedAtMs: updatedAtMs ?? this.updatedAtMs,
     );
@@ -92,6 +100,7 @@ class PeerInflightTurnRecord {
         'received_length': receivedLength,
         'accumulated_content': clipAccumulated(accumulatedContent),
         'partial_message_id': partialMessageId,
+        'last_tool_status': lastToolStatus,
         'started_at': startedAtMs,
         'updated_at': updatedAtMs,
       };
@@ -111,6 +120,7 @@ class PeerInflightTurnRecord {
       receivedLength: (row['received_length'] as num?)?.toInt() ?? 0,
       accumulatedContent: row['accumulated_content'] as String? ?? '',
       partialMessageId: row['partial_message_id'] as String?,
+      lastToolStatus: row['last_tool_status'] as String? ?? '',
       startedAtMs: (row['started_at'] as num?)?.toInt() ?? 0,
       updatedAtMs: (row['updated_at'] as num?)?.toInt() ?? 0,
     );
