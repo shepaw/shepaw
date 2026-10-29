@@ -10006,7 +10006,10 @@ class PeerAgentClientService {
     String requestId,
     _PendingRequest p,
   ) {
-    p.catchUpTimer?.cancel();
+    // 每个有缺口的 live 分片都会进到这里；分片间隔远小于补拉周期，
+    // 若每次重建计时器，周期定时器永远等不到触发，界面就一直不出流式
+    // 内容，直到 done 才整段出现。已在补拉就保持原计时器。
+    if (p.catchUpTimer?.isActive ?? false) return;
     p.catchUpTimer = Timer.periodic(_effectiveCatchUpInterval, (timer) {
       if (p.completer.isCompleted || !identical(_pending[requestId], p)) {
         timer.cancel();
