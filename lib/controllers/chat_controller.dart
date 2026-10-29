@@ -803,7 +803,75 @@ abstract class _ChatControllerBase extends ChangeNotifier
     )) {
       _handleStreamingForm(event);
     }
+    _replayOpenInteractions(
+      service,
+      peerId: peerId,
+      remoteAgentId: remoteId,
+      hostChannelId: hostChannelId,
+    );
   }
+
+  /// 回合内收到、还没收场的提问 / 审批：聊天页离开再回来、切会话再切回时，
+  /// 它们的回调属于已销毁的控制器，消息行又可能还没落库或被重新加载盖掉。
+  /// 载入完历史后（[replayOpenInteractionsAfterLoad]）把屏幕上缺的补回来。
+  ///
+  /// 已经在屏幕上的不动：表单按 id 去重，审批按 confirmation_id 去重。
+  void _replayOpenInteractions(
+    PeerAgentClientService service, {
+    required String peerId,
+    required String remoteAgentId,
+    required String hostChannelId,
+  }) {
+    final openForms = service.pendingOpenFormsFor(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      hostChannelId: hostChannelId,
+      includeUnattributed: true,
+    );
+    final openApprovals = service.pendingOpenApprovalsFor(
+      peerId: peerId,
+      remoteAgentId: remoteAgentId,
+      hostChannelId: hostChannelId,
+      includeUnattributed: true,
+    );
+    if (openForms.isEmpty && openApprovals.isEmpty) return;
+    for (final event in openForms) {
+      final formId = event['form_id']?.toString() ?? '';
+      if (formId.isEmpty) continue;
+      final shown = messageIdMap[PeerApprovalPayload.formCardMessageId(formId)];
+      if (shown != null) continue;
+      LoggerService().warning(
+        'replay open form missing from list: formId=$formId '
+        'channel=$currentChannelId',
+        tag: 'PeerApproval',
+      );
+      _handleStreamingForm(event);
+    }
+    for (final event in openApprovals) {
+      final id = event['confirmation_id']?.toString() ?? '';
+      if (id.isEmpty) continue;
+      final shown = messages.any((m) {
+        final card = m.metadata?['action_confirmation'];
+        return card is Map && card['confirmation_id'] == id;
+      });
+      if (shown) continue;
+      LoggerService().warning(
+        'replay open approval missing from list: confirmationId=$id '
+        'channel=$currentChannelId',
+        tag: 'PeerApproval',
+      );
+      _handleStreamingActionConfirmation(
+        Map<String, dynamic>.from(event)
+          ..remove('peer_id')
+          ..remove('remote_agent_id')
+          ..remove('channel_id'),
+      );
+    }
+  }
+
+  /// 历史载入完之后再补一次。构造时那次发生在载入之前，补回的卡会被随后的
+  /// 整表安装盖掉。
+  Future<void> replayOpenInteractionsAfterLoad() => _drainPendingOrphanCards();
 
   @override
   void dispose() {

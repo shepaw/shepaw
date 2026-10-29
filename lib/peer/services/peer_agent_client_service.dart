@@ -2322,6 +2322,16 @@ class PeerAgentClientService {
   /// 已提交的 AskUserQuestion 表单。重连重发 `agent_form_req` 时用它自动回填。
   final Map<String, Map<String, dynamic>> _submittedForms = {};
 
+  /// 回合内收到、还没收场的提问 / 审批帧（按 approvalId，附 `_peer_id` /
+  /// `_remote_agent_id`）。
+  ///
+  /// 这些卡只有本回合的 `onForm` / `onActionConfirmation` 回调和消息行两处落脚：
+  /// 聊天页离开再回来、切会话再切回，回调属于已销毁的控制器，消息行又可能还没
+  /// 落库或被重新加载盖掉 —— 卡没了，主机还在等。留一份帧在这里，聊天页载入完
+  /// 历史后按会话补回（见 [pendingOpenFormsFor] / [pendingOpenApprovalsFor]）。
+  final Map<String, Map<String, dynamic>> _openFormFrames = {};
+  final Map<String, Map<String, dynamic>> _openApprovalFrames = {};
+
   /// 还没写完的「已提交」落库，按 approvalId。退回可答之前要先等它。
   final Map<String, Future<void>> _formSubmitWrites = {};
 
@@ -2479,6 +2489,8 @@ class PeerAgentClientService {
     _approvalToRequest.clear();
     _orphanedApprovals.clear();
     _orphanedForms.clear();
+    _openFormFrames.clear();
+    _openApprovalFrames.clear();
     _submittedApprovals.clear();
     _submittedForms.clear();
     _deferredForms.clear();
@@ -8426,6 +8438,10 @@ class PeerAgentClientService {
     pending.openApprovals++;
     pending.lastApprovalOpenedAt = DateTime.now();
     _approvalToRequest[approvalId] = requestId;
+    _openFormFrames[approvalId] = Map<String, dynamic>.from(data)
+      ..['_peer_id'] = peerId
+      ..['_remote_agent_id'] = pending.remoteAgentId;
+    _capFrames(_openFormFrames);
     // 先落库再交给 UI：卡片只活在流式气泡的内存 metadata 里的话，
     // 聊天页重开/控制器重建/DB reconcile 都会让它消失，而主机还在等。
     if (pending.channelId.isNotEmpty) {
@@ -8505,6 +8521,7 @@ class PeerAgentClientService {
     _orphanedApprovals.remove(approvalId);
     final orphan = _orphanedForms.remove(approvalId);
     _deferredForms[approvalId] = requestId;
+    _openFormFrames[approvalId]?['deferred'] = true;
     if (_deferredForms.length > 50) {
       _deferredForms.remove(_deferredForms.keys.first);
     }
@@ -8735,6 +8752,87 @@ class PeerAgentClientService {
       );
     }
     return events;
+  }
+
+  /// 回合内收到、还没收场的表单（见 [_openFormFrames]）。
+  ///
+  /// 聊天页载入完历史后调用：卡片的回调属于离开前的控制器，消息行也可能没了。
+  /// 过滤规则同 [pendingOrphanFormsFor]。事件形状相同，但不带 `orphan`
+  /// （回合还活着，界面可以显示提交中的状态）。
+  List<Map<String, dynamic>> pendingOpenFormsFor({
+    required String peerId,
+    required String remoteAgentId,
+    String? hostChannelId,
+    bool includeUnattributed = false,
+  }) {
+    final events = <Map<String, dynamic>>[];
+    for (final entry in _openFormFrames.entries) {
+      final data = entry.value;
+      if (data['_peer_id'] != peerId) continue;
+      if (data['_remote_agent_id'] != remoteAgentId) continue;
+      final frameChannel = _frameChannelId(data);
+      if (hostChannelId != null &&
+          !(includeUnattributed && frameChannel.isEmpty) &&
+          frameChannel != hostChannelId) {
+        continue;
+      }
+      events.add(
+        _orphanFormEvent(
+          peerId: peerId,
+          requestId: data['request_id'] as String? ?? '',
+          approvalId: entry.key,
+          data: data,
+          remoteAgentId: remoteAgentId,
+        )..remove('orphan'),
+      );
+    }
+    return events;
+  }
+
+  /// 回合内收到、还没收场的工具审批（见 [_openApprovalFrames]）。
+  /// 过滤规则同 [pendingOrphanApprovalsFor]；带 `orphan: true` 是为了让聊天页
+  /// 用确定性 id 落卡，重复补回不会叠出几张一样的。
+  List<Map<String, dynamic>> pendingOpenApprovalsFor({
+    required String peerId,
+    required String remoteAgentId,
+    String? hostChannelId,
+    bool includeUnattributed = false,
+  }) {
+    final events = <Map<String, dynamic>>[];
+    for (final entry in _openApprovalFrames.entries) {
+      final data = entry.value;
+      if (data['_peer_id'] != peerId) continue;
+      if (data['_remote_agent_id'] != remoteAgentId) continue;
+      final frameChannel = _frameChannelId(data);
+      if (hostChannelId != null &&
+          !(includeUnattributed && frameChannel.isEmpty) &&
+          frameChannel != hostChannelId) {
+        continue;
+      }
+      final rawActions = data['actions'];
+      final actionData = PeerApprovalPayload.buildActionConfirmationData(
+        data: data,
+        approvalId: entry.key,
+        actions: PeerApprovalPayload.effectiveActions(
+          rawActions is List ? rawActions : null,
+        ),
+      );
+      actionData['request_id'] = data['request_id'] as String? ?? '';
+      events.add({
+        ...actionData,
+        'peer_id': peerId,
+        'remote_agent_id': remoteAgentId,
+        'channel_id': frameChannel,
+        'orphan': true,
+      });
+    }
+    return events;
+  }
+
+  static void _capFrames(Map<String, Map<String, dynamic>> frames) {
+    while (frames.length > 50) {
+      frames.remove(frames.keys.first);
+    }
   }
 
   /// 缓存里属于某个 peer agent 的孤儿审批。
@@ -9000,6 +9098,7 @@ class PeerAgentClientService {
     final wasDeferred = _deferredForms.remove(approvalId) != null;
     // 孤儿表单提交成功后清掉占位，避免重复点击落到 NO MATCH。
     _orphanedForms.remove(approvalId);
+    _openFormFrames.remove(approvalId);
     _submittedForms[approvalId] = {
       'action': 'accept',
       'content': values,
@@ -9070,6 +9169,7 @@ class PeerAgentClientService {
     _deferredForms.remove(approvalId);
     _approvalToRequest.remove(approvalId);
     _orphanedForms.remove(approvalId);
+    _openFormFrames.remove(approvalId);
     // 主机也会广播 `agent_interaction_closed(declined)`；这里先收一次，
     // 界面不用等回包。重复到达时卡片已有 `closed`，是幂等的。
     _applyInteractionClosed(approvalId, 'declined');
@@ -9162,6 +9262,10 @@ class PeerAgentClientService {
       pending.openApprovals++;
       pending.lastApprovalOpenedAt = DateTime.now();
       _approvalToRequest[approvalId] = requestId;
+      _openApprovalFrames[approvalId] = Map<String, dynamic>.from(data)
+        ..['_peer_id'] = peerId
+        ..['_remote_agent_id'] = pending.remoteAgentId;
+      _capFrames(_openApprovalFrames);
       if (!hasCallback) {
         _log.warning(
           'agent_approval_req: pending request has null onActionConfirmation '
@@ -9305,6 +9409,7 @@ class PeerAgentClientService {
     final requestId = _approvalToRequest.remove(approvalId);
     // 孤儿审批提交成功后清掉占位，避免重复点击落到 NO MATCH。
     _orphanedApprovals.remove(approvalId);
+    _openApprovalFrames.remove(approvalId);
     // 记录已提交的裁决：若 hub 其实没收到 resp（断连恰好发生在发送后），
     // 重连后 hub 会重发该卡片 —— _onApprovalReq 用此记录自动应答（E24）。
     _submittedApprovals[approvalId] = (
@@ -9546,6 +9651,8 @@ class PeerAgentClientService {
     final requestId = _approvalToRequest.remove(approvalId);
     _orphanedApprovals.remove(approvalId);
     _orphanedForms.remove(approvalId);
+    _openFormFrames.remove(approvalId);
+    _openApprovalFrames.remove(approvalId);
     if (requestId != null) {
       final pending = _pending[requestId];
       if (pending != null && pending.openApprovals > 0) {

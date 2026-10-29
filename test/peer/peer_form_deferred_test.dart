@@ -366,6 +366,77 @@ void main() {
       expect(closed, isEmpty);
     });
 
+    test('回合内的提问 / 审批帧留底，聊天页离开再回来能按会话补回', () async {
+      const requestId = 'req-open-frames';
+      const approvalId = 'appr-open-form';
+      final turn = svc.debugSeedPendingTurn(
+        requestId: requestId,
+        peerId: 'peer-1',
+        channelId: 'ch-deferred',
+        remoteAgentId: 'remote-agent',
+      );
+      turn.then((_) {}, onError: (_) {});
+
+      svc.debugInjectControlForTest(
+        'agent_form_req',
+        {
+          ...formFrame(requestId: requestId, approvalId: approvalId),
+          'channel_id': 'host-session-1',
+        },
+        peerId: 'peer-1',
+      );
+      svc.debugInjectControlForTest(
+        'agent_approval_req',
+        {
+          'request_id': requestId,
+          'approval_id': 'appr-open-tool',
+          'agent_id': 'remote-agent',
+          'channel_id': 'host-session-1',
+          'prompt': 'run ls',
+          'actions': [
+            {'id': 'allow', 'label': 'Allow', 'style': 'primary'},
+            {'id': 'deny', 'label': 'Deny', 'style': 'danger'},
+          ],
+        },
+        peerId: 'peer-1',
+      );
+
+      List<Map<String, dynamic>> forms(String channel) => svc.pendingOpenFormsFor(
+            peerId: 'peer-1',
+            remoteAgentId: 'remote-agent',
+            hostChannelId: channel,
+          );
+      List<Map<String, dynamic>> approvals(String channel) =>
+          svc.pendingOpenApprovalsFor(
+            peerId: 'peer-1',
+            remoteAgentId: 'remote-agent',
+            hostChannelId: channel,
+          );
+
+      expect(forms('host-session-1').map((e) => e['form_id']), [approvalId]);
+      expect(forms('host-session-1').single.containsKey('orphan'), isFalse);
+      expect(approvals('host-session-1').map((e) => e['confirmation_id']),
+          ['appr-open-tool']);
+      // 别的会话的卡不能贴进来。
+      expect(forms('host-session-2'), isEmpty);
+      expect(approvals('host-session-2'), isEmpty);
+
+      // 答完就不再补回。
+      svc.debugSendControlOverride = (peerId, json) async => true;
+      await svc.submitForm(
+        peerId: 'peer-1',
+        approvalId: approvalId,
+        values: const {'port': '3000'},
+      );
+      await svc.submitApproval(
+        peerId: 'peer-1',
+        approvalId: 'appr-open-tool',
+        selectedActionId: 'allow',
+      );
+      expect(forms('host-session-1'), isEmpty);
+      expect(approvals('host-session-1'), isEmpty);
+    });
+
     test('PeerConnection 控制帧白名单包含 agent_form_deferred', () {
       expect(PeerConnection.isControlFrameType('agent_form_deferred'), isTrue);
     });

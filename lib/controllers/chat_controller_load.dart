@@ -248,6 +248,9 @@ mixin _LoadOps on _ChatControllerBase {
       if (!isGroupMode) {
         reattachToActiveTask();
       }
+      // 离开前回合内收到、还没收场的提问 / 审批卡：历史装好之后再补，
+      // 构造时的那次补投早于载入，会被整表安装盖掉。
+      unawaited(replayOpenInteractionsAfterLoad());
       if (isGroupMode) {
         reattachToGroupActiveTasks();
         _reattachPendingPlanApproval();
