@@ -615,7 +615,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               title: Text(l10n.contacts_host),
               subtitle: Text(l10n.hostSetup_title),
               trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.of(context).pushNamed('/host-setup'),
+              // 必须走根 Navigator：设置页挂在自己的子 Navigator 上，它的
+              // onGenerateRoute 不看路由名；而主机流程内部靠 pushReplacementNamed
+              // 在命名路由之间跳转，只有根 Navigator 认得这些名字。
+              onTap: () => Navigator.of(context, rootNavigator: true)
+                  .pushNamed('/host-setup'),
             ),
             const Divider(),
             ListTile(

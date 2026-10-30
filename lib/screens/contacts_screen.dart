@@ -335,7 +335,8 @@ class ContactsScreenState extends State<ContactsScreen> {
         ListTile(
           leading: const Icon(Icons.dns_outlined),
           title: Text(l10n.contacts_noHost),
-          onTap: () => Navigator.of(context).pushNamed(
+          // 走根 Navigator：主机流程内部靠命名路由跳转，嵌套导航认不得。
+          onTap: () => Navigator.of(context, rootNavigator: true).pushNamed(
             isDesktopPlatform ? '/host-setup' : '/pouch',
           ),
         )
