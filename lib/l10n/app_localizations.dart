@@ -824,6 +824,24 @@ abstract class AppLocalizations {
   /// **'我的'**
   String get nav_mine;
 
+  /// No description provided for @mine_sectionContent.
+  ///
+  /// In zh, this message translates to:
+  /// **'我的内容'**
+  String get mine_sectionContent;
+
+  /// No description provided for @mine_sectionCapabilities.
+  ///
+  /// In zh, this message translates to:
+  /// **'能力'**
+  String get mine_sectionCapabilities;
+
+  /// No description provided for @mine_profileUnnamed.
+  ///
+  /// In zh, this message translates to:
+  /// **'未填写昵称'**
+  String get mine_profileUnnamed;
+
   /// No description provided for @drawer_logout.
   ///
   /// In zh, this message translates to:
@@ -1057,6 +1075,30 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'账户'**
   String get settings_account;
+
+  /// No description provided for @settings_general.
+  ///
+  /// In zh, this message translates to:
+  /// **'通用'**
+  String get settings_general;
+
+  /// No description provided for @settings_hostPouchSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机与储物袋'**
+  String get settings_hostPouchSection;
+
+  /// No description provided for @settings_sheMemory.
+  ///
+  /// In zh, this message translates to:
+  /// **'惜宝的长期记忆'**
+  String get settings_sheMemory;
+
+  /// No description provided for @settings_sheMemorySub.
+  ///
+  /// In zh, this message translates to:
+  /// **'存在主机上，换一台设备也能看到'**
+  String get settings_sheMemorySub;
 
   /// No description provided for @settings_profile.
   ///

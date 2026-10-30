@@ -1,15 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:package_info_plus/package_info_plus.dart';
-import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'settings/settings_sections.dart';
 import '../l10n/app_localizations.dart';
-import '../providers/locale_provider.dart';
-import '../providers/theme_provider.dart';
-import 'change_password_screen.dart';
-import 'privacy_policy_screen.dart';
-import 'notification_settings_screen.dart';
-import 'language_settings_screen.dart';
-import 'appearance_settings_screen.dart';
 import 'location_settings_screen.dart';
 import '../services/location_service.dart';
 import '../peer/services/peer_storage_service.dart';
@@ -25,24 +16,9 @@ import '../storage/pouch_login.dart';
 import '../storage/pouch_login_client.dart';
 import '../storage/pouch_session.dart';
 import '../utils/platform_utils.dart';
-import 'host_config_screen.dart';
-import 'inference_log_screen.dart';
-import 'log_viewer_screen.dart';
 import 'she_memory_screen.dart';
-import 'user_profile_settings_screen.dart';
-import 'model_management_screen.dart';
-import 'skill_management_screen.dart';
-import 'cli_config_management_screen.dart';
-import 'event_management/event_management_screen.dart';
-import '../task/screens/scheduled_tasks_management_screen.dart';
-import '../utils/layout_utils.dart';
 import '../services/biometric_service.dart';
-import '../widgets/update_dialog.dart';
 import '../services/update_service.dart';
-import '../widgets/model_icon.dart';
-import 'storage_space_manage_screen.dart';
-import '../services/model_registry.dart';
-import '../services/skill_registry.dart';
 import 'dart:io' show Platform;
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
@@ -325,9 +301,89 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (mounted) setState(() {});
   }
 
+  SettingsEntries _entries(AppLocalizations l10n) => SettingsEntries(
+        l10n: l10n,
+        openPage: _openAndRefresh,
+        biometricLoading: _biometricLoading,
+        biometricSupported: _biometricSupported,
+        biometricEnabled: _biometricEnabled,
+        onBiometricChanged: _onBiometricChanged,
+        batteryOptIgnored: _batteryOptIgnored,
+        onBatteryOptimization: _onBatteryOptimizationTap,
+        locationSubtitle: _locationSubtitle(l10n),
+        onLocation: () async {
+          await _openAndRefresh(const LocationSettingsScreen());
+          await _loadLocationState();
+        },
+        pouchName: _pouchName,
+        pouchHost: _pouchHost,
+        onRenamePouch: _renamePouch,
+        onSwitchPouch: _confirmSwitchPouch,
+        // 必须走根 Navigator：设置页挂在自己的子 Navigator 上，它的
+        // onGenerateRoute 不看路由名；而主机流程内部靠 pushReplacementNamed
+        // 在命名路由之间跳转，只有根 Navigator 认得这些名字。
+        onHostSetup: () =>
+            Navigator.of(context, rootNavigator: true).pushNamed('/host-setup'),
+        onSheMemory: () => _openAndRefresh(const SheMemoryScreen()),
+        onAbout: () => SettingsSections.showAbout(context, l10n),
+      );
+
+  Widget _sectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Text(
+        title,
+        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              color: Colors.grey[600],
+              fontWeight: FontWeight.bold,
+            ),
+      ),
+    );
+  }
+
+  Widget _buildLogoutTile(AppLocalizations l10n) {
+    return ListTile(
+      leading: const Icon(Icons.logout, color: Colors.red),
+      title: Text(
+        l10n.drawer_logout,
+        style: const TextStyle(color: Colors.red),
+      ),
+      onTap: () {
+        final screenContext = context;
+        showDialog(
+          context: screenContext,
+          builder: (dialogContext) {
+            final dialogL10n = AppLocalizations.of(dialogContext);
+            return AlertDialog(
+              title: Text(dialogL10n.logout_confirmTitle),
+              content: Text(dialogL10n.logout_confirmContent),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: Text(dialogL10n.common_cancel),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    Navigator.pop(dialogContext);
+                    await _logoutToGate();
+                  },
+                  child: Text(
+                    dialogL10n.drawer_logout,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final entries = _entries(l10n);
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: Navigator.canPop(context),
@@ -335,500 +391,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
         centerTitle: true,
       ),
       body: ListView(
+        padding: const EdgeInsets.only(bottom: 24),
         children: [
           const SizedBox(height: 16),
-
-          // Security settings section
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text(
-              l10n.settings_security,
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    color: Colors.grey[600],
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-          ),
-
-          ListTile(
-            leading: const Icon(Icons.lock_reset),
-            title: Text(l10n.settings_changePassword),
-            subtitle: Text(l10n.settings_changePasswordSub),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const ChangePasswordScreen(),
-                ),
-              );
-            },
-          ),
-
-          const Divider(),
-
-          ListTile(
-            leading: const Icon(Icons.fingerprint),
-            title: Text(l10n.settings_biometric),
-            subtitle: Text(
-              !_biometricLoading && !_biometricSupported
-                  ? l10n.settings_biometricNotSupported
-                  : l10n.settings_biometricSub,
-            ),
-            trailing: _biometricLoading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : Switch(
-                    value: _biometricEnabled,
-                    onChanged: _biometricSupported ? _onBiometricChanged : null,
-                  ),
-          ),
-
+          _sectionHeader(l10n.settings_general),
+          ...SettingsSections.general(context, entries),
           const Divider(height: 32),
-
-          // Account settings section
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text(
-              l10n.settings_account,
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    color: Colors.grey[600],
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-          ),
-
-          ListTile(
-            leading: const Icon(Icons.person),
-            title: Text(l10n.settings_userProfile),
-            subtitle: Text(l10n.settings_userProfileSub),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const UserProfileSettingsScreen(),
-                ),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.menu_book_outlined),
-            title: const Text('惜宝的长期记忆'),
-            subtitle: const Text('存在主机上，换一台设备也能看到'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const SheMemoryScreen(),
-                ),
-              );
-            },
-          ),
-
-          const Divider(),
-
-          ListTile(
-            leading: const Icon(Icons.notifications),
-            title: Text(l10n.settings_notifications),
-            subtitle: Text(l10n.settings_notificationsSub),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const NotificationSettingsScreen(),
-                ),
-              );
-            },
-          ),
-
-          const Divider(),
-
-          ListTile(
-            leading: const Icon(Icons.language),
-            title: Text(l10n.settings_language),
-            subtitle:
-                Text(context.watch<LocaleProvider>().currentLabel(context)),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const LanguageSettingsScreen(),
-                ),
-              );
-            },
-          ),
-
-          const Divider(),
-
-          ListTile(
-            leading: const Icon(Icons.dark_mode_outlined),
-            title: Text(l10n.settings_appearance),
-            subtitle:
-                Text(context.watch<ThemeProvider>().currentLabel(context)),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const AppearanceSettingsScreen(),
-                ),
-              );
-            },
-          ),
-
-          const Divider(),
-
-          ListTile(
-            leading: const Icon(Icons.location_on_outlined),
-            title: Text(l10n.settings_location),
-            subtitle: Text(_locationSubtitle(l10n)),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () async {
-              await _openAndRefresh(const LocationSettingsScreen());
-              await _loadLocationState();
-            },
-          ),
-
-          // Battery optimization (Android only)
-          if (Platform.isAndroid) ...[
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.battery_saver),
-              title: Text(l10n.settings_batteryOptimization),
-              subtitle: Text(
-                _batteryOptIgnored
-                    ? l10n.settings_batteryOptimizationIgnored
-                    : l10n.settings_batteryOptimizationSub,
-              ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: _onBatteryOptimizationTap,
-            ),
-          ],
-
+          _sectionHeader(l10n.settings_security),
+          ...SettingsSections.security(context, entries),
           const Divider(height: 32),
-
-          // Tools & capabilities (moved from primary menu)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text(
-              l10n.settings_toolsSection,
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    color: Colors.grey[600],
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-          ),
-
-          ListTile(
-            leading: const Icon(Icons.inventory_2_outlined),
-            title: Text(l10n.storage_manageTitle),
-            subtitle: Text(l10n.storage_settingsEntrySub),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const StorageSpaceManageScreen(),
-                ),
-              );
-            },
-          ),
-
-          const Divider(),
-
-          ListTile(
-            leading: const ModelIcon(),
-            title: Text(l10n.toolModel_managementTitle),
-            subtitle: Text(
-              l10n.toolModel_count(ModelRegistry.instance.definitions.length),
-            ),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _openAndRefresh(
-              const ModelManagementScreen(),
-            ),
-          ),
-
-          const Divider(),
-
-          ListTile(
-            leading: const Icon(Icons.auto_awesome_outlined),
-            title: Text(l10n.skillMgmt_title),
-            subtitle: Text(
-              SkillRegistry.instance.skills.isEmpty
-                  ? l10n.settings_skillsSub
-                  : l10n.skillMgmt_skillCount(
-                      SkillRegistry.instance.skills.length),
-            ),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _openAndRefresh(
-              const SkillManagementScreen(),
-            ),
-          ),
-
-          const Divider(),
-
-          ListTile(
-            leading: const Icon(Icons.terminal),
-            title: Text(l10n.osTool_configTitle),
-            subtitle: Text(l10n.settings_cliSub),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _openAndRefresh(
-              const CliConfigManagementScreen(),
-            ),
-          ),
-
-          const Divider(),
-
-          ListTile(
-            leading: const Icon(Icons.sensors),
-            title: Text(l10n.eventMgmt_title),
-            subtitle: Text(l10n.eventMgmt_subtitle),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _openAndRefresh(
-              const EventManagementScreen(),
-            ),
-          ),
-
-          const Divider(),
-
-          // 定时任务、本机 Agent Hub：桌面端入口。
-          if (!(Platform.isAndroid || Platform.isIOS)) ...[
-            ListTile(
-              leading: const Icon(Icons.schedule),
-              title: Text(l10n.scheduledTasks_title),
-              subtitle: Text(l10n.scheduledTasks_description),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => _openAndRefresh(
-                const ScheduledTasksManagementScreen(),
-              ),
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.dns_outlined),
-              title: Text(l10n.contacts_host),
-              subtitle: Text(l10n.hostSetup_title),
-              trailing: const Icon(Icons.chevron_right),
-              // 必须走根 Navigator：设置页挂在自己的子 Navigator 上，它的
-              // onGenerateRoute 不看路由名；而主机流程内部靠 pushReplacementNamed
-              // 在命名路由之间跳转，只有根 Navigator 认得这些名字。
-              onTap: () => Navigator.of(context, rootNavigator: true)
-                  .pushNamed('/host-setup'),
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.cloud_outlined),
-              title: Text(l10n.hostConfig_title),
-              subtitle: Text(l10n.hostConfig_subtitle),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => _openAndRefresh(const HostConfigScreen()),
-            ),
-          ],
-
+          _sectionHeader(l10n.settings_hostPouchSection),
+          ...SettingsSections.hostPouch(context, entries),
           const Divider(height: 32),
-
-          // Developer Tools section
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text(
-              l10n.settings_developerTools,
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    color: Colors.grey[600],
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-          ),
-
-          ListTile(
-            leading: const Icon(Icons.psychology),
-            title: Text(l10n.settings_inferenceLog),
-            subtitle: Text(l10n.settings_inferenceLogSub),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              LayoutUtils.openFloatingPanel(
-                context: context,
-                key: 'inference_log',
-                title: l10n.settings_inferenceLog,
-                builder: (context) => const InferenceLogScreen(embedded: true),
-              );
-            },
-          ),
-
-          const Divider(),
-
-          ListTile(
-            leading: const Icon(Icons.article_outlined),
-            title: Text(l10n.settings_systemLog),
-            subtitle: Text(l10n.settings_systemLogSub),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              LayoutUtils.openFloatingPanel(
-                context: context,
-                key: 'system_log',
-                title: l10n.settings_systemLog,
-                builder: (context) => const LogViewerScreen(embedded: true),
-              );
-            },
-          ),
-
+          _sectionHeader(l10n.settings_developerTools),
+          ...SettingsSections.developer(context, entries),
           const Divider(height: 32),
-
-          // About section
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text(
-              l10n.settings_about,
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    color: Colors.grey[600],
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-          ),
-
-          ListTile(
-            leading: const Icon(Icons.info),
-            title: Text(l10n.settings_about),
-            subtitle: FutureBuilder<PackageInfo>(
-              future: PackageInfo.fromPlatform(),
-              builder: (context, snapshot) {
-                final version = snapshot.data?.version ?? '';
-                return Text('v$version');
-              },
-            ),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () async {
-              final packageInfo = await PackageInfo.fromPlatform();
-              if (!context.mounted) return;
-              showAboutDialog(
-                context: context,
-                applicationName: l10n.appTitle,
-                applicationVersion: packageInfo.version,
-                applicationLegalese: l10n.about_legalese,
-                applicationIcon: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.asset(
-                    'assets/images/shepaw_icon.png',
-                    width: 48,
-                    height: 48,
-                  ),
-                ),
-                children: [
-                  const SizedBox(height: 12),
-                  Text(l10n.about_content),
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton(
-                      onPressed: () async {
-                        final uri =
-                            Uri.parse('https://github.com/shepaw/shepaw');
-                        await launchUrl(uri,
-                            mode: LaunchMode.externalApplication);
-                      },
-                      child: Text(l10n.about_sourceRepo),
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-
-          const CheckForUpdatesListTile(),
-
-          ListTile(
-            leading: const Icon(Icons.privacy_tip_outlined),
-            title: Text(l10n.settings_privacyPolicy),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const PrivacyPolicyScreen(),
-                ),
-              );
-            },
-          ),
-
-          ListTile(
-            leading: const Icon(Icons.description_outlined),
-            title: Text(l10n.settings_termsOfService),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) =>
-                      const PrivacyPolicyScreen(showTerms: true),
-                ),
-              );
-            },
-          ),
-
-          const Divider(),
-
-          if (_pouchName.isNotEmpty)
-            ListTile(
-              leading: const Icon(Icons.drive_file_rename_outline),
-              title: Text(l10n.settings_renamePouch),
-              subtitle: Text(_pouchName),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => _renamePouch(context),
-            ),
-
-          ListTile(
-            leading: const Icon(Icons.inventory_2_outlined),
-            title: Text(l10n.settings_switchPouch),
-            subtitle: _pouchName.isEmpty
-                ? null
-                : Text(
-                    l10n.settings_switchPouchCurrent(_pouchName, _pouchHost)),
-            onTap: () => _confirmSwitchPouch(context),
-          ),
-
-          // Logout
-          ListTile(
-            leading: const Icon(Icons.logout, color: Colors.red),
-            title: Text(
-              l10n.drawer_logout,
-              style: const TextStyle(color: Colors.red),
-            ),
-            onTap: () {
-              final screenContext = context;
-              showDialog(
-                context: screenContext,
-                builder: (dialogContext) {
-                  final dialogL10n = AppLocalizations.of(dialogContext);
-                  return AlertDialog(
-                    title: Text(dialogL10n.logout_confirmTitle),
-                    content: Text(dialogL10n.logout_confirmContent),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(dialogContext),
-                        child: Text(dialogL10n.common_cancel),
-                      ),
-                      TextButton(
-                        onPressed: () async {
-                          Navigator.pop(dialogContext);
-                          await _logoutToGate();
-                        },
-                        child: Text(
-                          dialogL10n.drawer_logout,
-                          style: const TextStyle(color: Colors.red),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              );
-            },
-          ),
-
+          _sectionHeader(l10n.settings_about),
+          ...SettingsSections.about(context, entries),
+          const Divider(height: 32),
+          _buildLogoutTile(l10n),
           const SizedBox(height: 32),
         ],
       ),

@@ -388,6 +388,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get nav_mine => '我的';
 
   @override
+  String get mine_sectionContent => '我的内容';
+
+  @override
+  String get mine_sectionCapabilities => '能力';
+
+  @override
+  String get mine_profileUnnamed => '未填写昵称';
+
+  @override
   String get drawer_logout => '退出登录';
 
   @override
@@ -513,6 +522,18 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settings_account => '账户';
+
+  @override
+  String get settings_general => '通用';
+
+  @override
+  String get settings_hostPouchSection => '主机与储物袋';
+
+  @override
+  String get settings_sheMemory => '惜宝的长期记忆';
+
+  @override
+  String get settings_sheMemorySub => '存在主机上，换一台设备也能看到';
 
   @override
   String get settings_profile => '个人资料';

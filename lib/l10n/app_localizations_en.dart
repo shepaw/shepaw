@@ -403,6 +403,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get nav_mine => 'Me';
 
   @override
+  String get mine_sectionContent => 'My stuff';
+
+  @override
+  String get mine_sectionCapabilities => 'Capabilities';
+
+  @override
+  String get mine_profileUnnamed => 'No name yet';
+
+  @override
   String get drawer_logout => 'Logout';
 
   @override
@@ -538,6 +547,19 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settings_account => 'Account';
+
+  @override
+  String get settings_general => 'General';
+
+  @override
+  String get settings_hostPouchSection => 'Host & Pouch';
+
+  @override
+  String get settings_sheMemory => 'She\'s long-term memory';
+
+  @override
+  String get settings_sheMemorySub =>
+      'Stored on the host — visible from any device';
 
   @override
   String get settings_profile => 'Profile';
