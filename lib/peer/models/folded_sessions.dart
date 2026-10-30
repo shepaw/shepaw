@@ -143,3 +143,59 @@ class FoldedSummary {
     return FoldedSummary(folders: folders);
   }
 }
+
+/// 群聊视角的一条消息：这个 Agent 在群会话里的发言（折叠方案 §3.3）。
+class GroupViewMessage {
+  const GroupViewMessage({
+    required this.id,
+    required this.role,
+    required this.content,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String role;
+  final String content;
+  final String createdAt;
+}
+
+/// `agent_group_view_resp` 的一页。游标顺着往后翻；`reset` 为真表示主机那边的
+/// 前缀变了，要丢掉已有的从头来。
+class GroupViewPage {
+  const GroupViewPage({
+    required this.messages,
+    required this.cursor,
+    required this.hasMore,
+    required this.total,
+    this.reset = false,
+  });
+
+  final List<GroupViewMessage> messages;
+  final String cursor;
+  final bool hasMore;
+  final int total;
+  final bool reset;
+
+  static GroupViewPage? fromResponse(Map<String, dynamic> response) {
+    if (response['error'] != null) return null;
+    final raw = response['messages'];
+    if (raw is! List) return null;
+    String text(Object? v) => v is String ? v : '';
+    return GroupViewPage(
+      messages: [
+        for (final item in raw)
+          if (item is Map)
+            GroupViewMessage(
+              id: text(item['message_id']),
+              role: text(item['role']),
+              content: text(item['content']),
+              createdAt: text(item['created_at']),
+            ),
+      ],
+      cursor: text(response['cursor']),
+      hasMore: response['has_more'] == true,
+      total: (response['total'] as num?)?.toInt() ?? raw.length,
+      reset: response['reset'] == true,
+    );
+  }
+}

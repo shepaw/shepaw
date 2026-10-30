@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../peer/models/folded_sessions.dart';
 import '../../peer/services/hub_folded_sessions.dart';
 import '../../screens/flow_run_screen.dart';
+import '../../screens/group_view_screen.dart';
 import '../../screens/session_folder_screen.dart';
 import '../session_folders.dart';
 
@@ -76,7 +77,7 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
     ));
   }
 
-  /// 工作流节点跳到运行视图；其余来源的只读记录还没有页面，先提示可以分叉。
+  /// 工作流节点跳到运行视图，群聊跳到群聊视角；其余来源的只读记录还没有页面，先提示可以分叉。
   void _openSession(BuildContext context, FoldedSession session) {
     if (session.isFlow && session.runId.isNotEmpty) {
       Navigator.of(context).push(MaterialPageRoute<void>(
@@ -84,6 +85,21 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
           peerId: widget.peerId,
           runId: session.runId,
           title: session.title,
+        ),
+      ));
+      return;
+    }
+    if (session.isGroup && session.groupId.isNotEmpty) {
+      Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => GroupViewScreen(
+          peerId: widget.peerId,
+          agentId: widget.remoteAgentId,
+          groupId: session.groupId,
+          groupSessionId: session.groupSessionId,
+          title: session.title,
+          foldedSessionId: session.sessionId,
+          client: _client,
+          onForked: widget.onForked,
         ),
       ));
       return;

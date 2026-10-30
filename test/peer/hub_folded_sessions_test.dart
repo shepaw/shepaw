@@ -8,6 +8,7 @@ import 'package:shepaw/peer/services/peer_connection_manager.dart';
 import 'package:shepaw/screens/session_folder_screen.dart';
 
 void main() {
+  groupViewTests();
   test('summary and folder frames ask for the folded view', () {
     expect(HubFoldedSessions.summaryFrame('a1', requestId: 'r'), {
       'type': 'agent_sessions_req',
@@ -123,6 +124,57 @@ void main() {
     await tester.tap(find.text('分叉到私聊'));
     await tester.pumpAndSettle();
     expect(forked, 'new-1');
+    await bus.close();
+  });
+}
+
+void groupViewTests() {
+  test('group view pages decode and pair by agent/group/session', () async {
+    final page = GroupViewPage.fromResponse({
+      'agent_id': 'a1',
+      'cursor': 'v1.2.x',
+      'has_more': true,
+      'total': 5,
+      'messages': [
+        {'message_id': 'm1', 'role': 'assistant', 'content': '我说的', 'created_at': 't'},
+      ],
+    })!;
+    expect(page.hasMore, isTrue);
+    expect(page.messages.single.content, '我说的');
+    expect(GroupViewPage.fromResponse({'error': 'missing_params', 'messages': []}),
+        isNull);
+
+    final bus = StreamController<PeerControlEvent>.broadcast();
+    final sent = <Map<String, dynamic>>[];
+    final client = HubFoldedSessions(
+      events: bus.stream,
+      send: (peerId, frame) async {
+        sent.add(frame);
+        // 别的群会话的回包先到，不能被认领。
+        bus.add(PeerControlEvent(peerId: peerId, data: {
+          'type': 'agent_group_view_resp',
+          'agent_id': 'a1',
+          'group_id': 'g-other',
+          'session_id': 's1',
+          'messages': [],
+        }));
+        bus.add(PeerControlEvent(peerId: peerId, data: {
+          'type': 'agent_group_view_resp',
+          'agent_id': 'a1',
+          'group_id': 'g1',
+          'session_id': 's1',
+          'total': 1,
+          'messages': [
+            {'message_id': 'm9', 'content': 'x'}
+          ],
+        }));
+        return true;
+      },
+    );
+    final got = await client.groupView('p1', 'a1', 'g1', 's1', cursor: 'c');
+    expect(got!.messages.single.id, 'm9');
+    expect(sent.single['cursor'], 'c');
+    expect(sent.single.containsKey('request_id'), isFalse);
     await bus.close();
   });
 }

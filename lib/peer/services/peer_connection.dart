@@ -170,6 +170,8 @@ class PeerConnection {
     'agent_session_drop_resp',
     'agent_session_delete_req',
     'agent_session_delete_resp',
+    'agent_group_view_req',
+    'agent_group_view_resp',
     'agent_session_fork_req',
     'agent_session_fork_resp',
     'agent_soul_req',

@@ -109,18 +109,61 @@ class HubFoldedSessions {
     return (sessionId: null, error: response['error'] as String? ?? '分叉失败');
   }
 
+  /// 群聊视角：这个 Agent 在群会话里的发言。这对帧没有 request_id，回包靠
+  /// agent / 群 / 会话三元组认领，所以同一个视角的翻页要一页一页来。
+  static Map<String, dynamic> groupViewFrame(
+    String agentId,
+    String groupId,
+    String sessionId, {
+    String cursor = '',
+    int? limit,
+  }) =>
+      {
+        'type': 'agent_group_view_req',
+        'agent_id': agentId,
+        'group_id': groupId,
+        'session_id': sessionId,
+        if (cursor.isNotEmpty) 'cursor': cursor,
+        if (limit != null) 'limit': limit,
+      };
+
+  Future<GroupViewPage?> groupView(
+    String peerId,
+    String agentId,
+    String groupId,
+    String sessionId, {
+    String cursor = '',
+    int limit = 100,
+  }) async {
+    final response = await _request(
+      peerId,
+      groupViewFrame(agentId, groupId, sessionId, cursor: cursor, limit: limit),
+      'agent_group_view_resp',
+      matches: (data) =>
+          data['agent_id'] == agentId &&
+          data['group_id'] == groupId &&
+          data['session_id'] == sessionId,
+    );
+    return response == null ? null : GroupViewPage.fromResponse(response);
+  }
+
   Future<Map<String, dynamic>?> _request(
     String peerId,
     Map<String, dynamic> frame,
-    String responseType,
-  ) async {
+    String responseType, {
+    bool Function(Map<String, dynamic> data)? matches,
+  }) async {
     final requestId = frame['request_id'] as String? ?? _uuid.v4();
-    frame['request_id'] = requestId;
+    if (matches == null) frame['request_id'] = requestId;
     final done = Completer<Map<String, dynamic>?>();
     final sub = events.listen((event) {
       if (done.isCompleted) return;
       if (event.peerId != peerId || event.type != responseType) return;
-      if (event.data['request_id'] != requestId) return;
+      if (matches != null) {
+        if (!matches(event.data)) return;
+      } else if (event.data['request_id'] != requestId) {
+        return;
+      }
       done.complete(event.data);
     });
     try {
