@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/conversation_selection.dart';
+import '../l10n/app_localizations.dart';
 import '../onboarding/phone_host_store.dart';
 import '../peer/services/peer_agent_client_service.dart'
     show syncedPeerChannelId;
@@ -9,6 +10,7 @@ import '../service_locator.dart';
 import '../storage/pouch_session.dart';
 import '../utils/platform_utils.dart';
 import 'local_database_service.dart';
+import 'app_lifecycle_service.dart';
 import 'logger_service.dart';
 import 'route_gate.dart';
 
@@ -35,6 +37,15 @@ String? deepLinkLoginRoute({
 class ChatNavigationService {
   ChatNavigationService._();
   static final ChatNavigationService instance = ChatNavigationService._();
+
+  /// 根 Navigator 当前的 context。没有 UI 的地方（通知、定时任务）偶尔要
+  /// 借它取一次 l10n，拿不到时返回 null，调用方退回兜底文案。
+  BuildContext? get navigatorContext => _navigatorKey?.currentContext;
+
+  AppLocalizations? get l10nOrNull {
+    final ctx = navigatorContext;
+    return ctx == null ? null : AppLocalizations.of(ctx);
+  }
 
   static const _tag = 'ChatNav';
 
@@ -108,6 +119,13 @@ class ChatNavigationService {
     if (nav == null) {
       LoggerService()
           .warning('No navigator to open channel $channelId', tag: _tag);
+      return;
+    }
+    // 已经在看这个会话（聊天页 → 详情 → 「发起对话」）：退回那一页，不再叠一层。
+    // activeChannelId 只在 ChatScreen 挂载期间有值，所以命中就说明它在栈里。
+    if (AppLifecycleService().activeChannelId == selection.channelId &&
+        nav.canPop()) {
+      nav.maybePop();
       return;
     }
     nav.push(

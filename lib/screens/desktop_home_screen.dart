@@ -8,7 +8,6 @@ import '../config/product_features.dart';
 import '../peer/models/paired_peer.dart';
 import '../peer/screens/add_agent_instance_screen.dart';
 import '../peer/screens/peer_chat_screen.dart';
-import '../peer/screens/peer_manual_input_screen.dart';
 import '../peer/screens/peer_pairing_screen.dart';
 import '../peer/screens/peer_settings_screen.dart';
 import '../peer/services/peer_connection.dart';
@@ -60,7 +59,6 @@ enum _RightPanelView {
   settings,
   createGroup,
   pairDevice,
-  pairDeviceInput,
   contactAgent,
   contactGroup,
   contactPeer,
@@ -650,7 +648,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                     onCreateGroup: () =>
                         _showPanel(_RightPanelView.createGroup),
                     onPairDevice: () =>
-                        _showPanel(_RightPanelView.pairDeviceInput),
+                        _showPanel(_RightPanelView.pairDevice),
                     onAddAgentInstance: (nodeId) {
                       _addAgentNodeId = nodeId;
                       _showPanel(_RightPanelView.addAgentInstance);
@@ -823,10 +821,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           onPaired: _onDevicePaired,
         );
 
-      case _RightPanelView.pairDeviceInput:
-        // 通讯录「添加配对设备」在桌面直接进「输入配对信息」，不再绕 tab。
-        return PeerManualInputScreen(onPaired: _onDevicePaired);
-
       case _RightPanelView.contactAgent:
         final agent = args.contactAgent;
         if (agent == null) return _buildEmptyState(args.mode);
@@ -915,7 +909,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     final topItems = [
       _SidebarItemDef(
         icon: Icons.chat_bubble,
-        tooltip: l10n.drawer_myProfile,
+        tooltip: l10n.nav_chats,
         colorBuilder: (_) =>
             _leftMode == _LeftPanelMode.conversations && !_settingsOpen
                 ? activeColor

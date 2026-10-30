@@ -2152,7 +2152,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_viewDetails => 'View Details';
 
   @override
-  String get chat_storageSpace => 'Storage Space';
+  String get chat_storageSpace => 'Pouch';
 
   @override
   String get chat_customSystemPrompt => 'Edit Soul';
@@ -7804,6 +7804,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get storage_moreSettings => 'More settings';
+
+  @override
+  String get storage_browseByScope => 'Browse by scope';
+
+  @override
+  String get chat_notificationPreviewOff => 'New message';
+
+  @override
+  String get storage_manageTitle => 'Pouch management';
 
   @override
   String storage_usedBadge(String size) {

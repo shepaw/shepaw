@@ -1161,7 +1161,7 @@
   "chat_editAgent": "编辑 Agent",
   "chat_regenerateResume": "重新生成简历",
   "chat_viewDetails": "查看详情",
-  "chat_storageSpace": "储物空间",
+  "chat_storageSpace": "储物袋",
   "chat_customSystemPrompt": "编辑 Soul",
   "chat_systemPromptTitle": "编辑 Soul",
   "chat_systemPromptHint": "Agent 的身份与角色定义（soul.md）",
@@ -4565,6 +4565,9 @@
   "storage_noSnapshotsHint": "创建第一份加密快照，即可随时恢复本机数据。",
   "storage_entrySpace": "本机空间",
   "storage_moreSettings": "更多设置",
+  "storage_browseByScope": "按 scope 浏览",
+  "chat_notificationPreviewOff": "新消息",
+  "storage_manageTitle": "储物袋管理",
   "storage_usedBadge": "已使用 {size}",
   "@storage_usedBadge": {
     "placeholders": {

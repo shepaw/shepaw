@@ -10,8 +10,6 @@ import '../peer/pouch_pair.dart';
 import '../peer/screens/peer_settings_screen.dart';
 import '../peer/widgets/peer_device_icon.dart';
 import '../peer/screens/add_agent_instance_screen.dart';
-import '../peer/screens/peer_manual_input_screen.dart';
-import '../peer/screens/peer_pairing_screen.dart';
 import '../peer/services/peer_storage_service.dart';
 import '../utils/platform_utils.dart';
 import '../services/contacts_directory.dart';
@@ -19,6 +17,7 @@ import '../services/local_database_service.dart';
 import '../services/she_service.dart';
 import '../services/logger_service.dart';
 import '../service_locator.dart';
+import '../widgets/add_entry_menu.dart';
 import '../widgets/avatar_image.dart';
 import '../widgets/mobile_shell_scope.dart';
 import '../models/remote_agent.dart';
@@ -230,43 +229,37 @@ class ContactsScreenState extends State<ContactsScreen> {
         elevation: 0,
         automaticallyImplyLeading: !MobileShellScope.isActive(context),
         actions: [
-          PopupMenuButton<String>(
+          PopupMenuButton<AddEntryAction>(
             icon: const Icon(Icons.add),
             position: PopupMenuPosition.under,
-            onSelected: (value) {
-              switch (value) {
-                case 'agent':
-                  _addAgent();
-                case 'device':
-                  _startPeerPairing();
-                case 'group':
-                  if (widget.onCreateGroup != null) {
-                    widget.onCreateGroup!();
-                  } else {
-                    _createGroup();
-                  }
-              }
+            onSelected: (action) {
+              AddEntryMenu.run(
+                context,
+                action,
+                embedded: widget.embedded,
+                onAddAgentInstance: () => _addAgent(),
+                onCreateGroup: widget.onCreateGroup ?? _createGroup,
+                onPairDevice: widget.onPairDevice,
+                onPaired: (peer) {
+                  if (!mounted) return;
+                  final l10n = AppLocalizations.of(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content:
+                          Text(l10n.peerList_pairedSuccess(peer.deviceName)),
+                    ),
+                  );
+                  _reload();
+                },
+                afterPushed: () {
+                  if (mounted) _reload();
+                },
+              );
             },
-            itemBuilder: (context) => [
-              PopupMenuItem(
-                value: 'agent',
-                child: Row(
-                  children: [
-                    const Icon(Icons.smart_toy_outlined, size: 22),
-                    const SizedBox(width: 12),
-                    Expanded(child: Text(l10n.home_addAgentInstance)),
-                  ],
-                ),
-              ),
-              PopupMenuItem(
-                value: 'device',
-                child: Text(l10n.contacts_addPairingDevice),
-              ),
-              PopupMenuItem(
-                value: 'group',
-                child: Text(l10n.home_createGroup),
-              ),
-            ],
+            itemBuilder: (context) => AddEntryMenu.items(
+              AppLocalizations.of(context),
+              showScan: AddEntryMenu.supportsScan,
+            ),
           ),
         ],
       ),
@@ -1082,27 +1075,6 @@ class ContactsScreenState extends State<ContactsScreen> {
         return;
       }
       if (mounted) _reload();
-    }
-  }
-
-  Future<void> _startPeerPairing() async {
-    if (widget.onPairDevice != null) {
-      widget.onPairDevice!();
-      return;
-    }
-    // 通讯录「添加配对设备」：移动端进「它连我」等人扫；桌面直接进输入配对信息。
-    final peer = isDesktopPlatform
-        ? await PeerManualInputScreen.show(context)
-        : await PeerPairingScreen.show(
-            context,
-            initialTab: PeerPairingTab.beConnected,
-          );
-    if (peer != null && mounted) {
-      final l10n = AppLocalizations.of(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.peerList_pairedSuccess(peer.deviceName))),
-      );
-      _reload();
     }
   }
 

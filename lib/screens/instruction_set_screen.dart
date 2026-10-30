@@ -482,9 +482,7 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
     final ownerId = item.ownerAgentId;
     // 内置「沉淀指令」的产出是一条指令，正文指向指令集。
     // 其余指令直接执行正文，不再另建玉简跟踪。
-    final tracked = InstructionSetService.isSystemInstruction(item)
-        ? InstructionSetService.systemInstructionRunPrompt(item.content)
-        : item.content;
+    final tracked = InstructionSetService.runPromptFor(item);
 
     final currentChannelId = widget.channelId;
     if (currentChannelId != null && currentChannelId.isNotEmpty) {

@@ -69,6 +69,14 @@ class InstructionSetService {
       '这次执行的结果记在指令集：把要沉淀的内容总结成一条指令，'
       '用 shepaw instructions save 保存，不要新建玉简。\n$content';
 
+  /// 执行一条指令时真正下发的正文。
+  ///
+  /// 内置「沉淀指令」要包一层提示词，结果才落在指令集；其余指令直接用正文。
+  /// 指令集页的「运行」和输入框的指令选择都必须走这里，否则两处行为不一。
+  static String runPromptFor(InstructionSet item) => isSystemInstruction(item)
+      ? systemInstructionRunPrompt(item.content)
+      : item.content;
+
   /// 按主键查询。
   Future<InstructionSet?> getById(String id) => _db.queryInstructionSetById(id);
 

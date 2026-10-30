@@ -8,9 +8,9 @@ import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
 import '../services/chat_service.dart';
 import '../services/composer_draft_service.dart';
-import 'create_group_screen.dart';
 import 'chat_screen.dart';
 import '../widgets/agent_search_delegate.dart';
+import '../widgets/add_entry_menu.dart';
 import '../widgets/shepaw_search_page.dart';
 import '../widgets/agent_list_avatar.dart';
 import '../widgets/chat/session_unread_badge.dart';
@@ -34,8 +34,6 @@ import '../peer/models/paired_peer.dart';
 import '../peer/screens/peer_chat_screen.dart';
 import '../peer/widgets/peer_device_icon.dart';
 import '../peer/screens/add_agent_instance_screen.dart';
-import '../peer/screens/peer_pairing_screen.dart';
-import '../peer/screens/peer_scan_screen.dart';
 import '../peer/services/peer_connection.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_storage_service.dart';
@@ -1301,7 +1299,17 @@ class HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 16),
             FilledButton.icon(
-              onPressed: _pairDevice,
+              onPressed: () {
+                AddEntryMenu.run(
+                  context,
+                  AddEntryAction.device,
+                  embedded: widget.embedded,
+                  onPairDevice: widget.onPairDevice,
+                  afterPushed: () {
+                    if (mounted) _loadAgents(silent: true);
+                  },
+                );
+              },
               icon: const Icon(Icons.devices_outlined),
               label: Text(l10n.home_addDevice),
             ),
@@ -1458,7 +1466,7 @@ class HomeScreenState extends State<HomeScreen> {
 
     final colorScheme = Theme.of(context).colorScheme;
 
-    final action = await showMenu<String>(
+    final action = await showMenu<AddEntryAction>(
       context: context,
       position: position,
       constraints: const BoxConstraints.tightFor(width: menuWidth),
@@ -1468,96 +1476,26 @@ class HomeScreenState extends State<HomeScreen> {
         borderRadius: BorderRadius.circular(8),
         side: BorderSide(color: colorScheme.outline.withValues(alpha: 0.6)),
       ),
-      items: [
-        _buildAddMenuItem(
-          value: 'agent',
-          icon: Icons.smart_toy_outlined,
-          label: l10n.home_addAgentInstance,
-        ),
-        _buildAddMenuItem(
-          value: 'group',
-          icon: Icons.group_add,
-          label: l10n.home_createGroup,
-        ),
-        _buildAddMenuItem(
-          value: 'device',
-          icon: Icons.devices_outlined,
-          label: l10n.home_addDevice,
-        ),
-        if (!widget.embedded)
-          _buildAddMenuItem(
-            value: 'scan',
-            icon: Icons.qr_code_scanner,
-            label: l10n.home_scanConnect,
-          ),
-      ],
+      items: AddEntryMenu.items(
+        l10n,
+        showScan: AddEntryMenu.supportsScan,
+      ),
     );
 
     if (!mounted || action == null) return;
-    switch (action) {
-      case 'agent':
-        if (widget.embedded && widget.onAddAgentInstance != null) {
-          widget.onAddAgentInstance!();
-        } else {
-          await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const AddAgentInstanceScreen(),
-            ),
-          );
-          if (mounted) _loadAgents(silent: true);
-        }
-      case 'group':
-        if (widget.embedded && widget.onCreateGroup != null) {
-          widget.onCreateGroup!();
-        } else {
-          await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const CreateGroupScreen(),
-            ),
-          );
-          if (mounted) _loadAgents(silent: true);
-        }
-      case 'device':
-        await _pairDevice();
-      case 'scan':
-        await PeerScanScreen.show(context);
+    await AddEntryMenu.run(
+      context,
+      action,
+      embedded: widget.embedded,
+      onAddAgentInstance: widget.onAddAgentInstance,
+      onCreateGroup: widget.onCreateGroup,
+      onPairDevice: widget.onPairDevice,
+      afterPushed: () {
         if (mounted) _loadAgents(silent: true);
-    }
-  }
-
-  Future<void> _pairDevice() async {
-    if (widget.embedded && widget.onPairDevice != null) {
-      widget.onPairDevice!();
-      return;
-    }
-    await PeerPairingScreen.show(context);
-    if (mounted) _loadAgents(silent: true);
-  }
-
-  PopupMenuItem<String> _buildAddMenuItem({
-    required String value,
-    required IconData icon,
-    required String label,
-  }) {
-    return PopupMenuItem<String>(
-      value: value,
-      height: 44,
-      child: Row(
-        children: [
-          Icon(icon, size: 22),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(fontSize: 15),
-            ),
-          ),
-        ],
-      ),
+      },
     );
   }
+
   Widget _buildGroupTile(Channel group) {
     final l10n = AppLocalizations.of(context);
     final latestMsg = _groupLatestMessages[group.id];

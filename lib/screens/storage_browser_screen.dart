@@ -41,9 +41,7 @@ import 'storage_snapshots_screen.dart';
 import 'storage_space_settings_screen.dart';
 import 'store_text_editor_screen.dart';
 import 'jade_slip_editor_screen.dart';
-import 'jade_slip_screen.dart';
 import 'instruction_set_editor_screen.dart';
-import 'instruction_set_screen.dart';
 
 class _BrowsedFile {
   const _BrowsedFile({
@@ -91,6 +89,7 @@ class StorageBrowserScreen extends StatefulWidget {
     this.initialSpace,
     this.initialPath,
     this.lockToInitialEntry = false,
+    this.lockToSpace = false,
     this.title,
     this.extraActions,
     this.extraMenuItems,
@@ -132,6 +131,12 @@ class StorageBrowserScreen extends StatefulWidget {
   /// 从外部深链进入（如 Agent 工作区）时：返回键在入口路径即 pop，
   /// 不会退到储物袋分区根 / 空间列表。
   final bool lockToInitialEntry;
+
+  /// 锁在 [initialSpace] 里：不给回到分区根列表的入口。
+  ///
+  /// 一级「文件」入口用它——文件是用户自己的空间，不该从里面翻到玉简、
+  /// 指令集或管理项，那些已经有各自的一级入口。
+  final bool lockToSpace;
 
   /// 覆盖 AppBar 标题；null 时用默认「存储文件」文案。
   final String? title;
@@ -271,7 +276,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
       _isMobileLayout(context) && _navSpace != null;
 
   bool get _hasNavFloor =>
-      widget.lockToInitialEntry &&
+      (widget.lockToInitialEntry || widget.lockToSpace) &&
       widget.initialSpace != null &&
       widget.initialSpace!.isNotEmpty;
 
@@ -291,7 +296,8 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
   }
 
   /// 从 agent / 群深链进来时不画路径栏，返回交给标题栏。
-  bool get _showPathBar => !_hasNavFloor;
+  // 路径栏只跟深链锁定有关；单纯锁在分区里时，分区内的面包屑还要照常显示。
+  bool get _showPathBar => !widget.lockToInitialEntry;
 
   /// 路径栏返回只在空间内部往上走。已经在该空间首页时不可点，避免回到分区列表。
   bool get _breadcrumbCanGoBack {
@@ -1830,22 +1836,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
   }
 
   void _enterSpace(String space) {
-    if (space == StoreSpace.slips) {
-      unawaited(Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => const JadeSlipScreen(),
-        ),
-      ));
-      return;
-    }
-    if (space == StoreSpace.instructions) {
-      unawaited(Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => const InstructionSetScreen(),
-        ),
-      ));
-      return;
-    }
     setState(() {
       _navSpace = space;
       _navPath = '';
@@ -2709,23 +2699,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
     );
   }
 
-  Widget _buildMobileNotesRow(AppLocalizations l10n) {
-    return _buildMobileSpecialSpaceRow(
-      icon: Icons.auto_stories_outlined,
-      title: l10n.jadeSlip_title,
-      subtitle: l10n.jadeSlip_entryHint,
-      onTap: _busy ? null : () => _enterSpace(StoreSpace.slips),
-    );
-  }
 
-  Widget _buildMobileInstructionsRow(AppLocalizations l10n) {
-    return _buildMobileSpecialSpaceRow(
-      icon: Icons.playlist_add_check_outlined,
-      title: l10n.instructionSet_title,
-      subtitle: l10n.instructionSet_subtitle,
-      onTap: _busy ? null : () => _enterSpace(StoreSpace.instructions),
-    );
-  }
 
   void _openBagMenu(String id) {
     final Widget screen = switch (id) {
@@ -2989,8 +2963,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
         continueStrip,
         if (userSpaces.isNotEmpty) ...[
           _buildSpaceCategoryHeader(l10n, l10n.storage_categoryMine),
-          _buildMobileNotesRow(l10n),
-          _buildMobileInstructionsRow(l10n),
           for (final space in userSpaces) _buildMobileSpaceRootRow(l10n, space),
         ],
         if (agentSpaces.isNotEmpty) ...[
@@ -3013,20 +2985,6 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
         continueStrip,
         if (userSpaces.isNotEmpty) ...[
           _buildSpaceCategoryHeader(l10n, l10n.storage_categoryMine),
-          ListTile(
-            leading: Icon(Icons.auto_stories_outlined,
-                color: Theme.of(context).colorScheme.primary),
-            title: Text(l10n.jadeSlip_title),
-            subtitle: Text(l10n.jadeSlip_entryHint),
-            onTap: () => _enterSpace(StoreSpace.slips),
-          ),
-          ListTile(
-            leading: Icon(Icons.playlist_add_check_outlined,
-                color: Theme.of(context).colorScheme.primary),
-            title: Text(l10n.instructionSet_title),
-            subtitle: Text(l10n.instructionSet_subtitle),
-            onTap: () => _enterSpace(StoreSpace.instructions),
-          ),
           for (final space in userSpaces)
             _buildDesktopSpaceRootRow(l10n, space),
         ],

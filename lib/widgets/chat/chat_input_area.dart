@@ -136,6 +136,10 @@ class ChatInputArea extends StatefulWidget {
   /// 为空则不显示指令入口。
   final VoidCallback? onCreateInstruction;
 
+  /// 指令下拉里选中一条时调用。由父级按指令集页「运行」的同一条路径落草稿，
+  /// 这样内置指令的包装提示词和气泡标题两处都一致。
+  final ValueChanged<InstructionSet>? onInstructionPicked;
+
   const ChatInputArea({
     super.key,
     required this.messageController,
@@ -165,6 +169,7 @@ class ChatInputArea extends StatefulWidget {
     this.channelId,
     this.onMainModelChanged,
     this.onCreateInstruction,
+    this.onInstructionPicked,
   });
 
   @override
@@ -982,19 +987,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
     }
     final id = picked.substring('inst:'.length);
     final chosen = items.where((i) => i.id == id).firstOrNull;
-    if (chosen != null) _prefillInstruction(chosen);
-  }
-
-  void _prefillInstruction(InstructionSet item) {
-    final ctrl = widget.messageController;
-    final current = ctrl.text;
-    final next =
-        current.trim().isEmpty ? item.content : '$current\n${item.content}';
-    ctrl.value = TextEditingValue(
-      text: next,
-      selection: TextSelection.collapsed(offset: next.length),
-    );
-    widget.textFieldFocusNode.requestFocus();
+    if (chosen != null) widget.onInstructionPicked?.call(chosen);
   }
 
   Widget _buildMainModelChip() {

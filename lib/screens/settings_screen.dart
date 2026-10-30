@@ -41,7 +41,6 @@ import '../widgets/update_dialog.dart';
 import '../services/update_service.dart';
 import '../widgets/model_icon.dart';
 import 'storage_space_manage_screen.dart';
-import '../widgets/mobile_shell_scope.dart';
 import '../services/model_registry.dart';
 import '../services/skill_registry.dart';
 import 'dart:io' show Platform;
@@ -71,10 +70,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      // 底部栏「设置」tab 会常驻挂载，角标改由切到该 tab 时清除。
-      if (!MobileShellScope.isActive(context)) {
-        UpdateService().dismissSettingsIconBadge();
-      }
+      // 设置页不再常驻挂载（移动端在「我的」里，桌面是独立模式），打开即清角标。
+      UpdateService().dismissSettingsIconBadge();
     });
     _loadBiometricState();
     _loadBatteryOptimizationState();
@@ -333,8 +330,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        automaticallyImplyLeading:
-            !MobileShellScope.isActive(context) && Navigator.canPop(context),
+        automaticallyImplyLeading: Navigator.canPop(context),
         title: Text(l10n.settings_title),
         centerTitle: true,
       ),
@@ -532,7 +528,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           ListTile(
             leading: const Icon(Icons.inventory_2_outlined),
-            title: Text(l10n.storage_title),
+            title: Text(l10n.storage_manageTitle),
             subtitle: Text(l10n.storage_settingsEntrySub),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {

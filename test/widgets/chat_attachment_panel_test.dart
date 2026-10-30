@@ -100,7 +100,7 @@ void main() {
         reason: '「＋」应位于输入框左侧');
   });
 
-  testWidgets('tapping add opens WeChat-style grid with 6 actions', (tester) async {
+  testWidgets('tapping add opens WeChat-style grid with 5 actions', (tester) async {
     usePhoneSurface(tester);
     final (agentId, channelId) = await createFreshChannel(tester);
     await pumpChatScreen(tester, agentId: agentId, channelId: channelId);
@@ -108,10 +108,10 @@ void main() {
     await tester.tap(find.byIcon(Icons.add_circle_outline));
     await settleFrames(tester);
 
-    // 图标网格面板出现，含 6 个动作。
+    // 图标网格面板出现，含 5 个动作。指令不再占一格——它在输入框的 chip 里选。
     final grid = find.byKey(const Key('chat_attachment_panel'));
     expect(grid, findsOneWidget);
-    for (final label in ['表情', '相册', '相机', '文件', '储物袋', '指令']) {
+    for (final label in ['表情', '相册', '相机', '文件', '储物袋']) {
       expect(
         find.descendant(of: grid, matching: find.text(label)),
         findsOneWidget,

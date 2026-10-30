@@ -7,6 +7,7 @@ import 'services/local_database_service.dart';
 import 'services/she_service.dart';
 import 'services/permission_service.dart';
 import 'services/notification_service.dart';
+import 'services/chat_message_notification.dart';
 import 'services/update_notification_service.dart';
 import 'services/app_lifecycle_service.dart';
 import 'services/network_monitor_service.dart';
@@ -106,6 +107,8 @@ class AppBootstrap {
     await NotificationService().init();
     UpdateNotificationService().init(navigatorKey: navigatorKey);
     ChatNavigationService.instance.init(navigatorKey: navigatorKey);
+    // 聊天消息通知的点击：payload 里带频道 id，点了要能回到那个会话。
+    ChatMessageNotification.ensureInitialized();
     registerStorageDirectoryOpener();
     _wirePlanApprovalReachability();
     if (getIt.isRegistered<ComposerDraftService>()) {

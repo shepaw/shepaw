@@ -11,6 +11,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../services/local_user_identity.dart';
 import '../models/channel.dart';
+import '../models/instruction_set.dart';
 import '../models/message.dart';
 import '../models/attachment_data.dart';
 import '../models/pending_attachment.dart';
@@ -71,6 +72,7 @@ import 'channel_trace_screen.dart';
 import 'group_task_list_screen.dart';
 import 'group_workflow_screen.dart';
 import 'instruction_set_screen.dart';
+import '../services/instruction_set_service.dart';
 import '../widgets/workflow/workflow_progress_panel.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../peer/services/peer_connection.dart' show PeerConnectionEventType;
@@ -1526,7 +1528,7 @@ class _ChatScreenState extends State<ChatScreen>
 
   /// WeChat-style mobile attachment panel: a grid of icon actions sharing the
   /// same bottom slot as the emoji picker. Items: 表情 / 相册 / 相机 / 文件 /
-  /// 储物袋 / 指令.
+  /// 储物袋 / 文件.
   Widget _buildAttachmentPanel() {
     final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
@@ -1675,6 +1677,23 @@ class _ChatScreenState extends State<ChatScreen>
         );
       }
     }
+  }
+
+  /// 输入框里选中一条指令：和指令集页「运行」走同一条落草稿路径，
+  /// 内置指令的包装提示词和气泡标题（`instructionName`）才不会两边不一样。
+  void _onInstructionPicked(InstructionSet item) {
+    final key = _composerDraftKey();
+    if (key == null) return;
+    final c = _controller;
+    getIt<ComposerDraftService>().setDraft(
+      key,
+      InstructionSetService.runPromptFor(item),
+      agentId: c.isGroupMode ? null : widget.agentId,
+      groupFamilyId: c.isGroupMode ? _composerGroupFamilyId() : null,
+      instructionName: item.name,
+    );
+    _restoreComposerDraft();
+    setState(() {});
   }
 
   Future<void> _openInstructionSet({bool startCreating = false}) async {
@@ -4259,6 +4278,7 @@ class _ChatScreenState extends State<ChatScreen>
                   onPickFromStorageBag: _pickFromStorageBag,
                   onCreateInstruction: () =>
                       _openInstructionSet(startCreating: true),
+                  onInstructionPicked: _onInstructionPicked,
                   onSendVoice: _sendVoiceMessage,
                   onRemoveAttachment: _removePendingAttachment,
                   onMentionPickerChanged: () {

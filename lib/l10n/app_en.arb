@@ -851,7 +851,7 @@
   "chat_editAgent": "Edit Agent",
   "chat_regenerateResume": "Regenerate Resume",
   "chat_viewDetails": "View Details",
-  "chat_storageSpace": "Storage Space",
+  "chat_storageSpace": "Pouch",
   "chat_customSystemPrompt": "Edit Soul",
   "chat_systemPromptTitle": "Edit Soul",
   "chat_systemPromptHint": "Agent identity and persona (soul.md)",
@@ -4115,6 +4115,9 @@
   "storage_noSnapshotsHint": "Create your first encrypted snapshot so you can restore this device anytime.",
   "storage_entrySpace": "Local Space",
   "storage_moreSettings": "More settings",
+  "storage_browseByScope": "Browse by scope",
+  "chat_notificationPreviewOff": "New message",
+  "storage_manageTitle": "Pouch management",
   "storage_usedBadge": "{size} used",
   "@storage_usedBadge": {
     "placeholders": {

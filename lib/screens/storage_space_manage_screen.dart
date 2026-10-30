@@ -142,13 +142,18 @@ class _StorageSpaceManageScreenState extends State<StorageSpaceManageScreen> {
       ownHostPouch: pouch.isRemote,
       usedBytes: _usedBytes,
       initialSpace: widget.initialSpace,
+      // 带 initialSpace 进来的是一级「文件」入口或深链：锁在那个分区里，
+      // 不再提供回到分区根列表的入口，免得从文件里又翻到玉简、指令集。
+      lockToSpace: widget.initialSpace != null,
       hideInternalFiles: _hideInternalFiles,
       onHideInternalFilesChanged: (v) => setState(() => _hideInternalFiles = v),
       extraActions: [
-        if (_hasScopeStore)
+        // 只在没有指定分区（储物袋管理）时才有意义：锁在分区里时这个按钮
+        // 点了也回不到 scope 视图。
+        if (_hasScopeStore && widget.initialSpace == null)
           IconButton(
             icon: const Icon(Icons.account_tree_outlined),
-            tooltip: '按 scope 浏览',
+            tooltip: l10n.storage_browseByScope,
             onPressed: () => setState(() => _forceLegacy = false),
           ),
         PopupMenuButton<StorageMoreAction>(

@@ -12,6 +12,8 @@ import '../models/queued_message.dart';
 import 'acp_interactive_connection.dart';
 import 'local_database_service.dart';
 import 'tool_result_database_service.dart';
+import 'chat_message_notification.dart';
+import 'chat_navigation_service.dart';
 import 'notification_service.dart';
 // Sub-service imports (refactored)
 import 'task/task_models.dart';
@@ -1929,12 +1931,17 @@ class ChatService {
     if (!provider.shouldNotify(senderId)) return;
     if (AppLifecycleService().shouldSuppressNotification(channelId)) return;
 
-    final body = provider.showPreview ? content : 'New message';
+    final body = provider.showPreview
+        ? content
+        : (ChatNavigationService.instance.l10nOrNull?.chat_notificationPreviewOff ??
+            'New message');
     NotificationService().showNotification(
       id: channelId.hashCode,
       title: senderName,
       body: body,
       playSound: provider.soundEnabled,
+      // 点击要能回到这条消息所在的会话，否则通知点了没反应。
+      payload: ChatMessageNotification.payloadFor(channelId),
     );
   }
 

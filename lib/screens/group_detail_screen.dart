@@ -11,6 +11,7 @@ import '../theme/app_theme.dart';
 import '../widgets/group_avatar_picker.dart';
 import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
+import '../services/chat_navigation_service.dart';
 import '../peer/services/hub_group_registry.dart';
 import '../service_locator.dart';
 import '../services/group/group_management_service.dart';
@@ -27,7 +28,6 @@ import '../widgets/avatar_image.dart';
 import 'storage_directory_opener.dart';
 import 'pouch_scope_browser_screen.dart';
 import 'workspace_binding_screen.dart';
-import 'chat_screen.dart';
 import 'group_member_detail_screen.dart';
 
 /// Group detail screen, similar to RemoteAgentDetailScreen but for groups.
@@ -995,11 +995,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     final targetChannelId = latestChannelId ?? _channel.id;
 
     if (!mounted) return;
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ChatScreen(channelId: targetChannelId),
-      ),
+    // 和智能体详情一致走 [ChatNavigationService]，桌面才会切到「聊天」并选中会话。
+    await ChatNavigationService.instance.openChannel(
+      channelId: targetChannelId,
     );
   }
 

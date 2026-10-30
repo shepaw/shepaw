@@ -3905,7 +3905,7 @@ abstract class AppLocalizations {
   /// No description provided for @chat_storageSpace.
   ///
   /// In zh, this message translates to:
-  /// **'储物空间'**
+  /// **'储物袋'**
   String get chat_storageSpace;
 
   /// No description provided for @chat_customSystemPrompt.
@@ -13654,6 +13654,24 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'更多设置'**
   String get storage_moreSettings;
+
+  /// No description provided for @storage_browseByScope.
+  ///
+  /// In zh, this message translates to:
+  /// **'按 scope 浏览'**
+  String get storage_browseByScope;
+
+  /// No description provided for @chat_notificationPreviewOff.
+  ///
+  /// In zh, this message translates to:
+  /// **'新消息'**
+  String get chat_notificationPreviewOff;
+
+  /// No description provided for @storage_manageTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'储物袋管理'**
+  String get storage_manageTitle;
 
   /// No description provided for @storage_usedBadge.
   ///

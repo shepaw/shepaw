@@ -2073,7 +2073,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_viewDetails => '查看详情';
 
   @override
-  String get chat_storageSpace => '储物空间';
+  String get chat_storageSpace => '储物袋';
 
   @override
   String get chat_customSystemPrompt => '编辑 Soul';
@@ -7517,6 +7517,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get storage_moreSettings => '更多设置';
+
+  @override
+  String get storage_browseByScope => '按 scope 浏览';
+
+  @override
+  String get chat_notificationPreviewOff => '新消息';
+
+  @override
+  String get storage_manageTitle => '储物袋管理';
 
   @override
   String storage_usedBadge(String size) {
