@@ -312,7 +312,7 @@ class HubFlow {
     } catch (_) {
       return null;
     } finally {
-      await sub.cancel();
+      unawaited(sub.cancel());
     }
   }
 

@@ -6646,6 +6646,9 @@ class PeerAgentClientService {
   void _onSessionsResp(String peerId, Map<String, dynamic> data) {
     final remoteId = data['agent_id'] as String?;
     if (remoteId == null) return;
+    // 折叠视图（摘要 / 组明细）的回包带 request_id，由 HubFoldedSessions 认领；
+    // 这里只收平铺名单，否则明细页会被当成「主机确认这名下只有这些会话」去剪枝。
+    if (data['request_id'] != null || data.containsKey('folders')) return;
     final hostNow = data['now_ms'];
     if (hostNow is int && hostNow > 0) {
       _hostNowMs[peerId] = hostNow;
