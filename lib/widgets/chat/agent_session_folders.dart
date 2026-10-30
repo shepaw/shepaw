@@ -6,6 +6,7 @@ import '../../peer/models/folded_sessions.dart';
 import '../../peer/services/hub_folded_sessions.dart';
 import '../../screens/flow_run_screen.dart';
 import '../../screens/group_view_screen.dart';
+import '../../screens/session_history_screen.dart';
 import '../../screens/session_folder_screen.dart';
 import '../session_folders.dart';
 
@@ -104,9 +105,17 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
       ));
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('这类会话是只读的，可以从右侧菜单分叉到私聊后继续聊')),
-    );
+    // 引擎客户端 / 终端 / 其他 Agent 发起：走主机的会话历史，只读，可分叉。
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => SessionHistoryScreen.forFolderSession(
+        peerId: widget.peerId,
+        agentId: widget.remoteAgentId,
+        sessionId: session.sessionId,
+        title: session.title.isEmpty ? session.sessionId : session.title,
+        client: _client,
+        onForked: widget.onForked,
+      ),
+    ));
   }
 
   @override

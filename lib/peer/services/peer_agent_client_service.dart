@@ -6620,6 +6620,49 @@ class PeerAgentClientService {
 
   static const _sessionFetchTimeout = Duration(seconds: 10);
 
+  /// 主机认折叠视图的 Agent（`peerId|remoteAgentId`）。名单里只有私聊，外部
+  /// 会话在折叠组里，所以同步时本机不再镜像它们，已有的副本一并清掉。
+  final Set<String> _foldedHostAgents = <String>{};
+
+  static String _foldedKey(String peerId, String remoteAgentId) =>
+      '$peerId|$remoteAgentId';
+
+  void _markFolded(String peerId, String remoteAgentId, bool folded) {
+    final key = _foldedKey(peerId, remoteAgentId);
+    if (folded) {
+      _foldedHostAgents.add(key);
+    } else {
+      _foldedHostAgents.remove(key);
+    }
+  }
+
+  @visibleForTesting
+  bool isHostFolded(String peerId, String remoteAgentId) =>
+      _foldedHostAgents.contains(_foldedKey(peerId, remoteAgentId));
+
+  @visibleForTesting
+  void debugHandleControl(PeerControlEvent event) => _onControl(event);
+
+  @visibleForTesting
+  void debugMarkFolded(String peerId, String remoteAgentId, bool folded) =>
+      _markFolded(peerId, remoteAgentId, folded);
+
+  /// 折叠组里某个会话的一页历史（只读记录页用）。`completed` 为假表示没问到。
+  Future<PeerHistoryPage> fetchFolderSessionHistory({
+    required String peerId,
+    required String remoteAgentId,
+    required String sessionId,
+    String? cursor,
+    int? limit,
+  }) =>
+      _fetchHistory(
+        peerId: peerId,
+        remoteAgentId: remoteAgentId,
+        sessionId: sessionId,
+        cursor: cursor,
+        limit: limit,
+      );
+
   Future<List<PeerRemoteSession>?> _requestSessions(
     String peerId,
     String remoteAgentId,
@@ -6628,6 +6671,10 @@ class PeerAgentClientService {
     final sent = await PeerConnectionManager.instance.sendControl(peerId, {
       'type': 'agent_sessions_req',
       'agent_id': remoteAgentId,
+      // 折叠视图：平铺名单只剩私聊，群聊 / 工作流 / 引擎客户端 / 终端收进折叠组
+      // （折叠方案 §3.1）。旧主机不认 view，回的还是平铺名单，下面按回包里有没有
+      // `folders` 判断。
+      'view': 'folded',
     });
     if (!sent) {
       if (identical(_pendingSessions[remoteAgentId], completer)) {
@@ -6646,9 +6693,10 @@ class PeerAgentClientService {
   void _onSessionsResp(String peerId, Map<String, dynamic> data) {
     final remoteId = data['agent_id'] as String?;
     if (remoteId == null) return;
-    // 折叠视图（摘要 / 组明细）的回包带 request_id，由 HubFoldedSessions 认领；
-    // 这里只收平铺名单，否则明细页会被当成「主机确认这名下只有这些会话」去剪枝。
-    if (data['request_id'] != null || data.containsKey('folders')) return;
+    // 折叠组摘要 / 明细的回包带 request_id，由 HubFoldedSessions 认领；这里只收
+    // 同步用的名单，否则明细页会被当成「主机确认这名下只有这些会话」去剪枝。
+    if (data['request_id'] != null) return;
+    _markFolded(peerId, remoteId, data.containsKey('folders'));
     final hostNow = data['now_ms'];
     if (hostNow is int && hostNow > 0) {
       _hostNowMs[peerId] = hostNow;
@@ -6675,6 +6723,7 @@ class PeerAgentClientService {
     final sent = await PeerConnectionManager.instance.sendControl(peerId, {
       'type': 'agent_sessions_digest_req',
       'request_id': _uuid.v4(),
+      'view': 'folded',
     });
     if (!sent) {
       _pendingSessionsDigest.remove(peerId);
@@ -6701,11 +6750,17 @@ class PeerAgentClientService {
       // 任一条目读不懂就整份快照判为「没问到」，交给逐 Agent 的 fetchSessions
       // 兜底。半份名单拿去剪枝会误删本地会话。
       final key = entry.key;
-      final parsed = key is String ? parsePeerSessionList(entry.value) : null;
+      // 折叠视图下每个 Agent 的摘要是 `{sessions, folders}`；旧主机和惜宝仍是数组。
+      final value = entry.value;
+      final folded = value is Map && value.containsKey('folders');
+      final parsed = key is String
+          ? parsePeerSessionList(value is Map ? value['sessions'] : value)
+          : null;
       if (key is! String || parsed == null) {
         completer.complete(null);
         return;
       }
+      _markFolded(peerId, key, folded);
       out[key] = parsed;
     }
     completer.complete(out);
@@ -6762,6 +6817,12 @@ class PeerAgentClientService {
     bool pruneToHost = false,
     bool preserveClientSessions = false,
   }) async {
+    if (isHostFolded(peerId, remoteAgentId)) {
+      // 折叠主机：引擎客户端 / 终端会话在折叠组里，不镜像成本地频道。
+      // 名单里没有它们，剪枝时本地已有的副本随之清掉，不再因为「同步开关」保留。
+      includeClientSessions = false;
+      preserveClientSessions = false;
+    }
     if (sessions.isEmpty) {
       if (pruneToHost) {
         await _dropPeerChannelsMissingFromHost(
