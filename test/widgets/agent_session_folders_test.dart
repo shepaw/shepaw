@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shepaw/l10n/app_localizations.dart';
 import 'package:shepaw/peer/services/hub_folded_sessions.dart';
 import 'package:shepaw/peer/services/peer_connection_manager.dart';
 import 'package:shepaw/widgets/chat/agent_session_folders.dart';
 
-HubFoldedSessions _host(StreamController<PeerControlEvent> bus, Object? folders) =>
+HubFoldedSessions _host(
+        StreamController<PeerControlEvent> bus, Object? folders) =>
     HubFoldedSessions(
       events: bus.stream,
       send: (peerId, frame) async {
@@ -22,9 +24,13 @@ HubFoldedSessions _host(StreamController<PeerControlEvent> bus, Object? folders)
     );
 
 void main() {
-  testWidgets('non-empty folders show as rows with their counts', (tester) async {
+  testWidgets('non-empty folders show as rows with their counts',
+      (tester) async {
     final bus = StreamController<PeerControlEvent>.broadcast();
     await tester.pumpWidget(MaterialApp(
+      locale: const Locale('zh'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: Scaffold(
         body: AgentSessionFolders(
           peerId: 'p1',
@@ -49,6 +55,9 @@ void main() {
       (tester) async {
     final bus = StreamController<PeerControlEvent>.broadcast();
     await tester.pumpWidget(MaterialApp(
+      locale: const Locale('zh'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: Scaffold(
         body: AgentSessionFolders(
           peerId: 'p1',

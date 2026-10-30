@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../peer/models/folded_sessions.dart';
 import '../peer/services/hub_folded_sessions.dart';
 
@@ -82,19 +83,22 @@ class _GroupViewScreenState extends State<GroupViewScreen> {
     final result = await _client.fork(widget.peerId, widget.agentId, id);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(result.sessionId == null ? (result.error ?? '分叉失败') : '已分叉到私聊'),
+      content: Text(result.sessionId == null
+          ? (result.error ?? AppLocalizations.of(context).folder_forkFailed)
+          : AppLocalizations.of(context).folder_forked),
     ));
     if (result.sessionId != null) widget.onForked?.call(result.sessionId!);
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.title ?? '群聊中的发言'),
+        title: Text(widget.title ?? l10n.folder_groupViewTitle),
         actions: [
           if (widget.foldedSessionId != null)
-            TextButton(onPressed: _fork, child: const Text('分叉到私聊')),
+            TextButton(onPressed: _fork, child: Text(l10n.folder_fork)),
         ],
       ),
       body: Builder(builder: (context) {
@@ -102,10 +106,11 @@ class _GroupViewScreenState extends State<GroupViewScreen> {
           if (_loading) return const Center(child: CircularProgressIndicator());
           if (_failed) {
             return Center(
-              child: TextButton(onPressed: _more, child: const Text('读取失败，点此重试')),
+              child:
+                  TextButton(onPressed: _more, child: Text(l10n.folder_retry)),
             );
           }
-          return const Center(child: Text('这个 Agent 在这个群会话里还没有发言'));
+          return Center(child: Text(l10n.folder_groupViewEmpty));
         }
         return ListView(
           padding: const EdgeInsets.all(12),
@@ -132,7 +137,8 @@ class _GroupViewScreenState extends State<GroupViewScreen> {
               Center(
                 child: _loading
                     ? const CircularProgressIndicator()
-                    : TextButton(onPressed: _more, child: const Text('加载更多')),
+                    : TextButton(
+                        onPressed: _more, child: Text(l10n.folder_loadMore)),
               ),
           ],
         );

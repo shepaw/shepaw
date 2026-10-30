@@ -8520,4 +8520,213 @@ class AppLocalizationsZh extends AppLocalizations {
   String pouch_namedBag(String name) {
     return '$name的储物袋';
   }
+
+  @override
+  String flow_kindSeq(String id) {
+    return '依次 · $id';
+  }
+
+  @override
+  String flow_kindPar(int count) {
+    return '并行 · $count 项';
+  }
+
+  @override
+  String flow_kindLoop(String id) {
+    return '循环 · $id';
+  }
+
+  @override
+  String flow_kindLoopRound(int round) {
+    return '循环 · 第 $round 轮';
+  }
+
+  @override
+  String flow_kindIf(String id) {
+    return '条件 · $id';
+  }
+
+  @override
+  String flow_kindMap(String id) {
+    return '逐项 · $id';
+  }
+
+  @override
+  String flow_kindPlan(String id) {
+    return '运行时生成 · $id';
+  }
+
+  @override
+  String flow_kindCall(String id) {
+    return '子流程 · $id';
+  }
+
+  @override
+  String flow_kindGate(String id) {
+    return '等你确认 · $id';
+  }
+
+  @override
+  String flow_kindSet(String id) {
+    return '赋值 · $id';
+  }
+
+  @override
+  String flow_kindOther(String kind, String id) {
+    return '$kind · $id';
+  }
+
+  @override
+  String get flow_nodePending => '等待';
+
+  @override
+  String get flow_nodeRunning => '进行中';
+
+  @override
+  String get flow_nodeDone => '完成';
+
+  @override
+  String get flow_nodeHalted => '已停下';
+
+  @override
+  String get flow_nodeFailed => '失败';
+
+  @override
+  String get flow_nodeSkipped => '跳过';
+
+  @override
+  String get flow_nodeCancelled => '已取消';
+
+  @override
+  String get flow_runRunning => '进行中';
+
+  @override
+  String get flow_runSucceeded => '已完成';
+
+  @override
+  String get flow_runFailed => '失败';
+
+  @override
+  String get flow_runCancelled => '已取消';
+
+  @override
+  String get flow_runTitle => '工作流运行';
+
+  @override
+  String get flow_cancelRun => '取消运行';
+
+  @override
+  String get flow_cancelRunTitle => '取消这次运行？';
+
+  @override
+  String get flow_cancelRunBody => '正在做的步骤会被叫停，已经完成的不受影响。';
+
+  @override
+  String get flow_keepWaiting => '再等等';
+
+  @override
+  String get flow_refresh => '刷新';
+
+  @override
+  String get flow_runLoadFailed => '读不到这次运行（主机不在线或运行不存在）';
+
+  @override
+  String get flow_noData => '没有数据';
+
+  @override
+  String get flow_answerFailed => '作答失败';
+
+  @override
+  String get flow_cancelFailed => '取消失败';
+
+  @override
+  String get flow_hostNoReply => '主机没有回应';
+
+  @override
+  String flow_statusLine(String status) {
+    return '状态：$status';
+  }
+
+  @override
+  String flow_attemptSuffix(int n) {
+    return ' · 第 $n 次尝试';
+  }
+
+  @override
+  String get flow_viewSession => '查看会话';
+
+  @override
+  String flow_tasksUsed(int count) {
+    return '已派活 $count 次';
+  }
+
+  @override
+  String get folder_group => '群聊';
+
+  @override
+  String get folder_delegated => '其他 Agent 发起';
+
+  @override
+  String get folder_flow => '工作流';
+
+  @override
+  String get folder_ide => '引擎客户端';
+
+  @override
+  String get folder_terminal => '引擎终端';
+
+  @override
+  String folder_tileTitle(String label, int count) {
+    return '$label · $count';
+  }
+
+  @override
+  String get folder_retry => '读取失败，点此重试';
+
+  @override
+  String get folder_empty => '这里还没有会话';
+
+  @override
+  String get folder_loadMore => '加载更多';
+
+  @override
+  String get folder_fork => '分叉到私聊';
+
+  @override
+  String get folder_more => '更多';
+
+  @override
+  String get folder_forked => '已分叉到私聊';
+
+  @override
+  String get folder_forkFailed => '分叉失败';
+
+  @override
+  String folder_runHeader(String run) {
+    return '运行 $run';
+  }
+
+  @override
+  String folder_node(String node) {
+    return '节点 $node';
+  }
+
+  @override
+  String folder_from(String agent) {
+    return '来自 $agent';
+  }
+
+  @override
+  String folder_messageCount(int count) {
+    return '$count 条';
+  }
+
+  @override
+  String get folder_groupViewTitle => '群聊中的发言';
+
+  @override
+  String get folder_groupViewEmpty => '这个 Agent 在这个群会话里还没有发言';
+
+  @override
+  String get folder_historyEmpty => '主机上没有这个会话可显示的记录';
 }

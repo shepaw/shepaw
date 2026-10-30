@@ -5163,5 +5163,201 @@
         "type": "String"
       }
     }
-  }
+  },
+  "flow_kindSeq": "依次 · {id}",
+  "@flow_kindSeq": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_kindPar": "并行 · {count} 项",
+  "@flow_kindPar": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "flow_kindLoop": "循环 · {id}",
+  "@flow_kindLoop": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_kindLoopRound": "循环 · 第 {round} 轮",
+  "@flow_kindLoopRound": {
+    "placeholders": {
+      "round": {
+        "type": "int"
+      }
+    }
+  },
+  "flow_kindIf": "条件 · {id}",
+  "@flow_kindIf": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_kindMap": "逐项 · {id}",
+  "@flow_kindMap": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_kindPlan": "运行时生成 · {id}",
+  "@flow_kindPlan": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_kindCall": "子流程 · {id}",
+  "@flow_kindCall": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_kindGate": "等你确认 · {id}",
+  "@flow_kindGate": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_kindSet": "赋值 · {id}",
+  "@flow_kindSet": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_kindOther": "{kind} · {id}",
+  "@flow_kindOther": {
+    "placeholders": {
+      "kind": {
+        "type": "String"
+      },
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_nodePending": "等待",
+  "flow_nodeRunning": "进行中",
+  "flow_nodeDone": "完成",
+  "flow_nodeHalted": "已停下",
+  "flow_nodeFailed": "失败",
+  "flow_nodeSkipped": "跳过",
+  "flow_nodeCancelled": "已取消",
+  "flow_runRunning": "进行中",
+  "flow_runSucceeded": "已完成",
+  "flow_runFailed": "失败",
+  "flow_runCancelled": "已取消",
+  "flow_runTitle": "工作流运行",
+  "flow_cancelRun": "取消运行",
+  "flow_cancelRunTitle": "取消这次运行？",
+  "flow_cancelRunBody": "正在做的步骤会被叫停，已经完成的不受影响。",
+  "flow_keepWaiting": "再等等",
+  "flow_refresh": "刷新",
+  "flow_runLoadFailed": "读不到这次运行（主机不在线或运行不存在）",
+  "flow_noData": "没有数据",
+  "flow_answerFailed": "作答失败",
+  "flow_cancelFailed": "取消失败",
+  "flow_hostNoReply": "主机没有回应",
+  "flow_statusLine": "状态：{status}",
+  "@flow_statusLine": {
+    "placeholders": {
+      "status": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_attemptSuffix": " · 第 {n} 次尝试",
+  "@flow_attemptSuffix": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "flow_viewSession": "查看会话",
+  "flow_tasksUsed": "已派活 {count} 次",
+  "@flow_tasksUsed": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "folder_group": "群聊",
+  "folder_delegated": "其他 Agent 发起",
+  "folder_flow": "工作流",
+  "folder_ide": "引擎客户端",
+  "folder_terminal": "引擎终端",
+  "folder_tileTitle": "{label} · {count}",
+  "@folder_tileTitle": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "folder_retry": "读取失败，点此重试",
+  "folder_empty": "这里还没有会话",
+  "folder_loadMore": "加载更多",
+  "folder_fork": "分叉到私聊",
+  "folder_more": "更多",
+  "folder_forked": "已分叉到私聊",
+  "folder_forkFailed": "分叉失败",
+  "folder_runHeader": "运行 {run}",
+  "@folder_runHeader": {
+    "placeholders": {
+      "run": {
+        "type": "String"
+      }
+    }
+  },
+  "folder_node": "节点 {node}",
+  "@folder_node": {
+    "placeholders": {
+      "node": {
+        "type": "String"
+      }
+    }
+  },
+  "folder_from": "来自 {agent}",
+  "@folder_from": {
+    "placeholders": {
+      "agent": {
+        "type": "String"
+      }
+    }
+  },
+  "folder_messageCount": "{count} 条",
+  "@folder_messageCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "folder_groupViewTitle": "群聊中的发言",
+  "folder_groupViewEmpty": "这个 Agent 在这个群会话里还没有发言",
+  "folder_historyEmpty": "主机上没有这个会话可显示的记录"
 }

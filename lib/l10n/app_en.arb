@@ -4711,5 +4711,201 @@
         "type": "String"
       }
     }
-  }
+  },
+  "flow_kindSeq": "Sequence · {id}",
+  "@flow_kindSeq": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_kindPar": "Parallel · {count}",
+  "@flow_kindPar": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "flow_kindLoop": "Loop · {id}",
+  "@flow_kindLoop": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_kindLoopRound": "Loop · round {round}",
+  "@flow_kindLoopRound": {
+    "placeholders": {
+      "round": {
+        "type": "int"
+      }
+    }
+  },
+  "flow_kindIf": "If · {id}",
+  "@flow_kindIf": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_kindMap": "Each · {id}",
+  "@flow_kindMap": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_kindPlan": "Planned at run time · {id}",
+  "@flow_kindPlan": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_kindCall": "Subflow · {id}",
+  "@flow_kindCall": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_kindGate": "Waiting for you · {id}",
+  "@flow_kindGate": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_kindSet": "Set · {id}",
+  "@flow_kindSet": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_kindOther": "{kind} · {id}",
+  "@flow_kindOther": {
+    "placeholders": {
+      "kind": {
+        "type": "String"
+      },
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_nodePending": "Pending",
+  "flow_nodeRunning": "Running",
+  "flow_nodeDone": "Done",
+  "flow_nodeHalted": "Halted",
+  "flow_nodeFailed": "Failed",
+  "flow_nodeSkipped": "Skipped",
+  "flow_nodeCancelled": "Cancelled",
+  "flow_runRunning": "Running",
+  "flow_runSucceeded": "Completed",
+  "flow_runFailed": "Failed",
+  "flow_runCancelled": "Cancelled",
+  "flow_runTitle": "Workflow run",
+  "flow_cancelRun": "Cancel run",
+  "flow_cancelRunTitle": "Cancel this run?",
+  "flow_cancelRunBody": "Steps in progress will be stopped; finished ones are kept.",
+  "flow_keepWaiting": "Keep waiting",
+  "flow_refresh": "Refresh",
+  "flow_runLoadFailed": "Cannot read this run (host offline or run not found)",
+  "flow_noData": "No data",
+  "flow_answerFailed": "Could not submit the answer",
+  "flow_cancelFailed": "Could not cancel",
+  "flow_hostNoReply": "The host did not respond",
+  "flow_statusLine": "Status: {status}",
+  "@flow_statusLine": {
+    "placeholders": {
+      "status": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_attemptSuffix": " · attempt {n}",
+  "@flow_attemptSuffix": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "flow_viewSession": "View session",
+  "flow_tasksUsed": "{count} tasks dispatched",
+  "@flow_tasksUsed": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "folder_group": "Group chats",
+  "folder_delegated": "Started by other agents",
+  "folder_flow": "Workflows",
+  "folder_ide": "Engine clients",
+  "folder_terminal": "Engine terminals",
+  "folder_tileTitle": "{label} · {count}",
+  "@folder_tileTitle": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "folder_retry": "Failed to load. Tap to retry",
+  "folder_empty": "No sessions here yet",
+  "folder_loadMore": "Load more",
+  "folder_fork": "Fork to private chat",
+  "folder_more": "More",
+  "folder_forked": "Forked to a private chat",
+  "folder_forkFailed": "Fork failed",
+  "folder_runHeader": "Run {run}",
+  "@folder_runHeader": {
+    "placeholders": {
+      "run": {
+        "type": "String"
+      }
+    }
+  },
+  "folder_node": "Node {node}",
+  "@folder_node": {
+    "placeholders": {
+      "node": {
+        "type": "String"
+      }
+    }
+  },
+  "folder_from": "From {agent}",
+  "@folder_from": {
+    "placeholders": {
+      "agent": {
+        "type": "String"
+      }
+    }
+  },
+  "folder_messageCount": "{count} messages",
+  "@folder_messageCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "folder_groupViewTitle": "Replies in the group",
+  "folder_groupViewEmpty": "This agent has not spoken in this group session",
+  "folder_historyEmpty": "The host has no record to show for this session"
 }

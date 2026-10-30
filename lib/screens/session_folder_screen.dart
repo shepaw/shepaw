@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../peer/models/folded_sessions.dart';
 import '../peer/services/hub_folded_sessions.dart';
+import '../widgets/session_folders.dart';
 
 /// 折叠组明细（折叠方案 §2.2）：只读，可以分叉到私聊。分页按主机给的游标走。
 class SessionFolderScreen extends StatefulWidget {
@@ -82,24 +84,28 @@ class _SessionFolderScreenState extends State<SessionFolderScreen> {
     if (!mounted) return;
     final id = result.sessionId;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(id == null ? (result.error ?? '分叉失败') : '已分叉到私聊'),
+      content: Text(id == null
+          ? (result.error ?? AppLocalizations.of(context).folder_forkFailed)
+          : AppLocalizations.of(context).folder_forked),
     ));
     if (id != null) widget.onForked?.call(id);
   }
 
-  String _subtitle(FoldedSession session) {
+  String _subtitle(AppLocalizations l10n, FoldedSession session) {
     final parts = <String>[];
     if (session.isFlow && session.nodeKey.isNotEmpty) {
-      parts.add('节点 ${session.nodeKey}');
+      parts.add(l10n.folder_node(session.nodeKey));
     }
-    if (session.fromAgent.isNotEmpty) parts.add('来自 ${session.fromAgent}');
+    if (session.fromAgent.isNotEmpty)
+      parts.add(l10n.folder_from(session.fromAgent));
     if (session.hostName.isNotEmpty) parts.add(session.hostName);
-    if (session.messageCount != null) parts.add('${session.messageCount} 条');
+    if (session.messageCount != null)
+      parts.add(l10n.folder_messageCount(session.messageCount!));
     return parts.join(' · ');
   }
 
   /// 工作流按运行分组，其余按时间平铺（折叠方案 §2.2）。
-  List<Widget> _rows() {
+  List<Widget> _rows(AppLocalizations l10n) {
     final rows = <Widget>[];
     String? lastRun;
     for (final session in _items) {
@@ -109,20 +115,22 @@ class _SessionFolderScreenState extends State<SessionFolderScreen> {
         lastRun = session.runId;
         rows.add(Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: Text('运行 ${session.runId}',
+          child: Text(l10n.folder_runHeader(session.runId),
               style: Theme.of(context).textTheme.labelMedium),
         ));
       }
       rows.add(ListTile(
         title: Text(session.title.isEmpty ? session.sessionId : session.title,
             maxLines: 1, overflow: TextOverflow.ellipsis),
-        subtitle: _subtitle(session).isEmpty ? null : Text(_subtitle(session)),
+        subtitle: _subtitle(l10n, session).isEmpty
+            ? null
+            : Text(_subtitle(l10n, session)),
         onTap: widget.onOpen == null ? null : () => widget.onOpen!(session),
         trailing: PopupMenuButton<String>(
-          tooltip: '更多',
+          tooltip: l10n.folder_more,
           onSelected: (_) => _fork(session),
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'fork', child: Text('分叉到私聊')),
+          itemBuilder: (_) => [
+            PopupMenuItem(value: 'fork', child: Text(l10n.folder_fork)),
           ],
         ),
       ));
@@ -132,21 +140,23 @@ class _SessionFolderScreenState extends State<SessionFolderScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
-      appBar: AppBar(title: Text(widget.folder.label)),
+      appBar: AppBar(title: Text(sessionFolderLabel(l10n, widget.folder))),
       body: Builder(builder: (context) {
         if (_items.isEmpty) {
           if (_loading) return const Center(child: CircularProgressIndicator());
           if (_failed) {
             return Center(
-              child: TextButton(onPressed: _more, child: const Text('读取失败，点此重试')),
+              child:
+                  TextButton(onPressed: _more, child: Text(l10n.folder_retry)),
             );
           }
-          return const Center(child: Text('这里还没有会话'));
+          return Center(child: Text(l10n.folder_empty));
         }
         return ListView(
           children: [
-            ..._rows(),
+            ..._rows(l10n),
             if (_cursor != null)
               Padding(
                 padding: const EdgeInsets.all(12),
@@ -154,7 +164,7 @@ class _SessionFolderScreenState extends State<SessionFolderScreen> {
                   child: _loading
                       ? const CircularProgressIndicator()
                       : TextButton(
-                          onPressed: _more, child: const Text('加载更多')),
+                          onPressed: _more, child: Text(l10n.folder_loadMore)),
                 ),
               ),
           ],

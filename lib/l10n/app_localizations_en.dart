@@ -8865,4 +8865,217 @@ class AppLocalizationsEn extends AppLocalizations {
   String pouch_namedBag(String name) {
     return '$name\'s pouch';
   }
+
+  @override
+  String flow_kindSeq(String id) {
+    return 'Sequence · $id';
+  }
+
+  @override
+  String flow_kindPar(int count) {
+    return 'Parallel · $count';
+  }
+
+  @override
+  String flow_kindLoop(String id) {
+    return 'Loop · $id';
+  }
+
+  @override
+  String flow_kindLoopRound(int round) {
+    return 'Loop · round $round';
+  }
+
+  @override
+  String flow_kindIf(String id) {
+    return 'If · $id';
+  }
+
+  @override
+  String flow_kindMap(String id) {
+    return 'Each · $id';
+  }
+
+  @override
+  String flow_kindPlan(String id) {
+    return 'Planned at run time · $id';
+  }
+
+  @override
+  String flow_kindCall(String id) {
+    return 'Subflow · $id';
+  }
+
+  @override
+  String flow_kindGate(String id) {
+    return 'Waiting for you · $id';
+  }
+
+  @override
+  String flow_kindSet(String id) {
+    return 'Set · $id';
+  }
+
+  @override
+  String flow_kindOther(String kind, String id) {
+    return '$kind · $id';
+  }
+
+  @override
+  String get flow_nodePending => 'Pending';
+
+  @override
+  String get flow_nodeRunning => 'Running';
+
+  @override
+  String get flow_nodeDone => 'Done';
+
+  @override
+  String get flow_nodeHalted => 'Halted';
+
+  @override
+  String get flow_nodeFailed => 'Failed';
+
+  @override
+  String get flow_nodeSkipped => 'Skipped';
+
+  @override
+  String get flow_nodeCancelled => 'Cancelled';
+
+  @override
+  String get flow_runRunning => 'Running';
+
+  @override
+  String get flow_runSucceeded => 'Completed';
+
+  @override
+  String get flow_runFailed => 'Failed';
+
+  @override
+  String get flow_runCancelled => 'Cancelled';
+
+  @override
+  String get flow_runTitle => 'Workflow run';
+
+  @override
+  String get flow_cancelRun => 'Cancel run';
+
+  @override
+  String get flow_cancelRunTitle => 'Cancel this run?';
+
+  @override
+  String get flow_cancelRunBody =>
+      'Steps in progress will be stopped; finished ones are kept.';
+
+  @override
+  String get flow_keepWaiting => 'Keep waiting';
+
+  @override
+  String get flow_refresh => 'Refresh';
+
+  @override
+  String get flow_runLoadFailed =>
+      'Cannot read this run (host offline or run not found)';
+
+  @override
+  String get flow_noData => 'No data';
+
+  @override
+  String get flow_answerFailed => 'Could not submit the answer';
+
+  @override
+  String get flow_cancelFailed => 'Could not cancel';
+
+  @override
+  String get flow_hostNoReply => 'The host did not respond';
+
+  @override
+  String flow_statusLine(String status) {
+    return 'Status: $status';
+  }
+
+  @override
+  String flow_attemptSuffix(int n) {
+    return ' · attempt $n';
+  }
+
+  @override
+  String get flow_viewSession => 'View session';
+
+  @override
+  String flow_tasksUsed(int count) {
+    return '$count tasks dispatched';
+  }
+
+  @override
+  String get folder_group => 'Group chats';
+
+  @override
+  String get folder_delegated => 'Started by other agents';
+
+  @override
+  String get folder_flow => 'Workflows';
+
+  @override
+  String get folder_ide => 'Engine clients';
+
+  @override
+  String get folder_terminal => 'Engine terminals';
+
+  @override
+  String folder_tileTitle(String label, int count) {
+    return '$label · $count';
+  }
+
+  @override
+  String get folder_retry => 'Failed to load. Tap to retry';
+
+  @override
+  String get folder_empty => 'No sessions here yet';
+
+  @override
+  String get folder_loadMore => 'Load more';
+
+  @override
+  String get folder_fork => 'Fork to private chat';
+
+  @override
+  String get folder_more => 'More';
+
+  @override
+  String get folder_forked => 'Forked to a private chat';
+
+  @override
+  String get folder_forkFailed => 'Fork failed';
+
+  @override
+  String folder_runHeader(String run) {
+    return 'Run $run';
+  }
+
+  @override
+  String folder_node(String node) {
+    return 'Node $node';
+  }
+
+  @override
+  String folder_from(String agent) {
+    return 'From $agent';
+  }
+
+  @override
+  String folder_messageCount(int count) {
+    return '$count messages';
+  }
+
+  @override
+  String get folder_groupViewTitle => 'Replies in the group';
+
+  @override
+  String get folder_groupViewEmpty =>
+      'This agent has not spoken in this group session';
+
+  @override
+  String get folder_historyEmpty =>
+      'The host has no record to show for this session';
 }

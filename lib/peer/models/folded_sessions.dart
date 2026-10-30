@@ -2,16 +2,15 @@
 library;
 
 enum SessionFolderKind {
-  group('group', '群聊'),
-  delegated('delegated', '其他 Agent 发起'),
-  flow('flow', '工作流'),
-  ide('ide', '引擎客户端'),
-  terminal('terminal', '引擎终端');
+  group('group'),
+  delegated('delegated'),
+  flow('flow'),
+  ide('ide'),
+  terminal('terminal');
 
-  const SessionFolderKind(this.wire, this.label);
+  const SessionFolderKind(this.wire);
 
   final String wire;
-  final String label;
 
   static SessionFolderKind? parse(Object? raw) {
     for (final kind in SessionFolderKind.values) {

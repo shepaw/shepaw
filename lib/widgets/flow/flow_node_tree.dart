@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../../peer/models/flow_models.dart';
 
 /// 工作流节点树的嵌套卡片渲染（方案 C.2）。不画连线，块结构自上而下。
@@ -51,42 +52,45 @@ class _Connector extends StatelessWidget {
 }
 
 /// 标题里的人话：`loop` 写轮次，`par` 写"并行"。翻译不了就原样显示 kind。
-String flowKindTitle(FlowNode node) {
+String flowKindTitle(AppLocalizations l10n, FlowNode node) {
   switch (node.kind) {
     case 'seq':
-      return '依次 · ${node.id}';
+      return l10n.flow_kindSeq(node.id);
     case 'par':
-      return '并行 · ${node.children.length} 项';
+      return l10n.flow_kindPar(node.children.length);
     case 'loop':
       final rounds = node.rounds;
-      return rounds == null ? '循环 · ${node.id}' : '循环 · 第 $rounds 轮';
+      return rounds == null
+          ? l10n.flow_kindLoop(node.id)
+          : l10n.flow_kindLoopRound(rounds);
     case 'if':
-      return '条件 · ${node.id}';
+      return l10n.flow_kindIf(node.id);
     case 'map':
-      return '逐项 · ${node.id}';
+      return l10n.flow_kindMap(node.id);
     case 'plan':
-      return '运行时生成 · ${node.id}';
+      return l10n.flow_kindPlan(node.id);
     case 'call':
-      return '子流程 · ${node.id}';
+      return l10n.flow_kindCall(node.id);
     case 'gate':
-      return '等你确认 · ${node.id}';
+      return l10n.flow_kindGate(node.id);
     case 'set':
-      return '赋值 · ${node.id}';
+      return l10n.flow_kindSet(node.id);
     case 'task':
       return node.id;
     default:
-      return '${node.kind} · ${node.id}';
+      return l10n.flow_kindOther(node.kind, node.id);
   }
 }
 
-String flowStatusLabel(FlowNodeStatus status) => switch (status) {
-      FlowNodeStatus.pending => '等待',
-      FlowNodeStatus.running => '进行中',
-      FlowNodeStatus.done => '完成',
-      FlowNodeStatus.halted => '已停下',
-      FlowNodeStatus.failed => '失败',
-      FlowNodeStatus.skipped => '跳过',
-      FlowNodeStatus.cancelled => '已取消',
+String flowStatusLabel(AppLocalizations l10n, FlowNodeStatus status) =>
+    switch (status) {
+      FlowNodeStatus.pending => l10n.flow_nodePending,
+      FlowNodeStatus.running => l10n.flow_nodeRunning,
+      FlowNodeStatus.done => l10n.flow_nodeDone,
+      FlowNodeStatus.halted => l10n.flow_nodeHalted,
+      FlowNodeStatus.failed => l10n.flow_nodeFailed,
+      FlowNodeStatus.skipped => l10n.flow_nodeSkipped,
+      FlowNodeStatus.cancelled => l10n.flow_nodeCancelled,
     };
 
 Color flowStatusColor(FlowNodeStatus status) => switch (status) {
@@ -141,7 +145,7 @@ class FlowNodeCard extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      flowKindTitle(node),
+                      flowKindTitle(AppLocalizations.of(context), node),
                       style: theme.textTheme.titleSmall,
                     ),
                   ),
@@ -291,7 +295,7 @@ class _StatusChip extends StatelessWidget {
               ),
             ),
           Text(
-            flowStatusLabel(status),
+            flowStatusLabel(AppLocalizations.of(context), status),
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,

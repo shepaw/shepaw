@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shepaw/l10n/app_localizations.dart';
 import 'package:shepaw/models/channel.dart';
 import 'package:shepaw/peer/services/peer_agent_client_service.dart';
 import 'package:shepaw/peer/services/peer_connection_manager.dart';
@@ -67,6 +68,9 @@ void main() {
     final cursors = <String?>[];
     String? forked;
     await tester.pumpWidget(MaterialApp(
+      locale: const Locale('zh'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: SessionHistoryScreen(
         title: '终端会话',
         loadPage: (cursor) async {
@@ -100,6 +104,9 @@ void main() {
 
   testWidgets('a session with no host-side record says so', (tester) async {
     await tester.pumpWidget(MaterialApp(
+      locale: const Locale('zh'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: SessionHistoryScreen(
         title: 't',
         loadPage: (_) async => PeerHistoryPage.empty,

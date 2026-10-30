@@ -1,6 +1,16 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../peer/models/folded_sessions.dart';
+
+String sessionFolderLabel(AppLocalizations l10n, SessionFolderKind kind) =>
+    switch (kind) {
+      SessionFolderKind.group => l10n.folder_group,
+      SessionFolderKind.delegated => l10n.folder_delegated,
+      SessionFolderKind.flow => l10n.folder_flow,
+      SessionFolderKind.ide => l10n.folder_ide,
+      SessionFolderKind.terminal => l10n.folder_terminal,
+    };
 
 IconData sessionFolderIcon(SessionFolderKind kind) => switch (kind) {
       SessionFolderKind.group => Icons.groups_outlined,
@@ -22,7 +32,9 @@ class SessionFolderTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       leading: Icon(sessionFolderIcon(summary.kind)),
-      title: Text('${summary.kind.label} · ${summary.count}'),
+      title: Text(AppLocalizations.of(context).folder_tileTitle(
+          sessionFolderLabel(AppLocalizations.of(context), summary.kind),
+          summary.count)),
       subtitle: summary.latestTitle.isEmpty
           ? null
           : Text(summary.latestTitle, maxLines: 1, overflow: TextOverflow.ellipsis),

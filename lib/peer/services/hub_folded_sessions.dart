@@ -102,11 +102,11 @@ class HubFoldedSessions {
       forkFrame(agentId, sessionId),
       'agent_session_fork_resp',
     );
-    if (response == null) return (sessionId: null, error: '主机没有回应');
+    if (response == null) return (sessionId: null, error: null);
     if (response['ok'] == true && response['session_id'] is String) {
       return (sessionId: response['session_id'] as String, error: null);
     }
-    return (sessionId: null, error: response['error'] as String? ?? '分叉失败');
+    return (sessionId: null, error: response['error'] as String?);
   }
 
   /// 群聊视角：这个 Agent 在群会话里的发言。这对帧没有 request_id，回包靠

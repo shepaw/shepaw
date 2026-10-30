@@ -340,14 +340,14 @@ class FlowCall {
   /// 不同的帧有的回 `success`，有的回 `ok`，这里一起认。
   factory FlowCall.fromResponse(Map<String, dynamic>? response) {
     if (response == null) {
-      return const FlowCall(reachable: false, ok: false, error: '主机没有回应');
+      return const FlowCall(reachable: false, ok: false);
     }
     final ok = response['success'] == true || response['ok'] == true;
     final error = response['error'];
     return FlowCall(
       reachable: true,
       ok: ok,
-      error: ok ? null : (error is String && error.isNotEmpty ? error : '失败'),
+      error: ok ? null : (error is String && error.isNotEmpty ? error : null),
       data: response,
     );
   }

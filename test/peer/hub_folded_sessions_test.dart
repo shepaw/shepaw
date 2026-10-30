@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shepaw/l10n/app_localizations.dart';
 import 'package:shepaw/peer/models/folded_sessions.dart';
 import 'package:shepaw/peer/services/hub_folded_sessions.dart';
 import 'package:shepaw/peer/services/peer_connection_manager.dart';
@@ -99,6 +100,9 @@ void main() {
     );
     String? forked;
     await tester.pumpWidget(MaterialApp(
+      locale: const Locale('zh'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: SessionFolderScreen(
         peerId: 'p1',
         agentId: 'a1',
@@ -136,12 +140,18 @@ void groupViewTests() {
       'has_more': true,
       'total': 5,
       'messages': [
-        {'message_id': 'm1', 'role': 'assistant', 'content': '我说的', 'created_at': 't'},
+        {
+          'message_id': 'm1',
+          'role': 'assistant',
+          'content': '我说的',
+          'created_at': 't'
+        },
       ],
     })!;
     expect(page.hasMore, isTrue);
     expect(page.messages.single.content, '我说的');
-    expect(GroupViewPage.fromResponse({'error': 'missing_params', 'messages': []}),
+    expect(
+        GroupViewPage.fromResponse({'error': 'missing_params', 'messages': []}),
         isNull);
 
     final bus = StreamController<PeerControlEvent>.broadcast();

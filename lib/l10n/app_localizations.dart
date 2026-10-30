@@ -15490,6 +15490,348 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'{name}的储物袋'**
   String pouch_namedBag(String name);
+
+  /// No description provided for @flow_kindSeq.
+  ///
+  /// In zh, this message translates to:
+  /// **'依次 · {id}'**
+  String flow_kindSeq(String id);
+
+  /// No description provided for @flow_kindPar.
+  ///
+  /// In zh, this message translates to:
+  /// **'并行 · {count} 项'**
+  String flow_kindPar(int count);
+
+  /// No description provided for @flow_kindLoop.
+  ///
+  /// In zh, this message translates to:
+  /// **'循环 · {id}'**
+  String flow_kindLoop(String id);
+
+  /// No description provided for @flow_kindLoopRound.
+  ///
+  /// In zh, this message translates to:
+  /// **'循环 · 第 {round} 轮'**
+  String flow_kindLoopRound(int round);
+
+  /// No description provided for @flow_kindIf.
+  ///
+  /// In zh, this message translates to:
+  /// **'条件 · {id}'**
+  String flow_kindIf(String id);
+
+  /// No description provided for @flow_kindMap.
+  ///
+  /// In zh, this message translates to:
+  /// **'逐项 · {id}'**
+  String flow_kindMap(String id);
+
+  /// No description provided for @flow_kindPlan.
+  ///
+  /// In zh, this message translates to:
+  /// **'运行时生成 · {id}'**
+  String flow_kindPlan(String id);
+
+  /// No description provided for @flow_kindCall.
+  ///
+  /// In zh, this message translates to:
+  /// **'子流程 · {id}'**
+  String flow_kindCall(String id);
+
+  /// No description provided for @flow_kindGate.
+  ///
+  /// In zh, this message translates to:
+  /// **'等你确认 · {id}'**
+  String flow_kindGate(String id);
+
+  /// No description provided for @flow_kindSet.
+  ///
+  /// In zh, this message translates to:
+  /// **'赋值 · {id}'**
+  String flow_kindSet(String id);
+
+  /// No description provided for @flow_kindOther.
+  ///
+  /// In zh, this message translates to:
+  /// **'{kind} · {id}'**
+  String flow_kindOther(String kind, String id);
+
+  /// No description provided for @flow_nodePending.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待'**
+  String get flow_nodePending;
+
+  /// No description provided for @flow_nodeRunning.
+  ///
+  /// In zh, this message translates to:
+  /// **'进行中'**
+  String get flow_nodeRunning;
+
+  /// No description provided for @flow_nodeDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'完成'**
+  String get flow_nodeDone;
+
+  /// No description provided for @flow_nodeHalted.
+  ///
+  /// In zh, this message translates to:
+  /// **'已停下'**
+  String get flow_nodeHalted;
+
+  /// No description provided for @flow_nodeFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'失败'**
+  String get flow_nodeFailed;
+
+  /// No description provided for @flow_nodeSkipped.
+  ///
+  /// In zh, this message translates to:
+  /// **'跳过'**
+  String get flow_nodeSkipped;
+
+  /// No description provided for @flow_nodeCancelled.
+  ///
+  /// In zh, this message translates to:
+  /// **'已取消'**
+  String get flow_nodeCancelled;
+
+  /// No description provided for @flow_runRunning.
+  ///
+  /// In zh, this message translates to:
+  /// **'进行中'**
+  String get flow_runRunning;
+
+  /// No description provided for @flow_runSucceeded.
+  ///
+  /// In zh, this message translates to:
+  /// **'已完成'**
+  String get flow_runSucceeded;
+
+  /// No description provided for @flow_runFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'失败'**
+  String get flow_runFailed;
+
+  /// No description provided for @flow_runCancelled.
+  ///
+  /// In zh, this message translates to:
+  /// **'已取消'**
+  String get flow_runCancelled;
+
+  /// No description provided for @flow_runTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作流运行'**
+  String get flow_runTitle;
+
+  /// No description provided for @flow_cancelRun.
+  ///
+  /// In zh, this message translates to:
+  /// **'取消运行'**
+  String get flow_cancelRun;
+
+  /// No description provided for @flow_cancelRunTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'取消这次运行？'**
+  String get flow_cancelRunTitle;
+
+  /// No description provided for @flow_cancelRunBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在做的步骤会被叫停，已经完成的不受影响。'**
+  String get flow_cancelRunBody;
+
+  /// No description provided for @flow_keepWaiting.
+  ///
+  /// In zh, this message translates to:
+  /// **'再等等'**
+  String get flow_keepWaiting;
+
+  /// No description provided for @flow_refresh.
+  ///
+  /// In zh, this message translates to:
+  /// **'刷新'**
+  String get flow_refresh;
+
+  /// No description provided for @flow_runLoadFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'读不到这次运行（主机不在线或运行不存在）'**
+  String get flow_runLoadFailed;
+
+  /// No description provided for @flow_noData.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有数据'**
+  String get flow_noData;
+
+  /// No description provided for @flow_answerFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'作答失败'**
+  String get flow_answerFailed;
+
+  /// No description provided for @flow_cancelFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'取消失败'**
+  String get flow_cancelFailed;
+
+  /// No description provided for @flow_hostNoReply.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机没有回应'**
+  String get flow_hostNoReply;
+
+  /// No description provided for @flow_statusLine.
+  ///
+  /// In zh, this message translates to:
+  /// **'状态：{status}'**
+  String flow_statusLine(String status);
+
+  /// No description provided for @flow_attemptSuffix.
+  ///
+  /// In zh, this message translates to:
+  /// **' · 第 {n} 次尝试'**
+  String flow_attemptSuffix(int n);
+
+  /// No description provided for @flow_viewSession.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看会话'**
+  String get flow_viewSession;
+
+  /// No description provided for @flow_tasksUsed.
+  ///
+  /// In zh, this message translates to:
+  /// **'已派活 {count} 次'**
+  String flow_tasksUsed(int count);
+
+  /// No description provided for @folder_group.
+  ///
+  /// In zh, this message translates to:
+  /// **'群聊'**
+  String get folder_group;
+
+  /// No description provided for @folder_delegated.
+  ///
+  /// In zh, this message translates to:
+  /// **'其他 Agent 发起'**
+  String get folder_delegated;
+
+  /// No description provided for @folder_flow.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作流'**
+  String get folder_flow;
+
+  /// No description provided for @folder_ide.
+  ///
+  /// In zh, this message translates to:
+  /// **'引擎客户端'**
+  String get folder_ide;
+
+  /// No description provided for @folder_terminal.
+  ///
+  /// In zh, this message translates to:
+  /// **'引擎终端'**
+  String get folder_terminal;
+
+  /// No description provided for @folder_tileTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'{label} · {count}'**
+  String folder_tileTitle(String label, int count);
+
+  /// No description provided for @folder_retry.
+  ///
+  /// In zh, this message translates to:
+  /// **'读取失败，点此重试'**
+  String get folder_retry;
+
+  /// No description provided for @folder_empty.
+  ///
+  /// In zh, this message translates to:
+  /// **'这里还没有会话'**
+  String get folder_empty;
+
+  /// No description provided for @folder_loadMore.
+  ///
+  /// In zh, this message translates to:
+  /// **'加载更多'**
+  String get folder_loadMore;
+
+  /// No description provided for @folder_fork.
+  ///
+  /// In zh, this message translates to:
+  /// **'分叉到私聊'**
+  String get folder_fork;
+
+  /// No description provided for @folder_more.
+  ///
+  /// In zh, this message translates to:
+  /// **'更多'**
+  String get folder_more;
+
+  /// No description provided for @folder_forked.
+  ///
+  /// In zh, this message translates to:
+  /// **'已分叉到私聊'**
+  String get folder_forked;
+
+  /// No description provided for @folder_forkFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'分叉失败'**
+  String get folder_forkFailed;
+
+  /// No description provided for @folder_runHeader.
+  ///
+  /// In zh, this message translates to:
+  /// **'运行 {run}'**
+  String folder_runHeader(String run);
+
+  /// No description provided for @folder_node.
+  ///
+  /// In zh, this message translates to:
+  /// **'节点 {node}'**
+  String folder_node(String node);
+
+  /// No description provided for @folder_from.
+  ///
+  /// In zh, this message translates to:
+  /// **'来自 {agent}'**
+  String folder_from(String agent);
+
+  /// No description provided for @folder_messageCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 条'**
+  String folder_messageCount(int count);
+
+  /// No description provided for @folder_groupViewTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'群聊中的发言'**
+  String get folder_groupViewTitle;
+
+  /// No description provided for @folder_groupViewEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个 Agent 在这个群会话里还没有发言'**
+  String get folder_groupViewEmpty;
+
+  /// No description provided for @folder_historyEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机上没有这个会话可显示的记录'**
+  String get folder_historyEmpty;
 }
 
 class _AppLocalizationsDelegate

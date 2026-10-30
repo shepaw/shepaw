@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shepaw/l10n/app_localizations.dart';
 import 'package:shepaw/peer/models/flow_models.dart';
 import 'package:shepaw/widgets/flow/flow_node_tree.dart';
 
@@ -15,6 +16,9 @@ void main() {
       options: ['通过', '返工'],
     );
     await tester.pumpWidget(MaterialApp(
+      locale: const Locale('zh'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: Scaffold(
         body: SingleChildScrollView(
           child: FlowNodeTree(
@@ -46,6 +50,9 @@ void main() {
 
   testWidgets('a finished gate no longer offers its options', (tester) async {
     await tester.pumpWidget(const MaterialApp(
+      locale: const Locale('zh'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: Scaffold(
         body: FlowNodeTree(nodes: [
           FlowNode(
@@ -61,16 +68,17 @@ void main() {
     expect(find.text('通过'), findsNothing);
   });
 
-  test('loop and par titles say what they are in plain words', () {
-    expect(
-        flowKindTitle(const FlowNode(
-            key: 'l', id: 'l', kind: 'loop', rounds: 2)),
-        '循环 · 第 2 轮');
-    expect(
-        flowKindTitle(const FlowNode(key: 'p', id: 'p', kind: 'par', children: [
-          FlowNode(key: 'p/a', id: 'a', kind: 'task'),
-          FlowNode(key: 'p/b', id: 'b', kind: 'task'),
-        ])),
-        '并行 · 2 项');
+  test('loop and par titles say what they are in plain words', () async {
+    final zh = await AppLocalizations.delegate.load(const Locale('zh'));
+    final en = await AppLocalizations.delegate.load(const Locale('en'));
+    const loop = FlowNode(key: 'l', id: 'l', kind: 'loop', rounds: 2);
+    const par = FlowNode(key: 'p', id: 'p', kind: 'par', children: [
+      FlowNode(key: 'p/a', id: 'a', kind: 'task'),
+      FlowNode(key: 'p/b', id: 'b', kind: 'task'),
+    ]);
+    expect(flowKindTitle(zh, loop), '循环 · 第 2 轮');
+    expect(flowKindTitle(zh, par), '并行 · 2 项');
+    expect(flowKindTitle(en, par), 'Parallel · 2');
+    expect(flowStatusLabel(en, FlowNodeStatus.done), 'Done');
   });
 }

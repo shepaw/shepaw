@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../peer/services/hub_folded_sessions.dart';
 import '../peer/services/peer_agent_client_service.dart';
 
@@ -97,8 +98,9 @@ class _SessionHistoryScreenState extends State<SessionHistoryScreen> {
     final result = await widget.fork!();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(
-          result.sessionId == null ? (result.error ?? '分叉失败') : '已分叉到私聊'),
+      content: Text(result.sessionId == null
+          ? (result.error ?? AppLocalizations.of(context).folder_forkFailed)
+          : AppLocalizations.of(context).folder_forked),
     ));
     if (result.sessionId != null) widget.onForked?.call(result.sessionId!);
   }
@@ -106,12 +108,13 @@ class _SessionHistoryScreenState extends State<SessionHistoryScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.title),
         actions: [
           if (widget.fork != null)
-            TextButton(onPressed: _fork, child: const Text('分叉到私聊')),
+            TextButton(onPressed: _fork, child: Text(l10n.folder_fork)),
         ],
       ),
       body: Builder(builder: (context) {
@@ -119,12 +122,12 @@ class _SessionHistoryScreenState extends State<SessionHistoryScreen> {
           if (_loading) return const Center(child: CircularProgressIndicator());
           if (_failed) {
             return Center(
-              child: TextButton(
-                  onPressed: _more, child: const Text('读取失败，点此重试')),
+              child:
+                  TextButton(onPressed: _more, child: Text(l10n.folder_retry)),
             );
           }
           return Center(
-            child: Text(_loadedOnce ? '主机上没有这个会话可显示的记录' : ''),
+            child: Text(_loadedOnce ? l10n.folder_historyEmpty : ''),
           );
         }
         return ListView(
@@ -155,7 +158,7 @@ class _SessionHistoryScreenState extends State<SessionHistoryScreen> {
                 child: _loading
                     ? const CircularProgressIndicator()
                     : TextButton(
-                        onPressed: _more, child: const Text('加载更多')),
+                        onPressed: _more, child: Text(l10n.folder_loadMore)),
               ),
           ],
         );
