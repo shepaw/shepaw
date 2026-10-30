@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../controllers/chat_controller.dart';
@@ -13,6 +15,7 @@ import 'session_preview_entry.dart';
 import 'session_row_menu.dart';
 import '../discard_changes_scope.dart';
 import 'chat_panel_scope.dart';
+import 'agent_session_folders.dart';
 
 Widget _selectionCheckbox(
   BuildContext context, {
@@ -178,6 +181,19 @@ class _SessionListContentState extends State<_SessionListContent> {
   Set<String> _selectedIds = {};
   final _databaseService = LocalDatabaseService();
 
+  /// 折叠组要问的主机与主机上的 Agent；本机 Agent、群或查不到时为空（不画折叠组）。
+  ({String peerId, String remoteAgentId})? _foldersTarget;
+
+  Future<void> _resolveFoldersTarget() async {
+    final id = widget.controller.agentId;
+    if (id == null || widget.controller.isGroupMode) return;
+    final agent = await _databaseService.getRemoteAgentById(id);
+    final peerId = agent?.sourcePeerId;
+    final remoteId = agent?.remoteAgentId;
+    if (!mounted || peerId == null || remoteId == null) return;
+    setState(() => _foldersTarget = (peerId: peerId, remoteAgentId: remoteId));
+  }
+
   /// 组件自建的回退缓存（未传入 [previewCache] 时使用，例如测试）。
   final Map<String, SessionPreviewEntry> _localPreviews = {};
 
@@ -201,6 +217,7 @@ class _SessionListContentState extends State<_SessionListContent> {
       _markChangedStale();
     }
     _refreshStalePreviews();
+    unawaited(_resolveFoldersTarget());
   }
 
   /// 逐个比对「最新消息时间」与「未读数」，只把实际变过的行标过期或原地更新。
@@ -355,6 +372,13 @@ class _SessionListContentState extends State<_SessionListContent> {
         // 「新建会话」行不参与滚动：它比会话行矮（无副标题），留在
         // [ListView.builder] 里会破坏等高前提（见 [_buildList]）。
         if (!_isSelectionMode) _buildNewSessionItem(context, l10n),
+        // 群聊 / 工作流 / 引擎客户端等来源的会话收进折叠组（折叠方案 §2.1）。
+        if (!_isSelectionMode && _foldersTarget != null)
+          AgentSessionFolders(
+            peerId: _foldersTarget!.peerId,
+            remoteAgentId: _foldersTarget!.remoteAgentId,
+            refreshTick: widget.listRefreshTick,
+          ),
         Expanded(child: _buildList()),
         if (_isSelectionMode) _buildBottomBar(l10n),
       ],
