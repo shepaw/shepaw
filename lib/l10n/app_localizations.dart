@@ -818,6 +818,12 @@ abstract class AppLocalizations {
   /// **'设置'**
   String get nav_settings;
 
+  /// No description provided for @nav_mine.
+  ///
+  /// In zh, this message translates to:
+  /// **'我的'**
+  String get nav_mine;
+
   /// No description provided for @drawer_logout.
   ///
   /// In zh, this message translates to:
@@ -11554,6 +11560,30 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'新建指令'**
   String get instructionSet_create;
+
+  /// No description provided for @chat_instructionAdd.
+  ///
+  /// In zh, this message translates to:
+  /// **'新增指令'**
+  String get chat_instructionAdd;
+
+  /// No description provided for @chat_instructionCurrentAgent.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前 Agent 的指令'**
+  String get chat_instructionCurrentAgent;
+
+  /// No description provided for @chat_instructionOthers.
+  ///
+  /// In zh, this message translates to:
+  /// **'其他指令'**
+  String get chat_instructionOthers;
+
+  /// No description provided for @storage_settingsEntrySub.
+  ///
+  /// In zh, this message translates to:
+  /// **'分区权限、用量、回收站与快照'**
+  String get storage_settingsEntrySub;
 
   /// No description provided for @instructionSet_nameLabel.
   ///

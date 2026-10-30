@@ -24,12 +24,8 @@ import 'remote_agent_detail_screen.dart';
 import 'settings_screen.dart';
 import 'contacts_screen.dart';
 import 'storage_space_manage_screen.dart';
-import 'storage_space_settings_screen.dart';
-import 'storage_snapshots_screen.dart';
 import 'storage_shared.dart';
-import 'instruction_set_screen.dart';
 import 'jade_slip_screen.dart';
-import '../widgets/storage/storage_space_list_panel.dart';
 import '../storage/store_protocol.dart';
 import '../utils/layout_utils.dart';
 import '../services/logger_service.dart';
@@ -43,8 +39,8 @@ import '../service_locator.dart' show getIt;
 import '../widgets/update_settings_badge.dart';
 
 /// Desktop split-panel layout similar to WeChat desktop.
-/// Left: icon sidebar + conversation / contacts / storage list.
-/// Right: chat / contact detail / storage overview or entry / settings.
+/// Left: icon sidebar + conversation / contacts list (jade / files fill the right pane).
+/// Right: chat / contact detail / jade / files / settings.
 class DesktopHomeScreen extends StatefulWidget {
   const DesktopHomeScreen({Key? key}) : super(key: key);
 
@@ -53,7 +49,9 @@ class DesktopHomeScreen extends StatefulWidget {
 }
 
 /// Middle column content (WeChat-style).
-enum _LeftPanelMode { conversations, contacts, storage }
+///
+/// 玉简和文件自带「列表 + 详情」两栏，所以不占中间栏，右栏铺满。
+enum _LeftPanelMode { conversations, contacts, jade, files }
 
 /// Tracks what the right panel is currently displaying.
 enum _RightPanelView {
@@ -68,21 +66,18 @@ enum _RightPanelView {
   contactPeer,
   traces,
   groupTasks,
-  storageSpaceManage,
-  storageBagMenu,
   jadeSlips,
-  instructions,
+  files,
   addAgentInstance,
 }
 
-/// 某个主菜单（消息 / 通讯录 / 储物袋）自己的右栏状态。
+/// 某个主菜单（消息 / 通讯录 / 玉简 / 文件）自己的右栏状态。
 ///
-/// 三个菜单各留一份，切走时不拆掉对应 Navigator，再回来还是上次的页面。
+/// 每个菜单各留一份，切走时不拆掉对应 Navigator，再回来还是上次的页面。
 class _DeskSlot {
   _DeskSlot({
     required this.mode,
     required this.rightPanel,
-    this.storageSpace,
   }) {
     routeArgs = _RouteArgs.fromSlot(this);
   }
@@ -94,7 +89,6 @@ class _DeskSlot {
   RemoteAgent? contactAgent;
   Channel? contactGroup;
   PairedPeer? contactPeer;
-  String? storageSpace;
   String? tracesChannelId;
   String? taskChannelId;
   String? taskChannelName;
@@ -113,7 +107,6 @@ class _RouteArgs {
     this.contactAgent,
     this.contactGroup,
     this.contactPeer,
-    this.storageSpace,
     this.tracesChannelId,
     this.taskChannelId,
     this.taskChannelName,
@@ -129,7 +122,6 @@ class _RouteArgs {
       contactAgent: slot.contactAgent,
       contactGroup: slot.contactGroup,
       contactPeer: slot.contactPeer,
-      storageSpace: slot.storageSpace,
       tracesChannelId: slot.tracesChannelId,
       taskChannelId: slot.taskChannelId,
       taskChannelName: slot.taskChannelName,
@@ -144,7 +136,6 @@ class _RouteArgs {
   final RemoteAgent? contactAgent;
   final Channel? contactGroup;
   final PairedPeer? contactPeer;
-  final String? storageSpace;
   final String? tracesChannelId;
   final String? taskChannelId;
   final String? taskChannelName;
@@ -283,8 +274,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   final GlobalKey<HomeScreenState> _homeKey = GlobalKey<HomeScreenState>();
   final GlobalKey<ContactsScreenState> _contactsKey =
       GlobalKey<ContactsScreenState>();
-  final GlobalKey<StorageSpaceListPanelState> _storageKey =
-      GlobalKey<StorageSpaceListPanelState>();
 
   _LeftPanelMode _leftMode = _LeftPanelMode.conversations;
   bool _settingsOpen = false;
@@ -302,10 +291,13 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       mode: _LeftPanelMode.contacts,
       rightPanel: _RightPanelView.empty,
     ),
-    _LeftPanelMode.storage: _DeskSlot(
-      mode: _LeftPanelMode.storage,
+    _LeftPanelMode.jade: _DeskSlot(
+      mode: _LeftPanelMode.jade,
       rightPanel: _RightPanelView.jadeSlips,
-      storageSpace: StoreSpace.slips,
+    ),
+    _LeftPanelMode.files: _DeskSlot(
+      mode: _LeftPanelMode.files,
+      rightPanel: _RightPanelView.files,
     ),
   };
 
@@ -328,11 +320,15 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     }
   }
 
-  bool _isStorageDetail(_DeskSlot slot) =>
-      slot.rightPanel == _RightPanelView.storageSpaceManage ||
-      slot.rightPanel == _RightPanelView.storageBagMenu ||
+  /// 玉简、文件的右栏根页被关掉后，按原样重新铺一页。
+  bool _isFullPane(_DeskSlot slot) =>
       slot.rightPanel == _RightPanelView.jadeSlips ||
-      slot.rightPanel == _RightPanelView.instructions;
+      slot.rightPanel == _RightPanelView.files;
+
+  /// 中间栏只给消息和通讯录用。
+  bool get _hasMiddleColumn =>
+      _leftMode == _LeftPanelMode.conversations ||
+      _leftMode == _LeftPanelMode.contacts;
 
   bool _isContactDetail(_DeskSlot slot) =>
       slot.rightPanel == _RightPanelView.contactAgent ||
@@ -479,10 +475,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     _contactsKey.currentState?.reload();
   }
 
-  void _reloadStorage() {
-    _storageKey.currentState?.reload();
-  }
-
   void _clearContactDetail({bool reloadList = false}) {
     setState(() {
       final slot = _slots[_LeftPanelMode.contacts]!;
@@ -503,10 +495,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         _clearContactDetail(reloadList: true);
         return;
       }
-      if (_isStorageDetail(slot)) {
-        // 根路由被关掉时，按当前分区重新铺一页。
+      if (_isFullPane(slot)) {
+        // 根路由被关掉时，按当前菜单重新铺一页。
         setState(() => _publishRoute(slot));
-        _reloadStorage();
       }
     });
   }
@@ -541,7 +532,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
   void _showContacts() => _showMode(_LeftPanelMode.contacts);
 
-  void _showStorage() => _showMode(_LeftPanelMode.storage);
+  void _showJade() => _showMode(_LeftPanelMode.jade);
+
+  void _showFiles() => _showMode(_LeftPanelMode.files);
 
   void _showPanel(_RightPanelView panel) {
     if (panel == _RightPanelView.settings) {
@@ -563,21 +556,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         slot.contactGroup = null;
         slot.contactPeer = null;
       }
-      _publishRoute(slot);
-    });
-  }
-
-  void _onStorageSpaceSelected(String space) {
-    setState(() {
-      final slot = _slots[_LeftPanelMode.storage]!;
-      slot.storageSpace = space;
-      slot.selected = null;
-      slot.rightPanel = switch (space) {
-        StoreSpace.slips => _RightPanelView.jadeSlips,
-        StoreSpace.instructions => _RightPanelView.instructions,
-        _ when StorageBagMenu.contains(space) => _RightPanelView.storageBagMenu,
-        _ => _RightPanelView.storageSpaceManage,
-      };
       _publishRoute(slot);
     });
   }
@@ -637,69 +615,73 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           // WeChat-style icon sidebar
           _buildSidebar(),
 
-          // 三个主菜单都留在树上，切走再回来不用重头渲染。
-          SizedBox(
-            width: _leftPanelWidth,
-            child: IndexedStack(
-              index: _leftMode.index,
-              sizing: StackFit.expand,
-              children: [
-                HomeScreen(
-                  key: _homeKey,
-                  embedded: true,
-                  selectedConversation:
-                      _slots[_LeftPanelMode.conversations]!.selected,
-                  onConversationSelected: _onConversationSelected,
-                  onCreateGroup: () => _showPanel(_RightPanelView.createGroup),
-                  onPairDevice: () => _showPanel(_RightPanelView.pairDevice),
-                  onAddAgentInstance: () {
-                    _addAgentNodeId = null;
-                    _showPanel(_RightPanelView.addAgentInstance);
-                  },
-                ),
-                ContactsScreen(
-                  key: _contactsKey,
-                  embedded: true,
-                  selectedContactId:
-                      _contactIdOf(_slots[_LeftPanelMode.contacts]!),
-                  onAgentSelected: _onContactAgentSelected,
-                  onGroupSelected: _onContactGroupSelected,
-                  onPeerSelected: _onContactPeerSelected,
-                  onCreateGroup: () => _showPanel(_RightPanelView.createGroup),
-                  onPairDevice: () =>
-                      _showPanel(_RightPanelView.pairDeviceInput),
-                  onAddAgentInstance: (nodeId) {
-                    _addAgentNodeId = nodeId;
-                    _showPanel(_RightPanelView.addAgentInstance);
-                  },
-                ),
-                StorageSpaceListPanel(
-                  key: _storageKey,
-                  selectedSpace: _slots[_LeftPanelMode.storage]!.storageSpace,
-                  onSpaceSelected: _onStorageSpaceSelected,
-                ),
-              ],
+          // 消息和通讯录的列表都留在树上，切走再回来不用重头渲染。
+          // 切到玉简 / 文件时只是藏起来（Offstage），不拆状态。
+          Offstage(
+            offstage: !_hasMiddleColumn,
+            child: SizedBox(
+              width: _leftPanelWidth,
+              child: IndexedStack(
+                index: _hasMiddleColumn ? _leftMode.index : 0,
+                sizing: StackFit.expand,
+                children: [
+                  HomeScreen(
+                    key: _homeKey,
+                    embedded: true,
+                    selectedConversation:
+                        _slots[_LeftPanelMode.conversations]!.selected,
+                    onConversationSelected: _onConversationSelected,
+                    onCreateGroup: () =>
+                        _showPanel(_RightPanelView.createGroup),
+                    onPairDevice: () => _showPanel(_RightPanelView.pairDevice),
+                    onAddAgentInstance: () {
+                      _addAgentNodeId = null;
+                      _showPanel(_RightPanelView.addAgentInstance);
+                    },
+                  ),
+                  ContactsScreen(
+                    key: _contactsKey,
+                    embedded: true,
+                    selectedContactId:
+                        _contactIdOf(_slots[_LeftPanelMode.contacts]!),
+                    onAgentSelected: _onContactAgentSelected,
+                    onGroupSelected: _onContactGroupSelected,
+                    onPeerSelected: _onContactPeerSelected,
+                    onCreateGroup: () =>
+                        _showPanel(_RightPanelView.createGroup),
+                    onPairDevice: () =>
+                        _showPanel(_RightPanelView.pairDeviceInput),
+                    onAddAgentInstance: (nodeId) {
+                      _addAgentNodeId = nodeId;
+                      _showPanel(_RightPanelView.addAgentInstance);
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
 
           // Resizable divider
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onHorizontalDragUpdate: (details) {
-              setState(() {
-                _leftPanelWidth = (_leftPanelWidth + details.delta.dx)
-                    .clamp(_minLeftPanelWidth, _maxLeftPanelWidth);
-              });
-            },
-            child: MouseRegion(
-              cursor: SystemMouseCursors.resizeColumn,
-              child: SizedBox(
-                width: 12,
-                child: Center(
-                  child: Container(
-                    width: 1,
-                    color:
-                        Theme.of(context).colorScheme.surfaceContainerHighest,
+          Offstage(
+            offstage: !_hasMiddleColumn,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onHorizontalDragUpdate: (details) {
+                setState(() {
+                  _leftPanelWidth = (_leftPanelWidth + details.delta.dx)
+                      .clamp(_minLeftPanelWidth, _maxLeftPanelWidth);
+                });
+              },
+              child: MouseRegion(
+                cursor: SystemMouseCursors.resizeColumn,
+                child: SizedBox(
+                  width: 12,
+                  child: Center(
+                    child: Container(
+                      width: 1,
+                      color:
+                          Theme.of(context).colorScheme.surfaceContainerHighest,
+                    ),
                   ),
                 ),
               ),
@@ -765,9 +747,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             return FutureBuilder<PairedPeer?>(
               key: ValueKey('peer_${selected.peerId}'),
               future: PouchPairing.visiblePeers().then(
-                    (peers) =>
-                        peers.where((p) => p.id == selected.peerId).firstOrNull,
-                  ),
+                (peers) =>
+                    peers.where((p) => p.id == selected.peerId).firstOrNull,
+              ),
               builder: (context, snapshot) {
                 // 仅在加载中显示转圈
                 if (snapshot.connectionState == ConnectionState.waiting) {
@@ -888,29 +870,11 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           onBack: _onGroupTasksBack,
         );
 
-      case _RightPanelView.storageSpaceManage:
-        final space = args.storageSpace;
-        if (space == null || space.isEmpty) {
-          return _buildEmptyState(args.mode);
-        }
-        return StorageSpaceManageScreen(initialSpace: space);
-
-      case _RightPanelView.storageBagMenu:
-        return switch (args.storageSpace) {
-          StorageBagMenu.recycle => const StorageSpaceSettingsScreen(
-              section: StorageSpaceSettingsSection.recycle,
-            ),
-          StorageBagMenu.snapshots => const StorageSnapshotsScreen(),
-          _ => const StorageSpaceSettingsScreen(
-              section: StorageSpaceSettingsSection.usage,
-            ),
-        };
-
       case _RightPanelView.jadeSlips:
         return const JadeSlipScreen(embedded: true);
 
-      case _RightPanelView.instructions:
-        return const InstructionSetScreen(embedded: true);
+      case _RightPanelView.files:
+        return const StorageSpaceManageScreen(initialSpace: StoreSpace.files);
 
       case _RightPanelView.addAgentInstance:
         return AddAgentInstanceScreen(
@@ -968,13 +932,20 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         onTap: _showContacts,
       ),
       _SidebarItemDef(
-        icon: Icons.inventory_2_outlined,
-        tooltip: l10n.storage_title,
-        colorBuilder: (_) =>
-            _leftMode == _LeftPanelMode.storage && !_settingsOpen
-                ? activeColor
-                : iconColor,
-        onTap: _showStorage,
+        icon: Icons.auto_stories_outlined,
+        tooltip: l10n.jadeSlip_title,
+        colorBuilder: (_) => _leftMode == _LeftPanelMode.jade && !_settingsOpen
+            ? activeColor
+            : iconColor,
+        onTap: _showJade,
+      ),
+      _SidebarItemDef(
+        icon: Icons.folder_outlined,
+        tooltip: storageSpaceLabel(l10n, StoreSpace.files),
+        colorBuilder: (_) => _leftMode == _LeftPanelMode.files && !_settingsOpen
+            ? activeColor
+            : iconColor,
+        onTap: _showFiles,
       ),
     ];
 
@@ -1079,9 +1050,12 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       case _LeftPanelMode.contacts:
         icon = Icons.contacts_outlined;
         label = l10n.contacts_title;
-      case _LeftPanelMode.storage:
-        icon = Icons.inventory_2_outlined;
-        label = l10n.storage_title;
+      case _LeftPanelMode.jade:
+        icon = Icons.auto_stories_outlined;
+        label = l10n.jadeSlip_title;
+      case _LeftPanelMode.files:
+        icon = Icons.folder_outlined;
+        label = storageSpaceLabel(l10n, StoreSpace.files);
       case _LeftPanelMode.conversations:
         icon = Icons.chat_bubble_outline;
         label = l10n.home_noMessages;

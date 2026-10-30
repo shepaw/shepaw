@@ -1,20 +1,20 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
-import '../services/update_service.dart';
 import '../widgets/mobile_nav_bar.dart';
 import '../widgets/mobile_shell_scope.dart';
 import 'contacts_screen.dart';
 import 'home_screen.dart';
-import 'settings_screen.dart';
-import 'storage_space_manage_screen.dart';
+import 'jade_slip_screen.dart';
+import 'mine_screen.dart';
 
-/// Mobile root: four bottom-bar tabs. Inactive tabs stay mounted after first
+/// Mobile root: four bottom-bar tabs (chats, contacts, jade slips, me). Files and
+/// settings live inside the "me" tab. Inactive tabs stay mounted after first
 /// open so list scroll position is kept.
 ///
 /// Chat pages still push on the root navigator, which covers this shell so
-/// the bar hides while in a conversation. The storage tab has its own
-/// navigator: pages opened from the pouch stay above the bar.
+/// the bar hides while in a conversation. The jade and me tabs each have
+/// their own navigator: pages opened from them stay above the bar.
 class MobileHomeShell extends StatefulWidget {
   const MobileHomeShell({super.key});
 
@@ -25,12 +25,13 @@ class MobileHomeShell extends StatefulWidget {
 class _MobileHomeShellState extends State<MobileHomeShell> {
   int _index = 0;
   final Set<int> _opened = {0};
-  final GlobalKey<NavigatorState> _storageNavKey = GlobalKey<NavigatorState>();
+  final GlobalKey<NavigatorState> _jadeNavKey = GlobalKey<NavigatorState>();
+  final GlobalKey<NavigatorState> _mineNavKey = GlobalKey<NavigatorState>();
+
+  static const int _jadeTab = 2;
+  static const int _mineTab = 3;
 
   void _select(int index) {
-    if (index == 3) {
-      UpdateService().dismissSettingsIconBadge();
-    }
     if (_index == index) return;
     setState(() {
       _index = index;
@@ -51,19 +52,23 @@ class _MobileHomeShellState extends State<MobileHomeShell> {
     );
   }
 
-  /// Pushes stay inside the pouch so the bottom bar remains tappable.
-  Widget _storageTab() {
+  /// Pushes stay inside the tab so the bottom bar remains tappable.
+  Widget _nestedTab({
+    required int tab,
+    required GlobalKey<NavigatorState> navKey,
+    required WidgetBuilder root,
+  }) {
     return NavigatorPopHandler<void>(
-      enabled: _index == 2,
+      enabled: _index == tab,
       onPopWithResult: (_) {
-        _storageNavKey.currentState?.maybePop();
+        navKey.currentState?.maybePop();
       },
       child: Navigator(
-        key: _storageNavKey,
+        key: navKey,
         onGenerateRoute: (settings) {
           return MaterialPageRoute<void>(
             settings: settings,
-            builder: (_) => const StorageSpaceManageScreen(),
+            builder: root,
           );
         },
       ),
@@ -95,12 +100,26 @@ class _MobileHomeShellState extends State<MobileHomeShell> {
                       _tab(0, const HomeScreen()),
                       _tab(1, const ContactsScreen()),
                       _tab(
-                        2,
-                        _opened.contains(2)
-                            ? _storageTab()
+                        _jadeTab,
+                        _opened.contains(_jadeTab)
+                            ? _nestedTab(
+                                tab: _jadeTab,
+                                navKey: _jadeNavKey,
+                                root: (_) =>
+                                    const JadeSlipScreen(embedded: true),
+                              )
                             : const SizedBox.shrink(),
                       ),
-                      _tab(3, const SettingsScreen()),
+                      _tab(
+                        _mineTab,
+                        _opened.contains(_mineTab)
+                            ? _nestedTab(
+                                tab: _mineTab,
+                                navKey: _mineNavKey,
+                                root: (_) => const MineScreen(),
+                              )
+                            : const SizedBox.shrink(),
+                      ),
                     ],
                   ),
                 ),
@@ -125,14 +144,14 @@ class _MobileHomeShellState extends State<MobileHomeShell> {
                     label: l10n.contacts_title,
                   ),
                   MobileNavItem(
-                    icon: Icons.inventory_2_outlined,
-                    selectedIcon: Icons.inventory_2,
-                    label: l10n.nav_storage,
+                    icon: Icons.auto_stories_outlined,
+                    selectedIcon: Icons.auto_stories,
+                    label: l10n.jadeSlip_title,
                   ),
                   MobileNavItem(
-                    icon: Icons.settings_outlined,
-                    selectedIcon: Icons.settings,
-                    label: l10n.nav_settings,
+                    icon: Icons.person_outline,
+                    selectedIcon: Icons.person,
+                    label: l10n.nav_mine,
                     showSettingsBadge: true,
                   ),
                 ],

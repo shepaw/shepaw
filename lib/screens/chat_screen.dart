@@ -1586,16 +1586,6 @@ class _ChatScreenState extends State<ChatScreen>
           _pickFromStorageBag();
         },
       ),
-      _buildAttachmentAction(
-        icon: Icons.playlist_add_check_outlined,
-        iconColor: Colors.indigo.shade400,
-        label: l10n.chat_instruction,
-        labelColor: labelColor,
-        onTap: () {
-          closePanel();
-          _openInstructionSet();
-        },
-      ),
     ];
 
     return Container(
@@ -1687,7 +1677,7 @@ class _ChatScreenState extends State<ChatScreen>
     }
   }
 
-  Future<void> _openInstructionSet() async {
+  Future<void> _openInstructionSet({bool startCreating = false}) async {
     final c = _controller;
     await Navigator.push(
       context,
@@ -1700,6 +1690,7 @@ class _ChatScreenState extends State<ChatScreen>
           groupFamilyId: c.isGroupMode
               ? (c.groupChannel?.groupFamilyId)
               : null,
+          startCreating: startCreating,
         ),
       ),
     );
@@ -4266,6 +4257,8 @@ class _ChatScreenState extends State<ChatScreen>
                   showAttachmentPanel: _showAttachmentPanel,
                   onPickFile: _pickAndStageFile,
                   onPickFromStorageBag: _pickFromStorageBag,
+                  onCreateInstruction: () =>
+                      _openInstructionSet(startCreating: true),
                   onSendVoice: _sendVoiceMessage,
                   onRemoveAttachment: _removePendingAttachment,
                   onMentionPickerChanged: () {

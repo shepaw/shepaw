@@ -37,6 +37,9 @@ class InstructionSetScreen extends StatefulWidget {
   /// 打开时在桌面分栏里选中这条指令。
   final String? initialInstructionId;
 
+  /// 打开即进入新建态，供输入框里的「新增指令」跳转用。
+  final bool startCreating;
+
   const InstructionSetScreen({
     super.key,
     this.channelId,
@@ -44,6 +47,7 @@ class InstructionSetScreen extends StatefulWidget {
     this.groupFamilyId,
     this.embedded = false,
     this.initialInstructionId,
+    this.startCreating = false,
   });
 
   @override
@@ -75,6 +79,7 @@ class _InstructionSetScreenState extends State<InstructionSetScreen> {
     super.initState();
     final initial = widget.initialInstructionId;
     if (initial != null && initial.isNotEmpty) _selectedId = initial;
+    _creating = widget.startCreating;
     unawaited(_load());
   }
 

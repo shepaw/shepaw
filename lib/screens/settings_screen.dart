@@ -40,6 +40,7 @@ import '../services/biometric_service.dart';
 import '../widgets/update_dialog.dart';
 import '../services/update_service.dart';
 import '../widgets/model_icon.dart';
+import 'storage_space_manage_screen.dart';
 import '../widgets/mobile_shell_scope.dart';
 import '../services/model_registry.dart';
 import '../services/skill_registry.dart';
@@ -132,9 +133,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     nav.pushNamedAndRemoveUntil(
       route,
       (_) => false,
-      arguments: phoneHost == null
-          ? null
-          : PhoneAuthArgs(hostPeerId: phoneHost),
+      arguments:
+          phoneHost == null ? null : PhoneAuthArgs(hostPeerId: phoneHost),
     );
   }
 
@@ -529,6 +529,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
             ),
           ),
+
+          ListTile(
+            leading: const Icon(Icons.inventory_2_outlined),
+            title: Text(l10n.storage_title),
+            subtitle: Text(l10n.storage_settingsEntrySub),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const StorageSpaceManageScreen(),
+                ),
+              );
+            },
+          ),
+
+          const Divider(),
 
           ListTile(
             leading: const ModelIcon(),

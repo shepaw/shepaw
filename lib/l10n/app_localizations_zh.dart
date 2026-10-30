@@ -385,6 +385,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get nav_settings => '设置';
 
   @override
+  String get nav_mine => '我的';
+
+  @override
   String get drawer_logout => '退出登录';
 
   @override
@@ -6322,6 +6325,18 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get instructionSet_create => '新建指令';
+
+  @override
+  String get chat_instructionAdd => '新增指令';
+
+  @override
+  String get chat_instructionCurrentAgent => '当前 Agent 的指令';
+
+  @override
+  String get chat_instructionOthers => '其他指令';
+
+  @override
+  String get storage_settingsEntrySub => '分区权限、用量、回收站与快照';
 
   @override
   String get instructionSet_nameLabel => '指令名称';

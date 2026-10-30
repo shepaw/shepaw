@@ -400,6 +400,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get nav_settings => 'Settings';
 
   @override
+  String get nav_mine => 'Me';
+
+  @override
   String get drawer_logout => 'Logout';
 
   @override
@@ -6574,6 +6577,19 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get instructionSet_create => 'New instruction';
+
+  @override
+  String get chat_instructionAdd => 'Add instruction';
+
+  @override
+  String get chat_instructionCurrentAgent => 'This agent\'s instructions';
+
+  @override
+  String get chat_instructionOthers => 'Other instructions';
+
+  @override
+  String get storage_settingsEntrySub =>
+      'Space permissions, usage, recycle bin and snapshots';
 
   @override
   String get instructionSet_nameLabel => 'Name';

@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../models/acp_protocol.dart';
+import '../../models/instruction_set.dart';
 import '../../models/mention_entry.dart';
 import '../../models/agent_scenario_models.dart';
 import '../../models/model_definition.dart';
@@ -23,6 +24,7 @@ import '../../peer/services/peer_connection_manager.dart';
 import '../../screens/model_management_screen.dart';
 import '../../services/agent_metadata_builder.dart';
 import '../../services/audio_recording_service.dart';
+import '../../services/instruction_set_service.dart';
 import '../../services/local_database_service.dart';
 import '../../services/model_registry.dart';
 import '../../services/remote_agent_service.dart';
@@ -130,6 +132,10 @@ class ChatInputArea extends StatefulWidget {
   /// 输入框里换了主模型（或新加一条并选中）之后调用。
   final VoidCallback? onMainModelChanged;
 
+  /// 指令下拉里点「新增指令」时调用，由父级跳到指令管理页（新建态）。
+  /// 为空则不显示指令入口。
+  final VoidCallback? onCreateInstruction;
+
   const ChatInputArea({
     super.key,
     required this.messageController,
@@ -158,6 +164,7 @@ class ChatInputArea extends StatefulWidget {
     this.agentId,
     this.channelId,
     this.onMainModelChanged,
+    this.onCreateInstruction,
   });
 
   @override
@@ -251,6 +258,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
   // - Peer agent → 上游 `fetchModels` / `setModel`。先显示缓存；
   //   switchable == false 时只展示当前模型。
   final GlobalKey _mainModelChipKey = GlobalKey();
+  final GlobalKey _instructionChipKey = GlobalKey();
   ModelDefinition? _mainModelDef;
   bool _mainModelAvailable = false;
 
@@ -277,6 +285,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
 
   /// 主模型菜单里的「添加模型」哨兵值。
   static const _addModelSentinel = '__add_model__';
+  static const _addInstructionSentinel = '__add_instruction__';
 
   String? get _effectiveFast => PeerModelsList(
         models: _peerModels,
@@ -840,6 +849,152 @@ class ChatInputAreaState extends State<ChatInputArea> {
     if (!mounted) return;
     // 定义可能被改名 / 删除，回来后按 registry 重新解析 chip。
     unawaited(_loadAgentControls());
+  }
+
+  bool get _instructionEntryAvailable => widget.onCreateInstruction != null;
+
+  Widget _buildInstructionChip() {
+    final l10n = AppLocalizations.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
+    final fg = colorScheme.onSurfaceVariant;
+    return InkWell(
+      key: _instructionChipKey,
+      onTap: _showInstructionMenu,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: colorScheme.outline, width: 0.5),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.playlist_add_check_outlined, size: 14, color: fg),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                l10n.instructionSet_title,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: fg,
+                ),
+              ),
+            ),
+            const SizedBox(width: 2),
+            Icon(Icons.arrow_drop_down, size: 16, color: fg),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 列出全部指令。当前 Agent 的排在前面，只是默认顺序，其余照样可选。
+  /// 选中后把正文填进输入框，由用户确认后再发。
+  Future<void> _showInstructionMenu() async {
+    final items = await InstructionSetService.instance.list();
+    if (!mounted) return;
+    final overlayBox =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (overlayBox == null) return;
+    final chipBox =
+        _instructionChipKey.currentContext?.findRenderObject() as RenderBox?;
+    final rect = chipBox != null
+        ? overlayBox.globalToLocal(chipBox.localToGlobal(Offset.zero)) &
+            chipBox.size
+        : Rect.fromLTWH(24, overlayBox.size.height - 240, 200, 0);
+    final l10n = AppLocalizations.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
+    final agentId = widget.isGroupMode ? null : widget.agentId;
+    final mine = [
+      for (final i in items)
+        if (agentId != null && i.ownerAgentId == agentId) i,
+    ];
+    final others = [
+      for (final i in items)
+        if (agentId == null || i.ownerAgentId != agentId) i,
+    ];
+
+    PopupMenuItem<String> header(String text) => PopupMenuItem<String>(
+          enabled: false,
+          height: 28,
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        );
+
+    PopupMenuItem<String> row(InstructionSet i) => PopupMenuItem<String>(
+          value: 'inst:${i.id}',
+          child: _ModelMenuItem(
+            title: i.name,
+            subtitle: i.description?.isNotEmpty == true
+                ? i.description!
+                : i.ownerAgentName,
+            selected: false,
+            colorScheme: colorScheme,
+          ),
+        );
+
+    final picked = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromSize(rect, overlayBox.size),
+      constraints: _kComposerChoiceMenuConstraints,
+      items: [
+        if (mine.isNotEmpty) ...[
+          header(l10n.chat_instructionCurrentAgent),
+          for (final i in mine) row(i),
+        ],
+        if (others.isNotEmpty) ...[
+          if (mine.isNotEmpty) header(l10n.chat_instructionOthers),
+          for (final i in others) row(i),
+        ],
+        if (items.isNotEmpty) const PopupMenuDivider(),
+        PopupMenuItem<String>(
+          value: _addInstructionSentinel,
+          child: Row(
+            children: [
+              Icon(Icons.add, size: 18, color: colorScheme.primary),
+              const SizedBox(width: 8),
+              Text(
+                l10n.chat_instructionAdd,
+                style: TextStyle(
+                  color: colorScheme.primary,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+    if (!mounted || picked == null) return;
+    if (picked == _addInstructionSentinel) {
+      widget.onCreateInstruction?.call();
+      return;
+    }
+    final id = picked.substring('inst:'.length);
+    final chosen = items.where((i) => i.id == id).firstOrNull;
+    if (chosen != null) _prefillInstruction(chosen);
+  }
+
+  void _prefillInstruction(InstructionSet item) {
+    final ctrl = widget.messageController;
+    final current = ctrl.text;
+    final next =
+        current.trim().isEmpty ? item.content : '$current\n${item.content}';
+    ctrl.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: next.length),
+    );
+    widget.textFieldFocusNode.requestFocus();
   }
 
   Widget _buildMainModelChip() {
@@ -1945,6 +2100,13 @@ class ChatInputAreaState extends State<ChatInputArea> {
                               child: _buildMainModelChip(),
                             ),
                           ],
+                          if (_instructionEntryAvailable) ...[
+                            const SizedBox(width: 4),
+                            Flexible(
+                              fit: FlexFit.loose,
+                              child: _buildInstructionChip(),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -2402,7 +2564,9 @@ class ChatInputAreaState extends State<ChatInputArea> {
             _buildPendingAttachmentsPreview(),
             // 输入框上方一条：那一行已塞了 语音 / + / 输入框 / 发送，再塞
             // 图标会挤（§5.1.5），两个 chip 单独占一条。
-            if (_sessionModeAvailable || _modelEntryAvailable)
+            if (_sessionModeAvailable ||
+                _modelEntryAvailable ||
+                _instructionEntryAvailable)
               Padding(
                 padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
                 child: Row(
@@ -2419,6 +2583,14 @@ class ChatInputAreaState extends State<ChatInputArea> {
                         fit: FlexFit.loose,
                         child: _buildMainModelChip(),
                       ),
+                    if (_instructionEntryAvailable) ...[
+                      if (_sessionModeAvailable || _modelEntryAvailable)
+                        const SizedBox(width: 6),
+                      Flexible(
+                        fit: FlexFit.loose,
+                        child: _buildInstructionChip(),
+                      ),
+                    ],
                   ],
                 ),
               ),
