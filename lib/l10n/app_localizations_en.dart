@@ -9100,4 +9100,105 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get folder_historyEmpty =>
       'The host has no record to show for this session';
+
+  @override
+  String flow_designTitle(String name) {
+    return 'Design: $name';
+  }
+
+  @override
+  String flow_revisionLabel(int n) {
+    return 'Revision $n';
+  }
+
+  @override
+  String get flow_rehearse => 'Rehearse';
+
+  @override
+  String get flow_rehearseStop => 'End rehearsal';
+
+  @override
+  String get flow_rehearsing => 'Rehearsing: no agent is called';
+
+  @override
+  String flow_rehearseFailed(String error) {
+    return 'Rehearsal failed: $error';
+  }
+
+  @override
+  String get flow_diffToggle => 'Compare with previous revision';
+
+  @override
+  String flow_diffSummary(int count) {
+    return '$count changes';
+  }
+
+  @override
+  String get flow_diffNone => 'No changes';
+
+  @override
+  String get flow_diffAdded => 'Added';
+
+  @override
+  String flow_diffRemoved(String ids) {
+    return 'Removed: $ids';
+  }
+
+  @override
+  String get flow_diffChanged => 'Changed';
+
+  @override
+  String get flow_save => 'Save';
+
+  @override
+  String flow_saved(int n) {
+    return 'Saved as revision $n';
+  }
+
+  @override
+  String get flow_saveFailed => 'Could not save';
+
+  @override
+  String flow_hasProblems(int count) {
+    return '$count problems to fix before saving';
+  }
+
+  @override
+  String get flow_inspectorApply => 'Apply';
+
+  @override
+  String get flow_inspectorDelete => 'Delete this step';
+
+  @override
+  String get flow_wrapPar => 'Wrap in parallel';
+
+  @override
+  String get flow_wrapLoop => 'Wrap in loop';
+
+  @override
+  String get flow_unwrap => 'Unwrap';
+
+  @override
+  String get flow_addAfter => 'Add a step after';
+
+  @override
+  String get flow_newStepPrompt => 'New step';
+
+  @override
+  String get flow_editFailed => 'That change could not be made';
+
+  @override
+  String get flow_designLoadFailed => 'Cannot read this flow';
+
+  @override
+  String get flow_libraryTitle => 'Flow library';
+
+  @override
+  String get flow_libraryEmpty => 'No flows yet';
+
+  @override
+  String get flow_startRun => 'Run';
+
+  @override
+  String get flow_startFailed => 'Could not start the run';
 }

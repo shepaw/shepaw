@@ -6,6 +6,7 @@ import '../l10n/app_localizations.dart';
 import '../peer/models/folded_sessions.dart';
 import '../peer/services/hub_folded_sessions.dart';
 import '../widgets/session_folders.dart';
+import 'flow_library_screen.dart';
 
 /// 折叠组明细（折叠方案 §2.2）：只读，可以分叉到私聊。分页按主机给的游标走。
 class SessionFolderScreen extends StatefulWidget {
@@ -142,7 +143,22 @@ class _SessionFolderScreenState extends State<SessionFolderScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return Scaffold(
-      appBar: AppBar(title: Text(sessionFolderLabel(l10n, widget.folder))),
+      appBar: AppBar(
+        title: Text(sessionFolderLabel(l10n, widget.folder)),
+        actions: [
+          // 工作流组顺手带上流程库的入口：设计、演练、运行都从这里进。
+          if (widget.folder == SessionFolderKind.flow)
+            IconButton(
+              tooltip: l10n.flow_libraryTitle,
+              icon: const Icon(Icons.account_tree_outlined),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => FlowLibraryScreen(peerId: widget.peerId),
+                ),
+              ),
+            ),
+        ],
+      ),
       body: Builder(builder: (context) {
         if (_items.isEmpty) {
           if (_loading) return const Center(child: CircularProgressIndicator());

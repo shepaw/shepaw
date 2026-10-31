@@ -8750,4 +8750,105 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get folder_historyEmpty => '主机上没有这个会话可显示的记录';
+
+  @override
+  String flow_designTitle(String name) {
+    return '设计：$name';
+  }
+
+  @override
+  String flow_revisionLabel(int n) {
+    return '第 $n 版';
+  }
+
+  @override
+  String get flow_rehearse => '演练';
+
+  @override
+  String get flow_rehearseStop => '结束演练';
+
+  @override
+  String get flow_rehearsing => '演练中：不调用任何 Agent';
+
+  @override
+  String flow_rehearseFailed(String error) {
+    return '演练走不通：$error';
+  }
+
+  @override
+  String get flow_diffToggle => '与上一版对比';
+
+  @override
+  String flow_diffSummary(int count) {
+    return '$count 处改动';
+  }
+
+  @override
+  String get flow_diffNone => '没有改动';
+
+  @override
+  String get flow_diffAdded => '新增';
+
+  @override
+  String flow_diffRemoved(String ids) {
+    return '已删除：$ids';
+  }
+
+  @override
+  String get flow_diffChanged => '有改动';
+
+  @override
+  String get flow_save => '保存';
+
+  @override
+  String flow_saved(int n) {
+    return '已保存为第 $n 版';
+  }
+
+  @override
+  String get flow_saveFailed => '保存失败';
+
+  @override
+  String flow_hasProblems(int count) {
+    return '还有 $count 个问题，先改好再保存';
+  }
+
+  @override
+  String get flow_inspectorApply => '应用';
+
+  @override
+  String get flow_inspectorDelete => '删除这一步';
+
+  @override
+  String get flow_wrapPar => '包成并行';
+
+  @override
+  String get flow_wrapLoop => '包成循环';
+
+  @override
+  String get flow_unwrap => '拆开';
+
+  @override
+  String get flow_addAfter => '在后面加一步';
+
+  @override
+  String get flow_newStepPrompt => '新的一步';
+
+  @override
+  String get flow_editFailed => '这个改动做不了';
+
+  @override
+  String get flow_designLoadFailed => '读不到这个流程';
+
+  @override
+  String get flow_libraryTitle => '流程库';
+
+  @override
+  String get flow_libraryEmpty => '还没有流程';
+
+  @override
+  String get flow_startRun => '运行';
+
+  @override
+  String get flow_startFailed => '开跑失败';
 }

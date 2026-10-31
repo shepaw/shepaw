@@ -12,6 +12,7 @@ class FlowNodeTree extends StatelessWidget {
     required this.nodes,
     this.onTapNode,
     this.onAnswerGate,
+    this.badgeFor,
   });
 
   final List<FlowNode> nodes;
@@ -19,6 +20,9 @@ class FlowNodeTree extends StatelessWidget {
 
   /// 关卡卡片上点了某个选项。
   final void Function(FlowNode node, String choice)? onAnswerGate;
+
+  /// 节点标题旁的小标记（差异里的"新增""有改动"），返回空就不画。
+  final (String, Color)? Function(FlowNode node)? badgeFor;
 
   @override
   Widget build(BuildContext context) {
@@ -31,6 +35,7 @@ class FlowNodeTree extends StatelessWidget {
             node: nodes[i],
             onTapNode: onTapNode,
             onAnswerGate: onAnswerGate,
+            badgeFor: badgeFor,
           ),
         ],
       ],
@@ -109,17 +114,20 @@ class FlowNodeCard extends StatelessWidget {
     required this.node,
     this.onTapNode,
     this.onAnswerGate,
+    this.badgeFor,
   });
 
   final FlowNode node;
   final void Function(FlowNode node)? onTapNode;
   final void Function(FlowNode node, String choice)? onAnswerGate;
+  final (String, Color)? Function(FlowNode node)? badgeFor;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final status = node.status;
-    final accent = status == null ? theme.dividerColor : flowStatusColor(status);
+    final accent =
+        status == null ? theme.dividerColor : flowStatusColor(status);
     final container = node.isContainer;
     final dashed = node.kind == 'plan';
     return Material(
@@ -149,6 +157,20 @@ class FlowNodeCard extends StatelessWidget {
                       style: theme.textTheme.titleSmall,
                     ),
                   ),
+                  if (badgeFor?.call(node) case (final text, final color))
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(text,
+                            style: TextStyle(fontSize: 11, color: color)),
+                      ),
+                    ),
                   if (status != null) _StatusChip(status: status),
                 ],
               ),
@@ -201,11 +223,13 @@ class FlowNodeCard extends StatelessWidget {
                           nodes: node.children,
                           onTapNode: onTapNode,
                           onAnswerGate: onAnswerGate,
+                          badgeFor: badgeFor,
                         )
                       : FlowNodeTree(
                           nodes: node.children,
                           onTapNode: onTapNode,
                           onAnswerGate: onAnswerGate,
+                          badgeFor: badgeFor,
                         ),
                 ),
             ],
@@ -222,11 +246,13 @@ class _ParallelChildren extends StatelessWidget {
     required this.nodes,
     this.onTapNode,
     this.onAnswerGate,
+    this.badgeFor,
   });
 
   final List<FlowNode> nodes;
   final void Function(FlowNode node)? onTapNode;
   final void Function(FlowNode node, String choice)? onAnswerGate;
+  final (String, Color)? Function(FlowNode node)? badgeFor;
 
   @override
   Widget build(BuildContext context) {
@@ -238,6 +264,7 @@ class _ParallelChildren extends StatelessWidget {
               node: node,
               onTapNode: onTapNode,
               onAnswerGate: onAnswerGate,
+              badgeFor: badgeFor,
             ),
         ];
         if (constraints.maxWidth < 560) {

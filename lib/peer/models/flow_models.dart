@@ -57,6 +57,7 @@ class FlowNode {
     this.children = const [],
     this.session,
     this.options = const [],
+    this.fields,
   });
 
   /// 定位键（`build#2/impl/backend`）。事件、作答、查看会话都用它。
@@ -78,13 +79,16 @@ class FlowNode {
   /// `gate` 的可选项。
   final List<String> options;
 
+  /// 节点自己的字段（设计视图才有），检查器回填当前值。
+  final Map<String, dynamic>? fields;
+
   bool get isContainer => children.isNotEmpty;
 
   /// 关卡正在等人回答。
-  bool get awaitsAnswer =>
-      kind == 'gate' && status == FlowNodeStatus.running;
+  bool get awaitsAnswer => kind == 'gate' && status == FlowNodeStatus.running;
 
-  FlowNode copyWith({FlowNodeStatus? status, int? attempt, List<FlowNode>? children}) =>
+  FlowNode copyWith(
+          {FlowNodeStatus? status, int? attempt, List<FlowNode>? children}) =>
       FlowNode(
         key: key,
         id: id,
@@ -99,6 +103,7 @@ class FlowNode {
         children: children ?? this.children,
         session: session,
         options: options,
+        fields: fields,
       );
 
   factory FlowNode.fromJson(Map<String, dynamic> json) {
@@ -128,6 +133,9 @@ class FlowNode {
       options: rawOptions is List
           ? [for (final item in rawOptions) item.toString()]
           : const [],
+      fields: json['fields'] is Map
+          ? Map<String, dynamic>.from(json['fields'] as Map)
+          : null,
     );
   }
 
@@ -145,6 +153,37 @@ class FlowNode {
         }(),
     ];
     return touched ? copyWith(children: next) : this;
+  }
+
+  /// 演练的动画帧：派活顺序里已经走过的叶子是完成，正在走的是进行中，其余等待；
+  /// 容器按子节点汇总。`done` / `running` 是节点 key。
+  FlowNode withProgress(Set<String> done, String? running) {
+    final kids = [for (final c in children) c.withProgress(done, running)];
+    FlowNodeStatus status;
+    if (kids.isEmpty) {
+      status = key == running
+          ? FlowNodeStatus.running
+          : done.contains(key)
+              ? FlowNodeStatus.done
+              : FlowNodeStatus.pending;
+    } else if (kids.every((k) => k.status == FlowNodeStatus.done)) {
+      status = FlowNodeStatus.done;
+    } else if (kids.every((k) => k.status == FlowNodeStatus.pending)) {
+      status = FlowNodeStatus.pending;
+    } else {
+      status = FlowNodeStatus.running;
+    }
+    return FlowNode(
+      key: key,
+      id: id,
+      kind: kind,
+      desc: desc,
+      status: status,
+      rounds: rounds,
+      children: kids,
+      options: options,
+      fields: fields,
+    );
   }
 
   /// 深度优先找第一个满足条件的节点。
@@ -201,7 +240,8 @@ class FlowRunView {
     );
   }
 
-  FlowRunView withNodeStatus(String nodeKey, FlowNodeStatus status, int attempt) {
+  FlowRunView withNodeStatus(
+      String nodeKey, FlowNodeStatus status, int attempt) {
     return FlowRunView(
       runId: runId,
       status: this.status,
@@ -304,4 +344,205 @@ class FlowEvent {
     }
     return null;
   }
+}
+
+/// 差异里的一条字段变化。
+class FlowFieldChange {
+  const FlowFieldChange({required this.field, this.from, this.to});
+
+  final String field;
+  final Object? from;
+  final Object? to;
+}
+
+enum FlowChange { added, removed, changed }
+
+class FlowNodeDiff {
+  const FlowNodeDiff({
+    required this.id,
+    required this.kind,
+    required this.change,
+    this.fields = const [],
+  });
+
+  final String id;
+  final String kind;
+  final FlowChange change;
+  final List<FlowFieldChange> fields;
+}
+
+/// `flow_diff_resp`：按节点 id 对齐的差异。
+class FlowDiff {
+  const FlowDiff({required this.nodes, required this.header});
+
+  final List<FlowNodeDiff> nodes;
+  final List<FlowFieldChange> header;
+
+  bool get isEmpty => nodes.isEmpty && header.isEmpty;
+
+  FlowNodeDiff? of(String id) {
+    for (final node in nodes) {
+      if (node.id == id) return node;
+    }
+    return null;
+  }
+
+  List<FlowNodeDiff> get removed => [
+        for (final n in nodes)
+          if (n.change == FlowChange.removed) n
+      ];
+
+  static List<FlowFieldChange> _fields(Object? raw) => raw is List
+      ? [
+          for (final item in raw)
+            if (item is Map)
+              FlowFieldChange(
+                field: (item['field'] as String?) ?? '',
+                from: item['from'],
+                to: item['to'],
+              ),
+        ]
+      : const [];
+
+  static FlowDiff? fromResponse(Map<String, dynamic> response) {
+    if (response['success'] != true) return null;
+    final raw = response['nodes'];
+    if (raw is! List) return null;
+    FlowChange? change(Object? v) {
+      for (final c in FlowChange.values) {
+        if (c.name == v) return c;
+      }
+      return null;
+    }
+
+    final nodes = <FlowNodeDiff>[];
+    for (final item in raw) {
+      if (item is! Map) continue;
+      final kind = change(item['change']);
+      if (kind == null) continue;
+      nodes.add(FlowNodeDiff(
+        id: (item['id'] as String?) ?? '',
+        kind: (item['kind'] as String?) ?? '',
+        change: kind,
+        fields: _fields(item['fields']),
+      ));
+    }
+    return FlowDiff(nodes: nodes, header: _fields(response['header']));
+  }
+}
+
+/// 检查器里的一个字段（`flow_schema_resp`）。
+class FlowSchemaField {
+  const FlowSchemaField({
+    required this.name,
+    required this.type,
+    required this.label,
+    this.options = const [],
+  });
+
+  final String name;
+
+  /// `string` / `text` / `int` / `enum`。
+  final String type;
+  final String label;
+  final List<String> options;
+
+  factory FlowSchemaField.fromJson(Map<String, dynamic> json) =>
+      FlowSchemaField(
+        name: (json['name'] as String?) ?? '',
+        type: (json['type'] as String?) ?? 'string',
+        label: (json['label'] as String?) ?? (json['name'] as String? ?? ''),
+        options: json['options'] is List
+            ? [for (final o in json['options'] as List) o.toString()]
+            : const [],
+      );
+}
+
+class FlowSchema {
+  const FlowSchema({required this.common, required this.kinds});
+
+  final List<FlowSchemaField> common;
+  final Map<String, List<FlowSchemaField>> kinds;
+
+  List<FlowSchemaField> fieldsFor(String kind) => [...common, ...?kinds[kind]];
+
+  static FlowSchema? fromResponse(Map<String, dynamic> response) {
+    if (response['success'] != true) return null;
+    List<FlowSchemaField> parse(Object? raw) => raw is List
+        ? [
+            for (final item in raw)
+              if (item is Map)
+                FlowSchemaField.fromJson(Map<String, dynamic>.from(item)),
+          ]
+        : const [];
+    final kinds = <String, List<FlowSchemaField>>{};
+    final rawKinds = response['kinds'];
+    if (rawKinds is Map) {
+      for (final entry in rawKinds.entries) {
+        kinds[entry.key.toString()] = parse(entry.value);
+      }
+    }
+    return FlowSchema(common: parse(response['common']), kinds: kinds);
+  }
+}
+
+/// 演练结果：派活顺序（节点 key）和走完后的节点树。
+class FlowRehearsal {
+  const FlowRehearsal({
+    required this.steps,
+    required this.tree,
+    required this.status,
+    this.error,
+  });
+
+  final List<String> steps;
+  final List<FlowNode> tree;
+  final FlowRunStatus status;
+  final String? error;
+
+  static FlowRehearsal? fromResponse(Map<String, dynamic> response) {
+    if (response['success'] != true) return null;
+    final status = FlowRunStatus.parse(response['status']);
+    final steps = response['steps'];
+    final tree = response['tree'];
+    if (status == null || steps is! List || tree is! List) return null;
+    return FlowRehearsal(
+      steps: [
+        for (final s in steps)
+          if (s is Map && s['key'] is String) s['key'] as String,
+      ],
+      tree: [
+        for (final n in tree)
+          if (n is Map) FlowNode.fromJson(Map<String, dynamic>.from(n)),
+      ],
+      status: status,
+      error: (response['error'] as String?)?.isNotEmpty == true
+          ? response['error'] as String
+          : null,
+    );
+  }
+}
+
+/// 点分路径取值：`task.prompt` → fields['task']['prompt']。
+Object? flowFieldValue(Map<String, dynamic>? fields, String path) {
+  Object? cursor = fields;
+  for (final part in path.split('.')) {
+    if (cursor is Map && cursor.containsKey(part)) {
+      cursor = cursor[part];
+    } else {
+      return null;
+    }
+  }
+  return cursor;
+}
+
+/// 节点的父节点（根层返回 null，用 [isRoot] 区分「没找到」）。
+({FlowNode? parent, int index})? flowLocate(List<FlowNode> tree, String id,
+    {FlowNode? parent}) {
+  for (var i = 0; i < tree.length; i++) {
+    if (tree[i].id == id) return (parent: parent, index: i);
+    final hit = flowLocate(tree[i].children, id, parent: tree[i]);
+    if (hit != null) return hit;
+  }
+  return null;
 }

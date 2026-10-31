@@ -4914,5 +4914,83 @@
   },
   "folder_groupViewTitle": "Replies in the group",
   "folder_groupViewEmpty": "This agent has not spoken in this group session",
-  "folder_historyEmpty": "The host has no record to show for this session"
+  "folder_historyEmpty": "The host has no record to show for this session",
+  "flow_designTitle": "Design: {name}",
+  "@flow_designTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_revisionLabel": "Revision {n}",
+  "@flow_revisionLabel": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "flow_rehearse": "Rehearse",
+  "flow_rehearseStop": "End rehearsal",
+  "flow_rehearsing": "Rehearsing: no agent is called",
+  "flow_rehearseFailed": "Rehearsal failed: {error}",
+  "@flow_rehearseFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_diffToggle": "Compare with previous revision",
+  "flow_diffSummary": "{count} changes",
+  "@flow_diffSummary": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "flow_diffNone": "No changes",
+  "flow_diffAdded": "Added",
+  "flow_diffRemoved": "Removed: {ids}",
+  "@flow_diffRemoved": {
+    "placeholders": {
+      "ids": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_diffChanged": "Changed",
+  "flow_save": "Save",
+  "flow_saved": "Saved as revision {n}",
+  "@flow_saved": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "flow_saveFailed": "Could not save",
+  "flow_hasProblems": "{count} problems to fix before saving",
+  "@flow_hasProblems": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "flow_inspectorApply": "Apply",
+  "flow_inspectorDelete": "Delete this step",
+  "flow_wrapPar": "Wrap in parallel",
+  "flow_wrapLoop": "Wrap in loop",
+  "flow_unwrap": "Unwrap",
+  "flow_addAfter": "Add a step after",
+  "flow_newStepPrompt": "New step",
+  "flow_editFailed": "That change could not be made",
+  "flow_designLoadFailed": "Cannot read this flow",
+  "flow_libraryTitle": "Flow library",
+  "flow_libraryEmpty": "No flows yet",
+  "flow_startRun": "Run",
+  "flow_startFailed": "Could not start the run"
 }

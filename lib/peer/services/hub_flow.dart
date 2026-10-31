@@ -100,7 +100,8 @@ class HubFlow {
         if (taskId.isNotEmpty) 'task_id': taskId,
       };
 
-  static Map<String, dynamic> cancelFrame(String runId, {String? requestId}) => {
+  static Map<String, dynamic> cancelFrame(String runId, {String? requestId}) =>
+      {
         'type': 'flow_run_cancel_req',
         if (requestId != null) 'request_id': requestId,
         'run_id': runId,
@@ -142,6 +143,134 @@ class HubFlow {
         'node_key': nodeKey,
         'steps': steps,
       };
+
+  static Map<String, dynamic> diffFrame({
+    String scope = '',
+    String name = '',
+    String fromYaml = '',
+    int? fromRevision,
+    String toYaml = '',
+    int? toRevision,
+    String? requestId,
+  }) =>
+      {
+        'type': 'flow_diff_req',
+        if (requestId != null) 'request_id': requestId,
+        if (scope.isNotEmpty) 'scope': scope,
+        if (name.isNotEmpty) 'name': name,
+        if (fromYaml.isNotEmpty) 'from_yaml': fromYaml,
+        if (fromRevision != null) 'from_revision': fromRevision,
+        if (toYaml.isNotEmpty) 'to_yaml': toYaml,
+        if (toRevision != null) 'to_revision': toRevision,
+      };
+
+  static Map<String, dynamic> editFrame(
+    String yaml,
+    List<Map<String, dynamic>> ops, {
+    String? requestId,
+  }) =>
+      {
+        'type': 'flow_edit_req',
+        if (requestId != null) 'request_id': requestId,
+        'yaml': yaml,
+        'ops': ops,
+      };
+
+  static Map<String, dynamic> schemaFrame({String? requestId}) => {
+        'type': 'flow_schema_req',
+        if (requestId != null) 'request_id': requestId,
+      };
+
+  static Map<String, dynamic> rehearseFrame(String yaml, {String? requestId}) =>
+      {
+        'type': 'flow_rehearse_req',
+        if (requestId != null) 'request_id': requestId,
+        'yaml': yaml,
+      };
+
+  /// 差异（C.5）。两边都不给 YAML 时，是 `name` 的最新版对上一版。
+  Future<({FlowDiff? diff, String? error})> diff(
+    String peerId, {
+    String scope = '',
+    String name = '',
+    String fromYaml = '',
+    int? fromRevision,
+    String toYaml = '',
+    int? toRevision,
+  }) async {
+    final response = await _request(
+      peerId,
+      diffFrame(
+        scope: scope,
+        name: name,
+        fromYaml: fromYaml,
+        fromRevision: fromRevision,
+        toYaml: toYaml,
+        toRevision: toRevision,
+      ),
+      responseType: 'flow_diff_resp',
+    );
+    return (
+      diff: response == null ? null : FlowDiff.fromResponse(response),
+      error: response?['error'] as String?,
+    );
+  }
+
+  /// 结构化编辑（C.4）：返回新 YAML、节点树和诊断；`error` 非空是操作本身不成立。
+  Future<({FlowValidation? result, String? error, bool reachable})> edit(
+    String peerId,
+    String yaml,
+    List<Map<String, dynamic>> ops,
+  ) async {
+    final response = await _request(
+      peerId,
+      editFrame(yaml, ops),
+      responseType: 'flow_edit_resp',
+    );
+    if (response == null) {
+      return (result: null, error: null, reachable: false);
+    }
+    if (response['success'] != true) {
+      return (
+        result: null,
+        error: response['error'] as String?,
+        reachable: true
+      );
+    }
+    return (
+      result: FlowValidation.fromResponse({
+        ...response,
+        'success': response['valid'] == true,
+      }),
+      error: null,
+      reachable: true,
+    );
+  }
+
+  Future<FlowSchema?> schema(String peerId) async {
+    final response = await _request(
+      peerId,
+      schemaFrame(),
+      responseType: 'flow_schema_resp',
+    );
+    return response == null ? null : FlowSchema.fromResponse(response);
+  }
+
+  /// 演练（C.5）。`error` 是演练走不通的原因（有关卡、校验不过…）。
+  Future<({FlowRehearsal? rehearsal, String? error})> rehearse(
+    String peerId,
+    String yaml,
+  ) async {
+    final response = await _request(
+      peerId,
+      rehearseFrame(yaml),
+      responseType: 'flow_rehearse_resp',
+    );
+    return (
+      rehearsal: response == null ? null : FlowRehearsal.fromResponse(response),
+      error: response?['error'] as String?,
+    );
+  }
 
   Future<List<FlowSummary>?> list(String peerId, {String scope = ''}) async {
     final response = await _request(

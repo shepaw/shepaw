@@ -15874,6 +15874,180 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'主机上没有这个会话可显示的记录'**
   String get folder_historyEmpty;
+
+  /// No description provided for @flow_designTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'设计：{name}'**
+  String flow_designTitle(String name);
+
+  /// No description provided for @flow_revisionLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'第 {n} 版'**
+  String flow_revisionLabel(int n);
+
+  /// No description provided for @flow_rehearse.
+  ///
+  /// In zh, this message translates to:
+  /// **'演练'**
+  String get flow_rehearse;
+
+  /// No description provided for @flow_rehearseStop.
+  ///
+  /// In zh, this message translates to:
+  /// **'结束演练'**
+  String get flow_rehearseStop;
+
+  /// No description provided for @flow_rehearsing.
+  ///
+  /// In zh, this message translates to:
+  /// **'演练中：不调用任何 Agent'**
+  String get flow_rehearsing;
+
+  /// No description provided for @flow_rehearseFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'演练走不通：{error}'**
+  String flow_rehearseFailed(String error);
+
+  /// No description provided for @flow_diffToggle.
+  ///
+  /// In zh, this message translates to:
+  /// **'与上一版对比'**
+  String get flow_diffToggle;
+
+  /// No description provided for @flow_diffSummary.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 处改动'**
+  String flow_diffSummary(int count);
+
+  /// No description provided for @flow_diffNone.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有改动'**
+  String get flow_diffNone;
+
+  /// No description provided for @flow_diffAdded.
+  ///
+  /// In zh, this message translates to:
+  /// **'新增'**
+  String get flow_diffAdded;
+
+  /// No description provided for @flow_diffRemoved.
+  ///
+  /// In zh, this message translates to:
+  /// **'已删除：{ids}'**
+  String flow_diffRemoved(String ids);
+
+  /// No description provided for @flow_diffChanged.
+  ///
+  /// In zh, this message translates to:
+  /// **'有改动'**
+  String get flow_diffChanged;
+
+  /// No description provided for @flow_save.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存'**
+  String get flow_save;
+
+  /// No description provided for @flow_saved.
+  ///
+  /// In zh, this message translates to:
+  /// **'已保存为第 {n} 版'**
+  String flow_saved(int n);
+
+  /// No description provided for @flow_saveFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存失败'**
+  String get flow_saveFailed;
+
+  /// No description provided for @flow_hasProblems.
+  ///
+  /// In zh, this message translates to:
+  /// **'还有 {count} 个问题，先改好再保存'**
+  String flow_hasProblems(int count);
+
+  /// No description provided for @flow_inspectorApply.
+  ///
+  /// In zh, this message translates to:
+  /// **'应用'**
+  String get flow_inspectorApply;
+
+  /// No description provided for @flow_inspectorDelete.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除这一步'**
+  String get flow_inspectorDelete;
+
+  /// No description provided for @flow_wrapPar.
+  ///
+  /// In zh, this message translates to:
+  /// **'包成并行'**
+  String get flow_wrapPar;
+
+  /// No description provided for @flow_wrapLoop.
+  ///
+  /// In zh, this message translates to:
+  /// **'包成循环'**
+  String get flow_wrapLoop;
+
+  /// No description provided for @flow_unwrap.
+  ///
+  /// In zh, this message translates to:
+  /// **'拆开'**
+  String get flow_unwrap;
+
+  /// No description provided for @flow_addAfter.
+  ///
+  /// In zh, this message translates to:
+  /// **'在后面加一步'**
+  String get flow_addAfter;
+
+  /// No description provided for @flow_newStepPrompt.
+  ///
+  /// In zh, this message translates to:
+  /// **'新的一步'**
+  String get flow_newStepPrompt;
+
+  /// No description provided for @flow_editFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个改动做不了'**
+  String get flow_editFailed;
+
+  /// No description provided for @flow_designLoadFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'读不到这个流程'**
+  String get flow_designLoadFailed;
+
+  /// No description provided for @flow_libraryTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'流程库'**
+  String get flow_libraryTitle;
+
+  /// No description provided for @flow_libraryEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没有流程'**
+  String get flow_libraryEmpty;
+
+  /// No description provided for @flow_startRun.
+  ///
+  /// In zh, this message translates to:
+  /// **'运行'**
+  String get flow_startRun;
+
+  /// No description provided for @flow_startFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'开跑失败'**
+  String get flow_startFailed;
 }
 
 class _AppLocalizationsDelegate

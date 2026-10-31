@@ -5366,5 +5366,83 @@
   },
   "folder_groupViewTitle": "群聊中的发言",
   "folder_groupViewEmpty": "这个 Agent 在这个群会话里还没有发言",
-  "folder_historyEmpty": "主机上没有这个会话可显示的记录"
+  "folder_historyEmpty": "主机上没有这个会话可显示的记录",
+  "flow_designTitle": "设计：{name}",
+  "@flow_designTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_revisionLabel": "第 {n} 版",
+  "@flow_revisionLabel": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "flow_rehearse": "演练",
+  "flow_rehearseStop": "结束演练",
+  "flow_rehearsing": "演练中：不调用任何 Agent",
+  "flow_rehearseFailed": "演练走不通：{error}",
+  "@flow_rehearseFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_diffToggle": "与上一版对比",
+  "flow_diffSummary": "{count} 处改动",
+  "@flow_diffSummary": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "flow_diffNone": "没有改动",
+  "flow_diffAdded": "新增",
+  "flow_diffRemoved": "已删除：{ids}",
+  "@flow_diffRemoved": {
+    "placeholders": {
+      "ids": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_diffChanged": "有改动",
+  "flow_save": "保存",
+  "flow_saved": "已保存为第 {n} 版",
+  "@flow_saved": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "flow_saveFailed": "保存失败",
+  "flow_hasProblems": "还有 {count} 个问题，先改好再保存",
+  "@flow_hasProblems": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "flow_inspectorApply": "应用",
+  "flow_inspectorDelete": "删除这一步",
+  "flow_wrapPar": "包成并行",
+  "flow_wrapLoop": "包成循环",
+  "flow_unwrap": "拆开",
+  "flow_addAfter": "在后面加一步",
+  "flow_newStepPrompt": "新的一步",
+  "flow_editFailed": "这个改动做不了",
+  "flow_designLoadFailed": "读不到这个流程",
+  "flow_libraryTitle": "流程库",
+  "flow_libraryEmpty": "还没有流程",
+  "flow_startRun": "运行",
+  "flow_startFailed": "开跑失败"
 }
