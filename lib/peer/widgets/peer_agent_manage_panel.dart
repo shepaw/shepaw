@@ -8,6 +8,7 @@ import '../../service_locator.dart' show getIt;
 import '../../services/chat_navigation_service.dart';
 import '../../services/local_database_service.dart';
 import '../../services/remote_agent_service.dart';
+import '../../theme/app_theme.dart';
 import '../../widgets/agent_list_avatar.dart';
 import '../services/peer_agent_client_service.dart';
 import '../services/peer_connection_manager.dart';
@@ -30,12 +31,16 @@ class PeerAgentManagePanel extends StatefulWidget {
 
   final bool isPeerConnected;
 
+  /// 桌面右栏里由外层铺「新建 Agent」面板，避免在嵌套 Navigator 里再叠一页。
+  final ValueChanged<String?>? onAddAgent;
+
   const PeerAgentManagePanel({
     super.key,
     required this.peerId,
     required this.isPeerConnected,
     this.nodeId,
     this.agentIds,
+    this.onAddAgent,
   });
 
   @override
@@ -46,6 +51,7 @@ class _PeerAgentManagePanelState extends State<PeerAgentManagePanel> {
   List<PeerAgentManageEntry> _entries = const [];
   List<RemoteAgent> _localAgents = const [];
   bool _loading = true;
+  bool _showHidden = false;
   String? _error;
   String? _busyId;
   StreamSubscription<void>? _peerListSub;
@@ -62,8 +68,10 @@ class _PeerAgentManagePanelState extends State<PeerAgentManagePanel> {
   @override
   void didUpdateWidget(covariant PeerAgentManagePanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.isPeerConnected != widget.isPeerConnected) {
-      _load();
+    if (oldWidget.isPeerConnected != widget.isPeerConnected ||
+        oldWidget.nodeId != widget.nodeId) {
+      // 连接状态一变就整块转圈会把已经显示出来的 Agent 清掉；静默重取即可。
+      _load(quiet: true);
     }
   }
 
@@ -77,14 +85,12 @@ class _PeerAgentManagePanelState extends State<PeerAgentManagePanel> {
     if (!quiet && mounted) setState(() => _loading = true);
     final all = await getIt<LocalDatabaseService>().getAllRemoteAgents();
     final scoped = widget.agentIds;
-    final mine = all
-        .where((a) {
-          if (a.protocol != ProtocolType.peer) return false;
-          if (scoped == null) return a.sourcePeerId == widget.peerId;
-          final id = a.remoteAgentId ?? a.id;
-          return scoped.contains(id) || scoped.contains(a.id);
-        })
-        .toList()
+    final mine = all.where((a) {
+      if (a.protocol != ProtocolType.peer) return false;
+      if (scoped == null) return a.sourcePeerId == widget.peerId;
+      final id = a.remoteAgentId ?? a.id;
+      return scoped.contains(id) || scoped.contains(a.id);
+    }).toList()
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
     PeerAgentManageResult? remote;
@@ -155,6 +161,11 @@ class _PeerAgentManagePanelState extends State<PeerAgentManagePanel> {
   }
 
   Future<void> _createAgent() async {
+    final onAdd = widget.onAddAgent;
+    if (onAdd != null) {
+      onAdd(widget.nodeId);
+      return;
+    }
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => AddAgentInstanceScreen(
@@ -230,6 +241,11 @@ class _PeerAgentManagePanelState extends State<PeerAgentManagePanel> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
+    final hiddenEntries = _entries
+        .where((entry) => (_localFor(entry)?.hiddenOnThisApp ?? false))
+        .toList();
+    final visibleEntries =
+        _entries.where((entry) => !hiddenEntries.contains(entry)).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -241,9 +257,10 @@ class _PeerAgentManagePanelState extends State<PeerAgentManagePanel> {
               Expanded(
                 child: Text(
                   l10n.peerSettings_sectionAgents,
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: Colors.grey[600],
-                      ),
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelLarge
+                      ?.copyWith(color: colorScheme.onSurfaceVariant),
                 ),
               ),
               if (widget.isPeerConnected)
@@ -255,13 +272,16 @@ class _PeerAgentManagePanelState extends State<PeerAgentManagePanel> {
             ],
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: Text(
-            l10n.peerSettings_agentVisibilityHint,
-            style: TextStyle(color: Colors.grey[600], fontSize: 12),
+        // 离线时照常显示本机缓存，只加一行说明，不把整块换成离线文案。
+        if (!widget.isPeerConnected && _entries.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text(
+              l10n.peerSettings_agentCacheOffline,
+              style:
+                  TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12),
+            ),
           ),
-        ),
         if (_loading)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
@@ -280,20 +300,68 @@ class _PeerAgentManagePanelState extends State<PeerAgentManagePanel> {
               widget.isPeerConnected
                   ? l10n.peerSettings_noManagedAgents
                   : l10n.peerSettings_agentManageOffline,
-              style: TextStyle(color: Colors.grey[600], fontSize: 13),
+              style:
+                  TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 13),
             ),
           )
-        else
-          ..._entries.map((entry) => _buildTile(l10n, entry)),
-        if (_error != null && _error != 'timeout' && _error != 'offline')
+        else ...[
+          ...visibleEntries.map((entry) => _buildTile(l10n, entry)),
+          if (hiddenEntries.isNotEmpty) _buildHiddenRow(l10n, hiddenEntries),
+        ],
+        if (_error != null)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Text(
-              l10n.peerSettings_agentOpFailed(_error!),
+              _errorText(l10n, _error!),
               style: TextStyle(color: colorScheme.error, fontSize: 12),
             ),
           ),
       ],
+    );
+  }
+
+  /// 原始错误码对用户没意义，也不该把远端字符串直接贴到界面上。
+  String _errorText(AppLocalizations l10n, String error) {
+    switch (error) {
+      case 'unsupported':
+        return l10n.peerSettings_agentManageUnsupported;
+      case 'timeout':
+        return l10n.peerSettings_agentOpTimeout;
+      case 'offline':
+        return l10n.peerSettings_agentManageOffline;
+      default:
+        return l10n.peerSettings_agentOpFailed(error);
+    }
+  }
+
+  /// 被隐藏的 Agent 默认收成一行，展开后才逐个操作。
+  Widget _buildHiddenRow(
+    AppLocalizations l10n,
+    List<PeerAgentManageEntry> entries,
+  ) {
+    final colorScheme = Theme.of(context).colorScheme;
+    if (!_showHidden) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                l10n.peerSettings_hiddenAgentCount(entries.length),
+                style: TextStyle(
+                    fontSize: 12, color: colorScheme.onSurfaceVariant),
+              ),
+            ),
+            TextButton(
+              onPressed: () => setState(() => _showHidden = true),
+              child: Text(l10n.peerSettings_showHiddenAgents),
+            ),
+          ],
+        ),
+      );
+    }
+    return Column(
+      children: entries.map((entry) => _buildTile(l10n, entry)).toList(),
     );
   }
 
@@ -306,6 +374,7 @@ class _PeerAgentManagePanelState extends State<PeerAgentManagePanel> {
     final hidden = local?.hiddenOnThisApp ?? false;
     final String statusLabel;
     final Color statusColor;
+    final onlineColor = AppColors.onlineFor(Theme.of(context).brightness);
     if (hidden) {
       statusLabel = l10n.peerSettings_agentHiddenOnApp;
       statusColor = Colors.grey;
@@ -315,14 +384,14 @@ class _PeerAgentManagePanelState extends State<PeerAgentManagePanel> {
         statusColor = Colors.grey;
       } else if (entry.running) {
         statusLabel = l10n.peerSettings_agentRunning;
-        statusColor = Colors.green;
+        statusColor = onlineColor;
       } else {
         statusLabel = l10n.peerSettings_agentStopped;
         statusColor = Colors.orange;
       }
     } else if (local?.isOnline == true) {
       statusLabel = l10n.status_online;
-      statusColor = Colors.green;
+      statusColor = onlineColor;
     } else {
       statusLabel = l10n.status_offline;
       statusColor = Colors.grey;
@@ -344,43 +413,86 @@ class _PeerAgentManagePanelState extends State<PeerAgentManagePanel> {
         style: TextStyle(color: statusColor, fontSize: 12),
       ),
       onTap: local == null ? null : () => _openChat(entry),
-      trailing: local == null && !(entry.manageable && widget.isPeerConnected)
-          ? null
-          : Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (busy)
-                  const Padding(
-                    padding: EdgeInsets.only(right: 8),
-                    child: SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ),
-                if (local != null)
-                  Tooltip(
-                    message: l10n.peerSettings_agentShowOnApp,
-                    child: SizedBox(
-                      height: 28,
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Switch(
-                          value: !hidden,
-                          onChanged:
-                              busy ? null : (v) => _setVisibleOnApp(local, v),
-                        ),
-                      ),
-                    ),
-                  ),
-                if (entry.manageable && widget.isPeerConnected)
-                  IconButton(
-                    tooltip: l10n.peerSettings_removeAgent,
-                    icon: const Icon(Icons.delete_outline, size: 20),
-                    onPressed: busy ? null : () => _removeAgent(entry),
-                  ),
-              ],
-            ),
+      // 开关和删除紧挨着容易误触，收进 ⋮ 菜单，菜单项自带说明。
+      trailing: busy
+          ? const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : _buildTileMenu(l10n, entry, local, hidden),
     );
+  }
+
+  Widget? _buildTileMenu(
+    AppLocalizations l10n,
+    PeerAgentManageEntry entry,
+    RemoteAgent? local,
+    bool hidden,
+  ) {
+    final canManage = entry.manageable && widget.isPeerConnected;
+    if (local == null && !canManage) return null;
+    return PopupMenuButton<String>(
+      icon: const Icon(Icons.more_vert, size: 20),
+      tooltip: l10n.common_more,
+      onSelected: (value) => _onTileAction(value, entry, local, hidden),
+      itemBuilder: (context) => [
+        if (local != null)
+          PopupMenuItem(
+            value: 'chat',
+            child: _menuRow(
+                Icons.chat_bubble_outline, l10n.contacts_actionSendMessage),
+          ),
+        if (local != null)
+          PopupMenuItem(
+            value: hidden ? 'show' : 'hide',
+            child: _menuRow(
+              hidden
+                  ? Icons.visibility_outlined
+                  : Icons.visibility_off_outlined,
+              hidden
+                  ? l10n.contacts_actionShowOnApp
+                  : l10n.contacts_actionHideOnApp,
+            ),
+          ),
+        if (canManage)
+          PopupMenuItem(
+            value: 'remove',
+            child: _menuRow(
+              Icons.delete_outline,
+              l10n.peerSettings_removeAgent,
+              color: Theme.of(context).colorScheme.error,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _menuRow(IconData icon, String label, {Color? color}) => Row(
+        children: [
+          Icon(icon, size: 20, color: color),
+          const SizedBox(width: 12),
+          Text(label, style: color == null ? null : TextStyle(color: color)),
+        ],
+      );
+
+  Future<void> _onTileAction(
+    String value,
+    PeerAgentManageEntry entry,
+    RemoteAgent? local,
+    bool hidden,
+  ) async {
+    switch (value) {
+      case 'chat':
+        await _openChat(entry);
+        break;
+      case 'hide':
+      case 'show':
+        if (local != null) await _setVisibleOnApp(local, hidden);
+        break;
+      case 'remove':
+        await _removeAgent(entry);
+        break;
+    }
   }
 }

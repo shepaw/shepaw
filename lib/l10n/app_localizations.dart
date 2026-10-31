@@ -8997,6 +8997,54 @@ abstract class AppLocalizations {
   /// **'Agent 管理'**
   String get peerSettings_sectionAgents;
 
+  /// No description provided for @peerSettings_sectionSecurity.
+  ///
+  /// In zh, this message translates to:
+  /// **'安全'**
+  String get peerSettings_sectionSecurity;
+
+  /// No description provided for @peerSettings_sectionAbout.
+  ///
+  /// In zh, this message translates to:
+  /// **'关于此设备'**
+  String get peerSettings_sectionAbout;
+
+  /// No description provided for @peerSettings_hiddenAgentCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'已在本 App 隐藏 {count} 个'**
+  String peerSettings_hiddenAgentCount(int count);
+
+  /// No description provided for @peerSettings_showHiddenAgents.
+  ///
+  /// In zh, this message translates to:
+  /// **'显示'**
+  String get peerSettings_showHiddenAgents;
+
+  /// No description provided for @peerSettings_agentCacheOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备离线，显示的是本机缓存'**
+  String get peerSettings_agentCacheOffline;
+
+  /// No description provided for @peerSettings_engineOfflineHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备离线，无法管理引擎'**
+  String get peerSettings_engineOfflineHint;
+
+  /// No description provided for @peerSettings_copied.
+  ///
+  /// In zh, this message translates to:
+  /// **'已复制'**
+  String get peerSettings_copied;
+
+  /// No description provided for @peerSettings_reconnect.
+  ///
+  /// In zh, this message translates to:
+  /// **'重新连接'**
+  String get peerSettings_reconnect;
+
   /// No description provided for @peerSettings_agentVisibilityHint.
   ///
   /// In zh, this message translates to:
@@ -9056,6 +9104,18 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'设备离线，暂无已同步的 Agent'**
   String get peerSettings_agentManageOffline;
+
+  /// No description provided for @peerSettings_agentManageUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台设备不支持管理 Agent'**
+  String get peerSettings_agentManageUnsupported;
+
+  /// No description provided for @peerSettings_agentOpTimeout.
+  ///
+  /// In zh, this message translates to:
+  /// **'操作超时，设备可能已离线'**
+  String get peerSettings_agentOpTimeout;
 
   /// No description provided for @peerSettings_newAgent.
   ///

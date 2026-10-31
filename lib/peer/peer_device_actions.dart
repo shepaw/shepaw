@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../services/logger_service.dart';
+import '../storage/store_protocol.dart' show TrustLevel;
 import 'models/paired_peer.dart';
 import 'pouch_pair.dart';
 import 'services/peer_storage_service.dart';
@@ -84,6 +85,22 @@ class PeerDeviceActions {
       ),
     );
     return confirm == true;
+  }
+
+  /// 信任级别的改动是否该写下去。
+  ///
+  /// [applyOwnerDefaults] 是 friend→owner 升级确认框的结果：`null` 表示用户
+  /// 点空白处 / 返回键关掉了，那是取消，不能默默把一台设备放宽成所有者。
+  static bool shouldApplyTrustChange(
+    String? selected,
+    String current,
+    bool? applyOwnerDefaults,
+  ) {
+    if (selected == null || selected == current) return false;
+    if (selected == TrustLevel.owner && current == TrustLevel.friend) {
+      return applyOwnerDefaults != null;
+    }
+    return true;
   }
 
   /// 执行删除。返回是否删掉了。

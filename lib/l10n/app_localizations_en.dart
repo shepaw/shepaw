@@ -5072,6 +5072,34 @@ class AppLocalizationsEn extends AppLocalizations {
   String get peerSettings_sectionAgents => 'Agent Management';
 
   @override
+  String get peerSettings_sectionSecurity => 'Security';
+
+  @override
+  String get peerSettings_sectionAbout => 'About this device';
+
+  @override
+  String peerSettings_hiddenAgentCount(int count) {
+    return '$count hidden from this app';
+  }
+
+  @override
+  String get peerSettings_showHiddenAgents => 'Show';
+
+  @override
+  String get peerSettings_agentCacheOffline =>
+      'Device offline: showing local cache';
+
+  @override
+  String get peerSettings_engineOfflineHint =>
+      'Device offline: engine management unavailable';
+
+  @override
+  String get peerSettings_copied => 'Copied';
+
+  @override
+  String get peerSettings_reconnect => 'Reconnect';
+
+  @override
   String get peerSettings_agentVisibilityHint =>
       'This only controls whether the agent appears in this app. It does not stop or disable the agent on the remote hub.';
 
@@ -5102,6 +5130,14 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get peerSettings_agentManageOffline =>
       'Device is offline. No synced agents yet.';
+
+  @override
+  String get peerSettings_agentManageUnsupported =>
+      'This device does not support agent management';
+
+  @override
+  String get peerSettings_agentOpTimeout =>
+      'Timed out. The device may be offline.';
 
   @override
   String get peerSettings_newAgent => 'New agent';

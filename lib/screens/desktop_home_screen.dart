@@ -1038,6 +1038,10 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             _showPanel(_RightPanelView.empty);
             _reloadContacts();
           },
+          onAddAgent: (nodeId) {
+            _addAgentNodeId = nodeId;
+            _showPanel(_RightPanelView.addAgentInstance);
+          },
         );
 
       case _RightPanelView.traces:

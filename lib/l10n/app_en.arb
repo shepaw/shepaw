@@ -2302,6 +2302,21 @@
     }
   },
   "peerSettings_sectionAgents": "Agent Management",
+  "peerSettings_sectionSecurity": "Security",
+  "peerSettings_sectionAbout": "About this device",
+  "peerSettings_hiddenAgentCount": "{count} hidden from this app",
+  "@peerSettings_hiddenAgentCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "peerSettings_showHiddenAgents": "Show",
+  "peerSettings_agentCacheOffline": "Device offline: showing local cache",
+  "peerSettings_engineOfflineHint": "Device offline: engine management unavailable",
+  "peerSettings_copied": "Copied",
+  "peerSettings_reconnect": "Reconnect",
   "peerSettings_agentVisibilityHint": "This only controls whether the agent appears in this app. It does not stop or disable the agent on the remote hub.",
   "peerSettings_agentShowOnApp": "Show on this app",
   "peerSettings_agentHiddenOnApp": "Hidden here",
@@ -2312,6 +2327,8 @@
   "peerSettings_agentRunning": "Running",
   "peerSettings_agentStopped": "Stopped",
   "peerSettings_agentManageOffline": "Device is offline. No synced agents yet.",
+  "peerSettings_agentManageUnsupported": "This device does not support agent management",
+  "peerSettings_agentOpTimeout": "Timed out. The device may be offline.",
   "peerSettings_newAgent": "New agent",
   "peerSettings_newAgentTitle": "New agent on this device",
   "peerSettings_engineLabel": "Engine",

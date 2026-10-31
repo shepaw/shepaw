@@ -4874,6 +4874,32 @@ class AppLocalizationsZh extends AppLocalizations {
   String get peerSettings_sectionAgents => 'Agent 管理';
 
   @override
+  String get peerSettings_sectionSecurity => '安全';
+
+  @override
+  String get peerSettings_sectionAbout => '关于此设备';
+
+  @override
+  String peerSettings_hiddenAgentCount(int count) {
+    return '已在本 App 隐藏 $count 个';
+  }
+
+  @override
+  String get peerSettings_showHiddenAgents => '显示';
+
+  @override
+  String get peerSettings_agentCacheOffline => '设备离线，显示的是本机缓存';
+
+  @override
+  String get peerSettings_engineOfflineHint => '设备离线，无法管理引擎';
+
+  @override
+  String get peerSettings_copied => '已复制';
+
+  @override
+  String get peerSettings_reconnect => '重新连接';
+
+  @override
   String get peerSettings_agentVisibilityHint =>
       '只控制本 App 是否展示该 Agent，不会在远端 Hub 上停用或下线。';
 
@@ -4903,6 +4929,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get peerSettings_agentManageOffline => '设备离线，暂无已同步的 Agent';
+
+  @override
+  String get peerSettings_agentManageUnsupported => '这台设备不支持管理 Agent';
+
+  @override
+  String get peerSettings_agentOpTimeout => '操作超时，设备可能已离线';
 
   @override
   String get peerSettings_newAgent => '新建 Agent';
