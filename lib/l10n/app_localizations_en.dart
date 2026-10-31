@@ -7935,6 +7935,22 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_upload => 'Upload file';
 
   @override
+  String get storage_batchActions => 'Batch actions';
+
+  @override
+  String get storage_entryOpen => 'Open';
+
+  @override
+  String storage_deleteManyConfirm(int count) {
+    return 'Delete these $count items?';
+  }
+
+  @override
+  String storage_selectedCount(int count) {
+    return '$count selected';
+  }
+
+  @override
   String get storage_legacyData => 'Legacy data (space directory)';
 
   @override

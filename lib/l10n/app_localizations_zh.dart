@@ -7642,6 +7642,22 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_upload => '上传文件';
 
   @override
+  String get storage_batchActions => '批量操作';
+
+  @override
+  String get storage_entryOpen => '打开';
+
+  @override
+  String storage_deleteManyConfirm(int count) {
+    return '确定删除这 $count 项？';
+  }
+
+  @override
+  String storage_selectedCount(int count) {
+    return '已选 $count 项';
+  }
+
+  @override
   String get storage_legacyData => '旧数据（space 目录）';
 
   @override

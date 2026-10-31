@@ -13883,6 +13883,30 @@ abstract class AppLocalizations {
   /// **'上传文件'**
   String get storage_upload;
 
+  /// No description provided for @storage_batchActions.
+  ///
+  /// In zh, this message translates to:
+  /// **'批量操作'**
+  String get storage_batchActions;
+
+  /// No description provided for @storage_entryOpen.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开'**
+  String get storage_entryOpen;
+
+  /// No description provided for @storage_deleteManyConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'确定删除这 {count} 项？'**
+  String storage_deleteManyConfirm(int count);
+
+  /// No description provided for @storage_selectedCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'已选 {count} 项'**
+  String storage_selectedCount(int count);
+
   /// No description provided for @storage_legacyData.
   ///
   /// In zh, this message translates to:

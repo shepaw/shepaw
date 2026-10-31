@@ -137,6 +137,12 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
   bool _loadingRecent = false;
   String? _recentError;
 
+  /// 批量操作模式：列表项前面出现复选框，标题栏换成取消 / 删除。
+  bool _batchMode = false;
+
+  /// 批量模式下勾上的文件（完整路径）。
+  final Set<String> _selected = <String>{};
+
   /// 上传/删除进行中：挡住重复操作。
   bool _busy = false;
   String? _error;
@@ -211,12 +217,15 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
       widget.store ?? await StoreService.instance.scopeStore();
 
   Future<void> _openScope(PouchScope scope, {String path = ''}) async {
+    // 换了一层目录，原来勾上的那些路径就不在这一层了。
+    final clearsSelection = _batchMode && path != _path;
     setState(() {
       _scope = scope;
       _path = path;
       _entries = const [];
       _error = null;
       _loadingEntries = true;
+      if (clearsSelection) _selected.clear();
     });
     try {
       final store = await _store();
@@ -267,7 +276,11 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
   void _selectNav(_FilesNav nav) {
     final scope = _scope;
     if (scope == null) return;
-    setState(() => _nav = nav);
+    // 切到「最近」或切回目录都是换了一批列表，勾上的先清掉。
+    setState(() {
+      _nav = nav;
+      _selected.clear();
+    });
     if (nav == _FilesNav.recent) {
       unawaited(_loadRecent(scope));
     } else if (_path.isNotEmpty) {
@@ -399,15 +412,46 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
     await (await _store()).write(scope, path, bytes);
   }
 
+  /// 删除一份文件（操作菜单里的「删除」）；确认框先过一道。
   Future<void> _deleteEntry(PouchScope scope, StoreEntry entry) async {
-    if (_busy) return;
     final l10n = AppLocalizations.of(context);
     final name = entry.path.split('/').last;
-    final confirmed = await showDialog<bool>(
+    final confirmed = await _confirmDelete(
+      title: l10n.storage_deleteFileTitle,
+      message: l10n.storage_deleteFileConfirm(name),
+    );
+    if (confirmed != true) return;
+    await _deletePaths(scope, [entry.path], deletedMessage: '已删除 $name');
+  }
+
+  /// 批量删除：确认一次，逐个删，失败的带上原因。
+  Future<void> _deleteSelected(PouchScope scope) async {
+    final l10n = AppLocalizations.of(context);
+    final paths = _selected.toList()..sort();
+    if (paths.isEmpty) return;
+    final confirmed = await _confirmDelete(
+      title: l10n.storage_deleteFileTitle,
+      message: l10n.storage_deleteManyConfirm(paths.length),
+    );
+    if (confirmed != true) return;
+    await _deletePaths(scope, paths);
+    if (!mounted) return;
+    setState(() {
+      _batchMode = false;
+      _selected.clear();
+    });
+  }
+
+  Future<bool?> _confirmDelete({
+    required String title,
+    required String message,
+  }) {
+    final l10n = AppLocalizations.of(context);
+    return showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(l10n.storage_deleteFileTitle),
-        content: Text(l10n.storage_deleteFileConfirm(name)),
+        title: Text(title),
+        content: Text(message),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -423,23 +467,132 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
         ],
       ),
     );
-    if (confirmed != true || !mounted) return;
+  }
+
+  /// 真删：[paths] 里每一条都走各自 scope 的写入口（群共享面只有
+  /// [GroupSharedFiles] 一个入口）。删完刷列表，锁定时连「最近」一起刷。
+  Future<void> _deletePaths(
+    PouchScope scope,
+    List<String> paths, {
+    String? deletedMessage,
+  }) async {
+    if (_busy || !mounted) return;
     setState(() => _busy = true);
+    final failures = <String>[];
+    var deleted = 0;
     try {
-      if (scope.kind == PouchScopeKind.shared) {
-        await (await _shared()).delete(scope.ownerId, entry.path);
-      } else {
-        await (await _store()).delete(scope, entry.path);
+      for (final path in paths) {
+        try {
+          if (scope.kind == PouchScopeKind.shared) {
+            await (await _shared()).delete(scope.ownerId, path);
+          } else {
+            await (await _store()).delete(scope, path);
+          }
+          deleted++;
+        } catch (e) {
+          failures.add('${path.split('/').last}：${_messageFor(e)}');
+        }
       }
-      if (mounted) _toast('已删除 $name');
-    } catch (e) {
-      if (mounted) _toast('删除失败——${_messageFor(e)}');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+    if (!mounted) return;
+    if (failures.isEmpty) {
+      _toast(deletedMessage ?? '已删除 $deleted 个文件');
+    } else {
+      _toast('删除失败——${failures.join('；')}');
+    }
     await _openScope(scope, path: _path);
     // 从「最近」里删的时候当前目录不一定刷得到那一条，单独再取一次。
-    if (_lockedNav && _showRecent) await _loadRecent(scope);
+    if (_lockedNav && (_showRecent || _path.isEmpty)) {
+      await _loadRecent(scope);
+    }
+  }
+
+  /// 单条文件的操作菜单：桌面右键 / 长按，移动端长按。
+  ///
+  /// [position] 是右键的那一点；长按没有位置，退回到整行居中
+  /// （和主会话行的菜单一个做法）。
+  Future<void> _showEntryMenu(
+    PouchScope scope,
+    StoreEntry entry, {
+    required BuildContext rowContext,
+    Offset? position,
+  }) async {
+    final l10n = AppLocalizations.of(context);
+    final box = rowContext.findRenderObject() as RenderBox?;
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (box == null || overlay == null) return;
+    final anchor = position ??
+        box.localToGlobal(box.size.center(Offset.zero), ancestor: overlay);
+    final rect = RelativeRect.fromLTRB(
+      anchor.dx,
+      anchor.dy,
+      overlay.size.width - anchor.dx,
+      overlay.size.height - anchor.dy,
+    );
+    final action = await showMenu<String>(
+      context: context,
+      position: rect,
+      items: [
+        PopupMenuItem<String>(
+          value: 'open',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.open_in_new_outlined, size: 20),
+              const SizedBox(width: 12),
+              Text(l10n.storage_entryOpen),
+            ],
+          ),
+        ),
+        // 目录删不掉：hub 的 delete 只对文件有意义。
+        if (!entry.isDir)
+          PopupMenuItem<String>(
+            value: 'delete',
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.delete_outline,
+                  size: 20,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  l10n.common_delete,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+    if (!mounted || action == null) return;
+    switch (action) {
+      case 'open':
+        if (entry.isDir) {
+          _enterDirectory(entry);
+        } else {
+          await _openFile(scope, entry);
+        }
+      case 'delete':
+        await _deleteEntry(scope, entry);
+    }
+  }
+
+  /// 批量模式下勾掉/勾上一项。目录不给勾（删不掉）。
+  void _toggleSelected(StoreEntry entry) {
+    setState(() {
+      if (!_selected.remove(entry.path)) _selected.add(entry.path);
+    });
+  }
+
+  void _exitBatchMode() {
+    setState(() {
+      _batchMode = false;
+      _selected.clear();
+    });
   }
 
   /// 同目录重名时依次试 `name (1).ext`、`name (2).ext`…
@@ -486,6 +639,17 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
                           MaterialLocalizations.of(context).backButtonTooltip,
                       onPressed: _upOneLevel,
                     ),
+              actions: scope == null
+                  ? null
+                  : (_batchMode
+                      ? _buildBatchActions(l10n, scope)
+                      : <Widget>[
+                          IconButton(
+                            icon: const Icon(Icons.checklist_outlined),
+                            tooltip: l10n.storage_batchActions,
+                            onPressed: () => setState(() => _batchMode = true),
+                          ),
+                        ]),
             ),
             body: wide
                 ? Row(
@@ -507,7 +671,7 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
                 : (scope == null
                     ? _buildScopeListPane()
                     : _buildContent(l10n, scope, wide: false)),
-            floatingActionButton: scope == null || _showRecent
+            floatingActionButton: scope == null || _showRecent || _batchMode
                 ? null
                 : FloatingActionButton.small(
                     tooltip: l10n.storage_upload,
@@ -677,7 +841,32 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
     );
   }
 
+  /// 标题栏右侧：批量模式下的「取消 / 删除 N 项」。
+  ///
+  /// 退出批量模式的入口就在这里，和「批量操作」按钮同一个位置，
+  /// 免得宽屏、窄屏各有一套说法。
+  List<Widget> _buildBatchActions(AppLocalizations l10n, PouchScope scope) {
+    final error = Theme.of(context).colorScheme.error;
+    final count = _selected.length;
+    return <Widget>[
+      TextButton(
+        onPressed: _exitBatchMode,
+        child: Text(l10n.common_cancel),
+      ),
+      TextButton.icon(
+        onPressed: count == 0 || _busy ? null : () => _deleteSelected(scope),
+        icon: Icon(Icons.delete_outline, size: 18, color: error),
+        label: Text(
+          count == 0 ? l10n.common_delete : '${l10n.common_delete} $count',
+          style: TextStyle(color: count == 0 ? null : error),
+        ),
+      ),
+      const SizedBox(width: 8),
+    ];
+  }
+
   String _titleFor(AppLocalizations l10n, PouchScope? scope) {
+    if (_batchMode) return l10n.storage_selectedCount(_selected.length);
     if (scope == null) return widget.title ?? l10n.storage_scopeTitle;
     if (_showRecent) return l10n.storage_recentTitle;
     final name = _path.isEmpty ? '' : ' / ${_path.split('/').last}';
@@ -895,26 +1084,55 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
       itemCount: _entries.length + offset,
       itemBuilder: (context, index) {
         if (strip != null && index == 0) return strip;
-        final entry = _entries[index - offset];
-        final name = entry.path.split('/').last;
-        return ListTile(
-          leading: Icon(
-            entry.isDir ? Icons.folder_outlined : Icons.description_outlined,
-          ),
-          title: Text(name),
-          subtitle: entry.isDir ? null : Text(_formatSize(entry.size)),
-          onTap: entry.isDir
-              ? () => _enterDirectory(entry)
-              : () => _openFile(scope, entry),
-          trailing: entry.isDir
-              ? null
-              : IconButton(
-                  icon: const Icon(Icons.delete_outline),
-                  tooltip: '删除',
-                  onPressed: _busy ? null : () => _deleteEntry(scope, entry),
-                ),
-        );
+        return _buildEntryTile(l10n, scope, _entries[index - offset]);
       },
+    );
+  }
+
+  /// 目录里的一行。
+  ///
+  /// 删除不再挂在行尾（原来那个垃圾桶图标）：桌面右键或长按、移动端长按
+  /// 出操作菜单，删除在菜单里。批量模式下行首换成复选框，点一下就勾上。
+  Widget _buildEntryTile(
+    AppLocalizations l10n,
+    PouchScope scope,
+    StoreEntry entry,
+  ) {
+    final name = entry.path.split('/').last;
+    final selected = _selected.contains(entry.path);
+    final tile = ListTile(
+      selected: selected,
+      leading: _batchMode
+          ? (entry.isDir
+              ? const Icon(Icons.folder_outlined)
+              : Checkbox(
+                  value: selected,
+                  onChanged: (_) => _toggleSelected(entry),
+                ))
+          : Icon(
+              entry.isDir ? Icons.folder_outlined : Icons.description_outlined,
+            ),
+      title: Text(name),
+      subtitle: entry.isDir ? null : Text(_formatSize(entry.size)),
+      onTap: _batchMode
+          ? (entry.isDir ? null : () => _toggleSelected(entry))
+          : (entry.isDir
+              ? () => _enterDirectory(entry)
+              : () => _openFile(scope, entry)),
+    );
+    if (_batchMode) return tile;
+    return Builder(
+      builder: (rowContext) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onLongPress: () => _showEntryMenu(scope, entry, rowContext: rowContext),
+        onSecondaryTapUp: (details) => _showEntryMenu(
+          scope,
+          entry,
+          rowContext: rowContext,
+          position: details.globalPosition,
+        ),
+        child: tile,
+      ),
     );
   }
 
@@ -1022,15 +1240,28 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
     final parts = <String>[dir.isEmpty ? scope.displayName : dir.split('/').last];
     final stamp = _formatStamp(entry.mtimeMs);
     if (stamp.isNotEmpty) parts.add(stamp);
-    return ListTile(
-      leading: const Icon(Icons.description_outlined),
+    final selected = _selected.contains(entry.path);
+    final tile = ListTile(
+      selected: selected,
+      leading: _batchMode
+          ? Checkbox(value: selected, onChanged: (_) => _toggleSelected(entry))
+          : const Icon(Icons.description_outlined),
       title: Text(name),
       subtitle: Text(parts.join(' · ')),
-      onTap: () => _openFile(scope, entry),
-      trailing: IconButton(
-        icon: const Icon(Icons.delete_outline),
-        tooltip: '删除',
-        onPressed: _busy ? null : () => _deleteEntry(scope, entry),
+      onTap: _batchMode ? () => _toggleSelected(entry) : () => _openFile(scope, entry),
+    );
+    if (_batchMode) return tile;
+    return Builder(
+      builder: (rowContext) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onLongPress: () => _showEntryMenu(scope, entry, rowContext: rowContext),
+        onSecondaryTapUp: (details) => _showEntryMenu(
+          scope,
+          entry,
+          rowContext: rowContext,
+          position: details.globalPosition,
+        ),
+        child: tile,
       ),
     );
   }

@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/l10n/app_localizations.dart';
@@ -249,7 +250,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('a.md'), findsOneWidget);
-    await tester.tap(find.byTooltip('删除'));
+    // 删除不在行尾了：长按出操作菜单，删除在菜单里。
+    await tester.longPress(find.widgetWithText(ListTile, 'a.md'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, '删除'));
     await tester.pumpAndSettle();
@@ -276,7 +280,14 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('删除'));
+    // 桌面右键也出同一个菜单。
+    await tester.tap(
+      find.widgetWithText(ListTile, 'a.md'),
+      buttons: kSecondaryButton,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('打开'), findsOneWidget);
+    await tester.tap(find.text('删除'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, '删除'));
     await tester.pumpAndSettle();
@@ -284,6 +295,124 @@ void main() {
     expect(transport.deletes, [
       (scope: 'agent:a1', path: 'notes/a.md'),
     ]);
+  });
+
+  testWidgets('长按出操作菜单，删除要确认，取消就不删', (tester) async {
+    final transport = _Transport(entries: <StoreEntry>[
+      StoreEntry(path: 'notes/a.md', size: 3, sha256: '', mtimeMs: 0),
+    ]);
+    final store = PouchScopeStore(transport: transport, pouchId: 'p1');
+    await tester.pumpWidget(MaterialApp(
+      locale: const Locale('zh'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: PouchScopeBrowserScreen(
+        store: store,
+        initialScope: PouchScope.agent('a1'),
+        initialPath: 'notes',
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // 行尾不再挂删除按钮。
+    expect(find.byTooltip('删除'), findsNothing);
+
+    await tester.longPress(find.widgetWithText(ListTile, 'a.md'));
+    await tester.pumpAndSettle();
+    expect(find.text('打开'), findsOneWidget);
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+    // 确认框：取消就什么都不删。
+    await tester.tap(find.widgetWithText(TextButton, '取消'));
+    await tester.pumpAndSettle();
+    expect(transport.deletes, isEmpty);
+
+    await tester.longPress(find.widgetWithText(ListTile, 'a.md'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '删除'));
+    await tester.pumpAndSettle();
+    expect(transport.deletes, [
+      (scope: 'agent:a1', path: 'notes/a.md'),
+    ]);
+  });
+
+  testWidgets('批量操作：勾上复选框，一次删掉选中的几项', (tester) async {
+    _setViewport(tester, w: 1400, h: 1000);
+    final transport = _Transport(entries: <StoreEntry>[
+      StoreEntry(path: 'a.md', size: 1, sha256: '', mtimeMs: 100),
+      StoreEntry(path: 'b.md', size: 1, sha256: '', mtimeMs: 200),
+      StoreEntry(path: 'docs', size: 0, sha256: '', mtimeMs: 300, kind: 'dir'),
+    ]);
+    final store = PouchScopeStore(transport: transport, pouchId: 'p1');
+    await tester.pumpWidget(
+      _screen(store, initialScope: PouchScope.files, lockToInitialScope: true),
+    );
+    await tester.pumpAndSettle();
+
+    // 平时没有复选框。
+    expect(find.byType(Checkbox), findsNothing);
+
+    await tester.tap(find.byTooltip('批量操作'));
+    await tester.pumpAndSettle();
+
+    // 批量操作按钮换成取消 / 删除，标题变成已选条数。
+    expect(find.byTooltip('批量操作'), findsNothing);
+    expect(find.text('取消'), findsOneWidget);
+    expect(find.text('已选 0 项'), findsOneWidget);
+    // 目录不给勾（删不掉），只有两个文件有复选框。
+    expect(find.byType(Checkbox), findsNWidgets(2));
+
+    await tester.tap(find.widgetWithText(ListTile, 'a.md'));
+    await tester.pumpAndSettle();
+    expect(find.text('已选 1 项'), findsOneWidget);
+
+    // 批量模式下点行只勾不选，不会打开文件。
+    await tester.tap(find.widgetWithText(ListTile, 'b.md'));
+    await tester.pumpAndSettle();
+    expect(find.text('已选 2 项'), findsOneWidget);
+
+    await tester.tap(find.text('删除 2'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '删除'));
+    await tester.pumpAndSettle();
+
+    expect(transport.deletes, [
+      (scope: 'files', path: 'a.md'),
+      (scope: 'files', path: 'b.md'),
+    ]);
+    // 删完退出批量模式。
+    expect(find.byType(Checkbox), findsNothing);
+    expect(find.byTooltip('批量操作'), findsOneWidget);
+  });
+
+  testWidgets('批量操作可以取消，复选框收起来', (tester) async {
+    _setViewport(tester, w: 1400, h: 1000);
+    final transport = _Transport(entries: <StoreEntry>[
+      StoreEntry(path: 'a.md', size: 1, sha256: '', mtimeMs: 100),
+      StoreEntry(path: 'b.md', size: 1, sha256: '', mtimeMs: 200),
+    ]);
+    final store = PouchScopeStore(transport: transport, pouchId: 'p1');
+    await tester.pumpWidget(
+      _screen(store, initialScope: PouchScope.files, lockToInitialScope: true),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('批量操作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ListTile, 'a.md'));
+    await tester.pumpAndSettle();
+    expect(find.text('已选 1 项'), findsOneWidget);
+
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(Checkbox), findsNothing);
+    expect(find.byTooltip('批量操作'), findsOneWidget);
+    expect(transport.deletes, isEmpty);
+    // 退出后点行又是打开文件，不是勾选。
+    expect(find.text('已选 0 项'), findsNothing);
   });
 
   test('recentScopeFiles：新→旧，丢掉目录和点开头的文件，按 limit 截断', () {

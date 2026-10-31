@@ -4174,6 +4174,10 @@
   "storage_deleteFileTitle": "Delete file",
   "storage_deleteFileConfirm": "Delete \"{name}\"?",
   "storage_upload": "Upload file",
+  "storage_batchActions": "Batch actions",
+  "storage_entryOpen": "Open",
+  "storage_deleteManyConfirm": "Delete these {count} items?",
+  "storage_selectedCount": "{count} selected",
   "storage_legacyData": "Legacy data (space directory)",
   "storage_legacyDataSub": "The v2 space/device view — only for pre-migration content",
   "storage_notPaired": "Not signed in to a pouch yet",
@@ -4181,6 +4185,20 @@
     "placeholders": {
       "name": {
         "type": "String"
+      }
+    }
+  },
+  "@storage_deleteManyConfirm": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@storage_selectedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
       }
     }
   },
