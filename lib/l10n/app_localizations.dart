@@ -13829,6 +13829,12 @@ abstract class AppLocalizations {
   /// **'袋子 scope'**
   String get storage_scopeTitle;
 
+  /// No description provided for @storage_pickScopeHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'从左边选一个空间'**
+  String get storage_pickScopeHint;
+
   /// No description provided for @storage_deleteFileTitle.
   ///
   /// In zh, this message translates to:

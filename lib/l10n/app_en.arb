@@ -4165,6 +4165,7 @@
   "storage_moreSettings": "More settings",
   "storage_browseByScope": "Browse by scope",
   "storage_scopeTitle": "Pouch scopes",
+  "storage_pickScopeHint": "Pick a space on the left",
   "storage_deleteFileTitle": "Delete file",
   "storage_deleteFileConfirm": "Delete \"{name}\"?",
   "storage_upload": "Upload file",

@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../storage/device_identity.dart';
 import '../storage/host_pouch_target.dart';
+import '../storage/pouch_scope.dart';
+import '../storage/store_protocol.dart';
 import '../storage/store_service.dart';
 import 'pouch_scope_browser_screen.dart';
 import 'storage_browser_screen.dart';
@@ -129,11 +131,18 @@ class _StorageSpaceManageScreenState extends State<StorageSpaceManageScreen> {
       );
     }
     final l10n = AppLocalizations.of(context);
-    // 默认按袋子里的 scope 浏览（[G4]）；space/device 视图留给「旧数据」入口。
-    if (_hasScopeStore && !_forceLegacy && widget.initialSpace == null) {
+    final space = widget.initialSpace;
+    // 主机现在只认 v3 的 scope 请求，v2 的 space/device 视图发过去会报
+    // 「scope required」并只剩一个空页。所以只要袋子在，一律走 scope 浏览；
+    // v2 留给「旧数据」入口（[onOpenLegacy]）自己退回去。
+    if (_hasScopeStore && !_forceLegacy) {
       return PouchScopeBrowserScreen(
-        title: l10n.storage_title,
-        onOpenLegacy: () => setState(() => _forceLegacy = true),
+        title: space == null ? l10n.storage_title : storageSpaceLabel(l10n, space),
+        initialScope: space == StoreSpace.files ? PouchScope.files : null,
+        lockToInitialScope: space == StoreSpace.files,
+        onOpenLegacy: space == null
+            ? () => setState(() => _forceLegacy = true)
+            : null,
       );
     }
     return StorageBrowserScreen(
@@ -148,14 +157,6 @@ class _StorageSpaceManageScreenState extends State<StorageSpaceManageScreen> {
       hideInternalFiles: _hideInternalFiles,
       onHideInternalFilesChanged: (v) => setState(() => _hideInternalFiles = v),
       extraActions: [
-        // 只在没有指定分区（储物袋管理）时才有意义：锁在分区里时这个按钮
-        // 点了也回不到 scope 视图。
-        if (_hasScopeStore && widget.initialSpace == null)
-          IconButton(
-            icon: const Icon(Icons.account_tree_outlined),
-            tooltip: l10n.storage_browseByScope,
-            onPressed: () => setState(() => _forceLegacy = false),
-          ),
         PopupMenuButton<StorageMoreAction>(
           tooltip: l10n.storage_moreSettings,
           icon: const Icon(Icons.more_horiz),

@@ -7906,6 +7906,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_scopeTitle => 'Pouch scopes';
 
   @override
+  String get storage_pickScopeHint => 'Pick a space on the left';
+
+  @override
   String get storage_deleteFileTitle => 'Delete file';
 
   @override

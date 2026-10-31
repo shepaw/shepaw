@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
 import '../l10n/app_localizations.dart';
+import '../utils/layout_utils.dart';
 import '../services/store_open_service.dart';
 import '../storage/group_shared_files.dart';
 import '../storage/local_store.dart';
@@ -28,6 +29,7 @@ class PouchScopeBrowserScreen extends StatefulWidget {
     this.store,
     this.title,
     this.initialScope,
+    this.lockToInitialScope = false,
     this.initialPath = '',
     this.onOpenLegacy,
     this.sharedFiles,
@@ -46,6 +48,12 @@ class PouchScopeBrowserScreen extends StatefulWidget {
 
   /// 进来直接打开这个 scope（群会话的「文件」入口用它）；null 时停在顶层。
   final PouchScope? initialScope;
+
+  /// 左栏只列 [initialScope] 这一个，不给切到别的空间。
+  ///
+  /// 一级「文件」入口用它：文件是用户自己的空间，不该从里面翻到群或
+  /// 智能体的空间。为 false 时左栏列出全部 scope。
+  final bool lockToInitialScope;
 
   /// 配合 [initialScope] 的起始路径。
   final String initialPath;
@@ -89,6 +97,12 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
   String? _scopesError;
 
   PouchScope? _scope;
+
+  /// 宽屏左栏宽度（可拖拽），和玉简页保持一致。
+  double _listPaneWidth = 280;
+  static const double _minListPaneWidth = 220;
+  static const double _maxListPaneWidth = 480;
+  static const double _minDetailPaneWidth = 360;
   String _path = '';
   List<StoreEntry> _entries = const <StoreEntry>[];
   bool _loadingEntries = false;
@@ -350,30 +364,108 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final scope = _scope;
-    return Scaffold(
-      appBar: AppBar(
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        title: Text(
-            scope == null
-                  ? (widget.title ?? l10n.storage_scopeTitle)
-                  : _titleFor(scope)),
-        leading: scope == null
-            ? null
-            : IconButton(
-                icon: const Icon(Icons.arrow_back),
-                tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-                onPressed: _upOneLevel,
-              ),
+    final title = scope == null
+        ? (widget.title ?? l10n.storage_scopeTitle)
+        : _titleFor(scope);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = _wideFor(context, constraints);
+        // 宽屏两栏：左边常驻 scope 列表，右边是当前 scope 的内容，和玉简页
+        // 一个布局。窄屏仍是「顶层列表 → 点进 scope」的两级导航。
+        return Scaffold(
+          appBar: AppBar(
+            elevation: 0,
+            scrolledUnderElevation: 0,
+            title: Text(title),
+            leading: (wide || scope == null)
+                ? null
+                : IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    tooltip:
+                        MaterialLocalizations.of(context).backButtonTooltip,
+                    onPressed: _upOneLevel,
+                  ),
+          ),
+          body: wide
+              ? Row(
+                  children: [
+                    SizedBox(
+                      width: _listPaneWidth,
+                      child: _buildScopeListPane(),
+                    ),
+                    _buildPaneSplitter(constraints.maxWidth),
+                    Expanded(
+                      child: scope == null
+                          ? _buildPickScopeHint(l10n)
+                          : _buildScope(scope),
+                    ),
+                  ],
+                )
+              : (scope == null ? _buildScopeListPane() : _buildScope(scope)),
+          floatingActionButton: scope == null
+              ? null
+              : FloatingActionButton.small(
+                  tooltip: l10n.storage_upload,
+                  onPressed: _busy ? null : _uploadFiles,
+                  child: const Icon(Icons.file_upload_outlined),
+                ),
+        );
+      },
+    );
+  }
+
+  bool _wideFor(BuildContext context, BoxConstraints constraints) =>
+      LayoutUtils.isDesktopLayout(context) && constraints.maxWidth >= 720;
+
+  void _resizeListPane(double delta, double maxWidth) {
+    final room = maxWidth - _minDetailPaneWidth;
+    final maxList = room < _minListPaneWidth
+        ? _minListPaneWidth
+        : (room > _maxListPaneWidth ? _maxListPaneWidth : room);
+    final next = _listPaneWidth + delta;
+    setState(() {
+      _listPaneWidth = next < _minListPaneWidth
+          ? _minListPaneWidth
+          : (next > maxList ? maxList : next);
+    });
+  }
+
+  Widget _buildPaneSplitter(double maxWidth) {
+    final line = Theme.of(context).colorScheme.outline;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onHorizontalDragUpdate: (details) =>
+          _resizeListPane(details.delta.dx, maxWidth),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.resizeColumn,
+        child: SizedBox(
+          width: 8,
+          child: Center(
+            child: Container(width: 1, color: line),
+          ),
+        ),
       ),
-      body: scope == null ? _buildTopLevel() : _buildScope(scope),
-      floatingActionButton: scope == null
-          ? null
-          : FloatingActionButton.small(
-              tooltip: l10n.storage_upload,
-              onPressed: _busy ? null : _uploadFiles,
-              child: const Icon(Icons.file_upload_outlined),
-            ),
+    );
+  }
+
+  /// 宽屏左边还没选 scope 时的提示。
+  Widget _buildPickScopeHint(AppLocalizations l10n) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.folder_open_outlined,
+            size: 48,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            l10n.storage_pickScopeHint,
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
+        ],
+      ),
     );
   }
 
@@ -382,13 +474,19 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
     return '${scope.displayName}$name';
   }
 
-  Widget _buildTopLevel() {
+  Widget _buildScopeListPane() {
     final l10n = AppLocalizations.of(context);
     if (_loadingScopes) {
       return const Center(child: CircularProgressIndicator());
     }
-    final groups = groupPouchScopes(_scopes);
-    final scopesError = _scopesError;
+    final locked = widget.lockToInitialScope ? widget.initialScope : null;
+    final visible = locked == null
+        ? _scopes
+        : _scopes.where((scope) => scope.id == locked.id).toList();
+    final groups = groupPouchScopes(visible);
+    // 已经进到某个 scope 时，名单读不到不再占左栏顶部报错——用户看的是
+    // 右边内容，那里的错误才是主信息（宽屏两栏下免得同一句报两遍）。
+    final scopesError = _scope == null ? _scopesError : null;
     return ListView(
       children: [
         if (scopesError != null)
@@ -446,6 +544,7 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
           ),
           for (final scope in group.scopes)
             ListTile(
+              selected: _scope?.id == scope.id,
               leading: Icon(_iconFor(scope.kind)),
               title: Text(scope.displayName),
               subtitle: Text(scope.id),

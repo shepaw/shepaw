@@ -4615,6 +4615,7 @@
   "storage_moreSettings": "更多设置",
   "storage_browseByScope": "按 scope 浏览",
   "storage_scopeTitle": "袋子 scope",
+  "storage_pickScopeHint": "从左边选一个空间",
   "storage_deleteFileTitle": "删除文件",
   "storage_deleteFileConfirm": "确定删除「{name}」？",
   "storage_upload": "上传文件",

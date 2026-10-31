@@ -7613,6 +7613,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_scopeTitle => '袋子 scope';
 
   @override
+  String get storage_pickScopeHint => '从左边选一个空间';
+
+  @override
   String get storage_deleteFileTitle => '删除文件';
 
   @override
