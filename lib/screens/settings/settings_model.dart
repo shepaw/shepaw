@@ -12,7 +12,6 @@ import '../../peer/services/peer_storage_service.dart';
 import '../../services/biometric_service.dart';
 import '../../services/cli_host.dart';
 import '../../services/cli_pouch.dart';
-import '../../services/local_database_service.dart';
 import '../../services/location_service.dart';
 import '../../storage/pouch_credential_store.dart';
 import '../../storage/pouch_login.dart';

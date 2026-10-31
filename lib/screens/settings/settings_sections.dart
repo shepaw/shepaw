@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,9 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../she_memory_screen.dart';
+import '../location_settings_screen.dart';
+import 'settings_model.dart';
 import '../../providers/locale_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/model_registry.dart';
@@ -444,6 +448,76 @@ class SettingsSections {
       ],
     );
   }
+}
+
+/// 桌面设置右栏：自己持一份 [SettingsModel] 加载分类需要的状态，
+/// 按 [category] 渲染对应的几项。
+class SettingsCategoryPane extends StatefulWidget {
+  const SettingsCategoryPane({super.key, required this.category});
+
+  final SettingsCategory category;
+
+  @override
+  State<SettingsCategoryPane> createState() => _SettingsCategoryPaneState();
+}
+
+class _SettingsCategoryPaneState extends State<SettingsCategoryPane> {
+  late final SettingsModel _model = SettingsModel();
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_model.init());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return ListenableBuilder(
+      listenable: _model,
+      builder: (context, _) => SettingsCategoryPage(
+        category: widget.category,
+        entries: _entries(l10n),
+      ),
+    );
+  }
+
+  SettingsEntries _entries(AppLocalizations l10n) => SettingsEntries(
+        l10n: l10n,
+        openPage: (page) => Navigator.push(
+          context,
+          MaterialPageRoute<void>(builder: (_) => page),
+        ),
+        biometricLoading: _model.biometricLoading,
+        biometricSupported: _model.biometricSupported,
+        biometricEnabled: _model.biometricEnabled,
+        onBiometricChanged: (v) => _model.setBiometric(context, v),
+        batteryOptIgnored: _model.batteryOptIgnored,
+        onBatteryOptimization: () => _model.openBatteryOptimization(context),
+        locationSubtitle: _model.locationSubtitle(l10n),
+        onLocation: () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute<void>(
+              builder: (_) => const LocationSettingsScreen(),
+            ),
+          );
+          await _model.loadLocationState();
+        },
+        pouchName: _model.pouchName,
+        pouchHost: _model.pouchHost,
+        onRenamePouch: (ctx) => _model.renamePouch(ctx),
+        onSwitchPouch: (ctx) => _model.confirmSwitchPouch(ctx),
+        // 必须走根 Navigator：右栏是子 Navigator，它的 onGenerateRoute 不看
+        // 路由名；而主机流程内部靠 pushReplacementNamed 在命名路由之间跳转。
+        onHostSetup: () =>
+            Navigator.of(context, rootNavigator: true).pushNamed('/host-setup'),
+        onSheMemory: () => Navigator.push(
+          context,
+          MaterialPageRoute<void>(builder: (_) => const SheMemoryScreen()),
+        ),
+        onAbout: () => SettingsSections.showAbout(context, l10n),
+      );
 }
 
 /// 桌面设置的中栏分类页：只显示 [category] 对应的那几项。

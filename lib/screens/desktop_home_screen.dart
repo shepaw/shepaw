@@ -20,7 +20,15 @@ import 'group_task_list_screen.dart';
 import 'create_group_screen.dart';
 import 'group_detail_screen.dart';
 import 'remote_agent_detail_screen.dart';
-import 'settings_screen.dart';
+import 'settings/settings_model.dart';
+import 'instruction_set_screen.dart';
+import 'settings/settings_sections.dart';
+import 'user_profile_settings_screen.dart';
+import 'model_management_screen.dart';
+import 'skill_management_screen.dart';
+import 'cli_config_management_screen.dart';
+import 'event_management/event_management_screen.dart';
+import '../task/screens/scheduled_tasks_management_screen.dart';
 import 'contacts_screen.dart';
 import 'storage_space_manage_screen.dart';
 import 'storage_shared.dart';
@@ -36,6 +44,8 @@ import '../services/she_service.dart';
 import '../services/update_service.dart';
 import '../service_locator.dart' show getIt;
 import '../widgets/update_settings_badge.dart';
+import '../widgets/desktop/mine_list_panel.dart';
+import '../widgets/desktop/settings_category_panel.dart';
 
 /// Desktop split-panel layout similar to WeChat desktop.
 /// Left: icon sidebar + conversation / contacts list (jade / files fill the right pane).
@@ -50,13 +60,19 @@ class DesktopHomeScreen extends StatefulWidget {
 /// Middle column content (WeChat-style).
 ///
 /// 玉简和文件自带「列表 + 详情」两栏，所以不占中间栏，右栏铺满。
-enum _LeftPanelMode { conversations, contacts, jade, files }
+enum _LeftPanelMode {
+  conversations,
+  contacts,
+  jade,
+  files,
+  mine,
+  settings,
+}
 
 /// Tracks what the right panel is currently displaying.
 enum _RightPanelView {
   empty,
   chat,
-  settings,
   createGroup,
   pairDevice,
   contactAgent,
@@ -66,16 +82,34 @@ enum _RightPanelView {
   groupTasks,
   jadeSlips,
   files,
+  mineProfile,
+  mineModels,
+  mineInstructions,
+  mineSkills,
+  mineCli,
+  mineEvents,
+  mineScheduledTasks,
+  settingsCategory,
   addAgentInstance,
 }
 
-/// 某个主菜单（消息 / 通讯录 / 玉简 / 文件）自己的右栏状态。
+/// 中栏有列表的模式。玉简和文件自带两栏，不占中栏。
+const List<_LeftPanelMode> _middleColumnModes = [
+  _LeftPanelMode.conversations,
+  _LeftPanelMode.contacts,
+  _LeftPanelMode.mine,
+  _LeftPanelMode.settings,
+];
+
+/// 某个主菜单（消息 / 通讯录 / 玉简 / 文件 / 我的 / 设置）自己的右栏状态。
 ///
 /// 每个菜单各留一份，切走时不拆掉对应 Navigator，再回来还是上次的页面。
 class _DeskSlot {
   _DeskSlot({
     required this.mode,
     required this.rightPanel,
+    this.minePage,
+    this.settingsCategory,
   }) {
     routeArgs = _RouteArgs.fromSlot(this);
   }
@@ -91,6 +125,8 @@ class _DeskSlot {
   String? taskChannelId;
   String? taskChannelName;
   String? taskGroupId;
+  MinePage? minePage;
+  SettingsCategory? settingsCategory;
   _RightPanelView? previousPanel;
   int navGeneration = 0;
   late _RouteArgs routeArgs;
@@ -109,6 +145,8 @@ class _RouteArgs {
     this.taskChannelId,
     this.taskChannelName,
     this.taskGroupId,
+    this.minePage,
+    this.settingsCategory,
     this.showChatBack = false,
   });
 
@@ -124,6 +162,8 @@ class _RouteArgs {
       taskChannelId: slot.taskChannelId,
       taskChannelName: slot.taskChannelName,
       taskGroupId: slot.taskGroupId,
+      minePage: slot.minePage,
+      settingsCategory: slot.settingsCategory,
       showChatBack: slot.previousPanel != null,
     );
   }
@@ -138,6 +178,8 @@ class _RouteArgs {
   final String? taskChannelId;
   final String? taskChannelName;
   final String? taskGroupId;
+  final MinePage? minePage;
+  final SettingsCategory? settingsCategory;
   final bool showChatBack;
 }
 
@@ -274,8 +316,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       GlobalKey<ContactsScreenState>();
 
   _LeftPanelMode _leftMode = _LeftPanelMode.conversations;
-  bool _settingsOpen = false;
-
   /// 右栏添加 Agent 实例页预选的工作节点，主机为 null。
   String? _addAgentNodeId;
 
@@ -296,6 +336,16 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     _LeftPanelMode.files: _DeskSlot(
       mode: _LeftPanelMode.files,
       rightPanel: _RightPanelView.files,
+    ),
+    _LeftPanelMode.mine: _DeskSlot(
+      mode: _LeftPanelMode.mine,
+      rightPanel: _RightPanelView.mineProfile,
+      minePage: MinePage.profile,
+    ),
+    _LeftPanelMode.settings: _DeskSlot(
+      mode: _LeftPanelMode.settings,
+      rightPanel: _RightPanelView.settingsCategory,
+      settingsCategory: SettingsCategory.general,
     ),
   };
 
@@ -323,10 +373,13 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       slot.rightPanel == _RightPanelView.jadeSlips ||
       slot.rightPanel == _RightPanelView.files;
 
-  /// 中间栏只给消息和通讯录用。
-  bool get _hasMiddleColumn =>
-      _leftMode == _LeftPanelMode.conversations ||
-      _leftMode == _LeftPanelMode.contacts;
+  bool get _hasMiddleColumn => _middleColumnModes.contains(_leftMode);
+
+  /// 中栏 IndexedStack 的下标：只有中栏模式参与。
+  int get _middleColumnIndex {
+    final index = _middleColumnModes.indexOf(_leftMode);
+    return index < 0 ? 0 : index;
+  }
 
   bool _isContactDetail(_DeskSlot slot) =>
       slot.rightPanel == _RightPanelView.contactAgent ||
@@ -340,20 +393,16 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   }
 
   void _showMode(_LeftPanelMode mode) {
-    if (_leftMode == mode && !_settingsOpen) return;
+    if (_leftMode == mode) return;
     FocusManager.instance.primaryFocus?.unfocus();
-    setState(() {
-      _settingsOpen = false;
-      _leftMode = mode;
-    });
+    setState(() => _leftMode = mode);
   }
 
   void _onConversationSelected(ConversationSelection selection) {
-    if (_leftMode != _LeftPanelMode.conversations || _settingsOpen) {
+    if (_leftMode != _LeftPanelMode.conversations) {
       FocusManager.instance.primaryFocus?.unfocus();
     }
     setState(() {
-      _settingsOpen = false;
       _leftMode = _LeftPanelMode.conversations;
       final slot = _slots[_LeftPanelMode.conversations]!;
       slot.previousPanel = null;
@@ -487,7 +536,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
   void _onRightPanelRootPopped(_LeftPanelMode mode) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _leftMode != mode || _settingsOpen) return;
+      if (!mounted || _leftMode != mode) return;
       final slot = _slots[mode]!;
       if (_isContactDetail(slot)) {
         _clearContactDetail(reloadList: true);
@@ -532,19 +581,51 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
   void _showJade() => _showMode(_LeftPanelMode.jade);
 
+  void _showMine() => _showMode(_LeftPanelMode.mine);
+
+  void _showSettings() {
+    UpdateService().dismissSettingsIconBadge();
+    _showMode(_LeftPanelMode.settings);
+  }
+
+  void _onMinePageSelected(MinePage page) {
+    setState(() {
+      final slot = _slots[_LeftPanelMode.mine]!;
+      slot.minePage = page;
+      slot.rightPanel = switch (page) {
+        MinePage.profile => _RightPanelView.mineProfile,
+        MinePage.models => _RightPanelView.mineModels,
+        MinePage.instructions => _RightPanelView.mineInstructions,
+        MinePage.skills => _RightPanelView.mineSkills,
+        MinePage.cli => _RightPanelView.mineCli,
+        MinePage.events => _RightPanelView.mineEvents,
+        MinePage.scheduledTasks => _RightPanelView.mineScheduledTasks,
+      };
+      _publishRoute(slot);
+    });
+  }
+
+  void _onSettingsCategorySelected(SettingsCategory category) {
+    setState(() {
+      final slot = _slots[_LeftPanelMode.settings]!;
+      slot.settingsCategory = category;
+      slot.rightPanel = _RightPanelView.settingsCategory;
+      _publishRoute(slot);
+    });
+  }
+
+  Future<void> _confirmLogout() async {
+    final confirmed = await confirmLogout(context);
+    if (confirmed != true) return;
+    await SettingsModel.logoutToGate();
+  }
+
   void _showFiles() => _showMode(_LeftPanelMode.files);
 
   void _showPanel(_RightPanelView panel) {
-    if (panel == _RightPanelView.settings) {
-      if (_settingsOpen) return;
-      FocusManager.instance.primaryFocus?.unfocus();
-      setState(() => _settingsOpen = true);
-      return;
-    }
     final slot = _active;
-    if (!_settingsOpen && slot.rightPanel == panel) return;
+    if (slot.rightPanel == panel) return;
     setState(() {
-      _settingsOpen = false;
       slot.rightPanel = panel;
       if (panel != _RightPanelView.chat) {
         slot.selected = null;
@@ -613,14 +694,14 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           // WeChat-style icon sidebar
           _buildSidebar(),
 
-          // 消息和通讯录的列表都留在树上，切走再回来不用重头渲染。
-          // 切到玉简 / 文件时只是藏起来（Offstage），不拆状态。
+          // 中栏模式（消息 / 通讯录 / 我的 / 设置）的列表都留在树上，切走
+          // 再回来不用重头渲染。切到玉简 / 文件时只是藏起来，不拆状态。
           Offstage(
             offstage: !_hasMiddleColumn,
             child: SizedBox(
               width: _leftPanelWidth,
               child: IndexedStack(
-                index: _hasMiddleColumn ? _leftMode.index : 0,
+                index: _middleColumnIndex,
                 sizing: StackFit.expand,
                 children: [
                   HomeScreen(
@@ -653,6 +734,17 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                       _addAgentNodeId = nodeId;
                       _showPanel(_RightPanelView.addAgentInstance);
                     },
+                  ),
+                  MineListPanel(
+                    selected: _slots[_LeftPanelMode.mine]!.minePage,
+                    onSelected: _onMinePageSelected,
+                  ),
+                  SettingsCategoryPanel(
+                    selected:
+                        _slots[_LeftPanelMode.settings]!.settingsCategory ??
+                            SettingsCategory.general,
+                    onSelected: _onSettingsCategorySelected,
+                    onLogout: _confirmLogout,
                   ),
                 ],
               ),
@@ -701,13 +793,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                         _modeNavigator(mode),
                     ],
                   ),
-                  if (_settingsOpen)
-                    Navigator(
-                      key: const ValueKey('desktop_settings'),
-                      onGenerateRoute: (_) => MaterialPageRoute<void>(
-                        builder: (_) => const SettingsScreen(),
-                      ),
-                    ),
                 ],
               ),
             ),
@@ -792,9 +877,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         }
         return _buildEmptyState(args.mode);
 
-      case _RightPanelView.settings:
-        return const SettingsScreen();
-
       case _RightPanelView.createGroup:
         return CreateGroupScreen(
           onGroupCreated: (channelId) {
@@ -870,6 +952,32 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       case _RightPanelView.files:
         return const StorageSpaceManageScreen(initialSpace: StoreSpace.files);
 
+      case _RightPanelView.mineProfile:
+        return const UserProfileSettingsScreen();
+
+      case _RightPanelView.mineModels:
+        return const ModelManagementScreen();
+
+      case _RightPanelView.mineInstructions:
+        return const InstructionSetScreen(embedded: true);
+
+      case _RightPanelView.mineSkills:
+        return const SkillManagementScreen();
+
+      case _RightPanelView.mineCli:
+        return const CliConfigManagementScreen();
+
+      case _RightPanelView.mineEvents:
+        return const EventManagementScreen();
+
+      case _RightPanelView.mineScheduledTasks:
+        return const ScheduledTasksManagementScreen();
+
+      case _RightPanelView.settingsCategory:
+        return SettingsCategoryPane(
+          category: args.settingsCategory ?? SettingsCategory.general,
+        );
+
       case _RightPanelView.addAgentInstance:
         return AddAgentInstanceScreen(
           key: ValueKey('add-agent:${_addAgentNodeId ?? ''}'),
@@ -911,7 +1019,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         icon: Icons.chat_bubble,
         tooltip: l10n.nav_chats,
         colorBuilder: (_) =>
-            _leftMode == _LeftPanelMode.conversations && !_settingsOpen
+            _leftMode == _LeftPanelMode.conversations
                 ? activeColor
                 : iconColor,
         onTap: _showConversations,
@@ -920,7 +1028,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         icon: Icons.contacts_outlined,
         tooltip: l10n.drawer_contacts,
         colorBuilder: (_) =>
-            _leftMode == _LeftPanelMode.contacts && !_settingsOpen
+            _leftMode == _LeftPanelMode.contacts
                 ? activeColor
                 : iconColor,
         onTap: _showContacts,
@@ -928,7 +1036,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _SidebarItemDef(
         icon: Icons.auto_stories_outlined,
         tooltip: l10n.jadeSlip_title,
-        colorBuilder: (_) => _leftMode == _LeftPanelMode.jade && !_settingsOpen
+        colorBuilder: (_) => _leftMode == _LeftPanelMode.jade
             ? activeColor
             : iconColor,
         onTap: _showJade,
@@ -936,7 +1044,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       _SidebarItemDef(
         icon: Icons.folder_outlined,
         tooltip: storageSpaceLabel(l10n, StoreSpace.files),
-        colorBuilder: (_) => _leftMode == _LeftPanelMode.files && !_settingsOpen
+        colorBuilder: (_) => _leftMode == _LeftPanelMode.files
             ? activeColor
             : iconColor,
         onTap: _showFiles,
@@ -952,13 +1060,18 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         onTap: () {},
       ),
       _SidebarItemDef(
+        icon: Icons.person_outline,
+        tooltip: l10n.nav_mine,
+        colorBuilder: (_) =>
+            _leftMode == _LeftPanelMode.mine ? activeColor : iconColor,
+        onTap: _showMine,
+      ),
+      _SidebarItemDef(
         icon: Icons.settings_outlined,
         tooltip: l10n.drawer_settings,
-        colorBuilder: (_) => _settingsOpen ? activeColor : iconColor,
-        onTap: () {
-          UpdateService().dismissSettingsIconBadge();
-          _showPanel(_RightPanelView.settings);
-        },
+        colorBuilder: (_) =>
+            _leftMode == _LeftPanelMode.settings ? activeColor : iconColor,
+        onTap: _showSettings,
         showUpdateBadge: true,
       ),
     ];
@@ -1050,6 +1163,12 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       case _LeftPanelMode.files:
         icon = Icons.folder_outlined;
         label = storageSpaceLabel(l10n, StoreSpace.files);
+      case _LeftPanelMode.mine:
+        icon = Icons.person_outline;
+        label = l10n.nav_mine;
+      case _LeftPanelMode.settings:
+        icon = Icons.settings_outlined;
+        label = l10n.settings_title;
       case _LeftPanelMode.conversations:
         icon = Icons.chat_bubble_outline;
         label = l10n.home_noMessages;
