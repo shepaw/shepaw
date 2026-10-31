@@ -86,6 +86,16 @@ class AppColors {
   /// 头像底板上的前景色：首字母兜底文字、无显式颜色的兜底图标。
   static const Color onAvatarPlate = Color(0xFF1F2329);
 
+  /// 在线状态色（浅色模式）。原来各处直接写 Colors.green，深色模式下偏亮。
+  static const Color online = Color(0xFF2E7D32);
+
+  /// 在线状态色（深色模式）。
+  static const Color onlineDark = Color(0xFF66BB6A);
+
+  /// 按当前亮度取在线状态色。
+  static Color onlineFor(Brightness brightness) =>
+      brightness == Brightness.dark ? onlineDark : online;
+
   /// 按当前亮度取头像底板色（深色模式同样用浅色底板，保证黑 logo 可见）。
   static Color avatarPlateFor(Brightness brightness) =>
       brightness == Brightness.dark ? darkAvatarPlate : avatarPlate;

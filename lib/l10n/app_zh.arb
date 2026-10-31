@@ -5081,6 +5081,32 @@
   },
   "contacts_loadFailed": "通讯录加载失败",
   "contacts_noSearchResults": "没有匹配的结果",
+  "contacts_tabPeople": "联系人",
+  "contacts_tabDevices": "设备",
+  "contacts_unassigned": "未归属",
+  "contacts_deviceCount": "{count} 台",
+  "@contacts_deviceCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "contacts_reconnect": "重新连接",
+  "contacts_reconnectFailed": "连不上主机，请检查主机是否在运行",
+  "contacts_noSessionTitle": "还没有连接主机",
+  "contacts_noSessionBody": "连接主机后才能看到它的 Agent、群聊和设备",
+  "contacts_connectHost": "连接主机",
+  "contacts_rosterRetry": "重试",
+  "contacts_actionSendMessage": "发消息",
+  "contacts_actionViewDetail": "查看详情",
+  "contacts_actionHideOnApp": "在通讯录中隐藏",
+  "contacts_actionShowOnApp": "在通讯录中显示",
+  "contacts_actionEnterGroup": "进入群聊",
+  "contacts_actionGroupDetail": "群详情",
+  "contacts_actionAddAgentHere": "在此节点添加 Agent",
+  "contacts_searchAgents": "Agent",
+  "contacts_searchDevices": "设备",
   "chat_attachImageFailed": "发送图片失败，请重试",
   "chat_attachFileFailed": "发送文件失败，请重试",
   "chat_sessionsLoadFailed": "加载会话失败，请重试",

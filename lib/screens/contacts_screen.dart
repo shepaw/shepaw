@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../l10n/app_localizations.dart';
 import '../models/agent.dart';
 import '../models/channel.dart';
@@ -11,8 +12,11 @@ import '../peer/widgets/peer_device_icon.dart';
 import '../peer/screens/add_agent_instance_screen.dart';
 import '../utils/platform_utils.dart';
 import '../peer/peer_device_actions.dart';
+import '../services/chat_navigation_service.dart';
 import '../services/contacts_directory.dart';
+import '../services/contacts_rows.dart';
 import '../services/local_database_service.dart';
+import '../services/remote_agent_service.dart';
 import '../services/she_service.dart';
 import '../services/logger_service.dart';
 import '../service_locator.dart';
@@ -24,8 +28,11 @@ import 'remote_agent_detail_screen.dart';
 import 'group_detail_screen.dart';
 import 'create_group_screen.dart';
 
-/// 通讯录：工作节点（主机排第一并打标）→ 客户端（桌面 + 移动）→ 群聊。
-/// 主机和工作节点下挂各自的 Agent，客户端只是设备；本机在设备名旁标出来。
+/// 通讯录。两个分段：[_ContactsTab.people] 用来找人聊天（群聊 + Agent），
+/// [_ContactsTab.devices] 用来管设备（主机 / 工作节点 / 客户端）。
+///
+/// 原来是一棵「分区 → 设备 → Agent」三层折叠树，最常用的 Agent 藏在第三层，
+/// 客户端这种设备管理信息又混在联系人里。现在两边各自是一层列表。
 ///
 /// When [embedded] is true (desktop middle column), selection callbacks open
 /// details in the parent right panel instead of pushing a new route.
@@ -37,6 +44,7 @@ class ContactsScreen extends StatefulWidget {
   final ValueChanged<PairedPeer>? onPeerSelected;
   final VoidCallback? onCreateGroup;
   final VoidCallback? onPairDevice;
+
   /// 添加 Agent 实例。从工作节点行进来时带上节点指纹，主机为 null。
   final ValueChanged<String?>? onAddAgentInstance;
 
@@ -56,41 +64,46 @@ class ContactsScreen extends StatefulWidget {
   State<ContactsScreen> createState() => ContactsScreenState();
 }
 
-enum _ContactsSection { workers, clients, groups }
+enum _ContactsTab { people, devices }
 
-const _deviceSections = <_ContactsSection, Set<ContactSection>>{
-  _ContactsSection.workers: {ContactSection.host, ContactSection.worker},
-  _ContactsSection.clients: {
-    ContactSection.pcClient,
-    ContactSection.mobileClient,
-  },
-};
+/// 长按 / 右键菜单里的一项。
+class _MenuAction {
+  const _MenuAction({
+    required this.value,
+    required this.label,
+    required this.icon,
+    this.danger = false,
+    this.enabled = true,
+  });
+
+  final String value;
+  final String label;
+  final IconData icon;
+  final bool danger;
+  final bool enabled;
+}
 
 class ContactsScreenState extends State<ContactsScreen> {
-  /// 折叠箭头列宽 + 间距，使子项头像与父节点头像左对齐。
-  static const double _rowPadH = 12;
-  static const double _chevronSize = 20;
-  static const double _chevronGap = 4;
   static const double _avatarSize = 36;
-  static const double _childIndent =
-      _rowPadH + _chevronSize + _chevronGap; // 对齐父节点头像
+  static const double _childIndent = 16;
 
   final LocalDatabaseService _databaseService = LocalDatabaseService();
   final TextEditingController _searchController = TextEditingController();
   late final ContactsDirectory _directory;
 
   ContactsView? _view;
-  bool _pinnedHost = false;
   List<Channel> _groups = [];
   bool _isLoading = true;
+  bool _reconnecting = false;
   String _query = '';
+  _ContactsTab _tab = _ContactsTab.people;
 
-  final Set<_ContactsSection> _expanded = {..._ContactsSection.values};
-
-  /// Peer ids whose nested agent list is expanded. Keyed by [ContactDevice.rowKey],
-  /// because one pairing id can belong to two rows.
-  final Set<String> _expandedPeerIds = {};
+  /// 一次配对的两边会共用 peer id，选中态要按行区分。
   String? _selectedRowKey;
+
+  /// 桌面端键盘上下键的位置，指向 [_entries] 里可选中的行。
+  int _focusIndex = -1;
+  final FocusNode _listFocusNode = FocusNode();
 
   StreamSubscription<ContactsView>? _directorySub;
 
@@ -104,7 +117,10 @@ class ContactsScreenState extends State<ContactsScreen> {
     _searchController.addListener(() {
       final next = _searchController.text.trim().toLowerCase();
       if (next != _query) {
-        setState(() => _query = next);
+        setState(() {
+          _query = next;
+          _focusIndex = -1;
+        });
       }
     });
     _directory = getIt<ContactsDirectory>();
@@ -119,11 +135,6 @@ class ContactsScreenState extends State<ContactsScreen> {
       setState(() {
         _view = view;
         _isLoading = false;
-        final host = view.devices.where((device) => device.isHost).firstOrNull;
-        if (host != null && !_pinnedHost) {
-          _expandedPeerIds.add(host.rowKey);
-          _pinnedHost = true;
-        }
       });
     });
     _reload(quiet: cached != null);
@@ -132,24 +143,14 @@ class ContactsScreenState extends State<ContactsScreen> {
   @override
   void dispose() {
     _directorySub?.cancel();
+    _listFocusNode.dispose();
     _searchController.dispose();
     super.dispose();
   }
 
-  @override
-  void didUpdateWidget(covariant ContactsScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Keep the selected peer's agent list expanded when details open on the right.
-    final selected = widget.selectedContactId;
-    if (selected == null || selected == oldWidget.selectedContactId) return;
-    final matches = _view?.devices.where((device) => device.peer.id == selected);
-    final only = matches?.length == 1 ? matches!.single : null;
-    if (only != null) _expandedPeerIds.add(only.rowKey);
-  }
-
   Future<void> _reload({bool quiet = false}) async {
-    // 手上已经有目录快照就一律静默：`_isLoading` 会把整个 body 换成转圈，
-    // 连 RefreshIndicator 一起卸掉。下拉刷新、从详情返回都会看到整页闪一下。
+    // 手上已经有目录快照就一律静默：`_isLoading` 会把整个 body 换成骨架屏，
+    // 连 RefreshIndicator 一起卸掉，下拉刷新、从详情返回都会看到整页闪一下。
     final silent = quiet || _view != null;
     if (!silent && mounted) setState(() => _isLoading = true);
     // 群聊和通讯录互不依赖，一起发起，别让页面顺序等两轮。
@@ -171,66 +172,21 @@ class ContactsScreenState extends State<ContactsScreen> {
     }
   }
 
-  List<Agent> _matchingAgents(List<Agent> agents) {
-    if (_query.isEmpty) return agents;
-    return agents.where(_agentMatchesQuery).toList();
+  // ==================== 数据 ====================
+
+  List<ContactsRow> _entriesFor(AppLocalizations l10n) {
+    final view = _view;
+    if (view == null) return const [];
+    return ContactsRows.build(
+      view: view,
+      groups: _groups,
+      query: _query,
+      showDevices: _tab == _ContactsTab.devices,
+      l10n: l10n,
+    );
   }
 
-  bool _agentMatchesQuery(Agent a) {
-    final name = a.name.toLowerCase();
-    final bio = a.bio?.toLowerCase() ?? '';
-    return name.contains(_query) || bio.contains(_query);
-  }
-
-  bool _deviceNameMatches(ContactDevice device) =>
-      _query.isNotEmpty &&
-      device.peer.deviceName.toLowerCase().contains(_query);
-
-  List<Channel> get _filteredGroups {
-    if (_query.isEmpty) return _groups;
-    return _groups
-        .where((g) =>
-            g.name.toLowerCase().contains(_query) ||
-            (g.description?.toLowerCase().contains(_query) ?? false))
-        .toList();
-  }
-
-  void _toggleSection(_ContactsSection section) {
-    setState(() {
-      if (_expanded.contains(section)) {
-        _expanded.remove(section);
-      } else {
-        _expanded.add(section);
-      }
-    });
-  }
-
-  void _togglePeerExpanded(ContactDevice device) {
-    final key = device.rowKey;
-    setState(() {
-      if (_expandedPeerIds.contains(key)) {
-        _expandedPeerIds.remove(key);
-      } else {
-        _expandedPeerIds.add(key);
-      }
-    });
-  }
-
-  /// Desktop: expand + show detail in the right panel.
-  /// Mobile: expand/collapse only — settings via info button or long-press menu.
-  void _onPeerTap(ContactDevice device) {
-    _selectedRowKey = device.rowKey;
-    if (widget.embedded) {
-      // 右栏已经在展示这台设备的详情了，再点一次只是重新选中，
-      // 不该把展开的 Agent 收起来。
-      if (!_expandedPeerIds.contains(device.rowKey)) {
-        setState(() => _expandedPeerIds.add(device.rowKey));
-      }
-      _openPeerDetail(device);
-      return;
-    }
-    _togglePeerExpanded(device);
-  }
+  // ==================== 页面 ====================
 
   @override
   Widget build(BuildContext context) {
@@ -275,19 +231,14 @@ class ContactsScreenState extends State<ContactsScreen> {
           ),
         ],
       ),
-      body: _isLoading && _view == null
-          ? _buildSkeleton()
-          : Column(
-              children: [
-                _buildSearchBar(l10n),
-                Expanded(
-                  child: RefreshIndicator(
-                    onRefresh: () => _reload(),
-                    child: _buildSectionList(l10n),
-                  ),
-                ),
-              ],
-            ),
+      body: Column(
+        children: [
+          _buildSearchBar(l10n),
+          _buildTabSwitcher(l10n),
+          _buildStatusBanner(l10n),
+          Expanded(child: _buildBody(l10n)),
+        ],
+      ),
     );
   }
 
@@ -309,7 +260,8 @@ class ContactsScreenState extends State<ContactsScreen> {
           isDense: true,
           filled: true,
           fillColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
             borderSide: BorderSide.none,
@@ -319,14 +271,104 @@ class ContactsScreenState extends State<ContactsScreen> {
     );
   }
 
-  Widget _buildSectionList(AppLocalizations l10n) {
+  Widget _buildTabSwitcher(AppLocalizations l10n) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: SegmentedButton<_ContactsTab>(
+        segments: [
+          ButtonSegment(
+            value: _ContactsTab.people,
+            label: Text(l10n.contacts_tabPeople),
+          ),
+          ButtonSegment(
+            value: _ContactsTab.devices,
+            label: Text(l10n.contacts_tabDevices),
+          ),
+        ],
+        selected: {_tab},
+        onSelectionChanged: (next) {
+          setState(() {
+            _tab = next.first;
+            _focusIndex = -1;
+          });
+        },
+      ),
+    );
+  }
+
+  /// 主机离线的横幅。放在列表外面，滚多远都看得见，也是唯一的重连入口。
+  Widget _buildStatusBanner(AppLocalizations l10n) {
     final view = _view;
-    if (view == null) return _buildSkeleton();
+    if (view == null) return const SizedBox.shrink();
+    if (view.hasSession && view.host != null && !view.hostOnline) {
+      final colorScheme = Theme.of(context).colorScheme;
+      return Material(
+        color: colorScheme.errorContainer,
+        child: ListTile(
+          dense: true,
+          leading: Icon(
+            Icons.cloud_off_outlined,
+            color: colorScheme.onErrorContainer,
+          ),
+          title: Text(
+            l10n.hostOffline_banner,
+            style: TextStyle(color: colorScheme.onErrorContainer),
+          ),
+          trailing: _reconnecting
+              ? SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: colorScheme.onErrorContainer,
+                  ),
+                )
+              : TextButton(
+                  onPressed: _reconnectHost,
+                  child: Text(l10n.contacts_reconnect),
+                ),
+        ),
+      );
+    }
+    if (view.rosterFailed && _tab == _ContactsTab.devices) {
+      final colorScheme = Theme.of(context).colorScheme;
+      return Material(
+        color: colorScheme.surfaceContainerHighest,
+        child: ListTile(
+          dense: true,
+          leading: const Icon(Icons.sync_problem_outlined),
+          title: Text(l10n.contacts_listFailed),
+          trailing: TextButton(
+            onPressed: () => _reload(),
+            child: Text(l10n.contacts_rosterRetry),
+          ),
+        ),
+      );
+    }
+    return const SizedBox.shrink();
+  }
 
-    final groups = _filteredGroups;
-    final devices = _matchingDevices(view.devices);
+  Widget _buildBody(AppLocalizations l10n) {
+    final view = _view;
+    if (view == null) {
+      return RefreshIndicator(
+        onRefresh: () => _reload(),
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            if (_isLoading)
+              ..._buildSkeletonRows()
+            else
+              const SizedBox(height: 32),
+          ],
+        ),
+      );
+    }
 
-    if (_query.isNotEmpty && devices.isEmpty && groups.isEmpty) {
+    if (!view.hasSession) return _buildNoSession(l10n);
+
+    final entries = _entriesFor(l10n);
+    if (entries.isEmpty) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
@@ -340,84 +382,59 @@ class ContactsScreenState extends State<ContactsScreen> {
       );
     }
 
-    final children = <Widget>[
-      if (view.hasSession && view.host != null && !view.hostOnline)
-        _buildOfflineBanner(l10n),
-      if (!view.hasSession)
-        ListTile(
-          leading: const Icon(Icons.dns_outlined),
-          title: Text(l10n.contacts_noHost),
-          // 走根 Navigator：主机流程内部靠命名路由跳转，嵌套导航认不得。
-          onTap: () => Navigator.of(context, rootNavigator: true).pushNamed(
-            isDesktopPlatform ? '/host-setup' : '/pouch',
-          ),
-        )
-      else ...[
-        for (final entry in _deviceSections.entries)
-          ..._buildDeviceSection(
-            entry.key,
-            [
-              for (final device in devices)
-                if (entry.value.contains(device.section)) device,
-            ],
-            view,
-            l10n,
-          ),
-        if (view.rosterFailed)
-          ListTile(
-            title: Text(l10n.contacts_listFailed),
-            onTap: () => _directory.refresh(),
-          ),
-      ],
-      _buildSectionHeader(
-        section: _ContactsSection.groups,
-        title: l10n.contacts_groups,
-        count: groups.length,
+    return RefreshIndicator(
+      onRefresh: () => _reload(),
+      child: Focus(
+        focusNode: _listFocusNode,
+        onKeyEvent: _onListKey,
+        child: ListView.builder(
+          physics: const AlwaysScrollableScrollPhysics(),
+          itemCount: entries.length + 1,
+          itemBuilder: (context, index) {
+            if (index == entries.length) return const SizedBox(height: 24);
+            return _buildRow(l10n, entries, index);
+          },
+        ),
       ),
-      // 搜索时一律忽略折叠：分区收起的话，命中的群看不到，标题上的计数却还在。
-      if (_expanded.contains(_ContactsSection.groups) || _query.isNotEmpty)
-        ..._buildGroupChildren(groups, l10n),
-      const SizedBox(height: 24),
-    ];
-
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      children: children,
     );
   }
 
-  List<Widget> _buildDeviceSection(
-    _ContactsSection section,
-    List<ContactDevice> devices,
-    ContactsView view,
-    AppLocalizations l10n,
-  ) {
-    if (devices.isEmpty) return const [];
-    final title = section == _ContactsSection.workers
-        ? l10n.contacts_workerNodes
-        : l10n.contacts_clients;
-    return [
-      _buildSectionHeader(
-        section: section,
-        title: title,
-        count: devices.length,
-      ),
-      if (_expanded.contains(section) || _query.isNotEmpty)
-        for (final device in devices)
-          Opacity(
-            key: ValueKey(device.rowKey),
-            opacity: device.isHost || view.hostOnline ? 1 : 0.45,
-            child: Column(
-              children: _deviceRows(device, view, l10n),
+  Widget _buildNoSession(AppLocalizations l10n) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.dns_outlined, size: 48, color: colorScheme.outline),
+            const SizedBox(height: 12),
+            Text(
+              l10n.contacts_noSessionTitle,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
             ),
-          ),
-    ];
+            const SizedBox(height: 6),
+            Text(
+              l10n.contacts_noSessionBody,
+              textAlign: TextAlign.center,
+              style:
+                  TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              // 走根 Navigator：主机流程内部靠命名路由跳转，嵌套导航认不得。
+              onPressed: () => Navigator.of(context, rootNavigator: true)
+                  .pushNamed(isDesktopPlatform ? '/host-setup' : '/pouch'),
+              icon: const Icon(Icons.dns_outlined),
+              label: Text(l10n.contacts_connectHost),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
-  Widget _buildSkeleton() {
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      children: [
+  List<Widget> _buildSkeletonRows() => [
         for (var i = 0; i < 6; i++)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -429,167 +446,333 @@ class ContactsScreenState extends State<ContactsScreen> {
               ),
             ),
           ),
-      ],
-    );
-  }
+      ];
 
-  Widget _buildOfflineBanner(AppLocalizations l10n) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Material(
-      color: colorScheme.errorContainer,
-      child: ListTile(
-        dense: true,
-        leading: Icon(Icons.cloud_off_outlined, color: colorScheme.onErrorContainer),
-        title: Text(
-          l10n.hostOffline_banner,
-          style: TextStyle(color: colorScheme.onErrorContainer),
-        ),
-        onTap: _reconnectHost,
-      ),
-    );
-  }
+  // ==================== 行 ====================
 
-  List<ContactDevice> _matchingDevices(List<ContactDevice> devices) {
-    if (_query.isEmpty) return devices;
-    final other = _view?.otherAgents ?? const <Agent>[];
-    return devices.where((device) {
-      if (device.peer.deviceName.toLowerCase().contains(_query)) return true;
-      if (_matchingAgents(device.agents).isNotEmpty) return true;
-      return device.isHost && _matchingAgents(other).isNotEmpty;
-    }).toList();
-  }
-
-  List<Widget> _deviceRows(
-    ContactDevice device,
-    ContactsView view,
-    AppLocalizations l10n,
-  ) {
-    // 设备名命中时不该再按关键词过滤它名下的 Agent：搜「MacBook」的人就是
-    // 想看这台设备上有什么，而那些 Agent 的名字里并没有这个词。
-    final matchedByName = _deviceNameMatches(device);
-    final agents =
-        matchedByName ? device.agents : _matchingAgents(device.agents);
-    final extras = device.isHost
-        ? (matchedByName ? view.otherAgents : _matchingAgents(view.otherAgents))
-        : const <Agent>[];
-    final visibleAgents = [...agents, ...extras];
-    final expanded = _expandedPeerIds.contains(device.rowKey) ||
-        (_query.isNotEmpty && visibleAgents.isNotEmpty);
-    return [
-      _buildPeerFoldHeader(
-        device,
-        l10n,
-        agents: visibleAgents,
-        online: device.isHost ? view.hostOnline : device.online,
-        statusText: device.isHost
-            ? _hostStatus(view, l10n)
-            : (device.section == ContactSection.worker && !device.online
-                ? l10n.contacts_nodeOffline
-                : null),
-        onStatusTap: device.isHost && !view.hostOnline ? _reconnectHost : null,
-      ),
-      if (expanded) ...[
-        ...agents.map(_buildAgentTile),
-        if (extras.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.only(left: _childIndent, top: 4),
-            child: Text(
-              l10n.contacts_other,
-              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-            ),
-          ),
-          ...extras.map(_buildAgentTile),
-        ],
-        if (device.section == ContactSection.host ||
-            device.section == ContactSection.worker)
-          if (_query.isEmpty)
-            ListTile(
-              contentPadding:
-                  const EdgeInsets.only(left: _childIndent, right: 16),
-              leading: const Icon(Icons.add, size: 20),
-              title: Text(l10n.home_addAgentInstance),
-              enabled: device.isHost || device.online,
-              onTap: () => _addAgent(nodeId: device.nodeId),
-            ),
-      ],
-    ];
-  }
-
-  bool _isDeviceSelected(ContactDevice device) {
-    final selected = widget.selectedContactId;
-    if (selected == null || selected != device.peer.id) return false;
-    final matches =
-        _view?.devices.where((item) => item.peer.id == selected).length ?? 0;
-    if (matches <= 1) return true;
-    return _selectedRowKey == device.rowKey;
-  }
-
-  String _hostStatus(ContactsView view, AppLocalizations l10n) {
-    if (!view.hostOnline) return l10n.contacts_offlineReconnect;
-    return l10n.home_statusOnline;
-  }
-
-  Future<void> _reconnectHost() async {
-    await _directory.reconnectHost();
-  }
-
-  void _addAgent({String? nodeId}) {
-    if (widget.embedded && widget.onAddAgentInstance != null) {
-      widget.onAddAgentInstance!(nodeId);
-      return;
+  Widget _buildRow(
+      AppLocalizations l10n, List<ContactsRow> entries, int index) {
+    final entry = entries[index];
+    if (index == _focusIndex && entry.isSelectable) {
+      final colorScheme = Theme.of(context).colorScheme;
+      return ColoredBox(
+        color: colorScheme.primary.withValues(alpha: 0.06),
+        child: _buildRowContent(l10n, entry),
+      );
     }
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => AddAgentInstanceScreen(presetNodeId: nodeId),
-      ),
-    );
+    return _buildRowContent(l10n, entry);
   }
 
-  Widget _buildSectionHeader({
-    required _ContactsSection section,
-    required String title,
-    required int count,
-  }) {
-    final expanded = _expanded.contains(section);
-    final colorScheme = Theme.of(context).colorScheme;
+  Widget _buildRowContent(AppLocalizations l10n, ContactsRow entry) {
+    switch (entry.kind) {
+      case ContactsRowKind.header:
+        return _buildSectionHeader(entry);
+      case ContactsRowKind.groupHint:
+        return _buildGroupsEmptyHint(l10n);
+      case ContactsRowKind.device:
+        return _buildDeviceTile(l10n, entry.device!);
+      case ContactsRowKind.agent:
+        return _buildAgentTile(l10n, entry.agent!, nodeName: entry.parentName);
+      case ContactsRowKind.group:
+        return _buildGroupTile(l10n, entry.group!);
+    }
+  }
 
-    return InkWell(
-      onTap: () => _toggleSection(section),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Row(
-          children: [
-            AnimatedRotation(
-              turns: expanded ? 0.25 : 0,
-              duration: const Duration(milliseconds: 180),
-              child: Icon(
-                Icons.chevron_right,
-                size: _chevronSize,
+  Widget _buildSectionHeader(ContactsRow entry) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              entry.title ?? '',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
                 color: colorScheme.onSurfaceVariant,
               ),
             ),
-            const SizedBox(width: _chevronGap),
-            Expanded(
-              child: Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
+          ),
+          if (entry.countLabel != null)
+            Text(
+              entry.countLabel!,
+              style:
+                  TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 群聊为空时的引导。文案和按钮由页面给，构造列表时不必带上回调。
+  Widget _buildGroupsEmptyHint(AppLocalizations l10n) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(_childIndent, 4, 16, 8),
+      child: Row(
+        children: [
+          Icon(Icons.group_outlined, size: 18, color: Colors.grey[400]),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              l10n.contacts_noGroups,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 13, color: Colors.grey[500]),
+            ),
+          ),
+          TextButton(
+            onPressed: _createGroup,
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+            ),
+            child: Text(
+              l10n.home_createGroup,
+              style: const TextStyle(fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAgentTile(
+    AppLocalizations l10n,
+    Agent agent, {
+    String? nodeName,
+  }) {
+    final isOnline = agent.status.isOnline;
+    final displayName = SheService.isSheIdentity(agent.id, agent.metadata)
+        ? SheService.resolveDisplayName(agent.name, l10n.she_name)
+        : agent.name;
+    final selected = widget.selectedContactId == agent.id;
+    final colorScheme = Theme.of(context).colorScheme;
+    final onlineColor = AppColors.onlineFor(Theme.of(context).brightness);
+
+    final bio = agent.bio?.trim() ?? '';
+    final statusText =
+        isOnline ? l10n.home_statusOnline : l10n.home_statusOffline;
+    // 状态始终显示，简介拼在后面：原来有简介就看不到在线状态了。
+    final subtitle = bio.isEmpty ? statusText : '$statusText · $bio';
+
+    return _withSecondary(
+      ListTile(
+        selected: selected,
+        selectedTileColor: colorScheme.primary.withValues(alpha: 0.08),
+        contentPadding: const EdgeInsets.only(left: _childIndent, right: 16),
+        leading: Stack(
+          children: [
+            Container(
+              width: _avatarSize,
+              height: _avatarSize,
+              decoration: BoxDecoration(
+                color: AppColors.avatarPlateFor(Theme.of(context).brightness),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: AvatarImage(
+                avatar: agent.avatar,
+                size: _avatarSize,
+                borderRadius: 8,
+                fallback: Text(
+                  agent.name.isNotEmpty ? agent.name[0] : 'A',
+                  style: const TextStyle(fontSize: 16),
                 ),
               ),
             ),
-            Text(
-              '$count',
-              style: TextStyle(
-                fontSize: 14,
-                color: colorScheme.onSurfaceVariant,
+            Positioned(
+              right: 0,
+              bottom: 0,
+              child: Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: isOnline ? onlineColor : Colors.grey,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Theme.of(context).scaffoldBackgroundColor,
+                    width: 1.5,
+                  ),
+                ),
               ),
             ),
           ],
         ),
+        title: Text(
+          displayName,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+        ),
+        subtitle: Text(
+          nodeName == null ? subtitle : '$nodeName · $subtitle',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+        ),
+        onTap: () => _onAgentTap(agent),
+      ),
+      onLongPress: () => _showAgentMenu(agent),
+      onSecondary: (d) => _showAgentMenu(agent, at: d.globalPosition),
+      onDoubleTap: widget.embedded ? () => _openAgentConversation(agent) : null,
+    );
+  }
+
+  /// 列表行统一的右键 / 长按包裹。ListTile 自己没有 onSecondaryTapUp。
+  Widget _withSecondary(
+    Widget child, {
+    VoidCallback? onLongPress,
+    ValueChanged<TapUpDetails>? onSecondary,
+    VoidCallback? onDoubleTap,
+  }) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onLongPress: onLongPress,
+      onSecondaryTapUp: onSecondary,
+      // 桌面端单击进详情，双击直接开聊。
+      onDoubleTap: onDoubleTap,
+      child: child,
+    );
+  }
+
+  Widget _buildGroupTile(AppLocalizations l10n, Channel group) {
+    final memberCount = group.members.where((m) => m.id != 'user').length;
+    final selected = widget.selectedContactId == group.id;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return _withSecondary(
+      ListTile(
+        selected: selected,
+        selectedTileColor: colorScheme.primary.withValues(alpha: 0.08),
+        contentPadding: const EdgeInsets.only(left: _childIndent, right: 16),
+        leading: Container(
+          width: _avatarSize,
+          height: _avatarSize,
+          decoration: BoxDecoration(
+            color: AppColors.primaryContainer,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          alignment: Alignment.center,
+          child: const Icon(Icons.group, size: 20, color: AppColors.primary),
+        ),
+        title: Text(
+          group.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+        ),
+        subtitle: Text(
+          group.description?.isNotEmpty == true
+              ? group.description!
+              : l10n.contacts_memberCount(memberCount),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+        ),
+        onTap: () => _onGroupTap(group),
+      ),
+      onLongPress: () => _showGroupMenu(group),
+      onSecondary: (d) => _showGroupMenu(group, at: d.globalPosition),
+      onDoubleTap: widget.embedded ? () => _openGroupConversation(group) : null,
+    );
+  }
+
+  Widget _buildDeviceTile(AppLocalizations l10n, ContactDevice device) {
+    final peer = device.peer;
+    final online = device.isHost ? (_view?.hostOnline ?? false) : device.online;
+    final selected = _isDeviceSelected(device);
+    final colorScheme = Theme.of(context).colorScheme;
+    final onlineColor = AppColors.onlineFor(Theme.of(context).brightness);
+    final agentCount = device.agents.length;
+
+    final status = device.isHost
+        ? (online ? l10n.home_statusOnline : l10n.contacts_offlineReconnect)
+        : (device.section == ContactSection.worker && !device.online
+            ? l10n.contacts_nodeOffline
+            : peer.state.listStatusLabel(l10n, showE2eWhenConnected: true));
+
+    return Material(
+      color: selected
+          ? colorScheme.primary.withValues(alpha: 0.08)
+          : Colors.transparent,
+      child: _withSecondary(
+        ListTile(
+          contentPadding: const EdgeInsets.only(left: _childIndent, right: 16),
+          leading: Stack(
+            children: [
+              PeerDeviceIcon(peer: peer, size: _avatarSize, borderRadius: 8),
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: online ? onlineColor : Colors.grey,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Theme.of(context).scaffoldBackgroundColor,
+                      width: 1.5,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          title: Row(
+            children: [
+              Flexible(
+                child: Text(
+                  peer.deviceName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w500),
+                ),
+              ),
+              if (device.isHost) ...[
+                const SizedBox(width: 6),
+                _roleTag(
+                  l10n.contacts_host,
+                  background: colorScheme.tertiaryContainer,
+                  foreground: colorScheme.onTertiaryContainer,
+                ),
+              ],
+              if (device.isThisDevice) ...[
+                const SizedBox(width: 6),
+                _roleTag(
+                  l10n.contacts_thisDevice,
+                  background: colorScheme.primaryContainer,
+                  foreground: colorScheme.onPrimaryContainer,
+                ),
+              ],
+            ],
+          ),
+          subtitle: Text(
+            status,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 12,
+              color: online ? onlineColor : colorScheme.onSurfaceVariant,
+            ),
+          ),
+          trailing:
+              agentCount > 0 && device.section != ContactSection.mobileClient
+                  ? Text(
+                      l10n.contacts_agentCount(agentCount),
+                      style: TextStyle(
+                          fontSize: 12, color: colorScheme.onSurfaceVariant),
+                    )
+                  : null,
+          // 点击只做一件事：进详情。长按 / 右键才是管理操作。
+          onTap: () => _onDeviceTap(device),
+        ),
+        onLongPress: () => _showDeviceMenu(device),
+        onSecondary: (d) => _showDeviceMenu(device, at: d.globalPosition),
       ),
     );
   }
@@ -616,197 +799,83 @@ class ContactsScreenState extends State<ContactsScreen> {
     );
   }
 
-  /// Device row: chevron + device icon + name; tap toggles fold (mobile) or fold + detail (desktop).
-  Widget _buildPeerFoldHeader(
-    ContactDevice device,
-    AppLocalizations l10n, {
-    required List<Agent> agents,
-    String? statusText,
-    bool? online,
-    VoidCallback? onStatusTap,
-  }) {
-    final peer = device.peer;
-    final isConnected = online ?? peer.state == PeerConnectionState.connected;
-    final expanded = _expandedPeerIds.contains(device.rowKey) ||
-        (_query.isNotEmpty && agents.isNotEmpty);
-    final agentCount = agents.length;
-    final status = statusText ??
-        peer.state.listStatusLabel(l10n, showE2eWhenConnected: true);
-    final selected = _isDeviceSelected(device);
-    final colorScheme = Theme.of(context).colorScheme;
+  // ==================== 操作 ====================
 
-    return Material(
-      color: selected
-          ? colorScheme.primary.withValues(alpha: 0.08)
-          : Colors.transparent,
-      child: InkWell(
-        onTap: () => _onPeerTap(device),
-        onLongPress: widget.embedded ? null : () => _showPeerActions(device),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(
-            children: [
-              AnimatedRotation(
-                turns: expanded ? 0.25 : 0,
-                duration: const Duration(milliseconds: 180),
-                child: Icon(
-                  Icons.chevron_right,
-                  size: _chevronSize,
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(width: _chevronGap),
-              Stack(
-                children: [
-                  PeerDeviceIcon(
-                    peer: peer,
-                    size: _avatarSize,
-                    borderRadius: 8,
-                  ),
-                  Positioned(
-                    right: 0,
-                    bottom: 0,
-                    child: Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: isConnected ? Colors.green : Colors.grey,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: Theme.of(context).scaffoldBackgroundColor,
-                          width: 1.5,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            peer.deviceName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                        if (device.isHost) ...[
-                          const SizedBox(width: 6),
-                          _roleTag(
-                            l10n.contacts_host,
-                            background: colorScheme.tertiaryContainer,
-                            foreground: colorScheme.onTertiaryContainer,
-                          ),
-                        ],
-                        if (device.isThisDevice) ...[
-                          const SizedBox(width: 6),
-                          _roleTag(
-                            l10n.contacts_thisDevice,
-                            background: colorScheme.primaryContainer,
-                            foreground: colorScheme.onPrimaryContainer,
-                          ),
-                        ],
-                      ],
-                    ),
-                    GestureDetector(
-                      onTap: onStatusTap,
-                      child: Text(
-                        status,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: isConnected ? Colors.green : Colors.grey,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (agentCount > 0)
-                Text(
-                  '$agentCount',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              if (!widget.embedded) ...[
-                const SizedBox(width: 4),
-                IconButton(
-                  icon: Icon(
-                    Icons.info_outline,
-                    size: 20,
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                  tooltip: l10n.peerSettings_title,
-                  onPressed: () => _openPeerDetail(device),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
+  bool _isDeviceSelected(ContactDevice device) {
+    final selected = widget.selectedContactId;
+    if (selected == null || selected != device.peer.id) return false;
+    final matches =
+        _view?.devices.where((item) => item.peer.id == selected).length ?? 0;
+    if (matches <= 1) return true;
+    return _selectedRowKey == device.rowKey;
+  }
+
+  /// 手机：单击直接进对话。桌面：单击进详情，菜单里的「发消息」才进对话。
+  Future<void> _onAgentTap(Agent agent) async {
+    if (widget.embedded) {
+      await _openAgentDetail(agent);
+      return;
+    }
+    await _openAgentConversation(agent);
+  }
+
+  Future<void> _openAgentConversation(Agent agent) async {
+    final l10n = AppLocalizations.of(context);
+    final name = SheService.isSheIdentity(agent.id, agent.metadata)
+        ? SheService.resolveDisplayName(agent.name, l10n.she_name)
+        : agent.name;
+    await ChatNavigationService.instance.openAgentConversation(
+      agentId: agent.id,
+      agentName: name,
+      agentAvatar: agent.avatar,
     );
   }
 
-  List<Widget> _buildGroupChildren(List<Channel> groups, AppLocalizations l10n) {
-    if (groups.isEmpty) {
-      if (_query.isNotEmpty) return const [];
-      return [
-        _buildEmptyHint(
-          icon: Icons.group_outlined,
-          message: l10n.contacts_noGroups,
-          actionLabel: l10n.home_createGroup,
-          onAction: _createGroup,
-        ),
-      ];
+  Future<void> _onGroupTap(Channel group) async {
+    if (widget.embedded) {
+      _openGroupDetail(group);
+      return;
     }
-    return groups.map(_buildGroupTile).toList();
+    await _openGroupConversation(group);
   }
 
-  Widget _buildEmptyHint({
-    required IconData icon,
-    required String message,
-    required String actionLabel,
-    required VoidCallback onAction,
-    double indent = _childIndent,
-  }) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(indent, 8, 16, 16),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: Colors.grey[400]),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              message,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 13, color: Colors.grey[500]),
-            ),
-          ),
-          TextButton(
-            onPressed: onAction,
-            style: TextButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-            ),
-            child: Text(actionLabel, style: const TextStyle(fontSize: 13)),
-          ),
-        ],
+  Future<void> _openGroupConversation(Channel group) async {
+    final channelId = await _databaseService
+            .getLatestActiveGroupChannel(group.groupFamilyId) ??
+        group.id;
+    if (!mounted) return;
+    await ChatNavigationService.instance.openChannel(channelId: channelId);
+  }
+
+  Future<void> _onDeviceTap(ContactDevice device) async {
+    _selectedRowKey = device.rowKey;
+    await _openPeerDetail(device);
+  }
+
+  Future<void> _reconnectHost() async {
+    if (_reconnecting) return;
+    setState(() => _reconnecting = true);
+    final ok = await _directory.reconnectHost();
+    if (!mounted) return;
+    setState(() => _reconnecting = false);
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppLocalizations.of(context).contacts_reconnectFailed),
+        ),
+      );
+    }
+  }
+
+  void _addAgent({String? nodeId}) {
+    if (widget.embedded && widget.onAddAgentInstance != null) {
+      widget.onAddAgentInstance!(nodeId);
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AddAgentInstanceScreen(presetNodeId: nodeId),
       ),
     );
   }
@@ -825,132 +894,13 @@ class ContactsScreenState extends State<ContactsScreen> {
     if (mounted) _reload();
   }
 
-  Widget _buildAgentTile(Agent agent) {
-    final l10n = AppLocalizations.of(context);
-    final isOnline = agent.status.isOnline;
-    final displayName = SheService.isSheIdentity(agent.id, agent.metadata)
-        ? SheService.resolveDisplayName(agent.name, l10n.she_name)
-        : agent.name;
-
-    final selected = widget.selectedContactId == agent.id;
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return ListTile(
-      selected: selected,
-      selectedTileColor: colorScheme.primary.withValues(alpha: 0.08),
-      // 与父节点（设备 / 分区）头像左对齐，不再额外缩进。
-      contentPadding: const EdgeInsets.only(left: _childIndent, right: 16),
-      leading: Stack(
-        children: [
-          Container(
-            width: _avatarSize,
-            height: _avatarSize,
-            decoration: BoxDecoration(
-              color: AppColors.avatarPlateFor(Theme.of(context).brightness),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: AvatarImage(
-              avatar: agent.avatar,
-              size: _avatarSize,
-              borderRadius: 8,
-              fallback: Text(
-                agent.name.isNotEmpty ? agent.name[0] : 'A',
-                style: const TextStyle(fontSize: 16),
-              ),
-            ),
-          ),
-          Positioned(
-            right: 0,
-            bottom: 0,
-            child: Container(
-              width: 10,
-              height: 10,
-              decoration: BoxDecoration(
-                color: isOnline ? Colors.green : Colors.grey,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: Theme.of(context).scaffoldBackgroundColor,
-                  width: 1.5,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-      title: Text(
-        displayName,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
-      ),
-      subtitle: agent.bio != null && agent.bio!.isNotEmpty
-          ? Text(
-              agent.bio!,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-            )
-          : Text(
-              isOnline ? l10n.home_statusOnline : l10n.home_statusOffline,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12,
-                color: isOnline ? Colors.green : Colors.grey,
-              ),
-            ),
-      onTap: () => _openAgentDetail(agent),
-    );
-  }
-
-  Widget _buildGroupTile(Channel group) {
-    final l10n = AppLocalizations.of(context);
-    final memberCount = group.members.where((m) => m.id != 'user').length;
-    final selected = widget.selectedContactId == group.id;
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return ListTile(
-      selected: selected,
-      selectedTileColor: colorScheme.primary.withValues(alpha: 0.08),
-      contentPadding: const EdgeInsets.only(left: _childIndent, right: 16),
-      leading: Container(
-        width: _avatarSize,
-        height: _avatarSize,
-        decoration: BoxDecoration(
-          color: AppColors.primaryContainer,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        alignment: Alignment.center,
-        child: const Icon(Icons.group, size: 20, color: AppColors.primary),
-      ),
-      title: Text(
-        group.name,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
-      ),
-      subtitle: Text(
-        group.description?.isNotEmpty == true
-            ? group.description!
-            : l10n.contacts_memberCount(memberCount),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-      ),
-      onTap: () => _openGroupDetail(group),
-    );
-  }
-
   Future<void> _openAgentDetail(Agent agent) async {
     final remoteAgent = await _databaseService.getRemoteAgentById(agent.id);
     if (remoteAgent == null || !mounted) return;
-
     if (widget.onAgentSelected != null) {
       widget.onAgentSelected!(remoteAgent);
       return;
     }
-
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -965,7 +915,6 @@ class ContactsScreenState extends State<ContactsScreen> {
       widget.onGroupSelected!(group);
       return;
     }
-
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -975,48 +924,197 @@ class ContactsScreenState extends State<ContactsScreen> {
     _reload();
   }
 
-  Future<void> _showPeerActions(ContactDevice device) async {
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      builder: (ctx) {
-        final sheetL10n = AppLocalizations.of(ctx);
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.settings_outlined),
-                title: Text(sheetL10n.peerSettings_title),
-                onTap: () => Navigator.pop(ctx, 'settings'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.edit),
-                title: Text(sheetL10n.peerList_editAlias),
-                onTap: () => Navigator.pop(ctx, 'rename'),
-              ),
-              ListTile(
-                leading: Icon(Icons.delete, color: Theme.of(context).colorScheme.error),
-                title: Text(
-                  sheetL10n.peerSettings_deletePairing,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-                onTap: () => Navigator.pop(ctx, 'delete'),
-              ),
-            ],
-          ),
-        );
-      },
-    );
+  Future<void> _openPeerDetail(ContactDevice device) async {
+    if (widget.onPeerSelected != null) {
+      widget.onPeerSelected!(device.peer);
+      return;
+    }
+    await PeerSettingsScreen.show(context, device.peer, device: device);
+    if (mounted) _reload();
+  }
 
-    if (!mounted) return;
-    if (action == 'settings') {
+  // ==================== 菜单 ====================
+
+  Future<void> _showAgentMenu(Agent agent, {Offset? at}) async {
+    final l10n = AppLocalizations.of(context);
+    final hidden = await _isAgentHidden(agent);
+    final action = await _showMenu(l10n, at: at, [
+      _MenuAction(
+        value: 'chat',
+        label: l10n.contacts_actionSendMessage,
+        icon: Icons.chat_bubble_outline,
+      ),
+      _MenuAction(
+        value: 'detail',
+        label: l10n.contacts_actionViewDetail,
+        icon: Icons.info_outline,
+      ),
+      _MenuAction(
+        value: hidden ? 'show' : 'hide',
+        label: hidden
+            ? l10n.contacts_actionShowOnApp
+            : l10n.contacts_actionHideOnApp,
+        icon:
+            hidden ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+      ),
+    ]);
+    if (action == null || !mounted) return;
+    if (action == 'chat') {
+      await _openAgentConversation(agent);
+    } else if (action == 'detail') {
+      await _openAgentDetail(agent);
+    } else if (action == 'hide' || action == 'show') {
+      await _setAgentHidden(agent, !hidden);
+    }
+  }
+
+  Future<void> _showGroupMenu(Channel group, {Offset? at}) async {
+    final l10n = AppLocalizations.of(context);
+    final action = await _showMenu(l10n, at: at, [
+      _MenuAction(
+        value: 'chat',
+        label: l10n.contacts_actionEnterGroup,
+        icon: Icons.chat_bubble_outline,
+      ),
+      _MenuAction(
+        value: 'detail',
+        label: l10n.contacts_actionGroupDetail,
+        icon: Icons.info_outline,
+      ),
+    ]);
+    if (action == null || !mounted) return;
+    if (action == 'chat') {
+      await _openGroupConversation(group);
+    } else if (action == 'detail') {
+      await _openGroupDetail(group);
+    }
+  }
+
+  Future<void> _showDeviceMenu(ContactDevice device, {Offset? at}) async {
+    final l10n = AppLocalizations.of(context);
+    final online = device.isHost ? (_view?.hostOnline ?? false) : device.online;
+    final canHost = device.isHost || device.section == ContactSection.worker;
+    final isUnlisted = device.peer.id.startsWith('node:');
+    final action = await _showMenu(l10n, at: at, [
+      _MenuAction(
+        value: 'detail',
+        label: l10n.peerSettings_title,
+        icon: Icons.settings_outlined,
+      ),
+      _MenuAction(
+        value: 'rename',
+        label: l10n.peerList_editAlias,
+        icon: Icons.edit,
+      ),
+      if (canHost)
+        _MenuAction(
+          value: 'addAgent',
+          label: l10n.contacts_actionAddAgentHere,
+          icon: Icons.add,
+          enabled: online,
+        ),
+      // 名单没同步回来的节点行没有真正的配对记录，删了没意义。
+      if (!isUnlisted)
+        _MenuAction(
+          value: 'delete',
+          label: l10n.peerSettings_deletePairing,
+          icon: Icons.delete_outline,
+          danger: true,
+        ),
+    ]);
+    if (action == null || !mounted) return;
+    if (action == 'detail') {
       await _openPeerDetail(device);
     } else if (action == 'rename') {
       await PeerDeviceActions.rename(context, device.peer);
       if (mounted) _reload();
+    } else if (action == 'addAgent') {
+      _addAgent(nodeId: device.nodeId);
     } else if (action == 'delete') {
       await _deletePeer(device);
     }
+  }
+
+  /// 手机弹底部弹窗，桌面在鼠标位置弹菜单，两项共用同一份菜单定义。
+  Future<String?> _showMenu(
+    AppLocalizations l10n,
+    List<_MenuAction> actions, {
+    Offset? at,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    if (widget.embedded || isDesktopPlatform) {
+      final target = at ?? Offset.zero;
+      return showMenu<String>(
+        context: context,
+        position:
+            RelativeRect.fromLTRB(target.dx, target.dy, target.dx, target.dy),
+        items: [
+          for (final action in actions)
+            PopupMenuItem<String>(
+              value: action.value,
+              enabled: action.enabled,
+              child: Row(
+                children: [
+                  Icon(
+                    action.icon,
+                    size: 20,
+                    color: action.danger ? colorScheme.error : null,
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    action.label,
+                    style: action.danger
+                        ? TextStyle(color: colorScheme.error)
+                        : null,
+                  ),
+                ],
+              ),
+            ),
+        ],
+      );
+    }
+    return showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final action in actions)
+              ListTile(
+                enabled: action.enabled,
+                leading: Icon(
+                  action.icon,
+                  color: action.danger ? colorScheme.error : null,
+                ),
+                title: Text(
+                  action.label,
+                  style: action.danger
+                      ? TextStyle(color: colorScheme.error)
+                      : null,
+                ),
+                onTap: () => Navigator.pop(ctx, action.value),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<bool> _isAgentHidden(Agent agent) async {
+    final remote = await _databaseService.getRemoteAgentById(agent.id);
+    return remote?.hiddenOnThisApp ?? false;
+  }
+
+  Future<void> _setAgentHidden(Agent agent, bool hidden) async {
+    final remote = await _databaseService.getRemoteAgentById(agent.id);
+    if (remote == null) return;
+    try {
+      await getIt<RemoteAgentService>().setVisibleOnApp(remote, !hidden);
+    } catch (e) {
+      LoggerService()
+          .error('toggle agent visibility failed', tag: 'Contacts', error: e);
+    }
+    if (mounted) _reload();
   }
 
   Future<void> _deletePeer(ContactDevice device) async {
@@ -1032,12 +1130,65 @@ class ContactsScreenState extends State<ContactsScreen> {
     _reload();
   }
 
-  Future<void> _openPeerDetail(ContactDevice device) async {
-    if (widget.onPeerSelected != null) {
-      widget.onPeerSelected!(device.peer);
-      return;
+  // ==================== 键盘 ====================
+
+  KeyEventResult _onListKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final entries = _entriesFor(AppLocalizations.of(context));
+    final selectable = <int>[];
+    for (var i = 0; i < entries.length; i++) {
+      if (entries[i].isSelectable) selectable.add(i);
     }
-    await PeerSettingsScreen.show(context, device.peer, device: device);
-    if (mounted) _reload();
+    if (selectable.isEmpty) return KeyEventResult.ignored;
+
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown ||
+        event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      final step = event.logicalKey == LogicalKeyboardKey.arrowDown ? 1 : -1;
+      final current = selectable.indexOf(_focusIndex);
+      final next = current < 0
+          ? (step > 0 ? 0 : selectable.length - 1)
+          : (current + step).clamp(0, selectable.length - 1);
+      setState(() => _focusIndex = selectable[next]);
+      _scrollToIndex(selectable[next]);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.enter && _focusIndex >= 0) {
+      _activate(entries[_focusIndex]);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  /// 键盘选中的行滚进视野。行高固定，按序号估算偏移就够了。
+  void _scrollToIndex(int index) {
+    final position = Scrollable.maybeOf(context)?.position;
+    if (position == null) return;
+    const rowHeight = 60.0;
+    final target = (index * rowHeight).clamp(0.0, position.maxScrollExtent);
+    if (target < position.pixels ||
+        target > position.pixels + position.viewportDimension - rowHeight) {
+      position.animateTo(
+        target,
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  void _activate(ContactsRow entry) {
+    switch (entry.kind) {
+      case ContactsRowKind.agent:
+        unawaited(_openAgentConversation(entry.agent!));
+        break;
+      case ContactsRowKind.group:
+        unawaited(_openGroupConversation(entry.group!));
+        break;
+      case ContactsRowKind.device:
+        unawaited(_openPeerDetail(entry.device!));
+        break;
+      case ContactsRowKind.header:
+      case ContactsRowKind.groupHint:
+        break;
+    }
   }
 }

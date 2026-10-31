@@ -316,10 +316,12 @@ class ContactsDirectory {
     }
   }
 
-  /// 本机主机走 [CliHost.attach]，远端主机重拨。
-  Future<void> reconnectHost() async {
+  /// 本机主机走 [CliHost.attach]，远端主机重拨。返回重连后是否真的连上了。
+  ///
+  /// 调用方要据此给用户反馈：原来异常一律吞掉，点完没有任何动静。
+  Future<bool> reconnectHost() async {
     final host = _latest?.host;
-    if (host == null) return;
+    if (host == null) return false;
     final cli = await CliHost.detect();
     if (cli != null && sameFingerprint(cli.fingerprint, host.fingerprint)) {
       try {
@@ -336,6 +338,9 @@ class ContactsDirectory {
       } catch (_) {}
     }
     await refresh();
+    final hostId = host.id.trim();
+    if (hostId.isEmpty) return false;
+    return PeerConnectionManager.instance.connectedPeerIds.contains(hostId);
   }
 
   Future<void> dispose() async {

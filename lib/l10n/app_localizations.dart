@@ -14933,6 +14933,120 @@ abstract class AppLocalizations {
   /// **'没有匹配的结果'**
   String get contacts_noSearchResults;
 
+  /// No description provided for @contacts_tabPeople.
+  ///
+  /// In zh, this message translates to:
+  /// **'联系人'**
+  String get contacts_tabPeople;
+
+  /// No description provided for @contacts_tabDevices.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备'**
+  String get contacts_tabDevices;
+
+  /// No description provided for @contacts_unassigned.
+  ///
+  /// In zh, this message translates to:
+  /// **'未归属'**
+  String get contacts_unassigned;
+
+  /// No description provided for @contacts_deviceCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 台'**
+  String contacts_deviceCount(int count);
+
+  /// No description provided for @contacts_reconnect.
+  ///
+  /// In zh, this message translates to:
+  /// **'重新连接'**
+  String get contacts_reconnect;
+
+  /// No description provided for @contacts_reconnectFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'连不上主机，请检查主机是否在运行'**
+  String get contacts_reconnectFailed;
+
+  /// No description provided for @contacts_noSessionTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没有连接主机'**
+  String get contacts_noSessionTitle;
+
+  /// No description provided for @contacts_noSessionBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接主机后才能看到它的 Agent、群聊和设备'**
+  String get contacts_noSessionBody;
+
+  /// No description provided for @contacts_connectHost.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接主机'**
+  String get contacts_connectHost;
+
+  /// No description provided for @contacts_rosterRetry.
+  ///
+  /// In zh, this message translates to:
+  /// **'重试'**
+  String get contacts_rosterRetry;
+
+  /// No description provided for @contacts_actionSendMessage.
+  ///
+  /// In zh, this message translates to:
+  /// **'发消息'**
+  String get contacts_actionSendMessage;
+
+  /// No description provided for @contacts_actionViewDetail.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看详情'**
+  String get contacts_actionViewDetail;
+
+  /// No description provided for @contacts_actionHideOnApp.
+  ///
+  /// In zh, this message translates to:
+  /// **'在通讯录中隐藏'**
+  String get contacts_actionHideOnApp;
+
+  /// No description provided for @contacts_actionShowOnApp.
+  ///
+  /// In zh, this message translates to:
+  /// **'在通讯录中显示'**
+  String get contacts_actionShowOnApp;
+
+  /// No description provided for @contacts_actionEnterGroup.
+  ///
+  /// In zh, this message translates to:
+  /// **'进入群聊'**
+  String get contacts_actionEnterGroup;
+
+  /// No description provided for @contacts_actionGroupDetail.
+  ///
+  /// In zh, this message translates to:
+  /// **'群详情'**
+  String get contacts_actionGroupDetail;
+
+  /// No description provided for @contacts_actionAddAgentHere.
+  ///
+  /// In zh, this message translates to:
+  /// **'在此节点添加 Agent'**
+  String get contacts_actionAddAgentHere;
+
+  /// No description provided for @contacts_searchAgents.
+  ///
+  /// In zh, this message translates to:
+  /// **'Agent'**
+  String get contacts_searchAgents;
+
+  /// No description provided for @contacts_searchDevices.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备'**
+  String get contacts_searchDevices;
+
   /// No description provided for @chat_attachImageFailed.
   ///
   /// In zh, this message translates to:

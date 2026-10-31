@@ -8240,6 +8240,65 @@ class AppLocalizationsZh extends AppLocalizations {
   String get contacts_noSearchResults => '没有匹配的结果';
 
   @override
+  String get contacts_tabPeople => '联系人';
+
+  @override
+  String get contacts_tabDevices => '设备';
+
+  @override
+  String get contacts_unassigned => '未归属';
+
+  @override
+  String contacts_deviceCount(int count) {
+    return '$count 台';
+  }
+
+  @override
+  String get contacts_reconnect => '重新连接';
+
+  @override
+  String get contacts_reconnectFailed => '连不上主机，请检查主机是否在运行';
+
+  @override
+  String get contacts_noSessionTitle => '还没有连接主机';
+
+  @override
+  String get contacts_noSessionBody => '连接主机后才能看到它的 Agent、群聊和设备';
+
+  @override
+  String get contacts_connectHost => '连接主机';
+
+  @override
+  String get contacts_rosterRetry => '重试';
+
+  @override
+  String get contacts_actionSendMessage => '发消息';
+
+  @override
+  String get contacts_actionViewDetail => '查看详情';
+
+  @override
+  String get contacts_actionHideOnApp => '在通讯录中隐藏';
+
+  @override
+  String get contacts_actionShowOnApp => '在通讯录中显示';
+
+  @override
+  String get contacts_actionEnterGroup => '进入群聊';
+
+  @override
+  String get contacts_actionGroupDetail => '群详情';
+
+  @override
+  String get contacts_actionAddAgentHere => '在此节点添加 Agent';
+
+  @override
+  String get contacts_searchAgents => 'Agent';
+
+  @override
+  String get contacts_searchDevices => '设备';
+
+  @override
   String get chat_attachImageFailed => '发送图片失败，请重试';
 
   @override

@@ -4631,6 +4631,32 @@
   },
   "contacts_loadFailed": "Couldn't load contacts",
   "contacts_noSearchResults": "No matches",
+  "contacts_tabPeople": "People",
+  "contacts_tabDevices": "Devices",
+  "contacts_unassigned": "Unassigned",
+  "contacts_deviceCount": "{count} devices",
+  "@contacts_deviceCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "contacts_reconnect": "Reconnect",
+  "contacts_reconnectFailed": "Could not reach the host. Check that it is running.",
+  "contacts_noSessionTitle": "No host connected",
+  "contacts_noSessionBody": "Connect a host to see its agents, group chats and devices",
+  "contacts_connectHost": "Connect host",
+  "contacts_rosterRetry": "Retry",
+  "contacts_actionSendMessage": "Send message",
+  "contacts_actionViewDetail": "View details",
+  "contacts_actionHideOnApp": "Hide from contacts",
+  "contacts_actionShowOnApp": "Show in contacts",
+  "contacts_actionEnterGroup": "Open group chat",
+  "contacts_actionGroupDetail": "Group details",
+  "contacts_actionAddAgentHere": "Add agent on this node",
+  "contacts_searchAgents": "Agents",
+  "contacts_searchDevices": "Devices",
   "chat_attachImageFailed": "Couldn't send the image. Try again.",
   "chat_attachFileFailed": "Couldn't send the file. Try again.",
   "chat_sessionsLoadFailed": "Couldn't load sessions. Try again.",

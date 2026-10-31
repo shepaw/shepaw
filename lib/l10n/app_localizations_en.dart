@@ -8569,6 +8569,67 @@ class AppLocalizationsEn extends AppLocalizations {
   String get contacts_noSearchResults => 'No matches';
 
   @override
+  String get contacts_tabPeople => 'People';
+
+  @override
+  String get contacts_tabDevices => 'Devices';
+
+  @override
+  String get contacts_unassigned => 'Unassigned';
+
+  @override
+  String contacts_deviceCount(int count) {
+    return '$count devices';
+  }
+
+  @override
+  String get contacts_reconnect => 'Reconnect';
+
+  @override
+  String get contacts_reconnectFailed =>
+      'Could not reach the host. Check that it is running.';
+
+  @override
+  String get contacts_noSessionTitle => 'No host connected';
+
+  @override
+  String get contacts_noSessionBody =>
+      'Connect a host to see its agents, group chats and devices';
+
+  @override
+  String get contacts_connectHost => 'Connect host';
+
+  @override
+  String get contacts_rosterRetry => 'Retry';
+
+  @override
+  String get contacts_actionSendMessage => 'Send message';
+
+  @override
+  String get contacts_actionViewDetail => 'View details';
+
+  @override
+  String get contacts_actionHideOnApp => 'Hide from contacts';
+
+  @override
+  String get contacts_actionShowOnApp => 'Show in contacts';
+
+  @override
+  String get contacts_actionEnterGroup => 'Open group chat';
+
+  @override
+  String get contacts_actionGroupDetail => 'Group details';
+
+  @override
+  String get contacts_actionAddAgentHere => 'Add agent on this node';
+
+  @override
+  String get contacts_searchAgents => 'Agents';
+
+  @override
+  String get contacts_searchDevices => 'Devices';
+
+  @override
   String get chat_attachImageFailed => 'Couldn\'t send the image. Try again.';
 
   @override
