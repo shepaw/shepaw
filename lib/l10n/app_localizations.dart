@@ -698,6 +698,24 @@ abstract class AppLocalizations {
   /// **'设备配对'**
   String get home_addDevice;
 
+  /// No description provided for @home_markRead.
+  ///
+  /// In zh, this message translates to:
+  /// **'标为已读'**
+  String get home_markRead;
+
+  /// No description provided for @home_deleteConversation.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除会话'**
+  String get home_deleteConversation;
+
+  /// No description provided for @home_deleteConversationConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除后该会话的历史消息不可恢复。'**
+  String get home_deleteConversationConfirm;
+
   /// No description provided for @home_scanConnect.
   ///
   /// In zh, this message translates to:

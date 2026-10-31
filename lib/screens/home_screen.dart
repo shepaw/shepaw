@@ -6,6 +6,7 @@ import '../models/channel.dart';
 import '../models/remote_agent.dart';
 import '../services/local_api_service.dart';
 import '../services/local_database_service.dart';
+import '../services/local_user_identity.dart';
 import '../services/chat_service.dart';
 import '../services/composer_draft_service.dart';
 import 'chat_screen.dart';
@@ -1496,6 +1497,112 @@ class HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// 会话行的菜单：桌面右键，移动端长按。
+  ///
+  /// 只放已有的能力——「置顶」要新增存储，这次不做。
+  Future<void> _showAgentRowMenu(Agent agent) async {
+    final l10n = AppLocalizations.of(context);
+    final action = await _showRowMenu([
+      (value: 'read', icon: Icons.done_all, label: l10n.home_markRead),
+      (
+        value: 'delete',
+        icon: Icons.delete_outline,
+        label: l10n.home_deleteConversation
+      ),
+    ]);
+    if (action == null) return;
+    if (action == 'read') {
+      await _markAgentRead(agent.id);
+      return;
+    }
+    if (action == 'delete') {
+      final ok = await _confirmDelete();
+      if (ok != true) return;
+      await getIt<ChatService>()
+          .deleteChatHistory(agentId: agent.id, userId: LocalUserIdentity.id);
+      await _loadAgents(silent: true);
+    }
+  }
+
+  Future<void> _showGroupRowMenu(Channel group) async {
+    final l10n = AppLocalizations.of(context);
+    final action = await _showRowMenu([
+      (value: 'read', icon: Icons.done_all, label: l10n.home_markRead),
+    ]);
+    if (action != 'read') return;
+    await getIt<LocalDatabaseService>()
+        .markChannelMessagesAsRead(group.id);
+    _list.clearGroupUnread(group.id);
+    await _loadAgents(silent: true);
+  }
+
+  Future<void> _markAgentRead(String agentId) async {
+    await getIt<LocalDatabaseService>().markAllAgentChannelsAsRead(agentId);
+    _list.clearAgentUnread(agentId);
+    await _loadAgents(silent: true);
+  }
+
+  Future<bool?> _confirmDelete() {
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        final dialogL10n = AppLocalizations.of(dialogContext);
+        return AlertDialog(
+          title: Text(dialogL10n.home_deleteConversation),
+          content: Text(dialogL10n.home_deleteConversationConfirm),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text(dialogL10n.common_cancel),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(
+                dialogL10n.common_confirm,
+                style: const TextStyle(color: Colors.red),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<String?> _showRowMenu(
+    List<({String value, IconData icon, String label})> entries,
+  ) async {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null) return null;
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (overlay == null) return null;
+    final tapPosition = box.localToGlobal(Offset.zero, ancestor: overlay);
+    final position = RelativeRect.fromLTRB(
+      tapPosition.dx + box.size.width / 2,
+      tapPosition.dy + box.size.height / 2,
+      overlay.size.width - tapPosition.dx,
+      overlay.size.height - tapPosition.dy,
+    );
+    return showMenu<String>(
+      context: context,
+      position: position,
+      items: [
+        for (final entry in entries)
+          PopupMenuItem<String>(
+            value: entry.value,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(entry.icon, size: 20),
+                const SizedBox(width: 12),
+                Text(entry.label),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _buildGroupTile(Channel group) {
     final l10n = AppLocalizations.of(context);
     final latestMsg = _groupLatestMessages[group.id];
@@ -1526,6 +1633,8 @@ class HomeScreenState extends State<HomeScreen> {
           fallbackChannelId: group.id,
         ));
       },
+      onLongPress: () => _showGroupRowMenu(group),
+      onSecondaryTapUp: (_) => _showGroupRowMenu(group),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         color: isSelected ? AppColors.primary.withValues(alpha: 0.08) : null,
@@ -1713,6 +1822,8 @@ class HomeScreenState extends State<HomeScreen> {
 
     return InkWell(
       onTap: () => _openAgentChat(agent),
+      onLongPress: () => _showAgentRowMenu(agent),
+      onSecondaryTapUp: (_) => _showAgentRowMenu(agent),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         color: isSelected ? AppColors.primary.withValues(alpha: 0.08) : null,

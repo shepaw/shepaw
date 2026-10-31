@@ -337,6 +337,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get home_addDevice => 'Device Pairing';
 
   @override
+  String get home_markRead => 'Mark as read';
+
+  @override
+  String get home_deleteConversation => 'Delete conversation';
+
+  @override
+  String get home_deleteConversationConfirm =>
+      'The history of this conversation cannot be recovered after deletion.';
+
+  @override
   String get home_scanConnect => 'Scan to Connect';
 
   @override

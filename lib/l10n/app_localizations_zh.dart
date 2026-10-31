@@ -323,6 +323,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get home_addDevice => '设备配对';
 
   @override
+  String get home_markRead => '标为已读';
+
+  @override
+  String get home_deleteConversation => '删除会话';
+
+  @override
+  String get home_deleteConversationConfirm => '删除后该会话的历史消息不可恢复。';
+
+  @override
   String get home_scanConnect => '扫码连接';
 
   @override
