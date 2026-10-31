@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../models/remote_agent.dart';
-import '../../screens/chat_screen.dart';
 import '../../service_locator.dart' show getIt;
+import '../../services/chat_navigation_service.dart';
 import '../../services/local_database_service.dart';
 import '../../services/remote_agent_service.dart';
 import '../../widgets/agent_list_avatar.dart';
@@ -191,17 +191,15 @@ class _PeerAgentManagePanelState extends State<PeerAgentManagePanel> {
     }
   }
 
-  void _openChat(PeerAgentManageEntry entry) {
+  Future<void> _openChat(PeerAgentManageEntry entry) async {
     final local = _localFor(entry);
     if (local == null) return;
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ChatScreen(
-          agentId: local.id,
-          agentName: local.name,
-          agentAvatar: local.avatar,
-        ),
-      ),
+    // 走 ChatNavigationService：桌面端要落进右栏，手机端要从根 Navigator 推，
+    // 自己 push 会绕开这两条接线，也会丢掉已有的会话。
+    await ChatNavigationService.instance.openAgentConversation(
+      agentId: local.id,
+      agentName: local.name,
+      agentAvatar: local.avatar,
     );
   }
 

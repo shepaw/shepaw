@@ -149,7 +149,10 @@ class ContactsScreenState extends State<ContactsScreen> {
   }
 
   Future<void> _reload({bool quiet = false}) async {
-    if (!quiet && mounted) setState(() => _isLoading = true);
+    // 手上已经有目录快照就一律静默：`_isLoading` 会把整个 body 换成转圈，
+    // 连 RefreshIndicator 一起卸掉。下拉刷新、从详情返回都会看到整页闪一下。
+    final silent = quiet || _view != null;
+    if (!silent && mounted) setState(() => _isLoading = true);
     // 群聊和通讯录互不依赖，一起发起，别让页面顺序等两轮。
     // 目录的失败处理先挂上，避免它比群聊查询更早失败时成为未处理异步错误。
     final directoryFuture = _directory.refresh().catchError((Object e) {
@@ -179,6 +182,10 @@ class ContactsScreenState extends State<ContactsScreen> {
     final bio = a.bio?.toLowerCase() ?? '';
     return name.contains(_query) || bio.contains(_query);
   }
+
+  bool _deviceNameMatches(ContactDevice device) =>
+      _query.isNotEmpty &&
+      device.peer.deviceName.toLowerCase().contains(_query);
 
   List<Channel> get _filteredGroups {
     if (_query.isEmpty) return _groups;
@@ -214,10 +221,16 @@ class ContactsScreenState extends State<ContactsScreen> {
   /// Mobile: expand/collapse only — settings via info button or long-press menu.
   void _onPeerTap(ContactDevice device) {
     _selectedRowKey = device.rowKey;
-    _togglePeerExpanded(device);
     if (widget.embedded) {
+      // 右栏已经在展示这台设备的详情了，再点一次只是重新选中，
+      // 不该把展开的 Agent 收起来。
+      if (!_expandedPeerIds.contains(device.rowKey)) {
+        setState(() => _expandedPeerIds.add(device.rowKey));
+      }
       _openPeerDetail(device.peer);
+      return;
     }
+    _togglePeerExpanded(device);
   }
 
   @override
@@ -263,8 +276,8 @@ class ContactsScreenState extends State<ContactsScreen> {
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+      body: _isLoading && _view == null
+          ? _buildSkeleton()
           : Column(
               children: [
                 _buildSearchBar(l10n),
@@ -362,7 +375,8 @@ class ContactsScreenState extends State<ContactsScreen> {
         title: l10n.contacts_groups,
         count: groups.length,
       ),
-      if (_expanded.contains(_ContactsSection.groups))
+      // 搜索时一律忽略折叠：分区收起的话，命中的群看不到，标题上的计数却还在。
+      if (_expanded.contains(_ContactsSection.groups) || _query.isNotEmpty)
         ..._buildGroupChildren(groups, l10n),
       const SizedBox(height: 24),
     ];
@@ -451,9 +465,14 @@ class ContactsScreenState extends State<ContactsScreen> {
     ContactsView view,
     AppLocalizations l10n,
   ) {
-    final agents = _matchingAgents(device.agents);
-    final extras =
-        device.isHost ? _matchingAgents(view.otherAgents) : const <Agent>[];
+    // 设备名命中时不该再按关键词过滤它名下的 Agent：搜「MacBook」的人就是
+    // 想看这台设备上有什么，而那些 Agent 的名字里并没有这个词。
+    final matchedByName = _deviceNameMatches(device);
+    final agents =
+        matchedByName ? device.agents : _matchingAgents(device.agents);
+    final extras = device.isHost
+        ? (matchedByName ? view.otherAgents : _matchingAgents(view.otherAgents))
+        : const <Agent>[];
     final visibleAgents = [...agents, ...extras];
     final expanded = _expandedPeerIds.contains(device.rowKey) ||
         (_query.isNotEmpty && visibleAgents.isNotEmpty);

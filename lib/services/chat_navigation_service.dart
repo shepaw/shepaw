@@ -9,7 +9,9 @@ import '../screens/chat_screen.dart';
 import '../service_locator.dart';
 import '../storage/pouch_session.dart';
 import '../utils/platform_utils.dart';
+import 'chat_service.dart';
 import 'local_database_service.dart';
+import 'local_user_identity.dart';
 import 'app_lifecycle_service.dart';
 import 'logger_service.dart';
 import 'route_gate.dart';
@@ -139,6 +141,28 @@ class ChatNavigationService {
           showBackButton: true,
         ),
       ),
+    );
+  }
+
+  /// 打开和某个 Agent 的会话：接着最近一次会话，没有就新开一个。
+  ///
+  /// 通讯录、Agent 详情、设备详情共用这一条，不要各自 `push(ChatScreen)`——
+  /// 那样会绕过登录校验和桌面端的右栏接线，还会丢掉已有会话。
+  Future<void> openAgentConversation({
+    required String agentId,
+    required String agentName,
+    String? agentAvatar,
+  }) async {
+    final chatService = getIt<ChatService>();
+    const userId = LocalUserIdentity.id;
+    final channelId =
+        await chatService.getLatestActiveChannelId(userId, agentId) ??
+            chatService.generateChannelId(userId, agentId);
+    await openChannel(
+      channelId: channelId,
+      agentId: agentId,
+      agentName: agentName,
+      agentAvatar: agentAvatar,
     );
   }
 

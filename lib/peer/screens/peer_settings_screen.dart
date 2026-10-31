@@ -188,20 +188,24 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
             ],
           ),
         );
+        // 点空白处关掉是「取消」：升级成所有者会放宽一台设备的权限，
+        // 不能在用户没有明确选择时默默做掉。
+        if (apply == null || !mounted) return;
         await PeerStorageService().setTrustLevel(widget.peer.id, selected);
-        if (apply == true) {
+        if (apply) {
           await StoreService.instance.setOutboundStoreShares(
             widget.peer.id,
             PeerStorageService.ownerDefaultStoreShares(),
           );
         }
       } else if (selected == TrustLevel.friend) {
+        await PeerStorageService().setTrustLevel(widget.peer.id, selected);
+        // 保存成功后才提示；先弹再存的话，失败时用户会同时看到两个相反的提示。
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(l10n.peerSettings_trustFriendHint)),
           );
         }
-        await PeerStorageService().setTrustLevel(widget.peer.id, selected);
       } else {
         await PeerStorageService().setTrustLevel(widget.peer.id, selected);
       }
