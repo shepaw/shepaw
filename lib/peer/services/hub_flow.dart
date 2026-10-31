@@ -100,6 +100,14 @@ class HubFlow {
         if (taskId.isNotEmpty) 'task_id': taskId,
       };
 
+  static Map<String, dynamic> deleteRunFrame(String runId,
+          {String? requestId}) =>
+      {
+        'type': 'flow_run_delete_req',
+        if (requestId != null) 'request_id': requestId,
+        'run_id': runId,
+      };
+
   static Map<String, dynamic> cancelFrame(String runId, {String? requestId}) =>
       {
         'type': 'flow_run_cancel_req',
@@ -403,6 +411,11 @@ class HubFlow {
         ),
         'flow_run_start_resp',
       );
+
+  /// 删掉一次运行（B.6 / C.8）：数据清掉，节点会话从折叠组里隐藏。
+  /// 还在跑的会被主机拒（`error` 里说明）。
+  Future<FlowCall> deleteRun(String peerId, String runId) =>
+      _call(peerId, deleteRunFrame(runId), 'flow_run_delete_resp');
 
   Future<FlowCall> cancel(String peerId, String runId) =>
       _call(peerId, cancelFrame(runId), 'flow_run_cancel_resp');

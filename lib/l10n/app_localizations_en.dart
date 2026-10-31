@@ -9314,4 +9314,17 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get flow_rehearseChoose => 'It stops here for you to choose';
+
+  @override
+  String get flow_deleteRun => 'Delete run';
+
+  @override
+  String get flow_deleteRunTitle => 'Delete this run?';
+
+  @override
+  String get flow_deleteRunBody =>
+      'The run record, node outputs and node sessions are removed. This cannot be undone.';
+
+  @override
+  String get flow_deleteRunFailed => 'Could not delete the run';
 }

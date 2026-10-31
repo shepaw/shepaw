@@ -105,6 +105,8 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
           peerId: widget.peerId,
           runId: session.runId,
           title: session.title,
+          // 运行被删掉：节点会话也一起隐藏了，重刷一下条数。
+          onDeleted: () => unawaited(_load()),
         ),
       ));
       return;

@@ -17,6 +17,7 @@ class FlowRunScreen extends StatefulWidget {
     this.title,
     this.client,
     this.onOpenSession,
+    this.onDeleted,
   });
 
   final String peerId;
@@ -28,6 +29,9 @@ class FlowRunScreen extends StatefulWidget {
 
   /// 点"查看会话"：参数是节点上的引擎会话键。App 在这里跳到只读会话页。
   final void Function(FlowNode node)? onOpenSession;
+
+  /// 这次运行被删掉了：调用方退回上一层（列表里也不该再有它）。
+  final VoidCallback? onDeleted;
 
   @override
   State<FlowRunScreen> createState() => _FlowRunScreenState();
@@ -99,6 +103,44 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
               : l10n.flow_hostNoReply)));
     }
     unawaited(_load());
+  }
+
+  /// 删掉这次运行（B.6 / C.8）：只有走完了才能删，主机那边还会把节点会话
+  /// 从折叠组里收起来。
+  Future<void> _deleteRun() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        final l10n = AppLocalizations.of(context);
+        return AlertDialog(
+          title: Text(l10n.flow_deleteRunTitle),
+          content: Text(l10n.flow_deleteRunBody),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text(l10n.flow_keepWaiting)),
+            FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(l10n.flow_deleteRun)),
+          ],
+        );
+      },
+    );
+    if (confirmed != true) return;
+    final result = await _client.deleteRun(widget.peerId, widget.runId);
+    if (!mounted) return;
+    final l10n = AppLocalizations.of(context);
+    if (!result.ok) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(result.reachable
+              ? (result.error ?? l10n.flow_deleteRunFailed)
+              : l10n.flow_hostNoReply)));
+      return;
+    }
+    widget.onDeleted?.call();
+    if (mounted && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
   }
 
   Future<void> _cancel() async {
@@ -202,6 +244,14 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
             icon: const Icon(Icons.refresh),
             onPressed: _load,
           ),
+          // 走完了才能删：在跑的要先取消（主机那边也会这么回）。
+          if (run != null && run.status.isFinished)
+            IconButton(
+              key: const ValueKey('run-delete'),
+              tooltip: AppLocalizations.of(context).flow_deleteRun,
+              icon: const Icon(Icons.delete_outline),
+              onPressed: _deleteRun,
+            ),
         ],
       ),
       body: _body(run),

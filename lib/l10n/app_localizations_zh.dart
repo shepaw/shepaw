@@ -8956,4 +8956,16 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get flow_rehearseChoose => '走到这儿要你选一下';
+
+  @override
+  String get flow_deleteRun => '删除运行';
+
+  @override
+  String get flow_deleteRunTitle => '删除这次运行？';
+
+  @override
+  String get flow_deleteRunBody => '运行记录、节点的输出和它的节点会话都会清掉，这一步做不回来。';
+
+  @override
+  String get flow_deleteRunFailed => '删除失败';
 }

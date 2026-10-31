@@ -5504,5 +5504,9 @@
   "flow_talkHintNoSelection": "长按节点选中它，再说要怎么改",
   "flow_talkSend": "发给群主",
   "flow_talkSelectHint": "长按节点可选中（可多选）",
-  "flow_rehearseChoose": "走到这儿要你选一下"
+  "flow_rehearseChoose": "走到这儿要你选一下",
+  "flow_deleteRun": "删除运行",
+  "flow_deleteRunTitle": "删除这次运行？",
+  "flow_deleteRunBody": "运行记录、节点的输出和它的节点会话都会清掉，这一步做不回来。",
+  "flow_deleteRunFailed": "删除失败"
 }

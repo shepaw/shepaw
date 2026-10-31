@@ -290,6 +290,8 @@ class PeerConnection {
     'flow_rehearse_drop_req',
     'flow_gate_resp',
     'flow_run_cancel_req',
+    'flow_run_delete_req',
+    'flow_run_delete_resp',
     'flow_run_cancel_resp',
     'flow_run_get_req',
     'flow_run_get_resp',

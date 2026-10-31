@@ -16240,6 +16240,30 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'走到这儿要你选一下'**
   String get flow_rehearseChoose;
+
+  /// No description provided for @flow_deleteRun.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除运行'**
+  String get flow_deleteRun;
+
+  /// No description provided for @flow_deleteRunTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除这次运行？'**
+  String get flow_deleteRunTitle;
+
+  /// No description provided for @flow_deleteRunBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'运行记录、节点的输出和它的节点会话都会清掉，这一步做不回来。'**
+  String get flow_deleteRunBody;
+
+  /// No description provided for @flow_deleteRunFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除失败'**
+  String get flow_deleteRunFailed;
 }
 
 class _AppLocalizationsDelegate
