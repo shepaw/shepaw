@@ -56,7 +56,11 @@ Future<void> openGroupWorkspaceBag(
   } on StoreException catch (e) {
     if (!context.mounted) return;
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      SnackBar(content: Text(e.code == StoreError.notPaired ? '还没有登录袋子' : '$e')),
+      SnackBar(
+        content: Text(e.code == StoreError.notPaired
+            ? AppLocalizations.of(context).storage_notPaired
+            : '$e'),
+      ),
     );
     return;
   }

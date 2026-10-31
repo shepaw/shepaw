@@ -501,7 +501,7 @@ class _PeerChatScreenState extends State<PeerChatScreen> {
         actions: [
           _buildTitleActionButton(
             icon: Icons.psychology_outlined,
-            tooltip: 'Traces',
+            tooltip: l10n.chat_traces,
             onPressed: _showChannelTraces,
           ),
           _buildTitleActionButton(

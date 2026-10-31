@@ -400,7 +400,7 @@ class _GroupMembersPanelState extends State<GroupMembersPanel> {
       subtitle: _buildAgentSubtitle(agent, displayBio: displayBio, hasGroupBio: hasGroupBio),
       trailing: IconButton(
         icon: const Icon(Icons.edit_note, size: 20, color: AppColors.primary),
-        tooltip: 'Edit group role',
+        tooltip: l10n.groupMembers_editRole,
         onPressed: () => _startEditing(agent),
       ),
       onTap: () {

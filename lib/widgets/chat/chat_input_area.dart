@@ -2062,14 +2062,14 @@ class ChatInputAreaState extends State<ChatInputArea> {
                       key: _emojiButtonKey,
                       icon: Icons.sentiment_satisfied_alt_outlined,
                       color: iconColor,
-                      tooltip: 'Emoji',
+                      tooltip: l10n.chat_emojiPanel,
                       onPressed: _toggleDesktopEmojiPopover,
                     ),
                     _buildDesktopToolbarIcon(
                       key: _attachmentButtonKey,
                       icon: Icons.folder_open_outlined,
                       color: iconColor,
-                      tooltip: 'Attachment',
+                      tooltip: l10n.chat_attachments,
                       onPressed: _toggleDesktopAttachmentPopover,
                     ),
                     if (widget.hasAudioModel && widget.onSendVoice != null)

@@ -3432,6 +3432,29 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_viewTrace => '查看 Trace';
 
   @override
+  String get chat_traces => 'Trace';
+
+  @override
+  String get chat_emojiPanel => '表情';
+
+  @override
+  String get chat_attachments => '附件';
+
+  @override
+  String get groupMembers_editRole => '修改群角色';
+
+  @override
+  String get scheduledTask_notifyTitle => '定时任务';
+
+  @override
+  String scheduledTask_notifyFired(String desc) {
+    return '定时任务已触发：$desc';
+  }
+
+  @override
+  String get scheduledTask_notifyNoDesc => '定时任务已在群聊触发';
+
+  @override
   String get chat_viewSession => '查看会话';
 
   @override
@@ -7585,6 +7608,29 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get storage_browseByScope => '按 scope 浏览';
+
+  @override
+  String get storage_scopeTitle => '袋子 scope';
+
+  @override
+  String get storage_deleteFileTitle => '删除文件';
+
+  @override
+  String storage_deleteFileConfirm(String name) {
+    return '确定删除「$name」？';
+  }
+
+  @override
+  String get storage_upload => '上传文件';
+
+  @override
+  String get storage_legacyData => '旧数据（space 目录）';
+
+  @override
+  String get storage_legacyDataSub => 'v2 的 space/device 视图，只用来翻迁移前的东西';
+
+  @override
+  String get storage_notPaired => '还没有登录袋子';
 
   @override
   String get chat_notificationPreviewOff => '新消息';

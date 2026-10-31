@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
+import '../l10n/app_localizations.dart';
 import '../services/store_open_service.dart';
 import '../storage/group_shared_files.dart';
 import '../storage/local_store.dart';
@@ -291,23 +292,24 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
 
   Future<void> _deleteEntry(PouchScope scope, StoreEntry entry) async {
     if (_busy) return;
+    final l10n = AppLocalizations.of(context);
     final name = entry.path.split('/').last;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除文件'),
-        content: Text('确定删除「$name」？'),
+        title: Text(l10n.storage_deleteFileTitle),
+        content: Text(l10n.storage_deleteFileConfirm(name)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
+            child: Text(l10n.common_cancel),
           ),
           FilledButton(
             style: FilledButton.styleFrom(
               backgroundColor: Theme.of(ctx).colorScheme.error,
             ),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('删除'),
+            child: Text(l10n.common_delete),
           ),
         ],
       ),
@@ -346,13 +348,16 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final scope = _scope;
     return Scaffold(
       appBar: AppBar(
         elevation: 0,
         scrolledUnderElevation: 0,
         title: Text(
-            scope == null ? (widget.title ?? '袋子 scope') : _titleFor(scope)),
+            scope == null
+                  ? (widget.title ?? l10n.storage_scopeTitle)
+                  : _titleFor(scope)),
         leading: scope == null
             ? null
             : IconButton(
@@ -365,7 +370,7 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
       floatingActionButton: scope == null
           ? null
           : FloatingActionButton.small(
-              tooltip: '上传文件',
+              tooltip: l10n.storage_upload,
               onPressed: _busy ? null : _uploadFiles,
               child: const Icon(Icons.file_upload_outlined),
             ),
@@ -378,6 +383,7 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
   }
 
   Widget _buildTopLevel() {
+    final l10n = AppLocalizations.of(context);
     if (_loadingScopes) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -413,7 +419,7 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
                   ),
                   TextButton(
                     onPressed: _loadingScopes ? null : _reloadScopes,
-                    child: const Text('重试'),
+                    child: Text(l10n.common_retry),
                   ),
                 ],
               ),
@@ -451,8 +457,8 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
           const Divider(height: 24),
           ListTile(
             leading: const Icon(Icons.inventory_2_outlined),
-            title: const Text('旧数据（space 目录）'),
-            subtitle: const Text('v2 的 space/device 视图，只用来翻迁移前的东西'),
+            title: Text(l10n.storage_legacyData),
+            subtitle: Text(l10n.storage_legacyDataSub),
             trailing: const Icon(Icons.chevron_right),
             onTap: widget.onOpenLegacy,
           ),

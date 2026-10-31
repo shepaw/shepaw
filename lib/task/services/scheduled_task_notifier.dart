@@ -37,7 +37,10 @@ class ScheduledTaskNotifier {
     if (channelId == null || channelId.isEmpty) return;
     if (AppLifecycleService().shouldSuppressNotification(channelId)) return;
 
-    final title = groupName.trim().isNotEmpty ? groupName.trim() : '定时任务';
+    final l10n = ChatNavigationService.instance.l10nOrNull;
+    final title = groupName.trim().isNotEmpty
+        ? groupName.trim()
+        : (l10n?.scheduledTask_notifyTitle ?? 'Scheduled task');
     final body = task.description.trim().isNotEmpty
         ? '定时任务已触发：${task.description.trim()}'
         : '定时任务已在群聊触发';

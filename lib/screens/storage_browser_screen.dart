@@ -2164,7 +2164,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
         IconButton(
           onPressed: _openScopeBrowser,
           icon: const Icon(Icons.account_tree_outlined),
-          tooltip: '袋子 scope',
+          tooltip: l10n.storage_browseByScope,
         ),
         if (!_pickMode) ...?widget.extraActions,
       ],
@@ -2210,7 +2210,7 @@ class _StorageBrowserScreenState extends State<StorageBrowserScreen> {
       IconButton(
         onPressed: _openScopeBrowser,
         icon: const Icon(Icons.account_tree_outlined),
-        tooltip: '袋子 scope',
+        tooltip: l10n.storage_browseByScope,
       ),
       if (includeCreate || widget.extraMenuItems != null)
         PopupMenuButton<dynamic>(

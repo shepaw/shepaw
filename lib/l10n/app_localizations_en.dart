@@ -3577,6 +3577,30 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_viewTrace => 'View Trace';
 
   @override
+  String get chat_traces => 'Traces';
+
+  @override
+  String get chat_emojiPanel => 'Emoji';
+
+  @override
+  String get chat_attachments => 'Attachments';
+
+  @override
+  String get groupMembers_editRole => 'Edit group role';
+
+  @override
+  String get scheduledTask_notifyTitle => 'Scheduled task';
+
+  @override
+  String scheduledTask_notifyFired(String desc) {
+    return 'Scheduled task fired: $desc';
+  }
+
+  @override
+  String get scheduledTask_notifyNoDesc =>
+      'A scheduled task fired in a group chat';
+
+  @override
   String get chat_viewSession => 'View Session';
 
   @override
@@ -7877,6 +7901,30 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get storage_browseByScope => 'Browse by scope';
+
+  @override
+  String get storage_scopeTitle => 'Pouch scopes';
+
+  @override
+  String get storage_deleteFileTitle => 'Delete file';
+
+  @override
+  String storage_deleteFileConfirm(String name) {
+    return 'Delete \"$name\"?';
+  }
+
+  @override
+  String get storage_upload => 'Upload file';
+
+  @override
+  String get storage_legacyData => 'Legacy data (space directory)';
+
+  @override
+  String get storage_legacyDataSub =>
+      'The v2 space/device view — only for pre-migration content';
+
+  @override
+  String get storage_notPaired => 'Not signed in to a pouch yet';
 
   @override
   String get chat_notificationPreviewOff => 'New message';

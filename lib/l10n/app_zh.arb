@@ -2002,6 +2002,20 @@
   "chat_enableStageGate": "阶段门闸",
   "chat_enableStageGateDesc": "每个阶段执行完暂停，等待管理员「继续 / 中止 / 换人」决策后再进入下一阶段",
   "chat_viewTrace": "查看 Trace",
+  "chat_traces": "Trace",
+  "chat_emojiPanel": "表情",
+  "chat_attachments": "附件",
+  "groupMembers_editRole": "修改群角色",
+  "scheduledTask_notifyTitle": "定时任务",
+  "scheduledTask_notifyFired": "定时任务已触发：{desc}",
+  "scheduledTask_notifyNoDesc": "定时任务已在群聊触发",
+  "@scheduledTask_notifyFired": {
+    "placeholders": {
+      "desc": {
+        "type": "String"
+      }
+    }
+  },
   "chat_viewSession": "查看会话",
   "chat_copySessionInfo": "复制会话信息",
   "chat_copySessionInfoPayload": "标题：{title}\n会话 ID：{sessionId}\nchannel ID：{channelId}",
@@ -4600,6 +4614,20 @@
   "storage_entrySpace": "本机空间",
   "storage_moreSettings": "更多设置",
   "storage_browseByScope": "按 scope 浏览",
+  "storage_scopeTitle": "袋子 scope",
+  "storage_deleteFileTitle": "删除文件",
+  "storage_deleteFileConfirm": "确定删除「{name}」？",
+  "storage_upload": "上传文件",
+  "storage_legacyData": "旧数据（space 目录）",
+  "storage_legacyDataSub": "v2 的 space/device 视图，只用来翻迁移前的东西",
+  "storage_notPaired": "还没有登录袋子",
+  "@storage_deleteFileConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "chat_notificationPreviewOff": "新消息",
   "storage_manageTitle": "储物袋管理",
   "storage_usedBadge": "已使用 {size}",

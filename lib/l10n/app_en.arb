@@ -1545,6 +1545,20 @@
   "chat_enableStageGate": "Stage Gate",
   "chat_enableStageGateDesc": "Pause at each stage for the admin to approve / redirect before the next stage starts",
   "chat_viewTrace": "View Trace",
+  "chat_traces": "Traces",
+  "chat_emojiPanel": "Emoji",
+  "chat_attachments": "Attachments",
+  "groupMembers_editRole": "Edit group role",
+  "scheduledTask_notifyTitle": "Scheduled task",
+  "scheduledTask_notifyFired": "Scheduled task fired: {desc}",
+  "scheduledTask_notifyNoDesc": "A scheduled task fired in a group chat",
+  "@scheduledTask_notifyFired": {
+    "placeholders": {
+      "desc": {
+        "type": "String"
+      }
+    }
+  },
   "chat_viewSession": "View Session",
   "chat_copySessionInfo": "Copy session info",
   "chat_copySessionInfoPayload": "Title: {title}\nSession ID: {sessionId}\nchannel ID: {channelId}",
@@ -4150,6 +4164,20 @@
   "storage_entrySpace": "Local Space",
   "storage_moreSettings": "More settings",
   "storage_browseByScope": "Browse by scope",
+  "storage_scopeTitle": "Pouch scopes",
+  "storage_deleteFileTitle": "Delete file",
+  "storage_deleteFileConfirm": "Delete \"{name}\"?",
+  "storage_upload": "Upload file",
+  "storage_legacyData": "Legacy data (space directory)",
+  "storage_legacyDataSub": "The v2 space/device view — only for pre-migration content",
+  "storage_notPaired": "Not signed in to a pouch yet",
+  "@storage_deleteFileConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "chat_notificationPreviewOff": "New message",
   "storage_manageTitle": "Pouch management",
   "storage_usedBadge": "{size} used",

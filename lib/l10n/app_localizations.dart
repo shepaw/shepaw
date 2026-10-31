@@ -6326,6 +6326,48 @@ abstract class AppLocalizations {
   /// **'查看 Trace'**
   String get chat_viewTrace;
 
+  /// No description provided for @chat_traces.
+  ///
+  /// In zh, this message translates to:
+  /// **'Trace'**
+  String get chat_traces;
+
+  /// No description provided for @chat_emojiPanel.
+  ///
+  /// In zh, this message translates to:
+  /// **'表情'**
+  String get chat_emojiPanel;
+
+  /// No description provided for @chat_attachments.
+  ///
+  /// In zh, this message translates to:
+  /// **'附件'**
+  String get chat_attachments;
+
+  /// No description provided for @groupMembers_editRole.
+  ///
+  /// In zh, this message translates to:
+  /// **'修改群角色'**
+  String get groupMembers_editRole;
+
+  /// No description provided for @scheduledTask_notifyTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'定时任务'**
+  String get scheduledTask_notifyTitle;
+
+  /// No description provided for @scheduledTask_notifyFired.
+  ///
+  /// In zh, this message translates to:
+  /// **'定时任务已触发：{desc}'**
+  String scheduledTask_notifyFired(String desc);
+
+  /// No description provided for @scheduledTask_notifyNoDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'定时任务已在群聊触发'**
+  String get scheduledTask_notifyNoDesc;
+
   /// No description provided for @chat_viewSession.
   ///
   /// In zh, this message translates to:
@@ -13780,6 +13822,48 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'按 scope 浏览'**
   String get storage_browseByScope;
+
+  /// No description provided for @storage_scopeTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'袋子 scope'**
+  String get storage_scopeTitle;
+
+  /// No description provided for @storage_deleteFileTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除文件'**
+  String get storage_deleteFileTitle;
+
+  /// No description provided for @storage_deleteFileConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'确定删除「{name}」？'**
+  String storage_deleteFileConfirm(String name);
+
+  /// No description provided for @storage_upload.
+  ///
+  /// In zh, this message translates to:
+  /// **'上传文件'**
+  String get storage_upload;
+
+  /// No description provided for @storage_legacyData.
+  ///
+  /// In zh, this message translates to:
+  /// **'旧数据（space 目录）'**
+  String get storage_legacyData;
+
+  /// No description provided for @storage_legacyDataSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'v2 的 space/device 视图，只用来翻迁移前的东西'**
+  String get storage_legacyDataSub;
+
+  /// No description provided for @storage_notPaired.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没有登录袋子'**
+  String get storage_notPaired;
 
   /// No description provided for @chat_notificationPreviewOff.
   ///
