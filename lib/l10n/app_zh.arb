@@ -2710,6 +2710,24 @@
       }
     }
   },
+  "peerSettings_deleteHostConfirm": "确定要删除与主机 {name} 的配对吗？\n删除后这台主机上的 Agent、群聊和文件都将不可用，需要重新配对才能恢复。",
+  "@peerSettings_deleteHostConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "peerSettings_deleteSelfConfirm": "确定要删除本机（{name}）在主机名单里的配对吗？\n删除后本 App 将无法再通过这台主机工作，需要重新配对。",
+  "@peerSettings_deleteSelfConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "peerDevice_renameUnsupported": "当前主机不支持修改这台设备的备注",
+  "peerDevice_renameFailed": "修改备注失败，本机没有这台设备的配对记录",
   "peerSettings_noShareableAgents": "暂无可分享的 Agent",
   "peerSettings_enableExternalAccessHint": "在 Agent 设置中开启「允许外部访问」后即可在此分享给该设备",
   "peerSettings_shareAgentsTitle": "分享给此设备的 Agent",

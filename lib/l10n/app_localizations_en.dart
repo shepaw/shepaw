@@ -5013,6 +5013,24 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String peerSettings_deleteHostConfirm(String name) {
+    return 'Remove pairing with host $name?\nAgents, group chats and files on this host become unavailable until you pair again.';
+  }
+
+  @override
+  String peerSettings_deleteSelfConfirm(String name) {
+    return 'Remove this device ($name) from the host roster?\nThis app can no longer work through this host until you pair again.';
+  }
+
+  @override
+  String get peerDevice_renameUnsupported =>
+      'This host does not support renaming this device';
+
+  @override
+  String get peerDevice_renameFailed =>
+      'Could not rename: no local pairing record for this device';
+
+  @override
   String get peerSettings_noShareableAgents => 'No agents available to share';
 
   @override

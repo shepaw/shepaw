@@ -8907,6 +8907,30 @@ abstract class AppLocalizations {
   /// **'确定要删除与 {name} 的配对吗？\n所有消息记录也会被删除。'**
   String peerSettings_deleteConfirm(String name);
 
+  /// No description provided for @peerSettings_deleteHostConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'确定要删除与主机 {name} 的配对吗？\n删除后这台主机上的 Agent、群聊和文件都将不可用，需要重新配对才能恢复。'**
+  String peerSettings_deleteHostConfirm(String name);
+
+  /// No description provided for @peerSettings_deleteSelfConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'确定要删除本机（{name}）在主机名单里的配对吗？\n删除后本 App 将无法再通过这台主机工作，需要重新配对。'**
+  String peerSettings_deleteSelfConfirm(String name);
+
+  /// No description provided for @peerDevice_renameUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前主机不支持修改这台设备的备注'**
+  String get peerDevice_renameUnsupported;
+
+  /// No description provided for @peerDevice_renameFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'修改备注失败，本机没有这台设备的配对记录'**
+  String get peerDevice_renameFailed;
+
   /// No description provided for @peerSettings_noShareableAgents.
   ///
   /// In zh, this message translates to:

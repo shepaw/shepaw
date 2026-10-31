@@ -6,12 +6,11 @@ import '../models/agent.dart';
 import '../models/channel.dart';
 import '../theme/app_theme.dart';
 import '../peer/models/paired_peer.dart';
-import '../peer/pouch_pair.dart';
 import '../peer/screens/peer_settings_screen.dart';
 import '../peer/widgets/peer_device_icon.dart';
 import '../peer/screens/add_agent_instance_screen.dart';
-import '../peer/services/peer_storage_service.dart';
 import '../utils/platform_utils.dart';
+import '../peer/peer_device_actions.dart';
 import '../services/contacts_directory.dart';
 import '../services/local_database_service.dart';
 import '../services/she_service.dart';
@@ -227,7 +226,7 @@ class ContactsScreenState extends State<ContactsScreen> {
       if (!_expandedPeerIds.contains(device.rowKey)) {
         setState(() => _expandedPeerIds.add(device.rowKey));
       }
-      _openPeerDetail(device.peer);
+      _openPeerDetail(device);
       return;
     }
     _togglePeerExpanded(device);
@@ -642,7 +641,7 @@ class ContactsScreenState extends State<ContactsScreen> {
           : Colors.transparent,
       child: InkWell(
         onTap: () => _onPeerTap(device),
-        onLongPress: widget.embedded ? null : () => _showPeerActions(peer),
+        onLongPress: widget.embedded ? null : () => _showPeerActions(device),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
@@ -753,7 +752,7 @@ class ContactsScreenState extends State<ContactsScreen> {
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                   tooltip: l10n.peerSettings_title,
-                  onPressed: () => _openPeerDetail(peer),
+                  onPressed: () => _openPeerDetail(device),
                 ),
               ],
             ],
@@ -976,7 +975,7 @@ class ContactsScreenState extends State<ContactsScreen> {
     _reload();
   }
 
-  Future<void> _showPeerActions(PairedPeer peer) async {
+  Future<void> _showPeerActions(ContactDevice device) async {
     final action = await showModalBottomSheet<String>(
       context: context,
       builder: (ctx) {
@@ -1011,99 +1010,34 @@ class ContactsScreenState extends State<ContactsScreen> {
 
     if (!mounted) return;
     if (action == 'settings') {
-      await _openPeerDetail(peer);
+      await _openPeerDetail(device);
     } else if (action == 'rename') {
-      await _renamePeer(peer);
-    } else if (action == 'delete') {
-      await _deletePeer(peer);
-    }
-  }
-
-  Future<void> _renamePeer(PairedPeer peer) async {
-    final newName = await showDialog<String>(
-      context: context,
-      builder: (ctx) {
-        final dialogL10n = AppLocalizations.of(ctx);
-        final controller = TextEditingController(text: peer.deviceName);
-        return AlertDialog(
-          title: Text(dialogL10n.peerList_editAlias),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            decoration: InputDecoration(
-              hintText: dialogL10n.peerSettings_editAliasHint,
-              border: const OutlineInputBorder(),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(dialogL10n.common_cancel),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-              child: Text(dialogL10n.common_save),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (newName != null && newName.isNotEmpty && newName != peer.deviceName) {
-      await PeerStorageService().updateDeviceName(peer.id, newName);
-      _reload();
-    }
-  }
-
-  Future<void> _deletePeer(PairedPeer peer) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) {
-        final dialogL10n = AppLocalizations.of(ctx);
-        return AlertDialog(
-          title: Text(dialogL10n.peerSettings_deletePairing),
-          content: Text(dialogL10n.peerSettings_deleteConfirm(peer.deviceName)),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text(dialogL10n.common_cancel),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.error,
-              ),
-              child: Text(dialogL10n.common_delete),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirm == true) {
-      try {
-        await PouchPairing.remove(peer);
-      } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              AppLocalizations.of(context).peerSettings_deleteFailed('$e'),
-            ),
-          ),
-        );
-        return;
-      }
+      await PeerDeviceActions.rename(context, device.peer);
       if (mounted) _reload();
+    } else if (action == 'delete') {
+      await _deletePeer(device);
     }
   }
 
-  Future<void> _openPeerDetail(PairedPeer peer) async {
+  Future<void> _deletePeer(ContactDevice device) async {
+    final confirm = await PeerDeviceActions.confirmDelete(
+      context,
+      device.peer,
+      isHost: device.isHost,
+      isThisDevice: device.isThisDevice,
+    );
+    if (!confirm || !mounted) return;
+    final removed = await PeerDeviceActions.delete(context, device.peer);
+    if (!removed || !mounted) return;
+    _reload();
+  }
+
+  Future<void> _openPeerDetail(ContactDevice device) async {
     if (widget.onPeerSelected != null) {
-      widget.onPeerSelected!(peer);
+      widget.onPeerSelected!(device.peer);
       return;
     }
-    await PeerSettingsScreen.show(context, peer);
+    await PeerSettingsScreen.show(context, device.peer, device: device);
     if (mounted) _reload();
   }
 }

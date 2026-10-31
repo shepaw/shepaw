@@ -4820,6 +4820,22 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String peerSettings_deleteHostConfirm(String name) {
+    return '确定要删除与主机 $name 的配对吗？\n删除后这台主机上的 Agent、群聊和文件都将不可用，需要重新配对才能恢复。';
+  }
+
+  @override
+  String peerSettings_deleteSelfConfirm(String name) {
+    return '确定要删除本机（$name）在主机名单里的配对吗？\n删除后本 App 将无法再通过这台主机工作，需要重新配对。';
+  }
+
+  @override
+  String get peerDevice_renameUnsupported => '当前主机不支持修改这台设备的备注';
+
+  @override
+  String get peerDevice_renameFailed => '修改备注失败，本机没有这台设备的配对记录';
+
+  @override
   String get peerSettings_noShareableAgents => '暂无可分享的 Agent';
 
   @override

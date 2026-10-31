@@ -296,10 +296,13 @@ class PeerStorageService {
     );
   }
 
-  /// 修改设备备注名
-  Future<void> updateDeviceName(String peerId, String name) async {
+  /// 修改设备备注名。返回受影响的行数。
+  ///
+  /// 主机名单里的设备不在本机这张表里，会返回 0。调用方要据此提示用户，
+  /// 不能当成改成功了。
+  Future<int> updateDeviceName(String peerId, String name) async {
     final db = await _db;
-    await db.update(
+    return db.update(
       'paired_peers',
       {'device_name': name},
       where: 'id = ?',

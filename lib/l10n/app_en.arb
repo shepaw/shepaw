@@ -2256,6 +2256,24 @@
       }
     }
   },
+  "peerSettings_deleteHostConfirm": "Remove pairing with host {name}?\nAgents, group chats and files on this host become unavailable until you pair again.",
+  "@peerSettings_deleteHostConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "peerSettings_deleteSelfConfirm": "Remove this device ({name}) from the host roster?\nThis app can no longer work through this host until you pair again.",
+  "@peerSettings_deleteSelfConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "peerDevice_renameUnsupported": "This host does not support renaming this device",
+  "peerDevice_renameFailed": "Could not rename: no local pairing record for this device",
   "peerSettings_noShareableAgents": "No agents available to share",
   "peerSettings_enableExternalAccessHint": "Enable \"Allow External Access\" in agent settings to share agents with this device",
   "peerSettings_shareAgentsTitle": "Agents Shared with This Device",

@@ -16,13 +16,26 @@ import '../screens/add_agent_instance_screen.dart';
 /// Device-details section: list peer agents, toggle whether they appear in
 /// this app, and create or remove agents on the device.
 class PeerAgentManagePanel extends StatefulWidget {
+  /// 管理请求发给谁。主机名单里的设备用的是主机侧的 id，请求仍然走主机。
   final String peerId;
+
+  /// 只看这个工作节点上的 Agent。主机为 null。
+  final String? nodeId;
+
+  /// 通讯录算好的归属名单（按 Agent id）。
+  ///
+  /// 工作节点上的 Agent 在库里记的 `source_peer_id` 是主机，只能靠元数据里
+  /// 的 `node_id` 二次区分；不传就只能自己按 source_peer_id 猜，节点下会是空的。
+  final Set<String>? agentIds;
+
   final bool isPeerConnected;
 
   const PeerAgentManagePanel({
     super.key,
     required this.peerId,
     required this.isPeerConnected,
+    this.nodeId,
+    this.agentIds,
   });
 
   @override
@@ -63,9 +76,14 @@ class _PeerAgentManagePanelState extends State<PeerAgentManagePanel> {
   Future<void> _load({bool quiet = false}) async {
     if (!quiet && mounted) setState(() => _loading = true);
     final all = await getIt<LocalDatabaseService>().getAllRemoteAgents();
+    final scoped = widget.agentIds;
     final mine = all
-        .where((a) =>
-            a.protocol == ProtocolType.peer && a.sourcePeerId == widget.peerId)
+        .where((a) {
+          if (a.protocol != ProtocolType.peer) return false;
+          if (scoped == null) return a.sourcePeerId == widget.peerId;
+          final id = a.remoteAgentId ?? a.id;
+          return scoped.contains(id) || scoped.contains(a.id);
+        })
         .toList()
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
@@ -74,6 +92,7 @@ class _PeerAgentManagePanelState extends State<PeerAgentManagePanel> {
       remote = await PeerAgentClientService.instance.manageAgents(
         peerId: widget.peerId,
         op: 'list',
+        nodeId: widget.nodeId,
       );
     }
 
@@ -138,7 +157,10 @@ class _PeerAgentManagePanelState extends State<PeerAgentManagePanel> {
   Future<void> _createAgent() async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => AddAgentInstanceScreen(presetPeerId: widget.peerId),
+        builder: (_) => AddAgentInstanceScreen(
+          presetPeerId: widget.peerId,
+          presetNodeId: widget.nodeId,
+        ),
       ),
     );
     if (!mounted) return;
@@ -178,6 +200,7 @@ class _PeerAgentManagePanelState extends State<PeerAgentManagePanel> {
       final removed = await service.removeAgent(
         peerId: widget.peerId,
         remoteAgentId: entry.id,
+        nodeId: widget.nodeId,
       );
       if (!mounted) return;
       if (!removed.ok) {
