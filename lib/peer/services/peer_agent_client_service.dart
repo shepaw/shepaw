@@ -9049,6 +9049,22 @@ class PeerAgentClientService {
       },
     );
     if (item != null) PendingApprovalHub.instance.upsert(item);
+    // 孤儿卡同样要落那条确定性消息行。此前只有活动回合那条路落（见 `_onForm`），
+    // 于是这类卡只活在内存里——App 一重启就再也答不上，而主机那一侧还在按
+    // 它的超时等。落库之后聊天页照常从消息行渲染，重启后 `submitForm` 也认得
+    // 这张卡（`_isPersistedOpenForm`）。
+    if (item != null && interactionType == 'form') {
+      await persistFormCard(
+        channelId: channelId,
+        senderId: localAgentId,
+        senderName: agentName,
+        formData: {
+          ...data,
+          'form_id': data['form_id'] ?? cardId,
+          'peer_form': {'peer_id': peerId, 'approval_id': cardId},
+        },
+      );
+    }
   }
 
   /// 主机会话 id → 本机频道 id。
