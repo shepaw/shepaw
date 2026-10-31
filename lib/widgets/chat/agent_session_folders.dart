@@ -8,7 +8,9 @@ import '../../peer/services/peer_agent_client_service.dart';
 import '../../screens/flow_run_screen.dart';
 import '../../screens/group_view_screen.dart';
 import '../../screens/session_history_screen.dart';
+import '../../l10n/app_localizations.dart';
 import '../../screens/session_folder_screen.dart';
+import '../../screens/session_search_screen.dart';
 import '../session_folders.dart';
 
 /// 私聊会话列表顶部的折叠组（折叠方案 §2.1）：群聊、其他 Agent 发起、工作流、
@@ -142,9 +144,23 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
   @override
   Widget build(BuildContext context) {
     if (_folders.isEmpty) return const SizedBox.shrink();
+    final l10n = AppLocalizations.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        // 搜全部会话（私聊 + 五个折叠组）：放在折叠组上面，一处进去都能找到。
+        ListTile(
+          key: const ValueKey('session-search'),
+          leading: const Icon(Icons.search),
+          title: Text(l10n.sessionSearchTitle),
+          onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+            builder: (_) => SessionSearchScreen(
+              peerId: widget.peerId,
+              agentId: widget.remoteAgentId,
+              client: _client,
+            ),
+          )),
+        ),
         for (final folder in _folders)
           SessionFolderTile(summary: folder, onTap: () => _open(folder.kind)),
         const Divider(height: 1),

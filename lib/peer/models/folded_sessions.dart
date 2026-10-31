@@ -198,3 +198,88 @@ class GroupViewPage {
     );
   }
 }
+
+/// 会话的来源（`origin.kind`）。私聊不折叠，其余各归一组。
+class SessionOrigin {
+  const SessionOrigin({
+    required this.kind,
+    this.groupId = '',
+    this.groupSessionId = '',
+    this.runId = '',
+    this.nodeKey = '',
+    this.fromAgent = '',
+    this.hostName = '',
+  });
+
+  final String kind;
+  final String groupId;
+  final String groupSessionId;
+  final String runId;
+  final String nodeKey;
+  final String fromAgent;
+  final String hostName;
+
+  bool get isPrivate => kind.isEmpty || kind == 'private';
+
+  factory SessionOrigin.private() => const SessionOrigin(kind: 'private');
+
+  factory SessionOrigin.fromJson(Map<String, dynamic> json) {
+    String text(Object? v) => v is String ? v : '';
+    return SessionOrigin(
+      kind: text(json['kind']).isEmpty ? 'private' : text(json['kind']),
+      groupId: text(json['group_id']),
+      groupSessionId: text(json['session_id']),
+      runId: text(json['run_id']),
+      nodeKey: text(json['node_key']),
+      fromAgent: text(json['from_agent']),
+      hostName: text(json['host_name']),
+    );
+  }
+}
+
+/// 会话搜索的一条结果（折叠方案 §2.3）。`origin` 就是来源角标：私聊可以直接
+/// 接着聊，折叠组里的会话只读。
+class SessionSearchHit {
+  const SessionSearchHit({
+    required this.agentId,
+    required this.sessionId,
+    required this.title,
+    required this.source,
+    required this.origin,
+    required this.updatedAt,
+    required this.readOnly,
+    this.snippet,
+  });
+
+  final String agentId;
+  final String sessionId;
+  final String title;
+  final String source;
+
+  /// 来源角标（`origin.kind`：`private` / `group` / `flow` / `delegated` /
+  /// `ide` / `terminal`）。
+  final SessionOrigin origin;
+  final int updatedAt;
+  final bool readOnly;
+
+  /// 正文里命中位置附近的一小段；标题命中的没有。
+  final String? snippet;
+
+  bool get isPrivate => origin.isPrivate;
+
+  factory SessionSearchHit.fromJson(Map<String, dynamic> json) {
+    final rawOrigin = json['origin'];
+    return SessionSearchHit(
+      agentId: (json['agent_id'] as String?) ?? '',
+      sessionId: (json['session_id'] as String?) ?? '',
+      title: (json['title'] as String?) ?? '',
+      source: (json['source'] as String?) ?? '',
+      origin: rawOrigin is Map
+          ? SessionOrigin.fromJson(Map<String, dynamic>.from(rawOrigin))
+          : SessionOrigin.private(),
+      updatedAt: (json['updated_at'] as num?)?.toInt() ?? 0,
+      readOnly: json['read_only'] == true,
+      snippet: json['snippet'] as String?,
+    );
+  }
+}

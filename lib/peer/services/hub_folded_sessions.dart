@@ -147,6 +147,42 @@ class HubFoldedSessions {
     return response == null ? null : GroupViewPage.fromResponse(response);
   }
 
+  /// 会话搜索（折叠方案 §2.3）：私聊和五个折叠组一起找，结果带来源角标。
+  static Map<String, dynamic> searchFrame(
+    String query, {
+    String agentId = '',
+    int? limit,
+    String? requestId,
+  }) =>
+      {
+        'type': 'agent_sessions_search_req',
+        if (requestId != null) 'request_id': requestId,
+        'query': query,
+        if (agentId.isNotEmpty) 'agent_id': agentId,
+        if (limit != null) 'limit': limit,
+      };
+
+  Future<List<SessionSearchHit>> search(
+    String peerId,
+    String query, {
+    String agentId = '',
+    int limit = 20,
+  }) async {
+    if (query.trim().isEmpty) return const [];
+    final response = await _request(
+      peerId,
+      searchFrame(query.trim(), agentId: agentId, limit: limit),
+      'agent_sessions_search_resp',
+    );
+    final raw = response?['results'];
+    if (raw is! List) return const [];
+    return [
+      for (final item in raw)
+        if (item is Map)
+          SessionSearchHit.fromJson(Map<String, dynamic>.from(item)),
+    ];
+  }
+
   Future<Map<String, dynamic>?> _request(
     String peerId,
     Map<String, dynamic> frame,
