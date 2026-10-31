@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../peer/services/peer_storage_service.dart';
 import '../services/store_open_service.dart';
 import '../storage/device_identity.dart';
