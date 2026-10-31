@@ -5053,5 +5053,6 @@
   "flow_talkHint": "Say how to change these nodes",
   "flow_talkHintNoSelection": "Long-press a node to select it, then say what to change",
   "flow_talkSend": "Send to the group owner",
-  "flow_talkSelectHint": "Long-press a node to select it (multiple allowed)"
+  "flow_talkSelectHint": "Long-press a node to select it (multiple allowed)",
+  "flow_rehearseChoose": "It stops here for you to choose"
 }

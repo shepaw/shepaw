@@ -9317,4 +9317,7 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get flow_talkSelectHint =>
       'Long-press a node to select it (multiple allowed)';
+
+  @override
+  String get flow_rehearseChoose => 'It stops here for you to choose';
 }

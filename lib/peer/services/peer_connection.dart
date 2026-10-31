@@ -286,6 +286,8 @@ class PeerConnection {
     'flow_schema_resp',
     'flow_rehearse_req',
     'flow_rehearse_resp',
+    'flow_rehearse_answer_req',
+    'flow_rehearse_drop_req',
     'flow_gate_resp',
     'flow_run_cancel_req',
     'flow_run_cancel_resp',

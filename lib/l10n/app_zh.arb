@@ -5505,5 +5505,6 @@
   "flow_talkHint": "说说要怎么改这几个节点",
   "flow_talkHintNoSelection": "长按节点选中它，再说要怎么改",
   "flow_talkSend": "发给群主",
-  "flow_talkSelectHint": "长按节点可选中（可多选）"
+  "flow_talkSelectHint": "长按节点可选中（可多选）",
+  "flow_rehearseChoose": "走到这儿要你选一下"
 }

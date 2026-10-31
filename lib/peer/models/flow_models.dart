@@ -486,6 +486,55 @@ class FlowSchema {
   }
 }
 
+/// 演练卡住的地方（C.5）：关卡给人选，判断给"是 / 否"。
+class FlowQuestion {
+  const FlowQuestion({
+    required this.kind,
+    required this.key,
+    required this.options,
+    this.ask = '',
+    this.show = '',
+    this.question = '',
+    this.who = '',
+  });
+
+  /// `gate` 或 `judge`。
+  final String kind;
+  final String key;
+  final List<String> options;
+
+  /// 关卡：给人看的那句话 / 要判断的那句话。
+  final String ask;
+  final String show;
+
+  /// 判断（`judge`）：问的是这句；`ask` 为空时用它做标题。
+  final String question;
+  final String who;
+
+  /// 摆在按钮上面那句话。
+  String get prompt => ask.isNotEmpty ? ask : question;
+
+  bool get isGate => kind == 'gate';
+
+  static FlowQuestion? fromJson(Map<String, dynamic> json) {
+    final kind = json['kind'];
+    final key = json['key'];
+    if (kind is! String || key is! String) return null;
+    final rawOptions = json['options'];
+    return FlowQuestion(
+      kind: kind,
+      key: key,
+      options: rawOptions is List
+          ? [for (final o in rawOptions) o.toString()]
+          : const [],
+      ask: (json['ask'] as String?) ?? '',
+      show: (json['show'] as String?) ?? '',
+      question: (json['question'] as String?) ?? '',
+      who: (json['who'] as String?) ?? '',
+    );
+  }
+}
+
 /// 演练结果：派活顺序（节点 key）和走完后的节点树。
 class FlowRehearsal {
   const FlowRehearsal({
@@ -493,6 +542,8 @@ class FlowRehearsal {
     required this.tree,
     required this.status,
     this.error,
+    this.rehearsalId = '',
+    this.question,
   });
 
   final List<String> steps;
@@ -500,12 +551,21 @@ class FlowRehearsal {
   final FlowRunStatus status;
   final String? error;
 
+  /// 主机上这一次的 id；卡住时作答要用。
+  final String rehearsalId;
+
+  /// 卡住的问题；为空表示这一段走完了。
+  final FlowQuestion? question;
+
+  bool get isWaiting => question != null;
+
   static FlowRehearsal? fromResponse(Map<String, dynamic> response) {
     if (response['success'] != true) return null;
     final status = FlowRunStatus.parse(response['status']);
     final steps = response['steps'];
     final tree = response['tree'];
     if (status == null || steps is! List || tree is! List) return null;
+    final rawQuestion = response['question'];
     return FlowRehearsal(
       steps: [
         for (final s in steps)
@@ -518,6 +578,10 @@ class FlowRehearsal {
       status: status,
       error: (response['error'] as String?)?.isNotEmpty == true
           ? response['error'] as String
+          : null,
+      rehearsalId: (response['rehearsal_id'] as String?) ?? '',
+      question: rawQuestion is Map
+          ? FlowQuestion.fromJson(Map<String, dynamic>.from(rawQuestion))
           : null,
     );
   }

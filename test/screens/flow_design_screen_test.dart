@@ -107,12 +107,45 @@ class _FakeHost {
         return {
           'type': 'flow_rehearse_resp',
           'success': true,
-          'status': 'succeeded',
+          'rehearsal_id': 'reh_1',
+          // 走到关卡：先派了一个活，然后停在那儿等人选。
+          'status': 'running',
           'tasks_used': 1,
           'steps': [
             {'key': 'impl', 'attempt': 1}
           ],
-          'tree': [_node('impl')],
+          'question': {
+            'kind': 'gate',
+            'key': 'ok',
+            'ask': '可以发吗',
+            'options': ['通过', '返工'],
+          },
+          'done': false,
+          'tree': [
+            _node('impl'),
+            {'key': 'ok', 'id': 'ok', 'kind': 'gate'},
+          ],
+        };
+      case 'flow_rehearse_answer_req':
+        return {
+          'type': 'flow_rehearse_resp',
+          'success': true,
+          'rehearsal_id': 'reh_1',
+          'status': 'succeeded',
+          'tasks_used': 2,
+          'steps': [
+            {'key': 'impl', 'attempt': 1},
+            {'key': 'ship', 'attempt': 1},
+          ],
+          'done': true,
+          'tree': [_node('impl'), _node('ship')],
+        };
+      case 'flow_rehearse_drop_req':
+        return {
+          'type': 'flow_rehearse_resp',
+          'success': true,
+          'rehearsal_id': 'reh_1',
+          'done': true,
         };
       case 'flow_save_req':
         return {
@@ -208,18 +241,35 @@ void main() {
       peerId: 'p1',
       name: 'dev',
       client: host.client,
-      stepInterval: const Duration(milliseconds: 50),
+      // 每步 300ms：`_settle` 的 180ms 还在点亮中，能先看到"演练中"。
+      stepInterval: const Duration(milliseconds: 300),
     )));
     await _settle(tester);
     await tester.tap(find.byTooltip('演练'));
     await _settle(tester);
     expect(find.text('演练中：不调用任何 Agent'), findsOneWidget);
-    // 走完后节点是完成。
-    await tester.pump(const Duration(milliseconds: 200));
+    // 节点依次点亮，点完停在关卡上摆出选项。
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('走到这儿要你选一下'), findsOneWidget);
+    expect(find.text('可以发吗'), findsOneWidget);
     expect(find.text('完成'), findsOneWidget);
+
+    // 选一个选项：接着往下走，走完不再问。
+    await tester.tap(find.byKey(const ValueKey('rehearse-通过')));
+    await _settle(tester);
+    await tester.pump(const Duration(milliseconds: 700));
+    expect(find.text('走到这儿要你选一下'), findsNothing);
+    final answered = host.sent
+        .firstWhere((f) => f['type'] == 'flow_rehearse_answer_req');
+    expect(answered['rehearsal_id'], 'reh_1');
+    expect(answered['choice'], '通过');
+
     await tester.tap(find.text('结束演练'));
     await tester.pump();
     expect(find.text('演练中：不调用任何 Agent'), findsNothing);
+    // 结束演练要把主机上那份丢掉。
+    expect(
+        host.sent.any((f) => f['type'] == 'flow_rehearse_drop_req'), isTrue);
     await tester.pumpWidget(const SizedBox());
     await host.bus.close();
   });

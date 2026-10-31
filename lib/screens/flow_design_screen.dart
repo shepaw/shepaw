@@ -82,6 +82,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   FlowRehearsal? _rehearsal;
   int _progress = 0;
   Timer? _timer;
+  bool _answering = false;
 
   // 点选 + 说话（C.3）
   final Set<String> _selected = <String>{};
@@ -347,6 +348,11 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
           : l10n.flow_rehearseFailed(got.error!));
       return;
     }
+    _startAnimation(rehearsal);
+  }
+
+  /// 卡片依次点亮，走完（或到卡住的地方）就把问题摆出来。
+  void _startAnimation(FlowRehearsal rehearsal) {
     _timer?.cancel();
     setState(() {
       _rehearsal = rehearsal;
@@ -355,13 +361,45 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     _timer = Timer.periodic(widget.stepInterval, (timer) {
       if (!mounted) return timer.cancel();
       setState(() => _progress++);
-      if (_progress > rehearsal.steps.length) timer.cancel();
+      if (_progress >= rehearsal.steps.length) timer.cancel();
     });
+  }
+
+  /// 演练卡在关卡 / 判断时作答，接着往下走（C.5）。
+  Future<void> _answerRehearsal(String choice) async {
+    final l10n = AppLocalizations.of(context);
+    final current = _rehearsal;
+    final id = current?.rehearsalId ?? '';
+    if (id.isEmpty) return;
+    setState(() => _answering = true);
+    final got = await _client.rehearseAnswer(widget.peerId, id, choice);
+    if (!mounted) return;
+    setState(() => _answering = false);
+    final next = got.rehearsal;
+    if (next == null) {
+      _snack(got.error == null
+          ? l10n.flow_hostNoReply
+          : l10n.flow_rehearseFailed(got.error!));
+      _stopRehearsal();
+      return;
+    }
+    // 接着点亮新派出去的那些活。
+    _startAnimation(next);
   }
 
   void _stopRehearsal() {
     _timer?.cancel();
+    final id = _rehearsal?.rehearsalId ?? '';
     setState(() => _rehearsal = null);
+    if (id.isNotEmpty) unawaited(_client.rehearseDrop(widget.peerId, id));
+  }
+
+  /// 卡住的问题。动画还在点亮时不急着把选项摆出来。
+  FlowQuestion? get _waiting {
+    final rehearsal = _rehearsal;
+    if (rehearsal == null) return null;
+    if (_progress < rehearsal.steps.length) return null;
+    return rehearsal.question;
   }
 
   /// 演练时画演练返回的树（循环按真实跑的轮数展开），按派活顺序点亮。
@@ -374,7 +412,8 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     final running = doneCount > 0 && doneCount <= steps.length
         ? steps[doneCount - 1]
         : null;
-    final finished = _progress > steps.length;
+    // 点亮完这一段（或这一段本来没有活要派）就算走到了。
+    final finished = _progress >= steps.length;
     return [
       for (final node in rehearsal.tree)
         node.withProgress(
@@ -444,13 +483,47 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
         if (_rehearsal != null)
           Card(
             color: theme.colorScheme.secondaryContainer,
-            child: ListTile(
-              leading: const Icon(Icons.play_circle_outline),
-              title: Text(l10n.flow_rehearsing),
-              trailing: TextButton(
-                onPressed: _stopRehearsal,
-                child: Text(l10n.flow_rehearseStop),
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.play_circle_outline),
+                  title: Text(_waiting == null
+                      ? l10n.flow_rehearsing
+                      : l10n.flow_rehearseChoose),
+                  trailing: TextButton(
+                    onPressed: _stopRehearsal,
+                    child: Text(l10n.flow_rehearseStop),
+                  ),
+                ),
+                // 卡住的地方：选项直接摆出来，选一个就接着走。
+                if (_waiting case final question?) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                    child: Text(
+                      question.prompt,
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        for (final option in question.options)
+                          FilledButton.tonal(
+                            key: ValueKey('rehearse-$option'),
+                            onPressed: _answering
+                                ? null
+                                : () => _answerRehearsal(option),
+                            child: Text(option),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         for (final d in _diagnostics)

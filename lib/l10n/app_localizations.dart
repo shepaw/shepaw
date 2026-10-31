@@ -16246,6 +16246,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'长按节点可选中（可多选）'**
   String get flow_talkSelectHint;
+
+  /// No description provided for @flow_rehearseChoose.
+  ///
+  /// In zh, this message translates to:
+  /// **'走到这儿要你选一下'**
+  String get flow_rehearseChoose;
 }
 
 class _AppLocalizationsDelegate

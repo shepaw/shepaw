@@ -188,6 +188,28 @@ class HubFlow {
         'yaml': yaml,
       };
 
+  static Map<String, dynamic> rehearseAnswerFrame(
+    String rehearsalId,
+    String choice, {
+    String? requestId,
+  }) =>
+      {
+        'type': 'flow_rehearse_answer_req',
+        if (requestId != null) 'request_id': requestId,
+        'rehearsal_id': rehearsalId,
+        'choice': choice,
+      };
+
+  static Map<String, dynamic> rehearseDropFrame(
+    String rehearsalId, {
+    String? requestId,
+  }) =>
+      {
+        'type': 'flow_rehearse_drop_req',
+        if (requestId != null) 'request_id': requestId,
+        'rehearsal_id': rehearsalId,
+      };
+
   /// 差异（C.5）。两边都不给 YAML 时，是 `name` 的最新版对上一版。
   Future<({FlowDiff? diff, String? error})> diff(
     String peerId, {
@@ -256,7 +278,8 @@ class HubFlow {
     return response == null ? null : FlowSchema.fromResponse(response);
   }
 
-  /// 演练（C.5）。`error` 是演练走不通的原因（有关卡、校验不过…）。
+  /// 演练（C.5）。`error` 是演练走不通的原因（校验不过、有 plan / call…）。
+  /// 走到的地方若卡在关卡或判断上，`rehearsal.question` 有值，作答后继续。
   Future<({FlowRehearsal? rehearsal, String? error})> rehearse(
     String peerId,
     String yaml,
@@ -269,6 +292,32 @@ class HubFlow {
     return (
       rehearsal: response == null ? null : FlowRehearsal.fromResponse(response),
       error: response?['error'] as String?,
+    );
+  }
+
+  /// 演练卡住时作答（C.5），接着往下走。返回的同样是这一段的新样子。
+  Future<({FlowRehearsal? rehearsal, String? error})> rehearseAnswer(
+    String peerId,
+    String rehearsalId,
+    String choice,
+  ) async {
+    final response = await _request(
+      peerId,
+      rehearseAnswerFrame(rehearsalId, choice),
+      responseType: 'flow_rehearse_resp',
+    );
+    return (
+      rehearsal: response == null ? null : FlowRehearsal.fromResponse(response),
+      error: response?['error'] as String?,
+    );
+  }
+
+  /// 结束演练：主机上那份是内存里的，丢掉即可。
+  Future<void> rehearseDrop(String peerId, String rehearsalId) async {
+    await _request(
+      peerId,
+      rehearseDropFrame(rehearsalId),
+      responseType: 'flow_rehearse_resp',
     );
   }
 

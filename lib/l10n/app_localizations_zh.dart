@@ -8959,4 +8959,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get flow_talkSelectHint => '长按节点可选中（可多选）';
+
+  @override
+  String get flow_rehearseChoose => '走到这儿要你选一下';
 }
