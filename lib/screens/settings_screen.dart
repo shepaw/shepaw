@@ -5,7 +5,6 @@ import 'settings/settings_model.dart';
 import 'settings/settings_sections.dart';
 import '../l10n/app_localizations.dart';
 import 'location_settings_screen.dart';
-import 'she_memory_screen.dart';
 import '../services/update_service.dart';
 
 /// Settings screen
@@ -62,7 +61,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         // 在命名路由之间跳转，只有根 Navigator 认得这些名字。
         onHostSetup: () =>
             Navigator.of(context, rootNavigator: true).pushNamed('/host-setup'),
-        onSheMemory: () => _openAndRefresh(const SheMemoryScreen()),
         onAbout: () => SettingsSections.showAbout(context, l10n),
       );
 

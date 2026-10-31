@@ -1350,6 +1350,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get agentDetail_editTooltip => '编辑';
 
   @override
+  String get agentDetail_storageBagSub => '产物、附件、记忆与已挂载的工作区';
+
+  @override
+  String get agentDetail_viewWorkspace => '查看工作区';
+
+  @override
   String get agentDetail_startConversation => '发起对话';
 
   @override
@@ -6944,6 +6950,11 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get agentBag_runtimeHint => '产物、附件与会话';
+
+  @override
+  String agentBag_title(String name) {
+    return '$name · 储物袋';
+  }
 
   @override
   String get agentBag_cognitionHint => 'Soul 与结构化记忆';

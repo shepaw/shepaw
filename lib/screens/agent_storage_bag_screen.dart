@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../services/she_service.dart';
+import 'she_memory_screen.dart';
+
 import '../l10n/app_localizations.dart';
 import '../models/remote_agent.dart';
 import '../peer/services/peer_attachment_placement.dart';
@@ -178,6 +181,9 @@ class _AgentStorageBagScreenState extends State<AgentStorageBagScreen> {
     // 从当前 agent 进来，左边会话列表或系统返回已经能离开。
     // 不再加一条带标题的导航栏。
     return Scaffold(
+      appBar: AppBar(
+        title: Text(l10n.agentBag_title(widget.displayName)),
+      ),
       body: SafeArea(
         child: Column(
           children: [
@@ -222,6 +228,17 @@ class _AgentStorageBagScreenState extends State<AgentStorageBagScreen> {
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
+          if (owner == SheService.sheId)
+            _spaceRow(
+              icon: Icons.menu_book_outlined,
+              title: l10n.settings_sheMemory,
+              subtitle: l10n.settings_sheMemorySub,
+              onTap: () => Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(
+                  builder: (_) => const SheMemoryScreen(),
+                ),
+              ),
+            ),
           _spaceRow(
             icon: Icons.bolt_outlined,
             title: l10n.storage_spaceRuntime,

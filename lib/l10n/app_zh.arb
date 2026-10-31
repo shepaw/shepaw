@@ -701,6 +701,8 @@
   "agentDetail_title": "Agent 详情",
   "agentDetail_editTitle": "编辑 Agent",
   "agentDetail_editTooltip": "编辑",
+  "agentDetail_storageBagSub": "产物、附件、记忆与已挂载的工作区",
+  "agentDetail_viewWorkspace": "查看工作区",
   "agentDetail_startConversation": "发起对话",
   "agentDetail_deleteAgent": "删除 Agent",
   "agentDetail_confirmDelete": "确认删除",
@@ -4071,6 +4073,14 @@
   "storage_spaceTools": "工具",
   "storage_spaceToolsHint": "App 与各智能体的 MCP、规则和技能",
   "agentBag_runtimeHint": "产物、附件与会话",
+  "agentBag_title": "{name} · 储物袋",
+  "@agentBag_title": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "agentBag_cognitionHint": "Soul 与结构化记忆",
   "agentBag_toolsHint": "这个智能体自己的 MCP、规则和技能",
   "agentBag_workspaceEmpty": "尚未挂载",

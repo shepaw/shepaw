@@ -576,6 +576,8 @@
   "agentDetail_title": "Agent Details",
   "agentDetail_editTitle": "Edit Agent",
   "agentDetail_editTooltip": "Edit",
+  "agentDetail_storageBagSub": "Artifacts, attachments, memory and mounted workspaces",
+  "agentDetail_viewWorkspace": "View workspace",
   "agentDetail_startConversation": "Start Conversation",
   "agentDetail_deleteAgent": "Delete Agent",
   "agentDetail_confirmDelete": "Confirm Delete",
@@ -3617,6 +3619,14 @@
   "storage_spaceTools": "Tools",
   "storage_spaceToolsHint": "MCP, rules, and skills for the app and each agent",
   "agentBag_runtimeHint": "Artifacts, attachments, and sessions",
+  "agentBag_title": "{name}'s Pouch",
+  "@agentBag_title": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "agentBag_cognitionHint": "Soul and structured memory",
   "agentBag_toolsHint": "This agent's own MCP, rules, and skills",
   "agentBag_workspaceEmpty": "None mounted",

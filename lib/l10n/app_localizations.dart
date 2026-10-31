@@ -2606,6 +2606,18 @@ abstract class AppLocalizations {
   /// **'编辑'**
   String get agentDetail_editTooltip;
 
+  /// No description provided for @agentDetail_storageBagSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'产物、附件、记忆与已挂载的工作区'**
+  String get agentDetail_storageBagSub;
+
+  /// No description provided for @agentDetail_viewWorkspace.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看工作区'**
+  String get agentDetail_viewWorkspace;
+
   /// No description provided for @agentDetail_startConversation.
   ///
   /// In zh, this message translates to:
@@ -12688,6 +12700,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'产物、附件与会话'**
   String get agentBag_runtimeHint;
+
+  /// No description provided for @agentBag_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'{name} · 储物袋'**
+  String agentBag_title(String name);
 
   /// No description provided for @agentBag_cognitionHint.
   ///

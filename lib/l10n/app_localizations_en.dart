@@ -1402,6 +1402,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get agentDetail_editTooltip => 'Edit';
 
   @override
+  String get agentDetail_storageBagSub =>
+      'Artifacts, attachments, memory and mounted workspaces';
+
+  @override
+  String get agentDetail_viewWorkspace => 'View workspace';
+
+  @override
   String get agentDetail_startConversation => 'Start Conversation';
 
   @override
@@ -7218,6 +7225,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get agentBag_runtimeHint => 'Artifacts, attachments, and sessions';
+
+  @override
+  String agentBag_title(String name) {
+    return '$name\'s Pouch';
+  }
 
   @override
   String get agentBag_cognitionHint => 'Soul and structured memory';

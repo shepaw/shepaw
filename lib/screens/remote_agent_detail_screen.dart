@@ -29,6 +29,7 @@ import '../models/agent_scenario_models.dart';
 import '../models/llm_provider_config.dart';
 import '../services/skill_registry.dart';
 import '../service_locator.dart' show getIt;
+import '../storage/agent_storage_bag_opener.dart';
 import '../services/chat_navigation_service.dart';
 import '../services/chat_service.dart';
 import '../services/local_user_identity.dart';
@@ -39,8 +40,6 @@ import '../widgets/agent_model_config_card.dart';
 import '../utils/layout_utils.dart';
 import '../models/prompt_stack_config.dart';
 import '../storage/runtime_share_service.dart';
-import 'agent_memory_detail_screen.dart';
-import 'agent_runtime_context_screen.dart';
 import 'agent_soul_edit_screen.dart';
 import 'agent_resume_edit_screen.dart';
 import 'storage_directory_opener.dart';
@@ -897,14 +896,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
 
   Future<void> _openSoulEditor() => _openSoulDetail(requireEditable: true);
 
-  Future<void> _openMemoryDetail() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => AgentMemoryDetailScreen(agent: _agent),
-      ),
-    );
-  }
-
   /// 打开 CLI 命令配置页。查看模式也可直接改，保存后立刻落库。
   Future<void> _openCliCommandsEditor() async {
     final current = _agent.enabledCliCommands;
@@ -1687,14 +1678,6 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   Widget _buildDetailBody() {
     final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
-    // DEBUG: Check if this is She
-    if (_agent.name == 'She' || _agent.metadata['is_she'] == true) {
-      debugPrint('DEBUG: She Agent found! '
-          'isPinned=${_agent.isPinned}, '
-          'name=${_agent.name}, '
-          'isShe=${_agent.isShe}, '
-          'metadata[is_she]=${_agent.metadata['is_she']}');
-    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1704,9 +1687,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
         const SizedBox(height: 16),
         _buildSoulEntry(),
         const SizedBox(height: 16),
-        _buildMemoryEntry(),
-        const SizedBox(height: 16),
-        _buildRuntimeContextEntry(),
+        _buildStorageBagEntry(),
         const SizedBox(height: 16),
         _buildWorkspaceViewEntry(),
         if (_isLocalMode) ...[
@@ -2183,6 +2164,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   /// Hub 可管理实例支持设置主工作区、增删附加工作区。
   Widget _buildWorkspaceViewEntry() {
     final colorScheme = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context);
     final zh = Localizations.localeOf(context).languageCode.startsWith('zh');
     final canEditWorkspace = _agent.isPeerAgent &&
         _agent.peerAgentManageable &&
@@ -2202,7 +2184,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
             ),
             child: ListTile(
               leading: Icon(Icons.folder_open_outlined, color: colorScheme.primary),
-              title: Text(zh ? '查看工作区' : 'View workspace'),
+              title: Text(l10n.agentDetail_viewWorkspace),
               subtitle: Text(
                 zh
                     ? '在储物袋中打开该 Agent 挂载的工作目录'
@@ -2212,7 +2194,11 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
                 style: TextStyle(color: colorScheme.onSurfaceVariant),
               ),
               trailing: const Icon(Icons.chevron_right),
-              onTap: () => _openAgentWorkspace(),
+              onTap: () => openAgentStorageBag(
+                context,
+                ownerId: _agent.id,
+                displayName: _agent.name,
+              ),
             ),
           );
         }
@@ -2673,10 +2659,12 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
     );
   }
 
-  /// 记忆：独立入口，点进查看 / 管理。
-  Widget _buildMemoryEntry() {
+  /// 储物袋：这个 agent 自己的空间（运行时产物、认知记忆、工具、工作区）。
+  ///
+  /// 记忆和产物原来是两条独立入口，其实都在同一个 agent scope 里，合成一条。
+  Widget _buildStorageBagEntry() {
     final colorScheme = Theme.of(context).colorScheme;
-    final zh = Localizations.localeOf(context).languageCode.startsWith('zh');
+    final l10n = AppLocalizations.of(context);
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(
@@ -2685,52 +2673,19 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
       ),
       child: ListTile(
         leading: Icon(Icons.auto_stories_outlined, color: colorScheme.primary),
-        title: Text(zh ? '记忆' : 'Memory'),
+        title: Text(l10n.chat_storageSpace),
         subtitle: Text(
-          zh ? '查看与管理该 Agent 的结构化记忆' : 'Browse and manage structured memories',
+          l10n.agentDetail_storageBagSub,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(color: colorScheme.onSurfaceVariant),
         ),
         trailing: const Icon(Icons.chevron_right),
-        onTap: () => unawaited(_openMemoryDetail()),
-      ),
-    );
-  }
-
-  /// 产物 / 附件（runtime 文件）。
-  Widget _buildRuntimeContextEntry() {
-    final colorScheme = Theme.of(context).colorScheme;
-    final zh = Localizations.localeOf(context).languageCode.startsWith('zh');
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: colorScheme.outlineVariant),
-      ),
-      child: ListTile(
-        leading: Icon(Icons.inventory_2_outlined, color: colorScheme.primary),
-        title: Text(zh ? '产物 · 附件' : 'Artifacts · Attachments'),
-        subtitle: Text(
-          zh
-              ? '查看该 Agent 的 runtime 产物与附件'
-              : 'Browse runtime artifacts and attachments',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: colorScheme.onSurfaceVariant),
+        onTap: () => openAgentStorageBag(
+          context,
+          ownerId: _agent.id,
+          displayName: _agent.name,
         ),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => AgentRuntimeContextScreen(
-                ownerId: _agent.id,
-                displayName: _agent.name,
-                agent: _agent,
-              ),
-            ),
-          );
-        },
       ),
     );
   }

@@ -7,7 +7,6 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../l10n/app_localizations.dart';
-import '../she_memory_screen.dart';
 import '../location_settings_screen.dart';
 import 'settings_model.dart';
 import '../../providers/locale_provider.dart';
@@ -82,7 +81,6 @@ class SettingsEntries {
     required this.onRenamePouch,
     required this.onSwitchPouch,
     required this.onHostSetup,
-    required this.onSheMemory,
     required this.onAbout,
   });
 
@@ -108,7 +106,6 @@ class SettingsEntries {
   final void Function(BuildContext)? onSwitchPouch;
 
   final VoidCallback? onHostSetup;
-  final VoidCallback? onSheMemory;
   final VoidCallback? onAbout;
 }
 
@@ -162,17 +159,6 @@ class SettingsSections {
           ),
           trailing: const Icon(Icons.chevron_right),
           onTap: e.onBatteryOptimization,
-        ),
-      ],
-      // 惜宝长期记忆归到惜宝的储物袋后（P3）这一项会移走。
-      if (e.onSheMemory != null) ...[
-        const Divider(),
-        ListTile(
-          leading: const Icon(Icons.menu_book_outlined),
-          title: Text(l10n.settings_sheMemory),
-          subtitle: Text(l10n.settings_sheMemorySub),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: e.onSheMemory,
         ),
       ],
     ];
@@ -512,10 +498,6 @@ class _SettingsCategoryPaneState extends State<SettingsCategoryPane> {
         // 路由名；而主机流程内部靠 pushReplacementNamed 在命名路由之间跳转。
         onHostSetup: () =>
             Navigator.of(context, rootNavigator: true).pushNamed('/host-setup'),
-        onSheMemory: () => Navigator.push(
-          context,
-          MaterialPageRoute<void>(builder: (_) => const SheMemoryScreen()),
-        ),
         onAbout: () => SettingsSections.showAbout(context, l10n),
       );
 }
