@@ -6,7 +6,7 @@ import 'package:shepaw/l10n/app_localizations.dart';
 import 'package:shepaw/peer/models/folded_sessions.dart';
 import 'package:shepaw/peer/services/hub_folded_sessions.dart';
 import 'package:shepaw/peer/services/peer_connection_manager.dart';
-import 'package:shepaw/screens/session_folder_screen.dart';
+import 'package:shepaw/widgets/chat/folded_session_items.dart';
 
 void main() {
   groupViewTests();
@@ -62,7 +62,7 @@ void main() {
     expect(FoldedPage.fromResponse({'cursor': ''})?.cursor, isNull);
   });
 
-  testWidgets('the folder screen pages through and forks into a private chat',
+  testWidgets('the expanded folder pages through and forks into a private chat',
       (tester) async {
     final bus = StreamController<PeerControlEvent>.broadcast();
     final sent = <Map<String, dynamic>>[];
@@ -103,12 +103,16 @@ void main() {
       locale: const Locale('zh'),
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
-      home: SessionFolderScreen(
-        peerId: 'p1',
-        agentId: 'a1',
-        folder: SessionFolderKind.flow,
-        client: client,
-        onForked: (id) => forked = id,
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: SessionFolderItems(
+            peerId: 'p1',
+            agentId: 'a1',
+            folder: SessionFolderKind.flow,
+            client: client,
+            onForked: (id) => forked = id,
+          ),
+        ),
       ),
     ));
     for (var i = 0; i < 5; i++) {

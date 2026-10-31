@@ -16343,6 +16343,12 @@ abstract class AppLocalizations {
   /// **'没有找到匹配的会话'**
   String get sessionSearchEmpty;
 
+  /// No description provided for @sessionSearchFoldedSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'群聊 / 工作流 / 引擎会话'**
+  String get sessionSearchFoldedSection;
+
   /// No description provided for @flow_validate.
   ///
   /// In zh, this message translates to:

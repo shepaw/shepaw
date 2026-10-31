@@ -8,10 +8,8 @@ import '../../peer/services/peer_agent_client_service.dart';
 import '../../screens/flow_run_screen.dart';
 import '../../screens/group_view_screen.dart';
 import '../../screens/session_history_screen.dart';
-import '../../l10n/app_localizations.dart';
-import '../../screens/session_folder_screen.dart';
-import '../../screens/session_search_screen.dart';
 import '../session_folders.dart';
+import 'folded_session_items.dart';
 
 /// 私聊会话列表顶部的折叠组（折叠方案 §2.1）：群聊、其他 Agent 发起、工作流、
 /// 引擎客户端、引擎终端，只在不为空时出现。
@@ -51,6 +49,9 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
   late final HubFoldedSessions _client = widget.client ?? HubFoldedSessions();
   List<SessionFolderSummary> _folders = const [];
 
+  /// 当前展开的那一组；为空表示都收着。
+  SessionFolderKind? _expanded;
+
   @override
   void initState() {
     super.initState();
@@ -86,20 +87,11 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
     await _load();
   }
 
-  void _open(SessionFolderKind kind) {
-    Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (context) => SessionFolderScreen(
-        peerId: widget.peerId,
-        agentId: widget.remoteAgentId,
-        folder: kind,
-        client: _client,
-        onOpen: (session) => _openSession(context, session),
-        onForked: (id) => unawaited(_afterFork(id)),
-      ),
-    ));
+  void _toggle(SessionFolderKind kind) {
+    setState(() => _expanded = _expanded == kind ? null : kind);
   }
 
-  /// 工作流节点跳到运行视图，群聊跳到群聊视角；其余来源的只读记录还没有页面，先提示可以分叉。
+  /// 展开后点其中一项 → 打开它的只读记录。
   void _openSession(BuildContext context, FoldedSession session) {
     if (session.isFlow && session.runId.isNotEmpty) {
       Navigator.of(context).push(MaterialPageRoute<void>(
@@ -144,25 +136,27 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
   @override
   Widget build(BuildContext context) {
     if (_folders.isEmpty) return const SizedBox.shrink();
-    final l10n = AppLocalizations.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // 搜全部会话（私聊 + 五个折叠组）：放在折叠组上面，一处进去都能找到。
-        ListTile(
-          key: const ValueKey('session-search'),
-          leading: const Icon(Icons.search),
-          title: Text(l10n.sessionSearchTitle),
-          onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-            builder: (_) => SessionSearchScreen(
+        // 一次只展开一组：抽屉就那么宽，几组同时铺开会把私聊挤出可视区。
+        for (final folder in _folders) ...[
+          SessionFolderTile(
+            summary: folder,
+            expanded: _expanded == folder.kind,
+            onTap: () => _toggle(folder.kind),
+          ),
+          if (_expanded == folder.kind)
+            SessionFolderItems(
+              key: ValueKey<SessionFolderKind>(folder.kind),
               peerId: widget.peerId,
               agentId: widget.remoteAgentId,
+              folder: folder.kind,
               client: _client,
+              onOpen: (session) => _openSession(context, session),
+              onForked: (id) => unawaited(_afterFork(id)),
             ),
-          )),
-        ),
-        for (final folder in _folders)
-          SessionFolderTile(summary: folder, onTap: () => _open(folder.kind)),
+        ],
         const Divider(height: 1),
       ],
     );

@@ -7,11 +7,13 @@ import 'package:shepaw/models/channel.dart';
 import 'package:shepaw/widgets/chat/group_session_list_panel.dart';
 import 'package:shepaw/widgets/chat/session_list_panel.dart';
 
-/// 会话列表固定行高（`ListView.builder` + `prototypeItem`）的前提是**每行渲染
-/// 高度一致**：Sliver 拿原型高度当统一 extent，任何一行比原型高都会被压在同一个
-/// extent 里，文字叠到下一行上。
+/// 会话列表固定行高（`prototypeItem`）的前提是**每行渲染高度一致**：Sliver 拿
+/// 原型高度当统一 extent，任何一行比原型高都会被压在同一个 extent 里，文字叠到
+/// 下一行上。
 ///
 /// 这些用例锁住前提：列表走原型量高度这条路，且所有行等高、行内文字不越出行框。
+/// DM 列表是 [CustomScrollView]（折叠组做第一个 sliver，跟着一起滚），群会话列表
+/// 仍是 [ListView]，所以下面一律按「滚动容器」找，不写死某一个类型。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -69,9 +71,15 @@ void main() {
     return paragraphs;
   }
 
+  /// 会话列表的滚动容器。DM 为了把折叠组一起滚起来是 [CustomScrollView]，
+  /// 群会话列表还是 [ListView]。
+  Finder scrollView() => find.byWidgetPredicate(
+        (widget) => widget is CustomScrollView || widget is ListView,
+      );
+
   /// 列表内的会话行（不含列表外的「新建会话」行）。
   Finder rowsInList() => find.descendant(
-        of: find.byType(ListView),
+        of: scrollView(),
         matching: find.byType(ListTile),
       );
 
@@ -100,8 +108,16 @@ void main() {
     return (heights.single, rows);
   }
 
-  /// 列表本身必须走「原型量高度」这条固定 extent 路径。
+  /// 会话行走「原型量高度」这条固定 extent 路径（DM 是 sliver，群列表是
+  /// [ListView]）。
   void expectPrototypeExtentList(WidgetTester tester) {
+    if (find.byType(CustomScrollView).evaluate().isNotEmpty) {
+      final sliver = tester.widget<SliverPrototypeExtentList>(
+        find.byType(SliverPrototypeExtentList),
+      );
+      expect(sliver.prototypeItem, isNotNull);
+      return;
+    }
     final list = tester.widget<ListView>(find.byType(ListView));
     expect(list.prototypeItem, isNotNull);
     expect(list.itemExtent, isNull);
@@ -188,7 +204,7 @@ void main() {
     expect(find.text('新建会话'), findsOneWidget);
     expect(
       tester.getRect(find.text('新建会话')).bottom,
-      lessThanOrEqualTo(tester.getRect(find.byType(ListView)).top + 0.01),
+      lessThanOrEqualTo(tester.getRect(scrollView()).top + 0.01),
     );
   });
 
@@ -308,7 +324,7 @@ void main() {
     await tester.pump();
     expect(offset(), 0);
 
-    await tester.drag(find.byType(ListView), const Offset(0, -600));
+    await tester.drag(scrollView(), const Offset(0, -600));
     await tester.pumpAndSettle();
     final scrolled = offset();
     expect(scrolled, greaterThan(0));

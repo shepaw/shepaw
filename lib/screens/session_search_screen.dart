@@ -14,6 +14,59 @@ import 'session_history_screen.dart';
 ///
 /// 主机是权威，搜索在主机上做；App 只发关键词、画结果。折叠组里的会话只读，
 /// 点开是它那份只读记录（工作流节点进运行视图，群聊进群聊视角）。
+/// 折叠方案 §2.3 里一条命中的来源角标文案。`private` 之外都按折叠组的名字显示。
+String sessionSearchHitBadge(AppLocalizations l10n, SessionSearchHit hit) {
+  final kind = SessionFolderKind.parse(hit.origin.kind);
+  if (kind == null) return hit.source;
+  return sessionFolderLabel(l10n, kind);
+}
+
+/// 打开一条命中：私聊本来就在平铺列表里（调用方自己切），这里只管只读记录 ——
+/// 工作流节点进运行视图、群聊进群聊视角、其余走主机的会话历史。
+///
+/// 抽屉搜索和独立搜索页共用这一段，免得两处各写一份跳转。
+void openSessionSearchHit(
+  BuildContext context, {
+  required String peerId,
+  required SessionSearchHit hit,
+  HubFoldedSessions? client,
+}) {
+  final origin = hit.origin;
+  if (origin.kind == 'flow' && origin.runId.isNotEmpty) {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => FlowRunScreen(
+        peerId: peerId,
+        runId: origin.runId,
+        title: hit.title,
+      ),
+    ));
+    return;
+  }
+  if (origin.kind == 'group' && origin.groupId.isNotEmpty) {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => GroupViewScreen(
+        peerId: peerId,
+        agentId: hit.agentId,
+        groupId: origin.groupId,
+        groupSessionId: origin.groupSessionId,
+        title: hit.title,
+        foldedSessionId: hit.sessionId,
+        client: client,
+      ),
+    ));
+    return;
+  }
+  Navigator.of(context).push(MaterialPageRoute<void>(
+    builder: (_) => SessionHistoryScreen.forFolderSession(
+      peerId: peerId,
+      agentId: hit.agentId,
+      sessionId: hit.sessionId,
+      title: hit.title.isEmpty ? hit.sessionId : hit.title,
+      client: client,
+    ),
+  ));
+}
+
 class SessionSearchScreen extends StatefulWidget {
   const SessionSearchScreen({
     super.key,
@@ -77,51 +130,6 @@ class _SessionSearchScreenState extends State<SessionSearchScreen> {
     });
   }
 
-  void _open(SessionSearchHit hit) {
-    final origin = hit.origin;
-    if (!hit.readOnly) return;
-    if (origin.kind == 'flow' && origin.runId.isNotEmpty) {
-      Navigator.of(context).push(MaterialPageRoute<void>(
-        builder: (_) => FlowRunScreen(
-          peerId: widget.peerId,
-          runId: origin.runId,
-          title: hit.title,
-        ),
-      ));
-      return;
-    }
-    if (origin.kind == 'group' && origin.groupId.isNotEmpty) {
-      Navigator.of(context).push(MaterialPageRoute<void>(
-        builder: (_) => GroupViewScreen(
-          peerId: widget.peerId,
-          agentId: hit.agentId,
-          groupId: origin.groupId,
-          groupSessionId: origin.groupSessionId,
-          title: hit.title,
-          foldedSessionId: hit.sessionId,
-          client: _client,
-        ),
-      ));
-      return;
-    }
-    Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => SessionHistoryScreen.forFolderSession(
-        peerId: widget.peerId,
-        agentId: hit.agentId,
-        sessionId: hit.sessionId,
-        title: hit.title,
-        client: _client,
-      ),
-    ));
-  }
-
-  /// 来源角标的文案。`private` 之外都按折叠组的名字显示。
-  String _badge(AppLocalizations l10n, SessionSearchHit hit) {
-    final kind = SessionFolderKind.parse(hit.origin.kind);
-    if (kind == null) return hit.source;
-    return sessionFolderLabel(l10n, kind);
-  }
-
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -169,10 +177,17 @@ class _SessionSearchScreenState extends State<SessionSearchScreen> {
             title: Text(hit.title.isEmpty ? hit.sessionId : hit.title),
             subtitle: hit.snippet == null ? null : Text(hit.snippet!),
             trailing: Chip(
-              label: Text(_badge(l10n, hit)),
+              label: Text(sessionSearchHitBadge(l10n, hit)),
               visualDensity: VisualDensity.compact,
             ),
-            onTap: hit.readOnly ? () => _open(hit) : null,
+            onTap: hit.readOnly
+                ? () => openSessionSearchHit(
+                      context,
+                      peerId: widget.peerId,
+                      hit: hit,
+                      client: _client,
+                    )
+                : null,
           ),
       ],
     );

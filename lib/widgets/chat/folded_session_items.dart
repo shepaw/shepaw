@@ -2,15 +2,18 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../l10n/app_localizations.dart';
-import '../peer/models/folded_sessions.dart';
-import '../peer/services/hub_folded_sessions.dart';
-import '../widgets/session_folders.dart';
-import 'flow_library_screen.dart';
+import '../../l10n/app_localizations.dart';
+import '../../peer/models/folded_sessions.dart';
+import '../../peer/services/hub_folded_sessions.dart';
+import '../../screens/flow_library_screen.dart';
+import '../session_folders.dart';
 
-/// 折叠组明细（折叠方案 §2.2）：只读，可以分叉到私聊。分页按主机给的游标走。
-class SessionFolderScreen extends StatefulWidget {
-  const SessionFolderScreen({
+/// 折叠组展开后的会话行（折叠方案 §2.2）：就在会话列表里展开，不开新页面。
+///
+/// 只读、可以分叉到私聊；分页按主机给的游标走。这里画的是一段普通的行，不是
+/// [ListView] —— 外层（会话列表）已经在滚，嵌套可滚动会抢手势。
+class SessionFolderItems extends StatefulWidget {
+  const SessionFolderItems({
     super.key,
     required this.peerId,
     required this.agentId,
@@ -22,22 +25,24 @@ class SessionFolderScreen extends StatefulWidget {
   });
 
   final String peerId;
+
+  /// 主机上的 Agent id（不是本机的 RemoteAgent.id）。
   final String agentId;
   final SessionFolderKind folder;
   final String parentSession;
   final HubFoldedSessions? client;
 
-  /// 点一项：打开它的只读记录（工作流节点走运行视图，群聊走"在群里打开"）。
+  /// 点一项：打开它的只读记录（工作流节点走运行视图，群聊走群聊视角）。
   final void Function(FoldedSession session)? onOpen;
 
   /// 分叉成功后，新私聊会话的 id；调用方在这里刷新平铺名单。
   final void Function(String sessionId)? onForked;
 
   @override
-  State<SessionFolderScreen> createState() => _SessionFolderScreenState();
+  State<SessionFolderItems> createState() => _SessionFolderItemsState();
 }
 
-class _SessionFolderScreenState extends State<SessionFolderScreen> {
+class _SessionFolderItemsState extends State<SessionFolderItems> {
   late final HubFoldedSessions _client = widget.client ?? HubFoldedSessions();
   final List<FoldedSession> _items = [];
   String? _cursor;
@@ -105,9 +110,22 @@ class _SessionFolderScreenState extends State<SessionFolderScreen> {
     return parts.join(' · ');
   }
 
-  /// 工作流按运行分组，其余按时间平铺（折叠方案 §2.2）。
-  List<Widget> _rows(AppLocalizations l10n) {
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final rows = <Widget>[];
+    // 工作流组顺手带上流程库的入口：设计、演练、运行都从这里进。原来它在组
+    // 明细页的标题栏，现在是展开区里的第一行。
+    if (widget.folder == SessionFolderKind.flow) {
+      rows.add(ListTile(
+        leading: const Icon(Icons.account_tree_outlined, size: 20),
+        title: Text(l10n.flow_libraryTitle),
+        onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+          builder: (_) => FlowLibraryScreen(peerId: widget.peerId),
+        )),
+      ));
+    }
+    // 工作流按运行分组，其余按时间平铺（折叠方案 §2.2）。
     String? lastRun;
     for (final session in _items) {
       if (widget.folder == SessionFolderKind.flow &&
@@ -120,12 +138,11 @@ class _SessionFolderScreenState extends State<SessionFolderScreen> {
               style: Theme.of(context).textTheme.labelMedium),
         ));
       }
+      final subtitle = _subtitle(l10n, session);
       rows.add(ListTile(
         title: Text(session.title.isEmpty ? session.sessionId : session.title,
             maxLines: 1, overflow: TextOverflow.ellipsis),
-        subtitle: _subtitle(l10n, session).isEmpty
-            ? null
-            : Text(_subtitle(l10n, session)),
+        subtitle: subtitle.isEmpty ? null : Text(subtitle),
         onTap: widget.onOpen == null ? null : () => widget.onOpen!(session),
         trailing: PopupMenuButton<String>(
           tooltip: l10n.folder_more,
@@ -136,56 +153,31 @@ class _SessionFolderScreenState extends State<SessionFolderScreen> {
         ),
       ));
     }
-    return rows;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(sessionFolderLabel(l10n, widget.folder)),
-        actions: [
-          // 工作流组顺手带上流程库的入口：设计、演练、运行都从这里进。
-          if (widget.folder == SessionFolderKind.flow)
-            IconButton(
-              tooltip: l10n.flow_libraryTitle,
-              icon: const Icon(Icons.account_tree_outlined),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => FlowLibraryScreen(peerId: widget.peerId),
-                ),
-              ),
-            ),
-        ],
-      ),
-      body: Builder(builder: (context) {
-        if (_items.isEmpty) {
-          if (_loading) return const Center(child: CircularProgressIndicator());
-          if (_failed) {
-            return Center(
-              child:
-                  TextButton(onPressed: _more, child: Text(l10n.folder_retry)),
-            );
-          }
-          return Center(child: Text(l10n.folder_empty));
-        }
-        return ListView(
-          children: [
-            ..._rows(l10n),
-            if (_cursor != null)
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Center(
-                  child: _loading
-                      ? const CircularProgressIndicator()
-                      : TextButton(
-                          onPressed: _more, child: Text(l10n.folder_loadMore)),
-                ),
-              ),
-          ],
-        );
-      }),
+    if (_loading && _items.isEmpty) {
+      rows.add(const Padding(
+        padding: EdgeInsets.all(12),
+        child: Center(child: CircularProgressIndicator()),
+      ));
+    } else if (_failed && _items.isEmpty) {
+      rows.add(Center(
+        child: TextButton(onPressed: _more, child: Text(l10n.folder_retry)),
+      ));
+    } else if (_items.isEmpty) {
+      rows.add(Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: Text(l10n.folder_empty,
+            style: TextStyle(fontSize: 13, color: Colors.grey[600])),
+      ));
+    } else if (_cursor != null || _loading) {
+      rows.add(Center(
+        child: _loading
+            ? const CircularProgressIndicator()
+            : TextButton(onPressed: _more, child: Text(l10n.folder_loadMore)),
+      ));
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: rows,
     );
   }
 }

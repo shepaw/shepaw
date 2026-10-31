@@ -5084,6 +5084,7 @@
   "sessionSearchTitle": "Search sessions",
   "sessionSearchHint": "Private chats, groups, workflows and terminals",
   "sessionSearchEmpty": "No matching sessions",
+  "sessionSearchFoldedSection": "Groups / workflows / engine sessions",
   "flow_validate": "Check",
   "flow_source": "Source",
   "flow_sourceApply": "Use this",

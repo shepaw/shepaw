@@ -5536,6 +5536,7 @@
   "sessionSearchTitle": "搜索会话",
   "sessionSearchHint": "私聊、群聊、工作流、终端都在这儿找",
   "sessionSearchEmpty": "没有找到匹配的会话",
+  "sessionSearchFoldedSection": "群聊 / 工作流 / 引擎会话",
   "flow_validate": "校验",
   "flow_source": "源码",
   "flow_sourceApply": "用这份",

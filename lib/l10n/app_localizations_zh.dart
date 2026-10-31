@@ -9013,6 +9013,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sessionSearchEmpty => '没有找到匹配的会话';
 
   @override
+  String get sessionSearchFoldedSection => '群聊 / 工作流 / 引擎会话';
+
+  @override
   String get flow_validate => '校验';
 
   @override

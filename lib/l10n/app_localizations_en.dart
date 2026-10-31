@@ -9373,6 +9373,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sessionSearchEmpty => 'No matching sessions';
 
   @override
+  String get sessionSearchFoldedSection =>
+      'Groups / workflows / engine sessions';
+
+  @override
   String get flow_validate => 'Check';
 
   @override

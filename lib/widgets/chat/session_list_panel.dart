@@ -9,6 +9,8 @@ import '../../utils/layout_utils.dart';
 import '../../utils/session_utils.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/session/client_session_sync.dart';
+import '../../services/session/folded_target.dart';
+import '../../peer/services/hub_folded_sessions.dart';
 import 'session_unread_badge.dart';
 import 'session_list_header_menu.dart';
 import 'session_preview_entry.dart';
@@ -82,6 +84,13 @@ class SessionListPanel extends StatelessWidget {
   /// 跨抽屉开关存活的行预览缓存。由 [ChatScreen] 持有；为空则组件自建。
   final Map<String, SessionPreviewEntry>? previewCache;
 
+  /// 折叠组问主机用的客户端。测试里换成假的；为空时用 [HubFoldedSessions]。
+  final HubFoldedSessions? foldersClient;
+
+  /// 折叠组要问的主机与主机上的 Agent。测试里直接给；为空时按 [agentId] 查库解析
+  /// （本机 Agent、群或查不到时不画折叠组）。
+  final ({String peerId, String remoteAgentId})? foldersTarget;
+
   const SessionListPanel({
     super.key,
     required this.sessions,
@@ -101,6 +110,8 @@ class SessionListPanel extends StatelessWidget {
     this.onCopyToAgent,
     this.onResetSession,
     this.previewCache,
+    this.foldersClient,
+    this.foldersTarget,
   });
 
   @override
@@ -120,6 +131,8 @@ class SessionListPanel extends StatelessWidget {
       onCopyToAgent: onCopyToAgent,
       onResetSession: onResetSession,
       previewCache: previewCache,
+      foldersClient: foldersClient,
+      foldersTarget: foldersTarget,
     );
   }
 }
@@ -155,6 +168,12 @@ class _SessionListContent extends StatefulWidget {
   /// 跨抽屉开关存活的行预览缓存；为空则 [State] 自建一份。
   final Map<String, SessionPreviewEntry>? previewCache;
 
+  /// 折叠组问主机用的客户端；为空时用 [HubFoldedSessions]。
+  final HubFoldedSessions? foldersClient;
+
+  /// 折叠组要问的主机；为空时按 agentId 查库解析。
+  final ({String peerId, String remoteAgentId})? foldersTarget;
+
   const _SessionListContent({
     required this.sessions,
     this.currentChannelId,
@@ -170,6 +189,8 @@ class _SessionListContent extends StatefulWidget {
     this.onCopyToAgent,
     this.onResetSession,
     this.previewCache,
+    this.foldersClient,
+    this.foldersTarget,
   });
 
   @override
@@ -181,17 +202,23 @@ class _SessionListContentState extends State<_SessionListContent> {
   Set<String> _selectedIds = {};
   final _databaseService = LocalDatabaseService();
 
+  /// 查库解析出来的折叠组目标；调用方直接给（[widget.foldersTarget]）时不用它。
+  ({String peerId, String remoteAgentId})? _resolvedFoldersTarget;
+
   /// 折叠组要问的主机与主机上的 Agent；本机 Agent、群或查不到时为空（不画折叠组）。
-  ({String peerId, String remoteAgentId})? _foldersTarget;
+  ({String peerId, String remoteAgentId})? get _foldersTarget =>
+      widget.foldersTarget ?? _resolvedFoldersTarget;
 
   Future<void> _resolveFoldersTarget() async {
-    final id = widget.controller.agentId;
-    if (id == null || widget.controller.isGroupMode) return;
-    final agent = await _databaseService.getRemoteAgentById(id);
-    final peerId = agent?.sourcePeerId;
-    final remoteId = agent?.remoteAgentId;
-    if (!mounted || peerId == null || remoteId == null) return;
-    setState(() => _foldersTarget = (peerId: peerId, remoteAgentId: remoteId));
+    // 调用方（测试）直接给了目标就不必查库。
+    if (widget.foldersTarget != null) return;
+    final target = await resolveFoldedTarget(
+      agentId: widget.controller.agentId,
+      isGroupMode: widget.controller.isGroupMode,
+      database: _databaseService,
+    );
+    if (!mounted || target == null) return;
+    setState(() => _resolvedFoldersTarget = target);
   }
 
   /// 组件自建的回退缓存（未传入 [previewCache] 时使用，例如测试）。
@@ -369,16 +396,9 @@ class _SessionListContentState extends State<_SessionListContent> {
     return Column(
       children: [
         if (_isSelectionMode) _buildSelectionHeader(l10n),
-        // 「新建会话」行不参与滚动：它比会话行矮（无副标题），留在
-        // [ListView.builder] 里会破坏等高前提（见 [_buildList]）。
+        // 「新建会话」行不参与滚动：它比会话行矮（无副标题），留在滚动区里
+        // 会破坏等高前提（见 [_buildList]）。
         if (!_isSelectionMode) _buildNewSessionItem(context, l10n),
-        // 群聊 / 工作流 / 引擎客户端等来源的会话收进折叠组（折叠方案 §2.1）。
-        if (!_isSelectionMode && _foldersTarget != null)
-          AgentSessionFolders(
-            peerId: _foldersTarget!.peerId,
-            remoteAgentId: _foldersTarget!.remoteAgentId,
-            refreshTick: widget.listRefreshTick,
-          ),
         Expanded(child: _buildList()),
         if (_isSelectionMode) _buildBottomBar(l10n),
       ],
@@ -444,48 +464,69 @@ class _SessionListContentState extends State<_SessionListContent> {
     );
   }
 
+  /// 列表本体：折叠组 + 会话行一起滚。
+  ///
+  /// 折叠组最多六行（群聊 / 其他 Agent 发起 / 工作流 / 引擎客户端 / 引擎终端），
+  /// 早先它和「新建会话」一起钉在滚动区上方，列表再长它也不让位，一直占着抽屉
+  /// 顶上一截。这里把它做成第一个 sliver：往上滑就跟着走，滑到底就是纯会话。
+  ///
+  /// 会话行仍走等高 sliver（[SliverPrototypeExtentList]）：抽屉收起即销毁整棵
+  /// 路由，重开时新的 viewport 要从上次的滚动偏移恢复。变高列表只能从 index 0
+  /// 逐行「建 + 排版」到该偏移（sliver_list.dart 的
+  /// `while (endScrollOffset < scrollOffset)`），滑得越深首帧越重，正好砸在
+  /// 250ms 划入动画上。给了等高原型后 Sliver 能由偏移 O(1) 算出首个可见行，
+  /// 只建可视行。
   Widget _buildList() {
-    return ListView.builder(
+    // 群聊 / 工作流 / 引擎客户端等来源的会话收进折叠组（折叠方案 §2.1）。
+    final folders = !_isSelectionMode && _foldersTarget != null
+        ? AgentSessionFolders(
+            peerId: _foldersTarget!.peerId,
+            remoteAgentId: _foldersTarget!.remoteAgentId,
+            refreshTick: widget.listRefreshTick,
+            client: widget.foldersClient,
+          )
+        : null;
+    return CustomScrollView(
       key: const PageStorageKey<String>('dm-session-list'),
-      // 固定行高：抽屉收起即销毁整棵路由，重开时新的 viewport 要从上次的
-      // 滚动偏移恢复。变高列表只能从 index 0 逐行「建 + 排版」到该偏移
-      // （sliver_list.dart 的 `while (endScrollOffset < scrollOffset)`），
-      // 滑得越深首帧越重，正好砸在 250ms 划入动画上。给了等高原型后
-      // Sliver 能由偏移 O(1) 算出首个可见行，只建可视行。
-      prototypeItem: const _SessionTilePrototype(),
-      itemCount: widget.sessions.length,
-      itemBuilder: (context, index) {
-        final session = widget.sessions[index];
-        final isCurrent = session.id == widget.currentChannelId;
-        final preview = _entryFor(session.id).data;
-        final firstMessage = preview?.$1;
-        final latestMessage = preview?.$2;
-        // 当前会话渲染时未读归零（缓存存原始未读数）。
-        final unreadCount = isCurrent ? 0 : preview?.$3 ?? 0;
-        // 行级 repaint 隔离：某会话「输入中」翻转时只重画该行。
-        return RepaintBoundary(
-          child: _buildSessionTile(
-            context,
-            session,
-            isCurrent,
-            firstMessage,
-            latestMessage,
-            unreadCount: unreadCount,
-            selectionMode: _isSelectionMode,
-            selected: _selectedIds.contains(session.id),
-            selectionEnabled: !isCurrent,
-            onSelectionToggle: isCurrent
-                ? null
-                : () => setState(() {
-                      if (_selectedIds.contains(session.id)) {
-                        _selectedIds.remove(session.id);
-                      } else {
-                        _selectedIds.add(session.id);
-                      }
-                    }),
-          ),
-        );
-      },
+      slivers: [
+        if (folders != null) SliverToBoxAdapter(child: folders),
+        SliverPrototypeExtentList.builder(
+          prototypeItem: const _SessionTilePrototype(),
+          itemCount: widget.sessions.length,
+          itemBuilder: (context, index) {
+            final session = widget.sessions[index];
+            final isCurrent = session.id == widget.currentChannelId;
+            final preview = _entryFor(session.id).data;
+            final firstMessage = preview?.$1;
+            final latestMessage = preview?.$2;
+            // 当前会话渲染时未读归零（缓存存原始未读数）。
+            final unreadCount = isCurrent ? 0 : preview?.$3 ?? 0;
+            // 行级 repaint 隔离：某会话「输入中」翻转时只重画该行。
+            return RepaintBoundary(
+              child: _buildSessionTile(
+                context,
+                session,
+                isCurrent,
+                firstMessage,
+                latestMessage,
+                unreadCount: unreadCount,
+                selectionMode: _isSelectionMode,
+                selected: _selectedIds.contains(session.id),
+                selectionEnabled: !isCurrent,
+                onSelectionToggle: isCurrent
+                    ? null
+                    : () => setState(() {
+                          if (_selectedIds.contains(session.id)) {
+                            _selectedIds.remove(session.id);
+                          } else {
+                            _selectedIds.add(session.id);
+                          }
+                        }),
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 
