@@ -15,7 +15,6 @@ import '../../storage/store_service.dart';
 import '../models/paired_peer.dart';
 import '../peer_detail_sections.dart';
 import '../peer_device_actions.dart';
-import '../screens/add_agent_instance_screen.dart';
 import '../services/peer_connection_manager.dart';
 import '../services/peer_storage_service.dart';
 import '../widgets/peer_agent_manage_panel.dart';
@@ -335,6 +334,7 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
       section: section,
       unlistedNode: _isUnlistedNode,
       hasAgents: device?.agents.isNotEmpty ?? false,
+      isMaster: _isMaster,
     );
 
     return Scaffold(
@@ -346,8 +346,10 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
         children: [
           const SizedBox(height: 24),
           _buildHeader(l10n),
-          const SizedBox(height: 16),
-          _buildQuickActions(l10n, sections.showEngine),
+          if (_buildQuickActions(l10n) case final actions?) ...[
+            const SizedBox(height: 16),
+            actions,
+          ],
           if (sections.showAgents) ...[
             const SizedBox(height: 8),
             PeerAgentManagePanel(
@@ -359,7 +361,7 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
               onAddAgent: widget.onAddAgent,
             ),
           ],
-          // 没有可分享的空间时这一节对名单外的节点行也没意义。
+          // 储物袋只在主机和 master 上，其余设备这一节点进去是空的。
           if (sections.showStorage) ...[
             const SizedBox(height: 16),
             _buildSection(context, l10n.storage_spaceSection, [
@@ -376,6 +378,17 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
                 subtitle: Text(l10n.peerStoreShare_panelHint),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: _openStoreSharePanel,
+              ),
+              // 信任级别唯一的实际作用是出站共享的默认值，属于这一节，
+              // 不另开「安全」——那会让人以为它是权限开关。
+              ListTile(
+                leading: const Icon(Icons.verified_user_outlined),
+                title: Text(l10n.peerSettings_trustLevel),
+                subtitle: Text(_trustLevel == TrustLevel.friend
+                    ? l10n.peerPairing_trustFriend
+                    : l10n.peerPairing_trustOwner),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: _changeTrustLevel,
               ),
             ]),
           ],
@@ -395,22 +408,6 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
                 onTap: _isConnected
                     ? () => unawaited(_openEngineManagement())
                     : null,
-              ),
-            ]),
-          ],
-
-          // 信任级别是安全属性，原来放在「存储空间」里。
-          if (sections.showSecurity) ...[
-            const SizedBox(height: 16),
-            _buildSection(context, l10n.peerSettings_sectionSecurity, [
-              ListTile(
-                leading: const Icon(Icons.verified_user_outlined),
-                title: Text(l10n.peerSettings_trustLevel),
-                subtitle: Text(_trustLevel == TrustLevel.friend
-                    ? l10n.peerPairing_trustFriend
-                    : l10n.peerPairing_trustOwner),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: _changeTrustLevel,
               ),
             ]),
           ],
@@ -584,7 +581,10 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
       );
 
   /// 常用操作。原来只有底部一个「发起对话」，其余都埋在列表里。
-  Widget _buildQuickActions(AppLocalizations l10n, bool canHostAgents) {
+  /// 快捷操作只放「发消息」：浏览空间和新建 Agent 在下面各自的区块里都有，
+  /// 摆两遍反而多一处要维护。设备聊天开关关着时这一行整个不出现。
+  Widget? _buildQuickActions(AppLocalizations l10n) {
+    if (!ProductFeatures.deviceChatUiEnabled) return null;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Wrap(
@@ -592,41 +592,12 @@ class _PeerSettingsScreenState extends State<PeerSettingsScreen> {
         runSpacing: 8,
         alignment: WrapAlignment.center,
         children: [
-          if (ProductFeatures.deviceChatUiEnabled)
-            OutlinedButton.icon(
-              onPressed: _startChat,
-              icon: const Icon(Icons.chat_bubble_outline, size: 18),
-              label: Text(l10n.peerSettings_startChat),
-            ),
           OutlinedButton.icon(
-            onPressed: _browsePeerStorage,
-            icon: const Icon(Icons.inventory_2_outlined, size: 18),
-            label: Text(l10n.storage_peerSpaceEntry),
+            onPressed: _startChat,
+            icon: const Icon(Icons.chat_bubble_outline, size: 18),
+            label: Text(l10n.peerSettings_startChat),
           ),
-          if (canHostAgents)
-            OutlinedButton.icon(
-              onPressed: _isConnected ? _addAgentHere : null,
-              icon: const Icon(Icons.add, size: 18),
-              label: Text(l10n.peerSettings_newAgent),
-            ),
         ],
-      ),
-    );
-  }
-
-  /// 桌面端由外层在右栏铺「添加 Agent」面板，避免在嵌套 Navigator 里再叠一页。
-  void _addAgentHere() {
-    final onAdd = widget.onAddAgent;
-    if (onAdd != null) {
-      onAdd(_device?.nodeId);
-      return;
-    }
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => AddAgentInstanceScreen(
-          presetNodeId: _device?.nodeId,
-          presetPeerId: _hostPeerId,
-        ),
       ),
     );
   }

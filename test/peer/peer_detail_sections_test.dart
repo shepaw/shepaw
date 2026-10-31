@@ -6,29 +6,32 @@ import 'package:shepaw/storage/store_protocol.dart' show TrustLevel;
 
 void main() {
   group('设备详情按角色显示区块', () {
-    test('主机：Agent、引擎、存储、安全、删除都有', () {
+    test('主机：Agent、引擎、存储、删除都有', () {
       final s = PeerDetailSections.of(
         isHost: true,
         section: ContactSection.host,
         unlistedNode: false,
         hasAgents: true,
+        isMaster: false,
       );
       expect(s.showAgents, isTrue);
       expect(s.showEngine, isTrue);
       expect(s.showStorage, isTrue);
-      expect(s.showSecurity, isTrue);
       expect(s.showDelete, isTrue);
     });
 
-    test('工作节点：Agent 和引擎有，其余照常', () {
+    test('工作节点：Agent 和引擎有，但没有自己的储物袋', () {
       final s = PeerDetailSections.of(
         isHost: false,
         section: ContactSection.worker,
         unlistedNode: false,
         hasAgents: true,
+        isMaster: false,
       );
       expect(s.showAgents, isTrue);
       expect(s.showEngine, isTrue);
+      // 工作节点把产物写进主机那份袋子，自己没有储物袋。
+      expect(s.showStorage, isFalse);
       expect(s.showDelete, isTrue);
     });
 
@@ -38,17 +41,29 @@ void main() {
         section: ContactSection.mobileClient,
         unlistedNode: false,
         hasAgents: false,
+        isMaster: false,
       );
       expect(s.showAgents, isFalse);
       expect(s.showEngine, isFalse);
-      expect(s.showStorage, isTrue);
+      expect(s.showStorage, isFalse);
       expect(s.showDelete, isTrue);
+
+      // 被指定为 master 的 NAS / 主节点有一份袋子，要显示。
+      final master = PeerDetailSections.of(
+        isHost: false,
+        section: ContactSection.pcClient,
+        unlistedNode: false,
+        hasAgents: false,
+        isMaster: true,
+      );
+      expect(master.showStorage, isTrue);
 
       final withAgents = PeerDetailSections.of(
         isHost: false,
         section: ContactSection.mobileClient,
         unlistedNode: false,
         hasAgents: true,
+        isMaster: false,
       );
       expect(withAgents.showAgents, isTrue);
       expect(withAgents.showEngine, isFalse);
@@ -60,11 +75,11 @@ void main() {
         section: ContactSection.worker,
         unlistedNode: true,
         hasAgents: true,
+        isMaster: false,
       );
       expect(s.showAgents, isTrue);
       expect(s.showEngine, isFalse);
       expect(s.showStorage, isFalse);
-      expect(s.showSecurity, isFalse);
       expect(s.showDelete, isFalse);
     });
 
@@ -74,6 +89,7 @@ void main() {
         section: null,
         unlistedNode: false,
         hasAgents: false,
+        isMaster: false,
       );
       // section 为 null 又不是主机，按客户端处理：不显示引擎。
       expect(worker.showEngine, isFalse);

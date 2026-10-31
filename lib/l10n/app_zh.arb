@@ -2756,7 +2756,6 @@
     }
   },
   "peerSettings_sectionAgents": "Agent 管理",
-  "peerSettings_sectionSecurity": "安全",
   "peerSettings_sectionAbout": "关于此设备",
   "peerSettings_hiddenAgentCount": "已在本 App 隐藏 {count} 个",
   "@peerSettings_hiddenAgentCount": {

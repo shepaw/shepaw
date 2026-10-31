@@ -5072,9 +5072,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get peerSettings_sectionAgents => 'Agent Management';
 
   @override
-  String get peerSettings_sectionSecurity => 'Security';
-
-  @override
   String get peerSettings_sectionAbout => 'About this device';
 
   @override

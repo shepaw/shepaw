@@ -4874,9 +4874,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get peerSettings_sectionAgents => 'Agent 管理';
 
   @override
-  String get peerSettings_sectionSecurity => '安全';
-
-  @override
   String get peerSettings_sectionAbout => '关于此设备';
 
   @override

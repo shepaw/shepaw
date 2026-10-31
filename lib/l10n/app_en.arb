@@ -2302,7 +2302,6 @@
     }
   },
   "peerSettings_sectionAgents": "Agent Management",
-  "peerSettings_sectionSecurity": "Security",
   "peerSettings_sectionAbout": "About this device",
   "peerSettings_hiddenAgentCount": "{count} hidden from this app",
   "@peerSettings_hiddenAgentCount": {

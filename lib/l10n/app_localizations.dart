@@ -8997,12 +8997,6 @@ abstract class AppLocalizations {
   /// **'Agent 管理'**
   String get peerSettings_sectionAgents;
 
-  /// No description provided for @peerSettings_sectionSecurity.
-  ///
-  /// In zh, this message translates to:
-  /// **'安全'**
-  String get peerSettings_sectionSecurity;
-
   /// No description provided for @peerSettings_sectionAbout.
   ///
   /// In zh, this message translates to:
