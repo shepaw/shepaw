@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shepaw/l10n/app_localizations.dart';
 import 'package:shepaw/screens/pouch_scope_browser_screen.dart';
 import 'package:shepaw/storage/group_shared_files.dart';
 import 'package:shepaw/storage/local_store.dart';
@@ -74,6 +75,11 @@ class _Transport implements PouchScopeTransport {
 }
 
 Widget _screen(PouchScopeStore store, {PouchScope? initialScope}) => MaterialApp(
+      // 页面文案走 l10n，测试树必须自己装上委托，否则 AppLocalizations.of
+      // 拿不到值（见 pouch_scope_browser_screen 的提示词与按钮文案）。
+      locale: const Locale('zh'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: PouchScopeBrowserScreen(
         store: store,
         initialScope: initialScope,
@@ -162,6 +168,9 @@ void main() {
     );
     var opened = 0;
     await tester.pumpWidget(MaterialApp(
+      locale: const Locale('zh'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: PouchScopeBrowserScreen(
         store: store,
         onOpenLegacy: () => opened++,
@@ -207,6 +216,9 @@ void main() {
     ]);
     final store = PouchScopeStore(transport: transport, pouchId: 'p1');
     await tester.pumpWidget(MaterialApp(
+      locale: const Locale('zh'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: PouchScopeBrowserScreen(
         store: store,
         initialScope: PouchScope.groupShared('g1'),
@@ -233,6 +245,9 @@ void main() {
     ]);
     final store = PouchScopeStore(transport: transport, pouchId: 'p1');
     await tester.pumpWidget(MaterialApp(
+      locale: const Locale('zh'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: PouchScopeBrowserScreen(
         store: store,
         initialScope: PouchScope.agent('a1'),
