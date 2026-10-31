@@ -3099,7 +3099,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get contacts_other => '其他';
 
   @override
-  String get hostOffline_banner => '主机离线 · 重新连接';
+  String get hostOffline_banner => '主机离线 · 连上后会自动登录';
 
   @override
   String get hostAttach_unresponsive => '主机没有响应';
@@ -9133,4 +9133,139 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get flow_patchFailed => '改写失败';
+
+  @override
+  String get sessionSearchTitle => '搜索会话';
+
+  @override
+  String get sessionSearchHint => '私聊、群聊、工作流、终端都在这儿找';
+
+  @override
+  String get sessionSearchEmpty => '没有找到匹配的会话';
+
+  @override
+  String unlock_welcomeBack(String name) {
+    return '欢迎回来，$name';
+  }
+
+  @override
+  String get unlock_welcomeBackPlain => '欢迎回来';
+
+  @override
+  String unlock_hostLine(String host) {
+    return '主机 $host';
+  }
+
+  @override
+  String get unlock_hostThisComputer => '这台电脑';
+
+  @override
+  String get unlock_enter => '进入';
+
+  @override
+  String get unlock_entering => '正在进入…';
+
+  @override
+  String get unlock_whyCredential => '主机密码改过，或这台设备被移除过，请重新输入';
+
+  @override
+  String get unlock_whyRestarted => '主机重启了，输入密码后会接着刚才的对话';
+
+  @override
+  String get unlock_whyInvite => '加入码已失效，请输入主机密码，或在已登录的设备上换一个加入码';
+
+  @override
+  String unlock_lockedCountdown(String seconds) {
+    return '$seconds 秒后再试';
+  }
+
+  @override
+  String get unlock_wrongPassword => '密码不对';
+
+  @override
+  String get unlock_tooManyAttempts => '试错太多次';
+
+  @override
+  String get unlock_forgot => '忘记密码？';
+
+  @override
+  String get unlock_switchHost => '换一台主机';
+
+  @override
+  String get unlock_needPassword => '需要输入主机密码';
+
+  @override
+  String get password_label => '主机密码';
+
+  @override
+  String get password_minLength => '至少 6 位';
+
+  @override
+  String get password_capsLock => '大写已开启';
+
+  @override
+  String get password_show => '显示密码';
+
+  @override
+  String get password_hide => '隐藏密码';
+
+  @override
+  String get hostStatus_online => '在线';
+
+  @override
+  String get hostStatus_connecting => '连接中…';
+
+  @override
+  String get hostStatus_offline => '连不上';
+
+  @override
+  String get hostOffline_local => '这台电脑上的主机没有响应';
+
+  @override
+  String hostOffline_remote(String host) {
+    return '连不上 $host。确认那台电脑开着、在同一网络，或者已经开启隧道';
+  }
+
+  @override
+  String get gate_errorGeneric => '没能登录，请稍后再试';
+
+  @override
+  String get gate_errorUnreachable => '连不上主机';
+
+  @override
+  String get gate_errorInvite => '加入码已失效，请输主机密码';
+
+  @override
+  String get gate_errorPouchMissing => '主机上找不到你的储物袋，它可能被重建过';
+
+  @override
+  String get gate_errorPasswordFile => '主机的密码文件坏了';
+
+  @override
+  String get gate_errorHostOutdated => '主机版本太旧，请在主机上执行 shepaw update';
+
+  @override
+  String get gate_details => '详情';
+
+  @override
+  String get gate_retry => '重试';
+
+  @override
+  String get gate_camera => '需要相机权限才能扫码';
+
+  @override
+  String get forgot_localTitle => '重设主机密码';
+
+  @override
+  String get forgot_localBody => '在这台电脑上重设主机密码。其他设备当前的登录还能用到过期，之后要输新密码或者扫加入码。';
+
+  @override
+  String get forgot_remoteBody =>
+      '密码只能在主机那台电脑上重设。打开那台电脑上的惜宝，点「忘记密码」；或者在那台电脑的终端执行 shepaw password set';
+
+  @override
+  String get gate_cameraSettings => '去设置开启';
+
+  @override
+  String get gate_usePaste => '改用粘贴';
 }

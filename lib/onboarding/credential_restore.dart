@@ -1,9 +1,16 @@
 import 'dart:async';
 
 import '../peer/models/paired_peer.dart';
+import '../peer/pairing_endpoints.dart';
+import '../peer/services/peer_connection_manager.dart';
+import '../peer/services/peer_storage_service.dart';
+import '../services/cli_host.dart';
+import '../services/logger_service.dart';
+import '../storage/pouch_credential_store.dart';
 import '../storage/pouch_grant.dart';
 import '../storage/pouch_login_client.dart';
 import '../storage/pouch_session.dart';
+import '../storage/pouch_login.dart';
 
 /// 静默续期的结果。
 enum RestoreResult {
@@ -190,4 +197,69 @@ class CredentialRestore {
     }
     return false;
   }
+}
+
+/// 接真实服务的那份。Splash、解锁页、keeper 都用同一个。
+CredentialRestore productionCredentialRestore({CliHostEndpoint? cli}) {
+  return CredentialRestore(
+    readSession: PouchSessionStore.readActive,
+    lookupPeer: (hostPeerId) =>
+        PeerStorageService().getPeerById(hostPeerId),
+    readCredential: ({
+      required String hostPeerId,
+      required String pouchId,
+      required int nowMs,
+    }) async {
+      final saved = await PouchCredentialStore.instance.readValid(
+        hostPeerId: hostPeerId,
+        pouchId: pouchId,
+        nowMs: nowMs,
+      );
+      return saved?.credential;
+    },
+    connect: (peer, {required bool redial}) async {
+      // 本机主机走 attach：它顺手把地址收回环，老 session 里的旧端口也一起修好。
+      final local = cli ?? await CliHost.detect();
+      if (local != null && sameFingerprint(local.fingerprint, peer.fingerprint)) {
+        await CliHost.attach(local);
+        return;
+      }
+      if (redial) {
+        await PeerConnectionManager.instance.disconnectPeer(peer.id);
+      }
+      await PeerConnectionManager.instance.connectToPeer(
+        peer,
+        ignoreTieBreak: true,
+      );
+    },
+    login: ({
+      required String hostPeerId,
+      required String pouchId,
+      required String credential,
+    }) =>
+        requestPouchLogin(
+      hostPeerId: hostPeerId,
+      pouchId: pouchId,
+      credential: credential,
+    ),
+    persist: (next) async {
+      await PouchSessionStore(await PouchSessionStore.appFile()).save(next);
+    },
+    install: PouchChannel.install,
+    saveCredential: ({
+      required String hostPeerId,
+      required String pouchId,
+      required String credential,
+      required int expiresAtMs,
+    }) =>
+        PouchCredentialStore.instance.save(
+      hostPeerId: hostPeerId,
+      pouchId: pouchId,
+      credential: credential,
+      expiresAtMs: expiresAtMs,
+    ),
+    dropCredential: (hostPeerId) =>
+        PouchCredentialStore.instance.delete(hostPeerId),
+    log: (message) => LoggerService().info(message, tag: 'CredentialRestore'),
+  );
 }

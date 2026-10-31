@@ -5,7 +5,7 @@ import '../peer/models/paired_peer.dart';
 import '../peer/screens/peer_connect_tab.dart';
 import '../peer/services/peer_storage_service.dart';
 import 'host_entry.dart';
-import 'phone_auth_screen.dart';
+import 'gate_entry.dart';
 import 'phone_host_store.dart';
 
 /// 手机连远端主机：扫码，或输入配对地址。
@@ -41,8 +41,8 @@ class _RemoteConnectScreenState extends State<RemoteConnectScreen> {
 
   void _returnToLogin(String hostId) {
     Navigator.of(context).pushReplacementNamed(
-      '/phone-login',
-      arguments: PhoneAuthArgs(hostPeerId: hostId),
+      '/unlock',
+      arguments: UnlockArgs(hostPeerId: hostId),
     );
   }
 
@@ -54,9 +54,9 @@ class _RemoteConnectScreenState extends State<RemoteConnectScreen> {
     await PhoneHostStore.write(peer.id);
     if (!mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil(
-      '/phone-login',
+      '/unlock',
       (_) => false,
-      arguments: PhoneAuthArgs(hostPeerId: peer.id),
+      arguments: UnlockArgs(hostPeerId: peer.id),
     );
   }
 

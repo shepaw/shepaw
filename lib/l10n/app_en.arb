@@ -5149,5 +5149,76 @@
   "flow_patchApply": "Send the rewrite",
   "flow_patchNotFound": "Cannot rewrite this (no enclosing block found)",
   "flow_patchNotAList": "Write it as a list of steps (JSON array)",
-  "flow_patchFailed": "Could not rewrite"
+  "flow_patchFailed": "Could not rewrite",
+  "sessionSearchTitle": "Search sessions",
+  "sessionSearchHint": "Private chats, groups, workflows and terminals",
+  "sessionSearchEmpty": "No matching sessions",
+  "@unlock_welcomeBack": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "unlock_welcomeBack": "Welcome back, {name}",
+  "unlock_welcomeBackPlain": "Welcome back",
+  "@unlock_hostLine": {
+    "placeholders": {
+      "host": {
+        "type": "String"
+      }
+    }
+  },
+  "unlock_hostLine": "Host {host}",
+  "unlock_hostThisComputer": "This computer",
+  "unlock_enter": "Sign in",
+  "unlock_entering": "Signing in…",
+  "unlock_whyCredential": "The host password changed or this device was removed. Please sign in again",
+  "unlock_whyRestarted": "The host restarted. Sign in to pick up where you left off",
+  "unlock_whyInvite": "That join code expired. Enter the host password, or get a new code from a signed-in device",
+  "@unlock_lockedCountdown": {
+    "placeholders": {
+      "seconds": {
+        "type": "String"
+      }
+    }
+  },
+  "unlock_lockedCountdown": "Try again in {seconds}s",
+  "unlock_wrongPassword": "Wrong password",
+  "unlock_tooManyAttempts": "Too many attempts",
+  "unlock_forgot": "Forgot password?",
+  "unlock_switchHost": "Use another host",
+  "unlock_needPassword": "Host password needed",
+  "password_label": "Host password",
+  "password_minLength": "At least 6 characters",
+  "password_capsLock": "Caps Lock is on",
+  "password_show": "Show password",
+  "password_hide": "Hide password",
+  "hostStatus_online": "Online",
+  "hostStatus_connecting": "Connecting…",
+  "hostStatus_offline": "Unreachable",
+  "hostOffline_local": "The host on this computer isn't responding",
+  "@hostOffline_remote": {
+    "placeholders": {
+      "host": {
+        "type": "String"
+      }
+    }
+  },
+  "hostOffline_remote": "Can't reach {host}. Make sure it's on, on the same network, or has a tunnel enabled",
+  "hostOffline_banner": "Host offline · you'll be signed in when it's back",
+  "gate_errorGeneric": "Couldn't sign in. Please try again",
+  "gate_errorUnreachable": "Can't reach the host",
+  "gate_errorInvite": "That join code expired. Enter the host password",
+  "gate_errorPouchMissing": "Your pouch isn't on this host. It may have been rebuilt",
+  "gate_errorPasswordFile": "The host's password file is broken",
+  "gate_errorHostOutdated": "The host is outdated. Run shepaw update on it",
+  "gate_details": "Details",
+  "gate_retry": "Retry",
+  "gate_camera": "Camera access is needed to scan",
+  "forgot_localTitle": "Reset host password",
+  "forgot_localBody": "Reset the host password on this computer. Other devices stay signed in until their session expires, then need the new password or a join code.",
+  "forgot_remoteBody": "The password can only be reset on the host. Open Shepaw there and choose \"Forgot password\", or run shepaw password set in its terminal",
+  "gate_cameraSettings": "Open Settings",
+  "gate_usePaste": "Paste instead"
 }

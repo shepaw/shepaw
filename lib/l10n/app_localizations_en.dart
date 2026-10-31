@@ -3225,7 +3225,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get contacts_other => 'Other';
 
   @override
-  String get hostOffline_banner => 'Host offline · Reconnect';
+  String get hostOffline_banner =>
+      'Host offline · you\'ll be signed in when it\'s back';
 
   @override
   String get hostAttach_unresponsive => 'The host isn\'t responding';
@@ -9502,4 +9503,147 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get flow_patchFailed => 'Could not rewrite';
+
+  @override
+  String get sessionSearchTitle => 'Search sessions';
+
+  @override
+  String get sessionSearchHint =>
+      'Private chats, groups, workflows and terminals';
+
+  @override
+  String get sessionSearchEmpty => 'No matching sessions';
+
+  @override
+  String unlock_welcomeBack(String name) {
+    return 'Welcome back, $name';
+  }
+
+  @override
+  String get unlock_welcomeBackPlain => 'Welcome back';
+
+  @override
+  String unlock_hostLine(String host) {
+    return 'Host $host';
+  }
+
+  @override
+  String get unlock_hostThisComputer => 'This computer';
+
+  @override
+  String get unlock_enter => 'Sign in';
+
+  @override
+  String get unlock_entering => 'Signing in…';
+
+  @override
+  String get unlock_whyCredential =>
+      'The host password changed or this device was removed. Please sign in again';
+
+  @override
+  String get unlock_whyRestarted =>
+      'The host restarted. Sign in to pick up where you left off';
+
+  @override
+  String get unlock_whyInvite =>
+      'That join code expired. Enter the host password, or get a new code from a signed-in device';
+
+  @override
+  String unlock_lockedCountdown(String seconds) {
+    return 'Try again in ${seconds}s';
+  }
+
+  @override
+  String get unlock_wrongPassword => 'Wrong password';
+
+  @override
+  String get unlock_tooManyAttempts => 'Too many attempts';
+
+  @override
+  String get unlock_forgot => 'Forgot password?';
+
+  @override
+  String get unlock_switchHost => 'Use another host';
+
+  @override
+  String get unlock_needPassword => 'Host password needed';
+
+  @override
+  String get password_label => 'Host password';
+
+  @override
+  String get password_minLength => 'At least 6 characters';
+
+  @override
+  String get password_capsLock => 'Caps Lock is on';
+
+  @override
+  String get password_show => 'Show password';
+
+  @override
+  String get password_hide => 'Hide password';
+
+  @override
+  String get hostStatus_online => 'Online';
+
+  @override
+  String get hostStatus_connecting => 'Connecting…';
+
+  @override
+  String get hostStatus_offline => 'Unreachable';
+
+  @override
+  String get hostOffline_local => 'The host on this computer isn\'t responding';
+
+  @override
+  String hostOffline_remote(String host) {
+    return 'Can\'t reach $host. Make sure it\'s on, on the same network, or has a tunnel enabled';
+  }
+
+  @override
+  String get gate_errorGeneric => 'Couldn\'t sign in. Please try again';
+
+  @override
+  String get gate_errorUnreachable => 'Can\'t reach the host';
+
+  @override
+  String get gate_errorInvite =>
+      'That join code expired. Enter the host password';
+
+  @override
+  String get gate_errorPouchMissing =>
+      'Your pouch isn\'t on this host. It may have been rebuilt';
+
+  @override
+  String get gate_errorPasswordFile => 'The host\'s password file is broken';
+
+  @override
+  String get gate_errorHostOutdated =>
+      'The host is outdated. Run shepaw update on it';
+
+  @override
+  String get gate_details => 'Details';
+
+  @override
+  String get gate_retry => 'Retry';
+
+  @override
+  String get gate_camera => 'Camera access is needed to scan';
+
+  @override
+  String get forgot_localTitle => 'Reset host password';
+
+  @override
+  String get forgot_localBody =>
+      'Reset the host password on this computer. Other devices stay signed in until their session expires, then need the new password or a join code.';
+
+  @override
+  String get forgot_remoteBody =>
+      'The password can only be reset on the host. Open Shepaw there and choose \"Forgot password\", or run shepaw password set in its terminal';
+
+  @override
+  String get gate_cameraSettings => 'Open Settings';
+
+  @override
+  String get gate_usePaste => 'Paste instead';
 }

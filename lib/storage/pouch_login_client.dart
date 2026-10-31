@@ -12,24 +12,42 @@ class PouchPasswordMemory {
   static String? value;
 }
 
-/// 主机已经设了密码，这次登录没对上。
-class PouchPasswordRequired implements Exception {
-  const PouchPasswordRequired(this.reason);
+/// 主机拒绝了这次登录。
+///
+/// [code] 是新主机给的稳定错误码（`wrong_password`、`locked`……）；老主机只给
+/// 中文 [reason]，这时 [code] 为空，调用方按关键字兜底。[retryAfter] 是锁定
+/// 还剩多久：以前没人读它，用户被锁住之后看不到任何倒计时。
+class PouchLoginRejected implements Exception {
+  const PouchLoginRejected(
+    this.reason, {
+    this.code,
+    this.retryAfter,
+    this.credentialRejected = false,
+  });
 
   final String reason;
+
+  /// 稳定错误码。老主机没有，为 null。
+  final String? code;
+
+  /// 主机要求等多久才能再试。
+  final Duration? retryAfter;
+
+  final bool credentialRejected;
 
   @override
   String toString() => reason;
 }
 
+/// 主机已经设了密码，这次登录没对上。
+class PouchPasswordRequired extends PouchLoginRejected {
+  const PouchPasswordRequired(super.reason, {super.code, super.retryAfter});
+}
+
 /// 带设备凭据登录，主机不认。
-class PouchCredentialRejected implements Exception {
-  const PouchCredentialRejected(this.reason);
-
-  final String reason;
-
-  @override
-  String toString() => reason;
+class PouchCredentialRejected extends PouchLoginRejected {
+  const PouchCredentialRejected(super.reason, {super.code, super.retryAfter})
+      : super(credentialRejected: true);
 }
 
 /// 服务端签发的一次袋子登录。
@@ -40,6 +58,8 @@ class PouchLoginGrant {
     required this.expiresAtMs,
     this.credential,
     this.credentialExpiresAtMs = 0,
+    this.pouchId = '',
+    this.pouchName = '',
   });
 
   final String token;
@@ -49,6 +69,10 @@ class PouchLoginGrant {
   /// 这次密码登录顺手签发的设备凭据。凭据登录成功时为空（不轮换）。
   final String? credential;
   final int credentialExpiresAtMs;
+
+  /// 主机确认的袋子。加入码登录时 pouch_id 是空着发过去的，要从回包里拿。
+  final String pouchId;
+  final String pouchName;
 }
 
 /// 主机上是否已经有登录密码。
@@ -119,13 +143,17 @@ Future<PouchLoginGrant> requestPouchLogin({
         final reason = (data['reason'] as String?)?.trim().isNotEmpty == true
             ? data['reason'] as String
             : '登录被拒绝';
+        final code = (data['code'] as String?)?.trim();
+        final waitMs = data['retry_after_ms'];
+        final retryAfter =
+            waitMs is int && waitMs > 0 ? Duration(milliseconds: waitMs) : null;
         // 主机在拒绝凭据时同时带 password_required，先认凭据这一层。
         if (data['credential_rejected'] == true) {
-          throw PouchCredentialRejected(reason);
+          throw PouchCredentialRejected(reason, code: code, retryAfter: retryAfter);
         }
         if (data['password_required'] == true) {
           // 老主机不认识 credential：它只会回「密码不对」，不该因此删掉凭据。
-          throw PouchPasswordRequired(reason);
+          throw PouchPasswordRequired(reason, code: code, retryAfter: retryAfter);
         }
         throw StateError(reason);
       }
@@ -148,6 +176,8 @@ Future<PouchLoginGrant> requestPouchLogin({
         credentialExpiresAtMs: issuedExpires is int && issuedExpires > 0
             ? issuedExpires
             : 0,
+        pouchId: (data['pouch_id'] as String?)?.trim() ?? '',
+        pouchName: (data['pouch_name'] as String?)?.trim() ?? '',
       );
     },
   );

@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../onboarding/gate_entry.dart';
+import '../onboarding/gate_navigator.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../service_locator.dart';
 import '../services/logger_service.dart';
@@ -58,11 +60,16 @@ class PouchLoginKeeper {
       },
       clearChannel: PouchChannel.clear,
       credentials: PouchCredentialStore.instance,
+      // 走 GateNavigator：它知道自己该去解锁页还是欢迎页，还带上「主机重启了」
+      // 这个原因，解锁页才能解释为什么要输一次密码。
       openChooser: () {
-        final route = isDesktopPlatform ? '/pouch' : '/phone-login';
-        navigatorKey.currentState?.pushNamedAndRemoveUntil(
-          route,
-          (_) => false,
+        final context = navigatorKey.currentContext;
+        if (context == null) return;
+        unawaited(
+          GateNavigator.go(
+            context,
+            hint: const GateHint(unlockReason: UnlockReason.hostRestarted),
+          ),
         );
       },
       log: (message) =>

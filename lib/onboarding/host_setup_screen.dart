@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../l10n/app_localizations.dart';
 import '../services/cli_bundle.dart';
+import '../services/logger_service.dart';
 import '../services/cli_host.dart';
 import 'host_entry.dart';
 import 'host_entry_flow.dart';
@@ -24,6 +25,7 @@ class _HostSetupScreenState extends State<HostSetupScreen> {
   String _error = '';
 
   Future<void> _install() async {
+    final l10n = AppLocalizations.of(context);
     setState(() {
       _busy = true;
       _error = '';
@@ -44,7 +46,11 @@ class _HostSetupScreenState extends State<HostSetupScreen> {
       if (!mounted) return;
       setState(() => _waitingForInstall = true);
     } catch (error) {
-      if (mounted) setState(() => _error = '$error');
+      LoggerService().warning(
+        'host setup failed: $error',
+        tag: 'HostSetup',
+      );
+      if (mounted) setState(() => _error = l10n.gate_errorGeneric);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -59,6 +65,7 @@ class _HostSetupScreenState extends State<HostSetupScreen> {
   }
 
   Future<void> _redetect() async {
+    final l10n = AppLocalizations.of(context);
     setState(() {
       _busy = true;
       _error = '';
@@ -70,7 +77,8 @@ class _HostSetupScreenState extends State<HostSetupScreen> {
         isDesktop: Platform.isMacOS || Platform.isWindows || Platform.isLinux,
       );
     } catch (error) {
-      if (mounted) setState(() => _error = '$error');
+      LoggerService().warning('redetect failed: $error', tag: 'HostSetup');
+      if (mounted) setState(() => _error = l10n.gate_errorGeneric);
     } finally {
       if (mounted) setState(() => _busy = false);
     }

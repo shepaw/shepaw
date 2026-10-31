@@ -27,9 +27,10 @@ import 'screens/password_setup_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/pouch_login_screen.dart';
 import 'onboarding/host_setup_screen.dart';
+import 'onboarding/gate_entry.dart';
+import 'onboarding/unlock_screen.dart';
 import 'onboarding/gate_navigator.dart';
 import 'onboarding/pouch_gate_screen.dart';
-import 'onboarding/phone_auth_screen.dart';
 import 'onboarding/remote_connect_screen.dart';
 import 'screens/adaptive_home_screen.dart';
 import 'widgets/window_title_sync.dart';
@@ -356,10 +357,10 @@ class _MyAppState extends State<MyApp> {
                 '/host-setup': (context) => const HostSetupScreen(),
                 '/pouch-init': (context) =>
                     const PouchGateScreen(initializing: true),
-                '/pouch-unlock': (context) =>
-                    const PouchGateScreen(initializing: false),
+                '/pouch-unlock': (context) => const _LegacyUnlockRoute(),
+                '/unlock': (context) => const UnlockScreen(),
                 '/remote-connect': (context) => const RemoteConnectScreen(),
-                '/phone-login': (context) => const PhoneAuthScreen(),
+                '/phone-login': (context) => const _LegacyUnlockRoute(),
                 '/home': (context) => const AdaptiveHomeScreen(),
               },
             ),
@@ -371,6 +372,22 @@ class _MyAppState extends State<MyApp> {
 }
 
 /// 启动页 - 检查密码状态并导航到相应页面
+/// 旧门页的别名：把 `/phone-login`、`/pouch-unlock` 转到新的 `/unlock`。
+///
+/// L6 清路由时连这个类一起删。
+class _LegacyUnlockRoute extends StatelessWidget {
+  const _LegacyUnlockRoute();
+
+  @override
+  Widget build(BuildContext context) {
+    final raw = ModalRoute.of(context)?.settings.arguments;
+    final hostPeerId = raw is UnlockArgs ? raw.hostPeerId : '';
+    return UnlockScreen(
+      args: UnlockArgs(hostPeerId: hostPeerId),
+    );
+  }
+}
+
 class SplashScreen extends StatefulWidget {
   const SplashScreen({Key? key}) : super(key: key);
 

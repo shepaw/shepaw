@@ -5723,7 +5723,7 @@ abstract class AppLocalizations {
   /// No description provided for @hostOffline_banner.
   ///
   /// In zh, this message translates to:
-  /// **'主机离线 · 重新连接'**
+  /// **'主机离线 · 连上后会自动登录'**
   String get hostOffline_banner;
 
   /// No description provided for @hostAttach_unresponsive.
@@ -16570,6 +16570,258 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'改写失败'**
   String get flow_patchFailed;
+
+  /// No description provided for @sessionSearchTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'搜索会话'**
+  String get sessionSearchTitle;
+
+  /// No description provided for @sessionSearchHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'私聊、群聊、工作流、终端都在这儿找'**
+  String get sessionSearchHint;
+
+  /// No description provided for @sessionSearchEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有找到匹配的会话'**
+  String get sessionSearchEmpty;
+
+  /// No description provided for @unlock_welcomeBack.
+  ///
+  /// In zh, this message translates to:
+  /// **'欢迎回来，{name}'**
+  String unlock_welcomeBack(String name);
+
+  /// No description provided for @unlock_welcomeBackPlain.
+  ///
+  /// In zh, this message translates to:
+  /// **'欢迎回来'**
+  String get unlock_welcomeBackPlain;
+
+  /// No description provided for @unlock_hostLine.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机 {host}'**
+  String unlock_hostLine(String host);
+
+  /// No description provided for @unlock_hostThisComputer.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台电脑'**
+  String get unlock_hostThisComputer;
+
+  /// No description provided for @unlock_enter.
+  ///
+  /// In zh, this message translates to:
+  /// **'进入'**
+  String get unlock_enter;
+
+  /// No description provided for @unlock_entering.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在进入…'**
+  String get unlock_entering;
+
+  /// No description provided for @unlock_whyCredential.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机密码改过，或这台设备被移除过，请重新输入'**
+  String get unlock_whyCredential;
+
+  /// No description provided for @unlock_whyRestarted.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机重启了，输入密码后会接着刚才的对话'**
+  String get unlock_whyRestarted;
+
+  /// No description provided for @unlock_whyInvite.
+  ///
+  /// In zh, this message translates to:
+  /// **'加入码已失效，请输入主机密码，或在已登录的设备上换一个加入码'**
+  String get unlock_whyInvite;
+
+  /// No description provided for @unlock_lockedCountdown.
+  ///
+  /// In zh, this message translates to:
+  /// **'{seconds} 秒后再试'**
+  String unlock_lockedCountdown(String seconds);
+
+  /// No description provided for @unlock_wrongPassword.
+  ///
+  /// In zh, this message translates to:
+  /// **'密码不对'**
+  String get unlock_wrongPassword;
+
+  /// No description provided for @unlock_tooManyAttempts.
+  ///
+  /// In zh, this message translates to:
+  /// **'试错太多次'**
+  String get unlock_tooManyAttempts;
+
+  /// No description provided for @unlock_forgot.
+  ///
+  /// In zh, this message translates to:
+  /// **'忘记密码？'**
+  String get unlock_forgot;
+
+  /// No description provided for @unlock_switchHost.
+  ///
+  /// In zh, this message translates to:
+  /// **'换一台主机'**
+  String get unlock_switchHost;
+
+  /// No description provided for @unlock_needPassword.
+  ///
+  /// In zh, this message translates to:
+  /// **'需要输入主机密码'**
+  String get unlock_needPassword;
+
+  /// No description provided for @password_label.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机密码'**
+  String get password_label;
+
+  /// No description provided for @password_minLength.
+  ///
+  /// In zh, this message translates to:
+  /// **'至少 6 位'**
+  String get password_minLength;
+
+  /// No description provided for @password_capsLock.
+  ///
+  /// In zh, this message translates to:
+  /// **'大写已开启'**
+  String get password_capsLock;
+
+  /// No description provided for @password_show.
+  ///
+  /// In zh, this message translates to:
+  /// **'显示密码'**
+  String get password_show;
+
+  /// No description provided for @password_hide.
+  ///
+  /// In zh, this message translates to:
+  /// **'隐藏密码'**
+  String get password_hide;
+
+  /// No description provided for @hostStatus_online.
+  ///
+  /// In zh, this message translates to:
+  /// **'在线'**
+  String get hostStatus_online;
+
+  /// No description provided for @hostStatus_connecting.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接中…'**
+  String get hostStatus_connecting;
+
+  /// No description provided for @hostStatus_offline.
+  ///
+  /// In zh, this message translates to:
+  /// **'连不上'**
+  String get hostStatus_offline;
+
+  /// No description provided for @hostOffline_local.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台电脑上的主机没有响应'**
+  String get hostOffline_local;
+
+  /// No description provided for @hostOffline_remote.
+  ///
+  /// In zh, this message translates to:
+  /// **'连不上 {host}。确认那台电脑开着、在同一网络，或者已经开启隧道'**
+  String hostOffline_remote(String host);
+
+  /// No description provided for @gate_errorGeneric.
+  ///
+  /// In zh, this message translates to:
+  /// **'没能登录，请稍后再试'**
+  String get gate_errorGeneric;
+
+  /// No description provided for @gate_errorUnreachable.
+  ///
+  /// In zh, this message translates to:
+  /// **'连不上主机'**
+  String get gate_errorUnreachable;
+
+  /// No description provided for @gate_errorInvite.
+  ///
+  /// In zh, this message translates to:
+  /// **'加入码已失效，请输主机密码'**
+  String get gate_errorInvite;
+
+  /// No description provided for @gate_errorPouchMissing.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机上找不到你的储物袋，它可能被重建过'**
+  String get gate_errorPouchMissing;
+
+  /// No description provided for @gate_errorPasswordFile.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机的密码文件坏了'**
+  String get gate_errorPasswordFile;
+
+  /// No description provided for @gate_errorHostOutdated.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机版本太旧，请在主机上执行 shepaw update'**
+  String get gate_errorHostOutdated;
+
+  /// No description provided for @gate_details.
+  ///
+  /// In zh, this message translates to:
+  /// **'详情'**
+  String get gate_details;
+
+  /// No description provided for @gate_retry.
+  ///
+  /// In zh, this message translates to:
+  /// **'重试'**
+  String get gate_retry;
+
+  /// No description provided for @gate_camera.
+  ///
+  /// In zh, this message translates to:
+  /// **'需要相机权限才能扫码'**
+  String get gate_camera;
+
+  /// No description provided for @forgot_localTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'重设主机密码'**
+  String get forgot_localTitle;
+
+  /// No description provided for @forgot_localBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'在这台电脑上重设主机密码。其他设备当前的登录还能用到过期，之后要输新密码或者扫加入码。'**
+  String get forgot_localBody;
+
+  /// No description provided for @forgot_remoteBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'密码只能在主机那台电脑上重设。打开那台电脑上的惜宝，点「忘记密码」；或者在那台电脑的终端执行 shepaw password set'**
+  String get forgot_remoteBody;
+
+  /// No description provided for @gate_cameraSettings.
+  ///
+  /// In zh, this message translates to:
+  /// **'去设置开启'**
+  String get gate_cameraSettings;
+
+  /// No description provided for @gate_usePaste.
+  ///
+  /// In zh, this message translates to:
+  /// **'改用粘贴'**
+  String get gate_usePaste;
 }
 
 class _AppLocalizationsDelegate

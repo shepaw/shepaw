@@ -8,7 +8,10 @@ import '../services/noise_identity.dart';
 import '../storage/pouch_login_keeper.dart';
 import '../storage/pouch_session.dart';
 
-/// 桌面首次进入：创建储物袋。之后每次用名称和密码进入。
+/// 桌面首次进入：这台电脑还没设过主机密码，创建第一只储物袋。
+///
+/// 解锁（选袋子 + 输密码）已经搬到 `UnlockScreen`，`/pouch-unlock` 现在转到那里。
+/// TODO(L4)：本页会被 `CreatePasswordScreen` 取代，届时整个文件删掉。
 class PouchGateScreen extends StatefulWidget {
   const PouchGateScreen({super.key, required this.initializing});
 
@@ -25,71 +28,12 @@ class _PouchGateScreenState extends State<PouchGateScreen> {
   final _confirm = TextEditingController();
 
   bool _busy = false;
-  bool _ready = false;
   String _error = '';
-  List<CliPouchAccount> _accounts = const [];
-  String? _selectedId;
 
   @override
   void initState() {
     super.initState();
     PouchLoginKeeper.instance.retainGate();
-    _loadSavedName();
-  }
-
-  Future<void> _loadSavedName() async {
-    if (widget.initializing) {
-      if (mounted) setState(() => _ready = true);
-      return;
-    }
-    final remembered = await PouchLoginMemory.read();
-    final session = await PouchSessionStore.readActive();
-    final recentId = remembered?.id ?? session?.pouchId;
-    // 先用本机记住的账号把页面点亮。`account list` 是一趟 CLI 往返，
-    // 主机忙或不在时不能让它把登录按钮锁住。
-    final cached = <String, CliPouchAccount>{};
-    if (session != null && session.pouchId.isNotEmpty) {
-      cached[session.pouchId] = CliPouchAccount(
-        id: session.pouchId,
-        name: session.pouchName,
-      );
-    }
-    if (remembered != null) {
-      cached[remembered.id] = CliPouchAccount(
-        id: remembered.id,
-        name: remembered.name,
-      );
-    }
-    if (cached.isNotEmpty && mounted) {
-      final accounts = cached.values.toList();
-      setState(() {
-        _accounts = accounts;
-        _selectedId = defaultPouchAccount(accounts, recentId: recentId)?.id;
-        _ready = true;
-      });
-    }
-    final binary = await CliHost.resolveBinary();
-    List<CliPouchAccount>? listed;
-    if (binary != null) {
-      try {
-        listed = await CliPouch.list(binary);
-      } catch (error) {
-        LoggerService()
-            .error('pouch list failed', tag: 'PouchGate', error: error);
-      }
-    }
-    if (!mounted) return;
-    setState(() {
-      // 查询成功（哪怕返回空名单）就以主机为准；失败才继续用缓存。
-      if (listed != null) {
-        _accounts = listed;
-        _selectedId = defaultPouchAccount(
-          listed,
-          recentId: _selectedId ?? recentId,
-        )?.id;
-      }
-      _ready = true;
-    });
   }
 
   @override
@@ -103,27 +47,18 @@ class _PouchGateScreenState extends State<PouchGateScreen> {
 
   Future<void> _submit() async {
     final l10n = AppLocalizations.of(context);
-    if (_busy || !_ready) return;
-    final name = widget.initializing
-        ? _name.text.trim()
-        : _accounts
-            .where((account) => account.id == _selectedId)
-            .map((account) => account.name)
-            .firstOrNull;
+    if (_busy) return;
+    final name = _name.text.trim();
     final password = _password.text;
-    if (widget.initializing && (name == null || name.isEmpty)) {
+    if (name.isEmpty) {
       setState(() => _error = l10n.pouch_nameRequired);
-      return;
-    }
-    if (!widget.initializing && (name == null || _selectedId == null)) {
-      setState(() => _error = l10n.pouch_noPouches);
       return;
     }
     if (password.length < 6) {
       setState(() => _error = l10n.passwordSetup_tooShort);
       return;
     }
-    if (widget.initializing && password != _confirm.text) {
+    if (password != _confirm.text) {
       setState(() => _error = l10n.passwordSetup_mismatch);
       return;
     }
@@ -135,23 +70,12 @@ class _PouchGateScreenState extends State<PouchGateScreen> {
       final binary = await CliHost.resolveBinary();
       if (binary == null) throw StateError('没有找到 shepaw');
       final fingerprint = (await NoiseIdentity.loadOrCreate()).fingerprintHex;
-      final CliLoginGrant grant;
-      if (widget.initializing) {
-        grant = await CliPouch.init(
-          binary: binary,
-          name: name!,
-          password: password,
-          fingerprint: fingerprint,
-        );
-      } else {
-        grant = await CliPouch.login(
-          binary: binary,
-          name: name!,
-          password: password,
-          fingerprint: fingerprint,
-          savedId: _selectedId,
-        );
-      }
+      final grant = await CliPouch.init(
+        binary: binary,
+        name: name,
+        password: password,
+        fingerprint: fingerprint,
+      );
       await CliPouch.openLocal(grant);
       if (!mounted) return;
       // openLocal 已经写好登录态并连上本机主机，不必再 probe / attach 一遍。
@@ -161,13 +85,18 @@ class _PouchGateScreenState extends State<PouchGateScreen> {
         setState(() => _error = switch (error.message) {
               '没有这只袋子' => l10n.pouchGate_missing,
               '有多只同名袋子' => l10n.pouchGate_ambiguous,
-              _ => error.message,
+              '没有找到 shepaw' => l10n.gate_errorGeneric,
+              _ => l10n.gate_errorGeneric,
             });
+        LoggerService().warning(
+          'pouch init failed: ${error.message}',
+          tag: 'PouchGate',
+        );
       }
     } catch (error) {
       LoggerService()
           .error('pouch gate failed', tag: 'PouchGate', error: error);
-      if (mounted) setState(() => _error = '$error');
+      if (mounted) setState(() => _error = l10n.gate_errorGeneric);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -176,75 +105,41 @@ class _PouchGateScreenState extends State<PouchGateScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final initializing = widget.initializing;
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          initializing ? l10n.pouchGate_initTitle : l10n.pouchGate_unlockTitle,
-        ),
-      ),
+      appBar: AppBar(title: Text(l10n.pouchGate_initTitle)),
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
-          Text(
-            initializing ? l10n.pouchGate_initBody : l10n.pouchGate_unlockBody,
-          ),
+          Text(l10n.pouchGate_initBody),
           const SizedBox(height: 20),
-          if (initializing)
-            TextField(
-              controller: _name,
-              enabled: _ready && !_busy,
-              decoration: InputDecoration(
-                labelText: l10n.pouchGate_name,
-                hintText: l10n.pouchGate_nameHint,
-              ),
-              textInputAction: TextInputAction.next,
-            )
-          else if (_accounts.isEmpty)
-            Text(l10n.pouch_noPouches)
-          else
-            RadioGroup<String>(
-              groupValue: _selectedId,
-              onChanged: (value) {
-                if (_busy) return;
-                setState(() => _selectedId = value);
-              },
-              child: Column(
-                children: [
-                  for (final account in _accounts)
-                    RadioListTile<String>(
-                      value: account.id,
-                      title: Text(account.name),
-                    ),
-                ],
-              ),
+          TextField(
+            controller: _name,
+            enabled: !_busy,
+            decoration: InputDecoration(
+              labelText: l10n.pouchGate_name,
+              hintText: l10n.pouchGate_nameHint,
             ),
+            textInputAction: TextInputAction.next,
+          ),
           const SizedBox(height: 12),
           TextField(
             controller: _password,
-            enabled: _ready && !_busy,
+            enabled: !_busy,
             obscureText: true,
             decoration: InputDecoration(
-              labelText: initializing
-                  ? l10n.passwordSetup_password
-                  : l10n.login_password,
+              labelText: l10n.passwordSetup_password,
             ),
-            onSubmitted: (_) {
-              if (!initializing) _submit();
-            },
           ),
-          if (initializing) ...[
-            const SizedBox(height: 12),
-            TextField(
-              controller: _confirm,
-              enabled: _ready && !_busy,
-              obscureText: true,
-              decoration: InputDecoration(
-                labelText: l10n.passwordSetup_confirmPassword,
-              ),
-              onSubmitted: (_) => _submit(),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _confirm,
+            enabled: !_busy,
+            obscureText: true,
+            decoration: InputDecoration(
+              labelText: l10n.passwordSetup_confirmPassword,
             ),
-          ],
+            onSubmitted: (_) => _submit(),
+          ),
           if (_error.isNotEmpty) ...[
             const SizedBox(height: 12),
             Text(
@@ -254,16 +149,14 @@ class _PouchGateScreenState extends State<PouchGateScreen> {
           ],
           const SizedBox(height: 20),
           FilledButton(
-            onPressed: _busy || !_ready ? null : _submit,
+            onPressed: _busy ? null : _submit,
             child: _busy
                 ? const SizedBox(
                     width: 18,
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : Text(
-                    initializing ? l10n.pouchGate_create : l10n.pouchGate_enter,
-                  ),
+                : Text(l10n.pouchGate_create),
           ),
           const SizedBox(height: 8),
           TextButton(

@@ -5601,5 +5601,76 @@
   "flow_patchApply": "交给主机改写",
   "flow_patchNotFound": "这段改不了（找不到它所在的容器）",
   "flow_patchNotAList": "要写成一组步骤（JSON 数组）",
-  "flow_patchFailed": "改写失败"
+  "flow_patchFailed": "改写失败",
+  "sessionSearchTitle": "搜索会话",
+  "sessionSearchHint": "私聊、群聊、工作流、终端都在这儿找",
+  "sessionSearchEmpty": "没有找到匹配的会话",
+  "@unlock_welcomeBack": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "unlock_welcomeBack": "欢迎回来，{name}",
+  "unlock_welcomeBackPlain": "欢迎回来",
+  "@unlock_hostLine": {
+    "placeholders": {
+      "host": {
+        "type": "String"
+      }
+    }
+  },
+  "unlock_hostLine": "主机 {host}",
+  "unlock_hostThisComputer": "这台电脑",
+  "unlock_enter": "进入",
+  "unlock_entering": "正在进入…",
+  "unlock_whyCredential": "主机密码改过，或这台设备被移除过，请重新输入",
+  "unlock_whyRestarted": "主机重启了，输入密码后会接着刚才的对话",
+  "unlock_whyInvite": "加入码已失效，请输入主机密码，或在已登录的设备上换一个加入码",
+  "@unlock_lockedCountdown": {
+    "placeholders": {
+      "seconds": {
+        "type": "String"
+      }
+    }
+  },
+  "unlock_lockedCountdown": "{seconds} 秒后再试",
+  "unlock_wrongPassword": "密码不对",
+  "unlock_tooManyAttempts": "试错太多次",
+  "unlock_forgot": "忘记密码？",
+  "unlock_switchHost": "换一台主机",
+  "unlock_needPassword": "需要输入主机密码",
+  "password_label": "主机密码",
+  "password_minLength": "至少 6 位",
+  "password_capsLock": "大写已开启",
+  "password_show": "显示密码",
+  "password_hide": "隐藏密码",
+  "hostStatus_online": "在线",
+  "hostStatus_connecting": "连接中…",
+  "hostStatus_offline": "连不上",
+  "hostOffline_local": "这台电脑上的主机没有响应",
+  "@hostOffline_remote": {
+    "placeholders": {
+      "host": {
+        "type": "String"
+      }
+    }
+  },
+  "hostOffline_remote": "连不上 {host}。确认那台电脑开着、在同一网络，或者已经开启隧道",
+  "hostOffline_banner": "主机离线 · 连上后会自动登录",
+  "gate_errorGeneric": "没能登录，请稍后再试",
+  "gate_errorUnreachable": "连不上主机",
+  "gate_errorInvite": "加入码已失效，请输主机密码",
+  "gate_errorPouchMissing": "主机上找不到你的储物袋，它可能被重建过",
+  "gate_errorPasswordFile": "主机的密码文件坏了",
+  "gate_errorHostOutdated": "主机版本太旧，请在主机上执行 shepaw update",
+  "gate_details": "详情",
+  "gate_retry": "重试",
+  "gate_camera": "需要相机权限才能扫码",
+  "forgot_localTitle": "重设主机密码",
+  "forgot_localBody": "在这台电脑上重设主机密码。其他设备当前的登录还能用到过期，之后要输新密码或者扫加入码。",
+  "forgot_remoteBody": "密码只能在主机那台电脑上重设。打开那台电脑上的惜宝，点「忘记密码」；或者在那台电脑的终端执行 shepaw password set",
+  "gate_cameraSettings": "去设置开启",
+  "gate_usePaste": "改用粘贴"
 }

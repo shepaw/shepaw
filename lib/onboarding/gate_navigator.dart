@@ -12,13 +12,11 @@ import '../services/cli_pouch.dart';
 import '../services/logger_service.dart';
 import '../storage/pouch_credential_store.dart';
 import '../storage/pouch_login.dart';
-import '../storage/pouch_login_client.dart';
 import '../storage/pouch_session.dart';
 import '../utils/platform_utils.dart';
 import 'credential_restore.dart';
 import 'gate_entry.dart';
 import 'host_entry.dart';
-import 'phone_auth_screen.dart';
 import 'phone_host_store.dart';
 
 /// 调用方带过来的上下文。比如 keeper 把人带到解锁页时，要说是主机重启了。
@@ -147,8 +145,8 @@ class GateNavigator {
         await _enterHome(context, session: session, cli: cli, host: host);
 
       case TryRestore(:final hostPeerId, :final fallback):
-        final result =
-            await _restore(cli: cli).run(hostPeerId: hostPeerId);
+        final result = await productionCredentialRestore(cli: cli)
+                .run(hostPeerId: hostPeerId);
         if (!context.mounted) return;
         switch (result) {
           case RestoreResult.restored:
@@ -224,18 +222,10 @@ class GateNavigator {
   }) async {
     final id = hostPeerId.trim().isEmpty ? await _localHostId(cli) : hostPeerId;
     if (!context.mounted) return;
-    if (!isDesktopPlatform) {
-      _replace(context, '/phone-login', arguments: PhoneAuthArgs(hostPeerId: id));
-      return;
-    }
-    if (hostPeerId.trim().isEmpty) {
-      _replace(context, '/pouch-unlock');
-      return;
-    }
     _replace(
       context,
-      '/pouch',
-      arguments: PouchLoginArgs(hostPeerId: id),
+      '/unlock',
+      arguments: UnlockArgs(hostPeerId: id, reason: reason),
     );
   }
 
@@ -386,69 +376,6 @@ class GateNavigator {
     _replace(context, initialized ? '/pouch-unlock' : '/pouch-init');
   }
 
-  static CredentialRestore _restore({required CliHostEndpoint? cli}) {
-    return CredentialRestore(
-      readSession: PouchSessionStore.readActive,
-      lookupPeer: (hostPeerId) =>
-          PeerStorageService().getPeerById(hostPeerId),
-      readCredential: ({
-        required String hostPeerId,
-        required String pouchId,
-        required int nowMs,
-      }) async {
-        final saved = await PouchCredentialStore.instance.readValid(
-          hostPeerId: hostPeerId,
-          pouchId: pouchId,
-          nowMs: nowMs,
-        );
-        return saved?.credential;
-      },
-      connect: (peer, {required bool redial}) async {
-        // 本机主机走 attach：它顺手把地址收回环，老 session 里的旧端口也一起修好。
-        final local = cli ?? await CliHost.detect();
-        if (local != null && sameFingerprint(local.fingerprint, peer.fingerprint)) {
-          await CliHost.attach(local);
-          return;
-        }
-        if (redial) {
-          await PeerConnectionManager.instance.disconnectPeer(peer.id);
-        }
-        await PeerConnectionManager.instance.connectToPeer(
-          peer,
-          ignoreTieBreak: true,
-        );
-      },
-      login: ({
-        required String hostPeerId,
-        required String pouchId,
-        required String credential,
-      }) =>
-          requestPouchLogin(
-        hostPeerId: hostPeerId,
-        pouchId: pouchId,
-        credential: credential,
-      ),
-      persist: (next) async {
-        await PouchSessionStore(await PouchSessionStore.appFile()).save(next);
-      },
-      install: PouchChannel.install,
-      saveCredential: ({
-        required String hostPeerId,
-        required String pouchId,
-        required String credential,
-        required int expiresAtMs,
-      }) =>
-          PouchCredentialStore.instance.save(
-        hostPeerId: hostPeerId,
-        pouchId: pouchId,
-        credential: credential,
-        expiresAtMs: expiresAtMs,
-      ),
-      dropCredential: (hostPeerId) =>
-          PouchCredentialStore.instance.delete(hostPeerId),
-      log: (message) => LoggerService().info(message, tag: 'CredentialRestore'),
-    );
-  }
 }
 
 void _replace(BuildContext context, String route, {Object? arguments}) {

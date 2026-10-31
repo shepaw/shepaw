@@ -226,3 +226,20 @@ GateEntry _remote(
   }
   return GoUnlock(hostPeerId: hostId, recordMode: record);
 }
+
+/// 解锁页的路由参数。
+class UnlockArgs {
+  const UnlockArgs({
+    required this.hostPeerId,
+    this.reason = UnlockReason.expired,
+    this.offline = false,
+  });
+
+  /// 要登录的主机。为空表示本机主机。
+  final String hostPeerId;
+
+  final UnlockReason reason;
+
+  /// 进来时就知道主机连不上。
+  final bool offline;
+}

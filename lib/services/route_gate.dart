@@ -12,6 +12,7 @@ const loginGateRoutes = <String>{
   '/host-setup',
   '/pouch-init',
   '/pouch-unlock',
+  '/unlock',
   '/remote-connect',
   '/phone-login',
 };

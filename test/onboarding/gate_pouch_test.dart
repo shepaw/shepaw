@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shepaw/onboarding/phone_auth_screen.dart';
+import 'package:shepaw/onboarding/gate_pouch.dart';
 import 'package:shepaw/onboarding/phone_pouch_memory.dart';
 import 'package:shepaw/services/cli_pouch.dart';
 import 'package:shepaw/storage/pouch_catalog.dart';
