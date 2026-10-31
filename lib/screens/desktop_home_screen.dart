@@ -1193,23 +1193,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       color: sidebarBg,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final availableHeight = constraints.maxHeight;
-          const double topPadding = 12.0;
-          const double logoHeight = 52.0;
-          const double itemHeight = 42.0;
-          const double dividerHeight = 17.0;
-          const double bottomPadding = 12.0;
-
-          final topItemsHeight = topItems.length * itemHeight;
-          final bottomHeight = dividerHeight + itemHeight;
-          final spacerHeight = (availableHeight -
-                  topPadding -
-                  logoHeight -
-                  topItemsHeight -
-                  bottomPadding -
-                  bottomHeight)
-              .clamp(0.0, double.infinity);
-
           Widget buildItem(_SidebarItemDef item) {
             final icon = _SidebarIcon(
               icon: item.icon,
@@ -1247,7 +1230,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                 ),
               ),
               ...topItems.map(buildItem),
-              SizedBox(height: spacerHeight),
+              // 用 Spacer 撑开，别手算高度：条目增减时算错会把底部挤出侧栏。
+              const Spacer(),
               for (final item in bottomItems)
                 if (item.icon == Icons.horizontal_rule)
                   const Divider(indent: 12, endIndent: 12, height: 17)
