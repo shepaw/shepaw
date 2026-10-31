@@ -3284,6 +3284,32 @@ class AppLocalizationsEn extends AppLocalizations {
   String get groupDetail_removeAvatar => 'Remove Avatar';
 
   @override
+  String get groupDetail_bagEmpty =>
+      'Not initialized (created on first group message)';
+
+  @override
+  String groupDetail_bagReady(int count) {
+    return 'Ready · $count members';
+  }
+
+  @override
+  String get groupDetail_sessions => 'Group sessions';
+
+  @override
+  String get groupDetail_sessionsSub =>
+      'Create, switch, rename or archive this group conversation';
+
+  @override
+  String get groupDetail_bindWorkspace => 'Bind workspaces';
+
+  @override
+  String get groupDetail_bindWorkspaceSub =>
+      'Write runtime/workspace.md for ContextBundle refs';
+
+  @override
+  String get groupDetail_shareRuntime => 'Share runtime context';
+
+  @override
   String get groupDetail_startChat => 'Start Chat';
 
   @override
@@ -9213,4 +9239,18 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get flow_startFailed => 'Could not start the run';
+
+  @override
+  String get flow_talkHint => 'Say how to change these nodes';
+
+  @override
+  String get flow_talkHintNoSelection =>
+      'Long-press a node to select it, then say what to change';
+
+  @override
+  String get flow_talkSend => 'Send to the group owner';
+
+  @override
+  String get flow_talkSelectHint =>
+      'Long-press a node to select it (multiple allowed)';
 }

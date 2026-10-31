@@ -22,7 +22,6 @@ import '../services/composer_draft_service.dart';
 import '../services/desktop_window_auto_size.dart';
 import '../services/local_database_service.dart';
 
-import '../services/group/group_management_service.dart';
 import '../utils/layout_utils.dart';
 import '../utils/message_utils.dart';
 import '../widgets/discard_changes_scope.dart';
@@ -58,7 +57,6 @@ import '../widgets/chat/group_members_panel.dart';
 import '../widgets/chat/add_group_member_panel.dart';
 import '../widgets/chat/copy_to_agent_picker.dart';
 import '../widgets/avatar_image.dart';
-import '../widgets/group_avatar_picker.dart';
 import '../widgets/voice_record_overlay.dart';
 import 'remote_agent_detail_screen.dart';
 import 'group_detail_screen.dart';
@@ -3139,307 +3137,27 @@ class _ChatScreenState extends State<ChatScreen>
   // Group management (UI-bound dialogs)
   // ---------------------------------------------------------------------------
 
+  /// 编辑群信息：两端都走 [GroupDetailScreen] 的编辑态。
+  ///
+  /// 以前桌面另写了一份右抽屉表单，字段和移动端不一样。桌面 push 出来的
+  /// 页面落在当前模式的右栏里，位置是对的。
   Future<void> _editGroupInfo() async {
-    if (LayoutUtils.isDesktopLayout(context)) {
-      _editGroupInfoDesktop();
-    } else {
-      final channel = _controller.groupChannel;
-      if (channel == null) return;
-      final result = await Navigator.push<Channel>(
-        context,
-        MaterialPageRoute(
-          builder: (context) => GroupDetailScreen(
-            channel: channel,
-            startInEditMode: true,
-          ),
+    final channel = _controller.groupChannel;
+    if (channel == null) return;
+    final result = await Navigator.push<Channel>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => GroupDetailScreen(
+          channel: channel,
+          startInEditMode: true,
         ),
-      );
-      if (result is Channel && mounted) {
-        _controller.updateGroupChannelInfo(result);
-      }
+      ),
+    );
+    if (result is Channel && mounted) {
+      _controller.updateGroupChannelInfo(result);
     }
   }
 
-  void _editGroupInfoDesktop() {
-    final channel = _controller.groupChannel;
-    final nameController = TextEditingController(text: channel?.name ?? '');
-    final descController =
-        TextEditingController(text: channel?.description ?? '');
-    final systemPromptController =
-        TextEditingController(text: channel?.systemPrompt ?? '');
-    final maxRoundsController = TextEditingController(
-      text: channel?.maxLoopRounds?.toString() ?? '',
-    );
-    String selectedMentionMode = channel?.effectiveMentionMode ?? 'adminOnly';
-    // 编辑中群头像（emoji / 本地绝对路径）；'' = 无/移除。
-    String pendingAvatar = channel?.avatar ?? '';
-
-    LayoutUtils.showRightDrawer(
-      context: context,
-      builder: (ctx) {
-        final panelL10n = AppLocalizations.of(ctx);
-        return StatefulBuilder(
-          builder: (ctx, setDrawerState) => Column(
-            children: [
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                child: Row(
-                  children: [
-                    Expanded(
-                        child: Text(panelL10n.chat_editGroupInfo,
-                            style: const TextStyle(
-                                fontSize: 18, fontWeight: FontWeight.bold))),
-                    IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.pop(ctx)),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // 群头像：点按或按钮打开 picker（内置图标 / 相册 / 拍照 / 移除）。
-                      Center(
-                        child: GestureDetector(
-                          onTap: () => GroupAvatarPicker.showSourceSheet(
-                            ctx,
-                            currentAvatar: pendingAvatar,
-                            onPick: (value) {
-                              if (ctx.mounted) {
-                                setDrawerState(() => pendingAvatar = value);
-                              }
-                            },
-                            onRemove: () {
-                              if (ctx.mounted) {
-                                setDrawerState(() => pendingAvatar = '');
-                              }
-                            },
-                          ),
-                          child: Stack(
-                            children: [
-                              Container(
-                                width: 80,
-                                height: 80,
-                                clipBehavior: Clip.antiAlias,
-                                decoration: BoxDecoration(
-                                  color: AppColors.primaryContainer,
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: pendingAvatar.isEmpty
-                                    ? const Icon(Icons.group,
-                                        size: 40,
-                                        color: AppColors.primary)
-                                    : AvatarImage(
-                                        avatar: pendingAvatar,
-                                        size: 80,
-                                        borderRadius: 0,
-                                        // 群头像容器自带橘色底，别再铺一层中性底板。
-                                        showPlate: false,
-                                        fallback: const Icon(Icons.group,
-                                            size: 40,
-                                            color: AppColors.primary),
-                                      ),
-                              ),
-                              Positioned(
-                                right: 0,
-                                bottom: 0,
-                                child: Container(
-                                  padding: const EdgeInsets.all(6),
-                                  decoration: BoxDecoration(
-                                    color: Theme.of(ctx).colorScheme.primary,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(Icons.camera_alt,
-                                      size: 18, color: Colors.white),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Center(
-                        child: TextButton.icon(
-                          onPressed: () => GroupAvatarPicker.showSourceSheet(
-                            ctx,
-                            currentAvatar: pendingAvatar,
-                            onPick: (value) {
-                              if (ctx.mounted) {
-                                setDrawerState(() => pendingAvatar = value);
-                              }
-                            },
-                            onRemove: () {
-                              if (ctx.mounted) {
-                                setDrawerState(() => pendingAvatar = '');
-                              }
-                            },
-                          ),
-                          icon: const Icon(Icons.edit, size: 16),
-                          label: Text(panelL10n.groupDetail_changeAvatar),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      TextField(
-                          controller: nameController,
-                          decoration: InputDecoration(
-                              labelText: panelL10n.chat_groupName,
-                              border: const OutlineInputBorder()),
-                          autofocus: true),
-                      const SizedBox(height: 16),
-                      TextField(
-                          controller: descController,
-                          decoration: InputDecoration(
-                              labelText:
-                                  panelL10n.chat_groupDescriptionOptional,
-                              border: const OutlineInputBorder()),
-                          maxLines: 2),
-                      const SizedBox(height: 16),
-                      TextField(
-                          controller: systemPromptController,
-                          decoration: InputDecoration(
-                              labelText: panelL10n.chat_groupSystemPrompt,
-                              hintText: panelL10n.chat_groupSystemPromptHint,
-                              border: const OutlineInputBorder()),
-                          maxLines: 4),
-                      const SizedBox(height: 16),
-                      DropdownButtonFormField<String>(
-                        value: selectedMentionMode,
-                        decoration: InputDecoration(
-                          labelText: panelL10n.chat_mentionMode,
-                          border: const OutlineInputBorder(),
-                          prefixIcon: const Icon(Icons.alternate_email),
-                        ),
-                        items: [
-                          DropdownMenuItem(
-                            value: 'adminOnly',
-                            child: Text(panelL10n.chat_mentionModeAdminOnly),
-                          ),
-                          DropdownMenuItem(
-                            value: 'allMembers',
-                            child: Text(panelL10n.chat_mentionModeAllMembers),
-                          ),
-                        ],
-                        onChanged: (value) {
-                          if (value != null) {
-                            setDrawerState(() {
-                              selectedMentionMode = value;
-                            });
-                          }
-                        },
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4, left: 4),
-                        child: Text(
-                          selectedMentionMode == 'allMembers'
-                              ? panelL10n.chat_mentionModeAllMembersDesc
-                              : panelL10n.chat_mentionModeAdminOnlyDesc,
-                          style:
-                              TextStyle(fontSize: 12, color: Colors.grey[600]),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: maxRoundsController,
-                        keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                          labelText: panelL10n.groupDetail_maxLoopRounds,
-                          hintText: panelL10n.createGroup_maxLoopRoundsHint,
-                          border: const OutlineInputBorder(),
-                          prefixIcon: const Icon(Icons.loop),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          TextButton(
-                              onPressed: () => Navigator.pop(ctx),
-                              child: Text(panelL10n.common_cancel)),
-                          const SizedBox(width: 8),
-                          FilledButton(
-                            onPressed: () async {
-                              final newName = nameController.text.trim();
-                              if (newName.isEmpty) {
-                                showTopToast(
-                                  ctx,
-                                  panelL10n.chat_groupNameEmpty,
-                                  icon: Icons.warning_amber,
-                                  color: Colors.orange,
-                                );
-                                return;
-                              }
-                              final maxRoundsText =
-                                  maxRoundsController.text.trim();
-                              int? maxLoopRounds;
-                              if (maxRoundsText.isNotEmpty) {
-                                maxLoopRounds = int.tryParse(maxRoundsText);
-                                if (maxLoopRounds == null ||
-                                    maxLoopRounds < 1) {
-                                  showTopToast(
-                                    ctx,
-                                    panelL10n.createGroup_maxLoopRoundsHint,
-                                    icon: Icons.warning_amber,
-                                    color: Colors.orange,
-                                  );
-                                  return;
-                                }
-                              }
-                              final old = _controller.groupChannel!;
-                              // 群配置只走 GroupManagementService 这一个入口
-                              // （DB 写回 + 家族标题同步 + 变更通知 + 整行重建
-                              // 保留未改列）。留空文本传 ''、轮次留空传 0 ——
-                              // 这里是「清空」而不是服务层的「保留原值」。
-                              final result = await GroupManagementService()
-                                  .updateGroupSettings(
-                                channelId: old.id,
-                                actorId: SheService.sheId,
-                                name: newName,
-                                description: descController.text.trim(),
-                                systemPrompt: systemPromptController.text.trim(),
-                                maxLoopRounds: maxLoopRounds ?? 0,
-                                mentionMode: selectedMentionMode,
-                                avatar:
-                                    pendingAvatar.isEmpty ? null : pendingAvatar,
-                                clearAvatar: pendingAvatar.isEmpty,
-                              );
-                              if (!result.ok) {
-                                if (ctx.mounted) {
-                                  showTopToast(
-                                    ctx,
-                                    result.error ?? '',
-                                    icon: Icons.error_outline,
-                                    color: Colors.red,
-                                  );
-                                }
-                                return;
-                              }
-                              final updated = await _controller
-                                  .localDatabaseService
-                                  .getChannelById(old.id);
-                              if (updated != null && mounted) {
-                                _controller.updateGroupChannelInfo(updated);
-                              }
-                              if (ctx.mounted) Navigator.pop(ctx);
-                            },
-                            child: Text(panelL10n.common_save),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
 
   Future<void> _showGroupMembersPanel() async {
     final l10n = AppLocalizations.of(context);

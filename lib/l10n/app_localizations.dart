@@ -5828,6 +5828,48 @@ abstract class AppLocalizations {
   /// **'移除头像'**
   String get groupDetail_removeAvatar;
 
+  /// No description provided for @groupDetail_bagEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'未初始化（群聊发消息后自动创建）'**
+  String get groupDetail_bagEmpty;
+
+  /// No description provided for @groupDetail_bagReady.
+  ///
+  /// In zh, this message translates to:
+  /// **'已就绪 · {count} 名成员'**
+  String groupDetail_bagReady(int count);
+
+  /// No description provided for @groupDetail_sessions.
+  ///
+  /// In zh, this message translates to:
+  /// **'群会话'**
+  String get groupDetail_sessions;
+
+  /// No description provided for @groupDetail_sessionsSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'新建、切换、改名或归档这一轮的会话'**
+  String get groupDetail_sessionsSub;
+
+  /// No description provided for @groupDetail_bindWorkspace.
+  ///
+  /// In zh, this message translates to:
+  /// **'绑定工作区'**
+  String get groupDetail_bindWorkspace;
+
+  /// No description provided for @groupDetail_bindWorkspaceSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'写入 runtime/workspace.md，供 ContextBundle 引用'**
+  String get groupDetail_bindWorkspaceSub;
+
+  /// No description provided for @groupDetail_shareRuntime.
+  ///
+  /// In zh, this message translates to:
+  /// **'分享运行时上下文'**
+  String get groupDetail_shareRuntime;
+
   /// No description provided for @groupDetail_startChat.
   ///
   /// In zh, this message translates to:
@@ -16066,6 +16108,30 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'开跑失败'**
   String get flow_startFailed;
+
+  /// No description provided for @flow_talkHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'说说要怎么改这几个节点'**
+  String get flow_talkHint;
+
+  /// No description provided for @flow_talkHintNoSelection.
+  ///
+  /// In zh, this message translates to:
+  /// **'长按节点选中它，再说要怎么改'**
+  String get flow_talkHintNoSelection;
+
+  /// No description provided for @flow_talkSend.
+  ///
+  /// In zh, this message translates to:
+  /// **'发给群主'**
+  String get flow_talkSend;
+
+  /// No description provided for @flow_talkSelectHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'长按节点可选中（可多选）'**
+  String get flow_talkSelectHint;
 }
 
 class _AppLocalizationsDelegate

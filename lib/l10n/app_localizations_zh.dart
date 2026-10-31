@@ -3159,6 +3159,30 @@ class AppLocalizationsZh extends AppLocalizations {
   String get groupDetail_removeAvatar => '移除头像';
 
   @override
+  String get groupDetail_bagEmpty => '未初始化（群聊发消息后自动创建）';
+
+  @override
+  String groupDetail_bagReady(int count) {
+    return '已就绪 · $count 名成员';
+  }
+
+  @override
+  String get groupDetail_sessions => '群会话';
+
+  @override
+  String get groupDetail_sessionsSub => '新建、切换、改名或归档这一轮的会话';
+
+  @override
+  String get groupDetail_bindWorkspace => '绑定工作区';
+
+  @override
+  String get groupDetail_bindWorkspaceSub =>
+      '写入 runtime/workspace.md，供 ContextBundle 引用';
+
+  @override
+  String get groupDetail_shareRuntime => '分享运行时上下文';
+
+  @override
   String get groupDetail_startChat => '发起聊天';
 
   @override
@@ -8862,4 +8886,16 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get flow_startFailed => '开跑失败';
+
+  @override
+  String get flow_talkHint => '说说要怎么改这几个节点';
+
+  @override
+  String get flow_talkHintNoSelection => '长按节点选中它，再说要怎么改';
+
+  @override
+  String get flow_talkSend => '发给群主';
+
+  @override
+  String get flow_talkSelectHint => '长按节点可选中（可多选）';
 }

@@ -1846,6 +1846,20 @@
   "groupDetail_avatar": "群头像",
   "groupDetail_changeAvatar": "更换头像",
   "groupDetail_removeAvatar": "移除头像",
+  "groupDetail_bagEmpty": "未初始化（群聊发消息后自动创建）",
+  "groupDetail_bagReady": "已就绪 · {count} 名成员",
+  "@groupDetail_bagReady": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "groupDetail_sessions": "群会话",
+  "groupDetail_sessionsSub": "新建、切换、改名或归档这一轮的会话",
+  "groupDetail_bindWorkspace": "绑定工作区",
+  "groupDetail_bindWorkspaceSub": "写入 runtime/workspace.md，供 ContextBundle 引用",
+  "groupDetail_shareRuntime": "分享运行时上下文",
   "groupDetail_startChat": "发起聊天",
   "groupDetail_deleteGroup": "删除群组",
   "groupDetail_confirmDelete": "删除群组？",
@@ -5454,5 +5468,9 @@
   "flow_libraryTitle": "流程库",
   "flow_libraryEmpty": "还没有流程",
   "flow_startRun": "运行",
-  "flow_startFailed": "开跑失败"
+  "flow_startFailed": "开跑失败",
+  "flow_talkHint": "说说要怎么改这几个节点",
+  "flow_talkHintNoSelection": "长按节点选中它，再说要怎么改",
+  "flow_talkSend": "发给群主",
+  "flow_talkSelectHint": "长按节点可选中（可多选）"
 }

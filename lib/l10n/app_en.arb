@@ -1389,6 +1389,20 @@
   "groupDetail_avatar": "Group Avatar",
   "groupDetail_changeAvatar": "Change Avatar",
   "groupDetail_removeAvatar": "Remove Avatar",
+  "groupDetail_bagEmpty": "Not initialized (created on first group message)",
+  "groupDetail_bagReady": "Ready · {count} members",
+  "@groupDetail_bagReady": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "groupDetail_sessions": "Group sessions",
+  "groupDetail_sessionsSub": "Create, switch, rename or archive this group conversation",
+  "groupDetail_bindWorkspace": "Bind workspaces",
+  "groupDetail_bindWorkspaceSub": "Write runtime/workspace.md for ContextBundle refs",
+  "groupDetail_shareRuntime": "Share runtime context",
   "groupDetail_startChat": "Start Chat",
   "groupDetail_deleteGroup": "Delete Group",
   "groupDetail_confirmDelete": "Delete Group?",
@@ -5002,5 +5016,9 @@
   "flow_libraryTitle": "Flow library",
   "flow_libraryEmpty": "No flows yet",
   "flow_startRun": "Run",
-  "flow_startFailed": "Could not start the run"
+  "flow_startFailed": "Could not start the run",
+  "flow_talkHint": "Say how to change these nodes",
+  "flow_talkHintNoSelection": "Long-press a node to select it, then say what to change",
+  "flow_talkSend": "Send to the group owner",
+  "flow_talkSelectHint": "Long-press a node to select it (multiple allowed)"
 }

@@ -17,16 +17,13 @@ import '../service_locator.dart';
 import '../services/group/group_management_service.dart';
 import '../services/logger_service.dart';
 import '../services/she_service.dart';
-import '../storage/group_shared_files.dart';
 import '../storage/group_workspace_service.dart';
-import '../storage/pouch_scope.dart';
 import '../storage/runtime_share_service.dart';
 import '../widgets/chat/hub_group_sessions_sheet.dart';
 import '../widgets/discard_changes_scope.dart';
 import '../widgets/form_bottom_bar.dart';
 import '../widgets/avatar_image.dart';
 import 'storage_directory_opener.dart';
-import 'pouch_scope_browser_screen.dart';
 import 'workspace_binding_screen.dart';
 import 'group_member_detail_screen.dart';
 
@@ -314,103 +311,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
   }
 
   /// 群工作空间详情：初始化状态、home device、成员表（角色）、共享面 URI。
-  void _showGroupWorkspaceSheet(
-    BuildContext context,
-    GroupWorkspaceMeta? meta,
-  ) {
-    final zh = Localizations.localeOf(context).languageCode.startsWith('zh');
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  zh ? '群工作空间' : 'Group workspace',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                if (meta == null) ...[
-                  Text(
-                    zh ? '未初始化——群聊发消息后自动创建。' : 'Not initialized — created on first group message.',
-                    style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-                  ),
-                ] else ...[
-                  Text(
-                    zh ? '状态：已就绪' : 'Status: ready',
-                    style: TextStyle(fontSize: 13, color: Colors.green[700]),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    zh ? '成员（${meta.members.length}）' : 'Members (${meta.members.length})',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  for (final m in meta.members.values)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 2),
-                      child: Text(
-                        '${m.agentId}  ·  ${m.role == 'admin' ? (zh ? '管理员' : 'admin') : (zh ? '成员' : 'member')}',
-                        style: const TextStyle(fontSize: 13),
-                      ),
-                    ),
-                  const SizedBox(height: 12),
-                  Text(
-                    zh ? '共享面：' : 'Shared area: ',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  // [G4] 共享文件在 v3 袋子里是 group:<gid>:shared/files；浏览、
-                  // 上传、删除走 PouchScopeBrowserScreen，共享面只有一个写入口
-                  // GroupSharedFiles。
-                  SelectableText(
-                    'group:${meta.groupId}:shared/files',
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                  const SizedBox(height: 4),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      onPressed: () {
-                        Navigator.of(sheetContext).pop();
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => PouchScopeBrowserScreen(
-                              initialScope: PouchScope.groupShared(meta.groupId),
-                              initialPath: GroupSharedFiles.filesDir,
-                              title: zh ? '群共享文件' : 'Shared files',
-                            ),
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.folder_shared_outlined, size: 18),
-                      label: Text(zh ? '打开共享文件' : 'Open shared files'),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -588,52 +488,12 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
         ),
         const Divider(height: 1),
 
-        // 群工作空间（储物袋 workspaces/group_<gid>/）：状态 + 成员表 + 共享面。
-        FutureBuilder<GroupWorkspaceMeta?>(
-          future: GroupWorkspaceService.instance.loadMeta(ownerId),
-          builder: (context, snapshot) {
-            final meta = snapshot.data;
-            final ready = meta != null;
-            return ListTile(
-              leading: Icon(
-                ready ? Icons.groups_outlined : Icons.groups,
-                color: colorScheme.primary,
-              ),
-              title: Text(
-                Localizations.localeOf(context).languageCode.startsWith('zh')
-                    ? '群工作空间'
-                    : 'Group workspace',
-              ),
-              subtitle: Text(
-                !ready
-                    ? (Localizations.localeOf(context).languageCode
-                            .startsWith('zh')
-                        ? '未初始化（群聊发消息后自动创建）'
-                        : 'Not initialized (created on first group message)')
-                    : '${Localizations.localeOf(context).languageCode.startsWith('zh') ? '已就绪' : 'Ready'} · '
-                        '${meta.members.length} '
-                        '${Localizations.localeOf(context).languageCode.startsWith('zh') ? '名成员' : 'members'}',
-                style: TextStyle(color: colorScheme.onSurfaceVariant),
-              ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => _showGroupWorkspaceSheet(context, meta),
-            );
-          },
-        ),
-        const Divider(height: 1),
-
         // 群会话（主机权威）：列出、切换、改名、归档。
         ListTile(
           leading: Icon(Icons.forum_outlined, color: colorScheme.primary),
-          title: Text(
-            Localizations.localeOf(context).languageCode.startsWith('zh')
-                ? '群会话'
-                : 'Group sessions',
-          ),
+          title: Text(l10n.groupDetail_sessions),
           subtitle: Text(
-            Localizations.localeOf(context).languageCode.startsWith('zh')
-                ? '新建、切换、改名或归档这一轮的会话'
-                : 'Create, switch, rename or archive this group conversation',
+            l10n.groupDetail_sessionsSub,
             style: TextStyle(color: colorScheme.onSurfaceVariant),
           ),
           trailing: const Icon(Icons.chevron_right),
@@ -643,15 +503,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
 
         ListTile(
           leading: Icon(Icons.folder_special_outlined, color: colorScheme.primary),
-          title: Text(
-            Localizations.localeOf(context).languageCode.startsWith('zh')
-                ? '绑定工作区'
-                : 'Bind workspaces',
-          ),
+          title: Text(l10n.groupDetail_bindWorkspace),
           subtitle: Text(
-            Localizations.localeOf(context).languageCode.startsWith('zh')
-                ? '写入 runtime/workspace.md，供 ContextBundle 引用'
-                : 'Write runtime/workspace.md for ContextBundle refs',
+            l10n.groupDetail_bindWorkspaceSub,
             style: TextStyle(color: colorScheme.onSurfaceVariant),
           ),
           trailing: const Icon(Icons.chevron_right),
@@ -668,25 +522,24 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
         ),
         const Divider(height: 1),
 
-        ListTile(
-          leading: Icon(Icons.inventory_2_outlined, color: colorScheme.primary),
-          title: Text(
-            Localizations.localeOf(context).languageCode.startsWith('zh')
-                ? '群储物袋'
-                : 'Group storage bag',
-          ),
-          subtitle: Text(
-            Localizations.localeOf(context).languageCode.startsWith('zh')
-                ? '成员产物在 members/ 下，任务卷宗在 shared/'
-                : 'Member artifacts under members/, task records under shared/',
-            style: TextStyle(color: colorScheme.onSurfaceVariant),
-          ),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () {
-            openGroupWorkspaceBag(
-              context,
-              groupId: _channel.groupFamilyId,
-              title: _channel.name,
+        // 群的储物袋：工作空间状态、成员产物、共享文件原来分成两个入口，
+        // 其实都是 `group:<gid>` 这一个 scope，合成一条。
+        FutureBuilder<GroupWorkspaceMeta?>(
+          future: GroupWorkspaceService.instance.loadMeta(ownerId),
+          builder: (context, snapshot) {
+            final meta = snapshot.data;
+            return ListTile(
+              leading: Icon(Icons.inventory_2_outlined,
+                  color: colorScheme.primary),
+              title: Text(l10n.chat_storageSpace),
+              subtitle: Text(
+                meta == null
+                    ? l10n.groupDetail_bagEmpty
+                    : l10n.groupDetail_bagReady(meta.members.length),
+                style: TextStyle(color: colorScheme.onSurfaceVariant),
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _openGroupBag(),
             );
           },
         ),
@@ -695,9 +548,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
         ListTile(
           leading: Icon(Icons.share_outlined, color: colorScheme.primary),
           title: Text(
-            Localizations.localeOf(context).languageCode.startsWith('zh')
-                ? '分享运行时上下文'
-                : 'Share runtime context',
+            l10n.groupDetail_shareRuntime,
           ),
           subtitle: Text(
             Localizations.localeOf(context).languageCode.startsWith('zh')
@@ -987,6 +838,15 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
       setState(() => _channel = refreshed);
     }
     await _loadAgents();
+  }
+
+  /// 群储物袋。`group:<gid>` 这一个 scope，成员产物和共享文件都在里面。
+  void _openGroupBag() {
+    openGroupWorkspaceBag(
+      context,
+      groupId: _channel.groupFamilyId,
+      title: _channel.name,
+    );
   }
 
   Future<void> _startChat() async {
