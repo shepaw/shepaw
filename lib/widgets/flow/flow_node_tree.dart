@@ -13,6 +13,8 @@ class FlowNodeTree extends StatelessWidget {
     this.onTapNode,
     this.onAnswerGate,
     this.badgeFor,
+    this.onLongPressNode,
+    this.selectedIds = const {},
   });
 
   final List<FlowNode> nodes;
@@ -23,6 +25,12 @@ class FlowNodeTree extends StatelessWidget {
 
   /// 节点标题旁的小标记（差异里的"新增""有改动"），返回空就不画。
   final (String, Color)? Function(FlowNode node)? badgeFor;
+
+  /// 长按选中（C.3 的点选）：选中后可以对着它说话，让群主改。
+  final void Function(FlowNode node)? onLongPressNode;
+
+  /// 已选中的节点 id。
+  final Set<String> selectedIds;
 
   @override
   Widget build(BuildContext context) {
@@ -36,6 +44,8 @@ class FlowNodeTree extends StatelessWidget {
             onTapNode: onTapNode,
             onAnswerGate: onAnswerGate,
             badgeFor: badgeFor,
+            onLongPressNode: onLongPressNode,
+            selected: selectedIds.contains(nodes[i].id),
           ),
         ],
       ],
@@ -115,35 +125,48 @@ class FlowNodeCard extends StatelessWidget {
     this.onTapNode,
     this.onAnswerGate,
     this.badgeFor,
+    this.onLongPressNode,
+    this.selected = false,
+    this.selectedIds = const {},
   });
 
   final FlowNode node;
   final void Function(FlowNode node)? onTapNode;
   final void Function(FlowNode node, String choice)? onAnswerGate;
   final (String, Color)? Function(FlowNode node)? badgeFor;
+  final void Function(FlowNode node)? onLongPressNode;
+  final bool selected;
+  final Set<String> selectedIds;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final status = node.status;
-    final accent =
-        status == null ? theme.dividerColor : flowStatusColor(status);
+    final accent = selected
+        ? theme.colorScheme.primary
+        : status == null
+            ? theme.dividerColor
+            : flowStatusColor(status);
     final container = node.isContainer;
     final dashed = node.kind == 'plan';
     return Material(
-      color: container
-          ? theme.colorScheme.surfaceContainerLowest
-          : theme.colorScheme.surface,
+      color: selected
+          ? theme.colorScheme.primaryContainer.withValues(alpha: 0.35)
+          : container
+              ? theme.colorScheme.surfaceContainerLowest
+              : theme.colorScheme.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
         side: BorderSide(
           color: accent.withValues(alpha: dashed ? 0.5 : 0.8),
-          width: status == FlowNodeStatus.running ? 1.6 : 1,
+          width: selected || status == FlowNodeStatus.running ? 1.6 : 1,
         ),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
         onTap: onTapNode == null ? null : () => onTapNode!(node),
+        onLongPress:
+            onLongPressNode == null ? null : () => onLongPressNode!(node),
         child: Padding(
           padding: const EdgeInsets.all(10),
           child: Column(
@@ -224,12 +247,16 @@ class FlowNodeCard extends StatelessWidget {
                           onTapNode: onTapNode,
                           onAnswerGate: onAnswerGate,
                           badgeFor: badgeFor,
+                          onLongPressNode: onLongPressNode,
+                          selectedIds: selectedIds,
                         )
                       : FlowNodeTree(
                           nodes: node.children,
                           onTapNode: onTapNode,
                           onAnswerGate: onAnswerGate,
                           badgeFor: badgeFor,
+                          onLongPressNode: onLongPressNode,
+                          selectedIds: selectedIds,
                         ),
                 ),
             ],
@@ -247,12 +274,16 @@ class _ParallelChildren extends StatelessWidget {
     this.onTapNode,
     this.onAnswerGate,
     this.badgeFor,
+    this.onLongPressNode,
+    this.selectedIds = const {},
   });
 
   final List<FlowNode> nodes;
   final void Function(FlowNode node)? onTapNode;
   final void Function(FlowNode node, String choice)? onAnswerGate;
   final (String, Color)? Function(FlowNode node)? badgeFor;
+  final void Function(FlowNode node)? onLongPressNode;
+  final Set<String> selectedIds;
 
   @override
   Widget build(BuildContext context) {
@@ -265,6 +296,8 @@ class _ParallelChildren extends StatelessWidget {
               onTapNode: onTapNode,
               onAnswerGate: onAnswerGate,
               badgeFor: badgeFor,
+              onLongPressNode: onLongPressNode,
+              selected: selectedIds.contains(node.id),
             ),
         ];
         if (constraints.maxWidth < 560) {

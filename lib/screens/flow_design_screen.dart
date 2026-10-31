@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../peer/models/flow_models.dart';
+import '../peer/pouch_turn_relay.dart';
 import '../peer/services/hub_flow.dart';
+import '../services/local_user_identity.dart';
 import '../widgets/flow/flow_node_inspector.dart';
 import '../widgets/flow/flow_node_tree.dart';
 
@@ -20,6 +22,9 @@ class FlowDesignScreen extends StatefulWidget {
     this.scope = '',
     this.client,
     this.stepInterval = const Duration(milliseconds: 350),
+    this.groupId = '',
+    this.sessionId = '',
+    this.talk,
   });
 
   final String peerId;
@@ -29,6 +34,19 @@ class FlowDesignScreen extends StatefulWidget {
 
   /// 演练动画每一步的间隔。
   final Duration stepInterval;
+
+  /// 有群就有"点选 + 说话"（C.3）：长按节点选中，对着它说一句，交给群主改。
+  /// 没有群时设计视图只能手改。
+  final String groupId;
+  final String sessionId;
+
+  /// 把一句话交给群主。测试里换成假的；为空时走 [PouchTurnRelay]。
+  final Future<void> Function({
+    required String groupId,
+    required String content,
+    required Map<String, dynamic> flowContext,
+    required void Function(String chunk) onChunk,
+  })? talk;
 
   @override
   State<FlowDesignScreen> createState() => _FlowDesignScreenState();
@@ -49,10 +67,27 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   bool _saving = false;
   int _nextId = 1;
 
+  bool get canTalk => _talkGroupId.isNotEmpty;
+
+  /// 说话要发到哪个群。没直接给 `groupId` 时，群库（`group:<gid>`）本身就是群。
+  /// `sessionId` 留空：主机取群 meta 的 current_session。
+  String get _talkGroupId {
+    if (widget.groupId.isNotEmpty) return widget.groupId;
+    return widget.scope.startsWith('group:')
+        ? widget.scope.substring('group:'.length)
+        : '';
+  }
+
   // 演练
   FlowRehearsal? _rehearsal;
   int _progress = 0;
   Timer? _timer;
+
+  // 点选 + 说话（C.3）
+  final Set<String> _selected = <String>{};
+  final TextEditingController _composer = TextEditingController();
+  final StringBuffer _reply = StringBuffer();
+  bool _talking = false;
 
   @override
   void initState() {
@@ -63,6 +98,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _composer.dispose();
     super.dispose();
   }
 
@@ -138,6 +174,70 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       id = '$prefix-${_nextId++}';
     } while (_tree.any((n) => n.find((x) => x.id == id) != null));
     return id;
+  }
+
+  void _toggleSelected(FlowNode node) {
+    if (_rehearsal != null) return;
+    setState(() {
+      if (!_selected.add(node.id)) _selected.remove(node.id);
+    });
+  }
+
+  /// 这一轮交给群主的上下文（C.3）：`{flow: {ref}, selection: [...]}`。
+  ///
+  /// 主机把选中节点的原文带进群主的提示里，群主不用猜"这两个并行"指哪两个。
+  Map<String, dynamic> _talkContext() {
+    final reference = widget.scope.isEmpty || widget.scope == 'lib'
+        ? 'lib/${widget.name}'
+        : '${widget.scope}/${widget.name}';
+    return {
+      'flow': {'ref': reference},
+      'selection': _selected.toList(),
+    };
+  }
+
+  Future<void> _talk() async {
+    final text = _composer.text.trim();
+    if (text.isEmpty || _talking) return;
+    setState(() {
+      _talking = true;
+      _reply.clear();
+    });
+    try {
+      final send = widget.talk;
+      if (send == null) {
+        await PouchTurnRelay.instance.forwardGroup(
+          hostPeerId: widget.peerId,
+          channelId: _talkGroupId,
+          content: text,
+          userId: LocalUserIdentity.id,
+          userName: LocalUserIdentity.displayName,
+          flowContext: _talkContext(),
+          onStreamChunk: (_, __, chunk) {
+            if (!mounted) return;
+            setState(() => _reply.write(chunk));
+          },
+          onAgentDone: (_, __, ___) => unawaited(_load()),
+        );
+      } else {
+        await send(
+          groupId: _talkGroupId,
+          content: text,
+          flowContext: _talkContext(),
+          onChunk: (chunk) {
+            if (!mounted) return;
+            setState(() => _reply.write(chunk));
+          },
+        );
+        // 假中继没有 onAgentDone：自己刷新一次。
+        unawaited(_load());
+      }
+    } catch (error) {
+      if (mounted) _snack('$error');
+    } finally {
+      if (mounted) setState(() => _talking = false);
+    }
+    _composer.clear();
   }
 
   void _openInspector(FlowNode node) {
@@ -324,7 +424,12 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
           ),
         ],
       ),
-      body: _body(l10n),
+      body: Column(
+        children: [
+          Expanded(child: _body(l10n)),
+          if (_talkBar(l10n) case final bar?) bar,
+        ],
+      ),
     );
   }
 
@@ -383,6 +488,8 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
         FlowNodeTree(
           nodes: _shownTree,
           onTapNode: _openInspector,
+          onLongPressNode: canTalk ? _toggleSelected : null,
+          selectedIds: _selected,
           badgeFor: diff == null
               ? null
               : (node) {
@@ -394,7 +501,73 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
                   };
                 },
         ),
+        if (_reply.isNotEmpty)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: SelectableText(_reply.toString()),
+            ),
+          ),
       ],
+    );
+  }
+
+  /// 底部的"点选 + 说话"条（C.3）：选中的节点 + 一句话，交给群主改。
+  Widget? _talkBar(AppLocalizations l10n) {
+    if (!canTalk) return null;
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_selected.isNotEmpty)
+              Wrap(
+                spacing: 6,
+                children: [
+                  for (final id in _selected)
+                    InputChip(
+                      key: ValueKey('sel-$id'),
+                      label: Text(id),
+                      onDeleted: () => setState(() => _selected.remove(id)),
+                    ),
+                ],
+              ),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    key: const ValueKey('talk-input'),
+                    controller: _composer,
+                    minLines: 1,
+                    maxLines: 4,
+                    decoration: InputDecoration(
+                      hintText: _selected.isEmpty
+                          ? l10n.flow_talkHintNoSelection
+                          : l10n.flow_talkHint,
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _talking
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : IconButton(
+                        key: const ValueKey('talk-send'),
+                        tooltip: l10n.flow_talkSend,
+                        icon: const Icon(Icons.send),
+                        onPressed: _talk,
+                      ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

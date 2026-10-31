@@ -88,6 +88,9 @@ class PouchTurnRelay {
     String? replyToId,
     String? replyQuoteText,
     List<Map<String, dynamic>>? attachmentRefs,
+    // 设计视图点选的上下文（C.3）：`{flow: {ref}, selection: [...]}`，主机据此
+    // 把选中节点的原文带给群主，不必用语言描述"第二个并行里那个"。
+    Map<String, dynamic>? flowContext,
   }) {
     return <String, dynamic>{
       'type': groupRequestType,
@@ -98,6 +101,7 @@ class PouchTurnRelay {
       'content': content,
       'user_id': userId,
       'user_name': userName,
+      if (flowContext != null) ...flowContext,
       if (userMessageId != null)
         'user_message_id': bareMessageId(userMessageId),
       'mentioned_agent_ids': mentionedAgentIds,
@@ -136,6 +140,9 @@ class PouchTurnRelay {
 
     /// 主机回显本轮实际用的会话和任务（B 4.5）。
     void Function(String sessionId, String? taskId)? onSessionResolved,
+
+    /// 设计视图点选的上下文（C.3），原样并进群回合帧。
+    Map<String, dynamic>? flowContext,
   }) async {
     final refs = await _attachmentRefs(
       hostPeerId: hostPeerId,
@@ -166,6 +173,7 @@ class PouchTurnRelay {
         replyToId: replyToId,
         replyQuoteText: replyQuoteText,
         attachmentRefs: refs,
+        flowContext: flowContext,
       ),
       onEvent: (event) {
         if (event['kind'] == 'interaction') {
@@ -224,8 +232,10 @@ class PouchTurnRelay {
     String? replyQuoteText,
     List<AttachmentData>? attachments,
     void Function(String chunk)? onStreamChunk,
+
     /// 主机下发的折叠区元数据（思考、工具步骤），字段同 `agent_metadata`。
     void Function(Map<String, dynamic> metadata)? onMetadata,
+
     /// 模型的推理文本片段，不属于回复正文。
     void Function(String chunk)? onThinking,
     Future<Map<String, dynamic>?> Function(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../peer/services/hub_group_sessions.dart';
+import '../../screens/flow_library_screen.dart';
 import '../../screens/pouch_scope_browser_screen.dart';
 import '../../storage/pouch_scope.dart';
 
@@ -157,10 +158,23 @@ class _HubGroupSessionsSheetState extends State<HubGroupSessionsSheet> {
             ListTile(
               title: const Text('群会话'),
               subtitle: const Text('切换只影响这一端之后的群回合'),
-              trailing: IconButton(
-                tooltip: '新建会话',
-                onPressed: _loading || _host.isEmpty ? null : _create,
-                icon: const Icon(Icons.add),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 本群的流程库（C.3）：进去可以改流程，也能点选节点后
+                  // 说一句话让群主改。`group:` scope 就是群主对话的目标。
+                  IconButton(
+                    key: const ValueKey('group-flow-design'),
+                    tooltip: '设计流程',
+                    onPressed: _host.isEmpty ? null : _openFlowDesign,
+                    icon: const Icon(Icons.account_tree_outlined),
+                  ),
+                  IconButton(
+                    tooltip: '新建会话',
+                    onPressed: _loading || _host.isEmpty ? null : _create,
+                    icon: const Icon(Icons.add),
+                  ),
+                ],
               ),
             ),
             const Divider(height: 1),
@@ -169,6 +183,15 @@ class _HubGroupSessionsSheetState extends State<HubGroupSessionsSheet> {
         ),
       ),
     );
+  }
+
+  void _openFlowDesign() {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => FlowLibraryScreen(
+        peerId: _host,
+        scope: 'group:${widget.groupId}',
+      ),
+    ));
   }
 
   Widget _body() {
