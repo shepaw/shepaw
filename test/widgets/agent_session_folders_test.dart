@@ -92,7 +92,26 @@ void main() {
               'session_id': 'new-1',
             }));
           case 'agent_sessions_req':
-            // 带 folder 的是组明细；不带的是摘要。
+            if (frame['type'] == 'agent_group_view_req') {
+          bus.add(PeerControlEvent(peerId: peerId, data: {
+            'type': 'agent_group_view_resp',
+            'agent_id': 'a1',
+            'group_id': 'g1',
+            'session_id': 's1',
+            'read_only': true,
+            'total': 1,
+            'messages': [
+              {
+                'role': 'agent',
+                'content': '我在群里说的话',
+                'message_id': 'm1',
+                'created_at': '2026-10-31T00:00:00.000Z',
+              }
+            ],
+          }));
+          return true;
+        }
+        // 带 folder 的是组明细；不带的是摘要。
             if (frame['folder'] == null) {
               summariesAsked++;
               bus.add(PeerControlEvent(peerId: peerId, data: {
@@ -152,30 +171,14 @@ void main() {
 
     // 进组明细 → 打开群聊视角 → 分叉（标题栏的按钮一定点得到）。
     await tester.tap(find.text('群聊 · 1'));
-    for (var i = 0; i < 4; i++) {
-      await tester.pump(const Duration(milliseconds: 20));
-    }
+    await tester.pumpAndSettle();
     await tester.tap(find.text('群里的话'));
-    for (var i = 0; i < 4; i++) {
-      await tester.pump(const Duration(milliseconds: 20));
-    }
-    // 群聊视角的"分叉到私聊"在 AppBar 右侧。这一屏的 AppBar 比视口宽
-    // （SelectableText 撑开的既有问题），坐标命中打不到，直接调按钮的回调。
-    final forkButton = tester.widget<TextButton>(find.ancestor(
-      of: find.text('分叉到私聊'),
-      matching: find.byType(TextButton),
-    ));
-    await tester.runAsync(() async {
-      forkButton.onPressed!();
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-    });
-    for (var i = 0; i < 4; i++) {
-      await tester.pump(const Duration(milliseconds: 20));
-    }
+    // 等路由动画走完：转场途中按钮还在屏幕外面，点不到。
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('分叉到私聊'));
+    await tester.pumpAndSettle();
 
     expect(forkAsked, 1);
-    // 请求那条 10 秒的超时计时器还在：推掉它，免得用例结尾报 pending timer。
-    await tester.pump(const Duration(seconds: 11));
 
     // 分叉之后立刻对齐一次主机名单：新私聊不用等下一次同步才出现。
     expect(refreshed, ['p1|a1']);

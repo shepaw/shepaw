@@ -16318,6 +16318,54 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'没有找到匹配的会话'**
   String get sessionSearchEmpty;
+
+  /// No description provided for @flow_validate.
+  ///
+  /// In zh, this message translates to:
+  /// **'校验'**
+  String get flow_validate;
+
+  /// No description provided for @flow_source.
+  ///
+  /// In zh, this message translates to:
+  /// **'源码'**
+  String get flow_source;
+
+  /// No description provided for @flow_sourceApply.
+  ///
+  /// In zh, this message translates to:
+  /// **'用这份'**
+  String get flow_sourceApply;
+
+  /// No description provided for @flow_patchNode.
+  ///
+  /// In zh, this message translates to:
+  /// **'改写还没跑到的部分'**
+  String get flow_patchNode;
+
+  /// No description provided for @flow_patchApply.
+  ///
+  /// In zh, this message translates to:
+  /// **'交给主机改写'**
+  String get flow_patchApply;
+
+  /// No description provided for @flow_patchNotFound.
+  ///
+  /// In zh, this message translates to:
+  /// **'这段改不了（找不到它所在的容器）'**
+  String get flow_patchNotFound;
+
+  /// No description provided for @flow_patchNotAList.
+  ///
+  /// In zh, this message translates to:
+  /// **'要写成一组步骤（JSON 数组）'**
+  String get flow_patchNotAList;
+
+  /// No description provided for @flow_patchFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'改写失败'**
+  String get flow_patchFailed;
 }
 
 class _AppLocalizationsDelegate

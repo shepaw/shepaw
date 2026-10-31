@@ -8995,4 +8995,28 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get sessionSearchEmpty => '没有找到匹配的会话';
+
+  @override
+  String get flow_validate => '校验';
+
+  @override
+  String get flow_source => '源码';
+
+  @override
+  String get flow_sourceApply => '用这份';
+
+  @override
+  String get flow_patchNode => '改写还没跑到的部分';
+
+  @override
+  String get flow_patchApply => '交给主机改写';
+
+  @override
+  String get flow_patchNotFound => '这段改不了（找不到它所在的容器）';
+
+  @override
+  String get flow_patchNotAList => '要写成一组步骤（JSON 数组）';
+
+  @override
+  String get flow_patchFailed => '改写失败';
 }

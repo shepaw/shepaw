@@ -234,6 +234,41 @@ void main() {
     await host.bus.close();
   });
 
+  testWidgets('the source bar opens on desktop and checks the yaml on the host',
+      (tester) async {
+    final host = _FakeHost();
+    // 桌面宽度：源码条在窄屏是只读的。
+    tester.view.physicalSize = const Size(3000, 2400);
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(_app(FlowDesignScreen(
+      peerId: 'p1',
+      name: 'dev',
+      client: host.client,
+    )));
+    await _settle(tester);
+
+    await tester.tap(find.byKey(const ValueKey('yaml-bar')));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('yaml-editor')), findsOneWidget);
+
+    // 校验走主机：改完立刻发 flow_validate_req。
+    await tester.tap(find.byKey(const ValueKey('yaml-validate')));
+    await _settle(tester);
+    expect(host.sent.any((f) => f['type'] == 'flow_validate_req'), isTrue);
+
+    // 用这份：草稿换成改过的，可以保存了。
+    await tester.enterText(find.byKey(const ValueKey('yaml-editor')),
+        'steps:\n- id: impl\n  task: {prompt: "认真写"}\n');
+    await tester.tap(find.byKey(const ValueKey('yaml-apply')));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('yaml-editor')), findsNothing);
+    final save = find.widgetWithIcon(IconButton, Icons.check);
+    expect(tester.widget<IconButton>(save).onPressed, isNotNull);
+    await tester.pumpWidget(const SizedBox());
+    await host.bus.close();
+  });
+
   testWidgets('rehearsal lights the steps in order and can be ended',
       (tester) async {
     final host = _FakeHost();

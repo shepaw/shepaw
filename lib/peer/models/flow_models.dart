@@ -206,6 +206,7 @@ class FlowRunView {
     required this.tree,
     this.error,
     this.children = const [],
+    this.yaml = '',
   });
 
   final String runId;
@@ -216,6 +217,9 @@ class FlowRunView {
 
   /// 子运行（`call`）的 run id。
   final List<String> children;
+
+  /// 运行固定在这一版定义上（B.6）。改写（F19）要靠它取出某个容器的子步骤。
+  final String yaml;
 
   static FlowRunView? fromResponse(Map<String, dynamic> response) {
     if (response['success'] != true) return null;
@@ -237,6 +241,7 @@ class FlowRunView {
       children: rawChildren is List
           ? [for (final id in rawChildren) id.toString()]
           : const [],
+      yaml: (response['yaml'] as String?) ?? '',
     );
   }
 
@@ -265,6 +270,7 @@ class FlowRunView {
         tree: tree,
         error: error,
         children: children,
+        yaml: yaml,
       );
 }
 

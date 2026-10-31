@@ -5517,5 +5517,13 @@
   "flow_deleteRunFailed": "删除失败",
   "sessionSearchTitle": "搜索会话",
   "sessionSearchHint": "私聊、群聊、工作流、终端都在这儿找",
-  "sessionSearchEmpty": "没有找到匹配的会话"
+  "sessionSearchEmpty": "没有找到匹配的会话",
+  "flow_validate": "校验",
+  "flow_source": "源码",
+  "flow_sourceApply": "用这份",
+  "flow_patchNode": "改写还没跑到的部分",
+  "flow_patchApply": "交给主机改写",
+  "flow_patchNotFound": "这段改不了（找不到它所在的容器）",
+  "flow_patchNotAList": "要写成一组步骤（JSON 数组）",
+  "flow_patchFailed": "改写失败"
 }

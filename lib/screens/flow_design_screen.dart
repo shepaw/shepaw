@@ -8,6 +8,7 @@ import '../peer/pouch_turn_relay.dart';
 import '../peer/services/hub_flow.dart';
 import '../services/local_user_identity.dart';
 import '../widgets/flow/flow_node_inspector.dart';
+import '../widgets/flow/flow_yaml_editor.dart';
 import '../widgets/flow/flow_node_tree.dart';
 
 /// 流程设计视图（方案 C.3–C.5）：节点树 + 检查器直接改 + 与上一版的差异 + 演练。
@@ -83,6 +84,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   int _progress = 0;
   Timer? _timer;
   bool _answering = false;
+  bool _showYaml = false;
 
   // 点选 + 说话（C.3）
   final Set<String> _selected = <String>{};
@@ -467,6 +469,8 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
         children: [
           Expanded(child: _body(l10n)),
           if (_talkBar(l10n) case final bar?) bar,
+          // 桌面端（C.6）：左边看图，右边直接改 YAML。手机只给看源码。
+          if (_yamlBar(l10n) case final bar?) bar,
         ],
       ),
     );
@@ -582,6 +586,48 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
             ),
           ),
       ],
+    );
+  }
+
+  /// 桌面端的源码条（C.6）：折叠着只占一行，展开后能直接改 YAML。
+  ///
+  /// 改完同样走 `flow_validate_req`（主机判），有错误就不让保存。手机上只读。
+  Widget? _yamlBar(AppLocalizations l10n) {
+    final wide = MediaQuery.of(context).size.width >= 900;
+    return SafeArea(
+      top: false,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            key: const ValueKey('yaml-bar'),
+            dense: true,
+            leading: const Icon(Icons.data_object),
+            title: Text(l10n.flow_source),
+            trailing: Icon(_showYaml
+                ? Icons.keyboard_arrow_down
+                : Icons.keyboard_arrow_up),
+            onTap: () => setState(() => _showYaml = !_showYaml),
+          ),
+          if (_showYaml)
+            SizedBox(
+              height: 260,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                child: FlowYamlEditor(
+                  yaml: _yaml,
+                  readOnly: !wide,
+                  validate: (text) => _client.validate(widget.peerId, text),
+                  applyLabel: l10n.flow_sourceApply,
+                  onApply: (edited) => setState(() {
+                    _yaml = edited;
+                    _showYaml = false;
+                  }),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 

@@ -5065,5 +5065,13 @@
   "flow_deleteRunFailed": "Could not delete the run",
   "sessionSearchTitle": "Search sessions",
   "sessionSearchHint": "Private chats, groups, workflows and terminals",
-  "sessionSearchEmpty": "No matching sessions"
+  "sessionSearchEmpty": "No matching sessions",
+  "flow_validate": "Check",
+  "flow_source": "Source",
+  "flow_sourceApply": "Use this",
+  "flow_patchNode": "Rewrite what has not started",
+  "flow_patchApply": "Send the rewrite",
+  "flow_patchNotFound": "Cannot rewrite this (no enclosing block found)",
+  "flow_patchNotAList": "Write it as a list of steps (JSON array)",
+  "flow_patchFailed": "Could not rewrite"
 }

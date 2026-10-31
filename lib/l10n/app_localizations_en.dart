@@ -9355,4 +9355,29 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get sessionSearchEmpty => 'No matching sessions';
+
+  @override
+  String get flow_validate => 'Check';
+
+  @override
+  String get flow_source => 'Source';
+
+  @override
+  String get flow_sourceApply => 'Use this';
+
+  @override
+  String get flow_patchNode => 'Rewrite what has not started';
+
+  @override
+  String get flow_patchApply => 'Send the rewrite';
+
+  @override
+  String get flow_patchNotFound =>
+      'Cannot rewrite this (no enclosing block found)';
+
+  @override
+  String get flow_patchNotAList => 'Write it as a list of steps (JSON array)';
+
+  @override
+  String get flow_patchFailed => 'Could not rewrite';
 }

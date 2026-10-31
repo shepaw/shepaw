@@ -15,6 +15,9 @@ dependencies:
   # UI
   cupertino_icons: ^1.0.6
   flutter_svg: ^2.0.9
+  # 流程定义是 YAML。App 不解析它（节点树由 Hub 给），只有两处要读原文：
+  # 运行中改写要把某个容器的子步骤取出来交给 Hub，桌面直接编辑 YAML 要能校验。
+  yaml: ^3.1.2
   cached_network_image: ^3.3.0
   emoji_picker_flutter: ^3.1.0
   

@@ -6,6 +6,8 @@ import '../l10n/app_localizations.dart';
 import '../peer/models/flow_models.dart';
 import '../peer/services/hub_flow.dart';
 import '../widgets/flow/flow_node_tree.dart';
+import '../widgets/flow/flow_yaml.dart';
+import '../widgets/flow/flow_yaml_editor.dart';
 
 /// 工作流运行视图（方案 C.2）：节点树叠状态，随 `flow.*` 事件更新；
 /// 关卡直接点选项作答；点节点看完整输出，有会话的可以"查看会话"。
@@ -219,10 +221,91 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
                   },
                 ),
               ],
+              // 运行中改写（F19）：只改还没开始的节点，所以已经开跑或终态的
+              // 不显示这个入口。
+              if (_canPatch(node)) ...[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  key: const ValueKey('node-patch'),
+                  icon: const Icon(Icons.edit_outlined),
+                  label: Text(l10n.flow_patchNode),
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _patchNode(node);
+                  },
+                ),
+              ],
             ],
           ),
         );
       },
+    );
+  }
+
+  /// 这个节点还能改吗。跑过的、已经有终态的都改不了（F19 的口径）。
+  bool _canPatch(FlowNode node) {
+    final status = node.status;
+    if (status == null) return false;
+    if (status != FlowNodeStatus.pending) return false;
+    return _run?.status == FlowRunStatus.running;
+  }
+
+  void _snack(String text) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+
+  /// 改写还没开始的节点（F19）。单个叶子改不了，要指向它所在的容器。
+  Future<void> _patchNode(FlowNode node) async {
+    final l10n = AppLocalizations.of(context);
+    final yaml = _run?.yaml ?? '';
+    final target = node.isContainer
+        ? node
+        : flowLocate(_run?.tree ?? const [], node.id)?.parent;
+    if (yaml.isEmpty || target == null) {
+      _snack(l10n.flow_patchNotFound);
+      return;
+    }
+    final stepsJson = FlowYaml.stepsJsonOf(yaml, target.id);
+    if (stepsJson == null) {
+      _snack(l10n.flow_patchNotFound);
+      return;
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheet) => Padding(
+        padding: EdgeInsets.only(
+          left: 12,
+          right: 12,
+          top: 12,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 12,
+        ),
+        child: SizedBox(
+          height: MediaQuery.of(context).size.height * 0.7,
+          child: FlowYamlEditor(
+            yaml: stepsJson,
+            hint: '[{"id": "a", "task": {"prompt": "做"}}]',
+            applyLabel: l10n.flow_patchApply,
+            onApply: (edited) async {
+              final steps = FlowYaml.stepsFromJson(edited);
+              if (steps == null) {
+                _snack(l10n.flow_patchNotAList);
+                return;
+              }
+              final result = await _client.patch(
+                  widget.peerId, widget.runId, target.id, steps);
+              if (!mounted) return;
+              if (!result.ok) {
+                _snack(result.reachable
+                    ? (result.error ?? l10n.flow_patchFailed)
+                    : l10n.flow_hostNoReply);
+                return;
+              }
+              Navigator.pop(sheet);
+              unawaited(_load());
+            },
+          ),
+        ),
+      ),
     );
   }
 
