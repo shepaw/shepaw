@@ -272,9 +272,23 @@ class ContactsScreenState extends State<ContactsScreen> {
   }
 
   Widget _buildTabSwitcher(AppLocalizations l10n) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
       child: SegmentedButton<_ContactsTab>(
+        // 默认会在选中项前加一个对勾，两个文字标签的场景显得多余。
+        showSelectedIcon: false,
+        style: SegmentedButton.styleFrom(
+          // 默认激活色是 secondaryContainer，本主题里那是淡粉色，和橘色主题
+          // 不搭；改用 primaryContainer（浅色下淡橘，深色下自动换成暗橘）。
+          selectedBackgroundColor: colorScheme.primaryContainer,
+          selectedForegroundColor: colorScheme.onPrimaryContainer,
+          foregroundColor: colorScheme.onSurfaceVariant,
+          side: BorderSide(color: colorScheme.outlineVariant),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+          visualDensity: VisualDensity.compact,
+        ),
         segments: [
           ButtonSegment(
             value: _ContactsTab.people,
