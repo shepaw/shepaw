@@ -3423,8 +3423,9 @@ class PeerAgentClientService {
     _pending[requestId] = pending;
     unawaited(pending.completer.future.then((result) {
       unawaited(_saveParkedReply(pending, requestId, result.content));
-    }).catchError((Object _) {
+    }).catchError((Object error) {
       ChatService().dropQueuedMessage(requestId);
+      unawaited(_saveParkedFailure(pending, requestId, error));
     }));
     final deviceInfo = await ClientDeviceInfo.current();
     final frame = <String, dynamic>{
@@ -3458,7 +3459,8 @@ class PeerAgentClientService {
       }
       throw Exception('配对设备未连接，无法发送');
     }
-    unawaited(_awaitTurnCompletion(requestId, pending, peerId));
+    // 只要看门狗；结果（含报错）由上面挂在 completer 上的回调收口。
+    _awaitTurnCompletion(requestId, pending, peerId).ignore();
     try {
       return await ack.future.timeout(_effectiveQueueAckTimeout);
     } on TimeoutException {
@@ -3505,11 +3507,33 @@ class PeerAgentClientService {
     }
   }
 
+  /// 排队回合以报错收尾。
+  ///
+  /// 还没开跑就失败（没送达、主机没收下）：消息只在排队面板里，聊天页挂着的
+  /// 还是上一轮的流式任务，什么都不能动。开跑后失败要和成功一样卸下这次
+  /// 流式挂接，否则气泡一直停在「正在输出」、半成品行每几秒刷一次库；
+  /// 已经流出来的正文照常落成回复，再补一条错误说明。
+  Future<void> _saveParkedFailure(
+    _PendingRequest pending,
+    String requestId,
+    Object error,
+  ) async {
+    if (pending.heldOnHost) return;
+    _log.warning('queued turn $requestId failed: $error', tag: _tag);
+    await _saveParkedReply(
+      pending,
+      requestId,
+      pending.answerContent,
+      error: error,
+    );
+  }
+
   Future<void> _saveParkedReply(
     _PendingRequest pending,
     String requestId,
-    String reply,
-  ) async {
+    String reply, {
+    Object? error,
+  }) async {
     ChatService().releaseQueuedMessage(requestId);
     final channelId = pending.channelId;
     final text = pending.parkedText;
@@ -3538,18 +3562,36 @@ class PeerAgentClientService {
         metadata: ClientDeviceInfo.stampMetadata(),
         conflictAlgorithm: ConflictAlgorithm.ignore,
       );
-      await db.createMessage(
-        id: replyId,
-        channelId: channelId,
-        senderId: pending.localAgentId.isEmpty
+      if (error == null || reply.trim().isNotEmpty) {
+        await db.createMessage(
+          id: replyId,
+          channelId: channelId,
+          senderId: pending.localAgentId.isEmpty
+              ? pending.remoteAgentId
+              : pending.localAgentId,
+          senderType: 'agent',
+          senderName: pending.agentName,
+          content: reply,
+          replyToId: userMessageId,
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+      }
+      if (error != null) {
+        final agentName = pending.agentName.isEmpty
             ? pending.remoteAgentId
-            : pending.localAgentId,
-        senderType: 'agent',
-        senderName: pending.agentName,
-        content: reply,
-        replyToId: userMessageId,
-        conflictAlgorithm: ConflictAlgorithm.ignore,
-      );
+            : pending.agentName;
+        await db.createMessage(
+          id: '$requestId-error',
+          channelId: channelId,
+          senderId: 'system',
+          senderType: 'system',
+          senderName: 'System',
+          content:
+              'Error: Failed to send message to $agentName. Details: $error',
+          messageType: 'system',
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+      }
       if ('$requestId-reply' != replyId) {
         await db.deleteMessage('$requestId-reply');
       }
