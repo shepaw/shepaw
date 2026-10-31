@@ -6229,14 +6229,17 @@ class PeerAgentClientService {
     return agent;
   }
 
+  /// [nodeId] 为 null 表示删主机自己名下的实例，否则删指定工作节点上的。
   Future<PeerAgentManageResult> removeAgent({
     required String peerId,
     required String remoteAgentId,
+    String? nodeId,
   }) async {
     final result = await manageAgents(
       peerId: peerId,
       op: 'remove',
       agentId: remoteAgentId,
+      nodeId: nodeId,
     );
     if (!result.ok) return result;
     // 主机已经删掉实例。先清本机行，会话列表不必等下一轮 agent_list 或重启。

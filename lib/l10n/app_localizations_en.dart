@@ -5013,6 +5013,24 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String peerSettings_deleteHostConfirm(String name) {
+    return 'Remove pairing with host $name?\nAgents, group chats and files on this host become unavailable until you pair again.';
+  }
+
+  @override
+  String peerSettings_deleteSelfConfirm(String name) {
+    return 'Remove this device ($name) from the host roster?\nThis app can no longer work through this host until you pair again.';
+  }
+
+  @override
+  String get peerDevice_renameUnsupported =>
+      'This host does not support renaming this device';
+
+  @override
+  String get peerDevice_renameFailed =>
+      'Could not rename: no local pairing record for this device';
+
+  @override
   String get peerSettings_noShareableAgents => 'No agents available to share';
 
   @override
@@ -5054,6 +5072,34 @@ class AppLocalizationsEn extends AppLocalizations {
   String get peerSettings_sectionAgents => 'Agent Management';
 
   @override
+  String get peerSettings_sectionSecurity => 'Security';
+
+  @override
+  String get peerSettings_sectionAbout => 'About this device';
+
+  @override
+  String peerSettings_hiddenAgentCount(int count) {
+    return '$count hidden from this app';
+  }
+
+  @override
+  String get peerSettings_showHiddenAgents => 'Show';
+
+  @override
+  String get peerSettings_agentCacheOffline =>
+      'Device offline: showing local cache';
+
+  @override
+  String get peerSettings_engineOfflineHint =>
+      'Device offline: engine management unavailable';
+
+  @override
+  String get peerSettings_copied => 'Copied';
+
+  @override
+  String get peerSettings_reconnect => 'Reconnect';
+
+  @override
   String get peerSettings_agentVisibilityHint =>
       'This only controls whether the agent appears in this app. It does not stop or disable the agent on the remote hub.';
 
@@ -5084,6 +5130,14 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get peerSettings_agentManageOffline =>
       'Device is offline. No synced agents yet.';
+
+  @override
+  String get peerSettings_agentManageUnsupported =>
+      'This device does not support agent management';
+
+  @override
+  String get peerSettings_agentOpTimeout =>
+      'Timed out. The device may be offline.';
 
   @override
   String get peerSettings_newAgent => 'New agent';
@@ -8580,6 +8634,67 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get contacts_noSearchResults => 'No matches';
+
+  @override
+  String get contacts_tabPeople => 'People';
+
+  @override
+  String get contacts_tabDevices => 'Devices';
+
+  @override
+  String get contacts_unassigned => 'Unassigned';
+
+  @override
+  String contacts_deviceCount(int count) {
+    return '$count devices';
+  }
+
+  @override
+  String get contacts_reconnect => 'Reconnect';
+
+  @override
+  String get contacts_reconnectFailed =>
+      'Could not reach the host. Check that it is running.';
+
+  @override
+  String get contacts_noSessionTitle => 'No host connected';
+
+  @override
+  String get contacts_noSessionBody =>
+      'Connect a host to see its agents, group chats and devices';
+
+  @override
+  String get contacts_connectHost => 'Connect host';
+
+  @override
+  String get contacts_rosterRetry => 'Retry';
+
+  @override
+  String get contacts_actionSendMessage => 'Send message';
+
+  @override
+  String get contacts_actionViewDetail => 'View details';
+
+  @override
+  String get contacts_actionHideOnApp => 'Hide from contacts';
+
+  @override
+  String get contacts_actionShowOnApp => 'Show in contacts';
+
+  @override
+  String get contacts_actionEnterGroup => 'Open group chat';
+
+  @override
+  String get contacts_actionGroupDetail => 'Group details';
+
+  @override
+  String get contacts_actionAddAgentHere => 'Add agent on this node';
+
+  @override
+  String get contacts_searchAgents => 'Agents';
+
+  @override
+  String get contacts_searchDevices => 'Devices';
 
   @override
   String get chat_attachImageFailed => 'Couldn\'t send the image. Try again.';

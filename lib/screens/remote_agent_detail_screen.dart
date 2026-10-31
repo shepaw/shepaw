@@ -31,8 +31,6 @@ import '../services/skill_registry.dart';
 import '../service_locator.dart' show getIt;
 import '../storage/agent_storage_bag_opener.dart';
 import '../services/chat_navigation_service.dart';
-import '../services/chat_service.dart';
-import '../services/local_user_identity.dart';
 import 'skill_select_screen.dart';
 import 'cli_command_select_screen.dart';
 import 'prompt_stack_config_screen.dart';
@@ -1407,14 +1405,7 @@ class _RemoteAgentDetailScreenState extends State<RemoteAgentDetailScreen> {
   /// 走 [ChatNavigationService]：桌面切到「聊天」并选中会话，移动端在根导航里
   /// 打开。原来是 pushReplacement，桌面会把通讯录右栏换成非嵌入聊天页。
   Future<void> _startConversation() async {
-    final chatService = getIt<ChatService>();
-    const userId = LocalUserIdentity.id;
-    final channelId =
-        await chatService.getLatestActiveChannelId(userId, _agent.id) ??
-            chatService.generateChannelId(userId, _agent.id);
-    if (!mounted) return;
-    await ChatNavigationService.instance.openChannel(
-      channelId: channelId,
+    await ChatNavigationService.instance.openAgentConversation(
       agentId: _agent.id,
       agentName: _agent.name,
       agentAvatar: _agent.avatar,

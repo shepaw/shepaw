@@ -4820,6 +4820,22 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String peerSettings_deleteHostConfirm(String name) {
+    return '确定要删除与主机 $name 的配对吗？\n删除后这台主机上的 Agent、群聊和文件都将不可用，需要重新配对才能恢复。';
+  }
+
+  @override
+  String peerSettings_deleteSelfConfirm(String name) {
+    return '确定要删除本机（$name）在主机名单里的配对吗？\n删除后本 App 将无法再通过这台主机工作，需要重新配对。';
+  }
+
+  @override
+  String get peerDevice_renameUnsupported => '当前主机不支持修改这台设备的备注';
+
+  @override
+  String get peerDevice_renameFailed => '修改备注失败，本机没有这台设备的配对记录';
+
+  @override
   String get peerSettings_noShareableAgents => '暂无可分享的 Agent';
 
   @override
@@ -4858,6 +4874,32 @@ class AppLocalizationsZh extends AppLocalizations {
   String get peerSettings_sectionAgents => 'Agent 管理';
 
   @override
+  String get peerSettings_sectionSecurity => '安全';
+
+  @override
+  String get peerSettings_sectionAbout => '关于此设备';
+
+  @override
+  String peerSettings_hiddenAgentCount(int count) {
+    return '已在本 App 隐藏 $count 个';
+  }
+
+  @override
+  String get peerSettings_showHiddenAgents => '显示';
+
+  @override
+  String get peerSettings_agentCacheOffline => '设备离线，显示的是本机缓存';
+
+  @override
+  String get peerSettings_engineOfflineHint => '设备离线，无法管理引擎';
+
+  @override
+  String get peerSettings_copied => '已复制';
+
+  @override
+  String get peerSettings_reconnect => '重新连接';
+
+  @override
   String get peerSettings_agentVisibilityHint =>
       '只控制本 App 是否展示该 Agent，不会在远端 Hub 上停用或下线。';
 
@@ -4887,6 +4929,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get peerSettings_agentManageOffline => '设备离线，暂无已同步的 Agent';
+
+  @override
+  String get peerSettings_agentManageUnsupported => '这台设备不支持管理 Agent';
+
+  @override
+  String get peerSettings_agentOpTimeout => '操作超时，设备可能已离线';
 
   @override
   String get peerSettings_newAgent => '新建 Agent';
@@ -8253,6 +8301,65 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get contacts_noSearchResults => '没有匹配的结果';
+
+  @override
+  String get contacts_tabPeople => '联系人';
+
+  @override
+  String get contacts_tabDevices => '设备';
+
+  @override
+  String get contacts_unassigned => '未归属';
+
+  @override
+  String contacts_deviceCount(int count) {
+    return '$count 台';
+  }
+
+  @override
+  String get contacts_reconnect => '重新连接';
+
+  @override
+  String get contacts_reconnectFailed => '连不上主机，请检查主机是否在运行';
+
+  @override
+  String get contacts_noSessionTitle => '还没有连接主机';
+
+  @override
+  String get contacts_noSessionBody => '连接主机后才能看到它的 Agent、群聊和设备';
+
+  @override
+  String get contacts_connectHost => '连接主机';
+
+  @override
+  String get contacts_rosterRetry => '重试';
+
+  @override
+  String get contacts_actionSendMessage => '发消息';
+
+  @override
+  String get contacts_actionViewDetail => '查看详情';
+
+  @override
+  String get contacts_actionHideOnApp => '在通讯录中隐藏';
+
+  @override
+  String get contacts_actionShowOnApp => '在通讯录中显示';
+
+  @override
+  String get contacts_actionEnterGroup => '进入群聊';
+
+  @override
+  String get contacts_actionGroupDetail => '群详情';
+
+  @override
+  String get contacts_actionAddAgentHere => '在此节点添加 Agent';
+
+  @override
+  String get contacts_searchAgents => 'Agent';
+
+  @override
+  String get contacts_searchDevices => '设备';
 
   @override
   String get chat_attachImageFailed => '发送图片失败，请重试';

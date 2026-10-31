@@ -203,6 +203,23 @@ class RemoteAgentService {
     return agent;
   }
 
+  /// 在本 App 的通讯录 / 会话列表里显示或隐藏这个 Agent。
+  ///
+  /// 只是本机可见性，不动主机上的实例。通讯录列表和设备详情共用这一份，
+  /// 别再各自改 metadata。
+  Future<void> setVisibleOnApp(RemoteAgent agent, bool visible) async {
+    final latest =
+        await _databaseService.getRemoteAgentById(agent.id) ?? agent;
+    final metadata = Map<String, dynamic>.from(latest.metadata);
+    if (visible) {
+      metadata.remove('hidden_on_this_app');
+    } else {
+      metadata['hidden_on_this_app'] = true;
+    }
+    await updateAgent(latest.copyWith(metadata: metadata));
+    PeerConnectionManager.instance.notifyPeerListChanged();
+  }
+
   /// 更新远端助手
   Future<void> updateAgent(RemoteAgent agent) async {
     final updatedAgent = agent.copyWith(

@@ -2256,6 +2256,24 @@
       }
     }
   },
+  "peerSettings_deleteHostConfirm": "Remove pairing with host {name}?\nAgents, group chats and files on this host become unavailable until you pair again.",
+  "@peerSettings_deleteHostConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "peerSettings_deleteSelfConfirm": "Remove this device ({name}) from the host roster?\nThis app can no longer work through this host until you pair again.",
+  "@peerSettings_deleteSelfConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "peerDevice_renameUnsupported": "This host does not support renaming this device",
+  "peerDevice_renameFailed": "Could not rename: no local pairing record for this device",
   "peerSettings_noShareableAgents": "No agents available to share",
   "peerSettings_enableExternalAccessHint": "Enable \"Allow External Access\" in agent settings to share agents with this device",
   "peerSettings_shareAgentsTitle": "Agents Shared with This Device",
@@ -2284,6 +2302,21 @@
     }
   },
   "peerSettings_sectionAgents": "Agent Management",
+  "peerSettings_sectionSecurity": "Security",
+  "peerSettings_sectionAbout": "About this device",
+  "peerSettings_hiddenAgentCount": "{count} hidden from this app",
+  "@peerSettings_hiddenAgentCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "peerSettings_showHiddenAgents": "Show",
+  "peerSettings_agentCacheOffline": "Device offline: showing local cache",
+  "peerSettings_engineOfflineHint": "Device offline: engine management unavailable",
+  "peerSettings_copied": "Copied",
+  "peerSettings_reconnect": "Reconnect",
   "peerSettings_agentVisibilityHint": "This only controls whether the agent appears in this app. It does not stop or disable the agent on the remote hub.",
   "peerSettings_agentShowOnApp": "Show on this app",
   "peerSettings_agentHiddenOnApp": "Hidden here",
@@ -2294,6 +2327,8 @@
   "peerSettings_agentRunning": "Running",
   "peerSettings_agentStopped": "Stopped",
   "peerSettings_agentManageOffline": "Device is offline. No synced agents yet.",
+  "peerSettings_agentManageUnsupported": "This device does not support agent management",
+  "peerSettings_agentOpTimeout": "Timed out. The device may be offline.",
   "peerSettings_newAgent": "New agent",
   "peerSettings_newAgentTitle": "New agent on this device",
   "peerSettings_engineLabel": "Engine",
@@ -4636,6 +4671,32 @@
   },
   "contacts_loadFailed": "Couldn't load contacts",
   "contacts_noSearchResults": "No matches",
+  "contacts_tabPeople": "People",
+  "contacts_tabDevices": "Devices",
+  "contacts_unassigned": "Unassigned",
+  "contacts_deviceCount": "{count} devices",
+  "@contacts_deviceCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "contacts_reconnect": "Reconnect",
+  "contacts_reconnectFailed": "Could not reach the host. Check that it is running.",
+  "contacts_noSessionTitle": "No host connected",
+  "contacts_noSessionBody": "Connect a host to see its agents, group chats and devices",
+  "contacts_connectHost": "Connect host",
+  "contacts_rosterRetry": "Retry",
+  "contacts_actionSendMessage": "Send message",
+  "contacts_actionViewDetail": "View details",
+  "contacts_actionHideOnApp": "Hide from contacts",
+  "contacts_actionShowOnApp": "Show in contacts",
+  "contacts_actionEnterGroup": "Open group chat",
+  "contacts_actionGroupDetail": "Group details",
+  "contacts_actionAddAgentHere": "Add agent on this node",
+  "contacts_searchAgents": "Agents",
+  "contacts_searchDevices": "Devices",
   "chat_attachImageFailed": "Couldn't send the image. Try again.",
   "chat_attachFileFailed": "Couldn't send the file. Try again.",
   "chat_sessionsLoadFailed": "Couldn't load sessions. Try again.",

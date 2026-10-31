@@ -8907,6 +8907,30 @@ abstract class AppLocalizations {
   /// **'确定要删除与 {name} 的配对吗？\n所有消息记录也会被删除。'**
   String peerSettings_deleteConfirm(String name);
 
+  /// No description provided for @peerSettings_deleteHostConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'确定要删除与主机 {name} 的配对吗？\n删除后这台主机上的 Agent、群聊和文件都将不可用，需要重新配对才能恢复。'**
+  String peerSettings_deleteHostConfirm(String name);
+
+  /// No description provided for @peerSettings_deleteSelfConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'确定要删除本机（{name}）在主机名单里的配对吗？\n删除后本 App 将无法再通过这台主机工作，需要重新配对。'**
+  String peerSettings_deleteSelfConfirm(String name);
+
+  /// No description provided for @peerDevice_renameUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前主机不支持修改这台设备的备注'**
+  String get peerDevice_renameUnsupported;
+
+  /// No description provided for @peerDevice_renameFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'修改备注失败，本机没有这台设备的配对记录'**
+  String get peerDevice_renameFailed;
+
   /// No description provided for @peerSettings_noShareableAgents.
   ///
   /// In zh, this message translates to:
@@ -8973,6 +8997,54 @@ abstract class AppLocalizations {
   /// **'Agent 管理'**
   String get peerSettings_sectionAgents;
 
+  /// No description provided for @peerSettings_sectionSecurity.
+  ///
+  /// In zh, this message translates to:
+  /// **'安全'**
+  String get peerSettings_sectionSecurity;
+
+  /// No description provided for @peerSettings_sectionAbout.
+  ///
+  /// In zh, this message translates to:
+  /// **'关于此设备'**
+  String get peerSettings_sectionAbout;
+
+  /// No description provided for @peerSettings_hiddenAgentCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'已在本 App 隐藏 {count} 个'**
+  String peerSettings_hiddenAgentCount(int count);
+
+  /// No description provided for @peerSettings_showHiddenAgents.
+  ///
+  /// In zh, this message translates to:
+  /// **'显示'**
+  String get peerSettings_showHiddenAgents;
+
+  /// No description provided for @peerSettings_agentCacheOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备离线，显示的是本机缓存'**
+  String get peerSettings_agentCacheOffline;
+
+  /// No description provided for @peerSettings_engineOfflineHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备离线，无法管理引擎'**
+  String get peerSettings_engineOfflineHint;
+
+  /// No description provided for @peerSettings_copied.
+  ///
+  /// In zh, this message translates to:
+  /// **'已复制'**
+  String get peerSettings_copied;
+
+  /// No description provided for @peerSettings_reconnect.
+  ///
+  /// In zh, this message translates to:
+  /// **'重新连接'**
+  String get peerSettings_reconnect;
+
   /// No description provided for @peerSettings_agentVisibilityHint.
   ///
   /// In zh, this message translates to:
@@ -9032,6 +9104,18 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'设备离线，暂无已同步的 Agent'**
   String get peerSettings_agentManageOffline;
+
+  /// No description provided for @peerSettings_agentManageUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台设备不支持管理 Agent'**
+  String get peerSettings_agentManageUnsupported;
+
+  /// No description provided for @peerSettings_agentOpTimeout.
+  ///
+  /// In zh, this message translates to:
+  /// **'操作超时，设备可能已离线'**
+  String get peerSettings_agentOpTimeout;
 
   /// No description provided for @peerSettings_newAgent.
   ///
@@ -14962,6 +15046,120 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'没有匹配的结果'**
   String get contacts_noSearchResults;
+
+  /// No description provided for @contacts_tabPeople.
+  ///
+  /// In zh, this message translates to:
+  /// **'联系人'**
+  String get contacts_tabPeople;
+
+  /// No description provided for @contacts_tabDevices.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备'**
+  String get contacts_tabDevices;
+
+  /// No description provided for @contacts_unassigned.
+  ///
+  /// In zh, this message translates to:
+  /// **'未归属'**
+  String get contacts_unassigned;
+
+  /// No description provided for @contacts_deviceCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 台'**
+  String contacts_deviceCount(int count);
+
+  /// No description provided for @contacts_reconnect.
+  ///
+  /// In zh, this message translates to:
+  /// **'重新连接'**
+  String get contacts_reconnect;
+
+  /// No description provided for @contacts_reconnectFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'连不上主机，请检查主机是否在运行'**
+  String get contacts_reconnectFailed;
+
+  /// No description provided for @contacts_noSessionTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没有连接主机'**
+  String get contacts_noSessionTitle;
+
+  /// No description provided for @contacts_noSessionBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接主机后才能看到它的 Agent、群聊和设备'**
+  String get contacts_noSessionBody;
+
+  /// No description provided for @contacts_connectHost.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接主机'**
+  String get contacts_connectHost;
+
+  /// No description provided for @contacts_rosterRetry.
+  ///
+  /// In zh, this message translates to:
+  /// **'重试'**
+  String get contacts_rosterRetry;
+
+  /// No description provided for @contacts_actionSendMessage.
+  ///
+  /// In zh, this message translates to:
+  /// **'发消息'**
+  String get contacts_actionSendMessage;
+
+  /// No description provided for @contacts_actionViewDetail.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看详情'**
+  String get contacts_actionViewDetail;
+
+  /// No description provided for @contacts_actionHideOnApp.
+  ///
+  /// In zh, this message translates to:
+  /// **'在通讯录中隐藏'**
+  String get contacts_actionHideOnApp;
+
+  /// No description provided for @contacts_actionShowOnApp.
+  ///
+  /// In zh, this message translates to:
+  /// **'在通讯录中显示'**
+  String get contacts_actionShowOnApp;
+
+  /// No description provided for @contacts_actionEnterGroup.
+  ///
+  /// In zh, this message translates to:
+  /// **'进入群聊'**
+  String get contacts_actionEnterGroup;
+
+  /// No description provided for @contacts_actionGroupDetail.
+  ///
+  /// In zh, this message translates to:
+  /// **'群详情'**
+  String get contacts_actionGroupDetail;
+
+  /// No description provided for @contacts_actionAddAgentHere.
+  ///
+  /// In zh, this message translates to:
+  /// **'在此节点添加 Agent'**
+  String get contacts_actionAddAgentHere;
+
+  /// No description provided for @contacts_searchAgents.
+  ///
+  /// In zh, this message translates to:
+  /// **'Agent'**
+  String get contacts_searchAgents;
+
+  /// No description provided for @contacts_searchDevices.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备'**
+  String get contacts_searchDevices;
 
   /// No description provided for @chat_attachImageFailed.
   ///
