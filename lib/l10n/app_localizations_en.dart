@@ -9363,16 +9363,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_deleteRunFailed => 'Could not delete the run';
 
   @override
-  String get sessionSearchTitle => 'Search sessions';
-
-  @override
-  String get sessionSearchHint =>
-      'Private chats, groups, workflows and terminals';
-
-  @override
-  String get sessionSearchEmpty => 'No matching sessions';
-
-  @override
   String get sessionSearchFoldedSection =>
       'Groups / workflows / engine sessions';
 

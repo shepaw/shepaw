@@ -9,6 +9,35 @@ import 'package:shepaw/peer/services/peer_connection_manager.dart';
 import 'package:shepaw/widgets/chat/folded_session_items.dart';
 
 void main() {
+  test('the search frame carries the query and the agent', () {
+    expect(
+        HubFoldedSessions.searchFrame('登录', agentId: 'a1', limit: 5,
+            requestId: 'r'),
+        {
+          'type': 'agent_sessions_search_req',
+          'request_id': 'r',
+          'query': '登录',
+          'agent_id': 'a1',
+          'limit': 5,
+        });
+  });
+
+  test('a hit knows whether it can be chatted in', () {
+    final hit = SessionSearchHit.fromJson({
+      'agent_id': 'a1',
+      'session_id': 'part-flow-r1-build',
+      'title': 'x',
+      'source': 'flow',
+      'read_only': true,
+      'origin': {'kind': 'flow', 'run_id': 'r1'},
+    });
+    expect(hit.isPrivate, isFalse);
+    expect(hit.readOnly, isTrue);
+    expect(hit.origin.runId, 'r1');
+    // 没有 origin 字段时按私聊处理（老主机的回包）。
+    expect(SessionSearchHit.fromJson({'session_id': 's'}).isPrivate, isTrue);
+  });
+
   groupViewTests();
   test('summary and folder frames ask for the folded view', () {
     expect(HubFoldedSessions.summaryFrame('a1', requestId: 'r'), {

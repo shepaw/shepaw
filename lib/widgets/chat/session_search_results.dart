@@ -6,7 +6,7 @@ import '../../models/channel.dart';
 import '../../models/message.dart';
 import '../../peer/models/folded_sessions.dart';
 import '../../peer/services/hub_folded_sessions.dart';
-import '../../screens/session_search_screen.dart';
+import 'folded_session_open.dart';
 import '../../services/local_database_service.dart';
 import '../../services/message_search_service.dart';
 import '../../services/session/folded_target.dart';
