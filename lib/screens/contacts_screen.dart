@@ -22,14 +22,15 @@ import '../services/logger_service.dart';
 import '../service_locator.dart';
 import '../widgets/add_entry_menu.dart';
 import '../widgets/avatar_image.dart';
+import '../widgets/contacts_tab_switcher.dart';
 import '../widgets/mobile_shell_scope.dart';
 import '../models/remote_agent.dart';
 import 'remote_agent_detail_screen.dart';
 import 'group_detail_screen.dart';
 import 'create_group_screen.dart';
 
-/// 通讯录。两个分段：[_ContactsTab.people] 用来找人聊天（群聊 + Agent），
-/// [_ContactsTab.devices] 用来管设备（主机 / 工作节点 / 客户端）。
+/// 通讯录。两个分段：[ContactsTab.people] 用来找人聊天（群聊 + Agent），
+/// [ContactsTab.devices] 用来管设备（主机 / 工作节点 / 客户端）。
 ///
 /// 原来是一棵「分区 → 设备 → Agent」三层折叠树，最常用的 Agent 藏在第三层，
 /// 客户端这种设备管理信息又混在联系人里。现在两边各自是一层列表。
@@ -64,8 +65,6 @@ class ContactsScreen extends StatefulWidget {
   State<ContactsScreen> createState() => ContactsScreenState();
 }
 
-enum _ContactsTab { people, devices }
-
 /// 长按 / 右键菜单里的一项。
 class _MenuAction {
   const _MenuAction({
@@ -96,7 +95,7 @@ class ContactsScreenState extends State<ContactsScreen> {
   bool _isLoading = true;
   bool _reconnecting = false;
   String _query = '';
-  _ContactsTab _tab = _ContactsTab.people;
+  ContactsTab _tab = ContactsTab.people;
 
   /// 一次配对的两边会共用 peer id，选中态要按行区分。
   String? _selectedRowKey;
@@ -181,7 +180,7 @@ class ContactsScreenState extends State<ContactsScreen> {
       view: view,
       groups: _groups,
       query: _query,
-      showDevices: _tab == _ContactsTab.devices,
+      showDevices: _tab == ContactsTab.devices,
       l10n: l10n,
     );
   }
@@ -234,7 +233,13 @@ class ContactsScreenState extends State<ContactsScreen> {
       body: Column(
         children: [
           _buildSearchBar(l10n),
-          _buildTabSwitcher(l10n),
+          ContactsTabSwitcher(
+            tab: _tab,
+            onChanged: (next) => setState(() {
+              _tab = next;
+              _focusIndex = -1;
+            }),
+          ),
           _buildStatusBanner(l10n),
           Expanded(child: _buildBody(l10n)),
         ],
@@ -267,45 +272,6 @@ class ContactsScreenState extends State<ContactsScreen> {
             borderSide: BorderSide.none,
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildTabSwitcher(AppLocalizations l10n) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-      child: SegmentedButton<_ContactsTab>(
-        // 默认会在选中项前加一个对勾，两个文字标签的场景显得多余。
-        showSelectedIcon: false,
-        style: SegmentedButton.styleFrom(
-          // 默认激活色是 secondaryContainer，本主题里那是淡粉色，和橘色主题
-          // 不搭；改用 primaryContainer（浅色下淡橘，深色下自动换成暗橘）。
-          selectedBackgroundColor: colorScheme.primaryContainer,
-          selectedForegroundColor: colorScheme.onPrimaryContainer,
-          foregroundColor: colorScheme.onSurfaceVariant,
-          side: BorderSide(color: colorScheme.outlineVariant),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-          visualDensity: VisualDensity.compact,
-        ),
-        segments: [
-          ButtonSegment(
-            value: _ContactsTab.people,
-            label: Text(l10n.contacts_tabPeople),
-          ),
-          ButtonSegment(
-            value: _ContactsTab.devices,
-            label: Text(l10n.contacts_tabDevices),
-          ),
-        ],
-        selected: {_tab},
-        onSelectionChanged: (next) {
-          setState(() {
-            _tab = next.first;
-            _focusIndex = -1;
-          });
-        },
       ),
     );
   }
@@ -344,7 +310,7 @@ class ContactsScreenState extends State<ContactsScreen> {
         ),
       );
     }
-    if (view.rosterFailed && _tab == _ContactsTab.devices) {
+    if (view.rosterFailed && _tab == ContactsTab.devices) {
       final colorScheme = Theme.of(context).colorScheme;
       return Material(
         color: colorScheme.surfaceContainerHighest,
