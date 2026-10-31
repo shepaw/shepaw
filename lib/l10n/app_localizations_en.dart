@@ -404,9 +404,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get nav_agents => 'Agents';
 
   @override
-  String get nav_storage => 'Pouch';
-
-  @override
   String get nav_settings => 'Settings';
 
   @override
@@ -1978,9 +1975,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get chat_storageBag => 'Nexus Pouch';
-
-  @override
-  String get chat_instruction => 'Instructions';
 
   @override
   String get chat_storageFilePickerTitle => 'Pick from Nexus Pouch';

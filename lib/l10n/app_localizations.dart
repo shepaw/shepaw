@@ -824,12 +824,6 @@ abstract class AppLocalizations {
   /// **'智能体'**
   String get nav_agents;
 
-  /// No description provided for @nav_storage.
-  ///
-  /// In zh, this message translates to:
-  /// **'储物袋'**
-  String get nav_storage;
-
   /// No description provided for @nav_settings.
   ///
   /// In zh, this message translates to:
@@ -3601,12 +3595,6 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'储物袋'**
   String get chat_storageBag;
-
-  /// No description provided for @chat_instruction.
-  ///
-  /// In zh, this message translates to:
-  /// **'指令'**
-  String get chat_instruction;
 
   /// No description provided for @chat_storageFilePickerTitle.
   ///

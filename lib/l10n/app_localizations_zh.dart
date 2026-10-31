@@ -388,9 +388,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get nav_agents => '智能体';
 
   @override
-  String get nav_storage => '储物袋';
-
-  @override
   String get nav_settings => '设置';
 
   @override
@@ -1899,9 +1896,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get chat_storageBag => '储物袋';
-
-  @override
-  String get chat_instruction => '指令';
 
   @override
   String get chat_storageFilePickerTitle => '选择储物袋文件';
