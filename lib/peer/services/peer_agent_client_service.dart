@@ -1595,8 +1595,7 @@ class PeerEngineInstance {
       cwd: (json['cwd'] as String?)?.trim() ?? '',
       enabled: json['enabled'] != false,
       connections: (json['connections'] as num?)?.toInt() ?? 0,
-      activeConversations:
-          (json['active_conversations'] as num?)?.toInt() ?? 0,
+      activeConversations: (json['active_conversations'] as num?)?.toInt() ?? 0,
       queued: (json['queued'] as num?)?.toInt() ?? 0,
       queuedSessions: (json['queued_sessions'] as num?)?.toInt() ?? 0,
       sessions: [
@@ -1695,8 +1694,7 @@ class PeerEngineEntry {
       acpCommand: (json['acp_command'] as String?)?.trim() ?? '',
       instanceCount: (json['instance_count'] as num?)?.toInt() ?? 0,
       connections: (json['connections'] as num?)?.toInt() ?? 0,
-      activeConversations:
-          (json['active_conversations'] as num?)?.toInt() ?? 0,
+      activeConversations: (json['active_conversations'] as num?)?.toInt() ?? 0,
       queued: (json['queued'] as num?)?.toInt() ?? 0,
       queuedSessions: (json['queued_sessions'] as num?)?.toInt() ?? 0,
       instances: [
@@ -1792,7 +1790,8 @@ class PeerEngineStatusSummary {
     List<PeerEngineEntry> engines,
   ) {
     final raw = data['summary'];
-    final map = raw is Map ? Map<String, dynamic>.from(raw) : const <String, dynamic>{};
+    final map =
+        raw is Map ? Map<String, dynamic>.from(raw) : const <String, dynamic>{};
     int fallback(String key, int value) => (map[key] as num?)?.toInt() ?? value;
     final instanceCount =
         engines.fold<int>(0, (total, engine) => total + engine.instanceCount);
@@ -2131,9 +2130,8 @@ class PeerAgentClientService {
   final Map<String, Timer> _persistTimers = {};
 
   final StreamController<({String channelId, String requestId, bool queued})>
-      _hostQueueEvents =
-      StreamController<({String channelId, String requestId, bool queued})>
-          .broadcast();
+      _hostQueueEvents = StreamController<
+          ({String channelId, String requestId, bool queued})>.broadcast();
 
   /// 直接发出的回合被主机收进会话队列（或终于轮到它开跑）时发出。
   ///
@@ -4812,6 +4810,19 @@ class PeerAgentClientService {
   /// 帧里只有 `changed_session_id`，名单本身要从主机拉；拉回来按主机视角
   /// 对齐本地频道，主机上没有的本地壳会被清掉（新会话由 [ChatService] 的
   /// fresh 标记保护）。
+  /// 分叉成功之后立刻对齐一次（折叠方案 §2.3）：分叉出来的会话是新的私聊，
+  /// 主机那边已经建好了，但本地要等下一次同步才会有它——用户会觉得"没反应"。
+  ///
+  /// 和 [_mirrorHostSessionList] 同一条路，只是对外：折叠组页面拿它补一次。
+  Future<void> refreshAgentSessions({
+    required String peerId,
+    required String remoteAgentId,
+  }) =>
+      _mirrorHostSessionList(
+        peerId: peerId,
+        remoteAgentId: remoteAgentId,
+      );
+
   Future<void> _mirrorHostSessionList({
     required String peerId,
     required String remoteAgentId,
@@ -10581,9 +10592,8 @@ class PeerAgentClientService {
         _markReconcileNeeded(requestId);
         _onError({
           'request_id': requestId,
-          'message': p.heardFromHost
-              ? '与主机断开太久，任务状态已丢失；如无回复请重新发送'
-              : '消息未能送达主机，请重新发送',
+          'message':
+              p.heardFromHost ? '与主机断开太久，任务状态已丢失；如无回复请重新发送' : '消息未能送达主机，请重新发送',
         });
         break;
     }

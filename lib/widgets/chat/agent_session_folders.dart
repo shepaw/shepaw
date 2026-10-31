@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../peer/models/folded_sessions.dart';
 import '../../peer/services/hub_folded_sessions.dart';
+import '../../peer/services/peer_agent_client_service.dart';
 import '../../screens/flow_run_screen.dart';
 import '../../screens/group_view_screen.dart';
 import '../../screens/session_history_screen.dart';
@@ -23,6 +24,7 @@ class AgentSessionFolders extends StatefulWidget {
     this.refreshTick,
     this.client,
     this.onForked,
+    this.refresh,
   });
 
   final String peerId;
@@ -34,6 +36,10 @@ class AgentSessionFolders extends StatefulWidget {
 
   /// 分叉成功：主机上多了一条私聊，调用方刷新平铺名单。
   final void Function(String sessionId)? onForked;
+
+  /// 分叉后把主机名单再对齐一次，让新私聊立刻出现在平铺列表里。
+  /// 测试里换成假的；为空时用 [PeerAgentClientService.refreshAgentSessions]。
+  final Future<void> Function(String peerId, String remoteAgentId)? refresh;
 
   @override
   State<AgentSessionFolders> createState() => _AgentSessionFoldersState();
@@ -62,6 +68,22 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
     setState(() => _folders = summary.folders);
   }
 
+  /// 分叉出来的新私聊要马上能在平铺列表里看到：主机名单再对齐一次，
+  /// 顺手把折叠组的条数也刷一遍（分叉不改折叠组，但时间会变）。
+  Future<void> _afterFork(String sessionId) async {
+    widget.onForked?.call(sessionId);
+    final refresh = widget.refresh;
+    if (refresh == null) {
+      await PeerAgentClientService.instance.refreshAgentSessions(
+        peerId: widget.peerId,
+        remoteAgentId: widget.remoteAgentId,
+      );
+    } else {
+      await refresh(widget.peerId, widget.remoteAgentId);
+    }
+    await _load();
+  }
+
   void _open(SessionFolderKind kind) {
     Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (context) => SessionFolderScreen(
@@ -70,10 +92,7 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
         folder: kind,
         client: _client,
         onOpen: (session) => _openSession(context, session),
-        onForked: (id) {
-          widget.onForked?.call(id);
-          unawaited(_load());
-        },
+        onForked: (id) => unawaited(_afterFork(id)),
       ),
     ));
   }
@@ -100,7 +119,7 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
           title: session.title,
           foldedSessionId: session.sessionId,
           client: _client,
-          onForked: widget.onForked,
+          onForked: (id) => unawaited(_afterFork(id)),
         ),
       ));
       return;
@@ -113,7 +132,7 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
         sessionId: session.sessionId,
         title: session.title.isEmpty ? session.sessionId : session.title,
         client: _client,
-        onForked: widget.onForked,
+        onForked: (id) => unawaited(_afterFork(id)),
       ),
     ));
   }
