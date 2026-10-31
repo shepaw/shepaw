@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -89,6 +90,15 @@ class PouchScopeBrowserScreen extends StatefulWidget {
       _PouchScopeBrowserScreenState();
 }
 
+/// 锁定模式（一级「文件」入口）下左栏选中的那一项。
+enum _FilesNav {
+  /// 当前 scope 的目录列表。
+  all,
+
+  /// 这个 scope 里最近改过的文件。
+  recent,
+}
+
 class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
   final _scopes = <PouchScope>[];
   bool _loadingScopes = true;
@@ -98,18 +108,49 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
 
   PouchScope? _scope;
 
+  /// 当前 scope 根目录下的一层文件夹（锁定模式左栏的快捷入口）。
+  ///
+  /// 只存一层：更深的地方靠右栏路径栏走，不在这里展开树。
+  List<StoreEntry> _rootFolders = const <StoreEntry>[];
+
   /// 宽屏左栏宽度（可拖拽），和玉简页保持一致。
   double _listPaneWidth = 280;
   static const double _minListPaneWidth = 220;
   static const double _maxListPaneWidth = 480;
   static const double _minDetailPaneWidth = 360;
+
+  /// 窄屏根目录上那一节「最近」显示几条。
+  static const int _recentStripCount = 5;
+
+  /// 「最近」视图最多列几条。
+  static const int _recentLimit = 50;
+
   String _path = '';
   List<StoreEntry> _entries = const <StoreEntry>[];
   bool _loadingEntries = false;
 
+  /// 锁定模式左栏选中的那一项。
+  _FilesNav _nav = _FilesNav.all;
+
+  /// 这个 scope 里最近改过的文件（新→旧）。
+  List<StoreEntry> _recentFiles = const <StoreEntry>[];
+  bool _loadingRecent = false;
+  String? _recentError;
+
   /// 上传/删除进行中：挡住重复操作。
   bool _busy = false;
   String? _error;
+
+  /// 左栏是「最近 / 全部文件 / 文件夹」导航，而不是 scope 名单。
+  ///
+  /// 只在锁定到一个 scope 时成立：储物袋、群会话这些入口仍然要能在
+  /// scope 之间切，行为不变。
+  bool get _lockedNav => widget.lockToInitialScope;
+
+  bool get _showRecent => _lockedNav && _nav == _FilesNav.recent;
+
+  /// 还在子目录里：系统返回先往上走一级，不直接关掉整页。
+  bool get _inSubfolder => _scope != null && _path.isNotEmpty;
 
   @override
   void initState() {
@@ -184,7 +225,12 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
       setState(() {
         _entries = entries;
         _loadingEntries = false;
+        if (path.isEmpty) {
+          _rootFolders = entries.where((entry) => entry.isDir).toList();
+        }
       });
+      // 回到根目录时顺手刷新「最近」：刚传上来、刚删掉的文件要体现出来。
+      if (_lockedNav && path.isEmpty) unawaited(_loadRecent(scope));
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -192,6 +238,49 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
         _loadingEntries = false;
       });
     }
+  }
+
+  /// 这个 scope 里最近改过的文件（按 mtime，v3 里没有访问记录）。
+  Future<void> _loadRecent(PouchScope scope) async {
+    setState(() {
+      _loadingRecent = true;
+      _recentError = null;
+    });
+    try {
+      final store = await _store();
+      final files = await store.recentFiles(scope, limit: _recentLimit);
+      if (!mounted) return;
+      setState(() {
+        _recentFiles = files;
+        _loadingRecent = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _recentError = _messageFor(e);
+        _loadingRecent = false;
+      });
+    }
+  }
+
+  /// 左栏选「最近」或「全部文件」。
+  void _selectNav(_FilesNav nav) {
+    final scope = _scope;
+    if (scope == null) return;
+    setState(() => _nav = nav);
+    if (nav == _FilesNav.recent) {
+      unawaited(_loadRecent(scope));
+    } else if (_path.isNotEmpty) {
+      unawaited(_openScope(scope));
+    }
+  }
+
+  /// 左栏点某个文件夹：切回目录视图并进到那一层。
+  void _openFolder(StoreEntry folder) {
+    final scope = _scope;
+    if (scope == null) return;
+    setState(() => _nav = _FilesNav.all);
+    _openScope(scope, path: folder.path);
   }
 
   /// 读失败时给人的话 + 错误码。空列表和读不到必须能分开：前者是数据状态，
@@ -233,7 +322,13 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
     final scope = _scope;
     if (scope == null) return;
     if (_path.isEmpty) {
-      _backToTop();
+      // 锁在 files 上时根目录就是底：退出交给路由返回，不再退到 scope 名单
+      // （那份名单只有一个 files，退过去等于原地打转）。
+      if (_lockedNav) {
+        unawaited(Navigator.maybePop(context));
+      } else {
+        _backToTop();
+      }
       return;
     }
     final slash = _path.lastIndexOf('/');
@@ -343,6 +438,8 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
       if (mounted) setState(() => _busy = false);
     }
     await _openScope(scope, path: _path);
+    // 从「最近」里删的时候当前目录不一定刷得到那一条，单独再取一次。
+    if (_lockedNav && _showRecent) await _loadRecent(scope);
   }
 
   /// 同目录重名时依次试 `name (1).ext`、`name (2).ext`…
@@ -364,53 +461,164 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final scope = _scope;
-    final title = scope == null
-        ? (widget.title ?? l10n.storage_scopeTitle)
-        : _titleFor(scope);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final wide = _wideFor(context, constraints);
-        // 宽屏两栏：左边常驻 scope 列表，右边是当前 scope 的内容，和玉简页
-        // 一个布局。窄屏仍是「顶层列表 → 点进 scope」的两级导航。
-        return Scaffold(
-          appBar: AppBar(
-            elevation: 0,
-            scrolledUnderElevation: 0,
-            title: Text(title),
-            leading: (wide || scope == null)
-                ? null
-                : IconButton(
-                    icon: const Icon(Icons.arrow_back),
-                    tooltip:
-                        MaterialLocalizations.of(context).backButtonTooltip,
-                    onPressed: _upOneLevel,
-                  ),
-          ),
-          body: wide
-              ? Row(
-                  children: [
-                    SizedBox(
-                      width: _listPaneWidth,
-                      child: _buildScopeListPane(),
-                    ),
-                    _buildPaneSplitter(constraints.maxWidth),
-                    Expanded(
-                      child: scope == null
-                          ? _buildPickScopeHint(l10n)
-                          : _buildScope(scope),
-                    ),
-                  ],
-                )
-              : (scope == null ? _buildScopeListPane() : _buildScope(scope)),
-          floatingActionButton: scope == null
-              ? null
-              : FloatingActionButton.small(
-                  tooltip: l10n.storage_upload,
-                  onPressed: _busy ? null : _uploadFiles,
-                  child: const Icon(Icons.file_upload_outlined),
-                ),
-        );
+    final title = _titleFor(l10n, scope);
+    return PopScope<Object?>(
+      // 还在子目录里时，系统返回先往上走一级，不直接关掉整页。
+      canPop: !_inSubfolder,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _upOneLevel();
       },
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final wide = _wideFor(context, constraints);
+          // 宽屏两栏：左边常驻列表，右边是当前 scope 的内容，和玉简页
+          // 一个布局。窄屏仍是「顶层列表 → 点进 scope」的两级导航。
+          return Scaffold(
+            appBar: AppBar(
+              elevation: 0,
+              scrolledUnderElevation: 0,
+              title: Text(title),
+              leading: (wide || scope == null)
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.arrow_back),
+                      tooltip:
+                          MaterialLocalizations.of(context).backButtonTooltip,
+                      onPressed: _upOneLevel,
+                    ),
+            ),
+            body: wide
+                ? Row(
+                    children: [
+                      SizedBox(
+                        width: _listPaneWidth,
+                        child: _lockedNav
+                            ? _buildFilesNavPane(l10n)
+                            : _buildScopeListPane(),
+                      ),
+                      _buildPaneSplitter(constraints.maxWidth),
+                      Expanded(
+                        child: scope == null
+                            ? _buildPickScopeHint(l10n)
+                            : _buildContent(l10n, scope, wide: true),
+                      ),
+                    ],
+                  )
+                : (scope == null
+                    ? _buildScopeListPane()
+                    : _buildContent(l10n, scope, wide: false)),
+            floatingActionButton: scope == null || _showRecent
+                ? null
+                : FloatingActionButton.small(
+                    tooltip: l10n.storage_upload,
+                    onPressed: _busy ? null : _uploadFiles,
+                    child: const Icon(Icons.file_upload_outlined),
+                  ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// 右栏：上面一条路径栏，下面是目录列表或「最近」。
+  Widget _buildContent(
+    AppLocalizations l10n,
+    PouchScope scope, {
+    required bool wide,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildPathBar(l10n, scope),
+        Expanded(
+          child: _showRecent
+              ? _buildRecentView(l10n, scope)
+              : _buildEntries(l10n, scope, wide: wide),
+        ),
+      ],
+    );
+  }
+
+  /// 路径栏：返回按钮 + 可点的路径（`文件 / 项目资料 / 2026`）。
+  ///
+  /// 进了子目录以后这是主要的回退入口——宽屏没有标题栏返回键，只点左栏的
+  /// scope 名也只能回到根。
+  Widget _buildPathBar(AppLocalizations l10n, PouchScope scope) {
+    final segments = <({String label, VoidCallback? onTap})>[
+      (
+        label: scope.displayName,
+        // 在「最近」视图里，根这一段就是回到全部文件的入口。
+        onTap: _showRecent
+            ? () => _selectNav(_FilesNav.all)
+            : (_path.isEmpty ? null : () => _openScope(scope)),
+      ),
+    ];
+    final parts = _path.split('/').where((part) => part.isNotEmpty).toList();
+    var acc = '';
+    for (var i = 0; i < parts.length; i++) {
+      acc = acc.isEmpty ? parts[i] : '$acc/${parts[i]}';
+      final target = acc;
+      segments.add((
+        label: parts[i],
+        onTap:
+            i == parts.length - 1 ? null : () => _openScope(scope, path: target),
+      ));
+    }
+    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
+    return Material(
+      color: Theme.of(context).colorScheme.surfaceContainerLowest,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        child: Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.arrow_back, size: 18),
+              tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+              onPressed: _path.isEmpty ? null : _upOneLevel,
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    for (var i = 0; i < segments.length; i++) ...[
+                      if (i > 0)
+                        Text(
+                          ' / ',
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: muted),
+                        ),
+                      InkWell(
+                        onTap: segments[i].onTap,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 6),
+                          child: Text(
+                            segments[i].label,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(
+                                  fontWeight: segments[i].onTap == null
+                                      ? FontWeight.w600
+                                      : FontWeight.normal,
+                                  color: segments[i].onTap == null
+                                      ? Theme.of(context).colorScheme.primary
+                                      : null,
+                                ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -469,9 +677,66 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
     );
   }
 
-  String _titleFor(PouchScope scope) {
+  String _titleFor(AppLocalizations l10n, PouchScope? scope) {
+    if (scope == null) return widget.title ?? l10n.storage_scopeTitle;
+    if (_showRecent) return l10n.storage_recentTitle;
     final name = _path.isEmpty ? '' : ' / ${_path.split('/').last}';
     return '${scope.displayName}$name';
+  }
+
+  /// 锁定模式（一级「文件」入口）的左栏：最近 / 全部文件 / 根目录下的文件夹。
+  ///
+  /// 这一栏不再列 scope 名单——锁在 files 上时那份名单只有一项，留着只会
+  /// 让人以为还能切到别处。
+  Widget _buildFilesNavPane(AppLocalizations l10n) {
+    final primary = Theme.of(context).colorScheme.primary;
+    return ListView(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      children: [
+        ListTile(
+          leading: const Icon(Icons.history_outlined),
+          title: Text(l10n.storage_spaceRecent),
+          selected: _nav == _FilesNav.recent,
+          onTap: () => _selectNav(_FilesNav.recent),
+        ),
+        ListTile(
+          leading: const Icon(Icons.folder_outlined),
+          title: Text(l10n.storage_filesAllFiles),
+          selected: _nav == _FilesNav.all && _path.isEmpty,
+          onTap: () => _selectNav(_FilesNav.all),
+        ),
+        if (_rootFolders.isNotEmpty) ...[
+          const Divider(height: 24),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+            child: Text(
+              l10n.storage_filesFolders,
+              style: Theme.of(context)
+                  .textTheme
+                  .labelLarge
+                  ?.copyWith(color: primary),
+            ),
+          ),
+          for (final folder in _rootFolders)
+            ListTile(
+              leading: const Icon(Icons.folder_open_outlined),
+              title: Text(folder.path.split('/').last),
+              selected: _nav == _FilesNav.all && _path == folder.path,
+              onTap: () => _openFolder(folder),
+            ),
+        ],
+        if (widget.onOpenLegacy != null) ...[
+          const Divider(height: 24),
+          ListTile(
+            leading: const Icon(Icons.inventory_2_outlined),
+            title: Text(l10n.storage_legacyData),
+            subtitle: Text(l10n.storage_legacyDataSub),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: widget.onOpenLegacy,
+          ),
+        ],
+      ],
+    );
   }
 
   Widget _buildScopeListPane() {
@@ -574,7 +839,12 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
     _loadScopes();
   }
 
-  Widget _buildScope(PouchScope scope) {
+  /// 目录列表。窄屏且停在根目录时，上面带一节「最近」。
+  Widget _buildEntries(
+    AppLocalizations l10n,
+    PouchScope scope, {
+    required bool wide,
+  }) {
     if (_loadingEntries) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -587,33 +857,45 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
         ),
       );
     }
+    // 宽屏的「最近」在左栏有入口，不在这里再摆一遍。
+    final strip = (_lockedNav && _path.isEmpty && !wide)
+        ? _buildRecentStrip(l10n, scope)
+        : null;
     if (_entries.isEmpty) {
       // 空态：这一层确实没有条目（读失败走上面的 error 分支，带错误码）。
-      return Padding(
+      final empty = Padding(
         padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.folder_open_outlined,
-              size: 40,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '这个位置还没有文件',
-              style: TextStyle(
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.folder_open_outlined,
+                size: 40,
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
-            ),
-          ],
+              const SizedBox(height: 8),
+              Text(
+                '这个位置还没有文件',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
         ),
       );
+      if (strip == null) return empty;
+      return Column(
+        children: [strip, Expanded(child: empty)],
+      );
     }
+    final offset = strip == null ? 0 : 1;
     return ListView.builder(
-      itemCount: _entries.length,
+      itemCount: _entries.length + offset,
       itemBuilder: (context, index) {
-        final entry = _entries[index];
+        if (strip != null && index == 0) return strip;
+        final entry = _entries[index - offset];
         final name = entry.path.split('/').last;
         return ListTile(
           leading: Icon(
@@ -634,6 +916,135 @@ class _PouchScopeBrowserScreenState extends State<PouchScopeBrowserScreen> {
         );
       },
     );
+  }
+
+  /// 窄屏根目录顶部那一节「最近」。
+  Widget _buildRecentStrip(AppLocalizations l10n, PouchScope scope) {
+    final items = _recentFiles.take(_recentStripCount).toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
+          child: Row(
+            children: [
+              Icon(
+                Icons.history_outlined,
+                size: 16,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                l10n.storage_spaceRecent,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+              ),
+              const Spacer(),
+              TextButton(
+                onPressed: () => _selectNav(_FilesNav.recent),
+                child: Text(l10n.storage_recentViewAll),
+              ),
+            ],
+          ),
+        ),
+        if (_loadingRecent && items.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Center(child: SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))),
+          ),
+        if (!_loadingRecent && items.isEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            child: Text(
+              l10n.storage_recentEmpty,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        for (final item in items) _buildRecentTile(l10n, scope, item),
+        const Divider(height: 16),
+      ],
+    );
+  }
+
+  /// 整个 scope 里最近改过的文件（宽屏左栏「最近」、窄屏「查看全部」）。
+  Widget _buildRecentView(AppLocalizations l10n, PouchScope scope) {
+    if (_loadingRecent) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    final error = _recentError;
+    if (error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(error, textAlign: TextAlign.center),
+        ),
+      );
+    }
+    if (_recentFiles.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.history_toggle_off_outlined,
+              size: 40,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              l10n.storage_recentEmpty,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return ListView(
+      children: [
+        for (final item in _recentFiles) _buildRecentTile(l10n, scope, item),
+      ],
+    );
+  }
+
+  /// 「最近」里的文件：文件名 + 所在文件夹 + 时间。
+  Widget _buildRecentTile(
+    AppLocalizations l10n,
+    PouchScope scope,
+    StoreEntry entry,
+  ) {
+    final name = entry.path.split('/').last;
+    final dir = p.dirname(entry.path);
+    final parts = <String>[dir.isEmpty ? scope.displayName : dir.split('/').last];
+    final stamp = _formatStamp(entry.mtimeMs);
+    if (stamp.isNotEmpty) parts.add(stamp);
+    return ListTile(
+      leading: const Icon(Icons.description_outlined),
+      title: Text(name),
+      subtitle: Text(parts.join(' · ')),
+      onTap: () => _openFile(scope, entry),
+      trailing: IconButton(
+        icon: const Icon(Icons.delete_outline),
+        tooltip: '删除',
+        onPressed: _busy ? null : () => _deleteEntry(scope, entry),
+      ),
+    );
+  }
+
+  /// `10月30日 14:05` / `10/30 14:05`；mtime 为 0（hub 没给）时留空。
+  String _formatStamp(int mtimeMs) {
+    if (mtimeMs <= 0) return '';
+    final t = DateTime.fromMillisecondsSinceEpoch(mtimeMs).toLocal();
+    final time =
+        '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+    if (Localizations.localeOf(context).languageCode == 'zh') {
+      return '${t.month}月${t.day}日 $time';
+    }
+    return '${t.month}/${t.day} $time';
   }
 
   IconData _iconFor(PouchScopeKind kind) => switch (kind) {

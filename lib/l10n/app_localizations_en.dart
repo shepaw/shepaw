@@ -7232,6 +7232,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storage_spaceRecent => 'Recent';
 
   @override
+  String get storage_recentTitle => 'Recent files';
+
+  @override
+  String get storage_recentViewAll => 'View all';
+
+  @override
+  String get storage_recentEmpty => 'No recent files yet';
+
+  @override
+  String get storage_filesAllFiles => 'All files';
+
+  @override
+  String get storage_filesFolders => 'Folders';
+
+  @override
   String get storage_continueTitle => 'Continue';
 
   @override

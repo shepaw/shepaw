@@ -74,7 +74,12 @@ class _Transport implements PouchScopeTransport {
   }
 }
 
-Widget _screen(PouchScopeStore store, {PouchScope? initialScope}) => MaterialApp(
+Widget _screen(
+  PouchScopeStore store, {
+  PouchScope? initialScope,
+  bool lockToInitialScope = false,
+}) =>
+    MaterialApp(
       // 页面文案走 l10n，测试树必须自己装上委托，否则 AppLocalizations.of
       // 拿不到值（见 pouch_scope_browser_screen 的提示词与按钮文案）。
       locale: const Locale('zh'),
@@ -83,8 +88,23 @@ Widget _screen(PouchScopeStore store, {PouchScope? initialScope}) => MaterialApp
       home: PouchScopeBrowserScreen(
         store: store,
         initialScope: initialScope,
+        lockToInitialScope: lockToInitialScope,
       ),
     );
+
+/// 文件页的一条假数据：docs 下两层 + 根目录一个文件 + 一个内部占位文件。
+List<StoreEntry> _fileEntries() => <StoreEntry>[
+      StoreEntry(path: 'docs/report.pdf', size: 1200, sha256: '', mtimeMs: 3000),
+      StoreEntry(path: 'note.md', size: 10, sha256: '', mtimeMs: 1000),
+      StoreEntry(path: 'docs/sub/old.md', size: 5, sha256: '', mtimeMs: 500),
+      StoreEntry(path: '.keep', size: 0, sha256: '', mtimeMs: 9000),
+    ];
+
+void _setViewport(WidgetTester tester, {required double w, required double h}) {
+  tester.view.physicalSize = Size(w, h);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+}
 
 void main() {
   testWidgets('顶层列 scope：只留能直接看文件的那些，会话不占位', (tester) async {
@@ -264,5 +284,142 @@ void main() {
     expect(transport.deletes, [
       (scope: 'agent:a1', path: 'notes/a.md'),
     ]);
+  });
+
+  test('recentScopeFiles：新→旧，丢掉目录和点开头的文件，按 limit 截断', () {
+    final entries = <StoreEntry>[
+      StoreEntry(path: 'a.md', size: 1, sha256: '', mtimeMs: 100),
+      StoreEntry(path: '.keep', size: 0, sha256: '', mtimeMs: 900),
+      StoreEntry(path: 'docs', size: 0, sha256: '', mtimeMs: 800, kind: 'dir'),
+      StoreEntry(path: 'b.md', size: 1, sha256: '', mtimeMs: 300),
+      StoreEntry(path: 'c.md', size: 1, sha256: '', mtimeMs: 200),
+    ];
+    expect(
+      recentScopeFiles(entries).map((e) => e.path).toList(),
+      ['b.md', 'c.md', 'a.md'],
+    );
+    expect(
+      recentScopeFiles(entries, limit: 2).map((e) => e.path).toList(),
+      ['b.md', 'c.md'],
+    );
+  });
+
+  testWidgets('文件页左栏是「最近 / 全部文件 / 文件夹」，不再只列一个 files',
+      (tester) async {
+    _setViewport(tester, w: 1400, h: 1000);
+    final store = PouchScopeStore(
+      transport: _Transport(entries: _fileEntries()),
+      pouchId: 'p1',
+    );
+    await tester.pumpWidget(
+      _screen(store, initialScope: PouchScope.files, lockToInitialScope: true),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('最近'), findsOneWidget);
+    expect(find.text('全部文件'), findsOneWidget);
+    expect(find.text('文件夹'), findsOneWidget);
+    // 根目录下的文件夹当快捷入口列在左栏；内容区也有一份。
+    expect(find.widgetWithText(ListTile, 'docs'), findsNWidgets(2));
+  });
+
+  testWidgets('进到子目录后，点路径栏的「文件」回到根目录', (tester) async {
+    _setViewport(tester, w: 1400, h: 1000);
+    final store = PouchScopeStore(
+      transport: _Transport(entries: _fileEntries()),
+      pouchId: 'p1',
+    );
+    await tester.pumpWidget(
+      _screen(store, initialScope: PouchScope.files, lockToInitialScope: true),
+    );
+    await tester.pumpAndSettle();
+
+    // 内容区那个 docs（左栏还有一个同名快捷入口，排在前面）。
+    await tester.tap(find.widgetWithText(ListTile, 'docs').last);
+    await tester.pumpAndSettle();
+    expect(find.text('文件 / docs'), findsOneWidget);
+    expect(find.widgetWithText(ListTile, 'report.pdf'), findsOneWidget);
+
+    await tester.tap(find.text('文件'));
+    await tester.pumpAndSettle();
+    expect(find.text('文件 / docs'), findsNothing);
+    expect(find.widgetWithText(ListTile, 'note.md'), findsOneWidget);
+  });
+
+  testWidgets('子目录里系统返回先上一级，到根目录才关页', (tester) async {
+    _setViewport(tester, w: 1400, h: 1000);
+    final store = PouchScopeStore(
+      transport: _Transport(entries: _fileEntries()),
+      pouchId: 'p1',
+    );
+    await tester.pumpWidget(
+      _screen(store, initialScope: PouchScope.files, lockToInitialScope: true),
+    );
+    await tester.pumpAndSettle();
+
+    PopScope<Object?> popScope() =>
+        tester.widget<PopScope<Object?>>(find.byType(PopScope<Object?>));
+    // 根目录：返回键直接关掉整页。
+    expect(popScope().canPop, isTrue);
+
+    await tester.tap(find.widgetWithText(ListTile, 'docs').last);
+    await tester.pumpAndSettle();
+    expect(popScope().canPop, isFalse);
+
+    final navigator = tester.state<NavigatorState>(find.byType(Navigator).first);
+    // PopScope 吃掉这次返回：didPop=false 的那一路，页面留着、往上走一级。
+    final popped = await navigator.maybePop();
+    await tester.pumpAndSettle();
+
+    expect(popped, isTrue, reason: '返回被 PopScope 拦下，不再往路由外面冒');
+    expect(find.text('文件 / docs'), findsNothing, reason: '应该往上走了一级');
+    expect(find.text('全部文件'), findsOneWidget, reason: '整页还在，没被关掉');
+    expect(popScope().canPop, isTrue);
+  });
+
+  testWidgets('窄屏根目录顶部有「最近」，查看全部进最近视图', (tester) async {
+    _setViewport(tester, w: 500, h: 1000);
+    final store = PouchScopeStore(
+      transport: _Transport(entries: _fileEntries()),
+      pouchId: 'p1',
+    );
+    await tester.pumpWidget(
+      _screen(store, initialScope: PouchScope.files, lockToInitialScope: true),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('最近'), findsOneWidget);
+    expect(find.widgetWithText(ListTile, 'report.pdf'), findsOneWidget);
+    expect(find.widgetWithText(ListTile, 'old.md'), findsOneWidget);
+
+    await tester.tap(find.text('查看全部'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('最近文件'), findsOneWidget);
+    expect(find.widgetWithText(ListTile, 'note.md'), findsOneWidget);
+    // 内部占位文件不进最近。
+    expect(find.widgetWithText(ListTile, '.keep'), findsNothing);
+    // 路径栏回到「全部文件」的入口还在。
+    await tester.tap(find.text('文件'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(ListTile, 'docs'), findsOneWidget);
+  });
+
+  testWidgets('最近里只剩内部文件时说「最近还没有文件」', (tester) async {
+    _setViewport(tester, w: 500, h: 1000);
+    final store = PouchScopeStore(
+      transport: _Transport(entries: <StoreEntry>[
+        StoreEntry(path: '.keep', size: 0, sha256: '', mtimeMs: 9000),
+      ]),
+      pouchId: 'p1',
+    );
+    await tester.pumpWidget(
+      _screen(store, initialScope: PouchScope.files, lockToInitialScope: true),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('最近还没有文件'), findsOneWidget);
+    // 内部文件只是不进最近，目录里照旧列出来。
+    expect(find.widgetWithText(ListTile, '.keep'), findsOneWidget);
   });
 }

@@ -12695,6 +12695,36 @@ abstract class AppLocalizations {
   /// **'最近'**
   String get storage_spaceRecent;
 
+  /// No description provided for @storage_recentTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'最近文件'**
+  String get storage_recentTitle;
+
+  /// No description provided for @storage_recentViewAll.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看全部'**
+  String get storage_recentViewAll;
+
+  /// No description provided for @storage_recentEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'最近还没有文件'**
+  String get storage_recentEmpty;
+
+  /// No description provided for @storage_filesAllFiles.
+  ///
+  /// In zh, this message translates to:
+  /// **'全部文件'**
+  String get storage_filesAllFiles;
+
+  /// No description provided for @storage_filesFolders.
+  ///
+  /// In zh, this message translates to:
+  /// **'文件夹'**
+  String get storage_filesFolders;
+
   /// No description provided for @storage_continueTitle.
   ///
   /// In zh, this message translates to:

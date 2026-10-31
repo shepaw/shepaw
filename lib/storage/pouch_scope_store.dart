@@ -716,6 +716,31 @@ class PouchScopeStore {
   Future<List<String>> scopes(String prefix) =>
       transport.scopes(pouchId: pouchId, prefix: prefix);
 
+  /// 这个 scope 里最近改过的文件（翻整个 scope，不限层级）。
+  ///
+  /// 「最近」按文件的 mtime 算：上传、覆盖、从别处同步进来都会刷新它，
+  /// 不另外记访问日志（v3 没有，记了也只在这台设备上看得到）。
+  /// 读不到时抛 [StoreException]，调用方别当空态。
+  Future<List<StoreEntry>> recentFiles(
+    PouchScope scope, {
+    int limit = 20,
+  }) async {
+    final flat = <StoreEntry>[];
+    String? cursor;
+    do {
+      final page = await transport.list(
+        pouchId: pouchId,
+        scope: scope,
+        limit: 1000,
+        cursor: cursor,
+      );
+      flat.addAll(page.entries);
+      if (page.entries.isEmpty) break;
+      cursor = page.nextCursor;
+    } while (cursor != null && cursor.isNotEmpty);
+    return recentScopeFiles(flat, limit: limit);
+  }
+
   /// 读一份文件；不存在返回 null。
   Future<Uint8List?> read(PouchScope scope, String path) =>
       transport.read(pouchId: pouchId, scope: scope, path: path);
@@ -760,6 +785,29 @@ class PouchScopeStore {
 /// 路径规则规范化（拒绝穿越与点段）。
 String scopeStorePath(String path) =>
     normalizeStorePath(path.trim().replaceAll(RegExp(r'^/+'), ''));
+
+/// 内部记账/占位条目：`.keep` 这类点开头的文件不进「最近」。
+bool isInternalScopeFile(String path) =>
+    path.split('/').where((s) => s.isNotEmpty).lastOrNull?.startsWith('.') ??
+    false;
+
+/// 一堆扁平条目里最近改过的文件（新→旧，最多 [limit] 条）。
+///
+/// 丢掉目录条目和点开头的文件；mtime 相同的按路径排，顺序稳定（测试可复现）。
+List<StoreEntry> recentScopeFiles(
+  Iterable<StoreEntry> entries, {
+  int limit = 20,
+}) {
+  final files = entries
+      .where((entry) => !entry.isDir && !isInternalScopeFile(entry.path))
+      .toList()
+    ..sort((a, b) {
+      final byTime = b.mtimeMs.compareTo(a.mtimeMs);
+      return byTime != 0 ? byTime : a.path.compareTo(b.path);
+    });
+  if (files.length > limit) return files.sublist(0, limit);
+  return files;
+}
 
 /// hub 的 `list` 回的是扁平路径；浏览器只要当前一层的子项。
 ///

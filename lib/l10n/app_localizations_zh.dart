@@ -6954,6 +6954,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get storage_spaceRecent => '最近';
 
   @override
+  String get storage_recentTitle => '最近文件';
+
+  @override
+  String get storage_recentViewAll => '查看全部';
+
+  @override
+  String get storage_recentEmpty => '最近还没有文件';
+
+  @override
+  String get storage_filesAllFiles => '全部文件';
+
+  @override
+  String get storage_filesFolders => '文件夹';
+
+  @override
   String get storage_continueTitle => '接着打开';
 
   @override
