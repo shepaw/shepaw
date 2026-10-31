@@ -851,6 +851,8 @@
   "chat_workflow": "Workflow",
   "chat_tasks": "Tasks",
   "chat_newSession": "New Session",
+  "menu_file": "File",
+  "menu_window": "Window",
   "chat_sessionList": "Session List",
   "chat_sessionHistory": "Session History",
   "chat_clearSessionHistory": "Clear Session History",

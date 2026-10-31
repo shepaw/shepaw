@@ -1161,6 +1161,8 @@
   "chat_workflow": "工作流",
   "chat_tasks": "任务",
   "chat_newSession": "新建会话",
+  "menu_file": "文件",
+  "menu_window": "窗口",
   "chat_sessionList": "会话列表",
   "chat_sessionHistory": "会话历史",
   "chat_clearSessionHistory": "清除会话历史",

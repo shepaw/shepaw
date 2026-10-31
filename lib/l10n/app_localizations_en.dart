@@ -2153,6 +2153,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_newSession => 'New Session';
 
   @override
+  String get menu_file => 'File';
+
+  @override
+  String get menu_window => 'Window';
+
+  @override
   String get chat_sessionList => 'Session List';
 
   @override

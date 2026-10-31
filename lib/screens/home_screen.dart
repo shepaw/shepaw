@@ -78,6 +78,9 @@ class HomeScreenState extends State<HomeScreen> {
   final ChatService _chatService = ChatService();
   late final ConversationListController _list;
   final TextEditingController _searchController = TextEditingController();
+
+  /// 内联搜索框的焦点，给桌面 ⌘K 用。
+  final FocusNode _searchFocusNode = FocusNode();
   final GlobalKey _addButtonKey = GlobalKey();
   late final MessageSearchService _messageSearchService;
   List<Channel> _searchChannelResults = [];
@@ -120,6 +123,9 @@ class HomeScreenState extends State<HomeScreen> {
     _list.refresh(silent: true);
     unawaited(_loadHostPeerId());
   }
+
+  /// 桌面 ⌘K：切到会话模块后把焦点放进内联搜索框。
+  void focusSearch() => _searchFocusNode.requestFocus();
 
   Future<void> _loadHostPeerId() async {
     final session = await PouchSessionStore.readActive();
@@ -271,6 +277,7 @@ class HomeScreenState extends State<HomeScreen> {
     _hostOfflineBannerTimer?.cancel();
     _hostConnectionSub?.cancel();
     _searchController.dispose();
+    _searchFocusNode.dispose();
     _list.dispose();
     super.dispose();
   }
@@ -731,6 +738,7 @@ class HomeScreenState extends State<HomeScreen> {
                 height: 32,
                 child: TextField(
                   controller: _searchController,
+                  focusNode: _searchFocusNode,
                   textInputAction: TextInputAction.search,
                   style: const TextStyle(fontSize: 14),
                   decoration: InputDecoration(

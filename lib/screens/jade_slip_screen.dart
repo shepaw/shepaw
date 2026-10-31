@@ -42,7 +42,14 @@ List<JadeSlip> insertRetainedJadeSlip({
 class JadeSlipScreen extends StatefulWidget {
   final bool embedded;
 
-  const JadeSlipScreen({super.key, this.embedded = false});
+  /// 打开即新建一条，供桌面菜单栏「新建玉简」用。
+  final bool startCreating;
+
+  const JadeSlipScreen({
+    super.key,
+    this.embedded = false,
+    this.startCreating = false,
+  });
 
   @override
   State<JadeSlipScreen> createState() => _JadeSlipScreenState();
@@ -101,6 +108,9 @@ class _JadeSlipScreenState extends State<JadeSlipScreen> {
   void initState() {
     super.initState();
     unawaited(_load());
+    if (widget.startCreating) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _onCreatePressed());
+    }
     _sub = _service.changes.listen((_) {
       if (mounted) _syncFromSnapshotOrLoad();
     });

@@ -3902,6 +3902,18 @@ abstract class AppLocalizations {
   /// **'新建会话'**
   String get chat_newSession;
 
+  /// No description provided for @menu_file.
+  ///
+  /// In zh, this message translates to:
+  /// **'文件'**
+  String get menu_file;
+
+  /// No description provided for @menu_window.
+  ///
+  /// In zh, this message translates to:
+  /// **'窗口'**
+  String get menu_window;
+
   /// No description provided for @chat_sessionList.
   ///
   /// In zh, this message translates to:

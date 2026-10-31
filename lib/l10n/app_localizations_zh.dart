@@ -2073,6 +2073,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_newSession => '新建会话';
 
   @override
+  String get menu_file => '文件';
+
+  @override
+  String get menu_window => '窗口';
+
+  @override
   String get chat_sessionList => '会话列表';
 
   @override

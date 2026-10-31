@@ -44,7 +44,11 @@ import '../services/she_service.dart';
 import '../services/update_service.dart';
 import '../service_locator.dart' show getIt;
 import '../widgets/update_settings_badge.dart';
+import '../widgets/add_entry_menu.dart';
+import '../widgets/desktop/desktop_shortcuts.dart';
 import '../widgets/desktop/mine_list_panel.dart';
+import 'inference_log_screen.dart';
+import 'log_viewer_screen.dart';
 import '../widgets/desktop/settings_category_panel.dart';
 
 /// Desktop split-panel layout similar to WeChat desktop.
@@ -318,6 +322,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   _LeftPanelMode _leftMode = _LeftPanelMode.conversations;
   /// 右栏添加 Agent 实例页预选的工作节点，主机为 null。
   String? _addAgentNodeId;
+
+  /// 桌面菜单栏「新建玉简」的一次性标记，读完后立刻清掉。
+  bool _jadeStartCreating = false;
 
   /// 每个主菜单一份右栏。切菜单只改 [_leftMode]，不重建另外两个 Navigator。
   final Map<_LeftPanelMode, _DeskSlot> _slots = {
@@ -686,9 +693,80 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     _onConversationSelected(ConversationSelection(peerId: peer.id));
   }
 
+  void _openLogPanel(String key) {
+    final l10n = AppLocalizations.of(context);
+    final isInference = key == 'inference_log';
+    LayoutUtils.openFloatingPanel(
+      context: context,
+      key: key,
+      title: isInference ? l10n.settings_inferenceLog : l10n.settings_systemLog,
+      builder: (context) => isInference
+          ? const InferenceLogScreen(embedded: true)
+          : const LogViewerScreen(embedded: true),
+    );
+  }
+
+  /// Cmd+K: switch to the conversation module, then focus its search field.
+  void _focusConversationSearch() {
+    if (_leftMode != _LeftPanelMode.conversations) {
+      setState(() => _leftMode = _LeftPanelMode.conversations);
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _homeKey.currentState?.focusSearch();
+    });
+  }
+
+  /// Cmd+N / menu bar "New session": same path as the "+" menu.
+  void _newSession() {
+    if (_leftMode != _LeftPanelMode.conversations) {
+      setState(() => _leftMode = _LeftPanelMode.conversations);
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AddEntryMenu.run(
+        context,
+        AddEntryAction.agent,
+        embedded: false,
+      );
+    });
+  }
+
+  /// Menu bar "New jade slip": switch to the module and start one.
+  void _newJadeSlip() {
+    setState(() {
+      _leftMode = _LeftPanelMode.jade;
+      _jadeStartCreating = true;
+      final slot = _slots[_LeftPanelMode.jade]!;
+      slot.rightPanel = _RightPanelView.jadeSlips;
+      // 换 navGeneration 让右栏根页重建，startCreating 才会被读到。
+      _publishRoute(slot);
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _jadeStartCreating = false);
+    });
+  }
+
+  /// Menu bar "New instruction".
+  void _newInstruction() {
+    if (_leftMode != _LeftPanelMode.mine) _showMode(_LeftPanelMode.mine);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _onMinePageSelected(MinePage.instructions);
+      Navigator.push(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) => const InstructionSetScreen(startCreating: true),
+        ),
+      );
+    });
+  }
+
+  Future<void> _showAboutFromMenu() async {
+    final l10n = AppLocalizations.of(context);
+    await SettingsSections.showAbout(context, l10n);
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    final body = Scaffold(
       body: Row(
         children: [
           // WeChat-style icon sidebar
@@ -799,6 +877,37 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           ),
         ],
       ),
+    );
+    final shortcuts = DesktopShortcuts(
+      onSelectModule: (index) {
+        switch (index) {
+          case 0:
+            _showMode(_LeftPanelMode.conversations);
+          case 1:
+            _showMode(_LeftPanelMode.contacts);
+          case 2:
+            _showMode(_LeftPanelMode.jade);
+          case 3:
+            _showMode(_LeftPanelMode.files);
+        }
+      },
+      onOpenSettings: _showSettings,
+      onFocusSearch: _focusConversationSearch,
+      onNewSession: _newSession,
+      onNewJadeSlip: _newJadeSlip,
+      onNewInstruction: _newInstruction,
+      onOpenLog: _openLogPanel,
+      child: body,
+    );
+    return DesktopShortcuts.menuBar(
+      context: context,
+      onAbout: _showAboutFromMenu,
+      onOpenSettings: _showSettings,
+      onNewSession: _newSession,
+      onNewJadeSlip: _newJadeSlip,
+      onNewInstruction: _newInstruction,
+      onOpenLog: _openLogPanel,
+      child: shortcuts,
     );
   }
 
@@ -947,7 +1056,10 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         );
 
       case _RightPanelView.jadeSlips:
-        return const JadeSlipScreen(embedded: true);
+        return JadeSlipScreen(
+          embedded: true,
+          startCreating: _jadeStartCreating,
+        );
 
       case _RightPanelView.files:
         return const StorageSpaceManageScreen(initialSpace: StoreSpace.files);
