@@ -3225,7 +3225,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get contacts_other => 'Other';
 
   @override
-  String get hostOffline_banner => 'Host offline · Reconnect';
+  String get hostOffline_banner =>
+      'Host offline · you\'ll be signed in when it\'s back';
 
   @override
   String get hostAttach_unresponsive => 'The host isn\'t responding';
@@ -9042,7 +9043,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Not this computer? Connect to a host on another computer';
 
   @override
-  String get hostInstall_copyCommand => 'Copy the install command';
+  String get hostInstall_copyCommand => 'Copy install command';
 
   @override
   String get hostStart_starting => 'Starting the host…';
@@ -9502,4 +9503,438 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get flow_patchFailed => 'Could not rewrite';
+
+  @override
+  String get sessionSearchTitle => 'Search sessions';
+
+  @override
+  String get sessionSearchHint =>
+      'Private chats, groups, workflows and terminals';
+
+  @override
+  String get sessionSearchEmpty => 'No matching sessions';
+
+  @override
+  String unlock_welcomeBack(String name) {
+    return 'Welcome back, $name';
+  }
+
+  @override
+  String get unlock_welcomeBackPlain => 'Welcome back';
+
+  @override
+  String unlock_hostLine(String host) {
+    return 'Host $host';
+  }
+
+  @override
+  String get unlock_hostThisComputer => 'This computer';
+
+  @override
+  String get unlock_enter => 'Sign in';
+
+  @override
+  String get unlock_entering => 'Signing in…';
+
+  @override
+  String get unlock_whyCredential =>
+      'The host password changed or this device was removed. Please sign in again';
+
+  @override
+  String get unlock_whyRestarted =>
+      'The host restarted. Sign in to pick up where you left off';
+
+  @override
+  String get unlock_whyInvite =>
+      'That join code expired. Enter the host password, or get a new code from a signed-in device';
+
+  @override
+  String unlock_lockedCountdown(String seconds) {
+    return 'Try again in ${seconds}s';
+  }
+
+  @override
+  String get unlock_wrongPassword => 'Wrong password';
+
+  @override
+  String get unlock_tooManyAttempts => 'Too many attempts';
+
+  @override
+  String get unlock_forgot => 'Forgot password?';
+
+  @override
+  String get unlock_switchHost => 'Use another host';
+
+  @override
+  String get unlock_needPassword => 'Host password needed';
+
+  @override
+  String get password_label => 'Host password';
+
+  @override
+  String get password_minLength => 'At least 6 characters';
+
+  @override
+  String get password_capsLock => 'Caps Lock is on';
+
+  @override
+  String get password_show => 'Show password';
+
+  @override
+  String get password_hide => 'Hide password';
+
+  @override
+  String get hostStatus_online => 'Online';
+
+  @override
+  String get hostStatus_connecting => 'Connecting…';
+
+  @override
+  String get hostStatus_offline => 'Unreachable';
+
+  @override
+  String get hostOffline_local => 'The host on this computer isn\'t responding';
+
+  @override
+  String hostOffline_remote(String host) {
+    return 'Can\'t reach $host. Make sure it\'s on, on the same network, or has a tunnel enabled';
+  }
+
+  @override
+  String get gate_errorGeneric => 'Couldn\'t sign in. Please try again';
+
+  @override
+  String get gate_errorUnreachable => 'Can\'t reach the host';
+
+  @override
+  String get gate_errorInvite =>
+      'That join code expired. Enter the host password';
+
+  @override
+  String get gate_errorPouchMissing =>
+      'Your pouch isn\'t on this host. It may have been rebuilt';
+
+  @override
+  String get gate_errorPasswordFile => 'The host\'s password file is broken';
+
+  @override
+  String get gate_errorHostOutdated =>
+      'The host is outdated. Run shepaw update on it';
+
+  @override
+  String get gate_details => 'Details';
+
+  @override
+  String get gate_retry => 'Retry';
+
+  @override
+  String get gate_camera => 'Camera access is needed to scan';
+
+  @override
+  String get forgot_localTitle => 'Reset host password';
+
+  @override
+  String get forgot_localBody =>
+      'Reset the host password on this computer. Other devices stay signed in until their session expires, then need the new password or a join code.';
+
+  @override
+  String get forgot_remoteBody =>
+      'The password can only be reset on the host. Open Shepaw there and choose \"Forgot password\", or run shepaw password set in its terminal';
+
+  @override
+  String get gate_cameraSettings => 'Open Settings';
+
+  @override
+  String get gate_usePaste => 'Paste instead';
+
+  @override
+  String get gate_splashStarting => 'Starting…';
+
+  @override
+  String get gate_splashStartingHost => 'Starting the host…';
+
+  @override
+  String gate_splashConnecting(String host) {
+    return 'Connecting to $host…';
+  }
+
+  @override
+  String get gate_splashRestoring => 'Restoring your session…';
+
+  @override
+  String get gate_skipOffline => 'Skip and continue offline';
+
+  @override
+  String get welcome_title => 'Welcome to Shepaw';
+
+  @override
+  String get welcome_desktopIntro =>
+      'Your data, She and agents live on a host computer that stays on. Pick one first.';
+
+  @override
+  String get welcome_thisComputer => 'This computer';
+
+  @override
+  String get welcome_thisComputerDesc =>
+      'Best for a desktop or a laptop that stays open';
+
+  @override
+  String get welcome_useThisComputer => 'Use this computer';
+
+  @override
+  String get welcome_recommended => 'Recommended';
+
+  @override
+  String get welcome_otherComputer => 'Another computer';
+
+  @override
+  String get welcome_otherComputerDesc =>
+      'The host already runs on a computer at home or work';
+
+  @override
+  String get welcome_goConnect => 'Connect';
+
+  @override
+  String get welcome_changeLater =>
+      'You can change this later in Settings → Host';
+
+  @override
+  String get connect_title => 'Connect to a host on another computer';
+
+  @override
+  String get connect_step1 =>
+      'On the host computer, open Shepaw: Settings → Host → Add device';
+
+  @override
+  String get connect_step1Terminal => 'No Shepaw app there? Run in a terminal:';
+
+  @override
+  String get connect_step2 => 'Paste the join link here';
+
+  @override
+  String get connect_clipboardDetected => 'Pasted from clipboard';
+
+  @override
+  String get connect_invalidLink => 'That isn\'t a valid join link';
+
+  @override
+  String get connect_button => 'Connect';
+
+  @override
+  String connect_connecting(String host) {
+    return 'Joining $host…';
+  }
+
+  @override
+  String connect_savedButOffline(String host) {
+    return '$host is saved but unreachable right now';
+  }
+
+  @override
+  String get connect_offlineHint =>
+      'Make sure it\'s on, on the same network, or has a tunnel enabled';
+
+  @override
+  String get connect_tryAgain => 'Try again';
+
+  @override
+  String get connect_stillOffline => 'Still unreachable';
+
+  @override
+  String get connect_enterOffline => 'Continue offline';
+
+  @override
+  String connect_joined(String pouch) {
+    return 'Joined $pouch';
+  }
+
+  @override
+  String get hostInstall_title => 'Preparing the host on this computer';
+
+  @override
+  String get hostInstall_stepInstall => 'Install host';
+
+  @override
+  String get hostInstall_stepStart => 'Start host';
+
+  @override
+  String get hostInstall_stepConnect => 'Connect to host';
+
+  @override
+  String hostInstall_bundled(String version) {
+    return 'Bundled $version';
+  }
+
+  @override
+  String get hostInstall_installFailed => 'Couldn\'t install the host program';
+
+  @override
+  String get hostInstall_installedIt => 'I\'ve installed it';
+
+  @override
+  String get hostInstall_startFailed => 'The host didn\'t start';
+
+  @override
+  String get hostInstall_unresponsive =>
+      'The host started but isn\'t responding';
+
+  @override
+  String get hostInstall_restart => 'Restart host';
+
+  @override
+  String get hostInstall_openLog => 'Open log';
+
+  @override
+  String get hostInstall_useOther =>
+      'Prefer another computer? Connect to its host';
+
+  @override
+  String get createPassword_title => 'Set a host password';
+
+  @override
+  String get createPassword_body =>
+      'Other devices can join by scanning a code or entering this password. This computer stays signed in.';
+
+  @override
+  String get createPassword_nickname => 'Your name';
+
+  @override
+  String createPassword_nicknameHint(String name) {
+    return 'Shown as \"$name\"';
+  }
+
+  @override
+  String get createPassword_submit => 'Finish';
+
+  @override
+  String get done_title => 'All set';
+
+  @override
+  String get done_phonePrompt => 'Use Shepaw on your phone too?';
+
+  @override
+  String get done_phoneSteps =>
+      '1. Install and open Shepaw on your phone\n2. Tap \"Scan to join\"\n3. Scan this code — you\'re in';
+
+  @override
+  String get done_enter => 'Open Shepaw';
+
+  @override
+  String get done_later => 'Later';
+
+  @override
+  String get welcome_phoneTitle => 'Join your host';
+
+  @override
+  String get welcome_phoneIntro =>
+      'Shepaw keeps your data on your computer. Scan its join code to start.';
+
+  @override
+  String get welcome_scan => 'Scan to join';
+
+  @override
+  String get welcome_paste => 'Paste join link';
+
+  @override
+  String get welcome_whereCode => 'Where\'s the join code?';
+
+  @override
+  String get welcome_whereCodeBody =>
+      'On your computer, open Shepaw: Settings → Host → Add device';
+
+  @override
+  String get welcome_noDesktop =>
+      'No Shepaw on your computer yet? Get it at shepaw.com';
+
+  @override
+  String get welcome_joinFailed =>
+      'Couldn\'t reach that host. You can try again';
+
+  @override
+  String get waitHost_title => 'This host isn\'t set up yet';
+
+  @override
+  String get waitHost_body =>
+      'Open Shepaw on the computer and set a host password. We\'ll continue automatically.';
+
+  @override
+  String get waitHost_checkNow => 'Check now';
+
+  @override
+  String get waitHost_stale => 'Still waiting? Tap below once it\'s set up';
+
+  @override
+  String get joinCode_title => 'Add a device';
+
+  @override
+  String get joinCode_body =>
+      'Scan this code on another device to sign in without a password';
+
+  @override
+  String joinCode_expiresIn(String time) {
+    return 'Expires in $time';
+  }
+
+  @override
+  String get joinCode_refresh => 'New code';
+
+  @override
+  String get joinCode_replaced => 'This code was replaced by a newer one';
+
+  @override
+  String get joinCode_expired => 'This join code has expired';
+
+  @override
+  String joinCode_joined(String device) {
+    return '$device joined';
+  }
+
+  @override
+  String get joinCode_notYou => 'Not you? Remove';
+
+  @override
+  String get joinCode_loopback =>
+      'The host only accepts connections from this computer right now';
+
+  @override
+  String get joinCode_unsupported => 'The host is too old for join codes';
+
+  @override
+  String get joinCode_copyLink => 'Copy link';
+
+  @override
+  String get appLock_title => 'Shepaw is locked';
+
+  @override
+  String appLock_unlock(String method) {
+    return 'Unlock with $method';
+  }
+
+  @override
+  String get appLock_reason => 'Verify it\'s you to open Shepaw';
+
+  @override
+  String get settings_privacy => 'Privacy & security';
+
+  @override
+  String get settings_appLock => 'Require verification to open Shepaw';
+
+  @override
+  String get settings_appLockSub => 'On by default on phones, off on computers';
+
+  @override
+  String get settings_appLockNotSupported =>
+      'This device has no screen lock set up';
+
+  @override
+  String settings_biometricUnlock(String method) {
+    return 'Unlock host with $method';
+  }
+
+  @override
+  String get settings_biometricUnlockSub =>
+      'You\'ll still need the host password if the credential expires';
+
+  @override
+  String get gate_enterOffline => 'Continue offline';
 }

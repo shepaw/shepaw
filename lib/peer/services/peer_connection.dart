@@ -252,6 +252,13 @@ class PeerConnection {
     'pouch_peer_list_resp',
     'pouch_peer_remove_req',
     'pouch_peer_remove_resp',
+    // 加入码：签发、查状态、撤销。不在名单里的话响应到不了发起方。
+    'pouch_invite_req',
+    'pouch_invite_resp',
+    'pouch_invite_status_req',
+    'pouch_invite_status_resp',
+    'pouch_invite_cancel_req',
+    'pouch_invite_cancel_resp',
     'session_create_req',
     'session_create_resp',
     'cli_execute_req',

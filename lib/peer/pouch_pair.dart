@@ -70,6 +70,7 @@ class PouchPairTicket {
           fingerprint: info.fingerprint,
           publicKey: info.publicKey,
           name: info.name,
+          inviteId: info.inviteId,
         ),
       };
 
@@ -188,6 +189,23 @@ class PouchPairRelay {
     final pending = _pending.remove(requestId);
     if (pending == null || pending.isCompleted) return;
     pending.complete(data);
+  }
+
+  /// 发一帧、等它的回包。回包按 `request_id` 认领，所以调用方不用管类型。
+  ///
+  /// 给加入码那三个帧用：它们和配对走同一条密封通道，但帧类型不同。
+  Future<Map<String, dynamic>> raw(
+    String hostPeerId,
+    Map<String, dynamic> body, {
+    Duration timeout = listTimeout,
+    bool retryOnRelogin = true,
+  }) {
+    return _send(
+      hostPeerId,
+      body,
+      timeout: timeout,
+      retryOnRelogin: retryOnRelogin,
+    );
   }
 
   Future<PairedPeer> forward({

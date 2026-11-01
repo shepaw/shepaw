@@ -5149,5 +5149,241 @@
   "flow_patchApply": "Send the rewrite",
   "flow_patchNotFound": "Cannot rewrite this (no enclosing block found)",
   "flow_patchNotAList": "Write it as a list of steps (JSON array)",
-  "flow_patchFailed": "Could not rewrite"
+  "flow_patchFailed": "Could not rewrite",
+  "sessionSearchTitle": "Search sessions",
+  "sessionSearchHint": "Private chats, groups, workflows and terminals",
+  "sessionSearchEmpty": "No matching sessions",
+  "@unlock_welcomeBack": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "unlock_welcomeBack": "Welcome back, {name}",
+  "unlock_welcomeBackPlain": "Welcome back",
+  "@unlock_hostLine": {
+    "placeholders": {
+      "host": {
+        "type": "String"
+      }
+    }
+  },
+  "unlock_hostLine": "Host {host}",
+  "unlock_hostThisComputer": "This computer",
+  "unlock_enter": "Sign in",
+  "unlock_entering": "Signing in…",
+  "unlock_whyCredential": "The host password changed or this device was removed. Please sign in again",
+  "unlock_whyRestarted": "The host restarted. Sign in to pick up where you left off",
+  "unlock_whyInvite": "That join code expired. Enter the host password, or get a new code from a signed-in device",
+  "@unlock_lockedCountdown": {
+    "placeholders": {
+      "seconds": {
+        "type": "String"
+      }
+    }
+  },
+  "unlock_lockedCountdown": "Try again in {seconds}s",
+  "unlock_wrongPassword": "Wrong password",
+  "unlock_tooManyAttempts": "Too many attempts",
+  "unlock_forgot": "Forgot password?",
+  "unlock_switchHost": "Use another host",
+  "unlock_needPassword": "Host password needed",
+  "password_label": "Host password",
+  "password_minLength": "At least 6 characters",
+  "password_capsLock": "Caps Lock is on",
+  "password_show": "Show password",
+  "password_hide": "Hide password",
+  "hostStatus_online": "Online",
+  "hostStatus_connecting": "Connecting…",
+  "hostStatus_offline": "Unreachable",
+  "hostOffline_local": "The host on this computer isn't responding",
+  "@hostOffline_remote": {
+    "placeholders": {
+      "host": {
+        "type": "String"
+      }
+    }
+  },
+  "hostOffline_remote": "Can't reach {host}. Make sure it's on, on the same network, or has a tunnel enabled",
+  "hostOffline_banner": "Host offline · you'll be signed in when it's back",
+  "gate_errorGeneric": "Couldn't sign in. Please try again",
+  "gate_errorUnreachable": "Can't reach the host",
+  "gate_errorInvite": "That join code expired. Enter the host password",
+  "gate_errorPouchMissing": "Your pouch isn't on this host. It may have been rebuilt",
+  "gate_errorPasswordFile": "The host's password file is broken",
+  "gate_errorHostOutdated": "The host is outdated. Run shepaw update on it",
+  "gate_details": "Details",
+  "gate_retry": "Retry",
+  "gate_camera": "Camera access is needed to scan",
+  "forgot_localTitle": "Reset host password",
+  "forgot_localBody": "Reset the host password on this computer. Other devices stay signed in until their session expires, then need the new password or a join code.",
+  "forgot_remoteBody": "The password can only be reset on the host. Open Shepaw there and choose \"Forgot password\", or run shepaw password set in its terminal",
+  "gate_cameraSettings": "Open Settings",
+  "gate_usePaste": "Paste instead",
+
+  "gate_splashStarting": "Starting…",
+  "gate_splashStartingHost": "Starting the host…",
+  "@gate_splashConnecting": {
+    "placeholders": {
+      "host": {
+        "type": "String"
+      }
+    }
+  },
+  "@connect_connecting": {
+    "placeholders": {
+      "host": {
+        "type": "String"
+      }
+    }
+  },
+  "@connect_savedButOffline": {
+    "placeholders": {
+      "host": {
+        "type": "String"
+      }
+    }
+  },
+  "@connect_joined": {
+    "placeholders": {
+      "pouch": {
+        "type": "String"
+      }
+    }
+  },
+  "@hostInstall_bundled": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "@createPassword_nicknameHint": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "gate_splashConnecting": "Connecting to {host}…",
+  "gate_splashRestoring": "Restoring your session…",
+  "gate_skipOffline": "Skip and continue offline",
+
+  "welcome_title": "Welcome to Shepaw",
+  "welcome_desktopIntro": "Your data, She and agents live on a host computer that stays on. Pick one first.",
+  "welcome_thisComputer": "This computer",
+  "welcome_thisComputerDesc": "Best for a desktop or a laptop that stays open",
+  "welcome_useThisComputer": "Use this computer",
+  "welcome_recommended": "Recommended",
+  "welcome_otherComputer": "Another computer",
+  "welcome_otherComputerDesc": "The host already runs on a computer at home or work",
+  "welcome_goConnect": "Connect",
+  "welcome_changeLater": "You can change this later in Settings → Host",
+
+  "connect_title": "Connect to a host on another computer",
+  "connect_step1": "On the host computer, open Shepaw: Settings → Host → Add device",
+  "connect_step1Terminal": "No Shepaw app there? Run in a terminal:",
+  "connect_step2": "Paste the join link here",
+  "connect_clipboardDetected": "Pasted from clipboard",
+  "connect_invalidLink": "That isn't a valid join link",
+  "connect_button": "Connect",
+  "connect_connecting": "Joining {host}…",
+  "connect_savedButOffline": "{host} is saved but unreachable right now",
+  "connect_offlineHint": "Make sure it's on, on the same network, or has a tunnel enabled",
+  "connect_tryAgain": "Try again",
+  "connect_stillOffline": "Still unreachable",
+  "connect_enterOffline": "Continue offline",
+  "connect_joined": "Joined {pouch}",
+
+  "hostInstall_title": "Preparing the host on this computer",
+  "hostInstall_stepInstall": "Install host",
+  "hostInstall_stepStart": "Start host",
+  "hostInstall_stepConnect": "Connect to host",
+  "hostInstall_bundled": "Bundled {version}",
+  "hostInstall_installFailed": "Couldn't install the host program",
+  "hostInstall_copyCommand": "Copy install command",
+  "hostInstall_installedIt": "I've installed it",
+  "hostInstall_startFailed": "The host didn't start",
+  "hostInstall_unresponsive": "The host started but isn't responding",
+  "hostInstall_restart": "Restart host",
+  "hostInstall_openLog": "Open log",
+  "hostInstall_useOther": "Prefer another computer? Connect to its host",
+
+  "createPassword_title": "Set a host password",
+  "createPassword_body": "Other devices can join by scanning a code or entering this password. This computer stays signed in.",
+  "createPassword_nickname": "Your name",
+  "createPassword_nicknameHint": "Shown as \"{name}\"",
+  "createPassword_submit": "Finish",
+
+  "done_title": "All set",
+  "done_phonePrompt": "Use Shepaw on your phone too?",
+  "done_phoneSteps": "1. Install and open Shepaw on your phone\n2. Tap \"Scan to join\"\n3. Scan this code — you're in",
+  "done_enter": "Open Shepaw",
+  "done_later": "Later",
+
+  "welcome_phoneTitle": "Join your host",
+  "welcome_phoneIntro": "Shepaw keeps your data on your computer. Scan its join code to start.",
+  "welcome_scan": "Scan to join",
+  "welcome_paste": "Paste join link",
+  "welcome_whereCode": "Where's the join code?",
+  "welcome_whereCodeBody": "On your computer, open Shepaw: Settings → Host → Add device",
+  "welcome_noDesktop": "No Shepaw on your computer yet? Get it at shepaw.com",
+  "welcome_joinFailed": "Couldn't reach that host. You can try again",
+
+  "waitHost_title": "This host isn't set up yet",
+  "waitHost_body": "Open Shepaw on the computer and set a host password. We'll continue automatically.",
+  "waitHost_checkNow": "Check now",
+  "waitHost_stale": "Still waiting? Tap below once it's set up",
+
+  "@joinCode_expiresIn": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "@joinCode_joined": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "joinCode_title": "Add a device",
+  "joinCode_body": "Scan this code on another device to sign in without a password",
+  "joinCode_expiresIn": "Expires in {time}",
+  "joinCode_refresh": "New code",
+  "joinCode_replaced": "This code was replaced by a newer one",
+  "joinCode_expired": "This join code has expired",
+  "joinCode_joined": "{device} joined",
+  "joinCode_notYou": "Not you? Remove",
+  "joinCode_loopback": "The host only accepts connections from this computer right now",
+  "joinCode_unsupported": "The host is too old for join codes",
+  "joinCode_copyLink": "Copy link",
+
+  "@appLock_unlock": {
+    "placeholders": {
+      "method": {
+        "type": "String"
+      }
+    }
+  },
+  "@settings_biometricUnlock": {
+    "placeholders": {
+      "method": {
+        "type": "String"
+      }
+    }
+  },
+  "appLock_title": "Shepaw is locked",
+  "appLock_unlock": "Unlock with {method}",
+  "appLock_reason": "Verify it's you to open Shepaw",
+  "settings_privacy": "Privacy & security",
+  "settings_appLock": "Require verification to open Shepaw",
+  "settings_appLockSub": "On by default on phones, off on computers",
+  "settings_appLockNotSupported": "This device has no screen lock set up",
+  "settings_biometricUnlock": "Unlock host with {method}",
+  "settings_biometricUnlockSub": "You'll still need the host password if the credential expires",
+  "gate_enterOffline": "Continue offline"
 }

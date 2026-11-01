@@ -142,6 +142,21 @@ class PouchCredentialStore {
     }
   }
 
+  /// 这张凭据现在能不能用：袋子对得上，而且没过期。
+  ///
+  /// 它只对这一台主机的一只袋子有效，换主机或者换了袋子就不能拿去续期。
+  Future<PouchCredential?> readValid({
+    required String hostPeerId,
+    required String pouchId,
+    required int nowMs,
+  }) async {
+    final saved = await read(hostPeerId);
+    if (saved == null) return null;
+    if (saved.pouchId != pouchId.trim()) return null;
+    if (saved.isExpired(nowMs)) return null;
+    return saved;
+  }
+
   Future<void> save({
     required String hostPeerId,
     required String pouchId,

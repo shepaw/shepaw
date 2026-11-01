@@ -5,6 +5,9 @@ import 'settings/settings_model.dart';
 import 'settings/settings_sections.dart';
 import '../l10n/app_localizations.dart';
 import 'location_settings_screen.dart';
+import '../service_locator.dart';
+import '../services/app_lock_service.dart';
+import '../services/biometric_service.dart';
 import '../services/update_service.dart';
 
 /// Settings screen
@@ -17,6 +20,8 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late final SettingsModel _model = SettingsModel();
+  late final AppLockService _lock = getIt<AppLockService>();
+  String _biometricMethod = '';
 
   @override
   void initState() {
@@ -27,6 +32,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
       UpdateService().dismissSettingsIconBadge();
     });
     unawaited(_model.init());
+    unawaited(_loadLock());
+  }
+
+  /// 应用锁开关 + 验证方式的名字（Touch ID / Face ID …）。
+  Future<void> _loadLock() async {
+    await _lock.load();
+    final method = await BiometricService().methodLabel();
+    if (!mounted) return;
+    setState(() => _biometricMethod = method);
   }
 
   /// Push 一页设置子页，回来后刷新（计数类副标题会变）。
@@ -45,6 +59,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         biometricSupported: _model.biometricSupported,
         biometricEnabled: _model.biometricEnabled,
         onBiometricChanged: (v) => _model.setBiometric(context, v),
+        appLockEnabled: _lock.enabled ?? false,
+        appLockSupported: _lock.supported,
+        onAppLockChanged: (v) => _lock.setEnabled(v),
+        biometricMethod: _biometricMethod,
+        biometricUnlockEnabled: _model.biometricEnabled,
+        onBiometricUnlockChanged: (v) => _model.setBiometric(context, v),
         batteryOptIgnored: _model.batteryOptIgnored,
         onBatteryOptimization: () => _model.openBatteryOptimization(context),
         locationSubtitle: _model.locationSubtitle(l10n),

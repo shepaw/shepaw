@@ -29,6 +29,7 @@ class CliHostEndpoint {
     required this.binary,
     required this.fingerprint,
     required this.pid,
+    this.version = '',
   });
 
   final int port;
@@ -36,10 +37,16 @@ class CliHostEndpoint {
   final String fingerprint;
   final int pid;
 
+  /// `peer-state.json` 里的版本号。给「准备主机」那页显示用。
+  final String version;
+
   String get localEndpoint => 'ws://127.0.0.1:$port/peer/ws';
 }
 
 class CliHost {
+  /// 主机日志。失败时给用户看末尾几行，不用自己去翻目录。
+  static File logFile() => File('${hubRoot()}/logs/hub.log');
+
   static const _probeTimeout = Duration(seconds: 5);
   static const _processTimeout = Duration(seconds: 2);
   static const _commandTimeout = Duration(seconds: 10);
@@ -153,6 +160,7 @@ class CliHost {
       binary: binary,
       fingerprint: fingerprint,
       pid: pid,
+      version: version,
     );
   }
 

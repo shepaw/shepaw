@@ -3099,7 +3099,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get contacts_other => '其他';
 
   @override
-  String get hostOffline_banner => '主机离线 · 重新连接';
+  String get hostOffline_banner => '主机离线 · 连上后会自动登录';
 
   @override
   String get hostAttach_unresponsive => '主机没有响应';
@@ -8689,7 +8689,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get hostSetup_switchRemote => '不想放在这台电脑？连接另一台电脑上的主机';
 
   @override
-  String get hostInstall_copyCommand => '复制终端安装命令';
+  String get hostInstall_copyCommand => '复制安装命令';
 
   @override
   String get hostStart_starting => '正在启动主机…';
@@ -9133,4 +9133,411 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get flow_patchFailed => '改写失败';
+
+  @override
+  String get sessionSearchTitle => '搜索会话';
+
+  @override
+  String get sessionSearchHint => '私聊、群聊、工作流、终端都在这儿找';
+
+  @override
+  String get sessionSearchEmpty => '没有找到匹配的会话';
+
+  @override
+  String unlock_welcomeBack(String name) {
+    return '欢迎回来，$name';
+  }
+
+  @override
+  String get unlock_welcomeBackPlain => '欢迎回来';
+
+  @override
+  String unlock_hostLine(String host) {
+    return '主机 $host';
+  }
+
+  @override
+  String get unlock_hostThisComputer => '这台电脑';
+
+  @override
+  String get unlock_enter => '进入';
+
+  @override
+  String get unlock_entering => '正在进入…';
+
+  @override
+  String get unlock_whyCredential => '主机密码改过，或这台设备被移除过，请重新输入';
+
+  @override
+  String get unlock_whyRestarted => '主机重启了，输入密码后会接着刚才的对话';
+
+  @override
+  String get unlock_whyInvite => '加入码已失效，请输入主机密码，或在已登录的设备上换一个加入码';
+
+  @override
+  String unlock_lockedCountdown(String seconds) {
+    return '$seconds 秒后再试';
+  }
+
+  @override
+  String get unlock_wrongPassword => '密码不对';
+
+  @override
+  String get unlock_tooManyAttempts => '试错太多次';
+
+  @override
+  String get unlock_forgot => '忘记密码？';
+
+  @override
+  String get unlock_switchHost => '换一台主机';
+
+  @override
+  String get unlock_needPassword => '需要输入主机密码';
+
+  @override
+  String get password_label => '主机密码';
+
+  @override
+  String get password_minLength => '至少 6 位';
+
+  @override
+  String get password_capsLock => '大写已开启';
+
+  @override
+  String get password_show => '显示密码';
+
+  @override
+  String get password_hide => '隐藏密码';
+
+  @override
+  String get hostStatus_online => '在线';
+
+  @override
+  String get hostStatus_connecting => '连接中…';
+
+  @override
+  String get hostStatus_offline => '连不上';
+
+  @override
+  String get hostOffline_local => '这台电脑上的主机没有响应';
+
+  @override
+  String hostOffline_remote(String host) {
+    return '连不上 $host。确认那台电脑开着、在同一网络，或者已经开启隧道';
+  }
+
+  @override
+  String get gate_errorGeneric => '没能登录，请稍后再试';
+
+  @override
+  String get gate_errorUnreachable => '连不上主机';
+
+  @override
+  String get gate_errorInvite => '加入码已失效，请输主机密码';
+
+  @override
+  String get gate_errorPouchMissing => '主机上找不到你的储物袋，它可能被重建过';
+
+  @override
+  String get gate_errorPasswordFile => '主机的密码文件坏了';
+
+  @override
+  String get gate_errorHostOutdated => '主机版本太旧，请在主机上执行 shepaw update';
+
+  @override
+  String get gate_details => '详情';
+
+  @override
+  String get gate_retry => '重试';
+
+  @override
+  String get gate_camera => '需要相机权限才能扫码';
+
+  @override
+  String get forgot_localTitle => '重设主机密码';
+
+  @override
+  String get forgot_localBody => '在这台电脑上重设主机密码。其他设备当前的登录还能用到过期，之后要输新密码或者扫加入码。';
+
+  @override
+  String get forgot_remoteBody =>
+      '密码只能在主机那台电脑上重设。打开那台电脑上的惜宝，点「忘记密码」；或者在那台电脑的终端执行 shepaw password set';
+
+  @override
+  String get gate_cameraSettings => '去设置开启';
+
+  @override
+  String get gate_usePaste => '改用粘贴';
+
+  @override
+  String get gate_splashStarting => '正在启动…';
+
+  @override
+  String get gate_splashStartingHost => '正在启动主机…';
+
+  @override
+  String gate_splashConnecting(String host) {
+    return '正在连接 $host…';
+  }
+
+  @override
+  String get gate_splashRestoring => '正在恢复登录…';
+
+  @override
+  String get gate_skipOffline => '跳过，先进主页（离线）';
+
+  @override
+  String get welcome_title => '欢迎使用惜宝';
+
+  @override
+  String get welcome_desktopIntro => '你的数据、惜宝和智能体都放在「主机」上。主机需要一直开着，先选一台。';
+
+  @override
+  String get welcome_thisComputer => '这台电脑';
+
+  @override
+  String get welcome_thisComputerDesc => '适合常开的台式机，或者不常合盖的笔记本';
+
+  @override
+  String get welcome_useThisComputer => '用这台电脑';
+
+  @override
+  String get welcome_recommended => '推荐';
+
+  @override
+  String get welcome_otherComputer => '另一台电脑';
+
+  @override
+  String get welcome_otherComputerDesc => '主机已经装在家里或公司的电脑上';
+
+  @override
+  String get welcome_goConnect => '去连接';
+
+  @override
+  String get welcome_changeLater => '以后可以在「设置 → 主机」里更换';
+
+  @override
+  String get connect_title => '连接另一台电脑上的主机';
+
+  @override
+  String get connect_step1 => '在主机那台电脑上打开惜宝：设置 → 主机 → 添加设备，会出现加入码';
+
+  @override
+  String get connect_step1Terminal => '那台电脑没装惜宝 App？在终端执行：';
+
+  @override
+  String get connect_step2 => '把加入链接粘贴到这里';
+
+  @override
+  String get connect_clipboardDetected => '已从剪贴板读取';
+
+  @override
+  String get connect_invalidLink => '这不是有效的加入链接';
+
+  @override
+  String get connect_button => '连接';
+
+  @override
+  String connect_connecting(String host) {
+    return '正在加入 $host…';
+  }
+
+  @override
+  String connect_savedButOffline(String host) {
+    return '已记下 $host，但现在连不上';
+  }
+
+  @override
+  String get connect_offlineHint => '确认那台电脑开着、在同一网络，或者已经开启隧道';
+
+  @override
+  String get connect_tryAgain => '再试一次';
+
+  @override
+  String get connect_stillOffline => '还是连不上';
+
+  @override
+  String get connect_enterOffline => '先进入（离线）';
+
+  @override
+  String connect_joined(String pouch) {
+    return '已加入 $pouch';
+  }
+
+  @override
+  String get hostInstall_title => '正在准备这台电脑上的主机';
+
+  @override
+  String get hostInstall_stepInstall => '安装主机程序';
+
+  @override
+  String get hostInstall_stepStart => '启动主机';
+
+  @override
+  String get hostInstall_stepConnect => '连接主机';
+
+  @override
+  String hostInstall_bundled(String version) {
+    return '应用自带 $version';
+  }
+
+  @override
+  String get hostInstall_installFailed => '没能把主机程序放进这台电脑';
+
+  @override
+  String get hostInstall_installedIt => '我装好了';
+
+  @override
+  String get hostInstall_startFailed => '主机没有启动起来';
+
+  @override
+  String get hostInstall_unresponsive => '主机启动了，但没有响应';
+
+  @override
+  String get hostInstall_restart => '重启主机';
+
+  @override
+  String get hostInstall_openLog => '打开日志';
+
+  @override
+  String get hostInstall_useOther => '不想放在这台电脑？连接另一台电脑上的主机';
+
+  @override
+  String get createPassword_title => '设置主机密码';
+
+  @override
+  String get createPassword_body => '别的设备第一次连这台主机时，可以扫码加入，也可以输这个密码。这台电脑会记住登录。';
+
+  @override
+  String get createPassword_nickname => '称呼';
+
+  @override
+  String createPassword_nicknameHint(String name) {
+    return '会显示为「$name」';
+  }
+
+  @override
+  String get createPassword_submit => '完成设置';
+
+  @override
+  String get done_title => '准备好了';
+
+  @override
+  String get done_phonePrompt => '要在手机上也用惜宝吗？';
+
+  @override
+  String get done_phoneSteps => '1. 手机上安装并打开惜宝\n2. 点「扫码加入」\n3. 扫这个码，直接进入';
+
+  @override
+  String get done_enter => '进入惜宝';
+
+  @override
+  String get done_later => '以后再说';
+
+  @override
+  String get welcome_phoneTitle => '加入你的主机';
+
+  @override
+  String get welcome_phoneIntro => '惜宝的数据放在你的电脑上，扫电脑上的加入码就能用。';
+
+  @override
+  String get welcome_scan => '扫码加入';
+
+  @override
+  String get welcome_paste => '粘贴加入链接';
+
+  @override
+  String get welcome_whereCode => '加入码在哪？';
+
+  @override
+  String get welcome_whereCodeBody => '电脑上打开惜宝：设置 → 主机 → 添加设备';
+
+  @override
+  String get welcome_noDesktop => '电脑还没装惜宝？去 shepaw.com 下载';
+
+  @override
+  String get welcome_joinFailed => '没能连上这台主机，可以再试一次';
+
+  @override
+  String get waitHost_title => '这台主机还没设置好';
+
+  @override
+  String get waitHost_body => '在电脑上打开惜宝，按提示设置主机密码，设置好之后这里会自动继续。';
+
+  @override
+  String get waitHost_checkNow => '现在检查';
+
+  @override
+  String get waitHost_stale => '还在等吗？设置好后点下面的按钮';
+
+  @override
+  String get joinCode_title => '添加设备';
+
+  @override
+  String get joinCode_body => '用另一台设备扫这个码，直接进入，不用输密码';
+
+  @override
+  String joinCode_expiresIn(String time) {
+    return '$time 后失效';
+  }
+
+  @override
+  String get joinCode_refresh => '换一个';
+
+  @override
+  String get joinCode_replaced => '这个码已被新的码替代';
+
+  @override
+  String get joinCode_expired => '加入码已过期';
+
+  @override
+  String joinCode_joined(String device) {
+    return '$device 已加入';
+  }
+
+  @override
+  String get joinCode_notYou => '不是你？移除';
+
+  @override
+  String get joinCode_loopback => '主机现在只允许这台电脑连接，其他设备连不上';
+
+  @override
+  String get joinCode_unsupported => '主机版本太旧，暂不支持加入码';
+
+  @override
+  String get joinCode_copyLink => '复制链接';
+
+  @override
+  String get appLock_title => '惜宝已锁定';
+
+  @override
+  String appLock_unlock(String method) {
+    return '使用 $method 解锁';
+  }
+
+  @override
+  String get appLock_reason => '验证身份以打开惜宝';
+
+  @override
+  String get settings_privacy => '隐私与安全';
+
+  @override
+  String get settings_appLock => '打开惜宝时验证身份';
+
+  @override
+  String get settings_appLockSub => '手机默认开，电脑默认关';
+
+  @override
+  String get settings_appLockNotSupported => '这台设备没有设置锁屏方式';
+
+  @override
+  String settings_biometricUnlock(String method) {
+    return '用 $method 解锁主机';
+  }
+
+  @override
+  String get settings_biometricUnlockSub => '凭据失效时仍需输入主机密码';
+
+  @override
+  String get gate_enterOffline => '先进主页（离线）';
 }

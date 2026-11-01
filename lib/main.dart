@@ -18,6 +18,8 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'sub_window_app.dart';
 import 'app_bootstrap.dart';
 import 'service_locator.dart';
+import 'services/app_lock_service.dart';
+import 'storage/pouch_session.dart';
 import 'theme/app_theme.dart';
 
 import 'providers/locale_provider.dart';
@@ -26,16 +28,15 @@ import 'providers/theme_provider.dart';
 import 'screens/password_setup_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/pouch_login_screen.dart';
-import 'onboarding/host_setup_screen.dart';
-import 'onboarding/host_entry.dart';
-import 'onboarding/host_entry_flow.dart';
-import 'onboarding/pouch_gate_screen.dart';
-import 'services/cli_pouch.dart';
-import 'storage/pouch_session.dart';
-import 'onboarding/phone_auth_screen.dart';
-import 'onboarding/phone_host_store.dart';
-import 'onboarding/remote_connect_screen.dart';
-import 'utils/platform_utils.dart';
+import 'onboarding/host_install_screen.dart';
+import 'onboarding/app_lock_screen.dart';
+import 'onboarding/gate_entry.dart';
+import 'onboarding/unlock_screen.dart';
+import 'onboarding/welcome_screen.dart';
+import 'onboarding/gate_navigator.dart';
+import 'onboarding/create_password_screen.dart';
+import 'onboarding/setup_done_screen.dart';
+
 import 'screens/adaptive_home_screen.dart';
 import 'widgets/window_title_sync.dart';
 import 'widgets/approval/pending_approval_banner.dart';
@@ -196,11 +197,34 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   StreamSubscription<PermissionRequest>? _permissionSub;
+  AppLifecycleListener? _lifecycle;
+  late final AppLockService _lock = getIt<AppLockService>();
 
   @override
   void initState() {
     super.initState();
     _listenForPermissionRequests();
+    _listenForLock();
+  }
+
+  /// 应用锁：进后台记时间，回前台超过 5 分钟就重新锁。
+  ///
+  /// 只在有登录态时才上锁 —— 还没登录过的门页本来没什么可保护的。
+  void _listenForLock() {
+    unawaited(_lock.load());
+    _lifecycle = AppLifecycleListener(
+      onHide: () => _lock.onPaused(),
+      onPause: () => _lock.onPaused(),
+      onResume: () async {
+        final session = await PouchSessionStore.readActive();
+        if (session == null) return;
+        _lock.onResumed();
+        if (!_lock.locked || !mounted) return;
+        final context = navigatorKey.currentContext;
+        if (context == null) return;
+        await Navigator.of(context).pushNamed('/app-locked');
+      },
+    );
   }
 
   void _listenForPermissionRequests() {
@@ -358,13 +382,17 @@ class _MyAppState extends State<MyApp> {
                 '/setup': (context) => const PasswordSetupScreen(),
                 '/login': (context) => const LoginScreen(),
                 '/pouch': (context) => const PouchLoginScreen(),
-                '/host-setup': (context) => const HostSetupScreen(),
-                '/pouch-init': (context) =>
-                    const PouchGateScreen(initializing: true),
-                '/pouch-unlock': (context) =>
-                    const PouchGateScreen(initializing: false),
-                '/remote-connect': (context) => const RemoteConnectScreen(),
-                '/phone-login': (context) => const PhoneAuthScreen(),
+                '/welcome': (context) => const WelcomeScreen(),
+                '/host-install': (context) => const HostInstallScreen(),
+                '/create-password': (context) => const CreatePasswordScreen(),
+                '/setup-done': (context) => const SetupDoneScreen(),
+                '/host-setup': (context) => const WelcomeScreen(),
+                '/pouch-init': (context) => const CreatePasswordScreen(),
+                '/pouch-unlock': (context) => const _LegacyUnlockRoute(),
+                '/unlock': (context) => const UnlockScreen(),
+                '/app-locked': (context) => const AppLockScreen(),
+                '/remote-connect': (context) => const WelcomeScreen(),
+                '/phone-login': (context) => const _LegacyUnlockRoute(),
                 '/home': (context) => const AdaptiveHomeScreen(),
               },
             ),
@@ -376,6 +404,22 @@ class _MyAppState extends State<MyApp> {
 }
 
 /// 启动页 - 检查密码状态并导航到相应页面
+/// 旧门页的别名：把 `/phone-login`、`/pouch-unlock` 转到新的 `/unlock`。
+///
+/// L6 清路由时连这个类一起删。
+class _LegacyUnlockRoute extends StatelessWidget {
+  const _LegacyUnlockRoute();
+
+  @override
+  Widget build(BuildContext context) {
+    final raw = ModalRoute.of(context)?.settings.arguments;
+    final hostPeerId = raw is UnlockArgs ? raw.hostPeerId : '';
+    return UnlockScreen(
+      args: UnlockArgs(hostPeerId: hostPeerId),
+    );
+  }
+}
+
 class SplashScreen extends StatefulWidget {
   const SplashScreen({Key? key}) : super(key: key);
 
@@ -384,69 +428,40 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  final _phase = ValueNotifier<GatePhase>(GatePhase.starting);
+
   @override
   void initState() {
     super.initState();
     _checkPasswordStatus();
   }
 
+  @override
+  void dispose() {
+    _phase.dispose();
+    super.dispose();
+  }
+
+  /// 门在哪、要不要静默续期，全部交给 [GateNavigator]。
+  ///
+  /// 这里只保证启动页不会闪一下：离开之前至少停 300ms，其余时间都拿去干活，
+  /// 不再固定等 1 秒。
   Future<void> _checkPasswordStatus() async {
-    // 短暂延迟，显示启动画面
-    await Future.delayed(const Duration(seconds: 1));
-
     if (!mounted) return;
+    await GateNavigator.go(
+      context,
+      minDisplay: const Duration(milliseconds: 300),
+      phase: _phase,
+    );
+  }
 
-    // 手机没有本机密码。没配过主机就去扫码或输入配对码；配过了先看登录态
-    // 还在不在，在就进主页，不在才用主机密码登录。
-    if (!isDesktopPlatform) {
-      final hostId = await PhoneHostStore.read();
-      if (!mounted) return;
-      final session = await PouchSessionStore.readActive();
-      if (!mounted) return;
-      final route = phoneStartRoute(
-        rememberedHostId: hostId,
-        session: session,
-        nowMs: DateTime.now().millisecondsSinceEpoch,
-      );
-      Navigator.of(context).pushReplacementNamed(
-        route,
-        arguments: route == '/phone-login' && hostId != null
-            ? PhoneAuthArgs(hostPeerId: hostId)
-            : null,
-      );
-      return;
-    }
-
-    // 电脑上的门是储物袋，不是本机另一套密码。初始化由 shepaw CLI 完成。
-    final binary = await CliHost.resolveBinary();
-    if (!mounted) return;
-    if (binary == null) {
-      Navigator.of(context).pushReplacementNamed('/host-setup');
-      return;
-    }
-    try {
-      final session = await PouchSessionStore.readActive();
-      final now = DateTime.now().millisecondsSinceEpoch;
-      if (session != null && session.isLoggedIn(now)) {
-        if (!mounted) return;
-        await HostEntryNavigator.go(context, isDesktop: true);
-        return;
-      }
-      final initialized = await CliPouch.passwordIsSet(binary);
-      if (!mounted) return;
-      Navigator.of(context).pushReplacementNamed(
-        initialized ? '/pouch-unlock' : '/pouch-init',
-      );
-    } catch (error, stack) {
-      LoggerService().error(
-        'pouch gate failed',
-        tag: 'PouchGate',
-        error: error,
-        stackTrace: stack,
-      );
-      if (!mounted) return;
-      Navigator.of(context).pushReplacementNamed('/pouch-unlock');
-    }
+  String _status(AppLocalizations l10n) {
+    return switch (_phase.value) {
+      GatePhase.starting => l10n.gate_splashStarting,
+      GatePhase.startingHost => l10n.gate_splashStartingHost,
+      GatePhase.connecting => l10n.gate_splashConnecting(l10n.appTitle),
+      GatePhase.restoring => l10n.gate_splashRestoring,
+    };
   }
 
   @override
@@ -491,11 +506,14 @@ class _SplashScreenState extends State<SplashScreen> {
               ),
               const SizedBox(height: 16),
 
-              Text(
-                l10n.splash_loading,
-                style: const TextStyle(
-                  fontSize: 16,
-                  color: Colors.white70,
+              ValueListenableBuilder<GatePhase>(
+                valueListenable: _phase,
+                builder: (context, _, __) => Text(
+                  _status(l10n),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    color: Colors.white70,
+                  ),
                 ),
               ),
             ],

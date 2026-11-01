@@ -65,6 +65,26 @@ class BiometricService {
     }
   }
 
+  /// 这台设备上「验证身份」叫什么：Touch ID / Face ID / 指纹 / Windows Hello。
+  ///
+  /// 界面上不能一律写「生物识别」—— Mac 上是 Touch ID，Windows 上是 Hello。
+  /// 没有可用的生物识别时用「设备密码」：local_auth 仍会落到系统凭据。
+  Future<String> methodLabel() async {
+    if (!_platformSupported) return '设备密码';
+    try {
+      final available = await _auth.getAvailableBiometrics();
+      if (available.contains(BiometricType.face)) return 'Face ID';
+      if (available.contains(BiometricType.fingerprint)) {
+        return Platform.isMacOS ? 'Touch ID' : '指纹';
+      }
+      if (available.contains(BiometricType.iris)) return '虹膜';
+      if (Platform.isWindows) return 'Windows Hello';
+      return '设备密码';
+    } catch (_) {
+      return '设备密码';
+    }
+  }
+
   /// Read the biometric enabled preference.
   Future<bool> isBiometricEnabled() async {
     if (!_platformSupported) return false;

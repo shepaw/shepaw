@@ -2,11 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../onboarding/gate_entry.dart';
+import '../onboarding/gate_navigator.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../service_locator.dart';
 import '../services/logger_service.dart';
 import '../utils/platform_utils.dart';
 import 'pouch_credential_store.dart';
+import 'pouch_grant.dart';
 import 'pouch_login.dart';
 import 'pouch_login_client.dart';
 import 'pouch_session.dart';
@@ -57,11 +60,16 @@ class PouchLoginKeeper {
       },
       clearChannel: PouchChannel.clear,
       credentials: PouchCredentialStore.instance,
+      // 走 GateNavigator：它知道自己该去解锁页还是欢迎页，还带上「主机重启了」
+      // 这个原因，解锁页才能解释为什么要输一次密码。
       openChooser: () {
-        final route = isDesktopPlatform ? '/pouch' : '/phone-login';
-        navigatorKey.currentState?.pushNamedAndRemoveUntil(
-          route,
-          (_) => false,
+        final context = navigatorKey.currentContext;
+        if (context == null) return;
+        unawaited(
+          GateNavigator.go(
+            context,
+            hint: const GateHint(unlockReason: UnlockReason.hostRestarted),
+          ),
         );
       },
       log: (message) =>
@@ -225,22 +233,20 @@ class PouchLoginKeeper {
   }
 
   Future<void> _acceptGrant(PouchSession session, PouchLoginGrant grant) async {
-    final next = PouchSession(
-      hubUrl: session.hubUrl,
-      pouchId: session.pouchId,
-      pouchName: session.pouchName,
-      hostPeerId: session.hostPeerId,
-      token: grant.token,
-      sessionId: grant.sessionId,
-      expiresAtMs: grant.expiresAtMs,
+    // 和冷启动的静默续期共用同一段：装会话、发新凭据，两边不能各写一份。
+    await applyLoginGrant(
+      session: session,
+      grant: grant,
+      persist: persist,
+      install: install,
+      saveCredential: ({
+        required String hostPeerId,
+        required String pouchId,
+        required String credential,
+        required int expiresAtMs,
+      }) =>
+          _saveCredential(session, credential, expiresAtMs),
     );
-    await persist(next);
-    install(next);
-    // 密码登录会换发新凭据；凭据登录不轮换，这里就没有新值。
-    final issued = grant.credential?.trim() ?? '';
-    if (issued.isNotEmpty) {
-      await _saveCredential(session, issued, grant.credentialExpiresAtMs);
-    }
     _reloginGeneration += 1;
     _needsUserPassword = false;
     _failureCount = 0;
@@ -299,12 +305,12 @@ class PouchLoginKeeper {
   Future<String?> _readCredential(PouchSession session) async {
     final store = credentials;
     if (store == null) return null;
-    final saved = await store.read(session.hostPeerId);
-    if (saved == null || saved.pouchId != session.pouchId) return null;
-    if (saved.isExpired(DateTime.now().millisecondsSinceEpoch)) {
-      log?.call('设备凭据已过期：pouch=${session.pouchId}');
-      return null;
-    }
+    final saved = await store.readValid(
+      hostPeerId: session.hostPeerId,
+      pouchId: session.pouchId,
+      nowMs: DateTime.now().millisecondsSinceEpoch,
+    );
+    if (saved == null) return null;
     return saved.credential;
   }
 

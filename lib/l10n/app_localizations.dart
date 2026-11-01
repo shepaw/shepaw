@@ -5723,7 +5723,7 @@ abstract class AppLocalizations {
   /// No description provided for @hostOffline_banner.
   ///
   /// In zh, this message translates to:
-  /// **'主机离线 · 重新连接'**
+  /// **'主机离线 · 连上后会自动登录'**
   String get hostOffline_banner;
 
   /// No description provided for @hostAttach_unresponsive.
@@ -15794,7 +15794,7 @@ abstract class AppLocalizations {
   /// No description provided for @hostInstall_copyCommand.
   ///
   /// In zh, this message translates to:
-  /// **'复制终端安装命令'**
+  /// **'复制安装命令'**
   String get hostInstall_copyCommand;
 
   /// No description provided for @hostStart_starting.
@@ -16570,6 +16570,762 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'改写失败'**
   String get flow_patchFailed;
+
+  /// No description provided for @sessionSearchTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'搜索会话'**
+  String get sessionSearchTitle;
+
+  /// No description provided for @sessionSearchHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'私聊、群聊、工作流、终端都在这儿找'**
+  String get sessionSearchHint;
+
+  /// No description provided for @sessionSearchEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有找到匹配的会话'**
+  String get sessionSearchEmpty;
+
+  /// No description provided for @unlock_welcomeBack.
+  ///
+  /// In zh, this message translates to:
+  /// **'欢迎回来，{name}'**
+  String unlock_welcomeBack(String name);
+
+  /// No description provided for @unlock_welcomeBackPlain.
+  ///
+  /// In zh, this message translates to:
+  /// **'欢迎回来'**
+  String get unlock_welcomeBackPlain;
+
+  /// No description provided for @unlock_hostLine.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机 {host}'**
+  String unlock_hostLine(String host);
+
+  /// No description provided for @unlock_hostThisComputer.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台电脑'**
+  String get unlock_hostThisComputer;
+
+  /// No description provided for @unlock_enter.
+  ///
+  /// In zh, this message translates to:
+  /// **'进入'**
+  String get unlock_enter;
+
+  /// No description provided for @unlock_entering.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在进入…'**
+  String get unlock_entering;
+
+  /// No description provided for @unlock_whyCredential.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机密码改过，或这台设备被移除过，请重新输入'**
+  String get unlock_whyCredential;
+
+  /// No description provided for @unlock_whyRestarted.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机重启了，输入密码后会接着刚才的对话'**
+  String get unlock_whyRestarted;
+
+  /// No description provided for @unlock_whyInvite.
+  ///
+  /// In zh, this message translates to:
+  /// **'加入码已失效，请输入主机密码，或在已登录的设备上换一个加入码'**
+  String get unlock_whyInvite;
+
+  /// No description provided for @unlock_lockedCountdown.
+  ///
+  /// In zh, this message translates to:
+  /// **'{seconds} 秒后再试'**
+  String unlock_lockedCountdown(String seconds);
+
+  /// No description provided for @unlock_wrongPassword.
+  ///
+  /// In zh, this message translates to:
+  /// **'密码不对'**
+  String get unlock_wrongPassword;
+
+  /// No description provided for @unlock_tooManyAttempts.
+  ///
+  /// In zh, this message translates to:
+  /// **'试错太多次'**
+  String get unlock_tooManyAttempts;
+
+  /// No description provided for @unlock_forgot.
+  ///
+  /// In zh, this message translates to:
+  /// **'忘记密码？'**
+  String get unlock_forgot;
+
+  /// No description provided for @unlock_switchHost.
+  ///
+  /// In zh, this message translates to:
+  /// **'换一台主机'**
+  String get unlock_switchHost;
+
+  /// No description provided for @unlock_needPassword.
+  ///
+  /// In zh, this message translates to:
+  /// **'需要输入主机密码'**
+  String get unlock_needPassword;
+
+  /// No description provided for @password_label.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机密码'**
+  String get password_label;
+
+  /// No description provided for @password_minLength.
+  ///
+  /// In zh, this message translates to:
+  /// **'至少 6 位'**
+  String get password_minLength;
+
+  /// No description provided for @password_capsLock.
+  ///
+  /// In zh, this message translates to:
+  /// **'大写已开启'**
+  String get password_capsLock;
+
+  /// No description provided for @password_show.
+  ///
+  /// In zh, this message translates to:
+  /// **'显示密码'**
+  String get password_show;
+
+  /// No description provided for @password_hide.
+  ///
+  /// In zh, this message translates to:
+  /// **'隐藏密码'**
+  String get password_hide;
+
+  /// No description provided for @hostStatus_online.
+  ///
+  /// In zh, this message translates to:
+  /// **'在线'**
+  String get hostStatus_online;
+
+  /// No description provided for @hostStatus_connecting.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接中…'**
+  String get hostStatus_connecting;
+
+  /// No description provided for @hostStatus_offline.
+  ///
+  /// In zh, this message translates to:
+  /// **'连不上'**
+  String get hostStatus_offline;
+
+  /// No description provided for @hostOffline_local.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台电脑上的主机没有响应'**
+  String get hostOffline_local;
+
+  /// No description provided for @hostOffline_remote.
+  ///
+  /// In zh, this message translates to:
+  /// **'连不上 {host}。确认那台电脑开着、在同一网络，或者已经开启隧道'**
+  String hostOffline_remote(String host);
+
+  /// No description provided for @gate_errorGeneric.
+  ///
+  /// In zh, this message translates to:
+  /// **'没能登录，请稍后再试'**
+  String get gate_errorGeneric;
+
+  /// No description provided for @gate_errorUnreachable.
+  ///
+  /// In zh, this message translates to:
+  /// **'连不上主机'**
+  String get gate_errorUnreachable;
+
+  /// No description provided for @gate_errorInvite.
+  ///
+  /// In zh, this message translates to:
+  /// **'加入码已失效，请输主机密码'**
+  String get gate_errorInvite;
+
+  /// No description provided for @gate_errorPouchMissing.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机上找不到你的储物袋，它可能被重建过'**
+  String get gate_errorPouchMissing;
+
+  /// No description provided for @gate_errorPasswordFile.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机的密码文件坏了'**
+  String get gate_errorPasswordFile;
+
+  /// No description provided for @gate_errorHostOutdated.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机版本太旧，请在主机上执行 shepaw update'**
+  String get gate_errorHostOutdated;
+
+  /// No description provided for @gate_details.
+  ///
+  /// In zh, this message translates to:
+  /// **'详情'**
+  String get gate_details;
+
+  /// No description provided for @gate_retry.
+  ///
+  /// In zh, this message translates to:
+  /// **'重试'**
+  String get gate_retry;
+
+  /// No description provided for @gate_camera.
+  ///
+  /// In zh, this message translates to:
+  /// **'需要相机权限才能扫码'**
+  String get gate_camera;
+
+  /// No description provided for @forgot_localTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'重设主机密码'**
+  String get forgot_localTitle;
+
+  /// No description provided for @forgot_localBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'在这台电脑上重设主机密码。其他设备当前的登录还能用到过期，之后要输新密码或者扫加入码。'**
+  String get forgot_localBody;
+
+  /// No description provided for @forgot_remoteBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'密码只能在主机那台电脑上重设。打开那台电脑上的惜宝，点「忘记密码」；或者在那台电脑的终端执行 shepaw password set'**
+  String get forgot_remoteBody;
+
+  /// No description provided for @gate_cameraSettings.
+  ///
+  /// In zh, this message translates to:
+  /// **'去设置开启'**
+  String get gate_cameraSettings;
+
+  /// No description provided for @gate_usePaste.
+  ///
+  /// In zh, this message translates to:
+  /// **'改用粘贴'**
+  String get gate_usePaste;
+
+  /// No description provided for @gate_splashStarting.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在启动…'**
+  String get gate_splashStarting;
+
+  /// No description provided for @gate_splashStartingHost.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在启动主机…'**
+  String get gate_splashStartingHost;
+
+  /// No description provided for @gate_splashConnecting.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在连接 {host}…'**
+  String gate_splashConnecting(String host);
+
+  /// No description provided for @gate_splashRestoring.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在恢复登录…'**
+  String get gate_splashRestoring;
+
+  /// No description provided for @gate_skipOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'跳过，先进主页（离线）'**
+  String get gate_skipOffline;
+
+  /// No description provided for @welcome_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'欢迎使用惜宝'**
+  String get welcome_title;
+
+  /// No description provided for @welcome_desktopIntro.
+  ///
+  /// In zh, this message translates to:
+  /// **'你的数据、惜宝和智能体都放在「主机」上。主机需要一直开着，先选一台。'**
+  String get welcome_desktopIntro;
+
+  /// No description provided for @welcome_thisComputer.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台电脑'**
+  String get welcome_thisComputer;
+
+  /// No description provided for @welcome_thisComputerDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'适合常开的台式机，或者不常合盖的笔记本'**
+  String get welcome_thisComputerDesc;
+
+  /// No description provided for @welcome_useThisComputer.
+  ///
+  /// In zh, this message translates to:
+  /// **'用这台电脑'**
+  String get welcome_useThisComputer;
+
+  /// No description provided for @welcome_recommended.
+  ///
+  /// In zh, this message translates to:
+  /// **'推荐'**
+  String get welcome_recommended;
+
+  /// No description provided for @welcome_otherComputer.
+  ///
+  /// In zh, this message translates to:
+  /// **'另一台电脑'**
+  String get welcome_otherComputer;
+
+  /// No description provided for @welcome_otherComputerDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机已经装在家里或公司的电脑上'**
+  String get welcome_otherComputerDesc;
+
+  /// No description provided for @welcome_goConnect.
+  ///
+  /// In zh, this message translates to:
+  /// **'去连接'**
+  String get welcome_goConnect;
+
+  /// No description provided for @welcome_changeLater.
+  ///
+  /// In zh, this message translates to:
+  /// **'以后可以在「设置 → 主机」里更换'**
+  String get welcome_changeLater;
+
+  /// No description provided for @connect_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接另一台电脑上的主机'**
+  String get connect_title;
+
+  /// No description provided for @connect_step1.
+  ///
+  /// In zh, this message translates to:
+  /// **'在主机那台电脑上打开惜宝：设置 → 主机 → 添加设备，会出现加入码'**
+  String get connect_step1;
+
+  /// No description provided for @connect_step1Terminal.
+  ///
+  /// In zh, this message translates to:
+  /// **'那台电脑没装惜宝 App？在终端执行：'**
+  String get connect_step1Terminal;
+
+  /// No description provided for @connect_step2.
+  ///
+  /// In zh, this message translates to:
+  /// **'把加入链接粘贴到这里'**
+  String get connect_step2;
+
+  /// No description provided for @connect_clipboardDetected.
+  ///
+  /// In zh, this message translates to:
+  /// **'已从剪贴板读取'**
+  String get connect_clipboardDetected;
+
+  /// No description provided for @connect_invalidLink.
+  ///
+  /// In zh, this message translates to:
+  /// **'这不是有效的加入链接'**
+  String get connect_invalidLink;
+
+  /// No description provided for @connect_button.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接'**
+  String get connect_button;
+
+  /// No description provided for @connect_connecting.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在加入 {host}…'**
+  String connect_connecting(String host);
+
+  /// No description provided for @connect_savedButOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'已记下 {host}，但现在连不上'**
+  String connect_savedButOffline(String host);
+
+  /// No description provided for @connect_offlineHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'确认那台电脑开着、在同一网络，或者已经开启隧道'**
+  String get connect_offlineHint;
+
+  /// No description provided for @connect_tryAgain.
+  ///
+  /// In zh, this message translates to:
+  /// **'再试一次'**
+  String get connect_tryAgain;
+
+  /// No description provided for @connect_stillOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'还是连不上'**
+  String get connect_stillOffline;
+
+  /// No description provided for @connect_enterOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'先进入（离线）'**
+  String get connect_enterOffline;
+
+  /// No description provided for @connect_joined.
+  ///
+  /// In zh, this message translates to:
+  /// **'已加入 {pouch}'**
+  String connect_joined(String pouch);
+
+  /// No description provided for @hostInstall_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在准备这台电脑上的主机'**
+  String get hostInstall_title;
+
+  /// No description provided for @hostInstall_stepInstall.
+  ///
+  /// In zh, this message translates to:
+  /// **'安装主机程序'**
+  String get hostInstall_stepInstall;
+
+  /// No description provided for @hostInstall_stepStart.
+  ///
+  /// In zh, this message translates to:
+  /// **'启动主机'**
+  String get hostInstall_stepStart;
+
+  /// No description provided for @hostInstall_stepConnect.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接主机'**
+  String get hostInstall_stepConnect;
+
+  /// No description provided for @hostInstall_bundled.
+  ///
+  /// In zh, this message translates to:
+  /// **'应用自带 {version}'**
+  String hostInstall_bundled(String version);
+
+  /// No description provided for @hostInstall_installFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'没能把主机程序放进这台电脑'**
+  String get hostInstall_installFailed;
+
+  /// No description provided for @hostInstall_installedIt.
+  ///
+  /// In zh, this message translates to:
+  /// **'我装好了'**
+  String get hostInstall_installedIt;
+
+  /// No description provided for @hostInstall_startFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机没有启动起来'**
+  String get hostInstall_startFailed;
+
+  /// No description provided for @hostInstall_unresponsive.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机启动了，但没有响应'**
+  String get hostInstall_unresponsive;
+
+  /// No description provided for @hostInstall_restart.
+  ///
+  /// In zh, this message translates to:
+  /// **'重启主机'**
+  String get hostInstall_restart;
+
+  /// No description provided for @hostInstall_openLog.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开日志'**
+  String get hostInstall_openLog;
+
+  /// No description provided for @hostInstall_useOther.
+  ///
+  /// In zh, this message translates to:
+  /// **'不想放在这台电脑？连接另一台电脑上的主机'**
+  String get hostInstall_useOther;
+
+  /// No description provided for @createPassword_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'设置主机密码'**
+  String get createPassword_title;
+
+  /// No description provided for @createPassword_body.
+  ///
+  /// In zh, this message translates to:
+  /// **'别的设备第一次连这台主机时，可以扫码加入，也可以输这个密码。这台电脑会记住登录。'**
+  String get createPassword_body;
+
+  /// No description provided for @createPassword_nickname.
+  ///
+  /// In zh, this message translates to:
+  /// **'称呼'**
+  String get createPassword_nickname;
+
+  /// No description provided for @createPassword_nicknameHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'会显示为「{name}」'**
+  String createPassword_nicknameHint(String name);
+
+  /// No description provided for @createPassword_submit.
+  ///
+  /// In zh, this message translates to:
+  /// **'完成设置'**
+  String get createPassword_submit;
+
+  /// No description provided for @done_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'准备好了'**
+  String get done_title;
+
+  /// No description provided for @done_phonePrompt.
+  ///
+  /// In zh, this message translates to:
+  /// **'要在手机上也用惜宝吗？'**
+  String get done_phonePrompt;
+
+  /// No description provided for @done_phoneSteps.
+  ///
+  /// In zh, this message translates to:
+  /// **'1. 手机上安装并打开惜宝\n2. 点「扫码加入」\n3. 扫这个码，直接进入'**
+  String get done_phoneSteps;
+
+  /// No description provided for @done_enter.
+  ///
+  /// In zh, this message translates to:
+  /// **'进入惜宝'**
+  String get done_enter;
+
+  /// No description provided for @done_later.
+  ///
+  /// In zh, this message translates to:
+  /// **'以后再说'**
+  String get done_later;
+
+  /// No description provided for @welcome_phoneTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'加入你的主机'**
+  String get welcome_phoneTitle;
+
+  /// No description provided for @welcome_phoneIntro.
+  ///
+  /// In zh, this message translates to:
+  /// **'惜宝的数据放在你的电脑上，扫电脑上的加入码就能用。'**
+  String get welcome_phoneIntro;
+
+  /// No description provided for @welcome_scan.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫码加入'**
+  String get welcome_scan;
+
+  /// No description provided for @welcome_paste.
+  ///
+  /// In zh, this message translates to:
+  /// **'粘贴加入链接'**
+  String get welcome_paste;
+
+  /// No description provided for @welcome_whereCode.
+  ///
+  /// In zh, this message translates to:
+  /// **'加入码在哪？'**
+  String get welcome_whereCode;
+
+  /// No description provided for @welcome_whereCodeBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'电脑上打开惜宝：设置 → 主机 → 添加设备'**
+  String get welcome_whereCodeBody;
+
+  /// No description provided for @welcome_noDesktop.
+  ///
+  /// In zh, this message translates to:
+  /// **'电脑还没装惜宝？去 shepaw.com 下载'**
+  String get welcome_noDesktop;
+
+  /// No description provided for @welcome_joinFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'没能连上这台主机，可以再试一次'**
+  String get welcome_joinFailed;
+
+  /// No description provided for @waitHost_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台主机还没设置好'**
+  String get waitHost_title;
+
+  /// No description provided for @waitHost_body.
+  ///
+  /// In zh, this message translates to:
+  /// **'在电脑上打开惜宝，按提示设置主机密码，设置好之后这里会自动继续。'**
+  String get waitHost_body;
+
+  /// No description provided for @waitHost_checkNow.
+  ///
+  /// In zh, this message translates to:
+  /// **'现在检查'**
+  String get waitHost_checkNow;
+
+  /// No description provided for @waitHost_stale.
+  ///
+  /// In zh, this message translates to:
+  /// **'还在等吗？设置好后点下面的按钮'**
+  String get waitHost_stale;
+
+  /// No description provided for @joinCode_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加设备'**
+  String get joinCode_title;
+
+  /// No description provided for @joinCode_body.
+  ///
+  /// In zh, this message translates to:
+  /// **'用另一台设备扫这个码，直接进入，不用输密码'**
+  String get joinCode_body;
+
+  /// No description provided for @joinCode_expiresIn.
+  ///
+  /// In zh, this message translates to:
+  /// **'{time} 后失效'**
+  String joinCode_expiresIn(String time);
+
+  /// No description provided for @joinCode_refresh.
+  ///
+  /// In zh, this message translates to:
+  /// **'换一个'**
+  String get joinCode_refresh;
+
+  /// No description provided for @joinCode_replaced.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个码已被新的码替代'**
+  String get joinCode_replaced;
+
+  /// No description provided for @joinCode_expired.
+  ///
+  /// In zh, this message translates to:
+  /// **'加入码已过期'**
+  String get joinCode_expired;
+
+  /// No description provided for @joinCode_joined.
+  ///
+  /// In zh, this message translates to:
+  /// **'{device} 已加入'**
+  String joinCode_joined(String device);
+
+  /// No description provided for @joinCode_notYou.
+  ///
+  /// In zh, this message translates to:
+  /// **'不是你？移除'**
+  String get joinCode_notYou;
+
+  /// No description provided for @joinCode_loopback.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机现在只允许这台电脑连接，其他设备连不上'**
+  String get joinCode_loopback;
+
+  /// No description provided for @joinCode_unsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机版本太旧，暂不支持加入码'**
+  String get joinCode_unsupported;
+
+  /// No description provided for @joinCode_copyLink.
+  ///
+  /// In zh, this message translates to:
+  /// **'复制链接'**
+  String get joinCode_copyLink;
+
+  /// No description provided for @appLock_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'惜宝已锁定'**
+  String get appLock_title;
+
+  /// No description provided for @appLock_unlock.
+  ///
+  /// In zh, this message translates to:
+  /// **'使用 {method} 解锁'**
+  String appLock_unlock(String method);
+
+  /// No description provided for @appLock_reason.
+  ///
+  /// In zh, this message translates to:
+  /// **'验证身份以打开惜宝'**
+  String get appLock_reason;
+
+  /// No description provided for @settings_privacy.
+  ///
+  /// In zh, this message translates to:
+  /// **'隐私与安全'**
+  String get settings_privacy;
+
+  /// No description provided for @settings_appLock.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开惜宝时验证身份'**
+  String get settings_appLock;
+
+  /// No description provided for @settings_appLockSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'手机默认开，电脑默认关'**
+  String get settings_appLockSub;
+
+  /// No description provided for @settings_appLockNotSupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台设备没有设置锁屏方式'**
+  String get settings_appLockNotSupported;
+
+  /// No description provided for @settings_biometricUnlock.
+  ///
+  /// In zh, this message translates to:
+  /// **'用 {method} 解锁主机'**
+  String settings_biometricUnlock(String method);
+
+  /// No description provided for @settings_biometricUnlockSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'凭据失效时仍需输入主机密码'**
+  String get settings_biometricUnlockSub;
+
+  /// No description provided for @gate_enterOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'先进主页（离线）'**
+  String get gate_enterOffline;
 }
 
 class _AppLocalizationsDelegate

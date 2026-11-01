@@ -5,7 +5,7 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../onboarding/host_entry.dart';
-import '../../onboarding/phone_auth_screen.dart';
+import '../../onboarding/gate_entry.dart';
 import '../../onboarding/phone_host_store.dart';
 import '../../onboarding/phone_pouch_memory.dart';
 import '../../peer/services/peer_storage_service.dart';
@@ -263,7 +263,7 @@ class SettingsModel extends ChangeNotifier {
       route,
       (_) => false,
       arguments:
-          phoneHost == null ? null : PhoneAuthArgs(hostPeerId: phoneHost),
+          phoneHost == null ? null : UnlockArgs(hostPeerId: phoneHost),
     );
   }
 }
