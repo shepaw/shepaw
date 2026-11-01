@@ -681,7 +681,11 @@ class _SessionListContentState extends State<_SessionListContent> {
     final firstRest = firstContent == null
         ? ''
         : SessionUtils.splitFirstSentence(firstContent).rest;
-    final latestContent = latestMessage?['content'] as String? ?? '';
+    // 最新消息是从库里直接取的原文，和标题一样可能带引擎标签 / [implicit]
+    // 提示块：整块滤掉，列表上只留用户看得懂的话。
+    final latestContent = SessionUtils.cleanClaudeSessionTitle(
+            latestMessage?['content'] as String?) ??
+        '';
     final isSameMessage = firstMessage != null &&
         latestMessage != null &&
         firstMessage['id'] == latestMessage['id'];
