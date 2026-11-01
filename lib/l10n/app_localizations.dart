@@ -17200,6 +17200,72 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'还在等吗？设置好后点下面的按钮'**
   String get waitHost_stale;
+
+  /// No description provided for @joinCode_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加设备'**
+  String get joinCode_title;
+
+  /// No description provided for @joinCode_body.
+  ///
+  /// In zh, this message translates to:
+  /// **'用另一台设备扫这个码，直接进入，不用输密码'**
+  String get joinCode_body;
+
+  /// No description provided for @joinCode_expiresIn.
+  ///
+  /// In zh, this message translates to:
+  /// **'{time} 后失效'**
+  String joinCode_expiresIn(String time);
+
+  /// No description provided for @joinCode_refresh.
+  ///
+  /// In zh, this message translates to:
+  /// **'换一个'**
+  String get joinCode_refresh;
+
+  /// No description provided for @joinCode_replaced.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个码已被新的码替代'**
+  String get joinCode_replaced;
+
+  /// No description provided for @joinCode_expired.
+  ///
+  /// In zh, this message translates to:
+  /// **'加入码已过期'**
+  String get joinCode_expired;
+
+  /// No description provided for @joinCode_joined.
+  ///
+  /// In zh, this message translates to:
+  /// **'{device} 已加入'**
+  String joinCode_joined(String device);
+
+  /// No description provided for @joinCode_notYou.
+  ///
+  /// In zh, this message translates to:
+  /// **'不是你？移除'**
+  String get joinCode_notYou;
+
+  /// No description provided for @joinCode_loopback.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机现在只允许这台电脑连接，其他设备连不上'**
+  String get joinCode_loopback;
+
+  /// No description provided for @joinCode_unsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机版本太旧，暂不支持加入码'**
+  String get joinCode_unsupported;
+
+  /// No description provided for @joinCode_copyLink.
+  ///
+  /// In zh, this message translates to:
+  /// **'复制链接'**
+  String get joinCode_copyLink;
 }
 
 class _AppLocalizationsDelegate

@@ -44,6 +44,14 @@ class PouchPasswordRequired extends PouchLoginRejected {
   const PouchPasswordRequired(super.reason, {super.code, super.retryAfter});
 }
 
+/// 加入码不能用：过期、已经用掉、或者这台设备不是配对的那台。
+///
+/// 和 [PouchPasswordRequired] 一样要密码兜底，但界面上说的是「加入码失效」，
+/// 不是「密码不对」。
+class PouchInviteInvalid extends PouchLoginRejected {
+  const PouchInviteInvalid(super.reason, {super.code});
+}
+
 /// 带设备凭据登录，主机不认。
 class PouchCredentialRejected extends PouchLoginRejected {
   const PouchCredentialRejected(super.reason, {super.code, super.retryAfter})
@@ -193,6 +201,64 @@ Future<PouchLoginGrant> requestPouchLogin({
     LoggerService().info(
       '设备凭据已保存：host=$hostPeerId pouch=$pouchId',
       tag: 'PouchLogin',
+    );
+  }
+  return grant;
+}
+
+/// 带加入码登录，不用密码。
+///
+/// 加入方还不知道袋子 id，请求里 `pouch_id` 是空的，由主机按邀请记录给出。
+Future<PouchLoginGrant> requestPouchInviteLogin({
+  required String hostPeerId,
+  required String inviteId,
+  Duration timeout = const Duration(seconds: 8),
+}) async {
+  final grant = await _request(
+    hostPeerId: hostPeerId,
+    type: 'pouch_login',
+    responseType: 'pouch_login_resp',
+    extra: <String, dynamic>{
+      'pouch_id': '',
+      'invite': inviteId,
+    },
+    timeout: timeout,
+    parse: (data) {
+      if (data['accepted'] != true) {
+        final reason = (data['reason'] as String?)?.trim().isNotEmpty == true
+            ? data['reason'] as String
+            : '加入码不能用了';
+        final code = (data['code'] as String?)?.trim();
+        throw PouchInviteInvalid(reason, code: code);
+      }
+      final token = (data['token'] as String?)?.trim() ?? '';
+      final sid = (data['sid'] as String?)?.trim() ?? '';
+      final expires = data['expires_at'];
+      if (token.isEmpty || sid.isEmpty || expires is! int) {
+        throw StateError('登录响应不完整');
+      }
+      final issued = (data['credential'] as String?)?.trim() ?? '';
+      final issuedExpires = data['credential_expires_at'];
+      return PouchLoginGrant(
+        token: token,
+        sessionId: sid,
+        expiresAtMs: expires,
+        credential: issued.isEmpty ? null : issued,
+        credentialExpiresAtMs: issuedExpires is int && issuedExpires > 0
+            ? issuedExpires
+            : 0,
+        pouchId: (data['pouch_id'] as String?)?.trim() ?? '',
+        pouchName: (data['pouch_name'] as String?)?.trim() ?? '',
+      );
+    },
+  );
+  final issued = grant.credential ?? '';
+  if (issued.isNotEmpty) {
+    await PouchCredentialStore.instance.save(
+      hostPeerId: hostPeerId,
+      pouchId: grant.pouchId,
+      credential: issued,
+      expiresAtMs: grant.credentialExpiresAtMs,
     );
   }
   return grant;

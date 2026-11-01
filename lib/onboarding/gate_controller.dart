@@ -31,6 +31,7 @@ class GateDeps {
     required this.installChannel,
     required this.connect,
     required this.credentials,
+    this.inviteLogin,
     this.connectedIds,
     this.restore,
     this.log,
@@ -48,6 +49,12 @@ class GateDeps {
     required String pouchId,
     required String password,
   }) login;
+
+  /// 带加入码登录，不用密码。袋子 id 由主机按邀请记录给出。
+  final Future<PouchLoginGrant> Function({
+    required String hostPeerId,
+    required String inviteId,
+  })? inviteLogin;
 
   final Future<void> Function(PouchSession session) persist;
   final void Function(PouchSession session) installChannel;
@@ -83,6 +90,14 @@ class GateDeps {
           hostPeerId: hostPeerId,
           pouchId: pouchId,
           password: password,
+        ),
+        inviteLogin: ({
+          required String hostPeerId,
+          required String inviteId,
+        }) =>
+            requestPouchInviteLogin(
+          hostPeerId: hostPeerId,
+          inviteId: inviteId,
         ),
         persist: (session) async {
           await PouchSessionStore(await PouchSessionStore.appFile())
@@ -326,6 +341,42 @@ class GateController extends ChangeNotifier {
       if (_error!.kind == GateErrorKind.wrongPassword) {
         _shakeKey++;
       }
+      _applyLock(_error!);
+      return false;
+    } finally {
+      _busy = false;
+      notifyListeners();
+    }
+  }
+
+  /// 用加入码进入：不用输密码。成功返回 true。
+  ///
+  /// 袋子 id 从回包里拿（请求是空着 pouch_id 发的），名字也是。
+  Future<bool> redeemInvite(String inviteId) async {
+    final inviteLogin = _deps.inviteLogin;
+    if (inviteLogin == null || _busy || locked) return false;
+    _busy = true;
+    _error = null;
+    notifyListeners();
+    try {
+      final grant = await inviteLogin(
+        hostPeerId: _hostPeerId,
+        inviteId: inviteId,
+      );
+      final pouch = PouchDescriptor(
+        id: grant.pouchId,
+        name: grant.pouchName,
+        rootPath: '',
+      );
+      _pouch = pouch;
+      _pouchName = pouch.name;
+      await _accept(pouch, grant);
+      _clearLock();
+      _error = null;
+      return true;
+    } catch (error) {
+      _deps.log?.call('invite login failed: $error');
+      _error = mapGateError(error);
       _applyLock(_error!);
       return false;
     } finally {

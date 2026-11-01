@@ -7,6 +7,7 @@ import 'package:shepaw/l10n/app_localizations.dart';
 import 'package:shepaw/onboarding/joining_view.dart';
 import 'package:shepaw/peer/models/paired_peer.dart';
 import 'package:shepaw/peer/models/pairing_payload.dart';
+import 'package:shepaw/storage/pouch_login_client.dart';
 
 PairedPeer peer([String id = 'peer-1']) {
   return PairedPeer(
@@ -81,6 +82,26 @@ class FakeSteps implements JoiningSteps {
   Future<bool> passwordSet(String hostPeerId) async {
     probes++;
     return hostPasswordSet;
+  }
+
+  Object? inviteError;
+  int invites = 0;
+
+  @override
+  Future<PouchLoginGrant> redeemInvite({
+    required String hostPeerId,
+    required String inviteId,
+  }) async {
+    invites++;
+    final error = inviteError;
+    if (error != null) throw error;
+    return const PouchLoginGrant(
+      token: 't',
+      sessionId: 's',
+      expiresAtMs: 9999999999999,
+      pouchId: 'pouch-a',
+      pouchName: 'Eden 的储物袋',
+    );
   }
 }
 
@@ -181,6 +202,38 @@ void main() {
     expect(outcome, JoinOutcome.offline);
     expect(find.textContaining('Boom'), findsNothing);
     expect(find.textContaining('StateError'), findsNothing);
+  });
+
+  testWidgets('带邀请的链接：免密直接进，不再问密码', (tester) async {
+    final steps = FakeSteps();
+    final withInvite = info().copyWith(inviteId: 'inv-1');
+    JoinOutcome? outcome;
+    await tester.pumpWidget(app(JoiningView(
+      info: withInvite,
+      steps: steps,
+      onCancel: () {},
+      onDone: (_, result) => outcome = result,
+    )));
+    await settle(tester);
+    expect(outcome, JoinOutcome.entered);
+    expect(steps.invites, 1);
+    // 免密那条路不用问主机有没有密码。
+    expect(steps.probes, 0);
+  });
+
+  testWidgets('邀请兑不了就退回输密码', (tester) async {
+    final steps = FakeSteps()..inviteError = StateError('加入码已失效');
+    final withInvite = info().copyWith(inviteId: 'inv-1');
+    JoinOutcome? outcome;
+    await tester.pumpWidget(app(JoiningView(
+      info: withInvite,
+      steps: steps,
+      onCancel: () {},
+      onDone: (_, result) => outcome = result,
+    )));
+    await settle(tester);
+    expect(outcome, JoinOutcome.unlock);
+    expect(steps.probes, 1);
   });
 
   testWidgets('取消之后不再往下走', (tester) async {

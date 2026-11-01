@@ -9862,4 +9862,43 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get waitHost_stale => 'Still waiting? Tap below once it\'s set up';
+
+  @override
+  String get joinCode_title => 'Add a device';
+
+  @override
+  String get joinCode_body =>
+      'Scan this code on another device to sign in without a password';
+
+  @override
+  String joinCode_expiresIn(String time) {
+    return 'Expires in $time';
+  }
+
+  @override
+  String get joinCode_refresh => 'New code';
+
+  @override
+  String get joinCode_replaced => 'This code was replaced by a newer one';
+
+  @override
+  String get joinCode_expired => 'This join code has expired';
+
+  @override
+  String joinCode_joined(String device) {
+    return '$device joined';
+  }
+
+  @override
+  String get joinCode_notYou => 'Not you? Remove';
+
+  @override
+  String get joinCode_loopback =>
+      'The host only accepts connections from this computer right now';
+
+  @override
+  String get joinCode_unsupported => 'The host is too old for join codes';
+
+  @override
+  String get joinCode_copyLink => 'Copy link';
 }

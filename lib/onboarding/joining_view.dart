@@ -9,10 +9,14 @@ import '../../peer/pouch_pair.dart';
 import '../../peer/services/peer_connection_manager.dart';
 import '../../services/logger_service.dart';
 import '../storage/pouch_login_client.dart';
+import '../storage/pouch_session.dart';
 import 'widgets/gate_widgets.dart';
 
 /// 加入的结果。
 enum JoinOutcome {
+  /// 带邀请，已经免密进去了。
+  entered,
+
   /// 主机已经设过密码，去输密码（L6 之后，带邀请就直接进主页）。
   unlock,
 
@@ -57,6 +61,12 @@ abstract class JoiningSteps {
   Future<PairedPeer> pair(PeerPairingInfo info);
   Future<void> connect(PairedPeer peer, {required bool redial});
   Future<bool> passwordSet(String hostPeerId);
+
+  /// 带邀请免密登录。袋子 id 由主机按邀请记录给出。
+  Future<PouchLoginGrant> redeemInvite({
+    required String hostPeerId,
+    required String inviteId,
+  });
 }
 
 class DefaultJoiningSteps implements JoiningSteps {
@@ -83,6 +93,16 @@ class DefaultJoiningSteps implements JoiningSteps {
   @override
   Future<bool> passwordSet(String hostPeerId) =>
       requestPouchPasswordStatus(hostPeerId: hostPeerId);
+
+  @override
+  Future<PouchLoginGrant> redeemInvite({
+    required String hostPeerId,
+    required String inviteId,
+  }) =>
+      requestPouchInviteLogin(
+        hostPeerId: hostPeerId,
+        inviteId: inviteId,
+      );
 }
 
 class _JoiningViewState extends State<JoiningView> {
@@ -118,6 +138,22 @@ class _JoiningViewState extends State<JoiningView> {
         await _steps.connect(peer, redial: true).timeout(_left(deadline));
       }
       if (!mounted || _cancelled) return;
+      // 链接里带邀请：这台设备刚用这个码证明过自己，不用再输密码。
+      final inviteId = widget.info.inviteId?.trim() ?? '';
+      if (inviteId.isNotEmpty) {
+        try {
+          await _steps
+              .redeemInvite(hostPeerId: peer.id, inviteId: inviteId)
+              .timeout(_left(deadline));
+          if (!mounted || _cancelled) return;
+          widget.onDone(peer, JoinOutcome.entered);
+          return;
+        } catch (error) {
+          LoggerService()
+              .warning('invite redemption failed: $error', tag: 'Joining');
+          // 兑不了就退回输密码，别把人卡在外面。
+        }
+      }
       final set = await _steps.passwordSet(peer.id).timeout(_left(deadline));
       if (!mounted || _cancelled) return;
       widget.onDone(peer, set ? JoinOutcome.unlock : JoinOutcome.waitHost);

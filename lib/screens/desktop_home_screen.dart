@@ -39,7 +39,9 @@ import '../services/logger_service.dart';
 import '../services/native_window_service.dart';
 import '../services/chat_navigation_service.dart';
 import '../services/local_database_service.dart';
+import '../onboarding/widgets/join_code_card.dart';
 import '../services/onboarding_service.dart';
+import '../storage/pouch_session.dart';
 import '../services/she_service.dart';
 import '../services/update_service.dart';
 import '../service_locator.dart' show getIt;
@@ -209,6 +211,16 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   StreamSubscription? _peerListChangedSub;
   late final Map<_LeftPanelMode, _RightPanelNavigatorObserver> _navObservers;
 
+  /// 当前登录的主机。还没读到 / 没有登录态时为 null。
+  String? _hostId;
+
+  Future<void> _loadHostId() async {
+    final session = await PouchSessionStore.readActive();
+    final id = session?.hostPeerId.trim() ?? '';
+    if (!mounted) return;
+    setState(() => _hostId = id.isEmpty ? null : id);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -217,6 +229,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         mode: _RightPanelNavigatorObserver(() => _onRightPanelRootPopped(mode)),
     };
     ChatNavigationService.instance.setDesktopHandler(_onConversationSelected);
+    unawaited(_loadHostId());
     // 监听 peer 事件，删除 peer 后右面板切回空
     _peerEventSub = PeerConnectionManager.instance.events.listen((event) {
       final selected = _slots[_LeftPanelMode.conversations]!.selected;
@@ -1004,13 +1017,17 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         );
 
       case _RightPanelView.pairDevice:
-        return PeerPairingScreen(
-          // 桌面端没有摄像头，`mobile_scanner` 也没有桌面实现 —— 「我连它」的第一项
-          // 在这块屏幕上必然是个死入口。所以桌面面板仍旧落在「它连我」：把二维码
-          // 摆出来让手机扫，本来就是桌面配对的常态流程。
-          initialTab: PeerPairingTab.beConnected,
-          onPaired: _onDevicePaired,
-        );
+        final hostId = _hostId;
+        if (hostId == null) {
+          return PeerPairingScreen(
+            // 还没登录：没有可以签发加入码的主机，退回老的配对页。
+            initialTab: PeerPairingTab.beConnected,
+            onPaired: _onDevicePaired,
+          );
+        }
+        // 登录过了就出示主机的加入码：手机扫完直接进，不用输密码。
+        // 以前这里摆的是 App 对等端的码，主机在别的电脑上时手机扫了登不上。
+        return _AddDevicePanel(hostPeerId: hostId);
 
       case _RightPanelView.contactAgent:
         final agent = args.contactAgent;
@@ -1335,6 +1352,32 @@ class _SidebarIcon extends StatelessWidget {
           child: Icon(icon, size: 22, color: color),
         ),
       ),
+    );
+  }
+}
+
+/// 右面板里的「添加设备」：直接出示主机的加入码。
+class _AddDevicePanel extends StatelessWidget {
+  const _AddDevicePanel({required this.hostPeerId});
+
+  final String hostPeerId;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return ListView(
+      padding: const EdgeInsets.all(24),
+      children: [
+        const SizedBox(height: 16),
+        Text(
+          l10n.joinCode_title,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 8),
+        Text(l10n.joinCode_body),
+        const SizedBox(height: 20),
+        JoinCodeCard(hostPeerId: hostPeerId),
+      ],
     );
   }
 }

@@ -151,6 +151,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
       return;
     }
     switch (outcome) {
+      case JoinOutcome.entered:
+        unawaited(_goHome());
       case JoinOutcome.unlock:
         unawaited(_goUnlock(peer.id));
       case JoinOutcome.waitHost:
@@ -164,6 +166,12 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
           _offline = _OfflineJoin(info: _joining!, hostName: peer.deviceName);
         });
     }
+  }
+
+  /// 免密进去了：直接去主页。
+  Future<void> _goHome() async {
+    if (!mounted) return;
+    await Navigator.of(context).pushReplacementNamed('/home');
   }
 
   Future<void> _goUnlock(String hostPeerId) async {

@@ -264,6 +264,11 @@ class PeerPairingInfo {
   /// 展示请用 [displayName]。
   final String? name;
 
+  /// 加入码邀请编号。有它，配对成功的这台设备可以免密兑换一次登录。
+  ///
+  /// 老主机发的链接没有这个参数，那种情况照旧要输一次主机密码。
+  final String? inviteId;
+
   PeerPairingInfo({
     this.localEndpoint,
     this.channelEndpoint,
@@ -271,6 +276,7 @@ class PeerPairingInfo {
     required this.fingerprint,
     required this.publicKey,
     this.name,
+    this.inviteId,
   }) : assert(localEndpoint != null || channelEndpoint != null,
             'At least one endpoint must be provided');
 
@@ -293,6 +299,7 @@ class PeerPairingInfo {
     String? fingerprint,
     Uint8List? publicKey,
     String? name,
+    String? inviteId,
   }) {
     return PeerPairingInfo(
       localEndpoint: localEndpoint ?? this.localEndpoint,
@@ -301,6 +308,7 @@ class PeerPairingInfo {
       fingerprint: fingerprint ?? this.fingerprint,
       publicKey: publicKey ?? this.publicKey,
       name: name ?? this.name,
+      inviteId: inviteId ?? this.inviteId,
     );
   }
 
@@ -379,6 +387,8 @@ class PeerPairingInfo {
       final name =
           (rawName != null && rawName.trim().isNotEmpty) ? rawName : null;
 
+      // `inv` 是可选的：老主机不认识它，没有就走输密码那条路。
+      final inviteId = uri.queryParameters['inv']?.trim();
       return PeerPairingInfo(
         localEndpoint: effectiveLocal,
         channelEndpoint: effectiveChannel,
@@ -386,6 +396,7 @@ class PeerPairingInfo {
         fingerprint: fp,
         publicKey: publicKey,
         name: name,
+        inviteId: (inviteId == null || inviteId.isEmpty) ? null : inviteId,
       );
     } catch (_) {
       return null;
@@ -405,6 +416,7 @@ class PeerPairingInfo {
     required String fingerprint,
     required Uint8List publicKey,
     String? name,
+    String? inviteId,
   }) {
     assert(localEndpoint != null || channelEndpoint != null);
     final pk = toBase64Url(publicKey);
@@ -420,6 +432,10 @@ class PeerPairingInfo {
       // Uri.encodeComponent 用 %20 编码空格（不是 +），与 encodeURIComponent 一致。
       params.add(
           'name=${Uri.encodeComponent(_truncateRunes(name, kPeerQrNameMaxRunes))}');
+    }
+    // `inv` 跟在 name 之后，和主机侧 build_peer_qr_payload 一致。
+    if (inviteId != null && inviteId.trim().isNotEmpty) {
+      params.add('inv=${Uri.encodeComponent(inviteId.trim())}');
     }
     return 'shepaw://peer?${params.join('&')}#fp=$fingerprint&pk=$pk';
   }

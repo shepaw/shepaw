@@ -9469,4 +9469,41 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get waitHost_stale => '还在等吗？设置好后点下面的按钮';
+
+  @override
+  String get joinCode_title => '添加设备';
+
+  @override
+  String get joinCode_body => '用另一台设备扫这个码，直接进入，不用输密码';
+
+  @override
+  String joinCode_expiresIn(String time) {
+    return '$time 后失效';
+  }
+
+  @override
+  String get joinCode_refresh => '换一个';
+
+  @override
+  String get joinCode_replaced => '这个码已被新的码替代';
+
+  @override
+  String get joinCode_expired => '加入码已过期';
+
+  @override
+  String joinCode_joined(String device) {
+    return '$device 已加入';
+  }
+
+  @override
+  String get joinCode_notYou => '不是你？移除';
+
+  @override
+  String get joinCode_loopback => '主机现在只允许这台电脑连接，其他设备连不上';
+
+  @override
+  String get joinCode_unsupported => '主机版本太旧，暂不支持加入码';
+
+  @override
+  String get joinCode_copyLink => '复制链接';
 }

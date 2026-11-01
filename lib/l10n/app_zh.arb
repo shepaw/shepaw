@@ -5793,5 +5793,31 @@
   "waitHost_title": "这台主机还没设置好",
   "waitHost_body": "在电脑上打开惜宝，按提示设置主机密码，设置好之后这里会自动继续。",
   "waitHost_checkNow": "现在检查",
-  "waitHost_stale": "还在等吗？设置好后点下面的按钮"
+  "waitHost_stale": "还在等吗？设置好后点下面的按钮",
+
+  "@joinCode_expiresIn": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "@joinCode_joined": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "joinCode_title": "添加设备",
+  "joinCode_body": "用另一台设备扫这个码，直接进入，不用输密码",
+  "joinCode_expiresIn": "{time} 后失效",
+  "joinCode_refresh": "换一个",
+  "joinCode_replaced": "这个码已被新的码替代",
+  "joinCode_expired": "加入码已过期",
+  "joinCode_joined": "{device} 已加入",
+  "joinCode_notYou": "不是你？移除",
+  "joinCode_loopback": "主机现在只允许这台电脑连接，其他设备连不上",
+  "joinCode_unsupported": "主机版本太旧，暂不支持加入码",
+  "joinCode_copyLink": "复制链接"
 }

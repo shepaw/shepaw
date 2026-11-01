@@ -5334,5 +5334,31 @@
   "waitHost_title": "This host isn't set up yet",
   "waitHost_body": "Open Shepaw on the computer and set a host password. We'll continue automatically.",
   "waitHost_checkNow": "Check now",
-  "waitHost_stale": "Still waiting? Tap below once it's set up"
+  "waitHost_stale": "Still waiting? Tap below once it's set up",
+
+  "@joinCode_expiresIn": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "@joinCode_joined": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "joinCode_title": "Add a device",
+  "joinCode_body": "Scan this code on another device to sign in without a password",
+  "joinCode_expiresIn": "Expires in {time}",
+  "joinCode_refresh": "New code",
+  "joinCode_replaced": "This code was replaced by a newer one",
+  "joinCode_expired": "This join code has expired",
+  "joinCode_joined": "{device} joined",
+  "joinCode_notYou": "Not you? Remove",
+  "joinCode_loopback": "The host only accepts connections from this computer right now",
+  "joinCode_unsupported": "The host is too old for join codes",
+  "joinCode_copyLink": "Copy link"
 }
