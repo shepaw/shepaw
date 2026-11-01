@@ -285,7 +285,7 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
             yaml: stepsJson,
             hint: '[{"id": "a", "task": {"prompt": "做"}}]',
             applyLabel: l10n.flow_patchApply,
-            onApply: (edited) async {
+            onApply: (edited, _) async {
               final steps = FlowYaml.stepsFromJson(edited);
               if (steps == null) {
                 _snack(l10n.flow_patchNotAList);

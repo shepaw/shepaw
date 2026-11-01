@@ -63,10 +63,11 @@ class _FakeHost {
           },
         };
       case 'flow_validate_req':
+        // 主机回的是补过 id 的那份（正常就是提交的那份），草稿以它为准。
         return {
           'type': 'flow_validate_resp',
           'success': true,
-          'yaml': _baseYaml,
+          'yaml': (frame['yaml'] as String?) ?? _baseYaml,
           'tree': [
             _node('impl', fields: {
               'task': {'prompt': '写'}

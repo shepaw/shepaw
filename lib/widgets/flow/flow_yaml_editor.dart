@@ -33,8 +33,12 @@ class FlowYamlEditor extends StatefulWidget {
   final bool readOnly;
   final String? applyLabel;
 
-  /// 点了"应用"。参数是最新的 YAML。
-  final void Function(String yaml)? onApply;
+  /// 点了"应用"。参数是最新的 YAML，以及刚才那次校验的结果（可能为 null：
+  /// 这段没法单独校验时）。
+  ///
+  /// 校验结果要一起带出去：调用方必须同时更新节点树和诊断，只换 YAML 会让
+  /// 界面上的树停在改之前的状态。
+  final void Function(String yaml, FlowValidation? checked)? onApply;
   final void Function(String yaml)? onChanged;
 
   @override
@@ -96,7 +100,7 @@ class _FlowYamlEditorState extends State<FlowYamlEditor> {
         return;
       }
     }
-    widget.onApply?.call(_field.text);
+    widget.onApply?.call(_field.text, checked);
   }
 
   void _snack(String text) =>

@@ -2,19 +2,25 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../controllers/flow/flow_edit_ops.dart';
+import '../controllers/flow/flow_editor_controller.dart';
+import '../controllers/flow/flow_editor_notice.dart';
 import '../l10n/app_localizations.dart';
 import '../peer/models/flow_models.dart';
 import '../peer/pouch_turn_relay.dart';
 import '../peer/services/hub_flow.dart';
 import '../services/local_user_identity.dart';
 import '../widgets/flow/flow_node_inspector.dart';
-import '../widgets/flow/flow_yaml_editor.dart';
 import '../widgets/flow/flow_node_tree.dart';
+import '../widgets/flow/flow_yaml_editor.dart';
 
-/// 流程设计视图（方案 C.3–C.5）：节点树 + 检查器直接改 + 与上一版的差异 + 演练。
+/// 流程设计视图（方案 C.3–C.5）：节点树 + 检查器改字段 + 与上一版的差异 + 演练。
 ///
 /// App 不解析 YAML：每次改动都发给 Hub（`flow_edit_req`），用回来的节点树重画；
 /// 不合法的地方在诊断里。保存才写进流程库成为新的 revision。
+///
+/// 草稿状态在 [FlowEditorController] 里，这一层只管画布、检查器弹出、源码条
+/// 和「点选 + 说话」。
 class FlowDesignScreen extends StatefulWidget {
   const FlowDesignScreen({
     super.key,
@@ -54,19 +60,14 @@ class FlowDesignScreen extends StatefulWidget {
 }
 
 class _FlowDesignScreenState extends State<FlowDesignScreen> {
-  late final HubFlow _client = widget.client ?? HubFlow();
-  FlowSchema? _schema;
-  String _baseYaml = '';
-  String _yaml = '';
-  int _revision = 0;
-  List<FlowNode> _tree = const [];
-  List<FlowDiagnostic> _diagnostics = const [];
-  FlowDiff? _diff;
-  bool _showDiff = false;
-  bool _loading = true;
-  bool _loadFailed = false;
-  bool _saving = false;
-  int _nextId = 1;
+  late final FlowEditorController _controller;
+  bool _showYaml = false;
+
+  // 点选 + 说话（C.3）
+  final Set<String> _selected = <String>{};
+  final TextEditingController _composer = TextEditingController();
+  final StringBuffer _reply = StringBuffer();
+  bool _talking = false;
 
   bool get canTalk => _talkGroupId.isNotEmpty;
 
@@ -79,108 +80,109 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
         : '';
   }
 
-  // 演练
-  FlowRehearsal? _rehearsal;
-  int _progress = 0;
-  Timer? _timer;
-  bool _answering = false;
-  bool _showYaml = false;
-
-  // 点选 + 说话（C.3）
-  final Set<String> _selected = <String>{};
-  final TextEditingController _composer = TextEditingController();
-  final StringBuffer _reply = StringBuffer();
-  bool _talking = false;
-
   @override
   void initState() {
     super.initState();
-    unawaited(_load());
+    _controller = FlowEditorController(
+      peerId: widget.peerId,
+      name: widget.name,
+      scope: widget.scope,
+      client: widget.client,
+      stepInterval: widget.stepInterval,
+    );
+    _controller.onNotice = _notice;
+    unawaited(_controller.load());
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
     _composer.dispose();
+    _controller.dispose();
     super.dispose();
   }
 
-  Future<void> _load() async {
-    final got =
-        await _client.get(widget.peerId, widget.name, scope: widget.scope);
-    final schema = await _client.schema(widget.peerId);
-    if (!mounted) return;
-    if (got == null || schema == null) {
-      setState(() {
-        _loading = false;
-        _loadFailed = true;
-      });
-      return;
-    }
-    final checked = await _client.validate(widget.peerId, got.yaml);
-    if (!mounted) return;
-    setState(() {
-      _loading = false;
-      _schema = schema;
-      _revision = got.revision;
-      _baseYaml = checked?.yaml.isNotEmpty == true ? checked!.yaml : got.yaml;
-      _yaml = _baseYaml;
-      _tree = checked?.tree ?? const [];
-      _diagnostics = checked?.diagnostics ?? const [];
-    });
-  }
-
-  int get _errorCount => _diagnostics.where((d) => d.isError).length;
-
-  Future<void> _applyOps(List<Map<String, dynamic>> ops) async {
-    final result = await _client.edit(widget.peerId, _yaml, ops);
+  /// 控制器只说"发生了什么"，文案在这配。
+  void _notice(FlowEditorNotice notice) {
     if (!mounted) return;
     final l10n = AppLocalizations.of(context);
-    if (!result.reachable) {
-      _snack(l10n.flow_hostNoReply);
-      return;
-    }
-    final checked = result.result;
-    if (checked == null) {
-      _snack(result.error ?? l10n.flow_editFailed);
-      return;
-    }
-    setState(() {
-      _yaml = checked.yaml;
-      _tree = checked.tree;
-      _diagnostics = checked.diagnostics;
-    });
-    if (_showDiff) unawaited(_refreshDiff());
-  }
-
-  Future<void> _refreshDiff() async {
-    final got = await _client.diff(
-      widget.peerId,
-      fromYaml: _baseYaml,
-      toYaml: _yaml,
-    );
-    if (!mounted) return;
-    setState(() => _diff = got.diff);
-  }
-
-  Future<void> _toggleDiff() async {
-    setState(() => _showDiff = !_showDiff);
-    if (_showDiff) await _refreshDiff();
+    final text = switch (notice.kind) {
+      FlowEditorNoticeKind.hostNoReply => l10n.flow_hostNoReply,
+      FlowEditorNoticeKind.editRejected =>
+        notice.raw ?? l10n.flow_editFailed,
+      FlowEditorNoticeKind.saveRejected =>
+        notice.raw ?? l10n.flow_saveFailed,
+      FlowEditorNoticeKind.hasProblems => l10n.flow_hasProblems(notice.count),
+      FlowEditorNoticeKind.saved => l10n.flow_saved(notice.count),
+      FlowEditorNoticeKind.sourceInvalid =>
+        l10n.flow_hasProblems(notice.count),
+    };
+    _snack(text);
   }
 
   void _snack(String text) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
 
-  String _freshId(String prefix) {
-    String id;
-    do {
-      id = '$prefix-${_nextId++}';
-    } while (_tree.any((n) => n.find((x) => x.id == id) != null));
-    return id;
+  // ── 检查器 ────────────────────────────────────────────────────────────────
+
+  void _openInspector(FlowNode node) {
+    final schema = _controller.schema;
+    if (schema == null || _controller.busy) return;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheet) => FlowNodeInspector(
+        node: node,
+        schema: schema,
+        onApply: (changes) {
+          Navigator.pop(sheet);
+          if (changes.isEmpty) return;
+          unawaited(_controller.applyOps([
+            for (final e in changes.entries)
+              FlowEditOps.set(node.id, e.key, e.value),
+          ]));
+        },
+        onDelete: () {
+          Navigator.pop(sheet);
+          unawaited(_controller.applyOps([FlowEditOps.delete(node.id)]));
+        },
+        onWrap: (kind) {
+          Navigator.pop(sheet);
+          unawaited(_controller.applyOps([
+            FlowEditOps.wrap(
+              nodeId: node.id,
+              kind: kind,
+              wrapperId: _controller.freshId(kind),
+            ),
+          ]));
+        },
+        onUnwrap: () {
+          Navigator.pop(sheet);
+          unawaited(_controller.applyOps([FlowEditOps.unwrap(node.id)]));
+        },
+        onAddAfter: () {
+          Navigator.pop(sheet);
+          final at = flowLocate(_controller.tree, node.id);
+          if (at == null) return;
+          unawaited(_controller.applyOps([
+            FlowEditOps.insert(
+              parentId: at.parent?.id ?? '',
+              index: at.index + 1,
+              step: FlowStepDefaults.step(
+                _controller.freshId('step'),
+                'task',
+                prompt: AppLocalizations.of(context).flow_newStepPrompt,
+              ),
+            ),
+          ]));
+        },
+      ),
+    );
   }
 
+  // ── 点选 + 说话 ───────────────────────────────────────────────────────────
+
   void _toggleSelected(FlowNode node) {
-    if (_rehearsal != null) return;
+    if (_controller.busy) return;
     setState(() {
       if (!_selected.add(node.id)) _selected.remove(node.id);
     });
@@ -202,6 +204,8 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   Future<void> _talk() async {
     final text = _composer.text.trim();
     if (text.isEmpty || _talking) return;
+    await _controller.flush();
+    if (!mounted) return;
     setState(() {
       _talking = true;
       _reply.clear();
@@ -220,7 +224,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
             if (!mounted) return;
             setState(() => _reply.write(chunk));
           },
-          onAgentDone: (_, __, ___) => unawaited(_load()),
+          onAgentDone: (_, __, ___) => unawaited(_controller.reload()),
         );
       } else {
         await send(
@@ -233,7 +237,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
           },
         );
         // 假中继没有 onAgentDone：自己刷新一次。
-        unawaited(_load());
+        unawaited(_controller.reload());
       }
     } catch (error) {
       if (mounted) _snack('$error');
@@ -243,294 +247,87 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     _composer.clear();
   }
 
-  void _openInspector(FlowNode node) {
-    final schema = _schema;
-    if (schema == null || _rehearsal != null) return;
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (sheet) => FlowNodeInspector(
-        node: node,
-        schema: schema,
-        onApply: (changes) {
-          Navigator.pop(sheet);
-          if (changes.isEmpty) return;
-          unawaited(_applyOps([
-            for (final e in changes.entries)
-              {
-                'op': 'set',
-                'node_id': node.id,
-                'field': e.key,
-                'value': e.value
-              },
-          ]));
-        },
-        onDelete: () {
-          Navigator.pop(sheet);
-          unawaited(_applyOps([
-            {'op': 'delete', 'node_id': node.id},
-          ]));
-        },
-        onWrap: (kind) {
-          Navigator.pop(sheet);
-          unawaited(_applyOps([
-            {
-              'op': 'wrap',
-              'node_id': node.id,
-              'kind': kind,
-              'wrapper_id': _freshId(kind),
-              if (kind == 'loop') 'max': 3,
-            },
-          ]));
-        },
-        onUnwrap: () {
-          Navigator.pop(sheet);
-          unawaited(_applyOps([
-            {'op': 'unwrap', 'node_id': node.id},
-          ]));
-        },
-        onAddAfter: () {
-          Navigator.pop(sheet);
-          final at = flowLocate(_tree, node.id);
-          if (at == null) return;
-          unawaited(_applyOps([
-            {
-              'op': 'insert',
-              'parent_id': at.parent?.id ?? '',
-              'index': at.index + 1,
-              'step': {
-                'id': _freshId('step'),
-                'task': {
-                  'prompt': AppLocalizations.of(context).flow_newStepPrompt,
-                },
-              },
-            },
-          ]));
-        },
-      ),
-    );
-  }
-
-  Future<void> _save() async {
-    final l10n = AppLocalizations.of(context);
-    if (_errorCount > 0) {
-      _snack(l10n.flow_hasProblems(_errorCount));
-      return;
-    }
-    setState(() => _saving = true);
-    final result = await _client.save(widget.peerId, widget.name, _yaml,
-        scope: widget.scope);
-    if (!mounted) return;
-    setState(() => _saving = false);
-    if (!result.ok) {
-      _snack(result.reachable
-          ? (result.error ?? l10n.flow_saveFailed)
-          : l10n.flow_hostNoReply);
-      return;
-    }
-    final flow = result.data['flow'];
-    final latest = flow is Map ? (flow['latest'] as num?)?.toInt() : null;
-    setState(() {
-      _baseYaml = _yaml;
-      _revision = latest ?? _revision + 1;
-      _diff = null;
-      _showDiff = false;
-    });
-    _snack(l10n.flow_saved(_revision));
-  }
-
-  Future<void> _rehearse() async {
-    final l10n = AppLocalizations.of(context);
-    final got = await _client.rehearse(widget.peerId, _yaml);
-    if (!mounted) return;
-    final rehearsal = got.rehearsal;
-    if (rehearsal == null) {
-      _snack(got.error == null
-          ? l10n.flow_hostNoReply
-          : l10n.flow_rehearseFailed(got.error!));
-      return;
-    }
-    _startAnimation(rehearsal);
-  }
-
-  /// 卡片依次点亮，走完（或到卡住的地方）就把问题摆出来。
-  void _startAnimation(FlowRehearsal rehearsal) {
-    _timer?.cancel();
-    setState(() {
-      _rehearsal = rehearsal;
-      _progress = 0;
-    });
-    _timer = Timer.periodic(widget.stepInterval, (timer) {
-      if (!mounted) return timer.cancel();
-      setState(() => _progress++);
-      if (_progress >= rehearsal.steps.length) timer.cancel();
-    });
-  }
-
-  /// 演练卡在关卡 / 判断时作答，接着往下走（C.5）。
-  Future<void> _answerRehearsal(String choice) async {
-    final l10n = AppLocalizations.of(context);
-    final current = _rehearsal;
-    final id = current?.rehearsalId ?? '';
-    if (id.isEmpty) return;
-    setState(() => _answering = true);
-    final got = await _client.rehearseAnswer(widget.peerId, id, choice);
-    if (!mounted) return;
-    setState(() => _answering = false);
-    final next = got.rehearsal;
-    if (next == null) {
-      _snack(got.error == null
-          ? l10n.flow_hostNoReply
-          : l10n.flow_rehearseFailed(got.error!));
-      _stopRehearsal();
-      return;
-    }
-    // 接着点亮新派出去的那些活。
-    _startAnimation(next);
-  }
-
-  void _stopRehearsal() {
-    _timer?.cancel();
-    final id = _rehearsal?.rehearsalId ?? '';
-    setState(() => _rehearsal = null);
-    if (id.isNotEmpty) unawaited(_client.rehearseDrop(widget.peerId, id));
-  }
-
-  /// 卡住的问题。动画还在点亮时不急着把选项摆出来。
-  FlowQuestion? get _waiting {
-    final rehearsal = _rehearsal;
-    if (rehearsal == null) return null;
-    if (_progress < rehearsal.steps.length) return null;
-    return rehearsal.question;
-  }
-
-  /// 演练时画演练返回的树（循环按真实跑的轮数展开），按派活顺序点亮。
-  List<FlowNode> get _shownTree {
-    final rehearsal = _rehearsal;
-    if (rehearsal == null) return _tree;
-    final steps = rehearsal.steps;
-    final doneCount = _progress.clamp(0, steps.length);
-    final done = steps.take(doneCount > 0 ? doneCount - 1 : 0).toSet();
-    final running = doneCount > 0 && doneCount <= steps.length
-        ? steps[doneCount - 1]
-        : null;
-    // 点亮完这一段（或这一段本来没有活要派）就算走到了。
-    final finished = _progress >= steps.length;
-    return [
-      for (final node in rehearsal.tree)
-        node.withProgress(
-            finished ? steps.toSet() : done, finished ? null : running),
-    ];
-  }
+  // ── 界面 ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(l10n.flow_designTitle(widget.name)),
-        actions: [
-          if (_revision > 0)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: Text(l10n.flow_revisionLabel(_revision),
-                    style: Theme.of(context).textTheme.bodySmall),
+    return ListenableBuilder(
+      listenable: _controller,
+      builder: (context, _) {
+        final c = _controller;
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(l10n.flow_designTitle(widget.name)),
+            actions: [
+              if (c.revision > 0)
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: Text(l10n.flow_revisionLabel(c.revision),
+                        style: Theme.of(context).textTheme.bodySmall),
+                  ),
+                ),
+              IconButton(
+                tooltip: l10n.flow_diffToggle,
+                icon: Icon(Icons.difference_outlined,
+                    color: c.showDiff
+                        ? Theme.of(context).colorScheme.primary
+                        : null),
+                onPressed: c.loading || c.busy ? null : c.toggleDiff,
               ),
-            ),
-          IconButton(
-            tooltip: l10n.flow_diffToggle,
-            icon: Icon(Icons.difference_outlined,
-                color:
-                    _showDiff ? Theme.of(context).colorScheme.primary : null),
-            onPressed: _loading || _rehearsal != null ? null : _toggleDiff,
-          ),
-          IconButton(
-            tooltip: l10n.flow_rehearse,
-            icon: const Icon(Icons.play_circle_outline),
-            onPressed: _loading || _rehearsal != null ? null : _rehearse,
-          ),
-          IconButton(
-            tooltip: l10n.flow_save,
-            icon: _saving
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.check),
-            onPressed:
-                _loading || _saving || _rehearsal != null || _yaml == _baseYaml
+              IconButton(
+                tooltip: l10n.flow_rehearse,
+                icon: const Icon(Icons.play_circle_outline),
+                onPressed: c.loading || c.busy
                     ? null
-                    : _save,
+                    : () async {
+                        await c.flush();
+                        await c.rehearsal.start(c.yaml);
+                      },
+              ),
+              IconButton(
+                tooltip: l10n.flow_save,
+                icon: c.saving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.check),
+                onPressed: c.loading || c.busy || !c.dirty
+                    ? null
+                    : () async {
+                        await c.flush();
+                        await c.save();
+                      },
+              ),
+            ],
           ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Expanded(child: _body(l10n)),
-          if (_talkBar(l10n) case final bar?) bar,
-          // 桌面端（C.6）：左边看图，右边直接改 YAML。手机只给看源码。
-          if (_yamlBar(l10n) case final bar?) bar,
-        ],
-      ),
+          body: Column(
+            children: [
+              Expanded(child: _body(l10n)),
+              if (_talkBar(l10n) case final bar?) bar,
+              // 桌面端（C.6）：左边看图，右边直接改 YAML。手机只给看源码。
+              if (_yamlBar(l10n) case final bar?) bar,
+            ],
+          ),
+        );
+      },
     );
   }
 
   Widget _body(AppLocalizations l10n) {
-    if (_loading) return const Center(child: CircularProgressIndicator());
-    if (_loadFailed) return Center(child: Text(l10n.flow_designLoadFailed));
+    final c = _controller;
+    if (c.loading) return const Center(child: CircularProgressIndicator());
+    if (c.loadFailed) return Center(child: Text(l10n.flow_designLoadFailed));
     final theme = Theme.of(context);
-    final diff = _showDiff ? _diff : null;
+    final diff = c.diff;
+    final rehearsal = c.rehearsal;
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
-        if (_rehearsal != null)
-          Card(
-            color: theme.colorScheme.secondaryContainer,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.play_circle_outline),
-                  title: Text(_waiting == null
-                      ? l10n.flow_rehearsing
-                      : l10n.flow_rehearseChoose),
-                  trailing: TextButton(
-                    onPressed: _stopRehearsal,
-                    child: Text(l10n.flow_rehearseStop),
-                  ),
-                ),
-                // 卡住的地方：选项直接摆出来，选一个就接着走。
-                if (_waiting case final question?) ...[
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-                    child: Text(
-                      question.prompt,
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      children: [
-                        for (final option in question.options)
-                          FilledButton.tonal(
-                            key: ValueKey('rehearse-$option'),
-                            onPressed: _answering
-                                ? null
-                                : () => _answerRehearsal(option),
-                            child: Text(option),
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        for (final d in _diagnostics)
+        if (rehearsal.active) _rehearsalCard(l10n, theme),
+        for (final d in c.diagnostics)
           Padding(
             padding: const EdgeInsets.only(bottom: 4),
             child: Text(
@@ -540,14 +337,14 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
               ),
             ),
           ),
-        if (_showDiff && diff != null)
+        if (c.showDiff && diff != null)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Text(
               diff.isEmpty
                   ? l10n.flow_diffNone
-                  : l10n
-                      .flow_diffSummary(diff.nodes.length + diff.header.length),
+                  : l10n.flow_diffSummary(
+                      diff.nodes.length + diff.header.length),
               style: theme.textTheme.labelLarge,
             ),
           ),
@@ -563,7 +360,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
             ),
           ),
         FlowNodeTree(
-          nodes: _shownTree,
+          nodes: rehearsal.view(c.tree),
           onTapNode: _openInspector,
           onLongPressNode: canTalk ? _toggleSelected : null,
           selectedIds: _selected,
@@ -586,6 +383,56 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
             ),
           ),
       ],
+    );
+  }
+
+  Widget _rehearsalCard(AppLocalizations l10n, ThemeData theme) {
+    final rehearsal = _controller.rehearsal;
+    final waiting = rehearsal.waiting;
+    return Card(
+      color: theme.colorScheme.secondaryContainer,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.play_circle_outline),
+            title: Text(waiting == null
+                ? l10n.flow_rehearsing
+                : l10n.flow_rehearseChoose),
+            trailing: TextButton(
+              onPressed: rehearsal.stop,
+              child: Text(l10n.flow_rehearseStop),
+            ),
+          ),
+          // 卡住的地方：选项直接摆出来，选一个就接着走。
+          if (waiting case final question?) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Text(
+                question.prompt,
+                style: theme.textTheme.bodyMedium,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  for (final option in question.options)
+                    FilledButton.tonal(
+                      key: ValueKey('rehearse-$option'),
+                      onPressed: rehearsal.answering
+                          ? null
+                          : () => rehearsal.answer(option),
+                      child: Text(option),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -615,14 +462,15 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                 child: FlowYamlEditor(
-                  yaml: _yaml,
+                  yaml: _controller.yaml,
                   readOnly: !wide,
-                  validate: (text) => _client.validate(widget.peerId, text),
+                  validate: (text) =>
+                      _controller.client.validate(widget.peerId, text),
                   applyLabel: l10n.flow_sourceApply,
-                  onApply: (edited) => setState(() {
-                    _yaml = edited;
-                    _showYaml = false;
-                  }),
+                  onApply: (edited, checked) {
+                    setState(() => _showYaml = false);
+                    unawaited(_controller.applySource(edited, checked));
+                  },
                 ),
               ),
             ),
