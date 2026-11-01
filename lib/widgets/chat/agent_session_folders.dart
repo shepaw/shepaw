@@ -25,6 +25,9 @@ class AgentSessionFolders extends StatefulWidget {
     this.client,
     this.onForked,
     this.refresh,
+    this.expandedKind,
+    this.onToggle,
+    this.onExpandedChanged,
   });
 
   final String peerId;
@@ -41,6 +44,17 @@ class AgentSessionFolders extends StatefulWidget {
   /// 测试里换成假的；为空时用 [PeerAgentClientService.refreshAgentSessions]。
   final Future<void> Function(String peerId, String remoteAgentId)? refresh;
 
+  /// 当前展开的那一组；为空表示都收着。展开态由外层持有 —— 顶部那行钉住的
+  /// 折叠组要能收起它（见 [SessionFolderStickyHeader]）。
+  final SessionFolderKind? expandedKind;
+
+  /// 点某一组：展开 / 收起。带上是哪一组的摘要，外层拿它画钉住的那一行。
+  final void Function(SessionFolderSummary summary)? onToggle;
+
+  /// 展开着的那组摘要有变化时（比如条数刷新了）告诉外层，钉住那一行才不会
+  /// 停在旧数字上。收起时给空。
+  final void Function(SessionFolderSummary? summary)? onExpandedChanged;
+
   @override
   State<AgentSessionFolders> createState() => _AgentSessionFoldersState();
 }
@@ -48,9 +62,6 @@ class AgentSessionFolders extends StatefulWidget {
 class _AgentSessionFoldersState extends State<AgentSessionFolders> {
   late final HubFoldedSessions _client = widget.client ?? HubFoldedSessions();
   List<SessionFolderSummary> _folders = const [];
-
-  /// 当前展开的那一组；为空表示都收着。
-  SessionFolderKind? _expanded;
 
   @override
   void initState() {
@@ -69,6 +80,16 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
     final summary = await _client.summary(widget.peerId, widget.remoteAgentId);
     if (!mounted || summary == null) return;
     setState(() => _folders = summary.folders);
+    // 条数可能变了：让外层钉住那一行跟着更新（收着的时候不用管）。
+    final kind = widget.expandedKind;
+    if (kind != null) widget.onExpandedChanged?.call(_summaryOf(kind));
+  }
+
+  SessionFolderSummary? _summaryOf(SessionFolderKind kind) {
+    for (final folder in _folders) {
+      if (folder.kind == kind) return folder;
+    }
+    return null;
   }
 
   /// 分叉出来的新私聊要马上能在平铺列表里看到：主机名单再对齐一次，
@@ -85,10 +106,6 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
       await refresh(widget.peerId, widget.remoteAgentId);
     }
     await _load();
-  }
-
-  void _toggle(SessionFolderKind kind) {
-    setState(() => _expanded = _expanded == kind ? null : kind);
   }
 
   /// 展开后点其中一项 → 打开它的只读记录。
@@ -136,27 +153,29 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
   @override
   Widget build(BuildContext context) {
     if (_folders.isEmpty) return const SizedBox.shrink();
+    final expanded = widget.expandedKind;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // 一次只展开一组：抽屉就那么宽，几组同时铺开会把私聊挤出可视区。
-        for (final folder in _folders) ...[
-          SessionFolderTile(
-            summary: folder,
-            expanded: _expanded == folder.kind,
-            onTap: () => _toggle(folder.kind),
+        // 展开的那组：它那一行折叠组由外层钉在列表顶部（[SessionFolderStickyHeader]），
+        // 这里只铺它的会话行，紧跟在钉住那一行下面。
+        if (expanded != null)
+          SessionFolderItems(
+            key: ValueKey<SessionFolderKind>(expanded),
+            peerId: widget.peerId,
+            agentId: widget.remoteAgentId,
+            folder: expanded,
+            client: _client,
+            onOpen: (session) => _openSession(context, session),
+            onForked: (id) => unawaited(_afterFork(id)),
           ),
-          if (_expanded == folder.kind)
-            SessionFolderItems(
-              key: ValueKey<SessionFolderKind>(folder.kind),
-              peerId: widget.peerId,
-              agentId: widget.remoteAgentId,
-              folder: folder.kind,
-              client: _client,
-              onOpen: (session) => _openSession(context, session),
-              onForked: (id) => unawaited(_afterFork(id)),
+        // 其余折叠组照旧一行一组；点一下展开（一次只展开一组）。
+        for (final folder in _folders)
+          if (folder.kind != expanded)
+            SessionFolderTile(
+              summary: folder,
+              onTap: () => widget.onToggle?.call(folder),
             ),
-        ],
         const Divider(height: 1),
       ],
     );

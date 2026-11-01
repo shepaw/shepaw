@@ -10,6 +10,7 @@ import '../../utils/session_utils.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/session/client_session_sync.dart';
 import '../../services/session/folded_target.dart';
+import '../../peer/models/folded_sessions.dart';
 import '../../peer/services/hub_folded_sessions.dart';
 import 'session_unread_badge.dart';
 import 'session_list_header_menu.dart';
@@ -17,6 +18,7 @@ import 'session_preview_entry.dart';
 import 'session_row_menu.dart';
 import '../discard_changes_scope.dart';
 import 'chat_panel_scope.dart';
+import '../session_folders.dart';
 import 'agent_session_folders.dart';
 
 Widget _selectionCheckbox(
@@ -204,6 +206,9 @@ class _SessionListContentState extends State<_SessionListContent> {
 
   /// 查库解析出来的折叠组目标；调用方直接给（[widget.foldersTarget]）时不用它。
   ({String peerId, String remoteAgentId})? _resolvedFoldersTarget;
+
+  /// 当前展开的那一组。放在这一层是为了让顶部钉住的那一行能收起它。
+  SessionFolderSummary? _expanded;
 
   /// 折叠组要问的主机与主机上的 Agent；本机 Agent、群或查不到时为空（不画折叠组）。
   ({String peerId, String remoteAgentId})? get _foldersTarget =>
@@ -478,17 +483,37 @@ class _SessionListContentState extends State<_SessionListContent> {
   /// 只建可视行。
   Widget _buildList() {
     // 群聊 / 工作流 / 引擎客户端等来源的会话收进折叠组（折叠方案 §2.1）。
+    // 展开态放在这一层：顶部钉住的那一行折叠组要能收起它。
     final folders = !_isSelectionMode && _foldersTarget != null
         ? AgentSessionFolders(
             peerId: _foldersTarget!.peerId,
             remoteAgentId: _foldersTarget!.remoteAgentId,
             refreshTick: widget.listRefreshTick,
             client: widget.foldersClient,
+            expandedKind: _expanded?.kind,
+            onToggle: (summary) => setState(() {
+              _expanded = _expanded?.kind == summary.kind ? null : summary;
+            }),
+            onExpandedChanged: (summary) {
+              if (summary == null) {
+                if (_expanded != null) setState(() => _expanded = null);
+                return;
+              }
+              if (_expanded?.kind != summary.kind) return;
+              if (!mounted) return;
+              setState(() => _expanded = summary);
+            },
           )
         : null;
     return CustomScrollView(
       key: const PageStorageKey<String>('dm-session-list'),
       slivers: [
+        // 展开着一组时，那一行折叠组钉在列表顶部：滑多远都够得着，点一下收起。
+        if (_expanded != null)
+          SessionFolderStickyHeader(
+            summary: _expanded!,
+            onTap: () => setState(() => _expanded = null),
+          ),
         if (folders != null) SliverToBoxAdapter(child: folders),
         SliverPrototypeExtentList.builder(
           prototypeItem: const _SessionTilePrototype(),
