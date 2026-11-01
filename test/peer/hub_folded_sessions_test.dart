@@ -92,6 +92,77 @@ void main() {
     expect(FoldedPage.fromResponse({'cursor': ''})?.cursor, isNull);
   });
 
+  testWidgets('组里的行不显示引擎标签和 [implicit] 提示块', (tester) async {
+    const implicit = '[implicit]\n'
+        'This message mentions pouch:// URI(s).\n'
+        'URIs: pouch://a95b5782/agent:fb1d3f94/session:s1/attachments/p.png\n'
+        '[/implicit]';
+    final bus = StreamController<PeerControlEvent>.broadcast();
+    final client = HubFoldedSessions(
+      events: bus.stream,
+      send: (peerId, frame) async {
+        if (frame['folder'] != null) {
+          bus.add(PeerControlEvent(peerId: peerId, data: {
+            'type': 'agent_sessions_resp',
+            'request_id': frame['request_id'],
+            'agent_id': 'a1',
+            'folder': frame['folder'],
+            'sessions': [
+              {
+                'session_id': 'term-1',
+                'title': '$implicit\n帮我看看这张图',
+                'updated_at': 1,
+                'origin': {'kind': 'terminal'},
+              },
+              {
+                'session_id': 'term-2',
+                'title': implicit,
+                'updated_at': 2,
+                'origin': {'kind': 'terminal'},
+              },
+            ],
+          }));
+          return true;
+        }
+        bus.add(PeerControlEvent(peerId: peerId, data: {
+          'type': 'agent_sessions_resp',
+          'request_id': frame['request_id'],
+          'agent_id': 'a1',
+          'sessions': [],
+          'folders': [
+            {'kind': 'terminal', 'count': 2, 'latest_title': implicit},
+          ],
+        }));
+        return true;
+      },
+    );
+
+    await tester.pumpWidget(MaterialApp(
+      locale: const Locale('zh'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: SessionFolderItems(
+            peerId: 'p1',
+            agentId: 'a1',
+            folder: SessionFolderKind.terminal,
+            client: client,
+          ),
+        ),
+      ),
+    ));
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+
+    // 提示块不出现在行上；有正文的那条只留正文，只剩提示块的那条退回会话 id。
+    expect(find.textContaining('[implicit]'), findsNothing);
+    expect(find.text('帮我看看这张图'), findsOneWidget);
+    expect(find.text('term-2'), findsOneWidget);
+    await bus.close();
+  });
+
   testWidgets('the expanded folder pages through and forks into a private chat',
       (tester) async {
     final bus = StreamController<PeerControlEvent>.broadcast();

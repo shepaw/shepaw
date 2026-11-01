@@ -220,13 +220,15 @@ class SessionUtils {
     return cleanClaudeSessionTitle(visible);
   }
 
-  /// 剔除会话标题里的引擎内置标记及其内容，折叠多余空白。
+  /// 剔除会话标题里的引擎内置标记及其内容、发送端附加提示块，折叠多余空白。
   ///
   /// 清理后为空返回 null，便于调用方回落默认名（如 'Session'）。
   static String? cleanClaudeSessionTitle(String? title) {
     if (title == null) return null;
-    final s =
-        stripEngineMarkupBlocks(title).replaceAll(RegExp(r'\s+'), ' ').trim();
+    // 主机给的标题里可能整段就是引擎包装或 [implicit] 提示（附件读取说明之类）。
+    final s = stripEngineMarkupBlocks(
+      MessageImplicitPrompt.stripImplicitBlocks(title),
+    ).replaceAll(RegExp(r'\s+'), ' ').trim();
     return s.isEmpty ? null : s;
   }
 }

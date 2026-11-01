@@ -572,6 +572,31 @@ void main() {
           '普通的会话标题',
         );
       });
+
+      test('[implicit] 附件提示块不算标题内容', () {
+        const implicit = '[implicit]\n'
+            'This message mentions pouch:// URI(s). If you need their\n'
+            'contents, read each with the `pouch_read` MCP tool (or\n'
+            '`shepaw pouch read --uri <uri-as-is>`).\n'
+            'pouch:// URIs are not OS paths; never read them as local files.\n'
+            'URIs: pouch://a95b5782/agent:fb1d3f94/session:s1/attachments/p.png\n'
+            '[/implicit]';
+        // 整段只剩提示块 → 不作标题。
+        expect(SessionUtils.cleanClaudeSessionTitle(implicit), isNull);
+        expect(
+          SessionUtils.sessionTitleFromMessageContent(implicit),
+          isNull,
+        );
+        // 提示块 + 正文 → 只留正文。
+        expect(
+          SessionUtils.cleanClaudeSessionTitle('$implicit\n看看这张图'),
+          '看看这张图',
+        );
+        expect(
+          SessionUtils.cleanClaudeSessionTitle('看看这张图\n$implicit'),
+          '看看这张图',
+        );
+      });
     });
   });
 }

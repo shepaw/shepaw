@@ -7,6 +7,7 @@ import '../../peer/models/folded_sessions.dart';
 import '../../peer/services/hub_folded_sessions.dart';
 import '../../utils/layout_utils.dart';
 import '../../screens/flow_library_screen.dart';
+import '../../utils/session_utils.dart';
 import '../session_folders.dart';
 import 'session_row_menu.dart';
 
@@ -125,7 +126,7 @@ class _SessionFolderItemsState extends State<SessionFolderItems> {
       enabled: isDesktop,
       builder: (context, hover) {
         return ListTile(
-          title: Text(session.title.isEmpty ? session.sessionId : session.title,
+          title: Text(_title(session),
               maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: subtitle.isEmpty ? null : Text(subtitle),
           onTap: widget.onOpen == null ? null : () => widget.onOpen!(session),
@@ -200,6 +201,11 @@ class _SessionFolderItemsState extends State<SessionFolderItems> {
     );
     if (choice == 'fork' && context.mounted) await _fork(session);
   }
+
+  /// 主机给的标题里可能整段是引擎标签或 `[implicit]` 提示：清掉，清完没东西
+  /// 就退回会话 id。
+  String _title(FoldedSession session) =>
+      SessionUtils.cleanClaudeSessionTitle(session.title) ?? session.sessionId;
 
   @override
   Widget build(BuildContext context) {
