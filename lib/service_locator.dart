@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:get_it/get_it.dart';
 
+import 'services/app_lock_service.dart';
 import 'services/local_database_service.dart';
 import 'services/chat_service.dart';
 import 'services/permission_service.dart';
@@ -65,6 +66,7 @@ void setupServiceLocator() {
 
   // 远端 Agent Hub 取码（无状态，仅持有 http.Client）。
   getIt.registerLazySingleton<ContactsDirectory>(() => ContactsDirectory());
+  getIt.registerLazySingleton<AppLockService>(() => AppLockService());
   getIt.registerLazySingleton<HubEventClient>(() => HubEventClient(
         onCaughtUp: (peerId) {
           if (getIt.isRegistered<HubGroupRegistry>()) {

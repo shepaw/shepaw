@@ -18,6 +18,8 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'sub_window_app.dart';
 import 'app_bootstrap.dart';
 import 'service_locator.dart';
+import 'services/app_lock_service.dart';
+import 'storage/pouch_session.dart';
 import 'theme/app_theme.dart';
 
 import 'providers/locale_provider.dart';
@@ -27,6 +29,7 @@ import 'screens/password_setup_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/pouch_login_screen.dart';
 import 'onboarding/host_install_screen.dart';
+import 'onboarding/app_lock_screen.dart';
 import 'onboarding/gate_entry.dart';
 import 'onboarding/unlock_screen.dart';
 import 'onboarding/welcome_screen.dart';
@@ -194,11 +197,34 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   StreamSubscription<PermissionRequest>? _permissionSub;
+  AppLifecycleListener? _lifecycle;
+  late final AppLockService _lock = getIt<AppLockService>();
 
   @override
   void initState() {
     super.initState();
     _listenForPermissionRequests();
+    _listenForLock();
+  }
+
+  /// 应用锁：进后台记时间，回前台超过 5 分钟就重新锁。
+  ///
+  /// 只在有登录态时才上锁 —— 还没登录过的门页本来没什么可保护的。
+  void _listenForLock() {
+    unawaited(_lock.load());
+    _lifecycle = AppLifecycleListener(
+      onHide: () => _lock.onPaused(),
+      onPause: () => _lock.onPaused(),
+      onResume: () async {
+        final session = await PouchSessionStore.readActive();
+        if (session == null) return;
+        _lock.onResumed();
+        if (!_lock.locked || !mounted) return;
+        final context = navigatorKey.currentContext;
+        if (context == null) return;
+        await Navigator.of(context).pushNamed('/app-locked');
+      },
+    );
   }
 
   void _listenForPermissionRequests() {
@@ -364,6 +390,7 @@ class _MyAppState extends State<MyApp> {
                 '/pouch-init': (context) => const CreatePasswordScreen(),
                 '/pouch-unlock': (context) => const _LegacyUnlockRoute(),
                 '/unlock': (context) => const UnlockScreen(),
+                '/app-locked': (context) => const AppLockScreen(),
                 '/remote-connect': (context) => const WelcomeScreen(),
                 '/phone-login': (context) => const _LegacyUnlockRoute(),
                 '/home': (context) => const AdaptiveHomeScreen(),

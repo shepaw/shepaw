@@ -17,6 +17,7 @@ const loginGateRoutes = <String>{
   '/pouch-init',
   '/pouch-unlock',
   '/unlock',
+  '/app-locked',
   '/remote-connect',
   '/phone-login',
 };

@@ -5360,5 +5360,30 @@
   "joinCode_notYou": "Not you? Remove",
   "joinCode_loopback": "The host only accepts connections from this computer right now",
   "joinCode_unsupported": "The host is too old for join codes",
-  "joinCode_copyLink": "Copy link"
+  "joinCode_copyLink": "Copy link",
+
+  "@appLock_unlock": {
+    "placeholders": {
+      "method": {
+        "type": "String"
+      }
+    }
+  },
+  "@settings_biometricUnlock": {
+    "placeholders": {
+      "method": {
+        "type": "String"
+      }
+    }
+  },
+  "appLock_title": "Shepaw is locked",
+  "appLock_unlock": "Unlock with {method}",
+  "appLock_reason": "Verify it's you to open Shepaw",
+  "settings_privacy": "Privacy & security",
+  "settings_appLock": "Require verification to open Shepaw",
+  "settings_appLockSub": "On by default on phones, off on computers",
+  "settings_appLockNotSupported": "This device has no screen lock set up",
+  "settings_biometricUnlock": "Unlock host with {method}",
+  "settings_biometricUnlockSub": "You'll still need the host password if the credential expires",
+  "gate_enterOffline": "Continue offline"
 }

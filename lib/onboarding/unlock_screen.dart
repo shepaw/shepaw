@@ -7,6 +7,8 @@ import '../services/logger_service.dart';
 import 'gate_controller.dart';
 import 'gate_pouch.dart';
 import 'gate_entry.dart';
+import 'forgot_password.dart';
+import 'offline_entry.dart';
 import 'gate_errors.dart';
 import 'widgets/gate_widgets.dart';
 
@@ -178,6 +180,11 @@ class _UnlockScreenState extends State<UnlockScreen> {
             onPressed: _gate.busy || locked != null ? null : _submit,
             child: Text(_buttonLabel(l10n, locked)),
           ),
+          if (_gate.reach == HostReachability.offline && _gate.pouch != null)
+            TextButton(
+              onPressed: _gate.busy ? null : _enterOffline,
+              child: Text(l10n.gate_enterOffline),
+            ),
         ],
         footer: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -225,25 +232,19 @@ class _UnlockScreenState extends State<UnlockScreen> {
     }
   }
 
-  void _forgot() {
-    final l10n = AppLocalizations.of(context);
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(l10n.unlock_forgot),
-        content: Text(
-          _gate.thisComputer
-              ? l10n.forgot_localBody
-              : l10n.forgot_remoteBody,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: Text(l10n.common_confirm),
-          ),
-        ],
-      ),
+  Future<void> _forgot() async {
+    await showForgotPassword(
+      context,
+      localHost: _gate.thisComputer,
+      hostPeerId: _gate.hostPeerId,
     );
+  }
+
+  /// 主机连不上但本机有缓存：先看东西，连上了自动续期。
+  Future<void> _enterOffline() async {
+    OfflineEntry.active.value = true;
+    if (!mounted) return;
+    await Navigator.of(context).pushReplacementNamed('/home');
   }
 
   void _switchHost() {

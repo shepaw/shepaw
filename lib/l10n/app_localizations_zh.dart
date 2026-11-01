@@ -9506,4 +9506,38 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get joinCode_copyLink => '复制链接';
+
+  @override
+  String get appLock_title => '惜宝已锁定';
+
+  @override
+  String appLock_unlock(String method) {
+    return '使用 $method 解锁';
+  }
+
+  @override
+  String get appLock_reason => '验证身份以打开惜宝';
+
+  @override
+  String get settings_privacy => '隐私与安全';
+
+  @override
+  String get settings_appLock => '打开惜宝时验证身份';
+
+  @override
+  String get settings_appLockSub => '手机默认开，电脑默认关';
+
+  @override
+  String get settings_appLockNotSupported => '这台设备没有设置锁屏方式';
+
+  @override
+  String settings_biometricUnlock(String method) {
+    return '用 $method 解锁主机';
+  }
+
+  @override
+  String get settings_biometricUnlockSub => '凭据失效时仍需输入主机密码';
+
+  @override
+  String get gate_enterOffline => '先进主页（离线）';
 }

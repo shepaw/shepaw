@@ -5819,5 +5819,30 @@
   "joinCode_notYou": "不是你？移除",
   "joinCode_loopback": "主机现在只允许这台电脑连接，其他设备连不上",
   "joinCode_unsupported": "主机版本太旧，暂不支持加入码",
-  "joinCode_copyLink": "复制链接"
+  "joinCode_copyLink": "复制链接",
+
+  "@appLock_unlock": {
+    "placeholders": {
+      "method": {
+        "type": "String"
+      }
+    }
+  },
+  "@settings_biometricUnlock": {
+    "placeholders": {
+      "method": {
+        "type": "String"
+      }
+    }
+  },
+  "appLock_title": "惜宝已锁定",
+  "appLock_unlock": "使用 {method} 解锁",
+  "appLock_reason": "验证身份以打开惜宝",
+  "settings_privacy": "隐私与安全",
+  "settings_appLock": "打开惜宝时验证身份",
+  "settings_appLockSub": "手机默认开，电脑默认关",
+  "settings_appLockNotSupported": "这台设备没有设置锁屏方式",
+  "settings_biometricUnlock": "用 {method} 解锁主机",
+  "settings_biometricUnlockSub": "凭据失效时仍需输入主机密码",
+  "gate_enterOffline": "先进主页（离线）"
 }

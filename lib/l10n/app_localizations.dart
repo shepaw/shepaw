@@ -17266,6 +17266,66 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'复制链接'**
   String get joinCode_copyLink;
+
+  /// No description provided for @appLock_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'惜宝已锁定'**
+  String get appLock_title;
+
+  /// No description provided for @appLock_unlock.
+  ///
+  /// In zh, this message translates to:
+  /// **'使用 {method} 解锁'**
+  String appLock_unlock(String method);
+
+  /// No description provided for @appLock_reason.
+  ///
+  /// In zh, this message translates to:
+  /// **'验证身份以打开惜宝'**
+  String get appLock_reason;
+
+  /// No description provided for @settings_privacy.
+  ///
+  /// In zh, this message translates to:
+  /// **'隐私与安全'**
+  String get settings_privacy;
+
+  /// No description provided for @settings_appLock.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开惜宝时验证身份'**
+  String get settings_appLock;
+
+  /// No description provided for @settings_appLockSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'手机默认开，电脑默认关'**
+  String get settings_appLockSub;
+
+  /// No description provided for @settings_appLockNotSupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台设备没有设置锁屏方式'**
+  String get settings_appLockNotSupported;
+
+  /// No description provided for @settings_biometricUnlock.
+  ///
+  /// In zh, this message translates to:
+  /// **'用 {method} 解锁主机'**
+  String settings_biometricUnlock(String method);
+
+  /// No description provided for @settings_biometricUnlockSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'凭据失效时仍需输入主机密码'**
+  String get settings_biometricUnlockSub;
+
+  /// No description provided for @gate_enterOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'先进主页（离线）'**
+  String get gate_enterOffline;
 }
 
 class _AppLocalizationsDelegate

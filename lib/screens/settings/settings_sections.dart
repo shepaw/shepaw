@@ -82,6 +82,12 @@ class SettingsEntries {
     required this.onSwitchPouch,
     required this.onHostSetup,
     required this.onAbout,
+    this.appLockEnabled = false,
+    this.appLockSupported = false,
+    this.onAppLockChanged,
+    this.biometricMethod = '',
+    this.biometricUnlockEnabled = false,
+    this.onBiometricUnlockChanged,
   });
 
   final AppLocalizations l10n;
@@ -93,6 +99,16 @@ class SettingsEntries {
   final bool biometricSupported;
   final bool biometricEnabled;
   final ValueChanged<bool>? onBiometricChanged;
+
+  /// 打开 App 时验证身份（应用锁）。
+  final bool appLockEnabled;
+  final bool appLockSupported;
+  final ValueChanged<bool>? onAppLockChanged;
+
+  /// 「解锁主机」那一栏显示的验证方式名（Touch ID / Face ID …）。
+  final String biometricMethod;
+  final bool biometricUnlockEnabled;
+  final ValueChanged<bool>? onBiometricUnlockChanged;
 
   final bool batteryOptIgnored;
   final VoidCallback? onBatteryOptimization;
@@ -194,6 +210,32 @@ class SettingsSections {
                 onChanged: e.biometricSupported ? e.onBiometricChanged : null,
               ),
       ),
+      // 应用锁：打开 App 时先验证身份。手机默认开，电脑默认关。
+      if (e.appLockSupported) ...[
+        const Divider(),
+        ListTile(
+          leading: const Icon(Icons.screen_lock_portrait_outlined),
+          title: Text(l10n.settings_appLock),
+          subtitle: Text(l10n.settings_appLockSub),
+          trailing: Switch(
+            value: e.appLockEnabled,
+            onChanged: e.onAppLockChanged,
+          ),
+        ),
+      ],
+      // 用生物识别解锁主机：本质是「用 Touch ID 保护设备凭据的使用」。
+      if (e.biometricMethod.isNotEmpty) ...[
+        const Divider(),
+        ListTile(
+          leading: const Icon(Icons.key_outlined),
+          title: Text(l10n.settings_biometricUnlock(e.biometricMethod)),
+          subtitle: Text(l10n.settings_biometricUnlockSub),
+          trailing: Switch(
+            value: e.biometricUnlockEnabled,
+            onChanged: e.onBiometricUnlockChanged,
+          ),
+        ),
+      ],
     ];
   }
 

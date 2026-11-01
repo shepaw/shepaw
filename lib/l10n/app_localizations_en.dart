@@ -9901,4 +9901,40 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get joinCode_copyLink => 'Copy link';
+
+  @override
+  String get appLock_title => 'Shepaw is locked';
+
+  @override
+  String appLock_unlock(String method) {
+    return 'Unlock with $method';
+  }
+
+  @override
+  String get appLock_reason => 'Verify it\'s you to open Shepaw';
+
+  @override
+  String get settings_privacy => 'Privacy & security';
+
+  @override
+  String get settings_appLock => 'Require verification to open Shepaw';
+
+  @override
+  String get settings_appLockSub => 'On by default on phones, off on computers';
+
+  @override
+  String get settings_appLockNotSupported =>
+      'This device has no screen lock set up';
+
+  @override
+  String settings_biometricUnlock(String method) {
+    return 'Unlock host with $method';
+  }
+
+  @override
+  String get settings_biometricUnlockSub =>
+      'You\'ll still need the host password if the credential expires';
+
+  @override
+  String get gate_enterOffline => 'Continue offline';
 }
