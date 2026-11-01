@@ -30,11 +30,29 @@ void main() {
 
   tearDown(() => controller.dispose());
 
-  /// 主机只回一个「引擎终端」组，好让折叠组在列表里出现。
+  /// 主机只回一个「引擎终端」组，好让折叠组在列表里出现；展开时给出组里的
+  /// 一条会话。
   HubFoldedSessions foldersHost(StreamController<PeerControlEvent> bus) =>
       HubFoldedSessions(
         events: bus.stream,
         send: (peerId, frame) async {
+          if (frame['folder'] != null) {
+            bus.add(PeerControlEvent(peerId: peerId, data: {
+              'type': 'agent_sessions_resp',
+              'request_id': frame['request_id'],
+              'agent_id': 'ra1',
+              'folder': frame['folder'],
+              'sessions': [
+                {
+                  'session_id': 'term-1',
+                  'title': '在终端里跑测试',
+                  'updated_at': 1,
+                  'origin': {'kind': 'terminal'},
+                },
+              ],
+            }));
+            return true;
+          }
           bus.add(PeerControlEvent(peerId: peerId, data: {
             'type': 'agent_sessions_resp',
             'request_id': frame['request_id'],
@@ -111,6 +129,31 @@ void main() {
 
     final after = tester.getRect(folder).top;
     expect(after, lessThan(before - 1));
+    await bus.close();
+  });
+
+  testWidgets('展开后滑多远都能点顶上那一行收起', (tester) async {
+    final bus = StreamController<PeerControlEvent>.broadcast();
+    await tester.pumpWidget(panel(foldersHost(bus), sessions(60)));
+    await pumpFolders(tester);
+
+    await tester.tap(find.text('引擎终端 · 3'));
+    await tester.pumpAndSettle();
+    expect(find.text('在终端里跑测试'), findsOneWidget);
+
+    // 滑到私聊区里去：那一行折叠组固定在列表上方，不用滑回去。
+    final scroll = find.byType(CustomScrollView);
+    await tester.drag(scroll, const Offset(0, -600));
+    await tester.pumpAndSettle();
+    final listTop = tester.getRect(scroll).top;
+    final rowTop = tester.getRect(find.text('引擎终端 · 3')).top;
+    expect(rowTop, lessThan(listTop));
+    // 会话行照常可见，列表没空白（滚到哪一行取决于行高，这里只断言还有行）。
+    expect(find.byType(ListTile), findsWidgets);
+
+    await tester.tap(find.text('引擎终端 · 3'));
+    await tester.pumpAndSettle();
+    expect(find.text('在终端里跑测试'), findsNothing);
     await bus.close();
   });
 

@@ -3,9 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/l10n/app_localizations.dart';
+import 'package:shepaw/peer/models/folded_sessions.dart';
 import 'package:shepaw/peer/services/hub_folded_sessions.dart';
 import 'package:shepaw/peer/services/peer_connection_manager.dart';
 import 'package:shepaw/widgets/chat/agent_session_folders.dart';
+import 'package:shepaw/widgets/session_folders.dart';
 
 HubFoldedSessions _host(
         StreamController<PeerControlEvent> bus, Object? folders) =>
@@ -63,6 +65,74 @@ HubFoldedSessions _hostWithItems(StreamController<PeerControlEvent> bus) =>
       },
     );
 
+/// 真实用法的外层：展开态由它持有，上方固定那一行折叠组（点一下收起）。
+///
+/// [AgentSessionFolders] 自己不再保存展开态（没有 [AgentSessionFolders.onToggle]
+/// 就点不开），所以这两个用例按列表里的真实结构搭一层。
+class _WithExpandedRow extends StatefulWidget {
+  const _WithExpandedRow({
+    required this.peerId,
+    required this.remoteAgentId,
+    required this.client,
+    this.onForked,
+    this.refresh,
+  });
+
+  final String peerId;
+  final String remoteAgentId;
+  final HubFoldedSessions client;
+  final void Function(String sessionId)? onForked;
+  final Future<void> Function(String, String)? refresh;
+
+  @override
+  State<_WithExpandedRow> createState() => _WithExpandedRowState();
+}
+
+class _WithExpandedRowState extends State<_WithExpandedRow> {
+  SessionFolderSummary? _expanded;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      children: [
+        if (_expanded != null)
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: theme.scaffoldBackgroundColor,
+              border: Border(bottom: BorderSide(color: theme.dividerColor)),
+            ),
+            child: SessionFolderTile(
+              summary: _expanded!,
+              expanded: true,
+              onTap: () => setState(() => _expanded = null),
+            ),
+          ),
+        Expanded(
+          child: CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
+                child: AgentSessionFolders(
+                  peerId: widget.peerId,
+                  remoteAgentId: widget.remoteAgentId,
+                  client: widget.client,
+                  onForked: widget.onForked,
+                  refresh: widget.refresh,
+                  expandedKind: _expanded?.kind,
+                  onToggle: (summary) => setState(() {
+                    _expanded =
+                        _expanded?.kind == summary.kind ? null : summary;
+                  }),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 void main() {
   testWidgets('tapping a folder expands it in place, no new page',
       (tester) async {
@@ -72,12 +142,10 @@ void main() {
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       home: Scaffold(
-        body: SingleChildScrollView(
-          child: AgentSessionFolders(
-            peerId: 'p1',
-            remoteAgentId: 'a1',
-            client: _hostWithItems(bus),
-          ),
+        body: _WithExpandedRow(
+          peerId: 'p1',
+          remoteAgentId: 'a1',
+          client: _hostWithItems(bus),
         ),
       ),
     ));
@@ -93,13 +161,14 @@ void main() {
     expect(find.text('周会'), findsOneWidget);
     // 就地展开：没有推新页面（新页面会带自己的 AppBar）。
     expect(find.byType(AppBar), findsNothing);
-    // 会话行画在折叠组下面。
+    // 展开后那一行折叠组固定在列表上方，会话行在它下面；列表里不再重复画
+    // 这一组。
     expect(
       tester.getRect(find.text('周会')).top,
       greaterThan(tester.getRect(find.text('群聊 · 6')).top),
     );
 
-    // 再点一次收回去。
+    // 点固定那一行收起 —— 不用滑回最顶部。
     await tester.tap(find.text('群聊 · 6'));
     await tester.pumpAndSettle();
     expect(find.text('周会'), findsNothing);
@@ -235,7 +304,7 @@ void main() {
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       home: Scaffold(
-        body: AgentSessionFolders(
+        body: _WithExpandedRow(
           peerId: 'p1',
           remoteAgentId: 'a1',
           client: client,

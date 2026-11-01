@@ -10,6 +10,7 @@ import '../../utils/session_utils.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/session/client_session_sync.dart';
 import '../../services/session/folded_target.dart';
+import '../../peer/models/folded_sessions.dart';
 import '../../peer/services/hub_folded_sessions.dart';
 import 'session_unread_badge.dart';
 import 'session_list_header_menu.dart';
@@ -17,6 +18,7 @@ import 'session_preview_entry.dart';
 import 'session_row_menu.dart';
 import '../discard_changes_scope.dart';
 import 'chat_panel_scope.dart';
+import '../session_folders.dart';
 import 'agent_session_folders.dart';
 
 Widget _selectionCheckbox(
@@ -204,6 +206,9 @@ class _SessionListContentState extends State<_SessionListContent> {
 
   /// 查库解析出来的折叠组目标；调用方直接给（[widget.foldersTarget]）时不用它。
   ({String peerId, String remoteAgentId})? _resolvedFoldersTarget;
+
+  /// 当前展开的那一组。放在这一层是为了让上方固定那一行能收起它。
+  SessionFolderSummary? _expanded;
 
   /// 折叠组要问的主机与主机上的 Agent；本机 Agent、群或查不到时为空（不画折叠组）。
   ({String peerId, String remoteAgentId})? get _foldersTarget =>
@@ -399,9 +404,32 @@ class _SessionListContentState extends State<_SessionListContent> {
         // 「新建会话」行不参与滚动：它比会话行矮（无副标题），留在滚动区里
         // 会破坏等高前提（见 [_buildList]）。
         if (!_isSelectionMode) _buildNewSessionItem(context, l10n),
+        // 展开着一组时，那一行折叠组固定在列表上方：滑多远都够得着，点一下收起。
+        // 它不进滚动区（滚动区保持「折叠组 + 会话行」两块，不碰 sliver 结构），
+        // 列表里也就不重复画这一组了。
+        if (_expanded != null) _buildStickyFolderRow(context, _expanded!),
         Expanded(child: _buildList()),
         if (_isSelectionMode) _buildBottomBar(l10n),
       ],
+    );
+  }
+
+  /// 展开着的那一行折叠组：钉在列表上方，点它收起。
+  Widget _buildStickyFolderRow(
+    BuildContext context,
+    SessionFolderSummary summary,
+  ) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.scaffoldBackgroundColor,
+        border: Border(bottom: BorderSide(color: theme.dividerColor)),
+      ),
+      child: SessionFolderTile(
+        summary: summary,
+        expanded: true,
+        onTap: () => setState(() => _expanded = null),
+      ),
     );
   }
 
@@ -478,12 +506,26 @@ class _SessionListContentState extends State<_SessionListContent> {
   /// 只建可视行。
   Widget _buildList() {
     // 群聊 / 工作流 / 引擎客户端等来源的会话收进折叠组（折叠方案 §2.1）。
+    // 展开态放在这一层：上方固定的那一行折叠组要能收起它。
     final folders = !_isSelectionMode && _foldersTarget != null
         ? AgentSessionFolders(
             peerId: _foldersTarget!.peerId,
             remoteAgentId: _foldersTarget!.remoteAgentId,
             refreshTick: widget.listRefreshTick,
             client: widget.foldersClient,
+            expandedKind: _expanded?.kind,
+            onToggle: (summary) => setState(() {
+              _expanded = _expanded?.kind == summary.kind ? null : summary;
+            }),
+            onExpandedChanged: (summary) {
+              if (summary == null) {
+                if (_expanded != null) setState(() => _expanded = null);
+                return;
+              }
+              if (_expanded?.kind != summary.kind) return;
+              if (!mounted) return;
+              setState(() => _expanded = summary);
+            },
           )
         : null;
     return CustomScrollView(
