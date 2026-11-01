@@ -566,6 +566,42 @@ void main() {
         );
       });
 
+      test('标题被截断、闭合标签没来时，从开标签起到结尾都算标记内容', () {
+        // 主机给折叠组的标题常是截断的：闭合标签没了。只摘标签会把 caveat
+        // 正文留在标题上，每行都长一样，没法辨识。
+        expect(
+          SessionUtils.stripEngineMarkupBlocks(
+            '<local-command-caveat>Caveat: The messages below were generated '
+            'by the user while running local commands.',
+          ),
+          isEmpty,
+        );
+        expect(
+          SessionUtils.cleanClaudeSessionTitle(
+            '<local-command-caveat>Caveat: The messages below were generated',
+          ),
+          isNull,
+        );
+        expect(
+          SessionUtils.isClaudeCommandArtifact(
+            '<local-command-caveat>Caveat: 本机执行的命令输出如下',
+          ),
+          isTrue,
+        );
+        // 正文在标记前面的那部分要留住。
+        expect(
+          SessionUtils.cleanClaudeSessionTitle(
+            '看看这个 <system-reminder>内部提示（未闭合',
+          ),
+          '看看这个',
+        );
+        // 反过来被截掉开头、只剩闭合标签。
+        expect(
+          SessionUtils.stripEngineMarkupBlocks('尾部提示</local-command-caveat>'),
+          '尾部提示',
+        );
+      });
+
       test('没标记的标题原样保留', () {
         expect(
           SessionUtils.cleanClaudeSessionTitle('普通的会话标题'),
@@ -581,7 +617,6 @@ void main() {
             'pouch:// URIs are not OS paths; never read them as local files.\n'
             'URIs: pouch://a95b5782/agent:fb1d3f94/session:s1/attachments/p.png\n'
             '[/implicit]';
-        // 整段只剩提示块 → 不作标题。
         expect(SessionUtils.cleanClaudeSessionTitle(implicit), isNull);
         expect(
           SessionUtils.sessionTitleFromMessageContent(implicit),

@@ -136,13 +136,29 @@ class SessionUtils {
   static String stripEngineMarkup(String text) =>
       text.replaceAll(_kEngineMarkupTags, '');
 
-  /// 去掉引擎内置标记**及其内容**，只留没被包住的部分。标题/预览用。
+  /// 去掉引擎内置标记**及其内容**，还有 `[implicit]` 提示块，只留没被包住的
+  /// 部分。标题/预览用 —— 列表上只该出现用户看得懂的话。
   ///
-  /// 标题可能被截断导致标签没闭合，所以再兜底剥一次裸标签。
-  static String stripEngineMarkupBlocks(String text) => text
-      .replaceAll(_kEngineMarkupBlocks, '')
-      .replaceAll(_kEngineMarkupTags, '')
-      .trim();
+  /// 主机给的标题常被截断：闭合标签没了，配对就匹配不上。那种情况下从开标签
+  /// 起到结尾都算标记内容（没法知道它在哪结束），不能只把标签摘掉把正文留在
+  /// 标题上 —— 那样每行标题都变成同一段系统说明，没法辨识。
+  static String stripEngineMarkupBlocks(String text) {
+    // 先摘 [implicit]…[/implicit]：它是整段的发送端提示，而且里面的占位符
+    // （<uri-as-is> 之类）会被下面的「标签形状」规则误认成标签。
+    final noImplicit = MessageImplicitPrompt.stripImplicitBlocks(text);
+    var s = noImplicit.replaceAll(_kEngineMarkupBlocks, '');
+    // 还能匹配到一个开标签，说明它的闭合标签没来（被截断了）。
+    final dangling = _kEngineMarkupOpenTag.firstMatch(s);
+    if (dangling != null) s = s.substring(0, dangling.start);
+    // 反过来被截掉开头、只剩闭合标签的情况。
+    return s.replaceAll(_kEngineMarkupCloseTag, '').trim();
+  }
+
+  static final RegExp _kEngineMarkupOpenTag =
+      RegExp(r'<' + _kEngineMarkupName + r'\b[^>]*>');
+
+  static final RegExp _kEngineMarkupCloseTag =
+      RegExp(r'</' + _kEngineMarkupName + r'\b[^>]*>');
 
   /// Hub / Agent Hub 同步 transcript 时，首条 user 消息可能是 Scope Card
   /// 或整段 system 说明书（`## 当前储物袋作用域`），不应作为会话标题或气泡展示。
