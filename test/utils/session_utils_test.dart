@@ -489,6 +489,89 @@ void main() {
       test('没有标记时原样返回', () {
         expect(SessionUtils.stripEngineMarkup('普通一句话'), '普通一句话');
       });
+
+      test('command-message / command-args 这类也认（按名字形状，不逐个列）', () {
+        expect(
+          SessionUtils.stripEngineMarkup(
+            '<command-message>model</command-message>'
+            '<command-name>/model</command-name>'
+            '<command-args>opus</command-args>',
+          ),
+          'model/modelopus',
+        );
+        expect(
+          SessionUtils.stripEngineMarkup(
+              '<system-reminder>提示</system-reminder>'),
+          '提示',
+        );
+        expect(
+          SessionUtils.stripEngineMarkup(
+              '<environment_context>本机</environment_context>'),
+          '本机',
+        );
+      });
+
+      test('正文里真要用的 HTML 不动', () {
+        expect(
+          SessionUtils.stripEngineMarkup('用 <b>粗体</b> 和 <br/> 换行'),
+          '用 <b>粗体</b> 和 <br/> 换行',
+        );
+      });
+    });
+
+    group('stripEngineMarkupBlocks（会话标题）', () {
+      test('标记连同内容一起去掉，只留没被包住的部分', () {
+        expect(
+          SessionUtils.stripEngineMarkupBlocks(
+            '<command-name>/model</command-name>\n'
+            '<local-command-stdout>已切到 opus</local-command-stdout>\n'
+            '修复聊天指令',
+          ),
+          '修复聊天指令',
+        );
+        expect(
+          SessionUtils.stripEngineMarkupBlocks(
+            '看看这个 <system-reminder>内部提示</system-reminder> 对不对',
+          ),
+          '看看这个  对不对',
+        );
+      });
+
+      test('整段只剩标记时不该当标题', () {
+        const onlyMarkup =
+            '<local-command-caveat>Caveat: xxx</local-command-caveat>';
+        expect(SessionUtils.stripEngineMarkupBlocks(onlyMarkup), isEmpty);
+        expect(SessionUtils.isClaudeCommandArtifact(onlyMarkup), isTrue);
+        expect(SessionUtils.cleanClaudeSessionTitle(onlyMarkup), isNull);
+        expect(
+          SessionUtils.sessionTitleFromMessageContent(onlyMarkup),
+          isNull,
+        );
+      });
+
+      test('标题取没被包住的那部分', () {
+        expect(
+          SessionUtils.cleanClaudeSessionTitle(
+            '<command-name>/model</command-name>\n'
+            '<local-command-stdout>已切到 opus</local-command-stdout>\n'
+            '修复聊天指令',
+          ),
+          '修复聊天指令',
+        );
+        expect(
+          SessionUtils.sessionTitleFromMessageContent(
+            '<command-message>model</command-message>\n帮我改一下标题',
+          ),
+          '帮我改一下标题',
+        );
+      });
+
+      test('没标记的标题原样保留', () {
+        expect(
+          SessionUtils.cleanClaudeSessionTitle('普通的会话标题'),
+          '普通的会话标题',
+        );
+      });
     });
   });
 }

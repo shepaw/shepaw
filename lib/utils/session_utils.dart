@@ -101,23 +101,48 @@ class SessionUtils {
     return session.id;
   }
 
-  /// Claude Code 本地斜杠命令（/model、/clear 等）注入的包装标签，
-  /// 同步远端会话后可能残留在会话标题里，展示层需剔除。
-  static const _kClaudeCommandTagPatterns = [
-    r'<local-command-caveat>.*?</local-command-caveat>',
-    r'<command-name>.*?</command-name>',
-    r'<local-command-stdout>.*?</local-command-stdout>',
-  ];
+  /// 引擎（Claude Code 等）注入的内置标记的名字规则：小写、带连字符或下划线。
+  ///
+  /// 已知的有 `<local-command-caveat>`、`<local-command-stdout>`、
+  /// `<command-name>`、`<command-message>`、`<command-args>`、
+  /// `<system-reminder>`、`<ide-selection>`、`<environment_context>` 等。
+  /// 与其一个个列，不如认这个形状 —— 引擎自己加的包装名都是这种。
+  ///
+  /// 不带连字符/下划线的 `<div>`、`<br/>`、`<b>` 是正文里真要用的 HTML，
+  /// 不在这个规则里，不会被剥。
+  static const _kEngineMarkupName = r'[a-z][a-z0-9]*(?:[-_][a-z0-9]+)+';
 
-  /// 判断一段文本是否为 Claude Code 注入的本地命令伪消息
-  /// （caveat / 命令名 / 命令输出）。这类内容不应作为会话标题或预览。
+  /// 只匹配标签本身（内容留着）。气泡用。
+  static final RegExp _kEngineMarkupTags =
+      RegExp(r'</?' + _kEngineMarkupName + r'\b[^>]*>', dotAll: true);
+
+  /// 一对标签连同被包住的内容。标题用 —— 这类内容不该当会话标题。
+  static final RegExp _kEngineMarkupBlocks = RegExp(
+    r'<(' + _kEngineMarkupName + r')\b[^>]*>.*?</\1>',
+    dotAll: true,
+  );
+
+  /// 判断一段文本是不是纯引擎包装（剥掉标记后什么都不剩）。
+  ///
+  /// 这类内容不是用户说的话，不该作为会话标题或预览。
   static bool isClaudeCommandArtifact(String? text) {
     if (text == null) return false;
     final t = text.trim();
-    return t.startsWith('<local-command-caveat>') ||
-        t.startsWith('<command-name>') ||
-        t.startsWith('<local-command-stdout>');
+    if (t.isEmpty || !_kEngineMarkupTags.hasMatch(t)) return false;
+    return stripEngineMarkupBlocks(t).trim().isEmpty;
   }
+
+  /// 去掉引擎内置标记，留下里面的正文（只去标签，不动内容）。气泡用。
+  static String stripEngineMarkup(String text) =>
+      text.replaceAll(_kEngineMarkupTags, '');
+
+  /// 去掉引擎内置标记**及其内容**，只留没被包住的部分。标题/预览用。
+  ///
+  /// 标题可能被截断导致标签没闭合，所以再兜底剥一次裸标签。
+  static String stripEngineMarkupBlocks(String text) => text
+      .replaceAll(_kEngineMarkupBlocks, '')
+      .replaceAll(_kEngineMarkupTags, '')
+      .trim();
 
   /// Hub / Agent Hub 同步 transcript 时，首条 user 消息可能是 Scope Card
   /// 或整段 system 说明书（`## 当前储物袋作用域`），不应作为会话标题或气泡展示。
@@ -133,21 +158,6 @@ class SessionUtils {
     final visible = stripHubInternalPromptForDisplay(t);
     return visible == null || visible.isEmpty;
   }
-
-  /// 引擎（Claude Code 等）注入的内置标记：`<local-command-caveat>`、
-  /// `<command-name>`、`<local-command-stdout>`、`<system-reminder>`。
-  ///
-  /// 这些是引擎自己加的包装，不是用户说的话。气泡里只展示被包住的内容，不
-  /// 展示标记本身（只去标签，内容保留）。
-  static final RegExp _kEngineMarkupTags = RegExp(
-    r'</?(?:local-command-caveat|command-name|local-command-stdout|system-reminder)\b[^>]*>',
-    dotAll: true,
-  );
-
-  /// 去掉引擎内置标记，留下里面的正文。标题另走 [_stripClaudeCommandTags]
-  /// （连内容一起去掉）。
-  static String stripEngineMarkup(String text) =>
-      text.replaceAll(_kEngineMarkupTags, '');
 
   /// 去掉 Scope Card 等 Hub 注入段，返回用户可见正文；无则 null。
   static String? stripHubInternalPromptForDisplay(String? text) {
@@ -176,7 +186,7 @@ class SessionUtils {
       kept.add(line);
     }
     s = kept.join('\n').trim();
-    s = _stripClaudeCommandTags(s).trim();
+    s = stripEngineMarkupBlocks(s);
     return s.isEmpty ? null : s;
   }
 
@@ -200,19 +210,6 @@ class SessionUtils {
     return stripEngineMarkup(stripped);
   }
 
-  static String _stripClaudeCommandTags(String s) {
-    for (final pattern in _kClaudeCommandTagPatterns) {
-      s = s.replaceAll(RegExp(pattern, dotAll: true), '');
-    }
-    return s.replaceAll(
-      RegExp(
-        r'</?(?:local-command-caveat|command-name|local-command-stdout)\b[^>]*>',
-        dotAll: true,
-      ),
-      '',
-    );
-  }
-
   /// 从消息正文提取会话列表标题候选；不可展示时返回 null。
   static String? sessionTitleFromMessageContent(String? content) {
     if (content == null) return null;
@@ -223,14 +220,13 @@ class SessionUtils {
     return cleanClaudeSessionTitle(visible);
   }
 
-  /// 剔除会话标题里由本地斜杠命令注入的标签及内容，折叠多余空白。
+  /// 剔除会话标题里的引擎内置标记及其内容，折叠多余空白。
   ///
   /// 清理后为空返回 null，便于调用方回落默认名（如 'Session'）。
   static String? cleanClaudeSessionTitle(String? title) {
     if (title == null) return null;
-    // 标题可能被截断导致标签未闭合，再兜底剔除一次裸标签。
     final s =
-        _stripClaudeCommandTags(title).replaceAll(RegExp(r'\s+'), ' ').trim();
+        stripEngineMarkupBlocks(title).replaceAll(RegExp(r'\s+'), ' ').trim();
     return s.isEmpty ? null : s;
   }
 }
