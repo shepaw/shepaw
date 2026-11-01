@@ -37,4 +37,42 @@ void main() {
     expect(find.text('跑一下测试'), findsWidgets);
     expect(find.text('测试通过了'), findsWidgets);
   });
+
+  testWidgets('气泡里不显示引擎内置标记，只留内容', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      locale: const Locale('zh'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: SessionHistoryScreen(
+        title: '终端会话',
+        recordId: 's1',
+        loadPage: (_) async => PeerHistoryPage(
+          completed: true,
+          messages: [
+            PeerHistoryMessage(
+              role: 'user',
+              content:
+                  '<command-name>/model</command-name>\n<local-command-stdout>已切换</local-command-stdout>',
+            ),
+            PeerHistoryMessage(
+              role: 'agent',
+              content:
+                  '<local-command-caveat>这条命令在本机执行过</local-command-caveat>',
+            ),
+          ],
+        ),
+      ),
+    ));
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+
+    // 标记本身不出现。
+    expect(find.textContaining('<local-command-caveat>'), findsNothing);
+    expect(find.textContaining('<command-name>'), findsNothing);
+    expect(find.textContaining('<local-command-stdout>'), findsNothing);
+    // 被包住的内容照常显示。
+    expect(find.textContaining('这条命令在本机执行过'), findsOneWidget);
+    expect(find.textContaining('已切换'), findsOneWidget);
+  });
 }

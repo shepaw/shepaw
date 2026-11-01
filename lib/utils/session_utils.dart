@@ -134,6 +134,21 @@ class SessionUtils {
     return visible == null || visible.isEmpty;
   }
 
+  /// 引擎（Claude Code 等）注入的内置标记：`<local-command-caveat>`、
+  /// `<command-name>`、`<local-command-stdout>`、`<system-reminder>`。
+  ///
+  /// 这些是引擎自己加的包装，不是用户说的话。气泡里只展示被包住的内容，不
+  /// 展示标记本身（只去标签，内容保留）。
+  static final RegExp _kEngineMarkupTags = RegExp(
+    r'</?(?:local-command-caveat|command-name|local-command-stdout|system-reminder)\b[^>]*>',
+    dotAll: true,
+  );
+
+  /// 去掉引擎内置标记，留下里面的正文。标题另走 [_stripClaudeCommandTags]
+  /// （连内容一起去掉）。
+  static String stripEngineMarkup(String text) =>
+      text.replaceAll(_kEngineMarkupTags, '');
+
   /// 去掉 Scope Card 等 Hub 注入段，返回用户可见正文；无则 null。
   static String? stripHubInternalPromptForDisplay(String? text) {
     if (text == null) return null;
@@ -179,7 +194,10 @@ class SessionUtils {
     }
     // Old rows may still carry the sender-side hint in `content`; hide it
     // without rewriting the DB here (callers own any rewrite).
-    return MessageImplicitPrompt.stripImplicitBlocks(visible);
+    final stripped = MessageImplicitPrompt.stripImplicitBlocks(visible);
+    // 引擎内置标记（<local-command-caveat> 等）只留内容：存库前剥一次，
+    // 搜索和历史都跟着干净（旧数据靠气泡渲染时再剥一次）。
+    return stripEngineMarkup(stripped);
   }
 
   static String _stripClaudeCommandTags(String s) {
@@ -211,7 +229,8 @@ class SessionUtils {
   static String? cleanClaudeSessionTitle(String? title) {
     if (title == null) return null;
     // 标题可能被截断导致标签未闭合，再兜底剔除一次裸标签。
-    final s = _stripClaudeCommandTags(title).replaceAll(RegExp(r'\s+'), ' ').trim();
+    final s =
+        _stripClaudeCommandTags(title).replaceAll(RegExp(r'\s+'), ' ').trim();
     return s.isEmpty ? null : s;
   }
 }

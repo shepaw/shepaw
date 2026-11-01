@@ -90,7 +90,8 @@ void main() {
 
           // DM channel - isGroup is false, so the group logic won't apply
           expect(
-            SessionUtils.shortSessionId('dm_user1_agent1', groupChannel: dmChannel),
+            SessionUtils.shortSessionId('dm_user1_agent1',
+                groupChannel: dmChannel),
             '#default',
           );
         });
@@ -198,7 +199,9 @@ void main() {
           );
         });
 
-        test('keeps derived sessions (gmd_ member / psess_ sync / peer__ inbound)', () {
+        test(
+            'keeps derived sessions (gmd_ member / psess_ sync / peer__ inbound)',
+            () {
           for (final id in [
             'gmd_group_x__agent1',
             'psess_remote123',
@@ -271,8 +274,7 @@ void main() {
 
     group('splitFirstSentence', () {
       test('中文句号切分：首句含标点，剩余为后续内容', () {
-        final r = SessionUtils.splitFirstSentence(
-            '帮我整理一下文件。然后发给小张看看。');
+        final r = SessionUtils.splitFirstSentence('帮我整理一下文件。然后发给小张看看。');
         expect(r.first, '帮我整理一下文件。');
         expect(r.rest, '然后发给小张看看。');
       });
@@ -320,7 +322,8 @@ void main() {
           isTrue,
         );
         expect(
-          SessionUtils.isClaudeCommandArtifact('<command-name>/model</command-name>'),
+          SessionUtils.isClaudeCommandArtifact(
+              '<command-name>/model</command-name>'),
           isTrue,
         );
         expect(
@@ -412,7 +415,10 @@ void main() {
         expect(
           SessionUtils.visibleMessageContent(
             '看看',
-            {'wire_content': '看看\n\n[implicit]\nread with pouch_read\n[/implicit]'},
+            {
+              'wire_content':
+                  '看看\n\n[implicit]\nread with pouch_read\n[/implicit]'
+            },
           ),
           '看看',
         );
@@ -429,6 +435,59 @@ void main() {
           ),
           '修复会话标题',
         );
+      });
+    });
+
+    group('stripEngineMarkup', () {
+      test('只去掉引擎内置标记，留下里面的内容', () {
+        expect(
+          SessionUtils.stripEngineMarkup(
+            '<local-command-caveat>这条命令在本机执行过</local-command-caveat>',
+          ),
+          '这条命令在本机执行过',
+        );
+        expect(
+          SessionUtils.stripEngineMarkup('<command-name>/model</command-name>'),
+          '/model',
+        );
+        expect(
+          SessionUtils.stripEngineMarkup(
+            '<local-command-stdout>ok\nall good</local-command-stdout>',
+          ),
+          'ok\nall good',
+        );
+        expect(
+          SessionUtils.stripEngineMarkup(
+            '<system-reminder>这里是系统提示</system-reminder>',
+          ),
+          '这里是系统提示',
+        );
+      });
+
+      test('标记和正文混排时只留正文', () {
+        expect(
+          SessionUtils.stripEngineMarkup(
+            '跑一下测试\n<local-command-caveat>已在本机执行</local-command-caveat>\n好了',
+          ),
+          '跑一下测试\n已在本机执行\n好了',
+        );
+      });
+
+      test('带属性的标记、没闭合的标记也剥掉', () {
+        expect(
+          SessionUtils.stripEngineMarkup(
+            '<local-command-caveat foo="bar">x</local-command-caveat>',
+          ),
+          'x',
+        );
+        expect(
+          SessionUtils.stripEngineMarkup('半截的 <local-command-caveat>内容'),
+          '半截的 内容',
+        );
+      });
+
+      test('没有标记时原样返回', () {
+        expect(SessionUtils.stripEngineMarkup('普通一句话'), '普通一句话');
       });
     });
   });

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/l10n/app_localizations.dart';
@@ -11,8 +12,8 @@ import 'package:shepaw/widgets/chat/folded_session_items.dart';
 void main() {
   test('the search frame carries the query and the agent', () {
     expect(
-        HubFoldedSessions.searchFrame('登录', agentId: 'a1', limit: 5,
-            requestId: 'r'),
+        HubFoldedSessions.searchFrame('登录',
+            agentId: 'a1', limit: 5, requestId: 'r'),
         {
           'type': 'agent_sessions_search_req',
           'request_id': 'r',
@@ -156,11 +157,20 @@ void main() {
     expect(find.text('加载更多'), findsNothing);
     expect(sent[1]['cursor'], '1');
 
-    await tester.tap(find.byType(PopupMenuButton<String>).first);
+    // 「更多」和私聊会话行一个规矩：平时不占位，鼠标悬停才出现。
+    expect(find.byIcon(Icons.more_vert), findsNothing);
+    final row = find.text('第一个');
+    final hover = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await hover.addPointer(location: tester.getCenter(row));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.more_vert), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.more_vert));
     await tester.pumpAndSettle();
     await tester.tap(find.text('分叉到私聊'));
     await tester.pumpAndSettle();
     expect(forked, 'new-1');
+    await hover.removePointer();
     await bus.close();
   });
 }

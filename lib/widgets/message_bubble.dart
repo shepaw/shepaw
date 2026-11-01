@@ -15,6 +15,7 @@ import '../screens/storage_directory_opener.dart';
 import '../storage/workspace_link_resolver.dart';
 import '../theme/app_theme.dart';
 import '../utils/progress_content_utils.dart';
+import '../utils/session_utils.dart';
 import 'copyable_code_block.dart';
 import 'store_uri_link_syntax.dart';
 import 'voice_message_bubble.dart';
@@ -264,8 +265,13 @@ class MessageBubble extends StatelessWidget {
 
   /// Old host rows may still carry a sender-side `[implicit]` hint in
   /// `content`; hide it at render time without rewriting storage.
-  String get _displayContent =>
-      MessageImplicitPrompt.stripImplicitBlocks(message.content);
+  ///
+  /// 引擎内置标记（`<local-command-caveat>` 等）同理：那是引擎加的包装，不是
+  /// 用户说的话，只留里面的内容。存库那头已经剥过（见
+  /// [SessionUtils.visibleMessageContent]），这里兜住旧数据和流式过来的。
+  String get _displayContent => SessionUtils.stripEngineMarkup(
+        MessageImplicitPrompt.stripImplicitBlocks(message.content),
+      );
 
   @override
   Widget build(BuildContext context) {

@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 import '../../peer/models/folded_sessions.dart';
 import '../../peer/services/hub_folded_sessions.dart';
+import '../../utils/layout_utils.dart';
 import '../../screens/flow_library_screen.dart';
 import '../session_folders.dart';
+import 'session_row_menu.dart';
 
 /// 折叠组展开后的会话行（折叠方案 §2.2）：就在会话列表里展开，不开新页面。
 ///
@@ -110,6 +112,95 @@ class _SessionFolderItemsState extends State<SessionFolderItems> {
     return parts.join(' · ');
   }
 
+  /// 组里的一行。和私聊会话行一个规矩：「更多」平时不占位，桌面悬停（或菜单
+  /// 打开期间）才出现；移动端没有悬停，改成长按弹底部菜单。
+  Widget _sessionRow(
+    BuildContext context,
+    AppLocalizations l10n,
+    FoldedSession session,
+    String subtitle,
+  ) {
+    final isDesktop = LayoutUtils.isDesktopLayout(context);
+    return SessionRowHoverHost(
+      enabled: isDesktop,
+      builder: (context, hover) {
+        return ListTile(
+          title: Text(session.title.isEmpty ? session.sessionId : session.title,
+              maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: subtitle.isEmpty ? null : Text(subtitle),
+          onTap: widget.onOpen == null ? null : () => widget.onOpen!(session),
+          onLongPress:
+              isDesktop ? null : () => _showForkSheet(context, l10n, session),
+          trailing: hover.showMore
+              ? Builder(builder: (buttonContext) {
+                  return IconButton(
+                    tooltip: l10n.folder_more,
+                    icon: const Icon(Icons.more_vert, size: 20),
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints.tightFor(width: 32, height: 32),
+                    onPressed: () => hover.holdWhileOpen(
+                      () =>
+                          _showForkMenu(context, buttonContext, l10n, session),
+                    ),
+                  );
+                })
+              : null,
+        );
+      },
+    );
+  }
+
+  /// 桌面：在「更多」按钮旁弹出下拉菜单（与会话行同一套路）。
+  Future<void> _showForkMenu(
+    BuildContext context,
+    BuildContext buttonContext,
+    AppLocalizations l10n,
+    FoldedSession session,
+  ) async {
+    final overlayBox =
+        Overlay.of(buttonContext).context.findRenderObject() as RenderBox?;
+    final buttonBox = buttonContext.findRenderObject() as RenderBox?;
+    if (overlayBox == null || buttonBox == null || !buttonBox.hasSize) return;
+    final rect =
+        overlayBox.globalToLocal(buttonBox.localToGlobal(Offset.zero)) &
+            buttonBox.size;
+    final choice = await showMenu<String>(
+      context: buttonContext,
+      position: RelativeRect.fromSize(rect, overlayBox.size),
+      items: [
+        PopupMenuItem<String>(value: 'fork', child: Text(l10n.folder_fork)),
+      ],
+    );
+    if (choice == 'fork') await _fork(session);
+  }
+
+  /// 移动端：长按弹底部菜单（没有悬停，这是唯一的入口）。
+  Future<void> _showForkSheet(
+    BuildContext context,
+    AppLocalizations l10n,
+    FoldedSession session,
+  ) async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.call_split),
+              title: Text(l10n.folder_fork),
+              onTap: () => Navigator.pop(sheetContext, 'fork'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (choice == 'fork' && context.mounted) await _fork(session);
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -138,20 +229,7 @@ class _SessionFolderItemsState extends State<SessionFolderItems> {
               style: Theme.of(context).textTheme.labelMedium),
         ));
       }
-      final subtitle = _subtitle(l10n, session);
-      rows.add(ListTile(
-        title: Text(session.title.isEmpty ? session.sessionId : session.title,
-            maxLines: 1, overflow: TextOverflow.ellipsis),
-        subtitle: subtitle.isEmpty ? null : Text(subtitle),
-        onTap: widget.onOpen == null ? null : () => widget.onOpen!(session),
-        trailing: PopupMenuButton<String>(
-          tooltip: l10n.folder_more,
-          onSelected: (_) => _fork(session),
-          itemBuilder: (_) => [
-            PopupMenuItem(value: 'fork', child: Text(l10n.folder_fork)),
-          ],
-        ),
-      ));
+      rows.add(_sessionRow(context, l10n, session, _subtitle(l10n, session)));
     }
     if (_loading && _items.isEmpty) {
       rows.add(const Padding(
