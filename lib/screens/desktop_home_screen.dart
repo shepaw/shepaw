@@ -21,6 +21,7 @@ import 'create_group_screen.dart';
 import 'group_detail_screen.dart';
 import 'agent_detail/agent_detail_screen.dart';
 import 'settings/settings_model.dart';
+import 'flow_workspace_screen.dart';
 import 'instruction_set_screen.dart';
 import 'settings/settings_sections.dart';
 import 'user_profile_settings_screen.dart';
@@ -92,6 +93,7 @@ enum _RightPanelView {
   mineModels,
   mineInstructions,
   mineSkills,
+  mineFlows,
   mineCli,
   mineEvents,
   mineScheduledTasks,
@@ -617,6 +619,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         MinePage.models => _RightPanelView.mineModels,
         MinePage.instructions => _RightPanelView.mineInstructions,
         MinePage.skills => _RightPanelView.mineSkills,
+        MinePage.flows => _RightPanelView.mineFlows,
         MinePage.cli => _RightPanelView.mineCli,
         MinePage.events => _RightPanelView.mineEvents,
         MinePage.scheduledTasks => _RightPanelView.mineScheduledTasks,
@@ -1096,6 +1099,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
       case _RightPanelView.mineSkills:
         return const SkillManagementScreen();
+
+      case _RightPanelView.mineFlows:
+        return const FlowWorkspaceScreen(embedded: true);
 
       case _RightPanelView.mineCli:
         return const CliConfigManagementScreen();

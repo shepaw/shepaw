@@ -5459,6 +5459,8 @@
   "flow_designLoadFailed": "读不到这个流程",
   "flow_libraryTitle": "流程库",
   "flow_libraryEmpty": "还没有流程",
+  "flow_workspaceNoHost": "没有连上主机",
+  "flow_workspaceSubtitle": "编排、演练、运行工作流",
   "flow_startRun": "运行",
   "flow_startFailed": "开跑失败",
   "flow_talkHint": "说说要怎么改这几个节点",

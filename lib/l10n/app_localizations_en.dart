@@ -9210,6 +9210,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_libraryEmpty => 'No flows yet';
 
   @override
+  String get flow_workspaceNoHost => 'No host connected';
+
+  @override
+  String get flow_workspaceSubtitle => 'Author, rehearse and run workflows';
+
+  @override
   String get flow_startRun => 'Run';
 
   @override

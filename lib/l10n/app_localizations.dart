@@ -16049,6 +16049,18 @@ abstract class AppLocalizations {
   /// **'还没有流程'**
   String get flow_libraryEmpty;
 
+  /// No description provided for @flow_workspaceNoHost.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有连上主机'**
+  String get flow_workspaceNoHost;
+
+  /// No description provided for @flow_workspaceSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'编排、演练、运行工作流'**
+  String get flow_workspaceSubtitle;
+
   /// No description provided for @flow_startRun.
   ///
   /// In zh, this message translates to:

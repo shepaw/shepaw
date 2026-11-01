@@ -8857,6 +8857,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_libraryEmpty => '还没有流程';
 
   @override
+  String get flow_workspaceNoHost => '没有连上主机';
+
+  @override
+  String get flow_workspaceSubtitle => '编排、演练、运行工作流';
+
+  @override
   String get flow_startRun => '运行';
 
   @override

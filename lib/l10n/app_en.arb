@@ -5028,6 +5028,8 @@
   "flow_designLoadFailed": "Cannot read this flow",
   "flow_libraryTitle": "Flow library",
   "flow_libraryEmpty": "No flows yet",
+  "flow_workspaceNoHost": "No host connected",
+  "flow_workspaceSubtitle": "Author, rehearse and run workflows",
   "flow_startRun": "Run",
   "flow_startFailed": "Could not start the run",
   "flow_talkHint": "Say how to change these nodes",

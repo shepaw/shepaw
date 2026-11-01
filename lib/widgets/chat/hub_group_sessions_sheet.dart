@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../peer/services/hub_group_sessions.dart';
-import '../../screens/flow_library_screen.dart';
+import '../../screens/flow_workspace_screen.dart';
 import '../../screens/pouch_scope_browser_screen.dart';
 import '../../storage/pouch_scope.dart';
 
@@ -187,7 +187,7 @@ class _HubGroupSessionsSheetState extends State<HubGroupSessionsSheet> {
 
   void _openFlowDesign() {
     Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => FlowLibraryScreen(
+      builder: (_) => FlowWorkspaceScreen(
         peerId: _host,
         scope: 'group:${widget.groupId}',
       ),

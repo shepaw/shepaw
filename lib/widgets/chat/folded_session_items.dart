@@ -6,7 +6,7 @@ import '../../l10n/app_localizations.dart';
 import '../../peer/models/folded_sessions.dart';
 import '../../peer/services/hub_folded_sessions.dart';
 import '../../utils/layout_utils.dart';
-import '../../screens/flow_library_screen.dart';
+import '../../screens/flow_workspace_screen.dart';
 import '../session_folders.dart';
 import 'session_row_menu.dart';
 
@@ -212,7 +212,7 @@ class _SessionFolderItemsState extends State<SessionFolderItems> {
         leading: const Icon(Icons.account_tree_outlined, size: 20),
         title: Text(l10n.flow_libraryTitle),
         onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-          builder: (_) => FlowLibraryScreen(peerId: widget.peerId),
+          builder: (_) => FlowWorkspaceScreen(peerId: widget.peerId),
         )),
       ));
     }
