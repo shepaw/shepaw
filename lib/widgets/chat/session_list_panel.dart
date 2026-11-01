@@ -210,6 +210,10 @@ class _SessionListContentState extends State<_SessionListContent> {
   /// 当前展开的那一组。放在这一层是为了让上方固定那一行能收起它。
   SessionFolderSummary? _expanded;
 
+  /// 列表的滚动位置。收起折叠组时要跳回 [_offsetBeforeExpand]。
+  final ScrollController _scrollController = ScrollController();
+  double _offsetBeforeExpand = 0;
+
   /// 折叠组要问的主机与主机上的 Agent；本机 Agent、群或查不到时为空（不画折叠组）。
   ({String peerId, String remoteAgentId})? get _foldersTarget =>
       widget.foldersTarget ?? _resolvedFoldersTarget;
@@ -350,6 +354,7 @@ class _SessionListContentState extends State<_SessionListContent> {
   void dispose() {
     widget.listRefreshTick.removeListener(_onExternalListRefresh);
     widget.selectionModeRequest.removeListener(_onSelectionModeRequested);
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -428,9 +433,41 @@ class _SessionListContentState extends State<_SessionListContent> {
       child: SessionFolderTile(
         summary: summary,
         expanded: true,
-        onTap: () => setState(() => _expanded = null),
+        onTap: _collapseExpanded,
       ),
     );
+  }
+
+  /// 展开某一组：记下此刻的滚动位置，收起时要回到这里。
+  void _toggleExpanded(SessionFolderSummary summary) {
+    final opening = _expanded?.kind != summary.kind;
+    if (opening) {
+      _offsetBeforeExpand =
+          _scrollController.hasClients ? _scrollController.offset : 0;
+    }
+    setState(() => _expanded = opening ? summary : null);
+    if (!opening) _restoreScrollOffset();
+  }
+
+  /// 收起：展开时列表内容长了一截（组里的会话行），收起后同样的偏移量会落到
+  /// 列表更深的地方 —— 用户会觉得莫名其妙。所以回到展开前那个位置。
+  void _collapseExpanded() {
+    if (_expanded == null) return;
+    setState(() => _expanded = null);
+    _restoreScrollOffset();
+  }
+
+  void _restoreScrollOffset() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      final position = _scrollController.position;
+      final target = _offsetBeforeExpand
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble();
+      if (_scrollController.offset != target) {
+        _scrollController.jumpTo(target);
+      }
+    });
   }
 
   Widget _buildSelectionHeader(AppLocalizations l10n) {
@@ -514,12 +551,11 @@ class _SessionListContentState extends State<_SessionListContent> {
             refreshTick: widget.listRefreshTick,
             client: widget.foldersClient,
             expandedKind: _expanded?.kind,
-            onToggle: (summary) => setState(() {
-              _expanded = _expanded?.kind == summary.kind ? null : summary;
-            }),
+            onToggle: _toggleExpanded,
             onExpandedChanged: (summary) {
               if (summary == null) {
-                if (_expanded != null) setState(() => _expanded = null);
+                // 主机那边这一组没了（会话被删等），顺手收起。
+                _collapseExpanded();
                 return;
               }
               if (_expanded?.kind != summary.kind) return;
@@ -529,6 +565,7 @@ class _SessionListContentState extends State<_SessionListContent> {
           )
         : null;
     return CustomScrollView(
+      controller: _scrollController,
       key: const PageStorageKey<String>('dm-session-list'),
       slivers: [
         if (folders != null) SliverToBoxAdapter(child: folders),

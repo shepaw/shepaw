@@ -157,6 +157,34 @@ void main() {
     await bus.close();
   });
 
+  testWidgets('收起后回到展开前的滚动位置', (tester) async {
+    final bus = StreamController<PeerControlEvent>.broadcast();
+    await tester.pumpWidget(panel(foldersHost(bus), sessions(60)));
+    await pumpFolders(tester);
+
+    double offset() => tester
+        .state<ScrollableState>(find.byType(Scrollable).first)
+        .position
+        .pixels;
+
+    final scroll = find.byType(CustomScrollView);
+    expect(offset(), 0);
+
+    // 展开（此刻在最顶部），然后往下滚一段。
+    await tester.tap(find.text('引擎终端 · 3'));
+    await tester.pumpAndSettle();
+    await tester.drag(scroll, const Offset(0, -400));
+    await tester.pumpAndSettle();
+    expect(offset(), greaterThan(0));
+
+    // 收起：组里的会话行撤掉了，同样的偏移量会落到列表更深的地方，所以要
+    // 跳回展开前那个位置。
+    await tester.tap(find.text('引擎终端 · 3'));
+    await tester.pumpAndSettle();
+    expect(offset(), 0);
+    await bus.close();
+  });
+
   testWidgets('列表里不再有额外的「搜索会话」行', (tester) async {
     final bus = StreamController<PeerControlEvent>.broadcast();
     await tester.pumpWidget(panel(foldersHost(bus), sessions(1)));
