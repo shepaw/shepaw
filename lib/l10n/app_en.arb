@@ -5320,5 +5320,19 @@
   "done_phonePrompt": "Use Shepaw on your phone too?",
   "done_phoneSteps": "1. Install and open Shepaw on your phone\n2. Tap \"Scan to join\"\n3. Scan this code — you're in",
   "done_enter": "Open Shepaw",
-  "done_later": "Later"
+  "done_later": "Later",
+
+  "welcome_phoneTitle": "Join your host",
+  "welcome_phoneIntro": "Shepaw keeps your data on your computer. Scan its join code to start.",
+  "welcome_scan": "Scan to join",
+  "welcome_paste": "Paste join link",
+  "welcome_whereCode": "Where's the join code?",
+  "welcome_whereCodeBody": "On your computer, open Shepaw: Settings → Host → Add device",
+  "welcome_noDesktop": "No Shepaw on your computer yet? Get it at shepaw.com",
+  "welcome_joinFailed": "Couldn't reach that host. You can try again",
+
+  "waitHost_title": "This host isn't set up yet",
+  "waitHost_body": "Open Shepaw on the computer and set a host password. We'll continue automatically.",
+  "waitHost_checkNow": "Check now",
+  "waitHost_stale": "Still waiting? Tap below once it's set up"
 }

@@ -33,7 +33,7 @@ import 'onboarding/welcome_screen.dart';
 import 'onboarding/gate_navigator.dart';
 import 'onboarding/create_password_screen.dart';
 import 'onboarding/setup_done_screen.dart';
-import 'onboarding/remote_connect_screen.dart';
+
 import 'screens/adaptive_home_screen.dart';
 import 'widgets/window_title_sync.dart';
 import 'widgets/approval/pending_approval_banner.dart';
@@ -364,7 +364,7 @@ class _MyAppState extends State<MyApp> {
                 '/pouch-init': (context) => const CreatePasswordScreen(),
                 '/pouch-unlock': (context) => const _LegacyUnlockRoute(),
                 '/unlock': (context) => const UnlockScreen(),
-                '/remote-connect': (context) => const RemoteConnectScreen(),
+                '/remote-connect': (context) => const WelcomeScreen(),
                 '/phone-login': (context) => const _LegacyUnlockRoute(),
                 '/home': (context) => const AdaptiveHomeScreen(),
               },

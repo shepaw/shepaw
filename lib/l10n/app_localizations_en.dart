@@ -9821,4 +9821,45 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get done_later => 'Later';
+
+  @override
+  String get welcome_phoneTitle => 'Join your host';
+
+  @override
+  String get welcome_phoneIntro =>
+      'Shepaw keeps your data on your computer. Scan its join code to start.';
+
+  @override
+  String get welcome_scan => 'Scan to join';
+
+  @override
+  String get welcome_paste => 'Paste join link';
+
+  @override
+  String get welcome_whereCode => 'Where\'s the join code?';
+
+  @override
+  String get welcome_whereCodeBody =>
+      'On your computer, open Shepaw: Settings → Host → Add device';
+
+  @override
+  String get welcome_noDesktop =>
+      'No Shepaw on your computer yet? Get it at shepaw.com';
+
+  @override
+  String get welcome_joinFailed =>
+      'Couldn\'t reach that host. You can try again';
+
+  @override
+  String get waitHost_title => 'This host isn\'t set up yet';
+
+  @override
+  String get waitHost_body =>
+      'Open Shepaw on the computer and set a host password. We\'ll continue automatically.';
+
+  @override
+  String get waitHost_checkNow => 'Check now';
+
+  @override
+  String get waitHost_stale => 'Still waiting? Tap below once it\'s set up';
 }

@@ -17128,6 +17128,78 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'以后再说'**
   String get done_later;
+
+  /// No description provided for @welcome_phoneTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'加入你的主机'**
+  String get welcome_phoneTitle;
+
+  /// No description provided for @welcome_phoneIntro.
+  ///
+  /// In zh, this message translates to:
+  /// **'惜宝的数据放在你的电脑上，扫电脑上的加入码就能用。'**
+  String get welcome_phoneIntro;
+
+  /// No description provided for @welcome_scan.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫码加入'**
+  String get welcome_scan;
+
+  /// No description provided for @welcome_paste.
+  ///
+  /// In zh, this message translates to:
+  /// **'粘贴加入链接'**
+  String get welcome_paste;
+
+  /// No description provided for @welcome_whereCode.
+  ///
+  /// In zh, this message translates to:
+  /// **'加入码在哪？'**
+  String get welcome_whereCode;
+
+  /// No description provided for @welcome_whereCodeBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'电脑上打开惜宝：设置 → 主机 → 添加设备'**
+  String get welcome_whereCodeBody;
+
+  /// No description provided for @welcome_noDesktop.
+  ///
+  /// In zh, this message translates to:
+  /// **'电脑还没装惜宝？去 shepaw.com 下载'**
+  String get welcome_noDesktop;
+
+  /// No description provided for @welcome_joinFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'没能连上这台主机，可以再试一次'**
+  String get welcome_joinFailed;
+
+  /// No description provided for @waitHost_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台主机还没设置好'**
+  String get waitHost_title;
+
+  /// No description provided for @waitHost_body.
+  ///
+  /// In zh, this message translates to:
+  /// **'在电脑上打开惜宝，按提示设置主机密码，设置好之后这里会自动继续。'**
+  String get waitHost_body;
+
+  /// No description provided for @waitHost_checkNow.
+  ///
+  /// In zh, this message translates to:
+  /// **'现在检查'**
+  String get waitHost_checkNow;
+
+  /// No description provided for @waitHost_stale.
+  ///
+  /// In zh, this message translates to:
+  /// **'还在等吗？设置好后点下面的按钮'**
+  String get waitHost_stale;
 }
 
 class _AppLocalizationsDelegate

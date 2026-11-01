@@ -9433,4 +9433,40 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get done_later => '以后再说';
+
+  @override
+  String get welcome_phoneTitle => '加入你的主机';
+
+  @override
+  String get welcome_phoneIntro => '惜宝的数据放在你的电脑上，扫电脑上的加入码就能用。';
+
+  @override
+  String get welcome_scan => '扫码加入';
+
+  @override
+  String get welcome_paste => '粘贴加入链接';
+
+  @override
+  String get welcome_whereCode => '加入码在哪？';
+
+  @override
+  String get welcome_whereCodeBody => '电脑上打开惜宝：设置 → 主机 → 添加设备';
+
+  @override
+  String get welcome_noDesktop => '电脑还没装惜宝？去 shepaw.com 下载';
+
+  @override
+  String get welcome_joinFailed => '没能连上这台主机，可以再试一次';
+
+  @override
+  String get waitHost_title => '这台主机还没设置好';
+
+  @override
+  String get waitHost_body => '在电脑上打开惜宝，按提示设置主机密码，设置好之后这里会自动继续。';
+
+  @override
+  String get waitHost_checkNow => '现在检查';
+
+  @override
+  String get waitHost_stale => '还在等吗？设置好后点下面的按钮';
 }

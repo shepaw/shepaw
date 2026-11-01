@@ -11,7 +11,7 @@ import '../peer/screens/peer_scan_screen.dart';
 import '../peer/services/peer_connection_manager.dart';
 import '../peer/services/peer_storage_service.dart';
 import '../onboarding/host_entry.dart';
-import '../onboarding/remote_connect_screen.dart';
+import '../onboarding/welcome_screen.dart';
 import '../peer/pairing_endpoints.dart';
 import '../services/cli_host.dart';
 import '../services/local_user_identity.dart';
@@ -298,7 +298,7 @@ class _PouchLoginScreenState extends State<PouchLoginScreen> {
     if (!_desktop) {
       final peer = await Navigator.of(context).push<PairedPeer>(
         MaterialPageRoute<PairedPeer>(
-          builder: (_) => const RemoteConnectScreen(popOnPaired: true),
+          builder: (_) => const ConnectRemoteView(popOnPaired: true),
         ),
       );
       if (!mounted) return;

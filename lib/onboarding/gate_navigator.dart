@@ -193,7 +193,7 @@ class GateNavigator {
         }
 
       case GoWelcome():
-        _replace(context, isDesktopPlatform ? '/welcome' : '/remote-connect');
+        _replace(context, '/welcome');
 
       case GoHostInstall(:final reason):
         await _hostInstall(

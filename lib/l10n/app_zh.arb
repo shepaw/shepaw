@@ -5779,5 +5779,19 @@
   "done_phonePrompt": "要在手机上也用惜宝吗？",
   "done_phoneSteps": "1. 手机上安装并打开惜宝\n2. 点「扫码加入」\n3. 扫这个码，直接进入",
   "done_enter": "进入惜宝",
-  "done_later": "以后再说"
+  "done_later": "以后再说",
+
+  "welcome_phoneTitle": "加入你的主机",
+  "welcome_phoneIntro": "惜宝的数据放在你的电脑上，扫电脑上的加入码就能用。",
+  "welcome_scan": "扫码加入",
+  "welcome_paste": "粘贴加入链接",
+  "welcome_whereCode": "加入码在哪？",
+  "welcome_whereCodeBody": "电脑上打开惜宝：设置 → 主机 → 添加设备",
+  "welcome_noDesktop": "电脑还没装惜宝？去 shepaw.com 下载",
+  "welcome_joinFailed": "没能连上这台主机，可以再试一次",
+
+  "waitHost_title": "这台主机还没设置好",
+  "waitHost_body": "在电脑上打开惜宝，按提示设置主机密码，设置好之后这里会自动继续。",
+  "waitHost_checkNow": "现在检查",
+  "waitHost_stale": "还在等吗？设置好后点下面的按钮"
 }

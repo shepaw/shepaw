@@ -1,18 +1,25 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../services/permission_service.dart';
 import '../../peer/models/paired_peer.dart';
 import '../../peer/models/pairing_payload.dart';
 import '../../peer/pouch_pair.dart';
+import '../../peer/screens/peer_scan_screen.dart';
 import '../../peer/services/peer_connection_manager.dart';
 import '../../services/cli_host.dart';
 import '../../services/logger_service.dart';
 import '../../utils/platform_utils.dart';
 import 'gate_entry.dart';
 import 'host_entry.dart';
+import 'joining_view.dart';
+import 'wait_host_view.dart';
+import 'widgets/gate_widgets.dart';
 import 'gate_navigator.dart';
 
 /// 第一次进来选主机放哪。桌面是「这台电脑 / 另一台电脑」两张卡；
@@ -30,10 +37,49 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   /// 切到「连接另一台电脑」那个视图。
   bool _remote = false;
 
+  /// 手机上：正在加入哪条链接。
+  PeerPairingInfo? _joining;
+
+  /// 手机上：等电脑设密码。
+  String? _waitingHostId;
+
+  /// 手机上：上一次加入失败（连不上），保留主机名再给一次机会。
+  _OfflineJoin? _offline;
+
   @override
   Widget build(BuildContext context) {
+    if (_joining != null) {
+      return JoiningView(
+        key: ValueKey<Object?>(_joining!.fingerprint),
+        info: _joining!,
+        onCancel: () => setState(() => _joining = null),
+        onDone: _onJoined,
+      );
+    }
+    final waiting = _waitingHostId;
+    if (waiting != null) {
+      return WaitHostView(
+        hostPeerId: waiting,
+        onReady: () => _goUnlock(waiting),
+      );
+    }
     if (_remote) {
       return const ConnectRemoteView();
+    }
+    if (!isDesktopPlatform) {
+      return _PhoneJoinView(
+        onScan: _scan,
+        onPaste: () => setState(() => _remote = true),
+        offline: _offline,
+        onRetry: () {
+          final offline = _offline;
+          if (offline == null) return;
+          setState(() {
+            _offline = null;
+            _joining = offline.info;
+          });
+        },
+      );
     }
     return _ChooseHostView(
       onThisComputer: _useThisComputer,
@@ -52,6 +98,175 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     } finally {
       if (mounted) setState(() => _connecting = false);
     }
+  }
+
+  /// 扫码。`PeerScanScreen` 自己完成配对并返回设备；返回 null 时可能是权限
+  /// 被拒，这时给一个「去设置开启」的出口。
+  Future<void> _scan() async {
+    final peer = await PeerScanScreen.show(context);
+    if (!mounted) return;
+    if (peer != null) {
+      await _goUnlock(peer.id);
+      return;
+    }
+    final status = await Permission.camera.status;
+    if (!mounted) return;
+    if (!status.isGranted) {
+      await _cameraDenied();
+    }
+  }
+
+  Future<void> _cameraDenied() async {
+    final l10n = AppLocalizations.of(context);
+    final goSettings = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        content: Text(l10n.gate_camera),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(l10n.gate_usePaste),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(l10n.gate_cameraSettings),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (goSettings == true) {
+      await openAppSettings();
+      return;
+    }
+    setState(() => _remote = true);
+  }
+
+  void _onJoined(PairedPeer? peer, JoinOutcome outcome) {
+    if (peer == null) {
+      setState(() {
+        _joining = null;
+        _offline = _OfflineJoin(info: _joining!, hostName: '');
+      });
+      return;
+    }
+    switch (outcome) {
+      case JoinOutcome.unlock:
+        unawaited(_goUnlock(peer.id));
+      case JoinOutcome.waitHost:
+        setState(() {
+          _joining = null;
+          _waitingHostId = peer.id;
+        });
+      case JoinOutcome.offline:
+        setState(() {
+          _joining = null;
+          _offline = _OfflineJoin(info: _joining!, hostName: peer.deviceName);
+        });
+    }
+  }
+
+  Future<void> _goUnlock(String hostPeerId) async {
+    if (!mounted) return;
+    await Navigator.of(context).pushReplacementNamed(
+      '/unlock',
+      arguments: UnlockArgs(hostPeerId: hostPeerId),
+    );
+  }
+}
+
+/// 加入失败时记住的那点状态：还要能「再试一次」。
+class _OfflineJoin {
+  const _OfflineJoin({required this.info, required this.hostName});
+
+  final PeerPairingInfo info;
+  final String hostName;
+}
+
+/// 手机上第一次进来：扫码加入，或者粘贴链接。
+class _PhoneJoinView extends StatelessWidget {
+  const _PhoneJoinView({
+    required this.onScan,
+    required this.onPaste,
+    this.offline,
+    this.onRetry,
+  });
+
+  final VoidCallback onScan;
+  final VoidCallback onPaste;
+  final _OfflineJoin? offline;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    return PopScope(
+      canPop: false,
+      child: Scaffold(
+        body: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 440),
+              child: ListView(
+                padding: const EdgeInsets.all(24),
+                children: [
+                  const SizedBox(height: 48),
+                  Center(
+                    child: Icon(
+                      Icons.pets_outlined,
+                      size: 64,
+                      color: scheme.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    l10n.welcome_phoneTitle,
+                    style: Theme.of(context).textTheme.headlineSmall,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    l10n.welcome_phoneIntro,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 32),
+                  FilledButton.icon(
+                    onPressed: onScan,
+                    icon: const Icon(Icons.qr_code_scanner),
+                    label: Text(l10n.welcome_scan),
+                  ),
+                  TextButton(
+                    onPressed: onPaste,
+                    child: Text(l10n.welcome_paste),
+                  ),
+                  if (offline != null) ...[
+                    const SizedBox(height: 16),
+                    GateStatusCard(
+                      title: l10n.connect_savedButOffline(offline!.hostName),
+                      body: l10n.connect_offlineHint,
+                      primaryLabel: l10n.connect_tryAgain,
+                      onPrimary: onRetry,
+                    ),
+                  ],
+                  const SizedBox(height: 32),
+                  const Divider(),
+                  const SizedBox(height: 16),
+                  Text(
+                    l10n.welcome_whereCode,
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(l10n.welcome_whereCodeBody),
+                  const SizedBox(height: 16),
+                  Text(l10n.welcome_noDesktop),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -232,7 +447,10 @@ class _ChoiceCard extends StatelessWidget {
 /// 以前这里是 `RemoteHostGuideScreen`，只有终端命令和粘贴框；现在第一步改成
 /// 「在主机那台电脑上出示加入码」，粘贴退成第二步。
 class ConnectRemoteView extends StatefulWidget {
-  const ConnectRemoteView({super.key});
+  const ConnectRemoteView({super.key, this.popOnPaired = false});
+
+  /// 从别的页面推进来时，配对成功后把设备交回去，不自己导航。
+  final bool popOnPaired;
 
   @override
   State<ConnectRemoteView> createState() => _ConnectRemoteViewState();
@@ -291,6 +509,10 @@ class _ConnectRemoteViewState extends State<ConnectRemoteView> {
       await HostModeStore.write(HostMode.remote);
       final peer = await PouchPairing.request(info);
       if (!mounted) return;
+      if (widget.popOnPaired) {
+        Navigator.of(context).pop(peer);
+        return;
+      }
       final online =
           PeerConnectionManager.instance.connectedPeerIds.contains(peer.id);
       if (!online) {
