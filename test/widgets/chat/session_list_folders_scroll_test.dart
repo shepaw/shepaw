@@ -8,7 +8,6 @@ import 'package:shepaw/models/channel.dart';
 import 'package:shepaw/peer/services/hub_folded_sessions.dart';
 import 'package:shepaw/peer/services/peer_connection_manager.dart';
 import 'package:shepaw/widgets/chat/session_list_panel.dart';
-import 'package:shepaw/widgets/session_folders.dart';
 
 /// 折叠组在会话列表里的位置：跟着列表一起滚，而且不再夹带一个「搜索」行。
 ///
@@ -133,35 +132,56 @@ void main() {
     await bus.close();
   });
 
-  testWidgets('展开后滑多远都能点顶部那一行收起', (tester) async {
+  testWidgets('展开后滑多远都能点顶上那一行收起', (tester) async {
     final bus = StreamController<PeerControlEvent>.broadcast();
     await tester.pumpWidget(panel(foldersHost(bus), sessions(60)));
     await pumpFolders(tester);
 
-    final scroll = find.byType(CustomScrollView);
     await tester.tap(find.text('引擎终端 · 3'));
     await tester.pumpAndSettle();
     expect(find.text('在终端里跑测试'), findsOneWidget);
 
-    // 滑到私聊区里去：那一行折叠组钉在列表顶部，不用滑回去。
+    // 滑到私聊区里去：那一行折叠组固定在列表上方，不用滑回去。
+    final scroll = find.byType(CustomScrollView);
     await tester.drag(scroll, const Offset(0, -600));
     await tester.pumpAndSettle();
     final listTop = tester.getRect(scroll).top;
-    // 还在列表顶上那一条带里（标题文字比行框再往下一点，所以给 24 的余量）；
-    // 不钉住的话它早就滑出可视区了。
-    expect(tester.getRect(find.text('引擎终端 · 3')).top,
-        greaterThanOrEqualTo(listTop - 1));
-    expect(tester.getRect(find.text('引擎终端 · 3')).top, lessThan(listTop + 24));
+    final rowTop = tester.getRect(find.text('引擎终端 · 3')).top;
+    expect(rowTop, lessThan(listTop));
+    // 会话行照常可见，列表没空白（滚到哪一行取决于行高，这里只断言还有行）。
+    expect(find.byType(ListTile), findsWidgets);
 
     await tester.tap(find.text('引擎终端 · 3'));
     await tester.pumpAndSettle();
-    // 收起来了：组里的会话行和顶部那一行都没了。
     expect(find.text('在终端里跑测试'), findsNothing);
-    expect(find.byType(SessionFolderStickyHeader), findsNothing);
-    // 滑回顶部：那一行折叠组回到列表里原来的位置。
-    await tester.drag(scroll, const Offset(0, 600));
+    await bus.close();
+  });
+
+  testWidgets('收起后回到展开前的滚动位置', (tester) async {
+    final bus = StreamController<PeerControlEvent>.broadcast();
+    await tester.pumpWidget(panel(foldersHost(bus), sessions(60)));
+    await pumpFolders(tester);
+
+    double offset() => tester
+        .state<ScrollableState>(find.byType(Scrollable).first)
+        .position
+        .pixels;
+
+    final scroll = find.byType(CustomScrollView);
+    expect(offset(), 0);
+
+    // 展开（此刻在最顶部），然后往下滚一段。
+    await tester.tap(find.text('引擎终端 · 3'));
     await tester.pumpAndSettle();
-    expect(find.text('引擎终端 · 3'), findsOneWidget);
+    await tester.drag(scroll, const Offset(0, -400));
+    await tester.pumpAndSettle();
+    expect(offset(), greaterThan(0));
+
+    // 收起：组里的会话行撤掉了，同样的偏移量会落到列表更深的地方，所以要
+    // 跳回展开前那个位置。
+    await tester.tap(find.text('引擎终端 · 3'));
+    await tester.pumpAndSettle();
+    expect(offset(), 0);
     await bus.close();
   });
 

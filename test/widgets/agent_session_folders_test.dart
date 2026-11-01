@@ -65,12 +65,12 @@ HubFoldedSessions _hostWithItems(StreamController<PeerControlEvent> bus) =>
       },
     );
 
-/// 真实用法的外层：展开态由它持有，顶部钉住那一行折叠组（点一下收起）。
+/// 真实用法的外层：展开态由它持有，上方固定那一行折叠组（点一下收起）。
 ///
-/// 单独跑 [AgentSessionFolders] 时它自己不展开（没有 [AgentSessionFolders
-/// .onToggle]），所以这两个用例按列表里的真实结构搭一层。
-class _WithStickyHeader extends StatefulWidget {
-  const _WithStickyHeader({
+/// [AgentSessionFolders] 自己不再保存展开态（没有 [AgentSessionFolders.onToggle]
+/// 就点不开），所以这两个用例按列表里的真实结构搭一层。
+class _WithExpandedRow extends StatefulWidget {
+  const _WithExpandedRow({
     required this.peerId,
     required this.remoteAgentId,
     required this.client,
@@ -85,32 +85,47 @@ class _WithStickyHeader extends StatefulWidget {
   final Future<void> Function(String, String)? refresh;
 
   @override
-  State<_WithStickyHeader> createState() => _WithStickyHeaderState();
+  State<_WithExpandedRow> createState() => _WithExpandedRowState();
 }
 
-class _WithStickyHeaderState extends State<_WithStickyHeader> {
+class _WithExpandedRowState extends State<_WithExpandedRow> {
   SessionFolderSummary? _expanded;
 
   @override
   Widget build(BuildContext context) {
-    return CustomScrollView(
-      slivers: [
+    final theme = Theme.of(context);
+    return Column(
+      children: [
         if (_expanded != null)
-          SessionFolderStickyHeader(
-            summary: _expanded!,
-            onTap: () => setState(() => _expanded = null),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: theme.scaffoldBackgroundColor,
+              border: Border(bottom: BorderSide(color: theme.dividerColor)),
+            ),
+            child: SessionFolderTile(
+              summary: _expanded!,
+              expanded: true,
+              onTap: () => setState(() => _expanded = null),
+            ),
           ),
-        SliverToBoxAdapter(
-          child: AgentSessionFolders(
-            peerId: widget.peerId,
-            remoteAgentId: widget.remoteAgentId,
-            client: widget.client,
-            onForked: widget.onForked,
-            refresh: widget.refresh,
-            expandedKind: _expanded?.kind,
-            onToggle: (summary) => setState(() {
-              _expanded = _expanded?.kind == summary.kind ? null : summary;
-            }),
+        Expanded(
+          child: CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
+                child: AgentSessionFolders(
+                  peerId: widget.peerId,
+                  remoteAgentId: widget.remoteAgentId,
+                  client: widget.client,
+                  onForked: widget.onForked,
+                  refresh: widget.refresh,
+                  expandedKind: _expanded?.kind,
+                  onToggle: (summary) => setState(() {
+                    _expanded =
+                        _expanded?.kind == summary.kind ? null : summary;
+                  }),
+                ),
+              ),
+            ],
           ),
         ),
       ],
@@ -127,7 +142,7 @@ void main() {
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       home: Scaffold(
-        body: _WithStickyHeader(
+        body: _WithExpandedRow(
           peerId: 'p1',
           remoteAgentId: 'a1',
           client: _hostWithItems(bus),
@@ -146,20 +161,17 @@ void main() {
     expect(find.text('周会'), findsOneWidget);
     // 就地展开：没有推新页面（新页面会带自己的 AppBar）。
     expect(find.byType(AppBar), findsNothing);
-
-    // 展开后那一行折叠组钉在顶部（列表里原本那一行让位给钉住的这行），
-    // 点它就收起 —— 不用滑回最顶部。
-    final sticky = find.byType(SessionFolderStickyHeader);
-    expect(sticky, findsOneWidget);
+    // 展开后那一行折叠组固定在列表上方，会话行在它下面；列表里不再重复画
+    // 这一组。
     expect(
-      tester.getRect(find.text('群聊 · 6')).top,
-      lessThan(tester.getRect(find.text('周会')).top),
+      tester.getRect(find.text('周会')).top,
+      greaterThan(tester.getRect(find.text('群聊 · 6')).top),
     );
 
+    // 点固定那一行收起 —— 不用滑回最顶部。
     await tester.tap(find.text('群聊 · 6'));
     await tester.pumpAndSettle();
     expect(find.text('周会'), findsNothing);
-    expect(find.byType(SessionFolderStickyHeader), findsNothing);
     await bus.close();
   });
 
@@ -292,7 +304,7 @@ void main() {
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       home: Scaffold(
-        body: _WithStickyHeader(
+        body: _WithExpandedRow(
           peerId: 'p1',
           remoteAgentId: 'a1',
           client: client,
