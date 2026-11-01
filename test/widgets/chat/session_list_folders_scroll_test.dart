@@ -8,7 +8,6 @@ import 'package:shepaw/models/channel.dart';
 import 'package:shepaw/peer/services/hub_folded_sessions.dart';
 import 'package:shepaw/peer/services/peer_connection_manager.dart';
 import 'package:shepaw/widgets/chat/session_list_panel.dart';
-import 'package:shepaw/widgets/session_folders.dart';
 
 /// 折叠组在会话列表里的位置：跟着列表一起滚，而且不再夹带一个「搜索」行。
 ///
@@ -31,29 +30,11 @@ void main() {
 
   tearDown(() => controller.dispose());
 
-  /// 主机只回一个「引擎终端」组，好让折叠组在列表里出现；展开时给出组里的
-  /// 一条会话。
+  /// 主机只回一个「引擎终端」组，好让折叠组在列表里出现。
   HubFoldedSessions foldersHost(StreamController<PeerControlEvent> bus) =>
       HubFoldedSessions(
         events: bus.stream,
         send: (peerId, frame) async {
-          if (frame['folder'] != null) {
-            bus.add(PeerControlEvent(peerId: peerId, data: {
-              'type': 'agent_sessions_resp',
-              'request_id': frame['request_id'],
-              'agent_id': 'ra1',
-              'folder': frame['folder'],
-              'sessions': [
-                {
-                  'session_id': 'term-1',
-                  'title': '在终端里跑测试',
-                  'updated_at': 1,
-                  'origin': {'kind': 'terminal'},
-                },
-              ],
-            }));
-            return true;
-          }
           bus.add(PeerControlEvent(peerId: peerId, data: {
             'type': 'agent_sessions_resp',
             'request_id': frame['request_id'],
@@ -130,38 +111,6 @@ void main() {
 
     final after = tester.getRect(folder).top;
     expect(after, lessThan(before - 1));
-    await bus.close();
-  });
-
-  testWidgets('展开后滑多远都能点顶部那一行收起', (tester) async {
-    final bus = StreamController<PeerControlEvent>.broadcast();
-    await tester.pumpWidget(panel(foldersHost(bus), sessions(60)));
-    await pumpFolders(tester);
-
-    final scroll = find.byType(CustomScrollView);
-    await tester.tap(find.text('引擎终端 · 3'));
-    await tester.pumpAndSettle();
-    expect(find.text('在终端里跑测试'), findsOneWidget);
-
-    // 滑到私聊区里去：那一行折叠组钉在列表顶部，不用滑回去。
-    await tester.drag(scroll, const Offset(0, -600));
-    await tester.pumpAndSettle();
-    final listTop = tester.getRect(scroll).top;
-    // 还在列表顶上那一条带里（标题文字比行框再往下一点，所以给 24 的余量）；
-    // 不钉住的话它早就滑出可视区了。
-    expect(tester.getRect(find.text('引擎终端 · 3')).top,
-        greaterThanOrEqualTo(listTop - 1));
-    expect(tester.getRect(find.text('引擎终端 · 3')).top, lessThan(listTop + 24));
-
-    await tester.tap(find.text('引擎终端 · 3'));
-    await tester.pumpAndSettle();
-    // 收起来了：组里的会话行和顶部那一行都没了。
-    expect(find.text('在终端里跑测试'), findsNothing);
-    expect(find.byType(SessionFolderStickyHeader), findsNothing);
-    // 滑回顶部：那一行折叠组回到列表里原来的位置。
-    await tester.drag(scroll, const Offset(0, 600));
-    await tester.pumpAndSettle();
-    expect(find.text('引擎终端 · 3'), findsOneWidget);
     await bus.close();
   });
 

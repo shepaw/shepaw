@@ -3,11 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/l10n/app_localizations.dart';
-import 'package:shepaw/peer/models/folded_sessions.dart';
 import 'package:shepaw/peer/services/hub_folded_sessions.dart';
 import 'package:shepaw/peer/services/peer_connection_manager.dart';
 import 'package:shepaw/widgets/chat/agent_session_folders.dart';
-import 'package:shepaw/widgets/session_folders.dart';
 
 HubFoldedSessions _host(
         StreamController<PeerControlEvent> bus, Object? folders) =>
@@ -65,59 +63,6 @@ HubFoldedSessions _hostWithItems(StreamController<PeerControlEvent> bus) =>
       },
     );
 
-/// 真实用法的外层：展开态由它持有，顶部钉住那一行折叠组（点一下收起）。
-///
-/// 单独跑 [AgentSessionFolders] 时它自己不展开（没有 [AgentSessionFolders
-/// .onToggle]），所以这两个用例按列表里的真实结构搭一层。
-class _WithStickyHeader extends StatefulWidget {
-  const _WithStickyHeader({
-    required this.peerId,
-    required this.remoteAgentId,
-    required this.client,
-    this.onForked,
-    this.refresh,
-  });
-
-  final String peerId;
-  final String remoteAgentId;
-  final HubFoldedSessions client;
-  final void Function(String sessionId)? onForked;
-  final Future<void> Function(String, String)? refresh;
-
-  @override
-  State<_WithStickyHeader> createState() => _WithStickyHeaderState();
-}
-
-class _WithStickyHeaderState extends State<_WithStickyHeader> {
-  SessionFolderSummary? _expanded;
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomScrollView(
-      slivers: [
-        if (_expanded != null)
-          SessionFolderStickyHeader(
-            summary: _expanded!,
-            onTap: () => setState(() => _expanded = null),
-          ),
-        SliverToBoxAdapter(
-          child: AgentSessionFolders(
-            peerId: widget.peerId,
-            remoteAgentId: widget.remoteAgentId,
-            client: widget.client,
-            onForked: widget.onForked,
-            refresh: widget.refresh,
-            expandedKind: _expanded?.kind,
-            onToggle: (summary) => setState(() {
-              _expanded = _expanded?.kind == summary.kind ? null : summary;
-            }),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 void main() {
   testWidgets('tapping a folder expands it in place, no new page',
       (tester) async {
@@ -127,10 +72,12 @@ void main() {
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       home: Scaffold(
-        body: _WithStickyHeader(
-          peerId: 'p1',
-          remoteAgentId: 'a1',
-          client: _hostWithItems(bus),
+        body: SingleChildScrollView(
+          child: AgentSessionFolders(
+            peerId: 'p1',
+            remoteAgentId: 'a1',
+            client: _hostWithItems(bus),
+          ),
         ),
       ),
     ));
@@ -146,20 +93,16 @@ void main() {
     expect(find.text('周会'), findsOneWidget);
     // 就地展开：没有推新页面（新页面会带自己的 AppBar）。
     expect(find.byType(AppBar), findsNothing);
-
-    // 展开后那一行折叠组钉在顶部（列表里原本那一行让位给钉住的这行），
-    // 点它就收起 —— 不用滑回最顶部。
-    final sticky = find.byType(SessionFolderStickyHeader);
-    expect(sticky, findsOneWidget);
+    // 会话行画在折叠组下面。
     expect(
-      tester.getRect(find.text('群聊 · 6')).top,
-      lessThan(tester.getRect(find.text('周会')).top),
+      tester.getRect(find.text('周会')).top,
+      greaterThan(tester.getRect(find.text('群聊 · 6')).top),
     );
 
+    // 再点一次收回去。
     await tester.tap(find.text('群聊 · 6'));
     await tester.pumpAndSettle();
     expect(find.text('周会'), findsNothing);
-    expect(find.byType(SessionFolderStickyHeader), findsNothing);
     await bus.close();
   });
 
@@ -292,7 +235,7 @@ void main() {
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       home: Scaffold(
-        body: _WithStickyHeader(
+        body: AgentSessionFolders(
           peerId: 'p1',
           remoteAgentId: 'a1',
           client: client,
