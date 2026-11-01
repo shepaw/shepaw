@@ -58,6 +58,7 @@ class FlowNode {
     this.session,
     this.options = const [],
     this.fields,
+    this.branch,
   });
 
   /// 定位键（`build#2/impl/backend`）。事件、作答、查看会话都用它。
@@ -82,6 +83,13 @@ class FlowNode {
   /// 节点自己的字段（设计视图才有），检查器回填当前值。
   final Map<String, dynamic>? fields;
 
+  /// 父节点是 `if` 时这一步属于哪一支：`then` / `else`。
+  ///
+  /// `if` 的两个分支在 `children` 里是拼在一起的，光靠下标分不出来。旧主机
+  /// 不带这个字段（[FlowHostCaps.branchesLabelled] 为 false），那时 `if` 内
+  /// 一律不给结构操作。
+  final String? branch;
+
   bool get isContainer => children.isNotEmpty;
 
   /// 关卡正在等人回答。
@@ -104,6 +112,7 @@ class FlowNode {
         session: session,
         options: options,
         fields: fields,
+        branch: branch,
       );
 
   factory FlowNode.fromJson(Map<String, dynamic> json) {
@@ -136,6 +145,7 @@ class FlowNode {
       fields: json['fields'] is Map
           ? Map<String, dynamic>.from(json['fields'] as Map)
           : null,
+      branch: asText(json['branch']),
     );
   }
 
@@ -465,10 +475,19 @@ class FlowSchemaField {
 }
 
 class FlowSchema {
-  const FlowSchema({required this.common, required this.kinds});
+  const FlowSchema({
+    required this.common,
+    required this.kinds,
+    this.ops = const [],
+  });
 
   final List<FlowSchemaField> common;
   final Map<String, List<FlowSchemaField>> kinds;
+
+  /// 主机认哪些操作。空表示这台主机没说（旧主机），按「什么都不支持」处理。
+  final List<String> ops;
+
+  bool hasOp(String name) => ops.contains(name);
 
   List<FlowSchemaField> fieldsFor(String kind) => [...common, ...?kinds[kind]];
 
@@ -488,7 +507,16 @@ class FlowSchema {
         kinds[entry.key.toString()] = parse(entry.value);
       }
     }
-    return FlowSchema(common: parse(response['common']), kinds: kinds);
+    return FlowSchema(
+      common: parse(response['common']),
+      kinds: kinds,
+      ops: [
+        // 新 App 会连到旧主机：旧主机的 schema 里没有 `ops`，也就没有
+        // `header` / `retype`。能力探测全靠它，不能假设操作一定在。
+        for (final item in response['ops'] is List ? response['ops'] as List : const [])
+          if (item is String) item,
+      ],
+    );
   }
 }
 

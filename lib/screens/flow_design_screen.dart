@@ -279,12 +279,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
               IconButton(
                 tooltip: l10n.flow_rehearse,
                 icon: const Icon(Icons.play_circle_outline),
-                onPressed: c.loading || c.busy
-                    ? null
-                    : () async {
-                        await c.flush();
-                        await c.rehearsal.start(c.yaml);
-                      },
+                onPressed: c.loading || c.busy ? null : c.startRehearsal,
               ),
               IconButton(
                 tooltip: l10n.flow_save,
@@ -294,12 +289,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2))
                     : const Icon(Icons.check),
-                onPressed: c.loading || c.busy || !c.dirty
-                    ? null
-                    : () async {
-                        await c.flush();
-                        await c.save();
-                      },
+                onPressed: c.loading || c.busy || !c.dirty ? null : c.save,
               ),
             ],
           ),
