@@ -16517,23 +16517,11 @@ abstract class AppLocalizations {
   /// **'删除失败'**
   String get flow_deleteRunFailed;
 
-  /// No description provided for @sessionSearchTitle.
+  /// No description provided for @sessionSearchFoldedSection.
   ///
   /// In zh, this message translates to:
-  /// **'搜索会话'**
-  String get sessionSearchTitle;
-
-  /// No description provided for @sessionSearchHint.
-  ///
-  /// In zh, this message translates to:
-  /// **'私聊、群聊、工作流、终端都在这儿找'**
-  String get sessionSearchHint;
-
-  /// No description provided for @sessionSearchEmpty.
-  ///
-  /// In zh, this message translates to:
-  /// **'没有找到匹配的会话'**
-  String get sessionSearchEmpty;
+  /// **'群聊 / 工作流 / 引擎会话'**
+  String get sessionSearchFoldedSection;
 
   /// No description provided for @flow_validate.
   ///

@@ -23,7 +23,89 @@ HubFoldedSessions _host(
       },
     );
 
+/// 摘要之外还答得出组明细：用来试「就地展开」。
+HubFoldedSessions _hostWithItems(StreamController<PeerControlEvent> bus) =>
+    HubFoldedSessions(
+      events: bus.stream,
+      send: (peerId, frame) async {
+        final id = frame['request_id'];
+        if (frame['folder'] != null) {
+          bus.add(PeerControlEvent(peerId: peerId, data: {
+            'type': 'agent_sessions_resp',
+            'request_id': id,
+            'agent_id': 'a1',
+            'folder': frame['folder'],
+            'sessions': [
+              {
+                'session_id': 'part-group-g1-s1',
+                'title': '周会',
+                'updated_at': 1,
+                'origin': {
+                  'kind': 'group',
+                  'group_id': 'g1',
+                  'session_id': 's1'
+                },
+              },
+            ],
+          }));
+          return true;
+        }
+        bus.add(PeerControlEvent(peerId: peerId, data: {
+          'type': 'agent_sessions_resp',
+          'request_id': id,
+          'agent_id': 'a1',
+          'sessions': [],
+          'folders': [
+            {'kind': 'group', 'count': 6, 'latest_title': '最新一条'},
+          ],
+        }));
+        return true;
+      },
+    );
+
 void main() {
+  testWidgets('tapping a folder expands it in place, no new page',
+      (tester) async {
+    final bus = StreamController<PeerControlEvent>.broadcast();
+    await tester.pumpWidget(MaterialApp(
+      locale: const Locale('zh'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: AgentSessionFolders(
+            peerId: 'p1',
+            remoteAgentId: 'a1',
+            client: _hostWithItems(bus),
+          ),
+        ),
+      ),
+    ));
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    expect(find.text('群聊 · 6'), findsOneWidget);
+    // 收着的时候组里的会话不出现。
+    expect(find.text('周会'), findsNothing);
+
+    await tester.tap(find.text('群聊 · 6'));
+    await tester.pumpAndSettle();
+    expect(find.text('周会'), findsOneWidget);
+    // 就地展开：没有推新页面（新页面会带自己的 AppBar）。
+    expect(find.byType(AppBar), findsNothing);
+    // 会话行画在折叠组下面。
+    expect(
+      tester.getRect(find.text('周会')).top,
+      greaterThan(tester.getRect(find.text('群聊 · 6')).top),
+    );
+
+    // 再点一次收回去。
+    await tester.tap(find.text('群聊 · 6'));
+    await tester.pumpAndSettle();
+    expect(find.text('周会'), findsNothing);
+    await bus.close();
+  });
+
   testWidgets('non-empty folders show as rows with their counts',
       (tester) async {
     final bus = StreamController<PeerControlEvent>.broadcast();
@@ -93,25 +175,25 @@ void main() {
             }));
           case 'agent_sessions_req':
             if (frame['type'] == 'agent_group_view_req') {
-          bus.add(PeerControlEvent(peerId: peerId, data: {
-            'type': 'agent_group_view_resp',
-            'agent_id': 'a1',
-            'group_id': 'g1',
-            'session_id': 's1',
-            'read_only': true,
-            'total': 1,
-            'messages': [
-              {
-                'role': 'agent',
-                'content': '我在群里说的话',
-                'message_id': 'm1',
-                'created_at': '2026-10-31T00:00:00.000Z',
-              }
-            ],
-          }));
-          return true;
-        }
-        // 带 folder 的是组明细；不带的是摘要。
+              bus.add(PeerControlEvent(peerId: peerId, data: {
+                'type': 'agent_group_view_resp',
+                'agent_id': 'a1',
+                'group_id': 'g1',
+                'session_id': 's1',
+                'read_only': true,
+                'total': 1,
+                'messages': [
+                  {
+                    'role': 'agent',
+                    'content': '我在群里说的话',
+                    'message_id': 'm1',
+                    'created_at': '2026-10-31T00:00:00.000Z',
+                  }
+                ],
+              }));
+              return true;
+            }
+            // 带 folder 的是组明细；不带的是摘要。
             if (frame['folder'] == null) {
               summariesAsked++;
               bus.add(PeerControlEvent(peerId: peerId, data: {

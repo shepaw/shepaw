@@ -2416,6 +2416,9 @@ class _ChatScreenState extends State<ChatScreen>
         searchService: c.searchService,
         onSwitchSession: _openDrawerSession,
         onLocateMessage: _locateSearchMessage,
+        // 折叠组（群聊 / 工作流 / 引擎客户端 / 终端）里的会话本机没有副本，
+        // 搜索时另外问一次主机。
+        agentId: c.agentId,
       );
     }
     return SessionListPanel(

@@ -9108,13 +9108,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_deleteRunFailed => '删除失败';
 
   @override
-  String get sessionSearchTitle => '搜索会话';
-
-  @override
-  String get sessionSearchHint => '私聊、群聊、工作流、终端都在这儿找';
-
-  @override
-  String get sessionSearchEmpty => '没有找到匹配的会话';
+  String get sessionSearchFoldedSection => '群聊 / 工作流 / 引擎会话';
 
   @override
   String get flow_validate => '校验';

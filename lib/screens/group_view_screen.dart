@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../peer/models/folded_sessions.dart';
 import '../peer/services/hub_folded_sessions.dart';
+import '../widgets/chat/folded_record_messages.dart';
 
 /// 群聊视角（折叠方案 §2.2）：这个 Agent 在某个群会话里说过的话，只读。
 /// 可以分叉到私聊接着聊。
@@ -112,35 +113,16 @@ class _GroupViewScreenState extends State<GroupViewScreen> {
           }
           return Center(child: Text(l10n.folder_groupViewEmpty));
         }
-        return ListView(
-          padding: const EdgeInsets.all(12),
-          children: [
+        // 这个 Agent 在群里说的话：也走私聊的气泡渲染（只读）。
+        return FoldedRecordMessageList(
+          channelId: widget.foldedSessionId ?? widget.groupSessionId,
+          messages: [
             for (final message in _messages)
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SelectableText(message.content),
-                      if (message.createdAt.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: Text(message.createdAt,
-                              style: Theme.of(context).textTheme.bodySmall),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            if (_hasMore)
-              Center(
-                child: _loading
-                    ? const CircularProgressIndicator()
-                    : TextButton(
-                        onPressed: _more, child: Text(l10n.folder_loadMore)),
-              ),
+              FoldedRecordMessage.fromGroupView(message),
           ],
+          loading: _loading,
+          hasMore: _hasMore,
+          onLoadMore: _more,
         );
       }),
     );

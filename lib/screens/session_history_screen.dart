@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../peer/services/hub_folded_sessions.dart';
 import '../peer/services/peer_agent_client_service.dart';
+import '../widgets/chat/folded_record_messages.dart';
 
 /// 折叠组里引擎客户端 / 终端 / 其他 Agent 发起的会话的只读记录（折叠方案 §2.2）。
 /// 数据走现成的 `agent_session_history_req`，顺着游标往后翻；可以分叉到私聊。
@@ -15,6 +16,7 @@ class SessionHistoryScreen extends StatefulWidget {
     required this.loadPage,
     this.fork,
     this.onForked,
+    this.recordId = '',
   });
 
   final String title;
@@ -25,6 +27,9 @@ class SessionHistoryScreen extends StatefulWidget {
   /// 分叉到私聊，返回新会话 id 或错误；为空则不显示分叉入口。
   final Future<({String? sessionId, String? error})> Function()? fork;
   final void Function(String sessionId)? onForked;
+
+  /// 只读记录的会话 id。只用来给气泡里的 [Message] 凑 id。
+  final String recordId;
 
   /// 按折叠组里的一项构造，走主机的会话历史。
   factory SessionHistoryScreen.forFolderSession({
@@ -51,6 +56,7 @@ class SessionHistoryScreen extends StatefulWidget {
       ),
       fork: () => hub.fork(peerId, agentId, sessionId),
       onForked: onForked,
+      recordId: sessionId,
     );
   }
 
@@ -107,7 +113,6 @@ class _SessionHistoryScreenState extends State<SessionHistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
@@ -130,37 +135,16 @@ class _SessionHistoryScreenState extends State<SessionHistoryScreen> {
             child: Text(_loadedOnce ? l10n.folder_historyEmpty : ''),
           );
         }
-        return ListView(
-          padding: const EdgeInsets.all(12),
-          children: [
+        // 直接复用私聊的气泡渲染（只读：没有输入框、没有交互卡回调）。
+        return FoldedRecordMessageList(
+          channelId: widget.recordId,
+          messages: [
             for (final message in _messages)
-              Align(
-                alignment: message.role == 'user'
-                    ? Alignment.centerRight
-                    : Alignment.centerLeft,
-                child: Container(
-                  margin: const EdgeInsets.symmetric(vertical: 4),
-                  padding: const EdgeInsets.all(10),
-                  constraints: BoxConstraints(
-                    maxWidth: MediaQuery.of(context).size.width * 0.85,
-                  ),
-                  decoration: BoxDecoration(
-                    color: message.role == 'user'
-                        ? theme.colorScheme.primaryContainer
-                        : theme.colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: SelectableText(message.content),
-                ),
-              ),
-            if (_hasMore)
-              Center(
-                child: _loading
-                    ? const CircularProgressIndicator()
-                    : TextButton(
-                        onPressed: _more, child: Text(l10n.folder_loadMore)),
-              ),
+              FoldedRecordMessage.fromPeerHistory(message),
           ],
+          loading: _loading,
+          hasMore: _hasMore,
+          onLoadMore: _more,
         );
       }),
     );

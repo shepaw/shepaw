@@ -6,9 +6,38 @@ import 'package:shepaw/l10n/app_localizations.dart';
 import 'package:shepaw/peer/models/folded_sessions.dart';
 import 'package:shepaw/peer/services/hub_folded_sessions.dart';
 import 'package:shepaw/peer/services/peer_connection_manager.dart';
-import 'package:shepaw/screens/session_folder_screen.dart';
+import 'package:shepaw/widgets/chat/folded_session_items.dart';
 
 void main() {
+  test('the search frame carries the query and the agent', () {
+    expect(
+        HubFoldedSessions.searchFrame('登录', agentId: 'a1', limit: 5,
+            requestId: 'r'),
+        {
+          'type': 'agent_sessions_search_req',
+          'request_id': 'r',
+          'query': '登录',
+          'agent_id': 'a1',
+          'limit': 5,
+        });
+  });
+
+  test('a hit knows whether it can be chatted in', () {
+    final hit = SessionSearchHit.fromJson({
+      'agent_id': 'a1',
+      'session_id': 'part-flow-r1-build',
+      'title': 'x',
+      'source': 'flow',
+      'read_only': true,
+      'origin': {'kind': 'flow', 'run_id': 'r1'},
+    });
+    expect(hit.isPrivate, isFalse);
+    expect(hit.readOnly, isTrue);
+    expect(hit.origin.runId, 'r1');
+    // 没有 origin 字段时按私聊处理（老主机的回包）。
+    expect(SessionSearchHit.fromJson({'session_id': 's'}).isPrivate, isTrue);
+  });
+
   groupViewTests();
   test('summary and folder frames ask for the folded view', () {
     expect(HubFoldedSessions.summaryFrame('a1', requestId: 'r'), {
@@ -62,7 +91,7 @@ void main() {
     expect(FoldedPage.fromResponse({'cursor': ''})?.cursor, isNull);
   });
 
-  testWidgets('the folder screen pages through and forks into a private chat',
+  testWidgets('the expanded folder pages through and forks into a private chat',
       (tester) async {
     final bus = StreamController<PeerControlEvent>.broadcast();
     final sent = <Map<String, dynamic>>[];
@@ -103,12 +132,16 @@ void main() {
       locale: const Locale('zh'),
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
-      home: SessionFolderScreen(
-        peerId: 'p1',
-        agentId: 'a1',
-        folder: SessionFolderKind.flow,
-        client: client,
-        onForked: (id) => forked = id,
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: SessionFolderItems(
+            peerId: 'p1',
+            agentId: 'a1',
+            folder: SessionFolderKind.flow,
+            client: client,
+            onForked: (id) => forked = id,
+          ),
+        ),
       ),
     ));
     for (var i = 0; i < 5; i++) {

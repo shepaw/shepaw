@@ -22,10 +22,19 @@ IconData sessionFolderIcon(SessionFolderKind kind) => switch (kind) {
 
 /// 会话列表顶部的一行折叠组："群聊 · 6"，副标题是最近一条的标题。
 /// 折叠组不计未读，所以没有角标。
+///
+/// 点一下就地展开这一组的会话（行画在它下面，不开新页面），`expanded` 控制
+/// 箭头方向。
 class SessionFolderTile extends StatelessWidget {
-  const SessionFolderTile({super.key, required this.summary, this.onTap});
+  const SessionFolderTile({
+    super.key,
+    required this.summary,
+    this.expanded = false,
+    this.onTap,
+  });
 
   final SessionFolderSummary summary;
+  final bool expanded;
   final VoidCallback? onTap;
 
   @override
@@ -37,8 +46,13 @@ class SessionFolderTile extends StatelessWidget {
           summary.count)),
       subtitle: summary.latestTitle.isEmpty
           ? null
-          : Text(summary.latestTitle, maxLines: 1, overflow: TextOverflow.ellipsis),
-      trailing: const Icon(Icons.chevron_right),
+          : Text(summary.latestTitle,
+              maxLines: 1, overflow: TextOverflow.ellipsis),
+      trailing: AnimatedRotation(
+        turns: expanded ? 0.25 : 0,
+        duration: const Duration(milliseconds: 150),
+        child: const Icon(Icons.chevron_right),
+      ),
       onTap: onTap,
     );
   }
