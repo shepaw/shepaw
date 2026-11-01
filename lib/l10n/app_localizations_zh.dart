@@ -1359,43 +1359,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get agentDetail_storageBagSub => '产物、附件、记忆与已挂载的工作区';
 
   @override
-  String get agentDetail_viewWorkspace => '查看工作区';
-
-  @override
   String get agentDetail_startConversation => '发起对话';
-
-  @override
-  String get agentDetail_deleteAgent => '删除 Agent';
-
-  @override
-  String get agentDetail_confirmDelete => '确认删除';
-
-  @override
-  String agentDetail_deleteContent(String name) {
-    return '确定要删除助手「$name」吗？\n\n删除后将无法恢复，相关的聊天记录也可能受到影响。';
-  }
-
-  @override
-  String agentDetail_deleted(String name) {
-    return '已删除「$name」';
-  }
 
   @override
   String agentDetail_deleteFailed(String error) {
     return '删除失败: $error';
   }
-
-  @override
-  String get agentDetail_connectionInfo => '连接信息';
-
-  @override
-  String get agentDetail_protocol => '协议';
-
-  @override
-  String get agentDetail_connectionType => '连接方式';
-
-  @override
-  String get agentDetail_endpoint => '端点';
 
   @override
   String get agentDetail_capabilities => '能力';
@@ -1404,19 +1373,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get agentDetail_systemPrompt => 'Soul';
 
   @override
-  String get agentDetail_llmConfig => '模型配置';
-
-  @override
-  String get agentDetail_provider => '服务商';
-
-  @override
   String get agentDetail_model => '模型';
 
   @override
   String get agentDetail_mode => '模式';
-
-  @override
-  String get agentDetail_lastActive => '最后活跃';
 
   @override
   String get agentDetail_createdAt => '创建时间';
@@ -1426,57 +1386,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get agentDetail_sourceDevice => '来源设备';
-
-  @override
-  String get agentDetail_peerTunnel => 'P2P 隧道（配对设备）';
-
-  @override
-  String get agentDetail_cliCommands => 'CLI 命令';
-
-  @override
-  String get agentDetail_allCliCommands => '全部可用（默认放行）';
-
-  @override
-  String get agentDetail_cliCommandsBlocked => '全部命令已禁止';
-
-  @override
-  String agentDetail_cliCommandsRestricted(int count) {
-    return '已限制为 $count 条命令';
-  }
-
-  @override
-  String get agentDetail_cliRequireApproval => '执行 CLI 前需要审核';
-
-  @override
-  String get agentDetail_cliRequireApprovalDesc =>
-      '非 She 默认开启。储物袋日常读写与 help 免审；其余确认出现在消息气泡里，可稍后点，也可勾选本次会话允许。关闭后 os 非 safe 命令仍会确认。';
-
-  @override
-  String get agentDetail_cliApprovalOn => '执行 CLI 需你确认（储物袋日常读写与 help 除外）';
-
-  @override
-  String get agentDetail_cliApprovalOff => '执行 CLI 不再额外确认（os 非 safe 仍会确认）';
-
-  @override
-  String get agentDetail_authToken => '认证 Token';
-
-  @override
-  String get agentDetail_copyToken => '复制 Token';
-
-  @override
-  String get agentDetail_tokenCopied => 'Token 已复制到剪贴板';
-
-  @override
-  String get agentDetail_nameRequired => '助手名称不能为空';
-
-  @override
-  String get agentDetail_tokenRequired => 'Token 不能为空';
-
-  @override
-  String get agentDetail_tokenHint => '粘贴远端 Agent 提供的 Token';
-
-  @override
-  String get agentDetail_saveSuccess => '保存成功';
 
   @override
   String agentDetail_saveFailed(String error) {
@@ -1495,9 +1404,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get agentDetail_editResume => '编辑简历';
-
-  @override
-  String get agentDetail_regenerateResumeSuccess => '简历已更新';
 
   @override
   String agentDetail_regenerateResumeFailed(String error) {
@@ -1561,23 +1467,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String agentDetail_cameraFailed(String error) {
     return '拍照失败: $error';
   }
-
-  @override
-  String agentDetail_saveImageFailed(String error) {
-    return '保存图片失败: $error';
-  }
-
-  @override
-  String get agentDetail_protocolType => '协议类型';
-
-  @override
-  String get agentDetail_connectionTypeLabel => '连接方式';
-
-  @override
-  String get agentDetail_custom => '自定义';
-
-  @override
-  String get agentDetail_copyTokenTooltip => '复制 Token';
 
   @override
   String get agentDetail_justNow => '刚刚';
@@ -2703,12 +2592,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get skillMgmt_invalidUrl => 'URL 无效，请输入 .zip 或 .md 文件的 http/https 直链';
 
   @override
-  String get agentDetail_noOsToolsEnabled => '未启用任何 OS 工具';
-
-  @override
-  String get agentDetail_noSkillsEnabled => '未启用任何技能';
-
-  @override
   String get settings_developerTools => '开发者工具';
 
   @override
@@ -3396,9 +3279,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String addAgent_toolModelsCount(int count) {
     return '已启用 $count 项生成能力';
   }
-
-  @override
-  String get agentDetail_noToolModelsEnabled => '未启用生成能力';
 
   @override
   String get chat_mentionMode => '提及模式';
@@ -5787,12 +5667,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get agentDetail_soulChangedElsewhere => '已在其他设备修改';
 
   @override
-  String get agentDetail_modelSwitchUnsupported => '该 agent 暂不支持切换模型';
-
-  @override
-  String get agentDetail_modelSwitched => '已切换模型';
-
-  @override
   String get agentDetail_modelSwitchFailed => '切换模型失败';
 
   @override
@@ -5824,107 +5698,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get agentDetail_noModels => '暂无可用模型';
 
   @override
-  String get agentDetail_modeSwitchUnsupported => '该 agent 暂不支持切换模式';
-
-  @override
-  String get agentDetail_modeSwitched => '已切换模式';
-
-  @override
   String get agentDetail_modeSwitchFailed => '切换模式失败';
-
-  @override
-  String get agentDetail_refreshModes => '刷新模式列表';
-
-  @override
-  String get agentDetail_switchModeHint => '切换远端 agent 的会话模式（作用于当前及后续对话）';
 
   @override
   String get agentDetail_noModes => '暂无可用模式';
 
   @override
-  String get agentDetail_noAiModel => '尚未配置 AI 模型';
-
-  @override
-  String get agentDetail_maxToolRounds => '最大工具调用轮次';
-
-  @override
-  String agentDetail_maxToolRoundsValue(int count) {
-    return '$count 次';
-  }
-
-  @override
-  String get agentDetail_taskTimeout => '任务超时时间';
-
-  @override
-  String agentDetail_taskTimeoutValue(int seconds) {
-    return '$seconds 秒';
-  }
-
-  @override
-  String get agentDetail_maxToolRoundsDefault => '默认 100';
-
-  @override
-  String get agentDetail_maxToolRoundsHelper => '单次对话中 LLM 最多可调用工具的轮数（1–500）';
-
-  @override
-  String get agentDetail_maxToolRoundsInvalid => '请输入 1 到 500 之间的整数';
-
-  @override
-  String get agentDetail_taskTimeoutSeconds => '任务超时时间（秒）';
-
-  @override
-  String get agentDetail_taskTimeoutDefault => '默认 10800';
-
-  @override
-  String get agentDetail_taskTimeoutHelper => '单次任务的最长等待时间（60–10800 秒）';
-
-  @override
-  String get agentDetail_taskTimeoutInvalid => '请输入 60 到 10800 之间的整数';
-
-  @override
   String agentDetail_fromSource(String name) {
     return '来自 $name';
   }
-
-  @override
-  String get agentDetail_createSuccess => 'Agent 创建成功';
-
-  @override
-  String get agentDetail_updateSuccess => 'Agent 更新成功';
-
-  @override
-  String get agentDetail_name => 'Agent 名称';
-
-  @override
-  String get agentDetail_nameHint => '输入 Agent 名称';
-
-  @override
-  String get agentDetail_type => 'Agent 类型';
-
-  @override
-  String get agentDetail_typeHint => '例如: assistant, chatbot';
-
-  @override
-  String get agentDetail_typeRequired => '请输入 Agent 类型';
-
-  @override
-  String get agentDetail_status => 'Agent 状态';
-
-  @override
-  String agentDetail_createdLog(String name) {
-    return '成功创建 Agent: $name';
-  }
-
-  @override
-  String agentDetail_updatedLog(String name) {
-    return '成功更新 Agent: $name';
-  }
-
-  @override
-  String get agentDetail_addTitle => '添加 Agent';
-
-  @override
-  String get agentDetail_viewTitle => 'Agent 详情';
 
   @override
   String get agentPair_unsupportedPlatform =>
@@ -8260,9 +8042,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get createGroup_failed => '创建群聊失败，请重试';
 
   @override
-  String get agentDetail_autosaveFailed => '保存失败，修改还在，请稍后重试';
-
-  @override
   String get groupDetail_saveFailed => '保存失败，请重试';
 
   @override
@@ -9543,4 +9322,116 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get gate_enterOffline => '先进主页（离线）';
+
+  @override
+  String get agentDetail_runtimeSection => '运行设置';
+
+  @override
+  String get agentDetail_workspaceSection => '工作区';
+
+  @override
+  String get agentDetail_primaryWorkspace => '主工作区';
+
+  @override
+  String agentDetail_additionalWorkspace(int index) {
+    return '附加工作区 $index';
+  }
+
+  @override
+  String get agentDetail_noWorkspace => '尚未挂载工作区';
+
+  @override
+  String get agentDetail_workspaceEditHint => '可在编辑页设置';
+
+  @override
+  String get agentDetail_setPrimaryWorkspace => '设置主工作区';
+
+  @override
+  String get agentDetail_addWorkspace => '添加附加工作区';
+
+  @override
+  String get agentDetail_removeWorkspace => '移除附加工作区';
+
+  @override
+  String agentDetail_removeWorkspaceConfirm(String path) {
+    return '确定移除：\n$path';
+  }
+
+  @override
+  String get agentDetail_workspaceRestartHint => '修改后运行中的实例会自动重启';
+
+  @override
+  String get agentDetail_workspaceUpdated => '工作区已更新';
+
+  @override
+  String agentDetail_workspaceUpdateFailed(String error) {
+    return '更新失败：$error';
+  }
+
+  @override
+  String get agentDetail_workspaceUnresolved => '无法解析该工作区路径';
+
+  @override
+  String get agentDetail_workspaceDuplicate => '该目录已在附加工作区中';
+
+  @override
+  String get agentDetail_noWorkspaceToOpen => '该 Agent 还没有挂载工作区';
+
+  @override
+  String agentDetail_openWorkspaceFailed(String error) {
+    return '无法打开工作区：$error';
+  }
+
+  @override
+  String get agentDetail_browseUnsupported => 'Hub 未响应目录浏览，请升级并重启 peer 服务后重试';
+
+  @override
+  String get agentDetail_techInfo => '技术信息';
+
+  @override
+  String get agentDetail_agentId => 'Agent ID';
+
+  @override
+  String get agentDetail_hostAgentId => '主机上的 ID';
+
+  @override
+  String get agentDetail_node => '节点';
+
+  @override
+  String get agentDetail_nodeOffline => '节点离线';
+
+  @override
+  String get agentDetail_hostOffline => '主机离线';
+
+  @override
+  String get agentDetail_nameFromHost => '名称由主机提供';
+
+  @override
+  String get agentDetail_dangerSection => '危险操作';
+
+  @override
+  String get agentDetail_removeFromHost => '从主机移除';
+
+  @override
+  String get agentDetail_removeFromHostConfirm =>
+      '将从主机上删除这个实例，无法恢复。本机的聊天记录会保留。';
+
+  @override
+  String get agentDetail_hideOnApp => '在本机隐藏';
+
+  @override
+  String get agentDetail_hideOnAppHint =>
+      '隐藏后不再出现在本机的联系人与会话列表；可在 设置 › 主机 › Agent 管理 中恢复显示。';
+
+  @override
+  String get agentDetail_addSheModel => '添加模型';
+
+  @override
+  String get agentDetail_modeHint => '与聊天输入框里的模式是同一个设置';
+
+  @override
+  String get agentDetail_syncOn => '开';
+
+  @override
+  String get agentDetail_syncOff => '关';
 }

@@ -303,19 +303,3 @@ bool sheCatalogShouldWriteBase({
   return preset.isNotEmpty && now == preset;
 }
 
-/// 用 Hub 回来的模型名和地址，对上本机列表里的一条定义。
-String? hostSheRegistryModelId(
-  Map<String, dynamic> metadata, {
-  required Iterable<({String id, String model, String baseUrl})> models,
-}) {
-  final model = (metadata['she_model'] as String?)?.trim() ?? '';
-  final base = (metadata['she_base_url'] as String?)?.trim() ?? '';
-  if (model.isEmpty) return null;
-  for (final item in models) {
-    if (item.model == model && item.baseUrl == base) return item.id;
-  }
-  for (final item in models) {
-    if (item.model == model) return item.id;
-  }
-  return null;
-}

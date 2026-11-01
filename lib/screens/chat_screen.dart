@@ -58,7 +58,8 @@ import '../widgets/chat/add_group_member_panel.dart';
 import '../widgets/chat/copy_to_agent_picker.dart';
 import '../widgets/avatar_image.dart';
 import '../widgets/voice_record_overlay.dart';
-import 'remote_agent_detail_screen.dart';
+import 'agent_detail/agent_detail_screen.dart';
+import 'agent_detail/agent_edit_screen.dart';
 import 'group_detail_screen.dart';
 import 'group_member_detail_screen.dart';
 import 'agent_storage_bag_screen.dart';
@@ -1908,8 +1909,8 @@ class _ChatScreenState extends State<ChatScreen>
     await _navigateToAgentDetailById(widget.agentId!);
   }
 
-  /// 直接以编辑模式打开 Agent 详情页，无需先进入详情再点击编辑
-  Future<void> _navigateToAgentDetailForEdit() async {
+  /// 直接打开编辑页，不用先经过详情页
+  Future<void> _navigateToAgentDetailForEdit({AgentEditSection? section}) async {
     if (widget.agentId == null) return;
     final remoteAgent = await _controller.localDatabaseService
         .getRemoteAgentById(widget.agentId!);
@@ -1917,9 +1918,9 @@ class _ChatScreenState extends State<ChatScreen>
       final result = await Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => RemoteAgentDetailScreen(
+          builder: (context) => AgentEditScreen(
             agent: remoteAgent,
-            initialEditMode: true,
+            initialSection: section,
           ),
         ),
       );
@@ -1948,7 +1949,7 @@ class _ChatScreenState extends State<ChatScreen>
       final result = await Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => RemoteAgentDetailScreen(agent: remoteAgent),
+          builder: (context) => AgentDetailScreen(agent: remoteAgent),
         ),
       );
       if (result == 'deleted' && mounted) {
@@ -4514,10 +4515,10 @@ class _ChatScreenState extends State<ChatScreen>
     await PeerAgentClientService.instance.ensureCommandsForLocalAgent(agentId);
   }
 
-  /// Navigate to She's edit screen (directly in edit mode) so the user can
-  /// pick a model — fewer taps than going through the detail page first.
+  /// 直接打开惜宝的编辑页并滚到「运行设置」，让用户选主模型 —— 比先过一遍
+  /// 详情页少点几次。
   Future<void> _openSheConfig() async {
-    await _navigateToAgentDetailForEdit();
+    await _navigateToAgentDetailForEdit(section: AgentEditSection.runtime);
     // Re-check after returning from edit screen
     _checkSheNeedsConfig();
     _checkAgentAudioSupport();

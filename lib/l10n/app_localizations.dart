@@ -2624,71 +2624,17 @@ abstract class AppLocalizations {
   /// **'产物、附件、记忆与已挂载的工作区'**
   String get agentDetail_storageBagSub;
 
-  /// No description provided for @agentDetail_viewWorkspace.
-  ///
-  /// In zh, this message translates to:
-  /// **'查看工作区'**
-  String get agentDetail_viewWorkspace;
-
   /// No description provided for @agentDetail_startConversation.
   ///
   /// In zh, this message translates to:
   /// **'发起对话'**
   String get agentDetail_startConversation;
 
-  /// No description provided for @agentDetail_deleteAgent.
-  ///
-  /// In zh, this message translates to:
-  /// **'删除 Agent'**
-  String get agentDetail_deleteAgent;
-
-  /// No description provided for @agentDetail_confirmDelete.
-  ///
-  /// In zh, this message translates to:
-  /// **'确认删除'**
-  String get agentDetail_confirmDelete;
-
-  /// No description provided for @agentDetail_deleteContent.
-  ///
-  /// In zh, this message translates to:
-  /// **'确定要删除助手「{name}」吗？\n\n删除后将无法恢复，相关的聊天记录也可能受到影响。'**
-  String agentDetail_deleteContent(String name);
-
-  /// No description provided for @agentDetail_deleted.
-  ///
-  /// In zh, this message translates to:
-  /// **'已删除「{name}」'**
-  String agentDetail_deleted(String name);
-
   /// No description provided for @agentDetail_deleteFailed.
   ///
   /// In zh, this message translates to:
   /// **'删除失败: {error}'**
   String agentDetail_deleteFailed(String error);
-
-  /// No description provided for @agentDetail_connectionInfo.
-  ///
-  /// In zh, this message translates to:
-  /// **'连接信息'**
-  String get agentDetail_connectionInfo;
-
-  /// No description provided for @agentDetail_protocol.
-  ///
-  /// In zh, this message translates to:
-  /// **'协议'**
-  String get agentDetail_protocol;
-
-  /// No description provided for @agentDetail_connectionType.
-  ///
-  /// In zh, this message translates to:
-  /// **'连接方式'**
-  String get agentDetail_connectionType;
-
-  /// No description provided for @agentDetail_endpoint.
-  ///
-  /// In zh, this message translates to:
-  /// **'端点'**
-  String get agentDetail_endpoint;
 
   /// No description provided for @agentDetail_capabilities.
   ///
@@ -2702,18 +2648,6 @@ abstract class AppLocalizations {
   /// **'Soul'**
   String get agentDetail_systemPrompt;
 
-  /// No description provided for @agentDetail_llmConfig.
-  ///
-  /// In zh, this message translates to:
-  /// **'模型配置'**
-  String get agentDetail_llmConfig;
-
-  /// No description provided for @agentDetail_provider.
-  ///
-  /// In zh, this message translates to:
-  /// **'服务商'**
-  String get agentDetail_provider;
-
   /// No description provided for @agentDetail_model.
   ///
   /// In zh, this message translates to:
@@ -2725,12 +2659,6 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'模式'**
   String get agentDetail_mode;
-
-  /// No description provided for @agentDetail_lastActive.
-  ///
-  /// In zh, this message translates to:
-  /// **'最后活跃'**
-  String get agentDetail_lastActive;
 
   /// No description provided for @agentDetail_createdAt.
   ///
@@ -2749,102 +2677,6 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'来源设备'**
   String get agentDetail_sourceDevice;
-
-  /// No description provided for @agentDetail_peerTunnel.
-  ///
-  /// In zh, this message translates to:
-  /// **'P2P 隧道（配对设备）'**
-  String get agentDetail_peerTunnel;
-
-  /// No description provided for @agentDetail_cliCommands.
-  ///
-  /// In zh, this message translates to:
-  /// **'CLI 命令'**
-  String get agentDetail_cliCommands;
-
-  /// No description provided for @agentDetail_allCliCommands.
-  ///
-  /// In zh, this message translates to:
-  /// **'全部可用（默认放行）'**
-  String get agentDetail_allCliCommands;
-
-  /// No description provided for @agentDetail_cliCommandsBlocked.
-  ///
-  /// In zh, this message translates to:
-  /// **'全部命令已禁止'**
-  String get agentDetail_cliCommandsBlocked;
-
-  /// No description provided for @agentDetail_cliCommandsRestricted.
-  ///
-  /// In zh, this message translates to:
-  /// **'已限制为 {count} 条命令'**
-  String agentDetail_cliCommandsRestricted(int count);
-
-  /// No description provided for @agentDetail_cliRequireApproval.
-  ///
-  /// In zh, this message translates to:
-  /// **'执行 CLI 前需要审核'**
-  String get agentDetail_cliRequireApproval;
-
-  /// No description provided for @agentDetail_cliRequireApprovalDesc.
-  ///
-  /// In zh, this message translates to:
-  /// **'非 She 默认开启。储物袋日常读写与 help 免审；其余确认出现在消息气泡里，可稍后点，也可勾选本次会话允许。关闭后 os 非 safe 命令仍会确认。'**
-  String get agentDetail_cliRequireApprovalDesc;
-
-  /// No description provided for @agentDetail_cliApprovalOn.
-  ///
-  /// In zh, this message translates to:
-  /// **'执行 CLI 需你确认（储物袋日常读写与 help 除外）'**
-  String get agentDetail_cliApprovalOn;
-
-  /// No description provided for @agentDetail_cliApprovalOff.
-  ///
-  /// In zh, this message translates to:
-  /// **'执行 CLI 不再额外确认（os 非 safe 仍会确认）'**
-  String get agentDetail_cliApprovalOff;
-
-  /// No description provided for @agentDetail_authToken.
-  ///
-  /// In zh, this message translates to:
-  /// **'认证 Token'**
-  String get agentDetail_authToken;
-
-  /// No description provided for @agentDetail_copyToken.
-  ///
-  /// In zh, this message translates to:
-  /// **'复制 Token'**
-  String get agentDetail_copyToken;
-
-  /// No description provided for @agentDetail_tokenCopied.
-  ///
-  /// In zh, this message translates to:
-  /// **'Token 已复制到剪贴板'**
-  String get agentDetail_tokenCopied;
-
-  /// No description provided for @agentDetail_nameRequired.
-  ///
-  /// In zh, this message translates to:
-  /// **'助手名称不能为空'**
-  String get agentDetail_nameRequired;
-
-  /// No description provided for @agentDetail_tokenRequired.
-  ///
-  /// In zh, this message translates to:
-  /// **'Token 不能为空'**
-  String get agentDetail_tokenRequired;
-
-  /// No description provided for @agentDetail_tokenHint.
-  ///
-  /// In zh, this message translates to:
-  /// **'粘贴远端 Agent 提供的 Token'**
-  String get agentDetail_tokenHint;
-
-  /// No description provided for @agentDetail_saveSuccess.
-  ///
-  /// In zh, this message translates to:
-  /// **'保存成功'**
-  String get agentDetail_saveSuccess;
 
   /// No description provided for @agentDetail_saveFailed.
   ///
@@ -2875,12 +2707,6 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'编辑简历'**
   String get agentDetail_editResume;
-
-  /// No description provided for @agentDetail_regenerateResumeSuccess.
-  ///
-  /// In zh, this message translates to:
-  /// **'简历已更新'**
-  String get agentDetail_regenerateResumeSuccess;
 
   /// No description provided for @agentDetail_regenerateResumeFailed.
   ///
@@ -2989,36 +2815,6 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'拍照失败: {error}'**
   String agentDetail_cameraFailed(String error);
-
-  /// No description provided for @agentDetail_saveImageFailed.
-  ///
-  /// In zh, this message translates to:
-  /// **'保存图片失败: {error}'**
-  String agentDetail_saveImageFailed(String error);
-
-  /// No description provided for @agentDetail_protocolType.
-  ///
-  /// In zh, this message translates to:
-  /// **'协议类型'**
-  String get agentDetail_protocolType;
-
-  /// No description provided for @agentDetail_connectionTypeLabel.
-  ///
-  /// In zh, this message translates to:
-  /// **'连接方式'**
-  String get agentDetail_connectionTypeLabel;
-
-  /// No description provided for @agentDetail_custom.
-  ///
-  /// In zh, this message translates to:
-  /// **'自定义'**
-  String get agentDetail_custom;
-
-  /// No description provided for @agentDetail_copyTokenTooltip.
-  ///
-  /// In zh, this message translates to:
-  /// **'复制 Token'**
-  String get agentDetail_copyTokenTooltip;
 
   /// No description provided for @agentDetail_justNow.
   ///
@@ -5000,18 +4796,6 @@ abstract class AppLocalizations {
   /// **'URL 无效，请输入 .zip 或 .md 文件的 http/https 直链'**
   String get skillMgmt_invalidUrl;
 
-  /// No description provided for @agentDetail_noOsToolsEnabled.
-  ///
-  /// In zh, this message translates to:
-  /// **'未启用任何 OS 工具'**
-  String get agentDetail_noOsToolsEnabled;
-
-  /// No description provided for @agentDetail_noSkillsEnabled.
-  ///
-  /// In zh, this message translates to:
-  /// **'未启用任何技能'**
-  String get agentDetail_noSkillsEnabled;
-
   /// No description provided for @settings_developerTools.
   ///
   /// In zh, this message translates to:
@@ -6259,12 +6043,6 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'已启用 {count} 项生成能力'**
   String addAgent_toolModelsCount(int count);
-
-  /// No description provided for @agentDetail_noToolModelsEnabled.
-  ///
-  /// In zh, this message translates to:
-  /// **'未启用生成能力'**
-  String get agentDetail_noToolModelsEnabled;
 
   /// No description provided for @chat_mentionMode.
   ///
@@ -10589,18 +10367,6 @@ abstract class AppLocalizations {
   /// **'已在其他设备修改'**
   String get agentDetail_soulChangedElsewhere;
 
-  /// No description provided for @agentDetail_modelSwitchUnsupported.
-  ///
-  /// In zh, this message translates to:
-  /// **'该 agent 暂不支持切换模型'**
-  String get agentDetail_modelSwitchUnsupported;
-
-  /// No description provided for @agentDetail_modelSwitched.
-  ///
-  /// In zh, this message translates to:
-  /// **'已切换模型'**
-  String get agentDetail_modelSwitched;
-
   /// No description provided for @agentDetail_modelSwitchFailed.
   ///
   /// In zh, this message translates to:
@@ -10661,35 +10427,11 @@ abstract class AppLocalizations {
   /// **'暂无可用模型'**
   String get agentDetail_noModels;
 
-  /// No description provided for @agentDetail_modeSwitchUnsupported.
-  ///
-  /// In zh, this message translates to:
-  /// **'该 agent 暂不支持切换模式'**
-  String get agentDetail_modeSwitchUnsupported;
-
-  /// No description provided for @agentDetail_modeSwitched.
-  ///
-  /// In zh, this message translates to:
-  /// **'已切换模式'**
-  String get agentDetail_modeSwitched;
-
   /// No description provided for @agentDetail_modeSwitchFailed.
   ///
   /// In zh, this message translates to:
   /// **'切换模式失败'**
   String get agentDetail_modeSwitchFailed;
-
-  /// No description provided for @agentDetail_refreshModes.
-  ///
-  /// In zh, this message translates to:
-  /// **'刷新模式列表'**
-  String get agentDetail_refreshModes;
-
-  /// No description provided for @agentDetail_switchModeHint.
-  ///
-  /// In zh, this message translates to:
-  /// **'切换远端 agent 的会话模式（作用于当前及后续对话）'**
-  String get agentDetail_switchModeHint;
 
   /// No description provided for @agentDetail_noModes.
   ///
@@ -10697,155 +10439,11 @@ abstract class AppLocalizations {
   /// **'暂无可用模式'**
   String get agentDetail_noModes;
 
-  /// No description provided for @agentDetail_noAiModel.
-  ///
-  /// In zh, this message translates to:
-  /// **'尚未配置 AI 模型'**
-  String get agentDetail_noAiModel;
-
-  /// No description provided for @agentDetail_maxToolRounds.
-  ///
-  /// In zh, this message translates to:
-  /// **'最大工具调用轮次'**
-  String get agentDetail_maxToolRounds;
-
-  /// No description provided for @agentDetail_maxToolRoundsValue.
-  ///
-  /// In zh, this message translates to:
-  /// **'{count} 次'**
-  String agentDetail_maxToolRoundsValue(int count);
-
-  /// No description provided for @agentDetail_taskTimeout.
-  ///
-  /// In zh, this message translates to:
-  /// **'任务超时时间'**
-  String get agentDetail_taskTimeout;
-
-  /// No description provided for @agentDetail_taskTimeoutValue.
-  ///
-  /// In zh, this message translates to:
-  /// **'{seconds} 秒'**
-  String agentDetail_taskTimeoutValue(int seconds);
-
-  /// No description provided for @agentDetail_maxToolRoundsDefault.
-  ///
-  /// In zh, this message translates to:
-  /// **'默认 100'**
-  String get agentDetail_maxToolRoundsDefault;
-
-  /// No description provided for @agentDetail_maxToolRoundsHelper.
-  ///
-  /// In zh, this message translates to:
-  /// **'单次对话中 LLM 最多可调用工具的轮数（1–500）'**
-  String get agentDetail_maxToolRoundsHelper;
-
-  /// No description provided for @agentDetail_maxToolRoundsInvalid.
-  ///
-  /// In zh, this message translates to:
-  /// **'请输入 1 到 500 之间的整数'**
-  String get agentDetail_maxToolRoundsInvalid;
-
-  /// No description provided for @agentDetail_taskTimeoutSeconds.
-  ///
-  /// In zh, this message translates to:
-  /// **'任务超时时间（秒）'**
-  String get agentDetail_taskTimeoutSeconds;
-
-  /// No description provided for @agentDetail_taskTimeoutDefault.
-  ///
-  /// In zh, this message translates to:
-  /// **'默认 10800'**
-  String get agentDetail_taskTimeoutDefault;
-
-  /// No description provided for @agentDetail_taskTimeoutHelper.
-  ///
-  /// In zh, this message translates to:
-  /// **'单次任务的最长等待时间（60–10800 秒）'**
-  String get agentDetail_taskTimeoutHelper;
-
-  /// No description provided for @agentDetail_taskTimeoutInvalid.
-  ///
-  /// In zh, this message translates to:
-  /// **'请输入 60 到 10800 之间的整数'**
-  String get agentDetail_taskTimeoutInvalid;
-
   /// No description provided for @agentDetail_fromSource.
   ///
   /// In zh, this message translates to:
   /// **'来自 {name}'**
   String agentDetail_fromSource(String name);
-
-  /// No description provided for @agentDetail_createSuccess.
-  ///
-  /// In zh, this message translates to:
-  /// **'Agent 创建成功'**
-  String get agentDetail_createSuccess;
-
-  /// No description provided for @agentDetail_updateSuccess.
-  ///
-  /// In zh, this message translates to:
-  /// **'Agent 更新成功'**
-  String get agentDetail_updateSuccess;
-
-  /// No description provided for @agentDetail_name.
-  ///
-  /// In zh, this message translates to:
-  /// **'Agent 名称'**
-  String get agentDetail_name;
-
-  /// No description provided for @agentDetail_nameHint.
-  ///
-  /// In zh, this message translates to:
-  /// **'输入 Agent 名称'**
-  String get agentDetail_nameHint;
-
-  /// No description provided for @agentDetail_type.
-  ///
-  /// In zh, this message translates to:
-  /// **'Agent 类型'**
-  String get agentDetail_type;
-
-  /// No description provided for @agentDetail_typeHint.
-  ///
-  /// In zh, this message translates to:
-  /// **'例如: assistant, chatbot'**
-  String get agentDetail_typeHint;
-
-  /// No description provided for @agentDetail_typeRequired.
-  ///
-  /// In zh, this message translates to:
-  /// **'请输入 Agent 类型'**
-  String get agentDetail_typeRequired;
-
-  /// No description provided for @agentDetail_status.
-  ///
-  /// In zh, this message translates to:
-  /// **'Agent 状态'**
-  String get agentDetail_status;
-
-  /// No description provided for @agentDetail_createdLog.
-  ///
-  /// In zh, this message translates to:
-  /// **'成功创建 Agent: {name}'**
-  String agentDetail_createdLog(String name);
-
-  /// No description provided for @agentDetail_updatedLog.
-  ///
-  /// In zh, this message translates to:
-  /// **'成功更新 Agent: {name}'**
-  String agentDetail_updatedLog(String name);
-
-  /// No description provided for @agentDetail_addTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'添加 Agent'**
-  String get agentDetail_addTitle;
-
-  /// No description provided for @agentDetail_viewTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'Agent 详情'**
-  String get agentDetail_viewTitle;
 
   /// No description provided for @agentPair_unsupportedPlatform.
   ///
@@ -14969,12 +14567,6 @@ abstract class AppLocalizations {
   /// **'创建群聊失败，请重试'**
   String get createGroup_failed;
 
-  /// No description provided for @agentDetail_autosaveFailed.
-  ///
-  /// In zh, this message translates to:
-  /// **'保存失败，修改还在，请稍后重试'**
-  String get agentDetail_autosaveFailed;
-
   /// No description provided for @groupDetail_saveFailed.
   ///
   /// In zh, this message translates to:
@@ -17332,6 +16924,210 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'先进主页（离线）'**
   String get gate_enterOffline;
+
+  /// No description provided for @agentDetail_runtimeSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'运行设置'**
+  String get agentDetail_runtimeSection;
+
+  /// No description provided for @agentDetail_workspaceSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作区'**
+  String get agentDetail_workspaceSection;
+
+  /// No description provided for @agentDetail_primaryWorkspace.
+  ///
+  /// In zh, this message translates to:
+  /// **'主工作区'**
+  String get agentDetail_primaryWorkspace;
+
+  /// No description provided for @agentDetail_additionalWorkspace.
+  ///
+  /// In zh, this message translates to:
+  /// **'附加工作区 {index}'**
+  String agentDetail_additionalWorkspace(int index);
+
+  /// No description provided for @agentDetail_noWorkspace.
+  ///
+  /// In zh, this message translates to:
+  /// **'尚未挂载工作区'**
+  String get agentDetail_noWorkspace;
+
+  /// No description provided for @agentDetail_workspaceEditHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'可在编辑页设置'**
+  String get agentDetail_workspaceEditHint;
+
+  /// No description provided for @agentDetail_setPrimaryWorkspace.
+  ///
+  /// In zh, this message translates to:
+  /// **'设置主工作区'**
+  String get agentDetail_setPrimaryWorkspace;
+
+  /// No description provided for @agentDetail_addWorkspace.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加附加工作区'**
+  String get agentDetail_addWorkspace;
+
+  /// No description provided for @agentDetail_removeWorkspace.
+  ///
+  /// In zh, this message translates to:
+  /// **'移除附加工作区'**
+  String get agentDetail_removeWorkspace;
+
+  /// No description provided for @agentDetail_removeWorkspaceConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'确定移除：\n{path}'**
+  String agentDetail_removeWorkspaceConfirm(String path);
+
+  /// No description provided for @agentDetail_workspaceRestartHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'修改后运行中的实例会自动重启'**
+  String get agentDetail_workspaceRestartHint;
+
+  /// No description provided for @agentDetail_workspaceUpdated.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作区已更新'**
+  String get agentDetail_workspaceUpdated;
+
+  /// No description provided for @agentDetail_workspaceUpdateFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'更新失败：{error}'**
+  String agentDetail_workspaceUpdateFailed(String error);
+
+  /// No description provided for @agentDetail_workspaceUnresolved.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法解析该工作区路径'**
+  String get agentDetail_workspaceUnresolved;
+
+  /// No description provided for @agentDetail_workspaceDuplicate.
+  ///
+  /// In zh, this message translates to:
+  /// **'该目录已在附加工作区中'**
+  String get agentDetail_workspaceDuplicate;
+
+  /// No description provided for @agentDetail_noWorkspaceToOpen.
+  ///
+  /// In zh, this message translates to:
+  /// **'该 Agent 还没有挂载工作区'**
+  String get agentDetail_noWorkspaceToOpen;
+
+  /// No description provided for @agentDetail_openWorkspaceFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法打开工作区：{error}'**
+  String agentDetail_openWorkspaceFailed(String error);
+
+  /// No description provided for @agentDetail_browseUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'Hub 未响应目录浏览，请升级并重启 peer 服务后重试'**
+  String get agentDetail_browseUnsupported;
+
+  /// No description provided for @agentDetail_techInfo.
+  ///
+  /// In zh, this message translates to:
+  /// **'技术信息'**
+  String get agentDetail_techInfo;
+
+  /// No description provided for @agentDetail_agentId.
+  ///
+  /// In zh, this message translates to:
+  /// **'Agent ID'**
+  String get agentDetail_agentId;
+
+  /// No description provided for @agentDetail_hostAgentId.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机上的 ID'**
+  String get agentDetail_hostAgentId;
+
+  /// No description provided for @agentDetail_node.
+  ///
+  /// In zh, this message translates to:
+  /// **'节点'**
+  String get agentDetail_node;
+
+  /// No description provided for @agentDetail_nodeOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'节点离线'**
+  String get agentDetail_nodeOffline;
+
+  /// No description provided for @agentDetail_hostOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机离线'**
+  String get agentDetail_hostOffline;
+
+  /// No description provided for @agentDetail_nameFromHost.
+  ///
+  /// In zh, this message translates to:
+  /// **'名称由主机提供'**
+  String get agentDetail_nameFromHost;
+
+  /// No description provided for @agentDetail_dangerSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'危险操作'**
+  String get agentDetail_dangerSection;
+
+  /// No description provided for @agentDetail_removeFromHost.
+  ///
+  /// In zh, this message translates to:
+  /// **'从主机移除'**
+  String get agentDetail_removeFromHost;
+
+  /// No description provided for @agentDetail_removeFromHostConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'将从主机上删除这个实例，无法恢复。本机的聊天记录会保留。'**
+  String get agentDetail_removeFromHostConfirm;
+
+  /// No description provided for @agentDetail_hideOnApp.
+  ///
+  /// In zh, this message translates to:
+  /// **'在本机隐藏'**
+  String get agentDetail_hideOnApp;
+
+  /// No description provided for @agentDetail_hideOnAppHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'隐藏后不再出现在本机的联系人与会话列表；可在 设置 › 主机 › Agent 管理 中恢复显示。'**
+  String get agentDetail_hideOnAppHint;
+
+  /// No description provided for @agentDetail_addSheModel.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加模型'**
+  String get agentDetail_addSheModel;
+
+  /// No description provided for @agentDetail_modeHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'与聊天输入框里的模式是同一个设置'**
+  String get agentDetail_modeHint;
+
+  /// No description provided for @agentDetail_syncOn.
+  ///
+  /// In zh, this message translates to:
+  /// **'开'**
+  String get agentDetail_syncOn;
+
+  /// No description provided for @agentDetail_syncOff.
+  ///
+  /// In zh, this message translates to:
+  /// **'关'**
+  String get agentDetail_syncOff;
 }
 
 class _AppLocalizationsDelegate

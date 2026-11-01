@@ -25,7 +25,7 @@ import '../widgets/avatar_image.dart';
 import '../widgets/contacts_tab_switcher.dart';
 import '../widgets/mobile_shell_scope.dart';
 import '../models/remote_agent.dart';
-import 'remote_agent_detail_screen.dart';
+import 'agent_detail/agent_detail_screen.dart';
 import 'group_detail_screen.dart';
 import 'create_group_screen.dart';
 
@@ -884,7 +884,7 @@ class ContactsScreenState extends State<ContactsScreen> {
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => RemoteAgentDetailScreen(agent: remoteAgent),
+        builder: (context) => AgentDetailScreen(agent: remoteAgent),
       ),
     );
     _reload();

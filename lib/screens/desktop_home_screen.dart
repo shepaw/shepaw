@@ -19,7 +19,7 @@ import 'channel_trace_screen.dart';
 import 'group_task_list_screen.dart';
 import 'create_group_screen.dart';
 import 'group_detail_screen.dart';
-import 'remote_agent_detail_screen.dart';
+import 'agent_detail/agent_detail_screen.dart';
 import 'settings/settings_model.dart';
 import 'instruction_set_screen.dart';
 import 'settings/settings_sections.dart';
@@ -1032,7 +1032,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       case _RightPanelView.contactAgent:
         final agent = args.contactAgent;
         if (agent == null) return _buildEmptyState(args.mode);
-        return RemoteAgentDetailScreen(
+        return AgentDetailScreen(
           key: ValueKey('contact_agent_${agent.id}'),
           agent: agent,
         );

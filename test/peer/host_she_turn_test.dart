@@ -231,16 +231,6 @@ void main() {
     expect(metadata.containsKey('api_key'), isFalse);
     expect(metadata['she_model'], 'gpt-4o');
     expect(metadata['has_main_model'], isTrue);
-    expect(
-      hostSheRegistryModelId(
-        metadata,
-        models: [
-          (id: 'm1', model: 'gpt-4o', baseUrl: 'https://api.example.com/v1'),
-          (id: 'm2', model: 'gpt-4o', baseUrl: 'https://other.example/v1'),
-        ],
-      ),
-      'm1',
-    );
 
     applyHostSheModelMetadata(metadata, {'has_main_model': false});
     expect(metadata.containsKey('has_main_model'), isFalse);

@@ -6,9 +6,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../models/remote_agent.dart';
 import 'noise_identity.dart';
-import 'remote_agent_service.dart';
 
 const _prefChannelBase = 'shepaw.discovery.channel_base';
 
@@ -166,43 +164,6 @@ class AgentAccessService {
     }
     return AccessRequestStatus.fromJson(
       jsonDecode(resp.body) as Map<String, dynamic>,
-    );
-  }
-
-  /// When approved, persist a local RemoteAgent ready for Noise connect
-  /// (no enrollment code — pubkey already on allowlist).
-  Future<RemoteAgent> importApproved({
-    required AccessRequestStatus status,
-    required RemoteAgentService remoteAgentService,
-  }) async {
-    if (!status.isApproved) {
-      throw AgentAccessException('not approved yet');
-    }
-    final endpoint = status.endpoint ?? '';
-    if (endpoint.isEmpty) {
-      throw AgentAccessException('approved but endpoint missing');
-    }
-    final pubkey = status.agentPubkey ?? '';
-    if (pubkey.isEmpty) {
-      throw AgentAccessException(
-        'approved but agent_pubkey missing — wait for agent re-register',
-      );
-    }
-
-    return remoteAgentService.createAgent(
-      name: status.agentName?.isNotEmpty == true
-          ? status.agentName!
-          : status.agentId,
-      protocol: ProtocolType.acp,
-      connectionType: ConnectionType.websocket,
-      endpoint: endpoint,
-      bio: 'Via channel access grant',
-      metadata: {
-        'target_agent_id': status.agentId,
-        'cached_peer_static_public_key': pubkey,
-        if (status.agentFp != null) 'expected_fingerprint': status.agentFp,
-        'from_access_grant': true,
-      },
     );
   }
 }

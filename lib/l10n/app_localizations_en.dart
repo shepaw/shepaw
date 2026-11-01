@@ -1413,43 +1413,12 @@ class AppLocalizationsEn extends AppLocalizations {
       'Artifacts, attachments, memory and mounted workspaces';
 
   @override
-  String get agentDetail_viewWorkspace => 'View workspace';
-
-  @override
   String get agentDetail_startConversation => 'Start Conversation';
-
-  @override
-  String get agentDetail_deleteAgent => 'Delete Agent';
-
-  @override
-  String get agentDetail_confirmDelete => 'Confirm Delete';
-
-  @override
-  String agentDetail_deleteContent(String name) {
-    return 'Are you sure you want to delete agent \"$name\"?\n\nThis cannot be undone, and related chat history may be affected.';
-  }
-
-  @override
-  String agentDetail_deleted(String name) {
-    return 'Deleted \"$name\"';
-  }
 
   @override
   String agentDetail_deleteFailed(String error) {
     return 'Delete failed: $error';
   }
-
-  @override
-  String get agentDetail_connectionInfo => 'Connection Info';
-
-  @override
-  String get agentDetail_protocol => 'Protocol';
-
-  @override
-  String get agentDetail_connectionType => 'Connection Type';
-
-  @override
-  String get agentDetail_endpoint => 'Endpoint';
 
   @override
   String get agentDetail_capabilities => 'Capabilities';
@@ -1458,19 +1427,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get agentDetail_systemPrompt => 'Soul';
 
   @override
-  String get agentDetail_llmConfig => 'Model Configuration';
-
-  @override
-  String get agentDetail_provider => 'Provider';
-
-  @override
   String get agentDetail_model => 'Model';
 
   @override
   String get agentDetail_mode => 'Mode';
-
-  @override
-  String get agentDetail_lastActive => 'Last Active';
 
   @override
   String get agentDetail_createdAt => 'Created';
@@ -1480,61 +1440,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get agentDetail_sourceDevice => 'Source Device';
-
-  @override
-  String get agentDetail_peerTunnel => 'P2P tunnel (paired device)';
-
-  @override
-  String get agentDetail_cliCommands => 'CLI Commands';
-
-  @override
-  String get agentDetail_allCliCommands => 'All commands available (default)';
-
-  @override
-  String get agentDetail_cliCommandsBlocked => 'All commands blocked';
-
-  @override
-  String agentDetail_cliCommandsRestricted(int count) {
-    return '$count command(s) selected (restricted)';
-  }
-
-  @override
-  String get agentDetail_cliRequireApproval =>
-      'Require approval before CLI runs';
-
-  @override
-  String get agentDetail_cliRequireApprovalDesc =>
-      'Non-She defaults on. Everyday store I/O and help skip review; other confirmations appear as a chat card you can tap later, or allow for this session. OS non-safe tools still confirm even when this is off.';
-
-  @override
-  String get agentDetail_cliApprovalOn =>
-      'CLI runs wait for your approval (everyday store I/O and help are exempt)';
-
-  @override
-  String get agentDetail_cliApprovalOff =>
-      'CLI runs without extra approval (OS non-safe tools still confirm)';
-
-  @override
-  String get agentDetail_authToken => 'Auth Token';
-
-  @override
-  String get agentDetail_copyToken => 'Copy Token';
-
-  @override
-  String get agentDetail_tokenCopied => 'Token copied to clipboard';
-
-  @override
-  String get agentDetail_nameRequired => 'Agent name cannot be empty';
-
-  @override
-  String get agentDetail_tokenRequired => 'Token cannot be empty';
-
-  @override
-  String get agentDetail_tokenHint =>
-      'Paste the token provided by the remote agent';
-
-  @override
-  String get agentDetail_saveSuccess => 'Saved successfully';
 
   @override
   String agentDetail_saveFailed(String error) {
@@ -1552,10 +1457,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'This will ask the remote agent to re-scan its workspace, regenerate its resume, and overwrite the local description. Continue?';
 
   @override
-  String get agentDetail_editResume => 'Edit Resume';
-
-  @override
-  String get agentDetail_regenerateResumeSuccess => 'Resume updated';
+  String get agentDetail_editResume => 'Edit resume';
 
   @override
   String agentDetail_regenerateResumeFailed(String error) {
@@ -1624,23 +1526,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String agentDetail_cameraFailed(String error) {
     return 'Failed to take photo: $error';
   }
-
-  @override
-  String agentDetail_saveImageFailed(String error) {
-    return 'Failed to save image: $error';
-  }
-
-  @override
-  String get agentDetail_protocolType => 'Protocol Type';
-
-  @override
-  String get agentDetail_connectionTypeLabel => 'Connection Type';
-
-  @override
-  String get agentDetail_custom => 'Custom';
-
-  @override
-  String get agentDetail_copyTokenTooltip => 'Copy Token';
 
   @override
   String get agentDetail_justNow => 'Just now';
@@ -2813,12 +2698,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Invalid URL. Please enter a direct http/https link to a .zip or .md file';
 
   @override
-  String get agentDetail_noOsToolsEnabled => 'No OS tools enabled';
-
-  @override
-  String get agentDetail_noSkillsEnabled => 'No skills enabled';
-
-  @override
   String get settings_developerTools => 'Developer Tools';
 
   @override
@@ -3539,10 +3418,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String addAgent_toolModelsCount(int count) {
     return '$count generation capabilities enabled';
   }
-
-  @override
-  String get agentDetail_noToolModelsEnabled =>
-      'No generation capabilities enabled';
 
   @override
   String get chat_mentionMode => 'Mention Mode';
@@ -6015,13 +5890,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get agentDetail_soulChangedElsewhere => 'Changed on another device';
 
   @override
-  String get agentDetail_modelSwitchUnsupported =>
-      'This agent does not support model switching';
-
-  @override
-  String get agentDetail_modelSwitched => 'Model switched';
-
-  @override
   String get agentDetail_modelSwitchFailed => 'Failed to switch model';
 
   @override
@@ -6055,113 +5923,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get agentDetail_noModels => 'No models available';
 
   @override
-  String get agentDetail_modeSwitchUnsupported =>
-      'This agent does not support mode switching';
-
-  @override
-  String get agentDetail_modeSwitched => 'Mode switched';
-
-  @override
   String get agentDetail_modeSwitchFailed => 'Failed to switch mode';
-
-  @override
-  String get agentDetail_refreshModes => 'Refresh mode list';
-
-  @override
-  String get agentDetail_switchModeHint =>
-      'Switch the remote agent\'s session mode (applies to the current and future chats)';
 
   @override
   String get agentDetail_noModes => 'No modes available';
 
   @override
-  String get agentDetail_noAiModel => 'No AI model configured';
-
-  @override
-  String get agentDetail_maxToolRounds => 'Max tool-call rounds';
-
-  @override
-  String agentDetail_maxToolRoundsValue(int count) {
-    return '$count rounds';
-  }
-
-  @override
-  String get agentDetail_taskTimeout => 'Task timeout';
-
-  @override
-  String agentDetail_taskTimeoutValue(int seconds) {
-    return '${seconds}s';
-  }
-
-  @override
-  String get agentDetail_maxToolRoundsDefault => 'Default 100';
-
-  @override
-  String get agentDetail_maxToolRoundsHelper =>
-      'Max tool-call rounds per conversation (1–500)';
-
-  @override
-  String get agentDetail_maxToolRoundsInvalid =>
-      'Enter an integer between 1 and 500';
-
-  @override
-  String get agentDetail_taskTimeoutSeconds => 'Task timeout (seconds)';
-
-  @override
-  String get agentDetail_taskTimeoutDefault => 'Default 10800';
-
-  @override
-  String get agentDetail_taskTimeoutHelper =>
-      'Max wait time per task (60–10800 seconds)';
-
-  @override
-  String get agentDetail_taskTimeoutInvalid =>
-      'Enter an integer between 60 and 10800';
-
-  @override
   String agentDetail_fromSource(String name) {
     return 'From $name';
   }
-
-  @override
-  String get agentDetail_createSuccess => 'Agent created';
-
-  @override
-  String get agentDetail_updateSuccess => 'Agent updated';
-
-  @override
-  String get agentDetail_name => 'Agent Name';
-
-  @override
-  String get agentDetail_nameHint => 'Enter agent name';
-
-  @override
-  String get agentDetail_type => 'Agent Type';
-
-  @override
-  String get agentDetail_typeHint => 'e.g. assistant, chatbot';
-
-  @override
-  String get agentDetail_typeRequired => 'Please enter an agent type';
-
-  @override
-  String get agentDetail_status => 'Agent Status';
-
-  @override
-  String agentDetail_createdLog(String name) {
-    return 'Successfully created agent: $name';
-  }
-
-  @override
-  String agentDetail_updatedLog(String name) {
-    return 'Successfully updated agent: $name';
-  }
-
-  @override
-  String get agentDetail_addTitle => 'Add Agent';
-
-  @override
-  String get agentDetail_viewTitle => 'Agent Details';
 
   @override
   String get agentPair_unsupportedPlatform =>
@@ -8593,10 +8363,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get createGroup_failed => 'Couldn\'t create the group. Try again.';
 
   @override
-  String get agentDetail_autosaveFailed =>
-      'Couldn\'t save. Your edits are still here — try again.';
-
-  @override
   String get groupDetail_saveFailed => 'Couldn\'t save. Try again.';
 
   @override
@@ -9941,4 +9707,122 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get gate_enterOffline => 'Continue offline';
+
+  @override
+  String get agentDetail_runtimeSection => 'Runtime';
+
+  @override
+  String get agentDetail_workspaceSection => 'Workspace';
+
+  @override
+  String get agentDetail_primaryWorkspace => 'Primary workspace';
+
+  @override
+  String agentDetail_additionalWorkspace(int index) {
+    return 'Additional workspace $index';
+  }
+
+  @override
+  String get agentDetail_noWorkspace => 'No mounted workspace';
+
+  @override
+  String get agentDetail_workspaceEditHint => 'Set it from the edit page';
+
+  @override
+  String get agentDetail_setPrimaryWorkspace => 'Set primary workspace';
+
+  @override
+  String get agentDetail_addWorkspace => 'Add additional workspace';
+
+  @override
+  String get agentDetail_removeWorkspace => 'Remove additional workspace';
+
+  @override
+  String agentDetail_removeWorkspaceConfirm(String path) {
+    return 'Remove:\n$path';
+  }
+
+  @override
+  String get agentDetail_workspaceRestartHint =>
+      'A running instance restarts after this change';
+
+  @override
+  String get agentDetail_workspaceUpdated => 'Workspace updated';
+
+  @override
+  String agentDetail_workspaceUpdateFailed(String error) {
+    return 'Update failed: $error';
+  }
+
+  @override
+  String get agentDetail_workspaceUnresolved =>
+      'Cannot resolve this workspace path';
+
+  @override
+  String get agentDetail_workspaceDuplicate =>
+      'That directory is already added';
+
+  @override
+  String get agentDetail_noWorkspaceToOpen =>
+      'This agent has no mounted workspace';
+
+  @override
+  String agentDetail_openWorkspaceFailed(String error) {
+    return 'Cannot open workspace: $error';
+  }
+
+  @override
+  String get agentDetail_browseUnsupported =>
+      'Hub did not answer directory browse. Upgrade and restart the peer service, then retry.';
+
+  @override
+  String get agentDetail_techInfo => 'Technical info';
+
+  @override
+  String get agentDetail_agentId => 'Agent ID';
+
+  @override
+  String get agentDetail_hostAgentId => 'ID on host';
+
+  @override
+  String get agentDetail_node => 'Node';
+
+  @override
+  String get agentDetail_nodeOffline => 'Node offline';
+
+  @override
+  String get agentDetail_hostOffline => 'Host offline';
+
+  @override
+  String get agentDetail_nameFromHost => 'Name comes from the host';
+
+  @override
+  String get agentDetail_dangerSection => 'Danger zone';
+
+  @override
+  String get agentDetail_removeFromHost => 'Remove from host';
+
+  @override
+  String get agentDetail_removeFromHostConfirm =>
+      'This deletes the instance on the host and cannot be undone. Chats on this device are kept.';
+
+  @override
+  String get agentDetail_hideOnApp => 'Hide on this device';
+
+  @override
+  String get agentDetail_hideOnAppHint =>
+      'Hidden agents disappear from contacts and the session list here. Restore them in Settings › Host › Agent management.';
+
+  @override
+  String get agentDetail_addSheModel => 'Add model';
+
+  @override
+  String get agentDetail_modeHint =>
+      'Same setting as the mode chip in the chat composer';
+
+  @override
+  String get agentDetail_syncOn => 'On';
+
+  @override
+  String get agentDetail_syncOff => 'Off';
 }

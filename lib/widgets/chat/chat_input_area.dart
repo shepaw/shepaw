@@ -234,7 +234,7 @@ class ChatInputAreaState extends State<ChatInputArea> {
   // ── 会话模式（Peer agent 的原生 mode）──
   // 只有 Peer 接入的 agent 有上游 mode 可切，本地 agent / 群聊整个入口不
   // 出现。列表与当前值先读本地缓存（没有则退回引擎目录），在线时再刷新。
-  // 切换走 setMode(sessionId:) —— 会话级，不落本地库。
+  // 切换走 setMode —— agent 级，存在主机（主机的 set_mode 不读 session_id）。
   final GlobalKey _modeChipKey = GlobalKey();
   List<PeerAgentMode> _sessionModes = const [];
   String? _currentSessionMode;

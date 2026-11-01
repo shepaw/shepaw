@@ -579,56 +579,20 @@
   "agentDetail_editTitle": "Edit Agent",
   "agentDetail_editTooltip": "Edit",
   "agentDetail_storageBagSub": "Artifacts, attachments, memory and mounted workspaces",
-  "agentDetail_viewWorkspace": "View workspace",
   "agentDetail_startConversation": "Start Conversation",
-  "agentDetail_deleteAgent": "Delete Agent",
-  "agentDetail_confirmDelete": "Confirm Delete",
-  "agentDetail_deleteContent": "Are you sure you want to delete agent \"{name}\"?\n\nThis cannot be undone, and related chat history may be affected.",
-  "agentDetail_deleted": "Deleted \"{name}\"",
   "agentDetail_deleteFailed": "Delete failed: {error}",
-  "agentDetail_connectionInfo": "Connection Info",
-  "agentDetail_protocol": "Protocol",
-  "agentDetail_connectionType": "Connection Type",
-  "agentDetail_endpoint": "Endpoint",
   "agentDetail_capabilities": "Capabilities",
   "agentDetail_systemPrompt": "Soul",
-  "agentDetail_llmConfig": "Model Configuration",
-  "agentDetail_provider": "Provider",
   "agentDetail_model": "Model",
   "agentDetail_mode": "Mode",
-  "agentDetail_lastActive": "Last Active",
   "agentDetail_createdAt": "Created",
   "agentDetail_updatedAt": "Updated",
   "agentDetail_sourceDevice": "Source Device",
-  "agentDetail_peerTunnel": "P2P tunnel (paired device)",
-  "agentDetail_cliCommands": "CLI Commands",
-  "agentDetail_allCliCommands": "All commands available (default)",
-  "agentDetail_cliCommandsBlocked": "All commands blocked",
-  "agentDetail_cliCommandsRestricted": "{count} command(s) selected (restricted)",
-  "@agentDetail_cliCommandsRestricted": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "agentDetail_cliRequireApproval": "Require approval before CLI runs",
-  "agentDetail_cliRequireApprovalDesc": "Non-She defaults on. Everyday store I/O and help skip review; other confirmations appear as a chat card you can tap later, or allow for this session. OS non-safe tools still confirm even when this is off.",
-  "agentDetail_cliApprovalOn": "CLI runs wait for your approval (everyday store I/O and help are exempt)",
-  "agentDetail_cliApprovalOff": "CLI runs without extra approval (OS non-safe tools still confirm)",
-  "agentDetail_authToken": "Auth Token",
-  "agentDetail_copyToken": "Copy Token",
-  "agentDetail_tokenCopied": "Token copied to clipboard",
-  "agentDetail_nameRequired": "Agent name cannot be empty",
-  "agentDetail_tokenRequired": "Token cannot be empty",
-  "agentDetail_tokenHint": "Paste the token provided by the remote agent",
-  "agentDetail_saveSuccess": "Saved successfully",
   "agentDetail_saveFailed": "Save failed: {error}",
   "agentDetail_regenerateResume": "Regenerate resume",
   "agentDetail_regeneratingResume": "Regenerating…",
   "agentDetail_regenerateResumeConfirm": "This will ask the remote agent to re-scan its workspace, regenerate its resume, and overwrite the local description. Continue?",
   "agentDetail_editResume": "Edit Resume",
-  "agentDetail_regenerateResumeSuccess": "Resume updated",
   "agentDetail_regenerateResumeFailed": "Failed to regenerate resume: {error}",
   "@agentDetail_regenerateResumeFailed": {
     "placeholders": {
@@ -661,11 +625,6 @@
   "agentDetail_takePhoto": "Take Photo",
   "agentDetail_galleryFailed": "Failed to pick image: {error}",
   "agentDetail_cameraFailed": "Failed to take photo: {error}",
-  "agentDetail_saveImageFailed": "Failed to save image: {error}",
-  "agentDetail_protocolType": "Protocol Type",
-  "agentDetail_connectionTypeLabel": "Connection Type",
-  "agentDetail_custom": "Custom",
-  "agentDetail_copyTokenTooltip": "Copy Token",
   "agentDetail_justNow": "Just now",
   "agentDetail_minutesAgo": "{minutes} min ago",
   "agentDetail_hoursAgo": "{hours} hr ago",
@@ -1153,8 +1112,6 @@
   },
   "skillMgmt_downloadingIndeterminate": "Downloading...",
   "skillMgmt_invalidUrl": "Invalid URL. Please enter a direct http/https link to a .zip or .md file",
-  "agentDetail_noOsToolsEnabled": "No OS tools enabled",
-  "agentDetail_noSkillsEnabled": "No skills enabled",
   "settings_developerTools": "Developer Tools",
   "settings_inferenceLog": "Inference Logs",
   "settings_inferenceLogSub": "Inspect requests, tool calls, and errors to diagnose chat issues",
@@ -1534,7 +1491,6 @@
       }
     }
   },
-  "agentDetail_noToolModelsEnabled": "No generation capabilities enabled",
   "chat_mentionMode": "Mention Mode",
   "chat_mentionModeAdminOnly": "Admin Only",
   "chat_mentionModeAllMembers": "All Members",
@@ -3001,8 +2957,6 @@
   },
   "agentDetail_peerOffline": "Paired device not connected",
   "agentDetail_soulChangedElsewhere": "Changed on another device",
-  "agentDetail_modelSwitchUnsupported": "This agent does not support model switching",
-  "agentDetail_modelSwitched": "Model switched",
   "agentDetail_modelSwitchFailed": "Failed to switch model",
   "agentDetail_sessionSync": "Sync Client Sessions",
   "agentDetail_sessionSyncHint": "Stored on the host, so every signed-in client shows the same switch. When on, this agent's own official terminal and IDE sessions appear in the session list. ShePaw sessions always sync",
@@ -3013,38 +2967,8 @@
   "agentDetail_refreshModels": "Refresh model list",
   "agentDetail_switchModelHint": "Switch the LLM model used by the remote agent (applies to future chats)",
   "agentDetail_noModels": "No models available",
-  "agentDetail_modeSwitchUnsupported": "This agent does not support mode switching",
-  "agentDetail_modeSwitched": "Mode switched",
   "agentDetail_modeSwitchFailed": "Failed to switch mode",
-  "agentDetail_refreshModes": "Refresh mode list",
-  "agentDetail_switchModeHint": "Switch the remote agent's session mode (applies to the current and future chats)",
   "agentDetail_noModes": "No modes available",
-  "agentDetail_noAiModel": "No AI model configured",
-  "agentDetail_maxToolRounds": "Max tool-call rounds",
-  "agentDetail_maxToolRoundsValue": "{count} rounds",
-  "@agentDetail_maxToolRoundsValue": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "agentDetail_taskTimeout": "Task timeout",
-  "agentDetail_taskTimeoutValue": "{seconds}s",
-  "@agentDetail_taskTimeoutValue": {
-    "placeholders": {
-      "seconds": {
-        "type": "int"
-      }
-    }
-  },
-  "agentDetail_maxToolRoundsDefault": "Default 100",
-  "agentDetail_maxToolRoundsHelper": "Max tool-call rounds per conversation (1–500)",
-  "agentDetail_maxToolRoundsInvalid": "Enter an integer between 1 and 500",
-  "agentDetail_taskTimeoutSeconds": "Task timeout (seconds)",
-  "agentDetail_taskTimeoutDefault": "Default 10800",
-  "agentDetail_taskTimeoutHelper": "Max wait time per task (60–10800 seconds)",
-  "agentDetail_taskTimeoutInvalid": "Enter an integer between 60 and 10800",
   "agentDetail_fromSource": "From {name}",
   "@agentDetail_fromSource": {
     "placeholders": {
@@ -3053,32 +2977,6 @@
       }
     }
   },
-  "agentDetail_createSuccess": "Agent created",
-  "agentDetail_updateSuccess": "Agent updated",
-  "agentDetail_name": "Agent Name",
-  "agentDetail_nameHint": "Enter agent name",
-  "agentDetail_type": "Agent Type",
-  "agentDetail_typeHint": "e.g. assistant, chatbot",
-  "agentDetail_typeRequired": "Please enter an agent type",
-  "agentDetail_status": "Agent Status",
-  "agentDetail_createdLog": "Successfully created agent: {name}",
-  "@agentDetail_createdLog": {
-    "placeholders": {
-      "name": {
-        "type": "String"
-      }
-    }
-  },
-  "agentDetail_updatedLog": "Successfully updated agent: {name}",
-  "@agentDetail_updatedLog": {
-    "placeholders": {
-      "name": {
-        "type": "String"
-      }
-    }
-  },
-  "agentDetail_addTitle": "Add Agent",
-  "agentDetail_viewTitle": "Agent Details",
   "agentPair_unsupportedPlatform": "This platform does not support scanning. Paste the URL and pairing code manually, or scan with a phone.",
   "agentPair_scanTitle": "Scan Pairing QR Code",
   "agentPair_torch": "Flashlight",
@@ -4644,7 +4542,6 @@
   },
   "createGroup_invalidMaxRounds": "Enter a positive whole number for max rounds",
   "createGroup_failed": "Couldn't create the group. Try again.",
-  "agentDetail_autosaveFailed": "Couldn't save. Your edits are still here — try again.",
   "groupDetail_saveFailed": "Couldn't save. Try again.",
   "scheduledTasks_saveFailed": "Couldn't save. Try again.",
   "scheduledTasks_executeFailed": "Couldn't run the task. Try again.",
@@ -5386,5 +5283,68 @@
   "settings_appLockNotSupported": "This device has no screen lock set up",
   "settings_biometricUnlock": "Unlock host with {method}",
   "settings_biometricUnlockSub": "You'll still need the host password if the credential expires",
-  "gate_enterOffline": "Continue offline"
+  "gate_enterOffline": "Continue offline",
+  "agentDetail_runtimeSection": "Runtime",
+  "agentDetail_workspaceSection": "Workspace",
+  "agentDetail_primaryWorkspace": "Primary workspace",
+  "agentDetail_additionalWorkspace": "Additional workspace {index}",
+  "@agentDetail_additionalWorkspace": {
+    "placeholders": {
+      "index": {
+        "type": "int"
+      }
+    }
+  },
+  "agentDetail_noWorkspace": "No mounted workspace",
+  "agentDetail_workspaceEditHint": "Set it from the edit page",
+  "agentDetail_setPrimaryWorkspace": "Set primary workspace",
+  "agentDetail_addWorkspace": "Add additional workspace",
+  "agentDetail_removeWorkspace": "Remove additional workspace",
+  "agentDetail_removeWorkspaceConfirm": "Remove:\n{path}",
+  "@agentDetail_removeWorkspaceConfirm": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "agentDetail_workspaceRestartHint": "A running instance restarts after this change",
+  "agentDetail_workspaceUpdated": "Workspace updated",
+  "agentDetail_workspaceUpdateFailed": "Update failed: {error}",
+  "@agentDetail_workspaceUpdateFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "agentDetail_workspaceUnresolved": "Cannot resolve this workspace path",
+  "agentDetail_workspaceDuplicate": "That directory is already added",
+  "agentDetail_noWorkspaceToOpen": "This agent has no mounted workspace",
+  "agentDetail_openWorkspaceFailed": "Cannot open workspace: {error}",
+  "@agentDetail_openWorkspaceFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "agentDetail_browseUnsupported": "Hub did not answer directory browse. Upgrade and restart the peer service, then retry.",
+  "agentDetail_techInfo": "Technical info",
+  "agentDetail_agentId": "Agent ID",
+  "agentDetail_hostAgentId": "ID on host",
+  "agentDetail_node": "Node",
+  "agentDetail_nodeOffline": "Node offline",
+  "agentDetail_hostOffline": "Host offline",
+  "agentDetail_editResume": "Edit resume",
+  "agentDetail_nameFromHost": "Name comes from the host",
+  "agentDetail_dangerSection": "Danger zone",
+  "agentDetail_removeFromHost": "Remove from host",
+  "agentDetail_removeFromHostConfirm": "This deletes the instance on the host and cannot be undone. Chats on this device are kept.",
+  "agentDetail_hideOnApp": "Hide on this device",
+  "agentDetail_hideOnAppHint": "Hidden agents disappear from contacts and the session list here. Restore them in Settings › Host › Agent management.",
+  "agentDetail_addSheModel": "Add model",
+  "agentDetail_modeHint": "Same setting as the mode chip in the chat composer",
+  "agentDetail_syncOn": "On",
+  "agentDetail_syncOff": "Off"
 }

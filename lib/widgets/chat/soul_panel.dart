@@ -162,6 +162,3 @@ class _SoulPanelState extends State<SoulPanel> {
     );
   }
 }
-
-/// @deprecated Use [SoulPanel] instead.
-typedef SystemPromptPanel = SoulPanel;

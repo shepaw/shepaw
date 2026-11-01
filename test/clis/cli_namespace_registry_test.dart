@@ -7,7 +7,7 @@ import 'package:shepaw/services/cli_tool_registry.dart';
 /// P0-1 回归：命名空间「事实」曾经有 4 份副本且已漂移。
 ///
 /// `CliNamespaceRegistry` 硬编码 11 项（缺 `os` / `workflow` / `store`），
-/// 而 `CliCommandSelectScreen` 用它的 `allCommandIds` 判断「是否全选」——
+/// 而消费方用它的 `allCommandIds` 判断「是否全选」——
 /// 这三个命名空间因此会被静默写掉（见 P0-2 bug 1）。这些断言把「派生自
 /// ShepawCLI」钉死，副本再次出现时立刻失败。
 void main() {

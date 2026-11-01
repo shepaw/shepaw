@@ -704,26 +704,7 @@
   "agentDetail_editTitle": "编辑 Agent",
   "agentDetail_editTooltip": "编辑",
   "agentDetail_storageBagSub": "产物、附件、记忆与已挂载的工作区",
-  "agentDetail_viewWorkspace": "查看工作区",
   "agentDetail_startConversation": "发起对话",
-  "agentDetail_deleteAgent": "删除 Agent",
-  "agentDetail_confirmDelete": "确认删除",
-  "agentDetail_deleteContent": "确定要删除助手「{name}」吗？\n\n删除后将无法恢复，相关的聊天记录也可能受到影响。",
-  "@agentDetail_deleteContent": {
-    "placeholders": {
-      "name": {
-        "type": "String"
-      }
-    }
-  },
-  "agentDetail_deleted": "已删除「{name}」",
-  "@agentDetail_deleted": {
-    "placeholders": {
-      "name": {
-        "type": "String"
-      }
-    }
-  },
   "agentDetail_deleteFailed": "删除失败: {error}",
   "@agentDetail_deleteFailed": {
     "placeholders": {
@@ -732,43 +713,13 @@
       }
     }
   },
-  "agentDetail_connectionInfo": "连接信息",
-  "agentDetail_protocol": "协议",
-  "agentDetail_connectionType": "连接方式",
-  "agentDetail_endpoint": "端点",
   "agentDetail_capabilities": "能力",
   "agentDetail_systemPrompt": "Soul",
-  "agentDetail_llmConfig": "模型配置",
-  "agentDetail_provider": "服务商",
   "agentDetail_model": "模型",
   "agentDetail_mode": "模式",
-  "agentDetail_lastActive": "最后活跃",
   "agentDetail_createdAt": "创建时间",
   "agentDetail_updatedAt": "更新时间",
   "agentDetail_sourceDevice": "来源设备",
-  "agentDetail_peerTunnel": "P2P 隧道（配对设备）",
-  "agentDetail_cliCommands": "CLI 命令",
-  "agentDetail_allCliCommands": "全部可用（默认放行）",
-  "agentDetail_cliCommandsBlocked": "全部命令已禁止",
-  "agentDetail_cliCommandsRestricted": "已限制为 {count} 条命令",
-  "@agentDetail_cliCommandsRestricted": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "agentDetail_cliRequireApproval": "执行 CLI 前需要审核",
-  "agentDetail_cliRequireApprovalDesc": "非 She 默认开启。储物袋日常读写与 help 免审；其余确认出现在消息气泡里，可稍后点，也可勾选本次会话允许。关闭后 os 非 safe 命令仍会确认。",
-  "agentDetail_cliApprovalOn": "执行 CLI 需你确认（储物袋日常读写与 help 除外）",
-  "agentDetail_cliApprovalOff": "执行 CLI 不再额外确认（os 非 safe 仍会确认）",
-  "agentDetail_authToken": "认证 Token",
-  "agentDetail_copyToken": "复制 Token",
-  "agentDetail_tokenCopied": "Token 已复制到剪贴板",
-  "agentDetail_nameRequired": "助手名称不能为空",
-  "agentDetail_tokenRequired": "Token 不能为空",
-  "agentDetail_tokenHint": "粘贴远端 Agent 提供的 Token",
-  "agentDetail_saveSuccess": "保存成功",
   "agentDetail_saveFailed": "保存失败: {error}",
   "@agentDetail_saveFailed": {
     "placeholders": {
@@ -781,7 +732,6 @@
   "agentDetail_regeneratingResume": "正在重新生成…",
   "agentDetail_regenerateResumeConfirm": "将调用远端 agent 重新扫描工作区并生成简历，然后覆盖本地的描述。继续？",
   "agentDetail_editResume": "编辑简历",
-  "agentDetail_regenerateResumeSuccess": "简历已更新",
   "agentDetail_regenerateResumeFailed": "重新生成简历失败: {error}",
   "@agentDetail_regenerateResumeFailed": {
     "placeholders": {
@@ -828,18 +778,6 @@
       }
     }
   },
-  "agentDetail_saveImageFailed": "保存图片失败: {error}",
-  "@agentDetail_saveImageFailed": {
-    "placeholders": {
-      "error": {
-        "type": "String"
-      }
-    }
-  },
-  "agentDetail_protocolType": "协议类型",
-  "agentDetail_connectionTypeLabel": "连接方式",
-  "agentDetail_custom": "自定义",
-  "agentDetail_copyTokenTooltip": "复制 Token",
   "agentDetail_justNow": "刚刚",
   "agentDetail_minutesAgo": "{minutes} 分钟前",
   "@agentDetail_minutesAgo": {
@@ -1568,8 +1506,6 @@
   },
   "skillMgmt_downloadingIndeterminate": "下载中...",
   "skillMgmt_invalidUrl": "URL 无效，请输入 .zip 或 .md 文件的 http/https 直链",
-  "agentDetail_noOsToolsEnabled": "未启用任何 OS 工具",
-  "agentDetail_noSkillsEnabled": "未启用任何技能",
   "settings_developerTools": "开发者工具",
   "settings_inferenceLog": "推理日志",
   "settings_inferenceLogSub": "查看请求、工具调用与错误，便于定位对话问题",
@@ -1991,7 +1927,6 @@
       }
     }
   },
-  "agentDetail_noToolModelsEnabled": "未启用生成能力",
   "chat_mentionMode": "提及模式",
   "chat_mentionModeAdminOnly": "仅管理员",
   "chat_mentionModeAllMembers": "所有成员",
@@ -3455,8 +3390,6 @@
   },
   "agentDetail_peerOffline": "配对设备未连接",
   "agentDetail_soulChangedElsewhere": "已在其他设备修改",
-  "agentDetail_modelSwitchUnsupported": "该 agent 暂不支持切换模型",
-  "agentDetail_modelSwitched": "已切换模型",
   "agentDetail_modelSwitchFailed": "切换模型失败",
   "agentDetail_sessionSync": "同步客户端会话",
   "agentDetail_sessionSyncHint": "开或关都记在主机上，已登录的客户端看到的是同一个状态。开启后，这个 Agent 自己的官方终端和 IDE 会话会出现在会话列表里。ShePaw 自己的会话始终同步",
@@ -3467,38 +3400,8 @@
   "agentDetail_refreshModels": "刷新模型列表",
   "agentDetail_switchModelHint": "切换远端 agent 使用的 LLM 模型（作用于后续对话）",
   "agentDetail_noModels": "暂无可用模型",
-  "agentDetail_modeSwitchUnsupported": "该 agent 暂不支持切换模式",
-  "agentDetail_modeSwitched": "已切换模式",
   "agentDetail_modeSwitchFailed": "切换模式失败",
-  "agentDetail_refreshModes": "刷新模式列表",
-  "agentDetail_switchModeHint": "切换远端 agent 的会话模式（作用于当前及后续对话）",
   "agentDetail_noModes": "暂无可用模式",
-  "agentDetail_noAiModel": "尚未配置 AI 模型",
-  "agentDetail_maxToolRounds": "最大工具调用轮次",
-  "agentDetail_maxToolRoundsValue": "{count} 次",
-  "@agentDetail_maxToolRoundsValue": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "agentDetail_taskTimeout": "任务超时时间",
-  "agentDetail_taskTimeoutValue": "{seconds} 秒",
-  "@agentDetail_taskTimeoutValue": {
-    "placeholders": {
-      "seconds": {
-        "type": "int"
-      }
-    }
-  },
-  "agentDetail_maxToolRoundsDefault": "默认 100",
-  "agentDetail_maxToolRoundsHelper": "单次对话中 LLM 最多可调用工具的轮数（1–500）",
-  "agentDetail_maxToolRoundsInvalid": "请输入 1 到 500 之间的整数",
-  "agentDetail_taskTimeoutSeconds": "任务超时时间（秒）",
-  "agentDetail_taskTimeoutDefault": "默认 10800",
-  "agentDetail_taskTimeoutHelper": "单次任务的最长等待时间（60–10800 秒）",
-  "agentDetail_taskTimeoutInvalid": "请输入 60 到 10800 之间的整数",
   "agentDetail_fromSource": "来自 {name}",
   "@agentDetail_fromSource": {
     "placeholders": {
@@ -3507,32 +3410,6 @@
       }
     }
   },
-  "agentDetail_createSuccess": "Agent 创建成功",
-  "agentDetail_updateSuccess": "Agent 更新成功",
-  "agentDetail_name": "Agent 名称",
-  "agentDetail_nameHint": "输入 Agent 名称",
-  "agentDetail_type": "Agent 类型",
-  "agentDetail_typeHint": "例如: assistant, chatbot",
-  "agentDetail_typeRequired": "请输入 Agent 类型",
-  "agentDetail_status": "Agent 状态",
-  "agentDetail_createdLog": "成功创建 Agent: {name}",
-  "@agentDetail_createdLog": {
-    "placeholders": {
-      "name": {
-        "type": "String"
-      }
-    }
-  },
-  "agentDetail_updatedLog": "成功更新 Agent: {name}",
-  "@agentDetail_updatedLog": {
-    "placeholders": {
-      "name": {
-        "type": "String"
-      }
-    }
-  },
-  "agentDetail_addTitle": "添加 Agent",
-  "agentDetail_viewTitle": "Agent 详情",
   "agentPair_unsupportedPlatform": "当前平台不支持扫码。请返回手动粘贴 URL + 填写配对码，或改用手机扫码。",
   "agentPair_scanTitle": "扫描配对二维码",
   "agentPair_torch": "手电筒",
@@ -5094,7 +4971,6 @@
   },
   "createGroup_invalidMaxRounds": "最大轮次请输入正整数",
   "createGroup_failed": "创建群聊失败，请重试",
-  "agentDetail_autosaveFailed": "保存失败，修改还在，请稍后重试",
   "groupDetail_saveFailed": "保存失败，请重试",
   "scheduledTasks_saveFailed": "保存失败，请重试",
   "scheduledTasks_executeFailed": "执行失败，请重试",
@@ -5845,5 +5721,68 @@
   "settings_appLockNotSupported": "这台设备没有设置锁屏方式",
   "settings_biometricUnlock": "用 {method} 解锁主机",
   "settings_biometricUnlockSub": "凭据失效时仍需输入主机密码",
-  "gate_enterOffline": "先进主页（离线）"
+  "gate_enterOffline": "先进主页（离线）",
+  "agentDetail_runtimeSection": "运行设置",
+  "agentDetail_workspaceSection": "工作区",
+  "agentDetail_primaryWorkspace": "主工作区",
+  "agentDetail_additionalWorkspace": "附加工作区 {index}",
+  "@agentDetail_additionalWorkspace": {
+    "placeholders": {
+      "index": {
+        "type": "int"
+      }
+    }
+  },
+  "agentDetail_noWorkspace": "尚未挂载工作区",
+  "agentDetail_workspaceEditHint": "可在编辑页设置",
+  "agentDetail_setPrimaryWorkspace": "设置主工作区",
+  "agentDetail_addWorkspace": "添加附加工作区",
+  "agentDetail_removeWorkspace": "移除附加工作区",
+  "agentDetail_removeWorkspaceConfirm": "确定移除：\n{path}",
+  "@agentDetail_removeWorkspaceConfirm": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "agentDetail_workspaceRestartHint": "修改后运行中的实例会自动重启",
+  "agentDetail_workspaceUpdated": "工作区已更新",
+  "agentDetail_workspaceUpdateFailed": "更新失败：{error}",
+  "@agentDetail_workspaceUpdateFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "agentDetail_workspaceUnresolved": "无法解析该工作区路径",
+  "agentDetail_workspaceDuplicate": "该目录已在附加工作区中",
+  "agentDetail_noWorkspaceToOpen": "该 Agent 还没有挂载工作区",
+  "agentDetail_openWorkspaceFailed": "无法打开工作区：{error}",
+  "@agentDetail_openWorkspaceFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "agentDetail_browseUnsupported": "Hub 未响应目录浏览，请升级并重启 peer 服务后重试",
+  "agentDetail_techInfo": "技术信息",
+  "agentDetail_agentId": "Agent ID",
+  "agentDetail_hostAgentId": "主机上的 ID",
+  "agentDetail_node": "节点",
+  "agentDetail_nodeOffline": "节点离线",
+  "agentDetail_hostOffline": "主机离线",
+  "agentDetail_editResume": "编辑简历",
+  "agentDetail_nameFromHost": "名称由主机提供",
+  "agentDetail_dangerSection": "危险操作",
+  "agentDetail_removeFromHost": "从主机移除",
+  "agentDetail_removeFromHostConfirm": "将从主机上删除这个实例，无法恢复。本机的聊天记录会保留。",
+  "agentDetail_hideOnApp": "在本机隐藏",
+  "agentDetail_hideOnAppHint": "隐藏后不再出现在本机的联系人与会话列表；可在 设置 › 主机 › Agent 管理 中恢复显示。",
+  "agentDetail_addSheModel": "添加模型",
+  "agentDetail_modeHint": "与聊天输入框里的模式是同一个设置",
+  "agentDetail_syncOn": "开",
+  "agentDetail_syncOff": "关"
 }
