@@ -26,11 +26,13 @@ import 'providers/theme_provider.dart';
 import 'screens/password_setup_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/pouch_login_screen.dart';
-import 'onboarding/host_setup_screen.dart';
+import 'onboarding/host_install_screen.dart';
 import 'onboarding/gate_entry.dart';
 import 'onboarding/unlock_screen.dart';
+import 'onboarding/welcome_screen.dart';
 import 'onboarding/gate_navigator.dart';
-import 'onboarding/pouch_gate_screen.dart';
+import 'onboarding/create_password_screen.dart';
+import 'onboarding/setup_done_screen.dart';
 import 'onboarding/remote_connect_screen.dart';
 import 'screens/adaptive_home_screen.dart';
 import 'widgets/window_title_sync.dart';
@@ -354,9 +356,12 @@ class _MyAppState extends State<MyApp> {
                 '/setup': (context) => const PasswordSetupScreen(),
                 '/login': (context) => const LoginScreen(),
                 '/pouch': (context) => const PouchLoginScreen(),
-                '/host-setup': (context) => const HostSetupScreen(),
-                '/pouch-init': (context) =>
-                    const PouchGateScreen(initializing: true),
+                '/welcome': (context) => const WelcomeScreen(),
+                '/host-install': (context) => const HostInstallScreen(),
+                '/create-password': (context) => const CreatePasswordScreen(),
+                '/setup-done': (context) => const SetupDoneScreen(),
+                '/host-setup': (context) => const WelcomeScreen(),
+                '/pouch-init': (context) => const CreatePasswordScreen(),
                 '/pouch-unlock': (context) => const _LegacyUnlockRoute(),
                 '/unlock': (context) => const UnlockScreen(),
                 '/remote-connect': (context) => const RemoteConnectScreen(),
@@ -396,10 +401,18 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  final _phase = ValueNotifier<GatePhase>(GatePhase.starting);
+
   @override
   void initState() {
     super.initState();
     _checkPasswordStatus();
+  }
+
+  @override
+  void dispose() {
+    _phase.dispose();
+    super.dispose();
   }
 
   /// 门在哪、要不要静默续期，全部交给 [GateNavigator]。
@@ -411,7 +424,17 @@ class _SplashScreenState extends State<SplashScreen> {
     await GateNavigator.go(
       context,
       minDisplay: const Duration(milliseconds: 300),
+      phase: _phase,
     );
+  }
+
+  String _status(AppLocalizations l10n) {
+    return switch (_phase.value) {
+      GatePhase.starting => l10n.gate_splashStarting,
+      GatePhase.startingHost => l10n.gate_splashStartingHost,
+      GatePhase.connecting => l10n.gate_splashConnecting(l10n.appTitle),
+      GatePhase.restoring => l10n.gate_splashRestoring,
+    };
   }
 
   @override
@@ -456,11 +479,14 @@ class _SplashScreenState extends State<SplashScreen> {
               ),
               const SizedBox(height: 16),
 
-              Text(
-                l10n.splash_loading,
-                style: const TextStyle(
-                  fontSize: 16,
-                  color: Colors.white70,
+              ValueListenableBuilder<GatePhase>(
+                valueListenable: _phase,
+                builder: (context, _, __) => Text(
+                  _status(l10n),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    color: Colors.white70,
+                  ),
                 ),
               ),
             ],

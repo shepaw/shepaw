@@ -16,7 +16,10 @@ import '../storage/pouch_session.dart';
 import '../utils/platform_utils.dart';
 import 'credential_restore.dart';
 import 'gate_entry.dart';
+import 'gate_entry.dart';
 import 'host_entry.dart';
+import 'host_install_controller.dart';
+import 'host_install_screen.dart';
 import 'phone_host_store.dart';
 
 /// 调用方带过来的上下文。比如 keeper 把人带到解锁页时，要说是主机重启了。
@@ -36,6 +39,9 @@ class GateNavigator {
     BuildContext context, {
     GateHint? hint,
     Duration minDisplay = Duration.zero,
+    ValueNotifier<GatePhase>? phase,
+    HostInstallController? install,
+    Duration inPlaceBudget = const Duration(seconds: 2),
   }) async {
     final started = DateTime.now();
     final isDesktop = isDesktopPlatform;
@@ -118,6 +124,9 @@ class GateNavigator {
       session: session,
       host: host,
       hint: hint,
+      phase: phase,
+      install: install,
+      inPlaceBudget: inPlaceBudget,
     );
   }
 
@@ -139,6 +148,9 @@ class GateNavigator {
     required PouchSession? session,
     required PairedPeer? host,
     GateHint? hint,
+    ValueNotifier<GatePhase>? phase,
+    HostInstallController? install,
+    Duration inPlaceBudget = const Duration(seconds: 2),
   }) async {
     switch (entry) {
       case GoHome():
@@ -174,11 +186,14 @@ class GateNavigator {
               session: session,
               host: host,
               hint: hint,
+              phase: phase,
+              install: install,
+              inPlaceBudget: inPlaceBudget,
             );
         }
 
       case GoWelcome():
-        _replace(context, isDesktopPlatform ? '/host-setup' : '/remote-connect');
+        _replace(context, isDesktopPlatform ? '/welcome' : '/remote-connect');
 
       case GoHostInstall(:final reason):
         await _hostInstall(
@@ -188,10 +203,13 @@ class GateNavigator {
           cliStatus: cliStatus,
           session: session,
           host: host,
+          phase: phase,
+          install: install,
+          inPlaceBudget: inPlaceBudget,
         );
 
       case GoCreatePassword():
-        _replace(context, '/pouch-init');
+        _replace(context, '/create-password');
 
       case GoUnlock(:final hostPeerId, :final reason):
         await _unlock(
@@ -274,11 +292,10 @@ class GateNavigator {
     required LocalCliStatus cliStatus,
     required PouchSession? session,
     required PairedPeer? host,
+    ValueNotifier<GatePhase>? phase,
+    HostInstallController? install,
+    Duration inPlaceBudget = const Duration(seconds: 2),
   }) async {
-    if (reason == HostInstallReason.firstInstall) {
-      _replace(context, '/host-setup');
-      return;
-    }
     if (reason == HostInstallReason.unresponsive) {
       _replace(
         context,
@@ -287,95 +304,44 @@ class GateNavigator {
       );
       return;
     }
-    await _autoLocal(context, cli: cli, session: session, host: host);
-  }
-
-  /// 主机装了没跑：自动 `shepaw start`，再按老路子决定去哪。
-  ///
-  /// TODO(L4)：这里会被 `HostInstallScreen` 取代，那个页面有分步进度和失败出口。
-  static Future<void> _autoLocal(
-    BuildContext context, {
-    required CliHostEndpoint? cli,
-    required PouchSession? session,
-    required PairedPeer? host,
-  }) async {
-    var running = cli;
-    final binary = running?.binary ?? await CliHost.resolveBinary();
+    final controller = install ??
+        HostInstallController(
+          reason: reason == HostInstallReason.firstInstall
+              ? HostInstallReason.firstInstall
+              : HostInstallReason.notRunning,
+          log: (message) => LoggerService().info(message, tag: 'HostInstall'),
+        );
+    phase?.value = GatePhase.startingHost;
+    unawaited(controller.start());
+    final deadline = DateTime.now().add(inPlaceBudget);
+    while (!controller.done &&
+        controller.failedStep == null &&
+        DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
     if (!context.mounted) return;
-    if (binary == null) {
-      _replace(context, '/host-setup');
+    if (!controller.done && controller.failedStep == null) {
+      _replaceHostInstall(context, controller);
       return;
     }
-    final l10n = AppLocalizations.of(context);
-    unawaited(showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => AlertDialog(
-        content: Text(l10n.hostStart_starting),
+    if (controller.done) {
+      await go(context, minDisplay: Duration.zero);
+      return;
+    }
+    _replaceHostInstall(context, controller);
+  }
+
+  static void _replaceHostInstall(
+    BuildContext context,
+    HostInstallController controller,
+  ) {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        settings: const RouteSettings(name: '/host-install'),
+        builder: (_) => HostInstallScreen(controller: controller),
       ),
-    ));
-    final started = DateTime.now();
-    try {
-      await CliHost.start(binary);
-    } catch (error) {
-      LoggerService().error('shepaw start failed', tag: 'Gate', error: error);
-      if (context.mounted) Navigator.of(context).pop();
-      if (context.mounted) _replace(context, '/host-setup');
-      return;
-    }
-    final elapsed = DateTime.now().difference(started);
-    if (elapsed < const Duration(seconds: 2)) {
-      await Future<void>.delayed(const Duration(seconds: 2) - elapsed);
-    }
-    if (context.mounted) Navigator.of(context).pop();
-    running = await CliHost.detect();
-    if (!context.mounted) return;
-    if (running == null) {
-      _replace(context, '/host-setup');
-      return;
-    }
-    try {
-      await CliHost.attach(running);
-    } on HostUnresponsiveException {
-      if (!context.mounted) return;
-      _replace(
-        context,
-        '/pouch',
-        arguments: const PouchLoginArgs(hostUnresponsive: true),
-      );
-      return;
-    }
-    final current = await PouchSessionStore.readActive();
-    final currentHost = current == null
-        ? null
-        : await PeerStorageService().getPeerById(current.hostPeerId);
-    final now = DateTime.now().millisecondsSinceEpoch;
-    if (!context.mounted) return;
-    if (current != null &&
-        current.isLoggedIn(now) &&
-        sameFingerprint(running.fingerprint, currentHost?.fingerprint)) {
-      _replace(context, '/home');
-      return;
-    }
-    bool? initialized;
-    try {
-      initialized = await CliPouch.passwordIsSet(running.binary)
-          .timeout(const Duration(seconds: 3));
-    } catch (error) {
-      LoggerService().warning('password status failed: $error', tag: 'Gate');
-    }
-    if (!context.mounted) return;
-    if (initialized == null) {
-      _replace(
-        context,
-        '/pouch',
-        arguments: const PouchLoginArgs(hostUnresponsive: true),
-      );
-      return;
-    }
-    _replace(context, initialized ? '/pouch-unlock' : '/pouch-init');
+    );
   }
-
 }
 
 void _replace(BuildContext context, String route, {Object? arguments}) {

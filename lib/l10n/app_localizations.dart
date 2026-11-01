@@ -15794,7 +15794,7 @@ abstract class AppLocalizations {
   /// No description provided for @hostInstall_copyCommand.
   ///
   /// In zh, this message translates to:
-  /// **'复制终端安装命令'**
+  /// **'复制安装命令'**
   String get hostInstall_copyCommand;
 
   /// No description provided for @hostStart_starting.
@@ -16822,6 +16822,312 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'改用粘贴'**
   String get gate_usePaste;
+
+  /// No description provided for @gate_splashStarting.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在启动…'**
+  String get gate_splashStarting;
+
+  /// No description provided for @gate_splashStartingHost.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在启动主机…'**
+  String get gate_splashStartingHost;
+
+  /// No description provided for @gate_splashConnecting.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在连接 {host}…'**
+  String gate_splashConnecting(String host);
+
+  /// No description provided for @gate_splashRestoring.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在恢复登录…'**
+  String get gate_splashRestoring;
+
+  /// No description provided for @gate_skipOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'跳过，先进主页（离线）'**
+  String get gate_skipOffline;
+
+  /// No description provided for @welcome_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'欢迎使用惜宝'**
+  String get welcome_title;
+
+  /// No description provided for @welcome_desktopIntro.
+  ///
+  /// In zh, this message translates to:
+  /// **'你的数据、惜宝和智能体都放在「主机」上。主机需要一直开着，先选一台。'**
+  String get welcome_desktopIntro;
+
+  /// No description provided for @welcome_thisComputer.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台电脑'**
+  String get welcome_thisComputer;
+
+  /// No description provided for @welcome_thisComputerDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'适合常开的台式机，或者不常合盖的笔记本'**
+  String get welcome_thisComputerDesc;
+
+  /// No description provided for @welcome_useThisComputer.
+  ///
+  /// In zh, this message translates to:
+  /// **'用这台电脑'**
+  String get welcome_useThisComputer;
+
+  /// No description provided for @welcome_recommended.
+  ///
+  /// In zh, this message translates to:
+  /// **'推荐'**
+  String get welcome_recommended;
+
+  /// No description provided for @welcome_otherComputer.
+  ///
+  /// In zh, this message translates to:
+  /// **'另一台电脑'**
+  String get welcome_otherComputer;
+
+  /// No description provided for @welcome_otherComputerDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机已经装在家里或公司的电脑上'**
+  String get welcome_otherComputerDesc;
+
+  /// No description provided for @welcome_goConnect.
+  ///
+  /// In zh, this message translates to:
+  /// **'去连接'**
+  String get welcome_goConnect;
+
+  /// No description provided for @welcome_changeLater.
+  ///
+  /// In zh, this message translates to:
+  /// **'以后可以在「设置 → 主机」里更换'**
+  String get welcome_changeLater;
+
+  /// No description provided for @connect_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接另一台电脑上的主机'**
+  String get connect_title;
+
+  /// No description provided for @connect_step1.
+  ///
+  /// In zh, this message translates to:
+  /// **'在主机那台电脑上打开惜宝：设置 → 主机 → 添加设备，会出现加入码'**
+  String get connect_step1;
+
+  /// No description provided for @connect_step1Terminal.
+  ///
+  /// In zh, this message translates to:
+  /// **'那台电脑没装惜宝 App？在终端执行：'**
+  String get connect_step1Terminal;
+
+  /// No description provided for @connect_step2.
+  ///
+  /// In zh, this message translates to:
+  /// **'把加入链接粘贴到这里'**
+  String get connect_step2;
+
+  /// No description provided for @connect_clipboardDetected.
+  ///
+  /// In zh, this message translates to:
+  /// **'已从剪贴板读取'**
+  String get connect_clipboardDetected;
+
+  /// No description provided for @connect_invalidLink.
+  ///
+  /// In zh, this message translates to:
+  /// **'这不是有效的加入链接'**
+  String get connect_invalidLink;
+
+  /// No description provided for @connect_button.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接'**
+  String get connect_button;
+
+  /// No description provided for @connect_connecting.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在加入 {host}…'**
+  String connect_connecting(String host);
+
+  /// No description provided for @connect_savedButOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'已记下 {host}，但现在连不上'**
+  String connect_savedButOffline(String host);
+
+  /// No description provided for @connect_offlineHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'确认那台电脑开着、在同一网络，或者已经开启隧道'**
+  String get connect_offlineHint;
+
+  /// No description provided for @connect_tryAgain.
+  ///
+  /// In zh, this message translates to:
+  /// **'再试一次'**
+  String get connect_tryAgain;
+
+  /// No description provided for @connect_stillOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'还是连不上'**
+  String get connect_stillOffline;
+
+  /// No description provided for @connect_enterOffline.
+  ///
+  /// In zh, this message translates to:
+  /// **'先进入（离线）'**
+  String get connect_enterOffline;
+
+  /// No description provided for @connect_joined.
+  ///
+  /// In zh, this message translates to:
+  /// **'已加入 {pouch}'**
+  String connect_joined(String pouch);
+
+  /// No description provided for @hostInstall_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在准备这台电脑上的主机'**
+  String get hostInstall_title;
+
+  /// No description provided for @hostInstall_stepInstall.
+  ///
+  /// In zh, this message translates to:
+  /// **'安装主机程序'**
+  String get hostInstall_stepInstall;
+
+  /// No description provided for @hostInstall_stepStart.
+  ///
+  /// In zh, this message translates to:
+  /// **'启动主机'**
+  String get hostInstall_stepStart;
+
+  /// No description provided for @hostInstall_stepConnect.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接主机'**
+  String get hostInstall_stepConnect;
+
+  /// No description provided for @hostInstall_bundled.
+  ///
+  /// In zh, this message translates to:
+  /// **'应用自带 {version}'**
+  String hostInstall_bundled(String version);
+
+  /// No description provided for @hostInstall_installFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'没能把主机程序放进这台电脑'**
+  String get hostInstall_installFailed;
+
+  /// No description provided for @hostInstall_installedIt.
+  ///
+  /// In zh, this message translates to:
+  /// **'我装好了'**
+  String get hostInstall_installedIt;
+
+  /// No description provided for @hostInstall_startFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机没有启动起来'**
+  String get hostInstall_startFailed;
+
+  /// No description provided for @hostInstall_unresponsive.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机启动了，但没有响应'**
+  String get hostInstall_unresponsive;
+
+  /// No description provided for @hostInstall_restart.
+  ///
+  /// In zh, this message translates to:
+  /// **'重启主机'**
+  String get hostInstall_restart;
+
+  /// No description provided for @hostInstall_openLog.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开日志'**
+  String get hostInstall_openLog;
+
+  /// No description provided for @hostInstall_useOther.
+  ///
+  /// In zh, this message translates to:
+  /// **'不想放在这台电脑？连接另一台电脑上的主机'**
+  String get hostInstall_useOther;
+
+  /// No description provided for @createPassword_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'设置主机密码'**
+  String get createPassword_title;
+
+  /// No description provided for @createPassword_body.
+  ///
+  /// In zh, this message translates to:
+  /// **'别的设备第一次连这台主机时，可以扫码加入，也可以输这个密码。这台电脑会记住登录。'**
+  String get createPassword_body;
+
+  /// No description provided for @createPassword_nickname.
+  ///
+  /// In zh, this message translates to:
+  /// **'称呼'**
+  String get createPassword_nickname;
+
+  /// No description provided for @createPassword_nicknameHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'会显示为「{name}」'**
+  String createPassword_nicknameHint(String name);
+
+  /// No description provided for @createPassword_submit.
+  ///
+  /// In zh, this message translates to:
+  /// **'完成设置'**
+  String get createPassword_submit;
+
+  /// No description provided for @done_title.
+  ///
+  /// In zh, this message translates to:
+  /// **'准备好了'**
+  String get done_title;
+
+  /// No description provided for @done_phonePrompt.
+  ///
+  /// In zh, this message translates to:
+  /// **'要在手机上也用惜宝吗？'**
+  String get done_phonePrompt;
+
+  /// No description provided for @done_phoneSteps.
+  ///
+  /// In zh, this message translates to:
+  /// **'1. 手机上安装并打开惜宝\n2. 点「扫码加入」\n3. 扫这个码，直接进入'**
+  String get done_phoneSteps;
+
+  /// No description provided for @done_enter.
+  ///
+  /// In zh, this message translates to:
+  /// **'进入惜宝'**
+  String get done_enter;
+
+  /// No description provided for @done_later.
+  ///
+  /// In zh, this message translates to:
+  /// **'以后再说'**
+  String get done_later;
 }
 
 class _AppLocalizationsDelegate

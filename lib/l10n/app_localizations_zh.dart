@@ -8689,7 +8689,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get hostSetup_switchRemote => '不想放在这台电脑？连接另一台电脑上的主机';
 
   @override
-  String get hostInstall_copyCommand => '复制终端安装命令';
+  String get hostInstall_copyCommand => '复制安装命令';
 
   @override
   String get hostStart_starting => '正在启动主机…';
@@ -9268,4 +9268,169 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get gate_usePaste => '改用粘贴';
+
+  @override
+  String get gate_splashStarting => '正在启动…';
+
+  @override
+  String get gate_splashStartingHost => '正在启动主机…';
+
+  @override
+  String gate_splashConnecting(String host) {
+    return '正在连接 $host…';
+  }
+
+  @override
+  String get gate_splashRestoring => '正在恢复登录…';
+
+  @override
+  String get gate_skipOffline => '跳过，先进主页（离线）';
+
+  @override
+  String get welcome_title => '欢迎使用惜宝';
+
+  @override
+  String get welcome_desktopIntro => '你的数据、惜宝和智能体都放在「主机」上。主机需要一直开着，先选一台。';
+
+  @override
+  String get welcome_thisComputer => '这台电脑';
+
+  @override
+  String get welcome_thisComputerDesc => '适合常开的台式机，或者不常合盖的笔记本';
+
+  @override
+  String get welcome_useThisComputer => '用这台电脑';
+
+  @override
+  String get welcome_recommended => '推荐';
+
+  @override
+  String get welcome_otherComputer => '另一台电脑';
+
+  @override
+  String get welcome_otherComputerDesc => '主机已经装在家里或公司的电脑上';
+
+  @override
+  String get welcome_goConnect => '去连接';
+
+  @override
+  String get welcome_changeLater => '以后可以在「设置 → 主机」里更换';
+
+  @override
+  String get connect_title => '连接另一台电脑上的主机';
+
+  @override
+  String get connect_step1 => '在主机那台电脑上打开惜宝：设置 → 主机 → 添加设备，会出现加入码';
+
+  @override
+  String get connect_step1Terminal => '那台电脑没装惜宝 App？在终端执行：';
+
+  @override
+  String get connect_step2 => '把加入链接粘贴到这里';
+
+  @override
+  String get connect_clipboardDetected => '已从剪贴板读取';
+
+  @override
+  String get connect_invalidLink => '这不是有效的加入链接';
+
+  @override
+  String get connect_button => '连接';
+
+  @override
+  String connect_connecting(String host) {
+    return '正在加入 $host…';
+  }
+
+  @override
+  String connect_savedButOffline(String host) {
+    return '已记下 $host，但现在连不上';
+  }
+
+  @override
+  String get connect_offlineHint => '确认那台电脑开着、在同一网络，或者已经开启隧道';
+
+  @override
+  String get connect_tryAgain => '再试一次';
+
+  @override
+  String get connect_stillOffline => '还是连不上';
+
+  @override
+  String get connect_enterOffline => '先进入（离线）';
+
+  @override
+  String connect_joined(String pouch) {
+    return '已加入 $pouch';
+  }
+
+  @override
+  String get hostInstall_title => '正在准备这台电脑上的主机';
+
+  @override
+  String get hostInstall_stepInstall => '安装主机程序';
+
+  @override
+  String get hostInstall_stepStart => '启动主机';
+
+  @override
+  String get hostInstall_stepConnect => '连接主机';
+
+  @override
+  String hostInstall_bundled(String version) {
+    return '应用自带 $version';
+  }
+
+  @override
+  String get hostInstall_installFailed => '没能把主机程序放进这台电脑';
+
+  @override
+  String get hostInstall_installedIt => '我装好了';
+
+  @override
+  String get hostInstall_startFailed => '主机没有启动起来';
+
+  @override
+  String get hostInstall_unresponsive => '主机启动了，但没有响应';
+
+  @override
+  String get hostInstall_restart => '重启主机';
+
+  @override
+  String get hostInstall_openLog => '打开日志';
+
+  @override
+  String get hostInstall_useOther => '不想放在这台电脑？连接另一台电脑上的主机';
+
+  @override
+  String get createPassword_title => '设置主机密码';
+
+  @override
+  String get createPassword_body => '别的设备第一次连这台主机时，可以扫码加入，也可以输这个密码。这台电脑会记住登录。';
+
+  @override
+  String get createPassword_nickname => '称呼';
+
+  @override
+  String createPassword_nicknameHint(String name) {
+    return '会显示为「$name」';
+  }
+
+  @override
+  String get createPassword_submit => '完成设置';
+
+  @override
+  String get done_title => '准备好了';
+
+  @override
+  String get done_phonePrompt => '要在手机上也用惜宝吗？';
+
+  @override
+  String get done_phoneSteps => '1. 手机上安装并打开惜宝\n2. 点「扫码加入」\n3. 扫这个码，直接进入';
+
+  @override
+  String get done_enter => '进入惜宝';
+
+  @override
+  String get done_later => '以后再说';
 }

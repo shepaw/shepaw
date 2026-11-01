@@ -9043,7 +9043,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Not this computer? Connect to a host on another computer';
 
   @override
-  String get hostInstall_copyCommand => 'Copy the install command';
+  String get hostInstall_copyCommand => 'Copy install command';
 
   @override
   String get hostStart_starting => 'Starting the host…';
@@ -9646,4 +9646,179 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get gate_usePaste => 'Paste instead';
+
+  @override
+  String get gate_splashStarting => 'Starting…';
+
+  @override
+  String get gate_splashStartingHost => 'Starting the host…';
+
+  @override
+  String gate_splashConnecting(String host) {
+    return 'Connecting to $host…';
+  }
+
+  @override
+  String get gate_splashRestoring => 'Restoring your session…';
+
+  @override
+  String get gate_skipOffline => 'Skip and continue offline';
+
+  @override
+  String get welcome_title => 'Welcome to Shepaw';
+
+  @override
+  String get welcome_desktopIntro =>
+      'Your data, She and agents live on a host computer that stays on. Pick one first.';
+
+  @override
+  String get welcome_thisComputer => 'This computer';
+
+  @override
+  String get welcome_thisComputerDesc =>
+      'Best for a desktop or a laptop that stays open';
+
+  @override
+  String get welcome_useThisComputer => 'Use this computer';
+
+  @override
+  String get welcome_recommended => 'Recommended';
+
+  @override
+  String get welcome_otherComputer => 'Another computer';
+
+  @override
+  String get welcome_otherComputerDesc =>
+      'The host already runs on a computer at home or work';
+
+  @override
+  String get welcome_goConnect => 'Connect';
+
+  @override
+  String get welcome_changeLater =>
+      'You can change this later in Settings → Host';
+
+  @override
+  String get connect_title => 'Connect to a host on another computer';
+
+  @override
+  String get connect_step1 =>
+      'On the host computer, open Shepaw: Settings → Host → Add device';
+
+  @override
+  String get connect_step1Terminal => 'No Shepaw app there? Run in a terminal:';
+
+  @override
+  String get connect_step2 => 'Paste the join link here';
+
+  @override
+  String get connect_clipboardDetected => 'Pasted from clipboard';
+
+  @override
+  String get connect_invalidLink => 'That isn\'t a valid join link';
+
+  @override
+  String get connect_button => 'Connect';
+
+  @override
+  String connect_connecting(String host) {
+    return 'Joining $host…';
+  }
+
+  @override
+  String connect_savedButOffline(String host) {
+    return '$host is saved but unreachable right now';
+  }
+
+  @override
+  String get connect_offlineHint =>
+      'Make sure it\'s on, on the same network, or has a tunnel enabled';
+
+  @override
+  String get connect_tryAgain => 'Try again';
+
+  @override
+  String get connect_stillOffline => 'Still unreachable';
+
+  @override
+  String get connect_enterOffline => 'Continue offline';
+
+  @override
+  String connect_joined(String pouch) {
+    return 'Joined $pouch';
+  }
+
+  @override
+  String get hostInstall_title => 'Preparing the host on this computer';
+
+  @override
+  String get hostInstall_stepInstall => 'Install host';
+
+  @override
+  String get hostInstall_stepStart => 'Start host';
+
+  @override
+  String get hostInstall_stepConnect => 'Connect to host';
+
+  @override
+  String hostInstall_bundled(String version) {
+    return 'Bundled $version';
+  }
+
+  @override
+  String get hostInstall_installFailed => 'Couldn\'t install the host program';
+
+  @override
+  String get hostInstall_installedIt => 'I\'ve installed it';
+
+  @override
+  String get hostInstall_startFailed => 'The host didn\'t start';
+
+  @override
+  String get hostInstall_unresponsive =>
+      'The host started but isn\'t responding';
+
+  @override
+  String get hostInstall_restart => 'Restart host';
+
+  @override
+  String get hostInstall_openLog => 'Open log';
+
+  @override
+  String get hostInstall_useOther =>
+      'Prefer another computer? Connect to its host';
+
+  @override
+  String get createPassword_title => 'Set a host password';
+
+  @override
+  String get createPassword_body =>
+      'Other devices can join by scanning a code or entering this password. This computer stays signed in.';
+
+  @override
+  String get createPassword_nickname => 'Your name';
+
+  @override
+  String createPassword_nicknameHint(String name) {
+    return 'Shown as \"$name\"';
+  }
+
+  @override
+  String get createPassword_submit => 'Finish';
+
+  @override
+  String get done_title => 'All set';
+
+  @override
+  String get done_phonePrompt => 'Use Shepaw on your phone too?';
+
+  @override
+  String get done_phoneSteps =>
+      '1. Install and open Shepaw on your phone\n2. Tap \"Scan to join\"\n3. Scan this code — you\'re in';
+
+  @override
+  String get done_enter => 'Open Shepaw';
+
+  @override
+  String get done_later => 'Later';
 }

@@ -227,6 +227,9 @@ GateEntry _remote(
   return GoUnlock(hostPeerId: hostId, recordMode: record);
 }
 
+/// 启动页状态行现在走到哪一步。
+enum GatePhase { starting, connecting, restoring, startingHost }
+
 /// 解锁页的路由参数。
 class UnlockArgs {
   const UnlockArgs({
