@@ -236,6 +236,19 @@ class SessionUtils {
     return cleanClaudeSessionTitle(visible);
   }
 
+  /// 标题被清空时的兜底：用「月/日 时:分」。比会话 id（UUID）好认得多，
+  /// 主机没给出可用标题时行上也不至于是一串 UUID。
+  static String shortDateTime(int timestampMs) {
+    if (timestampMs <= 0) return '';
+    final at = DateTime.fromMillisecondsSinceEpoch(timestampMs);
+    String two(int value) => value.toString().padLeft(2, '0');
+    final time = '${two(at.hour)}:${two(at.minute)}';
+    final now = DateTime.now();
+    return at.year == now.year
+        ? '${at.month}/${at.day} $time'
+        : '${at.year}/${at.month}/${at.day} $time';
+  }
+
   /// 剔除会话标题里的引擎内置标记及其内容、发送端附加提示块，折叠多余空白。
   ///
   /// 清理后为空返回 null，便于调用方回落默认名（如 'Session'）。

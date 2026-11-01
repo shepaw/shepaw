@@ -602,6 +602,22 @@ void main() {
         );
       });
 
+      test('标题被清空时用时间兜底（不用会话 id）', () {
+        final at = DateTime(2026, 11, 1, 14, 32);
+        expect(
+          SessionUtils.shortDateTime(at.millisecondsSinceEpoch),
+          '11/1 14:32',
+        );
+        // 跨年带上年份。
+        expect(
+          SessionUtils.shortDateTime(
+              DateTime(2025, 3, 9, 8, 5).millisecondsSinceEpoch),
+          '2025/3/9 08:05',
+        );
+        // 没有时间戳就没有兜底。
+        expect(SessionUtils.shortDateTime(0), isEmpty);
+      });
+
       test('没标记的标题原样保留', () {
         expect(
           SessionUtils.cleanClaudeSessionTitle('普通的会话标题'),

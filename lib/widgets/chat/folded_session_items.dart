@@ -204,8 +204,13 @@ class _SessionFolderItemsState extends State<SessionFolderItems> {
 
   /// 主机给的标题里可能整段是引擎标签或 `[implicit]` 提示：清掉，清完没东西
   /// 就退回会话 id。
-  String _title(FoldedSession session) =>
-      SessionUtils.cleanClaudeSessionTitle(session.title) ?? session.sessionId;
+  String _title(FoldedSession session) {
+    final cleaned = SessionUtils.cleanClaudeSessionTitle(session.title);
+    if (cleaned != null) return cleaned;
+    // 清完没东西（整段是引擎包装）：用时间兜底，别把会话 id（UUID）顶上去。
+    final stamp = SessionUtils.shortDateTime(session.updatedAt);
+    return stamp.isEmpty ? session.sessionId : stamp;
+  }
 
   @override
   Widget build(BuildContext context) {

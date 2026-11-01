@@ -160,8 +160,9 @@ void main() {
     // 系统说明不出现在任何一行的标题上。
     expect(find.textContaining('Caveat'), findsNothing);
     expect(find.textContaining('local-command-caveat'), findsNothing);
-    // 只剩标记的那条退回会话 id，带正文的那条只留正文。
-    expect(find.text('term-1'), findsOneWidget);
+    // 只剩标记的那条退回时间标签（不是会话 id / UUID），带正文的那条只留正文。
+    expect(find.text('term-1'), findsNothing);
+    expect(find.text('1970/1/1 08:00'), findsOneWidget);
     expect(find.text('跑一下测试'), findsOneWidget);
     await bus.close();
   });
@@ -233,7 +234,9 @@ void main() {
     // 提示块不出现在行上；有正文的那条只留正文，只剩提示块的那条退回会话 id。
     expect(find.textContaining('[implicit]'), findsNothing);
     expect(find.text('帮我看看这张图'), findsOneWidget);
-    expect(find.text('term-2'), findsOneWidget);
+    // 只剩提示块的那条退回时间标签，不是会话 id。
+    expect(find.text('term-2'), findsNothing);
+    expect(find.text('1970/1/1 08:00'), findsOneWidget);
     await bus.close();
   });
 
