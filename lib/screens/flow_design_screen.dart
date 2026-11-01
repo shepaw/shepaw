@@ -5,13 +5,17 @@ import 'package:flutter/material.dart';
 import '../controllers/flow/flow_edit_ops.dart';
 import '../controllers/flow/flow_editor_controller.dart';
 import '../controllers/flow/flow_editor_notice.dart';
+import '../controllers/flow/flow_outline.dart';
 import '../l10n/app_localizations.dart';
 import '../peer/models/flow_models.dart';
 import '../peer/pouch_turn_relay.dart';
 import '../peer/services/hub_flow.dart';
 import '../services/local_user_identity.dart';
+import '../utils/layout_utils.dart';
+import '../widgets/discard_changes_scope.dart';
 import '../widgets/flow/flow_node_inspector.dart';
 import '../widgets/flow/flow_node_tree.dart';
+import '../widgets/flow/flow_outline_tree.dart';
 import '../widgets/flow/flow_yaml_editor.dart';
 
 /// 流程设计视图（方案 C.3–C.5）：节点树 + 检查器改字段 + 与上一版的差异 + 演练。
@@ -65,11 +69,17 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
 
   // 点选 + 说话（C.3）
   final Set<String> _selected = <String>{};
+  final Set<String> _collapsed = <String>{};
+  String? _selectedId;
   final TextEditingController _composer = TextEditingController();
   final StringBuffer _reply = StringBuffer();
   bool _talking = false;
 
   bool get canTalk => _talkGroupId.isNotEmpty;
+
+  /// 编排只在桌面开（手机只读，但保留「点选 + 说话」），并且主机得支持这些操作。
+  bool get canEdit =>
+      LayoutUtils.isDesktopLayout(context) && _controller.caps.canEdit;
 
   /// 说话要发到哪个群。没直接给 `groupId` 时，群库（`group:<gid>`）本身就是群。
   /// `sessionId` 留空：主机取群 meta 的 current_session。
@@ -124,7 +134,72 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
 
   // ── 检查器 ────────────────────────────────────────────────────────────────
 
+  // ── 大纲 ──────────────────────────────────────────────────────────────────
+
+  List<FlowOutlineRow> _rows() =>
+      buildFlowOutline(_controller.tree, collapsed: _collapsed);
+
+  /// 这个节点在大纲里的那一行。结构操作一律经它，好带上 `branch`。
+  FlowOutlineRow? _rowFor(String id) {
+    for (final row in _rows()) {
+      if (row.node.id == id) return row;
+    }
+    return null;
+  }
+
+  /// 诊断按节点归堆。诊断的 `at` 是路径（`l/t`），树的 `key` 带轮次（`l#0/t`），
+  /// 不能直接比；但 id 全局唯一，取最后一段按 id 匹配。
+  Map<String, int> _errorCounts() {
+    final out = <String, int>{};
+    for (final d in _controller.diagnostics) {
+      if (!d.isError) continue;
+      final at = d.at;
+      if (at.isEmpty) continue;
+      final id = at.split('/').last;
+      out[id] = (out[id] ?? 0) + 1;
+    }
+    return out;
+  }
+
+  void _toggleCollapse(FlowOutlineRow row) {
+    setState(() {
+      if (!_collapsed.add(row.node.id)) _collapsed.remove(row.node.id);
+    });
+  }
+
+  void _addAfter(FlowOutlineRow row) {
+    unawaited(_controller.applyOps([
+      FlowOutlineOps.insertAfter(
+        row,
+        FlowStepDefaults.step(
+          _controller.freshId('step'),
+          'task',
+          prompt: AppLocalizations.of(context).flow_newStepPrompt,
+        ),
+      ),
+    ]));
+  }
+
+  void _move(FlowOutlineRow row, {required bool up}) {
+    unawaited(_controller.applyOps([
+      up ? FlowOutlineOps.moveUp(row) : FlowOutlineOps.moveDown(row),
+    ]));
+  }
+
+  Future<void> _delete(FlowOutlineRow row) async {
+    final l10n = AppLocalizations.of(context);
+    final ok = await showConfirmDialog(
+      context,
+      title: l10n.flow_inspectorDelete,
+      message: l10n.flow_outlineDeleteBody(row.node.id),
+      confirmLabel: l10n.flow_inspectorDelete,
+    );
+    if (ok != true || !mounted) return;
+    await _controller.applyOps([FlowEditOps.delete(row.node.id)]);
+  }
+
   void _openInspector(FlowNode node) {
+    setState(() => _selectedId = node.id);
     final schema = _controller.schema;
     if (schema == null || _controller.busy) return;
     showModalBottomSheet<void>(
@@ -161,13 +236,13 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
         },
         onAddAfter: () {
           Navigator.pop(sheet);
-          final at = flowLocate(_controller.tree, node.id);
-          if (at == null) return;
+          final row = _rowFor(node.id);
+          if (row == null) return;
+          // 走大纲那一行：`if` 里要带上 branch，否则新节点会落进 `then`。
           unawaited(_controller.applyOps([
-            FlowEditOps.insert(
-              parentId: at.parent?.id ?? '',
-              index: at.index + 1,
-              step: FlowStepDefaults.step(
+            FlowOutlineOps.insertAfter(
+              row,
+              FlowStepDefaults.step(
                 _controller.freshId('step'),
                 'task',
                 prompt: AppLocalizations.of(context).flow_newStepPrompt,
@@ -349,22 +424,51 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
               ),
             ),
           ),
-        FlowNodeTree(
-          nodes: rehearsal.view(c.tree),
-          onTapNode: _openInspector,
-          onLongPressNode: canTalk ? _toggleSelected : null,
-          selectedIds: _selected,
-          badgeFor: diff == null
-              ? null
-              : (node) {
-                  final change = diff.of(node.id);
-                  return switch (change?.change) {
-                    FlowChange.added => (l10n.flow_diffAdded, Colors.green),
-                    FlowChange.changed => (l10n.flow_diffChanged, Colors.amber),
-                    _ => null,
-                  };
-                },
-        ),
+        // 能改就画可编辑的大纲（带分支、上移下移、加一步）；否则画只读的那棵。
+        if (canEdit && !rehearsal.active)
+          FlowOutlineTree(
+            rows: _rows(),
+            canEdit: true,
+            branchesLabelled: c.caps.branchesLabelled,
+            selectedId: _selectedId,
+            errorCounts: _errorCounts(),
+            collapsed: _collapsed,
+            badgeFor: diff == null
+                ? null
+                : (row) {
+                    final change = diff.of(row.node.id);
+                    return switch (change?.change) {
+                      FlowChange.added => (l10n.flow_diffAdded, Colors.green),
+                      FlowChange.changed =>
+                        (l10n.flow_diffChanged, Colors.amber),
+                      _ => null,
+                    };
+                  },
+            onTapRow: (row) => _openInspector(row.node),
+            onToggleCollapse: _toggleCollapse,
+            onAddAfter: _addAfter,
+            onMoveUp: (row) => _move(row, up: true),
+            onMoveDown: (row) => _move(row, up: false),
+            onDelete: _delete,
+          )
+        else
+          FlowNodeTree(
+            nodes: rehearsal.view(c.tree),
+            onTapNode: canEdit ? _openInspector : null,
+            onLongPressNode: canTalk ? _toggleSelected : null,
+            selectedIds: _selected,
+            badgeFor: diff == null
+                ? null
+                : (node) {
+                    final change = diff.of(node.id);
+                    return switch (change?.change) {
+                      FlowChange.added => (l10n.flow_diffAdded, Colors.green),
+                      FlowChange.changed =>
+                        (l10n.flow_diffChanged, Colors.amber),
+                      _ => null,
+                    };
+                  },
+          ),
         if (_reply.isNotEmpty)
           Card(
             child: Padding(

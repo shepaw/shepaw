@@ -635,10 +635,22 @@ Object? flowFieldValue(Map<String, dynamic>? fields, String path) {
 }
 
 /// 节点的父节点（根层返回 null，用 [isRoot] 区分「没找到」）。
-({FlowNode? parent, int index})? flowLocate(List<FlowNode> tree, String id,
+({FlowNode? parent, int index, String? branch})? flowLocate(List<FlowNode> tree, String id,
     {FlowNode? parent}) {
+  // 父节点是 `if` 时，下标按分支内相对位置算：`then` / `else` 在 children 里
+  // 是拼在一起的，直接用拼起来的下标会把节点派到错的分支。
+  if (parent?.kind == 'if') {
+    var then = 0;
+    var els = 0;
+    for (final node in tree) {
+      final branch = node.branch ?? 'then';
+      final index = branch == 'else' ? els++ : then++;
+      if (node.id == id) return (parent: parent, index: index, branch: branch);
+    }
+    return null;
+  }
   for (var i = 0; i < tree.length; i++) {
-    if (tree[i].id == id) return (parent: parent, index: i);
+    if (tree[i].id == id) return (parent: parent, index: i, branch: null);
     final hit = flowLocate(tree[i].children, id, parent: tree[i]);
     if (hit != null) return hit;
   }

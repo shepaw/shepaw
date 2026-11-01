@@ -9207,6 +9207,26 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_libraryTitle => 'Flow library';
 
   @override
+  String get flow_outlineMoveUp => 'Move up';
+
+  @override
+  String get flow_outlineMoveDown => 'Move down';
+
+  @override
+  String get flow_outlineCollapse => 'Expand / collapse';
+
+  @override
+  String get flow_outlineThen => 'then';
+
+  @override
+  String get flow_outlineElse => 'else';
+
+  @override
+  String flow_outlineDeleteBody(String id) {
+    return 'Delete `$id` and everything under it.';
+  }
+
+  @override
   String get flow_libraryEmpty => 'No flows yet';
 
   @override

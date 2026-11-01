@@ -16043,6 +16043,42 @@ abstract class AppLocalizations {
   /// **'流程库'**
   String get flow_libraryTitle;
 
+  /// No description provided for @flow_outlineMoveUp.
+  ///
+  /// In zh, this message translates to:
+  /// **'上移'**
+  String get flow_outlineMoveUp;
+
+  /// No description provided for @flow_outlineMoveDown.
+  ///
+  /// In zh, this message translates to:
+  /// **'下移'**
+  String get flow_outlineMoveDown;
+
+  /// No description provided for @flow_outlineCollapse.
+  ///
+  /// In zh, this message translates to:
+  /// **'展开 / 收起'**
+  String get flow_outlineCollapse;
+
+  /// No description provided for @flow_outlineThen.
+  ///
+  /// In zh, this message translates to:
+  /// **'则'**
+  String get flow_outlineThen;
+
+  /// No description provided for @flow_outlineElse.
+  ///
+  /// In zh, this message translates to:
+  /// **'否则'**
+  String get flow_outlineElse;
+
+  /// No description provided for @flow_outlineDeleteBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'删掉 `{id}` 和它下面的所有步骤。'**
+  String flow_outlineDeleteBody(String id);
+
   /// No description provided for @flow_libraryEmpty.
   ///
   /// In zh, this message translates to:

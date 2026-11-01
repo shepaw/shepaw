@@ -5027,6 +5027,17 @@
   "flow_editFailed": "That change could not be made",
   "flow_designLoadFailed": "Cannot read this flow",
   "flow_libraryTitle": "Flow library",
+  "flow_outlineMoveUp": "Move up",
+  "flow_outlineMoveDown": "Move down",
+  "flow_outlineCollapse": "Expand / collapse",
+  "flow_outlineThen": "then",
+  "flow_outlineElse": "else",
+  "flow_outlineDeleteBody": "Delete `{id}` and everything under it.",
+  "@flow_outlineDeleteBody": {
+    "placeholders": {
+      "id": { "type": "String" }
+    }
+  },
   "flow_libraryEmpty": "No flows yet",
   "flow_workspaceNoHost": "No host connected",
   "flow_workspaceSubtitle": "Author, rehearse and run workflows",

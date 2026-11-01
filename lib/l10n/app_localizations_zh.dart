@@ -8854,6 +8854,26 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_libraryTitle => '流程库';
 
   @override
+  String get flow_outlineMoveUp => '上移';
+
+  @override
+  String get flow_outlineMoveDown => '下移';
+
+  @override
+  String get flow_outlineCollapse => '展开 / 收起';
+
+  @override
+  String get flow_outlineThen => '则';
+
+  @override
+  String get flow_outlineElse => '否则';
+
+  @override
+  String flow_outlineDeleteBody(String id) {
+    return '删掉 `$id` 和它下面的所有步骤。';
+  }
+
+  @override
   String get flow_libraryEmpty => '还没有流程';
 
   @override

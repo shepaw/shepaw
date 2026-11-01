@@ -5458,6 +5458,17 @@
   "flow_editFailed": "这个改动做不了",
   "flow_designLoadFailed": "读不到这个流程",
   "flow_libraryTitle": "流程库",
+  "flow_outlineMoveUp": "上移",
+  "flow_outlineMoveDown": "下移",
+  "flow_outlineCollapse": "展开 / 收起",
+  "flow_outlineThen": "则",
+  "flow_outlineElse": "否则",
+  "flow_outlineDeleteBody": "删掉 `{id}` 和它下面的所有步骤。",
+  "@flow_outlineDeleteBody": {
+    "placeholders": {
+      "id": { "type": "String" }
+    }
+  },
   "flow_libraryEmpty": "还没有流程",
   "flow_workspaceNoHost": "没有连上主机",
   "flow_workspaceSubtitle": "编排、演练、运行工作流",

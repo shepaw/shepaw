@@ -61,6 +61,17 @@ class _FakeHost {
               {'name': 'task.prompt', 'type': 'text', 'label': '提示词'},
             ],
           },
+          // 带 ops 才算"现在的主机"，否则能力探测会把整页判成只读。
+          'ops': [
+            'set',
+            'insert',
+            'move',
+            'delete',
+            'wrap',
+            'unwrap',
+            'retype',
+            'header',
+          ],
         };
       case 'flow_validate_req':
         // 主机回的是补过 id 的那份（正常就是提交的那份），草稿以它为准。
