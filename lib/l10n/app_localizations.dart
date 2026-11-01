@@ -5324,6 +5324,12 @@ abstract class AppLocalizations {
   /// **'重试'**
   String get chat_connectionInterruptedRetry;
 
+  /// No description provided for @chat_answerAfterReply.
+  ///
+  /// In zh, this message translates to:
+  /// **'回复还没结束，等它说完再提交，已填的内容会保留'**
+  String get chat_answerAfterReply;
+
   /// No description provided for @chat_peerTurnStillRunning.
   ///
   /// In zh, this message translates to:

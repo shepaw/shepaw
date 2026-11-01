@@ -3004,6 +3004,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chat_connectionInterruptedRetry => 'Retry';
 
   @override
+  String get chat_answerAfterReply =>
+      'The reply is still running. Submit once it finishes — your answers are kept.';
+
+  @override
   String get chat_peerTurnStillRunning =>
       'The previous reply is still running. Please wait before sending.';
 

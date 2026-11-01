@@ -796,6 +796,8 @@ class _ChatScreenState extends State<ChatScreen>
         return l10n.chat_responseError(param);
       case 'chat_peerTurnStillRunning':
         return l10n.chat_peerTurnStillRunning;
+      case 'chat_answerAfterReply':
+        return l10n.chat_answerAfterReply;
       case 'osTool_approvalExpired':
         return l10n.osTool_approvalExpired;
       case 'chat_historyLoadFailed':
@@ -3938,6 +3940,12 @@ class _ChatScreenState extends State<ChatScreen>
                     ),
                     onFormDeclined: (msg, fid) =>
                         c.handleFormDeclined(msg, fid),
+                    onSingleSelectSubmitted: (msg, sid, oid, olabel) =>
+                        c.handleSingleSelectSubmitted(msg, sid, oid, olabel),
+                    onMultiSelectSubmitted: (msg, sid, oids, summary) =>
+                        c.handleMultiSelectSubmitted(msg, sid, oids, summary),
+                    onFileUploadSubmitted: (msg, uid, files, summary) =>
+                        c.handleFileUploadSubmitted(msg, uid, files, summary),
                   );
                 },
               ),

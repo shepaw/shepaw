@@ -95,17 +95,86 @@ void main() {
       expect(deferred?.isForm, isTrue);
     });
 
-    test('没有 peer_form 的表单、工作流审批留在原处', () {
-      final form = _form('f1')..remove('peer_form');
+    test('工作流审批留在原处', () {
       expect(
         dockedPendingInteraction([
-          _msg('a', metadata: {'form': form}),
           _msg('b', metadata: {
             'action_confirmation':
                 _approval('c1', extra: {'_workflowPeerApproval': true})
           }),
         ], approvalIsLive: (_) => true),
         isNull,
+      );
+    });
+
+    test('气泡上的表单（She 的 form 工具）也停靠，用户接着说话后就不再停靠', () {
+      final form = _form('f1')..remove('peer_form');
+      final docked = dockedPendingInteraction([
+        _msg('a', metadata: {'form': form}),
+      ]);
+      expect(docked?.message.id, 'a');
+      expect(isStandaloneFormCard(docked!.message), isFalse);
+
+      final user = Message(
+        id: 'u',
+        from: MessageFrom(id: 'me', type: 'user', name: '我'),
+        type: MessageType.text,
+        content: '算了不填了',
+        timestampMs: 1,
+      );
+      expect(
+        dockedPendingInteraction([
+          _msg('a', metadata: {'form': form}),
+          user,
+        ]),
+        isNull,
+      );
+
+      // 主机提问卡由主机收场，用户说过话也照样停靠。
+      expect(
+        dockedPendingInteraction([
+          _msg('a', metadata: {'form': _form('f2')}),
+          user,
+        ])?.message.id,
+        'a',
+      );
+    });
+
+    test('单选、多选、上传卡也停靠，答过的不算', () {
+      final single = {
+        'select_id': 's1',
+        'prompt': '用哪个库？',
+        'options': [
+          {'id': 'pg', 'label': 'Postgres'},
+        ],
+      };
+      expect(
+        dockedPendingInteraction([
+          _msg('a', metadata: {'single_select': single}),
+        ])?.kind,
+        DockedInteractionKind.singleSelect,
+      );
+      expect(
+        dockedPendingInteraction([
+          _msg('a', metadata: {
+            'single_select': {...single, 'selected_option_id': 'pg'},
+          }),
+          _msg('b', metadata: {
+            'multi_select': {'select_id': 'm1', 'selected_option_ids': []},
+          }),
+          _msg('c', metadata: {
+            'file_upload': {'upload_id': 'u1', 'closed': 'timeout'},
+          }),
+        ]),
+        isNull,
+      );
+      expect(
+        dockedPendingInteraction([
+          _msg('a', metadata: {
+            'file_upload': {'upload_id': 'u1', 'prompt': '传张图'},
+          }),
+        ])?.kind,
+        DockedInteractionKind.fileUpload,
       );
     });
   });
@@ -277,6 +346,37 @@ void main() {
     await tester.tap(find.text('Claude · 等待你的回答'));
     await tester.pump();
     expect(find.byType(TextField), findsNothing);
+  });
+
+  testWidgets('停靠的单选卡点选项带回原消息', (tester) async {
+    final message = _msg('pick', metadata: {
+      'single_select': {
+        'select_id': 's1',
+        'prompt': '用哪个库？',
+        'options': [
+          {'id': 'pg', 'label': 'Postgres'},
+          {'id': 'lite', 'label': 'SQLite'},
+        ],
+      },
+    });
+    String? picked;
+    await tester.pumpWidget(_app(PendingInteractionDock(
+      interaction:
+          DockedInteraction(message, DockedInteractionKind.singleSelect),
+      onFormSubmitted: (_, __, ___, ____) async {},
+      onSingleSelectSubmitted: (msg, selectId, optionId, label) {
+        picked = '${msg.id}/$selectId/$optionId';
+      },
+      onActionSelected: (_, __, ___, ____) {},
+    )));
+
+    expect(find.text('Claude · 等待你的回答'), findsOneWidget);
+    expect(find.text('用哪个库？'), findsOneWidget);
+    await tester.tap(find.text('SQLite'));
+    await tester.pump();
+    await tester.tap(find.byType(ElevatedButton));
+    await tester.pump();
+    expect(picked, 'pick/s1/lite');
   });
 
   testWidgets('停靠的审批卡点按钮带回原消息和选项', (tester) async {

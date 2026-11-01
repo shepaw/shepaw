@@ -300,7 +300,9 @@ class _ChatMessageListState extends State<ChatMessageList> {
           final docked = widget.dockedInteraction?.message.id == message.id
               ? widget.dockedInteraction
               : null;
-          if (docked != null && docked.isForm) {
+          if (docked != null &&
+              docked.isForm &&
+              isStandaloneFormCard(message)) {
             return KeyedSubtree(
               key: ValueKey(message.id),
               child: Column(
@@ -308,7 +310,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
                 children: [
                   if (showDateSeparator)
                     _buildDateSeparator(context, message.dateTime),
-                  DockedInteractionPlaceholder.form(context, message),
+                  DockedInteractionPlaceholder.question(context, docked.card!),
                 ],
               ),
             );

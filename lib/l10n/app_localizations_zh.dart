@@ -2887,6 +2887,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chat_connectionInterruptedRetry => '重试';
 
   @override
+  String get chat_answerAfterReply => '回复还没结束，等它说完再提交，已填的内容会保留';
+
+  @override
   String get chat_peerTurnStillRunning => '上一轮回复仍在继续，完成后即可发送';
 
   @override

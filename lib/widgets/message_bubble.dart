@@ -33,7 +33,8 @@ import 'permission_audit_bubble.dart';
 import 'chat/plan_approval_card.dart';
 import '../services/approval/cli_audit_fold.dart';
 import 'chat/cli_approval_card.dart';
-import 'chat/pending_form_dock.dart' show DockedInteractionPlaceholder;
+import 'chat/pending_form_dock.dart'
+    show DockedInteractionPlaceholder, pendingQuestionKind;
 import 'chat/dispatch_card.dart';
 import 'chat/relay_approval_card.dart';
 import 'avatar_image.dart';
@@ -1260,6 +1261,15 @@ class MessageBubble extends StatelessWidget {
         onActionSelected: onActionSelected,
         isAgentOffline: isAgentOffline,
       );
+    }
+
+    // 停靠在输入框上方的提问卡：这里只留一行占位，回复正文照常显示。
+    if (interactionDocked) {
+      final kind = pendingQuestionKind(message);
+      final card = kind == null ? null : message.metadata?[kind.metadataKey];
+      if (card is Map<String, dynamic>) {
+        return DockedInteractionPlaceholder.question(context, card);
+      }
     }
 
     final singleSelect =

@@ -630,6 +630,23 @@ mixin _InteractionOps on _ChatControllerBase {
     localDatabaseService.updateMessageMetadata(messageId, meta).ignore();
   }
 
+  /// 群聊里成员在等的卡被答了：`*_responded` 只是给对账看的，卡片本身也要
+  /// 记成已答，停靠卡才会收起，气泡也不再可点。
+  void _markGroupCardAnswered(
+    String messageId,
+    String key,
+    Map<String, dynamic> answer,
+  ) {
+    final card = messageIdMap[messageId]?.metadata?[key];
+    if (card is Map) {
+      _updateGroupStreamingMetadata(messageId, key, {
+        ...Map<String, dynamic>.from(card),
+        ...answer,
+      });
+    }
+    _notify();
+  }
+
   /// 把用户选的选项并进卡片的元数据并落盘（单选 / 多选共用）。
   ///
   /// hub 那条路以前漏了这一步：`_answerHubInteraction` 成功就直接 return，
@@ -1015,6 +1032,10 @@ mixin _InteractionOps on _ChatControllerBase {
         'selected_option_label': optionLabel,
       });
       _updateGroupStreamingMetadata(originalMessage.id, 'single_select_responded', {'option_id': optionId, 'option_label': optionLabel});
+      _markGroupCardAnswered(originalMessage.id, 'single_select', {
+        'selected_option_id': optionId,
+        'selected_option_label': optionLabel,
+      });
       return;
     }
     // See handleActionSelected for why `isProcessing` is not checked here.
@@ -1053,6 +1074,9 @@ mixin _InteractionOps on _ChatControllerBase {
     if (pending != null && !pending.result.isCompleted) {
       pending.result.complete({'selected_option_ids': optionIds});
       _updateGroupStreamingMetadata(originalMessage.id, 'multi_select_responded', {'option_ids': optionIds});
+      _markGroupCardAnswered(originalMessage.id, 'multi_select', {
+        'selected_option_ids': optionIds,
+      });
       return;
     }
     // See handleActionSelected for why `isProcessing` is not checked here.
@@ -1083,10 +1107,15 @@ mixin _InteractionOps on _ChatControllerBase {
     if (pending != null && !pending.result.isCompleted) {
       pending.result.complete({'uploaded_files': files});
       _updateGroupStreamingMetadata(originalMessage.id, 'file_upload_responded', {'files': files});
+      _markGroupCardAnswered(originalMessage.id, 'file_upload', {
+        'uploaded_files': files,
+      });
       return;
     }
-    if (isProcessing && !isGroupMode) return;
-
+    if (isProcessing && !isGroupMode) {
+      _emit(ShowSnackBarEvent('chat_answerAfterReply'));
+      return;
+    }
 
     if (await _handleGroupInteractionLocally(originalMessage, 'file_upload', {
       'uploaded_files': files,
@@ -1151,9 +1180,17 @@ mixin _InteractionOps on _ChatControllerBase {
     if (pending != null && !pending.result.isCompleted) {
       pending.result.complete({'submitted_values': values});
       _updateGroupStreamingMetadata(originalMessage.id, 'form_responded', {'values': values});
+      _markGroupCardAnswered(originalMessage.id, 'form', {
+        'submitted_values': values,
+      });
       return;
     }
-    if (isProcessing && !isGroupMode) return;
+    if (isProcessing && !isGroupMode) {
+      // 卡片常驻在输入框上方，回复还在输出时也点得到：说一声，卡片和已填
+      // 的内容都留着，等这一轮结束再交。
+      _emit(ShowSnackBarEvent('chat_answerAfterReply'));
+      return;
+    }
 
     if (await _handleGroupInteractionLocally(originalMessage, 'form', {
       'submitted_values': values,
