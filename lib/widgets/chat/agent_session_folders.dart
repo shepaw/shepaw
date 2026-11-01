@@ -26,6 +26,7 @@ class AgentSessionFolders extends StatefulWidget {
     this.onForked,
     this.refresh,
     this.expandedKind,
+    this.expandedTileKey,
     this.onToggle,
     this.onExpandedChanged,
   });
@@ -48,8 +49,11 @@ class AgentSessionFolders extends StatefulWidget {
   /// 那一行折叠组要能收起它。
   final SessionFolderKind? expandedKind;
 
-  /// 点某一组：展开 / 收起。带上是哪一组的摘要，外层拿它画固定那一行。
+  /// 点某一组：展开 / 收起。带上是哪一组的摘要，外层拿它画上方那一行。
   final void Function(SessionFolderSummary summary)? onToggle;
+
+  /// 展开着的那一行折叠组的 key。外层靠它量位置，决定上方那一行盖不盖。
+  final GlobalKey? expandedTileKey;
 
   /// 展开着的那组摘要有变化时（比如条数刷新了）告诉外层，固定那一行才不会
   /// 停在旧数字上。收起时给空。
@@ -154,29 +158,30 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
   Widget build(BuildContext context) {
     if (_folders.isEmpty) return const SizedBox.shrink();
     final expanded = widget.expandedKind;
+    // 折叠组按主机给的顺序排，展开的那组就在自己那行下面铺会话行 —— 不把它
+    // 挪到最上面，否则展开「引擎终端」时它会跳到「引擎客户端」前面，顺序乱。
+    // 一次只展开一组：抽屉就那么宽，几组同时铺开会把私聊挤出可视区。
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // 展开着一组时：它那一行折叠组由外层固定在列表上方（见
-        // [SessionListPanel]），这里只铺它的会话行，所以会话行正好接在那一行
-        // 下面。一次只展开一组：抽屉就那么宽，几组同时铺开会把私聊挤出可视区。
-        if (expanded != null)
-          SessionFolderItems(
-            key: ValueKey<SessionFolderKind>(expanded),
-            peerId: widget.peerId,
-            agentId: widget.remoteAgentId,
-            folder: expanded,
-            client: _client,
-            onOpen: (session) => _openSession(context, session),
-            onForked: (id) => unawaited(_afterFork(id)),
+        for (final folder in _folders) ...[
+          SessionFolderTile(
+            key: folder.kind == expanded ? widget.expandedTileKey : null,
+            summary: folder,
+            expanded: folder.kind == expanded,
+            onTap: () => widget.onToggle?.call(folder),
           ),
-        // 其余折叠组照旧一行一组；点一下展开 / 收起。
-        for (final folder in _folders)
-          if (folder.kind != expanded)
-            SessionFolderTile(
-              summary: folder,
-              onTap: () => widget.onToggle?.call(folder),
+          if (folder.kind == expanded)
+            SessionFolderItems(
+              key: ValueKey<SessionFolderKind>(folder.kind),
+              peerId: widget.peerId,
+              agentId: widget.remoteAgentId,
+              folder: folder.kind,
+              client: _client,
+              onOpen: (session) => _openSession(context, session),
+              onForked: (id) => unawaited(_afterFork(id)),
             ),
+        ],
         const Divider(height: 1),
       ],
     );

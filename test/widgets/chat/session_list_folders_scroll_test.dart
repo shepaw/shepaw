@@ -59,6 +59,7 @@ void main() {
             'agent_id': 'ra1',
             'sessions': [],
             'folders': [
+              {'kind': 'ide', 'count': 1, 'latest_title': 'Cursor'},
               {'kind': 'terminal', 'count': 3, 'latest_title': '跑测试'},
             ],
           }));
@@ -182,6 +183,34 @@ void main() {
     await tester.tap(find.text('引擎终端 · 3'));
     await tester.pumpAndSettle();
     expect(offset(), 0);
+    await bus.close();
+  });
+
+  testWidgets('展开后面的组不会把它挪到前面的组上面', (tester) async {
+    // 同一个引擎同时有「引擎客户端」和「引擎终端」：主机顺序是客户端在前、
+    // 终端在后。展开终端时它必须留在原位，不能跳到客户端上面。
+    final bus = StreamController<PeerControlEvent>.broadcast();
+    await tester.pumpWidget(panel(foldersHost(bus), sessions(10)));
+    await pumpFolders(tester);
+
+    final ide = find.text('引擎客户端 · 1');
+    final terminal = find.text('引擎终端 · 3');
+    expect(ide, findsOneWidget);
+    expect(terminal, findsOneWidget);
+    final ideTop = tester.getRect(ide).top;
+    final terminalTop = tester.getRect(terminal).top;
+    expect(ideTop, lessThan(terminalTop));
+
+    await tester.tap(terminal);
+    await tester.pumpAndSettle();
+
+    // 顺序没变：客户端仍在终端上面。
+    expect(tester.getRect(ide).top, ideTop);
+    expect(tester.getRect(terminal).top, terminalTop);
+    // 终端的会话行铺在它自己那行下面，不是跑到最上面去。
+    final item = find.text('在终端里跑测试');
+    expect(item, findsOneWidget);
+    expect(tester.getRect(item).top, greaterThan(terminalTop));
     await bus.close();
   });
 
