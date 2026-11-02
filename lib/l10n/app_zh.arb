@@ -5483,6 +5483,8 @@
   "flow_draftDiscard": "不用了",
   "flow_draftSwitchBody": "这个流程还有改了没保存的地方，切走会丢掉它们。",
   "flow_draftSwitchGo": "仍然切走",
+  "flow_undo": "撤销",
+  "flow_redo": "重做",
   "flow_outlineMenu": "更多操作",
   "flow_outlineAddChild": "加子步骤",
   "flow_outlineRetype": "改类型",

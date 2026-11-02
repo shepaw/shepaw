@@ -8929,6 +8929,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_draftSwitchGo => '仍然切走';
 
   @override
+  String get flow_undo => '撤销';
+
+  @override
+  String get flow_redo => '重做';
+
+  @override
   String get flow_outlineMenu => '更多操作';
 
   @override

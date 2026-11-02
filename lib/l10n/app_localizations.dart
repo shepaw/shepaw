@@ -16193,6 +16193,18 @@ abstract class AppLocalizations {
   /// **'仍然切走'**
   String get flow_draftSwitchGo;
 
+  /// No description provided for @flow_undo.
+  ///
+  /// In zh, this message translates to:
+  /// **'撤销'**
+  String get flow_undo;
+
+  /// No description provided for @flow_redo.
+  ///
+  /// In zh, this message translates to:
+  /// **'重做'**
+  String get flow_redo;
+
   /// No description provided for @flow_outlineMenu.
   ///
   /// In zh, this message translates to:

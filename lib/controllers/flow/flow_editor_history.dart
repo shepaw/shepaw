@@ -34,7 +34,13 @@ class FlowEditorHistory {
   bool get canUndo => _past.isNotEmpty;
   bool get canRedo => _future.isNotEmpty;
 
-  void record(FlowEditorSnapshot snapshot) {
+  /// 记一步改动前的状态。
+  ///
+  /// [coalesce] 为 true 时不新压一条，保留栈顶那份更早的状态 —— 也就是把这次
+  /// 改动并进上一步。打一段提示词会触发好几次防抖发送，不合并的话 40 步 undo
+  /// 瞬间就用完了。
+  void record(FlowEditorSnapshot snapshot, {bool coalesce = false}) {
+    if (coalesce && _past.isNotEmpty) return;
     _past.add(snapshot);
     if (_past.length > limit) {
       _past.removeAt(0);

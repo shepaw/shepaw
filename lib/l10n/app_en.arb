@@ -5052,6 +5052,8 @@
   "flow_draftDiscard": "Not now",
   "flow_draftSwitchBody": "This flow has unsaved changes; switching away will drop them.",
   "flow_draftSwitchGo": "Switch anyway",
+  "flow_undo": "Undo",
+  "flow_redo": "Redo",
   "flow_outlineMenu": "More actions",
   "flow_outlineAddChild": "Add a child step",
   "flow_outlineRetype": "Change kind",

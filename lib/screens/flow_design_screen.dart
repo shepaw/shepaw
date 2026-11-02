@@ -527,6 +527,18 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
                   ),
                 ),
               IconButton(
+                key: const ValueKey('undo'),
+                tooltip: l10n.flow_undo,
+                icon: const Icon(Icons.undo),
+                onPressed: c.canUndo ? c.undo : null,
+              ),
+              IconButton(
+                key: const ValueKey('redo'),
+                tooltip: l10n.flow_redo,
+                icon: const Icon(Icons.redo),
+                onPressed: c.canRedo ? c.redo : null,
+              ),
+              IconButton(
                 tooltip: l10n.flow_diffToggle,
                 icon: Icon(Icons.difference_outlined,
                     color: c.showDiff

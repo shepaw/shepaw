@@ -9286,6 +9286,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_draftSwitchGo => 'Switch anyway';
 
   @override
+  String get flow_undo => 'Undo';
+
+  @override
+  String get flow_redo => 'Redo';
+
+  @override
   String get flow_outlineMenu => 'More actions';
 
   @override

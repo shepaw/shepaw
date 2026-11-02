@@ -228,6 +228,26 @@ void main() {
     expect(full.canRetype, isTrue);
   });
 
+  test('连着改同一个字段只算一步 undo', () async {
+    final harness = _Harness();
+    addTearDown(harness.close);
+    final c = await harness.controller();
+    addTearDown(c.dispose);
+    final before = c.yaml;
+
+    // 模拟打一段提示词：三次防抖发送，同一个字段。
+    for (final value in ['一', '一二', '一二三']) {
+      c.setField('a', 'desc', value, immediate: true);
+      await _pastDebounce();
+    }
+    expect(c.yaml, 'flow: dev\nsteps: []\n# edited\n');
+
+    // 一次撤销就回到打字之前 —— 否则 40 步 undo 打一段字就用完了。
+    await c.undo();
+    expect(c.yaml, before);
+    expect(c.canUndo, isFalse);
+  });
+
   test('头上的字段走 header 操作，且立即发送', () async {
     final harness = _Harness();
     addTearDown(harness.close);

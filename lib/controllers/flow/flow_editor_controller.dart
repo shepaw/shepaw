@@ -44,6 +44,10 @@ class FlowEditorController extends ChangeNotifier {
 
   static const Duration _debounceDelay = Duration(milliseconds: 500);
 
+  /// 同字段连续编辑合并成一步 undo 的时间窗。
+  static const Duration _coalesceWindow = Duration(seconds: 2);
+  int _lastAdoptMs = 0;
+
   final String peerId;
   final String name;
   final String scope;
@@ -302,7 +306,8 @@ class FlowEditorController extends ChangeNotifier {
       return false;
     }
     _offline = false;
-    _adopt(checked);
+    // 只改了一个字段时，这次改动可以和上一步合并（打一段提示词算一步）。
+    _adopt(checked, coalesce: extra.isEmpty && sent.length == 1);
     for (final entry in sent.entries) {
       if (_pending[entry.key] == entry.value) _pending.remove(entry.key);
     }
@@ -334,16 +339,25 @@ class FlowEditorController extends ChangeNotifier {
   ///
   /// 空 YAML 一律拒收：主机在 YAML 语法错时会回 `yaml:''` 加空诊断，照单采纳
   /// 会把草稿换成空串。
-  bool _adopt(FlowValidation checked) {
+  bool _adopt(FlowValidation checked, {bool coalesce = false}) {
     if (checked.yaml.trim().isEmpty) return false;
     if (!checked.ok && checked.tree.isEmpty && checked.diagnostics.isEmpty) {
       return false;
     }
-    _history.record(FlowEditorSnapshot(
-      yaml: _yaml,
-      tree: _tree,
-      diagnostics: _diagnostics,
-    ));
+    final now = DateTime.now().millisecondsSinceEpoch;
+    // 连着改同一个字段（打一段提示词）并进上一步，别把 40 步 undo 用光。
+    final merge = coalesce &&
+        _lastAdoptMs > 0 &&
+        now - _lastAdoptMs < _coalesceWindow.inMilliseconds;
+    _lastAdoptMs = now;
+    _history.record(
+      FlowEditorSnapshot(
+        yaml: _yaml,
+        tree: _tree,
+        diagnostics: _diagnostics,
+      ),
+      coalesce: merge,
+    );
     _yaml = checked.yaml;
     _tree = checked.tree;
     _diagnostics = checked.diagnostics;
