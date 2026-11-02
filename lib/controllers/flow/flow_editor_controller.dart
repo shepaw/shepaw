@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../../peer/models/flow_models.dart';
 import '../../peer/services/hub_flow.dart';
 import 'flow_edit_ops.dart';
+import 'flow_draft_store.dart';
 import 'flow_editor_history.dart';
 import 'flow_host_caps.dart';
 import 'flow_editor_notice.dart';
@@ -29,6 +30,7 @@ class FlowEditorController extends ChangeNotifier {
     required this.name,
     this.scope = '',
     HubFlow? client,
+    this.draftStore,
     this.stepInterval = const Duration(milliseconds: 350),
   }) : _client = client ?? HubFlow() {
     _rehearsal = FlowRehearsalRunner(
@@ -56,6 +58,32 @@ class FlowEditorController extends ChangeNotifier {
   FlowRehearsalRunner get rehearsal => _rehearsal;
 
   final FlowEditorHistory _history = FlowEditorHistory();
+
+  /// 未保存草稿的本地暂存。为 null 时不做暂存（单测里不给）。
+  final FlowDraftStore? draftStore;
+
+  /// 打开时发现了一份没保存的草稿，等界面问用户要不要恢复。
+  FlowDraft? _restorableDraft;
+  FlowDraft? get restorableDraft => _restorableDraft;
+
+  /// 恢复那份草稿（界面问过用户之后）。
+  Future<void> restoreDraft() async {
+    final draft = _restorableDraft;
+    if (draft == null) return;
+    _restorableDraft = null;
+    if (draft.yaml.isEmpty) return;
+    final checked = await _client.validate(peerId, draft.yaml);
+    if (_disposed || checked == null) return;
+    // 走 _adopt：草稿也要带树和诊断，不能只换 YAML。
+    _adopt(checked);
+  }
+
+  /// 不要那份草稿了。
+  void discardDraft() {
+    _restorableDraft = null;
+    notifyListeners();
+  }
+
   final Map<FlowPendingKey, Object?> _pending = <FlowPendingKey, Object?>{};
 
   /// 被主机拒过、用户还没改的那批值。
@@ -168,8 +196,27 @@ class FlowEditorController extends ChangeNotifier {
     _pending.clear();
     _diff = null;
     _history.clear();
+    // 打开时先看有没有上次没保存的：有就交给界面去问用户要不要恢复。
+    await _lookForDraft();
     _stateRev++;
     notifyListeners();
+  }
+
+  /// 找暂存里的草稿。版本对得上、且确实和库里不一样才值得问。
+  Future<void> _lookForDraft() async {
+    final store = draftStore;
+    if (store == null) return;
+    final draft = await store.load(
+      peerId: peerId,
+      scope: scope,
+      name: name,
+    );
+    if (draft == null) return;
+    if (draft.yaml.isEmpty || draft.yaml == _baseYaml) {
+      await _clearDraft();
+      return;
+    }
+    _restorableDraft = draft;
   }
 
   // ── 改 ────────────────────────────────────────────────────────────────────
@@ -302,7 +349,27 @@ class FlowEditorController extends ChangeNotifier {
     _diagnostics = checked.diagnostics;
     _stateRev++;
     notifyListeners();
+    unawaited(_persistDraft());
     return true;
+  }
+
+  /// 落一份草稿。切流程 / 杀进程之后还能找回来。
+  Future<void> _persistDraft() async {
+    final store = draftStore;
+    if (store == null || !dirty) return;
+    await store.save(
+      peerId: peerId,
+      scope: scope,
+      name: name,
+      yaml: _yaml,
+      baseRevision: _revision,
+    );
+  }
+
+  Future<void> _clearDraft() async {
+    final store = draftStore;
+    if (store == null) return;
+    await store.clear(peerId: peerId, scope: scope, name: name);
   }
 
   /// 用户在源码面板里改完，点「用这份」。
@@ -364,6 +431,7 @@ class FlowEditorController extends ChangeNotifier {
     _showDiff = false;
     _emit(FlowEditorNotice(FlowEditorNoticeKind.saved, count: _revision));
     notifyListeners();
+    await _clearDraft();
   }
 
   Future<void> toggleDiff() async {
@@ -436,6 +504,9 @@ class FlowEditorController extends ChangeNotifier {
 
   @override
   void dispose() {
+    // 关页面前把挂起的改动发一次，并留一份草稿；不等结果 —— dispose 是同步的。
+    unawaited(_commit(const []));
+    unawaited(_persistDraft());
     _disposed = true;
     _debounce?.cancel();
     _debounce = null;

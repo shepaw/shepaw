@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../controllers/flow/flow_edit_ops.dart';
+import '../controllers/flow/flow_draft_store.dart';
 import '../controllers/flow/flow_editor_controller.dart';
 import '../controllers/flow/flow_executor.dart';
 import '../controllers/flow/flow_editor_notice.dart';
@@ -42,12 +43,20 @@ class FlowDesignScreen extends StatefulWidget {
     this.groupId = '',
     this.sessionId = '',
     this.talk,
+    this.draftStore,
+    this.onDirtyChanged,
   });
 
   final String peerId;
   final String name;
   final String scope;
   final HubFlow? client;
+
+  /// 未保存草稿的本地暂存。为 null 时不暂存。
+  final FlowDraftStore? draftStore;
+
+  /// 草稿状态变了通知外层（工作台要在切流程前拦一下）。
+  final void Function(bool dirty)? onDirtyChanged;
 
   /// 演练动画每一步的间隔。
   final Duration stepInterval;
@@ -106,16 +115,67 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       scope: widget.scope,
       client: widget.client,
       stepInterval: widget.stepInterval,
+      draftStore: widget.draftStore,
     );
     _controller.onNotice = _notice;
+    _controller.addListener(_reportDirty);
     unawaited(_controller.load());
   }
 
   @override
   void dispose() {
     _composer.dispose();
+    _controller.removeListener(_reportDirty);
+    widget.onDirtyChanged?.call(false);
     _controller.dispose();
     super.dispose();
+  }
+
+  bool _lastDirty = false;
+
+  void _reportDirty() {
+    final dirty = _controller.dirty;
+    if (dirty != _lastDirty) {
+      _lastDirty = dirty;
+      widget.onDirtyChanged?.call(dirty);
+    }
+    // 打开时发现上次没保存的改动：问一句要不要接着改。
+    if (_controller.restorableDraft != null && !_askedDraft) {
+      _askedDraft = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _askRestore());
+    }
+  }
+
+  bool _askedDraft = false;
+
+  Future<void> _askRestore() async {
+    if (!mounted) return;
+    final l10n = AppLocalizations.of(context);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(l10n.flow_draftRestoreTitle),
+        content: Text(l10n.flow_draftRestoreBody),
+        actions: [
+          TextButton(
+            key: const ValueKey('draft-discard'),
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(l10n.flow_draftDiscard),
+          ),
+          FilledButton(
+            key: const ValueKey('draft-restore'),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(l10n.flow_draftRestore),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (ok == true) {
+      await _controller.restoreDraft();
+    } else {
+      _controller.discardDraft();
+    }
   }
 
   /// 控制器只说"发生了什么"，文案在这配。

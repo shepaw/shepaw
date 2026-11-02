@@ -9266,6 +9266,26 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_executorShe => 'She';
 
   @override
+  String get flow_draftRestoreTitle => 'Unsaved changes';
+
+  @override
+  String get flow_draftRestoreBody =>
+      'You had edits that were never saved. Pick up where you left off?';
+
+  @override
+  String get flow_draftRestore => 'Continue editing';
+
+  @override
+  String get flow_draftDiscard => 'Not now';
+
+  @override
+  String get flow_draftSwitchBody =>
+      'This flow has unsaved changes; switching away will drop them.';
+
+  @override
+  String get flow_draftSwitchGo => 'Switch anyway';
+
+  @override
   String get flow_outlineMenu => 'More actions';
 
   @override

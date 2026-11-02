@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../controllers/flow/flow_draft_store.dart';
 import '../controllers/flow/flow_executor.dart';
 import '../controllers/flow/flow_names.dart';
 import '../l10n/app_localizations.dart';
@@ -11,6 +12,7 @@ import '../services/local_database_service.dart';
 import '../peer/models/flow_models.dart';
 import '../peer/services/hub_flow.dart';
 import '../utils/layout_utils.dart';
+import '../widgets/discard_changes_scope.dart';
 import '../widgets/flow/flow_new_flow_dialog.dart';
 import '../widgets/flow/flow_start_dialog.dart';
 import 'flow_design_screen.dart';
@@ -60,6 +62,11 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   String? _selectedName;
   List<RemoteAgent> _agents = const [];
   int _detailToken = 0;
+
+  /// 编辑区有没有没保存的改动（由设计页报上来）。
+  bool _editorDirty = false;
+
+  final FlowDraftStore _drafts = FlowDraftStore();
 
   @override
   void initState() {
@@ -118,15 +125,37 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
     return flows.where((f) => f.name.toLowerCase().contains(q)).toList();
   }
 
+  /// 切走之前先问：编辑区里有没保存的改动。
+  Future<bool> _guardDirty() async {
+    if (!_editorDirty) return true;
+    final l10n = AppLocalizations.of(context);
+    return await showConfirmDialog(
+          context,
+          title: l10n.flow_draftRestoreTitle,
+          message: l10n.flow_draftSwitchBody,
+          confirmLabel: l10n.flow_draftSwitchGo,
+        ) ==
+        true;
+  }
+
   void _select(FlowSummary flow) {
-    setState(() {
-      _detailToken++;
-      _selectedName = flow.name;
-    });
+    if (_selectedName == flow.name) return;
+    unawaited(() async {
+      if (!await _guardDirty()) return;
+      if (!mounted) return;
+      setState(() {
+        _detailToken++;
+        _selectedName = flow.name;
+      });
+    }());
   }
 
   void _closeDetail() {
-    setState(() => _selectedName = null);
+    unawaited(() async {
+      if (!await _guardDirty()) return;
+      if (!mounted) return;
+      setState(() => _selectedName = null);
+    }());
   }
 
   /// 开跑。先把定义取回来（要知道声明了哪些 inputs、有哪些角色），再问一次。
@@ -398,6 +427,8 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
       name: name,
       scope: widget.scope,
       client: _client,
+      draftStore: _drafts,
+      onDirtyChanged: (dirty) => _editorDirty = dirty,
     );
   }
 }

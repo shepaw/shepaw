@@ -16157,6 +16157,42 @@ abstract class AppLocalizations {
   /// **'惜宝'**
   String get flow_executorShe;
 
+  /// No description provided for @flow_draftRestoreTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'有没保存的改动'**
+  String get flow_draftRestoreTitle;
+
+  /// No description provided for @flow_draftRestoreBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'上次改的还没保存。要接着改吗？'**
+  String get flow_draftRestoreBody;
+
+  /// No description provided for @flow_draftRestore.
+  ///
+  /// In zh, this message translates to:
+  /// **'接着改'**
+  String get flow_draftRestore;
+
+  /// No description provided for @flow_draftDiscard.
+  ///
+  /// In zh, this message translates to:
+  /// **'不用了'**
+  String get flow_draftDiscard;
+
+  /// No description provided for @flow_draftSwitchBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个流程还有改了没保存的地方，切走会丢掉它们。'**
+  String get flow_draftSwitchBody;
+
+  /// No description provided for @flow_draftSwitchGo.
+  ///
+  /// In zh, this message translates to:
+  /// **'仍然切走'**
+  String get flow_draftSwitchGo;
+
   /// No description provided for @flow_outlineMenu.
   ///
   /// In zh, this message translates to:

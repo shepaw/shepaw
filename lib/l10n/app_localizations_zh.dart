@@ -8911,6 +8911,24 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_executorShe => '惜宝';
 
   @override
+  String get flow_draftRestoreTitle => '有没保存的改动';
+
+  @override
+  String get flow_draftRestoreBody => '上次改的还没保存。要接着改吗？';
+
+  @override
+  String get flow_draftRestore => '接着改';
+
+  @override
+  String get flow_draftDiscard => '不用了';
+
+  @override
+  String get flow_draftSwitchBody => '这个流程还有改了没保存的地方，切走会丢掉它们。';
+
+  @override
+  String get flow_draftSwitchGo => '仍然切走';
+
+  @override
   String get flow_outlineMenu => '更多操作';
 
   @override
