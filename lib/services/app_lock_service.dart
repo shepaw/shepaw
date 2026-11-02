@@ -16,8 +16,8 @@ class AppLockService extends ChangeNotifier {
     Duration? away,
   })  : _authenticate = authenticate ??
             (() => BiometricService().authenticate(reason: 'verify')),
-        _deviceSupported = deviceSupported ??
-            (() => BiometricService().isDeviceSupported()),
+        _deviceSupported =
+            deviceSupported ?? (() => BiometricService().isDeviceSupported()),
         _away = away ?? const Duration(minutes: 5);
 
   static const key = 'app_lock_enabled';
@@ -42,14 +42,16 @@ class AppLockService extends ChangeNotifier {
 
   Duration get away => _away;
 
-  Future<void> load() async {
+  /// [hasSession] 为 false 时启动即视为已解锁：还没登录过的门页本来就
+  /// 没什么可保护的，用户这次进入 App 会先过密码 / 恢复那一关。
+  Future<void> load({bool hasSession = true}) async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getBool(key);
     // 没设过就按平台给默认值：手机开，桌面关。
     final next = raw ?? !isDesktopPlatform;
     _supported = await _deviceSupported();
     _enabled = _supported ? next : false;
-    _locked = _enabled == true;
+    _locked = _enabled == true && hasSession;
     notifyListeners();
   }
 

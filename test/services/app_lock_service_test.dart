@@ -37,6 +37,19 @@ void main() {
     expect(service.enabled, isDesktopPlatform ? isFalse : isTrue);
   });
 
+  test('冷启动有登录态时要先解锁', () async {
+    final service = lock();
+    await service.load(hasSession: true);
+    expect(service.locked, isTrue);
+  });
+
+  test('冷启动没有登录态时不上锁', () async {
+    final service = lock();
+    await service.load(hasSession: false);
+    expect(service.enabled, isTrue);
+    expect(service.locked, isFalse);
+  });
+
   test('后台不到阈值不重新锁', () async {
     final service = lock(away: const Duration(minutes: 5));
     await service.load();

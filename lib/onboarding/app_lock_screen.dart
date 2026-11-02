@@ -8,9 +8,10 @@ import '../../services/biometric_service.dart';
 ///
 /// 认证被取消就停在这里，不提供任何绕过方式 —— 开了应用锁又不拦，等于没开。
 class AppLockScreen extends StatefulWidget {
-  const AppLockScreen({super.key, this.lock});
+  const AppLockScreen({super.key, required this.lock});
 
-  final AppLockService? lock;
+  /// 必须传全局那个实例：解锁要清的就是驱动重锁的那份状态。
+  final AppLockService lock;
 
   @override
   State<AppLockScreen> createState() => _AppLockScreenState();
@@ -24,7 +25,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
   @override
   void initState() {
     super.initState();
-    _lock = widget.lock ?? AppLockService();
+    _lock = widget.lock;
     _loadMethod();
   }
 
