@@ -9266,6 +9266,26 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_executorShe => 'She';
 
   @override
+  String get flow_outlineMenu => 'More actions';
+
+  @override
+  String get flow_outlineAddChild => 'Add a child step';
+
+  @override
+  String get flow_outlineRetype => 'Change kind';
+
+  @override
+  String get flow_outlineIndent => 'Indent';
+
+  @override
+  String flow_outlineMoveInto(String id) {
+    return 'Move into \"$id\"';
+  }
+
+  @override
+  String get flow_outlineWrapWith => 'Wrap with the previous step';
+
+  @override
   String flow_startTitle(String name) {
     return 'Run $name';
   }

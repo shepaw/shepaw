@@ -16157,6 +16157,42 @@ abstract class AppLocalizations {
   /// **'惜宝'**
   String get flow_executorShe;
 
+  /// No description provided for @flow_outlineMenu.
+  ///
+  /// In zh, this message translates to:
+  /// **'更多操作'**
+  String get flow_outlineMenu;
+
+  /// No description provided for @flow_outlineAddChild.
+  ///
+  /// In zh, this message translates to:
+  /// **'加子步骤'**
+  String get flow_outlineAddChild;
+
+  /// No description provided for @flow_outlineRetype.
+  ///
+  /// In zh, this message translates to:
+  /// **'改类型'**
+  String get flow_outlineRetype;
+
+  /// No description provided for @flow_outlineIndent.
+  ///
+  /// In zh, this message translates to:
+  /// **'缩进'**
+  String get flow_outlineIndent;
+
+  /// No description provided for @flow_outlineMoveInto.
+  ///
+  /// In zh, this message translates to:
+  /// **'移进「{id}」'**
+  String flow_outlineMoveInto(String id);
+
+  /// No description provided for @flow_outlineWrapWith.
+  ///
+  /// In zh, this message translates to:
+  /// **'和上一步一起包成'**
+  String get flow_outlineWrapWith;
+
   /// No description provided for @flow_startTitle.
   ///
   /// In zh, this message translates to:

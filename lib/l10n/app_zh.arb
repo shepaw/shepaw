@@ -5477,6 +5477,17 @@
   "flow_executorAgent": "Agent",
   "flow_executorPickAgent": "选一个 Agent",
   "flow_executorShe": "惜宝",
+  "flow_outlineMenu": "更多操作",
+  "flow_outlineAddChild": "加子步骤",
+  "flow_outlineRetype": "改类型",
+  "flow_outlineIndent": "缩进",
+  "flow_outlineMoveInto": "移进「{id}」",
+  "flow_outlineWrapWith": "和上一步一起包成",
+  "@flow_outlineMoveInto": {
+    "placeholders": {
+      "id": { "type": "String" }
+    }
+  },
   "flow_startTitle": "运行 {name}",
   "flow_startRun": "开跑",
   "flow_startRunsSaved": "开跑用的是库里保存的第 {revision} 版，不是你正在改的草稿",

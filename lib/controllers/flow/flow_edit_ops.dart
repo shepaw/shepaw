@@ -90,42 +90,47 @@ class FlowEditOps {
     required String nodeId,
     required String previousSiblingId,
     required String wrapperId,
+    String kind = 'seq',
   }) =>
       [
         wrap(
           nodeId: previousSiblingId,
-          kind: 'seq',
+          kind: kind,
           wrapperId: wrapperId,
         ),
         move(nodeId: nodeId, parentId: wrapperId),
       ];
 
-  /// 换节点类型，保留节点 id。
+  /// 换节点类型（M1.5 的 `retype`）。
   ///
-  /// 主机没有「改类型」这个操作，但 `set` 允许对类型键本身置 null（只挡 `id`
-  /// 和 `steps`）。所以是：先把子节点挪到外面 → 删旧类型体 → 写新类型体 →
-  /// 把子节点挪回来。
+  /// **不要**自己拼「挪出子节点 → 清掉旧类型键 → 写新类型键 → 挪回去」：实测
+  /// `seq`→`task` 时最后一步被拒；而为了绕开不传子节点的话，清掉旧类型键会
+  /// 把整棵子树一起删掉。主机的 `retype` 保留 `id` / `desc` / `when` / `retry`
+  /// / `timeout` / `on_error`，新旧都是容器时搬 `steps`，装不下就报错 —— 由界面
+  /// 先提示用户处理。
   ///
-  /// 保留 id 很重要：`when` / `retry` / `desc` 这些挂在节点上的字段，以及别处
-  /// 用 `{{ id.text }}` 引用它的地方，都不会因为改类型而断掉。
-  ///
-  /// `if` 带 `else` 时不要用：树里两支是拼在一起的，挪出来会交错。
-  static List<Map<String, dynamic>> changeKind({
-    required String id,
-    required String from,
-    required String to,
-    required String parentId,
-    required int index,
-    List<String> childIds = const [],
+  /// [body] 不给时主机用该类型的默认体。
+  static Map<String, dynamic> retype({
+    required String nodeId,
+    required String kind,
+    Map<String, dynamic>? body,
   }) =>
-      [
-        for (var k = 0; k < childIds.length; k++)
-          move(nodeId: childIds[k], parentId: parentId, index: index + 1 + k),
-        set(id, from, null),
-        set(id, to, FlowStepDefaults.body(to)),
-        for (var k = 0; k < childIds.length; k++)
-          move(nodeId: childIds[k], parentId: id, index: k),
-      ];
+      {
+        'op': 'retype',
+        'node_id': nodeId,
+        'kind': kind,
+        if (body != null) 'body': body,
+      };
+
+  /// 往一个容器里加子步骤。空容器也能加：主机自己会建数组。
+  ///
+  /// `if` 要给 [branch]（`then` / `else`），否则新节点落在哪一支说不准。
+  static Map<String, dynamic> insertChild({
+    required String parentId,
+    required Map<String, dynamic> step,
+    String? branch,
+  }) =>
+      insert(parentId: parentId, index: 0, branch: branch, step: step);
 }
 
 /// 新建一个节点时给的默认值。

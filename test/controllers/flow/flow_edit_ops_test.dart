@@ -93,53 +93,54 @@ void main() {
       );
     });
 
-    test('改类型：子节点先挪出去，换完类型体再挪回来，id 不变', () {
+    test('改类型只发一个 retype，不再自己拼四步', () {
+      // 客户端拼的「挪出 → 删 → 写 → 挪回」实测失败：seq→task 时最后一步被拒；
+      // 绕开不传子节点的话，清掉旧类型键会把整棵子树删掉。交给主机做。
       expect(
-        FlowEditOps.changeKind(
-          id: 'build',
-          from: 'seq',
-          to: 'par',
-          parentId: '',
-          index: 0,
-          childIds: ['impl', 'review'],
+        FlowEditOps.retype(nodeId: 'build', kind: 'par'),
+        {'op': 'retype', 'node_id': 'build', 'kind': 'par'},
+      );
+      expect(
+        FlowEditOps.retype(
+          nodeId: 'build',
+          kind: 'gate',
+          body: {'ask': 'owner', 'options': ['ok']},
         ),
-        [
-          {'op': 'move', 'node_id': 'impl', 'parent_id': '', 'index': 1},
-          {'op': 'move', 'node_id': 'review', 'parent_id': '', 'index': 2},
-          {'op': 'set', 'node_id': 'build', 'field': 'seq', 'value': null},
-          {
-            'op': 'set',
-            'node_id': 'build',
-            'field': 'par',
-            'value': <String, dynamic>{},
-          },
-          {'op': 'move', 'node_id': 'impl', 'parent_id': 'build', 'index': 0},
-          {'op': 'move', 'node_id': 'review', 'parent_id': 'build', 'index': 1},
-        ],
+        {
+          'op': 'retype',
+          'node_id': 'build',
+          'kind': 'gate',
+          'body': {'ask': 'owner', 'options': ['ok']},
+        },
       );
     });
 
     test('没有子节点时改类型就是一删一加', () {
+      // 同上：一个 op 搞定，不用管子节点。
       expect(
-        FlowEditOps.changeKind(
-          id: 'a',
-          from: 'task',
-          to: 'gate',
-          parentId: '',
-          index: 0,
+        FlowEditOps.retype(nodeId: 'a', kind: 'gate'),
+        {'op': 'retype', 'node_id': 'a', 'kind': 'gate'},
+      );
+    });
+
+    test('往容器里加子步骤：if 要带分支', () {
+      expect(
+        FlowEditOps.insertChild(parentId: 'pick', step: const {}),
+        {'op': 'insert', 'parent_id': 'pick', 'index': 0, 'step': const {}},
+      );
+      expect(
+        FlowEditOps.insertChild(
+          parentId: 'pick',
+          branch: 'else',
+          step: const {},
         ),
-        [
-          {'op': 'set', 'node_id': 'a', 'field': 'task', 'value': null},
-          {
-            'op': 'set',
-            'node_id': 'a',
-            'field': 'gate',
-            'value': {
-              'ask': 'user',
-              'options': ['ok', 'rework'],
-            },
-          },
-        ],
+        {
+          'op': 'insert',
+          'parent_id': 'pick',
+          'index': 0,
+          'branch': 'else',
+          'step': const {},
+        },
       );
     });
   });

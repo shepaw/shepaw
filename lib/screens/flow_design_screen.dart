@@ -19,6 +19,7 @@ import '../utils/layout_utils.dart';
 import '../widgets/discard_changes_scope.dart';
 import '../widgets/flow/flow_node_inspector.dart';
 import '../widgets/flow/flow_node_tree.dart';
+import '../widgets/flow/flow_outline_menu.dart';
 import '../widgets/flow/flow_outline_tree.dart';
 import '../widgets/flow/flow_yaml_editor.dart';
 
@@ -189,6 +190,37 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     unawaited(_controller.applyOps([
       up ? FlowOutlineOps.moveUp(row) : FlowOutlineOps.moveDown(row),
     ]));
+  }
+
+  Future<void> _rowMenu(FlowOutlineRow row) async {
+    final choice = await showFlowOutlineMenu(
+      context,
+      row: row,
+      canRetype: _controller.caps.canRetype,
+    );
+    if (choice == null || !mounted) return;
+    final step = () => FlowStepDefaults.step(
+          _controller.freshId('step'),
+          'task',
+          prompt: AppLocalizations.of(context).flow_newStepPrompt,
+        );
+    await switch (choice.action) {
+      FlowOutlineMenuAction.insertChild => _controller.applyOps([
+          FlowOutlineOps.insertChild(row.node, step(), branch: choice.branch),
+        ]),
+      FlowOutlineMenuAction.moveIntoPrevious =>
+        _controller.applyOps([FlowOutlineOps.moveIntoPrevious(row)]),
+      FlowOutlineMenuAction.wrapWithPrevious => _controller.applyOps(
+          FlowOutlineOps.wrapWithPrevious(
+            row,
+            choice.kind!,
+            _controller.freshId(choice.kind!),
+          ),
+        ),
+      // 改类型只发一个 retype：保留 id 和 desc / when / retry，主机搬子节点。
+      FlowOutlineMenuAction.retype =>
+        _controller.applyOps([FlowOutlineOps.retype(row, choice.kind!)]),
+    };
   }
 
   Future<void> _delete(FlowOutlineRow row) async {
@@ -473,6 +505,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
             onMoveUp: (row) => _move(row, up: true),
             onMoveDown: (row) => _move(row, up: false),
             onDelete: _delete,
+            onMenu: _rowMenu,
           )
         else
           FlowNodeTree(

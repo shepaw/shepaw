@@ -17,8 +17,9 @@ class FlowOutlineRow {
     required this.depth,
     required this.parentId,
     required this.index,
-    this.branch,
     required this.siblingCount,
+    this.branch,
+    this.previousSibling,
   });
 
   final FlowNode node;
@@ -35,6 +36,9 @@ class FlowOutlineRow {
   /// 父节点是 `if` 时这一行属于哪一支。其余情况为 null。
   final String? branch;
 
+  /// 同一父节点（同一分支）里的前一个兄弟。缩进菜单要用它。
+  final FlowNode? previousSibling;
+
   /// 同一分支里有多少个兄弟。上移 / 下移能不能用看它。
   final int siblingCount;
 
@@ -43,6 +47,20 @@ class FlowOutlineRow {
 
   /// 父节点是 `if`：所有结构操作都必须带 [branch]，否则会跨分支。
   bool get inIfBranch => branch != null;
+}
+
+/// `if` 的两支是拼在一起的，前一个兄弟要在**同一支**里找。
+FlowNode? _previousInBranch(
+  List<FlowNode> nodes,
+  FlowNode node,
+  String branch,
+) {
+  FlowNode? last;
+  for (final candidate in nodes) {
+    if (identical(candidate, node)) return last;
+    if ((candidate.branch ?? 'then') == branch) last = candidate;
+  }
+  return last;
 }
 
 /// 把树摊平成行。[collapsed] 里的节点不展开子节点。
@@ -70,6 +88,9 @@ List<FlowOutlineRow> buildFlowOutline(
           index: index,
           branch: branch,
           siblingCount: counts[branch] ?? 1,
+          previousSibling: index == 0
+              ? null
+              : _previousInBranch(nodes, node, branch),
         ));
         if (node.children.isNotEmpty && !collapsed.contains(node.id)) {
           walk(node.children, depth + 1, node.id, node.kind == 'if');
@@ -85,6 +106,7 @@ List<FlowOutlineRow> buildFlowOutline(
         parentId: parentId,
         index: i,
         siblingCount: nodes.length,
+        previousSibling: i == 0 ? null : nodes[i - 1],
       ));
       if (node.children.isNotEmpty && !collapsed.contains(node.id)) {
         walk(node.children, depth + 1, node.id, node.kind == 'if');
@@ -127,16 +149,49 @@ class FlowOutlineOps {
         step: step,
       );
 
-  /// 往一个容器里加子步骤。空容器也能加（主机自己建数组）。
+  /// 往容器里加子步骤。空容器也能加（主机自己建数组）。
   static Map<String, dynamic> insertChild(
     FlowNode parent,
     Map<String, dynamic> step, {
     String? branch,
   }) =>
-      FlowEditOps.insert(
+      FlowEditOps.insertChild(
         parentId: parent.id,
-        index: 0,
         branch: branch,
         step: step,
       );
+
+  /// 移进上一个兄弟（它得是容器）。
+  ///
+  /// 和「包起来」的区别：这只是换个父节点，不新建容器，也不改执行语义。
+  static Map<String, dynamic> moveIntoPrevious(FlowOutlineRow row) =>
+      FlowEditOps.move(
+        nodeId: row.node.id,
+        parentId: row.previousSibling!.id,
+      );
+
+  /// 把当前节点和上一个兄弟一起包进一个新容器。
+  ///
+  /// 这是**显式**的选择 —— 以前「缩进」遇到叶子兄弟会悄悄造一个 seq，用户并不
+  /// 知道自己多了一层，移进 `par` / `loop` 还会改变执行语义（并发、重复）。
+  /// 菜单项要写清是哪一种。
+  static List<Map<String, dynamic>> wrapWithPrevious(
+    FlowOutlineRow row,
+    String kind,
+    String wrapperId,
+  ) =>
+      FlowEditOps.indentIntoLeaf(
+        nodeId: row.node.id,
+        previousSiblingId: row.previousSibling!.id,
+        wrapperId: wrapperId,
+        kind: kind,
+      );
+
+  /// 换节点类型。只发一个 `retype`，由主机保留 id 和公共字段。
+  static Map<String, dynamic> retype(
+    FlowOutlineRow row,
+    String kind, {
+    Map<String, dynamic>? body,
+  }) =>
+      FlowEditOps.retype(nodeId: row.node.id, kind: kind, body: body);
 }

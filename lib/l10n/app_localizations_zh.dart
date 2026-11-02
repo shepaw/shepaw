@@ -8911,6 +8911,26 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_executorShe => '惜宝';
 
   @override
+  String get flow_outlineMenu => '更多操作';
+
+  @override
+  String get flow_outlineAddChild => '加子步骤';
+
+  @override
+  String get flow_outlineRetype => '改类型';
+
+  @override
+  String get flow_outlineIndent => '缩进';
+
+  @override
+  String flow_outlineMoveInto(String id) {
+    return '移进「$id」';
+  }
+
+  @override
+  String get flow_outlineWrapWith => '和上一步一起包成';
+
+  @override
   String flow_startTitle(String name) {
     return '运行 $name';
   }

@@ -5046,6 +5046,17 @@
   "flow_executorAgent": "Agent",
   "flow_executorPickAgent": "Pick an agent",
   "flow_executorShe": "She",
+  "flow_outlineMenu": "More actions",
+  "flow_outlineAddChild": "Add a child step",
+  "flow_outlineRetype": "Change kind",
+  "flow_outlineIndent": "Indent",
+  "flow_outlineMoveInto": "Move into \"{id}\"",
+  "flow_outlineWrapWith": "Wrap with the previous step",
+  "@flow_outlineMoveInto": {
+    "placeholders": {
+      "id": { "type": "String" }
+    }
+  },
   "flow_startTitle": "Run {name}",
   "flow_startRun": "Start",
   "flow_startRunsSaved": "Running uses revision {revision} from the library, not your unsaved draft",

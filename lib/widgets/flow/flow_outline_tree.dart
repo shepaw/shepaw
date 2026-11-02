@@ -28,6 +28,7 @@ class FlowOutlineTree extends StatelessWidget {
     this.onMoveUp,
     this.onMoveDown,
     this.onDelete,
+    this.onMenu,
   });
 
   final List<FlowOutlineRow> rows;
@@ -48,6 +49,9 @@ class FlowOutlineTree extends StatelessWidget {
   final void Function(FlowOutlineRow row)? onMoveUp;
   final void Function(FlowOutlineRow row)? onMoveDown;
   final void Function(FlowOutlineRow row)? onDelete;
+
+  /// 「⋯」菜单：加子步骤 / 缩进 / 改类型。
+  final void Function(FlowOutlineRow row)? onMenu;
 
   /// 这一行能不能改结构。`if` 内没有分支标记时一律不给。
   bool _editable(FlowOutlineRow row) {
@@ -82,6 +86,7 @@ class FlowOutlineTree extends StatelessWidget {
             onMoveUp: onMoveUp == null ? null : () => onMoveUp!(row),
             onMoveDown: onMoveDown == null ? null : () => onMoveDown!(row),
             onDelete: onDelete == null ? null : () => onDelete!(row),
+            onMenu: onMenu == null ? null : () => onMenu!(row),
           ),
       ],
     );
@@ -105,6 +110,7 @@ class _Row extends StatelessWidget {
     required this.onMoveUp,
     required this.onMoveDown,
     required this.onDelete,
+    required this.onMenu,
   });
 
   final AppLocalizations l10n;
@@ -122,6 +128,7 @@ class _Row extends StatelessWidget {
   final VoidCallback? onMoveUp;
   final VoidCallback? onMoveDown;
   final VoidCallback? onDelete;
+  final VoidCallback? onMenu;
 
   @override
   Widget build(BuildContext context) {
@@ -226,6 +233,12 @@ class _Row extends StatelessWidget {
                     tooltip: l10n.flow_addAfter,
                     icon: const Icon(Icons.add, size: 18),
                     onPressed: onAddAfter,
+                  ),
+                  IconButton(
+                    key: ValueKey('menu-${node.id}'),
+                    tooltip: l10n.flow_outlineMenu,
+                    icon: const Icon(Icons.more_horiz, size: 18),
+                    onPressed: onMenu,
                   ),
                   IconButton(
                     key: ValueKey('del-${node.id}'),

@@ -112,6 +112,81 @@ void main() {
         'index': 0,
       });
     });
+
+    test('加子步骤：if 的两个分支分别给 branch', () {
+      final rows = buildFlowOutline(_ifTree());
+      final pick = rows.firstWhere((r) => r.node.id == 'pick');
+      expect(
+        FlowOutlineOps.insertChild(pick.node, const {}, branch: 'then'),
+        {
+          'op': 'insert',
+          'parent_id': 'pick',
+          'index': 0,
+          'branch': 'then',
+          'step': const {},
+        },
+      );
+      expect(
+        FlowOutlineOps.insertChild(pick.node, const {}, branch: 'else'),
+        {
+          'op': 'insert',
+          'parent_id': 'pick',
+          'index': 0,
+          'branch': 'else',
+          'step': const {},
+        },
+      );
+    });
+
+    test('改类型只发一个 retype', () {
+      final rows = buildFlowOutline(_ifTree());
+      final t1 = rows.firstWhere((r) => r.node.id == 't1');
+      expect(
+        FlowOutlineOps.retype(t1, 'gate'),
+        {'op': 'retype', 'node_id': 't1', 'kind': 'gate'},
+      );
+    });
+
+    test('缩进：移进上一个兄弟 vs 和它一起包起来', () {
+      final rows = buildFlowOutline([
+        FlowNode(
+          key: 'a',
+          id: 'a',
+          kind: 'seq',
+          children: [_task('x')],
+        ),
+        _task('b'),
+      ]);
+      final b = rows.firstWhere((r) => r.node.id == 'b');
+      // 上一个兄弟是容器：直接改父节点，不新建容器、不改执行语义。
+      expect(FlowOutlineOps.moveIntoPrevious(b), {
+        'op': 'move',
+        'node_id': 'b',
+        'parent_id': 'a',
+      });
+      // 包起来是显式选择，且要写清是哪一种（并行 / 循环 会改语义）。
+      expect(
+        FlowOutlineOps.wrapWithPrevious(b, 'par', 'wrap-1'),
+        [
+          {
+            'op': 'wrap',
+            'node_id': 'a',
+            'kind': 'par',
+            'wrapper_id': 'wrap-1',
+          },
+          {'op': 'move', 'node_id': 'b', 'parent_id': 'wrap-1'},
+        ],
+      );
+    });
+
+    test('前一个兄弟在同一支里找', () {
+      final rows = buildFlowOutline(_ifTree());
+      final byId = {for (final r in rows) r.node.id: r};
+      // e2 的前一个是 e1，不能是 t2（跨支）。
+      expect(byId['e2']!.previousSibling?.id, 'e1');
+      expect(byId['e1']!.previousSibling, isNull);
+      expect(byId['t2']!.previousSibling?.id, 't1');
+    });
   });
 
   test('flowLocate 也认分支', () {
