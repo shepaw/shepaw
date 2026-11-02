@@ -9251,6 +9251,21 @@ class AppLocalizationsEn extends AppLocalizations {
       'Start from an empty flow and add steps yourself';
 
   @override
+  String get flow_executorLabel => 'Who runs this';
+
+  @override
+  String get flow_executorRole => 'Role';
+
+  @override
+  String get flow_executorAgent => 'Agent';
+
+  @override
+  String get flow_executorPickAgent => 'Pick an agent';
+
+  @override
+  String get flow_executorShe => 'She';
+
+  @override
   String flow_outlineDeleteBody(String id) {
     return 'Delete `$id` and everything under it.';
   }

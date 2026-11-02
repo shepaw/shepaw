@@ -5041,6 +5041,11 @@
   "flow_newNameTaken": "A flow with that name already exists",
   "flow_newBlank": "Blank flow",
   "flow_newBlankHint": "Start from an empty flow and add steps yourself",
+  "flow_executorLabel": "Who runs this",
+  "flow_executorRole": "Role",
+  "flow_executorAgent": "Agent",
+  "flow_executorPickAgent": "Pick an agent",
+  "flow_executorShe": "She",
   "flow_outlineDeleteBody": "Delete `{id}` and everything under it.",
   "@flow_outlineDeleteBody": {
     "placeholders": {

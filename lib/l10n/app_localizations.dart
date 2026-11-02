@@ -16127,6 +16127,36 @@ abstract class AppLocalizations {
   /// **'从一个空流程开始，自己加步骤'**
   String get flow_newBlankHint;
 
+  /// No description provided for @flow_executorLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'谁来做'**
+  String get flow_executorLabel;
+
+  /// No description provided for @flow_executorRole.
+  ///
+  /// In zh, this message translates to:
+  /// **'角色'**
+  String get flow_executorRole;
+
+  /// No description provided for @flow_executorAgent.
+  ///
+  /// In zh, this message translates to:
+  /// **'Agent'**
+  String get flow_executorAgent;
+
+  /// No description provided for @flow_executorPickAgent.
+  ///
+  /// In zh, this message translates to:
+  /// **'选一个 Agent'**
+  String get flow_executorPickAgent;
+
+  /// No description provided for @flow_executorShe.
+  ///
+  /// In zh, this message translates to:
+  /// **'惜宝'**
+  String get flow_executorShe;
+
   /// No description provided for @flow_outlineDeleteBody.
   ///
   /// In zh, this message translates to:

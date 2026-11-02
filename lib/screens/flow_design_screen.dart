@@ -4,12 +4,16 @@ import 'package:flutter/material.dart';
 
 import '../controllers/flow/flow_edit_ops.dart';
 import '../controllers/flow/flow_editor_controller.dart';
+import '../controllers/flow/flow_executor.dart';
 import '../controllers/flow/flow_editor_notice.dart';
 import '../controllers/flow/flow_outline.dart';
 import '../l10n/app_localizations.dart';
 import '../peer/models/flow_models.dart';
 import '../peer/pouch_turn_relay.dart';
 import '../peer/services/hub_flow.dart';
+import '../models/remote_agent.dart';
+import '../screens/jade_slip_agent_picker.dart';
+import '../services/local_database_service.dart';
 import '../services/local_user_identity.dart';
 import '../utils/layout_utils.dart';
 import '../widgets/discard_changes_scope.dart';
@@ -71,6 +75,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   final Set<String> _selected = <String>{};
   final Set<String> _collapsed = <String>{};
   String? _selectedId;
+  List<RemoteAgent> _agents = const [];
   final TextEditingController _composer = TextEditingController();
   final StringBuffer _reply = StringBuffer();
   bool _talking = false;
@@ -208,6 +213,8 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       builder: (sheet) => FlowNodeInspector(
         node: node,
         schema: schema,
+        roles: peekRoles(_controller.yaml),
+        onPickAgent: _pickAgent,
         onApply: (changes) {
           Navigator.pop(sheet);
           if (changes.isEmpty) return;
@@ -274,6 +281,22 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       'flow': {'ref': reference},
       'selection': _selected.toList(),
     };
+  }
+
+  /// 打开 Agent 选择器，返回选中的 id。
+  Future<String?> _pickAgent() async {
+    if (_agents.isEmpty) {
+      final agents = await LocalDatabaseService().getAllRemoteAgents();
+      if (!mounted) return null;
+      setState(() => _agents = agents);
+    }
+    final l10n = AppLocalizations.of(context);
+    final picked = await showJadeSlipAgentPicker(
+      context,
+      agents: _agents,
+      title: l10n.flow_executorPickAgent,
+    );
+    return picked?.id;
   }
 
   Future<void> _talk() async {

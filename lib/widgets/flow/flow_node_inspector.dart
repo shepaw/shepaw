@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../controllers/flow/flow_executor.dart';
 import '../../l10n/app_localizations.dart';
 import '../../peer/models/flow_models.dart';
+import 'flow_executor_field.dart';
 import 'flow_node_tree.dart';
 
 /// 节点检查器（方案 C.4）：底部抽屉表单。字段表由 Hub 下发（`flow_schema_resp`），
@@ -16,10 +18,18 @@ class FlowNodeInspector extends StatefulWidget {
     required this.onWrap,
     required this.onUnwrap,
     required this.onAddAfter,
+    this.roles = const [],
+    this.onPickAgent,
   });
 
   final FlowNode node;
   final FlowSchema schema;
+
+  /// 定义头里的角色名，喂给「谁来做」选择器。
+  final List<String> roles;
+
+  /// 打开 Agent 选择器；为 null 时 Agent 退化成手输。
+  final Future<String?> Function()? onPickAgent;
 
   /// 改动的字段（点分路径 → 新值；空值表示清掉）。
   final void Function(Map<String, Object?> changes) onApply;
@@ -38,8 +48,18 @@ class _FlowNodeInspectorState extends State<FlowNodeInspector> {
   final Map<String, TextEditingController> _text = {};
   final Map<String, String?> _enums = {};
 
-  List<FlowSchemaField> get _fields =>
-      widget.schema.fieldsFor(widget.node.kind);
+  /// 为 null 表示用户没动过执行者：那就一个字段都别发，免得把现有的清掉。
+  FlowExecutor? _executor;
+
+  bool get _isTask => widget.node.kind == 'task';
+
+  /// `task.role` / `task.agent` 交给「谁来做」选择器，不再单独出文本框。
+  List<FlowSchemaField> get _fields => [
+        for (final field in widget.schema.fieldsFor(widget.node.kind))
+          if (!_isTask ||
+              (field.name != 'task.role' && field.name != 'task.agent'))
+            field,
+      ];
 
   @override
   void initState() {
@@ -66,6 +86,10 @@ class _FlowNodeInspectorState extends State<FlowNodeInspector> {
   /// 和打开时不一样的字段。整数字段写成数字，空值表示清掉。
   Map<String, Object?> _changes() {
     final changes = <String, Object?>{};
+    final executor = _executor;
+    if (_isTask && executor != null) {
+      changes.addAll(executor.ops());
+    }
     for (final field in _fields) {
       final before = flowFieldValue(widget.node.fields, field.name)?.toString();
       final String? after = field.type == 'enum'
@@ -107,6 +131,13 @@ class _FlowNodeInspectorState extends State<FlowNodeInspector> {
               Text(flowKindTitle(l10n, node),
                   style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
+              if (_isTask)
+                FlowExecutorField(
+                  node: widget.node,
+                  roles: widget.roles,
+                  onPickAgent: widget.onPickAgent,
+                  onChanged: (executor) => setState(() => _executor = executor),
+                ),
               for (final field in _fields)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4),

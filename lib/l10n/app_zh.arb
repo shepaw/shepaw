@@ -5472,6 +5472,11 @@
   "flow_newNameTaken": "已经有同名的流程了，换一个",
   "flow_newBlank": "空白流程",
   "flow_newBlankHint": "从一个空流程开始，自己加步骤",
+  "flow_executorLabel": "谁来做",
+  "flow_executorRole": "角色",
+  "flow_executorAgent": "Agent",
+  "flow_executorPickAgent": "选一个 Agent",
+  "flow_executorShe": "惜宝",
   "flow_outlineDeleteBody": "删掉 `{id}` 和它下面的所有步骤。",
   "@flow_outlineDeleteBody": {
     "placeholders": {

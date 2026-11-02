@@ -8896,6 +8896,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_newBlankHint => '从一个空流程开始，自己加步骤';
 
   @override
+  String get flow_executorLabel => '谁来做';
+
+  @override
+  String get flow_executorRole => '角色';
+
+  @override
+  String get flow_executorAgent => 'Agent';
+
+  @override
+  String get flow_executorPickAgent => '选一个 Agent';
+
+  @override
+  String get flow_executorShe => '惜宝';
+
+  @override
   String flow_outlineDeleteBody(String id) {
     return '删掉 `$id` 和它下面的所有步骤。';
   }
