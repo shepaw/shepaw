@@ -5463,6 +5463,15 @@
   "flow_outlineCollapse": "展开 / 收起",
   "flow_outlineThen": "则",
   "flow_outlineElse": "否则",
+  "flow_new": "新建",
+  "flow_newTitle": "新建流程",
+  "flow_newName": "流程名",
+  "flow_newNameHint": "字母、数字、下划线、点、短横线",
+  "flow_newNameInvalid": "只能用字母、数字、下划线、点、短横线",
+  "flow_newNameReserved": "这个名字是系统占着的，换一个",
+  "flow_newNameTaken": "已经有同名的流程了，换一个",
+  "flow_newBlank": "空白流程",
+  "flow_newBlankHint": "从一个空流程开始，自己加步骤",
   "flow_outlineDeleteBody": "删掉 `{id}` 和它下面的所有步骤。",
   "@flow_outlineDeleteBody": {
     "placeholders": {

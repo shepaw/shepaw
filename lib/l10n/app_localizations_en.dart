@@ -9222,6 +9222,35 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_outlineElse => 'else';
 
   @override
+  String get flow_new => 'New';
+
+  @override
+  String get flow_newTitle => 'New flow';
+
+  @override
+  String get flow_newName => 'Flow name';
+
+  @override
+  String get flow_newNameHint => 'letters, digits, underscore, dot, dash';
+
+  @override
+  String get flow_newNameInvalid =>
+      'Only letters, digits, underscore, dot and dash';
+
+  @override
+  String get flow_newNameReserved => 'That name is reserved, pick another';
+
+  @override
+  String get flow_newNameTaken => 'A flow with that name already exists';
+
+  @override
+  String get flow_newBlank => 'Blank flow';
+
+  @override
+  String get flow_newBlankHint =>
+      'Start from an empty flow and add steps yourself';
+
+  @override
   String flow_outlineDeleteBody(String id) {
     return 'Delete `$id` and everything under it.';
   }

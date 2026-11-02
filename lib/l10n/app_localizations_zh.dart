@@ -8869,6 +8869,33 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_outlineElse => '否则';
 
   @override
+  String get flow_new => '新建';
+
+  @override
+  String get flow_newTitle => '新建流程';
+
+  @override
+  String get flow_newName => '流程名';
+
+  @override
+  String get flow_newNameHint => '字母、数字、下划线、点、短横线';
+
+  @override
+  String get flow_newNameInvalid => '只能用字母、数字、下划线、点、短横线';
+
+  @override
+  String get flow_newNameReserved => '这个名字是系统占着的，换一个';
+
+  @override
+  String get flow_newNameTaken => '已经有同名的流程了，换一个';
+
+  @override
+  String get flow_newBlank => '空白流程';
+
+  @override
+  String get flow_newBlankHint => '从一个空流程开始，自己加步骤';
+
+  @override
   String flow_outlineDeleteBody(String id) {
     return '删掉 `$id` 和它下面的所有步骤。';
   }

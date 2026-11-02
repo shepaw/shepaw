@@ -16073,6 +16073,60 @@ abstract class AppLocalizations {
   /// **'否则'**
   String get flow_outlineElse;
 
+  /// No description provided for @flow_new.
+  ///
+  /// In zh, this message translates to:
+  /// **'新建'**
+  String get flow_new;
+
+  /// No description provided for @flow_newTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'新建流程'**
+  String get flow_newTitle;
+
+  /// No description provided for @flow_newName.
+  ///
+  /// In zh, this message translates to:
+  /// **'流程名'**
+  String get flow_newName;
+
+  /// No description provided for @flow_newNameHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'字母、数字、下划线、点、短横线'**
+  String get flow_newNameHint;
+
+  /// No description provided for @flow_newNameInvalid.
+  ///
+  /// In zh, this message translates to:
+  /// **'只能用字母、数字、下划线、点、短横线'**
+  String get flow_newNameInvalid;
+
+  /// No description provided for @flow_newNameReserved.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个名字是系统占着的，换一个'**
+  String get flow_newNameReserved;
+
+  /// No description provided for @flow_newNameTaken.
+  ///
+  /// In zh, this message translates to:
+  /// **'已经有同名的流程了，换一个'**
+  String get flow_newNameTaken;
+
+  /// No description provided for @flow_newBlank.
+  ///
+  /// In zh, this message translates to:
+  /// **'空白流程'**
+  String get flow_newBlank;
+
+  /// No description provided for @flow_newBlankHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'从一个空流程开始，自己加步骤'**
+  String get flow_newBlankHint;
+
   /// No description provided for @flow_outlineDeleteBody.
   ///
   /// In zh, this message translates to:

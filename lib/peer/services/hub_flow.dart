@@ -44,6 +44,8 @@ class HubFlow {
     String name,
     String yaml, {
     String scope = '',
+    bool createOnly = false,
+    int? baseRevision,
     String? requestId,
   }) =>
       {
@@ -52,6 +54,9 @@ class HubFlow {
         if (scope.isNotEmpty) 'scope': scope,
         'name': name,
         'yaml': yaml,
+        // 新建 / 另存为要带上：主机收到同名就拒，不静默变成下一版（M1.5）。
+        if (createOnly) 'create_only': true,
+        if (baseRevision != null) 'base_revision': baseRevision,
       };
 
   static Map<String, dynamic> deleteFrame(
@@ -373,10 +378,18 @@ class HubFlow {
     String name,
     String yaml, {
     String scope = '',
+    bool createOnly = false,
+    int? baseRevision,
   }) =>
       _call(
         peerId,
-        saveFrame(name, yaml, scope: scope),
+        saveFrame(
+          name,
+          yaml,
+          scope: scope,
+          createOnly: createOnly,
+          baseRevision: baseRevision,
+        ),
         'flow_save_resp',
       );
 

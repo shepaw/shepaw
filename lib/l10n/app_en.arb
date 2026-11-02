@@ -5032,6 +5032,15 @@
   "flow_outlineCollapse": "Expand / collapse",
   "flow_outlineThen": "then",
   "flow_outlineElse": "else",
+  "flow_new": "New",
+  "flow_newTitle": "New flow",
+  "flow_newName": "Flow name",
+  "flow_newNameHint": "letters, digits, underscore, dot, dash",
+  "flow_newNameInvalid": "Only letters, digits, underscore, dot and dash",
+  "flow_newNameReserved": "That name is reserved, pick another",
+  "flow_newNameTaken": "A flow with that name already exists",
+  "flow_newBlank": "Blank flow",
+  "flow_newBlankHint": "Start from an empty flow and add steps yourself",
   "flow_outlineDeleteBody": "Delete `{id}` and everything under it.",
   "@flow_outlineDeleteBody": {
     "placeholders": {

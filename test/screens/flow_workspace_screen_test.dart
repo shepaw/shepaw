@@ -37,6 +37,56 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('新建：名字不合法在对话框里就被拦下', (tester) async {
+    final harness = _Harness();
+    addTearDown(harness.close);
+    await _pump(tester, harness.client);
+
+    await tester.tap(find.byTooltip('新建'));
+    await _settle(tester);
+    await tester.enterText(find.byKey(const ValueKey('new-flow-name')), 'has space');
+    await tester.tap(find.byKey(const ValueKey('new-flow-create')));
+    await _settle(tester);
+    // 没关对话框，也没发保存。
+    expect(find.byKey(const ValueKey('new-flow-name')), findsOneWidget);
+    expect(harness.sent.any((f) => f['type'] == 'flow_save_req'), isFalse);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('新建：撞名不发请求', (tester) async {
+    final harness = _Harness();
+    addTearDown(harness.close);
+    await _pump(tester, harness.client);
+
+    await tester.tap(find.byTooltip('新建'));
+    await _settle(tester);
+    // 库里已经有 dev 了。
+    await tester.enterText(find.byKey(const ValueKey('new-flow-name')), 'dev');
+    await tester.tap(find.byKey(const ValueKey('new-flow-create')));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('new-flow-name')), findsOneWidget);
+    expect(harness.sent.any((f) => f['type'] == 'flow_save_req'), isFalse);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('新建空白：带 create_only 存一个空骨架', (tester) async {
+    final harness = _Harness();
+    addTearDown(harness.close);
+    await _pump(tester, harness.client);
+
+    await tester.tap(find.byTooltip('新建'));
+    await _settle(tester);
+    await tester.enterText(find.byKey(const ValueKey('new-flow-name')), 'fresh');
+    await tester.tap(find.byKey(const ValueKey('new-flow-create')));
+    await _settle(tester);
+
+    final save = harness.sent.lastWhere((f) => f['type'] == 'flow_save_req');
+    expect(save['name'], 'fresh');
+    expect(save['create_only'], true);
+    expect(save['yaml'], 'flow: fresh\nversion: 1\nsteps: []\n');
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('tapping a flow opens its design view in the detail pane',
       (tester) async {
     tester.view.physicalSize = const Size(2400, 1800);
@@ -77,6 +127,11 @@ class _Harness {
                 'flows': [
                   {'name': 'dev', 'latest': 3},
                 ],
+              },
+            'flow_save_req' => {
+                'type': 'flow_save_resp',
+                'success': true,
+                'flow': {'name': frame['name'], 'latest': 1},
               },
             'flow_run_start_req' => {
                 'type': 'flow_run_start_resp',

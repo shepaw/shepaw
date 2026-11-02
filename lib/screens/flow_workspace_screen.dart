@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../controllers/flow/flow_names.dart';
 import '../l10n/app_localizations.dart';
 import '../peer/models/flow_models.dart';
 import '../peer/services/hub_flow.dart';
 import '../utils/layout_utils.dart';
+import '../widgets/flow/flow_new_flow_dialog.dart';
 import 'flow_design_screen.dart';
 import 'flow_run_screen.dart';
 
@@ -142,6 +144,35 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
     ));
   }
 
+  Future<void> _create() async {
+    final name = await showNewFlowDialog(
+      context,
+      existing: _flows?.map((f) => f.name) ?? const [],
+    );
+    if (name == null || !mounted) return;
+    // `create_only`：撞名时由主机兜住，不静默变成同名流程的下一版。
+    final result = await _client.save(
+      _host,
+      name,
+      FlowBlankFlow.skeleton(name),
+      scope: widget.scope,
+      createOnly: true,
+    );
+    if (!mounted) return;
+    if (!result.ok) {
+      _snack(result.reachable
+          ? (result.error ?? AppLocalizations.of(context).flow_saveFailed)
+          : AppLocalizations.of(context).flow_hostNoReply);
+      return;
+    }
+    await _load();
+    if (!mounted) return;
+    setState(() {
+      _detailToken++;
+      _selectedName = name;
+    });
+  }
+
   void _snack(String message) {
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
@@ -169,6 +200,20 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
                   leading: showingNarrowDetail
                       ? BackButton(onPressed: _closeDetail)
                       : null,
+                  actions: [
+                    if (!showingNarrowDetail)
+                      IconButton(
+                        tooltip: l10n.flow_new,
+                        icon: const Icon(Icons.add),
+                        onPressed: () => unawaited(_create()),
+                      ),
+                    if (!showingNarrowDetail)
+                      IconButton(
+                        tooltip: l10n.common_refresh,
+                        icon: const Icon(Icons.refresh),
+                        onPressed: () => unawaited(_load()),
+                      ),
+                  ],
                 ),
           body: _loading
               ? const Center(child: CircularProgressIndicator())
@@ -228,6 +273,11 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
                     l10n.flow_libraryTitle,
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
+                ),
+                IconButton(
+                  tooltip: l10n.flow_new,
+                  icon: const Icon(Icons.add),
+                  onPressed: () => unawaited(_create()),
                 ),
                 IconButton(
                   tooltip: l10n.common_refresh,
