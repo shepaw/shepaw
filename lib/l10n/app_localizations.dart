@@ -16157,6 +16157,42 @@ abstract class AppLocalizations {
   /// **'惜宝'**
   String get flow_executorShe;
 
+  /// No description provided for @flow_startTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'运行 {name}'**
+  String flow_startTitle(String name);
+
+  /// No description provided for @flow_startRun.
+  ///
+  /// In zh, this message translates to:
+  /// **'运行'**
+  String get flow_startRun;
+
+  /// No description provided for @flow_startRunsSaved.
+  ///
+  /// In zh, this message translates to:
+  /// **'开跑用的是库里保存的第 {revision} 版，不是你正在改的草稿'**
+  String flow_startRunsSaved(int revision);
+
+  /// No description provided for @flow_startSaveFirst.
+  ///
+  /// In zh, this message translates to:
+  /// **'先保存成新一版再跑'**
+  String get flow_startSaveFirst;
+
+  /// No description provided for @flow_startInputRequired.
+  ///
+  /// In zh, this message translates to:
+  /// **'「{name}」是必填的'**
+  String flow_startInputRequired(String name);
+
+  /// No description provided for @flow_startRoleUnbound.
+  ///
+  /// In zh, this message translates to:
+  /// **'角色「{role}」还没选 Agent'**
+  String flow_startRoleUnbound(String role);
+
   /// No description provided for @flow_outlineDeleteBody.
   ///
   /// In zh, this message translates to:
@@ -16180,12 +16216,6 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'编排、演练、运行工作流'**
   String get flow_workspaceSubtitle;
-
-  /// No description provided for @flow_startRun.
-  ///
-  /// In zh, this message translates to:
-  /// **'运行'**
-  String get flow_startRun;
 
   /// No description provided for @flow_startFailed.
   ///

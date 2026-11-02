@@ -18,11 +18,33 @@ void main() {
     expect(find.text('第 3 版'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('flow-start-dev')));
     await _settle(tester);
+    // 开跑前先问一次：inputs、角色绑定、跑的是哪一版。
+    await tester.tap(find.byKey(const ValueKey('start-go')));
+    await _settle(tester);
     final start = harness.sent
         .firstWhere((f) => f['type'] == 'flow_run_start_req');
     expect(start['name'], 'dev');
     // 主机拒绝时把原因告诉用户，不跳走。
     expect(find.text('缺少输入'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('开跑：必填 input 没填就不发请求', (tester) async {
+    final harness = _Harness()
+      ..flowYaml =
+          'flow: dev\ninputs:\n  goal: {type: string, required: true}\nroles:\n  coder: {desc: 写}\nsteps: []\n';
+    addTearDown(harness.close);
+    await _pump(tester, harness.client);
+
+    await tester.tap(find.byKey(const ValueKey('flow-start-dev')));
+    await _settle(tester);
+    // 表单按 inputs 生成了。
+    expect(find.byKey(const ValueKey('start-input-goal')), findsOneWidget);
+    // 角色还没绑 Agent。
+    await tester.tap(find.byKey(const ValueKey('start-go')));
+    await _settle(tester);
+    expect(find.textContaining('goal'), findsWidgets);
+    expect(harness.sent.any((f) => f['type'] == 'flow_run_start_req'), isFalse);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -111,6 +133,10 @@ class _Harness {
   _Harness({this.reachable = true});
 
   final bool reachable;
+
+  /// `flow_get` 回的定义。换掉它就能试 inputs / roles 的开跑表单。
+  String flowYaml = 'flow: dev\nsteps: []\n';
+
   final StreamController<PeerControlEvent> bus =
       StreamController<PeerControlEvent>.broadcast();
   final List<Map<String, dynamic>> sent = [];
@@ -142,7 +168,7 @@ class _Harness {
                 'type': 'flow_get_resp',
                 'success': true,
                 'revision': 3,
-                'yaml': 'flow: dev\nsteps: []\n',
+                'yaml': flowYaml,
               },
             'flow_schema_req' => {
                 'type': 'flow_schema_resp',

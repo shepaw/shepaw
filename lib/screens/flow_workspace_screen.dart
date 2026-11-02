@@ -2,12 +2,17 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../controllers/flow/flow_executor.dart';
 import '../controllers/flow/flow_names.dart';
 import '../l10n/app_localizations.dart';
+import '../models/remote_agent.dart';
+import '../screens/jade_slip_agent_picker.dart';
+import '../services/local_database_service.dart';
 import '../peer/models/flow_models.dart';
 import '../peer/services/hub_flow.dart';
 import '../utils/layout_utils.dart';
 import '../widgets/flow/flow_new_flow_dialog.dart';
+import '../widgets/flow/flow_start_dialog.dart';
 import 'flow_design_screen.dart';
 import 'flow_run_screen.dart';
 
@@ -53,6 +58,7 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   bool _loading = true;
   String? _error;
   String? _selectedName;
+  List<RemoteAgent> _agents = const [];
   int _detailToken = 0;
 
   @override
@@ -123,12 +129,35 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
     setState(() => _selectedName = null);
   }
 
+  /// 开跑。先把定义取回来（要知道声明了哪些 inputs、有哪些角色），再问一次。
   Future<void> _start(FlowSummary flow) async {
     final l10n = AppLocalizations.of(context);
+    final got = await _client.get(_host, flow.name, scope: widget.scope);
+    if (!mounted) return;
+    if (got == null) {
+      _snack(l10n.flow_hostNoReply);
+      return;
+    }
+    final roles = peekRoles(got.yaml);
+    final plan = await showFlowStartDialog(
+      context,
+      flowName: flow.name,
+      yaml: got.yaml,
+      roles: roles,
+      // 这里是列表上的「运行」，没有草稿上下文：跑的一定是库里那一版。
+      dirty: false,
+      revision: got.revision,
+      onPickAgent: _pickAgent,
+    );
+    if (plan == null || !mounted) return;
     final result = await _client.start(
       _host,
       scope: widget.scope,
       name: flow.name,
+      inputs: <String, dynamic>{...plan.inputs},
+      bindings: plan.bindings.isEmpty
+          ? null
+          : <String, dynamic>{...plan.bindings},
     );
     if (!mounted) return;
     final runId = result.runId;
@@ -142,6 +171,21 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
       builder: (_) =>
           FlowRunScreen(peerId: _host, runId: runId, title: flow.name),
     ));
+  }
+
+  /// 打开 Agent 选择器，返回选中的 id。
+  Future<String?> _pickAgent() async {
+    if (_agents.isEmpty) {
+      final agents = await LocalDatabaseService().getAllRemoteAgents();
+      if (!mounted) return null;
+      setState(() => _agents = agents);
+    }
+    final picked = await showJadeSlipAgentPicker(
+      context,
+      agents: _agents,
+      title: AppLocalizations.of(context).flow_executorPickAgent,
+    );
+    return picked?.id;
   }
 
   Future<void> _create() async {

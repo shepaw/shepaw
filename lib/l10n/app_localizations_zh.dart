@@ -8911,6 +8911,32 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_executorShe => '惜宝';
 
   @override
+  String flow_startTitle(String name) {
+    return '运行 $name';
+  }
+
+  @override
+  String get flow_startRun => '运行';
+
+  @override
+  String flow_startRunsSaved(int revision) {
+    return '开跑用的是库里保存的第 $revision 版，不是你正在改的草稿';
+  }
+
+  @override
+  String get flow_startSaveFirst => '先保存成新一版再跑';
+
+  @override
+  String flow_startInputRequired(String name) {
+    return '「$name」是必填的';
+  }
+
+  @override
+  String flow_startRoleUnbound(String role) {
+    return '角色「$role」还没选 Agent';
+  }
+
+  @override
   String flow_outlineDeleteBody(String id) {
     return '删掉 `$id` 和它下面的所有步骤。';
   }
@@ -8923,9 +8949,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get flow_workspaceSubtitle => '编排、演练、运行工作流';
-
-  @override
-  String get flow_startRun => '运行';
 
   @override
   String get flow_startFailed => '开跑失败';

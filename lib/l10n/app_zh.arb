@@ -5477,6 +5477,32 @@
   "flow_executorAgent": "Agent",
   "flow_executorPickAgent": "选一个 Agent",
   "flow_executorShe": "惜宝",
+  "flow_startTitle": "运行 {name}",
+  "flow_startRun": "开跑",
+  "flow_startRunsSaved": "开跑用的是库里保存的第 {revision} 版，不是你正在改的草稿",
+  "flow_startSaveFirst": "先保存成新一版再跑",
+  "flow_startInputRequired": "「{name}」是必填的",
+  "flow_startRoleUnbound": "角色「{role}」还没选 Agent",
+  "@flow_startTitle": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "@flow_startRunsSaved": {
+    "placeholders": {
+      "revision": { "type": "int" }
+    }
+  },
+  "@flow_startInputRequired": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "@flow_startRoleUnbound": {
+    "placeholders": {
+      "role": { "type": "String" }
+    }
+  },
   "flow_outlineDeleteBody": "删掉 `{id}` 和它下面的所有步骤。",
   "@flow_outlineDeleteBody": {
     "placeholders": {

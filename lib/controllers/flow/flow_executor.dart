@@ -72,3 +72,47 @@ List<String> peekRoles(String yaml) {
     return const [];
   }
 }
+
+/// 定义头里声明的一个输入。
+class FlowInputSpec {
+  const FlowInputSpec({
+    required this.name,
+    required this.type,
+    required this.required,
+    this.defaultValue,
+  });
+
+  final String name;
+  final String type;
+  final bool required;
+
+  /// YAML 里的 `default`，原样当字符串用。
+  final String? defaultValue;
+}
+
+/// 只读地看一眼定义头里的 `inputs`，用来生成开跑表单。
+///
+/// 和 [peekRoles] 一样：只读不写，读不动就给空列表。
+List<FlowInputSpec> peekInputs(String yaml) {
+  Object? doc;
+  try {
+    doc = loadYaml(yaml);
+  } catch (_) {
+    return const [];
+  }
+  if (doc is! Map) return const [];
+  final inputs = doc['inputs'];
+  if (inputs is! Map) return const [];
+  final out = <FlowInputSpec>[];
+  for (final entry in inputs.entries) {
+    final spec = entry.value;
+    final map = spec is Map ? spec : const {};
+    out.add(FlowInputSpec(
+      name: entry.key.toString(),
+      type: (map['type'] ?? 'string').toString(),
+      required: map['required'] == true,
+      defaultValue: map['default']?.toString(),
+    ));
+  }
+  return out;
+}

@@ -9266,6 +9266,32 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_executorShe => 'She';
 
   @override
+  String flow_startTitle(String name) {
+    return 'Run $name';
+  }
+
+  @override
+  String get flow_startRun => 'Run';
+
+  @override
+  String flow_startRunsSaved(int revision) {
+    return 'Running uses revision $revision from the library, not your unsaved draft';
+  }
+
+  @override
+  String get flow_startSaveFirst => 'Save as a new revision first';
+
+  @override
+  String flow_startInputRequired(String name) {
+    return '`$name` is required';
+  }
+
+  @override
+  String flow_startRoleUnbound(String role) {
+    return 'Role `$role` has no agent bound yet';
+  }
+
+  @override
   String flow_outlineDeleteBody(String id) {
     return 'Delete `$id` and everything under it.';
   }
@@ -9278,9 +9304,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get flow_workspaceSubtitle => 'Author, rehearse and run workflows';
-
-  @override
-  String get flow_startRun => 'Run';
 
   @override
   String get flow_startFailed => 'Could not start the run';

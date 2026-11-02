@@ -5046,6 +5046,32 @@
   "flow_executorAgent": "Agent",
   "flow_executorPickAgent": "Pick an agent",
   "flow_executorShe": "She",
+  "flow_startTitle": "Run {name}",
+  "flow_startRun": "Start",
+  "flow_startRunsSaved": "Running uses revision {revision} from the library, not your unsaved draft",
+  "flow_startSaveFirst": "Save as a new revision first",
+  "flow_startInputRequired": "`{name}` is required",
+  "flow_startRoleUnbound": "Role `{role}` has no agent bound yet",
+  "@flow_startTitle": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "@flow_startRunsSaved": {
+    "placeholders": {
+      "revision": { "type": "int" }
+    }
+  },
+  "@flow_startInputRequired": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "@flow_startRoleUnbound": {
+    "placeholders": {
+      "role": { "type": "String" }
+    }
+  },
   "flow_outlineDeleteBody": "Delete `{id}` and everything under it.",
   "@flow_outlineDeleteBody": {
     "placeholders": {
