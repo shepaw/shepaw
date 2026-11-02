@@ -8935,6 +8935,20 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_redo => '重做';
 
   @override
+  String flow_diagnosticsTitle(int count) {
+    return '$count 条诊断';
+  }
+
+  @override
+  String get flow_diagnosticsNone => '没有诊断：这份定义没问题';
+
+  @override
+  String get flow_diagnosticsCopy => '复制';
+
+  @override
+  String get flow_diagnosticsCopied => '已复制';
+
+  @override
   String get flow_outlineMenu => '更多操作';
 
   @override

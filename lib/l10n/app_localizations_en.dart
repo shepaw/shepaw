@@ -9292,6 +9292,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_redo => 'Redo';
 
   @override
+  String flow_diagnosticsTitle(int count) {
+    return '$count diagnostics';
+  }
+
+  @override
+  String get flow_diagnosticsNone => 'No diagnostics: this definition is clean';
+
+  @override
+  String get flow_diagnosticsCopy => 'Copy';
+
+  @override
+  String get flow_diagnosticsCopied => 'Copied';
+
+  @override
   String get flow_outlineMenu => 'More actions';
 
   @override

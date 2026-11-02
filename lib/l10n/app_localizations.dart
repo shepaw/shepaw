@@ -16205,6 +16205,30 @@ abstract class AppLocalizations {
   /// **'重做'**
   String get flow_redo;
 
+  /// No description provided for @flow_diagnosticsTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 条诊断'**
+  String flow_diagnosticsTitle(int count);
+
+  /// No description provided for @flow_diagnosticsNone.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有诊断：这份定义没问题'**
+  String get flow_diagnosticsNone;
+
+  /// No description provided for @flow_diagnosticsCopy.
+  ///
+  /// In zh, this message translates to:
+  /// **'复制'**
+  String get flow_diagnosticsCopy;
+
+  /// No description provided for @flow_diagnosticsCopied.
+  ///
+  /// In zh, this message translates to:
+  /// **'已复制'**
+  String get flow_diagnosticsCopied;
+
   /// No description provided for @flow_outlineMenu.
   ///
   /// In zh, this message translates to:

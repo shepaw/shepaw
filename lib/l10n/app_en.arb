@@ -5054,6 +5054,15 @@
   "flow_draftSwitchGo": "Switch anyway",
   "flow_undo": "Undo",
   "flow_redo": "Redo",
+  "flow_diagnosticsTitle": "{count} diagnostics",
+  "flow_diagnosticsNone": "No diagnostics: this definition is clean",
+  "flow_diagnosticsCopy": "Copy",
+  "flow_diagnosticsCopied": "Copied",
+  "@flow_diagnosticsTitle": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
   "flow_outlineMenu": "More actions",
   "flow_outlineAddChild": "Add a child step",
   "flow_outlineRetype": "Change kind",

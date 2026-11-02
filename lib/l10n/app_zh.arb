@@ -5485,6 +5485,15 @@
   "flow_draftSwitchGo": "仍然切走",
   "flow_undo": "撤销",
   "flow_redo": "重做",
+  "flow_diagnosticsTitle": "{count} 条诊断",
+  "flow_diagnosticsNone": "没有诊断：这份定义没问题",
+  "flow_diagnosticsCopy": "复制",
+  "flow_diagnosticsCopied": "已复制",
+  "@flow_diagnosticsTitle": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
   "flow_outlineMenu": "更多操作",
   "flow_outlineAddChild": "加子步骤",
   "flow_outlineRetype": "改类型",

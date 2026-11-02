@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../controllers/flow/flow_edit_ops.dart';
+import '../controllers/flow/flow_diagnostics.dart';
 import '../controllers/flow/flow_draft_store.dart';
 import '../controllers/flow/flow_editor_controller.dart';
 import '../controllers/flow/flow_executor.dart';
@@ -19,6 +20,7 @@ import '../services/local_database_service.dart';
 import '../services/local_user_identity.dart';
 import '../utils/layout_utils.dart';
 import '../widgets/discard_changes_scope.dart';
+import '../widgets/flow/flow_diagnostics_panel.dart';
 import '../widgets/flow/flow_node_inspector.dart';
 import '../widgets/flow/flow_node_tree.dart';
 import '../widgets/flow/flow_outline_menu.dart';
@@ -226,6 +228,26 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       out[id] = (out[id] ?? 0) + 1;
     }
     return out;
+  }
+
+  /// 点一条诊断：跳到出问题的节点（展开它的祖先并选中）。
+  void _locate(FlowDiagnosticTarget target) {
+    switch (target) {
+      case NodeTarget(:final nodeId):
+        setState(() {
+          // 祖先都展开，否则目标还折叠着看不见。
+          for (final row in _rows()) {
+            if (row.node.find((n) => n.id == nodeId) != null) {
+              _collapsed.remove(row.node.id);
+            }
+          }
+          _selectedId = nodeId;
+        });
+      case HeaderTarget():
+      case GlobalTarget():
+        // 头部表单还没做（M5），先只把诊断留在面板上。
+        break;
+    }
   }
 
   void _toggleCollapse(FlowOutlineRow row) {
@@ -587,16 +609,11 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       padding: const EdgeInsets.all(12),
       children: [
         if (rehearsal.active) _rehearsalCard(l10n, theme),
-        for (final d in c.diagnostics)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Text(
-              d.at.isEmpty ? d.message : '[${d.at}] ${d.message}',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: d.isError ? theme.colorScheme.error : Colors.orange,
-              ),
-            ),
-          ),
+        FlowDiagnosticsPanel(
+          diagnostics: c.diagnostics,
+          tree: c.tree,
+          onLocate: _locate,
+        ),
         if (c.showDiff && diff != null)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
