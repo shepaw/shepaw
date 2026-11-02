@@ -179,6 +179,29 @@ void main() {
       );
     });
 
+    test('取消缩进：挪到父节点后面那一层', () {
+      final rows = buildFlowOutline([
+        FlowNode(
+          key: 'build',
+          id: 'build',
+          kind: 'seq',
+          children: [_task('x'), _task('b')],
+        ),
+      ]);
+      final b = rows.firstWhere((r) => r.node.id == 'b');
+      expect(b.canOutdent, isTrue);
+      // 插在父节点之后（index + 1），顺序看起来没变。
+      expect(FlowOutlineOps.outdent(b), {
+        'op': 'move',
+        'node_id': 'b',
+        'parent_id': '',
+        'index': 1,
+      });
+      // 根层的行没有父行，取消缩进不可用。
+      final build = rows.firstWhere((r) => r.node.id == 'build');
+      expect(build.canOutdent, isFalse);
+    });
+
     test('前一个兄弟在同一支里找', () {
       final rows = buildFlowOutline(_ifTree());
       final byId = {for (final r in rows) r.node.id: r};

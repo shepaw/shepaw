@@ -20,6 +20,7 @@ class FlowOutlineRow {
     required this.siblingCount,
     this.branch,
     this.previousSibling,
+    this.parent,
   });
 
   final FlowNode node;
@@ -41,6 +42,13 @@ class FlowOutlineRow {
 
   /// 同一分支里有多少个兄弟。上移 / 下移能不能用看它。
   final int siblingCount;
+
+  /// 父节点那一行。取消缩进要用它：得知道往哪一层挪、插在第几位。
+  /// 根层的行没有父行。
+  final FlowOutlineRow? parent;
+
+  /// 有地方可以取消缩进（不是根层，且父行找得到）。
+  bool get canOutdent => parent != null;
 
   bool get canMoveUp => index > 0;
   bool get canMoveDown => index < siblingCount - 1;
@@ -69,7 +77,13 @@ List<FlowOutlineRow> buildFlowOutline(
   Set<String> collapsed = const {},
 }) {
   final rows = <FlowOutlineRow>[];
-  void walk(List<FlowNode> nodes, int depth, String parentId, bool parentIsIf) {
+  void walk(
+    List<FlowNode> nodes,
+    int depth,
+    String parentId,
+    bool parentIsIf,
+    FlowOutlineRow? parentRow,
+  ) {
     if (parentIsIf) {
       var then = 0;
       var els = 0;
@@ -91,9 +105,10 @@ List<FlowOutlineRow> buildFlowOutline(
           previousSibling: index == 0
               ? null
               : _previousInBranch(nodes, node, branch),
+          parent: parentRow,
         ));
         if (node.children.isNotEmpty && !collapsed.contains(node.id)) {
-          walk(node.children, depth + 1, node.id, node.kind == 'if');
+          walk(node.children, depth + 1, node.id, node.kind == 'if', rows.last);
         }
       }
       return;
@@ -107,14 +122,15 @@ List<FlowOutlineRow> buildFlowOutline(
         index: i,
         siblingCount: nodes.length,
         previousSibling: i == 0 ? null : nodes[i - 1],
+        parent: parentRow,
       ));
       if (node.children.isNotEmpty && !collapsed.contains(node.id)) {
-        walk(node.children, depth + 1, node.id, node.kind == 'if');
+        walk(node.children, depth + 1, node.id, node.kind == 'if', rows.last);
       }
     }
   }
 
-  walk(tree, 0, '', false);
+  walk(tree, 0, '', false, null);
   return rows;
 }
 
@@ -161,7 +177,16 @@ class FlowOutlineOps {
         step: step,
       );
 
-  /// 移进上一个兄弟（它得是容器）。
+  /// 取消缩进：挪到父节点后面那一层。
+  ///
+  /// 插在父节点**之后**（`parent.index + 1`），这样顺序看起来没变。父节点是
+  /// `if` 时 branch 跟着父行走。
+  static Map<String, dynamic> outdent(FlowOutlineRow row) => FlowEditOps.move(
+        nodeId: row.node.id,
+        parentId: row.parent!.parentId,
+        index: row.parent!.index + 1,
+        branch: row.parent!.branch,
+      );
   ///
   /// 和「包起来」的区别：这只是换个父节点，不新建容器，也不改执行语义。
   static Map<String, dynamic> moveIntoPrevious(FlowOutlineRow row) =>

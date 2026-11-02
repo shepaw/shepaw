@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../controllers/flow/flow_edit_ops.dart';
 import '../controllers/flow/flow_editor_controller.dart';
@@ -190,6 +191,73 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     unawaited(_controller.applyOps([
       up ? FlowOutlineOps.moveUp(row) : FlowOutlineOps.moveDown(row),
     ]));
+  }
+
+  /// 当前选中的那一行（点过检查器就算选中）。
+  FlowOutlineRow? get _selectedRow =>
+      _selectedId == null ? null : _rowFor(_selectedId!);
+
+  /// 桌面快捷键。
+  ///
+  /// 绑在大纲自己的焦点上，不跟检查器里的 TextField 抢按键 —— 所以一律带 Alt
+  /// （删除除外）。
+  Widget _outlineShortcuts(Widget child) {
+    return Focus(
+      child: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.arrowUp, alt: true):
+              () => _shortcutMove(up: true),
+          const SingleActivator(LogicalKeyboardKey.arrowDown, alt: true):
+              () => _shortcutMove(up: false),
+          const SingleActivator(LogicalKeyboardKey.arrowLeft, alt: true):
+              _shortcutOutdent,
+          const SingleActivator(LogicalKeyboardKey.arrowRight, alt: true):
+              _shortcutIndent,
+          const SingleActivator(LogicalKeyboardKey.keyN, alt: true):
+              _shortcutAddAfter,
+          const SingleActivator(LogicalKeyboardKey.delete): _shortcutDelete,
+        },
+        child: child,
+      ),
+    );
+  }
+
+  void _shortcutMove({required bool up}) {
+    final row = _selectedRow;
+    if (row == null) return;
+    if (up ? !row.canMoveUp : !row.canMoveDown) return;
+    _move(row, up: up);
+  }
+
+  void _shortcutOutdent() {
+    final row = _selectedRow;
+    if (row == null || !row.canOutdent) return;
+    unawaited(_controller.applyOps([FlowOutlineOps.outdent(row)]));
+  }
+
+  void _shortcutIndent() {
+    final row = _selectedRow;
+    final previous = row?.previousSibling;
+    if (row == null || previous == null) return;
+    if (FlowStepDefaults.isContainer(previous.kind)) {
+      unawaited(
+          _controller.applyOps([FlowOutlineOps.moveIntoPrevious(row)]));
+      return;
+    }
+    // 上一个兄弟是叶子：不能悄悄造个容器出来，打开菜单让用户选。
+    unawaited(_rowMenu(row));
+  }
+
+  void _shortcutAddAfter() {
+    final row = _selectedRow;
+    if (row == null) return;
+    _addAfter(row);
+  }
+
+  void _shortcutDelete() {
+    final row = _selectedRow;
+    if (row == null) return;
+    unawaited(_delete(row));
   }
 
   Future<void> _rowMenu(FlowOutlineRow row) async {
@@ -481,31 +549,34 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
           ),
         // 能改就画可编辑的大纲（带分支、上移下移、加一步）；否则画只读的那棵。
         if (canEdit && !rehearsal.active)
-          FlowOutlineTree(
-            rows: _rows(),
-            canEdit: true,
-            branchesLabelled: c.caps.branchesLabelled,
-            selectedId: _selectedId,
-            errorCounts: _errorCounts(),
-            collapsed: _collapsed,
-            badgeFor: diff == null
-                ? null
-                : (row) {
-                    final change = diff.of(row.node.id);
-                    return switch (change?.change) {
-                      FlowChange.added => (l10n.flow_diffAdded, Colors.green),
-                      FlowChange.changed =>
-                        (l10n.flow_diffChanged, Colors.amber),
-                      _ => null,
-                    };
-                  },
-            onTapRow: (row) => _openInspector(row.node),
-            onToggleCollapse: _toggleCollapse,
-            onAddAfter: _addAfter,
-            onMoveUp: (row) => _move(row, up: true),
-            onMoveDown: (row) => _move(row, up: false),
-            onDelete: _delete,
-            onMenu: _rowMenu,
+          _outlineShortcuts(
+            FlowOutlineTree(
+              rows: _rows(),
+              canEdit: true,
+              branchesLabelled: c.caps.branchesLabelled,
+              selectedId: _selectedId,
+              errorCounts: _errorCounts(),
+              collapsed: _collapsed,
+              badgeFor: diff == null
+                  ? null
+                  : (row) {
+                      final change = diff.of(row.node.id);
+                      return switch (change?.change) {
+                        FlowChange.added =>
+                          (l10n.flow_diffAdded, Colors.green),
+                        FlowChange.changed =>
+                          (l10n.flow_diffChanged, Colors.amber),
+                        _ => null,
+                      };
+                    },
+              onTapRow: (row) => _openInspector(row.node),
+              onToggleCollapse: _toggleCollapse,
+              onAddAfter: _addAfter,
+              onMoveUp: (row) => _move(row, up: true),
+              onMoveDown: (row) => _move(row, up: false),
+              onDelete: _delete,
+              onMenu: _rowMenu,
+            ),
           )
         else
           FlowNodeTree(
