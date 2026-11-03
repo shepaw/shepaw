@@ -9027,6 +9027,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_refInsert => '插入引用';
 
   @override
+  String get flow_historyTitle => '版本历史';
+
+  @override
+  String get flow_historyCurrent => '当前版本';
+
+  @override
+  String get flow_historyNoDiff => '和当前版本没有差异';
+
+  @override
+  String get flow_historyUseAsDraft => '以此版为草稿';
+
+  @override
+  String get flow_historyOpen => '历史';
+
+  @override
   String get flow_outlineMenu => '更多操作';
 
   @override

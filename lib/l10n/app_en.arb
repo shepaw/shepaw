@@ -5084,6 +5084,11 @@
   "flow_headerHint": "The version is managed by the host; edits stay as a draft until you save.",
   "flow_headerOpen": "Flow settings",
   "flow_refInsert": "Insert reference",
+  "flow_historyTitle": "Revision history",
+  "flow_historyCurrent": "Current",
+  "flow_historyNoDiff": "No difference from the current revision",
+  "flow_historyUseAsDraft": "Use this revision as draft",
+  "flow_historyOpen": "History",
   "@flow_diagnosticsTitle": {
     "placeholders": {
       "count": { "type": "int" }

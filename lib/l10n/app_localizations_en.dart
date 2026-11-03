@@ -9385,6 +9385,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_refInsert => 'Insert reference';
 
   @override
+  String get flow_historyTitle => 'Revision history';
+
+  @override
+  String get flow_historyCurrent => 'Current';
+
+  @override
+  String get flow_historyNoDiff => 'No difference from the current revision';
+
+  @override
+  String get flow_historyUseAsDraft => 'Use this revision as draft';
+
+  @override
+  String get flow_historyOpen => 'History';
+
+  @override
   String get flow_outlineMenu => 'More actions';
 
   @override

@@ -22,6 +22,7 @@ import '../utils/layout_utils.dart';
 import '../widgets/discard_changes_scope.dart';
 import '../widgets/flow/flow_diagnostics_panel.dart';
 import '../widgets/flow/flow_header_form.dart';
+import '../widgets/flow/flow_history_sheet.dart';
 import '../widgets/flow/flow_node_inspector.dart';
 import '../widgets/flow/flow_node_tree.dart';
 import '../widgets/flow/flow_outline_menu.dart';
@@ -343,6 +344,23 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     unawaited(_delete(row));
   }
 
+  /// 载入某一版当草稿：走和源码「用这份」一样的校验 + 采纳路径，树和诊断一起换。
+  Future<void> _openHistory() async {
+    final choice = await showFlowHistorySheet(
+      context,
+      client: _controller.client,
+      peerId: widget.peerId,
+      scope: widget.scope,
+      name: widget.name,
+      latest: _controller.revision,
+    );
+    if (choice == null || !mounted) return;
+    final checked =
+        await _controller.client.validate(widget.peerId, choice.yaml);
+    if (!mounted) return;
+    await _controller.applySource(choice.yaml, checked);
+  }
+
   Future<void> _rowMenu(FlowOutlineRow row) async {
     final choice = await showFlowOutlineMenu(
       context,
@@ -550,6 +568,13 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
                     child: Text(l10n.flow_revisionLabel(c.revision),
                         style: Theme.of(context).textTheme.bodySmall),
                   ),
+                ),
+              if (c.revision > 1)
+                IconButton(
+                  key: const ValueKey('history-open'),
+                  tooltip: l10n.flow_historyOpen,
+                  icon: const Icon(Icons.history),
+                  onPressed: () => unawaited(_openHistory()),
                 ),
               if (c.caps.canEditHeader)
                 IconButton(

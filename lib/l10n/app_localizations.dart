@@ -16385,6 +16385,36 @@ abstract class AppLocalizations {
   /// **'插入引用'**
   String get flow_refInsert;
 
+  /// No description provided for @flow_historyTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'版本历史'**
+  String get flow_historyTitle;
+
+  /// No description provided for @flow_historyCurrent.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前版本'**
+  String get flow_historyCurrent;
+
+  /// No description provided for @flow_historyNoDiff.
+  ///
+  /// In zh, this message translates to:
+  /// **'和当前版本没有差异'**
+  String get flow_historyNoDiff;
+
+  /// No description provided for @flow_historyUseAsDraft.
+  ///
+  /// In zh, this message translates to:
+  /// **'以此版为草稿'**
+  String get flow_historyUseAsDraft;
+
+  /// No description provided for @flow_historyOpen.
+  ///
+  /// In zh, this message translates to:
+  /// **'历史'**
+  String get flow_historyOpen;
+
   /// No description provided for @flow_outlineMenu.
   ///
   /// In zh, this message translates to:
