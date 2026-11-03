@@ -5058,6 +5058,10 @@
   "flow_diagnosticsNone": "No diagnostics: this definition is clean",
   "flow_diagnosticsCopy": "Copy",
   "flow_diagnosticsCopied": "Copied",
+  "flow_newSource": "Start from",
+  "flow_newSourceBlank": "Blank",
+  "flow_newSourceTemplate": "Built-in template",
+  "flow_newSourceCopy": "Copy an existing",
   "@flow_diagnosticsTitle": {
     "placeholders": {
       "count": { "type": "int" }

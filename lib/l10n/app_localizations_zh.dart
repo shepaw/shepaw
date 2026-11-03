@@ -8949,6 +8949,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_diagnosticsCopied => '已复制';
 
   @override
+  String get flow_newSource => '从哪开始';
+
+  @override
+  String get flow_newSourceBlank => '空白';
+
+  @override
+  String get flow_newSourceTemplate => '内置模板';
+
+  @override
+  String get flow_newSourceCopy => '复制现有';
+
+  @override
   String get flow_outlineMenu => '更多操作';
 
   @override

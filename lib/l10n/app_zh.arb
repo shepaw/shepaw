@@ -5489,6 +5489,10 @@
   "flow_diagnosticsNone": "没有诊断：这份定义没问题",
   "flow_diagnosticsCopy": "复制",
   "flow_diagnosticsCopied": "已复制",
+  "flow_newSource": "从哪开始",
+  "flow_newSourceBlank": "空白",
+  "flow_newSourceTemplate": "内置模板",
+  "flow_newSourceCopy": "复制现有",
   "@flow_diagnosticsTitle": {
     "placeholders": {
       "count": { "type": "int" }

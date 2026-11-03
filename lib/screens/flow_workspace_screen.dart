@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../controllers/flow/flow_draft_store.dart';
 import '../controllers/flow/flow_executor.dart';
 import '../controllers/flow/flow_names.dart';
+import '../controllers/flow/flow_templates.dart';
 import '../l10n/app_localizations.dart';
 import '../models/remote_agent.dart';
 import '../screens/jade_slip_agent_picker.dart';
@@ -218,31 +219,61 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   }
 
   Future<void> _create() async {
-    final name = await showNewFlowDialog(
+    final request = await showNewFlowDialog(
       context,
       existing: _flows?.map((f) => f.name) ?? const [],
+      templates: FlowTemplateCatalog.builtins,
     );
-    if (name == null || !mounted) return;
+    if (request == null || !mounted) return;
+    final l10n = AppLocalizations.of(context);
+
+    String yaml;
+    switch (request.source) {
+      case FlowNewSource.blank:
+        yaml = FlowBlankFlow.skeleton(request.name);
+      case FlowNewSource.template:
+      case FlowNewSource.copy:
+        final source = await FlowFlowFrom.sourceYaml(
+          _client,
+          _host,
+          widget.scope,
+          request.sourceName!,
+        );
+        if (!mounted) return;
+        if (source == null) {
+          _snack(l10n.flow_hostNoReply);
+          return;
+        }
+        final renamed =
+            await FlowFlowFrom.rename(_client, _host, source, request.name);
+        if (!mounted) return;
+        if (renamed == null) {
+          _snack(l10n.flow_hostNoReply);
+          return;
+        }
+        yaml = renamed;
+    }
+
     // `create_only`：撞名时由主机兜住，不静默变成同名流程的下一版。
     final result = await _client.save(
       _host,
-      name,
-      FlowBlankFlow.skeleton(name),
+      request.name,
+      yaml,
       scope: widget.scope,
       createOnly: true,
     );
     if (!mounted) return;
     if (!result.ok) {
       _snack(result.reachable
-          ? (result.error ?? AppLocalizations.of(context).flow_saveFailed)
-          : AppLocalizations.of(context).flow_hostNoReply);
+          ? (result.error ?? l10n.flow_saveFailed)
+          : l10n.flow_hostNoReply);
       return;
     }
     await _load();
     if (!mounted) return;
     setState(() {
       _detailToken++;
-      _selectedName = name;
+      _selectedName = request.name;
     });
   }
 

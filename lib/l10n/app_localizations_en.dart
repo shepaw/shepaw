@@ -9306,6 +9306,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_diagnosticsCopied => 'Copied';
 
   @override
+  String get flow_newSource => 'Start from';
+
+  @override
+  String get flow_newSourceBlank => 'Blank';
+
+  @override
+  String get flow_newSourceTemplate => 'Built-in template';
+
+  @override
+  String get flow_newSourceCopy => 'Copy an existing';
+
+  @override
   String get flow_outlineMenu => 'More actions';
 
   @override

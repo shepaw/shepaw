@@ -16229,6 +16229,30 @@ abstract class AppLocalizations {
   /// **'已复制'**
   String get flow_diagnosticsCopied;
 
+  /// No description provided for @flow_newSource.
+  ///
+  /// In zh, this message translates to:
+  /// **'从哪开始'**
+  String get flow_newSource;
+
+  /// No description provided for @flow_newSourceBlank.
+  ///
+  /// In zh, this message translates to:
+  /// **'空白'**
+  String get flow_newSourceBlank;
+
+  /// No description provided for @flow_newSourceTemplate.
+  ///
+  /// In zh, this message translates to:
+  /// **'内置模板'**
+  String get flow_newSourceTemplate;
+
+  /// No description provided for @flow_newSourceCopy.
+  ///
+  /// In zh, this message translates to:
+  /// **'复制现有'**
+  String get flow_newSourceCopy;
+
   /// No description provided for @flow_outlineMenu.
   ///
   /// In zh, this message translates to:
