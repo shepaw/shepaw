@@ -1,11 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/clis/shepaw/chat/chat_namespace.dart';
 import 'package:shepaw/clis/shepaw/chat/session/session_create_command.dart';
-import 'package:shepaw/models/channel.dart';
+import 'package:shepaw/peer/services/hub_session_create.dart';
+import 'package:shepaw/peer/services/peer_connection_manager.dart';
 import 'package:shepaw/services/cli_namespace_registry.dart';
 import 'package:shepaw/services/local_database_service.dart';
-import 'package:shepaw/services/local_user_identity.dart';
-import 'package:shepaw/services/session/dm_session_create_service.dart';
 
 import '../../storage/test_harness.dart';
 
@@ -37,7 +38,7 @@ void main() {
 
   test('rejects missing reason / summary', () async {
     final cmd = ChatSessionCreateCommand(
-      service: DmSessionCreateService(notifyChannelUpdate: (_) {}),
+      host: HubSessionCreate(peerId: 'peer-1'),
     );
     expect(
       (await cmd.execute({'channel': 'dm_x'}))['error'],
@@ -49,54 +50,55 @@ void main() {
     );
   });
 
-  test('CLI create writes session_action for the switch card', () async {
-    final db = LocalDatabaseService();
-    final suffix = DateTime.now().microsecondsSinceEpoch;
-    final agentId = 'coder_$suffix';
-    final channelId = 'dm_cli_$suffix';
-    await db.createChannel(
-      Channel(
-        id: channelId,
-        name: 'Chat with Coder',
-        type: 'dm',
-        members: [
-          ChannelMember(
-            id: LocalUserIdentity.id,
-            type: 'user',
-            role: 'member',
-            joinedAt: 1,
-          ),
-          ChannelMember(
-            id: agentId,
-            type: 'agent',
-            role: 'member',
-            joinedAt: 1,
-          ),
-        ],
-      ),
-      LocalUserIdentity.id,
+  test('CLI create sends the request to the host and returns its switch action',
+      () async {
+    final incoming = StreamController<PeerControlEvent>.broadcast();
+    Map<String, dynamic>? sent;
+    final host = HubSessionCreate(
+      peerId: 'peer-1',
+      events: incoming.stream,
+      send: (peerId, frame) async {
+        sent = Map<String, dynamic>.from(frame);
+        incoming.add(PeerControlEvent(
+          peerId: peerId,
+          data: {
+            'type': 'session_create_resp',
+            'request_id': frame['request_id'],
+            'success': true,
+            'status': 'ok',
+            'new_session_id': 'dm_new_1',
+            'session_action': {
+              'type': 'switch',
+              'new_session_id': 'dm_new_1',
+              'source_session_id': frame['channel_id'],
+              'reason': 'context_too_long',
+              'status': 'pending',
+            },
+          },
+        ));
+        return true;
+      },
     );
 
-    final cmd = ChatSessionCreateCommand(
-      service: DmSessionCreateService(
-        db: db,
-        notifyChannelUpdate: (_) {},
-      ),
-    );
-    final result = await cmd.execute({
-      'channel': channelId,
+    final result = await ChatSessionCreateCommand(host: host).execute({
+      'channel': 'dm_x',
       'reason': 'context_too_long',
       'summary': 'Keep the auth token flow',
-      'agent_id': agentId,
-      'agent_name': 'Coder',
+      'agent_id': 'coder',
     });
 
-    expect(result['status'], 'ok');
-    expect(result['new_session_id'], isNotEmpty);
+    expect(result['success'], isTrue);
     expect(result['session_action'], isA<Map>());
     expect(
       (result['session_action'] as Map)['new_session_id'],
       result['new_session_id'],
     );
+    expect(sent, isNotNull);
+    expect(sent!['kind'], 'dm');
+    expect(sent!['channel_id'], 'dm_x');
+    expect(sent!['agent_id'], 'coder');
+    expect(sent!['summary'], 'Keep the auth token flow');
+    expect(sent!['suggest_switch'], isTrue);
+    await incoming.close();
   });
 }

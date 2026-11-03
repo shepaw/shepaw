@@ -40,7 +40,7 @@ import '../../services/approval/pending_approval_hub.dart';
 import '../../services/approval/pending_approval_item.dart';
 import '../../services/session/client_session_sync.dart';
 import '../../services/session/cli_execute_peer_handler.dart';
-import '../../services/session/session_create_peer_handler.dart';
+import '../../services/session/host_session_switch_card.dart';
 import '../../services/she_agent_impression_service.dart';
 import '../../services/she_service.dart';
 import '../../services/local_user_identity.dart';
@@ -3877,9 +3877,6 @@ class PeerAgentClientService {
       case 'agent_interaction_closed':
         _onInteractionClosed(event.data);
         break;
-      case 'session_create_req':
-        unawaited(_onSessionCreateReq(event.peerId, event.data));
-        break;
       case 'cli_execute_req':
         unawaited(_onCliExecuteReq(event.peerId, event.data));
         break;
@@ -5249,6 +5246,18 @@ class PeerAgentClientService {
           enabled: enabled,
         ));
       case PeerAgentMetaKind.sessions:
+        // 主机建好会话后会顺带广播 session_action：在来源会话挂一张切换卡片。
+        // 名单同步和卡片各走各的，卡片只插入一次（按来源 + 新会话去重）。
+        final action = data['session_action'];
+        if (action is Map) {
+          final source = action['source_session_id']?.toString() ?? '';
+          if (source.isNotEmpty) {
+            unawaited(attachHostSessionSwitchCard(
+              channelId: source,
+              sessionAction: Map<String, dynamic>.from(action),
+            ));
+          }
+        }
         unawaited(_mirrorHostSessionList(
           peerId: event.peerId,
           remoteAgentId: agentId,
@@ -9733,25 +9742,9 @@ class PeerAgentClientService {
     });
   }
 
-  Future<void> _onSessionCreateReq(
-    String peerId,
-    Map<String, dynamic> data,
-  ) async {
-    Map<String, dynamic> result;
-    try {
-      result = await SessionCreatePeerHandler(
-        publishMetadata: publishMetadataToChannel,
-      ).handle(data);
-    } catch (e) {
-      result = {'error': e.toString()};
-    }
-    final reqId = data['req_id'];
-    await PeerConnectionManager.instance.sendControl(peerId, {
-      'type': SessionCreatePeerHandler.respType,
-      if (reqId != null) 'req_id': reqId,
-      ...result,
-    });
-  }
+  // 会话创建已迁到主机：App 不再处理主机发来的 session_create_req，也不再
+  // 在本地建会话。切换卡片由 agent_meta_changed kind=sessions 带下来。
+  // 见 services/session/host_session_switch_card.dart。
 
   /// 主机放弃这张卡片了。reason 见帧里的 `reason` 字段（`timeout` / `cancelled`）。
   ///

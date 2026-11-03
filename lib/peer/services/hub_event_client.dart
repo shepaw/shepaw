@@ -14,6 +14,7 @@ import '../../services/local_database_service.dart';
 import '../../services/noise_identity.dart';
 import '../../services/serial_task_queue.dart';
 import '../../services/logger_service.dart';
+import '../../services/session/host_session_switch_card.dart';
 import '../../storage/pouch_login.dart';
 import '../../storage/pouch_login_keeper.dart';
 import '../../storage/pouch_session.dart';
@@ -606,11 +607,68 @@ class HubEventClient {
         }
       case 'agent_meta.changed':
         _applyMeta(peerId, event);
+      case 'group.session.changed':
+        await _onGroupSessionChanged(peerId, event);
       case 'agents.changed':
       case 'groups.changed':
         if (!_notices.isClosed) {
           _notices.add(HubNotice(peerId: peerId, event: event));
         }
+    }
+  }
+
+  /// 主机建好群会话后：把切换卡片挂到来源会话，交接正文写进新群会话。
+  /// 两件事都按固定 id 去重，事件重放 / 多端同时在线都不会重复插入。
+  Future<void> _onGroupSessionChanged(String peerId, HubEvent event) async {
+    final data = event.data;
+    final action = data['session_action'];
+    if (action is Map) {
+      final source = action['source_session_id']?.toString() ?? '';
+      if (source.isNotEmpty) {
+        await attachHostSessionSwitchCard(
+          channelId: source,
+          sessionAction: Map<String, dynamic>.from(action),
+        );
+      }
+    }
+    final handoff = data['handoff_text']?.toString().trim() ?? '';
+    final session = data['session'];
+    final newId = (data['session_id']?.toString() ??
+            (session is Map ? session['id']?.toString() ?? '' : ''))
+        .trim();
+    if (handoff.isNotEmpty && newId.isNotEmpty) {
+      await _insertGroupHandoffMessage(newId, handoff);
+    }
+    if (!_notices.isClosed) {
+      _notices.add(HubNotice(peerId: peerId, event: event));
+    }
+  }
+
+  Future<void> _insertGroupHandoffMessage(
+    String channelId,
+    String text,
+  ) async {
+    if (!getIt.isRegistered<LocalDatabaseService>()) return;
+    final db = getIt<LocalDatabaseService>();
+    final id = 'group_handoff_${channelId.hashCode.abs()}';
+    try {
+      if (await db.getMessageById(id) != null) return;
+      await db.createMessage(
+        id: id,
+        channelId: channelId,
+        senderId: 'system',
+        senderType: 'system',
+        senderName: 'system',
+        content: text,
+        messageType: 'text',
+      );
+      await db.markMessageAsRead(id);
+      _notify(channelId);
+    } catch (e) {
+      LoggerService().warning(
+        'Failed to insert group handoff message: $e',
+        tag: 'HubEvent',
+      );
     }
   }
 

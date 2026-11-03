@@ -1,23 +1,23 @@
 import 'dart:convert';
 
+import '../../../../peer/services/hub_session_create.dart';
 import '../../../../services/group/group_management_service.dart';
-import '../../../../services/session/dm_session_create_service.dart';
 import '../../../cli_base.dart';
 import '../chat_agent_scope.dart';
 
-/// shepaw chat session create — open a new 1:1 session with a handoff summary.
+/// shepaw chat session create — 把建会话交给主机，App 不再本地建。
 class ChatSessionCreateCommand extends CliCommand {
-  ChatSessionCreateCommand({DmSessionCreateService? service})
-      : _service = service ?? DmSessionCreateService();
+  ChatSessionCreateCommand({HubSessionCreate? host})
+      : _host = host ?? HubSessionCreate();
 
-  final DmSessionCreateService _service;
+  final HubSessionCreate _host;
 
   @override
   String get name => 'create';
 
   @override
   String get description =>
-      'Create a new 1:1 session with a handoff summary (does not auto-switch)';
+      'Create a new 1:1 session on the host with a handoff summary';
 
   @override
   String get usage =>
@@ -103,7 +103,10 @@ class ChatSessionCreateCommand extends CliCommand {
         return {'error': 'Invalid --handoff-json: $e'};
       }
     }
-    if (summary.isEmpty && inlineHandoff == null) {
+    final goal = inlineHandoff?['task'] is Map
+        ? (inlineHandoff!['task'] as Map)['user_goal']?.toString().trim() ?? ''
+        : '';
+    if (summary.isEmpty && goal.isEmpty) {
       return {'error': 'Provide --summary or --handoff-json'};
     }
 
@@ -117,7 +120,11 @@ class ChatSessionCreateCommand extends CliCommand {
         ? flags['agent_name']!.trim()
         : actorId;
 
-    final args = <String, dynamic>{
+    return _host.create(<String, dynamic>{
+      'kind': 'dm',
+      'agent_id': actorId,
+      'agent_name': actorName,
+      'channel_id': channelId,
       'reason': reason,
       if (flags['reason-detail']?.trim().isNotEmpty == true)
         'reason_detail': flags['reason-detail']!.trim(),
@@ -125,14 +132,6 @@ class ChatSessionCreateCommand extends CliCommand {
       if (inlineHandoff != null) 'handoff': inlineHandoff,
       'post_first_message': flags['no-first-message'] != 'true',
       'suggest_switch': flags['no-switch-card'] != 'true',
-    };
-
-    final result = await _service.create(
-      channelId: channelId,
-      actorId: actorId,
-      actorName: actorName,
-      args: args,
-    );
-    return result.toCliJson();
+    });
   }
 }

@@ -1,21 +1,22 @@
 import 'dart:convert';
 
+import '../../../../peer/services/hub_session_create.dart';
 import '../../../../services/group/group_management_service.dart';
 import '../../../cli_base.dart';
 
-/// shepaw chat group session create — open a new session with handoff (admin only).
+/// shepaw chat group session create — 把建群会话交给主机，App 不再本地建。
 class GroupSessionCreateCommand extends CliCommand {
-  GroupSessionCreateCommand({GroupManagementService? service})
-      : _service = service ?? GroupManagementService();
+  GroupSessionCreateCommand({HubSessionCreate? host})
+      : _host = host ?? HubSessionCreate();
 
-  final GroupManagementService _service;
+  final HubSessionCreate _host;
 
   @override
   String get name => 'create';
 
   @override
   String get description =>
-      'Create a new group session with a curated handoff package (admin only)';
+      'Create a group session on the host with a curated handoff package';
 
   @override
   String get usage =>
@@ -29,6 +30,11 @@ class GroupSessionCreateCommand extends CliCommand {
     base['flags'] = {
       'channel': {
         'description': 'Group channel id (defaults to injected channel_id)',
+        'required': false,
+        'type': 'string',
+      },
+      'group-id': {
+        'description': 'Host group id (defaults to the channel id)',
         'required': false,
         'type': 'string',
       },
@@ -76,6 +82,7 @@ class GroupSessionCreateCommand extends CliCommand {
         'error': 'Missing --channel or channel_id (must run inside a group)',
       };
     }
+    final groupId = (flags['group-id'] ?? flags['group_id'] ?? channelId).trim();
 
     final reason = flags['reason']?.trim();
     if (reason == null || reason.isEmpty) {
@@ -109,24 +116,26 @@ class GroupSessionCreateCommand extends CliCommand {
       return {'error': 'Missing executor agent id'};
     }
     final actorName = flags['agent_name']?.trim() ?? actorId;
+    final task = inlineHandoff?['task'];
+    final goal = task is Map
+        ? task['user_goal']?.toString().trim() ?? ''
+        : '';
 
-    final args = <String, dynamic>{
+    return _host.create(<String, dynamic>{
+      'kind': 'group',
+      'group_id': groupId,
+      'channel_id': channelId,
+      'agent_id': actorId,
+      'agent_name': actorName,
       'reason': reason,
       if (flags['reason-detail']?.trim().isNotEmpty == true)
         'reason_detail': flags['reason-detail']!.trim(),
+      if (goal.isNotEmpty) 'summary': goal,
       if (inlineHandoff != null) 'handoff': inlineHandoff,
       if (handoffUri != null && handoffUri.trim().isNotEmpty)
         'handoff_uri': handoffUri.trim(),
       'post_first_message': flags['no-first-message'] != 'true',
       'suggest_switch': flags['no-switch-card'] != 'true',
-    };
-
-    final result = await _service.createSessionWithHandoff(
-      channelId: channelId,
-      actorId: actorId,
-      actorName: actorName,
-      args: args,
-    );
-    return result.toCliJson();
+    });
   }
 }
