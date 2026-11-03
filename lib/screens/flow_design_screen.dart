@@ -21,6 +21,7 @@ import '../services/local_user_identity.dart';
 import '../utils/layout_utils.dart';
 import '../widgets/discard_changes_scope.dart';
 import '../widgets/flow/flow_diagnostics_panel.dart';
+import '../widgets/flow/flow_header_form.dart';
 import '../widgets/flow/flow_node_inspector.dart';
 import '../widgets/flow/flow_node_tree.dart';
 import '../widgets/flow/flow_outline_menu.dart';
@@ -547,6 +548,13 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
                     child: Text(l10n.flow_revisionLabel(c.revision),
                         style: Theme.of(context).textTheme.bodySmall),
                   ),
+                ),
+              if (c.caps.canEditHeader)
+                IconButton(
+                  key: const ValueKey('header-open'),
+                  tooltip: l10n.flow_headerOpen,
+                  icon: const Icon(Icons.tune),
+                  onPressed: openFlowHeaderForm(context, c),
                 ),
               IconButton(
                 key: const ValueKey('undo'),

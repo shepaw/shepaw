@@ -9318,6 +9318,70 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_newSourceCopy => 'Copy an existing';
 
   @override
+  String get flow_headerTitle => 'Flow settings';
+
+  @override
+  String get flow_headerBasics => 'Basics';
+
+  @override
+  String get flow_headerDescription => 'Description';
+
+  @override
+  String get flow_headerMaxTasks => 'Max tasks (0 = unlimited)';
+
+  @override
+  String get flow_headerTimeout => 'Overall timeout';
+
+  @override
+  String get flow_headerInputs => 'Inputs';
+
+  @override
+  String get flow_headerInputName => 'Input name';
+
+  @override
+  String get flow_headerInputType => 'Type';
+
+  @override
+  String get flow_headerInputRequired => 'Required';
+
+  @override
+  String get flow_headerInputDefault => 'Default';
+
+  @override
+  String get flow_headerAddInput => 'Add an input';
+
+  @override
+  String get flow_headerRoles => 'Roles';
+
+  @override
+  String get flow_headerRoleName => 'Role name';
+
+  @override
+  String get flow_headerRoleDesc => 'Description';
+
+  @override
+  String get flow_headerAddRole => 'Add a role';
+
+  @override
+  String get flow_headerOutputs => 'Outputs';
+
+  @override
+  String get flow_headerOutputName => 'Output name';
+
+  @override
+  String get flow_headerOutputTemplate => 'Template';
+
+  @override
+  String get flow_headerAddOutput => 'Add an output';
+
+  @override
+  String get flow_headerHint =>
+      'The version is managed by the host; edits stay as a draft until you save.';
+
+  @override
+  String get flow_headerOpen => 'Flow settings';
+
+  @override
   String get flow_outlineMenu => 'More actions';
 
   @override

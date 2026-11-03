@@ -16253,6 +16253,132 @@ abstract class AppLocalizations {
   /// **'复制现有'**
   String get flow_newSourceCopy;
 
+  /// No description provided for @flow_headerTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'流程设置'**
+  String get flow_headerTitle;
+
+  /// No description provided for @flow_headerBasics.
+  ///
+  /// In zh, this message translates to:
+  /// **'基本信息'**
+  String get flow_headerBasics;
+
+  /// No description provided for @flow_headerDescription.
+  ///
+  /// In zh, this message translates to:
+  /// **'说明'**
+  String get flow_headerDescription;
+
+  /// No description provided for @flow_headerMaxTasks.
+  ///
+  /// In zh, this message translates to:
+  /// **'最多派多少活（0 不限）'**
+  String get flow_headerMaxTasks;
+
+  /// No description provided for @flow_headerTimeout.
+  ///
+  /// In zh, this message translates to:
+  /// **'总超时'**
+  String get flow_headerTimeout;
+
+  /// No description provided for @flow_headerInputs.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入'**
+  String get flow_headerInputs;
+
+  /// No description provided for @flow_headerInputName.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入名'**
+  String get flow_headerInputName;
+
+  /// No description provided for @flow_headerInputType.
+  ///
+  /// In zh, this message translates to:
+  /// **'类型'**
+  String get flow_headerInputType;
+
+  /// No description provided for @flow_headerInputRequired.
+  ///
+  /// In zh, this message translates to:
+  /// **'必填'**
+  String get flow_headerInputRequired;
+
+  /// No description provided for @flow_headerInputDefault.
+  ///
+  /// In zh, this message translates to:
+  /// **'默认值'**
+  String get flow_headerInputDefault;
+
+  /// No description provided for @flow_headerAddInput.
+  ///
+  /// In zh, this message translates to:
+  /// **'加一个输入'**
+  String get flow_headerAddInput;
+
+  /// No description provided for @flow_headerRoles.
+  ///
+  /// In zh, this message translates to:
+  /// **'角色'**
+  String get flow_headerRoles;
+
+  /// No description provided for @flow_headerRoleName.
+  ///
+  /// In zh, this message translates to:
+  /// **'角色名'**
+  String get flow_headerRoleName;
+
+  /// No description provided for @flow_headerRoleDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'说明'**
+  String get flow_headerRoleDesc;
+
+  /// No description provided for @flow_headerAddRole.
+  ///
+  /// In zh, this message translates to:
+  /// **'加一个角色'**
+  String get flow_headerAddRole;
+
+  /// No description provided for @flow_headerOutputs.
+  ///
+  /// In zh, this message translates to:
+  /// **'输出'**
+  String get flow_headerOutputs;
+
+  /// No description provided for @flow_headerOutputName.
+  ///
+  /// In zh, this message translates to:
+  /// **'输出名'**
+  String get flow_headerOutputName;
+
+  /// No description provided for @flow_headerOutputTemplate.
+  ///
+  /// In zh, this message translates to:
+  /// **'模板'**
+  String get flow_headerOutputTemplate;
+
+  /// No description provided for @flow_headerAddOutput.
+  ///
+  /// In zh, this message translates to:
+  /// **'加一个输出'**
+  String get flow_headerAddOutput;
+
+  /// No description provided for @flow_headerHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'版本号由主机管理；改动会存成草稿，保存后才成为新一版。'**
+  String get flow_headerHint;
+
+  /// No description provided for @flow_headerOpen.
+  ///
+  /// In zh, this message translates to:
+  /// **'流程设置'**
+  String get flow_headerOpen;
+
   /// No description provided for @flow_outlineMenu.
   ///
   /// In zh, this message translates to:

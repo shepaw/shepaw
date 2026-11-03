@@ -90,6 +90,42 @@ class FlowInputSpec {
   final String? defaultValue;
 }
 
+/// 头部其余字段的只读窥探。和 [peekRoles] / [peekInputs] 一样只读不写。
+class FlowHeaderPeek {
+  FlowHeaderPeek._();
+
+  static Map<String, dynamic> _root(String yaml) {
+    try {
+      final doc = loadYaml(yaml);
+      return doc is Map ? Map<String, dynamic>.from(doc) : const {};
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  static String description(String yaml) =>
+      _root(yaml)['description']?.toString() ?? '';
+
+  static ({int maxTasks, String timeout}) limits(String yaml) {
+    final raw = _root(yaml)['limits'];
+    final map = raw is Map ? raw : const {};
+    return (
+      maxTasks: (map['max_tasks'] as num?)?.toInt() ?? 0,
+      timeout: map['timeout']?.toString() ?? '',
+    );
+  }
+
+  /// 顶层 `outputs`：`name → 模板字符串`。
+  static Map<String, String> outputs(String yaml) {
+    final raw = _root(yaml)['outputs'];
+    if (raw is! Map) return const {};
+    return {
+      for (final entry in raw.entries)
+        entry.key.toString(): entry.value?.toString() ?? '',
+    };
+  }
+}
+
 /// 只读地看一眼定义头里的 `inputs`，用来生成开跑表单。
 ///
 /// 和 [peekRoles] 一样：只读不写，读不动就给空列表。

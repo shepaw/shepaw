@@ -8961,6 +8961,69 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_newSourceCopy => '复制现有';
 
   @override
+  String get flow_headerTitle => '流程设置';
+
+  @override
+  String get flow_headerBasics => '基本信息';
+
+  @override
+  String get flow_headerDescription => '说明';
+
+  @override
+  String get flow_headerMaxTasks => '最多派多少活（0 不限）';
+
+  @override
+  String get flow_headerTimeout => '总超时';
+
+  @override
+  String get flow_headerInputs => '输入';
+
+  @override
+  String get flow_headerInputName => '输入名';
+
+  @override
+  String get flow_headerInputType => '类型';
+
+  @override
+  String get flow_headerInputRequired => '必填';
+
+  @override
+  String get flow_headerInputDefault => '默认值';
+
+  @override
+  String get flow_headerAddInput => '加一个输入';
+
+  @override
+  String get flow_headerRoles => '角色';
+
+  @override
+  String get flow_headerRoleName => '角色名';
+
+  @override
+  String get flow_headerRoleDesc => '说明';
+
+  @override
+  String get flow_headerAddRole => '加一个角色';
+
+  @override
+  String get flow_headerOutputs => '输出';
+
+  @override
+  String get flow_headerOutputName => '输出名';
+
+  @override
+  String get flow_headerOutputTemplate => '模板';
+
+  @override
+  String get flow_headerAddOutput => '加一个输出';
+
+  @override
+  String get flow_headerHint => '版本号由主机管理；改动会存成草稿，保存后才成为新一版。';
+
+  @override
+  String get flow_headerOpen => '流程设置';
+
+  @override
   String get flow_outlineMenu => '更多操作';
 
   @override
