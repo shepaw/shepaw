@@ -109,6 +109,20 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('运行记录栏列主机上的运行，点一条打开运行视图',
+      (tester) async {
+    final harness = _Harness();
+    addTearDown(harness.close);
+    await _pump(tester, harness.client);
+
+    await tester.tap(find.byKey(const ValueKey('tab-runs')));
+    await _settle(tester);
+    expect(harness.sent.any((f) => f['type'] == 'flow_run_list_req'), isTrue);
+    expect(find.byKey(const ValueKey('run-run_1')), findsOneWidget);
+    expect(find.text('dev'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('tapping a flow opens its design view in the detail pane',
       (tester) async {
     tester.view.physicalSize = const Size(2400, 1800);
@@ -152,6 +166,21 @@ class _Harness {
                 'success': true,
                 'flows': [
                   {'name': 'dev', 'latest': 3},
+                ],
+              },
+            'flow_run_list_req' => {
+                'type': 'flow_run_list_resp',
+                'success': true,
+                'runs': [
+                  {
+                    'run_id': 'run_1',
+                    'flow': 'dev',
+                    'status': 'succeeded',
+                    'scope': 'lib',
+                    'revision': 2,
+                    'started_ms': 1700000000000,
+                    'tasks_used': 3,
+                  },
                 ],
               },
             'flow_save_req' => {

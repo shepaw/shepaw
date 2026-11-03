@@ -474,6 +474,51 @@ class FlowSchemaField {
       );
 }
 
+/// 运行列表里的一项（M8' 的 `flow_run_list_resp`）。
+class FlowRunSummary {
+  const FlowRunSummary({
+    required this.runId,
+    required this.flow,
+    required this.status,
+    this.scope = '',
+    this.revision,
+    this.groupId,
+    this.startedMs = 0,
+    this.tasksUsed = 0,
+  });
+
+  final String runId;
+  final String flow;
+  final String status;
+  final String scope;
+  final int? revision;
+  final String? groupId;
+  final int startedMs;
+  final int tasksUsed;
+
+  bool get isRunning => status == 'running';
+
+  static List<FlowRunSummary> listFromResponse(Map<String, dynamic> response) {
+    if (response['success'] != true) return const [];
+    final runs = response['runs'];
+    if (runs is! List) return const [];
+    return [
+      for (final item in runs)
+        if (item is Map)
+          FlowRunSummary(
+            runId: (item['run_id'] as String?) ?? '',
+            flow: (item['flow'] as String?) ?? '',
+            status: (item['status'] as String?) ?? '',
+            scope: (item['scope'] as String?) ?? '',
+            revision: (item['revision'] as num?)?.toInt(),
+            groupId: item['group_id'] as String?,
+            startedMs: (item['started_ms'] as num?)?.toInt() ?? 0,
+            tasksUsed: (item['tasks_used'] as num?)?.toInt() ?? 0,
+          ),
+    ];
+  }
+}
+
 class FlowSchema {
   const FlowSchema({
     required this.common,

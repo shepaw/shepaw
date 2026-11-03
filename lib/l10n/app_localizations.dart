@@ -16415,6 +16415,54 @@ abstract class AppLocalizations {
   /// **'历史'**
   String get flow_historyOpen;
 
+  /// No description provided for @flow_runsTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'最近运行'**
+  String get flow_runsTitle;
+
+  /// No description provided for @flow_runsTab.
+  ///
+  /// In zh, this message translates to:
+  /// **'运行记录'**
+  String get flow_runsTab;
+
+  /// No description provided for @flow_runsEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没有运行过'**
+  String get flow_runsEmpty;
+
+  /// No description provided for @flow_runsUnknownTime.
+  ///
+  /// In zh, this message translates to:
+  /// **'时间未知'**
+  String get flow_runsUnknownTime;
+
+  /// No description provided for @flow_runsJustNow.
+  ///
+  /// In zh, this message translates to:
+  /// **'刚刚'**
+  String get flow_runsJustNow;
+
+  /// No description provided for @flow_runsMinutesAgo.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 分钟前'**
+  String flow_runsMinutesAgo(int count);
+
+  /// No description provided for @flow_runsHoursAgo.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 小时前'**
+  String flow_runsHoursAgo(int count);
+
+  /// No description provided for @flow_runsDaysAgo.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 天前'**
+  String flow_runsDaysAgo(int count);
+
   /// No description provided for @flow_outlineMenu.
   ///
   /// In zh, this message translates to:

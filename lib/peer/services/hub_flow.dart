@@ -105,6 +105,19 @@ class HubFlow {
         if (taskId.isNotEmpty) 'task_id': taskId,
       };
 
+  /// 运行列表（M8'）。`scope` / `name` 为空表示不过滤。
+  static Map<String, dynamic> runListFrame({
+    String scope = '',
+    String name = '',
+    String? requestId,
+  }) =>
+      {
+        'type': 'flow_run_list_req',
+        if (requestId != null) 'request_id': requestId,
+        if (scope.isNotEmpty) 'scope': scope,
+        if (name.isNotEmpty) 'name': name,
+      };
+
   static Map<String, dynamic> deleteRunFrame(String runId,
           {String? requestId}) =>
       {
@@ -457,6 +470,21 @@ class HubFlow {
         patchFrame(runId, nodeKey, steps),
         'flow_run_patch_resp',
       );
+
+  /// 列出运行。返回 null 表示主机没应答（不是「没有运行」）。
+  Future<List<FlowRunSummary>?> runList(
+    String peerId, {
+    String scope = '',
+    String name = '',
+  }) async {
+    final response = await _request(
+      peerId,
+      runListFrame(scope: scope, name: name),
+      responseType: 'flow_run_list_resp',
+    );
+    if (response == null) return null;
+    return FlowRunSummary.listFromResponse(response);
+  }
 
   Future<FlowRunView?> run(String peerId, String runId) async {
     final response = await _request(

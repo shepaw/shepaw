@@ -15,6 +15,7 @@ import '../peer/services/hub_flow.dart';
 import '../utils/layout_utils.dart';
 import '../widgets/discard_changes_scope.dart';
 import '../widgets/flow/flow_new_flow_dialog.dart';
+import '../widgets/flow/flow_runs_pane.dart';
 import '../widgets/flow/flow_start_dialog.dart';
 import 'flow_design_screen.dart';
 import 'flow_run_screen.dart';
@@ -66,6 +67,7 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
 
   /// 编辑区有没有没保存的改动（由设计页报上来）。
   bool _editorDirty = false;
+  bool _showRuns = false;
 
   final FlowDraftStore _drafts = FlowDraftStore();
 
@@ -378,21 +380,53 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
-                IconButton(
-                  tooltip: l10n.flow_new,
-                  icon: const Icon(Icons.add),
-                  onPressed: () => unawaited(_create()),
-                ),
+                if (!_showRuns)
+                  IconButton(
+                    tooltip: l10n.flow_new,
+                    icon: const Icon(Icons.add),
+                    onPressed: () => unawaited(_create()),
+                  ),
                 IconButton(
                   tooltip: l10n.common_refresh,
                   icon: const Icon(Icons.refresh),
-                  onPressed: () => unawaited(_load()),
+                  onPressed: () => setState(() {}),
                 ),
               ],
             ),
           ),
+        // 流程库 / 运行记录。运行记录走主机的 flow_run_list_req，不在本地记账。
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          child: Row(
+            children: [
+              ChoiceChip(
+                key: const ValueKey('tab-flows'),
+                label: Text(l10n.flow_libraryTitle),
+                selected: !_showRuns,
+                onSelected: (_) => setState(() => _showRuns = false),
+              ),
+              const SizedBox(width: 8),
+              ChoiceChip(
+                key: const ValueKey('tab-runs'),
+                label: Text(l10n.flow_runsTab),
+                selected: _showRuns,
+                onSelected: (_) => setState(() => _showRuns = true),
+              ),
+            ],
+          ),
+        ),
+        if (_showRuns)
+          Expanded(
+            child: FlowRunsPane(
+              client: _client,
+              peerId: _host,
+              scope: widget.scope,
+              onOpenRun: _openRun,
+            ),
+          )
+        else ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
           child: TextField(
             key: const ValueKey('flow-search'),
             controller: _search,
@@ -427,8 +461,16 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
                   ],
                 ),
         ),
+        ],
       ],
     );
+  }
+
+  void _openRun(String runId, String title) {
+    unawaited(Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) =>
+          FlowRunScreen(peerId: _host, runId: runId, title: title),
+    )));
   }
 
   Widget _buildDetail(AppLocalizations l10n) {

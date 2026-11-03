@@ -5089,6 +5089,29 @@
   "flow_historyNoDiff": "No difference from the current revision",
   "flow_historyUseAsDraft": "Use this revision as draft",
   "flow_historyOpen": "History",
+  "flow_runsTitle": "Recent runs",
+  "flow_runsTab": "Runs",
+  "flow_runsEmpty": "No runs yet",
+  "flow_runsUnknownTime": "time unknown",
+  "flow_runsJustNow": "just now",
+  "flow_runsMinutesAgo": "{count} min ago",
+  "flow_runsHoursAgo": "{count} h ago",
+  "flow_runsDaysAgo": "{count} d ago",
+  "@flow_runsMinutesAgo": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "@flow_runsHoursAgo": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "@flow_runsDaysAgo": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
   "@flow_diagnosticsTitle": {
     "placeholders": {
       "count": { "type": "int" }

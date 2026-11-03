@@ -9400,6 +9400,36 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_historyOpen => 'History';
 
   @override
+  String get flow_runsTitle => 'Recent runs';
+
+  @override
+  String get flow_runsTab => 'Runs';
+
+  @override
+  String get flow_runsEmpty => 'No runs yet';
+
+  @override
+  String get flow_runsUnknownTime => 'time unknown';
+
+  @override
+  String get flow_runsJustNow => 'just now';
+
+  @override
+  String flow_runsMinutesAgo(int count) {
+    return '$count min ago';
+  }
+
+  @override
+  String flow_runsHoursAgo(int count) {
+    return '$count h ago';
+  }
+
+  @override
+  String flow_runsDaysAgo(int count) {
+    return '$count d ago';
+  }
+
+  @override
   String get flow_outlineMenu => 'More actions';
 
   @override

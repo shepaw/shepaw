@@ -304,6 +304,8 @@ class PeerConnection {
     'flow_run_cancel_resp',
     'flow_run_get_req',
     'flow_run_get_resp',
+    'flow_run_list_req',
+    'flow_run_list_resp',
     'flow.run.changed',
     'flow.node.changed',
     'device.hello',

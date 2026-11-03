@@ -5520,6 +5520,29 @@
   "flow_historyNoDiff": "和当前版本没有差异",
   "flow_historyUseAsDraft": "以此版为草稿",
   "flow_historyOpen": "历史",
+  "flow_runsTitle": "最近运行",
+  "flow_runsTab": "运行记录",
+  "flow_runsEmpty": "还没有运行过",
+  "flow_runsUnknownTime": "时间未知",
+  "flow_runsJustNow": "刚刚",
+  "flow_runsMinutesAgo": "{count} 分钟前",
+  "flow_runsHoursAgo": "{count} 小时前",
+  "flow_runsDaysAgo": "{count} 天前",
+  "@flow_runsMinutesAgo": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "@flow_runsHoursAgo": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "@flow_runsDaysAgo": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
   "@flow_diagnosticsTitle": {
     "placeholders": {
       "count": { "type": "int" }

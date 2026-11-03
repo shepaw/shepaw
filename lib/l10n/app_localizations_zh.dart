@@ -9042,6 +9042,36 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_historyOpen => '历史';
 
   @override
+  String get flow_runsTitle => '最近运行';
+
+  @override
+  String get flow_runsTab => '运行记录';
+
+  @override
+  String get flow_runsEmpty => '还没有运行过';
+
+  @override
+  String get flow_runsUnknownTime => '时间未知';
+
+  @override
+  String get flow_runsJustNow => '刚刚';
+
+  @override
+  String flow_runsMinutesAgo(int count) {
+    return '$count 分钟前';
+  }
+
+  @override
+  String flow_runsHoursAgo(int count) {
+    return '$count 小时前';
+  }
+
+  @override
+  String flow_runsDaysAgo(int count) {
+    return '$count 天前';
+  }
+
+  @override
   String get flow_outlineMenu => '更多操作';
 
   @override
