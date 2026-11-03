@@ -203,6 +203,8 @@ void main() {
     final promptField = find.byKey(const ValueKey('f:task.prompt'));
     expect(find.text('写'), findsWidgets);
     await tester.enterText(promptField, '认真写');
+    // 客户端补充字段让检查器变高了，应用按钮可能滚出屏幕。
+    await tester.ensureVisible(find.byKey(const ValueKey('inspector-apply')));
     await tester.tap(find.byKey(const ValueKey('inspector-apply')));
     await _settle(tester);
 

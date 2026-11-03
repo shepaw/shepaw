@@ -74,4 +74,28 @@ void main() {
     expect(peekRoles('flow: dev\nsteps: []\n'), isEmpty);
     expect(peekRoles('::: not yaml'), isEmpty);
   });
+
+  test('peekInputs 读出类型、必填和默认值', () {
+    final specs = peekInputs(
+      'flow: dev\ninputs:\n  goal: {type: string, required: true}\n  rounds: {type: int, default: 3}\nsteps: []\n',
+    );
+    expect(specs.map((s) => s.name), ['goal', 'rounds']);
+    expect(specs.first.type, 'string');
+    expect(specs.first.required, isTrue);
+    expect(specs.last.type, 'int');
+    expect(specs.last.defaultValue, '3');
+  });
+
+  test('FlowHeaderPeek 读 description / limits / outputs', () {
+    const yaml = 'flow: dev\ndescription: 先设计再实现\nlimits: {max_tasks: 30, timeout: 2h}\noutputs:\n  report: "{{ summary.text }}"\nsteps: []\n';
+    expect(FlowHeaderPeek.description(yaml), '先设计再实现');
+    expect(FlowHeaderPeek.limits(yaml).maxTasks, 30);
+    expect(FlowHeaderPeek.limits(yaml).timeout, '2h');
+    expect(FlowHeaderPeek.outputs(yaml), {'report': '{{ summary.text }}'});
+    // 没写就给安全默认值，不抛。
+    expect(FlowHeaderPeek.description('flow: x\n'), '');
+    expect(FlowHeaderPeek.limits('flow: x\n').maxTasks, 0);
+    expect(FlowHeaderPeek.outputs('flow: x\n'), isEmpty);
+    expect(FlowHeaderPeek.limits('::: not yaml').maxTasks, 0);
+  });
 }

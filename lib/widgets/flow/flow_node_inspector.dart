@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../controllers/flow/flow_executor.dart';
+import '../../controllers/flow/flow_field_catalog.dart';
 import '../../l10n/app_localizations.dart';
 import '../../peer/models/flow_models.dart';
 import 'flow_executor_field.dart';
@@ -55,7 +56,8 @@ class _FlowNodeInspectorState extends State<FlowNodeInspector> {
 
   /// `task.role` / `task.agent` 交给「谁来做」选择器，不再单独出文本框。
   List<FlowSchemaField> get _fields => [
-        for (final field in widget.schema.fieldsFor(widget.node.kind))
+        for (final field
+            in FlowFieldCatalog.fieldsFor(widget.node.kind, widget.schema))
           if (!_isTask ||
               (field.name != 'task.role' && field.name != 'task.agent'))
             field,
