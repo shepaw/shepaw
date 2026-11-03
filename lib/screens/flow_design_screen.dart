@@ -398,6 +398,8 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
         schema: schema,
         roles: peekRoles(_controller.yaml),
         onPickAgent: _pickAgent,
+        tree: _controller.tree,
+        yaml: _controller.yaml,
         onApply: (changes) {
           Navigator.pop(sheet);
           if (changes.isEmpty) return;

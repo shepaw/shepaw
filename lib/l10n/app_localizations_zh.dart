@@ -9024,6 +9024,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_headerOpen => '流程设置';
 
   @override
+  String get flow_refInsert => '插入引用';
+
+  @override
   String get flow_outlineMenu => '更多操作';
 
   @override

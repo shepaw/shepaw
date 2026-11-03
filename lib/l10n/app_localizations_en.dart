@@ -9382,6 +9382,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_headerOpen => 'Flow settings';
 
   @override
+  String get flow_refInsert => 'Insert reference';
+
+  @override
   String get flow_outlineMenu => 'More actions';
 
   @override

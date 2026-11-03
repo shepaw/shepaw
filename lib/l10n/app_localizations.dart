@@ -16379,6 +16379,12 @@ abstract class AppLocalizations {
   /// **'流程设置'**
   String get flow_headerOpen;
 
+  /// No description provided for @flow_refInsert.
+  ///
+  /// In zh, this message translates to:
+  /// **'插入引用'**
+  String get flow_refInsert;
+
   /// No description provided for @flow_outlineMenu.
   ///
   /// In zh, this message translates to:

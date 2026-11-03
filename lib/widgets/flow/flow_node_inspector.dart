@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../controllers/flow/flow_executor.dart';
 import '../../controllers/flow/flow_field_catalog.dart';
+import '../../controllers/flow/flow_references.dart';
 import '../../l10n/app_localizations.dart';
 import '../../peer/models/flow_models.dart';
 import 'flow_executor_field.dart';
@@ -21,7 +24,13 @@ class FlowNodeInspector extends StatefulWidget {
     required this.onAddAfter,
     this.roles = const [],
     this.onPickAgent,
+    this.tree = const [],
+    this.yaml = '',
   });
+
+  /// 当前节点树和草稿（生成「插入引用」的候选）。
+  final List<FlowNode> tree;
+  final String yaml;
 
   final FlowNode node;
   final FlowSchema schema;
@@ -83,6 +92,42 @@ class _FlowNodeInspectorState extends State<FlowNodeInspector> {
       c.dispose();
     }
     super.dispose();
+  }
+
+  /// 在光标处插一个 `{{ ... }}` 引用。
+  Future<void> _insertRef(FlowSchemaField field) async {
+    final candidates = FlowReferences.of(
+      tree: widget.tree,
+      currentNodeId: widget.node.id,
+      yaml: widget.yaml,
+    );
+    if (candidates.isEmpty || !context.mounted) return;
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      builder: (sheet) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            for (final candidate in candidates)
+              ListTile(
+                key: ValueKey('ref-item-$candidate'),
+                title: Text(candidate),
+                onTap: () => Navigator.pop(sheet, candidate),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (picked == null || !context.mounted) return;
+    final controller = _text[field.name]!;
+    final at = controller.selection.baseOffset.clamp(0, controller.text.length);
+    controller.value = controller.value.copyWith(
+      text: controller.text.substring(0, at) +
+          picked +
+          controller.text.substring(at),
+      selection: TextSelection.collapsed(offset: at + picked.length),
+    );
+    setState(() {});
   }
 
   /// 和打开时不一样的字段。整数字段写成数字，空值表示清掉。
@@ -173,6 +218,14 @@ class _FlowNodeInspectorState extends State<FlowNodeInspector> {
                           decoration: InputDecoration(
                             labelText: zh ? field.label : field.name,
                             isDense: true,
+                            suffixIcon: FlowReferences.supports(field.name)
+                                ? IconButton(
+                                    key: ValueKey('ref:${field.name}'),
+                                    tooltip: l10n.flow_refInsert,
+                                    icon: const Icon(Icons.data_object, size: 18),
+                                    onPressed: () => unawaited(_insertRef(field)),
+                                  )
+                                : null,
                           ),
                         ),
                 ),

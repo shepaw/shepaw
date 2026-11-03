@@ -5514,6 +5514,7 @@
   "flow_headerAddOutput": "加一个输出",
   "flow_headerHint": "版本号由主机管理；改动会存成草稿，保存后才成为新一版。",
   "flow_headerOpen": "流程设置",
+  "flow_refInsert": "插入引用",
   "@flow_diagnosticsTitle": {
     "placeholders": {
       "count": { "type": "int" }
