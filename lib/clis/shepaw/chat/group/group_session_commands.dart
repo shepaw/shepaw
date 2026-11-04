@@ -4,6 +4,7 @@ import '../../../../peer/services/hub_session_create.dart';
 import '../../../../services/group/group_management_service.dart';
 import '../../../../storage/store_uri_reader.dart';
 import '../../../cli_base.dart';
+import '../chat_agent_scope.dart';
 
 /// shepaw chat group session create — 把建群会话交给主机，App 不再本地建。
 class GroupSessionCreateCommand extends CliCommand {
@@ -126,11 +127,19 @@ class GroupSessionCreateCommand extends CliCommand {
       return {'error': 'Provide --handoff-json or --handoff-uri'};
     }
 
-    final actorId = flags['agent_id']?.trim() ?? flags['owner']?.trim() ?? '';
+    // HubCliExecute 会把身份字段从 flags 里剥掉，注入到 Zone。群 admin
+    //（通常是 She）执行时必须回退到 ChatAgentScope，否则拿不到 actor。
+    final actorId = (flags['agent_id']?.trim().isNotEmpty == true)
+        ? flags['agent_id']!.trim()
+        : ((flags['owner']?.trim().isNotEmpty == true)
+            ? flags['owner']!.trim()
+            : ChatAgentScope.agentId.trim());
     if (actorId.isEmpty) {
       return {'error': 'Missing executor agent id'};
     }
-    final actorName = flags['agent_name']?.trim() ?? actorId;
+    final actorName = (flags['agent_name']?.trim().isNotEmpty == true)
+        ? flags['agent_name']!.trim()
+        : actorId;
     final task = inlineHandoff['task'];
     final goal = task is Map
         ? task['user_goal']?.toString().trim() ?? ''
