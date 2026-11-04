@@ -8966,6 +8966,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_newSourceTemplate => '内置模板';
 
   @override
+  String get flow_templateModified => '已修改';
+
+  @override
   String get flow_newSourceCopy => '复制现有';
 
   @override

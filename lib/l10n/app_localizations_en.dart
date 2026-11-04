@@ -9323,6 +9323,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_newSourceTemplate => 'Built-in template';
 
   @override
+  String get flow_templateModified => 'Modified';
+
+  @override
   String get flow_newSourceCopy => 'Copy an existing';
 
   @override

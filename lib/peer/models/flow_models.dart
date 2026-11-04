@@ -291,12 +291,21 @@ class FlowSummary {
     required this.latest,
     required this.scope,
     this.updatedMs,
+    this.updatedBy,
+    this.description,
   });
 
   final String name;
   final int latest;
   final String scope;
   final int? updatedMs;
+
+  /// 谁最后改的。内置模板由主机 seed 时写 `"hub"`；不是 hub 就说明用户改过。
+  final String? updatedBy;
+  final String? description;
+
+  bool get isUserEdited =>
+      updatedBy != null && updatedBy!.isNotEmpty && updatedBy != 'hub';
 
   static List<FlowSummary>? listFromResponse(
     Map<String, dynamic> response, {
@@ -313,6 +322,8 @@ class FlowSummary {
             latest: (item['latest'] as num?)?.toInt() ?? 0,
             scope: (item['scope'] as String?) ?? scope,
             updatedMs: (item['updated_ms'] as num?)?.toInt(),
+            updatedBy: item['updated_by'] as String?,
+            description: item['description'] as String?,
           ),
     ];
   }

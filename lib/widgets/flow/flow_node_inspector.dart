@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../../controllers/flow/flow_edit_ops.dart';
@@ -114,6 +116,11 @@ class _FlowNodeInspectorState extends State<FlowNodeInspector> {
     return changes;
   }
 
+  String _fingerprint(Object? value) {
+    if (value is Map || value is List) return jsonEncode(value);
+    return value?.toString() ?? '';
+  }
+
   bool _same(Object? a, Object? b) {
     if (a == null || b == null) return a == b;
     if (a is Map || a is List || b is Map || b is List) {
@@ -169,7 +176,9 @@ class _FlowNodeInspectorState extends State<FlowNodeInspector> {
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 6),
                   child: FlowFieldEditor(
-                    key: ValueKey('field-${spec.path}'),
+                    // key 带上当前值：外部换节点 / 草稿恢复时重新播种，而不会在
+                    // TextField 还持有焦点时改动控制器。
+                    key: ValueKey('field-${spec.path}-${_fingerprint(_original[spec.path])}'),
                     spec: spec,
                     current: _original[spec.path],
                     refCandidates: FlowReferences.supports(spec.path)

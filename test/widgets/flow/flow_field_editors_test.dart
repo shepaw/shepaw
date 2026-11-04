@@ -204,6 +204,24 @@ void main() {
     expect(value, 'lib/helper');
   });
 
+  testWidgets('当前值变了靠值派生 key 重新播种', (tester) async {
+    Object? value;
+    Widget editor(Object? current) => FlowFieldEditor(
+          key: ValueKey('editor-$current'),
+          spec: _spec('task.prompt', FlowFieldShape.text),
+          current: current,
+          onChanged: (v) => value = v,
+        );
+
+    await _pump(tester, editor('旧值'));
+    expect(find.text('旧值'), findsOneWidget);
+    await tester.pumpWidget(_app(editor('新值')));
+    await tester.pump();
+    expect(find.text('新值'), findsOneWidget);
+    // 重播种不该当成用户改动发出去。
+    expect(value, isNull);
+  });
+
   testWidgets('intOrInput 能从输入里挑一个引用', (tester) async {
     Object? value;
     await _pump(

@@ -232,6 +232,7 @@ class _TemplatePicker extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final l10n = AppLocalizations.of(context);
     final zh = Localizations.localeOf(context).languageCode == 'zh';
     return Column(
       children: [
@@ -242,9 +243,20 @@ class _TemplatePicker extends StatelessWidget {
             groupValue: current,
             dense: true,
             contentPadding: EdgeInsets.zero,
-            title: Text(zh ? entry.titleZh : entry.titleEn),
+            title: Row(
+              children: [
+                Expanded(child: Text(zh ? entry.titleZh : entry.titleEn)),
+                if (entry.modified)
+                  Text(
+                    l10n.flow_templateModified,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: scheme.tertiary,
+                    ),
+                  ),
+              ],
+            ),
             subtitle: Text(
-              zh ? entry.blurbZh : entry.blurbEn,
+              entry.blurb(zh),
               style: theme.textTheme.bodySmall
                   ?.copyWith(color: scheme.onSurfaceVariant),
             ),

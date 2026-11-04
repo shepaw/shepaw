@@ -231,10 +231,18 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   }
 
   Future<void> _create() async {
+    // 主机 `flow_list` 带 description / updated_by；内置模板可能被用户改过，
+    // 所以画廊文案从库里取，并标「已修改」。取不到时回退客户端内置文案。
+    final templates = await FlowTemplateCatalog.load(
+      _client,
+      _host,
+      scope: widget.scope,
+    );
+    if (!mounted) return;
     final request = await showNewFlowDialog(
       context,
       existing: _flows?.map((f) => f.name) ?? const [],
-      templates: FlowTemplateCatalog.builtins,
+      templates: templates,
     );
     if (request == null || !mounted) return;
     // 新建会换掉详情区（_detailToken++），和 _select 一样要先问未保存的草稿。

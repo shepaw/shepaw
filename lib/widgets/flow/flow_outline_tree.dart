@@ -30,6 +30,8 @@ class FlowOutlineTree extends StatelessWidget {
     this.onDelete,
     this.onMenu,
     this.onLongPressRow,
+    this.rowKeys = const {},
+    this.flashId,
   });
 
   final List<FlowOutlineRow> rows;
@@ -57,6 +59,12 @@ class FlowOutlineTree extends StatelessWidget {
   /// 长按多选（群流程的「点选 + 说话」）。
   final void Function(FlowOutlineRow row)? onLongPressRow;
 
+  /// 每行一个 GlobalKey：诊断定位时靠它 `Scrollable.ensureVisible`。
+  final Map<String, GlobalKey> rowKeys;
+
+  /// 正在闪烁的那一行（诊断点选后 600ms）。
+  final String? flashId;
+
   /// 这一行能不能改结构。`if` 内没有分支标记时一律不给。
   bool _editable(FlowOutlineRow row) {
     if (!canEdit) return false;
@@ -74,6 +82,7 @@ class FlowOutlineTree extends StatelessWidget {
       children: [
         for (final row in rows)
           _Row(
+            key: rowKeys[row.node.id],
             l10n: l10n,
             scheme: scheme,
             theme: theme,
@@ -81,6 +90,7 @@ class FlowOutlineTree extends StatelessWidget {
             selected: selectedId == row.node.id,
             errors: errorCounts[row.node.id] ?? 0,
             collapsed: collapsed.contains(row.node.id),
+            flashing: flashId == row.node.id,
             editable: _editable(row),
             badge: badgeFor?.call(row),
             onTap: onTapRow == null ? null : () => onTapRow!(row),
@@ -102,6 +112,7 @@ class FlowOutlineTree extends StatelessWidget {
 
 class _Row extends StatelessWidget {
   const _Row({
+    super.key,
     required this.l10n,
     required this.scheme,
     required this.theme,
@@ -109,6 +120,7 @@ class _Row extends StatelessWidget {
     required this.selected,
     required this.errors,
     required this.collapsed,
+    required this.flashing,
     required this.editable,
     required this.badge,
     required this.onTap,
@@ -128,6 +140,7 @@ class _Row extends StatelessWidget {
   final bool selected;
   final int errors;
   final bool collapsed;
+  final bool flashing;
   final bool editable;
   final (String, Color)? badge;
   final VoidCallback? onTap;
@@ -145,12 +158,18 @@ class _Row extends StatelessWidget {
     final hasChildren = node.children.isNotEmpty;
     return Padding(
       padding: EdgeInsets.only(left: 16.0 * row.depth, bottom: 6),
-      child: Card(
-        elevation: 0,
-        shape: RoundedRectangleBorder(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        decoration: BoxDecoration(
+          color: flashing
+              ? scheme.primaryContainer
+              : scheme.surface,
           borderRadius: BorderRadius.circular(10),
-          side: BorderSide(
-            color: selected ? scheme.primary : scheme.outlineVariant,
+          border: Border.all(
+            color: flashing
+                ? scheme.primary
+                : (selected ? scheme.primary : scheme.outlineVariant),
+            width: flashing ? 2 : 1,
           ),
         ),
         child: InkWell(

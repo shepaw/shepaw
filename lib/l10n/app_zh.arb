@@ -5499,6 +5499,7 @@
   "flow_newSource": "从哪开始",
   "flow_newSourceBlank": "空白",
   "flow_newSourceTemplate": "内置模板",
+  "flow_templateModified": "已修改",
   "flow_newSourceCopy": "复制现有",
   "flow_headerTitle": "流程设置",
   "flow_headerBasics": "基本信息",

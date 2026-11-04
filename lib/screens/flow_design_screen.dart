@@ -91,6 +91,9 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   late final FlowEditorController _controller;
   bool _showYaml = false;
   List<String> _flowRefs = const [];
+  String? _flashId;
+  Timer? _flashTimer;
+  final Map<String, GlobalKey> _rowKeys = {};
 
   // 点选 + 说话（C.3）
   final Set<String> _selected = <String>{};
@@ -152,6 +155,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   @override
   void dispose() {
     _composer.dispose();
+    _flashTimer?.cancel();
     _controller.removeListener(_reportDirty);
     widget.onDirtyChanged?.call(false);
     widget.onControllerReady?.call(null);
@@ -308,8 +312,14 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
 
   // ── 大纲 ──────────────────────────────────────────────────────────────────
 
-  List<FlowOutlineRow> _rows() =>
-      buildFlowOutline(_controller.tree, collapsed: _collapsed);
+  List<FlowOutlineRow> _rows() {
+    final rows =
+        buildFlowOutline(_controller.tree, collapsed: _collapsed);
+    for (final row in rows) {
+      _rowKeys.putIfAbsent(row.node.id, () => GlobalKey());
+    }
+    return rows;
+  }
 
   /// 这个节点在大纲里的那一行。结构操作一律经它，好带上 `branch`。
   FlowOutlineRow? _rowFor(String id) {
@@ -345,6 +355,23 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
             }
           }
           _selectedId = nodeId;
+          _flashId = nodeId;
+        });
+        _flashTimer?.cancel();
+        _flashTimer = Timer(const Duration(milliseconds: 600), () {
+          if (mounted) setState(() => _flashId = null);
+        });
+        // 展开后等一帧，大纲重排完了再滚过去。
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          final ctx = _rowKeys[nodeId]?.currentContext;
+          if (ctx != null) {
+            unawaited(Scrollable.ensureVisible(
+              ctx,
+              duration: const Duration(milliseconds: 250),
+              alignment: 0.3,
+            ));
+          }
         });
       case HeaderTarget():
         // 头部字段的问题直接跳到头部表单（M5 已经做了）。
@@ -821,6 +848,8 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
               selectedId: _selectedId,
               errorCounts: _errorCounts(),
               collapsed: _collapsed,
+              rowKeys: _rowKeys,
+              flashId: _flashId,
               badgeFor: diff == null
                   ? null
                   : (row) {

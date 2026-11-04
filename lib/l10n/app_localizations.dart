@@ -16259,6 +16259,12 @@ abstract class AppLocalizations {
   /// **'内置模板'**
   String get flow_newSourceTemplate;
 
+  /// No description provided for @flow_templateModified.
+  ///
+  /// In zh, this message translates to:
+  /// **'已修改'**
+  String get flow_templateModified;
+
   /// No description provided for @flow_newSourceCopy.
   ///
   /// In zh, this message translates to:

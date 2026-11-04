@@ -52,6 +52,14 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
   @override
   void initState() {
     super.initState();
+    _seed();
+  }
+
+  /// 调用方换了节点 / 主机推来了新草稿时由**值派生的 key**触发重建，重新播种
+  /// 输入框（见 [FlowNodeInspector] 里的 `field-…` key）。这里不做 didUpdateWidget
+  /// 里 dispose + 重建控制器 —— 那会在 TextField 还持有焦点时打断
+  /// `_FocusInheritedScope`。
+  void _seed() {
     final c = widget.current;
     _scalar = TextEditingController(
       text: c is num ? c.toString() : (c is String ? c : ''),
@@ -88,8 +96,7 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
     }
   }
 
-  @override
-  void dispose() {
+  void _releaseControllers() {
     _scalar.dispose();
     _judge.dispose();
     _ask.dispose();
@@ -102,6 +109,11 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
     for (final row in _outputs) {
       row.dispose();
     }
+  }
+
+  @override
+  void dispose() {
+    _releaseControllers();
     super.dispose();
   }
 

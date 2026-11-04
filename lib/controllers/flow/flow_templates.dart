@@ -1,8 +1,10 @@
+import '../../peer/models/flow_models.dart';
 import '../../peer/services/hub_flow.dart';
 import 'flow_edit_ops.dart';
 
-/// 内置模板。文案放客户端：M1.5 之后 `flow_list` 会带上 `description`，但内置
-/// 模板可能被用户改过（主机「库里有就不覆盖」），所以名单一律按 **模板 id** 认。
+/// 内置模板。名单按 **模板 id** 认（和主机 `builtin.rs::templates()` 对齐）；
+/// 展示文案优先用主机 `flow_list` 里的 `description`，因为内置流程「库里有就不
+/// 覆盖」，`flow_get` 拿到的可能是用户改过的版本。
 class FlowTemplateEntry {
   const FlowTemplateEntry({
     required this.id,
@@ -10,6 +12,8 @@ class FlowTemplateEntry {
     required this.titleEn,
     required this.blurbZh,
     required this.blurbEn,
+    this.libraryDescription,
+    this.modified = false,
   });
 
   final String id;
@@ -17,12 +21,48 @@ class FlowTemplateEntry {
   final String titleEn;
   final String blurbZh;
   final String blurbEn;
+
+  /// 主机库里的说明；有就用它替代内置文案。
+  final String? libraryDescription;
+
+  /// `updated_by != "hub"` —— 用户改过这份模板。
+  final bool modified;
+
+  String blurb(bool zh) {
+    final fromHost = libraryDescription;
+    if (fromHost != null && fromHost.isNotEmpty) return fromHost;
+    return zh ? blurbZh : blurbEn;
+  }
+
+  FlowTemplateEntry withLibrary(FlowSummary? flow) => FlowTemplateEntry(
+        id: id,
+        titleZh: titleZh,
+        titleEn: titleEn,
+        blurbZh: blurbZh,
+        blurbEn: blurbEn,
+        libraryDescription: flow?.description,
+        modified: flow?.isUserEdited ?? false,
+      );
 }
 
 /// 模板名单。和 `crates/api/src/flow/builtin.rs::templates()` 对齐 —— 主机那边
 /// 加模板时这里要跟着加，否则画廊里看不到。
 class FlowTemplateCatalog {
   FlowTemplateCatalog._();
+
+  /// 名单按 id 认，文案从主机 `flow_list` 取（主机升级前没有 description 时
+  /// 自动回退到客户端内置文案）。
+  static Future<List<FlowTemplateEntry>> load(
+    HubFlow client,
+    String peerId, {
+    String scope = '',
+  }) async {
+    final flows = await client.list(peerId, scope: scope);
+    final byName = <String, FlowSummary>{
+      for (final f in flows ?? const <FlowSummary>[]) f.name: f,
+    };
+    return [for (final t in builtins) t.withLibrary(byName[t.id])];
+  }
 
   static const builtins = [
     FlowTemplateEntry(
