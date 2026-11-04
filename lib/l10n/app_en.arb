@@ -5146,6 +5146,7 @@
   "flow_startSaveFirst": "Save as a new revision first",
   "flow_startInputRequired": "`{name}` is required",
   "flow_startRoleUnbound": "Role `{role}` has no agent bound yet",
+  "flow_startRolesAutoBound": "Bound automatically from group members",
   "@flow_startTitle": {
     "placeholders": {
       "name": { "type": "String" }

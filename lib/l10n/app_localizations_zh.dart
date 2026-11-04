@@ -9154,6 +9154,9 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get flow_startRolesAutoBound => '由群成员角色自动绑定';
+
+  @override
   String flow_outlineDeleteBody(String id) {
     return '删掉 `$id` 和它下面的所有步骤。';
   }

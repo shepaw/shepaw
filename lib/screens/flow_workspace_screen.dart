@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../controllers/flow/flow_draft_store.dart';
+import '../controllers/flow/flow_editor_controller.dart';
 import '../controllers/flow/flow_executor.dart';
 import '../controllers/flow/flow_names.dart';
 import '../controllers/flow/flow_templates.dart';
@@ -67,6 +68,7 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
 
   /// 编辑区有没有没保存的改动（由设计页报上来）。
   bool _editorDirty = false;
+  FlowEditorController? _editor;
   bool _showRuns = false;
 
   final FlowDraftStore _drafts = FlowDraftStore();
@@ -129,6 +131,9 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   }
 
   /// 切走之前先问：编辑区里有没保存的改动。
+  /// 手机只读：新建也要收起来，别让只读端还能往库里写。
+  bool get _canCreateFlows => LayoutUtils.isDesktopLayout(context);
+
   Future<bool> _guardDirty() async {
     if (!_editorDirty) return true;
     final l10n = AppLocalizations.of(context);
@@ -176,12 +181,17 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
       flowName: flow.name,
       yaml: got.yaml,
       roles: roles,
-      // 这里是列表上的「运行」，没有草稿上下文：跑的一定是库里那一版。
-      dirty: false,
+      dirty: _editor?.dirty ?? _editorDirty,
+      scope: widget.scope,
       revision: got.revision,
       onPickAgent: _pickAgent,
     );
     if (plan == null || !mounted) return;
+    // 用户选了「先保存成新一版再跑」：只有保存成功了才继续开跑。
+    if (plan.saveFirst && !await (_editor?.save() ?? Future.value(false))) {
+      _snack(l10n.flow_saveFailed);
+      return;
+    }
     final result = await _client.start(
       _host,
       scope: widget.scope,
@@ -227,6 +237,9 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
       templates: FlowTemplateCatalog.builtins,
     );
     if (request == null || !mounted) return;
+    // 新建会换掉详情区（_detailToken++），和 _select 一样要先问未保存的草稿。
+    if (!await _guardDirty()) return;
+    if (!mounted) return;
     final l10n = AppLocalizations.of(context);
 
     String yaml;
@@ -307,7 +320,7 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
                       ? BackButton(onPressed: _closeDetail)
                       : null,
                   actions: [
-                    if (!showingNarrowDetail)
+                    if (!showingNarrowDetail && _canCreateFlows)
                       IconButton(
                         tooltip: l10n.flow_new,
                         icon: const Icon(Icons.add),
@@ -380,7 +393,7 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
-                if (!_showRuns)
+                if (!_showRuns && _canCreateFlows)
                   IconButton(
                     tooltip: l10n.flow_new,
                     icon: const Icon(Icons.add),
@@ -502,6 +515,7 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
       client: _client,
       draftStore: _drafts,
       onDirtyChanged: (dirty) => _editorDirty = dirty,
+      onControllerReady: (controller) => _editor = controller,
     );
   }
 }

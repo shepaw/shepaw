@@ -36,6 +36,7 @@ Future<FlowStartPlan?> showFlowStartDialog(
   required String yaml,
   required List<String> roles,
   required bool dirty,
+  required String scope,
   required int revision,
   Future<String?> Function()? onPickAgent,
 }) {
@@ -46,6 +47,7 @@ Future<FlowStartPlan?> showFlowStartDialog(
       yaml: yaml,
       roles: roles,
       dirty: dirty,
+      scope: scope,
       revision: revision,
       onPickAgent: onPickAgent,
     ),
@@ -58,6 +60,7 @@ class _FlowStartDialog extends StatefulWidget {
     required this.yaml,
     required this.roles,
     required this.dirty,
+    required this.scope,
     required this.revision,
     this.onPickAgent,
   });
@@ -66,6 +69,12 @@ class _FlowStartDialog extends StatefulWidget {
   final String yaml;
   final List<String> roles;
   final bool dirty;
+  final String scope;
+
+  /// 群库流程由群成员角色自动绑定（主机 `bindings_from_group`），对话框只读显示，
+  /// 不应要求用户选 Agent，更不能把用户随手选的 Agent 覆盖主机绑定。
+  bool get rolesAutoBound => scope.startsWith('group:');
+
   final int revision;
   final Future<String?> Function()? onPickAgent;
 
@@ -107,11 +116,13 @@ class _FlowStartDialogState extends State<_FlowStartDialog> {
         return;
       }
     }
-    // 不在群里开跑时，每个角色都得绑一个 Agent，否则主机开跑就报缺绑定。
-    for (final role in widget.roles) {
-      if (_agents[role]?.isNotEmpty != true) {
-        setState(() => _error = l10n.flow_startRoleUnbound(role));
-        return;
+    // 群库流程由主机按 members_meta.roles 自动绑定，对话框不拦、也不覆盖。
+    if (!widget.rolesAutoBound) {
+      for (final role in widget.roles) {
+        if (_agents[role]?.isNotEmpty != true) {
+          setState(() => _error = l10n.flow_startRoleUnbound(role));
+          return;
+        }
       }
     }
     Navigator.pop(
@@ -122,10 +133,12 @@ class _FlowStartDialogState extends State<_FlowStartDialog> {
             if (entry.value.text.trim().isNotEmpty)
               entry.key: entry.value.text.trim(),
         },
-        bindings: {
-          for (final entry in _agents.entries)
-            if (entry.value != null) entry.key: entry.value!,
-        },
+        bindings: widget.rolesAutoBound
+            ? const {}
+            : {
+                for (final entry in _agents.entries)
+                  if (entry.value != null) entry.key: entry.value!,
+              },
         saveFirst: _saveFirst,
       ),
     );
@@ -187,17 +200,23 @@ class _FlowStartDialogState extends State<_FlowStartDialog> {
                 leading: const Icon(Icons.person_outline),
                 title: Text(role),
                 subtitle: Text(
-                  _agents[role] ?? l10n.flow_executorPickAgent,
+                  widget.rolesAutoBound
+                      ? l10n.flow_startRolesAutoBound
+                      : (_agents[role] ?? l10n.flow_executorPickAgent),
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),
                 ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () async {
-                  final picked = await widget.onPickAgent?.call();
-                  if (picked == null || !mounted) return;
-                  setState(() => _agents[role] = picked);
-                },
+                trailing: widget.rolesAutoBound
+                    ? null
+                    : const Icon(Icons.chevron_right),
+                onTap: widget.rolesAutoBound
+                    ? null
+                    : () async {
+                        final picked = await widget.onPickAgent?.call();
+                        if (picked == null || !mounted) return;
+                        setState(() => _agents[role] = picked);
+                      },
               ),
             if (_error != null)
               Padding(

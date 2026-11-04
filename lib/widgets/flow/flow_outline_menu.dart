@@ -72,7 +72,9 @@ class _Menu extends StatelessWidget {
     final scheme = theme.colorScheme;
     final node = row.node;
     final previous = row.previousSibling;
-    final isContainer = FlowStepDefaults.isContainer(node.kind);
+    // `if` 也是容器，只是子节点分在 then / else 两支里。
+    final isContainer =
+        node.kind == 'if' || FlowStepDefaults.isContainer(node.kind);
     final previousIsContainer =
         previous != null && FlowStepDefaults.isContainer(previous.kind);
 

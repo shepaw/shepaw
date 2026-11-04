@@ -29,6 +29,7 @@ class FlowOutlineTree extends StatelessWidget {
     this.onMoveDown,
     this.onDelete,
     this.onMenu,
+    this.onLongPressRow,
   });
 
   final List<FlowOutlineRow> rows;
@@ -52,6 +53,9 @@ class FlowOutlineTree extends StatelessWidget {
 
   /// 「⋯」菜单：加子步骤 / 缩进 / 改类型。
   final void Function(FlowOutlineRow row)? onMenu;
+
+  /// 长按多选（群流程的「点选 + 说话」）。
+  final void Function(FlowOutlineRow row)? onLongPressRow;
 
   /// 这一行能不能改结构。`if` 内没有分支标记时一律不给。
   bool _editable(FlowOutlineRow row) {
@@ -87,6 +91,9 @@ class FlowOutlineTree extends StatelessWidget {
             onMoveDown: onMoveDown == null ? null : () => onMoveDown!(row),
             onDelete: onDelete == null ? null : () => onDelete!(row),
             onMenu: onMenu == null ? null : () => onMenu!(row),
+            onLongPress: onLongPressRow == null
+                ? null
+                : () => onLongPressRow!(row),
           ),
       ],
     );
@@ -111,6 +118,7 @@ class _Row extends StatelessWidget {
     required this.onMoveDown,
     required this.onDelete,
     required this.onMenu,
+    required this.onLongPress,
   });
 
   final AppLocalizations l10n;
@@ -129,6 +137,7 @@ class _Row extends StatelessWidget {
   final VoidCallback? onMoveDown;
   final VoidCallback? onDelete;
   final VoidCallback? onMenu;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -148,6 +157,7 @@ class _Row extends StatelessWidget {
           key: ValueKey('row-${node.id}'),
           borderRadius: BorderRadius.circular(10),
           onTap: onTap,
+          onLongPress: onLongPress,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             child: Row(

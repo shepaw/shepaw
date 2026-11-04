@@ -69,16 +69,16 @@ class FlowReferences {
     return out;
   }
 
-  static bool _inside(List<FlowNode> nodes, String id, String kind,
-      [bool parentMatches = false]) {
+  static bool _inside(
+    List<FlowNode> nodes,
+    String id,
+    String kind, [
+    bool inside = false,
+  ]) {
     for (final node in nodes) {
-      if (node.id == id) return parentMatches;
-      if (node.kind == kind &&
-          node.children.isNotEmpty &&
-          _inside(node.children, id, kind, true)) {
-        return true;
-      }
-      if (node.children.isNotEmpty && _inside(node.children, id, kind)) {
+      if (node.id == id) return inside;
+      if (node.children.isNotEmpty &&
+          _inside(node.children, id, kind, inside || node.kind == kind)) {
         return true;
       }
     }

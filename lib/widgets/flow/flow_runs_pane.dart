@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
@@ -35,11 +37,33 @@ class FlowRunsPane extends StatefulWidget {
 
 class _FlowRunsPaneState extends State<FlowRunsPane> {
   List<FlowRunSummary>? _runs;
+  bool _loading = true;
+  StreamSubscription<FlowEvent>? _sub;
 
   @override
   void initState() {
     super.initState();
+    // 运行状态变了要刷新列表，否则得手动点刷新或切 tab。
+    _sub = widget.client
+        .runEvents(widget.peerId)
+        .listen((_) => unawaited(_load()));
     unawaited(_load());
+  }
+
+  @override
+  void didUpdateWidget(FlowRunsPane oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.peerId != widget.peerId ||
+        oldWidget.scope != widget.scope ||
+        oldWidget.name != widget.name) {
+      unawaited(_load());
+    }
+  }
+
+  @override
+  void dispose() {
+    unawaited(_sub?.cancel());
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -49,7 +73,10 @@ class _FlowRunsPaneState extends State<FlowRunsPane> {
       name: widget.name,
     );
     if (!mounted) return;
-    setState(() => _runs = runs);
+    setState(() {
+      _runs = runs;
+      _loading = false;
+    });
   }
 
   @override
@@ -79,11 +106,26 @@ class _FlowRunsPaneState extends State<FlowRunsPane> {
           ],
         ),
         Expanded(
-          child: runs == null
+          child: _loading
               ? const Center(child: CircularProgressIndicator())
-              : runs!.isEmpty
-                  ? Center(child: Text(l10n.flow_runsEmpty))
-                  : ListView(
+              : runs == null
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(l10n.flow_hostNoReply),
+                          const SizedBox(height: 8),
+                          OutlinedButton(
+                            key: const ValueKey('runs-retry'),
+                            onPressed: () => unawaited(_load()),
+                            child: Text(l10n.common_retry),
+                          ),
+                        ],
+                      ),
+                    )
+                  : runs.isEmpty
+                      ? Center(child: Text(l10n.flow_runsEmpty))
+                      : ListView(
                       children: [
                         for (final run in runs!)
                           ListTile(

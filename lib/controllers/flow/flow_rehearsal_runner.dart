@@ -8,9 +8,7 @@ import 'flow_editor_notice.dart';
 
 /// 演练：不调任何 Agent，用回声执行器把流程走一遍（方案 C.5）。
 ///
-/// 原来这段逻辑写在 `flow_design_screen.dart` 里，和界面状态混在一起。拆出来
-/// 之后它只管「演练自身的生命周期」：开跑、按派活顺序点亮、卡在关卡时作答、
-/// 结束。演练期间禁止编辑这件事由控制器读 [active] 统一拦。
+/// 演练期间禁止编辑这件事由控制器读 [active] 统一拦。
 class FlowRehearsalRunner extends ChangeNotifier {
   FlowRehearsalRunner({
     required this.client,
@@ -21,24 +19,24 @@ class FlowRehearsalRunner extends ChangeNotifier {
 
   final HubFlow client;
   final String peerId;
-
-  /// 每一步点亮的间隔。
   final Duration stepInterval;
-
-  /// 出错时通知界面（主机没应答 / 演练失败）。
   final void Function(FlowEditorNotice notice)? onNotice;
 
   FlowRehearsal? _rehearsal;
   int _progress = 0;
   Timer? _timer;
   bool _answering = false;
+  bool _disposed = false;
 
   bool get active => _rehearsal != null;
   bool get answering => _answering;
   FlowRehearsal? get rehearsal => _rehearsal;
   int get progress => _progress;
 
-  /// 卡住的问题。动画还在点亮时不急着把选项摆出来。
+  void _notify() {
+    if (!_disposed) notifyListeners();
+  }
+
   FlowQuestion? get waiting {
     final rehearsal = _rehearsal;
     if (rehearsal == null) return null;
@@ -46,7 +44,6 @@ class FlowRehearsalRunner extends ChangeNotifier {
     return rehearsal.question;
   }
 
-  /// 演练时画演练返回的树（循环按真实跑的轮数展开），按派活顺序点亮。
   List<FlowNode> view(List<FlowNode> draftTree) {
     final rehearsal = _rehearsal;
     if (rehearsal == null) return draftTree;
@@ -56,7 +53,6 @@ class FlowRehearsalRunner extends ChangeNotifier {
     final running = doneCount > 0 && doneCount <= steps.length
         ? steps[doneCount - 1]
         : null;
-    // 点亮完这一段（或这一段本来没有活要派）就算走到了。
     final finished = _progress >= steps.length;
     return [
       for (final node in rehearsal.tree)
@@ -65,28 +61,31 @@ class FlowRehearsalRunner extends ChangeNotifier {
     ];
   }
 
-  Future<void> start(String yaml) async {
+  /// 返回是否真的开起来了（失败时不该让调用方以为演练已在跑）。
+  Future<bool> start(String yaml) async {
     final got = await client.rehearse(peerId, yaml);
+    if (_disposed) return false;
     final rehearsal = got.rehearsal;
     if (rehearsal == null) {
       onNotice?.call(got.error == null
           ? const FlowEditorNotice(FlowEditorNoticeKind.hostNoReply)
           : FlowEditorNotice(FlowEditorNoticeKind.editRejected,
               raw: got.error));
-      return;
+      return false;
     }
     _animate(rehearsal);
+    return true;
   }
 
-  /// 演练卡在关卡 / 判断时作答，接着往下走。
   Future<void> answer(String choice) async {
     final current = _rehearsal;
     final id = current?.rehearsalId ?? '';
     if (id.isEmpty) return;
     _answering = true;
-    notifyListeners();
+    _notify();
     final got = await client.rehearseAnswer(peerId, id, choice);
     _answering = false;
+    if (_disposed) return;
     final next = got.rehearsal;
     if (next == null) {
       onNotice?.call(got.error == null
@@ -96,20 +95,18 @@ class FlowRehearsalRunner extends ChangeNotifier {
       stop();
       return;
     }
-    // 接着点亮新派出去的那些活。
     _animate(next);
   }
 
-  /// 卡片依次点亮，走完（或到卡住的地方）就把问题摆出来。
   void _animate(FlowRehearsal rehearsal) {
     _timer?.cancel();
     _rehearsal = rehearsal;
     _progress = 0;
-    notifyListeners();
+    _notify();
     _timer = Timer.periodic(stepInterval, (timer) {
       _progress++;
       if (_progress >= rehearsal.steps.length) timer.cancel();
-      notifyListeners();
+      _notify();
     });
   }
 
@@ -119,14 +116,19 @@ class FlowRehearsalRunner extends ChangeNotifier {
     final id = _rehearsal?.rehearsalId ?? '';
     _rehearsal = null;
     _progress = 0;
-    notifyListeners();
+    _notify();
     if (id.isNotEmpty) unawaited(client.rehearseDrop(peerId, id));
   }
 
   @override
   void dispose() {
+    // 主机那边的演练要显式结束，否则会一直留在内存里。
+    final id = _rehearsal?.rehearsalId ?? '';
+    _disposed = true;
     _timer?.cancel();
     _timer = null;
+    _rehearsal = null;
+    if (id.isNotEmpty) unawaited(client.rehearseDrop(peerId, id));
     super.dispose();
   }
 }

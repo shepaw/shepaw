@@ -16607,6 +16607,12 @@ abstract class AppLocalizations {
   /// **'角色「{role}」还没选 Agent'**
   String flow_startRoleUnbound(String role);
 
+  /// No description provided for @flow_startRolesAutoBound.
+  ///
+  /// In zh, this message translates to:
+  /// **'由群成员角色自动绑定'**
+  String get flow_startRolesAutoBound;
+
   /// No description provided for @flow_outlineDeleteBody.
   ///
   /// In zh, this message translates to:

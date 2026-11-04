@@ -126,6 +126,66 @@ void main() {
     expect(value, {'judge': 'owner', 'ask': ''});
   });
 
+  testWidgets('int 形状解析失败时不发字符串', (tester) async {
+    Object? value = 'unset';
+    await _pump(
+      tester,
+      FlowFieldEditor(
+        spec: _spec('retry.max', FlowFieldShape.int),
+        current: null,
+        onChanged: (v) => value = v,
+      ),
+    );
+    await tester.enterText(find.byKey(const ValueKey('f:retry.max')), 'abc');
+    await tester.pump();
+    // 发出去会让主机 M1.5 拒掉整批。
+    expect(value, isNull);
+    await tester.enterText(find.byKey(const ValueKey('f:retry.max')), '3');
+    await tester.pump();
+    expect(value, 3);
+  });
+
+  testWidgets('intOrInput 的数字写成 int，引用写成模板串', (tester) async {
+    Object? value;
+    await _pump(
+      tester,
+      FlowFieldEditor(
+        spec: _spec('loop.max', FlowFieldShape.intOrInput, required: true),
+        current: null,
+        onChanged: (v) => value = v,
+      ),
+    );
+    await tester.enterText(find.byKey(const ValueKey('f:loop.max')), '5');
+    await tester.pump();
+    expect(value, 5);
+    await tester.enterText(
+        find.byKey(const ValueKey('f:loop.max')), '{{ inputs.rounds }}');
+    await tester.pump();
+    expect(value, '{{ inputs.rounds }}');
+  });
+
+  testWidgets('outputMap 未编辑的行原样保留结构化值', (tester) async {
+    const original = {
+      'verdict': {
+        'enum': ['pass', 'reject, revise'],
+      },
+      'score': 'int',
+    };
+    Object? value;
+    await _pump(
+      tester,
+      FlowFieldEditor(
+        spec: _spec('task.output', FlowFieldShape.outputMap),
+        current: original,
+        onChanged: (v) => value = v,
+      ),
+    );
+    // 「加一行」会触发一次整表编码；未动过的两行必须原样带回。
+    await tester.tap(find.byKey(const ValueKey('add:task.output')));
+    await tester.pump();
+    expect(value, original);
+  });
+
   testWidgets('intOrInput 能从输入里挑一个引用', (tester) async {
     Object? value;
     await _pump(

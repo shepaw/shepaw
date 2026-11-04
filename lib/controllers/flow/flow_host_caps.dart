@@ -64,14 +64,22 @@ class FlowHostCaps {
     );
   }
 
-  /// 树里没有 `if` 时按「有标记」处理：那样界面不会误伤，等真遇到 `if` 再说。
+  /// 树里出现 `if` 但它的子节点没标 `branch`，就认为这台主机不带标记。
+  /// 必须走遍整棵树：只查第一个 `if` 时，混合标注（旧主机数据 + 新数据）会漏掉
+  /// 没标注的分支，界面一旦对它放开结构操作就会跨分支。
   static bool _branchesLabelled(List<FlowNode> tree) {
-    for (final node in tree) {
-      final found = node.find((n) => n.kind == 'if');
-      if (found == null) continue;
-      if (found.children.isEmpty) continue;
-      return found.children.every((child) => child.branch != null);
+    bool visit(List<FlowNode> nodes) {
+      for (final node in nodes) {
+        if (node.kind == 'if' &&
+            node.children.isNotEmpty &&
+            !node.children.every((child) => child.branch != null)) {
+          return false;
+        }
+        if (node.children.isNotEmpty && !visit(node.children)) return false;
+      }
+      return true;
     }
-    return true;
+
+    return visit(tree);
   }
 }

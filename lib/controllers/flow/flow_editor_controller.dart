@@ -21,9 +21,6 @@ typedef FlowPendingKey = ({String nodeId, String field});
 /// [onNotice]，由界面去配文案。
 ///
 /// **唯一的不变量：状态只在拿到主机回包时才改，从不做乐观更新。**
-///
-/// 由此省掉了回滚代码：主机的 `flow_edit_req` 是整批原子的，整批被拒时定义没
-/// 动过，我们这边也就什么都不用撤 —— 只要把挂起的字段改动留着，下次再发。
 class FlowEditorController extends ChangeNotifier {
   FlowEditorController({
     required this.peerId,
@@ -43,16 +40,11 @@ class FlowEditorController extends ChangeNotifier {
   }
 
   static const Duration _debounceDelay = Duration(milliseconds: 500);
-
-  /// 同字段连续编辑合并成一步 undo 的时间窗。
   static const Duration _coalesceWindow = Duration(seconds: 2);
-  int _lastAdoptMs = 0;
 
   final String peerId;
   final String name;
   final String scope;
-
-  /// 演练每一步的间隔。
   final Duration stepInterval;
 
   final HubFlow _client;
@@ -62,46 +54,56 @@ class FlowEditorController extends ChangeNotifier {
   FlowRehearsalRunner get rehearsal => _rehearsal;
 
   final FlowEditorHistory _history = FlowEditorHistory();
-
-  /// 未保存草稿的本地暂存。为 null 时不做暂存（单测里不给）。
   final FlowDraftStore? draftStore;
 
-  /// 打开时发现了一份没保存的草稿，等界面问用户要不要恢复。
   FlowDraft? _restorableDraft;
   FlowDraft? get restorableDraft => _restorableDraft;
 
   /// 恢复那份草稿（界面问过用户之后）。
-  Future<void> restoreDraft() async {
+  Future<bool> restoreDraft() async {
     final draft = _restorableDraft;
-    if (draft == null) return;
-    _restorableDraft = null;
-    if (draft.yaml.isEmpty) return;
+    if (draft == null) return false;
+    if (draft.yaml.isEmpty) {
+      _restorableDraft = null;
+      return false;
+    }
+    // 主机可能已经前进了好几版：先 flush 再比对版本，别把草稿盖到新版本上。
+    if (!await flush()) return false;
+    if (_disposed) return false;
     final checked = await _client.validate(peerId, draft.yaml);
-    if (_disposed || checked == null) return;
-    // 走 _adopt：草稿也要带树和诊断，不能只换 YAML。
-    _adopt(checked);
+    if (_disposed) return false;
+    if (checked == null || !_adopt(checked)) {
+      _emit(const FlowEditorNotice(FlowEditorNoticeKind.sourceInvalid));
+      return false; // 草稿还在，界面可以再问一次
+    }
+    _restorableDraft = null;
+    _generation++;
+    _pending.clear();
+    _rejected.clear();
+    return true;
   }
 
-  /// 不要那份草稿了。
   void discardDraft() {
     _restorableDraft = null;
-    notifyListeners();
+    _notify();
   }
 
   final Map<FlowPendingKey, Object?> _pending = <FlowPendingKey, Object?>{};
-
-  /// 被主机拒过、用户还没改的那批值。
-  ///
-  /// 值还留在界面上（界面拿它标红），但不再自动拼进后续批次 —— 否则一个坏
-  /// 字段会让之后所有编辑都被拒。用户改了值（[setField]）或撤销后才重发。
   final Map<FlowPendingKey, Object?> _rejected = <FlowPendingKey, Object?>{};
-
-  /// 在途期间来的结构操作。只留最后一批：连点三下「加一步」没必要发三次。
   List<Map<String, dynamic>>? _queuedOps;
 
-  /// 页面已经销毁。所有 `await` 之后都要看它，否则会碰已 dispose 的
-  /// `ChangeNotifier`。
   bool _disposed = false;
+
+  /// 每次 load / 源码 / 撤销 / 恢复草稿都 +1。迟到的回包发现版本变了就丢掉，
+  /// 否则旧请求的结果会把新状态覆盖回去。
+  int _generation = 0;
+
+  /// 在途的那一次 `_commit`。`flush()` 会等它，而不是看到空缓冲就报「都发出去了」。
+  Completer<bool>? _inFlightDone;
+
+  /// 上一次采纳是「同一个字段的单字段批次」，用来决定能否合并 undo。
+  FlowPendingKey? _lastCoalesceKey;
+  int _lastAdoptMs = 0;
 
   /// 界面挂上它来出提示。
   void Function(FlowEditorNotice notice)? onNotice;
@@ -123,13 +125,16 @@ class FlowEditorController extends ChangeNotifier {
   int _nextId = 1;
   Timer? _debounce;
 
+  /// 关页面之后回包仍可能到达：那时只能改数据，不能再 notify（ChangeNotifier
+  /// 已 dispose）。
+  void _notify() {
+    if (!_disposed) notifyListeners();
+  }
+
   // ── 读 ────────────────────────────────────────────────────────────────────
 
   FlowSchema? get schema => _schema;
-
-  /// 这台主机能干什么。新 App 连到旧主机时用它降级，别假设操作一定支持。
   FlowHostCaps get caps => FlowHostCaps.of(_schema, _tree);
-
   String get yaml => _yaml;
   String get baseYaml => _baseYaml;
   int get revision => _revision;
@@ -143,70 +148,69 @@ class FlowEditorController extends ChangeNotifier {
   bool get loadFailed => _loadFailed;
   bool get saving => _saving;
   bool get offline => _offline;
-
-  /// 有在途的事：编辑、保存、演练。界面上的手势在这个期间置灰。
   bool get busy => _busy || _saving || _rehearsal.active;
-
   bool get hasPending => _pending.isNotEmpty;
-
-  /// 有改了但被主机拒着、还没发出去的字段。
   bool get hasRejected => _rejected.isNotEmpty;
-
-  /// 有没保存的东西：草稿和库里的不一致，或者有改了还没发出去的字段。
   bool get dirty =>
       _yaml != _baseYaml || _pending.isNotEmpty || _rejected.isNotEmpty;
-
   int get errorCount => _diagnostics.where((d) => d.isError).length;
-
-  /// 在途请求期间不给撤销：会和回包交错。
   bool get canUndo => !busy && _history.canUndo;
   bool get canRedo => !busy && _history.canRedo;
-
   FlowDiff? get diff => _showDiff ? _diff : null;
   bool get showDiff => _showDiff;
 
   // ── 载入 ──────────────────────────────────────────────────────────────────
 
   Future<void> load() => _load();
-
-  /// 重新拉一份（群主改完之后）。撤销栈也一起重置：本地草稿被覆盖了。
   Future<void> reload() => _load();
 
   Future<void> _load() async {
+    final generation = ++_generation;
     _loading = true;
     _loadFailed = false;
-    notifyListeners();
+    _notify();
     final got = await _client.get(peerId, name, scope: scope);
     final schema = await _client.schema(peerId);
-    if (_disposed) return;
+    if (_disposed || generation != _generation) return;
     if (got == null || schema == null) {
       _loading = false;
       _loadFailed = true;
       _offline = true;
-      notifyListeners();
+      _notify();
       return;
     }
     // `flow_get_resp` 不带树，得再校验一次才有节点树和诊断。
     final checked = await _client.validate(peerId, got.yaml);
-    if (_disposed) return;
+    if (_disposed || generation != _generation) return;
+    if (checked == null) {
+      // 拿不到树就别装作加载成功：否则后续编辑会算在一份不存在的树上。
+      _loading = false;
+      _loadFailed = true;
+      _offline = true;
+      _emit(const FlowEditorNotice(FlowEditorNoticeKind.hostNoReply));
+      _notify();
+      return;
+    }
     _loading = false;
     _offline = false;
     _schema = schema;
     _revision = got.revision;
-    _baseYaml = checked?.yaml.isNotEmpty == true ? checked!.yaml : got.yaml;
+    _baseYaml = checked.yaml.isNotEmpty ? checked.yaml : got.yaml;
     _yaml = _baseYaml;
-    _tree = checked?.tree ?? const [];
-    _diagnostics = checked?.diagnostics ?? const [];
+    _tree = checked.tree;
+    _diagnostics = checked.diagnostics;
     _pending.clear();
+    _rejected.clear();
+    _queuedOps = null;
     _diff = null;
     _history.clear();
-    // 打开时先看有没有上次没保存的：有就交给界面去问用户要不要恢复。
+    _resetCoalesce();
     await _lookForDraft();
+    if (_disposed || generation != _generation) return;
     _stateRev++;
-    notifyListeners();
+    _notify();
   }
 
-  /// 找暂存里的草稿。版本对得上、且确实和库里不一样才值得问。
   Future<void> _lookForDraft() async {
     final store = draftStore;
     if (store == null) return;
@@ -215,6 +219,7 @@ class FlowEditorController extends ChangeNotifier {
       scope: scope,
       name: name,
     );
+    if (_disposed) return;
     if (draft == null) return;
     if (draft.yaml.isEmpty || draft.yaml == _baseYaml) {
       await _clearDraft();
@@ -225,11 +230,6 @@ class FlowEditorController extends ChangeNotifier {
 
   // ── 改 ────────────────────────────────────────────────────────────────────
 
-  /// 改节点上的一个字段。
-  ///
-  /// [immediate] 为 false（默认）时先落在本地缓冲里，500ms 后再发 —— 提示词
-  /// 这种字段一个字一个往返会把人卡住。非标量（列表、映射）和结构操作走
-  /// [applyOps]，本身是离散手势，不用防抖。
   void setField(
     String nodeId,
     String field,
@@ -238,9 +238,8 @@ class FlowEditorController extends ChangeNotifier {
   }) {
     final key = (nodeId: nodeId, field: field);
     _pending[key] = value;
-    // 用户又动了这个字段，之前被拒的那次就作废，重新参与发送。
     _rejected.remove(key);
-    notifyListeners();
+    _notify();
     if (immediate) {
       unawaited(flush());
       return;
@@ -248,108 +247,148 @@ class FlowEditorController extends ChangeNotifier {
     _rearmDebounce();
   }
 
-  /// 改定义头里的字段（`inputs` / `limits` / `description`…）。
   void setHeader(String field, Object? value) =>
       setField('', field, value, immediate: true);
+
+  /// 一次改多个头部字段。头部表单用：五个字段要在一个原子批次里发，不能拆成
+  /// 五次 `setHeader` 各自 `flush()`（会变成两个往返，切页面还会丢后四个）。
+  Future<bool> setHeaders(Map<String, Object?> fields) {
+    for (final entry in fields.entries) {
+      final key = (nodeId: '', field: entry.key);
+      _pending[key] = entry.value;
+      _rejected.remove(key);
+    }
+    _notify();
+    _debounce?.cancel();
+    _debounce = null;
+    return flush();
+  }
 
   void _rearmDebounce() {
     _debounce?.cancel();
     _debounce = Timer(_debounceDelay, () => unawaited(flush()));
   }
 
-  /// 把挂起的字段改动发出去。切选中、保存、演练、撤销、关页面前都要调一次。
-  ///
-  /// 返回这次调用有没有把改动都发出去：返回 false 时 [save] / [rehearse] /
-  /// [undo] 应当中止，否则会拿旧内容去保存还提示「已保存」。
   Future<bool> flush() => _commit(const []);
-
-  /// 结构操作（增 / 删 / 挪 / 包 / 拆 / 改类型）。挂起的字段改动先发。
   Future<bool> applyOps(List<Map<String, dynamic>> ops) => _commit(ops);
 
+  /// 把挂起的字段改动 + 结构操作合成一批发出去。
   Future<bool> _commit(List<Map<String, dynamic>> extra) async {
-    final ops = <Map<String, dynamic>>[
-      ..._pendingOps(),
-      ...extra,
-    ];
-    if (ops.isEmpty) return !hasRejected;
-    if (_busy) {
-      // 在途期间不丢东西：结构操作进单槽队列（只留最后一个），挂起的字段会
-      // 自然合并进下一次；防抖定时器重新排一次，别让它刚好落在在途窗口里。
-      if (extra.isNotEmpty) _queuedOps = extra;
+    // 有在途请求时不能因为「缓冲空」就报成功 —— save / rehearse / undo 等着这个
+    // 结果决定要不要继续。等它结束再重新评估。
+    final inFlight = _inFlightDone;
+    if (inFlight != null) {
+      if (extra.isNotEmpty) _queuedOps = List<Map<String, dynamic>>.of(extra);
       _rearmDebounce();
-      return false;
+      final ok = await inFlight.future;
+      if (!ok) return false;
+      return _commit(const []);
     }
+
+    final sent = <FlowPendingKey, Object?>{};
+    final ops = <Map<String, dynamic>>[];
+    for (final entry in _pending.entries) {
+      if (_rejected.containsKey(entry.key)) continue;
+      if (_isRequired(entry.key) && entry.value == null) continue;
+      sent[entry.key] = entry.value;
+      ops.add(entry.key.nodeId.isEmpty
+          ? FlowEditOps.header(entry.key.field, entry.value)
+          : FlowEditOps.set(entry.key.nodeId, entry.key.field, entry.value));
+    }
+    final queued = _queuedOps;
+    _queuedOps = null;
+    if (queued != null) ops.addAll(queued);
+    ops.addAll(extra);
+
+    // 被拒的字段是故意不发的；没有别的东西要发时就该成功返回，否则
+    // save / undo / rehearsal 会被永久卡死。
+    if (ops.isEmpty) return true;
+
+    final done = Completer<bool>();
+    _inFlightDone = done;
     _busy = true;
-    notifyListeners();
-    // 快照这批值：回包后只清掉「值没再变过」的 key。在途期间用户打的字不能
-    // 被清掉 —— 以前是 await 之后整表 clear，会把那几下敲掉。
-    final sent = Map<FlowPendingKey, Object?>.from(_pending);
+    _notify();
+    bool result = false;
+    try {
+      result = await _doCommit(ops, sent, extra.isEmpty && queued == null);
+    } catch (_) {
+      result = false;
+    } finally {
+      _busy = false;
+      _inFlightDone = null;
+      _notify();
+    }
+    done.complete(result);
+    return result;
+  }
+
+  Future<bool> _doCommit(
+    List<Map<String, dynamic>> ops,
+    Map<FlowPendingKey, Object?> sent,
+    bool singleFieldBatch,
+  ) async {
+    final generation = _generation;
     final result = await _client.edit(peerId, _yaml, ops);
-    _busy = false;
-    if (_disposed) return false;
+    // 迟到回包：load / 源码 / 撤销已经换了状态，丢掉它，别把旧结果盖回去。
+    if (generation != _generation) return false;
+
     if (!result.reachable) {
-      // 定义没变，挂起的改动留着，等下次再发。
       _offline = true;
       _emit(const FlowEditorNotice(FlowEditorNoticeKind.hostNoReply));
-      notifyListeners();
       return false;
     }
     final checked = result.result;
     if (checked == null) {
-      // 整批被拒：主机没动定义，我们也不动。这一批标为 rejected —— 值还留在
-      // 输入框里，但不再自动拼进后续批次，否则一个坏字段会让之后所有结构
-      // 操作都被拒。用户改值或撤销后才重发。
+      // 整批被拒：状态没动。只把**本批实际发出去的**字段标成 rejected；之前被拒、
+      // 这次没发的字段要留着，否则一次无关的成功提交会把它们清掉。
       _rejected.addEntries(sent.entries);
       _emit(FlowEditorNotice(FlowEditorNoticeKind.editRejected,
           raw: result.error));
-      notifyListeners();
       return false;
     }
     _offline = false;
-    // 只改了一个字段时，这次改动可以和上一步合并（打一段提示词算一步）。
-    _adopt(checked, coalesce: extra.isEmpty && sent.length == 1);
+    final coalesceKey =
+        singleFieldBatch && sent.length == 1 ? sent.keys.single : null;
+    // `_adopt` 拒收（空 yaml 等）时不改状态，也不能清挂起缓冲。
+    if (!_adopt(checked, coalesceKey: coalesceKey)) {
+      _emit(const FlowEditorNotice(FlowEditorNoticeKind.sourceInvalid));
+      return false;
+    }
     for (final entry in sent.entries) {
       if (_pending[entry.key] == entry.value) _pending.remove(entry.key);
     }
     _rejected.removeWhere((key, _) => !_pending.containsKey(key));
     if (_showDiff) unawaited(_refreshDiff());
-    // 续发排队的那批结构操作。
-    final queued = _queuedOps;
-    _queuedOps = null;
-    if (queued != null) return _commit(queued);
+    // 关页面之后才到的回包也要落草稿，否则最后敲的字会丢。
+    await _persistDraft();
     return true;
   }
 
-  List<Map<String, dynamic>> _pendingOps() {
-    final ops = <Map<String, dynamic>>[];
-    for (final entry in _pending.entries) {
-      final key = entry.key;
-      // 被主机拒过、用户还没改的字段不再自动重发。
-      if (_rejected.containsKey(key)) continue;
-      if (key.nodeId.isEmpty) {
-        ops.add(FlowEditOps.header(key.field, entry.value));
-      } else {
-        ops.add(FlowEditOps.set(key.nodeId, key.field, entry.value));
-      }
-    }
-    return ops;
+  /// 主机解析会直接失败的三个必填路径（`loop.max` / `if.cond` / `map.over`），
+  /// 再加 `task.prompt`：清空时绝不发 null。
+  bool _isRequired(FlowPendingKey key) {
+    if (key.nodeId.isEmpty) return false;
+    return const {
+      'loop.max',
+      'if.cond',
+      'map.over',
+      'task.prompt',
+    }.contains(key.field);
   }
 
   /// 采纳主机回来的三元组。这是唯一改状态的地方。
-  ///
-  /// 空 YAML 一律拒收：主机在 YAML 语法错时会回 `yaml:''` 加空诊断，照单采纳
-  /// 会把草稿换成空串。
-  bool _adopt(FlowValidation checked, {bool coalesce = false}) {
+  bool _adopt(FlowValidation checked, {FlowPendingKey? coalesceKey}) {
     if (checked.yaml.trim().isEmpty) return false;
     if (!checked.ok && checked.tree.isEmpty && checked.diagnostics.isEmpty) {
       return false;
     }
     final now = DateTime.now().millisecondsSinceEpoch;
-    // 连着改同一个字段（打一段提示词）并进上一步，别把 40 步 undo 用光。
-    final merge = coalesce &&
+    final merge = coalesceKey != null &&
+        _lastCoalesceKey == coalesceKey &&
         _lastAdoptMs > 0 &&
         now - _lastAdoptMs < _coalesceWindow.inMilliseconds;
     _lastAdoptMs = now;
+    _lastCoalesceKey = coalesceKey;
     _history.record(
       FlowEditorSnapshot(
         yaml: _yaml,
@@ -362,12 +401,15 @@ class FlowEditorController extends ChangeNotifier {
     _tree = checked.tree;
     _diagnostics = checked.diagnostics;
     _stateRev++;
-    notifyListeners();
-    unawaited(_persistDraft());
+    _notify();
     return true;
   }
 
-  /// 落一份草稿。切流程 / 杀进程之后还能找回来。
+  void _resetCoalesce() {
+    _lastCoalesceKey = null;
+    _lastAdoptMs = 0;
+  }
+
   Future<void> _persistDraft() async {
     final store = draftStore;
     if (store == null || !dirty) return;
@@ -386,11 +428,9 @@ class FlowEditorController extends ChangeNotifier {
     await store.clear(peerId: peerId, scope: scope, name: name);
   }
 
-  /// 用户在源码面板里改完，点「用这份」。
-  ///
-  /// 走同一条 [_adopt]，所以树和诊断一定一起刷新 —— 以前这里只换 YAML，界面
-  /// 上的树和诊断还是改之前的，是个真 bug。
   Future<bool> applySource(String text, FlowValidation? prechecked) async {
+    if (!await flush()) return false;
+    if (_disposed) return false;
     final checked = prechecked ?? await _client.validate(peerId, text);
     if (_disposed) return false;
     if (checked == null) {
@@ -401,56 +441,73 @@ class FlowEditorController extends ChangeNotifier {
       _emit(const FlowEditorNotice(FlowEditorNoticeKind.sourceInvalid));
       return false;
     }
+    _generation++;
+    _restorableDraft = null;
+    _resetCoalesce();
     _pending.clear();
     _rejected.clear();
+    _queuedOps = null;
     if (_showDiff) unawaited(_refreshDiff());
+    await _persistDraft();
     return true;
   }
 
-  /// 开一次演练。挂起的改动先落定，否则演练跑的是旧内容。
   Future<bool> startRehearsal() async {
     if (!await flush()) return false;
     if (_disposed) return false;
-    await _rehearsal.start(_yaml);
-    return true;
+    return _rehearsal.start(_yaml);
   }
 
-  Future<void> save() async {
+  Future<bool> save() async {
     if (errorCount > 0) {
       _emit(FlowEditorNotice(FlowEditorNoticeKind.hasProblems,
           count: errorCount));
-      return;
+      return false;
     }
-    // 没发出去的改动不能算数：否则存的是旧内容，还提示「已保存」。
-    if (!await flush()) return;
-    if (_disposed) return;
+    if (!await flush()) return false;
+    if (_disposed) return false;
+    // 还有被主机拒着的字段：存当前 yaml 会把用户在表单里看到的值丢掉。
+    if (hasRejected) {
+      _emit(const FlowEditorNotice(FlowEditorNoticeKind.editRejected,
+          raw: '有字段被主机拒绝，改好再保存'));
+      return false;
+    }
     _saving = true;
-    notifyListeners();
-    final result = await _client.save(peerId, name, _yaml, scope: scope);
+    _notify();
+    final savedYaml = _yaml;
+    final result = await _client.save(
+      peerId,
+      name,
+      savedYaml,
+      scope: scope,
+      baseRevision: _revision,
+    );
     _saving = false;
-    if (_disposed) return;
+    if (_disposed) return false;
     if (!result.ok) {
       _emit(result.reachable
           ? FlowEditorNotice(FlowEditorNoticeKind.saveRejected,
               raw: result.error)
           : const FlowEditorNotice(FlowEditorNoticeKind.hostNoReply));
-      notifyListeners();
-      return;
+      _notify();
+      return false;
     }
     final flow = result.data['flow'];
     final latest = flow is Map ? (flow['latest'] as num?)?.toInt() : null;
-    _baseYaml = _yaml;
+    _baseYaml = savedYaml;
     _revision = latest ?? _revision + 1;
     _diff = null;
     _showDiff = false;
+    _resetCoalesce();
     _emit(FlowEditorNotice(FlowEditorNoticeKind.saved, count: _revision));
-    notifyListeners();
+    _notify();
     await _clearDraft();
+    return true;
   }
 
   Future<void> toggleDiff() async {
     _showDiff = !_showDiff;
-    notifyListeners();
+    _notify();
     if (_showDiff) await _refreshDiff();
   }
 
@@ -458,12 +515,11 @@ class FlowEditorController extends ChangeNotifier {
     final got = await _client.diff(peerId, fromYaml: _baseYaml, toYaml: _yaml);
     if (_disposed) return;
     _diff = got.diff;
-    notifyListeners();
+    _notify();
   }
 
   Future<void> undo() async {
-    if (_busy) return;
-    // 先把挂起的改动落定，否则撤销会和回包交错。
+    if (busy) return;
     if (!await flush()) return;
     final previous = _history.undo(_snapshot());
     if (previous == null) return;
@@ -471,7 +527,7 @@ class FlowEditorController extends ChangeNotifier {
   }
 
   Future<void> redo() async {
-    if (_busy) return;
+    if (busy) return;
     if (!await flush()) return;
     final next = _history.redo(_snapshot());
     if (next == null) return;
@@ -489,21 +545,22 @@ class FlowEditorController extends ChangeNotifier {
     _tree = snapshot.tree;
     _diagnostics = snapshot.diagnostics;
     _pending.clear();
-    // 撤销回到之前的状态：之前被拒的字段已经不在草稿里了，约束也跟着解除。
     _rejected.clear();
+    _queuedOps = null;
+    _generation++;
+    _resetCoalesce();
     _stateRev++;
-    notifyListeners();
-    // 快照里没有树（不该发生）：补一次校验，别让界面停在空树上。
+    _notify();
     if (_tree.isEmpty && _yaml.isNotEmpty) {
       final checked = await _client.validate(peerId, _yaml);
       if (_disposed || checked == null) return;
       _tree = checked.tree;
       _diagnostics = checked.diagnostics;
-      notifyListeners();
+      _notify();
     }
+    await _persistDraft();
   }
 
-  /// 生成一个新的、树里没有的节点 id。
   String freshId(String prefix) {
     String id;
     do {
@@ -514,13 +571,13 @@ class FlowEditorController extends ChangeNotifier {
 
   void _emit(FlowEditorNotice notice) => onNotice?.call(notice);
 
-  void _onRehearsalChanged() => notifyListeners();
+  void _onRehearsalChanged() => _notify();
 
   @override
   void dispose() {
-    // 关页面前把挂起的改动发一次，并留一份草稿；不等结果 —— dispose 是同步的。
-    unawaited(_commit(const []));
-    unawaited(_persistDraft());
+    // 关页面前把挂起的改动发一次。回包即使晚到也会走 `_doCommit` 落草稿（见
+    // 那里对 `_disposed` 的处理），所以这里不再并发写一份旧 YAML 的草稿。
+    unawaited(flush());
     _disposed = true;
     _debounce?.cancel();
     _debounce = null;

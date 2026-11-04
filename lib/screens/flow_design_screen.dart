@@ -49,6 +49,7 @@ class FlowDesignScreen extends StatefulWidget {
     this.talk,
     this.draftStore,
     this.onDirtyChanged,
+    this.onControllerReady,
   });
 
   final String peerId;
@@ -61,6 +62,10 @@ class FlowDesignScreen extends StatefulWidget {
 
   /// 草稿状态变了通知外层（工作台要在切流程前拦一下）。
   final void Function(bool dirty)? onDirtyChanged;
+
+  /// 把 controller 交给工作台，好让「开跑对话框」能读到 dirty 并请求保存。销毁时
+  /// 回传 null，免得工作台拿着一个已 dispose 的 controller。
+  final void Function(FlowEditorController? controller)? onControllerReady;
 
   /// 演练动画每一步的间隔。
   final Duration stepInterval;
@@ -123,6 +128,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     );
     _controller.onNotice = _notice;
     _controller.addListener(_reportDirty);
+    widget.onControllerReady?.call(_controller);
     unawaited(_controller.load());
   }
 
@@ -131,6 +137,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     _composer.dispose();
     _controller.removeListener(_reportDirty);
     widget.onDirtyChanged?.call(false);
+    widget.onControllerReady?.call(null);
     _controller.dispose();
     super.dispose();
   }
@@ -224,10 +231,10 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     final out = <String, int>{};
     for (final d in _controller.diagnostics) {
       if (!d.isError) continue;
-      final at = d.at;
-      if (at.isEmpty) continue;
-      final id = at.split('/').last;
-      out[id] = (out[id] ?? 0) + 1;
+      // 用和面板同一个解析规则：头部 / 全局诊断不该算到某个假节点 id 上。
+      final target = resolveDiagnostic(d, _controller.tree);
+      if (target is! NodeTarget) continue;
+      out[target.nodeId] = (out[target.nodeId] ?? 0) + 1;
     }
     return out;
   }
@@ -246,8 +253,11 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
           _selectedId = nodeId;
         });
       case HeaderTarget():
+        // 头部字段的问题直接跳到头部表单（M5 已经做了）。
+        if (canEdit && _controller.caps.canEditHeader) {
+          openFlowHeaderForm(context, _controller)?.call();
+        }
       case GlobalTarget():
-        // 头部表单还没做（M5），先只把诊断留在面板上。
         break;
     }
   }
@@ -569,32 +579,36 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
                         style: Theme.of(context).textTheme.bodySmall),
                   ),
                 ),
-              if (c.revision > 1)
+              // 手机只读：所有写入口都用同一个 canEdit 判定，别让「头部设置」
+              // 绕过它把 header op 发出去。
+              if (canEdit && c.revision > 1)
                 IconButton(
                   key: const ValueKey('history-open'),
                   tooltip: l10n.flow_historyOpen,
                   icon: const Icon(Icons.history),
                   onPressed: () => unawaited(_openHistory()),
                 ),
-              if (c.caps.canEditHeader)
+              if (canEdit && c.caps.canEditHeader)
                 IconButton(
                   key: const ValueKey('header-open'),
                   tooltip: l10n.flow_headerOpen,
                   icon: const Icon(Icons.tune),
                   onPressed: openFlowHeaderForm(context, c),
                 ),
-              IconButton(
-                key: const ValueKey('undo'),
-                tooltip: l10n.flow_undo,
-                icon: const Icon(Icons.undo),
-                onPressed: c.canUndo ? c.undo : null,
-              ),
-              IconButton(
-                key: const ValueKey('redo'),
-                tooltip: l10n.flow_redo,
-                icon: const Icon(Icons.redo),
-                onPressed: c.canRedo ? c.redo : null,
-              ),
+              if (canEdit)
+                IconButton(
+                  key: const ValueKey('undo'),
+                  tooltip: l10n.flow_undo,
+                  icon: const Icon(Icons.undo),
+                  onPressed: c.canUndo ? c.undo : null,
+                ),
+              if (canEdit)
+                IconButton(
+                  key: const ValueKey('redo'),
+                  tooltip: l10n.flow_redo,
+                  icon: const Icon(Icons.redo),
+                  onPressed: c.canRedo ? c.redo : null,
+                ),
               IconButton(
                 tooltip: l10n.flow_diffToggle,
                 icon: Icon(Icons.difference_outlined,
@@ -603,21 +617,23 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
                         : null),
                 onPressed: c.loading || c.busy ? null : c.toggleDiff,
               ),
-              IconButton(
-                tooltip: l10n.flow_rehearse,
-                icon: const Icon(Icons.play_circle_outline),
-                onPressed: c.loading || c.busy ? null : c.startRehearsal,
-              ),
-              IconButton(
-                tooltip: l10n.flow_save,
-                icon: c.saving
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.check),
-                onPressed: c.loading || c.busy || !c.dirty ? null : c.save,
-              ),
+              if (canEdit)
+                IconButton(
+                  tooltip: l10n.flow_rehearse,
+                  icon: const Icon(Icons.play_circle_outline),
+                  onPressed: c.loading || c.busy ? null : c.startRehearsal,
+                ),
+              if (canEdit)
+                IconButton(
+                  tooltip: l10n.flow_save,
+                  icon: c.saving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.check),
+                  onPressed: c.loading || c.busy || !c.dirty ? null : c.save,
+                ),
             ],
           ),
           body: Column(
@@ -700,6 +716,9 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
               onMoveDown: (row) => _move(row, up: false),
               onDelete: _delete,
               onMenu: _rowMenu,
+              onLongPressRow: canTalk
+                  ? (row) => _toggleSelected(row.node)
+                  : null,
             ),
           )
         else
@@ -785,7 +804,8 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   ///
   /// 改完同样走 `flow_validate_req`（主机判），有错误就不让保存。手机上只读。
   Widget? _yamlBar(AppLocalizations l10n) {
-    final wide = MediaQuery.of(context).size.width >= 900;
+    // 和 canEdit 用同一个判定：桌面 + 主机支持；手机只读。
+    final editable = canEdit && MediaQuery.of(context).size.width >= 900;
     return SafeArea(
       top: false,
       child: Column(
@@ -808,7 +828,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                 child: FlowYamlEditor(
                   yaml: _controller.yaml,
-                  readOnly: !wide,
+                  readOnly: !editable,
                   validate: (text) =>
                       _controller.client.validate(widget.peerId, text),
                   applyLabel: l10n.flow_sourceApply,

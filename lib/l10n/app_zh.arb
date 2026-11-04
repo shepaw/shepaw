@@ -5577,6 +5577,7 @@
   "flow_startSaveFirst": "先保存成新一版再跑",
   "flow_startInputRequired": "「{name}」是必填的",
   "flow_startRoleUnbound": "角色「{role}」还没选 Agent",
+  "flow_startRolesAutoBound": "由群成员角色自动绑定",
   "@flow_startTitle": {
     "placeholders": {
       "name": { "type": "String" }

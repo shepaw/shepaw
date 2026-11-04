@@ -13,12 +13,18 @@ class FlowExecutorField extends StatelessWidget {
   const FlowExecutorField({
     super.key,
     required this.node,
+    required this.current,
     required this.roles,
     required this.onChanged,
     this.onPickAgent,
   });
 
   final FlowNode node;
+
+  /// 当前选中的执行者。必须由调用方持有状态并回传 —— 这个 widget 只负责展示，
+  /// 不能从不变的 `node.fields` 里重算，否则点芯片永远不改变选中态。
+
+  final FlowExecutor current;
 
   /// 定义头里的角色名（用来填下拉）。拿不到时下拉为空，仍可手输。
   final List<String> roles;
@@ -33,7 +39,7 @@ class FlowExecutorField extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final current = FlowExecutor.of(node.fields);
+    final selected = current;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -50,31 +56,38 @@ class FlowExecutorField extends StatelessWidget {
             ChoiceChip(
               key: const ValueKey('exec-role'),
               label: Text(l10n.flow_executorRole),
-              selected: current.mode == FlowExecutorMode.role,
-              onSelected: (_) => onChanged(
-                FlowExecutor.role(current.value ?? _firstRole()),
-              ),
+              selected: selected.mode == FlowExecutorMode.role,
+              // 切模式时不能沿用另一个模式的值（否则角色名会被当成 Agent id）。
+              onSelected: (_) => onChanged(FlowExecutor.role(
+                selected.mode == FlowExecutorMode.role
+                    ? (selected.value ?? _firstRole())
+                    : _firstRole(),
+              )),
             ),
             ChoiceChip(
               key: const ValueKey('exec-agent'),
               label: Text(l10n.flow_executorAgent),
-              selected: current.mode == FlowExecutorMode.agent,
-              onSelected: (_) => onChanged(FlowExecutor.agent(current.value ?? '')),
+              selected: selected.mode == FlowExecutorMode.agent,
+              onSelected: (_) => onChanged(FlowExecutor.agent(
+                selected.mode == FlowExecutorMode.agent
+                    ? (selected.value ?? '')
+                    : '',
+              )),
             ),
             ChoiceChip(
               key: const ValueKey('exec-she'),
               label: Text(l10n.flow_executorShe),
-              selected: current.mode == FlowExecutorMode.she,
+              selected: selected.mode == FlowExecutorMode.she,
               onSelected: (_) => onChanged(FlowExecutor.she),
             ),
           ],
         ),
         const SizedBox(height: 8),
-        switch (current.mode) {
+        switch (selected.mode) {
           FlowExecutorMode.role => _RolePicker(
               key: const ValueKey('exec-value'),
               roles: roles,
-              current: current.value,
+              current: selected.value,
               onChanged: (v) => onChanged(FlowExecutor.role(v)),
             ),
           FlowExecutorMode.agent => ListTile(
@@ -82,11 +95,11 @@ class FlowExecutorField extends StatelessWidget {
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.smart_toy_outlined),
               title: Text(
-                current.value?.isNotEmpty == true
-                    ? current.value!
+                selected.value?.isNotEmpty == true
+                    ? selected.value!
                     : l10n.flow_executorPickAgent,
                 style: theme.textTheme.bodyMedium?.copyWith(
-                  color: current.value?.isNotEmpty == true
+                  color: selected.value?.isNotEmpty == true
                       ? null
                       : scheme.onSurfaceVariant,
                 ),
@@ -94,7 +107,7 @@ class FlowExecutorField extends StatelessWidget {
               trailing: const Icon(Icons.chevron_right),
               onTap: () async {
                 final picked = await onPickAgent?.call();
-                if (picked == null || picked.isEmpty) return;
+                if (picked == null || picked.isEmpty || !context.mounted) return;
                 onChanged(FlowExecutor.agent(picked));
               },
             ),

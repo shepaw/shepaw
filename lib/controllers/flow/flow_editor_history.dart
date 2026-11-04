@@ -40,13 +40,14 @@ class FlowEditorHistory {
   /// 改动并进上一步。打一段提示词会触发好几次防抖发送，不合并的话 40 步 undo
   /// 瞬间就用完了。
   void record(FlowEditorSnapshot snapshot, {bool coalesce = false}) {
+    // 有了新的改动，之前"重做"的那条分支就作废了。这一步必须在合并早退之前 ——
+    // 否则 undo 之后接着打字，redo 会把刚撤销的编辑复活。
+    _future.clear();
     if (coalesce && _past.isNotEmpty) return;
     _past.add(snapshot);
     if (_past.length > limit) {
       _past.removeAt(0);
     }
-    // 有了新的改动，之前"重做"的那条分支就作废了。
-    _future.clear();
   }
 
   /// 撤销：把 [current] 推到将来，返回要退回到的那一步。

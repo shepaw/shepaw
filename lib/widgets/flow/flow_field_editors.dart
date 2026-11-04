@@ -109,11 +109,12 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
       case FlowFieldShape.text:
         value = _scalar.text.trim().isEmpty ? null : _scalar.text;
       case FlowFieldShape.int:
-        final raw = _scalar.text.trim();
-        value = raw.isEmpty ? null : (int.tryParse(raw) ?? raw);
+        // 非数字绝不发出去：主机 M1.5 会因解析失败拒掉**整批**，连带把一起改的
+        // 其他字段全标成 rejected。改成不发（界面标红）。
+        value = _numberOrNull(_scalar.text.trim());
       case FlowFieldShape.intOrInput:
-        final raw = _scalar.text.trim();
-        value = raw.isEmpty ? null : raw;
+        // 数字写成 int；引用写成 "{{ inputs.x }}"；别的都不发。
+        value = _intOrInputOrNull(_scalar.text.trim());
       case FlowFieldShape.boolean:
         value = _boolean;
       case FlowFieldShape.enumOf:
@@ -149,6 +150,21 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
         value = map.isEmpty ? null : map;
     }
     widget.onChanged(value);
+  }
+
+  static int? _numberOrNull(String raw) {
+    if (raw.isEmpty) return null;
+    return int.tryParse(raw);
+  }
+
+  static Object? _intOrInputOrNull(String raw) {
+    if (raw.isEmpty) return null;
+    final n = int.tryParse(raw);
+    if (n != null) return n;
+    if (RegExp(r'^\{\{\s*inputs\.[A-Za-z0-9_.-]+\s*\}\}$').hasMatch(raw)) {
+      return raw;
+    }
+    return null;
   }
 
   /// 插入引用到光标处。
@@ -298,9 +314,11 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
     switch (widget.spec.shape) {
       case FlowFieldShape.string:
       case FlowFieldShape.text:
-      case FlowFieldShape.int:
-      case FlowFieldShape.intOrInput:
         return _scalar.text.trim().isEmpty;
+      case FlowFieldShape.int:
+        return _numberOrNull(_scalar.text.trim()) == null;
+      case FlowFieldShape.intOrInput:
+        return _intOrInputOrNull(_scalar.text.trim()) == null;
       case FlowFieldShape.boolean:
         return _boolean == null;
       case FlowFieldShape.enumOf:
@@ -335,7 +353,7 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
         ),
       ),
     );
-    if (picked == null) return;
+    if (picked == null || !mounted) return;
     setState(() => _insertRef(picked));
   }
 
@@ -487,6 +505,7 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
         children: [
           for (var i = 0; i < _outputs.length; i++)
             _OutputRowTile(
+              key: ObjectKey(_outputs[i]),
               path: widget.spec.path,
               row: _outputs[i],
               index: i,
@@ -530,10 +549,15 @@ class _Pair {
 class _OutputRow {
   _OutputRow(String key, {this.isEnum = false, this.type = 'string'})
       : key = TextEditingController(text: key),
-        values = TextEditingController();
+        values = TextEditingController(),
+        original = null;
 
+  /// 从 YAML 读进来的原始值。没动过就原样写回 —— 否则任意一行的编辑都会把
+  /// 整张 output 表重编码，丢掉额外键、把含逗号的枚举项拆开、把结构化值压成
+  /// `'string'`。
   _OutputRow.from(String key, Object? value)
       : key = TextEditingController(text: key),
+        original = value,
         isEnum = value is Map && value.containsKey('enum'),
         values = TextEditingController(
           text: value is Map
@@ -544,17 +568,21 @@ class _OutputRow {
 
   final TextEditingController key;
   final TextEditingController values;
+  final Object? original;
   bool isEnum;
   String type;
+  bool dirty = false;
 
-  Object encode() => isEnum
-      ? {
-          'enum': [
-            for (final v in values.text.split(','))
-              if (v.trim().isNotEmpty) v.trim(),
-          ],
-        }
-      : type;
+  Object encode() {
+    if (!dirty && original != null) return original!;
+    if (!isEnum) return type;
+    return {
+      'enum': [
+        for (final v in values.text.split(','))
+          if (v.trim().isNotEmpty) v.trim(),
+      ],
+    };
+  }
 
   void dispose() {
     key.dispose();
@@ -564,6 +592,7 @@ class _OutputRow {
 
 class _OutputRowTile extends StatefulWidget {
   const _OutputRowTile({
+    super.key,
     required this.path,
     required this.row,
     required this.index,
@@ -584,10 +613,23 @@ class _OutputRowTile extends StatefulWidget {
 }
 
 class _OutputRowTileState extends State<_OutputRowTile> {
+  /// 任何编辑都要标脏，否则 `encode()` 会一直返回原始值。
+  void _edited([VoidCallback? change]) {
+    setState(() {
+      widget.row.dirty = true;
+      change?.call();
+      widget.onChanged();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final row = widget.row;
     final l10n = widget.l10n;
+    final knownTypes = ['string', 'int', 'bool', 'number', 'object'];
+    // YAML 里可能有这五种之外的类型串：不补进 items 会让 SDK 的
+    // DropdownButtonFormField 断言崩溃。
+    final types = {...knownTypes, if (row.type.isNotEmpty) row.type}.toList();
     return Row(
       children: [
         Expanded(
@@ -596,7 +638,7 @@ class _OutputRowTileState extends State<_OutputRowTile> {
             controller: row.key,
             decoration:
                 InputDecoration(labelText: l10n.flow_fieldKey, isDense: true),
-            onChanged: (_) => widget.onChanged(),
+            onChanged: (_) => _edited(),
           ),
         ),
         const SizedBox(width: 8),
@@ -611,9 +653,8 @@ class _OutputRowTileState extends State<_OutputRowTile> {
               DropdownMenuItem<String>(
                   value: 'enum', child: Text(l10n.flow_fieldEnum)),
             ],
-            onChanged: (v) => setState(() {
+            onChanged: (v) => _edited(() {
               row.isEnum = v == 'enum';
-              widget.onChanged();
             }),
           ),
         ),
@@ -625,18 +666,17 @@ class _OutputRowTileState extends State<_OutputRowTile> {
                   controller: row.values,
                   decoration: InputDecoration(
                       labelText: l10n.flow_fieldEnumValues, isDense: true),
-                  onChanged: (_) => widget.onChanged(),
+                  onChanged: (_) => _edited(),
                 )
               : DropdownButtonFormField<String>(
                   initialValue: row.type,
                   isDense: true,
                   items: [
-                    for (final t in ['string', 'int', 'bool', 'number', 'object'])
+                    for (final t in types)
                       DropdownMenuItem<String>(value: t, child: Text(t)),
                   ],
-                  onChanged: (v) => setState(() {
+                  onChanged: (v) => _edited(() {
                     row.type = v ?? 'string';
-                    widget.onChanged();
                   }),
                 ),
         ),

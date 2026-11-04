@@ -9512,6 +9512,10 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get flow_startRolesAutoBound =>
+      'Bound automatically from group members';
+
+  @override
   String flow_outlineDeleteBody(String id) {
     return 'Delete `$id` and everything under it.';
   }

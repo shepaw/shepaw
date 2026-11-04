@@ -34,7 +34,10 @@ Future<FlowNewRequest?> showNewFlowDialog(
   return showDialog<FlowNewRequest>(
     context: context,
     builder: (dialogContext) => _NewFlowDialog(
-      existing: existing.map((e) => e.toLowerCase()).toSet(),
+      // 查重不区分大小写，但复制源必须保留原始大小写（流程名允许大写）。
+      existingLower:
+          existing.map((e) => e.toLowerCase()).toSet(),
+      existingNames: existing.toList(),
       templates: templates,
     ),
   );
@@ -42,11 +45,13 @@ Future<FlowNewRequest?> showNewFlowDialog(
 
 class _NewFlowDialog extends StatefulWidget {
   const _NewFlowDialog({
-    required this.existing,
+    required this.existingLower,
+    required this.existingNames,
     required this.templates,
   });
 
-  final Set<String> existing;
+  final Set<String> existingLower;
+  final List<String> existingNames;
   final List<FlowTemplateEntry> templates;
 
   @override
@@ -77,7 +82,7 @@ class _NewFlowDialogState extends State<_NewFlowDialog> {
       case FlowNameProblem.invalid:
         return l10n.flow_newNameInvalid;
     }
-    if (widget.existing.contains(name.toLowerCase())) {
+    if (widget.existingLower.contains(name.toLowerCase())) {
       return l10n.flow_newNameTaken;
     }
     return null;
@@ -132,7 +137,12 @@ class _NewFlowDialogState extends State<_NewFlowDialog> {
                     selected: _source == FlowNewSource.template,
                     onSelected: (_) => setState(() {
                       _source = FlowNewSource.template;
-                      _sourceName ??= widget.templates.first.id;
+                      // 从「复制现有」切过来时旧 sourceName 是流程名，会变成
+                      // 「选了模板却复制了那个流程」。
+                      final ids = widget.templates.map((t) => t.id).toSet();
+                      if (!ids.contains(_sourceName)) {
+                        _sourceName = widget.templates.first.id;
+                      }
                     }),
                   ),
                 ChoiceChip(
@@ -165,7 +175,7 @@ class _NewFlowDialogState extends State<_NewFlowDialog> {
                   isDense: true,
                 ),
                 items: [
-                  for (final name in widget.existing)
+                  for (final name in widget.existingNames)
                     DropdownMenuItem<String>(value: name, child: Text(name)),
                 ],
                 onChanged: (v) => setState(() => _sourceName = v),

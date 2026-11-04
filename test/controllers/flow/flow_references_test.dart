@@ -88,6 +88,28 @@ void main() {
     );
   });
 
+  test('多层嵌套的 map / loop 祖先也能认出来', () {
+    final tree = [
+      FlowNode(
+        key: 'each',
+        id: 'each',
+        kind: 'map',
+        children: [
+          FlowNode(
+            key: 'seq',
+            id: 'seq',
+            kind: 'seq',
+            children: [FlowNode(key: 'work', id: 'work', kind: 'task')],
+          ),
+        ],
+      ),
+    ];
+    expect(
+      FlowReferences.of(tree: tree, currentNodeId: 'work', yaml: 'flow: x\n'),
+      contains('{{ item }}'),
+    );
+  });
+
   test('哪些字段给插入引用按钮', () {
     expect(FlowReferences.supports('task.prompt'), isTrue);
     expect(FlowReferences.supports('when'), isTrue);

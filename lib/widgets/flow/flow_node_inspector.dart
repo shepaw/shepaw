@@ -62,20 +62,27 @@ class _FlowNodeInspectorState extends State<FlowNodeInspector> {
   late final Map<String, Object?> _original;
   final Map<String, Object?> _values = {};
 
-  /// 为 null 表示用户没动过执行者：那就一个字段都别发，免得把现有的清掉。
-  FlowExecutor? _executor;
+  /// 执行者的选中状态由检查器持有（[FlowExecutorField] 是无状态的展示）。
+  /// 为 null 表示用户没动过：那就一个字段都别发，免得把现有的清掉。
+  late FlowExecutor _executor;
+  bool _executorDirty = false;
 
   bool get _isTask => widget.node.kind == 'task';
 
   @override
   void initState() {
     super.initState();
-    // `task.role` / `task.agent` 交给「谁来做」选择器，不再单独出文本框。
+    _executor = FlowExecutor.of(widget.node.fields);
+    _executorDirty = false;
+    // `task.role` / `task.agent` / `task.uses` 都交给「谁来做」选择器，不再单独
+    // 出文本框（否则会和选择器在同一批里发出两个互相冲突的执行者）。
     _specs = [
       for (final spec
           in FlowFieldCatalog.specsFor(widget.node.kind, widget.schema))
         if (!_isTask ||
-            (spec.path != 'task.role' && spec.path != 'task.agent'))
+            (spec.path != 'task.role' &&
+                spec.path != 'task.agent' &&
+                spec.path != 'task.uses'))
           spec,
     ];
     for (final spec in _specs) {
@@ -87,16 +94,17 @@ class _FlowNodeInspectorState extends State<FlowNodeInspector> {
   /// 和打开时不一样的字段。映射 / 列表按 JSON 比，不然内容相同也会被判成改动。
   Map<String, Object?> _changes() {
     final changes = <String, Object?>{};
-    final executor = _executor;
-    if (_isTask && executor != null) {
-      changes.addAll(executor.ops());
+    if (_isTask && _executorDirty) {
+      changes.addAll(_executor.ops());
     }
     for (final entry in _values.entries) {
       final before = _original[entry.key];
       if (_same(before, entry.value)) continue;
       // 必填字段被清空：不发 null（主机解析会失败），界面上标红让用户填回去。
       final spec = _specs.where((s) => s.path == entry.key).firstOrNull;
-      if (spec?.required == true && entry.value == null) continue;
+      // 必填字段被清空、或编辑器标红的非法值：不发（主机解析会失败），界面上
+      // 标红让用户填回去。
+      if (spec == null || !isFlowFieldValueValid(spec, entry.value)) continue;
       changes[entry.key] = entry.value;
     }
     return changes;
@@ -145,15 +153,19 @@ class _FlowNodeInspectorState extends State<FlowNodeInspector> {
               if (_isTask)
                 FlowExecutorField(
                   node: node,
+                  current: _executor,
                   roles: widget.roles,
                   onPickAgent: widget.onPickAgent,
-                  onChanged: (executor) =>
-                      setState(() => _executor = executor),
+                  onChanged: (executor) => setState(() {
+                    _executor = executor;
+                    _executorDirty = true;
+                  }),
                 ),
               for (final spec in _specs)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 6),
                   child: FlowFieldEditor(
+                    key: ValueKey('field-${spec.path}'),
                     spec: spec,
                     current: _original[spec.path],
                     refCandidates: FlowReferences.supports(spec.path)

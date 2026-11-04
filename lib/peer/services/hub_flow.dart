@@ -483,6 +483,9 @@ class HubFlow {
       responseType: 'flow_run_list_resp',
     );
     if (response == null) return null;
+    // 主机明确报错（success:false）不能当成「没有运行」；返回 null 让界面显示
+    // 错误态，而不是永久转圈或假空列表。
+    if (response['success'] != true || response['runs'] is! List) return null;
     return FlowRunSummary.listFromResponse(response);
   }
 

@@ -124,6 +124,15 @@ class FlowHeaderPeek {
         entry.key.toString(): entry.value?.toString() ?? '',
     };
   }
+
+  /// 原始头部映射。表单要拿它来「只替换改过的字段」，否则会把没显示的键
+  /// （roles.desc、inputs.default、limits 里的额外键）整表抹掉。
+  static Map<String, dynamic> raw(String yaml, String key) {
+    final value = _root(yaml)[key];
+    return value is Map
+        ? Map<String, dynamic>.from(value)
+        : <String, dynamic>{};
+  }
 }
 
 /// 只读地看一眼定义头里的 `inputs`，用来生成开跑表单。

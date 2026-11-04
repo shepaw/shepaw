@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../../controllers/flow/flow_editor_controller.dart';
@@ -44,32 +46,42 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
   late final List<_PairRow> _roles;
   late final List<_PairRow> _outputs;
 
+  /// 打开时的原始头部映射。用来只发真正改过的字段，并保住表单没显示的键
+  /// （roles.desc、inputs.default、limits 里的额外键、outputs 的非字符串值）。
+  late final String _rawDescription;
+  late final Map<String, dynamic> _rawLimits;
+  late final Map<String, dynamic> _rawInputs;
+  late final Map<String, dynamic> _rawRoles;
+  late final Map<String, dynamic> _rawOutputs;
+
   @override
   void initState() {
     super.initState();
     final yaml = widget.controller.yaml;
-    _description =
-        TextEditingController(text: FlowHeaderPeek.description(yaml));
-    final limits = FlowHeaderPeek.limits(yaml);
+    _rawDescription = FlowHeaderPeek.description(yaml);
+    _rawLimits = FlowHeaderPeek.raw(yaml, 'limits');
+    _rawInputs = FlowHeaderPeek.raw(yaml, 'inputs');
+    _rawRoles = FlowHeaderPeek.raw(yaml, 'roles');
+    _rawOutputs = FlowHeaderPeek.raw(yaml, 'outputs');
+    _description = TextEditingController(text: _rawDescription);
+    final maxTasks = (_rawLimits['max_tasks'] as num?)?.toInt() ?? 0;
     _maxTasks = TextEditingController(
-      text: limits.maxTasks == 0 ? '' : limits.maxTasks.toString(),
+      text: maxTasks == 0 ? '' : maxTasks.toString(),
     );
-    _timeout = TextEditingController(text: limits.timeout);
+    _timeout = TextEditingController(
+      text: _rawLimits['timeout']?.toString() ?? '',
+    );
     _inputs = [
-      for (final spec in peekInputs(yaml))
-        _InputRow(
-          name: spec.name,
-          type: spec.type,
-          required: spec.required,
-          defaultText: spec.defaultValue ?? '',
-        ),
+      for (final entry in _rawInputs.entries)
+        _InputRow.from(entry.key.toString(), entry.value),
     ];
     _roles = [
-      for (final role in peekRoles(yaml)) _PairRow(role, ''),
+      for (final entry in _rawRoles.entries)
+        _PairRow.from(entry.key.toString(), entry.value),
     ];
     _outputs = [
-      for (final entry in FlowHeaderPeek.outputs(yaml).entries)
-        _PairRow(entry.key, entry.value),
+      for (final entry in _rawOutputs.entries)
+        _PairRow.from(entry.key.toString(), entry.value),
     ];
   }
 
@@ -87,38 +99,69 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
     super.dispose();
   }
 
-  void _apply() {
+  /// 五个字段合成**一个**原子批次。以前五次 `setHeader(immediate:true)` 会拆成
+  /// 两个往返，切页面还会丢掉后四个。
+  Future<void> _apply() async {
     final c = widget.controller;
-    c.setHeader('description', _description.text.trim());
-    c.setHeader('limits', {
-      'max_tasks': int.tryParse(_maxTasks.text.trim()) ?? 0,
-      if (_timeout.text.trim().isNotEmpty) 'timeout': _timeout.text.trim(),
-    });
-    c.setHeader('inputs', {
+    final next = <String, Object?>{};
+
+    final description = _description.text.trim();
+    if (description != _rawDescription) {
+      next['description'] = description;
+    }
+
+    final encodedLimits = <String, dynamic>{..._rawLimits};
+    final maxTasks = int.tryParse(_maxTasks.text.trim()) ?? 0;
+    if (maxTasks > 0) {
+      encodedLimits['max_tasks'] = maxTasks;
+    } else {
+      encodedLimits.remove('max_tasks');
+    }
+    final timeout = _timeout.text.trim();
+    if (timeout.isNotEmpty) {
+      encodedLimits['timeout'] = timeout;
+    } else {
+      encodedLimits.remove('timeout');
+    }
+    if (!_sameJson(_rawLimits, encodedLimits)) next['limits'] = encodedLimits;
+
+    final encodedInputs = <String, dynamic>{
       for (final row in _inputs)
         if (row.name.text.trim().isNotEmpty)
-          row.name.text.trim(): {
-            'type': row.type,
-            if (row.required) 'required': true,
-            if (row.defaultValue.text.trim().isNotEmpty)
-              'default': row.defaultValue.text.trim(),
-          },
-    });
-    c.setHeader('roles', {
+          row.name.text.trim(): row.encode(),
+    };
+    if (!_sameJson(_rawInputs, encodedInputs)) next['inputs'] = encodedInputs;
+
+    final encodedRoles = <String, dynamic>{
       for (final row in _roles)
         if (row.key.text.trim().isNotEmpty)
-          row.key.text.trim(): {
-            if (row.value.text.trim().isNotEmpty)
-              'desc': row.value.text.trim(),
-          },
-    });
-    c.setHeader('outputs', {
+          row.key.text.trim(): row.encodeForRole(),
+    };
+    if (!_sameJson(_rawRoles, encodedRoles)) next['roles'] = encodedRoles;
+
+    final encodedOutputs = <String, dynamic>{
       for (final row in _outputs)
         if (row.key.text.trim().isNotEmpty)
-          row.key.text.trim(): row.value.text.trim(),
-    });
+          row.key.text.trim(): row.encodeForOutput(),
+    };
+    if (!_sameJson(_rawOutputs, encodedOutputs)) {
+      next['outputs'] = encodedOutputs;
+    }
+
+    if (next.isEmpty) {
+      Navigator.pop(context);
+      return;
+    }
+    final ok = await c.setHeaders(next);
+    if (!ok) {
+      // 批次被拒：留在表单上让用户改，别悄悄关掉。
+      return;
+    }
+    if (!mounted) return;
     Navigator.pop(context);
   }
+
+  bool _sameJson(Object? a, Object? b) => jsonEncode(a) == jsonEncode(b);
 
   @override
   Widget build(BuildContext context) {
@@ -331,13 +374,53 @@ class _FlowHeaderFormState extends State<FlowHeaderForm> {
       );
 }
 
+/// roles / outputs 的一行。`original` 留住原始值，没编辑过的行原样写回，
+/// 免得把 `desc`、额外键、非字符串值抹掉。
 class _PairRow {
-  _PairRow(String key, String value)
+  _PairRow(String key, String value, {this.original})
       : key = TextEditingController(text: key),
         value = TextEditingController(text: value);
 
+  _PairRow.from(String key, Object? raw)
+      : original = raw,
+        key = TextEditingController(text: key),
+        value = TextEditingController(text: _display(raw));
+
+  _PairRow.forRole(String key, Object? raw)
+      : original = raw,
+        key = TextEditingController(text: key),
+        value = TextEditingController(
+          text: raw is Map ? (raw['desc']?.toString() ?? '') : '',
+        );
+
   final TextEditingController key;
   final TextEditingController value;
+  final Object? original;
+
+  static String _display(Object? raw) =>
+      raw is Map ? (raw['desc']?.toString() ?? '') : (raw?.toString() ?? '');
+
+  /// roles：从原始 map 出发覆盖 desc，保住其他键。
+  Object? encodeForRole() {
+    final out = original is Map
+        ? <String, dynamic>{...original as Map}
+        : <String, dynamic>{};
+    if (value.text.trim().isEmpty) {
+      out.remove('desc');
+    } else {
+      out['desc'] = value.text.trim();
+    }
+    return out;
+  }
+
+  /// outputs：没改过就原样返回，避免把非字符串值压成 String。
+  Object? encodeForOutput() {
+    final before = original is Map
+        ? (original as Map)['desc']?.toString() ?? ''
+        : original?.toString() ?? '';
+    if (value.text.trim() == before) return original ?? value.text.trim();
+    return value.text.trim();
+  }
 
   void dispose() {
     key.dispose();
@@ -351,13 +434,45 @@ class _InputRow {
     required this.type,
     this.required = false,
     String defaultText = '',
+    this.original,
   })  : name = TextEditingController(text: name),
        defaultValue = TextEditingController(text: defaultText);
 
+  _InputRow.from(String key, Object? raw)
+      : original = raw is Map ? Map<String, dynamic>.from(raw) : null,
+        type = raw is Map ? (raw['type']?.toString() ?? 'string') : 'string',
+        required = raw is Map && raw['required'] == true,
+        name = TextEditingController(text: key),
+        defaultValue = TextEditingController(
+          text: raw is Map ? raw['default']?.toString() ?? '' : '',
+        );
+
   final TextEditingController name;
   final TextEditingController defaultValue;
+  final Map<String, dynamic>? original;
   String type;
   bool required;
+
+  /// 从原始规格出发覆盖表单里的三个字段，保住没显示的键。
+  Map<String, dynamic> encode() {
+    final out = <String, dynamic>{...?original};
+    out['type'] = type;
+    if (required) {
+      out['required'] = true;
+    } else {
+      out.remove('required');
+    }
+    if (defaultValue.text.trim().isEmpty) {
+      out.remove('default');
+    } else if (original?['default'] is num) {
+      // 原来是数字，用户没改就别把它变成字符串。
+      final n = num.tryParse(defaultValue.text.trim());
+      out['default'] = n ?? defaultValue.text.trim();
+    } else {
+      out['default'] = defaultValue.text.trim();
+    }
+    return out;
+  }
 
   void dispose() {
     name.dispose();

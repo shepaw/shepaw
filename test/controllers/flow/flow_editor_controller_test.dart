@@ -199,7 +199,9 @@ void main() {
     c.dispose();
     // 回包在这之后才到：不该碰已 dispose 的 ChangeNotifier。
     await Future<void>.delayed(const Duration(milliseconds: 300));
-    expect(c.hasPending, isTrue);
+    // 但迟到回包仍要被采纳并落草稿 —— 以前这里直接丢弃，最后敲的字会永久丢。
+    expect(c.yaml, 'flow: dev\nsteps: []\n# edited\n');
+    expect(c.hasPending, isFalse);
   });
 
   test('旧主机的能力按 schema 降级', () async {
@@ -262,6 +264,107 @@ void main() {
       {'op': 'header', 'field': 'limits.max_tasks', 'value': 30},
     ]);
   });
+  test('保存带 base_revision：不然两人同时改会静默覆盖', () async {
+    final harness = _Harness();
+    addTearDown(harness.close);
+    final c = await harness.controller();
+    addTearDown(c.dispose);
+
+    c.setField('a', 'desc', '改了', immediate: true);
+    await _pastDebounce();
+    await c.save();
+    final save = harness.sent.lastWhere((f) => f['type'] == 'flow_save_req');
+    expect(save['base_revision'], 3);
+  });
+
+  test('flush 会等在途请求：不会拿旧 YAML 保存', () async {
+    final harness = _Harness()..delay = const Duration(milliseconds: 200);
+    addTearDown(harness.close);
+    final c = await harness.controller();
+    addTearDown(c.dispose);
+
+    // 结构 op 在途（_pending 为空）。
+    unawaited(c.applyOps([
+      {'op': 'delete', 'node_id': 'a'},
+    ]));
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    await c.save();
+    final save = harness.sent.lastWhere((f) => f['type'] == 'flow_save_req');
+    // 保存的是采纳后的内容，不是结构 op 之前的。
+    expect(save['yaml'], 'flow: dev\nsteps: []\n# edited\n');
+  });
+
+  test('被拒的字段不会被无关的成功提交清掉', () async {
+    final harness = _Harness()..rejectEdits = true;
+    addTearDown(harness.close);
+    final c = await harness.controller();
+    addTearDown(c.dispose);
+
+    c.setField('a', 'desc', '坏值', immediate: true);
+    await _pastDebounce();
+    expect(c.hasRejected, isTrue);
+
+    harness.rejectEdits = false;
+    await c.applyOps([
+      {'op': 'delete', 'node_id': 'b'},
+    ]);
+    // 用户还没改这个字段，它必须继续留在 rejected 里。
+    expect(c.hasRejected, isTrue);
+    expect(c.hasPending, isTrue);
+  });
+
+  test('有被拒字段时 undo 不该被卡死', () async {
+    final harness = _Harness()..rejectEdits = true;
+    addTearDown(harness.close);
+    final c = await harness.controller();
+    addTearDown(c.dispose);
+
+    harness.rejectEdits = false;
+    c.setField('a', 'desc', '第一次', immediate: true);
+    await _pastDebounce();
+    harness.rejectEdits = true;
+    c.setField('a', 'desc', '坏值', immediate: true);
+    await _pastDebounce();
+
+    await c.undo();
+    expect(c.dirty, isFalse);
+  });
+
+  test('不同字段的连续编辑不能合并成一步 undo', () async {
+    final harness = _Harness();
+    addTearDown(harness.close);
+    final c = await harness.controller();
+    addTearDown(c.dispose);
+    final initial = c.yaml;
+
+    c.setField('a', 'desc', '一', immediate: true);
+    await _pastDebounce();
+    c.setField('a', 'task.prompt', '二', immediate: true);
+    await _pastDebounce();
+
+    await c.undo();
+    expect(c.yaml, isNot(initial), reason: '第一次撤销只该退掉第二个字段');
+    await c.undo();
+    expect(c.yaml, initial);
+  });
+
+  test('合并 undo 之后 redo 栈必须作废', () async {
+    final harness = _Harness();
+    addTearDown(harness.close);
+    final c = await harness.controller();
+    addTearDown(c.dispose);
+
+    c.setField('a', 'desc', '一', immediate: true);
+    await _pastDebounce();
+    c.setField('a', 'desc', '二', immediate: true);
+    await _pastDebounce();
+    await c.undo();
+    // 刚撤销完又打字（会走合并路径），redo 不该复活刚撤销的版本。
+    c.setField('a', 'desc', '三', immediate: true);
+    await _pastDebounce();
+    expect(c.canRedo, isFalse);
+  });
+
 }
 
 Future<void> _pastDebounce() =>
@@ -300,6 +403,11 @@ class _Harness {
                 'kinds': {},
               },
             'flow_validate_req' => _validate(frame['yaml'] as String? ?? ''),
+            'flow_save_req' => {
+                'type': 'flow_save_resp',
+                'success': true,
+                'flow': {'latest': 4},
+              },
             'flow_edit_req' => rejectEdits
                 ? {
                     'type': 'flow_edit_resp',
