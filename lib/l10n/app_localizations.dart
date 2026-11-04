@@ -16463,6 +16463,78 @@ abstract class AppLocalizations {
   /// **'{count} 天前'**
   String flow_runsDaysAgo(int count);
 
+  /// No description provided for @flow_fieldRequired.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个是必填的'**
+  String get flow_fieldRequired;
+
+  /// No description provided for @flow_fieldPickInput.
+  ///
+  /// In zh, this message translates to:
+  /// **'引用一个整数输入'**
+  String get flow_fieldPickInput;
+
+  /// No description provided for @flow_fieldCondExpr.
+  ///
+  /// In zh, this message translates to:
+  /// **'表达式'**
+  String get flow_fieldCondExpr;
+
+  /// No description provided for @flow_fieldCondJudge.
+  ///
+  /// In zh, this message translates to:
+  /// **'让人判断'**
+  String get flow_fieldCondJudge;
+
+  /// No description provided for @flow_fieldCondWho.
+  ///
+  /// In zh, this message translates to:
+  /// **'问谁（如 owner）'**
+  String get flow_fieldCondWho;
+
+  /// No description provided for @flow_fieldCondAsk.
+  ///
+  /// In zh, this message translates to:
+  /// **'问题'**
+  String get flow_fieldCondAsk;
+
+  /// No description provided for @flow_fieldAddRow.
+  ///
+  /// In zh, this message translates to:
+  /// **'加一行'**
+  String get flow_fieldAddRow;
+
+  /// No description provided for @flow_fieldKey.
+  ///
+  /// In zh, this message translates to:
+  /// **'名'**
+  String get flow_fieldKey;
+
+  /// No description provided for @flow_fieldValue.
+  ///
+  /// In zh, this message translates to:
+  /// **'值'**
+  String get flow_fieldValue;
+
+  /// No description provided for @flow_fieldType.
+  ///
+  /// In zh, this message translates to:
+  /// **'类型'**
+  String get flow_fieldType;
+
+  /// No description provided for @flow_fieldEnum.
+  ///
+  /// In zh, this message translates to:
+  /// **'枚举'**
+  String get flow_fieldEnum;
+
+  /// No description provided for @flow_fieldEnumValues.
+  ///
+  /// In zh, this message translates to:
+  /// **'可选项（逗号分隔）'**
+  String get flow_fieldEnumValues;
+
   /// No description provided for @flow_outlineMenu.
   ///
   /// In zh, this message translates to:

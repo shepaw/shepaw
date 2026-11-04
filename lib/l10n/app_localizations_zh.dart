@@ -9072,6 +9072,42 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get flow_fieldRequired => '这个是必填的';
+
+  @override
+  String get flow_fieldPickInput => '引用一个整数输入';
+
+  @override
+  String get flow_fieldCondExpr => '表达式';
+
+  @override
+  String get flow_fieldCondJudge => '让人判断';
+
+  @override
+  String get flow_fieldCondWho => '问谁（如 owner）';
+
+  @override
+  String get flow_fieldCondAsk => '问题';
+
+  @override
+  String get flow_fieldAddRow => '加一行';
+
+  @override
+  String get flow_fieldKey => '名';
+
+  @override
+  String get flow_fieldValue => '值';
+
+  @override
+  String get flow_fieldType => '类型';
+
+  @override
+  String get flow_fieldEnum => '枚举';
+
+  @override
+  String get flow_fieldEnumValues => '可选项（逗号分隔）';
+
+  @override
   String get flow_outlineMenu => '更多操作';
 
   @override

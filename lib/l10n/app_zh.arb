@@ -5528,6 +5528,18 @@
   "flow_runsMinutesAgo": "{count} 分钟前",
   "flow_runsHoursAgo": "{count} 小时前",
   "flow_runsDaysAgo": "{count} 天前",
+  "flow_fieldRequired": "这个是必填的",
+  "flow_fieldPickInput": "引用一个整数输入",
+  "flow_fieldCondExpr": "表达式",
+  "flow_fieldCondJudge": "让人判断",
+  "flow_fieldCondWho": "问谁（如 owner）",
+  "flow_fieldCondAsk": "问题",
+  "flow_fieldAddRow": "加一行",
+  "flow_fieldKey": "名",
+  "flow_fieldValue": "值",
+  "flow_fieldType": "类型",
+  "flow_fieldEnum": "枚举",
+  "flow_fieldEnumValues": "可选项（逗号分隔）",
   "@flow_runsMinutesAgo": {
     "placeholders": {
       "count": { "type": "int" }

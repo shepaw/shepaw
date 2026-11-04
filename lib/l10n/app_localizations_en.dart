@@ -9430,6 +9430,42 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get flow_fieldRequired => 'This field is required';
+
+  @override
+  String get flow_fieldPickInput => 'Reference an int input';
+
+  @override
+  String get flow_fieldCondExpr => 'Expression';
+
+  @override
+  String get flow_fieldCondJudge => 'Ask a person';
+
+  @override
+  String get flow_fieldCondWho => 'Who (e.g. owner)';
+
+  @override
+  String get flow_fieldCondAsk => 'Question';
+
+  @override
+  String get flow_fieldAddRow => 'Add a row';
+
+  @override
+  String get flow_fieldKey => 'Name';
+
+  @override
+  String get flow_fieldValue => 'Value';
+
+  @override
+  String get flow_fieldType => 'Type';
+
+  @override
+  String get flow_fieldEnum => 'Enum';
+
+  @override
+  String get flow_fieldEnumValues => 'Options (comma separated)';
+
+  @override
   String get flow_outlineMenu => 'More actions';
 
   @override

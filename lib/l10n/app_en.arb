@@ -5097,6 +5097,18 @@
   "flow_runsMinutesAgo": "{count} min ago",
   "flow_runsHoursAgo": "{count} h ago",
   "flow_runsDaysAgo": "{count} d ago",
+  "flow_fieldRequired": "This field is required",
+  "flow_fieldPickInput": "Reference an int input",
+  "flow_fieldCondExpr": "Expression",
+  "flow_fieldCondJudge": "Ask a person",
+  "flow_fieldCondWho": "Who (e.g. owner)",
+  "flow_fieldCondAsk": "Question",
+  "flow_fieldAddRow": "Add a row",
+  "flow_fieldKey": "Name",
+  "flow_fieldValue": "Value",
+  "flow_fieldType": "Type",
+  "flow_fieldEnum": "Enum",
+  "flow_fieldEnumValues": "Options (comma separated)",
   "@flow_runsMinutesAgo": {
     "placeholders": {
       "count": { "type": "int" }
