@@ -607,6 +607,8 @@ class HubEventClient {
         }
       case 'agent_meta.changed':
         _applyMeta(peerId, event);
+      case 'session.switch':
+        await _onSessionSwitch(event);
       case 'group.session.changed':
         await _onGroupSessionChanged(peerId, event);
       case 'agents.changed':
@@ -617,58 +619,44 @@ class HubEventClient {
     }
   }
 
-  /// 主机建好群会话后：把切换卡片挂到来源会话，交接正文写进新群会话。
-  /// 两件事都按固定 id 去重，事件重放 / 多端同时在线都不会重复插入。
+  /// 主机建好私聊会话：在来源会话挂一张切换卡片。
+  /// 会话名单同步由 `agent_meta.changed kind=sessions` 负责，不在这里做。
+  Future<void> _onSessionSwitch(HubEvent event) async {
+    final action = event.data['session_action'];
+    if (action is! Map) return;
+    final source = (event.data['source_session_id']?.toString() ?? '').isNotEmpty
+        ? event.data['source_session_id'].toString()
+        : event.channelId;
+    if (source.isEmpty) return;
+    await attachHostSessionSwitchCard(
+      channelId: source,
+      sessionAction: Map<String, dynamic>.from(action),
+    );
+  }
+
+  /// 主机建好群会话：把切换卡片挂到来源群频道。
+  /// 交接正文由主机写进群会话日志，App 拉历史时就能看到，不在本地另写一条。
   Future<void> _onGroupSessionChanged(String peerId, HubEvent event) async {
     final data = event.data;
     final action = data['session_action'];
     if (action is Map) {
-      final source = action['source_session_id']?.toString() ?? '';
+      final enriched = <String, dynamic>{
+        ...Map<String, dynamic>.from(action),
+        'kind': 'group',
+        'group_id': (data['group_id']?.toString() ?? '').isNotEmpty
+            ? data['group_id'].toString()
+            : event.channelId,
+      };
+      final source = enriched['source_session_id']?.toString() ?? '';
       if (source.isNotEmpty) {
         await attachHostSessionSwitchCard(
           channelId: source,
-          sessionAction: Map<String, dynamic>.from(action),
+          sessionAction: enriched,
         );
       }
     }
-    final handoff = data['handoff_text']?.toString().trim() ?? '';
-    final session = data['session'];
-    final newId = (data['session_id']?.toString() ??
-            (session is Map ? session['id']?.toString() ?? '' : ''))
-        .trim();
-    if (handoff.isNotEmpty && newId.isNotEmpty) {
-      await _insertGroupHandoffMessage(newId, handoff);
-    }
     if (!_notices.isClosed) {
       _notices.add(HubNotice(peerId: peerId, event: event));
-    }
-  }
-
-  Future<void> _insertGroupHandoffMessage(
-    String channelId,
-    String text,
-  ) async {
-    if (!getIt.isRegistered<LocalDatabaseService>()) return;
-    final db = getIt<LocalDatabaseService>();
-    final id = 'group_handoff_${channelId.hashCode.abs()}';
-    try {
-      if (await db.getMessageById(id) != null) return;
-      await db.createMessage(
-        id: id,
-        channelId: channelId,
-        senderId: 'system',
-        senderType: 'system',
-        senderName: 'system',
-        content: text,
-        messageType: 'text',
-      );
-      await db.markMessageAsRead(id);
-      _notify(channelId);
-    } catch (e) {
-      LoggerService().warning(
-        'Failed to insert group handoff message: $e',
-        tag: 'HubEvent',
-      );
     }
   }
 

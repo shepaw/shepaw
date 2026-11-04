@@ -40,7 +40,6 @@ import '../../services/approval/pending_approval_hub.dart';
 import '../../services/approval/pending_approval_item.dart';
 import '../../services/session/client_session_sync.dart';
 import '../../services/session/cli_execute_peer_handler.dart';
-import '../../services/session/host_session_switch_card.dart';
 import '../../services/she_agent_impression_service.dart';
 import '../../services/she_service.dart';
 import '../../services/local_user_identity.dart';
@@ -5246,18 +5245,8 @@ class PeerAgentClientService {
           enabled: enabled,
         ));
       case PeerAgentMetaKind.sessions:
-        // 主机建好会话后会顺带广播 session_action：在来源会话挂一张切换卡片。
-        // 名单同步和卡片各走各的，卡片只插入一次（按来源 + 新会话去重）。
-        final action = data['session_action'];
-        if (action is Map) {
-          final source = action['source_session_id']?.toString() ?? '';
-          if (source.isNotEmpty) {
-            unawaited(attachHostSessionSwitchCard(
-              channelId: source,
-              sessionAction: Map<String, dynamic>.from(action),
-            ));
-          }
-        }
+        // 名单同步只管名单。切换卡片走单独的 session.switch 事件，避免
+        // 全量回放这条 meta 时把用户删掉的卡片又插回来。
         unawaited(_mirrorHostSessionList(
           peerId: event.peerId,
           remoteAgentId: agentId,

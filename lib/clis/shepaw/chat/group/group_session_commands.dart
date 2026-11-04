@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../../../../peer/services/hub_session_create.dart';
 import '../../../../services/group/group_management_service.dart';
+import '../../../../storage/store_uri_reader.dart';
 import '../../../cli_base.dart';
 
 /// shepaw chat group session create — 把建群会话交给主机，App 不再本地建。
@@ -109,6 +110,20 @@ class GroupSessionCreateCommand extends CliCommand {
       } catch (e) {
         return {'error': 'Invalid --handoff-json: $e'};
       }
+    } else if (handoffUri != null && handoffUri.trim().isNotEmpty) {
+      // 主机不读 pouch://，App 在这里把交接包读成对象再带上，内容才不会丢。
+      try {
+        final bytes = await StoreUriReader.instance.read(handoffUri.trim());
+        final decoded = jsonDecode(utf8.decode(bytes));
+        if (decoded is Map) {
+          inlineHandoff = Map<String, dynamic>.from(decoded);
+        }
+      } catch (e) {
+        return {'error': 'Failed to read --handoff-uri: $e'};
+      }
+    }
+    if (inlineHandoff == null) {
+      return {'error': 'Provide --handoff-json or --handoff-uri'};
     }
 
     final actorId = flags['agent_id']?.trim() ?? flags['owner']?.trim() ?? '';
@@ -116,7 +131,7 @@ class GroupSessionCreateCommand extends CliCommand {
       return {'error': 'Missing executor agent id'};
     }
     final actorName = flags['agent_name']?.trim() ?? actorId;
-    final task = inlineHandoff?['task'];
+    final task = inlineHandoff['task'];
     final goal = task is Map
         ? task['user_goal']?.toString().trim() ?? ''
         : '';
@@ -131,7 +146,7 @@ class GroupSessionCreateCommand extends CliCommand {
       if (flags['reason-detail']?.trim().isNotEmpty == true)
         'reason_detail': flags['reason-detail']!.trim(),
       if (goal.isNotEmpty) 'summary': goal,
-      if (inlineHandoff != null) 'handoff': inlineHandoff,
+      'handoff': inlineHandoff,
       if (handoffUri != null && handoffUri.trim().isNotEmpty)
         'handoff_uri': handoffUri.trim(),
       'post_first_message': flags['no-first-message'] != 'true',
