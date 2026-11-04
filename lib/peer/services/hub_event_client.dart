@@ -25,6 +25,7 @@ import 'peer_connection.dart';
 import 'peer_connection_manager.dart';
 import 'peer_inflight_turn.dart';
 import 'peer_storage_service.dart';
+import 'warm_ready_registry.dart';
 
 /// 跟着储物袋把主机事件补到这台客户端。
 ///
@@ -585,6 +586,14 @@ class HubEventClient {
 
   Future<void> _dispatch(String peerId, HubEvent event) async {
     switch (event.kind) {
+      case 'agent.warm_ready':
+        final agentId = (event.data['agent_id'] as String?)?.trim() ?? '';
+        final sessionId = (event.data['session_id'] as String?)?.trim() ?? '';
+        WarmReadyRegistry.instance.record(
+          agentId,
+          sessionId,
+          event.data['ok'] == true,
+        );
       case 'message.created':
         await _insertMessage(peerId, event);
       case 'message.updated':

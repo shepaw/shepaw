@@ -65,6 +65,7 @@ import 'peer_connection_manager.dart';
 import 'peer_inflight_turn.dart';
 import 'peer_storage_service.dart';
 import 'peer_turn_resume.dart';
+import 'warm_ready_registry.dart';
 import '../../storage/agent_workspace_uris.dart';
 import '../../storage/store_protocol.dart';
 
@@ -4072,6 +4073,8 @@ class PeerAgentClientService {
     if (!_peerIsConnected(peerId)) return;
     final sessionId = hostSessionIdForChannel(channelId);
     if (sessionId.isEmpty) return;
+    // 重新发起预热：清掉上一次的 ready，等主机回 agent.warm_ready。
+    WarmReadyRegistry.instance.clear(remoteAgentId, sessionId);
     try {
       await _sendMetaControl(peerId, {
         'type': 'agent_session_warm',
