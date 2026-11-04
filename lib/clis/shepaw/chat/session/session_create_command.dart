@@ -119,11 +119,13 @@ class ChatSessionCreateCommand extends CliCommand {
     final actorName = flags['agent_name']?.trim().isNotEmpty == true
         ? flags['agent_name']!.trim()
         : actorId;
+    final callToken = (flags['call_token'] ?? '').trim();
 
     return _host.create(<String, dynamic>{
       'kind': 'dm',
       'agent_id': actorId,
       'agent_name': actorName,
+      if (callToken.isNotEmpty) 'call_token': callToken,
       'channel_id': channelId,
       'reason': reason,
       if (flags['reason-detail']?.trim().isNotEmpty == true)

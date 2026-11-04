@@ -85,6 +85,7 @@ void main() {
       'reason': 'context_too_long',
       'summary': 'Keep the auth token flow',
       'agent_id': 'coder',
+      'call_token': 'tok-1',
     });
 
     expect(result['success'], isTrue);
@@ -97,6 +98,7 @@ void main() {
     expect(sent!['kind'], 'dm');
     expect(sent!['channel_id'], 'dm_x');
     expect(sent!['agent_id'], 'coder');
+    expect(sent!['call_token'], 'tok-1');
     expect(sent!['summary'], 'Keep the auth token flow');
     expect(sent!['suggest_switch'], isTrue);
     await incoming.close();

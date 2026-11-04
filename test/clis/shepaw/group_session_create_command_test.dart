@@ -32,12 +32,14 @@ void main() {
       'reason': 'topic_shift',
       'handoff-json':
           '{"task":{"user_goal":"做完 X","status":"in_progress"}}',
+      'call_token': 'tok-1',
     });
 
     expect(result['success'], isTrue);
     expect(sent, isNotNull);
     // 没传 --agent_id：身份必须来自 Zone，否则群 admin 建不了会话。
     expect(sent!['agent_id'], isNotEmpty);
+    expect(sent!['call_token'], 'tok-1');
     expect(sent!['kind'], 'group');
     expect(sent!['group_id'], 'group_1');
     expect(sent!['channel_id'], 'group_1');

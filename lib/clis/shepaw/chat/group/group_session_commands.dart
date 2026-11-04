@@ -144,6 +144,7 @@ class GroupSessionCreateCommand extends CliCommand {
     final goal = task is Map
         ? task['user_goal']?.toString().trim() ?? ''
         : '';
+    final callToken = (flags['call_token'] ?? '').trim();
 
     return _host.create(<String, dynamic>{
       'kind': 'group',
@@ -151,6 +152,7 @@ class GroupSessionCreateCommand extends CliCommand {
       'channel_id': channelId,
       'agent_id': actorId,
       'agent_name': actorName,
+      if (callToken.isNotEmpty) 'call_token': callToken,
       'reason': reason,
       if (flags['reason-detail']?.trim().isNotEmpty == true)
         'reason_detail': flags['reason-detail']!.trim(),
