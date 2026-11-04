@@ -17,6 +17,9 @@ enum FlowOutlineMenuAction {
 
   /// 和上一个兄弟一起包进一个新容器。
   wrapWithPrevious,
+
+  /// 显式跨分支移动（`if` 内不靠下标跨 then/else）。
+  moveToBranch,
 }
 
 /// 菜单的选择。[kind] 对 [FlowOutlineMenuAction.retype] 是目标类型，
@@ -166,6 +169,25 @@ class _Menu extends StatelessWidget {
                           branch: null,
                         ));
                   }),
+              ]),
+            // 在 if 里时给显式的跨分支入口：上移/下移刻意不跨分支（会跳错支）。
+            if (row.branch != null)
+              section(l10n.flow_outlineMoveToBranch, [
+                for (final branch in ['then', 'else'])
+                  if (branch != row.branch)
+                    _item(
+                      context,
+                      branch == 'then' ? l10n.flow_outlineThen : l10n.flow_outlineElse,
+                      () {
+                        Navigator.pop(
+                            context,
+                            (
+                              action: FlowOutlineMenuAction.moveToBranch,
+                              kind: null,
+                              branch: branch,
+                            ));
+                      },
+                    ),
               ]),
             if (canRetype)
               section(l10n.flow_outlineRetype, [

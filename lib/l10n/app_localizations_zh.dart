@@ -8819,6 +8819,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_saveFailed => '保存失败';
 
   @override
+  String flow_conflictOverwrite(int revision) {
+    return '覆盖为第 $revision 版之后的新一版';
+  }
+
+  @override
+  String get flow_conflictSaveAs => '另存为';
+
+  @override
   String flow_hasProblems(int count) {
     return '还有 $count 个问题，先改好再保存';
   }
@@ -9128,6 +9136,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_outlineWrapWith => '和上一步一起包成';
 
   @override
+  String get flow_outlineMoveToBranch => '移到另一支';
+
+  @override
   String flow_startTitle(String name) {
     return '运行 $name';
   }
@@ -9208,6 +9219,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get flow_source => '源码';
+
+  @override
+  String get flow_sourceCommentHint => '改完应用会重新生成整份定义，注释不会保留';
+
+  @override
+  String get flow_readOnlyHostHint => '这台主机不支持部分编辑操作，当前为只读；升级主机后可编辑';
 
   @override
   String get flow_sourceApply => '用这份';

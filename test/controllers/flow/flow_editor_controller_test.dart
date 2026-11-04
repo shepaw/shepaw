@@ -365,6 +365,31 @@ void main() {
     expect(c.canRedo, isFalse);
   });
 
+  test('另存为带 create_only，普通保存不带', () async {
+    final harness = _Harness();
+    addTearDown(harness.close);
+    final c = await harness.controller();
+    addTearDown(c.dispose);
+
+    await c.saveAs('copy-of-dev');
+    final saveAs =
+        harness.sent.lastWhere((f) => f['type'] == 'flow_save_req');
+    expect(saveAs['name'], 'copy-of-dev');
+    expect(saveAs['create_only'], true);
+    expect(saveAs['base_revision'], isNull);
+  });
+
+  test('force 保存不带 base_revision（冲突后覆盖为新一版）', () async {
+    final harness = _Harness();
+    addTearDown(harness.close);
+    final c = await harness.controller();
+    addTearDown(c.dispose);
+
+    await c.save(force: true);
+    final save = harness.sent.lastWhere((f) => f['type'] == 'flow_save_req');
+    expect(save['base_revision'], isNull);
+  });
+
 }
 
 Future<void> _pastDebounce() =>

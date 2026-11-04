@@ -179,6 +179,17 @@ void main() {
       );
     });
 
+    test('跨分支移动要显式带 branch，不按拼接下标', () {
+      final rows = buildFlowOutline(_ifTree());
+      final e1 = rows.firstWhere((r) => r.node.id == 'e1');
+      expect(FlowOutlineOps.moveToBranch(e1, 'then'), {
+        'op': 'move',
+        'node_id': 'e1',
+        'parent_id': 'pick',
+        'branch': 'then',
+      });
+    });
+
     test('取消缩进：挪到父节点后面那一层', () {
       final rows = buildFlowOutline([
         FlowNode(

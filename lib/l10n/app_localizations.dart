@@ -15977,6 +15977,18 @@ abstract class AppLocalizations {
   /// **'保存失败'**
   String get flow_saveFailed;
 
+  /// No description provided for @flow_conflictOverwrite.
+  ///
+  /// In zh, this message translates to:
+  /// **'覆盖为第 {revision} 版之后的新一版'**
+  String flow_conflictOverwrite(int revision);
+
+  /// No description provided for @flow_conflictSaveAs.
+  ///
+  /// In zh, this message translates to:
+  /// **'另存为'**
+  String get flow_conflictSaveAs;
+
   /// No description provided for @flow_hasProblems.
   ///
   /// In zh, this message translates to:
@@ -16571,6 +16583,12 @@ abstract class AppLocalizations {
   /// **'和上一步一起包成'**
   String get flow_outlineWrapWith;
 
+  /// No description provided for @flow_outlineMoveToBranch.
+  ///
+  /// In zh, this message translates to:
+  /// **'移到另一支'**
+  String get flow_outlineMoveToBranch;
+
   /// No description provided for @flow_startTitle.
   ///
   /// In zh, this message translates to:
@@ -16714,6 +16732,18 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'源码'**
   String get flow_source;
+
+  /// No description provided for @flow_sourceCommentHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'改完应用会重新生成整份定义，注释不会保留'**
+  String get flow_sourceCommentHint;
+
+  /// No description provided for @flow_readOnlyHostHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台主机不支持部分编辑操作，当前为只读；升级主机后可编辑'**
+  String get flow_readOnlyHostHint;
 
   /// No description provided for @flow_sourceApply.
   ///

@@ -18,6 +18,10 @@ enum FlowEditorNoticeKind {
   /// 保存成功，[FlowEditorNotice.count] 是新的版本号。
   saved,
 
+  /// 保存被冲突检测拒了（create_only 撞名 / base_revision 落后）。
+  /// [FlowEditorNotice.count] 是主机回的当前版本号 `latest`。
+  saveConflict,
+
   /// 源码应用前校验就没过。
   sourceInvalid,
 }

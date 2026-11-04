@@ -9172,6 +9172,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_saveFailed => 'Could not save';
 
   @override
+  String flow_conflictOverwrite(int revision) {
+    return 'Save as a new revision after $revision';
+  }
+
+  @override
+  String get flow_conflictSaveAs => 'Save as…';
+
+  @override
   String flow_hasProblems(int count) {
     return '$count problems to fix before saving';
   }
@@ -9486,6 +9494,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_outlineWrapWith => 'Wrap with the previous step';
 
   @override
+  String get flow_outlineMoveToBranch => 'Move to the other branch';
+
+  @override
   String flow_startTitle(String name) {
     return 'Run $name';
   }
@@ -9571,6 +9582,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get flow_source => 'Source';
+
+  @override
+  String get flow_sourceCommentHint =>
+      'Applying rewrites the whole definition; comments are not kept';
+
+  @override
+  String get flow_readOnlyHostHint =>
+      'This host does not support all edit operations; read-only until upgraded';
 
   @override
   String get flow_sourceApply => 'Use this';

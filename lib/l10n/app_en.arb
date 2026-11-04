@@ -5009,6 +5009,13 @@
     }
   },
   "flow_saveFailed": "Could not save",
+  "flow_conflictOverwrite": "Save as a new revision after {revision}",
+  "flow_conflictSaveAs": "Save as…",
+  "@flow_conflictOverwrite": {
+    "placeholders": {
+      "revision": { "type": "int" }
+    }
+  },
   "flow_hasProblems": "{count} problems to fix before saving",
   "@flow_hasProblems": {
     "placeholders": {
@@ -5135,6 +5142,7 @@
   "flow_outlineIndent": "Indent",
   "flow_outlineMoveInto": "Move into \"{id}\"",
   "flow_outlineWrapWith": "Wrap with the previous step",
+  "flow_outlineMoveToBranch": "Move to the other branch",
   "@flow_outlineMoveInto": {
     "placeholders": {
       "id": { "type": "String" }
@@ -5190,6 +5198,8 @@
   "sessionSearchFoldedSection": "Groups / workflows / engine sessions",
   "flow_validate": "Check",
   "flow_source": "Source",
+  "flow_sourceCommentHint": "Applying rewrites the whole definition; comments are not kept",
+  "flow_readOnlyHostHint": "This host does not support all edit operations; read-only until upgraded",
   "flow_sourceApply": "Use this",
   "flow_patchNode": "Rewrite what has not started",
   "flow_patchApply": "Send the rewrite",

@@ -212,6 +212,18 @@ class FlowOutlineOps {
         kind: kind,
       );
 
+  /// 显式移到 `if` 的另一支。不带 index → 追加到该支末尾，不会按拼接后的
+  /// 下标把节点放错位置。
+  static Map<String, dynamic> moveToBranch(
+    FlowOutlineRow row,
+    String branch,
+  ) =>
+      FlowEditOps.move(
+        nodeId: row.node.id,
+        parentId: row.parentId,
+        branch: branch,
+      );
+
   /// 换节点类型。只发一个 `retype`，由主机保留 id 和公共字段。
   static Map<String, dynamic> retype(
     FlowOutlineRow row,

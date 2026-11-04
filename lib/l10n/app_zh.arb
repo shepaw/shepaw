@@ -5440,6 +5440,13 @@
     }
   },
   "flow_saveFailed": "保存失败",
+  "flow_conflictOverwrite": "覆盖为第 {revision} 版之后的新一版",
+  "flow_conflictSaveAs": "另存为",
+  "@flow_conflictOverwrite": {
+    "placeholders": {
+      "revision": { "type": "int" }
+    }
+  },
   "flow_hasProblems": "还有 {count} 个问题，先改好再保存",
   "@flow_hasProblems": {
     "placeholders": {
@@ -5566,6 +5573,7 @@
   "flow_outlineIndent": "缩进",
   "flow_outlineMoveInto": "移进「{id}」",
   "flow_outlineWrapWith": "和上一步一起包成",
+  "flow_outlineMoveToBranch": "移到另一支",
   "@flow_outlineMoveInto": {
     "placeholders": {
       "id": { "type": "String" }
@@ -5621,6 +5629,8 @@
   "sessionSearchFoldedSection": "群聊 / 工作流 / 引擎会话",
   "flow_validate": "校验",
   "flow_source": "源码",
+  "flow_sourceCommentHint": "改完应用会重新生成整份定义，注释不会保留",
+  "flow_readOnlyHostHint": "这台主机不支持部分编辑操作，当前为只读；升级主机后可编辑",
   "flow_sourceApply": "用这份",
   "flow_patchNode": "改写还没跑到的部分",
   "flow_patchApply": "交给主机改写",

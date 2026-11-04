@@ -192,6 +192,10 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   /// 控制器只说"发生了什么"，文案在这配。
   void _notice(FlowEditorNotice notice) {
     if (!mounted) return;
+    if (notice.kind == FlowEditorNoticeKind.saveConflict) {
+      unawaited(_showSaveConflict(notice));
+      return;
+    }
     final l10n = AppLocalizations.of(context);
     final text = switch (notice.kind) {
       FlowEditorNoticeKind.hostNoReply => l10n.flow_hostNoReply,
@@ -203,8 +207,81 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       FlowEditorNoticeKind.saved => l10n.flow_saved(notice.count),
       FlowEditorNoticeKind.sourceInvalid =>
         l10n.flow_hasProblems(notice.count),
+      FlowEditorNoticeKind.saveConflict => notice.raw ?? l10n.flow_saveFailed,
     };
     _snack(text);
+  }
+
+  /// 保存被冲突检测拒了：给三个出口（方案「关键设计 5」）。
+  Future<void> _showSaveConflict(FlowEditorNotice notice) async {
+    final l10n = AppLocalizations.of(context);
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: Text(l10n.flow_saveFailed),
+        content: Text(notice.raw ?? ''),
+        actions: [
+          TextButton(
+            key: const ValueKey('conflict-diff'),
+            onPressed: () => Navigator.pop(dialog, 'diff'),
+            child: Text(l10n.flow_diffToggle),
+          ),
+          TextButton(
+            key: const ValueKey('conflict-overwrite'),
+            onPressed: () => Navigator.pop(dialog, 'overwrite'),
+            child: Text(l10n.flow_conflictOverwrite(notice.count)),
+          ),
+          FilledButton(
+            key: const ValueKey('conflict-save-as'),
+            onPressed: () => Navigator.pop(dialog, 'saveAs'),
+            child: Text(l10n.flow_conflictSaveAs),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || choice == null) return;
+    switch (choice) {
+      case 'diff':
+        if (!_controller.showDiff) await _controller.toggleDiff();
+      case 'overwrite':
+        await _controller.save(force: true);
+      case 'saveAs':
+        final name = await _askSaveAsName();
+        if (name != null && mounted && name.isNotEmpty) {
+          final ok = await _controller.saveAs(name);
+          if (mounted && !ok) _snack(l10n.flow_saveFailed);
+        }
+    }
+  }
+
+  Future<String?> _askSaveAsName() async {
+    final l10n = AppLocalizations.of(context);
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: Text(l10n.flow_conflictSaveAs),
+        content: TextField(
+          key: const ValueKey('save-as-name'),
+          controller: controller,
+          autofocus: true,
+          decoration: InputDecoration(labelText: l10n.flow_newName),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialog),
+            child: Text(l10n.common_cancel),
+          ),
+          FilledButton(
+            key: const ValueKey('save-as-go'),
+            onPressed: () => Navigator.pop(dialog, controller.text.trim()),
+            child: Text(l10n.flow_save),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return name;
   }
 
   void _snack(String text) =>
@@ -268,16 +345,23 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     });
   }
 
+  /// 新建一个 task 的默认体。带上流程里的第一个角色，新建后就不会立刻多一条
+  /// 「缺执行者」诊断（方案要求新建一步后至多 1 条诊断）。
+  Map<String, dynamic> _newStep() {
+    final roles = peekRoles(_controller.yaml);
+    final body = <String, dynamic>{
+      'prompt': AppLocalizations.of(context).flow_newStepPrompt,
+    };
+    if (roles.isNotEmpty) body['role'] = roles.first;
+    return {
+      'id': _controller.freshId('step'),
+      'task': body,
+    };
+  }
+
   void _addAfter(FlowOutlineRow row) {
     unawaited(_controller.applyOps([
-      FlowOutlineOps.insertAfter(
-        row,
-        FlowStepDefaults.step(
-          _controller.freshId('step'),
-          'task',
-          prompt: AppLocalizations.of(context).flow_newStepPrompt,
-        ),
-      ),
+      FlowOutlineOps.insertAfter(row, _newStep()),
     ]));
   }
 
@@ -310,10 +394,27 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
           const SingleActivator(LogicalKeyboardKey.keyN, alt: true):
               _shortcutAddAfter,
           const SingleActivator(LogicalKeyboardKey.delete): _shortcutDelete,
+          const SingleActivator(LogicalKeyboardKey.keyZ, control: true):
+              _shortcutUndo,
+          const SingleActivator(LogicalKeyboardKey.keyZ, meta: true):
+              _shortcutUndo,
+          const SingleActivator(
+              LogicalKeyboardKey.keyZ, control: true, shift: true):
+              _shortcutRedo,
+          const SingleActivator(LogicalKeyboardKey.keyZ, meta: true, shift: true):
+              _shortcutRedo,
         },
         child: child,
       ),
     );
+  }
+
+  void _shortcutUndo() {
+    if (_controller.canUndo) unawaited(_controller.undo());
+  }
+
+  void _shortcutRedo() {
+    if (_controller.canRedo) unawaited(_controller.redo());
   }
 
   void _shortcutMove({required bool up}) {
@@ -333,12 +434,13 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     final row = _selectedRow;
     final previous = row?.previousSibling;
     if (row == null || previous == null) return;
-    if (FlowStepDefaults.isContainer(previous.kind)) {
+    // 只有 seq 是纯顺序、移进去不改语义，可以直接生效；par / loop / map 会引入
+    // 并发 / 重复 / 逐项语义，交给菜单把选项写清楚再让用户挑。
+    if (previous.kind == 'seq') {
       unawaited(
           _controller.applyOps([FlowOutlineOps.moveIntoPrevious(row)]));
       return;
     }
-    // 上一个兄弟是叶子：不能悄悄造个容器出来，打开菜单让用户选。
     unawaited(_rowMenu(row));
   }
 
@@ -378,11 +480,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       canRetype: _controller.caps.canRetype,
     );
     if (choice == null || !mounted) return;
-    final step = () => FlowStepDefaults.step(
-          _controller.freshId('step'),
-          'task',
-          prompt: AppLocalizations.of(context).flow_newStepPrompt,
-        );
+    final step = _newStep;
     await switch (choice.action) {
       FlowOutlineMenuAction.insertChild => _controller.applyOps([
           FlowOutlineOps.insertChild(row.node, step(), branch: choice.branch),
@@ -399,6 +497,9 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       // 改类型只发一个 retype：保留 id 和 desc / when / retry，主机搬子节点。
       FlowOutlineMenuAction.retype =>
         _controller.applyOps([FlowOutlineOps.retype(row, choice.kind!)]),
+      FlowOutlineMenuAction.moveToBranch => _controller.applyOps([
+          FlowOutlineOps.moveToBranch(row, choice.branch!),
+        ]),
     };
   }
 
@@ -460,14 +561,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
           if (row == null) return;
           // 走大纲那一行：`if` 里要带上 branch，否则新节点会落进 `then`。
           unawaited(_controller.applyOps([
-            FlowOutlineOps.insertAfter(
-              row,
-              FlowStepDefaults.step(
-                _controller.freshId('step'),
-                'task',
-                prompt: AppLocalizations.of(context).flow_newStepPrompt,
-              ),
-            ),
+            FlowOutlineOps.insertAfter(row, _newStep()),
           ]));
         },
       ),
@@ -659,6 +753,18 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
+        // 桌面但主机缺操作：明确说清为什么只读，别让人以为按钮坏了。
+        if (!canEdit && LayoutUtils.isDesktopLayout(context))
+          Card(
+            color: theme.colorScheme.secondaryContainer,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                l10n.flow_readOnlyHostHint,
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+          ),
         if (rehearsal.active) _rehearsalCard(l10n, theme),
         FlowDiagnosticsPanel(
           diagnostics: c.diagnostics,
@@ -821,6 +927,16 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
                 : Icons.keyboard_arrow_up),
             onTap: () => setState(() => _showYaml = !_showYaml),
           ),
+          if (_showYaml)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Text(
+                AppLocalizations.of(context).flow_sourceCommentHint,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+            ),
           if (_showYaml)
             SizedBox(
               height: 260,

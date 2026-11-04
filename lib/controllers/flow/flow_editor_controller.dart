@@ -121,7 +121,6 @@ class FlowEditorController extends ChangeNotifier {
   bool _saving = false;
   bool _busy = false;
   bool _offline = false;
-  int _stateRev = 0;
   int _nextId = 1;
   Timer? _debounce;
 
@@ -140,9 +139,6 @@ class FlowEditorController extends ChangeNotifier {
   int get revision => _revision;
   List<FlowNode> get tree => _tree;
   List<FlowDiagnostic> get diagnostics => _diagnostics;
-
-  /// 检查器靠它判断要不要重播种：主机回了新状态才 +1，打字不动它。
-  int get stateRev => _stateRev;
 
   bool get loading => _loading;
   bool get loadFailed => _loadFailed;
@@ -207,7 +203,6 @@ class FlowEditorController extends ChangeNotifier {
     _resetCoalesce();
     await _lookForDraft();
     if (_disposed || generation != _generation) return;
-    _stateRev++;
     _notify();
   }
 
@@ -400,7 +395,6 @@ class FlowEditorController extends ChangeNotifier {
     _yaml = checked.yaml;
     _tree = checked.tree;
     _diagnostics = checked.diagnostics;
-    _stateRev++;
     _notify();
     return true;
   }
@@ -458,7 +452,7 @@ class FlowEditorController extends ChangeNotifier {
     return _rehearsal.start(_yaml);
   }
 
-  Future<bool> save() async {
+  Future<bool> save({bool force = false}) async {
     if (errorCount > 0) {
       _emit(FlowEditorNotice(FlowEditorNoticeKind.hasProblems,
           count: errorCount));
@@ -480,15 +474,20 @@ class FlowEditorController extends ChangeNotifier {
       name,
       savedYaml,
       scope: scope,
-      baseRevision: _revision,
+      baseRevision: force ? null : _revision,
     );
     _saving = false;
     if (_disposed) return false;
     if (!result.ok) {
-      _emit(result.reachable
-          ? FlowEditorNotice(FlowEditorNoticeKind.saveRejected,
-              raw: result.error)
-          : const FlowEditorNotice(FlowEditorNoticeKind.hostNoReply));
+      if (result.reachable) {
+        final latest = result.data['latest'] is num
+            ? (result.data['latest'] as num).toInt()
+            : 0;
+        _emit(FlowEditorNotice(FlowEditorNoticeKind.saveConflict,
+            raw: result.error, count: latest));
+      } else {
+        _emit(const FlowEditorNotice(FlowEditorNoticeKind.hostNoReply));
+      }
       _notify();
       return false;
     }
@@ -503,6 +502,20 @@ class FlowEditorController extends ChangeNotifier {
     _notify();
     await _clearDraft();
     return true;
+  }
+
+  /// 另存为：把当前草稿存成一个新名字（带 create_only），本编辑器仍留在原流程上。
+  Future<bool> saveAs(String newName) async {
+    if (!await flush()) return false;
+    if (_disposed) return false;
+    final result = await _client.save(
+      peerId,
+      newName,
+      _yaml,
+      scope: scope,
+      createOnly: true,
+    );
+    return result.ok;
   }
 
   Future<void> toggleDiff() async {
@@ -549,7 +562,6 @@ class FlowEditorController extends ChangeNotifier {
     _queuedOps = null;
     _generation++;
     _resetCoalesce();
-    _stateRev++;
     _notify();
     if (_tree.isEmpty && _yaml.isNotEmpty) {
       final checked = await _client.validate(peerId, _yaml);
