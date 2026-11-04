@@ -32,6 +32,7 @@ class FlowNodeInspector extends StatefulWidget {
     this.onPickAgent,
     this.tree = const [],
     this.yaml = '',
+    this.flowRefs = const [],
   });
 
   final FlowNode node;
@@ -52,6 +53,9 @@ class FlowNodeInspector extends StatefulWidget {
   /// 当前节点树和草稿（生成「插入引用」候选和 int 输入列表）。
   final List<FlowNode> tree;
   final String yaml;
+
+  /// 同 scope 的流程库引用候选（`call.flow` 用）。
+  final List<String> flowRefs;
 
   @override
   State<FlowNodeInspector> createState() => _FlowNodeInspectorState();
@@ -173,6 +177,9 @@ class _FlowNodeInspectorState extends State<FlowNodeInspector> {
                         : const [],
                     intInputNames: spec.shape == FlowFieldShape.intOrInput
                         ? intInputs
+                        : const [],
+                    flowRefChoices: spec.shape == FlowFieldShape.flowRef
+                        ? widget.flowRefs
                         : const [],
                     onChanged: (value) => _values[spec.path] = value,
                   ),

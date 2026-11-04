@@ -111,6 +111,13 @@ void main() {
     }
   });
 
+  test('call.flow 是流程库选择器，不是自由文本框', () {
+    final call = FlowFieldCatalog.specsFor('call', _host());
+    final flow = call.where((s) => s.path == 'call.flow');
+    expect(flow, isNotEmpty);
+    expect(flow.first.shape, FlowFieldShape.flowRef);
+  });
+
   test('schema 为空时不炸', () {
     expect(FlowFieldCatalog.specsFor('task', null), isEmpty);
   });

@@ -9086,6 +9086,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_fieldPickInput => '引用一个整数输入';
 
   @override
+  String get flow_fieldPickFlow => '从流程库选一个子流程';
+
+  @override
   String get flow_fieldCondExpr => '表达式';
 
   @override

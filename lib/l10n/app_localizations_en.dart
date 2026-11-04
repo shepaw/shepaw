@@ -9444,6 +9444,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_fieldPickInput => 'Reference an int input';
 
   @override
+  String get flow_fieldPickFlow => 'Pick a subflow from the library';
+
+  @override
   String get flow_fieldCondExpr => 'Expression';
 
   @override

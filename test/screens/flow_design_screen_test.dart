@@ -42,6 +42,14 @@ class _FakeHost {
 
   Map<String, dynamic>? _reply(Map<String, dynamic> frame) {
     switch (frame['type']) {
+      case 'flow_list_req':
+        return {
+          'type': 'flow_list_resp',
+          'success': true,
+          'flows': [
+            {'name': 'helper', 'latest': 1},
+          ],
+        };
       case 'flow_get_req':
         return {
           'type': 'flow_get_resp',

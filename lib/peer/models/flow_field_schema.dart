@@ -14,6 +14,9 @@ enum FlowFieldShape {
   listOf,
   mapOf,
   outputMap,
+
+  /// 流程库引用（`call.flow`）：同 scope 的流程列表里选，不手敲 `lib/x@2`。
+  flowRef,
 }
 
 class FlowFieldSpec {
@@ -89,5 +92,6 @@ bool isFlowFieldValueValid(FlowFieldSpec spec, Object? value) {
           }
           return true; // 主机给的原始结构化值，原样保留
         }),
+    FlowFieldShape.flowRef => value is String && value.trim().isNotEmpty,
   };
 }

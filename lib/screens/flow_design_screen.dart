@@ -90,6 +90,7 @@ class FlowDesignScreen extends StatefulWidget {
 class _FlowDesignScreenState extends State<FlowDesignScreen> {
   late final FlowEditorController _controller;
   bool _showYaml = false;
+  List<String> _flowRefs = const [];
 
   // 点选 + 说话（C.3）
   final Set<String> _selected = <String>{};
@@ -130,6 +131,22 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     _controller.addListener(_reportDirty);
     widget.onControllerReady?.call(_controller);
     unawaited(_controller.load());
+    unawaited(_loadFlowRefs());
+  }
+
+  /// `call.flow` 的候选：同 scope 的流程库引用。排除自己（自引用一定成环）。
+  Future<void> _loadFlowRefs() async {
+    final flows = await _controller.client.list(widget.peerId, scope: widget.scope);
+    if (!mounted || flows == null) return;
+    final prefix = widget.scope.startsWith('group:')
+        ? 'group/${widget.scope.substring('group:'.length)}'
+        : 'lib';
+    setState(() {
+      _flowRefs = [
+        for (final f in flows)
+          if (f.name != widget.name) '$prefix/${f.name}',
+      ];
+    });
   }
 
   @override
@@ -529,6 +546,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
         onPickAgent: _pickAgent,
         tree: _controller.tree,
         yaml: _controller.yaml,
+        flowRefs: _flowRefs,
         onApply: (changes) {
           Navigator.pop(sheet);
           if (changes.isEmpty) return;

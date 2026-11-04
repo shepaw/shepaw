@@ -186,6 +186,24 @@ void main() {
     expect(value, original);
   });
 
+  testWidgets('flowRef 可以从流程库里选，不用手敲引用', (tester) async {
+    Object? value;
+    await _pump(
+      tester,
+      FlowFieldEditor(
+        spec: _spec('call.flow', FlowFieldShape.flowRef),
+        current: null,
+        flowRefChoices: const ['lib/helper', 'lib/review'],
+        onChanged: (v) => value = v,
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey('pick:call.flow')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('flow-ref-lib/helper')));
+    await tester.pumpAndSettle();
+    expect(value, 'lib/helper');
+  });
+
   testWidgets('intOrInput 能从输入里挑一个引用', (tester) async {
     Object? value;
     await _pump(

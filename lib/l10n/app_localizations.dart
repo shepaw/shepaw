@@ -16487,6 +16487,12 @@ abstract class AppLocalizations {
   /// **'引用一个整数输入'**
   String get flow_fieldPickInput;
 
+  /// No description provided for @flow_fieldPickFlow.
+  ///
+  /// In zh, this message translates to:
+  /// **'从流程库选一个子流程'**
+  String get flow_fieldPickFlow;
+
   /// No description provided for @flow_fieldCondExpr.
   ///
   /// In zh, this message translates to:

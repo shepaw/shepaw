@@ -5537,6 +5537,7 @@
   "flow_runsDaysAgo": "{count} 天前",
   "flow_fieldRequired": "这个是必填的",
   "flow_fieldPickInput": "引用一个整数输入",
+  "flow_fieldPickFlow": "从流程库选一个子流程",
   "flow_fieldCondExpr": "表达式",
   "flow_fieldCondJudge": "让人判断",
   "flow_fieldCondWho": "问谁（如 owner）",

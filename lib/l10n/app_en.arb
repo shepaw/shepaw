@@ -5106,6 +5106,7 @@
   "flow_runsDaysAgo": "{count} d ago",
   "flow_fieldRequired": "This field is required",
   "flow_fieldPickInput": "Reference an int input",
+  "flow_fieldPickFlow": "Pick a subflow from the library",
   "flow_fieldCondExpr": "Expression",
   "flow_fieldCondJudge": "Ask a person",
   "flow_fieldCondWho": "Who (e.g. owner)",

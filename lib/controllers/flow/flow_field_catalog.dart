@@ -18,6 +18,7 @@ class FlowFieldCatalog {
     'loop.max': FlowFieldShape.intOrInput,
     'if.cond': FlowFieldShape.cond,
     'map.over': FlowFieldShape.cond,
+    'call.flow': FlowFieldShape.flowRef,
   };
 
   /// 主机 schema 里那些「类型对了但选项可能不对」的字段，用客户端选项覆盖。
@@ -144,6 +145,11 @@ class FlowFieldCatalog {
         shape: FlowFieldShape.mapOf,
         labelZh: '变量（名 → 表达式）',
         labelEn: 'Variables (name → expression)'),
+    'call.flow': FlowFieldSpec(
+        path: 'call.flow',
+        shape: FlowFieldShape.flowRef,
+        labelZh: '子流程',
+        labelEn: 'Subflow reference'),
     'call.group': FlowFieldSpec(
         path: 'call.group',
         shape: FlowFieldShape.string,

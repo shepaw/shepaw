@@ -18,6 +18,7 @@ class FlowFieldEditor extends StatefulWidget {
     required this.onChanged,
     this.refCandidates = const [],
     this.intInputNames = const [],
+    this.flowRefChoices = const [],
   });
 
   final FlowFieldSpec spec;
@@ -29,6 +30,9 @@ class FlowFieldEditor extends StatefulWidget {
 
   /// [FlowFieldShape.intOrInput] 能引用的 int 输入名。
   final List<String> intInputNames;
+
+  /// [FlowFieldShape.flowRef] 的候选（`lib/<name>` / `group/<gid>/<name>`）。
+  final List<String> flowRefChoices;
 
   @override
   State<FlowFieldEditor> createState() => _FlowFieldEditorState();
@@ -148,6 +152,8 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
               row.key.text.trim(): row.encode(),
         };
         value = map.isEmpty ? null : map;
+      case FlowFieldShape.flowRef:
+        value = _scalar.text.trim().isEmpty ? null : _scalar.text.trim();
     }
     widget.onChanged(value);
   }
@@ -307,7 +313,60 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
       FlowFieldShape.listOf => wrap(_listRows(l10n)),
       FlowFieldShape.mapOf => wrap(_pairRows(l10n)),
       FlowFieldShape.outputMap => wrap(_outputRows(l10n)),
+      FlowFieldShape.flowRef => wrap(_flowRefRow(context, l10n)),
     };
+  }
+
+  /// `call.flow`：优先从同 scope 的流程库里选，仍可手输（比如带 `@revision`）。
+  Widget _flowRefRow(BuildContext context, AppLocalizations l10n) {
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            key: ValueKey('f:${widget.spec.path}'),
+            controller: _scalar,
+            decoration: const InputDecoration(isDense: true),
+            onChanged: (_) => setState(_emit),
+          ),
+        ),
+        if (widget.flowRefChoices.isNotEmpty)
+          IconButton(
+            key: ValueKey('pick:${widget.spec.path}'),
+            tooltip: l10n.flow_fieldPickFlow,
+            icon: const Icon(Icons.account_tree_outlined, size: 18),
+            onPressed: () => unawaited(_pickFlowRef(context, l10n)),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _pickFlowRef(BuildContext context, AppLocalizations l10n) async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      builder: (sheet) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(l10n.flow_fieldPickFlow,
+                  style: Theme.of(context).textTheme.titleSmall),
+            ),
+            for (final ref in widget.flowRefChoices)
+              ListTile(
+                key: ValueKey('flow-ref-$ref'),
+                title: Text(ref),
+                onTap: () => Navigator.pop(sheet, ref),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _scalar.text = picked;
+      _emit();
+    });
   }
 
   bool _isEmptyValue() {
@@ -333,6 +392,8 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
         return _pairs.every((p) => p.key.text.trim().isEmpty);
       case FlowFieldShape.outputMap:
         return _outputs.every((r) => r.key.text.trim().isEmpty);
+      case FlowFieldShape.flowRef:
+        return _scalar.text.trim().isEmpty;
     }
   }
 

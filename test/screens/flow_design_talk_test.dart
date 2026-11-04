@@ -16,6 +16,12 @@ HubFlow _host(StreamController<PeerControlEvent> bus) => HubFlow(
       send: (peerId, frame) async {
         Map<String, dynamic>? reply;
         switch (frame['type']) {
+          case 'flow_list_req':
+            reply = {
+              'type': 'flow_list_resp',
+              'success': true,
+              'flows': <Object>[],
+            };
           case 'flow_get_req':
             reply = {
               'type': 'flow_get_resp',
