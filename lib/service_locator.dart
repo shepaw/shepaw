@@ -16,6 +16,7 @@ import 'services/vision/reference_album_service.dart';
 import 'peer/services/hub_event_client.dart';
 import 'peer/services/hub_group_registry.dart';
 import 'peer/services/hub_she_mind.dart';
+import 'peer/services/session_runtime_mirror.dart';
 import 'peer/services/peer_agent_client_service.dart';
 import 'services/event/event_bus.dart';
 import 'services/event/setup_event_bus.dart';
@@ -67,6 +68,11 @@ void setupServiceLocator() {
   // 远端 Agent Hub 取码（无状态，仅持有 http.Client）。
   getIt.registerLazySingleton<ContactsDirectory>(() => ContactsDirectory());
   getIt.registerLazySingleton<AppLockService>(() => AppLockService());
+  // 会话运行时的唯一镜像：主机写、App 只读。UI 直接订阅对应会话的
+  // ValueNotifier，不经过整页 setState 门控。
+  getIt.registerLazySingleton<SessionRuntimeMirror>(
+    () => SessionRuntimeMirror(),
+  );
   getIt.registerLazySingleton<HubEventClient>(() => HubEventClient(
         onCaughtUp: (peerId) {
           if (getIt.isRegistered<HubGroupRegistry>()) {

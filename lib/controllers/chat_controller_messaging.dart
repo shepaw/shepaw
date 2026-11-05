@@ -105,6 +105,9 @@ mixin _MessagingOps on _ChatControllerBase {
         streaming.applyMetadataTo(messages, messageIdMap, metadata);
         scheduleStreamingRebuild();
       },
+      // 主机 `agent_done` 帧的兜底：终态清理由 SessionRuntimeMirror 的
+      // running→idle 跃迁主导（见 _onSessionRuntimeChanged），这里保证落库
+      // 刷新和本地队列排空仍会发生。两条路径都只由主机帧触发，App 不猜终态。
       onTaskFinished: () async {
         await activeTask.waitForSave();
         acpCancellationToken = null;
@@ -112,7 +115,6 @@ mixin _MessagingOps on _ChatControllerBase {
         isProcessing = false;
         await loadMessages();
         _notify();
-        processNextInQueue();
       },
     );
   }
@@ -204,8 +206,7 @@ mixin _MessagingOps on _ChatControllerBase {
             respondingAgentNames.clear();
             groupStreamingMessageIds.clear();
             _notify();
-            processNextInQueue();
-          });
+              });
         }
       },
     );
@@ -338,7 +339,6 @@ mixin _MessagingOps on _ChatControllerBase {
       hasAttachments: hasPendingAttachments,
       isGroupMode: isGroupMode,
       hasAgent: agentId != null,
-      isProcessing: false,
     );
     if (early == ChatSendDisposition.empty) return;
     if (early == ChatSendDisposition.noAgent) {
@@ -398,49 +398,15 @@ mixin _MessagingOps on _ChatControllerBase {
     final attachmentDataList = persisted.data;
     final hasAttachments = attachmentDataList.isNotEmpty;
 
+    // 「这条立刻发还是排队」由主机 SessionRuntime 裁决，App 一律把消息交出去。
+    // 旧代码用本地 isProcessing + 静默秒数猜上一轮有没有结束，正是气泡提前
+    // 停下、新消息又被主机判成排队的根源。
     var disposition = ChatSendPlanner.decide(
       content: content,
       hasAttachments: hasAttachments,
       isGroupMode: isGroupMode,
       hasAgent: agentId != null,
-      isProcessing: isProcessing,
     );
-
-    // 回复正文已经停了（没有工具、没有待答卡片）。Claude Code 多轮之后
-    // 经常还占着引擎，不交正式收尾。这种时候下一条不该进队列。
-    final channelForFollowUp = currentChannelId;
-    if (!isGroupMode &&
-        channelForFollowUp != null &&
-        _settledPeerReplyLetsFollowUp(channelForFollowUp) &&
-        messageQueue.isEmpty) {
-      await _releaseSettledPeerTurn(channelForFollowUp);
-      if (!isProcessing &&
-          !PeerAgentClientService.instance
-              .followUpBlockedByChannel(channelForFollowUp) &&
-          disposition == ChatSendDisposition.queueText) {
-        disposition = ChatSendDisposition.sendDm;
-      }
-    }
-
-    // 兜底：失败后队列本应被 _restoreQueueToComposer 倒回清空；若因异常路径
-    // 残留了未处理的队列（isProcessing=false 但队列非空），手动再发一条时
-    // 不直接发送，而是排到队尾并恢复排空，保持 FIFO（队首旧消息先出，新
-    // 消息后发），避免队列永久卡死。正常态下队列只在 isProcessing=true 时
-    // 非空，不会误伤正常发送。
-    if (!isProcessing && messageQueue.isNotEmpty) {
-      if (disposition == ChatSendDisposition.sendDm ||
-          disposition == ChatSendDisposition.sendGroup) {
-        disposition = ChatSendDisposition.queueText;
-      }
-    }
-    // 主机上这路会话还有没写完的回复时，新消息继续交给主机，不在手机另开一条。
-    // 正文已经落地的回合不算「还在回复」，上面已经放行。
-    if (disposition == ChatSendDisposition.sendDm &&
-        channelForFollowUp != null &&
-        PeerAgentClientService.instance
-            .followUpBlockedByChannel(channelForFollowUp)) {
-      disposition = ChatSendDisposition.queueText;
-    }
 
     switch (disposition) {
       case ChatSendDisposition.empty:
@@ -454,37 +420,21 @@ mixin _MessagingOps on _ChatControllerBase {
         }
         return;
       case ChatSendDisposition.queueText:
+        // 防御性分支：主机是唯一裁决者，正常路径不该再命中这里。真到了也
+        // 一律直接交出去，绝不往本机塞第二份待发列表。
         if (hasAttachments && !isGroupMode) {
           for (final msg in savedAttachmentMessages) {
             await sendAttachmentToAgent(msg);
           }
         }
-        _offerQueuedMessage(
-          QueuedMessage(
-            // 排队项的 id 既当本机气泡落库，又当上行的 user_message_id，
-            // 得跟主机回包的形态一致（第三方 agent 的 DM 是 `peerhist_*`，
-            // 惜宝/群是裸 id）。
-            id: localUserMessageIdFor(
-              isGroupMode || agentId == null
-                  ? null
-                  : await localDatabaseService.getRemoteAgentById(agentId!),
-              const Uuid().v4(),
-            ),
-            content: content,
-            replyToId: capturedReplyToId,
-            replyQuoteText: capturedReplyQuoteText,
-            mentions: mentions,
-            instructionName: instructionName,
-            // 群聊附件未随 DM 分支立即发送，必须随队列项携带，出队时透传。
-            attachments:
-                (isGroupMode && hasAttachments) ? attachmentDataList : null,
-          ),
+        await processMessage(
+          content,
+          replyToId: capturedReplyToId,
+          replyQuoteText: capturedReplyQuoteText,
+          attachments: hasAttachments ? attachmentDataList : null,
+          attachmentMessages: hasAttachments ? savedAttachmentMessages : null,
+          instructionName: instructionName,
         );
-        // 兜底恢复：残留队列时入队后立即排空（正常态 isProcessing=true，
-        // 由当前回合的 finally 负责排空，这里不触发）。
-        if (!isProcessing) {
-          unawaited(processNextInQueue());
-        }
         return;
       case ChatSendDisposition.sendGroup:
         LoggerService().debug(
@@ -544,7 +494,7 @@ mixin _MessagingOps on _ChatControllerBase {
     }
 
     acpCancellationToken?.cancel();
-    // DO NOT clear messageQueue — let processNextInQueue() pick up the next one
+    // 不碰主机队列：后续排队消息由 SessionRuntime 自己出队。
     isProcessing = false;
     _notify();
   }
@@ -708,211 +658,15 @@ mixin _MessagingOps on _ChatControllerBase {
     _notify();
   }
 
-  /// 当前这条 peer 回复在屏幕上已经结束：有正文、停了一会儿、没有工具也没有审批。
-  bool _settledPeerReplyLetsFollowUp(String channelId) {
-    final busy = isProcessing ||
-        PeerAgentClientService.instance.hasInflightForChannel(channelId);
-    if (!busy) return false;
-    if (_streamingToolStillRunning()) return false;
-    if (streaming.isActive) {
-      if (streaming.content.trim().isEmpty) return false;
-      if (streaming.activeWithin(kFollowUpSettle)) return false;
-    }
-    return !PeerAgentClientService.instance
-        .followUpBlockedByChannel(channelId);
-  }
+  // 「正文停了一会儿、没有工具、没有审批」曾经被用来强行结束在途回合、
+  // 放行下一条。现在回合终态只由主机宣布，这几个本地猜测已全部删除：
+  // App 不再有权 `_finishPending`。
 
-  bool _streamingToolStillRunning() {
-    final id = streaming.messageId;
-    if (id == null) return false;
-    final status = messageIdMap[id]?.metadata?['tool_status'];
-    return status == 'pending' || status == 'in_progress';
-  }
+  // 本地入队 / 主机托管排队已删除：消息一律直接发出，由主机
+  // SessionRuntime 裁决 started / queued；ChatQueuePanel 只镜像 mirror.queue。
 
-  /// 用已经收到的正文结束占着发送闸门的回合，再让本条直接发出去。
-  Future<void> _releaseSettledPeerTurn(String channelId) async {
-    PeerAgentClientService.instance.completeSettledTurns(
-      channelId,
-      fallbackAnswer: streaming.content,
-    );
-    final deadline = DateTime.now().add(const Duration(seconds: 3));
-    while (isProcessing && DateTime.now().isBefore(deadline)) {
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-    }
-  }
-
-  /// 面板仍显示这条，发送交给主机上的会话队列，不在手机本地出队。
-  void _offerQueuedMessage(QueuedMessage item) {
-    item.hostOwned = true;
-    messageQueue.add(item);
-    _notify();
-    unawaited(_parkQueuedOnHost(item));
-  }
-
-  Future<void> _parkQueuedOnHost(QueuedMessage item) async {
-    final channelId = currentChannelId;
-    if (channelId == null || channelId.isEmpty) {
-      item.hostOwned = false;
-      return;
-    }
-    bool stillQueued() => chatService
-        .pendingSendQueue(channelId)
-        .any((queued) => queued.id == item.id);
-    try {
-      final route = await PouchTurnRelay.currentRoute();
-      final hostPeerId = route.hostPeerId;
-      if (route.runLocal || hostPeerId == null || hostPeerId.isEmpty) {
-        item.hostOwned = false;
-        return;
-      }
-      final bool parked;
-      if (isGroupMode) {
-        final mentionedAgentIds = GroupMentionResolver.resolveAgentIds(
-          content: item.content,
-          mentions: item.mentions,
-          agents: [
-            for (final agent in groupAgents) (id: agent.id, name: agent.name),
-          ],
-        );
-        parked = await PouchTurnRelay.instance.enqueueGroup(
-          hostPeerId: hostPeerId,
-          requestId: item.id,
-          channelId: channelId,
-          content: () => item.content,
-          stillQueued: stillQueued,
-          userId: getUserId(),
-          userName: getUserName(),
-          mentionedAgentIds: mentionedAgentIds,
-          replyToId: item.replyToId,
-          replyQuoteText: item.replyQuoteText,
-          attachments: item.attachments,
-        );
-      } else {
-        final agent = agentId == null
-            ? null
-            : await localDatabaseService.getRemoteAgentById(agentId!);
-        if (agent != null && relaysHostSheTurn(agent)) {
-          parked = await PouchTurnRelay.instance.enqueueDm(
-            hostPeerId: hostPeerId,
-            requestId: item.id,
-            channelId: channelId,
-            agentId: hostSheTurnAgentId(agent),
-            content: () => item.content,
-            stillQueued: stillQueued,
-            userId: getUserId(),
-            userName: getUserName(),
-            replyToId: item.replyToId,
-            replyQuoteText: item.replyQuoteText,
-            attachments: item.attachments,
-          );
-        } else if (agent != null &&
-            agent.sourcePeerId != null &&
-            agent.remoteAgentId != null) {
-          final dial = await PouchRosterDial.decideLive(
-            fallbackPeerId: agent.sourcePeerId!,
-            remoteAgentId: agent.remoteAgentId!,
-            hubFingerprint: agent.metadata['roster_hub_fingerprint'] as String?,
-          );
-          if (dial.blocked) {
-            throw Exception(PouchRosterDial.blockedMessage);
-          }
-          final sessionId =
-              remoteSessionIdFromChannelId(channelId) ?? channelId;
-          parked = await PeerAgentClientService.instance.enqueueChat(
-            peerId: dial.peerId ?? agent.sourcePeerId!,
-            remoteAgentId: dial.remoteAgentId ?? agent.remoteAgentId!,
-            requestId: item.id,
-            message: item.content,
-            sessionId: sessionId,
-            channelId: channelId,
-            localAgentId: agent.id,
-            userId: getUserId(),
-            userName: getUserName(),
-            agentName: agent.name,
-            // 排队消息落库用的就是队列 id，交给主机后两边同一条。
-            userMessageId: item.id,
-            replyToId: item.replyToId,
-            replyQuoteText: item.replyQuoteText,
-            attachments: item.attachments,
-          );
-        } else {
-          item.hostOwned = false;
-          if (!isProcessing && isMounted) unawaited(processNextInQueue());
-          return;
-        }
-      }
-      if (!parked && stillQueued()) {
-        chatService
-            .pendingSendQueue(channelId)
-            .removeWhere((queued) => queued.id == item.id);
-        if (isMounted) _notify();
-      }
-    } catch (e) {
-      LoggerService().warning(
-        'park queue on host failed: $e',
-        tag: 'HostQueue',
-      );
-      if (!stillQueued()) return;
-      if (isMounted) {
-        _emit(ShowErrorSnackBarEvent('$e'));
-      }
-    }
-  }
-
-  @override
-  Future<void> processNextInQueue() async {
-    // 页面已离开：不再于已销毁的 Controller 上后台排空——队列保留在
-    // ChatService 侧，重进后由 loadMessages 恢复发送（避免死 Controller
-    // 与重进的新 Controller 并发出队）。
-    if (!isMounted) return;
-
-    final channelId = currentChannelId;
-    if (channelId == null) return;
-    final queue = chatService.pendingSendQueue(channelId);
-    if (queue.isEmpty) return;
-
-    // 已有回合在途（isProcessing，或 channel 级 live task / peer inflight
-    // 尚未落进 isProcessing）时不得并发出队：此刻派发下一条只会让多条回合
-    // 同时跑——ACP 异步路径覆盖共享 ActiveTask / 流式状态导致回复错乱，
-    // peer busy 路径则整段 reattach 只吐「上一轮回复仍在继续」不真正发送。
-    // 统一交给当前回合的 onTaskFinished / finally（在 isProcessing=false
-    // 后）逐条排空，保证同一时刻只派发一条。
-    if (isProcessing) return;
-    if (chatService.getActiveTask(channelId) != null) return;
-    if (!isGroupMode &&
-        PeerAgentClientService.instance.hasInflightForChannel(channelId)) {
-      return;
-    }
-
-    if (!QueuedMessageOps.localQueueShouldSend(
-      hostOwned: queue.first.hostOwned,
-    )) {
-      return;
-    }
-
-    final next = queue.removeAt(0);
-    _notify();
-    if (isGroupMode) {
-      await processGroupMessage(
-        next.content,
-        replyToId: next.replyToId,
-        replyQuoteText: next.replyQuoteText,
-        attachments: next.attachments,
-        mentions: next.mentions,
-        instructionName: next.instructionName,
-      );
-    } else {
-      await processMessage(
-        next.content,
-        replyToId: next.replyToId,
-        replyQuoteText: next.replyQuoteText,
-        // DM 附件的附件消息在入队前已随 sendAttachmentToAgent 立即发送，
-        // 队列项不携带 attachmentMessages。
-        attachments: next.attachments,
-        instructionName: next.instructionName,
-      );
-    }
-  }
+  // 本地排空循环（processNextInQueue）已删除：队列由主机 SessionRuntime
+  // 自己出队，App 不再从本地列表逐条派发。
 
   // ---------------------------------------------------------------------------
   // Process DM message
@@ -1096,8 +850,8 @@ mixin _MessagingOps on _ChatControllerBase {
       await loadMessages();
       final err = e.toString();
       if (e is PeerTurnInFlightException) {
-        // 对方回合仍在进行：非失败，交由 reattach / onTaskFinished 的
-        // processNextInQueue 继续排空。
+        // 对方回合仍在进行：非失败，交由 reattach / onTaskFinished 收尾；
+        // 后续排队消息由主机自己出队。
         reattachToActiveTask();
         awaitingAsyncTask =
             chatService.getActiveTask(currentChannelId ?? '') != null;
@@ -1123,8 +877,7 @@ mixin _MessagingOps on _ChatControllerBase {
           // 这里只暂停队列排空（避免级联）。
           _notify();
         } else {
-          // 失败路径：清理当前回合状态但不调用 processNextInQueue——
-          // 队列保留且停住，避免级联自动发送。
+          // 失败路径：清理当前回合状态，但不碰主机队列，避免级联自动发送。
           acpCancellationToken = null;
           streaming.clear();
           pendingHistoryRequest = null;
@@ -1134,7 +887,7 @@ mixin _MessagingOps on _ChatControllerBase {
       } else if (awaitingAsyncTask) {
         // 异步确认路径：本轮任务仍在后台跑，isProcessing / 流式状态交给
         // activeTask.onTaskFinished 清理——回合真正结束时它负责置
-        // isProcessing=false 并调用 processNextInQueue 逐条排空。
+        // isProcessing=false；后续排队消息由主机自己出队，App 不并发派发。
         // 这里绝不能排空队列：此刻回合还活着，出队下一条会并发起新回合
         // （ACP 覆盖共享 ActiveTask 导致回复错乱），或命中 peer busy 守卫
         // 重复 reattach（队列整段倒出 + 后续发送卡「上一轮回复仍在继续」）。
@@ -1144,7 +897,6 @@ mixin _MessagingOps on _ChatControllerBase {
         pendingHistoryRequest = null;
         isProcessing = false;
         _notify();
-        processNextInQueue();
       }
     }
   }
@@ -1762,24 +1514,8 @@ mixin _MessagingOps on _ChatControllerBase {
           tag: 'ChatController');
       return;
     }
-    if (isProcessing) {
-      LoggerService().debug(
-        'processGroupMessage queued (already processing): ${content.length} chars',
-        tag: 'ChatController',
-      );
-      _offerQueuedMessage(
-        QueuedMessage(
-          id: const Uuid().v4(),
-          content: content,
-          replyToId: replyToId,
-          replyQuoteText: replyQuoteText,
-          mentions: mentions,
-          attachments: attachments,
-          instructionName: instructionName,
-        ),
-      );
-      return;
-    }
+    // 不再因为本地 isProcessing 把消息塞进本机队列：群回合也一律交给主机
+    // SessionRuntime 裁决 started / queued，App 不维护第二份待发列表。
     LoggerService().debug(
         'processGroupMessage: channelId=$currentChannelId, agents=${groupAgents.map((a) => a.name).toList()}, adminId=$groupAdminAgentId',
         tag: 'ChatController');
@@ -1790,8 +1526,6 @@ mixin _MessagingOps on _ChatControllerBase {
     isProcessing = true;
     acpCancellationToken = ACPCancellationToken();
     final epoch = groupTurnGate.beginTurn();
-    // 群回合失败标记：失败时保留 backlog 并暂停自动排空。
-    bool groupFailed = false;
     _notify();
 
     final userMessage = GroupInteractionPlanner.buildOptimisticUserMessage(
@@ -1955,7 +1689,6 @@ mixin _MessagingOps on _ChatControllerBase {
     } catch (e, stackTrace) {
       LoggerService().error('processGroupMessage error: $e',
           tag: 'ChatController', error: e, stackTrace: stackTrace);
-      groupFailed = true;
       // 失败后把当前群消息（含附件）+ 队列剩余消息倒回输入框。
       _restoreQueueToComposer(
         failedContent: content,
@@ -1978,7 +1711,6 @@ mixin _MessagingOps on _ChatControllerBase {
         groupStreamingMessageIds.clear();
         _notify();
         // 失败时保留 backlog 并暂停自动排空，等待用户手动恢复。
-        if (!groupFailed) processNextInQueue();
       }
     }
   }
@@ -2133,9 +1865,6 @@ mixin _MessagingOps on _ChatControllerBase {
 
     acpCancellationToken = ACPCancellationToken();
 
-    // 附件消息发送失败标记：失败时暂停自动排空，保留 backlog。
-    bool fileFailed = false;
-
     try {
       final remoteAgent =
           await localDatabaseService.getRemoteAgentById(agentId!);
@@ -2195,7 +1924,6 @@ mixin _MessagingOps on _ChatControllerBase {
       messages.removeWhere((m) => m.id == streamingMessageId);
       messageIdMap.remove(streamingMessageId);
       _notify();
-      fileFailed = true;
       // 失败后把附件消息文本 + 附件本体 + 队列剩余消息倒回输入框。
       _restoreQueueToComposer(
         failedContent: attachmentMessage.content,
@@ -2207,7 +1935,6 @@ mixin _MessagingOps on _ChatControllerBase {
       isProcessing = false;
       _notify();
       // 失败时保留 backlog 并暂停自动排空，等待用户手动恢复。
-      if (!fileFailed) processNextInQueue();
     }
   }
 

@@ -105,12 +105,6 @@ TurnWatchdogVerdict evaluateTurnWatchdog({
   return TurnWatchdogVerdict.none;
 }
 
-/// 已有助手正文且流静止后，视为回复结束（成功收口，不是超时失败）。
-///
-/// `agent_done` 只是便利信号，不是定义。工作流不应等成员/对端再吐一个
-/// done；有正文、无在途审批、持续静默即结束。
-const Duration kReplySettleIdle = Duration(seconds: 180);
-
 /// 审批闸门卡住后，允许 stall probe 的最短等待。
 ///
 /// 用户正在读卡片时不探测；但 `openApprovals` 因漏计 / 提交挂起而
@@ -157,8 +151,8 @@ bool shouldProbeStalledTurn({
 /// Hub keepalive (`{keepalive: true, upstream_status: working}`) must not
 /// restart the idle clock. It only feeds `lastKeepaliveAt` of
 /// [evaluateTurnWatchdog] so a silent tool does not trip the 30-minute
-/// failure timeout; counting it as output would block
-/// [shouldCompleteSettledReply] and the stall probe forever.
+/// failure timeout; counting it as output would also keep the stall probe
+/// from ever firing.
 bool isHubKeepalive(Map<String, dynamic> metadata) =>
     metadata['keepalive'] == true;
 bool metadataResetsIdleClock(Map<String, dynamic> metadata) {
@@ -167,45 +161,6 @@ bool metadataResetsIdleClock(Map<String, dynamic> metadata) {
     if (key != 'keepalive' && key != 'upstream_status') return true;
   }
   return false;
-}
-
-/// 正文已经落地、停了一小会儿、没有待答卡片、也没有工具还在跑。
-///
-/// 这种回合在用户眼里已经结束。Claude Code 多轮之后经常还占着引擎，
-/// 下一条不该因此先进入发送队列。
-const Duration kFollowUpSettle = Duration(seconds: 1);
-
-bool settledReplyLetsFollowUp({
-  required bool hasAnswer,
-  required int openApprovals,
-  required Duration idle,
-  String? toolStatus,
-  Duration settle = kFollowUpSettle,
-}) {
-  if (openApprovals > 0) return false;
-  final tool = (toolStatus ?? '').trim();
-  if (tool == 'pending' || tool == 'in_progress') return false;
-  if (!hasAnswer) return false;
-  return idle >= settle;
-}
-
-/// 系统观察到回复已经结束：有助手正文、没有未决审批、流已静止。
-///
-/// 断连 / 上游重连期间不算结束（对端本来就不会再吐帧）。
-bool shouldCompleteSettledReply({
-  required DateTime now,
-  required DateTime idleSince,
-  required DateTime? suspendedSince,
-  required DateTime? upstreamReconnectingSince,
-  required int openApprovals,
-  required bool hasAssistantContent,
-  Duration settleIdle = kReplySettleIdle,
-}) {
-  if (!hasAssistantContent) return false;
-  if (openApprovals > 0) return false;
-  if (suspendedSince != null) return false;
-  if (upstreamReconnectingSince != null) return false;
-  return now.difference(idleSince) >= settleIdle;
 }
 
 /// One role/content line from a remote peer transcript.

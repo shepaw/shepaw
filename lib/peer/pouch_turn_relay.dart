@@ -781,6 +781,19 @@ class PouchTurnRelay {
     });
   }
 
+  /// 主机裁决回执（`session_ack`）：这条请求已被受理，`started` 或 `queued`。
+  /// 旧路径等 `pouch_turn_event kind:queued`，主机已不再发那种帧；这里把
+  /// 回执转成在途 turn 认得的 kind，避免 `_forward` 一直干等到超时。
+  void onSessionAck(Map<String, dynamic> data) {
+    final requestId = data['request_id'] as String? ?? '';
+    if (!_pending.containsKey(requestId)) return;
+    final queued = data['disposition'] == 'queued';
+    onEvent(<String, dynamic>{
+      'request_id': requestId,
+      'kind': queued ? 'queued' : 'start',
+    });
+  }
+
   void onEvent(Map<String, dynamic> data) {
     final requestId = data['request_id'] as String? ?? '';
     final pending = _pending[requestId];

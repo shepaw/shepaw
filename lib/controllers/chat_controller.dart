@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:flutter/foundation.dart' show ChangeNotifier;
+import 'package:flutter/foundation.dart'
+    show ChangeNotifier, ValueNotifier, VoidCallback;
 import 'package:flutter/widgets.dart';
-import 'package:sqflite/sqflite.dart' show ConflictAlgorithm;
 import 'package:uuid/uuid.dart';
 import '../models/mention_entry.dart';
 import '../models/message.dart';
@@ -33,13 +33,13 @@ import '../services/cli_approval_coordinator.dart';
 import '../services/cli_approval_service.dart';
 import '../clis/shepaw/os/os_executor.dart' as os_exec;
 import '../models/workflow_models.dart';
-import '../peer/pouch_roster.dart';
 import '../peer/host_she_turn.dart';
 import '../peer/pouch_turn_relay.dart';
 import '../peer/services/hub_event_client.dart';
 import '../peer/services/peer_agent_client_service.dart';
 import '../peer/services/peer_storage_service.dart';
 import '../peer/services/peer_connection_manager.dart';
+import '../peer/services/session_runtime_mirror.dart';
 import '../storage/store_uri_reader.dart';
 import '../peer/services/peer_connection.dart' show PeerConnectionEvent;
 import '../peer/peer_approval_selection.dart';
@@ -53,7 +53,6 @@ import '../services/workflow/workflow_plan_approval_sync.dart';
 import '../services/group/group_member_session_service.dart';
 import '../services/group/group_orchestration_continuation.dart';
 import '../services/dispatch/she_relay_session_service.dart';
-import '../services/noise_identity.dart';
 import '../services/composer_draft_service.dart';
 import '../peer/services/hub_group_registry.dart';
 import '../service_locator.dart' show getIt;
@@ -69,7 +68,6 @@ import 'group_mention_resolver.dart';
 import 'chat_message_reconciler.dart';
 import 'chat_send_planner.dart';
 import 'dm_send_turn_planner.dart';
-import 'queued_message_ops.dart';
 import 'group_interaction_planner.dart';
 import 'peer_device_label_resolver.dart';
 import 'chat_load_channel_planner.dart';
@@ -203,17 +201,91 @@ abstract class _ChatControllerBase extends ChangeNotifier
   bool mirrorsRemoteTurn = false;
   ACPCancellationToken? acpCancellationToken;
 
-  /// 待发送队列：按频道存放在 ChatService 侧（跨 Controller 生命周期存活）。
-  /// 退出聊天页后队列不随 dispose 丢失，重进时由 loadMessages 重新接管发送。
-  List<QueuedMessage> get messageQueue =>
-      chatService.pendingSendQueue(currentChannelId ?? '');
+  /// 待发送队列的**只读投影**：主机会话队列是唯一真相源。
+  /// 编辑/删除/重排一律通过 _syncHostQueue 发给主机，改完由
+  /// `session.state` 收敛；本机不再维护第二份待发列表，也不再自行出队重发。
+  List<QueuedMessage> get messageQueue {
+    final state = sessionState?.value;
+    if (state == null || state.queue.isEmpty) return const <QueuedMessage>[];
+    return <QueuedMessage>[
+      for (final item in state.queue)
+        QueuedMessage(
+          id: item.requestId,
+          content: item.content,
+          hostOwned: true,
+        ),
+    ];
+  }
 
-  /// 已经直接发出、却被主机收进会话队列的回合数。
-  ///
-  /// 这类消息不在本地待发面板里（本地以为已经发出去了），靠一条轻量提示
-  /// 让用户知道它其实在主机上排队，上一轮结束后才开始。
-  int get hostQueuedTurnCount => PeerAgentClientService.instance
-      .hostQueuedDirectTurnCount(currentChannelId ?? '');
+  /// 当前会话在主机 SessionRuntime 里的 key。
+  String? get sessionRuntimeKey {
+    final cid = currentChannelId;
+    final aid = agentId;
+    if (cid == null || cid.isEmpty || aid == null || aid.isEmpty) return null;
+    return SessionRuntimeMirror.sessionKey(agentId: aid, channelId: cid);
+  }
+
+  /// UI 直接订阅这份状态，不经过外层结构快照门控：
+  /// `session_ack` / `session.state` 一到达，排队条同帧刷新，不需要手势。
+  ValueNotifier<SessionState>? get sessionState {
+    // widget 测试常直接 new ChatController 而不跑 setupServiceLocator。
+    if (!getIt.isRegistered<SessionRuntimeMirror>()) return null;
+    final mirror = getIt<SessionRuntimeMirror>();
+    final key = sessionRuntimeKey;
+    if (key != null) {
+      final exact = mirror.peek(key);
+      if (exact != null && exact.value.revision > 0) return exact;
+    }
+    // 本地 agent id 与主机 agent_id 未必同一套：按 session_id 后缀兜底。
+    final cid = currentChannelId;
+    if (cid == null || cid.isEmpty) return null;
+    return mirror.notifierForChannel(cid);
+  }
+
+  VoidCallback? _sessionRuntimeListener;
+  /// 主机最近一次宣告「正在跑」的 turn id。只有从 running 翻到 idle
+  /// 才允许收起占位，启动对账看到 idle 不会误清用户正在看的回复。
+  String? _runtimeActiveTurnId;
+
+  /// 主机的 running→idle 跃迁是气泡输出态的主导清理路径。
+  /// 断线期间 `agent_done` 丢帧时，重连补拉的 `session.state` 也能收口；
+  /// App 自己的计时器/静默猜测一律不参与。
+  void _onSessionRuntimeChanged() {
+    if (_eventController.isClosed ||
+        !getIt.isRegistered<SessionRuntimeMirror>()) {
+      return;
+    }
+    final mirror = getIt<SessionRuntimeMirror>();
+    final changedKey = mirror.lastChangedKey;
+    final cid = currentChannelId;
+    if (changedKey == null || cid == null || cid.isEmpty) return;
+    final expected = sessionRuntimeKey;
+    const prefix = 'psess_';
+    final bare =
+        cid.startsWith(prefix) ? cid.substring(prefix.length) : cid;
+    final matches = expected != null
+        ? changedKey == expected
+        : changedKey.endsWith(':$bare');
+    if (!matches) return;
+    final state = mirror.peek(changedKey)?.value;
+    if (state == null) return;
+    // ChatQueuePanel 仍读 c.messageQueue（现在是 mirror 的投影）：状态一变
+    // 就让外层重算结构快照，否则面板不会重建。快照门控会挡掉没变化的刷新。
+    _notify();
+    if (state.isRunning) {
+      if (state.turnId.isNotEmpty) _runtimeActiveTurnId = state.turnId;
+      return;
+    }
+    if (_runtimeActiveTurnId == null) return;
+    _runtimeActiveTurnId = null;
+    if (!streaming.isActive && !isProcessing) return;
+    acpCancellationToken = null;
+    streaming.clear();
+    isProcessing = false;
+    _notify();
+    // 落库内容仍由主机 `agent_done` 的 onTaskFinished 刷新；这里只收状态，
+    // 不并发发起第二次 reload，避免两次整表刷新互相顶掉。
+  }
 
   /// 群编排代际守卫：stop 后旧编排的 abort-summarize 会跑完（设计上不带
   /// 取消令牌），其 finally/流式回调不得再触碰新轮共享状态。
@@ -272,11 +344,6 @@ abstract class _ChatControllerBase extends ChangeNotifier
   /// messages, member failure notices) so they surface in the chat
   /// immediately instead of waiting for the next full reconcile.
   StreamSubscription<List<Message>>? _channelUpdateSub;
-  StreamSubscription<({String channelId, QueuedMessage message})>?
-      _queueReleaseSub;
-  StreamSubscription<String>? _queueDropSub;
-  StreamSubscription<({String channelId, String requestId, bool queued})>?
-      _hostQueueSub;
   StreamSubscription<AgentTaskCompletion>? _agentTaskCompletionSub;
   VoidCallback? _typingListener;
 
@@ -453,75 +520,13 @@ abstract class _ChatControllerBase extends ChangeNotifier
       _cliApprovalHandler,
       channelId: currentChannelId,
     );
-    // 先把气泡放进列表并刷新，drop 再收起队列面板。
-    _queueReleaseSub = chatService.queuedMessageReleased.listen((released) {
-      if (_eventController.isClosed) return;
-      final bubble = released.message.toChatBubble(
-        userId: getUserId(),
-        userName: getUserName(),
-      );
-      if (_showReleasedQueuedBubble(released.channelId, bubble)) {
-        _notify();
-        _emit(RequestScrollToBottomEvent(force: true));
-      }
-      unawaited(
-        _persistReleasedQueuedBubble(released.channelId, bubble),
-      );
-    });
-    _queueDropSub = chatService.queuedMessageDropped.listen((_) {
-      if (_eventController.isClosed) return;
-      _notify();
-      if (!isProcessing) unawaited(processNextInQueue());
-    });
-    // 直接发出的消息被主机排队 / 终于开跑：重算提示条。
-    _hostQueueSub =
-        PeerAgentClientService.instance.hostQueueEvents.listen((event) {
-      if (_eventController.isClosed) return;
-      if (event.channelId == currentChannelId) _notify();
-    });
-  }
-
-  /// 主机开始执行排队消息时，立刻放进当前对话，不等库刷新或下一次同步。
-  /// 返回是否新放进了列表。
-  bool _showReleasedQueuedBubble(String channelId, Message bubble) {
-    if (currentChannelId != channelId) return false;
-    if (messageIdMap.containsKey(bubble.id)) return false;
-    messages.add(bubble);
-    messageIdMap[bubble.id] = bubble;
-    isUserScrolledUp = false;
-    return true;
-  }
-
-  Future<void> _persistReleasedQueuedBubble(
-    String channelId,
-    Message bubble,
-  ) async {
-    try {
-      await localDatabaseService.createMessage(
-        id: bubble.id,
-        channelId: channelId,
-        senderId: bubble.from.id,
-        senderType: 'user',
-        senderName: bubble.from.name,
-        content: bubble.content,
-        metadata: bubble.metadata,
-        replyToId: bubble.replyTo,
-        createdAt: DateTime.fromMillisecondsSinceEpoch(bubble.timestampMs),
-        conflictAlgorithm: ConflictAlgorithm.ignore,
-      );
-    } catch (e) {
-      LoggerService().warning(
-        'persist released queue message failed: $e',
-        tag: 'HostQueue',
-      );
-      return;
+    // 气泡输出态跟随主机会话状态：running→idle 才收起，App 不再自己判终态。
+    if (getIt.isRegistered<SessionRuntimeMirror>()) {
+      _sessionRuntimeListener = _onSessionRuntimeChanged;
+      getIt<SessionRuntimeMirror>()
+          .changes
+          .addListener(_sessionRuntimeListener!);
     }
-    if (_eventController.isClosed) return;
-    if (_showReleasedQueuedBubble(channelId, bubble)) {
-      _notify();
-      _emit(RequestScrollToBottomEvent(force: true));
-    }
-    chatService.notifyChannelUpdate(channelId);
   }
 
   /// 流式回合结束：若期间有 DB 写入通知被推迟，补一次 reconcile（把
@@ -899,9 +904,13 @@ abstract class _ChatControllerBase extends ChangeNotifier
     _orphanFormSub?.cancel();
     _interactionClosedSub?.cancel();
     _formDeferredSub?.cancel();
-    _queueReleaseSub?.cancel();
-    _queueDropSub?.cancel();
-    _hostQueueSub?.cancel();
+    if (_sessionRuntimeListener != null &&
+        getIt.isRegistered<SessionRuntimeMirror>()) {
+      getIt<SessionRuntimeMirror>()
+          .changes
+          .removeListener(_sessionRuntimeListener!);
+    }
+    _sessionRuntimeListener = null;
     _channelUpdateSub?.cancel();
     _agentTaskCompletionSub?.cancel();
     if (_typingListener != null) {
@@ -1118,7 +1127,6 @@ abstract class _ChatControllerBase extends ChangeNotifier
   void _syncGroupStreamingHostsFromActiveTasks();
   void _reattachPendingPlanApproval();
   void scheduleStreamingRebuild({bool refreshList = false});
-  Future<void> processNextInQueue();
   void _updateStreamingMetadata(Map<String, dynamic> metadata);
   Future<void> processMessage(String content,
       {String? replyToId,
@@ -1481,41 +1489,33 @@ abstract class _ChatControllerBase extends ChangeNotifier
     }
   }
 
-  // ---- 待发送队列逐条管理 ----
+  // ---- 待发送队列逐条管理（主机是唯一 writer） ----
 
-  /// 编辑队列中 [id] 的消息内容。trim 后为空会被拒绝。返回是否命中。
+  bool _queueHas(String id) => messageQueue.any((item) => item.id == id);
+
+  /// 编辑：只把改动发给主机，列表由 `session.state` 收敛。
+  /// 本机不再原地改列表——那是第二份真相源。
   bool editQueuedMessage(String id, String newContent) {
-    final hit = QueuedMessageOps.edit(messageQueue, id, newContent);
-    if (!hit) return false;
-    _notify();
-    _syncHostQueue(op: 'edit', itemId: id, content: newContent.trim());
+    final content = newContent.trim();
+    if (content.isEmpty || !_queueHas(id)) return false;
+    _syncHostQueue(op: 'edit', itemId: id, content: content);
     return true;
   }
 
-  /// 删除队列中 [id] 的消息。返回是否命中。
   bool removeQueuedMessage(String id) {
-    final hit = QueuedMessageOps.remove(messageQueue, id);
-    if (!hit) return false;
-    _notify();
+    if (!_queueHas(id)) return false;
     _syncHostQueue(op: 'remove', itemId: id);
     return true;
   }
 
-  /// 将队列中 [id] 的消息移动 [delta] 位（-1 上移 / +1 下移）。
-  /// 越界或 `delta == 0` 时无操作。返回是否命中。
   bool moveQueuedMessage(String id, int delta) {
-    final hit = QueuedMessageOps.move(messageQueue, id, delta);
-    if (!hit) return false;
-    _notify();
+    if (delta == 0 || !_queueHas(id)) return false;
     _syncHostQueue(op: 'move', itemId: id, delta: delta);
     return true;
   }
 
-  /// 清空当前频道的待发送队列。
   void clearQueuedMessages() {
     if (messageQueue.isEmpty) return;
-    messageQueue.clear();
-    _notify();
     _syncHostQueue(op: 'clear');
   }
 
@@ -1559,25 +1559,18 @@ abstract class _ChatControllerBase extends ChangeNotifier
     String? failedContent,
     List<AttachmentData>? failedAttachments,
   }) {
-    final queue = messageQueue;
-    final payload = QueuedMessageOps.buildRestorePayload(
-      queue: queue,
-      failedContent: failedContent,
-      failedAttachments: failedAttachments,
-    );
-    if (payload.parts.isEmpty && payload.attachments.isEmpty) return;
-    queue.clear();
-    _syncHostQueue(op: 'clear');
+    // 主机队列已受理的消息不能倒回，也不该因为一次发送失败就清空整个
+    // 主机队列：只把本次失败的输入还原给用户。排队由 SessionRuntime
+    // 自己出队，App 不再参与。
+    final text = failedContent?.trim() ?? '';
+    final attachments = failedAttachments ?? <AttachmentData>[];
+    if (text.isEmpty && attachments.isEmpty) return;
     if (!isMounted) {
-      // 注意：草稿只持久化文本；附件（仅群聊队列携带）在离开页面场景无法
-      // 重建，仍会丢失。这是边缘中的边缘，暂不扩 scope。
-      _persistRestoreAsDraft(payload.parts.join('\n\n'));
+      // 离开页面时只持久化文本；附件无法重建。
+      _persistRestoreAsDraft(text);
       return;
     }
-    _emit(RestoreQueueToComposerEvent(
-      payload.parts.join('\n\n'),
-      attachments: payload.attachments,
-    ));
+    _emit(RestoreQueueToComposerEvent(text, attachments: attachments));
     _notify();
   }
 

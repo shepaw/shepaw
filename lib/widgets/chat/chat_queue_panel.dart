@@ -1,14 +1,22 @@
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/queued_message.dart';
+import '../../peer/services/session_runtime_mirror.dart';
 import '../../theme/app_theme.dart';
 
-/// 待发送队列面板：折叠态显示条数与首条预览，展开态逐条列出，
+/// 主机会话队列面板：折叠态显示条数与首条预览，展开态逐条列出，
 /// 支持逐条上移/下移/编辑/删除以及一键清空。
 ///
+/// 直接订阅 [SessionRuntimeMirror] 的 ValueNotifier，`session_ack` /
+/// `session.state` 一到达同帧重画，不经过整页 `setState` 门控——旧实现要
+/// 手滑一下才看得到排队条，就是被外层结构快照挡住了。
 /// UI 局部状态（展开/折叠）用本地 `setState`，符合状态管理约定。
 class ChatQueuePanel extends StatefulWidget {
+  /// 没有 [state] 时的兜底列表（如旧调用方 / 测试）。
   final List<QueuedMessage> items;
+  /// 传了就以主机镜像为准，[items] 不参与渲染。
+  final ValueListenable<SessionState>? state;
   final void Function(String id, String newContent) onEdit;
   final void Function(String id) onDelete;
   final void Function(String id, int delta) onMove;
@@ -17,6 +25,7 @@ class ChatQueuePanel extends StatefulWidget {
   const ChatQueuePanel({
     super.key,
     required this.items,
+    this.state,
     required this.onEdit,
     required this.onDelete,
     required this.onMove,
@@ -32,11 +41,29 @@ class _ChatQueuePanelState extends State<ChatQueuePanel> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.items.isEmpty) return const SizedBox.shrink();
+    final listenable = widget.state;
+    if (listenable == null) return _buildPanel(context, widget.items);
+    return ValueListenableBuilder<SessionState>(
+      valueListenable: listenable,
+      builder: (context, snapshot, _) {
+        final items = <QueuedMessage>[
+          for (final item in snapshot.queue)
+            QueuedMessage(
+              id: item.requestId,
+              content: item.content,
+              hostOwned: true,
+            ),
+        ];
+        return _buildPanel(context, items);
+      },
+    );
+  }
+
+  Widget _buildPanel(BuildContext context, List<QueuedMessage> items) {
+    if (items.isEmpty) return const SizedBox.shrink();
 
     final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
-    final items = widget.items;
 
     return Container(
       decoration: BoxDecoration(
@@ -58,7 +85,7 @@ class _ChatQueuePanelState extends State<ChatQueuePanel> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      l10n.chat_sendQueueCount(items.length),
+                      l10n.chat_hostQueueNotice(items.length),
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,

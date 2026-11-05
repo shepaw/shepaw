@@ -44,7 +44,6 @@ import '../widgets/chat/chat_input_area.dart';
 import '../widgets/chat/chat_message_list.dart';
 import '../widgets/chat/streaming_scroll_anchor.dart';
 import '../widgets/chat/chat_reply_preview.dart';
-import '../widgets/chat/chat_host_queue_notice.dart';
 import '../widgets/chat/chat_queue_panel.dart';
 import '../widgets/chat/pending_form_dock.dart';
 import '../widgets/chat/session_list_panel.dart';
@@ -3961,17 +3960,13 @@ class _ChatScreenState extends State<ChatScreen>
                   onCancel: () => c.cancelReply(),
                 ),
   
-              // 消息已经直接发出、却被主机收进会话队列：只读提示，
-              // 让用户知道它还在排队，上一轮结束后才会开始。
-              if (!c.isViewingGroupBoundMemberSession &&
-                  !c.isViewingSheBoundSession)
-                ChatHostQueueNotice(count: c.hostQueuedTurnCount),
-
-              // Pending-send queue panel (collapsible, per-item edit/delete)
+              // 唯一的主机会话队列面板：只读提示与可编辑队列已合并。
+              // 它自己订阅 SessionRuntimeMirror，状态一变同帧重画。
               if (!c.isViewingGroupBoundMemberSession &&
                   !c.isViewingSheBoundSession)
                 ChatQueuePanel(
                   items: c.messageQueue,
+                  state: c.sessionState,
                   onEdit: (id, newContent) =>
                       c.editQueuedMessage(id, newContent),
                   onDelete: (id) => c.removeQueuedMessage(id),

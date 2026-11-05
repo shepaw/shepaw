@@ -65,13 +65,13 @@ import 'peer_connection_manager.dart';
 import 'peer_inflight_turn.dart';
 import 'peer_storage_service.dart';
 import 'peer_turn_resume.dart';
+import 'session_runtime_mirror.dart';
 import 'warm_ready_registry.dart';
 import '../../storage/agent_workspace_uris.dart';
 import '../../storage/store_protocol.dart';
 
 export 'peer_agent_ids.dart';
 export 'peer_inflight_turn.dart' show PeerTurnInFlightException;
-export 'peer_turn_resume.dart' show kFollowUpSettle, settledReplyLetsFollowUp;
 
 /// 「已同步的远端 peer 会话」在本地 channel id 上的前缀。
 ///
@@ -1978,20 +1978,9 @@ class _PendingRequest {
   /// 不参与 settle / stall probe。
   DateTime? lastKeepaliveAt;
 
-  /// 这条已经交给主机排队，还没轮到它。空闲超时不能把它判死。
-  bool heldOnHost = false;
-
   /// 最近一帧工具调用的状态（`pending` / `in_progress` / `completed` /
-  /// `failed`）。正文停了、工具还在跑时回合不能算结束：主机侧的
-  /// `turn_followup_can_start` 同样要求 `answer_settled`
-  /// （正文之后没有工具/思考），下一条必须继续排队。
+  /// `failed`）。只用于观测与连接诊断，不再参与任何终态判定。
   String lastToolStatus = '';
-
-  /// 主机收下排队（true）或已经直接开跑（false）。
-  Completer<bool>? queueAck;
-
-  /// 排队消息的用户正文。回合真正结束时补进本地聊天记录。
-  String? parkedText;
 
   /// 发出 resume_req 时的 receivedLength 基准，用于 delta 去重（drop-prefix）。
   int? resumeBaseLength;
@@ -2128,18 +2117,6 @@ class PeerAgentClientService {
   final _uuid = const Uuid();
   final _storage = PeerStorageService();
   final Map<String, Timer> _persistTimers = {};
-
-  final StreamController<({String channelId, String requestId, bool queued})>
-      _hostQueueEvents = StreamController<
-          ({String channelId, String requestId, bool queued})>.broadcast();
-
-  /// 直接发出的回合被主机收进会话队列（或终于轮到它开跑）时发出。
-  ///
-  /// 正常路径下 App 会先把消息放进本地待发面板（`_offerQueuedMessage`），
-  /// 面板自己显示排队；这条事件只兜底「本地判断与主机不一致、消息已经
-  /// 发出去才被主机排队」的情况，让聊天页能显示「已交给主机排队」。
-  Stream<({String channelId, String requestId, bool queued})>
-      get hostQueueEvents => _hostQueueEvents.stream;
 
   StreamSubscription<PeerControlEvent>? _controlSub;
   StreamSubscription<PeerConnectionEvent>? _eventSub;
@@ -2571,91 +2548,8 @@ class PeerAgentClientService {
     return false;
   }
 
-  /// 已经直接发出、被主机收进会话队列、还没轮到的回合数。
-  ///
-  /// 本地面板自己排队的消息（`parkedText != null`）已经显示在会局面板里，
-  /// 不重复统计。
-  int hostQueuedDirectTurnCount(String channelId) {
-    if (channelId.isEmpty) return 0;
-    var count = 0;
-    for (final p in _pending.values) {
-      if (p.completer.isCompleted || p.channelId != channelId) continue;
-      if (p.heldOnHost && p.parkedText == null) count++;
-    }
-    return count;
-  }
-
-  void _emitHostQueueEvent(
-    _PendingRequest pending,
-    String requestId, {
-    required bool queued,
-  }) {
-    if (pending.channelId.isEmpty || _hostQueueEvents.isClosed) return;
-    _hostQueueEvents.add((
-      channelId: pending.channelId,
-      requestId: requestId,
-      queued: queued,
-    ));
-  }
-
-  /// 这路会话上还有没写完的回复，下一条应该排队。
-  ///
-  /// 已经交到主机队列里的消息（heldOnHost）也算挡住：要保持先后顺序。
-  /// 正文已经停住、没有审批也没有工具时返回 false，调用方应直接发送。
-  bool followUpBlockedByChannel(String channelId) {
-    if (channelId.isEmpty) return false;
-    final now = DateTime.now();
-    for (final p in _pending.values) {
-      if (p.completer.isCompleted || p.channelId != channelId) continue;
-      if (p.heldOnHost) return true;
-      if (!settledReplyLetsFollowUp(
-        hasAnswer: p.answerContent.trim().isNotEmpty,
-        openApprovals: p.openApprovals,
-        idle: now.difference(p.idleSince),
-        toolStatus: p.lastToolStatus,
-      )) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  /// 把已经写完的在途回合按现有正文收掉，好让下一条马上发出去。
-  ///
-  /// 不走用户停止：停止会把气泡改成「已停止」。这里只是引擎还没交正式收尾。
-  void completeSettledTurns(String channelId, {String fallbackAnswer = ''}) {
-    if (channelId.isEmpty) return;
-    final now = DateTime.now();
-    final ready = <String>[];
-    for (final entry in _pending.entries) {
-      final pending = entry.value;
-      if (pending.completer.isCompleted ||
-          pending.channelId != channelId ||
-          pending.heldOnHost) {
-        continue;
-      }
-      final answer = pending.answerContent.trim().isNotEmpty
-          ? pending.answerContent
-          : fallbackAnswer;
-      if (!settledReplyLetsFollowUp(
-        hasAnswer: answer.trim().isNotEmpty,
-        openApprovals: pending.openApprovals,
-        idle: now.difference(pending.idleSince),
-        toolStatus: pending.lastToolStatus,
-      )) {
-        continue;
-      }
-      ready.add(entry.key);
-    }
-    for (final id in ready) {
-      final pending = _pending[id];
-      if (pending == null) continue;
-      final answer = pending.answerContent.trim().isNotEmpty
-          ? pending.answerContent
-          : fallbackAnswer;
-      _finishPending(id, {'content': answer});
-    }
-  }
+  // 本地 settle 闸门（followUpBlockedByChannel / completeSettledTurns）已删除：
+  // 终态只由主机宣布，App 不再凭「静默几秒 + 有正文」放行下一条或自行收口。
 
   /// Cancel every in-flight turn bound to [channelId], regardless of which
   /// [ACPCancellationToken] (if any) the turn was started with.
@@ -2710,7 +2604,6 @@ class PeerAgentClientService {
     final p = _pending.remove(requestId);
     if (p == null || p.completer.isCompleted) return;
     _stopCatchUp(p);
-    if (p.heldOnHost) _emitHostQueueEvent(p, requestId, queued: false);
     // 断连挂起期间的取消：下面的 sendControl 大概率发不出去（连接已断），
     // 登记下来，重连后补发 cancel 而不是 resume（见 _resumeSuspendedTurns）。
     if (p.suspendedSince != null) {
@@ -2754,10 +2647,6 @@ class PeerAgentClientService {
   /// Test seam: shrink the post-send delivery probe delay.
   @visibleForTesting
   Duration? debugDeliveryProbeDelayOverride;
-
-  /// Test seam: shrink the `agent_queued` ack wait.
-  @visibleForTesting
-  Duration? debugQueueAckTimeoutOverride;
 
   /// Test seam: shrink the post-reconnect catch-up probe interval.
   @visibleForTesting
@@ -3362,245 +3251,10 @@ class PeerAgentClientService {
     );
   }
 
-  /// 会话正忙时把下一条交给主机排队。返回 true 表示主机先收下了。
-  Future<bool> enqueueChat({
-    required String peerId,
-    required String remoteAgentId,
-    required String requestId,
-    required String message,
-    String? sessionId,
-    String? channelId,
-    String? localAgentId,
-    String? userId,
-    String? userName,
-    String? agentName,
-    String? userMessageId,
-    List<AttachmentData>? attachments,
-
-    /// 这条引用回复的是哪一条（本机落库 id）；上行只发裸 id。
-    String? replyToId,
-
-    /// 引用时选中的那段文字。
-    String? replyQuoteText,
-  }) async {
-    List<Map<String, dynamic>>? attachmentRefs;
-    if (attachments != null && attachments.isNotEmpty) {
-      attachmentRefs = <Map<String, dynamic>>[];
-      for (final att in attachments) {
-        if (att.exceedsSizeLimit) {
-          throw Exception(
-            '附件过大（上限 ${AttachmentData.maxSizeBytes ~/ (1024 * 1024)}MB）: '
-            '${att.fileName}',
-          );
-        }
-        final pushed = await pushFile(
-          peerId: peerId,
-          remoteAgentId: remoteAgentId,
-          attachment: att,
-          sessionId: sessionId,
-        );
-        attachmentRefs.add(att.toPeerRefJson(
-          pushed.fileId,
-          stripClientStoreUri: true,
-        ));
-      }
-    }
-    final ack = Completer<bool>();
-    final pending = _PendingRequest(
-      peerId: peerId,
-      remoteAgentId: remoteAgentId,
-      localAgentId: localAgentId ?? '',
-      channelId: channelId ?? '',
-      sessionId: sessionId ?? '',
-      userId: userId ?? '',
-      userName: userName ?? '',
-      agentName: agentName ?? '',
-      userMessageId: userMessageId ?? '',
-    );
-    pending.heldOnHost = true;
-    pending.parkedText = message;
-    pending.queueAck = ack;
-    _pending[requestId] = pending;
-    unawaited(pending.completer.future.then((result) {
-      unawaited(_saveParkedReply(pending, requestId, result.content));
-    }).catchError((Object error) {
-      ChatService().dropQueuedMessage(requestId);
-      unawaited(_saveParkedFailure(pending, requestId, error));
-    }));
-    final deviceInfo = await ClientDeviceInfo.current();
-    final frame = <String, dynamic>{
-      'type': 'agent_chat',
-      'request_id': requestId,
-      'agent_id': remoteAgentId,
-      'message': message,
-      if (userMessageId != null && userMessageId.isNotEmpty)
-        'user_message_id': bareMessageId(userMessageId),
-      if (replyToId != null && replyToId.isNotEmpty)
-        'reply_to_id': bareMessageId(replyToId),
-      if (replyQuoteText != null && replyQuoteText.isNotEmpty)
-        'reply_quote_text': replyQuoteText,
-      if (sessionId != null && sessionId.isNotEmpty) 'session_id': sessionId,
-      if (channelId != null && channelId.isNotEmpty) 'channel_id': channelId,
-      if (attachmentRefs != null) 'attachments': attachmentRefs,
-      ...deviceInfo.toWireFields(),
-    };
-    final override = debugSendControlOverride;
-    final sent = override != null
-        ? await override(peerId, frame)
-        : await PeerConnectionManager.instance.sendControl(
-            peerId,
-            frame,
-            waitForReconnect: _controlReconnectWait,
-          );
-    if (!sent) {
-      _pending.remove(requestId);
-      if (!pending.completer.isCompleted) {
-        pending.completer.completeError(Exception('配对设备未连接，无法发送'));
-      }
-      throw Exception('配对设备未连接，无法发送');
-    }
-    // 只要看门狗；结果（含报错）由上面挂在 completer 上的回调收口。
-    _awaitTurnCompletion(requestId, pending, peerId).ignore();
-    try {
-      return await ack.future.timeout(_effectiveQueueAckTimeout);
-    } on TimeoutException {
-      // 确认帧可能正好丢在断线上。主机会把已经受理、但还没开跑的
-      // request 也映射成 streaming，所以先 resume 对账一次再判死：
-      // 直接报失败会让主机照跑的那条消息被用户重发一遍。
-      if (!pending.completer.isCompleted && !ack.isCompleted) {
-        if (!pending.resumeInFlight) {
-          pending.resumeInFlight = true;
-          pending.resumePurpose = _ResumePurpose.deliveryProbe;
-          pending.resumeBaseLength = pending.receivedLength;
-          final probed = await _sendResumeReq(peerId, requestId, pending);
-          if (!probed) {
-            // 连接此刻不可用，帧可能只是没送出去 —— 保留排队态，等重连。
-            pending.resumeInFlight = false;
-            pending.resumePurpose = _ResumePurpose.none;
-            pending.resumeBaseLength = null;
-            return true;
-          }
-          // 应答由 _onTurnResumeResp 收口：非 lost → ack(true)，
-          // lost → ack(false)。看门狗只负责没应答时复位标志。
-          _watchResumeResponse(
-            peerId,
-            requestId,
-            0,
-            failOnExhausted: false,
-          );
-        }
-        try {
-          return await ack.future.timeout(_effectiveResumeResponseTimeout);
-        } on TimeoutException {
-          // 连得上却没回音：先保留排队态，交给重连后的 resume 对账。
-          return true;
-        }
-      }
-      _pending.remove(requestId);
-      if (!ack.isCompleted) {
-        ack.completeError(TimeoutException('主机没有收下排队消息'));
-      }
-      if (!pending.completer.isCompleted) {
-        pending.completer.completeError(TimeoutException('主机没有收下排队消息'));
-      }
-      rethrow;
-    }
-  }
-
-  /// 排队回合以报错收尾。
-  ///
-  /// 还没开跑就失败（没送达、主机没收下）：消息只在排队面板里，聊天页挂着的
-  /// 还是上一轮的流式任务，什么都不能动。开跑后失败要和成功一样卸下这次
-  /// 流式挂接，否则气泡一直停在「正在输出」、半成品行每几秒刷一次库；
-  /// 已经流出来的正文照常落成回复，再补一条错误说明。
-  Future<void> _saveParkedFailure(
-    _PendingRequest pending,
-    String requestId,
-    Object error,
-  ) async {
-    if (pending.heldOnHost) return;
-    _log.warning('queued turn $requestId failed: $error', tag: _tag);
-    await _saveParkedReply(
-      pending,
-      requestId,
-      pending.answerContent,
-      error: error,
-    );
-  }
-
-  Future<void> _saveParkedReply(
-    _PendingRequest pending,
-    String requestId,
-    String reply, {
-    Object? error,
-  }) async {
-    ChatService().releaseQueuedMessage(requestId);
-    final channelId = pending.channelId;
-    final text = pending.parkedText;
-    if (channelId.isEmpty || text == null || text.trim().isEmpty) {
-      if (channelId.isNotEmpty) {
-        await ChatService().completeQueuedPeerTurn(channelId);
-      }
-      return;
-    }
-    if (!getIt.isRegistered<LocalDatabaseService>()) {
-      await ChatService().completeQueuedPeerTurn(channelId);
-      return;
-    }
-    final db = getIt<LocalDatabaseService>();
-    final userMessageId =
-        pending.userMessageId.isEmpty ? requestId : pending.userMessageId;
-    final replyId = 'peerhist_$requestId';
-    try {
-      await db.createMessage(
-        id: userMessageId,
-        channelId: channelId,
-        senderId: pending.userId,
-        senderType: 'user',
-        senderName: pending.userName,
-        content: text,
-        metadata: ClientDeviceInfo.stampMetadata(),
-        conflictAlgorithm: ConflictAlgorithm.ignore,
-      );
-      if (error == null || reply.trim().isNotEmpty) {
-        await db.createMessage(
-          id: replyId,
-          channelId: channelId,
-          senderId: pending.localAgentId.isEmpty
-              ? pending.remoteAgentId
-              : pending.localAgentId,
-          senderType: 'agent',
-          senderName: pending.agentName,
-          content: reply,
-          replyToId: userMessageId,
-          conflictAlgorithm: ConflictAlgorithm.ignore,
-        );
-      }
-      if (error != null) {
-        final agentName = pending.agentName.isEmpty
-            ? pending.remoteAgentId
-            : pending.agentName;
-        await db.createMessage(
-          id: '$requestId-error',
-          channelId: channelId,
-          senderId: 'system',
-          senderType: 'system',
-          senderName: 'System',
-          content:
-              'Error: Failed to send message to $agentName. Details: $error',
-          messageType: 'system',
-          conflictAlgorithm: ConflictAlgorithm.ignore,
-        );
-      }
-      if ('$requestId-reply' != replyId) {
-        await db.deleteMessage('$requestId-reply');
-      }
-    } catch (error) {
-      _log.warning('save parked reply failed: $error', tag: _tag);
-    }
-    await ChatService().completeQueuedPeerTurn(channelId);
-    ChatService().notifyChannelUpdate(channelId);
-  }
+  // 本地排队补偿路径已整块删除（enqueueChat / _saveParkedFailure /
+  // _saveParkedReply）。它们服务于「App 自己判断上一轮还在跑、先把消息放进
+  // 本机队列再交给主机」；现在消息一律直接发出，由主机 SessionRuntime
+  // 裁决 started / queued，ChatQueuePanel 只镜像 mirror.queue。
 
   /// Await the turn with an approval-aware watchdog.
   ///
@@ -3624,7 +3278,6 @@ class PeerAgentClientService {
         timer.cancel();
         return;
       }
-      if (pending.heldOnHost) return;
       final now = DateTime.now();
       final verdict = evaluateTurnWatchdog(
         now: now,
@@ -3647,23 +3300,9 @@ class PeerAgentClientService {
         );
         return;
       }
-      if (shouldCompleteSettledReply(
-        now: now,
-        idleSince: pending.idleSince,
-        suspendedSince: pending.suspendedSince,
-        upstreamReconnectingSince: pending.upstreamReconnectingSince,
-        openApprovals: pending.openApprovals,
-        hasAssistantContent: pending.answerContent.trim().isNotEmpty,
-      )) {
-        timer.cancel();
-        _log.info(
-          'reply settled requestId=$requestId '
-          '(${pending.answerContent.length} chars, no agent_done needed)',
-          tag: _tag,
-        );
-        _finishPending(requestId, {'content': pending.answerContent});
-        return;
-      }
+      // 不再凭「静默 N 秒 + 有正文」自行收口。旧逻辑让气泡在主机还在回复时
+      // 提前停下，下一条又被主机判成排队。终态只认主机帧 / session.state；
+      // 这里的看门狗只负责连接故障（超时、停滞探测），不判「回复写完」。
       if (shouldProbeStalledTurn(
         now: now,
         idleSince: pending.idleSince,
@@ -3760,7 +3399,6 @@ class PeerAgentClientService {
     final p = _pending.remove(requestId);
     if (p == null || p.completer.isCompleted) return;
     _stopCatchUp(p);
-    if (p.heldOnHost) _emitHostQueueEvent(p, requestId, queued: false);
     _clearPersistedTurn(requestId);
     unawaited(PeerConnectionManager.instance.sendControl(peerId, {
       'type': 'agent_cancel',
@@ -3806,11 +3444,30 @@ class PeerAgentClientService {
     p.deliveryProbeTimer = null;
   }
 
+  bool _isStaleOutputStream(String type, Map<String, dynamic> data) {
+    final key = data['session_key'] as String?;
+    if (key == null || key.isEmpty) return false;
+    if (!getIt.isRegistered<SessionRuntimeMirror>()) return false;
+    final state = getIt<SessionRuntimeMirror>().peek(key)?.value;
+    return isStaleOutputStream(type, data, state);
+  }
+
   void _onControl(PeerControlEvent event) {
     // 主机对某个在途 turn 发出的任何业务帧，都说明它收到了 agent_chat。
     // resume 应答本身就是投递确认的答案，交给 _onTurnResumeResp 处理。
     if (event.type != 'agent_turn_resume_resp') {
       _noteHostTurnSignal(event.data);
+    }
+    // 旧世代 / 终态之后的迟到输出：不再静默丢弃，也不串进新气泡。
+    // 记一条日志让这类问题可诊断（旧实现是 _onChunk 里 p==null 直接 return）。
+    if (_isStaleOutputStream(event.type, event.data)) {
+      _log.info(
+        'late turn output ignored type=${event.type} '
+        'session=${event.data['session_key']} gen=${event.data['generation']} '
+        'turn=${event.data['request_id']}',
+        tag: _tag,
+      );
+      return;
     }
     switch (event.type) {
       case 'agent_list_resp':
@@ -3825,8 +3482,11 @@ class PeerAgentClientService {
       case 'agent_chunk':
         _onChunk(event.data);
         break;
-      case 'agent_queued':
-        _onAgentQueued(event.data);
+      case 'session_ack':
+        // 主机裁决回执。`_noteHostTurnSignal` 已把它算作投递确认；这里只把
+        // 结果转给储物袋回合，让它别再等主机已删除的 kind:queued 帧。
+        // 不改任何终态：回合是否结束由主机帧 / session.state 说了算。
+        PouchTurnRelay.instance.onSessionAck(event.data);
         break;
       case 'pouch_turn_event':
         PouchTurnRelay.instance.onEvent(event.data);
@@ -9577,15 +9237,6 @@ class PeerAgentClientService {
     if (requestId == null) return;
     final p = _pending[requestId];
     if (p == null) return;
-    if (p.heldOnHost) {
-      p.heldOnHost = false;
-      _emitHostQueueEvent(p, requestId, queued: false);
-      p.idleSince = DateTime.now();
-      final ack = p.queueAck;
-      if (ack != null && !ack.isCompleted) ack.complete(false);
-      ChatService().releaseQueuedMessage(requestId);
-      ChatService().attachQueuedPeerTurn(p.toRecord(requestId));
-    }
     // 新主机的 live 分片带 UTF-16 起始偏移。断线重连后主机把流改推到
     // 当前连接，live 分片可能和 resume 增量交错：重叠的裁掉，跳在前面的
     // 说明还有缺口，先交给 resume 补齐。
@@ -9624,15 +9275,6 @@ class PeerAgentClientService {
     if (metadata.isEmpty) return;
     final p = _pending[requestId];
     if (p == null) return;
-    if (p.heldOnHost) {
-      p.heldOnHost = false;
-      _emitHostQueueEvent(p, requestId, queued: false);
-      p.idleSince = DateTime.now();
-      final ack = p.queueAck;
-      if (ack != null && !ack.isCompleted) ack.complete(false);
-      ChatService().releaseQueuedMessage(requestId);
-      ChatService().attachQueuedPeerTurn(p.toRecord(requestId));
-    }
     final currentMode = (metadata['current_mode'] as String?)?.trim();
     if (currentMode != null && currentMode.isNotEmpty) {
       _patchCachedCurrent(
@@ -9968,10 +9610,6 @@ class PeerAgentClientService {
     final p = _pending.remove(requestId);
     if (p == null || p.completer.isCompleted) return;
     _stopCatchUp(p);
-    if (p.heldOnHost) _emitHostQueueEvent(p, requestId, queued: false);
-    // 回合跑完了 → 主机当然收下了；排队回执可能在断线上丢了。
-    final ack = p.queueAck;
-    if (ack != null && !ack.isCompleted) ack.complete(true);
     _clearPersistedTurn(requestId);
     _closeCardsOfRequest(requestId, 'turn_ended');
     unawaited(_persistTurnCardsClosed(p, requestId, 'turn_ended'));
@@ -10008,33 +9646,12 @@ class PeerAgentClientService {
     _finishPending(requestId, data);
   }
 
-  void _onAgentQueued(Map<String, dynamic> data) {
-    final requestId = data['request_id'] as String?;
-    if (requestId == null) return;
-    final pending = _pending[requestId];
-    if (pending == null) return;
-    final wasHeld = pending.heldOnHost;
-    pending.heldOnHost = true;
-    // 面板自己排队的消息（enqueueChat）收到 ack 时本来就在排队，不用再提示；
-    // 只有「直接发出去、到主机才发现上一轮还没结束」才需要让聊天页显示排队态。
-    if (!wasHeld) _emitHostQueueEvent(pending, requestId, queued: true);
-    final ack = pending.queueAck;
-    if (ack != null && !ack.isCompleted) ack.complete(true);
-  }
-
   void _onError(Map<String, dynamic> data) {
     final requestId = data['request_id'] as String?;
     if (requestId == null) return;
     final p = _pending.remove(requestId);
     if (p == null || p.completer.isCompleted) return;
     _stopCatchUp(p);
-    if (p.heldOnHost) _emitHostQueueEvent(p, requestId, queued: false);
-    final ack = p.queueAck;
-    if (ack != null && !ack.isCompleted) {
-      ack.completeError(
-        Exception(data['message'] as String? ?? 'Peer agent error'),
-      );
-    }
     _clearPersistedTurn(requestId);
     _closeCardsOfRequest(requestId, 'turn_ended');
     unawaited(_persistTurnCardsClosed(p, requestId, 'turn_ended'));
@@ -10175,8 +9792,6 @@ class PeerAgentClientService {
       if (p.completer.isCompleted || p.heardFromHost) return;
       // 连接已断 / 已有续传探测在跑 → 交给断连恢复路径。
       if (p.suspendedSince != null || p.resumeInFlight) return;
-      // 排队路径有 agent_queued + 20s ack 兜底；未 claim 前 resume 会误报 lost。
-      if (p.heldOnHost) return;
 
       p.resumeInFlight = true;
       p.resumePurpose = _ResumePurpose.deliveryProbe;
@@ -10464,9 +10079,6 @@ class PeerAgentClientService {
   Duration get _effectiveResumeResponseTimeout =>
       debugResumeResponseTimeoutOverride ?? resumeResponseTimeout;
 
-  Duration get _effectiveQueueAckTimeout =>
-      debugQueueAckTimeoutOverride ?? const Duration(seconds: 20);
-
   Duration get _effectiveCatchUpInterval =>
       debugReconnectCatchUpIntervalOverride ?? reconnectCatchUpInterval;
 
@@ -10555,12 +10167,6 @@ class PeerAgentClientService {
       'delta=${delta.length} (raw=${rawDelta.length})',
       tag: 'PeerApproval',
     );
-    // 主机认得这一轮：排队确认帧（agent_queued）可能正好丢在断线上，
-    // resume 的应答同样能证明它收下了。lost 交给下面的失败路径。
-    final queueAck = p.queueAck;
-    if (queueAck != null && !queueAck.isCompleted) {
-      queueAck.complete(status != 'lost');
-    }
     switch (status) {
       case 'streaming':
         // 续传成功 —— idle 看门狗从此刻重新计时。

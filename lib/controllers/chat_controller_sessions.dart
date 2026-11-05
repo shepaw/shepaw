@@ -34,8 +34,7 @@ mixin _SessionOps on _ChatControllerBase {
     );
     if (!shouldPrune) return;
 
-    // 有待发送队列（离线排队中的消息）或已有消息：不算空会话，保留。
-    if (chatService.pendingSendQueue(currentId).isNotEmpty) return;
+    // 已有消息：不算空会话，保留。
     final count = await localDatabaseService.countChannelMessages(currentId);
     if (count > 0) return;
 

@@ -80,16 +80,3 @@ class QueuedMessage {
   }
 }
 
-/// 从各频道队列里取出 [id] 对应的那一条。没有则返回 null。
-({String channelId, QueuedMessage message})? takeQueuedMessage(
-  Map<String, List<QueuedMessage>> queues,
-  String id,
-) {
-  if (id.isEmpty) return null;
-  for (final entry in queues.entries) {
-    final index = entry.value.indexWhere((item) => item.id == id);
-    if (index == -1) continue;
-    return (channelId: entry.key, message: entry.value.removeAt(index));
-  }
-  return null;
-}

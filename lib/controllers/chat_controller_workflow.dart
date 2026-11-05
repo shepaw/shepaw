@@ -423,8 +423,6 @@ mixin _WorkflowOps on _ChatControllerBase {
     respondingAgentNames.clear();
     groupStreamingMessageIds.clear();
     _notify();
-    // 排空工作流期间用户排队的消息（此前 isProcessing=true 导致入队）。
-    unawaited(processNextInQueue());
   }
 
   /// Re-attach UI callbacks to a workflow that is still running in ChatService

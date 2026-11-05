@@ -18,14 +18,13 @@ Message _agent(String id, {Map<String, dynamic>? metadata, String content = ''})
 
 void main() {
   group('ChatSendPlanner', () {
-    test('empty / noAgent / attachmentsOnly / queue / routes', () {
+    test('empty / noAgent / attachmentsOnly / 一律交主机 / routes', () {
       expect(
         ChatSendPlanner.decide(
           content: '',
           hasAttachments: false,
           isGroupMode: false,
           hasAgent: true,
-          isProcessing: false,
         ),
         ChatSendDisposition.empty,
       );
@@ -35,7 +34,6 @@ void main() {
           hasAttachments: false,
           isGroupMode: false,
           hasAgent: false,
-          isProcessing: false,
         ),
         ChatSendDisposition.noAgent,
       );
@@ -45,19 +43,18 @@ void main() {
           hasAttachments: true,
           isGroupMode: false,
           hasAgent: true,
-          isProcessing: false,
         ),
         ChatSendDisposition.attachmentsOnly,
       );
+      // 本地以为「上一轮还在跑」也一律交给主机裁决：App 不再排队、不再猜。
       expect(
         ChatSendPlanner.decide(
           content: 'hi',
           hasAttachments: true,
           isGroupMode: false,
           hasAgent: true,
-          isProcessing: true,
         ),
-        ChatSendDisposition.queueText,
+        ChatSendDisposition.sendDm,
       );
       expect(
         ChatSendPlanner.decide(
@@ -65,7 +62,6 @@ void main() {
           hasAttachments: false,
           isGroupMode: true,
           hasAgent: false,
-          isProcessing: false,
         ),
         ChatSendDisposition.sendGroup,
       );
@@ -75,7 +71,6 @@ void main() {
           hasAttachments: false,
           isGroupMode: false,
           hasAgent: true,
-          isProcessing: false,
         ),
         ChatSendDisposition.sendDm,
       );

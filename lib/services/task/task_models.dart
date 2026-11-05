@@ -4,9 +4,9 @@ import '../cli_approval_coordinator.dart';
 
 /// 等待 [ActiveTask.dbSaveCompleter] 的上限。
 ///
-/// UI 收尾流程 await 这个 completer 之后才放开 `isProcessing` 并推进消息队列
-/// （`processNextInQueue`）。任一终态路径漏了 complete，没有上限就会让界面永久
-/// 转圈、队列永久冻住。这是「永不卡死」的最后一道保险：正常落库远快于此值，
+/// UI 收尾流程 await 这个 completer 之后才放开 `isProcessing`；后续排队消息
+/// 由主机 SessionRuntime 自己出队。任一终态路径漏了 complete，没有上限就会让
+/// 界面永久转圈。这是「永不卡死」的最后一道保险：正常落库远快于此值，
 /// 真到点了宁可带着可能不完整的内容解卡，也不要停在转圈上。
 const Duration dbSaveTimeout = Duration(seconds: 30);
 

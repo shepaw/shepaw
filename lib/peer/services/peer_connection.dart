@@ -125,7 +125,10 @@ class PeerConnection {
     'engine_control_req',
     'engine_control_resp',
     'agent_chat',
-    'agent_queued',
+    // 会话状态裁决回执与启动全量对账。主机是唯一真相源，App 只镜像。
+    'session_ack',
+    'session_snapshot_req',
+    'session_snapshot_resp',
     'agent_chunk',
     'agent_metadata',
     'agent_done',

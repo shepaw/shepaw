@@ -8,7 +8,6 @@ import '../models/channel.dart';
 import '../models/remote_agent.dart';
 import '../models/acp_protocol.dart';
 import '../models/attachment_data.dart';
-import '../models/queued_message.dart';
 import 'acp_interactive_connection.dart';
 import 'local_database_service.dart';
 import 'tool_result_database_service.dart';
@@ -35,7 +34,6 @@ import '../models/workflow_models.dart';
 import 'messaging/agent_messaging_service.dart';
 import 'messaging/chat_history_content.dart';
 import '../peer/services/peer_agent_client_service.dart';
-import '../peer/services/peer_inflight_turn.dart';
 import '../peer/pouch_turn_relay.dart';
 import 'group/group_session_service.dart';
 import 'group/group_member_session_service.dart';
@@ -175,23 +173,6 @@ class ChatService {
 
   // Active group tasks: channelId -> { agentId -> GroupActiveTask }
   final Map<String, Map<String, GroupActiveTask>> _activeGroupTasks = {};
-
-  // Pending send queues (keyed by channelId) — survive UI detach/reattach so
-  // messages queued behind an in-flight turn are not lost when the user
-  // leaves and re-enters the chat.
-  final Map<String, List<QueuedMessage>> _pendingSendQueues = {};
-  final StreamController<String> _queuedMessageDropped =
-      StreamController<String>.broadcast();
-  final StreamController<({String channelId, QueuedMessage message})>
-      _queuedMessageReleased =
-      StreamController<({String channelId, QueuedMessage message})>.broadcast();
-
-  /// 主机开始跑某一条排队消息时发出它的 id。聊天页用来收起队列面板。
-  Stream<String> get queuedMessageDropped => _queuedMessageDropped.stream;
-
-  /// 主机开始执行的那条排队消息。聊天页据此立刻放进气泡，不等下一次同步。
-  Stream<({String channelId, QueuedMessage message})>
-      get queuedMessageReleased => _queuedMessageReleased.stream;
 
   /// Sub-service: group session management (create/list/clear sessions)
   late final GroupSessionService _groupSessionService = GroupSessionService(
@@ -812,40 +793,6 @@ class ChatService {
   void clearInterruptedTaskInfo(String channelId) {
     _lastInterruptedTasks.remove(channelId);
   }
-
-  /// Live pending-send queue for [channelId] (created lazily). Callers may
-  /// add / removeAt(0) / clear directly; the list survives ChatController
-  /// disposal so re-entering the chat resumes the queue.
-  List<QueuedMessage> pendingSendQueue(String channelId) =>
-      _pendingSendQueues.putIfAbsent(channelId, () => []);
-
-  /// 从面板拿掉这条排队消息，不放进对话。发送失败时用。
-  void dropQueuedMessage(String id) {
-    if (takeQueuedMessage(_pendingSendQueues, id) == null) return;
-    if (!_queuedMessageDropped.isClosed) {
-      _queuedMessageDropped.add(id);
-    }
-  }
-
-  /// 主机已经开始执行这条排队消息：面板拿掉，并交给聊天页立刻显示气泡。
-  void releaseQueuedMessage(String id) {
-    final taken = takeQueuedMessage(_pendingSendQueues, id);
-    if (taken == null) return;
-    if (!_queuedMessageReleased.isClosed) {
-      _queuedMessageReleased.add(taken);
-    }
-    if (!_queuedMessageDropped.isClosed) {
-      _queuedMessageDropped.add(id);
-    }
-  }
-
-  /// 排队回合在主机上开始出字。之后和普通发送一样可以切回来接着看流式回复。
-  void attachQueuedPeerTurn(PeerInflightTurnRecord rec) =>
-      _agentMessagingService.attachQueuedPeerTurn(rec);
-
-  /// 排队回合的最终回复已经落库，卸下这次流式挂接。
-  Future<void> completeQueuedPeerTurn(String channelId) =>
-      _agentMessagingService.completeQueuedPeerTurn(channelId);
 
   /// Query whether there is an in-progress task for [channelId].
   ActiveTask? getActiveTask(String channelId) {

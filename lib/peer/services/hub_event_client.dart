@@ -25,6 +25,7 @@ import 'peer_connection.dart';
 import 'peer_connection_manager.dart';
 import 'peer_inflight_turn.dart';
 import 'peer_storage_service.dart';
+import 'session_runtime_mirror.dart';
 import 'warm_ready_registry.dart';
 
 /// 跟着储物袋把主机事件补到这台客户端。
@@ -194,6 +195,7 @@ class HubEventClient {
           // 调用方要等这一帧返回后才装上登录通道。立刻补洞会以明文发出去。
           final peerId = event.peerId;
           unawaited(Future<void>(() => catchUp(peerId)));
+          unawaited(requestSessionSnapshot(peerId));
         }
       case 'hub_event':
         final parsed = HubEvent.parse(event.data['event']);
@@ -234,7 +236,25 @@ class HubEventClient {
         await _onAttachedChunk(event.peerId, event.data);
       case 'events_sync_resp':
         break;
+      case 'session_snapshot_resp':
+        // 启动 / 重连全量对账：主机没提到的会话一律收敛成 idle，
+        // 上一代 hub 留下的 running 不会永远挂着。
+        final sessions = event.data['sessions'];
+        if (sessions is List &&
+            getIt.isRegistered<SessionRuntimeMirror>()) {
+          getIt<SessionRuntimeMirror>().reconcileTo(sessions);
+        }
     }
+  }
+
+  /// 登录成功后立刻要一份所有活跃会话的全量状态快照。
+  /// 主机正在跑、但启动那一刻没有状态跃迁的回合，只有这次对账能让 App
+  /// 看到；`session.state` 是跃迁事件，不会为「早就开始了」的回合补发。
+  Future<void> requestSessionSnapshot(String peerId) async {
+    await _send(peerId, <String, dynamic>{
+      'type': 'session_snapshot_req',
+      'request_id': _uuid.v4(),
+    });
   }
 
   Future<void> catchUp(String peerId) {
@@ -601,9 +621,28 @@ class HubEventClient {
       case 'channel.read':
         await _onChannelRead(event);
       case 'turn.started':
+        // 主机自发回合（推送 / 后台汇报 / pouch）不走 submit，但要登记到
+        // 同一份 mirror，App 不再有独立的 live-turn 真相源。
+        if (getIt.isRegistered<SessionRuntimeMirror>()) {
+          getIt<SessionRuntimeMirror>().noteLiveTurnStarted(
+            event.data['turn_id'] as String? ?? '',
+            event.data['session_key'] as String? ?? event.channelId,
+          );
+        }
         await _onTurnStarted(peerId, event);
       case 'turn.finished':
+        if (getIt.isRegistered<SessionRuntimeMirror>()) {
+          getIt<SessionRuntimeMirror>().noteLiveTurnFinished(
+            event.data['turn_id'] as String? ?? '',
+          );
+        }
         await _onTurnFinished(event);
+      case 'session.state':
+        // 主机是唯一 writer：这里只按 revision 应用全量快照，绝不自己
+        // 凭静默秒数判回合结束。live 丢了就靠 events_sync 补拉，天然幂等。
+        if (getIt.isRegistered<SessionRuntimeMirror>()) {
+          getIt<SessionRuntimeMirror>().apply(event.data);
+        }
       case 'interaction.pending':
         await _showInteraction(peerId, event);
         if (!_notices.isClosed) {
@@ -1077,9 +1116,6 @@ class HubEventClient {
         ? event.data['channel_id'] as String
         : event.channelId;
     if (turnId.isEmpty || rawChannelId.isEmpty) return;
-    if (getIt.isRegistered<ChatService>()) {
-      getIt<ChatService>().releaseQueuedMessage(turnId);
-    }
     final watching = watchingTurn?.call(turnId) ??
         PouchTurnRelay.instance.isWatching(turnId);
     if (watching) return;
