@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/controllers/flow/flow_templates.dart';
+import 'package:shepaw/peer/models/flow_models.dart';
 import 'package:shepaw/peer/services/hub_flow.dart';
 import 'package:shepaw/peer/services/peer_connection_manager.dart';
 
@@ -49,6 +50,18 @@ void main() {
     final lead = entries.firstWhere((e) => e.id == 'builtin-lead');
     expect(lead.blurb(true), '交给领队自己拆成若干步再执行');
     expect(lead.modified, isFalse);
+  });
+
+  test('画廊也可以直接用已加载的列表，不再发一次请求', () async {
+    final entries = FlowTemplateCatalog.fromFlows([
+      const FlowSummary(name: 'builtin-lead', latest: 4, scope: 'lib',
+          description: '库里的说明', updatedBy: 'user'),
+    ]);
+    final lead = entries.firstWhere((e) => e.id == 'builtin-lead');
+    expect(lead.blurb(true), '库里的说明');
+    expect(lead.modified, isTrue);
+    // 名单不全或没加载时，三个内置模板照样都在。
+    expect(FlowTemplateCatalog.fromFlows(null).length, 3);
   });
 
   test('主机没应答时仍给完整名单（回退内置文案）', () async {

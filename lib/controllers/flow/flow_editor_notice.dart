@@ -12,6 +12,9 @@ enum FlowEditorNoticeKind {
   /// 保存被拒（多半是校验没过）。
   saveRejected,
 
+  /// 另存为的名字库里已经有了（老主机不认 create_only 时靠客户端挡住）。
+  nameTaken,
+
   /// 还有 error 级诊断，不让保存。
   hasProblems,
 

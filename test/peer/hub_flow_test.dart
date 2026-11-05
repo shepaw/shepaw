@@ -267,6 +267,26 @@ void designModelTests() {
     expect(flowLocate(tree, 'zz'), isNull);
   });
 
+  test('if 分支里的容器仍能被递归定位到（运行视图改写用）', () {
+    final tree = [
+      const FlowNode(key: 'c', id: 'c', kind: 'if', children: [
+        FlowNode(key: 'c/then', id: 'seq', kind: 'seq', branch: 'then', children: [
+          FlowNode(key: 'c/then/leaf', id: 'leaf', kind: 'task'),
+        ]),
+        FlowNode(key: 'c/else', id: 'gate', kind: 'gate', branch: 'else'),
+      ]),
+    ];
+    // 直接子节点：下标是分支内相对下标。
+    final gate = flowLocate(tree, 'gate')!;
+    expect(gate.parent!.id, 'c');
+    expect(gate.index, 0);
+    expect(gate.branch, 'else');
+    // 嵌套在 then 的 seq 里的节点：父节点是 seq，不是 if，也不能找不到。
+    final leaf = flowLocate(tree, 'leaf')!;
+    expect(leaf.parent!.id, 'seq');
+    expect(leaf.index, 0);
+  });
+
   test('design frames carry the wire fields', () {
     expect(
         HubFlow.diffFrame(

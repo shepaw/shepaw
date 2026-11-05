@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
-import '../../peer/models/flow_models.dart';
 import '../../peer/services/hub_flow.dart';
 
 /// 版本历史（方案「关键设计 12」）。

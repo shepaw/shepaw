@@ -348,14 +348,20 @@ class HubFlow {
   }
 
   Future<List<FlowSummary>?> list(String peerId, {String scope = ''}) async {
-    final response = await _request(
-      peerId,
-      listFrame(scope),
-      responseType: 'flow_list_resp',
-    );
+    final response = await listRaw(peerId, scope: scope);
     if (response == null) return null;
     return FlowSummary.listFromResponse(response, scope: scope);
   }
+
+  /// `flow_list_resp` 原帧。查重要区分「主机没应答」和「主机回了失败」：前者
+  /// 不能写，后者只是没法核名字（新主机的 create_only 是原子的，可以照常写）。
+  Future<Map<String, dynamic>?> listRaw(String peerId,
+          {String scope = ''}) async =>
+      _request(
+        peerId,
+        listFrame(scope),
+        responseType: 'flow_list_resp',
+      );
 
   /// 读一版定义。返回 `{revision, yaml}`；失败返回 null。
   Future<({int revision, String yaml})?> get(

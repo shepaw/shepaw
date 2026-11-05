@@ -109,6 +109,84 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('打开新建对话框不再额外查库（离线时不会卡 10 秒）', (tester) async {
+    final harness = _Harness();
+    addTearDown(harness.close);
+    await _pump(tester, harness.client);
+    final before = harness.sent
+        .where((f) => f['type'] == 'flow_list_req')
+        .length;
+
+    await tester.tap(find.byTooltip('新建'));
+    await _settle(tester);
+
+    expect(find.byKey(const ValueKey('new-flow-name')), findsOneWidget);
+    expect(
+      harness.sent.where((f) => f['type'] == 'flow_list_req').length,
+      before,
+    );
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('对话框打开期间别人建了同名流程：保存前查库把它挡下',
+      (tester) async {
+    final harness = _Harness();
+    addTearDown(harness.close);
+    await _pump(tester, harness.client);
+
+    await tester.tap(find.byTooltip('新建'));
+    await _settle(tester);
+    await tester.enterText(find.byKey(const ValueKey('new-flow-name')), 'fresh');
+    // 对话框里的 existing 还是旧的；库里已经被别人占了名字。
+    harness.flows = [
+      {'name': 'dev', 'latest': 3},
+      {'name': 'fresh', 'latest': 1},
+    ];
+    await tester.tap(find.byKey(const ValueKey('new-flow-create')));
+    await _settle(tester);
+
+    expect(harness.sent.any((f) => f['type'] == 'flow_save_req'), isFalse);
+    expect(find.text('已经有同名的流程了，换一个'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('flow_list 整体失败时新建仍照常保存，不误报主机没回应',
+      (tester) async {
+    final harness = _Harness()..listFails = true;
+    addTearDown(harness.close);
+    await _pump(tester, harness.client);
+
+    await tester.tap(find.byTooltip('新建'));
+    await _settle(tester);
+    await tester.enterText(find.byKey(const ValueKey('new-flow-name')), 'fresh');
+    await tester.tap(find.byKey(const ValueKey('new-flow-create')));
+    await _settle(tester);
+
+    expect(harness.sent.any((f) => f['type'] == 'flow_save_req'), isTrue);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('列表栏的刷新会重新取名单（画廊文案不会停在旧值）', (tester) async {
+    tester.view.physicalSize = const Size(2400, 1800);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(tester.view.reset);
+    final harness = _Harness();
+    addTearDown(harness.close);
+    await _pump(tester, harness.client, embedded: true);
+    final before = harness.sent
+        .where((f) => f['type'] == 'flow_list_req')
+        .length;
+
+    await tester.tap(find.byIcon(Icons.refresh));
+    await _settle(tester);
+
+    expect(
+      harness.sent.where((f) => f['type'] == 'flow_list_req').length,
+      greaterThan(before),
+    );
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('运行记录栏列主机上的运行，点一条打开运行视图',
       (tester) async {
     final harness = _Harness();
@@ -151,6 +229,14 @@ class _Harness {
   /// `flow_get` 回的定义。换掉它就能试 inputs / roles 的开跑表单。
   String flowYaml = 'flow: dev\nsteps: []\n';
 
+  /// 库里的流程名单。改它就能模拟「对话框打开期间别人建了同名流程」。
+  List<Map<String, dynamic>> flows = [
+    {'name': 'dev', 'latest': 3},
+  ];
+
+  /// 让 `flow_list_resp` 整体失败（例如库里有一个坏掉的 meta.json）。
+  bool listFails = false;
+
   final StreamController<PeerControlEvent> bus =
       StreamController<PeerControlEvent>.broadcast();
   final List<Map<String, dynamic>> sent = [];
@@ -161,13 +247,17 @@ class _Harness {
           sent.add(frame);
           if (!reachable) return false;
           final reply = switch (frame['type']) {
-            'flow_list_req' => {
-                'type': 'flow_list_resp',
-                'success': true,
-                'flows': [
-                  {'name': 'dev', 'latest': 3},
-                ],
-              },
+            'flow_list_req' => listFails
+                ? {
+                    'type': 'flow_list_resp',
+                    'success': false,
+                    'error': 'meta 读不出来',
+                  }
+                : {
+                    'type': 'flow_list_resp',
+                    'success': true,
+                    'flows': flows,
+                  },
             'flow_run_list_req' => {
                 'type': 'flow_run_list_resp',
                 'success': true,
@@ -228,12 +318,14 @@ class _Harness {
   }
 }
 
-Future<void> _pump(WidgetTester tester, HubFlow client) async {
+Future<void> _pump(WidgetTester tester, HubFlow client,
+    {bool embedded = false}) async {
   await tester.pumpWidget(MaterialApp(
     locale: const Locale('zh'),
     localizationsDelegates: AppLocalizations.localizationsDelegates,
     supportedLocales: AppLocalizations.supportedLocales,
-    home: FlowWorkspaceScreen(peerId: 'p1', client: client),
+    home: FlowWorkspaceScreen(
+        peerId: 'p1', client: client, embedded: embedded),
   ));
   await _settle(tester);
 }

@@ -1,7 +1,5 @@
 import 'package:yaml/yaml.dart';
 
-import '../../peer/models/flow_models.dart';
-
 /// task 的执行者（方案 M4）。
 ///
 /// 主机要求 `role` / `agent` / `uses` **三选一**（`validate` 会报「只能指定一个

@@ -224,6 +224,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
         notice.raw ?? l10n.flow_editFailed,
       FlowEditorNoticeKind.saveRejected =>
         notice.raw ?? l10n.flow_saveFailed,
+      FlowEditorNoticeKind.nameTaken => l10n.flow_newNameTaken,
       FlowEditorNoticeKind.hasProblems => l10n.flow_hasProblems(notice.count),
       FlowEditorNoticeKind.saved => l10n.flow_saved(notice.count),
       FlowEditorNoticeKind.sourceInvalid =>
@@ -269,8 +270,9 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       case 'saveAs':
         final name = await _askSaveAsName();
         if (name != null && mounted && name.isNotEmpty) {
-          final ok = await _controller.saveAs(name);
-          if (mounted && !ok) _snack(l10n.flow_saveFailed);
+          // 失败原因由控制器发 notice（撞名 / 主机没应答 / 保存失败），这里别
+          // 再叠一条通用「保存失败」把具体原因盖掉。
+          await _controller.saveAs(name);
         }
     }
   }

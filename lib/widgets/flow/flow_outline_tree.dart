@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../controllers/flow/flow_outline.dart';
 import '../../l10n/app_localizations.dart';
-import '../../peer/models/flow_models.dart';
 import 'flow_node_tree.dart';
 
 /// 可编辑的大纲（方案 M3）。

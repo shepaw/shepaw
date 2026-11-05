@@ -702,6 +702,10 @@ Object? flowFieldValue(Map<String, dynamic>? fields, String path) {
       final branch = node.branch ?? 'then';
       final index = branch == 'else' ? els++ : then++;
       if (node.id == id) return (parent: parent, index: index, branch: branch);
+      // 分支里还可能套着 seq / loop 之类的容器。别因为直接父节点是 `if` 就
+      // 截断递归：运行视图的「改写」要靠它找到嵌套在分支内部的节点的父节点。
+      final hit = flowLocate(node.children, id, parent: node);
+      if (hit != null) return hit;
     }
     return null;
   }

@@ -390,6 +390,142 @@ void main() {
     expect(save['base_revision'], isNull);
   });
 
+  test('保存失败但版本没变：不弹「覆盖为新一版」的冲突对话框', () async {
+    // 主机给所有失败都带 latest；校验不过时它等于手上的版本（3）。
+    final harness = _Harness()
+      ..saveReply = {
+        'type': 'flow_save_resp',
+        'success': false,
+        'error': '定义校验不过',
+        'latest': 3,
+      };
+    addTearDown(harness.close);
+    final c = await harness.controller();
+    addTearDown(c.dispose);
+
+    expect(await c.save(), isFalse);
+    expect(harness.notices.last.kind, FlowEditorNoticeKind.saveRejected);
+  });
+
+  test('版本被别人推进了才算冲突', () async {
+    final harness = _Harness()
+      ..saveReply = {
+        'type': 'flow_save_resp',
+        'success': false,
+        'error': '已经被改到第 5 版',
+        'latest': 5,
+      };
+    addTearDown(harness.close);
+    final c = await harness.controller();
+    addTearDown(c.dispose);
+
+    expect(await c.save(), isFalse);
+    expect(harness.notices.last.kind, FlowEditorNoticeKind.saveConflict);
+    expect(harness.notices.last.count, 5);
+  });
+
+  test('别人删了重建让版本反而变小，也仍然是冲突', () async {
+    // 旧判据 `latest > _revision` 会把这种真冲突当成普通失败，三个出口全没了。
+    final harness = _Harness()
+      ..saveReply = {
+        'type': 'flow_save_resp',
+        'success': false,
+        'error': '已经被改到第 1 版（你要改的是第 3 版）',
+        'latest': 1,
+      };
+    addTearDown(harness.close);
+    final c = await harness.controller();
+    addTearDown(c.dispose);
+
+    expect(await c.save(), isFalse);
+    expect(harness.notices.last.kind, FlowEditorNoticeKind.saveConflict);
+  });
+
+  test('force 保存不带 base_revision，任何失败都不能再弹冲突对话框', () async {
+    // 否则「覆盖为新一版」会反复弹同一个对话框，成为死循环。
+    final harness = _Harness()
+      ..saveReply = {
+        'type': 'flow_save_resp',
+        'success': false,
+        'error': '磁盘写失败',
+        'latest': 5,
+      };
+    addTearDown(harness.close);
+    final c = await harness.controller();
+    addTearDown(c.dispose);
+
+    expect(await c.save(force: true), isFalse);
+    expect(harness.notices.last.kind, FlowEditorNoticeKind.saveRejected);
+  });
+
+  test('另存为撞名：一个写请求都不发', () async {
+    final harness = _Harness()
+      ..listReply = {
+        'type': 'flow_list_resp',
+        'success': true,
+        'flows': [
+          // 编辑器自己就开在 dev 上，真实的库里必然有这一项。
+          {'name': 'dev', 'latest': 3},
+        ],
+      };
+    addTearDown(harness.close);
+    final c = await harness.controller();
+    addTearDown(c.dispose);
+
+    expect(await c.saveAs('dev'), isFalse);
+    expect(harness.sent.where((f) => f['type'] == 'flow_save_req'), isEmpty);
+    expect(harness.notices.last.kind, FlowEditorNoticeKind.nameTaken);
+  });
+
+  test('流程名按主机原样区分大小写，DEV 不该被 dev 挡住', () async {
+    final harness = _Harness()
+      ..listReply = {
+        'type': 'flow_list_resp',
+        'success': true,
+        'flows': [
+          {'name': 'dev', 'latest': 3},
+        ],
+      };
+    addTearDown(harness.close);
+    final c = await harness.controller();
+    addTearDown(c.dispose);
+
+    // 主机把名字原样拼进 scope，flow:DEV 和 flow:dev 是两行。
+    expect(await c.saveAs('DEV'), isTrue);
+    final save = harness.sent.lastWhere((f) => f['type'] == 'flow_save_req');
+    expect(save['name'], 'DEV');
+  });
+
+  test('flow_list 明确回了失败：照常写，不再误报「主机没有回应」', () async {
+    // 库里有一个坏掉的 meta.json 会让整个 list 失败，但主机仍在、save 仍能
+    // 工作（新主机的 create_only 是原子的）。别把「新建」永久挡在这里。
+    final harness = _Harness()
+      ..listReply = {
+        'type': 'flow_list_resp',
+        'success': false,
+        'error': 'meta 读不出来',
+      };
+    addTearDown(harness.close);
+    final c = await harness.controller();
+    addTearDown(c.dispose);
+
+    expect(await c.saveAs('fresh'), isTrue);
+    expect(harness.sent.any((f) => f['type'] == 'flow_save_req'), isTrue);
+    expect(harness.notices.any((n) => n.kind == FlowEditorNoticeKind.hostNoReply),
+        isFalse);
+  });
+
+  test('主机真的不应答：另存为不写，并如实报「主机没有回应」', () async {
+    final harness = _Harness()..reachable = false;
+    addTearDown(harness.close);
+    final c = await harness.controller();
+    addTearDown(c.dispose);
+
+    expect(await c.saveAs('fresh'), isFalse);
+    expect(harness.sent.any((f) => f['type'] == 'flow_save_req'), isFalse);
+    expect(harness.notices.last.kind, FlowEditorNoticeKind.hostNoReply);
+  });
+
 }
 
 Future<void> _pastDebounce() =>
@@ -401,6 +537,12 @@ class _Harness {
 
   bool reachable = true;
   bool rejectEdits = false;
+
+  /// 自定义 `flow_save_req` 的应答（测失败路径）。
+  Map<String, dynamic>? saveReply;
+
+  /// 自定义 `flow_list_req` 的应答（另存为查重用）。
+  Map<String, dynamic>? listReply;
 
   /// 回包延后多久。用来造「在途期间用户还在打字」的窗口。
   Duration delay = Duration.zero;
@@ -428,11 +570,20 @@ class _Harness {
                 'kinds': {},
               },
             'flow_validate_req' => _validate(frame['yaml'] as String? ?? ''),
-            'flow_save_req' => {
-                'type': 'flow_save_resp',
-                'success': true,
-                'flow': {'latest': 4},
-              },
+            'flow_list_req' =>
+              listReply ??
+                  {
+                    'type': 'flow_list_resp',
+                    'success': true,
+                    'flows': [],
+                  },
+            'flow_save_req' =>
+              saveReply ??
+                  {
+                    'type': 'flow_save_resp',
+                    'success': true,
+                    'flow': {'latest': 4},
+                  },
             'flow_edit_req' => rejectEdits
                 ? {
                     'type': 'flow_edit_resp',

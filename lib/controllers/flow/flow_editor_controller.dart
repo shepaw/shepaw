@@ -9,6 +9,7 @@ import 'flow_draft_store.dart';
 import 'flow_editor_history.dart';
 import 'flow_host_caps.dart';
 import 'flow_editor_notice.dart';
+import 'flow_names.dart';
 import 'flow_rehearsal_runner.dart';
 
 /// 挂起的一个字段改动。`nodeId` 为空表示这是定义头上的字段。
@@ -483,8 +484,19 @@ class FlowEditorController extends ChangeNotifier {
         final latest = result.data['latest'] is num
             ? (result.data['latest'] as num).toInt()
             : 0;
-        _emit(FlowEditorNotice(FlowEditorNoticeKind.saveConflict,
-            raw: result.error, count: latest));
+        // `latest` 只是「库里现在第几版」，主机给所有失败都带它，不能单独当
+        // 冲突标志。只有我们确实报了 base_revision、且主机报的版本和手上的
+        // 不一样，才算冲突（`>` 不够：别人删了重建会让 latest 反而变小）。
+        // force 保存没报 base_revision，不可能冲突；否则「覆盖为新一版」会
+        // 再弹一次同样的对话框，成死循环。旧主机不带这个字段，也不会误判。
+        final conflict = !force && latest > 0 && latest != _revision;
+        if (conflict) {
+          _emit(FlowEditorNotice(FlowEditorNoticeKind.saveConflict,
+              raw: result.error, count: latest));
+        } else {
+          _emit(FlowEditorNotice(FlowEditorNoticeKind.saveRejected,
+              raw: result.error));
+        }
       } else {
         _emit(const FlowEditorNotice(FlowEditorNoticeKind.hostNoReply));
       }
@@ -508,6 +520,19 @@ class FlowEditorController extends ChangeNotifier {
   Future<bool> saveAs(String newName) async {
     if (!await flush()) return false;
     if (_disposed) return false;
+    // 老主机不认 create_only，同名会静默覆盖已有的那份流程。先查一次库；
+    // 只有「主机压根没应答」才不写，主机回了但名单不可用时照常交给主机裁决。
+    final availability =
+        await FlowNameGuard.check(_client, peerId, newName, scope: scope);
+    if (_disposed) return false;
+    if (availability == FlowNameAvailability.taken) {
+      _emit(const FlowEditorNotice(FlowEditorNoticeKind.nameTaken));
+      return false;
+    }
+    if (availability == FlowNameAvailability.unavailable) {
+      _emit(const FlowEditorNotice(FlowEditorNoticeKind.hostNoReply));
+      return false;
+    }
     final result = await _client.save(
       peerId,
       newName,
@@ -515,6 +540,14 @@ class FlowEditorController extends ChangeNotifier {
       scope: scope,
       createOnly: true,
     );
+    if (_disposed) return false;
+    if (!result.ok) {
+      // 所有失败都由控制器发通知，界面别再叠一条通用「保存失败」把它盖掉。
+      _emit(result.reachable
+          ? FlowEditorNotice(FlowEditorNoticeKind.saveRejected,
+              raw: result.error)
+          : const FlowEditorNotice(FlowEditorNoticeKind.hostNoReply));
+    }
     return result.ok;
   }
 

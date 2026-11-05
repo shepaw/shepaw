@@ -56,8 +56,14 @@ class FlowTemplateCatalog {
     HubFlow client,
     String peerId, {
     String scope = '',
-  }) async {
-    final flows = await client.list(peerId, scope: scope);
+  }) async =>
+      fromFlows(await client.list(peerId, scope: scope));
+
+  /// 用**已经加载**的流程列表装饰内置名单，不额外发请求。
+  ///
+  /// 工作台进页面时已经取过 `flow_list`，画廊直接用那份就够了；再发一次会在
+  /// 主机不应答时把「新建」按钮卡住一个 10 秒超时。
+  static List<FlowTemplateEntry> fromFlows(List<FlowSummary>? flows) {
     final byName = <String, FlowSummary>{
       for (final f in flows ?? const <FlowSummary>[]) f.name: f,
     };

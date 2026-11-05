@@ -231,14 +231,9 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   }
 
   Future<void> _create() async {
-    // 主机 `flow_list` 带 description / updated_by；内置模板可能被用户改过，
-    // 所以画廊文案从库里取，并标「已修改」。取不到时回退客户端内置文案。
-    final templates = await FlowTemplateCatalog.load(
-      _client,
-      _host,
-      scope: widget.scope,
-    );
-    if (!mounted) return;
+    // 工作台进页面时已经取过 flow_list，画廊文案直接用那份结果生成：离线时点
+    // 「新建」不该再等一个 10 秒超时的往返，内置文案本来就能兜底。
+    final templates = FlowTemplateCatalog.fromFlows(_flows);
     final request = await showNewFlowDialog(
       context,
       existing: _flows?.map((f) => f.name) ?? const [],
@@ -249,6 +244,26 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
     if (!await _guardDirty()) return;
     if (!mounted) return;
     final l10n = AppLocalizations.of(context);
+
+    // 对话框里的 existing 可能已经过期（别的设备刚建了同名流程），而老主机
+    // 不认 create_only：同名会静默变成给已有流程追加一版。保存前再查一次库。
+    // 「主机没应答」才不写；主机回了但没给出名单时照常写，让新主机的
+    // create_only 原子裁决撞名，别把「新建」永久挡在一个坏 meta 上。
+    final availability = await FlowNameGuard.check(
+      _client,
+      _host,
+      request.name,
+      scope: widget.scope,
+    );
+    if (!mounted) return;
+    if (availability == FlowNameAvailability.taken) {
+      _snack(l10n.flow_newNameTaken);
+      return;
+    }
+    if (availability == FlowNameAvailability.unavailable) {
+      _snack(l10n.flow_hostNoReply);
+      return;
+    }
 
     String yaml;
     switch (request.source) {
@@ -308,7 +323,6 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final flows = _flows;
     return LayoutBuilder(
       builder: (context, constraints) {
         final wide = _wideFor(constraints);
@@ -410,7 +424,9 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
                 IconButton(
                   tooltip: l10n.common_refresh,
                   icon: const Icon(Icons.refresh),
-                  onPressed: () => setState(() {}),
+                  // 重新取名单：画廊文案 /「已修改」标记都来自 flow_list 的
+                  // description / updated_by，光 setState 不会刷新它们。
+                  onPressed: () => unawaited(_load()),
                 ),
               ],
             ),

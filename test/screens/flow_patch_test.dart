@@ -19,6 +19,19 @@ steps:
           task: {uses: "agent:y", prompt: "审"}
 ''';
 
+/// 嵌套容器：父节点的 key 是完整路径，只有顶层容器才等于 id。
+const _nestedYaml = '''
+steps:
+  - id: outer
+    seq:
+      steps:
+        - id: inner
+          seq:
+            steps:
+              - id: leaf
+                task: {uses: "agent:x", prompt: "写"}
+''';
+
 /// 运行中的节点上有个不停转的进度圈，pumpAndSettle 永远等不到静止。
 Future<void> _settle(WidgetTester tester) async {
   for (var i = 0; i < 8; i++) {
@@ -143,6 +156,89 @@ void main() {
     await tester.tap(find.text('impl'));
     await _settle(tester);
     expect(find.byKey(const ValueKey('node-patch')), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    await bus.close();
+  });
+
+  testWidgets('nested container uses the full NodeKey, not the bare id',
+      (tester) async {
+    final bus = StreamController<PeerControlEvent>.broadcast();
+    final sent = <Map<String, dynamic>>[];
+    final client = HubFlow(
+      events: bus.stream,
+      send: (peerId, frame) async {
+        sent.add(frame);
+        Map<String, dynamic>? reply;
+        switch (frame['type']) {
+          case 'flow_run_get_req':
+            reply = {
+              'type': 'flow_run_get_resp',
+              'success': true,
+              'run_id': 'r1',
+              'status': 'running',
+              'yaml': _nestedYaml,
+              'tree': [
+                {
+                  'key': 'outer',
+                  'id': 'outer',
+                  'kind': 'seq',
+                  'status': 'running',
+                  'children': [
+                    {
+                      'key': 'outer/inner',
+                      'id': 'inner',
+                      'kind': 'seq',
+                      'status': 'pending',
+                      'children': [
+                        {
+                          'key': 'outer/inner/leaf',
+                          'id': 'leaf',
+                          'kind': 'task',
+                          'status': 'pending',
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            };
+          case 'flow_run_patch_req':
+            reply = {
+              'type': 'flow_run_patch_resp',
+              'success': true,
+              'run_id': 'r1',
+            };
+        }
+        if (reply != null) {
+          bus.add(PeerControlEvent(
+              peerId: peerId, data: {...reply, 'request_id': frame['request_id']}));
+        }
+        return true;
+      },
+    );
+    tester.view.physicalSize = const Size(3000, 2400);
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MaterialApp(
+      locale: const Locale('zh'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: FlowRunScreen(peerId: 'p1', runId: 'r1', client: client),
+    ));
+    await _settle(tester);
+
+    await tester.tap(find.text('leaf'));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('node-patch')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('node-patch')));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('yaml-editor')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('yaml-apply')));
+    await _settle(tester);
+
+    final patch = sent.firstWhere((f) => f['type'] == 'flow_run_patch_req');
+    // 主机按 `NodeKey::parse` 找节点，只发 `inner` 会记到一个用不上的 key 上。
+    expect(patch['node_key'], 'outer/inner');
     await tester.pumpWidget(const SizedBox());
     await bus.close();
   });

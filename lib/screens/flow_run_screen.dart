@@ -291,8 +291,12 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
                 _snack(l10n.flow_patchNotAList);
                 return;
               }
+              // 主机按完整 NodeKey 找运行中的节点（`outer/inner`、`loop#2/x`）。
+              // 只有顶层容器的 key 才等于 id；嵌在容器 / if 分支里的节点如果只
+              // 发 id，主机会把改写记到一个永远用不上的 key 上，回 success:true
+              // 却什么都没改。YAML 里的步骤仍按 id 定位，所以上面用 target.id。
               final result = await _client.patch(
-                  widget.peerId, widget.runId, target.id, steps);
+                  widget.peerId, widget.runId, target.key, steps);
               if (!mounted) return;
               if (!result.ok) {
                 _snack(result.reachable
