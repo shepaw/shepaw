@@ -69,6 +69,9 @@ class SessionState {
   /// 主机生成这份快照的墙钟时间。换 hub 后 revision 会从 1 重新计数，
   /// 用时间水位挡住 events_sync 回放里的旧 session.state 复活已结束回合。
   final int atMs;
+  /// 产生这份快照的主机实例 id。换 hub 后 revision 从 1 重新计数、墙钟也
+  /// 可能回拨，只有身份能可靠区分两代 revision 空间。
+  final String hubId;
   final SessionTerminal? lastTerminal;
   final List<QueuedItem> queue;
 
@@ -84,6 +87,7 @@ class SessionState {
     this.startedAtMs = 0,
     this.lastProgressAtMs = 0,
     this.atMs = 0,
+    this.hubId = '',
     this.lastTerminal,
     this.queue = const <QueuedItem>[],
   });
@@ -106,6 +110,7 @@ class SessionState {
       startedAtMs: (json['started_at_ms'] as num?)?.toInt() ?? 0,
       lastProgressAtMs: (json['last_progress_at_ms'] as num?)?.toInt() ?? 0,
       atMs: (json['at'] as num?)?.toInt() ?? 0,
+      hubId: (json['hub_id'] as String?) ?? '',
       lastTerminal: rawTerminal is Map
           ? SessionTerminal.fromJson(rawTerminal)
           : null,
@@ -170,9 +175,10 @@ class SessionRuntimeMirror {
   /// 最近一次被接受的状态跃迁属于哪个会话。
   String? lastChangedKey;
 
-  /// 最近一次全量对账的墙钟水位。低于它的 `session.state` 是换 hub 之前的
-  /// 旧回放，必须拒绝，否则会把已结束的 running 状态复活。
-  int _reconcileWatermarkMs = 0;
+  /// 当前认定的主机实例。换 hub（id 变化）时重置本地 revision 空间并强制
+  /// 接受新 hub 的任何 revision；旧 hub 的历史回放按 id 不匹配拒绝。
+  /// 墙钟不可靠（换 hub / NTP 回拨），不再用它做水位。
+  String? _hubId;
 
   // 主机自发回合（推送 / 后台汇报 / pouch）的「哪些回合在跑」由
   // HubEventClient 的 _attached/_liveChannels/_liveBuffers 承担——它们是
@@ -217,7 +223,7 @@ class SessionRuntimeMirror {
       // 主机对 pouch / 群回合用裸 channel_id 作 session_key（无冒号），
       // agent_chat 才是 `agent:<id>:<session>`。两种都要能命中。
       final matchesKey = entry.key == bare || entry.key.endsWith(':$bare');
-      if (!matchesKey || entry.value.value.revision == 0) {
+      if (!matchesKey) {
         continue;
       }
       if (found != null) return null;
@@ -246,8 +252,16 @@ class SessionRuntimeMirror {
   bool apply(Map<dynamic, dynamic> snapshot, {bool force = false}) {
     final incoming = SessionState.fromSnapshot(snapshot);
     if (incoming.sessionKey.isEmpty) return false;
-    // 换 hub 之后，events_sync 回放里旧 hub 的 session.state 一律不复活。
-    if (!force && incoming.atMs < _reconcileWatermarkMs) return false;
+    if (!force) {
+      final hub = incoming.hubId;
+      if (hub.isNotEmpty && _hubId != null && hub != _hubId) {
+        // 旧 hub 的历史回放，拒绝（否则会把已结束的 running 状态复活）。
+        return false;
+      }
+      if (hub.isNotEmpty && _hubId == null) {
+        _hubId = hub;
+      }
+    }
     final notifier = notifierFor(incoming.sessionKey);
     final next = force ? incoming : reduceSessionState(notifier.value, incoming);
     if (identical(next, notifier.value)) return false;
@@ -267,26 +281,37 @@ class SessionRuntimeMirror {
     return applied;
   }
 
-  /// 启动 / 重连全量对账：快照里的会话强制落地（主机 revision 可能比本地
-  /// 低），没提到的会话重置为空。水位用来挡住随后 events_sync 的旧回放。
-  void reconcileTo(Iterable<dynamic> snapshots) {
+  /// 启动 / 重连全量对账：快照里的会话强制落地（新 hub 的 revision 可能比
+  /// 本地低），没提到的会话重置为空。[hubId] 是响应顶层的主机身份，空快照
+  /// 时也要靠它识别换 hub。
+  void reconcileTo(Iterable<dynamic> snapshots, {String? hubId}) {
     final seen = <String>{};
-    var snapshotMaxAt = 0;
-    var hasSnapshot = false;
+    final parsed = <Map<dynamic, dynamic>>[];
+    String? effectiveHub = (hubId == null || hubId.isEmpty) ? null : hubId;
     for (final snapshot in snapshots) {
       if (snapshot is! Map) continue;
       final state = SessionState.fromSnapshot(snapshot);
       if (state.sessionKey.isEmpty) continue;
-      hasSnapshot = true;
+      if (effectiveHub == null && state.hubId.isNotEmpty) {
+        effectiveHub = state.hubId;
+      }
       seen.add(state.sessionKey);
-      if (state.atMs > snapshotMaxAt) snapshotMaxAt = state.atMs;
-      apply(snapshot, force: true);
+      parsed.add(snapshot);
     }
-    if (hasSnapshot) {
-      // 水位允许下降：换 hub / NTP 回拨后新 hub 的时钟可能比旧的更早，
-      // 只升不降会让新 hub 的所有实时事件被永久拒绝。旧回放仍早于本次
-      // 快照的 at，依旧会被挡住。
-      _reconcileWatermarkMs = snapshotMaxAt;
+    if (effectiveHub != null &&
+        effectiveHub.isNotEmpty &&
+        effectiveHub != _hubId) {
+      // 换 hub：清空本地 revision 空间，让新 hub 的任何 revision 都能落地。
+      // 之后旧 hub 的历史回放按 hub_id 不匹配被 apply 拒绝。
+      for (final entry in _notifiers.entries) {
+        entry.value.value = SessionState.empty(entry.key);
+      }
+      _hubId = effectiveHub;
+    } else if (effectiveHub != null && effectiveHub.isNotEmpty) {
+      _hubId = effectiveHub;
+    }
+    for (final snapshot in parsed) {
+      apply(snapshot, force: true);
     }
     for (final entry in _notifiers.entries) {
       if (seen.contains(entry.key)) continue;

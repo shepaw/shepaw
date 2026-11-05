@@ -12,6 +12,7 @@ Map<String, dynamic> snap({
   Object? lastTerminal,
   List<Map<String, dynamic>>? queue,
   int at = 1300,
+  String hubId = 'hub-a',
 }) =>
     <String, dynamic>{
       'session_key': key,
@@ -27,6 +28,7 @@ Map<String, dynamic> snap({
       'last_terminal': lastTerminal,
       'queue': queue ?? <Map<String, dynamic>>[],
       'at': at,
+      'hub_id': hubId,
     };
 
 void main() {
@@ -343,19 +345,27 @@ void main() {
     expect(mirror.stateFor('agent:a:s1').turnId, 't2');
   });
 
-  test('对账水位挡住旧 hub 回放，不复活已结束回合', () {
+  test('旧 hub 的回放按 hub_id 拒绝，不复活已结束回合', () {
     final mirror = SessionRuntimeMirror();
     addTearDown(mirror.dispose);
     mirror.reconcileTo(<Map<String, dynamic>>[
-      snap(revision: 1, at: 5000, state: 'idle', turnId: ''),
-    ]);
+      snap(revision: 1, state: 'idle', turnId: '', hubId: 'hub-b'),
+    ], hubId: 'hub-b');
     expect(
-      mirror.apply(snap(revision: 12, at: 3000, turnId: 'old')),
+      mirror.apply(snap(
+        revision: 12,
+        at: 9000,
+        turnId: 'old',
+        hubId: 'hub-a',
+      )),
       isFalse,
-      reason: 'at 早于水位的旧回放必须被拒',
+      reason: '旧 hub 的回放必须被拒，即使 at 更晚、revision 更高',
     );
     expect(mirror.stateFor('agent:a:s1').isRunning, isFalse);
-    expect(mirror.apply(snap(revision: 2, at: 6000, turnId: 't3')), isTrue);
+    expect(
+      mirror.apply(snap(revision: 2, turnId: 't3', hubId: 'hub-b')),
+      isTrue,
+    );
     expect(mirror.stateFor('agent:a:s1').turnId, 't3');
   });
 
@@ -377,20 +387,34 @@ void main() {
     expect(mirror.isRequestQueued('missing'), isFalse);
   });
 
-  test('换 hub 时钟回退时水位下降，新 hub 的事件能收敛', () {
+  test('换 hub 的空快照也重置身份，新 hub 事件能收敛', () {
     final mirror = SessionRuntimeMirror();
     addTearDown(mirror.dispose);
     mirror.reconcileTo(<Map<String, dynamic>>[
-      snap(revision: 1, at: 9000, state: 'idle', turnId: ''),
-    ]);
-    // 新 hub 的时钟比旧的早，水位必须跟着下降。
-    mirror.reconcileTo(<Map<String, dynamic>>[
-      snap(revision: 1, at: 5000, turnId: 't2'),
-    ]);
+      snap(revision: 20, at: 9000, hubId: 'hub-a'),
+    ], hubId: 'hub-a');
+    expect(mirror.stateFor('agent:a:s1').revision, 20);
+    // 新 hub 没有活跃会话，时钟也比旧的早；顶层 hub_id 仍要触发换 hub。
+    mirror.reconcileTo(<Map<String, dynamic>>[], hubId: 'hub-b');
+    expect(mirror.stateFor('agent:a:s1').revision, 0);
     expect(
-      mirror.apply(snap(revision: 2, at: 6000, turnId: 't3')),
+      mirror.apply(snap(
+        revision: 1,
+        at: 5000,
+        turnId: 't2',
+        hubId: 'hub-b',
+      )),
       isTrue,
     );
-    expect(mirror.stateFor('agent:a:s1').turnId, 't3');
+    expect(mirror.stateFor('agent:a:s1').turnId, 't2');
+    expect(
+      mirror.apply(snap(
+        revision: 30,
+        at: 6000,
+        turnId: 'old',
+        hubId: 'hub-a',
+      )),
+      isFalse,
+    );
   });
 }
