@@ -29,36 +29,6 @@ Map<String, dynamic> snap({
     };
 
 void main() {
-  group('liveTurns（主机自发回合）', () {
-    test('开始/结束都登记到同一份 mirror 并通知一次', () {
-      final mirror = SessionRuntimeMirror();
-      addTearDown(mirror.dispose);
-      var ticks = 0;
-      void listener() => ticks++;
-      mirror.changes.addListener(listener);
-      addTearDown(() => mirror.changes.removeListener(listener));
-
-      mirror.noteLiveTurnStarted('t-push', 'psess_s1');
-      expect(mirror.liveTurns['t-push'], 'psess_s1');
-      expect(mirror.lastChangedKey, 'psess_s1');
-      expect(ticks, 1);
-
-      mirror.noteLiveTurnFinished('t-push');
-      expect(mirror.liveTurns.isEmpty, isTrue);
-      expect(ticks, 2);
-
-      mirror.noteLiveTurnFinished('t-push');
-      expect(ticks, 2, reason: '重复结束不该通知');
-    });
-
-    test('空 turnId 忽略', () {
-      final mirror = SessionRuntimeMirror();
-      addTearDown(mirror.dispose);
-      mirror.noteLiveTurnStarted('', 'psess_s1');
-      expect(mirror.liveTurns.isEmpty, isTrue);
-    });
-  });
-
   group('isStaleOutputStream', () {
     SessionState running(int gen) => SessionState(
           sessionKey: 'agent:a:s1',
@@ -113,10 +83,22 @@ void main() {
       );
     });
 
-    test('主机已宣布 idle 后的迟到输出拦下', () {
+    test('mirror 还是上一轮 idle（状态事件尚未到达）时放行，不吞本轮 chunk', () {
       expect(
         isStaleOutputStream('agent_chunk', frame('agent_chunk'), idle(3)),
-        isTrue,
+        isFalse,
+        reason: '状态事件走异步队列，不能据此判迟到',
+      );
+    });
+
+    test('帧的世代比 mirror 新也放行（mirror 落后）', () {
+      expect(
+        isStaleOutputStream(
+          'agent_chunk',
+          frame('agent_chunk', gen: 4),
+          idle(3),
+        ),
+        isFalse,
       );
     });
 
@@ -224,6 +206,13 @@ void main() {
     );
     expect(mirror.notifierForChannel('dm_other'), isNull);
     expect(mirror.peek('agent:wrong:dm_a1_user_9'), isNull);
+  });
+
+  test('pouch / 群回合的裸 channel_id 也能按频道找到', () {
+    final mirror = SessionRuntimeMirror();
+    addTearDown(mirror.dispose);
+    mirror.apply(snap(key: 'group_g1', revision: 3));
+    expect(mirror.notifierForChannel('group_g1')?.value.turnId, 't1');
   });
 
   test('空会话是 idle，没有任何排队', () {
@@ -420,17 +409,27 @@ void main() {
     expect(notifier.value.hostQueuedCount, 1);
   });
 
-  test('全量对账会把主机不再报告的会话收敛成 idle', () {
+  test('全量对账把主机不再报告的会话重置为 revision 0', () {
     final mirror = SessionRuntimeMirror();
     addTearDown(mirror.dispose);
-    mirror.apply(snap(key: 'agent:a:s1'));
-    mirror.apply(snap(key: 'agent:a:s2', turnId: 't9'));
+    mirror.apply(snap(key: 'agent:a:s1', revision: 12));
+    mirror.apply(snap(key: 'agent:a:s2', revision: 8, turnId: 't9'));
     expect(mirror.stateFor('agent:a:s2').isRunning, isTrue);
 
     mirror.reconcileTo(<Map<String, dynamic>>[
-      snap(key: 'agent:a:s1', revision: 2, state: 'idle', turnId: ''),
+      snap(key: 'agent:a:s1', revision: 13, state: 'idle', turnId: ''),
     ]);
     expect(mirror.stateFor('agent:a:s2').isRunning, isFalse);
-    expect(mirror.stateFor('agent:a:s2').lastTerminal?.reason, 'reconciled');
+    expect(
+      mirror.stateFor('agent:a:s2').revision,
+      0,
+      reason: '不能伪造比新主机更大的 revision',
+    );
+    // 换 hub / 重启后主机从 1 重新计数，低 revision 的真实事件也要能收敛。
+    expect(
+      mirror.apply(snap(key: 'agent:a:s2', revision: 1, turnId: 't10')),
+      isTrue,
+    );
+    expect(mirror.stateFor('agent:a:s2').turnId, 't10');
   });
 }

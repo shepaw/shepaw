@@ -140,9 +140,10 @@ class SessionState {
 
 /// 这条输出流帧是否属于「已经结束 / 被顶掉的世代」。
 ///
-/// 只拦 `agent_chunk` / `agent_metadata`：`agent_done` / `agent_error` /
-/// `session_ack` 是终态或回执，必须照常处理，否则在途 turn 永远挂住。
-/// 没有 `session_key`（旧路径、pouch 帧）或还没有状态快照时一律放行。
+/// 只丢「明确属于更旧世代」的帧。mirror 的状态事件走 HubEventClient 的
+/// 异步控制队列，可能落后于同步到达的流帧：不能用 generation 不等、也不能
+/// 用 `!isRunning` 判迟到，否则本轮开头的 chunk 会被整批吞掉。
+/// 终态之后真正没有宿主的迟到帧由 _onChunk 里 `p == null` 分支收口并记日志。
 bool isStaleOutputStream(
   String type,
   Map<String, dynamic> data,
@@ -153,9 +154,8 @@ bool isStaleOutputStream(
   if (key == null || key.isEmpty) return false;
   if (state == null || state.revision == 0) return false;
   final generation = data['generation'];
-  if (generation is int && generation != state.generation) return true;
-  // 主机已宣布 idle：这一轮的输出没有宿主了，算迟到帧。
-  return !state.isRunning;
+  if (generation is int && generation < state.generation) return true;
+  return false;
 }
 
 /// 纯 reducer：只接受更大 revision 的快照，乱序 / 重放天然幂等。
@@ -181,24 +181,10 @@ class SessionRuntimeMirror {
   /// 最近一次被接受的状态跃迁属于哪个会话。
   String? lastChangedKey;
 
-  /// 主机自己发起的 live turn（推送 / 后台汇报 / pouch 回合）索引：
-  /// `turnId → sessionKey`。这些回合不走 `submit`，但同样要让 App 只有
-  /// 一份「哪些回合在跑」的记录，而不是 HubEventClient 另立三张表。
-  final Map<String, String> liveTurns = <String, String>{};
-
-  void noteLiveTurnStarted(String turnId, String sessionKey) {
-    if (turnId.isEmpty) return;
-    liveTurns[turnId] = sessionKey;
-    lastChangedKey = sessionKey;
-    changes.value++;
-  }
-
-  void noteLiveTurnFinished(String turnId) {
-    final key = liveTurns.remove(turnId);
-    if (key == null) return;
-    lastChangedKey = key;
-    changes.value++;
-  }
+  // 主机自发回合（推送 / 后台汇报 / pouch）的「哪些回合在跑」由
+  // HubEventClient 的 _attached/_liveChannels/_liveBuffers 承担——它们是
+  // 本机接流视图与落库路由，不是会话状态。会话状态的唯一真相源是这里
+  // 的 per-session notifier；不再另立一份只写不读的 live-turn 索引。
 
   /// App 本地 channel id → 主机 `agent:<agentId>:<session_id>`。
   /// `psess_` 壳剥掉，本机新建的 `dm_` 原样带上（与
@@ -235,7 +221,10 @@ class SessionRuntimeMirror {
     if (bare.isEmpty) return null;
     ValueNotifier<SessionState>? found;
     for (final entry in _notifiers.entries) {
-      if (!entry.key.endsWith(':$bare') || entry.value.value.revision == 0) {
+      // 主机对 pouch / 群回合用裸 channel_id 作 session_key（无冒号），
+      // agent_chat 才是 `agent:<id>:<session>`。两种都要能命中。
+      final matchesKey = entry.key == bare || entry.key.endsWith(':$bare');
+      if (!matchesKey || entry.value.value.revision == 0) {
         continue;
       }
       if (found != null) return null;
@@ -284,24 +273,12 @@ class SessionRuntimeMirror {
       if (seen.contains(entry.key)) continue;
       final current = entry.value.value;
       if (!current.isRunning && current.queue.isEmpty) continue;
-      final incoming = SessionState.fromSnapshot(<String, dynamic>{
-        'session_key': entry.key,
-        'revision': current.revision + 1,
-        'generation': current.generation,
-        'state': 'idle',
-        'last_terminal': <String, dynamic>{
-          'turn_id': current.turnId,
-          'reason': 'reconciled',
-          'at_ms': DateTime.now().millisecondsSinceEpoch,
-          'revision': current.revision + 1,
-        },
-      });
-      final next = reduceSessionState(current, incoming);
-      if (!identical(next, current)) {
-        entry.value.value = next;
-        lastChangedKey = entry.key;
-        changes.value++;
-      }
+      // 主机没提到这段会话：把本地状态**重置**为 revision 0，等它的真实
+      // 快照。不能伪造 current.revision+1 —— 换 hub / 重启后主机从 1 重新
+      // 计数，一个更大的假 revision 会让后续所有真实事件被 reducer 拒绝。
+      entry.value.value = SessionState.empty(entry.key);
+      lastChangedKey = entry.key;
+      changes.value++;
     }
   }
 

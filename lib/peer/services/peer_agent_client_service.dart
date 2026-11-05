@@ -1990,6 +1990,10 @@ class _PendingRequest {
   /// 发出后一段时间仍为 false 时要主动向主机确认。
   bool heardFromHost = false;
 
+  /// 主机已把这条消息收进会话队列、还没轮到它。排队期间不会有任何帧，
+  /// 看门狗不能按「30 分钟无输出」判失败；回合真正开始出字时清除。
+  bool queuedOnHost = false;
+
   /// 发出 `agent_chat` 后等待首个主机帧的确认定时器。
   Timer? deliveryProbeTimer;
 
@@ -3278,6 +3282,9 @@ class PeerAgentClientService {
         timer.cancel();
         return;
       }
+      // 主机已把这条收进会话队列、还没轮到它：排队期间本来就不会有帧，
+      // 不能按「30 分钟无输出」判失败；首个 chunk/metadata 会清除标记。
+      if (pending.queuedOnHost) return;
       final now = DateTime.now();
       final verdict = evaluateTurnWatchdog(
         now: now,
@@ -3483,9 +3490,22 @@ class PeerAgentClientService {
         _onChunk(event.data);
         break;
       case 'session_ack':
-        // 主机裁决回执。`_noteHostTurnSignal` 已把它算作投递确认；这里只把
-        // 结果转给储物袋回合，让它别再等主机已删除的 kind:queued 帧。
-        // 不改任何终态：回合是否结束由主机帧 / session.state 说了算。
+        // 主机裁决回执：queued 的消息排队期间不会有任何帧，标记后让看门狗
+        // 跳过 idle 超时；started / 首个 chunk 清除标记；rejected 收口为错误。
+        final disposition = event.data['disposition'] as String? ?? '';
+        final ackRequestId = event.data['request_id'] as String? ?? '';
+        final ackPending =
+            ackRequestId.isEmpty ? null : _pending[ackRequestId];
+        if (disposition == 'queued') {
+          if (ackPending != null) ackPending.queuedOnHost = true;
+        } else if (disposition == 'started') {
+          if (ackPending != null) ackPending.queuedOnHost = false;
+        } else if (disposition == 'rejected') {
+          _onError(<String, dynamic>{
+            'request_id': ackRequestId,
+            'message': event.data['message'] as String? ?? '主机会话队列已满',
+          });
+        }
         PouchTurnRelay.instance.onSessionAck(event.data);
         break;
       case 'pouch_turn_event':
@@ -9236,7 +9256,20 @@ class PeerAgentClientService {
     var content = data['content'] as String? ?? '';
     if (requestId == null) return;
     final p = _pending[requestId];
-    if (p == null) return;
+    if (p == null) {
+      _log.info(
+        'late output without inflight turn requestId=$requestId '
+        'gen=${data['generation']}',
+        tag: _tag,
+      );
+      return;
+    }
+    // 排队消息开始出字：解除看门狗豁免，并把 idle 时钟挪到此刻，否则
+    // 排队期间累积的静默会立刻触发 30 分钟失败判定。
+    if (p.queuedOnHost) {
+      p.queuedOnHost = false;
+      p.idleSince = DateTime.now();
+    }
     // 新主机的 live 分片带 UTF-16 起始偏移。断线重连后主机把流改推到
     // 当前连接，live 分片可能和 resume 增量交错：重叠的裁掉，跳在前面的
     // 说明还有缺口，先交给 resume 补齐。
@@ -9275,6 +9308,10 @@ class PeerAgentClientService {
     if (metadata.isEmpty) return;
     final p = _pending[requestId];
     if (p == null) return;
+    if (p.queuedOnHost) {
+      p.queuedOnHost = false;
+      p.idleSince = DateTime.now();
+    }
     final currentMode = (metadata['current_mode'] as String?)?.trim();
     if (currentMode != null && currentMode.isNotEmpty) {
       _patchCachedCurrent(

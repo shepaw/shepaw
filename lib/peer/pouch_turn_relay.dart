@@ -787,11 +787,18 @@ class PouchTurnRelay {
   void onSessionAck(Map<String, dynamic> data) {
     final requestId = data['request_id'] as String? ?? '';
     if (!_pending.containsKey(requestId)) return;
-    final queued = data['disposition'] == 'queued';
-    onEvent(<String, dynamic>{
-      'request_id': requestId,
-      'kind': queued ? 'queued' : 'start',
-    });
+    final disposition = data['disposition'] as String? ?? '';
+    if (disposition == 'rejected') {
+      onEvent(<String, dynamic>{
+        'request_id': requestId,
+        'kind': 'error',
+        'message': data['message'] as String? ?? '主机会话队列已满',
+      });
+      return;
+    }
+    // started / queued 都**不** complete：_forward 要等真正的 done。
+    // 旧实现把 queued 转成 kind:'queued'，而它在 completeOn 里，会让排队
+    // 消息立刻返回空 buffer、落一条空回复。
   }
 
   void onEvent(Map<String, dynamic> data) {
@@ -861,7 +868,15 @@ class PouchTurnRelay {
       _pending.remove(id);
       throw StateError('无法把回合交给储物袋主机');
     }
-    await pending.completer.future;
+    try {
+      await pending.completer.future.timeout(const Duration(minutes: 30));
+    } on TimeoutException {
+      _pending.remove(id);
+      throw TimeoutException(
+        '主机回合超时未收尾',
+        const Duration(minutes: 30),
+      );
+    }
     return pending.done;
   }
 }

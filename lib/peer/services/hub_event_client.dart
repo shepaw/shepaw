@@ -621,21 +621,8 @@ class HubEventClient {
       case 'channel.read':
         await _onChannelRead(event);
       case 'turn.started':
-        // 主机自发回合（推送 / 后台汇报 / pouch）不走 submit，但要登记到
-        // 同一份 mirror，App 不再有独立的 live-turn 真相源。
-        if (getIt.isRegistered<SessionRuntimeMirror>()) {
-          getIt<SessionRuntimeMirror>().noteLiveTurnStarted(
-            event.data['turn_id'] as String? ?? '',
-            event.data['session_key'] as String? ?? event.channelId,
-          );
-        }
         await _onTurnStarted(peerId, event);
       case 'turn.finished':
-        if (getIt.isRegistered<SessionRuntimeMirror>()) {
-          getIt<SessionRuntimeMirror>().noteLiveTurnFinished(
-            event.data['turn_id'] as String? ?? '',
-          );
-        }
         await _onTurnFinished(event);
       case 'session.state':
         // 主机是唯一 writer：这里只按 revision 应用全量快照，绝不自己

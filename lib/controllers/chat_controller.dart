@@ -257,18 +257,15 @@ abstract class _ChatControllerBase extends ChangeNotifier
     }
     final mirror = getIt<SessionRuntimeMirror>();
     final changedKey = mirror.lastChangedKey;
-    final cid = currentChannelId;
-    if (changedKey == null || cid == null || cid.isEmpty) return;
-    final expected = sessionRuntimeKey;
-    const prefix = 'psess_';
-    final bare =
-        cid.startsWith(prefix) ? cid.substring(prefix.length) : cid;
-    final matches = expected != null
-        ? changedKey == expected
-        : changedKey.endsWith(':$bare');
-    if (!matches) return;
-    final state = mirror.peek(changedKey)?.value;
-    if (state == null) return;
+    // 用与 sessionState 相同的解析逻辑（含裸 channel_id / session_id 后缀
+    // 兜底），避免「面板能收敛、running→idle 清理却因 key 拼法不同永不执行」。
+    final state = sessionState?.value;
+    if (state == null || state.revision == 0) return;
+    if (changedKey != null &&
+        changedKey != state.sessionKey &&
+        changedKey != sessionRuntimeKey) {
+      return;
+    }
     // ChatQueuePanel 仍读 c.messageQueue（现在是 mirror 的投影）：状态一变
     // 就让外层重算结构快照，否则面板不会重建。快照门控会挡掉没变化的刷新。
     _notify();
