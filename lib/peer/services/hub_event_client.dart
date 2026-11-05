@@ -670,6 +670,11 @@ class HubEventClient {
         if (getIt.isRegistered<SessionRuntimeMirror>()) {
           getIt<SessionRuntimeMirror>().apply(event.data);
         }
+        // 队列是 durable 的：session_ack 单播丢帧时用它自愈 relay 的排队豁免。
+        final queue = event.data['queue'];
+        if (queue is List) {
+          PouchTurnRelay.instance.noteHostQueue(queue);
+        }
       case 'interaction.pending':
         await _showInteraction(peerId, event);
         if (!_notices.isClosed) {

@@ -800,7 +800,26 @@ class PouchTurnRelay {
     // 旧实现把 queued 转成 kind:'queued'，而它在 completeOn 里，会让排队
     // 消息立刻返回空 buffer、落一条空回复。
     if (disposition == 'queued') {
-      _pending[requestId]?.hostQueued = true;
+      final pending = _pending[requestId];
+      if (pending != null) {
+        pending.hostQueued = true;
+        pending.onProgress?.call();
+      }
+    }
+  }
+
+  /// `session.state` 里 durable 的队列信息：session_ack 是单播直发、可能丢帧，
+  /// 用权威队列自愈 hostQueued，避免排队中的回合按 30 分钟被误判失败。
+  void noteHostQueue(Iterable<dynamic>? queueItems) {
+    if (queueItems == null) return;
+    final ids = <String>{
+      for (final item in queueItems)
+        if (item is Map) (item['request_id'] as String?) ?? '',
+    }..remove('');
+    for (final entry in _pending.entries) {
+      if (!ids.contains(entry.key) || entry.value.hostQueued) continue;
+      entry.value.hostQueued = true;
+      entry.value.onProgress?.call();
     }
   }
 
@@ -809,11 +828,11 @@ class PouchTurnRelay {
     final pending = _pending[requestId];
     if (pending == null) return;
     final kind = data['kind'] as String? ?? '';
-    pending.lastActivityAt = DateTime.now();
-    // 主机开始出字/开始执行：解除排队标记，超时上限回到 30 分钟。否则
-    // 一旦 done 帧丢在断线上，_forward 会一直按 25 小时重挂。
-    if (kind == 'chunk' || kind == 'start' || kind == 'metadata') {
+    // 任何回合进度帧（chunk/thinking/tool_*/start/metadata/done）都说明已经
+    // 开跑，解除排队标记并重挂 watchdog；只有 error/queued 例外。
+    if (kind != 'error' && kind != 'queued') {
       pending.hostQueued = false;
+      pending.onProgress?.call();
     }
     if (kind == 'error') {
       _pending.remove(requestId);
@@ -877,20 +896,32 @@ class PouchTurnRelay {
       _pending.remove(id);
       throw StateError('无法把回合交给储物袋主机');
     }
-    // 超时窗口从「最后一次进度」起算，并随 hostQueued 动态生效（排队 25h，
-    // 开跑后 30min；chunk/metadata 刷新窗口）。已挂的 Future.timeout 不会因
-    // 标志位改变而重算，所以用轮询而不是固定 Timer：排队后开跑、以及正在
-    // 出字但 done 丢帧这两种情形都能在正确的时间点收口。
-    while (!pending.completer.isCompleted) {
-      await Future<void>.delayed(const Duration(seconds: 1));
-      if (pending.completer.isCompleted) break;
+    // 等待 completer：错误回执（queue 满 / 引擎失败）能原样抛给调用方。
+    // watchdog 用单调 Timer 收口，进度帧或 hostQueued 变化时经 onProgress
+    // 重挂窗口——不用墙钟、不轮询、定时器数量与进度帧数同阶。
+    Timer? watchdog;
+    void armWatchdog() {
+      watchdog?.cancel();
       final limit = pending.hostQueued
           ? const Duration(hours: 25)
           : const Duration(minutes: 30);
-      if (DateTime.now().difference(pending.lastActivityAt) > limit) {
+      watchdog = Timer(limit, () {
+        if (pending.completer.isCompleted) return;
         _pending.remove(id);
-        throw TimeoutException('主机回合超时未收尾', limit);
-      }
+        pending.completer.completeError(
+          TimeoutException('主机回合超时未收尾', limit),
+        );
+      });
+    }
+
+    pending.onProgress = armWatchdog;
+    armWatchdog();
+    try {
+      await pending.completer.future;
+    } finally {
+      watchdog?.cancel();
+      pending.onProgress = null;
+      _pending.remove(id);
     }
     return pending.done;
   }
@@ -1021,6 +1052,6 @@ class _PendingTurn {
   /// 主机已把这条收进会话队列：排队超过 30 分钟是正常情况（上一轮还没
   /// 跑完），超时上限放宽到 25 小时，避免误判失败后主机又照常执行。
   bool hostQueued = false;
-  /// 最后一次进度（chunk/metadata/start/排队回执）。超时窗口从它起算。
-  DateTime lastActivityAt = DateTime.now();
+  /// 收到进度帧时重挂 watchdog。由 _forward 设置。
+  void Function()? onProgress;
 }
