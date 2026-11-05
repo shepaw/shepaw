@@ -157,6 +157,8 @@ class HubEventClient {
     _connSub ??= PeerConnectionManager.instance.events.listen((event) {
       if (event.type == PeerConnectionEventType.connected) {
         unawaited(_catchUpIfActiveHost(event.peerId));
+        // 每次连接建立都对账一次：冷启动复用凭据时不会有 pouch_login_resp。
+        unawaited(requestSessionSnapshot(event.peerId));
       }
     });
     _resumeSub ??= AppLifecycleService().onResume.listen((_) {
@@ -165,6 +167,9 @@ class HubEventClient {
     final active = PouchChannel.active?.session;
     if (active != null) {
       unawaited(_catchUpIfConnected(active.hostPeerId));
+      // installed 是广播且不回放，恢复登录时它早于 start() 触发；冷启动必须
+      // 在这里补一次全量对账，否则 mirror 一直是空的。
+      unawaited(requestSessionSnapshot(active.hostPeerId));
     }
   }
 

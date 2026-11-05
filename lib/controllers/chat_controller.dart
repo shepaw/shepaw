@@ -234,7 +234,9 @@ abstract class _ChatControllerBase extends ChangeNotifier
     final key = sessionRuntimeKey;
     if (key != null) {
       final exact = mirror.peek(key);
-      if (exact != null && exact.value.revision > 0) return exact;
+      // 对账把会话重置到 revision 0 后也要能拿到 notifier，否则
+      // running→idle 清理拿不到状态、气泡会一直挂在「正在输出」。
+      if (exact != null) return exact;
     }
     // 本地 agent id 与主机 agent_id 未必同一套：按 session_id 后缀兜底。
     final cid = currentChannelId;
@@ -260,7 +262,7 @@ abstract class _ChatControllerBase extends ChangeNotifier
     // 用与 sessionState 相同的解析逻辑（含裸 channel_id / session_id 后缀
     // 兜底），避免「面板能收敛、running→idle 清理却因 key 拼法不同永不执行」。
     final state = sessionState?.value;
-    if (state == null || state.revision == 0) return;
+    if (state == null) return;
     if (changedKey != null &&
         changedKey != state.sessionKey &&
         changedKey != sessionRuntimeKey) {

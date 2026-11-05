@@ -271,15 +271,22 @@ class SessionRuntimeMirror {
   /// 低），没提到的会话重置为空。水位用来挡住随后 events_sync 的旧回放。
   void reconcileTo(Iterable<dynamic> snapshots) {
     final seen = <String>{};
+    var snapshotMaxAt = 0;
+    var hasSnapshot = false;
     for (final snapshot in snapshots) {
       if (snapshot is! Map) continue;
       final state = SessionState.fromSnapshot(snapshot);
       if (state.sessionKey.isEmpty) continue;
+      hasSnapshot = true;
       seen.add(state.sessionKey);
-      if (state.atMs > _reconcileWatermarkMs) {
-        _reconcileWatermarkMs = state.atMs;
-      }
+      if (state.atMs > snapshotMaxAt) snapshotMaxAt = state.atMs;
       apply(snapshot, force: true);
+    }
+    if (hasSnapshot) {
+      // 水位允许下降：换 hub / NTP 回拨后新 hub 的时钟可能比旧的更早，
+      // 只升不降会让新 hub 的所有实时事件被永久拒绝。旧回放仍早于本次
+      // 快照的 at，依旧会被挡住。
+      _reconcileWatermarkMs = snapshotMaxAt;
     }
     for (final entry in _notifiers.entries) {
       if (seen.contains(entry.key)) continue;

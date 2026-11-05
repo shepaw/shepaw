@@ -871,14 +871,20 @@ class PouchTurnRelay {
       _pending.remove(id);
       throw StateError('无法把回合交给储物袋主机');
     }
-    final limit = pending.hostQueued
-        ? const Duration(hours: 25)
-        : const Duration(minutes: 30);
-    try {
-      await pending.completer.future.timeout(limit);
-    } on TimeoutException {
-      _pending.remove(id);
-      throw TimeoutException('主机回合超时未收尾', limit);
+    // session_ack(queued) 是异步到达的：hostQueued 可能在 await 期间才置位，
+    // 上限不能提前固定。排队标记到位后重挂成 25 小时。
+    while (!pending.completer.isCompleted) {
+      final limit = pending.hostQueued
+          ? const Duration(hours: 25)
+          : const Duration(minutes: 30);
+      try {
+        await pending.completer.future.timeout(limit);
+      } on TimeoutException {
+        if (pending.completer.isCompleted) break;
+        if (pending.hostQueued && limit.inMinutes < 25 * 60) continue;
+        _pending.remove(id);
+        throw TimeoutException('主机回合超时未收尾', limit);
+      }
     }
     return pending.done;
   }

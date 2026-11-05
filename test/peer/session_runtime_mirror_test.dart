@@ -376,4 +376,21 @@ void main() {
     expect(mirror.isRequestQueued('r2'), isTrue);
     expect(mirror.isRequestQueued('missing'), isFalse);
   });
+
+  test('换 hub 时钟回退时水位下降，新 hub 的事件能收敛', () {
+    final mirror = SessionRuntimeMirror();
+    addTearDown(mirror.dispose);
+    mirror.reconcileTo(<Map<String, dynamic>>[
+      snap(revision: 1, at: 9000, state: 'idle', turnId: ''),
+    ]);
+    // 新 hub 的时钟比旧的早，水位必须跟着下降。
+    mirror.reconcileTo(<Map<String, dynamic>>[
+      snap(revision: 1, at: 5000, turnId: 't2'),
+    ]);
+    expect(
+      mirror.apply(snap(revision: 2, at: 6000, turnId: 't3')),
+      isTrue,
+    );
+    expect(mirror.stateFor('agent:a:s1').turnId, 't3');
+  });
 }
