@@ -809,6 +809,7 @@ class PouchTurnRelay {
     final pending = _pending[requestId];
     if (pending == null) return;
     final kind = data['kind'] as String? ?? '';
+    pending.lastActivityAt = DateTime.now();
     // 主机开始出字/开始执行：解除排队标记，超时上限回到 30 分钟。否则
     // 一旦 done 帧丢在断线上，_forward 会一直按 25 小时重挂。
     if (kind == 'chunk' || kind == 'start' || kind == 'metadata') {
@@ -876,17 +877,17 @@ class PouchTurnRelay {
       _pending.remove(id);
       throw StateError('无法把回合交给储物袋主机');
     }
-    // session_ack(queued) 是异步到达的：hostQueued 可能在 await 期间才置位，
-    // 上限不能提前固定。排队标记到位后重挂成 25 小时。
+    // 超时窗口从「最后一次进度」起算，并随 hostQueued 动态生效（排队 25h，
+    // 开跑后 30min；chunk/metadata 刷新窗口）。已挂的 Future.timeout 不会因
+    // 标志位改变而重算，所以用轮询而不是固定 Timer：排队后开跑、以及正在
+    // 出字但 done 丢帧这两种情形都能在正确的时间点收口。
     while (!pending.completer.isCompleted) {
+      await Future<void>.delayed(const Duration(seconds: 1));
+      if (pending.completer.isCompleted) break;
       final limit = pending.hostQueued
           ? const Duration(hours: 25)
           : const Duration(minutes: 30);
-      try {
-        await pending.completer.future.timeout(limit);
-      } on TimeoutException {
-        if (pending.completer.isCompleted) break;
-        if (pending.hostQueued && limit.inMinutes < 25 * 60) continue;
+      if (DateTime.now().difference(pending.lastActivityAt) > limit) {
         _pending.remove(id);
         throw TimeoutException('主机回合超时未收尾', limit);
       }
@@ -1020,4 +1021,6 @@ class _PendingTurn {
   /// 主机已把这条收进会话队列：排队超过 30 分钟是正常情况（上一轮还没
   /// 跑完），超时上限放宽到 25 小时，避免误判失败后主机又照常执行。
   bool hostQueued = false;
+  /// 最后一次进度（chunk/metadata/start/排队回执）。超时窗口从它起算。
+  DateTime lastActivityAt = DateTime.now();
 }
