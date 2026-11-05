@@ -799,6 +799,9 @@ class PouchTurnRelay {
     // started / queued 都**不** complete：_forward 要等真正的 done。
     // 旧实现把 queued 转成 kind:'queued'，而它在 completeOn 里，会让排队
     // 消息立刻返回空 buffer、落一条空回复。
+    if (disposition == 'queued') {
+      _pending[requestId]?.hostQueued = true;
+    }
   }
 
   void onEvent(Map<String, dynamic> data) {
@@ -868,14 +871,14 @@ class PouchTurnRelay {
       _pending.remove(id);
       throw StateError('无法把回合交给储物袋主机');
     }
+    final limit = pending.hostQueued
+        ? const Duration(hours: 25)
+        : const Duration(minutes: 30);
     try {
-      await pending.completer.future.timeout(const Duration(minutes: 30));
+      await pending.completer.future.timeout(limit);
     } on TimeoutException {
       _pending.remove(id);
-      throw TimeoutException(
-        '主机回合超时未收尾',
-        const Duration(minutes: 30),
-      );
+      throw TimeoutException('主机回合超时未收尾', limit);
     }
     return pending.done;
   }
@@ -1003,4 +1006,7 @@ class _PendingTurn {
   final Set<String> completeOn;
   final Completer<void> completer = Completer<void>();
   Map<String, dynamic> done = const {};
+  /// 主机已把这条收进会话队列：排队超过 30 分钟是正常情况（上一轮还没
+  /// 跑完），超时上限放宽到 25 小时，避免误判失败后主机又照常执行。
+  bool hostQueued = false;
 }

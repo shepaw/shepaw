@@ -66,6 +66,9 @@ class SessionState {
   final bool answerSettled;
   final int startedAtMs;
   final int lastProgressAtMs;
+  /// 主机生成这份快照的墙钟时间。换 hub 后 revision 会从 1 重新计数，
+  /// 用时间水位挡住 events_sync 回放里的旧 session.state 复活已结束回合。
+  final int atMs;
   final SessionTerminal? lastTerminal;
   final List<QueuedItem> queue;
 
@@ -80,6 +83,7 @@ class SessionState {
     this.answerSettled = false,
     this.startedAtMs = 0,
     this.lastProgressAtMs = 0,
+    this.atMs = 0,
     this.lastTerminal,
     this.queue = const <QueuedItem>[],
   });
@@ -101,6 +105,7 @@ class SessionState {
       answerSettled: json['answer_settled'] == true,
       startedAtMs: (json['started_at_ms'] as num?)?.toInt() ?? 0,
       lastProgressAtMs: (json['last_progress_at_ms'] as num?)?.toInt() ?? 0,
+      atMs: (json['at'] as num?)?.toInt() ?? 0,
       lastTerminal: rawTerminal is Map
           ? SessionTerminal.fromJson(rawTerminal)
           : null,
@@ -138,25 +143,9 @@ class SessionState {
   }
 }
 
-/// 这条输出流帧是否属于「已经结束 / 被顶掉的世代」。
-///
-/// 只丢「明确属于更旧世代」的帧。mirror 的状态事件走 HubEventClient 的
-/// 异步控制队列，可能落后于同步到达的流帧：不能用 generation 不等、也不能
-/// 用 `!isRunning` 判迟到，否则本轮开头的 chunk 会被整批吞掉。
-/// 终态之后真正没有宿主的迟到帧由 _onChunk 里 `p == null` 分支收口并记日志。
-bool isStaleOutputStream(
-  String type,
-  Map<String, dynamic> data,
-  SessionState? state,
-) {
-  if (type != 'agent_chunk' && type != 'agent_metadata') return false;
-  final key = data['session_key'] as String?;
-  if (key == null || key.isEmpty) return false;
-  if (state == null || state.revision == 0) return false;
-  final generation = data['generation'];
-  if (generation is int && generation < state.generation) return true;
-  return false;
-}
+// 流帧的归属由 PeerAgentClientService 的 _pending[request_id] 判定，不在
+// mirror 里判「迟到」：状态事件是异步的、主机 epoch 又不持久化（重启从 1
+// 重新发号），任何基于 generation / isRunning 的绝对比较都会误丢本轮 chunk。
 
 /// 纯 reducer：只接受更大 revision 的快照，乱序 / 重放天然幂等。
 /// 返回同一个对象表示「没变化」，调用方据此决定要不要通知 UI。
@@ -180,6 +169,10 @@ class SessionRuntimeMirror {
 
   /// 最近一次被接受的状态跃迁属于哪个会话。
   String? lastChangedKey;
+
+  /// 最近一次全量对账的墙钟水位。低于它的 `session.state` 是换 hub 之前的
+  /// 旧回放，必须拒绝，否则会把已结束的 running 状态复活。
+  int _reconcileWatermarkMs = 0;
 
   // 主机自发回合（推送 / 后台汇报 / pouch）的「哪些回合在跑」由
   // HubEventClient 的 _attached/_liveChannels/_liveBuffers 承担——它们是
@@ -235,12 +228,28 @@ class SessionRuntimeMirror {
 
   SessionState stateFor(String sessionKey) => notifierFor(sessionKey).value;
 
+  /// 主机队列里是否排着这条 request。session_ack 是单播直发、可能丢帧；
+  /// 看门狗用 durable 的 session.state 自愈排队豁免。
+  bool isRequestQueued(String requestId) {
+    if (requestId.isEmpty) return false;
+    for (final notifier in _notifiers.values) {
+      for (final item in notifier.value.queue) {
+        if (item.requestId == requestId) return true;
+      }
+    }
+    return false;
+  }
+
   /// 应用一份主机快照。返回是否真的前移了状态。
-  bool apply(Map<dynamic, dynamic> snapshot) {
+  /// [force] 只给全量对账用：换 hub 后主机 revision 会从 1 重新计数，
+  /// 低 revision 的权威快照也必须直接落地。
+  bool apply(Map<dynamic, dynamic> snapshot, {bool force = false}) {
     final incoming = SessionState.fromSnapshot(snapshot);
     if (incoming.sessionKey.isEmpty) return false;
+    // 换 hub 之后，events_sync 回放里旧 hub 的 session.state 一律不复活。
+    if (!force && incoming.atMs < _reconcileWatermarkMs) return false;
     final notifier = notifierFor(incoming.sessionKey);
-    final next = reduceSessionState(notifier.value, incoming);
+    final next = force ? incoming : reduceSessionState(notifier.value, incoming);
     if (identical(next, notifier.value)) return false;
     notifier.value = next;
     lastChangedKey = incoming.sessionKey;
@@ -258,24 +267,25 @@ class SessionRuntimeMirror {
     return applied;
   }
 
-  /// 启动 / 重连全量对账时，主机没提到的会话一律视为 idle。
-  /// 防止上一代 hub 留下的 running 状态永远挂着。
+  /// 启动 / 重连全量对账：快照里的会话强制落地（主机 revision 可能比本地
+  /// 低），没提到的会话重置为空。水位用来挡住随后 events_sync 的旧回放。
   void reconcileTo(Iterable<dynamic> snapshots) {
     final seen = <String>{};
     for (final snapshot in snapshots) {
       if (snapshot is! Map) continue;
-      final key = (snapshot['session_key'] as String?) ?? '';
-      if (key.isEmpty) continue;
-      seen.add(key);
-      apply(snapshot);
+      final state = SessionState.fromSnapshot(snapshot);
+      if (state.sessionKey.isEmpty) continue;
+      seen.add(state.sessionKey);
+      if (state.atMs > _reconcileWatermarkMs) {
+        _reconcileWatermarkMs = state.atMs;
+      }
+      apply(snapshot, force: true);
     }
     for (final entry in _notifiers.entries) {
       if (seen.contains(entry.key)) continue;
       final current = entry.value.value;
       if (!current.isRunning && current.queue.isEmpty) continue;
-      // 主机没提到这段会话：把本地状态**重置**为 revision 0，等它的真实
-      // 快照。不能伪造 current.revision+1 —— 换 hub / 重启后主机从 1 重新
-      // 计数，一个更大的假 revision 会让后续所有真实事件被 reducer 拒绝。
+      // 重置到 revision 0：既不伪造递增，也让新 hub 的任何真实快照收敛。
       entry.value.value = SessionState.empty(entry.key);
       lastChangedKey = entry.key;
       changes.value++;

@@ -151,6 +151,8 @@ class HubEventClient {
     });
     _channelInstalledSub ??= PouchChannel.installed.listen((session) {
       unawaited(_catchUpIfConnected(session.hostPeerId));
+      // 凭据复用、没有新的 pouch_login_resp 时也要对账一次。
+      unawaited(requestSessionSnapshot(session.hostPeerId));
     });
     _connSub ??= PeerConnectionManager.instance.events.listen((event) {
       if (event.type == PeerConnectionEventType.connected) {
@@ -195,7 +197,9 @@ class HubEventClient {
           // 调用方要等这一帧返回后才装上登录通道。立刻补洞会以明文发出去。
           final peerId = event.peerId;
           unawaited(Future<void>(() => catchUp(peerId)));
-          unawaited(requestSessionSnapshot(peerId));
+          // 与 catchUp 一样延迟到本帧返回、登录通道装好之后再发；同步发出
+          // 会让未密封的业务帧被主机拒绝（回 pouch_login_required）。
+          unawaited(Future<void>(() => requestSessionSnapshot(peerId)));
         }
       case 'hub_event':
         final parsed = HubEvent.parse(event.data['event']);

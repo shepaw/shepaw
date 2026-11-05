@@ -3282,10 +3282,30 @@ class PeerAgentClientService {
         timer.cancel();
         return;
       }
-      // 主机已把这条收进会话队列、还没轮到它：排队期间本来就不会有帧，
-      // 不能按「30 分钟无输出」判失败；首个 chunk/metadata 会清除标记。
-      if (pending.queuedOnHost) return;
       final now = DateTime.now();
+      // session_ack 是单播直发、可能丢帧：用 durable 的 session.state 里的
+      // 队列信息自愈排队豁免。
+      if (!pending.queuedOnHost &&
+          getIt.isRegistered<SessionRuntimeMirror>() &&
+          getIt<SessionRuntimeMirror>().isRequestQueued(requestId)) {
+        pending.queuedOnHost = true;
+      }
+      // 排队期间本来就不会有帧：刷新 idle 时钟避免 30 分钟误判；但仍继续
+      // 走看门狗，让断连 suspend 上限与排队硬上限兜底生效。首个
+      // chunk/metadata 会清除标记。
+      if (pending.queuedOnHost) {
+        pending.idleSince = now;
+        if (now.difference(startedAt) > suspendWaitHardCap) {
+          timer.cancel();
+          _timeoutRequest(
+            requestId,
+            peerId,
+            duringApproval: false,
+            duringSuspend: true,
+          );
+          return;
+        }
+      }
       final verdict = evaluateTurnWatchdog(
         now: now,
         startedAt: startedAt,
@@ -3451,31 +3471,16 @@ class PeerAgentClientService {
     p.deliveryProbeTimer = null;
   }
 
-  bool _isStaleOutputStream(String type, Map<String, dynamic> data) {
-    final key = data['session_key'] as String?;
-    if (key == null || key.isEmpty) return false;
-    if (!getIt.isRegistered<SessionRuntimeMirror>()) return false;
-    final state = getIt<SessionRuntimeMirror>().peek(key)?.value;
-    return isStaleOutputStream(type, data, state);
-  }
-
   void _onControl(PeerControlEvent event) {
     // 主机对某个在途 turn 发出的任何业务帧，都说明它收到了 agent_chat。
     // resume 应答本身就是投递确认的答案，交给 _onTurnResumeResp 处理。
     if (event.type != 'agent_turn_resume_resp') {
       _noteHostTurnSignal(event.data);
     }
-    // 旧世代 / 终态之后的迟到输出：不再静默丢弃，也不串进新气泡。
-    // 记一条日志让这类问题可诊断（旧实现是 _onChunk 里 p==null 直接 return）。
-    if (_isStaleOutputStream(event.type, event.data)) {
-      _log.info(
-        'late turn output ignored type=${event.type} '
-        'session=${event.data['session_key']} gen=${event.data['generation']} '
-        'turn=${event.data['request_id']}',
-        tag: _tag,
-      );
-      return;
-    }
+    // 帧归属只由 _pending[request_id] 判定（`_onChunk` / `_onMetadata` 里
+    // p == null 就记日志并收口）。不再用 mirror 的 generation 判迟到：
+    // 状态事件走异步队列可能落后，且主机 epoch 不持久化、重启后从 1
+    // 重新发号，任何绝对比较都会误丢本轮开头的 chunk。
     switch (event.type) {
       case 'agent_list_resp':
         unawaited(_onAgentList(event.peerId, event.data));

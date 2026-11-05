@@ -11,6 +11,7 @@ Map<String, dynamic> snap({
   String phase = 'streaming',
   Object? lastTerminal,
   List<Map<String, dynamic>>? queue,
+  int at = 1300,
 }) =>
     <String, dynamic>{
       'session_key': key,
@@ -25,120 +26,12 @@ Map<String, dynamic> snap({
       'last_progress_at_ms': 1200,
       'last_terminal': lastTerminal,
       'queue': queue ?? <Map<String, dynamic>>[],
-      'at': 1300,
+      'at': at,
     };
 
 void main() {
-  group('isStaleOutputStream', () {
-    SessionState running(int gen) => SessionState(
-          sessionKey: 'agent:a:s1',
-          revision: 5,
-          generation: gen,
-          isRunning: true,
-          turnId: 't1',
-        );
-    SessionState idle(int gen) => SessionState(
-          sessionKey: 'agent:a:s1',
-          revision: 6,
-          generation: gen,
-          isRunning: false,
-          lastTerminal: const SessionTerminal(
-            turnId: 't1',
-            reason: 'end_turn',
-            atMs: 1,
-            revision: 6,
-          ),
-        );
-    Map<String, dynamic> frame(String type, {int gen = 3}) =>
-        <String, dynamic>{
-          'type': type,
-          'request_id': 't1',
-          'session_key': 'agent:a:s1',
-          'generation': gen,
-        };
-
-    test('当前世代的 chunk 放行', () {
-      expect(
-        isStaleOutputStream('agent_chunk', frame('agent_chunk'), running(3)),
-        isFalse,
-      );
-      expect(
-        isStaleOutputStream(
-          'agent_metadata',
-          frame('agent_metadata'),
-          running(3),
-        ),
-        isFalse,
-      );
-    });
-
-    test('旧世代的 chunk 拦下', () {
-      expect(
-        isStaleOutputStream(
-          'agent_chunk',
-          frame('agent_chunk', gen: 2),
-          running(3),
-        ),
-        isTrue,
-      );
-    });
-
-    test('mirror 还是上一轮 idle（状态事件尚未到达）时放行，不吞本轮 chunk', () {
-      expect(
-        isStaleOutputStream('agent_chunk', frame('agent_chunk'), idle(3)),
-        isFalse,
-        reason: '状态事件走异步队列，不能据此判迟到',
-      );
-    });
-
-    test('帧的世代比 mirror 新也放行（mirror 落后）', () {
-      expect(
-        isStaleOutputStream(
-          'agent_chunk',
-          frame('agent_chunk', gen: 4),
-          idle(3),
-        ),
-        isFalse,
-      );
-    });
-
-    test('终态帧与回执一律不拦，否则在途 turn 永远挂住', () {
-      for (final type in <String>[
-        'agent_done',
-        'agent_error',
-        'session_ack',
-      ]) {
-        expect(
-          isStaleOutputStream(type, frame(type), idle(3)),
-          isFalse,
-          reason: type,
-        );
-      }
-    });
-
-    test('没有标签或没有状态快照时放行', () {
-      expect(
-        isStaleOutputStream(
-          'agent_chunk',
-          <String, dynamic>{'request_id': 't1'},
-          idle(3),
-        ),
-        isFalse,
-      );
-      expect(
-        isStaleOutputStream('agent_chunk', frame('agent_chunk'), null),
-        isFalse,
-      );
-      expect(
-        isStaleOutputStream(
-          'agent_chunk',
-          frame('agent_chunk'),
-          SessionState.empty('agent:a:s1'),
-        ),
-        isFalse,
-      );
-    });
-  });
+  // 流帧归属已移到 PeerAgentClientService 的 _pending[request_id] 判定，
+  // mirror 不再承担「迟到帧」判断（主机 epoch 不持久化，绝对比较会误丢帧）。
 
   test('本地 channel id 映射到主机 session_key', () {
     expect(
@@ -431,5 +324,56 @@ void main() {
       isTrue,
     );
     expect(mirror.stateFor('agent:a:s2').turnId, 't10');
+  });
+
+  test('换 hub 后低 revision 的权威快照也能落地', () {
+    final mirror = SessionRuntimeMirror();
+    addTearDown(mirror.dispose);
+    mirror.apply(snap(revision: 20, at: 1000));
+    expect(mirror.stateFor('agent:a:s1').revision, 20);
+
+    mirror.reconcileTo(<Map<String, dynamic>>[
+      snap(revision: 1, at: 2000, turnId: 't2'),
+    ]);
+    expect(
+      mirror.stateFor('agent:a:s1').revision,
+      1,
+      reason: 'force apply 绕过本地更高的旧 revision',
+    );
+    expect(mirror.stateFor('agent:a:s1').turnId, 't2');
+  });
+
+  test('对账水位挡住旧 hub 回放，不复活已结束回合', () {
+    final mirror = SessionRuntimeMirror();
+    addTearDown(mirror.dispose);
+    mirror.reconcileTo(<Map<String, dynamic>>[
+      snap(revision: 1, at: 5000, state: 'idle', turnId: ''),
+    ]);
+    expect(
+      mirror.apply(snap(revision: 12, at: 3000, turnId: 'old')),
+      isFalse,
+      reason: 'at 早于水位的旧回放必须被拒',
+    );
+    expect(mirror.stateFor('agent:a:s1').isRunning, isFalse);
+    expect(mirror.apply(snap(revision: 2, at: 6000, turnId: 't3')), isTrue);
+    expect(mirror.stateFor('agent:a:s1').turnId, 't3');
+  });
+
+  test('isRequestQueued 从 durable 队列自愈排队豁免', () {
+    final mirror = SessionRuntimeMirror();
+    addTearDown(mirror.dispose);
+    mirror.apply(snap(
+      at: 9000,
+      queue: <Map<String, dynamic>>[
+        <String, dynamic>{
+          'request_id': 'r2',
+          'position': 1,
+          'preview': 'x',
+          'content': 'x',
+        },
+      ],
+    ));
+    expect(mirror.isRequestQueued('r2'), isTrue);
+    expect(mirror.isRequestQueued('missing'), isFalse);
   });
 }
