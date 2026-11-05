@@ -1,4 +1,7 @@
 import 'dart:convert';
+
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import '../cli_base.dart';
 import 'context/context_namespace.dart';
 import '../../services/she_service.dart';
@@ -281,7 +284,7 @@ class ShepawCLI {
 
     LoggerService().info(
         'shepaw $namespace ${subcommand.isNotEmpty ? subcommand : ""} '
-        '${_redactSensitiveFlags(flags)} [agentId=$agentId]',
+        '${redactSensitiveFlags(flags)} [agentId=$agentId]',
         tag: 'Paw');
 
     try {
@@ -414,9 +417,18 @@ class ShepawCLI {
   ///
   /// 不做全量 key 名（如 memory `--key soul` 是普通字段）；只处理明确表示
   /// 凭据的 flag。
-  Map<String, String> _redactSensitiveFlags(Map<String, String> flags) {
+  @visibleForTesting
+  static Map<String, String> redactSensitiveFlags(Map<String, String> flags) {
     if (flags.isEmpty) return flags;
-    const sensitiveKeys = {'api_key', 'token', 'password', 'secret'};
+    // call_token 是 Hub 签给引擎会话的身份令牌，会随 cli_execute_req 的
+    // flags 透传进来；漏掉它 execute 开头的日志就会把令牌明文写出去。
+    const sensitiveKeys = {
+      'api_key',
+      'token',
+      'password',
+      'secret',
+      'call_token',
+    };
     if (!flags.keys.any(sensitiveKeys.contains)) return flags;
     final copy = Map<String, String>.from(flags);
     for (final key in copy.keys.toList()) {
