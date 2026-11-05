@@ -223,8 +223,10 @@ mixin _LoadOps on _ChatControllerBase {
           ));
       }
 
+      // 进入任何 peer agent 会话都预热：进程被空闲回收后，重进历史会话
+      // 也要能提前把 ACP 进程起回来，别让首条消息撞上冷启动。
+      // warmSession 在主机侧有去重（已有进程直接返回），不会重复起。
       if (!isGroupMode &&
-          messages.isEmpty &&
           resolvedAgent != null &&
           resolvedAgent.isPeerAgent &&
           !relaysHostSheTurn(resolvedAgent)) {

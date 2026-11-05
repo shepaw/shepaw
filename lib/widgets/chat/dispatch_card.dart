@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/dispatch_task.dart';
 import '../../models/message.dart';
+import '../../peer/services/hub_group_sessions.dart';
 import '../../screens/chat_screen.dart';
 import '../../services/dispatch/dispatch_service.dart';
 import '../../services/session/dm_session_create_service.dart';
@@ -445,6 +446,22 @@ class GroupSessionSwitchCard extends StatelessWidget {
                 children: [
                   TextButton.icon(
                     onPressed: () {
+                      // 群会话不是一个独立频道：选中主机上的会话，再打开群频道。
+                      // 私聊会话的 new_session_id 已换算成本地频道 id。
+                      final isGroup = payload['kind'] == 'group';
+                      final groupId = payload['group_id']?.toString() ?? '';
+                      if (isGroup && groupId.isNotEmpty) {
+                        GroupSessionSelection.select(groupId, newSessionId);
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => ChatScreen(
+                              channelId: groupId,
+                              showBackButton: true,
+                            ),
+                          ),
+                        );
+                        return;
+                      }
                       Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => ChatScreen(

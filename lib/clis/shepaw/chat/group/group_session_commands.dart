@@ -1,21 +1,24 @@
 import 'dart:convert';
 
+import '../../../../peer/services/hub_session_create.dart';
 import '../../../../services/group/group_management_service.dart';
+import '../../../../storage/store_uri_reader.dart';
 import '../../../cli_base.dart';
+import '../chat_agent_scope.dart';
 
-/// shepaw chat group session create — open a new session with handoff (admin only).
+/// shepaw chat group session create — 把建群会话交给主机，App 不再本地建。
 class GroupSessionCreateCommand extends CliCommand {
-  GroupSessionCreateCommand({GroupManagementService? service})
-      : _service = service ?? GroupManagementService();
+  GroupSessionCreateCommand({HubSessionCreate? host})
+      : _host = host ?? HubSessionCreate();
 
-  final GroupManagementService _service;
+  final HubSessionCreate _host;
 
   @override
   String get name => 'create';
 
   @override
   String get description =>
-      'Create a new group session with a curated handoff package (admin only)';
+      'Create a group session on the host with a curated handoff package';
 
   @override
   String get usage =>
@@ -29,6 +32,11 @@ class GroupSessionCreateCommand extends CliCommand {
     base['flags'] = {
       'channel': {
         'description': 'Group channel id (defaults to injected channel_id)',
+        'required': false,
+        'type': 'string',
+      },
+      'group-id': {
+        'description': 'Host group id (defaults to the channel id)',
         'required': false,
         'type': 'string',
       },
@@ -76,6 +84,7 @@ class GroupSessionCreateCommand extends CliCommand {
         'error': 'Missing --channel or channel_id (must run inside a group)',
       };
     }
+    final groupId = (flags['group-id'] ?? flags['group_id'] ?? channelId).trim();
 
     final reason = flags['reason']?.trim();
     if (reason == null || reason.isEmpty) {
@@ -102,31 +111,57 @@ class GroupSessionCreateCommand extends CliCommand {
       } catch (e) {
         return {'error': 'Invalid --handoff-json: $e'};
       }
+    } else if (handoffUri != null && handoffUri.trim().isNotEmpty) {
+      // 主机不读 pouch://，App 在这里把交接包读成对象再带上，内容才不会丢。
+      try {
+        final bytes = await StoreUriReader.instance.read(handoffUri.trim());
+        final decoded = jsonDecode(utf8.decode(bytes));
+        if (decoded is Map) {
+          inlineHandoff = Map<String, dynamic>.from(decoded);
+        }
+      } catch (e) {
+        return {'error': 'Failed to read --handoff-uri: $e'};
+      }
+    }
+    if (inlineHandoff == null) {
+      return {'error': 'Provide --handoff-json or --handoff-uri'};
     }
 
-    final actorId = flags['agent_id']?.trim() ?? flags['owner']?.trim() ?? '';
+    // HubCliExecute 会把身份字段从 flags 里剥掉，注入到 Zone。群 admin
+    //（通常是 She）执行时必须回退到 ChatAgentScope，否则拿不到 actor。
+    final actorId = (flags['agent_id']?.trim().isNotEmpty == true)
+        ? flags['agent_id']!.trim()
+        : ((flags['owner']?.trim().isNotEmpty == true)
+            ? flags['owner']!.trim()
+            : ChatAgentScope.agentId.trim());
     if (actorId.isEmpty) {
       return {'error': 'Missing executor agent id'};
     }
-    final actorName = flags['agent_name']?.trim() ?? actorId;
+    final actorName = (flags['agent_name']?.trim().isNotEmpty == true)
+        ? flags['agent_name']!.trim()
+        : actorId;
+    final task = inlineHandoff['task'];
+    final goal = task is Map
+        ? task['user_goal']?.toString().trim() ?? ''
+        : '';
+    final callToken = (flags['call_token'] ?? '').trim();
 
-    final args = <String, dynamic>{
+    return _host.create(<String, dynamic>{
+      'kind': 'group',
+      'group_id': groupId,
+      'channel_id': channelId,
+      'agent_id': actorId,
+      'agent_name': actorName,
+      if (callToken.isNotEmpty) 'call_token': callToken,
       'reason': reason,
       if (flags['reason-detail']?.trim().isNotEmpty == true)
         'reason_detail': flags['reason-detail']!.trim(),
-      if (inlineHandoff != null) 'handoff': inlineHandoff,
+      if (goal.isNotEmpty) 'summary': goal,
+      'handoff': inlineHandoff,
       if (handoffUri != null && handoffUri.trim().isNotEmpty)
         'handoff_uri': handoffUri.trim(),
       'post_first_message': flags['no-first-message'] != 'true',
       'suggest_switch': flags['no-switch-card'] != 'true',
-    };
-
-    final result = await _service.createSessionWithHandoff(
-      channelId: channelId,
-      actorId: actorId,
-      actorName: actorName,
-      args: args,
-    );
-    return result.toCliJson();
+    });
   }
 }

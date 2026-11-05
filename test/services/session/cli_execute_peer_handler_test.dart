@@ -57,6 +57,27 @@ void main() {
       );
     });
 
+    test('passes the call token through to CLI flags', () async {
+      Map<String, dynamic>? captured;
+      final h = PeerCliExecuteHandler(
+        lookupAgent: (_) async => _hubEngine(),
+        run: ({required agentId, params}) async {
+          captured = params;
+          return {'ok': true};
+        },
+      );
+      await h.handle({
+        'agent_id': 'h1',
+        'namespace': 'chat',
+        'subcommand': 'session',
+        'call_token': 'tok-1',
+        'flags': {'reason': 'topic_shift'},
+      });
+      expect(captured?['call_token'], 'tok-1');
+      expect((captured?['flags'] as Map)['call_token'], 'tok-1');
+      expect((captured?['flags'] as Map)['reason'], 'topic_shift');
+    });
+
     test('rejects unknown and non-Hub agents', () async {
       final h = PeerCliExecuteHandler(
         lookupAgent: (id) async => id == 'p1' ? _phonePeer() : null,

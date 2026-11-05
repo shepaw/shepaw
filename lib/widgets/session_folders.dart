@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../peer/models/folded_sessions.dart';
+import '../utils/session_utils.dart';
 
 String sessionFolderLabel(AppLocalizations l10n, SessionFolderKind kind) =>
     switch (kind) {
@@ -39,15 +40,16 @@ class SessionFolderTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 主机给的「最近一条」标题可能整段是引擎标签或 [implicit] 提示。
+    final latest = SessionUtils.cleanClaudeSessionTitle(summary.latestTitle);
     return ListTile(
       leading: Icon(sessionFolderIcon(summary.kind)),
       title: Text(AppLocalizations.of(context).folder_tileTitle(
           sessionFolderLabel(AppLocalizations.of(context), summary.kind),
           summary.count)),
-      subtitle: summary.latestTitle.isEmpty
+      subtitle: latest == null
           ? null
-          : Text(summary.latestTitle,
-              maxLines: 1, overflow: TextOverflow.ellipsis),
+          : Text(latest, maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: AnimatedRotation(
         turns: expanded ? 0.25 : 0,
         duration: const Duration(milliseconds: 150),

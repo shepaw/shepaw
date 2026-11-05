@@ -18,6 +18,7 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'sub_window_app.dart';
 import 'app_bootstrap.dart';
 import 'service_locator.dart';
+import 'services/app_lock_coordinator.dart';
 import 'services/app_lock_service.dart';
 import 'storage/pouch_session.dart';
 import 'theme/app_theme.dart';
@@ -199,6 +200,7 @@ class _MyAppState extends State<MyApp> {
   StreamSubscription<PermissionRequest>? _permissionSub;
   AppLifecycleListener? _lifecycle;
   late final AppLockService _lock = getIt<AppLockService>();
+  late final AppLockCoordinator _lockCoordinator;
 
   @override
   void initState() {
@@ -207,24 +209,36 @@ class _MyAppState extends State<MyApp> {
     _listenForLock();
   }
 
-  /// 应用锁：进后台记时间，回前台超过 5 分钟就重新锁。
+  /// 应用锁：冷启动和回前台超过阈值都要先验证身份。
   ///
   /// 只在有登录态时才上锁 —— 还没登录过的门页本来没什么可保护的。
   void _listenForLock() {
-    unawaited(_lock.load());
-    _lifecycle = AppLifecycleListener(
-      onHide: () => _lock.onPaused(),
-      onPause: () => _lock.onPaused(),
-      onResume: () async {
-        final session = await PouchSessionStore.readActive();
-        if (session == null) return;
-        _lock.onResumed();
-        if (!_lock.locked || !mounted) return;
+    _lockCoordinator = AppLockCoordinator(
+      lock: _lock,
+      hasSession: () async => await PouchSessionStore.readActive() != null,
+      onGate: () => RouteGateObserver.onGate.value,
+      pushLockScreen: () async {
         final context = navigatorKey.currentContext;
         if (context == null) return;
         await Navigator.of(context).pushNamed('/app-locked');
       },
     );
+    _lock.addListener(_onLockStateChanged);
+    RouteGateObserver.onGate.addListener(_onLockStateChanged);
+    unawaited(_lockCoordinator.start());
+    _lifecycle = AppLifecycleListener(
+      onHide: () => _lock.onPaused(),
+      onPause: () => _lock.onPaused(),
+      onResume: () {
+        _lock.onResumed();
+        _onLockStateChanged();
+      },
+    );
+  }
+
+  void _onLockStateChanged() {
+    if (!mounted) return;
+    unawaited(_lockCoordinator.check());
   }
 
   void _listenForPermissionRequests() {
@@ -319,6 +333,9 @@ class _MyAppState extends State<MyApp> {
   @override
   void dispose() {
     _permissionSub?.cancel();
+    _lock.removeListener(_onLockStateChanged);
+    RouteGateObserver.onGate.removeListener(_onLockStateChanged);
+    _lifecycle?.dispose();
     super.dispose();
   }
 
@@ -390,7 +407,7 @@ class _MyAppState extends State<MyApp> {
                 '/pouch-init': (context) => const CreatePasswordScreen(),
                 '/pouch-unlock': (context) => const _LegacyUnlockRoute(),
                 '/unlock': (context) => const UnlockScreen(),
-                '/app-locked': (context) => const AppLockScreen(),
+                '/app-locked': (context) => AppLockScreen(lock: _lock),
                 '/remote-connect': (context) => const WelcomeScreen(),
                 '/phone-login': (context) => const _LegacyUnlockRoute(),
                 '/home': (context) => const AdaptiveHomeScreen(),

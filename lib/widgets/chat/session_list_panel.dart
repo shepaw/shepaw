@@ -207,12 +207,22 @@ class _SessionListContentState extends State<_SessionListContent> {
   /// 查库解析出来的折叠组目标；调用方直接给（[widget.foldersTarget]）时不用它。
   ({String peerId, String remoteAgentId})? _resolvedFoldersTarget;
 
-  /// 当前展开的那一组。放在这一层是为了让上方固定那一行能收起它。
+  /// 当前展开的那一组。放在这一层是为了让上方那一行能收起它。
   SessionFolderSummary? _expanded;
 
   /// 列表的滚动位置。收起折叠组时要跳回 [_offsetBeforeExpand]。
   final ScrollController _scrollController = ScrollController();
   double _offsetBeforeExpand = 0;
+
+  /// 展开着的那一行折叠组（量它有没有滑出可视区）和整个列表区域。
+  final GlobalKey _expandedTileKey = GlobalKey();
+  final GlobalKey _listAreaKey = GlobalKey();
+
+  /// 上面那一行现在盖着没有（展开的那一行已滑出可视区）。
+  bool _showSticky = false;
+
+  /// 展开那一行在滚动内容里的底边位置；滑过它就盖上那一行。
+  double _expandedTileBottomInContent = double.infinity;
 
   /// 折叠组要问的主机与主机上的 Agent；本机 Agent、群或查不到时为空（不画折叠组）。
   ({String peerId, String remoteAgentId})? get _foldersTarget =>
@@ -409,10 +419,11 @@ class _SessionListContentState extends State<_SessionListContent> {
         // 「新建会话」行不参与滚动：它比会话行矮（无副标题），留在滚动区里
         // 会破坏等高前提（见 [_buildList]）。
         if (!_isSelectionMode) _buildNewSessionItem(context, l10n),
-        // 展开着一组时，那一行折叠组固定在列表上方：滑多远都够得着，点一下收起。
-        // 它不进滚动区（滚动区保持「折叠组 + 会话行」两块，不碰 sliver 结构），
-        // 列表里也就不重复画这一组了。
-        if (_expanded != null) _buildStickyFolderRow(context, _expanded!),
+        // 展开那一组「已经滑出可视区」时，才在列表上方盖一行同名的折叠组：
+        // 滑多远都够得着，点一下收起。没滑出去时不显示 —— 组还在列表里原位，
+        // 顺序不动。
+        if (_expanded != null && _showSticky)
+          _buildStickyFolderRow(context, _expanded!),
         Expanded(child: _buildList()),
         if (_isSelectionMode) _buildBottomBar(l10n),
       ],
@@ -447,6 +458,7 @@ class _SessionListContentState extends State<_SessionListContent> {
     }
     setState(() => _expanded = opening ? summary : null);
     if (!opening) _restoreScrollOffset();
+    _scheduleStickySync();
   }
 
   /// 收起：展开时列表内容长了一截（组里的会话行），收起后同样的偏移量会落到
@@ -455,6 +467,7 @@ class _SessionListContentState extends State<_SessionListContent> {
     if (_expanded == null) return;
     setState(() => _expanded = null);
     _restoreScrollOffset();
+    _scheduleStickySync();
   }
 
   void _restoreScrollOffset() {
@@ -551,6 +564,7 @@ class _SessionListContentState extends State<_SessionListContent> {
             refreshTick: widget.listRefreshTick,
             client: widget.foldersClient,
             expandedKind: _expanded?.kind,
+            expandedTileKey: _expandedTileKey,
             onToggle: _toggleExpanded,
             onExpandedChanged: (summary) {
               if (summary == null) {
@@ -564,49 +578,100 @@ class _SessionListContentState extends State<_SessionListContent> {
             },
           )
         : null;
-    return CustomScrollView(
-      controller: _scrollController,
-      key: const PageStorageKey<String>('dm-session-list'),
-      slivers: [
-        if (folders != null) SliverToBoxAdapter(child: folders),
-        SliverPrototypeExtentList.builder(
-          prototypeItem: const _SessionTilePrototype(),
-          itemCount: widget.sessions.length,
-          itemBuilder: (context, index) {
-            final session = widget.sessions[index];
-            final isCurrent = session.id == widget.currentChannelId;
-            final preview = _entryFor(session.id).data;
-            final firstMessage = preview?.$1;
-            final latestMessage = preview?.$2;
-            // 当前会话渲染时未读归零（缓存存原始未读数）。
-            final unreadCount = isCurrent ? 0 : preview?.$3 ?? 0;
-            // 行级 repaint 隔离：某会话「输入中」翻转时只重画该行。
-            return RepaintBoundary(
-              child: _buildSessionTile(
-                context,
-                session,
-                isCurrent,
-                firstMessage,
-                latestMessage,
-                unreadCount: unreadCount,
-                selectionMode: _isSelectionMode,
-                selected: _selectedIds.contains(session.id),
-                selectionEnabled: !isCurrent,
-                onSelectionToggle: isCurrent
-                    ? null
-                    : () => setState(() {
-                          if (_selectedIds.contains(session.id)) {
-                            _selectedIds.remove(session.id);
-                          } else {
-                            _selectedIds.add(session.id);
-                          }
-                        }),
-              ),
-            );
+    return Stack(
+      key: _listAreaKey,
+      children: [
+        NotificationListener<ScrollNotification>(
+          // 滚动时量一次：展开那一行滑出可视区之后，上面那一行才盖上来。
+          onNotification: (_) {
+            _syncSticky();
+            return false;
           },
+          child: CustomScrollView(
+            controller: _scrollController,
+            key: const PageStorageKey<String>('dm-session-list'),
+            slivers: [
+              if (folders != null) SliverToBoxAdapter(child: folders),
+              SliverPrototypeExtentList.builder(
+                prototypeItem: const _SessionTilePrototype(),
+                itemCount: widget.sessions.length,
+                itemBuilder: (context, index) {
+                  final session = widget.sessions[index];
+                  final isCurrent = session.id == widget.currentChannelId;
+                  final preview = _entryFor(session.id).data;
+                  final firstMessage = preview?.$1;
+                  final latestMessage = preview?.$2;
+                  // 当前会话渲染时未读归零（缓存存原始未读数）。
+                  final unreadCount = isCurrent ? 0 : preview?.$3 ?? 0;
+                  // 行级 repaint 隔离：某会话「输入中」翻转时只重画该行。
+                  return RepaintBoundary(
+                    child: _buildSessionTile(
+                      context,
+                      session,
+                      isCurrent,
+                      firstMessage,
+                      latestMessage,
+                      unreadCount: unreadCount,
+                      selectionMode: _isSelectionMode,
+                      selected: _selectedIds.contains(session.id),
+                      selectionEnabled: !isCurrent,
+                      onSelectionToggle: isCurrent
+                          ? null
+                          : () => setState(() {
+                                if (_selectedIds.contains(session.id)) {
+                                  _selectedIds.remove(session.id);
+                                } else {
+                                  _selectedIds.add(session.id);
+                                }
+                              }),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
         ),
       ],
     );
+  }
+
+  /// 展开态变了：等这一帧画完量一次那一行的位置，再决定上方那一行盖不盖。
+  void _scheduleStickySync() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _measureExpandedTile();
+      _syncSticky();
+    });
+  }
+
+  /// 记下展开那一行「在滚动内容里的底边位置」。
+  ///
+  /// 不能每次滚动都现场量：滑出可视区之后那个 render box 不再更新，量出来的
+  /// 是旧坐标。所以只在它肯定可见的时候（刚展开、还没滚走）换算一次，之后用
+  /// 滚动偏移跟这个阈值比。会话行都铺在它下面，阈值不会因为展开而变。
+  void _measureExpandedTile() {
+    if (_expanded == null) return;
+    final ctx = _expandedTileKey.currentContext;
+    final tile = ctx?.findRenderObject() as RenderBox?;
+    final list = _listAreaKey.currentContext?.findRenderObject() as RenderBox?;
+    if (tile == null || list == null || !tile.hasSize || !list.hasSize) return;
+    final offset =
+        _scrollController.hasClients ? _scrollController.offset : 0.0;
+    final bottom = tile.localToGlobal(Offset(0, tile.size.height)).dy -
+        list.localToGlobal(Offset.zero).dy +
+        offset;
+    _expandedTileBottomInContent = bottom;
+  }
+
+  /// 展开那一行滑过列表顶部之后，上面盖一行同名的折叠组；滑回去就撤掉。
+  ///
+  /// 只在「要不要盖」翻转时 setState，滚动过程中不重建。
+  void _syncSticky() {
+    if (!mounted) return;
+    final want = _expanded != null &&
+        _scrollController.hasClients &&
+        _scrollController.offset >= _expandedTileBottomInContent;
+    if (want == _showSticky) return;
+    setState(() => _showSticky = want);
   }
 
   Widget _buildNewSessionItem(BuildContext context, AppLocalizations l10n) {
@@ -681,7 +746,11 @@ class _SessionListContentState extends State<_SessionListContent> {
     final firstRest = firstContent == null
         ? ''
         : SessionUtils.splitFirstSentence(firstContent).rest;
-    final latestContent = latestMessage?['content'] as String? ?? '';
+    // 最新消息是从库里直接取的原文，和标题一样可能带引擎标签 / [implicit]
+    // 提示块：整块滤掉，列表上只留用户看得懂的话。
+    final latestContent = SessionUtils.cleanClaudeSessionTitle(
+            latestMessage?['content'] as String?) ??
+        '';
     final isSameMessage = firstMessage != null &&
         latestMessage != null &&
         firstMessage['id'] == latestMessage['id'];

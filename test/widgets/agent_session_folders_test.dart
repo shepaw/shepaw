@@ -65,12 +65,13 @@ HubFoldedSessions _hostWithItems(StreamController<PeerControlEvent> bus) =>
       },
     );
 
-/// 真实用法的外层：展开态由它持有，上方固定那一行折叠组（点一下收起）。
+/// 真实用法的外层：展开态由它持有（[AgentSessionFolders] 自己没有展开态，
+/// 没有 [AgentSessionFolders.onToggle] 就点不开）。
 ///
-/// [AgentSessionFolders] 自己不再保存展开态（没有 [AgentSessionFolders.onToggle]
-/// 就点不开），所以这两个用例按列表里的真实结构搭一层。
-class _WithExpandedRow extends StatefulWidget {
-  const _WithExpandedRow({
+/// 面板里还会在「展开那一行滑出可视区」时盖一行上去，那是面板自己的事；
+/// 这两个用例只关心就地展开 / 收起。
+class _WithExpandedState extends StatefulWidget {
+  const _WithExpandedState({
     required this.peerId,
     required this.remoteAgentId,
     required this.client,
@@ -85,47 +86,27 @@ class _WithExpandedRow extends StatefulWidget {
   final Future<void> Function(String, String)? refresh;
 
   @override
-  State<_WithExpandedRow> createState() => _WithExpandedRowState();
+  State<_WithExpandedState> createState() => _WithExpandedStateState();
 }
 
-class _WithExpandedRowState extends State<_WithExpandedRow> {
+class _WithExpandedStateState extends State<_WithExpandedState> {
   SessionFolderSummary? _expanded;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      children: [
-        if (_expanded != null)
-          DecoratedBox(
-            decoration: BoxDecoration(
-              color: theme.scaffoldBackgroundColor,
-              border: Border(bottom: BorderSide(color: theme.dividerColor)),
-            ),
-            child: SessionFolderTile(
-              summary: _expanded!,
-              expanded: true,
-              onTap: () => setState(() => _expanded = null),
-            ),
-          ),
-        Expanded(
-          child: CustomScrollView(
-            slivers: [
-              SliverToBoxAdapter(
-                child: AgentSessionFolders(
-                  peerId: widget.peerId,
-                  remoteAgentId: widget.remoteAgentId,
-                  client: widget.client,
-                  onForked: widget.onForked,
-                  refresh: widget.refresh,
-                  expandedKind: _expanded?.kind,
-                  onToggle: (summary) => setState(() {
-                    _expanded =
-                        _expanded?.kind == summary.kind ? null : summary;
-                  }),
-                ),
-              ),
-            ],
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(
+          child: AgentSessionFolders(
+            peerId: widget.peerId,
+            remoteAgentId: widget.remoteAgentId,
+            client: widget.client,
+            onForked: widget.onForked,
+            refresh: widget.refresh,
+            expandedKind: _expanded?.kind,
+            onToggle: (summary) => setState(() {
+              _expanded = _expanded?.kind == summary.kind ? null : summary;
+            }),
           ),
         ),
       ],
@@ -142,7 +123,7 @@ void main() {
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       home: Scaffold(
-        body: _WithExpandedRow(
+        body: _WithExpandedState(
           peerId: 'p1',
           remoteAgentId: 'a1',
           client: _hostWithItems(bus),
@@ -304,7 +285,7 @@ void main() {
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       home: Scaffold(
-        body: _WithExpandedRow(
+        body: _WithExpandedState(
           peerId: 'p1',
           remoteAgentId: 'a1',
           client: client,

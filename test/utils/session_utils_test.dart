@@ -489,6 +489,165 @@ void main() {
       test('没有标记时原样返回', () {
         expect(SessionUtils.stripEngineMarkup('普通一句话'), '普通一句话');
       });
+
+      test('command-message / command-args 这类也认（按名字形状，不逐个列）', () {
+        expect(
+          SessionUtils.stripEngineMarkup(
+            '<command-message>model</command-message>'
+            '<command-name>/model</command-name>'
+            '<command-args>opus</command-args>',
+          ),
+          'model/modelopus',
+        );
+        expect(
+          SessionUtils.stripEngineMarkup(
+              '<system-reminder>提示</system-reminder>'),
+          '提示',
+        );
+        expect(
+          SessionUtils.stripEngineMarkup(
+              '<environment_context>本机</environment_context>'),
+          '本机',
+        );
+      });
+
+      test('正文里真要用的 HTML 不动', () {
+        expect(
+          SessionUtils.stripEngineMarkup('用 <b>粗体</b> 和 <br/> 换行'),
+          '用 <b>粗体</b> 和 <br/> 换行',
+        );
+      });
+    });
+
+    group('stripEngineMarkupBlocks（会话标题）', () {
+      test('标记连同内容一起去掉，只留没被包住的部分', () {
+        expect(
+          SessionUtils.stripEngineMarkupBlocks(
+            '<command-name>/model</command-name>\n'
+            '<local-command-stdout>已切到 opus</local-command-stdout>\n'
+            '修复聊天指令',
+          ),
+          '修复聊天指令',
+        );
+        expect(
+          SessionUtils.stripEngineMarkupBlocks(
+            '看看这个 <system-reminder>内部提示</system-reminder> 对不对',
+          ),
+          '看看这个  对不对',
+        );
+      });
+
+      test('整段只剩标记时不该当标题', () {
+        const onlyMarkup =
+            '<local-command-caveat>Caveat: xxx</local-command-caveat>';
+        expect(SessionUtils.stripEngineMarkupBlocks(onlyMarkup), isEmpty);
+        expect(SessionUtils.isClaudeCommandArtifact(onlyMarkup), isTrue);
+        expect(SessionUtils.cleanClaudeSessionTitle(onlyMarkup), isNull);
+        expect(
+          SessionUtils.sessionTitleFromMessageContent(onlyMarkup),
+          isNull,
+        );
+      });
+
+      test('标题取没被包住的那部分', () {
+        expect(
+          SessionUtils.cleanClaudeSessionTitle(
+            '<command-name>/model</command-name>\n'
+            '<local-command-stdout>已切到 opus</local-command-stdout>\n'
+            '修复聊天指令',
+          ),
+          '修复聊天指令',
+        );
+        expect(
+          SessionUtils.sessionTitleFromMessageContent(
+            '<command-message>model</command-message>\n帮我改一下标题',
+          ),
+          '帮我改一下标题',
+        );
+      });
+
+      test('标题被截断、闭合标签没来时，从开标签起到结尾都算标记内容', () {
+        // 主机给折叠组的标题常是截断的：闭合标签没了。只摘标签会把 caveat
+        // 正文留在标题上，每行都长一样，没法辨识。
+        expect(
+          SessionUtils.stripEngineMarkupBlocks(
+            '<local-command-caveat>Caveat: The messages below were generated '
+            'by the user while running local commands.',
+          ),
+          isEmpty,
+        );
+        expect(
+          SessionUtils.cleanClaudeSessionTitle(
+            '<local-command-caveat>Caveat: The messages below were generated',
+          ),
+          isNull,
+        );
+        expect(
+          SessionUtils.isClaudeCommandArtifact(
+            '<local-command-caveat>Caveat: 本机执行的命令输出如下',
+          ),
+          isTrue,
+        );
+        // 正文在标记前面的那部分要留住。
+        expect(
+          SessionUtils.cleanClaudeSessionTitle(
+            '看看这个 <system-reminder>内部提示（未闭合',
+          ),
+          '看看这个',
+        );
+        // 反过来被截掉开头、只剩闭合标签。
+        expect(
+          SessionUtils.stripEngineMarkupBlocks('尾部提示</local-command-caveat>'),
+          '尾部提示',
+        );
+      });
+
+      test('标题被清空时用时间兜底（不用会话 id）', () {
+        final at = DateTime(2026, 11, 1, 14, 32);
+        expect(
+          SessionUtils.shortDateTime(at.millisecondsSinceEpoch),
+          '11/1 14:32',
+        );
+        // 跨年带上年份。
+        expect(
+          SessionUtils.shortDateTime(
+              DateTime(2025, 3, 9, 8, 5).millisecondsSinceEpoch),
+          '2025/3/9 08:05',
+        );
+        // 没有时间戳就没有兜底。
+        expect(SessionUtils.shortDateTime(0), isEmpty);
+      });
+
+      test('没标记的标题原样保留', () {
+        expect(
+          SessionUtils.cleanClaudeSessionTitle('普通的会话标题'),
+          '普通的会话标题',
+        );
+      });
+
+      test('[implicit] 附件提示块不算标题内容', () {
+        const implicit = '[implicit]\n'
+            'This message mentions pouch:// URI(s). If you need their\n'
+            'contents, read each with the `pouch_read` MCP tool (or\n'
+            '`shepaw pouch read --uri <uri-as-is>`).\n'
+            'pouch:// URIs are not OS paths; never read them as local files.\n'
+            'URIs: pouch://a95b5782/agent:fb1d3f94/session:s1/attachments/p.png\n'
+            '[/implicit]';
+        expect(SessionUtils.cleanClaudeSessionTitle(implicit), isNull);
+        expect(
+          SessionUtils.sessionTitleFromMessageContent(implicit),
+          isNull,
+        );
+        // 提示块 + 正文 → 只留正文。
+        expect(
+          SessionUtils.cleanClaudeSessionTitle('$implicit\n看看这张图'),
+          '看看这张图',
+        );
+        expect(
+          SessionUtils.cleanClaudeSessionTitle('看看这张图\n$implicit'),
+          '看看这张图',
+        );
+      });
     });
   });
 }

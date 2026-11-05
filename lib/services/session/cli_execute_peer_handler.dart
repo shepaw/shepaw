@@ -56,6 +56,16 @@ class PeerCliExecuteHandler {
       return {'ok': false, 'error': 'missing namespace'};
     }
 
+    final callToken = (data['call_token'] as String?)?.trim() ?? '';
+    // Hub 签给引擎会话的调用令牌要一路带到 CLI 命令，回发主机的帧用它证明身份。
+    // 放进 flags：sanitizeFlags 只剥离身份伪装字段，不会动 call_token。
+    final flags = <String, dynamic>{
+      ...? (data['flags'] is Map
+          ? Map<String, dynamic>.from(data['flags'] as Map)
+          : null),
+      if (callToken.isNotEmpty) 'call_token': callToken,
+    };
+
     final run = _run ??
         ({
           required String agentId,
@@ -71,8 +81,9 @@ class PeerCliExecuteHandler {
       params: {
         'namespace': namespace,
         'subcommand': subcommand,
-        'flags': data['flags'],
+        'flags': flags,
         if (data['session_id'] != null) 'session_id': data['session_id'],
+        if (callToken.isNotEmpty) 'call_token': callToken,
       },
     );
   }

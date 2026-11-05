@@ -6,7 +6,13 @@ import '../../peer/services/hub_folded_sessions.dart';
 import '../../screens/flow_run_screen.dart';
 import '../../screens/group_view_screen.dart';
 import '../../screens/session_history_screen.dart';
+import '../../utils/session_utils.dart';
 import '../session_folders.dart';
+
+/// 命中里主机给的标题同样可能带引擎标签 / `[implicit]` 提示：清掉，清完没东西
+/// 就退回会话 id。
+String _hitTitle(SessionSearchHit hit) =>
+    SessionUtils.cleanClaudeSessionTitle(hit.title) ?? hit.sessionId;
 
 /// 一条搜索命中的来源角标文案。`private` 之外都按折叠组的名字显示。
 String sessionSearchHitBadge(AppLocalizations l10n, SessionSearchHit hit) {
@@ -31,7 +37,7 @@ void openSessionSearchHit(
       builder: (_) => FlowRunScreen(
         peerId: peerId,
         runId: origin.runId,
-        title: hit.title,
+        title: _hitTitle(hit),
       ),
     ));
     return;
@@ -43,7 +49,7 @@ void openSessionSearchHit(
         agentId: hit.agentId,
         groupId: origin.groupId,
         groupSessionId: origin.groupSessionId,
-        title: hit.title,
+        title: _hitTitle(hit),
         foldedSessionId: hit.sessionId,
         client: client,
       ),
@@ -55,7 +61,7 @@ void openSessionSearchHit(
       peerId: peerId,
       agentId: hit.agentId,
       sessionId: hit.sessionId,
-      title: hit.title.isEmpty ? hit.sessionId : hit.title,
+      title: _hitTitle(hit),
       client: client,
     ),
   ));

@@ -40,7 +40,6 @@ import '../../services/approval/pending_approval_hub.dart';
 import '../../services/approval/pending_approval_item.dart';
 import '../../services/session/client_session_sync.dart';
 import '../../services/session/cli_execute_peer_handler.dart';
-import '../../services/session/session_create_peer_handler.dart';
 import '../../services/she_agent_impression_service.dart';
 import '../../services/she_service.dart';
 import '../../services/local_user_identity.dart';
@@ -66,6 +65,7 @@ import 'peer_connection_manager.dart';
 import 'peer_inflight_turn.dart';
 import 'peer_storage_service.dart';
 import 'peer_turn_resume.dart';
+import 'warm_ready_registry.dart';
 import '../../storage/agent_workspace_uris.dart';
 import '../../storage/store_protocol.dart';
 
@@ -3877,9 +3877,6 @@ class PeerAgentClientService {
       case 'agent_interaction_closed':
         _onInteractionClosed(event.data);
         break;
-      case 'session_create_req':
-        unawaited(_onSessionCreateReq(event.peerId, event.data));
-        break;
       case 'cli_execute_req':
         unawaited(_onCliExecuteReq(event.peerId, event.data));
         break;
@@ -4076,6 +4073,8 @@ class PeerAgentClientService {
     if (!_peerIsConnected(peerId)) return;
     final sessionId = hostSessionIdForChannel(channelId);
     if (sessionId.isEmpty) return;
+    // 重新发起预热：清掉上一次的 ready，等主机回 agent.warm_ready。
+    WarmReadyRegistry.instance.clear(remoteAgentId, sessionId);
     try {
       await _sendMetaControl(peerId, {
         'type': 'agent_session_warm',
@@ -5249,6 +5248,8 @@ class PeerAgentClientService {
           enabled: enabled,
         ));
       case PeerAgentMetaKind.sessions:
+        // 名单同步只管名单。切换卡片走单独的 session.switch 事件，避免
+        // 全量回放这条 meta 时把用户删掉的卡片又插回来。
         unawaited(_mirrorHostSessionList(
           peerId: event.peerId,
           remoteAgentId: agentId,
@@ -9733,25 +9734,9 @@ class PeerAgentClientService {
     });
   }
 
-  Future<void> _onSessionCreateReq(
-    String peerId,
-    Map<String, dynamic> data,
-  ) async {
-    Map<String, dynamic> result;
-    try {
-      result = await SessionCreatePeerHandler(
-        publishMetadata: publishMetadataToChannel,
-      ).handle(data);
-    } catch (e) {
-      result = {'error': e.toString()};
-    }
-    final reqId = data['req_id'];
-    await PeerConnectionManager.instance.sendControl(peerId, {
-      'type': SessionCreatePeerHandler.respType,
-      if (reqId != null) 'req_id': reqId,
-      ...result,
-    });
-  }
+  // 会话创建已迁到主机：App 不再处理主机发来的 session_create_req，也不再
+  // 在本地建会话。切换卡片由 agent_meta_changed kind=sessions 带下来。
+  // 见 services/session/host_session_switch_card.dart。
 
   /// 主机放弃这张卡片了。reason 见帧里的 `reason` 字段（`timeout` / `cancelled`）。
   ///

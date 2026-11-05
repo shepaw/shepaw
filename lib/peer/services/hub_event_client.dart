@@ -14,6 +14,7 @@ import '../../services/local_database_service.dart';
 import '../../services/noise_identity.dart';
 import '../../services/serial_task_queue.dart';
 import '../../services/logger_service.dart';
+import '../../services/session/host_session_switch_card.dart';
 import '../../storage/pouch_login.dart';
 import '../../storage/pouch_login_keeper.dart';
 import '../../storage/pouch_session.dart';
@@ -24,6 +25,7 @@ import 'peer_connection.dart';
 import 'peer_connection_manager.dart';
 import 'peer_inflight_turn.dart';
 import 'peer_storage_service.dart';
+import 'warm_ready_registry.dart';
 
 /// 跟着储物袋把主机事件补到这台客户端。
 ///
@@ -584,6 +586,14 @@ class HubEventClient {
 
   Future<void> _dispatch(String peerId, HubEvent event) async {
     switch (event.kind) {
+      case 'agent.warm_ready':
+        final agentId = (event.data['agent_id'] as String?)?.trim() ?? '';
+        final sessionId = (event.data['session_id'] as String?)?.trim() ?? '';
+        WarmReadyRegistry.instance.record(
+          agentId,
+          sessionId,
+          event.data['ok'] == true,
+        );
       case 'message.created':
         await _insertMessage(peerId, event);
       case 'message.updated':
@@ -606,11 +616,106 @@ class HubEventClient {
         }
       case 'agent_meta.changed':
         _applyMeta(peerId, event);
+      case 'session.switch':
+        await _onSessionSwitch(event);
+      case 'group.session.changed':
+        await _onGroupSessionChanged(peerId, event);
       case 'agents.changed':
       case 'groups.changed':
         if (!_notices.isClosed) {
           _notices.add(HubNotice(peerId: peerId, event: event));
         }
+    }
+  }
+
+  /// 主机建好私聊会话：在来源会话挂一张切换卡片。
+  /// 会话名单同步由 `agent_meta.changed kind=sessions` 负责，不在这里做。
+  Future<void> _onSessionSwitch(HubEvent event) async {
+    final action = event.data['session_action'];
+    if (action is! Map) return;
+    final source = (event.data['source_session_id']?.toString() ?? '').isNotEmpty
+        ? event.data['source_session_id'].toString()
+        : event.channelId;
+    if (source.isEmpty) return;
+    await attachHostSessionSwitchCard(
+      channelId: source,
+      sessionAction: Map<String, dynamic>.from(action),
+    );
+  }
+
+  /// 主机建好群会话：在来源群频道挂切换卡片，并把交接摘要显示出来。
+  /// 正文的权威副本由主机写进新会话日志；App 按群 current_session 拉历史时
+  /// 新会话未必是 current，所以这里在来源频道补一条本地摘要，保证用户能看到。
+  Future<void> _onGroupSessionChanged(String peerId, HubEvent event) async {
+    final data = event.data;
+    final action = data['session_action'];
+    var source = '';
+    if (action is Map) {
+      final enriched = <String, dynamic>{
+        ...Map<String, dynamic>.from(action),
+        'kind': 'group',
+        'group_id': (data['group_id']?.toString() ?? '').isNotEmpty
+            ? data['group_id'].toString()
+            : event.channelId,
+      };
+      source = enriched['source_session_id']?.toString() ?? '';
+      if (source.isNotEmpty) {
+        await attachHostSessionSwitchCard(
+          channelId: source,
+          sessionAction: enriched,
+        );
+      }
+    }
+    final handoff = data['handoff_text']?.toString().trim() ?? '';
+    final createdAt = data['created_at_ms'];
+    final fresh = createdAt is! int ||
+        DateTime.now().millisecondsSinceEpoch - createdAt <= 600000;
+    if (handoff.isNotEmpty && source.isNotEmpty && fresh) {
+      final db = getIt.isRegistered<LocalDatabaseService>()
+          ? getIt<LocalDatabaseService>()
+          : LocalDatabaseService();
+      final local = await localChannelIdForHostSession(db, source);
+      await _insertGroupHandoffMessage(
+        local,
+        data['session_id']?.toString() ?? '',
+        handoff,
+      );
+    }
+    if (!_notices.isClosed) {
+      _notices.add(HubNotice(peerId: peerId, event: event));
+    }
+  }
+
+  /// 群会话不是独立本地频道，交接摘要落在来源群频道，按会话 id 去重。
+  Future<void> _insertGroupHandoffMessage(
+    String channelId,
+    String sessionId,
+    String text,
+  ) async {
+    if (channelId.isEmpty) return;
+    final db = getIt.isRegistered<LocalDatabaseService>()
+        ? getIt<LocalDatabaseService>()
+        : LocalDatabaseService();
+    final id =
+        'group_handoff_${channelId.hashCode.abs()}_${sessionId.hashCode.abs()}';
+    try {
+      if (await db.getMessageById(id) != null) return;
+      await db.createMessage(
+        id: id,
+        channelId: channelId,
+        senderId: 'system',
+        senderType: 'system',
+        senderName: 'system',
+        content: text,
+        messageType: 'text',
+      );
+      await db.markMessageAsRead(id);
+      _notify(channelId);
+    } catch (e) {
+      LoggerService().warning(
+        'Failed to insert group handoff message: $e',
+        tag: 'HubEvent',
+      );
     }
   }
 
