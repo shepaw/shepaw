@@ -258,9 +258,9 @@ class SessionRuntimeMirror {
         // 旧 hub 的历史回放，拒绝（否则会把已结束的 running 状态复活）。
         return false;
       }
-      if (hub.isNotEmpty && _hubId == null) {
-        _hubId = hub;
-      }
+      // 身份只由全量对账（reconcileTo）确立。首次运行若让第一条回放事件
+      // 「认领」身份，旧 hub 的高 revision 状态会毒化 mirror，当前主机事件
+      // 反而被永久拒绝。
     }
     final notifier = notifierFor(incoming.sessionKey);
     final next = force ? incoming : reduceSessionState(notifier.value, incoming);
@@ -305,6 +305,10 @@ class SessionRuntimeMirror {
       // 之后旧 hub 的历史回放按 hub_id 不匹配被 apply 拒绝。
       for (final entry in _notifiers.entries) {
         entry.value.value = SessionState.empty(entry.key);
+        // 复位本身也是一次状态跃迁：必须通知监听者，否则 ChatController 的
+        // running→idle 清理与整页 _notify() 不会执行，气泡会一直挂着。
+        lastChangedKey = entry.key;
+        changes.value++;
       }
       _hubId = effectiveHub;
     } else if (effectiveHub != null && effectiveHub.isNotEmpty) {

@@ -809,6 +809,11 @@ class PouchTurnRelay {
     final pending = _pending[requestId];
     if (pending == null) return;
     final kind = data['kind'] as String? ?? '';
+    // 主机开始出字/开始执行：解除排队标记，超时上限回到 30 分钟。否则
+    // 一旦 done 帧丢在断线上，_forward 会一直按 25 小时重挂。
+    if (kind == 'chunk' || kind == 'start' || kind == 'metadata') {
+      pending.hostQueued = false;
+    }
     if (kind == 'error') {
       _pending.remove(requestId);
       final message = data['message'] as String? ?? '主机回合失败';

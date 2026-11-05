@@ -249,11 +249,11 @@ class HubEventClient {
         // 启动 / 重连全量对账：只认最新请求的回执，且必须是当前主机，
         // 否则旧连接 / 非主机 peer 的快照会把 mirror 强制回退。
         final requestId = event.data['request_id'] as String? ?? '';
-        if (requestId.isEmpty ||
-            requestId != _latestSnapshotRequestId) {
+        final seq = _snapshotRequests.remove(requestId);
+        if (seq == null || seq < _snapshotAppliedSeq) {
           return;
         }
-        _latestSnapshotRequestId = null;
+        _snapshotAppliedSeq = seq;
         final activeHost = PouchChannel.active?.session?.hostPeerId;
         if (activeHost != null &&
             activeHost.isNotEmpty &&
@@ -274,8 +274,11 @@ class HubEventClient {
   /// 登录成功后立刻要一份所有活跃会话的全量状态快照。
   /// 主机正在跑、但启动那一刻没有状态跃迁的回合，只有这次对账能让 App
   /// 看到；`session.state` 是跃迁事件，不会为「早就开始了」的回合补发。
-  /// 只认最新一次快照请求的回执：并发/切网重连时旧回执不能把 mirror 回退。
-  String? _latestSnapshotRequestId;
+  int _snapshotSeq = 0;
+  int _snapshotAppliedSeq = -1;
+  /// request_id → 发出序号。并发请求的回执按序号只应用最新的一份，
+  /// 但任意一次成功发出的请求都能拿到回执（不会因为最后一次发送失败而全丢）。
+  final Map<String, int> _snapshotRequests = {};
 
   Future<void> requestSessionSnapshot(String peerId) async {
     final activeHost = PouchChannel.active?.session?.hostPeerId;
@@ -284,15 +287,14 @@ class HubEventClient {
         peerId != activeHost) {
       return;
     }
+    final seq = ++_snapshotSeq;
     final id = _uuid.v4();
-    _latestSnapshotRequestId = id;
+    _snapshotRequests[id] = seq;
     final sent = await _send(peerId, <String, dynamic>{
       'type': 'session_snapshot_req',
       'request_id': id,
     });
-    if (!sent && _latestSnapshotRequestId == id) {
-      _latestSnapshotRequestId = null;
-    }
+    if (!sent) _snapshotRequests.remove(id);
   }
 
   Future<void> catchUp(String peerId) {

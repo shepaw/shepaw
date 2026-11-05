@@ -76,6 +76,8 @@ void main() {
   test('reconcileTo 收敛未报告的会话也会广播', () {
     final mirror = SessionRuntimeMirror();
     addTearDown(mirror.dispose);
+    // 先确立 hub 身份，避免换 hub 复位分支干扰计数。
+    mirror.reconcileTo(<Map<String, dynamic>>[], hubId: 'hub-a');
     mirror.apply(snap(key: 'agent:a:s1'));
     mirror.apply(snap(key: 'agent:a:s2', turnId: 't9'));
     var notifications = 0;
@@ -85,7 +87,7 @@ void main() {
 
     mirror.reconcileTo(<Map<String, dynamic>>[
       snap(key: 'agent:a:s1', revision: 2, state: 'idle', turnId: ''),
-    ]);
+    ], hubId: 'hub-a');
     expect(notifications, 2, reason: '对账里的 apply + 未报告会话的收敛');
     expect(mirror.lastChangedKey, 'agent:a:s2');
   });
@@ -416,5 +418,38 @@ void main() {
       )),
       isFalse,
     );
+  });
+
+  test('换 hub 的复位本身也通知监听者，气泡能收起', () {
+    final mirror = SessionRuntimeMirror();
+    addTearDown(mirror.dispose);
+    mirror.reconcileTo(<Map<String, dynamic>>[
+      snap(revision: 20, hubId: 'hub-a'),
+    ], hubId: 'hub-a');
+    var notifications = 0;
+    void listener() => notifications++;
+    mirror.changes.addListener(listener);
+    addTearDown(() => mirror.changes.removeListener(listener));
+    expect(notifications, 0);
+
+    mirror.reconcileTo(<Map<String, dynamic>>[], hubId: 'hub-b');
+    expect(notifications, greaterThan(0));
+    expect(mirror.stateFor('agent:a:s1').revision, 0);
+    expect(mirror.stateFor('agent:a:s1').isRunning, isFalse);
+  });
+
+  test('首次运行不被旧 hub 回放毒化身份', () {
+    final mirror = SessionRuntimeMirror();
+    addTearDown(mirror.dispose);
+    // 旧 hub 的回放先到：apply 不认领身份。
+    expect(mirror.apply(snap(revision: 12, hubId: 'hub-a')), isTrue);
+    // 当前主机的权威快照纠正身份与状态。
+    mirror.reconcileTo(<Map<String, dynamic>>[
+      snap(revision: 1, hubId: 'hub-b'),
+    ], hubId: 'hub-b');
+    expect(mirror.stateFor('agent:a:s1').revision, 1);
+    expect(mirror.apply(snap(revision: 30, hubId: 'hub-a')), isFalse);
+    expect(mirror.apply(snap(revision: 2, hubId: 'hub-b')), isTrue);
+    expect(mirror.stateFor('agent:a:s1').revision, 2);
   });
 }
