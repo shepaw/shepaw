@@ -310,6 +310,50 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
   });
+
+  testWidgets('A5-7: 指针移出大纲后停掉自动滚动计时器', (tester) async {
+    final rows = buildFlowOutline(tree);
+    final keys = <String, GlobalKey>{
+      for (final r in rows) r.node.id: GlobalKey(),
+    };
+    await _pumpTree(
+      tester,
+      FlowOutlineTree(
+        rows: rows,
+        canEdit: true,
+        dragEnabled: true,
+        tree: tree,
+        rowKeys: keys,
+        onDrop: (_, __) {},
+      ),
+    );
+
+    final start = tester.getCenter(find.byKey(const ValueKey('drag-a')));
+    final gesture = await tester.startGesture(start);
+    await gesture.moveTo(start + const Offset(40, 0));
+    await tester.pump(const Duration(milliseconds: 16));
+    // 停在顶部边缘（仍在行上）：自动滚动应持续生效。
+    final treeTop = tester.getTopLeft(find.byType(FlowOutlineTree)).dy;
+    await gesture.moveTo(Offset(start.dx, treeTop + 4));
+    await tester.pump(const Duration(milliseconds: 16));
+    FlowOutlineTree.debugAutoScrollMoves = 0;
+    await tester.pump(const Duration(milliseconds: 48));
+    expect(FlowOutlineTree.debugAutoScrollMoves, greaterThan(0),
+        reason: '指针在大纲边缘时自动滚动应在生效（否则下面的断言没有意义）');
+
+    // 指针移到大纲下方（仍在滚动视图里）：onLeave 必须清掉最后的位置。
+    final outlineBottom = tester.getBottomLeft(find.byType(FlowOutlineTree)).dy;
+    await gesture.moveTo(Offset(start.dx, outlineBottom + 80));
+    await tester.pump(const Duration(milliseconds: 16));
+
+    FlowOutlineTree.debugAutoScrollMoves = 0;
+    await tester.pump(const Duration(milliseconds: 160));
+    expect(FlowOutlineTree.debugAutoScrollMoves, 0,
+        reason: '指针离开大纲后不能按最后停在边缘的位置继续自动滚动');
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+  });
 }
 
 /// 宽一点的窗口，免得可编辑行的五个 IconButton 挤溢出。

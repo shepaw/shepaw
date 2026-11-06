@@ -7,6 +7,7 @@ import 'package:shepaw/models/remote_agent.dart';
 import 'package:shepaw/peer/services/hub_flow.dart';
 import 'package:shepaw/peer/services/peer_connection_manager.dart';
 import 'package:shepaw/screens/flow_workspace_screen.dart';
+import 'package:shepaw/storage/pouch_session.dart';
 
 void main() {
   testWidgets('lists the library and starts a run with the flow name',
@@ -421,7 +422,96 @@ void main() {
         reason: '主机只认 Hub id，不能把本机行 id 发过去');
     await tester.pumpWidget(const SizedBox());
   });
+
+  // ── A5-6：切主机后 agent 候选必须跟着换 ──────────────────────────────────
+
+  testWidgets('A5-6 切主机后开跑选择器给的是新主机的 agent', (tester) async {
+    tester.view.physicalSize = const Size(2400, 1800);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(tester.view.reset);
+
+    var activeHost = 'p1';
+    PouchSessionStore.readOverride = () async => PouchSession(
+          hubUrl: 'wss://hub.example/peer/ws',
+          pouchId: 'bag',
+          pouchName: 'bag',
+          hostPeerId: activeHost,
+        );
+    addTearDown(() => PouchSessionStore.readOverride = null);
+
+    final agents = [
+      _peerAgent('agent-p1', 'P1 Agent', 'p1'),
+      _peerAgent('agent-p2', 'P2 Agent', 'p2'),
+    ];
+    final harness = _Harness()
+      ..flowYaml = 'flow: dev\nroles:\n  coder: {desc: 写}\nsteps: []\n';
+    addTearDown(harness.close);
+    await tester.pumpWidget(MaterialApp(
+      locale: const Locale('zh'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: FlowWorkspaceScreen(
+        peerId: '',
+        client: harness.client,
+        embedded: true,
+        initialAgents: agents,
+      ),
+    ));
+    await _settle(tester);
+
+    // 对话框退场动画比 _settle 的 180ms 长，多等一会儿，别在它还挂在树上时继续点。
+    Future<void> settleLong() async {
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+    }
+
+    Future<void> openPicker() async {
+      await tester.tap(find.byKey(const ValueKey('flow-start-dev')));
+      await settleLong();
+      await tester.tap(find.byKey(const ValueKey('start-role-coder')));
+      await settleLong();
+    }
+
+    await openPicker();
+    expect(find.text('P1 Agent'), findsOneWidget);
+    expect(find.text('P2 Agent'), findsNothing,
+        reason: '当前主机是 p1，不能列 p2 的 agent');
+    // 选一个关掉选择器，再关掉开跑对话框。
+    await tester.tap(find.text('P1 Agent'));
+    await settleLong();
+    await tester.tap(find.widgetWithText(TextButton, '取消').last);
+    await settleLong();
+
+    // 主机切成 p2 后刷新工作台。
+    activeHost = 'p2';
+    await tester.tap(find.byIcon(Icons.refresh));
+    await settleLong();
+
+    await openPicker();
+    expect(find.text('P2 Agent'), findsOneWidget,
+        reason: '换主机后必须重拉该主机的 agent 列表');
+    expect(find.text('P1 Agent'), findsNothing, reason: '旧主机的 agent 不能留在候选里');
+    await tester.tap(find.text('P2 Agent'));
+    await _settle(tester);
+    await tester.pumpWidget(const SizedBox());
+  });
 }
+
+RemoteAgent _peerAgent(String id, String name, String peerId) => RemoteAgent(
+      id: id,
+      name: name,
+      token: 'tok',
+      endpoint: 'peer://$peerId/$id',
+      protocol: ProtocolType.peer,
+      connectionType: ConnectionType.websocket,
+      metadata: {
+        'source_peer_id': peerId,
+        'remote_agent_id': id,
+      },
+      createdAt: 1,
+      updatedAt: 1,
+    );
 
 /// 假主机：按帧类型回一份固定应答，并把请求记下来。
 class _Harness {

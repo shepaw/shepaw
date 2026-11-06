@@ -1,13 +1,25 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shepaw/models/remote_agent.dart';
 import 'package:shepaw/peer/services/peer_agent_client_service.dart';
 import 'package:shepaw/peer/services/session_runtime_mirror.dart';
 import 'package:shepaw/service_locator.dart' show getIt;
+import 'package:shepaw/services/local_database_service.dart';
+
+import '../storage/test_harness.dart';
 
 /// 用户主动停止时，无论 controller 的 cancel token 是否已与 turn 失联
 /// （页面 reattach / 进程重启 hydrate 后 token 是新建的），都必须按 channel
 /// 清掉 inflight turn 并通知对端中断 —— 否则下一次发送会被
 /// 「上一轮回复仍在继续」拦截，直到 300s 空闲 watchdog 超时。
 void main() {
+  setUpAll(() async {
+    await StorageTestHarness.init();
+    if (!getIt.isRegistered<LocalDatabaseService>()) {
+      getIt.registerSingleton<LocalDatabaseService>(LocalDatabaseService());
+    }
+    await LocalDatabaseService().database;
+  });
+
   group('PeerAgentClientService.cancelInflightTurnsForChannel', () {
     final svc = PeerAgentClientService.instance;
     final sentFrames = <({String peerId, Map<String, dynamic> json})>[];
@@ -27,7 +39,8 @@ void main() {
       svc.debugSendControlOverride = null;
     });
 
-    test('取消后 hasInflightForChannel 立即为 false，completer 以 [Stopped] 完成', () async {
+    test('取消后 hasInflightForChannel 立即为 false，completer 以 [Stopped] 完成',
+        () async {
       final future = svc.debugSeedPendingTurn(
         requestId: 'req-1',
         peerId: 'peer-1',
@@ -58,7 +71,8 @@ void main() {
       expect(sentFrames.single.json['request_id'], 'req-2');
     });
 
-    test('suspended turn 取消后登记 _cancelledWhileSuspended（重连补发 cancel 而非 resume）', () async {
+    test('suspended turn 取消后登记 _cancelledWhileSuspended（重连补发 cancel 而非 resume）',
+        () async {
       svc.debugSeedPendingTurn(
         requestId: 'req-3',
         peerId: 'peer-9',
@@ -195,12 +209,14 @@ void main() {
     void seedSnapshot({
       required String requestId,
       required bool running,
+      String key = sessionKey,
+      String peerId = 'peer-1',
     }) {
       mirror.apply({
-        'session_key': sessionKey,
+        'session_key': key,
         'state': running ? 'running' : 'idle',
         'turn_id': requestId,
-        'peer_id': 'peer-1',
+        if (peerId.isNotEmpty) 'peer_id': peerId,
         'revision': 1,
         'at': 1,
         'hub_id': 'hub-1',
@@ -266,8 +282,7 @@ void main() {
       expect(sentFrames.single.json['request_id'], turnId);
     });
 
-    test('普通 DM 不额外发 cancel（非 flow- 前缀且已在 _pending 里）',
-        () async {
+    test('普通 DM 不额外发 cancel（非 flow- 前缀且已在 _pending 里）', () async {
       seedSnapshot(requestId: 'req-dm-1', running: true);
       final future = svc.debugSeedPendingTurn(
         requestId: 'req-dm-1',
@@ -295,6 +310,52 @@ void main() {
       );
 
       expect(sentFrames, isEmpty);
+    });
+
+    test('A5-5 快照缺 peer_id 时按 session key 的 agent 归属发往正确主机', () async {
+      await LocalDatabaseService().createRemoteAgent(RemoteAgent(
+        id: 'peeragent_p2_remote-a',
+        name: 'Agent A',
+        token: 'tok',
+        endpoint: 'peer://p2/peeragent_p2_remote-a',
+        protocol: ProtocolType.peer,
+        connectionType: ConnectionType.websocket,
+        metadata: {
+          'source_peer_id': 'p2',
+          'remote_agent_id': 'agent-7',
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      ));
+      // 两台主机都连着时，第一条 state 没有 peer_id。
+      seedSnapshot(requestId: turnId, running: true, peerId: '');
+
+      await svc.cancelInflightTurnsForChannel(
+        channelId,
+        sessionKey: sessionKey,
+      );
+
+      expect(sentFrames, hasLength(1));
+      expect(sentFrames.single.peerId, 'p2',
+          reason: '应按 session key 里的 agent 归属解析主机，不能随便挑第一个');
+      expect(sentFrames.single.json['request_id'], turnId);
+    });
+
+    test('A5-5 归属解析不到时不乱发 agent_cancel', () async {
+      const unknownKey = 'agent:unknown-agent:flow_deadbe12_impl';
+      seedSnapshot(
+        requestId: turnId,
+        running: true,
+        key: unknownKey,
+        peerId: '',
+      );
+
+      await svc.cancelInflightTurnsForChannel(
+        channelId,
+        sessionKey: unknownKey,
+      );
+
+      expect(sentFrames, isEmpty, reason: '解析不到归属主机时宁可不发，也不能把停止发给另一台主机');
     });
   });
 }

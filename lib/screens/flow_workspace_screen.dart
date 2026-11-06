@@ -70,6 +70,10 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   String? _error;
   String? _selectedName;
   List<RemoteAgent> _agents = const [];
+
+  /// [_agents] 是按哪台主机过滤的。换主机后必须清掉重拉，否则选择器里
+  /// 还是上一台主机的 agent（id 发过去主机不认识）。
+  String _agentsHost = '';
   int _detailToken = 0;
 
   /// 编辑区有没有没保存的改动（由设计页报上来）。
@@ -119,9 +123,15 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
     }
     final flows = await _client.list(host, scope: widget.scope);
     if (!mounted) return;
+    final hostChanged = host != _host;
     setState(() {
       _loading = false;
       _host = host;
+      if (hostChanged) {
+        // 换主机：旧的 agent 行属于上一台主机，选择器不能再拿它们当候选。
+        _agents = const [];
+        _agentsHost = '';
+      }
       _flows = flows;
       _error =
           flows == null ? AppLocalizations.of(context).flow_hostNoReply : null;
@@ -130,6 +140,7 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
         _selectedName = null;
       }
     });
+    if (hostChanged) unawaited(_ensureAgents(host));
   }
 
   bool _wideFor(BoxConstraints constraints) =>
@@ -248,6 +259,21 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
     ));
   }
 
+  /// 拉取并缓存某台主机的 agent 候选。换主机时调用方会先把缓存清空。
+  Future<void> _ensureAgents(String peerId) async {
+    if (peerId.isEmpty) return;
+    final all = widget.initialAgents ??
+        await LocalDatabaseService().getAllRemoteAgents();
+    // 拉取期间主机又切了：这批结果属于旧主机，丢掉。
+    final current = _host.isNotEmpty ? _host : widget.peerId;
+    if (!mounted || peerId != current) return;
+    setState(() {
+      _agentsHost = peerId;
+      _agents =
+          all.where((a) => a.isPeerAgent && a.sourcePeerId == peerId).toList();
+    });
+  }
+
   /// 打开 Agent 选择器，返回选中的 **Hub 侧 agent id**。
   ///
   /// 只列这个流程所在主机的 peer agent；写入 `bindings` 时用 Hub id，而不是
@@ -255,20 +281,19 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   /// 已经转过，这里必须用同一套逻辑，否则开跑时主机会收到一个它不认识的 id。
   Future<String?> _pickAgent() async {
     final peerId = _host.isNotEmpty ? _host : widget.peerId;
-    if (_agents.isEmpty) {
-      final all = widget.initialAgents ??
-          await LocalDatabaseService().getAllRemoteAgents();
+    // 主机可能刚切过（_load 是异步的），候选必须和当前主机一致。
+    if (_agentsHost != peerId) {
+      await _ensureAgents(peerId);
       if (!mounted) return null;
-      setState(() => _agents =
-          all.where((a) => a.isPeerAgent && a.sourcePeerId == peerId).toList());
     }
+    final agents = _agents;
     final picked = await showJadeSlipAgentPicker(
       context,
-      agents: _agents,
+      agents: agents,
       title: AppLocalizations.of(context).flow_executorPickAgent,
     );
     if (picked == null) return null;
-    final agent = _agents.where((a) => a.id == picked.id).firstOrNull;
+    final agent = agents.where((a) => a.id == picked.id).firstOrNull;
     // 选择弹层里还有惜宝那条（不在 _agents 里）：原样返回，沿用旧行为。
     return agent == null ? picked.id : hubAgentIdOf(agent);
   }

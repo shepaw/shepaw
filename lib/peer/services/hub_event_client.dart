@@ -117,9 +117,6 @@ class HubEventClient {
   /// [_finalizeIdleTurn] 把占位改成终态（保留正文、停掉流式标记）。
   final _idleFinalizeTimers = <String, Timer>{};
 
-  /// 超时收尾后仍保留的占位（turnId → channelId）：等最终消息到了再删。
-  final _finalizedPlaceholders = <String, String>{};
-
   /// 已落过流式占位行的 turn（裸流程帧专用，避免每片 chunk 都写一次库）。
   final _flowPlaceholders = <String>{};
 
@@ -279,7 +276,6 @@ class HubEventClient {
     _liveDirty.clear();
     _flowTargets.clear();
     _liveTurnTokens.clear();
-    _finalizedPlaceholders.clear();
     _settledTurns.clear();
     _attachRequests.clear();
     _catchUpQueued.clear();
@@ -1193,19 +1189,22 @@ class HubEventClient {
         // 和 idle / turn.finished 走同一条清理路径：占位行、_flowPlaceholders、
         // 落点缓存一起收掉。只删占位的话 _flowPlaceholders 会永远留着这个
         // turnId，后续同回合 chunk 建不出占位、集合也无限增长。
-        await _clearLiveTurn(id);
+        //
+        // 这里只清占位 / 缓冲，**不关交互卡**：同一频道里的 agent 普通消息
+        // 不代表回合结束，主机可能仍停在 `ask_ui` 等用户作答。卡只在真正的
+        // 回合终态（idle / turn.finished / attach done）收。
+        await _clearLiveTurn(id, closeCards: false);
       }
-      // idle 超时收尾后保留下来的占位：最终消息终于到了，现在可以删了，
-      // 否则同一回合会同时留下「收尾占位」和「最终消息」两条气泡。
-      final finalized = _finalizedPlaceholders.entries
-          .where((entry) => entry.value == channelId)
-          .map((entry) => entry.key)
-          .toList();
-      for (final id in finalized) {
-        _finalizedPlaceholders.remove(id);
-        if (getIt.isRegistered<LocalDatabaseService>()) {
-          await db.deleteMessage(liveTurnPlaceholderId(id));
-        }
+      // 重启后内存里的回合索引已经没了，但占位行还在库里。最终消息到达时
+      // 按确定性 id 前缀把它们收掉（跳过仍在接流的回合，它们的占位由上面
+      // 的循环或后续终态帧负责）。不依赖内存，重放也能幂等清干净。
+      final livePlaceholders = {
+        for (final id in _liveChannels.keys) liveTurnPlaceholderId(id),
+      };
+      for (final placeholderId
+          in await db.listLiveTurnPlaceholderIds(channelId)) {
+        if (livePlaceholders.contains(placeholderId)) continue;
+        await db.deleteMessage(placeholderId);
       }
     }
     _notify(channelId);
@@ -1310,15 +1309,19 @@ class HubEventClient {
   ///
   /// [deletePlaceholder] 为 false 时保留占位行本身（idle 超时收尾用：正文
   /// 已经显示了，不能因为主机没发最终消息就把它删掉）。
+  ///
+  /// [closeCards] 为 false 时只清占位 / 缓冲，不动这个回合问过的交互卡。
+  /// `message.created` 的清理走这条：一条 agent 消息不代表回合结束，主机
+  /// 可能还停在 `ask_ui` 等用户作答，提前关掉卡片会让用户答不了。
   Future<String?> _clearLiveTurn(
     String turnId, {
     bool deletePlaceholder = true,
+    bool closeCards = true,
   }) async {
     // 先登记「已收尾」：任何在 await 期间 / 之后到达的迟到 chunk 都不能再
     // 把这个回合当成新回合重建占位。
     _markSettledTurn(turnId);
     _idleFinalizeTimers.remove(turnId)?.cancel();
-    _finalizedPlaceholders.remove(turnId);
     _attached.remove(turnId);
     _flowPlaceholders.remove(turnId);
     _liveTurnTokens.remove(turnId);
@@ -1333,7 +1336,7 @@ class HubEventClient {
       await getIt<LocalDatabaseService>()
           .deleteMessage(liveTurnPlaceholderId(turnId));
     }
-    await _closeTurnCards(turnId);
+    if (closeCards) await _closeTurnCards(turnId);
     return channelId;
   }
 
@@ -1499,6 +1502,41 @@ class HubEventClient {
     );
   }
 
+  /// 取（必要时解析并缓存）一个回合的落点。
+  ///
+  /// 只有 `channelId` 和 `senderId` 都解析出来才写缓存：缺 `agent_id` 的帧
+  /// 会落到「裸 channel + 空 sender」的兜底结果，缓存它会让同回合后续真正
+  /// 带 `agent_id` 的 chunk 全部复用兜底值 —— 占位写到裸 `flow_…`、没有
+  /// sender、本地壳也建不出来。兜底结果用完即弃，下一帧重新解析。
+  Future<({String channelId, String senderId, String senderName})>
+      _flowTargetFor(
+    String peerId,
+    String turnId,
+    Map<String, dynamic> data,
+  ) async {
+    final key = _flowTargetKey(peerId, turnId);
+    final cached = _flowTargets[key];
+    if (cached != null) {
+      final target = await cached;
+      if (_isCompleteFlowTarget(target)) return target;
+      // 之前缓存的是兜底结果：别再复用，重新解析这一帧。
+      if (identical(_flowTargets[key], cached)) _flowTargets.remove(key);
+    }
+    final future = _resolveFlowControlTarget(peerId, data);
+    _flowTargets[key] = future;
+    final target = await future;
+    if (!_isCompleteFlowTarget(target) &&
+        identical(_flowTargets[key], future)) {
+      _flowTargets.remove(key);
+    }
+    return target;
+  }
+
+  bool _isCompleteFlowTarget(
+    ({String channelId, String senderId, String senderName}) target,
+  ) =>
+      target.channelId.isNotEmpty && target.senderId.isNotEmpty;
+
   /// 节点回合的 `agent_chunk`：按 channel_id 起一条本机流式占位，逐帧拼正文。
   /// 主机结束时会 append 一条 `agent` 消息，`_insertMessage` 会把占位收掉，
   /// 所以这里只管「运行中能实时看到字」。
@@ -1527,25 +1565,28 @@ class HubEventClient {
     // 回合登记代次：await 回来时用它判断这一轮是否已经被终态 / 超时收尾清掉。
     _liveTurnTokens.putIfAbsent(turnId, () => Object());
     final token = _liveTurnTokens[turnId];
-    // idle 之后又来了 chunk：说明回合还在出字，取消收尾计时，继续按流式处理。
-    _idleFinalizeTimers.remove(turnId)?.cancel();
+    // idle 之后又来了 chunk：说明回合还在出字。取消旧计时，但**不能就此
+    // 不再计时** —— 主机可能不会再发 idle，占位会永远停在 streaming。
+    // 处理完这一帧后重新起计时：继续出字就不断顺延，停下来后照样收尾。
+    final idleTimer = _idleFinalizeTimers.remove(turnId);
+    idleTimer?.cancel();
     if (content.isNotEmpty) {
       _liveBuffers[turnId] = (_liveBuffers[turnId] ?? '') + content;
     }
     final gate = debugBeforeFlowChunkResolve;
     if (gate != null) await gate();
     // 同一回合的后续 chunk 复用落点解析：查库 / 建壳只做一次。
-    final target = await _flowTargets.putIfAbsent(
-      _flowTargetKey(peerId, turnId),
-      () => _resolveFlowControlTarget(peerId, data),
-    );
+    final target = await _flowTargetFor(peerId, turnId, data);
     // 解析期间回合可能已经被终态消息 / 超时收尾清掉。这时不能再把
     // _liveChannels / 占位重新登记回去 —— 否则气泡永远停在 streaming。
     if (token == null || _liveTurnTokens[turnId] != token) return;
-    final channelId =
-        target.channelId.isEmpty ? rawChannelId : target.channelId;
+    final resolved = _isCompleteFlowTarget(target);
+    final channelId = resolved ? target.channelId : rawChannelId;
     _liveChannels[turnId] = channelId;
-    if (!_flowPlaceholders.contains(turnId) &&
+    // 落点没解析全（缺 agent_id）时先不建占位：兜底 sender 是空的，建出来
+    // 之后同 id 的占位没法再补 sender / 频道。等下一帧带 agent_id 再建。
+    if (resolved &&
+        !_flowPlaceholders.contains(turnId) &&
         getIt.isRegistered<LocalDatabaseService>()) {
       await getIt<LocalDatabaseService>().createMessage(
         id: liveTurnPlaceholderId(turnId),
@@ -1561,6 +1602,9 @@ class HubEventClient {
     }
     if (content.isNotEmpty) _scheduleLiveFlush(turnId);
     _notify(channelId);
+    if (idleTimer != null && _liveChannels.containsKey(turnId)) {
+      _scheduleIdleFinalize(turnId);
+    }
   }
 
   /// `agent_metadata` 同样没有 _pending。进度 / thinking 元数据 v1 不画独立
@@ -1581,10 +1625,7 @@ class HubEventClient {
     final turnId = (data['turn_id'] ?? data['request_id'] ?? '').toString();
     final target = turnId.isEmpty
         ? await _resolveFlowControlTarget(peerId, data)
-        : await _flowTargets.putIfAbsent(
-            _flowTargetKey(peerId, turnId),
-            () => _resolveFlowControlTarget(peerId, data),
-          );
+        : await _flowTargetFor(peerId, turnId, data);
     if (target.channelId.isNotEmpty) _notify(target.channelId);
   }
 
@@ -1642,8 +1683,9 @@ class HubEventClient {
   /// 等不到最终消息：把占位从「流式」收成终态，正文保留。
   ///
   /// 空正文（只有 metadata、还没来得及出字）没有保留价值，直接删掉；
-  /// 有正文就只去掉 `status: streaming`，并登记到 [_finalizedPlaceholders]，
-  /// 万一最终消息随后才到还能被 [_insertMessage] 收掉。
+  /// 有正文就只去掉 `status: streaming`。占位行本身保留到最终消息到达，
+  /// 届时 [_insertMessage] 会按确定性的 `hub-live-<turnId>` id 在库里找到并
+  /// 删除 —— 不依赖内存，App 重启后重放最终消息也能收干净。
   Future<void> _finalizeIdleTurn(String turnId) async {
     if (!_liveChannels.containsKey(turnId)) return;
     await _flushLiveTurn(turnId);
@@ -1665,8 +1707,7 @@ class HubEventClient {
       }
     }
     _notify(channelId);
-    final finalized = await _clearLiveTurn(turnId, deletePlaceholder: false);
-    if (finalized != null) _finalizedPlaceholders[turnId] = finalized;
+    await _clearLiveTurn(turnId, deletePlaceholder: false);
   }
 
   void _applyMeta(String peerId, HubEvent event) {

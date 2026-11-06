@@ -6,6 +6,7 @@ import '../local_database_service.dart';
 import '../logger_service.dart';
 import '../../storage/pouch_chat_log.dart';
 import '../../storage/runtime_mirror_service.dart';
+import '../../peer/hub_event_apply.dart' show liveTurnPlaceholderPrefix;
 
 /// `messages.created_at` 的唯一写法：UTC、毫秒，和主机同步下来的行同一格式。
 ///
@@ -313,6 +314,27 @@ extension MessageDao on LocalDatabaseService {
       orderBy: 'created_at DESC',
       limit: limit,
     );
+  }
+
+  /// 某个频道里本机流式占位行的 id。
+  ///
+  /// 占位 id 是确定性的 `hub-live-<turnId>`，但 turnId 只活在内存里的
+  /// 回合索引中。App 重启后最终 `message.created` 被重放时内存里已经没有
+  /// 这个回合了，只能按前缀在库里找出来删掉，否则同一回合会留下
+  /// 「收尾占位 + 最终消息」两条气泡。
+  Future<List<String>> listLiveTurnPlaceholderIds(String channelId) async {
+    if (channelId.isEmpty) return const [];
+    final db = await database;
+    final rows = await db.query(
+      'messages',
+      columns: const ['id'],
+      where: 'channel_id = ? AND id LIKE ?',
+      whereArgs: [channelId, '$liveTurnPlaceholderPrefix%'],
+    );
+    return [
+      for (final row in rows)
+        if ((row['id'] as String? ?? '').isNotEmpty) row['id'] as String,
+    ];
   }
 
   /// 根据 ID 获取单条消息

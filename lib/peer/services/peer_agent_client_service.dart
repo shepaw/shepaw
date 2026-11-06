@@ -2648,11 +2648,21 @@ class PeerAgentClientService {
     if (!turnId.startsWith('flow-') || alreadyCancelled.contains(turnId)) {
       return;
     }
-    var peerId = state?.peerId ?? '';
+    var peerId = (state?.peerId ?? '').trim();
     if (peerId.isEmpty) {
-      final connected = PeerConnectionManager.instance.connectedPeerIds;
-      if (connected.isEmpty) return;
-      peerId = connected.first;
+      peerId = await _hostPeerForFlowChannel(
+        channelId,
+        sessionKey: sessionKey,
+      );
+    }
+    // 多台主机同时连着时不能挑「第一个已连接 peer」：那很可能是另一台，
+    // cancel 发错主机等于没停。解析不到归属主机就不发，让用户重试。
+    if (peerId.isEmpty) {
+      _log.warning(
+        'cannot resolve host peer for flow turn $turnId (channel=$channelId)',
+        tag: _tag,
+      );
+      return;
     }
     final sendControl =
         debugSendControlOverride ?? PeerConnectionManager.instance.sendControl;
@@ -2672,6 +2682,47 @@ class PeerAgentClientService {
     // 已出队开跑的优先：session.state 比单播 session_ack 更权威。
     if (mirror?.isRequestRunning(requestId) == true) return false;
     return p.queuedOnHost || mirror?.isRequestQueued(requestId) == true;
+  }
+
+  /// 从频道 / 会话归属解析这条回合属于哪台主机。
+  ///
+  /// 只有一台主机能回答这个 turn。候选来源：
+  /// - `session.key` 里的 agent id（`agent:<agentId>:<session>`）→ 该 agent
+  ///   行的 `source_peer_id`；
+  /// - 本地频道的成员 agent → `source_peer_id`。
+  ///
+  /// 候选必须唯一；多台主机都对得上（例如群流程）时宁可返回空，也不乱发。
+  Future<String> _hostPeerForFlowChannel(
+    String channelId, {
+    String? sessionKey,
+  }) async {
+    if (channelId.isEmpty && (sessionKey ?? '').isEmpty) return '';
+    final key = (sessionKey ?? '').trim();
+    final agentId = RegExp(r'^agent:([^:]+):').firstMatch(key)?.group(1) ?? '';
+    final owners = <String>{};
+    try {
+      final agents = await _db.getAllRemoteAgents();
+      for (final a in agents) {
+        if (!a.isPeerAgent) continue;
+        final owner = a.sourcePeerId ?? '';
+        if (owner.isEmpty) continue;
+        if (agentId.isNotEmpty &&
+            (a.remoteAgentId == agentId || a.id == agentId)) {
+          owners.add(owner);
+        }
+      }
+      if (owners.isEmpty && channelId.isNotEmpty) {
+        final members = await _db.getChannelMemberIds(channelId);
+        for (final a in agents) {
+          if (!a.isPeerAgent) continue;
+          final owner = a.sourcePeerId ?? '';
+          if (owner.isNotEmpty && members.contains(a.id)) {
+            owners.add(owner);
+          }
+        }
+      }
+    } catch (_) {}
+    return owners.length == 1 ? owners.single : '';
   }
 
   /// Cancel the in-flight turn of a single group agent (identified by its
@@ -3585,8 +3636,7 @@ class PeerAgentClientService {
         // 跳过 idle 超时；started / 首个 chunk 清除标记；rejected 收口为错误。
         final disposition = event.data['disposition'] as String? ?? '';
         final ackRequestId = event.data['request_id'] as String? ?? '';
-        final ackPending =
-            ackRequestId.isEmpty ? null : _pending[ackRequestId];
+        final ackPending = ackRequestId.isEmpty ? null : _pending[ackRequestId];
         if (disposition == 'queued') {
           if (ackPending != null) ackPending.queuedOnHost = true;
         } else if (disposition == 'started') {

@@ -140,6 +140,28 @@ void main() {
       expect(warnings.join('\n'), contains('a.text'));
     });
 
+    test('A5-8 断掉的是 .data 引用时，提示保留用户写的表达式', () {
+      final tree = [
+        FlowNode(key: 'a', id: 'a', kind: 'task'),
+        FlowNode(
+          key: 'b',
+          id: 'b',
+          kind: 'task',
+          fields: {
+            'task': {'prompt': '请根据 {{ a.data.rows }} 来写'}
+          },
+        ),
+      ];
+      // a → b 之后：引用跑到引用方后面，断掉。
+      final target = FlowDropTarget(dragId: 'a', parentId: '', index: 1);
+      final warnings = refWarningsAfterMove(tree, 'a', target);
+      expect(warnings, isNotEmpty);
+      expect(warnings.join('\n'), contains('{{ a.data.rows }}'),
+          reason: '预警要指回用户真正写的字段');
+      expect(warnings.join('\n'), isNot(contains('{{ a.text }}')),
+          reason: '不能凭空把引用改写成 .text');
+    });
+
     test('没有断的引用不报警', () {
       final tree = [
         FlowNode(key: 'a', id: 'a', kind: 'task'),

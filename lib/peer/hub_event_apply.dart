@@ -92,4 +92,8 @@ bool syncCaughtUp(int cursor, int headSeq) => cursor >= headSeq;
 /// 同一条消息 id 已经在本地时，不再插第二次。
 bool shouldInsertMessage(bool exists) => !exists;
 
-String liveTurnPlaceholderId(String turnId) => 'hub-live-$turnId';
+/// 本机流式占位行的 id 前缀。落库 / 收尾 / 重启后按前缀清理都用它。
+const liveTurnPlaceholderPrefix = 'hub-live-';
+
+String liveTurnPlaceholderId(String turnId) =>
+    '$liveTurnPlaceholderPrefix$turnId';

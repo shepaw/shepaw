@@ -128,8 +128,11 @@ Iterable<String> _allStrings(Object? value) sync* {
 final RegExp _refPattern =
     RegExp(r'\{\{\s*([A-Za-z0-9_-]+)\.(?:text|data)[^}]*\}\}');
 
-/// 一个节点引用的其它步骤 id（`{{ x.text }}` / `{{ x.data.* }}`）。
-Iterable<String> _refsOf(FlowNode node) sync* {
+/// 一个节点引用的其它步骤：命中步骤 id，以及**原文里的引用表达式**。
+///
+/// 预警要指回用户真正写的那个字段（`{{ a.data.rows }}`），不能统一写成
+/// `.text` —— 那会指向一个用户没写过的引用。
+Iterable<({String id, String expression})> _refsOf(FlowNode node) sync* {
   for (final s in _allStrings(node.fields)) {
     for (final m in _refPattern.allMatches(s)) {
       final id = m.group(1);
@@ -138,7 +141,7 @@ Iterable<String> _refsOf(FlowNode node) sync* {
           id != 'prev' &&
           id != 'item' &&
           id != 'index') {
-        yield id;
+        yield (id: id, expression: m.group(0) ?? '{{ $id.text }}');
       }
     }
   }
@@ -243,13 +246,13 @@ List<String> refWarningsAfterMove(
   // 1) 前向引用：之前能解析（引用在前面），移动后引用跑到后面去了。
   for (final entry in after) {
     for (final ref in _refsOf(entry.node)) {
-      final bi = beforeIndex[ref];
+      final bi = beforeIndex[ref.id];
       final bj = beforeIndex[entry.id];
-      final ai = afterIndex[ref];
+      final ai = afterIndex[ref.id];
       final aj = afterIndex[entry.id];
       if (bi == null || bj == null || ai == null || aj == null) continue;
       if (bi < bj && ai >= aj) {
-        warnings.add('{{ $ref.text }} ← ${entry.id}');
+        warnings.add('${ref.expression} ← ${entry.id}');
       }
     }
   }

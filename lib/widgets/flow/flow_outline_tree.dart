@@ -98,6 +98,11 @@ class FlowOutlineTree extends StatefulWidget {
   @visibleForTesting
   static int debugAutoScrollTicks = 0;
 
+  /// Test seam：自动滚动实际被应用到滚动位置上的次数（指针不在大纲里时
+  /// 不该再增加）。
+  @visibleForTesting
+  static int debugAutoScrollMoves = 0;
+
   /// 这一行能不能改结构。`if` 内没有分支标记时一律不给。
   bool _editable(FlowOutlineRow row) {
     if (!canEdit) return false;
@@ -197,6 +202,14 @@ class _FlowOutlineTreeState extends State<FlowOutlineTree> {
     if (box is! RenderBox || !box.attached) return;
     final top = box.localToGlobal(Offset.zero).dy;
     final bottom = top + box.size.height;
+    // 指针已经移出可视区（离开大纲）时最后的位置不再代表用户意图：
+    // 停掉计时器，别让列表在指针不在时还一直滚。
+    if (dy < top || dy > bottom) {
+      _pointerDy = null;
+      _autoScroll?.cancel();
+      _autoScroll = null;
+      return;
+    }
     double? target;
     if (dy < top + 48) {
       target = pos.pixels - 16;
@@ -204,7 +217,15 @@ class _FlowOutlineTreeState extends State<FlowOutlineTree> {
       target = pos.pixels + 16;
     }
     if (target == null) return;
+    FlowOutlineTree.debugAutoScrollMoves++;
     pos.jumpTo(target.clamp(pos.minScrollExtent, pos.maxScrollExtent));
+  }
+
+  /// 指针离开某一行时调用。清掉最后记录的指针位置：`_onMove` 只在指针
+  /// 位于某一行上时才会更新它，指针移出大纲后如果继续按旧值滚，列表会一直
+  /// 停不下来。换到另一行时随后的 `onMove` 会立刻把位置补回来。
+  void _onPointerLeaveRow() {
+    _pointerDy = null;
   }
 
   /// 只算便宜的落点身份（行 + 上中下区 + if 分支），不碰全树预检。
@@ -383,6 +404,7 @@ class _FlowOutlineTreeState extends State<FlowOutlineTree> {
       onMove: (details) => _onMove(row, details.offset),
       onLeave: (data) {
         if (_hover?.overId == row.node.id) setState(() => _hover = null);
+        _onPointerLeaveRow();
       },
       onAcceptWithDetails: (details) => _onAccept(row, details),
       builder: (context, candidate, rejected) => rowWidget,
