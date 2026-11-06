@@ -6,13 +6,15 @@ import '../../l10n/app_localizations.dart';
 import '../../peer/models/folded_sessions.dart';
 import '../../peer/services/flow_session_open.dart';
 import '../../peer/services/hub_folded_sessions.dart';
-import '../../peer/services/peer_agent_client_service.dart'
-    show kSyncedPeerSessionPrefix;
 import '../../screens/flow_run_screen.dart';
 import '../../screens/group_view_screen.dart';
 import '../../screens/session_history_screen.dart';
 import '../../utils/session_utils.dart';
 import '../session_folders.dart';
+
+// 会话 id 的格式守卫在服务层：运行页（FlowRunScreen）也要用它，避免两处
+// 各写一份、各漏一类旧格式。
+export '../../peer/services/flow_session_open.dart' show flowFoldedSessionId;
 
 /// 命中里主机给的标题同样可能带引擎标签 / `[implicit]` 提示：清掉，清完没东西
 /// 就退回会话 id。
@@ -28,24 +30,8 @@ String sessionSearchHitBadge(AppLocalizations l10n, SessionSearchHit hit) {
 
 /// 折叠组里的 session id 能不能当主机会话 id 用。
 ///
-/// P4 之后节点会话是 `flow_<rid8>_<node>`（无冒号），折叠项里存的就是它，
-/// 可以直接拼 `psess_`。旧运行 / 群运行的条目可能仍是引擎槽位 key
-/// （`flow:<rid>:<node>` / `group:<gid>:<sid>:...`），那种拼不出真频道，
-/// 点击只能继续走运行视图。
+/// 守卫本身在 [flowFoldedSessionId]（服务层），运行页也复用同一份。
 ///
-/// 参与条目（`part-flow-<run>-<node>`）是折叠组 / 搜索为了展示列出来的
-/// 成员行，不是会话 —— 它同样没有冒号，以前会被当成真会话拼出
-/// `psess_part-flow-…` 这种空频道，还挡住了真正的运行页入口。真会话必须
-/// 以 `flow_` 开头。
-String? flowFoldedSessionId(String raw) {
-  final id = raw.trim();
-  if (id.isEmpty || id.contains(':') || id.contains('/')) return null;
-  if (id.startsWith(kSyncedPeerSessionPrefix)) return null;
-  if (id.startsWith('part-')) return null;
-  if (!id.startsWith('flow_')) return null;
-  return id;
-}
-
 /// 长按 / 菜单里的「查看运行」：跳回运行视图。
 void pushFlowRunScreen(
   BuildContext context, {

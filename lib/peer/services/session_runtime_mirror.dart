@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 /// 主机 `session.state` 快照在 App 侧的镜像。
@@ -79,6 +81,11 @@ class SessionState {
   final SessionTerminal? lastTerminal;
   final List<QueuedItem> queue;
 
+  /// 主机标的 `flow: true`。节点会话的 `revision` 是**按 key 独立**的计数器
+  /// （主机重启后从 1 重新开始），不能和 hub 运行时会话共用一套「只认更大
+  /// revision」的比较，否则重连 / 重启后低 revision 的 flow 帧会被永久拒绝。
+  final bool isFlow;
+
   const SessionState({
     required this.sessionKey,
     this.revision = 0,
@@ -94,6 +101,7 @@ class SessionState {
     this.hubId = '',
     this.lastTerminal,
     this.queue = const <QueuedItem>[],
+    this.isFlow = false,
   });
 
   factory SessionState.empty(String sessionKey) =>
@@ -123,8 +131,20 @@ class SessionState {
               .map((item) => QueuedItem.fromJson(item))
               .toList(growable: false)
           : const <QueuedItem>[],
+      isFlow: json['flow'] == true,
     );
   }
+
+  /// 保留 key / revision 等身份信息，只把回合收成 idle。
+  /// 重连保留的 running 条目超时收尾用；不伪造 revision。
+  SessionState asIdle() => SessionState(
+        sessionKey: sessionKey,
+        revision: revision,
+        generation: generation,
+        peerId: peerId,
+        atMs: atMs,
+        hubId: hubId,
+      );
 
   /// 气泡的「正在输出」态。只有主机说 idle 才会变成 null。
   String? get streamingMessageId =>
@@ -159,6 +179,9 @@ class SessionState {
 /// 返回同一个对象表示「没变化」，调用方据此决定要不要通知 UI。
 SessionState reduceSessionState(SessionState current, SessionState incoming) {
   if (incoming.sessionKey != current.sessionKey) return current;
+  // flow 帧的 revision 是 per-key 计数器，重连 / 主机重启后可能比本地小；
+  // 直接落地（见 [SessionRuntimeMirror.apply]）。
+  if (incoming.isFlow) return incoming;
   if (incoming.revision <= current.revision) return current;
   return incoming;
 }
@@ -167,7 +190,22 @@ SessionState reduceSessionState(SessionState current, SessionState incoming) {
 /// 这样排队条等外层控件不必依赖整页 `setState`，
 /// `OuterStructuralSnapshot` 门控挡不住它。
 class SessionRuntimeMirror {
+  SessionRuntimeMirror({
+    this.flowRetention = const Duration(seconds: 30),
+  });
+
+  /// 重连时保留下来的 running flow 条目最多再撑多久。
+  ///
+  /// 节点会话不在 `session_snapshot_resp` 里，断线期间丢掉的 idle 帧没有
+  /// 别的路径补回来。保留 running（停止按钮要靠 turnId）必须有边界：
+  /// 在保留期内没有新的 flow 活动（chunk）就按 idle 收尾，否则会永远显示
+  /// 正在输出、停止按钮发无效取消。
+  final Duration flowRetention;
+
   final Map<String, ValueNotifier<SessionState>> _notifiers = {};
+
+  /// 重连保留的 running flow key → 到期计时器。
+  final Map<String, Timer> _flowRetentionTimers = {};
 
   /// 任何会话状态跃迁都会通知。订阅方用 [lastChangedKey] + [peek] 判断
   /// 这次变化是不是自己那段会话，不必为每个会话单独管理订阅生命周期。
@@ -270,7 +308,8 @@ class SessionRuntimeMirror {
   bool apply(Map<dynamic, dynamic> snapshot, {bool force = false}) {
     final incoming = SessionState.fromSnapshot(snapshot);
     if (incoming.sessionKey.isEmpty) return false;
-    if (!force) {
+    final isFlow = incoming.isFlow;
+    if (!force && !isFlow) {
       final hub = incoming.hubId;
       if (hub.isNotEmpty && _hubId != null && hub != _hubId) {
         // 旧 hub 的历史回放，拒绝（否则会把已结束的 running 状态复活）。
@@ -280,14 +319,44 @@ class SessionRuntimeMirror {
       // 「认领」身份，旧 hub 的高 revision 状态会毒化 mirror，当前主机事件
       // 反而被永久拒绝。
     }
+    // 任一权威帧都证明这个 key 还活着：取消重连保留的 idle 收尾计时器。
+    _cancelFlowRetention(incoming.sessionKey);
     final notifier = notifierFor(incoming.sessionKey);
-    final next =
-        force ? incoming : reduceSessionState(notifier.value, incoming);
+    final next = (force || isFlow)
+        ? incoming
+        : reduceSessionState(notifier.value, incoming);
     if (identical(next, notifier.value)) return false;
     notifier.value = next;
     lastChangedKey = incoming.sessionKey;
     changes.value++;
     return true;
+  }
+
+  /// 该 flow 会话还有真实活动（流式 chunk）：证明它确实在跑，取消保留计时。
+  ///
+  /// 主机不保证在 running 回合中途再发 `session.state`；如果只按时间收尾，
+  /// 重连后仍在出字的长回合会被误判成 idle。chunk 到达就把保留转成确认。
+  void noteFlowActivity(String sessionKey) {
+    _cancelFlowRetention(sessionKey);
+  }
+
+  void _cancelFlowRetention(String sessionKey) {
+    _flowRetentionTimers.remove(sessionKey)?.cancel();
+  }
+
+  /// 重连保留：先留着 running（停止按钮要靠 turnId），但设一个上限。
+  void _retainRunningFlow(String sessionKey) {
+    if (_flowRetentionTimers.containsKey(sessionKey)) return;
+    _flowRetentionTimers[sessionKey] = Timer(flowRetention, () {
+      _flowRetentionTimers.remove(sessionKey);
+      final notifier = _notifiers[sessionKey];
+      if (notifier == null) return;
+      if (!notifier.value.isRunning) return;
+      // 到期仍没有任何 flow 活动：按 idle 收尾，回落到 revision 基线重来。
+      notifier.value = notifier.value.asIdle();
+      lastChangedKey = sessionKey;
+      changes.value++;
+    });
   }
 
   /// `session_snapshot_resp` / `events_sync_resp` 的批量对账。
@@ -333,6 +402,10 @@ class SessionRuntimeMirror {
         effectiveHub != _hubId) {
       // 换 hub：清空本地 revision 空间，让新 hub 的任何 revision 都能落地。
       // 之后旧 hub 的历史回放按 hub_id 不匹配被 apply 拒绝。
+      for (final timer in _flowRetentionTimers.values) {
+        timer.cancel();
+      }
+      _flowRetentionTimers.clear();
       for (final entry in _notifiers.entries) {
         entry.value.value = SessionState.empty(entry.key);
         // 复位本身也是一次状态跃迁：必须通知监听者，否则 ChatController 的
@@ -352,11 +425,15 @@ class SessionRuntimeMirror {
       final current = entry.value.value;
       if (!current.isRunning && current.queue.isEmpty) continue;
       // 节点会话不归 hub 运行时会话表管，重连快照里天然缺席。正在跑的
-      // flow_ 条目保留原状态（尤其是 turnId，停止按钮要靠它）：等主机
-      // 发 idle 帧 / 回合结束的清理路径再收，不能在这里伪造任何 revision
-      // 或 hub_event seq。
-      if (current.isRunning && _isFlowSessionKey(entry.key)) continue;
+      // flow_ 条目先保留原状态（尤其是 turnId，停止按钮要靠它），但保留
+      // 必须有边界：断线期间丢掉的 idle 帧不会再有别的路径补回来。给一个
+      // flowRetention 的窗口；期间有 chunk 活动就取消，否则到期按 idle 收尾。
+      if (current.isRunning && _isFlowSessionKey(entry.key)) {
+        _retainRunningFlow(entry.key);
+        continue;
+      }
       // 重置到 revision 0：既不伪造递增，也让新 hub 的任何真实快照收敛。
+      _cancelFlowRetention(entry.key);
       entry.value.value = SessionState.empty(entry.key);
       lastChangedKey = entry.key;
       changes.value++;
@@ -364,6 +441,10 @@ class SessionRuntimeMirror {
   }
 
   void dispose() {
+    for (final timer in _flowRetentionTimers.values) {
+      timer.cancel();
+    }
+    _flowRetentionTimers.clear();
     for (final notifier in _notifiers.values) {
       notifier.dispose();
     }

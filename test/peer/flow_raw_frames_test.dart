@@ -33,6 +33,8 @@ Map<String, dynamic> _flowChunk(String content) => {
 
 Map<String, dynamic> _sessionState(String status) => {
       'type': 'session.state',
+      // 主机对节点会话的帧会带 `flow: true`，revision 按 key 独立计数。
+      'flow': true,
       'session_key': _sessionId,
       'channel_id': _channelId,
       'status': status,
@@ -44,6 +46,9 @@ Map<String, dynamic> _sessionState(String status) => {
       'hub_id': 'hub-flow',
     };
 
+/// A4-8：主机真实发出的 flow metadata 帧（H4-11 起带 `agent_id`）。
+/// 字段组合和 node_runtime 转发出来的一致：request_id / turn_id /
+/// channel_id / session_id / agent_id / run_id / node / metadata。
 Map<String, dynamic> _flowMetadata() => {
       'type': 'agent_metadata',
       'request_id': _turnId,
@@ -188,10 +193,22 @@ void main() {
     );
     expect(await db.getMessageById('msg-final-p4'), isNotNull);
 
-    // 回合缓存也随最终消息清掉：同一 turnId 再来 chunk 需要重新解析。
+    // A4-4：收尾后同一 turnId 的迟到 chunk 被丢弃，不再解析 / 重建占位。
     incoming.add(PeerControlEvent(
       peerId: 'peer-1',
-      data: _flowChunk('下一轮'),
+      data: _flowChunk('迟到'),
+    ));
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    expect(client.debugFlowControlTargetResolves, 1,
+        reason: '已收尾回合的迟到 chunk 不该再解析落点');
+    expect(await db.getMessageById(liveTurnPlaceholderId(_turnId)), isNull);
+
+    // 新回合（新 turnId）照常解析：落点缓存确实随收尾清掉了。
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: _flowChunk('下一轮')
+        ..['turn_id'] = 'flow-deadbe12-impl-b1'
+        ..['request_id'] = 'flow-deadbe12-impl-b1',
     ));
     await _until(() async => client.debugFlowControlTargetResolves == 2);
     expect(client.debugFlowControlTargetResolves, 2, reason: '最终消息应清掉该回合的落点缓存');
@@ -224,43 +241,115 @@ void main() {
     await incoming.close();
   });
 
-  test('A2-6: message.created 收尾后占位集合也清掉，后续 chunk 能重建占位', () async {
+  test('A4-4: 收尾后的迟到 chunk 不重建占位，也不留流式残留', () async {
+    const turnId = 'flow-a44-late-a1';
     final incoming = StreamController<PeerControlEvent>.broadcast();
     final client = HubEventClient(
       events: incoming.stream,
       seqStore: MemoryHubSeqStore(),
+      flowIdleFinalizeDelay: const Duration(milliseconds: 60),
     );
     client.start();
     addTearDown(client.dispose);
     final db = getIt<LocalDatabaseService>();
-    await db.deleteMessage(liveTurnPlaceholderId(_turnId));
-    await db.deleteMessage('msg-final-a26');
+    await db.deleteMessage(liveTurnPlaceholderId(turnId));
+    await db.deleteMessage('msg-final-a44');
 
-    // 先有流式占位。
-    incoming.add(PeerControlEvent(peerId: 'peer-1', data: _flowChunk('半截')));
+    Map<String, dynamic> chunk(String content) => {
+          'type': 'agent_chunk',
+          'request_id': turnId,
+          'turn_id': turnId,
+          'channel_id': _channelId,
+          'session_id': _sessionId,
+          'agent_id': 'agent-7',
+          'run_id': 'a44run',
+          'node': 'impl',
+          'content': content,
+        };
+    Map<String, dynamic> idle() => {
+          'type': 'session.state',
+          'flow': true,
+          'session_key': _sessionId,
+          'channel_id': _channelId,
+          'status': 'idle',
+          'turn_id': turnId,
+          'revision': 2,
+          'peer_id': 'peer-1',
+          'hub_id': 'hub-flow',
+        };
+
+    // 先有流式占位，再让最终消息把它收掉。
+    incoming.add(PeerControlEvent(peerId: 'peer-1', data: chunk('半截')));
     await _until(
       () async =>
-          await db.getMessageById(liveTurnPlaceholderId(_turnId)) != null,
+          await db.getMessageById(liveTurnPlaceholderId(turnId)) != null,
     );
-
-    // 回合结束：主机 append 最终消息，清理循环应同时移除 _flowPlaceholders。
     incoming.add(PeerControlEvent(
       peerId: 'peer-1',
-      data: _flowFinalMessage('msg-final-a26'),
+      data: _flowFinalMessage('msg-final-a44'),
     ));
     await _until(
       () async =>
-          await db.getMessageById(liveTurnPlaceholderId(_turnId)) == null,
+          await db.getMessageById(liveTurnPlaceholderId(turnId)) == null,
     );
 
-    // 同一个 turnId 再来 chunk：占位集合若没清，这里会建不出占位。
-    incoming.add(PeerControlEvent(peerId: 'peer-1', data: _flowChunk('再来')));
+    // 最终消息之后迟到的一片 chunk：不能当成新回合重建 streaming 占位。
+    incoming.add(PeerControlEvent(peerId: 'peer-1', data: chunk('迟到')));
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    expect(await db.getMessageById(liveTurnPlaceholderId(turnId)), isNull,
+        reason: '已收尾回合的迟到 chunk 不该重建占位');
+
+    // idle 超时收尾的路径同理：保留的正文不被迟到 chunk 改回 streaming。
+    const idleTurn = 'flow-a44-idle-a1';
+    await db.deleteMessage(liveTurnPlaceholderId(idleTurn));
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: {
+        'type': 'agent_chunk',
+        'request_id': idleTurn,
+        'turn_id': idleTurn,
+        'channel_id': _channelId,
+        'session_id': _sessionId,
+        'agent_id': 'agent-7',
+        'run_id': 'a44run',
+        'node': 'impl',
+        'content': '超时前的正文',
+      },
+    ));
     await _until(() async {
-      final row = await db.getMessageById(liveTurnPlaceholderId(_turnId));
-      return (row?['content'] as String? ?? '').contains('再来');
+      final row = await db.getMessageById(liveTurnPlaceholderId(idleTurn));
+      return (row?['content'] as String? ?? '').contains('超时前的正文');
     });
-    expect(await db.getMessageById(liveTurnPlaceholderId(_turnId)), isNotNull,
-        reason: '占位集合未清会导致后续 chunk 建不出占位');
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: idle()..['turn_id'] = idleTurn,
+    ));
+    // 等 idle 超时把占位收成终态。
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    final finalized = await db.getMessageById(liveTurnPlaceholderId(idleTurn));
+    expect(finalized, isNotNull);
+
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: {
+        'type': 'agent_chunk',
+        'request_id': idleTurn,
+        'turn_id': idleTurn,
+        'channel_id': _channelId,
+        'session_id': _sessionId,
+        'agent_id': 'agent-7',
+        'run_id': 'a44run',
+        'node': 'impl',
+        'content': '迟到',
+      },
+    ));
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    final after = await db.getMessageById(liveTurnPlaceholderId(idleTurn));
+    expect(after?['content'] as String? ?? '', '超时前的正文',
+        reason: '迟到 chunk 不能改已收尾的占位');
+    final meta = after?['metadata'];
+    expect(meta is String ? jsonDecode(meta) : meta,
+        isNot(containsPair('status', 'streaming')));
     await incoming.close();
   });
 
@@ -293,10 +382,10 @@ void main() {
     await incoming.close();
   });
 
-  test('A3-1: 不带 agent_id 的 metadata 不缓存空目标，chunk 仍能正确归属', () async {
-    const sessionId = 'flow_a31_impl';
+  test('A4-8: 真实 metadata 帧（带 agent_id）预热落点缓存并建壳', () async {
+    const sessionId = 'flow_a48_impl';
     const channelId = 'psess_$sessionId';
-    const turnId = 'flow-a31-impl-a1';
+    const turnId = 'flow-a48-impl-a1';
     final incoming = StreamController<PeerControlEvent>.broadcast();
     final client = HubEventClient(
       events: incoming.stream,
@@ -306,9 +395,10 @@ void main() {
     addTearDown(client.dispose);
     final db = getIt<LocalDatabaseService>();
     await db.deleteMessage(liveTurnPlaceholderId(turnId));
+    await db.deleteChannel(channelId);
     client.debugFlowControlTargetResolves = 0;
 
-    // 主机原生 metadata 帧没有 agent_id：不能拿空 sender 去解析并缓存。
+    // 主机发出来的帧形状：带 agent_id，因此 metadata 就该负责建壳并缓存。
     incoming.add(PeerControlEvent(
       peerId: 'peer-1',
       data: {
@@ -317,16 +407,17 @@ void main() {
         'turn_id': turnId,
         'channel_id': channelId,
         'session_id': sessionId,
-        'run_id': 'a31run',
+        'agent_id': 'agent-7',
+        'run_id': 'a48run',
         'node': 'impl',
         'metadata': {'kind': 'thinking'},
       },
     ));
-    await Future<void>.delayed(const Duration(milliseconds: 40));
-    expect(client.debugFlowControlTargetResolves, 0,
-        reason: '没有 agent_id 的 metadata 不该去解析落点（会缓存空目标）');
+    await _until(() async => client.debugFlowControlTargetResolves == 1);
+    expect(await db.getChannelById(channelId), isNotNull,
+        reason: '真实 metadata 帧应把频道壳建好');
 
-    // 稍后带 agent_id 的 chunk 仍要解析出正确的 sender 并建好频道壳。
+    // 同回合 chunk 复用 metadata 解析出的落点（sender 不能是空）。
     incoming.add(PeerControlEvent(
       peerId: 'peer-1',
       data: {
@@ -336,7 +427,7 @@ void main() {
         'channel_id': channelId,
         'session_id': sessionId,
         'agent_id': 'agent-7',
-        'run_id': 'a31run',
+        'run_id': 'a48run',
         'node': 'impl',
         'content': '正文',
       },
@@ -348,10 +439,7 @@ void main() {
     expect(client.debugFlowControlTargetResolves, 1);
     final row = await db.getMessageById(liveTurnPlaceholderId(turnId));
     expect(row, isNotNull);
-    expect(row!['sender_id'], 'agent-7',
-        reason: 'metadata 不能把空 sender 缓存给 chunk 复用');
-    expect(await db.getChannelById(row['channel_id'] as String), isNotNull,
-        reason: 'chunk 解析时应把频道壳建好');
+    expect(row!['sender_id'], 'agent-7');
     await incoming.close();
   });
 

@@ -123,6 +123,38 @@ class HubEventClient {
   /// 已落过流式占位行的 turn（裸流程帧专用，避免每片 chunk 都写一次库）。
   final _flowPlaceholders = <String>{};
 
+  /// 已经收尾（idle 超时 / 最终消息 / turn.finished）的回合。
+  ///
+  /// 主机可能发完 idle / 最终消息后还有迟到的 chunk。回合此时已从
+  /// [_liveChannels] 清掉，再按「新回合」处理会重建一个永远没人清理的
+  /// streaming 占位。记下这些 id，迟到的 chunk 直接丢弃。
+  /// 用 Set 保序，超过上限先丢最老的，避免无限增长。
+  final _settledTurns = <String>{};
+  static const _settledTurnCap = 512;
+
+  bool _isSettledFlowTurn(String turnId) => _settledTurns.contains(turnId);
+
+  void _markSettledTurn(String turnId) {
+    if (turnId.isEmpty) return;
+    _settledTurns.remove(turnId);
+    _settledTurns.add(turnId);
+    while (_settledTurns.length > _settledTurnCap) {
+      _settledTurns.remove(_settledTurns.first);
+    }
+  }
+
+  /// 本回合还有真实活动：取消 mirror 里重连保留条目上的 idle 收尾计时。
+  void _noteFlowActivity(Map<String, dynamic> data, String rawChannelId) {
+    if (!getIt.isRegistered<SessionRuntimeMirror>()) return;
+    String text(String key) => data[key]?.toString().trim() ?? '';
+    final explicitKey = text('session_key');
+    final sessionKey = explicitKey.isNotEmpty
+        ? explicitKey
+        : (remoteSessionIdFromChannelId(rawChannelId) ?? rawChannelId);
+    if (sessionKey.isEmpty) return;
+    getIt<SessionRuntimeMirror>().noteFlowActivity(sessionKey);
+  }
+
   /// 流式 chunk 的落点解析缓存，key = `peerId\u0000turnId`。
   ///
   /// 每个 chunk 都去查库 / 建壳太贵，而且解析是异步的：同一回合的两片几乎
@@ -248,6 +280,7 @@ class HubEventClient {
     _flowTargets.clear();
     _liveTurnTokens.clear();
     _finalizedPlaceholders.clear();
+    _settledTurns.clear();
     _attachRequests.clear();
     _catchUpQueued.clear();
     _liveDeferred.clear();
@@ -1281,6 +1314,9 @@ class HubEventClient {
     String turnId, {
     bool deletePlaceholder = true,
   }) async {
+    // 先登记「已收尾」：任何在 await 期间 / 之后到达的迟到 chunk 都不能再
+    // 把这个回合当成新回合重建占位。
+    _markSettledTurn(turnId);
     _idleFinalizeTimers.remove(turnId)?.cancel();
     _finalizedPlaceholders.remove(turnId);
     _attached.remove(turnId);
@@ -1474,6 +1510,9 @@ class HubEventClient {
     final turnId = (data['turn_id'] ?? data['request_id'] ?? '').toString();
     final rawChannelId = (data['channel_id'] as String? ?? '').trim();
     if (turnId.isEmpty || rawChannelId.isEmpty) return;
+    // 收尾过的回合再来迟到 chunk：不能把它当成新回合重新建占位。
+    if (_isSettledFlowTurn(turnId)) return;
+    _noteFlowActivity(data, rawChannelId);
     // `content` 是新字段，`text` / `chunk` 是主机旧帧里的别名。
     final content =
         (data['content'] ?? data['text'] ?? data['chunk'] ?? '').toString();
@@ -1538,6 +1577,7 @@ class HubEventClient {
     // [_flowTargets]，同回合稍后带 agent_id 的 chunk 复用它，占位就没归属了。
     // 这里干脆不解析也不缓存：频道壳等带 agent_id 的 chunk 到了再建。
     if ((data['agent_id'] as String? ?? '').trim().isEmpty) return;
+    _noteFlowActivity(data, (data['channel_id'] as String? ?? '').trim());
     final turnId = (data['turn_id'] ?? data['request_id'] ?? '').toString();
     final target = turnId.isEmpty
         ? await _resolveFlowControlTarget(peerId, data)

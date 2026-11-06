@@ -102,8 +102,8 @@ void main() {
 
     test('rejects another peer or another remote agent', () {
       expect(isPeerAgentRowId('peeragent_other_$uuid', peerId, uuid), isFalse);
-      expect(isPeerAgentRowId('peeragent_${peerId}_other', peerId, uuid),
-          isFalse);
+      expect(
+          isPeerAgentRowId('peeragent_${peerId}_other', peerId, uuid), isFalse);
       expect(isPeerAgentRowId('local-admin', peerId, uuid), isFalse);
     });
 
@@ -112,10 +112,39 @@ void main() {
     });
   });
 
+  group('hubAgentIdFromRaw', () {
+    test('strips agent: prefix and legacy peeragent row ids', () {
+      expect(hubAgentIdFromRaw(uuid), uuid);
+      expect(hubAgentIdFromRaw(' agent:$uuid '), uuid);
+      expect(
+          hubAgentIdFromRaw('peeragent_${peerId}_$uuid', peerId: peerId), uuid);
+      expect(hubAgentIdFromRaw('peeragent_other_$uuid', peerId: peerId),
+          'peeragent_other_$uuid');
+    });
+
+    test('hubAgentIdOf uses the same normalization for legacy rows', () {
+      final legacy = _agent(
+        id: 'peeragent_${peerId}_$uuid',
+        protocol: ProtocolType.peer,
+        metadata: {'source_peer_id': peerId},
+      );
+      expect(hubAgentIdOf(legacy), uuid);
+      final withRemote = _agent(
+        id: 'peeragent_${peerId}_$uuid',
+        protocol: ProtocolType.peer,
+        metadata: {
+          'source_peer_id': peerId,
+          'remote_agent_id': 'agent:$uuid',
+        },
+      );
+      expect(hubAgentIdOf(withRemote), uuid);
+    });
+  });
+
   group('orphanCardBelongsToHostSession', () {
     test('claims only the same session', () {
-      expect(orphanCardBelongsToHostSession('dm_a_user_1', 'dm_a_user_1'),
-          isTrue);
+      expect(
+          orphanCardBelongsToHostSession('dm_a_user_1', 'dm_a_user_1'), isTrue);
       expect(
         orphanCardBelongsToHostSession('group-1', 'group-1'),
         isTrue,

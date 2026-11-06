@@ -183,6 +183,10 @@ class _SessionFolderItemsState extends State<SessionFolderItems> {
         PopupMenuItem<String>(value: 'fork', child: Text(l10n.folder_fork)),
       ],
     );
+    // showMenu 是一个路由：等它关掉再回来时，列表行可能已经被替换 / 卸载
+    // （分组刷新、筛选变化）。和移动端 sheet 路径一致，先确认 context 还
+    // 活着，否则访问 widget 会抛 "This widget has been unmounted"。
+    if (!context.mounted) return;
     if (choice == 'run') {
       widget.onViewRun?.call(session);
     } else if (choice == 'fork') {

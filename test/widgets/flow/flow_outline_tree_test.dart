@@ -237,6 +237,79 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
   });
+
+  testWidgets('A4-2: 从手柄中心抓取，拖到行下四分之一拿到 after 而不是 into', (tester) async {
+    final dragTree = [
+      FlowNode(key: 'a', id: 'a', kind: 'task'),
+      FlowNode(key: 'b', id: 'b', kind: 'seq'),
+    ];
+    final rows = buildFlowOutline(dragTree);
+    final keys = <String, GlobalKey>{
+      for (final r in rows) r.node.id: GlobalKey(),
+    };
+    final drops = <(String, FlowDropTarget)>[];
+    await _pumpTree(
+      tester,
+      FlowOutlineTree(
+        rows: rows,
+        canEdit: true,
+        dragEnabled: true,
+        tree: dragTree,
+        rowKeys: keys,
+        onDrop: (id, target) => drops.add((id, target)),
+      ),
+    );
+
+    // 0.85 高：指针确实在下 1/4；若仍用 childDragAnchorStrategy，反馈原点
+    // 会向上偏一个抓取偏移，落点会算成 into。
+    await _dragTo(tester, keys, 'a', 'b', 0.85);
+    expect(drops, hasLength(1));
+    final (id, target) = drops.single;
+    expect(id, 'a');
+    expect(target.parentId, '', reason: '应落在 b 之后，而不是 b 内部');
+    expect(target.index, 1);
+  });
+
+  testWidgets('A4-6: 拖拽中切到 busy（dragEnabled=false）会停掉自动滚动计时器', (tester) async {
+    final rows = buildFlowOutline(tree);
+    final keys = <String, GlobalKey>{
+      for (final r in rows) r.node.id: GlobalKey(),
+    };
+    Widget buildTree(bool dragEnabled) => _app(FlowOutlineTree(
+          rows: rows,
+          canEdit: dragEnabled,
+          dragEnabled: dragEnabled,
+          tree: tree,
+          rowKeys: keys,
+          onDrop: (_, __) {},
+        ));
+
+    await tester.pumpWidget(buildTree(true));
+    await tester.pump();
+
+    final start = tester.getCenter(find.byKey(const ValueKey('drag-a')));
+    final gesture = await tester.startGesture(start);
+    // 移动超过 touch slop，真正进入拖拽态（_startDrag 被回调）。
+    await gesture.moveTo(start + const Offset(40, 0));
+    await tester.pump(const Duration(milliseconds: 16));
+
+    FlowOutlineTree.debugAutoScrollTicks = 0;
+    await tester.pump(const Duration(milliseconds: 32));
+    expect(FlowOutlineTree.debugAutoScrollTicks, greaterThan(0),
+        reason: '拖拽已开始，计时器应在跑（否则下面的断言没有意义）');
+
+    FlowOutlineTree.debugAutoScrollTicks = 0;
+    // 切到 busy：Draggable 被卸载，onDragEnd 不会回调。
+    await tester.pumpWidget(buildTree(false));
+    await tester.pump();
+    final afterSwitch = FlowOutlineTree.debugAutoScrollTicks;
+    await tester.pump(const Duration(milliseconds: 160));
+    expect(FlowOutlineTree.debugAutoScrollTicks, afterSwitch,
+        reason: 'didUpdateWidget 必须在 dragEnabled 变 false 时取消计时器');
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+  });
 }
 
 /// 宽一点的窗口，免得可编辑行的五个 IconButton 挤溢出。

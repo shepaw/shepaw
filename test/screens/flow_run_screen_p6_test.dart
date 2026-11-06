@@ -238,6 +238,33 @@ void main() {
     await bus.close();
   });
 
+  testWidgets('A4-3: 非真会话 id（group:…）不在运行页外拼 psess 假会话', (tester) async {
+    final bus = StreamController<PeerControlEvent>.broadcast();
+    await tester.pumpWidget(_app(_host(
+      bus,
+      tree: const [
+        {
+          'key': 'impl',
+          'id': 'impl',
+          'kind': 'task',
+          'status': 'waiting_user',
+          'session_id': 'group:g1:s1:flow_x',
+          'agent_id': 'agent-7',
+        },
+      ],
+    )));
+    await _settle(tester);
+
+    expect(find.byKey(const ValueKey('flow-node-goto-answer-impl')),
+        findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('flow-node-goto-answer-impl')));
+    await _settle(tester);
+
+    expect(opened, isEmpty, reason: '旧引擎槽位 key 拼不出真会话，应留在运行页');
+    await tester.pumpWidget(const SizedBox());
+    await bus.close();
+  });
+
   testWidgets('P6: 原有 gate 按钮仍然可用（回归）', (tester) async {
     final picked = <String>[];
     final bus = StreamController<PeerControlEvent>.broadcast();

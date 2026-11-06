@@ -213,16 +213,20 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
       override(node);
       return;
     }
-    final sessionId = node.sessionId;
-    if (sessionId == null || sessionId.isEmpty) return;
+    // 只有主机发下来的真节点会话（`flow_...`）能拼 `psess_` 频道。旧运行 /
+    // 群运行的条目可能还留着 `flow:<rid>:<node>` / `group:<gid>:<sid>:...`
+    // 这类引擎槽位 key；硬拼会建出一个永远没有消息的假会话。格式不合法时
+    // 留在运行页。
+    final guardedSessionId = flowFoldedSessionId(node.sessionId ?? '');
+    if (guardedSessionId == null) return;
     final l10n = AppLocalizations.of(context);
     unawaited(openFlowSession(
       peerId: widget.peerId,
-      sessionId: sessionId,
+      sessionId: guardedSessionId,
       remoteAgentId: node.agentId ?? '',
       title: l10n.flow_sessionBanner(node.id),
       highlightMessageId: node.status?.isWaitingForUser == true
-          ? pendingFlowFormMessageId(flowSessionChannelId(sessionId))
+          ? pendingFlowFormMessageId(flowSessionChannelId(guardedSessionId))
           : null,
     ));
   }

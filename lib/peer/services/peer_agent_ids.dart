@@ -30,11 +30,27 @@ bool isOwnedPeerAgentRow(
 String hubAgentIdOf(RemoteAgent agent) {
   if (!agent.isPeerAgent) return agent.id;
   final remote = agent.remoteAgentId;
-  if (remote != null && remote.isNotEmpty) return remote;
-  final prefix = 'peeragent_${agent.sourcePeerId}_';
-  if (agent.id.startsWith(prefix)) return agent.id.substring(prefix.length);
-  // 没有 remoteAgentId 且不是老前缀：id 本身已经是 Hub id。
-  return agent.id;
+  if (remote != null && remote.isNotEmpty) {
+    return hubAgentIdFromRaw(remote, peerId: agent.sourcePeerId ?? '');
+  }
+  return hubAgentIdFromRaw(agent.id, peerId: agent.sourcePeerId ?? '');
+}
+
+/// 任意来源的 agent 标识 → Hub 侧 agent id。
+///
+/// 数据里可能混着几种历史格式：本机行 id（老行是
+/// `peeragent_<peer>_<remote>`）、带 `agent:` 前缀的引用、以及已经是 Hub id
+/// 的裸值。运行页 / 设计页 / 检查器都要用同一套归一化，否则同一个 agent
+/// 在不同入口会被翻译成不同的值。
+String hubAgentIdFromRaw(String raw, {String peerId = ''}) {
+  var id = raw.trim();
+  if (id.startsWith('agent:')) id = id.substring('agent:'.length);
+  final peer = peerId.trim();
+  if (peer.isNotEmpty) {
+    final prefix = 'peeragent_${peer}_';
+    if (id.startsWith(prefix)) id = id.substring(prefix.length);
+  }
+  return id;
 }
 
 /// 孤儿卡帧里的会话归属是否就是 [hostSessionId]。

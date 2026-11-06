@@ -93,6 +93,11 @@ class FlowOutlineTree extends StatefulWidget {
   @visibleForTesting
   static int debugHoverWarningsComputed = 0;
 
+  /// Test seam：自动滚动计时器实际 tick 了几次。拖拽被卸载 / 切到 busy
+  /// 之后不该再增长。
+  @visibleForTesting
+  static int debugAutoScrollTicks = 0;
+
   /// 这一行能不能改结构。`if` 内没有分支标记时一律不给。
   bool _editable(FlowOutlineRow row) {
     if (!canEdit) return false;
@@ -130,11 +135,30 @@ class _FlowOutlineTreeState extends State<FlowOutlineTree> {
 
   @override
   void dispose() {
-    _autoScroll?.cancel();
+    _cancelDragState();
     super.dispose();
   }
 
+  @override
+  void didUpdateWidget(covariant FlowOutlineTree oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 拖拽中切到 busy（dragEnabled 变 false）时 Draggable 会被卸载，
+    // onDragEnd 不会回调；这里主动收掉计时器和拖拽状态。
+    if (!widget.dragEnabled) _cancelDragState();
+  }
+
+  /// 只清本地拖拽状态，不触发 setState —— 给 dispose / didUpdateWidget 用
+  /// （这两处随后本来就会重建或已不可重建）。
+  void _cancelDragState() {
+    _autoScroll?.cancel();
+    _autoScroll = null;
+    _dragId = null;
+    _hover = null;
+    _pointerDy = null;
+  }
+
   void _startDrag(String id) {
+    if (!mounted) return;
     _scrollable = Scrollable.maybeOf(context);
     _autoScroll?.cancel();
     setState(() {
@@ -152,6 +176,10 @@ class _FlowOutlineTreeState extends State<FlowOutlineTree> {
     _autoScroll?.cancel();
     _autoScroll = null;
     if (_dragId == null) return;
+    if (!mounted) {
+      _cancelDragState();
+      return;
+    }
     setState(() {
       _dragId = null;
       _hover = null;
@@ -160,6 +188,8 @@ class _FlowOutlineTreeState extends State<FlowOutlineTree> {
   }
 
   void _autoScrollTick() {
+    FlowOutlineTree.debugAutoScrollTicks++;
+    if (!mounted) return;
     final dy = _pointerDy;
     final pos = _scrollable?.position;
     if (dy == null || pos == null || _dragId == null) return;
@@ -236,6 +266,7 @@ class _FlowOutlineTreeState extends State<FlowOutlineTree> {
   }
 
   void _onMove(FlowOutlineRow row, Offset global) {
+    if (!mounted) return;
     _pointerDy = global.dy;
     final dragId = _dragId;
     if (dragId == null) return;
@@ -254,6 +285,7 @@ class _FlowOutlineTreeState extends State<FlowOutlineTree> {
   }
 
   void _onAccept(FlowOutlineRow row, DragTargetDetails<String> details) {
+    if (!mounted) return;
     final hover = _computeHover(row, details.offset);
     _endDrag();
     if (hover?.target != null) {
@@ -625,6 +657,11 @@ class _Row extends StatelessWidget {
   Widget _dragHandle() => Draggable<String>(
         key: ValueKey('drag-${row.node.id}'),
         data: row.node.id,
+        // DragTargetDetails.offset 是拖拽反馈的原点，不是指针。默认
+        // childDragAnchorStrategy 会把「指针在手柄内的抓取偏移」带进落点，
+        // 落点整体向上偏，自动滚动边界也跟着晚触发。改成指针锚点后
+        // offset 就是指针本身。
+        dragAnchorStrategy: pointerDragAnchorStrategy,
         feedback: Material(
           elevation: 6,
           borderRadius: BorderRadius.circular(8),

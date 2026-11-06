@@ -18,18 +18,6 @@ import 'flow_executor_field.dart';
 import 'flow_field_editors.dart';
 import 'flow_node_tree.dart';
 
-/// 把本机行 id / 旧格式 `peeragent_<peer>_<remote>` / `agent:` 前缀剥成 Hub 侧
-/// 的 agent id。`task.agent` 里可能还留着老值。
-String _stripToHubId(String raw, String peerId) {
-  var id = raw.trim();
-  if (id.startsWith('agent:')) id = id.substring('agent:'.length);
-  final prefix = 'peeragent_${peerId}_';
-  if (prefix.isNotEmpty && id.startsWith(prefix)) {
-    id = id.substring(prefix.length);
-  }
-  return id;
-}
-
 const FlowChoiceBundle _manualOnlyBundle = FlowChoiceBundle(
   models: FlowModelChoices(allowManual: true),
   modes: FlowModelChoices(allowManual: true),
@@ -56,7 +44,8 @@ Future<({String localAgentId, String remoteAgentId})?> _resolveAgentTarget(
       return null;
   }
   if (!she && (agentId == null || agentId.isEmpty)) return null;
-  final hubId = agentId == null ? '' : _stripToHubId(agentId, peerId);
+  final hubId =
+      agentId == null ? '' : hubAgentIdFromRaw(agentId, peerId: peerId);
 
   final List<RemoteAgent> agents;
   try {
@@ -74,7 +63,7 @@ Future<({String localAgentId, String remoteAgentId})?> _resolveAgentTarget(
     }
     if (isPeerAgentRowId(a.id, peerId, hubId) || a.id == hubId) {
       final remote = (a.remoteAgentId?.trim().isNotEmpty ?? false)
-          ? _stripToHubId(a.remoteAgentId!, peerId)
+          ? hubAgentIdFromRaw(a.remoteAgentId!, peerId: peerId)
           : hubId;
       return (localAgentId: a.id, remoteAgentId: remote);
     }

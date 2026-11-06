@@ -13,6 +13,7 @@ Map<String, dynamic> snap({
   List<Map<String, dynamic>>? queue,
   int at = 1300,
   String hubId = 'hub-a',
+  bool flow = false,
 }) =>
     <String, dynamic>{
       'session_key': key,
@@ -29,6 +30,7 @@ Map<String, dynamic> snap({
       'queue': queue ?? <Map<String, dynamic>>[],
       'at': at,
       'hub_id': hubId,
+      if (flow) 'flow': true,
     };
 
 void main() {
@@ -536,5 +538,125 @@ void main() {
     ));
     expect(mirror.isRequestQueued('q-next'), isFalse);
     expect(mirror.isRequestRunning('q-next'), isTrue);
+  });
+
+  test('A4-1: 重连保留的 running flow 条目超时后回 idle 并广播', () async {
+    final mirror = SessionRuntimeMirror(
+      flowRetention: const Duration(milliseconds: 40),
+    );
+    addTearDown(mirror.dispose);
+    mirror.reconcileTo(<Map<String, dynamic>>[
+      snap(key: 'agent:hub:main', revision: 1, state: 'idle', turnId: ''),
+    ], hubId: 'hub-a');
+    mirror.apply(snap(
+      key: 'flow_deadbe12_impl',
+      revision: 3,
+      flow: true,
+      turnId: 'flow-deadbe12-impl-a1',
+    ));
+
+    // 断线期间的 idle 帧丢了：重连快照只含 hub 运行时会话。
+    mirror.reconcileTo(<Map<String, dynamic>>[
+      snap(key: 'agent:hub:main', revision: 2, state: 'idle', turnId: ''),
+    ], hubId: 'hub-a');
+    expect(mirror.stateFor('flow_deadbe12_impl').isRunning, isTrue,
+        reason: '重连当下先保留 turnId，停止按钮还能用');
+
+    var notifications = 0;
+    void listener() => notifications++;
+    mirror.changes.addListener(listener);
+    addTearDown(() => mirror.changes.removeListener(listener));
+
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    final state = mirror.stateFor('flow_deadbe12_impl');
+    expect(state.isRunning, isFalse, reason: '没有后续 flow 活动时必须收尾');
+    expect(state.turnId, '');
+    expect(state.revision, 3, reason: '收尾不伪造 revision');
+    expect(notifications, 1);
+
+    // 主机重启后 flow revision 从 1 重新计数：照样要能落地。
+    expect(
+      mirror.apply(snap(
+        key: 'flow_deadbe12_impl',
+        revision: 1,
+        flow: true,
+        turnId: 'flow-deadbe12-impl-a2',
+      )),
+      isTrue,
+      reason: 'flow 帧按 key 独立 revision，低 revision 不能被拒',
+    );
+    expect(
+        mirror.stateFor('flow_deadbe12_impl').turnId, 'flow-deadbe12-impl-a2');
+  });
+
+  test('A4-1: flow 帧绕过 hub 身份与 revision 比较', () {
+    final mirror = SessionRuntimeMirror();
+    addTearDown(mirror.dispose);
+    mirror.reconcileTo(<Map<String, dynamic>>[
+      snap(key: 'agent:hub:main', revision: 1, state: 'idle', turnId: ''),
+    ], hubId: 'hub-new');
+
+    expect(
+      mirror.apply(snap(
+        key: 'flow_deadbe12_impl',
+        revision: 9,
+        flow: true,
+        hubId: 'hub-old',
+        turnId: 't9',
+      )),
+      isTrue,
+      reason: 'flow 帧只作用于自己的 key，不参与 hub revision 空间',
+    );
+    expect(
+      mirror.apply(snap(
+        key: 'flow_deadbe12_impl',
+        revision: 1,
+        flow: true,
+        hubId: 'hub-old',
+        state: 'idle',
+        turnId: '',
+      )),
+      isTrue,
+      reason: 'per-key revision 回落后也应用',
+    );
+    expect(mirror.stateFor('flow_deadbe12_impl').isRunning, isFalse);
+
+    // 普通 hub 会话仍按原来的 hub 身份 / revision 规则拒绝。
+    expect(
+      mirror.apply(snap(
+        key: 'agent:hub:main',
+        revision: 2,
+        hubId: 'hub-old',
+        turnId: 'stale',
+      )),
+      isFalse,
+    );
+  });
+
+  test('A4-1: 保留期内有 flow chunk 活动就不误收尾', () async {
+    final mirror = SessionRuntimeMirror(
+      flowRetention: const Duration(milliseconds: 40),
+    );
+    addTearDown(mirror.dispose);
+    mirror.reconcileTo(<Map<String, dynamic>>[
+      snap(key: 'agent:hub:main', revision: 1, state: 'idle', turnId: ''),
+    ], hubId: 'hub-a');
+    mirror.apply(snap(
+      key: 'flow_deadbe12_impl',
+      revision: 1,
+      flow: true,
+      turnId: 'flow-deadbe12-impl-a1',
+    ));
+    mirror.reconcileTo(<Map<String, dynamic>>[
+      snap(key: 'agent:hub:main', revision: 2, state: 'idle', turnId: ''),
+    ], hubId: 'hub-a');
+
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    mirror.noteFlowActivity('flow_deadbe12_impl');
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+    expect(mirror.stateFor('flow_deadbe12_impl').isRunning, isTrue,
+        reason: '还在出字的回合不能因为保留超时被清掉');
+    expect(
+        mirror.stateFor('flow_deadbe12_impl').turnId, 'flow-deadbe12-impl-a1');
   });
 }
