@@ -8687,6 +8687,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flow_viewSession => '查看会话';
 
   @override
+  String get flow_sessionPreparing => '正在准备会话，请稍后再点';
+
+  @override
   String flow_tasksUsed(int count) {
     return '已派活 $count 次';
   }

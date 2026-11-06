@@ -104,8 +104,7 @@ mixin _SessionOps on _ChatControllerBase {
 
       unawaited(() async {
         try {
-          final agent =
-              await localDatabaseService.getRemoteAgentById(agentId!);
+          final agent = await localDatabaseService.getRemoteAgentById(agentId!);
           if (agent == null) return;
           await PeerAgentClientService.instance.openHostSession(
             agent: agent,
@@ -220,14 +219,15 @@ mixin _SessionOps on _ChatControllerBase {
 
     final userId = getUserId();
     final userName = getUserName();
-    final sessionId = currentChannelId
-        ?? await chatService.getLatestActiveChannelId(userId, agentId!)
-        ?? chatService.generateChannelId(userId, agentId!);
+    final sessionId = currentChannelId ??
+        await chatService.getLatestActiveChannelId(userId, agentId!) ??
+        chatService.generateChannelId(userId, agentId!);
 
     _emit(ShowLoadingOverlayEvent('chat_clearingSession'));
 
     try {
-      final remoteAgent = await localDatabaseService.getRemoteAgentById(agentId!);
+      final remoteAgent =
+          await localDatabaseService.getRemoteAgentById(agentId!);
 
       if (remoteAgent != null && remoteAgent.isOnline) {
         try {
@@ -278,14 +278,15 @@ mixin _SessionOps on _ChatControllerBase {
 
     final userId = getUserId();
     final userName = getUserName();
-    final sessionId = currentChannelId
-        ?? await chatService.getLatestActiveChannelId(userId, agentId!)
-        ?? chatService.generateChannelId(userId, agentId!);
+    final sessionId = currentChannelId ??
+        await chatService.getLatestActiveChannelId(userId, agentId!) ??
+        chatService.generateChannelId(userId, agentId!);
 
     _emit(ShowLoadingOverlayEvent('chat_clearingAllSessions'));
 
     try {
-      final remoteAgent = await localDatabaseService.getRemoteAgentById(agentId!);
+      final remoteAgent =
+          await localDatabaseService.getRemoteAgentById(agentId!);
 
       if (remoteAgent != null && remoteAgent.isOnline) {
         try {
@@ -309,7 +310,8 @@ mixin _SessionOps on _ChatControllerBase {
         }
       }
 
-      final defaultChannel = await localDatabaseService.getChannelById(defaultChannelId);
+      final defaultChannel =
+          await localDatabaseService.getChannelById(defaultChannelId);
       if (defaultChannel == null) {
         final channel = Channel.withMemberIds(
           id: defaultChannelId,
@@ -352,7 +354,8 @@ mixin _SessionOps on _ChatControllerBase {
     try {
       final agentIds = groupAgents.map((a) => a.id).toList();
       final parentGroupId = groupChannel!.groupFamilyId;
-      final sessions = await chatService.getGroupSessions(parentGroupId: parentGroupId);
+      final sessions =
+          await chatService.getGroupSessions(parentGroupId: parentGroupId);
 
       if (sessions.length > 1) {
         await chatService.clearGroupSessionHistory(
@@ -363,7 +366,8 @@ mixin _SessionOps on _ChatControllerBase {
             .deleteMemberSessionsForGroupChannel(currentChannelId!);
         await localDatabaseService.deleteChannel(currentChannelId!);
 
-        final remaining = sessions.where((s) => s.id != currentChannelId).toList();
+        final remaining =
+            sessions.where((s) => s.id != currentChannelId).toList();
         final targetSession = remaining.first;
 
         _emit(DismissOverlayEvent());
@@ -424,7 +428,34 @@ mixin _SessionOps on _ChatControllerBase {
     }
   }
 
-  Future<void> batchDeleteSessions(List<String> sessionIds, {required bool isGroup}) async {
+  /// 某个频道自己的 mirror 状态。批量删除时每个被删的节点会话都要用它发
+  /// 取消：只用 currentChannelId 的那份会让其它正在跑的 flow 回合在主机上
+  /// 继续，下一条消息又把刚删掉的频道建回来（A8-6）。
+  ({String? sessionKey, String? runtimeTurnId}) _runtimeCancelArgs(
+      String channelId) {
+    final exact = channelId == currentChannelId
+        ? sessionRuntimeKey
+        : (agentId == null || agentId!.isEmpty
+            ? null
+            : SessionRuntimeMirror.sessionKey(
+                agentId: agentId!, channelId: channelId));
+    final mirror = getIt.isRegistered<SessionRuntimeMirror>()
+        ? getIt<SessionRuntimeMirror>()
+        : null;
+    final state = mirror == null
+        ? null
+        : ((exact == null ? null : mirror.peek(exact)) ??
+                mirror.notifierForChannel(channelId))
+            ?.value;
+    final key = (state != null && state.sessionKey.isNotEmpty)
+        ? state.sessionKey
+        : exact;
+    final turnId = state?.turnId.trim() ?? '';
+    return (sessionKey: key, runtimeTurnId: turnId.isEmpty ? null : turnId);
+  }
+
+  Future<void> batchDeleteSessions(List<String> sessionIds,
+      {required bool isGroup}) async {
     if (sessionIds.isEmpty) return;
 
     _emit(ShowLoadingOverlayEvent('chat_clearingAllSessions'));
@@ -461,22 +492,21 @@ mixin _SessionOps on _ChatControllerBase {
 
       final deletingCurrent =
           currentChannelId != null && idsToDelete.contains(currentChannelId);
-      // 先停掉这条会话上还在跑的回复，再删库，避免停止标记写进即将消失的会话。
-      if (deletingCurrent) {
-        final id = currentChannelId!;
+      // 先停掉**每一个**被删会话上还在跑的回复，再删库：主机发起的节点回合
+      // 没有本地 _pending，必须按各频道 mirror 里的 sessionKey + turnId 逐个
+      // 发 `flow-` 取消（A7-8 / A8-6）。只停当前频道会让其它节点回合继续跑，
+      // 下一条 message.created 又把刚删的频道建回来。
+      for (final id in idsToDelete) {
         if (isGroup) {
           chatService.cancelActiveGroupTasks(id);
-        } else {
-          // A7-8：节点会话是主机发起的回合，没有本地 _pending。和 stop 两处
-          // 一样带上 sessionKey + 当前 mirror 的 turnId，cancel 才能按 `flow-`
-          // 前缀路由到主机停节点；不传的话主机回合继续跑，下一条
-          // message.created 又把刚删的频道建回来。
-          await chatService.cancelActiveDmTask(
-            id,
-            sessionKey: sessionRuntimeKey,
-            runtimeTurnId: currentChannelRuntimeTurnId,
-          );
+          continue;
         }
+        final args = _runtimeCancelArgs(id);
+        await chatService.cancelActiveDmTask(
+          id,
+          sessionKey: args.sessionKey,
+          runtimeTurnId: args.runtimeTurnId,
+        );
       }
 
       for (final id in idsToDelete) {

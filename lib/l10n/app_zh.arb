@@ -5317,6 +5317,7 @@
     }
   },
   "flow_viewSession": "查看会话",
+  "flow_sessionPreparing": "正在准备会话，请稍后再点",
   "flow_tasksUsed": "已派活 {count} 次",
   "@flow_tasksUsed": {
     "placeholders": {

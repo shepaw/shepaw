@@ -291,5 +291,42 @@ void main() {
       final warnings = refWarningsAfterMove(tree, 'work', target);
       expect(warnings.join('\n'), contains('prev.*'));
     });
+
+    test('A8-9: then 末尾的越界 index 按主机语义插在 else 之前', () {
+      final tree = [
+        FlowNode(key: 'cond', id: 'cond', kind: 'if', children: const [
+          FlowNode(key: 'a', id: 'a', kind: 'task', branch: 'then'),
+          FlowNode(key: 'b', id: 'b', kind: 'task', branch: 'else'),
+        ]),
+        FlowNode(
+          key: 'x',
+          id: 'x',
+          kind: 'task',
+          fields: {
+            'task': {'prompt': '结合 {{ b.text }} 继续'}
+          },
+        ),
+      ];
+      // 主机把 index=1 当作 then 数组内下标（越界夹到 then 末尾），
+      // 结果顺序 [a, x, b]：x 对 b 的前向引用应该报警。旧模拟器会放到
+      // [a, b, x]，把预警算没。
+      final thenEnd = FlowDropTarget(
+        dragId: 'x',
+        parentId: 'cond',
+        index: 1,
+        branch: 'then',
+      );
+      expect(refWarningsAfterMove(tree, 'x', thenEnd).join('\n'),
+          contains('{{ b.text }}'));
+
+      // 越界的 else index 夹到 else 末尾：[a, b, x]，顺序没坏，不该误报。
+      final elseEnd = FlowDropTarget(
+        dragId: 'x',
+        parentId: 'cond',
+        index: 5,
+        branch: 'else',
+      );
+      expect(refWarningsAfterMove(tree, 'x', elseEnd), isEmpty);
+    });
   });
 }

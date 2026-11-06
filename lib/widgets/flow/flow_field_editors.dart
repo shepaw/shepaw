@@ -253,7 +253,13 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
       case FlowFieldShape.modelRef:
       case FlowFieldShape.modeRef:
         if (_manualChoice) {
-          value = _scalar.text.trim().isEmpty ? null : _scalar.text.trim();
+          // A8-8：不可切换的 agent 上，模板值只能原样展示。即便用户之前在
+          // 可切换状态下进过文本模式，也不再把编辑后的值发出去覆盖远程配置。
+          final locked =
+              widget.choices?.switchable == false ? widget.current : null;
+          value = locked is String
+              ? (locked.isEmpty ? null : locked)
+              : (_scalar.text.trim().isEmpty ? null : _scalar.text.trim());
         } else {
           value = _choiceValue == _kFollowDefault ? null : _choiceValue;
         }
@@ -484,6 +490,28 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
         currentVal != _kFollowDefault &&
         !currentVal.trimLeft().startsWith('{{') &&
         !known.contains(currentVal);
+
+    if (_manualChoice && !choices.switchable) {
+      // A8-8：YAML 里的 `{{ inputs.model }}` 不能绕过 switchable=false 锁。
+      // 只读展示当前值 + 诊断，不给 TextField，也不给「手动输入 / 选列表」入口。
+      final locked = widget.current is String ? widget.current as String : '';
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: SelectableText(
+              locked,
+              style: bodySmall,
+            ),
+          ),
+          Text(
+            l10n.flow_modelNotSwitchable,
+            style: bodySmall?.copyWith(color: scheme.error),
+          ),
+        ],
+      );
+    }
 
     if (_manualChoice) {
       return Column(

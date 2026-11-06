@@ -13,6 +13,7 @@ import '../../peer/host_she_turn.dart';
 import '../../peer/models/flow_field_schema.dart';
 import '../../peer/models/flow_models.dart';
 import '../../peer/services/peer_agent_client_service.dart';
+import '../../service_locator.dart' show getIt;
 import '../../services/local_database_service.dart';
 import 'flow_executor_field.dart';
 import 'flow_field_editors.dart';
@@ -29,6 +30,7 @@ Future<({String localAgentId, String remoteAgentId})?> _resolveAgentTarget(
   FlowExecutor executor,
   String peerId,
   Map<String, dynamic> roles,
+  LocalDatabaseService database,
 ) async {
   String? agentId;
   var she = false;
@@ -49,7 +51,7 @@ Future<({String localAgentId, String remoteAgentId})?> _resolveAgentTarget(
 
   final List<RemoteAgent> agents;
   try {
-    agents = await LocalDatabaseService().getAllRemoteAgents();
+    agents = await database.getAllRemoteAgents();
   } catch (_) {
     return null;
   }
@@ -75,9 +77,13 @@ FlowChoiceBundle _bundleFrom(
   PeerModelsList? models,
   PeerModesList? modes, {
   bool loading = false,
+  bool modelsAllowManual = false,
+  bool modesAllowManual = false,
 }) {
   // 每个字段独立判断：这一路没有结果（请求失败且没有缓存）就只把这一路
   // 退成手输，不能因为另一路成功就把用户彻底锁死。
+  // A8-7：缓存里是空列表、主机又没答上来时，用户连模板都填不了；「成功但
+  // 为空」与「拉取失败」都要给手输入口。
   return FlowChoiceBundle(
     models: FlowModelChoices(
       options: [
@@ -90,7 +96,7 @@ FlowChoiceBundle _bundleFrom(
       current: models?.current,
       switchable: models?.switchable ?? true,
       loading: loading,
-      allowManual: models == null,
+      allowManual: models == null || models.models.isEmpty || modelsAllowManual,
     ),
     modes: FlowModelChoices(
       options: [
@@ -102,7 +108,7 @@ FlowChoiceBundle _bundleFrom(
       ],
       current: modes?.current,
       loading: loading,
-      allowManual: modes == null,
+      allowManual: modes == null || modes.modes.isEmpty || modesAllowManual,
     ),
   );
 }
@@ -147,9 +153,16 @@ Future<FlowChoiceBundle> defaultFlowChoiceLoader(
   required String peerId,
   required Map<String, dynamic> roles,
   required void Function(FlowChoiceBundle cached) onCached,
+  LocalDatabaseService? db,
 }) async {
-  // 没固定 agent（unset / role 无 default）：不碰数据库和网络，直接允许手输。
-  final target = await _resolveAgentTarget(executor, peerId, roles);
+  // A8-10：数据库从组合根取，不在这里直接 new。测试可以用 [db] 注入替身。
+  final database = db ??
+      (getIt.isRegistered<LocalDatabaseService>()
+          ? getIt<LocalDatabaseService>()
+          : null);
+  if (database == null) return _manualOnlyBundle;
+  // 没固定 agent（unset / role 无 default）：不碰网络和主机，直接允许手输。
+  final target = await _resolveAgentTarget(executor, peerId, roles, database);
   if (target == null) return _manualOnlyBundle;
 
   final client = PeerAgentClientService.instance;
@@ -191,7 +204,14 @@ Future<FlowChoiceBundle> defaultFlowChoiceLoader(
       ? cachedModes
       : (modeOut.completed ? modeOut.list : cachedModes);
   if (models == null && modes == null) return _manualOnlyBundle;
-  return _bundleFrom(models, modes);
+  // A8-7：没答上来的那一路只是退回缓存，不代表主机确认过「没有可选项」；
+  // 空缓存 + 刷新失败时仍要允许用户手输模板变量。
+  return _bundleFrom(
+    models,
+    modes,
+    modelsAllowManual: modelOut == null || !modelOut.completed,
+    modesAllowManual: modeOut == null || !modeOut.completed,
+  );
 }
 
 /// 节点检查器：底部抽屉表单。

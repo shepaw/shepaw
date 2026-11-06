@@ -78,4 +78,69 @@ void main() {
       reason: '裸调 cancelActiveDmTask 找不到主机发起的 flow- 回合，删除后主机继续跑',
     );
   });
+
+  test('A8-6: 批量删两个运行中的节点会话，两个 flow- 取消都发出', () async {
+    const channelA = 'psess_flow_a86_a';
+    const channelB = 'psess_flow_a86_b';
+    const keyA = 'agent:agent-7:flow_a86_a';
+    const keyB = 'agent:agent-7:flow_a86_b';
+    const turnA = 'flow-a86-a1';
+    const turnB = 'flow-a86-b1';
+
+    final mirror = SessionRuntimeMirror();
+    if (getIt.isRegistered<SessionRuntimeMirror>()) {
+      await getIt.unregister<SessionRuntimeMirror>();
+    }
+    getIt.registerSingleton<SessionRuntimeMirror>(mirror);
+    for (final entry in [
+      (key: keyA, turn: turnA),
+      (key: keyB, turn: turnB),
+    ]) {
+      mirror.apply({
+        'session_key': entry.key,
+        'state': 'running',
+        'turn_id': entry.turn,
+        'peer_id': 'p1',
+        'revision': 1,
+        'flow': true,
+      }, force: true);
+    }
+
+    final sentFrames = <Map<String, dynamic>>[];
+    final svc = PeerAgentClientService.instance;
+    svc.debugSendControlOverride = (peerId, json) async {
+      sentFrames.add(Map<String, dynamic>.from(json));
+      return true;
+    };
+    addTearDown(() async {
+      svc.debugSendControlOverride = null;
+      if (getIt.isRegistered<SessionRuntimeMirror>()) {
+        await getIt.unregister<SessionRuntimeMirror>();
+      }
+    });
+
+    final controller = ChatController(
+      agentId: 'agent-7',
+      initialChannelId: channelA,
+      getUserId: () => 'user',
+      getUserName: () => 'User',
+    );
+    addTearDown(controller.dispose);
+    controller.currentChannelId = channelA;
+
+    await controller.batchDeleteSessions([channelA, channelB], isGroup: false);
+
+    for (var i = 0; i < 50; i++) {
+      if (sentFrames.where((f) => f['type'] == 'agent_cancel').length >= 2) {
+        break;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    final cancelled = sentFrames
+        .where((f) => f['type'] == 'agent_cancel')
+        .map((f) => f['request_id'])
+        .toSet();
+    expect(cancelled, containsAll(<String>[turnA, turnB]),
+        reason: '只停当前频道会让另一个节点回合继续跑，下一条消息又把它建回来');
+  });
 }

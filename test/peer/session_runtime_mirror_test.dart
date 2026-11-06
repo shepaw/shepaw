@@ -841,4 +841,144 @@ void main() {
     );
     expect(mirror.stateFor('flow_a72_stale').isRunning, isFalse);
   });
+
+  test('A8-2: rev3 idle 之后的 rev2 running 不复活 flow 回合', () {
+    final mirror = SessionRuntimeMirror();
+    addTearDown(mirror.dispose);
+    const key = 'agent:agent-7:flow_a82_impl';
+    const turnId = 'flow-a82-impl-a1';
+
+    // 主机临时重试：同 peer、无 hub_id 的裸 flow 帧，跳过全局 revision 比较。
+    expect(
+      mirror.apply(
+        snap(
+          key: key,
+          revision: 2,
+          flow: true,
+          hubId: '',
+          turnId: turnId,
+        ),
+        sourcePeerId: 'p1',
+      ),
+      isTrue,
+    );
+    expect(
+      mirror.apply(
+        snap(
+          key: key,
+          revision: 3,
+          state: 'idle',
+          flow: true,
+          hubId: '',
+          turnId: '',
+        ),
+        sourcePeerId: 'p1',
+      ),
+      isTrue,
+      reason: '低 revision 的权威 idle 不参与 hub 全局比较',
+    );
+    expect(mirror.stateFor(key).isRunning, isFalse);
+
+    // 迟到的 running(rev2)：id / 身份都匹配，但比权威终态水位更旧。
+    expect(
+      mirror.apply(
+        snap(
+          key: key,
+          revision: 2,
+          flow: true,
+          hubId: '',
+          turnId: turnId,
+        ),
+        sourcePeerId: 'p1',
+      ),
+      isFalse,
+      reason: '终态之后的旧 running 不能把死回合复活成「正在输出」',
+    );
+    expect(mirror.stateFor(key).isRunning, isFalse);
+    expect(mirror.stateFor(key).turnId, '');
+
+    // 更高 revision 的真实新回合照常落地。
+    expect(
+      mirror.apply(
+        snap(
+          key: key,
+          revision: 4,
+          flow: true,
+          hubId: '',
+          turnId: 'flow-a82-impl-b1',
+        ),
+        sourcePeerId: 'p1',
+      ),
+      isTrue,
+    );
+    expect(mirror.stateFor(key).turnId, 'flow-a82-impl-b1');
+  });
+
+  test('A8-2: 未收尾时也挡更旧的 running；换 hub 的低 revision 帧仍落地', () {
+    final mirror = SessionRuntimeMirror();
+    addTearDown(mirror.dispose);
+    const key = 'agent:agent-7:flow_a82_running';
+    expect(
+      mirror.apply(
+        snap(key: key, revision: 5, flow: true, hubId: '', turnId: 't5'),
+        sourcePeerId: 'p1',
+      ),
+      isTrue,
+    );
+    expect(
+      mirror.apply(
+        snap(key: key, revision: 2, flow: true, hubId: '', turnId: 't2'),
+        sourcePeerId: 'p1',
+      ),
+      isFalse,
+      reason: '同一 key 的最大 revision 水位不能倒退',
+    );
+
+    // 换 hub：per-key revision 从 1 重新开始，旧水位必须失效。
+    mirror.reconcileTo(<Map<String, dynamic>>[
+      snap(key: 'agent:hub:main', revision: 1, state: 'idle', turnId: ''),
+    ], hubId: 'hub-new');
+    expect(
+      mirror.apply(
+        snap(
+          key: key,
+          revision: 1,
+          flow: true,
+          hubId: 'hub-new',
+          turnId: 't1',
+        ),
+        sourcePeerId: 'p1',
+      ),
+      isTrue,
+    );
+    expect(mirror.stateFor(key).turnId, 't1');
+  });
+
+  test('A8-5: 裸 session key 的 activity 刷新 agent 前缀的 retention', () async {
+    final mirror = SessionRuntimeMirror(
+      flowRetention: const Duration(milliseconds: 40),
+    );
+    addTearDown(mirror.dispose);
+    const key = 'agent:agent-7:flow_a85_impl';
+    mirror.apply(
+      snap(
+        key: key,
+        revision: 1,
+        flow: true,
+        hubId: '',
+        turnId: 'flow-a85-impl-a1',
+      ),
+      sourcePeerId: 'p1',
+    );
+    // 主机 metadata 帧只有裸 `flow_<tag>_<node>`。
+    for (var i = 0; i < 4; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      mirror.noteFlowActivity('flow_a85_impl');
+    }
+    expect(mirror.stateFor(key).isRunning, isTrue);
+    expect(mirror.stateFor(key).turnId, 'flow-a85-impl-a1');
+    // 是刷新不是取消：沉默一个窗口后仍会自动回 idle。
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    expect(mirror.stateFor(key).isRunning, isFalse);
+  });
 }

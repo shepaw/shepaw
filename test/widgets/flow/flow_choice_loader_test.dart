@@ -232,4 +232,53 @@ void main() {
       contains('mode-old'),
     );
   });
+
+  test('A8-7: 离线 + 空缓存仍允许手输模板', () async {
+    const peerId = 'peer-a87';
+    const remoteId = 'agent-a87';
+    const localId = 'peeragent_peer-a87_agent-a87';
+    await createAgent(peerId: peerId, remoteId: remoteId);
+    // 缓存里两个列表都成功过，但都是空的；主机这轮又不应答。
+    await seedModels(localId, const []);
+    await seedModes(localId, const []);
+    svc.debugSendControlOverride = (peer, frame) async {
+      throw StateError('host offline');
+    };
+
+    final bundle = await defaultFlowChoiceLoader(
+      FlowExecutor.agent(remoteId),
+      peerId: peerId,
+      roles: const {},
+      onCached: (_) {},
+    );
+
+    expect(bundle.models.options, isEmpty);
+    expect(bundle.modes.options, isEmpty);
+    expect(bundle.models.allowManual, isTrue, reason: '空缓存 + 刷新失败时不能把用户锁在空下拉里');
+    expect(bundle.modes.allowManual, isTrue, reason: '成功但为空 / 拉取失败都要留出模板手输入口');
+  });
+
+  test('A8-10: loader 接受注入的数据库服务，缓存读取仍走组合根', () async {
+    const peerId = 'peer-a810';
+    const remoteId = 'agent-a810';
+    const localId = 'peeragent_peer-a810_agent-a810';
+    await createAgent(peerId: peerId, remoteId: remoteId);
+    await seedModels(localId, const ['m-cached']);
+    svc.debugSendControlOverride = (peer, frame) async {
+      throw StateError('host offline');
+    };
+    // 数据库由 getIt 组合根提供；loader 另外留了可注入的 db 给测试。
+    expect(getIt.isRegistered<LocalDatabaseService>(), isTrue);
+    expect(getIt<LocalDatabaseService>(), same(db));
+
+    final bundle = await defaultFlowChoiceLoader(
+      FlowExecutor.agent(remoteId),
+      peerId: peerId,
+      roles: const {},
+      onCached: (_) {},
+      db: db,
+    );
+    expect(bundle.models.options.map((o) => o.value), contains('m-cached'),
+        reason: '注入的 db 应被使用，缓存结果仍然可见');
+  });
 }

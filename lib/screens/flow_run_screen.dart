@@ -101,6 +101,14 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
   bool _loading = true;
   bool _loadFailed = false;
 
+  /// 事件里只有 session_id、没有 agent：先别建空壳频道，等 refetch 补上
+  /// agent 再打开（A8-3）。
+  ({
+    String sessionId,
+    String title,
+    String? highlightMessageId
+  })? _pendingSessionOpen;
+
   @override
   void initState() {
     super.initState();
@@ -127,6 +135,49 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
         _loadFailed = true;
       }
     });
+    // 事件先到、agent 还没同步下来时挂起的「查看会话」，重拉成功后再打开。
+    _retryPendingSessionOpen();
+  }
+
+  /// 在最新的运行树里按 key / session_id 找同一个节点的 agent。
+  /// 弹层里的 node 可能是旧 `_run` 的快照；重拉回来后树上的 agentId 才是权威。
+  String _agentIdForSession(FlowNode node) {
+    final own = node.agentId?.trim() ?? '';
+    if (own.isNotEmpty) return own;
+    final run = _run;
+    if (run == null) return '';
+    for (final root in run.tree) {
+      final current = root.find((candidate) =>
+          candidate.key == node.key ||
+          (node.sessionId != null &&
+              candidate.sessionId == node.sessionId &&
+              candidate.agentId != null &&
+              candidate.agentId!.isNotEmpty));
+      if (current != null) return current.agentId?.trim() ?? '';
+    }
+    return '';
+  }
+
+  void _retryPendingSessionOpen() {
+    final pending = _pendingSessionOpen;
+    if (pending == null || !mounted || _run == null) return;
+    final node = _run!.tree
+        .map((root) => root.find((candidate) =>
+            candidate.sessionId == pending.sessionId &&
+            (candidate.agentId?.isNotEmpty ?? false)))
+        .whereType<FlowNode>()
+        .firstOrNull;
+    if (node == null) return;
+    final agentId = node.agentId!.trim();
+    if (agentId.isEmpty) return;
+    _pendingSessionOpen = null;
+    unawaited(openFlowSession(
+      peerId: widget.peerId,
+      sessionId: pending.sessionId,
+      remoteAgentId: agentId,
+      title: pending.title,
+      highlightMessageId: pending.highlightMessageId,
+    ));
   }
 
   void _onEvent(FlowEvent event) {
@@ -240,11 +291,6 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
   /// 真会话 id 拼出来。调用方传了 [FlowRunScreen.onOpenSession] 就走覆盖。
   /// P6：节点在等用户回答时顺带把待答卡片的高亮 id 带上，点进去直接定位。
   void _openSession(FlowNode node) {
-    final override = widget.onOpenSession;
-    if (override != null) {
-      override(node);
-      return;
-    }
     // 只有主机发下来的真节点会话（`flow_...`）能拼 `psess_` 频道。旧运行 /
     // 群运行的条目可能还留着 `flow:<rid>:<node>` / `group:<gid>:<sid>:...`
     // 这类引擎槽位 key；硬拼会建出一个永远没有消息的假会话。格式不合法时
@@ -252,14 +298,41 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
     final guardedSessionId = flowFoldedSessionId(node.sessionId ?? '');
     if (guardedSessionId == null) return;
     final l10n = AppLocalizations.of(context);
+    final title = l10n.flow_sessionBanner(node.id);
+    final highlightMessageId = node.status?.isWaitingForUser == true
+        ? pendingFlowFormMessageId(flowSessionChannelId(guardedSessionId))
+        : null;
+    // 旧主机 / 事件帧可能只给 session_id，不给 agent_id（H8-11 之前）。
+    // 拿空 agent 打开会建出一条没有成员的空壳频道；先用运行树里同 key
+    // 节点的 agentId，仍拿不到就挂起，等 refetch 把 agent 带回来再打开。
+    final agentId = _agentIdForSession(node);
+    if (agentId.isEmpty) {
+      _pendingSessionOpen = (
+        sessionId: guardedSessionId,
+        title: title,
+        highlightMessageId: highlightMessageId,
+      );
+      _snack(l10n.flow_sessionPreparing);
+      // 不等事件自带的 400ms 合批窗口，立刻重拉一次。
+      _refetch?.cancel();
+      unawaited(_load());
+      return;
+    }
+    // 覆盖入口也拿补全后的 agentId，不能让它用空成员建频道。
+    final resolvedNode = (node.agentId ?? '').trim() == agentId
+        ? node
+        : node.copyWith(agentId: agentId);
+    final override = widget.onOpenSession;
+    if (override != null) {
+      override(resolvedNode);
+      return;
+    }
     unawaited(openFlowSession(
       peerId: widget.peerId,
       sessionId: guardedSessionId,
-      remoteAgentId: node.agentId ?? '',
-      title: l10n.flow_sessionBanner(node.id),
-      highlightMessageId: node.status?.isWaitingForUser == true
-          ? pendingFlowFormMessageId(flowSessionChannelId(guardedSessionId))
-          : null,
+      remoteAgentId: agentId,
+      title: title,
+      highlightMessageId: highlightMessageId,
     ));
   }
 

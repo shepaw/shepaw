@@ -277,4 +277,71 @@ void main() {
     await _settle(tester);
     expect(find.text('m-retired（不可用）'), findsOneWidget);
   });
+
+  testWidgets('A8-7: 空候选 + allowManual 时仍能手输模板', (tester) async {
+    final fake = _FakeChoices(const FlowChoiceBundle(
+      models: FlowModelChoices(allowManual: true),
+      modes: FlowModelChoices(allowManual: true),
+    ));
+    Object? emitted;
+    await tester.pumpWidget(_app(FlowNodeInspector(
+      node: const FlowNode(
+        key: 'impl',
+        id: 'impl',
+        kind: 'task',
+        fields: {
+          'task': {'prompt': '写', 'agent': 'agent-x'},
+        },
+      ),
+      schema: _schema(),
+      peerId: 'p1',
+      roles: const [],
+      choiceLoader: fake.load,
+      onApply: (_) {},
+      onDelete: () {},
+      onWrap: (_) {},
+      onUnwrap: () {},
+      onAddAfter: () {},
+    )));
+    await _settle(tester);
+    await tester
+        .ensureVisible(find.byKey(const ValueKey('choice-manual:task.model')));
+    await tester.tap(find.byKey(const ValueKey('choice-manual:task.model')));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('f:task.model')), findsOneWidget);
+    await tester.enterText(
+        find.byKey(const ValueKey('f:task.model')), '{{ inputs.model }}');
+    await tester.pump();
+    expect(find.text('{{ inputs.model }}'), findsOneWidget);
+    expect(emitted, isNull);
+  });
+
+  testWidgets('A8-8: switchable=false + 模板值只读，不给可编辑输入框', (tester) async {
+    Object? emitted = 'unset';
+    await tester.pumpWidget(_app(FlowFieldEditor(
+      spec: const FlowFieldSpec(
+        path: 'task.model',
+        shape: FlowFieldShape.modelRef,
+        labelZh: '模型',
+        labelEn: 'Model',
+      ),
+      current: '{{ inputs.model }}',
+      choices: const FlowModelChoices(
+        switchable: false,
+        allowManual: true,
+        options: [FlowModelChoice(value: 'm-locked')],
+      ),
+      onChanged: (v) => emitted = v,
+    )));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('f:task.model')), findsNothing,
+        reason: '不可切换的 agent 不能被模板值绕过锁定');
+    expect(find.byKey(const ValueKey('choice-manual:task.model')), findsNothing,
+        reason: '手动入口同样要遵守 switchable=false');
+    expect(find.byKey(const ValueKey('choice-pick:task.model')), findsNothing);
+    expect(find.text('{{ inputs.model }}'), findsOneWidget,
+        reason: '模板值仍应只读展示');
+    expect(find.text('这个 agent 不支持切换模型'), findsOneWidget);
+    expect(emitted, 'unset', reason: '只读展示不该发出任何改动');
+  });
 }

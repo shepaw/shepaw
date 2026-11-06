@@ -162,6 +162,24 @@ void main() {
     // 事件没带 agent_id 时保留树上已有的成员，不把入口清空。
     final noAgent = run.withNodeStatus(event.node!, FlowNodeStatus.done, 2);
     expect(noAgent.tree.single.agentId, 'agent-7');
+    // A8-3：旧主机只给 session_id 时不许凭空造一个 agent id；由运行页
+    // 用树里已有值兜底，或延后到 refetch 后再打开会话。
+    final legacy = FlowEvent.parse('flow.node.changed', {
+      'run_id': 'r1',
+      'node': 'seq/impl',
+      'status': 'running',
+      'session_id': 'flow_deadbe12_impl',
+    })!;
+    expect(legacy.sessionId, 'flow_deadbe12_impl');
+    expect(legacy.agentId, isNull);
+    expect(
+        run
+            .withNodeStatus(legacy.node!, legacy.nodeStatus!, legacy.attempt,
+                sessionId: legacy.sessionId, agentId: legacy.agentId)
+            .tree
+            .single
+            .agentId,
+        'agent-7');
   });
 
   test('node events update the tree in place and run events flip the status',

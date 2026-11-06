@@ -193,16 +193,31 @@ class HubEventClient {
     }
   }
 
-  /// 本回合还有真实活动：取消 mirror 里重连保留条目上的 idle 收尾计时。
+  /// 本回合还有真实活动（chunk / metadata）：取消 mirror 里重连保留条目上的
+  /// idle 收尾计时。主机 `session.state` 的节点 key 是 `agent:<id>:flow_...`，
+  /// 裸控制帧却常常只有 channel_id（或裸 `flow_...` session_key），两种 key
+  /// 都要刷到（A8-5）；mirror 自己也会把裸 key 映射到 agent 前缀的 notifier。
   void _noteFlowActivity(Map<String, dynamic> data, String rawChannelId) {
     if (!getIt.isRegistered<SessionRuntimeMirror>()) return;
     String text(String key) => data[key]?.toString().trim() ?? '';
     final explicitKey = text('session_key');
-    final sessionKey = explicitKey.isNotEmpty
-        ? explicitKey
-        : (remoteSessionIdFromChannelId(rawChannelId) ?? rawChannelId);
-    if (sessionKey.isEmpty) return;
-    getIt<SessionRuntimeMirror>().noteFlowActivity(sessionKey);
+    final channel = rawChannelId.trim();
+    final bare = explicitKey.isNotEmpty
+        ? (explicitKey.contains(':')
+            ? explicitKey.substring(explicitKey.lastIndexOf(':') + 1)
+            : explicitKey)
+        : (remoteSessionIdFromChannelId(channel) ?? channel);
+    final agentId = text('agent_id');
+    final keys = <String>{
+      if (explicitKey.isNotEmpty) explicitKey,
+      if (bare.isNotEmpty) bare,
+      if (bare.isNotEmpty && agentId.isNotEmpty) 'agent:$agentId:$bare',
+    };
+    if (keys.isEmpty) return;
+    final mirror = getIt<SessionRuntimeMirror>();
+    for (final key in keys) {
+      mirror.noteFlowActivity(key);
+    }
   }
 
   /// 流式 chunk 的落点解析缓存，key = `peerId\u0000turnId`。
@@ -1168,11 +1183,19 @@ class HubEventClient {
 
   /// 这一回合的最终回复：主机 append 时带 `metadata.flow`，id 是
   /// `peerhist_*` 形态。只有它能把「已收尾保留的半成品占位」换成完整答案。
+  ///
+  /// 来源 / 类型先于 progress 字段判定：工具回合的最终消息也会带
+  /// `progress_content` / `progress_steps`，按中途消息处理会让保留占位和完整
+  /// 答案并存成两条气泡（A8-4）。没有这两种最终标记的进度消息仍由
+  /// [_isIntermediateAgentMessage] 判成中途消息。
   static bool _isFinalAnswerMessage(Map<String, dynamic> data) {
-    if (_isIntermediateAgentMessage(data)) return false;
     final meta = data['metadata'];
     if (meta is Map && meta['flow'] is Map) return true;
-    return (data['id'] as String? ?? '').startsWith('peerhist_');
+    final id = data['id'] as String? ?? '';
+    if (!id.startsWith('peerhist_')) return false;
+    // 非 text 的 peerhist_ 行（工具结果等）仍是回合中途的消息。
+    final type = (data['type'] as String? ?? '').toLowerCase();
+    return type.isEmpty || type == 'text';
   }
 
   /// 占位行是不是「idle 超时收尾后保留下来的正文」（A7-1）。
@@ -1291,7 +1314,10 @@ class HubEventClient {
           .where((entry) => entry.value == channelId)
           .map((entry) => entry.key)
           .toList();
-      final intermediate = _isIntermediateAgentMessage(data);
+      // A8-4：最终 agent 回复即便带 progress 元数据也不能按中途消息处理，
+      // 否则已收尾保留的占位不会被删，出现「半段 + 完整」两条答案。
+      final finalAnswer = _isFinalAnswerMessage(data);
+      final intermediate = !finalAnswer && _isIntermediateAgentMessage(data);
       for (final id in turnId) {
         if (intermediate) {
           // A7-5：工具结果 / 进度消息只删占位行，绝不结束回合。删掉
@@ -1313,7 +1339,6 @@ class HubEventClient {
       // 重启后内存里的回合索引已经没了，但占位行还在库里。最终消息到达时
       // 按确定性 id 前缀把它们收掉（跳过仍在接流的回合，它们的占位由上面
       // 的循环或后续终态帧负责）。不依赖内存，重放也能幂等清干净。
-      final finalAnswer = _isFinalAnswerMessage(data);
       final livePlaceholders = {
         for (final id in _liveChannels.keys) liveTurnPlaceholderId(id),
       };
@@ -1803,21 +1828,33 @@ class HubEventClient {
   /// 气泡；带 `agent_id` 时顺便把本地壳建好、把落点解析缓存给同回合的 chunk
   /// 复用（查库 / 建壳很贵，且 metadata 常常先于第一片 chunk 到达）。
   /// 不带 `agent_id` 的帧不解析、不缓存，交给 chunk 处理。
+  ///
+  /// A8-1：不管带不带 agent_id，它都是回合仍活着的证据 —— 长工具回合可能
+  /// 几十秒只发 metadata，兜底收尾计时器必须和 chunk 一样被刷新（重新装回），
+  /// 否则 30s 时占位被收尾、后续 chunk 因 settled 被丢，答案截断。
   Future<void> _onFlowControlMetadata(
     String peerId,
     Map<String, dynamic> data,
   ) async {
     if (!_isFlowRuntimeFrame(data)) return;
+    final rawChannelId = (data['channel_id'] as String? ?? '').trim();
+    final turnId = (data['turn_id'] ?? data['request_id'] ?? '').toString();
+    final agentId = (data['agent_id'] as String? ?? '').trim();
+    _noteFlowActivity(data, rawChannelId);
     // metadata 帧经常不带 `agent_id`（relay / 主机原生帧只有 request_id +
     // metadata）。拿空 agent_id 解析会把「空 sender、未建壳」的目标缓存进
     // [_flowTargets]，同回合稍后带 agent_id 的 chunk 复用它，占位就没归属了。
     // 这里干脆不解析也不缓存：频道壳等带 agent_id 的 chunk 到了再建。
-    if ((data['agent_id'] as String? ?? '').trim().isEmpty) return;
-    _noteFlowActivity(data, (data['channel_id'] as String? ?? '').trim());
-    final turnId = (data['turn_id'] ?? data['request_id'] ?? '').toString();
-    final target = turnId.isEmpty
-        ? await _resolveFlowControlTarget(peerId, data)
-        : await _flowTargetFor(peerId, turnId, data);
+    if (turnId.isEmpty) {
+      if (agentId.isEmpty) return;
+      final target = await _resolveFlowControlTarget(peerId, data);
+      if (target.channelId.isNotEmpty) _notify(target.channelId);
+      return;
+    }
+    if (_isSettledFlowTurn(turnId)) return;
+    _scheduleFinalize(turnId);
+    if (agentId.isEmpty) return;
+    final target = await _flowTargetFor(peerId, turnId, data);
     if (target.channelId.isNotEmpty) _notify(target.channelId);
   }
 

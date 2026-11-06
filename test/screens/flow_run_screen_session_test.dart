@@ -86,7 +86,8 @@ void main() {
     await tester.pumpWidget(_app(_host(bus)));
     await _settle(tester);
 
-    expect(find.byKey(const ValueKey('flow-node-session-impl')), findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('flow-node-session-impl')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('flow-node-session-impl')));
     await _settle(tester);
 
@@ -99,7 +100,8 @@ void main() {
     await bus.close();
   });
 
-  testWidgets('P4: flow.node.changed session_id adds the entry without a refetch',
+  testWidgets(
+      'P4: flow.node.changed session_id adds the entry without a refetch',
       (tester) async {
     final bus = StreamController<PeerControlEvent>.broadcast();
     await tester.pumpWidget(_app(
@@ -131,7 +133,8 @@ void main() {
       },
     ));
     await tester.pump(const Duration(milliseconds: 30));
-    expect(find.byKey(const ValueKey('flow-node-session-impl')), findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('flow-node-session-impl')), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
     await bus.close();
   });
@@ -169,6 +172,84 @@ void main() {
     await _settle(tester);
     expect(overridden, ['flow_deadbe12_impl']);
     expect(opened, isEmpty);
+    await tester.pumpWidget(const SizedBox());
+    await bus.close();
+  });
+
+  testWidgets('A8-3: 事件缺 agent_id 时不建空壳，refetch 补上后自动打开', (tester) async {
+    final bus = StreamController<PeerControlEvent>.broadcast();
+    // 第一次重拉只有 session_id（主机旧帧），第二次才带上 agent_id。
+    const firstTree = [
+      {
+        'key': 'impl',
+        'id': 'impl',
+        'kind': 'task',
+        'status': 'pending',
+      },
+    ];
+    const secondTree = [
+      {
+        'key': 'impl',
+        'id': 'impl',
+        'kind': 'task',
+        'status': 'running',
+        'session_id': 'flow_deadbe12_impl',
+        'agent_id': 'agent-7',
+      },
+    ];
+    var requests = 0;
+    final client = HubFlow(
+      events: bus.stream,
+      send: (peerId, frame) async {
+        if (frame['type'] == 'flow_run_get_req') {
+          final tree = requests == 0 ? firstTree : secondTree;
+          requests++;
+          bus.add(PeerControlEvent(
+            peerId: peerId,
+            data: {
+              'type': 'flow_run_get_resp',
+              'request_id': frame['request_id'],
+              'success': true,
+              'run_id': 'r1',
+              'status': 'running',
+              'tasks_used': 1,
+              'tree': tree,
+            },
+          ));
+        }
+        return true;
+      },
+    );
+    await tester.pumpWidget(_app(client));
+    await _settle(tester);
+
+    // 主机 H8-11 之前的事件：只带 session_id，没有 agent_id / agent。
+    bus.add(PeerControlEvent(
+      peerId: 'p1',
+      data: const {
+        'type': 'flow.node.changed',
+        'run_id': 'r1',
+        'node': 'impl',
+        'status': 'running',
+        'attempt': 1,
+        'session_id': 'flow_deadbe12_impl',
+      },
+    ));
+    await tester.pump(const Duration(milliseconds: 30));
+    expect(
+        find.byKey(const ValueKey('flow-node-session-impl')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('flow-node-session-impl')));
+    await _settle(tester);
+
+    // 不能以空 agentId 打开频道：要么完全没打开，要么带上 refetch 回来的 agent。
+    expect(opened.where((entry) => entry.agentId?.isEmpty ?? true), isEmpty,
+        reason: '空 agentId 会建出没有成员频道的空壳会话');
+    expect(find.text('正在准备会话，请稍后再点'), findsOneWidget);
+    expect(opened, hasLength(1), reason: 'refetch 拿到 agent 后应补上这次打开');
+    expect(opened.single.channelId, 'psess_flow_deadbe12_impl');
+    expect(opened.single.agentId, 'agent-7');
+
     await tester.pumpWidget(const SizedBox());
     await bus.close();
   });

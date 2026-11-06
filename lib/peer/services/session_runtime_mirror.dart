@@ -226,6 +226,15 @@ class SessionRuntimeMirror {
   /// 裸帧根本不带 `hub_id`，换主机后只有连接身份能挡住旧主机的迟到回放。
   String? _hubPeerId;
 
+  /// 每个 flow key 的权威状态水位：该身份下见过的最高 revision、最近是否收尾。
+  ///
+  /// flow 帧的 revision 是 per-key 计数器，不能拿它和别的 key / hub 全局空间
+  /// 做严格比较；但同一个 key 上「先 running(rev2)、再 idle(rev3)、又来迟到
+  /// running(rev2)」必须拒绝，否则停止按钮会对已经死掉的回合发取消（A8-2）。
+  /// 换 hub（revision 从 1 重来）时整张表清空，身份不同的帧互不挡路。
+  final Map<String, ({int revision, bool terminal, String identity})>
+      _flowWatermarks = {};
+
   /// 换 hub 前还在 running 的 flow turn id。旧主机重放的 running 帧既没有
   /// `hub_id`、又没有可核对的连接身份时，靠它把「已经死掉的回合」认出来。
   /// 有界，避免长会话无限增长。
@@ -335,6 +344,7 @@ class SessionRuntimeMirror {
     final incoming = SessionState.fromSnapshot(snapshot);
     if (incoming.sessionKey.isEmpty) return false;
     final isFlow = incoming.isFlow;
+    final fromPeer = sourcePeerId?.trim() ?? '';
     // A6-3/A7-2：flow 帧可以跳过 revision 比较（per-key 计数器重启会回退），
     // 但**不能**跳过 hub 身份检查。身份有三种：帧里的 hub_id、连接对端的
     // peerId（裸帧）、以及换 hub 时记下的旧 turn id。
@@ -344,11 +354,11 @@ class SessionRuntimeMirror {
       if (hub.isNotEmpty && _hubId != null && hub != _hubId) {
         return false;
       }
-      final fromPeer = sourcePeerId?.trim() ?? '';
       if (fromPeer.isNotEmpty && _hubPeerId != null && fromPeer != _hubPeerId) {
         return false;
       }
       if (_isStaleFlowReplay(incoming, fromPeer)) return false;
+      if (_isStaleRunningFlowFrame(incoming, fromPeer)) return false;
     }
     final notifier = notifierFor(incoming.sessionKey);
     final current = notifier.value;
@@ -356,6 +366,7 @@ class SessionRuntimeMirror {
         (force || isFlow) ? incoming : reduceSessionState(current, incoming);
     if (identical(next, current)) return false;
     notifier.value = next;
+    if (isFlow) _rememberFlowFrame(next, fromPeer);
     lastChangedKey = incoming.sessionKey;
     changes.value++;
     // A7-2：任何被接受的 running flow 帧都必须带 retention 计时器，否则丢了
@@ -390,12 +401,59 @@ class SessionRuntimeMirror {
     return false;
   }
 
-  /// 该 flow 会话还有真实活动（流式 chunk）：把保留计时**刷新**回完整的
+  /// flow 帧的身份：优先帧里的 hub_id，其次连接对端，都没有就是「无身份」。
+  /// 只有同一身份下的水位才有可比性（换 hub / 换 peer 后 revision 从 1 重来）。
+  String _flowFrameIdentity(SessionState state, String fromPeer) {
+    if (state.hubId.isNotEmpty) return 'hub:${state.hubId}';
+    if (fromPeer.isNotEmpty) return 'peer:$fromPeer';
+    return '';
+  }
+
+  /// 记下一份已接受的 flow 快照作为该 key 的权威水位。
+  /// 只对同身份取最大 revision；idle / 终态把水位标成「已收尾」。
+  void _rememberFlowFrame(SessionState accepted, String fromPeer) {
+    final key = accepted.sessionKey;
+    final identity = _flowFrameIdentity(accepted, fromPeer);
+    final previous = _flowWatermarks[key];
+    final sameIdentity = previous != null && previous.identity == identity;
+    final revision = sameIdentity && previous.revision > accepted.revision
+        ? previous.revision
+        : accepted.revision;
+    _flowWatermarks[key] = (
+      revision: revision,
+      terminal: !accepted.isRunning,
+      identity: identity,
+    );
+  }
+
+  /// A8-2：flow 帧跳过 hub 全局 revision / 严格比较，但同一 key、同一身份下，
+  /// 比权威水位更旧的 running 帧不能被接受 —— 主机临时重试先发 running 再发
+  /// idle，迟到的 running 会把已收尾的回合复活成「正在输出」。
+  /// 更高 revision 的真实新回合、以及身份不同的帧（换 hub / 老版本无身份帧）
+  /// 一律照常落地。
+  bool _isStaleRunningFlowFrame(SessionState incoming, String fromPeer) {
+    if (!incoming.isFlow || !incoming.isRunning) return false;
+    final mark = _flowWatermarks[incoming.sessionKey];
+    if (mark == null) return false;
+    if (incoming.revision > mark.revision) return false;
+    if (_flowFrameIdentity(incoming, fromPeer) != mark.identity) return false;
+    // 终态之后（含同 revision）的 running 都只可能是重放；未收尾时只挡更旧的。
+    return mark.terminal || incoming.revision < mark.revision;
+  }
+
+  /// 该 flow 会话还有真实活动（流式 chunk / metadata）：把保留计时**刷新**回完整的
   /// [flowRetention]，不是取消。主机之后沉默就靠这个计时器自动回 idle。
   void noteFlowActivity(String sessionKey) {
     final notifier = _notifiers[sessionKey];
-    if (notifier == null || !notifier.value.isRunning) return;
-    _armFlowRetention(sessionKey);
+    if (notifier != null && notifier.value.isRunning) {
+      _armFlowRetention(sessionKey);
+      return;
+    }
+    // 裸 `flow_<tag>_<node>` 帧（metadata 常常不带 agent 前缀）也要能刷新
+    // `agent:<id>:flow_<tag>_<node>` 那份权威状态（A8-5）。命中不唯一时不猜。
+    final matched = notifierForChannel(sessionKey);
+    if (matched == null || !matched.value.isRunning) return;
+    _armFlowRetention(matched.value.sessionKey);
   }
 
   void _cancelFlowRetention(String sessionKey) {
@@ -413,6 +471,9 @@ class SessionRuntimeMirror {
       if (!notifier.value.isRunning) return;
       // 到期仍没有任何 flow 活动：按 idle 收尾，回落到 revision 基线重来。
       notifier.value = notifier.value.asIdle();
+      // 这是 App 自己的兜底收尾，不是主机宣告的权威终态：清掉水位，别拿它
+      // 挡住主机重启后从 1 重新计数的新回合（A4-1 / A8-2）。
+      _flowWatermarks.remove(sessionKey);
       lastChangedKey = sessionKey;
       changes.value++;
     });
@@ -478,6 +539,8 @@ class SessionRuntimeMirror {
         timer.cancel();
       }
       _flowRetentionTimers.clear();
+      // 新 hub 的 per-key revision 从 1 重来，旧水位一律失效。
+      _flowWatermarks.clear();
       for (final entry in _notifiers.entries) {
         // 旧 hub 这些回合已经死了：记下 turn id，之后无身份的旧 running 回放
         // 一律拒绝，不能让它们复活成 running（A7-2）。
@@ -527,6 +590,7 @@ class SessionRuntimeMirror {
       timer.cancel();
     }
     _flowRetentionTimers.clear();
+    _flowWatermarks.clear();
     _retiredFlowTurns.clear();
     for (final notifier in _notifiers.values) {
       notifier.dispose();

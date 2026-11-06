@@ -9038,6 +9038,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get flow_viewSession => 'View session';
 
   @override
+  String get flow_sessionPreparing =>
+      'Preparing the session, please try again shortly';
+
+  @override
   String flow_tasksUsed(int count) {
     return '$count tasks dispatched';
   }

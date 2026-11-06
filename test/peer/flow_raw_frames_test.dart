@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shepaw/models/channel.dart';
 import 'package:shepaw/peer/hub_event_apply.dart' show liveTurnPlaceholderId;
 import 'package:shepaw/peer/services/hub_event_client.dart';
+import 'package:shepaw/peer/services/peer_agent_client_service.dart';
 import 'package:shepaw/peer/services/peer_connection.dart';
 import 'package:shepaw/peer/services/peer_connection_manager.dart';
 import 'package:shepaw/peer/services/session_runtime_mirror.dart';
@@ -1378,6 +1379,247 @@ void main() {
     final row = await db.getMessageById(liveTurnPlaceholderId(turnId));
     expect(row!['content'], '前半后半');
     expect(await db.getMessageById('msg-a75-progress'), isNotNull);
+    await incoming.close();
+  });
+
+  test('A8-1: 只有 metadata 的长工具回合不误收尾，后续 chunk 仍能拼入', () async {
+    const sessionId = 'flow_a81_impl';
+    const channelId = 'psess_$sessionId';
+    const turnId = 'flow-a81-impl-a1';
+    final incoming = StreamController<PeerControlEvent>.broadcast();
+    final client = HubEventClient(
+      events: incoming.stream,
+      seqStore: MemoryHubSeqStore(),
+      flowIdleFinalizeDelay: const Duration(milliseconds: 40),
+      flowFallbackFinalizeDelay: const Duration(milliseconds: 400),
+    );
+    client.start();
+    addTearDown(client.dispose);
+    final db = getIt<LocalDatabaseService>();
+    await db.deleteMessage(liveTurnPlaceholderId(turnId));
+
+    Map<String, dynamic> chunk(String content) => {
+          'type': 'agent_chunk',
+          'request_id': turnId,
+          'turn_id': turnId,
+          'channel_id': channelId,
+          'session_id': sessionId,
+          'agent_id': 'agent-7',
+          'run_id': 'a81run',
+          'node': 'impl',
+          'content': content,
+        };
+    // 长工具回合常见的 relay 帧：没有 agent_id、没有 session_key。
+    Map<String, dynamic> metadata() => {
+          'type': 'agent_metadata',
+          'request_id': turnId,
+          'turn_id': turnId,
+          'channel_id': channelId,
+          'run_id': 'a81run',
+          'node': 'impl',
+          'metadata': {'kind': 'thinking'},
+        };
+    Future<bool> isStreaming() async {
+      final row = await db.getMessageById(liveTurnPlaceholderId(turnId));
+      final meta = row?['metadata'];
+      return meta is String && meta.contains('streaming');
+    }
+
+    incoming.add(PeerControlEvent(peerId: 'peer-1', data: chunk('甲')));
+    await _until(isStreaming);
+    final arms = client.debugFinalizeTimerArms;
+    expect(client.debugHasFinalizeTimer(turnId), isTrue);
+
+    // 兜底窗口之内只来 metadata：它也必须刷新并重新装回计时器。
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    incoming.add(PeerControlEvent(peerId: 'peer-1', data: metadata()));
+    await _until(() async => client.debugFinalizeTimerArms > arms);
+    expect(client.debugHasFinalizeTimer(turnId), isTrue,
+        reason: 'metadata 刷新不能只是把计时器取消');
+    expect(client.debugFinalizeDelayFor(turnId),
+        const Duration(milliseconds: 400));
+
+    // 第一片 chunk 的原始 400ms 窗口已经过去；刷新后的窗口还没到。
+    await Future<void>.delayed(const Duration(milliseconds: 320));
+    expect(await isStreaming(), isTrue,
+        reason: '只发 metadata 的长回合不能在 400ms 被误收尾');
+    expect(client.debugHasFinalizeTimer(turnId), isTrue);
+
+    // 之后的 chunk 不能被 settled 丢掉，正文要接上。
+    incoming.add(PeerControlEvent(peerId: 'peer-1', data: chunk('乙')));
+    await _until(() async {
+      final row = await db.getMessageById(liveTurnPlaceholderId(turnId));
+      return (row?['content'] as String? ?? '') == '甲乙';
+    });
+    expect(await isStreaming(), isTrue);
+    await incoming.close();
+  });
+
+  test('A8-4: 带 progress 的最终 peerhist_ 回复仍删掉保留占位', () async {
+    const sessionId = 'flow_a84_impl';
+    const channelId = 'psess_$sessionId';
+    const turnId = 'flow-a84-impl-a1';
+    const finalId = 'peerhist_a84_final';
+    final incoming = StreamController<PeerControlEvent>.broadcast();
+    final client = HubEventClient(
+      events: incoming.stream,
+      seqStore: MemoryHubSeqStore(),
+      flowIdleFinalizeDelay: const Duration(milliseconds: 60),
+      flowFallbackFinalizeDelay: const Duration(seconds: 5),
+    );
+    client.start();
+    addTearDown(client.dispose);
+    final db = getIt<LocalDatabaseService>();
+    await db.deleteMessage(liveTurnPlaceholderId(turnId));
+    await db.deleteMessage(finalId);
+
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: {
+        'type': 'agent_chunk',
+        'request_id': turnId,
+        'turn_id': turnId,
+        'channel_id': channelId,
+        'session_id': sessionId,
+        'agent_id': 'agent-7',
+        'run_id': 'a84run',
+        'node': 'impl',
+        'content': '半成品回答',
+      },
+    ));
+    await _until(() async {
+      final row = await db.getMessageById(liveTurnPlaceholderId(turnId));
+      return (row?['content'] as String? ?? '').contains('半成品回答');
+    });
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: {
+        'type': 'session.state',
+        'flow': true,
+        'session_key': sessionId,
+        'channel_id': channelId,
+        'status': 'idle',
+        'turn_id': turnId,
+        'revision': 2,
+        'hub_id': 'hub-flow',
+      },
+    ));
+    await _until(() async {
+      final row = await db.getMessageById(liveTurnPlaceholderId(turnId));
+      final meta = row?['metadata'];
+      return meta is String && meta.contains('finalized');
+    });
+
+    // 工具回合的最终回复也带 progress_content，但不是「中途消息」。
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: {
+        'type': 'hub_event',
+        'event': {
+          'seq': 2,
+          'kind': 'message.created',
+          'channel_id': channelId,
+          'agent_id': 'agent-7',
+          'data': {
+            'id': finalId,
+            'channel_id': channelId,
+            'session_id': sessionId,
+            'agent_id': 'agent-7',
+            'content': '完整答案',
+            'type': 'text',
+            'metadata': {'progress_content': 'Bash'},
+            'from': {'id': 'agent-7', 'type': 'agent', 'name': 'Impl'},
+          },
+        },
+      },
+    ));
+    await _until(() async =>
+        await db.getMessageById(liveTurnPlaceholderId(turnId)) == null);
+    expect(await db.getMessageById(finalId), isNotNull);
+    expect(await db.listLiveTurnPlaceholderIds(channelId), isEmpty,
+        reason: '只剩完整答案一条，不能和半成品占位并存');
+    await incoming.close();
+  });
+
+  test('A8-5: metadata 刷新 agent 前缀 mirror，长回合 turnId 不丢、能停止', () async {
+    const sessionId = 'flow_a85_impl';
+    const channelId = 'psess_$sessionId';
+    const sessionKey = 'agent:agent-7:$sessionId';
+    const turnId = 'flow-a85-impl-a1';
+
+    final previous = getIt.isRegistered<SessionRuntimeMirror>()
+        ? getIt<SessionRuntimeMirror>()
+        : null;
+    if (previous != null) await getIt.unregister<SessionRuntimeMirror>();
+    final mirror = SessionRuntimeMirror(
+      flowRetention: const Duration(milliseconds: 90),
+    );
+    getIt.registerSingleton<SessionRuntimeMirror>(mirror);
+    addTearDown(() async {
+      await getIt.unregister<SessionRuntimeMirror>();
+      mirror.dispose();
+      if (previous != null) {
+        getIt.registerSingleton<SessionRuntimeMirror>(previous);
+      }
+    });
+
+    final incoming = StreamController<PeerControlEvent>.broadcast();
+    final client = HubEventClient(events: incoming.stream);
+    client.start();
+    addTearDown(client.dispose);
+
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: {
+        'type': 'session.state',
+        'flow': true,
+        'session_key': sessionKey,
+        'channel_id': channelId,
+        'state': 'running',
+        'turn_id': turnId,
+        'revision': 1,
+        'peer_id': 'peer-1',
+      },
+    ));
+    await _until(() async => mirror.stateFor(sessionKey).isRunning);
+
+    // 只有 metadata 的长工具回合：帧里既没有 session_key 也没有 agent_id，
+    // 退回的裸 key 必须能映射到 `agent:agent-7:...` 那份 notifier。
+    for (var i = 0; i < 5; i++) {
+      incoming.add(PeerControlEvent(
+        peerId: 'peer-1',
+        data: {
+          'type': 'agent_metadata',
+          'request_id': turnId,
+          'turn_id': turnId,
+          'channel_id': channelId,
+          'run_id': 'a85run',
+          'node': 'impl',
+          'metadata': {'kind': 'thinking'},
+        },
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+    }
+    // 200ms > 90ms retention：没刷到正确的 notifier 就已经被翻成 idle。
+    expect(mirror.stateFor(sessionKey).isRunning, isTrue,
+        reason: 'metadata 活动要刷新 agent 前缀的 retention 计时器');
+    expect(mirror.stateFor(sessionKey).turnId, turnId,
+        reason: 'turnId 还在，停止按钮才能发 flow- 取消');
+
+    final sent = <Map<String, dynamic>>[];
+    final svc = PeerAgentClientService.instance;
+    svc.debugSendControlOverride = (peerId, frame) async {
+      sent.add(Map<String, dynamic>.from(frame));
+      return true;
+    };
+    addTearDown(() => svc.debugSendControlOverride = null);
+    await svc.cancelInflightTurnsForChannel(
+      channelId,
+      sessionKey: sessionKey,
+      runtimeTurnId: turnId,
+    );
+    await _until(() async => sent.any((frame) =>
+        frame['type'] == 'agent_cancel' && frame['request_id'] == turnId));
     await incoming.close();
   });
 }

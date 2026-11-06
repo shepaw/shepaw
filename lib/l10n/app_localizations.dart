@@ -15761,6 +15761,12 @@ abstract class AppLocalizations {
   /// **'查看会话'**
   String get flow_viewSession;
 
+  /// No description provided for @flow_sessionPreparing.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在准备会话，请稍后再点'**
+  String get flow_sessionPreparing;
+
   /// No description provided for @flow_tasksUsed.
   ///
   /// In zh, this message translates to:

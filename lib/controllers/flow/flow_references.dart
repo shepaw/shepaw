@@ -160,24 +160,38 @@ List<FlowNode> _insertAsChild(
   bool parentIsIf,
 ) {
   if (parentIsIf && branch != null) {
-    final out = <FlowNode>[];
-    var branchIdx = 0;
-    var inserted = false;
-    for (final c in children) {
-      final b = c.branch ?? 'then';
-      // 追加到 then：放在第一段 else 之前；追加到 else：落到末尾。
-      if (b == 'else' && branch == 'then' && index == null && !inserted) {
-        out.add(drag);
-        inserted = true;
+    // 主机的 `move` 把 index 当作**该分支数组内**的下标：then 段和 else 段是
+    // 各自独立计数的，越界就夹到该分支末尾。旧实现按整份 children 的序号找
+    // branchIdx==index，then 有 1 个子、index=1 时找不到，节点被追加到所有
+    // else 之后，前序索引全错（A8-9）。
+    String branchOf(FlowNode child) => child.branch == 'else' ? 'else' : 'then';
+    final targetBranch = branch == 'else' ? 'else' : 'then';
+    final branchCount =
+        children.where((c) => branchOf(c) == targetBranch).length;
+    final wanted = index == null ? branchCount : index.clamp(0, branchCount);
+    // 把分支内下标翻译成扁平 children 里的插入位置。
+    var flatIndex = children.length;
+    if (wanted < branchCount) {
+      var seen = 0;
+      for (var i = 0; i < children.length; i++) {
+        if (branchOf(children[i]) != targetBranch) continue;
+        if (seen == wanted) {
+          flatIndex = i;
+          break;
+        }
+        seen++;
       }
-      if (b == branch && index != null && branchIdx == index && !inserted) {
-        out.add(drag);
-        inserted = true;
+    } else if (targetBranch == 'then') {
+      // then 段末尾 = 第一段 else 之前；没有 else 就是整份 children 的末尾。
+      for (var i = 0; i < children.length; i++) {
+        if (branchOf(children[i]) == 'else') {
+          flatIndex = i;
+          break;
+        }
       }
-      if (b == branch) branchIdx++;
-      out.add(c);
     }
-    if (!inserted) out.add(drag);
+    final out = List<FlowNode>.from(children);
+    out.insert(flatIndex, drag);
     return out;
   }
   final out = List<FlowNode>.from(children);
