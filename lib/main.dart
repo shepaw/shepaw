@@ -22,6 +22,7 @@ import 'services/app_lock_coordinator.dart';
 import 'services/app_lock_service.dart';
 import 'storage/pouch_session.dart';
 import 'theme/app_theme.dart';
+import 'widgets/compact_build_error.dart';
 
 import 'providers/locale_provider.dart';
 import 'providers/notification_provider.dart';
@@ -69,6 +70,8 @@ Future<void> main(List<String> args) async {
   runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+      // 列表项构建失败时不要用默认错误占位：它会撑满视口，release 上看着像白屏。
+      installCompactBuildErrorWidget();
 
       // 解析数据根目录（macOS 首次运行会把旧沙盒容器搬过来）。
       // 必须早于 LoggerService / 任何数据库，否则会在错误的位置建空库。

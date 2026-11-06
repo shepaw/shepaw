@@ -8,6 +8,7 @@ import '../../services/messaging/chat_history_content.dart';
 import '../../services/message_collapse_preference.dart';
 import '../../service_locator.dart';
 import 'message_long_press_handler.dart';
+import '../form_field_shape.dart';
 import 'pending_form_dock.dart';
 import 'streaming_scroll_anchor.dart';
 
@@ -310,7 +311,8 @@ class _ChatMessageListState extends State<ChatMessageList> {
                 children: [
                   if (showDateSeparator)
                     _buildDateSeparator(context, message.dateTime),
-                  DockedInteractionPlaceholder.question(context, docked.card!),
+                  if (docked.card case final card?)
+                    DockedInteractionPlaceholder.question(context, card),
                 ],
               ),
             );
@@ -447,10 +449,11 @@ class _ChatMessageListState extends State<ChatMessageList> {
                           : null,
                       onActionSelected:
                           (confirmationId, actionId, actionLabel) {
-                        final confirmationContext = (live.metadata?[
-                                    'action_confirmation']
-                                as Map<String, dynamic>?)?[
-                            'confirmation_context'] as String?;
+                        final confirmationContext = FormFieldShape.strictString(
+                          FormFieldShape.stringKeyMap(
+                            live.metadata?['action_confirmation'],
+                          )?['confirmation_context'],
+                        );
                         widget.onActionSelected(
                             live, confirmationId, actionId, actionLabel,
                             confirmationContext: confirmationContext);

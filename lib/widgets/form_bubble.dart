@@ -144,16 +144,19 @@ class _FormBubbleState extends State<FormBubble> {
 
   @override
   Widget build(BuildContext context) {
-    final title = widget.formData['title'] as String?;
-    final description = widget.formData['description'] as String?;
-    final formId = widget.formData['form_id'] as String? ?? '';
-    final fields = (widget.formData['fields'] as List<dynamic>?) ?? [];
+    final title = FormFieldShape.asString(widget.formData['title']);
+    final description = FormFieldShape.asString(widget.formData['description']);
+    final formId =
+        FormFieldShape.strictString(widget.formData['form_id']) ?? '';
+    final rawFields = widget.formData['fields'];
+    final fields = rawFields is List ? rawFields : const <dynamic>[];
     final submittedValues =
-        widget.formData['submitted_values'] as Map<String, dynamic>?;
+        FormFieldShape.stringKeyMap(widget.formData['submitted_values']);
     final isSubmitted = submittedValues != null;
     // 主机不再等这张表单了（超时按默认继续 / 回合被停止）。字段留着给用户看
     // 当时问了什么，但不能再填 —— 提交按钮换成一句说明。
-    final closedReason = widget.formData['closed'] as String?;
+    final closedReason =
+        FormFieldShape.strictString(widget.formData['closed']);
     final isClosed = !isSubmitted && closedReason != null;
 
     if (fields.isEmpty) return const SizedBox.shrink();
@@ -206,7 +209,8 @@ class _FormBubbleState extends State<FormBubble> {
               // Form fields
               ...fields.asMap().entries.map((entry) {
                 final index = entry.key;
-                final field = entry.value as Map<String, dynamic>;
+                final field = FormFieldShape.stringKeyMap(entry.value);
+                if (field == null) return const SizedBox.shrink();
                 return Padding(
                   padding: EdgeInsets.only(
                       bottom: index < fields.length - 1 ? 12 : 0),
@@ -770,7 +774,7 @@ class _FormBubbleState extends State<FormBubble> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      f['name'] as String? ?? 'File',
+                      FormFieldShape.asString(f['name']) ?? 'File',
                       style: const TextStyle(fontSize: 13),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -955,8 +959,11 @@ class _FormBubbleState extends State<FormBubble> {
         );
 
       case 'file_upload':
-        final files =
-            (value as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [];
+        final files = <Map<String, dynamic>>[
+          if (value is List)
+            for (final raw in value)
+              if (FormFieldShape.stringKeyMap(raw) case final file?) file,
+        ];
         return Column(
           children: files.map<Widget>((f) {
             return Padding(
@@ -968,7 +975,7 @@ class _FormBubbleState extends State<FormBubble> {
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
-                      f['name'] as String? ?? 'File',
+                      FormFieldShape.asString(f['name']) ?? 'File',
                       style: const TextStyle(fontSize: 13),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,

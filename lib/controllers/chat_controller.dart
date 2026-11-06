@@ -31,6 +31,7 @@ import '../services/approval/pending_approval_hub.dart';
 import '../services/approval/pending_approval_item.dart';
 import '../services/cli_approval_coordinator.dart';
 import '../services/cli_approval_service.dart';
+import '../widgets/form_field_shape.dart';
 import '../clis/shepaw/os/os_executor.dart' as os_exec;
 import '../models/workflow_models.dart';
 import '../peer/host_she_turn.dart';

@@ -6,6 +6,7 @@ import 'package:shepaw/l10n/app_localizations.dart';
 import 'package:shepaw/models/message.dart';
 import 'package:shepaw/widgets/chat/paged_form_panel.dart';
 import 'package:shepaw/widgets/chat/pending_form_dock.dart';
+import 'package:shepaw/widgets/form_field_shape.dart';
 
 Message _msg(String id, {Map<String, dynamic>? metadata}) => Message(
       id: id,
@@ -49,6 +50,47 @@ Widget _app(Widget child) => MaterialApp(
 
 void main() {
   group('dockedPendingInteraction', () {
+    test('loosely typed form map still docks and keeps the card', () {
+      final loose = <dynamic, dynamic>{
+        'form_id': 'f-loose',
+        'title': '选哪个端口',
+        'fields': <dynamic>[
+          <dynamic, dynamic>{
+            'field_id': 'port',
+            'type': 'text_input',
+            'label': '端口',
+          },
+        ],
+        'peer_form': <dynamic, dynamic>{
+          'peer_id': 'peer-1',
+          'approval_id': 'f-loose',
+        },
+      };
+      final docked = dockedPendingInteraction([
+        _msg('loose', metadata: {'form': loose}),
+      ]);
+      expect(docked?.kind, DockedInteractionKind.form);
+      expect(docked?.card, isA<Map<String, dynamic>>());
+      expect(docked?.card?['title'], '选哪个端口');
+      expect(isStandaloneFormCard(docked!.message), isTrue);
+    });
+
+    test('mergeCard keeps a local close and stays string-keyed', () {
+      final existing = <dynamic, dynamic>{
+        'form_id': 'f1',
+        'title': '旧标题',
+        'closed': 'answered_elsewhere',
+      };
+      final merged = FormFieldShape.mergeCard(existing, {
+        'form_id': 'f1',
+        'title': '新标题',
+        'fields': <dynamic>[],
+      });
+      expect(merged, isA<Map<String, dynamic>>());
+      expect(merged['title'], '新标题');
+      expect(merged['closed'], 'answered_elsewhere');
+    });
+
     test('取最新一张待处理卡：提问或审批', () {
       final messages = [
         _msg('a', metadata: {'form': _form('f1')}),

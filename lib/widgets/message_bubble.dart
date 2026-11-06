@@ -27,6 +27,7 @@ import 'single_select_bubble.dart';
 import 'multi_select_bubble.dart';
 import 'file_upload_bubble.dart';
 import 'form_bubble.dart';
+import 'form_field_shape.dart';
 import '../models/progress_step.dart';
 import 'collapsible_message_bubble.dart';
 import 'progress_steps_view.dart';
@@ -918,16 +919,19 @@ class MessageBubble extends StatelessWidget {
       return result;
     }
 
-    final mentionsRaw = metadata?['mentions'] as List<dynamic>? ?? [];
-    if (mentionsRaw.isEmpty) return cacheAndReturn(content);
+    final mentionsRaw = metadata?['mentions'];
+    if (mentionsRaw is! List || mentionsRaw.isEmpty) {
+      return cacheAndReturn(content);
+    }
 
     final notifyByName = <String, bool>{};
     final names = <String>[];
     for (final raw in mentionsRaw) {
-      final m = raw as Map<String, dynamic>;
-      final name = m['name'] as String? ?? '';
+      final m = FormFieldShape.stringKeyMap(raw);
+      if (m == null) continue;
+      final name = FormFieldShape.asString(m['name']) ?? '';
       if (name.isEmpty) continue;
-      notifyByName[name] = m['notify'] as bool? ?? true;
+      notifyByName[name] = m['notify'] == false ? false : true;
       if (!names.contains(name)) names.add(name);
     }
     if (names.isEmpty) return cacheAndReturn(content);
@@ -1213,10 +1217,11 @@ class MessageBubble extends StatelessWidget {
     }
 
     final planApproval =
-        message.metadata?['plan_approval'] as Map<String, dynamic>?;
+        FormFieldShape.stringKeyMap(message.metadata?['plan_approval']);
     if (planApproval != null && onPlanApprovalResponded != null) {
-      final planResponded =
-          message.metadata?['plan_approval_responded'] as Map<String, dynamic>?;
+      final planResponded = FormFieldShape.stringKeyMap(
+        message.metadata?['plan_approval_responded'],
+      );
       final isPlanResponded =
           planResponded != null || planApproval['_approved'] != null;
       return PlanApprovalCard(
@@ -1226,8 +1231,9 @@ class MessageBubble extends StatelessWidget {
       );
     }
 
-    final actionConfirmation =
-        message.metadata?['action_confirmation'] as Map<String, dynamic>?;
+    final actionConfirmation = FormFieldShape.stringKeyMap(
+      message.metadata?['action_confirmation'],
+    );
     if (actionConfirmation != null &&
         actionConfirmation['_workflowPeerApproval'] == true &&
         actionConfirmation['selected_action_id'] == null) {
@@ -1279,7 +1285,7 @@ class MessageBubble extends StatelessWidget {
     }
 
     final singleSelect =
-        message.metadata?['single_select'] as Map<String, dynamic>?;
+        FormFieldShape.stringKeyMap(message.metadata?['single_select']);
     if (singleSelect != null) {
       return SingleSelectBubble(
         selectData: singleSelect,
@@ -1288,7 +1294,7 @@ class MessageBubble extends StatelessWidget {
     }
 
     final multiSelect =
-        message.metadata?['multi_select'] as Map<String, dynamic>?;
+        FormFieldShape.stringKeyMap(message.metadata?['multi_select']);
     if (multiSelect != null) {
       return MultiSelectBubble(
         selectData: multiSelect,
@@ -1297,7 +1303,7 @@ class MessageBubble extends StatelessWidget {
     }
 
     final fileUpload =
-        message.metadata?['file_upload'] as Map<String, dynamic>?;
+        FormFieldShape.stringKeyMap(message.metadata?['file_upload']);
     if (fileUpload != null) {
       return FileUploadBubble(
         uploadData: fileUpload,
@@ -1305,7 +1311,7 @@ class MessageBubble extends StatelessWidget {
       );
     }
 
-    final formData = message.metadata?['form'] as Map<String, dynamic>?;
+    final formData = FormFieldShape.stringKeyMap(message.metadata?['form']);
     if (formData != null) {
       return FormBubble(
         formData: formData,
