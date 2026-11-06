@@ -69,6 +69,7 @@ class HubEventClient {
     this.onCaughtUp,
     this.pageTimeout = _defaultPageTimeout,
     this.pageRetryDelay = const Duration(seconds: 1),
+    this.flowIdleFinalizeDelay = const Duration(seconds: 2),
   })  : events = events ?? PeerConnectionManager.instance.controlEvents,
         seqStore = seqStore ?? PrefsHubSeqStore();
 
@@ -83,6 +84,15 @@ class HubEventClient {
   final Duration pageTimeout;
   final Duration pageRetryDelay;
 
+  /// idle 后等最终 `message.created` 的窗口；超过就把占位收尾成终态。
+  /// 测试里调小，线上用默认值。
+  final Duration flowIdleFinalizeDelay;
+
+  /// Test seam：流式 chunk 在解析落点前可以卡在这里，用来制造
+  /// 「解析期间回合已被清掉」的时序。测试注入，线上为 null。
+  @visibleForTesting
+  Future<void> Function()? debugBeforeFlowChunkResolve;
+
   final _uuid = const Uuid();
   final _log = LoggerService();
   final _notices = StreamController<HubNotice>.broadcast();
@@ -94,6 +104,21 @@ class HubEventClient {
   final _attached = <String>{};
   final _liveBuffers = <String, String>{};
   final _liveChannels = <String, String>{};
+
+  /// 每回合的「登记代次」。流式 chunk 解析落点是异步的；await 期间回合可能
+  /// 已经被终态消息 / idle 超时收尾清掉（[_clearLiveTurn]），代次随之一并失效。
+  /// 回来先比对代次，否则会把已结束的回合重新登记回去，留下永不消失的流式气泡。
+  final _liveTurnTokens = <String, Object>{};
+
+  /// idle 之后等待最终 `message.created` 的收尾计时器。
+  ///
+  /// 主机（修好之后）先写回复再发 idle，但旧主机 / 失败回合的顺序不保证。
+  /// idle 只 flush、不删占位；最终消息到了由 [_clearLiveTurn] 收掉，超时则由
+  /// [_finalizeIdleTurn] 把占位改成终态（保留正文、停掉流式标记）。
+  final _idleFinalizeTimers = <String, Timer>{};
+
+  /// 超时收尾后仍保留的占位（turnId → channelId）：等最终消息到了再删。
+  final _finalizedPlaceholders = <String, String>{};
 
   /// 已落过流式占位行的 turn（裸流程帧专用，避免每片 chunk 都写一次库）。
   final _flowPlaceholders = <String>{};
@@ -215,8 +240,14 @@ class HubEventClient {
     _resumeSub = null;
     _liveFlushTimer?.cancel();
     _liveFlushTimer = null;
+    for (final timer in _idleFinalizeTimers.values) {
+      timer.cancel();
+    }
+    _idleFinalizeTimers.clear();
     _liveDirty.clear();
     _flowTargets.clear();
+    _liveTurnTokens.clear();
+    _finalizedPlaceholders.clear();
     _attachRequests.clear();
     _catchUpQueued.clear();
     _liveDeferred.clear();
@@ -1131,6 +1162,18 @@ class HubEventClient {
         // turnId，后续同回合 chunk 建不出占位、集合也无限增长。
         await _clearLiveTurn(id);
       }
+      // idle 超时收尾后保留下来的占位：最终消息终于到了，现在可以删了，
+      // 否则同一回合会同时留下「收尾占位」和「最终消息」两条气泡。
+      final finalized = _finalizedPlaceholders.entries
+          .where((entry) => entry.value == channelId)
+          .map((entry) => entry.key)
+          .toList();
+      for (final id in finalized) {
+        _finalizedPlaceholders.remove(id);
+        if (getIt.isRegistered<LocalDatabaseService>()) {
+          await db.deleteMessage(liveTurnPlaceholderId(id));
+        }
+      }
     }
     _notify(channelId);
   }
@@ -1201,6 +1244,7 @@ class HubEventClient {
     _attached.add(turnId);
     _liveChannels[turnId] = channelId;
     _liveBuffers[turnId] = '';
+    _liveTurnTokens[turnId] = Object();
     if (getIt.isRegistered<LocalDatabaseService>()) {
       await getIt<LocalDatabaseService>().createMessage(
         id: liveTurnPlaceholderId(turnId),
@@ -1230,15 +1274,26 @@ class HubEventClient {
 
   /// 清掉一个回合在本机留下的所有临时状态。占位行和卡片都要收掉，
   /// 否则回合早没了却还挂着一个 streaming 气泡。
-  Future<String?> _clearLiveTurn(String turnId) async {
+  ///
+  /// [deletePlaceholder] 为 false 时保留占位行本身（idle 超时收尾用：正文
+  /// 已经显示了，不能因为主机没发最终消息就把它删掉）。
+  Future<String?> _clearLiveTurn(
+    String turnId, {
+    bool deletePlaceholder = true,
+  }) async {
+    _idleFinalizeTimers.remove(turnId)?.cancel();
+    _finalizedPlaceholders.remove(turnId);
     _attached.remove(turnId);
     _flowPlaceholders.remove(turnId);
+    _liveTurnTokens.remove(turnId);
     _attachRequests.removeWhere((_, id) => id == turnId);
     _liveBuffers.remove(turnId);
     _liveDirty.remove(turnId);
     _forgetFlowTargets(turnId);
     final channelId = _liveChannels.remove(turnId);
-    if (turnId.isNotEmpty && getIt.isRegistered<LocalDatabaseService>()) {
+    if (deletePlaceholder &&
+        turnId.isNotEmpty &&
+        getIt.isRegistered<LocalDatabaseService>()) {
       await getIt<LocalDatabaseService>()
           .deleteMessage(liveTurnPlaceholderId(turnId));
     }
@@ -1430,14 +1485,24 @@ class HubEventClient {
       _liveChannels[turnId] = rawChannelId;
       _liveBuffers[turnId] = '';
     }
+    // 回合登记代次：await 回来时用它判断这一轮是否已经被终态 / 超时收尾清掉。
+    _liveTurnTokens.putIfAbsent(turnId, () => Object());
+    final token = _liveTurnTokens[turnId];
+    // idle 之后又来了 chunk：说明回合还在出字，取消收尾计时，继续按流式处理。
+    _idleFinalizeTimers.remove(turnId)?.cancel();
     if (content.isNotEmpty) {
       _liveBuffers[turnId] = (_liveBuffers[turnId] ?? '') + content;
     }
+    final gate = debugBeforeFlowChunkResolve;
+    if (gate != null) await gate();
     // 同一回合的后续 chunk 复用落点解析：查库 / 建壳只做一次。
     final target = await _flowTargets.putIfAbsent(
       _flowTargetKey(peerId, turnId),
       () => _resolveFlowControlTarget(peerId, data),
     );
+    // 解析期间回合可能已经被终态消息 / 超时收尾清掉。这时不能再把
+    // _liveChannels / 占位重新登记回去 —— 否则气泡永远停在 streaming。
+    if (token == null || _liveTurnTokens[turnId] != token) return;
     final channelId =
         target.channelId.isEmpty ? rawChannelId : target.channelId;
     _liveChannels[turnId] = channelId;
@@ -1460,15 +1525,19 @@ class HubEventClient {
   }
 
   /// `agent_metadata` 同样没有 _pending。进度 / thinking 元数据 v1 不画独立
-  /// 气泡，但必须按 channel_id 把本地壳建好，后面的落库才有地方去。
-  ///
-  /// 与 chunk 共用 [_flowTargets]：同一回合的 metadata / chunk 只解析一次
-  /// 落点（查库 / 建壳很贵，且 metadata 常常先于第一片 chunk 到达）。
+  /// 气泡；带 `agent_id` 时顺便把本地壳建好、把落点解析缓存给同回合的 chunk
+  /// 复用（查库 / 建壳很贵，且 metadata 常常先于第一片 chunk 到达）。
+  /// 不带 `agent_id` 的帧不解析、不缓存，交给 chunk 处理。
   Future<void> _onFlowControlMetadata(
     String peerId,
     Map<String, dynamic> data,
   ) async {
     if (!_isFlowRuntimeFrame(data)) return;
+    // metadata 帧经常不带 `agent_id`（relay / 主机原生帧只有 request_id +
+    // metadata）。拿空 agent_id 解析会把「空 sender、未建壳」的目标缓存进
+    // [_flowTargets]，同回合稍后带 agent_id 的 chunk 复用它，占位就没归属了。
+    // 这里干脆不解析也不缓存：频道壳等带 agent_id 的 chunk 到了再建。
+    if ((data['agent_id'] as String? ?? '').trim().isEmpty) return;
     final turnId = (data['turn_id'] ?? data['request_id'] ?? '').toString();
     final target = turnId.isEmpty
         ? await _resolveFlowControlTarget(peerId, data)
@@ -1507,15 +1576,57 @@ class HubEventClient {
     if (queue is List) {
       PouchTurnRelay.instance.noteHostQueue(queue);
     }
-    // 翻成 idle 就收掉自己起的流式占位；终态正文由 message.created 落库。
+    // 翻成 idle：先把已拼到的正文 flush 出去，但**不要立刻删占位**。
+    // 主机的顺序不保证（旧版先发 idle 再落最终消息；失败 / 取消的回合甚至
+    // 没有最终消息），立刻删会让答案闪一下消失、失败回合的流式正文全丢。
+    // 保留到该回合的最终 `message.created` 到达（[_insertMessage] 会收掉），
+    // 或等过 [_flowIdleFinalizeDelay] 把占位收尾成终态（见 [_finalizeIdleTurn]）。
     if (snapshot['state'] != 'running') {
       final turnId = (data['turn_id'] ?? '').toString();
       if (turnId.isNotEmpty && _liveChannels.containsKey(turnId)) {
         await _flushLiveTurn(turnId);
-        final channelId = await _clearLiveTurn(turnId);
-        if (channelId != null) _notify(channelId);
+        if (_liveChannels.containsKey(turnId)) _scheduleIdleFinalize(turnId);
       }
     }
+  }
+
+  /// idle 之后给「最终消息」留一个有限窗口；超时就地收尾，不删占位。
+  void _scheduleIdleFinalize(String turnId) {
+    _idleFinalizeTimers.remove(turnId)?.cancel();
+    _idleFinalizeTimers[turnId] = Timer(flowIdleFinalizeDelay, () {
+      _idleFinalizeTimers.remove(turnId);
+      unawaited(_finalizeIdleTurn(turnId));
+    });
+  }
+
+  /// 等不到最终消息：把占位从「流式」收成终态，正文保留。
+  ///
+  /// 空正文（只有 metadata、还没来得及出字）没有保留价值，直接删掉；
+  /// 有正文就只去掉 `status: streaming`，并登记到 [_finalizedPlaceholders]，
+  /// 万一最终消息随后才到还能被 [_insertMessage] 收掉。
+  Future<void> _finalizeIdleTurn(String turnId) async {
+    if (!_liveChannels.containsKey(turnId)) return;
+    await _flushLiveTurn(turnId);
+    // flush 期间最终消息可能已经先到了。
+    if (!_liveChannels.containsKey(turnId)) return;
+    final channelId = _liveChannels[turnId]!;
+    final content = _liveBuffers[turnId] ?? '';
+    if (content.isEmpty) {
+      final cleared = await _clearLiveTurn(turnId);
+      if (cleared != null) _notify(cleared);
+      return;
+    }
+    if (getIt.isRegistered<LocalDatabaseService>()) {
+      try {
+        await getIt<LocalDatabaseService>()
+            .updateMessageMetadata(liveTurnPlaceholderId(turnId), const {});
+      } catch (e) {
+        _log.warning('idle finalize failed: $e', tag: 'HubEvent');
+      }
+    }
+    _notify(channelId);
+    final finalized = await _clearLiveTurn(turnId, deletePlaceholder: false);
+    if (finalized != null) _finalizedPlaceholders[turnId] = finalized;
   }
 
   void _applyMeta(String peerId, HubEvent event) {

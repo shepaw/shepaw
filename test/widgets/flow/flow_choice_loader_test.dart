@@ -149,6 +149,43 @@ void main() {
     );
   });
 
+  test('A3-5 models 拉取失败、modes 成功时，模型仍可手输', () async {
+    const peerId = 'peer-a5';
+    const remoteId = 'agent-a5';
+    await createAgent(peerId: peerId, remoteId: remoteId);
+    // 不给模型缓存：这一路是「请求失败且没有缓存」。
+    svc.debugSendControlOverride = (peer, frame) async {
+      switch (frame['type']) {
+        case 'agent_models_req':
+          throw StateError('models backend down');
+        case 'agent_modes_req':
+          reply(peerId, 'agent_modes_resp', {
+            'agent_id': remoteId,
+            'modes': [
+              {'value': 'mode-new', 'display_name': 'New mode'},
+            ],
+          });
+      }
+      return true;
+    };
+
+    final bundle = await defaultFlowChoiceLoader(
+      FlowExecutor.agent(remoteId),
+      peerId: peerId,
+      roles: const {},
+      onCached: (_) {},
+    );
+
+    expect(bundle.models.options, isEmpty);
+    expect(bundle.models.allowManual, isTrue,
+        reason: '模型拉取失败且无缓存时，应允许用户手输，不受 modes 成功影响');
+    expect(bundle.modes.allowManual, isFalse, reason: 'modes 正常返回列表时不需要手输');
+    expect(
+      bundle.modes.options.map((o) => o.value),
+      contains('mode-new'),
+    );
+  });
+
   test('A10 fetchModes 抛异常时 fetchModels 的新结果仍然生效', () async {
     const peerId = 'peer-a10';
     const remoteId = 'agent-a10';

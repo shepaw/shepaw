@@ -14,6 +14,7 @@ import '../l10n/app_localizations.dart';
 import '../peer/models/flow_models.dart';
 import '../peer/pouch_turn_relay.dart';
 import '../peer/services/hub_flow.dart';
+import '../peer/services/peer_agent_ids.dart';
 import '../models/remote_agent.dart';
 import '../screens/jade_slip_agent_picker.dart';
 import '../services/local_database_service.dart';
@@ -694,17 +695,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     if (picked == null) return null;
     final agent = _agents.where((a) => a.id == picked.id).firstOrNull;
     // 选择弹层里还有惜宝那条（不在 _agents 里）：原样返回，沿用旧行为。
-    return agent == null ? picked.id : _hubAgentId(agent);
-  }
-
-  String _hubAgentId(RemoteAgent agent) {
-    if (!agent.isPeerAgent) return agent.id;
-    final remote = agent.remoteAgentId;
-    if (remote != null && remote.isNotEmpty) return remote;
-    final prefix = 'peeragent_${agent.sourcePeerId}_';
-    if (agent.id.startsWith(prefix)) return agent.id.substring(prefix.length);
-    // 新行落库时 id 就是 Hub id 本身。
-    return agent.id;
+    return agent == null ? picked.id : hubAgentIdOf(agent);
   }
 
   Future<void> _talk() async {

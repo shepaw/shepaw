@@ -18,8 +18,7 @@ class FlowSessionOrigin {
   final String nodeKey;
 
   /// 横幅上只显示最后一段节点 id，完整 key（`outer/inner`）太长。
-  String get label =>
-      nodeKey.isEmpty ? runId : nodeKey.split('/').last;
+  String get label => nodeKey.isEmpty ? runId : nodeKey.split('/').last;
 }
 
 FlowSessionOrigin? flowSessionOriginOf(Iterable<Message> messages) {
@@ -34,6 +33,38 @@ FlowSessionOrigin? flowSessionOriginOf(Iterable<Message> messages) {
     );
   }
   return null;
+}
+
+/// 会话级缓存：消息列表没变就不重复全量扫描。
+///
+/// 聊天页每次重建（抽屉拖动、键盘、流式通知）都会调到这里。长 DM 里
+/// [flowSessionOriginOf] 每次从头扫到尾纯属浪费；只有列表长度、最后一条 id
+/// 或频道变了才可能影响结果。
+class FlowSessionOriginCache {
+  FlowSessionOrigin? _origin;
+  int _length = -1;
+  String? _lastId;
+  String _scope = '';
+
+  /// 真正重新扫描的次数（测试用来确认缓存生效）。
+  int scanCount = 0;
+
+  FlowSessionOrigin? resolve(
+    List<Message> messages, {
+    String scope = '',
+  }) {
+    final length = messages.length;
+    final lastId = length == 0 ? null : messages.last.id;
+    if (length == _length && lastId == _lastId && scope == _scope) {
+      return _origin;
+    }
+    _length = length;
+    _lastId = lastId;
+    _scope = scope;
+    scanCount++;
+    _origin = flowSessionOriginOf(messages);
+    return _origin;
+  }
 }
 
 /// ChatScreen 顶部的一条轻量提示。不重建页面结构：只在消息列表上方多一行。

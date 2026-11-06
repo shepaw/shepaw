@@ -13,6 +13,7 @@ import '../screens/jade_slip_agent_picker.dart';
 import '../services/local_database_service.dart';
 import '../peer/models/flow_models.dart';
 import '../peer/services/hub_flow.dart';
+import '../peer/services/peer_agent_ids.dart';
 import '../utils/layout_utils.dart';
 import '../widgets/discard_changes_scope.dart';
 import '../widgets/flow/flow_new_flow_dialog.dart';
@@ -35,6 +36,7 @@ class FlowWorkspaceScreen extends StatefulWidget {
     this.scope = '',
     this.embedded = false,
     this.client,
+    this.initialAgents,
   });
 
   /// 为空时自己解析当前登录的主机（[HubFlow.activeHost]）。
@@ -47,6 +49,10 @@ class FlowWorkspaceScreen extends StatefulWidget {
   final bool embedded;
 
   final HubFlow? client;
+
+  /// Test seam：直接给定 agent 候选行，跳过本地库查询。
+  @visibleForTesting
+  final List<RemoteAgent>? initialAgents;
 
   @override
   State<FlowWorkspaceScreen> createState() => _FlowWorkspaceScreenState();
@@ -242,19 +248,29 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
     ));
   }
 
-  /// 打开 Agent 选择器，返回选中的 id。
+  /// 打开 Agent 选择器，返回选中的 **Hub 侧 agent id**。
+  ///
+  /// 只列这个流程所在主机的 peer agent；写入 `bindings` 时用 Hub id，而不是
+  /// 本机行 id。老行是 `peeragent_<peer>_<remote>`，设计页（[FlowDesignScreen]）
+  /// 已经转过，这里必须用同一套逻辑，否则开跑时主机会收到一个它不认识的 id。
   Future<String?> _pickAgent() async {
+    final peerId = _host.isNotEmpty ? _host : widget.peerId;
     if (_agents.isEmpty) {
-      final agents = await LocalDatabaseService().getAllRemoteAgents();
+      final all = widget.initialAgents ??
+          await LocalDatabaseService().getAllRemoteAgents();
       if (!mounted) return null;
-      setState(() => _agents = agents);
+      setState(() => _agents =
+          all.where((a) => a.isPeerAgent && a.sourcePeerId == peerId).toList());
     }
     final picked = await showJadeSlipAgentPicker(
       context,
       agents: _agents,
       title: AppLocalizations.of(context).flow_executorPickAgent,
     );
-    return picked?.id;
+    if (picked == null) return null;
+    final agent = _agents.where((a) => a.id == picked.id).firstOrNull;
+    // 选择弹层里还有惜宝那条（不在 _agents 里）：原样返回，沿用旧行为。
+    return agent == null ? picked.id : hubAgentIdOf(agent);
   }
 
   Future<void> _create() async {
@@ -350,16 +366,21 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, _) => _onPop(didPop),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final wide = _wideFor(constraints);
-          _wide = wide;
-          final showingNarrowDetail = !wide && _selectedName != null;
-          final hideOuterAppBar = widget.embedded && wide;
-          return Scaffold(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = _wideFor(constraints);
+        _wide = wide;
+        final showingNarrowDetail = !wide && _selectedName != null;
+        final hideOuterAppBar = widget.embedded && wide;
+        // 只有真的要自己处理时才拦返回：窄屏详情（先退回列表）或编辑区
+        // 有未保存改动。列表态且干净就放行，别无条件吃掉 iOS 侧滑 / 原生 pop。
+        final intercept = showingNarrowDetail || _editorDirty;
+        final canPopNatively =
+            !intercept && !widget.embedded && Navigator.of(context).canPop();
+        return PopScope<Object?>(
+          canPop: canPopNatively,
+          onPopInvokedWithResult: (didPop, _) => _onPop(didPop),
+          child: Scaffold(
             appBar: hideOuterAppBar
                 ? null
                 : AppBar(
@@ -424,9 +445,9 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
                         : showingNarrowDetail
                             ? _buildDetail(l10n, hoistActions: true)
                             : _buildListPane(l10n, showHeader: false),
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -585,7 +606,15 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
       draftStore: _drafts,
       embedded: true,
       actionsNotifier: hoistActions ? _designActions : null,
-      onDirtyChanged: (dirty) => _editorDirty = dirty,
+      onDirtyChanged: (dirty) {
+        if (_editorDirty == dirty) return;
+        _editorDirty = dirty;
+        // PopScope 的 canPop 依赖这个值；设计页可能在 build / dispose 阶段
+        // 回调，不能直接 setState，推到下一帧再刷新。
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() {});
+        });
+      },
       onControllerReady: (controller) => _editor = controller,
     );
   }

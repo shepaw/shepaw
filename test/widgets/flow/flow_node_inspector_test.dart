@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/controllers/flow/flow_executor.dart';
@@ -154,6 +156,65 @@ void main() {
     expect(applied!.containsKey('task.model'), isFalse,
         reason: '值没变，不能发一条 set(null) 把模板清掉');
     expect(applied!['task.agent'], 'agent-y');
+  });
+
+  testWidgets('A3-3 换 agent 后、异步结果回来前不再显示旧 agent 的模型', (tester) async {
+    final first = _models();
+    final lateBundle = Completer<FlowChoiceBundle>();
+    var calls = 0;
+    FlowExecutor? last;
+    Future<FlowChoiceBundle> load(
+      FlowExecutor executor, {
+      required String peerId,
+      required Map<String, dynamic> roles,
+      required void Function(FlowChoiceBundle cached) onCached,
+    }) {
+      calls++;
+      last = executor;
+      if (executor.value == 'agent-y') return lateBundle.future;
+      return Future.value(first);
+    }
+
+    await tester.pumpWidget(_app(FlowNodeInspector(
+      node: const FlowNode(key: 'impl', id: 'impl', kind: 'task', fields: {
+        'task': {'agent': 'agent-x', 'model': 'm-old'}
+      }),
+      schema: _schema(),
+      peerId: 'p1',
+      roles: const [],
+      choiceLoader: load,
+      onPickAgent: () async => 'agent-y',
+      onApply: (_) {},
+      onDelete: () {},
+      onWrap: (_) {},
+      onUnwrap: () {},
+      onAddAfter: () {},
+    )));
+    await _settle(tester);
+    expect(calls, 1);
+    expect(find.text('Old'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('exec-value')));
+    await _settle(tester);
+    // 新 agent 的请求还挂着：旧列表必须已经清掉，不能继续让用户选。
+    expect(calls, 2);
+    expect(last?.value, 'agent-y');
+    expect(find.text('Old'), findsNothing, reason: '异步结果回来前必须先把旧 agent 的模型清掉');
+    expect(find.text('正在加载模型…'), findsWidgets);
+
+    // 新结果回来后才显示新 agent 的模型。
+    lateBundle.complete(const FlowChoiceBundle(
+      models: FlowModelChoices(
+        options: [FlowModelChoice(value: 'm-new', displayName: 'New')],
+        current: 'm-new',
+      ),
+      modes: FlowModelChoices(),
+    ));
+    await _settle(tester);
+    expect(find.text('Old'), findsNothing);
+    expect(find.text('正在加载模型…'), findsNothing, reason: '新结果回来后不该还在 loading');
+    // 当前值已经换成新 agent 的 m-new（下拉收起时显示「跟随 agent 默认」那一项）。
+    expect(find.textContaining('m-new'), findsWidgets);
   });
 
   testWidgets('switchable=false 时模型下拉禁用并给出提示', (tester) async {

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/l10n/app_localizations.dart';
+import 'package:shepaw/models/remote_agent.dart';
 import 'package:shepaw/peer/services/hub_flow.dart';
 import 'package:shepaw/peer/services/peer_connection_manager.dart';
 import 'package:shepaw/screens/flow_workspace_screen.dart';
@@ -328,10 +329,96 @@ void main() {
     // 加一步 → 产生未保存改动（onDirtyChanged → _editorDirty = true）。
     await tester.tap(find.byKey(const ValueKey('after-impl')));
     await _settle(tester);
+    // A3-7：有未保存改动仍要拦截原生返回。
+    expect(
+      tester.widget<PopScope<Object?>>(find.byType(PopScope<Object?>)).canPop,
+      isFalse,
+    );
     // 返回走 PopScope → _guardDirty → 弹确认。
     await tester.tap(find.byType(BackButton).first);
     await _settle(tester);
     expect(find.text('有没保存的改动'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  // ── A3-7：原生返回 / 侧滑 ────────────────────────────────────────────────
+
+  testWidgets('A3-7 列表态且干净时放行原生返回', (tester) async {
+    final harness = _Harness();
+    addTearDown(harness.close);
+    await _pumpPushed(tester, harness.client, size: const Size(400, 800));
+
+    expect(
+      tester.widget<PopScope<Object?>>(find.byType(PopScope<Object?>)).canPop,
+      isTrue,
+      reason: '列表态没有可拦截的层级，不该吃掉 iOS 侧滑 / 原生 pop',
+    );
+    final navigator =
+        tester.state<NavigatorState>(find.byType(Navigator).first);
+    expect(await navigator.maybePop(), isTrue);
+    await _settle(tester);
+    expect(find.text('previous page'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('A3-7 窄屏详情仍然拦截，先退回列表', (tester) async {
+    final harness = _Harness();
+    addTearDown(harness.close);
+    await _pumpPushed(tester, harness.client, size: const Size(400, 800));
+    await tester.tap(find.text('dev'));
+    await _settle(tester);
+
+    expect(
+      tester.widget<PopScope<Object?>>(find.byType(PopScope<Object?>)).canPop,
+      isFalse,
+      reason: '详情态要先退回列表，不能直接退出页面',
+    );
+    final navigator =
+        tester.state<NavigatorState>(find.byType(Navigator).first);
+    expect(await navigator.maybePop(), isTrue);
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('flow-search')), findsOneWidget);
+    expect(find.text('previous page'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  // ── A3-6：开跑对话框的 agent 绑定用 Hub id ───────────────────────────────
+
+  testWidgets('A3-6 老 peeragent_ 行选进 bindings 时发送 Hub id', (tester) async {
+    const localId = 'peeragent_p1_remote-a36';
+    final agent = RemoteAgent(
+      id: localId,
+      name: 'Legacy Agent',
+      token: 'tok',
+      endpoint: 'peer://p1/$localId',
+      protocol: ProtocolType.peer,
+      connectionType: ConnectionType.websocket,
+      metadata: {
+        'source_peer_id': 'p1',
+        'remote_agent_id': 'remote-a36',
+      },
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+    );
+
+    final harness = _Harness()
+      ..flowYaml = 'flow: dev\nroles:\n  coder: {desc: 写}\nsteps: []\n';
+    addTearDown(harness.close);
+    await _pump(tester, harness.client, agents: [agent]);
+
+    await tester.tap(find.byKey(const ValueKey('flow-start-dev')));
+    await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('start-role-coder')));
+    await _settle(tester);
+    await tester.tap(find.text('Legacy Agent'));
+    await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('start-go')));
+    await _settle(tester);
+
+    final start =
+        harness.sent.firstWhere((f) => f['type'] == 'flow_run_start_req');
+    expect(start['bindings'], {'coder': 'remote-a36'},
+        reason: '主机只认 Hub id，不能把本机行 id 发过去');
     await tester.pumpWidget(const SizedBox());
   });
 }
@@ -489,13 +576,22 @@ class _Harness {
   }
 }
 
-Future<void> _pump(WidgetTester tester, HubFlow client,
-    {bool embedded = false}) async {
+Future<void> _pump(
+  WidgetTester tester,
+  HubFlow client, {
+  bool embedded = false,
+  List<RemoteAgent> agents = const [],
+}) async {
   await tester.pumpWidget(MaterialApp(
     locale: const Locale('zh'),
     localizationsDelegates: AppLocalizations.localizationsDelegates,
     supportedLocales: AppLocalizations.supportedLocales,
-    home: FlowWorkspaceScreen(peerId: 'p1', client: client, embedded: embedded),
+    home: FlowWorkspaceScreen(
+      peerId: 'p1',
+      client: client,
+      embedded: embedded,
+      initialAgents: agents.isEmpty ? null : agents,
+    ),
   ));
   await _settle(tester);
 }

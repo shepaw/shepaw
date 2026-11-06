@@ -154,6 +154,9 @@ class _ChatScreenState extends State<ChatScreen>
   /// so the app bar can show a "同步远端…" indicator.
   bool _syncingPeerHistory = false;
 
+  /// 流程来源横幅的扫描缓存：消息列表没变时不再全量扫一遍。
+  final _flowOriginCache = FlowSessionOriginCache();
+
   // UI-only state (bound to widget tree)
   final _messageController = TextEditingController();
   final _itemScrollController = ItemScrollController();
@@ -3561,8 +3564,12 @@ class _ChatScreenState extends State<ChatScreen>
     final hasLeading = hasCustomLeading ||
         (!widget.embedded && Navigator.of(context).canPop());
     // 流程发起的 prompt 带 metadata.flow：只给这种会话加一行来源横幅。
-    final flowOrigin =
-        c.isGroupMode ? null : flowSessionOriginOf(c.messages);
+    final flowOrigin = c.isGroupMode
+        ? null
+        : _flowOriginCache.resolve(
+            c.messages,
+            scope: c.currentChannelId ?? '',
+          );
     return Scaffold(
       appBar: AppBar(
           elevation: 0,

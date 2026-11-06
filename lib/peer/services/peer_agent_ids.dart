@@ -23,6 +23,20 @@ bool isOwnedPeerAgentRow(
   return rid == null || rid == remoteAgentId;
 }
 
+/// 本机 agent 行 → Hub 侧认得的 agent id。
+///
+/// 新行落库时 id 就是 Hub id；旧行是 `peeragent_<peer>_<remote>`，必须先剥成
+/// remote id，否则发给主机的 `task.agent` / 角色绑定会是一个不存在的值。
+String hubAgentIdOf(RemoteAgent agent) {
+  if (!agent.isPeerAgent) return agent.id;
+  final remote = agent.remoteAgentId;
+  if (remote != null && remote.isNotEmpty) return remote;
+  final prefix = 'peeragent_${agent.sourcePeerId}_';
+  if (agent.id.startsWith(prefix)) return agent.id.substring(prefix.length);
+  // 没有 remoteAgentId 且不是老前缀：id 本身已经是 Hub id。
+  return agent.id;
+}
+
 /// 孤儿卡帧里的会话归属是否就是 [hostSessionId]。
 ///
 /// 帧里的 `channel_id` 与 `hostSessionIdForChannel(currentChannelId)` 是同一

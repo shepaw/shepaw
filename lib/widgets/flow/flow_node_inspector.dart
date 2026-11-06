@@ -86,32 +86,37 @@ FlowChoiceBundle _bundleFrom(
   PeerModelsList? models,
   PeerModesList? modes, {
   bool loading = false,
-}) =>
-    FlowChoiceBundle(
-      models: FlowModelChoices(
-        options: [
-          for (final m in models?.models ?? const <PeerAgentModel>[])
-            FlowModelChoice(
-                value: m.value,
-                displayName: m.displayName,
-                description: m.description),
-        ],
-        current: models?.current,
-        switchable: models?.switchable ?? true,
-        loading: loading,
-      ),
-      modes: FlowModelChoices(
-        options: [
-          for (final m in modes?.modes ?? const <PeerAgentMode>[])
-            FlowModelChoice(
-                value: m.value,
-                displayName: m.displayName,
-                description: m.description),
-        ],
-        current: modes?.current,
-        loading: loading,
-      ),
-    );
+}) {
+  // 每个字段独立判断：这一路没有结果（请求失败且没有缓存）就只把这一路
+  // 退成手输，不能因为另一路成功就把用户彻底锁死。
+  return FlowChoiceBundle(
+    models: FlowModelChoices(
+      options: [
+        for (final m in models?.models ?? const <PeerAgentModel>[])
+          FlowModelChoice(
+              value: m.value,
+              displayName: m.displayName,
+              description: m.description),
+      ],
+      current: models?.current,
+      switchable: models?.switchable ?? true,
+      loading: loading,
+      allowManual: models == null,
+    ),
+    modes: FlowModelChoices(
+      options: [
+        for (final m in modes?.modes ?? const <PeerAgentMode>[])
+          FlowModelChoice(
+              value: m.value,
+              displayName: m.displayName,
+              description: m.description),
+      ],
+      current: modes?.current,
+      loading: loading,
+      allowManual: modes == null,
+    ),
+  );
+}
 
 /// 单个请求失败只影响自己：失败返回 null，另一个照常返回结果。
 Future<({PeerModelsList list, bool completed})?> _fetchModelsSafe(
@@ -371,7 +376,13 @@ class _FlowNodeInspectorState extends State<FlowNodeInspector> {
     } else {
       _modeSeedValue = _values['task.mode'];
     }
-    setState(() => _choiceSeed++);
+    // 换 agent 后旧列表立刻作废：不等异步结果回来，就不能再让用户看到
+    // 上一个 agent 的模型 / 模式（id 不通用，选了也会被主机拒）。
+    setState(() {
+      _modelChoices = const FlowModelChoices(loading: true);
+      _modeChoices = const FlowModelChoices(loading: true);
+      _choiceSeed++;
+    });
     _refreshChoices(executor);
     if (!cleared) return;
     final messenger = ScaffoldMessenger.maybeOf(context);
