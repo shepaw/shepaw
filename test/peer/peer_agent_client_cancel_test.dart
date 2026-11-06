@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/peer/services/peer_agent_client_service.dart';
+import 'package:shepaw/peer/services/session_runtime_mirror.dart';
+import 'package:shepaw/service_locator.dart' show getIt;
 
 /// 用户主动停止时，无论 controller 的 cancel token 是否已与 turn 失联
 /// （页面 reattach / 进程重启 hydrate 后 token 是新建的），都必须按 channel
@@ -179,6 +181,120 @@ void main() {
 
       expect(sentFrames, isEmpty);
       expect(svc.hasInflightForChannel('ch-a'), isTrue);
+    });
+  });
+
+  group('P4: 主机发起的流程回合没有本地 _pending', () {
+    const channelId = 'psess_flow_deadbe12_impl';
+    const sessionKey = 'agent:agent-7:flow_deadbe12_impl';
+    const turnId = 'flow-deadbe12-impl-a1';
+    final svc = PeerAgentClientService.instance;
+    final sentFrames = <({String peerId, Map<String, dynamic> json})>[];
+    late SessionRuntimeMirror mirror;
+
+    void seedSnapshot({
+      required String requestId,
+      required bool running,
+    }) {
+      mirror.apply({
+        'session_key': sessionKey,
+        'state': running ? 'running' : 'idle',
+        'turn_id': requestId,
+        'peer_id': 'peer-1',
+        'revision': 1,
+        'at': 1,
+        'hub_id': 'hub-1',
+      }, force: true);
+    }
+
+    setUp(() async {
+      sentFrames.clear();
+      mirror = SessionRuntimeMirror();
+      if (getIt.isRegistered<SessionRuntimeMirror>()) {
+        await getIt.unregister<SessionRuntimeMirror>();
+      }
+      getIt.registerSingleton<SessionRuntimeMirror>(mirror);
+      svc.debugSendControlOverride = (peerId, json) async {
+        sentFrames.add((peerId: peerId, json: json));
+        return true;
+      };
+    });
+
+    tearDown(() async {
+      svc.debugSendControlOverride = null;
+      if (getIt.isRegistered<SessionRuntimeMirror>()) {
+        await getIt.unregister<SessionRuntimeMirror>();
+      }
+    });
+
+    test('按 session.state 的 turn_id 发 agent_cancel', () async {
+      seedSnapshot(requestId: turnId, running: true);
+      expect(svc.hasInflightForChannel(channelId), isFalse);
+
+      await svc.cancelInflightTurnsForChannel(
+        channelId,
+        sessionKey: sessionKey,
+      );
+
+      expect(sentFrames, hasLength(1));
+      expect(sentFrames.single.peerId, 'peer-1');
+      expect(sentFrames.single.json, {
+        'type': 'agent_cancel',
+        'request_id': turnId,
+      });
+    });
+
+    test('不知道精确 sessionKey 时按 channel id 后缀兜底', () async {
+      seedSnapshot(requestId: turnId, running: true);
+
+      await svc.cancelInflightTurnsForChannel(channelId);
+
+      expect(sentFrames, hasLength(1));
+      expect(sentFrames.single.json['request_id'], turnId);
+    });
+
+    test('快照已 idle 时用 ChatController 缓存的 turn id 兜底', () async {
+      seedSnapshot(requestId: turnId, running: false);
+
+      await svc.cancelInflightTurnsForChannel(
+        channelId,
+        sessionKey: sessionKey,
+        runtimeTurnId: turnId,
+      );
+
+      expect(sentFrames, hasLength(1));
+      expect(sentFrames.single.json['request_id'], turnId);
+    });
+
+    test('普通 DM 不额外发 cancel（非 flow- 前缀且已在 _pending 里）',
+        () async {
+      seedSnapshot(requestId: 'req-dm-1', running: true);
+      final future = svc.debugSeedPendingTurn(
+        requestId: 'req-dm-1',
+        peerId: 'peer-1',
+        channelId: channelId,
+      );
+
+      await svc.cancelInflightTurnsForChannel(
+        channelId,
+        sessionKey: sessionKey,
+        runtimeTurnId: 'req-dm-1',
+      );
+
+      expect(sentFrames, hasLength(1));
+      expect(sentFrames.single.json['request_id'], 'req-dm-1');
+      expect((await future).content, '[Stopped]');
+    });
+
+    test('idle 且无缓存 turn id 时为空操作', () async {
+      seedSnapshot(requestId: turnId, running: false);
+
+      await svc.cancelInflightTurnsForChannel(
+        channelId,
+        sessionKey: sessionKey,
+      );
+
+      expect(sentFrames, isEmpty);
     });
   });
 }

@@ -19,6 +19,9 @@ class FlowFieldCatalog {
     'if.cond': FlowFieldShape.cond,
     'map.over': FlowFieldShape.cond,
     'call.flow': FlowFieldShape.flowRef,
+    // 主机把这些当普通 string 给，界面要换成「选 agent 的可用模型 / 模式」的下拉。
+    'task.model': FlowFieldShape.modelRef,
+    'task.mode': FlowFieldShape.modeRef,
   };
 
   /// 主机 schema 里那些「类型对了但选项可能不对」的字段，用客户端选项覆盖。
@@ -58,12 +61,12 @@ class FlowFieldCatalog {
         labelEn: 'Executor (agent:<id> or she)'),
     'task.model': FlowFieldSpec(
         path: 'task.model',
-        shape: FlowFieldShape.string,
+        shape: FlowFieldShape.modelRef,
         labelZh: '模型',
         labelEn: 'Model'),
     'task.mode': FlowFieldSpec(
         path: 'task.mode',
-        shape: FlowFieldShape.string,
+        shape: FlowFieldShape.modeRef,
         labelZh: '模式',
         labelEn: 'Mode'),
     'task.on_restart': FlowFieldSpec(

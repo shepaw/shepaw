@@ -17,6 +17,13 @@ enum FlowFieldShape {
 
   /// 流程库引用（`call.flow`）：同 scope 的流程列表里选，不手敲 `lib/x@2`。
   flowRef,
+
+  /// `task.model`：选中的 agent 的可用模型下拉。主机 schema 仍是 string，
+  /// 形状由客户端覆盖（[FlowFieldCatalog]）。写入的是模型 id，或模板串。
+  modelRef,
+
+  /// `task.mode`：同上，走 `agent_modes_req` 拉到的模式列表。
+  modeRef,
 }
 
 class FlowFieldSpec {
@@ -55,22 +62,19 @@ bool isFlowFieldValueValid(FlowFieldSpec spec, Object? value) {
     FlowFieldShape.int => value is int,
     FlowFieldShape.intOrInput => value is int ||
         (value is String &&
-            RegExp(r'^\{\{\s*inputs\.[A-Za-z0-9_.-]+\s*\}\}$')
-                .hasMatch(value)),
+            RegExp(r'^\{\{\s*inputs\.[A-Za-z0-9_.-]+\s*\}\}$').hasMatch(value)),
     FlowFieldShape.boolean => value is bool,
-    FlowFieldShape.enumOf =>
-      value is String && spec.options.contains(value),
+    FlowFieldShape.enumOf => value is String && spec.options.contains(value),
     FlowFieldShape.cond => switch (value) {
         String text => text.trim().isNotEmpty,
-        Map map =>
-          map['judge'] is String &&
-          (map['judge'] as String).trim().isNotEmpty &&
-          map['ask'] is String,
+        Map map => map['judge'] is String &&
+            (map['judge'] as String).trim().isNotEmpty &&
+            map['ask'] is String,
         _ => false,
       },
-    FlowFieldShape.listOf =>
-      value is List && value.isNotEmpty &&
-          value.every((e) => e is String && e.trim().isNotEmpty),
+    FlowFieldShape.listOf => value is List &&
+        value.isNotEmpty &&
+        value.every((e) => e is String && e.trim().isNotEmpty),
     FlowFieldShape.mapOf => value is Map &&
         value.isNotEmpty &&
         value.entries.every((e) =>
@@ -92,6 +96,9 @@ bool isFlowFieldValueValid(FlowFieldSpec spec, Object? value) {
           }
           return true; // 主机给的原始结构化值，原样保留
         }),
-    FlowFieldShape.flowRef => value is String && value.trim().isNotEmpty,
+    FlowFieldShape.flowRef ||
+    FlowFieldShape.modelRef ||
+    FlowFieldShape.modeRef =>
+      value is String && value.trim().isNotEmpty,
   };
 }

@@ -4,10 +4,32 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../peer/models/flow_models.dart';
+import '../peer/peer_approval_payload.dart';
+import '../peer/services/flow_session_open.dart';
 import '../peer/services/hub_flow.dart';
+import '../services/approval/pending_approval_hub.dart';
 import '../widgets/flow/flow_node_tree.dart';
 import '../widgets/flow/flow_yaml.dart';
 import '../widgets/flow/flow_yaml_editor.dart';
+
+/// P6：「去回答」要定位到那张待答卡片。孤儿卡落的确定性消息行是
+/// `peer_form_<approval_id>`；提醒项 id 是 `action:<form_id>`（form_id 就等于
+/// approval_id）。找不到待答项时返回 null —— 只打开会话，不强求高亮。
+@visibleForTesting
+String? pendingFlowFormMessageId(String channelId) {
+  for (final item in PendingApprovalHub.instance.itemsForChannel(channelId)) {
+    final mid = item.messageId;
+    if (mid != null && mid.isNotEmpty) return mid;
+    const prefix = 'action:';
+    if (item.id.startsWith(prefix)) {
+      final formId = item.id.substring(prefix.length);
+      if (formId.isNotEmpty) {
+        return PeerApprovalPayload.formCardMessageId(formId);
+      }
+    }
+  }
+  return null;
+}
 
 /// 工作流运行视图（方案 C.2）：节点树叠状态，随 `flow.*` 事件更新；
 /// 关卡直接点选项作答；点节点看完整输出，有会话的可以"查看会话"。
@@ -29,7 +51,8 @@ class FlowRunScreen extends StatefulWidget {
   /// 测试里换成假的。
   final HubFlow? client;
 
-  /// 点"查看会话"：参数是节点上的引擎会话键。App 在这里跳到只读会话页。
+  /// 点"查看会话"的可选覆盖。不传时屏幕自己按 `psess_<sessionId>` 打开
+  /// 普通私聊（[openFlowNodeSession]），调用方不必再接线。
   final void Function(FlowNode node)? onOpenSession;
 
   /// 这次运行被删掉了：调用方退回上一层（列表里也不该再有它）。
@@ -81,8 +104,12 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
     if (run != null) {
       setState(() {
         if (event.node != null) {
-          _run =
-              run.withNodeStatus(event.node!, event.nodeStatus!, event.attempt);
+          _run = run.withNodeStatus(
+            event.node!,
+            event.nodeStatus!,
+            event.attempt,
+            sessionId: event.sessionId,
+          );
         } else if (event.runStatus != null) {
           _run = run.withRunStatus(event.runStatus!);
         }
@@ -177,6 +204,39 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
     unawaited(_load());
   }
 
+  /// 默认的「查看会话」：节点会话就是一条普通私聊，频道 id 由主机下发的
+  /// 真会话 id 拼出来。调用方传了 [FlowRunScreen.onOpenSession] 就走覆盖。
+  /// P6：节点在等用户回答时顺带把待答卡片的高亮 id 带上，点进去直接定位。
+  void _openSession(FlowNode node) {
+    final override = widget.onOpenSession;
+    if (override != null) {
+      override(node);
+      return;
+    }
+    final sessionId = node.sessionId;
+    if (sessionId == null || sessionId.isEmpty) return;
+    final l10n = AppLocalizations.of(context);
+    unawaited(openFlowSession(
+      peerId: widget.peerId,
+      sessionId: sessionId,
+      remoteAgentId: node.agentId ?? '',
+      title: l10n.flow_sessionBanner(node.id),
+      highlightMessageId: node.status?.isWaitingForUser == true
+          ? pendingFlowFormMessageId(flowSessionChannelId(sessionId))
+          : null,
+    ));
+  }
+
+  /// P6：顶部「运行会话」入口打开本次运行的惜宝会话（`flow_<rid8>_she`）。
+  void _openRunSession(String runSheSessionId) {
+    final l10n = AppLocalizations.of(context);
+    unawaited(openFlowRunSession(
+      peerId: widget.peerId,
+      runSheSessionId: runSheSessionId,
+      title: l10n.flow_runSession,
+    ));
+  }
+
   void _showNode(FlowNode node) {
     showModalBottomSheet<void>(
       context: context,
@@ -210,14 +270,29 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
                 const SizedBox(height: 12),
                 SelectableText(node.text!),
               ],
-              if (node.session != null && widget.onOpenSession != null) ...[
+              if (node.hasSession) ...[
                 const SizedBox(height: 16),
                 OutlinedButton.icon(
+                  key: const ValueKey('node-view-session'),
                   icon: const Icon(Icons.forum_outlined),
                   label: Text(l10n.flow_viewSession),
                   onPressed: () {
                     Navigator.pop(context);
-                    widget.onOpenSession!(node);
+                    _openSession(node);
+                  },
+                ),
+              ],
+              // P6：节点在等人回答时，弹层里也放一个「去回答」（和卡片上那个
+              // 一样打开节点会话并定位待答卡片）。
+              if (node.status?.isWaitingForUser == true && node.hasSession) ...[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  key: const ValueKey('node-goto-answer'),
+                  icon: const Icon(Icons.question_answer_outlined),
+                  label: Text(l10n.flow_gotoAnswer),
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _openSession(node);
                   },
                 ),
               ],
@@ -357,13 +432,41 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
       padding: const EdgeInsets.all(12),
       children: [
         _RunHeader(run: run),
+        // P6：运行级惜宝会话（flow_<rid8>_she）。gate / judge 这类流程层面的
+        // 卡片都落在这里，从运行页能一步点进去。拿不到 rid8 时不画这个入口。
+        if (run.runSessionId != null) ...[
+          const SizedBox(height: 8),
+          _RunSessionEntry(onTap: () => _openRunSession(run.runSessionId!)),
+        ],
         const SizedBox(height: 12),
         FlowNodeTree(
           nodes: run.tree,
           onTapNode: _showNode,
+          onOpenSession: _openSession,
           onAnswerGate: _answer,
         ),
       ],
+    );
+  }
+}
+
+/// 顶部「运行会话」入口。
+class _RunSessionEntry extends StatelessWidget {
+  const _RunSessionEntry({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: OutlinedButton.icon(
+        key: const ValueKey('flow-run-session'),
+        icon: const Icon(Icons.forum_outlined, size: 18),
+        label: Text(l10n.flow_runSession),
+        onPressed: onTap,
+      ),
     );
   }
 }

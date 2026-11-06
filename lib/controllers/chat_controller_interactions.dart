@@ -8,6 +8,21 @@ part of 'chat_controller.dart';
 // 不被控制器核心逻辑反向调用，因此拆分为挂载在 [_ChatControllerBase] 上的 mixin。
 // ---------------------------------------------------------------------------
 
+/// P6：这张**已落库**的 deferred 卡是不是工作流发起的（应由主机推进）。
+///
+/// 只认卡片自己的元数据：`channel_id`、`request_id` / `approval_id` 上的流程
+/// 前缀。**不能用「当前打开的会话」兜底** —— 节点会话（`psess_flow_…`）里
+/// 普通 DM 的延期卡（`request_id` 是 `ask-…`）会被误判成流程卡，答案被静默
+/// 丢掉（见 `flow_p6_orphan_card_test` 里「flow 频道 + ask 卡」的组合）。
+bool isFlowDeferredFormCard(Object? formMeta, String approvalId) {
+  if (formMeta is! Map) return false;
+  return isFlowFormCard(
+    channelId: formMeta['channel_id']?.toString(),
+    requestId: formMeta['request_id']?.toString(),
+    approvalId: approvalId,
+  );
+}
+
 mixin _InteractionOps on _ChatControllerBase {
   static const _cliExpiredActionId = 'expired';
 
@@ -180,8 +195,8 @@ mixin _InteractionOps on _ChatControllerBase {
       final taskForm = task?.metadata?['form'];
       if (task != null && taskForm is Map) {
         task.metadata = Map<String, dynamic>.from(task.metadata!)
-          ..['form'] = (Map<String, dynamic>.from(taskForm)
-            ..remove('submitted_values'));
+          ..['form'] =
+              (Map<String, dynamic>.from(taskForm)..remove('submitted_values'));
       }
     }
     final meta =
@@ -220,6 +235,8 @@ mixin _InteractionOps on _ChatControllerBase {
       return;
     }
     if (!continueTurn) return;
+    // P6：工作流卡片由主机推进，不补这一轮（否则和主机重派的回合并发）。
+    if (shouldSkipDeferredFormFollowUp(formMeta, approvalId)) return;
     await sendDeferredFormFollowUp(
       _deferredFormFollowUpText(approvalId, values),
       instructionName: instructionName,
@@ -523,7 +540,8 @@ mixin _InteractionOps on _ChatControllerBase {
     String? responseText,
   }) async {
     if (!isGroupMode) return false;
-    final updatedMeta = Map<String, dynamic>.from(originalMessage.metadata ?? {});
+    final updatedMeta =
+        Map<String, dynamic>.from(originalMessage.metadata ?? {});
     final section = Map<String, dynamic>.from(
       updatedMeta[metadataKey] as Map<String, dynamic>? ?? {},
     );
@@ -550,7 +568,8 @@ mixin _InteractionOps on _ChatControllerBase {
     }
 
     try {
-      await localDatabaseService.updateMessageMetadata(originalMessage.id, updatedMeta);
+      await localDatabaseService.updateMessageMetadata(
+          originalMessage.id, updatedMeta);
     } catch (e) {
       _emit(ShowErrorSnackBarEvent('$e'));
     }
@@ -568,8 +587,9 @@ mixin _InteractionOps on _ChatControllerBase {
       final agentName = originalMessage.from.name;
       final groupId = groupChannel?.groupFamilyId ?? currentChannelId ?? '';
       Future.microtask(() async {
-        final continued = await GroupOrchestrationContinuation
-            .resolveForInteractionResponse(groupId: groupId);
+        final continued =
+            await GroupOrchestrationContinuation.resolveForInteractionResponse(
+                groupId: groupId);
         await processGroupMessage(
           '@$agentName $responseText',
           continueOrchestrationId: continued,
@@ -626,7 +646,8 @@ mixin _InteractionOps on _ChatControllerBase {
       {'action_id': actionId, 'action_label': actionLabel},
     );
     // Persist so reconcile / channel reload cannot revive the pending card.
-    final meta = Map<String, dynamic>.from(messageIdMap[messageId]?.metadata ?? {});
+    final meta =
+        Map<String, dynamic>.from(messageIdMap[messageId]?.metadata ?? {});
     localDatabaseService.updateMessageMetadata(messageId, meta).ignore();
   }
 
@@ -666,7 +687,8 @@ mixin _InteractionOps on _ChatControllerBase {
     // 一样记个时间，两条路的答案记录长得一样，对账时不用分辨是哪条路写的。
     merged['selected_at'] = DateTime.now().millisecondsSinceEpoch;
     _updateGroupStreamingMetadata(messageId, key, merged);
-    final meta = Map<String, dynamic>.from(messageIdMap[messageId]?.metadata ?? {});
+    final meta =
+        Map<String, dynamic>.from(messageIdMap[messageId]?.metadata ?? {});
     localDatabaseService.updateMessageMetadata(messageId, meta).ignore();
   }
 
@@ -828,9 +850,8 @@ mixin _InteractionOps on _ChatControllerBase {
           feedback: feedback,
         ),
       );
-      final existingPlanData =
-          messageIdMap[originalMessage.id]?.metadata?['plan_approval']
-              as Map<String, dynamic>?;
+      final existingPlanData = messageIdMap[originalMessage.id]
+          ?.metadata?['plan_approval'] as Map<String, dynamic>?;
       if (existingPlanData != null) {
         _updateGroupStreamingMetadata(
           originalMessage.id,
@@ -983,9 +1004,13 @@ mixin _InteractionOps on _ChatControllerBase {
         ? 'User selected action: $actionLabel. 请立即开始按计划执行，直接委派任务给各成员，不要重新输出计划。'
         : 'User selected action: $actionLabel';
 
-    if (await _handleGroupInteractionLocally(originalMessage, 'action_confirmation', {
-      'selected_action_id': actionId,
-    }, responseText: responseTextForGroup)) return;
+    if (await _handleGroupInteractionLocally(
+        originalMessage,
+        'action_confirmation',
+        {
+          'selected_action_id': actionId,
+        },
+        responseText: responseTextForGroup)) return;
 
     // NOTE: intentionally NOT gated on `isProcessing`. An action-confirmation
     // tap is a reply to the in-flight task, not a fresh user turn — for ACP
@@ -1031,7 +1056,10 @@ mixin _InteractionOps on _ChatControllerBase {
         'selected_option_id': optionId,
         'selected_option_label': optionLabel,
       });
-      _updateGroupStreamingMetadata(originalMessage.id, 'single_select_responded', {'option_id': optionId, 'option_label': optionLabel});
+      _updateGroupStreamingMetadata(
+          originalMessage.id,
+          'single_select_responded',
+          {'option_id': optionId, 'option_label': optionLabel});
       _markGroupCardAnswered(originalMessage.id, 'single_select', {
         'selected_option_id': optionId,
         'selected_option_label': optionLabel,
@@ -1040,9 +1068,13 @@ mixin _InteractionOps on _ChatControllerBase {
     }
     // See handleActionSelected for why `isProcessing` is not checked here.
 
-    if (await _handleGroupInteractionLocally(originalMessage, 'single_select', {
-      'selected_option_id': optionId,
-    }, responseText: 'Selected: $optionLabel')) return;
+    if (await _handleGroupInteractionLocally(
+        originalMessage,
+        'single_select',
+        {
+          'selected_option_id': optionId,
+        },
+        responseText: 'Selected: $optionLabel')) return;
 
     try {
       await interactiveResponseHandler.handleSelectResponse(
@@ -1073,7 +1105,8 @@ mixin _InteractionOps on _ChatControllerBase {
     final pending = pendingGroupInteractions[originalMessage.id];
     if (pending != null && !pending.result.isCompleted) {
       pending.result.complete({'selected_option_ids': optionIds});
-      _updateGroupStreamingMetadata(originalMessage.id, 'multi_select_responded', {'option_ids': optionIds});
+      _updateGroupStreamingMetadata(originalMessage.id,
+          'multi_select_responded', {'option_ids': optionIds});
       _markGroupCardAnswered(originalMessage.id, 'multi_select', {
         'selected_option_ids': optionIds,
       });
@@ -1081,9 +1114,13 @@ mixin _InteractionOps on _ChatControllerBase {
     }
     // See handleActionSelected for why `isProcessing` is not checked here.
 
-    if (await _handleGroupInteractionLocally(originalMessage, 'multi_select', {
-      'selected_option_ids': optionIds,
-    }, responseText: 'Selected: $summary')) return;
+    if (await _handleGroupInteractionLocally(
+        originalMessage,
+        'multi_select',
+        {
+          'selected_option_ids': optionIds,
+        },
+        responseText: 'Selected: $summary')) return;
 
     try {
       await interactiveResponseHandler.handleSelectResponse(
@@ -1106,7 +1143,8 @@ mixin _InteractionOps on _ChatControllerBase {
     final pending = pendingGroupInteractions[originalMessage.id];
     if (pending != null && !pending.result.isCompleted) {
       pending.result.complete({'uploaded_files': files});
-      _updateGroupStreamingMetadata(originalMessage.id, 'file_upload_responded', {'files': files});
+      _updateGroupStreamingMetadata(
+          originalMessage.id, 'file_upload_responded', {'files': files});
       _markGroupCardAnswered(originalMessage.id, 'file_upload', {
         'uploaded_files': files,
       });
@@ -1117,9 +1155,13 @@ mixin _InteractionOps on _ChatControllerBase {
       return;
     }
 
-    if (await _handleGroupInteractionLocally(originalMessage, 'file_upload', {
-      'uploaded_files': files,
-    }, responseText: 'Uploaded files: $summary')) return;
+    if (await _handleGroupInteractionLocally(
+        originalMessage,
+        'file_upload',
+        {
+          'uploaded_files': files,
+        },
+        responseText: 'Uploaded files: $summary')) return;
 
     try {
       await interactiveResponseHandler.handleSelectResponse(
@@ -1156,10 +1198,12 @@ mixin _InteractionOps on _ChatControllerBase {
         );
         PendingApprovalHub.instance.resolveByConfirmationId(approvalId);
         _markPeerFormSubmitted(originalMessage, values);
-        if (wasDeferred) {
+        if (wasDeferred &&
+            !shouldSkipDeferredFormFollowUp(formMeta, approvalId)) {
           // 旧回合已经收束，答案回不到那次工具调用：用卡片内容正常发一条
           // 消息，开新的一轮接着做。正文是给模型看的内部指令，气泡改用
           // 卡片提交标题展示，别把指令原文当成用户说的话。
+          // P6 的工作流卡片不走这里：主机自己会重派节点/收口关卡。
           await sendDeferredFormFollowUp(
             _deferredFormFollowUpText(approvalId, values),
             instructionName: instructionName,
@@ -1179,7 +1223,8 @@ mixin _InteractionOps on _ChatControllerBase {
     final pending = pendingGroupInteractions[originalMessage.id];
     if (pending != null && !pending.result.isCompleted) {
       pending.result.complete({'submitted_values': values});
-      _updateGroupStreamingMetadata(originalMessage.id, 'form_responded', {'values': values});
+      _updateGroupStreamingMetadata(
+          originalMessage.id, 'form_responded', {'values': values});
       _markGroupCardAnswered(originalMessage.id, 'form', {
         'submitted_values': values,
       });
@@ -1192,9 +1237,13 @@ mixin _InteractionOps on _ChatControllerBase {
       return;
     }
 
-    if (await _handleGroupInteractionLocally(originalMessage, 'form', {
-      'submitted_values': values,
-    }, responseText: 'Form submitted: $summary')) return;
+    if (await _handleGroupInteractionLocally(
+        originalMessage,
+        'form',
+        {
+          'submitted_values': values,
+        },
+        responseText: 'Form submitted: $summary')) return;
 
     try {
       await interactiveResponseHandler.handleSelectResponse(
@@ -1228,6 +1277,16 @@ mixin _InteractionOps on _ChatControllerBase {
       _emit(ShowErrorSnackBarEvent('$e'));
     }
   }
+
+  /// P6：工作流卡片（群外 gate / 节点 ask_user）由主机在 `agent_form_resp`
+  /// 里自己推进运行，App 不能补开一轮 `agent_chat`，否则会和主机重派的回合
+  /// 在同一条会话里并发。普通 DM 的 deferred 卡仍照旧补那一轮。
+  ///
+  /// 只按卡片自己的元数据判 —— 注意**不能**拿当前会话的 `flow_…` id 兜底：
+  /// 节点会话里普通 DM 的延期卡（`ask-…`）会因此被跳过，答案静默丢失。
+  @visibleForTesting
+  bool shouldSkipDeferredFormFollowUp(Object? formMeta, String approvalId) =>
+      isFlowDeferredFormCard(formMeta, approvalId);
 
   /// 回合外作答时发给模型的新一轮正文。
   ///
@@ -1271,10 +1330,12 @@ mixin _InteractionOps on _ChatControllerBase {
       messageIdMap[updated.id] = updated;
     }
     final channelId = currentChannelId;
-    final task = channelId == null ? null : chatService.getActiveTask(channelId);
+    final task =
+        channelId == null ? null : chatService.getActiveTask(channelId);
     if (task != null) {
       final meta = Map<String, dynamic>.from(task.metadata ?? {});
-      final form = Map<String, dynamic>.from((meta['form'] as Map?) ?? const {});
+      final form =
+          Map<String, dynamic>.from((meta['form'] as Map?) ?? const {});
       form['submitted_values'] = values;
       meta['form'] = form;
       task.metadata = meta;

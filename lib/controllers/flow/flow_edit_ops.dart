@@ -173,6 +173,12 @@ class FlowStepDefaults {
   static bool isContainer(String kind) =>
       kind == 'seq' || kind == 'par' || kind == 'loop' || kind == 'map';
 
+  /// 能不能往这个节点里放子节点（拖放用）。
+  ///
+  /// 比 [isContainer] 多一个 `if`：它虽然不能「拆」，但有两个槽（then / else）
+  /// 能接收子节点。拆开 [canUnwrap] 仍刻意排除它 —— 主机拆 `if` 会丢掉 else。
+  static bool acceptsChildren(String kind) => isContainer(kind) || kind == 'if';
+
   /// 能「拆开」的类型。刻意排除 `if`：主机会把 `else` 整支丢掉。
   static bool canUnwrap(String kind) => isContainer(kind);
 }

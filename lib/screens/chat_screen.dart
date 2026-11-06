@@ -42,6 +42,7 @@ import '../widgets/chat/chat_more_drawer.dart';
 import '../widgets/chat/chat_panel_scope.dart';
 import '../widgets/chat/chat_input_area.dart';
 import '../widgets/chat/chat_message_list.dart';
+import '../widgets/chat/flow_session_banner.dart';
 import '../widgets/chat/streaming_scroll_anchor.dart';
 import '../widgets/chat/chat_reply_preview.dart';
 import '../widgets/chat/chat_queue_panel.dart';
@@ -3559,6 +3560,9 @@ class _ChatScreenState extends State<ChatScreen>
     final hasCustomLeading = widget.showBackButton && widget.onClose != null;
     final hasLeading = hasCustomLeading ||
         (!widget.embedded && Navigator.of(context).canPop());
+    // 流程发起的 prompt 带 metadata.flow：只给这种会话加一行来源横幅。
+    final flowOrigin =
+        c.isGroupMode ? null : flowSessionOriginOf(c.messages);
     return Scaffold(
       appBar: AppBar(
           elevation: 0,
@@ -3649,6 +3653,8 @@ class _ChatScreenState extends State<ChatScreen>
           onOpenGestureEnd: _onOpenGestureEnd,
           child: Column(
             children: [
+              if (flowOrigin != null)
+                FlowSessionBanner(origin: flowOrigin),
               // She config banner — shown when She has no LLM model configured
               if (_sheNeedsConfig) _buildSheConfigBanner(),
   

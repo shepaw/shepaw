@@ -20,6 +20,9 @@ enum FlowOutlineMenuAction {
 
   /// 显式跨分支移动（`if` 内不靠下标跨 then/else）。
   moveToBranch,
+
+  /// 移出一层（取消缩进，对应大纲里的 Alt+←）。
+  outdent,
 }
 
 /// 菜单的选择。[kind] 对 [FlowOutlineMenuAction.retype] 是目标类型，
@@ -43,8 +46,7 @@ Future<FlowOutlineMenuChoice?> showFlowOutlineMenu(
   return showModalBottomSheet<FlowOutlineMenuChoice>(
     context: context,
     isScrollControlled: true,
-    builder: (sheetContext) =>
-        _Menu(row: row, canRetype: canRetype),
+    builder: (sheetContext) => _Menu(row: row, canRetype: canRetype),
   );
 }
 
@@ -112,48 +114,53 @@ class _Menu extends StatelessWidget {
                 [
                   if (node.kind == 'if') ...[
                     _item(context, l10n.flow_outlineThen, () {
-                      Navigator.pop(
-                          context,
-                          (
-                            action: FlowOutlineMenuAction.insertChild,
-                            kind: null,
-                            branch: 'then',
-                          ));
+                      Navigator.pop(context, (
+                        action: FlowOutlineMenuAction.insertChild,
+                        kind: null,
+                        branch: 'then',
+                      ));
                     }),
                     _item(context, l10n.flow_outlineElse, () {
-                      Navigator.pop(
-                          context,
-                          (
-                            action: FlowOutlineMenuAction.insertChild,
-                            kind: null,
-                            branch: 'else',
-                          ));
+                      Navigator.pop(context, (
+                        action: FlowOutlineMenuAction.insertChild,
+                        kind: null,
+                        branch: 'else',
+                      ));
                     }),
                   ] else
                     _item(context, l10n.flow_outlineAddChild, () {
-                      Navigator.pop(
-                          context,
-                          (
-                            action: FlowOutlineMenuAction.insertChild,
-                            kind: null,
-                            branch: null,
-                          ));
+                      Navigator.pop(context, (
+                        action: FlowOutlineMenuAction.insertChild,
+                        kind: null,
+                        branch: null,
+                      ));
                     }),
                 ],
               ),
+            if (row.canOutdent)
+              section(l10n.flow_outlineOutdent, [
+                _item(context, l10n.flow_outlineOutdent, () {
+                  Navigator.pop(
+                    context,
+                    (
+                      action: FlowOutlineMenuAction.outdent,
+                      kind: null,
+                      branch: null,
+                    ),
+                  );
+                }),
+              ]),
             if (previous != null && previousIsContainer)
               section(l10n.flow_outlineIndent, [
                 _item(
                   context,
                   l10n.flow_outlineMoveInto(previous.id),
                   () {
-                    Navigator.pop(
-                        context,
-                        (
-                          action: FlowOutlineMenuAction.moveIntoPrevious,
-                          kind: null,
-                          branch: null,
-                        ));
+                    Navigator.pop(context, (
+                      action: FlowOutlineMenuAction.moveIntoPrevious,
+                      kind: null,
+                      branch: null,
+                    ));
                   },
                 ),
               ]),
@@ -161,13 +168,11 @@ class _Menu extends StatelessWidget {
               section(l10n.flow_outlineWrapWith, [
                 for (final kind in _containerKinds)
                   _item(context, kind, () {
-                    Navigator.pop(
-                        context,
-                        (
-                          action: FlowOutlineMenuAction.wrapWithPrevious,
-                          kind: kind,
-                          branch: null,
-                        ));
+                    Navigator.pop(context, (
+                      action: FlowOutlineMenuAction.wrapWithPrevious,
+                      kind: kind,
+                      branch: null,
+                    ));
                   }),
               ]),
             // 在 if 里时给显式的跨分支入口：上移/下移刻意不跨分支（会跳错支）。
@@ -177,15 +182,15 @@ class _Menu extends StatelessWidget {
                   if (branch != row.branch)
                     _item(
                       context,
-                      branch == 'then' ? l10n.flow_outlineThen : l10n.flow_outlineElse,
+                      branch == 'then'
+                          ? l10n.flow_outlineThen
+                          : l10n.flow_outlineElse,
                       () {
-                        Navigator.pop(
-                            context,
-                            (
-                              action: FlowOutlineMenuAction.moveToBranch,
-                              kind: null,
-                              branch: branch,
-                            ));
+                        Navigator.pop(context, (
+                          action: FlowOutlineMenuAction.moveToBranch,
+                          kind: null,
+                          branch: branch,
+                        ));
                       },
                     ),
               ]),
@@ -200,13 +205,11 @@ class _Menu extends StatelessWidget {
                           key: ValueKey('retype-$kind'),
                           label: Text(kind),
                           onPressed: () {
-                            Navigator.pop(
-                                context,
-                                (
-                                  action: FlowOutlineMenuAction.retype,
-                                  kind: kind,
-                                  branch: null,
-                                ));
+                            Navigator.pop(context, (
+                              action: FlowOutlineMenuAction.retype,
+                              kind: kind,
+                              branch: null,
+                            ));
                           },
                         ),
                   ],

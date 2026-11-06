@@ -10167,4 +10167,61 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get agentDetail_syncOff => 'Off';
+
+  @override
+  String get flow_dragHandle => 'Drag to reorder';
+
+  @override
+  String get flow_outlineOutdent => 'Outdent one level';
+
+  @override
+  String get flow_dropRefWarning => 'This move may break references';
+
+  @override
+  String flow_modelFollowDefault(String current) {
+    return 'Follow agent default (current: $current)';
+  }
+
+  @override
+  String get flow_modelCurrentNone => 'not set';
+
+  @override
+  String get flow_modelNotSwitchable =>
+      'This agent does not support switching models';
+
+  @override
+  String get flow_modelUnavailable => ' (unavailable)';
+
+  @override
+  String get flow_modelManual => 'Enter manually';
+
+  @override
+  String get flow_modelPick => 'Choose from list';
+
+  @override
+  String get flow_modelRuntimeBound => 'Bound at run time; cannot preselect';
+
+  @override
+  String get flow_modelCleared =>
+      'Agent changed - model selection was cleared, pick again';
+
+  @override
+  String get flow_modelLoading => 'Loading models...';
+
+  @override
+  String get flow_viewRun => 'View run';
+
+  @override
+  String flow_sessionBanner(String node) {
+    return 'Workflow · node $node';
+  }
+
+  @override
+  String get flow_runSession => 'Run session';
+
+  @override
+  String get flow_gotoAnswer => 'Go answer';
+
+  @override
+  String get flow_nodeWaitingUser => 'Waiting for you';
 }

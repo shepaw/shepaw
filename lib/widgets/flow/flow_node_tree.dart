@@ -11,6 +11,7 @@ class FlowNodeTree extends StatelessWidget {
     super.key,
     required this.nodes,
     this.onTapNode,
+    this.onOpenSession,
     this.onAnswerGate,
     this.badgeFor,
     this.onLongPressNode,
@@ -19,6 +20,9 @@ class FlowNodeTree extends StatelessWidget {
 
   final List<FlowNode> nodes;
   final void Function(FlowNode node)? onTapNode;
+
+  /// 点节点卡片上的会话入口：打开这条 agent 会话的私聊。
+  final void Function(FlowNode node)? onOpenSession;
 
   /// 关卡卡片上点了某个选项。
   final void Function(FlowNode node, String choice)? onAnswerGate;
@@ -42,6 +46,7 @@ class FlowNodeTree extends StatelessWidget {
           FlowNodeCard(
             node: nodes[i],
             onTapNode: onTapNode,
+            onOpenSession: onOpenSession,
             onAnswerGate: onAnswerGate,
             badgeFor: badgeFor,
             onLongPressNode: onLongPressNode,
@@ -106,6 +111,7 @@ String flowStatusLabel(AppLocalizations l10n, FlowNodeStatus status) =>
       FlowNodeStatus.failed => l10n.flow_nodeFailed,
       FlowNodeStatus.skipped => l10n.flow_nodeSkipped,
       FlowNodeStatus.cancelled => l10n.flow_nodeCancelled,
+      FlowNodeStatus.waitingUser => l10n.flow_nodeWaitingUser,
     };
 
 Color flowStatusColor(FlowNodeStatus status) => switch (status) {
@@ -116,6 +122,7 @@ Color flowStatusColor(FlowNodeStatus status) => switch (status) {
       FlowNodeStatus.failed => Colors.red,
       FlowNodeStatus.skipped => Colors.blueGrey,
       FlowNodeStatus.cancelled => Colors.grey,
+      FlowNodeStatus.waitingUser => Colors.orange,
     };
 
 class FlowNodeCard extends StatelessWidget {
@@ -123,6 +130,7 @@ class FlowNodeCard extends StatelessWidget {
     super.key,
     required this.node,
     this.onTapNode,
+    this.onOpenSession,
     this.onAnswerGate,
     this.badgeFor,
     this.onLongPressNode,
@@ -132,6 +140,7 @@ class FlowNodeCard extends StatelessWidget {
 
   final FlowNode node;
   final void Function(FlowNode node)? onTapNode;
+  final void Function(FlowNode node)? onOpenSession;
   final void Function(FlowNode node, String choice)? onAnswerGate;
   final (String, Color)? Function(FlowNode node)? badgeFor;
   final void Function(FlowNode node)? onLongPressNode;
@@ -195,6 +204,11 @@ class FlowNodeCard extends StatelessWidget {
                       ),
                     ),
                   if (status != null) _StatusChip(status: status),
+                  if (node.hasSession)
+                    _SessionEntry(
+                      node: node,
+                      onOpenSession: onOpenSession,
+                    ),
                 ],
               ),
               if (node.desc != null)
@@ -238,6 +252,24 @@ class FlowNodeCard extends StatelessWidget {
                     ],
                   ),
                 ),
+              // P6：节点在等用户回答（ask_user / 权限确认卡片落在这条会话里）。
+              // 「去回答」打开节点会话，FlowRunScreen 会带上待答卡片的高亮 id。
+              // 关卡仍用上面的选项按钮，不重复。
+              if (node.status?.isWaitingForUser == true && node.hasSession)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: FilledButton.icon(
+                      key: ValueKey('flow-node-goto-answer-${node.key}'),
+                      icon: const Icon(Icons.question_answer_outlined, size: 16),
+                      label: Text(AppLocalizations.of(context).flow_gotoAnswer),
+                      onPressed: onOpenSession == null
+                          ? null
+                          : () => onOpenSession!(node),
+                    ),
+                  ),
+                ),
               if (container)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
@@ -245,6 +277,7 @@ class FlowNodeCard extends StatelessWidget {
                       ? _ParallelChildren(
                           nodes: node.children,
                           onTapNode: onTapNode,
+                          onOpenSession: onOpenSession,
                           onAnswerGate: onAnswerGate,
                           badgeFor: badgeFor,
                           onLongPressNode: onLongPressNode,
@@ -253,6 +286,7 @@ class FlowNodeCard extends StatelessWidget {
                       : FlowNodeTree(
                           nodes: node.children,
                           onTapNode: onTapNode,
+                          onOpenSession: onOpenSession,
                           onAnswerGate: onAnswerGate,
                           badgeFor: badgeFor,
                           onLongPressNode: onLongPressNode,
@@ -272,6 +306,7 @@ class _ParallelChildren extends StatelessWidget {
   const _ParallelChildren({
     required this.nodes,
     this.onTapNode,
+    this.onOpenSession,
     this.onAnswerGate,
     this.badgeFor,
     this.onLongPressNode,
@@ -280,6 +315,7 @@ class _ParallelChildren extends StatelessWidget {
 
   final List<FlowNode> nodes;
   final void Function(FlowNode node)? onTapNode;
+  final void Function(FlowNode node)? onOpenSession;
   final void Function(FlowNode node, String choice)? onAnswerGate;
   final (String, Color)? Function(FlowNode node)? badgeFor;
   final void Function(FlowNode node)? onLongPressNode;
@@ -294,6 +330,7 @@ class _ParallelChildren extends StatelessWidget {
             FlowNodeCard(
               node: node,
               onTapNode: onTapNode,
+              onOpenSession: onOpenSession,
               onAnswerGate: onAnswerGate,
               badgeFor: badgeFor,
               onLongPressNode: onLongPressNode,
@@ -321,6 +358,96 @@ class _ParallelChildren extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// 有真会话 id 的节点才有这个入口：agent 头像 + 会话按钮。运行中在头像角上
+/// 转一个小圈（主机正在往会话里推 chunk），等人回答时叠一个红点。
+class _SessionEntry extends StatelessWidget {
+  const _SessionEntry({required this.node, this.onOpenSession});
+
+  final FlowNode node;
+  final void Function(FlowNode node)? onOpenSession;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final running = node.status == FlowNodeStatus.running;
+    // 等人的卡片：关卡开着、或节点处于 waitingUser / halted（P6 的 ask_user
+    // 卡片就落在这条会话里）。红点提醒「这条会话里有张卡等你回答」。
+    final waiting = (node.kind == 'gate' && node.awaitsAnswer) ||
+        (node.status?.isWaitingForUser ?? false);
+    return Padding(
+      padding: const EdgeInsets.only(left: 6),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              CircleAvatar(
+                radius: 11,
+                backgroundColor: theme.colorScheme.primaryContainer,
+                child: Icon(
+                  Icons.smart_toy_outlined,
+                  size: 13,
+                  color: theme.colorScheme.onPrimaryContainer,
+                ),
+              ),
+              if (waiting)
+                Positioned(
+                  right: -2,
+                  top: -2,
+                  child: Container(
+                    key: const ValueKey('flow-node-session-waiting'),
+                    width: 7,
+                    height: 7,
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+              if (running)
+                Positioned(
+                  right: -2,
+                  bottom: -2,
+                  child: Container(
+                    width: 10,
+                    height: 10,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surface,
+                      shape: BoxShape.circle,
+                    ),
+                    child: SizedBox(
+                      key: const ValueKey('flow-node-session-streaming'),
+                      width: 8,
+                      height: 8,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 1.2,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          theme.colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          IconButton(
+            key: ValueKey('flow-node-session-${node.key}'),
+            tooltip: AppLocalizations.of(context).flow_viewSession,
+            icon: const Icon(Icons.chat_bubble_outline, size: 18),
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 30, height: 30),
+            onPressed:
+                onOpenSession == null ? null : () => onOpenSession!(node),
+          ),
+        ],
+      ),
     );
   }
 }

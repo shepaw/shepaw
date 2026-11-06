@@ -361,6 +361,17 @@ class _SessionSearchResultsState extends State<SessionSearchResults> {
                 hit: hit,
                 client: widget.hubClient,
               ),
+      // 工作流命中现在默认打开节点会话，「查看运行」留作长按的次级入口。
+      onLongPress: target == null ||
+              hit.origin.kind != 'flow' ||
+              hit.origin.runId.isEmpty
+          ? null
+          : () => showFlowRunActions(
+                context,
+                peerId: target.peerId,
+                runId: hit.origin.runId,
+                title: hit.title.isEmpty ? hit.sessionId : hit.title,
+              ),
     );
   }
 

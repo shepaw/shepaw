@@ -1,0 +1,219 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shepaw/controllers/flow/flow_executor.dart';
+import 'package:shepaw/l10n/app_localizations.dart';
+import 'package:shepaw/peer/models/flow_field_schema.dart';
+import 'package:shepaw/peer/models/flow_models.dart';
+import 'package:shepaw/widgets/flow/flow_field_editors.dart';
+import 'package:shepaw/widgets/flow/flow_node_inspector.dart';
+
+Widget _app(Widget child) => MaterialApp(
+      locale: const Locale('zh'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: Scaffold(body: SingleChildScrollView(child: child)),
+    );
+
+Future<void> _settle(WidgetTester tester) async {
+  for (var i = 0; i < 8; i++) {
+    await tester.pump(const Duration(milliseconds: 30));
+  }
+}
+
+FlowSchema _schema() => FlowSchema.fromResponse({
+      'success': true,
+      'common': [],
+      'kinds': {
+        'task': [
+          {'name': 'task.prompt', 'type': 'text', 'label': '提示词'},
+        ],
+      },
+      'ops': [],
+    })!;
+
+FlowChoiceBundle _models({bool switchable = true}) => FlowChoiceBundle(
+      models: FlowModelChoices(
+        options: const [
+          FlowModelChoice(value: 'm-fast', displayName: 'Fast'),
+          FlowModelChoice(value: 'm-old', displayName: 'Old'),
+        ],
+        current: 'm-fast',
+        switchable: switchable,
+      ),
+      modes: const FlowModelChoices(allowManual: true),
+    );
+
+/// 假的拉取器：计数、记住最后一次执行者，直接回一份可控候选，不碰数据库/主机。
+class _FakeChoices {
+  _FakeChoices(this.bundle);
+  FlowChoiceBundle bundle;
+  int calls = 0;
+  FlowExecutor? last;
+
+  Future<FlowChoiceBundle> load(
+    FlowExecutor executor, {
+    required String peerId,
+    required Map<String, dynamic> roles,
+    required void Function(FlowChoiceBundle cached) onCached,
+  }) async {
+    calls++;
+    last = executor;
+    return bundle;
+  }
+}
+
+Widget _inspector({
+  required Map<String, dynamic> fields,
+  required FlowChoiceBundle bundle,
+  required _FakeChoices fake,
+  required void Function(Map<String, Object?>) onApply,
+  Future<String?> Function()? onPickAgent,
+}) {
+  return _app(FlowNodeInspector(
+    node: FlowNode(key: 'impl', id: 'impl', kind: 'task', fields: fields),
+    schema: _schema(),
+    peerId: 'p1',
+    roles: const [],
+    choiceLoader: fake.load,
+    onPickAgent: onPickAgent,
+    onApply: onApply,
+    onDelete: () {},
+    onWrap: (_) {},
+    onUnwrap: () {},
+    onAddAfter: () {},
+  ));
+}
+
+void main() {
+  testWidgets('换 agent 会重新拉模型并清空已选的 model', (tester) async {
+    final fake = _FakeChoices(_models());
+    Map<String, Object?>? applied;
+    await tester.pumpWidget(_inspector(
+      fields: {
+        'task': {'prompt': '写', 'agent': 'agent-x', 'model': 'm-old'}
+      },
+      bundle: fake.bundle,
+      fake: fake,
+      onApply: (changes) => applied = changes,
+      onPickAgent: () async => 'agent-y',
+    ));
+    await _settle(tester);
+    expect(fake.calls, 1);
+    // 初始选中的是 m-old（显示名 Old）。
+    expect(find.text('Old'), findsOneWidget);
+
+    // 点「Agent」那一行 → onPickAgent 返回一个不同的 agent。
+    await tester.tap(find.byKey(const ValueKey('exec-value')));
+    await _settle(tester);
+    expect(fake.calls, 2, reason: '换 agent 后应重新拉一次');
+    expect(fake.last?.value, 'agent-y');
+    // 已选 model 被清空，下拉回到「跟随 agent 默认」。
+    expect(find.text('Old'), findsNothing);
+    expect(find.textContaining('跟随 agent 默认'), findsWidgets);
+
+    // Apply 里要把 model 清成 null。
+    await tester.ensureVisible(find.byKey(const ValueKey('inspector-apply')));
+    await tester.tap(find.byKey(const ValueKey('inspector-apply')));
+    await _settle(tester);
+    expect(applied, isNotNull);
+    expect(applied!.containsKey('task.model'), isTrue);
+    expect(applied!['task.model'], isNull);
+    expect(applied!['task.agent'], 'agent-y');
+  });
+
+  testWidgets('换 agent 保留 {{ inputs.model }} 模板值，不发 set(null)', (tester) async {
+    final fake = _FakeChoices(_models());
+    Map<String, Object?>? applied;
+    await tester.pumpWidget(_inspector(
+      fields: {
+        'task': {
+          'prompt': '写',
+          'agent': 'agent-x',
+          'model': '{{ inputs.model }}',
+        }
+      },
+      bundle: fake.bundle,
+      fake: fake,
+      onApply: (changes) => applied = changes,
+      onPickAgent: () async => 'agent-y',
+    ));
+    await _settle(tester);
+    // 模板值走文本模式。
+    expect(find.text('{{ inputs.model }}'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('exec-value')));
+    await _settle(tester);
+    expect(fake.calls, 2, reason: '换 agent 后仍要重新拉一次候选');
+    // 模板值和具体 agent 无关，换 agent 不能把它清掉。
+    expect(find.text('{{ inputs.model }}'), findsOneWidget);
+
+    await tester.ensureVisible(find.byKey(const ValueKey('inspector-apply')));
+    await tester.tap(find.byKey(const ValueKey('inspector-apply')));
+    await _settle(tester);
+    expect(applied, isNotNull);
+    expect(applied!.containsKey('task.model'), isFalse,
+        reason: '值没变，不能发一条 set(null) 把模板清掉');
+    expect(applied!['task.agent'], 'agent-y');
+  });
+
+  testWidgets('switchable=false 时模型下拉禁用并给出提示', (tester) async {
+    final fake = _FakeChoices(_models(switchable: false));
+    await tester.pumpWidget(_inspector(
+      fields: {
+        'task': {'prompt': '写', 'agent': 'agent-x', 'model': 'm-old'}
+      },
+      bundle: fake.bundle,
+      fake: fake,
+      onApply: (_) {},
+    ));
+    await _settle(tester);
+    final dropdown = tester.widget<DropdownButtonFormField<String>>(
+      find.byKey(const ValueKey('f:task.model')),
+    );
+    expect(dropdown.onChanged, isNull);
+    expect(find.text('这个 agent 不支持切换模型'), findsOneWidget);
+  });
+
+  testWidgets('模板值 {{ inputs.model }} 走文本模式', (tester) async {
+    final fake = _FakeChoices(_models());
+    Object? emitted;
+    await tester.pumpWidget(_app(FlowFieldEditor(
+      spec: const FlowFieldSpec(
+        path: 'task.model',
+        shape: FlowFieldShape.modelRef,
+        labelZh: '模型',
+        labelEn: 'Model',
+      ),
+      current: '{{ inputs.model }}',
+      choices: fake.bundle.models,
+      onChanged: (v) => emitted = v,
+    )));
+    await _settle(tester);
+    // 文本模式：是一个可直接编辑的 TextField，不是下拉。
+    expect(
+      tester.widget<TextField>(find.byKey(const ValueKey('f:task.model'))),
+      isNotNull,
+    );
+    expect(find.text('{{ inputs.model }}'), findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('choice-pick:task.model')), findsOneWidget);
+    await tester.enterText(
+        find.byKey(const ValueKey('f:task.model')), '{{ inputs.other }}');
+    await tester.pump();
+    expect(emitted, '{{ inputs.other }}');
+  });
+
+  testWidgets('YAML 里的值已不在列表里时显示「不可用」红条目', (tester) async {
+    final fake = _FakeChoices(_models());
+    await tester.pumpWidget(_inspector(
+      fields: {
+        'task': {'prompt': '写', 'agent': 'agent-x', 'model': 'm-retired'}
+      },
+      bundle: fake.bundle,
+      fake: fake,
+      onApply: (_) {},
+    ));
+    await _settle(tester);
+    expect(find.text('m-retired（不可用）'), findsOneWidget);
+  });
+}

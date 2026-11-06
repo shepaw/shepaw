@@ -61,6 +61,7 @@ import 'peer_connection.dart' show PeerConnectionEvent, PeerConnectionEventType;
 import '../peer_approval_payload.dart';
 import '../host_she_turn.dart';
 import 'peer_agent_ids.dart';
+import 'flow_session_open.dart' show ensureFlowSessionShell;
 import 'peer_connection_manager.dart';
 import 'peer_inflight_turn.dart';
 import 'peer_storage_service.dart';
@@ -121,6 +122,30 @@ enum HostSessionDeleteResult { absent, removed, archived, failed }
 /// 发给主机的会话 id。`psess_` 壳剥掉，本机新建的 `dm_` 原样带上。
 String hostSessionIdForChannel(String channelId) =>
     remoteSessionIdFromChannelId(channelId) ?? channelId;
+
+/// P6：这张表单卡是不是工作流发起的（群外 gate / 节点 ask_user）。
+///
+/// 主机收到 `agent_form_resp` 后自己推进运行（`Event::UserAnswered` 重派节点、
+/// `answer_gate_at` 收口关卡），App 不能再像普通 DM 的 deferred 卡那样补一轮
+/// `agent_chat` —— 那一轮会和主机重派的回合在同一条会话里并发跑。
+/// 认裸主机会话 id（`flow_…`）、流程回合 request id（`flow-` / `flowgate-`）；
+/// 老帧只剩 approval_id 时也认。
+bool isFlowFormCard({
+  String? channelId,
+  String? requestId,
+  String? approvalId,
+}) {
+  bool hasPrefix(String? raw, List<String> prefixes) {
+    if (raw == null) return false;
+    final value = raw.trim();
+    if (value.isEmpty) return false;
+    return prefixes.any(value.startsWith);
+  }
+
+  return hasPrefix(channelId, const ['flow_']) ||
+      hasPrefix(requestId, const ['flow-', 'flowgate-']) ||
+      hasPrefix(approvalId, const ['flow-', 'flowgate-']);
+}
 
 /// 本机频道里，主机这次名单没有的那些。
 ///
@@ -2563,7 +2588,11 @@ class PeerAgentClientService {
   /// would leave both the peer's turn and our inflight guard running —
   /// blocking the next send with "上一轮回复仍在继续" until the idle watchdog
   /// fires. Called from the DM/group stop funnels.
-  Future<void> cancelInflightTurnsForChannel(String channelId) async {
+  Future<void> cancelInflightTurnsForChannel(
+    String channelId, {
+    String? sessionKey,
+    String? runtimeTurnId,
+  }) async {
     if (channelId.isEmpty) return;
     final mirror = getIt.isRegistered<SessionRuntimeMirror>()
         ? getIt<SessionRuntimeMirror>()
@@ -2581,6 +2610,57 @@ class PeerAgentClientService {
     for (final requestId in requestIds) {
       _abortPendingTurn(requestId);
     }
+    // 主机发起的流程回合没有本地 _pending 项，上面一条也找不到：另按
+    // session.state 快照里的 turn_id 补发 agent_cancel（见下）。
+    await _cancelHostOwnedFlowTurn(
+      channelId: channelId,
+      sessionKey: sessionKey,
+      runtimeTurnId: runtimeTurnId,
+      alreadyCancelled: requestIds,
+    );
+  }
+
+  /// 工作流节点那轮是主机自己发起的：App 从未发过 `agent_chat`，request id
+  /// 只出现在 `session.state` 快照的 [SessionState.turnId] 上。停止按钮得按它
+  /// 再发一条 `agent_cancel`，主机用 `flow-` 前缀路由到 FlowHost 的停节点逻辑。
+  /// 普通 DM 的 request id 已被 [_abortPendingTurn] 取消过，不重复发。
+  Future<void> _cancelHostOwnedFlowTurn({
+    required String channelId,
+    required List<String> alreadyCancelled,
+    String? sessionKey,
+    String? runtimeTurnId,
+  }) async {
+    if (!getIt.isRegistered<SessionRuntimeMirror>()) return;
+    final mirror = getIt<SessionRuntimeMirror>();
+    SessionState? state;
+    if (sessionKey != null && sessionKey.isNotEmpty) {
+      // 有精确 key 就用 stateFor；没有精确条目时别凭空造一个空 notifier，
+      // 否则 notifierForChannel 的后缀兜底会因为「多个命中」而失效。
+      if (mirror.peek(sessionKey) != null) {
+        state = mirror.stateFor(sessionKey);
+      }
+    }
+    state ??= mirror.notifierForChannel(channelId)?.value;
+    var turnId = state?.isRunning == true ? state!.turnId : '';
+    // 快照刚翻成 idle 但 ChatController 还记着上一轮 running 的 turn id 时，
+    // 用它兜底：主机那边仍可能在处理这次停止。
+    if (turnId.isEmpty) turnId = runtimeTurnId?.trim() ?? '';
+    if (!turnId.startsWith('flow-') || alreadyCancelled.contains(turnId)) {
+      return;
+    }
+    var peerId = state?.peerId ?? '';
+    if (peerId.isEmpty) {
+      final connected = PeerConnectionManager.instance.connectedPeerIds;
+      if (connected.isEmpty) return;
+      peerId = connected.first;
+    }
+    final sendControl =
+        debugSendControlOverride ?? PeerConnectionManager.instance.sendControl;
+    _log.info('cancel host-owned flow turn $turnId on $peerId', tag: _tag);
+    unawaited(sendControl(peerId, {
+      'type': 'agent_cancel',
+      'request_id': turnId,
+    }));
   }
 
   bool _isHostQueued(
@@ -8726,6 +8806,19 @@ class PeerAgentClientService {
     }
     final localAgentId =
         await _localAgentIdForRemote(peerId, remoteAgentId) ?? remoteAgentId;
+    // P6：工作流会话（裸 channel_id `flow_…`）的卡片可能在频道还没被
+    // `message.created` 同步下来时就到 —— 离线补发只重放 deferred 帧，那条
+    // 惜宝消息不会重放。先按 P4 的 ensureFlowSessionShell 建好 `psess_` 壳：
+    // 否则消息行没有对应的会话行，列表看不到、横幅/通知点开会落到空频道。
+    // 普通 DM / 群卡片不走这里（它们的频道本来就存在），行为不变。
+    if (hostChannelId.startsWith('flow_')) {
+      await ensureFlowSessionShell(
+        channelId: channelId,
+        agentId: localAgentId,
+        title: (data['title'] as String?) ?? '',
+        db: _db,
+      );
+    }
     final agentName =
         (await _db.getRemoteAgentById(localAgentId))?.name ?? remoteAgentId;
     final item = PendingApprovalItem.fromInteraction(

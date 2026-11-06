@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../controllers/flow/flow_outline.dart';
+import '../../controllers/flow/flow_references.dart';
 import '../../l10n/app_localizations.dart';
+import '../../peer/models/flow_models.dart';
 import 'flow_node_tree.dart';
 
 /// 可编辑的大纲（方案 M3）。
@@ -11,7 +15,11 @@ import 'flow_node_tree.dart';
 ///
 /// [canEdit] 为 false 时只画，不给按钮；`if` 的子节点在主机没标 `branch` 时
 /// （[branchesLabelled] 为 false）也一律不给按钮：按下标派发会跨分支。
-class FlowOutlineTree extends StatelessWidget {
+///
+/// [dragEnabled] 只在「桌面可编辑态」（`canEdit && !rehearsal.active && !busy`）
+/// 打开：每行左侧多一个拖拽手柄，**只有手柄能触发拖拽**（长按已经被「点选 +
+/// 说话」的多选占用了）。落点分上 / 中 / 下三区，非法落点不会发出 [onDrop]。
+class FlowOutlineTree extends StatefulWidget {
   const FlowOutlineTree({
     super.key,
     required this.rows,
@@ -31,6 +39,10 @@ class FlowOutlineTree extends StatelessWidget {
     this.onLongPressRow,
     this.rowKeys = const {},
     this.flashId,
+    this.onDrop,
+    this.dragEnabled = false,
+    this.canMove = true,
+    this.tree = const [],
   });
 
   final List<FlowOutlineRow> rows;
@@ -64,11 +76,189 @@ class FlowOutlineTree extends StatelessWidget {
   /// 正在闪烁的那一行（诊断点选后 600ms）。
   final String? flashId;
 
+  /// 拖放落点。参数是被拖节点 id 和解析好的落点。
+  final void Function(String dragId, FlowDropTarget target)? onDrop;
+
+  /// 是否开启拖放（桌面可编辑且不忙）。
+  final bool dragEnabled;
+
+  /// 主机支不支持 move；不支持时所有落点都会被拒。
+  final bool canMove;
+
+  /// 完整节点树（不受折叠影响），软引用预检用。
+  final List<FlowNode> tree;
+
+  /// Test seam：拖拽过程中实际跑了几次 [refWarningsAfterMove]（全树模拟 +
+  /// 正则扫描）。落点没变时不该增加。
+  @visibleForTesting
+  static int debugHoverWarningsComputed = 0;
+
   /// 这一行能不能改结构。`if` 内没有分支标记时一律不给。
   bool _editable(FlowOutlineRow row) {
     if (!canEdit) return false;
     if (row.inIfBranch && !branchesLabelled) return false;
     return true;
+  }
+
+  @override
+  State<FlowOutlineTree> createState() => _FlowOutlineTreeState();
+}
+
+class _Hover {
+  const _Hover({
+    required this.overId,
+    required this.zone,
+    required this.branch,
+    required this.target,
+    required this.warnings,
+  });
+
+  final String overId;
+  final DropZone zone;
+  final String? branch;
+  final FlowDropTarget? target;
+  final List<String> warnings;
+}
+
+class _FlowOutlineTreeState extends State<FlowOutlineTree> {
+  String? _dragId;
+  _Hover? _hover;
+  double? _pointerDy;
+  ScrollableState? _scrollable;
+  Timer? _autoScroll;
+  final Map<String, GlobalKey> _boxKeys = {};
+
+  @override
+  void dispose() {
+    _autoScroll?.cancel();
+    super.dispose();
+  }
+
+  void _startDrag(String id) {
+    _scrollable = Scrollable.maybeOf(context);
+    _autoScroll?.cancel();
+    setState(() {
+      _dragId = id;
+      _hover = null;
+    });
+    // 长列表拖到边缘时自动滚。
+    _autoScroll = Timer.periodic(
+      const Duration(milliseconds: 16),
+      (_) => _autoScrollTick(),
+    );
+  }
+
+  void _endDrag() {
+    _autoScroll?.cancel();
+    _autoScroll = null;
+    if (_dragId == null) return;
+    setState(() {
+      _dragId = null;
+      _hover = null;
+      _pointerDy = null;
+    });
+  }
+
+  void _autoScrollTick() {
+    final dy = _pointerDy;
+    final pos = _scrollable?.position;
+    if (dy == null || pos == null || _dragId == null) return;
+    final box = _scrollable!.context.findRenderObject();
+    if (box is! RenderBox || !box.attached) return;
+    final top = box.localToGlobal(Offset.zero).dy;
+    final bottom = top + box.size.height;
+    double? target;
+    if (dy < top + 48) {
+      target = pos.pixels - 16;
+    } else if (dy > bottom - 48) {
+      target = pos.pixels + 16;
+    }
+    if (target == null) return;
+    pos.jumpTo(target.clamp(pos.minScrollExtent, pos.maxScrollExtent));
+  }
+
+  /// 只算便宜的落点身份（行 + 上中下区 + if 分支），不碰全树预检。
+  ({String overId, DropZone zone, String? branch})? _slotAt(
+    FlowOutlineRow row,
+    Offset global,
+  ) {
+    final box = _boxKeys[row.node.id]?.currentContext?.findRenderObject();
+    if (box is! RenderBox || !box.attached) return null;
+    final local = box.globalToLocal(global);
+    final h = box.size.height;
+    final w = box.size.width;
+    final zone = local.dy < h * 0.25
+        ? DropZone.before
+        : (local.dy > h * 0.75 ? DropZone.after : DropZone.into);
+    // `if` 的中间区再按左右拆成 then / else 两个落点。
+    String? branch;
+    if (zone == DropZone.into && row.node.kind == 'if') {
+      branch = local.dx < w / 2 ? 'then' : 'else';
+    }
+    return (overId: row.node.id, zone: zone, branch: branch);
+  }
+
+  _Hover _hoverFor(
+    String dragId,
+    ({String overId, DropZone zone, String? branch}) slot,
+  ) {
+    final target = resolveDrop(
+      widget.rows,
+      dragId,
+      slot.overId,
+      slot.zone,
+      branch: slot.branch,
+      canMove: widget.canMove,
+      branchesLabelled: widget.branchesLabelled,
+    );
+    final warnings =
+        target == null ? const <String>[] : _warningsFor(dragId, target);
+    return _Hover(
+      overId: slot.overId,
+      zone: slot.zone,
+      branch: slot.branch,
+      target: target,
+      warnings: warnings,
+    );
+  }
+
+  List<String> _warningsFor(String dragId, FlowDropTarget target) {
+    FlowOutlineTree.debugHoverWarningsComputed++;
+    return refWarningsAfterMove(widget.tree, dragId, target);
+  }
+
+  _Hover? _computeHover(FlowOutlineRow row, Offset global) {
+    final dragId = _dragId;
+    if (dragId == null) return null;
+    final slot = _slotAt(row, global);
+    if (slot == null) return null;
+    return _hoverFor(dragId, slot);
+  }
+
+  void _onMove(FlowOutlineRow row, Offset global) {
+    _pointerDy = global.dy;
+    final dragId = _dragId;
+    if (dragId == null) return;
+    // 先比便宜的落点身份；没变就别做 target / 全树预检。
+    final slot = _slotAt(row, global);
+    if (slot == null) return;
+    final hover = _hover;
+    if (hover != null &&
+        hover.overId == slot.overId &&
+        hover.zone == slot.zone &&
+        hover.branch == slot.branch) {
+      return;
+    }
+    final next = _hoverFor(dragId, slot);
+    setState(() => _hover = next);
+  }
+
+  void _onAccept(FlowOutlineRow row, DragTargetDetails<String> details) {
+    final hover = _computeHover(row, details.offset);
+    _endDrag();
+    if (hover?.target != null) {
+      widget.onDrop?.call(details.data, hover!.target!);
+    }
   }
 
   @override
@@ -79,34 +269,177 @@ class FlowOutlineTree extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        for (final row in rows)
-          _Row(
-            key: rowKeys[row.node.id],
-            l10n: l10n,
-            scheme: scheme,
-            theme: theme,
-            row: row,
-            selected: selectedId == row.node.id,
-            errors: errorCounts[row.node.id] ?? 0,
-            collapsed: collapsed.contains(row.node.id),
-            flashing: flashId == row.node.id,
-            editable: _editable(row),
-            badge: badgeFor?.call(row),
-            onTap: onTapRow == null ? null : () => onTapRow!(row),
-            onToggleCollapse:
-                onToggleCollapse == null ? null : () => onToggleCollapse!(row),
-            onAddAfter: onAddAfter == null ? null : () => onAddAfter!(row),
-            onMoveUp: onMoveUp == null ? null : () => onMoveUp!(row),
-            onMoveDown: onMoveDown == null ? null : () => onMoveDown!(row),
-            onDelete: onDelete == null ? null : () => onDelete!(row),
-            onMenu: onMenu == null ? null : () => onMenu!(row),
-            onLongPress: onLongPressRow == null
-                ? null
-                : () => onLongPressRow!(row),
+        for (final row in widget.rows)
+          _buildRow(context, l10n, theme, scheme, row),
+      ],
+    );
+  }
+
+  Widget _buildRow(
+    BuildContext context,
+    AppLocalizations l10n,
+    ThemeData theme,
+    ColorScheme scheme,
+    FlowOutlineRow row,
+  ) {
+    final editable = widget._editable(row);
+    final draggable = widget.dragEnabled && editable;
+    final hover = _hover?.overId == row.node.id ? _hover : null;
+
+    Widget rowWidget = _Row(
+      key: widget.rowKeys[row.node.id],
+      l10n: l10n,
+      scheme: scheme,
+      theme: theme,
+      row: row,
+      selected: widget.selectedId == row.node.id,
+      errors: widget.errorCounts[row.node.id] ?? 0,
+      collapsed: widget.collapsed.contains(row.node.id),
+      flashing: widget.flashId == row.node.id,
+      editable: editable,
+      badge: widget.badgeFor?.call(row),
+      draggable: draggable,
+      onDragStarted: () => _startDrag(row.node.id),
+      onDragEnd: _endDrag,
+      onTap: widget.onTapRow == null ? null : () => widget.onTapRow!(row),
+      onToggleCollapse: widget.onToggleCollapse == null
+          ? null
+          : () => widget.onToggleCollapse!(row),
+      onAddAfter:
+          widget.onAddAfter == null ? null : () => widget.onAddAfter!(row),
+      onMoveUp: widget.onMoveUp == null ? null : () => widget.onMoveUp!(row),
+      onMoveDown:
+          widget.onMoveDown == null ? null : () => widget.onMoveDown!(row),
+      onDelete: widget.onDelete == null ? null : () => widget.onDelete!(row),
+      onMenu: widget.onMenu == null ? null : () => widget.onMenu!(row),
+      onLongPress: widget.onLongPressRow == null
+          ? null
+          : () => widget.onLongPressRow!(row),
+    );
+
+    if (hover != null) {
+      rowWidget = Stack(
+        clipBehavior: Clip.none,
+        children: [
+          rowWidget,
+          Positioned.fill(
+            child: IgnorePointer(
+              child: _DropHighlight(
+                hover: hover,
+                row: row,
+                scheme: scheme,
+                l10n: l10n,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (!widget.dragEnabled) return rowWidget;
+
+    return DragTarget<String>(
+      key: _boxKeys.putIfAbsent(row.node.id, () => GlobalKey()),
+      onWillAcceptWithDetails: (details) =>
+          widget.dragEnabled && _dragId != null,
+      onMove: (details) => _onMove(row, details.offset),
+      onLeave: (data) {
+        if (_hover?.overId == row.node.id) setState(() => _hover = null);
+      },
+      onAcceptWithDetails: (details) => _onAccept(row, details),
+      builder: (context, candidate, rejected) => rowWidget,
+    );
+  }
+}
+
+/// 落点提示：before/after 画一条带缩进的插入线，into 画高亮框；会断引用时变
+/// 黄，非法落点变红；`if` 的 into 再叠 then / else 两个分支标签行。
+class _DropHighlight extends StatelessWidget {
+  const _DropHighlight({
+    required this.hover,
+    required this.row,
+    required this.scheme,
+    required this.l10n,
+  });
+
+  final _Hover hover;
+  final FlowOutlineRow row;
+  final ColorScheme scheme;
+  final AppLocalizations l10n;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = hover.target == null
+        ? scheme.error
+        : (hover.warnings.isNotEmpty ? Colors.amber : scheme.primary);
+
+    if (hover.zone != DropZone.into) {
+      return Padding(
+        padding: EdgeInsets.only(left: 16.0 * row.depth),
+        child: Align(
+          alignment: hover.zone == DropZone.before
+              ? Alignment.topCenter
+              : Alignment.bottomCenter,
+          child: Container(
+            width: double.infinity,
+            height: 3,
+            color: color,
+          ),
+        ),
+      );
+    }
+
+    Widget box = Container(
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        border: Border.all(color: color, width: 2),
+        borderRadius: BorderRadius.circular(10),
+      ),
+    );
+    if (hover.warnings.isNotEmpty) {
+      box = Tooltip(
+        message: '${l10n.flow_dropRefWarning}\n${hover.warnings.join('\n')}',
+        child: box,
+      );
+    }
+    return Stack(
+      children: [
+        Positioned.fill(child: box),
+        if (row.node.kind == 'if')
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Row(
+                children: [
+                  _branchChip(
+                      l10n.flow_outlineThen, hover.branch == 'then', color),
+                  _branchChip(
+                      l10n.flow_outlineElse, hover.branch == 'else', color),
+                ],
+              ),
+            ),
           ),
       ],
     );
   }
+
+  Widget _branchChip(String label, bool active, Color color) => Expanded(
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: active ? color : color.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                color: active ? scheme.onPrimary : scheme.onSurface,
+              ),
+            ),
+          ),
+        ),
+      );
 }
 
 class _Row extends StatelessWidget {
@@ -122,6 +455,9 @@ class _Row extends StatelessWidget {
     required this.flashing,
     required this.editable,
     required this.badge,
+    required this.draggable,
+    required this.onDragStarted,
+    required this.onDragEnd,
     required this.onTap,
     required this.onToggleCollapse,
     required this.onAddAfter,
@@ -142,6 +478,9 @@ class _Row extends StatelessWidget {
   final bool flashing;
   final bool editable;
   final (String, Color)? badge;
+  final bool draggable;
+  final VoidCallback? onDragStarted;
+  final VoidCallback? onDragEnd;
   final VoidCallback? onTap;
   final VoidCallback? onToggleCollapse;
   final VoidCallback? onAddAfter;
@@ -160,9 +499,7 @@ class _Row extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         decoration: BoxDecoration(
-          color: flashing
-              ? scheme.primaryContainer
-              : scheme.surface,
+          color: flashing ? scheme.primaryContainer : scheme.surface,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
             color: flashing
@@ -180,12 +517,12 @@ class _Row extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             child: Row(
               children: [
+                if (draggable) _dragHandle(),
                 if (hasChildren)
                   IconButton(
                     key: ValueKey('collapse-${node.id}'),
-                    icon: Icon(collapsed
-                        ? Icons.chevron_right
-                        : Icons.expand_more),
+                    icon: Icon(
+                        collapsed ? Icons.chevron_right : Icons.expand_more),
                     tooltip: l10n.flow_outlineCollapse,
                     onPressed: onToggleCollapse,
                   )
@@ -283,4 +620,33 @@ class _Row extends StatelessWidget {
       ),
     );
   }
+
+  /// 只有手柄能触发拖拽：长按仍归「点选 + 说话」的多选用。
+  Widget _dragHandle() => Draggable<String>(
+        key: ValueKey('drag-${row.node.id}'),
+        data: row.node.id,
+        feedback: Material(
+          elevation: 6,
+          borderRadius: BorderRadius.circular(8),
+          color: scheme.surfaceContainerHighest.withValues(alpha: 0.92),
+          child: SizedBox(
+            width: 220,
+            child: ListTile(
+              dense: true,
+              leading: const Icon(Icons.drag_indicator, size: 18),
+              title: Text(flowKindTitle(l10n, row.node),
+                  overflow: TextOverflow.ellipsis),
+            ),
+          ),
+        ),
+        childWhenDragging: const SizedBox(width: 20, height: 24),
+        onDragStarted: onDragStarted,
+        onDragEnd: (_) => onDragEnd?.call(),
+        onDraggableCanceled: (_, __) => onDragEnd?.call(),
+        child: Semantics(
+          label: l10n.flow_dragHandle,
+          child: Icon(Icons.drag_indicator,
+              size: 18, color: scheme.onSurfaceVariant),
+        ),
+      );
 }

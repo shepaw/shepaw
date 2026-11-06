@@ -92,6 +92,60 @@ void main() {
     expect(FlowRunView.fromResponse({'success': false}), isNull);
   });
 
+  test('P4: nodes decode session_id / agent_id and keep the legacy slot key', () {
+    final node = FlowNode.fromJson({
+      'key': 'seq/impl',
+      'id': 'impl',
+      'kind': 'task',
+      'status': 'running',
+      'session': 'flow:r1:impl',
+      'session_id': 'flow_deadbe12_impl',
+      'agent_id': 'agent-7',
+    });
+    expect(node.session, 'flow:r1:impl');
+    expect(node.sessionId, 'flow_deadbe12_impl');
+    expect(node.agentId, 'agent-7');
+    expect(node.hasSession, isTrue);
+    // 事件改状态时不能把会话字段丢掉。
+    final updated = node.copyWith(status: FlowNodeStatus.done, attempt: 2);
+    expect(updated.sessionId, 'flow_deadbe12_impl');
+    expect(updated.agentId, 'agent-7');
+    expect(updated.session, 'flow:r1:impl');
+    expect(updated.awaitsAnswer, isFalse);
+    expect(FlowNode.fromJson({'key': 'a', 'id': 'a', 'kind': 'task'}).hasSession,
+        isFalse);
+    // 演练树也要带着会话信息，否则预览里入口会消失。
+    final rehearsed = node.withProgress(const {}, 'impl');
+    expect(rehearsed.sessionId, 'flow_deadbe12_impl');
+    expect(rehearsed.agentId, 'agent-7');
+  });
+
+  test('P4: flow.node.changed carries session_id into the tree immediately', () {
+    final event = FlowEvent.parse('flow.node.changed', {
+      'run_id': 'r1',
+      'node': 'seq/impl',
+      'status': 'running',
+      'session_id': 'flow_deadbe12_impl',
+      'attempt': 1,
+    })!;
+    expect(event.sessionId, 'flow_deadbe12_impl');
+    var run = FlowRunView.fromResponse({
+      'success': true,
+      'run_id': 'r1',
+      'status': 'running',
+      'tree': [
+        {'key': 'seq/impl', 'id': 'impl', 'kind': 'task', 'status': 'pending'},
+      ],
+      'yaml': 'steps: []',
+    })!;
+    run = run.withNodeStatus(event.node!, event.nodeStatus!, event.attempt,
+        sessionId: event.sessionId);
+    expect(run.tree.single.sessionId, 'flow_deadbe12_impl');
+    expect(run.tree.single.status, FlowNodeStatus.running);
+    // F19 改写用的 yaml 不能被状态更新吃掉。
+    expect(run.yaml, 'steps: []');
+  });
+
   test('node events update the tree in place and run events flip the status',
       () {
     var run = FlowRunView.fromResponse({

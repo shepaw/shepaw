@@ -81,4 +81,119 @@ void main() {
     expect(flowKindTitle(en, par), 'Parallel · 2');
     expect(flowStatusLabel(en, FlowNodeStatus.done), 'Done');
   });
+
+  testWidgets('P4: session entry appears only for nodes with session_id',
+      (tester) async {
+    await tester.pumpWidget(_treeApp(const [
+      FlowNode(
+        key: 'has',
+        id: 'has',
+        kind: 'task',
+        status: FlowNodeStatus.done,
+        sessionId: 'flow_deadbe12_has',
+        agentId: 'agent-7',
+      ),
+      FlowNode(
+        key: 'none',
+        id: 'none',
+        kind: 'task',
+        status: FlowNodeStatus.done,
+        session: 'flow:r1:none',
+      ),
+    ]));
+    expect(find.byKey(const ValueKey('flow-node-session-has')), findsOneWidget);
+    expect(find.byKey(const ValueKey('flow-node-session-none')), findsNothing);
+    expect(find.byIcon(Icons.chat_bubble_outline), findsOneWidget);
+    expect(find.byKey(const ValueKey('flow-node-session-streaming')),
+        findsNothing);
+  });
+
+  testWidgets('P4: tapping the session entry fires onOpenSession',
+      (tester) async {
+    FlowNode? opened;
+    await tester.pumpWidget(_treeApp(
+      const [
+        FlowNode(
+          key: 'impl',
+          id: 'impl',
+          kind: 'task',
+          status: FlowNodeStatus.done,
+          sessionId: 'flow_deadbe12_impl',
+          agentId: 'agent-7',
+        ),
+      ],
+      onOpenSession: (node) => opened = node,
+    ));
+    await tester.tap(find.byKey(const ValueKey('flow-node-session-impl')));
+    await tester.pump();
+    expect(opened?.sessionId, 'flow_deadbe12_impl');
+    expect(opened?.agentId, 'agent-7');
+  });
+
+  testWidgets('P4: running node shows the streaming indicator', (tester) async {
+    await tester.pumpWidget(_treeApp(const [
+      FlowNode(
+        key: 'impl',
+        id: 'impl',
+        kind: 'task',
+        status: FlowNodeStatus.running,
+        sessionId: 'flow_deadbe12_impl',
+      ),
+    ]));
+    expect(find.byKey(const ValueKey('flow-node-session-streaming')),
+        findsOneWidget);
+  });
+
+  testWidgets('P4: onOpenSession reaches nested seq and par children',
+      (tester) async {
+    final opened = <String>[];
+    await tester.pumpWidget(_treeApp(
+      const [
+        FlowNode(
+          key: 'seq',
+          id: 'seq',
+          kind: 'seq',
+          children: [
+            FlowNode(
+              key: 'seq/inner',
+              id: 'inner',
+              kind: 'task',
+              sessionId: 'flow_deadbe12_inner',
+            ),
+          ],
+        ),
+        FlowNode(
+          key: 'par',
+          id: 'par',
+          kind: 'par',
+          children: [
+            FlowNode(
+              key: 'par/a',
+              id: 'a',
+              kind: 'task',
+              sessionId: 'flow_deadbe12_a',
+            ),
+          ],
+        ),
+      ],
+      onOpenSession: (node) => opened.add(node.key),
+    ));
+    await tester.tap(find.byKey(const ValueKey('flow-node-session-seq/inner')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('flow-node-session-par/a')));
+    await tester.pump();
+    expect(opened, ['seq/inner', 'par/a']);
+  });
 }
+
+Widget _treeApp(List<FlowNode> nodes, {void Function(FlowNode)? onOpenSession}) =>
+    MaterialApp(
+      locale: const Locale('zh'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: FlowNodeTree(nodes: nodes, onOpenSession: onOpenSession),
+        ),
+      ),
+    );

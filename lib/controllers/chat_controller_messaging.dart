@@ -490,6 +490,8 @@ mixin _MessagingOps on _ChatControllerBase {
       unawaited(chatService.cancelActiveDmTask(
         currentChannelId!,
         contentOverride: streamingContent.isNotEmpty ? streamingContent : null,
+        sessionKey: sessionRuntimeKey,
+        runtimeTurnId: _runtimeActiveTurnId,
       ));
     }
 
@@ -588,6 +590,8 @@ mixin _MessagingOps on _ChatControllerBase {
       unawaited(chatService.cancelActiveDmTask(
         currentChannelId!,
         contentOverride: streamingContent.isNotEmpty ? streamingContent : null,
+        sessionKey: sessionRuntimeKey,
+        runtimeTurnId: _runtimeActiveTurnId,
       ));
     }
 
@@ -1229,8 +1233,15 @@ mixin _MessagingOps on _ChatControllerBase {
     if (formId.isEmpty) return;
     // 卡片属于别的会话时不进当前列表；服务层已按发起回合的频道落库，
     // 切回那个会话会从 DB 载入。
+    // P6：帧里的 `channel_id` 是裸主机会话 id（`flow_<rid8>_she`），本机
+    // 打开的却是 `psess_flow_<rid8>_she`。两者是同一条会话，别因为字符串
+    // 不相等就把已经打开的工作流会话里的卡丢掉（否则要退出重进才看得见）。
     final frameChannel = formData['channel_id']?.toString() ?? '';
-    if (frameChannel.isNotEmpty && frameChannel != currentChannelId) {
+    final current = currentChannelId;
+    final belongsHere = frameChannel.isEmpty ||
+        frameChannel == current ||
+        (current != null && frameChannel == hostSessionIdForChannel(current));
+    if (!belongsHere) {
       return;
     }
     // 先落库：卡片的重开可见性靠这条确定性行，而不是随时会被 reconcile
@@ -1296,10 +1307,13 @@ mixin _MessagingOps on _ChatControllerBase {
   /// DB reconcile 都会让它消失，而主机还在等回答。落库之后重开页面，
   /// FormBubble 仍能从消息 metadata 里渲染出来并继续提交。
   void _persistPeerFormCard(Map<String, dynamic> formData) {
-    final frameChannel = formData['channel_id']?.toString() ?? '';
-    final channelId = frameChannel.isNotEmpty ? frameChannel : currentChannelId;
+    // 能走到这里，_showPeerFormCard 已经确认卡属于当前会话。帧里的
+    // `channel_id` 可能是裸主机会话 id（`flow_…`），直接拿它当本机频道会写出
+    // 一条没有会话行的幽灵消息；一律用本机频道 id。
+    final channelId = currentChannelId;
+    if (channelId == null) return;
     final senderId = agentId;
-    if (channelId == null || senderId == null) return;
+    if (senderId == null) return;
     unawaited(PeerAgentClientService.instance.persistFormCard(
       formData: formData,
       channelId: channelId,

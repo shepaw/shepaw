@@ -548,6 +548,8 @@ class AgentMessagingService {
   Future<void> finalizeActiveDmTaskAsStopped({
     required String channelId,
     String? contentOverride,
+    String? sessionKey,
+    String? runtimeTurnId,
   }) async {
     // 中断 peer 侧仍在运行的 turn 并解除 inflight 发送拦截。必须放在
     // ActiveTask 检查之前：controller 的 cancel token 在页面 reattach /
@@ -555,7 +557,11 @@ class AgentMessagingService {
     // 且 restored turn 可能没有对应 ActiveTask —— 仅取消 token 不足以
     // 触达 PeerAgentClientService._pending。
     unawaited(
-      PeerAgentClientService.instance.cancelInflightTurnsForChannel(channelId),
+      PeerAgentClientService.instance.cancelInflightTurnsForChannel(
+        channelId,
+        sessionKey: sessionKey,
+        runtimeTurnId: runtimeTurnId,
+      ),
     );
 
     final task = _activeTasks[channelId];

@@ -9768,4 +9768,59 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get agentDetail_syncOff => '关';
+
+  @override
+  String get flow_dragHandle => '拖动排序';
+
+  @override
+  String get flow_outlineOutdent => '移出一层';
+
+  @override
+  String get flow_dropRefWarning => '这次移动可能断开引用';
+
+  @override
+  String flow_modelFollowDefault(String current) {
+    return '跟随 agent 默认（当前：$current）';
+  }
+
+  @override
+  String get flow_modelCurrentNone => '未设置';
+
+  @override
+  String get flow_modelNotSwitchable => '这个 agent 不支持切换模型';
+
+  @override
+  String get flow_modelUnavailable => '（不可用）';
+
+  @override
+  String get flow_modelManual => '手动输入';
+
+  @override
+  String get flow_modelPick => '从列表选择';
+
+  @override
+  String get flow_modelRuntimeBound => '运行时按绑定决定，无法预选';
+
+  @override
+  String get flow_modelCleared => '切换 agent 后已清空模型，请重新选择';
+
+  @override
+  String get flow_modelLoading => '正在加载模型…';
+
+  @override
+  String get flow_viewRun => '查看运行';
+
+  @override
+  String flow_sessionBanner(String node) {
+    return '工作流 · 节点 $node';
+  }
+
+  @override
+  String get flow_runSession => '运行会话';
+
+  @override
+  String get flow_gotoAnswer => '去回答';
+
+  @override
+  String get flow_nodeWaitingUser => '等你回答';
 }

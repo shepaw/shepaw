@@ -5506,5 +5506,37 @@
   "agentDetail_addSheModel": "Add model",
   "agentDetail_modeHint": "Same setting as the mode chip in the chat composer",
   "agentDetail_syncOn": "On",
-  "agentDetail_syncOff": "Off"
+  "agentDetail_syncOff": "Off",
+  "flow_dragHandle": "Drag to reorder",
+  "flow_outlineOutdent": "Outdent one level",
+  "flow_dropRefWarning": "This move may break references",
+  "@flow_modelFollowDefault": {
+    "placeholders": {
+      "current": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_modelFollowDefault": "Follow agent default (current: {current})",
+  "flow_modelCurrentNone": "not set",
+  "flow_modelNotSwitchable": "This agent does not support switching models",
+  "flow_modelUnavailable": " (unavailable)",
+  "flow_modelManual": "Enter manually",
+  "flow_modelPick": "Choose from list",
+  "flow_modelRuntimeBound": "Bound at run time; cannot preselect",
+  "flow_modelCleared": "Agent changed - model selection was cleared, pick again",
+  "flow_modelLoading": "Loading models...",
+  "@flow_viewRun": {},
+  "flow_viewRun": "View run",
+  "@flow_sessionBanner": {
+    "placeholders": {
+      "node": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_sessionBanner": "Workflow · node {node}",
+  "flow_runSession": "Run session",
+  "flow_gotoAnswer": "Go answer",
+  "flow_nodeWaitingUser": "Waiting for you"
 }

@@ -1049,10 +1049,14 @@ class ChatService {
   Future<void> cancelActiveDmTask(
     String channelId, {
     String? contentOverride,
+    String? sessionKey,
+    String? runtimeTurnId,
   }) =>
       _agentMessagingService.finalizeActiveDmTaskAsStopped(
         channelId: channelId,
         contentOverride: contentOverride,
+        sessionKey: sessionKey,
+        runtimeTurnId: runtimeTurnId,
       );
 
   // ---------------------------------------------------------------------------

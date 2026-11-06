@@ -121,4 +121,45 @@ void main() {
   test('schema 为空时不炸', () {
     expect(FlowFieldCatalog.specsFor('task', null), isEmpty);
   });
+
+  test('task.model / task.mode 换成 modelRef / modeRef（主机没给时）', () {
+    final task = FlowFieldCatalog.specsFor('task', _host());
+    expect(task.firstWhere((s) => s.path == 'task.model').shape,
+        FlowFieldShape.modelRef);
+    expect(task.firstWhere((s) => s.path == 'task.mode').shape,
+        FlowFieldShape.modeRef);
+  });
+
+  test('主机把 model / mode 当 string 给也要覆盖成下拉形状', () {
+    final host = FlowSchema.fromResponse({
+      'success': true,
+      'common': [],
+      'kinds': {
+        'task': [
+          {'name': 'task.model', 'type': 'string', 'label': '模型'},
+          {'name': 'task.mode', 'type': 'string', 'label': '模式'},
+        ],
+      },
+      'ops': [],
+    })!;
+    final task = FlowFieldCatalog.specsFor('task', host);
+    expect(task.firstWhere((s) => s.path == 'task.model').shape,
+        FlowFieldShape.modelRef);
+    expect(task.firstWhere((s) => s.path == 'task.mode').shape,
+        FlowFieldShape.modeRef);
+    // 标签仍用主机的。
+    expect(task.firstWhere((s) => s.path == 'task.model').labelZh, '模型');
+  });
+
+  test('modelRef / modeRef 的模板串值合法，空值也合法', () {
+    const spec = FlowFieldSpec(
+      path: 'task.model',
+      shape: FlowFieldShape.modelRef,
+      labelZh: '模型',
+      labelEn: 'Model',
+    );
+    expect(isFlowFieldValueValid(spec, 'gpt-4'), isTrue);
+    expect(isFlowFieldValueValid(spec, '{{ inputs.model }}'), isTrue);
+    expect(isFlowFieldValueValid(spec, null), isTrue);
+  });
 }

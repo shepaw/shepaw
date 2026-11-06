@@ -239,4 +239,81 @@ void main() {
     await tester.pumpAndSettle();
     expect(value, '{{ inputs.rounds }}');
   });
+
+  testWidgets('modelRef 只有在 allowManual && switchable 时才给手动输入', (tester) async {
+    FlowFieldEditor editor(FlowModelChoices choices) => FlowFieldEditor(
+          spec: _spec('task.model', FlowFieldShape.modelRef),
+          current: null,
+          choices: choices,
+          onChanged: (_) {},
+        );
+    const options = [FlowModelChoice(value: 'm-1')];
+
+    // switchable=false：模型由远端配置，手输等于绕过它 —— 入口完全隐藏。
+    await _pump(
+      tester,
+      editor(const FlowModelChoices(
+        options: options,
+        switchable: false,
+        allowManual: true,
+      )),
+    );
+    expect(
+        find.byKey(const ValueKey('choice-manual:task.model')), findsNothing);
+
+    // allowManual=false：不允许手输时也不露出按钮。
+    await _pump(
+      tester,
+      editor(const FlowModelChoices(
+        options: options,
+        allowManual: false,
+      )),
+    );
+    expect(
+        find.byKey(const ValueKey('choice-manual:task.model')), findsNothing);
+
+    // 两者都满足才显示（role / unset 的手输兜底）。
+    await _pump(
+      tester,
+      editor(const FlowModelChoices(
+        options: options,
+        allowManual: true,
+      )),
+    );
+    expect(
+        find.byKey(const ValueKey('choice-manual:task.model')), findsOneWidget);
+  });
+
+  testWidgets('modelRef 下拉写入模型 id，「跟随默认」写 null', (tester) async {
+    Object? value = 'unset';
+    const choices = FlowModelChoices(
+      options: [
+        FlowModelChoice(value: 'm-1', displayName: '一'),
+        FlowModelChoice(value: 'm-2', displayName: '二'),
+      ],
+      current: 'm-1',
+    );
+    await _pump(
+      tester,
+      FlowFieldEditor(
+        spec: _spec('task.model', FlowFieldShape.modelRef),
+        current: null,
+        choices: choices,
+        onChanged: (v) => value = v,
+      ),
+    );
+    expect(value, 'unset'); // 没动过不发
+    await tester.tap(find.byKey(const ValueKey('f:task.model')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('二').last);
+    await tester.pumpAndSettle();
+    // 写入的是 value（模型 id），不是显示名。
+    expect(value, 'm-2');
+
+    await tester.tap(find.byKey(const ValueKey('f:task.model')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('跟随 agent 默认').last);
+    await tester.pumpAndSettle();
+    expect(value, isNull);
+  });
 }

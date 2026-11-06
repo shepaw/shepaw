@@ -3,13 +3,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../peer/models/folded_sessions.dart';
+import '../../peer/services/flow_session_open.dart';
 import '../../peer/services/hub_folded_sessions.dart';
 import '../../peer/services/peer_agent_client_service.dart';
-import '../../screens/flow_run_screen.dart';
 import '../../screens/group_view_screen.dart';
 import '../../screens/session_history_screen.dart';
 import '../session_folders.dart';
 import 'folded_session_items.dart';
+import 'folded_session_open.dart'
+    show flowFoldedSessionId, pushFlowRunScreen;
 
 /// 私聊会话列表顶部的折叠组（折叠方案 §2.1）：群聊、其他 Agent 发起、工作流、
 /// 引擎客户端、引擎终端，只在不为空时出现。
@@ -112,18 +114,21 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
     await _load();
   }
 
-  /// 展开后点其中一项 → 打开它的只读记录。
+  /// 展开后点其中一项 → 打开它的会话。工作流条目有真会话 id 时按私聊打开
+  /// （能继续聊 / 停止），旧条目才退回只读的运行视图。
   void _openSession(BuildContext context, FoldedSession session) {
     if (session.isFlow && session.runId.isNotEmpty) {
-      Navigator.of(context).push(MaterialPageRoute<void>(
-        builder: (_) => FlowRunScreen(
+      final sessionId = flowFoldedSessionId(session.sessionId);
+      if (sessionId != null) {
+        unawaited(openFlowNodeSession(
           peerId: widget.peerId,
-          runId: session.runId,
-          title: session.title,
-          // 运行被删掉：节点会话也一起隐藏了，重刷一下条数。
-          onDeleted: () => unawaited(_load()),
-        ),
-      ));
+          sessionId: sessionId,
+          remoteAgentId: widget.remoteAgentId,
+          title: session.title.isEmpty ? session.sessionId : session.title,
+        ));
+        return;
+      }
+      viewRun(context, session);
       return;
     }
     if (session.isGroup && session.groupId.isNotEmpty) {
@@ -154,6 +159,19 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
     ));
   }
 
+  /// 长按 / 「更多」里的「查看运行」。
+  void viewRun(BuildContext context, FoldedSession session) {
+    if (session.runId.isEmpty) return;
+    pushFlowRunScreen(
+      context,
+      peerId: widget.peerId,
+      runId: session.runId,
+      title: session.title,
+      // 运行被删掉：节点会话也一起隐藏了，重刷一下条数。
+      onDeleted: () => unawaited(_load()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_folders.isEmpty) return const SizedBox.shrink();
@@ -179,6 +197,7 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
               folder: folder.kind,
               client: _client,
               onOpen: (session) => _openSession(context, session),
+              onViewRun: (session) => viewRun(context, session),
               onForked: (id) => unawaited(_afterFork(id)),
             ),
         ],

@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../peer/models/folded_sessions.dart';
+import '../../peer/services/flow_session_open.dart';
 import '../../peer/services/hub_folded_sessions.dart';
+import '../../peer/services/peer_agent_client_service.dart'
+    show kSyncedPeerSessionPrefix;
 import '../../screens/flow_run_screen.dart';
 import '../../screens/group_view_screen.dart';
 import '../../screens/session_history_screen.dart';
@@ -21,8 +26,68 @@ String sessionSearchHitBadge(AppLocalizations l10n, SessionSearchHit hit) {
   return sessionFolderLabel(l10n, kind);
 }
 
-/// 打开一条命中：私聊本来就在平铺列表里（调用方自己切），这里只管只读记录 ——
-/// 工作流节点进运行视图、群聊进群聊视角、其余走主机的会话历史。
+/// 折叠组里的 session id 能不能当主机会话 id 用。
+///
+/// P4 之后节点会话是 `flow_<rid8>_<node>`（无冒号），折叠项里存的就是它，
+/// 可以直接拼 `psess_`。旧运行 / 群运行的条目可能仍是引擎槽位 key
+/// （`flow:<rid>:<node>` / `group:<gid>:<sid>:...`），那种拼不出真频道，
+/// 点击只能继续走运行视图。
+String? flowFoldedSessionId(String raw) {
+  final id = raw.trim();
+  if (id.isEmpty || id.contains(':') || id.contains('/')) return null;
+  if (id.startsWith(kSyncedPeerSessionPrefix)) return null;
+  return id;
+}
+
+/// 长按 / 菜单里的「查看运行」：跳回运行视图。
+void pushFlowRunScreen(
+  BuildContext context, {
+  required String peerId,
+  required String runId,
+  required String title,
+  VoidCallback? onDeleted,
+}) {
+  Navigator.of(context).push(MaterialPageRoute<void>(
+    builder: (_) => FlowRunScreen(
+      peerId: peerId,
+      runId: runId,
+      title: title,
+      onDeleted: onDeleted,
+    ),
+  ));
+}
+
+/// 搜索命中 / 折叠行的次级入口。主点击已经改成打开会话，运行视图留在这里。
+Future<void> showFlowRunActions(
+  BuildContext context, {
+  required String peerId,
+  required String runId,
+  required String title,
+}) =>
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.account_tree_outlined),
+              title: Text(AppLocalizations.of(sheetContext).flow_viewRun),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                pushFlowRunScreen(context,
+                    peerId: peerId, runId: runId, title: title);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+
+/// 打开一条命中：私聊本来就在平铺列表里（调用方自己切），工作流节点优先打开
+/// 它的 agent 会话（和私聊一样能继续聊 / 停止），群聊进群聊视角，其余走主机的
+/// 会话历史。没有真会话 id 的旧条目仍退回运行视图。
 ///
 /// 抽屉搜索和别处共用这一段，免得两处各写一份跳转。
 void openSessionSearchHit(
@@ -33,13 +98,18 @@ void openSessionSearchHit(
 }) {
   final origin = hit.origin;
   if (origin.kind == 'flow' && origin.runId.isNotEmpty) {
-    Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => FlowRunScreen(
+    final sessionId = flowFoldedSessionId(hit.sessionId);
+    if (sessionId != null) {
+      unawaited(openFlowNodeSession(
         peerId: peerId,
-        runId: origin.runId,
+        sessionId: sessionId,
+        remoteAgentId: hit.agentId,
         title: _hitTitle(hit),
-      ),
-    ));
+      ));
+      return;
+    }
+    pushFlowRunScreen(context,
+        peerId: peerId, runId: origin.runId, title: _hitTitle(hit));
     return;
   }
   if (origin.kind == 'group' && origin.groupId.isNotEmpty) {

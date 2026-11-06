@@ -2,8 +2,82 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../controllers/flow/flow_executor.dart';
 import '../../l10n/app_localizations.dart';
 import '../../peer/models/flow_field_schema.dart';
+
+/// 「跟随 agent 默认」这一项的值。用一个不会和真实模型 / 模式 id 撞上的哨兵。
+const String _kFollowDefault = '\u0000follow-agent-default';
+
+/// `modelRef` / `modeRef` 下拉里的一项。`value` 是写进字段的值（主机只认 id），
+/// `displayName` / `description` 只拿来显示。
+class FlowModelChoice {
+  const FlowModelChoice({
+    required this.value,
+    this.displayName,
+    this.description = '',
+  });
+
+  final String value;
+  final String? displayName;
+  final String description;
+
+  String get label =>
+      (displayName == null || displayName!.isEmpty) ? value : displayName!;
+}
+
+/// 一个 `modelRef` / `modeRef` 字段的可选项与状态（由检查器异步填好）。
+class FlowModelChoices {
+  const FlowModelChoices({
+    this.options = const [],
+    this.current,
+    this.switchable = true,
+    this.loading = false,
+    this.hint,
+    this.allowManual = false,
+  });
+
+  final List<FlowModelChoice> options;
+
+  /// 该 agent 当前的默认模型 / 模式（显示在「跟随默认」那一项里）。
+  final String? current;
+
+  /// false：模型在远端配置，App 只能展示不能切换。
+  final bool switchable;
+  final bool loading;
+
+  /// 说明性提示（role 模式「运行时按绑定决定」、加载失败等）。
+  final String? hint;
+
+  /// 没有固定 agent（role / unset）时允许手输模板变量。
+  final bool allowManual;
+
+  static const empty = FlowModelChoices();
+
+  bool get canPick => switchable && options.isNotEmpty;
+}
+
+/// 一次拉取得到的两个字段候选（model 与 mode 一起刷）。
+class FlowChoiceBundle {
+  const FlowChoiceBundle({
+    this.models = FlowModelChoices.empty,
+    this.modes = FlowModelChoices.empty,
+  });
+
+  final FlowModelChoices models;
+  final FlowModelChoices modes;
+
+  static const empty = FlowChoiceBundle();
+}
+
+/// 拉候选：先回缓存（[onCached]），再回最终刷新结果。生产实现见
+/// [defaultFlowChoiceLoader]；测试里换成假的即可，不必碰数据库和主机。
+typedef FlowChoiceLoader = Future<FlowChoiceBundle> Function(
+  FlowExecutor executor, {
+  required String peerId,
+  required Map<String, dynamic> roles,
+  required void Function(FlowChoiceBundle cached) onCached,
+});
 
 /// 一个字段的编辑器。
 ///
@@ -19,6 +93,7 @@ class FlowFieldEditor extends StatefulWidget {
     this.refCandidates = const [],
     this.intInputNames = const [],
     this.flowRefChoices = const [],
+    this.choices,
   });
 
   final FlowFieldSpec spec;
@@ -34,6 +109,9 @@ class FlowFieldEditor extends StatefulWidget {
   /// [FlowFieldShape.flowRef] 的候选（`lib/<name>` / `group/<gid>/<name>`）。
   final List<String> flowRefChoices;
 
+  /// [FlowFieldShape.modelRef] / [FlowFieldShape.modeRef] 的候选与状态。
+  final FlowModelChoices? choices;
+
   @override
   State<FlowFieldEditor> createState() => _FlowFieldEditorState();
 }
@@ -45,6 +123,8 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
   late String _enumValue;
   bool? _boolean;
   bool _condIsJudge = false;
+  bool _manualChoice = false;
+  late String _choiceValue;
   late List<TextEditingController> _list;
   late List<_Pair> _pairs;
   late List<_OutputRow> _outputs;
@@ -68,10 +148,13 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
     _condIsJudge = cond != null && cond.containsKey('judge');
     _judge = TextEditingController(text: cond?['judge']?.toString() ?? '');
     _ask = TextEditingController(text: cond?['ask']?.toString() ?? '');
-    _enumValue = widget.spec.options.contains(c?.toString())
-        ? c!.toString()
-        : '';
+    _enumValue =
+        widget.spec.options.contains(c?.toString()) ? c!.toString() : '';
     _boolean = c is bool ? c : null;
+    // 模板值（`{{ inputs.model }}`）走文本模式；其余用下拉，空值 = 跟随默认。
+    final raw = c is String ? c : '';
+    _manualChoice = raw.trimLeft().startsWith('{{');
+    _choiceValue = (_manualChoice || raw.isEmpty) ? _kFollowDefault : raw;
     _list = [
       if (c is List)
         for (final item in c) TextEditingController(text: item.toString()),
@@ -147,7 +230,8 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
         }
       case FlowFieldShape.listOf:
         final items = [
-          for (final c in _list) if (c.text.trim().isNotEmpty) c.text.trim(),
+          for (final c in _list)
+            if (c.text.trim().isNotEmpty) c.text.trim(),
         ];
         value = items.isEmpty ? null : items;
       case FlowFieldShape.mapOf:
@@ -166,6 +250,13 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
         value = map.isEmpty ? null : map;
       case FlowFieldShape.flowRef:
         value = _scalar.text.trim().isEmpty ? null : _scalar.text.trim();
+      case FlowFieldShape.modelRef:
+      case FlowFieldShape.modeRef:
+        if (_manualChoice) {
+          value = _scalar.text.trim().isEmpty ? null : _scalar.text.trim();
+        } else {
+          value = _choiceValue == _kFollowDefault ? null : _choiceValue;
+        }
     }
     widget.onChanged(value);
   }
@@ -214,8 +305,9 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
                   child: Text(
                     label + (spec.required ? ' *' : ''),
                     style: theme.textTheme.labelMedium?.copyWith(
-                      color:
-                          emptyRequired ? scheme.error : scheme.onSurfaceVariant,
+                      color: emptyRequired
+                          ? scheme.error
+                          : scheme.onSurfaceVariant,
                     ),
                   ),
                 ),
@@ -228,17 +320,15 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
                   l10n.flow_fieldRequired,
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: scheme.error),
+                  style:
+                      theme.textTheme.bodySmall?.copyWith(color: scheme.error),
                 ),
               ),
           ],
         );
 
     return switch (spec.shape) {
-      FlowFieldShape.string ||
-      FlowFieldShape.text =>
-        wrap(TextField(
+      FlowFieldShape.string || FlowFieldShape.text => wrap(TextField(
           key: ValueKey('f:${spec.path}'),
           controller: _scalar,
           maxLines: spec.shape == FlowFieldShape.text ? 5 : 1,
@@ -293,9 +383,7 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
         )),
       FlowFieldShape.boolean => wrap(DropdownButtonFormField<String>(
           key: ValueKey('f:${spec.path}'),
-          initialValue: _boolean == null
-              ? ''
-              : _boolean.toString(),
+          initialValue: _boolean == null ? '' : _boolean.toString(),
           isDense: true,
           items: const [
             DropdownMenuItem<String>(value: '', child: Text('—')),
@@ -326,6 +414,9 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
       FlowFieldShape.mapOf => wrap(_pairRows(l10n)),
       FlowFieldShape.outputMap => wrap(_outputRows(l10n)),
       FlowFieldShape.flowRef => wrap(_flowRefRow(context, l10n)),
+      FlowFieldShape.modelRef ||
+      FlowFieldShape.modeRef =>
+        wrap(_choiceRow(context, l10n)),
     };
   }
 
@@ -381,6 +472,136 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
     });
   }
 
+  /// `task.model` / `task.mode`：优先从选中 agent 的可用列表里选，仍可手输模板
+  /// 变量。第一项「跟随 agent 默认」写 null，把字段清掉。
+  Widget _choiceRow(BuildContext context, AppLocalizations l10n) {
+    final choices = widget.choices ?? FlowModelChoices.empty;
+    final scheme = Theme.of(context).colorScheme;
+    final bodySmall = Theme.of(context).textTheme.bodySmall;
+    final currentVal = _manualChoice ? _scalar.text : _choiceValue;
+    final known = {for (final o in choices.options) o.value};
+    final unavailable = currentVal.isNotEmpty &&
+        currentVal != _kFollowDefault &&
+        !currentVal.trimLeft().startsWith('{{') &&
+        !known.contains(currentVal);
+
+    if (_manualChoice) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            key: ValueKey('f:${widget.spec.path}'),
+            controller: _scalar,
+            decoration: const InputDecoration(
+                isDense: true, border: OutlineInputBorder()),
+            onChanged: (_) => setState(_emit),
+          ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              key: ValueKey('choice-pick:${widget.spec.path}'),
+              onPressed: () => setState(() {
+                _manualChoice = false;
+                _choiceValue = _kFollowDefault;
+                _emit();
+              }),
+              child: Text(l10n.flow_modelPick),
+            ),
+          ),
+        ],
+      );
+    }
+
+    final items = <DropdownMenuItem<String>>[
+      DropdownMenuItem<String>(
+        value: _kFollowDefault,
+        child: Text(
+          l10n.flow_modelFollowDefault(
+              choices.current ?? l10n.flow_modelCurrentNone),
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+      for (final o in choices.options)
+        DropdownMenuItem<String>(
+          value: o.value,
+          child: Text(o.label, overflow: TextOverflow.ellipsis),
+        ),
+      if (unavailable)
+        DropdownMenuItem<String>(
+          value: currentVal,
+          child: Text(
+            '$currentVal${l10n.flow_modelUnavailable}',
+            style: TextStyle(color: scheme.error),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+    ];
+    final effective = items.any((i) => i.value == _choiceValue)
+        ? _choiceValue
+        : _kFollowDefault;
+    final shownHint = choices.hint ??
+        (choices.allowManual &&
+                choices.options.isEmpty &&
+                !choices.loading &&
+                _choiceValue == _kFollowDefault
+            ? l10n.flow_modelRuntimeBound
+            : null);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (choices.loading)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text(l10n.flow_modelLoading,
+                style: bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+          ),
+        DropdownButtonFormField<String>(
+          key: ValueKey('f:${widget.spec.path}'),
+          initialValue: effective,
+          isDense: true,
+          isExpanded: true,
+          items: items,
+          // switchable == false：禁用，只展示当前值。
+          onChanged: choices.switchable
+              ? (v) => setState(() {
+                    _choiceValue = v ?? _kFollowDefault;
+                    _emit();
+                  })
+              : null,
+        ),
+        if (!choices.switchable)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(l10n.flow_modelNotSwitchable,
+                style: bodySmall?.copyWith(color: scheme.error)),
+          )
+        else if (shownHint != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(shownHint,
+                style: bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+          ),
+        // 手动输入只在「允许手输」且「模型可切换」时才给：agent 明确不可切换
+        // （switchable=false）时，手输等于绕过它的模型配置；允许手输标记
+        // （allowManual）没打开时也不该露出这个入口。
+        if (choices.allowManual && choices.switchable)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              key: ValueKey('choice-manual:${widget.spec.path}'),
+              onPressed: () => setState(() {
+                _manualChoice = true;
+                _scalar.text =
+                    _choiceValue == _kFollowDefault ? '' : _choiceValue;
+              }),
+              child: Text(l10n.flow_modelManual),
+            ),
+          ),
+      ],
+    );
+  }
+
   bool _isEmptyValue() {
     switch (widget.spec.shape) {
       case FlowFieldShape.string:
@@ -406,6 +627,9 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
         return _outputs.every((r) => r.key.text.trim().isEmpty);
       case FlowFieldShape.flowRef:
         return _scalar.text.trim().isEmpty;
+      case FlowFieldShape.modelRef:
+      case FlowFieldShape.modeRef:
+        return false; // 非必填：清成「跟随默认」也合法
     }
   }
 
@@ -497,8 +721,8 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
                   child: TextField(
                     key: ValueKey('f:${widget.spec.path}-$i'),
                     controller: _list[i],
-                    decoration: InputDecoration(
-                        labelText: '#${i + 1}', isDense: true),
+                    decoration:
+                        InputDecoration(labelText: '#${i + 1}', isDense: true),
                     onChanged: (_) => setState(_emit),
                   ),
                 ),

@@ -23,6 +23,7 @@ class SessionFolderItems extends StatefulWidget {
     this.parentSession = '',
     this.client,
     this.onOpen,
+    this.onViewRun,
     this.onForked,
   });
 
@@ -34,8 +35,11 @@ class SessionFolderItems extends StatefulWidget {
   final String parentSession;
   final HubFoldedSessions? client;
 
-  /// 点一项：打开它的只读记录（工作流节点走运行视图，群聊走群聊视角）。
+  /// 点一项：打开它的会话（工作流节点是私聊，其余是只读记录）。
   final void Function(FoldedSession session)? onOpen;
+
+  /// 工作流条目的次级入口：「查看运行」。
+  final void Function(FoldedSession session)? onViewRun;
 
   /// 分叉成功后，新私聊会话的 id；调用方在这里刷新平铺名单。
   final void Function(String sessionId)? onForked;
@@ -171,10 +175,19 @@ class _SessionFolderItemsState extends State<SessionFolderItems> {
       context: buttonContext,
       position: RelativeRect.fromSize(rect, overlayBox.size),
       items: [
+        if (session.isFlow && widget.onViewRun != null)
+          PopupMenuItem<String>(
+            value: 'run',
+            child: Text(l10n.flow_viewRun),
+          ),
         PopupMenuItem<String>(value: 'fork', child: Text(l10n.folder_fork)),
       ],
     );
-    if (choice == 'fork') await _fork(session);
+    if (choice == 'run') {
+      widget.onViewRun?.call(session);
+    } else if (choice == 'fork') {
+      await _fork(session);
+    }
   }
 
   /// 移动端：长按弹底部菜单（没有悬停，这是唯一的入口）。
@@ -190,6 +203,12 @@ class _SessionFolderItemsState extends State<SessionFolderItems> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (session.isFlow && widget.onViewRun != null)
+              ListTile(
+                leading: const Icon(Icons.account_tree_outlined),
+                title: Text(l10n.flow_viewRun),
+                onTap: () => Navigator.pop(sheetContext, 'run'),
+              ),
             ListTile(
               leading: const Icon(Icons.call_split),
               title: Text(l10n.folder_fork),
@@ -199,7 +218,11 @@ class _SessionFolderItemsState extends State<SessionFolderItems> {
         ),
       ),
     );
-    if (choice == 'fork' && context.mounted) await _fork(session);
+    if (choice == 'run' && context.mounted) {
+      widget.onViewRun?.call(session);
+    } else if (choice == 'fork' && context.mounted) {
+      await _fork(session);
+    }
   }
 
   /// 工作流组里要画出来的记录。同一次运行只留一条；节点名和

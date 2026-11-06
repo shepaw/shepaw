@@ -5944,5 +5944,37 @@
   "agentDetail_addSheModel": "添加模型",
   "agentDetail_modeHint": "与聊天输入框里的模式是同一个设置",
   "agentDetail_syncOn": "开",
-  "agentDetail_syncOff": "关"
+  "agentDetail_syncOff": "关",
+  "flow_dragHandle": "拖动排序",
+  "flow_outlineOutdent": "移出一层",
+  "flow_dropRefWarning": "这次移动可能断开引用",
+  "@flow_modelFollowDefault": {
+    "placeholders": {
+      "current": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_modelFollowDefault": "跟随 agent 默认（当前：{current}）",
+  "flow_modelCurrentNone": "未设置",
+  "flow_modelNotSwitchable": "这个 agent 不支持切换模型",
+  "flow_modelUnavailable": "（不可用）",
+  "flow_modelManual": "手动输入",
+  "flow_modelPick": "从列表选择",
+  "flow_modelRuntimeBound": "运行时按绑定决定，无法预选",
+  "flow_modelCleared": "切换 agent 后已清空模型，请重新选择",
+  "flow_modelLoading": "正在加载模型…",
+  "@flow_viewRun": {},
+  "flow_viewRun": "查看运行",
+  "@flow_sessionBanner": {
+    "placeholders": {
+      "node": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_sessionBanner": "工作流 · 节点 {node}",
+  "flow_runSession": "运行会话",
+  "flow_gotoAnswer": "去回答",
+  "flow_nodeWaitingUser": "等你回答"
 }

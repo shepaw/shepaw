@@ -126,7 +126,10 @@ class PeerConnection {
     'engine_control_resp',
     'agent_chat',
     // 会话状态裁决回执与启动全量对账。主机是唯一真相源，App 只镜像。
+    // `session.state` 也是裸控制帧：工作流节点回合由主机直接 publish，
+    // 不是 hub_event（重连不回放），不在名单里会连 control 流都到不了。
     'session_ack',
+    'session.state',
     'session_snapshot_req',
     'session_snapshot_resp',
     'agent_chunk',

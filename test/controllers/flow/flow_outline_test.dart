@@ -230,4 +230,139 @@ void main() {
     // 拼起来的下标是 3，分支内是 1。
     expect(hit.index, 1);
   });
+
+  group('resolveDrop', () {
+    List<FlowNode> chain() => [
+          FlowNode(key: 'a', id: 'a', kind: 'task'),
+          FlowNode(key: 'b', id: 'b', kind: 'task'),
+          FlowNode(key: 'c', id: 'c', kind: 'task'),
+        ];
+
+    test('同父上移：before 用 over.index，不减 1', () {
+      final rows = buildFlowOutline(chain()); // a@0 b@1 c@2
+      final t = resolveDrop(rows, 'c', 'a', DropZone.before)!;
+      expect(t.dragId, 'c');
+      expect(t.parentId, '');
+      expect(t.index, 0);
+      expect(t.branch, isNull);
+    });
+
+    test('同父下移：after 的 index − 1（主机先摘后插）', () {
+      final rows = buildFlowOutline(chain());
+      // 把 a 拖到 c 之后：base = 2 + 1 = 3，摘掉 a 后 → 2。
+      final t = resolveDrop(rows, 'a', 'c', DropZone.after)!;
+      expect(t.parentId, '');
+      expect(t.index, 2);
+    });
+
+    test('同父下移：before 也减 1（贴着后一个兄弟放是 no-op）', () {
+      final rows = buildFlowOutline(chain());
+      final t = resolveDrop(rows, 'a', 'b', DropZone.before)!;
+      expect(t.index, 0);
+    });
+
+    test('跨父：不减 1，parent 用 over 的父', () {
+      final rows = buildFlowOutline([
+        FlowNode(key: 'x', id: 'x', kind: 'seq', children: [
+          FlowNode(key: 'm', id: 'm', kind: 'task'),
+        ]),
+        FlowNode(key: 'y', id: 'y', kind: 'seq', children: [
+          FlowNode(key: 'n', id: 'n', kind: 'task'),
+        ]),
+      ]);
+      final t = resolveDrop(rows, 'm', 'n', DropZone.before)!;
+      expect(t.parentId, 'y');
+      expect(t.index, 0);
+    });
+
+    test('if：把 else 的节点拖到 then 的某行之前，branch 跟着目标', () {
+      final rows = buildFlowOutline(_ifTree());
+      final t = resolveDrop(rows, 'e1', 't2', DropZone.before)!;
+      expect(t.parentId, 'pick');
+      expect(t.branch, 'then');
+      // 跨分支没有「摘掉自己后目标前移」的问题，不减 1。
+      expect(t.index, 1);
+    });
+
+    test('into if：必须给 branch，追加（index 为 null）', () {
+      final rows = buildFlowOutline([
+        ..._ifTree(),
+        FlowNode(key: 'z', id: 'z', kind: 'task'),
+      ]);
+      expect(resolveDrop(rows, 'z', 'pick', DropZone.into), isNull);
+      final then =
+          resolveDrop(rows, 'z', 'pick', DropZone.into, branch: 'then')!;
+      expect(then.parentId, 'pick');
+      expect(then.index, isNull);
+      expect(then.branch, 'then');
+      expect(
+          resolveDrop(rows, 'z', 'pick', DropZone.into, branch: 'else')!.branch,
+          'else');
+    });
+
+    test('空容器 into 追加到末尾', () {
+      final rows = buildFlowOutline([
+        FlowNode(key: 'empty', id: 'empty', kind: 'seq'),
+        FlowNode(key: 't', id: 't', kind: 'task'),
+      ]);
+      final t = resolveDrop(rows, 't', 'empty', DropZone.into)!;
+      expect(t.parentId, 'empty');
+      expect(t.index, isNull);
+      expect(t.branch, isNull);
+    });
+
+    test('拖进自身 / 子孙返回 null', () {
+      final rows = buildFlowOutline([
+        FlowNode(key: 'box', id: 'box', kind: 'seq', children: [
+          FlowNode(key: 'inner', id: 'inner', kind: 'seq', children: [
+            FlowNode(key: 'leaf', id: 'leaf', kind: 'task'),
+          ]),
+        ]),
+        FlowNode(key: 'z', id: 'z', kind: 'task'),
+      ]);
+      expect(resolveDrop(rows, 'box', 'inner', DropZone.into), isNull);
+      expect(resolveDrop(rows, 'box', 'leaf', DropZone.before), isNull);
+      expect(resolveDrop(rows, 'inner', 'leaf', DropZone.into), isNull);
+      expect(resolveDrop(rows, 'box', 'box', DropZone.into), isNull);
+    });
+
+    test('叶子不能 into', () {
+      final rows = buildFlowOutline(chain());
+      expect(resolveDrop(rows, 'a', 'b', DropZone.into), isNull);
+    });
+
+    test('branchesLabelled=false / canMove=false 时 if 不可落', () {
+      final rows = buildFlowOutline([
+        ..._ifTree(),
+        FlowNode(key: 'z', id: 'z', kind: 'task'),
+      ]);
+      expect(
+          resolveDrop(rows, 'z', 'pick', DropZone.into,
+              branch: 'then', branchesLabelled: false),
+          isNull);
+      expect(
+          resolveDrop(rows, 'z', 'pick', DropZone.into,
+              branch: 'then', canMove: false),
+          isNull);
+      expect(
+          resolveDrop(rows, 'a', 'z', DropZone.before, canMove: false), isNull);
+    });
+
+    test('超过 maxDepth 层返回 null', () {
+      final rows = buildFlowOutline(chain());
+      expect(
+          resolveDrop(rows, 'a', 'b', DropZone.before, maxDepth: -1), isNull);
+    });
+  });
+
+  test('FlowOutlineOps.moveTo 生成一个 move op', () {
+    final rows = buildFlowOutline([
+      FlowNode(key: 'a', id: 'a', kind: 'task'),
+      FlowNode(key: 'c', id: 'c', kind: 'task'),
+    ]);
+    final t = resolveDrop(rows, 'a', 'c', DropZone.after)!;
+    expect(FlowOutlineOps.moveTo(t), [
+      {'op': 'move', 'node_id': 'a', 'parent_id': '', 'index': 1},
+    ]);
+  });
 }

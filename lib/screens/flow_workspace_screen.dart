@@ -73,6 +73,13 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
 
   final FlowDraftStore _drafts = FlowDraftStore();
 
+  /// 设计页在窄屏详情态把 actions 发布到这里，外层工具条合并成唯一一条栏。
+  final ValueNotifier<List<Widget>> _designActions =
+      ValueNotifier<List<Widget>>([]);
+
+  /// 最近一次布局是不是宽屏（系统返回键逐级退要用）。
+  bool _wide = false;
+
   @override
   void initState() {
     super.initState();
@@ -82,6 +89,7 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   @override
   void dispose() {
     _search.dispose();
+    _designActions.dispose();
     super.dispose();
   }
 
@@ -109,9 +117,8 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
       _loading = false;
       _host = host;
       _flows = flows;
-      _error = flows == null
-          ? AppLocalizations.of(context).flow_hostNoReply
-          : null;
+      _error =
+          flows == null ? AppLocalizations.of(context).flow_hostNoReply : null;
       if (_selectedName != null &&
           (flows == null || flows.every((f) => f.name != _selectedName))) {
         _selectedName = null;
@@ -158,12 +165,33 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
     }());
   }
 
-  void _closeDetail() {
-    unawaited(() async {
-      if (!await _guardDirty()) return;
-      if (!mounted) return;
-      setState(() => _selectedName = null);
-    }());
+  void _closeDetail() => unawaited(_closeDetailGuarded());
+
+  Future<void> _closeDetailGuarded() async {
+    if (!await _guardDirty()) return;
+    if (!mounted) return;
+    setState(() => _selectedName = null);
+  }
+
+  /// 系统返回键 / 隐含返回按钮统一走这里，按层级逐级退：
+  /// 窄屏详情 → 列表（_closeDetail 内部已问过未保存草稿）；列表 → 上一页。
+  void _onPop(bool didPop) {
+    if (didPop) return;
+    unawaited(_handlePop());
+  }
+
+  Future<void> _handlePop() async {
+    if (!_wide && _selectedName != null) {
+      await _closeDetailGuarded();
+      return;
+    }
+    if (!await _guardDirty()) return;
+    if (!mounted) return;
+    // 桌面嵌入里这是嵌套 Navigator 的根路由，没有「上一页」可退；交给桌面外壳
+    // 的菜单处理，别把根路由也 pop 掉（那样会先出现一帧空右栏）。
+    if (widget.embedded) return;
+    final nav = Navigator.of(context);
+    if (nav.canPop()) nav.pop();
   }
 
   /// 开跑。先把定义取回来（要知道声明了哪些 inputs、有哪些角色），再问一次。
@@ -197,9 +225,8 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
       scope: widget.scope,
       name: flow.name,
       inputs: <String, dynamic>{...plan.inputs},
-      bindings: plan.bindings.isEmpty
-          ? null
-          : <String, dynamic>{...plan.bindings},
+      bindings:
+          plan.bindings.isEmpty ? null : <String, dynamic>{...plan.bindings},
     );
     if (!mounted) return;
     final runId = result.runId;
@@ -323,64 +350,83 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final wide = _wideFor(constraints);
-        final showingNarrowDetail = !wide && _selectedName != null;
-        final hideOuterAppBar = widget.embedded && wide;
-        return Scaffold(
-          appBar: hideOuterAppBar
-              ? null
-              : AppBar(
-                  title: Text(showingNarrowDetail
-                      ? (_selectedName ?? l10n.flow_libraryTitle)
-                      : l10n.flow_libraryTitle),
-                  elevation: widget.embedded ? 0 : null,
-                  automaticallyImplyLeading:
-                      !widget.embedded && !showingNarrowDetail,
-                  leading: showingNarrowDetail
-                      ? BackButton(onPressed: _closeDetail)
-                      : null,
-                  actions: [
-                    if (!showingNarrowDetail && _canCreateFlows)
-                      IconButton(
-                        tooltip: l10n.flow_new,
-                        icon: const Icon(Icons.add),
-                        onPressed: () => unawaited(_create()),
-                      ),
-                    if (!showingNarrowDetail)
-                      IconButton(
-                        tooltip: l10n.common_refresh,
-                        icon: const Icon(Icons.refresh),
-                        onPressed: () => unawaited(_load()),
-                      ),
-                  ],
-                ),
-          body: _loading
-              ? const Center(child: CircularProgressIndicator())
-              : _error != null
-                  ? _buildError(l10n)
-                  : wide
-                      ? Row(
-                          children: [
-                            SizedBox(
-                              width: _listPaneWidth,
-                              child: _buildListPane(l10n,
-                                  showHeader: hideOuterAppBar),
-                            ),
-                            VerticalDivider(
-                              width: 1,
-                              color:
-                                  Theme.of(context).colorScheme.outlineVariant,
-                            ),
-                            Expanded(child: _buildDetail(l10n)),
-                          ],
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) => _onPop(didPop),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final wide = _wideFor(constraints);
+          _wide = wide;
+          final showingNarrowDetail = !wide && _selectedName != null;
+          final hideOuterAppBar = widget.embedded && wide;
+          return Scaffold(
+            appBar: hideOuterAppBar
+                ? null
+                : AppBar(
+                    title: Text(showingNarrowDetail
+                        ? (_selectedName ?? l10n.flow_libraryTitle)
+                        : l10n.flow_libraryTitle),
+                    elevation: widget.embedded ? 0 : null,
+                    automaticallyImplyLeading:
+                        !widget.embedded && !showingNarrowDetail,
+                    leading: showingNarrowDetail
+                        ? BackButton(onPressed: _closeDetail)
+                        : null,
+                    actions: [
+                      // 窄屏详情态：设计页把它的 actions 发布到 _designActions，
+                      // 这里就是唯一一条栏（不再叠一条内层 AppBar）。
+                      if (showingNarrowDetail)
+                        ValueListenableBuilder<List<Widget>>(
+                          valueListenable: _designActions,
+                          builder: (context, actions, _) => Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: actions,
+                          ),
                         )
-                      : showingNarrowDetail
-                          ? _buildDetail(l10n)
-                          : _buildListPane(l10n, showHeader: false),
-        );
-      },
+                      else ...[
+                        if (_canCreateFlows)
+                          IconButton(
+                            tooltip: l10n.flow_new,
+                            icon: const Icon(Icons.add),
+                            onPressed: () => unawaited(_create()),
+                          ),
+                        IconButton(
+                          tooltip: l10n.common_refresh,
+                          icon: const Icon(Icons.refresh),
+                          onPressed: () => unawaited(_load()),
+                        ),
+                      ],
+                    ],
+                  ),
+            body: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? _buildError(l10n)
+                    : wide
+                        ? Row(
+                            children: [
+                              SizedBox(
+                                width: _listPaneWidth,
+                                child: _buildListPane(l10n,
+                                    showHeader: hideOuterAppBar),
+                              ),
+                              VerticalDivider(
+                                width: 1,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .outlineVariant,
+                              ),
+                              Expanded(
+                                  child:
+                                      _buildDetail(l10n, hoistActions: false)),
+                            ],
+                          )
+                        : showingNarrowDetail
+                            ? _buildDetail(l10n, hoistActions: true)
+                            : _buildListPane(l10n, showHeader: false),
+          );
+        },
+      ),
     );
   }
 
@@ -464,40 +510,40 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
         else ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-          child: TextField(
-            key: const ValueKey('flow-search'),
-            controller: _search,
-            decoration: InputDecoration(
-              hintText: l10n.common_search,
-              prefixIcon: const Icon(Icons.search),
-              isDense: true,
-              border: const OutlineInputBorder(),
+            child: TextField(
+              key: const ValueKey('flow-search'),
+              controller: _search,
+              decoration: InputDecoration(
+                hintText: l10n.common_search,
+                prefixIcon: const Icon(Icons.search),
+                isDense: true,
+                border: const OutlineInputBorder(),
+              ),
+              onChanged: (_) => setState(() {}),
             ),
-            onChanged: (_) => setState(() {}),
           ),
-        ),
-        Expanded(
-          child: visible.isEmpty
-              ? Center(child: Text(l10n.flow_libraryEmpty))
-              : ListView(
-                  children: [
-                    for (final flow in visible)
-                      ListTile(
-                        key: ValueKey('flow-row-${flow.name}'),
-                        selected: _selectedName == flow.name,
-                        leading: const Icon(Icons.account_tree_outlined),
-                        title: Text(flow.name),
-                        subtitle: Text(l10n.flow_revisionLabel(flow.latest)),
-                        onTap: () => _select(flow),
-                        trailing: TextButton(
-                          key: ValueKey('flow-start-${flow.name}'),
-                          onPressed: () => unawaited(_start(flow)),
-                          child: Text(l10n.flow_startRun),
+          Expanded(
+            child: visible.isEmpty
+                ? Center(child: Text(l10n.flow_libraryEmpty))
+                : ListView(
+                    children: [
+                      for (final flow in visible)
+                        ListTile(
+                          key: ValueKey('flow-row-${flow.name}'),
+                          selected: _selectedName == flow.name,
+                          leading: const Icon(Icons.account_tree_outlined),
+                          title: Text(flow.name),
+                          subtitle: Text(l10n.flow_revisionLabel(flow.latest)),
+                          onTap: () => _select(flow),
+                          trailing: TextButton(
+                            key: ValueKey('flow-start-${flow.name}'),
+                            onPressed: () => unawaited(_start(flow)),
+                            child: Text(l10n.flow_startRun),
+                          ),
                         ),
-                      ),
-                  ],
-                ),
-        ),
+                    ],
+                  ),
+          ),
         ],
       ],
     );
@@ -505,12 +551,11 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
 
   void _openRun(String runId, String title) {
     unawaited(Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) =>
-          FlowRunScreen(peerId: _host, runId: runId, title: title),
+      builder: (_) => FlowRunScreen(peerId: _host, runId: runId, title: title),
     )));
   }
 
-  Widget _buildDetail(AppLocalizations l10n) {
+  Widget _buildDetail(AppLocalizations l10n, {required bool hoistActions}) {
     final name = _selectedName;
     if (name == null) {
       final scheme = Theme.of(context).colorScheme;
@@ -538,6 +583,8 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
       scope: widget.scope,
       client: _client,
       draftStore: _drafts,
+      embedded: true,
+      actionsNotifier: hoistActions ? _designActions : null,
       onDirtyChanged: (dirty) => _editorDirty = dirty,
       onControllerReady: (controller) => _editor = controller,
     );

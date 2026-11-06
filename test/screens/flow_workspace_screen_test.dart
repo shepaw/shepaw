@@ -21,8 +21,8 @@ void main() {
     // 开跑前先问一次：inputs、角色绑定、跑的是哪一版。
     await tester.tap(find.byKey(const ValueKey('start-go')));
     await _settle(tester);
-    final start = harness.sent
-        .firstWhere((f) => f['type'] == 'flow_run_start_req');
+    final start =
+        harness.sent.firstWhere((f) => f['type'] == 'flow_run_start_req');
     expect(start['name'], 'dev');
     // 主机拒绝时把原因告诉用户，不跳走。
     expect(find.text('缺少输入'), findsOneWidget);
@@ -66,7 +66,8 @@ void main() {
 
     await tester.tap(find.byTooltip('新建'));
     await _settle(tester);
-    await tester.enterText(find.byKey(const ValueKey('new-flow-name')), 'has space');
+    await tester.enterText(
+        find.byKey(const ValueKey('new-flow-name')), 'has space');
     await tester.tap(find.byKey(const ValueKey('new-flow-create')));
     await _settle(tester);
     // 没关对话框，也没发保存。
@@ -98,7 +99,8 @@ void main() {
 
     await tester.tap(find.byTooltip('新建'));
     await _settle(tester);
-    await tester.enterText(find.byKey(const ValueKey('new-flow-name')), 'fresh');
+    await tester.enterText(
+        find.byKey(const ValueKey('new-flow-name')), 'fresh');
     await tester.tap(find.byKey(const ValueKey('new-flow-create')));
     await _settle(tester);
 
@@ -113,9 +115,8 @@ void main() {
     final harness = _Harness();
     addTearDown(harness.close);
     await _pump(tester, harness.client);
-    final before = harness.sent
-        .where((f) => f['type'] == 'flow_list_req')
-        .length;
+    final before =
+        harness.sent.where((f) => f['type'] == 'flow_list_req').length;
 
     await tester.tap(find.byTooltip('新建'));
     await _settle(tester);
@@ -128,15 +129,15 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('对话框打开期间别人建了同名流程：保存前查库把它挡下',
-      (tester) async {
+  testWidgets('对话框打开期间别人建了同名流程：保存前查库把它挡下', (tester) async {
     final harness = _Harness();
     addTearDown(harness.close);
     await _pump(tester, harness.client);
 
     await tester.tap(find.byTooltip('新建'));
     await _settle(tester);
-    await tester.enterText(find.byKey(const ValueKey('new-flow-name')), 'fresh');
+    await tester.enterText(
+        find.byKey(const ValueKey('new-flow-name')), 'fresh');
     // 对话框里的 existing 还是旧的；库里已经被别人占了名字。
     harness.flows = [
       {'name': 'dev', 'latest': 3},
@@ -150,15 +151,15 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('flow_list 整体失败时新建仍照常保存，不误报主机没回应',
-      (tester) async {
+  testWidgets('flow_list 整体失败时新建仍照常保存，不误报主机没回应', (tester) async {
     final harness = _Harness()..listFails = true;
     addTearDown(harness.close);
     await _pump(tester, harness.client);
 
     await tester.tap(find.byTooltip('新建'));
     await _settle(tester);
-    await tester.enterText(find.byKey(const ValueKey('new-flow-name')), 'fresh');
+    await tester.enterText(
+        find.byKey(const ValueKey('new-flow-name')), 'fresh');
     await tester.tap(find.byKey(const ValueKey('new-flow-create')));
     await _settle(tester);
 
@@ -173,9 +174,8 @@ void main() {
     final harness = _Harness();
     addTearDown(harness.close);
     await _pump(tester, harness.client, embedded: true);
-    final before = harness.sent
-        .where((f) => f['type'] == 'flow_list_req')
-        .length;
+    final before =
+        harness.sent.where((f) => f['type'] == 'flow_list_req').length;
 
     await tester.tap(find.byIcon(Icons.refresh));
     await _settle(tester);
@@ -187,8 +187,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('运行记录栏列主机上的运行，点一条打开运行视图',
-      (tester) async {
+  testWidgets('运行记录栏列主机上的运行，点一条打开运行视图', (tester) async {
     final harness = _Harness();
     addTearDown(harness.close);
     await _pump(tester, harness.client);
@@ -218,13 +217,133 @@ void main() {
     expect(harness.sent.any((f) => f['type'] == 'flow_get_req'), isTrue);
     await tester.pumpWidget(const SizedBox());
   });
+
+  // ── P1：退回按钮 ──────────────────────────────────────────────────────────
+
+  testWidgets('P1 mobile push：列表 / 详情都只有一个返回按钮，且逐级退回', (tester) async {
+    final harness = _Harness();
+    addTearDown(harness.close);
+    await _pumpPushed(tester, harness.client, size: const Size(400, 800));
+    // 列表态：外层隐含返回，1 个。
+    expect(find.byType(BackButton), findsOneWidget);
+    await tester.tap(find.text('dev'));
+    await _settle(tester);
+    // 窄屏详情：actions 上提到外层，设计页不再画内层 AppBar。
+    expect(find.text('设计：dev'), findsNothing);
+    expect(find.byType(BackButton), findsOneWidget);
+    // 设计页的 actions 确实合并进了外层唯一一条栏（这里至少能点「与上一版对比」）。
+    expect(find.byTooltip('与上一版对比'), findsOneWidget);
+    // 第一次返回 → 列表。
+    await tester.tap(find.byType(BackButton));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('flow-search')), findsOneWidget);
+    expect(find.byType(BackButton), findsOneWidget);
+    // 第二次返回 → 上一页。
+    await tester.tap(find.byType(BackButton));
+    await _settle(tester);
+    expect(find.text('previous page'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('P1 desktop 非嵌入 push（宽屏）：最多一个返回按钮', (tester) async {
+    final harness = _Harness();
+    addTearDown(harness.close);
+    await _pumpPushed(tester, harness.client, size: const Size(2400, 1800));
+    expect(find.byType(BackButton), findsOneWidget);
+    await tester.tap(find.text('dev'));
+    await _settle(tester);
+    // 宽屏：设计页自己那条栏没有返回按钮，外层仍是唯一一个。
+    expect(find.byType(BackButton), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('P1 desktop 嵌入（窄窗口）：详情态只有一个 _closeDetail 返回', (tester) async {
+    final harness = _Harness();
+    addTearDown(harness.close);
+    await _pumpPushed(tester, harness.client,
+        embedded: true, size: const Size(600, 900));
+    // 窄屏嵌入列表态：不隐含返回。
+    expect(find.byType(BackButton), findsNothing);
+    await tester.tap(find.text('dev'));
+    await _settle(tester);
+    expect(find.text('设计：dev'), findsNothing);
+    expect(find.byType(BackButton), findsOneWidget);
+    await tester.tap(find.byType(BackButton));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('flow-search')), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('P1 desktop 嵌入（宽窗口）：hideOuterAppBar 后最多一个返回', (tester) async {
+    final harness = _Harness();
+    addTearDown(harness.close);
+    await _pumpPushed(tester, harness.client,
+        embedded: true, size: const Size(2400, 1800));
+    expect(find.byType(BackButton), findsNothing);
+    await tester.tap(find.text('dev'));
+    await _settle(tester);
+    expect(find.byType(BackButton), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('A7 切 locale 后窄屏外层工具栏文案跟着更新', (tester) async {
+    final harness = _Harness();
+    addTearDown(harness.close);
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final locale = ValueNotifier(const Locale('zh'));
+    addTearDown(locale.dispose);
+
+    await tester.pumpWidget(ValueListenableBuilder<Locale>(
+      valueListenable: locale,
+      builder: (context, value, _) => MaterialApp(
+        locale: value,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: FlowWorkspaceScreen(peerId: 'p1', client: harness.client),
+      ),
+    ));
+    await _settle(tester);
+    await tester.tap(find.text('dev'));
+    await _settle(tester);
+    // 窄屏详情：设计页把 actions 发布到外层唯一一条栏。
+    expect(find.byTooltip('与上一版对比'), findsOneWidget);
+
+    locale.value = const Locale('en');
+    await _settle(tester);
+    // 状态没变（revision / dirty / …），但 locale 变了 —— 缓存签名必须换掉旧按钮。
+    expect(find.byTooltip('与上一版对比'), findsNothing);
+    expect(find.byTooltip('Compare with previous revision'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('P1 有未保存草稿时按返回会弹 _guardDirty 确认', (tester) async {
+    final harness = _Harness(editable: true)
+      ..flowYaml = 'flow: dev\nsteps:\n- id: impl\n  task: {prompt: 写}\n';
+    addTearDown(harness.close);
+    await _pumpPushed(tester, harness.client, size: const Size(2400, 1800));
+    await tester.tap(find.text('dev'));
+    await _settle(tester);
+    // 加一步 → 产生未保存改动（onDirtyChanged → _editorDirty = true）。
+    await tester.tap(find.byKey(const ValueKey('after-impl')));
+    await _settle(tester);
+    // 返回走 PopScope → _guardDirty → 弹确认。
+    await tester.tap(find.byType(BackButton).first);
+    await _settle(tester);
+    expect(find.text('有没保存的改动'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
 }
 
 /// 假主机：按帧类型回一份固定应答，并把请求记下来。
 class _Harness {
-  _Harness({this.reachable = true});
+  _Harness({this.reachable = true, this.editable = false});
 
   final bool reachable;
+
+  /// 让 design 页可编辑（schema 带 ops、树里有一个 task 节点），用来造未保存草稿。
+  final bool editable;
 
   /// `flow_get` 回的定义。换掉它就能试 inputs / roles 的开跑表单。
   String flowYaml = 'flow: dev\nsteps: []\n';
@@ -293,13 +412,65 @@ class _Harness {
                 'type': 'flow_schema_resp',
                 'success': true,
                 'common': [],
-                'kinds': {},
+                'kinds': editable
+                    ? {
+                        'task': [
+                          {
+                            'name': 'task.prompt',
+                            'type': 'text',
+                            'label': '提示词'
+                          },
+                        ],
+                      }
+                    : {},
+                'ops': editable
+                    ? [
+                        'set',
+                        'insert',
+                        'move',
+                        'delete',
+                        'wrap',
+                        'unwrap',
+                        'retype',
+                        'header',
+                      ]
+                    : [],
               },
             'flow_validate_req' => {
                 'type': 'flow_validate_resp',
                 'success': true,
-                'yaml': 'flow: dev\nsteps: []\n',
-                'tree': [],
+                'yaml': editable
+                    ? ((frame['yaml'] as String?) ?? flowYaml)
+                    : 'flow: dev\nsteps: []\n',
+                'tree': editable
+                    ? [
+                        {
+                          'key': 'impl',
+                          'id': 'impl',
+                          'kind': 'task',
+                          'fields': {
+                            'task': {'prompt': '写'}
+                          },
+                        },
+                      ]
+                    : [],
+                'diagnostics': [],
+              },
+            'flow_edit_req' => {
+                'type': 'flow_edit_resp',
+                'success': true,
+                'valid': true,
+                'yaml': 'flow: dev\nsteps:\n- id: impl\n  task: {prompt: 改了}\n',
+                'tree': [
+                  {
+                    'key': 'impl',
+                    'id': 'impl',
+                    'kind': 'task',
+                    'fields': {
+                      'task': {'prompt': '改了'}
+                    },
+                  },
+                ],
                 'diagnostics': [],
               },
             _ => null,
@@ -324,9 +495,51 @@ Future<void> _pump(WidgetTester tester, HubFlow client,
     locale: const Locale('zh'),
     localizationsDelegates: AppLocalizations.localizationsDelegates,
     supportedLocales: AppLocalizations.supportedLocales,
-    home: FlowWorkspaceScreen(
-        peerId: 'p1', client: client, embedded: embedded),
+    home: FlowWorkspaceScreen(peerId: 'p1', client: client, embedded: embedded),
   ));
+  await _settle(tester);
+}
+
+/// 把工作台 push 成一条真正的路由（下面压着「上一页」），才能验证逐级返回，
+/// 也能让 AppBar 真正生成隐含返回按钮。
+Future<void> _pumpPushed(
+  WidgetTester tester,
+  HubFlow client, {
+  bool embedded = false,
+  Size? size,
+}) async {
+  if (size != null) {
+    tester.view.physicalSize = size;
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+  }
+  await tester.pumpWidget(MaterialApp(
+    locale: const Locale('zh'),
+    localizationsDelegates: AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
+    home: Builder(
+        builder: (context) => Scaffold(
+              body: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('previous page'),
+                    ElevatedButton(
+                      key: const ValueKey('go-to-flows'),
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => FlowWorkspaceScreen(
+                              peerId: 'p1', client: client, embedded: embedded),
+                        ),
+                      ),
+                      child: const Text('go'),
+                    ),
+                  ],
+                ),
+              ),
+            )),
+  ));
+  await tester.tap(find.byKey(const ValueKey('go-to-flows')));
   await _settle(tester);
 }
 

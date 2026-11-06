@@ -102,9 +102,8 @@ List<FlowOutlineRow> buildFlowOutline(
           index: index,
           branch: branch,
           siblingCount: counts[branch] ?? 1,
-          previousSibling: index == 0
-              ? null
-              : _previousInBranch(nodes, node, branch),
+          previousSibling:
+              index == 0 ? null : _previousInBranch(nodes, node, branch),
           parent: parentRow,
         ));
         if (node.children.isNotEmpty && !collapsed.contains(node.id)) {
@@ -134,6 +133,117 @@ List<FlowOutlineRow> buildFlowOutline(
   return rows;
 }
 
+// ── 拖放（方案 c0bd02d7）────────────────────────────────────────────────────
+
+/// 一行里指针落在哪个区：上 25% 放在它之前，下 25% 放在它之后，中间放进去。
+enum DropZone { before, into, after }
+
+/// 解析好的落点，够发一个 `move` 操作。
+class FlowDropTarget {
+  const FlowDropTarget({
+    required this.dragId,
+    required this.parentId,
+    this.index,
+    this.branch,
+  });
+
+  final String dragId;
+
+  /// 新的父节点 id，空串表示根层。
+  final String parentId;
+
+  /// 新的（分支内相对）下标；null 表示追加。
+  final int? index;
+
+  /// 父节点是 `if` 时放进哪一支。
+  final String? branch;
+}
+
+bool _sameSlot(FlowOutlineRow a, FlowOutlineRow b) =>
+    a.parentId == b.parentId && a.branch == b.branch;
+
+/// `dragId` 是不是 `row` 本身或它的祖先（也就是 row 落在被拖的子树里）。
+bool _dragIsAncestorOf(FlowOutlineRow row, String dragId) {
+  FlowOutlineRow? cur = row;
+  while (cur != null) {
+    if (cur.node.id == dragId) return true;
+    cur = cur.parent;
+  }
+  return false;
+}
+
+int _subtreeHeight(FlowNode node) {
+  if (node.children.isEmpty) return 0;
+  var deepest = 0;
+  for (final child in node.children) {
+    final h = 1 + _subtreeHeight(child);
+    if (h > deepest) deepest = h;
+  }
+  return deepest;
+}
+
+/// 纯函数：把「拖 [dragId] 落到 [overId] 的 [zone]」翻译成落点，非法返回 null。
+///
+/// - before / after：`parentId = over.parentId`、`branch = over.branch`、
+///   `index = over.index`（after +1）。**同父同支且下移时 index − 1**，因为主机
+///   先摘后插。
+/// - into：`parentId = over.node.id`、`index = null`（追加）。只有容器和带分支的
+///   `if` 能收；`if` 必须给 [branch] 且主机标了分支。
+/// - 非法：拖到自己/子孙、叶子的 into、`if` 但没标分支/没给分支、主机不能 move、
+///   落下去会超过 [maxDepth] 层。主机还会再判一次，这里先挡掉明显的。
+FlowDropTarget? resolveDrop(
+  List<FlowOutlineRow> rows,
+  String dragId,
+  String overId,
+  DropZone zone, {
+  String? branch,
+  bool canMove = true,
+  bool branchesLabelled = true,
+  int maxDepth = 32,
+}) {
+  if (!canMove || dragId == overId) return null;
+  FlowOutlineRow? dragRow;
+  FlowOutlineRow? overRow;
+  for (final row in rows) {
+    if (row.node.id == dragId) dragRow = row;
+    if (row.node.id == overId) overRow = row;
+  }
+  if (dragRow == null || overRow == null) return null;
+
+  // 目标行落在被拖的子树里（含它自己）：会成环，直接拒。
+  if (_dragIsAncestorOf(overRow, dragId)) return null;
+
+  final dragNode = dragRow.node;
+  final overNode = overRow.node;
+
+  if (zone == DropZone.into) {
+    if (!FlowStepDefaults.acceptsChildren(overNode.kind)) return null;
+    if (overNode.kind == 'if' && (!branchesLabelled || branch == null)) {
+      return null;
+    }
+    if (overRow.depth + 1 + _subtreeHeight(dragNode) > maxDepth) return null;
+    return FlowDropTarget(
+      dragId: dragId,
+      parentId: overNode.id,
+      branch: branch,
+    );
+  }
+
+  var index = overRow.index + (zone == DropZone.after ? 1 : 0);
+  // 同父同支往下移：摘掉自己后目标下标会前移一位。
+  if (_sameSlot(dragRow, overRow) && dragRow.index < overRow.index) {
+    index -= 1;
+  }
+  if (index < 0) index = 0;
+  if (overRow.depth + _subtreeHeight(dragNode) > maxDepth) return null;
+  return FlowDropTarget(
+    dragId: dragId,
+    parentId: overRow.parentId,
+    index: index,
+    branch: overRow.branch,
+  );
+}
+
 /// 从行直接产出的操作。全是对 [FlowEditOps] 的一层薄封装，把「这一行」翻译成
 /// `parent_id` / `index` / `branch`。
 class FlowOutlineOps {
@@ -152,6 +262,16 @@ class FlowOutlineOps {
         index: row.index + 1,
         branch: row.branch,
       );
+
+  /// 拖放落点：就是一个 `move`。撤销走编辑器快照，自动可用。
+  static List<Map<String, dynamic>> moveTo(FlowDropTarget target) => [
+        FlowEditOps.move(
+          nodeId: target.dragId,
+          parentId: target.parentId,
+          index: target.index,
+          branch: target.branch,
+        ),
+      ];
 
   /// 在这一行后面加一步。父节点是 `if` 时落进同一支。
   static Map<String, dynamic> insertAfter(
@@ -187,6 +307,7 @@ class FlowOutlineOps {
         index: row.parent!.index + 1,
         branch: row.parent!.branch,
       );
+
   ///
   /// 和「包起来」的区别：这只是换个父节点，不新建容器，也不改执行语义。
   static Map<String, dynamic> moveIntoPrevious(FlowOutlineRow row) =>

@@ -9,18 +9,39 @@ enum FlowNodeStatus {
   halted,
   failed,
   skipped,
-  cancelled;
+  cancelled,
+
+  /// P6：群外节点的 `ask_user` 卡片转 deferred，节点在等用户回答。
+  /// 主机 `NodeStatus::WaitingUser` 序列化成 `waiting_user`。
+  waitingUser;
 
   static FlowNodeStatus? parse(Object? raw) {
     if (raw is! String) return null;
+    // 主机若把「等用户回答」下发成别的写法，也统一归到 waitingUser。
+    // 不认的写法一律返回 null：宁可这一格没有状态，也不要抛异常把整棵
+    // 运行树解析崩掉（FlowRunView.fromResponse / FlowEvent.parse 都会跳过）。
+    switch (raw) {
+      case 'waiting_user':
+      case 'waiting':
+      case 'needs_user':
+        return FlowNodeStatus.waitingUser;
+    }
     for (final value in FlowNodeStatus.values) {
       if (value.name == raw) return value;
     }
     return null;
   }
 
+  /// 这一态是不是「等用户拍板」。`halted` 是旧的关卡等待态，也按等人处理；
+  /// P6 的「去回答」入口和卡片红点按它显示。
+  bool get isWaitingForUser =>
+      this == FlowNodeStatus.waitingUser || this == FlowNodeStatus.halted;
+
   bool get isTerminal => switch (this) {
-        FlowNodeStatus.pending || FlowNodeStatus.running => false,
+        FlowNodeStatus.pending ||
+        FlowNodeStatus.running ||
+        FlowNodeStatus.waitingUser =>
+          false,
         _ => true,
       };
 }
@@ -33,6 +54,15 @@ enum FlowRunStatus {
 
   static FlowRunStatus? parse(Object? raw) {
     if (raw is! String) return null;
+    // P6：主机若把「等用户回答」上升成 run 级状态，运行其实还没结束。
+    // 按 running 处理，别让整屏被判成「读不到这次运行」。
+    switch (raw) {
+      case 'waiting_user':
+      case 'waiting':
+      case 'needs_user':
+      case 'halted':
+        return FlowRunStatus.running;
+    }
     for (final value in FlowRunStatus.values) {
       if (value.name == raw) return value;
     }
@@ -56,6 +86,8 @@ class FlowNode {
     this.error,
     this.children = const [],
     this.session,
+    this.sessionId,
+    this.agentId,
     this.options = const [],
     this.fields,
     this.branch,
@@ -75,7 +107,17 @@ class FlowNode {
   final String? text;
   final String? error;
   final List<FlowNode> children;
+
+  /// 引擎槽位 key（旧字段，`flow:<rid>:<node>`）。主机为兼容仍在下发，
+  /// 但它不是会话库里的私聊会话，不能用它拼频道 id。
   final String? session;
+
+  /// 主机会话库里的真会话 id（`flow_<rid8>_<node>`，无冒号）。有它就能按
+  /// `psess_<sessionId>` 打开普通私聊，看历史、继续聊、停止。
+  final String? sessionId;
+
+  /// Hub 侧的 agent id。用来在本地会话里定位对应的 agent 行。
+  final String? agentId;
 
   /// `gate` 的可选项。
   final List<String> options;
@@ -92,11 +134,23 @@ class FlowNode {
 
   bool get isContainer => children.isNotEmpty;
 
-  /// 关卡正在等人回答。
-  bool get awaitsAnswer => kind == 'gate' && status == FlowNodeStatus.running;
+  /// 有没有可以点进去的私聊会话。
+  bool get hasSession => sessionId != null && sessionId!.isNotEmpty;
 
-  FlowNode copyWith(
-          {FlowNodeStatus? status, int? attempt, List<FlowNode>? children}) =>
+  /// 关卡正在等人回答。带节点会话且正在跑的执行节点也算：P6 的询问卡片会落在
+  /// 这条会话里，卡片上要能提示「等人回答」。等用户回答的节点态（waitingUser /
+  /// halted）同样要露出「去回答」入口。
+  bool get awaitsAnswer =>
+      (status == FlowNodeStatus.running && (kind == 'gate' || hasSession)) ||
+      (status != null && status!.isWaitingForUser);
+
+  FlowNode copyWith({
+    FlowNodeStatus? status,
+    int? attempt,
+    List<FlowNode>? children,
+    String? sessionId,
+    String? agentId,
+  }) =>
       FlowNode(
         key: key,
         id: id,
@@ -110,6 +164,8 @@ class FlowNode {
         error: error,
         children: children ?? this.children,
         session: session,
+        sessionId: sessionId ?? this.sessionId,
+        agentId: agentId ?? this.agentId,
         options: options,
         fields: fields,
         branch: branch,
@@ -139,6 +195,8 @@ class FlowNode {
             ]
           : const [],
       session: asText(json['session']),
+      sessionId: asText(json['session_id']),
+      agentId: asText(json['agent_id']),
       options: rawOptions is List
           ? [for (final item in rawOptions) item.toString()]
           : const [],
@@ -191,6 +249,9 @@ class FlowNode {
       status: status,
       rounds: rounds,
       children: kids,
+      session: session,
+      sessionId: sessionId,
+      agentId: agentId,
       options: options,
       fields: fields,
     );
@@ -207,6 +268,26 @@ class FlowNode {
   }
 }
 
+/// 主机目前不在 `flow_run_get_resp` 里下发 run 级惜宝会话 id，但每个节点
+/// 会话都是 `flow_<rid8>_<...>`（群内可能再带 `group:...:` 前缀）。前缀里的
+/// `<rid8>` 就是这次运行的 tag，由此拼出 P6 的运行会话 `flow_<rid8>_she`。
+/// 找不到带会话的节点时返回 null —— 没跑过任何节点，卡片也还没到，没处可点。
+final RegExp _flowRunTag = RegExp(r'flow_([A-Za-z0-9]+)_');
+
+String? flowRunSheSessionId(Iterable<FlowNode> tree) {
+  for (final root in tree) {
+    final hit = root.find((node) {
+      final id = node.sessionId;
+      return id != null && _flowRunTag.hasMatch(id);
+    });
+    final id = hit?.sessionId;
+    if (id == null) continue;
+    final match = _flowRunTag.firstMatch(id);
+    if (match != null) return 'flow_${match.group(1)}_she';
+  }
+  return null;
+}
+
 /// `flow_run_get_resp` 的内容。
 class FlowRunView {
   const FlowRunView({
@@ -217,6 +298,7 @@ class FlowRunView {
     this.error,
     this.children = const [],
     this.yaml = '',
+    this.runSessionId,
   });
 
   final String runId;
@@ -231,20 +313,47 @@ class FlowRunView {
   /// 运行固定在这一版定义上（B.6）。改写（F19）要靠它取出某个容器的子步骤。
   final String yaml;
 
+  /// P6：这次运行的惜宝会话 id（`flow_<rid8>_she`，裸主机会话 id）。
+  /// 主机若开始下发 run 级字段就直接用；否则从节点会话前缀推出来。
+  /// 顶部「运行会话」入口打开 `psess_<runSessionId>`。
+  final String? runSessionId;
+
   static FlowRunView? fromResponse(Map<String, dynamic> response) {
     if (response['success'] != true) return null;
     final status = FlowRunStatus.parse(response['status']);
     final raw = response['tree'];
     if (status == null || raw is! List) return null;
     final rawChildren = response['children'];
+    final tree = [
+      for (final node in raw)
+        if (node is Map) FlowNode.fromJson(Map<String, dynamic>.from(node)),
+    ];
+    // 群运行的流程层面问题走群聊，主机不建 run 级惜宝会话。主机在
+    // flow_run_get_resp 里下发 group_id / she_session_id：有 group_id 就收起入口，
+    // 否则直接用下发的 she_session_id（节点还没跑过时也能打开）。
+    final groupId = response['group_id'];
+    final isGroupRun = (groupId is String && groupId.isNotEmpty) ||
+        response['scene'] == 'group';
+    String? runSessionId;
+    if (!isGroupRun) {
+      for (final key in const [
+        'she_session_id',
+        'run_session_id',
+        'session_id',
+      ]) {
+        final value = response[key];
+        if (value is String && value.isNotEmpty) {
+          runSessionId = value;
+          break;
+        }
+      }
+      runSessionId ??= flowRunSheSessionId(tree);
+    }
     return FlowRunView(
       runId: (response['run_id'] as String?) ?? '',
       status: status,
       tasksUsed: (response['tasks_used'] as num?)?.toInt() ?? 0,
-      tree: [
-        for (final node in raw)
-          if (node is Map) FlowNode.fromJson(Map<String, dynamic>.from(node)),
-      ],
+      tree: tree,
       error: (response['error'] as String?)?.isNotEmpty == true
           ? response['error'] as String
           : null,
@@ -252,11 +361,16 @@ class FlowRunView {
           ? [for (final id in rawChildren) id.toString()]
           : const [],
       yaml: (response['yaml'] as String?) ?? '',
+      runSessionId: runSessionId,
     );
   }
 
   FlowRunView withNodeStatus(
-      String nodeKey, FlowNodeStatus status, int attempt) {
+    String nodeKey,
+    FlowNodeStatus status,
+    int attempt, {
+    String? sessionId,
+  }) {
     return FlowRunView(
       runId: runId,
       status: this.status,
@@ -265,11 +379,17 @@ class FlowRunView {
         for (final node in tree)
           node.mapNode(
             nodeKey,
-            (n) => n.copyWith(status: status, attempt: attempt),
+            (n) => n.copyWith(
+              status: status,
+              attempt: attempt,
+              sessionId: sessionId,
+            ),
           ),
       ],
       error: error,
       children: children,
+      yaml: yaml,
+      runSessionId: runSessionId,
     );
   }
 
@@ -281,6 +401,7 @@ class FlowRunView {
         error: error,
         children: children,
         yaml: yaml,
+        runSessionId: runSessionId,
       );
 }
 
@@ -334,13 +455,15 @@ class FlowEvent {
   const FlowEvent.run({required this.runId, required this.runStatus})
       : node = null,
         nodeStatus = null,
-        attempt = 0;
+        attempt = 0,
+        sessionId = null;
 
   const FlowEvent.node({
     required this.runId,
     required String this.node,
     required this.nodeStatus,
     this.attempt = 0,
+    this.sessionId,
   }) : runStatus = null;
 
   final String runId;
@@ -348,6 +471,9 @@ class FlowEvent {
   final FlowNodeStatus? nodeStatus;
   final FlowRunStatus? runStatus;
   final int attempt;
+
+  /// `flow.node.changed` 上新下发的真会话 id；有它不用等重拉就能放入口。
+  final String? sessionId;
 
   static FlowEvent? parse(String type, Map<String, dynamic> data) {
     final runId = data['run_id'];
@@ -367,6 +493,10 @@ class FlowEvent {
         node: node,
         nodeStatus: status,
         attempt: (data['attempt'] as num?)?.toInt() ?? 0,
+        sessionId: data['session_id'] is String &&
+                (data['session_id'] as String).isNotEmpty
+            ? data['session_id'] as String
+            : null,
       );
     }
     return null;
@@ -569,7 +699,8 @@ class FlowSchema {
       ops: [
         // 新 App 会连到旧主机：旧主机的 schema 里没有 `ops`，也就没有
         // `header` / `retype`。能力探测全靠它，不能假设操作一定在。
-        for (final item in response['ops'] is List ? response['ops'] as List : const [])
+        for (final item
+            in response['ops'] is List ? response['ops'] as List : const [])
           if (item is String) item,
       ],
     );
@@ -691,7 +822,8 @@ Object? flowFieldValue(Map<String, dynamic>? fields, String path) {
 }
 
 /// 节点的父节点（根层返回 null，用 [isRoot] 区分「没找到」）。
-({FlowNode? parent, int index, String? branch})? flowLocate(List<FlowNode> tree, String id,
+({FlowNode? parent, int index, String? branch})? flowLocate(
+    List<FlowNode> tree, String id,
     {FlowNode? parent}) {
   // 父节点是 `if` 时，下标按分支内相对位置算：`then` / `else` 在 children 里
   // 是拼在一起的，直接用拼起来的下标会把节点派到错的分支。

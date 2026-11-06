@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
@@ -39,17 +40,22 @@ class HubEventClient {
   /// 一直不变」那个自持循环的燃料，必须有出口。
   static const _maxPageAttempts = 3;
   static const _defaultPageTimeout = Duration(seconds: 8);
+
   /// 连续超时后单页最多再等多久。主机可能只是这一页翻得慢（大日志 + 冷
   /// 缓存），多等一轮就能补回来；等到这个上限还拿不到才跳 head，别把
   /// 能补回来的历史当成丢了。
   static const _maxPageTimeout = Duration(seconds: 60);
+
   /// 单页超时后继续等多久认领迟到的回包。主机那一页只是算得慢，不是没收到。
   static const _latePageWindow = Duration(seconds: 45);
+
   /// 迟到页最多存几个。游标一旦跳走，存着的页就没用了，留够重试即可。
   static const _maxLatePages = 8;
+
   /// 续传回合的落库合并窗口。主机补发 chunk 可以很密，落库与整列刷新
   /// 没必要跟着每帧走。
   static const _liveFlushInterval = Duration(milliseconds: 100);
+
   /// 游标读改写必须串行：live 事件是并发回调，读-派发-写不在一个临界区
   /// 会让相邻两帧读到同一个游标，游标按完成顺序回退。
   static const _controlKey = 'hub-control';
@@ -88,6 +94,29 @@ class HubEventClient {
   final _attached = <String>{};
   final _liveBuffers = <String, String>{};
   final _liveChannels = <String, String>{};
+
+  /// 已落过流式占位行的 turn（裸流程帧专用，避免每片 chunk 都写一次库）。
+  final _flowPlaceholders = <String>{};
+
+  /// 流式 chunk 的落点解析缓存，key = `peerId\u0000turnId`。
+  ///
+  /// 每个 chunk 都去查库 / 建壳太贵，而且解析是异步的：同一回合的两片几乎
+  /// 同时到达，缓存结果还不够，必须缓存 **Future** 才能只解析一次。
+  /// 回合结束（idle / 占位清理）时删掉，跨设备也不会串（key 带 peerId）。
+  final _flowTargets = <String,
+      Future<({String channelId, String senderId, String senderName})>>{};
+
+  /// Test seam：本机实际做了几次落点解析，验证同一回合的 chunk 复用缓存。
+  @visibleForTesting
+  int debugFlowControlTargetResolves = 0;
+
+  String _flowTargetKey(String peerId, String turnId) => '$peerId\u0000$turnId';
+
+  void _forgetFlowTargets(String turnId) {
+    if (turnId.isEmpty) return;
+    _flowTargets.removeWhere((key, _) => key.endsWith('\u0000$turnId'));
+  }
+
   /// 回合 → 这个回合问过的问题。回合结束时按它兜底收起还没答的卡片。
   final _turnCards = <String, Set<String>>{};
 
@@ -187,6 +216,7 @@ class HubEventClient {
     _liveFlushTimer?.cancel();
     _liveFlushTimer = null;
     _liveDirty.clear();
+    _flowTargets.clear();
     _attachRequests.clear();
     _catchUpQueued.clear();
     _liveDeferred.clear();
@@ -243,6 +273,16 @@ class HubEventClient {
         );
       case 'pouch_turn_event':
         await _onAttachedChunk(event.peerId, event.data);
+      // 工作流节点回合是主机直接 publish 的裸控制帧，不是 hub_event（不进
+      // 事件日志、重连也不回放）。它没有 App 本地 _pending，所以
+      // PeerAgentClientService._onChunk / _onMetadata 会丢；这里按 channel_id
+      // 认领并接流。普通 DM 帧不带 flow 标记，原路径完全不变。
+      case 'agent_chunk':
+        await _onFlowControlChunk(event.peerId, event.data);
+      case 'agent_metadata':
+        await _onFlowControlMetadata(event.peerId, event.data);
+      case 'session.state':
+        await _onRawSessionState(event.peerId, event.data);
       case 'events_sync_resp':
         break;
       case 'session_snapshot_resp':
@@ -261,8 +301,7 @@ class HubEventClient {
           return;
         }
         final sessions = event.data['sessions'];
-        if (sessions is List &&
-            getIt.isRegistered<SessionRuntimeMirror>()) {
+        if (sessions is List && getIt.isRegistered<SessionRuntimeMirror>()) {
           getIt<SessionRuntimeMirror>().reconcileTo(
             sessions,
             hubId: event.data['hub_id'] as String?,
@@ -276,15 +315,14 @@ class HubEventClient {
   /// 看到；`session.state` 是跃迁事件，不会为「早就开始了」的回合补发。
   int _snapshotSeq = 0;
   int _snapshotAppliedSeq = -1;
+
   /// request_id → 发出序号。并发请求的回执按序号只应用最新的一份，
   /// 但任意一次成功发出的请求都能拿到回执（不会因为最后一次发送失败而全丢）。
   final Map<String, int> _snapshotRequests = {};
 
   Future<void> requestSessionSnapshot(String peerId) async {
     final activeHost = PouchChannel.active?.session?.hostPeerId;
-    if (activeHost != null &&
-        activeHost.isNotEmpty &&
-        peerId != activeHost) {
+    if (activeHost != null && activeHost.isNotEmpty && peerId != activeHost) {
       return;
     }
     final seq = ++_snapshotSeq;
@@ -704,9 +742,10 @@ class HubEventClient {
   Future<void> _onSessionSwitch(HubEvent event) async {
     final action = event.data['session_action'];
     if (action is! Map) return;
-    final source = (event.data['source_session_id']?.toString() ?? '').isNotEmpty
-        ? event.data['source_session_id'].toString()
-        : event.channelId;
+    final source =
+        (event.data['source_session_id']?.toString() ?? '').isNotEmpty
+            ? event.data['source_session_id'].toString()
+            : event.channelId;
     if (source.isEmpty) return;
     await attachHostSessionSwitchCard(
       channelId: source,
@@ -984,9 +1023,10 @@ class HubEventClient {
   Future<void> _insertMessage(String peerId, HubEvent event) async {
     final data = event.data;
     final id = data['id'] as String? ?? '';
-    final rawChannelId = (data['channel_id'] as String?)?.trim().isNotEmpty == true
-        ? data['channel_id'] as String
-        : event.channelId;
+    final rawChannelId =
+        (data['channel_id'] as String?)?.trim().isNotEmpty == true
+            ? data['channel_id'] as String
+            : event.channelId;
     if (id.isEmpty || rawChannelId.isEmpty) return;
     if (!getIt.isRegistered<LocalDatabaseService>()) return;
     final db = getIt<LocalDatabaseService>();
@@ -1089,6 +1129,7 @@ class HubEventClient {
         await db.deleteMessage(liveTurnPlaceholderId(id));
         _liveBuffers.remove(id);
         _liveChannels.remove(id);
+        _forgetFlowTargets(id);
       }
     }
     _notify(channelId);
@@ -1143,10 +1184,10 @@ class HubEventClient {
 
   Future<void> _onTurnStarted(String peerId, HubEvent event) async {
     final turnId = event.data['turn_id'] as String? ?? '';
-    final rawChannelId = (event.data['channel_id'] as String?)?.trim().isNotEmpty ==
-            true
-        ? event.data['channel_id'] as String
-        : event.channelId;
+    final rawChannelId =
+        (event.data['channel_id'] as String?)?.trim().isNotEmpty == true
+            ? event.data['channel_id'] as String
+            : event.channelId;
     if (turnId.isEmpty || rawChannelId.isEmpty) return;
     final watching = watchingTurn?.call(turnId) ??
         PouchTurnRelay.instance.isWatching(turnId);
@@ -1191,9 +1232,11 @@ class HubEventClient {
   /// 否则回合早没了却还挂着一个 streaming 气泡。
   Future<String?> _clearLiveTurn(String turnId) async {
     _attached.remove(turnId);
+    _flowPlaceholders.remove(turnId);
     _attachRequests.removeWhere((_, id) => id == turnId);
     _liveBuffers.remove(turnId);
     _liveDirty.remove(turnId);
+    _forgetFlowTargets(turnId);
     final channelId = _liveChannels.remove(turnId);
     if (turnId.isNotEmpty && getIt.isRegistered<LocalDatabaseService>()) {
       await getIt<LocalDatabaseService>()
@@ -1317,6 +1360,155 @@ class HubEventClient {
     }
   }
 
+  /// 是不是 P4 工作流节点回合的裸控制帧。
+  ///
+  /// 主机给这些帧带了 `run_id` / `node`，turn id 是 `flow-` 前缀，频道是
+  /// `psess_<flow_...>`。四个标记认一个就够，避免误接普通 DM / 群回合的
+  /// `agent_chunk`（那些由 PeerAgentClientService 按 _pending 处理）。
+  bool _isFlowRuntimeFrame(Map<String, dynamic> data) {
+    String text(String key) => data[key]?.toString() ?? '';
+    if (text('turn_id').startsWith('flow-') ||
+        text('request_id').startsWith('flow-')) {
+      return true;
+    }
+    if (text('run_id').isNotEmpty) return true;
+    if (text('channel_id').startsWith('${kSyncedPeerSessionPrefix}flow_')) {
+      return true;
+    }
+    final sessionKey = text('session_key');
+    return sessionKey.startsWith('flow_') || sessionKey.contains(':flow_');
+  }
+
+  /// 和 `message.created` 用同一套映射折到本地频道：顺手建好还没同步下来的
+  /// `psess_` 壳和 agent 行，流式占位才不会落到一个空频道上。
+  Future<({String channelId, String senderId, String senderName})>
+      _resolveFlowControlTarget(
+    String peerId,
+    Map<String, dynamic> data,
+  ) async {
+    final rawChannelId = (data['channel_id'] as String? ?? '').trim();
+    if (rawChannelId.isEmpty) {
+      return (channelId: '', senderId: '', senderName: '');
+    }
+    debugFlowControlTargetResolves++;
+    final rawSessionId = (data['session_id'] as String? ?? '').trim();
+    final sessionId = rawSessionId.isNotEmpty
+        ? rawSessionId
+        : (remoteSessionIdFromChannelId(rawChannelId) ?? rawChannelId);
+    final agentId = (data['agent_id'] as String? ?? '').trim();
+    return PeerAgentClientService.instance.prepareLocalTargetForHubMessage(
+      peerId: peerId,
+      remoteAgentId: agentId,
+      sessionId: sessionId,
+      rawChannelId: rawChannelId,
+      senderType: 'agent',
+      fallbackSenderId: agentId,
+      fallbackSenderName: '',
+      sessionTitle: data['session_title'] as String?,
+    );
+  }
+
+  /// 节点回合的 `agent_chunk`：按 channel_id 起一条本机流式占位，逐帧拼正文。
+  /// 主机结束时会 append 一条 `agent` 消息，`_insertMessage` 会把占位收掉，
+  /// 所以这里只管「运行中能实时看到字」。
+  Future<void> _onFlowControlChunk(
+    String peerId,
+    Map<String, dynamic> data,
+  ) async {
+    if (!_isFlowRuntimeFrame(data)) return;
+    final turnId = (data['turn_id'] ?? data['request_id'] ?? '').toString();
+    final rawChannelId = (data['channel_id'] as String? ?? '').trim();
+    if (turnId.isEmpty || rawChannelId.isEmpty) return;
+    // `content` 是新字段，`text` / `chunk` 是主机旧帧里的别名。
+    final content =
+        (data['content'] ?? data['text'] ?? data['chunk'] ?? '').toString();
+    // 先在没有 await 的同步段里按顺序拼正文：解析本地频道壳是异步的，
+    // 完成的先后不保证，放到 await 之后会把分片拼反。
+    final isNewTurn = !_liveChannels.containsKey(turnId);
+    if (isNewTurn) {
+      _attached.add(turnId);
+      _liveChannels[turnId] = rawChannelId;
+      _liveBuffers[turnId] = '';
+    }
+    if (content.isNotEmpty) {
+      _liveBuffers[turnId] = (_liveBuffers[turnId] ?? '') + content;
+    }
+    // 同一回合的后续 chunk 复用落点解析：查库 / 建壳只做一次。
+    final target = await _flowTargets.putIfAbsent(
+      _flowTargetKey(peerId, turnId),
+      () => _resolveFlowControlTarget(peerId, data),
+    );
+    final channelId =
+        target.channelId.isEmpty ? rawChannelId : target.channelId;
+    _liveChannels[turnId] = channelId;
+    if (!_flowPlaceholders.contains(turnId) &&
+        getIt.isRegistered<LocalDatabaseService>()) {
+      await getIt<LocalDatabaseService>().createMessage(
+        id: liveTurnPlaceholderId(turnId),
+        channelId: channelId,
+        senderId: target.senderId,
+        senderType: 'agent',
+        senderName: target.senderName,
+        content: '',
+        metadata: const {'status': 'streaming'},
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+      _flowPlaceholders.add(turnId);
+    }
+    if (content.isNotEmpty) _scheduleLiveFlush(turnId);
+    _notify(channelId);
+  }
+
+  /// `agent_metadata` 同样没有 _pending。进度 / thinking 元数据 v1 不画独立
+  /// 气泡，但必须按 channel_id 把本地壳建好，后面的落库才有地方去。
+  Future<void> _onFlowControlMetadata(
+    String peerId,
+    Map<String, dynamic> data,
+  ) async {
+    if (!_isFlowRuntimeFrame(data)) return;
+    final target = await _resolveFlowControlTarget(peerId, data);
+    if (target.channelId.isNotEmpty) _notify(target.channelId);
+  }
+
+  /// 裸 `session.state` 快照：所有字段都在顶层，直接喂给 mirror。
+  ///
+  /// 绝不伪造 `hub_event` 的 seq —— 那会把事件游标顶到不存在的序号上。
+  /// 广播-only（主机标了 TODO），重连靠 `session_snapshot_resp` 对账。
+  Future<void> _onRawSessionState(
+    String peerId,
+    Map<String, dynamic> data,
+  ) async {
+    if (!_isFlowRuntimeFrame(data)) return;
+    final snapshot = Map<String, dynamic>.from(data);
+    // 主机两种写法都发：`state` / `status`；mirror 只认 `state`。
+    if (snapshot['state'] == null && snapshot['status'] != null) {
+      snapshot['state'] = snapshot['status'];
+    }
+    if ((snapshot['session_key'] as String? ?? '').isEmpty) {
+      final channelId = (data['channel_id'] as String? ?? '').trim();
+      snapshot['session_key'] =
+          remoteSessionIdFromChannelId(channelId) ?? channelId;
+    }
+    if (getIt.isRegistered<SessionRuntimeMirror>()) {
+      getIt<SessionRuntimeMirror>().apply(snapshot);
+    }
+    // 队列是 durable 的：和 hub_event 的 session.state 一样补给 relay 做
+    // 排队豁免（运行中用户插话要等这一轮跑完）。
+    final queue = snapshot['queue'];
+    if (queue is List) {
+      PouchTurnRelay.instance.noteHostQueue(queue);
+    }
+    // 翻成 idle 就收掉自己起的流式占位；终态正文由 message.created 落库。
+    if (snapshot['state'] != 'running') {
+      final turnId = (data['turn_id'] ?? '').toString();
+      if (turnId.isNotEmpty && _liveChannels.containsKey(turnId)) {
+        await _flushLiveTurn(turnId);
+        final channelId = await _clearLiveTurn(turnId);
+        if (channelId != null) _notify(channelId);
+      }
+    }
+  }
+
   void _applyMeta(String peerId, HubEvent event) {
     final kind = event.data['kind'] as String? ?? '';
     final body = event.data['data'];
@@ -1400,9 +1592,7 @@ class HubEventClient {
     if (id.isEmpty) return;
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     final active = PouchChannel.active?.session;
-    if (active != null &&
-        active.hostPeerId == id &&
-        active.isLoggedIn(nowMs)) {
+    if (active != null && active.hostPeerId == id && active.isLoggedIn(nowMs)) {
       await catchUp(id);
       return;
     }

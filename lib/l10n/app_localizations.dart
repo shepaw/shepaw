@@ -17752,6 +17752,108 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'关'**
   String get agentDetail_syncOff;
+
+  /// No description provided for @flow_dragHandle.
+  ///
+  /// In zh, this message translates to:
+  /// **'拖动排序'**
+  String get flow_dragHandle;
+
+  /// No description provided for @flow_outlineOutdent.
+  ///
+  /// In zh, this message translates to:
+  /// **'移出一层'**
+  String get flow_outlineOutdent;
+
+  /// No description provided for @flow_dropRefWarning.
+  ///
+  /// In zh, this message translates to:
+  /// **'这次移动可能断开引用'**
+  String get flow_dropRefWarning;
+
+  /// No description provided for @flow_modelFollowDefault.
+  ///
+  /// In zh, this message translates to:
+  /// **'跟随 agent 默认（当前：{current}）'**
+  String flow_modelFollowDefault(String current);
+
+  /// No description provided for @flow_modelCurrentNone.
+  ///
+  /// In zh, this message translates to:
+  /// **'未设置'**
+  String get flow_modelCurrentNone;
+
+  /// No description provided for @flow_modelNotSwitchable.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个 agent 不支持切换模型'**
+  String get flow_modelNotSwitchable;
+
+  /// No description provided for @flow_modelUnavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'（不可用）'**
+  String get flow_modelUnavailable;
+
+  /// No description provided for @flow_modelManual.
+  ///
+  /// In zh, this message translates to:
+  /// **'手动输入'**
+  String get flow_modelManual;
+
+  /// No description provided for @flow_modelPick.
+  ///
+  /// In zh, this message translates to:
+  /// **'从列表选择'**
+  String get flow_modelPick;
+
+  /// No description provided for @flow_modelRuntimeBound.
+  ///
+  /// In zh, this message translates to:
+  /// **'运行时按绑定决定，无法预选'**
+  String get flow_modelRuntimeBound;
+
+  /// No description provided for @flow_modelCleared.
+  ///
+  /// In zh, this message translates to:
+  /// **'切换 agent 后已清空模型，请重新选择'**
+  String get flow_modelCleared;
+
+  /// No description provided for @flow_modelLoading.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在加载模型…'**
+  String get flow_modelLoading;
+
+  /// No description provided for @flow_viewRun.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看运行'**
+  String get flow_viewRun;
+
+  /// No description provided for @flow_sessionBanner.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作流 · 节点 {node}'**
+  String flow_sessionBanner(String node);
+
+  /// No description provided for @flow_runSession.
+  ///
+  /// In zh, this message translates to:
+  /// **'运行会话'**
+  String get flow_runSession;
+
+  /// No description provided for @flow_gotoAnswer.
+  ///
+  /// In zh, this message translates to:
+  /// **'去回答'**
+  String get flow_gotoAnswer;
+
+  /// No description provided for @flow_nodeWaitingUser.
+  ///
+  /// In zh, this message translates to:
+  /// **'等你回答'**
+  String get flow_nodeWaitingUser;
 }
 
 class _AppLocalizationsDelegate

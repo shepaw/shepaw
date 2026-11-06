@@ -50,6 +50,8 @@ class FlowDesignScreen extends StatefulWidget {
     this.draftStore,
     this.onDirtyChanged,
     this.onControllerReady,
+    this.embedded = false,
+    this.actionsNotifier,
   });
 
   final String peerId;
@@ -66,6 +68,14 @@ class FlowDesignScreen extends StatefulWidget {
   /// 把 controller 交给工作台，好让「开跑对话框」能读到 dirty 并请求保存。销毁时
   /// 回传 null，免得工作台拿着一个已 dispose 的 controller。
   final void Function(FlowEditorController? controller)? onControllerReady;
+
+  /// 嵌在工作台详情区里：内层 AppBar 不再画隐含的返回按钮（工作台外层才是
+  /// 唯一一条栏），避免它直接 pop 掉整个流程库路由。
+  final bool embedded;
+
+  /// 非 null 时：设计页根本不画自己的 AppBar，把 actions 发布到这里，由外层
+  /// 工具栏显示（窄屏详情态的「只有一条栏」）。
+  final ValueNotifier<List<Widget>>? actionsNotifier;
 
   /// 演练动画每一步的间隔。
   final Duration stepInterval;
@@ -139,7 +149,8 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
 
   /// `call.flow` 的候选：同 scope 的流程库引用。排除自己（自引用一定成环）。
   Future<void> _loadFlowRefs() async {
-    final flows = await _controller.client.list(widget.peerId, scope: widget.scope);
+    final flows =
+        await _controller.client.list(widget.peerId, scope: widget.scope);
     if (!mounted || flows == null) return;
     final prefix = widget.scope.startsWith('group:')
         ? 'group/${widget.scope.substring('group:'.length)}'
@@ -150,6 +161,16 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
           if (f.name != widget.name) '$prefix/${f.name}',
       ];
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant FlowDesignScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 从宽屏（actionsNotifier 为 null）切回窄屏详情时，强制重发一次 actions，
+    // 免得外层栏里留着上一次窄屏会话的旧按钮状态。
+    if (oldWidget.actionsNotifier == null && widget.actionsNotifier != null) {
+      _lastActionSig = '';
+    }
   }
 
   @override
@@ -220,15 +241,12 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     final l10n = AppLocalizations.of(context);
     final text = switch (notice.kind) {
       FlowEditorNoticeKind.hostNoReply => l10n.flow_hostNoReply,
-      FlowEditorNoticeKind.editRejected =>
-        notice.raw ?? l10n.flow_editFailed,
-      FlowEditorNoticeKind.saveRejected =>
-        notice.raw ?? l10n.flow_saveFailed,
+      FlowEditorNoticeKind.editRejected => notice.raw ?? l10n.flow_editFailed,
+      FlowEditorNoticeKind.saveRejected => notice.raw ?? l10n.flow_saveFailed,
       FlowEditorNoticeKind.nameTaken => l10n.flow_newNameTaken,
       FlowEditorNoticeKind.hasProblems => l10n.flow_hasProblems(notice.count),
       FlowEditorNoticeKind.saved => l10n.flow_saved(notice.count),
-      FlowEditorNoticeKind.sourceInvalid =>
-        l10n.flow_hasProblems(notice.count),
+      FlowEditorNoticeKind.sourceInvalid => l10n.flow_hasProblems(notice.count),
       FlowEditorNoticeKind.saveConflict => notice.raw ?? l10n.flow_saveFailed,
     };
     _snack(text);
@@ -315,8 +333,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   // ── 大纲 ──────────────────────────────────────────────────────────────────
 
   List<FlowOutlineRow> _rows() {
-    final rows =
-        buildFlowOutline(_controller.tree, collapsed: _collapsed);
+    final rows = buildFlowOutline(_controller.tree, collapsed: _collapsed);
     for (final row in rows) {
       _rowKeys.putIfAbsent(row.node.id, () => GlobalKey());
     }
@@ -417,6 +434,23 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     ]));
   }
 
+  /// 拖放落点：发一个 move（撤销走编辑器快照），落下后选中并滚到被拖节点。
+  void _onDrop(String dragId, FlowDropTarget target) {
+    unawaited(_controller.applyOps(FlowOutlineOps.moveTo(target)));
+    setState(() => _selectedId = dragId);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final ctx = _rowKeys[dragId]?.currentContext;
+      if (ctx != null) {
+        unawaited(Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 250),
+          alignment: 0.3,
+        ));
+      }
+    });
+  }
+
   /// 当前选中的那一行（点过检查器就算选中）。
   FlowOutlineRow? get _selectedRow =>
       _selectedId == null ? null : _rowFor(_selectedId!);
@@ -429,10 +463,10 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     return Focus(
       child: CallbackShortcuts(
         bindings: {
-          const SingleActivator(LogicalKeyboardKey.arrowUp, alt: true):
-              () => _shortcutMove(up: true),
-          const SingleActivator(LogicalKeyboardKey.arrowDown, alt: true):
-              () => _shortcutMove(up: false),
+          const SingleActivator(LogicalKeyboardKey.arrowUp, alt: true): () =>
+              _shortcutMove(up: true),
+          const SingleActivator(LogicalKeyboardKey.arrowDown, alt: true): () =>
+              _shortcutMove(up: false),
           const SingleActivator(LogicalKeyboardKey.arrowLeft, alt: true):
               _shortcutOutdent,
           const SingleActivator(LogicalKeyboardKey.arrowRight, alt: true):
@@ -444,11 +478,10 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
               _shortcutUndo,
           const SingleActivator(LogicalKeyboardKey.keyZ, meta: true):
               _shortcutUndo,
-          const SingleActivator(
-              LogicalKeyboardKey.keyZ, control: true, shift: true):
-              _shortcutRedo,
-          const SingleActivator(LogicalKeyboardKey.keyZ, meta: true, shift: true):
-              _shortcutRedo,
+          const SingleActivator(LogicalKeyboardKey.keyZ,
+              control: true, shift: true): _shortcutRedo,
+          const SingleActivator(LogicalKeyboardKey.keyZ,
+              meta: true, shift: true): _shortcutRedo,
         },
         child: child,
       ),
@@ -483,8 +516,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     // 只有 seq 是纯顺序、移进去不改语义，可以直接生效；par / loop / map 会引入
     // 并发 / 重复 / 逐项语义，交给菜单把选项写清楚再让用户挑。
     if (previous.kind == 'seq') {
-      unawaited(
-          _controller.applyOps([FlowOutlineOps.moveIntoPrevious(row)]));
+      unawaited(_controller.applyOps([FlowOutlineOps.moveIntoPrevious(row)]));
       return;
     }
     unawaited(_rowMenu(row));
@@ -546,6 +578,8 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       FlowOutlineMenuAction.moveToBranch => _controller.applyOps([
           FlowOutlineOps.moveToBranch(row, choice.branch!),
         ]),
+      FlowOutlineMenuAction.outdent =>
+        _controller.applyOps([FlowOutlineOps.outdent(row)]),
     };
   }
 
@@ -573,6 +607,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
         schema: schema,
         roles: peekRoles(_controller.yaml),
         onPickAgent: _pickAgent,
+        peerId: widget.peerId,
         tree: _controller.tree,
         yaml: _controller.yaml,
         flowRefs: _flowRefs,
@@ -637,12 +672,18 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     };
   }
 
-  /// 打开 Agent 选择器，返回选中的 id。
+  /// 打开 Agent 选择器，返回选中的 **Hub 侧 agent id**。
+  ///
+  /// 只列这个流程所在主机的 peer agent；写入时用 Hub id，而不是本机行 id。
+  /// 老行是 `peeragent_<peer>_<remote>`，得先剥成 remote id，否则 `task.agent`
+  /// 会存一个主机不认的值，模型列表也拉不对。
   Future<String?> _pickAgent() async {
     if (_agents.isEmpty) {
-      final agents = await LocalDatabaseService().getAllRemoteAgents();
+      final all = await LocalDatabaseService().getAllRemoteAgents();
       if (!mounted) return null;
-      setState(() => _agents = agents);
+      setState(() => _agents = all
+          .where((a) => a.isPeerAgent && a.sourcePeerId == widget.peerId)
+          .toList());
     }
     final l10n = AppLocalizations.of(context);
     final picked = await showJadeSlipAgentPicker(
@@ -650,7 +691,20 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       agents: _agents,
       title: l10n.flow_executorPickAgent,
     );
-    return picked?.id;
+    if (picked == null) return null;
+    final agent = _agents.where((a) => a.id == picked.id).firstOrNull;
+    // 选择弹层里还有惜宝那条（不在 _agents 里）：原样返回，沿用旧行为。
+    return agent == null ? picked.id : _hubAgentId(agent);
+  }
+
+  String _hubAgentId(RemoteAgent agent) {
+    if (!agent.isPeerAgent) return agent.id;
+    final remote = agent.remoteAgentId;
+    if (remote != null && remote.isNotEmpty) return remote;
+    final prefix = 'peeragent_${agent.sourcePeerId}_';
+    if (agent.id.startsWith(prefix)) return agent.id.substring(prefix.length);
+    // 新行落库时 id 就是 Hub id 本身。
+    return agent.id;
   }
 
   Future<void> _talk() async {
@@ -708,75 +762,19 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       listenable: _controller,
       builder: (context, _) {
         final c = _controller;
+        final actions = _buildActions(context, l10n, c);
+        if (widget.actionsNotifier != null)
+          _publishActions(actions, c, context);
         return Scaffold(
-          appBar: AppBar(
-            title: Text(l10n.flow_designTitle(widget.name)),
-            actions: [
-              if (c.revision > 0)
-                Center(
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 4),
-                    child: Text(l10n.flow_revisionLabel(c.revision),
-                        style: Theme.of(context).textTheme.bodySmall),
-                  ),
+          appBar: widget.actionsNotifier != null
+              ? null
+              : AppBar(
+                  title: Text(l10n.flow_designTitle(widget.name)),
+                  // 嵌在工作台里时，外层才是唯一一条栏：这里不能再冒出一个
+                  // 隐含的返回按钮把整个流程库路由 pop 掉。
+                  automaticallyImplyLeading: !widget.embedded,
+                  actions: actions,
                 ),
-              // 手机只读：所有写入口都用同一个 canEdit 判定，别让「头部设置」
-              // 绕过它把 header op 发出去。
-              if (canEdit && c.revision > 1)
-                IconButton(
-                  key: const ValueKey('history-open'),
-                  tooltip: l10n.flow_historyOpen,
-                  icon: const Icon(Icons.history),
-                  onPressed: () => unawaited(_openHistory()),
-                ),
-              if (canEdit && c.caps.canEditHeader)
-                IconButton(
-                  key: const ValueKey('header-open'),
-                  tooltip: l10n.flow_headerOpen,
-                  icon: const Icon(Icons.tune),
-                  onPressed: openFlowHeaderForm(context, c),
-                ),
-              if (canEdit)
-                IconButton(
-                  key: const ValueKey('undo'),
-                  tooltip: l10n.flow_undo,
-                  icon: const Icon(Icons.undo),
-                  onPressed: c.canUndo ? c.undo : null,
-                ),
-              if (canEdit)
-                IconButton(
-                  key: const ValueKey('redo'),
-                  tooltip: l10n.flow_redo,
-                  icon: const Icon(Icons.redo),
-                  onPressed: c.canRedo ? c.redo : null,
-                ),
-              IconButton(
-                tooltip: l10n.flow_diffToggle,
-                icon: Icon(Icons.difference_outlined,
-                    color: c.showDiff
-                        ? Theme.of(context).colorScheme.primary
-                        : null),
-                onPressed: c.loading || c.busy ? null : c.toggleDiff,
-              ),
-              if (canEdit)
-                IconButton(
-                  tooltip: l10n.flow_rehearse,
-                  icon: const Icon(Icons.play_circle_outline),
-                  onPressed: c.loading || c.busy ? null : c.startRehearsal,
-                ),
-              if (canEdit)
-                IconButton(
-                  tooltip: l10n.flow_save,
-                  icon: c.saving
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.check),
-                  onPressed: c.loading || c.busy || !c.dirty ? null : c.save,
-                ),
-            ],
-          ),
           body: Column(
             children: [
               Expanded(child: _body(l10n)),
@@ -788,6 +786,103 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
         );
       },
     );
+  }
+
+  /// 设计页的工具条按钮。嵌入且外层要合并工具条时，通过 [actionsNotifier]
+  /// 发布给外层；否则自己画在 AppBar 里。
+  List<Widget> _buildActions(
+    BuildContext context,
+    AppLocalizations l10n,
+    FlowEditorController c,
+  ) =>
+      [
+        if (c.revision > 0)
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: Text(l10n.flow_revisionLabel(c.revision),
+                  style: Theme.of(context).textTheme.bodySmall),
+            ),
+          ),
+        // 手机只读：所有写入口都用同一个 canEdit 判定，别让「头部设置」
+        // 绕过它把 header op 发出去。
+        if (canEdit && c.revision > 1)
+          IconButton(
+            key: const ValueKey('history-open'),
+            tooltip: l10n.flow_historyOpen,
+            icon: const Icon(Icons.history),
+            onPressed: () => unawaited(_openHistory()),
+          ),
+        if (canEdit && c.caps.canEditHeader)
+          IconButton(
+            key: const ValueKey('header-open'),
+            tooltip: l10n.flow_headerOpen,
+            icon: const Icon(Icons.tune),
+            onPressed: openFlowHeaderForm(context, c),
+          ),
+        if (canEdit)
+          IconButton(
+            key: const ValueKey('undo'),
+            tooltip: l10n.flow_undo,
+            icon: const Icon(Icons.undo),
+            onPressed: c.canUndo ? c.undo : null,
+          ),
+        if (canEdit)
+          IconButton(
+            key: const ValueKey('redo'),
+            tooltip: l10n.flow_redo,
+            icon: const Icon(Icons.redo),
+            onPressed: c.canRedo ? c.redo : null,
+          ),
+        IconButton(
+          tooltip: l10n.flow_diffToggle,
+          icon: Icon(Icons.difference_outlined,
+              color: c.showDiff ? Theme.of(context).colorScheme.primary : null),
+          onPressed: c.loading || c.busy ? null : c.toggleDiff,
+        ),
+        if (canEdit)
+          IconButton(
+            tooltip: l10n.flow_rehearse,
+            icon: const Icon(Icons.play_circle_outline),
+            onPressed: c.loading || c.busy ? null : c.startRehearsal,
+          ),
+        if (canEdit)
+          IconButton(
+            tooltip: l10n.flow_save,
+            icon: c.saving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.check),
+            onPressed: c.loading || c.busy || !c.dirty ? null : c.save,
+          ),
+      ];
+
+  String _lastActionSig = '';
+
+  /// 只在会影响按钮的状态变化时发布，避免每次 build 都通知外层造成抖动。
+  ///
+  /// locale / brightness 也要进签名：这些按钮的文字和图标颜色由它们决定，
+  /// 切语言 / 切主题时状态没变，但外层栏里的旧按钮必须换掉。
+  void _publishActions(
+    List<Widget> actions,
+    FlowEditorController c,
+    BuildContext context,
+  ) {
+    final locale = Localizations.localeOf(context);
+    final brightness = Theme.of(context).brightness;
+    final sig = '${c.revision}|${c.canUndo}|${c.canRedo}|${c.showDiff}|'
+        '${c.loading}|${c.busy}|${c.saving}|${c.dirty}|$canEdit|'
+        '${c.caps.canEditHeader}|${c.rehearsal.active}|$locale|$brightness';
+    if (sig == _lastActionSig) return;
+    _lastActionSig = sig;
+    final notifier = widget.actionsNotifier;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && notifier == widget.actionsNotifier) {
+        notifier?.value = actions;
+      }
+    });
   }
 
   Widget _body(AppLocalizations l10n) {
@@ -824,8 +919,8 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
             child: Text(
               diff.isEmpty
                   ? l10n.flow_diffNone
-                  : l10n.flow_diffSummary(
-                      diff.nodes.length + diff.header.length),
+                  : l10n
+                      .flow_diffSummary(diff.nodes.length + diff.header.length),
               style: theme.textTheme.labelLarge,
             ),
           ),
@@ -847,6 +942,10 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
               rows: _rows(),
               canEdit: true,
               branchesLabelled: c.caps.branchesLabelled,
+              canMove: c.caps.canMove,
+              tree: c.tree,
+              dragEnabled: !c.busy,
+              onDrop: _onDrop,
               selectedId: _selectedId,
               errorCounts: _errorCounts(),
               collapsed: _collapsed,
@@ -857,10 +956,11 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
                   : (row) {
                       final change = diff.of(row.node.id);
                       return switch (change?.change) {
-                        FlowChange.added =>
-                          (l10n.flow_diffAdded, Colors.green),
-                        FlowChange.changed =>
-                          (l10n.flow_diffChanged, Colors.amber),
+                        FlowChange.added => (l10n.flow_diffAdded, Colors.green),
+                        FlowChange.changed => (
+                            l10n.flow_diffChanged,
+                            Colors.amber
+                          ),
                         _ => null,
                       };
                     },
@@ -871,9 +971,8 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
               onMoveDown: (row) => _move(row, up: false),
               onDelete: _delete,
               onMenu: _rowMenu,
-              onLongPressRow: canTalk
-                  ? (row) => _toggleSelected(row.node)
-                  : null,
+              onLongPressRow:
+                  canTalk ? (row) => _toggleSelected(row.node) : null,
             ),
           )
         else
@@ -888,8 +987,10 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
                     final change = diff.of(node.id);
                     return switch (change?.change) {
                       FlowChange.added => (l10n.flow_diffAdded, Colors.green),
-                      FlowChange.changed =>
-                        (l10n.flow_diffChanged, Colors.amber),
+                      FlowChange.changed => (
+                          l10n.flow_diffChanged,
+                          Colors.amber
+                        ),
                       _ => null,
                     };
                   },

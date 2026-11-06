@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart'
-    show ChangeNotifier, ValueNotifier, VoidCallback;
+    show ChangeNotifier, ValueNotifier, VoidCallback, visibleForTesting;
 import 'package:flutter/widgets.dart';
 import 'package:uuid/uuid.dart';
 import '../models/mention_entry.dart';
@@ -251,6 +251,7 @@ abstract class _ChatControllerBase extends ChangeNotifier
   }
 
   VoidCallback? _sessionRuntimeListener;
+
   /// 主机最近一次宣告「正在跑」的 turn id。只有从 running 翻到 idle
   /// 才允许收起占位，启动对账看到 idle 不会误清用户正在看的回复。
   String? _runtimeActiveTurnId;
