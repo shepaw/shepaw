@@ -77,6 +77,57 @@ void main() {
     });
   });
 
+  group('ChatSendPlanner.deferTurnUi', () {
+    bool defer({
+      bool hostRunning = false,
+      bool localProcessing = false,
+      bool localStreaming = false,
+      bool hasInflightTurn = false,
+    }) =>
+        ChatSendPlanner.deferTurnUi(
+          hostRunning: hostRunning,
+          localProcessing: localProcessing,
+          localStreaming: localStreaming,
+          hasInflightTurn: hasInflightTurn,
+        );
+
+    test('会话空闲 → 立即接管 UI，保持原来的乐观流式气泡', () {
+      expect(defer(), isFalse);
+    });
+
+    test('四个信号任一为真 → 延迟接管，避免与在途回合抢共用状态', () {
+      expect(defer(hostRunning: true), isTrue);
+      expect(defer(localProcessing: true), isTrue);
+      expect(defer(localStreaming: true), isTrue);
+      expect(defer(hasInflightTurn: true), isTrue);
+    });
+
+    test('主机镜像权威：本地状态已清但主机还在跑，仍然延迟', () {
+      expect(
+        defer(
+          hostRunning: true,
+          localProcessing: false,
+          localStreaming: false,
+          hasInflightTurn: false,
+        ),
+        isTrue,
+      );
+    });
+
+    test('只决定 UI 接管时机，不改变发送裁决', () {
+      // 无论是否延迟，消息一律 sendDm，交给主机 SessionRuntime 判 started/queued。
+      expect(
+        ChatSendPlanner.decide(
+          content: '再补一句',
+          hasAttachments: false,
+          isGroupMode: false,
+          hasAgent: true,
+        ),
+        ChatSendDisposition.sendDm,
+      );
+    });
+  });
+
   group('StreamingActionConfirmation', () {
     test('resolveHostMessageId prefers preferred then latest agent', () {
       final messages = [

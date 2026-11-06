@@ -38,4 +38,23 @@ class ChatSendPlanner {
     if (isGroupMode) return ChatSendDisposition.sendGroup;
     return ChatSendDisposition.sendDm;
   }
+
+  /// 本条 DM 是否按「排队回合」处理 UI。
+  ///
+  /// 主机还在跑上一轮时，这条 `agent_chat` 会被 SessionRuntime 收进队列，
+  /// 真正开跑要等上一轮结束。此时 App 只有一份 `streaming` / `isProcessing` /
+  /// `_activeTasks[channelId]`，若在发送当下就抢过去，上一轮剩下的分片会
+  /// 写进新气泡，新回合反而没有占位。所以排队回合只先落用户气泡，等主机
+  /// 开始这一轮（首个帧）再接管。
+  ///
+  /// 只决定 **UI 何时接管**，绝不决定「发不发」：消息一律交给主机裁决。
+  /// 四个信号取或：主机镜像是权威，其余三个覆盖 `session.state` 尚未到达、
+  /// 或上一轮刚结束但本机状态还没收口的窗口。
+  static bool deferTurnUi({
+    required bool hostRunning,
+    required bool localProcessing,
+    required bool localStreaming,
+    required bool hasInflightTurn,
+  }) =>
+      hostRunning || localProcessing || localStreaming || hasInflightTurn;
 }

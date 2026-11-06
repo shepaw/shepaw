@@ -246,6 +246,21 @@ class SessionRuntimeMirror {
     return false;
   }
 
+  /// 主机已把这条 request 出队并提成当前回合。
+  ///
+  /// 出队时主机只广播 `session.state`（不会再发一次 session_ack started），
+  /// 客户端的 `queuedOnHost` 要等首个 chunk 才清。中间这段窗口里按停止，
+  /// 必须认出它已经是 running，否则会把该停的回合当成「还在排队」跳过。
+  bool isRequestRunning(String requestId) {
+    if (requestId.isEmpty) return false;
+    for (final notifier in _notifiers.values) {
+      // 与「发送闸门」用的是同一条判定，别在这里另写一份
+      // `isRunning && turnId == requestId`，否则两处语义会漂移。
+      if (notifier.value.dispositionFor(requestId) == 'running') return true;
+    }
+    return false;
+  }
+
   /// 应用一份主机快照。返回是否真的前移了状态。
   /// [force] 只给全量对账用：换 hub 后主机 revision 会从 1 重新计数，
   /// 低 revision 的权威快照也必须直接落地。

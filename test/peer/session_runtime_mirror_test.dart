@@ -452,4 +452,35 @@ void main() {
     expect(mirror.apply(snap(revision: 2, hubId: 'hub-b')), isTrue);
     expect(mirror.stateFor('agent:a:s1').revision, 2);
   });
+
+  test('出队：queue 里的 request 提成 turn_id 后不再算排队', () {
+    final mirror = SessionRuntimeMirror();
+    addTearDown(mirror.dispose);
+
+    mirror.apply(snap(
+      key: 'agent:a:s1',
+      revision: 1,
+      turnId: 't-running',
+      queue: <Map<String, dynamic>>[
+        <String, dynamic>{
+          'request_id': 'q-next',
+          'position': 1,
+          'preview': '下一条',
+          'content': '下一条',
+        },
+      ],
+    ));
+    expect(mirror.isRequestQueued('q-next'), isTrue);
+    expect(mirror.isRequestRunning('q-next'), isFalse);
+
+    // 主机 continue_session：原子地结束上一轮、出队、把 q-next 提成 running。
+    mirror.apply(snap(
+      key: 'agent:a:s1',
+      revision: 2,
+      turnId: 'q-next',
+      queue: <Map<String, dynamic>>[],
+    ));
+    expect(mirror.isRequestQueued('q-next'), isFalse);
+    expect(mirror.isRequestRunning('q-next'), isTrue);
+  });
 }

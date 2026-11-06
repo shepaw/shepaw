@@ -71,7 +71,6 @@ import '../../storage/agent_workspace_uris.dart';
 import '../../storage/store_protocol.dart';
 
 export 'peer_agent_ids.dart';
-export 'peer_inflight_turn.dart' show PeerTurnInFlightException;
 
 /// 「已同步的远端 peer 会话」在本地 channel id 上的前缀。
 ///
@@ -2566,15 +2565,33 @@ class PeerAgentClientService {
   /// fires. Called from the DM/group stop funnels.
   Future<void> cancelInflightTurnsForChannel(String channelId) async {
     if (channelId.isEmpty) return;
+    final mirror = getIt.isRegistered<SessionRuntimeMirror>()
+        ? getIt<SessionRuntimeMirror>()
+        : null;
     final requestIds = <String>[
       for (final entry in _pending.entries)
         if (!entry.value.completer.isCompleted &&
-            entry.value.channelId == channelId)
+            entry.value.channelId == channelId &&
+            // 主机队列里的消息还没开跑：停的是当前这一轮，不能把排队回合的
+            // pending 也删掉——主机随后仍会按原 request_id 推 chunk，
+            // 删了就没人接，回复直接丢。要清队列请用排队面板。
+            !_isHostQueued(entry.key, entry.value, mirror))
           entry.key,
     ];
     for (final requestId in requestIds) {
       _abortPendingTurn(requestId);
     }
+  }
+
+  bool _isHostQueued(
+    String requestId,
+    _PendingRequest p,
+    SessionRuntimeMirror? mirror,
+  ) {
+    if (requestId.isEmpty) return p.queuedOnHost;
+    // 已出队开跑的优先：session.state 比单播 session_ack 更权威。
+    if (mirror?.isRequestRunning(requestId) == true) return false;
+    return p.queuedOnHost || mirror?.isRequestQueued(requestId) == true;
   }
 
   /// Cancel the in-flight turn of a single group agent (identified by its
@@ -2820,20 +2837,6 @@ class PeerAgentClientService {
   @visibleForTesting
   bool debugIsOrphanFormBuffered(String approvalId) =>
       _orphanedForms.containsKey(approvalId);
-
-  bool hasInflightForSession({
-    required String peerId,
-    required String remoteAgentId,
-    String? sessionId,
-  }) {
-    final sid = sessionId ?? '';
-    for (final p in _pending.values) {
-      if (p.completer.isCompleted) continue;
-      if (p.peerId != peerId || p.remoteAgentId != remoteAgentId) continue;
-      if ((p.sessionId) == sid) return true;
-    }
-    return false;
-  }
 
   /// 测试用：这张卡片还在本地账簿里（未答、未作废）。
   bool debugIsCardActive(String approvalId) =>
@@ -3150,13 +3153,11 @@ class PeerAgentClientService {
 
     final requestId = _uuid.v4();
     final effectiveSessionId = sessionId ?? '';
-    if (hasInflightForSession(
-      peerId: peerId,
-      remoteAgentId: remoteAgentId,
-      sessionId: effectiveSessionId,
-    )) {
-      throw const PeerTurnInFlightException();
-    }
+    // 同一会话允许「一个在跑 + 多个排队」的 pending：主机 SessionRuntime
+    // 是唯一裁决者，忙时按 request_id 入队并回 session_ack{queued}，出队后
+    // 仍用原 request_id 推 agent_chunk / agent_done。旧守卫在这里抛
+    // PeerTurnInFlightException，把第二条消息堵在 App 里、只弹「上一轮回复
+    // 仍在继续」，与主机排队模型直接冲突。
     final pending = _PendingRequest(
       peerId: peerId,
       remoteAgentId: remoteAgentId,
@@ -3209,18 +3210,23 @@ class PeerAgentClientService {
       ...deviceInfo.toWireFields(),
     };
     var waitingForReconnect = false;
-    final sent = await PeerConnectionManager.instance.sendControl(
-      peerId,
-      pending.agentChatFrame!,
-      // 切网后 connectivity 监听的重连有 800ms 去抖 + 探活，用户往往等不到。
-      // 这里主动拉起重连并最多等 [_controlReconnectWait]，连上就补发。
-      waitForReconnect: _controlReconnectWait,
-      onWaitingForReconnect: () {
-        waitingForReconnect = true;
-        onReconnecting?.call(1, 1);
-      },
-      abortWhen: () => cancelToken?.isCancelled == true,
-    );
+    // 与文件里其他帧路径一致：单测可替换发送通道，验证「同一会话多个
+    // request_id 并存」而不需要真的连上配对设备。
+    final sendOverride = debugSendControlOverride;
+    final sent = sendOverride != null
+        ? await sendOverride(peerId, pending.agentChatFrame!)
+        : await PeerConnectionManager.instance.sendControl(
+            peerId,
+            pending.agentChatFrame!,
+            // 切网后 connectivity 监听的重连有 800ms 去抖 + 探活，用户往往等不到。
+            // 这里主动拉起重连并最多等 [_controlReconnectWait]，连上就补发。
+            waitForReconnect: _controlReconnectWait,
+            onWaitingForReconnect: () {
+              waitingForReconnect = true;
+              onReconnecting?.call(1, 1);
+            },
+            abortWhen: () => cancelToken?.isCancelled == true,
+          );
     if (waitingForReconnect) onReconnecting?.call(0, 0);
 
     if (!sent) {
@@ -3255,10 +3261,10 @@ class PeerAgentClientService {
     );
   }
 
-  // 本地排队补偿路径已整块删除（enqueueChat / _saveParkedFailure /
-  // _saveParkedReply）。它们服务于「App 自己判断上一轮还在跑、先把消息放进
-  // 本机队列再交给主机」；现在消息一律直接发出，由主机 SessionRuntime
-  // 裁决 started / queued，ChatQueuePanel 只镜像 mirror.queue。
+  // 本机待发队列 / enqueueChat 补偿路径已删除：消息一律由 sendChat 发出，
+  // 主机 SessionRuntime 裁决 started / queued，ChatQueuePanel 只镜像
+  // mirror.queue。因此 _pending 允许同一会话同时挂多条 turn（一条在跑 +
+  // 若干排队），直到各自收到 agent_done / agent_error 才收口。
 
   /// Await the turn with an approval-aware watchdog.
   ///

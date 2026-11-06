@@ -4,16 +4,6 @@ library;
 
 import 'dart:convert';
 
-/// Thrown when [PeerAgentClientService.sendChat] is asked to start a new
-/// turn on a session that already has one running (including a restored
-/// turn from a previous process).
-class PeerTurnInFlightException implements Exception {
-  const PeerTurnInFlightException();
-
-  @override
-  String toString() => 'PeerTurnInFlightException';
-}
-
 /// Disk record of a peer `agent_chat` that has not reached a terminal
 /// `agent_done` / error / cancel. Survives App process death.
 class PeerInflightTurnRecord {

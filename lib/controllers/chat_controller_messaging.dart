@@ -678,15 +678,38 @@ mixin _MessagingOps on _ChatControllerBase {
       String? replyQuoteText,
       List<AttachmentData>? attachments,
       List<Message>? attachmentMessages,
-      String? instructionName}) async {
+      String? instructionName,
+      bool? deferredTurn}) async {
     final userId = getUserId();
     final userName = getUserName();
+    // 排队回合可能几分钟后才开跑，期间用户会切会话；激活 ActiveTask 必须用
+    // 发送时的频道，不能用当时的 currentChannelId。
+    final sendChannelId = currentChannelId;
 
-    isProcessing = true;
+    // 「上一轮还在跑」不再拦截发送：主机 SessionRuntime 会把这条排进队列。
+    // 这里只决定本机 UI 何时接管 —— 排队回合共用的 streaming / isProcessing /
+    // ActiveTask 仍属于上一轮，不能现在就抢过来。
+    final deferUi = deferredTurn ??
+        ChatSendPlanner.deferTurnUi(
+          hostRunning: sessionState?.value.isRunning ?? false,
+          localProcessing: isProcessing,
+          localStreaming: streaming.isActive,
+          hasInflightTurn: PeerAgentClientService.instance
+              .hasInflightForChannel(currentChannelId ?? ''),
+        );
+    // 每条回合自带取消令牌，排队期间不覆盖正在跑那一轮的 token。
+    final turnToken = ACPCancellationToken();
+    var myEpoch = deferUi ? 0 : ++_dmTurnEpoch;
+    // 排队回合是否已经接管 UI。声明在 try 外，finally 才能判断共用状态
+    // 是不是我们的；没接管就一个字段都不能碰。
+    var uiActivated = false;
+    if (!deferUi) {
+      isProcessing = true;
+      acpCancellationToken = turnToken;
+    }
     _notify();
 
     lastUserQuestion = content;
-    acpCancellationToken = ACPCancellationToken();
 
     // Set to true when the agent supports async-confirmation: the task lives
     // on past this method's return, and the finally block must NOT clear
@@ -694,7 +717,8 @@ mixin _MessagingOps on _ChatControllerBase {
     // onTaskFinished callback, which fires later when task.completed arrives.
     bool awaitingAsyncTask = false;
     // 发送失败标记：失败时保留 backlog 并暂停自动排空（由用户手动恢复），
-    // 避免一条失败后级联自动发送下一条。PeerTurnInFlight 不视为失败。
+    // 避免一条失败后级联自动发送下一条。排队回合在未开跑前失败也不能碰
+    // 上一轮的共用状态（见 finally 里的 ownsTurnUi）。
     bool sendFailed = false;
 
     try {
@@ -708,17 +732,9 @@ mixin _MessagingOps on _ChatControllerBase {
         throw Exception('Agent has no valid endpoint');
       }
 
-      if (remoteAgent.isPeerAgent && currentChannelId != null) {
-        final liveTask = chatService.getActiveTask(currentChannelId!);
-        final hydrated = PeerAgentClientService.instance
-            .hasInflightForChannel(currentChannelId!);
-        if ((liveTask != null && !liveTask.isComplete) || hydrated) {
-          reattachToActiveTask();
-          awaitingAsyncTask = liveTask != null && !liveTask.isComplete;
-          _emit(ShowSnackBarEvent('chat_peerTurnStillRunning'));
-          return;
-        }
-      }
+      // 旧的「本会话有在途回合 → 弹『上一轮回复仍在继续』并 return」已删除。
+      // 主机是唯一裁决者：忙时它按 request_id 入队并回 session_ack{queued}，
+      // 出队后仍用原 request_id 推 chunk。App 只需要为排队回合延迟接管 UI。
 
       // 注意：不再在此做前置的 checkAgentHealth 探测。
       // AgentMessagingService 内部在建连阶段已带 3 次指数退避重试 +
@@ -736,11 +752,47 @@ mixin _MessagingOps on _ChatControllerBase {
         replyQuoteText: replyQuoteText,
         instructionName: instructionName,
       );
-      streaming.begin(optimistic.streaming.id, fromId: remoteAgent.id);
+      // 排队回合：先只落用户气泡。流式占位等主机真正开跑这一轮再建，
+      // 免得和上一轮抢同一份 streaming / isProcessing / ActiveTask。
+      if (!deferUi) {
+        streaming.begin(optimistic.streaming.id, fromId: remoteAgent.id);
+        messages.add(optimistic.streaming);
+        messageIdMap[optimistic.streaming.id] = optimistic.streaming;
+      }
       messages.add(optimistic.user);
-      messages.add(optimistic.streaming);
       messageIdMap[optimistic.user.id] = optimistic.user;
-      messageIdMap[optimistic.streaming.id] = optimistic.streaming;
+
+      /// 返回 true 表示本回合的帧可以写进当前频道共用的 streaming / 气泡 /
+      /// token。排队回合可能几分钟后才开跑，期间用户切到了别的会话；这时
+      /// `messages` / `streaming` / `isProcessing` / `acpCancellationToken`
+      /// 全都属于新频道，绝不能把旧频道的占位、spinner 和取消令牌塞进去
+      ///（停止按钮会因此停掉另一个频道的回合）。只跳过 UI 接管、不置
+      /// `uiActivated`：用户切回原频道后下一帧仍会正常激活。
+      bool activateTurnUi() {
+        if (!deferUi) return true;
+        if (currentChannelId != sendChannelId) return false;
+        if (uiActivated) return true;
+        uiActivated = true;
+        myEpoch = ++_dmTurnEpoch;
+        if (!messageIdMap.containsKey(optimistic.streaming.id)) {
+          messages.add(optimistic.streaming);
+          messageIdMap[optimistic.streaming.id] = optimistic.streaming;
+        }
+        streaming.begin(optimistic.streaming.id, fromId: remoteAgent.id);
+        isProcessing = true;
+        acpCancellationToken = turnToken;
+        if (sendChannelId != null && sendChannelId.isNotEmpty) {
+          chatService.activateDeferredDmTask(
+            sendChannelId,
+            userMessageId: optimistic.user.id,
+          );
+        }
+        _notify();
+        // 排队期间用户可能已经上翻阅读历史；出队别强行把视图拽到底部。
+        _emit(RequestScrollToBottomEvent(force: !isUserScrolledUp));
+        return true;
+      }
+
       // Resume live follow before the async scroll event is delivered — a
       // sticky scrolled-up flag from a prior turn would otherwise suppress
       // streaming rebuilds and follow-scrolls for this turn.
@@ -769,9 +821,10 @@ mixin _MessagingOps on _ChatControllerBase {
         replyToId: replyToId,
         replyQuoteText: replyQuoteText,
         dmSystemPrompt: dmSystemPrompt,
-        acpCancellationToken: acpCancellationToken,
+        acpCancellationToken: turnToken,
         attachments: attachments,
         instructionName: instructionName,
+        deferredTurn: deferUi,
         onReconnecting: (attempt, total) {
           if (attempt == 0) {
             _emit(HideReconnectingSnackBarEvent());
@@ -781,32 +834,47 @@ mixin _MessagingOps on _ChatControllerBase {
         },
         onOsToolConfirmation: requestCliApproval,
         onStreamChunk: (chunk) {
+          if (!activateTurnUi()) return;
           streaming.append(chunk);
           streaming.applyContentTo(messages, messageIdMap);
           scheduleStreamingRebuild();
         },
-        onActionConfirmation: _handleStreamingActionConfirmation,
+        onActionConfirmation: (actionData) {
+          if (!activateTurnUi()) return;
+          _handleStreamingActionConfirmation(actionData);
+        },
         onSingleSelect: (selectData) {
+          if (!activateTurnUi()) return;
           _updateStreamingMetadata(
               {'single_select': Map<String, dynamic>.from(selectData)});
         },
         onMultiSelect: (selectData) {
+          if (!activateTurnUi()) return;
           _updateStreamingMetadata(
               {'multi_select': Map<String, dynamic>.from(selectData)});
         },
         onFileUpload: (uploadData) {
+          if (!activateTurnUi()) return;
           _updateStreamingMetadata(
               {'file_upload': Map<String, dynamic>.from(uploadData)});
         },
-        onForm: _showPeerFormCard,
+        onForm: (formData) {
+          if (!activateTurnUi()) return;
+          _showPeerFormCard(formData);
+        },
         onFileMessage: (fileData) async {
+          if (!activateTurnUi()) return;
           await _handleFileMessage(fileData);
         },
         onMessageMetadata: (metadata) {
+          if (!activateTurnUi()) return;
           streaming.applyMetadataTo(messages, messageIdMap, metadata);
           scheduleStreamingRebuild();
         },
-        onWorkflowPlanCreated: _handleDmWorkflowPlanCreated,
+        onWorkflowPlanCreated: (workflowId, planData) {
+          if (!activateTurnUi()) return;
+          _handleDmWorkflowPlanCreated(workflowId, planData);
+        },
         onRequestHistory: (historyData) {
           pendingHistoryRequest = Map<String, dynamic>.from(historyData);
         },
@@ -849,36 +917,38 @@ mixin _MessagingOps on _ChatControllerBase {
           tag: 'ChatController', error: e, stackTrace: stackTrace);
       await loadMessages();
       final err = e.toString();
-      if (e is PeerTurnInFlightException) {
-        // 对方回合仍在进行：非失败，交由 reattach / onTaskFinished 收尾；
-        // 后续排队消息由主机自己出队。
-        reattachToActiveTask();
-        awaitingAsyncTask =
-            chatService.getActiveTask(currentChannelId ?? '') != null;
-        _emit(ShowSnackBarEvent('chat_peerTurnStillRunning'));
+      // 发送失败：把当前失败消息（含附件）+ 队列剩余消息倒回输入框
+      //（队列清空），供用户重新编辑后手动重发。
+      sendFailed = true;
+      _restoreQueueToComposer(
+        failedContent: content,
+        failedAttachments: attachments,
+      );
+      if (err.contains('not reachable after')) {
+        _emit(ShowErrorSnackBarEvent('chat_reconnectFailed'));
       } else {
-        // 发送失败：把当前失败消息（含附件）+ 队列剩余消息倒回输入框
-        //（队列清空），供用户重新编辑后手动重发。
-        sendFailed = true;
-        _restoreQueueToComposer(
-          failedContent: content,
-          failedAttachments: attachments,
-        );
-        if (err.contains('not reachable after')) {
-          _emit(ShowErrorSnackBarEvent('chat_reconnectFailed'));
-        } else {
-          _emit(ShowErrorSnackBarEvent('$e'));
-        }
+        _emit(ShowErrorSnackBarEvent('$e'));
       }
     } finally {
+      // 排队回合没等到自己开跑就收尾（如主机队列已满 / 发送失败）时，共用
+      // 的 streaming / isProcessing / token 仍属于上一轮，这里一个都不能碰。
+      final ownsTurnUi =
+          (!deferUi || uiActivated) && myEpoch == _dmTurnEpoch;
+      // 已经换回合时别把新回合的 token 一起清掉。
+      void clearOwnedToken() {
+        if (identical(acpCancellationToken, turnToken)) {
+          acpCancellationToken = null;
+        }
+      }
+
       if (sendFailed) {
         if (awaitingAsyncTask) {
           // 异步确认路径：task 仍在后台跑，流式状态交给 onTaskFinished 清理，
           // 这里只暂停队列排空（避免级联）。
           _notify();
-        } else {
+        } else if (ownsTurnUi) {
           // 失败路径：清理当前回合状态，但不碰主机队列，避免级联自动发送。
-          acpCancellationToken = null;
+          clearOwnedToken();
           streaming.clear();
           pendingHistoryRequest = null;
           isProcessing = false;
@@ -888,11 +958,8 @@ mixin _MessagingOps on _ChatControllerBase {
         // 异步确认路径：本轮任务仍在后台跑，isProcessing / 流式状态交给
         // activeTask.onTaskFinished 清理——回合真正结束时它负责置
         // isProcessing=false；后续排队消息由主机自己出队，App 不并发派发。
-        // 这里绝不能排空队列：此刻回合还活着，出队下一条会并发起新回合
-        // （ACP 覆盖共享 ActiveTask 导致回复错乱），或命中 peer busy 守卫
-        // 重复 reattach（队列整段倒出 + 后续发送卡「上一轮回复仍在继续」）。
-      } else {
-        acpCancellationToken = null;
+      } else if (ownsTurnUi) {
+        clearOwnedToken();
         streaming.clear();
         pendingHistoryRequest = null;
         isProcessing = false;
