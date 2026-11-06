@@ -196,6 +196,11 @@ abstract class _ChatControllerBase extends ChangeNotifier
   // ---- Processing / queue ----
   bool isProcessing = false;
 
+  /// DM 回合接管共用 UI 状态（streaming / isProcessing / token）的代际。
+  /// 排队回合在主机真正开跑那一轮才 `++`；上一轮的 finally 若晚到，
+  /// 凭代际就能认出自己已经不是当前回合，不去清掉新回合的状态。
+  int _dmTurnEpoch = 0;
+
   /// 正在看别的设备发起的主机回合。气泡跟着流式占位长，标题显示正在输入，
   /// 但停止按钮不能停掉那一轮（停的是本机任务）。
   bool mirrorsRemoteTurn = false;
@@ -1129,9 +1134,13 @@ abstract class _ChatControllerBase extends ChangeNotifier
   void _updateStreamingMetadata(Map<String, dynamic> metadata);
   Future<void> processMessage(String content,
       {String? replyToId,
+      String? replyQuoteText,
       List<AttachmentData>? attachments,
       List<Message>? attachmentMessages,
-      String? instructionName});
+      String? instructionName,
+
+      /// null = 按当前会话是否已有在途回合自动判断（见 ChatSendPlanner.deferTurnUi）。
+      bool? deferredTurn});
   Future<void> processGroupMessage(String content,
       {String? replyToId,
       String? replyQuoteText,

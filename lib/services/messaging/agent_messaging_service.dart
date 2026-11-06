@@ -55,6 +55,56 @@ void releaseDmForegroundOnce(
   releaseForegroundTask(task.agentName);
 }
 
+/// 收口本次发送自己创建的 ActiveTask。
+///
+/// 排队模型下后来开跑的回合可能已经把先结束那条从 `_activeTasks` 里挤掉，
+/// 所以「谁 acquire 谁 release」必须按**任务对象**记账，不能只看当前表里
+/// 挂着谁。漏一次 release，ForegroundTaskService 的引用计数就永远归不了零
+/// （Android 前台服务通知 / wakelock 一直不灭）。`releaseDmForegroundOnce`
+/// 按任务幂等，两条路径都调也不会重复减。
+void finishOwnedDmTask({
+  required ActiveTask? owned,
+  required ActiveTask? fromMap,
+  required void Function(String agentName) releaseForegroundTask,
+}) {
+  final seen = <ActiveTask>{};
+  for (final task in <ActiveTask?>[owned, fromMap]) {
+    if (task == null || !seen.add(task)) continue;
+    releaseDmForegroundOnce(task, releaseForegroundTask);
+    if (!task.dbSaveCompleter.isCompleted) {
+      task.dbSaveCompleter.complete();
+    }
+  }
+}
+
+/// 从挂起队列里取走属于 [userMessageId] 的那条。
+///
+/// 主机会话队列可以在面板里重排，出队顺序未必等于发送顺序；按 FIFO
+/// `removeAt(0)` 会把别的回合的 ActiveTask 提成当前任务。
+ActiveTask? takeDeferredDmTask(List<ActiveTask> held, String? userMessageId) {
+  if (held.isEmpty) return null;
+  final index = userMessageId == null
+      ? 0
+      : held.indexWhere((task) => task.userMessageId == userMessageId);
+  if (index < 0) return null;
+  return held.removeAt(index);
+}
+
+/// 只从活跃表摘掉属于本次发送的任务；恢复出来的 inflight 任务
+/// `userMessageId` 可能是空串，不能把它当成「任何回合都匹配」。
+ActiveTask? takeOwnedDmTask(
+  Map<String, ActiveTask> activeTasks,
+  String channelId,
+  String? userMessageId,
+) {
+  final current = activeTasks[channelId];
+  if (current == null) return null;
+  if (userMessageId != null && current.userMessageId != userMessageId) {
+    return null;
+  }
+  return activeTasks.remove(channelId);
+}
+
 /// 卸下一条已经结束的 1:1 回合，并通知列表刷新「输入中 / 思考中」。
 ///
 /// 储物袋把惜宝回合转发到主机时，任务会登记进 [activeTasks]，列表据此显示
@@ -236,10 +286,11 @@ class AgentMessagingService {
     var partialMessageId = rec.partialMessageId;
     if (partialMessageId == null || partialMessageId.isEmpty) {
       // 记录里没带 partial id（老版本写入的 inflight 行、或 flush 恰好还没
-      // 跑过）：收养同会话同 agent 最近的 streaming 半成品行。DM 会话同一
-      // channel 只可能存在一个在途 turn（PeerTurnInFlightException 保证），
-      // 收养是安全的；完成时 deletePartial 才能删掉杀进程前那行，避免
-      // 「半成品 + 完整消息」两条并存。
+      // 跑过）：收养同会话同 agent 最近的 streaming 半成品行，完成时
+      // deletePartial 才能删掉杀进程前那行，避免「半成品 + 完整消息」两条
+      // 并存。注意主机排队后同一 channel 可能有多条 inflight（一条在跑 +
+      // 若干排队），这里只给 restorePeerInflightTurns 挑中的那一条挂 UI；
+      // 排队回合的落库由主机 message.created 镜像负责。
       partialMessageId = await _db.findLatestStreamingPartialMessageId(
         channelId: rec.channelId,
         senderId: agent.id,
@@ -423,6 +474,69 @@ class AgentMessagingService {
     updateTypingAgentIds();
   }
 
+  /// 主机会话队列里等着的回合：先按发送顺序挂起，别登记进
+  /// `_activeTasks[channelId]`（那张表是「当前正在跑的那一轮」）。
+  final Map<String, List<ActiveTask>> _deferredActiveTasks = {};
+
+  void _holdDeferredActiveTask(String channelId, ActiveTask task) {
+    if (channelId.isEmpty) return;
+    _deferredActiveTasks.putIfAbsent(channelId, () => <ActiveTask>[]).add(task);
+  }
+
+  /// 排队回合真正开跑（App 收到它的第一个帧）时，把属于该回合的那条提成
+  /// 当前 ActiveTask：停止按钮 / 输入中 / reattach 才有对象可指。
+  ///
+  /// [userMessageId] 必须精确匹配：主机队列可以在面板里重排，出队顺序未必
+  /// 等于发送顺序，按 FIFO `removeAt(0)` 会把别的回合的任务提成当前任务。
+  void activateDeferredDmTask(String channelId, {String? userMessageId}) {
+    if (channelId.isEmpty) return;
+    final held = _deferredActiveTasks[channelId];
+    if (held == null || held.isEmpty) return;
+    final task = takeDeferredDmTask(held, userMessageId);
+    if (task == null) return;
+    if (held.isEmpty) _deferredActiveTasks.remove(channelId);
+    _registerActiveTask(channelId, task);
+  }
+
+  /// 排队回合没开跑就收尾（发送失败 / 队列被拒）：从挂起表里摘掉，
+  /// 免得下一条开跑时错把这条提成当前任务。
+  List<ActiveTask> _dropHeldTask(String channelId, String? userMessageId) {
+    if (channelId.isEmpty) return const <ActiveTask>[];
+    final held = _deferredActiveTasks[channelId];
+    if (held == null) return const <ActiveTask>[];
+    final removed = <ActiveTask>[
+      for (final task in held)
+        if (userMessageId != null && task.userMessageId == userMessageId) task,
+    ];
+    if (removed.isEmpty) return const <ActiveTask>[];
+    held.removeWhere((task) => removed.contains(task));
+    if (held.isEmpty) _deferredActiveTasks.remove(channelId);
+    return removed;
+  }
+
+  /// 只收掉属于本次发送的 ActiveTask。
+  ///
+  /// 排队模型下同一频道会叠加多个 sendMessageToAgent 调用；先结束的那条
+  /// 不能无条件 `_activeTasks.remove(channelId)`，否则会把后来开跑那一轮的
+  /// 任务一起摘掉（输入中卡住、停止按钮找不到对象）。
+  ActiveTask? _takeOwnedTask(String channelId, String? userMessageId) =>
+      takeOwnedDmTask(_activeTasks, channelId, userMessageId);
+
+  /// 本次发送自己创建的 ActiveTask，按 user_message_id 记账。
+  ///
+  /// 它可能被后来开跑的排队回合从 `_activeTasks[channelId]` 里顶掉；留一份
+  /// 引用，收尾时才能无条件释放前台占用（见 [finishOwnedDmTask]）。
+  final Map<String, ActiveTask> _ownedTasksByUserMessageId = {};
+
+  void _trackOwnedTask(ActiveTask task) {
+    if (task.userMessageId.isEmpty) return;
+    _ownedTasksByUserMessageId[task.userMessageId] = task;
+  }
+
+  ActiveTask? _takeTrackedTask(String? userMessageId) => userMessageId == null
+      ? null
+      : _ownedTasksByUserMessageId.remove(userMessageId);
+
   // 为「App 本地排队回合」挂接 ActiveTask / 流式 flush 的一整套逻辑已删除
   // （attachQueuedPeerTurn / _bindQueuedPeerTurn / _armQueuedFlush /
   // completeQueuedPeerTurn + 两个 _queued* map）。现在消息一律直接发出，
@@ -578,6 +692,9 @@ class AgentMessagingService {
     String? userMessageId,
     /// 指令集标题：写入用户消息 metadata，气泡只展示标题、内容隐式投递。
     String? instructionName,
+    /// 排队回合：不在发送当下登记 ActiveTask，等主机真正开跑再接管。
+    bool deferredTurn = false,
+
     /// 主动重连进度回调：`(attempt, total)`。
     /// - `attempt > 0`：正在进行第 `attempt` 次（共 `total` 次）重连尝试。
     /// - `attempt == 0`：重连流程结束（连上或彻底失败），UI 可隐藏进度提示。
@@ -616,6 +733,7 @@ class AgentMessagingService {
           existingUserMessage: existingUserMessage,
           userMessageId: userMessageId,
           instructionName: instructionName,
+          deferredTurn: deferredTurn,
         );
       }
 
@@ -714,6 +832,7 @@ class AgentMessagingService {
           acpCancellationToken: acpCancellationToken,
           attachments: attachments,
           onReconnecting: onReconnecting,
+          deferredTurn: deferredTurn,
         );
       } else if (agent.protocol == ProtocolType.acp) {
         // ACP 是已废弃的直连协议：它唯一的服务方（agent-bridge）已下线，主机
@@ -754,7 +873,7 @@ class AgentMessagingService {
         final task = _activeTasks.remove(channelId);
         updateTypingAgentIds();
         if (task != null) {
-          releaseForegroundTask(task.agentName);
+          releaseDmForegroundOnce(task, releaseForegroundTask);
           if (!task.dbSaveCompleter.isCompleted) {
             task.dbSaveCompleter.complete();
           }
@@ -779,14 +898,21 @@ class AgentMessagingService {
 
       // Signal the active task that DB save is done, then clean up
       if (channelId != null) {
-        final task = _activeTasks.remove(channelId);
-        updateTypingAgentIds();
-        if (task != null) {
-          releaseForegroundTask(task.agentName);
-          if (!task.dbSaveCompleter.isCompleted) {
-            task.dbSaveCompleter.complete();
+        final ownedId = userMessageId ?? existingUserMessage?.id;
+        final task = _takeOwnedTask(channelId, ownedId);
+        // 排队回合若压根没开跑（失败 / 队列被拒），把挂起的任务一并收掉。
+        for (final held in _dropHeldTask(channelId, ownedId)) {
+          releaseDmForegroundOnce(held, releaseForegroundTask);
+          if (!held.dbSaveCompleter.isCompleted) {
+            held.dbSaveCompleter.complete();
           }
         }
+        finishOwnedDmTask(
+          owned: _takeTrackedTask(ownedId),
+          fromMap: task,
+          releaseForegroundTask: releaseForegroundTask,
+        );
+        updateTypingAgentIds();
         _emitCompletion(
           channelId: channelId,
           agent: agent,
@@ -821,14 +947,20 @@ class AgentMessagingService {
 
       // Signal the active task that DB save is done (even on error), then clean up
       if (channelId != null) {
-        final task = _activeTasks.remove(channelId);
-        updateTypingAgentIds();
-        if (task != null) {
-          releaseForegroundTask(task.agentName);
-          if (!task.dbSaveCompleter.isCompleted) {
-            task.dbSaveCompleter.complete();
+        final ownedId = userMessageId ?? existingUserMessage?.id;
+        final task = _takeOwnedTask(channelId, ownedId);
+        for (final held in _dropHeldTask(channelId, ownedId)) {
+          releaseDmForegroundOnce(held, releaseForegroundTask);
+          if (!held.dbSaveCompleter.isCompleted) {
+            held.dbSaveCompleter.complete();
           }
         }
+        finishOwnedDmTask(
+          owned: _takeTrackedTask(ownedId),
+          fromMap: task,
+          releaseForegroundTask: releaseForegroundTask,
+        );
+        updateTypingAgentIds();
         _emitCompletion(
           channelId: channelId,
           agent: agent,
@@ -1013,6 +1145,7 @@ class AgentMessagingService {
     ACPCancellationToken? acpCancellationToken,
     List<AttachmentData>? attachments,
     void Function(int attempt, int total)? onReconnecting,
+    bool deferredTurn = false,
   }) async {
     final sourcePeerId = agent.sourcePeerId;
     final sourceRemoteAgentId = agent.remoteAgentId;
@@ -1045,7 +1178,14 @@ class AgentMessagingService {
     // Surface tool-call approvals (agent_approval_req relayed by the hub) to
     // the chat UI via the same card mechanism as the direct ACP flow.
     activeTask.onActionConfirmation = onActionConfirmation;
-    _registerActiveTask(effectiveChannelId, activeTask);
+    // 排队回合会被后来开跑的回合顶出 _activeTasks；留一份自己的引用，
+    // 收尾时才能确定性地释放前台占用。
+    _trackOwnedTask(activeTask);
+    if (deferredTurn) {
+      _holdDeferredActiveTask(effectiveChannelId, activeTask);
+    } else {
+      _registerActiveTask(effectiveChannelId, activeTask);
+    }
     ForegroundTaskService().acquireTask(agent.name);
 
     // Declared before the flush helper so its onFlushed closure can bridge the
@@ -1384,6 +1524,7 @@ class AgentMessagingService {
     Message? existingUserMessage,
     String? userMessageId,
     String? instructionName,
+    bool deferredTurn = false,
   }) async {
     LoggerService().info('Relaying turn to host', tag: 'AgentMessagingService');
 
@@ -1433,7 +1574,11 @@ class AgentMessagingService {
         );
         task.onStreamChunk = onStreamChunk;
         task.onMessageMetadata = onMessageMetadata;
-        _registerActiveTask(turnChannelId, task);
+        if (deferredTurn) {
+          _holdDeferredActiveTask(turnChannelId, task);
+        } else {
+          _registerActiveTask(turnChannelId, task);
+        }
         ForegroundTaskService().acquireTask(agent.name);
         flush = StreamingFlushHelper.fromAgent(
           db: _db,
@@ -1539,6 +1684,9 @@ class AgentMessagingService {
         rethrow;
       } finally {
         flush?.cancel();
+        // 没开跑就收尾的排队回合：从挂起表里摘掉，别让下一条回合误接管。
+        // 前台计数 / dbSaveCompleter 由下面的 releaseTrackedDmTask 收口。
+        _dropHeldTask(turnChannelId, userMessage.id);
         if (task != null) {
           releaseTrackedDmTask(
             activeTasks: _activeTasks,

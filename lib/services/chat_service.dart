@@ -1139,6 +1139,9 @@ class ChatService {
     /// `attempt==0` 重连流程结束（成功或失败）。仅 ACP 协议触发。
     void Function(int attempt, int total)? onReconnecting,
 
+    /// 排队回合：不在发送当下登记 ActiveTask，等主机真正开跑再接管。
+    bool deferredTurn = false,
+
     /// See [AgentMessagingService.sendMessageToAgent].
     bool foldProgressContent = true,
     List<Map<String, dynamic>>? extraTools,
@@ -1171,6 +1174,16 @@ class ChatService {
         onReconnecting: onReconnecting,
         foldProgressContent: foldProgressContent,
         extraTools: extraTools,
+        deferredTurn: deferredTurn,
+      );
+
+  /// 主机会话队列里的一条开始出字：把先前挂起的 ActiveTask 提成当前任务，
+  /// 停止按钮 / 「输入中」/ reattach 才有对象可指。由 ChatController 在
+  /// 收到该回合第一个帧时调用。
+  void activateDeferredDmTask(String channelId, {String? userMessageId}) =>
+      _agentMessagingService.activateDeferredDmTask(
+        channelId,
+        userMessageId: userMessageId,
       );
 
   /// Returns an interactive-connection handle for [agent] — a
