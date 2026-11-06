@@ -2642,9 +2642,15 @@ class PeerAgentClientService {
     }
     state ??= mirror.notifierForChannel(channelId)?.value;
     var turnId = state?.isRunning == true ? state!.turnId : '';
-    // 快照刚翻成 idle 但 ChatController 还记着上一轮 running 的 turn id 时，
-    // 用它兜底：主机那边仍可能在处理这次停止。
-    if (turnId.isEmpty) turnId = runtimeTurnId?.trim() ?? '';
+    // 快照刚翻成 idle 但同一回合还在主机侧收尾时，允许用 turn id 兜底。
+    // A6-2：只接受「当前频道 mirror 状态里」那一个 id。切到别的会话后
+    // 残留的旧 turn id 与这里的 state 不符，绝不拿它发 agent_cancel。
+    if (turnId.isEmpty) {
+      final cached = runtimeTurnId?.trim() ?? '';
+      if (cached.isNotEmpty && cached == (state?.turnId ?? '')) {
+        turnId = cached;
+      }
+    }
     if (!turnId.startsWith('flow-') || alreadyCancelled.contains(turnId)) {
       return;
     }

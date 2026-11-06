@@ -701,6 +701,137 @@ void main() {
     await incoming.close();
   });
 
+  test('A6-6: 重启重放最终消息后，同 turn 的迟到 chunk 不再建永久占位', () async {
+    const sessionId = 'flow_a66_impl';
+    const channelId = 'psess_$sessionId';
+    const turnId = 'flow-a66-impl-a1';
+    const finalId = 'msg-a66-final';
+    final incoming = StreamController<PeerControlEvent>.broadcast();
+    final client = HubEventClient(
+      events: incoming.stream,
+      seqStore: MemoryHubSeqStore(),
+    );
+    client.start();
+    addTearDown(client.dispose);
+    final db = getIt<LocalDatabaseService>();
+    await db.deleteMessage(liveTurnPlaceholderId(turnId));
+    await db.deleteMessage(finalId);
+    // App 刚重启：内存里没有这个回合，库里还留着 idle 收尾后的占位行。
+    await db.createMessage(
+      id: liveTurnPlaceholderId(turnId),
+      channelId: channelId,
+      senderId: 'agent-7',
+      senderType: 'agent',
+      senderName: 'Impl',
+      content: '收尾前的正文',
+      metadata: const {},
+    );
+
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: {
+        'type': 'hub_event',
+        'event': {
+          'seq': 1,
+          'kind': 'message.created',
+          'channel_id': channelId,
+          'agent_id': 'agent-7',
+          'data': {
+            'id': finalId,
+            'channel_id': channelId,
+            'session_id': sessionId,
+            'agent_id': 'agent-7',
+            'content': '最终回复',
+            'type': 'text',
+            'from': {'id': 'agent-7', 'type': 'agent', 'name': 'Impl'},
+          },
+        },
+      },
+    ));
+    await _until(
+      () async =>
+          await db.getMessageById(liveTurnPlaceholderId(turnId)) == null,
+    );
+
+    // 主机补发的迟到分片：已被 settled，不能当成新回合重建 streaming 占位。
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: {
+        'type': 'agent_chunk',
+        'request_id': turnId,
+        'turn_id': turnId,
+        'channel_id': channelId,
+        'session_id': sessionId,
+        'agent_id': 'agent-7',
+        'run_id': 'a66run',
+        'node': 'impl',
+        'content': '迟到分片',
+      },
+    ));
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    expect(await db.getMessageById(liveTurnPlaceholderId(turnId)), isNull,
+        reason: '删占位时必须把 turnId 记为 settled');
+    expect(await db.getMessageById(finalId), isNotNull);
+    await incoming.close();
+  });
+
+  test('A6-7: 只有 request_id 的 idle 也能把占位收尾', () async {
+    const sessionId = 'flow_a67_impl';
+    const channelId = 'psess_$sessionId';
+    const turnId = 'flow-a67-impl-a1';
+    final incoming = StreamController<PeerControlEvent>.broadcast();
+    final client = HubEventClient(
+      events: incoming.stream,
+      seqStore: MemoryHubSeqStore(),
+      flowIdleFinalizeDelay: const Duration(milliseconds: 60),
+    );
+    client.start();
+    addTearDown(client.dispose);
+    final db = getIt<LocalDatabaseService>();
+    await db.deleteMessage(liveTurnPlaceholderId(turnId));
+
+    // 旧主机帧只有 request_id；chunk 用它登记 _liveChannels。
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: {
+        'type': 'agent_chunk',
+        'request_id': turnId,
+        'channel_id': channelId,
+        'session_id': sessionId,
+        'agent_id': 'agent-7',
+        'run_id': 'a67run',
+        'node': 'impl',
+        'content': '旧主机正文',
+      },
+    ));
+    await _until(() async {
+      final row = await db.getMessageById(liveTurnPlaceholderId(turnId));
+      return (row?['content'] as String? ?? '').contains('旧主机正文');
+    });
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: {
+        'type': 'session.state',
+        'flow': true,
+        'session_key': sessionId,
+        'channel_id': channelId,
+        'status': 'idle',
+        'request_id': turnId,
+        'revision': 2,
+        'peer_id': 'peer-1',
+        'hub_id': 'hub-flow',
+      },
+    ));
+    // idle 只 flush，超时才把 streaming 标记收成终态。
+    await _until(() async {
+      final row = await db.getMessageById(liveTurnPlaceholderId(turnId));
+      if (row == null) return false;
+      final meta = row['metadata'];
+      return meta is! String || !meta.contains('streaming');
+    });
+    await incoming.close();
+  });
+
   test('A5-2: 首帧缺 agent_id 时兜底落点不写缓存，下一帧重新解析', () async {
     const sessionId = 'flow_a52_impl';
     const channelId = 'psess_$sessionId';

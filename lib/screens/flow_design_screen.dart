@@ -99,12 +99,15 @@ class FlowDesignScreen extends StatefulWidget {
 }
 
 class _FlowDesignScreenState extends State<FlowDesignScreen> {
-  late final FlowEditorController _controller;
+  late FlowEditorController _controller;
   bool _showYaml = false;
   List<String> _flowRefs = const [];
   String? _flashId;
   Timer? _flashTimer;
   final Map<String, GlobalKey> _rowKeys = {};
+
+  /// 换主机后旧请求（流程引用 / agent 名单）的回包不能再写进新主机状态。
+  int _hostEpoch = 0;
 
   // 点选 + 说话（C.3）
   final Set<String> _selected = <String>{};
@@ -133,6 +136,12 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   @override
   void initState() {
     super.initState();
+    _startController();
+    unawaited(_loadFlowRefs());
+  }
+
+  /// 建一份绑定当前 peerId / name / scope 的 controller，并接好通知。
+  void _startController() {
     _controller = FlowEditorController(
       peerId: widget.peerId,
       name: widget.name,
@@ -145,21 +154,52 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     _controller.addListener(_reportDirty);
     widget.onControllerReady?.call(_controller);
     unawaited(_controller.load());
+  }
+
+  /// 换主机 / 换流程时彻底换掉 controller：它记着旧主机的 peerId，继续用
+  /// 会让保存、校验、模型选项、演练都发到上一台主机（A6-1）。
+  void _restartController() {
+    final old = _controller;
+    old.removeListener(_reportDirty);
+    old.onNotice = null;
+    widget.onControllerReady?.call(null);
+    old.dispose();
+    _hostEpoch++;
+    _flowRefs = const [];
+    _agents = const [];
+    _selected.clear();
+    _collapsed.clear();
+    _selectedId = null;
+    _rowKeys.clear();
+    _showYaml = false;
+    _flashId = null;
+    _flashTimer?.cancel();
+    _flashTimer = null;
+    _reply.clear();
+    _lastDirty = false;
+    _askedDraft = false;
+    _lastActionSig = '';
+    widget.onDirtyChanged?.call(false);
+    _startController();
+    // didUpdateWidget 之后本来就会 rebuild，不需要再 setState 一帧。
     unawaited(_loadFlowRefs());
   }
 
   /// `call.flow` 的候选：同 scope 的流程库引用。排除自己（自引用一定成环）。
   Future<void> _loadFlowRefs() async {
-    final flows =
-        await _controller.client.list(widget.peerId, scope: widget.scope);
-    if (!mounted || flows == null) return;
-    final prefix = widget.scope.startsWith('group:')
-        ? 'group/${widget.scope.substring('group:'.length)}'
+    final epoch = _hostEpoch;
+    final peerId = widget.peerId;
+    final name = widget.name;
+    final scope = widget.scope;
+    final flows = await _controller.client.list(peerId, scope: scope);
+    if (!mounted || flows == null || epoch != _hostEpoch) return;
+    final prefix = scope.startsWith('group:')
+        ? 'group/${scope.substring('group:'.length)}'
         : 'lib';
     setState(() {
       _flowRefs = [
         for (final f in flows)
-          if (f.name != widget.name) '$prefix/${f.name}',
+          if (f.name != name) '$prefix/${f.name}',
       ];
     });
   }
@@ -167,6 +207,15 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   @override
   void didUpdateWidget(covariant FlowDesignScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // A6-1：同名流程可能在两台主机上都有。切主机（或换流程 / scope）后
+    // 必须重建 controller 并清掉旧主机的引用与 agent 缓存，否则所有请求
+    // 仍打向旧 peerId。工作台虽然也会给详情换 ValueKey，这一层自己也要守。
+    if (oldWidget.peerId != widget.peerId ||
+        oldWidget.name != widget.name ||
+        oldWidget.scope != widget.scope) {
+      _restartController();
+      return;
+    }
     // 从宽屏（actionsNotifier 为 null）切回窄屏详情时，强制重发一次 actions，
     // 免得外层栏里留着上一次窄屏会话的旧按钮状态。
     if (oldWidget.actionsNotifier == null && widget.actionsNotifier != null) {
@@ -680,11 +729,14 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   /// 会存一个主机不认的值，模型列表也拉不对。
   Future<String?> _pickAgent() async {
     if (_agents.isEmpty) {
+      final epoch = _hostEpoch;
+      final peerId = widget.peerId;
       final all = await LocalDatabaseService().getAllRemoteAgents();
-      if (!mounted) return null;
-      setState(() => _agents = all
-          .where((a) => a.isPeerAgent && a.sourcePeerId == widget.peerId)
-          .toList());
+      if (!mounted || epoch != _hostEpoch || peerId != widget.peerId) {
+        return null;
+      }
+      setState(() => _agents =
+          all.where((a) => a.isPeerAgent && a.sourcePeerId == peerId).toList());
     }
     final l10n = AppLocalizations.of(context);
     final picked = await showJadeSlipAgentPicker(

@@ -250,6 +250,30 @@ void main() {
       );
     });
 
+    test('A6-10: 同一 par 内换位置不报 join/write，外面拖进 par 仍报', () {
+      final tree = [
+        FlowNode(
+          key: 'par',
+          id: 'par',
+          kind: 'par',
+          children: const [
+            FlowNode(key: 'a', id: 'a', kind: 'task'),
+            FlowNode(key: 'b', id: 'b', kind: 'task'),
+          ],
+        ),
+        FlowNode(key: 'outside', id: 'outside', kind: 'task'),
+      ];
+      final inside = FlowDropTarget(dragId: 'a', parentId: 'par', index: 1);
+      expect(refWarningsAfterMove(tree, 'a', inside), isEmpty,
+          reason: 'par 内从 index 0 拖到 1 没改变并行关系');
+
+      final fromOutside =
+          FlowDropTarget(dragId: 'outside', parentId: 'par', index: 0);
+      expect(refWarningsAfterMove(tree, 'outside', fromOutside).join('\n'),
+          contains('par par (join/write)'),
+          reason: '从外部拖进 par 仍要提示 join / 变量写冲突');
+    });
+
     test('prev.* 离开 loop → 预警', () {
       final tree = [
         FlowNode(key: 'retry', id: 'retry', kind: 'loop', children: [

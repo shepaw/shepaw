@@ -23,6 +23,7 @@ class _FakeHost {
       events: bus.stream,
       send: (peerId, frame) async {
         sent.add(frame);
+        sentPeers.add(peerId);
         final reply = _reply(frame);
         if (reply != null) {
           bus.add(PeerControlEvent(peerId: peerId, data: {
@@ -37,6 +38,9 @@ class _FakeHost {
 
   final bus = StreamController<PeerControlEvent>.broadcast();
   final sent = <Map<String, dynamic>>[];
+
+  /// 每个请求发往哪台主机（A6-1：切主机后保存要走新 peer）。
+  final sentPeers = <String>[];
   late final HubFlow client;
   String editedPrompt = '写';
 
@@ -316,8 +320,8 @@ void main() {
     await _settle(tester);
     await tester.pump(const Duration(milliseconds: 700));
     expect(find.text('走到这儿要你选一下'), findsNothing);
-    final answered = host.sent
-        .firstWhere((f) => f['type'] == 'flow_rehearse_answer_req');
+    final answered =
+        host.sent.firstWhere((f) => f['type'] == 'flow_rehearse_answer_req');
     expect(answered['rehearsal_id'], 'reh_1');
     expect(answered['choice'], '通过');
 
@@ -325,8 +329,49 @@ void main() {
     await tester.pump();
     expect(find.text('演练中：不调用任何 Agent'), findsNothing);
     // 结束演练要把主机上那份丢掉。
+    expect(host.sent.any((f) => f['type'] == 'flow_rehearse_drop_req'), isTrue);
+    await tester.pumpWidget(const SizedBox());
+    await host.bus.close();
+  });
+
+  testWidgets('A6-1: 同名流程切主机后，保存 / 校验都发往新 peer', (tester) async {
+    final host = _FakeHost();
+    Widget screen(String peerId) => FlowDesignScreen(
+          peerId: peerId,
+          name: 'dev',
+          client: host.client,
+        );
+    await tester.pumpWidget(_app(screen('p1')));
+    await _settle(tester);
+    expect(host.sentPeers, isNotEmpty);
+    expect(host.sentPeers.every((p) => p == 'p1'), isTrue);
+
+    // 同名流程在两台主机上都存在：只换 peerId，ValueKey 不变。
+    final beforeSwitch = host.sent.length;
+    await tester.pumpWidget(_app(screen('p2')));
+    await _settle(tester);
+    expect(host.sent.length, greaterThan(beforeSwitch),
+        reason: '切主机要重建 controller 并重新加载定义 / 引用');
+    expect(host.sentPeers.sublist(beforeSwitch).every((p) => p == 'p2'), isTrue,
+        reason: '旧 peerId 不能残留在 controller 里');
+
+    await tester.tap(find.text('impl'));
+    await _settle(tester);
+    await tester.enterText(find.byKey(const ValueKey('f:task.prompt')), '认真写');
+    await tester.ensureVisible(find.byKey(const ValueKey('inspector-apply')));
+    await tester.tap(find.byKey(const ValueKey('inspector-apply')));
+    await _settle(tester);
+    final save = find.widgetWithIcon(IconButton, Icons.check);
+    expect(tester.widget<IconButton>(save).onPressed, isNotNull);
+    await tester.tap(save);
+    await _settle(tester);
+
+    final saveIdx =
+        host.sent.lastIndexWhere((f) => f['type'] == 'flow_save_req');
+    expect(saveIdx, greaterThanOrEqualTo(beforeSwitch));
+    expect(host.sentPeers[saveIdx], 'p2', reason: '保存必须发往新主机');
     expect(
-        host.sent.any((f) => f['type'] == 'flow_rehearse_drop_req'), isTrue);
+        host.sentPeers.sublist(beforeSwitch).every((p) => p == 'p2'), isTrue);
     await tester.pumpWidget(const SizedBox());
     await host.bus.close();
   });

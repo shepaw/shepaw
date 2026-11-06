@@ -21,8 +21,7 @@ class PendingApprovalHub {
 
   final Map<String, PendingApprovalItem> _items = {};
   final Set<String> _dismissedIds = {};
-  final _controller =
-      StreamController<List<PendingApprovalItem>>.broadcast();
+  final _controller = StreamController<List<PendingApprovalItem>>.broadcast();
 
   bool _hydrated = false;
 
@@ -61,13 +60,15 @@ class PendingApprovalHub {
         messageId: item.messageId ?? existing.messageId,
         agentName:
             item.agentName.isNotEmpty ? item.agentName : existing.agentName,
+        isForm: existing.isForm || item.isForm,
       );
       // Skip no-op updates so reachability UI / notifications are not churned.
       if (merged.messageId == existing.messageId &&
           merged.agentName == existing.agentName &&
           merged.channelId == existing.channelId &&
           merged.agentId == existing.agentId &&
-          merged.kind == existing.kind) {
+          merged.kind == existing.kind &&
+          merged.isForm == existing.isForm) {
         return;
       }
       _items[item.id] = merged;
@@ -87,6 +88,7 @@ class PendingApprovalHub {
         messageId: item.messageId ?? existing.messageId,
         agentName:
             item.agentName.isNotEmpty ? item.agentName : existing.agentName,
+        isForm: existing.isForm || item.isForm,
       );
     } else {
       _items[item.id] = item;
@@ -109,7 +111,8 @@ class PendingApprovalHub {
     }
   }
 
-  void resolveByWorkflowId(String workflowId) => resolve(PendingApprovalItem.planId(workflowId));
+  void resolveByWorkflowId(String workflowId) =>
+      resolve(PendingApprovalItem.planId(workflowId));
 
   void resolveByConfirmationId(String confirmationId) =>
       resolve(PendingApprovalItem.actionId(confirmationId));
@@ -184,7 +187,8 @@ class PendingApprovalHub {
     final wf = workflowService ?? WorkflowService.instance;
     final database = db ?? LocalDatabaseService();
     try {
-      final plans = await wf.getWorkflowsByStatus(WorkflowStatus.pendingApproval);
+      final plans =
+          await wf.getWorkflowsByStatus(WorkflowStatus.pendingApproval);
       for (final exec in plans) {
         _upsertSilent(
           PendingApprovalItem(

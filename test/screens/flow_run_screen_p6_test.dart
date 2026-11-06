@@ -222,6 +222,100 @@ void main() {
     await bus.close();
   });
 
+  testWidgets('A6-5: 节点事件带 agent_id，重拉之前点会话入口就有成员', (tester) async {
+    final bus = StreamController<PeerControlEvent>.broadcast();
+    await tester.pumpWidget(_app(_host(
+      bus,
+      tree: const [
+        {
+          'key': 'impl',
+          'id': 'impl',
+          'kind': 'task',
+          'status': 'waiting_user',
+          // 初始树还没拿到执行 agent（主机节点事件先到、重拉 400ms 后才到）。
+          'session_id': 'flow_deadbe12_impl',
+        },
+      ],
+    )));
+    await _settle(tester);
+
+    bus.add(PeerControlEvent(
+      peerId: 'p1',
+      data: {
+        'type': 'flow.node.changed',
+        'run_id': 'r1',
+        'node': 'impl',
+        'status': 'waiting_user',
+        'session_id': 'flow_deadbe12_impl',
+        'agent_id': 'agent-live',
+        'attempt': 1,
+      },
+    ));
+    await tester.pump(const Duration(milliseconds: 10));
+    await tester.pump(const Duration(milliseconds: 10));
+
+    await tester.tap(find.byKey(const ValueKey('flow-node-goto-answer-impl')));
+    await _settle(tester);
+    expect(opened, hasLength(1));
+    expect(opened.single.agentId, 'agent-live',
+        reason: '400ms 重拉之前也应该用事件里的 agent_id 建频道壳');
+    await tester.pumpWidget(const SizedBox());
+    await bus.close();
+  });
+
+  test('A6-8: 动作确认提醒排在前面时仍高亮表单卡', () {
+    const channelId = 'psess_flow_deadbe12_impl';
+    const formId = 'ask-a68-impl';
+    // 排序按 createdAt 倒序：动作确认提醒会在表单提醒之前返回。
+    PendingApprovalHub.instance.upsert(const PendingApprovalItem(
+      id: 'action:confirm-a68',
+      channelId: channelId,
+      messageId: 'msg-confirm-a68',
+      agentId: 'agent-7',
+      agentName: 'Agent',
+      kind: PendingApprovalKind.action,
+      createdAt: 20,
+    ));
+    PendingApprovalHub.instance.upsert(
+      PendingApprovalItem.fromInteraction(
+        channelId: channelId,
+        agentId: 'agent-7',
+        agentName: 'Agent',
+        interactionType: 'form',
+        data: const {'form_id': formId},
+        messageId: 'msg-sid-placeholder',
+      )!
+          .copyWith(createdAt: 10),
+    );
+    expect(pendingFlowFormMessageId(channelId),
+        PeerApprovalPayload.formCardMessageId(formId));
+
+    // 只有普通提醒时仍退回第一条的消息 id。
+    PendingApprovalHub.instance.resetForTest();
+    PendingApprovalHub.instance.upsert(const PendingApprovalItem(
+      id: 'action:confirm-a68',
+      channelId: channelId,
+      messageId: 'msg-confirm-a68',
+      agentId: 'agent-7',
+      agentName: 'Agent',
+      kind: PendingApprovalKind.action,
+      createdAt: 20,
+    ));
+    expect(pendingFlowFormMessageId(channelId), 'msg-confirm-a68');
+
+    // DB hydrate 出来的提醒没带 isForm，但消息行是确定性表单卡。
+    PendingApprovalHub.instance.upsert(const PendingApprovalItem(
+      id: 'action:hydrated-confirm',
+      channelId: channelId,
+      messageId: 'peer_form_hydrated-form',
+      agentId: 'agent-7',
+      agentName: 'Agent',
+      kind: PendingApprovalKind.action,
+      createdAt: 5,
+    ));
+    expect(pendingFlowFormMessageId(channelId), 'peer_form_hydrated-form');
+  });
+
   testWidgets('P6: 节点弹层里的「去回答」同样打开节点会话', (tester) async {
     final bus = StreamController<PeerControlEvent>.broadcast();
     await tester.pumpWidget(_app(_host(bus)));

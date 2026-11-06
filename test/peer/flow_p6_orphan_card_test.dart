@@ -503,6 +503,29 @@ void main() {
       );
     });
 
+    test('A6-11: 16 位十六进制 run_tag 也能推出运行级惜宝会话', () {
+      // H6-10 把 tag 从 8 位改成完整 64 位十六进制；App 侧不能写死 8 位。
+      for (final nodeSession in const [
+        'flow_deadbe12_impl',
+        'flow_deadbe12deadbe12_impl',
+        'group:g1:s1:flow_deadbe12deadbe12_impl',
+      ]) {
+        final tag =
+            RegExp(r'flow_([0-9a-fA-F]+)_').firstMatch(nodeSession)!.group(1)!;
+        expect(
+          flowRunSheSessionId([
+            FlowNode.fromJson({
+              'key': 'n',
+              'id': 'n',
+              'kind': 'task',
+              'session_id': nodeSession,
+            }),
+          ]),
+          'flow_${tag}_she',
+        );
+      }
+    });
+
     test('FlowRunView 解析运行会话 id 并在状态更新后保留', () {
       final run = FlowRunView.fromResponse({
         'success': true,

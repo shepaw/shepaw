@@ -3569,6 +3569,7 @@ class _ChatScreenState extends State<ChatScreen>
         : _flowOriginCache.resolve(
             c.messages,
             scope: c.currentChannelId ?? '',
+            metadataRevision: c.messageMetadataRevision,
           );
     return Scaffold(
       appBar: AppBar(

@@ -51,32 +51,34 @@ void pushFlowRunScreen(
 }
 
 /// 搜索命中 / 折叠行的次级入口。主点击已经改成打开会话，运行视图留在这里。
+///
+/// 弹层结束后才用外层的 [context] 跳转：弹层期间那一行可能被卸载（列表刷新、
+/// 切频道），此时 `Navigator.of(context)` 会直接抛异常。
 Future<void> showFlowRunActions(
   BuildContext context, {
   required String peerId,
   required String runId,
   required String title,
-}) =>
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.account_tree_outlined),
-              title: Text(AppLocalizations.of(sheetContext).flow_viewRun),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                pushFlowRunScreen(context,
-                    peerId: peerId, runId: runId, title: title);
-              },
-            ),
-          ],
-        ),
+}) async {
+  final viewRun = await showModalBottomSheet<bool>(
+    context: context,
+    showDragHandle: true,
+    builder: (sheetContext) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.account_tree_outlined),
+            title: Text(AppLocalizations.of(sheetContext).flow_viewRun),
+            onTap: () => Navigator.pop(sheetContext, true),
+          ),
+        ],
       ),
-    );
+    ),
+  );
+  if (viewRun != true || !context.mounted) return;
+  pushFlowRunScreen(context, peerId: peerId, runId: runId, title: title);
+}
 
 /// 打开一条命中：私聊本来就在平铺列表里（调用方自己切），工作流节点优先打开
 /// 它的 agent 会话（和私聊一样能继续聊 / 停止），群聊进群聊视角，其余走主机的

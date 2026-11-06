@@ -79,4 +79,39 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('查看运行'), findsOneWidget);
   });
+
+  testWidgets('A6-4: 弹层期间行被卸载，点「查看运行」不抛异常', (tester) async {
+    var showRow = true;
+    late StateSetter setRow;
+    await tester.pumpWidget(_app(StatefulBuilder(
+      builder: (context, setState) {
+        setRow = setState;
+        return showRow
+            ? Builder(
+                builder: (rowContext) => TextButton(
+                  onPressed: () => showFlowRunActions(
+                    rowContext,
+                    peerId: 'p1',
+                    runId: 'deadbe12',
+                    title: '修 bug',
+                  ),
+                  child: const Text('menu'),
+                ),
+              )
+            : const Text('row gone');
+      },
+    )));
+    await tester.tap(find.text('menu'));
+    await tester.pumpAndSettle();
+    expect(find.text('查看运行'), findsOneWidget);
+
+    // 列表刷新把这一行拆掉，但底部弹层还开着。
+    setRow(() => showRow = false);
+    await tester.pump();
+    expect(find.text('row gone'), findsOneWidget);
+
+    await tester.tap(find.text('查看运行'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
 }

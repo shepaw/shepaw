@@ -69,6 +69,45 @@ void main() {
     expect(cache.scanCount, 4);
   });
 
+  test('A6-9: 原地补 metadata.flow 后横幅出现，且不恢复每次全量扫描', () {
+    final cache = FlowSessionOriginCache();
+    final messages = [
+      _message({'source': 'local'}),
+      _message(null, id: 'm2'),
+    ];
+    expect(cache.resolve(messages), isNull);
+    expect(cache.resolve(messages), isNull);
+    expect(cache.scanCount, 1, reason: 'A3-8：普通重建不重扫');
+
+    // 同长同 id，但给已有 prompt 原地加了 metadata.flow：签名变了。
+    messages.first.metadata!['flow'] = {
+      'run_id': 'run16',
+      'node_key': 'seq/impl',
+    };
+    expect(cache.resolve(messages)?.runId, 'run16');
+    expect(cache.scanCount, 2);
+  });
+
+  test('A6-9: 中间消息的 metadata 变更靠调用方 revision 失效', () {
+    final cache = FlowSessionOriginCache();
+    final messages = [
+      _message(null, id: 'a'),
+      _message({'source': 'local'}, id: 'b'),
+      _message(null, id: 'c'),
+    ];
+    expect(cache.resolve(messages, metadataRevision: 1), isNull);
+    expect(cache.scanCount, 1);
+
+    messages[1].metadata!['flow'] = {'run_id': 'run-middle'};
+    // 没换频道 / 没换列表时仍不重复扫描。
+    expect(cache.resolve(messages, metadataRevision: 1), isNull);
+    expect(cache.scanCount, 1);
+
+    // DB 重载带回新 metadata，调用方把 revision 前移 → 重扫一次。
+    expect(cache.resolve(messages, metadataRevision: 2)?.runId, 'run-middle');
+    expect(cache.scanCount, 2);
+  });
+
   testWidgets('P4: banner shows the node and a 查看运行 link', (tester) async {
     const origin = FlowSessionOrigin(runId: 'deadbe12', nodeKey: 'outer/impl');
     await tester.pumpWidget(MaterialApp(

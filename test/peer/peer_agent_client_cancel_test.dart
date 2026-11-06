@@ -282,6 +282,30 @@ void main() {
       expect(sentFrames.single.json['request_id'], turnId);
     });
 
+    test('A6-2: 别频道的残留 turn id 不能用来发 agent_cancel', () async {
+      // B 会话没有任何 flow 状态；缓存字段却还留着 A 的运行中 flow turn。
+      await svc.cancelInflightTurnsForChannel(
+        'psess_flow_bbbb_impl',
+        sessionKey: 'agent:agent-7:flow_bbbb_impl',
+        runtimeTurnId: turnId,
+      );
+      expect(sentFrames, isEmpty, reason: '切频道后按停止不能误停 A / 发到错误主机');
+
+      // B 自己有 flow 回合时，仍按当前频道 mirror 的 turn id 停。
+      seedSnapshot(
+        requestId: 'flow-bbbb-impl-a1',
+        running: true,
+        key: 'agent:agent-7:flow_bbbb_impl',
+      );
+      await svc.cancelInflightTurnsForChannel(
+        'psess_flow_bbbb_impl',
+        sessionKey: 'agent:agent-7:flow_bbbb_impl',
+        runtimeTurnId: turnId,
+      );
+      expect(sentFrames, hasLength(1));
+      expect(sentFrames.single.json['request_id'], 'flow-bbbb-impl-a1');
+    });
+
     test('普通 DM 不额外发 cancel（非 flow- 前缀且已在 _pending 里）', () async {
       seedSnapshot(requestId: 'req-dm-1', running: true);
       final future = svc.debugSeedPendingTurn(

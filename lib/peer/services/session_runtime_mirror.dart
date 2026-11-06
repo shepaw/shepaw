@@ -309,15 +309,15 @@ class SessionRuntimeMirror {
     final incoming = SessionState.fromSnapshot(snapshot);
     if (incoming.sessionKey.isEmpty) return false;
     final isFlow = incoming.isFlow;
-    if (!force && !isFlow) {
+    // A6-3：flow 帧可以跳过 revision 比较（per-key 计数器重启会回退），
+    // 但**不能**跳过 hub 身份检查：切主机后旧 hub 迟到的 flow 帧同样会把
+    // 旧回合复活成 running。只有「同 hub 但低 revision」才绕过 reducer。
+    // 身份只由全量对账（reconcileTo）确立；还没有身份时两类帧都先接受。
+    if (!force) {
       final hub = incoming.hubId;
       if (hub.isNotEmpty && _hubId != null && hub != _hubId) {
-        // 旧 hub 的历史回放，拒绝（否则会把已结束的 running 状态复活）。
         return false;
       }
-      // 身份只由全量对账（reconcileTo）确立。首次运行若让第一条回放事件
-      // 「认领」身份，旧 hub 的高 revision 状态会毒化 mirror，当前主机事件
-      // 反而被永久拒绝。
     }
     // 任一权威帧都证明这个 key 还活着：取消重连保留的 idle 收尾计时器。
     _cancelFlowRetention(incoming.sessionKey);

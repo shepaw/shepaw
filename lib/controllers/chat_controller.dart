@@ -254,7 +254,27 @@ abstract class _ChatControllerBase extends ChangeNotifier
 
   /// 主机最近一次宣告「正在跑」的 turn id。只有从 running 翻到 idle
   /// 才允许收起占位，启动对账看到 idle 不会误清用户正在看的回复。
+  /// 它是**当前频道**的会话状态，切频道必须清掉（A6-2）。
   String? _runtimeActiveTurnId;
+
+  /// 停止按钮允许带上的 turn id 只能来自当前频道的 mirror 状态，绝不能用
+  /// 上面那份可能在切频道后残留的缓存。快照刚翻成 idle 时 turn_id 仍在，
+  /// 同一回合的停止仍能兜底；跨频道的旧 id 一律不出门。
+  String? get currentChannelRuntimeTurnId {
+    final state = sessionState?.value;
+    if (state == null || state.sessionKey.isEmpty) return null;
+    final turnId = state.turnId.trim();
+    return turnId.isEmpty ? null : turnId;
+  }
+
+  /// 测试里核对切频道后缓存确实被清空。
+  @visibleForTesting
+  String? get debugRuntimeActiveTurnId => _runtimeActiveTurnId;
+
+  /// 消息列表被整体替换（DB 重载带回新的 metadata）时自增。
+  /// 流程横幅的缓存用它做显式失效，普通重建 / 流式 chunk 不动它（A6-9）。
+  int messageMetadataRevision = 0;
+  Object? _lastNotifiedMessagesList;
 
   /// 主机的 running→idle 跃迁是气泡输出态的主导清理路径。
   /// 断线期间 `agent_done` 丢帧时，重连补拉的 `session.state` 也能收口；
@@ -995,6 +1015,12 @@ abstract class _ChatControllerBase extends ChangeNotifier
 
   void _notify() {
     if (_eventController.isClosed) return;
+    // 列表换成新实例（reload / reconcile）才可能带来 metadata.flow 变更。
+    // 抽屉拖动、键盘、逐字 chunk 这类纯重建不递增，横幅不会全量重扫。
+    if (!identical(messages, _lastNotifiedMessagesList)) {
+      _lastNotifiedMessagesList = messages;
+      messageMetadataRevision++;
+    }
     notifyListeners();
     // 0d83ec7 之后消息列表子树只订阅 contentListenable，外层 setState 又被
     // OuterStructuralSnapshot 门控（结构字段不含消息内容/metadata）。

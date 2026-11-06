@@ -6,6 +6,7 @@ import 'package:shepaw/l10n/app_localizations.dart';
 import 'package:shepaw/models/remote_agent.dart';
 import 'package:shepaw/peer/services/hub_flow.dart';
 import 'package:shepaw/peer/services/peer_connection_manager.dart';
+import 'package:shepaw/screens/flow_design_screen.dart';
 import 'package:shepaw/screens/flow_workspace_screen.dart';
 import 'package:shepaw/storage/pouch_session.dart';
 
@@ -494,6 +495,57 @@ void main() {
     expect(find.text('P1 Agent'), findsNothing, reason: '旧主机的 agent 不能留在候选里');
     await tester.tap(find.text('P2 Agent'));
     await _settle(tester);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  // ── A6-1：切主机后详情必须换 key（连同 controller 一起重建） ─────────────
+
+  testWidgets('A6-1 同名流程切主机后详情的 ValueKey 带上新 peerId', (tester) async {
+    tester.view.physicalSize = const Size(2400, 1800);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(tester.view.reset);
+
+    var activeHost = 'p1';
+    PouchSessionStore.readOverride = () async => PouchSession(
+          hubUrl: 'wss://hub.example/peer/ws',
+          pouchId: 'bag',
+          pouchName: 'bag',
+          hostPeerId: activeHost,
+        );
+    addTearDown(() => PouchSessionStore.readOverride = null);
+
+    final harness = _Harness();
+    addTearDown(harness.close);
+    await tester.pumpWidget(MaterialApp(
+      locale: const Locale('zh'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: FlowWorkspaceScreen(
+        peerId: '',
+        client: harness.client,
+        embedded: true,
+      ),
+    ));
+    await _settle(tester);
+    await tester.tap(find.text('dev'));
+    await _settle(tester);
+    final before =
+        tester.widget<FlowDesignScreen>(find.byType(FlowDesignScreen));
+    expect(before.peerId, 'p1');
+    expect(before.key.toString(), contains('p1'));
+
+    activeHost = 'p2';
+    await tester.tap(find.byIcon(Icons.refresh));
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+
+    final after =
+        tester.widget<FlowDesignScreen>(find.byType(FlowDesignScreen));
+    expect(after.peerId, 'p2');
+    expect(after.key, isNot(before.key),
+        reason: '同名流程换主机后必须强制重建详情，不能复用旧 controller');
+    expect(after.key.toString(), contains('p2'));
     await tester.pumpWidget(const SizedBox());
   });
 }

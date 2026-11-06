@@ -206,7 +206,7 @@ mixin _MessagingOps on _ChatControllerBase {
             respondingAgentNames.clear();
             groupStreamingMessageIds.clear();
             _notify();
-              });
+          });
         }
       },
     );
@@ -491,7 +491,7 @@ mixin _MessagingOps on _ChatControllerBase {
         currentChannelId!,
         contentOverride: streamingContent.isNotEmpty ? streamingContent : null,
         sessionKey: sessionRuntimeKey,
-        runtimeTurnId: _runtimeActiveTurnId,
+        runtimeTurnId: currentChannelRuntimeTurnId,
       ));
     }
 
@@ -591,7 +591,7 @@ mixin _MessagingOps on _ChatControllerBase {
         currentChannelId!,
         contentOverride: streamingContent.isNotEmpty ? streamingContent : null,
         sessionKey: sessionRuntimeKey,
-        runtimeTurnId: _runtimeActiveTurnId,
+        runtimeTurnId: currentChannelRuntimeTurnId,
       ));
     }
 
@@ -1850,9 +1850,7 @@ mixin _MessagingOps on _ChatControllerBase {
       if (hubInteraction != null) {
         persistedMeta['hub_interaction'] = hubInteraction;
       }
-      localDatabaseService
-          .updateMessageMetadata(sid, persistedMeta)
-          .ignore();
+      localDatabaseService.updateMessageMetadata(sid, persistedMeta).ignore();
     }
 
     final event = GroupInteractionRequestEvent(

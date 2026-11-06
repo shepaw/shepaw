@@ -8,6 +8,7 @@ import '../peer/peer_approval_payload.dart';
 import '../peer/services/flow_session_open.dart';
 import '../peer/services/hub_flow.dart';
 import '../services/approval/pending_approval_hub.dart';
+import '../services/approval/pending_approval_item.dart';
 import '../widgets/flow/flow_node_tree.dart';
 import '../widgets/flow/flow_yaml.dart';
 import '../widgets/flow/flow_yaml_editor.dart';
@@ -15,20 +16,50 @@ import '../widgets/flow/flow_yaml_editor.dart';
 /// P6：「去回答」要定位到那张待答卡片。孤儿卡落的确定性消息行是
 /// `peer_form_<approval_id>`；提醒项 id 是 `action:<form_id>`（form_id 就等于
 /// approval_id）。找不到待答项时返回 null —— 只打开会话，不强求高亮。
+///
+/// A6-8：动作确认提醒也可能排在表单卡前面，直接取第一条会把高亮指到
+/// 错误的气泡。表单提醒（[PendingApprovalItem.isForm]）优先，其余留作兜底。
 @visibleForTesting
 String? pendingFlowFormMessageId(String channelId) {
-  for (final item in PendingApprovalHub.instance.itemsForChannel(channelId)) {
+  const actionPrefix = 'action:';
+  const formCardPrefix = 'peer_form_';
+  String? cardIdFor(PendingApprovalItem item) {
     final mid = item.messageId;
-    if (mid != null && mid.isNotEmpty) return mid;
-    const prefix = 'action:';
-    if (item.id.startsWith(prefix)) {
-      final formId = item.id.substring(prefix.length);
+    // 已经落在确定性表单行上时直接用它，别再按提醒 id 另拼一个。
+    if (mid != null && mid.startsWith(formCardPrefix)) return mid;
+    if (item.id.startsWith(actionPrefix)) {
+      final formId = item.id.substring(actionPrefix.length);
       if (formId.isNotEmpty) {
         return PeerApprovalPayload.formCardMessageId(formId);
       }
     }
+    return mid != null && mid.isNotEmpty ? mid : null;
   }
-  return null;
+
+  String? fallback;
+  for (final item in PendingApprovalHub.instance.itemsForChannel(channelId)) {
+    final mid = item.messageId;
+    // 从 DB hydrate 出来的表单提醒没有 interactionType，按确定性消息行
+    // `peer_form_<form_id>` 也能认出来。
+    final isFormCard =
+        item.isForm || (mid != null && mid.startsWith(formCardPrefix));
+    if (isFormCard) {
+      final formCard = cardIdFor(item);
+      if (formCard != null) return formCard;
+    }
+    if (mid != null && mid.isNotEmpty) {
+      fallback ??= mid;
+    } else {
+      final id = item.id;
+      if (id.startsWith(actionPrefix)) {
+        final formId = id.substring(actionPrefix.length);
+        if (formId.isNotEmpty) {
+          fallback ??= PeerApprovalPayload.formCardMessageId(formId);
+        }
+      }
+    }
+  }
+  return fallback;
 }
 
 /// 工作流运行视图（方案 C.2）：节点树叠状态，随 `flow.*` 事件更新；
@@ -109,6 +140,7 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
             event.nodeStatus!,
             event.attempt,
             sessionId: event.sessionId,
+            agentId: event.agentId,
           );
         } else if (event.runStatus != null) {
           _run = run.withRunStatus(event.runStatus!);

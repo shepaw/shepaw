@@ -92,7 +92,8 @@ void main() {
     expect(FlowRunView.fromResponse({'success': false}), isNull);
   });
 
-  test('P4: nodes decode session_id / agent_id and keep the legacy slot key', () {
+  test('P4: nodes decode session_id / agent_id and keep the legacy slot key',
+      () {
     final node = FlowNode.fromJson({
       'key': 'seq/impl',
       'id': 'impl',
@@ -112,7 +113,8 @@ void main() {
     expect(updated.agentId, 'agent-7');
     expect(updated.session, 'flow:r1:impl');
     expect(updated.awaitsAnswer, isFalse);
-    expect(FlowNode.fromJson({'key': 'a', 'id': 'a', 'kind': 'task'}).hasSession,
+    expect(
+        FlowNode.fromJson({'key': 'a', 'id': 'a', 'kind': 'task'}).hasSession,
         isFalse);
     // 演练树也要带着会话信息，否则预览里入口会消失。
     final rehearsed = node.withProgress(const {}, 'impl');
@@ -120,15 +122,27 @@ void main() {
     expect(rehearsed.agentId, 'agent-7');
   });
 
-  test('P4: flow.node.changed carries session_id into the tree immediately', () {
+  test('P4/A6-5: flow.node.changed 把 session_id 与 agent_id 一起带进树', () {
     final event = FlowEvent.parse('flow.node.changed', {
       'run_id': 'r1',
       'node': 'seq/impl',
       'status': 'running',
       'session_id': 'flow_deadbe12_impl',
+      'agent_id': 'agent-7',
       'attempt': 1,
     })!;
     expect(event.sessionId, 'flow_deadbe12_impl');
+    expect(event.agentId, 'agent-7');
+    // 老主机把 agent 写成 `agent`（NodeState.resolved 里就是这个键）。
+    expect(
+        FlowEvent.parse('flow.node.changed', {
+          'run_id': 'r1',
+          'node': 'seq/impl',
+          'status': 'running',
+          'agent': 'agent-8',
+        })!
+            .agentId,
+        'agent-8');
     var run = FlowRunView.fromResponse({
       'success': true,
       'run_id': 'r1',
@@ -139,11 +153,15 @@ void main() {
       'yaml': 'steps: []',
     })!;
     run = run.withNodeStatus(event.node!, event.nodeStatus!, event.attempt,
-        sessionId: event.sessionId);
+        sessionId: event.sessionId, agentId: event.agentId);
     expect(run.tree.single.sessionId, 'flow_deadbe12_impl');
+    expect(run.tree.single.agentId, 'agent-7');
     expect(run.tree.single.status, FlowNodeStatus.running);
     // F19 改写用的 yaml 不能被状态更新吃掉。
     expect(run.yaml, 'steps: []');
+    // 事件没带 agent_id 时保留树上已有的成员，不把入口清空。
+    final noAgent = run.withNodeStatus(event.node!, FlowNodeStatus.done, 2);
+    expect(noAgent.tree.single.agentId, 'agent-7');
   });
 
   test('node events update the tree in place and run events flip the status',
@@ -324,9 +342,14 @@ void designModelTests() {
   test('if 分支里的容器仍能被递归定位到（运行视图改写用）', () {
     final tree = [
       const FlowNode(key: 'c', id: 'c', kind: 'if', children: [
-        FlowNode(key: 'c/then', id: 'seq', kind: 'seq', branch: 'then', children: [
-          FlowNode(key: 'c/then/leaf', id: 'leaf', kind: 'task'),
-        ]),
+        FlowNode(
+            key: 'c/then',
+            id: 'seq',
+            kind: 'seq',
+            branch: 'then',
+            children: [
+              FlowNode(key: 'c/then/leaf', id: 'leaf', kind: 'task'),
+            ]),
         FlowNode(key: 'c/else', id: 'gate', kind: 'gate', branch: 'else'),
       ]),
     ];

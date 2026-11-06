@@ -269,9 +269,12 @@ class FlowNode {
 }
 
 /// 主机目前不在 `flow_run_get_resp` 里下发 run 级惜宝会话 id，但每个节点
-/// 会话都是 `flow_<rid8>_<...>`（群内可能再带 `group:...:` 前缀）。前缀里的
-/// `<rid8>` 就是这次运行的 tag，由此拼出 P6 的运行会话 `flow_<rid8>_she`。
+/// 会话都是 `flow_<tag>_<...>`（群内可能再带 `group:...:` 前缀）。前缀里的
+/// tag 是这次运行的十六进制短指纹：老主机 8 位，H6-10 之后是 16 位，
+/// 两种都要能推出 P6 的运行会话 `flow_<tag>_she`。
 /// 找不到带会话的节点时返回 null —— 没跑过任何节点，卡片也还没到，没处可点。
+/// App 侧不写死 tag 长度（8 位老主机 / 16 位 H6-10 都认）：只要能抓到
+/// `flow_<tag>_` 这一段就能拼出运行会话，避免主机换形状后入口消失。
 final RegExp _flowRunTag = RegExp(r'flow_([A-Za-z0-9]+)_');
 
 String? flowRunSheSessionId(Iterable<FlowNode> tree) {
@@ -370,6 +373,7 @@ class FlowRunView {
     FlowNodeStatus status,
     int attempt, {
     String? sessionId,
+    String? agentId,
   }) {
     return FlowRunView(
       runId: runId,
@@ -383,6 +387,7 @@ class FlowRunView {
               status: status,
               attempt: attempt,
               sessionId: sessionId,
+              agentId: agentId,
             ),
           ),
       ],
@@ -456,7 +461,8 @@ class FlowEvent {
       : node = null,
         nodeStatus = null,
         attempt = 0,
-        sessionId = null;
+        sessionId = null,
+        agentId = null;
 
   const FlowEvent.node({
     required this.runId,
@@ -464,6 +470,7 @@ class FlowEvent {
     required this.nodeStatus,
     this.attempt = 0,
     this.sessionId,
+    this.agentId,
   }) : runStatus = null;
 
   final String runId;
@@ -474,6 +481,16 @@ class FlowEvent {
 
   /// `flow.node.changed` 上新下发的真会话 id；有它不用等重拉就能放入口。
   final String? sessionId;
+
+  /// 同帧的执行 agent。`flow_run_get_resp` 重拉要 400ms 之后才到，这之前点
+  /// 「查看会话」若没有 agentId 会建出一条没有成员的空壳频道。
+  /// 主机旧帧里这个字段叫 `agent`，两种都认；缺失时沿用树上已有的值。
+  final String? agentId;
+
+  static String? _nonEmptyText(Map<String, dynamic> data, String key) {
+    final value = data[key];
+    return value is String && value.isNotEmpty ? value : null;
+  }
 
   static FlowEvent? parse(String type, Map<String, dynamic> data) {
     final runId = data['run_id'];
@@ -493,10 +510,9 @@ class FlowEvent {
         node: node,
         nodeStatus: status,
         attempt: (data['attempt'] as num?)?.toInt() ?? 0,
-        sessionId: data['session_id'] is String &&
-                (data['session_id'] as String).isNotEmpty
-            ? data['session_id'] as String
-            : null,
+        sessionId: _nonEmptyText(data, 'session_id'),
+        agentId:
+            _nonEmptyText(data, 'agent_id') ?? _nonEmptyText(data, 'agent'),
       );
     }
     return null;

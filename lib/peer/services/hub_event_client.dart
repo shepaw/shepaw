@@ -1205,6 +1205,14 @@ class HubEventClient {
           in await db.listLiveTurnPlaceholderIds(channelId)) {
         if (livePlaceholders.contains(placeholderId)) continue;
         await db.deleteMessage(placeholderId);
+        // A6-6：占位行是 `hub-live-<turnId>`。重启后内存里的回合索引已经
+        // 没了，光删行不够——同一 turn 的迟到 chunk 会把它当新回合再建一个
+        // 永久 streaming 占位。把从 id 反解出来的 turnId 记成 settled（同样
+        // 有界），迟到帧才会在 [_onFlowControlChunk] 入口被丢掉。
+        if (placeholderId.startsWith(liveTurnPlaceholderPrefix)) {
+          _markSettledTurn(
+              placeholderId.substring(liveTurnPlaceholderPrefix.length));
+        }
       }
     }
     _notify(channelId);
@@ -1663,7 +1671,11 @@ class HubEventClient {
     // 保留到该回合的最终 `message.created` 到达（[_insertMessage] 会收掉），
     // 或等过 [_flowIdleFinalizeDelay] 把占位收尾成终态（见 [_finalizeIdleTurn]）。
     if (snapshot['state'] != 'running') {
-      final turnId = (data['turn_id'] ?? '').toString();
+      // A6-7：旧主机只发 `request_id`，chunk 用 `turn_id ?? request_id`
+      // 登记 [_liveChannels]；idle 必须按同一套提取，否则永远找不到这一
+      // 回合，占位一直挂在 streaming。
+      final turnId =
+          (snapshot['turn_id'] ?? snapshot['request_id'] ?? '').toString();
       if (turnId.isNotEmpty && _liveChannels.containsKey(turnId)) {
         await _flushLiveTurn(turnId);
         if (_liveChannels.containsKey(turnId)) _scheduleIdleFinalize(turnId);

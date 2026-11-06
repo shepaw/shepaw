@@ -291,10 +291,11 @@ List<String> refWarningsAfterMove(
     warnings.add('${origParent.id} (empty container)');
   }
 
-  // 4) 拖进 par：join.at_least 和变量写冲突交给主机诊断。
+  // 4) 从外面拖进 par：join.at_least 和变量写冲突交给主机诊断。
+  //    同一 par 内换个位置不会改变并行关系，别误报（A6-10）。
   final newParent =
       target.parentId.isEmpty ? null : flowLocate(moved, target.parentId)?.node;
-  if (newParent?.kind == 'par') {
+  if (newParent?.kind == 'par' && target.parentId != origParent?.id) {
     warnings.add('par ${newParent!.id} (join/write)');
   }
 

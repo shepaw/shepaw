@@ -589,35 +589,52 @@ void main() {
         mirror.stateFor('flow_deadbe12_impl').turnId, 'flow-deadbe12-impl-a2');
   });
 
-  test('A4-1: flow 帧绕过 hub 身份与 revision 比较', () {
+  test('A6-3: flow 帧跳过 revision 比较，但仍校验 hub 身份', () {
     final mirror = SessionRuntimeMirror();
     addTearDown(mirror.dispose);
     mirror.reconcileTo(<Map<String, dynamic>>[
       snap(key: 'agent:hub:main', revision: 1, state: 'idle', turnId: ''),
     ], hubId: 'hub-new');
 
+    // 同 hub、per-key revision 回落：照常落地（不参与 hub 全局 revision 空间）。
     expect(
       mirror.apply(snap(
         key: 'flow_deadbe12_impl',
         revision: 9,
         flow: true,
-        hubId: 'hub-old',
+        hubId: 'hub-new',
         turnId: 't9',
       )),
       isTrue,
-      reason: 'flow 帧只作用于自己的 key，不参与 hub revision 空间',
+      reason: 'flow 帧只作用于自己的 key，revision 从 1 重来也要接受',
     );
+    // 旧 hub 的迟到 flow 帧：不能把当前主机已收尾的回合复活。
+    expect(
+      mirror.apply(snap(
+        key: 'flow_deadbe12_impl',
+        revision: 99,
+        flow: true,
+        hubId: 'hub-old',
+        turnId: 'stale-flow',
+      )),
+      isFalse,
+      reason: '换了 hub 后旧主机的 flow 帧一律拒绝',
+    );
+    expect(mirror.stateFor('flow_deadbe12_impl').turnId, 't9');
+    expect(mirror.stateFor('flow_deadbe12_impl').isRunning, isTrue);
+
+    // 同 hub 的低 revision idle 仍要收尾。
     expect(
       mirror.apply(snap(
         key: 'flow_deadbe12_impl',
         revision: 1,
         flow: true,
-        hubId: 'hub-old',
+        hubId: 'hub-new',
         state: 'idle',
         turnId: '',
       )),
       isTrue,
-      reason: 'per-key revision 回落后也应用',
+      reason: '只有「同 hub 但低 revision」才跳过 reducer',
     );
     expect(mirror.stateFor('flow_deadbe12_impl').isRunning, isFalse);
 
@@ -630,6 +647,17 @@ void main() {
         turnId: 'stale',
       )),
       isFalse,
+    );
+    // 没有 hub_id 的旧帧仍能落地（主机老版本 / 对账未确立身份时）。
+    expect(
+      mirror.apply(snap(
+        key: 'flow_deadbe12_impl',
+        revision: 1,
+        flow: true,
+        hubId: '',
+        turnId: 't-no-hub',
+      )),
+      isTrue,
     );
   });
 

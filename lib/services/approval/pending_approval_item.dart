@@ -14,6 +14,11 @@ class PendingApprovalItem {
   final PendingApprovalKind kind;
   final int createdAt;
 
+  /// 这张提醒来自 `form` 交互（`AskUserQuestion` 表单卡），不是动作确认。
+  /// 两者共用 `action:` id 前缀和 `kind: action`，「去回答」要靠它把高亮
+  /// 定位到确定性的 `peer_form_<form_id>` 卡片，而不是第一条提醒的消息。
+  final bool isForm;
+
   const PendingApprovalItem({
     required this.id,
     required this.channelId,
@@ -22,6 +27,7 @@ class PendingApprovalItem {
     required this.agentName,
     required this.kind,
     required this.createdAt,
+    this.isForm = false,
   });
 
   PendingApprovalItem copyWith({
@@ -29,6 +35,7 @@ class PendingApprovalItem {
     String? messageId,
     String? agentName,
     int? createdAt,
+    bool? isForm,
   }) =>
       PendingApprovalItem(
         id: id,
@@ -38,6 +45,7 @@ class PendingApprovalItem {
         agentName: agentName ?? this.agentName,
         kind: kind,
         createdAt: createdAt ?? this.createdAt,
+        isForm: isForm ?? this.isForm,
       );
 
   static String planId(String workflowId) => 'plan:$workflowId';
@@ -98,6 +106,7 @@ class PendingApprovalItem {
         agentName: agentName,
         kind: PendingApprovalKind.action,
         createdAt: now,
+        isForm: true,
       );
     }
     if (interactionType == 'action_confirmation') {

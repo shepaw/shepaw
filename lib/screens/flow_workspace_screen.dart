@@ -623,7 +623,10 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
       );
     }
     return FlowDesignScreen(
-      key: ValueKey('flow-detail-$_detailToken'),
+      // A6-1：同名流程可能同时存在于两台主机。key 带上 _host，切主机时
+      // 强制重建详情（连同它自己的 controller / 引用 / agent 缓存），
+      // 不让旧 peerId 的草稿和请求混进新主机。
+      key: ValueKey('flow-detail-$_detailToken-$_host'),
       peerId: _host,
       name: name,
       scope: widget.scope,

@@ -320,6 +320,10 @@ mixin _LoadOps on _ChatControllerBase {
     //    （与 stopStreaming 同款，见 GroupTurnGate 注释）。
     groupTurnGate.invalidate();
 
+    // A6-2：这个 id 属于旧频道的运行中回合。留着它，在新频道按停止会把
+    // 旧会话的 flow turn id 当成本频道的发出去（误停 A / 发到错误主机）。
+    _runtimeActiveTurnId = null;
+
     // 3. 清 DM 流式会话，且不触发 deferred-reload 链：必须先复位标志再
     //    clear()——clear() 会调 onClear → _onStreamingSessionCleared →
     //    reloadMessagesFromDB()，否则会在新频道上误跑一次 reconcile。
@@ -673,5 +677,4 @@ mixin _LoadOps on _ChatControllerBase {
     _statusAgentId = id;
     unawaited(refreshAgentStatus());
   }
-
 }
