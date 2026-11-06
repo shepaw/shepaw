@@ -1245,11 +1245,10 @@ mixin _MessagingOps on _ChatControllerBase {
       ..remove('orphan');
     final existing = messageIdMap[messageId];
     if (existing != null) {
-      // 保留本地已经填好/提交的状态，只合并主机这次带来的字段。
-      final existingForm = existing.metadata?['form'];
-      final form = existingForm is Map
-          ? {...existingForm, ...data}
-          : <String, dynamic>{...data};
+      // 保留本地已经填好/提交/作废的状态。`{...existing, ...data}` 在
+      // `existing is Map` 之后运行时类型是 `Map<dynamic, dynamic>`，
+      // 列表里 `as Map<String, dynamic>` 会抛，release 上整段消息区变成灰屏。
+      final form = FormFieldShape.mergeCard(existing.metadata?['form'], data);
       final updated = ChatStreamingText.withMergedMetadata(
         existing,
         {'form': form},

@@ -86,6 +86,34 @@ class FormFieldShape {
     return '$value';
   }
 
+  /// 只认字符串。数字、布尔值不当作 id / 作废原因，免得 `"true"` 被看成已作废。
+  static String? strictString(Object? value) =>
+      value is String ? value : null;
+
+  /// 收成 `Map<String, dynamic>`。
+  ///
+  /// `{...existing, ...incoming}` 在 `existing is Map` 之后，字面量的运行时
+  /// 类型是 `Map<dynamic, dynamic>`。`is Map<String, dynamic>` 为假，
+  /// `as Map<String, dynamic>?` 直接抛。列表项在 release 里会被换成一块
+  /// 尽量撑高的错误占位，整段消息区看起来像白屏。
+  static Map<String, dynamic>? stringKeyMap(Object? value) {
+    if (value == null) return null;
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return null;
+  }
+
+  /// 把主机再投来的卡片叠到本地那张上。
+  ///
+  /// 本地已经记下的作废 / 作答不被一份「还开着」的补发盖掉。
+  static Map<String, dynamic> mergeCard(
+    Object? existing,
+    Map<String, dynamic> incoming,
+  ) {
+    final base = stringKeyMap(existing) ?? <String, dynamic>{};
+    return Map<String, dynamic>.from(base)..addAll(incoming);
+  }
+
   static bool asBool(dynamic value) {
     if (value is bool) return value;
     if (value is num) return value != 0;

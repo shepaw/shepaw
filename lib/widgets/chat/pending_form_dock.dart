@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/message.dart';
 import '../../services/she_service.dart';
+import '../form_field_shape.dart';
 import '../action_confirmation_buttons.dart';
 import '../file_upload_bubble.dart';
 import '../multi_select_bubble.dart';
@@ -37,10 +38,8 @@ class DockedInteraction {
   /// 等用户回答的提问（表单 / 单选 / 多选 / 上传），不是工具审批。
   bool get isQuestion => kind != DockedInteractionKind.approval;
 
-  Map<String, dynamic>? get card {
-    final data = message.metadata?[kind.metadataKey];
-    return data is Map<String, dynamic> ? data : null;
-  }
+  Map<String, dynamic>? get card =>
+      FormFieldShape.stringKeyMap(message.metadata?[kind.metadataKey]);
 }
 
 /// 顺序与 `MessageBubble._buildInteractiveFooter` 一致：一条消息上只画
