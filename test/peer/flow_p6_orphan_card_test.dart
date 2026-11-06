@@ -427,9 +427,20 @@ void main() {
       expect(FlowNodeStatus.waitingUser.isTerminal, isFalse);
     });
 
-    test('halted 仍解析成 halted，但也按「等人回答」处理', () {
+    test('A7-6: halted 是终态失败，不算等人回答', () {
       expect(FlowNodeStatus.parse('halted'), FlowNodeStatus.halted);
-      expect(FlowNodeStatus.halted.isWaitingForUser, isTrue);
+      expect(FlowNodeStatus.halted.isWaitingForUser, isFalse,
+          reason: '主机 Halted 没有自动卡片，不能给红点 / 去回答');
+      expect(FlowNodeStatus.halted.isTerminal, isTrue,
+          reason: '仍在 isTerminal 里');
+      const node = FlowNode(
+        key: 'impl',
+        id: 'impl',
+        kind: 'task',
+        status: FlowNodeStatus.halted,
+        sessionId: 'flow_deadbe12_impl',
+      );
+      expect(node.awaitsAnswer, isFalse);
     });
 
     test('未知状态返回 null 且不抛异常', () {

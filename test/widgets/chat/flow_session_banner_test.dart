@@ -120,4 +120,83 @@ void main() {
     expect(find.text('查看运行'), findsOneWidget);
     expect(find.byKey(const ValueKey('flow-session-view-run')), findsOneWidget);
   });
+
+  Widget bannerApp(FlowSessionOrigin origin) => MaterialApp(
+        locale: const Locale('zh'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(body: FlowSessionBanner(origin: origin)),
+      );
+
+  test('A7-7: origin 带上会话的 agent 行 / 消息里的来源 peer', () {
+    final messages = [
+      _message({
+        'flow': {'run_id': 'r16', 'node_key': 'a/impl'},
+        'source_peer_id': 'p1',
+      }),
+    ];
+    final origin = flowSessionOriginOf(messages, agentRowId: 'agent-row-impl')!;
+    expect(origin.runId, 'r16');
+    expect(origin.sourceAgentId, 'agent-row-impl');
+    expect(origin.peerId, 'p1');
+
+    // agent 行换了（会话切换）必须重新扫描，别沿用上一条的 origin。
+    final cache = FlowSessionOriginCache();
+    expect(cache.resolve(messages, agentRowId: 'a')?.sourceAgentId, 'a');
+    expect(cache.scanCount, 1);
+    expect(cache.resolve(messages, agentRowId: 'b')?.sourceAgentId, 'b');
+    expect(cache.scanCount, 2);
+  });
+
+  testWidgets('A7-7: 查看运行连到来源主机 p1，而不是当前 activeHost p2', (tester) async {
+    final opened = <({String peerId, String runId})>[];
+    debugFlowSourcePeerResolver = (rowId) async {
+      expect(rowId, 'agent-row-impl');
+      return 'p1';
+    };
+    debugFlowActiveHost = () async => 'p2';
+    debugOpenFlowRun = (peerId, runId) async {
+      opened.add((peerId: peerId, runId: runId));
+    };
+    addTearDown(() {
+      debugFlowSourcePeerResolver = null;
+      debugFlowActiveHost = null;
+      debugOpenFlowRun = null;
+    });
+
+    final origin = flowSessionOriginOf([
+      _message({
+        'flow': {'run_id': 'r16', 'node_key': 'a/impl'},
+      }),
+    ], agentRowId: 'agent-row-impl')!;
+    await tester.pumpWidget(bannerApp(origin));
+    await tester.tap(find.byKey(const ValueKey('flow-session-view-run')));
+    await tester.pump();
+
+    expect(opened, hasLength(1));
+    expect(opened.single.peerId, 'p1', reason: '不能用当前主机 p2 去查另一台主机发起的运行');
+    expect(opened.single.runId, 'r16');
+  });
+
+  testWidgets('A7-7: 来源 peer 拿不到才退回 activeHost', (tester) async {
+    final opened = <String>[];
+    debugFlowSourcePeerResolver = (_) async => '';
+    debugFlowActiveHost = () async => 'p2';
+    debugOpenFlowRun = (peerId, _) async => opened.add(peerId);
+    addTearDown(() {
+      debugFlowSourcePeerResolver = null;
+      debugFlowActiveHost = null;
+      debugOpenFlowRun = null;
+    });
+
+    final origin = flowSessionOriginOf([
+      _message({
+        'flow': {'run_id': 'r16', 'node_key': 'a/impl'},
+      }),
+    ], agentRowId: 'agent-row-unknown')!;
+    await tester.pumpWidget(bannerApp(origin));
+    await tester.tap(find.byKey(const ValueKey('flow-session-view-run')));
+    await tester.pump();
+    expect(opened, ['p2']);
+  });
 }

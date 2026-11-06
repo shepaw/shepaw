@@ -93,7 +93,7 @@ void main() {
         findsNothing);
   });
 
-  testWidgets('P6: halted 节点也按等人回答露出入口（防御）', (tester) async {
+  testWidgets('A7-6: halted 是终态，没有去回答 / 红点 / 等你回答', (tester) async {
     await tester.pumpWidget(_app(const [
       FlowNode(
         key: 'impl',
@@ -104,9 +104,13 @@ void main() {
       ),
     ]));
     expect(find.byKey(const ValueKey('flow-node-goto-answer-impl')),
-        findsOneWidget);
+        findsNothing);
     expect(find.byKey(const ValueKey('flow-node-session-waiting')),
-        findsOneWidget);
+        findsNothing);
+    expect(find.text('去回答'), findsNothing);
+    expect(find.text('等你回答'), findsNothing);
+    // 节点会话入口本身还在，只是不该高亮成「等人回答」。
+    expect(find.byKey(const ValueKey('flow-node-session-impl')), findsOneWidget);
   });
 
   testWidgets('P6: 运行中的 gate 仍显示选项按钮（回归）', (tester) async {

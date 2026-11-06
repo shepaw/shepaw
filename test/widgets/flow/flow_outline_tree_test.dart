@@ -347,9 +347,12 @@ void main() {
     await tester.pump(const Duration(milliseconds: 16));
 
     FlowOutlineTree.debugAutoScrollMoves = 0;
+    FlowOutlineTree.debugAutoScrollTicks = 0;
     await tester.pump(const Duration(milliseconds: 160));
     expect(FlowOutlineTree.debugAutoScrollMoves, 0,
         reason: '指针离开大纲后不能按最后停在边缘的位置继续自动滚动');
+    expect(FlowOutlineTree.debugAutoScrollTicks, 0,
+        reason: 'A7-10：onLeave 必须真的取消 16ms 计时器，不能空转');
 
     await gesture.up();
     await tester.pumpAndSettle();

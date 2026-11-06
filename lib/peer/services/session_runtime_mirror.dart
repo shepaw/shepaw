@@ -194,12 +194,13 @@ class SessionRuntimeMirror {
     this.flowRetention = const Duration(seconds: 30),
   });
 
-  /// 重连时保留下来的 running flow 条目最多再撑多久。
+  /// 重连保留 / 最近一次 flow 活动之后，running flow 条目最多再撑多久。
   ///
   /// 节点会话不在 `session_snapshot_resp` 里，断线期间丢掉的 idle 帧没有
   /// 别的路径补回来。保留 running（停止按钮要靠 turnId）必须有边界：
-  /// 在保留期内没有新的 flow 活动（chunk）就按 idle 收尾，否则会永远显示
-  /// 正在输出、停止按钮发无效取消。
+  /// 最后一次活动之后 [flowRetention] 内没有新的 flow 活动（chunk / running
+  /// 帧）就按 idle 收尾，否则会永远显示正在输出、停止按钮发无效取消。
+  /// 活动只把窗口刷新回完整时长，绝不取消这个上限（A7-4）。
   final Duration flowRetention;
 
   final Map<String, ValueNotifier<SessionState>> _notifiers = {};
@@ -220,6 +221,25 @@ class SessionRuntimeMirror {
   /// 接受新 hub 的任何 revision；旧 hub 的历史回放按 id 不匹配拒绝。
   /// 墙钟不可靠（换 hub / NTP 回拨），不再用它做水位。
   String? _hubId;
+
+  /// 当前主机是哪个配对设备（全量对账回执的 peerId）。主机 `session.state`
+  /// 裸帧根本不带 `hub_id`，换主机后只有连接身份能挡住旧主机的迟到回放。
+  String? _hubPeerId;
+
+  /// 换 hub 前还在 running 的 flow turn id。旧主机重放的 running 帧既没有
+  /// `hub_id`、又没有可核对的连接身份时，靠它把「已经死掉的回合」认出来。
+  /// 有界，避免长会话无限增长。
+  final Set<String> _retiredFlowTurns = <String>{};
+  static const _retiredFlowTurnCap = 512;
+
+  void _rememberRetiredFlowTurn(String turnId) {
+    if (turnId.isEmpty) return;
+    _retiredFlowTurns.remove(turnId);
+    _retiredFlowTurns.add(turnId);
+    while (_retiredFlowTurns.length > _retiredFlowTurnCap) {
+      _retiredFlowTurns.remove(_retiredFlowTurns.first);
+    }
+  }
 
   // 主机自发回合（推送 / 后台汇报 / pouch）的「哪些回合在跑」由
   // HubEventClient 的 _attached/_liveChannels/_liveBuffers 承担——它们是
@@ -305,48 +325,87 @@ class SessionRuntimeMirror {
   /// 应用一份主机快照。返回是否真的前移了状态。
   /// [force] 只给全量对账用：换 hub 后主机 revision 会从 1 重新计数，
   /// 低 revision 的权威快照也必须直接落地。
-  bool apply(Map<dynamic, dynamic> snapshot, {bool force = false}) {
+  /// [sourcePeerId] 是送来这帧的连接对端。裸 `session.state` 不带 `hub_id`
+  /// （A7-2），换主机后只有连接身份能区分新旧两代 revision 空间。
+  bool apply(
+    Map<dynamic, dynamic> snapshot, {
+    bool force = false,
+    String? sourcePeerId,
+  }) {
     final incoming = SessionState.fromSnapshot(snapshot);
     if (incoming.sessionKey.isEmpty) return false;
     final isFlow = incoming.isFlow;
-    // A6-3：flow 帧可以跳过 revision 比较（per-key 计数器重启会回退），
-    // 但**不能**跳过 hub 身份检查：切主机后旧 hub 迟到的 flow 帧同样会把
-    // 旧回合复活成 running。只有「同 hub 但低 revision」才绕过 reducer。
+    // A6-3/A7-2：flow 帧可以跳过 revision 比较（per-key 计数器重启会回退），
+    // 但**不能**跳过 hub 身份检查。身份有三种：帧里的 hub_id、连接对端的
+    // peerId（裸帧）、以及换 hub 时记下的旧 turn id。
     // 身份只由全量对账（reconcileTo）确立；还没有身份时两类帧都先接受。
     if (!force) {
       final hub = incoming.hubId;
       if (hub.isNotEmpty && _hubId != null && hub != _hubId) {
         return false;
       }
+      final fromPeer = sourcePeerId?.trim() ?? '';
+      if (fromPeer.isNotEmpty && _hubPeerId != null && fromPeer != _hubPeerId) {
+        return false;
+      }
+      if (_isStaleFlowReplay(incoming, fromPeer)) return false;
     }
-    // 任一权威帧都证明这个 key 还活着：取消重连保留的 idle 收尾计时器。
-    _cancelFlowRetention(incoming.sessionKey);
     final notifier = notifierFor(incoming.sessionKey);
-    final next = (force || isFlow)
-        ? incoming
-        : reduceSessionState(notifier.value, incoming);
-    if (identical(next, notifier.value)) return false;
+    final current = notifier.value;
+    final next =
+        (force || isFlow) ? incoming : reduceSessionState(current, incoming);
+    if (identical(next, current)) return false;
     notifier.value = next;
     lastChangedKey = incoming.sessionKey;
     changes.value++;
+    // A7-2：任何被接受的 running flow 帧都必须带 retention 计时器，否则丢了
+    // idle 就永远 running。A7-4：只有权威的 idle/终态帧才真正取消计时器。
+    if (isFlow && next.isRunning) {
+      _armFlowRetention(incoming.sessionKey);
+    } else {
+      _cancelFlowRetention(incoming.sessionKey);
+    }
     return true;
   }
 
-  /// 该 flow 会话还有真实活动（流式 chunk）：证明它确实在跑，取消保留计时。
-  ///
-  /// 主机不保证在 running 回合中途再发 `session.state`；如果只按时间收尾，
-  /// 重连后仍在出字的长回合会被误判成 idle。chunk 到达就把保留转成确认。
+  /// 「没有身份、revision 明显落后」的 running flow 帧只在当前 key 没有更权威
+  /// 状态时才接受。主机裸帧不带 hub_id，旧主机回放的 running 会把已经收尾的
+  /// 回合复活成 running；带 hub_id / 连接身份的帧在上面已经校验过。
+  bool _isStaleFlowReplay(SessionState incoming, String fromPeer) {
+    if (!incoming.isFlow || !incoming.isRunning) return false;
+    if (incoming.hubId.isNotEmpty) return false;
+    if (fromPeer.isNotEmpty && _hubPeerId != null) return false;
+    final turnId = incoming.turnId;
+    if (turnId.isNotEmpty && _retiredFlowTurns.contains(turnId)) return true;
+    final current = _notifiers[incoming.sessionKey]?.value;
+    if (current == null || current.sessionKey.isEmpty) return false;
+    // 当前 key 已有同 hub、revision 更大的收尾状态：这一帧只可能是重放。
+    // 严格大于，别把「同 hub 但低 revision」的真实 flow 帧误拒。
+    if (current.hubId.isNotEmpty &&
+        current.hubId == _hubId &&
+        !current.isRunning &&
+        current.revision > incoming.revision) {
+      return true;
+    }
+    return false;
+  }
+
+  /// 该 flow 会话还有真实活动（流式 chunk）：把保留计时**刷新**回完整的
+  /// [flowRetention]，不是取消。主机之后沉默就靠这个计时器自动回 idle。
   void noteFlowActivity(String sessionKey) {
-    _cancelFlowRetention(sessionKey);
+    final notifier = _notifiers[sessionKey];
+    if (notifier == null || !notifier.value.isRunning) return;
+    _armFlowRetention(sessionKey);
   }
 
   void _cancelFlowRetention(String sessionKey) {
     _flowRetentionTimers.remove(sessionKey)?.cancel();
   }
 
-  /// 重连保留：先留着 running（停止按钮要靠 turnId），但设一个上限。
-  void _retainRunningFlow(String sessionKey) {
-    if (_flowRetentionTimers.containsKey(sessionKey)) return;
+  /// 装（或重新装）一个保留计时器。activity / 新 running 帧都走这里重置窗口；
+  /// 只有权威的 idle/终态帧才走 [_cancelFlowRetention] 真正取消。
+  void _armFlowRetention(String sessionKey) {
+    _cancelFlowRetention(sessionKey);
     _flowRetentionTimers[sessionKey] = Timer(flowRetention, () {
       _flowRetentionTimers.remove(sessionKey);
       final notifier = _notifiers[sessionKey];
@@ -359,12 +418,20 @@ class SessionRuntimeMirror {
     });
   }
 
+  /// 重连保留：先留着 running（停止按钮要靠 turnId），但设一个上限。
+  void _retainRunningFlow(String sessionKey) {
+    if (_flowRetentionTimers.containsKey(sessionKey)) return;
+    _armFlowRetention(sessionKey);
+  }
+
   /// `session_snapshot_resp` / `events_sync_resp` 的批量对账。
   /// 顺序无所谓：reducer 只认 revision。
-  int applyAll(Iterable<dynamic> snapshots) {
+  int applyAll(Iterable<dynamic> snapshots, {String? sourcePeerId}) {
     var applied = 0;
     for (final snapshot in snapshots) {
-      if (snapshot is Map && apply(snapshot)) applied++;
+      if (snapshot is Map && apply(snapshot, sourcePeerId: sourcePeerId)) {
+        applied++;
+      }
     }
     return applied;
   }
@@ -382,8 +449,13 @@ class SessionRuntimeMirror {
 
   /// 启动 / 重连全量对账：快照里的会话强制落地（新 hub 的 revision 可能比
   /// 本地低），没提到的会话重置为空。[hubId] 是响应顶层的主机身份，空快照
-  /// 时也要靠它识别换 hub。
-  void reconcileTo(Iterable<dynamic> snapshots, {String? hubId}) {
+  /// 时也要靠它识别换 hub；[sourcePeerId] 是回执来自哪个连接，裸
+  /// `session.state` 帧不带 hub_id，之后的身份校验要靠它。
+  void reconcileTo(
+    Iterable<dynamic> snapshots, {
+    String? hubId,
+    String? sourcePeerId,
+  }) {
     final seen = <String>{};
     final parsed = <Map<dynamic, dynamic>>[];
     String? effectiveHub = (hubId == null || hubId.isEmpty) ? null : hubId;
@@ -407,6 +479,14 @@ class SessionRuntimeMirror {
       }
       _flowRetentionTimers.clear();
       for (final entry in _notifiers.entries) {
+        // 旧 hub 这些回合已经死了：记下 turn id，之后无身份的旧 running 回放
+        // 一律拒绝，不能让它们复活成 running（A7-2）。
+        final before = entry.value.value;
+        if (before.isRunning &&
+            _isFlowSessionKey(entry.key) &&
+            before.turnId.isNotEmpty) {
+          _rememberRetiredFlowTurn(before.turnId);
+        }
         entry.value.value = SessionState.empty(entry.key);
         // 复位本身也是一次状态跃迁：必须通知监听者，否则 ChatController 的
         // running→idle 清理与整页 _notify() 不会执行，气泡会一直挂着。
@@ -417,6 +497,8 @@ class SessionRuntimeMirror {
     } else if (effectiveHub != null && effectiveHub.isNotEmpty) {
       _hubId = effectiveHub;
     }
+    final peer = sourcePeerId?.trim() ?? '';
+    if (peer.isNotEmpty) _hubPeerId = peer;
     for (final snapshot in parsed) {
       apply(snapshot, force: true);
     }
@@ -445,6 +527,7 @@ class SessionRuntimeMirror {
       timer.cancel();
     }
     _flowRetentionTimers.clear();
+    _retiredFlowTurns.clear();
     for (final notifier in _notifiers.values) {
       notifier.dispose();
     }

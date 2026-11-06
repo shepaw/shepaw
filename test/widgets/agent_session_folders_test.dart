@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/l10n/app_localizations.dart';
 import 'package:shepaw/peer/models/folded_sessions.dart';
+import 'package:shepaw/peer/services/flow_session_open.dart';
 import 'package:shepaw/peer/services/hub_folded_sessions.dart';
 import 'package:shepaw/peer/services/peer_connection_manager.dart';
 import 'package:shepaw/widgets/chat/agent_session_folders.dart';
@@ -317,6 +318,79 @@ void main() {
     // 折叠组也顺手重刷了。
     expect(summariesAsked, 2);
     await tester.pumpWidget(const SizedBox());
+    await bus.close();
+  });
+
+  testWidgets('A7-9: 折叠会话用 fromAgent，而不是抽屉的 agent', (tester) async {
+    final bus = StreamController<PeerControlEvent>.broadcast();
+    final client = HubFoldedSessions(
+      events: bus.stream,
+      send: (peerId, frame) async {
+        final id = frame['request_id'];
+        if (frame['folder'] != null) {
+          bus.add(PeerControlEvent(peerId: peerId, data: {
+            'type': 'agent_sessions_resp',
+            'request_id': id,
+            'agent_id': 'a1',
+            'folder': frame['folder'],
+            'sessions': [
+              {
+                'session_id': 'flow_deadbe12_impl',
+                'title': '节点会话',
+                'updated_at': 1,
+                'origin': {
+                  'kind': 'flow',
+                  'run_id': 'deadbe12',
+                  'node_key': 'impl',
+                  'from_agent': 'agent-node',
+                },
+              },
+            ],
+          }));
+          return true;
+        }
+        bus.add(PeerControlEvent(peerId: peerId, data: {
+          'type': 'agent_sessions_resp',
+          'request_id': id,
+          'agent_id': 'a1',
+          'sessions': [],
+          'folders': [
+            {'kind': 'flow', 'count': 1, 'latest_title': '最新一条'},
+          ],
+        }));
+        return true;
+      },
+    );
+    final opened = <({String channelId, String? agentId})>[];
+    debugOpenFlowSessionChannel = (channelId, agentId) async {
+      opened.add((channelId: channelId, agentId: agentId));
+    };
+    addTearDown(() => debugOpenFlowSessionChannel = null);
+
+    await tester.pumpWidget(MaterialApp(
+      locale: const Locale('zh'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: Scaffold(
+        body: _WithExpandedState(
+          peerId: 'p1',
+          remoteAgentId: 'a1',
+          client: client,
+        ),
+      ),
+    ));
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    await tester.tap(find.text('工作流 · 1'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('节点会话'));
+    await tester.pump();
+
+    expect(opened, hasLength(1));
+    expect(opened.single.channelId, 'psess_flow_deadbe12_impl');
+    expect(opened.single.agentId, 'agent-node',
+        reason: '多 agent 流程里 fromAgent 才是该节点的 agent');
     await bus.close();
   });
 }

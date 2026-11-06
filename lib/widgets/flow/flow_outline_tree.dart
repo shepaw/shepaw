@@ -134,6 +134,7 @@ class _FlowOutlineTreeState extends State<FlowOutlineTree> {
   String? _dragId;
   _Hover? _hover;
   double? _pointerDy;
+  bool _pointerLeftOutline = false;
   ScrollableState? _scrollable;
   Timer? _autoScroll;
   final Map<String, GlobalKey> _boxKeys = {};
@@ -160,6 +161,7 @@ class _FlowOutlineTreeState extends State<FlowOutlineTree> {
     _dragId = null;
     _hover = null;
     _pointerDy = null;
+    _pointerLeftOutline = false;
   }
 
   void _startDrag(String id) {
@@ -169,8 +171,14 @@ class _FlowOutlineTreeState extends State<FlowOutlineTree> {
     setState(() {
       _dragId = id;
       _hover = null;
+      _pointerLeftOutline = false;
     });
-    // 长列表拖到边缘时自动滚。
+    _resumeAutoScroll();
+  }
+
+  /// 指针回到大纲里（onMove）时把自动滚动计时器装回来。
+  void _resumeAutoScroll() {
+    if (_autoScroll != null || _dragId == null) return;
     _autoScroll = Timer.periodic(
       const Duration(milliseconds: 16),
       (_) => _autoScrollTick(),
@@ -189,15 +197,24 @@ class _FlowOutlineTreeState extends State<FlowOutlineTree> {
       _dragId = null;
       _hover = null;
       _pointerDy = null;
+      _pointerLeftOutline = false;
     });
   }
 
   void _autoScrollTick() {
     FlowOutlineTree.debugAutoScrollTicks++;
     if (!mounted) return;
+    // A7-10：离开大纲 / 拖拽已结束的判断必须放在 `_pointerDy == null` 的
+    // early return 之前，否则 onLeave 把位置清空后 16ms Timer 会一直空转到
+    // 拖拽结束。越界分支同样先把计时器停掉。
+    if (_pointerLeftOutline || _dragId == null) {
+      _autoScroll?.cancel();
+      _autoScroll = null;
+      return;
+    }
     final dy = _pointerDy;
     final pos = _scrollable?.position;
-    if (dy == null || pos == null || _dragId == null) return;
+    if (dy == null || pos == null) return;
     final box = _scrollable!.context.findRenderObject();
     if (box is! RenderBox || !box.attached) return;
     final top = box.localToGlobal(Offset.zero).dy;
@@ -206,6 +223,7 @@ class _FlowOutlineTreeState extends State<FlowOutlineTree> {
     // 停掉计时器，别让列表在指针不在时还一直滚。
     if (dy < top || dy > bottom) {
       _pointerDy = null;
+      _pointerLeftOutline = true;
       _autoScroll?.cancel();
       _autoScroll = null;
       return;
@@ -221,11 +239,14 @@ class _FlowOutlineTreeState extends State<FlowOutlineTree> {
     pos.jumpTo(target.clamp(pos.minScrollExtent, pos.maxScrollExtent));
   }
 
-  /// 指针离开某一行时调用。清掉最后记录的指针位置：`_onMove` 只在指针
-  /// 位于某一行上时才会更新它，指针移出大纲后如果继续按旧值滚，列表会一直
-  /// 停不下来。换到另一行时随后的 `onMove` 会立刻把位置补回来。
+  /// 指针离开某一行时调用。直接停掉自动滚动计时器：拖出大纲后没有新的
+  /// onMove 会来，继续 tick 只是 16ms 空转（A7-10）。指针回到大纲里时
+  /// [_onMove] 会立刻把位置补回来并把计时器重新装上。
   void _onPointerLeaveRow() {
     _pointerDy = null;
+    _pointerLeftOutline = true;
+    _autoScroll?.cancel();
+    _autoScroll = null;
   }
 
   /// 只算便宜的落点身份（行 + 上中下区 + if 分支），不碰全树预检。
@@ -289,8 +310,10 @@ class _FlowOutlineTreeState extends State<FlowOutlineTree> {
   void _onMove(FlowOutlineRow row, Offset global) {
     if (!mounted) return;
     _pointerDy = global.dy;
+    _pointerLeftOutline = false;
     final dragId = _dragId;
     if (dragId == null) return;
+    _resumeAutoScroll();
     // 先比便宜的落点身份；没变就别做 target / 全树预检。
     final slot = _slotAt(row, global);
     if (slot == null) return;

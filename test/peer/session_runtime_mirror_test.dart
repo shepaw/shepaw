@@ -661,7 +661,7 @@ void main() {
     );
   });
 
-  test('A4-1: 保留期内有 flow chunk 活动就不误收尾', () async {
+  test('A7-4: 连续 chunk 刷新 retention，chunk 停止 40ms 后自动回 idle', () async {
     final mirror = SessionRuntimeMirror(
       flowRetention: const Duration(milliseconds: 40),
     );
@@ -679,12 +679,166 @@ void main() {
       snap(key: 'agent:hub:main', revision: 2, state: 'idle', turnId: ''),
     ], hubId: 'hub-a');
 
-    await Future<void>.delayed(const Duration(milliseconds: 20));
-    mirror.noteFlowActivity('flow_deadbe12_impl');
-    await Future<void>.delayed(const Duration(milliseconds: 60));
+    // 连续 chunk：每 15ms 一次，跨过原本 40ms 的窗口也不该被误收尾。
+    for (var i = 0; i < 4; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 15));
+      mirror.noteFlowActivity('flow_deadbe12_impl');
+    }
     expect(mirror.stateFor('flow_deadbe12_impl').isRunning, isTrue,
-        reason: '还在出字的回合不能因为保留超时被清掉');
+        reason: '连续 chunk 期间不能因为保留超时被清掉');
     expect(
         mirror.stateFor('flow_deadbe12_impl').turnId, 'flow-deadbe12-impl-a1');
+
+    // 主机沉默：最后一次活动刷新出的 40ms 窗口到期，自动回 idle。
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    expect(mirror.stateFor('flow_deadbe12_impl').isRunning, isFalse,
+        reason: 'activity 必须是刷新而不是取消计时器');
+    expect(mirror.stateFor('flow_deadbe12_impl').turnId, '');
+  });
+
+  test('A7-4: 权威 idle 帧真正取消 retention 计时器', () async {
+    final mirror = SessionRuntimeMirror(
+      flowRetention: const Duration(milliseconds: 40),
+    );
+    addTearDown(mirror.dispose);
+    mirror.apply(snap(
+      key: 'flow_a74_impl',
+      revision: 1,
+      flow: true,
+      turnId: 'flow-a74-impl-a1',
+    ));
+    // running 帧本身也装了计时器（A7-2）；idle 必须把它真正取消。
+    mirror.apply(snap(
+      key: 'flow_a74_impl',
+      revision: 2,
+      flow: true,
+      state: 'idle',
+      turnId: '',
+    ));
+    var notifications = 0;
+    void listener() => notifications++;
+    mirror.changes.addListener(listener);
+    addTearDown(() => mirror.changes.removeListener(listener));
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    expect(notifications, 0, reason: 'idle 之后不该再有一次 retention 收尾跃迁');
+    expect(mirror.stateFor('flow_a74_impl').isRunning, isFalse);
+  });
+
+  test('A7-2: 切 hub 后旧 running 帧被拒，同 hub 低 revision 落地且带超时', () async {
+    final mirror = SessionRuntimeMirror(
+      flowRetention: const Duration(milliseconds: 40),
+    );
+    addTearDown(mirror.dispose);
+    const key = 'flow_a72_impl';
+    mirror.reconcileTo(<Map<String, dynamic>>[
+      snap(key: 'agent:hub:main', revision: 1, state: 'idle', turnId: ''),
+    ], hubId: 'hub-a', sourcePeerId: 'p1');
+    // 主机裸 `session.state` 帧根本没有 hub_id：靠连接 peer 校验身份。
+    expect(
+      mirror.apply(
+        snap(
+          key: key,
+          revision: 3,
+          flow: true,
+          hubId: '',
+          turnId: 'flow-old-a1',
+        ),
+        sourcePeerId: 'p1',
+      ),
+      isTrue,
+    );
+    expect(mirror.stateFor(key).isRunning, isTrue);
+
+    // 换主机：全量对账复位本地状态并记下旧 turn id。
+    mirror.reconcileTo(<Map<String, dynamic>>[
+      snap(key: 'agent:hub:main', revision: 1, state: 'idle', turnId: ''),
+    ], hubId: 'hub-b', sourcePeerId: 'p2');
+    expect(mirror.stateFor(key).isRunning, isFalse);
+
+    // 旧主机的 running 回放：连接身份不匹配 → 拒绝。
+    expect(
+      mirror.apply(
+        snap(
+          key: key,
+          revision: 2,
+          flow: true,
+          hubId: '',
+          turnId: 'flow-old-a1',
+        ),
+        sourcePeerId: 'p1',
+      ),
+      isFalse,
+      reason: '旧主机连接上的 running 帧不能复活死回合',
+    );
+    // 连 peerId 都没有的重放（events_sync / 老版本）：按退休 turn id 拒绝。
+    expect(
+      mirror.apply(snap(
+        key: key,
+        revision: 2,
+        flow: true,
+        hubId: '',
+        turnId: 'flow-old-a1',
+      )),
+      isFalse,
+      reason: '没有 hub_id 的旧 running 重放也必须被拒',
+    );
+    // 带旧 hub_id 的回放同样被拒。
+    expect(
+      mirror.apply(snap(
+        key: key,
+        revision: 99,
+        flow: true,
+        hubId: 'hub-a',
+        turnId: 'flow-old-a1',
+      )),
+      isFalse,
+    );
+    expect(mirror.stateFor(key).isRunning, isFalse,
+        reason: '切 hub 后不能被任何旧 running 帧复活');
+
+    // 同 hub、per-key 低 revision 的真实 running 帧仍要落地，且带 retention。
+    expect(
+      mirror.apply(
+        snap(
+          key: key,
+          revision: 1,
+          flow: true,
+          hubId: 'hub-b',
+          turnId: 'flow-new-a1',
+        ),
+        sourcePeerId: 'p2',
+      ),
+      isTrue,
+    );
+    expect(mirror.stateFor(key).turnId, 'flow-new-a1');
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    expect(mirror.stateFor(key).isRunning, isFalse,
+        reason: '任何被接受的 running flow 帧都要装 retention 计时器');
+  });
+
+  test('A7-2: 无身份但 revision 落后于权威收尾状态的 running 帧被拒', () async {
+    final mirror = SessionRuntimeMirror();
+    addTearDown(mirror.dispose);
+    mirror.reconcileTo(<Map<String, dynamic>>[
+      snap(
+        key: 'flow_a72_stale',
+        revision: 9,
+        state: 'idle',
+        turnId: '',
+        hubId: 'hub-a',
+      ),
+    ], hubId: 'hub-a');
+    expect(
+      mirror.apply(snap(
+        key: 'flow_a72_stale',
+        revision: 2,
+        flow: true,
+        hubId: '',
+        turnId: 'flow-old-a1',
+      )),
+      isFalse,
+      reason: '当前 key 已有更权威的收尾状态，低 revision running 只可能是重放',
+    );
+    expect(mirror.stateFor('flow_a72_stale').isRunning, isFalse);
   });
 }

@@ -467,7 +467,15 @@ mixin _SessionOps on _ChatControllerBase {
         if (isGroup) {
           chatService.cancelActiveGroupTasks(id);
         } else {
-          await chatService.cancelActiveDmTask(id);
+          // A7-8：节点会话是主机发起的回合，没有本地 _pending。和 stop 两处
+          // 一样带上 sessionKey + 当前 mirror 的 turnId，cancel 才能按 `flow-`
+          // 前缀路由到主机停节点；不传的话主机回合继续跑，下一条
+          // message.created 又把刚删的频道建回来。
+          await chatService.cancelActiveDmTask(
+            id,
+            sessionKey: sessionRuntimeKey,
+            runtimeTurnId: currentChannelRuntimeTurnId,
+          );
         }
       }
 

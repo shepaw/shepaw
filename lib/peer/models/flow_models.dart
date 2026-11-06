@@ -32,10 +32,10 @@ enum FlowNodeStatus {
     return null;
   }
 
-  /// 这一态是不是「等用户拍板」。`halted` 是旧的关卡等待态，也按等人处理；
-  /// P6 的「去回答」入口和卡片红点按它显示。
-  bool get isWaitingForUser =>
-      this == FlowNodeStatus.waitingUser || this == FlowNodeStatus.halted;
+  /// 这一态是不是「等用户拍板」。只有真正有 ask_user 卡片的 [waitingUser]
+  /// 才算：主机 `Halted` 是终态失败（`[NEED_ADMIN]` / blocked），v1 没有自动
+  /// 卡片，给它红点 +「去回答」只会把用户带到一张旧卡上（A7-6）。
+  bool get isWaitingForUser => this == FlowNodeStatus.waitingUser;
 
   bool get isTerminal => switch (this) {
         FlowNodeStatus.pending ||
@@ -138,8 +138,8 @@ class FlowNode {
   bool get hasSession => sessionId != null && sessionId!.isNotEmpty;
 
   /// 关卡正在等人回答。带节点会话且正在跑的执行节点也算：P6 的询问卡片会落在
-  /// 这条会话里，卡片上要能提示「等人回答」。等用户回答的节点态（waitingUser /
-  /// halted）同样要露出「去回答」入口。
+  /// 这条会话里，卡片上要能提示「等人回答」。真正有卡片的 [waitingUser] 同样
+  /// 要露出「去回答」入口；halted 是终态失败，不在其中（A7-6）。
   bool get awaitsAnswer =>
       (status == FlowNodeStatus.running && (kind == 'gate' || hasSession)) ||
       (status != null && status!.isWaitingForUser);

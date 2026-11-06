@@ -117,13 +117,19 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
   /// 展开后点其中一项 → 打开它的会话。工作流条目有真会话 id 时按私聊打开
   /// （能继续聊 / 停止），旧条目才退回只读的运行视图。
   void _openSession(BuildContext context, FoldedSession session) {
+    // A7-9：多 agent 流程里 `origin.from_agent` 才是这个节点的 agent；抽屉
+    // 的 remoteAgentId 是「打开抽屉时」那个 agent，拿它建频道成员 / 头像 /
+    // 发送目标全错。只有折叠项没带 fromAgent 时才退回抽屉的 agent。
+    final sessionAgent = session.fromAgent.trim().isNotEmpty
+        ? session.fromAgent.trim()
+        : widget.remoteAgentId;
     if (session.isFlow && session.runId.isNotEmpty) {
       final sessionId = flowFoldedSessionId(session.sessionId);
       if (sessionId != null) {
         unawaited(openFlowNodeSession(
           peerId: widget.peerId,
           sessionId: sessionId,
-          remoteAgentId: widget.remoteAgentId,
+          remoteAgentId: sessionAgent,
           title: session.title.isEmpty ? session.sessionId : session.title,
         ));
         return;
@@ -135,7 +141,7 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
       Navigator.of(context).push(MaterialPageRoute<void>(
         builder: (_) => GroupViewScreen(
           peerId: widget.peerId,
-          agentId: widget.remoteAgentId,
+          agentId: sessionAgent,
           groupId: session.groupId,
           groupSessionId: session.groupSessionId,
           title: session.title,
@@ -150,7 +156,7 @@ class _AgentSessionFoldersState extends State<AgentSessionFolders> {
     Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) => SessionHistoryScreen.forFolderSession(
         peerId: widget.peerId,
-        agentId: widget.remoteAgentId,
+        agentId: sessionAgent,
         sessionId: session.sessionId,
         title: session.title.isEmpty ? session.sessionId : session.title,
         client: _client,

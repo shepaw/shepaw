@@ -3570,6 +3570,8 @@ class _ChatScreenState extends State<ChatScreen>
             c.messages,
             scope: c.currentChannelId ?? '',
             metadataRevision: c.messageMetadataRevision,
+            // A7-7：带上本会话的 agent 行 id，横幅才能按来源主机打开运行页。
+            agentRowId: c.agentId ?? '',
           );
     return Scaffold(
       appBar: AppBar(

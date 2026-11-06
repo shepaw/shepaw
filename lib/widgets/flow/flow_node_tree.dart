@@ -374,8 +374,8 @@ class _SessionEntry extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final running = node.status == FlowNodeStatus.running;
-    // 等人的卡片：关卡开着、或节点处于 waitingUser / halted（P6 的 ask_user
-    // 卡片就落在这条会话里）。红点提醒「这条会话里有张卡等你回答」。
+    // 等人的卡片：关卡开着、或节点处于 waitingUser（P6 的 ask_user 卡片就
+    // 落在这条会话里）。halted 是终态失败、没有卡片，不画红点（A7-6）。
     final waiting = (node.kind == 'gate' && node.awaitsAnswer) ||
         (node.status?.isWaitingForUser ?? false);
     return Padding(
