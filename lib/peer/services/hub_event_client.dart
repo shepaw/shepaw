@@ -1126,10 +1126,10 @@ class HubEventClient {
           .map((entry) => entry.key)
           .toList();
       for (final id in turnId) {
-        await db.deleteMessage(liveTurnPlaceholderId(id));
-        _liveBuffers.remove(id);
-        _liveChannels.remove(id);
-        _forgetFlowTargets(id);
+        // 和 idle / turn.finished 走同一条清理路径：占位行、_flowPlaceholders、
+        // 落点缓存一起收掉。只删占位的话 _flowPlaceholders 会永远留着这个
+        // turnId，后续同回合 chunk 建不出占位、集合也无限增长。
+        await _clearLiveTurn(id);
       }
     }
     _notify(channelId);
@@ -1461,12 +1461,21 @@ class HubEventClient {
 
   /// `agent_metadata` 同样没有 _pending。进度 / thinking 元数据 v1 不画独立
   /// 气泡，但必须按 channel_id 把本地壳建好，后面的落库才有地方去。
+  ///
+  /// 与 chunk 共用 [_flowTargets]：同一回合的 metadata / chunk 只解析一次
+  /// 落点（查库 / 建壳很贵，且 metadata 常常先于第一片 chunk 到达）。
   Future<void> _onFlowControlMetadata(
     String peerId,
     Map<String, dynamic> data,
   ) async {
     if (!_isFlowRuntimeFrame(data)) return;
-    final target = await _resolveFlowControlTarget(peerId, data);
+    final turnId = (data['turn_id'] ?? data['request_id'] ?? '').toString();
+    final target = turnId.isEmpty
+        ? await _resolveFlowControlTarget(peerId, data)
+        : await _flowTargets.putIfAbsent(
+            _flowTargetKey(peerId, turnId),
+            () => _resolveFlowControlTarget(peerId, data),
+          );
     if (target.channelId.isNotEmpty) _notify(target.channelId);
   }
 

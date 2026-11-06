@@ -229,6 +229,10 @@ FlowDropTarget? resolveDrop(
     );
   }
 
+  // 目标行本身就在 `if` 分支里（row.branch 非空）时，before / after 也会
+  // 生成带 branch 的 move。旧主机不认分支标记，这种落点同样落不了。
+  if (!branchesLabelled && overRow.branch != null) return null;
+
   var index = overRow.index + (zone == DropZone.after ? 1 : 0);
   // 同父同支往下移：摘掉自己后目标下标会前移一位。
   if (_sameSlot(dragRow, overRow) && dragRow.index < overRow.index) {

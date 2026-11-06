@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/controllers/flow/flow_outline.dart';
@@ -118,6 +119,75 @@ void main() {
       }
       drops.clear();
     }
+  });
+
+  testWidgets('A2-3: 会断引用的落点 Tooltip 在 IgnorePointer 外层，能被触发', (tester) async {
+    final dragTree = [
+      FlowNode(key: 'a', id: 'a', kind: 'task'),
+      FlowNode(
+        key: 'b',
+        id: 'b',
+        kind: 'task',
+        fields: const {
+          'task': {'prompt': '{{ a.text }}'},
+        },
+      ),
+      FlowNode(
+        key: 'box',
+        id: 'box',
+        kind: 'seq',
+        children: [FlowNode(key: 'inner', id: 'inner', kind: 'task')],
+      ),
+    ];
+    final rows = buildFlowOutline(dragTree);
+    final keys = <String, GlobalKey>{
+      for (final r in rows) r.node.id: GlobalKey(),
+    };
+    await _pumpTree(
+      tester,
+      FlowOutlineTree(
+        rows: rows,
+        canEdit: true,
+        dragEnabled: true,
+        tree: dragTree,
+        rowKeys: keys,
+        onDrop: (_, __) {},
+      ),
+    );
+
+    // 把 a 拖进 box：b 的 {{ a.text }} 会从「引用在前面」变成前向引用。
+    final start = tester.getCenter(find.byKey(const ValueKey('drag-a')));
+    final rect = tester.getRect(find.byKey(keys['box']!));
+    final end =
+        Offset(rect.left + rect.width * 0.5, rect.top + rect.height * 0.5);
+    // 用鼠标拖：Tooltip 的 hover 触发依赖 MouseRegion 的命中测试。旧实现把
+    // Tooltip 放在 IgnorePointer 里，MouseRegion 收不到 hover，提示永远不出现。
+    final gesture =
+        await tester.startGesture(start, kind: PointerDeviceKind.mouse);
+    await tester.pump(const Duration(milliseconds: 16));
+    for (var i = 1; i <= 8; i++) {
+      await gesture.moveTo(Offset.lerp(start, end, i / 8)!);
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await tester.pump();
+    // hover 触发后 Tooltip 走 overlay 显示。
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(
+      find.byWidgetPredicate(
+        (w) => w is Tooltip && (w.message ?? '').contains('{{ a.text }}'),
+      ),
+      findsOneWidget,
+      reason: '预警 Tooltip 应该出现在落点高亮上',
+    );
+    expect(
+      find.textContaining('{{ a.text }}'),
+      findsOneWidget,
+      reason: 'Tooltip 应能被 hover 触发并显示提示文本',
+    );
+
+    await gesture.up();
+    await tester.pumpAndSettle();
   });
 
   testWidgets('A9 同一落点连续 move 不重复跑全树预检', (tester) async {

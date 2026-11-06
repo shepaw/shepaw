@@ -111,25 +111,6 @@ List<_Entry> _preOrder(List<FlowNode> tree) {
   return out;
 }
 
-FlowNode? _findNode(List<FlowNode> tree, String id) {
-  for (final n in tree) {
-    final hit = n.find((x) => x.id == id);
-    if (hit != null) return hit;
-  }
-  return null;
-}
-
-FlowNode? _parentOf(List<FlowNode> tree, String id) {
-  for (final n in tree) {
-    for (final c in n.children) {
-      if (c.id == id) return n;
-    }
-    final hit = _parentOf(n.children, id);
-    if (hit != null) return hit;
-  }
-  return null;
-}
-
 Iterable<String> _allStrings(Object? value) sync* {
   if (value is String) {
     yield value;
@@ -246,7 +227,7 @@ List<String> refWarningsAfterMove(
   FlowDropTarget target,
 ) {
   final warnings = <String>[];
-  final drag = _findNode(tree, dragId);
+  final drag = flowLocate(tree, dragId)?.node;
   if (drag == null) return warnings;
 
   final before = _preOrder(tree);
@@ -299,7 +280,7 @@ List<String> refWarningsAfterMove(
 
   // 3) 把容器里最后一个子节点拖走会让容器变空（seq/par/loop 空了会报错）。
   //    拖回原容器（into 区 / 同父换位置）时容器不会变空，别误报。
-  final origParent = _parentOf(tree, dragId);
+  final origParent = flowLocate(tree, dragId)?.parent;
   if (origParent != null &&
       target.parentId != origParent.id &&
       FlowStepDefaults.isContainer(origParent.kind) &&
@@ -309,7 +290,7 @@ List<String> refWarningsAfterMove(
 
   // 4) 拖进 par：join.at_least 和变量写冲突交给主机诊断。
   final newParent =
-      target.parentId.isEmpty ? null : _findNode(moved, target.parentId);
+      target.parentId.isEmpty ? null : flowLocate(moved, target.parentId)?.node;
   if (newParent?.kind == 'par') {
     warnings.add('par ${newParent!.id} (join/write)');
   }

@@ -31,6 +31,15 @@ void main() {
     expect(flowFoldedSessionId(''), isNull);
   });
 
+  test('A2-1: 参与条目 part-flow-… 不是会话，不能拼成 psess_ 频道', () {
+    // 折叠组 / 搜索把参与成员列成 `part-flow-<run>-<node>`。
+    expect(flowFoldedSessionId('part-flow-r1-build'), isNull);
+    // 即便里面已经带了 flow_ 字样，前缀仍然说明它是参与条目。
+    expect(flowFoldedSessionId('part-flow_deadbe12_impl'), isNull);
+    // 真会话 id 仍照常通行。
+    expect(flowFoldedSessionId('flow_deadbe12_impl'), 'flow_deadbe12_impl');
+  });
+
   testWidgets('P4: tapping a flow search hit opens the node session',
       (tester) async {
     final opened = <({String channelId, String? agentId})>[];

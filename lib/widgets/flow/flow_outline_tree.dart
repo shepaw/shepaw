@@ -318,20 +318,26 @@ class _FlowOutlineTreeState extends State<FlowOutlineTree> {
     );
 
     if (hover != null) {
+      Widget highlight = _DropHighlight(
+        hover: hover,
+        row: row,
+        scheme: scheme,
+        l10n: l10n,
+      );
+      highlight = IgnorePointer(child: highlight);
+      if (hover.warnings.isNotEmpty) {
+        // Tooltip 必须在 IgnorePointer **外层**：落在里面时子树的命中测试被
+        // 整个跳过，hover / 长按都到不了 tooltip，预警永远看不到。
+        highlight = Tooltip(
+          message: '${l10n.flow_dropRefWarning}\n${hover.warnings.join('\n')}',
+          child: highlight,
+        );
+      }
       rowWidget = Stack(
         clipBehavior: Clip.none,
         children: [
           rowWidget,
-          Positioned.fill(
-            child: IgnorePointer(
-              child: _DropHighlight(
-                hover: hover,
-                row: row,
-                scheme: scheme,
-                l10n: l10n,
-              ),
-            ),
-          ),
+          Positioned.fill(child: highlight),
         ],
       );
     }
@@ -396,12 +402,6 @@ class _DropHighlight extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
       ),
     );
-    if (hover.warnings.isNotEmpty) {
-      box = Tooltip(
-        message: '${l10n.flow_dropRefWarning}\n${hover.warnings.join('\n')}',
-        child: box,
-      );
-    }
     return Stack(
       children: [
         Positioned.fill(child: box),

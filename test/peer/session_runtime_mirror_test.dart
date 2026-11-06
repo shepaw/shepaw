@@ -242,8 +242,7 @@ void main() {
     expect(state.phase, 'tool_running');
     expect(state.isRunning, isTrue);
     expect(state.isProcessing, isTrue);
-    expect(state.streamingMessageId, 't1',
-        reason: '正文看起来写完也不能结束气泡');
+    expect(state.streamingMessageId, 't1', reason: '正文看起来写完也不能结束气泡');
     expect(state.lastTerminal, isNull);
   });
 
@@ -328,6 +327,61 @@ void main() {
       isTrue,
     );
     expect(mirror.stateFor('agent:a:s2').turnId, 't10');
+  });
+
+  test('A2-2: 重连对账保留 running 的 flow_ 节点会话，idle 后清掉', () {
+    final mirror = SessionRuntimeMirror();
+    addTearDown(mirror.dispose);
+    mirror.reconcileTo(<Map<String, dynamic>>[
+      snap(key: 'agent:hub:main', revision: 1, state: 'idle', turnId: ''),
+    ], hubId: 'hub-a');
+    mirror.apply(snap(
+      key: 'flow_deadbe12_impl',
+      revision: 1,
+      turnId: 'flow-deadbe12-impl-a1',
+    ));
+    mirror.apply(snap(
+      key: 'agent:real:flow_deadbe12_plan',
+      revision: 1,
+      turnId: 'flow-deadbe12-plan-a1',
+    ));
+    expect(mirror.stateFor('flow_deadbe12_impl').isRunning, isTrue);
+
+    // 重连的 session_snapshot_resp 只含 hub 运行时会话，节点会话不在里面。
+    mirror.reconcileTo(<Map<String, dynamic>>[
+      snap(key: 'agent:hub:main', revision: 2, state: 'idle', turnId: ''),
+    ], hubId: 'hub-a');
+
+    final kept = mirror.stateFor('flow_deadbe12_impl');
+    expect(kept.isRunning, isTrue);
+    expect(kept.turnId, 'flow-deadbe12-impl-a1',
+        reason: '保留 turnId，停止按钮才找得到回合');
+    expect(
+      mirror.stateFor('agent:real:flow_deadbe12_plan').turnId,
+      'flow-deadbe12-plan-a1',
+      reason: '带 agent: 前缀的 flow key 同样要保留',
+    );
+
+    // 主机发 idle 帧才收掉。
+    mirror.apply(snap(
+      key: 'flow_deadbe12_impl',
+      revision: 2,
+      state: 'idle',
+      turnId: '',
+    ));
+    expect(mirror.stateFor('flow_deadbe12_impl').isRunning, isFalse);
+    expect(mirror.stateFor('flow_deadbe12_impl').turnId, '');
+  });
+
+  test('A2-2: 非 flow_ 会话在重连快照缺席时仍按原逻辑清掉', () {
+    final mirror = SessionRuntimeMirror();
+    addTearDown(mirror.dispose);
+    // 先确立 hub 身份，确认是「未报告的 running 会话」清理路径。
+    mirror.reconcileTo(<Map<String, dynamic>>[], hubId: 'hub-a');
+    mirror.apply(snap(key: 'agent:a:s1', revision: 5));
+    mirror.reconcileTo(<Map<String, dynamic>>[], hubId: 'hub-a');
+    expect(mirror.stateFor('agent:a:s1').isRunning, isFalse);
+    expect(mirror.stateFor('agent:a:s1').turnId, '');
   });
 
   test('换 hub 后低 revision 的权威快照也能落地', () {

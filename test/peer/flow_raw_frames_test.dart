@@ -43,6 +43,37 @@ Map<String, dynamic> _sessionState(String status) => {
       'hub_id': 'hub-flow',
     };
 
+Map<String, dynamic> _flowMetadata() => {
+      'type': 'agent_metadata',
+      'request_id': _turnId,
+      'turn_id': _turnId,
+      'channel_id': _channelId,
+      'session_id': _sessionId,
+      'agent_id': 'agent-7',
+      'run_id': 'deadbe12-1234',
+      'node': 'impl',
+      'metadata': {'kind': 'thinking'},
+    };
+
+Map<String, dynamic> _flowFinalMessage(String id) => {
+      'type': 'hub_event',
+      'event': {
+        'seq': 1,
+        'kind': 'message.created',
+        'channel_id': _channelId,
+        'agent_id': 'agent-7',
+        'data': {
+          'id': id,
+          'channel_id': _channelId,
+          'session_id': _sessionId,
+          'agent_id': 'agent-7',
+          'content': '最终回复',
+          'type': 'text',
+          'from': {'id': 'agent-7', 'type': 'agent', 'name': 'Impl'},
+        },
+      },
+    };
+
 Future<void> _until(FutureOr<bool> Function() ready) async {
   for (var i = 0; i < 100; i++) {
     if (await ready()) return;
@@ -148,6 +179,72 @@ void main() {
     await _until(() async => client.debugFlowControlTargetResolves == 2);
     expect(client.debugFlowControlTargetResolves, 2,
         reason: 'idle 应清掉该回合的落点缓存');
+    await incoming.close();
+  });
+
+  test('A2-5: 同回合的 agent_metadata 与 chunk 只解析一次落点', () async {
+    final incoming = StreamController<PeerControlEvent>.broadcast();
+    final client = HubEventClient(
+      events: incoming.stream,
+      seqStore: MemoryHubSeqStore(),
+    );
+    client.start();
+    addTearDown(client.dispose);
+    final db = getIt<LocalDatabaseService>();
+    await db.deleteMessage(liveTurnPlaceholderId(_turnId));
+    client.debugFlowControlTargetResolves = 0;
+
+    // metadata 先到：它要负责建好本地壳，并把落点解析缓存下来。
+    incoming.add(PeerControlEvent(peerId: 'peer-1', data: _flowMetadata()));
+    await _until(() async => client.debugFlowControlTargetResolves == 1);
+
+    incoming.add(PeerControlEvent(peerId: 'peer-1', data: _flowChunk('合并')));
+    await _until(() async {
+      final row = await db.getMessageById(liveTurnPlaceholderId(_turnId));
+      return (row?['content'] as String? ?? '').contains('合并');
+    });
+    expect(client.debugFlowControlTargetResolves, 1,
+        reason: 'chunk 应复用 metadata 解析好的 peer + turn 缓存');
+    await incoming.close();
+  });
+
+  test('A2-6: message.created 收尾后占位集合也清掉，后续 chunk 能重建占位', () async {
+    final incoming = StreamController<PeerControlEvent>.broadcast();
+    final client = HubEventClient(
+      events: incoming.stream,
+      seqStore: MemoryHubSeqStore(),
+    );
+    client.start();
+    addTearDown(client.dispose);
+    final db = getIt<LocalDatabaseService>();
+    await db.deleteMessage(liveTurnPlaceholderId(_turnId));
+    await db.deleteMessage('msg-final-a26');
+
+    // 先有流式占位。
+    incoming.add(PeerControlEvent(peerId: 'peer-1', data: _flowChunk('半截')));
+    await _until(
+      () async =>
+          await db.getMessageById(liveTurnPlaceholderId(_turnId)) != null,
+    );
+
+    // 回合结束：主机 append 最终消息，清理循环应同时移除 _flowPlaceholders。
+    incoming.add(PeerControlEvent(
+      peerId: 'peer-1',
+      data: _flowFinalMessage('msg-final-a26'),
+    ));
+    await _until(
+      () async =>
+          await db.getMessageById(liveTurnPlaceholderId(_turnId)) == null,
+    );
+
+    // 同一个 turnId 再来 chunk：占位集合若没清，这里会建不出占位。
+    incoming.add(PeerControlEvent(peerId: 'peer-1', data: _flowChunk('再来')));
+    await _until(() async {
+      final row = await db.getMessageById(liveTurnPlaceholderId(_turnId));
+      return (row?['content'] as String? ?? '').contains('再来');
+    });
+    expect(await db.getMessageById(liveTurnPlaceholderId(_turnId)), isNotNull,
+        reason: '占位集合未清会导致后续 chunk 建不出占位');
     await incoming.close();
   });
 

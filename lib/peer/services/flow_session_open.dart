@@ -4,6 +4,7 @@ import '../../models/channel.dart';
 import '../../service_locator.dart' show getIt;
 import '../../services/chat_navigation_service.dart';
 import '../../services/local_database_service.dart';
+import '../../services/she_service.dart' show SheService;
 import 'peer_agent_client_service.dart' show syncedPeerChannelId;
 import 'peer_agent_ids.dart';
 
@@ -15,9 +16,6 @@ Future<void> Function(String channelId, String? agentId)?
 /// P6 测试用：记录「去回答」带上的高亮消息 id；每次打开会话都会重置。
 @visibleForTesting
 String? debugLastFlowSessionHighlightMessageId;
-
-/// Hub 侧惜宝 agent id（`SHE_AGENT_ID`）。运行级惜宝会话属于它。
-const String kFlowRunSheAgentId = 'she-builtin-agent-001';
 
 /// 节点会话在本机的频道 id。主机用 `psess_<sessionId>` 广播 `message.created`、
 /// `agent_chunk` 和 `session.state`，App 打开的是同一个壳。
@@ -74,6 +72,9 @@ Future<void> ensureFlowSessionShell({
   try {
     final existing = await database.getChannelById(channelId);
     if (existing == null) {
+      // 没有 agent 可当成员时不要建一个只有 user 的空频道：主机名单还没
+      // 同步过来的空 agentId 会拼出 `['user', '']` 这种脏成员。
+      if (agentId.isEmpty) return;
       await database.createChannel(
         Channel.withMemberIds(
           id: channelId,
@@ -167,7 +168,7 @@ Future<void> openFlowRunSession({
     openFlowSession(
       peerId: peerId,
       sessionId: runSheSessionId,
-      remoteAgentId: kFlowRunSheAgentId,
+      remoteAgentId: SheService.sheId,
       title: title,
       db: db,
     );

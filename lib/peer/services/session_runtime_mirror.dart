@@ -11,6 +11,7 @@ class QueuedItem {
   final String requestId;
   final int position;
   final String preview;
+
   /// 完整正文。队列编辑面板要用它，`preview` 是截断的，拿来编辑会丢字。
   final String content;
 
@@ -62,13 +63,16 @@ class SessionState {
   final String turnId;
   final String peerId;
   final String phase;
+
   /// 「正文看起来写完了」只是 UI hint。它为真时回合**仍然在跑**。
   final bool answerSettled;
   final int startedAtMs;
   final int lastProgressAtMs;
+
   /// 主机生成这份快照的墙钟时间。换 hub 后 revision 会从 1 重新计数，
   /// 用时间水位挡住 events_sync 回放里的旧 session.state 复活已结束回合。
   final int atMs;
+
   /// 产生这份快照的主机实例 id。换 hub 后 revision 从 1 重新计数、墙钟也
   /// 可能回拨，只有身份能可靠区分两代 revision 空间。
   final String hubId;
@@ -111,9 +115,8 @@ class SessionState {
       lastProgressAtMs: (json['last_progress_at_ms'] as num?)?.toInt() ?? 0,
       atMs: (json['at'] as num?)?.toInt() ?? 0,
       hubId: (json['hub_id'] as String?) ?? '',
-      lastTerminal: rawTerminal is Map
-          ? SessionTerminal.fromJson(rawTerminal)
-          : null,
+      lastTerminal:
+          rawTerminal is Map ? SessionTerminal.fromJson(rawTerminal) : null,
       queue: rawQueue is List
           ? rawQueue
               .whereType<Map>()
@@ -278,7 +281,8 @@ class SessionRuntimeMirror {
       // 反而被永久拒绝。
     }
     final notifier = notifierFor(incoming.sessionKey);
-    final next = force ? incoming : reduceSessionState(notifier.value, incoming);
+    final next =
+        force ? incoming : reduceSessionState(notifier.value, incoming);
     if (identical(next, notifier.value)) return false;
     notifier.value = next;
     lastChangedKey = incoming.sessionKey;
@@ -294,6 +298,17 @@ class SessionRuntimeMirror {
       if (snapshot is Map && apply(snapshot)) applied++;
     }
     return applied;
+  }
+
+  /// 这个 key 是不是节点会话（裸 `flow_...` 或 `agent:<id>:flow_...`）。
+  ///
+  /// `session_snapshot_resp` 只含 hub 运行时自己的会话，节点会话的裸
+  /// `flow_` key 不在里面 —— 不能因为「快照没提」就把正在跑的回合清掉。
+  static bool _isFlowSessionKey(String sessionKey) {
+    final bare = sessionKey.startsWith('agent:')
+        ? sessionKey.substring(sessionKey.lastIndexOf(':') + 1)
+        : sessionKey;
+    return bare.startsWith('flow_');
   }
 
   /// 启动 / 重连全量对账：快照里的会话强制落地（新 hub 的 revision 可能比
@@ -336,6 +351,11 @@ class SessionRuntimeMirror {
       if (seen.contains(entry.key)) continue;
       final current = entry.value.value;
       if (!current.isRunning && current.queue.isEmpty) continue;
+      // 节点会话不归 hub 运行时会话表管，重连快照里天然缺席。正在跑的
+      // flow_ 条目保留原状态（尤其是 turnId，停止按钮要靠它）：等主机
+      // 发 idle 帧 / 回合结束的清理路径再收，不能在这里伪造任何 revision
+      // 或 hub_event seq。
+      if (current.isRunning && _isFlowSessionKey(entry.key)) continue;
       // 重置到 revision 0：既不伪造递增，也让新 hub 的任何真实快照收敛。
       entry.value.value = SessionState.empty(entry.key);
       lastChangedKey = entry.key;

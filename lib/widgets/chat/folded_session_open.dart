@@ -32,10 +32,17 @@ String sessionSearchHitBadge(AppLocalizations l10n, SessionSearchHit hit) {
 /// 可以直接拼 `psess_`。旧运行 / 群运行的条目可能仍是引擎槽位 key
 /// （`flow:<rid>:<node>` / `group:<gid>:<sid>:...`），那种拼不出真频道，
 /// 点击只能继续走运行视图。
+///
+/// 参与条目（`part-flow-<run>-<node>`）是折叠组 / 搜索为了展示列出来的
+/// 成员行，不是会话 —— 它同样没有冒号，以前会被当成真会话拼出
+/// `psess_part-flow-…` 这种空频道，还挡住了真正的运行页入口。真会话必须
+/// 以 `flow_` 开头。
 String? flowFoldedSessionId(String raw) {
   final id = raw.trim();
   if (id.isEmpty || id.contains(':') || id.contains('/')) return null;
   if (id.startsWith(kSyncedPeerSessionPrefix)) return null;
+  if (id.startsWith('part-')) return null;
+  if (!id.startsWith('flow_')) return null;
   return id;
 }
 

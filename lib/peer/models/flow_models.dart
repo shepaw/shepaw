@@ -822,7 +822,8 @@ Object? flowFieldValue(Map<String, dynamic>? fields, String path) {
 }
 
 /// 节点的父节点（根层返回 null，用 [isRoot] 区分「没找到」）。
-({FlowNode? parent, int index, String? branch})? flowLocate(
+/// 同时带回节点本身，调用方不必再写一份树遍历。
+({FlowNode node, FlowNode? parent, int index, String? branch})? flowLocate(
     List<FlowNode> tree, String id,
     {FlowNode? parent}) {
   // 父节点是 `if` 时，下标按分支内相对位置算：`then` / `else` 在 children 里
@@ -833,7 +834,9 @@ Object? flowFieldValue(Map<String, dynamic>? fields, String path) {
     for (final node in tree) {
       final branch = node.branch ?? 'then';
       final index = branch == 'else' ? els++ : then++;
-      if (node.id == id) return (parent: parent, index: index, branch: branch);
+      if (node.id == id) {
+        return (node: node, parent: parent, index: index, branch: branch);
+      }
       // 分支里还可能套着 seq / loop 之类的容器。别因为直接父节点是 `if` 就
       // 截断递归：运行视图的「改写」要靠它找到嵌套在分支内部的节点的父节点。
       final hit = flowLocate(node.children, id, parent: node);
@@ -842,7 +845,9 @@ Object? flowFieldValue(Map<String, dynamic>? fields, String path) {
     return null;
   }
   for (var i = 0; i < tree.length; i++) {
-    if (tree[i].id == id) return (parent: parent, index: i, branch: null);
+    if (tree[i].id == id) {
+      return (node: tree[i], parent: parent, index: i, branch: null);
+    }
     final hit = flowLocate(tree[i].children, id, parent: tree[i]);
     if (hit != null) return hit;
   }

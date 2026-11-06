@@ -348,6 +348,28 @@ void main() {
           resolveDrop(rows, 'a', 'z', DropZone.before, canMove: false), isNull);
     });
 
+    test('branchesLabelled=false 时 if 分支内 before/after 也不可落', () {
+      final rows = buildFlowOutline([
+        ..._ifTree(),
+        FlowNode(key: 'z', id: 'z', kind: 'task'),
+      ]);
+      // 旧主机不认 branch 标记：落在 if 子节点旁边同样会带 branch:'then'。
+      expect(
+        resolveDrop(rows, 'z', 't1', DropZone.before, branchesLabelled: false),
+        isNull,
+      );
+      expect(
+        resolveDrop(rows, 'z', 't2', DropZone.after, branchesLabelled: false),
+        isNull,
+      );
+      expect(
+        resolveDrop(rows, 'z', 'e1', DropZone.before, branchesLabelled: false),
+        isNull,
+      );
+      // 新主机标了分支时照常放行。
+      expect(resolveDrop(rows, 'z', 't1', DropZone.before)?.branch, 'then');
+    });
+
     test('超过 maxDepth 层返回 null', () {
       final rows = buildFlowOutline(chain());
       expect(
