@@ -55,6 +55,16 @@ void main() {
     expect(service.getDraft('ch-1'), 'draft');
   });
 
+  test('migrate does not copy an alias that already belongs to another channel',
+      () {
+    final service = ComposerDraftService();
+    service.setDraft('ch-1', 'unsent', agentId: 'a1');
+    service.migrate(fromKey: 'agent:a1', toKey: 'ch-2');
+    expect(service.getDraft('ch-1'), 'unsent');
+    expect(service.getDraft('ch-2'), '');
+    expect(service.getDraft(ComposerDraftService.agentListKey('a1')), 'unsent');
+  });
+
   test('migrate keeps existing target draft', () {
     final service = ComposerDraftService();
     service.setDraft('agent:a1', 'from-agent');

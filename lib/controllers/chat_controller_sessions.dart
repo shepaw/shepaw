@@ -16,9 +16,9 @@ mixin _SessionOps on _ChatControllerBase {
 
   /// 切换/新建会话离开当前会话前，自动删除「新建会话」产生的空会话。
   ///
-  /// 判定见 [SessionUtils.shouldPruneEmptySessionOnSwitch]；此处再补充两个
-  /// 「非空」条件：有待发送队列（离线排队中的消息）或已有落库消息。删除时
-  /// 与批量删除一致，级联清理群成员 DM / She 中转会话。
+  /// 判定见 [SessionUtils.shouldPruneEmptySessionOnSwitch]。下面几种不算空：
+  /// 输入框里还有没发出去的草稿、待发送队列里还有消息、本地已经落库的消息。
+  /// 删除时与批量删除一致，级联清理群成员 DM / She 中转会话。
   Future<void> pruneEmptySessionBeforeSwitch({String? nextChannelId}) async {
     final currentId = currentChannelId;
     if (currentId == null) return;
@@ -33,6 +33,9 @@ mixin _SessionOps on _ChatControllerBase {
           : chatService.generateChannelId(getUserId(), agentId!),
     );
     if (!shouldPrune) return;
+
+    // 输入框有未发送内容，或队列里还有没发出去的消息：留下这条会话。
+    if (_hasUnsentComposerDraft(currentId) || messageQueue.isNotEmpty) return;
 
     // 已有消息：不算空会话，保留。
     final count = await localDatabaseService.countChannelMessages(currentId);
@@ -61,6 +64,20 @@ mixin _SessionOps on _ChatControllerBase {
     }
     await localDatabaseService.deleteChannelMessages(currentId);
     await localDatabaseService.deleteChannel(currentId);
+  }
+
+  /// 这条会话的输入框草稿还在（按频道 id，不看列表别名）。
+  ///
+  /// 列表上的 `agent:` / `group:` 别名是最近一次编辑的镜像，不能拿来判断
+  /// 当前会话有没有未发送内容，否则同一 agent 下任意会话都会被留下。
+  bool _hasUnsentComposerDraft(String channelId) {
+    if (channelId.isEmpty || !getIt.isRegistered<ComposerDraftService>()) {
+      return false;
+    }
+    return getIt<ComposerDraftService>()
+        .getDraft(channelId)
+        .trimRight()
+        .isNotEmpty;
   }
 
   Future<void> createNewSession() async {

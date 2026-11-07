@@ -168,13 +168,38 @@ class ComposerDraftService extends ChangeNotifier {
     _persistNow();
   }
 
+  /// 列表别名（`agent:` / `group:`）是不是另一条会话草稿的镜像。
+  ///
+  /// 别名会跟着最近一次编辑写上同一段文字。新建或切到别的会话时，不能把这段
+  /// 已经属于 [channelId] 以外某条会话的草稿再灌进去，否则每点一次「新建会话」
+  /// 都会把未发送内容复制到新会话，空会话清理也就再也删不掉它们。
+  bool listAliasMirrorsAnotherChannel(
+    String aliasKey, {
+    required String channelId,
+  }) {
+    final text = getDraft(aliasKey);
+    if (text.isEmpty) return false;
+    for (final entry in _drafts.entries) {
+      final key = entry.key;
+      if (key == aliasKey || key == channelId) continue;
+      if (_isListAliasKey(key)) continue;
+      if (entry.value == text) return true;
+    }
+    return false;
+  }
+
   /// Copies a draft from [fromKey] to [toKey] when the conversation identity
   /// resolves. Keeps [toKey]'s existing draft if both exist.
   ///
   /// List aliases (`agent:` / `group:`) are preserved so the conversation
-  /// list can keep finding the draft after channelId resolves.
+  /// list can keep finding the draft after channelId resolves. An alias that
+  /// already mirrors some other channel is left alone.
   void migrate({required String fromKey, required String toKey}) {
     if (fromKey.isEmpty || toKey.isEmpty || fromKey == toKey) return;
+    if (_isListAliasKey(fromKey) &&
+        listAliasMirrorsAnotherChannel(fromKey, channelId: toKey)) {
+      return;
+    }
     final fromDraft = _drafts[fromKey];
     final fromAt = _updatedAt[fromKey];
     if (fromDraft == null || fromDraft.isEmpty) return;

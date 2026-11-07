@@ -858,16 +858,19 @@ class _ChatScreenState extends State<ChatScreen>
         agentId.isNotEmpty &&
         key != ComposerDraftService.agentListKey(agentId)) {
       final agentKey = ComposerDraftService.agentListKey(agentId);
-      draft = service.getDraft(agentKey);
-      if (draft.isNotEmpty) {
-        service.migrate(fromKey: agentKey, toKey: key);
-        // Keep list alias so the conversation list can still find it.
-        service.setDraft(
-          key,
-          draft,
-          agentId: agentId,
-          groupFamilyId: _composerGroupFamilyId(),
-        );
+      // 别名已经挂在另一条会话上时，那是没发出去的草稿，不能灌进当前会话。
+      if (!service.listAliasMirrorsAnotherChannel(agentKey, channelId: key)) {
+        draft = service.getDraft(agentKey);
+        if (draft.isNotEmpty) {
+          service.migrate(fromKey: agentKey, toKey: key);
+          // Keep list alias so the conversation list can still find it.
+          service.setDraft(
+            key,
+            draft,
+            agentId: agentId,
+            groupFamilyId: _composerGroupFamilyId(),
+          );
+        }
       }
     }
     if (draft.isEmpty) return;
@@ -875,6 +878,15 @@ class _ChatScreenState extends State<ChatScreen>
       text: draft,
       selection: TextSelection.collapsed(offset: draft.length),
     );
+  }
+
+  /// 离开当前会话前，把输入框里还没发出去的文字落成这条会话的草稿。
+  ///
+  /// 输入框是空的时什么都不写：空写入会连带清掉 agent / 群的列表别名，
+  /// 把另一条会话的未发送内容从列表上抹掉。
+  void _persistUnsentComposerBeforeLeave() {
+    if (_messageController.text.trimRight().isEmpty) return;
+    _persistComposerDraft();
   }
 
   void _persistComposerDraft({bool notify = false}) {
@@ -2432,7 +2444,11 @@ class _ChatScreenState extends State<ChatScreen>
       currentChannelId: c.currentChannelId,
       controller: c,
       previewCache: _drawerPreviewCache,
-      onNewSession: () => c.createNewSession(),
+      onNewSession: () {
+        // 先把输入框落成草稿，空会话清理才能看见还没发送的内容。
+        _persistUnsentComposerBeforeLeave();
+        c.createNewSession();
+      },
       onSwitchSession: _openDrawerSession,
       onBatchDelete: (ids) => c.batchDeleteSessions(ids, isGroup: false),
       listRefreshTick: refreshTick,
@@ -2482,7 +2498,10 @@ class _ChatScreenState extends State<ChatScreen>
       currentChannelId: c.currentChannelId,
       controller: c,
       previewCache: _drawerPreviewCache,
-      onNewSession: () => c.createNewGroupSession(),
+      onNewSession: () {
+        _persistUnsentComposerBeforeLeave();
+        c.createNewGroupSession();
+      },
       onSwitchSession: _openDrawerSession,
       onBatchDelete: (ids) => c.batchDeleteSessions(ids, isGroup: true),
       listRefreshTick: refreshTick,
@@ -2979,8 +2998,9 @@ class _ChatScreenState extends State<ChatScreen>
     String channelId, {
     String? highlightMessageId,
   }) async {
-    // 离开当前会话：若它是「新建会话」留下的空会话，自动删除，避免误点击
-    // 「新建会话」产生空会话。
+    // 离开当前会话：若它是「新建会话」留下的空会话，自动删除。输入框里
+    // 还有没发出去的内容时，草稿先落盘，清理逻辑会把这条会话留下。
+    _persistUnsentComposerBeforeLeave();
     await _controller.pruneEmptySessionBeforeSwitch(nextChannelId: channelId);
     // 主机上的会话按主机活跃时间排。本机点开一条不再把它抬到列表最前，
     // 否则另一台客户端的顺序对不上。
@@ -3029,6 +3049,7 @@ class _ChatScreenState extends State<ChatScreen>
   /// 控制器随本页 dispose 导致抽屉冻结（与切换会话同理）。
   Future<void> _forkDrawerSession(Channel session,
       {required bool isGroup}) async {
+    _persistUnsentComposerBeforeLeave();
     await _closeDrawerAndWait();
     if (!mounted) return;
     unawaited(_controller.forkSession(session, isGroup: isGroup));
@@ -3040,6 +3061,7 @@ class _ChatScreenState extends State<ChatScreen>
     BuildContext panelContext,
     Channel session,
   ) async {
+    _persistUnsentComposerBeforeLeave();
     final l10n = AppLocalizations.of(context);
     final allAgents =
         await _controller.localDatabaseService.getAllRemoteAgents();
