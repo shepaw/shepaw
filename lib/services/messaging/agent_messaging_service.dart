@@ -701,6 +701,9 @@ class AgentMessagingService {
     /// 排队回合：不在发送当下登记 ActiveTask，等主机真正开跑再接管。
     bool deferredTurn = false,
 
+    /// 主机 `session_ack` 判定 queued 时回调一次。
+    void Function()? onHostQueued,
+
     /// 主动重连进度回调：`(attempt, total)`。
     /// - `attempt > 0`：正在进行第 `attempt` 次（共 `total` 次）重连尝试。
     /// - `attempt == 0`：重连流程结束（连上或彻底失败），UI 可隐藏进度提示。
@@ -839,6 +842,7 @@ class AgentMessagingService {
           attachments: attachments,
           onReconnecting: onReconnecting,
           deferredTurn: deferredTurn,
+          onHostQueued: onHostQueued,
         );
       } else if (agent.protocol == ProtocolType.acp) {
         // ACP 是已废弃的直连协议：它唯一的服务方（agent-bridge）已下线，主机
@@ -1152,6 +1156,7 @@ class AgentMessagingService {
     List<AttachmentData>? attachments,
     void Function(int attempt, int total)? onReconnecting,
     bool deferredTurn = false,
+    void Function()? onHostQueued,
   }) async {
     final sourcePeerId = agent.sourcePeerId;
     final sourceRemoteAgentId = agent.remoteAgentId;
@@ -1292,6 +1297,7 @@ class AgentMessagingService {
         replyToId: userMessage.replyTo,
         replyQuoteText: userMessage.replyQuoteText,
         onReconnecting: onReconnecting,
+        onQueued: onHostQueued,
         onRequestStarted: (requestId) {
           peerRequestId = requestId;
           final spanId = TraceService.instance.addSpan(

@@ -2015,6 +2015,9 @@ class _PendingRequest {
   /// 看门狗不能按「30 分钟无输出」判失败；回合真正开始出字时清除。
   bool queuedOnHost = false;
 
+  /// 第一次被标成排队时通知 UI，只调用一次。
+  void Function()? onQueued;
+
   /// 发出 `agent_chat` 后等待首个主机帧的确认定时器。
   Timer? deliveryProbeTimer;
 
@@ -3277,6 +3280,9 @@ class PeerAgentClientService {
 
     /// 引用时选中的那段文字，被引用的那条不在本地时靠它兜底。
     String? replyQuoteText,
+
+    /// 主机 `session_ack` 判定 queued 时回调一次。
+    void Function()? onQueued,
   }) async {
     List<Map<String, dynamic>>? attachmentRefs;
     if (attachments != null && attachments.isNotEmpty) {
@@ -3322,7 +3328,7 @@ class PeerAgentClientService {
       onActionConfirmation: onActionConfirmation,
       onForm: onForm,
       onMetadata: onMetadata,
-    );
+    )..onQueued = onQueued;
     _pending[requestId] = pending;
     _requestAgents[requestId] = (peerId: peerId, remoteAgentId: remoteAgentId);
     if (_requestAgents.length > 200) {
@@ -3444,7 +3450,7 @@ class PeerAgentClientService {
       if (!pending.queuedOnHost &&
           getIt.isRegistered<SessionRuntimeMirror>() &&
           getIt<SessionRuntimeMirror>().isRequestQueued(requestId)) {
-        pending.queuedOnHost = true;
+        _noteQueued(pending);
       }
       // 排队期间本来就不会有帧：刷新 idle 时钟避免 30 分钟误判；但仍继续
       // 走看门狗，让断连 suspend 上限与排队硬上限兜底生效。首个
@@ -3616,6 +3622,20 @@ class PeerAgentClientService {
 
   // ── 控制消息处理 ───────────────────────────────────────────────────────
 
+  /// 第一次确认这条请求在主机队列里。重复的 ack / 快照不再回调。
+  void _noteQueued(_PendingRequest pending) {
+    if (pending.queuedOnHost) return;
+    pending.queuedOnHost = true;
+    final notify = pending.onQueued;
+    pending.onQueued = null;
+    if (notify == null) return;
+    try {
+      notify();
+    } catch (e) {
+      _log.warning('onQueued callback failed: $e', tag: 'PeerAgentClient');
+    }
+  }
+
   /// 收到主机帧 → 标记该 turn 已被主机接收，并取消待发的投递探活。
   void _noteHostTurnSignal(Map<String, dynamic> data) {
     final requestId = data['request_id'];
@@ -3657,7 +3677,7 @@ class PeerAgentClientService {
         final ackRequestId = event.data['request_id'] as String? ?? '';
         final ackPending = ackRequestId.isEmpty ? null : _pending[ackRequestId];
         if (disposition == 'queued') {
-          if (ackPending != null) ackPending.queuedOnHost = true;
+          if (ackPending != null) _noteQueued(ackPending);
         } else if (disposition == 'started') {
           if (ackPending != null) ackPending.queuedOnHost = false;
         } else if (disposition == 'rejected') {

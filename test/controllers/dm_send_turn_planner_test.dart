@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shepaw/controllers/dm_send_turn_planner.dart';
 import 'package:shepaw/models/client_device_info.dart';
+import 'package:shepaw/models/message.dart';
 
 void main() {
   group('HistoryRequestInfo', () {
@@ -86,6 +87,63 @@ void main() {
         plain.user.metadata?[ClientDeviceInfo.deviceNameMetaKey],
         isNotEmpty,
       );
+    });
+  });
+
+  group('DmSendTurnPlanner.placeStreamingAfterUser', () {
+    Message text(String id, int at, {bool agent = false}) => Message(
+          id: id,
+          content: id,
+          timestampMs: at,
+          from: MessageFrom(
+            id: agent ? 'a' : 'u',
+            type: agent ? 'agent' : 'user',
+            name: agent ? 'Agent' : 'User',
+          ),
+          type: MessageType.text,
+        );
+
+    test('占位紧跟在自己的用户消息后面，不盖住后发出去的消息', () {
+      final user = text('u1', 10);
+      final later = text('u2', 20);
+      final streaming = text('s1', 11, agent: true);
+      final messages = <Message>[user, later, streaming];
+
+      DmSendTurnPlanner.placeStreamingAfterUser(
+        messages: messages,
+        user: user,
+        streaming: streaming,
+      );
+
+      expect(messages.map((m) => m.id).toList(), ['u1', 's1', 'u2']);
+    });
+
+    test('排队时撤掉还没内容的占位，已经写出的正文留下', () {
+      final empty = Message(
+        id: 's-empty',
+        content: '',
+        timestampMs: 1,
+        from: MessageFrom(id: 'a', type: 'agent', name: 'Agent'),
+        type: MessageType.text,
+      );
+      final filled = text('s-filled', 2, agent: true);
+      final messages = <Message>[empty, filled];
+
+      expect(
+        DmSendTurnPlanner.dropEmptyStreamingPlaceholder(
+          messages: messages,
+          streamingId: 's-empty',
+        ),
+        isTrue,
+      );
+      expect(
+        DmSendTurnPlanner.dropEmptyStreamingPlaceholder(
+          messages: messages,
+          streamingId: 's-filled',
+        ),
+        isFalse,
+      );
+      expect(messages.map((m) => m.id).toList(), ['s-filled']);
     });
   });
 

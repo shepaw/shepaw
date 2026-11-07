@@ -1146,6 +1146,9 @@ class ChatService {
     /// 排队回合：不在发送当下登记 ActiveTask，等主机真正开跑再接管。
     bool deferredTurn = false,
 
+    /// 主机把这条收进会话队列（`session_ack` queued）时回调一次。
+    void Function()? onHostQueued,
+
     /// See [AgentMessagingService.sendMessageToAgent].
     bool foldProgressContent = true,
     List<Map<String, dynamic>>? extraTools,
@@ -1179,6 +1182,7 @@ class ChatService {
         foldProgressContent: foldProgressContent,
         extraTools: extraTools,
         deferredTurn: deferredTurn,
+        onHostQueued: onHostQueued,
       );
 
   /// 主机会话队列里的一条开始出字：把先前挂起的 ActiveTask 提成当前任务，

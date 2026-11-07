@@ -127,6 +127,39 @@ class DmSendTurnPlanner {
     return (user: user, streaming: streaming);
   }
 
+  /// 流式占位必须紧挨在它要回答的那条用户消息后面。
+  ///
+  /// 直接 `add` 到列表末尾时，排队期间又发出去的消息会被这条回复盖住；
+  /// 先加占位再加用户消息时，空的「...」会冒到提问上面。
+  static void placeStreamingAfterUser({
+    required List<Message> messages,
+    required Message user,
+    required Message streaming,
+  }) {
+    messages.removeWhere((message) => message.id == streaming.id);
+    final at = messages.indexWhere((message) => message.id == user.id);
+    if (at < 0) {
+      messages.add(streaming);
+      return;
+    }
+    messages.insert(at + 1, streaming);
+  }
+
+  /// 主机把这条收进队列时，还没内容的流式占位不该留在对话里。
+  ///
+  /// 它和排队条是同一条消息的两份展示；空占位还会带着停止按钮，
+  /// 把上一轮的输出态抢走。已经写出正文的不删。
+  static bool dropEmptyStreamingPlaceholder({
+    required List<Message> messages,
+    required String streamingId,
+  }) {
+    final at = messages.indexWhere((message) => message.id == streamingId);
+    if (at < 0) return false;
+    if (messages[at].content.trim().isNotEmpty) return false;
+    messages.removeAt(at);
+    return true;
+  }
+
   static HistorySupplementRoundDecision evaluateSupplementRound({
     required bool supplementIsNull,
     required int actualSentCount,
