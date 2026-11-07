@@ -399,31 +399,30 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
                 const SizedBox(height: 12),
                 SelectableText(node.text!),
               ],
+              // 底部面板只摆当前适用的 1~2 个动作：等回答时「去回答」优先，
+              // 其余时候才看「查看会话」；两者不再同时出现。
               if (node.hasSession) ...[
                 const SizedBox(height: 16),
-                OutlinedButton.icon(
-                  key: const ValueKey('node-view-session'),
-                  icon: const Icon(Icons.forum_outlined),
-                  label: Text(l10n.flow_viewSession),
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _openSession(node);
-                  },
-                ),
-              ],
-              // P6：节点在等人回答时，弹层里也放一个「去回答」（和卡片上那个
-              // 一样打开节点会话并定位待答卡片）。
-              if (node.status?.isWaitingForUser == true && node.hasSession) ...[
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  key: const ValueKey('node-goto-answer'),
-                  icon: const Icon(Icons.question_answer_outlined),
-                  label: Text(l10n.flow_gotoAnswer),
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _openSession(node);
-                  },
-                ),
+                if (node.status?.isWaitingForUser == true)
+                  OutlinedButton.icon(
+                    key: const ValueKey('node-goto-answer'),
+                    icon: const Icon(Icons.question_answer_outlined),
+                    label: Text(l10n.flow_gotoAnswer),
+                    onPressed: () {
+                      Navigator.pop(context);
+                      _openSession(node);
+                    },
+                  )
+                else
+                  OutlinedButton.icon(
+                    key: const ValueKey('node-view-session'),
+                    icon: const Icon(Icons.forum_outlined),
+                    label: Text(l10n.flow_viewSession),
+                    onPressed: () {
+                      Navigator.pop(context);
+                      _openSession(node);
+                    },
+                  ),
               ],
               // 运行中改写（F19）：只改还没开始的节点，所以已经开跑或终态的
               // 不显示这个入口。
@@ -524,25 +523,13 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
       appBar: AppBar(
         title: Text(widget.title ?? AppLocalizations.of(context).flow_runTitle),
         actions: [
-          if (run != null && !run.status.isFinished)
-            IconButton(
-              tooltip: AppLocalizations.of(context).flow_cancelRun,
-              icon: const Icon(Icons.stop_circle_outlined),
-              onPressed: _cancel,
-            ),
+          // 运行相关的动作都在顶部状态条上：取消在明处，删除收进 `⋯`，
+          // 避免两个危险按钮挨着被误点。这里只留全局刷新。
           IconButton(
             tooltip: AppLocalizations.of(context).flow_refresh,
             icon: const Icon(Icons.refresh),
             onPressed: _load,
           ),
-          // 走完了才能删：在跑的要先取消（主机那边也会这么回）。
-          if (run != null && run.status.isFinished)
-            IconButton(
-              key: const ValueKey('run-delete'),
-              tooltip: AppLocalizations.of(context).flow_deleteRun,
-              icon: const Icon(Icons.delete_outline),
-              onPressed: _deleteRun,
-            ),
         ],
       ),
       body: _body(run),
@@ -560,7 +547,11 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
-        _RunHeader(run: run),
+        _RunStatusStrip(
+          run: run,
+          onCancel: _cancel,
+          onDelete: _deleteRun,
+        ),
         // 群运行的对话在群里，不画这个入口（runSessionId 为空）。
         // 点进去优先打开节点自己的 agent 会话，而不是惜宝私聊。
         if (run.runSessionId != null) ...[
@@ -600,10 +591,16 @@ class _RunSessionEntry extends StatelessWidget {
   }
 }
 
-class _RunHeader extends StatelessWidget {
-  const _RunHeader({required this.run});
+class _RunStatusStrip extends StatelessWidget {
+  const _RunStatusStrip({
+    required this.run,
+    required this.onCancel,
+    required this.onDelete,
+  });
 
   final FlowRunView run;
+  final VoidCallback onCancel;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -615,15 +612,72 @@ class _RunHeader extends StatelessWidget {
       FlowRunStatus.failed => (l10n.flow_runFailed, Colors.red),
       FlowRunStatus.cancelled => (l10n.flow_runCancelled, Colors.grey),
     };
-    return Row(
-      children: [
-        Icon(Icons.account_tree_outlined, color: color),
-        const SizedBox(width: 8),
-        Text(label, style: theme.textTheme.titleMedium?.copyWith(color: color)),
-        const Spacer(),
-        Text(l10n.flow_tasksUsed(run.tasksUsed),
-            style: theme.textTheme.bodySmall),
-      ],
+    final started = run.startedMs;
+    final elapsed = started != null && started > 0
+        ? DateTime.now().difference(
+            DateTime.fromMillisecondsSinceEpoch(started))
+        : null;
+    String? elapsedLabel;
+    if (elapsed != null && !run.status.isFinished) {
+      elapsedLabel = l10n.flow_runElapsed(_durationLabel(elapsed));
+    }
+    return Material(
+      key: const ValueKey('run-status-strip'),
+      color: theme.colorScheme.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+        child: Wrap(
+          spacing: 10,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Icon(Icons.account_tree_outlined, color: color, size: 18),
+            Text(label,
+                style: theme.textTheme.titleSmall?.copyWith(color: color)),
+            Text(l10n.flow_tasksUsed(run.tasksUsed),
+                style: theme.textTheme.bodySmall),
+            if (elapsedLabel != null)
+              Text(elapsedLabel, style: theme.textTheme.bodySmall),
+            if (!run.status.isFinished)
+              Tooltip(
+                message: l10n.flow_cancelRun,
+                child: OutlinedButton.icon(
+                  key: const ValueKey('run-cancel'),
+                  onPressed: onCancel,
+                  icon: const Icon(Icons.stop_circle_outlined, size: 16),
+                  label: Text(l10n.flow_cancelRun),
+                ),
+              ),
+            PopupMenuButton<String>(
+              key: const ValueKey('run-more'),
+              tooltip: l10n.flow_runMore,
+              onSelected: (value) {
+                if (value == 'delete') onDelete();
+              },
+              itemBuilder: (context) => [
+                PopupMenuItem<String>(
+                  key: const ValueKey('run-delete'),
+                  value: 'delete',
+                  enabled: run.status.isFinished,
+                  child: Text(l10n.flow_deleteRun),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
+  }
+
+  /// 数字时长（hh:mm:ss），不带语言，交给 [AppLocalizations.flow_runElapsed]
+  /// 配「已用 …」的文案。
+  static String _durationLabel(Duration elapsed) {
+    final hours = elapsed.inHours;
+    final minutes = elapsed.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = elapsed.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return hours > 0
+        ? '${hours.toString().padLeft(2, '0')}:$minutes:$seconds'
+        : '$minutes:$seconds';
   }
 }

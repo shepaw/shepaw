@@ -75,6 +75,12 @@ void main() {
     )));
     await _settle(tester);
 
+    // 删除收进状态条的 `⋯`，不和「取消」挨着。
+    expect(find.byKey(const ValueKey('run-delete')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('run-more')));
+    for (var i = 0; i < 8; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
     expect(find.byKey(const ValueKey('run-delete')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('run-delete')));
     await tester.pumpAndSettle();

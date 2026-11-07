@@ -9829,4 +9829,160 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get flow_nodeWaitingUser => '等你回答';
+
+  @override
+  String get flow_tabOverview => '概览';
+
+  @override
+  String get flow_tabEdit => '编辑';
+
+  @override
+  String get flow_tabRuns => '运行';
+
+  @override
+  String get flow_overviewStart => '开始运行';
+
+  @override
+  String get flow_overviewRehearse => '演练（不会真调用 agent）';
+
+  @override
+  String get flow_overviewRecentRuns => '最近运行';
+
+  @override
+  String get flow_overviewNoDescription => '暂无说明';
+
+  @override
+  String get flow_startConfirmTitle => '确认开始运行';
+
+  @override
+  String get flow_startRealCallHint => '这会真实调用 Agent 并发送消息；演练不会产生真实调用。';
+
+  @override
+  String get flow_startRoleSection => '这次要绑定的角色';
+
+  @override
+  String get flow_startNoRoles => '这个流程没有需要手动绑定的角色';
+
+  @override
+  String get flow_startGo => '确认并运行';
+
+  @override
+  String get flow_listDraft => '有未保存草稿';
+
+  @override
+  String get flow_listStatusRunning => '运行中';
+
+  @override
+  String get flow_listStatusFailed => '最近失败';
+
+  @override
+  String get flow_listStatusNeedsApproval => '待审批';
+
+  @override
+  String get flow_listStart => '开始运行';
+
+  @override
+  String get flow_listCopy => '复制';
+
+  @override
+  String get flow_listHistory => '查看历史';
+
+  @override
+  String get flow_libraryEmptyHint => '库里还没有流程';
+
+  @override
+  String get flow_libraryFromTemplate => '从模板新建';
+
+  @override
+  String get flow_toolbarUnsaved => '● 未保存的改动';
+
+  @override
+  String get flow_toolbarSaving => '保存中…';
+
+  @override
+  String get flow_toolbarMore => '更多操作';
+
+  @override
+  String get flow_drawerProblems => '问题';
+
+  @override
+  String get flow_drawerDiff => '对比';
+
+  @override
+  String get flow_drawerRehearsal => '演练';
+
+  @override
+  String get flow_drawerSource => '源码';
+
+  @override
+  String get flow_drawerClose => '收起侧栏';
+
+  @override
+  String get flow_drawerOpen => '打开侧栏';
+
+  @override
+  String get flow_rehearsalBanner => '演练中 · 不会产生真实调用';
+
+  @override
+  String get flow_rehearseHint => '演练只走流程结构，不会真的调用 agent';
+
+  @override
+  String get flow_rehearseStart => '开始演练';
+
+  @override
+  String get flow_sourceSyncHint => '源码与可视视图同步；源码有语法错误时无法应用';
+
+  @override
+  String get flow_draftBannerTitle => '有上次未保存的改动';
+
+  @override
+  String get flow_draftBannerRestore => '恢复';
+
+  @override
+  String get flow_draftBannerDiscard => '丢弃';
+
+  @override
+  String get flow_draftBannerReadOnly => '在桌面端可恢复';
+
+  @override
+  String get flow_runsGroupAttention => '需要你处理';
+
+  @override
+  String get flow_runsGroupRunning => '运行中';
+
+  @override
+  String get flow_runsGroupFinished => '已结束';
+
+  @override
+  String get flow_runMore => '更多';
+
+  @override
+  String flow_toolbarSaved(int n) {
+    return '已保存第 $n 版';
+  }
+
+  @override
+  String flow_toolbarProblems(int count) {
+    return '有 $count 个问题';
+  }
+
+  @override
+  String flow_drawerProblemsCount(int count) {
+    return '问题 $count';
+  }
+
+  @override
+  String flow_conflictBody(int revision) {
+    return '别人已把它改到第 $revision 版';
+  }
+
+  @override
+  String flow_overviewUpdated(String when) {
+    return '最近修改 $when';
+  }
+
+  @override
+  String flow_runElapsed(String duration) {
+    return '已用 $duration';
+  }
 }

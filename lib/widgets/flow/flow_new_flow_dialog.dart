@@ -30,6 +30,8 @@ Future<FlowNewRequest?> showNewFlowDialog(
   BuildContext context, {
   required Iterable<String> existing,
   List<FlowTemplateEntry> templates = const [],
+  FlowNewSource initialSource = FlowNewSource.blank,
+  String? initialSourceName,
 }) {
   return showDialog<FlowNewRequest>(
     context: context,
@@ -39,6 +41,15 @@ Future<FlowNewRequest?> showNewFlowDialog(
           existing.map((e) => e.toLowerCase()).toSet(),
       existingNames: existing.toList(),
       templates: templates,
+      initialSource: templates.isEmpty && initialSource == FlowNewSource.template
+          ? FlowNewSource.blank
+          : initialSource,
+      initialSourceName: initialSourceName ??
+          (initialSource == FlowNewSource.copy
+              ? existing.firstOrNull
+              : (initialSource == FlowNewSource.template
+                  ? templates.firstOrNull?.id
+                  : null)),
     ),
   );
 }
@@ -48,11 +59,17 @@ class _NewFlowDialog extends StatefulWidget {
     required this.existingLower,
     required this.existingNames,
     required this.templates,
+    this.initialSource = FlowNewSource.blank,
+    this.initialSourceName,
   });
 
   final Set<String> existingLower;
   final List<String> existingNames;
   final List<FlowTemplateEntry> templates;
+
+  /// 空库的「从模板新建」入口直接落在模板页签，别再让人多点一次。
+  final FlowNewSource initialSource;
+  final String? initialSourceName;
 
   @override
   State<_NewFlowDialog> createState() => _NewFlowDialogState();
@@ -61,8 +78,11 @@ class _NewFlowDialog extends StatefulWidget {
 class _NewFlowDialogState extends State<_NewFlowDialog> {
   final TextEditingController _name = TextEditingController();
   final GlobalKey<FormState> _form = GlobalKey<FormState>();
-  FlowNewSource _source = FlowNewSource.blank;
-  String? _sourceName;
+  late FlowNewSource _source = widget.initialSource;
+  late String? _sourceName =
+      widget.initialSource == FlowNewSource.blank
+          ? null
+          : widget.initialSourceName;
 
   @override
   void dispose() {

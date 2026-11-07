@@ -5540,5 +5540,95 @@
   "flow_sessionBanner": "Workflow · node {node}",
   "flow_runSession": "Run session",
   "flow_gotoAnswer": "Go answer",
-  "flow_nodeWaitingUser": "Waiting for you"
+  "flow_nodeWaitingUser": "Waiting for you",
+  "flow_tabOverview": "Overview",
+  "flow_tabEdit": "Edit",
+  "flow_tabRuns": "Runs",
+  "flow_overviewStart": "Start run",
+  "flow_overviewRehearse": "Rehearse (no real calls)",
+  "flow_overviewRecentRuns": "Recent runs",
+  "flow_overviewNoDescription": "No description yet",
+  "flow_startConfirmTitle": "Confirm start",
+  "flow_startRealCallHint": "This really calls agents and sends messages. A rehearsal makes no real calls.",
+  "flow_startRoleSection": "Roles to bind for this run",
+  "flow_startNoRoles": "No roles need manual binding",
+  "flow_startGo": "Confirm and run",
+  "flow_listDraft": "Unsaved draft",
+  "flow_listStatusRunning": "Running",
+  "flow_listStatusFailed": "Recently failed",
+  "flow_listStatusNeedsApproval": "Needs approval",
+  "flow_listStart": "Start run",
+  "flow_listCopy": "Duplicate",
+  "flow_listHistory": "View history",
+  "flow_libraryEmptyHint": "No flows in this library yet",
+  "flow_libraryFromTemplate": "Start from a template",
+  "flow_toolbarUnsaved": "● Unsaved changes",
+  "flow_toolbarSaving": "Saving…",
+  "flow_toolbarMore": "More actions",
+  "flow_drawerProblems": "Problems",
+  "flow_drawerDiff": "Compare",
+  "flow_drawerRehearsal": "Rehearsal",
+  "flow_drawerSource": "Source",
+  "flow_drawerClose": "Close panel",
+  "flow_drawerOpen": "Open panel",
+  "flow_rehearsalBanner": "Rehearsing · no real calls are made",
+  "flow_rehearseHint": "A rehearsal only walks the flow structure; no agent is called",
+  "flow_rehearseStart": "Start rehearsal",
+  "flow_sourceSyncHint": "Source and the visual view stay in sync; invalid source cannot be applied",
+  "flow_draftBannerTitle": "Unsaved edits from last time",
+  "flow_draftBannerRestore": "Restore",
+  "flow_draftBannerDiscard": "Discard",
+  "flow_draftBannerReadOnly": "Restore on desktop",
+  "flow_runsGroupAttention": "Needs your action",
+  "flow_runsGroupRunning": "Running",
+  "flow_runsGroupFinished": "Finished",
+  "flow_runMore": "More",
+  "flow_toolbarSaved": "Saved rev {n}",
+  "@flow_toolbarSaved": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "flow_toolbarProblems": "{count} problems",
+  "@flow_toolbarProblems": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "flow_drawerProblemsCount": "Problems {count}",
+  "@flow_drawerProblemsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "flow_conflictBody": "Someone else has saved revision {revision}",
+  "@flow_conflictBody": {
+    "placeholders": {
+      "revision": {
+        "type": "int"
+      }
+    }
+  },
+  "flow_overviewUpdated": "Last edited {when}",
+  "@flow_overviewUpdated": {
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_runElapsed": "Elapsed {duration}",
+  "@flow_runElapsed": {
+    "placeholders": {
+      "duration": {
+        "type": "String"
+      }
+    }
+  }
 }

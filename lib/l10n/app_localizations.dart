@@ -17866,6 +17866,294 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'等你回答'**
   String get flow_nodeWaitingUser;
+
+  /// No description provided for @flow_tabOverview.
+  ///
+  /// In zh, this message translates to:
+  /// **'概览'**
+  String get flow_tabOverview;
+
+  /// No description provided for @flow_tabEdit.
+  ///
+  /// In zh, this message translates to:
+  /// **'编辑'**
+  String get flow_tabEdit;
+
+  /// No description provided for @flow_tabRuns.
+  ///
+  /// In zh, this message translates to:
+  /// **'运行'**
+  String get flow_tabRuns;
+
+  /// No description provided for @flow_overviewStart.
+  ///
+  /// In zh, this message translates to:
+  /// **'开始运行'**
+  String get flow_overviewStart;
+
+  /// No description provided for @flow_overviewRehearse.
+  ///
+  /// In zh, this message translates to:
+  /// **'演练（不会真调用 agent）'**
+  String get flow_overviewRehearse;
+
+  /// No description provided for @flow_overviewRecentRuns.
+  ///
+  /// In zh, this message translates to:
+  /// **'最近运行'**
+  String get flow_overviewRecentRuns;
+
+  /// No description provided for @flow_overviewNoDescription.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无说明'**
+  String get flow_overviewNoDescription;
+
+  /// No description provided for @flow_startConfirmTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'确认开始运行'**
+  String get flow_startConfirmTitle;
+
+  /// No description provided for @flow_startRealCallHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'这会真实调用 Agent 并发送消息；演练不会产生真实调用。'**
+  String get flow_startRealCallHint;
+
+  /// No description provided for @flow_startRoleSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'这次要绑定的角色'**
+  String get flow_startRoleSection;
+
+  /// No description provided for @flow_startNoRoles.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个流程没有需要手动绑定的角色'**
+  String get flow_startNoRoles;
+
+  /// No description provided for @flow_startGo.
+  ///
+  /// In zh, this message translates to:
+  /// **'确认并运行'**
+  String get flow_startGo;
+
+  /// No description provided for @flow_listDraft.
+  ///
+  /// In zh, this message translates to:
+  /// **'有未保存草稿'**
+  String get flow_listDraft;
+
+  /// No description provided for @flow_listStatusRunning.
+  ///
+  /// In zh, this message translates to:
+  /// **'运行中'**
+  String get flow_listStatusRunning;
+
+  /// No description provided for @flow_listStatusFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'最近失败'**
+  String get flow_listStatusFailed;
+
+  /// No description provided for @flow_listStatusNeedsApproval.
+  ///
+  /// In zh, this message translates to:
+  /// **'待审批'**
+  String get flow_listStatusNeedsApproval;
+
+  /// No description provided for @flow_listStart.
+  ///
+  /// In zh, this message translates to:
+  /// **'开始运行'**
+  String get flow_listStart;
+
+  /// No description provided for @flow_listCopy.
+  ///
+  /// In zh, this message translates to:
+  /// **'复制'**
+  String get flow_listCopy;
+
+  /// No description provided for @flow_listHistory.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看历史'**
+  String get flow_listHistory;
+
+  /// No description provided for @flow_libraryEmptyHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'库里还没有流程'**
+  String get flow_libraryEmptyHint;
+
+  /// No description provided for @flow_libraryFromTemplate.
+  ///
+  /// In zh, this message translates to:
+  /// **'从模板新建'**
+  String get flow_libraryFromTemplate;
+
+  /// No description provided for @flow_toolbarUnsaved.
+  ///
+  /// In zh, this message translates to:
+  /// **'● 未保存的改动'**
+  String get flow_toolbarUnsaved;
+
+  /// No description provided for @flow_toolbarSaving.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存中…'**
+  String get flow_toolbarSaving;
+
+  /// No description provided for @flow_toolbarMore.
+  ///
+  /// In zh, this message translates to:
+  /// **'更多操作'**
+  String get flow_toolbarMore;
+
+  /// No description provided for @flow_drawerProblems.
+  ///
+  /// In zh, this message translates to:
+  /// **'问题'**
+  String get flow_drawerProblems;
+
+  /// No description provided for @flow_drawerDiff.
+  ///
+  /// In zh, this message translates to:
+  /// **'对比'**
+  String get flow_drawerDiff;
+
+  /// No description provided for @flow_drawerRehearsal.
+  ///
+  /// In zh, this message translates to:
+  /// **'演练'**
+  String get flow_drawerRehearsal;
+
+  /// No description provided for @flow_drawerSource.
+  ///
+  /// In zh, this message translates to:
+  /// **'源码'**
+  String get flow_drawerSource;
+
+  /// No description provided for @flow_drawerClose.
+  ///
+  /// In zh, this message translates to:
+  /// **'收起侧栏'**
+  String get flow_drawerClose;
+
+  /// No description provided for @flow_drawerOpen.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开侧栏'**
+  String get flow_drawerOpen;
+
+  /// No description provided for @flow_rehearsalBanner.
+  ///
+  /// In zh, this message translates to:
+  /// **'演练中 · 不会产生真实调用'**
+  String get flow_rehearsalBanner;
+
+  /// No description provided for @flow_rehearseHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'演练只走流程结构，不会真的调用 agent'**
+  String get flow_rehearseHint;
+
+  /// No description provided for @flow_rehearseStart.
+  ///
+  /// In zh, this message translates to:
+  /// **'开始演练'**
+  String get flow_rehearseStart;
+
+  /// No description provided for @flow_sourceSyncHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'源码与可视视图同步；源码有语法错误时无法应用'**
+  String get flow_sourceSyncHint;
+
+  /// No description provided for @flow_draftBannerTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'有上次未保存的改动'**
+  String get flow_draftBannerTitle;
+
+  /// No description provided for @flow_draftBannerRestore.
+  ///
+  /// In zh, this message translates to:
+  /// **'恢复'**
+  String get flow_draftBannerRestore;
+
+  /// No description provided for @flow_draftBannerDiscard.
+  ///
+  /// In zh, this message translates to:
+  /// **'丢弃'**
+  String get flow_draftBannerDiscard;
+
+  /// No description provided for @flow_draftBannerReadOnly.
+  ///
+  /// In zh, this message translates to:
+  /// **'在桌面端可恢复'**
+  String get flow_draftBannerReadOnly;
+
+  /// No description provided for @flow_runsGroupAttention.
+  ///
+  /// In zh, this message translates to:
+  /// **'需要你处理'**
+  String get flow_runsGroupAttention;
+
+  /// No description provided for @flow_runsGroupRunning.
+  ///
+  /// In zh, this message translates to:
+  /// **'运行中'**
+  String get flow_runsGroupRunning;
+
+  /// No description provided for @flow_runsGroupFinished.
+  ///
+  /// In zh, this message translates to:
+  /// **'已结束'**
+  String get flow_runsGroupFinished;
+
+  /// No description provided for @flow_runMore.
+  ///
+  /// In zh, this message translates to:
+  /// **'更多'**
+  String get flow_runMore;
+
+  /// No description provided for @flow_toolbarSaved.
+  ///
+  /// In zh, this message translates to:
+  /// **'已保存第 {n} 版'**
+  String flow_toolbarSaved(int n);
+
+  /// No description provided for @flow_toolbarProblems.
+  ///
+  /// In zh, this message translates to:
+  /// **'有 {count} 个问题'**
+  String flow_toolbarProblems(int count);
+
+  /// No description provided for @flow_drawerProblemsCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'问题 {count}'**
+  String flow_drawerProblemsCount(int count);
+
+  /// No description provided for @flow_conflictBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'别人已把它改到第 {revision} 版'**
+  String flow_conflictBody(int revision);
+
+  /// No description provided for @flow_overviewUpdated.
+  ///
+  /// In zh, this message translates to:
+  /// **'最近修改 {when}'**
+  String flow_overviewUpdated(String when);
+
+  /// No description provided for @flow_runElapsed.
+  ///
+  /// In zh, this message translates to:
+  /// **'已用 {duration}'**
+  String flow_runElapsed(String duration);
 }
 
 class _AppLocalizationsDelegate
