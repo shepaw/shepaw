@@ -672,6 +672,17 @@ mixin _MessagingOps on _ChatControllerBase {
   // 本地排空循环（processNextInQueue）已删除：队列由主机 SessionRuntime
   // 自己出队，App 不再从本地列表逐条派发。
 
+  /// 流式占位贴在对应的用户消息后面，再按时间稳定排序。
+  void _placeStreamingBubble(Message user, Message streaming) {
+    DmSendTurnPlanner.placeStreamingAfterUser(
+      messages: messages,
+      user: user,
+      streaming: streaming,
+    );
+    messageIdMap[streaming.id] = streaming;
+    sortMessagesByTime(messages);
+  }
+
   // ---------------------------------------------------------------------------
   // Process DM message
   // ---------------------------------------------------------------------------
@@ -693,7 +704,8 @@ mixin _MessagingOps on _ChatControllerBase {
     // 「上一轮还在跑」不再拦截发送：主机 SessionRuntime 会把这条排进队列。
     // 这里只决定本机 UI 何时接管 —— 排队回合共用的 streaming / isProcessing /
     // ActiveTask 仍属于上一轮，不能现在就抢过来。
-    final deferUi = deferredTurn ??
+    // 主机事后回 queued 时要改成「先别占流式 UI」，所以不是 final。
+    var deferUi = deferredTurn ??
         ChatSendPlanner.deferTurnUi(
           hostRunning: sessionState?.value.isRunning ?? false,
           localProcessing: isProcessing,
@@ -756,15 +768,15 @@ mixin _MessagingOps on _ChatControllerBase {
         replyQuoteText: replyQuoteText,
         instructionName: instructionName,
       );
-      // 排队回合：先只落用户气泡。流式占位等主机真正开跑这一轮再建，
-      // 免得和上一轮抢同一份 streaming / isProcessing / ActiveTask。
-      if (!deferUi) {
-        streaming.begin(optimistic.streaming.id, fromId: remoteAgent.id);
-        messages.add(optimistic.streaming);
-        messageIdMap[optimistic.streaming.id] = optimistic.streaming;
-      }
+      // 先落用户气泡，流式占位紧跟在它后面。排队回合先不建占位，
+      // 免得和上一轮抢同一份 streaming / isProcessing / ActiveTask，
+      // 也免得空的「...」和排队条同时出现。
       messages.add(optimistic.user);
       messageIdMap[optimistic.user.id] = optimistic.user;
+      if (!deferUi) {
+        streaming.begin(optimistic.streaming.id, fromId: remoteAgent.id);
+        _placeStreamingBubble(optimistic.user, optimistic.streaming);
+      }
 
       /// 返回 true 表示本回合的帧可以写进当前频道共用的 streaming / 气泡 /
       /// token。排队回合可能几分钟后才开跑，期间用户切到了别的会话；这时
@@ -779,8 +791,7 @@ mixin _MessagingOps on _ChatControllerBase {
         uiActivated = true;
         myEpoch = ++_dmTurnEpoch;
         if (!messageIdMap.containsKey(optimistic.streaming.id)) {
-          messages.add(optimistic.streaming);
-          messageIdMap[optimistic.streaming.id] = optimistic.streaming;
+          _placeStreamingBubble(optimistic.user, optimistic.streaming);
         }
         streaming.begin(optimistic.streaming.id, fromId: remoteAgent.id);
         isProcessing = true;
@@ -829,6 +840,29 @@ mixin _MessagingOps on _ChatControllerBase {
         attachments: attachments,
         instructionName: instructionName,
         deferredTurn: deferUi,
+        onHostQueued: () {
+          // 本机以为能马上开跑，主机却收进了队列：撤掉空的「...」，
+          // 停止按钮交还给上一轮。真正开跑时 activateTurnUi 再把占位
+          // 插回这条用户消息后面。已经写出正文的不撤，避免迟到的
+          // queued 把正在输出的回合清掉。
+          if (deferUi) return;
+          final removed = DmSendTurnPlanner.dropEmptyStreamingPlaceholder(
+            messages: messages,
+            streamingId: optimistic.streaming.id,
+          );
+          if (!removed) return;
+          deferUi = true;
+          messageIdMap.remove(optimistic.streaming.id);
+          if (streaming.messageId == optimistic.streaming.id) {
+            streaming.clear();
+          }
+          if (identical(acpCancellationToken, turnToken)) {
+            acpCancellationToken = null;
+          }
+          isProcessing = false;
+          uiActivated = false;
+          _notify();
+        },
         onReconnecting: (attempt, total) {
           if (attempt == 0) {
             _emit(HideReconnectingSnackBarEvent());
