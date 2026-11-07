@@ -336,14 +336,34 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
     ));
   }
 
-  /// P6：顶部「运行会话」入口打开本次运行的惜宝会话（`flow_<rid8>_she`）。
-  void _openRunSession(String runSheSessionId) {
+  /// 顶部「运行会话」：打开第一个已经跑起来的节点自己的会话。
+  ///
+  /// 节点的 `agent_id` 是模板里配的执行者（design 经常不是惜宝）。聊天记录
+  /// 在那条节点会话上，不在 `flow_<tag>_she`。节点还没会话时才打开惜宝那条。
+  void _openRunConversation(FlowRunView run) {
     final l10n = AppLocalizations.of(context);
+    final target =
+        flowRunConversationTarget(run.tree, sheSessionId: run.runSessionId);
+    if (target == null) return;
+    final node = _nodeForSession(run, target.sessionId);
+    if (node != null) {
+      _openSession(node);
+      return;
+    }
     unawaited(openFlowRunSession(
       peerId: widget.peerId,
-      runSheSessionId: runSheSessionId,
+      runSheSessionId: target.sessionId,
       title: l10n.flow_runSession,
     ));
+  }
+
+  FlowNode? _nodeForSession(FlowRunView run, String sessionId) {
+    for (final root in run.tree) {
+      final node = root.find(
+          (candidate) => flowFoldedSessionId(candidate.sessionId ?? '') == sessionId);
+      if (node != null) return node;
+    }
+    return null;
   }
 
   void _showNode(FlowNode node) {
@@ -541,11 +561,11 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
       padding: const EdgeInsets.all(12),
       children: [
         _RunHeader(run: run),
-        // P6：运行级惜宝会话（flow_<rid8>_she）。gate / judge 这类流程层面的
-        // 卡片都落在这里，从运行页能一步点进去。拿不到 rid8 时不画这个入口。
+        // 群运行的对话在群里，不画这个入口（runSessionId 为空）。
+        // 点进去优先打开节点自己的 agent 会话，而不是惜宝私聊。
         if (run.runSessionId != null) ...[
           const SizedBox(height: 8),
-          _RunSessionEntry(onTap: () => _openRunSession(run.runSessionId!)),
+          _RunSessionEntry(onTap: () => _openRunConversation(run)),
         ],
         const SizedBox(height: 12),
         FlowNodeTree(

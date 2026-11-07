@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shepaw/peer/models/flow_models.dart';
 import 'package:shepaw/peer/services/flow_session_open.dart';
 import 'package:shepaw/peer/services/peer_agent_client_service.dart';
 import 'package:shepaw/service_locator.dart';
@@ -114,6 +115,34 @@ void main() {
       db: db,
     );
     expect((await db.getChannelById(secondChannel))!.name, 'Session');
+  });
+
+  test('运行会话优先打开节点自己的 agent，没有节点会话才退回惜宝', () {
+    final design = flowRunConversationTarget(const [
+      FlowNode(
+        key: 'design',
+        id: 'design',
+        kind: 'task',
+        sessionId: 'flow_deadbe12_design',
+        agentId: 'coder-agent',
+      ),
+      FlowNode(
+        key: 'impl',
+        id: 'impl',
+        kind: 'task',
+        sessionId: 'flow_deadbe12_impl',
+        agentId: 'agent-7',
+      ),
+    ], sheSessionId: 'flow_deadbe12_she');
+    expect(design?.sessionId, 'flow_deadbe12_design');
+    expect(design?.agentId, 'coder-agent');
+
+    final fallback = flowRunConversationTarget(const [
+      FlowNode(key: 'ok', id: 'ok', kind: 'gate'),
+    ], sheSessionId: 'flow_deadbe12_she');
+    expect(fallback?.sessionId, 'flow_deadbe12_she');
+    expect(fallback?.agentId, SheService.sheId);
+    expect(flowRunConversationTarget(const []), isNull);
   });
 
   test('A2-9: 运行会话用 SheService.sheId，而不是第四份字面量', () async {

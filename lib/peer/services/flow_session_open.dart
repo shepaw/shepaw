@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import '../../models/channel.dart';
+import '../../peer/models/flow_models.dart';
 import '../../service_locator.dart' show getIt;
 import '../../services/chat_navigation_service.dart';
 import '../../services/local_database_service.dart';
@@ -216,7 +217,34 @@ Future<void> openFlowNodeSession({
       db: db,
     );
 
-/// P6：FlowRunScreen 顶部「运行会话」入口，打开本次运行的惜宝会话
+/// 顶部「运行会话」该打开的那条私聊。
+///
+/// 节点上配的 agent 才是干活的人，聊天记录在它自己的节点会话里
+/// （`flow_<tag>_<node>`）。design 配的不是惜宝时，不能再进
+/// `flow_<tag>_she` 那条惜宝私聊。按树的先序取第一个已经有真会话、
+/// 也有 agent 的节点。一个都没有（节点还没跑）才退回运行级惜宝会话。
+({String sessionId, String agentId})? flowRunConversationTarget(
+  List<FlowNode> tree, {
+  String? sheSessionId,
+}) {
+  for (final root in tree) {
+    final node = root.find((candidate) {
+      final sessionId = flowFoldedSessionId(candidate.sessionId ?? '');
+      final agentId = (candidate.agentId ?? '').trim();
+      return sessionId != null && agentId.isNotEmpty;
+    });
+    if (node == null) continue;
+    return (
+      sessionId: flowFoldedSessionId(node.sessionId!)!,
+      agentId: node.agentId!.trim(),
+    );
+  }
+  final she = sheSessionId?.trim() ?? '';
+  if (she.isEmpty) return null;
+  return (sessionId: she, agentId: SheService.sheId);
+}
+
+/// P6：节点还没跑出自己的会话时，顶部「运行会话」才打开惜宝会话
 /// （`flow_<rid8>_she`）。
 Future<void> openFlowRunSession({
   required String peerId,

@@ -12,9 +12,9 @@ import 'package:shepaw/screens/flow_run_screen.dart';
 import 'package:shepaw/services/approval/pending_approval_hub.dart';
 import 'package:shepaw/services/approval/pending_approval_item.dart';
 
-/// P6：FlowRunScreen 顶部「运行会话」入口打开本次运行的惜宝会话
-/// （`psess_flow_<rid8>_she`）；等用户回答的节点上「去回答」打开节点会话并
-/// 带上待答卡片的高亮 id。关卡按钮保持原样可用。
+/// 顶部「运行会话」打开第一个已经跑起来的节点自己的会话（配的那个 agent），
+/// 不再一律进惜宝的 `flow_<tag>_she`。节点还没会话时才退回惜宝。
+/// 等用户回答的节点上「去回答」仍打开节点会话并带上待答卡片的高亮 id。
 const _tree = [
   {
     'key': 'impl',
@@ -112,9 +112,26 @@ void main() {
     PendingApprovalHub.instance.resetForTest();
   });
 
-  testWidgets('P6: 运行会话入口打开 psess_flow_<rid8>_she（从节点前缀推导）', (tester) async {
+  testWidgets('运行会话打开第一个节点自己的 agent，而不是惜宝私聊', (tester) async {
     final bus = StreamController<PeerControlEvent>.broadcast();
-    await tester.pumpWidget(_app(_host(bus)));
+    await tester.pumpWidget(_app(_host(bus, tree: const [
+      {
+        'key': 'design',
+        'id': 'design',
+        'kind': 'task',
+        'status': 'failed',
+        'session_id': 'flow_deadbe12_design',
+        'agent_id': 'coder-agent',
+      },
+      {
+        'key': 'impl',
+        'id': 'impl',
+        'kind': 'task',
+        'status': 'pending',
+        'session_id': 'flow_deadbe12_impl',
+        'agent_id': 'agent-7',
+      },
+    ])));
     await _settle(tester);
 
     expect(find.byKey(const ValueKey('flow-run-session')), findsOneWidget);
@@ -122,9 +139,8 @@ void main() {
     await _settle(tester);
 
     expect(opened, hasLength(1));
-    expect(opened.single.channelId, 'psess_flow_deadbe12_she');
-    expect(opened.single.agentId, 'she-builtin-agent-001');
-    // 运行会话不带某张卡的高亮：它是流程层面的入口。
+    expect(opened.single.channelId, 'psess_flow_deadbe12_design');
+    expect(opened.single.agentId, 'coder-agent');
     expect(debugLastFlowSessionHighlightMessageId, isNull);
     await tester.pumpWidget(const SizedBox());
     await bus.close();
