@@ -212,6 +212,44 @@ steps:
     });
   });
 
+  group('FlowRunFormData.parse', () {
+    const yaml = '''
+flow: dev
+inputs:
+  goal: {type: string, required: true}
+roles:
+  coder: {desc: 写, default: codex-main}
+steps:
+  - id: impl
+    task: {agent: claude-main, prompt: 写}
+''';
+
+    test('一次解析拿齐 inputs / 角色 / 默认值，老主机退回本地扫描', () {
+      final data = FlowRunFormData.parse(yaml);
+      expect(data.inputs.map((s) => s.name), ['goal']);
+      expect(data.inputs.first.required, isTrue);
+      expect(data.roleDefaults, {'coder': 'codex-main'});
+      expect(data.roles, isEmpty,
+          reason: '节点已改成 agent，声明过的角色不该再问绑定');
+    });
+
+    test('主机给了 required_roles 就以主机为准，不再自己扫', () {
+      final data =
+          FlowRunFormData.parse(yaml, requiredRoles: ['coder', 'ghost']);
+      expect(data.roles, ['coder', 'ghost']);
+      // 其余两项仍然来自同一次解析，没有丢。
+      expect(data.inputs.map((s) => s.name), ['goal']);
+      expect(data.roleDefaults, {'coder': 'codex-main'});
+    });
+
+    test('坏 YAML 不抛，给空表单数据', () {
+      final data = FlowRunFormData.parse('::: not yaml');
+      expect(data.inputs, isEmpty);
+      expect(data.roles, isEmpty);
+      expect(data.roleDefaults, isEmpty);
+    });
+  });
+
   test('peekInputs 读出类型、必填和默认值', () {
     final specs = peekInputs(
       'flow: dev\ninputs:\n  goal: {type: string, required: true}\n  rounds: {type: int, default: 3}\nsteps: []\n',

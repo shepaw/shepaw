@@ -227,15 +227,18 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
     }
     var yaml = fetched.yaml;
     var revision = fetched.revision;
-    // 只问「步骤树里还引用着的」角色：头里声明过、但用户已经把执行者换成
-    // 具体 Agent 的角色不需要绑定（f3eb35c1）。模板自带的 roles.*.default
-    // 预填进表单，主机不会自己套默认值，得随 bindings 发过去。
+    // 新版主机在 flow_get_resp 里直接给出需要绑定的角色；老主机没给就退回
+    // 客户端的保守扫描。整份定义只在这里解析一次，inputs / 角色默认值一起
+    // 算好传给表单页，页面不再重复解析 YAML。
+    var form = FlowRunFormData.parse(yaml,
+        requiredRoles: fetched.requiredRoles);
     var plan = await pushFlowStartScreen(
       context,
       flowName: flow.name,
       yaml: yaml,
-      roles: peekUsedRoles(yaml),
-      roleDefaults: peekRoleDefaults(yaml),
+      roles: form.roles,
+      roleDefaults: form.roleDefaults,
+      inputSpecs: form.inputs,
       dirty: _editor?.dirty ?? _editorDirty,
       scope: widget.scope,
       revision: revision,
@@ -263,13 +266,13 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
       }
       yaml = saved.yaml;
       revision = saved.revision;
+      form = FlowRunFormData.parse(yaml, requiredRoles: saved.requiredRoles);
       // 表单是照旧版本生成的，草稿里新增的 role 节点可能要多一条绑定。带着
       // 刚填好的值再问一次，别等主机跑到那个节点才报「角色没有绑定 Agent」。
-      final savedRoles = peekUsedRoles(yaml);
       final missing = autoBound
           ? <String>[]
           : <String>[
-              for (final role in savedRoles)
+              for (final role in form.roles)
                 if (!firstPlan.bindings.containsKey(role)) role,
             ];
       if (missing.isNotEmpty) {
@@ -277,8 +280,9 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
           context,
           flowName: flow.name,
           yaml: yaml,
-          roles: savedRoles,
-          roleDefaults: peekRoleDefaults(yaml),
+          roles: form.roles,
+          roleDefaults: form.roleDefaults,
+          inputSpecs: form.inputs,
           initialInputs: firstPlan.inputs,
           initialBindings: firstPlan.bindings,
           dirty: false,

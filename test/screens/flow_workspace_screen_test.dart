@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+// 只为在用例结束后还原平台实例；shared_preferences 本身是直接依赖。
+// ignore: depend_on_referenced_packages
+import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 import 'package:shepaw/l10n/app_localizations.dart';
 import 'package:shepaw/models/remote_agent.dart';
 import 'package:shepaw/peer/services/hub_flow.dart';
@@ -34,6 +37,69 @@ void main() {
     expect(start['revision'], 3);
     // 主机拒绝时把原因告诉用户，不跳走。
     expect(find.text('缺少输入'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('主机给出 required_roles 时按主机名单生成绑定行', (tester) async {
+    final harness = _Harness()
+      // 定义里一个 role 引用都没有：客户端自己扫描会得到空名单，只有主机
+      // 名单被采纳才会出现这一行（模拟主机新增了 App 还不认的节点用法）。
+      ..flowYaml = 'flow: dev\nsteps:\n  - id: impl\n    task: {agent: claude-main, prompt: 写}\n'
+      ..requiredRoles = ['coder'];
+    addTearDown(harness.close);
+    await _pump(tester, harness.client);
+
+    await tester.tap(find.byKey(const ValueKey('flow-start-dev')));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('start-role-coder')), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('先保存再跑：新版本多出角色时带着旧值再问一次', (tester) async {
+    // 草稿落盘走 SharedPreferences，没 mock 平台通道时 save() 会一直挂着。
+    // 用完把平台实例还原：否则同文件后续用例会真的落草稿、互相污染。
+    final originalPlatform = SharedPreferencesStorePlatform.instance;
+    SharedPreferences.setMockInitialValues({});
+    addTearDown(() {
+      SharedPreferences.setMockInitialValues({}); // 清数据 + 重置缓存实例
+      SharedPreferencesStorePlatform.instance = originalPlatform;
+    });
+    final harness = _Harness(editable: true)
+      ..flowYaml = 'flow: dev\ninputs:\n  goal: {type: string, required: true}\nsteps:\n- id: impl\n  task: {prompt: 写}\n'
+      ..requiredRoles = [];
+    addTearDown(harness.close);
+    await _pumpPushed(tester, harness.client, size: const Size(2400, 1800));
+    await tester.tap(find.text('dev'));
+    await _settle(tester);
+    // 加一步 → 产生未保存草稿。
+    await tester.tap(find.byKey(const ValueKey('after-impl')));
+    await _settle(tester);
+
+    await tester.tap(find.byKey(const ValueKey('flow-start-dev')));
+    await _settleRoute(tester);
+    // 表单照旧版生成：没有角色要绑。
+    expect(find.byKey(const ValueKey('start-role-reviewer')), findsNothing);
+    await tester.enterText(
+        find.byKey(const ValueKey('start-input-goal')), '目标');
+    await tester.tap(find.byKey(const ValueKey('save-first')));
+    await tester.pump();
+    // 保存成的新一版里多了一个 role 节点，主机名单也跟着变了。
+    harness.flowYaml = 'flow: dev\ninputs:\n  goal: {type: string, required: true}\nroles:\n  reviewer: {desc: 审}\nsteps:\n- id: impl\n  task: {role: reviewer, prompt: 写}\n';
+    harness.requiredRoles = ['reviewer'];
+    await tester.tap(find.byKey(const ValueKey('start-go')));
+    await _settleRoute(tester);
+
+    // 表单重新打开：刚填的目标带回来了，并补问新角色（不能拿旧 bindings 直接跑）。
+    expect(find.byType(FlowStartScreen), findsOneWidget);
+    expect(
+        tester
+            .widget<TextField>(
+                find.byKey(const ValueKey('start-input-goal')))
+            .controller
+            ?.text,
+        '目标');
+    expect(find.byKey(const ValueKey('start-role-reviewer')), findsOneWidget);
+    expect(harness.sent.any((f) => f['type'] == 'flow_run_start_req'), isFalse);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -670,48 +736,6 @@ steps:
     expect(after.key.toString(), contains('p2'));
     await tester.pumpWidget(const SizedBox());
   });
-
-  // 这个用例必须留在文件最后：它给 SharedPreferences 装了 mock，之后同一 isolate
-  // 里的用例就能真的落草稿，前面的 A3-7 / A6-1 会被残留草稿改变行为。
-  testWidgets('先保存再跑：新版本多出角色时带着旧值再问一次', (tester) async {
-    // 草稿落盘走 SharedPreferences，没 mock 平台通道时 save() 会一直挂着。
-    SharedPreferences.setMockInitialValues({});
-    final harness = _Harness(editable: true)
-      ..flowYaml = 'flow: dev\ninputs:\n  goal: {type: string, required: true}\nsteps:\n- id: impl\n  task: {prompt: 写}\n';
-    addTearDown(harness.close);
-    await _pumpPushed(tester, harness.client, size: const Size(2400, 1800));
-    await tester.tap(find.text('dev'));
-    await _settle(tester);
-    // 加一步 → 产生未保存草稿。
-    await tester.tap(find.byKey(const ValueKey('after-impl')));
-    await _settle(tester);
-
-    await tester.tap(find.byKey(const ValueKey('flow-start-dev')));
-    await _settleRoute(tester);
-    // 表单照旧版生成：没有角色要绑。
-    expect(find.byKey(const ValueKey('start-role-reviewer')), findsNothing);
-    await tester.enterText(
-        find.byKey(const ValueKey('start-input-goal')), '目标');
-    await tester.tap(find.byKey(const ValueKey('save-first')));
-    await tester.pump();
-    // 保存成的新一版里多了一个 role 节点。
-    harness.flowYaml = 'flow: dev\ninputs:\n  goal: {type: string, required: true}\nroles:\n  reviewer: {desc: 审}\nsteps:\n- id: impl\n  task: {role: reviewer, prompt: 写}\n';
-    await tester.tap(find.byKey(const ValueKey('start-go')));
-    await _settleRoute(tester);
-
-    // 表单重新打开：刚填的目标带回来了，并补问新角色（不能拿旧 bindings 直接跑）。
-    expect(find.byType(FlowStartScreen), findsOneWidget);
-    expect(
-        tester
-            .widget<TextField>(
-                find.byKey(const ValueKey('start-input-goal')))
-            .controller
-            ?.text,
-        '目标');
-    expect(find.byKey(const ValueKey('start-role-reviewer')), findsOneWidget);
-    expect(harness.sent.any((f) => f['type'] == 'flow_run_start_req'), isFalse);
-    await tester.pumpWidget(const SizedBox());
-  });
 }
 
 RemoteAgent _peerAgent(String id, String name, String peerId) => RemoteAgent(
@@ -740,6 +764,10 @@ class _Harness {
 
   /// `flow_get` 回的定义。换掉它就能试 inputs / roles 的开跑表单。
   String flowYaml = 'flow: dev\nsteps: []\n';
+
+  /// 新版主机在 `flow_get_resp` 里带的「需要绑定的角色」。null = 老主机，
+  /// 客户端要退回自己的保守扫描。
+  List<String>? requiredRoles;
 
   /// 库里的流程名单。改它就能模拟「对话框打开期间别人建了同名流程」。
   List<Map<String, dynamic>> flows = [
@@ -800,6 +828,7 @@ class _Harness {
                 'success': true,
                 'revision': 3,
                 'yaml': flowYaml,
+                if (requiredRoles != null) 'required_roles': requiredRoles,
               },
             'flow_schema_req' => {
                 'type': 'flow_schema_resp',

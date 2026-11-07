@@ -54,50 +54,81 @@ class FlowExecutor {
       };
 }
 
+/// 解析一次 YAML，给下面所有 peek 共用。读不动就给空 map（退回安全默认值）。
+Map<dynamic, dynamic> _loadRoot(String yaml) {
+  try {
+    final doc = loadYaml(yaml);
+    if (doc is Map) return Map<dynamic, dynamic>.from(doc);
+  } catch (_) {
+    // 主机那边也会先报校验错，这里只要别抛。
+  }
+  return const <dynamic, dynamic>{};
+}
+
+List<String> _peekRoleNames(Map doc) {
+  final roles = doc['roles'];
+  return roles is Map
+      ? <String>[for (final key in roles.keys) key.toString()]
+      : <String>[];
+}
+
 /// 只读地看一眼定义头里的 `roles`，用来填「谁来做」的下拉。
 ///
 /// App 原则上不解析 YAML —— 改动一律走主机的 header 操作。这里破例，**只读不
-/// 写**：角色名单没有别的帧能拿到，读出来的东西也不会被回写进定义。读不动就
-/// 返回空列表，下拉退化成没有候选项。
-List<String> peekRoles(String yaml) {
-  try {
-    final doc = loadYaml(yaml);
-    if (doc is! Map) return const [];
-    final roles = doc['roles'];
-    if (roles is! Map) return const [];
-    return [for (final key in roles.keys) key.toString()];
-  } catch (_) {
-    return const [];
+/// 写**：角色名单没有别的帧能拿到，读出来的东西也不会被回写进定义。
+List<String> peekRoles(String yaml) => _peekRoleNames(_loadRoot(yaml));
+
+/// 开跑表单要用的头部信息，**一次解析 YAML** 拿齐。
+///
+/// 以前点一次「运行」要解析三四遍（角色扫描 / 角色默认值 / 表单页的 inputs）；
+/// 现在 [FlowRunFormData.parse] 解析一次，结果直接传给开跑表单页。
+class FlowRunFormData {
+  const FlowRunFormData({
+    required this.inputs,
+    required this.roles,
+    required this.roleDefaults,
+  });
+
+  /// 定义头声明的输入，用来生成表单字段。
+  final List<FlowInputSpec> inputs;
+
+  /// 开跑前要绑 Agent 的角色。
+  final List<String> roles;
+
+  /// `roles.*.default`，用来预填绑定。
+  final Map<String, String> roleDefaults;
+
+  /// [requiredRoles] 是新版主机在 `flow_get_resp` 里直接给出的名单（由主机从
+  /// 解析后的 Definition 算出，见 `crates/api/src/flow/roles.rs`）。有就用它，
+  /// 客户端不用再镜像主机的绑定解析规则；老主机没给这个字段时才退回本地的
+  /// [peekUsedRoles] 保守扫描。
+  factory FlowRunFormData.parse(String yaml, {List<String>? requiredRoles}) {
+    final doc = _loadRoot(yaml);
+    return FlowRunFormData(
+      inputs: _peekInputs(doc),
+      roles: requiredRoles ?? _peekUsedRoles(doc),
+      roleDefaults: _peekRoleDefaults(doc),
+    );
   }
 }
 
-/// 只读地看一眼定义里**可能要绑定 Agent** 的角色。
+/// 只读地看一眼定义里**可能要绑定 Agent** 的角色（老主机 / 离线兜底）。
 ///
 /// 主机在几种地方查 `bindings`：`task.role` / `task.uses: role:` 走
 /// `resolve_target`，`cond.judge` / `plan.who` 走 `judge_agent`
 /// （`crates/api/src/flow/host.rs`）；后两者都是自由文本，主机新增用法时 App
-/// 不该逐个镜像字段，漏一个就会静默少发绑定、等跑到那个节点才报错。所以这里
-/// 反过来做**保守排除**：步骤树里任何字符串值只要等于声明过的角色名，就当它还
-/// 要用；只有全流程一次都没出现过的角色才不问。
+/// 不该逐个镜像字段。所以这里反过来做**保守排除**：步骤树里任何字符串值只要
+/// 等于声明过的角色名，就当它还要用；只有全流程一次都没出现过的角色才不问。
 ///
 /// 头里 `roles:` 声明过、但节点后来全改成 `agent: <id>` 的角色因此不再拦着用户
 /// （玉简 f3eb35c1）；没在 roles 里声明、却写在 `task.role` / `judge` / `who`
 /// 上的名字也会问，免得主机开跑后找不到 Agent。
 ///
-/// 只读不写，只解析一次 YAML；解析不了就给空列表（主机那边也会先报校验错）。
 /// 返回顺序以头里的声明顺序为准，手写了未声明角色的节点排在后面。
-List<String> peekUsedRoles(String yaml) {
-  Object? doc;
-  try {
-    doc = loadYaml(yaml);
-  } catch (_) {
-    return const [];
-  }
-  if (doc is! Map) return const [];
-  final roles = doc['roles'];
-  final declared = roles is Map
-      ? <String>[for (final key in roles.keys) key.toString()]
-      : <String>[];
+List<String> peekUsedRoles(String yaml) => _peekUsedRoles(_loadRoot(yaml));
+
+List<String> _peekUsedRoles(Map doc) {
+  final declared = _peekRoleNames(doc);
   final declaredSet = declared.toSet();
   final found = <String>{};
 
@@ -160,16 +191,21 @@ List<String> peekUsedRoles(String yaml) {
 ///
 /// 主机 `flow_start` 不会自动把 roles.*.default 灌进 bindings，所以开跑表单
 /// 要预填、并随 `bindings` 一起发过去，否则模板写着默认 Agent 也照样要人手选。
-Map<String, String> peekRoleDefaults(String yaml) {
+Map<String, String> peekRoleDefaults(String yaml) =>
+    _peekRoleDefaults(_loadRoot(yaml));
+
+Map<String, String> _peekRoleDefaults(Map doc) {
   final out = <String, String>{};
-  for (final entry in FlowHeaderPeek.raw(yaml, 'roles').entries) {
+  final raw = doc['roles'];
+  if (raw is! Map) return out;
+  for (final entry in raw.entries) {
     final spec = entry.value;
     if (spec is! Map) continue;
     final agent = spec['default']?.toString().trim() ?? '';
     // `{{ inputs.x }}` 这类模板值主机不会当 Agent id 解析，别预填进去把
     // 原本能手选的绑定变成一条跑不起来的 bindings。
     if (agent.isEmpty || agent.contains('{{')) continue;
-    out[entry.key] = agent;
+    out[entry.key.toString()] = agent;
   }
   return out;
 }
@@ -239,14 +275,9 @@ class FlowHeaderPeek {
 /// 只读地看一眼定义头里的 `inputs`，用来生成开跑表单。
 ///
 /// 和 [peekRoles] 一样：只读不写，读不动就给空列表。
-List<FlowInputSpec> peekInputs(String yaml) {
-  Object? doc;
-  try {
-    doc = loadYaml(yaml);
-  } catch (_) {
-    return const [];
-  }
-  if (doc is! Map) return const [];
+List<FlowInputSpec> peekInputs(String yaml) => _peekInputs(_loadRoot(yaml));
+
+List<FlowInputSpec> _peekInputs(Map doc) {
   final inputs = doc['inputs'];
   if (inputs is! Map) return const [];
   final out = <FlowInputSpec>[];

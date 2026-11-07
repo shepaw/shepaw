@@ -363,8 +363,11 @@ class HubFlow {
         responseType: 'flow_list_resp',
       );
 
-  /// 读一版定义。返回 `{revision, yaml}`；失败返回 null。
-  Future<({int revision, String yaml})?> get(
+  /// 读一版定义。返回 `{revision, yaml, requiredRoles}`；失败返回 null。
+  ///
+  /// `requiredRoles` 是新版主机算出的「开跑前要绑 Agent 的角色」；老主机不带
+  /// 这个字段时为 null，调用方退回客户端的保守扫描。
+  Future<({int revision, String yaml, List<String>? requiredRoles})?> get(
     String peerId,
     String name, {
     String scope = '',
@@ -378,7 +381,14 @@ class HubFlow {
     if (response == null || response['success'] != true) return null;
     final yaml = response['yaml'];
     if (yaml is! String) return null;
-    return (revision: (response['revision'] as num?)?.toInt() ?? 0, yaml: yaml);
+    final rawRoles = response['required_roles'];
+    return (
+      revision: (response['revision'] as num?)?.toInt() ?? 0,
+      yaml: yaml,
+      requiredRoles: rawRoles is List
+          ? <String>[for (final role in rawRoles) role.toString()]
+          : null,
+    );
   }
 
   /// 主机校验并回节点树。`error` 非空时是写不通的原因。

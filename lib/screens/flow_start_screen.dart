@@ -38,6 +38,7 @@ Future<FlowStartPlan?> pushFlowStartScreen(
   required String yaml,
   required List<String> roles,
   required Map<String, String> roleDefaults,
+  List<FlowInputSpec>? inputSpecs,
   required bool dirty,
   required String scope,
   required int revision,
@@ -53,6 +54,7 @@ Future<FlowStartPlan?> pushFlowStartScreen(
         yaml: yaml,
         roles: roles,
         roleDefaults: roleDefaults,
+        inputSpecs: inputSpecs,
         dirty: dirty,
         scope: scope,
         revision: revision,
@@ -72,6 +74,7 @@ class FlowStartScreen extends StatefulWidget {
     required this.yaml,
     required this.roles,
     this.roleDefaults = const {},
+    this.inputSpecs,
     required this.dirty,
     required this.scope,
     required this.revision,
@@ -88,6 +91,11 @@ class FlowStartScreen extends StatefulWidget {
 
   /// `roles.*.default`：预填进绑定，省得模板自带 Agent 还要人手选一遍。
   final Map<String, String> roleDefaults;
+
+  /// 调用方已经解析过定义时直接给字段规格，避免再解析一遍 YAML；
+  /// 不传（例如测试里单独打开本页）就自己从 [yaml] 读。
+  final List<FlowInputSpec>? inputSpecs;
+
   final bool dirty;
   final String scope;
 
@@ -117,7 +125,7 @@ class _FlowStartScreenState extends State<FlowStartScreen> {
   @override
   void initState() {
     super.initState();
-    _specs = peekInputs(widget.yaml);
+    _specs = widget.inputSpecs ?? peekInputs(widget.yaml);
     for (final spec in _specs) {
       _inputs[spec.name] = TextEditingController(
         text: widget.initialInputs[spec.name] ?? spec.defaultValue ?? '',
