@@ -836,6 +836,12 @@ abstract class AppLocalizations {
   /// **'我的'**
   String get nav_mine;
 
+  /// No description provided for @nav_flows.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作流'**
+  String get nav_flows;
+
   /// No description provided for @mine_sectionContent.
   ///
   /// In zh, this message translates to:

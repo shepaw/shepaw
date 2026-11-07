@@ -204,6 +204,29 @@ void main() {
     expect(value, 'lib/helper');
   });
 
+  testWidgets('文本输入框随内容自动长高，不再钉死一行', (tester) async {
+    for (final shape in [FlowFieldShape.string, FlowFieldShape.text]) {
+      await _pump(
+        tester,
+        FlowFieldEditor(
+          key: ValueKey('editor-$shape'),
+          spec: _spec('task.prompt', shape),
+          current: '短',
+          onChanged: (_) {},
+        ),
+      );
+      final field = find.byKey(const ValueKey('f:task.prompt'));
+      final widget = tester.widget<TextField>(field);
+      expect(widget.maxLines, isNull, reason: '$shape 不能限死行数');
+      expect(widget.minLines, shape == FlowFieldShape.text ? 3 : 1);
+
+      final before = tester.getSize(field).height;
+      await tester.enterText(field, '一\n二\n三\n四\n五\n六');
+      await tester.pump();
+      expect(tester.getSize(field).height, greaterThan(before));
+    }
+  });
+
   testWidgets('当前值变了靠值派生 key 重新播种', (tester) async {
     Object? value;
     Widget editor(Object? current) => FlowFieldEditor(

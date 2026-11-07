@@ -9,7 +9,6 @@ enum MinePage {
   models,
   instructions,
   skills,
-  flows,
   cli,
   events,
   scheduledTasks,
@@ -36,7 +35,6 @@ class MineListPanel extends StatelessWidget {
       (MinePage.instructions, Icons.playlist_add_check_outlined,
           l10n.instructionSet_title),
       (MinePage.skills, Icons.auto_awesome_outlined, l10n.skillMgmt_title),
-      (MinePage.flows, Icons.account_tree_outlined, l10n.flow_libraryTitle),
       (MinePage.cli, Icons.terminal, l10n.osTool_configTitle),
       (MinePage.events, Icons.sensors, l10n.eventMgmt_title),
       if (!(Platform.isAndroid || Platform.isIOS))

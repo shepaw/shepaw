@@ -6,7 +6,7 @@ import '../../l10n/app_localizations.dart';
 
 /// 桌面的全局快捷键。
 ///
-/// ⌘/Ctrl + 1..4 切模块，⌘, 设置，⌘K 搜索，⌘N 新会话。
+/// ⌘/Ctrl + 1..5 切模块，⌘, 设置，⌘K 搜索，⌘N 新会话。
 /// 用 [Shortcuts] + [Actions] 包在 [child] 外面：输入框聚焦时这些组合键
 /// 仍然先走到这里，不会被 TextField 吃掉。
 class DesktopShortcuts extends StatelessWidget {
@@ -22,7 +22,7 @@ class DesktopShortcuts extends StatelessWidget {
     required this.child,
   });
 
-  /// 0..3 对应 聊天 / 通讯录 / 玉简 / 文件。
+  /// 0..4 对应 聊天 / 通讯录 / 工作流 / 玉简 / 文件。
   final ValueChanged<int> onSelectModule;
   final VoidCallback onOpenSettings;
   final VoidCallback onFocusSearch;
@@ -56,6 +56,8 @@ class DesktopShortcuts extends StatelessWidget {
             const _SwitchModuleIntent._(index: 2),
         _mod(LogicalKeyboardKey.digit4):
             const _SwitchModuleIntent._(index: 3),
+        _mod(LogicalKeyboardKey.digit5):
+            const _SwitchModuleIntent._(index: 4),
         _mod(LogicalKeyboardKey.comma): _openSettings,
         _mod(LogicalKeyboardKey.keyK): _focusSearch,
         _mod(LogicalKeyboardKey.keyN): _newSession,

@@ -7,6 +7,7 @@ import 'package:shepaw/models/remote_agent.dart';
 import 'package:shepaw/peer/services/hub_flow.dart';
 import 'package:shepaw/peer/services/peer_connection_manager.dart';
 import 'package:shepaw/screens/flow_design_screen.dart';
+import 'package:shepaw/screens/flow_start_screen.dart';
 import 'package:shepaw/screens/flow_workspace_screen.dart';
 import 'package:shepaw/storage/pouch_session.dart';
 
@@ -48,6 +49,76 @@ void main() {
     await _settle(tester);
     expect(find.textContaining('goal'), findsWidgets);
     expect(harness.sent.any((f) => f['type'] == 'flow_run_start_req'), isFalse);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('模板节点改成 Agent 后，开跑不再要求给声明过的角色选 Agent',
+      (tester) async {
+    final harness = _Harness()
+      ..flowYaml = '''
+flow: dev
+roles:
+  coder: {desc: 写代码}
+  reviewer: {desc: 审代码}
+inputs:
+  goal: {type: string, required: true}
+steps:
+  - id: impl
+    task: {agent: claude-main, prompt: 写}
+  - id: review
+    task: {agent: codex-main, prompt: 审}
+''';
+    addTearDown(harness.close);
+    await _pump(tester, harness.client);
+
+    await tester.tap(find.byKey(const ValueKey('flow-start-dev')));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('start-role-coder')), findsNothing);
+    expect(find.byKey(const ValueKey('start-role-reviewer')), findsNothing);
+    await tester.enterText(
+        find.byKey(const ValueKey('start-input-goal')), '做个小工具');
+    await tester.tap(find.byKey(const ValueKey('start-go')));
+    await _settle(tester);
+
+    final start =
+        harness.sent.firstWhere((f) => f['type'] == 'flow_run_start_req');
+    expect(start.containsKey('bindings'), isFalse,
+        reason: '没有节点用 role，就不该给主机塞没用的 bindings');
+    expect(start['inputs'], {'goal': '做个小工具'});
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('开跑表单是独立页面，文本输入框会跟着内容长高', (tester) async {
+    final harness = _Harness()
+      ..flowYaml = 'flow: dev\ninputs:\n  goal: {type: string}\nsteps: []\n';
+    addTearDown(harness.close);
+    await _pump(tester, harness.client);
+
+    await tester.tap(find.byKey(const ValueKey('flow-start-dev')));
+    await _settle(tester);
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.byType(FlowStartScreen), findsOneWidget);
+    final field = tester.widget<TextField>(
+        find.byKey(const ValueKey('start-input-goal')));
+    expect(field.maxLines, isNull, reason: '不能钉死成单行');
+    expect(field.minLines, 1);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('roles.default 预填进绑定，不用再手选 Agent', (tester) async {
+    final harness = _Harness()
+      ..flowYaml = 'flow: dev\nroles:\n  coder: {desc: 写, default: codex-main}\nsteps:\n  - id: impl\n    task: {role: coder, prompt: 写}\n';
+    addTearDown(harness.close);
+    await _pump(tester, harness.client);
+
+    await tester.tap(find.byKey(const ValueKey('flow-start-dev')));
+    await _settle(tester);
+    expect(find.text('codex-main'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('start-go')));
+    await _settle(tester);
+    final start =
+        harness.sent.firstWhere((f) => f['type'] == 'flow_run_start_req');
+    expect(start['bindings'], {'coder': 'codex-main'});
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -404,7 +475,7 @@ void main() {
     );
 
     final harness = _Harness()
-      ..flowYaml = 'flow: dev\nroles:\n  coder: {desc: 写}\nsteps: []\n';
+      ..flowYaml = 'flow: dev\nroles:\n  coder: {desc: 写}\nsteps:\n  - id: impl\n    task: {role: coder, prompt: 写}\n';
     addTearDown(harness.close);
     await _pump(tester, harness.client, agents: [agent]);
 
@@ -445,7 +516,7 @@ void main() {
       _peerAgent('agent-p2', 'P2 Agent', 'p2'),
     ];
     final harness = _Harness()
-      ..flowYaml = 'flow: dev\nroles:\n  coder: {desc: 写}\nsteps: []\n';
+      ..flowYaml = 'flow: dev\nroles:\n  coder: {desc: 写}\nsteps:\n  - id: impl\n    task: {role: coder, prompt: 写}\n';
     addTearDown(harness.close);
     await tester.pumpWidget(MaterialApp(
       locale: const Locale('zh'),
@@ -506,7 +577,7 @@ void main() {
     addTearDown(tester.view.reset);
 
     final harness = _Harness()
-      ..flowYaml = 'flow: dev\nroles:\n  coder: {desc: 写}\nsteps: []\n';
+      ..flowYaml = 'flow: dev\nroles:\n  coder: {desc: 写}\nsteps:\n  - id: impl\n    task: {role: coder, prompt: 写}\n';
     addTearDown(harness.close);
     // 开机那一刻 peer agent 还没同步：缓存是一份空列表（非 null）。
     final agents = <RemoteAgent>[];

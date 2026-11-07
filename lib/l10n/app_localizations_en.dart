@@ -410,6 +410,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get nav_mine => 'Me';
 
   @override
+  String get nav_flows => 'Workflows';
+
+  @override
   String get mine_sectionContent => 'My stuff';
 
   @override

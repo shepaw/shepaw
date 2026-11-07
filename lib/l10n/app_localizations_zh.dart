@@ -394,6 +394,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get nav_mine => '我的';
 
   @override
+  String get nav_flows => '工作流';
+
+  @override
   String get mine_sectionContent => '我的内容';
 
   @override

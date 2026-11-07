@@ -75,6 +75,97 @@ void main() {
     expect(peekRoles('::: not yaml'), isEmpty);
   });
 
+  test('peekRoleDefaults 读出模板自带的兜底 Agent', () {
+    const yaml = 'flow: dev\nroles:\n  coder: {desc: 写}\n  reviewer: {desc: 审, default: codex-main}\n  owner: {default: "{{ inputs.agent }}"}\nsteps: []\n';
+    expect(peekRoleDefaults(yaml), {'reviewer': 'codex-main'},
+        reason: '模板值不是 Agent id，不能预填成绑定');
+    expect(peekRoleDefaults('flow: dev\nsteps: []\n'), isEmpty);
+    expect(peekRoleDefaults('::: not yaml'), isEmpty);
+  });
+
+  group('peekUsedRoles', () {
+    test('模板节点全改成 agent：声明过的角色不再要求绑定', () {
+      const yaml = '''
+flow: dev
+roles:
+  coder: {desc: 写代码}
+  reviewer: {desc: 审代码}
+steps:
+  - id: impl
+    task: {agent: claude-main, prompt: 写}
+  - id: review
+    task: {agent: codex-main, prompt: 审}
+''';
+      expect(peekRoles(yaml), ['coder', 'reviewer']);
+      expect(peekUsedRoles(yaml), isEmpty,
+          reason: '节点已经绑好 Agent，开跑表单不该再挨个问角色');
+    });
+
+    test('嵌套容器里还在用 role 的节点照样要绑定', () {
+      const yaml = '''
+flow: dev
+roles:
+  coder: {desc: 写}
+  reviewer: {desc: 审}
+steps:
+  - id: build
+    loop:
+      max: 3
+      steps:
+        - id: impl
+          par:
+            steps:
+              - id: backend
+                task: {role: coder, prompt: 后端}
+        - id: review
+          task: {role: reviewer, prompt: 审, output: {role: string}}
+''';
+      expect(peekUsedRoles(yaml), ['coder', 'reviewer'],
+          reason: 'output.role 是输出字段名，不能被当成角色引用');
+    });
+
+    test('uses: role:<name> 和 plan.who 的角色名也算，owner 不算', () {
+      const yaml = '''
+flow: dev
+roles:
+  owner: {desc: 负责人}
+  coder: {desc: 写}
+steps:
+  - id: impl
+    task: {uses: "role:coder", prompt: 写}
+  - id: dispatch
+    plan: {who: coder, brief: 拆任务}
+  - id: lead
+    plan: {who: owner, brief: 主持}
+''';
+      // owner / user / she / agent:<id> 主机 judge_agent 自己会兜底。
+      expect(peekUsedRoles(yaml), ['coder']);
+    });
+
+    test('节点手写了没在 roles 里声明的角色也要问一次绑定', () {
+      const yaml = 'flow: dev\nsteps:\n  - id: impl\n    task: {role: ghost, prompt: 写}\n';
+      expect(peekUsedRoles(yaml), ['ghost']);
+    });
+
+    test('只有部分角色还用着：只返回用上的那些', () {
+      const yaml = '''
+flow: dev
+roles:
+  coder: {desc: 写}
+  reviewer: {desc: 审}
+steps:
+  - id: impl
+    task: {role: reviewer, prompt: 写}
+''';
+      expect(peekUsedRoles(yaml), ['reviewer']);
+    });
+
+    test('坏 YAML / 没有步骤都不抛', () {
+      expect(peekUsedRoles('::: not yaml'), isEmpty);
+      expect(peekUsedRoles('flow: x\nsteps: []\n'), isEmpty);
+    });
+  });
+
   test('peekInputs 读出类型、必填和默认值', () {
     final specs = peekInputs(
       'flow: dev\ninputs:\n  goal: {type: string, required: true}\n  rounds: {type: int, default: 3}\nsteps: []\n',

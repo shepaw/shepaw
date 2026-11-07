@@ -337,7 +337,12 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
       FlowFieldShape.string || FlowFieldShape.text => wrap(TextField(
           key: ValueKey('f:${spec.path}'),
           controller: _scalar,
-          maxLines: spec.shape == FlowFieldShape.text ? 5 : 1,
+          // 随内容自动长高：以前 string 钉死一行、text 钉死五行，长提示词
+          // 只能靠滚动条看，输入框本身不会跟着变高。
+          minLines: spec.shape == FlowFieldShape.text ? 3 : 1,
+          maxLines: null,
+          keyboardType: TextInputType.multiline,
+          textInputAction: TextInputAction.newline,
           decoration: InputDecoration(
             isDense: true,
             border: const OutlineInputBorder(),

@@ -18,9 +18,9 @@ import '../utils/layout_utils.dart';
 import '../widgets/discard_changes_scope.dart';
 import '../widgets/flow/flow_new_flow_dialog.dart';
 import '../widgets/flow/flow_runs_pane.dart';
-import '../widgets/flow/flow_start_dialog.dart';
 import 'flow_design_screen.dart';
 import 'flow_run_screen.dart';
+import 'flow_start_screen.dart';
 
 /// 流程库工作台：左边列表，右边一个流程的设计视图。
 ///
@@ -215,7 +215,8 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
     if (nav.canPop()) nav.pop();
   }
 
-  /// 开跑。先把定义取回来（要知道声明了哪些 inputs、有哪些角色），再问一次。
+  /// 开跑。先把定义取回来（要知道声明了哪些 inputs、哪些角色还真的用得上），
+  /// 再打开独立表单页问一次。
   Future<void> _start(FlowSummary flow) async {
     final l10n = AppLocalizations.of(context);
     final got = await _client.get(_host, flow.name, scope: widget.scope);
@@ -224,12 +225,17 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
       _snack(l10n.flow_hostNoReply);
       return;
     }
-    final roles = peekRoles(got.yaml);
-    final plan = await showFlowStartDialog(
+    // 只问「节点上还写着 role 的」角色：头里声明过、但用户已经把执行者换成
+    // 具体 Agent 的角色不需要绑定（f3eb35c1）。模板自带的 roles.*.default
+    // 预填进表单，主机不会自己套默认值，得随 bindings 发过去。
+    final roles = peekUsedRoles(got.yaml);
+    final roleDefaults = peekRoleDefaults(got.yaml);
+    final plan = await pushFlowStartScreen(
       context,
       flowName: flow.name,
       yaml: got.yaml,
       roles: roles,
+      roleDefaults: roleDefaults,
       dirty: _editor?.dirty ?? _editorDirty,
       scope: widget.scope,
       revision: got.revision,

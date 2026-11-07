@@ -18,7 +18,6 @@ import '../../widgets/model_icon.dart';
 import '../../widgets/update_dialog.dart';
 import '../change_password_screen.dart';
 import '../instruction_set_screen.dart';
-import '../flow_workspace_screen.dart';
 import '../cli_config_management_screen.dart';
 import '../event_management/event_management_screen.dart';
 import '../host_config_screen.dart';
@@ -395,14 +394,6 @@ class SettingsSections {
         ),
         trailing: const Icon(Icons.chevron_right),
         onTap: () => openPage(const SkillManagementScreen()),
-      ),
-      const Divider(),
-      ListTile(
-        leading: const Icon(Icons.account_tree_outlined),
-        title: Text(l10n.flow_libraryTitle),
-        subtitle: Text(l10n.flow_workspaceSubtitle),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () => openPage(const FlowWorkspaceScreen()),
       ),
       const Divider(),
       ListTile(

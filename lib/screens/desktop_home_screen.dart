@@ -66,10 +66,11 @@ class DesktopHomeScreen extends StatefulWidget {
 
 /// Middle column content (WeChat-style).
 ///
-/// 玉简和文件自带「列表 + 详情」两栏，所以不占中间栏，右栏铺满。
+/// 玉简、工作流和文件自带「列表 + 详情」两栏，所以不占中间栏，右栏铺满。
 enum _LeftPanelMode {
   conversations,
   contacts,
+  flows,
   jade,
   files,
   mine,
@@ -89,11 +90,11 @@ enum _RightPanelView {
   groupTasks,
   jadeSlips,
   files,
+  flows,
   mineProfile,
   mineModels,
   mineInstructions,
   mineSkills,
-  mineFlows,
   mineCli,
   mineEvents,
   mineScheduledTasks,
@@ -101,7 +102,7 @@ enum _RightPanelView {
   addAgentInstance,
 }
 
-/// 中栏有列表的模式。玉简和文件自带两栏，不占中栏。
+/// 中栏有列表的模式。玉简、工作流和文件自带两栏，不占中栏。
 const List<_LeftPanelMode> _middleColumnModes = [
   _LeftPanelMode.conversations,
   _LeftPanelMode.contacts,
@@ -109,7 +110,7 @@ const List<_LeftPanelMode> _middleColumnModes = [
   _LeftPanelMode.settings,
 ];
 
-/// 某个主菜单（消息 / 通讯录 / 玉简 / 文件 / 我的 / 设置）自己的右栏状态。
+/// 某个主菜单（消息 / 通讯录 / 工作流 / 玉简 / 文件 / 我的 / 设置）自己的右栏状态。
 ///
 /// 每个菜单各留一份，切走时不拆掉对应 Navigator，再回来还是上次的页面。
 class _DeskSlot {
@@ -351,6 +352,12 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       mode: _LeftPanelMode.contacts,
       rightPanel: _RightPanelView.empty,
     ),
+    // 工作流从「我的」里提出来，侧栏排在通讯录和玉简中间；和玉简一样自带
+    // 列表 + 详情两栏，右栏铺满。
+    _LeftPanelMode.flows: _DeskSlot(
+      mode: _LeftPanelMode.flows,
+      rightPanel: _RightPanelView.flows,
+    ),
     _LeftPanelMode.jade: _DeskSlot(
       mode: _LeftPanelMode.jade,
       rightPanel: _RightPanelView.jadeSlips,
@@ -390,10 +397,11 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     }
   }
 
-  /// 玉简、文件的右栏根页被关掉后，按原样重新铺一页。
+  /// 玉简、工作流、文件的右栏根页被关掉后，按原样重新铺一页。
   bool _isFullPane(_DeskSlot slot) =>
       slot.rightPanel == _RightPanelView.jadeSlips ||
-      slot.rightPanel == _RightPanelView.files;
+      slot.rightPanel == _RightPanelView.files ||
+      slot.rightPanel == _RightPanelView.flows;
 
   bool get _hasMiddleColumn => _middleColumnModes.contains(_leftMode);
 
@@ -601,6 +609,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
   void _showContacts() => _showMode(_LeftPanelMode.contacts);
 
+  void _showFlows() => _showMode(_LeftPanelMode.flows);
+
   void _showJade() => _showMode(_LeftPanelMode.jade);
 
   void _showMine() => _showMode(_LeftPanelMode.mine);
@@ -619,7 +629,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         MinePage.models => _RightPanelView.mineModels,
         MinePage.instructions => _RightPanelView.mineInstructions,
         MinePage.skills => _RightPanelView.mineSkills,
-        MinePage.flows => _RightPanelView.mineFlows,
         MinePage.cli => _RightPanelView.mineCli,
         MinePage.events => _RightPanelView.mineEvents,
         MinePage.scheduledTasks => _RightPanelView.mineScheduledTasks,
@@ -902,8 +911,10 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           case 1:
             _showMode(_LeftPanelMode.contacts);
           case 2:
-            _showMode(_LeftPanelMode.jade);
+            _showMode(_LeftPanelMode.flows);
           case 3:
+            _showMode(_LeftPanelMode.jade);
+          case 4:
             _showMode(_LeftPanelMode.files);
         }
       },
@@ -1088,6 +1099,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       case _RightPanelView.files:
         return const StorageSpaceManageScreen(initialSpace: StoreSpace.files);
 
+      case _RightPanelView.flows:
+        return const FlowWorkspaceScreen(embedded: true);
+
       case _RightPanelView.mineProfile:
         return const UserProfileSettingsScreen();
 
@@ -1099,9 +1113,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
       case _RightPanelView.mineSkills:
         return const SkillManagementScreen();
-
-      case _RightPanelView.mineFlows:
-        return const FlowWorkspaceScreen(embedded: true);
 
       case _RightPanelView.mineCli:
         return const CliConfigManagementScreen();
@@ -1171,6 +1182,13 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                 ? activeColor
                 : iconColor,
         onTap: _showContacts,
+      ),
+      _SidebarItemDef(
+        icon: Icons.account_tree_outlined,
+        tooltip: l10n.nav_flows,
+        colorBuilder: (_) =>
+            _leftMode == _LeftPanelMode.flows ? activeColor : iconColor,
+        onTap: _showFlows,
       ),
       _SidebarItemDef(
         icon: Icons.auto_stories_outlined,
@@ -1280,6 +1298,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       case _LeftPanelMode.contacts:
         icon = Icons.contacts_outlined;
         label = l10n.contacts_title;
+      case _LeftPanelMode.flows:
+        icon = Icons.account_tree_outlined;
+        label = l10n.nav_flows;
       case _LeftPanelMode.jade:
         icon = Icons.auto_stories_outlined;
         label = l10n.jadeSlip_title;

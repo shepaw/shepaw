@@ -4,19 +4,50 @@ import '../l10n/app_localizations.dart';
 import '../widgets/mobile_nav_bar.dart';
 import '../widgets/mobile_shell_scope.dart';
 import 'contacts_screen.dart';
+import 'flow_workspace_screen.dart';
 import 'home_screen.dart';
 import 'jade_slip_screen.dart';
 import 'mine_screen.dart';
 
-/// Mobile root: four bottom-bar tabs (chats, contacts, jade slips, me). Files and
-/// settings live inside the "me" tab. Inactive tabs stay mounted after first
-/// open so list scroll position is kept.
+/// Mobile root: five bottom-bar tabs (chats, contacts, workflows, jade slips,
+/// me). Files and settings live inside the "me" tab. Inactive tabs stay mounted
+/// after first open so list scroll position is kept.
 ///
 /// Chat pages still push on the root navigator, which covers this shell so
-/// the bar hides while in a conversation. The jade and me tabs each have
-/// their own navigator: pages opened from them stay above the bar.
+/// the bar hides while in a conversation. The workflows, jade and me tabs each
+/// have their own navigator: pages opened from them stay above the bar.
 class MobileHomeShell extends StatefulWidget {
   const MobileHomeShell({super.key});
+
+  /// 底栏条目顺序。tab 下标和文案只写一份；工作流排在通讯录和玉简中间。
+  static List<MobileNavItem> navItems(AppLocalizations l10n) => [
+        MobileNavItem(
+          icon: Icons.chat_bubble_outline,
+          selectedIcon: Icons.chat_bubble,
+          label: l10n.nav_chats,
+        ),
+        MobileNavItem(
+          icon: Icons.people_outline,
+          selectedIcon: Icons.people,
+          label: l10n.contacts_title,
+        ),
+        MobileNavItem(
+          icon: Icons.account_tree_outlined,
+          selectedIcon: Icons.account_tree,
+          label: l10n.nav_flows,
+        ),
+        MobileNavItem(
+          icon: Icons.auto_stories_outlined,
+          selectedIcon: Icons.auto_stories,
+          label: l10n.jadeSlip_title,
+        ),
+        MobileNavItem(
+          icon: Icons.person_outline,
+          selectedIcon: Icons.person,
+          label: l10n.nav_mine,
+          showSettingsBadge: true,
+        ),
+      ];
 
   @override
   State<MobileHomeShell> createState() => _MobileHomeShellState();
@@ -25,11 +56,14 @@ class MobileHomeShell extends StatefulWidget {
 class _MobileHomeShellState extends State<MobileHomeShell> {
   int _index = 0;
   final Set<int> _opened = {0};
+  final GlobalKey<NavigatorState> _flowsNavKey = GlobalKey<NavigatorState>();
   final GlobalKey<NavigatorState> _jadeNavKey = GlobalKey<NavigatorState>();
   final GlobalKey<NavigatorState> _mineNavKey = GlobalKey<NavigatorState>();
 
-  static const int _jadeTab = 2;
-  static const int _mineTab = 3;
+  /// 工作流入口提出来，排在通讯录和玉简中间。
+  static const int _flowsTab = 2;
+  static const int _jadeTab = 3;
+  static const int _mineTab = 4;
 
   void _select(int index) {
     if (_index == index) return;
@@ -100,6 +134,17 @@ class _MobileHomeShellState extends State<MobileHomeShell> {
                       _tab(0, const HomeScreen()),
                       _tab(1, const ContactsScreen()),
                       _tab(
+                        _flowsTab,
+                        _opened.contains(_flowsTab)
+                            ? _nestedTab(
+                                tab: _flowsTab,
+                                navKey: _flowsNavKey,
+                                root: (_) =>
+                                    const FlowWorkspaceScreen(embedded: true),
+                              )
+                            : const SizedBox.shrink(),
+                      ),
+                      _tab(
                         _jadeTab,
                         _opened.contains(_jadeTab)
                             ? _nestedTab(
@@ -132,29 +177,7 @@ class _MobileHomeShellState extends State<MobileHomeShell> {
               child: MobileNavBar(
                 index: _index,
                 onSelect: _select,
-                items: [
-                  MobileNavItem(
-                    icon: Icons.chat_bubble_outline,
-                    selectedIcon: Icons.chat_bubble,
-                    label: l10n.nav_chats,
-                  ),
-                  MobileNavItem(
-                    icon: Icons.people_outline,
-                    selectedIcon: Icons.people,
-                    label: l10n.contacts_title,
-                  ),
-                  MobileNavItem(
-                    icon: Icons.auto_stories_outlined,
-                    selectedIcon: Icons.auto_stories,
-                    label: l10n.jadeSlip_title,
-                  ),
-                  MobileNavItem(
-                    icon: Icons.person_outline,
-                    selectedIcon: Icons.person,
-                    label: l10n.nav_mine,
-                    showSettingsBadge: true,
-                  ),
-                ],
+                items: MobileHomeShell.navItems(l10n),
               ),
             ),
           ],

@@ -71,6 +71,91 @@ List<String> peekRoles(String yaml) {
   }
 }
 
+/// 只读地看一眼定义里**真正要绑定 Agent** 的角色。
+///
+/// 主机只在执行到 `task.role` / `task.uses: role:<name>`（或 `plan.who` 写成
+/// 角色名）的节点时查 `bindings`（`crates/api/src/flow/host.rs::resolve_target`）。
+/// 头里 `roles:` 声明过、但节点后来全改成 `agent: <id>` 的角色根本用不上绑定：
+/// 以前开跑表单按声明名单挨个要人选 Agent，用户把模板节点的执行者换完、保存，
+/// 点运行还是被拦下来（玉简 f3eb35c1）。
+///
+/// 和 [peekRoles] 一样只读不写；解析不了就给空列表（主机那边也会先报校验错）。
+/// 返回顺序以头里的声明顺序为准，手写了未声明角色的节点排在后面。
+List<String> peekUsedRoles(String yaml) {
+  Object? doc;
+  try {
+    doc = loadYaml(yaml);
+  } catch (_) {
+    return const [];
+  }
+  if (doc is! Map) return const [];
+  final declared = peekRoles(yaml);
+  final declaredSet = declared.toSet();
+  final found = <String>{};
+  // host.rs::judge_agent 对 plan.who 的 owner / user / she / agent:<id> 自己兜底，
+  // 只有写成声明过的角色名才需要 bindings。
+  const autoResolved = {'', 'owner', 'user', 'she'};
+
+  void visit(Object? node) {
+    if (node is Map) {
+      final task = node['task'];
+      if (task is Map) {
+        final role = task['role'];
+        if (role is String && role.trim().isNotEmpty) found.add(role.trim());
+        final uses = task['uses'];
+        if (uses is String && uses.trim().startsWith('role:')) {
+          final fromUses = uses.trim().substring('role:'.length).trim();
+          if (fromUses.isNotEmpty) found.add(fromUses);
+        }
+      }
+      final plan = node['plan'];
+      if (plan is Map) {
+        final who = plan['who'];
+        if (who is String &&
+            declaredSet.contains(who.trim()) &&
+            !autoResolved.contains(who.trim())) {
+          found.add(who.trim());
+        }
+      }
+      for (final value in node.values) {
+        visit(value);
+      }
+    } else if (node is List) {
+      for (final item in node) {
+        visit(item);
+      }
+    }
+  }
+
+  // 只看步骤树：头里 `roles` / `outputs` 等映射也可能有名叫 role 的键，
+  // 全文档扫键名会把输出字段名误认成角色。
+  visit(doc['steps']);
+  return [
+    for (final role in declared)
+      if (found.contains(role)) role,
+    for (final role in found)
+      if (!declaredSet.contains(role)) role,
+  ];
+}
+
+/// 角色声明里的 `default`（模板自带的兜底 Agent id）。
+///
+/// 主机 `flow_start` 不会自动把 roles.*.default 灌进 bindings，所以开跑表单
+/// 要预填、并随 `bindings` 一起发过去，否则模板写着默认 Agent 也照样要人手选。
+Map<String, String> peekRoleDefaults(String yaml) {
+  final out = <String, String>{};
+  for (final entry in FlowHeaderPeek.raw(yaml, 'roles').entries) {
+    final spec = entry.value;
+    if (spec is! Map) continue;
+    final agent = spec['default']?.toString().trim() ?? '';
+    // `{{ inputs.x }}` 这类模板值主机不会当 Agent id 解析，别预填进去把
+    // 原本能手选的绑定变成一条跑不起来的 bindings。
+    if (agent.isEmpty || agent.contains('{{')) continue;
+    out[entry.key] = agent;
+  }
+  return out;
+}
+
 /// 定义头里声明的一个输入。
 class FlowInputSpec {
   const FlowInputSpec({
