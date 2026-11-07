@@ -204,27 +204,39 @@ void main() {
     expect(value, 'lib/helper');
   });
 
-  testWidgets('文本输入框随内容自动长高，不再钉死一行', (tester) async {
-    for (final shape in [FlowFieldShape.string, FlowFieldShape.text]) {
-      await _pump(
-        tester,
-        FlowFieldEditor(
-          key: ValueKey('editor-$shape'),
-          spec: _spec('task.prompt', shape),
-          current: '短',
-          onChanged: (_) {},
-        ),
-      );
-      final field = find.byKey(const ValueKey('f:task.prompt'));
-      final widget = tester.widget<TextField>(field);
-      expect(widget.maxLines, isNull, reason: '$shape 不能限死行数');
-      expect(widget.minLines, shape == FlowFieldShape.text ? 3 : 1);
+  testWidgets('长文本随内容自动长高，短 id 标量仍旧单行', (tester) async {
+    // text：提示词 / 说明这类长文本。
+    await _pump(
+      tester,
+      FlowFieldEditor(
+        spec: _spec('task.prompt', FlowFieldShape.text),
+        current: '短',
+        onChanged: (_) {},
+      ),
+    );
+    final prompt = find.byKey(const ValueKey('f:task.prompt'));
+    expect(tester.widget<TextField>(prompt).maxLines, isNull,
+        reason: '长文本不能限死行数');
+    expect(tester.widget<TextField>(prompt).minLines, 3);
+    final before = tester.getSize(prompt).height;
+    await tester.enterText(prompt, '一\n二\n三\n四\n五\n六');
+    await tester.pump();
+    expect(tester.getSize(prompt).height, greaterThan(before));
 
-      final before = tester.getSize(field).height;
-      await tester.enterText(field, '一\n二\n三\n四\n五\n六');
-      await tester.pump();
-      expect(tester.getSize(field).height, greaterThan(before));
-    }
+    // string：task.uses / call.group / plan.who 这类 id，放开多行会把换行
+    // 原样发给主机（agent:<id>\n 解析不出 Agent）。
+    await _pump(
+      tester,
+      FlowFieldEditor(
+        spec: _spec('task.uses', FlowFieldShape.string),
+        current: 'agent:claude-main',
+        onChanged: (_) {},
+      ),
+    );
+    final uses = find.byKey(const ValueKey('f:task.uses'));
+    expect(tester.widget<TextField>(uses).maxLines, 1);
+    expect(tester.widget<TextField>(uses).keyboardType,
+        isNot(TextInputType.multiline));
   });
 
   testWidgets('当前值变了靠值派生 key 重新播种', (tester) async {

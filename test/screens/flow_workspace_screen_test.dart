@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shepaw/l10n/app_localizations.dart';
 import 'package:shepaw/models/remote_agent.dart';
 import 'package:shepaw/peer/services/hub_flow.dart';
@@ -28,6 +29,9 @@ void main() {
     final start =
         harness.sent.firstWhere((f) => f['type'] == 'flow_run_start_req');
     expect(start['name'], 'dev');
+    // 表单是照第 3 版生成的，开跑就钉住第 3 版：别人中途存了新版也不会
+    // 拿旧 inputs / bindings 去跑另一份定义。
+    expect(start['revision'], 3);
     // 主机拒绝时把原因告诉用户，不跳走。
     expect(find.text('缺少输入'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
@@ -666,6 +670,48 @@ steps:
     expect(after.key.toString(), contains('p2'));
     await tester.pumpWidget(const SizedBox());
   });
+
+  // 这个用例必须留在文件最后：它给 SharedPreferences 装了 mock，之后同一 isolate
+  // 里的用例就能真的落草稿，前面的 A3-7 / A6-1 会被残留草稿改变行为。
+  testWidgets('先保存再跑：新版本多出角色时带着旧值再问一次', (tester) async {
+    // 草稿落盘走 SharedPreferences，没 mock 平台通道时 save() 会一直挂着。
+    SharedPreferences.setMockInitialValues({});
+    final harness = _Harness(editable: true)
+      ..flowYaml = 'flow: dev\ninputs:\n  goal: {type: string, required: true}\nsteps:\n- id: impl\n  task: {prompt: 写}\n';
+    addTearDown(harness.close);
+    await _pumpPushed(tester, harness.client, size: const Size(2400, 1800));
+    await tester.tap(find.text('dev'));
+    await _settle(tester);
+    // 加一步 → 产生未保存草稿。
+    await tester.tap(find.byKey(const ValueKey('after-impl')));
+    await _settle(tester);
+
+    await tester.tap(find.byKey(const ValueKey('flow-start-dev')));
+    await _settleRoute(tester);
+    // 表单照旧版生成：没有角色要绑。
+    expect(find.byKey(const ValueKey('start-role-reviewer')), findsNothing);
+    await tester.enterText(
+        find.byKey(const ValueKey('start-input-goal')), '目标');
+    await tester.tap(find.byKey(const ValueKey('save-first')));
+    await tester.pump();
+    // 保存成的新一版里多了一个 role 节点。
+    harness.flowYaml = 'flow: dev\ninputs:\n  goal: {type: string, required: true}\nroles:\n  reviewer: {desc: 审}\nsteps:\n- id: impl\n  task: {role: reviewer, prompt: 写}\n';
+    await tester.tap(find.byKey(const ValueKey('start-go')));
+    await _settleRoute(tester);
+
+    // 表单重新打开：刚填的目标带回来了，并补问新角色（不能拿旧 bindings 直接跑）。
+    expect(find.byType(FlowStartScreen), findsOneWidget);
+    expect(
+        tester
+            .widget<TextField>(
+                find.byKey(const ValueKey('start-input-goal')))
+            .controller
+            ?.text,
+        '目标');
+    expect(find.byKey(const ValueKey('start-role-reviewer')), findsOneWidget);
+    expect(harness.sent.any((f) => f['type'] == 'flow_run_start_req'), isFalse);
+    await tester.pumpWidget(const SizedBox());
+  });
 }
 
 RemoteAgent _peerAgent(String id, String name, String peerId) => RemoteAgent(
@@ -903,5 +949,13 @@ Future<void> _pumpPushed(
 Future<void> _settle(WidgetTester tester) async {
   for (var i = 0; i < 6; i++) {
     await tester.pump(const Duration(milliseconds: 30));
+  }
+}
+
+/// 开跑表单是整页路由（300ms 转场），180ms 不够它落位：宽窗口下右侧的
+/// 「运行」按钮还会停在屏幕外，tap 会打空。
+Future<void> _settleRoute(WidgetTester tester) async {
+  for (var i = 0; i < 14; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
   }
 }

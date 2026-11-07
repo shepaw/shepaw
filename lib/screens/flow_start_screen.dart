@@ -41,6 +41,8 @@ Future<FlowStartPlan?> pushFlowStartScreen(
   required bool dirty,
   required String scope,
   required int revision,
+  Map<String, String> initialInputs = const {},
+  Map<String, String> initialBindings = const {},
   Future<String?> Function()? onPickAgent,
 }) {
   return Navigator.of(context).push<FlowStartPlan>(
@@ -54,6 +56,8 @@ Future<FlowStartPlan?> pushFlowStartScreen(
         dirty: dirty,
         scope: scope,
         revision: revision,
+        initialInputs: initialInputs,
+        initialBindings: initialBindings,
         onPickAgent: onPickAgent,
       ),
     ),
@@ -71,6 +75,8 @@ class FlowStartScreen extends StatefulWidget {
     required this.dirty,
     required this.scope,
     required this.revision,
+    this.initialInputs = const {},
+    this.initialBindings = const {},
     this.onPickAgent,
   });
 
@@ -90,6 +96,11 @@ class FlowStartScreen extends StatefulWidget {
   bool get rolesAutoBound => scope.startsWith('group:');
 
   final int revision;
+
+  /// 保存成新一版后重开表单时，把上一轮填过的值带回来，别让用户重填。
+  final Map<String, String> initialInputs;
+  final Map<String, String> initialBindings;
+
   final Future<String?> Function()? onPickAgent;
 
   @override
@@ -108,10 +119,13 @@ class _FlowStartScreenState extends State<FlowStartScreen> {
     super.initState();
     _specs = peekInputs(widget.yaml);
     for (final spec in _specs) {
-      _inputs[spec.name] =
-          TextEditingController(text: spec.defaultValue ?? '');
+      _inputs[spec.name] = TextEditingController(
+        text: widget.initialInputs[spec.name] ?? spec.defaultValue ?? '',
+      );
     }
+    _agents.addAll(widget.initialBindings);
     for (final role in widget.roles) {
+      if (_agents[role] != null) continue;
       final preset = widget.roleDefaults[role];
       if (preset != null && preset.isNotEmpty) _agents[role] = preset;
     }
@@ -189,7 +203,10 @@ class _FlowStartScreenState extends State<FlowStartScreen> {
                         key: const ValueKey('save-first'),
                         title: Text(l10n.flow_startSaveFirst),
                         value: _saveFirst,
-                        onChanged: (v) => setState(() => _saveFirst = v),
+                        onChanged: (v) => setState(() {
+                          _saveFirst = v;
+                          _error = null;
+                        }),
                       ),
                     ],
                   ),
@@ -217,6 +234,10 @@ class _FlowStartScreenState extends State<FlowStartScreen> {
                       alignLabelWithHint: true,
                       border: const OutlineInputBorder(),
                     ),
+                    // 一改字段就撤掉上一条校验提示，别让修好了还挂着红字。
+                    onChanged: (_) {
+                      if (_error != null) setState(() => _error = null);
+                    },
                   ),
                 ),
               for (final role in widget.roles)
@@ -242,7 +263,10 @@ class _FlowStartScreenState extends State<FlowStartScreen> {
                         : () async {
                             final picked = await widget.onPickAgent?.call();
                             if (picked == null || !mounted) return;
-                            setState(() => _agents[role] = picked);
+                            setState(() {
+                              _agents[role] = picked;
+                              _error = null;
+                            });
                           },
                   ),
                 ),

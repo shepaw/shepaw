@@ -26,6 +26,8 @@ steps:
     String scope = 'lib',
     bool dirty = false,
     Map<String, String> roleDefaults = const {},
+    Map<String, String> initialInputs = const {},
+    Map<String, String> initialBindings = const {},
     Future<String?> Function()? onPickAgent,
   }) async {
     await tester.pumpWidget(MaterialApp(
@@ -48,6 +50,8 @@ steps:
                   dirty: dirty,
                   scope: scope,
                   revision: 3,
+                  initialInputs: initialInputs,
+                  initialBindings: initialBindings,
                   onPickAgent: onPickAgent,
                 );
                 onResult(plan);
@@ -233,5 +237,38 @@ steps:
     await tester.tap(find.byKey(const ValueKey('start-go')));
     await tester.pumpAndSettle();
     expect(plan?.saveFirst, isTrue);
+  });
+
+  testWidgets('改了字段就撤掉上一条校验提示', (tester) async {
+    await pumpLauncher(tester, onResult: (_) {});
+
+    await tester.tap(find.byKey(const ValueKey('start-go')));
+    await tester.pump();
+    expect(find.text('「goal」是必填的'), findsOneWidget);
+    await tester.enterText(
+        find.byKey(const ValueKey('start-input-goal')), '补上了');
+    await tester.pump();
+    expect(find.text('「goal」是必填的'), findsNothing,
+        reason: '修好之后不能还挂着红字');
+  });
+
+  testWidgets('重开表单带回上一轮填过的 inputs / bindings', (tester) async {
+    FlowStartPlan? plan;
+    await pumpLauncher(
+      tester,
+      onResult: (p) => plan = p,
+      initialInputs: const {'goal': '上一轮的目标', 'note': '备注'},
+      initialBindings: const {'coder': 'codex-main'},
+    );
+
+    expect(find.text('上一轮的目标'), findsOneWidget);
+    expect(find.text('备注'), findsOneWidget);
+    expect(find.text('codex-main'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('start-go')));
+    await tester.pumpAndSettle();
+    expect(plan?.inputs['goal'], '上一轮的目标');
+    expect(plan?.inputs['note'], '备注');
+    expect(plan?.bindings, {'coder': 'codex-main'},
+        reason: '预填的旧绑定不能在第二轮提交时丢掉');
   });
 }

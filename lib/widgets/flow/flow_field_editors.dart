@@ -333,28 +333,38 @@ class _FlowFieldEditorState extends State<FlowFieldEditor> {
           ],
         );
 
+    final textDecoration = InputDecoration(
+      isDense: true,
+      border: const OutlineInputBorder(),
+      suffixIcon: widget.refCandidates.isEmpty
+          ? null
+          : IconButton(
+              key: ValueKey('ref:${spec.path}'),
+              tooltip: l10n.flow_refInsert,
+              icon: const Icon(Icons.data_object, size: 18),
+              onPressed: () => unawaited(_pickRef(context)),
+            ),
+    );
+
     return switch (spec.shape) {
-      FlowFieldShape.string || FlowFieldShape.text => wrap(TextField(
+      // 长文本（task.prompt / plan.brief …）随内容自动长高，不再钉死五行。
+      FlowFieldShape.text => wrap(TextField(
           key: ValueKey('f:${spec.path}'),
           controller: _scalar,
-          // 随内容自动长高：以前 string 钉死一行、text 钉死五行，长提示词
-          // 只能靠滚动条看，输入框本身不会跟着变高。
-          minLines: spec.shape == FlowFieldShape.text ? 3 : 1,
+          minLines: 3,
           maxLines: null,
           keyboardType: TextInputType.multiline,
           textInputAction: TextInputAction.newline,
-          decoration: InputDecoration(
-            isDense: true,
-            border: const OutlineInputBorder(),
-            suffixIcon: widget.refCandidates.isEmpty
-                ? null
-                : IconButton(
-                    key: ValueKey('ref:${spec.path}'),
-                    tooltip: l10n.flow_refInsert,
-                    icon: const Icon(Icons.data_object, size: 18),
-                    onPressed: () => unawaited(_pickRef(context)),
-                  ),
-          ),
+          decoration: textDecoration,
+          onChanged: (_) => setState(_emit),
+        )),
+      // string 是 id / 短标量（task.uses、call.group、plan.who …），必须单行：
+      // 放开多行会把换行原样发给主机，`agent:<id>\n` 就解析不出 Agent 了。
+      FlowFieldShape.string => wrap(TextField(
+          key: ValueKey('f:${spec.path}'),
+          controller: _scalar,
+          maxLines: 1,
+          decoration: textDecoration,
           onChanged: (_) => setState(_emit),
         )),
       FlowFieldShape.int => wrap(TextField(

@@ -135,35 +135,28 @@ class _MobileHomeShellState extends State<MobileHomeShell> {
                       _tab(1, const ContactsScreen()),
                       _tab(
                         _flowsTab,
-                        _opened.contains(_flowsTab)
-                            ? _nestedTab(
-                                tab: _flowsTab,
-                                navKey: _flowsNavKey,
-                                root: (_) =>
-                                    const FlowWorkspaceScreen(embedded: true),
-                              )
-                            : const SizedBox.shrink(),
+                        _nestedTab(
+                          tab: _flowsTab,
+                          navKey: _flowsNavKey,
+                          root: (_) =>
+                              const FlowWorkspaceScreen(embedded: true),
+                        ),
                       ),
                       _tab(
                         _jadeTab,
-                        _opened.contains(_jadeTab)
-                            ? _nestedTab(
-                                tab: _jadeTab,
-                                navKey: _jadeNavKey,
-                                root: (_) =>
-                                    const JadeSlipScreen(embedded: true),
-                              )
-                            : const SizedBox.shrink(),
+                        _nestedTab(
+                          tab: _jadeTab,
+                          navKey: _jadeNavKey,
+                          root: (_) => const JadeSlipScreen(embedded: true),
+                        ),
                       ),
                       _tab(
                         _mineTab,
-                        _opened.contains(_mineTab)
-                            ? _nestedTab(
-                                tab: _mineTab,
-                                navKey: _mineNavKey,
-                                root: (_) => const MineScreen(),
-                              )
-                            : const SizedBox.shrink(),
+                        _nestedTab(
+                          tab: _mineTab,
+                          navKey: _mineNavKey,
+                          root: (_) => const MineScreen(),
+                        ),
                       ),
                     ],
                   ),

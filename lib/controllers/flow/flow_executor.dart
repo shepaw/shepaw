@@ -71,15 +71,20 @@ List<String> peekRoles(String yaml) {
   }
 }
 
-/// 只读地看一眼定义里**真正要绑定 Agent** 的角色。
+/// 只读地看一眼定义里**可能要绑定 Agent** 的角色。
 ///
-/// 主机只在执行到 `task.role` / `task.uses: role:<name>`（或 `plan.who` 写成
-/// 角色名）的节点时查 `bindings`（`crates/api/src/flow/host.rs::resolve_target`）。
-/// 头里 `roles:` 声明过、但节点后来全改成 `agent: <id>` 的角色根本用不上绑定：
-/// 以前开跑表单按声明名单挨个要人选 Agent，用户把模板节点的执行者换完、保存，
-/// 点运行还是被拦下来（玉简 f3eb35c1）。
+/// 主机在几种地方查 `bindings`：`task.role` / `task.uses: role:` 走
+/// `resolve_target`，`cond.judge` / `plan.who` 走 `judge_agent`
+/// （`crates/api/src/flow/host.rs`）；后两者都是自由文本，主机新增用法时 App
+/// 不该逐个镜像字段，漏一个就会静默少发绑定、等跑到那个节点才报错。所以这里
+/// 反过来做**保守排除**：步骤树里任何字符串值只要等于声明过的角色名，就当它还
+/// 要用；只有全流程一次都没出现过的角色才不问。
 ///
-/// 和 [peekRoles] 一样只读不写；解析不了就给空列表（主机那边也会先报校验错）。
+/// 头里 `roles:` 声明过、但节点后来全改成 `agent: <id>` 的角色因此不再拦着用户
+/// （玉简 f3eb35c1）；没在 roles 里声明、却写在 `task.role` / `judge` / `who`
+/// 上的名字也会问，免得主机开跑后找不到 Agent。
+///
+/// 只读不写，只解析一次 YAML；解析不了就给空列表（主机那边也会先报校验错）。
 /// 返回顺序以头里的声明顺序为准，手写了未声明角色的节点排在后面。
 List<String> peekUsedRoles(String yaml) {
   Object? doc;
@@ -89,15 +94,31 @@ List<String> peekUsedRoles(String yaml) {
     return const [];
   }
   if (doc is! Map) return const [];
-  final declared = peekRoles(yaml);
+  final roles = doc['roles'];
+  final declared = roles is Map
+      ? <String>[for (final key in roles.keys) key.toString()]
+      : <String>[];
   final declaredSet = declared.toSet();
   final found = <String>{};
-  // host.rs::judge_agent 对 plan.who 的 owner / user / she / agent:<id> 自己兜底，
-  // 只有写成声明过的角色名才需要 bindings。
-  const autoResolved = {'', 'owner', 'user', 'she'};
+
+  // host.rs::judge_agent 只兜底空串 / owner / agent:<id>；`user`、`she`
+  // 都不是保留字，写成角色名时照样要 bindings。
+  bool autoResolved(String who) =>
+      who.isEmpty || who == 'owner' || who.startsWith('agent:');
 
   void visit(Object? node) {
     if (node is Map) {
+      // 声明过的角色名以「值」出现在 steps 任意位置（`task.role`、
+      // `when.judge`、`plan.who`，以及以后新增的字段）都算还在用。
+      for (final value in node.values) {
+        if (value is String) {
+          final text = value.trim();
+          if (declaredSet.contains(text) && !autoResolved(text)) {
+            found.add(text);
+          }
+        }
+      }
+      // 没声明过的角色引用：主机同样会拿这个名字查 bindings。
       final task = node['task'];
       if (task is Map) {
         final role = task['role'];
@@ -108,12 +129,9 @@ List<String> peekUsedRoles(String yaml) {
           if (fromUses.isNotEmpty) found.add(fromUses);
         }
       }
-      final plan = node['plan'];
-      if (plan is Map) {
-        final who = plan['who'];
-        if (who is String &&
-            declaredSet.contains(who.trim()) &&
-            !autoResolved.contains(who.trim())) {
+      for (final key in const ['judge', 'who']) {
+        final who = node[key];
+        if (who is String && !autoResolved(who.trim())) {
           found.add(who.trim());
         }
       }

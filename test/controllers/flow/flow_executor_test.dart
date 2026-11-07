@@ -138,8 +138,54 @@ steps:
   - id: lead
     plan: {who: owner, brief: 主持}
 ''';
-      // owner / user / she / agent:<id> 主机 judge_agent 自己会兜底。
+      // 主机 judge_agent 只兜底 owner / agent:<id>（和空串）。
       expect(peekUsedRoles(yaml), ['coder']);
+    });
+
+    test('判断式条件 when.judge 里的角色也要绑定', () {
+      const yaml = '''
+flow: dev
+roles:
+  reviewer: {desc: 审}
+steps:
+  - id: impl
+    when: {judge: reviewer, ask: 可以发布吗}
+    task: {agent: claude-main, prompt: 写}
+''';
+      // host.rs::judge_agent(who=reviewer) 会查 bindings；只扫 task.role 会漏。
+      expect(peekUsedRoles(yaml), ['reviewer']);
+    });
+
+    test('没声明过的 judge / who 名字也照问，agent:<id> 不问', () {
+      const yaml = '''
+flow: dev
+steps:
+  - id: gate
+    when: {judge: ghost, ask: 可以吗}
+    task: {prompt: 写}
+  - id: dispatch
+    plan: {who: architect, brief: 拆任务}
+  - id: direct
+    plan: {who: "agent:claude-main", brief: 直接派}
+''';
+      expect(peekUsedRoles(yaml), unorderedEquals(['ghost', 'architect']));
+    });
+
+    test('user / she 不是主机保留字，写成角色名时照样要绑定', () {
+      const yaml = '''
+flow: dev
+roles:
+  user: {desc: 用户}
+  she: {desc: 惜宝}
+steps:
+  - id: dispatch
+    plan: {who: user, brief: 拆任务}
+  - id: judge
+    when: {judge: she, ask: 通过吗}
+    task: {prompt: 写}
+''';
+      // judge_agent 只兜底 '' / owner / agent:<id>，别把 user、she 排除掉。
+      expect(peekUsedRoles(yaml), ['user', 'she']);
     });
 
     test('节点手写了没在 roles 里声明的角色也要问一次绑定', () {

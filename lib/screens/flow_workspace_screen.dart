@@ -219,38 +219,85 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
   /// 再打开独立表单页问一次。
   Future<void> _start(FlowSummary flow) async {
     final l10n = AppLocalizations.of(context);
-    final got = await _client.get(_host, flow.name, scope: widget.scope);
+    final fetched = await _client.get(_host, flow.name, scope: widget.scope);
     if (!mounted) return;
-    if (got == null) {
+    if (fetched == null) {
       _snack(l10n.flow_hostNoReply);
       return;
     }
-    // 只问「节点上还写着 role 的」角色：头里声明过、但用户已经把执行者换成
+    var yaml = fetched.yaml;
+    var revision = fetched.revision;
+    // 只问「步骤树里还引用着的」角色：头里声明过、但用户已经把执行者换成
     // 具体 Agent 的角色不需要绑定（f3eb35c1）。模板自带的 roles.*.default
     // 预填进表单，主机不会自己套默认值，得随 bindings 发过去。
-    final roles = peekUsedRoles(got.yaml);
-    final roleDefaults = peekRoleDefaults(got.yaml);
-    final plan = await pushFlowStartScreen(
+    var plan = await pushFlowStartScreen(
       context,
       flowName: flow.name,
-      yaml: got.yaml,
-      roles: roles,
-      roleDefaults: roleDefaults,
+      yaml: yaml,
+      roles: peekUsedRoles(yaml),
+      roleDefaults: peekRoleDefaults(yaml),
       dirty: _editor?.dirty ?? _editorDirty,
       scope: widget.scope,
-      revision: got.revision,
+      revision: revision,
       onPickAgent: _pickAgent,
     );
     if (plan == null || !mounted) return;
-    // 用户选了「先保存成新一版再跑」：只有保存成功了才继续开跑。
-    if (plan.saveFirst && !await (_editor?.save() ?? Future.value(false))) {
-      _snack(l10n.flow_saveFailed);
-      return;
+    final firstPlan = plan;
+    final autoBound = widget.scope.startsWith('group:');
+
+    // 不保存就钉住表单据以生成的那一版：否则别人在这期间存了新版，开跑用的
+    // 定义和刚才填的 inputs / bindings 就不是同一份了（0 = 老主机没给版本号）。
+    int? runRevision = revision > 0 ? revision : null;
+    if (firstPlan.saveFirst) {
+      // 用户选了「先保存成新一版再跑」：只有保存成功了才继续。
+      if (!await (_editor?.save() ?? Future.value(false))) {
+        _snack(l10n.flow_saveFailed);
+        return;
+      }
+      if (!mounted) return;
+      final saved = await _client.get(_host, flow.name, scope: widget.scope);
+      if (!mounted) return;
+      if (saved == null) {
+        _snack(l10n.flow_hostNoReply);
+        return;
+      }
+      yaml = saved.yaml;
+      revision = saved.revision;
+      // 表单是照旧版本生成的，草稿里新增的 role 节点可能要多一条绑定。带着
+      // 刚填好的值再问一次，别等主机跑到那个节点才报「角色没有绑定 Agent」。
+      final savedRoles = peekUsedRoles(yaml);
+      final missing = autoBound
+          ? <String>[]
+          : <String>[
+              for (final role in savedRoles)
+                if (!firstPlan.bindings.containsKey(role)) role,
+            ];
+      if (missing.isNotEmpty) {
+        final again = await pushFlowStartScreen(
+          context,
+          flowName: flow.name,
+          yaml: yaml,
+          roles: savedRoles,
+          roleDefaults: peekRoleDefaults(yaml),
+          initialInputs: firstPlan.inputs,
+          initialBindings: firstPlan.bindings,
+          dirty: false,
+          scope: widget.scope,
+          revision: revision,
+          onPickAgent: _pickAgent,
+        );
+        if (again == null || !mounted) return;
+        plan = again;
+      }
+      // 钉住刚保存下来的那一版（表单已经照它重建），别让期间别人又存的新版
+      // 混进来；老主机没给版本号时不钉。
+      runRevision = revision > 0 ? revision : null;
     }
     final result = await _client.start(
       _host,
       scope: widget.scope,
       name: flow.name,
+      revision: runRevision,
       inputs: <String, dynamic>{...plan.inputs},
       bindings:
           plan.bindings.isEmpty ? null : <String, dynamic>{...plan.bindings},
