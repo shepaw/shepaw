@@ -41,7 +41,11 @@ class SessionFolderTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // 主机给的「最近一条」标题可能整段是引擎标签或 [implicit] 提示。
-    final latest = SessionUtils.cleanClaudeSessionTitle(summary.latestTitle);
+    // 工作流组只留启动时的第一句，和展开后的记录行同一个口径。
+    final cleaned = SessionUtils.cleanClaudeSessionTitle(summary.latestTitle);
+    final latest = summary.kind == SessionFolderKind.flow
+        ? SessionUtils.firstSentenceTitle(cleaned)
+        : cleaned;
     return ListTile(
       leading: Icon(sessionFolderIcon(summary.kind)),
       title: Text(AppLocalizations.of(context).folder_tileTitle(

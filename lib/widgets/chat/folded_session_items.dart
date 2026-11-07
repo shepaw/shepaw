@@ -6,7 +6,6 @@ import '../../l10n/app_localizations.dart';
 import '../../peer/models/folded_sessions.dart';
 import '../../peer/services/hub_folded_sessions.dart';
 import '../../utils/layout_utils.dart';
-import '../../screens/flow_workspace_screen.dart';
 import '../../utils/session_utils.dart';
 import '../session_folders.dart';
 import 'session_row_menu.dart';
@@ -119,14 +118,15 @@ class _SessionFolderItemsState extends State<SessionFolderItems> {
     BuildContext context,
     AppLocalizations l10n,
     FoldedSession session,
-    String subtitle,
-  ) {
+    String subtitle, {
+    String? title,
+  }) {
     final isDesktop = LayoutUtils.isDesktopLayout(context);
     return SessionRowHoverHost(
       enabled: isDesktop,
       builder: (context, hover) {
         return ListTile(
-          title: Text(_title(session),
+          title: Text(title ?? _title(session),
               maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: subtitle.isEmpty ? null : Text(subtitle),
           onTap: widget.onOpen == null ? null : () => widget.onOpen!(session),
@@ -202,6 +202,27 @@ class _SessionFolderItemsState extends State<SessionFolderItems> {
     if (choice == 'fork' && context.mounted) await _fork(session);
   }
 
+  /// 工作流组里要画出来的记录。同一次运行只留一条；节点名和
+  /// `工作流 <run id>` 是流程步骤的占位，不是用户发起时说的那句话。
+  static List<FoldedSession> flowInitiationRecords(List<FoldedSession> items) {
+    final seen = <String>{};
+    final out = <FoldedSession>[];
+    for (final session in items) {
+      if (session.runId.isEmpty || _isFlowStepPlaceholder(session)) continue;
+      if (!seen.add(session.runId)) continue;
+      if (SessionUtils.firstSentenceTitle(session.title) == null) continue;
+      out.add(session);
+    }
+    return out;
+  }
+
+  static bool _isFlowStepPlaceholder(FoldedSession session) {
+    final title = session.title.trim();
+    if (title.isEmpty) return true;
+    if (session.nodeKey.isNotEmpty && title == session.nodeKey) return true;
+    return session.runId.isNotEmpty && title == '工作流 ${session.runId}';
+  }
+
   /// 主机给的标题里可能整段是引擎标签或 `[implicit]` 提示：清掉，清完没东西
   /// 就退回会话 id。
   String _title(FoldedSession session) {
@@ -216,31 +237,22 @@ class _SessionFolderItemsState extends State<SessionFolderItems> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final rows = <Widget>[];
-    // 工作流组顺手带上流程库的入口：设计、演练、运行都从这里进。原来它在组
-    // 明细页的标题栏，现在是展开区里的第一行。
-    if (widget.folder == SessionFolderKind.flow) {
-      rows.add(ListTile(
-        leading: const Icon(Icons.account_tree_outlined, size: 20),
-        title: Text(l10n.flow_libraryTitle),
-        onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-          builder: (_) => FlowWorkspaceScreen(peerId: widget.peerId),
-        )),
+    // 工作流组只列发起过的运行，一条运行一行，标题是启动时的第一句话。
+    // 流程库和模板不从这里进。
+    final sessions = widget.folder == SessionFolderKind.flow
+        ? flowInitiationRecords(_items)
+        : _items;
+    for (final session in sessions) {
+      final title = widget.folder == SessionFolderKind.flow
+          ? (SessionUtils.firstSentenceTitle(session.title) ?? '')
+          : null;
+      rows.add(_sessionRow(
+        context,
+        l10n,
+        session,
+        widget.folder == SessionFolderKind.flow ? '' : _subtitle(l10n, session),
+        title: title,
       ));
-    }
-    // 工作流按运行分组，其余按时间平铺（折叠方案 §2.2）。
-    String? lastRun;
-    for (final session in _items) {
-      if (widget.folder == SessionFolderKind.flow &&
-          session.runId.isNotEmpty &&
-          session.runId != lastRun) {
-        lastRun = session.runId;
-        rows.add(Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: Text(l10n.folder_runHeader(session.runId),
-              style: Theme.of(context).textTheme.labelMedium),
-        ));
-      }
-      rows.add(_sessionRow(context, l10n, session, _subtitle(l10n, session)));
     }
     if (_loading && _items.isEmpty) {
       rows.add(const Padding(
@@ -251,7 +263,7 @@ class _SessionFolderItemsState extends State<SessionFolderItems> {
       rows.add(Center(
         child: TextButton(onPressed: _more, child: Text(l10n.folder_retry)),
       ));
-    } else if (_items.isEmpty) {
+    } else if (sessions.isEmpty && _cursor == null) {
       rows.add(Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
         child: Text(l10n.folder_empty,

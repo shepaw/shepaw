@@ -249,6 +249,16 @@ class SessionUtils {
         : '${at.year}/${at.month}/${at.day} $time';
   }
 
+  /// 工作流折叠组那一行要的字：启动时那句话的第一句。
+  ///
+  /// 清掉引擎标签和 `[implicit]` 之后按句末标点切开；没有句末标点时整段就是第一句。
+  static String? firstSentenceTitle(String? title) {
+    final cleaned = cleanClaudeSessionTitle(title);
+    if (cleaned == null || cleaned.isEmpty) return null;
+    final sentence = splitFirstSentence(cleaned).first;
+    return sentence.isEmpty ? null : sentence;
+  }
+
   /// 剔除会话标题里的引擎内置标记及其内容、发送端附加提示块，折叠多余空白。
   ///
   /// 清理后为空返回 null，便于调用方回落默认名（如 'Session'）。

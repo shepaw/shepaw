@@ -265,13 +265,40 @@ void main() {
           'agent_id': 'a1',
           'folder': 'flow',
           'cursor': first ? '1' : null,
-          'sessions': [
-            {
-              'session_id': first ? 's1' : 's2',
-              'title': first ? '第一个' : '第二个',
-              'origin': {'kind': 'flow', 'run_id': 'r1', 'node_key': 'n'},
-            },
-          ],
+          'sessions': first
+              ? [
+                  {
+                    'session_id': 's1',
+                    'title': '帮我做登录页。顺便加上验证码',
+                    'origin': {'kind': 'flow', 'run_id': 'r1', 'node_key': 'n'},
+                  },
+                  // 同一次运行的节点，以及没写下用户那句话的模板步骤，都不单独成行。
+                  {
+                    'session_id': 's1-node',
+                    'title': 'review',
+                    'origin': {
+                      'kind': 'flow',
+                      'run_id': 'r1',
+                      'node_key': 'review'
+                    },
+                  },
+                  {
+                    'session_id': 's-template',
+                    'title': 'impl',
+                    'origin': {
+                      'kind': 'flow',
+                      'run_id': 'r-template',
+                      'node_key': 'impl'
+                    },
+                  },
+                ]
+              : [
+                  {
+                    'session_id': 's2',
+                    'title': '再跑一遍发布流程',
+                    'origin': {'kind': 'flow', 'run_id': 'r2', 'node_key': 'n'},
+                  },
+                ],
         }));
         return true;
       },
@@ -296,18 +323,23 @@ void main() {
     for (var i = 0; i < 5; i++) {
       await tester.pump(const Duration(milliseconds: 20));
     }
-    expect(find.text('第一个'), findsOneWidget);
-    expect(find.text('运行 r1'), findsOneWidget);
+    expect(find.text('帮我做登录页。'), findsOneWidget);
+    expect(find.textContaining('顺便加上验证码'), findsNothing);
+    expect(find.text('流程库'), findsNothing);
+    expect(find.text('运行 r1'), findsNothing);
+    expect(find.text('review'), findsNothing);
+    expect(find.text('impl'), findsNothing);
+    expect(find.textContaining('节点'), findsNothing);
 
     await tester.tap(find.text('加载更多'));
     await tester.pumpAndSettle();
-    expect(find.text('第二个'), findsOneWidget);
+    expect(find.text('再跑一遍发布流程'), findsOneWidget);
     expect(find.text('加载更多'), findsNothing);
     expect(sent[1]['cursor'], '1');
 
     // 「更多」和私聊会话行一个规矩：平时不占位，鼠标悬停才出现。
     expect(find.byIcon(Icons.more_vert), findsNothing);
-    final row = find.text('第一个');
+    final row = find.text('帮我做登录页。');
     final hover = await tester.createGesture(kind: PointerDeviceKind.mouse);
     await hover.addPointer(location: tester.getCenter(row));
     await tester.pumpAndSettle();
