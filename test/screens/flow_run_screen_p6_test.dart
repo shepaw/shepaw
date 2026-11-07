@@ -348,7 +348,7 @@ void main() {
     await bus.close();
   });
 
-  testWidgets('A4-3: 非真会话 id（group:…）不在运行页外拼 psess 假会话', (tester) async {
+  testWidgets('A4-3 / A10-7: 非真会话 id（group:…）不显示点不开的会话入口', (tester) async {
     final bus = StreamController<PeerControlEvent>.broadcast();
     await tester.pumpWidget(_app(_host(
       bus,
@@ -365,11 +365,17 @@ void main() {
     )));
     await _settle(tester);
 
-    expect(find.byKey(const ValueKey('flow-node-goto-answer-impl')),
-        findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('flow-node-goto-answer-impl')));
-    await _settle(tester);
+    // A10-7：旧引擎槽位 key 会被 _openSession 的格式守卫拒绝，不该再给出
+    // 「会话 / 去回答」这种点了完全没反应的按钮。
+    expect(find.byKey(const ValueKey('flow-node-session-impl')), findsNothing);
+    expect(
+        find.byKey(const ValueKey('flow-node-goto-answer-impl')), findsNothing);
 
+    // 节点详情弹层里同样不露出无效入口。
+    await tester.tap(find.text('impl'));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey('node-view-session')), findsNothing);
+    expect(find.byKey(const ValueKey('node-goto-answer')), findsNothing);
     expect(opened, isEmpty, reason: '旧引擎槽位 key 拼不出真会话，应留在运行页');
     await tester.pumpWidget(const SizedBox());
     await bus.close();

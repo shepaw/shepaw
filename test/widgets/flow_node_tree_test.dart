@@ -50,7 +50,7 @@ void main() {
 
   testWidgets('a finished gate no longer offers its options', (tester) async {
     await tester.pumpWidget(const MaterialApp(
-      locale: const Locale('zh'),
+      locale: Locale('zh'),
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       home: Scaffold(
@@ -106,6 +106,74 @@ void main() {
     expect(find.byIcon(Icons.chat_bubble_outline), findsOneWidget);
     expect(find.byKey(const ValueKey('flow-node-session-streaming')),
         findsNothing);
+  });
+
+  testWidgets('A10-7: 旧引擎槽位 key 不显示会话/去回答按钮', (tester) async {
+    await tester.pumpWidget(_treeApp(const [
+      FlowNode(
+        key: 'legacy',
+        id: 'legacy',
+        kind: 'task',
+        status: FlowNodeStatus.waitingUser,
+        sessionId: 'flow:r1:legacy',
+        agentId: 'agent-7',
+      ),
+      FlowNode(
+        key: 'group-legacy',
+        id: 'group-legacy',
+        kind: 'task',
+        status: FlowNodeStatus.waitingUser,
+        sessionId: 'group:g1:s1:flow_x',
+        agentId: 'agent-7',
+      ),
+      FlowNode(
+        key: 'real',
+        id: 'real',
+        kind: 'task',
+        status: FlowNodeStatus.waitingUser,
+        sessionId: 'flow_deadbe12_real',
+        agentId: 'agent-7',
+      ),
+    ]));
+    for (final key in ['legacy', 'group-legacy']) {
+      expect(find.byKey(ValueKey('flow-node-session-$key')), findsNothing,
+          reason: '点不开的会话不该露出按钮');
+      expect(find.byKey(ValueKey('flow-node-goto-answer-$key')), findsNothing);
+    }
+    expect(
+        find.byKey(const ValueKey('flow-node-session-real')), findsOneWidget);
+    expect(find.byKey(const ValueKey('flow-node-goto-answer-real')),
+        findsOneWidget);
+  });
+
+  test('A10-7: hasSession 复用格式守卫', () {
+    expect(
+      const FlowNode(
+        key: 'legacy',
+        id: 'legacy',
+        kind: 'task',
+        sessionId: 'flow:r1:legacy',
+      ).hasSession,
+      isFalse,
+    );
+    expect(
+      const FlowNode(
+        key: 'part',
+        id: 'part',
+        kind: 'task',
+        sessionId: 'part-flow-r1-build',
+      ).hasSession,
+      isFalse,
+    );
+    expect(
+      const FlowNode(
+        key: 'real',
+        id: 'real',
+        kind: 'task',
+        sessionId: 'flow_deadbe12_real',
+      ).hasSession,
+      isTrue,
+    );
   });
 
   testWidgets('P4: tapping the session entry fires onOpenSession',
@@ -186,7 +254,8 @@ void main() {
   });
 }
 
-Widget _treeApp(List<FlowNode> nodes, {void Function(FlowNode)? onOpenSession}) =>
+Widget _treeApp(List<FlowNode> nodes,
+        {void Function(FlowNode)? onOpenSession}) =>
     MaterialApp(
       locale: const Locale('zh'),
       localizationsDelegates: AppLocalizations.localizationsDelegates,

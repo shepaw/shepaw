@@ -719,12 +719,12 @@ void main() {
       events: incoming.stream,
       seqStore: MemoryHubSeqStore(),
     );
-    client.start();
-    addTearDown(client.dispose);
     final db = getIt<LocalDatabaseService>();
     await db.deleteMessage(liveTurnPlaceholderId(turnId));
     await db.deleteMessage(finalId);
     // App 刚重启：内存里没有这个回合，库里还留着 idle 收尾后的占位行。
+    // A10-10 之后 flow 频道不再逐条无条件扫库，启动时的一次 hydration 必须
+    // 已经能看到这行（生产里 DB 行本来就早于 start() 存在）。
     await db.createMessage(
       id: liveTurnPlaceholderId(turnId),
       channelId: channelId,
@@ -734,6 +734,9 @@ void main() {
       content: '收尾前的正文',
       metadata: const {},
     );
+    client.start();
+    await _until(() async => client.debugHasPlaceholderChannel(channelId));
+    addTearDown(client.dispose);
 
     incoming.add(PeerControlEvent(
       peerId: 'peer-1',

@@ -818,6 +818,85 @@ void main() {
         reason: '任何被接受的 running flow 帧都要装 retention 计时器');
   });
 
+  test('A10-6: 同 peer 重放退休 turnId 仍被拒，身份检查不挡黑名单', () {
+    final mirror = SessionRuntimeMirror();
+    addTearDown(mirror.dispose);
+    const key = 'flow_a106_impl';
+    const oldTurn = 'flow-a106-old';
+    const newTurn = 'flow-a106-new';
+
+    mirror.reconcileTo(<Map<String, dynamic>>[
+      snap(key: 'agent:hub:main', revision: 1, state: 'idle', turnId: ''),
+    ], hubId: 'hub-a', sourcePeerId: 'p1');
+    expect(
+      mirror.apply(
+        snap(
+          key: key,
+          revision: 5,
+          flow: true,
+          hubId: '',
+          turnId: oldTurn,
+        ),
+        sourcePeerId: 'p1',
+      ),
+      isTrue,
+    );
+    expect(mirror.stateFor(key).isRunning, isTrue);
+
+    // 主机换代但配对 peerId 不变：旧 turnId 进退休黑名单。
+    mirror.reconcileTo(<Map<String, dynamic>>[
+      snap(key: 'agent:hub:main', revision: 1, state: 'idle', turnId: ''),
+    ], hubId: 'hub-b', sourcePeerId: 'p1');
+
+    // raw 帧都带 sourcePeerId；以前身份检查在黑名单之前直接 return false，
+    // 这些旧帧会被接受、把死回合复活成 running。
+    expect(
+      mirror.apply(
+        snap(
+          key: key,
+          revision: 2,
+          flow: true,
+          hubId: '',
+          turnId: oldTurn,
+        ),
+        sourcePeerId: 'p1',
+      ),
+      isFalse,
+      reason: '无 hub_id + 当前 peer 也不能绕过退休黑名单',
+    );
+    expect(
+      mirror.apply(
+        snap(
+          key: key,
+          revision: 9,
+          flow: true,
+          hubId: 'hub-b',
+          turnId: oldTurn,
+        ),
+        sourcePeerId: 'p1',
+      ),
+      isFalse,
+      reason: '带当前 hub_id 的退休回合重放同样不能复活',
+    );
+    expect(mirror.stateFor(key).isRunning, isFalse);
+
+    // 新 turnId 的帧仍照常接受。
+    expect(
+      mirror.apply(
+        snap(
+          key: key,
+          revision: 1,
+          flow: true,
+          hubId: 'hub-b',
+          turnId: newTurn,
+        ),
+        sourcePeerId: 'p1',
+      ),
+      isTrue,
+    );
+    expect(mirror.stateFor(key).turnId, newTurn);
+  });
+
   test('A7-2: 无身份但 revision 落后于权威收尾状态的 running 帧被拒', () async {
     final mirror = SessionRuntimeMirror();
     addTearDown(mirror.dispose);

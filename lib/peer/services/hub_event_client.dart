@@ -109,6 +109,16 @@ class HubEventClient {
   @visibleForTesting
   int debugLivePlaceholderScans = 0;
 
+  /// Test seam：`_ensurePlaceholderHydrated` 被等过几次（A10-10）。
+  /// `start()` 一次之后，flow 频道无占位的历史重放不该再逐条 await 它。
+  @visibleForTesting
+  int debugPlaceholderHydrationCalls = 0;
+
+  /// Test seam：这个频道在启动时的一次 hydration 里确实发现了占位行。
+  @visibleForTesting
+  bool debugHasPlaceholderChannel(String channelId) =>
+      _channelsWithLivePlaceholders.contains(channelId);
+
   /// Test seam：收尾计时器被装回过几次（A7-3：每片 chunk 都必须刷新并重新
   /// 装回，不能只取消）。A9-10 之后「装回」= 刷新 deadline，不再分配 Timer。
   @visibleForTesting
@@ -227,6 +237,7 @@ class HubEventClient {
   /// 之后 `_finalizedRetainedTurns` 是空的，但 DB 行上的 `finalized` 标记还在。
   /// 只查一次，不做成每条消息一次全表扫。
   Future<void> _ensurePlaceholderHydrated() {
+    debugPlaceholderHydrationCalls++;
     final running = _placeholderHydration;
     if (running != null) return running;
     final future = _hydratePlaceholderState();
@@ -326,16 +337,10 @@ class HubEventClient {
     return true;
   }
 
-  /// flow 节点会话的频道（`psess_flow_...`）。普通 DM / 群频道只有在确实
-  /// 登记过占位时才需要扫库（A9-9）。
-  static bool _isFlowChannel(String channelId) {
-    final bare = remoteSessionIdFromChannelId(channelId) ?? channelId;
-    return bare.startsWith('flow_') || channelId.contains(':flow_');
-  }
-
-  /// 这条消息属于哪个回合。主机并不总带 turn_id；带得出来就只处理那一回合
-  /// 的占位，带不出来则由调用方走「只动当前 live、不碰别的 retained 行」的
-  /// 保守路径（A9-2）。
+  /// 这条消息属于哪个回合。主机 H10-12 之后在最终 flow agent 消息的
+  /// `metadata.flow.turn_id` 里带上它；老主机 / 中继可能放在顶层、
+  /// `metadata` 或 `request_id`。带得出来就只处理那一回合的占位，
+  /// 带不出来则由调用方走保守路径（A9-2 / A10-4）。
   static String? _messageTurnId(Map<String, dynamic> data) {
     String? value(Object? raw) {
       final text = raw?.toString().trim() ?? '';
@@ -603,17 +608,55 @@ class HubEventClient {
             event.peerId != activeHost) {
           return;
         }
-        final sessions = event.data['sessions'];
-        if (sessions is List && getIt.isRegistered<SessionRuntimeMirror>()) {
+        // A10-3：H10-11 在顶层放 `epoch`（u64）。整个响应（包括 sessions 为空
+        // 或缺字段的快照）都要参与对账，否则换 hub / 主机重启时这条唯一的
+        // 权威信号会被丢掉。
+        if (getIt.isRegistered<SessionRuntimeMirror>()) {
+          final sessions = event.data['sessions'];
           getIt<SessionRuntimeMirror>().reconcileTo(
-            sessions,
+            sessions is List ? sessions : const <dynamic>[],
             hubId: event.data['hub_id'] as String?,
-            epoch: event.data['epoch']?.toString(),
+            epoch: _snapshotEpoch(event.data),
             sourcePeerId: event.peerId,
           );
         }
     }
   }
+
+  /// 从 `session_snapshot_resp` 里取主机进程代次（A10-3）。
+  ///
+  /// 顶层 `epoch` 是 H10-11 的正式位置；兼容老主机 / 中继把它放在
+  /// `hub_epoch`、`sessions[].epoch`（[SessionRuntimeMirror.reconcileTo] 也会逐条
+  /// 兜底）或 `snapshot.epoch` 的形态。数字 / 字符串统一成可比较的文本。
+  static String? _snapshotEpoch(Map<String, dynamic> data) {
+    String? normalized(Object? raw) {
+      if (raw == null) return null;
+      final text = raw.toString().trim();
+      return text.isEmpty || text == 'null' ? null : text;
+    }
+
+    final top = normalized(data['epoch']) ?? normalized(data['hub_epoch']);
+    if (top != null) return top;
+    final sessions = data['sessions'];
+    if (sessions is List) {
+      for (final session in sessions) {
+        if (session is! Map) continue;
+        final epoch =
+            normalized(session['epoch']) ?? normalized(session['hub_epoch']);
+        if (epoch != null) return epoch;
+      }
+    }
+    final snapshot = data['snapshot'];
+    if (snapshot is Map) {
+      return normalized(snapshot['epoch']) ?? normalized(snapshot['hub_epoch']);
+    }
+    return null;
+  }
+
+  /// Test seam：核对快照 epoch 的几种兼容位置（A10-3）。
+  @visibleForTesting
+  static String? debugSnapshotEpoch(Map<String, dynamic> data) =>
+      _snapshotEpoch(data);
 
   /// 登录成功后立刻要一份所有活跃会话的全量状态快照。
   /// 主机正在跑、但启动那一刻没有状态跃迁的回合，只有这次对账能让 App
@@ -1325,14 +1368,61 @@ class HubEventClient {
     if (channelId.isNotEmpty) _notify(channelId);
   }
 
+  /// 主机 `open_direct_gate` 往 run 级惜宝会话写的 gate / 通知消息也带
+  /// `metadata.flow`（H10-12 只给最终 agent 回复带 `turn_id`），但它不代表
+  /// 回合结束（A10-5）。消息里任何明确的 gate / notice 标记都按通知处理：
+  /// 不删占位、不收尾 live turn。
+  static bool _isFlowNoticeMessage(Map<String, dynamic> data) {
+    final meta = data['metadata'];
+    if (meta is! Map) return false;
+    final flow = meta['flow'];
+    if (flow is Map) {
+      for (final key in const [
+        'gate',
+        'notice',
+        'notification',
+        'is_gate',
+        'is_notice',
+        'kind',
+        'type',
+        'message_type',
+      ]) {
+        final value = flow[key];
+        if (value == null || value == false) continue;
+        if (key == 'gate' || key == 'notice' || key == 'notification') {
+          return true;
+        }
+        if (key == 'is_gate' || key == 'is_notice') {
+          if (value == true || value == 1) return true;
+          continue;
+        }
+        final text = value.toString().toLowerCase();
+        if (text.contains('gate') || text.contains('notice')) return true;
+      }
+    }
+    for (final key in const ['gate', 'notice', 'notification']) {
+      final value = meta[key];
+      if (value != null && value != false) return true;
+    }
+    final kind = meta['kind']?.toString().toLowerCase() ?? '';
+    return kind == 'gate' ||
+        kind == 'notice' ||
+        kind == 'notification' ||
+        kind.contains('gate') ||
+        kind.contains('notice');
+  }
+
   /// 主机在回合中途 append 的工具结果 / 进度消息：带 progress_* / tool_*
   /// metadata，或者干脆不是 text 类型。它不代表回合结束（A7-5）。
   static bool _isIntermediateAgentMessage(Map<String, dynamic> data) {
     final meta = data['metadata'];
     if (meta is Map) {
-      // 流程节点回合的最终回复也带 metadata.flow，哪怕它同时带进度块，也
-      // 不能被当成回合中途的消息。
-      if (meta['flow'] is Map) return false;
+      final flow = meta['flow'];
+      final notice = _isFlowNoticeMessage(data);
+      // A8-4：流程节点回合的最终回复也带 metadata.flow，哪怕同时带进度块，
+      // 也不能被当成回合中途的消息。但 gate / notice 不是最终回复，必须继续
+      // 判成中途通知（A10-5）。
+      if (flow is Map && !notice) return false;
       for (final key in const [
         'progress_content',
         'progress_steps',
@@ -1348,6 +1438,7 @@ class HubEventClient {
         return true;
       }
       if (meta['status'] == 'progress') return true;
+      if (notice) return true;
     }
     final type = (data['type'] as String? ?? '').toLowerCase();
     return type.isNotEmpty && type != 'text';
@@ -1359,8 +1450,10 @@ class HubEventClient {
   /// 来源 / 类型先于 progress 字段判定：工具回合的最终消息也会带
   /// `progress_content` / `progress_steps`，按中途消息处理会让保留占位和完整
   /// 答案并存成两条气泡（A8-4）。没有这两种最终标记的进度消息仍由
-  /// [_isIntermediateAgentMessage] 判成中途消息。
+  /// [_isIntermediateAgentMessage] 判成中途消息。gate / 通知消息一律不算
+  /// 最终回复（A10-5）。
   static bool _isFinalAnswerMessage(Map<String, dynamic> data) {
+    if (_isFlowNoticeMessage(data)) return false;
     final meta = data['metadata'];
     if (meta is Map && meta['flow'] is Map) return true;
     final id = data['id'] as String? ?? '';
@@ -1481,9 +1574,9 @@ class HubEventClient {
         DateTime.fromMillisecondsSinceEpoch(rawTs, isUtc: true),
       );
     }
-    if (senderType != 'user') {
-      // A9-4：重登 / dispose 之后 retain 集合是空的，先从库里重建一次（只一次）。
-      await _ensurePlaceholderHydrated();
+    // gate / notice 消息带 metadata.flow 但不是回合回复：不动占位 / live turn，
+    // 也不触发占位扫描（A10-5）。
+    if (senderType != 'user' && !_isFlowNoticeMessage(data)) {
       final liveTurns = _liveChannels.entries
           .where((entry) => entry.value == channelId)
           .map((entry) => entry.key)
@@ -1492,16 +1585,25 @@ class HubEventClient {
       // 否则已收尾保留的占位不会被删，出现「半段 + 完整」两条答案。
       final finalAnswer = _isFinalAnswerMessage(data);
       final intermediate = !finalAnswer && _isIntermediateAgentMessage(data);
-      // A9-2：消息明确带回合归属时，只收那一个回合的 live turn / 占位。
+      // A9-2 / A10-4：消息明确带回合归属时，只收那一个回合的 live turn / 占位。
       final attributedTurn = _messageTurnId(data);
+      // 老主机帧没有 turn_id / metadata.flow.turn_id。频道里有多个 live turn
+      // 时这条回复归谁根本判不出来：整批收尾会误伤另一个还在跑的回合，
+      // 连占位扫描也一起跳过，由它自己的最终帧 / idle / turn.finished 收尾。
+      final ambiguousLiveTurns = attributedTurn == null && liveTurns.length > 1;
+      final targets = ambiguousLiveTurns
+          ? const <String>[]
+          : liveTurns
+              .where((turnId) =>
+                  attributedTurn == null || turnId == attributedTurn)
+              .toList();
       var clearedLiveTurn = false;
-      for (final id in liveTurns) {
-        if (attributedTurn != null && id != attributedTurn) continue;
+      for (final turnId in targets) {
         if (intermediate) {
           // A7-5：工具结果 / 进度消息只删占位行，绝不结束回合。删掉
           // _attached / 标记 settled 会让后续 pouch_turn_event / agent_chunk
           // 全被丢掉，回复从中间截断。
-          await _clearIntermediatePlaceholder(id);
+          await _clearIntermediatePlaceholder(turnId);
           continue;
         }
         // 最终回复才做完整清理：占位行、缓冲、落点缓存一起收掉。
@@ -1509,16 +1611,20 @@ class HubEventClient {
         // _flowPlaceholders 会永远留着这个 turnId，后续同回合 chunk
         // 建不出占位、集合也无限增长。
         clearedLiveTurn = true;
-        await _clearLiveTurn(id, closeCards: false);
+        await _clearLiveTurn(turnId, closeCards: false);
       }
-      // A9-9：普通 DM / 群频道从没登记过占位就不必为每条 agent 消息扫库。
-      // 只有 flow 频道、本频道有 live/finalized 占位、或刚收掉一个 live 回合
-      // 时才按确定性 id 前缀把残留收干净（重启后内存索引没了也能幂等清理）。
-      final shouldScan = _isFlowChannel(channelId) ||
-          clearedLiveTurn ||
-          liveTurns.isNotEmpty ||
-          _channelsWithLivePlaceholders.contains(channelId);
+      // A9-9 / A10-10：flow 频道也不再无条件扫库。只在确实见过占位前缀、
+      // 刚清掉一个 live 回合、或该频道已登记过 live/finalized 占位时才扫；
+      // 其余长历史重放连 hydration 都不必等（start() 已重建过一次）。
+      final knownPlaceholderPrefix =
+          id.startsWith(liveTurnPlaceholderPrefix) || liveTurns.isNotEmpty;
+      final shouldScan = !ambiguousLiveTurns &&
+          (clearedLiveTurn ||
+              knownPlaceholderPrefix ||
+              _channelsWithLivePlaceholders.contains(channelId));
       if (shouldScan) {
+        // A9-4：重登 / dispose 之后 retain 集合是空的，先从库里重建一次（只一次）。
+        await _ensurePlaceholderHydrated();
         debugLivePlaceholderScans++;
         final placeholderIds = await db.listLiveTurnPlaceholderIds(channelId);
         final livePlaceholders = {
@@ -2222,15 +2328,26 @@ class HubEventClient {
   /// 有正文就只去掉 `status: streaming`。占位行本身保留到最终消息到达，
   /// 届时 [_insertMessage] 会按确定性的 `hub-live-<turnId>` id 在库里找到并
   /// 删除 —— 不依赖内存，App 重启后重放最终消息也能收干净。
+  ///
+  /// A10-1：30s 兜底只是给流式占位停动画、清 attached/live 状态，**不是**
+  /// 权威终态。主机可能停在 `ask_ui` 等用户回答（最长 30 分钟），这期间没有
+  /// 帧到达；兜底计时器不能把还在等的交互卡标成 `turn_ended`。只有明确的
+  /// idle（[_scheduleIdleFinalize]）/ `turn.finished` 才允许关卡。
   Future<void> _finalizeIdleTurn(String turnId) async {
     if (!_liveChannels.containsKey(turnId)) return;
+    // _idleSeenTurns 会在 _clearLiveTurn 里被清掉，先在这里记下这次收尾
+    // 是「权威 idle 超时」还是「没收到 idle 的兜底」。
+    final sawAuthoritativeIdle = _idleSeenTurns.contains(turnId);
     await _flushLiveTurn(turnId);
     // flush 期间最终消息可能已经先到了。
     if (!_liveChannels.containsKey(turnId)) return;
     final channelId = _liveChannels[turnId]!;
     final content = _liveBuffers[turnId] ?? '';
     if (content.isEmpty) {
-      final cleared = await _clearLiveTurn(turnId);
+      final cleared = await _clearLiveTurn(
+        turnId,
+        closeCards: sawAuthoritativeIdle,
+      );
       if (cleared != null) _notify(cleared);
       return;
     }
@@ -2251,7 +2368,11 @@ class HubEventClient {
       }
     }
     _notify(channelId);
-    await _clearLiveTurn(turnId, deletePlaceholder: false);
+    await _clearLiveTurn(
+      turnId,
+      deletePlaceholder: false,
+      closeCards: sawAuthoritativeIdle,
+    );
   }
 
   void _applyMeta(String peerId, HubEvent event) {

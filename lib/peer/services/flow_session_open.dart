@@ -8,10 +8,7 @@ import '../../services/local_database_service.dart';
 import '../../services/she_service.dart' show SheService;
 import '../../utils/session_utils.dart';
 import 'peer_agent_client_service.dart'
-    show
-        kSyncedPeerSessionPrefix,
-        remoteSessionIdFromChannelId,
-        syncedPeerChannelId;
+    show remoteSessionIdFromChannelId, syncedPeerChannelId;
 import 'peer_agent_ids.dart';
 
 /// 折叠组 / 运行视图里的 session id 能不能当主机会话 id 用。
@@ -25,13 +22,29 @@ import 'peer_agent_ids.dart';
 /// 成员行，不是会话 —— 它同样没有冒号，以前会被当成真会话拼出
 /// `psess_part-flow-…` 这种空频道，还挡住了真正的运行页入口。真会话必须
 /// 以 `flow_` 开头。
-String? flowFoldedSessionId(String raw) {
-  final id = raw.trim();
-  if (id.isEmpty || id.contains(':') || id.contains('/')) return null;
-  if (id.startsWith(kSyncedPeerSessionPrefix)) return null;
-  if (id.startsWith('part-')) return null;
-  if (!id.startsWith('flow_')) return null;
-  return id;
+String? flowFoldedSessionId(String raw) => usableFlowSessionId(raw);
+
+/// 频道名是不是「占位值」：空 / 默认 'Session' / 泛化入口标题 / 直接拿
+/// session id 兜底。这些名字不是用户或主机给的正式会话名，可以用后来到的
+/// `session_title` 纠正；其余名字一律保留（A10-2）。
+@visibleForTesting
+bool isPlaceholderSessionName(String? name, {String sessionId = ''}) {
+  final trimmed = name?.trim() ?? '';
+  if (trimmed.isEmpty || trimmed.toLowerCase() == 'session') return true;
+  // `flow_sessionBanner` / `flow_runSession` 两种语言的泛化标题。
+  for (final prefix in const [
+    '工作流 · 节点 ',
+    '工作流·节点 ',
+    'Workflow · node ',
+    'Workflow·node ',
+  ]) {
+    if (trimmed.startsWith(prefix)) return true;
+  }
+  if (trimmed == '运行会话' || trimmed == 'Run session') return true;
+  // 搜索命中标题清不干净时回落到会话 id，本身也只是占位。
+  final bare = sessionId.trim();
+  if (bare.isNotEmpty && trimmed == bare) return true;
+  return false;
 }
 
 /// 测试里替换真正的导航动作，用来核对拼出来的频道 id / agent id。
@@ -87,8 +100,9 @@ Future<String> resolveFlowAgentLocalId({
 /// 名），也永远不会因为后续带 `session_title` 的消息而改名。
 ///
 /// 标题一律过 [SessionUtils.cleanClaudeSessionTitle]：清不干净就回落
-/// 'Session'。已存在的壳在有干净标题时改回主机给的标题（flow 壳，或还停在
-/// 默认 'Session' 的壳），普通用户改过名的会话不动。
+/// 'Session'。只有「本函数刚建出来的壳」或「当前名还是占位值」才允许写标题；
+/// 主机下发的 `session_title`、卡片 / 运行页反复点击带来的泛化标题都不能覆盖
+/// 用户改过的名字或主机给的真实流程名（A10-2）。
 Future<void> ensureLocalSessionShell({
   required LocalDatabaseService db,
   required String channelId,
@@ -122,10 +136,11 @@ Future<void> ensureLocalSessionShell({
     await db.addChannelMember(channelId, agentId);
   }
   final bare = remoteSessionIdFromChannelId(channelId) ?? channelId;
-  final isFlowShell = bare.startsWith('flow_');
-  if (clean != null &&
-      clean != existing.name &&
-      (isFlowShell || existing.name.isEmpty || existing.name == 'Session')) {
+  final renameAllowed = isPlaceholderSessionName(
+    existing.name,
+    sessionId: bare,
+  );
+  if (clean != null && clean != existing.name && renameAllowed) {
     await db.updateChannelName(channelId, clean);
   }
 }

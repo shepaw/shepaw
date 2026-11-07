@@ -2,6 +2,22 @@
 /// `flow_validate_resp` / `flow_run_get_resp` 给出，这里只做解码。
 library;
 
+/// 工作流会话 id 的格式守卫：只有主机下发的 `flow_<...>` 真会话能拼出
+/// `psess_` 频道。旧运行 / 群运行的条目可能是引擎槽位 key
+/// （`flow:<rid>:<node>` / `group:<gid>:<sid>:...`）、参与条目（`part-flow-…`）
+/// 或已经带壳的 `psess_flow_…`，点进去只会得到一条永远没有消息的假会话。
+///
+/// 服务层的 `flowFoldedSessionId` 和节点的 [FlowNode.hasSession] 都复用这一份，
+/// 免得两处守卫漂移（A10-7）。
+String? usableFlowSessionId(String? raw) {
+  final id = raw?.trim() ?? '';
+  if (id.isEmpty || id.contains(':') || id.contains('/')) return null;
+  if (id.startsWith('psess_')) return null;
+  if (id.startsWith('part-')) return null;
+  if (!id.startsWith('flow_')) return null;
+  return id;
+}
+
 enum FlowNodeStatus {
   pending,
   running,
@@ -60,8 +76,11 @@ enum FlowRunStatus {
       case 'waiting_user':
       case 'waiting':
       case 'needs_user':
-      case 'halted':
         return FlowRunStatus.running;
+      // A10-9：节点级 Halted 是终态失败（[FlowNodeStatus.isTerminal]）。
+      // run 级也按失败收尾，否则运行页一直转圈、不显示失败。
+      case 'halted':
+        return FlowRunStatus.failed;
     }
     for (final value in FlowRunStatus.values) {
       if (value.name == raw) return value;
@@ -134,8 +153,9 @@ class FlowNode {
 
   bool get isContainer => children.isNotEmpty;
 
-  /// 有没有可以点进去的私聊会话。
-  bool get hasSession => sessionId != null && sessionId!.isNotEmpty;
+  /// 有没有可以点进去的真会话。非空不等于可用：旧运行的引擎槽位 key 会
+  /// 被 `flowFoldedSessionId` 拒绝，显示按钮只会点了没反应（A10-7）。
+  bool get hasSession => usableFlowSessionId(sessionId) != null;
 
   /// 关卡正在等人回答。带节点会话且正在跑的执行节点也算：P6 的询问卡片会落在
   /// 这条会话里，卡片上要能提示「等人回答」。真正有卡片的 [waitingUser] 同样

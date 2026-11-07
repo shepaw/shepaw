@@ -86,8 +86,8 @@ void main() {
     expect(channel, isNotNull);
     expect(channel!.name, '确认部署？');
 
-    // 之后带 session_title 的 message.created 走 prepareLocalTargetForHubMessage
-    // 建壳：两条路径共用一份逻辑，必须把错名字改过来。
+    // 之后带 session_title 的 message.created 也走同一份建壳逻辑，但 A10-2
+    // 之后已有的干净标题是正式名字，不能被主机消息 / 点击反复覆盖。
     final target =
         await PeerAgentClientService.instance.prepareLocalTargetForHubMessage(
       peerId: 'p1',
@@ -101,8 +101,7 @@ void main() {
     );
     expect(target.channelId, channelId);
     channel = await db.getChannelById(channelId);
-    expect(channel!.name, '主机给的节点标题',
-        reason: '后续 message.created 的 session_title 要更新频道名');
+    expect(channel!.name, '确认部署？', reason: '已起好的非占位标题不能被后续 session_title 覆盖');
 
     // 整段都是提示块时回落默认名，而不是把标记写进会话列表。
     const secondId = 'flow_r9_a98_impl2';
@@ -143,6 +142,94 @@ void main() {
     expect(fallback?.sessionId, 'flow_deadbe12_she');
     expect(fallback?.agentId, SheService.sheId);
     expect(flowRunConversationTarget(const []), isNull);
+  });
+
+  test('A10-2: 用户改名 / 主机标题不被 hub 消息或再次点击覆盖', () async {
+    await StorageTestHarness.init();
+    if (!getIt.isRegistered<LocalDatabaseService>()) {
+      getIt.registerSingleton<LocalDatabaseService>(LocalDatabaseService());
+    }
+    final db = LocalDatabaseService();
+    await db.database;
+    const sessionId = 'flow_a102_impl';
+    const channelId = 'psess_$sessionId';
+    const implicit = '[implicit]\n'
+        'This message mentions pouch:// URI(s). Read it with pouch_read.\n'
+        '[/implicit]';
+    await db.deleteChannel(channelId);
+
+    final opened = <String>[];
+    debugOpenFlowSessionChannel = (id, agent) async => opened.add(id);
+    addTearDown(() => debugOpenFlowSessionChannel = null);
+
+    // 频道刚由本函数创建：用清理过的干净标题。
+    await ensureFlowSessionShell(
+      channelId: channelId,
+      agentId: 'agent-a10',
+      title: '$implicit\n审查发布',
+      db: db,
+    );
+    expect((await db.getChannelById(channelId))!.name, '审查发布');
+
+    // 用户自己改名。
+    await db.updateChannelName(channelId, '我改的名字');
+    await PeerAgentClientService.instance.prepareLocalTargetForHubMessage(
+      peerId: 'p1',
+      remoteAgentId: 'agent-a10',
+      sessionId: sessionId,
+      rawChannelId: channelId,
+      senderType: 'agent',
+      fallbackSenderId: 'agent-a10',
+      fallbackSenderName: '',
+      sessionTitle: '主机给的真实流程名',
+    );
+    expect((await db.getChannelById(channelId))!.name, '我改的名字',
+        reason: '用户改过的名字不能被每条 hub 消息覆盖');
+
+    // 再从运行页点一次（泛化的 flow_sessionBanner 标题）。
+    await openFlowSession(
+      peerId: 'p1',
+      sessionId: sessionId,
+      remoteAgentId: 'agent-a10',
+      title: '工作流 · 节点 impl',
+      db: db,
+    );
+    expect(opened, [channelId]);
+    expect((await db.getChannelById(channelId))!.name, '我改的名字');
+
+    // 主机先给了真实流程名，随后的泛化标题同样不能覆盖。
+    await db.updateChannelName(channelId, '发布流水线 v2');
+    await openFlowSession(
+      peerId: 'p1',
+      sessionId: sessionId,
+      remoteAgentId: 'agent-a10',
+      title: '工作流 · 节点 impl',
+      db: db,
+    );
+    expect((await db.getChannelById(channelId))!.name, '发布流水线 v2');
+
+    // 当前名只是占位值时，仍允许主机下发的 session_title 纠正。
+    const secondId = 'flow_a102_placeholder';
+    const secondChannel = 'psess_$secondId';
+    await db.deleteChannel(secondChannel);
+    await ensureFlowSessionShell(
+      channelId: secondChannel,
+      agentId: 'agent-a10',
+      title: implicit,
+      db: db,
+    );
+    expect((await db.getChannelById(secondChannel))!.name, 'Session');
+    await PeerAgentClientService.instance.prepareLocalTargetForHubMessage(
+      peerId: 'p1',
+      remoteAgentId: 'agent-a10',
+      sessionId: secondId,
+      rawChannelId: secondChannel,
+      senderType: 'agent',
+      fallbackSenderId: 'agent-a10',
+      fallbackSenderName: '',
+      sessionTitle: '主机给的真实流程名',
+    );
+    expect((await db.getChannelById(secondChannel))!.name, '主机给的真实流程名');
   });
 
   test('A2-9: 运行会话用 SheService.sheId，而不是第四份字面量', () async {

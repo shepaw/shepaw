@@ -467,7 +467,7 @@ void main() {
     });
 
     test('run 级 waiting 别名按 running 处理，不判加载失败', () {
-      for (final raw in ['waiting_user', 'waiting', 'needs_user', 'halted']) {
+      for (final raw in ['waiting_user', 'waiting', 'needs_user']) {
         expect(FlowRunStatus.parse(raw), FlowRunStatus.running);
       }
       expect(
@@ -479,6 +479,21 @@ void main() {
         }),
         isNotNull,
       );
+    });
+
+    test('A10-9: run 级 halted 是失败终态，不再一直转圈', () {
+      expect(FlowRunStatus.parse('halted'), FlowRunStatus.failed,
+          reason: '和 FlowNodeStatus.halted.isTerminal 保持一致');
+      expect(FlowRunStatus.parse('halted')!.isFinished, isTrue);
+      expect(FlowRunStatus.parse('waiting_user')!.isFinished, isFalse);
+      final run = FlowRunView.fromResponse({
+        'success': true,
+        'run_id': 'r1',
+        'status': 'halted',
+        'tree': <dynamic>[],
+      });
+      expect(run, isNotNull);
+      expect(run!.status, FlowRunStatus.failed);
     });
 
     test('flowRunSheSessionId 从节点会话前缀推出运行级惜宝会话', () {

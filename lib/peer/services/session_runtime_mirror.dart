@@ -431,16 +431,20 @@ class SessionRuntimeMirror {
   /// 回合复活成 running；带 hub_id / 连接身份的帧在上面已经校验过。
   bool _isStaleFlowReplay(SessionState incoming, String fromPeer) {
     if (!incoming.isFlow || !incoming.isRunning) return false;
-    if (incoming.hubId.isNotEmpty) return false;
-    if (fromPeer.isNotEmpty && _hubPeerId != null) return false;
-    // A9-1：主机换了进程代次，旧回合的 retired id 不能挡住新进程的新帧。
+    // A9-1：换代后的新进程不能被上一代留下的黑名单误拒。
     if (incoming.epoch.isNotEmpty &&
         _epoch != null &&
         incoming.epoch != _epoch) {
       return false;
     }
+    // A10-6：已退休的 turnId 无条件拒绝，peer / hub 身份只能用来判断
+    // 「新 turnId」的帧。raw 帧一律带 sourcePeerId，身份检查放在这里之前会
+    // 让整张黑名单永远不可达：同一主机重启（peerId 不变）时旧进程的 running
+    // 重放会把死回合复活。
     final turnId = incoming.turnId;
     if (turnId.isNotEmpty && _retiredFlowTurns.contains(turnId)) return true;
+    if (incoming.hubId.isNotEmpty) return false;
+    if (fromPeer.isNotEmpty && _hubPeerId != null) return false;
     final current = _notifiers[incoming.sessionKey]?.value;
     if (current == null || current.sessionKey.isEmpty) return false;
     // 当前 key 已有同 hub、revision 更大的收尾状态：这一帧只可能是重放。
