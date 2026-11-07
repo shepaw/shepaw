@@ -198,6 +198,26 @@ class _FlowStartScreenState extends State<FlowStartScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // 开跑确认：把「会真实调用 agent」和「演练不会」写在同一屏，
+              // 别让人把两种播放按钮搞混。取消这一页不会产生任何运行。
+              Card(
+                key: const ValueKey('start-confirm-banner'),
+                color: scheme.tertiaryContainer,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(l10n.flow_startConfirmTitle,
+                          style: theme.textTheme.titleSmall),
+                      const SizedBox(height: 6),
+                      Text(l10n.flow_startRealCallHint,
+                          style: theme.textTheme.bodySmall),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
               if (widget.dirty) ...[
                 Card(
                   color: scheme.secondaryContainer,
@@ -247,6 +267,17 @@ class _FlowStartScreenState extends State<FlowStartScreen> {
                       if (_error != null) setState(() => _error = null);
                     },
                   ),
+                ),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(l10n.flow_startRoleSection,
+                    style: theme.textTheme.labelLarge),
+              ),
+              if (widget.roles.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(l10n.flow_startNoRoles,
+                      style: theme.textTheme.bodySmall),
                 ),
               for (final role in widget.roles)
                 Card(
@@ -309,7 +340,7 @@ class _FlowStartScreenState extends State<FlowStartScreen> {
                   FilledButton(
                     key: const ValueKey('start-go'),
                     onPressed: _submit,
-                    child: Text(l10n.flow_startRun),
+                    child: Text(l10n.flow_startGo),
                   ),
                 ],
               ),

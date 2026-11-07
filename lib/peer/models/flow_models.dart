@@ -322,6 +322,7 @@ class FlowRunView {
     this.children = const [],
     this.yaml = '',
     this.runSessionId,
+    this.startedMs,
   });
 
   final String runId;
@@ -340,6 +341,9 @@ class FlowRunView {
   /// 主机若开始下发 run 级字段就直接用；否则从节点会话前缀推出来。
   /// 顶部「运行会话」入口打开 `psess_<runSessionId>`。
   final String? runSessionId;
+
+  /// 主机若下发 `started_ms`，状态条显示已用时；旧主机没有就不显示。
+  final int? startedMs;
 
   static FlowRunView? fromResponse(Map<String, dynamic> response) {
     if (response['success'] != true) return null;
@@ -385,6 +389,7 @@ class FlowRunView {
           : const [],
       yaml: (response['yaml'] as String?) ?? '',
       runSessionId: runSessionId,
+      startedMs: (response['started_ms'] as num?)?.toInt(),
     );
   }
 
@@ -415,6 +420,7 @@ class FlowRunView {
       children: children,
       yaml: yaml,
       runSessionId: runSessionId,
+      startedMs: startedMs,
     );
   }
 
@@ -427,6 +433,7 @@ class FlowRunView {
         children: children,
         yaml: yaml,
         runSessionId: runSessionId,
+        startedMs: startedMs,
       );
 }
 
@@ -439,6 +446,10 @@ class FlowSummary {
     this.updatedMs,
     this.updatedBy,
     this.description,
+    this.lastRunStatus,
+    this.lastRunMs,
+    this.lastRunId,
+    this.lastRunNeedsApproval = false,
   });
 
   final String name;
@@ -450,8 +461,22 @@ class FlowSummary {
   final String? updatedBy;
   final String? description;
 
+  /// 新版主机在 `flow_list_resp` 里附带的最近一次运行状态。旧主机没有这些
+  /// 字段，一律是 null —— 列表行据此回退到「只有 rev + 说明」，不报错也不
+  /// 额外发请求。状态串沿用运行快照里的写法（`running` / `failed` /
+  /// `waiting_user` …），App 只认得这几种，认不出的就不画状态点。
+  final String? lastRunStatus;
+  final int? lastRunMs;
+  final String? lastRunId;
+
+  /// 最近一次运行里有节点在等人回答。旧主机没这个字段，默认 false。
+  final bool lastRunNeedsApproval;
+
   bool get isUserEdited =>
       updatedBy != null && updatedBy!.isNotEmpty && updatedBy != 'hub';
+
+  /// 列表行右侧的状态标识。和运行状态用同一套判定，别让两处漂移。
+  FlowSummaryStatus get status => FlowSummaryStatus.of(lastRunStatus);
 
   static List<FlowSummary>? listFromResponse(
     Map<String, dynamic> response, {
@@ -470,8 +495,37 @@ class FlowSummary {
             updatedMs: (item['updated_ms'] as num?)?.toInt(),
             updatedBy: item['updated_by'] as String?,
             description: item['description'] as String?,
+            lastRunStatus: item['last_run_status'] as String?,
+            lastRunMs: (item['last_run_ms'] as num?)?.toInt(),
+            lastRunId: item['last_run_id'] as String?,
+            lastRunNeedsApproval:
+                item['last_run_needs_approval'] == true,
           ),
     ];
+  }
+}
+
+/// 流程列表行的状态点。旧主机没给 `last_run_status` 时一律 [none]，
+/// 页面不显示任何状态标识（信息回退，但功能完整）。
+enum FlowSummaryStatus {
+  none,
+  running,
+  failed,
+  needsApproval;
+
+  static FlowSummaryStatus of(String? raw) {
+    final value = raw?.trim().toLowerCase() ?? '';
+    return switch (value) {
+      'running' || 'in_progress' => FlowSummaryStatus.running,
+      'failed' || 'error' || 'halted' => FlowSummaryStatus.failed,
+      'waiting_user' ||
+      'waiting' ||
+      'needs_user' ||
+      'needs_approval' ||
+      'pending_approval' =>
+        FlowSummaryStatus.needsApproval,
+      _ => FlowSummaryStatus.none,
+    };
   }
 }
 
@@ -675,6 +729,25 @@ class FlowRunSummary {
 
   bool get isRunning => status == 'running';
 
+  /// 运行列表分组：要人拍板的排最前，其次运行中的，最后已结束的。
+  ///
+  /// 主机 run 级状态只有 running/succeeded/failed/cancelled，`waiting_user`
+  /// 是节点状态；这里仍然认这几种写法，兼容把它上升成 run 级状态的新主机。
+  FlowRunGroup get group {
+    final value = status.toLowerCase();
+    if (const {
+      'waiting_user',
+      'waiting',
+      'needs_user',
+      'needs_approval',
+      'blocked',
+      'halted',
+    }.contains(value)) {
+      return FlowRunGroup.attention;
+    }
+    return isRunning ? FlowRunGroup.running : FlowRunGroup.finished;
+  }
+
   static List<FlowRunSummary> listFromResponse(Map<String, dynamic> response) {
     if (response['success'] != true) return const [];
     final runs = response['runs'];
@@ -695,6 +768,9 @@ class FlowRunSummary {
     ];
   }
 }
+
+/// 运行列表的分组顺序（[FlowRunSummary.group]）。
+enum FlowRunGroup { attention, running, finished }
 
 class FlowSchema {
   const FlowSchema({

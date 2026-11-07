@@ -52,7 +52,8 @@ class FlowDesignScreen extends StatefulWidget {
     this.onDirtyChanged,
     this.onControllerReady,
     this.embedded = false,
-    this.actionsNotifier,
+    this.initialDrawerTab,
+    this.restoreRequests,
   });
 
   final String peerId;
@@ -70,13 +71,14 @@ class FlowDesignScreen extends StatefulWidget {
   /// 回传 null，免得工作台拿着一个已 dispose 的 controller。
   final void Function(FlowEditorController? controller)? onControllerReady;
 
-  /// 嵌在工作台详情区里：内层 AppBar 不再画隐含的返回按钮（工作台外层才是
-  /// 唯一一条栏），避免它直接 pop 掉整个流程库路由。
+  /// 嵌在工作台详情区里：不画自己的 AppBar（外层详情页已经有 Tab 栏）。
   final bool embedded;
 
-  /// 非 null 时：设计页根本不画自己的 AppBar，把 actions 发布到这里，由外层
-  /// 工具栏显示（窄屏详情态的「只有一条栏」）。
-  final ValueNotifier<List<Widget>>? actionsNotifier;
+  /// 从概览页「演练」进来时，侧栏抽屉直接落在演练页签。
+  final String? initialDrawerTab;
+
+  /// 概览页草稿横幅点「恢复」时 +1；设计页等控制器载入完草稿再恢复。
+  final ValueNotifier<int>? restoreRequests;
 
   /// 演练动画每一步的间隔。
   final Duration stepInterval;
@@ -100,11 +102,17 @@ class FlowDesignScreen extends StatefulWidget {
 
 class _FlowDesignScreenState extends State<FlowDesignScreen> {
   late FlowEditorController _controller;
-  bool _showYaml = false;
+
+  /// 侧栏抽屉当前页签：null = 收起。问题 / 对比 / 演练 / 源码都在这里，
+  /// 不再作为卡片插在节点树顶上把它挤下去。
+  String? _drawerTab;
+  static const _drawerTabs = ['problems', 'diff', 'rehearsal', 'source'];
+
   List<String> _flowRefs = const [];
   String? _flashId;
   Timer? _flashTimer;
   final Map<String, GlobalKey> _rowKeys = {};
+  bool _pendingRestore = false;
 
   /// 换主机后旧请求（流程引用 / agent 名单）的回包不能再写进新主机状态。
   int _hostEpoch = 0;
@@ -136,6 +144,10 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
   @override
   void initState() {
     super.initState();
+    _drawerTab = _drawerTabs.contains(widget.initialDrawerTab)
+        ? widget.initialDrawerTab
+        : null;
+    widget.restoreRequests?.addListener(_onRestoreRequest);
     _startController();
     unawaited(_loadFlowRefs());
   }
@@ -171,14 +183,12 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     _collapsed.clear();
     _selectedId = null;
     _rowKeys.clear();
-    _showYaml = false;
     _flashId = null;
     _flashTimer?.cancel();
     _flashTimer = null;
     _reply.clear();
     _lastDirty = false;
-    _askedDraft = false;
-    _lastActionSig = '';
+    _pendingRestore = false;
     widget.onDirtyChanged?.call(false);
     _startController();
     // didUpdateWidget 之后本来就会 rebuild，不需要再 setState 一帧。
@@ -216,15 +226,11 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       _restartController();
       return;
     }
-    // 从宽屏（actionsNotifier 为 null）切回窄屏详情时，强制重发一次 actions，
-    // 免得外层栏里留着上一次窄屏会话的旧按钮状态。
-    if (oldWidget.actionsNotifier == null && widget.actionsNotifier != null) {
-      _lastActionSig = '';
-    }
   }
 
   @override
   void dispose() {
+    widget.restoreRequests?.removeListener(_onRestoreRequest);
     _composer.dispose();
     _flashTimer?.cancel();
     _controller.removeListener(_reportDirty);
@@ -242,43 +248,21 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       _lastDirty = dirty;
       widget.onDirtyChanged?.call(dirty);
     }
-    // 打开时发现上次没保存的改动：问一句要不要接着改。
-    if (_controller.restorableDraft != null && !_askedDraft) {
-      _askedDraft = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) => _askRestore());
-    }
+    // 进入时不再弹「恢复草稿」对话框：概览页顶部只有一条横幅，用户明确点
+    // 「恢复」才走到这里（也可能控制器还没载入完，等下一个 notify 再试）。
+    _maybeRestore();
   }
 
-  bool _askedDraft = false;
+  void _onRestoreRequest() {
+    _pendingRestore = true;
+    _maybeRestore();
+  }
 
-  Future<void> _askRestore() async {
-    if (!mounted) return;
-    final l10n = AppLocalizations.of(context);
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(l10n.flow_draftRestoreTitle),
-        content: Text(l10n.flow_draftRestoreBody),
-        actions: [
-          TextButton(
-            key: const ValueKey('draft-discard'),
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: Text(l10n.flow_draftDiscard),
-          ),
-          FilledButton(
-            key: const ValueKey('draft-restore'),
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text(l10n.flow_draftRestore),
-          ),
-        ],
-      ),
-    );
-    if (!mounted) return;
-    if (ok == true) {
-      await _controller.restoreDraft();
-    } else {
-      _controller.discardDraft();
-    }
+  void _maybeRestore() {
+    if (!_pendingRestore || _controller.loading) return;
+    if (_controller.restorableDraft == null) return;
+    _pendingRestore = false;
+    unawaited(_controller.restoreDraft());
   }
 
   /// 控制器只说"发生了什么"，文案在这配。
@@ -309,7 +293,15 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       context: context,
       builder: (dialog) => AlertDialog(
         title: Text(l10n.flow_saveFailed),
-        content: Text(notice.raw ?? ''),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(notice.raw ?? ''),
+            const SizedBox(height: 8),
+            Text(l10n.flow_conflictBody(notice.count)),
+          ],
+        ),
         actions: [
           TextButton(
             key: const ValueKey('conflict-diff'),
@@ -805,25 +797,20 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
       listenable: _controller,
       builder: (context, _) {
         final c = _controller;
-        final actions = _buildActions(context, l10n, c);
-        if (widget.actionsNotifier != null)
-          _publishActions(actions, c, context);
         return Scaffold(
-          appBar: widget.actionsNotifier != null
+          // 嵌在详情页里时，Tab 栏在上面；这里不再叠第二条 AppBar。
+          appBar: widget.embedded
               ? null
               : AppBar(
                   title: Text(l10n.flow_designTitle(widget.name)),
-                  // 嵌在工作台里时，外层才是唯一一条栏：这里不能再冒出一个
-                  // 隐含的返回按钮把整个流程库路由 pop 掉。
-                  automaticallyImplyLeading: !widget.embedded,
-                  actions: actions,
+                  automaticallyImplyLeading: false,
                 ),
           body: Column(
             children: [
+              _toolbar(context, l10n, c),
+              if (c.rehearsal.active) _rehearsalBanner(l10n),
               Expanded(child: _body(l10n)),
               if (_talkBar(l10n) case final bar?) bar,
-              // 桌面端（C.6）：左边看图，右边直接改 YAML。手机只给看源码。
-              if (_yamlBar(l10n) case final bar?) bar,
             ],
           ),
         );
@@ -831,101 +818,196 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     );
   }
 
-  /// 设计页的工具条按钮。嵌入且外层要合并工具条时，通过 [actionsNotifier]
-  /// 发布给外层；否则自己画在 AppBar 里。
-  List<Widget> _buildActions(
+  /// 工具条分层：左边流程名 + 保存状态文字，主区只有 保存 / 演练 / 撤销 /
+  /// 重做，低频操作全收进 `⋯`。窄宽度进一步收成 保存 + `⋯`。
+  Widget _toolbar(
     BuildContext context,
     AppLocalizations l10n,
     FlowEditorController c,
-  ) =>
-      [
-        if (c.revision > 0)
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.only(right: 4),
-              child: Text(l10n.flow_revisionLabel(c.revision),
-                  style: Theme.of(context).textTheme.bodySmall),
-            ),
-          ),
-        // 手机只读：所有写入口都用同一个 canEdit 判定，别让「头部设置」
-        // 绕过它把 header op 发出去。
-        if (canEdit && c.revision > 1)
-          IconButton(
-            key: const ValueKey('history-open'),
-            tooltip: l10n.flow_historyOpen,
-            icon: const Icon(Icons.history),
-            onPressed: () => unawaited(_openHistory()),
-          ),
-        if (canEdit && c.caps.canEditHeader)
-          IconButton(
-            key: const ValueKey('header-open'),
-            tooltip: l10n.flow_headerOpen,
-            icon: const Icon(Icons.tune),
-            onPressed: openFlowHeaderForm(context, c),
-          ),
-        if (canEdit)
-          IconButton(
-            key: const ValueKey('undo'),
-            tooltip: l10n.flow_undo,
-            icon: const Icon(Icons.undo),
-            onPressed: c.canUndo ? c.undo : null,
-          ),
-        if (canEdit)
-          IconButton(
-            key: const ValueKey('redo'),
-            tooltip: l10n.flow_redo,
-            icon: const Icon(Icons.redo),
-            onPressed: c.canRedo ? c.redo : null,
-          ),
-        IconButton(
-          tooltip: l10n.flow_diffToggle,
-          icon: Icon(Icons.difference_outlined,
-              color: c.showDiff ? Theme.of(context).colorScheme.primary : null),
-          onPressed: c.loading || c.busy ? null : c.toggleDiff,
-        ),
-        if (canEdit)
-          IconButton(
-            tooltip: l10n.flow_rehearse,
-            icon: const Icon(Icons.play_circle_outline),
-            onPressed: c.loading || c.busy ? null : c.startRehearsal,
-          ),
-        if (canEdit)
-          IconButton(
-            tooltip: l10n.flow_save,
-            icon: c.saving
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.check),
-            onPressed: c.loading || c.busy || !c.dirty ? null : c.save,
-          ),
-      ];
-
-  String _lastActionSig = '';
-
-  /// 只在会影响按钮的状态变化时发布，避免每次 build 都通知外层造成抖动。
-  ///
-  /// locale / brightness 也要进签名：这些按钮的文字和图标颜色由它们决定，
-  /// 切语言 / 切主题时状态没变，但外层栏里的旧按钮必须换掉。
-  void _publishActions(
-    List<Widget> actions,
-    FlowEditorController c,
-    BuildContext context,
   ) {
-    final locale = Localizations.localeOf(context);
-    final brightness = Theme.of(context).brightness;
-    final sig = '${c.revision}|${c.canUndo}|${c.canRedo}|${c.showDiff}|'
-        '${c.loading}|${c.busy}|${c.saving}|${c.dirty}|$canEdit|'
-        '${c.caps.canEditHeader}|${c.rehearsal.active}|$locale|$brightness';
-    if (sig == _lastActionSig) return;
-    _lastActionSig = sig;
-    final notifier = widget.actionsNotifier;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && notifier == widget.actionsNotifier) {
-        notifier?.value = actions;
-      }
-    });
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final theme = Theme.of(context);
+        final scheme = theme.colorScheme;
+        // 用真实可用宽度，不用窗口宽度：工作台右栏可能只有四五百像素。
+        final compact = constraints.maxWidth < 600;
+        final statusText = c.saving
+        ? l10n.flow_toolbarSaving
+        : c.errorCount > 0
+            ? l10n.flow_toolbarProblems(c.errorCount)
+            : c.dirty
+                ? l10n.flow_toolbarUnsaved
+                : l10n.flow_toolbarSaved(c.revision);
+    return Material(
+      color: scheme.surfaceContainerLow,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(widget.name,
+                      style: theme.textTheme.labelLarge,
+                      overflow: TextOverflow.ellipsis),
+                  Text(
+                    statusText,
+                    key: const ValueKey('save-status'),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: c.dirty || c.errorCount > 0
+                          ? scheme.error
+                          : scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  // 独立打开设计页（不在工作台里）时保留一个纯版本号标签：
+                  // 保存状态文字是「已保存第 N 版」，这个短标签便于核对版本。
+                  if (!widget.embedded && c.revision > 0)
+                    Text(l10n.flow_revisionLabel(c.revision),
+                        key: const ValueKey('revision-label'),
+                        style: theme.textTheme.labelSmall),
+                ],
+              ),
+            ),
+            if (canEdit)
+              FilledButton.icon(
+                key: const ValueKey('save-button'),
+                onPressed: c.loading || c.busy || !c.dirty
+                    ? null
+                    : () => _doSave(c),
+                icon: c.saving
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.check, size: 18),
+                label: Text(l10n.flow_save),
+              ),
+            if (canEdit && !compact) ...[
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                key: const ValueKey('rehearse-button'),
+                onPressed: c.loading || c.busy || c.rehearsal.active
+                    ? null
+                    : () => _startRehearsal(c),
+                icon: const Icon(Icons.science_outlined, size: 18),
+                label: Text(l10n.flow_rehearse),
+              ),
+              IconButton(
+                key: const ValueKey('undo'),
+                tooltip: l10n.flow_undo,
+                icon: const Icon(Icons.undo),
+                onPressed: c.canUndo ? c.undo : null,
+              ),
+              IconButton(
+                key: const ValueKey('redo'),
+                tooltip: l10n.flow_redo,
+                icon: const Icon(Icons.redo),
+                onPressed: c.canRedo ? c.redo : null,
+              ),
+            ],
+            _moreMenu(l10n, c),
+          ],
+        ),
+      ),
+      );
+    },
+  );
+  }
+
+  Widget _moreMenu(AppLocalizations l10n, FlowEditorController c) {
+    return PopupMenuButton<String>(
+      key: const ValueKey('design-more'),
+      tooltip: l10n.flow_toolbarMore,
+      onSelected: (choice) => _onMenuChoice(choice, c),
+      itemBuilder: (context) => [
+        PopupMenuItem<String>(
+          key: const ValueKey('history-open'),
+          value: 'history',
+          enabled: canEdit && c.revision > 1,
+          child: Text(l10n.flow_historyOpen),
+        ),
+        PopupMenuItem<String>(
+          key: const ValueKey('header-open'),
+          value: 'header',
+          enabled: canEdit && c.caps.canEditHeader,
+          child: Text(l10n.flow_headerOpen),
+        ),
+        PopupMenuItem<String>(
+          key: const ValueKey('diff-toggle'),
+          value: 'diff',
+          child: Text(l10n.flow_diffToggle),
+        ),
+        PopupMenuItem<String>(
+          // 旧的「源码条」入口 key 保持不变，现在打开侧栏的源码页签。
+          key: const ValueKey('yaml-bar'),
+          value: 'source',
+          child: Text(l10n.flow_source),
+        ),
+        PopupMenuItem<String>(
+          key: const ValueKey('menu-problems'),
+          value: 'problems',
+          child: Text(l10n.flow_drawerProblems),
+        ),
+        PopupMenuItem<String>(
+          key: const ValueKey('menu-rehearsal'),
+          value: 'rehearsal',
+          child: Text(l10n.flow_drawerRehearsal),
+        ),
+      ],
+    );
+  }
+
+  void _onMenuChoice(String choice, FlowEditorController c) {
+    switch (choice) {
+      case 'history':
+        unawaited(_openHistory());
+      case 'header':
+        openFlowHeaderForm(context, c)?.call();
+      case 'diff':
+        _openDrawer('diff');
+        if (!c.showDiff && !c.loading && !c.busy) unawaited(c.toggleDiff());
+      case 'source':
+        _openDrawer('source');
+      case 'problems':
+        _openDrawer('problems');
+      case 'rehearsal':
+        _openDrawer('rehearsal');
+    }
+  }
+
+  void _openDrawer(String tab) {
+    if (!mounted) return;
+    setState(() => _drawerTab = tab);
+  }
+
+  void _doSave(FlowEditorController c) {
+    if (c.errorCount > 0) _openDrawer('problems');
+    unawaited(c.save());
+  }
+
+  void _startRehearsal(FlowEditorController c) {
+    // 演练的图标 / 文案与「开始运行」显式区分；演练期间顶部一直挂着提示条。
+    _openDrawer('rehearsal');
+    unawaited(c.startRehearsal());
+  }
+
+  Widget _rehearsalBanner(AppLocalizations l10n) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      key: const ValueKey('rehearsal-banner'),
+      width: double.infinity,
+      color: scheme.secondaryContainer,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Row(
+        children: [
+          const Icon(Icons.science_outlined, size: 16),
+          const SizedBox(width: 8),
+          Expanded(child: Text(l10n.flow_rehearsalBanner)),
+        ],
+      ),
+    );
   }
 
   Widget _body(AppLocalizations l10n) {
@@ -935,7 +1017,11 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
     final theme = Theme.of(context);
     final diff = c.diff;
     final rehearsal = c.rehearsal;
-    return ListView(
+    // 节点树独占首屏：问题 / 对比 / 演练 / 源码都搬进右侧抽屉，不再作为
+    // 卡片插在树上面把它挤下去。抽屉开合只改 Row 的分割，树的滚动位置由
+    // 同一个 ListView 自己保留。
+    final treePane = ListView(
+      key: const ValueKey('flow-node-tree'),
       padding: const EdgeInsets.all(12),
       children: [
         // 桌面但主机缺操作：明确说清为什么只读，别让人以为按钮坏了。
@@ -947,34 +1033,6 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
               child: Text(
                 l10n.flow_readOnlyHostHint,
                 style: theme.textTheme.bodySmall,
-              ),
-            ),
-          ),
-        if (rehearsal.active) _rehearsalCard(l10n, theme),
-        FlowDiagnosticsPanel(
-          diagnostics: c.diagnostics,
-          tree: c.tree,
-          onLocate: _locate,
-        ),
-        if (c.showDiff && diff != null)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              diff.isEmpty
-                  ? l10n.flow_diffNone
-                  : l10n
-                      .flow_diffSummary(diff.nodes.length + diff.header.length),
-              style: theme.textTheme.labelLarge,
-            ),
-          ),
-        if (diff != null && diff.removed.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              l10n.flow_diffRemoved(diff.removed.map((n) => n.id).join(', ')),
-              style: theme.textTheme.bodySmall?.copyWith(
-                decoration: TextDecoration.lineThrough,
-                color: Colors.grey,
               ),
             ),
           ),
@@ -1047,6 +1105,266 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
           ),
       ],
     );
+    final drawer = _drawerTab == null ? null : _sideDrawer(l10n, theme);
+    // 宽到能分成两栏才并排；窄一点的右栏把抽屉浮在树上，别把节点树压到
+    // 一百多像素（大纲行会横向溢出），树的滚动位置两种情况下都保留。
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final treeStack = Stack(
+          children: [
+            treePane,
+            if (drawer == null)
+              Positioned.directional(
+                textDirection: Directionality.of(context),
+                end: 8,
+                top: 8,
+                child: IconButton(
+                  key: const ValueKey('drawer-open'),
+                  tooltip: l10n.flow_drawerOpen,
+                  icon: const Icon(Icons.view_sidebar_outlined),
+                  onPressed: () => _openDrawer('problems'),
+                ),
+              ),
+          ],
+        );
+        if (constraints.maxWidth >= 760) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: treeStack),
+              if (drawer != null) ...[
+                VerticalDivider(
+                    width: 1, color: theme.colorScheme.outlineVariant),
+                SizedBox(width: 320, child: drawer),
+              ],
+            ],
+          );
+        }
+        return Stack(
+          children: [
+            Positioned.fill(child: treeStack),
+            if (drawer != null)
+              Positioned(
+                right: 0,
+                top: 0,
+                bottom: 0,
+                width: constraints.maxWidth * 0.6,
+                child: Material(
+                  elevation: 4,
+                  child: drawer,
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// 右侧抽屉：问题 / 对比 / 演练 / 源码。切换页签不动左边的节点树。
+  Widget _sideDrawer(AppLocalizations l10n, ThemeData theme) {
+    final c = _controller;
+    final tab = _drawerTab;
+    final index = tab == null || !_drawerTabs.contains(tab)
+        ? 0
+        : _drawerTabs.indexOf(tab);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 6, 4, 6),
+          child: Row(
+            children: [
+              _drawerTabButton('drawer-tab-problems',
+                  l10n.flow_drawerProblemsCount(c.errorCount), index == 0),
+              _drawerTabButton(
+                  'drawer-tab-diff', l10n.flow_drawerDiff, index == 1),
+              _drawerTabButton('drawer-tab-rehearsal',
+                  l10n.flow_drawerRehearsal, index == 2),
+              _drawerTabButton(
+                  'drawer-tab-source', l10n.flow_drawerSource, index == 3),
+              IconButton(
+                key: const ValueKey('drawer-close'),
+                tooltip: l10n.flow_drawerClose,
+                icon: const Icon(Icons.close, size: 18),
+                onPressed: () => setState(() => _drawerTab = null),
+              ),
+            ],
+          ),
+        ),
+        Divider(height: 1, color: theme.colorScheme.outlineVariant),
+        Expanded(
+          child: IndexedStack(
+            index: index,
+            children: [
+              _problemsPage(l10n),
+              _diffPage(l10n, theme),
+              _rehearsalPage(l10n, theme),
+              _sourcePage(l10n, theme),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _drawerTabButton(String key, String label, bool selected) {
+    final scheme = Theme.of(context).colorScheme;
+    return Expanded(
+      child: InkWell(
+        key: ValueKey(key),
+        onTap: () => _openDrawer(_drawerTabs[
+            ['drawer-tab-problems', 'drawer-tab-diff', 'drawer-tab-rehearsal',
+                'drawer-tab-source']
+                .indexOf(key)]),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                width: selected ? 2 : 0,
+                color: selected ? scheme.primary : Colors.transparent,
+              ),
+            ),
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 12,
+              color: selected ? scheme.primary : scheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _problemsPage(AppLocalizations l10n) {
+    return ListView(
+      key: const ValueKey('drawer-problems-page'),
+      padding: const EdgeInsets.all(12),
+      children: [
+        FlowDiagnosticsPanel(
+          diagnostics: _controller.diagnostics,
+          tree: _controller.tree,
+          onLocate: _locate,
+        ),
+      ],
+    );
+  }
+
+  Widget _diffPage(AppLocalizations l10n, ThemeData theme) {
+    final c = _controller;
+    final diff = c.diff;
+    return ListView(
+      key: const ValueKey('drawer-diff-page'),
+      padding: const EdgeInsets.all(12),
+      children: [
+        OutlinedButton.icon(
+          key: const ValueKey('diff-toggle-inline'),
+          onPressed: c.loading || c.busy ? null : c.toggleDiff,
+          icon: const Icon(Icons.difference_outlined, size: 18),
+          label: Text(l10n.flow_diffToggle),
+        ),
+        const SizedBox(height: 12),
+        if (!c.showDiff)
+          Text(l10n.flow_drawerDiff, style: theme.textTheme.labelLarge)
+        else if (diff == null)
+          Text(l10n.flow_diffNone)
+        else ...[
+          Text(
+            diff.isEmpty
+                ? l10n.flow_diffNone
+                : l10n.flow_diffSummary(
+                    diff.nodes.length + diff.header.length),
+            style: theme.textTheme.labelLarge,
+          ),
+          if (diff.removed.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              l10n.flow_diffRemoved(diff.removed.map((n) => n.id).join(', ')),
+              style: theme.textTheme.bodySmall?.copyWith(
+                decoration: TextDecoration.lineThrough,
+                color: Colors.grey,
+              ),
+            ),
+          ],
+        ],
+      ],
+    );
+  }
+
+  Widget _rehearsalPage(AppLocalizations l10n, ThemeData theme) {
+    final c = _controller;
+    return ListView(
+      key: const ValueKey('drawer-rehearsal-page'),
+      padding: const EdgeInsets.all(12),
+      children: [
+        Text(l10n.flow_rehearseHint, style: theme.textTheme.bodySmall),
+        const SizedBox(height: 12),
+        if (!c.rehearsal.active)
+          OutlinedButton.icon(
+            key: const ValueKey('rehearse-start'),
+            onPressed: c.loading || c.busy
+                ? null
+                : () => _startRehearsal(c),
+            icon: const Icon(Icons.science_outlined, size: 18),
+            label: Text(l10n.flow_rehearseStart),
+          )
+        else ...[
+          _rehearsalCard(l10n, theme),
+          const SizedBox(height: 8),
+          // 演练走过的时间线：走到哪一步一眼看得出，不用回到节点树数。
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              for (final step in c.rehearsal.rehearsal?.steps ?? const <String>[])
+                Chip(
+                  key: ValueKey('rehearse-step-$step'),
+                  label: Text(step, style: const TextStyle(fontSize: 11)),
+                  visualDensity: VisualDensity.compact,
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _sourcePage(AppLocalizations l10n, ThemeData theme) {
+    final c = _controller;
+    final editable = canEdit && MediaQuery.of(context).size.width >= 900;
+    return Column(
+      key: const ValueKey('drawer-source-page'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(12),
+          child: Text(
+            l10n.flow_sourceSyncHint,
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+        ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            child: FlowYamlEditor(
+              yaml: c.yaml,
+              readOnly: !editable,
+              validate: (text) => c.client.validate(widget.peerId, text),
+              applyLabel: l10n.flow_sourceApply,
+              onApply: (edited, checked) {
+                setState(() => _drawerTab = null);
+                unawaited(c.applySource(edited, checked));
+              },
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _rehearsalCard(AppLocalizations l10n, ThemeData theme) {
@@ -1058,7 +1376,7 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           ListTile(
-            leading: const Icon(Icons.play_circle_outline),
+            leading: const Icon(Icons.science_outlined),
             title: Text(waiting == null
                 ? l10n.flow_rehearsing
                 : l10n.flow_rehearseChoose),
@@ -1094,60 +1412,6 @@ class _FlowDesignScreenState extends State<FlowDesignScreen> {
               ),
             ),
           ],
-        ],
-      ),
-    );
-  }
-
-  /// 桌面端的源码条（C.6）：折叠着只占一行，展开后能直接改 YAML。
-  ///
-  /// 改完同样走 `flow_validate_req`（主机判），有错误就不让保存。手机上只读。
-  Widget? _yamlBar(AppLocalizations l10n) {
-    // 和 canEdit 用同一个判定：桌面 + 主机支持；手机只读。
-    final editable = canEdit && MediaQuery.of(context).size.width >= 900;
-    return SafeArea(
-      top: false,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            key: const ValueKey('yaml-bar'),
-            dense: true,
-            leading: const Icon(Icons.data_object),
-            title: Text(l10n.flow_source),
-            trailing: Icon(_showYaml
-                ? Icons.keyboard_arrow_down
-                : Icons.keyboard_arrow_up),
-            onTap: () => setState(() => _showYaml = !_showYaml),
-          ),
-          if (_showYaml)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-              child: Text(
-                AppLocalizations.of(context).flow_sourceCommentHint,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-              ),
-            ),
-          if (_showYaml)
-            SizedBox(
-              height: 260,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                child: FlowYamlEditor(
-                  yaml: _controller.yaml,
-                  readOnly: !editable,
-                  validate: (text) =>
-                      _controller.client.validate(widget.peerId, text),
-                  applyLabel: l10n.flow_sourceApply,
-                  onApply: (edited, checked) {
-                    setState(() => _showYaml = false);
-                    unawaited(_controller.applySource(edited, checked));
-                  },
-                ),
-              ),
-            ),
         ],
       ),
     );

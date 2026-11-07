@@ -1,7 +1,5 @@
 import 'dart:async';
 
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
@@ -12,6 +10,9 @@ import '../../peer/services/hub_flow.dart';
 ///
 /// 数据来自主机的 `flow_run_list_req` —— 元信息随运行快照落盘，所以主机重启、
 /// 运行结束之后仍然列得出来。不在这台设备上开过的运行也能看到。
+///
+/// 分组口径：**需要你处理**（等待审批 / 卡住）置顶，其次运行中，最后已结束。
+/// 概览页传 [limit] 只取最近几条并收起标题栏。
 class FlowRunsPane extends StatefulWidget {
   const FlowRunsPane({
     super.key,
@@ -20,6 +21,8 @@ class FlowRunsPane extends StatefulWidget {
     this.scope = '',
     this.name = '',
     this.onOpenRun,
+    this.limit,
+    this.showHeader = true,
   });
 
   final HubFlow client;
@@ -30,6 +33,10 @@ class FlowRunsPane extends StatefulWidget {
   final String name;
 
   final void Function(String runId, String title)? onOpenRun;
+
+  /// 只显示最近 N 条（概览页用）。
+  final int? limit;
+  final bool showHeader;
 
   @override
   State<FlowRunsPane> createState() => _FlowRunsPaneState();
@@ -87,24 +94,25 @@ class _FlowRunsPaneState extends State<FlowRunsPane> {
     final runs = _runs;
     return Column(
       children: [
-        Row(
-          children: [
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                l10n.flow_runsTitle,
-                style: theme.textTheme.labelLarge
-                    ?.copyWith(color: scheme.onSurfaceVariant),
+        if (widget.showHeader)
+          Row(
+            children: [
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  l10n.flow_runsTitle,
+                  style: theme.textTheme.labelLarge
+                      ?.copyWith(color: scheme.onSurfaceVariant),
+                ),
               ),
-            ),
-            IconButton(
-              key: const ValueKey('runs-refresh'),
-              tooltip: l10n.common_refresh,
-              icon: const Icon(Icons.refresh, size: 18),
-              onPressed: () => unawaited(_load()),
-            ),
-          ],
-        ),
+              IconButton(
+                key: const ValueKey('runs-refresh'),
+                tooltip: l10n.common_refresh,
+                icon: const Icon(Icons.refresh, size: 18),
+                onPressed: () => unawaited(_load()),
+              ),
+            ],
+          ),
         Expanded(
           child: _loading
               ? const Center(child: CircularProgressIndicator())
@@ -126,42 +134,101 @@ class _FlowRunsPaneState extends State<FlowRunsPane> {
                   : runs.isEmpty
                       ? Center(child: Text(l10n.flow_runsEmpty))
                       : ListView(
-                      children: [
-                        for (final run in runs!)
-                          ListTile(
-                            key: ValueKey('run-${run.runId}'),
-                            leading: Icon(
-                              run.isRunning
-                                  ? Icons.play_circle_outline
-                                  : Icons.check_circle_outline,
-                              color: run.isRunning
-                                  ? scheme.primary
-                                  : scheme.onSurfaceVariant,
-                            ),
-                            title: Text(
-                              run.flow.isEmpty ? run.runId : run.flow,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            subtitle: Text(
-                              '${run.status} · ${_when(run.startedMs, l10n)}',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: scheme.onSurfaceVariant,
-                              ),
-                            ),
-                            trailing: run.revision == null
-                                ? null
-                                : Text(l10n.flow_revisionLabel(run.revision!)),
-                            onTap: widget.onOpenRun == null
-                                ? null
-                                : () => widget.onOpenRun!(
-                                      run.runId,
-                                      run.flow.isEmpty ? run.runId : run.flow,
-                                    ),
-                          ),
-                      ],
-                    ),
+                          children: _grouped(runs, l10n, theme, scheme),
+                        ),
         ),
       ],
+    );
+  }
+
+  /// 分组后按 attention → running → finished 拼行，组内保留主机给的
+  /// 「最近开的排前面」顺序。
+  List<Widget> _grouped(
+    List<FlowRunSummary> runs,
+    AppLocalizations l10n,
+    ThemeData theme,
+    ColorScheme scheme,
+  ) {
+    final limit = widget.limit;
+    final shown = limit != null && limit > 0 && runs.length > limit
+        ? runs.take(limit).toList()
+        : runs;
+    final groups = <FlowRunGroup, List<FlowRunSummary>>{
+      for (final group in FlowRunGroup.values) group: <FlowRunSummary>[],
+    };
+    for (final run in shown) {
+      groups[run.group]!.add(run);
+    }
+    final out = <Widget>[];
+    for (final group in FlowRunGroup.values) {
+      final items = groups[group]!;
+      if (items.isEmpty) continue;
+      final label = switch (group) {
+        FlowRunGroup.attention => l10n.flow_runsGroupAttention,
+        FlowRunGroup.running => l10n.flow_runsGroupRunning,
+        FlowRunGroup.finished => l10n.flow_runsGroupFinished,
+      };
+      out.add(
+        Padding(
+          key: ValueKey('runs-group-${group.name}'),
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 2),
+          child: Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: group == FlowRunGroup.attention
+                  ? Colors.orange
+                  : scheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      );
+      for (final run in items) {
+        out.add(_row(run, l10n, theme, scheme));
+      }
+    }
+    return out;
+  }
+
+  Widget _row(
+    FlowRunSummary run,
+    AppLocalizations l10n,
+    ThemeData theme,
+    ColorScheme scheme,
+  ) {
+    final needsAction = run.group == FlowRunGroup.attention;
+    return ListTile(
+      key: ValueKey('run-${run.runId}'),
+      leading: Icon(
+        needsAction
+            ? Icons.report_problem_outlined
+            : run.isRunning
+                ? Icons.play_circle_outline
+                : Icons.check_circle_outline,
+        color: needsAction
+            ? Colors.orange
+            : run.isRunning
+                ? scheme.primary
+                : scheme.onSurfaceVariant,
+      ),
+      title: Text(
+        run.flow.isEmpty ? run.runId : run.flow,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(
+        '${run.status} · ${_when(run.startedMs, l10n)}',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: scheme.onSurfaceVariant,
+        ),
+      ),
+      trailing: run.revision == null
+          ? null
+          : Text(l10n.flow_revisionLabel(run.revision!)),
+      onTap: widget.onOpenRun == null
+          ? null
+          : () => widget.onOpenRun!(
+                run.runId,
+                run.flow.isEmpty ? run.runId : run.flow,
+              ),
     );
   }
 

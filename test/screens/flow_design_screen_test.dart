@@ -195,6 +195,18 @@ Future<void> _settle(WidgetTester tester) async {
   }
 }
 
+/// 低频操作都收进了工具条的 `⋯` 菜单；弹层转场要等 ~300ms。
+Future<void> _openMenu(WidgetTester tester, String itemKey) async {
+  await tester.tap(find.byKey(const ValueKey('design-more')));
+  for (var i = 0; i < 8; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+  }
+  await tester.tap(find.byKey(ValueKey(itemKey)));
+  for (var i = 0; i < 8; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+  }
+}
+
 void main() {
   testWidgets('editing a field sends a set op and redraws from the host tree',
       (tester) async {
@@ -207,8 +219,8 @@ void main() {
     await _settle(tester);
     expect(find.text('第 2 版'), findsOneWidget);
     // 没改动时不能保存。
-    final save = find.widgetWithIcon(IconButton, Icons.check);
-    expect(tester.widget<IconButton>(save).onPressed, isNull);
+    final save = find.byKey(const ValueKey('save-button'));
+    expect(tester.widget<FilledButton>(save).onPressed, isNull);
 
     await tester.tap(find.text('impl'));
     await _settle(tester);
@@ -229,7 +241,7 @@ void main() {
         'value': '认真写',
       }
     ]);
-    expect(tester.widget<IconButton>(save).onPressed, isNotNull);
+    expect(tester.widget<FilledButton>(save).onPressed, isNotNull);
 
     // 保存：成功后版本号跟着主机报的走，按钮又灰回去。
     await tester.tap(save);
@@ -237,7 +249,7 @@ void main() {
     expect(host.sent.last['type'], 'flow_save_req');
     expect(host.sent.last['name'], 'dev');
     expect(find.text('第 3 版'), findsOneWidget);
-    expect(tester.widget<IconButton>(save).onPressed, isNull);
+    expect(tester.widget<FilledButton>(save).onPressed, isNull);
     await tester.pumpWidget(const SizedBox());
     await host.bus.close();
   });
@@ -250,7 +262,7 @@ void main() {
       client: host.client,
     )));
     await _settle(tester);
-    await tester.tap(find.byTooltip('与上一版对比'));
+    await _openMenu(tester, 'diff-toggle');
     await _settle(tester);
     expect(find.text('1 处改动'), findsOneWidget);
     expect(find.text('有改动'), findsOneWidget);
@@ -274,7 +286,7 @@ void main() {
     )));
     await _settle(tester);
 
-    await tester.tap(find.byKey(const ValueKey('yaml-bar')));
+    await _openMenu(tester, 'yaml-bar');
     await _settle(tester);
     expect(find.byKey(const ValueKey('yaml-editor')), findsOneWidget);
 
@@ -289,8 +301,8 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('yaml-apply')));
     await _settle(tester);
     expect(find.byKey(const ValueKey('yaml-editor')), findsNothing);
-    final save = find.widgetWithIcon(IconButton, Icons.check);
-    expect(tester.widget<IconButton>(save).onPressed, isNotNull);
+    final save = find.byKey(const ValueKey('save-button'));
+    expect(tester.widget<FilledButton>(save).onPressed, isNotNull);
     await tester.pumpWidget(const SizedBox());
     await host.bus.close();
   });
@@ -306,7 +318,7 @@ void main() {
       stepInterval: const Duration(milliseconds: 300),
     )));
     await _settle(tester);
-    await tester.tap(find.byTooltip('演练'));
+    await tester.tap(find.byKey(const ValueKey('rehearse-button')));
     await _settle(tester);
     expect(find.text('演练中：不调用任何 Agent'), findsOneWidget);
     // 节点依次点亮，点完停在关卡上摆出选项。
@@ -361,8 +373,8 @@ void main() {
     await tester.ensureVisible(find.byKey(const ValueKey('inspector-apply')));
     await tester.tap(find.byKey(const ValueKey('inspector-apply')));
     await _settle(tester);
-    final save = find.widgetWithIcon(IconButton, Icons.check);
-    expect(tester.widget<IconButton>(save).onPressed, isNotNull);
+    final save = find.byKey(const ValueKey('save-button'));
+    expect(tester.widget<FilledButton>(save).onPressed, isNotNull);
     await tester.tap(save);
     await _settle(tester);
 

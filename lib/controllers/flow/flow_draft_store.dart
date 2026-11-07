@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// 一份没保存的草稿。
@@ -32,8 +33,38 @@ class FlowDraftStore {
 
   static const _prefix = 'flow_draft_v1';
 
+  /// 当前已知有草稿的流程 key（[keyFor] 的结果）。
+  ///
+  /// 列表行要在**不发额外请求、不等 SharedPreferences** 的前提下显示「有未保存
+  /// 草稿」标记，所以这里同步维护一份内存清单：save / load / clear 都更新它。
+  /// 工作台持有同一个 [FlowDraftStore] 实例，设计页落草稿时列表立刻跟着变。
+  final ValueNotifier<Set<String>> drafts = ValueNotifier<Set<String>>({});
+
   Future<SharedPreferences> _store() async =>
       _prefs ??= await SharedPreferences.getInstance();
+
+  String keyFor({
+    required String peerId,
+    required String scope,
+    required String name,
+  }) =>
+      _key(peerId: peerId, scope: scope, name: name);
+
+  /// 同步判断：这个流程当前有没有已知草稿（不读磁盘）。
+  bool hasDraft({
+    required String peerId,
+    required String scope,
+    required String name,
+  }) =>
+      drafts.value.contains(_key(peerId: peerId, scope: scope, name: name));
+
+  void _mark(String key, bool present) {
+    final current = drafts.value;
+    if (present == current.contains(key)) return;
+    drafts.value = present
+        ? <String>{...current, key}
+        : (current.toSet()..remove(key));
+  }
 
   String _key({
     required String peerId,
@@ -50,14 +81,16 @@ class FlowDraftStore {
     required int baseRevision,
   }) async {
     final prefs = await _store();
+    final key = _key(peerId: peerId, scope: scope, name: name);
     await prefs.setString(
-      _key(peerId: peerId, scope: scope, name: name),
+      key,
       jsonEncode({
         'yaml': yaml,
         'base_revision': baseRevision,
         'saved_ms': DateTime.now().millisecondsSinceEpoch,
       }),
     );
+    _mark(key, true);
   }
 
   Future<FlowDraft?> load({
@@ -66,15 +99,21 @@ class FlowDraftStore {
     required String name,
   }) async {
     final prefs = await _store();
-    final raw = prefs.getString(_key(peerId: peerId, scope: scope, name: name));
-    if (raw == null || raw.isEmpty) return null;
+    final key = _key(peerId: peerId, scope: scope, name: name);
+    final raw = prefs.getString(key);
+    if (raw == null || raw.isEmpty) {
+      _mark(key, false);
+      return null;
+    }
     try {
       final map = jsonDecode(raw) as Map<String, dynamic>;
-      return FlowDraft(
+      final draft = FlowDraft(
         yaml: (map['yaml'] as String?) ?? '',
         baseRevision: (map['base_revision'] as num?)?.toInt() ?? 0,
         savedMs: (map['saved_ms'] as num?)?.toInt() ?? 0,
       );
+      _mark(key, draft.yaml.isNotEmpty);
+      return draft;
     } catch (_) {
       // 存坏了就当没有，别把人卡在恢复流程里。
       await clear(peerId: peerId, scope: scope, name: name);
@@ -89,5 +128,6 @@ class FlowDraftStore {
   }) async {
     final prefs = await _store();
     await prefs.remove(_key(peerId: peerId, scope: scope, name: name));
+    _mark(_key(peerId: peerId, scope: scope, name: name), false);
   }
 }

@@ -5978,5 +5978,95 @@
   "flow_sessionBanner": "工作流 · 节点 {node}",
   "flow_runSession": "运行会话",
   "flow_gotoAnswer": "去回答",
-  "flow_nodeWaitingUser": "等你回答"
+  "flow_nodeWaitingUser": "等你回答",
+  "flow_tabOverview": "概览",
+  "flow_tabEdit": "编辑",
+  "flow_tabRuns": "运行",
+  "flow_overviewStart": "开始运行",
+  "flow_overviewRehearse": "演练（不会真调用 agent）",
+  "flow_overviewRecentRuns": "最近运行",
+  "flow_overviewNoDescription": "暂无说明",
+  "flow_startConfirmTitle": "确认开始运行",
+  "flow_startRealCallHint": "这会真实调用 Agent 并发送消息；演练不会产生真实调用。",
+  "flow_startRoleSection": "这次要绑定的角色",
+  "flow_startNoRoles": "这个流程没有需要手动绑定的角色",
+  "flow_startGo": "确认并运行",
+  "flow_listDraft": "有未保存草稿",
+  "flow_listStatusRunning": "运行中",
+  "flow_listStatusFailed": "最近失败",
+  "flow_listStatusNeedsApproval": "待审批",
+  "flow_listStart": "开始运行",
+  "flow_listCopy": "复制",
+  "flow_listHistory": "查看历史",
+  "flow_libraryEmptyHint": "库里还没有流程",
+  "flow_libraryFromTemplate": "从模板新建",
+  "flow_toolbarUnsaved": "● 未保存的改动",
+  "flow_toolbarSaving": "保存中…",
+  "flow_toolbarMore": "更多操作",
+  "flow_drawerProblems": "问题",
+  "flow_drawerDiff": "对比",
+  "flow_drawerRehearsal": "演练",
+  "flow_drawerSource": "源码",
+  "flow_drawerClose": "收起侧栏",
+  "flow_drawerOpen": "打开侧栏",
+  "flow_rehearsalBanner": "演练中 · 不会产生真实调用",
+  "flow_rehearseHint": "演练只走流程结构，不会真的调用 agent",
+  "flow_rehearseStart": "开始演练",
+  "flow_sourceSyncHint": "源码与可视视图同步；源码有语法错误时无法应用",
+  "flow_draftBannerTitle": "有上次未保存的改动",
+  "flow_draftBannerRestore": "恢复",
+  "flow_draftBannerDiscard": "丢弃",
+  "flow_draftBannerReadOnly": "在桌面端可恢复",
+  "flow_runsGroupAttention": "需要你处理",
+  "flow_runsGroupRunning": "运行中",
+  "flow_runsGroupFinished": "已结束",
+  "flow_runMore": "更多",
+  "flow_toolbarSaved": "已保存第 {n} 版",
+  "@flow_toolbarSaved": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "flow_toolbarProblems": "有 {count} 个问题",
+  "@flow_toolbarProblems": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "flow_drawerProblemsCount": "问题 {count}",
+  "@flow_drawerProblemsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "flow_conflictBody": "别人已把它改到第 {revision} 版",
+  "@flow_conflictBody": {
+    "placeholders": {
+      "revision": {
+        "type": "int"
+      }
+    }
+  },
+  "flow_overviewUpdated": "最近修改 {when}",
+  "@flow_overviewUpdated": {
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "flow_runElapsed": "已用 {duration}",
+  "@flow_runElapsed": {
+    "placeholders": {
+      "duration": {
+        "type": "String"
+      }
+    }
+  }
 }

@@ -16,9 +16,11 @@ import '../peer/services/hub_flow.dart';
 import '../peer/services/peer_agent_ids.dart';
 import '../utils/layout_utils.dart';
 import '../widgets/discard_changes_scope.dart';
+import '../widgets/flow/flow_history_sheet.dart';
 import '../widgets/flow/flow_new_flow_dialog.dart';
 import '../widgets/flow/flow_runs_pane.dart';
-import 'flow_design_screen.dart';
+import '../widgets/flow/flow_summary_tile.dart';
+import 'flow_detail_screen.dart';
 import 'flow_run_screen.dart';
 import 'flow_start_screen.dart';
 
@@ -83,23 +85,29 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
 
   final FlowDraftStore _drafts = FlowDraftStore();
 
-  /// 设计页在窄屏详情态把 actions 发布到这里，外层工具条合并成唯一一条栏。
-  final ValueNotifier<List<Widget>> _designActions =
-      ValueNotifier<List<Widget>>([]);
-
   /// 最近一次布局是不是宽屏（系统返回键逐级退要用）。
   bool _wide = false;
 
   @override
   void initState() {
     super.initState();
+    // 设计页落草稿时立刻更新列表行的「有未保存草稿」标记。回调可能发生在
+    // build 期间，推到下一帧再刷新。
+    _drafts.drafts.addListener(_onDraftsChanged);
     unawaited(_load());
+  }
+
+  void _onDraftsChanged() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
   void dispose() {
+    _drafts.drafts.removeListener(_onDraftsChanged);
+    _drafts.drafts.dispose();
     _search.dispose();
-    _designActions.dispose();
     super.dispose();
   }
 
@@ -363,7 +371,10 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
     return agent == null ? picked.id : hubAgentIdOf(agent);
   }
 
-  Future<void> _create() async {
+  Future<void> _create({
+    FlowNewSource initialSource = FlowNewSource.blank,
+    String? initialSourceName,
+  }) async {
     // 工作台进页面时已经取过 flow_list，画廊文案直接用那份结果生成：离线时点
     // 「新建」不该再等一个 10 秒超时的往返，内置文案本来就能兜底。
     final templates = FlowTemplateCatalog.fromFlows(_flows);
@@ -371,6 +382,8 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
       context,
       existing: _flows?.map((f) => f.name) ?? const [],
       templates: templates,
+      initialSource: initialSource,
+      initialSourceName: initialSourceName,
     );
     if (request == null || !mounted) return;
     // 新建会换掉详情区（_detailToken++），和 _select 一样要先问未保存的草稿。
@@ -448,6 +461,35 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
     });
   }
 
+  /// 列表行 `⋯` 里的「复制」：直接落在复制页签，源就是这一行。
+  void _duplicate(FlowSummary flow) => unawaited(_create(
+        initialSource: FlowNewSource.copy,
+        initialSourceName: flow.name,
+      ));
+
+  /// 列表行 `⋯` 里的「查看历史」：看旧版本，选中某一版就存成本地草稿，
+  /// 概览页顶部会出现恢复横幅（不阻塞、不直接改库里的定义）。
+  Future<void> _showHistory(FlowSummary flow) async {
+    final choice = await showFlowHistorySheet(
+      context,
+      client: _client,
+      peerId: _host,
+      scope: widget.scope,
+      name: flow.name,
+      latest: flow.latest,
+    );
+    if (choice == null || !mounted) return;
+    await _drafts.save(
+      peerId: _host,
+      scope: widget.scope,
+      name: flow.name,
+      yaml: choice.yaml,
+      baseRevision: flow.latest,
+    );
+    if (!mounted) return;
+    _select(flow);
+  }
+
   void _snack(String message) {
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
@@ -484,29 +526,19 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
                         ? BackButton(onPressed: _closeDetail)
                         : null,
                     actions: [
-                      // 窄屏详情态：设计页把它的 actions 发布到 _designActions，
-                      // 这里就是唯一一条栏（不再叠一条内层 AppBar）。
-                      if (showingNarrowDetail)
-                        ValueListenableBuilder<List<Widget>>(
-                          valueListenable: _designActions,
-                          builder: (context, actions, _) => Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: actions,
-                          ),
-                        )
-                      else ...[
-                        if (_canCreateFlows)
-                          IconButton(
-                            tooltip: l10n.flow_new,
-                            icon: const Icon(Icons.add),
-                            onPressed: () => unawaited(_create()),
-                          ),
+                      // 窄屏详情态不再把编辑页的 actions 提升到外层：手机只读，
+                      // 概览页自带按钮，这一栏只留全局的新建 / 刷新。
+                      if (!showingNarrowDetail && _canCreateFlows)
                         IconButton(
-                          tooltip: l10n.common_refresh,
-                          icon: const Icon(Icons.refresh),
-                          onPressed: () => unawaited(_load()),
+                          tooltip: l10n.flow_new,
+                          icon: const Icon(Icons.add),
+                          onPressed: () => unawaited(_create()),
                         ),
-                      ],
+                      IconButton(
+                        tooltip: l10n.common_refresh,
+                        icon: const Icon(Icons.refresh),
+                        onPressed: () => unawaited(_load()),
+                      ),
                     ],
                   ),
             body: _loading
@@ -529,11 +561,11 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
                               ),
                               Expanded(
                                   child:
-                                      _buildDetail(l10n, hoistActions: false)),
+                                      _buildDetail(l10n, showHeader: true)),
                             ],
                           )
                         : showingNarrowDetail
-                            ? _buildDetail(l10n, hoistActions: true)
+                            ? _buildDetail(l10n, showHeader: false)
                             : _buildListPane(l10n, showHeader: false),
           ),
         );
@@ -635,22 +667,26 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
           ),
           Expanded(
             child: visible.isEmpty
-                ? Center(child: Text(l10n.flow_libraryEmpty))
+                ? _buildEmptyLibrary(l10n)
                 : ListView(
                     children: [
                       for (final flow in visible)
-                        ListTile(
-                          key: ValueKey('flow-row-${flow.name}'),
+                        FlowSummaryTile(
+                          flow: flow,
                           selected: _selectedName == flow.name,
-                          leading: const Icon(Icons.account_tree_outlined),
-                          title: Text(flow.name),
-                          subtitle: Text(l10n.flow_revisionLabel(flow.latest)),
-                          onTap: () => _select(flow),
-                          trailing: TextButton(
-                            key: ValueKey('flow-start-${flow.name}'),
-                            onPressed: () => unawaited(_start(flow)),
-                            child: Text(l10n.flow_startRun),
+                          hasDraft: _drafts.hasDraft(
+                            peerId: _host,
+                            scope: widget.scope,
+                            name: flow.name,
                           ),
+                          needsApproval: flow.lastRunNeedsApproval,
+                          onTap: () => _select(flow),
+                          onStart: () => unawaited(_start(flow)),
+                          onDuplicate: () => _duplicate(flow),
+                          onHistory: () => unawaited(_showHistory(flow)),
+                          onApproval: flow.lastRunId == null
+                              ? null
+                              : () => _openRun(flow.lastRunId!, flow.name),
                         ),
                     ],
                   ),
@@ -660,13 +696,44 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
     );
   }
 
+  /// 空库不再只是一行字：直接给「从模板新建」入口（桌面可写时）。
+  Widget _buildEmptyLibrary(AppLocalizations l10n) {
+    final scheme = Theme.of(context).colorScheme;
+    final searching = _search.text.trim().isNotEmpty;
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.account_tree_outlined, size: 40, color: scheme.outline),
+          const SizedBox(height: 12),
+          Text(
+            searching ? l10n.flow_libraryEmpty : l10n.flow_libraryEmptyHint,
+            style: Theme.of(context)
+                .textTheme
+                .bodyMedium
+                ?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+          if (!searching && _canCreateFlows) ...[
+            const SizedBox(height: 16),
+            FilledButton.tonal(
+              key: const ValueKey('library-from-template'),
+              onPressed: () => unawaited(
+                  _create(initialSource: FlowNewSource.template)),
+              child: Text(l10n.flow_libraryFromTemplate),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   void _openRun(String runId, String title) {
     unawaited(Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) => FlowRunScreen(peerId: _host, runId: runId, title: title),
     )));
   }
 
-  Widget _buildDetail(AppLocalizations l10n, {required bool hoistActions}) {
+  Widget _buildDetail(AppLocalizations l10n, {required bool showHeader}) {
     final name = _selectedName;
     if (name == null) {
       final scheme = Theme.of(context).colorScheme;
@@ -687,18 +754,23 @@ class _FlowWorkspaceScreenState extends State<FlowWorkspaceScreen> {
         ),
       );
     }
-    return FlowDesignScreen(
+    final flow = _flows
+            ?.where((f) => f.name == name)
+            .firstOrNull ??
+        FlowSummary(name: name, latest: 0, scope: widget.scope);
+    return FlowDetailScreen(
       // A6-1：同名流程可能同时存在于两台主机。key 带上 _host，切主机时
       // 强制重建详情（连同它自己的 controller / 引用 / agent 缓存），
       // 不让旧 peerId 的草稿和请求混进新主机。
       key: ValueKey('flow-detail-$_detailToken-$_host'),
       peerId: _host,
-      name: name,
+      flow: flow,
       scope: widget.scope,
       client: _client,
       draftStore: _drafts,
-      embedded: true,
-      actionsNotifier: hoistActions ? _designActions : null,
+      showHeader: showHeader,
+      onStart: () => unawaited(_start(flow)),
+      onOpenRun: _openRun,
       onDirtyChanged: (dirty) {
         if (_editorDirty == dirty) return;
         _editorDirty = dirty;

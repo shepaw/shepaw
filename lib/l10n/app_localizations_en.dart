@@ -10231,4 +10231,163 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get flow_nodeWaitingUser => 'Waiting for you';
+
+  @override
+  String get flow_tabOverview => 'Overview';
+
+  @override
+  String get flow_tabEdit => 'Edit';
+
+  @override
+  String get flow_tabRuns => 'Runs';
+
+  @override
+  String get flow_overviewStart => 'Start run';
+
+  @override
+  String get flow_overviewRehearse => 'Rehearse (no real calls)';
+
+  @override
+  String get flow_overviewRecentRuns => 'Recent runs';
+
+  @override
+  String get flow_overviewNoDescription => 'No description yet';
+
+  @override
+  String get flow_startConfirmTitle => 'Confirm start';
+
+  @override
+  String get flow_startRealCallHint =>
+      'This really calls agents and sends messages. A rehearsal makes no real calls.';
+
+  @override
+  String get flow_startRoleSection => 'Roles to bind for this run';
+
+  @override
+  String get flow_startNoRoles => 'No roles need manual binding';
+
+  @override
+  String get flow_startGo => 'Confirm and run';
+
+  @override
+  String get flow_listDraft => 'Unsaved draft';
+
+  @override
+  String get flow_listStatusRunning => 'Running';
+
+  @override
+  String get flow_listStatusFailed => 'Recently failed';
+
+  @override
+  String get flow_listStatusNeedsApproval => 'Needs approval';
+
+  @override
+  String get flow_listStart => 'Start run';
+
+  @override
+  String get flow_listCopy => 'Duplicate';
+
+  @override
+  String get flow_listHistory => 'View history';
+
+  @override
+  String get flow_libraryEmptyHint => 'No flows in this library yet';
+
+  @override
+  String get flow_libraryFromTemplate => 'Start from a template';
+
+  @override
+  String get flow_toolbarUnsaved => '● Unsaved changes';
+
+  @override
+  String get flow_toolbarSaving => 'Saving…';
+
+  @override
+  String get flow_toolbarMore => 'More actions';
+
+  @override
+  String get flow_drawerProblems => 'Problems';
+
+  @override
+  String get flow_drawerDiff => 'Compare';
+
+  @override
+  String get flow_drawerRehearsal => 'Rehearsal';
+
+  @override
+  String get flow_drawerSource => 'Source';
+
+  @override
+  String get flow_drawerClose => 'Close panel';
+
+  @override
+  String get flow_drawerOpen => 'Open panel';
+
+  @override
+  String get flow_rehearsalBanner => 'Rehearsing · no real calls are made';
+
+  @override
+  String get flow_rehearseHint =>
+      'A rehearsal only walks the flow structure; no agent is called';
+
+  @override
+  String get flow_rehearseStart => 'Start rehearsal';
+
+  @override
+  String get flow_sourceSyncHint =>
+      'Source and the visual view stay in sync; invalid source cannot be applied';
+
+  @override
+  String get flow_draftBannerTitle => 'Unsaved edits from last time';
+
+  @override
+  String get flow_draftBannerRestore => 'Restore';
+
+  @override
+  String get flow_draftBannerDiscard => 'Discard';
+
+  @override
+  String get flow_draftBannerReadOnly => 'Restore on desktop';
+
+  @override
+  String get flow_runsGroupAttention => 'Needs your action';
+
+  @override
+  String get flow_runsGroupRunning => 'Running';
+
+  @override
+  String get flow_runsGroupFinished => 'Finished';
+
+  @override
+  String get flow_runMore => 'More';
+
+  @override
+  String flow_toolbarSaved(int n) {
+    return 'Saved rev $n';
+  }
+
+  @override
+  String flow_toolbarProblems(int count) {
+    return '$count problems';
+  }
+
+  @override
+  String flow_drawerProblemsCount(int count) {
+    return 'Problems $count';
+  }
+
+  @override
+  String flow_conflictBody(int revision) {
+    return 'Someone else has saved revision $revision';
+  }
+
+  @override
+  String flow_overviewUpdated(String when) {
+    return 'Last edited $when';
+  }
+
+  @override
+  String flow_runElapsed(String duration) {
+    return 'Elapsed $duration';
+  }
 }

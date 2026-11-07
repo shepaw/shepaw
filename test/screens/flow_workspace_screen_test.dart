@@ -11,6 +11,7 @@ import 'package:shepaw/models/remote_agent.dart';
 import 'package:shepaw/peer/services/hub_flow.dart';
 import 'package:shepaw/peer/services/peer_connection_manager.dart';
 import 'package:shepaw/screens/flow_design_screen.dart';
+import 'package:shepaw/screens/flow_detail_screen.dart';
 import 'package:shepaw/screens/flow_start_screen.dart';
 import 'package:shepaw/screens/flow_workspace_screen.dart';
 import 'package:shepaw/storage/pouch_session.dart';
@@ -24,7 +25,7 @@ void main() {
 
     expect(find.text('dev'), findsOneWidget);
     expect(find.text('第 3 版'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('flow-start-dev')));
+    await _startFromRow(tester, 'dev');
     await _settle(tester);
     // 开跑前先问一次：inputs、角色绑定、跑的是哪一版。
     await tester.tap(find.byKey(const ValueKey('start-go')));
@@ -49,7 +50,7 @@ void main() {
     addTearDown(harness.close);
     await _pump(tester, harness.client);
 
-    await tester.tap(find.byKey(const ValueKey('flow-start-dev')));
+    await _startFromRow(tester, 'dev');
     await _settle(tester);
     expect(find.byKey(const ValueKey('start-role-coder')), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
@@ -71,11 +72,13 @@ void main() {
     await _pumpPushed(tester, harness.client, size: const Size(2400, 1800));
     await tester.tap(find.text('dev'));
     await _settle(tester);
+    // 详情默认落在概览；编辑器要切到「编辑」Tab 才创建。
+    await _openEdit(tester);
     // 加一步 → 产生未保存草稿。
     await tester.tap(find.byKey(const ValueKey('after-impl')));
     await _settle(tester);
 
-    await tester.tap(find.byKey(const ValueKey('flow-start-dev')));
+    await _startFromRow(tester, 'dev');
     await _settleRoute(tester);
     // 表单照旧版生成：没有角色要绑。
     expect(find.byKey(const ValueKey('start-role-reviewer')), findsNothing);
@@ -110,7 +113,7 @@ void main() {
     addTearDown(harness.close);
     await _pump(tester, harness.client);
 
-    await tester.tap(find.byKey(const ValueKey('flow-start-dev')));
+    await _startFromRow(tester, 'dev');
     await _settle(tester);
     // 表单按 inputs 生成了。
     expect(find.byKey(const ValueKey('start-input-goal')), findsOneWidget);
@@ -141,7 +144,7 @@ steps:
     addTearDown(harness.close);
     await _pump(tester, harness.client);
 
-    await tester.tap(find.byKey(const ValueKey('flow-start-dev')));
+    await _startFromRow(tester, 'dev');
     await _settle(tester);
     expect(find.byKey(const ValueKey('start-role-coder')), findsNothing);
     expect(find.byKey(const ValueKey('start-role-reviewer')), findsNothing);
@@ -164,7 +167,7 @@ steps:
     addTearDown(harness.close);
     await _pump(tester, harness.client);
 
-    await tester.tap(find.byKey(const ValueKey('flow-start-dev')));
+    await _startFromRow(tester, 'dev');
     await _settle(tester);
     expect(find.byType(AlertDialog), findsNothing);
     expect(find.byType(FlowStartScreen), findsOneWidget);
@@ -181,7 +184,7 @@ steps:
     addTearDown(harness.close);
     await _pump(tester, harness.client);
 
-    await tester.tap(find.byKey(const ValueKey('flow-start-dev')));
+    await _startFromRow(tester, 'dev');
     await _settle(tester);
     expect(find.text('codex-main'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('start-go')));
@@ -344,7 +347,7 @@ steps:
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('tapping a flow opens its design view in the detail pane',
+  testWidgets('tapping a flow opens its overview first, edit is a separate tab',
       (tester) async {
     tester.view.physicalSize = const Size(2400, 1800);
     tester.view.devicePixelRatio = 2.0;
@@ -355,10 +358,19 @@ steps:
 
     await tester.tap(find.text('dev'));
     await _settle(tester);
-    // 右栏出现设计视图（标题带流程名）。
-    expect(find.text('设计：dev'), findsOneWidget);
-    // 进详情要先把定义取回来。
+    // 默认落在概览：开始运行在这里，编辑页还没被创建。
+    expect(find.byKey(const ValueKey('detail-tab-overview')), findsOneWidget);
+    expect(find.byKey(const ValueKey('overview-start')), findsOneWidget);
+    expect(find.byType(FlowDesignScreen), findsNothing);
+    expect(harness.sent.any((f) => f['type'] == 'flow_get_req'), isFalse);
+
+    await _openEdit(tester);
+    // 切到编辑 Tab 才把定义取回来。
     expect(harness.sent.any((f) => f['type'] == 'flow_get_req'), isTrue);
+    expect(find.byType(FlowDesignScreen), findsOneWidget);
+    // 主机只给了空 ops：这台主机只读，所以没有保存按钮（也不该有灰态编辑按钮）。
+    expect(find.byKey(const ValueKey('save-button')), findsNothing);
+    expect(find.byKey(const ValueKey('flow-node-tree')), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -372,11 +384,13 @@ steps:
     expect(find.byType(BackButton), findsOneWidget);
     await tester.tap(find.text('dev'));
     await _settle(tester);
-    // 窄屏详情：actions 上提到外层，设计页不再画内层 AppBar。
+    // 窄屏详情：只读，只有 概览 / 运行 两个 Tab，没有灰掉的编辑按钮。
     expect(find.text('设计：dev'), findsNothing);
+    expect(find.byKey(const ValueKey('detail-tab-overview')), findsOneWidget);
+    expect(find.byKey(const ValueKey('detail-tab-runs')), findsOneWidget);
+    expect(find.byKey(const ValueKey('detail-tab-edit')), findsNothing);
+    expect(find.byType(FlowDesignScreen), findsNothing);
     expect(find.byType(BackButton), findsOneWidget);
-    // 设计页的 actions 确实合并进了外层唯一一条栏（这里至少能点「与上一版对比」）。
-    expect(find.byTooltip('与上一版对比'), findsOneWidget);
     // 第一次返回 → 列表。
     await tester.tap(find.byType(BackButton));
     await _settle(tester);
@@ -451,14 +465,13 @@ steps:
     await _settle(tester);
     await tester.tap(find.text('dev'));
     await _settle(tester);
-    // 窄屏详情：设计页把 actions 发布到外层唯一一条栏。
-    expect(find.byTooltip('与上一版对比'), findsOneWidget);
+    // 概览页自带按钮，切 locale 后它们的文案必须跟着换。
+    expect(find.text('开始运行'), findsOneWidget);
 
     locale.value = const Locale('en');
     await _settle(tester);
-    // 状态没变（revision / dirty / …），但 locale 变了 —— 缓存签名必须换掉旧按钮。
-    expect(find.byTooltip('与上一版对比'), findsNothing);
-    expect(find.byTooltip('Compare with previous revision'), findsOneWidget);
+    expect(find.text('开始运行'), findsNothing);
+    expect(find.text('Start run'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -469,6 +482,7 @@ steps:
     await _pumpPushed(tester, harness.client, size: const Size(2400, 1800));
     await tester.tap(find.text('dev'));
     await _settle(tester);
+    await _openEdit(tester);
     // 加一步 → 产生未保存改动（onDirtyChanged → _editorDirty = true）。
     await tester.tap(find.byKey(const ValueKey('after-impl')));
     await _settle(tester);
@@ -549,7 +563,7 @@ steps:
     addTearDown(harness.close);
     await _pump(tester, harness.client, agents: [agent]);
 
-    await tester.tap(find.byKey(const ValueKey('flow-start-dev')));
+    await _startFromRow(tester, 'dev');
     await _settle(tester);
     await tester.tap(find.byKey(const ValueKey('start-role-coder')));
     await _settle(tester);
@@ -609,7 +623,7 @@ steps:
     }
 
     Future<void> openPicker() async {
-      await tester.tap(find.byKey(const ValueKey('flow-start-dev')));
+      await _startFromRow(tester, 'dev');
       await settleLong();
       await tester.tap(find.byKey(const ValueKey('start-role-coder')));
       await settleLong();
@@ -677,7 +691,7 @@ steps:
       }
     }
 
-    await tester.tap(find.byKey(const ValueKey('flow-start-dev')));
+    await _startFromRow(tester, 'dev');
     await settleLong();
     await tester.tap(find.byKey(const ValueKey('start-role-coder')));
     await settleLong();
@@ -718,7 +732,7 @@ steps:
     await tester.tap(find.text('dev'));
     await _settle(tester);
     final before =
-        tester.widget<FlowDesignScreen>(find.byType(FlowDesignScreen));
+        tester.widget<FlowDetailScreen>(find.byType(FlowDetailScreen));
     expect(before.peerId, 'p1');
     expect(before.key.toString(), contains('p1'));
 
@@ -729,7 +743,7 @@ steps:
     }
 
     final after =
-        tester.widget<FlowDesignScreen>(find.byType(FlowDesignScreen));
+        tester.widget<FlowDetailScreen>(find.byType(FlowDetailScreen));
     expect(after.peerId, 'p2');
     expect(after.key, isNot(before.key),
         reason: '同名流程换主机后必须强制重建详情，不能复用旧 controller');
@@ -909,6 +923,27 @@ class _Harness {
   Future<void> close() async {
     await bus.close();
   }
+}
+
+/// 列表行不再有常驻「开始运行」按钮：从 `⋯` 菜单进开跑确认页。
+/// PopupMenuButton 的弹层转场要 ~300ms，光 pump 一帧会点在动画外。
+Future<void> _startFromRow(WidgetTester tester, String name) async {
+  await tester.tap(find.byKey(ValueKey('flow-more-$name')));
+  await _settleMenu(tester);
+  await tester.tap(find.byKey(ValueKey('flow-start-$name')));
+  await _settleMenu(tester);
+}
+
+Future<void> _settleMenu(WidgetTester tester) async {
+  for (var i = 0; i < 8; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+  }
+}
+
+/// 桌面详情默认落在概览，编辑页要显式切到「编辑」Tab 才创建。
+Future<void> _openEdit(WidgetTester tester) async {
+  await tester.tap(find.byKey(const ValueKey('detail-tab-edit')));
+  await _settle(tester);
 }
 
 Future<void> _pump(
