@@ -7,6 +7,8 @@ import '../peer/models/flow_models.dart';
 import '../peer/peer_approval_payload.dart';
 import '../peer/services/flow_session_open.dart';
 import '../peer/services/hub_flow.dart';
+import '../peer/services/peer_connection.dart';
+import '../peer/services/peer_connection_manager.dart';
 import '../services/approval/pending_approval_hub.dart';
 import '../services/approval/pending_approval_item.dart';
 import '../widgets/flow/flow_node_tree.dart';
@@ -96,10 +98,13 @@ class FlowRunScreen extends StatefulWidget {
 class _FlowRunScreenState extends State<FlowRunScreen> {
   late final HubFlow _client = widget.client ?? HubFlow();
   StreamSubscription<FlowEvent>? _sub;
+  StreamSubscription<PeerConnectionEvent>? _connSub;
   Timer? _refetch;
   FlowRunView? _run;
   bool _loading = true;
   bool _loadFailed = false;
+  Future<void>? _inFlightLoad;
+  bool _reloadQueued = false;
 
   /// 事件里只有 session_id、没有 agent：先别建空壳频道，等 refetch 补上
   /// agent 再打开（A8-3）。
@@ -113,6 +118,17 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
   void initState() {
     super.initState();
     _sub = _client.runEvents(widget.peerId).listen(_onEvent);
+    // 测试注入了假客户端时不要碰真实连接管理器。
+    if (widget.client == null) {
+      _connSub = PeerConnectionManager.instance.events.listen((event) {
+        if (!mounted || event.peerId != widget.peerId) return;
+        if (event.type != PeerConnectionEventType.connected) return;
+        // 废连接被丢掉并重连成功后，把刚才失败的那次运行重新拉回来。
+        if (_loadFailed || (_run == null && !_loading)) {
+          unawaited(_load());
+        }
+      });
+    }
     unawaited(_load());
   }
 
@@ -120,10 +136,27 @@ class _FlowRunScreenState extends State<FlowRunScreen> {
   void dispose() {
     _refetch?.cancel();
     _sub?.cancel();
+    _connSub?.cancel();
     super.dispose();
   }
 
-  Future<void> _load() async {
+  Future<void> _load() {
+    final inFlight = _inFlightLoad;
+    if (inFlight != null) {
+      _reloadQueued = true;
+      return inFlight;
+    }
+    final future = _loadOnce();
+    _inFlightLoad = future;
+    return future.whenComplete(() {
+      if (identical(_inFlightLoad, future)) _inFlightLoad = null;
+      if (!_reloadQueued || !mounted) return;
+      _reloadQueued = false;
+      unawaited(_load());
+    });
+  }
+
+  Future<void> _loadOnce() async {
     final run = await _client.run(widget.peerId, widget.runId);
     if (!mounted) return;
     setState(() {

@@ -22,6 +22,7 @@ import '../../storage/pouch_login.dart';
 import '../../storage/store_binary_frame.dart';
 import '../models/paired_peer.dart';
 import '../models/peer_message.dart';
+import 'closed_socket.dart';
 import 'peer_advertise.dart';
 import 'peer_channel_bridge.dart';
 import 'peer_delivery_trace_service.dart';
@@ -59,11 +60,14 @@ class PeerConnection {
 
   NoiseSession? _noiseSession;
   WebSocketChannel? _wsChannel;
+  io.WebSocket? _ioSocket;
+  int _socketGen = 0;
   PeerTunnelStream? _tunnelStream;
   StreamSubscription? _incomingSub;
   Timer? _heartbeatTimer;
   DateTime? _lastActivity;
   DateTime? _lastReceivedAt;
+  DateTime? _connectedAt;
   bool _closed = false;
   int? _lastCloseCode;
 
@@ -79,6 +83,16 @@ class PeerConnection {
   /// 最近一次收到对端任意帧（含 pong）的时间；新建连接为 null。
   /// 用于发送前判断「连接是否刚被证明是活的」。
   DateTime? get lastReceivedAt => _lastReceivedAt;
+
+  /// 底层 WebSocket 已经不在 OPEN。
+  ///
+  /// dart:io 关掉 TLS socket 时，「Reading from a closed socket」会从 Timer
+  /// 里抛出来，流的 onDone 不一定跟着来。调用方靠这个判断废连接。
+  bool get socketIsClosed {
+    final socket = _ioSocket;
+    if (socket == null) return false;
+    return socket.readyState != io.WebSocket.open;
+  }
 
   /// 发送队列锁 — 保证 encrypt + send 的原子性（防止 nonce 乱序）
   Future<void> _sendLock = Future.value();
@@ -372,6 +386,8 @@ class PeerConnection {
   }) async {
     if (_closed) return;
     _lastCloseCode = null;
+    // 同一对象上重试时，上一轮的入站时间不能算到这次连接头上。
+    _lastReceivedAt = null;
     _setState(PeerConnectionState.connecting);
 
     // 清理上一次尝试遗留的订阅 / socket / 会话。connectViaWebSocket 会在同一个
@@ -381,15 +397,13 @@ class PeerConnection {
     // NoiseTransportError: decrypt failed，并造成 socket / 订阅泄漏。
     await _incomingSub?.cancel();
     _incomingSub = null;
-    try {
-      await _wsChannel?.sink.close();
-    } catch (_) {}
-    _wsChannel = null;
+    await _releaseSocket();
     _noiseSession?.close();
     _noiseSession = null;
 
     try {
       final ioSocket = await io.WebSocket.connect(endpoint).timeout(timeout);
+      _bindSocket(ioSocket);
       _wsChannel = IOWebSocketChannel(ioSocket);
 
       // 单一 subscription：第一帧用 Completer 取 msg2 完成握手，之后继续用同一个 sub。
@@ -455,11 +469,46 @@ class PeerConnection {
     } catch (e) {
       // 对端离线是常态，由 PeerConnectionManager 节流汇总；这里只留 debug。
       _log.debug('Connection failed to ${peer.deviceName}: $e', tag: _tag);
-      _incomingSub?.cancel();
+      await _incomingSub?.cancel();
       _incomingSub = null;
+      await _releaseSocket();
       _setState(PeerConnectionState.disconnected);
       rethrow;
     }
+  }
+
+  /// 记下当前 socket，并在它结束时把连接标成断开。
+  ///
+  /// 换 socket 之前先作废旧的代次：旧 socket 的 `done` 晚到时不能把
+  /// 正在握手的新连接打成 disconnected。
+  void _bindSocket(io.WebSocket socket) {
+    final gen = ++_socketGen;
+    _ioSocket = socket;
+    socket.done.then((_) {
+      if (gen != _socketGen) return;
+      _onSocketFinished();
+    }, onError: (Object _) {
+      if (gen != _socketGen) return;
+      _onSocketFinished();
+    });
+  }
+
+  void _onSocketFinished() {
+    if (_closed || _state == PeerConnectionState.disconnected) return;
+    _log.info('Peer socket closed for ${peer.deviceName}', tag: _tag);
+    _heartbeatTimer?.cancel();
+    _setState(PeerConnectionState.disconnected);
+  }
+
+  Future<void> _releaseSocket() async {
+    _socketGen++;
+    final socket = _ioSocket;
+    _ioSocket = null;
+    _wsChannel = null;
+    if (socket == null) return;
+    try {
+      await socket.close();
+    } catch (_) {}
   }
 
   /// 发送加密消息
@@ -536,7 +585,16 @@ class PeerConnection {
     _heartbeatTimer?.cancel();
     _incomingSub?.cancel();
     _noiseSession?.close();
-    _wsChannel?.sink.close();
+    final socket = _ioSocket;
+    final channel = _wsChannel;
+    _socketGen++;
+    _ioSocket = null;
+    _wsChannel = null;
+    if (socket != null) {
+      unawaited(socket.close().then((_) {}, onError: (Object _) {}));
+    } else if (channel != null) {
+      unawaited(channel.sink.close().then((_) {}, onError: (Object _) {}));
+    }
     _tunnelStream?.close();
     _setState(PeerConnectionState.disconnected);
     _messageController.close();
@@ -823,6 +881,10 @@ class PeerConnection {
     if (_closed) {
       throw StateError('Connection closed');
     }
+    final socket = _ioSocket;
+    if (socket != null && socket.readyState != io.WebSocket.open) {
+      throw StateError('WebSocket closed');
+    }
     if (_wsChannel != null) {
       _wsChannel!.sink.add(frameStr);
     } else if (_tunnelStream != null && !_tunnelStream!.isClosed) {
@@ -865,14 +927,22 @@ class PeerConnection {
   static const _livenessTimeout = Duration(seconds: 120);
 
   void _startHeartbeat() {
+    _connectedAt = DateTime.now();
+    _heartbeatTimer?.cancel();
     _heartbeatTimer = Timer.periodic(_heartbeatInterval, (_) async {
       // 半开连接（对端消失但 TCP FIN 未到达，relay/移动网络常见）不会触发
-      // onDone，必须靠活性检测主动断开。每次成功收帧都会刷新 _lastActivity，
-      // 因此活连接靠 30s 一次的 pong 持续刷新；超过阈值无任何活动 → 判定已死。
-      if (_lastActivity != null &&
-          DateTime.now().difference(_lastActivity!) > _livenessTimeout) {
+      // onDone，必须靠入站帧判断。本端自己的发送（含这次心跳）不能把计时
+      // 拨回去，否则废连接会一直停在 connected，工作流页刷新也发不出去。
+      final connectedAt = _connectedAt;
+      if (connectedAt != null &&
+          peerInboundExpired(
+            _lastReceivedAt,
+            connectedAt,
+            DateTime.now(),
+            _livenessTimeout,
+          )) {
         _log.warning(
-          'Heartbeat timeout (no activity ${_livenessTimeout.inSeconds}s) '
+          'Heartbeat timeout (no inbound frame for ${_livenessTimeout.inSeconds}s) '
           'for ${peer.deviceName}, dropping connection',
           tag: _tag,
         );

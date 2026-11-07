@@ -12,6 +12,8 @@ import 'services/cli_host.dart';
 import 'services/cli_language.dart';
 import 'services/desktop_window_auto_size.dart';
 import 'services/permission_service.dart';
+import 'peer/services/closed_socket.dart';
+import 'peer/services/peer_connection_manager.dart';
 import 'services/logger_service.dart';
 import 'services/route_gate.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
@@ -149,6 +151,7 @@ Future<void> main(List<String> args) async {
 
       // 捕获未处理的异步异常
       PlatformDispatcher.instance.onError = (error, stack) {
+        if (_recoverClosedSocket(error)) return true;
         LoggerService().error(
           'Unhandled async error',
           tag: 'Platform',
@@ -161,6 +164,7 @@ Future<void> main(List<String> args) async {
       runApp(const MyApp());
     },
     (error, stack) {
+      if (_recoverClosedSocket(error)) return;
       LoggerService().error(
         'Uncaught zone error',
         tag: 'Zone',
@@ -169,6 +173,18 @@ Future<void> main(List<String> args) async {
       );
     },
   );
+}
+
+/// TLS socket 在读事件已经排队后被关掉时，异常不会进 WebSocket 的 onDone。
+/// 记一条警告并丢掉已经关掉的 peer 连接，让工作流页能重连后重新加载。
+bool _recoverClosedSocket(Object error) {
+  if (!isReadingClosedSocket(error)) return false;
+  LoggerService().warning(
+    'TLS socket closed while a read was pending; dropping dead peer transports',
+    tag: 'Zone',
+  );
+  unawaited(PeerConnectionManager.instance.dropClosedTransports());
+  return true;
 }
 
 /// Run the lightweight sub-window app.

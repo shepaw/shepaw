@@ -14,10 +14,15 @@ class HubFlow {
   HubFlow({
     this.send,
     Stream<PeerControlEvent>? events,
+    this.sendTimeout = const Duration(seconds: 8),
   }) : events = events ?? PeerConnectionManager.instance.controlEvents;
 
   final Future<bool> Function(String peerId, Map<String, dynamic> frame)? send;
   final Stream<PeerControlEvent> events;
+
+  /// 发送本身的上限。响应另有 10 秒超时；发送卡在废连接的发送锁上时，
+  /// 没有这个上限运行页会一直转圈。
+  final Duration sendTimeout;
   final _uuid = const Uuid();
 
   static Map<String, dynamic> listFrame(String scope, {String? requestId}) => {
@@ -557,7 +562,10 @@ class HubFlow {
       done.complete(event.data);
     });
     try {
-      final sent = await _send(peerId, frame);
+      final sent = await _send(peerId, frame).timeout(
+        sendTimeout,
+        onTimeout: () => false,
+      );
       if (!sent) return null;
       return await done.future.timeout(const Duration(seconds: 10));
     } catch (_) {

@@ -25,6 +25,7 @@ import '../models/pairing_payload.dart';
 import '../models/peer_message.dart';
 import 'peer_connection.dart';
 import 'peer_channel_bridge.dart';
+import 'closed_socket.dart';
 import 'peer_advertise.dart';
 import 'local_cli_dial.dart';
 import 'peer_endpoint_utils.dart';
@@ -95,6 +96,9 @@ class PeerConnectionManager {
 
   /// 是否已启动
   bool _running = false;
+
+  /// 上次因「读已关闭的 socket」丢掉废连接的时间。短时间内的重复抛错只处理一次。
+  DateTime? _lastClosedSocketRecovery;
 
   /// 恢复前台刷新连接前的征询钩子：返回 true 表示该 peer 有在途的 agent
   /// 交互（审批待决 / 流式输出中），连接绝不能被掐断重建。
@@ -577,12 +581,40 @@ class PeerConnectionManager {
     unawaited(_triggerImmediateReconnect(peerId));
   }
 
+  /// dart:io 在 TLS 读事件已经排队后关掉 socket，异常不会进 WebSocket 的
+  /// onDone。这里把已经不在 OPEN 的连接丢掉并立刻重连，工作流页才能重新拉到运行。
+  ///
+  /// 2 秒内的重复抛错只处理一次，避免关 socket 时的连锁错误把退避打乱。
+  Future<void> dropClosedTransports() async {
+    if (!_running) return;
+    final now = DateTime.now();
+    final last = _lastClosedSocketRecovery;
+    if (last != null && now.difference(last) < const Duration(seconds: 2)) {
+      return;
+    }
+    final closed = <String, PeerConnection>{};
+    for (final entry in _connections.entries) {
+      if (entry.value.socketIsClosed) closed[entry.key] = entry.value;
+    }
+    if (closed.isEmpty) return;
+    _lastClosedSocketRecovery = now;
+    for (final entry in closed.entries) {
+      _log.warning(
+        'Dropping closed socket for ${entry.key}',
+        tag: _tag,
+      );
+      await _dropStaleConnection(entry.key, entry.value);
+      await _triggerImmediateReconnect(entry.key);
+    }
+  }
+
   /// 单次发送尝试：未连接返回 false；连接上发送抛错则顺手丢掉这条半开连接，
   /// 让后续 [_triggerImmediateReconnect] 能真正重建（否则 state 仍是 connected
   /// 会被 _triggerImmediateReconnect 直接跳过）。
   ///
   /// [dropStaleOnError] 只对「会等待重连」的调用方开启：普通控制帧调用保持
-  /// 原有语义，避免离线广播时反复重置重连退避。
+  /// 原有语义，避免离线广播时反复重置重连退避。传输层已经死掉（socket 已关、
+  /// 会话未就绪）时仍然丢掉，否则工作流请求会一直写进废连接。
   Future<bool> _trySendControl(
     String peerId,
     Map<String, dynamic> json, {
@@ -600,7 +632,16 @@ class PeerConnectionManager {
       return true;
     } catch (e) {
       _log.warning('sendControl failed: $e', tag: _tag);
-      if (dropStaleOnError) await _dropStaleConnection(peerId, conn);
+      final dead = sendFailureIsDeadTransport(
+        e,
+        socketClosed: conn.socketIsClosed,
+      );
+      if (dropStaleOnError || dead) {
+        await _dropStaleConnection(peerId, conn);
+        if (dead && !dropStaleOnError) {
+          unawaited(_triggerImmediateReconnect(peerId));
+        }
+      }
       return false;
     }
   }

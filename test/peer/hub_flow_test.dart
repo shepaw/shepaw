@@ -251,6 +251,16 @@ void main() {
     expect(miss.ok, isFalse);
     await bus.close();
   });
+
+  test('a send that never returns does not pin the run view', () async {
+    final client = HubFlow(
+      events: const Stream.empty(),
+      send: (_, __) => Completer<bool>().future,
+      sendTimeout: const Duration(milliseconds: 30),
+    );
+    final result = await client.run('p1', 'run');
+    expect(result, isNull);
+  });
 }
 
 void designModelTests() {
